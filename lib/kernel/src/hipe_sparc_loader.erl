@@ -37,7 +37,8 @@ patch_instr(Addr, Val, Type) ->
 	 patch_alu(Addr, Lo);
     atom -> patch_hi_or(Addr,Val);
     constant -> patch_hi_or(Addr,Val);
-    closure -> patch_hi_or(Addr,Val)
+    closure -> patch_hi_or(Addr,Val);
+    c_const -> patch_hi_or(Addr,Val)
   end.
 
 patch_call_instr(Address,DestAddress) ->

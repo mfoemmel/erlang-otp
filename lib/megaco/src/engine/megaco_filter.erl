@@ -296,6 +296,9 @@ pretty({partial_failure, ContextId, RepList} = Res) ->
    end;
 pretty({trans, Trans}) ->
     case catch megaco_pretty_text_encoder:encode_transaction(Trans) of
+	{ok, Bin} when binary(Bin) ->
+	    IoList2 = lists:flatten(binary_to_list(Bin)),
+	    term_to_string(IoList2);
 	{ok, IoList} ->
 	    IoList2 = lists:flatten(IoList),
 	    term_to_string(IoList2);

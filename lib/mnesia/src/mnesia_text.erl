@@ -68,7 +68,7 @@ del_data(Bad, [H|T], Ack) ->
 	true -> del_data(Bad, T, Ack);
 	false -> del_data(Bad, T, [H|Ack])
     end;
-del_data(Bad, [], Ack) ->
+del_data(_Bad, [], Ack) ->
     lists:reverse(Ack).
 		
 %% Tis the place to call the validate func in mnesia_schema
@@ -134,12 +134,12 @@ collect_data(Tabs, [{Line, Term} | Tail]) when tuple(Term) ->
     case lists:keysearch(element(1, Term), 1, Tabs) of
 	{value, _} ->
 	    [Term | collect_data(Tabs, Tail)];
-	Other ->
+	_Other ->
 	    io:format("Object:~p at line ~w unknown\n", [Term,Line]),
 	    error(undefined_object)
     end;
-collect_data(Tabs, []) -> [];
-collect_data(Tabs, [H|T]) ->
+collect_data(_Tabs, []) -> [];
+collect_data(_Tabs, [H|_T]) ->
     io:format("Object:~p unknown\n", [H]),
     error(undefined_object).
 
@@ -151,7 +151,7 @@ file(File) ->
 	    Res = read_terms(Stream, File, 1, []),
 	    file:close(Stream),
 	    Res;
-	Other ->
+	_Other ->
 	    {error, open}
     end.
 
@@ -181,7 +181,7 @@ read_term_from_stream(Stream, File, Line) ->
 		    io:format("Error2 **~p~n",[T]),
 		    error
 	    end;
-	{eof,EndLine} ->
+	{eof,_EndLine} ->
 	    eof;
 	Other ->
 	    io:format("Error1 **~p~n",[Other]),

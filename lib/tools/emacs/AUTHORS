@@ -1,7 +1,13 @@
 Original Authors:
-
-The Erlang emacs momde was written by Anders Lindgren.
-
-(erlang_appwiz by Johan Bevermyr)
+The Erlang emacs mode was written by Anders Lindgren.
 
 Contributors:
+Luke Gorrie 
+
+Maintainers:
+Sverker Wiberg
+Kent Boortz
+Björn Gustavsson
+
+Currently maintained by:
+Ingela Anderton

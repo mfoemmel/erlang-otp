@@ -46,13 +46,23 @@ compiler(_) -> no.
 %% Entry from command line.
 
 compile_cmdline(List) ->
-    %% I experimented using init:stop/0 instead of halt/0,
-    %% to make sure we don't lose output, but it turned out
-    %% to be too slow for practial use.
     case compile(List) of
-	ok -> halt();
-	error -> halt(1);
-	_ -> halt(2)
+	ok -> my_halt(0);
+	error -> my_halt(1);
+	_ -> my_halt(2)
+    end.
+
+my_halt(Reason) ->
+    case process_info(group_leader(), status) of
+	{_,waiting} ->
+	    %% Now all output data is down in the driver.
+	    %% Give the driver some extra time before halting.
+	    receive after 1 -> ok end,
+	    halt(Reason);
+	_ ->
+	    %% Probably still processing I/O requests.
+	    erlang:yield(),
+	    my_halt(Reason)
     end.
 
 %% Run the the compiler in a separate process, trapping EXITs.

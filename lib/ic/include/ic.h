@@ -345,6 +345,13 @@ extern "C" {
 /* "Generic" function -- kept for backward compatibility */
     typedef ___exec_function___  ___generic___;
 
+#ifdef __WIN32__
+/* Windows.h #defines interface to struct, get rid of it! */
+#ifdef interface
+#undef interface
+#endif
+#endif
+
 /* Operation declaration */
     typedef struct {
 	char *interface;

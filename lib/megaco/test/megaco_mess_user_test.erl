@@ -93,25 +93,29 @@ call(UserCallback) ->
 	undefined ->
 	    exit({no_server, ?SERVER, Request});
         Pid when pid(Pid) ->
-	    ?LOG("send: ~p~n", [Request]),
+	    ?LOG("call[~p] -> bang request: ~n~p~n", [Pid,Request]),
 	    Pid ! Request,
-	    receive
-		{?MODULE, Pid, UserReply} = Reply ->
-		    ?LOG("receive: ~p~n", [Reply]),
-		    case UserReply of
-			{ok, Good}   -> Good;
-			{error, Bad} -> exit(Bad)
-		    end;
-		{'EXIT', Pid, Reason} = Bad ->
-		    ?LOG("receive test case exit: ~p~n", [Bad]),
-		    exit(Reason);
-		{'EXIT', _, Reason} = Bad ->
-		    ?LOG("receive unknown exit: ~p~n", [Bad]),
-		    exit(Reason);
-		Bad ->
-		    ?LOG("receive other: ~p~n", [Bad]),
-		    exit(Bad)
-	    end
+	    call_await_reply(Pid)
+    end.
+
+call_await_reply(Pid) ->
+    receive
+	{?MODULE, Pid, UserReply} = Reply ->
+%  	    io:format("~p~p[~p]: call_await_reply -> received: ~n~p~n", 
+%  		      [self(),?MODULE,?LINE,Reply]),
+	    case UserReply of
+		{ok, Good}   -> Good;
+		{error, Bad} -> exit(Bad)
+	    end;
+	{'EXIT', Pid, Reason} = Bad ->
+	    ?LOG("receive test case exit: ~p~n", [Bad]),
+	    exit(Reason);
+	{'EXIT', _, Reason} = Bad ->
+	    ?LOG("receive unknown exit: ~p~n", [Bad]),
+	    call_await_reply(Pid);
+	Bad ->
+	    ?LOG("receive other: ~p~n", [Bad]),
+	    exit(Bad)
     end.
 
 %%----------------------------------------------------------------------
@@ -119,6 +123,8 @@ call(UserCallback) ->
 %%----------------------------------------------------------------------
 
 handle_connect(ConnHandle, ProtocolVersion) ->
+%     io:format("~p~p[~p]: handle_connect -> entry~n", 
+% 	      [self(),?MODULE,?LINE]),
     call({connect, ConnHandle, ProtocolVersion, []}).
 
 handle_disconnect(ConnHandle, ProtocolVersion, Reason) ->
@@ -131,15 +137,23 @@ handle_message_error(ConnHandle, ProtocolVersion, ErrorDescriptor) ->
     call({message_error, ConnHandle, ProtocolVersion, [ErrorDescriptor]}).
 
 handle_trans_request(ConnHandle, ProtocolVersion, ActionRequests) ->
+%     io:format("~p~p[~p]: handle_trans_request -> entry~n", 
+% 	      [self(),?MODULE,?LINE]),
     call({request, ConnHandle, ProtocolVersion, [ActionRequests]}).
 
 handle_trans_long_request(ConnHandle, ProtocolVersion, RequestData) ->
+%     io:format("~p~p[~p]: handle_trans_long_request -> entry~n", 
+% 	      [self(),?MODULE,?LINE]),
     call({long_request, ConnHandle, ProtocolVersion, [RequestData]}).
 
 handle_trans_reply(ConnHandle, ProtocolVersion, UserReply, UserData) ->
+%     io:format("~p~p[~p]: handle_trans_reply -> entry~n", 
+% 	      [self(),?MODULE,?LINE]),
     call({reply, ConnHandle, ProtocolVersion, [UserReply, UserData]}).
 
 handle_trans_ack(ConnHandle, ProtocolVersion, AckStatus, AckData) ->
+%     io:format("~p~p[~p]: handle_trans_ack -> entry~n", 
+% 	      [self(),?MODULE,?LINE]),
     call({ack, ConnHandle, ProtocolVersion, [AckStatus, AckData]}).
 
 %%----------------------------------------------------------------------

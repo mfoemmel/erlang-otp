@@ -31,11 +31,19 @@
 #include "erl_db.h"
 #include "bif.h"
 #include "erl_version.h"
+#include "hash.h"
+#include "atom.h"
+#include "beam_load.h"
+#include "erl_instrument.h"
 
-/* Forward declarations */
+#ifdef _OSE_
+#include "time.h"
+#endif
+
+/* Forward declarations -- should really appear somewhere else */
 static void process_killer(void);
 void do_break(void);
-void erl_crash_dump(char *, int, char *, va_list);
+extern void erl_crash_dump(char *, int, char *, va_list);
 #ifdef DEBUG
 static void bin_check(void);
 #endif
@@ -45,17 +53,14 @@ static void print_garb_info(Process* p, CIO to);
 static void dump_frequencies(void);
 #endif
 
-static void message_info(to)
-CIO to;
-{
-}
+static void dump_attributes(CIO to, byte* ptr, int size);
+
+extern char* erts_system_version[];
 
 static void
 port_info(CIO to)
 {
     int i;
-    erl_printf(to,"\nPort Information\n");
-    erl_printf(to,"--------------------------------------------------\n");
     for (i = 0; i < erts_max_ports; i++)
 	print_port_info(i,to);
 }
@@ -64,16 +69,12 @@ void
 process_info(CIO to)
 {
     int i;
-    erl_printf(to,"\nProcess Information\n");
-    erl_printf(to,"--------------------------------------------------\n");
     for (i = 0; i < erts_max_processes; i++) {
 	if ((process_tab[i] != NULL) && (process_tab[i]->i != ENULL)) {
 	   if (process_tab[i]->status != P_EXITING)
-	      print_process_info(process_tab[i],to);
+	       print_process_info(process_tab[i], to);
 	}
     }
-
-    process_info_zombies(to);
 
     port_info(to);
 }
@@ -119,48 +120,54 @@ print_process_info(Process *p, CIO to)
     int running = 0;
 
     /* display the PID */
-    display(p->id,to);
-    /* Display the status */
+    erl_printf(to, "=proc:");
+    display(p->id, to);
+    erl_printf(to, "\n");
+
+    /* Display the state */
+    erl_printf(to, "State: ");
     switch (p->status) {
     case P_FREE:
-	erl_printf(to," Non Existing."); /* Should never happen */
+	erl_printf(to,"Non Existing"); /* Should never happen */
 	break;
     case P_RUNABLE:
-	erl_printf(to," Scheduled.");
+	erl_printf(to,"Scheduled");
 	break;
     case P_WAITING:
-	erl_printf(to," Waiting.");
+	erl_printf(to,"Waiting");
 	break;
     case P_SUSPENDED:
-	erl_printf(to," Suspended.");
+	erl_printf(to,"Suspended");
 	break;
     case P_RUNNING:
-	erl_printf(to," Running.");
+	erl_printf(to,"Running");
 	running = 1;
 	break;
     case P_EXITING:
-	erl_printf(to," Exiting.");
+	erl_printf(to,"Exiting");
 	break;
     case P_GARBING:
-	erl_printf(to," Process is garbing, limited information.");
+	erl_printf(to,"Garbing");
 	garbing = 1;
 	running = 1;
 	break;
     }
+    erl_printf(to, "\n");
 
     /*
      * If the process is registered as a global process, display the
      * registered name
      */
     if (p->reg != NULL) {
-	erl_printf(to," Registered as: ");
+	erl_printf(to,"Name: ");
 	print_atom(atom_val(p->reg->name), to);
+	erl_printf(to, "\n");
     }
 
     /*
      * Display the initial function name
      */
-    erl_printf(to,"\nSpawned as: ");
+    erl_printf(to,"Spawned as: ");
     display(p->initial[INITIAL_MOD], to);
     erl_printf(to,":");
     display(p->initial[INITIAL_FUN], to);
@@ -179,19 +186,18 @@ print_process_info(Process *p, CIO to)
 	erl_printf(to,"/%d\n", p->current[2]);
     }
 
+    erl_printf(to, "Spawned by: ");
+    display(p->parent, to);
+    erl_printf(to, "\n");
+
+    erl_printf(to, "Started: %s", ctime((time_t*)&p->started));
+    erl_printf(to, "Message queue length: %d\n", p->msg.len);
+
     /* display the message queue only if there is anything in it */
-    if (p->msg.first != NULL && !garbing) {
+    if (!erts_writing_erl_crash_dump && p->msg.first != NULL && !garbing) {
 	ErlMessage* mp = p->msg.first;
-	int n = 0;
 
-	while (mp != NULL) {
-	   n++;
-	   mp = mp->next;
-	}
-
-	erl_printf(to,"Message queue (%d message%s): [",
-		   n, n == 1 ? "" : "s");
-
+	erl_printf(to, "Message queue: [");
 	mp = p->msg.first;
 	while (mp != NULL) {
 	    display(ERL_MESSAGE_TERM(mp), to);
@@ -204,22 +210,24 @@ print_process_info(Process *p, CIO to)
 #ifndef SHARED_HEAP
     {
        long s = 0;
+       int frags = 0;
        ErlHeapFragment *m = p->mbuf;
        while (m != NULL) {
-	  s += m->size;
-	  m = m->next;
+	   frags++;
+	   s += m->size;
+	   m = m->next;
        }
-       erl_printf(to, "Message buffer data: %d words\n", s);
+       erl_printf(to, "Number of heap fragments: %d\n", frags);
     }
+    erl_printf(to, "Heap fragment data: %u\n", (unsigned)(MBUF_SIZE(p)));
 #endif
 
     if (p->ct != NULL) {
        int i, j;
 
-       erl_printf(to, "Last calls:\n");
-	  for (i = 0; i < p->ct->n; i++)
-	  {
-	     erl_printf(to, "  ");
+       erl_printf(to, "Last calls:");
+       for (i = 0; i < p->ct->n; i++) {
+	     erl_printf(to, " ");
 	     j = p->ct->cur - i - 1;
 	     if (j < 0)
 		j += p->ct->len;
@@ -235,8 +243,8 @@ print_process_info(Process *p, CIO to)
 		display(p->ct->ct[j]->code[1], to);
 		erl_printf(to, "/%d", p->ct->ct[j]->code[2]);
 	     }
-	     erl_printf(to, "\n");
 	  }
+       erl_printf(to, "\n");
     }
 
     /* display the links only if there are any*/
@@ -286,61 +294,68 @@ print_process_info(Process *p, CIO to)
 	erl_printf(to,"]\n");
     }
 
-    /* and the dictionary */
-    if (p->dictionary != NULL && !garbing) {
-	erl_printf(to, "Dictionary: ");
-	dictionary_dump(p->dictionary, to);
-	erl_printf(to, "\n");
-    }
+
+    if (!erts_writing_erl_crash_dump) {
+
+	/* and the dictionary */
+	if (p->dictionary != NULL && !garbing) {
+	    erl_printf(to, "Dictionary: ");
+	    erts_dictionary_dump(p->dictionary, to);
+	    erl_printf(to, "\n");
+	}
     
-    /* as well as the debug dictionary */
-    if (p->debug_dictionary != NULL && !garbing) {
-	erl_printf(to, "$Dictionary: ");
-	dictionary_dump(p->debug_dictionary, to);
-	erl_printf(to, "\n");
+	/* as well as the debug dictionary */
+	if (p->debug_dictionary != NULL && !garbing) {
+	    erl_printf(to, "$Dictionary: ");
+	    erts_dictionary_dump(p->debug_dictionary, to);
+	    erl_printf(to, "\n");
+	}
     }
     
     /* print the number of reductions etc */
+    erl_printf(to, "Reductions: %u\n", (unsigned)p->reds);
+
 #ifdef SHARED_HEAP
-    erl_printf(to,"Reductions %d heap_sz %d old_heap_sz=%d \n",
+    erl_printf(to, "Stack: %u\n", (unsigned)(p->stack - p->send));
 #else
-    erl_printf(to,"Reductions %d stack+heap %d old_heap_sz=%d \n",
-#endif
-               p->reds, p->heap_sz,
+    erl_printf(to, "Stack+heap: %u\n", (unsigned)p->heap_sz);
+    erl_printf(to, "OldHeap: %u\n",
                (OLD_HEAP(p) == NULL) ? 0 :
-               OLD_HEND(p) - OLD_HEAP(p) );
-    erl_printf(to,"Heap unused=%d OldHeap unused=%d\n",
-               p->hend - p->htop,
+               (unsigned)(OLD_HEND(p) - OLD_HEAP(p)) );
+    erl_printf(to, "Heap unused: %u\n", (unsigned)(p->hend - p->htop));
+    erl_printf(to, "OldHeap unused: %u\n",
 	       (OLD_HEAP(p) == NULL) ? 0 : 
-	       OLD_HEND(p) - OLD_HEAP(p));
+	       (unsigned)(OLD_HEND(p) - OLD_HEAP(p)) );
+#endif
 
     if (garbing) {
 	print_garb_info(p, to);
     }
     
-    erl_printf(to, "Stack dump:\n");
-    erts_stack_dump(p, to);
-
-    erl_printf(to,"--------------------------------------------------\n");
+    if (erts_writing_erl_crash_dump) {
+	erts_program_counter_info(p, to);
+    } else {
+	erl_printf(to, "Stack dump:\n");
+	erts_stack_dump(p, to);
+    }
 }
 
 static void
 print_garb_info(Process* p, CIO to)
 {
-    erl_printf(to, "new heap: %-8s %-8s %-8s %-8s\n",
-	       "start", "top", "sp", "end");
-    erl_printf(to, "          %08X %08X %08X %08X\n",
-	       p->heap, p->htop, p->stop, p->hend);
-    erl_printf(to, "old heap: %-8s %-8s %-8s\n",
-               "start", "top", "end");
-    erl_printf(to, "          %08X %08X %08X\n",
-               OLD_HEAP(p), OLD_HTOP(p), OLD_HEND(p));
+    erl_printf(to, "New heap start: %X\n", p->heap);
+    erl_printf(to, "New heap top: %X\n", p->htop);
+    erl_printf(to, "Stack top: %X\n", p->stop);
+    erl_printf(to, "Stack end: %X\n", p->hend);
+    erl_printf(to, "Old heap start: %X\n", OLD_HEAP(p));
+    erl_printf(to, "Old heap top: %X\n", OLD_HTOP(p));
+    erl_printf(to, "Old heap end: %X\n", OLD_HEND(p));
 }
 
 void
 info(CIO to)
 {
-    erl_printf(to,"--------------------------------------------------\n");
+    erts_memory(&to, NULL, THE_NON_VALUE);
     atom_info(to);
     module_info(to);
     export_info(to);
@@ -348,51 +363,83 @@ info(CIO to)
     erts_fun_info(to);
     erts_node_table_info(to);
     erts_dist_table_info(to);
-    erts_sl_alloc_info(to);
-    erl_printf(to, "Allocated binary data %d\n", tot_bin_allocated);
-    erl_printf(to, "Allocated by process_desc %d\n", fix_info(process_desc));
-    erl_printf(to, "Allocated by table_desc %d\n", fix_info(table_desc));
-    erl_printf(to, "Allocated by atom_desc %d\n", fix_info(atom_desc));
-    erl_printf(to, "Allocated by export_desc %d\n", fix_info(export_desc));
-    erl_printf(to, "Allocated by module_desc %d\n", fix_info(module_desc));
-    erl_printf(to, "Allocated by preg_desc %d\n", fix_info(preg_desc));
-    erl_printf(to, "Allocated by plist_desc %d\n", fix_info(plist_desc));
-    erl_printf(to, "Allocated by erts_fun_desc %d\n", fix_info(erts_fun_desc));
-    erl_printf(to, "Allocated by link_desc %d\n", fix_info(link_desc));
-    erl_printf(to, "Allocated by link_sh_desc %d\n", fix_info(link_sh_desc));
-    erl_printf(to, "Allocated by link_lh %u\n", erts_tot_link_lh_size);
-#ifdef INSTRUMENT
-    {
-      SysAllocStat sas;
-      sys_alloc_stat(&sas);
-      erl_printf(to,"Totally allocated %u\n", sas.total);
-      erl_printf(to,"Maximum allocated %u\n", sas.maximum);
-    }
-#endif
-    erl_printf(to,"--------------------------------------------------\n");
+    erts_allocated_areas(&to, NULL);
+    erts_allocator_info(to);
+
 }
 
 void
 loaded(CIO to)
 {
-    int i, old = 0, cur = 0;
-    erl_printf(to,"--------------------------------------------------\n");
+    int i;
+    int old = 0;
+    int cur = 0;
+    Eterm* code;
+
+    /*
+     * Calculate and print totals.
+     */
     for (i = 0; i < module_code_size; i++) {
 	if (module_code(i) != NULL &&
 	    ((module_code(i)->code_length != 0) ||
 	     (module_code(i)->old_code_length != 0))) {
-	    print_atom(module_code(i)->module, to);
 	    cur += module_code(i)->code_length;
-	    erl_printf(to," %d", module_code(i)->code_length );
 	    if (module_code(i)->old_code_length != 0) {
-		erl_printf(to," (%d old)", module_code(i)->old_code_length );
 		old += module_code(i)->old_code_length;
 	    }
-	    erl_printf(to,"\n");
 	}
     }
-    erl_printf(to,"\nTotals. Current code = %d Old code = %d\n", cur, old);
-    erl_printf(to,"--------------------------------------------------\n");
+    erl_printf(to, "Current code: %d\n", cur);
+    erl_printf(to, "Old code: %d\n", old);
+    
+    /*
+     * Print one line per module.
+     */
+    for (i = 0; i < module_code_size; i++) {
+	if (module_code(i) != NULL &&
+	    ((module_code(i)->code_length != 0) ||
+	     (module_code(i)->old_code_length != 0))) {
+	    erl_printf(to, "=mod:");
+	    print_atom(module_code(i)->module, to);
+	    erl_printf(to,"\n");
+	    erl_printf(to, "Current size: %d\n", module_code(i)->code_length);
+	    code = module_code(i)->code;
+	    if (code != NULL && code[MI_ATTR_PTR]) {
+		erl_printf(to, "Current attributes: ");
+		dump_attributes(to, (byte *) code[MI_ATTR_PTR], code[MI_ATTR_SIZE]);
+	    }
+	    if (code != NULL && code[MI_COMPILE_PTR]) {
+		erl_printf(to, "Current compilation info: ");
+		dump_attributes(to, (byte *) code[MI_COMPILE_PTR],
+				code[MI_COMPILE_SIZE]);
+	    }
+
+	    if (module_code(i)->old_code_length != 0) {
+		erl_printf(to, "Old size: %d\n", module_code(i)->old_code_length);
+		code = module_code(i)->old_code;
+		if (code[MI_ATTR_PTR]) {
+		    erl_printf(to, "Old attributes: ");
+		    dump_attributes(to, (byte *) code[MI_ATTR_PTR],
+				    code[MI_ATTR_SIZE]);
+		}
+		if (code[MI_COMPILE_PTR]) {
+		    erl_printf(to, "Old compilation info: ");
+		    dump_attributes(to, (byte *) code[MI_COMPILE_PTR],
+				    code[MI_COMPILE_SIZE]);
+		}
+	    }
+	}
+    }
+}
+
+
+static void
+dump_attributes(CIO to, byte* ptr, int size)
+{
+    while (size-- > 0) {
+	erl_printf(to, "%02X", *ptr++);
+    }
+    erl_printf(to, "\n");
 }
 
 
@@ -423,7 +470,6 @@ do_break(void)
 	    process_info(COUT);
 	    return;
 	case 'm':
-	    message_info(COUT);
 	    return;
 	case 'o':
 	    port_info(COUT);
@@ -559,7 +605,7 @@ bin_check(void)
 
 #endif
 
-/* XXX THIS SHOULD SHOULD BE IN SYSTEM !!!! */
+/* XXX THIS SHOULD BE IN SYSTEM !!!! */
 void
 erl_crash_dump(char *file, int line, char* fmt, va_list args)
 {
@@ -568,60 +614,65 @@ erl_crash_dump(char *file, int line, char* fmt, va_list args)
     char* dumpname;
     char buf[512];
 
+    if (erts_writing_erl_crash_dump)
+	return;
+
+    erts_writing_erl_crash_dump = 1; /* Allow us to pass certain places
+					without locking... */
+
     dumpname = getenv("ERL_CRASH_DUMP");
-    if (!dumpname)
+    if (!dumpname) {
 	dumpname = "erl_crash.dump";
+    }
 #ifndef VXWORKS
     close(3);			/* Make sure we have a free descriptor */
 #endif
     fd = open(dumpname,O_WRONLY | O_CREAT | O_TRUNC,0640);
-    if(fd < 0) 
+    if (fd < 0) 
 	return; /* Can't create the crash dump, skip it */
-
+    
     time(&now);
-    erl_printf(fd,"<Erlang crash dump>\n%s\n",ctime(&now));
+    erl_printf(fd, "=erl_crash_dump:0.1\n%s", ctime(&now));
 
     if (file != NULL)
        erl_printf(fd,"The error occurred in file %s, line %d\n", file, line);
 
     if (fmt != NULL && *fmt != '\0') {
 	vsprintf(buf, fmt, args);
-	erl_printf(fd,"Slogan: %s\n\n",buf);
-    } else {
-	erl_printf(fd,"No slogan.\n\n");
+	erl_printf(fd, "Slogan: %s",buf);
     }
-    erl_printf(fd,"Erlang (%s) emulator version " ERLANG_VERSION "\n",EMULATOR);
-    erl_printf(fd,"Compiled on " ERLANG_COMPILE_DATE "\n");
-
+    erl_printf(fd, "System version: %s", erts_get_system_version(NULL));
+    erl_printf(fd, "Compiled: " ERLANG_COMPILE_DATE "\n");
+    erl_printf(fd, "Atoms: %d\n", atom_table.sz);
+    info(fd); /* General system info */
     if (process_tab != NULL)  /* XXX true at init */
 	process_info(fd); /* Info about each process and port */
-    erl_printf(fd,"\nInternal Table Information\n");
-    info(fd); /* General system info */
-    erl_printf(fd,"\nETS tables\n");
-    erl_printf(fd,"--------------------------------------------------\n");
     db_info(fd, 0);
-    erl_printf(fd,"\nTimers\n");
-    erl_printf(fd,"--------------------------------------------------\n");
     print_timer_info(fd);
-    erl_printf(fd,"--------------------------------------------------\n");
-    erl_printf(fd,"\nDistribution Information\n");
     distribution_info(fd);
-    erl_printf(fd,"\nLoaded Modules Information\n");
+    erl_printf(fd, "=loaded_modules\n");
     loaded(fd);
-    erl_printf(fd,"\nFun table\n");
-    erl_printf(fd,"--------------------------------------------------\n");
     erts_dump_fun_entries(fd);
-    erl_printf(fd,"\nAtoms\n");
-    erl_printf(fd,"--------------------------------------------------\n");
+    erts_deep_process_dump(fd);
+    erl_printf(fd,"=atoms\n");
     dump_atoms(fd);
 
+    /* Keep the instrumentation data at the end of the dump */
+    if (erts_instr_memory_map || erts_instr_stat) {
+	erl_printf(fd, "=instr_data\n");
 
-#ifdef INSTRUMENT
-    erl_printf(fd,"\nMemory allocation information\n");
-    erl_printf(fd,"--------------------------------------------------\n");
-    dump_memory_to_fd(fd);
-#endif
+	if (erts_instr_stat) {
+	    erl_printf(fd,"=memory_status\n");
+	    erts_instr_dump_stat_to_fd(fd, 0);
+	}
+	if (erts_instr_memory_map) {
+	    erl_printf(fd,"=memory_map\n");
+	    erts_instr_dump_memory_map_to_fd(fd);
+	}
+    }
 
-    erl_printf(fd,"\n<End of Erlang crash dump>\n");
+    erl_printf(fd,"=end\n");
     close(fd);
+    sprintf(buf, "\r\nCrash dump was written to: %s\r\n", dumpname);
+    write(2, buf, strlen(buf));
 }

@@ -178,12 +178,20 @@ maybe_create_snmp_counters(SH) ->
 	    ok
     end.
 
-create_snmp_counters(SH, []) ->
-    ok;
-create_snmp_counters(SH, [Counter|Counters]) ->
-    Key = {SH, Counter},
-    ets:insert(megaco_udp_stats, {Key, 0}),
-    create_snmp_counters(SH, Counters).
+% create_snmp_counters(SH, []) ->
+%     ok;
+% create_snmp_counters(SH, [Counter|Counters]) ->
+%     Key = {SH, Counter},
+%     ets:insert(megaco_udp_stats, {Key, 0}),
+%     create_snmp_counters(SH, Counters).
+
+create_snmp_counters(SH, Counters) ->
+    F = fun(Counter) ->
+		Key = {SH, Counter},
+		ets:insert(megaco_udp_stats, {Key, 0})
+	end,
+    lists:foreach(F, Counters).
+
 
 %%-----------------------------------------------------------------
 %% Func: send_message
@@ -284,13 +292,13 @@ parse_options(BadList, _UdpRec, _Mand) ->
 %%              
 %%-----------------------------------------------------------------
 incNumOutMessages(SH) ->
-    ets:update_counter(megaco_udp_stats, 
-		       {SH, medGwyGatewayNumOutMessages}, 1).
+    incCounter({SH, medGwyGatewayNumOutMessages}, 1).
 
 incNumOutOctets(SH, NumOctets) ->
-    ets:update_counter(megaco_udp_stats, 
-		       {SH, medGwyGatewayNumOutOctets}, NumOctets).
+    incCounter({SH, medGwyGatewayNumOutOctets}, NumOctets).
+
+incCounter(Key, Inc) ->
+    ets:update_counter(megaco_udp_stats, Key, Inc).
 
 % incNumErrors(SH) ->
-%     ets:update_counter(megaco_udp_stats, 
-% 		       {SH, medGwyGatewayNumErrors}, 1).
+%     incCounter({SH, medGwyGatewayNumErrors}, 1).

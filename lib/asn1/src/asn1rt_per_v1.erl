@@ -59,9 +59,9 @@
 dec_fixup(Terms,Cnames,RemBytes) ->
     dec_fixup(Terms,Cnames,RemBytes,[]).
 
-dec_fixup([novalue|T],[Hc|Tc],RemBytes,Acc) ->
+dec_fixup([novalue|T],[_Hc|Tc],RemBytes,Acc) ->
     dec_fixup(T,Tc,RemBytes,Acc);
-dec_fixup([{_Name,novalue}|T],[Hc|Tc],RemBytes,Acc) ->
+dec_fixup([{_Name,novalue}|T],[_Hc|Tc],RemBytes,Acc) ->
     dec_fixup(T,Tc,RemBytes,Acc);
 dec_fixup([H|T],[Hc|Tc],RemBytes,Acc) ->
     dec_fixup(T,Tc,RemBytes,[{Hc,H}|Acc]);
@@ -77,7 +77,7 @@ cindex(Ix,Val,Cname) ->
 % converts a list to a record if necessary
 list_to_record(Name,List) when list(List) ->
     list_to_tuple([Name|List]);
-list_to_record(Name,Tuple) when tuple(Tuple) ->
+list_to_record(_Name,Tuple) when tuple(Tuple) ->
     Tuple.
 
 %%--------------------------------------------------------
@@ -105,7 +105,7 @@ fixoptionals2(OptList,OptLength,Val) when tuple(Val) ->
     Bits = fixoptionals2(OptList,Val,0),
     {Val,{bits,OptLength,Bits}};
 
-fixoptionals2([],Val,Acc) ->
+fixoptionals2([],_Val,Acc) ->
     %% Optbits
     Acc;
 fixoptionals2([Pos|Ot],Val,Acc) ->
@@ -139,9 +139,9 @@ fixoptionals([{_,Pos}|Ot],Val,Acc) ->
 %    Vlist = tuple_to_list(Val),
 %    setoptionals(OptList,Vlist,1,[]).
 
-fixoptionals([{Name,Pos}|Ot],[{Name,Val}|Vt],Opt,Acc1,Acc2) ->
+fixoptionals([{Name,Pos}|Ot],[{Name,Val}|Vt],_Opt,Acc1,Acc2) ->
     fixoptionals(Ot,Vt,Pos+1,[1|Acc1],[{Name,Val}|Acc2]);
-fixoptionals([{Name,Pos}|Ot],V,Pos,Acc1,Acc2) ->
+fixoptionals([{_Name,Pos}|Ot],V,Pos,Acc1,Acc2) ->
     fixoptionals(Ot,V,Pos+1,[0|Acc1],[asn1_NOVALUE|Acc2]);
 fixoptionals(O,[Vh|Vt],Pos,Acc1,Acc2) ->
     fixoptionals(O,Vt,Pos+1,Acc1,[Vh|Acc2]);
@@ -204,13 +204,13 @@ skipextensions(Bytes,Nr,ExtensionBitPattern) ->
 
 getchoice(Bytes,1,0) -> % only 1 alternative is not encoded
     {0,Bytes};
-getchoice(Bytes,NumChoices,1) ->
+getchoice(Bytes,_NumChoices,1) ->
     decode_small_number(Bytes);
 getchoice(Bytes,NumChoices,0) ->
     decode_integer(Bytes,[{'ValueRange',{0,NumChoices-1}}]).
 
 getoptionals2(Bytes,NumOpt) ->
-    {Opts,Bytes1} = getbits(Bytes,NumOpt).
+    getbits(Bytes,NumOpt).
 
 %% getoptionals is kept only for bakwards compatibility
 getoptionals(Bytes,NumOpt) ->
@@ -227,7 +227,7 @@ getoptionals(Bytes,L,NumComp) when list(L) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% comptuple is only here for compatibility not used from 1.3.2
-comptuple([Bh|Bt],[{Name,Nr}|T],NumComp,Nr) ->
+comptuple([Bh|Bt],[{_Name,Nr}|T],NumComp,Nr) ->
     [Bh|comptuple(Bt,T,NumComp-1,Nr+1)];
 comptuple(Bl,[{Name,Tnr}|Tl],NumComp,Nr) ->
     [0|comptuple(Bl,[{Name,Tnr}|Tl],NumComp-1,Nr+1)];
@@ -244,7 +244,7 @@ comptuple(B,O,N,Nr) ->
 %% RestBytes = tuple()
 getbits_as_binary(Num,Bytes) when list(Bytes) ->
     getbits_as_binary(Num,{0,Bytes});
-getbits_as_binary(Num,{Used,[]}) ->
+getbits_as_binary(_Num,{Used,[]}) ->
     {{0,<<>>},{Used,[]}};
 getbits_as_binary(Num,{Used,Bits=[H|T]}) ->
     B1 = case (Num+Used) =< 8 of
@@ -258,9 +258,9 @@ getbits_as_binary(Num,{Used,Bits=[H|T]}) ->
     NewUsed = (Used + Num) rem 8,
     {{Pad,<<(H bsr (8-(Used+B1))):B1,Int:B2,0:Pad>>},{NewUsed,RestBits}}.
 
-integer_from_list(Int,[],BigInt) ->
+integer_from_list(_Int,[],BigInt) ->
     BigInt;
-integer_from_list(Int,[H|T],BigInt) when Int < 8 ->
+integer_from_list(Int,[H|_T],BigInt) when Int < 8 ->
     (BigInt bsl Int) bor (H bsr (8-Int));
 integer_from_list(Int,[H|T],BigInt) ->
     integer_from_list(Int-8,T,(BigInt bsl 8) bor H).
@@ -305,12 +305,12 @@ getoctet(Bytes) ->
 
 getoctet1({0,[H|T]}) ->
     {H,{0,T}};
-getoctet1({Pos,[_,H|T]}) ->
+getoctet1({_Pos,[_,H|T]}) ->
     {H,{0,T}}.
 
 align({0,L}) ->
     {0,L};
-align({Pos,[H|T]}) ->
+align({_Pos,[_H|T]}) ->
     {0,T};
 align(Bytes) ->
     {0,Bytes}.
@@ -343,7 +343,7 @@ getoctets_as_list(Buffer,Num,Acc) ->
 %% second is the Extensions and then Altnum must also be a tuple with the
 %% lengths of the 2 lists 
 %%
-set_choice(Alt,{L1,L2},{Len1,Len2}) ->
+set_choice(Alt,{L1,L2},{Len1,_Len2}) ->
     case set_choice_tag(Alt,L1) of
 	N when integer(N), Len1 > 1 ->
 	    [{bit,0}, % the value is in the root set
@@ -372,11 +372,11 @@ set_choice(Alt,L,Len) ->
 set_choice_tag(Alt,Choices) ->
     set_choice_tag(Alt,Choices,0).
 
-set_choice_tag(Alt,[Alt|Rest],Tag) ->
+set_choice_tag(Alt,[Alt|_Rest],Tag) ->
     Tag;
-set_choice_tag(Alt,[H|Rest],Tag) ->
+set_choice_tag(Alt,[_H|Rest],Tag) ->
     set_choice_tag(Alt,Rest,Tag+1);
-set_choice_tag(Alt,[],Tag) ->
+set_choice_tag(_Alt,[],_Tag) ->
     false.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -385,10 +385,10 @@ set_choice_tag(Alt,[],Tag) ->
 %%         | binary
 %% Contraint = not used in this version
 %%
-encode_open_type(Constraint, Val) when list(Val) -> 
+encode_open_type(_Constraint, Val) when list(Val) -> 
     [encode_length(undefined,length(Val)),align,
 	     {octets,Val}];
-encode_open_type(Constraint, Val) when binary(Val) ->
+encode_open_type(_Constraint, Val) when binary(Val) ->
     [encode_length(undefined,size(Val)),align,
 	     {octets,binary_to_list(Val)}].
 %% the binary_to_list is not optimal but compatible with the current solution
@@ -399,7 +399,7 @@ encode_open_type(Constraint, Val) when binary(Val) ->
 %% Buffer = [byte] with PER encoded data 
 %% Value = [byte] with decoded data (which must be decoded again as some type)
 %%
-decode_open_type(Bytes, Constraint) ->
+decode_open_type(Bytes, _Constraint) ->
     {Len,Bytes2} = decode_length(Bytes,undefined),
     Bytes3 = align(Bytes2),
     getoctets_as_list(Bytes3,Len).
@@ -418,7 +418,7 @@ encode_integer(C,V,NamedNumberList) when atom(V) ->
 	_ -> 
 	    exit({error,{asn1,{namednumber,V}}})
     end;
-encode_integer(C,V,NamedNumberList) when integer(V) ->
+encode_integer(C,V,_) when integer(V) ->
     encode_integer(C,V);
 encode_integer(C,{Name,V},NamedNumberList) when atom(Name) ->
     encode_integer(C,V,NamedNumberList).
@@ -426,7 +426,7 @@ encode_integer(C,{Name,V},NamedNumberList) when atom(Name) ->
 encode_integer(C,{Name,Val}) when atom(Name) ->
     encode_integer(C,Val);
 
-encode_integer({Rc,Ec},Val) ->
+encode_integer({Rc,_Ec},Val) ->
     case (catch encode_integer(Rc,Val)) of
 	{'EXIT',{error,{asn1,_}}} ->
 	    [{bit,1},encode_unconstrained_number(Val)];
@@ -471,7 +471,7 @@ decode_integer(Buffer,Range,NamedNumberList) ->
 	_ -> {Val,Buffer2}
     end.
 
-decode_integer(Buffer,{Rc,Ec}) ->
+decode_integer(Buffer,{Rc,_Ec}) ->
     {Ext,Buffer2} = getext(Buffer),
     case Ext of
 	0 -> decode_integer(Buffer2,Rc);
@@ -501,7 +501,7 @@ decode_integer1(Buffer,C) ->
 	    decode_unconstrained_number(Buffer);
 	{Lb, 'MAX'} ->
 	    decode_semi_constrained_number(Buffer,Lb);
-	{Lb,Ub} ->
+	{_,_} ->
 	    decode_constrained_number(Buffer,VR)
     end.
 
@@ -549,25 +549,25 @@ encode_constrained_number({Lb,Ub},Val) when Val >= Lb, Ub >= Val ->
     Val2 = Val - Lb,
     if 
 	Range  == 2 ->
-	    Size = {bits,1,Val2};
+	    {bits,1,Val2};
 	Range  =< 4 -> 
-	    Size = {bits,2,Val2};
+	    {bits,2,Val2};
 	Range  =< 8 ->
-	    Size = {bits,3,Val2};
+	    {bits,3,Val2};
 	Range  =< 16 ->
-	    Size = {bits,4,Val2};
+	    {bits,4,Val2};
 	Range  =< 32 ->
-	    Size = {bits,5,Val2};
+	    {bits,5,Val2};
 	Range  =< 64 ->
-	    Size = {bits,6,Val2};
+	    {bits,6,Val2};
 	Range  =< 128 ->
-	    Size = {bits,7,Val2};
+	    {bits,7,Val2};
 	Range  =< 255 ->
-	    Size = {bits,8,Val2};
+	    {bits,8,Val2};
 	Range  =< 256 ->
-	    Size = {octets,1,Val2};
+	    {octets,1,Val2};
 	Range  =< 65536 ->
-	    Size = {octets,2,Val2};
+	    {octets,2,Val2};
 	Range =< 16#1000000  ->
 	    Octs = eint_positive(Val2),
 	    [encode_length({1,3},length(Octs)),{octets,Octs}];
@@ -741,7 +741,7 @@ encode_length({Lb,Ub},Len) when Ub =< 65535 ,Lb >= 0 -> % constrained
 encode_length({{Lb,Ub},[]},Len) when Ub =< 65535 ,Lb >= 0 -> 
     %% constrained extensible
     [{bit,0},encode_constrained_number({Lb,Ub},Len)];
-encode_length(SingleValue,Len) when integer(SingleValue) ->
+encode_length(SingleValue,_) when integer(SingleValue) ->
     [].
 
 encode_small_length(Len) when Len =< 64 ->
@@ -784,11 +784,11 @@ decode_length(Buffer,{{Lb,Ub},[]}) ->
 	    decode_length(Buffer2, {Lb,Ub})
     end;
 						% X.691:10.9.3.5 
-decode_length(Buffer,{_,_Lb,Ub}) -> %when Len =< 127 -> % Unconstrained or large Ub
+decode_length(Buffer,{_,_Lb,_Ub}) -> %when Len =< 127 -> % Unconstrained or large Ub
     case getbit(Buffer) of
 	{0,Remain} -> 
 	    getbits(Remain,7);
-	{1,Remain} -> 
+	{1,_Remain} -> 
 	    {Val,Remain2} = getoctets(Buffer,2),
 	    {Val band 2#0111111111111111, Remain2}
     end;
@@ -827,7 +827,7 @@ encode_enumerated(C,{Name,Value},NamedNumberList) when
     encode_enumerated(C,Value,NamedNumberList);
 
 %% ENUMERATED with extension mark
-encode_enumerated(C,{asn1_enum,Value},{Nlist1,Nlist2}) when Value >= length(Nlist2) ->
+encode_enumerated(_C,{asn1_enum,Value},{_Nlist1,Nlist2}) when Value >= length(Nlist2) ->
     [{bit,1},encode_small_number(Value)];
 encode_enumerated(C,Value,{Nlist1,Nlist2}) ->
     case enum_search(Value,Nlist1,0) of
@@ -853,9 +853,9 @@ encode_enumerated(C,Value,NamedNumberList) when list(NamedNumberList) ->
 %% returns the ordinal number from 0 ,1 ... in the list where Name is found
 %% or false if not found
 %%
-enum_search(Name,[Name|NamedNumberList],Acc) ->
+enum_search(Name,[Name|_NamedNumberList],Acc) ->
     Acc;
-enum_search(Name,[H|T],Acc) ->
+enum_search(Name,[_H|T],Acc) ->
     enum_search(Name,T,Acc+1);
 enum_search(_,[],_) ->
     false. % name not found !error
@@ -868,7 +868,7 @@ decode_enumerated(Buffer,C,{Ntup1,Ntup2}) when tuple(Ntup1), tuple(Ntup2) ->
 	    {Val,Buffer3} = decode_integer(Buffer2,C),
 	    case catch (element(Val+1,Ntup1)) of
 		NewVal when atom(NewVal) -> {NewVal,Buffer3};
-		Error -> exit({error,{asn1,{decode_enumerated,{Val,[Ntup1,Ntup2]}}}})
+		_Error -> exit({error,{asn1,{decode_enumerated,{Val,[Ntup1,Ntup2]}}}})
 	    end;
 	1 -> % this an extension value
 	    {Val,Buffer3} = decode_small_number(Buffer2),
@@ -882,7 +882,7 @@ decode_enumerated(Buffer,C,NamedNumberTup) when tuple(NamedNumberTup) ->
     {Val,Buffer2} = decode_integer(Buffer,C),
     case catch (element(Val+1,NamedNumberTup)) of
 	NewVal when atom(NewVal) -> {NewVal,Buffer2};
-	Error -> exit({error,{asn1,{decode_enumerated,{Val,NamedNumberTup}}}})
+	_Error -> exit({error,{asn1,{decode_enumerated,{Val,NamedNumberTup}}}})
     end.
 
 %%===============================================================================
@@ -1127,7 +1127,7 @@ bit_list_to_named1(Pos,[1|Bt],Names,Acc) ->
 	_  -> 
 	    bit_list_to_named1(Pos+1,Bt,Names,[{bit,Pos}|Acc])
     end;
-bit_list_to_named1(Pos,[],Names,Acc) ->
+bit_list_to_named1(_Pos,[],_Names,Acc) ->
     lists:reverse(Acc).
 
 
@@ -1140,7 +1140,7 @@ int_to_bitlist(0) ->
 int_to_bitlist(Int) when integer(Int), Int >= 0 ->
     [Int band 1 | int_to_bitlist(Int bsr 1)].
 
-int_to_bitlist(Int,0) ->
+int_to_bitlist(_Int,0) ->
     [];
 int_to_bitlist(0,N) ->
     [0|int_to_bitlist(0,N-1)];
@@ -1175,7 +1175,7 @@ make_and_set_list([XPos|SetPos], XPos) ->
     [1 | make_and_set_list(SetPos, XPos + 1)];
 make_and_set_list([Pos|SetPos], XPos) ->
     [0 | make_and_set_list([Pos | SetPos], XPos + 1)];
-make_and_set_list([], XPos) ->
+make_and_set_list([], _XPos) ->
     [].
 
 %%%%%%%%%%%%%%%%%
@@ -1204,9 +1204,9 @@ encode_octet_string(C,{Name,Val}) when atom(Name) ->
 encode_octet_string(C,Val) ->
     encode_octet_string(C,false,Val).
 
-encode_octet_string(C,Bool,{Name,Val}) ->
+encode_octet_string(C,Bool,{_Name,Val}) ->
     encode_octet_string(C,Bool,Val);
-encode_octet_string(C,true,Val) -> 
+encode_octet_string(_,true,_) -> 
     exit({error,{asn1,{'not_supported',extensionmarker}}});
 encode_octet_string(C,false,Val) ->
     case get_constraint(C,'SizeConstraint') of
@@ -1278,10 +1278,10 @@ encode_restricted_string(aligned,Val) when list(Val)->
     [encode_length(undefined,length(Val)),align,
      {octets,Val}].
 
-encode_known_multiplier_string(aligned,StringType,C,Ext,{Name,Val}) when atom(Name) ->
+encode_known_multiplier_string(aligned,StringType,C,_Ext,{Name,Val}) when atom(Name) ->
     encode_known_multiplier_string(aligned,StringType,C,false,Val);
 
-encode_known_multiplier_string(aligned,StringType,C,Ext,Val) ->
+encode_known_multiplier_string(aligned,StringType,C,_Ext,Val) ->
     Result = chars_encode(C,StringType,Val),
     NumBits = get_NumBits(C,StringType),
     case get_constraint(C,'SizeConstraint') of
@@ -1309,7 +1309,7 @@ decode_restricted_string(Bytes,aligned) ->
     Bytes3 = align(Bytes2),
     getoctets_as_list(Bytes3,Len).
 
-decode_known_multiplier_string(Bytes,aligned,StringType,C,Ext) ->
+decode_known_multiplier_string(Bytes,aligned,StringType,C,_Ext) ->
     NumBits = get_NumBits(C,StringType),
     case get_constraint(C,'SizeConstraint') of
 	Ub when integer(Ub), Ub*NumBits =< 16  ->
@@ -1367,29 +1367,29 @@ decode_UniversalString(Bytes,C) ->
 %% end of known-multiplier strings for which PER visible constraints are
 %% applied
 
-encode_GeneralString(C,Val) ->
+encode_GeneralString(_C,Val) ->
     encode_restricted_string(aligned,Val).
-decode_GeneralString(Bytes,C) ->
+decode_GeneralString(Bytes,_C) ->
     decode_restricted_string(Bytes,aligned).
 
-encode_GraphicString(C,Val) ->
+encode_GraphicString(_C,Val) ->
     encode_restricted_string(aligned,Val).
-decode_GraphicString(Bytes,C) ->
+decode_GraphicString(Bytes,_C) ->
     decode_restricted_string(Bytes,aligned).
 
-encode_ObjectDescriptor(C,Val) ->
+encode_ObjectDescriptor(_C,Val) ->
     encode_restricted_string(aligned,Val).
 decode_ObjectDescriptor(Bytes) ->
     decode_restricted_string(Bytes,aligned).
 
-encode_TeletexString(C,Val) -> % equivalent with T61String
+encode_TeletexString(_C,Val) -> % equivalent with T61String
     encode_restricted_string(aligned,Val).
-decode_TeletexString(Bytes,C) ->
+decode_TeletexString(Bytes,_C) ->
     decode_restricted_string(Bytes,aligned).
 
-encode_VideotexString(C,Val) ->
+encode_VideotexString(_C,Val) ->
     encode_restricted_string(aligned,Val).
-decode_VideotexString(Bytes,C) ->
+decode_VideotexString(Bytes,_C) ->
     decode_restricted_string(Bytes,aligned).
 
 
@@ -1431,9 +1431,9 @@ getBMPChars(Bytes,Len,Acc) ->
 
 chars_encode(C,StringType,Value) ->
     case {StringType,get_constraint(C,'PermittedAlphabet')} of
-	{'UniversalString',{_,Sv}} ->
+	{'UniversalString',{_,_Sv}} ->
 	    exit({error,{asn1,{'not implemented',"UniversalString with PermittedAlphabet constraint"}}});
-	{'BMPString',{_,Sv}} ->
+	{'BMPString',{_,_Sv}} ->
 	    exit({error,{asn1,{'not implemented',"BMPString with PermittedAlphabet constraint"}}});
 	_ ->
 	    {NumBits,CharOutTab} = {get_NumBits(C,StringType),get_CharOutTab(C,StringType)}, 
@@ -1452,7 +1452,7 @@ chars_encode2([{A,B,C,D}|T],NumBits,{Min,Max,Tab}) ->
     %% no value range check here (ought to be, but very expensive)
 %    [{bits,NumBits,element((A*B*C*D)-Min,Tab)}|chars_encode2(T,NumBits,{Min,Max,notab})];
     [{bits,NumBits,element(((((((A bsl 8)+B) bsl 8)+C) bsl 8)+D)-Min,Tab)}|chars_encode2(T,NumBits,{Min,Max,notab})];
-chars_encode2([H|T],NumBits,{Min,Max,Tab}) ->
+chars_encode2([H|_T],_,{_,_,_}) ->
     exit({error,{asn1,{illegal_char_value,H}}});
 chars_encode2([],_,_) ->
     [].
@@ -1652,7 +1652,7 @@ chars_decode2(Bytes,{Min,Max,CharInTab},NumBits,Len,Acc) ->
 			% X.691:17 
 encode_null({Name,Val}) when atom(Name) ->
     encode_null(Val);
-encode_null(Val) -> []. % encodes to nothing
+encode_null(_) -> []. % encodes to nothing
 
 decode_null(Bytes) ->
     {'NULL',Bytes}.
@@ -1685,7 +1685,7 @@ e_object_identifier(V,DoTag) when tuple(V) ->
     e_object_identifier(tuple_to_list(V),DoTag);
 
 % E1 = 0|1|2 and (E2 < 40 when E1 = 0|1) 
-e_object_identifier([E1,E2|Tail],DoTag) when E1 =< 2 ->
+e_object_identifier([E1,E2|Tail],_DoTag) when E1 =< 2 ->
     Head = 40*E1 + E2,  % weird
     Res = e_object_elements([Head|Tail]),
 %    dotag(DoTag,[6],elength(length(Res)+1),[Head|Res]),
@@ -1727,7 +1727,7 @@ dec_subidentifiers([H|T],Av,Al) when H >=16#80 ->
     dec_subidentifiers(T,(Av bsl 7) + (H band 16#7F),Al);
 dec_subidentifiers([H|T],Av,Al) ->
     dec_subidentifiers(T,0,[(Av bsl 7) + H |Al]);
-dec_subidentifiers([],Av,Al) ->
+dec_subidentifiers([],_Av,Al) ->
     lists:reverse(Al).
 
 get_constraint(C,Key) ->
@@ -1777,7 +1777,7 @@ complete([{octets,N,Val}|T],Acc,Acclen) when N =< 4 ,integer(Val) ->
     end,
     complete([{octets,Newval}|T],Acc,Acclen);
 
-complete([{octets,Oct}|T],[],Acclen) when list(Oct) ->
+complete([{octets,Oct}|T],[],_Acclen) when list(Oct) ->
     complete(T,lists:reverse(Oct),0);
 complete([{octets,Oct}|T],[Hacc|Tacc],Acclen) when list(Oct) ->
     Rest = 8 - Acclen,
@@ -1814,7 +1814,7 @@ complete([align|T],Acc,0) ->
 complete([align|T],[Hacc|Tacc],Acclen) ->
     Rest = 8 - Acclen,
     complete(T,[Hacc bsl Rest|Tacc],0);
-complete([{octets,N,Val}|T],Acc,Acclen) when list(Val) -> % no security check here 
+complete([{octets,_N,Val}|T],Acc,Acclen) when list(Val) -> % no security check here 
     complete([{octets,Val}|T],Acc,Acclen);
 
 complete([],[],0) ->

@@ -75,7 +75,10 @@ endif
 # Make Rules
 # ----------------------------------------------------
 
-debug opt: $(JAVA_DEST_ROOT)$(JARFILE)
+debug opt: make_dirs $(JAVA_DEST_ROOT)$(JARFILE)
+
+make_dirs:
+	if [ ! -d "$(JAVA_DEST_ROOT)" ];then mkdir "$(JAVA_DEST_ROOT)"; fi
 
 $(JAVA_DEST_ROOT)$(JARFILE): $(TARGET_FILES)
 	@(cd $(JAVA_DEST_ROOT) ; $(JAR) $(JARFLAGS) $(JARFILE) $(JAVA_CLASS_SUBDIR))

@@ -26,6 +26,7 @@
 
 %% Deprecated interface.
 -export([dict_to_list/1,list_to_dict/1]).
+-deprecated([{dict_to_list,1},{list_to_dict,1}]).
 
 %% new() -> Dictionary
 

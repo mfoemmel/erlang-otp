@@ -26,7 +26,7 @@
 #include "erl_fun.h"
 #include "hash.h"
 
-static Hash erts_fun_table;
+Hash erts_fun_table;
 
 static HashValue fun_hash(ErlFunEntry* obj);
 static int fun_cmp(ErlFunEntry* obj1, ErlFunEntry* obj2);
@@ -35,11 +35,11 @@ static void fun_free(ErlFunEntry* obj);
 
 /*
  * The address field of every fun that has no loaded code will point
- * to unloaded_fun[1]. The -1 in unloaded_fun[0] will be interpreted
+ * to unloaded_fun[]. The -1 in unloaded_fun[0] will be interpreted
  * as an illegal arity when attempting to call a fun.
  */
-static Eterm unloaded_fun_code[2] = {-1, 0};
-static Eterm* unloaded_fun = unloaded_fun_code + 1;
+static Eterm unloaded_fun_code[3] = {NIL, -1, 0};
+static Eterm* unloaded_fun = unloaded_fun_code + 2;
 
 void
 erts_init_fun_table(void)
@@ -51,7 +51,7 @@ erts_init_fun_table(void)
     f.alloc = (HALLOC_FUN) fun_alloc;
     f.free = (HFREE_FUN) fun_free;
 
-    hash_init(&erts_fun_table, "fun_table", 16, f);
+    hash_init(ERTS_ALC_T_FUN_TABLE, &erts_fun_table, "fun_table", 16, f);
 }
 
 void
@@ -208,14 +208,17 @@ erts_dump_fun_entries(CIO fd)
 
 	while (b) {
 	    ErlFunEntry* fe = (ErlFunEntry *) b;
-	    sys_printf(fd, "module=");
+	    sys_printf(fd, "=fun\n");
+	    sys_printf(fd, "Module: ");
 	    print_atom(atom_val(fe->module), fd);
-	    sys_printf(fd, " uniq=%d index=%d:\n", fe->old_uniq, fe->old_index);
-	    sys_printf(fd, "  address=%p\n", fe->address);
+	    sys_printf(fd, "\n");
+	    sys_printf(fd, "Uniq: %d\n", fe->old_uniq);
+	    sys_printf(fd, "Index: %d\n",fe->old_index);
+	    sys_printf(fd, "Address: %p\n", fe->address);
 #ifdef HIPE
-	    sys_printf(fd, "  native_address=%p\n", fe->native_address);
+	    sys_printf(fd, "Native_address: %p\n", fe->native_address);
 #endif
-	    sys_printf(fd, "  refc=%d\n\n", fe->refc);
+	    sys_printf(fd, "Refc: %d\n", fe->refc);
 	    b = b->next;
 	}
     }
@@ -238,7 +241,8 @@ fun_cmp(ErlFunEntry* obj1, ErlFunEntry* obj2)
 static ErlFunEntry*
 fun_alloc(ErlFunEntry* template)
 {
-    ErlFunEntry* obj = (ErlFunEntry *) fix_alloc(erts_fun_desc);
+    ErlFunEntry* obj = (ErlFunEntry *) erts_alloc(ERTS_ALC_T_FUN_ENTRY,
+						  sizeof(ErlFunEntry));
 
     obj->old_uniq = template->old_uniq;
     obj->old_index = template->old_index;
@@ -254,5 +258,5 @@ fun_alloc(ErlFunEntry* template)
 static void
 fun_free(ErlFunEntry* obj)
 {
-    fix_free(erts_fun_desc, (void *) obj);
+    erts_free(ERTS_ALC_T_FUN_ENTRY, (void *) obj);
 }

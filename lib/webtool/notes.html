@@ -1,9 +1,6 @@
-<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
 <html>
 <head>
-   <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
-   <meta name="GENERATOR" content="Mozilla/4.5 [en] (X11; I; SunOS 5.7 sun4u) [Netscape]">
-   <title>WebTool Release Notes</title>
+  <title>Webtool Release Notes</title>
   <style type="text/css">
 <!--
     body          { background: white; margin: 3em }
@@ -15,18 +12,52 @@
 -->
   </style>
 </head>
-<body bgcolor="#FFFFFF">
 
-<center>
-<h1>
-WebTool Release Notes</h1></center>
+<body bgcolor=white>
 
-<h2>WebTool 0.7</h2>
-WebTool is a framework for web based tools.
+<center><h1>Webtool Release Notes</h1></center>
 
-<h3>Known bugs and problems</h3>
+
+<!--- ################################################################# --->
+
+<h2>Webtool 0.8.1</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
 <ul>
-<li>WebTool is still in beta stadium. 
+
+  <li>
+    <code>httpd.conf</code> is removed. All config data for
+    <code>inets</code> is given when the webserver is started with
+    <code>httpd:start2/1</code>.<br>
+    (Own Id: OTP-4640)<p>
+  </li>
+
 </ul>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+    Added shell script <code>start_webtool</code> and batch file
+    <code>start_webtool.bat</code> for starting webtool including arbitrary
+    application and browser.<br>
+    (Own Id: OTP-4748)<p>
+  </li>
+
+</ul>
+
+
+
+There are also release notes for
+<a href="notes_history.html">older versions</a>.
+
 </body>
 </html>

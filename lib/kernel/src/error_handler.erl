@@ -31,9 +31,9 @@ undefined_function(Module, Func, Args) ->
 		false ->
 		    crash(Module, Func, Args)
 	    end;
-	{module, Other} ->
+	{module, _} ->
 	    crash(Module, Func, Args);
-	Other ->
+	_Other ->
 	    crash(Module, Func, Args)
     end.
 
@@ -43,9 +43,9 @@ undefined_lambda(Module, Fun, Args) ->
 	    %% There is no need (and no way) to test if the fun is present.
 	    %% apply/2 will not call us again if the fun is missing.
 	    apply(Fun, Args);
-	{module, Other} ->
+	{module, _} ->
 	    crash(Fun, Args);
-	Other ->
+	_Other ->
 	    crash(Fun, Args)
     end.
 
@@ -60,7 +60,7 @@ crash(Fun, Args) ->
 crash(M, F, A) ->
     crash({M,F,A}).
 crash(MFA) ->
-    {'EXIT',{undef,[Current|Mfas]}} = (catch erlang:fault(undef)),
+    {'EXIT',{undef,[_Current|Mfas]}} = (catch erlang:fault(undef)),
     exit({undef,[MFA|Mfas]}).
 
 %% If the code_server has not been started yet dynamic code loading

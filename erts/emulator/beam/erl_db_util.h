@@ -135,7 +135,6 @@ Eterm db_set_trace_control_word_1(Process *p, Eterm val);
 
 void db_initialize_util(void);
 Eterm db_getkey(int keypos, Eterm obj);
-Eterm add_counter(Eterm counter, Eterm incr);
 int db_realloc_counter(void** bp, DbTerm *b, Uint offset, Uint sz, 
 		       Eterm new_counter, int counterpos);
 void db_free_term_data(DbTerm* p);
@@ -148,6 +147,7 @@ int db_do_update_counter(Process *p,
 			 int counterpos,
 			 int (*realloc_fun)(void *, Uint, Eterm, int),
 			 Eterm incr,
+			 int warp,
 			 Eterm *ret);
 Eterm db_match_set_lint(Process *p, Eterm matchexpr, Uint flags);
 Binary *db_match_set_compile(Process *p, Eterm matchexpr, 

@@ -4,6 +4,8 @@
   {modules,
    [	
 	megaco,
+	megaco_ack_sender,
+	megaco_acks_sup,
 	megaco_ber_bin_encoder,
 	megaco_ber_bin_media_gateway_control,
 	megaco_ber_encoder,
@@ -21,6 +23,7 @@
 	megaco_flex_scanner,
 	megaco_flex_scanner_handler,
 	megaco_messenger,
+	megaco_messenger_misc,
 	megaco_misc_sup,
 	megaco_monitor,
 	megaco_per_encoder,
@@ -45,7 +48,7 @@
 	megaco_user
        ]},
   {registered, [megaco_config, megaco_monitor, 
-                megaco_misc_sup, megaco_sup]},
+                megaco_acks_sup, megaco_misc_sup, megaco_sup]},
   {applications, [stdlib, kernel]},
   {env, []},
   {mod, {megaco_sup, []}}

@@ -52,12 +52,12 @@ init([]) ->
 	    {stop, {mod_syslog, Error}}
     end.
 
-handle_call(stop, From, State) ->
+handle_call(stop, _From, State) ->
     Port = State#state.port,
     Reason = stop_port(Port),
     {stop, Reason, ok, State#state{port = noport}}.
 
-handle_cast(Msg, State) ->
+handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({Port, {data, Msg}}, State) when Port == State#state.port ->
@@ -72,7 +72,7 @@ handle_info(_, State) ->
 terminate(_Reason, State) when port(State#state.port) ->
     stop_port(State#state.port),
     ok;
-terminate(_Reason, State) -> % The port is already stopped !!
+terminate(_Reason, _State) -> % The port is already stopped !!
     ok.
 
 %%%----------------------------------------------------------------------

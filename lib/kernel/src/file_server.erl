@@ -44,9 +44,9 @@
 %%%----------------------------------------------------------------------
 %%% API
 %%%----------------------------------------------------------------------
-format_error({Line, ?MODULE, Reason}) ->
+format_error({_Line, ?MODULE, Reason}) ->
     io_lib:format("~w", [Reason]);
-format_error({Line, Mod, Reason}) ->
+format_error({_Line, Mod, Reason}) ->
     Mod:format_error(Reason);
 format_error(ErrorId) ->
     erl_posix_msg:message(ErrorId).
@@ -217,11 +217,11 @@ handle_cast(Msg, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 
-handle_info({'EXIT', Pid, Reason}, Handle) when pid(Pid) ->
+handle_info({'EXIT', Pid, _Reason}, Handle) when pid(Pid) ->
     ets:delete(?FILE_IO_SERVER_TABLE, Pid),
     {noreply, Handle};
 
-handle_info({'EXIT', Handle, Reason}, Handle) ->
+handle_info({'EXIT', Handle, _Reason}, Handle) ->
     error_logger:error_msg('Port controlling ~w terminated in ~w',
 			   [?FILE_SERVER, ?MODULE]),
     {stop, normal, Handle};
@@ -235,7 +235,7 @@ handle_info(Info, State) ->
 %% Purpose: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%----------------------------------------------------------------------
-terminate(Reason, Handle) ->
+terminate(_Reason, Handle) ->
     ?PRIM_FILE:stop(Handle).
 
 %%----------------------------------------------------------------------
@@ -243,7 +243,7 @@ terminate(Reason, Handle) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%%----------------------------------------------------------------------

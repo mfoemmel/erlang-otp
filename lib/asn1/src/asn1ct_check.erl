@@ -133,7 +133,9 @@ check(S,{Types,Values,ParameterizedTypes,Classes,Objects,ObjectSets}) ->
     case {Terror3,Verror5,Cerror,Oerror,Exporterror} of
 	{[],[],[],[],[]} -> 
 	    ContextSwitchTs = context_switch_in_spec(),
-	    NewTypes = lists:subtract(Types,AddClasses) ++ ContextSwitchTs,
+	    InstanceOf = instance_of_in_spec(),
+	    NewTypes = lists:subtract(Types,AddClasses) ++ ContextSwitchTs
+		++ InstanceOf,
 	    NewValues = lists:subtract(Values,PObjSetNames++ObjectNames++
 				       ValueSetNames),
 	    {ok,
@@ -158,6 +160,15 @@ context_switch_in_spec() ->
 		end
 	end,
     lists:foldl(F,[],L).
+
+instance_of_in_spec() ->
+    case get(instance_of) of
+	generate ->
+	    erase(instance_of),
+	    ['INSTANCE OF'];
+	_ ->
+	    []
+    end.
 
 filter_errors(Pred,ErrorList) ->
     Element2 = fun(X) -> element(2,X) end,
@@ -745,12 +756,12 @@ check_object(S,
 		OS = TDef#typedef.typespec,
 		NewSet = reduce_objectset(OS#'ObjectSet'.set,Exclusion),
 		NewOS = OS#'ObjectSet'{set=NewSet},
-		CheckedSet = check_object(S,TDef#typedef{typespec=NewOS},
-					  NewOS);
+		check_object(S,TDef#typedef{typespec=NewOS},
+			     NewOS);
 	    #type{def={pt,DefinedObjSet,ParamList}} ->
 		{_,PObjSetDef} = get_referenced_type(S,DefinedObjSet),
 		instantiate_pos(S,ClassDef,PObjSetDef,ParamList);
-	    {ObjDef={object,definedsyntax,_ObjFields},Ext} ->
+	    {ObjDef={object,definedsyntax,_ObjFields},_Ext} ->
 		CheckedSet = check_object_list(S,NewClassRef,[ObjDef]),
 		NewSet = get_unique_valuelist(S,CheckedSet,UniqueFieldName),
 		ObjSet#'ObjectSet'{uniquefname=UniqueFieldName,
@@ -799,7 +810,7 @@ check_object_list(S,ClassRef,[ObjOrSet|Objs],Acc) ->
 	    {_,ObjectDef} = get_referenced_type(S,#identifier{val=ObjName}),
 	    #'Object'{def=Def} = check_object(S,ObjectDef,ObjectDef#typedef.typespec),
 	    check_object_list(S,ClassRef,Objs,[{ObjectDef#typedef.name,Def}|Acc]);
-	{'SingleValue',Ref = #'Externalvaluereference'{value=ObjName}} ->
+	{'SingleValue',Ref = #'Externalvaluereference'{}} ->
 	    {_,ObjectDef} = get_referenced_type(S,Ref),
 	    #'Object'{def=Def} = check_object(S,ObjectDef,ObjectDef#typedef.typespec),
 	    check_object_list(S,ClassRef,Objs,[{ObjectDef#typedef.name,Def}|Acc]);
@@ -1889,14 +1900,14 @@ normalize_value(S,Type,{'DEFAULT',Value},NameList) ->
 	    normalize_bitstring(S,Value,CType);
 	{'OCTET STRING',CType,_} ->
 	    normalize_octetstring(S,Value,CType);
-	{'NULL',CType,_} ->
+	{'NULL',_CType,_} ->
 	    %%normalize_null(Value);
 	    'NULL';
-	{'OBJECT IDENTIFIER',CType,_} ->
+	{'OBJECT IDENTIFIER',_,_} ->
 	    normalize_objectidentifier(S,Value);
-	{'ObjectDescriptor',CType,_} ->
+	{'ObjectDescriptor',_,_} ->
 	    normalize_objectdescriptor(Value);
-	{'REAL',CType,_} ->
+	{'REAL',_,_} ->
 	    normalize_real(Value);
 	{'ENUMERATED',CType,_} ->
 	    normalize_enumerated(Value,CType);
@@ -2717,9 +2728,7 @@ check_type(S=#state{recordtopname=TopName},Type,Ts) when record(Ts,type) ->
     T5#type{constraint=check_constraints(S,T5#type.constraint)}.
 
 
-get_innertag(S,#'ObjectClassFieldType'{class=#objectclass{fields=Fs},
-				       fieldname=FieldNameList,
-				       type=Type}) ->
+get_innertag(_S,#'ObjectClassFieldType'{type=Type}) ->
     case Type of
 	#type{tag=Tag} -> Tag;
 	{fixedtypevaluefield,_,#type{tag=Tag}} -> Tag;
@@ -2795,7 +2804,7 @@ maybe_open_type(S,ClassSpec=#objectclass{fields=Fs},
 
 is_open_type(#'ObjectClassFieldType'{type='ASN1_OPEN_TYPE'}) ->
     true;
-is_open_type(#'ObjectClassFieldType'{fieldname=FieldRefList}) ->
+is_open_type(#'ObjectClassFieldType'{}) ->
     false.
 
 
@@ -3022,7 +3031,7 @@ check_constraint(S,{simpletable,Type}) ->
 	     Type#type{def=check_externaltypereference(S,C)},
 	    {simpletable,OSName};
 	_ ->
-	    CheckedType = check_type(S,S#state.tname,Type),
+	    check_type(S,S#state.tname,Type),
 	    {simpletable,OSName}
     end;
 
@@ -3499,9 +3508,9 @@ is_exported(Module,Name) when record(Module,module) ->
 	    end
     end.
     
-check_externaltypereference(S,Etref=#'Externaltypereference'{pos=Pos,
-							     module=Emod,
-							     type=Etype})->
+
+
+check_externaltypereference(S,Etref=#'Externaltypereference'{module=Emod})->
     Currmod = S#state.mname,
     MergedMods = S#state.inputmodules,
     case Emod of
@@ -3814,8 +3823,9 @@ check_bitstr(S,[],Acc) ->
 check_instance_of(S,DefinedObjectClass,Constraint) ->
     check_type_identifier(S,DefinedObjectClass),
     iof_associated_type(S,Constraint).
+    
 
-check_type_identifier(S,'TYPE-IDENTIFIER') ->
+check_type_identifier(_S,'TYPE-IDENTIFIER') ->
     ok;
 check_type_identifier(S,Eref=#'Externaltypereference'{}) ->
     case get_referenced_type(S,Eref) of
@@ -3828,21 +3838,50 @@ check_type_identifier(S,Eref=#'Externaltypereference'{}) ->
     end.
 
 iof_associated_type(S,[]) ->
+    %% in this case encode/decode functions for INSTANCE OF must be
+    %% generated
+    case get(instance_of) of
+	undefined ->
+	    AssociateSeq = iof_associated_type1(S,[]),
+	    Tag =
+		case S#state.erule of
+		    ber_bin_v2 ->
+			[?TAG_CONSTRUCTED(?N_INSTANCE_OF)];
+		    _ -> []
+		end,
+	    TypeDef=#typedef{checked=true,
+			     name='INSTANCE OF',
+			     typespec=#type{tag=Tag,
+					    def=AssociateSeq}},
+	    asn1_db:dbput(S#state.mname,'INSTANCE OF',TypeDef),
+	    put(instance_of,generate);
+	_ ->
+	    ok
+    end,
     #'Externaltypereference'{module=S#state.mname,type='INSTANCE OF'};
-iof_associated_type(S,#constraint{c={simpletable,Type}}) ->
-    #type{def=#'Externaltypereference'{type=Name}} = Type,
-    TagDefault = (S#state.module)#module.tagdefault,
+iof_associated_type(S,C) ->
+    iof_associated_type1(S,C).
+
+iof_associated_type1(S,C) ->
+    {TableCInf,Comp1Cnstr,Comp2Cnstr,Comp2tablecinf}=
+	instance_of_constraints(S,C),
+
     ModuleName = S#state.mname,
-    TagFun = fun(DefaultTag,Tag,N) ->
-		     case DefaultTag of
-			 'AUTOMATIC' ->[{'CONTEXT',N}];
-			 _ ->[{'UNIVERSAL',Tag}]
-		     end
-	     end,
-%    case Type of
-%	#type{def='Externaltypereference'{type=Name}} ->
-    ObjectSetRef=#'Externaltypereference'{module=ModuleName,
-					  type=Name},
+    Typefield_type=
+	case C of
+	    [] -> 'ASN1_OPEN_TYPE';
+	    _ -> {typefield,'Type'}
+	end,
+    {ObjIdTag,C1TypeTag}=
+	case S#state.erule of
+	    ber_bin_v2 -> 
+		{[{'UNIVERSAL',8}],
+		 [#tag{class='UNIVERSAL',
+		       number=6,
+		       type='IMPLICIT',
+		       form=0}]};
+	    _ -> {[{'UNIVERSAL','INTEGER'}],[]}
+	end,
     TypeIdentifierRef=#'Externaltypereference'{module=ModuleName,
 					       type='TYPE-IDENTIFIER'},
     ObjectIdentifier =
@@ -3855,39 +3894,51 @@ iof_associated_type(S,#constraint{c={simpletable,Type}}) ->
 	#'ObjectClassFieldType'{classname=TypeIdentifierRef,
 				class=[],
 				fieldname={'Type',[]},
-				type={typefield,'Type'}},
-    CRel=[{componentrelation,{objectset,
-			      undefined, %% pos
-			      ObjectSetRef,
-			      [{innermost,
-				[#'Externalvaluereference'{module=ModuleName,
-							   value=type}]}]}}],
+				type=Typefield_type},
     IOFComponents =
 	[#'ComponentType'{name='type-id',
-			  typespec=#type{def=ObjectIdentifier,
-					 constraint=[{simpletable,Name}]},
+			  typespec=#type{tag=C1TypeTag,
+					 def=ObjectIdentifier,
+					 constraint=Comp1Cnstr},
 			  prop=mandatory,
-			  tags=TagFun(TagDefault,'OBJECT IDENTIFIER',0)
-			  },
+			  tags=ObjIdTag},
 	 #'ComponentType'{name=value,
 			  typespec=#type{tag=[#tag{class='CONTEXT',
 						   number=0,
-						   type='AUTOMATIC',
+						   type='EXPLICIT',
 						   form=32}],
 					 def=Typefield,
-					 constraint=CRel,
-					 tablecinf=[{objfun,ObjectSetRef}]},
+					 constraint=Comp2Cnstr,
+					 tablecinf=Comp2tablecinf},
 			  prop=mandatory,
 			  tags=[{'CONTEXT',0}]}],
-    IOFDef=
-	#'SEQUENCE'{tablecinf=#simpletableattributes{objectsetname=Name,
-						     c_name='type-id',%actually type-id but hyphens cannot exist in a variable name
-						     c_index=1,
-						     usedclassfield=id,
-						     uniqueclassfield=id,
-						     valueindex=[]},
-		    components=IOFComponents}.
-	    
+    #'SEQUENCE'{tablecinf=TableCInf,
+		components=IOFComponents}.
+	   
+
+%% returns the leading attribute, the constraint of the components and
+%% the tablecinf value for the second component.
+instance_of_constraints(_,[]) ->
+    {false,[],[],[]};
+instance_of_constraints(S,#constraint{c={simpletable,Type}}) ->
+    #type{def=#'Externaltypereference'{type=Name}} = Type,
+    ModuleName = S#state.mname,
+    ObjectSetRef=#'Externaltypereference'{module=ModuleName,
+					  type=Name},
+    CRel=[{componentrelation,{objectset,
+			      undefined, %% pos
+			      ObjectSetRef},
+			      [{innermost,
+				[#'Externalvaluereference'{module=ModuleName,
+							   value=type}]}]}],
+    TableCInf=#simpletableattributes{objectsetname=Name,
+				     c_name='type-id',
+				     c_index=1,
+				     usedclassfield=id,
+				     uniqueclassfield=id,
+				     valueindex=[]},
+    {TableCInf,[{simpletable,Name}],CRel,[{objfun,ObjectSetRef}]}.
+
 %% Check ENUMERATED
 %% ****************************************
 %% Check that all values are unique
@@ -4404,7 +4455,7 @@ componentrelation_leadingattr(S,[C|Cs],CompList,STList,Acc,CompAcc) ->
 					lists:reverse(S#state.abscomppath),[]) of
 		    [] ->
 			{[],C};
-		    NewCRI=[{ObjSet,Attr,N,ClassDef,_Path,ValueIndex}|_NewRest] ->
+		    [{ObjSet,Attr,N,ClassDef,_Path,ValueIndex}|_NewRest] ->
 			OS = object_set_mod_name(S,ObjSet),
 			UniqueFieldName = 
 			    case (catch get_unique_fieldname(#classdef{typespec=ClassDef})) of
@@ -4414,7 +4465,7 @@ componentrelation_leadingattr(S,[C|Cs],CompList,STList,Acc,CompAcc) ->
 				    error({type,Msg,S});
 				Other -> Other
 			    end,
-			UsedFieldName = get_used_fieldname(S,Attr,STList),
+%			UsedFieldName = get_used_fieldname(S,Attr,STList),
 			%% Res should be done differently: even though
 			%% a unique field name exists it is not
 			%% certain that the ObjectClassFieldType of
@@ -4436,7 +4487,7 @@ componentrelation_leadingattr(S,[C|Cs],CompList,STList,Acc,CompAcc) ->
     componentrelation_leadingattr(S,Cs,CompList,STList,LAAcc++Acc,
 				  [NewC|CompAcc]).
 
-object_set_mod_name(S,ObjSet) when atom(ObjSet) ->
+object_set_mod_name(_S,ObjSet) when atom(ObjSet) ->
     ObjSet;
 object_set_mod_name(#state{mname=M},
 		    #'Externaltypereference'{module=M,type=T}) ->
@@ -4453,12 +4504,12 @@ object_set_mod_name(S,#'Externaltypereference'{module=M,type=T}) ->
 %% the ObjectClassFieldType construct in the simple table constraint
 %% corresponding to the component relation constraint that depends on
 %% it.
-get_used_fieldname(_S,CName,[{[CName|_Rest],_,ClFieldName}|_RestSimpleT]) ->
-    ClFieldName;
-get_used_fieldname(S,CName,[_SimpleTC|Rest]) ->
-    get_used_fieldname(S,CName,Rest);
-get_used_fieldname(S,_,[]) ->
-    error({type,"Error in Simple table constraint",S}).
+% get_used_fieldname(_S,CName,[{[CName|_Rest],_,ClFieldName}|_RestSimpleT]) ->
+%     ClFieldName;
+% get_used_fieldname(S,CName,[_SimpleTC|Rest]) ->
+%     get_used_fieldname(S,CName,Rest);
+% get_used_fieldname(S,_,[]) ->
+%     error({type,"Error in Simple table constraint",S}).
     
 %% any_simple_table/3 checks if any of the components on this level is
 %% constrained by a simple table constraint. It returns a list of
@@ -4556,7 +4607,7 @@ get_simple_table_info1(S,#'ComponentType'{typespec=TS},[],Path) ->
 	    ObjectClassFieldName =
 		case FieldName of
 		    {LastFieldName,[]} -> LastFieldName;
-		    {FirstFieldName,FieldNames} ->
+		    {_FirstFieldName,FieldNames} ->
 			lists:last(FieldNames)
 		end,
 	    %%ObjectClassFieldName is the last element in the dotted
@@ -4619,7 +4670,7 @@ any_component_relation(S,[C|Cs],CNames,NamePath,Acc) ->
 	    {no,{constructed,bif}} ->
 		InnerCs = 
 		    case get_components(Type#type.def) of
-			{IC1,IC2} -> IC1 ++ IC1;
+			{IC1,_IC2} -> IC1 ++ IC1;
 			IC -> IC
 		    end,
 		%% here we are interested in components of an
@@ -4638,7 +4689,7 @@ any_component_relation(_,[],_,_,Acc) ->
 %% found AtPath is refering to the same sub-branch as the simple table
 %% has, then there shall not be any leading attribute info on this
 %% level.
-evaluate_atpath(_,[],Cnames,{innermost,AtPath=[Ref|Refs]}) ->
+evaluate_atpath(_,[],Cnames,{innermost,AtPath=[Ref|_Refs]}) ->
     %% any innermost constraint found deeper in the structure is
     %% ignored.
     case lists:member(Ref,Cnames) of
@@ -4648,7 +4699,7 @@ evaluate_atpath(_,[],Cnames,{innermost,AtPath=[Ref|Refs]}) ->
 %% In this case must check that the AtPath doesn't step any step of
 %% the NamePath, in that case the constraint will be handled in an
 %% inner level.
-evaluate_atpath(TopPath,NamePath,Cnames,{outermost,AtPath=[Ref|Refs]}) ->
+evaluate_atpath(TopPath,NamePath,Cnames,{outermost,AtPath=[_Ref|_Refs]}) ->
     AtPathBelowTop =
 	case TopPath of
 	    [] -> AtPath;
@@ -4660,9 +4711,9 @@ evaluate_atpath(TopPath,NamePath,Cnames,{outermost,AtPath=[Ref|Refs]}) ->
 		end
 	end,
     case {NamePath,AtPathBelowTop} of
-	{[H|T1],[H|T2]} -> []; % this must be handled in lower level
+	{[H|_T1],[H|_T2]} -> []; % this must be handled in lower level
 	{_,[]} -> [];% this must be handled in an above level
-	{_,[H|T]} ->
+	{_,[H|_T]} ->
 	    case lists:member(H,Cnames) of
 		true -> [AtPathBelowTop];
 		_ -> error({type,{asn1,"failed to analyze at-path",AtPath}})
@@ -4877,7 +4928,7 @@ leading_attr_index1(S,[C|Cs],Arg={ObjectSet,_,CDef,P},
 %% component is counted. For a CHOICE the index is 2.
 value_match(S,C,Name,SubAttr) ->
     value_match(S,C,Name,SubAttr,[]). % C has name Name
-value_match(S,#'ComponentType'{typespec=Type},Name,[],Acc) ->
+value_match(_S,#'ComponentType'{},_Name,[],Acc) ->
     Acc;% do not reverse, indexes in reverse order
 value_match(S,#'ComponentType'{typespec=Type},Name,[At|Ats],Acc) ->
     InnerType = asn1ct_gen:get_inner(Type#type.def),
@@ -4899,9 +4950,9 @@ component_value_index(S,_,At,Components) ->
 
 component_index(S,Name,Components) ->
     component_index1(S,Name,Components,1).
-component_index1(S,Name,[#'ComponentType'{name=Name}|Cs],N) ->
+component_index1(_S,Name,[#'ComponentType'{name=Name}|_Cs],N) ->
     N;
-component_index1(S,Name,[C|Cs],N) ->
+component_index1(S,Name,[_C|Cs],N) ->
     component_index1(S,Name,Cs,N+1);
 component_index1(S,Name,[],_) ->
     error({type,{asn1,"component of at-list was not"
@@ -4936,9 +4987,8 @@ get_tableconstraint_info(S,Type,[C|Cs],Acc) ->
     AccComp = 
 	case CheckedTs#type.def of 
 	    %% ObjectClassFieldType
-	    OCFT=#'ObjectClassFieldType'{class=#objectclass{fields=Fields},
-					 type=_AType,
-					 fieldname=FieldRef} ->
+	    OCFT=#'ObjectClassFieldType'{class=#objectclass{},
+					 type=_AType} ->
 %		AType = get_ObjectClassFieldType(S,Fields,FieldRef),
 %		RefedFieldName = 
 %		    get_referencedclassfield(CheckedTs#type.def),%is probably obsolete
@@ -5060,6 +5110,10 @@ get_taglist(S,{'CHOICE',{Rc,Ec}}) ->
 get_taglist(S,{'CHOICE',Components}) ->
     get_taglist1(S,Components);
 %% ObjectClassFieldType OTP-4390
+get_taglist(_S,#'ObjectClassFieldType'{type={typefield,_}}) ->
+    [];
+get_taglist(S,#'ObjectClassFieldType'{type={fixedtypevaluefield,_,Type}}) ->
+    get_taglist(S,Type);
 get_taglist(S,{ERef=#'Externaltypereference'{},FieldNameList})
   when list(FieldNameList) ->
     case get_ObjectClassFieldType(S,ERef,FieldNameList) of

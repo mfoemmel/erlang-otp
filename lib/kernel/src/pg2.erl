@@ -261,7 +261,7 @@ del_members([[Name, Pids] | T], Pid) ->
 	 (_) -> ok
       end, Pids),
     del_members(T, Pid);
-del_members([], Pid) -> ok.
+del_members([],_Pid) -> ok.
 
 del_member(KeyTag, Name, Pid) ->
     [{_, Members}] = ets:lookup(pg2_table, {KeyTag, Name}),
@@ -275,7 +275,7 @@ del_node_members([[Name, Pids] | T], Node) ->
 		     end, Pids),
     ets:insert(pg2_table, {{members, Name}, NewMembers}),
     del_node_members(T, Node);
-del_node_members([], Node) -> ok.
+del_node_members([],_Node) -> ok.
 
 %% delete _all_ occurences of X in list
 delete([X | T], X) -> delete(T, X);

@@ -32,7 +32,7 @@ parse(Tokens) ->
 	{ModuleDefinition,Rest1} ->
 	    {Types,Rest2} = parse_AssignmentList(Rest1),
 	    case Rest2 of
-		[{'END',_}|Rest3] ->
+		[{'END',_}|_Rest3] ->
 		    {ok,ModuleDefinition#module{typeorval = Types}};
 		_  ->
 		    {error,{{get_line(hd(Rest2)),get(asn1_module),
@@ -43,9 +43,9 @@ parse(Tokens) ->
 
 parse_ModuleDefinition([{typereference,L1,ModuleIdentifier}|Rest0]) ->
     put(asn1_module,ModuleIdentifier),
-    {DefinitiveIdentifier,Rest02} = 
+    {_DefinitiveIdentifier,Rest02} = 
 	case Rest0 of
-	    [{'{',_}|Rest01] ->
+	    [{'{',_}|_Rest01] ->
 		parse_ObjectIdentifierValue(Rest0);
 	    _ ->
 		{[],Rest0}
@@ -60,23 +60,23 @@ parse_ModuleDefinition([{typereference,L1,ModuleIdentifier}|Rest0]) ->
 	   end,
     {TagDefault,Rest2} = 
 	case Rest of
-	    [{'EXPLICIT',L3},{'TAGS',L4}|Rest1] ->
+	    [{'EXPLICIT',_L3},{'TAGS',_L4}|Rest1] ->
 		put(tagdefault,'EXPLICIT'), {'EXPLICIT',Rest1};
-	    [{'IMPLICIT',L3},{'TAGS',L4}|Rest1] ->
+	    [{'IMPLICIT',_L3},{'TAGS',_L4}|Rest1] ->
 		put(tagdefault,'IMPLICIT'), {'IMPLICIT',Rest1};
-	    [{'AUTOMATIC',L3},{'TAGS',L4}|Rest1] ->
+	    [{'AUTOMATIC',_L3},{'TAGS',_L4}|Rest1] ->
 		put(tagdefault,'AUTOMATIC'), {'AUTOMATIC',Rest1};
 	    Rest1 ->
 		put(tagdefault,'EXPLICIT'), {'EXPLICIT',Rest1} % The default
 	end,
     {ExtensionDefault,Rest3} = 
 	case Rest2 of
-	    [{'EXTENSIBILITY',L5}, {'IMPLIED',L6}|Rest21] -> 
+	    [{'EXTENSIBILITY',_L5}, {'IMPLIED',_L6}|Rest21] -> 
 		{'IMPLIED',Rest21};
 	    _  -> {false,Rest2}
 	end,
     case Rest3 of
-	[{'::=',L7}, {'BEGIN',L8}|Rest4] ->
+	[{'::=',_L7}, {'BEGIN',_L8}|Rest4] ->
 	    {Exports, Rest5} = parse_Exports(Rest4),
 	    {Imports, Rest6} = parse_Imports(Rest5),
 	    {#module{ pos = L1,
@@ -93,9 +93,9 @@ parse_ModuleDefinition(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,typereference]}}).
     
-parse_Exports([{'EXPORTS',L1},{';',L2}|Rest]) ->
+parse_Exports([{'EXPORTS',_L1},{';',_L2}|Rest]) ->
     {{exports,[]},Rest};
-parse_Exports([{'EXPORTS',L1}|Rest]) ->
+parse_Exports([{'EXPORTS',_L1}|Rest]) ->
     {SymbolList,Rest2} = parse_SymbolList(Rest),
     case Rest2 of
 	[{';',_}|Rest3] ->    
@@ -113,7 +113,7 @@ parse_SymbolList(Tokens) ->
 parse_SymbolList(Tokens,Acc) ->
     {Symbol,Rest} = parse_Symbol(Tokens),
     case Rest of 
-	[{',',L1}|Rest2] ->
+	[{',',_L1}|Rest2] ->
 	    parse_SymbolList(Rest2,[Symbol|Acc]);
 	Rest2  ->
 	    {lists:reverse([Symbol|Acc]),Rest2}
@@ -122,28 +122,28 @@ parse_SymbolList(Tokens,Acc) ->
 parse_Symbol(Tokens) ->
     parse_Reference(Tokens).
 
-parse_Reference([Tref = {typereference,L1,TrefName},{'{',L2},{'}',L3}|Rest]) ->
+parse_Reference([{typereference,L1,TrefName},{'{',_L2},{'}',_L3}|Rest]) ->
 %    {Tref,Rest};
     {tref2Exttref(L1,TrefName),Rest};
 parse_Reference([Tref1 = {typereference,_,_},{'.',_},Tref2 = {typereference,_,_},
-		 {'{',L2},{'}',L3}|Rest]) ->
+		 {'{',_L2},{'}',_L3}|Rest]) ->
 %    {{Tref1,Tref2},Rest};
     {{tref2Exttref(Tref1),tref2Exttref(Tref2)},Rest};
-parse_Reference([Tref = {typereference,L1,TrefName}|Rest]) ->
+parse_Reference([Tref = {typereference,_L1,_TrefName}|Rest]) ->
     {tref2Exttref(Tref),Rest};
-parse_Reference([Vref = {identifier,L1,VName}|Rest]) ->
+parse_Reference([Vref = {identifier,_L1,_VName}|Rest]) ->
     {identifier2Extvalueref(Vref),Rest};
 parse_Reference(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,
 			[typereference,identifier]]}}).
 
-parse_Imports([{'IMPORTS',L1},{';',L2}|Rest]) ->
+parse_Imports([{'IMPORTS',_L1},{';',_L2}|Rest]) ->
     {{imports,[]},Rest};
-parse_Imports([{'IMPORTS',L1}|Rest]) ->
+parse_Imports([{'IMPORTS',_L1}|Rest]) ->
     {SymbolsFromModuleList,Rest2} = parse_SymbolsFromModuleList(Rest),
     case Rest2 of
-	[{';',L2}|Rest3] ->
+	[{';',_L2}|Rest3] ->
 	    {{imports,SymbolsFromModuleList},Rest3};
 	Rest3 ->
 	    throw({asn1_error,{get_line(hd(Rest3)),get(asn1_module),
@@ -158,37 +158,41 @@ parse_SymbolsFromModuleList(Tokens) ->
 parse_SymbolsFromModuleList(Tokens,Acc) ->
     {SymbolsFromModule,Rest} = parse_SymbolsFromModule(Tokens),
     case (catch parse_SymbolsFromModule(Rest)) of 
-	{Sl,Rest2} when record(Sl,'SymbolsFromModule') ->
+	{Sl,_Rest2} when record(Sl,'SymbolsFromModule') ->
 	    parse_SymbolsFromModuleList(Rest,[SymbolsFromModule|Acc]);
 	_  ->
 	    {lists:reverse([SymbolsFromModule|Acc]),Rest}
     end.
     
 parse_SymbolsFromModule(Tokens) ->
+    SetRefModuleName =
+	fun(N) ->
+		fun(X) when record(X,'Externaltypereference')->
+			X#'Externaltypereference'{module=N};
+		   (X) when record(X,'Externalvaluereference')->
+			X#'Externalvaluereference'{module=N} 
+		end
+	end,
     {SymbolList,Rest} = parse_SymbolList(Tokens),
     case Rest of
 	%%How does this case correspond to x.680 ?
-	[{'FROM',L1},Tref = {typereference,_,_},Ref={identifier,L2,Id},C={',',_}|Rest2] ->
+	[{'FROM',_L1},Tref = {typereference,_,_},Ref={identifier,_L2,_Id},C={',',_}|Rest2] ->
 	    {#'SymbolsFromModule'{symbols=SymbolList,
 				  module=tref2Exttref(Tref)},[Ref,C|Rest2]};
 	%%How does this case correspond to x.680 ?
-	[{'FROM',L1},Tref = {typereference,_,_},{identifier,L2,Id}|Rest2] ->
+	[{'FROM',_L1},Tref = {typereference,_,_},{identifier,_L2,_Id}|Rest2] ->
 	    {#'SymbolsFromModule'{symbols=SymbolList,
 				  module=tref2Exttref(Tref)},Rest2}; 
-	[{'FROM',L1},Tref = {typereference,_,Name},Brace = {'{',_}|Rest2] ->
-	    {ObjIdVal,Rest3} = parse_ObjectIdentifierValue([Brace|Rest2]), % value not used yet, fix me
-	    NewSymbolList =
-		lists:map(fun(X)->X#'Externaltypereference'{module=Name} end,
-			  SymbolList),
+	[{'FROM',_L1},Tref = {typereference,_,Name},Brace = {'{',_}|Rest2] ->
+	    {_ObjIdVal,Rest3} = parse_ObjectIdentifierValue([Brace|Rest2]), % value not used yet, fix me
+	    NewSymbolList = lists:map(SetRefModuleName(Name),SymbolList),
 	    {#'SymbolsFromModule'{symbols=NewSymbolList,
 				  module=tref2Exttref(Tref)},Rest3}; 
-	[{'FROM',L1},Tref = {typereference,_,Name}|Rest2] ->
-	    NewSymbolList = 
-		lists:map(fun(X)->X#'Externaltypereference'{module=Name} end,
-			  SymbolList),
+	[{'FROM',_L1},Tref = {typereference,_,Name}|Rest2] ->
+	    NewSymbolList = lists:map(SetRefModuleName(Name),SymbolList),
 	    {#'SymbolsFromModule'{symbols=NewSymbolList,
 				  module=tref2Exttref(Tref)},Rest2};
-	Other ->
+	_ ->
 	    throw({asn1_error,{get_line(hd(Rest)),get(asn1_module),
 			       [got,get_token(hd(Rest)),expected,
 				['FROM typerefernece identifier ,',
@@ -212,23 +216,23 @@ parse_ObjectIdentifierValue([Id = {identifier,_,_}|Rest],Acc) ->
     parse_ObjectIdentifierValue(Rest,[identifier2Extvalueref(Id)|Acc]);
 parse_ObjectIdentifierValue([{'}',_}|Rest],Acc) ->
     {lists:reverse(Acc),Rest};
-parse_ObjectIdentifierValue([H|T],Acc) ->
+parse_ObjectIdentifierValue([H|_T],_Acc) ->
     throw({asn1_error,{get_line(H),get(asn1_module),
 		       [got,get_token(H),expected,
 			['{ some of the following }',number,'identifier ( number )',
 			 'identifier ( identifier )',
 			 'identifier ( typereference.identifier)',identifier]]}}).
     
-parse_AssignmentList(Tokens = [{'END',_}|Rest]) ->
+parse_AssignmentList(Tokens = [{'END',_}|_Rest]) ->
     {[],Tokens};
-parse_AssignmentList(Tokens = [{'$end',_}|Rest]) ->
+parse_AssignmentList(Tokens = [{'$end',_}|_Rest]) ->
     {[],Tokens};
 parse_AssignmentList(Tokens) ->
     parse_AssignmentList(Tokens,[]).
 
-parse_AssignmentList(Tokens= [{'END',_}|Rest],Acc) ->
+parse_AssignmentList(Tokens= [{'END',_}|_Rest],Acc) ->
     {lists:reverse(Acc),Tokens};
-parse_AssignmentList(Tokens= [{'$end',_}|Rest],Acc) ->
+parse_AssignmentList(Tokens= [{'$end',_}|_Rest],Acc) ->
     {lists:reverse(Acc),Tokens};
 parse_AssignmentList(Tokens,Acc) ->
     case (catch parse_Assignment(Tokens)) of
@@ -264,7 +268,7 @@ parse_Assignment(Tokens) ->
 parse_or(Tokens,Flist) ->
 	parse_or(Tokens,Flist,[]).
 
-parse_or(Tokens,[],ErrList) ->
+parse_or(_Tokens,[],ErrList) ->
     case ErrList of
 	[] ->
 	    throw({asn1_error,{parse_or,ErrList}});
@@ -279,7 +283,7 @@ parse_or(Tokens,[],ErrList) ->
     end;
 parse_or(Tokens,[Fun|Frest],ErrList) ->
     case (catch Fun(Tokens)) of
-	Exit = {'EXIT',Reason} ->
+	Exit = {'EXIT',_Reason} ->
 	    parse_or(Tokens,Frest,[Exit|ErrList]);
 	AsnErr = {asn1_error,_} ->
 	    parse_or(Tokens,Frest,[AsnErr|ErrList]);
@@ -296,11 +300,11 @@ parse_or(Tokens,[Fun|Frest],ErrList) ->
 parse_TypeAssignment([{typereference,L1,Tref},{'::=',_}|Rest]) ->	
     {Type,Rest2} = parse_Type(Rest),
     {#typedef{pos=L1,name=Tref,typespec=Type},Rest2};
-parse_TypeAssignment([H1,H2|Rest]) ->
+parse_TypeAssignment([H1,H2|_Rest]) ->
     throw({asn1_assignment_error,{get_line(H1),get(asn1_module),
 				  [got,[get_token(H1),get_token(H2)], expected,
 				   typereference,'::=']}});
-parse_TypeAssignment([H|T]) ->
+parse_TypeAssignment([H|_T]) ->
     throw({asn1_assignment_error,{get_line(H),get(asn1_module),
 				  [got,get_token(H),expected,
 				   typereference]}}).
@@ -308,7 +312,7 @@ parse_TypeAssignment([H|T]) ->
 parse_Type(Tokens) ->
     {Tag,Rest3} = case Tokens of
 		      [Lbr= {'[',_}|Rest] ->
-			  {TempTag,Rest2} = parse_Tag([Lbr|Rest]);
+			  parse_Tag([Lbr|Rest]);
 		      Rest-> {[],Rest}
 		  end,
     {Tag2,Rest4} = case Rest3 of
@@ -325,7 +329,7 @@ parse_Type(Tokens) ->
     {Type,Rest5} = case (catch parse_or(Rest4,Flist)) of
 		      {'EXIT',Reason} ->
 			  exit(Reason);
-			AsnErr = {asn1_error,Reason} ->
+			AsnErr = {asn1_error,_Reason} ->
 			 throw(AsnErr);
 		      Result ->
 			  Result
@@ -394,7 +398,17 @@ parse_BuiltinType([{'ENUMERATED',_},{'{',_}|Rest]) ->
 parse_BuiltinType([{'EXTERNAL',_}|Rest]) ->
     {#type{def='EXTERNAL'},Rest};
 
-% InstanceOfType , fix me later
+% InstanceOfType
+parse_BuiltinType([{'INSTANCE',_},{'OF',_}|Rest]) ->
+    {DefinedObjectClass,Rest2} = parse_DefinedObjectClass(Rest),
+    case Rest2 of
+	[{'(',_}|_] ->
+	    {Constraint,Rest3} = parse_Constraint(Rest2),
+	    {#type{def={'INSTANCE OF',DefinedObjectClass,Constraint}},Rest3};
+	_ ->
+	    {#type{def={'INSTANCE OF',DefinedObjectClass,[]}},Rest2}
+    end;
+
 % parse_BuiltinType(Tokens) ->
     
 parse_BuiltinType([{'INTEGER',_}|Rest]) ->
@@ -571,12 +585,12 @@ parse_ReferencedType(Tokens) ->
 	    Result
     end.
     
-parse_DefinedType(Tokens=[{typereference,L1,TypeName},{'{',_}|Rest]) ->
+parse_DefinedType(Tokens=[{typereference,_,_},{'{',_}|_Rest]) ->
     parse_ParameterizedType(Tokens);
 parse_DefinedType(Tokens=[{typereference,L1,TypeName},
 			  T2={typereference,_,_},T3={'{',_}|Rest]) ->
     case (catch parse_ParameterizedType(Tokens)) of
-	{'EXIT',Reason} ->
+	{'EXIT',_Reason} ->
 	    Rest2 = [T2,T3|Rest],
 	    {#type{def = #'Externaltypereference'{pos=L1,
 						  module=get(asn1_module),
@@ -589,7 +603,7 @@ parse_DefinedType(Tokens=[{typereference,L1,TypeName},
 	Result ->
 	    Result
     end;
-parse_DefinedType([{typereference,L1,Module},{'.',_},{typereference,L2,TypeName}|Rest]) ->
+parse_DefinedType([{typereference,L1,Module},{'.',_},{typereference,_,TypeName}|Rest]) ->
     {#type{def = #'Externaltypereference'{pos=L1,module=Module,type=TypeName}},Rest};
 parse_DefinedType([{typereference,L1,TypeName}|Rest]) ->
     {#type{def = #'Externaltypereference'{pos=L1,module=get(asn1_module),
@@ -600,7 +614,7 @@ parse_DefinedType(Tokens) ->
 			[typereference,'typereference.typereference',
 			 'typereference typereference']]}}).
 
-parse_SelectionType([{identifier,L1,Name},{'<',_}|Rest]) ->    
+parse_SelectionType([{identifier,_,Name},{'<',_}|Rest]) ->    
     {Type,Rest2} = parse_Type(Rest),
     {{'SelectionType',Name,Type},Rest2};
 parse_SelectionType(Tokens) ->
@@ -632,7 +646,7 @@ parse_Constraints(Tokens) ->
 parse_Constraints(Tokens,Acc) ->
     {Constraint,Rest} = parse_Constraint(Tokens),
     case Rest of
-	[{'(',_}|Rest2] ->
+	[{'(',_}|_Rest2] ->
 	    parse_Constraints(Rest,[Constraint|Acc]);
 	_ ->
 	    {lists:reverse([Constraint|Acc]),Rest}
@@ -644,7 +658,7 @@ parse_Constraint([{'(',_}|Rest]) ->
     case Rest3 of
 	[{')',_}|Rest4] ->
 	    {#constraint{c=Constraint,e=Exception},Rest4};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,')']}})
     end;
@@ -691,7 +705,7 @@ parse_TypeColonValue(Tokens) ->
 	[{':',_}|Rest2] ->
 	    {Value,Rest3} = parse_Value(Rest2),
 	    {{Type,Value},Rest3};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,':']}})
     end.
@@ -710,7 +724,7 @@ parse_ElementSetSpecs(Tokens) ->
 	    {{RootElems,AdditionalElems},Rest3};
 	[{',',_},{'...',_}|Rest2] ->
 	    {{RootElems,[]},Rest2};
-	Other ->
+	_ ->
 	    {RootElems,Rest}
     end.
 
@@ -779,7 +793,7 @@ parse_Intersections(Tokens) ->
 	    {[V1] ++ [intersection|V2],Rest2};
 	{V1,V2} ->
 	    {[V1,intersection,V2],Rest2};
-	Other ->
+	_ ->
 	    throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 			       [got,get_token(hd(Tokens)),expected,'a Union']}})
     end.
@@ -797,7 +811,7 @@ parse_IElemsRec([{'^',_}|Rest]) ->
 	    {[V1] ++ V2,Rest3};
 	{V1,V2} ->
 	    {[V1,V2],Rest3};
-	Other ->
+	_ ->
 	    throw({asn1_error,{get_line(hd(Rest)),get(asn1_module),
 			       [got,get_token(hd(Rest)),expected,'an Intersection']}})
     end;
@@ -814,7 +828,7 @@ parse_IElemsRec([{'INTERSECTION',_}|Rest]) ->
 	    {[V1] ++ V2,Rest3};
 	{V1,V2} ->
 	    {[V1,V2],Rest3};
-	Other ->
+	_ ->
 	    throw({asn1_error,{get_line(hd(Rest)),get(asn1_module),
 			       [got,get_token(hd(Rest)),expected,'an Intersection']}})
     end;
@@ -836,7 +850,7 @@ parse_Elements([{'(',_}|Rest]) ->
     case Rest2 of
 	[{')',_}|Rest3] ->
 	    {Elems,Rest3};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,')']}})
     end;
@@ -846,7 +860,7 @@ parse_Elements(Tokens) ->
     case (catch parse_or(Tokens,Flist)) of
 	{'EXIT',Reason} ->
 	    exit(Reason);
-	Err = {asn1_error,Reason2} ->
+	Err = {asn1_error,_} ->
 	    throw(Err);
 	Result ->
 	    Result
@@ -857,11 +871,11 @@ parse_Elements(Tokens) ->
 
 %% --------------------------
 
-parse_DefinedObjectClass([{typereference,L1,ModName},{'.',_},Tr={typereference,L2,ObjClName}|Rest]) ->
+parse_DefinedObjectClass([{typereference,_,_ModName},{'.',_},Tr={typereference,_,_ObjClName}|Rest]) ->
 %%    {{objectclassname,ModName,ObjClName},Rest};
 %    {{objectclassname,tref2Exttref(Tr)},Rest};
     {tref2Exttref(Tr),Rest};
-parse_DefinedObjectClass([Tr={typereference,L1,ObjClName}|Rest]) ->
+parse_DefinedObjectClass([Tr={typereference,_,_ObjClName}|Rest]) ->
 %    {{objectclassname,tref2Exttref(Tr)},Rest};
     {tref2Exttref(Tr),Rest};
 parse_DefinedObjectClass([{'TYPE-IDENTIFIER',_}|Rest]) ->
@@ -925,14 +939,14 @@ parse_FieldSpec(Tokens,Acc) ->
 	    {lists:reverse([Type|Acc]),Rest};
 	{Type,[{',',_}|Rest2]} ->
 	    parse_FieldSpec(Rest2,[Type|Acc]);
-	{_,[H|T]}  ->
+	{_,[H|_T]}  ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'}']}})
     end.
 
-parse_PrimitiveFieldName([{typefieldreference,L1,FieldName}|Rest]) ->
+parse_PrimitiveFieldName([{typefieldreference,_,FieldName}|Rest]) ->
     {{typefieldreference,FieldName},Rest};
-parse_PrimitiveFieldName([{valuefieldreference,L1,FieldName}|Rest]) ->
+parse_PrimitiveFieldName([{valuefieldreference,_,FieldName}|Rest]) ->
     {{valuefieldreference,FieldName},Rest};
 parse_PrimitiveFieldName(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
@@ -947,7 +961,7 @@ parse_FieldName([{'.',_}|Rest],Acc) ->
     case (catch parse_PrimitiveFieldName(Rest)) of
 	{'EXIT',Reason} ->
 	    exit(Reason);
-	AsnErr = {asn1_error,Reason} ->
+	AsnErr = {asn1_error,_} ->
 	    throw(AsnErr);
 	{FieldName,Rest2} ->
 	    parse_FieldName(Rest2,[FieldName|Acc])
@@ -982,7 +996,7 @@ parse_FixedTypeValueFieldSpec(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,valuefieldreference]}}).
 
-parse_VariableTypeValueFieldSpec([{valuefieldreference,L1,VFieldName}|Rest]) ->
+parse_VariableTypeValueFieldSpec([{valuefieldreference,_,VFieldName}|Rest]) ->
     {FieldRef,Rest2} = parse_FieldName(Rest),
     {OptionalitySpec,Rest3} = parse_ValueOptionalitySpec(Rest2),
     {{variabletypevaluefield,VFieldName,FieldRef,OptionalitySpec},Rest3};
@@ -990,7 +1004,7 @@ parse_VariableTypeValueFieldSpec(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,valuefieldreference]}}).
 
-parse_ObjectFieldSpec([{valuefieldreference,L1,VFieldName}|Rest]) ->
+parse_ObjectFieldSpec([{valuefieldreference,_,VFieldName}|Rest]) ->
     {Class,Rest2} = parse_DefinedObjectClass(Rest),
     {OptionalitySpec,Rest3} = parse_ObjectOptionalitySpec(Rest2),
     {{objectfield,VFieldName,Class,OptionalitySpec},Rest3};
@@ -998,14 +1012,14 @@ parse_ObjectFieldSpec(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,valuefieldreference]}}).
 
-parse_TypeFieldSpec([{typefieldreference,L1,TFieldName}|Rest]) ->
+parse_TypeFieldSpec([{typefieldreference,_,TFieldName}|Rest]) ->
     {OptionalitySpec,Rest2} = parse_TypeOptionalitySpec(Rest),
     {{typefield,TFieldName,OptionalitySpec},Rest2};
 parse_TypeFieldSpec(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,typefieldreference]}}).
 
-parse_FixedTypeValueSetFieldSpec([{typefieldreference,L1,TFieldName}|Rest]) ->
+parse_FixedTypeValueSetFieldSpec([{typefieldreference,_,TFieldName}|Rest]) ->
     {Type,Rest2} = parse_Type(Rest),
     {OptionalitySpec,Rest3} = parse_ValueSetOptionalitySpec(Rest2),
     {{objectset_or_fixedtypevalueset_field,TFieldName,Type,
@@ -1014,7 +1028,7 @@ parse_FixedTypeValueSetFieldSpec(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,typefieldreference]}}).
 
-parse_VariableTypeValueSetFieldSpec([{typefieldreference,L1,TFieldName}|Rest]) ->
+parse_VariableTypeValueSetFieldSpec([{typefieldreference,_,TFieldName}|Rest]) ->
     {FieldRef,Rest2} = parse_FieldName(Rest),
     {OptionalitySpec,Rest3} = parse_ValueSetOptionalitySpec(Rest2),
     {{variabletypevaluesetfield,TFieldName,FieldRef,OptionalitySpec},Rest3};
@@ -1022,7 +1036,7 @@ parse_VariableTypeValueSetFieldSpec(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,typefieldreference]}}).
 
-parse_ObjectSetFieldSpec([{typefieldreference,L1,TFieldName}|Rest]) ->
+parse_ObjectSetFieldSpec([{typefieldreference,_,TFieldName}|Rest]) ->
     {Class,Rest2} = parse_DefinedObjectClass(Rest),
     {OptionalitySpec,Rest3} = parse_ObjectSetOptionalitySpec(Rest2),
     {{objectsetfield,TFieldName,Class,OptionalitySpec},Rest3};
@@ -1036,7 +1050,7 @@ parse_ValueOptionalitySpec(Tokens)->
 	[{'DEFAULT',_}|Rest] ->
 	    {Value,Rest2} = parse_Value(Rest),
 	    {{'DEFAULT',Value},Rest2};
-	Other  -> {'MANDATORY',Tokens}
+	_  -> {'MANDATORY',Tokens}
     end.
 
 parse_ObjectOptionalitySpec(Tokens) ->
@@ -1045,7 +1059,7 @@ parse_ObjectOptionalitySpec(Tokens) ->
 	[{'DEFAULT',_}|Rest] ->
 	    {Object,Rest2} = parse_Object(Rest),
 	    {{'DEFAULT',Object},Rest2};
-	Other  -> {'MANDATORY',Tokens}
+	_  -> {'MANDATORY',Tokens}
     end.
 
 parse_TypeOptionalitySpec(Tokens) ->
@@ -1054,7 +1068,7 @@ parse_TypeOptionalitySpec(Tokens) ->
 	[{'DEFAULT',_}|Rest] ->
 	    {Type,Rest2} = parse_Type(Rest),
 	    {{'DEFAULT',Type},Rest2};
-	Other  -> {'MANDATORY',Tokens}
+	_  -> {'MANDATORY',Tokens}
     end.
 
 parse_ValueSetOptionalitySpec(Tokens) ->
@@ -1063,7 +1077,7 @@ parse_ValueSetOptionalitySpec(Tokens) ->
 	[{'DEFAULT',_}|Rest] ->
 	    {ValueSet,Rest2} = parse_ValueSet(Rest),
 	    {{'DEFAULT',ValueSet},Rest2};
-	Other  -> {'MANDATORY',Tokens}
+	_  -> {'MANDATORY',Tokens}
     end.
 
 parse_ObjectSetOptionalitySpec(Tokens) ->
@@ -1072,7 +1086,7 @@ parse_ObjectSetOptionalitySpec(Tokens) ->
 	[{'DEFAULT',_}|Rest] ->
 	    {ObjectSet,Rest2} = parse_ObjectSet(Rest),
 	    {{'DEFAULT',ObjectSet},Rest2};
-	Other  -> {'MANDATORY',Tokens}
+	_  -> {'MANDATORY',Tokens}
     end.
 
 parse_WithSyntaxSpec([{'WITH',_},{'SYNTAX',_}|Rest]) ->
@@ -1142,9 +1156,9 @@ parse_OptionalGroup(Tokens,Acc) ->
     {Spec,Rest} = parse_TokenOrGroupSpec(Tokens),
     parse_OptionalGroup(Rest,[Spec|Acc]).
 
-parse_DefinedObject([Id={identifier,L1,ObjName}|Rest]) ->
+parse_DefinedObject([Id={identifier,_,_ObjName}|Rest]) ->
     {{object,identifier2Extvalueref(Id)},Rest};
-parse_DefinedObject([{typereference,L1,ModName},{'.',_},{identifier,L2,ObjName}|Rest]) ->
+parse_DefinedObject([{typereference,L1,ModName},{'.',_},{identifier,_,ObjName}|Rest]) ->
     {{object, #'Externaltypereference'{pos=L1,module=ModName,type=ObjName}},Rest};
 parse_DefinedObject(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
@@ -1158,7 +1172,7 @@ parse_ObjectAssignment([{identifier,L1,ObjName}|Rest]) ->
 	    {Object,Rest4} = parse_Object(Rest3),
 	    {#typedef{pos=L1,name=ObjName,
 		      typespec=#'Object'{classname=Class,def=Object}},Rest4};
-	[H|T]  -> 
+	[H|_T]  -> 
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'::=']}});
 	Other ->
@@ -1210,7 +1224,7 @@ parse_DefaultSyntax(Tokens,Acc) ->
 	    parse_DefaultSyntax(Rest2,[Setting|Acc]);
 	[{'}',_}|Rest3] ->
 	    {{object,defaultsyntax,lists:reverse([Setting|Acc])},Rest3};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,[',','}']]}})
     end.
@@ -1294,7 +1308,7 @@ parse_ObjectSetAssignment([{typereference,L1,ObjSetName}|Rest]) ->
 	    {#typedef{pos=L1,name=ObjSetName,
 		      typespec=#'ObjectSet'{class=Class,
 					    set=ObjectSet}},Rest4};
-	[H|T]  -> 
+	[H|_T]  -> 
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'::=']}})
 %%%	Other ->
@@ -1310,7 +1324,7 @@ parse_ObjectSet([{'{',_}|Rest]) ->
     case Rest2 of
 	[{'}',_}|Rest3] ->
 	    {ObjSetSpec,Rest3};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'}']}})
     end;
@@ -1346,7 +1360,7 @@ parse_ObjectClassFieldType(Tokens) ->
 	      classname=Class,
 	      class=Class,fieldname=FieldName},
 	    {#type{def=OCFT},Rest3};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'.']}})
 %%%	Other ->
@@ -1374,7 +1388,7 @@ parse_OpenTypeFieldVal(Tokens) ->
 	[{':',_}|Rest2] ->
 	    {Value,Rest3} = parse_Value(Rest2),
 	    {{opentypefieldvalue,Type,Value},Rest3};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,':']}})
     end.
@@ -1423,7 +1437,7 @@ parse_ValueFromObject(Tokens) ->
 				       [got,typefieldreference,expected,
 					valuefieldreference]}})
 	    end;
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'.']}})
 %%%	Other ->
@@ -1436,14 +1450,14 @@ parse_ValueSetFromObjects(Tokens) ->
 	[{'.',_}|Rest2] ->
 	    {Name,Rest3} = parse_FieldName(Rest2),
 	    case lists:last(Name) of
-		{typefieldreference,FieldName} ->
+		{typefieldreference,_FieldName} ->
 		    {{'ValueSetFromObjects',Objects,Name},Rest3};
 		_ ->
 		    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),
 				       [got,get_token(hd(Rest2)),expected,
 					typefieldreference]}})
 	    end;
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'.']}})
 %%%	Other ->
@@ -1456,14 +1470,14 @@ parse_TypeFromObject(Tokens) ->
 	[{'.',_}|Rest2] ->
 	    {Name,Rest3} = parse_FieldName(Rest2),
 	    case lists:last(Name) of
-		{typefieldreference,FieldName} ->
+		{typefieldreference,_FieldName} ->
 		    {{'TypeFromObject',Objects,Name},Rest3};
 		_ ->
 		    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),
 				       [got,get_token(hd(Rest2)),expected,
 					typefieldreference]}})
 	    end;
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'.']}})
 %%%	Other ->
@@ -1476,7 +1490,7 @@ parse_ObjectFromObject(Tokens) ->
 	[{'.',_}|Rest2] ->
 	    {Name,Rest3} = parse_FieldName(Rest2),
 	    {{'ObjectFromObject',Objects,Name},Rest3};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'.']}})
 %%%	Other ->
@@ -1489,7 +1503,7 @@ parse_ObjectSetFromObjects(Tokens) ->
 	[{'.',_}|Rest2] ->
 	    {Name,Rest3} = parse_FieldName(Rest2),
 	    {{'ObjectSetFromObjects',Objects,Name},Rest3};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'.']}})
 %%%	Other ->
@@ -1528,7 +1542,7 @@ parse_UserDefinedConstraint([{'CONSTRAINED',_},
     case Rest2 of
 	[{'}',_}|Rest3] ->
 	    {{constrained_by,Param},Rest3};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'}']}})
     end;
@@ -1549,7 +1563,7 @@ parse_UserDefinedConstraintParameter(Tokens,Acc) ->
 	    throw(AsnErr);
 	{Result,Rest} ->
 	    case Rest of
-		[{',',_}|Rest2] ->
+		[{',',_}|_Rest2] ->
 		    parse_UserDefinedConstraintParameter(Tokens,[Result|Acc]);
 		_  ->
 		    {lists:reverse([Result|Acc]),Rest}
@@ -1562,7 +1576,7 @@ parse_GovernorAndActualParameter(Tokens) ->
 	[{':',_}|Rest2] ->
 	    {Params,Rest3} = parse_ActualParameter(Rest2),
 	    {{'Governor_Params',Governor,Params},Rest3};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,':']}})
     end.
@@ -1591,11 +1605,11 @@ parse_ComponentRelationConstraint([{'{',_}|Rest]) ->
 	    case Rest4 of
 		[{'}',_}|Rest5] ->
 		    {{componentrelation,ObjectSet,AtNot},Rest5};
-		[H|T]  ->
+		[H|_T]  ->
 		    throw({asn1_error,{get_line(H),get(asn1_module),
 				       [got,get_token(H),expected,'}']}})
 	    end;
-	[H|T]  ->
+	[H|_T]  ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,
 				'ComponentRelationConstraint',ended,with,'}']}})
@@ -1628,9 +1642,9 @@ parse_AtNotation(Tokens) ->
 parse_ComponentIdList(Tokens) ->
     parse_ComponentIdList(Tokens,[]).
 
-parse_ComponentIdList([Id = {identifier,L1,Name},{'.',_}|Rest],Acc) ->
+parse_ComponentIdList([Id = {identifier,_,_},{'.',_}|Rest],Acc) ->
     parse_ComponentIdList(Rest,[identifier2Extvalueref(Id)|Acc]);
-parse_ComponentIdList([Id = {identifier,L1,Name}|Rest],Acc) ->
+parse_ComponentIdList([Id = {identifier,_,_}|Rest],Acc) ->
     {lists:reverse([identifier2Extvalueref(Id)|Acc]),Rest};
 parse_ComponentIdList(Tokens,_) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
@@ -1696,7 +1710,7 @@ parse_ParameterizedTypeAssignment([{typereference,L1,Name}|Rest]) ->
 	    {Type,Rest4} = parse_Type(Rest3),
 	    {#ptypedef{pos=L1,name=Name,args=ParameterList,typespec=Type},
 	     Rest4};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'::=']}})
     end;
@@ -1713,7 +1727,7 @@ parse_ParameterizedValueAssignment([{identifier,L1,Name}|Rest]) ->
 	    {Value,Rest5} = parse_Value(Rest4),
 	    {#pvaluedef{pos=L1,name=Name,args=ParameterList,type=Type,
 			 value=Value},Rest5};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'::=']}})
     end;
@@ -1729,7 +1743,7 @@ parse_ParameterizedValueSetTypeAssignment([{typereference,L1,Name}|Rest]) ->
 	    {ValueSet,Rest5} = parse_ValueSet(Rest4),
 	    {#pvaluesetdef{pos=L1,name=Name,args=ParameterList,
 			   type=Type,valueset=ValueSet},Rest5};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'::=']}})
     end;
@@ -1745,7 +1759,7 @@ parse_ParameterizedObjectClassAssignment([{typereference,L1,Name}|Rest]) ->
 	    {Class,Rest4} = parse_ObjectClass(Rest3),
 	    {#ptypedef{pos=L1,name=Name,args=ParameterList,typespec=Class},
 	     Rest4};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'::=']}})
     end;
@@ -1762,7 +1776,7 @@ parse_ParameterizedObjectAssignment([{identifier,L1,Name}|Rest]) ->
 	    {Object,Rest5} = parse_Object(Rest4),
 	    {#pobjectdef{pos=L1,name=Name,args=ParameterList,
 			 class=Class,def=Object},Rest5};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'::=']}})
 %%%	Other ->
@@ -1780,7 +1794,7 @@ parse_ParameterizedObjectSetAssignment([{typereference,L1,Name}|Rest]) ->
 	    {ObjectSet,Rest5} = parse_ObjectSet(Rest4),
 	    {#pobjectsetdef{pos=L1,name=Name,args=ParameterList,
 			    class=Class,def=ObjectSet},Rest5};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'::=']}})
 %%%	Other ->
@@ -1804,7 +1818,7 @@ parse_ParameterList(Tokens,Acc) ->
 	    parse_ParameterList(Rest2,[Parameter|Acc]);
 	[{'}',_}|Rest3] ->
 	    {lists:reverse([Parameter|Acc]),Rest3};
-	[H|T]  ->
+	[H|_T]  ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,[',','}']]}})
     end.
@@ -1827,7 +1841,7 @@ parse_ParamGovAndRef(Tokens) ->
 	[{':',_}|Rest2] ->
 	    {Ref,Rest3} = parse_Reference(Rest2),
 	    {{ParamGov,Ref},Rest3};
-	[H|T] ->
+	[H|_T] ->
 	   throw({asn1_error,{get_line(H),get(asn1_module),
 			      [got,get_token(H),expected,':']}})
     end.
@@ -1854,10 +1868,10 @@ parse_ParamGovernor(Tokens) ->
 %     end.
 
 parse_SimpleDefinedType([{typereference,L1,ModuleName},{'.',_},
-			 {typereference,L2,TypeName}|Rest]) ->
+			 {typereference,_,TypeName}|Rest]) ->
     {#'Externaltypereference'{pos=L1,module=ModuleName,
 						 type=TypeName},Rest};
-parse_SimpleDefinedType([Tref={typereference,L2,TypeName}|Rest]) ->
+parse_SimpleDefinedType([Tref={typereference,_,_}|Rest]) ->
 %    {#'Externaltypereference'{pos=L2,module=get(asn1_module),
 %						 type=TypeName},Rest};
     {tref2Exttref(Tref),Rest};
@@ -1867,7 +1881,7 @@ parse_SimpleDefinedType(Tokens) ->
 			[typereference,'typereference.typereference']]}}).
 
 parse_SimpleDefinedValue([{typereference,L1,ModuleName},{'.',_},
-			  {identifier,L2,Value}|Rest]) ->
+			  {identifier,_,Value}|Rest]) ->
     {{simpledefinedvalue,#'Externalvaluereference'{pos=L1,module=ModuleName,
 						   value=Value}},Rest};
 parse_SimpleDefinedValue([{identifier,L2,Value}|Rest]) ->
@@ -1915,7 +1929,7 @@ parse_ActualParameterList(Tokens,Acc) ->
 	    parse_ActualParameterList(Rest2,[Parameter|Acc]);
 	[{'}',_}|Rest3] ->
 	    {lists:reverse([Parameter|Acc]),Rest3};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,[',','}']]}})
 %%%	Other ->
@@ -1977,15 +1991,15 @@ not_allowed_word(Name) ->
 
 check_one_char_word([A]) when $A =< A, $Z >= A ->
     true;
-check_one_char_word([A]) ->
+check_one_char_word([_]) ->
     false. %% unknown item in SyntaxList
 
 check_first(A) when $A =< A, $Z >= A ->
     true;
-check_first(A) ->
+check_first(_) ->
     false. %% unknown item in SyntaxList
 
-check_rest([R,R|Rs]) when $- == R ->
+check_rest([R,R|_Rs]) when $- == R ->
     false; %% two consecutive hyphens are not allowed in a word
 check_rest([R]) when $- == R ->
     false; %% word cannot end with hyphen
@@ -1993,7 +2007,7 @@ check_rest([R|Rs]) when $A=<R, $Z>=R; $-==R ->
     check_rest(Rs);
 check_rest([]) ->
     true;
-check_rest(Other) ->
+check_rest(_) ->
     false.
 
 
@@ -2007,7 +2021,7 @@ parse_AlternativeTypeLists(Tokens) ->
     {AlternativeTypeList,Rest1} = parse_AlternativeTypeList(Tokens),
     {ExtensionAndException,Rest2} = 
 	case Rest1 of
-	    [{',',_},{'...',L1},Ex = {'!',_}|Rest12] ->
+	    [{',',_},{'...',L1},{'!',_}|Rest12] ->
 		{_,Rest13} = parse_ExceptionIdentification(Rest12),
 		%% Exception info is currently thrown away
 		{[#'EXTENSIONMARK'{pos=L1}],Rest13};
@@ -2023,8 +2037,7 @@ parse_AlternativeTypeLists(Tokens) ->
 	    {ExtensionAddition,Rest3} = 
 		case Rest2 of
 		    [{',',_}|Rest23] ->
-			{ExtensionAdditionAlternatives,Rest24} = 
-			    parse_ExtensionAdditionAlternativeList(Rest23);
+			parse_ExtensionAdditionAlternativeList(Rest23);
 		    _ ->
 			{[],Rest2}
 		end,
@@ -2052,13 +2065,14 @@ parse_AlternativeTypeList(Tokens,Acc) ->
     end.
 
     
+
 parse_ExtensionAdditionAlternativeList(Tokens) ->
     parse_ExtensionAdditionAlternativeList(Tokens,[]).
     
 parse_ExtensionAdditionAlternativeList(Tokens,Acc) ->
     {Element,Rest0} =
 	case Tokens of
-	    [{identifier,_,_}|Rest] ->
+	    [{identifier,_,_}|_Rest] ->
 		parse_NamedType(Tokens);
 	    [{'[[',_}|_] ->
 		parse_ExtensionAdditionAlternatives(Tokens)
@@ -2097,29 +2111,29 @@ parse_NamedType(Tokens) ->
 
 
 parse_ComponentTypeLists(Tokens) ->
-    {ComponentTypeList,Rest1} = 
-	case Tokens of 
-	    [{identifier,_,_}|Rest0] ->
-		{Clist,Rest01} = parse_ComponentTypeList(Tokens),
-		case Rest01 of
-		    [{',',_}|Rest02] -> 
-			parse_ComponentTypeLists(Rest02,Clist);
-		    _ ->
-			{Clist,Rest01}
-		end;
-	    [{'COMPONENTS',_},{'OF',_}|Rest] ->
-		{Clist,Rest01} = parse_ComponentTypeList(Tokens),
-		case Rest01 of
-		    [{',',_}|Rest02] -> 
-			parse_ComponentTypeLists(Rest02,Clist);
-		    _ ->
-			{Clist,Rest01}
-		end;
-	    _ ->
-		parse_ComponentTypeLists(Tokens,[])
-	end.
+%    Resulting tuple {ComponentTypeList,Rest1} is returned
+    case Tokens of 
+	[{identifier,_,_}|_Rest0] ->
+	    {Clist,Rest01} = parse_ComponentTypeList(Tokens),
+	    case Rest01 of
+		[{',',_}|Rest02] -> 
+		    parse_ComponentTypeLists(Rest02,Clist);
+		_ ->
+		    {Clist,Rest01}
+	    end;
+	[{'COMPONENTS',_},{'OF',_}|_Rest] ->
+	    {Clist,Rest01} = parse_ComponentTypeList(Tokens),
+	    case Rest01 of
+		[{',',_}|Rest02] -> 
+		    parse_ComponentTypeLists(Rest02,Clist);
+		_ ->
+		    {Clist,Rest01}
+	    end;
+	_ ->
+	    parse_ComponentTypeLists(Tokens,[])
+    end.
 
-parse_ComponentTypeLists([{'...',L1},Ex = {'!',_}|Rest],Clist1) ->
+parse_ComponentTypeLists([{'...',L1},{'!',_}|Rest],Clist1) ->
     {_,Rest2} = parse_ExceptionIdentification(Rest),
     %% Exception info is currently thrown away
     parse_ComponentTypeLists2(Rest2,Clist1++[#'EXTENSIONMARK'{pos=L1}]);
@@ -2184,11 +2198,11 @@ parse_ExtensionAdditionList(Tokens) ->
 parse_ExtensionAdditionList(Tokens,Acc) ->
     {Element,Rest0} =
 	case Tokens of
-	    [{identifier,_,_}|Rest] ->
+	    [{identifier,_,_}|_Rest] ->
 		parse_ComponentType(Tokens);
 	    [{'[[',_}|_] ->
 		parse_ExtensionAdditions(Tokens);
-	    Other ->
+	    _ ->
 		throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 				   [got,get_token(hd(Tokens)),expected,
 				    [identifier,'[[']]}})
@@ -2247,13 +2261,13 @@ parse_SignedNumber(Tokens) ->
 		       [got,get_token(hd(Tokens)),expected,
 			[number,'-number']]}}).
 
-parse_Enumerations(Tokens=[{identifier,_,_}|Rest]) ->
+parse_Enumerations(Tokens=[{identifier,_,_}|_Rest]) ->
     parse_Enumerations(Tokens,[]);
-parse_Enumerations(Tokens=[H|T]) ->
+parse_Enumerations([H|_T]) ->
     throw({asn1_error,{get_line(H),get(asn1_module),
 		       [got,get_token(H),expected,identifier]}}).
 
-parse_Enumerations(Tokens = [{identifier,_,Id},{'(',_}|Rest], Acc) ->
+parse_Enumerations(Tokens = [{identifier,_,_},{'(',_}|_Rest], Acc) ->
     {NamedNumber,Rest2} = parse_NamedNumber(Tokens),
     case Rest2 of
 	[{',',_}|Rest3] ->
@@ -2261,21 +2275,21 @@ parse_Enumerations(Tokens = [{identifier,_,Id},{'(',_}|Rest], Acc) ->
 	_ ->
 	    {lists:reverse([NamedNumber|Acc]),Rest2}
     end;
-parse_Enumerations(Tokens = [{identifier,_,Id}|Rest], Acc) ->
+parse_Enumerations([{identifier,_,Id}|Rest], Acc) ->
     case Rest of
 	[{',',_}|Rest2] ->
 	    parse_Enumerations(Rest2,[Id|Acc]);
 	_ ->
 	    {lists:reverse([Id|Acc]),Rest}
     end;
-parse_Enumerations(Tokens = [{'...',_}|Rest], Acc) ->
+parse_Enumerations([{'...',_}|Rest], Acc) ->
     case Rest of
 	[{',',_}|Rest2] ->
 	    parse_Enumerations(Rest2,['EXTENSIONMARK'|Acc]);
 	_ ->
 	    {lists:reverse(['EXTENSIONMARK'|Acc]),Rest}
     end;
-parse_Enumerations([H|T],_) ->
+parse_Enumerations([H|_T],_) ->
     throw({asn1_error,{get_line(H),get(asn1_module),
 		       [got,get_token(H),expected,identifier]}}).
 
@@ -2301,7 +2315,7 @@ parse_NamedNumber([{identifier,_,Name},{'(',_}|Rest]) ->
 	    throw(AsnErr);
 	{NamedNum,[{')',_}|Rest2]} ->
 	    {{'NamedNumber',Name,NamedNum},Rest2};
-	ParseError ->
+	_ ->
 	    throw({asn1_error,{get_line(hd(Rest)),get(asn1_module),
 			       [got,get_token(hd(Rest)),expected,'NamedNumberList']}})
     end;
@@ -2343,35 +2357,35 @@ parse_Value(Tokens) ->
     Flist = [fun parse_BuiltinValue/1,
 	     fun parse_ValueFromObject/1,
 	     fun parse_DefinedValue/1],
-    {Value,Rest1} = 
-	case (catch parse_or(Tokens,Flist)) of
-	    {'EXIT',Reason} ->
-		exit(Reason);
-	    AsnErr = {asn1_error,_} ->
-		throw(AsnErr);
-	    Result ->
-		Result
-	end.
+
+    case (catch parse_or(Tokens,Flist)) of
+	{'EXIT',Reason} ->
+	    exit(Reason);
+	AsnErr = {asn1_error,_} ->
+	    throw(AsnErr);
+	Result ->
+	    Result
+    end.
 
 parse_BuiltinValue([{bstring,_,Bstr}|Rest]) ->
     {{bstring,Bstr},Rest};
 parse_BuiltinValue([{hstring,_,Hstr}|Rest]) ->
     {{hstring,Hstr},Rest};
-parse_BuiltinValue(Tokens = [{'{',_},{'}',_}|Rest]) ->
+parse_BuiltinValue([{'{',_},{'}',_}|Rest]) ->
     {[],Rest};
-parse_BuiltinValue(Tokens = [{'{',_}|Rest]) ->
+parse_BuiltinValue(Tokens = [{'{',_}|_Rest]) ->
     Flist = [
 	     fun parse_SequenceOfValue/1, 
 	     fun parse_SequenceValue/1, 
 	     fun parse_ObjectIdentifierValue/1],
-    {Vlist,Rest1} = case (catch parse_or(Tokens,Flist)) of
-			{'EXIT',Reason} ->
-			    exit(Reason);
-			AsnErr = {asn1_error,Reason} ->
-			    throw(AsnErr);
-			Result ->
-			    Result
-		    end;
+    case (catch parse_or(Tokens,Flist)) of
+	{'EXIT',Reason} ->
+	    exit(Reason);
+	AsnErr = {asn1_error,_} ->
+	    throw(AsnErr);
+	Result ->
+	    Result
+    end;
 parse_BuiltinValue([{identifier,_,IdName},{':',_}|Rest]) ->
     {Value,Rest2} = parse_Value(Rest),
     {{'CHOICE',{IdName,Value}},Rest2};
@@ -2392,13 +2406,13 @@ parse_BuiltinValue([{number,_,Num}|Rest]) ->
 parse_BuiltinValue([{'-',_},{number,_,Num}|Rest]) ->
     {- Num,Rest};
 parse_BuiltinValue(Tokens) ->
-    {Value,Rest} = parse_ObjectClassFieldValue(Tokens).
+    parse_ObjectClassFieldValue(Tokens).
 
 %% Externalvaluereference
 parse_DefinedValue([{typereference,L1,Tname},{'.',_},{identifier,_,Idname}|Rest]) ->
     {#'Externalvaluereference'{pos=L1,module=Tname,value=Idname},Rest};
 %% valuereference
-parse_DefinedValue([Id = {identifier,_,Idname}|Rest]) ->
+parse_DefinedValue([Id = {identifier,_,_}|Rest]) ->
     {identifier2Extvalueref(Id),Rest};
 %% ParameterizedValue
 parse_DefinedValue(Tokens) ->
@@ -2422,7 +2436,7 @@ parse_SequenceValue([{identifier,_,IdName}|Rest],Acc) ->
 	    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),
 			       [got,get_token(hd(Rest2)),expected,'}']}})
     end;
-parse_SequenceValue(Tokens,Acc) ->
+parse_SequenceValue(Tokens,_Acc) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,identifier]}}).
 
@@ -2450,7 +2464,7 @@ parse_ValueSetTypeAssignment([{typereference,L1,Name}|Rest]) ->
 	[{'::=',_}|Rest3] ->
 	    {ValueSet,Rest4} = parse_ValueSet(Rest3),
 	    {#valuedef{pos=L1,name=Name,type=Type,value=ValueSet},Rest4};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(L1),get(asn1_module),
 			       [got,get_token(H),expected,'::=']}})
     end;
@@ -2464,7 +2478,7 @@ parse_ValueSet([{'{',_}|Rest]) ->
     case Rest2 of
 	[{'}',_}|Rest3] ->
 	    {{valueset,Elems},Rest3};
-	[H|T] ->
+	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'}']}})
     end;
@@ -2536,7 +2550,7 @@ parse_SubtypeElements(Tokens) ->
 	    exit(Reason);
 	{asn1_error,Reason} ->
 	    throw(Reason);
-	Result = {Val,Rest} when record(Val,type) ->
+	Result = {Val,_} when record(Val,type) ->
 	    Result;
 	{Lower,[{'..',_}|Rest]} ->
 	    {Upper,Rest2} = parse_UpperEndpoint(Rest),
@@ -2544,7 +2558,7 @@ parse_SubtypeElements(Tokens) ->
 	{Lower,[{'<',_},{'..',_}|Rest]} ->
 	    {Upper,Rest2} = parse_UpperEndpoint(Rest),
 	    {{'ValueRange',{{gt,Lower},Upper}},Rest2};
-	{Res={'ContainedSubtype',Type},Rest} ->
+	{Res={'ContainedSubtype',_Type},Rest} ->
 	    {Res,Rest};
 	{Value,Rest} ->
 	    {{'SingleValue',Value},Rest}
@@ -2570,7 +2584,7 @@ parse_UpperEndpoint(Lt,Tokens) ->
     case (catch parse_or(Tokens,Flist)) of
 	{'EXIT',Reason} ->
 	    exit(Reason);
-	AsnErr = {asn1_error,Reason} ->
+	AsnErr = {asn1_error,_} ->
 	    throw(AsnErr);
 	{Value,Rest2} when Lt == lt ->
 	    {{lt,Value},Rest2};
@@ -2581,7 +2595,7 @@ parse_UpperEndpoint(Lt,Tokens) ->
 parse_TypeConstraints(Tokens) ->
     parse_TypeConstraints(Tokens,[]).
 
-parse_TypeConstraints([{identifier,_,IdName}|Rest],Acc) ->
+parse_TypeConstraints([{identifier,_,_}|Rest],Acc) ->
     {ComponentConstraint,Rest2} = parse_ComponentConstraint(Rest),
     case Rest2 of
 	[{',',_}|Rest3] ->
@@ -2589,11 +2603,11 @@ parse_TypeConstraints([{identifier,_,IdName}|Rest],Acc) ->
 	_ ->
 	    {lists:reverse([ComponentConstraint|Acc]),Rest2}
     end;
-parse_TypeConstraints([H|T],Acc) ->
+parse_TypeConstraints([H|_T],_) ->
     throw({asn1_error,{get_line(H),get(asn1_module),
 		       [got,get_token(H),expected,identifier]}}).
 
-parse_ComponentConstraint(Tokens = [{'(',_}|Rest]) ->
+parse_ComponentConstraint(Tokens = [{'(',_}|_Rest]) ->
     {ValueConstraint,Rest2} = parse_Constraint(Tokens),
     {PresenceConstraint,Rest3} = parse_PresenceConstraint(Rest2),
     {{ValueConstraint,PresenceConstraint},Rest3};
@@ -2678,7 +2692,7 @@ get_line({_,Pos,Token}) when integer(Pos),atom(Token) ->
     Pos;
 get_line({Token,Pos}) when integer(Pos),atom(Token) ->
     Pos;
-get_line(Unknown) ->
+get_line(_) ->
     undefined.
 
 get_token({_,Pos,Token}) when integer(Pos),atom(Token) ->
@@ -2687,7 +2701,7 @@ get_token({'$end',Pos}) when integer(Pos) ->
     undefined;
 get_token({Token,Pos}) when integer(Pos),atom(Token) ->
     Token;
-get_token(Unknown) ->
+get_token(_) ->
     undefined.
 
 prioritize_error(ErrList) ->
@@ -2695,7 +2709,7 @@ prioritize_error(ErrList) ->
 	false -> % only asn1_assignment_error -> take the last
 	    lists:last(ErrList);
 	true -> % contains errors from deeper in a Type
-	    NewErrList = [Err={_,R}|RestErr] =
+	    NewErrList = [_Err={_,_}|_RestErr] =
 		lists:filter(fun({asn1_error,_})->true;(_)->false end,
 			     ErrList),
 	    SplitErrs =
@@ -2742,7 +2756,7 @@ identifier2Extvalueref(#identifier{pos=Pos,val=Name}) ->
 %% lookahead_assignment/1 checks that the next sequence of tokens
 %% in Token contain a valid assignment or the
 %% 'END' token. Otherwise an exception is thrown.
-lookahead_assignment([{'END',_}|Rest]) ->
+lookahead_assignment([{'END',_}|_Rest]) ->
     ok;
 lookahead_assignment(Tokens) ->
     parse_Assignment(Tokens),

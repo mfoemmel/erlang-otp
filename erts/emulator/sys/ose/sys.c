@@ -27,9 +27,10 @@
 #include "efs.h"
 #include "unistd.h"
 #include "fm.sig"
+#include "prh.sig"
 
 #include "erl_sys_driver.h"
-#include "port_signals.sig"
+#include "erl_port_signals.sig"
 
 #include <termios.h>
 
@@ -39,7 +40,6 @@
 #include <string.h>
 #endif
 
-
 #ifndef RETSIGTYPE
 #define RETSIGTYPE void
 #endif
@@ -47,7 +47,7 @@
 #define WANT_NONBLOCKING
 #include "sys.h"
 
-#define MAX_FILES() 256		/* how to find for OSE!? */
+#define MAX_FILES() 256		/* how to find in OSE!? */
 
 EXTERN_FUNCTION(void, erl_exit, (int n, char*, _DOTS_));
 EXTERN_FUNCTION(void, erl_error, (char*, va_list));
@@ -56,7 +56,10 @@ EXTERN_FUNCTION(void, output_ready, (int, int));
 EXTERN_FUNCTION(int, driver_interrupt, (int, int));
 EXTERN_FUNCTION(void, increment_time, (int));
 EXTERN_FUNCTION(int, next_time, (_VOID_));
-EXTERN_FUNCTION(int, send_error_to_logger, (uint32));
+EXTERN_FUNCTION(int, send_error_to_logger, (Uint));
+EXTERN_FUNCTION(int, erl_dbg_fputc, (char, FILE*));
+EXTERN_FUNCTION(int, erl_dbg_vfprintf, (FILE*, char*, va_list));
+EXTERN_FUNCTION(int, erl_dbg_fprintf, (FILE*, char*, ...));
 
 extern Uint erts_max_ports;
 extern PROCESS erl_block;
@@ -67,16 +70,18 @@ extern PROCESS erl_block;
 /* forward declarations */
 static FUNCTION(void, check_io, (int));
 static FUNCTION(void, initialize_allocation, (void));
-
+static FUNCTION(void, start_pgm_server, (void));
+FUNCTION(int,  get_pgm_data, (char*, void**, void**, int*));
+ 
 #define DEFAULT_PORT_STACK_SIZE  4095
 static int port_stack_size;
-
 static int max_files = 50;	/* default configAll.h */
 
-/* 
- * used by the break handler (set by signal handler on ctrl-c)
- */
+static PROCESS stdin_pid_;
+
+/* used by the break handler (set by signal handler on ctrl-c) */
 static volatile int break_requested = 0;
+static int ignore_break = 0;
 
 typedef struct port_entry_ {
   HashBucket hash;
@@ -102,24 +107,31 @@ static int debug_log = 1;
 
 int using_oldshell = 1; 
 
-union SIGNAL {
-  SIGSELECT sig_no;
-};
-
-static PROCESS stdin_pid_;
+#ifdef TRACE_OSE_SIG_ALLOC
+static Uint ose_sig_allocated;
+static Uint ose_sig_allocated_bytes;
+static Uint ose_sig_freed;
+#endif
 
 /********************* General functions ****************************/
 
-void
-erl_sys_init(void)
+void erts_sys_alloc_init(void) {
+  /* initialize heap memory handler */
+  initialize_allocation();
+}
+
+void erl_sys_init(void)
 {
   break_requested = 0;
 
   if ((max_files = MAX_FILES()) < 0)
     erl_exit(1, "Can't get no. of available file descriptors\n");
 
-  /* initialize heap memory handler */
-  initialize_allocation();
+#ifdef TRACE_OSE_SIG_ALLOC
+  ose_sig_allocated = 0;
+  ose_sig_allocated_bytes = 0;
+  ose_sig_freed = 0;
+#endif
 
   /* no stdio buffering */
   setvbuf(stdout, (char *)NULL, _IOLBF, BUFSIZ);
@@ -129,8 +141,13 @@ erl_sys_init(void)
   pt_funs.alloc = (HALLOC_FUN) pt_alloc;
   pt_funs.free = (HFREE_FUN) pt_free;
 
-  hash_init(&pt, "pid2port", PID2PORT_INIT_SZ, pt_funs);
+  hash_init(ERTS_ALC_T_PRT_TAB, &pt, "pid2port", PID2PORT_INIT_SZ, pt_funs);
+}
 
+void erl_sys_init_final(void)
+{
+  /* server for registering (user) port programs and drivers */
+  start_pgm_server();
 }
 
 /*
@@ -138,8 +155,7 @@ erl_sys_init(void)
  * or when Erlang code has performed INPUT_REDUCTIONS reduction
  * steps. runnable == 0 iff there are no runnable Erlang processes.
  */
-void
-erl_sys_schedule(int runnable)
+void erl_sys_schedule(int runnable)
 {
     if (runnable) {
 	check_io(0);		/* Poll for I/O */
@@ -155,6 +171,10 @@ int sys_max_files(void)
 
 
 /************************* Break handling ******************************/
+
+void erts_set_ignore_break(void) {
+  ignore_break = 1;
+}
 
 /* remote break request, makes it possible to signal a break from 
    outside the emulator */
@@ -319,7 +339,7 @@ os_version(int *pMajor, int *pMinor, int *pBuild)
     char *release;		/* Pointer to the release string: X.Y or X.Y.Z. */
     char sysname[MAX_SYS_STR+1]; /* dummy */
 
-    release = sys_alloc(MAX_VER_STR+3);
+    release = erts_alloc(ERTS_ALC_T_TMP, MAX_VER_STR+3);
 
     os_info = get_cpu(current_process());
     split_os_info(os_info, sysname, release);
@@ -328,23 +348,30 @@ os_version(int *pMajor, int *pMinor, int *pBuild)
     *pMinor = get_number(&release);
     *pBuild = get_number(&release);
 
-    sys_free(release);
+    erts_free(ERTS_ALC_T_TMP, release);
     free_buf((union SIGNAL **)&os_info);
 }
 
-typedef struct getenv_state {int c; char* p; char** e;} GetEnvState;
+typedef struct getenv_state {int c; char* p; char** e; char* prev} GetEnvState;
 
 void init_getenv_state(GETENV_STATE *state) {
   char *envstr;
   int len, c=0;
-  char **environment;
+  int getenv_sz = 0;
+  char **environment = NULL;
   GetEnvState *s;
   
-  environment = (char**)sys_alloc(10*sizeof(char*));
-  s = (GetEnvState *)sys_alloc(sizeof(GetEnvState));
+  s = (GetEnvState *) erts_alloc(ERTS_ALC_T_GETENV_STATE,
+				 sizeof(GetEnvState));
   envstr = get_env_list(get_bid(current_process()), NULL); /* get 1st string of vars */
   while((len = strlen(envstr)) > 0) {
-    environment[c] = sys_alloc(len+1);
+    if (c >= getenv_sz) {
+	getenv_sz += 10;
+	environment = (char **) erts_realloc(ERTS_ALC_T_GETENV_STATE,
+					     (void *) environment,
+					     getenv_sz*sizeof(char*));
+    }
+    environment[c] = erts_alloc(ERTS_ALC_T_GETENV_STR, len+1);
     strcpy(environment[c], envstr);
     free_buf((union SIGNAL **)&envstr);
     while((environment[c][len] != 32) && len > 0) len--; /* find last var in string */
@@ -352,43 +379,51 @@ void init_getenv_state(GETENV_STATE *state) {
     envstr = get_env_list(get_bid(current_process()), /* get next string */
 			  (environment[c])+len); 
     c++;
+	
   }
   free_buf((union SIGNAL **)&envstr);
   environment[c] = NULL;
-  s->c = 0; s->p = environment[0]; s->e = environment;
+  s->c = 0; s->p = environment[0]; s->e = environment; s->prev = NULL;
   *state = (GETENV_STATE)s; 
 }
 
+/* Before building and returning a new "var=value" string, we free
+   the string from the previous call. We assume this function will
+   always be called for all variables (i.e. called until it returns 0. */
 char *getenv_string(GETENV_STATE *state0) {
   char *next, *value;
   char* env = NULL;
   GetEnvState *s = (GetEnvState *)*state0;
 
+  if(s->prev != NULL) erts_free(ERTS_ALC_T_GETENV_STR, s->prev);
+
   while(1) {
     if((s->e)[s->c] == NULL) {	
       /* last string processed, clean up */
-      sys_free(s->e);
-      sys_free(s);
+      erts_free(ERTS_ALC_T_GETENV_STATE, s->e);
+      erts_free(ERTS_ALC_T_GETENV_STATE, s);
       return NULL;
     }
     /* if next==NULL, we're at the last var in string */
     if((next = strchr(s->p, 32)) != NULL) 
       *next = '\0';
     if((value = get_env(get_bid(current_process()), s->p)) != NULL) {
-      env = safe_alloc(strlen(s->p)+strlen(value)+2);
+      env = erts_alloc(ERTS_ALC_T_GETENV_STR, strlen(s->p)+strlen(value)+2);
       strcpy(env, s->p);
       strcat(env, "=");
       strcat(env, value);
       free_buf((union SIGNAL **)&value);
     }
     if(next == NULL) {	/* done with this str? if so, try next */
-      sys_free((s->e)[s->c]);
+      erts_free(ERTS_ALC_T_GETENV_STR, (s->e)[s->c]);
       (s->c)++; s->p = (s->e)[s->c];
     } else {
       s->p = (char*)((unsigned int)next + 1);
     }
-    if(env != NULL)
+    if(env != NULL) {
+      s->prev = env;
       return env;
+    }
   }
 }
     
@@ -416,19 +451,11 @@ static SigEntry *sig_buf_1st = NULL; /* buffer of pending signals */
 static SigEntry *sig_buf_last = NULL;
 
 static byte *tmp_buf;
-static Uint32 tmp_buf_size;
+static Uint tmp_buf_size;
 int cerr_pos;
 
 
 /*-------------------------- Drivers -----------------------------*/
-
-/*!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!*/
-/*
-  Various port programs need to ported as well! See c_src for each
-  application + etc in erts! 
-*/
-/*!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!*/
-
 
 struct driver_data_t {
   int port_num;
@@ -490,7 +517,6 @@ const struct erl_drv_entry spawn_driver_entry = {
 
 union portSig {
   SIGSELECT sig_no;
-  struct ErlPid   erl_pid;
   struct PortData port_data;
 };
 
@@ -503,7 +529,12 @@ PROCESS pid_, sec_pid_;
 {
   struct driver_data_t* driver_data;
 
-  driver_data = (struct driver_data_t*)sys_alloc(sizeof(struct driver_data_t));
+  driver_data = erts_alloc_fnf(ERTS_ALC_T_DRIVER_DATA,
+			       sizeof(struct driver_data_t));
+  if(!driver_data) {
+    fprintf(stderr, "Error: Not enough memory for driver! Port=%d\n", port_num);
+    return NULL;
+  }
 
   driver_data->packet_bytes = packet_bytes;
   driver_data->port_num = port_num;
@@ -523,39 +554,42 @@ PROCESS pid_, sec_pid_;
 
 static int port_inp_failure(struct driver_data_t *dd, int res)
 {
-  (void) driver_select(dd->port_num, dd->pid_, DO_READ, 0); 
+  /* res: 0 (eof) or -1 (error) */
+
+  driver_select(dd->port_num, dd->pid_, DO_READ, 0); 
   if (res == 0) {
-    if (dd->report_exit) {
-      int tmpexit = 0;
-      int reported;
-      if ((reported = dd->exit_reported))
-	tmpexit = dd->exitcode;
-      if (reported) {
-	erl_printf(CERR, "Exitcode %d reported\r\n", tmpexit);
-	driver_report_exit(dd->port_num, tmpexit);
-      }
-    }
+    if (dd->report_exit)
+      driver_report_exit(dd->port_num, 0);
+    driver_failure_eof(dd->port_num);
+  } else {
+    driver_failure_atom(dd->port_num, "port_exit");
   }
-  driver_failure(dd->port_num, res);
   return 0;
 }
 
 /*** common driver interface ***/
 
+/* To stop the port process, send an attach signal to it. A properly
+   written port process should detect this and shut down. We shouldn't
+   use kill_proc, since the process might be in a sensitive state. */
+
 static void stop_driver(ErlDrvData driver_data)
 {
   struct driver_data_t* dd = (struct driver_data_t *)driver_data;
+  union AttachSig *sig;
 
-  kill_proc(dd->pid_);		/* stop and delete port process */
+  sig = (union AttachSig *)alloc(sizeof(struct PortData), OS_ATTACH_SIG);
+  send((union SIGNAL **)&sig, dd->pid_);
   driver_select(dd->port_num, dd->pid_, DO_STOP, 1);
   process_counter--;
 
   if(dd->sec_pid_ != 0) {
-    kill_proc(dd->pid_);		/* stop and delete port process */
+    sig = (union AttachSig *)alloc(sizeof(struct PortData), OS_ATTACH_SIG);
+    send((union SIGNAL **)&sig, dd->pid_);
     driver_select(dd->port_num, dd->sec_pid_, DO_STOP, 1);
     process_counter--;
   }
-  sys_free(dd);		
+  erts_free(ERTS_ALC_T_DRIVER_DATA, dd);		
 }
 
 /*** fd driver implementation ***/
@@ -585,7 +619,7 @@ union ackSig {
 
 void send_ack(PROCESS pid_) {
   union ackSig *sig;
-  sig = (union ackSig *)alloc(sizeof(struct ackStruct), ACK_SIG_NO);
+  sig = (union ackSig *)ose_sig_alloc(sizeof(struct ackStruct), ACK_SIG_NO);
   send((union SIGNAL **)&sig, pid_);
 }
 
@@ -593,7 +627,7 @@ void recv_ack() {
   union ackSig *sig;
   static const SIGSELECT recv_ack_sig[2] = {1, ACK_SIG_NO};
   sig = (union ackSig *)receive((SIGSELECT*)recv_ack_sig);
-  free_buf((union SIGNAL **)&sig);
+  ose_sig_free_buf((union SIGNAL **)&sig);
 }
 
 /* This process will handle general fd output, print received buffer
@@ -619,7 +653,7 @@ OS_PROCESS(fdout_process) {
   fdout = fd_sig->fds.fdout;
   in_pid_ = fd_sig->fds.in_pid_;
   erts_ = sender((union SIGNAL **)&fd_sig);
-  free_buf((union SIGNAL **)&fd_sig);
+  ose_sig_free_buf((union SIGNAL **)&fd_sig);
 
   /* Attach to erts so that an OS_ATTACH_SIG is received when
      erlang is shut down. When this happens, also kill the input 
@@ -628,7 +662,7 @@ OS_PROCESS(fdout_process) {
 
   /* wait for something to print out */
   while(1) {
-#ifdef xDEBUG
+#ifdef DEBUG
     printf("Waiting to print to %d...\n\n", fdout);
 #endif
 
@@ -638,7 +672,7 @@ OS_PROCESS(fdout_process) {
 #ifdef DEBUG
       printf("ERTS has terminated, cleaning up... ");
 #endif
-      free_buf((union SIGNAL **)&port_sig);
+      ose_sig_free_buf((union SIGNAL **)&port_sig);
       kill_proc(in_pid_);
       kill_proc(current_process());
 #ifdef DEBUG
@@ -649,7 +683,7 @@ OS_PROCESS(fdout_process) {
     len = port_sig->port_data.len;
     buf = port_sig->port_data.buf;
 
-#ifdef xDEBUG
+#ifdef DEBUG
     printf("Will print \"%s\" (%d bytes) to %d!\n\n", buf, len, fdout);
 #endif
 
@@ -681,7 +715,7 @@ OS_PROCESS(fdout_process) {
     }
     
     /* this must not be called until operation is finished with buf */
-    free_buf((union SIGNAL **)&port_sig);
+    ose_sig_free_buf((union SIGNAL **)&port_sig);
     /* driver (erts_) waits for print operation to finish */
     send_ack(erts_);
   }
@@ -715,7 +749,7 @@ OS_PROCESS(fdin_process) {
   fd_sig = (union fdSig *)receive((SIGSELECT*)recv_fd_sig);
   fdin = fd_sig->fds.fdin;
   erts_ = sender((union SIGNAL **)&fd_sig);
-  free_buf((union SIGNAL **)&fd_sig);
+  ose_sig_free_buf((union SIGNAL **)&fd_sig);
 
   /* check the start mode and suspend the process if noshell is set */
   /* note: to start interactive mode later, simply activate this process again */
@@ -735,7 +769,7 @@ OS_PROCESS(fdin_process) {
     int cursor=0, done=0;
     char ch;
 
-    port_sig = (union portSig *)alloc(max_sig_buf_size, PORT_DATA);
+    port_sig = (union portSig *)ose_sig_alloc(max_sig_buf_size, PORT_DATA);
 
     /* If we're reading from stdin, we need to set the terminal mode to raw
        and handle each character individually to detect a control character.
@@ -784,8 +818,13 @@ OS_PROCESS(fdin_process) {
 		done = 1;
 		break;
 	      case 0x3:		/* ^C (break) */
-		fprintf(stdout, " <break>\n"); /* echo ctrl character */
-		cursor = 0; done = 1;
+		if(!ignore_break) {
+		  fprintf(stdout, " <break>\n"); /* echo ctrl character */
+		  cursor = 0; done = 1;
+		} else {
+		  strcpy(port_sig->port_data.buf, "break_ignored.\n");
+		  cursor = 15; done = 1;
+		}
 		break;
 	      case 0x12:	/*  ^R (new prompt) */
 		fprintf(stdout, " <ignore>\n");
@@ -793,8 +832,13 @@ OS_PROCESS(fdin_process) {
 		cursor = 4; done = 1;
 		break;
 	      case 0x18:	/* ^X (break) */
-		fprintf(stdout, " <break>\n"); /* echo ctrl character */
-		cursor = 0; done = 1;
+		if(!ignore_break) {
+		  fprintf(stdout, " <break>\n"); /* echo ctrl character */
+		  cursor = 0; done = 1;
+		} else {
+		  strcpy(port_sig->port_data.buf, "break_ignored.\n");
+		  cursor = 15; done = 1;
+		}
 		break;
 	      default:
 		port_sig->port_data.buf[cursor++] = ch;
@@ -828,7 +872,7 @@ OS_PROCESS(fdin_process) {
 
     if(cursor > 0) {
       port_sig->port_data.buf[cursor] = '\0';
-#ifdef xDEBUG
+#ifdef DEBUG
       printf("Read \"%s\" from %d (%d bytes)\n\n", port_sig->port_data.buf, fdin, cursor);
 #endif
       port_sig->port_data.len = cursor;
@@ -836,7 +880,7 @@ OS_PROCESS(fdin_process) {
       /* wait until erts is ready for more */
       recv_ack();
     } else {
-      free_buf((union SIGNAL **)&port_sig);
+      ose_sig_free_buf((union SIGNAL **)&port_sig);
       if(cursor == 0) {		/* break */
 	request_break();
 	/* suspend process, will resume after break has been handled */
@@ -861,6 +905,11 @@ fd_start(ErlDrvPort port_num, char *name, SysDriverOpts* opts)
   OSENTRYPOINT *entrypoint_out = &fdout_process;
   OSENTRYPOINT *entrypoint_in = &fdin_process;
   union fdSig *sig;
+  struct driver_data_t* res;
+
+#ifdef DEBUG
+  erl_dbg_fprintf(stdout, "FD driver starting...\n");
+#endif
 
   if (((opts->read_write & DO_READ) && opts->ifd >= max_files) ||
       ((opts->read_write & DO_WRITE) && opts->ofd >= max_files)) {
@@ -872,30 +921,30 @@ fd_start(ErlDrvPort port_num, char *name, SysDriverOpts* opts)
   else
     process_counter+=2;
   
-  out_pid_ = create_process (OS_PRI_PROC, name, entrypoint_out, 
+  out_pid_ = create_process (OS_BG_PROC, name, entrypoint_out, 
 			     (OSADDRESS)port_stack_size, 20, 
 			     0, erl_block, NULL, 0, 0);
   efs_clone(out_pid_);
   start(out_pid_);
 
-  in_pid_ = create_process (OS_PRI_PROC, name, entrypoint_in, 
+  in_pid_ = create_process (OS_BG_PROC, name, entrypoint_in, 
 			    (OSADDRESS)port_stack_size, 20, 
 			    0, erl_block, NULL, 0, 0);
   efs_clone(in_pid_);
   start(in_pid_);
   
-#ifdef xDEBUG
+#ifdef DEBUG
   printf("Spawned fd processes %li(in) %li(out)\n", 
 	 (unsigned long)in_pid_, (unsigned long)out_pid_); 
 #endif
 
-  sig = (union fdSig *)alloc(sizeof(struct fdStruct), FD_SIG_NO);
+  sig = (union fdSig *)ose_sig_alloc(sizeof(struct fdStruct), FD_SIG_NO);
   sig->fds.fdout = 0;
   sig->fds.fdin =  opts->ifd;
   sig->fds.in_pid_ = 0;  
   send((union SIGNAL **)&sig, in_pid_);
 
-  sig = (union fdSig *)alloc(sizeof(struct fdStruct), FD_SIG_NO);
+  sig = (union fdSig *)ose_sig_alloc(sizeof(struct fdStruct), FD_SIG_NO);
   sig->fds.fdout = opts->ofd;
   sig->fds.fdin =  0;
   sig->fds.in_pid_ = in_pid_;
@@ -912,8 +961,10 @@ fd_start(ErlDrvPort port_num, char *name, SysDriverOpts* opts)
 
   /* make sure input process is set as main process, we will not
      receive anything from the output process */
-  return (ErlDrvData)(set_driver_data(port_num, packet_bytes,
-				      opts->exit_status, in_pid_, out_pid_));
+  if((res = set_driver_data(port_num, packet_bytes,
+			    opts->exit_status, in_pid_, out_pid_)) == NULL)
+    return ERL_DRV_ERROR_GENERAL;
+  return (ErlDrvData)res;
 }
 
 /* Erlang writes to fd */
@@ -925,12 +976,15 @@ static void fd_output(ErlDrvData drv_data, char *buf, int len)
 
   out_pid_ = dd->sec_pid_;
 
-  sig = (union portSig *)alloc(sizeof(struct PortData)+len, PORT_DATA);
+  if(len > 65536)
+    erl_dbg_fprintf(stderr, "\r\nWARNING! fd_out signal = %d bytes!\r\n", len);
+
+  sig = (union portSig *)ose_sig_alloc(sizeof(struct PortData)+len, PORT_DATA);
   memcpy(sig->port_data.buf, buf, len);
   sig->port_data.buf[len] = '\0'; 
   sig->port_data.len = len;
-
-#ifdef xDEBUG
+  
+#ifdef DEBUG
   printf("Sending \"%s\" (%d bytes) to %li\n", sig->port_data.buf, len, 
 	 (unsigned long)out_pid_);
 #endif
@@ -955,7 +1009,7 @@ static void fd_ready_input(ErlDrvData drv_data, ErlDrvEvent sig)
   len = signal->port_data.len;
   buf = signal->port_data.buf;
   
-#ifdef xDEBUG
+#ifdef DEBUG
   printf("Receiving %d bytes (\"%s\") from %li, port %d\n", len, buf, 
 	 (unsigned long)pid_, port_num);
 #endif
@@ -971,7 +1025,7 @@ static void fd_ready_input(ErlDrvData drv_data, ErlDrvEvent sig)
   /* tell input process it's ok to read more*/
   send_ack(pid_);
 
-  free_buf((union SIGNAL **)&signal);
+  ose_sig_free_buf((union SIGNAL **)&signal);
 }
 
 
@@ -993,29 +1047,15 @@ static int spawn_init(void)
   return 0;
 }
 
-/* extern OSENTRYPOINT erl_port_init0; */
-extern int user_port_map(char*, void**);
-
-static int sys_port_map(char *name, void **func) {
-  /*
-  if(strcmp(name, "sys_port1") == 0) {
-    *func = (void)&sys_port1;
-    return 1;
-  }
-  */
-  return 0;
-}
-
 static ErlDrvData
 spawn_start(ErlDrvPort port_num, char *name, SysDriverOpts* opts)
 {
     int packet_bytes = opts->packet_bytes;
     PROCESS port_pid_;
-    /*    OSENTRYPOINT *entrypoint = &erl_port_init0;  */
     OSENTRYPOINT *entrypoint = NULL;
     union portSig *sig;
-    int result;
     void *func = NULL;
+    struct driver_data_t* res;
 
 #ifdef DEBUG
     printf("Spawn driver starting: %s, port %d\n", name, (int)port_num);
@@ -1026,43 +1066,35 @@ spawn_start(ErlDrvPort port_num, char *name, SysDriverOpts* opts)
     else
       process_counter++;
 
-    /* create and start OSE port process */
-    /* later create separate block for port processes so they don't
-       interfere with erts */
-    
-    if(!(result = sys_port_map(name, &func)))
-      result = user_port_map(name, &func);
-
-    if(result) {
-      entrypoint = func;
-#ifdef DEBUG
-      printf("Creating process, type: %d, prio: %d, entry: %x\n", 
-	     opts->process_type, opts->priority, *entrypoint);
-#endif
-      
-      port_pid_ = create_process(opts->process_type, name, entrypoint, 
-				 (OSADDRESS)port_stack_size, opts->priority, 
-				 0, erl_block, NULL, 0, 0);
-      efs_clone(port_pid_);
-      start(port_pid_);
-      attach(NULL, port_pid_);
-      
-      /* send id of erts process to port process */
-      sig = (union portSig *)alloc(sizeof(struct ErlPid), ERL_PID);
-      sig->erl_pid.pid_ = current_process();
-      send((union SIGNAL **)&sig, port_pid_);
-
-#ifdef DEBUG
-      printf("Spawned %s as process %li\n", name, (unsigned long)port_pid_);
-#endif      
-      return (ErlDrvData)(set_driver_data(port_num, packet_bytes,
-					  opts->exit_status, port_pid_, 0));
-    } else {
-      fprintf(stderr, "Invalid port process name \"%s\", not started!", name);
-      return (ErlDrvData) -1;
+    /* create and start OSE port process
+       first lookup the process entrypoint from the pgm server */
+    if(!get_pgm_data(name, &func, NULL, NULL)){
+      fprintf(stderr, "Port process entrypoint for \"%s\" not registered!", name);
+      return (ErlDrvData)ERL_DRV_ERROR_GENERAL;
     }
-}
+    entrypoint = func;
+    port_pid_ = create_process(opts->process_type, name, entrypoint, 
+			       (OSADDRESS)port_stack_size, opts->priority, 
+			       0, erl_block, NULL, 0, 0);
+#ifdef DEBUG
+    erl_dbg_fprintf(stdout, "Creating process %s, port: %d, type: %d, prio: %d, pid: %li\n", 
+		    name, (int)port_num, opts->process_type, opts->priority, 
+		    (unsigned long)port_pid_);
+#endif
+    
+    efs_clone(port_pid_);
+    start(port_pid_);
+    attach(NULL, port_pid_);
+    
+#ifdef DEBUG
+    erl_dbg_fprintf(stdout, "Spawned %s as process %li\n", name, (unsigned long)port_pid_);
+#endif      
 
+    if((res = set_driver_data(port_num, packet_bytes,
+			      opts->exit_status, port_pid_, 0)) == NULL)
+      return ERL_DRV_ERROR_GENERAL;
+    return (ErlDrvData)res;
+}
 
 /* Erlang sends message to port */
 static void output(ErlDrvData drv_data, char* buf, int len)
@@ -1073,9 +1105,28 @@ static void output(ErlDrvData drv_data, char* buf, int len)
   union portSig *sig;
   
   pid_ = dd->pid_;
-  pb = dd->packet_bytes;	/* used if not stream mode!? */
+  pb = dd->packet_bytes;	
 
-  sig = (union portSig *)alloc(sizeof(struct PortData)+len, PORT_DATA);
+  /* Only stream mode makes sense to use for OSE port communication. However,
+     FOR TESTING PURPOSES we need to support packet mode as well. In packet
+     mode an initial OSE signal will be sent only containing the header bytes
+     (the length indicator of 1,2 or 4 bytes) in buf. This signal is followed 
+     by the signal containing the actual message. Note that the len element in
+     the "header signal" will be set to 0. */
+
+  if(pb > 0) {
+    int i, n;
+    sig = (union portSig *)ose_sig_alloc(sizeof(struct PortData)+pb, PORT_DATA);
+    n = len;
+    for(i = pb; i > 0; i--) {
+	sig->port_data.buf[i-1] = (char) n;	/* store least significant byte. */
+	n = n >> 8;
+    }
+    sig->port_data.len = 0;
+    send((union SIGNAL **)&sig, pid_);
+  }
+
+  sig = (union portSig *)ose_sig_alloc(sizeof(struct PortData)+len, PORT_DATA);
   memcpy(sig->port_data.buf, buf, len);
   sig->port_data.buf[len] = '\0';
   sig->port_data.len = len;
@@ -1090,22 +1141,33 @@ static void ready_input(ErlDrvData drv_data, ErlDrvEvent sig)
   struct driver_data_t *dd = (struct driver_data_t *)drv_data;
   union portSig *signal = (union portSig *)sig;
   int port_num, len;
+  int result;
 
   port_num = dd->port_num;
 
+  /* if the port process has terminated, this should result in an exit
+     unless the report_exit flag is set */
   if(signal->sig_no == OS_ATTACH_SIG) {
-    fprintf(stderr, "Port process has terminated, closing port %d!\n", (int)port_num);
-    driver_exit(port_num, 0);
+#ifdef DEBUG
+    erl_dbg_fprintf(stderr, "Port process has terminated, closing port %d!\n", (int)port_num);
+#endif
+    port_inp_failure(dd, 0);
   } else {
     len = signal->port_data.len;
-    if (len > 0)
-      driver_output(port_num, signal->port_data.buf, len);
-    else
+    if (len >= 0) {
+      if((result = driver_output(port_num, signal->port_data.buf, len)) < 0) {
+#ifdef DEBUG
+	erl_dbg_fprintf(stderr, "Invalid port (%d) or bad data, %d bytes ignored!\n",
+			(int)port_num, len);
+#endif
+      }
+    } else { 
+      fprintf(stderr, "Data from port process %d has undefined size!\n", (int)port_num);
       port_inp_failure(dd, -1);
+    }
   }
-  free_buf((union SIGNAL **)&signal);
+  ose_sig_free_buf((union SIGNAL **)&signal);
 }
-
 
 /*----------------------- port I/O ctrl --------------------------*/
 
@@ -1168,7 +1230,7 @@ static void check_input_ready(void *sig)
 #ifdef DEBUG
       printf("Signal from process: %li. Driver stopped!?\n", (unsigned long)pid_);
 #endif
-    free_buf((union SIGNAL **)&sig);    
+    ose_sig_free_buf((union SIGNAL **)&sig);    
   }
 }
 
@@ -1212,8 +1274,8 @@ static void check_io(int wait)
 #ifdef xDEBUG
       from_ = sender((union SIGNAL **)&sig);
       pcbBuff = get_pcb(from_);
-      printf("Signal %d from %li (%s) received!\n", ((union SIGNAL *)sig)->sig_no, 
-	     (unsigned long)from_, &pcbBuff->strings[pcbBuff->name]);
+      erl_dbg_fprintf(stdout, "Signal %d from %li (%s) received!\n", ((union SIGNAL *)sig)->sig_no, 
+		      (unsigned long)from_, &pcbBuff->strings[pcbBuff->name]);
       free_buf((union SIGNAL **) &pcbBuff);
 #endif
       check_input_ready(sig);
@@ -1237,7 +1299,7 @@ static void check_io(int wait)
 }
 
 /* add signal to be processed by check_io */
-int driver_sig_pending(ErlDrvPort ix, void *sig) {
+int erl_driver_sig_pending(ErlDrvPort ix, void *sig) {
   return buffer_sig(ix, sig, sigQ_1st, sigQ_last);
 }
 
@@ -1246,7 +1308,7 @@ static int
 buffer_sig(ErlDrvPort ix, void *sig, SigEntry *q0, SigEntry *q1) {
   SigEntry *new_sig;
 
-  new_sig = (SigEntry *)sys_alloc(sizeof(SigEntry));
+  new_sig = (SigEntry *) erts_alloc(ERTS_ALC_T_SIG_ENTRY, sizeof(SigEntry));
   new_sig->next_sig = NULL;
   new_sig->port = ix;
   new_sig->sig = sig;
@@ -1273,8 +1335,8 @@ process_sigs(int action, PROCESS pid_, SigEntry *src0, SigEntry *src1,
 	buffer_sig((ErlDrvPort)curr->port, curr->sig, target0, target1);
       if (curr != prev) {
 	prev->next_sig = curr->next_sig;
-	sys_free(curr);
-	if (action == DELETE) free_buf((union SIGNAL **)(&(curr->sig)));
+	erts_free(ERTS_ALC_T_SIG_ENTRY, curr);
+	if (action == DELETE) ose_sig_free_buf((union SIGNAL **)(&(curr->sig)));
 	curr = prev->next_sig;
       }
       else {			/* curr is first elem in list */
@@ -1282,8 +1344,8 @@ process_sigs(int action, PROCESS pid_, SigEntry *src0, SigEntry *src1,
 	  src1 = src0 = curr->next_sig;
 	else
 	  src0 = curr->next_sig;
-	sys_free(curr);
-	if (action == DELETE) free_buf((union SIGNAL **)(&(curr->sig)));
+	erts_free(ERTS_ALC_T_SIG_ENTRY, curr);
+	if (action == DELETE) ose_sig_free_buf((union SIGNAL **)(&(curr->sig)));
 	curr = prev = src0;
       }
     }
@@ -1377,7 +1439,7 @@ static int pt_cmp(void *src, void *test) {
 }
 
 static void* pt_alloc(void *bucket) {
-  port_entry *entry = sys_alloc(sizeof(port_entry));
+  port_entry *entry = erts_alloc(ERTS_ALC_T_PRT_ENTRY, sizeof(port_entry));
   entry->port = ((port_entry *) bucket)->port;
   entry->pid_ = ((port_entry *) bucket)->pid_;
   entry->state = ((port_entry *) bucket)->state;
@@ -1385,9 +1447,263 @@ static void* pt_alloc(void *bucket) {
 }
 
 static void pt_free(void *bucket) {
-  sys_free(bucket);
+  erts_free(ERTS_ALC_T_PRT_ENTRY, bucket);
 }
 
+
+/********** Port prog and driver registration server ***********/
+
+#define MAX_ENTRIES erts_max_ports
+
+/* the PGM server should use a separate heap (i.e. call OSE 
+   malloc instead of erts_alloc) */
+#define PGM_SERVER_ALLOC(size) malloc(size)
+/* #define PGM_SERVER_ALLOC(size) erts_alloc(ERTS_ALC_T_PGM_TAB, size) */
+#define PGM_SERVER_FREE(p) free(p)
+/* #define PGM_SERVER_FREE(p) erts_free(ERTS_ALC_T_PGM_ENTRY, p) */
+
+extern void reg_erl_user_pgms(void);
+
+union pgmSig {
+  SIGSELECT sigNo;
+  struct pgm_entry pgm;
+};
+
+OS_PROCESS(erl_sys_pgm_server) {
+  union pgmSig *sig;
+  static const SIGSELECT select[] = {0};
+  pgmEntry **pgms;
+  int pgmcount = 0;
+  int i = 0;
+  PROCESS erts_, client_;
+
+#ifdef DEBUG
+  erl_dbg_fprintf(stdout, "erl_sys_pgm_server %li started\n", 
+		  (unsigned long)current_process());
+#endif
+
+  hunt(ERTS_OSE_PROC_NAME, 0, &erts_, NULL);
+  attach(NULL, erts_);
+
+  pgms = PGM_SERVER_ALLOC((MAX_ENTRIES * sizeof(pgmEntry*)));
+
+  while(1) {
+    sig = (union pgmSig *)receive((SIGSELECT *)select);
+    switch(sig->sigNo) {
+    case REG_PGM:
+#ifdef DEBUG
+      printf("Received reg_pgm: {%s,%X,%d}\n", 
+	     sig->pgm.name, sig->pgm.entrypoint, sig->pgm.is_static);
+#endif
+      pgms[pgmcount] = PGM_SERVER_ALLOC((sizeof(pgmEntry) + strlen(sig->pgm.name)));
+      strcpy(pgms[pgmcount]->name, sig->pgm.name);
+      pgms[pgmcount]->entrypoint = sig->pgm.entrypoint;
+      pgms[pgmcount]->hnd = sig->pgm.hnd;
+      pgms[pgmcount]->is_static = sig->pgm.is_static;
+      free_buf((union SIGNAL **)&sig);
+      pgmcount++;
+      break;  
+    case DEL_PGM:
+      /* find entry given name,
+	 move all preceeding entries one step back */
+      i = 0;
+      while((strcmp(pgms[i]->name, sig->pgm.name) != 0) && (i < pgmcount)) i++;
+      if(i == pgmcount) {	/* not found */
+	fprintf(stderr, "Cannot delete program %s, not registered!\n", sig->pgm.name);	 
+	free_buf((union SIGNAL **)&sig);
+	break;
+      }
+#ifdef DEBUG
+      printf("Will delete entry %d(%d), %s, %X\n", i, pgmcount, pgms[i]->name, pgms[i]->entrypoint);
+#endif
+      PGM_SERVER_FREE(pgms[i]);
+      while(i < (pgmcount-1)) { pgms[i] = pgms[i+1]; i++; }
+      --pgmcount;
+      client_ = sender((union SIGNAL **)&sig);
+      send((union SIGNAL **)&sig, client_);      
+      break;    
+    case OS_ATTACH_SIG:
+      free_buf((union SIGNAL **)&sig);
+      kill_proc(current_process());
+      break;
+    case GET_PGM:		/* lookup pgm data */
+    case ADD_HND:		/* add program handle */
+    default:			
+      i = 0;
+      while(i < pgmcount) {
+	if( (strcmp(pgms[i]->name, sig->pgm.name) == 0) ||
+	    ( (sig->pgm.entrypoint != NULL) && 
+	      (pgms[i]->entrypoint == sig->pgm.entrypoint) ) ) {
+	  if(sig->sigNo == ADD_HND)
+	    pgms[i]->hnd = sig->pgm.hnd;
+	  else {		/* pgm data */
+	    strcpy(sig->pgm.name, pgms[i]->name);
+	    sig->pgm.hnd = pgms[i]->hnd;
+	    sig->pgm.is_static = pgms[i]->is_static;
+	  }
+	  sig->pgm.entrypoint = pgms[i]->entrypoint;
+	  break;
+	}
+	i++;
+      }
+      if(i == pgmcount) sig->pgm.entrypoint = NULL; /* not found */
+      client_ = sender((union SIGNAL **)&sig);
+      send((union SIGNAL **)&sig, client_);
+    }
+  }
+}
+
+static void start_pgm_server(void) {
+  PROCESS server_;
+
+  server_ = create_process(OS_BG_PROC, PGM_SERVER,
+			   erl_sys_pgm_server,
+			   65535, 20, 0,
+			   erl_block, NULL, 0, 0);
+  efs_clone(server_);
+  start(server_);
+
+  /* call function to register all static port progs and drivers */
+  reg_erl_user_pgms();
+}
+
+/* 
+   search for data given name or entrypoint
+
+   name == NULL:    search on entrypoint, ignore name value
+   name[0] == '\0': search on entrypoint, fill name with found program name
+   name == <pgm>  : search on name, possibly set entrypoint to found value
+
+   no search on hnd or is_static
+*/
+int get_pgm_data(char *name, void **entrypoint, void **hnd, int *is_static) {
+  union pgmSig *sig;
+  static const SIGSELECT select[] = {1, GET_PGM};
+  PROCESS server_;
+
+  if(!hunt(PGM_SERVER, 0, &server_, NULL)) {
+    fprintf(stderr, "sys_get_pgm_data: %s not running!\n", PGM_SERVER);
+    return 0;
+  }
+
+  if((name != NULL) && (name[0] != '\0')) { /* name is key */
+    sig = (union pgmSig *)alloc(sizeof(pgmEntry) + strlen(name), GET_PGM);  
+    strcpy(sig->pgm.name, name);   
+  } else {
+    sig = (union pgmSig *)alloc(sizeof(pgmEntry) + 256, GET_PGM);
+    sig->pgm.name[0] = '\0';
+  }
+
+  if(entrypoint != NULL) 
+    sig->pgm.entrypoint = *entrypoint;
+  else
+    sig->pgm.entrypoint = NULL;
+
+  send((union SIGNAL **)&sig, server_);
+  sig = (union pgmSig *)receive((SIGSELECT *) select);
+
+  if(sig->pgm.entrypoint == NULL) { /* not found */
+    free_buf((union SIGNAL **)&sig);
+    return 0;
+  }
+  if(name != NULL) strcpy(name, sig->pgm.name);
+  if(entrypoint != NULL) *entrypoint = sig->pgm.entrypoint;
+  if(hnd != NULL)        *hnd =        sig->pgm.hnd;
+  if(is_static != NULL)  *is_static =  sig->pgm.is_static;
+  free_buf((union SIGNAL **)&sig);
+  return 1;
+}
+
+static int reg_pgm(char *name, void *entry, PROCESS from_) {
+  union pgmSig *sig;
+  PROCESS erts_, server_;
+
+  hunt(ERTS_OSE_PROC_NAME, 0, &erts_, NULL);
+
+  if(!hunt(PGM_SERVER, 0, &server_, NULL)) {
+    fprintf(stderr, "sys_reg_pgm(%s): %s not running!\n", name, PGM_SERVER);
+    kill_proc(current_process());
+  }
+  sig = (union pgmSig *)alloc(sizeof(pgmEntry) + strlen(name), REG_PGM);
+  strcpy(sig->pgm.name, name);
+  sig->pgm.hnd = NULL;
+  sig->pgm.entrypoint = entry;
+  if(from_ == erts_)		/* static programs are reg. by erts_ */
+    sig->pgm.is_static = 1;    
+  else 
+    sig->pgm.is_static = 0;
+  send((union SIGNAL **)&sig, server_);
+  return 0;
+}
+
+void del_pgm(char *name) {
+  union pgmSig *sig;
+  static const SIGSELECT select[] = {1, DEL_PGM};
+  PROCESS server_;
+  
+  if(!hunt(PGM_SERVER, 0, &server_, NULL)) {
+    fprintf(stderr, "sys_del_pgm(%s): %s not running!\n", name, PGM_SERVER);
+    kill_proc(current_process());
+  }
+  sig = (union pgmSig *)alloc(sizeof(pgmEntry) + strlen(name), DEL_PGM);
+  strcpy(sig->pgm.name, name);
+  send((union SIGNAL **)&sig, server_);
+  sig = (union pgmSig *)receive((SIGSELECT *) select);
+  free_buf((union SIGNAL **)&sig);
+}
+
+int unreg_pgm(char *name) {
+  int is_static;
+
+  if(get_pgm_data(name, NULL, NULL, &is_static)) {
+    if(is_static) {
+      /* fprintf(stderr, "%s is static and cannot be unregistered\n", name); */
+      return -1;
+    } else {
+      del_pgm(name);
+      return 0;
+    }
+  }
+  fprintf(stderr, "%s is not a registered program\n", name);
+  return -1;
+}
+
+/* exported functions for registering static user drivers and port programs
+   (dynamic programs use a lib) */
+int erl_reg_port_prog(char *name, OSENTRYPOINT *entrypoint, PROCESS from_) {
+  reg_pgm(name, (void*)entrypoint, from_);
+}
+int erl_unreg_port_prog(char *name) {
+  unreg_pgm(name);
+}
+int erl_reg_driver(char *name, void *drv_init_func, PROCESS from_) {
+  reg_pgm(name, drv_init_func, from_);
+}
+int erl_unreg_driver(char *name) {
+  unreg_pgm(name);
+}
+
+/* used by ose_ddll_drv to save the program handle with the driver info */
+int add_pgm_handle(char *name, void *hnd) {
+  union pgmSig *sig;
+  static const SIGSELECT select[] = {1, ADD_HND};
+  PROCESS server_;
+  int result;
+
+  if(!hunt(PGM_SERVER, 0, &server_, NULL)) {
+    fprintf(stderr, "sys_add_hnd(%s): %s not running!\n", name, PGM_SERVER);
+    return 0;
+  }
+  sig = (union pgmSig *)alloc(sizeof(pgmEntry) + strlen(name), ADD_HND);
+  strcpy(sig->pgm.name, name);
+  sig->pgm.hnd = hnd;
+  sig->pgm.entrypoint = NULL;
+  send((union SIGNAL **)&sig, server_);
+  sig = (union pgmSig *)receive((SIGSELECT *) select);
+  result = (sig->pgm.entrypoint == NULL ? 0 : 1);
+  free_buf((union SIGNAL **)&sig);
+  return result;
+}
 
 /************************** Misc *******************************/
 
@@ -1401,17 +1717,17 @@ int sys_putenv(char *buffer) {
   int result;
 
   tmp = strtok(buffer, "=");
-  var = safe_alloc(strlen(tmp)+1);
+  var = erts_alloc(ERTS_ALC_T_PUTENV_STR, strlen(tmp)+1);
   strcpy(var, tmp);
   tmp =  strtok(NULL, "=");
-  value = safe_alloc(strlen(tmp)+1);
+  value = erts_alloc(ERTS_ALC_T_PUTENV_STR, strlen(tmp)+1);
   strcpy(value, tmp);
   strtok(NULL, " ");
   result = set_env (get_bid(current_process()), var, value);
   return result;
 }
 
-void sys_init_io(byte *buf, Uint32 size) 
+void sys_init_io(byte *buf, Uint size) 
 {
   tmp_buf = buf;
   tmp_buf_size = size;
@@ -1440,10 +1756,18 @@ void sys_printf(CIO where, char* format, ...)
 #endif
   
   if (where == CERR) {
+#ifndef USE_ERL_DEBUG_PRINTF
     erl_error(format, va);
+#else
+    erl_dbg_vfprintf(stderr, format, va);
+#endif
   }
   else if (where == COUT) {
+#ifndef USE_ERL_DEBUG_PRINTF
     vfprintf(stdout, format, va);
+#else
+    erl_dbg_vfprintf(stdout, format, va);
+#endif
   }
   else if (where == CBUF) {
     if (cerr_pos < TMP_BUF_MAX) {
@@ -1481,7 +1805,11 @@ void sys_putc(int ch, CIO where)
       erl_exit(1, "Internal buffer overflow in erl_printf\n");
   }
   else if (where == COUT)
+#ifndef USE_ERL_DEBUG_PRINTF
     fputc(ch, stdout);
+#else
+    erl_dbg_fputc(ch, stdout);
+#endif
   else
     sys_printf(where, "%c", ch);
 }
@@ -1523,10 +1851,15 @@ int sys_get_key(int fd)
 void
 erl_assert_error(char* expr, char* file, int line)
 {   
+#ifndef USE_ERL_DEBUG_PRINTF
     fflush(stdout);
     fprintf(stderr, "Assertion failed: %s in %s, line %d\n",
 	    expr, file, line);
     fflush(stderr);
+#else
+    erl_dbg_fprintf(stderr, "Assertion failed: %s in %s, line %d\n",
+		    expr, file, line);
+#endif
     erl_crash_dump(NULL, NULL);
     abort();
 }
@@ -1540,7 +1873,11 @@ erl_debug(char* fmt, ...)
     va_start(va, fmt);
     vsprintf(sbuf, fmt, va);
     va_end(va);
+#ifndef USE_ERL_DEBUG_PRINTF
     fprintf(stderr, "%s\n", sbuf);
+#else
+    erl_dbg_fprintf(stderr, "%s\n", sbuf);
+#endif
 }
 
 #endif /* DEBUG */
@@ -1591,92 +1928,10 @@ static void initialize_allocation(void){
 #endif
 }
 
-#ifdef INSTRUMENT
-/* When instrumented sys_alloc and friends are implemented in utils.c */
-#define SYS_ALLOC_ELSEWHERE
-#endif
-
-/* A = alloc |realloc | free */
-#ifdef SYS_ALLOC_ELSEWHERE
-
-/* sys_A implemented elsewhere (calls sys_A2) ... */ 
-#ifndef sys_alloc2
-/* ... and sys_A2 makros not used; use this implementation as sys_A2 */
-#define SYS_ALLOC   sys_alloc2
-#define SYS_REALLOC sys_realloc2
-#define SYS_FREE    sys_free2
-#else  /* ifndef sys_alloc2 */
-/* ... and sys_A2 makros used; don't use this implementation as sys_A2 */
-#endif /* ifndef sys_alloc2 */
-
-#else /* #ifdef SYS_ALLOC_ELSEWHERE */
-
-/* sys_A not implemented elsewhere ... */
-#ifndef sys_alloc2
-/* ... and sys_A2 makros not used; skip sys_A2 and use
-   this implementation as sys_A */
-#define SYS_ALLOC   sys_alloc
-#define SYS_REALLOC sys_realloc
-#define SYS_FREE    sys_free
-
-#else /* ifndef sys_alloc2 */
-
-/* ... and sys_A2 makros used; need sys_A (symbols) */
-void* sys_alloc(Uint size)              { return sys_alloc2(size);        }
-void* sys_realloc(void* ptr, Uint size) { return sys_realloc2(ptr, size); }
-void* sys_free(void* ptr)               { return sys_free2(ptr);          }
-#endif /* ifndef sys_alloc2 */
-
-#endif /* #ifdef SYS_ALLOC_ELSEWHERE */
-
-#ifdef SYS_ALLOC 
-
-/* 
- * !!!!!!!  Allocated blocks MUST be aligned correctly !!!!!!!!!
- */
-#define MEM_BEFORE  ((Uint) 0xABCDEF97)
-
-#define MEM_AFTER1  ((byte) 0xBA)
-#define MEM_AFTER2  ((byte) 0xDC)
-#define MEM_AFTER3  ((byte) 0xFE)
-#define MEM_AFTER4  ((byte) 0x77)
-
-#define SL_MALLOC_MEM_BEFORE ((Uint) ~MEM_BEFORE)
-
-#define SL_MALLOC_MEM_AFTER1 ((byte) ~MEM_AFTER1)
-#define SL_MALLOC_MEM_AFTER2 ((byte) ~MEM_AFTER2)
-#define SL_MALLOC_MEM_AFTER3 ((byte) ~MEM_AFTER3)
-#define SL_MALLOC_MEM_AFTER4 ((byte) ~MEM_AFTER4)
-
-#define SIZEOF_AFTER 4
-
-#define SET_AFTER(p) \
-  (p)[0] = MEM_AFTER1; (p)[1] = MEM_AFTER2; \
-  (p)[2] = MEM_AFTER3; (p)[3] = MEM_AFTER4
-
-#define CLEAR_AFTER(p) \
-  (p)[0] = 0; (p)[1] = 0; \
-  (p)[2] = 0; (p)[3] = 0
-
-#define CHECK_AFTER(p) \
-  ((p)[0] == MEM_AFTER1 && (p)[1] == MEM_AFTER2 && \
-  (p)[2] == MEM_AFTER3 && (p)[3] == MEM_AFTER4)
-  
-typedef union most_strict {
-    double x;
-    long y;
-} Most_strict;
-
-typedef struct memory_guard {
-    Uint pattern;			/* Fence pattern. */
-    Uint size;				/* Size of allocated memory block. */
-    Most_strict block[1];		/* Ensure proper alignment. */
-} Memory_guard;
-
-#define MEM_GUARD_SZ (sizeof(Memory_guard) - sizeof(Most_strict))
-
 void *sys_calloc2(Uint nelem, Uint elsize) {
-  void *ptr = sys_ose_calloc(nelem, elsize);
+  void *ptr = erts_alloc_fnf(ERTS_ALC_T_UNDEF, nelem*elsize);
+  if(ptr)
+    memset(ptr, 0, nelem*elsize);
   return ptr;
 }
 
@@ -1685,156 +1940,52 @@ void *sys_calloc2(Uint nelem, Uint elsize) {
 /*
  * The malloc wrapper
  */
-void *SYS_ALLOC(Uint size) {
-    register byte *p;
-
-#ifdef DEBUG
-    size += MEM_GUARD_SZ + SIZEOF_AFTER;
-#endif
-
-    /* printf("Allocating %d bytes (%li allocated)\n", size, allocated);
-       allocated += size; */
-
+void *erts_sys_alloc(ErtsAlcType_t t, void *x, Uint size)
+{
 #ifdef ENABLE_ELIB_MALLOC
-    p = (byte *)elib_malloc((size_t)size);
+    return elib_malloc((size_t)size);
 #else
-    p = (byte *)sys_ose_malloc(size);
+    return sys_ose_malloc(size);
 #endif
 
-#ifdef DEBUG
-    if (p != NULL) {
-	Memory_guard* before = (Memory_guard *) p;
-	byte* after;
-
-	p += MEM_GUARD_SZ;
-	before->pattern = MEM_BEFORE;
-	before->size = size - MEM_GUARD_SZ - SIZEOF_AFTER;
-	after = p + before->size;
-	SET_AFTER(after);
-    }
-#endif    
-    return (void*)p;
 }
 
 /*
  * The realloc wrapper
  */
-void *SYS_REALLOC(void *ptr, Uint size) {
-    register byte *p;
-
-#ifdef DEBUG
-    {
-      Uint old_size;
-      Memory_guard* before;
-      byte* after;
-      
-      /* Note: realloc(NULL, size) is supposed to work, even in DEBUG mode. */
-      if (ptr) {
-	p = (byte *) ptr;
-	before = (Memory_guard *) (p-MEM_GUARD_SZ);
-	if (before->pattern != MEM_BEFORE) {
-	  if(before->pattern == SL_MALLOC_MEM_BEFORE
-	     && ((byte *)p+before->size)[0] == SL_MALLOC_MEM_AFTER1
-	     && ((byte *)p+before->size)[1] == SL_MALLOC_MEM_AFTER2
-	     && ((byte *)p+before->size)[2] == SL_MALLOC_MEM_AFTER3
-	     && ((byte *)p+before->size)[3] == SL_MALLOC_MEM_AFTER4)
-	    erl_exit(1,
-		     "sys_realloc on memory allocated by sl_malloc/sl_realloc at "
-		     "0x%p (size %d)\n",
-		     ptr,
-		     before->size);
-	  
-	  erl_exit(1, "realloc: Fence before memory at 0x%p clobbered\n",
-		   ptr);
-	}
-	old_size = before->size;
-	after = p+old_size;
-	if (!CHECK_AFTER(after)) {
-	  erl_exit(1, "realloc: Fence after memory at 0x%p (size %d) clobbered\n",
-		   ptr, size);
-	}
-	ptr = ((byte*) ptr) - MEM_GUARD_SZ;
-	size += MEM_GUARD_SZ + SIZEOF_AFTER;
-      }
-    }
-#endif
-    
+void *
+erts_sys_realloc(ErtsAlcType_t type, void *extra, void *ptr, Uint size)
+{
 #ifdef ENABLE_ELIB_MALLOC
     if(alloc_flags & REALLOC_MOVES) {
+      byte *p;
       size_t osz = elib_sizeof(ptr);
       p = (byte*)elib_malloc((size_t) size);
       if(p != NULL){
 	memcpy(p, ptr,(((size_t)size) < osz) ? ((size_t)size) : osz);
 	elib_free(ptr);
       }
+      return p;
     } else {
-      p = (byte*)elib_realloc(ptr,(size_t)size);
+	return elib_realloc(ptr,(size_t)size);
     }
 #else
-    p = (byte*)sys_ose_realloc(ptr, size);
+    return sys_ose_realloc(ptr, size);
 #endif
-
-#ifdef DEBUG
-    if (p != NULL) {
-	before = (Memory_guard *) p;
-	before->size = size-MEM_GUARD_SZ-SIZEOF_AFTER;
-	p += MEM_GUARD_SZ;
-	after = p + before->size;
-	SET_AFTER(after);
-    }
-#endif
-    return (void*)p;
 }
 
 /*
  * The free wrapper
  */
-void SYS_FREE(void *ptr) {
-#ifdef DEBUG
-    Uint size;
-    register byte* p;
-    Memory_guard* before;
-    byte* after;
-
-    if (ptr) {
-      p = (byte *) ptr;
-      before = (Memory_guard *) (p-MEM_GUARD_SZ);
-    
-      if (before->pattern != MEM_BEFORE) {
-	if(before->pattern == SL_MALLOC_MEM_BEFORE
-	   && ((byte *)p+before->size)[0] == SL_MALLOC_MEM_AFTER1
-	   && ((byte *)p+before->size)[1] == SL_MALLOC_MEM_AFTER2
-	   && ((byte *)p+before->size)[2] == SL_MALLOC_MEM_AFTER3
-	   && ((byte *)p+before->size)[3] == SL_MALLOC_MEM_AFTER4)
-	  erl_exit(1,
-		   "sys_free on memory allocated by sl_malloc/sl_realloc at "
-		   "0x%p (size %d)\n",
-		   ptr,
-		   before->size);
-	erl_exit(1, "free: Fence before %p clobbered\n", ptr);
-      }
-      size = before->size;
-      after = p + size;
-      if (!CHECK_AFTER(after)) {
-	erl_exit(1, "free: Fence after block 0x%p of size %d clobbered\n",
-		 ptr, size);
-      }
-      CLEAR_AFTER(after);
-      before->pattern = 0;
-      before->size = 0;
-      ptr = ((byte*) ptr) - MEM_GUARD_SZ;
-    }
-#endif
-
+void
+erts_sys_free(ErtsAlcType_t type, void *extra, void *ptr)
+{
 #ifdef ENABLE_ELIB_MALLOC
     elib_free(ptr);
 #else
     sys_ose_free(ptr);
 #endif
 }
-
-#endif /* #ifdef SYS_ALLOC */
-
 
 /* 
  * External interface to be called before erlang is started 
@@ -2004,28 +2155,34 @@ int sys_double_to_chars(double fp, char *buf)
 }
 
 
+/**************** Trace & Debug *******************/
+#ifdef TRACE_OSE_SIG_ALLOC
+
+union SIGNAL *ose_sig_alloc(OSBUFSIZE size, SIGSELECT signo) {
+    ++ose_sig_allocated;
+    ose_sig_allocated_bytes += (Uint)size;
+    return alloc(size, signo);
+}
+
+void ose_sig_free_buf(union SIGNAL **sig) {
+    ++ose_sig_freed;
+    free_buf(sig);
+}
+
+int ose_sig_trace_info(int argc, char **argv) {
+  erl_dbg_fprintf(stdout, "ALLOC: N = %u, Bytes = %u\n", 
+		  (Uint)ose_sig_allocated,(Uint)ose_sig_allocated_bytes);
+  erl_dbg_fprintf(stdout, "FREE: N = %u\n", 
+		  (Uint)ose_sig_freed);
+  return 0;
+}
+  
+
+#endif /* TRACE_OSE_SIG_ALLOC */
+
 /******************** dummies ********************/
 
 void init_break_handler() {
-}
-
-void sys_tty_reset() {
-}
-
-char *ddll_error() {
-  return (char*)NULL;
-}
-
-void *ddll_open(char *full_name) {
-  return (void*)NULL;
-}
-
-void *ddll_sym(void *handle, char *func_name) {
-  return (void*)NULL;
-}
-
-int ddll_close(void *handle) {
-  return 0;
 }
 
 int driver_event(ErlDrvPort ix, ErlDrvEvent e, ErlDrvEventData event_data) {
@@ -2035,11 +2192,3 @@ int driver_event(ErlDrvPort ix, ErlDrvEvent e, ErlDrvEventData event_data) {
 /* vanilla driver - dummy for now */
 const struct erl_drv_entry vanilla_driver_entry;
   
-
-/*! *** Qs ***
- - Problem with port program: How to "carry" the create_process args?
-    Possibilites: 1. Don't allow port programs, only drivers (handle spawning themselves)
-                  2. Restrict port program to only use defaults
-                  3. Extend open_port -> driver_start i/f
-		  4. "Work around" existing i/f
- */

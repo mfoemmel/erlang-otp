@@ -59,6 +59,8 @@ atom and
 atom andalso
 atom andthen
 atom arity
+atom atom
+atom atom_used
 atom attributes
 atom backtrace backtrace_depth
 atom badarg badarith badarity badfile badmatch badsig badfun
@@ -72,6 +74,8 @@ atom bxor
 atom breakpoint
 atom bsl
 atom bsr
+atom busy_dist_port
+atom busy_port
 atom call
 atom call_count
 atom caller
@@ -81,6 +85,7 @@ atom cd
 atom clear
 atom close
 atom closed
+atom code
 atom command
 atom compile
 atom compressed
@@ -109,7 +114,6 @@ atom DollarDollar='$$'
 atom DollarUnderscore='$_'
 atom DollarDictionary='$dictionary'
 atom dsend
-atom dsend_nosuspend
 atom dunlink
 atom duplicate_bag
 atom elib_malloc
@@ -126,13 +130,13 @@ atom ERROR='ERROR'
 atom error
 atom error_handler
 atom error_logger
+atom ets
 atom exit_status
 atom existing
 atom exiting
 atom exports
 atom false
 atom fd
-atom fix_alloc
 atom flags
 atom fullsweep_after
 atom fullsweep_if_old_binaries
@@ -167,6 +171,7 @@ atom imports
 atom in
 atom index
 atom infinity
+atom info
 atom initial_call
 atom input
 atom internal_error
@@ -174,12 +179,12 @@ atom instruction_counts
 atom invalid
 atom is_seq_trace
 atom io
-atom keep_zombies
 atom keypos
 atom kill
 atom killed
 atom known
 atom label
+atom large_heap
 atom last_calls
 atom Le='=<'
 atom line
@@ -187,6 +192,7 @@ atom link_list
 atom links
 atom little
 atom local
+atom long_gc
 atom low
 atom Lt='<'
 atom machine
@@ -196,6 +202,7 @@ atom maximum
 atom max_tables max_processes
 atom mbuf_size
 atom memory
+atom memory_types
 atom message
 atom message_queue_len
 atom messages
@@ -206,6 +213,7 @@ atom Minus='-'
 atom module
 atom module_info
 atom monitored_by
+atom monitor
 atom monitors
 atom more
 atom name
@@ -222,12 +230,12 @@ atom noconnect
 atom noconnection
 atom nocookie
 atom node
-atom node_and_dist_references
 atom nodedown
 atom noeol
 atom nofile
 atom noproc
 atom normal
+atom nosuspend
 atom not
 atom not_purged
 atom notalive
@@ -242,6 +250,13 @@ atom ordered_set
 atom orelse
 atom os_type
 atom os_version
+atom ose_bg_proc
+atom ose_int_proc
+atom ose_phantom
+atom ose_pri_proc
+atom ose_process_prio
+atom ose_process_type
+atom ose_ti_proc
 atom out
 atom output
 atom owner
@@ -254,6 +269,8 @@ atom print
 atom priority
 atom private
 atom process
+atom processes
+atom processes_used
 atom process_count
 atom process_limit
 atom process_dump
@@ -280,7 +297,6 @@ atom runnable
 atom running
 atom runtime
 atom save_calls
-atom see_zombies
 atom sequential_tracer
 atom sequential_trace_token
 atom serial
@@ -300,11 +316,14 @@ atom sl_alloc
 atom stack_size
 atom start
 atom status
+atom static
 atom stderr_to_stdout
 atom stop
 atom stream
 atom suspend
 atom suspended
+atom sys_misc
+atom system
 atom system_limit
 atom system_version
 atom system_architecture
@@ -312,15 +331,18 @@ atom SYSTEM='SYSTEM'
 atom table
 atom this
 atom thread_pool_size
-atom THROW='THROW'
+atom threads
+atom throw
 atom timeout
 atom timeout_value
 atom Times='*'
 atom timestamp
+atom total
 atom trace trace_ts traced 
 atom trace_control_word
 atom tracer
 atom trap_exit
+atom try_clause
 atom true
 atom type
 atom undef
@@ -342,6 +364,7 @@ atom version
 atom visible
 atom waiting
 atom wall_clock
+atom warning
 atom wordsize
 atom xor
 atom yield

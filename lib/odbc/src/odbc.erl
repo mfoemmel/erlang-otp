@@ -50,8 +50,6 @@
 -export([erl_executeStmt/2, erl_executeStmt/3]).
 -export([erl_disconnect/1, erl_disconnect/2]).
 
-%-export([select/3, info/1, select_position/3, update_position/2]).
-
 %% Start/stop
 -export([start_link/2, start_link/3]).
 -export([stop/1, stop/2]).
@@ -110,9 +108,16 @@
 %%-------------------------------------------------------------------------
 connect(ConnectionStr, Options) when list(ConnectionStr), list(Options) ->
     
-    %% Just in case, most of the time this function call
-    %% will return {error,{already_started,odbc}}. This is expected.
-    application:start(odbc),
+    %% Start of the odbc application should really be handled by the 
+    %% application using odbc. 
+    case application:start(odbc) of
+	{error,{already_started,odbc}} ->
+	    ok;
+	ok ->
+	    error_logger:info_report("The odbc application was not started."
+				     " Has now been started as a temporary" 
+				     " application.")
+    end,
     
     %% Spawn the erlang control process.
     case supervisor:start_child(odbc_sup, [[{client, self()}]]) of
@@ -120,13 +125,7 @@ connect(ConnectionStr, Options) when list(ConnectionStr), list(Options) ->
 	    connect(Pid, ConnectionStr, Options);
 	{error, Reason} ->
 	    {error, Reason}
-    end;
-
-connect(ConnectionStr, Options) when list(ConnectionStr) ->
-    {error, {invalid_argument_Options, Options}};
-
-connect(ConnectionStr, _) ->
-    {error, {invalid_argument_ConnectionStr, ConnectionStr}}.
+    end.
 
 %%--------------------------------------------------------------------------
 %% disconnect(ConnectionReferense) -> ok | {error, Reason}
@@ -134,7 +133,7 @@ connect(ConnectionStr, _) ->
 %% Description: Disconnects from the database and terminates both the erlang
 %%              control process and the database handling c-process. 
 %%--------------------------------------------------------------------------
-disconnect(ConnectionReference) ->
+disconnect(ConnectionReference) when pid(ConnectionReference)->
     ODBCCmd = [?CLOSE_CONNECTION],
     case call(ConnectionReference, {disconnect, ODBCCmd}, 5000) of 
 	{error, connection_closed} ->
@@ -147,10 +146,11 @@ disconnect(ConnectionReference) ->
 	%% gracefully.
 	ok ->
 	    ok;
-	%% Could happen if the argument ConnectionReference is not a pid. 
-	{error, Reason} ->
-	    {error, Reason}
-    end.
+	%% However you may receive an error message as result if you try to
+	%% disconnect a connection started by another process.
+	Other ->
+	    Other
+    end. 
 	    
 %%--------------------------------------------------------------------------
 %% commit(ConnectionReference, CommitMode, <TimeOut>) ->  ok | {error, Reason} 
@@ -159,15 +159,26 @@ disconnect(ConnectionReference) ->
 %%              where automatic commit is turned off.  
 %%--------------------------------------------------------------------------
 commit(ConnectionReference, CommitMode) ->
-	commit(ConnectionReference, CommitMode, ?DEFAULT_TIMEOUT).
+    commit(ConnectionReference, CommitMode, ?DEFAULT_TIMEOUT).
 
-commit(ConnectionReference, CommitMode, TimeOut) when CommitMode == commit;
-						      CommitMode == rollback ->
-	ODBCCmd = [?COMMIT_TRANSACTION, commit_mode(CommitMode)],
-	call(ConnectionReference, {commit, ODBCCmd}, TimeOut);
+commit(ConnectionReference, commit, infinity) when pid(ConnectionReference) ->
+    ODBCCmd = [?COMMIT_TRANSACTION, ?COMMIT],
+    call(ConnectionReference, {commit, ODBCCmd}, infinity);
 
-commit(_, CommitMode, _) ->
-    {error, {invalid_argument_CommitMode, CommitMode}}.
+commit(ConnectionReference, commit, TimeOut) 
+  when pid(ConnectionReference), integer(TimeOut), TimeOut > 0  ->
+    ODBCCmd = [?COMMIT_TRANSACTION, ?COMMIT],
+    call(ConnectionReference, {commit, ODBCCmd}, TimeOut);
+
+commit(ConnectionReference, rollback, infinity) when pid(ConnectionReference) ->
+    ODBCCmd = [?COMMIT_TRANSACTION, ?ROLLBACK],
+    call(ConnectionReference, {commit, ODBCCmd}, infinity);
+
+commit(ConnectionReference, rollback, TimeOut) 
+  when pid(ConnectionReference), integer(TimeOut), TimeOut > 0  ->
+    ODBCCmd = [?COMMIT_TRANSACTION, ?ROLLBACK],
+    call(ConnectionReference, {commit, ODBCCmd}, TimeOut).
+
 %%--------------------------------------------------------------------------
 %% sql_query(ConnectionReference, SQLQuery, <TimeOut>) -> {updated, NRows} |
 %%				{selected, ColNames, Rows} | {error, Reason} 
@@ -177,14 +188,17 @@ commit(_, CommitMode, _) ->
 %%       	rows are returned.
 %%--------------------------------------------------------------------------
 sql_query(ConnectionReference, SQLQuery) ->
-	sql_query(ConnectionReference, SQLQuery, ?DEFAULT_TIMEOUT).
+    sql_query(ConnectionReference, SQLQuery, ?DEFAULT_TIMEOUT).
 
-sql_query(ConnectionReference, SQLQuery, TimeOut) when list(SQLQuery) ->
-	ODBCCmd = [?QUERY, SQLQuery],
-	call(ConnectionReference, {sql_query, ODBCCmd}, TimeOut);
+sql_query(ConnectionReference, SQLQuery, infinity) when 
+  pid(ConnectionReference), list(SQLQuery) -> 
+    ODBCCmd = [?QUERY, SQLQuery],
+    call(ConnectionReference, {sql_query, ODBCCmd}, infinity);
 
-sql_query(_, SQLQuery, _) ->
-    {error, {invalid_argument_SQLQuery, SQLQuery}}.
+sql_query(ConnectionReference, SQLQuery, TimeOut) 
+  when pid(ConnectionReference), list(SQLQuery), integer(TimeOut), TimeOut > 0 -> 
+    ODBCCmd = [?QUERY, SQLQuery],
+    call(ConnectionReference, {sql_query, ODBCCmd}, TimeOut).
 %%--------------------------------------------------------------------------
 %% select_count(ConnectionReference, SQLQuery, <TimeOut>) -> {ok, NrRows} |
 %%							     {error, Reason}  
@@ -197,13 +211,15 @@ sql_query(_, SQLQuery, _) ->
 select_count(ConnectionReference, SQLQuery) ->	
     select_count(ConnectionReference, SQLQuery, ?DEFAULT_TIMEOUT).
 
-select_count(ConnectionReference, SQLQuery, TimeOut) when list(SQLQuery) ->
+select_count(ConnectionReference, SQLQuery, infinity) when 
+  pid(ConnectionReference), list(SQLQuery) ->
     ODBCCmd = [?SELECT_COUNT, SQLQuery],
-    call(ConnectionReference, {select_count, ODBCCmd}, TimeOut);
+    call(ConnectionReference, {select_count, ODBCCmd}, infinity);
 
-select_count(_, SQLQuery, _) ->
-    {error, {invalid_argument_SQLQuery, SQLQuery}}.
-
+select_count(ConnectionReference, SQLQuery, TimeOut) when 
+  pid(ConnectionReference), list(SQLQuery), integer(TimeOut), TimeOut > 0 ->
+    ODBCCmd = [?SELECT_COUNT, SQLQuery],
+    call(ConnectionReference, {select_count, ODBCCmd}, TimeOut).
 
 %%--------------------------------------------------------------------------
 %% first(ConnectionReference, <TimeOut>) ->  {selected, ColNames, Rows} | 
@@ -214,8 +230,13 @@ select_count(_, SQLQuery, _) ->
 %%--------------------------------------------------------------------------
 first(ConnectionReference) ->	
     first(ConnectionReference, ?DEFAULT_TIMEOUT).	
-    
-first(ConnectionReference, TimeOut) ->	
+
+first(ConnectionReference, infinity) when pid(ConnectionReference) ->	
+    ODBCCmd = [?SELECT, ?SELECT_FIRST],
+    call(ConnectionReference, {select_cmd, absolute, ODBCCmd}, infinity);
+
+first(ConnectionReference, TimeOut)
+  when pid(ConnectionReference), integer(TimeOut), TimeOut > 0 ->	
     ODBCCmd = [?SELECT, ?SELECT_FIRST],
     call(ConnectionReference, {select_cmd, absolute, ODBCCmd}, TimeOut).
 
@@ -228,11 +249,15 @@ first(ConnectionReference, TimeOut) ->
 %%--------------------------------------------------------------------------
 last(ConnectionReference) ->	
     last(ConnectionReference, ?DEFAULT_TIMEOUT).	
-   
-last(ConnectionReference, TimeOut) ->	
+
+last(ConnectionReference, infinity) when pid(ConnectionReference) ->	
+    ODBCCmd = [?SELECT, ?SELECT_LAST],
+    call(ConnectionReference, {select_cmd, absolute, ODBCCmd}, infinity);
+
+last(ConnectionReference, TimeOut) 
+  when pid(ConnectionReference), integer(TimeOut), TimeOut > 0 ->	
     ODBCCmd = [?SELECT, ?SELECT_LAST],
     call(ConnectionReference, {select_cmd, absolute, ODBCCmd}, TimeOut).
-
 %%--------------------------------------------------------------------------
 %% next(ConnectionReference, <TimeOut>) -> {selected, ColNames, Rows} | 
 %%					   {error, Reason}  
@@ -244,7 +269,12 @@ last(ConnectionReference, TimeOut) ->
 next(ConnectionReference) ->	
     next(ConnectionReference, ?DEFAULT_TIMEOUT).	
     
-next(ConnectionReference, TimeOut) ->	
+next(ConnectionReference, infinity) when pid(ConnectionReference) ->	
+    ODBCCmd = [?SELECT, ?SELECT_NEXT],
+    call(ConnectionReference, {select_cmd, next, ODBCCmd}, infinity);
+
+next(ConnectionReference, TimeOut) 
+  when pid(ConnectionReference), integer(TimeOut), TimeOut > 0 ->	
     ODBCCmd = [?SELECT, ?SELECT_NEXT],
     call(ConnectionReference, {select_cmd, next, ODBCCmd}, TimeOut).
 
@@ -258,8 +288,13 @@ next(ConnectionReference, TimeOut) ->
 %%--------------------------------------------------------------------------
 prev(ConnectionReference) ->	
     prev(ConnectionReference, ?DEFAULT_TIMEOUT).	
-    
-prev(ConnectionReference, TimeOut) ->	
+
+prev(ConnectionReference, infinity) when pid(ConnectionReference) ->	
+    ODBCCmd = [?SELECT, ?SELECT_PREV],
+    call(ConnectionReference, {select_cmd, relative, ODBCCmd}, infinity);
+
+prev(ConnectionReference, TimeOut) 
+  when pid(ConnectionReference), integer(TimeOut), TimeOut > 0 ->	
     ODBCCmd = [?SELECT, ?SELECT_PREV],
     call(ConnectionReference, {select_cmd, relative, ODBCCmd}, TimeOut).
 
@@ -279,41 +314,56 @@ prev(ConnectionReference, TimeOut) ->
 select(ConnectionReference, Position, N) ->
     select(ConnectionReference, Position, N, ?DEFAULT_TIMEOUT).
 
-select(ConnectionReference, Position, N, TimeOut) when integer(N) ->
+select(ConnectionReference, next, N, infinity) 
+  when pid(ConnectionReference), integer(N), N > 0 ->
+    ODBCCmd = [?SELECT, ?SELECT_N_NEXT,
+	       integer_to_list(?DUMMY_OFFSET), ";", integer_to_list(N), ";"],
+    call(ConnectionReference, {select_cmd, next, ODBCCmd},
+	 infinity);
 
-    NewPosition =
-	case Position of
-	    next ->
-		{next, ?DUMMY_OFFSET};
-	    {relative, Pos} ->
-		Position;
-	    {relative, Pos} when integer(Pos) ->
-		Position;	    
-	    {absolute, Pos} when integer(Pos) -> 
-		Position;
-	    Other ->
-		{error, {invalid_argument_Position, Other}}
-	end,
-    
-    case NewPosition of 
-	{error, Reason} ->
-	    {error, Reason};
-	{CursorRelation, OffSet} ->
-	    ODBCCmd = [?SELECT, cursor_relation(CursorRelation),
-		       integer_to_list(OffSet), ";", integer_to_list(N), ";"],
-	    call(ConnectionReference, {select_cmd, CursorRelation, ODBCCmd},
-		 TimeOut)
-    end;
+select(ConnectionReference, next, N, TimeOut) 
+  when pid(ConnectionReference), integer(N), N > 0,
+  integer(TimeOut), TimeOut > 0 ->
+    ODBCCmd = [?SELECT, ?SELECT_N_NEXT,
+	       integer_to_list(?DUMMY_OFFSET), ";", integer_to_list(N), ";"],
+    call(ConnectionReference, {select_cmd, next, ODBCCmd},
+	 TimeOut);
 
-select(_, _, N, _) ->
-    {error, {invalid_argument_N, N}}.
+select(ConnectionReference, {relative, Pos} , N, infinity) 
+  when pid(ConnectionReference), integer(Pos), Pos > 0, integer(N), N > 0 ->
+    ODBCCmd = [?SELECT, ?SELECT_RELATIVE,
+	       integer_to_list(Pos), ";", integer_to_list(N), ";"],
+    call(ConnectionReference, {select_cmd, relative, ODBCCmd},
+	 infinity);
 
+select(ConnectionReference, {relative, Pos} , N, TimeOut) 
+  when pid(ConnectionReference), integer(Pos), Pos >0, integer(N),  N > 0,
+  integer(TimeOut), TimeOut > 0 ->
+    ODBCCmd = [?SELECT,?SELECT_RELATIVE,
+	       integer_to_list(Pos), ";", integer_to_list(N), ";"],
+    call(ConnectionReference, {select_cmd, relative, ODBCCmd},
+	 TimeOut);
+
+select(ConnectionReference, {absolute, Pos} , N, infinity) 
+  when pid(ConnectionReference), integer(Pos), Pos > 0, integer(N), N > 0 ->
+    ODBCCmd = [?SELECT, ?SELECT_ABSOLUTE,
+	       integer_to_list(Pos), ";", integer_to_list(N), ";"],
+    call(ConnectionReference, {select_cmd, absolute, ODBCCmd},
+	 infinity);
+
+select(ConnectionReference, {absolute, Pos} , N, TimeOut) 
+  when pid(ConnectionReference), integer(Pos), Pos > 0, integer(N),  N > 0, 
+  integer(TimeOut), TimeOut > 0  ->
+    ODBCCmd = [?SELECT, ?SELECT_ABSOLUTE,
+	       integer_to_list(Pos), ";", integer_to_list(N), ";"],
+    call(ConnectionReference, {select_cmd, absolute, ODBCCmd},
+	 TimeOut).
 
 %%%=========================================================================
 %%% Start/stop
 %%%=========================================================================
 %%--------------------------------------------------------------------------
-%% start_link_sup(Args) -> {ok, Pid}  
+%% start_link_sup(Args) -> {ok, Pid} | {error, Reason} 
 %%                                    
 %% Description: Callback function for the odbc supervisor. It is called 
 %%            : when connect/2 calls supervisor:start_child/2 to start an 
@@ -344,11 +394,12 @@ init(Args) ->
     case os:find_executable(?SERVERPROG, ?SERVERDIR) of
 	FileName when list(FileName)->
 	    Port  = open_port({spawn, FileName},
-			      [{packet, ?LENGTH_INDICATOR_SIZE}, binary]),
+			      [{packet, ?LENGTH_INDICATOR_SIZE}, binary,
+			       exit_status]),
 	    State = #state{port = Port, owner = ClientPid},
 	    {ok, State};
 	false ->
-	    {stop, "Can't find the port-program: odbcserver executable."}
+	    {stop, port_program_executable_not_found}
     end.
 		    
 %%--------------------------------------------------------------------------
@@ -555,8 +606,7 @@ handle_msg({db_cmd, {_Tag, ODBCCmd}}, Timeout, State =
 %% really bad code that violates the API.
 handle_msg(Request, _Timeout, State) ->
     {stop, {'API_violation_connection_colsed', Request},
-     {error, {'API_violation_connection_colsed', Request}}, 
-     State#state{reply_to = undefined}}.
+     {error, connection_closed}, State#state{reply_to = undefined}}.
 
 %%--------------------------------------------------------------------------
 %% handle_cast(Request, State) -> {noreply, State} | {noreply, State, Timeout}|
@@ -564,7 +614,8 @@ handle_msg(Request, _Timeout, State) ->
 %% Description:         
 %% Note: The order of the function clauses is significant.
 %%-------------------------------------------------------------------------
-%% Stop Call Back -deprecated
+%% Used if the odbc connect call fails as this is discover in the client-code.
+%% see function connect/3
 handle_cast(stop, State) ->
     {stop, normal, State};
 
@@ -643,7 +694,7 @@ handle_info({Port, {data, BinData}},  State = #state{state = disconnecting,
  				      "gracefully due to ~p~n", [Reason])
     end,
     
-    {stop, normal, State};
+    {stop, normal, State#state{reply_to = undefined}};
 
 handle_info(timeout, State = #state{state = disconnecting, 
  				    reply_to = From}) when From /= undefined ->
@@ -654,7 +705,7 @@ handle_info(timeout, State = #state{state = disconnecting,
 handle_info(timeout, State = #state{state = connecting, 
  				    reply_to = From}) when From /= undefined ->
     gen_server:reply(From, timeout),
-    {stop, normal, State};
+    {stop, normal, State#state{reply_to = undefined}};
 
 handle_info(timeout, State = #state{state = connected, 
 				    pending_request = undefined,
@@ -664,21 +715,32 @@ handle_info(timeout, State = #state{state = connected,
 			  num_timeouts = State#state.num_timeouts + 1}};
 
 handle_info(timeout, State =
-	    #state{state = connected, 
+	    #state{state = connected,      
 		   pending_request = {{_, {disconnect, _}, _}, 
 				      PendingFrom}}) ->
     gen_server:reply(PendingFrom, ok),
     {stop, {timeout, "Port-program busy when trying to disconnect,  "
 	    "will be killed"},
-     State#state{pending_request = undefined,
+     State#state{pending_request = undefined, reply_to = undefined,
 		 num_timeouts = State#state.num_timeouts + 1}};
 
 handle_info(timeout, State =
 	    #state{state = connected, 
 		   pending_request = {Request, PendingFrom}}) ->
     gen_server:reply(PendingFrom, timeout),
-    {noreply, State#state{pending_request = undefined,
+    %% The state variable reply_to should continue to have the value skip 
+    {noreply, State#state{pending_request = undefined,  
  			  num_timeouts = State#state.num_timeouts + 1}};
+
+handle_info({Port, {exit_status, Status}}, State = #state{port = Port}) ->
+    case State#state.reply_to of
+ 	undefined ->
+ 	    ok;
+ 	From ->
+ 	    gen_server:reply(From, {error, connection_closed})
+    end,
+    {stop, {exit_status, Status}, State#state{reply_to = undefined}};
+
 
 handle_info({'EXIT', Port, Reason}, State = #state{port = Port}) ->
     case State#state.reply_to of
@@ -687,11 +749,24 @@ handle_info({'EXIT', Port, Reason}, State = #state{port = Port}) ->
 	From ->
 	    gen_server:reply(From, {error, connection_closed})
     end,
-    {stop, {port_exit, Reason}, State};
+    NewReason = receive 
+		    {Port, {exit_status, Status}} -> 
+			{port_exit, Status}
+		after 5000 ->
+			{port_exit, Reason}
+		end,
+    {stop, NewReason, State#state{reply_to = undefined}};
 
-%% If the owning process dies there is no reson to go on
+%%% If the owning process dies there is no reson to go on
+handle_info({'DOWN', _Ref, _Type, Process, normal}, State) ->
+    {stop, normal, State#state{reply_to = undefined}};
+    
+handle_info({'DOWN', _Ref, _Type, Process, timeout}, State) ->
+    {stop, normal, State#state{reply_to = undefined}};
+ 
 handle_info({'DOWN', _Ref, _Type, Process, Reason}, State) ->
-    {stop, {stopped, {'EXIT', Process, Reason}}, State};
+    {stop, {stopped, {'EXIT', Process, Reason}}, 
+     State#state{reply_to = undefined}};
     
 %---------------------------------------------------------------------------
 %% Catch all - throws away unknown messages (This could happen by "accident"
@@ -705,10 +780,10 @@ handle_info(Info, State) ->
 %% terminate/2 and code_change/3
 %%--------------------------------------------------------------------------
 
-terminate({port_exit, _Reason}, _State) ->
+terminate({port_exit, _Reason}, #state{reply_to = undefined}) ->
     ok;
 
-terminate(_Reason, State) ->
+terminate(_Reason,  State = #state{reply_to = undefined}) ->
     Port = State#state.port,
     port_close(Port),
     receive
@@ -716,14 +791,19 @@ terminate(_Reason, State) ->
 	    ok;
 	{'EXIT', Port, normal} ->
 	    ok
-    after 10000 ->
+    after 3000 ->
 	    error_logger:error_report("Erlang ODBC-process did not receive "
 				      "closed port message.")
-    end.
+    end;
+
+terminate(Reason, State = #state{reply_to = From}) ->
+    gen_server:reply(From, {error, connection_closed}),
+    terminate(Reason, State#state{reply_to = undefined}).
 
 %---------------------------------------------------------------------------
 code_change(_Vsn, State, _Extra) ->
     {ok, State}.
+
 
 %%%========================================================================
 %%% Internal functions
@@ -783,59 +863,27 @@ connection_default(trace_driver) ->
 
 connection_default(scrollable_cursors) ->
     {?ON, on}.
-%%--------------------------------------------------------------------------
-commit_mode(commit) ->
-    ?COMMIT;
-commit_mode(rollback) ->
-    ?ROLLBACK.
-%%--------------------------------------------------------------------------
-cursor_relation(relative) ->
-    ?SELECT_RELATIVE;
-cursor_relation(absolute) ->
-    ?SELECT_ABSOLUTE;
-cursor_relation(next) ->
-    ?SELECT_N_NEXT.
+
 %%-------------------------------------------------------------------------
-call(ConnectionReference, Msg, Timeout) when pid(ConnectionReference) ->
-
-    case check_timeout(Timeout) of
-	true ->
-	    Result = (catch gen_server:call(ConnectionReference, 
-					    {self(), Msg, Timeout}, infinity)),
-	    case Result of
-		%% Normal case, the result from the port-program has directly 
-		%% been forwarded to the client
-		Binary when binary(Binary) -> 
-		    binary_to_term(Binary); 
-		timeout -> 
-		    exit(timeout);
-		{'EXIT',{noproc, _}} ->
-		    {error, connection_closed};
-		Other ->  % Special case or error
-		    Other
-	    end;
-	false ->
-	    {error, {invalid_argument_Timeout, Timeout}}
-    end;
-
-call(ConnectionReference, _, _) ->
-    {error, {invalid_argument_ConnectionReference, ConnectionReference}}.
+call(ConnectionReference, Msg, Timeout) ->
     
+    Result = (catch gen_server:call(ConnectionReference, 
+				    {self(), Msg, Timeout}, infinity)),
+    case Result of
+	%% Normal case, the result from the port-program has directly 
+	%% been forwarded to the client
+	Binary when binary(Binary) -> 
+	    binary_to_term(Binary); 
+	timeout -> 
+	    exit(timeout);
+	{'EXIT', _} ->
+	    {error, connection_closed};
+	Other ->  % Special case or error
+	    Other
+    end.    
 %%-------------------------------------------------------------------------
 cast(ConnectionReference, Msg) ->
     gen_server:cast(ConnectionReference, Msg).
-
-%%-------------------------------------------------------------------------
-
-check_timeout(Timeout) ->
-    case Timeout of
-	infinity ->
-	    true;
-	Timeout when integer(Timeout) ->
-	    true;
-	Else ->
-	    false
-    end.
 
 %%%========================================================================
 %%% Debug functions

@@ -100,7 +100,8 @@ format_error({include,W,F}) ->
 format_error({illegal,How,What}) ->
     io_lib:format("~s '-~s'", [How,What]);
 format_error({'NYI',What}) ->
-    io_lib:format("not yet implemented '~s'", [What]).
+    io_lib:format("not yet implemented '~s'", [What]);
+format_error(E) -> file:format_error(E).
 
 %% parse_file(FileName, IncludePath, [PreDefMacro]) ->
 %%	{ok,[Form]} | {error,OpenError}
@@ -197,7 +198,7 @@ wait_request(St) ->
     receive
 	{epp_request,From,scan_erl_form} -> From;
 	{epp_request,From,macro_defs} ->
-	    epp_reply(From, dict:dict_to_list(St#epp.macs)),
+	    epp_reply(From, dict:to_list(St#epp.macs)),
 	    wait_request(St);
 	{epp_request,From,close} ->
 	    epp_reply(From, ok),
@@ -431,7 +432,7 @@ macro_ref([_Token | Rest]) ->
     macro_ref(Rest).
 
 all_macro_uses(D0) ->
-    L = dict:dict_to_list(D0),
+    L = dict:to_list(D0),
     D = dict:new(),
     add_macro_uses(L, D).
 

@@ -192,11 +192,22 @@ static Milli last_ct_diff;
 static Milli last_cc; 
 static clock_t last_ct;
 
+/* sys_times() might need to be wrapped and the values shifted (right)
+   a bit to cope with newer linux (2.5.*) kernels, this has to be taken care 
+   of dynamically to start with, a special version that uses
+   the times() return value as a high resolution timer can be made
+   to fully utilize the faster ticks, like on windows, but for now, we'll
+   settle with this silly workaround */
+#ifdef ERTS_WRAP_SYS_TIMES 
+#define KERNEL_TICKS() (sys_times_wrap() &  \
+			((1UL << ((sizeof(clock_t) * 8) - 1)) - 1)) 
+#else
 SysTimes dummy_tms;
 
 #define KERNEL_TICKS() (sys_times(&dummy_tms) &  \
 			((1UL << ((sizeof(clock_t) * 8) - 1)) - 1)) 
 
+#endif
 
 static void init_tolerant_timeofday(void)
 {
@@ -219,8 +230,12 @@ static void get_tolerant_timeofday(SysTimeval *tvp)
     Milli act_correction; /* long showed to be too small */
     Milli max_adjust;
 
-#define TICK_MS (1000 / SYS_CLK_TCK)
 
+#ifdef ERTS_WRAP_SYS_TIMES 
+#define TICK_MS (1000 / SYS_CLK_TCK_WRAP)
+#else
+#define TICK_MS (1000 / SYS_CLK_TCK)
+#endif
     current_ct = KERNEL_TICKS();
     sys_gettimeofday(&current_tv);
 
@@ -335,7 +350,8 @@ static int clock_resolution;
 ** instead of something like select.
 */
 
-int erts_init_time_sup(void) 
+int 
+erts_init_time_sup(void)
 {
 #ifndef SYS_CLOCK_RESOLUTION
     clock_resolution = sys_init_time();
@@ -361,9 +377,9 @@ int erts_init_time_sup(void)
 }    
 /* info functions */
 
-void elapsed_time_both(ms_user, ms_sys, ms_user_diff, ms_sys_diff)
-unsigned long *ms_user, *ms_sys;
-unsigned long *ms_user_diff, *ms_sys_diff;
+void 
+elapsed_time_both(unsigned long *ms_user, unsigned long *ms_sys, 
+		  unsigned long *ms_user_diff, unsigned long *ms_sys_diff)
 {
     unsigned long prev_total_user, prev_total_sys;
     unsigned long total_user, total_sys;
@@ -392,9 +408,8 @@ unsigned long *ms_user_diff, *ms_sys_diff;
 
 /* wall clock routines */
 
-void wall_clock_elapsed_time_both(ms_total, ms_diff)
-unsigned long *ms_total;
-unsigned long *ms_diff;
+void 
+wall_clock_elapsed_time_both(unsigned long *ms_total, unsigned long *ms_diff)
 {
     unsigned long prev_total;
     SysTimeval tv;
@@ -414,8 +429,8 @@ unsigned long *ms_diff;
 }
 
 /* get current time */
-void get_time(hour, minute, second)
-int *hour, *minute, *second;
+void 
+get_time(int *hour, int *minute, int *second)
 {
     time_t the_clock;
     struct tm *tm;
@@ -436,8 +451,8 @@ int *hour, *minute, *second;
 }
 
 /* get current date */
-void get_date(year, month, day)
-int *year, *month, *day;
+void 
+get_date(int *year, int *month, int *day)
 {
     time_t the_clock;
     struct tm *tm;
@@ -458,8 +473,9 @@ int *year, *month, *day;
 }
 
 /* get localtime */
-void get_localtime(year, month, day, hour, minute, second)
-int *year, *month, *day, *hour, *minute, *second;
+void 
+get_localtime(int *year, int *month, int *day, 
+	      int *hour, int *minute, int *second)
 {
     time_t the_clock;
     struct tm *tm;
@@ -483,8 +499,9 @@ int *year, *month, *day, *hour, *minute, *second;
 
 
 /* get universaltime */
-void get_universaltime(year, month, day, hour, minute, second)
-int *year, *month, *day, *hour, *minute, *second;
+void 
+get_universaltime(int *year, int *month, int *day, 
+		  int *hour, int *minute, int *second)
 {
     time_t the_clock;
     struct tm *tm;
@@ -550,15 +567,16 @@ static int long gregday(int year, int month, int day)
 
 
 
-int local_to_univ(year, month, day, hour, minute, second)
-int *year, *month, *day, *hour, *minute, *second;
+int 
+local_to_univ(int *year, int *month, int *day, 
+	      int *hour, int *minute, int *second, int isdst)
 {
     time_t the_clock;
     struct tm *tm, t;
 #ifdef HAVE_GMTIME_R
     struct tm tmbuf;
 #endif
-
+    
     if (!(IN_RANGE(BASEYEAR, *year, INT_MAX - 1) &&
           IN_RANGE(1, *month, 12) &&
           IN_RANGE(1, *day, (mdays[*month] + 
@@ -570,14 +588,14 @@ int *year, *month, *day, *hour, *minute, *second;
           IN_RANGE(0, *second, 59))) {
       return 0;
     }
-
+    
     t.tm_year = *year - 1900;
     t.tm_mon = *month - 1;
     t.tm_mday = *day;
     t.tm_hour = *hour;
     t.tm_min = *minute;
     t.tm_sec = *second;
-    t.tm_isdst = -1;
+    t.tm_isdst = isdst;
     the_clock = mktime(&t);
 #ifdef HAVE_GMTIME_R
     gmtime_r(&the_clock, (tm = &tmbuf));
@@ -593,15 +611,16 @@ int *year, *month, *day, *hour, *minute, *second;
     return 1;
 }
 
-int univ_to_local(year, month, day, hour, minute, second)
-int *year, *month, *day, *hour, *minute, *second;
+int 
+univ_to_local(int *year, int *month, int *day, 
+	      int *hour, int *minute, int *second)
 {
     time_t the_clock;
     struct tm *tm;
 #ifdef HAVE_LOCALTIME_R
     struct tm tmbuf;
 #endif
-
+    
     if (!(IN_RANGE(BASEYEAR, *year, INT_MAX - 1) &&
           IN_RANGE(1, *month, 12) &&
           IN_RANGE(1, *day, (mdays[*month] + 
@@ -613,7 +632,7 @@ int *year, *month, *day, *hour, *minute, *second;
           IN_RANGE(0, *second, 59))) {
       return 0;
     }
-
+    
     the_clock = *second + 60 * (*minute + 60 * (*hour + 24 *
                                             gregday(*year, *month, *day)));
 #ifdef HAVE_LOCALTIME_R
@@ -721,8 +740,14 @@ void erts_time_remaining(SysTimeval *rem_time)
     }
 }
 
+long
+erts_get_time(void)
+{
+    SysTimeval sys_tv;
 
-
+    get_tolerant_timeofday(&sys_tv);
+    return sys_tv.tv_sec;
+}
 
 #ifdef HAVE_ERTS_NOW_CPU
 void erts_get_now_cpu(Uint* megasec, Uint* sec, Uint* microsec) {

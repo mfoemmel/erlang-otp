@@ -13,7 +13,7 @@
  * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
  * AB. All Rights Reserved.''
  * 
- *     $Id: ddll_drv.c,v 1.4 2000/06/08 21:56:49 tony Exp $
+ *     $Id$
  */
 /* 
  * Dynamic driver loader and linker
@@ -79,6 +79,12 @@ struct erl_drv_entry ddll_driver_entry = {
 
 static long erlang_port = -1;
 
+#ifdef _OSE_
+void reset_ddll_drv() {
+  erlang_port = -1;
+}
+#endif
+
 static long reply(long port, int success, char *str)
 {
     char tmp[200];
@@ -125,7 +131,7 @@ static void dyn_stop(ErlDrvData d)
 }
 
 
-static int unload(void* arg1, void* arg2)
+static int unload(void* arg1, void* arg2, void* dummy1, void* dummy2)
 {
     DE_List* de = (DE_List*) arg1;
     int ix = (int) (long) arg2;
@@ -197,7 +203,12 @@ static int load(char* full_name, char* driver_name)
     dh->cb = NULL;
     dh->ca[0] = NULL;
 
-    if ((dp = initfn(dh)) == NULL) {
+#ifdef __WIN32__
+    dp = initfn((DE_Handle *) win_get_ddll_init_param());
+#else
+    dp = initfn(dh);
+#endif
+    if (dp == NULL) {
 	ddll_close(lib);
 	driver_free(dh);
 	return reply(erlang_port, 'e', "driver_init_failed");
@@ -227,7 +238,7 @@ static int reload(void* arg1, void* arg2, void* arg3, void* arg4)
 
     DEBUGF(("ddll_drv: reload: %s, %s\r\n", full_name, driver_name));
 
-    unload(arg3, arg4);
+    unload(arg3, arg4, NULL, NULL);
     code = load(full_name, driver_name);
     driver_free(full_name);
     driver_free(driver_name);
@@ -348,7 +359,8 @@ static void handle_command(ErlDrvData inport, char *buf, int count)
 			    return;
 		    }
 		    else {
-			unload((void*) de, (void*) erlang_port);
+			unload((void*) de, (void*) erlang_port, 
+			       NULL, NULL);
 			return;
 		    }
 		}

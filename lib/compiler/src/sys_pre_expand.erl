@@ -27,9 +27,9 @@
 %% Main entry point.
 -export([module/2]).
 
--import(ordsets, [list_to_set/1,add_element/2,
+-import(ordsets, [from_list/1,add_element/2,
 		  union/1,union/2,intersection/1,intersection/2,subtract/2]).
--import(lists,   [member/2,map/2,foldl/3,foldr/3,sort/1,reverse/1]).
+-import(lists,   [member/2,map/2,foldl/3,foldr/3,sort/1,reverse/1,duplicate/2]).
 
 -include("../include/erl_bits.hrl").
 
@@ -130,7 +130,7 @@ attribute(module, Module, St) ->
     St#expand{module=list_to_atom(M),
 	      package = packages:strip_last(M)};
 attribute(export, Es, St) ->
-    St#expand{exports=union(list_to_set(Es), St#expand.exports)};
+    St#expand{exports=union(from_list(Es), St#expand.exports)};
 attribute(import, Is, St) ->
     import(Is, St);
 attribute(compile, C, St) when list(C) ->
@@ -252,8 +252,6 @@ guard_tests([Gt0|Gts0], Vs, St0) ->
 guard_tests([], _, St) -> {[],[],[],St}.
 
 guard_test({call,Line,{atom,_,record},[A,{atom,_,Name}]}, Vs, St) ->
-    record_test(Line, A, Name, Vs, St);
-guard_test({call,Line,{atom,_,is_record},[A,{atom,_,Name}]}, Vs, St) ->
     record_test(Line, A, Name, Vs, St);
 guard_test({call,Line,{atom,Lt,Tname},As}, Vs, St) ->
     Test = {remote,Lt,
@@ -380,6 +378,9 @@ expr({'fun',Line,Body}, Vs, St) ->
 %%%     expr({call,Line,{atom,Line,list_to_atom},[M]}, Vs, St);
 expr({call,Line,{atom,_,is_record},[A,{atom,_,Name}]}, Vs, St) ->
     record_test(Line, A, Name, Vs, St);
+expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,is_record}},
+      [A,{atom,_,Name}]}, Vs, St) ->
+    record_test(Line, A, Name, Vs, St);
 expr({call,Line,{atom,La,N},As0}, Vs, St0) ->
     {As,Asvs,Asus,St1} = expr_list(As0, Vs, St0),
     Ar = length(As),
@@ -401,21 +402,27 @@ expr({call,Line,{atom,La,N},As0}, Vs, St0) ->
 		    end
 	    end
     end;
+expr({call,Line,{record_field,_,_,_}=M,As0}, Vs, St0) ->
+    expr({call,Line,expand_package(M, St0),As0}, Vs, St0);
 expr({call,Line,{remote,Lr,M,F},As0}, Vs, St0) ->
     M1 = expand_package(M, St0),
     {[M2,F1|As1],Asvs,Asus,St1} = expr_list([M1,F|As0], Vs, St0),
     {{call,Line,{remote,Lr,M2,F1},As1},Asvs,Asus,St1};
+expr({call,Line,{tuple,_,[{atom,_,_}=M,{atom,_,_}=F]},As}, Vs, St) ->
+    %% Rewrite {Mod,Function}(Args...) to Mod:Function(Args...).
+    expr({call,Line,{remote,Line,M,F},As}, Vs, St);
 expr({call,Line,F,As0}, Vs, St0) ->
     {[Fun1|As1],Asvs,Asus,St1} = expr_list([F|As0], Vs, St0),
     {{call,Line,Fun1,As1},Asvs,Asus,St1};
-expr({'try',Line,Es0,[]}, Vs, St0) ->
-    {V,St1} = new_var(Line,St0),
-    expr({'try',Line,Es0,[{clause,Line,[V],[],[V]}]}, Vs, St1);
-expr({'try',Line,Es0,Cs0}, Vs, St0) ->
-    {Es,Esvs,Esus,St1} = exprs(Es0, Vs, St0),
-    {Cs,Csvss,Csuss,St2} = icr_clauses(Cs0, union(Esvs, Vs), St1),
+expr({'try',Line,Es0,Scs0,Ccs0}, Vs, St0) ->
+    {Es1,Esvs,Esus,St1} = exprs(Es0, Vs, St0),
+    Cvs = union(Esvs, Vs),
+    {Scs1,Scsvss,Scsuss,St2} = icr_clauses(Scs0, Cvs, St1),
+    {Ccs1,Ccsvss,Ccsuss,St3} = icr_clauses(Ccs0, Cvs, St2),
+    Csvss = Scsvss ++ Ccsvss,
+    Csuss = Scsuss ++ Ccsuss,
     All = new_in_all(Vs, Csvss),
-    {{'try',Line,Es,Cs},union(Esvs, All),union([Esus|Csuss]),St2};
+    {{'try',Line,Es1,Scs1,Ccs1},union(Esvs, All),union([Esus|Csuss]),St3};
 expr({'catch',Line,E0}, Vs, St0) ->
     %% Catch exports no new variables.
     {E,_Evs,Eus,St1} = expr(E0, Vs, St0),
@@ -444,11 +451,10 @@ expr({op,Line,'++',{lc,Ll,E0,Qs0},M0}, Vs, St0) ->
     {{op,Line,'++',{lc,Ll,E1,Qs1},M1},Lvs,Lus,St1};
 expr({op,_,'++',{string,L1,S1},{string,_,S2}}, _Vs, St) ->
     {{string,L1,S1 ++ S2},[],[],St};
-expr({op,Ll,'++',{string,L1,S1}=Str,R0}, Vs, St0) ->
+expr({op,_,'++',{string,L1,S1},R0}, Vs, St0) ->
     {R1,Rvs,Rus,St1} = expr(R0, Vs, St0),
     E = case R1 of
 	    {string,_,S2} -> {string,L1,S1 ++ S2};
-	    _Other when length(S1) > 10 -> {op,Ll,'++',Str,R1};
 	    _Other -> string_to_conses(L1, S1, R1)
     end,
     {E,Rvs,Rus,St1};
@@ -653,13 +659,9 @@ record_update(R, Name, Fs, Us0, St0) ->
     {Update,St} =
 	if
 	    Nu == 0 -> {R,St1};			%No fields updated
-	    Nc =< 1 ->				%Few fields copied
-		{record_el(R, Name, Fs, Us),St1};
 	    Nu =< Nc ->				%Few fields updated
-		{record_setel(R, Name, Fs, Us),St1};
-	    Nu =< 1 ->				%Few fields updated
-		{record_setel(R, Name, Fs, Us),St1};
-	    true ->					%The wide area inbetween
+		{record_setel(R, Name, Fs, Us), St1};
+	    true ->			      %The wide area inbetween
 		record_match(R, Name, Fs, Us, St1)
 	end,
     {case Pre of
@@ -690,27 +692,9 @@ record_upd_fs([{record_field,Lf,{atom,_La,F},_Val}|Fs], Us, St0) ->
     end;
 record_upd_fs([], _, St) -> {[],[],St}.
 
-%% record_el(Record, RecordName, [RecDefField], [Update])
-%%  Build a new record using Rec#name.field expression for unchanged
-%%  values.
-
-record_el(R, Name, Fs, []) ->
-    record_el1(R, Name, Fs, [], element(2, R));
-record_el(R, Name, Fs, Us) ->
-    record_el1(R, Name, Fs, Us, element(2, hd(Us))).
-
-record_el1(R, Name, Fs, Us, Lr) ->
-    {tuple,Lr,[{atom,Lr,Name}|
-	       map(fun (F) -> record_el2(R, Name, F, Us) end, Fs)]}.
-
-record_el2(R, Name, {record_field,Lf,{atom,La,F},_Val}, Us) ->
-    case find_field(F, Us) of
-	{ok,New} -> New;
-	error -> {record_field,Lf,R,Name,{atom,La,F}}
-    end.
-
 %% record_setel(Record, RecordName, [RecDefField], [Update])
-%%  Build a nested chain of setelement calls to build updated record tuple.
+%%  Build a nested chain of setelement calls to build the 
+%%  updated record tuple.
 
 record_setel(R, Name, Fs, Us0) ->
     Us1 = foldl(fun ({record_field,Lf,Field,Val}, Acc) ->
@@ -718,9 +702,15 @@ record_setel(R, Name, Fs, Us0) ->
 			[{I,Lf,Val}|Acc]
 		end, [], Us0),
     Us = sort(Us1),
-    foldr(fun ({I,Lf,Val}, Acc) ->
-		  {call,Lf,{atom,Lf,setelement},[I,Acc,Val]} end,
-	  R, Us).
+    Lr = element(2, hd(Us)),
+    Wildcards = duplicate(length(Fs), {var,Lr,'_'}),
+    {'case',Lr,R,
+     [{clause,Lr,[{tuple,Lr,[{atom,Lr,Name}|Wildcards]}],[],
+       [foldr(fun ({I,Lf,Val}, Acc) ->
+		      {call,Lf,{atom,Lf,setelement},[I,Acc,Val]} end,
+	      R, Us)]},
+      {clause,Lr,[{var,Lr,'_'}],[],
+       [call_fault(Lr, {tuple,Lr,[{atom,Lr,badrecord},{atom,Lr,Name}]})]}]}.
 
 %% Expand a call to record_info/2. We have checked that it is not
 %% shadowed by an import.
@@ -910,7 +900,7 @@ new_in_all(Before, Region) ->
 
 import({Mod0,Fs}, St) ->
     Mod = list_to_atom(package_to_string(Mod0)),
-    Mfs = list_to_set(Fs),
+    Mfs = from_list(Fs),
     St#expand{imports=add_imports(Mod, Mfs, St#expand.imports)};
 import(Mod0, St) ->
     Mod = package_to_string(Mod0),

@@ -27,7 +27,7 @@
 
 include $(ERL_TOP)/make/target.mk
 
-debug opt instr shared purify quantify purecov:
+debug opt shared purify quantify purecov:
 	$(MAKE) -f $(TARGET)/Makefile TYPE=$@
 
 clean generate depend docs release release_spec release_docs release_docs_spec \

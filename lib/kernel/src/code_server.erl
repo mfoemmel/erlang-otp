@@ -39,6 +39,7 @@
 	       path,
 	       moddb,
 	       namedb,
+	       cache = no_cache,
 	       mode=interactive}).
 
 
@@ -52,25 +53,34 @@ init([Root, Mode]) ->
 		interactive ->
 		    LibDir = filename:append(Root, "lib"),
 		    {ok,Dirs} = file:list_dir(LibDir),
-		    {Paths, Libs} = make_path(LibDir, Dirs),
+		    {Paths,_Libs} = make_path(LibDir, Dirs),
 		    ["."|Paths];
 		_ ->
 		    []
 	    end,
 
     Db = ets:new(code, [private]),
-    foreach(fun (M) -> ets:insert(Db, {M,preloaded}) end, erlang:pre_loaded()),
-    foreach(fun (MF) -> ets:insert(Db, MF) end, Loaded=init:fetch_loaded()),
+    foreach(fun (M) ->  ets:insert(Db, {M,preloaded}) end, erlang:pre_loaded()),
+    foreach(fun (MF) -> ets:insert(Db, MF) end, init:fetch_loaded()),
+
 
     Path = add_loader_path(IPath, Mode),
-    {ok,#state{root = Root,
-	       path = Path,
-	       moddb = Db,
-	       namedb = init_namedb(Path),
-	       mode = Mode}}.
+    State0 = #state{root = Root,
+		    path = Path,
+		    moddb = Db,
+		    namedb = init_namedb(Path),
+		    mode = Mode},
+    
+    State = case init:get_argument(code_path_cache) of
+		error -> 
+		    State0;
+		{ok, _} -> 
+		    create_cache(State0)
+	    end,
+    {ok,State}.
 
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     %% I doubt that changing the code for this module will work,
     %% but at least we avoid a compilation warning.
     {ok,State}.
@@ -79,59 +89,62 @@ code_change(OldVsn, State, Extra) ->
 %% The gen_server call back functions.
 %%
 
-handle_call({stick_dir,Dir}, {From, Tag}, S) ->
+handle_call({stick_dir,Dir}, {_From,_Tag}, S) ->
     {reply,stick_dir(Dir, true, S),S};
 
-handle_call({unstick_dir,Dir}, {From,Tag}, S) ->
+handle_call({unstick_dir,Dir}, {_From,_Tag}, S) ->
     {reply,stick_dir(Dir, false, S),S};
 
-handle_call({stick_mod,Mod}, {From, Tag}, S) ->
+handle_call({stick_mod,Mod}, {_From,_Tag}, S) ->
     {reply,stick_mod(Mod, true, S),S};
 
-handle_call({unstick_mod,Mod}, {From,Tag}, S) ->
+handle_call({unstick_mod,Mod}, {_From,_Tag}, S) ->
     {reply,stick_mod(Mod, false, S),S};
 
-handle_call({dir,Dir},{From,Tag}, S) ->
+handle_call({dir,Dir},{_From,_Tag}, S) ->
     Root = S#state.root,
     Resp = do_dir(Root,Dir,S#state.namedb),
     {reply,Resp,S};
 
-handle_call({load_file,Mod},{From,Tag}, S) ->
+handle_call({load_file,Mod},{_From,_Tag}, S) ->
     case modp(Mod) of
 	false ->
 	    {reply,{error, badarg},S};
 	_ ->
-	    Path = S#state.path,
-	    Status = load_file(Mod, Path, S#state.moddb),
-	    {reply,Status,S}
+	    {St,Status} = load_file(Mod, S),
+	    {reply,Status,St}
     end;
 
-handle_call({add_path,Where,Dir},{From,Tag}, S) ->
-    {Resp,Path} = add_path(Where,Dir,S#state.path,S#state.namedb),
-    {reply,Resp,S#state{path = Path}};
+handle_call({add_path,Where,Dir}, {_From,_Tag}, S) ->
+    {Resp,Path} = add_path(Where, Dir, S#state.path, S#state.namedb),
+    {reply,Resp,rehash_cache(S#state{path = Path})};
 
-handle_call({add_paths,Where,Dirs},{From,Tag}, S) ->
+handle_call({add_paths,Where,Dirs}, {_From,_Tag}, S) ->
     {Resp,Path} = add_paths(Where,Dirs,S#state.path,S#state.namedb),
-    {reply,Resp,S#state{path = Path}};
+    {reply,Resp,rehash_cache(S#state{path = Path})};
 
-handle_call({set_path,PathList},{From,Tag}, S) ->
+handle_call({set_path,PathList}, {_From,_Tag}, S) ->
     Path = S#state.path,
     {Resp, NewPath,NewDb} = set_path(PathList, Path, S#state.namedb),
-    {reply,Resp,S#state{path = NewPath, namedb=NewDb}};
+    {reply,Resp,rehash_cache(S#state{path = NewPath, namedb=NewDb})};
 
-handle_call({del_path,Name},{From,Tag}, S) ->
+handle_call({del_path,Name},{_From,_Tag}, S) ->
     {Resp,Path} = del_path(Name,S#state.path,S#state.namedb),
-    {reply,Resp,S#state{path = Path}};
+    {reply,Resp,rehash_cache(S#state{path = Path})};
 
-handle_call({replace_path,Name,Dir},{From,Tag}, S) ->
+handle_call({replace_path,Name,Dir},{_From,_Tag}, S) ->
     {Resp,Path} = replace_path(Name,Dir,S#state.path,S#state.namedb),
-    {reply,Resp,S#state{path = Path}};
+    {reply,Resp,rehash_cache(S#state{path = Path})};
 
-handle_call(get_path,{From,Tag}, S) ->
+handle_call(rehash, {_From,_Tag}, S0) ->
+    S = create_cache(S0),
+    {reply,ok,S};
+
+handle_call(get_path, {_From,_Tag}, S) ->
     {reply,S#state.path,S};
 
 %% Messages to load, delete and purge modules/files.
-handle_call({load_abs,File,Mod},{From,Tag}, S) ->
+handle_call({load_abs,File,Mod}, {_From,_Tag}, S) ->
     case modp(File) of
 	false ->
 	    {reply,{error,badarg},S};
@@ -140,65 +153,66 @@ handle_call({load_abs,File,Mod},{From,Tag}, S) ->
 	    {reply,Status,S}
     end;
 
-handle_call({load_binary,Mod,File,Bin},{From,Tag}, S) ->
+handle_call({load_binary,Mod,File,Bin}, {_From,_Tag}, S) ->
     Status = do_load_binary(Mod,File,Bin,S#state.moddb),
     {reply,Status,S};
 
-handle_call({ensure_loaded,Mod0}, {From,Tag}, St0) ->
+handle_call({ensure_loaded,Mod0}, {_From,_Tag}, St0) ->
     Fun = fun (M, St) ->
 		  case erlang:module_loaded(M) of
 		      true ->
-			  {module,M};
+			  {St, {module,M}};
 		      false when St#state.mode =:= interactive ->
-			  Path = St#state.path,
-			  load_file(M, Path, St#state.moddb);
-		      false -> {error,embedded}
+			  load_file(M, St);
+		      false -> 
+			  {St, {error,embedded}}
 		  end
 	  end,
     do_mod_call(Fun, Mod0, {error,badarg}, St0);
 
-handle_call({delete,Mod0}, {From,Tag}, S) ->
+handle_call({delete,Mod0}, {_From,_Tag}, S) ->
     Fun = fun (M, St) ->
 		  case catch erlang:delete_module(M) of
 		      true ->
 			  ets:delete(St#state.moddb, M),
-			  true;
-		      _ -> false
+			  {St, true};
+		      _ -> 
+			  {St, false}
 		  end
 	  end,
     do_mod_call(Fun, Mod0, false, S);
 
-handle_call({purge,Mod0}, {From,Tag}, St0) ->
-    do_mod_call(fun (M, St) -> do_purge(M) end, Mod0, false, St0);
+handle_call({purge,Mod0}, {_From,_Tag}, St0) ->
+    do_mod_call(fun (M, St) -> {St, do_purge(M)} end, Mod0, false, St0);
 
-handle_call({soft_purge,Mod0},{From,Tag}, St0) ->
-    do_mod_call(fun (M, St) -> do_soft_purge(M) end, Mod0, true, St0);
+handle_call({soft_purge,Mod0},{_From,_Tag}, St0) ->
+    do_mod_call(fun (M, St) -> {St,do_soft_purge(M)} end, Mod0, true, St0);
 
-handle_call({is_loaded,Mod0},{From,Tag}, St0) ->
-    do_mod_call(fun (M, St) -> is_loaded(M, St#state.moddb) end, Mod0, false, St0);
+handle_call({is_loaded,Mod0},{_From,_Tag}, St0) ->
+    do_mod_call(fun (M, St) -> {St, is_loaded(M, St#state.moddb)} end, Mod0, false, St0);
 
-handle_call(all_loaded,{From,Tag}, S) ->
+handle_call(all_loaded, {_From,_Tag}, S) ->
     Db = S#state.moddb,
     {reply,all_loaded(Db),S};
 
-handle_call({get_object_code,Mod0}, {From,Tag}, St0) ->
+handle_call({get_object_code,Mod0}, {_From,_Tag}, St0) ->
     Fun = fun(M, St) ->
 		  Path = St#state.path,
 		  case mod_to_bin(Path, atom_to_list(M)) of
-		      {_,Bin,FName} -> {M,Bin,FName};
-		      Error -> Error
+		      {_,Bin,FName} -> {St,{M,Bin,FName}};
+		      Error -> {St,Error}
 		  end
 	  end,
     do_mod_call(Fun, Mod0, error, St0);
 
-handle_call({is_sticky, Mod}, {From, Tag}, S) ->
+handle_call({is_sticky, Mod}, {_From,_Tag}, S) ->
     Db = S#state.moddb,
     {reply, is_sticky(Mod,Db), S};
 
-handle_call(stop,{From,Tag}, S) ->
+handle_call(stop,{_From,_Tag}, S) ->
     {stop,normal,stopped,S};
 
-handle_call(Other,{From,Tag}, S) ->			
+handle_call(Other,{_From,_Tag}, S) ->			
     error_logger:error_msg(" ** Codeserver*** ignoring ~w~n ",[Other]),
     {noreply,S}.
 
@@ -210,15 +224,63 @@ handle_info(_,S) ->
 terminate(_Reason,_) ->
     ok.
 
-do_mod_call(Action, Module, Error, St) when atom(Module) ->
-    {reply,Action(Module, St),St};
-do_mod_call(Action, Module, Error, St) ->
+do_mod_call(Action, Module, _Error, St0) when is_atom(Module) ->
+    {St, Res} = Action(Module, St0),
+    {reply,Res,St};
+do_mod_call(Action, Module, Error, St0) ->
     case catch list_to_atom(Module) of
 	{'EXIT',_} ->
-	    {reply,Error,St};
+	    {reply,Error,St0};
 	Atom when atom(Atom) ->
-	    {reply,Action(Atom, St),St}
+	    {St, Res} = Action(Atom, St0),
+	    {reply,Res,St}
     end.
+
+%% --------------------------------------------------------------
+%% Cache functions 
+%% --------------------------------------------------------------
+
+create_cache(St = #state{cache = no_cache}) ->
+    Cache = ets:new(code_cache, [protected]),
+    rehash_cache(Cache, St);
+create_cache(St) ->
+    rehash_cache(St).
+
+rehash_cache(St = #state{cache = no_cache}) ->
+    St;
+rehash_cache(St = #state{cache = OldCache}) ->
+    ets:delete(OldCache), 
+    Cache = ets:new(code_cache, [protected]),
+    rehash_cache(Cache, St).
+
+rehash_cache(Cache, St = #state{path = Path}) ->
+    Ext = code_aux:objfile_extension(),
+    {Cache,NewPath} = locate_mods(lists:reverse(Path), Ext, Cache, []),
+    St#state{cache = Cache, path=NewPath}.
+
+locate_mods([Dir0|Path], Ext, Cache, Acc) ->
+    Dir = filename:absname(Dir0), %% Cache always expands the path 
+    case file:list_dir(Dir) of
+	{ok, Files} -> 
+	    Cache = filter_mods(Files, Ext, Dir, Cache),
+	    locate_mods(Path, Ext, Cache, [Dir|Acc]);
+	{error, _} ->
+	    locate_mods(Path, Ext, Cache, Acc)
+    end;
+locate_mods([], _, Cache, Path) ->
+    {Cache,Path}.
+
+filter_mods([File|Rest], Ext, Dir, Cache) ->
+    case filename:extension(File) of
+	Ext ->
+	    Mod = list_to_atom(filename:rootname(File, Ext)),
+	    true = ets:insert(Cache, {Mod, Dir}),
+	    filter_mods(Rest, Ext, Dir, Cache);
+	_ ->
+	    filter_mods(Rest, Ext, Dir, Cache)
+    end;
+filter_mods([], _, _, Cache) ->
+    Cache.
 
 %% --------------------------------------------------------------
 %% Path handling functions.
@@ -233,7 +295,7 @@ make_path(BundleDir,Bundles0) ->
 
 choose_bundles(Bundles) ->
     Bs = lists:sort(lists:map(fun(B) -> cr_b(B) end,Bundles)),
-    lists:map(fun({Name,NumVsn,FullName}) -> FullName end,
+    lists:map(fun({_Name,_NumVsn,FullName}) -> FullName end,
 	      choose(lists:reverse(Bs),[])).
 
 cr_b(FullName) ->
@@ -496,7 +558,7 @@ maybe_update(Dir,NameDb) ->
         _     -> false
     end.
 
-update(Dir,false) ->
+update(_Dir, false) ->
     ok;
 update(Dir,NameDb) ->
     replace_name(Dir,NameDb).
@@ -703,22 +765,22 @@ do_dir(Root,lib_dir,_) ->
     filename:append(Root, "lib");
 do_dir(Root,root_dir,_) ->
     Root;
-do_dir(Root,compiler_dir,NameDb) ->
+do_dir(_Root,compiler_dir,NameDb) ->
     case lookup_name("compiler", NameDb) of
 	{ok, Dir} -> Dir;
 	_         -> ""
     end;
-do_dir(Root,{lib_dir,Name},NameDb) ->
+do_dir(_Root,{lib_dir,Name},NameDb) ->
     case catch lookup_name(code_aux:to_list(Name), NameDb) of
 	{ok, Dir} -> Dir;
 	_         -> {error, bad_name}
     end;
-do_dir(Root,{priv_dir,Name},NameDb) ->
+do_dir(_Root,{priv_dir,Name},NameDb) ->
     case catch lookup_name(code_aux:to_list(Name), NameDb) of
 	{ok, Dir} -> filename:append(Dir, "priv");
 	_         -> {error, bad_name}
     end;
-do_dir(Root,_,_) ->
+do_dir(_, _, _) ->
     'bad request to code'.
 
 stick_dir(Dir, Stick, St) ->
@@ -806,6 +868,24 @@ load_abs(File, Mod0, Db) ->
 	    {error,nofile}
     end.
 
+try_load_module(Mod, Dir, Db) ->
+    File = filename:append(Dir, code_aux:to_path(Mod) ++ 
+			   code_aux:objfile_extension()),
+    case erl_prim_loader:get_file(File) of
+	error -> 
+	    %% No cache case tries with erl_prim_loader here
+	    %% Should the caching code do it??
+%           File2 = code_aux:to_path(Mod) ++ code_aux:objfile_extension(),
+% 	    case erl_prim_loader:get_file(File2) of
+% 		error -> 
+	    error;     % No more alternatives !
+% 		{ok,Bin,FName} ->
+% 		    	    try_load_module(absname(FName), Mod, Binary, Db)
+% 	    end;
+	{ok,Binary,FName} ->
+	    try_load_module(absname(FName), Mod, Binary, Db)
+    end.
+
 try_load_module(File, Mod, Bin, Db) ->
     M = code_aux:to_atom(Mod),
 
@@ -871,14 +951,27 @@ load_native_code(Mod, Bin, ChunkTag, Loader) ->
     end.
 
 int_list([H|T]) when integer(H) -> int_list(T);
-int_list([_|T])                 -> false;
+int_list([_|_])                 -> false;
 int_list([])                    -> true.
 
 
-load_file(Mod, Path, Db) ->
+load_file(Mod, St=#state{path=Path,moddb=Db,cache=no_cache}) ->
     case mod_to_bin(Path, Mod) of
-	error -> {error,nofile};
-	{Mod,Binary,File} -> try_load_module(File, Mod, Binary, Db)
+	error -> {St, {error,nofile}};
+	{Mod,Binary,File} -> {St,try_load_module(File, Mod, Binary, Db)}
+    end;
+load_file(Mod, St0=#state{moddb=Db,cache=Cache}) ->
+    case ets:lookup(Cache, Mod) of
+	[] -> 
+	    St = rehash_cache(St0),
+	    case ets:lookup(St#state.cache, Mod) of
+		[] -> 
+		    {St, {error,nofile}};
+		[{Mod,Dir}] ->
+		    {St, try_load_module(Mod, Dir, Db)}
+	    end;
+	[{Mod,Dir}] ->
+	    {St0, try_load_module(Mod, Dir, Db)}
     end.
 
 mod_to_bin([Dir|Tail], Mod) ->
@@ -902,7 +995,7 @@ mod_to_bin([], Mod) ->
 absname(File) ->
     case prim_file:get_cwd() of
 	{ok,Cwd} -> filename:absname(File, Cwd);
-	Error -> File
+	_Error -> File
     end.
 
 %% do_purge(Module)
@@ -954,7 +1047,7 @@ is_loaded(M, Db) ->
 all_loaded(Db) ->
     all_l(Db, ets:slot(Db, 0), 1, []).
 
-all_l(Db, '$end_of_table', _, Acc) ->
+all_l(_Db, '$end_of_table', _, Acc) ->
     Acc;
 all_l(Db, ModInfo, N, Acc) ->
     NewAcc = strip_mod_info(ModInfo,Acc),

@@ -45,7 +45,10 @@ dnl style assume that $host is also what we are building for. I would
 dnl like to get cross compiling working, since we actually have
 dnl systems we cross compile for!
 dnl
-AC_CANONICAL_HOST
+
+if test "X$host" != "Xfree_source" -a "X$host" != "Xwin32"; then
+    AC_CANONICAL_HOST
+fi
 
 TARGET=$host
 AC_SUBST(TARGET)

@@ -383,12 +383,12 @@ addr(Addrs) -> addr(Addrs, "").
 
 addr([{snmpUDPDomain, {Ip, Port}}], Str) ->
     [Str, io_lib:format("~s:~w", [ip(Ip), Port])];
-addr([{snmpUDPDomain, {Ip, Port}} | Addrs], Str) ->
+addr([{snmpUDPDomain, {Ip, Port}} | Addrs], _Str) ->
     addr(Addrs, [io_lib:format("~s:~w, ", [ip(Ip), Port])]);
 %% Handle old format as well...
 addr([{snmpUDPDomain, Ip, Port}], Str) ->
     [Str, io_lib:format("~s:~w", [ip(Ip), Port])];
-addr([{snmpUDPDomain, Ip, Port} | Addrs], Str) ->
+addr([{snmpUDPDomain, Ip, Port} | Addrs], _Str) ->
     addr(Addrs, [io_lib:format("~s:~w, ", [ip(Ip), Port])]);
 addr([], Str) ->
     Str.
@@ -400,7 +400,7 @@ ip({A,B,C,D}) ->
 %% Temporary fix, since we dont really know what Term is...
 %% grumble, mutter, ...
 %% Mib is a list of {Oid,Aliasname,bertype} (with no duplicates)
-format({Packet,Ip,Port},Mib) when binary(Packet) ->
+format({Packet,Ip,Port}, _Mib) when binary(Packet) ->
     L = binary_to_list(Packet),
     case catch snmp_pdus:dec_message(L) of
 	{'EXIT', Reason} -> 
@@ -417,5 +417,6 @@ format({Packet,Ip,Port},Mib) when binary(Packet) ->
 	DecodedMessage -> 
 	    io_lib:format("~p received from ~p:~p",[DecodedMessage,Ip,Port])
     end;
-format(Term,Mib) ->
+format(Term,_Mib) ->
     io_lib:format("~p",[Term]).
+

@@ -47,7 +47,7 @@ load_driver(DriverName) ->
     end.
 
 		    
-is_driver_loaded(Name) ->
+is_driver_loaded(_Name) ->
     case whereis(asn1_driver_owner) of
 	undefined ->
 	    false;

@@ -150,7 +150,7 @@ change_time(Name, Atime, Mtime) when tuple(Atime), tuple(Mtime) ->
 %% this is useful
 
 with_port(Fun) ->
-    case catch erlang:open_port_prim({spawn, efile}, [binary]) of
+    case catch open_port({spawn, efile}, [binary]) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
 	Port ->
@@ -349,7 +349,7 @@ mkport(Cmd, BinaryFile) ->
 	BinaryFile == 0 -> [];
 	true -> [binary]  %% flag is set
     end,
-    case catch erlang:open_port_prim({spawn, efile}, Opts) of
+    case catch open_port({spawn, efile}, Opts) of
 	P ->
 	    port_command(P, Cmd),
 	    P;

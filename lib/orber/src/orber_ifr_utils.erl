@@ -49,6 +49,8 @@
 -include("orber_ifr.hrl").
 -include("ifr_objects.hrl").
 
+-define(DEBUG_LEVEL, 5).
+
 %%%======================================================================
 %%% Internal stuff
 
@@ -327,8 +329,7 @@ init_DB(Timeout, Options) ->
 	       _ ->
 		   ?ifr_record_tuple_list(Options)
     end,
-    DB_tables_created = lists:map(fun({T,F}) -> F() end, Func),
-    db_error_check(DB_tables_created,"Database table creation failed."),
+    create_tables(Func), 
     Wait = mnesia:wait_for_tables(?ifr_object_list, Timeout),
     db_error_check([Wait],"Database table waiting failed.").
 
@@ -339,6 +340,32 @@ db_error_check(Checkval,Message) ->
 	false ->
 	    ok
     end.   
+
+create_tables([{T,F}|Rest]) -> 
+    case F() of
+	ok ->
+	    create_tables2(Rest);
+	{aborted,{already_exists,_}} ->
+	    exit({error, "Orber Mnesia Table(s) already exist. Cannot install Orber."});
+	Reason ->
+	    orber:dbg("[~p] orber_ifr_utils:create_tables(~p); 
+Failed to create the Mnesia table.
+Reason: ~p", [?LINE, T, Reason], ?DEBUG_LEVEL),
+	    exit({error, "Unable to create Mnesia Table"})
+    end.
+
+create_tables2([]) -> 
+    ok;
+create_tables2([{T,F}|Rest]) -> 
+    case F() of
+	ok ->
+	    create_tables2(Rest);
+	Reason ->
+	    orber:dbg("[~p] orber_ifr_utils:create_tables2(~p); 
+Failed to create the Mnesia table.
+Reason: ~p", [?LINE, T, Reason], ?DEBUG_LEVEL),
+	    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO})
+    end.
 
 
 %%%----------------------------------------------------------------------

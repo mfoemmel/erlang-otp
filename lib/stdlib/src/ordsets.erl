@@ -27,6 +27,7 @@
 %% Deprecated interface.
 
 -export([new_set/0,set_to_list/1,list_to_set/1,subset/2]).
+-deprecated([{new_set,0},{set_to_list,1},{list_to_set,1},{subset,2}]).
 
 %% new() -> Set.
 %%  Return a new empty ordered set.
@@ -175,7 +176,7 @@ filter(F, [E|Es]) ->
     end;
 filter(_, []) -> [].
 
-%% Depreciated interface.
+%% Deprecated interface.
 
 new_set() -> new().
 

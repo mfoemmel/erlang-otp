@@ -17,4 +17,3 @@
 %%
 -record(appl_data, {name, regs = [], phases, mod, mods = [],
                     inc_apps, maxP = infinity, maxT = infinity}).
--define(wild_appl_mods, {appl_data,'_','_','_','_','$2','_','_','_'}).

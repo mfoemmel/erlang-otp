@@ -53,9 +53,9 @@
 -export([fam2rel/1, rel2fam/1]).
 
 -import(lists,
-        [any/2, append/1, duplicate/2, flatten/1, foreach/2, last/1,
-         map/2, mapfoldl/3, member/2, merge/2, reverse/1, reverse/2,
-         sort/1, umerge/1, umerge/2, usort/1]).
+        [any/2, append/1, duplicate/2, flatten/1, foreach/2,
+         keysort/2, last/1, map/2, mapfoldl/3, member/2, merge/2,
+         reverse/1, reverse/2, sort/1, umerge/1, umerge/2, usort/1]).
 
 -compile({inline, [{family_to_relation,1}, {relation_to_family,1}]}).
 
@@ -68,7 +68,7 @@
            {test_rel,3}, {symdiff,3}, 
            {subst,4}]}).
 
--compile({inline, [{restriction_op,4},{fam_binop,3}]}).
+-compile({inline, [{fam_binop,3}]}).
 
 %% Nope, no is_member, del_member or add_member.
 %%
@@ -92,7 +92,7 @@
 %       ).
 -define(SET(L, T), #?TAG{data = L, type = T}).
 -define(IS_SET(S), record(S, ?TAG)).
--define(IS_UNTYPED_SET(S), ?TYPE(S) == ?ANYTYPE).
+-define(IS_UNTYPED_SET(S), ?TYPE(S) =:= ?ANYTYPE).
 
 %% Ordered sets and atoms:
 -define(ORDDATA(S), (S)#?ORDTAG.orddata).
@@ -342,8 +342,8 @@ symmetric_partition(S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
 
 product(S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
     if
-        ?TYPE(S1) == ?ANYTYPE -> S1;
-        ?TYPE(S2) == ?ANYTYPE -> S2;
+        ?TYPE(S1) =:= ?ANYTYPE -> S1;
+        ?TYPE(S2) =:= ?ANYTYPE -> S2;
         true ->
 	    F = fun(E) -> {0, E} end,
 	    T = ?BINREL(?TYPE(S1), ?TYPE(S2)),
@@ -414,7 +414,7 @@ is_set(S) when ?IS_ORDSET(S) ->
     false.
 
 is_empty_set(S) when ?IS_SET(S) -> 
-    ?LIST(S) == [];
+    ?LIST(S) =:= [];
 is_empty_set(S) when ?IS_ORDSET(S) ->
     false.
 
@@ -508,7 +508,7 @@ relative_product(R1, R2) when ?IS_SET(R1), ?IS_SET(R2) ->
     relative_product1(converse(R1), R2);
 relative_product(RT, R) when tuple(RT), ?IS_SET(R) ->
     EmptyR = case ?TYPE(R) of
-                 ?BINREL(_, _) -> ?LIST(R) == [];
+                 ?BINREL(_, _) -> ?LIST(R) =:= [];
                  ?ANYTYPE -> true;
                  _ -> erlang:fault(badarg, [RT, R])
              end,
@@ -531,8 +531,8 @@ relative_product1(R1, R2) when ?IS_SET(R1), ?IS_SET(R2) ->
                      _ -> erlang:fault(badarg, [R1, R2])
                  end,
     case match_types(DTR1, DTR2) of
-        true when DTR1 == ?ANYTYPE -> R1;
-        true when DTR2 == ?ANYTYPE -> R2;
+        true when DTR1 =:= ?ANYTYPE -> R1;
+        true when DTR2 =:= ?ANYTYPE -> R2;
         true -> ?SET(relprod(?LIST(R1), ?LIST(R2)), ?BINREL(RTR1, RTR2));
         false -> erlang:fault(type_mismatch, [R1, R2])
     end.
@@ -653,8 +653,8 @@ composite(Fn1, Fn2) when ?IS_SET(Fn1), ?IS_SET(Fn2) ->
 			      _ -> erlang:fault(badarg, [Fn1, Fn2])
 			  end,
     case match_types(RTF1, DTF2) of
-        true when DTF1 == ?ANYTYPE -> Fn1;
-        true when DTF2 == ?ANYTYPE -> Fn2;
+        true when DTF1 =:= ?ANYTYPE -> Fn1;
+        true when DTF2 =:= ?ANYTYPE -> Fn2;
         true -> 
 	    case comp(?LIST(Fn1), ?LIST(Fn2)) of
 		SL when list(SL) ->
@@ -683,14 +683,7 @@ inverse(Fn) when ?IS_SET(Fn) ->
 %%% 
 
 %% Equivalent to range(restriction(inverse(substitution(Fun, S1)), S2)).
-restriction(SetFun, Set1, Set2) ->
-    restriction_op(SetFun, Set1, Set2, fun restrict/2).
-
-drestriction(SetFun, Set1, Set2) ->
-    restriction_op(SetFun, Set1, Set2, fun diff_restrict/2).
-
-%% Inlined.
-restriction_op(I, R, S, RFun) when integer(I), ?IS_SET(R), ?IS_SET(S) ->
+restriction(I, R, S) when integer(I), ?IS_SET(R), ?IS_SET(S) ->
     RT = ?TYPE(R),
     ST = ?TYPE(S),
     case check_for_sort(RT, I) of
@@ -699,25 +692,33 @@ restriction_op(I, R, S, RFun) when integer(I), ?IS_SET(R), ?IS_SET(S) ->
 	error ->
 	    erlang:fault(badarg, [I, R, S]);
 	Sort ->
-	    case match_types(?REL_TYPE(I, RT), ST) of
-		true ->
-		    R1 = inverse_substitution(?LIST(R), I, Sort),
-		    ?SET(sort(Sort, RFun(?LIST(S), R1)), RT);
-		false ->
+	    RL = ?LIST(R),
+	    case {match_types(?REL_TYPE(I, RT), ST), ?LIST(S)} of
+		{true, _SL} when RL =:= [] ->
+		    R;
+		{true, []} ->
+                    ?SET([], RT);
+		{true, [E | Es]} when Sort =:= false -> % I =:= 1
+		    ?SET(reverse(restrict_n(I, RL, E, Es, [])), RT);
+		{true, [E | Es]} ->
+		    ?SET(sort(restrict_n(I, keysort(I, RL), E, Es, [])), RT);
+		{false, _SL} ->
 		    erlang:fault(type_mismatch, [I, R, S])
 	    end
     end;
-restriction_op(SetFun, S1, S2, RFun) when ?IS_SET(S1), ?IS_SET(S2) ->
+restriction(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
     Type1 = ?TYPE(S1),
     Type2 = ?TYPE(S2),
     SL1 = ?LIST(S1),
     case external_fun(SetFun) of
+	false when Type2 =:= ?ANYTYPE ->
+	    S2;
 	false ->
 	    case subst(SL1, SetFun, element_type(Type1)) of
 		{NSL, NewType} -> % NewType can be ?ANYTYPE
 		    case match_types(NewType, Type2) of
 			true ->
-			    NL = sort(RFun(?LIST(S2), converse(NSL, []))),
+			    NL = sort(restrict(?LIST(S2), converse(NSL, []))),
 			    ?SET(NL, Type1);
 			false ->
 			    erlang:fault(type_mismatch, [SetFun, S1, S2])
@@ -725,7 +726,7 @@ restriction_op(SetFun, S1, S2, RFun) when ?IS_SET(S1), ?IS_SET(S2) ->
 		Bad ->
 		    erlang:fault(Bad, [SetFun, S1, S2])
 	    end;
-	_ when Type1 == ?ANYTYPE ->
+	_ when Type1 =:= ?ANYTYPE ->
 	    S1;
 	_XFun when ?IS_SET_OF(Type1) ->
             erlang:fault(badarg, [SetFun, S1, S2]);
@@ -738,7 +739,72 @@ restriction_op(SetFun, S1, S2, RFun) when ?IS_SET(S1), ?IS_SET(S2) ->
 		    case match_types(FunT, Type2) of
 			true ->
 			    R1 = inverse_substitution(SL1, XFun, Sort),
-			    ?SET(sort(Sort, RFun(?LIST(S2), R1)), Type1);
+			    ?SET(sort(Sort, restrict(?LIST(S2), R1)), Type1);
+			false ->
+			    erlang:fault(type_mismatch, [SetFun, S1, S2])
+		    end
+	    end
+    end.
+
+drestriction(I, R, S) when integer(I), ?IS_SET(R), ?IS_SET(S) ->
+    RT = ?TYPE(R),
+    ST = ?TYPE(S),
+    case check_for_sort(RT, I) of
+	empty ->
+	    R;
+	error ->
+	    erlang:fault(badarg, [I, R, S]);
+	Sort ->
+	    RL = ?LIST(R),
+	    case {match_types(?REL_TYPE(I, RT), ST), ?LIST(S)} of
+		{true, []} ->
+		    R;
+		{true, _SL} when RL =:= [] ->
+		    R;
+		{true, [E | Es]} when Sort =:= false -> % I =:= 1
+		    ?SET(diff_restrict_n(I, RL, E, Es, []), RT);
+		{true, [E | Es]} ->
+		    ?SET(diff_restrict_n(I, keysort(I, RL), E, Es, []), RT);
+		{false, _SL} ->
+		    erlang:fault(type_mismatch, [I, R, S])
+	    end
+    end;
+drestriction(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
+    Type1 = ?TYPE(S1),
+    Type2 = ?TYPE(S2),
+    SL1 = ?LIST(S1),
+    case external_fun(SetFun) of
+	false when Type2 =:= ?ANYTYPE ->
+	    S1;
+	false ->
+	    case subst(SL1, SetFun, element_type(Type1)) of
+		{NSL, NewType} -> % NewType can be ?ANYTYPE
+		    case match_types(NewType, Type2) of
+			true ->
+			    SL2 = ?LIST(S2),
+			    NL = sort(diff_restrict(SL2, converse(NSL, []))),
+			    ?SET(NL, Type1);
+			false ->
+			    erlang:fault(type_mismatch, [SetFun, S1, S2])
+		    end;
+		Bad ->
+		    erlang:fault(Bad, [SetFun, S1, S2])
+	    end;
+	_ when Type1 =:= ?ANYTYPE ->
+	    S1;
+	_XFun when ?IS_SET_OF(Type1) ->
+            erlang:fault(badarg, [SetFun, S1, S2]);
+	XFun ->
+	    FunT = XFun(Type1),
+	    case catch check_fun(Type1, XFun, FunT) of
+		{'EXIT', _} ->
+		    erlang:fault(badarg, [SetFun, S1, S2]);
+		Sort ->
+		    case match_types(FunT, Type2) of
+			true ->
+			    R1 = inverse_substitution(SL1, XFun, Sort),
+			    SL2 = ?LIST(S2),
+			    ?SET(sort(Sort, diff_restrict(SL2, R1)), Type1);
 			false ->
 			    erlang:fault(type_mismatch, [SetFun, S1, S2])
 		    end
@@ -785,7 +851,7 @@ substitution(SetFun, Set) when ?IS_SET(Set) ->
 	    end;
 	false ->
 	    empty_set();
-	_ when Type == ?ANYTYPE ->
+	_ when Type =:= ?ANYTYPE ->
 	    empty_set();
 	_XFun when ?IS_SET_OF(Type) ->
             erlang:fault(badarg, [SetFun, Set]);
@@ -813,9 +879,9 @@ partition(I, Set) when integer(I), ?IS_SET(Set) ->
         error ->
             erlang:fault(badarg, [I, Set]);
 	false -> % I =:= 1
-	    ?SET(partition1(?LIST(Set)), ?SET_OF(Type));
+	    ?SET(partition_n(I, ?LIST(Set)), ?SET_OF(Type));
         true ->
-	    partition_n(Set, I, Type)
+	    ?SET(partition_n(I, keysort(I, ?LIST(Set))), ?SET_OF(Type))
     end;
 partition(Fun, Set) ->
     range(partition_family(Fun, Set)).
@@ -829,12 +895,19 @@ partition(I, R, S) when integer(I), ?IS_SET(R), ?IS_SET(S) ->
 	error ->
 	    erlang:fault(badarg, [I, R, S]);
 	Sort ->
-	    case match_types(?REL_TYPE(I, RT), ST) of
-		true ->
-		    R1 = inverse_substitution(?LIST(R), I, Sort),
-		    [L1 | L2] = partition3(?LIST(S), R1),
-		    {?SET(sort(Sort, L1), RT), ?SET(sort(Sort, L2), RT)};
-		false ->
+	    RL = ?LIST(R),
+	    case {match_types(?REL_TYPE(I, RT), ST), ?LIST(S)} of
+		{true, _SL} when RL =:= [] ->
+		    {R, R};
+		{true, []} ->
+		    {?SET([], RT), R};
+		{true, [E | Es]} when Sort =:= false -> % I =:= 1
+		    [L1 | L2] = partition3_n(I, RL, E, Es, [], []),
+		    {?SET(L1, RT), ?SET(L2, RT)};
+		{true, [E | Es]} ->
+		    [L1 | L2] = partition3_n(I, keysort(I,RL), E, Es, [], []),
+		    {?SET(L1, RT), ?SET(L2, RT)};
+		{false, _SL} ->
 		    erlang:fault(type_mismatch, [I, R, S])
 	    end
     end;
@@ -843,6 +916,8 @@ partition(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
     Type2 = ?TYPE(S2),
     SL1 = ?LIST(S1),
     case external_fun(SetFun) of
+	false when Type2 =:= ?ANYTYPE ->
+	    {S2, S1};
 	false ->
 	    case subst(SL1, SetFun, element_type(Type1)) of
 		{NSL, NewType} -> % NewType can be ?ANYTYPE
@@ -857,7 +932,7 @@ partition(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
 		Bad ->
 		    erlang:fault(Bad, [SetFun, S1, S2])
 	    end;
-	_ when Type1 == ?ANYTYPE ->
+	_ when Type1 =:= ?ANYTYPE ->
 	    {S1, S1};
 	_XFun when ?IS_SET_OF(Type1) ->
             erlang:fault(badarg, [SetFun, S1, S2]);
@@ -880,27 +955,27 @@ partition(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
 
 multiple_relative_product(T, R) when tuple(T), ?IS_SET(R) ->
     case test_rel(R, size(T), eq) of
-	ok when ?TYPE(R) == ?ANYTYPE ->
+	true when ?TYPE(R) =:= ?ANYTYPE ->
 	    empty_set();
-        ok -> 
+        true -> 
 	    MProd = mul_relprod(tuple_to_list(T), 1, R),
 	    relative_product(list_to_tuple(MProd));
-        error -> 
+        false -> 
 	    erlang:fault(badarg, [T, R])
     end.
 
 join(R1, I1, R2, I2) 
   when ?IS_SET(R1), ?IS_SET(R2), integer(I1), integer(I2) ->
-    case (test_rel(R1, I1, lte) == ok) and (test_rel(R2, I2, lte) == ok) of
+    case test_rel(R1, I1, lte) and test_rel(R2, I2, lte) of
         false -> 
 	    erlang:fault(badarg, [R1, I1, R2, I2]);
-        true when ?TYPE(R1) == ?ANYTYPE -> R1;
-        true when ?TYPE(R2) == ?ANYTYPE -> R2;
+        true when ?TYPE(R1) =:= ?ANYTYPE -> R1;
+        true when ?TYPE(R2) =:= ?ANYTYPE -> R2;
         true ->
 	    L1 = ?LIST(raise_element(R1, I1)),
 	    L2 = ?LIST(raise_element(R2, I2)),
 	    T = relprod1(L1, L2),
-	    F = case (I1 == 1) and (I2 == 1)  of
+	    F = case (I1 =:= 1) and (I2 =:= 1)  of
 		    true ->
 			fun({X,Y}) -> join_element(X, Y) end;
 		    false ->
@@ -914,10 +989,11 @@ join(R1, I1, R2, I2)
 %% Inlined.
 test_rel(R, I, C) ->
     case ?TYPE(R) of
-        Rel when ?IS_RELATION(Rel), C == eq, I == ?REL_ARITY(Rel) -> ok;
-        Rel when ?IS_RELATION(Rel), C == lte, I>=1, I =< ?REL_ARITY(Rel) -> ok;
-        ?ANYTYPE -> ok;
-        _ -> error
+        Rel when ?IS_RELATION(Rel), C =:= eq, I =:= ?REL_ARITY(Rel) -> true;
+        Rel when ?IS_RELATION(Rel), C =:= lte, I>=1, I =< ?REL_ARITY(Rel) ->
+            true;
+        ?ANYTYPE -> true;
+        _ -> false
     end.
 
 %%%
@@ -1046,10 +1122,11 @@ partition_family(I, Set) when integer(I), ?IS_SET(Set) ->
         error ->
             erlang:fault(badarg, [I, Set]);
 	false -> % when I =:= 1
-	    ?SET(fam_partition1(?LIST(Set)),
+	    ?SET(fam_partition_n(I, ?LIST(Set)),
 		 ?BINREL(?REL_TYPE(I, Type), ?SET_OF(Type)));
-        Sort -> % when Sort == true
-            partition_family(Set, I, Sort, Type, ?REL_TYPE(I, Type))
+        true ->
+	    ?SET(fam_partition_n(I, keysort(I, ?LIST(Set))),
+		 ?BINREL(?REL_TYPE(I, Type), ?SET_OF(Type)))
     end;
 partition_family(SetFun, Set) when ?IS_SET(Set) ->
     Type = ?TYPE(Set),
@@ -1065,23 +1142,25 @@ partition_family(SetFun, Set) when ?IS_SET(Set) ->
 	    end;
 	false ->
 	    empty_set();
-	_ when Type == ?ANYTYPE ->
+	_ when Type =:= ?ANYTYPE ->
 	    empty_set();
 	_XFun when ?IS_SET_OF(Type) ->
             erlang:fault(badarg, [SetFun, Set]);
 	XFun ->
-	    FunT = XFun(Type),
-	    case catch check_fun(Type, XFun, FunT) of
+	    DType = XFun(Type),
+	    case catch check_fun(Type, XFun, DType) of
 		{'EXIT', _} ->
 		    erlang:fault(badarg, [SetFun, Set]);
 		Sort ->
-		    partition_family(Set, XFun, Sort, Type, FunT)
+		    Ts = inverse_substitution(?LIST(Set), XFun, Sort),
+		    P = fam_partition(Ts, Sort),
+		    ?SET(reverse(P), ?BINREL(DType, ?SET_OF(Type)))
 	    end
     end.
 
 family_projection(SetFun, F) when ?IS_SET(F) ->
     case ?TYPE(F) of 
-        ?FAMILY(_, _) when [] == ?LIST(F) ->
+        ?FAMILY(_, _) when [] =:= ?LIST(F) ->
 	    empty_set();
         ?FAMILY(DT, Type) ->
 	    case external_fun(SetFun) of
@@ -1128,12 +1207,18 @@ family_to_digraph(F, Type) when ?IS_SET(F) ->
     end.
 
 digraph_to_family(G) ->
-    digraph_family(G, ?FAMILY(atom, atom)).
+    case catch digraph_family(G) of
+        {'EXIT', _} -> erlang:fault(badarg, [G]);
+        L -> ?SET(L, ?FAMILY(?ATOM_TYPE, ?ATOM_TYPE))
+    end.
 
 digraph_to_family(G, T) ->
     case {is_type(T), T} of
         {true, ?SET_OF(?FAMILY(_,_) = Type)} ->
-            digraph_family(G, Type);
+            case catch digraph_family(G) of
+                {'EXIT', _} -> erlang:fault(badarg, [G, T]);
+                L -> ?SET(L, Type)
+            end;
         _ ->
             erlang:fault(badarg, [G, T])
     end.
@@ -1144,7 +1229,7 @@ digraph_to_family(G, T) ->
 
 %% Type = OrderedSetType
 %%      | SetType
-%%      | atom                       % an atom
+%%      | atom() except '_'
 %% OrderedSetType = {Type, ..., Type}
 %% SetType = [ElementType]           % list of exactly one element
 %% ElementType = '_'                 % any type (implies empty set)
@@ -1210,7 +1295,7 @@ rel(Ts, Sz, Type) when Sz >= 1 ->
     SL = usort(Ts),
     rel(SL, SL, Sz, Type).
 
-rel([T | Ts], L, Sz, Type) when tuple(T), size(T) == Sz ->
+rel([T | Ts], L, Sz, Type) when tuple(T), size(T) =:= Sz ->
     rel(Ts, L, Sz, Type);
 rel([], L, _Sz, Type) ->
     ?SET(L, Type).
@@ -1237,7 +1322,7 @@ func(L0, Type) ->
     L = usort(L0),
     func(L, L, L, Type).
 
-func([{X,_} | Ts], X0, L, Type) when X =/= X0 ->
+func([{X,_} | Ts], X0, L, Type) when X /= X0 ->
     func(Ts, X, L, Type);
 func([{X,_} | _Ts], X0, _L, _Type) when X == X0 ->
     bad_function;
@@ -1259,11 +1344,11 @@ fam2([], Type) ->
 fam2(Ts, Type) -> 
     fam2(sort(Ts), Ts, [], Type).
 
-fam2([{I,L} | T], I0, SL, Type) when I =/= I0 ->
+fam2([{I,L} | T], I0, SL, Type) when I /= I0 ->
     fam2(T, I, [{I,usort(L)} | SL], Type);
 fam2([{I,L} | T], I0, SL, Type) when I == I0 ->
     case {usort(L), SL} of
-	{NL, [{_I,NL} | _]} ->
+	{NL, [{_I,NL1} | _]} when NL == NL1 ->
 	    fam2(T, I0, SL, Type);
 	_ ->
 	    bad_function
@@ -1289,7 +1374,7 @@ setify(L, ?SET_OF(Type0)) ->
             {?SET_OF(Type), Set} = create(L, Type0, Type0, []),
             ?SET(Set, Type);
         N when integer(N) ->
-            rel(L, N);
+             rel(L, N, Type0);
         Sizes ->
             make_oset(L, Sizes, L, Type0)
     end;
@@ -1305,7 +1390,7 @@ is_no_lists(_T, 0, Sz, []) ->
    Sz;
 is_no_lists(_T, 0, Sz, L) ->
    {Sz, L};
-is_no_lists(T, I, Sz, L) when ?REL_TYPE(I, T) == atom ->
+is_no_lists(T, I, Sz, L) when ?IS_ATOM_TYPE(?REL_TYPE(I, T)) ->
    is_no_lists(T, I-1, Sz, L);
 is_no_lists(T, I, Sz, L) ->
    is_no_lists(T, I-1, Sz, [{I,is_no_lists(?REL_TYPE(I, T))} | L]).
@@ -1322,16 +1407,17 @@ make_element(C, Atom, ?ANYTYPE) when ?IS_ATOM_TYPE(Atom), constant(C) ->
     {Atom, C};
 make_element(C, Atom, Atom) when ?IS_ATOM_TYPE(Atom) ->
     {Atom, C};
-make_element(T, TT, ?ANYTYPE) when tuple(T), tuple(TT), size(T) == size(TT) ->
+make_element(T, TT, ?ANYTYPE) when tuple(T), tuple(TT), 
+                                   size(T) =:= size(TT) ->
     make_tuple(tuple_to_list(T), tuple_to_list(TT), [], [], ?ANYTYPE);
-make_element(T, TT, T0) when tuple(T), tuple(TT), size(T) == size(TT) ->
+make_element(T, TT, T0) when tuple(T), tuple(TT), size(T) =:= size(TT) ->
     make_tuple(tuple_to_list(T), tuple_to_list(TT), [], [], tuple_to_list(T0));
 make_element(L, [LT], ?ANYTYPE) when list(L) ->
     create(L, LT, ?ANYTYPE, []);
 make_element(L, [LT], [T0]) when list(L) ->
     create(L, LT, T0, []).
 
-make_tuple([E | Es], [T | Ts], NT, L, T0) when T0 == ?ANYTYPE ->
+make_tuple([E | Es], [T | Ts], NT, L, T0) when T0 =:= ?ANYTYPE ->
     {ET, ES} = make_element(E, T, T0),
     make_tuple(Es, Ts, [ET | NT], [ES | L], T0);
 make_tuple([E | Es], [T | Ts], NT, L, [T0 | T0s]) ->
@@ -1361,9 +1447,9 @@ make_oset([], _Szs, L, Type) ->
     ?SET(usort(L), Type).
 
 %% Optimization. Avoid re-building (nested) tuples.
-test_oset({Sz,Args}, T, T0) when tuple(T), size(T) == Sz ->
+test_oset({Sz,Args}, T, T0) when tuple(T), size(T) =:= Sz ->
     test_oset_args(Args, T, T0);
-test_oset(Sz, T, _T0) when tuple(T), size(T) == Sz ->
+test_oset(Sz, T, _T0) when tuple(T), size(T) =:= Sz ->
     true.
 
 test_oset_args([{Arg,Szs} | Ss], T, T0) ->
@@ -1548,7 +1634,7 @@ subset([H1 | T1], [H2 | T2]) when H1 > H2 ->
 subset([H1 | T1], [H2 | T2]) when H1 == H2 ->
     subset(T1, T2);
 subset(L1, _) ->
-    L1 == [].
+    L1 =:= [].
 
 subset(T1, [H2 | T2], H1) when H1 > H2 ->
     subset(T1, T2, H1);
@@ -1622,7 +1708,7 @@ dom([{X,_} | Es]) ->
 dom([] = L) ->
     L.
 
-dom(L, X, [{X,_} | Es]) ->
+dom(L, X, [{X1,_} | Es]) when X == X1 ->
     dom(L, X, Es);
 dom(L, X, [{Y,_} | Es]) ->
     dom([X | L], Y, Es);
@@ -1678,7 +1764,7 @@ relprod_n(RT, R, EmptyR, IsR) ->
             Type = ?BINREL(DType, RType),
             Prod = 
                 case Empty of
-                    true when DType == ?ANYTYPE; RType == ?ANYTYPE ->
+                    true when DType =:= ?ANYTYPE; RType =:= ?ANYTYPE ->
                         empty_set();
                     true ->
                         ?SET([], Type);
@@ -1700,9 +1786,7 @@ relprod_n([R | Rs]) ->
 relprod_n([], R) ->
     R;
 relprod_n([R | Rs], R0) ->
-    ?BINREL(DT, _) = ?TYPE(R),
-    T = ?SET(inverse_substitution(?LIST(R0), 1, false), 
-             ?BINREL(DT, ?TYPE(R))),
+    T = raise_element(R0, 1),
     R1 = relative_product1(T, R),
     NR = projection({external, fun({{X,A},AS}) -> {X,{A,AS}} end}, R1),
     relprod_n(Rs, NR).
@@ -1741,7 +1825,7 @@ converse([{A,B} | X], L) ->
 converse([], L) ->
     sort(L).
 
-strict([{E,E} | Es], L) ->
+strict([{E1,E2} | Es], L) when E1 == E2 ->
     strict(Es, L);
 strict([E | Es], L) ->
     strict(Es, [E | L]);
@@ -1754,11 +1838,11 @@ weak(Es) ->
 
 weak(Es=[{X,_} | _], [Y | Ys], L) when X > Y ->
     weak(Es, Ys, [{Y,Y} | L]);
-weak(Es=[{X,_} | _], [X | Ys], L) ->
+weak(Es=[{X,_} | _], [Y | Ys], L) when X == Y ->
     weak(Es, Ys, L);
 weak([E={X,Y} | Es], Ys, L) when X > Y ->
     weak1(Es, Ys, [E | L], X);
-weak([E={X,X} | Es], Ys, L) ->
+weak([E={X,Y} | Es], Ys, L) when X == Y ->
     weak2(Es, Ys, [E | L], X);
 weak([E={X,_Y} | Es], Ys, L) -> % when X < _Y
     weak2(Es, Ys, [E, {X,X} | L], X);
@@ -1767,16 +1851,16 @@ weak([], [Y | Ys], L) ->
 weak([], [], L) ->
     reverse(L).
 
-weak1([E={X,Y} | Es], Ys, L, X) when X > Y ->
+weak1([E={X,Y} | Es], Ys, L, X0) when X > Y, X == X0 ->
     weak1(Es, Ys, [E | L], X);
-weak1([E={X,X} | Es], Ys, L, X) ->
+weak1([E={X,Y} | Es], Ys, L, X0) when X == Y, X == X0 ->
     weak2(Es, Ys, [E | L], X);
-weak1([E={X,_Y} | Es], Ys, L, X) -> % when X < Y 
+weak1([E={X,_Y} | Es], Ys, L, X0) when X == X0 -> % when X < Y
     weak2(Es, Ys, [E, {X,X} | L], X);
 weak1(Es, Ys, L, X) ->
     weak(Es, Ys, [{X,X} | L]).
 
-weak2([E={X,_Y} | Es], Ys, L, X) -> % when X < Y 
+weak2([E={X,_Y} | Es], Ys, L, X0) when X == X0 -> % when X < _Y 
     weak2(Es, Ys, [E | L], X);
 weak2(Es, Ys, L, _X) ->
     weak(Es, Ys, L).
@@ -1809,10 +1893,31 @@ extc_tail(L, [D | Ds], C) ->
 extc_tail(L, [], _C) ->
     L.
 
-is_a_func([{E,_} | Es], E0) when E =/= E0 ->
+is_a_func([{E,_} | Es], E0) when E /= E0 ->
     is_a_func(Es, E);
 is_a_func(L, _E) ->
-    L == [].
+    L =:= [].
+
+restrict_n(I, [T | Ts], Key, Keys, L) ->
+    case element(I, T) of
+	K when K < Key ->
+	    restrict_n(I, Ts, Key, Keys, L);
+	K when K == Key ->
+	    restrict_n(I, Ts, Key, Keys, [T | L]);
+	K ->
+	    restrict_n(I, K, Ts, Keys, L, T)
+    end;
+restrict_n(_I, _Ts, _Key, _Keys, L) ->
+    L.
+    
+restrict_n(I, K, Ts, [Key | Keys], L, E) when K > Key ->
+    restrict_n(I, K, Ts, Keys, L, E);
+restrict_n(I, K, Ts, [Key | Keys], L, E) when K == Key ->
+    restrict_n(I, Ts, Key, Keys, [E | L]);
+restrict_n(I, _K, Ts, [Key | Keys], L, _E) ->
+    restrict_n(I, Ts, Key, Keys, L);
+restrict_n(_I, _K, _Ts, _Keys, L, _E) ->
+    L.
 
 restrict([Key | Keys], Tuples) ->
     restrict(Tuples, Key, Keys, []);
@@ -1836,6 +1941,31 @@ restrict(Ts, _K, [Key | Keys], L, _E) ->
     restrict(Ts, Key, Keys, L);
 restrict(_Ts, _K, _Keys, L, _E) ->
     L.
+
+diff_restrict_n(I, [T | Ts], Key, Keys, L) ->
+    case element(I, T) of
+	K when K < Key ->
+	    diff_restrict_n(I, Ts, Key, Keys, [T | L]);
+	K when K == Key ->
+	    diff_restrict_n(I, Ts, Key, Keys, L);
+	K ->
+	    diff_restrict_n(I, K, Ts, Keys, L, T)
+    end;
+diff_restrict_n(I, _Ts, _Key, _Keys, L) when I =:= 1 ->
+    reverse(L);
+diff_restrict_n(_I, _Ts, _Key, _Keys, L) ->
+    sort(L).
+    
+diff_restrict_n(I, K, Ts, [Key | Keys], L, T) when K > Key ->
+    diff_restrict_n(I, K, Ts, Keys, L, T);
+diff_restrict_n(I, K, Ts, [Key | Keys], L, _T) when K == Key ->
+    diff_restrict_n(I, Ts, Key, Keys, L);
+diff_restrict_n(I, _K, Ts, [Key | Keys], L, T) ->
+    diff_restrict_n(I, Ts, Key, Keys, [T | L]);
+diff_restrict_n(I, _K, Ts, _Keys, L, T) when I =:= 1 ->
+    reverse(L, [T | Ts]);
+diff_restrict_n(_I, _K, Ts, _Keys, L, T) ->
+    sort([T | Ts ++ L]).
 
 diff_restrict([Key | Keys], Tuples) ->
     diff_restrict(Tuples, Key, Keys, []);
@@ -1882,7 +2012,7 @@ comp1([{Ay,_Ax} | _A], _B, _L, Bx, _By) when Ay < Bx ->
 comp1([], B, L, Bx, _By) ->
     check_function(Bx, B, L).
 
-comp2(A, [{Bx,_By} | B], L, Bx0, Ay, Ax) when Ay > Bx, Bx =/= Bx0  ->
+comp2(A, [{Bx,_By} | B], L, Bx0, Ay, Ax) when Ay > Bx, Bx /= Bx0 ->
     comp2(A, B, L, Bx, Ay, Ax);
 comp2(A, [{Bx,By} | B], L, _Bx0, Ay, Ax) when Ay == Bx ->
     comp1(A, B, [{Ax,By} | L], Bx, By);
@@ -1894,7 +2024,7 @@ inverse1([{A,B} | X]) ->
 inverse1([]) ->
     [].
 
-inverse([{A,B} | X], A0, L) when A0 =/= A ->
+inverse([{A,B} | X], A0, L) when A0 /= A ->
     inverse(X, A, [{B,A} | L]);
 inverse([{A,_B} | _X], A0, _L) when A0 == A ->
     bad_function;
@@ -1935,8 +2065,8 @@ projection1([] = L) ->
 
 projection1(L, X, [E | Es]) ->
     case element(1, E) of
-	X -> projection1(L, X, Es);
-	Y -> projection1([X | L], Y, Es)
+	X1 when X == X1 -> projection1(L, X, Es);
+	X1 -> projection1([X | L], X1, Es)
     end;
 projection1(L, X, []) ->
     reverse(L, [X]).
@@ -1956,45 +2086,51 @@ substitute([T | Ts], Fun, L) ->
 substitute(_, _Fun, L) ->
     reverse(L).
 
-partition1([E | Ts]) ->
-    partition1(Ts, element(1, E), [E], []);
-partition1([]) ->
+partition_n(I, [E | Ts]) ->
+    partition_n(I, Ts, element(I, E), [E], []);
+partition_n(_I, []) ->
     [].
 
-partition1([E | Ts], K, Es, P) ->
-    case {element(1, E), Es} of
-	{K, _} ->
-	    partition1(Ts, K, [E | Es], P);
+partition_n(I, [E | Ts], K, Es, P) ->
+    case {element(I, E), Es} of
+	{K1, _} when K == K1 ->
+	    partition_n(I, Ts, K, [E | Es], P);
 	{K1, [_]} -> % optimization
-	    partition1(Ts, K1, [E], [Es | P]);
+	    partition_n(I, Ts, K1, [E], [Es | P]);
 	{K1, _} ->
-	    partition1(Ts, K1, [E], [reverse(Es) | P])
+	    partition_n(I, Ts, K1, [E], [reverse(Es) | P])
     end;
-partition1([], _K, [_] = Es, P) -> % optimization
+partition_n(I, [], _K, Es, P) when I > 1 ->
+    sort([reverse(Es) | P]);
+partition_n(_I, [], _K, [_] = Es, P) -> % optimization
     reverse(P, [Es]);
-partition1([], _K, Es, P) ->
+partition_n(_I, [], _K, Es, P) ->
     reverse(P, [reverse(Es)]).
 
-partition_n(Set, Fun, Type) ->
-    Ts = inverse_substitution(?LIST(Set), Fun, true),
-    P = partition_n(Ts),
-    ?SET(sort(P), ?SET_OF(Type)).
-
-partition_n([{K,Vs} | Ts]) ->
-    partition_n(Ts, K, [Vs], []);
-partition_n([]) ->
-    [].
-
-partition_n([{K1,V} | Ts], K, Vs, P) when K1 == K ->
-    partition_n(Ts, K, [V | Vs], P);
-partition_n([{K1,V} | Ts], _K, [_] = Vs, P) -> % optimization
-    partition_n(Ts, K1, [V], [Vs | P]);
-partition_n([{K1,V} | Ts], _K, Vs, P) ->
-    partition_n(Ts, K1, [V], [sort(Vs) | P]);
-partition_n([], _K, [_] = Vs, P) -> % optimization
-    [Vs | P];
-partition_n([], _K, Vs, P) ->
-    [sort(Vs) | P].
+partition3_n(I, [T | Ts], Key, Keys, L1, L2)  ->
+    case element(I, T) of
+	K when K < Key ->
+	    partition3_n(I, Ts, Key, Keys, L1, [T | L2]);
+	K when K == Key ->
+	    partition3_n(I, Ts, Key, Keys, [T | L1], L2);
+	K ->
+	    partition3_n(I, K, Ts, Keys, L1, L2, T)
+    end;
+partition3_n(I, _Ts, _Key, _Keys, L1, L2) when I =:= 1 ->
+    [reverse(L1) | reverse(L2)];
+partition3_n(_I, _Ts, _Key, _Keys, L1, L2) ->
+    [sort(L1) | sort(L2)].
+    
+partition3_n(I, K, Ts, [Key | Keys], L1, L2, T) when K > Key ->
+    partition3_n(I, K, Ts, Keys, L1, L2, T);
+partition3_n(I, K, Ts, [Key | Keys], L1, L2, T) when K == Key ->
+    partition3_n(I, Ts, Key, Keys, [T | L1], L2);
+partition3_n(I, _K, Ts, [Key | Keys], L1, L2, T) ->
+    partition3_n(I, Ts, Key, Keys, L1, [T | L2]);
+partition3_n(I, _K, Ts, _Keys, L1, L2, T) when I =:= 1 ->
+    [reverse(L1) | reverse(L2, [T | Ts])];
+partition3_n(_I, _K, Ts, _Keys, L1, L2, T) ->
+    [sort(L1) | sort([T | Ts ++ L2])].
 
 partition3([Key | Keys], Tuples) ->
     partition3(Tuples, Key, Keys, [], []);
@@ -2037,9 +2173,14 @@ mul_relprod([], _I, _R) ->
     [].
 
 raise_element(R, I) ->
-    L = inverse_substitution(?LIST(R), I, I =/= 1),
+    L = sort(I =/= 1, rearr(?LIST(R), I, [])),
     Type = ?TYPE(R),
     ?SET(L, ?BINREL(?REL_TYPE(I, Type), Type)).
+
+rearr([E | Es], I, L) ->
+    rearr(Es, I, [{element(I, E), E} | L]);
+rearr([], _I, L) ->
+    L.
 
 join_element(E1, E2) ->
     [_ | L2] = tuple_to_list(E2),
@@ -2156,36 +2297,31 @@ check_function([{X,_} | XL], R) ->
 check_function([], R) ->
     R.
     
-check_function(X0, [{X,_} | XL], R) when X0 =/= X ->
+check_function(X0, [{X,_} | XL], R) when X0 /= X ->
     check_function(X, XL, R);
 check_function(X0, [{X,_} | _XL], _R) when X0 == X ->
     bad_function;
 check_function(_X0, [], R) ->
     R.
 
-fam_partition1([E | Ts]) ->
-    fam_partition1(Ts, element(1, E), [E], []);
-fam_partition1([]) ->
+fam_partition_n(I, [E | Ts]) ->
+    fam_partition_n(I, Ts, element(I, E), [E], []);
+fam_partition_n(_I, []) ->
     [].
 
-fam_partition1([E | Ts], K, Es, P) ->
-    case {element(1, E), Es} of
-	{K, _} ->
-	    fam_partition1(Ts, K, [E | Es], P);
+fam_partition_n(I, [E | Ts], K, Es, P) ->
+    case {element(I, E), Es} of
+	{K1, _} when K == K1 ->
+	    fam_partition_n(I, Ts, K, [E | Es], P);
 	{K1, [_]} -> % optimization
-	    fam_partition1(Ts, K1, [E], [{K,Es} | P]);
+	    fam_partition_n(I, Ts, K1, [E], [{K,Es} | P]);
 	{K1, _} ->
-	    fam_partition1(Ts, K1, [E], [{K,reverse(Es)} | P])
+	    fam_partition_n(I, Ts, K1, [E], [{K,reverse(Es)} | P])
     end;
-fam_partition1([], K, [_] = Es, P) -> % optimization
+fam_partition_n(_I, [], K, [_] = Es, P) -> % optimization
     reverse(P, [{K,Es}]);
-fam_partition1([], K, Es, P) ->
+fam_partition_n(_I, [], K, Es, P) ->
     reverse(P, [{K,reverse(Es)}]).
-
-partition_family(Set, Fun, Sort, Type, DType) ->
-    Ts = inverse_substitution(?LIST(Set), Fun, Sort),
-    P = fam_partition(Ts, Sort),
-    ?SET(reverse(P), ?BINREL(DType, ?SET_OF(Type))).
 
 fam_partition([{K,Vs} | Ts], Sort) ->
     fam_partition(Ts, K, [Vs], [], Sort);
@@ -2250,14 +2386,15 @@ fam2digraph(F, G) ->
     foreach(Fun, to_external(F)),
     G.
 
-digraph_family(G, T) ->
-    ?SET(digraph_fam(digraph:vertices(G), G, []), T).
+digraph_family(G) ->
+    Vs = sort(digraph:vertices(G)),
+    digraph_fam(Vs, Vs, G, []).
 
-digraph_fam([V | Vs], G, L) ->
+digraph_fam([V | Vs], V0, G, L) when V /= V0 ->
     Ns = sort(digraph:out_neighbours(G, V)),
-    digraph_fam(Vs, G, [{V,Ns} | L]);
-digraph_fam([], _G, L) ->
-    sort(L).
+    digraph_fam(Vs, V, G, [{V,Ns} | L]);
+digraph_fam([], _V0, _G, L) ->
+    reverse(L).
 
 %% -> bool()
 check_fun(T, F, FunT) ->
@@ -2281,7 +2418,7 @@ has_hole([I | Is], I0) when I =< I0 -> has_hole(Is, max(I+1, I0));
 has_hole(Is, _I) -> Is =/= [].
 
 %% Optimization. Same as check_fun/3, but for integers.
-check_for_sort(T, _I) when T == ?ANYTYPE ->
+check_for_sort(T, _I) when T =:= ?ANYTYPE ->
     empty;
 check_for_sort(T, I) when ?IS_RELATION(T), I =< ?REL_ARITY(T), I >= 1 ->
     I > 1;
@@ -2291,18 +2428,11 @@ check_for_sort(_T, _I) ->
 max(A, B) when A >= B -> A;
 max(_A, B) -> B.
 
-inverse_substitution(L, I, Sort) when integer(I) ->
-    sort(Sort, rearr(L, I, []));
 inverse_substitution(L, Fun, Sort) ->
     %% One easily sees that the inverse of the tuples created by
     %% applying Fun need to be sorted iff the tuples created by Fun
     %% need to be sorted.
     sort(Sort, fun_rearr(L, Fun, [])).
-
-rearr([E | Es], I, L) ->
-    rearr(Es, I, [{element(I, E), E} | L]);
-rearr([], _I, L) ->
-    L.
 
 fun_rearr([E | Es], Fun, L) ->
     fun_rearr(Es, Fun, [{Fun(E), E} | L]);
@@ -2314,7 +2444,7 @@ sets_to_list(Ss) ->
 
 types([], L) ->
     list_to_tuple(reverse(L));
-types([S | _Ss], _L) when ?TYPE(S) == ?ANYTYPE ->
+types([S | _Ss], _L) when ?TYPE(S) =:= ?ANYTYPE ->
     ?ANYTYPE;
 types([S | Ss], L) ->
     types(Ss, [?TYPE(S) | L]).
@@ -2332,7 +2462,7 @@ unify_types1(Type, ?ANYTYPE) ->
     Type;
 unify_types1(?SET_OF(Type1), ?SET_OF(Type2)) ->
     [unify_types1(Type1, Type2)];
-unify_types1(T1, T2) when tuple(T1), tuple(T2), size(T1) == size(T2) ->
+unify_types1(T1, T2) when tuple(T1), tuple(T2), size(T1) =:= size(T2) ->
     unify_typesl(size(T1), T1, T2, []);
 unify_types1(_T1, _T2) ->
     throw([]).
@@ -2355,7 +2485,7 @@ match_types1(_, ?ANYTYPE) ->
     true;
 match_types1(?SET_OF(Type1), ?SET_OF(Type2)) -> 
     match_types1(Type1, Type2);
-match_types1(T1, T2) when tuple(T1), tuple(T2), size(T1) == size(T2) ->
+match_types1(T1, T2) when tuple(T1), tuple(T2), size(T1) =:= size(T2) ->
     match_typesl(size(T1), T1, T2);
 match_types1(_T1, _T2) ->
     false.

@@ -14,7 +14,8 @@
 	 getIDom/2,
 	 getRoot/1,
 	 getSize/1,
-	 pp/1]).
+	 pp/1,
+	 dominates/3]).
 
 -include("hipe_domtree.hrl").
 
@@ -340,7 +341,7 @@ create(CFG) ->
     {WorkData, DFS, N} = dfs(CFG),
     {DomData, WorkData2} = getIdoms(CFG, empty(hipe_gen_cfg:start_label(CFG)), WorkData, N, 
 				    DFS, PredMap),
-    finalize(WorkData2, DomData, N, DFS).
+    finalize(WorkData2, DomData, 1, N, DFS).
 
 
 %%>----------------------------------------------------------------------<
@@ -548,7 +549,7 @@ filterBucket([], _, WorkData, DomData) -> {WorkData, DomData}.
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : finalize/4
+%  Procedure : finalize/5
 %  Purpose   : This algorithm finishes up the second clause of the Dominator
 %              Theorem. Hence, the main purpose of this function is therefore
 %              to update the dominator tree with the nodes that were deferred
@@ -557,20 +558,37 @@ filterBucket([], _, WorkData, DomData) -> {WorkData, DomData}.
 %              Domdata  - Hashtable consisting of domTree cells
 %              N        - The index used for retrieving the node to be 
 %                         processed
+%              Max      - Maximum node index
 %  Return    : An updated version of the hash table DomData
 %  Notes     : 
 %%>----------------------------------------------------------------------<
-finalize(WorkData, DomData, N, DFS) when integer(N), N > 0 ->
+finalize(WorkData, DomData, N, Max, DFS) when N =< Max ->
     Node = lookup(N, DFS),
     case lookup({samedom, Node}, WorkData) of
-	none     -> finalize(WorkData, DomData, N - 1, DFS);
+	none     -> finalize(WorkData, DomData, N + 1, Max, DFS);
 	SameDomN -> IdomSameDomN = getIDom(SameDomN, DomData),
 		    DomData2 = setIDom(Node, IdomSameDomN, DomData),
-		    finalize(WorkData, DomData2, N - 1, DFS)
+		    finalize(WorkData, DomData2, N + 1, Max, DFS)
     end;
 
-finalize(_, DomData, 0, _) -> DomData.   
+finalize(_, DomData, _, _, _) -> DomData.   
+
+%%>----------------------------------------------------------------------<
+%  Procedure : dominates/3
+%  Purpose   : checks wheter Node1 dominates Node2 with respect to the
+%              dominatortree DomTree
+%  Arguments : Node1 the possible dominator, Node2 which might be dominated 
+%              and DomTree  - the target dominator tree.
+%  Notes     : Relies on lists:any to return false when the a list is empty
+%%>----------------------------------------------------------------------<     
+dominates(Node1, Node1, DomTree) ->
+  true;
 	
+dominates(Node1, Node2, DomTree) ->
+  Children = getChildren(Node1, DomTree),
+  lists:any(fun(X)-> dominates(X,Node2,DomTree) end, Children).
+		
+
 
 %%>----------------------------------------------------------------------<
 %  Procedure : pp/1

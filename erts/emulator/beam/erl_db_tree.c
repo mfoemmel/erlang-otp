@@ -260,7 +260,6 @@ Export ets_select_reverse_exp;
 */
 void db_initialize_tree(void)
 {
-    extern Eterm* em_apply_bif;
     memset(&ets_select_reverse_exp, 0, sizeof(Export));
     ets_select_reverse_exp.address = 
 	&ets_select_reverse_exp.code[3];
@@ -281,10 +280,13 @@ void db_initialize_tree(void)
 int db_create_tree(Process *p, DbTableTree *tb)
 {
     tb->root = NULL;
-    tb->stack = safe_alloc_from(54, sizeof(TreeDbTerm *) * STACK_NEED);
+    tb->stack = erts_alloc(ERTS_ALC_T_DB_STK,
+			   sizeof(TreeDbTerm *) * STACK_NEED);
     tb->stack_pos = 0;
     tb->slot_pos = 0;
-    tb->memory = sizeof(DbTableHash) / sizeof(Eterm);
+    ERTS_DB_TAB_MORE_MEM(tb,
+			 sizeof(TreeDbTerm *) * STACK_NEED / sizeof(Uint)
+			 + sizeof(DbTable) / sizeof(Eterm));
     return DB_ERROR_NONE;
 }
 
@@ -401,7 +403,8 @@ int db_prev_tree(Process *p, DbTableTree *tb,
 }
 
 int db_update_counter_tree(Process *p, DbTableTree *tb, 
-			   Eterm key, Eterm incr, int counterpos, Eterm *ret)
+			   Eterm key, Eterm incr, int warp, int counterpos, 
+			   Eterm *ret)
 {
     TreeDbTerm **bp = find_node2(tb, key);
     TreeDbTerm *b;
@@ -414,7 +417,7 @@ int db_update_counter_tree(Process *p, DbTableTree *tb,
     res = db_do_update_counter(p, (void *) bp, (*bp)->dbterm.tpl,
 			       counterpos, 
 			       (int (*)(void *, Uint, Eterm, int))
-			       &realloc_counter, incr, ret);
+			       &realloc_counter, incr, warp, ret);
     if (*bp != b) /* May be reallocated in which case 
 		     the saved stack is messed up, clear stck if so. */
 	tb->stack_pos = tb->slot_pos = 0;
@@ -449,7 +452,7 @@ int db_put_tree(Process *proc, DbTableTree *tb,
 	    else
 		return DB_ERROR_SYSRES;
 	    *this = get_term(NULL, obj);
-	    tb->memory += SIZ_DBTERM(*this);
+	    ERTS_DB_TAB_MORE_MEM(tb, SIZ_DBTERM(*this));
 	    (*this)->balance = 0;
 	    (*this)->left = (*this)->right = NULL;
 	    break;
@@ -463,9 +466,9 @@ int db_put_tree(Process *proc, DbTableTree *tb,
 	    tstack[tpos++] = this;
 	    this = &((*this)->right);
 	} else { /* Equal key and this is a set, replace. */
-	    tb->memory -= (*this)->dbterm.size;
+	    ERTS_DB_TAB_LESS_MEM(tb, (*this)->dbterm.size);
 	    *this = get_term(*this, obj);
-	    tb->memory += (*this)->dbterm.size;
+	    ERTS_DB_TAB_MORE_MEM(tb, (*this)->dbterm.size);
 	    break;
 	}
     while (state && ( dir = dstack[--dpos] ) != DIR_END) {
@@ -1543,7 +1546,8 @@ void free_tree_table(DbTableTree *tb)
 {
     do_free_tree(tb->root);
     if (tb->stack)
-	sys_free(tb->stack);
+	erts_free(ERTS_ALC_T_DB_STK, tb->stack);
+    ERTS_DB_TAB_LESS_MEM(tb, tb->memory);
 }
 
 
@@ -1623,7 +1627,7 @@ static TreeDbTerm *linkout_tree(DbTableTree *tb,
 		state = delsub(this);
 	    }
 	    --(tb->nitems);
-	    tb->memory -= SIZ_DBTERM(q);
+	    ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(q));
 	    break;
 	}
     }
@@ -1691,7 +1695,7 @@ static TreeDbTerm *linkout_object_tree(DbTableTree *tb,
 		state = delsub(this);
 	    }
 	    --(tb->nitems);
-	    tb->memory -= SIZ_DBTERM(q);
+	    ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(q));
 	    break;
 	}
     }
@@ -1741,7 +1745,7 @@ static int analyze_pattern(DbTableTree *tb, Eterm pattern,
 	return DB_ERROR_BADPARAM;
     }
     if (num_heads > 10) {
-	buff = safe_alloc_from(41, sizeof(Eterm) * num_heads * 3);
+	buff = erts_alloc(ERTS_ALC_T_DB_TMP, sizeof(Eterm) * num_heads * 3);
     }
 
     matches = buff;
@@ -1754,14 +1758,14 @@ static int analyze_pattern(DbTableTree *tb, Eterm pattern,
 	ttpl = CAR(list_val(lst));
 	if (!is_tuple(ttpl)) {
 	    if (buff != sbuff) { 
-		sys_free(buff);
+		erts_free(ERTS_ALC_T_DB_TMP, buff);
 	    }
 	    return DB_ERROR_BADPARAM;
 	}
 	ptpl = tuple_val(ttpl);
 	if (ptpl[0] != make_arityval(3U)) {
 	    if (buff != sbuff) { 
-		sys_free(buff);
+		erts_free(ERTS_ALC_T_DB_TMP, buff);
 	    }
 	    return DB_ERROR_BADPARAM;
 	}
@@ -1804,18 +1808,22 @@ static int analyze_pattern(DbTableTree *tb, Eterm pattern,
     }
     mpi->least = least;
     mpi->most = most;
-    if (mpi->something_can_match) {
-	if ((mpi->mp = db_match_compile(matches, guards, bodies,
-					num_heads, DCOMP_TABLE, NULL)) 
-	    == NULL) {
-	    if (buff != sbuff) { 
-		sys_free(buff);
-	    }
-	    return DB_ERROR_BADPARAM;
+
+    /*
+     * It would be nice not to compile the match_spec if nothing could match,
+     * but then the select calls would not fail like they should on bad 
+     * match specs that happen to specify non existent keys etc.
+     */
+    if ((mpi->mp = db_match_compile(matches, guards, bodies,
+				    num_heads, DCOMP_TABLE, NULL)) 
+	== NULL) {
+	if (buff != sbuff) { 
+	    erts_free(ERTS_ALC_T_DB_TMP, buff);
 	}
+	return DB_ERROR_BADPARAM;
     }
     if (buff != sbuff) { 
-	sys_free(buff);
+	erts_free(ERTS_ALC_T_DB_TMP, buff);
     }
     return DB_ERROR_NONE;
 }
@@ -1837,7 +1845,7 @@ static void free_term(TreeDbTerm* p)
 {
 
     db_free_term_data(&(p->dbterm));
-    sys_free(p);
+    erts_free(ERTS_ALC_T_DB_TERM, p);
 }
 
 static void do_free_tree(TreeDbTerm *root) 

@@ -197,3 +197,10 @@ BEAM_FORMAT_NUMBER=0
 
 # New fun construction (R8).
 103: make_fun2/1
+
+# Try/catch/raise (R9C).
+104: try/2
+105: try_end/1
+106: try_case/1
+107: try_case_end/1
+108: raise/2

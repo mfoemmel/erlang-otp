@@ -20,6 +20,46 @@
 
 <!--- ################################################################# --->
 
+<h2>Os_mon 1.6.1</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    A configurable "helper timeout" has been added to <code>memsup</code>.
+    It defines how long timeout time, in seconds, the <code>memsup</code>
+    process should use when communicating with the
+    <code>memsup_helper</code> process (an application internal server).
+    The default is 30 seconds. The "helper timeout" can be set with the
+    <code>memsup_helper_timeout</code> configuration parameter, or the
+    <code>memsup:set_helper_timeout/1</code> function.
+    <code>memsup:get_helper_timeout/0</code> can be used to retrieve the
+    currently used "helper timeout".<br>
+    (Own Id: OTP-4223)<br>
+    (Aux Id: Seq7222)<p>
+  </li>
+
+  <li>
+    A bug which could cause memsup to be erroneously initialized has been
+    fixed. The erroneous initialization could in turn cause the
+    <code>system_memory_high_watermark</code> alarm to be set too early.<br>
+    (Own Id: OTP-4515)<br>
+    (Aux Id: OTP-4489)<p>
+  </li>
+
+</ul>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+
+
+<!--- ################################################################# --->
+
 <h2>Os_mon 1.6.0</h2>
 
 

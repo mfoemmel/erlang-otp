@@ -27,9 +27,17 @@
 	 restart/0,restart/1,restart/2,
 	 parse_query/1]).
 
+%% Optional start related stuff...
+-export([load/1,        load_mime_types/1, 
+	 start2/1,      start2/2, 
+	 start_link2/1, start_link2/2, 
+	 stop2/1]).
+
+%% Management stuff
 -export([block/0,block/1,block/2,block/3,block/4,
 	 unblock/0,unblock/1,unblock/2]).
 
+%% Debugging and status info stuff...
 -export([verbosity/3,verbosity/4]).
 -export([get_status/1,get_status/2,get_status/3,
 	 get_admin_state/0,get_admin_state/1,get_admin_state/2,
@@ -65,6 +73,21 @@ start_link(ConfigFile, Verbosity) when list(ConfigFile), list(Verbosity) ->
     httpd_sup:start_link(ConfigFile, Verbosity).
 
 
+%% start2 & start_link2
+
+start2(Config) ->
+    start2(Config, []).
+
+start2(Config, Verbosity) when list(Config), list(Verbosity) ->
+    httpd_sup:start2(Config, Verbosity).
+
+start_link2(Config) ->
+    start_link2(Config, []).
+
+start_link2(Config, Verbosity) when list(Config), list(Verbosity) ->
+    httpd_sup:start_link2(Config, Verbosity).
+
+
 %% stop
 
 stop() ->
@@ -81,6 +104,8 @@ stop(ConfigFile) when list(ConfigFile) ->
 stop(Addr, Port) when integer(Port) ->
     httpd_sup:stop(Addr, Port).
 
+stop2(Config) when list(Config) ->
+    httpd_sup:stop2(Config).
 
 %% start_child
 
@@ -495,16 +520,25 @@ get_status(Addr,Port,Timeout) when integer(Port) ->
     end.
 
 
+%% load config
+
+load(ConfigFile) ->
+    httpd_conf:load(ConfigFile).
+
+load_mime_types(MimeTypesFile) ->
+    httpd_conf:load_mime_types(MimeTypesFile).
+
+
 %% parse_query
 
 parse_query(String) ->
-  {ok,SplitString}=regexp:split(String,"[&;]"),
+  {ok, SplitString} = regexp:split(String,"[&;]"),
   foreach(SplitString).
 
 foreach([]) ->
   [];
 foreach([KeyValue|Rest]) ->
-  {ok,Plus2Space,_}=regexp:gsub(KeyValue,"[\+]"," "),
+  {ok, Plus2Space, _} = regexp:gsub(KeyValue,"[\+]"," "),
   case regexp:split(Plus2Space,"=") of
     {ok,[Key|Value]} ->
       [{httpd_util:decode_hex(Key),

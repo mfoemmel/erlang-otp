@@ -129,15 +129,10 @@
 #ifndef ENOTSUP
 #define	ENOTSUP		-1738659
 #endif
+
 /*
 ** For the erl_timer_sup module.
 */
-
-#if defined(SIZEOF_LONG) && (SIZEOF_LONG == 8)
-typedef long Sint64;
-#else
-typedef long long Sint64;
-#endif
 
 typedef struct timeval SysTimeval;
 
@@ -151,6 +146,11 @@ extern int erts_ticks_per_sec;
 
 #define sys_times(Arg) times(Arg)
 
+#define ERTS_WRAP_SYS_TIMES 1
+extern int erts_ticks_per_sec_wrap;
+#define SYS_CLK_TCK_WRAP (erts_ticks_per_sec_wrap)
+extern clock_t sys_times_wrap(void);
+
 #ifdef HAVE_GETHRTIME
 typedef hrtime_t SysHrTime;
 
@@ -161,15 +161,21 @@ typedef hrtime_t SysHrTime;
 
 #ifdef HAVE_GETHRVTIME
 #  define sys_gethrvtime() gethrvtime()
-extern int sys_start_hrvtime();
-extern int sys_stop_hrvtime();
+int sys_start_hrvtime(void);
+int sys_stop_hrvtime(void);
 #endif /* HAVE_GETHRVTIME */
 
 /* No use in having other resolutions than 1 Ms. */
 #define SYS_CLOCK_RESOLUTION 1
 
 /* These are defined in sys.c */
-extern RETSIGTYPE (*sys_sigset())();
+#if defined(SIG_SIGSET)		/* Old SysV */
+RETSIGTYPE (*sys_sigset())();
+#elif defined(SIG_SIGNAL)	/* Old BSD */
+RETSIGTYPE (*sys_sigset())();
+#else
+RETSIGTYPE (*sys_sigset(int, RETSIGTYPE (*func)(int)))(int);
+#endif
 extern void sys_sigrelease(int);
 extern void sys_sigblock(int);
 extern void sys_stop_cat(void);
@@ -204,7 +210,12 @@ static __inline__ int erts_check_x87(double f)
 }
 #  define ERTS_FP_ERROR(f, Action) do { if( erts_check_x87((f)) ) { Action; } } while (0)
 #  else
-#  define ERTS_FP_ERROR(f, Action) if (erl_fp_exception) { Action; } else {}
+static __inline__ int erts_check_fpe(double f)
+{
+    __asm__ __volatile__("" : "=m"(erl_fp_exception) : "g"(f));
+    return erl_fp_exception;
+}
+#  define ERTS_FP_ERROR(f, Action) do { if( erts_check_fpe((f)) ) { Action; } } while (0)
 #  endif
 #  define ERTS_SAVE_FP_EXCEPTION() int old_erl_fp_exception = erl_fp_exception
 #  define ERTS_RESTORE_FP_EXCEPTION() \
@@ -223,5 +234,11 @@ static __inline__ int erts_check_x87(double f)
 #define CS_ARGV_NO_OF_DUP2_OPS	3		/* Number of dup2 ops	*/
 #define CS_ARGV_NO_OF_ARGS	7		/* Number of arguments	*/
 #endif /* #ifdef NEED_CHILD_SETUP_DEFINES */
+
+/* Threads */
+#ifdef USE_THREADS
+extern int init_async(int);
+extern int exit_async(void);
+#endif
 
 #endif /* #ifndef _ERL_UNIX_SYS_H */

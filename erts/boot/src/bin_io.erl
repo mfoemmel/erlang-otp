@@ -20,7 +20,7 @@
 
 -export([open_read/1,open_create/0,open_append/1,close/1]).
 
--record(state, {mode,bin,buf}).
+-record(state, {mode,bin,buf,read_mode}).
 
 -define(READ_SIZE, 256).			%Bytes per chunk read
 
@@ -28,17 +28,20 @@
 
 open_read(Bin) when binary(Bin) ->
     {ok,spawn(fun () ->
-		      server_loop(#state{mode=read,bin=Bin,buf=Bin})
+		      server_loop(#state{mode=read,bin=Bin,buf=Bin,
+					 read_mode=list})
 	      end)}.
 
 open_create() ->
     {ok,spawn(fun () ->
-		      server_loop(#state{mode=write,bin= <<>>,buf=[]})
+		      server_loop(#state{mode=write,bin= <<>>,buf=[],
+					 read_mode=list})
 	      end)}.
 
 open_append(Bin) when binary(Bin) ->
     {ok,spawn(fun () ->
-		      server_loop(#state{mode=write,bin=Bin,buf=[]})
+		      server_loop(#state{mode=write,bin=Bin,buf=[],
+					 read_mode=list})
 	      end)}.
 
 close(Io) ->
@@ -115,6 +118,9 @@ bin_request(Unknown, State) ->
 %%  Handle general io requests.
 
 
+io_request({put_chars,Chars}, #state{mode=write,bin=Bin}=St) 
+  when binary(Chars) ->						% New in R9C
+    {ok,ok,St#state{bin=[Bin|Chars]}};
 io_request({put_chars,Chars}, #state{mode=write,bin=Bin}=St) ->
     case catch list_to_binary(Chars) of
 	{'EXIT',Reason} ->
@@ -127,7 +133,17 @@ io_request({put_chars,Mod,Func,Args}, #state{mode=write}=St) ->
 	Bin when binary(Bin) -> io_request({put_chars,[Bin]}, St);
 	Other -> {error,{error,Func},St}
     end;
-io_request({get_until,Prompt,Mod,Func,ExtraArgs}, #state{mode=read}=St) ->
+%% These are new in R9C
+io_request({get_chars,_Prompt,N}, #state{mode=read}=St) ->
+    get_chars(io_lib, collect_chars, N, St);
+io_request({get_chars,_Prompt,Mod,Func,XtraArg}, #state{mode=read}=St) ->
+    get_chars(Mod, Func, XtraArg, St);
+io_request({get_line,_Prompt}, #state{mode=read}=St) ->
+    get_chars(io_lib, collect_line, [], St);
+io_request({setopts,Opts}, St) when list(Opts) ->
+    setopts(Opts, St);
+%% End of new in R9C
+io_request({get_until,_Prompt,Mod,Func,ExtraArgs}, #state{mode=read}=St) ->
     get_until(Mod, Func, ExtraArgs, St);
 io_request({requests,Reqs}, St) when list(Reqs) ->
     io_request_loop(Reqs, {ok,ok,St});
@@ -142,6 +158,66 @@ io_request_loop([], Res) -> Res;
 io_request_loop([Req|Reqs], {ok,Rep,St}) ->
     io_request_loop(Reqs, io_request(Req, St));
 io_request_loop([Req|Reqs], Res) -> Res.
+
+%% setopts
+setopts(Opts0, St) ->
+    Opts = proplists:substitute_negations([{list,binary}], Opts0),
+    case proplists:get_value(binary, Opts) of
+	true ->
+	    {ok,ok,St#state{read_mode=binary}};
+	false ->
+	    {ok,ok,St#state{read_mode=list}};
+	_ ->
+	    {error,{error,badarg},St}
+    end.
+
+%% get_chars(Module, Func, ExtraArg, State) ->
+%%      {ok,Reply,State} | {error,Reply,State}.
+%%  Apply the get_chars loop scanning the binary until the scan
+%%  function has enough.  Buffer any remaining bytes until the next
+%%  call.
+get_chars(M, F, Xa, St) ->
+    get_chars_loop(M, F, Xa, St, start).
+
+get_chars_loop(M, F, Xa, #state{buf=[Buf|Bin],read_mode=ReadMode}=St, State) ->
+    get_chars_apply(M, F, Xa, St#state{buf=Bin}, State, Buf);
+get_chars_loop(M, F, Xa, #state{buf=Bin}=St, State) ->
+    case size(Bin) of
+	0 ->
+	    get_chars_apply(M, F, Xa, St, State, eof);
+	N when N < ?READ_SIZE ->
+	    get_chars_apply(M, F, Xa, St#state{buf= <<>>}, State, Bin);
+	N ->
+	    {B1,B2} = split_binary(Bin, ?READ_SIZE),
+	    get_chars_apply(M, F, Xa, St#state{buf=B2}, State, B1)
+    end.
+
+get_chars_apply(M, F, Xa, #state{buf=Bin,read_mode=ReadMode}=St, State, Buf) ->
+    case catch M:F(State, cast(Buf, ReadMode), Xa) of
+	{stop,Res,[]} ->
+	    {ok,Res,St};
+	{stop,Res,<<>>} ->
+	    {ok,Res,St};
+	{stop,Res,NewBuf} ->
+	    {ok,Res,St#state{buf=[NewBuf|Bin]}};
+	{'EXIT',_} ->
+	    {error,{error,F},St};
+	NewState ->
+	    get_chars_loop(M, F, Xa, St, NewState)
+    end.
+
+%% Convert error code to make it look as before
+err_func(io_lib, get_until, {_,F,_}) ->
+    F;
+err_func(_, F, _) ->
+    F.
+
+cast(L, binary) when list(L) ->
+    list_to_binary(L);
+cast(B, list) when binary(B) ->
+    binary_to_list(B);
+cast(Eof, _undefined) ->
+    Eof.
 
 %% get_until(Module, Func, [ExtraArg], State) ->
 %%      {ok,Reply,State} | {error,Reply,State}.

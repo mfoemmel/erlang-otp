@@ -25,9 +25,8 @@ include ../vsn.mk
 VSN=$(CRYPTO_VSN)
 
 # ----------------------------------------------------
-# The following variables differ on different systems, we set
-# reasonable defaults, if something different is needed it should
-# be set for that system only.
+# The following variables differ between systems.
+# Set by configure.
 # ----------------------------------------------------
 CC = @CC@
 LD = @DED_LD@
@@ -36,20 +35,18 @@ LIBS = @LIBS@
 LDFLAGS = @DED_LDFLAGS@
 ERLANG_OSTYPE = @ERLANG_OSTYPE@
 TARGET = @host@
+SSL_LIBDIR = @SSL_LIBDIR@
+SSL_INCLUDE = @SSL_INCLUDE@
 
-ROOTDIR = $(ERL_TOP)/lib
 PRIVDIR = ../priv
 OBJDIR = $(PRIVDIR)/obj/$(TARGET)
 LIBDIR = $(PRIVDIR)/lib/$(TARGET)
 
-# XXX We use the SSLeay installation under application SSL
-SSLEAY_ROOT = @SSLEAY_ROOT@
-SSLEAY_LIBDIR = $(SSLEAY_ROOT)/lib
-SSLEAY_INCDIR = @SSL_INCLUDE@
 # For erl_driver.h
-SYS_INCDIR = $(ERL_TOP)/erts/emulator/beam
+SYS_INCLUDE = -I$(ERL_TOP)/erts/emulator/beam \
+	-I$(ERL_TOP)/erts/emulator/sys/$(ERLANG_OSTYPE)
 
-INCLUDES = $(SSLEAY_INCDIR) -I $(SYS_INCDIR)
+INCLUDES = $(SSL_INCLUDE) $(SYS_INCLUDE)
 
 ifeq ($(TYPE),debug)
 TYPEMARKER = .debug
@@ -69,59 +66,19 @@ RELSYSDIR = $(RELEASE_PATH)/lib/crypto-$(VSN)
 # ----------------------------------------------------
 # Misc Macros
 # ----------------------------------------------------
-CRYPTO_DRV_OBJS = $(OBJDIR)/crypto_drv.o
-ELIBCRYPTO_OBJS = $(OBJDIR)/elibcrypto.o
-
-OBJS = $(CRYPTO_DRV_OBJS) $(ELIBCRYPTO_OBJS)
+OBJS = $(OBJDIR)/crypto_drv.o
 
 ifeq ($(findstring win32,$(TARGET)), win32)
-SOLIBS = $(LIBDIR)/crypto_drv.dll \
-	 $(LIBDIR)/elibcrypto.dll
+DYN_DRIVER = $(LIBDIR)/crypto_drv.dll
 else
-SOLIBS = $(LIBDIR)/crypto_drv.so \
-	 $(LIBDIR)/elibcrypto.so
-endif
-
-ifeq ($(findstring darwin,$(TARGET)),darwin)
-ELIBCRYPTO_UNDEFS = \
-	-u _CRYPTO_set_mem_functions \
-	-u _MD5 \
-	-u _MD5_Init \
-	-u _MD5_Update \
-	-u _MD5_Final \
-	-u _SHA1 \
-	-u _SHA1_Init \
-	-u _SHA1_Update \
-	-u _SHA1_Final \
-	-u _des_set_key \
-	-u _des_ncbc_encrypt \
-	-u _des_ede3_cbc_encrypt
-else
-ELIBCRYPTO_UNDEFS = \
-	-u CRYPTO_set_mem_functions \
-	-u MD5 \
-	-u MD5_Init \
-	-u MD5_Update \
-	-u MD5_Final \
-	-u SHA1 \
-	-u SHA1_Init \
-	-u SHA1_Update \
-	-u SHA1_Final \
-	-u des_set_key \
-	-u des_ncbc_encrypt \
-	-u des_ede3_cbc_encrypt
+DYN_DRIVER = $(LIBDIR)/crypto_drv.so
 endif
 
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
 
-ifeq ($(findstring win32,$(TARGET)), win32)
-debug opt:
-	@echo "Native code libraries will need to be built on windows."
-else
-debug opt: $(OBJDIR) $(LIBDIR) $(SOLIBS)
-endif
+debug opt: $(OBJDIR) $(LIBDIR) $(DYN_DRIVER)
 
 $(OBJDIR):
 	-@mkdir -p $(OBJDIR)
@@ -129,25 +86,21 @@ $(OBJDIR):
 $(LIBDIR):
 	-@mkdir -p $(LIBDIR)
 
-
 $(OBJDIR)/%.o: %.c
 	$(INSTALL_DIR) $(OBJDIR)
 	$(CC) -c -o $@ $(ALL_CFLAGS) $<
 
-$(OBJDIR)/elibcrypto.o:
-	$(INSTALL_DIR) $(OBJDIR)
-	$(LD) -r $(ELIBCRYPTO_UNDEFS) -L$(SSLEAY_LIBDIR) -lcrypto -o $@
-
-$(LIBDIR)/crypto_drv.so: $(CRYPTO_DRV_OBJS)
+$(LIBDIR)/crypto_drv.so: $(OBJS)
 	$(INSTALL_DIR) $(LIBDIR)
-	$(CC) $(LDFLAGS) -o $@ $^ -lc $(LIBS)
+	$(CC) $(LDFLAGS) -L$(SSL_LIBDIR) -Wl,-R$(SSL_LIBDIR) \
+			-o $@ $^ $(LDLIBS) -lcrypto
 
-$(LIBDIR)/elibcrypto.so: $(ELIBCRYPTO_OBJS)
+$(LIBDIR)/crypto_drv.dll: $(OBJS)
 	$(INSTALL_DIR) $(LIBDIR)
-	$(CC) $(LDFLAGS) -o $@ $^ -lc $(LIBS)
+	$(LD) $(LDFLAGS) -o $@ -L$(SSL_LIBDIR) $(OBJS) -llibeay32
 
 clean:
-	rm -f $(SOLIBS) $(OBJS)
+	rm -f $(DYN_DRIVER) $(OBJS)
 	rm -f core *~
 
 docs:
@@ -159,7 +112,7 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/lib
-	$(INSTALL_PROGRAM) $(SOLIBS) $(RELSYSDIR)/priv/lib
+	$(INSTALL_PROGRAM) $(DYN_DRIVER) $(RELSYSDIR)/priv/lib
 
 release_docs_spec:
 

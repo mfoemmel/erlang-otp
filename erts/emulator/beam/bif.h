@@ -22,15 +22,10 @@
 
 #define BIF_P A__p
 
-#define BIF_ALIST_0 A__p
-#define BIF_ALIST_1 A__p, A_1
-#define BIF_ALIST_2 A__p, A_1, A_2
-#define BIF_ALIST_3 A__p, A_1, A_2, A_3
-
-#define BIF_ADECL_0 Process* A__p;
-#define BIF_ADECL_1 Process* A__p; Eterm A_1;
-#define BIF_ADECL_2 Process* A__p; Eterm A_1; Eterm A_2;
-#define BIF_ADECL_3 Process* A__p; Eterm A_1; Eterm A_2; Eterm A_3;
+#define BIF_ALIST_0 Process* A__p
+#define BIF_ALIST_1 Process* A__p, Eterm A_1
+#define BIF_ALIST_2 Process* A__p, Eterm A_1, Eterm A_2
+#define BIF_ALIST_3 Process* A__p, Eterm A_1, Eterm A_2, Eterm A_3
 
 #define BIF_ARG_1  A_1
 #define BIF_ARG_2  A_2

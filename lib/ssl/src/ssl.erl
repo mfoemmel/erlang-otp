@@ -20,10 +20,11 @@
 
 -module(ssl).
 
--export([start/0, stop/0, accept/1, accept/2, close/1, connect/3,
+-export([start/0, stop/0, accept/1, accept/2, ciphers/0, close/1, connect/3,
 	 connect/4, controlling_process/2, listen/2, pid/1, port/1,
 	 peername/1, recv/2, recv/3, send/2, getopts/2, setopts/2,
-	 sockname/1, format_error/1]).
+	 seed/1, sockname/1, peercert/1, peercert/2, version/0,
+	 format_error/1]).
 
 -include("ssl_int.hrl").
 
@@ -41,8 +42,16 @@ accept(ListenSocket) ->
 
 accept(ListenSocket, Timeout) when record(ListenSocket, sslsocket) ->
     {ok, Pid} = ssl_broker:start_broker(acceptor),
-    ssl_broker:accept(Pid, ListenSocket, [], Timeout).
+    ssl_broker:accept(Pid, ListenSocket, Timeout).
 
+ciphers() ->
+    case (catch ssl_server:ciphers()) of
+	{'EXIT', _} ->
+	    {error, enotstarted};
+	Res = {ok, _}  ->
+	    Res
+    end.
+				
 %% close(Socket) -> ok
 %%
 close(Socket) when record(Socket, sslsocket) ->
@@ -64,11 +73,25 @@ controlling_process(Socket, NewOwner) when pid(NewOwner) ->
 
 %% listen(Port, Options) -> {ok, ListenSock} | {error, Reason}
 %%
-listen(Port, []) ->
+listen(_Port, []) ->
     {error, enooptions};
 listen(Port, Options) ->
     {ok, Pid} = ssl_broker:start_broker(listener),
     ssl_broker:listen(Pid, Port, Options).
+
+%% peercert(Socket) -> {ok, Cert} | {error, Reason}
+%% peercert(Socket, Opts) -> {ok, Cert} | {error, Reason}
+%% 
+peercert(Socket) ->
+    peercert(Socket, []).
+
+peercert(Socket, Opts) when record(Socket, sslsocket) ->
+    case ssl_broker:peercert(Socket) of
+	{ok, Bin} ->
+	    ssl_pkix:decode_cert(Bin, Opts);
+	{error, Reason}  ->
+	    {error, Reason}
+    end.
 
 %% peername(Socket) -> {ok, {Address, Port}} | {error, Reason}
 %%
@@ -84,7 +107,7 @@ pid(Socket) when record(Socket, sslsocket) ->
 
 %% port(Socket) -> {ok, Port} | {error, Reason}
 %%
-%%
+%% Deprecated. Use sockname/1 instead.
 port(Socket) when record(Socket, sslsocket) ->
     case sockname(Socket) of
 	{ok, {_, Port}} ->
@@ -101,6 +124,11 @@ recv(Socket, Length) ->
     recv(Socket, Length, infinity).
 recv(Socket, Length, Timeout) when record(Socket, sslsocket) -> 
     ssl_broker:recv(Socket, Length, Timeout).
+
+%% seed(Data) -> ok | {error, edata}
+%%
+seed(Data) ->
+    ssl_server:seed(Data).
 
 %% send(Socket, Data) -> ok
 %%
@@ -125,6 +153,16 @@ setopts(Socket, Options) when record(Socket, sslsocket) ->
 sockname(Socket) when record(Socket, sslsocket) ->
     ssl_broker:sockname(Socket).
 
+version() ->
+    SSLVsn = ?VSN,
+    {CompVsn, LibVsn} = case (catch ssl_server:version()) of
+			    {'EXIT', _} ->
+				{"", ""};
+			    {ok, Vsns}  ->
+				Vsns
+			end,
+    {ok, {SSLVsn, CompVsn, LibVsn}}.
+				
 
 %% format_error(Term) -> string()
 %% 
@@ -159,9 +197,12 @@ format_error(enoservercert) ->
 format_error(enotlistener) ->
     "Attempt to accept on a non-listening socket.";
 format_error(enoproxysocket) ->
-    "No proxy socket found (internal error).";
+    "No proxy socket found (internal error or max number of file "
+	"descriptors exceeded).";
 format_error(enooptions) ->
     "List of options is empty.";
+format_error(enotstarted) ->
+    "The SSL application has not been started.";
 format_error(eoptions) ->
     "Invalid list of options.";
 format_error(epeercert) ->
@@ -184,14 +225,26 @@ format_error(ewantconnect) ->
 format_error(ex509lookup) ->
     "Protocol wants X.509 lookup, which is not supported in this "
 	"version of the SSL application.";
-format_error({badcall, Call}) ->
+format_error({badcall, _Call}) ->
     "Call not recognized for current mode (active or passive) and state "
 	"of socket.";
-format_error({badcast, Cast}) ->
+format_error({badcast, _Cast}) ->
     "Call not recognized for current mode (active or passive) and state "
 	"of socket."; 
-format_error({badinfo, Info}) ->
-    "Call not recognized for current mode (active or passive) and state "
-	"of socket.".
 
-    
+format_error({badinfo, _Info}) ->
+    "Call not recognized for current mode (active or passive) and state "
+	"of socket.";
+format_error(Error) ->
+    case (catch inet:format_error(Error)) of
+	"unkknown POSIX" ++ _ ->
+	    no_format(Error);
+	{'EXIT', _} ->
+	    no_format(Error);
+	Other ->
+	    Other
+    end.
+
+no_format(Error) ->    
+    io_lib:format("No format string for error: \"~p\" available.", [Error]).
+

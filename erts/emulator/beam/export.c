@@ -61,7 +61,7 @@ export_cmp(Export* tmpl, Export* obj)
 static Export*
 export_alloc(Export* tmpl)
 {
-    Export* obj = (Export*) fix_alloc(export_desc);
+    Export* obj = (Export*) erts_alloc(ERTS_ALC_T_EXPORT, sizeof(Export));
     
     obj->fake_op_func_info_for_hipe[0] = 0;
     obj->fake_op_func_info_for_hipe[1] = 0;
@@ -80,7 +80,7 @@ export_alloc(Export* tmpl)
 static void 
 export_free(Export* obj)
 {
-    fix_free(export_desc, (void*) obj);
+    erts_free(ERTS_ALC_T_EXPORT,  (void*) obj);
 }
 
 
@@ -94,7 +94,7 @@ init_export_table(void)
     f.alloc = (HALLOC_FUN) export_alloc;
     f.free = (HFREE_FUN) export_free;
 
-    index_init(&export_table, "export_list",
+    index_init(ERTS_ALC_T_EXPORT_TABLE, &export_table, "export_list",
 	       EXPORT_SIZE, EXPORT_LIMIT, EXPORT_RATE, f);
 }
 
@@ -112,7 +112,7 @@ init_export_table(void)
  */
 
 Export*
-erts_find_export_entry(Eterm m, Eterm f, int a)
+erts_find_export_entry(Eterm m, Eterm f, unsigned int a)
 {
     HashValue hval = EXPORT_HASH(m, f, a);
     int ix = hval % export_table.htable.size;
@@ -138,14 +138,14 @@ erts_find_export_entry(Eterm m, Eterm f, int a)
  * Returns a NULL pointer if the given function is not loaded, or
  * a pointer to the export entry.
  *
- * Note: This function never return export entries for BIFs
- * or functions which are not yet loaded.  This make it suitable
+ * Note: This function never returns export entries for BIFs
+ * or functions which are not yet loaded.  This makes it suitable
  * for use by the erlang:function_exported/3 BIF or whenever you
  * cannot depend on the error_handler.
  */
 
 Export*
-erts_find_function(Eterm m, Eterm f, int a)
+erts_find_function(Eterm m, Eterm f, unsigned int a)
 {
     Export e;
     Export* ep;
@@ -170,7 +170,7 @@ erts_find_function(Eterm m, Eterm f, int a)
  */
 
 Export*
-erts_export_put(Eterm mod, Eterm func, int arity)
+erts_export_put(Eterm mod, Eterm func, unsigned int arity)
 {
     Export e;
     

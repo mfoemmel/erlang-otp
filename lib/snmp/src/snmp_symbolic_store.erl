@@ -436,96 +436,29 @@ terminate(Reason, S) ->
 %%----------------------------------------------------------
 
 % downgrade
-code_change({down, Vsn}, State, downgrade_to_pre_3_3_0) ->
-    ?debug("code_change(down) -> entry with~n"
-	   "  Vsn:   ~p~n"
-	   "  State: ~p~n"
-	   "  Extra: ~p",
-      [Vsn,State,downgrade_to_pre_3_3_0]),
-    case State#state.db of
-	{ets,Tab} ->
-	    ?debug("code_change(down) -> Tab = ~p",[Tab]),
-	    NTab = ets_downgrade(Tab),
-	    ?debug("code_change(down) -> NTab = ~p",[NTab]),
-	    {ok, {state,NTab}};
-	Other ->
-	    exit({unsupported_database,Other})
-    end;
-code_change({down, Vsn}, State, Extra) ->
-    ?debug("code_change(down) -> entry with~n"
-	   "  Vsn:   ~p~n"
-	   "  State: ~p~n"
-	   "  Extra: ~p",
-      [Vsn,State,Extra]),
+code_change({down, _Vsn}, State, _Extra) ->
+%     ?debug("code_change(down) -> entry with"
+% 	   "~n   Vsn:   ~p"
+% 	   "~n   State: ~p"
+% 	   "~n   Extra: ~p",
+% 	[Vsn,State,Extra]),
     {ok, State};
 
 % upgrade
-code_change(Vsn, State, upgrade_from_pre_3_3_0) ->
-    ?debug("code_change(up) -> entry with~n"
-	   "  Vsn:   ~p~n"
-	   "  State: ~p~n"
-	   "  Extra: ~p",
-      [Vsn,State,upgrade_from_pre_3_3_0]),
-    %% Prior to 3.3.0 there where only ets storage
-    {state,Tab} = State,
-    ?debug("code_change(up) -> Tab = ~p",[Tab]),
-    NTab = ets_upgrade(Tab),
-    ?debug("code_change(up) -> NTab = ~p",[NTab]),
-    {ok, #state{db = {ets,NTab}}};
-code_change(Vsn, State, Extra) ->
-    ?debug("code_change(up) -> entry with~n"
-	   "  Vsn:   ~p~n"
-	   "  State: ~p~n"
-	   "  Extra: ~p",
-      [Vsn,State,Extra]),
+code_change(_Vsn, State, _Extra) ->
+%     ?debug("code_change(up) -> entry with"
+% 	   "~n   Vsn:   ~p"
+% 	   "~n   State: ~p"
+% 	   "~n   Extra: ~p",
+% 	[Vsn,State,Extra]),
     {ok, State}.
 
 
 
-ets_upgrade(Tab) ->
-    ets_update(Tab,up).
-
-ets_downgrade(Tab) ->
-    ets_update(Tab,down).
-
-ets_update(Tab,How) ->
-    ?debug("ets_update -> entry when Tab = ~p",[Tab]),
-    Recs = ets:tab2list(Tab),
-    ?debug("ets_update -> ~p records to be ~pgraded",[length(Recs),How]),
-    ets:rename(Tab,snmp_symbolic_store_tmp),
-    {ets,NTab} = snmp_general_db:open(ets,snmp_symbolic_store,
-				      symbol,record_info(fields,symbol),bag),
-    ?debug("ets_update -> NTab = ~p",[NTab]),
-    ets_update(NTab,Tab,Recs,How).
-
-ets_update(Tab,OldTab,[],_How) ->
-    ets:delete(OldTab),
-    Tab;
-ets_update(Tab,OldTab,[Rec|Recs],How) ->
-    ?debug("ets_update -> ~pgrade record ~p",[How,Rec]),
-    record_update(Tab,Rec,How),
-    ets_update(Tab,OldTab,Recs,How).
-
-record_update(Tab,{Key, MibName, Info},up) ->
-    ?debug("record_update -> upgrade record with"
-	   "~n     Tab:     ~p"
-	   "~n     Key:     ~p"
-	   "~n     MibName: ~p"
-	   "~n     Info:    ~p",[Tab, Key, MibName, Info]),
-    NRec = #symbol{key = Key, mib_name = MibName, info = Info},
-    ?debug("record_update(up) -> "
-	   "~n     NRec: ~p",[NRec]),
-    ets:insert(Tab,NRec);
-record_update(Tab,Rec,down) when record(Rec,symbol) ->
-    ?debug("record_update -> downgrade record"
-	   "~n     Rec: ~p",[Rec]),
-    ORec = {Rec#symbol.key, Rec#symbol.mib_name, Rec#symbol.info},
-    ?debug("record_update -> ORec: ~p",[ORec]),
-    ets:insert(Tab,ORec).
 
     
 %%-----------------------------------------------------------------
-%% Store traps
+%% Trap operations (write, read, delete)
 %%-----------------------------------------------------------------
 %% A notification is stored as {Key, Value}, where
 %% Key is the symbolic trap name, and Value is 
@@ -549,8 +482,8 @@ set_notif(Db, MibName, Trap) ->
     snmp_general_db:write(Db, Rec).
 
 delete_notif(Db, MibName) ->
-    Rec = #symbol{key = {trap, '_'}, mib_name = MibName, info = '_'},
-    snmp_general_db:match_delete(Db, Rec).
+    Pattern = #symbol{key = {trap, '_'}, mib_name = MibName, info = '_'},
+    snmp_general_db:match_delete(Db, Pattern).
 
 
 %% -------------------------------------

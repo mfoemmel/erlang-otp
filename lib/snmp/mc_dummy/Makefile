@@ -16,7 +16,7 @@
 #     $Id$
 #
 include $(ERL_TOP)/make/target.mk
-ESRC=../src
+ESRC = ../src
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 # ----------------------------------------------------
@@ -24,6 +24,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # ----------------------------------------------------
 include ../vsn.mk
 VSN=$(SNMPEA_VSN)
+APP_VSN = "snmp-$(VSN)"
 
 # ----------------------------------------------------
 # Release directory specification
@@ -35,9 +36,9 @@ RELSYSDIR = $(RELEASE_PATH)/lib/snmp-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 
-PARSER_SRC = ../src/snmp_mib_gram.yrl
+PARSER_SRC    = ../src/snmp_mib_gram.yrl
 
-PARSER_MODULE=$(PARSER_SRC:%.yrl=%)
+PARSER_MODULE = $(PARSER_SRC:%.yrl=%)
 
 MODULES = $(PARSER_MODULE) \
 	../src/snmp \
@@ -60,7 +61,10 @@ HRL_FILES = ../src/snmp_compile.hrl ../src/snmp_generic.hrl
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/stdlib
+ERL_COMPILE_FLAGS += \
+                     +'{parse_transform,sys_pre_attributes}' \
+                     +'{attribute,insert,app_vsn,$(APP_VSN)}' \
+                     -I$(ERL_TOP)/lib/stdlib
 
 YRL_FLAGS = -o ../src
 

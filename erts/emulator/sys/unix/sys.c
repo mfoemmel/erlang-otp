@@ -1,4 +1,4 @@
- /* ``The contents of this file are subject to the Erlang Public License,
+/* ``The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
@@ -106,6 +106,13 @@
 #  include <fcntl.h>
 #endif
 
+#ifdef USE_THREADS
+#define ERL_THREADS_EMU_INTERNAL__
+#include "erl_threads.h"
+#endif
+
+#include "erl_mseg.h"
+
 extern char **environ;
 
 #define MAX_VSIZE 16		/* Max number of entries allowed in an I/O
@@ -149,19 +156,8 @@ extern char **environ;
  * child_waiter().
  */
 
-#if CHLDWTHR
-#include "erl_threads.h"
-#endif
-
 EXTERN_FUNCTION(void, input_ready, (int, int));
 EXTERN_FUNCTION(void, output_ready, (int, int));
-#ifdef USE_THREADS
-EXTERN_FUNCTION(void, async_ready, (int, int));
-EXTERN_FUNCTION(int, init_async, (int));
-EXTERN_FUNCTION(int, exit_async, (_VOID_));
-EXTERN_FUNCTION(int, erts_thread_sigmask, (int, const sigset_t*, sigset_t*));
-EXTERN_FUNCTION(int, erts_thread_sigwait, (const sigset_t*, int*));
-#endif
 EXTERN_FUNCTION(int, check_async_ready, (_VOID_));
 EXTERN_FUNCTION(int, driver_interrupt, (int, int));
 EXTERN_FUNCTION(void, increment_time, (int));
@@ -171,14 +167,11 @@ EXTERN_FUNCTION(void, do_break, (_VOID_));
 
 EXTERN_FUNCTION(void, erl_sys_args, (int*, char**));
 
-#if CHLDWTHR
-EXTERN_FUNCTION(erts_mutex_t, erts_mutex_sys, (int));
-#endif
+/* The following two defs should probably be moved somewhere else */
 
-void erts_sys_init_float(void);
+extern void erts_sys_init_float(void);
 
-
-void erl_crash_dump(char* fmt, va_list args);
+extern void erl_crash_dump(char* fmt, va_list args);
 
 #ifdef USE_SELECT
 
@@ -218,6 +211,9 @@ static struct pollfd*  dev_poll_rfds = NULL; /* Allocated at startup */
 
 static void devpoll_init();
 static void devpoll_update_pix(int pix);
+#ifdef HAVE_SYS_DEVPOLL_H
+static void devpoll_clear_pix(int pix);
+#endif /* HAVE_SYS_DEVPOLL_H */
 
 #endif /* !USE_DEVPOLL */
 
@@ -247,8 +243,6 @@ static int max_fd;
 
 #if defined(DEBUG)
 #define ERL_BUILD_TYPE_MARKER ".debug"
-#elif defined(INSTRUMENT)
-#define ERL_BUILD_TYPE_MARKER ".instr"
 #elif defined(PURIFY)
 #define ERL_BUILD_TYPE_MARKER ".purify"
 #elif defined(QUANTIFY)
@@ -272,16 +266,6 @@ static erts_thread_t child_waiter_tid;
 static volatile int children_died;
 #endif
 
-/* We maintain a linked fifo queue of these structs in order */
-/* to manage unfinnished reads/and writes on differenet fd's */
-
-typedef struct pend {
-    char *cpos;
-    int fd;
-    int remain;
-    struct pend *next;
-    char buf[1];   /* this is a trick to be able to malloc one chunk */
-} Pend;
 
 static struct fd_data {
     int   inport;
@@ -290,15 +274,14 @@ static struct fd_data {
     ErlDrvEventData event_data;
     int   pix;       /* index in poll_fds array */
 #endif
+    char  pbuf[4];   /* hold partial packet bytes */
+    int   psz;       /* size of pbuf */
     char  *buf;
     char  *cpos;
     int   sz;
     int   remain;  /* for input on fd */
-    Pend* pending;   /* pending outputs */
 } *fd_data;			/* indexed by fd */
 
-/* forward declarations */
-static FUNCTION(int, read_fill, (int, char*, int));
 /* static FUNCTION(int, write_fill, (int, char*, int)); unused? */
 static FUNCTION(void, check_io, (int));
 static FUNCTION(void, note_child_death, (int, int));
@@ -338,17 +321,22 @@ void
 erl_sys_init(void)
 {
 #if !DISABLE_VFORK
-    char *bindir = getenv("BINDIR");
+    char *bindir;
+    Uint csp_path_sz;
+
+    bindir = getenv("BINDIR");
     if (!bindir)
         erl_exit(-1, "Environment variable BINDIR is not set\n");
     if (bindir[0] != DIR_SEPARATOR_CHAR)
 	erl_exit(-1,
 		 "Environment variable BINDIR does not contain an"
 		 " absolute path\n");
-    child_setup_prog = safe_alloc(strlen(bindir)
-                                  + 1 /* DIR_SEPARATOR_CHAR */
-                                  + sizeof(CHILD_SETUP_PROG_NAME)
-                                  + 1);
+    csp_path_sz = (strlen(bindir)
+		   + 1 /* DIR_SEPARATOR_CHAR */
+		   + sizeof(CHILD_SETUP_PROG_NAME)
+		   + 1);
+    child_setup_prog = erts_alloc(ERTS_ALC_T_CS_PROG_PATH, csp_path_sz);
+    erts_sys_misc_mem_sz += csp_path_sz;
     sprintf(child_setup_prog,
             "%s%c%s",
             bindir,
@@ -390,38 +378,32 @@ RETSIGTYPE (*func)();
 {
     return(sigset(sig, func));
 }
-void sys_sigblock(sig)
-int sig;
+void sys_sigblock(int sig)
 {
     sighold(sig);
 }
-void sys_sigrelease(sig)
-int sig;
+void sys_sigrelease(int sig)
 {
     sigrelse(sig);
 }
 #else /* !SIG_SIGSET */
 #ifdef SIG_SIGNAL		/* Old BSD */
-RETSIGTYPE (*sys_sigset(sig, func))()
+RETSIGTYPE (*sys_sigset(sig, func))(int, int)
 int sig;
 RETSIGTYPE (*func)();
 {
     return(signal(sig, func));
 }
-sys_sigblock(sig)
-int sig;
+sys_sigblock(int sig)
 {
     sigblock(sig);
 }
-sys_sigrelease(sig)
-int sig;
+sys_sigrelease(int sig)
 {
     sigsetmask(sigblock(0) & ~sigmask(sig));
 }
 #else /* !SIG_SIGNAL */	/* The True Way - POSIX!:-) */
-RETSIGTYPE (*sys_sigset(sig, func))()
-int sig;
-RETSIGTYPE (*func)();
+RETSIGTYPE (*sys_sigset(int sig, RETSIGTYPE (*func)(int)))(int)
 {
     struct sigaction act, oact;
 
@@ -437,8 +419,7 @@ RETSIGTYPE (*func)();
 #define sigprocmask erts_thread_sigmask
 #endif
 
-void sys_sigblock(sig)
-int sig;
+void sys_sigblock(int sig)
 {
     sigset_t mask;
 
@@ -447,8 +428,7 @@ int sig;
     sigprocmask(SIG_BLOCK, &mask, (sigset_t *)NULL);
 }
 
-void sys_sigrelease(sig)
-int sig;
+void sys_sigrelease(int sig)
 {
     sigset_t mask;
 
@@ -461,8 +441,7 @@ int sig;
 
 #if (0) /* not used? -- gordon */
 static void (*break_func)();
-static RETSIGTYPE break_handler(sig)
-int sig;
+static RETSIGTYPE break_handler(int sig)
 {
 #ifdef QNX
     /* Turn off SIGCHLD during break processing */
@@ -476,7 +455,11 @@ int sig;
 #endif /* 0 */
 
 /* set up signal handlers for break and quit */
-static void request_break()
+#if (defined(SIG_SIGSET) || defined(SIG_SIGNAL))
+static RETSIGTYPE request_break(void)
+#else
+static RETSIGTYPE request_break(int signum)
+#endif
 {
   /* just set a flag - checked for and handled 
    * in main thread (not signal handler).
@@ -492,7 +475,17 @@ static void request_break()
 
 }
 
-static void user_signal1()
+#ifdef UNUSABLE_SIGUSRX
+#warning "Unusable SIGUSR1 & SIGUSR2. Disabling use of these signals"
+#endif
+
+#ifndef UNUSABLE_SIGUSRX
+
+#if (defined(SIG_SIGSET) || defined(SIG_SIGNAL))
+static RETSIGTYPE user_signal1(void)
+#else
+static RETSIGTYPE user_signal1(int signum)
+#endif
 {
    /* We do this at interrupt level, since the main reason for
       wanting to generate a crash dump in this way is that the emulator
@@ -503,54 +496,78 @@ static void user_signal1()
 }
 
 #ifdef QUANTIFY
-static void user_signal2()
+#if (defined(SIG_SIGSET) || defined(SIG_SIGNAL))
+static RETSIGTYPE user_signal2(void)
+#else
+static RETSIGTYPE user_signal2(int signum)
+#endif
 {
    quantify_save_data();
 }
 #endif
 
-static void do_quit()
+#endif /* #ifndef UNUSABLE_SIGUSRX */
+
+#if (defined(SIG_SIGSET) || defined(SIG_SIGNAL))
+static RETSIGTYPE do_quit(void)
+#else
+static RETSIGTYPE do_quit(int signum)
+#endif
 {
     halt_0(0);
 }
 
-void init_break_handler()
+void erts_set_ignore_break(void) {
+    sys_sigset(SIGINT,  SIG_IGN);
+    sys_sigset(SIGQUIT, SIG_IGN);
+    sys_sigset(SIGTSTP, SIG_IGN);
+}
+
+void init_break_handler(void)
 {
    sys_sigset(SIGINT, request_break);
+#ifndef UNUSABLE_SIGUSRX
    sys_sigset(SIGUSR1, user_signal1);
 #ifdef QUANTIFY
    sys_sigset(SIGUSR2, user_signal2);
 #endif
+#endif /* #ifndef UNUSABLE_SIGUSRX */
    sys_sigset(SIGQUIT, do_quit);
 }
 
-int sys_max_files() 
+int sys_max_files(void)
 {
    return(max_files);
 }
 
-static void block_signals()
+static void block_signals(void)
 {
 #if !CHLDWTHR
    sys_sigblock(SIGCHLD);
 #endif
    sys_sigblock(SIGINT);
+#ifndef UNUSABLE_SIGUSRX
    sys_sigblock(SIGUSR1);
+#endif
 }
 
-static void unblock_signals()
+static void unblock_signals(void)
 {
     /* Update erl_child_setup.c if changed */
 #if !CHLDWTHR
    sys_sigrelease(SIGCHLD);
 #endif
    sys_sigrelease(SIGINT);
+#ifndef UNUSABLE_SIGUSRX
    sys_sigrelease(SIGUSR1);
+#endif /* #ifndef UNUSABLE_SIGUSRX */
 }
 
 /******************* Routines for time measurement *********************/
 
 int erts_ticks_per_sec = 0; /* Will be SYS_CLK_TCK in erl_unix_sys.h */
+int erts_ticks_per_sec_wrap = 0; /* Will be SYS_CLK_TCK_WRAP */
+static int ticks_bsr = 0; /* Shift wrapped tick value this much to the right */
 
 /* 
  * init timers, chose a tick length, and return it.
@@ -566,7 +583,25 @@ int sys_init_time(void)
      */
     if ((erts_ticks_per_sec = TICKS_PER_SEC()) < 0)
 	erl_exit(1, "Can't get clock ticks/sec\n");
+    if (erts_ticks_per_sec >= 1000) {
+	/* Workaround for beta linux kernels, need to be done in runtime
+	   to make erlang run on both 2.4 and 2.5 kernels. In the future, 
+	   the kernel ticks might as 
+	   well be used as a high res timer instead, but that's for when the 
+	   majority uses kernels with HZ == 1024 */
+	ticks_bsr = 3;
+    } else {
+	ticks_bsr = 0;
+    }
+    erts_ticks_per_sec_wrap = (erts_ticks_per_sec >> ticks_bsr);
     return SYS_CLOCK_RESOLUTION;
+}
+
+clock_t sys_times_wrap(void)
+{
+    SysTimes dummy;
+    clock_t result = (sys_times(&dummy) >> ticks_bsr);
+    return result;
 }
 
 /************************** OS info *******************************/
@@ -577,8 +612,7 @@ int sys_init_time(void)
 char os_type[] = "unix";
 
 static int
-get_number(str_ptr)
-char** str_ptr;
+get_number(char **str_ptr)
 {
     char* s = *str_ptr;		/* Pointer to beginning of string. */
     char* dot;			/* Pointer to dot in string or NULL. */
@@ -596,9 +630,8 @@ char** str_ptr;
 }
 
 void
-os_flavor(namebuf, size)
-char* namebuf;			/* Where to return the name. */
-unsigned size;			/* Size of name buffer. */
+os_flavor(char* namebuf, 	/* Where to return the name. */
+	  unsigned size) 	/* Size of name buffer. */
 {
     struct utsname uts;		/* Information about the system. */
 
@@ -627,14 +660,12 @@ int* pBuild;			/* Pointer to build number. */
     *pBuild = get_number(&release);
 }
 
-void init_getenv_state(state)
-GETENV_STATE *state;
+void init_getenv_state(GETENV_STATE *state)
 {
    *state = NULL;
 }
 
-char *getenv_string(state0)
-GETENV_STATE *state0;
+char *getenv_string(GETENV_STATE *state0)
 {
    char **state = (char **) *state0;
    char *cp;
@@ -763,7 +794,11 @@ struct erl_drv_entry async_driver_entry = {
 #endif
 
 /* Handle SIGCHLD signals. */
-static RETSIGTYPE onchld()
+#if (defined(SIG_SIGSET) || defined(SIG_SIGNAL))
+static RETSIGTYPE onchld(void)
+#else
+static RETSIGTYPE onchld(int signum)
+#endif
 {
 #if CHLDWTHR
     ASSERT(0); /* We should *never* catch a SIGCHLD signal */
@@ -772,14 +807,13 @@ static RETSIGTYPE onchld()
 #endif
 }
 
-static int set_driver_data(port_num,
-			   ifd,
-			   ofd,
-			   packet_bytes,
-			   read_write,
-			   exit_status,
-			   pid)
-int port_num, ifd, ofd, packet_bytes, read_write, exit_status, pid;
+static int set_driver_data(int port_num,
+			   int ifd,
+			   int ofd,
+			   int packet_bytes,
+			   int read_write,
+			   int exit_status,
+			   int pid)
 {
     if (read_write & DO_READ) {
 	driver_data[ifd].packet_bytes = packet_bytes;
@@ -814,10 +848,9 @@ static int spawn_init()
    int i;
 
    sys_sigset(SIGPIPE, SIG_IGN); /* Ignore - we'll handle the write failure */
-   if ((driver_data = (struct driver_data *)
-	sys_alloc_from(181,max_files * sizeof(struct driver_data))) == NULL)
-      erl_exit(1, "Can't allocate %d bytes of memory\n",
-	       max_files * sizeof(struct driver_data));
+   driver_data = (struct driver_data *)
+       erts_alloc(ERTS_ALC_T_DRV_TAB, max_files * sizeof(struct driver_data));
+   erts_sys_misc_mem_sz += max_files * sizeof(struct driver_data);
 
    for (i = 0; i < max_files; i++)
       driver_data[i].pid = -1;
@@ -829,7 +862,7 @@ static int spawn_init()
    sys_sigset(SIGCHLD, onchld); /* Reap children */
 
 #if CHLDWTHR
-   dead_child_status_lock = erts_mutex_sys(2);
+   dead_child_status_lock = erts_mutex_sys(ERTS_MUTEX_SYS_CHILD_STATUS);
    if(erts_thread_create(&child_waiter_tid, child_waiter, NULL, 0) != 0)
      erl_exit(1, "Failed to start child waiter thread");
 #endif
@@ -837,9 +870,7 @@ static int spawn_init()
    return 1;
 }
 
-static void close_pipes(ifd, ofd, read_write)
-int ifd[2], ofd[2];
-int read_write;
+static void close_pipes(int ifd[2], int ofd[2], int read_write)
 {
     if (read_write & DO_READ) {
 	(void) close(ifd[0]);
@@ -851,44 +882,79 @@ int read_write;
     }
 }
 
-static void init_fd_data(fd, prt)
-int fd, prt;
+static void init_fd_data(int fd, int prt)
 {
-    fd_data[fd].pending = NULL;
-    fd_data[fd].buf = fd_data[fd].cpos = NULL;
-    fd_data[fd].remain = fd_data[fd].sz = 0;
+    fd_data[fd].buf = NULL;
+    fd_data[fd].cpos = NULL;
+    fd_data[fd].remain = 0;
+    fd_data[fd].sz = 0;
+    fd_data[fd].psz = 0;
 }
 
-static char **build_unix_environment(block)
-char *block;
+static char **build_unix_environment(char *block)
 {
-   int len;
-   char *cp;
-   char **cpp;
+    int i;
+    int j;
+    int len;
+    char *cp;
+    char **cpp;
+    char** old_env;
+    
+    cp = block;
+    len = 0;
+    while (*cp != '\0') {
+	cp += strlen(cp) + 1;
+	len++;
+    }
+    old_env = environ;
+    while (*old_env++ != NULL) {
+	len++;
+    }
+    
+    cpp = (char **) erts_alloc_fnf(ERTS_ALC_T_ENVIRONMENT,
+				   sizeof(char *) * (len+1));
+    if (cpp == NULL) {
+	return NULL;
+    }
 
-   cp = block;
-   len = 0;
-   while (*cp != '\0')
-   {
-      cp += strlen(cp) + 1;
-      len++;
-   }
+    cp = block;
+    len = 0;
+    while (*cp != '\0') {
+	cpp[len] = cp;
+	cp += strlen(cp) + 1;
+	len++;
+    }
+    
+    i = len;
+    for (old_env = environ; *old_env; old_env++) {
+	char* old = *old_env;
 
-   cpp = (char **) sys_alloc (sizeof(char *) * (len+1));
-   if (cpp == NULL)
-      return NULL;
-   
-   cp = block;
-   len = 0;
-   while (*cp != '\0')
-   {
-      cpp[len] = cp;
-      cp += strlen(cp) + 1;
-      len++;
-   }
-   cpp[len] = NULL;
+	for (j = 0; j < len; j++) {
+	    char *s, *t;
 
-   return cpp;
+	    s = cpp[j];
+	    t = old;
+	    while (*s == *t && *s != '=') {
+		s++, t++;
+	    }
+	    if (*s == '=' && *t == '=') {
+		break;
+	    }
+	}
+
+	if (j == len) {		/* New version not found */
+	    cpp[len++] = old;
+	}
+    }
+
+    for (j = 0; j < i; j++) {
+	if (cpp[j][strlen(cpp[j])-1] == '=') {
+	    cpp[j] = cpp[--len];
+	}
+    }
+
+    cpp[len] = NULL;
+    return cpp;
 }
 
 /*
@@ -969,16 +1035,12 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 	*p1-- = *p2--;
     memcpy(tmp_buf, "exec ", 5);
 
-    if (opts->envir != NULL)
-    {
-       if ((new_environ = build_unix_environment(opts->envir)) == NULL)
-       {
-	  errno = ENOMEM;
-	  return ERL_DRV_ERROR_ERRNO;
-       }
-    }
-    else
-       new_environ = environ;
+    if (opts->envir == NULL) {
+	new_environ = environ;
+    } else if ((new_environ = build_unix_environment(opts->envir)) == NULL) {
+	errno = ENOMEM;
+	return ERL_DRV_ERROR_ERRNO;
+    } 
 
 #ifndef QNX
 
@@ -1145,7 +1207,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 #endif /* QNX */
 
     if (new_environ != environ)
-       sys_free(new_environ);
+	erts_free(ERTS_ALC_T_ENVIRONMENT, (void *) new_environ);
 
     if (opts->read_write & DO_READ) 
 	(void) close(ifd[1]);
@@ -1345,37 +1407,27 @@ static ErlDrvData fd_start(ErlDrvPort port_num, char* name,
     erts_mutex_unlock(dead_child_status_lock);
 #endif
     return res;
-    
 }
 
-static void clear_fd_data(fd) 
-int fd;
+static void clear_fd_data(int fd) 
 {
-    
-    if (fd_data[fd].sz > 0) 
-	sys_free(fd_data[fd].buf);
+    if (fd_data[fd].sz > 0) {
+	erts_free(ERTS_ALC_T_FD_ENTRY_BUF, (void *) fd_data[fd].buf);
+	ASSERT(erts_sys_misc_mem_sz >= fd_data[fd].sz);
+	erts_sys_misc_mem_sz -= fd_data[fd].sz;
+    }
     fd_data[fd].buf = NULL;
     fd_data[fd].sz = 0;
     fd_data[fd].remain = 0;
     fd_data[fd].cpos = NULL;
-    fd_data[fd].pending = NULL;
+    fd_data[fd].psz = 0;
 }
 
-static void nbio_stop_fd(prt, fd)
-int prt, fd;
+static void nbio_stop_fd(int prt, int fd)
 {
-    Pend *p, *p1;
-    
     driver_select(prt,fd,DO_READ|DO_WRITE,0);
     clear_fd_data(fd);
-    p = fd_data[fd].pending;
     SET_BLOCKING(fd);
-    while (p) {
-	p1 = p->next;
-	sys_free(p);
-	p = p1;
-    }
-    fd_data[fd].pending = NULL;
 }
 
 static void fd_stop(ErlDrvData fd)  /* Does not close the fds */
@@ -1389,7 +1441,7 @@ static void fd_stop(ErlDrvData fd)  /* Does not close the fds */
 }
 
 static ErlDrvData vanilla_start(ErlDrvPort port_num, char* name,
-			  SysDriverOpts* opts)
+				SysDriverOpts* opts)
 {
     int flags, fd;
     ErlDrvData res;
@@ -1548,31 +1600,8 @@ static void output(ErlDrvData e, char* buf, int len)
     return; /* 0; */
 }
 
-static int ensure_header(fd, buf,  packet_size, sofar)
-int fd;
-char *buf;
-int packet_size, sofar;
-{
-    int res;
-    int remaining = packet_size - sofar;
-    SET_BLOCKING(fd);  /* FIXME !!!!!!!! */
-    if (read_fill(fd, buf+sofar, remaining) != remaining)
-	return -1;
-    switch (packet_size) {
-    case 1: res = get_int8(buf); break;
-    case 2: res = get_int16(buf); break;
-    case 4: res = get_int32(buf); break;
-    default:
-	return -1;
-    }
-    SET_NONBLOCKING(fd);
-    return(res);
-}
-
-static int port_inp_failure(port_num, ready_fd, res)
-int port_num;
-int ready_fd;
-int res;			/* Result: 0 (eof) or -1 (error) */
+static int port_inp_failure(int port_num, int ready_fd, int res)
+				/* Result: 0 (eof) or -1 (error) */
 {
     int err = errno;
     int status;
@@ -1624,7 +1653,9 @@ int res;			/* Result: 0 (eof) or -1 (error) */
 static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
 {
     int fd = (int)(long)e;
-    int port_num, packet_bytes, res;
+    int port_num;
+    int packet_bytes;
+    int res;
     Uint h;
     char *buf;
 
@@ -1632,111 +1663,79 @@ static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
     packet_bytes = driver_data[fd].packet_bytes;
 
     if (packet_bytes == 0) {
-	if ((res = read(ready_fd, tmp_buf, tmp_buf_size)) > 0) {
-	    driver_output(port_num, (char*)tmp_buf, res);
-	    return; /* 0; */
+	res = read(ready_fd, tmp_buf, tmp_buf_size);
+	if (res < 0) {
+	    if ((errno != EINTR) && (errno != ERRNO_BLOCK))
+		port_inp_failure(port_num, ready_fd, res);
 	}
-	if ((res < 0) && ((errno == EINTR) || (errno == ERRNO_BLOCK)))
-	    return; /* 0; */
-	port_inp_failure(port_num, ready_fd, res);
-	return;
+	else if (res == 0)
+	    port_inp_failure(port_num, ready_fd, res);
+	else 
+	    driver_output(port_num, (char*)tmp_buf, res);
     }
-
-    if (fd_data[ready_fd].remain > 0) { /* We try to read the remainder */
+    else if (fd_data[ready_fd].remain > 0) { /* We try to read the remainder */
 	/* space is allocated in buf */
 	res = read(ready_fd, fd_data[ready_fd].cpos, 
 		   fd_data[ready_fd].remain);
 	if (res < 0) {
-	    if ((errno == EINTR) || (errno == ERRNO_BLOCK))
-		return; /* 0; */
-	    else {
+	    if ((errno != EINTR) && (errno != ERRNO_BLOCK))
 		port_inp_failure(port_num, ready_fd, res);
-		return;
-	    }
 	}
 	else if (res == 0) {
 	    port_inp_failure(port_num, ready_fd, res);
-	    return;
 	}
 	else if (res == fd_data[ready_fd].remain) { /* we're done  */
 	    driver_output(port_num, fd_data[ready_fd].buf, 
 			  fd_data[ready_fd].sz);
 	    clear_fd_data(ready_fd);
-	    return; /* 0; */
 	}
 	else { /*  if (res < fd_data[ready_fd].remain) */
 	    fd_data[ready_fd].cpos += res;
 	    fd_data[ready_fd].remain -= res;
-	    return; /* 0; */
 	}
     }
-
-
-    if (fd_data[ready_fd].remain == 0) { /* clean fd */
+    else if (fd_data[ready_fd].remain == 0) { /* clean fd */
 	/* We make one read attempt and see what happens */
 	res = read(ready_fd, tmp_buf, tmp_buf_size);
 	if (res < 0) {  
-	    if ((errno == EINTR) || (errno == ERRNO_BLOCK))
-		return; /* 0; */
-	    port_inp_failure(port_num, ready_fd, res);
-	    return;
+	    if ((errno != EINTR) && (errno != ERRNO_BLOCK))
+		port_inp_failure(port_num, ready_fd, res);
 	}
 	else if (res == 0) {     	/* eof */
 	    port_inp_failure(port_num, ready_fd, res);
-	    return;
-	} else if (res < packet_bytes) { /* Ugly case... get at least */
-	    /*
-	     * XXX Fix this!!!
-	     */
-	    if ((h = ensure_header(ready_fd, tmp_buf, packet_bytes, res))==-1) {
-		port_inp_failure(port_num, ready_fd, -1);
-		return;
-	    }
-	    if ((buf = sys_alloc(h)) == NULL) {
-		errno = ENOMEM;
-		port_inp_failure(port_num, ready_fd, -1);
-		return;
-	    }
-	    fd_data[ready_fd].buf = buf;
-	    fd_data[ready_fd].sz = h;
-	    fd_data[ready_fd].remain = h;
-	    fd_data[ready_fd].cpos = buf;
-	    return; /* 0; */
+	} 
+	else if (res < packet_bytes - fd_data[ready_fd].psz) { 
+	    memcpy(fd_data[ready_fd].pbuf+fd_data[ready_fd].psz,
+		   tmp_buf, res);
+	    fd_data[ready_fd].psz += res;
 	}
 	else  { /* if (res >= packet_bytes) */
 	    unsigned char* cpos = tmp_buf;
 	    int bytes_left = res;
-	    while (1) {		/* driver_output as many as possible */
-		if (bytes_left == 0) {
-		    clear_fd_data(ready_fd);
-		    return; /* 0; */
+
+	    while (1) {
+		int psz = fd_data[ready_fd].psz;
+		char* pbp = fd_data[ready_fd].pbuf + psz;
+
+		while(bytes_left && (psz < packet_bytes)) {
+		    *pbp++ = *cpos++;
+		    bytes_left--;
+		    psz++;
 		}
-		if (bytes_left < packet_bytes) { /* Yet an ugly case */
-		    if((h=ensure_header(ready_fd, cpos, 
-					packet_bytes, bytes_left))==-1) {
-			port_inp_failure(port_num, ready_fd, -1);
-			return;
-		    }
-		    if ((buf = sys_alloc(h)) == NULL) {
-			errno = ENOMEM;
-			port_inp_failure(port_num, ready_fd, -1);
-			return;
-		    }
-		    fd_data[ready_fd].buf = buf;
-		    fd_data[ready_fd].sz = h;
-		    fd_data[ready_fd].remain = h;
-		    fd_data[ready_fd].cpos = buf;
-		    return; /* 0; */
+		
+		if (psz < packet_bytes) {
+		    fd_data[ready_fd].psz = psz;
+		    break;
 		}
+		fd_data[ready_fd].psz = 0;
+
 		switch (packet_bytes) {
-		case 1: h = get_int8(cpos); cpos += 1; break;
-		case 2: h = get_int16(cpos); cpos += 2; break;
-		case 4: h = get_int32(cpos); cpos += 4; break;
-		default:
-		    return; /* -1; */
+		case 1: h = get_int8(fd_data[ready_fd].pbuf);  break;
+		case 2: h = get_int16(fd_data[ready_fd].pbuf); break;
+		case 4: h = get_int32(fd_data[ready_fd].pbuf); break;
+		default: ASSERT(0); return; /* -1; */
 		}
-		bytes_left -= packet_bytes;
-		/* we've got the header, now check if we've got the data */
+
 		if (h <= (bytes_left)) {
 		    driver_output(port_num, (char*) cpos, h);
 		    cpos += h;
@@ -1744,24 +1743,24 @@ static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
 		    continue;
 		}
 		else {		/* The last message we got was split */
-		    if ((buf = sys_alloc(h)) == NULL) {
+		    buf = erts_alloc_fnf(ERTS_ALC_T_FD_ENTRY_BUF, h);
+		    if (!buf) {
 			errno = ENOMEM;
 			port_inp_failure(port_num, ready_fd, -1);
-			return;
 		    }
-		    sys_memcpy(buf, cpos, bytes_left);
-		    fd_data[ready_fd].buf = buf;
-		    fd_data[ready_fd].sz = h;
-		    fd_data[ready_fd].remain = h - bytes_left;
-		    fd_data[ready_fd].cpos = buf + bytes_left;
-		    return; /* 0; */
+		    else {
+			erts_sys_misc_mem_sz += h;
+			sys_memcpy(buf, cpos, bytes_left);
+			fd_data[ready_fd].buf = buf;
+			fd_data[ready_fd].sz = h;
+			fd_data[ready_fd].remain = h - bytes_left;
+			fd_data[ready_fd].cpos = buf + bytes_left;
+		    }
+		    break;
 		}
 	    }
-	    return; /* 0; */
 	}
     }
-    ASSERT(0);
-    return; /* -1; */
 }
 
 
@@ -1912,7 +1911,7 @@ int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
 		max_fd++;   /* FIXME: panic if max_fds >= max_files */
 		pix = max_fd;
 		fd_data[fd].pix = pix;
-		// init the pfd structure
+		/* init the pfd structure */
 		poll_fds[pix].fd = fd;
 		poll_fds[pix].events = 0;
 	    }
@@ -2034,7 +2033,17 @@ int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
 	    max_fd--;
 	}
 #ifdef USE_DEVPOLL
-	else {
+	else if (mode) {
+
+	    /* If we have removed an event request but not all of them
+	       then we have to remove all requests and redo the
+	       request. This is because on Solaris the event mask is
+	       OR'ed in, i.e. if we earlier requested both POLLIN and
+	       POLLOUT and remove POLLOUT nothing will be changed */
+
+#ifdef HAVE_SYS_DEVPOLL_H
+	    devpoll_clear_pix(pix);
+#endif /* HAVE_SYS_DEVPOLL_H */
 	    devpoll_update_pix(pix);
 	}
 #endif
@@ -2215,7 +2224,7 @@ static void async_drv_input(ErlDrvData e, ErlDrvEvent fd)
 
 
 /* Lifted out from check_io() */
-static void do_break_handling()
+static void do_break_handling(void)
 {
     struct termios temp_mode;
     int saved = 0;
@@ -2223,12 +2232,12 @@ static void do_break_handling()
     /* during break we revert to initial settings */
     /* this is done differently for oldshell */
     if (using_oldshell) {
-	SET_BLOCKING(1);
+      SET_BLOCKING(1);
     }
     else if (isatty(0)) {
-	tcgetattr(0,&temp_mode);
-	tcsetattr(0,TCSANOW,&initial_tty_mode);
-	saved = 1;
+      tcgetattr(0,&temp_mode);
+      tcsetattr(0,TCSANOW,&initial_tty_mode);
+      saved = 1;
     }
     
     /* call the break handling function, reset the flag */
@@ -2238,10 +2247,10 @@ static void do_break_handling()
     
     /* after break we go back to saved settings */
     if (using_oldshell) {
-	SET_NONBLOCKING(1);
+      SET_NONBLOCKING(1);
     }
     else if (saved) {
-	tcsetattr(0,TCSANOW,&temp_mode);
+      tcsetattr(0,TCSANOW,&temp_mode);
     }
 }
 
@@ -2804,7 +2813,9 @@ void sys_get_pid(char *buffer){
 }
 
 int sys_putenv(char *buffer){
-    char *env = safe_alloc(strlen(buffer)+1);
+    Uint sz = strlen(buffer)+1;
+    char *env = erts_alloc(ERTS_ALC_T_PUTENV_STR, sz);
+    erts_sys_misc_mem_sz += sz;
     strcpy(env,buffer);
     return(putenv(env));
 }
@@ -2816,10 +2827,9 @@ sys_init_io(byte *buf, Uint size)
     tmp_buf_size = size;
     cerr_pos = 0;
 
-    if ((fd_data = (struct fd_data *)
-	 sys_alloc_from(180,max_files * sizeof(struct fd_data))) == NULL)
-	erl_exit(1, "Can't allocate %d bytes of memory\n",
-		 max_files * sizeof(struct fd_data));
+    fd_data = (struct fd_data *)
+	erts_alloc(ERTS_ALC_T_FD_TAB, max_files * sizeof(struct fd_data));
+    erts_sys_misc_mem_sz += max_files * sizeof(struct fd_data);
 
 #ifdef USE_SELECT
     FD_ZERO(&input_fds);
@@ -2827,17 +2837,15 @@ sys_init_io(byte *buf, Uint size)
 
 #else
     poll_fds =  (struct pollfd *)
-	sys_alloc_from(182, max_files * sizeof(struct pollfd));
+	erts_alloc(ERTS_ALC_T_POLL_FDS, max_files * sizeof(struct pollfd));
+    erts_sys_misc_mem_sz += max_files * sizeof(struct pollfd);
     ready_fds =  (struct readyfd *)
-	sys_alloc_from(182, ERL_POLL_READY_ENTRIES * max_files * sizeof(struct readyfd));
-
-    if (poll_fds == NULL)
-	erl_exit(1, "Can't allocate %d bytes of memory\n",
-		 max_files * sizeof(struct pollfd));
-
-    if (ready_fds == NULL)
-	erl_exit(1, "Can't allocate %d bytes of memory\n",
-		 ERL_POLL_READY_ENTRIES * max_files * sizeof(struct readyfd));
+	erts_alloc(ERTS_ALC_T_READY_FDS, (ERL_POLL_READY_ENTRIES
+					  * max_files
+					  * sizeof(struct readyfd)));
+    erts_sys_misc_mem_sz += (ERL_POLL_READY_ENTRIES
+			     * max_files
+			     * sizeof(struct readyfd));
 
     nof_ready_fds = 0;
     {
@@ -2898,25 +2906,6 @@ sys_init_io(byte *buf, Uint size)
 #endif
 }
 
-
-/* Fill buffer, return buffer length, 0 for EOF, < 0 for error except EINTR. */
-static int read_fill(fd, buf, len)
-int fd, len;
-char *buf;
-{
-    int i, got = 0;
-
-    do {
-	if ((i = read(fd, buf+got, len-got)) <= 0) {
-	    if (i == 0 || errno != EINTR)
-		return (i);
-	    i = 0;
-	}
-	got += i;
-    } while (got < len);
-    return (len);
-}
-
 #if (0) /* unused? */
 static int write_fill(fd, buf, len)
 int fd, len;
@@ -2939,207 +2928,39 @@ char *buf;
 extern const char pre_loaded_code[];
 extern char* const pre_loaded[];
 
-#ifdef INSTRUMENT
-/* When instrumented sys_alloc and friends are implemented in utils.c */
-#define SYS_ALLOC_ELSEWHERE
-#endif
-
-/* A = alloc |realloc | free */
-#ifdef SYS_ALLOC_ELSEWHERE
-
-/* sys_A implemented elsewhere (calls sys_A2) ... */ 
-#ifndef sys_alloc2
-/* ... and sys_A2 makros not used; use this implementation as sys_A2 */
-#define SYS_ALLOC   sys_alloc2
-#define SYS_REALLOC sys_realloc2
-#define SYS_FREE    sys_free2
-#else  /* ifndef sys_alloc2 */
-/* ... and sys_A2 makros used; don't use this implementation as sys_A2 */
-#endif /* ifndef sys_alloc2 */
-
-#else /* #ifdef SYS_ALLOC_ELSEWHERE */
-
-/* sys_A not implemented elsewhere ... */
-#ifndef sys_alloc2
-/* ... and sys_A2 makros not used; skip sys_A2 and use
-   this implementation as sys_A */
-#define SYS_ALLOC   sys_alloc
-#define SYS_REALLOC sys_realloc
-#define SYS_FREE    sys_free
-
-#else /* ifndef sys_alloc2 */
-
-/* ... and sys_A2 makros used; need sys_A (symbols) */
-void* sys_alloc(Uint size)		{ return sys_alloc2(size);        }
-void* sys_realloc(void* ptr, Uint size)	{ return sys_realloc2(ptr, size); }
-void* sys_free(void* ptr)		{ return sys_free2(ptr);          }
-#endif /* ifndef sys_alloc2 */
-
-#endif /* #ifdef SYS_ALLOC_ELSEWHERE */
-
-#ifdef SYS_ALLOC 
-
-/* 
- * !!!!!!!  Allocated blocks MUST be aligned correctly !!!!!!!!!
- */
-#define MEM_BEFORE  ((Uint) 0xABCDEF97)
-
-#define MEM_AFTER1  ((byte) 0xBA)
-#define MEM_AFTER2  ((byte) 0xDC)
-#define MEM_AFTER3  ((byte) 0xFE)
-#define MEM_AFTER4  ((byte) 0x77)
-
-#define SL_MALLOC_MEM_BEFORE ((Uint) ~MEM_BEFORE)
-
-#define SL_MALLOC_MEM_AFTER1 ((byte) ~MEM_AFTER1)
-#define SL_MALLOC_MEM_AFTER2 ((byte) ~MEM_AFTER2)
-#define SL_MALLOC_MEM_AFTER3 ((byte) ~MEM_AFTER3)
-#define SL_MALLOC_MEM_AFTER4 ((byte) ~MEM_AFTER4)
-
-#define SIZEOF_AFTER 4
-
-#define SET_AFTER(p) \
-  (p)[0] = MEM_AFTER1; (p)[1] = MEM_AFTER2; \
-  (p)[2] = MEM_AFTER3; (p)[3] = MEM_AFTER4
-
-#define CLEAR_AFTER(p) \
-  (p)[0] = 0; (p)[1] = 0; \
-  (p)[2] = 0; (p)[3] = 0
-
-#define CHECK_AFTER(p) \
-  ((p)[0] == MEM_AFTER1 && (p)[1] == MEM_AFTER2 && \
-  (p)[2] == MEM_AFTER3 && (p)[3] == MEM_AFTER4)
-  
-typedef union most_strict {
-    double x;
-    long y;
-} Most_strict;
-
-typedef struct memory_guard {
-    Uint pattern;			/* Fence pattern. */
-    Uint size;				/* Size of allocated memory block. */
-    Most_strict block[1];		/* Ensure proper alignment. */
-} Memory_guard;
-
-#define MEM_GUARD_SZ (sizeof(Memory_guard) - sizeof(Most_strict))
-
-void* SYS_ALLOC(Uint size)
+void erts_sys_alloc_init(void)
 {
-    register byte* p;
-
-#ifdef DEBUG
-    size += MEM_GUARD_SZ + SIZEOF_AFTER;
-#endif
-
-    p = (byte *) malloc((size_t)size);
-
-#ifdef DEBUG
-    if (p != NULL) {
-	Memory_guard* before = (Memory_guard *) p;
-	byte* after;
-
-	p += MEM_GUARD_SZ;
-	before->pattern = MEM_BEFORE;
-	before->size = size - MEM_GUARD_SZ - SIZEOF_AFTER;
-	after = p + before->size;
-	SET_AFTER(after);
-    }
-#endif
-    return p;
+    elib_ensure_initialized();
 }
 
-void* SYS_REALLOC(void* ptr, Uint size)
+void *erts_sys_alloc(ErtsAlcType_t t, void *x, Uint sz)
 {
-    register byte* p;
-
-#ifdef DEBUG
-    Uint old_size;
-    Memory_guard* before;
-    byte* after;
-
-    /* Note: realloc(NULL, size) is supposed to work, even in DEBUG mode. */
-    if (ptr) {
-	p = (byte *) ptr;
-	before = (Memory_guard *) (p-MEM_GUARD_SZ);
-	if (before->pattern != MEM_BEFORE) {
-	    if(before->pattern == SL_MALLOC_MEM_BEFORE
-	       && ((byte *)p+before->size)[0] == SL_MALLOC_MEM_AFTER1
-	       && ((byte *)p+before->size)[1] == SL_MALLOC_MEM_AFTER2
-	       && ((byte *)p+before->size)[2] == SL_MALLOC_MEM_AFTER3
-	       && ((byte *)p+before->size)[3] == SL_MALLOC_MEM_AFTER4)
-		erl_exit(1,
-			 "sys_realloc on memory allocated by sl_malloc/sl_realloc at "
-			 "0x%p (size %d)\n",
-			 ptr,
-			 before->size);
-
-	    erl_exit(1, "realloc: Fence before memory at 0x%p clobbered\n",
-		     ptr);
-	}
-	old_size = before->size;
-	after = p+old_size;
-	if (!CHECK_AFTER(after)) {
-	    erl_exit(1, "realloc: Fence after memory at 0x%p (size %d) clobbered\n",
-		     ptr, size);
-	}
-	ptr = ((byte*) ptr) - MEM_GUARD_SZ;
-	size += MEM_GUARD_SZ + SIZEOF_AFTER;
+    void *res = malloc((size_t) sz);
+#if HAVE_ERTS_MSEG
+    if (!res) {
+	erts_mseg_clear_cache();
+	return malloc((size_t) sz);
     }
 #endif
-    p = realloc(ptr, (size_t)size);
-#ifdef DEBUG
-    if (p != NULL) {
-	before = (Memory_guard *) p;
-	before->size = size-MEM_GUARD_SZ-SIZEOF_AFTER;
-	p += MEM_GUARD_SZ;
-	after = p + before->size;
-	SET_AFTER(after);
-    }
-#endif
-
-    return p;
+    return res;
 }
 
-void SYS_FREE(void* ptr)
+void *erts_sys_realloc(ErtsAlcType_t t, void *x, void *p, Uint sz)
 {
-#ifdef DEBUG
-    Uint size;
-    register byte* p;
-    Memory_guard* before;
-    byte* after;
-
-    if (ptr) {
-      p = (byte *) ptr;
-      before = (Memory_guard *) (p-MEM_GUARD_SZ);
-    
-      if (before->pattern != MEM_BEFORE) {
-	if(before->pattern == SL_MALLOC_MEM_BEFORE
-	   && ((byte *)p+before->size)[0] == SL_MALLOC_MEM_AFTER1
-	   && ((byte *)p+before->size)[1] == SL_MALLOC_MEM_AFTER2
-	   && ((byte *)p+before->size)[2] == SL_MALLOC_MEM_AFTER3
-	   && ((byte *)p+before->size)[3] == SL_MALLOC_MEM_AFTER4)
-	  erl_exit(1,
-		   "sys_free on memory allocated by sl_malloc/sl_realloc at "
-		   "0x%p (size %d)\n",
-		   ptr,
-		   before->size);
-	erl_exit(1, "free: Fence before %p clobbered\n", ptr);
-      }
-      size = before->size;
-      after = p + size;
-      if (!CHECK_AFTER(after)) {
-	erl_exit(1, "free: Fence after block 0x%p of size %d clobbered\n",
-		 ptr, size);
-      }
-      CLEAR_AFTER(after);
-      before->pattern = 0;
-      before->size = 0;
-      ptr = ((byte*) ptr) - MEM_GUARD_SZ;
+    void *res = realloc(p, (size_t) sz);
+#if HAVE_ERTS_MSEG
+    if (!res) {
+	erts_mseg_clear_cache();
+	return realloc(p, (size_t) sz);
     }
 #endif
-    free(ptr);
+    return res;
 }
-#endif /* #ifdef SYS_ALLOC */
+
+void erts_sys_free(ErtsAlcType_t t, void *x, void *p)
+{
+    free(p);
+}
 
 /* What happens when we write to a buffer? Do we want the extra \r?
    Now we do this also when not in raw mode. */
@@ -3299,16 +3120,11 @@ static void  sdbg()
 
 	if (FD_ISSET(i, &output_fds))
 	    fprintf(stderr, "fd %d set on output \n", i);
-	p = fd_data[i].pending;
-	while(p) {
-	    fprintf(stderr, "  Pending output %d bytes on %d\n", p->remain,i);
-	    p = p->next;
-	}
     }
 }
 #endif /* (0) */
 
-
+extern int erts_initialized;
 void
 erl_assert_error(char* expr, char* file, int line)
 {   
@@ -3316,7 +3132,8 @@ erl_assert_error(char* expr, char* file, int line)
     fprintf(stderr, "Assertion failed: %s in %s, line %d\n",
 	    expr, file, line);
     fflush(stderr);
-    erl_crash_dump(NULL, NULL);
+    if (erts_initialized)
+	erl_crash_dump(NULL, NULL);
     abort();
 }
 
@@ -3386,7 +3203,7 @@ child_waiter(void *unused)
 
 #else
 
-static void check_children()
+static void check_children(void)
 {
     int pid;
     int status;
@@ -3430,7 +3247,8 @@ char** argv;
 
 #ifdef HAVE_GETHRVTIME_PROCFS_IOCTL
 
-int sys_start_hrvtime() {
+int sys_start_hrvtime(void)
+{
     long msacct = PR_MSACCT;
     int fd;
 
@@ -3445,7 +3263,8 @@ int sys_start_hrvtime() {
     return 0;
 }
 
-int sys_stop_hrvtime() {
+int sys_stop_hrvtime(void)
+{
     long msacct = PR_MSACCT;
     int fd;
 
@@ -3478,11 +3297,14 @@ static void kqueue_init()
         DEBUGF(("Will use poll()\n"));
         kqueue_fd = -1;
     } else {
-        if ( (kqueue_res = 
-              (struct kevent *)sys_alloc(ERL_POLL_READY_ENTRIES*sizeof(struct kevent)*max_files)) == NULL ) {
-            erl_exit(1, "Can't allocate %d bytes for kqueue result array\n",
-                     ERL_POLL_READY_ENTRIES*sizeof(struct kevent)*max_files);
-        }
+	kqueue_res = 
+	    (struct kevent *) erts_alloc(ERTS_ALC_T_POLL_FDS,
+					 (ERL_POLL_READY_ENTRIES
+					  * sizeof(struct kevent)
+					  * max_files));
+	erts_sys_misc_mem_sz += (ERL_POLL_READY_ENTRIES
+				 *sizeof(struct kevent)
+				 *max_files);
     }
 }
 
@@ -3633,11 +3455,10 @@ static void solaris_devpoll_init()
         dev_poll_fd = -1; /* We will not use /dev/poll */
     } else {
         DEBUGF(("Will use /dev/poll\n"));
-        dev_poll_rfds =  (struct pollfd *)
-            sys_alloc_from(182, max_files * sizeof(struct pollfd));
-        if (dev_poll_rfds == NULL)
-            erl_exit(1, "Can't allocate %d bytes of memory\n",
-                     max_files * sizeof(struct pollfd));
+        dev_poll_rfds =
+	    (struct pollfd *) erts_alloc(ERTS_ALC_T_POLL_FDS,
+					 max_files * sizeof(struct pollfd));
+	erts_sys_misc_mem_sz += max_files * sizeof(struct pollfd);
     }
 }
 
@@ -3727,6 +3548,23 @@ static void devpoll_update_pix(int pix)
     }
 #endif /* HAVE_LINUX_KPOLL_H */
 }
+
+
+#ifdef HAVE_SYS_DEVPOLL_H
+
+static void devpoll_clear_pix(int pix)
+{
+    struct pollfd tmp = poll_fds[pix];
+    tmp.events = POLLREMOVE;
+
+    if ( dev_poll_fd != -1 ) {
+        if ( (devpoll_write(dev_poll_fd,&tmp,sizeof(struct pollfd))) != 
+             (sizeof(struct pollfd)) ) {
+            erl_exit(1,"Can't write to /dev/poll\n");
+        }
+    }
+}
+#endif /* HAVE_SYS_DEVPOLL_H */
 
 #endif /* USE_DEVPOLL */
 

@@ -47,7 +47,7 @@
 %%
 translate(Fun,Options) ->
   ?IF_DEBUG_LEVEL(2,put(hipe_mfa,hipe_icode:icode_fun(Fun)),true),  
-  %% hipe_icode:pp(Fun),
+  %% hipe_icode_pp:pp(Fun),
 
   %% Initialize gensym and varmap
   {Args, VarMap} = hipe_rtl_varmap:init(Fun),
@@ -154,11 +154,7 @@ translate_instruction(I, VarMap, ConstTab, Options, ExitInfo) ->
       hipe_rtl_exceptions:gen_restore_catch(I, VarMap, ConstTab, Options);
     comment ->
       {hipe_rtl:mk_comment(hipe_icode:comment_text(I)), VarMap, ConstTab};  
-    fclearerror ->
-      gen_fclearerror(VarMap, ConstTab);
     fmov ->  gen_fmove(I, VarMap, ConstTab);
-    unsafe_untag_float -> gen_unsafe_untag_float(I, VarMap, ConstTab);
-    unsafe_tag_float -> gen_unsafe_tag_float(I, VarMap, ConstTab, Options);
     X ->
       exit({?MODULE, {"unknown icode instruction", X}})
   end.
@@ -168,7 +164,7 @@ translate_instruction(I, VarMap, ConstTab, Options, ExitInfo) ->
 %% MOVE
 gen_move(I, VarMap, ConstTab) ->
   MovedSrc = hipe_icode:mov_src(I),
-  case hipe_icode:is_var(MovedSrc) of
+  case hipe_icode:is_var(MovedSrc) orelse hipe_icode:is_reg(MovedSrc)  of
     true -> %% A move from one var to another
       {[Dst,Src], VarMap0} =
 	hipe_rtl_varmap:ivs2rvs([hipe_icode:mov_dst(I),MovedSrc], VarMap),
@@ -182,52 +178,12 @@ gen_move(I, VarMap, ConstTab) ->
   end.
 
 %% ____________________________________________________________________
-%% FCLEARERROR
-gen_fclearerror(VarMap, ConstTab) ->
-  ContLbl = hipe_rtl:mk_new_label(),
-  LblName = hipe_rtl:label_name(ContLbl),
-  {[hipe_rtl:mk_call([], clear_fp_exception, [], primop, LblName, []),
-    ContLbl], VarMap, ConstTab}.
-
-%% ____________________________________________________________________
 %% FMOVE. fvar := fvar or fvar := -fvar
 gen_fmove(I, VarMap, ConstTab) ->
-  Neg = hipe_icode:fmov_negate(I),
   {[Dst,Src], VarMap0} =
     hipe_rtl_varmap:ivs2rvs([hipe_icode:fmov_dst(I),
 			     hipe_icode:fmov_src(I)], VarMap),
-  {hipe_rtl:mk_fmov(Dst, Src, Neg), VarMap0, ConstTab}.
-
-%% ____________________________________________________________________
-%% UNSAFE_UNTAG_FLOAT. fvar := var or fvar := const
-gen_unsafe_untag_float(I, VarMap, ConstTab) ->
-  Src1 = hipe_icode:unsafe_untag_float_src(I),
-  Dst1 = hipe_icode:unsafe_untag_float_dst(I),
-  case hipe_icode:is_var(Src1) of
-    true ->
-      {[Dst, Src], VarMap0} = 
-	hipe_rtl_varmap:ivs2rvs([Dst1, Src1], VarMap),
-      {hipe_tagscheme:unsafe_untag_float(Dst, Src), VarMap0, ConstTab};
-    false -> 
-      %% If Src1 is a constant we do var := const, fvar := var
-      {Dst, VarMap0} = 
-	hipe_rtl_varmap:icode_var2rtl_var(Dst1, VarMap),
-      Tmp = hipe_rtl:mk_new_var(),
-      {Code, NewConstTab} = 
-	gen_const_move(Tmp, Src1, ConstTab),
-      {[Code] ++
-       hipe_tagscheme:unsafe_untag_float(Dst, Tmp), VarMap0, NewConstTab}
-  end.
-
-%% ____________________________________________________________________
-%% UNSAFE_TAG_FLOAT. var := fvar
-gen_unsafe_tag_float(I, VarMap, ConstTab, Options) ->
-  {[Dst, Src], VarMap0} = 
-    hipe_rtl_varmap:ivs2rvs([hipe_icode:unsafe_tag_float_dst(I),
-			     hipe_icode:unsafe_tag_float_src(I)],
-			    VarMap),
-  {hipe_tagscheme:unsafe_tag_float(Dst, Src, Options), VarMap0, ConstTab}.
-
+  {hipe_rtl:mk_fmov(Dst, Src), VarMap0, ConstTab}.
 
 %% ____________________________________________________________________
 %% TYPE

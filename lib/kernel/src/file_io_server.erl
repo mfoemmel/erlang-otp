@@ -22,19 +22,20 @@
 -export([format_error/1]).
 -export([start/3, start_link/3]).
 
--record(state, {handle, owner, mref, buf}).
+-record(state, {handle,owner,mref,buf,read_mode}).
 
 -define(PRIM_FILE, prim_file).
--define(READ_SIZE, 128).
+-define(READ_SIZE_LIST, 128).
+-define(READ_SIZE_BINARY, (8*1024)).
 
 -define(eat_message(M, T), receive M -> M after T -> timeout end).
 
 %%%-----------------------------------------------------------------
 %%% Exported functions
 
-format_error({Line, ?MODULE, Reason}) ->
+format_error({_Line, ?MODULE, Reason}) ->
     io_lib:format("~w", [Reason]);
-format_error({Line, Mod, Reason}) ->
+format_error({_Line, Mod, Reason}) ->
     Mod:format_error(Reason);
 format_error(ErrorId) ->
     erl_posix_msg:message(ErrorId).
@@ -57,18 +58,26 @@ do_start(Spawn, Owner, FileName, ModeList) ->
 	erlang:Spawn(
 	  fun() ->
 		  %% process_flag(trap_exit, true),
-		  case ?PRIM_FILE:open(FileName, ModeList) of
-		      {error, Reason} = E ->
+		  {ReadMode,Opts} = 
+		      case lists:member(binary, ModeList) of
+			  true ->
+			      {binary,ModeList};
+			  false ->
+			      {list,[binary|ModeList]}
+		      end,
+		  case ?PRIM_FILE:open(FileName, Opts) of
+		      {error, Reason} ->
 			  exit(Reason);
 		      {ok, Handle} ->
 			  %% XXX must I handle R6 nodes here?
 			  M = erlang:monitor(process, Owner),
 			  Self ! {Ref, ok},
 			  server_loop(
-			    #state{handle = Handle,
-				   owner  = Owner, 
-				   mref   = M, 
-				   buf    = []})
+			    #state{handle    = Handle,
+				   owner     = Owner, 
+				   mref      = M, 
+				   buf       = <<>>,
+				   read_mode = ReadMode})
 		  end
 	  end),
     Mref = erlang:monitor(process, Pid),
@@ -130,89 +139,103 @@ io_reply(From, ReplyAs, Reply) ->
 %%%-----------------------------------------------------------------
 %%% file requests
 
-file_request({pread, At, Sz}, 
-	     #state{handle = Handle, buf = Buf} = State) ->
+file_request({pread,At,Sz}, 
+	     #state{handle=Handle,buf=Buf,read_mode=ReadMode}=State) ->
     case position(Handle, At, Buf) of
-	{ok, _Offs} ->
+	{ok,_Offs} ->
 	    case ?PRIM_FILE:read(Handle, Sz) of
-		{error, _Reason} = Reply ->
-		    {error, Reply, State#state{buf = []}};
+		{ok,Bin} when ReadMode==list ->
+		    std_reply({ok,binary_to_list(Bin)}, State);
 		Reply ->
-		    {reply, Reply, State#state{buf = []}}
+		    std_reply(Reply, State)
 	    end;
 	Reply ->
-	    {error, Reply, State#state{buf = []}}
+	    std_reply(Reply, State)
     end;
-file_request({pwrite, At, Bytes}, 
-	     #state{handle = Handle, buf = Buf} = State) ->
+file_request({pwrite,At,Data}, 
+	     #state{handle=Handle,buf=Buf}=State) ->
     case position(Handle, At, Buf) of
-	{ok, _Offs} ->
-	    case ?PRIM_FILE:write(Handle, Bytes) of
-		{error, _Reason} = Reply ->
-		    {error, Reply, State#state{buf = []}};
-		Reply ->
-		    {reply, Reply, State#state{buf = []}}
-	    end;
+	{ok,_Offs} ->
+	    std_reply(?PRIM_FILE:write(Handle, Data), State);
 	Reply ->
-	    {error, Reply, State#state{buf = []}}
+	    std_reply(Reply, State)
     end;
 file_request(sync, 
-	     #state{handle = Handle} = State) ->
+	     #state{handle=Handle}=State) ->
     case ?PRIM_FILE:sync(Handle) of
-	{error, Reason} = Error ->
-	    {stop, normal, Error, State};
+	{error,_}=Reply ->
+	    {stop,normal,Reply,State};
 	Reply ->
-	    {reply, Reply, State}
+	    {reply,Reply,State}
     end;
 file_request(close, 
-	     #state{handle = Handle} = State) ->
-    Reply = ?PRIM_FILE:close(Handle),
-    {stop, normal, Reply, State#state{buf = []}};
-file_request({position, At}, 
-	     #state{handle = Handle, buf = Buf} = State) ->
-    case position(Handle, At, Buf) of
-	{error, _Reason} = Reply ->
-	    {error, Reply, State#state{buf = []}};
-	Reply ->
-	    {reply, Reply, State#state{buf = []}}
-    end;
+	     #state{handle=Handle}=State) ->
+    {stop,normal,?PRIM_FILE:close(Handle),State#state{buf= <<>>}};
+file_request({position,At}, 
+	     #state{handle=Handle,buf=Buf}=State) ->
+    std_reply(position(Handle, At, Buf), State);
 file_request(truncate, 
-	     #state{handle = Handle} = State) ->
+	     #state{handle=Handle}=State) ->
     case ?PRIM_FILE:truncate(Handle) of
-	{error, Reason} = Reply ->
-	    {stop, normal, Reply, State#state{buf = []}};
+	{error,_Reason}=Reply ->
+	    {stop,normal,Reply,State#state{buf= <<>>}};
 	Reply ->
-	    {reply, Reply, State}
+	    {reply,Reply,State}
     end;
 file_request(Unknown, 
-	     #state{} = State) ->
+	     #state{}=State) ->
     Reason = {request, Unknown},
-    {error, {error, Reason}, State}.
+    {error,{error,Reason},State}.
+
+std_reply({error,_}=Reply, State) ->
+    {error,Reply,State#state{buf= <<>>}};
+std_reply(Reply, State) ->
+    {reply,Reply,State#state{buf= <<>>}}.
 
 %%%-----------------------------------------------------------------
-%%% io request 
+%%% I/O request 
 
-io_request({put_chars, Chars}, #state{handle = Handle} = State) ->
-    case ?PRIM_FILE:write(Handle, Chars) of
-	{error, Reason} = Reply ->
-	    {stop, normal, Reply, State};
-	Reply ->
-	    {reply, Reply, State}
+io_request({put_chars,Chars}, % binary(Chars) new in R9C
+	   #state{buf= <<>>}=State) ->
+    put_chars(Chars, State);
+io_request({put_chars,Chars}, % binary(Chars) new in R9C
+	   #state{handle=Handle,buf=Buf}=State) ->
+    case position(Handle, cur, Buf) of
+	{error,_}=Reply ->
+	    {stop,normal,Reply,State#state{buf= <<>>}};
+	_ ->
+	    put_chars(Chars, State#state{buf= <<>>})
     end;
-io_request({put_chars, Mod, Func, Args}, #state{} = State) ->
+io_request({put_chars,Mod,Func,Args}, 
+	   #state{}=State) ->
     case catch apply(Mod, Func, Args) of
 	Chars when list(Chars); binary(Chars) ->
-	    io_request({put_chars, Chars}, State);
+	    io_request({put_chars,Chars}, State);
 	_ ->
-	    {error, {error, Func}, State}
+	    {error,{error,Func},State}
     end;
-io_request({get_until, _Prompt, Mod, Func, XtraArgs}, #state{} = State) ->
-    get_until(Mod, Func, XtraArgs, State);
-io_request({requests, Requests}, #state{} = State) when list(Requests) ->
-    io_request_loop(Requests, {reply, ok, State});
-io_request(Unknown, #state{} = State) ->
-    Reason = {request, Unknown},
-    {error, {error, Reason}, State}.
+io_request({get_until,_Prompt,Mod,Func,XtraArgs}, 
+	   #state{}=State) ->
+    get_chars(io_lib, get_until, {Mod, Func, XtraArgs}, State);
+io_request({get_chars,_Prompt,N}, % New in R9C
+	   #state{}=State) ->
+    get_chars(N, State);
+io_request({get_chars,_Prompt,Mod,Func,XtraArg}, % New in R9C
+	   #state{}=State) ->
+    get_chars(Mod, Func, XtraArg, State);
+io_request({get_line,_Prompt}, % New in R9C
+	   #state{}=State) ->
+    get_chars(io_lib, collect_line, [], State);
+io_request({setopts, Opts}, % New in R9C
+	   #state{}=State) when list(Opts) ->
+    setopts(Opts, State);
+io_request({requests,Requests}, 
+	   #state{}=State) when list(Requests) ->
+    io_request_loop(Requests, {reply,ok,State});
+io_request(Unknown, 
+	   #state{}=State) ->
+    Reason = {request,Unknown},
+    {error,{error,Reason},State}.
 
 
 
@@ -220,54 +243,145 @@ io_request(Unknown, #state{} = State) ->
 
 io_request_loop([], Result) ->
     Result;
-io_request_loop([_Request | _Tail], 
-		{stop, _Reason, _Reply, _State} = Result) ->
+io_request_loop([_Request|_Tail], 
+		{stop,_Reason,_Reply,_State}=Result) ->
     Result;
-io_request_loop([_Request | _Tail],
-		{error, _Reply, _State} = Result) ->
+io_request_loop([_Request|_Tail],
+		{error,_Reply,_State}=Result) ->
     Result;
-io_request_loop([Request | Tail], 
-		{reply, _Reply, State}) ->
+io_request_loop([Request|Tail], 
+		{reply,_Reply,State}) ->
     io_request_loop(Tail, io_request(Request, State)).
 
 
-%% Process the io request get_until
 
-get_until(Mod, Func, XtraArgs, #state{buf = []} = State) ->
-    get_until_loop(Mod, Func, XtraArgs, State,
-		   {more, []});
-get_until(Mod, Func, XtraArgs, #state{buf = <<>>} = State) ->
-    get_until_loop(Mod, Func, XtraArgs, State,
-		   {more, []});
-get_until(Mod, Func, XtraArgs, #state{buf = Buf} = State) ->
-    get_until_loop(Mod, Func, XtraArgs, State,
-		   catch apply(Mod, Func, [[], Buf | XtraArgs])).
+%% I/O request put_chars
+%%
+put_chars(Chars, #state{handle=Handle}=State) ->
+    case ?PRIM_FILE:write(Handle, Chars) of
+	{error,_}=Reply ->
+	    {stop,normal,Reply,State};
+	Reply ->
+	    {reply,Reply,State}
+    end.
 
-get_until_loop(Mod, Func, XtraArgs, #state{handle = Handle} = State, 
-	       {more, Cont}) ->
-    case ?PRIM_FILE:read(Handle, ?READ_SIZE) of 
+
+%% Process the I/O request get_chars
+%%
+get_chars(0, #state{read_mode=ReadMode}=State) ->
+    {reply,cast(<<>>, ReadMode),State};
+get_chars(N, #state{buf=Buf,read_mode=ReadMode}=State) 
+  when integer(N), N > 0, N =< size(Buf) ->
+    {B1,B2} = split_binary(Buf, N),
+    {reply,cast(B1, ReadMode),State#state{buf=B2}};
+get_chars(N, #state{handle=Handle,buf=Buf,read_mode=ReadMode}=State) 
+  when integer(N), N > 0 ->
+    BufSize = size(Buf),
+    NeedSize = N-BufSize,
+    Size = max(NeedSize, ?READ_SIZE_BINARY),
+    case ?PRIM_FILE:read(Handle, Size) of
+	{ok, B} ->
+	    if BufSize+size(B) < N ->
+		    std_reply(cat(Buf, B, ReadMode), State);
+	       true ->
+		    {B1,B2} = split_binary(B, NeedSize),
+		    {reply,cat(Buf, B1, ReadMode),State#state{buf=B2}}
+	    end;
+	eof when BufSize==0 ->
+	    {reply,eof,State};
 	eof ->
-	    get_until_loop(
-	      Mod, Func, XtraArgs, State#state{buf = []},
-	      catch apply(Mod, Func, [Cont, eof | XtraArgs]));
-	{ok, Buf} when binary(Buf) ->
-	    get_until_loop(
-	      Mod, Func, XtraArgs, State#state{buf = Buf},
-	      catch apply(Mod, Func, 
-			  [Cont, binary_to_list(Buf) | XtraArgs]));
-	{ok, Buf} ->
-	    get_until_loop(
-	      Mod, Func, XtraArgs, State#state{buf = Buf},
-	      catch apply(Mod, Func, [Cont, Buf | XtraArgs]));
-	{error, Reason} = Error ->
-	    {stop, Reason, Error, State#state{buf = []}}
+	    std_reply(cast(Buf, ReadMode), State);
+	{error,Reason}=Error ->
+	    {stop,Reason,Error,State#state{buf= <<>>}}
     end;
-get_until_loop(_Mod, _Func, _XtraArgs, #state{} = State,
-	      {done, Result, Buf}) ->
-    {reply, Result, State#state{buf = Buf}};
-get_until_loop(_Mod, Func, _XtraArgs, #state{} = State,
-	      _Other) ->
-    {error, {error, Func}, State}.
+get_chars(_N, #state{}=State) ->
+    {error,{error,get_chars},State}.
+
+get_chars(Mod, Func, XtraArg, #state{buf= <<>>}=State) ->
+    get_chars_empty(Mod, Func, XtraArg, start, State);
+get_chars(Mod, Func, XtraArg, #state{buf=Buf}=State) ->
+    get_chars_apply(Mod, Func, XtraArg, start, State#state{buf= <<>>}, Buf).
+
+get_chars_empty(Mod, Func, XtraArg, S, 
+		#state{handle=Handle,read_mode=ReadMode}=State) ->
+    case ?PRIM_FILE:read(Handle, read_size(ReadMode)) of
+	{ok,Bin} ->
+	    get_chars_apply(Mod, Func, XtraArg, S, State, Bin);
+	eof ->
+	    get_chars_apply(Mod, Func, XtraArg, S, State, eof);
+	{error,Reason}=Error ->
+	    {stop,Reason,Error,State}
+    end.
+
+get_chars_apply(Mod, Func, XtraArg, S0, 
+		#state{read_mode=ReadMode}=State, Data0) ->
+    Data1 = case ReadMode of
+	       list when binary(Data0) -> binary_to_list(Data0);
+	       _ -> Data0
+	    end,
+    case catch Mod:Func(S0, Data1, XtraArg) of
+	{stop,Result,Buf} ->
+	    {reply,Result,State#state{buf=cast_binary(Buf)}};
+	{'EXIT',Reason} ->
+	    {stop,Reason,{error,err_func(Mod, Func, XtraArg)},State};
+	S1 ->
+	    get_chars_empty(Mod, Func, XtraArg, S1, State)
+    end.
+
+%% Convert error code to make it look as before
+err_func(io_lib, get_until, {_,F,_}) ->
+    F;
+err_func(_, F, _) ->
+    F.
+
+
+
+%% Process the I/O request setopts
+%%
+%% setopts
+setopts(Opts0, State) ->
+    Opts = proplists:substitute_negations([{list,binary}], Opts0),
+    case proplists:get_value(binary, Opts) of
+	true ->
+	    {ok,ok,State#state{read_mode=binary}};
+	false ->
+	    {ok,ok,State#state{read_mode=list}};
+	_ ->
+	    {error,{error,badarg},State}
+    end.
+
+
+
+%% Concatenate two binaries and convert the result to list or binary
+cat(B1, B2, binary) ->
+    list_to_binary([B1,B2]);
+cat(B1, B2, list) ->
+    binary_to_list(B1)++binary_to_list(B2).
+
+%% Cast binary to list or binary
+cast(B, binary) ->
+    B;
+cast(B, list) ->
+    binary_to_list(B).
+
+%% Convert buffer to binary
+cast_binary(Binary) when binary(Binary) ->
+    Binary;
+cast_binary(List) when list(List) ->
+    list_to_binary(List);
+cast_binary(_EOF) ->
+    <<>>.
+
+%% Read size for different read modes
+read_size(binary) ->
+    ?READ_SIZE_BINARY;
+read_size(list) ->
+    ?READ_SIZE_LIST.
+
+max(A, B) when A >= B ->
+    A;
+max(_, B) ->
+    B.
 
 %%%-----------------------------------------------------------------
 %%% ?PRIM_FILE helpers

@@ -195,10 +195,12 @@ map(F, #c_call{module=M,name=N,args=Args}=R) ->
 map(F, #c_primop{name=N,args=Args}=R) ->
     F(R#c_primop{name=map(F, N),
 		 args=map_list(F, Args)});
-map(F, #c_try{expr=Expr, vars=Vars, body=Body}=R) ->
-    F(R#c_try{expr=map(F, Expr), 
+map(F, #c_try{arg=Expr,vars=Vars,body=Body,evars=Evars,handler=Handler}=R) ->
+    F(R#c_try{arg=map(F, Expr), 
 	      vars=map(F, Vars), 
-	      body=map(F, Body)});
+	      body=map(F, Body),
+	      evars=map(F, Evars),
+	      handler=map(F, Handler)});
 map(F, #c_catch{body=Body}=R) ->
     F(R#c_catch{body=map(F, Body)});
 map(F, T) -> F(T).				%Atomic nodes.
@@ -246,8 +248,9 @@ fold(F, Acc, #c_call{module=Mod,name=Name,args=Args}=R) ->
     F(R, fold_list(F, fold(F, fold(F, Acc, Mod), Name), Args));
 fold(F, Acc, #c_primop{name=Name,args=Args}=R) ->
     F(R, fold_list(F, fold(F, Acc, Name), Args));
-fold(F, Acc, #c_try{expr=Ex, vars=Vr, body=Bd}=R) ->
-    F(R, fold(F, fold(F, fold(F, Acc, Ex), Vr), Bd));
+fold(F, Acc, #c_try{arg=E,vars=Vs,body=Body,evars=Evs,handler=H}=R) ->
+    NewB = fold(F, fold_list(F, fold(F, Acc, E), Vs), Body),
+    F(R, fold(F, fold_list(F, NewB, Evs), H));
 fold(F, Acc, #c_catch{body=Body}=R) ->
     F(R, fold(F, Acc, Body));
 fold(F, Acc, T) ->				%Atomic nodes
@@ -329,11 +332,13 @@ mapfold(F, Acc0, #c_primop{name=N0, args=As0}=R) ->
     {N1,Acc1} = mapfold(F, Acc0, N0),
     {As1,Acc2} = mapfold_list(F, Acc1, As0),
     F(R#c_primop{name=N1,args=As1}, Acc2);
-mapfold(F, Acc0, #c_try{expr=E0, vars=V0, body=B0}=R) ->
+mapfold(F, Acc0, #c_try{arg=E0,vars=Vs0,body=B0,evars=Evs0,handler=H0}=R) ->
     {E1,Acc1} = mapfold(F, Acc0, E0),
-    {V1,Acc2} = mapfold(F, Acc1, V0),
+    {Vs1,Acc2} = mapfold_list(F, Acc1, Vs0),
     {B1,Acc3} = mapfold(F, Acc2, B0),
-    F(R#c_try{expr=E1,vars=V1,body=B1}, Acc3);
+    {Evs1,Acc4} = mapfold_list(F, Acc3, Evs0),
+    {H1,Acc5} = mapfold(F, Acc4, H0),
+    F(R#c_try{arg=E1,vars=Vs1,body=B1,evars=Evs1,handler=H1}, Acc5);
 mapfold(F, Acc0, #c_catch{body=B0}=R) ->
     {B1,Acc1} = mapfold(F, Acc0, B0),
     F(R#c_catch{body=B1}, Acc1);
@@ -411,14 +416,21 @@ vu_expr(V, #c_primop{args=As}) ->		%Name is an atom
     vu_expr_list(V, As);
 vu_expr(V, #c_catch{body=B}) ->
     vu_body(V, B);
-vu_expr(V, #c_try{expr=E, vars=Vs, body=B}) ->
+vu_expr(V, #c_try{arg=E,vars=Vs,body=B,evars=Evs,handler=H}) ->
     case vu_body(V, E) of
 	true -> true;
 	false ->
 	    %% Variables shadow previous ones.
-	    case vu_var_list(V, Vs) of
-		true -> false;
-		false -> vu_body(V, B)
+	    case case vu_var_list(V, Vs) of
+		     true -> false;
+		     false -> vu_body(V, B)
+		 end of
+		true -> true;
+		false ->
+		    case vu_var_list(V, Evs) of
+			true -> false;
+			false -> vu_body(V, H)
+		    end
 	    end
     end;
 vu_expr(_, _) -> false.				%Everything else
@@ -457,7 +469,7 @@ vu_clauses(V, Cs) ->
 %%  Binaries complicate patterns as a variable can both be properly
 %%  used, in a bit segment size, and shadow.  They can also do both.
 
-%% vu_pattern(V, Pat) -> vu_pattern(V, Pat, {false,false}).
+%%vu_pattern(V, Pat) -> vu_pattern(V, Pat, {false,false}).
 
 vu_pattern(V, #c_var{name=V2}, St) ->
     setelement(2, St, V =:= V2);

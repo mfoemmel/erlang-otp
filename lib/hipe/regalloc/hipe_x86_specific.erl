@@ -105,14 +105,7 @@ labels(CFG) ->
   hipe_x86_cfg:labels(CFG).
 
 var_range(CFG) ->
-  %% Linear = hipe_x86_cfg:linearise(CFG),
-  %% Code = hipe_x86:defun_code(Linear),
-  %% HV = highest_var(Code),
-  %% io:format("Var_range:{1,~w}\n",[HV]),
-  %% {1,HV}.
-  %% hipe_x86_pp:pp(Linear),
   {Min,Max} = hipe_x86_cfg:var_range(CFG),
-  %% io:format("Var_range: ~w\n",[{Min,Max}]),
   {Min,Max}.
 
 number_of_temporaries(CFG) ->
@@ -133,10 +126,6 @@ def_use(Instruction) ->
 	   hipe_x86:temp_is_allocatable(X),
 	   hipe_x86:temp_type(X) /= 'double']
     }.
-%     Def = lists:map( fun({x86_temp,Temp,Tag}) -> {x86_temp,Temp+1,Tag} end, hipe_x86_defuse:insn_def(Instruction) ),
-%     Use = lists:map( fun({x86_temp,Temp,Tag}) -> {x86_temp,Temp+1,Tag} end, hipe_x86_defuse:insn_use(Instruction) ),
-%     %io:format("def:~w use:~w\n",[Def,Use]),
-%     {Def,Use}.
 
 uses(I) ->
     [X || X <- hipe_x86_defuse:insn_use(I),

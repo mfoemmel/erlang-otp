@@ -27,11 +27,13 @@
 	 get_env/1,
 	 init/0,
 	 mktab/2,
+	 unsafe_mktab/2,
 	 mnesia_down/2,
 	 needs_protocol_conversion/1,
 	 negotiate_protocol/1,
 	 disconnect/1,
 	 open_dets/2,
+	 unsafe_open_dets/2,
 	 open_log/1,
 	 patch_env/2,
 	 protocol_version/0,
@@ -89,9 +91,13 @@ mnesia_down(From, Node) ->
 
 mktab(Tab, Args) ->
     unsafe_call({mktab, Tab, Args}).
+unsafe_mktab(Tab, Args) ->
+    unsafe_call({unsafe_mktab, Tab, Args}).
 
 open_dets(Tab, Args) ->
     unsafe_call({open_dets, Tab, Args}).
+unsafe_open_dets(Tab, Args) ->
+    unsafe_call({unsafe_open_dets, Tab, Args}).
 
 close_dets(Tab) ->
     unsafe_call({close_dets, Tab}).
@@ -127,7 +133,7 @@ negotiate_protocol(Nodes) ->
     {Replies, _BadNodes} = multicall(Nodes, Msg),
     check_protocol(Replies, Protocols).
 
-check_protocol([{Node, {accept, Mon, Version, Protocol}} | Tail], Protocols) ->
+check_protocol([{Node, {accept, Mon, _Version, Protocol}} | Tail], Protocols) ->
     case lists:member(Protocol, Protocols) of
 	true ->
 	    case Protocol == protocol_version() of
@@ -141,14 +147,14 @@ check_protocol([{Node, {accept, Mon, Version, Protocol}} | Tail], Protocols) ->
 	    unlink(Mon), % Get rid of unneccessary link
 	    check_protocol(Tail, Protocols)
     end;
-check_protocol([{Node, {reject, Mon, Version, Protocol}} | Tail], Protocols) ->
+check_protocol([{Node, {reject, _Mon, Version, Protocol}} | Tail], Protocols) ->
     verbose("Failed to connect with ~p. ~p protocols rejected. "
 	    "expected version = ~p, expected protocol = ~p~n",
 	    [Node, Protocols, Version, Protocol]),
     check_protocol(Tail, Protocols);
-check_protocol([{error, Reason} | Tail], Protocols) ->
+check_protocol([{error, _Reason} | Tail], Protocols) ->
     check_protocol(Tail, Protocols);
-check_protocol([{badrpc, Reason} | Tail], Protocols) ->
+check_protocol([{badrpc, _Reason} | Tail], Protocols) ->
     check_protocol(Tail, Protocols);
 check_protocol([], [Protocol | _Protocols]) ->
     set(protocol_version, Protocol),
@@ -201,7 +207,7 @@ call(Msg) ->
 
             %% We get an exit signal if server dies
 	    receive
-		{'EXIT', Pid, Reason} ->
+		{'EXIT', Pid, _Reason} ->
 		    {error, {node_not_running, node()}}
 	    after 0 ->
 		    ignore
@@ -219,7 +225,7 @@ start_proc(Who, Mod, Fun, Args) ->
 terminate_proc(Who, R, State) when R /= shutdown, R /= killed ->
     fatal("~p crashed: ~p state: ~p~n", [Who, R, State]);
 
-terminate_proc(Who, Reason, State) ->
+terminate_proc(Who, Reason, _State) ->
     mnesia_lib:verbose("~p terminated: ~p~n", [Who, Reason]),
     ok.
 
@@ -301,7 +307,7 @@ non_empty_dir() ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%----------------------------------------------------------------------
 
-handle_call({mktab, Tab, Args}, From, State) ->
+handle_call({mktab, Tab, Args}, _From, State) ->
     case catch ?ets_new_table(Tab, Args) of
 	{'EXIT', ExitReason} ->
 	    Msg = "Cannot create ets table",
@@ -312,7 +318,16 @@ handle_call({mktab, Tab, Args}, From, State) ->
 	    {reply, Reply, State}
     end;
 
-handle_call({open_dets, Tab, Args}, From, State) ->
+handle_call({unsafe_mktab, Tab, Args}, _From, State) ->
+    case catch ?ets_new_table(Tab, Args) of
+	{'EXIT', ExitReason} ->
+	    {reply, {error, ExitReason}, State};
+	Reply ->
+	    {reply, Reply, State}
+    end;
+
+
+handle_call({open_dets, Tab, Args}, _From, State) ->
     case mnesia_lib:dets_sync_open(Tab, Args) of
 	{ok, Tab} ->
 	    {reply, {ok, Tab}, State};
@@ -324,7 +339,15 @@ handle_call({open_dets, Tab, Args}, From, State) ->
 	    {noreply, State}
     end;
 
-handle_call({close_dets, Tab}, From, State) ->
+handle_call({unsafe_open_dets, Tab, Args}, _From, State) ->
+    case mnesia_lib:dets_sync_open(Tab, Args) of
+	{ok, Tab} ->
+	    {reply, {ok, Tab}, State};
+	{error, Reason} ->
+	    {reply, {error,Reason}, State}
+    end;
+
+handle_call({close_dets, Tab}, _From, State) ->
     case mnesia_lib:dets_sync_close(Tab) of
 	ok ->
 	    {reply, ok, State};
@@ -335,15 +358,15 @@ handle_call({close_dets, Tab}, From, State) ->
 	    {noreply, State}
     end;
 
-handle_call({unsafe_close_dets, Tab}, From, State) ->
+handle_call({unsafe_close_dets, Tab}, _From, State) ->
     mnesia_lib:dets_sync_close(Tab),
     {reply, ok, State};
 
-handle_call({open_log, Args}, From, State) ->
+handle_call({open_log, Args}, _From, State) ->
     Res = disk_log:open([{notify, true}|Args]),
     {reply, Res, State};
 
-handle_call({reopen_log, Name, Fname, Head}, From, State) ->
+handle_call({reopen_log, Name, Fname, Head}, _From, State) ->
     case disk_log:reopen(Name, Fname, Head) of
 	ok ->
 	    {reply, ok, State};
@@ -355,7 +378,7 @@ handle_call({reopen_log, Name, Fname, Head}, From, State) ->
  	    {noreply, State}
     end;
 
-handle_call({close_log, Name}, From, State) ->
+handle_call({close_log, Name}, _From, State) ->
     case disk_log:close(Name) of
 	ok ->
 	    {reply, ok, State};
@@ -367,11 +390,11 @@ handle_call({close_log, Name}, From, State) ->
 	    {noreply, State}
     end;
 
-handle_call({unsafe_close_log, Name}, From, State) ->
+handle_call({unsafe_close_log, Name}, _From, State) ->
     disk_log:close(Name),
     {reply, ok, State};
 
-handle_call({negotiate_protocol, Mon, Version, Protocols}, From, State) 
+handle_call({negotiate_protocol, Mon, _Version, _Protocols}, _From, State) 
   when State#state.tm_started == false ->
     State2 =  State#state{early_connects = [node(Mon) | State#state.early_connects]},    
     {reply, {node(), {reject, self(), uninitialized, uninitialized}}, State2};
@@ -398,13 +421,13 @@ handle_call({negotiate_protocol, Mon, Version, Protocols}, From, State)
 	    end
     end;
 
-handle_call(init, From, State) ->
+handle_call(init, _From, State) ->
     net_kernel:monitor_nodes(true),
     EarlyNodes = State#state.early_connects,
     State2 = State#state{tm_started = true},
     {reply, EarlyNodes, State2};
 
-handle_call(Msg, From, State) ->
+handle_call(Msg, _From, State) ->
     error("~p got unexpected call: ~p~n", [?MODULE, Msg]),
     {noreply, State}.
 
@@ -540,9 +563,9 @@ handle_info({nodedown, _Node}, State) ->
 
 handle_info({disk_log, _Node, Log, Info}, State) ->
     case Info of
-	{truncated, No} ->
+	{truncated, _No} ->
 	    ok;
-	Else ->
+	_ ->
 	    mnesia_lib:important("Warning Log file ~p error reason ~s~n", 
 				 [Log, disk_log:format_error(Info)])
     end,
@@ -565,7 +588,7 @@ terminate(Reason, State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%%----------------------------------------------------------------------
@@ -614,7 +637,8 @@ env() ->
      ignore_fallback_at_startup,
      fallback_error_function,
      max_wait_for_decision,
-     schema_location
+     schema_location,
+     core_dir
     ].
 
 default_env(access_module) -> 
@@ -649,11 +673,13 @@ default_env(fallback_error_function) ->
 default_env(max_wait_for_decision) -> 
     infinity;
 default_env(schema_location) -> 
-    opt_disc.
+    opt_disc;
+default_env(core_dir) ->
+    false.
 
 check_type(Env, Val) ->
     case catch do_check_type(Env, Val) of
-	{'EXIT', Reason} ->
+	{'EXIT', _Reason} ->
 	    exit({bad_config, Env, Val});
 	NewVal ->
 	    NewVal
@@ -685,7 +711,11 @@ do_check_type(extra_db_nodes, L) when list(L) ->
     lists:filter(Fun, L);
 do_check_type(max_wait_for_decision, infinity) -> infinity;
 do_check_type(max_wait_for_decision, I) when integer(I), I > 0 -> I;
-do_check_type(schema_location, M) -> media(M).
+do_check_type(schema_location, M) -> media(M);
+do_check_type(core_dir, "false") -> false;
+do_check_type(core_dir, false) -> false;
+do_check_type(core_dir, Dir) when list(Dir) -> Dir.
+
 
 bool(true) -> true;
 bool(false) -> false.
@@ -696,7 +726,7 @@ media(ram) -> ram.
 
 patch_env(Env, Val) ->
     case catch do_check_type(Env, Val) of
-	{'EXIT', Reason} ->
+	{'EXIT', _Reason} ->
 	    {error, {bad_type, Env, Val}};
 	NewVal ->
 	    application_controller:set_env(mnesia, Env, NewVal),
@@ -727,7 +757,7 @@ has_remote_mnesia_down(Node) ->
 	    {false, node()}
     end.
 
-report_inconsistency([{true, Node} | Replies], Context, Status) ->
+report_inconsistency([{true, Node} | Replies], Context, _Status) ->
     %% Oops, Mnesia is already running on the
     %% other node AND we both regard each
     %% other as down. The database is

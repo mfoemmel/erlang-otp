@@ -96,7 +96,8 @@ init_notify_table([Row | T]) ->
 init_notify_table([]) -> true.
 
 table_create_row(Tab,Name,Row) ->
-    ?vtrace("create table ~w row with Name: ~s",[Tab,Name]),
+    ?vtrace("create table ~w row with Name ~s:"
+	"~n   ~p", [Tab,Name,Row]),
     snmp_local_db:table_create_row(db(Tab), Name, Row).
 
 
@@ -216,7 +217,7 @@ get_targets([{TagList, Addr, TargetName, Params, Timeout, Retry}|T],
 	false ->
 	    get_targets(T, Tag, Type, Name)
     end;
-get_targets([], Tag, Type, Name) ->
+get_targets([], _Tag, _Type, _Name) ->
     [].
 
 type(trap, _, _) -> trap;
@@ -248,18 +249,18 @@ snmpNotifyTable(Op, Arg1, Arg2) ->
 %% In this version of the agent, we don't support notification
 %% filters.
 %%-----------------------------------------------------------------
-snmpNotifyFilterTable(get, RowIndex, Cols) ->
-    lists:map(fun(Col) -> {noValue, noSuchObject} end, Cols);
-snmpNotifyFilterTable(get_next, RowIndex, Cols) ->
-    lists:map(fun(Col) -> endOfTable end, Cols);
-snmpNotifyFilterTable(is_set_ok, RowIndex, Cols) ->
+snmpNotifyFilterTable(get, _RowIndex, Cols) ->
+    lists:map(fun(_Col) -> {noValue, noSuchObject} end, Cols);
+snmpNotifyFilterTable(get_next, _RowIndex, Cols) ->
+    lists:map(fun(_Col) -> endOfTable end, Cols);
+snmpNotifyFilterTable(is_set_ok, _RowIndex, Cols) ->
     {notWritable, element(1, hd(Cols))}.
 
-snmpNotifyFilterProfileTable(get, RowIndex, Cols) ->
-    lists:map(fun(Col) -> {noValue, noSuchObject} end, Cols);
-snmpNotifyFilterProfileTable(get_next, RowIndex, Cols) ->
-    lists:map(fun(Col) -> endOfTable end, Cols);
-snmpNotifyFilterProfileTable(is_set_ok, RowIndex, Cols) ->
+snmpNotifyFilterProfileTable(get, _RowIndex, Cols) ->
+    lists:map(fun(_Col) -> {noValue, noSuchObject} end, Cols);
+snmpNotifyFilterProfileTable(get_next, _RowIndex, Cols) ->
+    lists:map(fun(_Col) -> endOfTable end, Cols);
+snmpNotifyFilterProfileTable(is_set_ok, _RowIndex, Cols) ->
     {notWritable, element(1, hd(Cols))}.
 
 

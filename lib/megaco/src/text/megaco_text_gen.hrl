@@ -83,7 +83,7 @@ enc_AuthData({'AuthData',Val}, State) ->
 enc_AuthData(Val, State) ->
     [
      "0x",
-     enc_HEXDIG(Val, State, 32, 64)
+     enc_HEXDIG(Val, State, 24, 64)  %% OTP-4710
     ].
 
 enc_Message(Val, State)
@@ -224,22 +224,28 @@ enc_Transaction({Tag, Val}, State) ->
 	transactionReply ->
 	    enc_TransactionReply(Val, State);
 	transactionResponseAck ->
-	    [enc_TransactionAck(T, State) || T <- Val]
+	    enc_TransactionResponseAck(Val, State)
     end.
 
-enc_TransactionAck(Val, State)
-  when record(Val, 'TransactionAck') ->
+enc_TransactionResponseAck([Mand | Opt], State) ->
     [
      ?ResponseAckToken,
      ?LBRKT_INDENT(State),
+     [enc_TransactionAck(Mand, State) |
+      [[?COMMA_INDENT(State), enc_TransactionAck(Val, State)] || Val <- Opt]],
+     ?RBRKT_INDENT(State)
+    ].
+    
+enc_TransactionAck(Val, State)
+  when record(Val, 'TransactionAck') ->
+    [
      enc_TransactionId(Val#'TransactionAck'.firstAck, ?INC_INDENT(State)),
      case Val#'TransactionAck'.lastAck of
 	 asn1_NOVALUE ->
 	     [];
 	 LastAck ->
-	     enc_TransactionId(LastAck, State)
-     end,
-     ?RBRKT_INDENT(State)
+	     ["-",enc_TransactionId(LastAck, State)]
+     end
     ].
 
 enc_TransactionId({'TransactionId',Val}, State) ->
@@ -1806,8 +1812,7 @@ do_enc_HEXDIG([Octet | Rest], State, Min, Max, Count, Acc)
 do_enc_HEXDIG([], State, Min, Max, Count, Acc)
   when integer(Min), Count < Min ->
     do_enc_HEXDIG([0], State, Min, Max, Count, Acc);
-do_enc_HEXDIG([], _State, Min, Max, Count, Acc)
-  when integer(Min), Count < Min ->
+do_enc_HEXDIG([], _State, Min, Max, Count, Acc) -> %% OTP-4710
     verify_count(Count, Min, Max),
     lists:reverse(Acc).
 
@@ -1917,6 +1922,4 @@ verify_count(Count, Min, Max) ->
 	true ->
 	    exit({count_not_an_integer, Count})
     end.
-
-
 

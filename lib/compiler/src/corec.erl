@@ -418,9 +418,10 @@ core_lint_module(St) ->
 			      errors=St#compile.errors ++ Es}}
     end.
 
-beam_asm(#compile{code=Code0,abstract_code=Abst,options=Opts0}=St) ->
+beam_asm(#compile{ifile=File,code=Code0,abstract_code=Abst,options=Opts0}=St) ->
+    Source = filename:absname(File),
     Opts = filter(fun is_informative_option/1, Opts0),
-    case beam_asm:module(Code0, Abst, Opts) of
+    case beam_asm:module(Code0, Abst, Source, Opts) of
 	{ok,Code} -> {ok,St#compile{code=Code,abstract_code=[]}};
 	{error,Es} -> {error,St#compile{errors=St#compile.errors ++ Es}}
     end.

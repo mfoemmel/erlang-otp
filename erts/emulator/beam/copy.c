@@ -103,7 +103,8 @@ size_object(Eterm obj)
 		    {
 			int i;
 			int real_n = VECTOR_ARRAY_SIZE(obj);
-			Eterm* vec = safe_alloc((real_n+1)*sizeof(Eterm));
+			Eterm* vec = erts_alloc(ERTS_ALC_T_TMP,
+						(real_n+1)*sizeof(Eterm));
 
 			arity = vector_arity(hdr);
 			sum += arity + 1 + real_n + 1;
@@ -114,7 +115,7 @@ size_object(Eterm obj)
 				ESTACK_PUSH(s, tmp);
 			    }
 			}
-			sys_free(vec);
+			erts_free(ERTS_ALC_T_TMP, (void *) vec);
 			goto size_common;
 		    }
 		case FUN_SUBTAG:

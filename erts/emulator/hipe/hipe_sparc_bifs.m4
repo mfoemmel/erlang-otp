@@ -5,18 +5,6 @@
 #include "hipe_sparc_asm.h"
 
 /*
- * A C bif returns a single tagged Erlang value. To indicate an
- * exceptional condition, it puts an error code in p->freason
- * and returns zero (THE_NON_VALUE).
- *
- * If p->freason == TRAP, then the bif redirects its call to some
- * other function, given by p->fvalue and p->def_arg_reg[].
- * The other function has the same arity as the bif.
- *
- * A bif can suspend the call by setting p->freason == RESCHEDULE.
- * The caller should return immediately to the scheduler. When
- * the process is resumed, the caller should re-execute the call.
- *
  * These m4 macros expand to assembly code which
  * is further processed using the C pre-processor:
  * - Expansion of symbolic names for registers and PCB fields.
@@ -74,7 +62,7 @@ $1:
 	!! Restore registers and test for success/failure
 	ld [P+P_FCALLS],FCALLS
 	ld [P+P_HP],HP
-	subcc %o0,0,%g0
+	subcc %o0,THE_NON_VALUE,%g0
 	bz,pn %icc,nbif_0_simple_exception
 	ld [P+P_NSP],NSP
 	jmpl TEMP3+8,%g0
@@ -105,7 +93,7 @@ $1:
 	!! Restore registers and test for success/failure
 	ld [P+P_FCALLS],FCALLS
 	ld [P+P_HP],HP
-	subcc %o0,0,%g0
+	subcc %o0,THE_NON_VALUE,%g0
 	bz,pn %icc,nbif_1_simple_exception
 	ld [P+P_NSP],NSP
 	jmpl TEMP3+8,%g0
@@ -136,7 +124,7 @@ $1:
 	!! Restore registers and test for success/failure
 	ld [P+P_FCALLS],FCALLS
 	ld [P+P_HP],HP
-	subcc %o0,0,%g0
+	subcc %o0,THE_NON_VALUE,%g0
 	bz,pn %icc,nbif_2_simple_exception
 	ld [P+P_NSP],NSP
 	jmpl TEMP3+8,%g0
@@ -167,7 +155,7 @@ $1:
 	!! Restore registers and test for success/failure
 	ld [P+P_FCALLS],FCALLS
 	ld [P+P_HP],HP
-	subcc %o0,0,%g0
+	subcc %o0,THE_NON_VALUE,%g0
 	bz,pn %icc,nbif_3_simple_exception
 	ld [P+P_NSP],NSP
 	jmpl TEMP3+8,%g0
@@ -208,7 +196,7 @@ $1:
 	!! Restore registers and test for success/failure
 	ld [P+P_FCALLS],FCALLS
 	ld [P+P_HP],HP
-	subcc %o0,0,%g0
+	subcc %o0,THE_NON_VALUE,%g0
 	bz,pn %icc,$1_failed
 	ld [P+P_NSP],NSP
 	jmpl TEMP3+8,%g0
@@ -249,7 +237,7 @@ $1:
 	!! Restore registers and test for success/failure
 	ld [P+P_FCALLS],FCALLS
 	ld [P+P_HP],HP
-	subcc %o0,0,%g0
+	subcc %o0,THE_NON_VALUE,%g0
 	bz,pn %icc,$1_failed
 	ld [P+P_NSP],NSP
 	jmpl TEMP3+8,%g0
@@ -452,6 +440,8 @@ $1:
 	mov %o1, %o0
 	mov %o2, %o1
 	mov %o3, %o2
+	mov %o4, %o3
+	mov %o5, %o4
 	st RA,[P+P_NRA]
 	st FCALLS,[P+P_FCALLS]
 	st HP,[P+P_HP]
@@ -598,6 +588,8 @@ bs_nofail_bif_interface(nbif_bs_put_binary_all, erts_bs_put_binary_all)
 bs_nofail_bif_interface(nbif_bs_put_binary, erts_bs_put_binary)
 bs_nofail_bif_interface(nbif_bs_put_float, erts_bs_put_float)
 bs_nofail_bif_interface(nbif_bs_put_integer, erts_bs_put_integer)
+bs_nofail_bif_interface(nbif_bs_put_big_integer, hipe_bs_put_big_integer)
+bs_nofail_bif_interface(nbif_bs_put_small_float, hipe_bs_put_small_float)
 bs_nofail_bif_interface(nbif_bs_skip_bits_all, erts_bs_skip_bits_all)
 bs_nofail_bif_interface(nbif_bs_skip_bits, erts_bs_skip_bits)
 bs_nofail_bif_interface(nbif_bs_get_integer, erts_bs_get_integer)
@@ -609,6 +601,7 @@ bs_nofail_bif_interface(nbif_bs_restore, erts_bs_restore)
 bs_nofail_bif_interface(nbif_bs_save, erts_bs_save)
 bs_nofail_bif_interface(nbif_bs_final, erts_bs_final)
 bs_nofail_bif_interface(nbif_bs_get_matchbuffer, hipe_bs_get_matchbuffer)
+bs_nofail_bif_interface(nbif_bs_allocate, hipe_bs_allocate)
 
 /*
  * Standard BIFs.

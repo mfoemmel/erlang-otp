@@ -7,9 +7,9 @@
 %%  History  :	* 2001-10-25 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: happi $
-%%              $Date: 2002/05/13 16:51:08 $
-%%              $Revision: 1.14 $
+%%              $Author: toli6207 $
+%%              $Date: 2002/11/13 11:43:33 $
+%%              $Revision: 1.15 $
 %% ====================================================================
 %%  Exports  :
 %%              pp/1,        Pretty prints linear sparc code.
@@ -288,6 +288,14 @@ pp_instr(I, Dev, Pre) ->
 	  io:format(Dev, "~n    or  ", []),
 	  pp_arg(Dev, hipe_sparc:load_address_dest(I)),
 	  io:format(Dev, ", %lo(~s_dl_~w), ", [Pre, Address]),
+	  pp_arg(Dev, hipe_sparc:load_address_dest(I));
+	c_const ->
+	  io:format(Dev, "    sethi %hi(", []),
+	  io:format(Dev, "~w), ", [Address]),
+	  pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	  io:format(Dev, "~n    or  ", []),
+	  pp_arg(Dev, hipe_sparc:load_address_dest(I)),
+	  io:format(Dev, ", %lo(~w), ", [Address]),
 	  pp_arg(Dev, hipe_sparc:load_address_dest(I));
 	label ->
 	  io:format(Dev, "    sethi %hi( ", []),

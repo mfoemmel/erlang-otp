@@ -15,24 +15,101 @@
  * 
  *     $Id$
  */
+
 /*
  * Purpose:  Implementation of Secure Socket Layer (SSL).
  *
- * This is an "SSL proxy" for Erlang. The implementation has borrowed 
- * somewhat from the original implementation of `socket' by Claes Wikström,
- * and a former implementation of `ssl_socket' by Helen Ariyan. 
+ * This is an "SSL proxy" for Erlang in the form of a port
+ * program. 
  *
- * About closing: We close a file descriptor that Erlang know about only
- * after we have got a close message from Erlang. If we have not got a close
- * message from Erlang at the point in time when all has been cleaned-up
- * for a connection, we send a FROMNET_CLOSE, otherwise not.
+ * The implementation has borrowed somewhat from the original
+ * implementation of `socket' by Claes Wikström, and the former
+ * implementation of `ssl_socket' by Helen Ariyan.
  *
- * XXX There are many uneccessary `break;'s in the code.
+ * All I/O is now non-blocking. 
  *
- */
+ * When a connection (cp) is in the state JOINED we have the following
+ * picture:
+ *
+ *            proxy->fd                          fd
+ *               |                               |
+ *  proxy->eof   |  -------->  wq  ----------->  |   bp 
+ *               |                               |
+ *  Erlang       |                               |   SSL
+ *               |                               |
+ *  proxy->bp    |  <------ proxy->wq ---------  |   eof
+ *               |                               |
+ * 
+ * We read from Erlang (proxy->fd) and write to SSL (fd); and read from 
+ * SSL (fd) and write to Erlang (proxy->fd).  
+ *
+ * The variables bp (broken pipe) and eof (end of file) take the
+ * values 0 and 1.
+ *
+ * What has been read and cannot be immediately written is put in a
+ * write queue (wq). A wq is emptied before reads are continued, which
+ * means that at most one chunk that is read can be in a wq.
+ *
+ * The proxy-to-ssl part of a cp is valid iff 
+ *
+ *         !bp && (wq.len > 0 || !proxy->eof).
+ *
+ * The ssl-to-proxy part of a cp is valid iff 
+ *
+ *         !proxy->bp && (proxy->wq.len > 0 || !eof). 
+ *
+ * The connection is valid if any of the above parts are valid, i.e.
+ * invalid if both parts are invalid.
+ *
+ * Every SELECT_TIMEOUT second we try to write to those file
+ * descriptors that have non-empty wq's (the only way to detect that a
+ * far end has gone away is to write to it). XXX True?
+ *
+ * STATE TRANSITIONS
+ *
+ * Below (*) means that the corresponding file descriptor is published
+ * (i.e. kwown outside this port program) when the state is entered,
+ * and thus cannot be closed without synchronization with the
+ * ssl_server.
+ *
+ * Listen:
+ *
+ * STATE_NONE ---> (*) PASSIVE_LISTENING <---> ACTIVE_LISTENING
+ *
+ * Accept:
+ *
+ * STATE_NONE ---> SSL_ACCEPT ---> (*) CONNECTED ---> JOINED ---> 
+ *  ---> SSL_SHUTDOWN ---> DEFUNCT
+ *
+ * Connect:
+ *
+ * STATE_NONE ---> (*) WAIT_CONNECT ---> SSL_CONNECT ---> CONNECTED ---> 
+ *  ---> JOINED ---> SSL_SHUTDOWN ---> DEFUNCT
+ * 
+ * In states where file descriptors has been published, and where
+ * something goes wrong, the state of the connection is set to
+ * DEFUNCT. A connection in such a state can only be closed by a CLOSE
+ * message from Erlang (a reception of such a message is registered in
+ * cp->closed). The possible states are: WAIT_CONNECT, SSL_CONNECT,
+ * CONNECTED, JOINED, and SSL_SHUTDOWN.
+ *
+ * A connection in state SSL_ACCEPT can be closed and removed without
+ * synchronization.
+ *
+ * XXX We should ONLY consider the the states of fd and proxy->fd, and
+ * neither rely on any control information received regarding their
+ * desired states, nor send any control information about their actual
+ * states. In particular, FROMNET_CLOSE should never be sent.
+ *
+ * XXX If we do not go through the JOINED state, we may leak proxy
+ * file descriptors. It is when a connection is in the state CONNECTED
+ * that a proxy file descriptor is created. It is ssl_broker.erl that
+ * makes the connect. It knows cp->fd, and the port number of its own
+ * socket.  It is however only if the broker crashes (or gets killed)
+ * that we lose a descriptor.  */
 
 #ifdef __WIN32__
-#include <winsock2.h>
+#include "esock_winsock.h"
 #endif
 
 #include <stdio.h>
@@ -70,43 +147,41 @@
 
 #define MAJOR_VERSION   2
 #define MINOR_VERSION   0
-#define MAXCOMMAND	256
+#define MAXREPLYBUF	256
 #define RWBUFLEN	4096
 #define IS_CLIENT       0
 #define IS_SERVER       1
 #define SELECT_TIMEOUT  2	/* seconds */
 
-#define errstr()	esock_posix_str(sock_errno())
-#define ssl_errstr()	esock_ssl_err_str
+#define psx_errstr()	esock_posix_str(sock_errno())
+#define ssl_errstr()	esock_ssl_errstr
 
-#define ENDPOINT_VALID(p)  	(!(p)->eof && !(p)->bp)
-#define WQ_NONEMPTY(p) 		((p)->wq.len > 0)
+#define PROXY_TO_SSL_VALID(cp) (!(cp)->bp && \
+				((cp)->wq.len > 0 || !(cp)->proxy->eof))
 
-#define PROXY_TO_SSL_VALID(cp) (ENDPOINT_VALID(cp) && \
-				(WQ_NONEMPTY(cp) || ENDPOINT_VALID(cp->proxy)))
+#define SSL_TO_PROXY_VALID(cp) (!(cp)->proxy->bp && \
+				((cp)->proxy->wq.len > 0 || !(cp)->eof))
 
-#define SSL_TO_PROXY_VALID(cp) (ENDPOINT_VALID(cp->proxy) && \
-				(WQ_NONEMPTY(cp->proxy) || ENDPOINT_VALID(cp)))
-
-#define JOINED_STATE_VALID(cp) (PROXY_TO_SSL_VALID(cp) && \
-				SSL_TO_PROXY_VALID(cp))
-
-static int read_loop(void);
-static void try_ssl_closing(Connection *cp);
-static void do_ssl_closing(Connection *cp);
+#define JOINED_STATE_INVALID(cp) (!(PROXY_TO_SSL_VALID(cp)) && \
+				!(SSL_TO_PROXY_VALID(cp)))
+static int loop(void);
+static void leave_joined_state(Connection *cp);
+static void do_shutdown(Connection *cp);
+static void close_and_remove_connection(Connection *cp);
 static int reply(int cmd, char *fmt, ...);
 static int input(char *fmt, ...);
 static int put_pars(unsigned char *buf, char *fmt, va_list args);
 static int get_pars(unsigned char *buf, char *fmt, va_list args);
-static FD do_connect(char *ipstring, int port);
+static FD do_connect(char *lipstring, int lport, char *fipstring, int fport);
 static FD do_listen(char *ipstring, int lport, int backlog, int *aport);
 static void print_connections(void);
 static void safe_close(FD fd);
 static Connection *new_connection(int state, FD fd);
-static void remove_connection(FD fd);
+static Connection *get_connection(FD fd);
+static void remove_connection(Connection *conn);
 static Proxy *get_proxy_by_peerport(int port);
 static Proxy *new_proxy(FD fd);
-static void remove_proxy(FD fd);
+static void remove_proxy(Proxy *proxy);
 static void ensure_write_queue(WriteQueue *wq, int size);
 static void clean_up(void);
 
@@ -116,10 +191,11 @@ static Proxy *proxies = NULL;
 static int proxy_listensock = INVALID_FD;
 static int proxy_listenport = 0;
 static int proxy_backlog = 5;
+static int proxysock_last_err = 0;
+static int proxysock_err_cnt = 0;
 static char rwbuf[RWBUFLEN];
 static unsigned char *ebuf = NULL; /* Set by read_ctrl() */
 static unsigned long one = 1;
-static unsigned char command[MAXCOMMAND];
 static struct timeval timeout = {SELECT_TIMEOUT, 0};
 
 static char *connstr[] = {
@@ -131,13 +207,22 @@ static char *connstr[] = {
     "SSL_CONNECT",
     "SSL_ACCEPT",
     "JOINED",
-    "SSL_CLOSING"
+    "SSL_SHUTDOWN",
+    "DEFUNCT"
+};
+
+static char *originstr[] = {
+    "listen",
+    "accept",
+    "connect"
 };
 
 int main(int argc, char **argv) 
 {
     char *logfile = NULL;
     int i;
+    esock_version *vsn;
+    char *ciphers; 
 #ifdef __WIN32__
     int pid;
     WORD version;
@@ -171,30 +256,40 @@ int main(int argc, char **argv)
 	    logfile = esock_malloc(strlen(argv[i]) + 64);
 	    sprintf(logfile, "%s/ssl_esock.%d.log", argv[i], (int)pid);
 	    i++;
+	} else if (strcmp(argv[i], "-ersa") == 0) {
+	    ephemeral_rsa = 1;
+	    i++;
+	} else if (strcmp(argv[i], "-edh") == 0) {
+	    ephemeral_dh = 1;
+	    i++;
 	}
     }
     if (debug || debugmsg) {
 	DEBUGF(("Starting ssl_esock\n"));
-	if (logfile) open_syslog(logfile);
-	atexit(close_syslog);
+	if (logfile) open_ssllog(logfile);
+	atexit(close_ssllog);
 	DEBUGF(("pid = %d\n", getpid()));
     }
-    if (esock_ssl_init() < 0)
+    if (esock_ssl_init() < 0) {
+	fprintf(stderr, "esock: Could not do esock_ssl_init\n");
 	exit(EXIT_FAILURE);
+    }
+
     atexit(esock_ssl_finish);
 
 #ifdef __WIN32__
     /* Start Windows' sockets */
     version = MAKEWORD(MAJOR_VERSION, MINOR_VERSION);
     if (WSAStartup(version, &wsa_data) != 0) {
-	fprintf(stderr, "Could not start-up Windows' sockets\n");
+	fprintf(stderr, "esock: Could not start up Windows' sockets\n");
 	exit(EXIT_FAILURE);
     }
     atexit((void (*)(void))WSACleanup);
     if (LOBYTE(wsa_data.wVersion) < MAJOR_VERSION ||
 	(LOBYTE(wsa_data.wVersion) == MAJOR_VERSION && 
 	 HIBYTE(wsa_data.wVersion) < MINOR_VERSION)) {
-	fprintf(stderr, "Windows socket version error. Requested version:"
+	fprintf(stderr, "esock: Windows socket version error. "
+		"Requested version:"
 		"%d.%d, version found: %d.%d\n", MAJOR_VERSION, 
 		MINOR_VERSION, LOBYTE(wsa_data.wVersion), 
 		HIBYTE(wsa_data.wVersion));
@@ -206,7 +301,7 @@ int main(int argc, char **argv)
 	    wsa_data.iMaxSockets));
  
     if (esock_osio_init() < 0) {
-	fprintf(stderr, "Could not init osio\n");
+	fprintf(stderr, "esock: Could not init osio\n");
 	exit(EXIT_FAILURE);
     }
     atexit(esock_osio_finish);
@@ -217,49 +312,46 @@ int main(int argc, char **argv)
     proxy_listensock = do_listen("127.0.0.1", proxy_listenport, 
 				 proxy_backlog, &proxy_listenport);
     if (proxy_listensock == INVALID_FD) {
-	DEBUGF(("Cannot create local listen socket\n"));
+	fprintf(stderr, "esock: Cannot create local listen socket\n");
 	exit(EXIT_FAILURE);
     }
     SET_NONBLOCKING(proxy_listensock);
     DEBUGF(("Local proxy listen socket: fd = %d, port = %d\n", 
 	   proxy_listensock, proxy_listenport));
 
-    /* Report the port number of the local proxy listen socket */
-    reply(ESOCK_PROXY_PORT, "24", proxy_listenport, (int)pid);
+    vsn = esock_ssl_version();
+    ciphers = esock_ssl_ciphers();
+
+    /* Report: port number of the local proxy listen socket, the native
+     * os pid, the compile and lib versions of the ssl library, and 
+     * the list of available ciphers. */
+    reply(ESOCK_PROXY_PORT_REP, "24sss", proxy_listenport, (int)pid, 
+	  vsn->compile_version, vsn->lib_version, ciphers);
 
     atexit(clean_up);
 
-    read_loop();
+    loop();
 
-    esock_free(logfile);
+    if (logfile) 
+	esock_free(logfile);
     exit(EXIT_SUCCESS);
 }
 
-
-Connection *get_connection(FD fd)
-{
-    Connection *cp = connections;
-    
-    while(cp) {
-	if(cp->fd == fd)
-	    return cp;
-	cp = cp->next;
-    }
-    return NULL;
-}
 
 /*
  * Local functions
  *
  */
 
-static int read_loop(void)
+static int loop(void)
 {
     FD fd, msgsock, listensock, connectsock, proxysock;
-    int cc, wc, cport, lport, pport, length, backlog, intref, op;
+    int cc, wc, fport, lport, pport, length, backlog, intref, op;
     int value;
-    char *ipstring;
+    char *lipstring, *fipstring;
     char *flags;
+    unsigned char *cert, *bin;
+    int certlen, binlen;
     struct sockaddr_in iserv_addr;
     int sret = 1, j;
     Connection *cp, *cpnext, *newcp;
@@ -278,18 +370,20 @@ static int read_loop(void)
 	tv = timeout;		/* select() might change tv */
 	set_wq_fds = 0;
 
+	if (sret)		/* sret == 1 the first time. */
+	    DEBUGF(("==========LOOP=============\n"));
+
 	cc = esock_ssl_set_masks(connections, &readmask, &writemask, 
 				 &exceptmask, sret) + 1;
-
-	if (sret) {		/* sret == 1 the first time. */
-	    DEBUGF(("__________READ-LOOP_____________\n"));
+	if (sret) {
 	    print_connections();
-	    DEBUGF(("server before select cc = %d \n", cc));
+	    DEBUGF(("Before select: %d descriptor%s\n", cc, 
+		    (cc == 1) ? "" : "s"));
 	}
-	sret = select(FD_SETSIZE, &readmask, &writemask, &exceptmask, &tv);
 
+	sret = select(FD_SETSIZE, &readmask, &writemask, &exceptmask, &tv);
 	if (sret < 0) {
-	    DEBUGF(("select error: %s\n", errstr()));
+	    DEBUGF(("select error: %s\n", psx_errstr()));
 	    continue;
 	} else if (sret == 0) {
 	    FD_ZERO(&readmask);
@@ -298,7 +392,7 @@ static int read_loop(void)
 	}
 
 	if (sret) {
-	    DEBUGF(("server after select: %d descriptor%s: ", sret, 
+	    DEBUGF(("After select: %d descriptor%s: ", sret, 
 		    (sret == 1) ? "" : "s"));
 #ifndef __WIN32__
 	    for (j = 0; j < FD_SETSIZE; j++) {
@@ -333,8 +427,18 @@ static int read_loop(void)
 				   (int*)&length);
 		if(proxysock == INVALID_FD) {
 		    if (sock_errno() != ERRNO_BLOCK) {
+			/* XXX Here we have a major flaw. We can here
+			 * for example get the error EMFILE, i.e. no
+			 * more file descriptor available, but we do
+			 * not have any specific connection to report
+			 * the error to. 
+			 * We increment the error counter and saves the
+			 * last err.
+			 */
+			proxysock_err_cnt++;
+			proxysock_last_err = sock_errno();
 			DEBUGF(("accept error (proxy_listensock): %s\n", 
-				errstr()));
+				psx_errstr()));
 		    }
 		    break;
 		} else {
@@ -349,7 +453,8 @@ static int read_loop(void)
 			pp = new_proxy(proxysock);
 			pp->peer_port = ntohs(iserv_addr.sin_port);
 			DEBUGF(("-----------------------------------\n"));
-			DEBUGF(("[PROXY_LISTEN_SOCK] conn accepted: fd = %d, "
+			DEBUGF(("[PROXY_LISTEN_SOCK] conn accepted: "
+				"proxyfd = %d, "
 			       "peer port = %d\n", proxysock, pp->peer_port));
 		    }
 		}
@@ -372,20 +477,31 @@ static int read_loop(void)
 
 		switch((int)*ebuf) {
 
-		case ESOCK_GETPEERNAME:
+		case ESOCK_SET_SEED_CMD:
+		    /* 
+		     * ebuf = {cmd(1), binary(N) }
+		     */
+		    input("b", &binlen, &bin);
+		    DEBUGF(("[SET_SEED_CMD]\n"));
+		    esock_ssl_seed(bin, binlen);
+		    /* no reply */
+		    break;
+
+		case ESOCK_GETPEERNAME_CMD:
 		    /* 
 		     * ebuf = {cmd(1), fd(4)}
 		     */
 		    input("4", &fd);
+		    DEBUGF(("[GETPEERNAME_CMD] fd = %d\n", fd)); 
 		    cp = get_connection(fd);
 		    length = sizeof(iserv_addr);
 		    if (!cp) {
 			sock_set_errno(ERRNO_NOTSOCK);
-			reply(ESOCK_GETPEERNAME_ERR, "4s", fd, errstr());
+			reply(ESOCK_GETPEERNAME_ERR, "4s", fd, psx_errstr());
 		    } else if (getpeername(fd, 
 					   (struct sockaddr *) &iserv_addr, 
 					   &length) < 0) {
-			reply(ESOCK_GETPEERNAME_ERR, "4s", fd, errstr());
+			reply(ESOCK_GETPEERNAME_ERR, "4s", fd, psx_errstr());
 		    } else {
 			/*
 			 * reply  = {cmd(1), fd(4), port(2), 
@@ -397,20 +513,21 @@ static int read_loop(void)
 		    }
 		    break;
 
-		case ESOCK_GETSOCKNAME:
+		case ESOCK_GETSOCKNAME_CMD:
 		    /* 
 		     * ebuf = {cmd(1), fd(4)}
 		     */
 		    input("4", &fd);
+		    DEBUGF(("[GETSOCKNAME_CMD] fd = %d\n", fd)); 
 		    cp = get_connection(fd);
 		    length = sizeof(iserv_addr);
 		    if (!cp) {
 			sock_set_errno(ERRNO_NOTSOCK);
-			reply(ESOCK_GETSOCKNAME_ERR, "4s", fd, errstr());
+			reply(ESOCK_GETSOCKNAME_ERR, "4s", fd, psx_errstr());
 		    } else if (getsockname(fd, 
 					   (struct sockaddr *)&iserv_addr, 
 					   &length) < 0) {
-			reply(ESOCK_GETSOCKNAME_ERR, "4s", fd, errstr());
+			reply(ESOCK_GETSOCKNAME_ERR, "4s", fd, psx_errstr());
 		    } else {
 			/*
 			 * reply  = {cmd(1), fd(4), port(2), 
@@ -422,61 +539,94 @@ static int read_loop(void)
 		    }
 		    break;
 
-		case ESOCK_CONNECT:   /* request to connect */
+		case ESOCK_GETPEERCERT_CMD:
 		    /* 
-		     * ebuf = {cmd(1), intref(4), port(2), ipstring(N), 0(1), 
+		     * ebuf = {cmd(1), fd(4)}
+		     */
+		    input("4", &fd);
+		    DEBUGF(("[GETPEERCERT_CMD] fd = %d\n", fd)); 
+		    cp = get_connection(fd);
+		    if (!cp) {
+			sock_set_errno(ERRNO_NOTSOCK);
+			reply(ESOCK_GETPEERCERT_ERR, "4s", fd, psx_errstr());
+		    } else {
+			if ((certlen = esock_ssl_getpeercert(cp, &cert)) < 0)
+			    reply(ESOCK_GETPEERCERT_ERR, "4s", fd, psx_errstr());
+			else {
+			    /*
+			     * reply  = {cmd(1), fd(4), certlen(4), cert(N)}
+			     */
+			    reply(ESOCK_GETPEERCERT_REP, "4b", fd, 
+				  certlen, cert);
+			    esock_free(cert);
+			}
+		    }
+		    break;
+
+		case ESOCK_CONNECT_CMD:
+		    /* 
+		     * ebuf = {cmd(1), intref(4), 
+		     * 	       lport(2), lipstring(N), 0(1),  -- local
+		     *         fport(2), fipstring(N), 0(1),  -- foreign
 		     * 	       flags(N), 0(1)}
 		     */
-		    input("42ss", &intref, &cport, &ipstring, &flags);
-		    DEBUGF(("[ERLANG_CONNECT] intref = %d, ipstring = %s "
-			   "port = %d, flags = %s\n", intref, ipstring, 
-			   cport, flags));
-		    connectsock = do_connect(ipstring, cport);
+		    input("42s2ss", &intref, &lport, &lipstring, 
+			  &fport, &fipstring, &flags);
+		    DEBUGF(("[CONNECT_CMD] intref = %d, "
+			    "lipstring = %s lport = %d, "
+			    "fipstring = %s fport = %d, "
+			    "flags = %s\n", intref, lipstring, lport,
+			    fipstring, fport, flags));
+		    connectsock = do_connect(lipstring, lport, 
+					     fipstring, fport);
 		    if(connectsock == INVALID_FD) {
-			reply(ESOCK_CONNECT_SYNC_ERR, "4s", intref, errstr());
+			reply(ESOCK_CONNECT_SYNC_ERR, "4s", intref, psx_errstr());
 			break;
 		    }
 		    DEBUGF(("  fd = %d\n", connectsock));
 		    cp = new_connection(ESOCK_WAIT_CONNECT, connectsock);
-		    cp->origin = "connect";
+		    cp->origin = ORIG_CONNECT;
 		    length = strlen(flags);
 		    cp->flags = esock_malloc(length + 1);
 		    strcpy(cp->flags, flags);
 		    DEBUGF(("-> WAIT_CONNECT fd = %d\n", connectsock));
-		    reply(ESOCK_CONNECT_WAIT, "44", intref, connectsock);
+		    /* Publish connectsock */
+		    reply(ESOCK_CONNECT_WAIT_REP, "44", intref, connectsock);
 		    break;
 		    
-		case ESOCK_TERMINATE:
+		case ESOCK_TERMINATE_CMD:
 		    /* 
 		     * ebuf = {cmd(1)}
 		     */
 		    exit(EXIT_SUCCESS);
 		    break;
 
-		case ESOCK_CLOSE:
+		case ESOCK_CLOSE_CMD:
 		    /* 
 		     * ebuf = {cmd(1), fd(4)}
 		     */
 		    input("4", &fd);
 		    if ((cp = get_connection(fd))) {
-			DEBUGF(("%s[ERLANG_CLOSE]: fd = %d\n", 
-			       connstr[cp->state], fd));
+			DEBUGF(("%s[CLOSE_CMD]: fd = %d\n", 
+				connstr[cp->state], fd));
+			if (cp->proxy)
+			    cp->proxy->bp = 1;
 			switch (cp->state) {
 			case ESOCK_JOINED:
-			case ESOCK_SSL_CLOSING:
+			case ESOCK_SSL_SHUTDOWN:
+			    DEBUGF(("  close flag set\n"));
 			    cp->close = 1;
 			    break;
 			default:
-			    remove_connection(fd);
-			    safe_close(fd);
+			    DEBUGF(("-> (removal)\n"));
+			    close_and_remove_connection(cp);
 			}
-		    } else {
-			DEBUGF(("[ERLANG_CLOSE]: (no cp found)\n"));
-			safe_close(fd);
-		    }
+		    } else 
+			DEBUGF(("%s[ERLANG_CLOSE]: ERROR: fd = %d not found\n",
+				connstr[cp->state], fd));
 		    break;
 
-		case ESOCK_SET_SOCK_OPT:
+		case ESOCK_SET_SOCKOPT_CMD:
 		    /* 
 		     * ebuf = {cmd(1), fd(4), op(1), on(1)}
 		     */
@@ -484,9 +634,9 @@ static int read_loop(void)
 		    switch(op) {
 		    case ESOCK_SET_TCP_NODELAY:
 			if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, 
-				      &value, sizeof(value)) < 0) {
+				      (void *)&value, sizeof(value)) < 0) {
 			    DEBUGF(("Error: setsockopt TCP_NODELAY\n"));
-			    reply(ESOCK_IOCTL_ERR, "4s", fd, errstr());
+			    reply(ESOCK_IOCTL_ERR, "4s", fd, psx_errstr());
 			} else {
 			    reply(ESOCK_IOCTL_OK, "4", fd);
 			}
@@ -494,25 +644,25 @@ static int read_loop(void)
 		    default:
 			DEBUGF(("Error: set_sock_opt - Not implemented\n"));
 			sock_set_errno(ERRNO_OPNOTSUPP);
-			reply(ESOCK_IOCTL_ERR, "4", fd, errstr());
+			reply(ESOCK_IOCTL_ERR, "4", fd, psx_errstr());
 			break;
 		    }
 		    break;
 
-		case ESOCK_LISTEN:
+		case ESOCK_LISTEN_CMD:
 		    /* 
 		     * ebuf = {cmd(1), intref(4), lport(2), ipstring(N), 0(1),
 		     * 	       backlog(2), flags(N), 0(1)}
 		     */
-		    input("42s2s", &intref, &lport, &ipstring, &backlog,
+		    input("42s2s", &intref, &lport, &lipstring, &backlog,
 			  &flags);
-		    DEBUGF(("[ERLANG_LISTEN] intref = %d, port = %d, "
+		    DEBUGF(("[LISTEN_CMD] intref = %d, port = %d, "
 			   "ipstring = %s, backlog = %d, flags = %s\n", 
-			   intref, lport, ipstring, backlog, flags));
+			   intref, lport, lipstring, backlog, flags));
 		    
-		    listensock = do_listen(ipstring, lport, backlog, &lport);
+		    listensock = do_listen(lipstring, lport, backlog, &lport);
 		    if(listensock == INVALID_FD) {
-			reply(ESOCK_LISTEN_SYNC_ERR, "4s", intref, errstr());
+			reply(ESOCK_LISTEN_SYNC_ERR, "4s", intref, psx_errstr());
 			break;
 		    }
 		    cp = new_connection(ESOCK_PASSIVE_LISTENING, listensock);
@@ -521,23 +671,26 @@ static int read_loop(void)
 			cp->flags = esock_malloc(length + 1);
 			strcpy(cp->flags, flags);
 		    }
+		    cp->origin = ORIG_LISTEN;
 		    if (esock_ssl_listen_init(cp) < 0) {
 			DEBUGF(("esock_ssl_listen_init() failed.\n"));
 			reply(ESOCK_LISTEN_SYNC_ERR, "4s", intref, 
 			      ssl_errstr());
+			close_and_remove_connection(cp);
 			break;
 		    }
 		    DEBUGF(("-> PASSIVE_LISTENING (fd = %d)\n", listensock));
+		    /* Publish listensock */
 		    reply(ESOCK_LISTEN_REP, "442", intref, listensock,
 			  ntohs(iserv_addr.sin_port));
 		    break;
 
-		case ESOCK_ACCEPT:
+		case ESOCK_ACCEPT_CMD:
 		    /* 
 		     * ebuf =  { op(1), fd(4), flags(N), 0(1)} 
 		     */
 		    input("4s", &fd, &flags);
-		    DEBUGF(("[ERLANG_ACCEPT] fd = %d, flags = %s\n", fd, 
+		    DEBUGF(("[ACCEPT_CMD] listenfd = %d, flags = %s\n", fd, 
 			   flags));
 		    cp = get_connection(fd);
 		    if (cp) {
@@ -563,12 +716,12 @@ static int read_loop(void)
 		    reply(ESOCK_ACCEPT_ERR, "4s", fd, "ebadf");
 		    break;
 
-		case ESOCK_NOACCEPT:
+		case ESOCK_NOACCEPT_CMD:
 		    /* 
 		     * ebuf = {cmd(1), fd(4)}
 		     */
 		    input("4", &fd);
-		    DEBUGF(("[ERLANG_NOACCEPT] fd = %d\n", fd));
+		    DEBUGF(("[NOACCEPT_CMD] listenfd = %d\n", fd));
 		    cp = get_connection(fd);
 		    if (cp && (--cp->acceptors <= 0)) {
 			cp->acceptors = 0;
@@ -577,7 +730,7 @@ static int read_loop(void)
 		    }
 		    break;
 
-		case ESOCK_PROXY_JOIN:
+		case ESOCK_PROXY_JOIN_CMD:
 		    /*
 		     * ebuf = {cmd(1), fd(4), portnum(2)}
 		     *
@@ -586,11 +739,11 @@ static int read_loop(void)
 		     * portnum - port number of the Erlang proxy peer 
 		     */
 		    input("42", &fd, &pport);
-		    DEBUGF(("CONNECTED[ERLANG_PROXY_JOIN] fd = %d "
-			   "portnum = %d\n", fd, pport));
 		    cp = get_connection(fd);
 		    pp = get_proxy_by_peerport(pport);
 		    if (cp && cp->state == ESOCK_CONNECTED && pp) {
+			DEBUGF(("CONNECTED[PROXY_JOIN_CMD] fd = %d "
+				"portnum = %d\n", fd, pport));
 			cp->proxy = pp;
 			pp->conn = cp;
 			reply(ESOCK_PROXY_JOIN_REP, "4", fd);
@@ -599,32 +752,43 @@ static int read_loop(void)
 			break;
 		    }
 		    if (!cp) {
-			DEBUGF(("ERROR: No connection with fd = %d\n", fd));
+			DEBUGF(("[PROXY_JOIN_CMD] ERROR: No connection "
+				"having fd = %d\n", fd));
 			reply(ESOCK_PROXY_JOIN_ERR, "4s", fd, "ebadsocket");
 		    } else if (cp->state != ESOCK_CONNECTED) {
-			DEBUGF(("ERROR: Bad state: fd = %d\n", fd));
+			DEBUGF(("%s[PROXY_JOIN_CMD] ERROR: Bad state: "
+			       "fd = %d\n", connstr[cp->state], cp->fd));
 			reply(ESOCK_PROXY_JOIN_ERR, "4s", fd, "ebadstate");
 		    } else {
 			DEBUGF(("ERROR: No proxy: fd = %d, pport = %d\n",
 			       fd, pport));
-			reply(ESOCK_PROXY_JOIN_ERR, "4s", fd, 
-			      "enoproxysocket");
+			if (proxysock_err_cnt > 0) {
+			    proxysock_err_cnt--;
+			    reply(ESOCK_PROXY_JOIN_ERR, "4s", fd, 
+				  esock_posix_str(proxysock_last_err));
+			} else {
+			    reply(ESOCK_PROXY_JOIN_ERR, "4s", fd, 
+				  "enoproxysocket");
+			}
+			cp->state = ESOCK_DEFUNCT;
 		    }
 		    break;
 
 		default:
-		    DEBUGF(("default value in read_loop %c\n", *ebuf));
+		    fprintf(stderr, "esock: default value in loop %c\n", 
+			    *ebuf);
 		    exit(EXIT_FAILURE);
 		    break;
-		    
 		}
 	    }
 	}
-	/* not from erlang */
 
-	/* Note: We may remove the current connection (cp). Thus we must
-	 * be careful not to read cp->next after cp has been removed.
-	 */
+	/* Go through all connections that have their file descriptors
+           set. */
+
+	/* Note: We may remove the current connection (cp). Thus we
+	 * must be careful not to read cp->next after cp has been
+	 * removed.  */
 	for (cp = esock_ssl_read_masks(connections, &cpnext, &readmask, 
 				       &writemask, &exceptmask, set_wq_fds); 
 	     cp != NULL; 
@@ -633,6 +797,12 @@ static int read_loop(void)
 	    ) {
 
 	    switch(cp->state) {
+
+	    case ESOCK_PASSIVE_LISTENING:
+		DEBUGF(("-----------------------------------\n"));
+		fprintf(stderr, "esock: Got connect request while PASSIVE\n");
+		exit(EXIT_FAILURE);
+		break;
 		
 	    case ESOCK_ACTIVE_LISTENING:
 		/* new connect from network */
@@ -643,8 +813,8 @@ static int read_loop(void)
 		msgsock = accept(cp->fd, (struct sockaddr*)&iserv_addr, 
 				 (int*)&length);
 		if(msgsock == INVALID_FD)  {
-		    DEBUGF(("accept error: %s\n", errstr()));
-		    reply(ESOCK_ACCEPT_ERR, "4s", cp->fd, errstr());
+		    DEBUGF(("accept error: %s\n", psx_errstr()));
+		    reply(ESOCK_ACCEPT_ERR, "4s", cp->fd, psx_errstr());
 		    break;
 		}
 		SET_NONBLOCKING(msgsock);
@@ -655,38 +825,61 @@ static int read_loop(void)
 		}
 		DEBUGF(("server accepted connection on fd %d\n", msgsock));
 		newcp = new_connection(ESOCK_SSL_ACCEPT, msgsock);
-		newcp->origin = "accept";
+		newcp->origin = ORIG_ACCEPT;
 		DEBUGF(("(new) -> SSL_ACCEPT on fd %d\n", msgsock));
 		newcp->listen_fd = cp->fd; /* Needed for ESOCK_ACCEPT_ERR  */
 		length = strlen(cp->flags);
+		/* XXX new flags are not needed */
 		newcp->flags = esock_malloc(length + 1);
 		strcpy(newcp->flags, cp->flags); /* XXX Why? */
-		if (esock_ssl_accept_init(newcp) < 0) {
+		if (esock_ssl_accept_init(newcp, cp->opaque) < 0) {
 		    /* N.B.: The *listen fd* is reported. */
 		    reply(ESOCK_ACCEPT_ERR, "4s", newcp->listen_fd,
 			  ssl_errstr());
-		    remove_connection(msgsock);
-		    safe_close(msgsock);
+		    close_and_remove_connection(newcp);
 		    break;
 		}
 		newcp->ssl_want = ESOCK_SSL_WANT_READ;
 		break;
 
-	    case ESOCK_PASSIVE_LISTENING:
+	    case ESOCK_SSL_ACCEPT:
+		/* SSL accept handshake. msgsock is *not* published yet. */
+		msgsock = cp->fd;
 		DEBUGF(("-----------------------------------\n"));
-		DEBUGF(("Got connect request while PASSIVE\n"));
-		exit(EXIT_FAILURE);
+		DEBUGF(("SSL_ACCEPT fd = %d\n", msgsock));
+		if (esock_ssl_accept(cp) < 0) {
+		    if (sock_errno() != ERRNO_BLOCK) {
+			/* Handshake failed. */
+			reply(ESOCK_ACCEPT_ERR, "4s", cp->listen_fd,
+			      ssl_errstr());
+			DEBUGF(("ERROR: handshake: %s\n", ssl_errstr()));
+			close_and_remove_connection(cp);
+		    }
+		} else {
+		    /* SSL handshake successful: publish */
+		    reply(ESOCK_ACCEPT_REP, "44", cp->listen_fd, msgsock);
+		    DEBUGF(("-> CONNECTED\n"));
+		    cp->state = ESOCK_CONNECTED;
+		}
+		break;
+
+	    case ESOCK_CONNECTED:
+		/* Should not happen. We do not read or write until
+		   the connection is in state JOINED. */
+		DEBUGF(("-----------------------------------\n"));
+		DEBUGF(("CONNECTED: Error: should not happen. fd = %d\n", 
+			cp->fd));
 		break;
 
 	    case ESOCK_JOINED:
 		/* 
-		 * Proxy to SSL 
+		 * Reading from Proxy, writing to SSL 
 		 */
 		if (FD_ISSET(cp->fd, &writemask)) {
 		    /* If there is a write queue, write to ssl only */
 		    if (cp->wq.len > 0) { 
 			/* The write retry semantics of SSL_write in
-			 * the SSLeay package is strange. Partial
+			 * the OpenSSL package is strange. Partial
 			 * writes never occur, only complete writes or
 			 * failures.  A failure, however, still
 			 * consumes all data written, although not all
@@ -696,24 +889,39 @@ static int read_loop(void)
 			 * the original call, in our case rwbuf and
 			 * the original buffer length. Hence the
 			 * strange memcpy(). Note that wq.offset will
-			 * always be zero when we use SSLeay.  
+			 * always be zero when we use OpenSSL.  
 			 */
 			DEBUGF(("-----------------------------------\n"));
 			DEBUGF(("JOINED: writing to ssl "
 				"fd = %d, from write queue only, wc = %d\n", 
 				cp->fd, cp->wq.len - cp->wq.offset));
 			memcpy(rwbuf, cp->wq.buf, cp->wq.len - cp->wq.offset);
+
+			/* esock_ssl_write sets cp->eof, cp->bp when return
+			 * value is zero */
 			wc = esock_ssl_write(cp, rwbuf, 
 					     cp->wq.len - cp->wq.offset);
 			if (wc < 0) {
 			    if (sock_errno() != ERRNO_BLOCK) {
-				/* Assume broken pipe */
-				cp->bp = 1;
+				/* Assume broken SSL pipe */
 				DEBUGF(("broken SSL pipe\n"));
-				if (!JOINED_STATE_VALID(cp)) {
-				    try_ssl_closing(cp);
+				cp->bp = 1;
+				shutdown(cp->proxy->fd, SHUTDOWN_READ);
+				cp->proxy->eof = 1;
+				if (JOINED_STATE_INVALID(cp)) {
+				    leave_joined_state(cp);
 				    break;
 				}
+			    }
+			} else if (wc == 0) {
+			    /* SSL broken pipe */
+			    DEBUGF(("broken SSL pipe\n"));
+			    cp->bp = 1;
+			    shutdown(cp->proxy->fd, SHUTDOWN_READ);
+			    cp->proxy->eof = 1;
+			    if (JOINED_STATE_INVALID(cp)) {
+				leave_joined_state(cp);
+				break;
 			    }
 			} else {
 			    cp->wq.offset += wc;
@@ -725,19 +933,23 @@ static int read_loop(void)
 		    /* Read from proxy and write to SSL */
 		    DEBUGF(("-----------------------------------\n"));
 		    DEBUGF(("JOINED: reading from proxy, "
-			   "fd = %d\n", cp->proxy->fd));
+			   "proxyfd = %d\n", cp->proxy->fd));
 		    cc = sock_read(cp->proxy->fd, rwbuf, RWBUFLEN); 
-		    DEBUGF(("read from proxy fd = %d, cc = %d\n", 
+		    DEBUGF(("read from proxyfd = %d, cc = %d\n", 
 			   cp->proxy->fd, cc));
 		    if (cc > 0) {
+			/* esock_ssl_write sets cp->eof, cp->bp when return
+			 * value is zero */
 			wc = esock_ssl_write(cp, rwbuf, cc);
 			if (wc < 0) {
 			    if (sock_errno() != ERRNO_BLOCK) {
-			    /* Assume broken pipe */
-				cp->bp = 1;
+				/* Assume broken pipe */
 				DEBUGF(("broken SSL pipe\n"));
-				if (!JOINED_STATE_VALID(cp)) {
-				    try_ssl_closing(cp);
+				cp->bp = 1;
+				shutdown(cp->proxy->fd, SHUTDOWN_READ);
+				cp->proxy->eof = 1;
+				if (JOINED_STATE_INVALID(cp)) {
+				    leave_joined_state(cp);
 				    break;
 				}
 			    } else {
@@ -749,8 +961,18 @@ static int read_loop(void)
 				cp->wq.len = cc;
 				cp->wq.offset = 0;
 			    }
+			} else if (wc == 0) {
+				/* Broken SSL pipe */
+				DEBUGF(("broken SSL pipe\n"));
+				cp->bp = 1;
+				shutdown(cp->proxy->fd, SHUTDOWN_READ);
+				cp->proxy->eof = 1;
+				if (JOINED_STATE_INVALID(cp)) {
+				    leave_joined_state(cp);
+				    break;
+				}
 			} else if (wc < cc) {
-			    /* add to write queue */
+			    /* add remainder to write queue */
 			    DEBUGF(("adding remainder to write queue "
 				    "%d bytes\n", cc - wc));
 			    ensure_write_queue(&cp->wq, cc - wc);
@@ -762,8 +984,12 @@ static int read_loop(void)
 			/* EOF proxy */
 			DEBUGF(("proxy eof\n"));
 			cp->proxy->eof = 1;
-			if (!JOINED_STATE_VALID(cp)) {
-			    try_ssl_closing(cp);
+			if (cp->wq.len == 0) {
+			    esock_ssl_shutdown(cp);
+			    cp->bp = 1;
+			}
+			if (JOINED_STATE_INVALID(cp)) {
+			    leave_joined_state(cp);
 			    break;
 			}
 		    } else {
@@ -773,14 +999,14 @@ static int read_loop(void)
 		    }
 		}
 		/* 
-		 * SSL to proxy 
+		 * Reading from SSL, writing to proxy 
 		 */
 		if (FD_ISSET(cp->proxy->fd, &writemask)) {
 		    /* If there is a write queue, write to proxy only */
 		    if (cp->proxy->wq.len > 0) {
 			DEBUGF(("-----------------------------------\n"));
-			DEBUGF(("JOINED: writing to proxy "
-				"fd = %d, from write queue only, wc = %d\n", 
+			DEBUGF(("JOINED: writing to proxyfd = %d, "
+				"from write queue only, wc = %d\n", 
 				cp->proxy->fd, cp->proxy->wq.len - 
 				cp->proxy->wq.offset));
 			wc = sock_write(cp->proxy->fd, cp->proxy->wq.buf + 
@@ -790,10 +1016,12 @@ static int read_loop(void)
 			if (wc < 0) {
 			    if (sock_errno() != ERRNO_BLOCK) {
 				/* Assume broken pipe */
-				cp->proxy->bp = 1;
 				DEBUGF(("broken proxy pipe\n"));
-				if (!JOINED_STATE_VALID(cp)) {
-				    try_ssl_closing(cp);
+				cp->proxy->bp = 1;
+				/* There is no SSL shutdown for read */
+				cp->eof = 1;
+				if (JOINED_STATE_INVALID(cp)) {
+				    leave_joined_state(cp);
 				    break;
 				}
 			    }
@@ -814,15 +1042,17 @@ static int read_loop(void)
 			wc = sock_write(cp->proxy->fd, rwbuf, cc);
 			if (wc < 0) {
 			    if (sock_errno() != ERRNO_BLOCK) {
+				DEBUGF(("broken proxy pipe\n"));
 				/* Assume broken pipe */
 				cp->proxy->bp = 1;
-				DEBUGF(("broken proxy pipe\n"));
-				if (!JOINED_STATE_VALID(cp)) {
-				    try_ssl_closing(cp);
+				/* There is no SSL shutdown for read */
+				cp->eof = 1;
+				if (JOINED_STATE_INVALID(cp)) {
+				    leave_joined_state(cp);
 				    break;
 				}
 			    } else {
-				/* add to write queue */
+				/* add all to write queue */
 				DEBUGF(("adding to write queue %d bytes\n", 
 					cc));
 				ensure_write_queue(&cp->proxy->wq, cc);
@@ -843,8 +1073,12 @@ static int read_loop(void)
 			/* SSL eof */
 			DEBUGF(("SSL eof\n"));
 			cp->eof = 1;
-			if (!JOINED_STATE_VALID(cp)) {
-			    try_ssl_closing(cp);
+			if (cp->proxy->wq.len == 0) {
+			    shutdown(cp->proxy->fd, SHUTDOWN_WRITE);
+			    cp->proxy->bp = 1;
+			}
+			if (JOINED_STATE_INVALID(cp)) {
+			    leave_joined_state(cp);
 			    break;
 			}
 		    } else {
@@ -855,36 +1089,48 @@ static int read_loop(void)
 		}
 		break;
 
+	    case ESOCK_SSL_SHUTDOWN:
+		DEBUGF(("-----------------------------------\n"));
+		DEBUGF(("SSL_SHUTDOWN: fd = %d\n", cp->fd));
+		do_shutdown(cp);
+		break;
+
+	    case ESOCK_DEFUNCT:
+		DEBUGF(("-----------------------------------\n"));
+		DEBUGF(("DEFUNCT: ERROR: should not happen. fd = %d\n", 
+			cp->fd));
+		break;
+
 	    case ESOCK_WAIT_CONNECT:
-		/* New connection attempt */
-		connectsock = cp->fd;
+		/* New connection shows up */
+		connectsock = cp->fd;/* Is published */
 		DEBUGF(("-----------------------------------\n"));
 		DEBUGF(("WAIT_CONNECT fd = %d\n", connectsock));
 
-		/* If the connection did succeed it's possible to fetch
-		 * the peer name (UNIX); or Failure shows in exceptmask
-		 * (WIN32). Sorry for the mess, but we have to have 
-		 * balanced paren's in #ifdefs in order not to confuse
-		 * Emacs' indentation.
-		 */
+		/* If the connection did succeed it's possible to
+		 * fetch the peer name (UNIX); or failure shows in
+		 * exceptmask (WIN32). Sorry for the mess below, but
+		 * we have to have balanced paren's in #ifdefs in
+		 * order not to confuse Emacs' indentation.  */
 		length = sizeof(iserv_addr);
 		if (
 #ifdef __WIN32__
 		    FD_ISSET(connectsock, &exceptmask)
 #else
- 		    getpeername(connectsock, (struct sockaddr *)&iserv_addr, 
-				&length) < 0 
+		    getpeername(connectsock, (struct sockaddr *)&iserv_addr, 
+				&length) < 0
 #endif
 		    ) {
-		    DEBUGF(("connect error: %s\n", errstr()));
-		    reply(ESOCK_CONNECT_ERR, "4s", connectsock, errstr());
-		    remove_connection(connectsock);
+		    sock_set_errno(ERRNO_CONNREFUSED);
+		    DEBUGF(("connect error: %s\n", psx_errstr()));
+		    reply(ESOCK_CONNECT_ERR, "4s", connectsock, psx_errstr());
+		    cp->state = ESOCK_DEFUNCT;
 		    break;
 		}
 		if (esock_ssl_connect_init(cp) < 0) {
 		    DEBUGF(("esock_ssl_connect_init() failed\n"));
 		    reply(ESOCK_CONNECT_ERR, "4s", connectsock, ssl_errstr());
-		    remove_connection(connectsock);
+		    cp->state = ESOCK_DEFUNCT;
 		    break;
 		}
 		DEBUGF(("-> SSL_CONNECT\n"));
@@ -893,93 +1139,115 @@ static int read_loop(void)
 		break;
 
 	    case ESOCK_SSL_CONNECT:
+		/* SSL connect handshake. connectsock is published. */
 		connectsock = cp->fd;
 		DEBUGF(("-----------------------------------\n"));
 		DEBUGF(("SSL_CONNECT fd = %d\n", connectsock));
 		if (esock_ssl_connect(cp) < 0) {
 		    if (sock_errno() != ERRNO_BLOCK) {
 			/* Handshake failed */
+			DEBUGF(("ERROR: handshake: %s\n", ssl_errstr()));
 			reply(ESOCK_CONNECT_ERR, "4s", connectsock,
 			      ssl_errstr());
-			DEBUGF(("ERROR: handshake: %s\n", ssl_errstr()));
-			remove_connection(connectsock);
+			cp->state = ESOCK_DEFUNCT;
 		    }
 		} else {
-		    /* SSL handshake successful */
+		    /* SSL connect handshake successful */
+		    DEBUGF(("-> CONNECTED\n"));
 		    reply(ESOCK_CONNECT_REP, "4", connectsock);
-		    DEBUGF(("-> CONNECTED\n"));
 		    cp->state = ESOCK_CONNECTED;
 		}
-		break;
-
-	    case ESOCK_SSL_ACCEPT:
-		/* Erlang does not know of msgsock yet */
-		msgsock = cp->fd;
-		DEBUGF(("-----------------------------------\n"));
-		DEBUGF(("SSL_ACCEPT fd = %d\n", msgsock));
-		if (esock_ssl_accept(cp) < 0) {
-		    if (sock_errno() != ERRNO_BLOCK) {
-			/* Handshake failed. */
-			reply(ESOCK_ACCEPT_ERR, "4s", cp->listen_fd,
-			      ssl_errstr());
-			DEBUGF(("ERROR: handshake: %s\n", ssl_errstr()));
-			remove_connection(msgsock);
-			safe_close(msgsock);
-		    }
-		} else {
-		    /* SSL handshake successful */
-		    reply(ESOCK_ACCEPT_REP, "44", cp->listen_fd, msgsock);
-		    DEBUGF(("-> CONNECTED\n"));
-		    cp->state = ESOCK_CONNECTED;
-		}
-		break;
-
-	    case ESOCK_SSL_CLOSING:
-		DEBUGF(("-----------------------------------\n"));
-		DEBUGF(("SSL_CLOSING: fd = %d\n", cp->fd));
-		do_ssl_closing(cp);
 		break;
 
 	    default:
 		DEBUGF(("ERROR: Connection in unknown state.\n"));
 	    }
 	}
+   }
+}
+
+static void leave_joined_state(Connection *cp)
+{
+    shutdown(cp->proxy->fd, SHUTDOWN_ALL);
+    if (((cp->bp || cp->eof) && cp->clean) ||
+	(!cp->bp && !cp->eof)) {
+	DEBUGF(("-> SSL_SHUTDOWN\n"));
+	cp->state = ESOCK_SSL_SHUTDOWN;
+	cp->ssl_want = ESOCK_SSL_WANT_WRITE;
+	do_shutdown(cp);
+    } else if (cp->close) {
+	DEBUGF(("-> (removal)\n"));
+	close_and_remove_connection(cp);
+    } else {
+	DEBUGF(("-> DEFUNCT\n"));
+	cp->state = ESOCK_DEFUNCT;
     }
 }
 
-static void try_ssl_closing(Connection *cp)
+/* We are always in state SHUTDOWN here */
+static void do_shutdown(Connection *cp)
 {
-    DEBUGF(("-> SSL_CLOSING (or removal)\n"));
-    cp->state = ESOCK_SSL_CLOSING;
-    cp->ssl_want = ESOCK_SSL_WANT_WRITE;
-    do_ssl_closing(cp);
+    int ret;
+
+    ret = esock_ssl_shutdown(cp); 
+    if (ret < 0) {
+	if (sock_errno() == ERRNO_BLOCK) {
+	    return;
+	} else {
+	    /* Something is wrong -- close and remove or move to DEFUNCT */
+	    DEBUGF(("Error in SSL shutdown\n"));
+	    if (cp->close) {
+		DEBUGF(("-> (removal)\n"));
+		close_and_remove_connection(cp);
+	    } else {
+		DEBUGF(("-> DEFUNCT\n"));
+		cp->state = ESOCK_DEFUNCT;
+	    }
+	}
+    } else if (ret == 0) {
+	/* `close_notify' has been sent. Wait for reception of
+           same. */
+	return; 
+    } else if (ret == 1) {
+	/* `close_notify' has been sent, and received. */
+	if (cp->close) {
+	    DEBUGF(("-> (removal)\n"));
+	    close_and_remove_connection(cp);
+	} else {
+	    DEBUGF(("-> DEFUNCT\n"));
+	    cp->state = ESOCK_DEFUNCT;
+	}
+    }
 }
 
-static void do_ssl_closing(Connection *cp)
+static void close_and_remove_connection(Connection *cp)
 {
-    if (esock_ssl_close(cp) < 0 && sock_errno() == ERRNO_BLOCK)
-	return;
-    esock_ssl_free(cp);
-    if (cp->close)
 	safe_close(cp->fd);
-    else {
-	DEBUGF(("sending FROMNET_CLOSE fd = %d\n", cp->fd));
-	reply(ESOCK_FROMNET_CLOSE, "4", cp->fd);
-    }
-    remove_connection(cp->fd);
+	remove_connection(cp);
 }
 
 static int reply(int cmd, char *fmt, ...)
 {
+    static unsigned char replybuf[MAXREPLYBUF];
+    unsigned char *buf = replybuf;
     va_list args;
     int len;
 
-    PUT_INT8(cmd, command);
     va_start(args, fmt);
-    len = put_pars(command + 1, fmt, args);
+    len = put_pars(NULL, fmt, args);
     va_end(args);
-    write_ctrl(command, len + 1);
-    return len + 1;
+    len++;
+    if (len > sizeof(replybuf))
+	buf = esock_malloc(len);
+
+    PUT_INT8(cmd, buf);
+    va_start(args, fmt);
+    (void) put_pars(buf + 1, fmt, args);
+    va_end(args);
+    write_ctrl(buf, len);
+    if (buf != replybuf)
+	esock_free(buf);
+    return len;
 }
 
 static int input(char *fmt, ...)
@@ -995,34 +1263,48 @@ static int input(char *fmt, ...)
 
 static int put_pars(unsigned char *buf, char *fmt, va_list args)
 {
-    char *s, *str;
-    int val, pos = 0;
+    char *s, *str, *bin;
+    int val, len, pos = 0;
 
     s = fmt;
     while (*s) {
 	switch (*s) {
 	case '1':
 	    val = va_arg(args, int);
-	    PUT_INT8(val, buf + pos);
+	    if (buf)
+		PUT_INT8(val, buf + pos);
 	    pos++;
 	    break;
 	case '2':
 	    val = va_arg(args, int);
-	    PUT_INT16(val, buf + pos);
+	    if (buf)
+		PUT_INT16(val, buf + pos);
 	    pos += 2;
 	    break;
 	case '4':
 	    val = va_arg(args, int);
-	    PUT_INT32(val, buf + pos);
+	    if (buf)
+		PUT_INT32(val, buf + pos);
 	    pos += 4;
 	    break;
-	case 's':
+	case 's':		/* string */
 	    str = va_arg(args, char *);
-	    strcpy(buf + pos, str);
+	    if (buf)
+		strcpy((char *)(buf + pos), str);
 	    pos += strlen(str) + 1;
 	    break;
+	case 'b':		/* binary */
+	    len = va_arg(args, int);
+	    if (buf)
+		PUT_INT32(len, buf + pos);
+	    pos += 4;
+	    bin = va_arg(args, char *);
+	    if (buf)
+		memcpy(buf + pos, bin, len);
+	    pos += len;
+	    break;
 	default:
-	    fprintf(stderr, "Invalid format character: %c\n", *s);
+	    fprintf(stderr, "esock: Invalid format character: %c\n", *s);
 	    exit(EXIT_FAILURE);
 	    break;
 	}
@@ -1035,7 +1317,7 @@ static int put_pars(unsigned char *buf, char *fmt, va_list args)
 static int get_pars(unsigned char *buf, char *fmt, va_list args)
 {
     int *ip;
-    char *s, **strp;
+    char *s, **strp, **bin;
     int pos = 0;
 
     s = fmt;
@@ -1058,11 +1340,19 @@ static int get_pars(unsigned char *buf, char *fmt, va_list args)
 	    break;
 	case 's':
 	    strp = va_arg(args, char **);
-	    *strp = buf + pos;
+	    *strp = (char *)(buf + pos);
 	    pos += strlen(*strp) + 1;
 	    break;
+	case 'b':
+	    ip = va_arg(args, int *);
+	    *ip = GET_INT32(buf + pos);
+	    pos += 4;
+	    bin = va_arg(args, char **);
+	    *bin = (char *)(buf + pos);
+	    pos += *ip;
+	    break;
 	default:
-	    fprintf(stderr, "Invalid format character: %c\n", *s);
+	    fprintf(stderr, "esock: Invalid format character: %c\n", *s);
 	    exit(EXIT_FAILURE);
 	    break;
 	}
@@ -1071,7 +1361,7 @@ static int get_pars(unsigned char *buf, char *fmt, va_list args)
     return pos;
 }
 
-static FD do_connect(char *ipstring, int port)
+static FD do_connect(char *lipstring, int lport, char *fipstring, int fport)
 {
     struct sockaddr_in sock_addr;
     long inaddr;
@@ -1082,16 +1372,39 @@ static FD do_connect(char *ipstring, int port)
 	return fd;
     }
     DEBUGF(("  fd = %d\n", fd));
-    if ((inaddr = inet_addr(ipstring)) == INADDR_NONE) {
-	DEBUGF(("Error in inet_addr(): ipstring = %s\n", ipstring));
+
+    /* local */
+    if ((inaddr = inet_addr(lipstring)) == INADDR_NONE) {
+	DEBUGF(("Error in inet_addr(): lipstring = %s\n", lipstring));
 	safe_close(fd);
 	sock_set_errno(ERRNO_ADDRNOTAVAIL);
 	return INVALID_FD;
     }
+    memset(&sock_addr, 0, sizeof(sock_addr));
     sock_addr.sin_family = AF_INET;
     sock_addr.sin_addr.s_addr = inaddr;
-    sock_addr.sin_port = htons(port);
+    sock_addr.sin_port = htons(lport);
+    if(bind(fd, (struct sockaddr*) &sock_addr, sizeof(sock_addr)) < 0) {
+	DEBUGF(("Error in bind()\n"));
+	safe_close(fd);
+	/* XXX Set error code for bind error */
+	return INVALID_FD;
+    }
+
+    /* foreign */
+    if ((inaddr = inet_addr(fipstring)) == INADDR_NONE) {
+	DEBUGF(("Error in inet_addr(): fipstring = %s\n", fipstring));
+	safe_close(fd);
+	sock_set_errno(ERRNO_ADDRNOTAVAIL);
+	return INVALID_FD;
+    }
+    memset(&sock_addr, 0, sizeof(sock_addr));
+    sock_addr.sin_family = AF_INET;
+    sock_addr.sin_addr.s_addr = inaddr;
+    sock_addr.sin_port = htons(fport);
+
     SET_NONBLOCKING(fd);
+
     if(connect(fd, (struct sockaddr*)&sock_addr, sizeof(sock_addr)) < 0) {
 	if (sock_errno() != ERRNO_PROGRESS && /* UNIX */
 	    sock_errno() != ERRNO_BLOCK) { /* WIN32 */
@@ -1109,7 +1422,6 @@ static FD do_listen(char *ipstring, int lport, int backlog, int *aport)
     long inaddr;
     int length;
     FD fd;
-
     
     if((fd = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_FD) {
 	DEBUGF(("Error calling socket()\n"));
@@ -1127,7 +1439,7 @@ static FD do_listen(char *ipstring, int lport, int backlog, int *aport)
     sock_addr.sin_addr.s_addr = inaddr;
     sock_addr.sin_port = htons(lport);
 
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *)&one, sizeof(one));
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void *)&one, sizeof(one));
 
     if(bind(fd, (struct sockaddr*) &sock_addr, sizeof(sock_addr)) < 0) {
 	DEBUGF(("Error in bind()\n"));
@@ -1165,11 +1477,11 @@ static Connection *new_connection(int state, FD fd)
     cp->proxy = NULL;
     cp->opaque = NULL;
     cp->ssl_want = 0;
-    cp->ssl_verify_depth = 0;
     cp->eof = 0;
     cp->bp = 0;
+    cp->clean = 0;
     cp->close = 0;
-    cp->origin = "";
+    cp->origin = -1;
     cp->flags = NULL;
     cp->logfp = NULL;
     cp->wq.size = 0;
@@ -1193,7 +1505,7 @@ static void print_connections(void)
 		DEBUGF((" - %s [%8p] (origin = %s)\n"
 			"       (fd = %d, eof = %d, wq = %d, bp = %d)\n"
 			"       (proxyfd = %d, eof = %d, wq = %d, bp = %d)\n", 
-		       connstr[cp->state], cp, cp->origin,
+		       connstr[cp->state], cp, originstr[cp->origin],
 			cp->fd, cp->eof, cp->wq.len, cp->bp,
 			cp->proxy->fd, cp->proxy->eof, cp->proxy->wq.len, 
 			cp->proxy->bp));
@@ -1210,27 +1522,39 @@ static void print_connections(void)
 }
 
 
+static Connection *get_connection(FD fd)
+{
+    Connection *cp = connections;
+    
+    while(cp) {
+	if(cp->fd == fd)
+	    return cp;
+	cp = cp->next;
+    }
+    return NULL;
+}
+
 /* 
  * Remove a connection from the list of connection, close the proxy
  * socket and free all resources. The main socket (fd) is *not* 
  * closed here, because the closing of that socket has to be synchronized
  * with the Erlang process controlling this port program.
  */
-static void remove_connection(FD fd)
+static void remove_connection(Connection *conn)
 {
     Connection **prev = &connections;
     Connection *cp = connections; 
     
     while (cp) {
-	if(cp->fd == fd) {
-	    DEBUGF(("remove_connection: fd = %d\n", fd));
-	    esock_ssl_free(cp);
+	if(cp == conn) {
+	    DEBUGF(("remove_connection: fd = %d\n", cp->fd));
+	    esock_ssl_free(cp);	/* frees cp->opaque only */
 	    esock_free(cp->flags);
 	    closelog(cp->logfp);
 	    esock_free(cp->wq.buf);
 	    if (cp->proxy) {
 		safe_close(cp->proxy->fd);
-		remove_proxy(cp->proxy->fd);
+		remove_proxy(cp->proxy);
 	    }
 	    *prev = cp->next;
 	    esock_free(cp);
@@ -1274,13 +1598,13 @@ static Proxy *new_proxy(FD fd)
     return p;
 }
 
-static void remove_proxy(FD fd)
+static void remove_proxy(Proxy *proxy)
 {
     Proxy *p = proxies, **pp = &proxies;
 
     while(p) {
-	if (p->fd == fd) {
-	    DEBUGF(("remove_proxy: fd = %d\n", fd));
+	if (p == proxy) {
+	    DEBUGF(("remove_proxyfd = %d\n", p->fd));
 	    esock_free(p->wq.buf);
 	    *pp = p->next;
 	    esock_free(p);
@@ -1312,7 +1636,7 @@ static void clean_up(void)
     while (cp) {
 	safe_close(cp->fd);
 	cpnext = cp->next;
-	remove_connection(cp->fd);
+	remove_connection(cp);
 	cp = cpnext;
     }
     
@@ -1320,7 +1644,7 @@ static void clean_up(void)
     while (pp) {
 	safe_close(pp->fd);
 	ppnext = pp->next;
-	remove_proxy(pp->fd);
+	remove_proxy(pp);
 	pp = ppnext;
     }
 }

@@ -8,25 +8,18 @@ IMPORTS
         FROM SNMPv2-CONF
     otpModules
         FROM OTP-REG
-    otpSnmpeaMIBObjects, otpSnmpeaMIBCompliances
+    otpSnmpeaMIBObjects, otpSnmpeaMIBCompliances, otpSnmpeaMIBGroups
         FROM OTP-SNMPEA-MIB
     logTransferIndex
         FROM OTP-LOG-MIB
     ;
 
 otpSnmpeaLogModule MODULE-IDENTITY
-    LAST-UPDATED  "9712010900Z"
-    ORGANIZATION  "Ericsson, EPK/TE"
+    LAST-UPDATED  "0305090900Z"
+    ORGANIZATION  "Ericsson"
     CONTACT-INFO
-        "Contact:  Erlang Support
-
-          Postal:  ERICSSON SOFTWARE TECHNOLOGY AB
-                   ERLANG SYSTEMS
-                   Box 1214
-                   S-164 28  KISTA, SWEDEN
-
-             Tel:  +46  8 719 00 00
-          E-mail:  support@erlang.ericsson.se"
+        "Contact:  Erlang Support see license agreement for Erlang/OTP."
+    
     DESCRIPTION
         "This MIB is part of the OTP MIB.  It defines MIB objects
         for the Audit Trail logging mechanism in the extensible snmp
@@ -36,6 +29,12 @@ otpSnmpeaLogModule MODULE-IDENTITY
         the log and the transfer of logs.  The logType of the log snmp
         audit trail log is 'snmpeaLogType'."
 
+    
+    REVISION	"0305090900Z"	
+    DESCRIPTION		
+        "Changed CONTACT-INFO as it was outdated, made it more generic
+	to avoid such changes in the future. Also corrected a minor bug."
+    
     REVISION    "9712010900Z"
     DESCRIPTION
         "The initial version of this MIB module."

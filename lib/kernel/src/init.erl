@@ -44,15 +44,19 @@
 %% 
 
 -module(init).
--export([restart/0,reboot/0,stop/0,get_args/0,
+-export([restart/0,reboot/0,stop/0,
 	 get_status/0,boot/1,get_arguments/0,get_plain_arguments/0,
 	 get_argument/1,script_id/0]).
+
+-export([get_args/0]).
+-deprecated([{get_args,0}]).
 
 % internal exports
 -export([fetch_loaded/0,ensure_loaded/1,make_permanent/2]).
 
 % old interface functions kept for backward compability.
 -export([get_flag/1,get_flags/0]).
+-deprecated([{get_flag,1},{get_flags,0}]).
 
 -record(state, {flags = [],
 		args = [],
@@ -494,7 +498,7 @@ kill_all_pids(Heart) ->
     
 %% All except zombies.
 alive_processes() ->
-    lists:filter({erlang, is_process_alive}, processes()).
+    [P || P <- processes(), erlang:is_process_alive(P)].
 
 get_pids(Heart) ->
     Pids = alive_processes(),

@@ -77,7 +77,6 @@
         'orber_iiop_net',
         'orber_iiop_net_accept',
         'orber_iiop_outproxy',
-        'orber_iiop_outrequest',
         'orber_iiop_outsup',
         'orber_iiop_pm',
         'orber_iiop_socketsup',

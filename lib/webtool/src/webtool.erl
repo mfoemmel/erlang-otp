@@ -1,4 +1,21 @@
-                                                                        
+%% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%% 
+%%     $Id$
+%%
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                     %%
 %%The general idea is:                                                 %%
@@ -6,36 +23,43 @@
 %%                                                                     %%
 %% 1. Scan through the  path for *.tool files and find all the         %%
 %%    web based tools. Query each tool for configuration data          %%
-%% 2. Add Alias for Erlscript and html to the httpd.conf file          %%
-%%    for each tool.                                                   %%
-%%                                                                     %%
-%% 3. Start the webbserver                                             %%
+%% 2. Add Alias for Erlscript and html for each tool to the            %%
+%%    webserver configuration data.                                    %%
+%% 3. Start the webserver                                              %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -module(webtool).
-%Export the api functions
+
+%%Export the api functions
 -export([start/0,start/2,stop/0]).
 
-%The Web api
+%%Starting webtool from a shell script
+-export([script_start/0,script_start/1]).
+
+%%The Web api
 -export([started_tools/2,toolbar/2,start_tools/2,stop_tools/2]).
 
-%API against other tools
+%%API against other tools
 -export([is_localhost/0]).
-%Debug export 
+
+%%Debug export 
 -export([get_tools1/1]).
+-export([debug/1,stop_debug/0]).
 
 
-%Export the callback functions for the webTool
+%%Export the callback functions for the webTool
 -export([init/1,handle_call/3,handle_cast/2]).
 -export([handle_info/2,terminate/2,code_change/3]).
 
 -include_lib("kernel/include/file.hrl").
-
-
+-include_lib("stdlib/include/ms_transform.hrl").
 
 -behaviour(gen_server).
 -record(state,{priv_dir,app_data,supvis,web_data,started=[]}).
 
--define(WEBTOOL_ALIAS,{webtool,{alias,{erl_alias,"/webtool",[webtool]}}}).
+-define(DEFAULT_PORT,8888).
+-define(DEFAULT_ADDR,{127,0,0,1}).
+
+-define(WEBTOOL_ALIAS,{webtool,[{alias,{erl_alias,"/webtool",[webtool]}}]}).
 -define(HEADER,"Pragma:no-cache\r\n Content-type: text/html\r\n\r\n").
 -define(HTML_HEADER,"<HTML>\r\n<HEAD>\r\n<TITLE>WebTool</TITLE>\r\n</HEAD>\r\n<BODY BGCOLOR=\"#FFFFFF\">\r\n").
 -define(HTML_HEADER_RELOAD,"<HTML>\r\n<HEAD>\r\n<TITLE>WebTool
@@ -43,6 +67,129 @@
                              <BODY BGCOLOR=\"#FFFFFF\" onLoad=reloadCompiledList()>\r\n").
 
 -define(HTML_END,"</BODY></HTML>").
+
+-define(SEND_URL_TIMEOUT,5000).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%                                                                  %%
+%% For debugging only.                                              %%
+%%                                                                  %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Start tracing with
+%% debug(Functions).
+%% Functions = local | global | FunctionList
+%% FunctionList = [Function]
+%% Function = {FunctionName,Arity} | FunctionName
+debug(F) -> 
+    ttb:tracer(all,[{file,"webtool.trc"}]), % tracing all nodes
+    ttb:p(all,[call,timestamp]),
+    MS = [{'_',[],[{return_trace},{message,{caller}}]}],
+    tp(F,MS),
+    ttb:ctp(?MODULE,stop_debug), % don't want tracing of the stop_debug func
+    ok.
+tp(local,MS) -> % all functions
+    ttb:tpl(?MODULE,MS);
+tp(global,MS) -> % all exported functions
+    ttb:tp(?MODULE,MS);
+tp([{F,A}|T],MS) -> % function/arity
+    ttb:tpl(?MODULE,F,A,MS),
+    tp(T,MS);
+tp([F|T],MS) -> % function
+    ttb:tpl(?MODULE,F,MS),
+    tp(T,MS);
+tp([],_MS) ->
+    ok.
+stop_debug() ->
+    ttb:stop([format]).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%                                                                  %%
+%% Functions called via script.                                     %%
+%%                                                                  %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+script_start() ->
+    usage(),
+    halt().
+script_start([App]) ->
+    DefaultBrowser = 
+	case os:type() of
+	    {win32,_} -> iexplore;
+	    _ -> netscape
+	end,
+    script_start([App,DefaultBrowser]);
+script_start([App,Browser]) ->
+    io:format("Starting webtool...\n"),
+    start(),
+    AvailableApps = get_applications(),
+    {OSType,_} = os:type(),
+    case lists:keysearch(App,1,AvailableApps) of
+	{value,{App,StartPage}} ->
+	    io:format("Starting ~w...\n",[App]),
+	    start_tools([],"app=" ++ atom_to_list(App)),
+	    Url = case StartPage of
+		      "/" ++ Page -> "http://localhost:8888/" ++ Page;
+		      _ -> "http://localhost:8888/" ++ StartPage
+		  end,
+	    case Browser of 
+                iexplore when OSType == win32->
+                    io:format("Starting internet explorer...\n"),
+                    {ok,R} = win32reg:open(""),
+		    Key="\\local_machine\\SOFTWARE\\Microsoft\\IE Setup\\Setup",
+                    win32reg:change_key(R,Key),
+                    {ok,Val} = win32reg:value(R,"Path"),
+		    IExplore=filename:join(win32reg:expand(Val),"iexplore.exe"),
+                    os:cmd("\"" ++ IExplore ++ "\" " ++ Url);
+		_ when OSType == win32 ->
+                    io:format("Starting ~w...\n",[Browser]),
+                    os:cmd("\"" ++ atom_to_list(Browser) ++ "\" " ++ Url);
+		B when B==netscape; B==mozilla ->
+		    io:format("Sending URL to ~w...",[Browser]),
+		    BStr = atom_to_list(Browser),
+		    SendCmd = BStr ++ " -raise -remote \'openUrl(" ++ 
+			Url ++ ")\'",
+		    Port = open_port({spawn,SendCmd},[exit_status]),
+		    receive 
+			{Port,{exit_status,0}} -> 
+			    io:format("done\n"),
+			    ok;
+			{Port,{exit_status,_Error}} ->
+			    io:format(" not running, starting ~w...\n",
+				      [Browser]),
+			    os:cmd(BStr ++ " " ++ Url),
+			    ok
+		    after ?SEND_URL_TIMEOUT ->
+			    io:format(" failed, starting ~w...\n",[Browser]),
+			    erlang:port_close(Port),
+			    os:cmd(BStr ++ " " ++ Url)
+		    end;
+		_ ->
+		    io:format("Starting ~w...\n",[Browser]),
+		    os:cmd(atom_to_list(Browser) ++ " " ++ Url)
+	    end,
+	    ok;
+	false ->
+	    stop(),
+	    io:format("\n{error,{unknown_app,~p}}\n",[App]),
+	    halt()
+    end.
+
+usage() ->
+    io:format("Starting webtool...\n"),
+    start(),
+    Apps = lists:map(fun({A,_}) -> A end,get_applications()),
+    io:format(
+      "\nUsage: start_webtool application [ browser ]\n"
+      "\nAvailable applications are: ~p\n"
+      "Default browser is \'iexplore\' (Internet Explorer) on Windows "
+      "or else \'netscape\'\n",
+      [Apps]),
+    stop().
+
+
+get_applications() ->
+    gen_server:call(web_tool,get_applications).
+    
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                  %%
@@ -64,8 +211,8 @@ start(Path,standard_data)->
 start(standard_path,Port) when integer(Port)->
     Path=get_path(),
     case get_standard_data(Port)of
-	error->
-	    {error,"unable to get ipaddress"};
+	{error,Error}->
+	    {error,{"unable to get ipaddress",Error}};
 	Data ->
 	    start(Path,Data)
     end;
@@ -76,13 +223,14 @@ start(standard_path,Data)->
     
 start(Path,Port) when integer(Port)->
     case get_standard_data(Port)of
-	error->
-	    {error,"unable to get ipaddress"};
+	{error,Error}->
+	    {error,{"unable to get ipaddress",Error}};
 	Data ->
 	    start(Path,Data)
     end;
 	
-start(Path,Data)->
+start(Path,Data0)->
+    Data = Data0 ++ rest_of_standard_data(),
     gen_server:start({local,web_tool},webtool,{Path,Data},[]).
 
 stop()->
@@ -114,10 +262,15 @@ is_localhost()->
 %%The gen_server callback functions that builds the webbpages       %%
 %%                                                                  %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-handle_call({started_tools,Env,Input},_,State)->
+handle_call(get_applications,_,State)->
+    MS = ets:fun2ms(fun({Tool,{web_data,{_,Start}}}) -> {Tool,Start} end),
+    Tools = ets:select(State#state.app_data,MS),
+    {reply,Tools,State};
+
+handle_call({started_tools,_Env,_Input},_,State)->
     {reply,started_tools_page(State),State};
 
-handle_call({toolbar,Env,Input},_,State)->
+handle_call({toolbar,_Env,_Input},_,State)->
     {reply,toolbar(),State};
 
 handle_call({start_tools,Env,Input},_,State)->
@@ -132,8 +285,8 @@ handle_call(stoppit,_From,Data)->
     {stop,normal,ok,Data};
 
 handle_call(is_localhost,_From,Data)->
-    Result=case httpd_util:key1search(Data#state.web_data,"BindAddress",localhost) of
-	"127.0.0.1" ->
+    Result=case httpd_util:key1search(Data#state.web_data,bind_address) of
+	?DEFAULT_ADDR ->
 	    true;
 	_IpNumber ->
 	    false 
@@ -141,10 +294,10 @@ handle_call(is_localhost,_From,Data)->
     {reply,Result,Data}.
 
 
-handle_info(Message,State)->
+handle_info(_Message,State)->
     {noreply,State}.
 
-handle_cast(Request,State)->
+handle_cast(_Request,State)->
     {noreply,State}.
 
 code_change(_,State,_)->
@@ -157,21 +310,21 @@ code_change(_,State,_)->
 %----------------------------------------------------------------------
 % Start the gen_server
 %----------------------------------------------------------------------
-init({Path,Config_data})->
-    case is_dir(Path) of
+init({Path,Config})->
+    case filelib:is_dir(Path) of
 	true->
 	    case get_data() of
 		{ok,Data}->
-		    ets:insert(Data,?WEBTOOL_ALIAS),
+		    insert_app(?WEBTOOL_ALIAS,Data),
 		    case webtool_sup:start_link() of
 			{ok, Pid} ->
-			    case start_webserver(Data,Path,Config_data,Pid) of
+			    case start_webserver(Data,Path,Config) of
 				{ok,_}->
-				    print_url(Config_data),		      
+				    print_url(Config),	
 				    {ok,#state{priv_dir=Path,
 					       app_data=Data,
 					       supvis=Pid,
-					       web_data=Config_data}};
+					       web_data=Config}};
 				{error,Error} ->
 				    {stop,{error,Error}}
 			    end;
@@ -185,8 +338,7 @@ init({Path,Config_data})->
 	   {stop,{error,error_dir}}
     end.
 
-
-terminate(Reason,Data)->
+terminate(_Reason,Data)->
     %%shut down the webbserver
     shutdown_server(Data),
     %%Shutdown the different tools that are started with application:start
@@ -196,11 +348,11 @@ terminate(Reason,Data)->
     ok.
 
 print_url(ConfigData)->
-    Server=httpd_util:key1search(ConfigData,"ServerName","undefined"),
-    Port=httpd_util:key1search(ConfigData,"Port","undefined"),
-    Address=httpd_util:key1search(ConfigData,"BindAddress","undefined"),
-    io:format("WebTool is availible at http://~s:~s/~n",[Server,Port]),
-    io:format("Or  http://~s:~s/~n",[Address,Port]).
+    Server=httpd_util:key1search(ConfigData,server_name,"undefined"),
+    Port=httpd_util:key1search(ConfigData,port,"undefined"),
+    {A,B,C,D}=httpd_util:key1search(ConfigData,bind_address,"undefined"),
+    io:format("WebTool is available at http://~s:~w/~n",[Server,Port]),
+    io:format("Or  http://~w.~w.~w.~w:~w/~n",[A,B,C,D,Port]).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -219,22 +371,24 @@ toolbar()->
     [?HEADER,?HTML_HEADER,toolbar_page(),?HTML_END].
 
                
-start_tools_page(Env,Input,State)->
+start_tools_page(_Env,Input,State)->
     %%io:format("~n======= ~n ~p ~n============~n",[Input]),
     case get_tools(Input) of
 	{tools,Tools}->
 	    %%io:format("~n======= ~n ~p ~n============~n",[Tools]),
-	    NewState=handle_apps(Tools,State,start),
-	    {NewState,[?HEADER,?HTML_HEADER_RELOAD,reload_started_apps(),show_unstarted_apps(NewState),?HTML_END]};
+	    {ok,NewState}=handle_apps(Tools,State,start),
+	    {NewState,[?HEADER,?HTML_HEADER_RELOAD,reload_started_apps(),
+		       show_unstarted_apps(NewState),?HTML_END]};
 	_ ->
 	    {State,[?HEADER,?HTML_HEADER,show_unstarted_apps(State),?HTML_END]}
     end.
 
-stop_tools_page(Env,Input,State)->
+stop_tools_page(_Env,Input,State)->
     case get_tools(Input) of
 	{tools,Tools}->
-	    NewState=handle_apps(Tools,State,stop),
-	    {NewState,[?HEADER,?HTML_HEADER_RELOAD,reload_started_apps(),show_started_apps(NewState),?HTML_END]};
+	    {ok,NewState}=handle_apps(Tools,State,stop),
+	    {NewState,[?HEADER,?HTML_HEADER_RELOAD,reload_started_apps(),
+		       show_started_apps(NewState),?HTML_END]};
 	_ ->
 	    {State,[?HEADER,?HTML_HEADER,show_started_apps(State),?HTML_END]}
     end.
@@ -244,13 +398,12 @@ stop_tools_page(Env,Input,State)->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Functions that start and config the webserver
-%% 1. Collect the data
-%% 2. Config Webbserver
-%% 3. Start webbserver
+%% 1. Collect the config data
+%% 2. Start webserver
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %----------------------------------------------------------------------
-%Collects the data from the config file 
+%Collects the tool specific config data data from all tools
 %----------------------------------------------------------------------
 get_data()->
     case get_tool_files_data() of
@@ -261,40 +414,43 @@ get_data()->
     end.
 
 %----------------------------------------------------------------------
-%When we gathered the data then this function starts the 4 other tasks
+% Start the webserver
 %----------------------------------------------------------------------
-start_webserver(Data,Path,Config_data,Pid)->
-    update_conf_file(Data,Path,Config_data).
-
-%----------------------------------------------------------------------
-% Update the file that configure the webbserver 
-%----------------------------------------------------------------------
-update_conf_file(Data,Path,Config_data)->
-    case update_conf_file2(Data,Path,Config_data) of
-	{ok,Data}->
-	        start_server(Path);
-	Error ->
-	    {error,error_server_conf_file}
+start_webserver(Data,Path,Config)->
+    case get_conf_data(Data,Path,Config) of
+	{ok,Conf_data}->
+	    %%io:format("Conf_data: ~p~n",[Conf_data]),
+	    start_server(Conf_data);
+	{error,Error} ->
+	    {error,{error_server_conf_file,Error}}
     end.
-%----------------------------------------------------------------------
-% Start the webbserver
-%----------------------------------------------------------------------
-start_server(Path)->
-    case httpd:start(filename:join([Path,"root/conf/httpd.conf"])) of
+
+start_server(Conf_data)->
+    case httpd:start2(Conf_data) of
 	{ok,Pid}->
 	    {ok,Pid};
 	Error->
 	    {error,{server_error,Error}}
     end.
 
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                                                                  %%
-%% The functions that collects the configuration data from          %%
-%% The tools and inserts them into a ets table                      %%
-%%                                                                  %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%----------------------------------------------------------------------
+% Create config data for the webserver 
+%----------------------------------------------------------------------
+get_conf_data(Data,Path,Config)->
+    Aliases=get_aliases(Data),
+    ServerRoot = filename:join([Path,"root"]),
+    MimeTypesFile = filename:join([ServerRoot,"conf","mime.types"]),
+    case httpd_conf:load_mime_types(MimeTypesFile) of
+	{ok,MimeTypes} ->
+	    Config1 = Config ++ Aliases,
+	    Config2 = [{server_root,ServerRoot},
+			    {document_root,filename:join([Path,"root/doc"])},
+			    {mime_types,MimeTypes} |
+			    Config1],
+	    {ok,Config2};
+	Error ->
+	    Error
+    end.
 
 %----------------------------------------------------------------------
 % Control the path for *.tools files 
@@ -341,188 +497,31 @@ insert_file_content(Content)->
 %elements in the list to the ets:table
 %----------------------------------------------------------------------
 insert_app({Name,Key_val_list},Table)when list(Key_val_list),atom(Name)->
-    lists:foreach(fun(Key_val_pair)->
-			  ets:insert(Table,{Name,Key_val_pair})
-		  end,Key_val_list);
+    %%io:format("ToolData: ~p: ~p~n",[Name,Key_val_list]),
+    lists:foreach(
+      fun({alias,{erl_alias,Alias,Mods}}) ->
+	      Key_val = {erl_script_alias,{Alias,[atom_to_list(M)||M<-Mods]}},
+	      %%io:format("Insert: ~p~n",[Key_val]),
+	      ets:insert(Table,{Name,Key_val});
+	 (Key_val_pair)->
+	      %%io:format("Insert: ~p~n",[Key_val_pair]),
+	      ets:insert(Table,{Name,Key_val_pair})
+      end,
+      Key_val_list);
 
 insert_app(_,_)->
     ok.
    
 %----------------------------------------------------------------------
-%Control that the string file really is a file name
-%----------------------------------------------------------------------
-%is_file(File_name)->
-%    control_type(File_name,regular).
-
-is_dir(File_name)->
-    control_type(File_name,directory).
-%----------------------------------------------------------------------
-% control_type(Dir_or_file,Type)->true|false
-% Dir_or_file a string that shall be controlled if its a plain file or a dir
-%----------------------------------------------------------------------
-
-control_type(Dir_or_file,Type)->
-    case file:read_file_info(Dir_or_file) of
-	{ok,Info}->
-	    case Info#file_info.type of
-		Type->
-		    true;
-		_->
-		    false
-	    end;
-	_->
-	    false
-    end.
-
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                                                                  %%
-%% The functions that edit the config file for the server           %%
-%%                                                                  %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-update_conf_file2(Data,Path,Config_data)->
-    Alias=get_aliases(Data),
-    %Erl_alias=get_erlscriptalias(Data),
-    Backup_file=filename:join([Path,"root/conf/conf.backup"]),
-    Conf_file=filename:join([Path,"root/conf/httpd.conf"]),
-    case file:rename(Conf_file,Backup_file) of
-	ok->
-	    case create_file_handles(Conf_file,Backup_file) of
-		{ok,{Backup_handle,Conf_handle}}->
-		    copy_and_add_data(Alias,Config_data,Path,Backup_handle,Conf_handle),
-		    {ok,Data};
-		{error,Reason}->
-		    {error,Reason}
-	    end;
-	Error ->
-	    {error,Error}
-    end.
-
-%----------------------------------------------------------------------
-%Select all the alias in the database
+% Select all the alias in the database
 %----------------------------------------------------------------------
 get_aliases(Data)->
-    lists:map(fun({_,{_,Alias}})->
-		      Alias
-	      end,ets:match_object(Data,{'_',{alias,'_'}})).
-
-%----------------------------------------------------------------------
-% Create the file handles
-%----------------------------------------------------------------------
-create_file_handles(Conf_file,Backup_file)->
-    case file:open(Conf_file,[write]) of
-	{ok,Config_handle}->
-	    case file:open(Backup_file,[read]) of
-		{ok,Backup_handle}->
-		    {ok,{Backup_handle,Config_handle}};
-		{error,Reason} ->
-		    {error,"Cant create backup handle"}
-	    end;
-	{error,Reason} ->
-	    {error,"Can not create httpd.conf handle"}
-    end.
-
-
-%----------------------------------------------------------------------
-%Copy the lines from the old config file, to the new config file
-%---------------------------------------------------------------------- 
-copy_and_add_data(Alias,Config_data,Path,Backup_handle,Conf_handle)->
-    case io:get_line(Backup_handle,[]) of
-	eof->
-	    file:close(Backup_handle),
-	    file:close(Conf_handle),
-	    {ok,eof};
-	[$#,$S,$t,$a,$r,$t,$# |Whatever] ->
-	    add_dynamic_aliases(Alias,Path,Backup_handle,Conf_handle),
-	    copy_and_add_data(Alias,Config_data,Path,Backup_handle,Conf_handle);
-	[$S,$e,$r,$v,$e,$r,$R,$o,$o,$t|Whatever]->
-	    add_server_root(Alias,Path,Backup_handle,Conf_handle),
-	    copy_and_add_data(Alias,Config_data,Path,Backup_handle,Conf_handle);
-	[$D,$o,$c,$u,$m,$e,$n,$t,$R,$o,$o,$t|Whatever]->
-	    add_document_root(Alias,Path,Backup_handle,Conf_handle),
-	    copy_and_add_data(Alias,Config_data,Path,Backup_handle,Conf_handle);
-	[$P,$o,$r,$t|Old_data]->
-	    add_configuration("Port",Old_data,Config_data,Conf_handle),
-	    copy_and_add_data(Alias,Config_data,Path,Backup_handle,Conf_handle);
-	[$B,$i,$n,$d,$A,$d,$d,$r,$e,$s,$s|Old_data]->
-	    add_configuration("BindAddress",Old_data,Config_data,Conf_handle),
-	    copy_and_add_data(Alias,Config_data,Path,Backup_handle,Conf_handle);
-	[$S,$e,$r,$v,$e,$r,$N,$a,$m,$e|Old_data]->
-	    add_configuration("ServerName",Old_data,Config_data,Conf_handle),
-	    copy_and_add_data(Alias,Config_data,Path,Backup_handle,Conf_handle);
-	Line->
-	    io:fwrite(Conf_handle,"~s",[Line]),
-	    copy_and_add_data(Alias,Config_data,Path,Backup_handle,Conf_handle)
-    end.
-
-add_configuration(Which_data,Old_data,Config_data,Conf_handle)->
-    case lists:keymember(Which_data,1,Config_data) of
-	true->
-	    {value,{Name,Data}}=lists:keysearch(Which_data,1,Config_data),
-	    io:fwrite(Conf_handle,"~s \n",[Name ++ " " ++ Data]);
-	false->
-	    io:fwrite(Conf_handle,"~s  \n",[Which_data ++ Old_data])
-	end.
-	    
-add_server_root(Alias,Path,Backup_handle,Conf_handle)->
-    io:fwrite(Conf_handle,"ServerRoot ~s \n",[filename:join([Path,"root/"])]).
-
-add_document_root(Alias,Path,Backup_handle,Conf_handle)->
-    io:fwrite(Conf_handle,"DocumentRoot ~s \n",[filename:join([Path,"root/doc"])]).
-
-add_dynamic_aliases(Alias,Path,Backup_handle,Conf_handle)->
-    insert_the_data(Conf_handle,Alias),
-    step_by_old_alias(Backup_handle).
-
-    
-insert_the_data(Conf_handle,Alias)->
-    io:fwrite(Conf_handle,"~s",["#Start# Please do not remove this line\n"]),
-    insert_alias(Alias,Conf_handle),
-    io:fwrite(Conf_handle,"~s",["#Stop# Please do not remove this line \n"]).
-
-
-%----------------------------------------------------------------------
-%Scan through the old conf file until we find #Stop#
-%----------------------------------------------------------------------
-step_by_old_alias(Backup_handle)->
-    case io:get_line(Backup_handle,[]) of
-	eof->
-	    {ok,eof};
-	[$#,$S,$t,$o,$p,$# |Whatever] ->
-	    {ok,stepped_by};
-	Line->
-	    step_by_old_alias(Backup_handle)
-    end.
-
-%----------------------------------------------------------------------
-%The function that do the actual writing of aliases to the conf file.
-%----------------------------------------------------------------------
-    
-insert_alias([],Conf_handle)->
-    ok;
-insert_alias([Alias|Rest],Conf_handle) ->
-    io:fwrite(Conf_handle,"~s",[format_alias(Alias)]),    
-    insert_alias(Rest,Conf_handle).
-
-%----------------------------------------------------------------------
-% There are two kind of aliases, to handle this we use pattern matching
-% to create the corresponding alias row that we write to the file
-%----------------------------------------------------------------------
-format_alias({Alias,Dir})->
-    "Alias "++ Alias ++ " "  ++ Dir ++ "\n";
-format_alias({erl_alias,Alias,Mods}) ->
-    "ErlScriptAlias " ++ Alias ++ " " ++ format_modules(Mods) ++ "\n".
-%----------------------------------------------------------------------
-% When we has am Erlscript alias there is a list of modules and they are
-% Atom so the must be formatted to be correectly written to the file
-%----------------------------------------------------------------------
-
-format_modules([])->
-    [];
-format_modules([Mod|Rest]) ->
-    atom_to_list(Mod) ++ " " ++format_modules(Rest).
-
+    MS = ets:fun2ms(fun({_,{erl_script_alias,Alias}}) -> 
+			    {erl_script_alias,Alias};
+		       ({_,{alias,Alias}}) -> 
+			    {alias,Alias} 
+		    end),
+    ets:select(Data,MS).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -532,53 +531,79 @@ format_modules([Mod|Rest]) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 get_standard_data(Port)->
     {ok,HostName}=inet:gethostname(),
-    case format_ip_num(inet:getaddr(HostName,inet)) of
-	error ->
-	    error;
-	IpNum ->
-	    [{"Port",integer_to_list(Port)},
-	     {"BindAddress",IpNum},
-	     {"ServerName",HostName}]
+    case inet:getaddr(HostName,inet) of
+	{ok,IpNum} ->
+	    [{port,Port},
+	     {bind_address,IpNum},
+	     {server_name,HostName}];
+	Error ->
+	    Error
     end.
 
-format_ip_num({ok,{N1,N2,N3,N4}})->
-    integer_to_list(N1)++"."++integer_to_list(N2)++"."++integer_to_list(N3)++"."++integer_to_list(N4);
-format_ip_num(_)->
-    error.
-
-
 get_standard_data()->
-    [{"Port","8888"},
-     {"BindAddress","127.0.0.1"},
-     {"ServerName","localhost"}].
+    [
+     %% 'port' must be over 1024 or the user that starts the server 
+     %% must be root on unix
+     {port,?DEFAULT_PORT},
+     {bind_address,?DEFAULT_ADDR},
+     {server_name,"localhost"}
+    ].
+
+rest_of_standard_data() ->
+    [
+     %% Do not allow the server to be crashed by malformed http-request
+     {max_header_siz,1024},
+     {max_header_action,reply414},
+     %% Go on a straight ip-socket
+     {com_type,ip_comm},
+     %% Do not change the order of these module names!!
+     {modules,[mod_alias,
+	       mod_auth,
+	       mod_esi,
+	       mod_actions,
+	       mod_cgi,
+	       mod_include,
+	       mod_dir,
+	       mod_get,
+	       mod_head,
+	       mod_log,
+	       mod_disk_log]},
+     {directory_index,["index.html"]},
+     {default_type,"text/plain"}
+    ].
+
 
 get_path()->
     code:priv_dir(webtool).
 
 
-
-
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% These functionss is used to shutdown the webserver
+% These functions is used to shutdown the webserver
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %----------------------------------------------------------------------
 % Shut down the webbserver 
 %----------------------------------------------------------------------
 shutdown_server(State)->
-    httpd:stop(filename:join([State#state.priv_dir,"root/conf/httpd.conf"])).
-    %httpd:stop(list_to_integer(PortNr)).
+    {Addr,Port} = get_addr_and_port(State#state.web_data),
+    httpd:stop(Addr,Port).
+
+get_addr_and_port(Config) ->
+    Addr = httpd_util:key1search(Config,bind_address,?DEFAULT_ADDR),
+    Port = httpd_util:key1search(Config,port,?DEFAULT_PORT),
+    {Addr,Port}.
 
 %----------------------------------------------------------------------
 % Select all apps in the table and close them
 %----------------------------------------------------------------------
 shutdown_apps(State)->
     Data=State#state.app_data,
+    MS = ets:fun2ms(fun({_,{start,HowToStart}}) -> HowToStart end),
     lists:foreach(fun(Start_app)->
-			  stop_app(Start_app,Data)
-	     end,ets:match_object(Data,{'_',{start,'_'}})),
-    {ok,Data}.
+			  stop_app(Start_app)
+		  end,
+		  ets:select(Data,MS)).
+
 %----------------------------------------------------------------------
 %Shuts down the supervisor that supervises tools that is not
 %Designed as applications
@@ -587,16 +612,17 @@ shutdown_supervisor(State)->
     %io:format("~n==================~n"),
     webtool_sup:stop(State#state.supvis).
     %io:format("~n==================~n").
+
 %----------------------------------------------------------------------
 %close the individual apps.
 %----------------------------------------------------------------------  
-stop_app({Name,{start,{child,Real_name}}},Data)->
+stop_app({child,_Real_name})->
     ok;
 
-stop_app({Name,{start,{app,Real_name}}},Data)->
+stop_app({app,Real_name})->
     application:stop(Real_name);
 
-stop_app({Name,{start,{func,Start,Stop}}},Data)->    
+stop_app({func,_Start,Stop})->    
     case Stop of
 	{M,F,A} ->
 	    catch apply(M,F,A);
@@ -655,14 +681,13 @@ started_tools(State)->
 %----------------------------------------------------------------------
     
 get_started_apps(Data,Started)->
-    SelectData=fun({App,{web_data,{Name,Link}}})->
+    SelectData=fun({Name,Link}) ->
 		       {Name,Link}
 	       end,
-    SelectStart=fun({App,{web_data,{Name,Link}}})->
-			lists:member(App,Started)
-		end,
-    [SelectData(X)||X<-ets:match_object(Data,{'_',{web_data,'_'}}),SelectStart(X)]++[{"WebTool","/tool_management.html"}].
+    MS = lists:map(fun(A) -> {{A,{web_data,'$1'}},[],['$1']} end,Started),
 
+    [{"WebTool","/tool_management.html"} | 
+     [SelectData(X) || X <- ets:select(Data,MS)]].
 
 %----------------------------------------------------------------------
 % make_rows(List,Result,Fields)-> String (The rows of a htmltable
@@ -723,8 +748,9 @@ get_tools(Input)->
 	[]->
 	    no_tools;
 	 Tools->
-	    FormatData=fun({Name,Data})->list_to_atom(Data) end,
-	    SelectData=fun({Name,Data})->string:sub_string(Name,1,3)=="app"end,
+	    FormatData=fun({_Name,Data}) -> list_to_atom(Data) end,
+	    SelectData=
+		fun({Name,_Data}) -> string:equal(Name,"app") end,
 	    {tools,[FormatData(X)||X<-Tools,SelectData(X)]}
     end.
 
@@ -732,8 +758,8 @@ get_tools(Input)->
 % Selects the data to start  the applications the user has ordered 
 % starting of 
 %----------------------------------------------------------------------
-handle_apps([],State,Cmd)->
-    State;
+handle_apps([],State,_Cmd)->
+    {ok,State};
 
 handle_apps([Tool|Tools],State,Cmd)->
     case ets:match_object(State#state.app_data,{Tool,{start,'_'}}) of
@@ -742,7 +768,6 @@ handle_apps([Tool|Tools],State,Cmd)->
 			  start ->
 			      [Tool|State#state.started];
 			  stop ->
-			      
 			      lists:delete(Tool,State#state.started)
 		      end,
 	    {ok,#state{priv_dir=State#state.priv_dir,
@@ -763,7 +788,7 @@ handle_apps([Tool|Tools],State,Cmd)->
 %execute every start or stop data about a tool.
 %----------------------------------------------------------------------
 handle_apps2([{Name,Start_data}],State,Cmd)->
-    case handle_app({Name,Start_data},State#state.app_data,State#state.supvis,Cmd)of
+    case handle_app({Name,Start_data},State#state.app_data,State#state.supvis,Cmd) of
 	ok->
 	    Started = case Cmd of
 			  start ->
@@ -791,10 +816,10 @@ handle_apps2([{Name,Start_data}|Rest],State,Cmd)->
 
 
 %----------------------------------------------------------------------
-% Handle th start and stop of availible applications  the application 
+% Handle start and stop of applications
 %---------------------------------------------------------------------- 
 
-handle_app({Name,{start,{func,Start,Stop}}},Data,Pid,Cmd)->
+handle_app({Name,{start,{func,Start,Stop}}},Data,_Pid,Cmd)->
     Action = case Cmd of
 		 start ->
 		     Start;
@@ -805,6 +830,7 @@ handle_app({Name,{start,{func,Start,Stop}}},Data,Pid,Cmd)->
 	{M,F,A} ->
 	    case catch apply(M,F,A) of
 		{'EXIT',_}->
+		    %%! Here the tool disappears from the webtool interface!!
 		    ets:delete(Data,Name);
 		_OK->
 		    ok
@@ -822,9 +848,11 @@ handle_app({Name,{start,{child,ChildSpec}}},Data,Pid,Cmd)->
 		    ok;
 		{ok,_,_}->
 		    ok;
-		{error,Reason}->
+		{error,_Reason}->
+		    %%! Here the tool disappears from the webtool interface!!
 		    ets:delete(Data,Name);
 		_ ->
+		    %%! Here the tool disappears from the webtool interface!!
 		    ets:delete(Data,Name)
 	    end;
 	stop ->
@@ -838,7 +866,7 @@ handle_app({Name,{start,{child,ChildSpec}}},Data,Pid,Cmd)->
 
 
 
-handle_app({Name,{start,{app,Real_name}}},Data,Pid,Cmd)->
+handle_app({Name,{start,{app,Real_name}}},Data,_Pid,Cmd)->
     case Cmd of
 	start ->
 	    case application:start(Real_name,temporary) of
@@ -846,10 +874,12 @@ handle_app({Name,{start,{app,Real_name}}},Data,Pid,Cmd)->
 		    io:write(Name),
 		    ok;
 		{error,{already_started,_}}->
-		    %% Remove it from the database so we dont stop anything already started
+		    %% Remove it from the database so we dont start
+		    %% anything already started
 		    ets:match_delete(Data,{Name,{start,{app,Real_name}}}),
 		    ok;
-		{error,Reason}->
+		{error,_Reason}->
+		    %%! Here the tool disappears from the webtool interface!!
 		    ets:delete(Data,Name)
 	    end;
 	
@@ -860,7 +890,8 @@ handle_app({Name,{start,{app,Real_name}}},Data,Pid,Cmd)->
 %----------------------------------------------------------------------
 % If the data is incorrect delete the app
 %----------------------------------------------------------------------
-handle_app({Name,_},Data,Pid,Cmd)->
+handle_app({Name,_},Data,_Pid,_Cmd)->
+    %%! Here the tool disappears from the webtool interface!!
     ets:delete(Data,Name).
 
 
@@ -884,12 +915,12 @@ show_unstarted_apps(State)->
       <FORM NAME=\"stop_apps\" ACTION=\"/webtool/webtool/start_tools\" >
        <TABLE BORDER=1 WIDTH=60%>
 	 <TR BGCOLOR=\"#8899AA\">
-	   <TD ALIGN=CENTER COLSPAN=2><FONT SIZE=4>Availible Tools<FONT></TD>
+	   <TD ALIGN=CENTER COLSPAN=2><FONT SIZE=4>Available Tools<FONT></TD>
 	 </TR>
  	<TR>
 	   <TD WIDTH=50%>
 	       <TABLE BORDER=0>
-	           "++ list_availible_apps(State)++"
+	           "++ list_available_apps(State)++"
                    <TR><TD COLSPAN=2>&nbsp;</TD></TR>
                    <TR>
                       <TD COLSPAN=2 ALIGN=\"center\">
@@ -916,22 +947,21 @@ show_unstarted_apps(State)->
 
 
 
-list_availible_apps(State)->
-    Unstarted_apps=lists:filter(fun({Tool,Web_data})->
-					  false==lists:member(Tool,State#state.started)
-				  end,ets:match_object(State#state.app_data,{'_',{web_data,'_'}})),
+list_available_apps(State)->
+    MS = ets:fun2ms(fun({Tool,{web_data,{Name,_}}}) -> {Tool,Name} end),
+    Unstarted_apps=
+	lists:filter(
+	  fun({Tool,_})->
+		  false==lists:member(Tool,State#state.started)
+	  end,
+	  ets:select(State#state.app_data,MS)),
     case Unstarted_apps of
 	[]->
 	    "<TR><TD>All tools are started</TD></TR>";
 	_->
-	    lists:flatten(
-	      lists:map(fun({Tool,{web_data,{Name,Link}}})->
-				"<TR><TD>
-                                    <INPUT TYPE=\"checkbox\" NAME=\"app\" VALUE=\""  ++ atom_to_list(Tool) ++"\">
-                                    "++Name++"     
-                                 </TR></TD>"  
-			end,Unstarted_apps))
+	    list_apps(Unstarted_apps)
     end.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                  %%
@@ -976,24 +1006,26 @@ show_started_apps(State)->
    </TABLE>".
 
 list_started_apps(State)->
-    Started_apps=lists:filter(fun({Tool,Web_data})->
-					  true==lists:member(Tool,State#state.started)
-				  end,ets:match_object(State#state.app_data,{'_',{web_data,'_'}})),
+    MS = lists:map(fun(A) -> {{A,{web_data,{'$1','_'}}},[],[{{A,'$1'}}]} end,
+		   State#state.started),
+    Started_apps= ets:select(State#state.app_data,MS),
     case Started_apps of
 	[]->
 	    "<TR><TD>No tool is started yet.</TD></TR>";
 	_->
-	    lists:flatten(
-	      lists:map(fun({Tool,{web_data,{Name,Link}}})->
-				"<TR><TD>
-                                    <INPUT TYPE=\"checkbox\" NAME=\"app\" VALUE=\""  ++ atom_to_list(Tool) ++"\">
-                                    "++Name++"     
-                                 </TD></TR>"  
-			end,Started_apps))
+	    list_apps(Started_apps)
     end.
 
-			 
- 
+
+list_apps(Apps) ->
+      lists:map(fun({Tool,Name})->
+			"<TR><TD>
+                            <INPUT TYPE=\"checkbox\" NAME=\"app\" VALUE=\""  
+			    ++ atom_to_list(Tool) ++ "\">
+                               " ++ Name ++ "     
+                            </TD></TR>"
+		end,
+		Apps).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1014,8 +1046,8 @@ get_tools1([Dir|Rest],Data) when list(Dir) ->
     Tools=case filename:basename(Dir) of
 	      %% Dir is an 'ebin' directory, check in '../priv' as well
 	      "ebin" ->
-		  get_tools2(filename:join(filename:dirname(Dir),"priv"))++
-		  get_tools2(Dir);
+		  [get_tools2(filename:join(filename:dirname(Dir),"priv")) |
+		   get_tools2(Dir)];
 	      _ ->
 		  get_tools2(Dir)
 	  end,
@@ -1037,7 +1069,7 @@ get_tools2([ToolFile|Rest],Data) ->
     case get_tools3(ToolFile) of
 	{tool,WebData} ->
 	    get_tools2(Rest,[{tool,WebData}|Data]);
-	{error,Reason} ->
+	{error,_Reason} ->
 	    get_tools2(Rest,Data);
 	nodata ->
 	    get_tools2(Rest,Data)
@@ -1058,10 +1090,10 @@ get_tools3(ToolFile) ->
 	    {error,nofile};
 	{error,read} ->
 	    {error,format};
-	{ok,[{version,Vsn},InfoTuple]} when tuple(InfoTuple)->
-	    {error,old_version};
 	{ok,[{version,"1.2"},ToolInfo]} when list(ToolInfo)->
 	    webdata(ToolInfo);
+	{ok,[{version,_Vsn},_Info]} ->
+	    {error,old_version};
 	{ok,_Other} ->
 	    {error,format}
     end.
@@ -1115,16 +1147,4 @@ filter_tool_files(Dir,[File|Rest]) ->
 	_ ->
 	    filter_tool_files(Dir,Rest)
     end.
-
-
-
-
-
-
-
-
-
-
-
-
 

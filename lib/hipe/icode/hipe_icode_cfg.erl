@@ -23,7 +23,7 @@
 %
 
 init(Icode) ->
-  %% hipe_icode:pp(Icode),
+  %% hipe_icode_pp:pp(Icode),
   Code = hipe_icode:icode_code(Icode),
   StartLabel = hipe_icode:label_name(hd(Code)),
   {MinV,MaxV} = hipe_icode:icode_var_range(Icode),
@@ -57,10 +57,6 @@ remove_blocks(CFG, []) ->
    CFG;
 remove_blocks(CFG, [Lbl|Lbls]) ->
    remove_blocks(bb_remove(CFG, Lbl), Lbls).
-
-
-is_fail_entrypoint(Label) ->
-   lists:member(entry, hipe_icode:info(Label)).
 
 
 is_label(Instr) ->
@@ -104,10 +100,10 @@ redirect_ops(_,CFG,_) -> %% We do not refer to labels in Icode ops.
   CFG.
 
 pp(CFG) ->
-   hipe_icode:pp(linearize(CFG)).
+   hipe_icode_pp:pp(linearize(CFG)).
 
 pp(Dev, CFG) ->
-   hipe_icode:pp(Dev, linearize(CFG)).
+   hipe_icode_pp:pp(Dev, linearize(CFG)).
 
 linearize(CFG) ->
   Code = linearize_cfg(CFG),

@@ -94,7 +94,7 @@ tokenise([$:,$:,$=|T],Lno) ->
 
 tokenise([$'|T],Lno) ->
     case catch collect_quoted(T,Lno,[]) of
-         {'ERR',R} ->
+         {'ERR',_} ->
              throw({'ERR','bad_quote'});
          {Thing, T1} ->
              [Thing|tokenise(T1,Lno)]
@@ -245,7 +245,7 @@ collect_quoted([$',$H|T],Lno, L) ->
     end;
 collect_quoted([H|T], Lno, L) ->
     collect_quoted(T, Lno,[H|L]);
-collect_quoted([], Lno, L) ->        % This should be allowed FIX later
+collect_quoted([], _, _) ->        % This should be allowed FIX later
     throw({'ERR',{eol_in_token}}).
 
 check_bin([$0|T]) ->

@@ -35,9 +35,9 @@ opentab(Tab,Mod,Includes) ->
     Base = lists:concat([Mod,".asn1db"]),
     opentab2(Tab,Base,Mod,Includes,ok).
 
-opentab2(Tab,Base,Mod,[],Error) ->
+opentab2(_Tab,_Base,_Mod,[],Error) ->
     Error;
-opentab2(Tab,Base,Mod,[Ih|It],Error) ->
+opentab2(Tab,Base,Mod,[Ih|It],_Error) ->
     File = filename:join(Ih,Base),
     case ets:file2tab(File) of
 	{ok,Modtab} ->
@@ -105,7 +105,7 @@ dbloop(Includes, Tab) ->
 	{From, stop} ->
 		    From ! {asn1db, ok};  %% nothing to store
 	{From, clear} ->
-	    ModTabList = [Mt||{M,Mt} <- ets:tab2list(Tab)],
+	    ModTabList = [Mt||{_,Mt} <- ets:tab2list(Tab)],
 	    lists:foreach(fun(T) -> ets:delete(T) end,ModTabList),
 	    ets:delete(Tab),
 	    From ! {asn1db, cleared},
@@ -145,8 +145,8 @@ req(R) ->
 
 stop_server(Name) ->
     stop_server(Name, whereis(Name)).
-stop_server(Name, undefined) -> stopped;
-stop_server(Name, Pid) ->
+stop_server(_, undefined) -> stopped;
+stop_server(Name, _Pid) ->
     Name  ! {self(), stop},
     receive {Name, _} -> stopped end.
 
@@ -155,7 +155,7 @@ start_server(Name,Mod,Fun,Args) ->
     case whereis(Name) of
 	undefined ->
 	    register(Name, spawn(Mod,Fun, Args));
-	Pid ->
+	_Pid ->
 	    already_started
     end.
 

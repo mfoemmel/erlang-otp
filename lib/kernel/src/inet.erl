@@ -142,10 +142,10 @@ withsocket(Fun) ->
     end.
     
 
-pushf(Socket, Fun, State) when function(Fun) ->
+pushf(_Socket, Fun, _State) when function(Fun) ->
     {error, einval}.
 
-popf(Socket) ->
+popf(_Socket) ->
     {error, einval}.
 
 
@@ -311,6 +311,8 @@ con_opt([Opt | Opts], R, As) ->
 	binary      -> con_add(mode, binary, R, Opts, As);
 	list        -> con_add(mode, list, R, Opts, As);
 	{tcp_module,_}  -> con_opt(Opts, R, As);
+	inet        -> con_opt(Opts, R, As);
+	inet6       -> con_opt(Opts, R, As);
 	{Name,Val} when atom(Name) -> con_add(Name, Val, R, Opts, As);
 	_ -> {error, badarg}
     end;
@@ -351,10 +353,12 @@ list_opt([Opt | Opts], R, As) ->
 	binary       ->  list_add(mode, binary, R, Opts, As);
 	list         ->  list_add(mode, list, R, Opts, As);
 	{tcp_module,_}  -> list_opt(Opts, R, As);
+	inet         -> list_opt(Opts, R, As);
+	inet6        -> list_opt(Opts, R, As);
 	{Name,Val} when atom(Name) -> list_add(Name, Val, R, Opts, As);
 	_ -> {error, badarg}
     end;
-list_opt([], R, SockOpts) ->
+list_opt([], R, _SockOpts) ->
     {ok, R}.
 
 list_add(Name, Val, R, Opts, As) ->
@@ -370,7 +374,8 @@ list_add(Name, Val, R, Opts, As) ->
 
 udp_options() ->
     [reuseaddr, sndbuf, recbuf, header, active, buffer, mode, deliver,
-     broadcast, dontroute, multicast_if, multicast_ttl, multicast_loop].
+     broadcast, dontroute, multicast_if, multicast_ttl, multicast_loop,
+     add_membership, drop_membership].
 
 
 udp_options(Opts, Family) ->
@@ -391,10 +396,12 @@ udp_opt([Opt | Opts], R, As) ->
 	binary      ->  udp_add(mode, binary, R, Opts, As);
 	list        ->  udp_add(mode, list, R, Opts, As);
 	{udp_module,_} -> udp_opt(Opts, R, As);
+	inet        -> udp_opt(Opts, R, As);
+	inet6       -> udp_opt(Opts, R, As);
 	{Name,Val} when atom(Name) -> udp_add(Name, Val, R, Opts, As);
 	_ -> {error, badarg}
     end;
-udp_opt([], R, SockOpts) ->
+udp_opt([], R, _SockOpts) ->
     {ok, R}.
 
 udp_add(Name, Val, R, Opts, As) ->
@@ -431,6 +438,11 @@ translate_ip(IP, _) -> IP.
 getaddrs_tm({A,B,C,D} = IP, inet, _) ->
     if 
 	?ip(A,B,C,D) -> {ok, [IP]};
+	true -> {error,einval}
+    end;
+getaddrs_tm({A,B,C,D}, inet6, _) ->
+    if 
+	?ip(A,B,C,D) -> {ok, [{0,0,0,0,0,16#ffff,?u16(A,B),?u16(C,D)}]};
 	true -> {error,einval}
     end;
 getaddrs_tm({A,B,C,D,E,F,G,H} = IP, inet6, _) ->
@@ -496,7 +508,7 @@ gethostbyname_tm(Name, Type, Timer, [native | Opts]) ->
     end;
 gethostbyname_tm(Name, Type, Timer, [_ | Opts]) ->
     gethostbyname_tm(Name, Type, Timer, Opts);
-gethostbyname_tm(Name, Type, Timer, []) ->
+gethostbyname_tm(Name, _Type, _Timer, []) ->
     case inet_parse:ipv4_address(Name) of
 	{ok, IP4} ->
 	    {ok, 
@@ -555,7 +567,7 @@ gethostbyaddr_tm(Addr, Timer, [native | Opts]) ->
     end;    
 gethostbyaddr_tm(Addr, Timer, [_ | Opts]) ->
     gethostbyaddr_tm(Addr, Timer, Opts);
-gethostbyaddr_tm(Addr, Timer, []) ->
+gethostbyaddr_tm(_Addr, _Timer, []) ->
     {error, nxdomain}.
 
 

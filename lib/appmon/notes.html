@@ -17,23 +17,26 @@
 
 <CENTER><H1>Appmon Release Notes</H1></CENTER>
 
-<H2>Appmon 2.1.0</H2>
-  <H3>Improvements and new features</H3>
-  <UL>
-    <LI>Added a web based user interface to Appmon.<BR>
-      Own Id: OTP-4106<BR>
-      Aux Id: OTP-4104
-    </LI>
-  </UL>
+<H2>Appmon 2.1.2</H2>
   <H3>Known Problems</H3>
   <UL>
-    <LI>Appmon assumes all connected nodes have the Appmon code
-      available.<BR>
-      Own Id: OTP-3591
-    </LI>
     <LI>Appmon sometimes crashes if the application controller is heavily
       loaded, for example during a node startup.<BR>
       Own Id: OTP-3616
+    </LI>
+  </UL>
+
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>Appmon assumed all connected nodes had the appmon code available.
+      Now nodes where the appmon code is not available, for example
+      embedded nodes, are ignored by Appmon.<BR>
+      Own Id: OTP-3591
+    </LI>
+
+    <LI>Child processes were shown in reversed order (compared to order of
+      creation) when viewing an application tree in process mode.<BR>
+      Own Id: OTP-4082
     </LI>
   </UL>
 

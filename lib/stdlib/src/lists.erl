@@ -33,9 +33,13 @@
 -export([merge/3, rmerge/3, sort/2, umerge/3, rumerge/3, usort/2]).
 
 -export([all/2,any/2,map/2,flatmap/2,foldl/3,foldr/3,filter/2,zf/2,
-	 mapfoldl/3,mapfoldr/3,foreach/2,takewhile/2,dropwhile/2,splitwith/2]).
+	 mapfoldl/3,mapfoldr/3,foreach/2,takewhile/2,dropwhile/2,splitwith/2,
+	 split/2]).
 -export([all/3,any/3,map/3,flatmap/3,foldl/4,foldr/4,filter/3,zf/3,
 	 mapfoldl/4,mapfoldr/4,foreach/3]).
+
+-deprecated([{keymap,4},{all,3},{any,3},{map,3},{flatmap,3},{foldl,4},
+             {foldr,4},{filter,3},{mapfoldl,4},{mapfoldr,4},{foreach,3}]).
 
 %% member(X, L) -> (true | false)
 %%  test if X is a member of the list L
@@ -256,10 +260,10 @@ rmerge3(L1, [H2 | T2], [H3 | T3]) ->
 %% merge(X, Y) -> L
 %%  merges two sorted lists X and Y
 
-merge([], T2) ->
-    T2;
-merge([H1 | T1], T2) ->
-    lists:reverse(lists_sort:merge2_2(T1, H1, T2, []), []).
+merge(T1, []) ->
+    T1;
+merge(T1, [H2 | T2]) ->
+    lists:reverse(lists_sort:merge2_1(T1, H2, T2, []), []).
 
 %% rmerge(X, Y) -> L
 %%  merges two reversed sorted lists X and Y
@@ -286,19 +290,17 @@ thing_to_list(X) when list(X)	 -> X.		%Assumed to be a string
 %% flatten(List, Tail)
 %%  Flatten a list, adding optional tail.
 
-flatten(List) ->
-    flatten(List, [], []).
+flatten(List) when list(List) ->
+    do_flatten(List, []).
 
-flatten(List, Tail) ->
-    flatten(List, [], Tail).
+flatten(List, Tail) when list(List), list(Tail) ->
+    do_flatten(List, Tail).
 
-flatten([H|T], Cont, Tail) when list(H) ->
-    flatten(H, [T|Cont], Tail);
-flatten([H|T], Cont, Tail) ->
-    [H|flatten(T, Cont, Tail)];
-flatten([], [H|Cont], Tail) ->
-    flatten(H, Cont, Tail);
-flatten([], [], Tail) ->
+do_flatten([H|T], Tail) when list(H) ->
+    do_flatten(H, do_flatten(T, Tail));
+do_flatten([H|T], Tail) ->
+    [H|do_flatten(T, Tail)];
+do_flatten([], Tail) ->
     Tail.
 
 %% flat_length(List) (undocumented can be removed later)
@@ -363,20 +365,60 @@ keyreplace3(Key, Pos, [H|T], New) ->
     [H|keyreplace3(Key, Pos, T, New)];
 keyreplace3(_, _, [], _) -> [].
 
-keysort(Index, L) when integer(Index), Index > 0 ->
+keysort(I, L) when integer(I), I > 0 ->
     case L of
 	[] -> L;
 	[_] -> L;
 	[X, Y | T] ->
-	    EX = element(Index, X),
-	    EY = element(Index, Y),
-	    if
-		EX =< EY ->
-		    lists_sort:keysplit_1(Index, X, EX, Y, EY, T, [], []);
-		true ->
-		    lists_sort:keysplit_2(Index, Y, EY, T, [X])
+	    case {element(I, X), element(I, Y)} of
+		{EX, EY} when EX =< EY ->
+		    case T of
+			[] ->
+			    L;
+			[Z] ->
+			    case element(I, Z) of
+				EZ when EY =< EZ ->
+				    L;
+				EZ when EX =< EZ ->
+				    [X, Z, Y];
+				_EZ ->
+				    [Z, X, Y]
+			    end;
+			_ when X == Y ->
+			    keysort_1(I, Y, EY, T, [X]);
+			_ ->
+			    lists_sort:keysplit_1(I, X, EX, Y, EY, T, [], [])
+		    end;
+		{EX, EY} ->
+		    case T of
+			[] ->
+			    [Y, X];
+			[Z] ->
+			    case element(I, Z) of
+				EZ when EX =< EZ ->
+				    [Y, X | T];
+				EZ when EY =< EZ ->
+				    [Y, Z, X];
+				_EZ ->
+				    [Z, Y, X]
+			    end;
+			_ ->
+			    lists_sort:keysplit_2(I, X, EX, Y, EY, T, [], [])
+		    end
 	    end
     end.
+
+keysort_1(I, X, EX, [Y | L], R) when X == Y ->
+    keysort_1(I, Y, EX, L, [X | R]);
+keysort_1(I, X, EX, [Y | L], R) ->
+    case element(I, Y) of
+	EY when EX =< EY ->
+	    lists_sort:keysplit_1(I, X, EX, Y, EY, L, R, []);
+	EY ->
+	    lists_sort:keysplit_2(I, X, EX, Y, EY, L, R, [])
+    end;
+keysort_1(_I, X, _EX, [], R) ->
+    [X | R].
 
 keymerge(Index, T1, L2) when integer(Index), Index > 0 -> 
     case L2 of
@@ -399,29 +441,68 @@ rkeymerge(Index, T1, L2) when integer(Index), Index > 0 ->
 	    lists:reverse(M, [])
     end.
 
-ukeysort(Index, L) when integer(Index), Index > 0 ->
+ukeysort(I, L) when integer(I), I > 0 ->
     case L of
 	[] -> L;
 	[_] -> L;
+	[X, Y | T] when X == Y ->
+	    ukeysort_1(I, X, element(I, X), T);
 	[X, Y | T] ->
-	    ukeysort_1(Index, X, element(Index, X), Y, T)
+	    case {element(I, X), element(I, Y)} of
+		{EX, EY} when EX =< EY ->
+		    case T of
+			[] ->
+			    L;
+			[Z] when Z == Y ->
+			    [X, Y];
+			[Z] ->
+			    case element(I, Z) of
+				EZ when EY =< EZ ->
+				    L;
+				_EZ when X == Z ->
+				    [X, Y];
+				EZ when EX =< EZ ->
+				    [X, Z, Y];
+				_EZ ->
+				    [Z, X, Y]
+			    end;
+			_ ->
+			    lists_sort:ukeysplit_1(I, X, EX, Y, EY, T, [], [])
+		    end;
+		{EX, EY} ->
+		    case T of
+			[] ->
+			    [Y, X];
+			[Z] when Z == X ->
+			    [Y, X];
+			[Z] ->
+			    case element(I, Z) of
+				EZ when EX =< EZ ->
+				    [Y, X, Z];
+				_EZ when Y == Z ->
+				    [Y, X];
+				EZ when EY =< EZ ->
+				    [Y, Z, X];
+				_EZ ->
+				    [Z, Y, X]
+			    end;
+			_ ->
+			    lists_sort:ukeysplit_2(I, Y, EY, T, [X])
+		    end
+	    end
     end.
 
-ukeysort_1(I, X, EX, Y, L) when X == Y ->
-    case L of
-	[] ->
-	    [X];
-	[Z | T] ->
-	    ukeysort_1(I, X, EX, Z, T)
-    end;
-ukeysort_1(I, X, EX, Y, L) ->
-    EY = element(I, Y),
-    if
-	EX =< EY ->
+ukeysort_1(I, X, EX, [Y | L]) when X == Y ->
+    ukeysort_1(I, X, EX, L);
+ukeysort_1(I, X, EX, [Y | L]) ->
+    case element(I, Y) of
+	EY when EX =< EY ->
 	    lists_sort:ukeysplit_1(I, X, EX, Y, EY, L, [], []);
-	true ->
+	EY ->
 	    lists_sort:ukeysplit_2(I, Y, EY, L, [X])
-    end.
+    end;
+ukeysort_1(_I, X, _EX, []) ->
+    [X].
 
 ukeymerge(Index, L1, T2) when integer(Index), Index > 0 ->
     case L1 of
@@ -464,7 +545,7 @@ sort(Fun, [X, Y | T]) ->
 	true ->
 	    lists_sort:fsplit_1(Y, X, Fun, T, [], []);
 	false ->
-	    lists_sort:fsplit_2(Y, T, Fun, [X])
+	    lists_sort:fsplit_2(Y, X, Fun, T, [], [])
     end.
 
 merge(Fun, T1, [H2 | T2]) ->
@@ -486,10 +567,10 @@ usort(Fun, [X | L]) ->
     usort_1(Fun, X, L).
 
 usort_1(Fun, X, [Y | L]) when X == Y ->
-    if 
-	L == [] ->
+    case L of
+	[] ->
 	    [X];
-	true ->
+	_ ->
 	    usort_1(Fun, X, L)
     end;
 usort_1(Fun, X, [Y | L]) ->
@@ -520,8 +601,14 @@ usort([X, Y | L] = L0) when X < Y ->
 	    L0;
 	[Z] when Y < Z ->
 	    L0;
+	[Z] when Y == Z ->
+	    [X, Y];
 	[Z] when Z < X ->
 	    [Z, X, Y];
+	[Z] when Z == X ->
+	    [X, Y];
+	[Z] ->
+	    [X, Z, Y];
 	_ ->
 	    lists_sort:usplit_1(X, Y, L, [], [])
     end;
@@ -531,8 +618,14 @@ usort([X, Y | L]) when X > Y ->
 	    [Y, X];
 	[Z] when X < Z ->
 	    [Y, X | L];
+	[Z] when X == Z ->
+	    [Y, X];
 	[Z] when Z < Y ->
 	    [Z, Y, X];
+	[Z] when Z == Y ->
+	    [Y, X];
+	[Z] ->
+	    [Y, Z, X];
         _ ->
             lists_sort:usplit_2(X, Y, L, [], [])
     end;
@@ -567,7 +660,7 @@ umerge3(L1, [], L3) ->
 umerge3(L1, L2, []) ->
    umerge(L1, L2);
 umerge3(L1, [H2 | T2], [H3 | T3]) ->
-   lists:reverse(lists_sort:umerge3_1(L1, [], H2, T2, H3, T3), []).
+   lists:reverse(lists_sort:umerge3_1(L1, [H2 | H3], T2, H2, [], T3, H3), []).
 
 %% rumerge3(X, Y, Z) -> L
 %%  merges three reversed sorted lists X, Y and Z without duplicates,
@@ -578,7 +671,7 @@ rumerge3(L1, [], L3) ->
 rumerge3(L1, L2, []) ->
    rumerge(L1, L2);
 rumerge3(L1, [H2 | T2], [H3 | T3]) ->
-   lists:reverse(lists_sort:rumerge3_1(L1, [], H2, T2, H3, T3), []).
+   lists:reverse(lists_sort:rumerge3_1(L1, T2, H2, [], T3, H3),[]).
 
 %% umerge(X, Y) -> L
 %%  merges two sorted lists X and Y without duplicates, removes duplicates
@@ -704,6 +797,23 @@ splitwith(Pred, [Hd|Tail], Taken) ->
 	false -> {reverse(Taken), [Hd|Tail]}
     end;
 splitwith(_, [], Taken) -> {reverse(Taken),[]}.
+
+split(N, List) when integer(N), N >= 0, list(List) ->
+    case split(N, List, []) of
+	Fault when atom(Fault) ->
+	    erlang:fault(Fault, [N,List]);
+	Result ->
+	    Result
+    end;
+split(N, List) ->
+    erlang:fault(badarg, [N,List]).
+
+split(0, L, R) ->
+    {lists:reverse(R, []), L};
+split(N, [H|T], R) ->
+    split(N-1, T, [H|R]);
+split(_, [], _) ->
+    badarg.
 
 %% Versions of the above functions with extra arguments.
 

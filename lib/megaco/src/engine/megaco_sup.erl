@@ -25,17 +25,26 @@
 -behaviour(supervisor).
 
 %% public
--export([start/0, start/2, stop/1, init/1]).
+-export([start/0, start/2, stop/1]).
+-export([start_sup_child/1, stop_sup_child/1]).
 
+%% internal
+-export([init/1]).
 
 %% debug
 -export([supervisor_timeout/1]).
+
+
+%% -define(d(F,A), io:format("~p~p:" ++ F ++ "~n", [self(),?MODULE|A])).
+-define(d(F,A), ok).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% application and supervisor callback functions
 
 start(normal, Args) ->
+    ?d("start(normal) -> entry with"
+	"~n   Args: ~p", [Args]),
     SupName = {local, ?MODULE},
     case supervisor:start_link(SupName, ?MODULE, [Args]) of
 	{ok, Pid} ->
@@ -47,6 +56,7 @@ start(_, _) ->
     {error, badarg}.
 
 start() ->
+    ?d("start -> entry", []),
     SupName = {local,?MODULE},
     supervisor:start_link(SupName, ?MODULE, []).
 
@@ -58,14 +68,34 @@ init([]) -> % Supervisor
 init([[]]) -> % Application
     init();
 init(BadArg) ->
+    ?d("init -> entry when"
+	"~n   BadArg: ~p",[BadArg]),
     {error, {badarg, BadArg}}.
 
 init() ->
+    ?d("init -> entry", []),
     Flags = {one_for_one, 0, 1},
     Sups = [sup_spec(megaco_misc_sup), 
+	    sup_spec(megaco_acks_sup), 
 	    worker_spec(megaco_config,  [gen_server]),
 	    worker_spec(megaco_monitor, [gen_server])],
+    ?d("init -> done when"
+	"~n   Flags: ~p"
+	"~n   Sups:  ~p", [Flags, Sups]),
     {ok, {Flags, Sups}}.
+
+
+start_sup_child(Name) ->
+    ?d("start_sup_child -> entry with Name: ~p", [Name]),
+    Spec = sup_spec(Name),
+    supervisor:start_child(?MODULE, Spec).
+
+
+stop_sup_child(Name) ->
+    ?d("stop_sup_child -> entry with Name: ~p", [Name]),
+    ok = supervisor:terminate_child(?MODULE, Name),
+    ok = supervisor:delete_child(?MODULE, Name).
+    
 
 
 sup_spec(Name) ->

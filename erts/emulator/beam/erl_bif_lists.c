@@ -30,6 +30,8 @@
 #include "error.h"
 #include "bif.h"
 
+static Eterm keyfind(int Bif, Process* p, Eterm Key, Eterm Pos, Eterm List);
+
 /*
  * erlang:'++'/2
  */
@@ -51,7 +53,6 @@ ebif_minusminus_2(Process* p, Eterm A, Eterm B)
 }
 
 BIF_RETTYPE append_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Eterm list;
     Eterm copy;
@@ -87,7 +88,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE subtract_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Eterm  list;
     Eterm* hp;
@@ -116,7 +116,7 @@ BIF_ADECL_2
     if (n <= sizeof(small_vec)/sizeof(small_vec[0]))
 	vec_p = small_vec;
     else
-	vec_p = (Eterm*) safe_alloc_from(360, n * sizeof(Eterm));
+	vec_p = (Eterm*) erts_alloc(ERTS_ALC_T_TMP, n * sizeof(Eterm));
     
     /* PUT ALL ELEMENTS IN VP */
     vp = vec_p;
@@ -165,12 +165,11 @@ BIF_ADECL_2
 	}
     }
     if (vec_p != small_vec)
-	sys_free(vec_p);
+	erts_free(ERTS_ALC_T_TMP, (void *) vec_p);
     BIF_RET(res);
 }
 
 BIF_RETTYPE lists_member_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Eterm term;
     Eterm list;
@@ -205,7 +204,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE lists_reverse_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Eterm list;
     Eterm tmp_list;
@@ -279,70 +277,106 @@ BIF_ADECL_2
 BIF_RETTYPE
 lists_keymember_3(Process* p, Eterm Key, Eterm Pos, Eterm List)
 {
-    int pos;
-    int max_iter = 10 * CONTEXT_REDS;
-    Eterm term;
-    int non_immed_key;
+    Eterm res;
 
-    if (!is_small(Pos) || (pos = signed_val(Pos)) < 1) {
-	BIF_ERROR(p, BADARG);
+    res = keyfind(BIF_lists_keymember_3, p, Key, Pos, List);
+    if (is_value(res) && is_tuple(res)) {
+	return am_true;
+    } else {
+	return res;
     }
-
-    non_immed_key = is_not_immed(Key);
-    while (is_list(List)) {
-	if (--max_iter < 0) {
-	    BUMP_ALL_REDS(p);
-	    BIF_TRAP3(bif_export[BIF_lists_keymember_3], p, Key, Pos, List);
-	}
-	term = CAR(list_val(List));
-	if (is_tuple(term)) {
-	    Eterm *tuple_ptr = tuple_val(term);
-	    if (pos <= arityval(*tuple_ptr)) {
-		Eterm element = tuple_ptr[pos];
-		if ((Key == element) || (non_immed_key && eq(Key, element))) {
-		    return am_true;
-		}
-	    }
-	}
-	List = CDR(list_val(List));
-    }
-    if (is_not_nil(List))  {
-	BIF_ERROR(p, BADARG);
-    }
-    return am_false;
 }
 
 BIF_RETTYPE
 lists_keysearch_3(Process* p, Eterm Key, Eterm Pos, Eterm List)
 {
-    int pos;
+    Eterm res;
+
+    res = keyfind(BIF_lists_keysearch_3, p, Key, Pos, List);
+    if (is_non_value(res) || is_not_tuple(res)) {
+	return res;
+    } else {			/* Tuple */
+	Eterm* hp = HAlloc(p, 3);
+	return TUPLE2(hp, am_value, res);
+    }
+}
+
+static Eterm
+keyfind(int Bif, Process* p, Eterm Key, Eterm Pos, Eterm List)
+{
     int max_iter = 10 * CONTEXT_REDS;
+    int pos;
     Eterm term;
-    int non_immed_key;
 
     if (!is_small(Pos) || (pos = signed_val(Pos)) < 1) {
 	BIF_ERROR(p, BADARG);
     }
 
-    non_immed_key = is_not_immed(Key);
-    while (is_list(List)) {
-	if (--max_iter < 0) {
-	    BUMP_ALL_REDS(p);
-	    BIF_TRAP3(bif_export[BIF_lists_keysearch_3], p, Key, Pos, List);
-	}
-	term = CAR(list_val(List));
-	if (is_tuple(term)) {
-	    Eterm *tuple_ptr = tuple_val(term);
-	    if (pos <= arityval(*tuple_ptr)) {
-		Eterm element = tuple_ptr[pos];
-		if ((Key == element) || (non_immed_key && eq(Key, element))) {
-		    Eterm* hp = HAlloc(p, 3);
-		    return TUPLE2(hp, am_value, term);
+    if (is_small(Key)) {
+	double float_key = (double) signed_val(Key);
+
+	while (is_list(List)) {
+	    if (--max_iter < 0) {
+		BUMP_ALL_REDS(p);
+		BIF_TRAP3(bif_export[Bif], p, Key, Pos, List);
+	    }
+	    term = CAR(list_val(List));
+	    List = CDR(list_val(List));
+	    if (is_tuple(term)) {
+		Eterm *tuple_ptr = tuple_val(term);
+		if (pos <= arityval(*tuple_ptr)) {
+		    Eterm element = tuple_ptr[pos];
+		    if (Key == element) {
+			return term;
+		    } else if (is_float(element)) {
+			FloatDef f;
+
+			GET_DOUBLE(element, f);
+			if (f.fd == float_key) {
+			    return term;
+			}
+		    }
 		}
 	    }
 	}
-	List = CDR(list_val(List));
+    } else if (is_immed(Key)) {
+	while (is_list(List)) {
+	    if (--max_iter < 0) {
+		BUMP_ALL_REDS(p);
+		BIF_TRAP3(bif_export[Bif], p, Key, Pos, List);
+	    }
+	    term = CAR(list_val(List));
+	    List = CDR(list_val(List));
+	    if (is_tuple(term)) {
+		Eterm *tuple_ptr = tuple_val(term);
+		if (pos <= arityval(*tuple_ptr)) {
+		    Eterm element = tuple_ptr[pos];
+		    if (Key == element) {
+			return term;
+		    }
+		}
+	    }
+	}
+    } else {
+	while (is_list(List)) {
+	    if (--max_iter < 0) {
+		BUMP_ALL_REDS(p);
+		BIF_TRAP3(bif_export[Bif], p, Key, Pos, List);
+	    }
+	    term = CAR(list_val(List));
+	    List = CDR(list_val(List));
+	    if (is_tuple(term)) {
+		Eterm *tuple_ptr = tuple_val(term);
+		if (pos <= arityval(*tuple_ptr)) {
+		    Eterm element = tuple_ptr[pos];
+		    if (cmp(Key, element) == 0) {
+			return term;
+		    }
+		}
+	    }
+	}
     }
+
     if (is_not_nil(List))  {
 	BIF_ERROR(p, BADARG);
     }

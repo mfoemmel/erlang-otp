@@ -44,18 +44,6 @@ then
 fi
 
 #
-# Install Standalone Erlang.
-#
-beam_evm=$ERL_ROOT/erts-%I_VSN%/bin/beam_evm
-elink=$ERL_ROOT/erts-%I_VSN%/bin/elink
-erlang_ears=$ERL_ROOT/erts-%I_VSN%
-bindir=$ERL_ROOT/erts-%I_VSN%/bin
-for i in $bindir/ecc $bindir/elink $bindir/esh $bindir/escript $bindir/ear; do
-   ERLANG_EARS=$erlang_ears $beam_evm $elink -r $beam_evm $i < /dev/null
-done
-
-
-#
 # Fetch target system.
 #
 SYS=`(uname -s) 2>/dev/null` || SYS=unknown
@@ -85,21 +73,6 @@ cd $ERL_ROOT/bin
 
 cp -p $ERL_ROOT/erts-%I_VSN%/bin/erl .
 cp -p $ERL_ROOT/erts-%I_VSN%/bin/erlc .
-
-cp -p $ERL_ROOT/erts-%I_VSN%/bin/ecc .
-cp -p $ERL_ROOT/erts-%I_VSN%/bin/elink .
-cp -p $ERL_ROOT/erts-%I_VSN%/bin/escript .
-cp -p $ERL_ROOT/erts-%I_VSN%/bin/ear .
-cp -p $ERL_ROOT/erts-%I_VSN%/bin/esh .
-
-
-#
-# Add mnemosyne to the installed erlang.ear.
-#
-
-$ERL_ROOT/bin/ear -a $ERL_ROOT/erts-%I_VSN%/erlang.ear \
-   $ERL_ROOT/lib/mnemosyne*/ebin/*.beam \
-   $ERL_ROOT/lib/mnemosyne*/include/*.hrl < /dev/null
 
 #
 # Set a soft link to epmd
@@ -160,15 +133,6 @@ esac
 cp -p ../releases/%I_SYSTEM_VSN%/start_*.boot .
 cp -p $Name.boot start.boot
 cp -p ../releases/%I_SYSTEM_VSN%/$Name.script start.script
-
-#
-# Installation of pxw
-#
-if [ -d $ERL_ROOT/lib/pxw -a -x $ERL_ROOT/lib/pxw/Install ]
-then
-	cd $ERL_ROOT/lib/pxw
-	./Install $ERL_ROOT
-fi
 
 #
 # We always run ranlib unless Solaris/SunOS 5

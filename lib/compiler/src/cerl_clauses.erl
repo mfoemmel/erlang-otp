@@ -31,7 +31,7 @@
 -import(cerl, [alias_pat/1, alias_var/1, data_arity/1, data_es/1,
 	       data_type/1, clause_guard/1, clause_pats/1, concrete/1,
 	       is_data/1, is_c_var/1, let_body/1, letrec_body/1,
-	       seq_body/1, try_expr/1, type/1, values_es/1]).
+	       seq_body/1, try_arg/1, type/1, values_es/1]).
 
 -import(lists, [reverse/1]).
 
@@ -100,9 +100,9 @@ any_catchall([]) ->
 %% @spec eval_guard(Expr::cerl()) -> none | {value, term()}
 %%
 %% @doc Tries to reduce a guard expression to a single constant value,
-%% if possible. The returned value is <code>{value, Term}</code> if
-%% the guard expression <code>Expr</code> always yields the constant
-%% value <code>Term</code>, and otherwise returns <code>false</code>.
+%% if possible. The returned value is <code>{value, Term}</code> if the
+%% guard expression <code>Expr</code> always yields the constant value
+%% <code>Term</code>, and is otherwise <code>none</code>.
 %%
 %% <p>Note that although guard expressions should only yield boolean
 %% values, this function does not guarantee that <code>Term</code> is
@@ -127,7 +127,7 @@ eval_guard(E) ->
 		    none
 	    end;
 	'try' ->
-	    eval_guard(try_expr(E));
+	    eval_guard(try_arg(E));
 	seq ->
 	    eval_guard(seq_body(E));
 	'let' ->
@@ -149,36 +149,34 @@ eval_guard(E) ->
 reduce(Cs) ->
     reduce(Cs, []).
 
-%% @spec reduce(Clauses::[Entry], Exprs::[Expr]) ->
-%%           {true, {Entry, Bindings}}
-%%         | {false, [Entry]}
+%% @spec reduce(Clauses::[Clause], Exprs::[Expr]) ->
+%%           {true, {Clause, Bindings}}
+%%         | {false, [Clause]}
 %%
-%%    Entry = {cerl(), term()}
+%%    Clause = cerl()
 %%    Expr = any | cerl()
 %%    Bindings = [{cerl(), cerl()}]
 %%
 %% @doc Selects a single clause, if possible, or otherwise reduces the
-%% list of selectable clauses. The input is a list
-%% <code>Clauses</code> of pairs of abstract clauses (i.e., syntax
-%% trees of type <code>clause</code>) and respective associated "user
-%% data" (arbitrary terms), and a list of switch expressions
-%% <code>Exprs</code>. The function tries to uniquely select a single
-%% clause or discard unselectable clauses, with respect to the switch
-%% expressions. All abstract clauses in the list must have the same
-%% number of patterns. If <code>Exprs</code> is not the empty list, it
-%% must have the same length as the number of patterns in each clause;
-%% see <code>match_list/2</code> for details.
+%% list of selectable clauses. The input is a list <code>Clauses</code>
+%% of abstract clauses (i.e., syntax trees of type <code>clause</code>),
+%% and a list of switch expressions <code>Exprs</code>. The function
+%% tries to uniquely select a single clause or discard unselectable
+%% clauses, with respect to the switch expressions. All abstract clauses
+%% in the list must have the same number of patterns. If
+%% <code>Exprs</code> is not the empty list, it must have the same
+%% length as the number of patterns in each clause; see
+%% <code>match_list/2</code> for details.
 %% 
 %% <p>A clause can only be selected if its guard expression always
 %% yields the atom <code>true</code>, and a clause whose guard
 %% expression always yields the atom <code>false</code> can never be
-%% selected.  Other guard expressions are considered to have unknown
+%% selected. Other guard expressions are considered to have unknown
 %% value; cf. <code>eval_guard/1</code>.</p>
 %%
 %% <p>If a particular clause can be selected, the function returns
-%% <code>{true, {{Clause, Data}, Bindings}}</code>, where
-%% <code>{Clause, Data}</code> is the corresponding entry in
-%% <code>Clauses</code>, and <code>Bindings</code> is a list of pairs
+%% <code>{true, {Clause, Bindings}}</code>, where <code>Clause</code> is
+%% the selected clause and <code>Bindings</code> is a list of pairs
 %% <code>{Var, SubExpr}</code> associating the variables occurring in
 %% the patterns of <code>Clause</code> with the corresponding
 %% subexpressions in <code>Exprs</code>. The list of bindings is given
@@ -188,8 +186,7 @@ reduce(Cs) ->
 %% <p>If no clause could be definitely selected, the function returns
 %% <code>{false, NewClauses}</code>, where <code>NewClauses</code> is
 %% the list of entries in <code>Clauses</code> that remain after
-%% eliminating unselectable clauses, preserving the relative
-%% order.</p>
+%% eliminating unselectable clauses, preserving the relative order.</p>
 %%
 %% @see eval_guard/1
 %% @see match/2
@@ -198,8 +195,7 @@ reduce(Cs) ->
 reduce(Cs, Es) ->
     reduce(Cs, Es, []).
 
-reduce([C0 | Cs], Es, Cs1) ->
-    {C, _} = C0,
+reduce([C | Cs], Es, Cs1) ->
     Ps = clause_pats(C),
     case match_list(Ps, Es) of
 	none ->
@@ -209,19 +205,19 @@ reduce([C0 | Cs], Es, Cs1) ->
 	{false, _} ->
 	    %% We are not sure if this clause might be selected, so we
 	    %% save it and visit the rest.
-	    reduce(Cs, Es, [C0 | Cs1]);
+	    reduce(Cs, Es, [C | Cs1]);
 	{true, Bs} ->
 	    case eval_guard(clause_guard(C)) of
 		{value, true} when Cs1 == [] ->
 		    %% We have a definite match - we return the residual
 		    %% expression and signal that a selection has been
 		    %% made. All other clauses are dropped.
-		    {true, {C0, Bs}};
+		    {true, {C, Bs}};
 		{value, true} ->
 		    %% Unless one of the previous clauses is selected,
 		    %% this clause will definitely be, so we can drop
 		    %% the rest.
-		    {false, reverse([C0 | Cs1])};
+		    {false, reverse([C | Cs1])};
 		{value, false} ->
 		    %% This clause can never be selected, since its
 		    %% guard is never 'true', so we drop it.
@@ -230,7 +226,7 @@ reduce([C0 | Cs], Es, Cs1) ->
 		    %% We are not sure if this clause might be selected
 		    %% (or might even cause a crash), so we save it and
 		    %% visit the rest.
-		    reduce(Cs, Es, [C0 | Cs1])
+		    reduce(Cs, Es, [C | Cs1])
 	    end
     end;
 reduce([], _, Cs) ->
@@ -411,4 +407,3 @@ match_list([P | Ps], [E | Es], Bs) ->
     end;
 match_list([], [], Bs) ->
     {true, Bs}.
-

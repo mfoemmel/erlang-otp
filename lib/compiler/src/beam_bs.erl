@@ -35,9 +35,17 @@ function({function,Name,Arity,CLabel,Asm0}=Func) ->
 	    {function,Name,Arity,CLabel,Asm}
     end.
 
+
+%%%
+%%% Pass 1: Found out which bs_restore's that are needed. For now we assume
+%%% that a bs_restore is needed unless it is directly preceeded by a bs_save.
+%%%
+
+needed([{bs_save,Name},{bs_restore,Name}|T], N, _BsUsed, Dict) ->
+    needed(T, N, true, Dict);
 needed([{bs_save,_Name}|T], N, _BsUsed, Dict) ->
     needed(T, N, true, Dict);
-needed([{label,_Lbl},{bs_restore,Name}|T], N, _BsUsed, Dict) ->
+needed([{bs_restore,Name}|T], N, _BsUsed, Dict) ->
     case keysearch(Name, 1, Dict) of
 	{value,{Name,_}} -> needed(T, N, true, Dict);
 	false -> needed(T, N+1, true, [{Name,N}|Dict])
@@ -49,6 +57,13 @@ needed([{bs_start_match,_,_}|T], N, _, Dict) ->
 needed([_|T], N, BsUsed, Dict) ->
     needed(T, N, BsUsed, Dict);
 needed([], _, BsUsed, Dict) -> {BsUsed,Dict}.
+
+%%%
+%%% Pass 2: Only needed if there were some bs_* instructions found.
+%%%
+%%% Remove any bs_save with a name that never were found to be restored
+%%% in the first pass.
+%%%
 
 replace([{bs_save,Name}=Save,{bs_restore,Name}|T], Dict, Acc) ->
     replace([Save|T], Dict, Acc);

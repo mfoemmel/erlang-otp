@@ -116,12 +116,6 @@ void *memcpy(void *s1, const void *s2, size_t n);
 #define	ENOTSUP		-1738659
 #endif
 
-#if defined(SIZEOF_LONG) && (SIZEOF_LONG == 8)
-typedef long Sint64;
-#else
-typedef long long Sint64;
-#endif
-
 /********************* useful definitions ********************/
 #ifndef _OSE_
 #define _OSE_
@@ -149,10 +143,6 @@ typedef long long Sint64;
 #ifndef _INET_H			
 #include <unistd.h>
 #include <fcntl.h>
-#endif
-
-#if !defined(LARGE_MEMORY)
-#define SMALL_MEMORY
 #endif
 
 /*************** floating point exception handling ***********/
@@ -199,7 +189,7 @@ clock_t sys_times(SysTimes *t);
 #define SYS_CLOCK_RESOLUTION 1
 
 
-/******************* sizes ******************************/
+/********************* sizes ****************************/
 
 #define CHAR_BIT       8	/* missing in limits.h */
 #define SIZEOF_SHORT   2
@@ -209,4 +199,35 @@ clock_t sys_times(SysTimes *t);
 #define SIZEOF_SIZE_T  4
 #define SIZEOF_OFF_T   4
 
+/***************** trace & debug ***********************/
+
+/* only for testing, use compile flag later */
+#define TRACE_OSE_SIG_ALLOC 1
+
+#ifdef TRACE_OSE_SIG_ALLOC
+union SIGNAL *ose_sig_alloc(OSBUFSIZE size, SIGSELECT signo);
+void ose_sig_free_buf(union SIGNAL **sig);
+#else
+#define ose_sig_alloc alloc
+#define ose_sig_free_buf free_buf
 #endif
+
+/*************** program registration *****************/
+#define PGM_SERVER "erl_sys_pgm_server"
+#define REG_PGM    1
+#define GET_PGM    2
+#define DEL_PGM    3
+#define ADD_HND    4
+
+typedef struct pgm_entry {
+  SIGSELECT sigNo;
+  void *hnd;
+  void *entrypoint;
+  int is_static;
+  char name[1];
+} pgmEntry;
+
+
+
+#endif
+

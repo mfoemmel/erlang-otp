@@ -85,7 +85,6 @@
 %%   {multi_threaded, Bool} true means that SETs are serialized,
 %%      while GETs are concurrent, even with a SET.
 %%   {set_mechanism, SetModule}           % undocumented feature
-%%   {verbosity, verbosity()}             % undocumented feature
 %%
 %% The following options are now removed - they are not needed
 %% anymore when VACM is standard for authentication, and works
@@ -136,7 +135,7 @@ init([Parent, Ref, Options]) ->
     MultiT = get_option(multi_threaded, Options, false),
     MiscSup = get_option(misc_sup, Options, undefined),
     Vsns = snmp_misc:get_option(snmp_vsn, Options, [v1,v2,v3]),
-    {Type, ParentPid, NetIfPid} =
+    {Type, NetIfPid} =
 	case Parent of
 	    none -> 
 		NetIf = get_option(net_if, Options, snmp_net_if),
@@ -144,17 +143,15 @@ init([Parent, Ref, Options]) ->
 		NiRecBuf = get_option(net_if_recbuf, Options, use_default),
 		NiOpts = [{net_if_verbosity,NiVerbosity},
 			  {net_if_recbuf,NiRecBuf}],
-		?debug("init -> start net if",[]),
 		?vdebug("start net if",[]),
 		case snmp_misc_sup:start_net_if(MiscSup,Ref,self(),
 						NetIf,NiOpts) of
-		    {ok, Pid} -> {master_agent, undefined, Pid};
+		    {ok, Pid} -> {master_agent, Pid};
 		    {error, Reason} -> exit(Reason)
 		end;
 	    Pid when pid(Pid) -> 
-		{subagent, Pid, undefined}
+		{subagent, undefined}
 	end,
-    ?debug("init -> start mib server",[]),
     ?vdebug("start mib server (~p,~p,~p,~p)",
 	    [MeOverride,TeOverride,MibsVerbosity,MibStorage]),
     MibsOpts = [{mibentry_override,MeOverride},
@@ -169,21 +166,18 @@ init([Parent, Ref, Options]) ->
 	    {Worker, SetWorker} =
 		case MultiT of
 		    true ->
-			?debug("start worker and set-worker",[]),
 			?vdebug("start worker and set-worker",[]),
 			{proc_lib:spawn_link(?MODULE,worker,[self(),get()]),
 			 proc_lib:spawn_link(?MODULE,worker,[self(),get()])};
 		    _ -> 
 			{undefined, undefined}
 		end,
-	    ?debug("init -> started",[]),
 	    ?vdebug("started",[]),
 	    {ok, #state{type = Type, parent = Parent, worker = Worker,
 			set_worker = SetWorker,
 			multi_threaded = MultiT, ref = Ref,
 			misc_sup = MiscSup, vsns = Vsns}};
 	{error, Reason2} ->
-	    ?debug("init -> error: ~p",[Reason2]),
 	    ?vlog("~n   failed starting mib: ~p",[Reason2]),
 	    {stop, Reason2}
     end.
@@ -821,8 +815,12 @@ process_pdu(#pdu{type='get-request', request_id = ReqId, varbinds=Vbs},
 	    "~n   ~p",[ResponseVarbinds]),
     make_response_pdu(ReqId, ErrStatus, ErrIndex, Vbs, ResponseVarbinds);
 
-process_pdu(#pdu{type = 'get-next-request',request_id = ReqId,varbinds = Vbs},
+process_pdu(#pdu{type = 'get-next-request', request_id = ReqId, varbinds = Vbs},
 	    _PduMS, Vsn, MibView) ->
+    ?vtrace("process get-next-request -> entry with"
+	    "~n   ReqId:   ~p"
+	    "~n   Vbs:     ~p"
+	    "~n   MibView: ~p",[ReqId, Vbs, MibView]),
     Res = get_err(do_get_next(MibView, Vbs)),
     ?vtrace("get-next result: "
 	    "~n   ~p",[Res]),
@@ -831,12 +829,12 @@ process_pdu(#pdu{type = 'get-next-request',request_id = ReqId,varbinds = Vbs},
 	    Vsn == 'version-1' -> validate_next_v1(Res, MibView);
 	    true -> Res
 	end,
-    ?vtrace("get-next final result: "
+    ?vtrace("get-next final result -> validation result:"
 	    "~n   Error status: ~p"
 	    "~n   Error index:  ~p"
 	    "~n   Varbinds:     ~p",[ErrStatus,ErrIndex,ResVarbinds]),
     ResponseVarbinds = lists:keysort(#varbind.org_index, ResVarbinds),
-    ?vtrace("response varbinds: "
+    ?vtrace("get-next final result -> response varbinds: "
 	    "~n   ~p",[ResponseVarbinds]),
     make_response_pdu(ReqId, ErrStatus, ErrIndex, Vbs, ResponseVarbinds);
 
@@ -885,7 +883,7 @@ validate_get_v1_2([Vb | Vbs]) when Vb#varbind.value /= noSuchInstance,
 				   Vb#varbind.value /= noSuchObject,
 				   Vb#varbind.variabletype /= 'Counter64' ->
     validate_get_v1_2(Vbs);
-validate_get_v1_2([Vb | Vbs]) ->
+validate_get_v1_2([Vb | _Vbs]) ->
     {noSuchName, Vb#varbind.org_index};
 validate_get_v1_2([]) ->
     true.
@@ -904,7 +902,7 @@ validate_next_v1({noError, _, ResponseVarbinds}, MibView) ->
 validate_next_v1({ErrStatus, ErrIndex, ResponseVarbinds}, _MibView) ->
     {v2err_to_v1err(ErrStatus), ErrIndex, ResponseVarbinds}.
 
-validate_next_v1_2([Vb | Vbs], MibView, _Res)
+validate_next_v1_2([Vb | _Vbs], _MibView, _Res)
   when Vb#varbind.value == endOfMibView ->
     {noSuchName, Vb#varbind.org_index};
 validate_next_v1_2([Vb | Vbs], MibView, Res)
@@ -933,7 +931,7 @@ validate_next_v1_2([], _MibView, Res) ->
 %%-----------------------------------------------------------------
 mk_next_oid(Vb) ->
     case snmp_mib:lookup(get(mibserver), Oid = Vb#varbind.oid) of
-	{table_column, MibEntry, TableEntryOid} ->
+	{table_column, _MibEntry, TableEntryOid} ->
 	    [Col | _] = Oid -- TableEntryOid,
 	    Vb#varbind{oid = TableEntryOid ++ [Col+1]};
 	_ ->
@@ -970,7 +968,7 @@ split_vbs_view([Vb | Vbs], MibView, Out, In) ->
 	false -> split_vbs_view(Vbs, MibView,
 				[Vb#varbind{value = noSuchObject} | Out], In)
     end;
-split_vbs_view([], MibView, Out, In) ->
+split_vbs_view([], _MibView, Out, In) ->
     {Out, In}.
 	    
 do_get(UnsortedVarbinds, IsNotification) ->
@@ -1039,7 +1037,6 @@ do_get_subagents([], Res, _IsNotification) ->
 %%          List of #varbind
 %%-----------------------------------------------------------------
 try_get(IVb, IsNotification) when record(IVb, ivarbind) ->
-    #ivarbind{varbind = Vb} = IVb,
     get_var_value_from_ivb(IVb, IsNotification);
 try_get({TableOid, TableVbs}, IsNotification) ->
     [#ivarbind{mibentry = MibEntry}|_] = TableVbs,
@@ -1057,7 +1054,6 @@ try_get({TableOid, TableVbs}, IsNotification) ->
 %%-----------------------------------------------------------------
 check_all_table_vbs([IVb| IVbs], IsNotification, NoA, A) ->
     #ivarbind{mibentry = Me, varbind = Vb} = IVb,
-    #varbind{oid = Oid, org_index = OrgIndex} = Vb,
     case Me#me.access of
 	'not-accessible' -> 
 	    NNoA = [Vb#varbind{value = noSuchInstance} | NoA],
@@ -1183,7 +1179,7 @@ get_value_all_rows([Row | Rows], Module, Func, Args, Res) ->
 %	    Index = col_to_index(ColNumber, OrgCols),
 %	    validate_err(row_set, {ErrorStatus, Index}, {Module,Func,Args})
     end;
-get_value_all_rows([], Module, Func, Args, Res) -> Res.
+get_value_all_rows([], _Module, _Func, _Args, Res) -> Res.
 
 %%-----------------------------------------------------------------
 %% Returns: list of {ShortOid, ASN1TYpe}
@@ -1192,13 +1188,13 @@ deletePrefixes(Prefix, [#ivarbind{varbind = Varbind, mibentry = ME} | Vbs]) ->
     #varbind{oid = Oid} = Varbind,
     [{snmp_misc:diff(Oid, Prefix), ME#me.asn1_type} |
      deletePrefixes(Prefix, Vbs)];
-deletePrefixes(Prefix, []) -> [].
+deletePrefixes(_Prefix, []) -> [].
 
 %%-----------------------------------------------------------------
 %% Args: {RowIndex, list of {ShortOid, ASN1Type}}
 %% Returns: list of Col
 %%-----------------------------------------------------------------
-delete_index([{Col, Val, OrgIndex} | T]) ->
+delete_index([{Col, _Val, _OrgIndex} | T]) ->
     [Col | delete_index(T)];
 delete_index([]) -> [].
 
@@ -1224,12 +1220,12 @@ remove_duplicates([], NCols, Dup) ->
     {lists:reverse(NCols), lists:reverse(Dup)}.
 
 restore_duplicates([], Cols) ->
-    lists:map(fun({Col, Val, OrgIndex}) -> {Val, OrgIndex} end, Cols);
-restore_duplicates([{Col, Val2, OrgIndex2} | Dup],
+    lists:map(fun({_Col, Val, OrgIndex}) -> {Val, OrgIndex} end, Cols);
+restore_duplicates([{Col, _Val2, OrgIndex2} | Dup],
 		   [{Col, NVal, OrgIndex1} | Cols]) ->
     [{NVal, OrgIndex2} |
      restore_duplicates(Dup, [{Col, NVal, OrgIndex1} | Cols])];
-restore_duplicates(Dup, [{Col, Val, OrgIndex} | T]) ->
+restore_duplicates(Dup, [{_Col, Val, OrgIndex} | T]) ->
     [{Val, OrgIndex} | restore_duplicates(Dup, T)].
 
 %% Maps the column number to Index.
@@ -1250,7 +1246,7 @@ restore_duplicates(Dup, [{Col, Val, OrgIndex} | T]) ->
 %%         other.
 %%-----------------------------------------------------------------
 validate_tab_res(Values, OrgCols, Mfa) when list(Values) ->
-    {_Col, ASN1Type, OneIdx} = hd(OrgCols),
+    {_Col, _ASN1Type, OneIdx} = hd(OrgCols),
     validate_tab_res(Values, OrgCols, Mfa, [], OneIdx);
 validate_tab_res({noValue, Error}, OrgCols, Mfa) ->
     Values = lists:duplicate(length(OrgCols), {noValue, Error}),
@@ -1265,7 +1261,7 @@ validate_tab_res({genErr, Col}, OrgCols, Mfa) ->
 	    [{_Col, _ASN1Type, Index} | _] = OrgCols,
 	    {error, genErr, Index}
     end;
-validate_tab_res(genErr, [{_Col, _ASN1Type, Index} | _OrgCols], Mfa) ->
+validate_tab_res(genErr, [{_Col, __ASN1Type, Index} | _OrgCols], _Mfa) ->
     {error, genErr, Index};
 validate_tab_res(Error, [{_Col, _ASN1Type, Index} | _OrgCols], Mfa) ->
     user_err("Invalid return value ~w from ~w (get)",[Error, Mfa]),
@@ -1284,11 +1280,11 @@ validate_tab_res([Value | Values], [{Col, ASN1Type, Index} | OrgCols],
 	    NewRes = [{Col, CorrectValue, Index} | Res],
 	    validate_tab_res(Values, OrgCols, Mfa, NewRes, I)
     end;
-validate_tab_res([], [], Mfa, Res, _I) -> Res;
-validate_tab_res([], [{_Col, _ASN1Type, Index}|_], Mfa, Res, I) ->
+validate_tab_res([], [], _Mfa, Res, _I) -> Res;
+validate_tab_res([], [{_Col, _ASN1Type, Index}|_], Mfa, _Res, _I) ->
     user_err("Too few values returned from ~w (get)", [Mfa]),
     {error, genErr, Index};
-validate_tab_res(TooMany, [], Mfa, Res, I) ->
+validate_tab_res(_TooMany, [], Mfa, _Res, I) ->
     user_err("Too many values returned from ~w (get)", [Mfa]),
     {error, genErr, I}.
 
@@ -1340,6 +1336,9 @@ oid_sort_varbindlist(Vbs) ->
 
 %% LAVb is Last Accessible Vb
 next_loop_varbinds([], [Vb | Vbs], MibView, Res, LAVb) ->
+%%     ?vtrace("next_loop_varbins -> entry when"
+%% 	"~n   Vb:      ~p"
+%% 	"~n   MibView: ~p", [Vb, MibView]),
     case varbind_next(Vb, MibView) of
 	endOfMibView ->
 	    RVb = if LAVb == [] -> Vb;
@@ -1364,7 +1363,7 @@ next_loop_varbinds([], [Vb | Vbs], MibView, Res, LAVb) ->
 			    "~n   ErrorStatus: ~p",[ErrorStatus]),
 		    {ErrorStatus, Vb#varbind.org_index, []}
 	    end;
-	{variable, ME, VarOid} -> 
+	{variable, _ME, VarOid} -> 
 	    RVb = if LAVb == [] -> Vb;
 		     true -> LAVb
 		  end,
@@ -1379,7 +1378,10 @@ next_loop_varbinds([], [Vb | Vbs], MibView, Res, LAVb) ->
 			       Vbs, MibView, Res, [])
     end;
 next_loop_varbinds({table, TableOid, ME, TabOids},
-		   [Vb | Vbs], MibView, Res, LAVb) ->
+		   [Vb | Vbs], MibView, Res, _LAVb) ->
+%%     ?vtrace("next_loop_varbins(table) -> entry with"
+%% 	"~n   TableOid: ~p"
+%% 	"~n   Vb:       ~p", [TableOid, Vb]),
     case varbind_next(Vb, MibView) of
 	{table, TableOid, TableRestOid, _ME} ->
 	    next_loop_varbinds({table, TableOid, ME,
@@ -1400,9 +1402,14 @@ next_loop_varbinds({table, TableOid, ME, TabOids},
 	    end
     end;
 next_loop_varbinds({table, TableOid, ME, TabOids},
-		   [], MibView, Res, LAVb) ->
+		   [], MibView, Res, _LAVb) ->
+%%     ?vtrace("next_loop_varbins(table) -> entry with"
+%% 	"~n   TableOid: ~p", [TableOid]),
     case get_next_table(ME, TableOid, TabOids, MibView) of
 	{ok, TabRes, TabEndOfTabVbs} ->
+%% 	    ?vtrace("next_loop_varbins(table) -> get_next_table result:"
+%% 		"~n   TabRes:         ~p"
+%% 		"~n   TabEndOfTabVbs: ~p", [TabRes, TabEndOfTabVbs]),
 	    NewRes = lists:append(TabRes, Res),
 	    next_loop_varbinds([], TabEndOfTabVbs, MibView, NewRes, []);
 	{ErrorStatus, OrgIndex} ->
@@ -1413,9 +1420,13 @@ next_loop_varbinds({table, TableOid, ME, TabOids},
 	    {ErrorStatus, OrgIndex, []}
     end;
 next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
-		   [Vb | Vbs], MibView, Res, LAVb) ->
+		   [Vb | Vbs], MibView, Res, _LAVb) ->
+%%     ?vtrace("next_loop_varbins(subagent) -> entry with"
+%% 	"~n   SAPid: ~p"
+%% 	"~n   SAOid: ~p"
+%% 	"~n   Vb:    ~p", [SAPid, SAOid, Vb]),
     case varbind_next(Vb, MibView) of
-	{subagent, SubAgentPid, SAOid} ->
+	{subagent, _SubAgentPid, SAOid} ->
 	    next_loop_varbinds({subagent, SAPid, SAOid,
 				[Vb | SAVbs]},
 			       Vbs, MibView, Res, []);
@@ -1435,7 +1446,10 @@ next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
 	    end
     end;
 next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
-		   [], MibView, Res, LAVb) ->
+		   [], MibView, Res, _LAVb) ->
+%%     ?vtrace("next_loop_varbins(subagent) -> entry with"
+%% 	"~n   SAPid: ~p"
+%% 	"~n   SAOid: ~p", [SAPid, SAOid]),
     case get_next_sa(SAPid, SAOid, SAVbs, MibView) of
 	{ok, SARes, SAEndOfMibViewVbs} ->
 	    NewRes = lists:append(SARes, Res),
@@ -1448,9 +1462,10 @@ next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
 	    {ErrorStatus, OrgIndex, []}
     end;
 next_loop_varbinds([], [], _MibView, Res, _LAVb) ->
+%%     ?vtrace("next_loop_varbins -> entry when done", []),
     {noError, 0, Res}.
 
-try_get_instance(Vb, #me{mfa = {M, F, A}, asn1_type = ASN1Type}) ->
+try_get_instance(_Vb, #me{mfa = {M, F, A}, asn1_type = ASN1Type}) ->
     ?vtrace("try get instance from <~p,~p,~p>",[M,F,A]),
     Result = (catch dbg_apply(M, F, [get | A])),
     % mib shall return {value, <a-nice-value-within-range>} |
@@ -1469,6 +1484,10 @@ tab_oid(X) -> X.
 %% a subagent has returned endOfMibView.
 %%-----------------------------------------------------------------
 varbind_next(#varbind{value = Value, oid = Oid}, MibView) ->
+%%     ?vtrace("varbind_next -> entry with"
+%% 	"~n   Value:   ~p"
+%% 	"~n   Oid:     ~p"
+%% 	"~n   MibView: ~p", [Value, Oid, MibView]),
     case Value of
 	{endOfTable, NextOid} ->
 	    snmp_mib:next(get(mibserver), NextOid, MibView);
@@ -1480,9 +1499,18 @@ varbind_next(#varbind{value = Value, oid = Oid}, MibView) ->
 
 get_next_table(#me{mfa = {M, F, A}}, TableOid, TableOids, MibView) ->
     % We know that all TableOids have at least a column number as oid
+%%     ?vtrace("get_next_table -> entry with"
+%% 	"~n   M:         ~p"
+%% 	"~n   F:         ~p"
+%% 	"~n   A:         ~p"
+%% 	"~n   TableOid:  ~p"
+%% 	"~n   TableOids: ~p"
+%% 	"~n   MibView:   ~p", [M, F, A, TableOid, TableOids, MibView]),
     Sorted = snmp_svbl:sort_varbinds_rows(TableOids),
     case get_next_values_all_rows(Sorted, M,F,A, [], TableOid) of
 	NewVbs when list(NewVbs) ->
+%% 	    ?vtrace("get_next_table -> "
+%% 		"~n   NewVbs: ~p", [NewVbs]),
 	    % We must now check each Vb for endOfTable and that it is
 	    % in the MibView. If not, it becomes a endOfTable. We 
 	    % collect all of these together.
@@ -1494,20 +1522,32 @@ get_next_table(#me{mfa = {M, F, A}}, TableOid, TableOids, MibView) ->
 get_next_values_all_rows([Row | Rows], M, F, A, Res, TabOid) ->
     {RowIndex, TableOids} = Row,
     Cols = delete_index(TableOids),
+%%     ?vtrace("get_next_values_all_rows -> "
+%% 	"~n   Cols: ~p", [Cols]),
     Result = (catch dbg_apply(M, F, [get_next, RowIndex, Cols | A])),
+%%     ?vtrace("get_next_values_all_rows -> "
+%% 	"~n   Result: ~p", [Result]),
     case validate_tab_next_res(Result, TableOids, {M, F, A}, TabOid) of
 	Values when list(Values) -> 
+%% 	    ?vtrace("get_next_values_all_rows -> "
+%% 		"~n   Values: ~p", [Values]),
 	    NewRes = lists:append(Values, Res),
 	    get_next_values_all_rows(Rows, M, F, A, NewRes, TabOid);
 	{ErrorStatus, OrgIndex} ->
 	    {ErrorStatus, OrgIndex}
     end;
-get_next_values_all_rows([], M, F, A, Res, TabOid) ->
+get_next_values_all_rows([], _M, _F, _A, Res, _TabOid) ->
     Res.
 
 transform_tab_next_result([Vb | Vbs], {Res, EndOfs}, MibView) ->
     case Vb#varbind.value of
 	{endOfTable, _} ->
+%% 	    ?vtrace("transform_tab_next_result -> endOfTable: "
+%% 		"split varbinds",[]),
+%% 	    R = split_varbinds(Vbs, Res, [Vb | EndOfs]),
+%% 	    ?vtrace("transform_tab_next_result -> "
+%% 		"~n   R: ~p", [R]),
+%% 	    R;
 	    split_varbinds(Vbs, Res, [Vb | EndOfs]);
 	_ ->
 	    case snmp_acm:validate_mib_view(Vb#varbind.oid, MibView) of
@@ -1521,6 +1561,9 @@ transform_tab_next_result([Vb | Vbs], {Res, EndOfs}, MibView) ->
 	    end
     end;
 transform_tab_next_result([], {Res, EndOfs}, _MibView) ->
+%%     ?vtrace("transform_tab_next_result -> entry with: "
+%% 	"~n   Res:    ~p"
+%% 	"~n   EndIfs: ~p",[Res, EndOfs]),
     {ok, Res, EndOfs}.
 
 %%-----------------------------------------------------------------
@@ -1537,52 +1580,82 @@ transform_tab_next_result([], {Res, EndOfs}, _MibView) ->
 %%          (In the NewVarbinds list, the value may be endOfTable)
 %%-----------------------------------------------------------------
 validate_tab_next_res(Values, TableOids, Mfa, TabOid) ->
-    {_Col, ASN1Type, OneIdx} = hd(TableOids),
+%%     ?vtrace("validate_tab_next_res -> entry with: "
+%% 	"~n   Values:     ~p"
+%% 	"~n   TableOids:  ~p"
+%% 	"~n   Mfa:        ~p"
+%% 	"~n   TabOid:     ~p", [Values, TableOids, Mfa, TabOid]),
+    {_Col, _ASN1Type, OneIdx} = hd(TableOids),
     validate_tab_next_res(Values, TableOids, Mfa, [], TabOid,
 			  next_oid(TabOid), OneIdx).
 validate_tab_next_res([{NextOid, Value} | Values],
 		      [{_ColNo, OrgVb, _Index} | TableOids],
 		      Mfa, Res, TabOid, TabNextOid, I) ->
+%%     ?vtrace("validate_tab_next_res -> entry with: "
+%% 	"~n   NextOid:    ~p"
+%% 	"~n   Value:      ~p"
+%% 	"~n   Values:     ~p"
+%% 	"~n   TableOids:  ~p"
+%% 	"~n   Mfa:        ~p"
+%% 	"~n   TabOid:     ~p", 
+%% 	[NextOid, Value, Values, TableOids, Mfa, TabOid]),
     #varbind{org_index = OrgIndex} = OrgVb,
+%%     ?vtrace("validate_tab_next_res -> OrgIndex: ~p", [OrgIndex]),
     NextCompleteOid = lists:append(TabOid, NextOid),
     case snmp_mib:lookup(get(mibserver), NextCompleteOid) of
 	{table_column, #me{asn1_type = ASN1Type}, _TableEntryOid} ->
+%% 	    ?vtrace("validate_tab_next_res -> ASN1Type: ~p", [ASN1Type]),
 	    case make_value_a_correct_value({value, Value}, ASN1Type, Mfa) of
 		{error, ErrorStatus} ->
+%% 		    ?vtrace("validate_tab_next_res -> "
+%% 			"~n   ErrorStatus: ~p", [ErrorStatus]),
 		    {ErrorStatus, OrgIndex};
 		{value, Type, NValue} ->
+%% 		    ?vtrace("validate_tab_next_res -> "
+%% 			"~n   Type:   ~p"
+%% 			"~n   NValue: ~p", [Type, NValue]),
 		    NewVb = OrgVb#varbind{oid = NextCompleteOid,
 					  variabletype = Type, value = NValue},
 		    validate_tab_next_res(Values, TableOids, Mfa,
 					  [NewVb | Res], TabOid, TabNextOid, I)
 	    end;
-	_ ->
-	    user_err("Invalid oid ~w from ~w (get_next). Using genErr",
-		     [NextOid, Mfa]),
+	Error ->
+	    user_err("Invalid oid ~w from ~w (get_next). Using genErr => ~p",
+		     [NextOid, Mfa, Error]),
 	    {genErr, OrgIndex}
     end;
 validate_tab_next_res([endOfTable | Values],
 		      [{_ColNo, OrgVb, _Index} | TableOids],
 		      Mfa, Res, TabOid, TabNextOid, I) ->
+%%     ?vtrace("validate_tab_next_res(endOfTable) -> entry with: "
+%% 	"~n   Values:     ~p"
+%% 	"~n   OrgVb:      ~p"
+%% 	"~n   TableOids:  ~p"
+%% 	"~n   Mfa:        ~p"
+%% 	"~n   Res:        ~p"
+%% 	"~n   TabOid:     ~p"
+%% 	"~n   TabNextOid: ~p"
+%% 	"~n   I:          ~p",
+%% 	[Values, OrgVb, TableOids, Mfa, Res, TabOid, TabNextOid, I]),
     NewVb = OrgVb#varbind{value = {endOfTable, TabNextOid}},
     validate_tab_next_res(Values, TableOids, Mfa, [NewVb | Res],
 			  TabOid, TabNextOid, I);
-validate_tab_next_res([], [], _Mfa, Res, _TabOid, _TabNextOid, I) ->
+validate_tab_next_res([], [], _Mfa, Res, _TabOid, _TabNextOid, _I) ->
     Res;
-validate_tab_next_res([], [{_Col, _OrgVb, Index}|_], Mfa, Res, _, _, _I) ->
+validate_tab_next_res([], [{_Col, _OrgVb, Index}|_], Mfa, _Res, _, _, _I) ->
     user_err("Too few values returned from ~w (get_next)", [Mfa]),
     {genErr, Index};
 validate_tab_next_res({genErr, ColNumber}, OrgCols,
-		      Mfa, _Res, _TabOid, _TabNextOid, I) ->
+		      Mfa, _Res, _TabOid, _TabNextOid, _I) ->
     OrgIndex = snmp_svbl:col_to_orgindex(ColNumber, OrgCols),
     validate_err(table_next, {genErr, OrgIndex}, Mfa);
 validate_tab_next_res(Error, [{_ColNo, OrgVb, _Index} | _TableOids],
-		      Mfa, _Res, _TabOid, _TabNextOid, I) ->
+		      Mfa, _Res, _TabOid, _TabNextOid, _I) ->
     #varbind{org_index = OrgIndex} = OrgVb,
     user_err("Invalid return value ~w from ~w (get_next)",
 	     [Error, Mfa]),
     {genErr, OrgIndex};
-validate_tab_next_res(TooMany, [], Mfa, Res, _, _, I) ->
+validate_tab_next_res(TooMany, [], Mfa, _Res, _, _, I) ->
     user_err("Too many values ~w returned from ~w (get_next)",
 	     [TooMany, Mfa]),
     {genErr, I}.
@@ -1678,7 +1751,7 @@ do_get_bulk(MibView, NonRepeaters, MaxRepetitions, PduMS, Varbinds) ->
 
 split_vbs(N, Varbinds, Res) when N =< 0 -> {Res, Varbinds};
 split_vbs(N, [H | T], Res) -> split_vbs(N-1, T, [H | Res]);
-split_vbs(N, [], Res) -> {Res, []}.
+split_vbs(_N, [], Res) -> {Res, []}.
      
 enc_vbs(SizeLeft, Vbs) ->
     catch lists:foldl(fun(Vb, {Sz, Res}) when Sz > 0 ->
@@ -1690,9 +1763,9 @@ enc_vbs(SizeLeft, Vbs) ->
 				  true ->
 				      throw(Res)
 			      end;
-			 (Vb, {Sz, [H | T]}) ->
+			 (_Vb, {_Sz, [_H | T]}) ->
 			      throw(T);
-			 (Vb, {Sz, []}) ->
+			 (_Vb, {_Sz, []}) ->
 			      throw([])
 		      end,
 		      {SizeLeft, []},
@@ -1710,7 +1783,7 @@ conv_res([VbListOfBytes | T], Bytes) ->
 conv_res([], Bytes) ->
     Bytes.
 
-do_get_rep(_Sz, MibView, Max, Max, _, Res) ->
+do_get_rep(_Sz, _MibView, Max, Max, _, Res) ->
     {noError, 0, conv_res(Res)};
 do_get_rep(Sz, MibView, Count, Max, Varbinds, Res) -> 
     case try_get_bulk(Sz, MibView, Varbinds) of
@@ -1772,16 +1845,16 @@ sort_varbindlist(Varbinds) ->
 sa_split(SubagentVarbinds) ->
     snmp_svbl:sa_split(SubagentVarbinds).
 
-make_response_pdu(ReqId, ErrStatus, ErrIndex, OrgVarbinds, ResponseVarbinds)
+make_response_pdu(ReqId, ErrStatus, ErrIndex, OrgVarbinds, _ResponseVarbinds)
   when ErrIndex /= 0 ->
     #pdu{type = 'get-response', request_id = ReqId, error_status = ErrStatus,
 	 error_index = ErrIndex, varbinds = OrgVarbinds};
-make_response_pdu(ReqId, ErrStatus, ErrIndex, OrgVarbinds, ResponseVarbinds) ->
+make_response_pdu(ReqId, ErrStatus, ErrIndex, _OrgVarbinds, ResponseVarbinds) ->
     #pdu{type = 'get-response', request_id = ReqId, error_status = ErrStatus,
 	 error_index = ErrIndex, varbinds = ResponseVarbinds}.
 
 %% Valid errormsgs for different operations.
-validate_err(consistency_check, {'EXIT', Reason}, _) ->
+validate_err(consistency_check, {'EXIT', _Reason}, _) ->
     {genErr, 0};
 validate_err(consistency_check, X, _) ->
     X;
@@ -1828,7 +1901,7 @@ validate_err(table_is_set_ok, X, Mfa) ->
 
 validate_err(row_is_set_ok, {Err, Idx}, _) when integer(Idx) ->
     {Err, Idx};
-validate_err(row_is_set_ok, {Err, {false, BadCol}}, Mfa) ->
+validate_err(row_is_set_ok, {_Err, {false, BadCol}}, Mfa) ->
     user_err("~w with is_set_ok (table), returned bad column: "
 	     "~w. Using genErr.", [Mfa, BadCol]),
     {genErr, 0};
@@ -1842,7 +1915,7 @@ validate_err(table_undo, X, Mfa) ->
 
 validate_err(row_undo, {Err, Idx}, _) when integer(Idx) ->
     {Err, Idx};
-validate_err(row_undo, {Err, {false, BadCol}}, Mfa) ->
+validate_err(row_undo, {_Err, {false, BadCol}}, Mfa) ->
     user_err("~w with undo (table), returned bad column: "
 	     "~w. Using genErr.", [Mfa, BadCol]),
     {genErr, 0};
@@ -1856,14 +1929,14 @@ validate_err(table_set, X, Mfa) ->
 
 validate_err(row_set, {Err, Idx}, _) when integer(Idx) ->
     {Err, Idx};
-validate_err(row_set, {Err, {false, BadCol}}, Mfa) ->
+validate_err(row_set, {_Err, {false, BadCol}}, Mfa) ->
     user_err("~w with set (table), returned bad column: "
 	     "~w. Using genErr.", [Mfa, BadCol]),
     {genErr, 0};
 
-validate_err(table_next, {Err, Idx}, Mfa) when integer(Idx) ->
+validate_err(table_next, {Err, Idx}, _Mfa) when integer(Idx) ->
     {Err, Idx};
-validate_err(table_next, {Err, {false, BadCol}}, Mfa) ->
+validate_err(table_next, {_Err, {false, BadCol}}, Mfa) ->
     user_err("~w with get_next, returned bad column: "
 	     "~w. Using genErr.", [Mfa, BadCol]),
     {genErr, 0}.
@@ -1941,7 +2014,7 @@ make_value_a_correct_value({value, Val}, Asn1, Mfa)
     case round(math:pow(2,BitNo+1)) of
 	X when Val < X ->
 	    {value,'BITS',Val};
-	Big ->
+	_Big ->
 	    report_err(Val,Mfa,wrongValue)
     end;
 
@@ -1957,23 +2030,23 @@ make_value_a_correct_value({value, String},
 
 make_value_a_correct_value({value, Oid},
 			   #asn1_type{bertype = 'OBJECT IDENTIFIER'},
-			   Mfa) ->
+			   _Mfa) ->
     case snmp_misc:is_oid(Oid) of
-	true -> {value, 'OBJECT IDENTIFIER', Oid};
-	Else -> {error, wrongType}
+	true  -> {value, 'OBJECT IDENTIFIER', Oid};
+	_Else -> {error, wrongType}
     end;
 
-make_value_a_correct_value({value, Val}, Asn1, Mfa)
+make_value_a_correct_value({value, Val}, Asn1, _Mfa)
   when Asn1#asn1_type.bertype == 'Opaque' ->
     if list(Val) -> {value, 'Opaque', Val};
        true -> {error, wrongType}
     end;
 
-make_value_a_correct_value({noValue, noSuchObject}, ASN1Type, Mfa) ->
+make_value_a_correct_value({noValue, noSuchObject}, _ASN1Type, _Mfa) ->
     {value, noValue, noSuchObject};
-make_value_a_correct_value({noValue, noSuchInstance}, ASN1Type, Mfa) ->
+make_value_a_correct_value({noValue, noSuchInstance}, _ASN1Type, _Mfa) ->
     {value, noValue, noSuchInstance};
-make_value_a_correct_value({noValue, noSuchName}, ASN1Type, Mfa) ->
+make_value_a_correct_value({noValue, noSuchName}, _ASN1Type, _Mfa) ->
     %% Transform this into a v2 value.  It is converted to noSuchName
     %% later if it was v1.  If it was v2, we use noSuchInstance.
     {value, noValue, noSuchInstance};
@@ -1981,12 +2054,12 @@ make_value_a_correct_value({noValue, noSuchName}, ASN1Type, Mfa) ->
 %% it makes no sense to return unSpecified for a variable! But we did
 %% allow it previously. -- We transform unSpecified to noSuchInstance
 %% (OTP-3303).
-make_value_a_correct_value({noValue, unSpecified}, ASN1Type, Mfa) ->
+make_value_a_correct_value({noValue, unSpecified}, _ASN1Type, _Mfa) ->
     {value, noValue, noSuchInstance};
 make_value_a_correct_value(genErr, _ASN1Type, _MFA) ->
     {error, genErr};
 
-make_value_a_correct_value(WrongVal, ASN1Type, undef) ->
+make_value_a_correct_value(_WrongVal, _ASN1Type, undef) ->
     {error, genErr};
 
 make_value_a_correct_value(WrongVal, ASN1Type, Mfa) ->
@@ -2012,7 +2085,7 @@ check_octet_string(String, Hi, Lo, Mfa, Type) ->
 	    {value, Type, String};
 	true ->
 	    report_err(String, Mfa, wrongLength);
-	Else ->
+	_Else ->
 	    report_err(String, Mfa, wrongType)
     end.
 
@@ -2046,12 +2119,15 @@ check_enums(Val, Asn1, Enums, Mfa) ->
 	    true         -> {error, wrongType}
     end,
     case Association of
-	{value, {AliasIntName, Val2}} -> {value, Asn1#asn1_type.bertype, Val2};
-	false                         -> report_err(Val, Mfa, wrongValue);
-	{error, wrongType}            -> report_err(Val, Mfa, wrongType)
+	{value, {_AliasIntName, Val2}} -> 
+	    {value, Asn1#asn1_type.bertype, Val2};
+	false ->
+	    report_err(Val, Mfa, wrongValue);
+	{error, wrongType} ->
+	    report_err(Val, Mfa, wrongType)
     end.
 
-report_err(Val, undef, Err) ->
+report_err(_Val, undef, Err) ->
     {error, Err};
 report_err(Val, Mfa, Err) ->
     user_err("Got ~p from ~w. Using ~w", [Val, Mfa, Err]),
@@ -2094,7 +2170,7 @@ mapfoldl(F, Eas, Accu0, [Hd|Tail]) ->
     {R,Accu1} = apply(F, [Hd,Accu0|Eas]),
     {Accu2,Rs} = mapfoldl(F, Eas, Accu1, Tail),
     {Accu2,[R|Rs]};
-mapfoldl(F, Eas, Accu, []) -> {Accu,[]}.
+mapfoldl(_F, _Eas, Accu, []) -> {Accu,[]}.
 
 %%-----------------------------------------------------------------
 %% Runtime debugging of the agent.
@@ -2112,7 +2188,7 @@ dbg_apply(M,F,A) ->
 
 
 short_name(none) -> ma;
-short_name(Pid)  -> sa.
+short_name(_Pid) -> sa.
 
 worker_short_name(ma) -> maw;
 worker_short_name(_)  -> saw.

@@ -19,13 +19,14 @@
 %% c(snmp_mgr_misc).
 
 %% API
--export([start_link_packet/8, stop/1, 
+-export([start_link_packet/8, start_link_packet/9, 
+	 stop/1, 
 	 send_discovery_pdu/2, send_pdu/2, send_msg/4, send_bytes/2,
 	 error/2,
 	 get_pdu/1, set_pdu/2, format_hdr/1]).
 
 %% internal exports
--export([init_packet/9]).
+-export([init_packet/10]).
 
 -define(SNMP_USE_V3, true).
 -include("snmp_types.hrl").
@@ -36,11 +37,23 @@
 %%----------------------------------------------------------------------
 %% The InHandler process will receive messages on the form {snmp_pdu, Pdu}.
 %%----------------------------------------------------------------------
-start_link_packet(InHandler,AgentIp,UdpPort,TrapUdp,VsnHdr,Version,Dir,BufSz) 
-  when integer(UdpPort) ->
-    proc_lib:start_link(snmp_mgr_misc, init_packet,
-		[self(),InHandler,AgentIp,UdpPort,TrapUdp, VsnHdr, Version,
-		 Dir,BufSz]).
+start_link_packet(InHandler, 
+		  AgentIp, UdpPort, TrapUdp,
+		  VsnHdr, Version, Dir, BufSz) ->
+    start_link_packet(InHandler, 
+		      AgentIp, UdpPort, TrapUdp,
+		      VsnHdr, Version, Dir, BufSz, 
+		      false).
+
+start_link_packet(InHandler, 
+		  AgentIp, UdpPort, TrapUdp, 
+		  VsnHdr, Version, Dir, BufSz,
+		  Dbg) when integer(UdpPort) ->
+    Args = [self(), InHandler,
+	    AgentIp, UdpPort, TrapUdp, 
+	    VsnHdr, Version, Dir, BufSz, 
+	    Dbg],
+    proc_lib:start_link(snmp_mgr_misc, init_packet, Args).
 
 stop(Pid) ->
     Pid ! {stop, self()},
@@ -57,7 +70,7 @@ await_discovery_response_pdu() ->
     receive
 	{discovery_response,Reply} ->
 	    Reply;
-	O ->
+	_ ->
 	    await_discovery_response_pdu()
     end.
     
@@ -74,7 +87,10 @@ send_bytes(Bytes, PacketPid) ->
 %%--------------------------------------------------
 %% The SNMP encode/decode process
 %%--------------------------------------------------
-init_packet(Parent,SnmpMgr,AgentIp,UdpPort,TrapUdp,VsnHdr,Version,Dir,BufSz) ->
+init_packet(Parent, SnmpMgr,
+	    AgentIp, UdpPort, TrapUdp,
+	    VsnHdr, Version, Dir, BufSz, Dbg) ->
+    put(debug,Dbg),
     {ok, UdpId} = gen_udp:open(TrapUdp, [{recbuf,BufSz},{reuseaddr, true}]),
     put(msg_id, 1),
     proc_lib:init_ack(Parent, self()),
@@ -84,6 +100,9 @@ init_packet(Parent,SnmpMgr,AgentIp,UdpPort,TrapUdp,VsnHdr,Version,Dir,BufSz) ->
 packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
     receive
 	{send_discovery_pdu, From, Pdu} ->
+	    d("packet_loop -> received send_discovery_pdu with"
+	      "~n   From: ~p"
+	      "~n   Pdu:  ~p", [From, Pdu]),
 	    case mk_discovery_msg(Version, Pdu, VsnHdr, "") of
 		error ->
 		    ok;
@@ -94,6 +113,8 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 	    end,
 	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
 	{send_pdu, Pdu} ->
+	    d("packet_loop -> received send_pdu with"
+	      "~n   Pdu:  ~p", [Pdu]),
 	    case mk_msg(Version, Pdu, VsnHdr, MsgData) of
 		error ->
 		    ok;
@@ -102,6 +123,10 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 	    end,
 	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
 	{send_msg, Msg, Ip, Udp} ->
+	    d("packet_loop -> received send_msg with"
+	      "~n   Msg:  ~p"
+	      "~n   Ip:   ~p"
+	      "~n   Udp:  ~p", [Msg,Ip,Udp]),
 	    case catch snmp_pdus:enc_message(Msg) of
 		{'EXIT', Reason} ->
 		    error("Encoding error. Msg: ~w. Reason: ~w",[Msg,Reason]);
@@ -110,33 +135,45 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 	    end,
 	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
 	{udp, UdpId, Ip, UdpPort, Bytes} ->
+	    d("packet_loop -> received udp with"
+	      "~n   UdpId:     ~p"
+	      "~n   Ip:        ~p"
+	      "~n   UdpPort:   ~p"
+	      "~n   sz(Bytes): ~p", [UdpId, Ip, UdpPort, sz(Bytes)]),	    
 	    MsgData3 = handle_udp_packet(Version,erase(discovery),
 					 UdpId, Ip, UdpPort, Bytes,
 					 SnmpMgr, AgentIp),
 	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,
 			MsgData3);
 	{send_bytes, B} ->
+	    d("packet_loop -> received send_bytes with"
+	      "~n   sz(B): ~p", [sz(B)]),	    
 	    udp_send(UdpId, AgentIp, UdpPort, B),
 	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
 	{stop, Pid} ->
+	    d("packet_loop -> received stop from ~p", [Pid]),	    
 	    gen_udp:close(UdpId),
 	    Pid ! {self(), stopped},
 	    exit(normal);
 	Other ->
+	    d("packet_loop -> received unknown"
+	      "~n   ~p", [Other]),	    
 	    exit({snmp_packet_got_other, Other})
     end.
+
 
 handle_udp_packet(_V,undefined,UdpId,Ip,UdpPort,Bytes,SnmpMgr,AgentIp) ->
     M = (catch snmp_pdus:dec_message_only(Bytes)),
     MsgData3 =
 	case M of
 	    Message when Message#message.version == 'version-3' ->
+		d("handle_udp_packet -> version 3"),
 		case catch handle_v3_msg(Bytes, Message) of
 		    {ok, NewData, MsgData2} ->
 			Msg = Message#message{data = NewData},
 			case SnmpMgr of
 			    {pdu, Pid} ->
-					Pid ! {snmp_pdu, get_pdu(Msg)};
+				Pid ! {snmp_pdu, get_pdu(Msg)};
 			    {msg, Pid} ->
 				Pid ! {snmp_msg, Msg, Ip, UdpPort}
 			end,
@@ -157,6 +194,7 @@ handle_udp_packet(_V,undefined,UdpId,Ip,UdpPort,Bytes,SnmpMgr,AgentIp) ->
 		end;
 	    Message when record(Message, message) ->
 		%% v1 or v2c
+		d("handle_udp_packet -> version 1 or v2c"),
 		case catch snmp_pdus:dec_pdu(Message#message.data) of
 		    Pdu when record(Pdu, pdu) ->
 			case SnmpMgr of
@@ -188,7 +226,7 @@ handle_udp_packet(_V,undefined,UdpId,Ip,UdpPort,Bytes,SnmpMgr,AgentIp) ->
 		[]
 	end,
     MsgData3;
-handle_udp_packet(V,{DiscoReqMsg,From},UdpId,Ip,UdpPort,Bytes,_,AgentIp) ->
+handle_udp_packet(V,{DiscoReqMsg,From},_UdpId,_Ip,_UdpPort,Bytes,_,_AgentIp) ->
     DiscoRspMsg = (catch snmp_pdus:dec_message(Bytes)),
     display_incomming_message(DiscoRspMsg),
     Reply = (catch check_discovery_result(V,DiscoReqMsg,DiscoRspMsg)),
@@ -200,7 +238,7 @@ handle_udp_packet(V,{DiscoReqMsg,From},UdpId,Ip,UdpPort,Bytes,_,AgentIp) ->
 check_discovery_result('version-3',DiscoReqMsg,DiscoRspMsg) ->
     ReqMsgID = getMsgID(DiscoReqMsg),
     RspMsgID = getMsgID(DiscoRspMsg),
-    check_msgID(ReqMsgID,ReqMsgID),
+    check_msgID(ReqMsgID,RspMsgID),
     ReqRequestId = getRequestId('version-3',DiscoReqMsg),
     RspRequestId = getRequestId('version-3',DiscoRspMsg),
     check_requestId(ReqRequestId,RspRequestId),
@@ -226,7 +264,7 @@ getMsgID(M) when record(M,message) ->
 
 getRequestId('version-3',M) when record(M,message) ->
     ((M#message.data)#scopedPdu.data)#pdu.request_id;
-getRequestId(Version,M) when record(M,message) ->
+getRequestId(_Version,M) when record(M,message) ->
     (M#message.data)#pdu.request_id;
 getRequestId(Version,M) ->
     io:format("************* ERROR ****************"
@@ -241,22 +279,14 @@ getMsgAuthEngineID(M) when record(M,message) ->
     
 getSysDescr(M) when record(M,message) ->
     getSysDescr((M#message.data)#pdu.varbinds);
-getSysDescr([H|T]) ->
-    case getSysDescr(H) of
-	{ok,SysDescr} ->
-	    SysDescr;
-	_ ->
-	    getSysDescr(T)
-    end;
-getSysDescr(V) when record(V,varbind) ->
-    case V#varbind.oid of
-	[1,3,6,1,2,1,1,1] ->
-	    {ok,V#varbind.value};
-	[1,3,6,1,2,1,1,1,0] ->
-	    {ok,V#varbind.value};
-	_ ->
-	    not_found
-    end.
+getSysDescr([]) ->
+    not_found;
+getSysDescr([#varbind{oid = [1,3,6,1,2,1,1,1], value = Value}|_]) ->
+    Value;
+getSysDescr([#varbind{oid = [1,3,6,1,2,1,1,1,0], value = Value}|_]) ->
+    Value;
+getSysDescr([_|T]) ->
+    getSysDescr(T).
     
 handle_v3_msg(Packet, #message{vsn_hdr = V3Hdr, data = Data}) ->
     %% Code copied from snmp_mpd.erl
@@ -268,7 +298,7 @@ handle_v3_msg(Packet, #message{vsn_hdr = V3Hdr, data = Data}) ->
     IsReportable = snmp_misc:is_reportable(MsgFlags),
     SecRes = (catch SecModule:process_incoming_msg(list_to_binary(Packet), 
 						   Data,SecParams,SecLevel)),
-    {SecEngineID, SecName, ScopedPDUBytes, SecData} =
+    {_SecEngineID, SecName, ScopedPDUBytes, SecData} =
 	check_sec_module_result(SecRes, V3Hdr, Data, IsReportable),
     case catch snmp_pdus:dec_scoped_pdu(ScopedPDUBytes) of
 	ScopedPDU when record(ScopedPDU, scopedPdu) -> 
@@ -302,7 +332,7 @@ check_sec_module_result(Res, V3Hdr, Data, IsReportable) ->
 	    throw({error, {securityError, Else}})
     end.
 
-generate_v3_report_msg(MsgID, MsgSecurityModel, Data, ErrorInfo) ->
+generate_v3_report_msg(_MsgID, _MsgSecurityModel, Data, ErrorInfo) ->
     {Varbind, SecName, Opts} = ErrorInfo,
     ReqId =
 	if record(Data, scopedPdu) -> (Data#scopedPdu.data)#pdu.request_id;
@@ -354,9 +384,9 @@ mk_discovery_msg('version-3', Pdu, _VsnHdr, UserName) ->
 	    error("Encoding error. Pdu: ~w. Reason: ~w",[Pdu, Reason]),
 	    error;
 	L when list(L) ->
-	    {Msg, L}
+	    {Msg#message{data = ScopedPDU}, L}
     end;
-mk_discovery_msg(Version, Pdu, {Com, _, _, _, _}, UserName) ->
+mk_discovery_msg(Version, Pdu, {Com, _, _, _, _}, _UserName) ->
     Msg = #message{version = Version, vsn_hdr = Com, data = Pdu},
     case catch snmp_pdus:enc_message(Msg) of
 	{'EXIT', Reason} ->
@@ -421,7 +451,7 @@ format_hdr(#message{version = 'version-3',
 		    data = #scopedPdu{contextName = CName}}) ->
     io_lib:format("v3, ContextName = \"~s\"  Message ID = ~w\n",
 		  [CName, MsgId]);
-format_hdr(#message{version = Vsn, vsn_hdr = Com, data = X}) ->
+format_hdr(#message{version = Vsn, vsn_hdr = Com}) ->
     io_lib:format("~w, CommunityName = \"~s\"\n", [vsn(Vsn), Com]).
 
 vsn('version-1') -> v1;
@@ -491,7 +521,7 @@ display_hdr('version-3',H) ->
     SecModel = H#v3_hdr.msgSecurityModel,
     display_msgSecurityModel(SecModel),
     display_msgSecurityParameters(SecModel,H#v3_hdr.msgSecurityParameters);
-display_hdr(V,Community) -> 
+display_hdr(_V,Community) -> 
     display_community(Community).
 
 display_community(Community) ->
@@ -561,7 +591,7 @@ display_msg_data('version-3',Direction,D) when record(D,scopedPdu) ->
     display_scoped_pdu(Direction,D);
 display_msg_data(_Version,Direction,D) when record(D,pdu) ->
     display_pdu(Direction,D);
-display_msg_data(_Version,Direction,D) ->
+display_msg_data(_Version,_Direction,D) ->
     display_prop("Unknown message data",D).
 
 display_scoped_pdu(Direction,P) ->
@@ -601,9 +631,6 @@ display_error_status(S) ->
 
 display_error_index(I) ->
     display_prop("Error index",I).
-
-%%display_varbinds(V) ->
-%%    display_prop("Varbinds",V).
 
 display_varbinds([H|T]) ->
     display_prop_hdr("Varbinds"),
@@ -645,3 +672,22 @@ display_prop(S,V) ->
 display_prop_hdr(S) ->
     io:format("\t~s:~n",[S]).
 
+
+%%----------------------------------------------------------------------
+%% Debug
+%%----------------------------------------------------------------------
+
+sz(L) when list(L) ->
+    length(lists:flatten(L));
+sz(B) when binary(B) ->
+    size(B);
+sz(O) ->
+    {unknown_size, O}.
+
+d(F)   -> d(F, []).
+d(F,A) -> d(get(debug),F,A).
+
+d(true,F,A) ->
+    io:format("MGR_PS_DBG:" ++ F ++ "~n",A);
+d(_,_F,_A) -> 
+    ok.

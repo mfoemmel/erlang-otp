@@ -17,11 +17,12 @@
 /* Copy of erl_posix_str.c */
 
 #ifdef __WIN32__
-#include <winsock2.h>
+#include "esock_winsock.h"
 #endif
 
 #include <stdio.h>
 #include <errno.h>
+#include "esock_posix_str.h"
 
 /*
  *----------------------------------------------------------------------

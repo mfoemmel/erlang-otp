@@ -59,7 +59,7 @@ init() ->
 %%--------------------------------------------------------------------
 create_win(GS, Title, Menus) ->
     Win = gs:window(GS, [{title, Title},
-			 {width, 746}, {height, 390},
+			 {width, 780}, {height, 390},
 			 {configure,true}, {destroy,true},
 			 {keypress,true}, {motion,true}]),
 
@@ -67,10 +67,10 @@ create_win(GS, Title, Menus) ->
     dbg_ui_win:create_menus(MenuBar, Menus),
     dbg_ui_winman:windows_menu(MenuBar),
 
-    Grid = gs:grid(Win, [{x, 5}, {y, 30}, {width, 736}, {height, 348},
+    Grid = gs:grid(Win, [{x, 5}, {y, 30}, {width, 770}, {height, 348},
 			 {bg, grey}, {fg, black},
 			 {vscroll, right}, {hscroll, bottom},
-			 calc_columnwidths(736),
+			 calc_columnwidths(770),
 			 {rows, {1,?default_rows}}]),
     gs:gridline(Grid, [{row, 1}, {bw, 5}, {fg, blue},
 		       {text, {1,"Pid"}}, {text, {2,"Initial Call"}},
@@ -164,6 +164,7 @@ add_process(WinInfo, Pid, Name, {Mod,Func,Args}, Status, Info) ->
 			  true -> ok
 		       end,
 		       gs:gridline(Grid, [{row, Row}, {bw, 5}, {fg, black},
+					  {font,{screen,12}},
 					  {click, true},
 					  {doubleclick, true}]);
 		   GSObj ->
@@ -408,10 +409,10 @@ configure(WinInfo, {W, H}) ->
 
 calc_columnwidths(Width) ->
     if
-	Width=<736 -> 
-	    {columnwidths, [75, 215, 146, 150, 400]};
+	Width=<770 -> 
+	    {columnwidths, [109, 215, 146, 150, 400]};
 	true -> 
-	    S = (Width-75)/(215+146+150+150),
-	    {columnwidths, [75, round(215*S), round(146*S), round(150*S),
-			    round(400*S)]}
+	    S = Width/770,
+	    {columnwidths, [round(109*S), round(215*S), round(146*S), 
+			    round(150*S), round(400*S)]}
     end.

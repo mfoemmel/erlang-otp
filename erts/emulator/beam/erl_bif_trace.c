@@ -480,8 +480,8 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 	    ok = 1;
 	    for (i = 0; i < erts_max_processes; i++) {
 		Process* tracee_p = process_tab[i];
-		
-		if (INVALID_PID(tracee_p, tracee_p->id))
+
+		if (! tracee_p) 
 		    continue;
 		if (tracer != NIL) {
 		    if (tracee_p->id == tracer)
@@ -1362,7 +1362,6 @@ static void clear_trace_bif(int bif_index) {
  */
 
 BIF_RETTYPE seq_trace_2(BIF_ALIST_2)    
-BIF_ADECL_2
 {
     Eterm res;
     res = erts_seq_trace(BIF_P, BIF_ARG_1, BIF_ARG_2, 1);
@@ -1476,7 +1475,6 @@ new_seq_trace_token(Process* p)
 }
 
 BIF_RETTYPE seq_trace_info_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm item;
     Eterm res;
@@ -1540,7 +1538,6 @@ BIF_ADECL_1
    fulfilled, but nothing is passed if system_seq_tracer is not set.
  */
 BIF_RETTYPE seq_trace_print_1(BIF_ALIST_1)    
-BIF_ADECL_1
 {
     if (SEQ_TRACE_TOKEN(BIF_P) == NIL) 
 	BIF_RET(am_false);
@@ -1559,7 +1556,6 @@ BIF_ADECL_1
    fulfilled, but nothing is passed if system_seq_tracer is not set.
  */
 BIF_RETTYPE seq_trace_print_2(BIF_ALIST_2)    
-BIF_ADECL_2
 {
     if (SEQ_TRACE_TOKEN(BIF_P) == NIL) 
 	BIF_RET(am_false);
@@ -1573,3 +1569,122 @@ BIF_ADECL_2
 		     SEQ_TRACE_PRINT, NIL, BIF_P);
     BIF_RET(am_true);
 }
+
+
+
+void erts_system_monitor_clear() {
+    erts_system_monitor = NIL;
+    erts_system_monitor_long_gc = 0;
+    erts_system_monitor_large_heap = 0;
+    erts_system_monitor_flags.busy_port = 0;
+    erts_system_monitor_flags.busy_dist_port = 0;
+}
+
+static Eterm system_monitor_get(Process *p) {
+    Eterm *hp;
+    
+    if (erts_system_monitor == NIL) {
+	return am_undefined;
+    } else {
+	Eterm l;
+	Eterm long_gc = 
+	    erts_system_monitor_long_gc != 0 ?
+	    make_small_or_big(erts_system_monitor_long_gc, p) :
+	    NIL;
+	Eterm large_heap = 
+	    erts_system_monitor_large_heap != 0 ?
+	    make_small_or_big(erts_system_monitor_large_heap, p) :
+	    NIL;
+	
+	hp = HAlloc(p, 3 + ((long_gc != NIL ? 2+3 : 0) + 
+			    (large_heap != NIL ? 2+3 : 0) +
+			    (erts_system_monitor_flags.busy_dist_port ? 2 : 0) +
+			    (erts_system_monitor_flags.busy_port ? 2 : 0)));
+	l = NIL;
+	if (long_gc != NIL) {
+	    Eterm t = TUPLE2(hp, am_long_gc, long_gc); hp += 3;
+	    l = CONS(hp, t, l); hp += 2;
+	}
+	if (large_heap != NIL) {
+	    Eterm t = TUPLE2(hp, am_large_heap, large_heap); hp += 3;
+	    l = CONS(hp, t, l); hp += 2;
+	}
+	if (erts_system_monitor_flags.busy_port) {
+	    l = CONS(hp, am_busy_port, l); hp += 2;
+	}
+	if (erts_system_monitor_flags.busy_dist_port) {
+	    l = CONS(hp, am_busy_dist_port, l); hp += 2;
+	}
+	return TUPLE2(hp, erts_system_monitor, l);
+    }
+}
+
+BIF_RETTYPE system_monitor_0(Process *p) {
+    BIF_RET(system_monitor_get(p));
+}
+
+BIF_RETTYPE system_monitor_1(Process *p, Eterm spec) {
+    if (spec == am_undefined) {
+	Eterm prev = system_monitor_get(p);
+	erts_system_monitor_clear();
+	BIF_RET(prev);
+    } else if (is_tuple(spec)) {
+	Eterm *tp = tuple_val(spec);
+	if (tp[0] != make_arityval(2)) goto error;
+	BIF_RET(system_monitor_2(p, tp[1], tp[2]));
+    }
+ error:
+    BIF_ERROR(p, BADARG);
+}
+
+BIF_RETTYPE system_monitor_2(Process *p, Eterm monitor_pid, Eterm list) {
+    Eterm prev;
+    Process *monitor_p;
+    if (monitor_pid == am_undefined || list == NIL) {
+	prev = system_monitor_get(p);
+	erts_system_monitor_clear();
+	BIF_RET(prev);
+    }
+    if (is_not_internal_pid(monitor_pid)) goto error;
+    if (internal_pid_index(monitor_pid) >= erts_max_processes) goto error;
+    monitor_p = process_tab[internal_pid_index(monitor_pid)];
+    if (INVALID_PID(monitor_p, monitor_pid)) goto error;
+    if (is_not_list(list)) goto error;
+    else {
+	Uint long_gc, large_heap;
+	int busy_port, busy_dist_port;
+	for (long_gc = 0, large_heap = 0, busy_port = 0, busy_dist_port = 0;
+	     is_list(list);
+	     list = CDR(list_val(list))) {
+	    Eterm t = CAR(list_val(list));
+	    if (is_tuple(t)) {
+		Eterm *tp = tuple_val(t);
+		if (arityval(tp[0]) != 2) goto error;
+		if (tp[1] == am_long_gc) {
+		    if (! term_to_Uint(tp[2], &long_gc)) goto error;
+		    if (long_gc < 1) long_gc = 1;
+		} else if (tp[1] == am_large_heap) {
+		    if (! term_to_Uint(tp[2], &large_heap)) goto error;
+		    if (large_heap < 16384) large_heap = 16384;
+		    /* 16 Kword is not an unnatural heap size */
+		} else goto error;
+	    } else if (t == am_busy_port) {
+		busy_port = !0;
+	    } else if (t == am_busy_dist_port) {
+		busy_dist_port = !0;
+	    } else goto error;
+	}
+	if (is_not_nil(list)) goto error;
+	prev = system_monitor_get(p);
+	erts_system_monitor = monitor_pid;
+	monitor_p->flags |= F_TRACER;
+	erts_system_monitor_long_gc = long_gc;
+	erts_system_monitor_large_heap = large_heap;
+	erts_system_monitor_flags.busy_port = !!busy_port;
+	erts_system_monitor_flags.busy_dist_port = !!busy_dist_port;
+	BIF_RET(prev);
+    }
+ error:
+    BIF_ERROR(p, BADARG);
+}
+

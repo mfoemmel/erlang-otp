@@ -19,7 +19,7 @@
 
 -module(beam_jump).
 
--export([module/2]).
+-export([module/2,function/1]).
 
 %%% The following optimisations are done:
 %%%
@@ -113,13 +113,17 @@ module({Mod,Exp,Attr,Fs,Lc}, _Opt) ->
     {ok,{Mod,Exp,Attr,map(fun function/1, Fs),Lc}}.
 
 function({function,Name,Arity,CLabel,Asm0}) ->
-    [{label,Fc},_Fi,{label,Entry}|_] = Asm0,
-    Lbls = ordsets:list_to_set([Fc,Entry]),
+    [{label,Fc}|_] = Asm0,
+    Lbls = initial_labels(Asm0, []),
     St0 = #st{fc=Fc,mcode=dict:new(),mlbl=dict:new(),labels=Lbls},
     {Asm1,St} = opt(Asm0, [], St0),
     Asm = remove_unused_labels(Asm1, St),
     {function,Name,Arity,CLabel,Asm}.
 
+initial_labels([{label,Lbl}|Is], Acc) ->
+    initial_labels(Is, [Lbl|Acc]);
+initial_labels([{func_info,_,_,_},{label,Lbl}|_], Acc) ->
+    ordsets:from_list([Lbl|Acc]).
 
 opt([{test,Test0,{f,Lnum}=Lbl,Ops0}=I|Is0], Acc, St) ->
     case Is0 of
@@ -141,12 +145,17 @@ opt([{select_val,_R,Fail,{list,Vls}}=I|Is], Acc, St) ->
     skip_unreachable(Is, [I|Acc], label_used([Fail|Vls], St));
 opt([{select_tuple_arity,_R,Fail,{list,Vls}}=I|Is], Acc, St) ->
     skip_unreachable(Is, [I|Acc], label_used([Fail|Vls], St));
+opt([{'try',_R,Lbl}=I|Is], Acc, St) ->
+    opt(Is, [I|Acc], label_used(Lbl, St));
 opt([{'catch',_R,Lbl}=I|Is], Acc, St) ->
     opt(Is, [I|Acc], label_used(Lbl, St));
 opt([{label,L1},{jump,{f,L2}}=I|Is], [Prev|Acc], St0) ->
     St1 = St0#st{mlbl=dict:append(L2, L1, St0#st.mlbl)},
     opt([Prev,I|Is], Acc, label_used({f,L2}, St1));
 opt([{label,L},{case_end,_R}=I|Is], [Prev|Acc], St0) ->
+    St1 = St0#st{mcode=dict:append([I], L, St0#st.mcode)},
+    opt([Prev,I|Is], Acc, St1);
+opt([{label,L},{try_case_end,_R}=I|Is], [Prev|Acc], St0) ->
     St1 = St0#st{mcode=dict:append([I], L, St0#st.mcode)},
     opt([Prev,I|Is], Acc, St1);
 opt([{label,L},{badmatch,_R}=I|Is], [Prev|Acc], St0) ->
@@ -203,9 +212,9 @@ opt([I|Is], Acc, St) ->
 	true  -> skip_unreachable(Is, [I|Acc], St);
 	false -> opt(Is, [I|Acc], St)
     end;
-opt([], Acc, St0) ->
+opt([], Acc, #st{fc=Fc,mlbl=Mlbl}=St0) ->
     Code = reverse(Acc, insert_moved_code(St0)),
-    {case dict:find(St0#st.fc, St0#st.mlbl) of
+    {case dict:find(Fc, Mlbl) of
 	 {ok,Lbls} -> [{label,L} || L <- Lbls] ++ Code;
 	 error -> Code
      end,St0}.
@@ -297,6 +306,7 @@ is_unreachable_after({func_info,_M,_F,_A}) -> true;
 is_unreachable_after(return) -> true;
 is_unreachable_after(if_end) -> true;
 is_unreachable_after({case_end,_}) -> true;
+is_unreachable_after({try_case_end,_}) -> true;
 is_unreachable_after({badmatch,_}) -> true;
 is_unreachable_after({call_ext_last,_Ar,_ExtFunc,_D}) -> true;
 is_unreachable_after({call_ext_only,_Ar,_ExtFunc}) -> true;

@@ -17,6 +17,7 @@
 #include "beam_load.h"
 #include "erl_db.h"
 #include "hash.h"
+#include "erl_bits.h"
 #ifdef HIPE
 #include "hipe_mode_switch.h"
 #include "hipe_native_bif.h"
@@ -85,7 +86,6 @@ static Eterm address_to_term(void *address, Process *p)
  * BIFs for reading and writing memory. Used internally by HiPE.
  */
 BIF_RETTYPE hipe_bifs_read_u8_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     unsigned char *address = term_to_address(BIF_ARG_1);
     if( !address )
@@ -94,7 +94,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE hipe_bifs_read_s32_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Sint32 *address = term_to_address(BIF_ARG_1);
     if( !address || is_unsafe_32(address) )
@@ -103,7 +102,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE hipe_bifs_read_u32_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Uint *address = term_to_address(BIF_ARG_1);
     if( !address || is_unsafe_32(address) )
@@ -112,7 +110,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE hipe_bifs_write_u8_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     unsigned char *address;
 
@@ -124,7 +121,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE hipe_bifs_write_s32_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Sint32 *address;
     Sint value;
@@ -139,7 +135,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE hipe_bifs_write_u32_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Uint *address;
     Uint value;
@@ -180,7 +175,6 @@ BIF_ADECL_2
 #define array_length(a)		array_header_arity(array_val((a))[0])
 
 BIF_RETTYPE hipe_bifs_array_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Eterm *hp;
     int nelts, i;
@@ -199,7 +193,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE hipe_bifs_array_length_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if( is_not_array(BIF_ARG_1) ) {
 	if( is_nil(BIF_ARG_1) )	/* NIL represents empty arrays */
@@ -210,7 +203,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE hipe_bifs_array_sub_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     unsigned i;
 
@@ -222,7 +214,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE hipe_bifs_array_update_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     unsigned i;
 
@@ -236,7 +227,6 @@ BIF_ADECL_3
 }
 
 BIF_RETTYPE hipe_bifs_ref_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm *hp;
 
@@ -249,7 +239,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE hipe_bifs_ref_get_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if( is_not_array(BIF_ARG_1) ||
 	array_val(BIF_ARG_1)[0] != make_array_header(1) )
@@ -258,7 +247,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE hipe_bifs_ref_set_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     if( is_not_immed(BIF_ARG_2) ||
 	is_not_array(BIF_ARG_1) ||
@@ -272,13 +260,12 @@ BIF_ADECL_2
  * Allocate memory for code.
  */
 BIF_RETTYPE hipe_bifs_alloc_code_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm *block;
 
     if( is_not_small(BIF_ARG_1) )
 	BIF_ERROR(BIF_P, BADARG);
-    block = (Eterm*) safe_alloc(unsigned_val(BIF_ARG_1));
+    block = (Eterm*) erts_alloc(ERTS_ALC_T_HIPE, unsigned_val(BIF_ARG_1));
     BIF_RET(address_to_term(block, BIF_P));
 }
 
@@ -311,7 +298,7 @@ static Eterm *constants_alloc(unsigned nwords)
 
     /* initialise at the first call */
     if( (next = hipe_constants_next) == NULL ) {
-	next = (Eterm*)safe_alloc(CONSTANTS_BYTES);
+	next = (Eterm*)erts_alloc(ERTS_ALC_T_HIPE, CONSTANTS_BYTES);
 	hipe_constants_start = next;
 	hipe_constants_next = next;
 	constants_avail_words = CONSTANTS_BYTES / sizeof(Eterm);
@@ -324,7 +311,6 @@ static Eterm *constants_alloc(unsigned nwords)
 }
 
 BIF_RETTYPE hipe_bifs_alloc_constant_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     unsigned nwords;
     Eterm *block;
@@ -337,13 +323,11 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE hipe_bifs_term_size_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     BIF_RET(make_small(size_object(BIF_ARG_1)));
 }
 
 BIF_RETTYPE hipe_bifs_copy_term_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     Eterm size, *hp, res;
 
@@ -395,7 +379,6 @@ Uint *hipe_bifs_find_pc_from_mfa(Eterm mfa)
 }
 
 BIF_RETTYPE hipe_bifs_fun_to_address_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm *pc = hipe_bifs_find_pc_from_mfa(BIF_ARG_1);
     if( !pc )
@@ -404,7 +387,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE hipe_bifs_fun_to_address_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
   Export* export_entry;
 
@@ -422,7 +404,6 @@ BIF_ADECL_3
 }
 
 BIF_RETTYPE hipe_bifs_set_native_address_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     Eterm *pc;
     void *address;
@@ -459,7 +440,6 @@ BIF_ADECL_3
  *    - returns {Module, Function, Arity}
  */
 BIF_RETTYPE hipe_bifs_address_to_fun_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm *pc;
     Eterm *funcinfo;
@@ -499,9 +479,7 @@ struct hipe_sdesc_table hipe_sdesc_table;
 static struct sdesc **alloc_bucket(unsigned int size)
 {
     unsigned long nbytes = size * sizeof(struct sdesc*);
-    struct sdesc **bucket = sys_alloc_from(110, nbytes);
-    if( !bucket )
-	erl_exit(1, "failed to allocate hash buckets (%lu)\n", nbytes);
+    struct sdesc **bucket = erts_alloc(ERTS_ALC_T_HIPE, nbytes);
     sys_memzero(bucket, nbytes);
     return bucket;
 }
@@ -530,7 +508,7 @@ static void hipe_grow_sdesc_table(void)
 	    b = next;
 	}
     }
-    sys_free(old_bucket);
+    erts_free(ERTS_ALC_T_HIPE, old_bucket);
 }
 
 static struct sdesc *hipe_put_sdesc(struct sdesc *sdesc)
@@ -627,7 +605,7 @@ static struct sdesc *decode_sdesc(Eterm arg)
     livebitswords = (fsize + arity + 1 + 31) / 32;
     /* Calculate number of words for the stack descriptor. */
     sdescwords = 3 + livebitswords + (exnra ? 1 : 0);
-    p = safe_alloc(sdescwords*4);
+    p = erts_alloc(ERTS_ALC_T_HIPE, sdescwords*4);
     /* If we have an exception handler use the
        special sdesc_with_exnra structure. */
     if( exnra ) {
@@ -653,7 +631,6 @@ static struct sdesc *decode_sdesc(Eterm arg)
 }
 
 BIF_RETTYPE hipe_bifs_enter_sdesc_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     struct sdesc *sdesc;
 
@@ -715,7 +692,7 @@ static void init_nbif_table(void)
     f.alloc = (HALLOC_FUN) nbif_alloc;
     f.free = NULL;
 
-    hash_init(&nbif_table, "nbif_table", 500, f);
+    hash_init(ERTS_ALC_T_NBIF_TABLE, &nbif_table, "nbif_table", 500, f);
 
     for(i = 0; i < BIF_SIZE; ++i)
 	hash_put(&nbif_table, &nbifs[i]);
@@ -738,7 +715,6 @@ static void *nbif_address(Eterm mod, Eterm fun, unsigned arity)
  * hipe_bifs_bif_address(M,F,A) -> address or false
  */
 BIF_RETTYPE hipe_bifs_bif_address_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     void *address;
     static int init_done = 0;
@@ -764,12 +740,15 @@ BIF_ADECL_3
  * hipe_bifs_primop_address(Atom) -> address or false
  */
 BIF_RETTYPE hipe_bifs_primop_address_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     void *res;
 
     switch( BIF_ARG_1 ) {
 #define check_bif(Name,Address)	case Name: res = Address; break
+        check_bif(am_erl_fp_exception, (int*)&erl_fp_exception); /* ignore volatile */
+        check_bif(am_erts_mb, &erts_mb);
+	check_bif(am_erts_save_mb, &erts_save_mb);
+
 	check_bif(am_callemu, nbif_callemu);
 	check_bif(am_suspend_msg, nbif_suspend_msg);
 	check_bif(am_suspend_msg_timeout, nbif_suspend_msg_timeout);
@@ -814,15 +793,13 @@ BIF_ADECL_1
 	check_bif(am_bs_put_float, nbif_bs_put_float);
 	check_bif(am_bs_put_string, nbif_bs_put_string);
 	check_bif(am_bs_get_matchbuffer, nbif_bs_get_matchbuffer);
-
+	check_bif(am_bs_allocate, nbif_bs_allocate);
+	check_bif(am_bs_put_big_integer, nbif_bs_put_big_integer);
+	check_bif(am_bs_put_small_float, nbif_bs_put_small_float);
+	
 	check_bif(am_cmp_2, nbif_cmp_2);
 	check_bif(am_op_exact_eqeq_2, nbif_eq_2);
 
-	check_bif(am_test, nbif_test);
-
-
-	check_bif(am_clear_fp_exception, nbif_clear_fp_exception);
-	check_bif(am_check_fp_exception, nbif_check_fp_exception);
 	check_bif(am_conv_big_to_float, nbif_conv_big_to_float);
 
 #ifdef __sparc__
@@ -846,6 +823,7 @@ BIF_ADECL_1
 #endif
 #ifdef __i386__
 	check_bif(am_inc_stack_0, nbif_inc_stack_0);
+	check_bif(am_handle_fp_exception, nbif_handle_fp_exception);
 #endif
 #undef check_bif
       default:
@@ -862,7 +840,6 @@ BIF_ADECL_1
 #undef GBIF_LIST
 
 BIF_RETTYPE hipe_bifs_gbif_address_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     unsigned arity;
     void *address;
@@ -885,7 +862,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE hipe_bifs_atom_to_word_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if( is_not_atom(BIF_ARG_1) )
 	BIF_ERROR(BIF_P, BADARG);
@@ -893,13 +869,11 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE hipe_bifs_term_to_word_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     BIF_RET(Uint_to_term(BIF_ARG_1, BIF_P));
 }
 
 BIF_RETTYPE hipe_bifs_emu_stub_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
   Export* export_entry;
 
@@ -914,7 +888,7 @@ BIF_ADECL_3
 }
 
 DbTable* code_tb = (DbTable*) NULL;
-void init_code_table(void)
+static void init_code_table(void)
 {
     Uint32 status;
     int keypos;
@@ -923,10 +897,11 @@ void init_code_table(void)
     status = DB_NORMAL | DB_SET | DB_LHASH | DB_PROTECTED;
     keypos = 1;
 
-    code_tb = (DbTable*) fix_alloc_from(55, table_desc);
+    code_tb = (DbTable*) erts_alloc(ERTS_ALC_T_DB_TABLE, sizeof(DbTable));
     code_tb->common.status = status;
     code_tb->common.keypos = keypos;
     code_tb->common.nitems = 0;
+    code_tb->common.memory = 0;
     cret = db_create_hash((Process *)NULL, &(code_tb->hash));
 
     if (cret != DB_ERROR_NONE) {
@@ -936,7 +911,6 @@ void init_code_table(void)
 }
 
 BIF_RETTYPE hipe_bifs_set_funinfo_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     int cret;
     Eterm ret;
@@ -961,7 +935,6 @@ BIF_ADECL_1
 
 /* XXX: this is really a primop, not a BIF */
 BIF_RETTYPE hipe_conv_big_to_float(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm res;
     Eterm* hp;
@@ -980,7 +953,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE hipe_bifs_get_funinfo_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     int cret;
     Eterm ret;
@@ -1006,7 +978,6 @@ BIF_ADECL_1
 */
 
 BIF_RETTYPE hipe_bifs_make_fun_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
   Eterm free_vars;
   Eterm mod;
@@ -1090,7 +1061,6 @@ BIF_ADECL_3
 }
 
 BIF_RETTYPE hipe_bifs_make_fe_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
   /*
      args: Nativecodeaddress, Module, {Uniq, Index, BeamAddress}
@@ -1191,7 +1161,6 @@ int hipe_patch_address(Uint *address, Eterm patchtype, Uint value)
 }
 
 BIF_RETTYPE hipe_bifs_check_crc_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Uint crc;
 

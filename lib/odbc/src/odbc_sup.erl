@@ -27,7 +27,7 @@ init([Name]) ->
     MaxT = 3600,
     StartFunc = {odbc, start_link_sup, []},
     Restart = temporary, % E.g. should not be restarted
-    Shutdown = 1000,
+    Shutdown = 7000,
     Modules = [odbc],
     Type = worker,
     ChildSpec = {Name, StartFunc, Restart, Shutdown, Type, Modules},

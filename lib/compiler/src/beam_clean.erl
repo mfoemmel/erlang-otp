@@ -22,8 +22,6 @@
 -export([module/2]).
 -import(lists, [member/2,map/2,foldl/3,mapfoldl/3]).
 
--compile({inline,{label,2}}).
-
 module({Mod,Exp,Attr,Fs0,_}, _Opt) ->
     Order = [Lbl || {function,_,_,Lbl,_} <- Fs0],
     All = foldl(fun({function,_,_,Lbl,_}=Func,D) -> dict:store(Lbl, Func, D) end,
@@ -138,6 +136,8 @@ replace([{select_tuple_arity,R,{f,Fail},{list,Vls0}}|Is], Acc, D) ->
     Vls = map(fun ({f,L}) -> {f,label(L, D)};
 		  (Other) -> Other end, Vls0),
     replace(Is, [{select_tuple_arity,R,{f,label(Fail, D)},{list,Vls}}|Acc], D);
+replace([{'try',R,{f,Lbl}}|Is], Acc, D) ->
+    replace(Is, [{'try',R,{f,label(Lbl, D)}}|Acc], D);
 replace([{'catch',R,{f,Lbl}}|Is], Acc, D) ->
     replace(Is, [{'catch',R,{f,label(Lbl, D)}}|Acc], D);
 replace([{jump,{f,Lbl}}|Is], Acc, D) ->

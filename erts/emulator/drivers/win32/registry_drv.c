@@ -128,19 +128,19 @@ reg_start(ErlDrvPort port, char* buf)
 	}
     }
   
-    rp = sys_alloc(sizeof(RegPort));
+    rp = driver_alloc(sizeof(RegPort));
     if (rp == NULL) {
 	return ERL_DRV_ERROR_GENERAL;
     }
     rp->port = port;
     rp->hkey = rp->hkey_root = HKEY_CLASSES_ROOT;
     rp->sam = sam;
-    rp->key = sys_alloc(1);
+    rp->key = driver_alloc(1);
     rp->key_size = 0;
     rp->name_buf_size = 64;
-    rp->name_buf = sys_alloc(rp->name_buf_size);
+    rp->name_buf = driver_alloc(rp->name_buf_size);
     rp->value_buf_size = 64;
-    rp->value_buf = sys_alloc(rp->value_buf_size);
+    rp->value_buf = driver_alloc(rp->value_buf_size);
     return (ErlDrvData) rp;
 }
 
@@ -150,10 +150,10 @@ reg_stop(ErlDrvData clientData)
     RegPort* rp = (RegPort *) clientData;
 
     (void) RegCloseKey(rp->hkey);
-    sys_free(rp->name_buf);
-    sys_free(rp->value_buf);
-    sys_free(rp->key);
-    sys_free(rp);
+    driver_free(rp->name_buf);
+    driver_free(rp->value_buf);
+    driver_free(rp->key);
+    driver_free(rp);
     /* return 1; */
 }
 
@@ -190,9 +190,9 @@ reg_from_erlang(ErlDrvData clientData, char* buf, int count)
 	    if (result == ERROR_SUCCESS) {
 		RegCloseKey(rp->hkey);
 		rp->hkey = newKey;
-		sys_free(rp->key);
+		driver_free(rp->key);
 		rp->key_size = strlen(key);
-		rp->key = sys_alloc(rp->key_size+1);
+		rp->key = driver_alloc(rp->key_size+1);
 		strcpy(rp->key, key);
 	    }
 	    reply(rp, result);
@@ -213,9 +213,9 @@ reg_from_erlang(ErlDrvData clientData, char* buf, int count)
 	    if (result == ERROR_SUCCESS) {
 		RegCloseKey(rp->hkey);
 		rp->hkey = newKey;
-		sys_free(rp->key);
+		driver_free(rp->key);
 		rp->key_size = strlen(key);
-		rp->key = sys_alloc(rp->key_size+1);
+		rp->key = driver_alloc(rp->key_size+1);
 		strcpy(rp->key, key);
 	    }
 	    reply(rp, result);
@@ -233,7 +233,8 @@ reg_from_erlang(ErlDrvData clientData, char* buf, int count)
 				      NULL, NULL, NULL, NULL);
 		if (result == ERROR_MORE_DATA) {
 		    rp->name_buf_size *= 2;
-		    rp->name_buf = sys_realloc(rp->name_buf, rp->name_buf_size);
+		    rp->name_buf = driver_realloc(rp->name_buf,
+						  rp->name_buf_size);
 		    continue;
 		} else if (result == ERROR_NO_MORE_ITEMS) {
 		    reply(rp, ERROR_SUCCESS);
@@ -341,8 +342,8 @@ fix_value_result(RegPort* rp, LONG result, DWORD type,
 	rp->name_buf_size = (max_name1 > max_name2 ? max_name1 : max_name2) 
 	    + 1;
 	rp->value_buf_size = max_value + 1;
-	rp->name_buf = sys_realloc(rp->name_buf, rp->name_buf_size);
-	rp->value_buf = sys_realloc(rp->value_buf, rp->value_buf_size);
+	rp->name_buf = driver_realloc(rp->name_buf, rp->name_buf_size);
+	rp->value_buf = driver_realloc(rp->value_buf, rp->value_buf_size);
 	return FALSE;
     } else if (result != ERROR_SUCCESS) {
 	reply(rp, result);
@@ -423,7 +424,7 @@ key_reply(RegPort* rp,		/* Pointer to port structure. */
     int needed = 1+nameSize;
 
     if (sizeof sbuf < needed) {
-	s = sys_alloc(needed);
+	s = driver_alloc(needed);
     }
 
     s[0] = 'k';
@@ -431,7 +432,7 @@ key_reply(RegPort* rp,		/* Pointer to port structure. */
     driver_output(rp->port, s, needed);
 
     if (s != sbuf) {
-	sys_free(s);
+	driver_free(s);
     }
     return 1;
 }
@@ -456,7 +457,7 @@ value_reply(RegPort* rp,	/* Pointer to port structure. */
     int i;
 
     if (sizeof sbuf < needed) {
-	s = sys_alloc(needed);
+	s = driver_alloc(needed);
     }
 
     s[0] = 'v';
@@ -471,7 +472,7 @@ value_reply(RegPort* rp,	/* Pointer to port structure. */
     driver_output(rp->port, s, needed);
 
     if (s != sbuf) {
-	sys_free(s);
+	driver_free(s);
     }
     return 1;
 }
@@ -494,7 +495,7 @@ state_reply(RegPort* rp,	/* Pointer to port structure. */
     int i;
 
     if (sizeof sbuf < needed) {
-	s = sys_alloc(needed);
+	s = driver_alloc(needed);
     }
 
     s[0] = 's';
@@ -506,7 +507,7 @@ state_reply(RegPort* rp,	/* Pointer to port structure. */
     driver_output(rp->port, s, needed);
 
     if (s != sbuf) {
-	sys_free(s);
+	driver_free(s);
     }
     return 1;
 }

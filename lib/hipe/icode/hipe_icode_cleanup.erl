@@ -5,14 +5,17 @@
 %% ====================================================================
 %%  Filename : 	hipe_icode_cleanup.erl
 %%  Module   :	hipe_icode_cleanup
-%%  Purpose  :  
+%%  Purpose  :  To turn calls to exit and fault into exit and fault isntructions.
 %%  Notes    : 
 %%  History  :	* 2000-11-07 Erik Johansson (happi@csd.uu.se): 
-%%               Created.
+%%                     Created.
+%%                   * 2003-04-10 Erik Stenman (happi@home.se):
+%%                     Removed entry-flagging for catch blocks.
+%%
 %%  CVS      :
 %%              $Author: happi $
-%%              $Date: 2002/05/13 16:51:07 $
-%%              $Revision: 1.4 $
+%%              $Date: 2003/04/11 15:06:24 $
+%%              $Revision: 1.5 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -32,29 +35,19 @@ code(Icode) ->
 
 
 cleanup_code(Code) ->
-  Catches = find_catch_entries(Code),
-  cleanup_code(Code, [], Catches).
+  cleanup_code(Code, []).
 
-cleanup_code([I|Is], Acc, Catches) ->
-  cleanup_code(Is, cleanup_instr(I, Catches) ++ Acc, Catches);
-cleanup_code([], Acc, _) -> lists:reverse(Acc).
+cleanup_code([I|Is], Acc) ->
+  cleanup_code(Is, cleanup_instr(I) ++ Acc);
+cleanup_code([], Acc) -> lists:reverse(Acc).
 
 
-cleanup_instr(I, Catches) ->
+cleanup_instr(I) ->
   case hipe_icode:type(I) of
     call ->
       call_to_primop(I);
     enter ->
       enter_to_primop(I);
-    label ->
-      case lists:member(hipe_icode:label_name(I), Catches) of
-	true -> 
-	  case lists:member(entry,hipe_icode:info(I)) of
-	    true -> [I];
-	    false -> [hipe_icode:info_add(I, entry)]
-	  end;
-	false -> [I]
-      end;
     _Other -> [I]
   end.
 
@@ -98,14 +91,3 @@ enter_to_primop(I) ->
   end.
 
 
-find_catch_entries(Code) ->
-  find_catch_entries(Code,[]).
-
-find_catch_entries([I|Is], Acc) ->
-  case hipe_icode:type(I) of
-    pushcatch ->
-      find_catch_entries(Is, [hipe_icode:pushcatch_label(I)|Acc]);
-    _ ->
-      find_catch_entries(Is, Acc)
-  end;
-find_catch_entries([],Acc) -> Acc.

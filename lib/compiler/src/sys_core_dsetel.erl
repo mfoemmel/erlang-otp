@@ -128,11 +128,14 @@ visit(Env0, #c_primop{name=N0, args=As0}=R) ->
     {N1,Env1} = visit(Env0, N0),
     {As1,Env2} = visit_list(Env1, As0),
     {R#c_primop{name=N1,args=As1}, Env2};
-visit(Env0, #c_try{expr=E0, vars=Vs, body=B0}=R) ->
+visit(Env0, #c_try{arg=E0, vars=Vs, body=B0, evars=Evs, handler=H0}=R) ->
     {E1,Env1} = visit(Env0, E0),
     {Xs, Env2} = bind_vars(Vs, Env1),
     {B1,Env3} = visit(Env2, B0),
-    {R#c_try{expr=E1,body=B1}, restore_vars(Xs, Env1, Env3)};
+    Env4 = restore_vars(Xs, Env1, Env3),
+    {Ys, Env5} = bind_vars(Evs, Env4),
+    {H1,Env6} = visit(Env5, H0),
+    {R#c_try{arg=E1,body=B1,handler=H1}, restore_vars(Ys, Env4, Env6)};
 visit(Env0, #c_catch{body=B0}=R) ->
     {B1,Env1} = visit(Env0, B0),
     {R#c_catch{body=B1}, Env1};
@@ -205,12 +208,12 @@ rewrite(#c_let{vars=[#c_var{name=X}=V]=Vs,
 			   name=#c_atom{val='setelement'},
 			   args=[#c_int{val=Index1}, _Tuple, _Val1]
 			  }=A,
- 	       body=#c_call{module=#c_atom{val='erlang'},
+ 	       body=#c_call{anno=Banno,module=#c_atom{val='erlang'},
  			    name=#c_atom{val='setelement'},
   			    args=[#c_int{val=Index2},
 				  #c_var{name=X},
 				  Val2]
-  			   }=B
+  			   }
 	      }=R,
 	_BodyEnv, FinalEnv)
   when integer(Index1), integer(Index2), Index2 > 0, Index1 > Index2 ->
@@ -218,11 +221,12 @@ rewrite(#c_let{vars=[#c_var{name=X}=V]=Vs,
 	true ->
 	    {R#c_let{vars=Vs,
 		     arg=A,
-		     body=#c_seq{arg=B#c_primop{
-				       name=#c_atom{val='dsetelement'},
-				       args=[#c_int{val=Index2},
-					     V,
-					     Val2]},
+		     body=#c_seq{arg=#c_primop{
+				   anno=Banno,
+				   name=#c_atom{val='dsetelement'},
+				   args=[#c_int{val=Index2},
+					 V,
+					 Val2]},
 				 body=V}
 		    },
 	     FinalEnv};
@@ -245,7 +249,8 @@ rewrite(#c_let{vars=[#c_var{name=X1}],
 			   args=[#c_int{val=Index1}, _Tuple, _Val1]
 			  }=A,
 	       body=#c_let{vars=[#c_var{}=V]=Vs,
-			   arg=#c_call{module=#c_atom{val='erlang'},
+			   arg=#c_call{anno=Banno,
+				       module=#c_atom{val='erlang'},
 				       name=#c_atom{val='setelement'},
 				       args=[#c_int{val=Index2},
 					     #c_var{name=X1},
@@ -258,11 +263,12 @@ rewrite(#c_let{vars=[#c_var{name=X1}],
 	true ->
 	    {R#c_let{vars=Vs,
 		     arg=A,
-		     body=#c_seq{arg=B#c_primop{
-				       name=#c_atom{val='dsetelement'},
-				       args=[#c_int{val=Index2},
-					     V,
-					     Val2]},
+		     body=#c_seq{arg=#c_primop{
+				   anno=Banno,
+				   name=#c_atom{val='dsetelement'},
+				   args=[#c_int{val=Index2},
+					 V,
+					 Val2]},
 				 body=B}
 		    },
 	     FinalEnv};

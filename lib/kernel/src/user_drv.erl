@@ -113,22 +113,43 @@ server_loop(Iport, Oport, Curr, User, Gr) ->
 	{Iport,eof} ->
 	    Curr ! {self(),eof},
 	    server_loop(Iport, Oport, Curr, User, Gr);
-	{User,Req} ->				%Never block from user!
+	{User,Req} ->				% never block from user!
 	    io_request(Req, Iport, Oport),
 	    server_loop(Iport, Oport, Curr, User, Gr);
 	{Curr,Req} ->
 	    io_request(Req, Iport, Oport),
 	    server_loop(Iport, Oport, Curr, User, Gr);
-	{'EXIT',Iport,R} ->
+	{'EXIT',Iport,_R} ->
 	    server_loop(Iport, Oport, Curr, User, Gr);
-	{'EXIT',Oport,R} ->
+	{'EXIT',Oport,_R} ->
 	    server_loop(Iport, Oport, Curr, User, Gr);
-	{'EXIT',User,R} ->			%Keep 'user' alive
+	{'EXIT',User,_R} ->			% keep 'user' alive
 	    NewU = start_user(),
 	    server_loop(Iport, Oport, Curr, NewU, gr_set_num(Gr, 1, NewU, {}));
-	{'EXIT',Pid,R} ->
-	    server_loop(Iport, Oport, Curr, User, gr_del_pid(Gr, Pid));
-	X ->
+	{'EXIT',Pid,R} ->			% shell and group leader exit
+	    case gr_cur_pid(Gr) of
+		Pid when R /= die ,
+			 R /= terminated ->	% current shell, abnormal exit
+		    io_requests([{put_chars,"*** ERROR: Shell process terminated! "}],
+				Iport, Oport),	    
+		    Gr1 = gr_del_pid(Gr, Pid),		    
+		    case gr_get_info(Gr, Pid) of
+			{Ix,{shell,start,[]}} -> % local shell
+			    io_requests([{put_chars,"***\n"}], Iport, Oport),	    
+			    %% restart group leader and shell, same index
+			    Pid1 = group:start(self(), {shell,start,[]}),
+			    {ok,Gr2} = gr_set_cur(gr_set_num(Gr1, Ix, Pid1, 
+							     {shell,start,[]}), Ix),
+			    server_loop(Iport, Oport, Pid1, User, Gr2);
+			_ ->			% remote shell
+			    io_requests([{put_chars,"(^G to start new job) ***\n"}],
+					Iport, Oport),	    
+			    server_loop(Iport, Oport, Curr, User, Gr1)
+		    end;
+		_ ->				% not current, just remove it
+		    server_loop(Iport, Oport, Curr, User, gr_del_pid(Gr, Pid))
+	    end;
+	_X ->
 	    %% Ignore unknown messages.
 	    server_loop(Iport, Oport, Curr, User, Gr)
     end.
@@ -137,7 +158,7 @@ server_loop(Iport, Oport, Curr, User, Gr) ->
 %%  Check the Bytes from the port to see if it contains a ^G which
 %%  break to switch_loop else send the bytes to Curr.
 
-port_bytes([$\^G|Bs], Iport, Oport, Curr, User, Gr) ->
+port_bytes([$\^G|_Bs], Iport, Oport, _Curr, User, Gr) ->
     io_request({put_chars,"\nUser switch command\n"}, Iport, Oport),
     server_loop(Iport, Oport, User, switch_loop(Iport, Oport, Gr));
 port_bytes([B], Iport, Oport, Curr, User, Gr) ->
@@ -162,7 +183,7 @@ switch_cmd({ok,[{atom,_,c},{integer,_,I}],_}, Iport, Oport, Gr0) ->
 	{ok,Gr} -> Gr;
 	undefined -> unknown_group(Iport, Oport, Gr0)
     end;
-switch_cmd({ok,[{atom,_,c}],_}, Iport, Oport, Gr) ->
+switch_cmd({ok,[{atom,_,c}],_}, _Iport, _Oport, Gr) ->
     Gr;
 switch_cmd({ok,[{atom,_,i},{integer,_,I}],_}, Iport, Oport, Gr) ->
     case gr_get_num(Gr, I) of
@@ -179,13 +200,36 @@ switch_cmd({ok,[{atom,_,k},{integer,_,I}],_}, Iport, Oport, Gr) ->
     case gr_get_num(Gr, I) of
 	{pid,Pid} ->
 	    exit(Pid, die),
-	    switch_loop(Iport, Oport, Gr);
+	    case gr_get_info(Gr, Pid) of
+		{_Ix,{}} ->			% no shell
+		    switch_loop(Iport, Oport, Gr);
+		_ ->
+		    Gr1 = 
+			receive {'EXIT',Pid,_} ->
+				gr_del_pid(Gr, Pid)
+			after 1000 ->
+				Gr
+			end,
+		    switch_loop(Iport, Oport, Gr1)
+	    end;
 	undefined ->
 	    unknown_group(Iport, Oport, Gr)
     end;
 switch_cmd({ok,[{atom,_,k}],_}, Iport, Oport, Gr) ->
-    exit(gr_cur_pid(Gr), die),
-    switch_loop(Iport, Oport, Gr);
+    Pid = gr_cur_pid(Gr),
+    exit(Pid, die),
+    case gr_get_info(Gr, Pid) of
+	{_Ix,{}} ->			% no shell
+	    switch_loop(Iport, Oport, Gr);
+	_ ->
+	    Gr1 = 
+		receive {'EXIT',Pid,_} ->
+			gr_del_pid(Gr, Pid)
+		after 1000 ->
+			Gr
+		end,
+	    switch_loop(Iport, Oport, Gr1)
+    end;
 switch_cmd({ok,[{atom,_,j}],_}, Iport, Oport, Gr) ->
     io_requests(gr_list(Gr), Iport, Oport),
     switch_loop(Iport, Oport, Gr);
@@ -208,7 +252,7 @@ switch_cmd({ok,[{atom,_,r},{atom,_,Node}],_}, Iport, Oport, Gr0) ->
     Pid = group:start(self(), {Node,shell,start,[]}),
     Gr = gr_add_cur(Gr0, Pid, {Node,shell,start,[]}),
     switch_loop(Iport, Oport, Gr);
-switch_cmd({ok,[{atom,_,q}],_}, Iport, Oport, Gr) ->
+switch_cmd({ok,[{atom,_,q}],_}, _Iport, _Oport, _Gr) ->
     halt();
 switch_cmd({ok,[{atom,_,h}],_}, Iport, Oport, Gr) ->
     list_commands(Iport, Oport),
@@ -218,10 +262,10 @@ switch_cmd({ok,[{'?',_}],_}, Iport, Oport, Gr) ->
     switch_loop(Iport, Oport, Gr);
 switch_cmd({ok,[],_}, Iport, Oport, Gr) ->
     switch_loop(Iport, Oport, Gr);
-switch_cmd({ok,Ts,_}, Iport, Oport, Gr) ->
+switch_cmd({ok,_Ts,_}, Iport, Oport, Gr) ->
     io_request({put_chars,"Unknown command\n"}, Iport, Oport),
     switch_loop(Iport, Oport, Gr);
-switch_cmd(Ts, Iport, Oport, Gr) ->
+switch_cmd(_Ts, Iport, Oport, Gr) ->
     io_request({put_chars,"Illegal input\n"}, Iport, Oport),
     switch_loop(Iport, Oport, Gr).
 
@@ -239,10 +283,10 @@ list_commands(Iport, Oport) ->
 		 {put_chars,"  q        - quit erlang\n"},
 		 {put_chars,"  ? | h    - this message\n"}], Iport, Oport).
 
-get_line({done,Line,Rest,Rs}, Iport, Oport) ->
+get_line({done,Line,_Rest,Rs}, Iport, Oport) ->
     io_requests(Rs, Iport, Oport),
     Line;
-get_line({undefined,Char,Cs,Cont,Rs}, Iport, Oport) ->
+get_line({undefined,_Char,Cs,Cont,Rs}, Iport, Oport) ->
     io_requests(Rs, Iport, Oport),
     io_request(beep, Iport, Oport),
     get_line(edlin:edit_line(Cs, Cont), Iport, Oport);
@@ -264,25 +308,25 @@ get_line_timeout(more_chars) -> infinity.
 %% io_request(Request, InPort, OutPort)
 %% io_requests(Requests, InPort, OutPort)
 
-io_request({put_chars,Cs}, Iport, Oport) ->
+io_request({put_chars,Cs}, _Iport, Oport) ->
     Oport ! {self(),{command,[0|Cs]}};
-io_request({move_rel,N}, Iport, Oport) ->
+io_request({move_rel,N}, _Iport, Oport) ->
     Oport ! {self(),{command,[1|put_int16(N, [])]}};
-io_request({insert_chars,Cs}, Iport, Oport) ->
+io_request({insert_chars,Cs}, _Iport, Oport) ->
     Oport ! {self(),{command,[2|Cs]}};
-io_request({delete_chars,N}, Iport, Oport) ->
+io_request({delete_chars,N}, _Iport, Oport) ->
     Oport ! {self(),{command,[3|put_int16(N, [])]}};
-io_request(beep, Iport, Oport) ->
+io_request(beep, _Iport, Oport) ->
     Oport ! {self(),{command,[4]}};
 io_request({requests,Rs}, Iport, Oport) ->
     io_requests(Rs, Iport, Oport);
-io_request(R, Iport, Oport) ->
+io_request(_R, _Iport, _Oport) ->
     ok.
 
 io_requests([R|Rs], Iport, Oport) ->
     io_request(R, Iport, Oport),
     io_requests(Rs, Iport, Oport);
-io_requests([], Iport, Oport) ->
+io_requests([], _Iport, _Oport) ->
     ok.
 
 put_int16(N, Tail) ->
@@ -290,6 +334,7 @@ put_int16(N, Tail) ->
 
 %% gr_new()
 %% gr_get_num(Group, Index)
+%% gr_get_info(Group, Pid)
 %% gr_add_cur(Group, Pid, Shell)
 %% gr_set_cur(Group, Index)
 %% gr_cur_pid(Group)
@@ -303,20 +348,30 @@ put_int16(N, Tail) ->
 gr_new() ->
     {1,0,none,[]}.
 
-gr_get_num({Next,CurI,CurP,Gs}, I) ->
+gr_get_num({_Next,_CurI,_CurP,Gs}, I) ->
     gr_get_num1(Gs, I).
 
-gr_get_num1([{I,Pid,S}|Gs], I) ->
+gr_get_num1([{_I,Pid,_S}|_Gs], _I) ->
     {pid,Pid};
-gr_get_num1([G|Gs], I) ->
+gr_get_num1([_G|Gs], I) ->
     gr_get_num1(Gs, I);
-gr_get_num1([], I) ->
+gr_get_num1([], _I) ->
     undefined.
 
-gr_add_cur({Next,CurI,CurP,Gs}, Pid, Shell) ->
+gr_get_info({_Next,_CurI,_CurP,Gs}, Pid) ->
+    gr_get_info1(Gs, Pid).
+
+gr_get_info1([{I,Pid,S}|_Gs], Pid) ->
+    {I,S};
+gr_get_info1([_G|Gs], I) ->
+    gr_get_info1(Gs, I);
+gr_get_info1([], _I) ->
+    undefined.
+
+gr_add_cur({Next,_CurI,_CurP,Gs}, Pid, Shell) ->
     {Next+1,Next,Pid,append(Gs, [{Next,Pid,Shell}])}.
 
-gr_set_cur({Next,CurI,CurP,Gs}, I) ->
+gr_set_cur({Next,_CurI,_CurP,Gs}, I) ->
     case gr_get_num1(Gs, I) of
 	{pid,Pid} -> {ok,{Next,I,Pid,Gs}};
 	undefined -> undefined
@@ -325,9 +380,9 @@ gr_set_cur({Next,CurI,CurP,Gs}, I) ->
 gr_set_num({Next,CurI,CurP,Gs}, I, Pid, Shell) ->
     {Next,CurI,CurP,gr_set_num1(Gs, I, Pid, Shell)}.
 
-gr_set_num1([{I,Pid,Shell}|Gs], I, NewPid, NewShell) ->
+gr_set_num1([{I,_Pid,_Shell}|Gs], I, NewPid, NewShell) ->
     [{I,NewPid,NewShell}|Gs];
-gr_set_num1([{I,Pid,Shell}|Gs], NewI, NewPid, NewShell) when NewI < I ->
+gr_set_num1([{I,Pid,Shell}|Gs], NewI, NewPid, NewShell) when NewI > I ->
     [{I,Pid,Shell}|gr_set_num1(Gs, NewI, NewPid, NewShell)];
 gr_set_num1(Gs, NewI, NewPid, NewShell) ->
     [{NewI,NewPid,NewShell}|Gs].
@@ -335,26 +390,26 @@ gr_set_num1(Gs, NewI, NewPid, NewShell) ->
 gr_del_pid({Next,CurI,CurP,Gs}, Pid) ->
     {Next,CurI,CurP,gr_del_pid1(Gs, Pid)}.
 
-gr_del_pid1([{I,Pid,S}|Gs], Pid) ->
+gr_del_pid1([{_I,Pid,_S}|Gs], Pid) ->
     Gs;
 gr_del_pid1([G|Gs], Pid) ->
     [G|gr_del_pid1(Gs, Pid)];
-gr_del_pid1([], Pid) ->
+gr_del_pid1([], _Pid) ->
     [].
 
-gr_cur_pid({Next,CurI,CurP,Gs}) ->
+gr_cur_pid({_Next,_CurI,CurP,_Gs}) ->
     CurP.
 
-gr_list({Next,CurI,CurP,Gs}) ->
+gr_list({_Next,CurI,_CurP,Gs}) ->
     gr_list(Gs, CurI).
 
-gr_list([{Cur,Pid,Shell}|Gs], Cur) ->
+gr_list([{Cur,_Pid,Shell}|Gs], Cur) ->
     [{put_chars,flatten(io_lib:format("~4w* ~w\n", [Cur,Shell]))}|
      gr_list(Gs, Cur)];
-gr_list([{I,Pid,Shell}|Gs], Cur) ->
+gr_list([{I,_Pid,Shell}|Gs], Cur) ->
     [{put_chars,flatten(io_lib:format("~4w  ~w\n", [I,Shell]))}|
      gr_list(Gs, Cur)];
-gr_list([], Cur) ->
+gr_list([], _Cur) ->
     [].
 
 append([H|T], X) ->
@@ -362,10 +417,10 @@ append([H|T], X) ->
 append([], X) ->
     X.
 
-member(X, [X|Rest]) -> true;
-member(X, [H|Rest]) ->
+member(X, [X|_Rest]) -> true;
+member(X, [_H|Rest]) ->
     member(X, Rest);
-member(X, []) -> false.
+member(_X, []) -> false.
 
 flatten(List) ->
     flatten(List, [], []).

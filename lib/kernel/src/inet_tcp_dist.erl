@@ -81,7 +81,7 @@ listen(Name) ->
 	    Error
     end.
 
-do_listen(Options) ->
+do_listen(Options0) ->
     {First,Last} = case application:get_env(kernel,inet_dist_listen_min) of
 		       {ok,N} when integer(N) ->
 			   case application:get_env(kernel,
@@ -94,7 +94,13 @@ do_listen(Options) ->
 		       _ ->
 			   {0,0}
 		   end,
-    do_listen(First,Last,Options).
+    Options = case application:get_env(kernel, inet_dist_use_interface) of
+		   {ok, Ip} ->
+		       [{ip, Ip} | Options0];
+		   _ ->
+		       Options0
+	       end,
+    do_listen(First, Last, Options).
 
 do_listen(First,Last,_) when First > Last ->
     {error,eaddrinuse};
@@ -326,9 +332,9 @@ do_setup(Kernel, Node, Type, MyNode, LongOrShortNames,SetupTime) ->
 			   "failed.~n", [Node]),
 		    ?shutdown(Node)
 	    end;
-	Other ->
+	_Other ->
 	    ?trace("inet_getaddr(~p) "
-		   "failed (~p).~n", [Node,Other]),
+		   "failed (~p).~n", [Node,_Other]),
 	    ?shutdown(Node)
     end.
 
@@ -431,10 +437,10 @@ mask({M1,M2,M3,M4}, {IP1,IP2,IP3,IP4}) ->
 
 is_node_name(Node) when atom(Node) ->
     case split_node(atom_to_list(Node), $@, []) of
-	[_, Host] -> true;
+	[_, _Host] -> true;
 	_ -> false
     end;
-is_node_name(Node) ->
+is_node_name(_Node) ->
     false.
 tick(Sock) ->
     ?to_port(Sock,[]).

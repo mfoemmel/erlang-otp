@@ -32,8 +32,6 @@
 #include "beam_catches.h"
 #include "erl_binary.h"
 
-Eterm erts_preloaded(Process* p);
-
 static Eterm check_process_code(Process* rp, Module* modp);
 static void delete_code(Module* modp);
 static void delete_export_references(Eterm module);
@@ -42,7 +40,6 @@ static int is_native(Eterm* code);
 
 Eterm
 load_module_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Eterm   reason;
     Eterm*  hp;
@@ -82,7 +79,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE purge_module_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_not_atom(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -94,7 +90,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE code_is_module_native_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Module* modp;
 
@@ -111,7 +106,6 @@ BIF_ADECL_1
 
 Eterm
 check_process_code_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Process* rp;
     Module* modp;
@@ -140,7 +134,6 @@ BIF_ADECL_2
 
 
 BIF_RETTYPE delete_module_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Module* modp;
 
@@ -167,7 +160,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE module_loaded_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Module* modp;
 
@@ -181,13 +173,11 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE pre_loaded_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     return erts_preloaded(BIF_P);
 }
 
 BIF_RETTYPE loaded_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     Eterm previous = NIL;
     Eterm* hp;
@@ -320,11 +310,13 @@ purge_module(int module)
     /*
      * Remove the old code.
      */
+    ASSERT(erts_total_code_size >= modp->old_code_length);
+    erts_total_code_size -= modp->old_code_length;
     code = modp->old_code;
     end = (Eterm *)((char *)code + modp->old_code_length);
     erts_cleanup_funs_on_purge(code, end);
     beam_catches_delmod(modp->old_catches, code, modp->old_code_length);
-    sys_free((char *) code);
+    erts_free(ERTS_ALC_T_CODE, (void *) code);
     modp->old_code = NULL;
     modp->old_code_length = 0;
     modp->old_catches = BEAM_CATCHES_NIL;

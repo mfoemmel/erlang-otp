@@ -83,10 +83,12 @@ static char* possibly_quote(char* arg);
  * Supply a strerror() function if libc doesn't.
  */
 #ifndef HAVE_STRERROR
+
 extern int sys_nerr;
+
 #ifndef SYS_ERRLIST_DECLARED
 extern const char * const sys_errlist[];
-#endif
+#endif /* !SYS_ERRLIST_DECLARED */
 
 char *strerror(int errnum)
 {
@@ -413,6 +415,79 @@ char* src;
     if (sbuf[0])
 	PUSH(strsave(sbuf));
 }
+#ifdef __WIN32__
+ char *make_commandline(char **argv)
+{
+    static char *buff = NULL;
+    static int siz = 0;
+    int num = 0;
+    char **arg, *p;
+
+    if (*argv == NULL) { 
+	return "";
+    }
+    for (arg = argv; *arg != NULL; ++arg) {
+	num += strlen(*arg)+1;
+    }
+    if (!siz) {
+	siz = num;
+	buff = malloc(siz*sizeof(char));
+    } else if (siz < num) {
+	siz = num;
+	buff = realloc(buff,siz*sizeof(char));
+    }
+    p = buff;
+    for (arg = argv; *arg != NULL; ++arg) {
+	strcpy(p,*arg);
+	p+=strlen(*arg);
+	*p++=' ';
+    }
+    *(--p) = '\0';
+
+    if (debug) {
+	printf("Processed commandline:%s\n",buff);
+    }
+    return buff;
+}
+
+int my_spawnvp(char **argv)
+{
+    STARTUPINFO siStartInfo;
+    PROCESS_INFORMATION piProcInfo;
+    DWORD ec;
+
+    memset(&siStartInfo,0,sizeof(STARTUPINFO));
+    siStartInfo.cb = sizeof(STARTUPINFO); 
+    siStartInfo.dwFlags = STARTF_USESTDHANDLES;
+    siStartInfo.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    siStartInfo.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+    siStartInfo.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+    siStartInfo.wShowWindow = SW_HIDE;
+    siStartInfo.dwFlags |= STARTF_USESHOWWINDOW;
+
+
+    if (!CreateProcess(NULL, 
+		       make_commandline(argv),
+		       NULL, 
+		       NULL, 
+		       TRUE, 
+		       0,
+		       NULL, 
+		       NULL, 
+		       &siStartInfo, 
+		       &piProcInfo)) {
+	return -1;
+    }
+    CloseHandle(piProcInfo.hThread);
+
+    WaitForSingleObject(piProcInfo.hProcess,INFINITE);
+    if (!GetExitCodeProcess(piProcInfo.hProcess,&ec)) {
+	return 0;
+    }
+    return (int) ec;
+}    
+#endif /* __WIN32__ */
+
 
 static int
 run_erlang(progname, argv)
@@ -437,9 +512,10 @@ char** argv;
      * we are finished and print a prompt and read keyboard input.
      */
 
-    status = spawnvp(_P_WAIT, progname, argv);
+    status = my_spawnvp(argv)/*_spawnvp(_P_WAIT,progname,argv)*/;
     if (status == -1) {
-	fprintf(stderr, "erlc: Error executing '%s': %d", progname, errno);
+	fprintf(stderr, "erlc: Error executing '%s': %d", progname, 
+		GetLastError());
     }
     if (pause_after_execution) {
 	fprintf(stderr, "Press ENTER to continue . . .\n");
@@ -588,8 +664,11 @@ possibly_quote(char* arg)
 	}
 	*s = *arg;
     }
+    if (s[-1] == '\\') {
+	*s++ ='\\';
+    }
     *s++ = '"';
     *s = '\0';
     return narg;
 }
-#endif
+#endif /* __WIN32__ */

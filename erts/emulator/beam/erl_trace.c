@@ -73,7 +73,7 @@ do_send_to_port(Port* trace_port, Eterm message) {
     buffer = tmp_buf;
     size = encode_size_struct(message, TERM_TO_BINARY_DFLAGS);
     if (size >= TMP_BUF_SIZE) {
-	buffer = safe_alloc_from(350, size);
+	buffer = (byte *) erts_alloc(ERTS_ALC_T_TMP, size);
     }
 
     ptr = buffer;
@@ -85,7 +85,7 @@ do_send_to_port(Port* trace_port, Eterm message) {
     dist_port_command(trace_port, buffer, ptr-buffer);
 
     if (buffer != tmp_buf) {
-	sys_free(buffer);
+	erts_free(ERTS_ALC_T_TMP, (void *) buffer);
     }
 }
 
@@ -1302,9 +1302,11 @@ erts_bif_trace(int bif_index, Process* p,
 	 * no tracing will occur. Doing the whole else branch will 
 	 * also do nothing, only slower.
 	 */
-	return (bif_table[bif_index].f)(p, arg1, arg2, arg3, I);
+	Eterm (*func)(Process*, Eterm, Eterm, Eterm, Uint*) = bif_table[bif_index].f;
+	return func(p, arg1, arg2, arg3, I);
     } else {
 	Eterm result;
+	Eterm (*func)(Process*, Eterm, Eterm, Eterm, Uint*);
 	Export* ep = bif_export[bif_index];
 	Uint32 flags = 0, flags_meta = 0;
 	int global = !!(erts_bif_trace_flags[bif_index] & BIF_TRACE_AS_GLOBAL);
@@ -1342,7 +1344,9 @@ erts_bif_trace(int bif_index, Process* p,
 	/* Restore original continuation pointer (if changed). */
 	p->cp = cp;
 	
-	result = (bif_table[bif_index].f)(p, arg1, arg2, arg3, I);
+	func = bif_table[bif_index].f;
+
+	result = func(p, arg1, arg2, arg3, I);
 	
 	/* Try to get these in the order 
 	 * they usually appear in normal code... */
@@ -1441,4 +1445,103 @@ trace_gc(Process *p, Eterm what)
 	queue_message_tt(tracer, NULL, msg, NIL);
     }
 #undef CONS_PAIR
+}
+
+
+
+void
+monitor_long_gc(Process *p, Uint time) {
+    Process *monitor_p, *mp;
+    Eterm *hp, timeout, tuple, list, msg;
+    
+#define CONS_PAIR(key, val) \
+    tuple = TUPLE2(hp, (key), (val)); hp += 3; \
+    list = CONS(hp, tuple, list); hp += 2
+    
+    ASSERT(is_internal_pid(erts_system_monitor)
+	   && internal_pid_index(erts_system_monitor) < erts_max_processes);
+    monitor_p = process_tab[internal_pid_index(erts_system_monitor)];
+    if (INVALID_PID(monitor_p, erts_system_monitor)
+	|| (monitor_p->flags & F_TRACER) == 0) {
+	return;
+    }
+#ifdef SHARED_HEAP
+    /* The running process has the updated heap pointers! */
+    mp = monitor_p;
+#else
+    mp = monitor_p;
+#endif
+    timeout = make_small_or_big(time, mp);
+    /* XXX Multi-thread note: Perhaps allocating on another process's heap. */
+    hp = HAlloc(mp, 30);
+    list = NIL;
+    CONS_PAIR(am_heap_size, make_small(HEAP_TOP(p) - HEAP_START(p)));
+    CONS_PAIR(am_stack_size, make_small(STACK_START(p) - p->stop));
+    CONS_PAIR(am_mbuf_size, make_small(MBUF_SIZE(p)));
+    CONS_PAIR(am_heap_block_size, make_small(HEAP_SIZE(p)));
+    CONS_PAIR(am_timeout, timeout);
+    msg = TUPLE4(hp, am_monitor, p->id/* Local pid */, am_long_gc, list); 
+    hp += 5;
+    queue_message_tt(monitor_p, NULL, msg, NIL);
+#undef CONS_PAIR
+}
+
+void
+monitor_large_heap(Process *p) {
+    Process *monitor_p, *mp;
+    Eterm *hp, tuple, list, msg;
+    
+#define CONS_PAIR(key, val) \
+    tuple = TUPLE2(hp, (key), (val)); hp += 3; \
+    list = CONS(hp, tuple, list); hp += 2
+    
+    ASSERT(is_internal_pid(erts_system_monitor)
+	   && internal_pid_index(erts_system_monitor) < erts_max_processes);
+    monitor_p = process_tab[internal_pid_index(erts_system_monitor)];
+    if (INVALID_PID(monitor_p, erts_system_monitor)
+	|| (monitor_p->flags & F_TRACER) == 0) {
+	return;
+    }
+#ifdef SHARED_HEAP
+    /* The running process has the updated heap pointers! */
+    mp = monitor_p;
+#else
+    mp = monitor_p;
+#endif
+    /* XXX Multi-thread note: Perhaps allocating on another process's heap. */
+    hp = HAlloc(mp, 25);
+    list = NIL;
+    CONS_PAIR(am_heap_size, make_small(HEAP_TOP(p) - HEAP_START(p)));
+    CONS_PAIR(am_stack_size, make_small(STACK_START(p) - p->stop));
+    CONS_PAIR(am_mbuf_size, make_small(MBUF_SIZE(p)));
+    CONS_PAIR(am_heap_block_size, make_small(HEAP_SIZE(p)));
+    msg = TUPLE4(hp, am_monitor, p->id/* Local pid */, am_large_heap, list); 
+    hp += 5;
+    queue_message_tt(monitor_p, NULL, msg, NIL);
+#undef CONS_PAIR
+}
+
+void
+monitor_generic(Process *p, Eterm type, Eterm spec) {
+    Process *monitor_p, *mp;
+    Eterm *hp, msg;
+    
+    ASSERT(is_internal_pid(erts_system_monitor)
+	   && internal_pid_index(erts_system_monitor) < erts_max_processes);
+    monitor_p = process_tab[internal_pid_index(erts_system_monitor)];
+    if (INVALID_PID(monitor_p, erts_system_monitor)
+	|| (monitor_p->flags & F_TRACER) == 0) {
+	return;
+    }
+#ifdef SHARED_HEAP
+    /* The running process has the updated heap pointers! */
+    mp = monitor_p;
+#else
+    mp = monitor_p;
+#endif
+    /* XXX Multi-thread note: Perhaps allocating on another process's heap. */
+    hp = HAlloc(mp, 5);
+    msg = TUPLE4(hp, am_monitor, p->id/* Local pid */, type, spec); 
+    hp += 5;
+    queue_message_tt(monitor_p, NULL, msg, NIL);
 }

@@ -61,7 +61,7 @@
 
 %% Local
 -include_lib("cosTransactions/src/ETraP_Common.hrl").
--include_lib("cosTransactions/src/CosTransactions.hrl").
+-include_lib("cosTransactions/include/CosTransactions.hrl").
 
 
 %%--------------- IMPORTS-------------------------------------

@@ -50,7 +50,7 @@ negotiate(S, gssapi) ->
 negotiate(S, error) ->
     inet_tcp:close(S),
     {error, einval};
-negotiate(S, Method) ->
+negotiate(S,_Method) ->
     inet_tcp:close(S),
     {error, "unknown subnegotiation"}.
 

@@ -34,7 +34,7 @@
 -export([start/0, start_link/0, stop/0]).
 
 %% Internal exports, call-back functions.
--export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2]).
+-export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,code_change/3]).
 
 %% Defines for ddll_drv.
 
@@ -122,7 +122,7 @@ handle_call(stop, _, Data) ->
 handle_cast(_, Data) ->
     {noreply, Data}.
 
-handle_info({'EXIT', Pid, Reason}, {Port, Drivers}) ->
+handle_info({'EXIT', Pid, _Reason}, {Port, Drivers}) ->
     NewDrivers = unload_drivers(Drivers, Pid, Port, []),
     {noreply, {Port, NewDrivers}};
 handle_info({'EXIT', Port, Reason}, {Port, Drivers}) ->
@@ -161,12 +161,12 @@ increment_count([{Driver, Processes}|Rest], From, Driver, Result) ->
     {ok, Result ++ [{Driver, NewProcesses}|Rest]};
 increment_count([Drv|Rest], From, Driver, Result) ->
     increment_count(Rest, From, Driver, [Drv|Result]);
-increment_count([], From, Driver, Result) ->
+increment_count([], _From, _Driver, _Result) ->
     not_loaded.
 
 increment_process_count([{From, Count}|Rest], From, Result) ->
     Result ++ [{From, Count+1}|Rest];
-increment_process_count([Process|Rest], From, Result) ->
+increment_process_count([Process|Rest], From, _Result) ->
     increment_process_count(Rest, From, [Process|Rest]);
 increment_process_count([], From, Result) ->
     [{From, 1}|Result].
@@ -214,7 +214,7 @@ decrement_count([{Driver, Processes}|Rest], From, Driver, Result) ->
     end;
 decrement_count([Drv|Rest], From, Driver, Result) ->
     decrement_count(Rest, From, Driver, [Drv|Result]);
-decrement_count([], From, Driver, Result) ->
+decrement_count([], _From, _Driver, _Result) ->
     {error, not_loaded}.
 
 decrement_process_count([{From, 1}|Rest], From, Result) ->
@@ -224,7 +224,7 @@ decrement_process_count([{From, Count}|Rest], From, Result) ->
     Result ++ [{From, Count-1}|Rest];
 decrement_process_count([Process|Rest], From, Result) ->
     decrement_process_count(Rest, From, [Process|Result]);
-decrement_process_count([], From, Result) ->
+decrement_process_count([], _From, _Result) ->
     {error, not_loaded_by_this_process}.
 
 %% Unloads all drivers owned by Pid.
@@ -238,14 +238,14 @@ unload_drivers([{Driver, Processes}|Rest], Pid, Port, Result) ->
 	NewProcesses ->
 	    unload_drivers(Rest, Pid, Port, [{Driver, NewProcesses}|Result])
     end;
-unload_drivers([], Pid, Port, Result) ->
+unload_drivers([], _Pid, _Port, Result) ->
     Result.
 
 unload_process([{Pid, _}|Rest], Pid, Result) ->
     Result ++ Rest;
 unload_process([P|Rest], Pid, Result) ->
     unload_process(Rest, Pid, [P|Result]);
-unload_process([], Pid, Result) ->
+unload_process([], _Pid, Result) ->
     Result.
 
 %% Unloads all drivers (called when the server terminates).
@@ -272,9 +272,9 @@ loaded_drivers(Port) ->
 
 loaded_drivers(Port, {list_item, Item}, Result) ->
     loaded_drivers(Port, get_response(Port), [Item|Result]);
-loaded_drivers(Port, ok, Result) ->
+loaded_drivers(_Port, ok, Result) ->
     {ok, lists:reverse(Result)};
-loaded_drivers(Port, Status, []) ->
+loaded_drivers(_Port, Status, []) ->
     Status.
 
 command(Port, Command) ->
@@ -305,3 +305,7 @@ get_error([0|Message], Atom) ->
 get_error([C|Rest], Atom) ->
     get_error(Rest, [C|Atom]).
     
+code_change(_OldVsn, State, _Extra) ->
+    %% I doubt that changing the code for this module will work,
+    %% but at least we avoid a compilation warning.
+    {ok,State}.

@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
+#include <math.h>
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -19,6 +20,7 @@
 #include "hipe_x86_asm.h"
 #undef P
 #undef HP
+#undef NSP
 #undef TEMP0
 #undef TEMP1
 #undef ARG0
@@ -114,6 +116,8 @@ static const struct literal {
 #else
     { "P_HP_LIMIT", offsetof(struct process, stop) },
     { "P_OFF_HEAP_FUNS", offsetof(struct process, off_heap.funs) },
+    { "P_OFF_HEAP_MSO", offsetof(struct process, off_heap.mso) },
+    { "P_OFF_HEAP_OVERHEAD", offsetof(struct process, off_heap.overhead) },
 #endif
     { "P_ID", offsetof(struct process, id) },
     { "P_FLAGS", offsetof(struct process, flags) },
@@ -197,10 +201,21 @@ static const struct literal {
     { "MB_BASE", offsetof(struct erl_bin_match_buffer, base) },
     { "MB_OFFSET", offsetof(struct erl_bin_match_buffer, offset) },
     { "MB_SIZE", offsetof(struct erl_bin_match_buffer, size) },
+    { "PROC_BIN_THING_WORD", offsetof(struct proc_bin, thing_word) },
+    { "PROC_BIN_BINSIZE", offsetof(struct proc_bin, size) },
+    { "PROC_BIN_NEXT", offsetof(struct proc_bin, next) },
+    { "PROC_BIN_VAL", offsetof(struct proc_bin, val) },
+    { "PROC_BIN_BYTES", offsetof(struct proc_bin, bytes) },
+    { "PROC_BIN_BYTESIZE", PROC_BIN_SIZE},
+    { "BINARY_ORIG_BYTES", offsetof(struct binary, orig_bytes) },
     { "MAX_HEAP_BIN_SIZE", ERL_ONHEAP_BIN_LIMIT},
+    { "OVERHEAD_FACTOR", (BINARY_OVERHEAD_FACTOR*sizeof(Eterm))},
 
     /* x86 */
     { "X86_NR_ARG_REGS", X86_NR_ARG_REGS },
+#if X86_HP_IN_ESI
+    { "X86_HP_IN_ESI", 1 },
+#endif
 
     /* SPARC */
     { "HIPE_SPARC_LEAF_WORDS", HIPE_SPARC_LEAF_WORDS },
@@ -276,7 +291,7 @@ static unsigned long crc_update(unsigned long crc_value, const void *buf, unsign
 static unsigned long literals_crc(void)
 {
     unsigned long crc_value;
-    int i;
+    unsigned int i;
 
     crc_value = crc_init();
     for(i = 0; i < NLITERALS; ++i)
@@ -296,7 +311,7 @@ static void e_print1(FILE *fp, const struct literal *literal)
 
 static void printall(FILE *fp, void (*print1)(FILE*,const struct literal*))
 {
-    int i;
+    unsigned int i;
 
     for(i = 0; i < NLITERALS; ++i)
 	(*print1)(fp, &literals[i]);
@@ -323,7 +338,7 @@ static int do_e(FILE *fp)
 
 int main(int argc, const char **argv)
 {
-    if( argv[1] ) {
+    if( argc > 0 ) {
 	if( strcmp(argv[1], "-c") == 0 )
 	    return do_c(stdout);
 	if( strcmp(argv[1], "-e") == 0 )

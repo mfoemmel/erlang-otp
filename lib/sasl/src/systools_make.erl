@@ -1253,12 +1253,12 @@ behave(Mod) ->
 %% These two must still be there though.
 
 mandatory_modules() ->
-    [erlang, error_handler].
+    [error_handler].
 
 %%______________________________________________________________________    
 %% This is the modules that are preloaded into the Erlang system.
 
-preloaded() -> [init, erl_prim_loader].
+preloaded() -> [erlang,erl_prim_loader,prim_file,prim_inet,init,otp_ring0].
 
 %%______________________________________________________________________    
 %% Kernel processes; processes that are specially treated by the init

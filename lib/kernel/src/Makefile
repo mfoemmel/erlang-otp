@@ -79,7 +79,6 @@ MODULES = \
 	erl_ddll \
 	erl_distribution \
 	erl_epmd \
-	erl_open_port \
 	erl_reply \
 	erts_debug \
 	error_handler \
@@ -127,7 +126,8 @@ MODULES = \
 	user \
 	user_drv \
 	user_sup \
-	wrap_log_reader
+	wrap_log_reader \
+	zlib
 
 HRL_FILES= ../include/file.hrl ../include/inet.hrl
 INTERNAL_HRL_FILES= application_master.hrl disk_log.hrl \
@@ -158,7 +158,7 @@ APPUP_TARGET= ../ebin/$(APPUP_FILE)
 # ----------------------------------------------------
 
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += -I../include 
+ERL_COMPILE_FLAGS += -I../include
 
 # ----------------------------------------------------
 # Targets
@@ -207,6 +207,10 @@ $(EBIN)/erl_epmd.beam: $(ESRC)/erl_epmd.erl
 
 ifdef HIPE_ENABLED
 HIPE_MKLITERALS=$(ERL_TOP)/bin/$(TARGET)/hipe_mkliterals
+
+$(HIPE_MKLITERALS):
+	cd $(ERL_TOP)/erts/emulator \
+	  && $(MAKE) generate ERL_TOP=$(ERL_TOP) TYPE=$(TYPE)
 
 ../../hipe/rtl/hipe_literals.hrl: $(HIPE_MKLITERALS)
 	$(HIPE_MKLITERALS) -e > $@

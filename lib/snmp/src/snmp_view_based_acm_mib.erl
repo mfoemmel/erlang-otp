@@ -142,7 +142,7 @@ gc_tab(Tab) ->
 %% The context table is actually implemented in an internal,
 %% non-snmp visible table intContextTable.
 %%-----------------------------------------------------------------
-vacmContextTable(Op) ->
+vacmContextTable(_Op) ->
     ok.
 vacmContextTable(Op, Arg1, Arg2) ->
     snmp_framework_mib:intContextTable(Op, Arg1, Arg2).
@@ -166,7 +166,7 @@ vacmSecurityToGroupTable(Op, Arg1, Arg2) ->
 %%    {RowIndex, {Col4, Col5, ..., Col9}}
 %%
 %%-----------------------------------------------------------------
-vacmAccessTable(Op) ->
+vacmAccessTable(_Op) ->
     ok.
 vacmAccessTable(get, RowIndex, Cols) ->
     %% For GET, Cols are guaranteed to be accessible columns.
@@ -219,7 +219,7 @@ vacmAccessTable(is_set_ok, RowIndex, Cols) ->
 		false -> {noCreation, Col}; % Bad RowIndex
 		_ -> {inconsistentValue, Col}
 	    end;
-	{value, {Col, ?'RowStatus_destroy'}} -> % always ok!
+	{value, {_Col, ?'RowStatus_destroy'}} -> % always ok!
 	    {noError, 0};
 	_ -> % otherwise, it's a change; it must exist
 	    case snmp_vacm:get_row(RowIndex) of
@@ -231,12 +231,12 @@ vacmAccessTable(is_set_ok, RowIndex, Cols) ->
     end;
 vacmAccessTable(set, RowIndex, Cols) ->
     case lists:keysearch(?vacmAccessStatus, 1, Cols) of
-	{value, {Col, ?'RowStatus_createAndGo'}} ->
+	{value, {_Col, ?'RowStatus_createAndGo'}} ->
 	    Row = mk_row(Cols),
 	    Row2 = setelement(?vacmAStatus, Row, ?'RowStatus_active'),
 	    snmp_vacm:insert([{RowIndex, Row2}]),
 	    {noError, 0};
-	{value, {Col, ?'RowStatus_createAndWait'}} ->
+	{value, {_Col, ?'RowStatus_createAndWait'}} ->
 	    Row = mk_row(Cols),
 	    Row2 = case element(?vacmAContextMatch, Row) of
 		       noinit -> setelement(?vacmAStatus, Row,
@@ -246,7 +246,7 @@ vacmAccessTable(set, RowIndex, Cols) ->
 		   end,
 	    snmp_vacm:insert([{RowIndex, Row2}]),
 	    {noError, 0};
-	{value, {Col, ?'RowStatus_destroy'}} ->
+	{value, {_Col, ?'RowStatus_destroy'}} ->
 	    snmp_vacm:delete(RowIndex),
 	    {noError, 0};
 	_ ->
@@ -274,14 +274,14 @@ do_get_next(RowIndex, Cols) ->
 		      end, Cols);
 	false ->
 	    case snmp_vacm:get_next_row([]) of
-		{NextIndex, Row} ->
+		{_NextIndex, Row} ->
 		    lists:map(fun(Col) when Col < ?vacmAccessStatus -> 
 				      {[Col+1 | RowIndex], element(Col-2, Row)};
 				 (_) ->
 				      endOfTable
 			      end, Cols);
 		false ->
-		    lists:map(fun(Col) -> endOfTable end, Cols)
+		    lists:map(fun(_Col) -> endOfTable end, Cols)
 	    end
     end.
 
@@ -296,11 +296,11 @@ is_valid_key(RowIndex) ->
 
 mk_key([L1 | T1]) ->
     [L2 | T2] = spx(L1, T1),
-    [SM, SL] = spx(L2, T2),
+    [_SM, _SL] = spx(L2, T2),
     true.
 
 spx(N, L) -> spx(N, [], L).
-spx(0, L1, L2) -> L2;
+spx(0, _L1, L2) -> L2;
 spx(N, L1, [H | L2]) -> spx(N-1, [H | L1], L2).
 
 mk_row(Cols) -> 

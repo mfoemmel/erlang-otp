@@ -61,7 +61,7 @@ create_time_stamp_table() ->
 delete_time_stamp_table() ->
     Tab = time_stamp,
     case catch mnesia:dirty_read({Tab, ref_count}) of
-	{'EXIT', Reason} ->
+	{'EXIT', _Reason} ->
 	    delete_table(Tab);
 	[] ->
 	    delete_table(Tab);
@@ -98,17 +98,18 @@ update(Name, UpdateFunc, Interval) ->
 %%            whenever the table must be updated
 %% Returns: As specified for an SNMP table instrumentation function.
 %%-----------------------------------------------------------------
-table_func(new, {Name, SnmpKey, Attribs, Interval, UpdateFunc}) ->
+table_func(new, {Name, SnmpKey, Attribs, _Interval, _UpdateFunc}) ->
     create_time_stamp_table(),
     Props = [{type, set},
 	     {snmp, [{key, SnmpKey}]},
 	     {attributes, Attribs}],
     create_table(Name, Props, ram_copies, true);
-table_func(delete, {Name, SnmpKey, Attribs, Interval, UpdateFunc}) ->
+table_func(delete, {Name, _SnmpKey, _Attribs, _Interval, _UpdateFunc}) ->
     delete_time_stamp_table(),
     delete_table(Name).
 
-table_func(Op, RowIndex, Cols, {Name, SnmpKey, Attribs, Interval, UpdateFunc}) ->
+table_func(Op, RowIndex, Cols, 
+	   {Name, _SnmpKey, _Attribs, Interval, UpdateFunc}) ->
     update(Name, UpdateFunc, Interval),
     snmp_generic:table_func(Op, RowIndex, Cols, {Name, mnesia}).
 
@@ -165,7 +166,7 @@ delete_table(Tab) ->
 			 [del_table_copy, Tab, node()]) of
 		{atomic, ok} ->
 		    ok;
-		{aborted, Reason} ->
+		{aborted, _Reason} ->
 		    catch delete_all(Tab),
 		    ok
 	    end;

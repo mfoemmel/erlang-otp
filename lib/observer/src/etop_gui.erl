@@ -27,8 +27,8 @@
 -import(etop, [loadinfo/1, meminfo/2, dbgout/2, getopt/2]).
 
 %% Heights
--define(BarH, 25).      % height of menubar
--define(LabelH, 80).    % height of label with system info
+-define(BarH, 28).      % height of menubar
+-define(LabelH, 90).    % height of label with system info
 -define(GridLineH, 21). % height of one line in the table (grid)
 
 %% Column numbers for grid - click to sort
@@ -43,7 +43,7 @@
 
 
 %% -----------------------------------------------------------------------------
-stop(_) -> gs:stop().
+stop(_) -> ok.
 
 init(Config) ->
     S = gs:start(),
@@ -312,7 +312,7 @@ makesysinfo(Node,Info,SysInfo) ->
 
     Str = io_lib:fwrite(?SYSFORM, [Node,Clock,Cpu,Tot,NProcs,Procs,
 				   RQ,Atom,Bin,Code,Ets]),
-    gs:config(SysInfo,[{label,{text,Str}}]).
+    gs:config(SysInfo,[{label,{text,Str}},{font,?Normal}]).
 
 
 

@@ -70,6 +70,7 @@ int db_next_hash(Process *p, DbTableHash *tb /* [in out] */,
 int db_update_counter_hash(Process *p, DbTableHash *tb /* [in out] */, 
 			   Eterm key /* [in] */,
 			   Eterm incr, /* [in] */
+			   int warp, /* [in] */
 			   int counterpos, /* [in] */
 			   Eterm *ret /* [out] */);
 int db_put_hash(Process *p, DbTableHash *tb /* [in out] */, 

@@ -1,0 +1,30 @@
+#! /bin/sh
+# Note! This shellscript expects to be run in a cygwin environment,
+# it converts erlc command lines to native windows erlc commands, which
+# basically means running the command cygpath on whatever is a path...
+
+CMD=""
+for x in "$@"; do 
+    case "$x" in
+	-I/*|-o/*)
+	    y=`echo $x | sed 's,^-[Io]\(/.*\),\1,g'`;
+	    z=`echo $x | sed 's,^-\([Io]\)\(/.*\),\1,g'`;
+	    #echo "Foooo:$z"
+	    MPATH=`cygpath -m $y`;
+	    CMD="$CMD -$z\"$MPATH\"";; 
+	/*)
+	    #echo "absolute:"$x;
+	    MPATH=`cygpath -m $x`;
+	    CMD="$CMD \"$MPATH\"";; 
+#	+{*);;
+	*)
+#	    y=`echo $x | sed 's,",\\\\\\\\\\\",g'`;
+	    y=`echo $x | sed 's,",\\\",g'`;
+	    CMD="$CMD \"$y\"";;
+    esac
+done
+#echo "$@"
+#eval echo erlc.exe $CMD
+ERL_TOP=`cygpath -m $ERL_TOP`
+export ERL_TOP
+eval erl.exe $CMD

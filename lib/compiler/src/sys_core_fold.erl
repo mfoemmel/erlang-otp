@@ -68,8 +68,7 @@
 
 -export([module/2,function/1]).
 
--import(lists, [map/2,foldl/3,foldr/3,mapfoldl/3,all/2,any/2,reverse/1,
-		member/2]).
+-import(lists, [map/2,foldl/3,foldr/3,mapfoldl/3,all/2,any/2,reverse/1]).
 -include("core_parse.hrl").
 
 %% Variable value info.
@@ -135,12 +134,13 @@ guard(#c_seq{arg=Arg0,body=B0}=Seq, Sub) ->
 	{_,#c_atom{val=false}=False} -> False;
 	{Arg,B1} -> Seq#c_seq{arg=Arg,body=B1}
     end;
-guard(#c_try{expr=E0,body=#c_atom{val=false}}=Prot, Sub) ->
-    %% We can remove protected if value a literal.
+guard(#c_try{arg=E0,vars=[#c_var{name=X}],body=#c_var{name=X},
+	     handler=#c_atom{val=false}}=Prot, Sub) ->
+    %% We can remove protected if value a simple.
     E1 = body(E0, Sub),
     case core_lib:is_simple(E1) of
 	true -> E1;
-	false -> Prot#c_try{expr=E1}
+	false -> Prot#c_try{arg=E1}
     end;
 guard(E, Sub) -> expr(E, Sub).
 
@@ -172,12 +172,12 @@ expr(#c_seq{arg=Arg0,body=B0}=Seq, Sub) ->
     %% Optimise away pure literal arg as its value is ignored.
     case body(Arg0, Sub) of
 	#c_values{es=Es}=Arg1 ->
-	    case is_safe_literal_list(Es) of
+	    case is_safe_simple_list(Es) of
 		true -> B1;
 		false -> Seq#c_seq{arg=Arg1,body=B1}
 	    end;
 	Arg1 ->
-	    case is_safe_literal(Arg1) of
+	    case is_safe_simple(Arg1) of
 		true -> B1;
 		false -> Seq#c_seq{arg=Arg1,body=B1}
 	    end
@@ -227,15 +227,24 @@ expr(#c_primop{args=As0}=Prim, Sub) ->
     As1 = expr_list(As0, Sub),
     Prim#c_primop{args=As1};
 expr(#c_catch{body=B0}=Catch, Sub) ->
+    %% We can remove catch if the value is simple
     B1 = body(B0, Sub),
-    Catch#c_catch{body=B1};
-expr(#c_try{expr=E0,body=B0}=Try, Sub) ->
-    %% We can remove `try' if the value is simple.
-    E1 = body(E0, Sub),
-    B1 = body(B0, Sub),
-    case core_lib:is_simple(E1) of
-	true -> E1;
-	false -> Try#c_try{expr=E1,body=B1}
+    case is_safe_simple(B1) of
+	true -> B1;
+	false -> Catch#c_catch{body=B1}
+    end;
+expr(#c_try{anno=A,arg=E0,vars=Vs0,body=B0,evars=Evs0,handler=H0}=Try, Sub0) ->
+    %% We can remove try if the value is simple and replace it with a let.
+    E1 = body(E0, Sub0),
+    {Vs1,Sub1} = pattern_list(Vs0, Sub0),
+    B1 = body(B0, Sub1),
+    case is_safe_simple(E1) of
+	true ->
+	    expr(#c_let{anno=A,vars=Vs1,arg=E1,body=B1}, Sub0);
+	false ->
+	    {Evs1,Sub2} = pattern_list(Evs0, Sub0),
+	    H1 = body(H0, Sub2),
+	    Try#c_try{arg=E1,vars=Vs1,body=B1,evars=Evs1,handler=H1}
     end.
 
 expr_list(Es, Sub) ->
@@ -247,35 +256,36 @@ bin_seg_list(Es, Sub) ->
 bin_segment(#c_bin_seg{val=Val,size=Size}=BinSeg, Sub) ->
     BinSeg#c_bin_seg{val=expr(Val, Sub),size=expr(Size, Sub)}.
 
-%% is_safe_literal(Expr) -> true | false.
-%%  A safe literal cannot fail with badarg.  Binaries are difficult to
+%% is_safe_simple(Expr) -> true | false.
+%%  A safe simple cannot fail with badarg.  Binaries are difficult to
 %%  check so be very conservative here.
 
-is_safe_literal(#c_cons{hd=H,tl=T}) ->
-    case is_safe_literal(H) of
-	true -> is_safe_literal(T); 
+is_safe_simple(#c_var{}) -> true;		%Not atomic
+is_safe_simple(#c_cons{hd=H,tl=T}) ->
+    case is_safe_simple(H) of
+	true -> is_safe_simple(T); 
 	false -> false
     end;
-is_safe_literal(#c_tuple{es=Es}) -> is_safe_literal_list(Es);
-is_safe_literal(#c_binary{segs=Ss}) ->
-    is_safe_lit_bin(Ss);
-is_safe_literal(#c_var{}) -> true;		%Not atomic
-is_safe_literal(E) -> core_lib:is_atomic(E).
+is_safe_simple(#c_tuple{es=Es}) -> is_safe_simple_list(Es);
+is_safe_simple(#c_binary{}) -> false;
+% is_safe_simple(#c_binary{segs=Ss}) ->
+%     is_safe_lit_bin(Ss);
+is_safe_simple(E) -> core_lib:is_atomic(E).
 
-is_safe_literal_list(Es) -> all(fun is_safe_literal/1, Es).
+is_safe_simple_list(Es) -> all(fun is_safe_simple/1, Es).
 
-is_safe_lit_bin(Ss) ->
-    {Bits,Safe} = foldl(fun (#c_bin_seg{val=#c_int{},size=#c_int{val=S},
-					unit=U,type=integer}, {Bits,Safe}) ->
-				Sb = S*U,
-				{Bits + Sb,Safe};
-			    (#c_bin_seg{val=#c_float{},size=#c_int{val=S},
-					unit=U,type=float}, {Bits,Safe}) ->
-				Sb = S*U,
-				{Bits + Sb, Safe and (Sb == 64)};
-			    (_Seg, {Bits,_Safe}) -> {Bits,false}
-			end, {0,true}, Ss),
-    Safe and ((Bits rem 8) == 0).
+% is_safe_lit_bin(Ss) ->
+%     {Bits,Safe} = foldl(fun (#c_bin_seg{val=#c_int{},size=#c_int{val=S},
+% 					unit=U,type=integer}, {Bits,Safe}) ->
+% 				Sb = S*U,
+% 				{Bits + Sb,Safe};
+% 			    (#c_bin_seg{val=#c_float{},size=#c_int{val=S},
+% 					unit=U,type=float}, {Bits,Safe}) ->
+% 				Sb = S*U,
+% 				{Bits + Sb, Safe and (Sb == 64)};
+% 			    (_Seg, {Bits,_Safe}) -> {Bits,false}
+% 			end, {0,true}, Ss),
+%     Safe and ((Bits rem 8) == 0).
 
 %% eval_cons(Cons, Head, Tail) -> Expr.
 %%  Evaluate constant part of a cons expression.
@@ -294,11 +304,11 @@ eval_cons(Cons, H, T) ->
 
 call(#c_call{args=As}=Call, #c_atom{val=M}=M0, #c_atom{val=N}=N0, Sub) ->
     case get(no_inline_list_funcs) of
-	true ->
-	    call_0(Call, M0, N0, As, Sub);
-	false ->
-	    call_1(Call, M, N, As, Sub)
-    end;
+  	true ->
+ 	    call_0(Call, M0, N0, As, Sub);
+  	false ->
+  	    call_1(Call, M, N, As, Sub)
+      end;
 call(#c_call{args=As}=Call, M, N, Sub) ->
     call_0(Call, M, N, As, Sub).
 
@@ -310,7 +320,7 @@ call_0(Call, M, N, As0, Sub) ->
 %% We use the same evaluation order as the library function.
 
 call_1(_Call, lists, all, [Arg1,Arg2], Sub) ->
-    Loop = #c_fname{id='^all', arity=1},
+    Loop = #c_fname{id='lists^all', arity=1},
     F = #c_var{name='F'},
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
@@ -339,7 +349,7 @@ call_1(_Call, lists, all, [Arg1,Arg2], Sub) ->
 			       body=#c_apply{op=Loop, args=[L]}}},
 	 Sub);
 call_1(_Call, lists, any, [Arg1,Arg2], Sub) ->
-    Loop = #c_fname{id='^any', arity=1},
+    Loop = #c_fname{id='lists^any', arity=1},
     F = #c_var{name='F'},
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
@@ -368,7 +378,7 @@ call_1(_Call, lists, any, [Arg1,Arg2], Sub) ->
 			       body=#c_apply{op=Loop, args=[L]}}},
 	 Sub);
 call_1(_Call, lists, foreach, [Arg1,Arg2], Sub) ->
-    Loop = #c_fname{id='^foreach', arity=1},
+    Loop = #c_fname{id='lists^foreach', arity=1},
     F = #c_var{name='F'},
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
@@ -389,7 +399,7 @@ call_1(_Call, lists, foreach, [Arg1,Arg2], Sub) ->
 			       body=#c_apply{op=Loop, args=[L]}}},
 	 Sub);
 call_1(_Call, lists, map, [Arg1,Arg2], Sub) ->
-    Loop = #c_fname{id='^map', arity=1},
+    Loop = #c_fname{id='lists^map', arity=1},
     F = #c_var{name='F'},
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
@@ -413,7 +423,7 @@ call_1(_Call, lists, map, [Arg1,Arg2], Sub) ->
 			       body=#c_apply{op=Loop, args=[L]}}},
 	 Sub);
 call_1(_Call, lists, flatmap, [Arg1,Arg2], Sub) ->
-    Loop = #c_fname{id='^flatmap', arity=1},
+    Loop = #c_fname{id='lists^flatmap', arity=1},
     F = #c_var{name='F'},
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
@@ -440,7 +450,7 @@ call_1(_Call, lists, flatmap, [Arg1,Arg2], Sub) ->
 			       body=#c_apply{op=Loop, args=[L]}}},
 	 Sub);
 call_1(_Call, lists, filter, [Arg1,Arg2], Sub) ->
-    Loop = #c_fname{id='^filter', arity=1},
+    Loop = #c_fname{id='lists^filter', arity=1},
     F = #c_var{name='F'},
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
@@ -475,7 +485,7 @@ call_1(_Call, lists, filter, [Arg1,Arg2], Sub) ->
 			       body=#c_apply{op=Loop, args=[L]}}},
 	 Sub);
 call_1(_Call, lists, foldl, [Arg1,Arg2,Arg3], Sub) ->
-    Loop = #c_fname{id='^foldl', arity=2},
+    Loop = #c_fname{id='lists^foldl', arity=2},
     F = #c_var{name='F'},
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
@@ -496,7 +506,7 @@ call_1(_Call, lists, foldl, [Arg1,Arg2,Arg3], Sub) ->
 			       body=#c_apply{op=Loop, args=[L, A]}}},
 	 Sub);
 call_1(_Call, lists, foldr, [Arg1,Arg2,Arg3], Sub) ->
-    Loop = #c_fname{id='^foldr', arity=2},
+    Loop = #c_fname{id='lists^foldr', arity=2},
     F = #c_var{name='F'},
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
@@ -517,7 +527,7 @@ call_1(_Call, lists, foldr, [Arg1,Arg2,Arg3], Sub) ->
 			       body=#c_apply{op=Loop, args=[L, A]}}},
 	 Sub);
 call_1(_Call, lists, mapfoldl, [Arg1,Arg2,Arg3], Sub) ->
-    Loop = #c_fname{id='^mapfoldl', arity=2},
+    Loop = #c_fname{id='lists^mapfoldl', arity=2},
     F = #c_var{name='F'},
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
@@ -569,7 +579,7 @@ call_1(_Call, lists, mapfoldl, [Arg1,Arg2,Arg3], Sub) ->
 %%% 					   body=#c_tuple{es=[Xs, A]}}}},
 	 Sub);
 call_1(_Call, lists, mapfoldr, [Arg1,Arg2,Arg3], Sub) ->
-    Loop = #c_fname{id='^mapfoldr', arity=2},
+    Loop = #c_fname{id='lists^mapfoldr', arity=2},
     F = #c_var{name='F'},
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
@@ -635,12 +645,11 @@ call_1(#c_call{module=M, name=N}=Call, _, _, As, Sub) ->
 %%  We evaluate element/2 and setelement/3 if the position is constant and
 %%  the shape of the tuple is known.
 %%
-%%  We evalute '++' if the first operand is a literal (or partly literal).
+%%  We evalute '++' if the first operand is as literal (or partly literal).
 
 fold_call(Call, #c_atom{val=M}, #c_atom{val=F}, Args) ->
     fold_call_1(Call, M, F, Args);
-fold_call(Call, _M, _N, _Args) ->
-    Call.
+fold_call(Call, _M, _N, _Args) -> Call.
 
 fold_call_1(Call, erlang, length, [Arg]) ->
     eval_length(Call, Arg);
@@ -1041,6 +1050,8 @@ will_match_list_type(_, _) -> no.		%Different length
 
 remove_non_vars(#c_tuple{es=Ps}, #c_tuple{es=Es}, Pacc, Eacc) ->
     remove_non_vars(Ps, Es, Pacc, Eacc);
+remove_non_vars([#c_var{}=Var|Ps], [#c_alias{var=Evar}|Es], Pacc, Eacc) ->
+    remove_non_vars(Ps, Es, [Var|Pacc], [Evar|Eacc]);
 remove_non_vars([#c_var{}=Var|Ps], [E|Es], Pacc, Eacc) ->
     remove_non_vars(Ps, Es, [Var|Pacc], [E|Eacc]);
 remove_non_vars([_|Ps], [_|Es], Pacc, Eacc) ->
@@ -1084,8 +1095,10 @@ letify_guard(Flet, Avs, #c_call{module=#c_atom{val=erlang},
     Arg1 = letify_guard(Flet, Avs, A1),
     Arg2 = letify_guard(Flet, Avs, A2),
     Call#c_call{args=[Arg1,Arg2]};
-letify_guard(Flet, Avs, #c_try{expr=B,body=#c_atom{val=false}}=Prot) ->
-    Prot#c_try{expr=foldl(Flet, B, Avs)};
+letify_guard(Flet, Avs, #c_try{arg=B,
+			       vars=[#c_var{name=X}],body=#c_var{name=X},
+			       handler=#c_atom{val=false}}=Prot) ->
+    Prot#c_try{arg=foldl(Flet, B, Avs)};
 letify_guard(Flet, Avs, E) -> foldl(Flet, E, Avs).
 
 %% case_tuple_pat([Pattern], Arity) -> {ok,[Pattern],[{AliasVar,Pat}]} | error.

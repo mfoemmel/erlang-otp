@@ -37,6 +37,8 @@
 
 -export([i/0, i/1, i/2, i/3]).
 
+-deprecated([{fixtable,2}]).
+
 %% The following functions used to be found in this module, but
 %% are now BIFs (i.e. implemented in C).
 %%
@@ -71,38 +73,24 @@
 
 fun2ms(ShellFun) when is_function(ShellFun) ->
     % Check that this is really a shell fun...
-    Mod = erlang:fun_info(ShellFun,module),
-    case Mod of 
-	{module,erl_eval} ->
-	    Env = erlang:fun_info(ShellFun,env),
-	    case Env of
-		{env,[{eval,{shell,local_func},_},
-		      ImportList,
-		      Clauses]} when is_list(ImportList),
-				     element(1,hd(Clauses)) == clause ->
-		    case ms_transform:transform_from_shell(
-			   ?MODULE,Clauses,ImportList) of
-			{error,[{_,[{_,_,Code}|_]}|_],_} ->
-			    io:format("Error: ~s~n",
-				      [ms_transform:format_error(Code)]),
-			    {error,transform_error};
-			Else ->
-			    Else
-		    end;
-		_ ->
-		    exit({badarg,{?MODULE,fun2ms,
-				  [function,called,with,real,'fun',
-				   should,be,transformed,with,
-				   parse_transform,'or',called,with,
-				   a,'fun',generated,in,the,
-				   shell]}})
-	       end;
-	_ ->
-	    exit({badarg,{?MODULE,fun2ms,[function,called,with,real,'fun',
-				      should,be,transformed,with,
-				      parse_transform,'or',called,with,
-				      a,'fun',generated,in,the,
-				      shell]}}) 
+    case erl_eval:fun_data(ShellFun) of
+        {fun_data,ImportList,Clauses} ->
+            case ms_transform:transform_from_shell(
+                   ?MODULE,Clauses,ImportList) of
+                {error,[{_,[{_,_,Code}|_]}|_],_} ->
+                    io:format("Error: ~s~n",
+                              [ms_transform:format_error(Code)]),
+                    {error,transform_error};
+                Else ->
+                    Else
+            end;
+        false ->
+            exit({badarg,{?MODULE,fun2ms,
+                          [function,called,with,real,'fun',
+                           should,be,transformed,with,
+                           parse_transform,'or',called,with,
+                           a,'fun',generated,in,the,
+                           shell]}})
     end.
 
 

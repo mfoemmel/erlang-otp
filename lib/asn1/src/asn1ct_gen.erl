@@ -37,7 +37,7 @@
 	 get_constraint/2,
 	 insert_once/2,
 	 rt2ct_suffix/1,rt2ct_suffix/0]).
--export([pgen/4,pgen_module/5,mk_var/1]).
+-export([pgen/4,pgen_module/5,mk_var/1, un_hyphen_var/1]).
 -export([gen_encode_constructed/4,gen_decode_constructed/4]).
 
 %% pgen(Erules, Module, TypeOrVal)
@@ -64,6 +64,7 @@ pgen_module(OutFile,Erules,Module,TypeOrVal,Indent) ->
     pgen_dispatcher(Erules,Module,TypeOrVal),
     pgen_info(Erules,Module),
     pgen_typeorval(wrap_ber(Erules),Module,TypeOrVal),
+    pgen_partial_incomplete_decode(Erules),
 % gen_vars(asn1_db:mod_to_vars(Module)),
 % gen_tag_table(AllTypes),
     file:close(Fid),
@@ -79,7 +80,8 @@ pgen_typeorval(Erules,Module,{Types,Values,_Ptypes,_Classes,Objects,ObjectSets})
 	true ->
 	    pgen_check_defaultval(Erules,Module);
 	_ -> ok
-    end.
+    end,
+    pgen_partial_decode(Erules,Module).
 
 pgen_values(_,_,[]) ->
     true;
@@ -123,17 +125,213 @@ pgen_objectsets(Erules,Module,[H|T]) ->
 
 pgen_check_defaultval(Erules,Module) ->
     CheckObjects = ets:tab2list(check_functions),
-    FileName = lists:concat([Module,'.table']),
-    {ok,IoDevice} = file:open(FileName,[write]),
-    Fun =
-	fun(X)->
-		io:format(IoDevice,"~n~n************~n~n~p~n~n*****"
-			  "********~n~n",[X]) 
-	end,
-    lists:foreach(Fun,CheckObjects),
-    file:close(IoDevice),
+    case get(asndebug) of
+	true ->
+	    FileName = lists:concat([Module,'.table']),
+	    {ok,IoDevice} = file:open(FileName,[write]),
+	    Fun =
+		fun(X)->
+			io:format(IoDevice,"~n~n************~n~n~p~n~n*****"
+				  "********~n~n",[X]) 
+		end,
+	    lists:foreach(Fun,CheckObjects),
+	    file:close(IoDevice);
+	_ -> ok
+    end,
     gen_check_defaultval(Erules,Module,CheckObjects).
-				    
+
+pgen_partial_decode(Erules,Module) ->
+    pgen_partial_inc_dec(Erules,Module),
+    pgen_partial_dec(Erules,Module).
+
+pgen_partial_inc_dec(Erules,Module) ->
+%    io:format("Start partial incomplete decode gen?~n"),
+    case asn1ct:get_gen_state_field(inc_type_pattern) of
+	undefined ->
+%	    io:format("Partial incomplete decode gen not started: ~w~n",[asn1ct:get_gen_state_field(active)]),
+	    ok;
+%	[] ->
+%	    ok;
+	ConfList -> 
+	    PatternLists=lists:map(fun({_,P}) -> P end,ConfList),
+	    pgen_partial_inc_dec1(Erules,Module,PatternLists),
+	    gen_partial_inc_dec_refed_funcs(Erules)
+    end.
+    
+%% pgen_partial_inc_dec1 generates a function of the toptype in each
+%% of the partial incomplete decoded types.
+pgen_partial_inc_dec1(Erules,Module,[P|Ps]) ->
+    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
+				       rt2ct_suffix(Erules)])),
+    TopTypeName = asn1ct:partial_inc_dec_toptype(P),
+    TypeDef=asn1_db:dbget(Module,TopTypeName),
+    asn1ct_name:clear(),
+    asn1ct:update_gen_state(namelist,P),
+    asn1ct:update_gen_state(active,true),
+    asn1ct:update_gen_state(prefix,"dec-inc-"),
+    Rtmod:gen_decode(Erules,TypeDef),
+%%    asn1ct:update_gen_state(namelist,tl(P)), %% 
+    gen_dec_part_inner_constr(Erules,TypeDef,[TopTypeName]),
+    pgen_partial_inc_dec1(Erules,Module,Ps);
+pgen_partial_inc_dec1(_,_,[]) ->
+    ok.
+
+gen_partial_inc_dec_refed_funcs(Erule) when Erule == ber_bin_v2 ->
+    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erule),
+				       rt2ct_suffix(Erule)])),
+    case asn1ct:next_refed_func() of
+	[] ->
+	    ok;
+	{#'Externaltypereference'{module=M,type=Name},Pattern} ->
+	    TypeDef = asn1_db:dbget(M,Name),
+	    asn1ct:update_gen_state(namelist,Pattern),
+	    Rtmod:gen_inc_decode(Erule,TypeDef),
+	    gen_dec_part_inner_constr(Erule,TypeDef,[Name]),
+	    gen_partial_inc_dec_refed_funcs(Erule);
+	_ ->
+	    gen_partial_inc_dec_refed_funcs(Erule)
+    end;
+gen_partial_inc_dec_refed_funcs(_) ->
+    ok.
+
+pgen_partial_dec(_Erules,_Module) ->
+    ok. %%%% implement later
+
+%% generate code for all inner types that are called from the top type
+%% of the partial incomplete decode
+gen_dec_part_inner_constr(Erules,TypeDef,TypeName) ->
+    Def = TypeDef#typedef.typespec,
+    InnerType = asn1ct_gen:get_inner(Def#type.def),
+    case InnerType of
+	'SET' ->
+	    #'SET'{components=Components} = Def#type.def,
+	    gen_dec_part_inner_types(Erules,Components,TypeName);
+	%%  Continue generate the inner of each component
+	'SEQUENCE' ->
+	    #'SEQUENCE'{components=Components} = Def#type.def,
+	    gen_dec_part_inner_types(Erules,Components,TypeName);
+	'CHOICE' ->
+	    {_,Components} = Def#type.def,
+	    gen_dec_part_inner_types(Erules,Components,TypeName);
+	'SEQUENCE OF' ->
+	    %% this and next case must be the last component in the
+	    %% partial decode chain here. Not likely that this occur.
+	    {_,Type} = Def#type.def,
+	    NameSuffix = constructed_suffix(InnerType,Type#type.def),
+	    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
+					       rt2ct_suffix(Erules)])),
+	    asn1ct_name:clear(),
+	    Rtmod:gen_decode(Erules,[NameSuffix|TypeName],Type);
+%%	    gen_types(Erules,[NameSuffix|Typename],Type);
+	'SET OF' ->
+	    {_,Type} = Def#type.def,
+	    NameSuffix = constructed_suffix(InnerType,Type#type.def),
+	    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
+					       rt2ct_suffix(Erules)])),
+	    asn1ct_name:clear(),
+	    Rtmod:gen_decode(Erules,[NameSuffix|TypeName],Type);
+	_ ->
+	    ok
+    end.
+
+gen_dec_part_inner_types(Erules,[ComponentType|Rest],TypeName) ->
+    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
+				       rt2ct_suffix(Erules)])),
+    asn1ct_name:clear(),
+    Rtmod:gen_decode(Erules,TypeName,ComponentType),
+    gen_dec_part_inner_types(Erules,Rest,TypeName);
+gen_dec_part_inner_types(Erules,{Comps1,Comps2},TypeName)
+  when list(Comps1),list(Comps2) ->
+    gen_dec_part_inner_types(Erules,Comps1 ++ Comps2,TypeName);
+gen_dec_part_inner_types(_,[],_) ->
+    ok.
+
+
+pgen_partial_incomplete_decode(Erule) ->
+    case asn1ct:get_gen_state_field(active) of
+	true ->
+	    pgen_partial_incomplete_decode1(Erule),
+	    asn1ct:reset_gen_state();
+	_ ->
+	    ok
+    end.
+pgen_partial_incomplete_decode1(ber_bin_v2) ->
+    case asn1ct:read_config_data(partial_incomplete_decode) of
+	undefined ->
+	    ok;
+	Data ->
+	    lists:foreach(fun emit_partial_incomplete_decode/1,Data)
+    end,
+    GeneratedFs= asn1ct:get_gen_state_field(gen_refed_funcs),
+%    io:format("GeneratedFs :~n~p~n",[GeneratedFs]),
+    gen_part_decode_funcs(GeneratedFs,0);
+pgen_partial_incomplete_decode1(_) -> ok.
+
+emit_partial_incomplete_decode({FuncName,TopTypeName,Pattern}) ->
+    emit([{asis,FuncName},"(Bytes) ->",nl,
+	  "  decode_partial_incomplete(",{asis,TopTypeName},",Bytes,",{asis,Pattern},").",nl]);
+emit_partial_incomplete_decode(D) ->
+    throw({error,{asn1,{"bad data in asn1config file",D}}}).
+
+gen_part_decode_funcs([Data={Name,_,_,Type}|GeneratedFs],N) ->
+    InnerType = 
+	case Type#type.def of
+	    #'ObjectClassFieldType'{type=OCFTType} ->
+		OCFTType;
+	    _ ->
+		get_inner(Type#type.def)
+	end,
+    WhatKind = type(InnerType),
+    TypeName=list2name(Name),
+    if
+	N > 0 -> emit([";",nl]);
+	true -> ok
+    end,
+    emit(["decode_inc_disp('",TypeName,"',Data) ->",nl]),
+    gen_part_decode_funcs(WhatKind,TypeName,Data),
+    gen_part_decode_funcs(GeneratedFs,N+1);
+gen_part_decode_funcs([_H|T],N) ->
+    gen_part_decode_funcs(T,N);
+gen_part_decode_funcs([],N) ->
+    if
+	N > 0 ->
+	    .emit([".",nl]);
+	true ->
+	    ok
+    end.
+
+gen_part_decode_funcs(#'Externaltypereference'{module=M,type=T},
+		      _TypeName,Data) ->
+    #typedef{typespec=TS} = asn1_db:dbget(M,T),
+    InnerType = 
+	case TS#type.def of
+	    #'ObjectClassFieldType'{type=OCFTType} ->
+		OCFTType;
+	    _ ->
+		get_inner(TS#type.def)
+	end,
+    WhatKind = type(InnerType),
+    gen_part_decode_funcs(WhatKind,[T],Data);
+gen_part_decode_funcs({constructed,bif},TypeName,
+		      {_Name,parts,Tag,_Type}) ->
+    emit(["  case Data of",nl,
+	  "    L when list(L) ->",nl,
+	  "      'dec_",TypeName,"'(lists:map(fun(X)->element(1,?RT_BER:decode(X)) end,L),",{asis,Tag},");",nl,
+	  "    _ ->",nl,
+	  "      [Res] = 'dec_",TypeName,"'([Data],",{asis,Tag},"),",nl,
+	  "      Res",nl,
+	  "  end"]);
+gen_part_decode_funcs(WhatKind,_TypeName,{_Name,parts,_Tag,_Type}) ->
+    throw({error,{asn1,{"only SEQUENCE OF/SET OF may have the partial incomplete directive 'parts'.",WhatKind}}});
+gen_part_decode_funcs({constructed,bif},TypeName,
+		      {_Name,undecoded,Tag,_Type}) ->
+    emit(["  'dec_",TypeName,"'(Data,",{asis,Tag},")"]);
+gen_part_decode_funcs({primitive,bif},_TypeName,
+		      {_Name,undecoded,Tag,Type}) ->
+    % Argument no 6 is 0, i.e. bit 6 for primitive encoding.
+    asn1ct_gen_ber_bin_v2:gen_dec_prim(ber_bin_v2,Type,"Data",Tag,[],0,", mandatory, ");
+gen_part_decode_funcs(WhatKind,_TypeName,{_,Directive,_,_}) ->
+    throw({error,{asn1,{"Not implemented yet",WhatKind," partial incomplete directive:",Directive}}}).
     
 gen_types(Erules,Tname,{RootList,ExtList}) when list(RootList) ->
     gen_types(Erules,Tname,RootList),
@@ -294,6 +492,16 @@ mk_var(X) when atom(X) ->
 mk_var([H|T]) ->
     [H-32|T].
 
+%% Since hyphens are allowed in ASN.1 names, it may occur in a
+%% variable to. Turn a hyphen into a under-score sign.
+un_hyphen_var(X) when atom(X) ->
+    list_to_atom(un_hyphen_var(atom_to_list(X)));
+un_hyphen_var([45|T]) ->
+    [95|un_hyphen_var(T)];
+un_hyphen_var([H|T]) ->
+    [H|un_hyphen_var(T)];
+un_hyphen_var([]) ->
+    [].
 
 %% Generate value functions ***************
 %% ****************************************
@@ -342,6 +550,8 @@ gen_encode_constructed(Erules,Typename,InnerType,D)
 
 gen_decode_constructed(Erules,Typename,InnerType,D) when record(D,type) ->
     Rtmod = list_to_atom(lists:concat(["asn1ct_constructed_",erule(Erules)])),
+    asn1ct:step_in_constructed(), %% updates namelist for incomplete
+                                  %% partial decode
     case InnerType of
 	'SET' ->
 	    Rtmod:gen_decode_set(Erules,Typename,D);
@@ -429,6 +639,7 @@ pgen_exports(Erules,_Module,{Types,Values,_,_,Objects,ObjectSets}) ->
 	    gen_exports1(ObjectSets,"getdec_",2)
     end,
     emit({"-export([info/0]).",nl}),
+    gen_partial_inc_decode_exports(),
     emit({nl,nl}).
 
 gen_exports1([F1,F2|T],Prefix,Arity) ->
@@ -437,6 +648,32 @@ gen_exports1([F1,F2|T],Prefix,Arity) ->
 gen_exports1([Flast|_T],Prefix,Arity) ->
 	emit({"'",Prefix,Flast,"'/",Arity,nl,"]).",nl,nl}).
 
+gen_partial_inc_decode_exports() ->
+    case {asn1ct:read_config_data(partial_incomplete_decode),
+	  asn1ct:get_gen_state_field(inc_type_pattern)}  of
+	{undefined,_} ->
+	    ok;
+	{_,undefined} ->
+	    ok;
+	{Data,_} ->
+	    gen_partial_inc_decode_exports(Data),
+	    emit("-export([decode_part/2]).")
+    end.
+gen_partial_inc_decode_exports([]) ->
+    ok;
+gen_partial_inc_decode_exports([{Name,_,_}|Rest]) ->
+    emit(["-export([",Name,"/1"]),
+    gen_partial_inc_decode_exports1(Rest);
+gen_partial_inc_decode_exports([_|Rest]) ->
+    gen_partial_inc_decode_exports(Rest).
+
+gen_partial_inc_decode_exports1([]) ->
+    emit(["]).",nl]);
+gen_partial_inc_decode_exports1([{Name,_,_}|Rest]) ->
+    emit([", ",Name,"/1"]),
+    gen_partial_inc_decode_exports1(Rest);
+gen_partial_inc_decode_exports1([_|Rest]) ->
+    gen_partial_inc_decode_exports1(Rest).
 
 pgen_dispatcher(Erules,_Module,{[],_Values,_,_,_Objects,_ObjectSets}) ->
     emit(["encoding_rule() ->",nl]),
@@ -497,6 +734,8 @@ pgen_dispatcher(Erules,_Module,{Types,_Values,_,_,_Objects,_ObjectSets}) ->
     end,
     emit(["end.",nl,nl]),
 
+    gen_decode_partial_incomplete(Erules),
+
     case Types of
 	[] -> ok;
 	_ ->
@@ -509,7 +748,8 @@ pgen_dispatcher(Erules,_Module,{Types,_Values,_,_,_Objects,_ObjectSets}) ->
 		    gen_dispatcher(Types,"decode_disp","dec_",",mandatory");
 		ber_bin_v2 ->
 		    gen_dispatcher(Types,"encode_disp","enc_",""),
-		    gen_dispatcher(Types,"decode_disp","dec_","");
+		    gen_dispatcher(Types,"decode_disp","dec_",""),
+		    gen_partial_inc_dispatcher();
 		_PerOrPer_bin -> 
 		    gen_dispatcher(Types,"encode_disp","enc_",""),
 		    gen_dispatcher(Types,"decode_disp","dec_",",mandatory")
@@ -522,6 +762,65 @@ pgen_dispatcher(Erules,_Module,{Types,_Values,_,_,_Objects,_ObjectSets}) ->
 	_ -> ok
     end,
     emit({nl,nl}).
+
+
+gen_decode_partial_incomplete(Erule) when Erule == ber;Erule==ber_bin;
+					   Erule==ber_bin_v2 ->
+    case {asn1ct:read_config_data(partial_incomplete_decode),
+	  asn1ct:get_gen_state_field(inc_type_pattern)} of
+	{undefined,_} ->
+	    ok;
+	{_,undefined} ->
+	    ok;
+	_ ->
+	    case Erule of
+		ber_bin_v2 ->
+		    EmitCaseClauses =
+			fun() ->
+				emit(["   {'EXIT',{error,Reason}} ->",nl,
+				      "      {error,Reason};",nl,
+				      "    {'EXIT',Reason} ->",nl,
+				      "      {error,{asn1,Reason}};",nl,
+				      "    Result ->",nl,
+				      "      {ok,Result}",nl,
+				      "  end.",nl,nl])
+			end,
+		    emit(["decode_partial_incomplete(Type,Data0,",
+			  "Pattern) ->",nl]),
+		    emit(["  {Data,_RestBin} =",nl,
+			  "    ?RT_BER:decode_primitive_",
+			  "incomplete(Pattern,Data0),",nl,
+			  "  case catch decode_partial_inc_disp(Type,",
+			  "Data) of",nl]),
+		    EmitCaseClauses(),
+		    emit(["decode_part(Type,Data0) ->",nl,
+			  "  {Data,_RestBin} = ?RT_BER:decode(Data0),",nl,
+			  "  case catch decode_inc_disp(Type,Data) of",nl]),
+		    EmitCaseClauses();
+		_ -> ok % add later
+	    end
+    end;
+gen_decode_partial_incomplete(_Erule) ->
+    ok.
+
+gen_partial_inc_dispatcher() ->
+    case {asn1ct:read_config_data(partial_incomplete_decode),
+	  asn1ct:get_gen_state_field(inc_type_pattern)} of
+	{undefined,_} ->
+	    ok;
+	{_,undefined} ->
+	    ok;
+	{Data,_} ->
+	    gen_partial_inc_dispatcher(Data)
+    end.
+gen_partial_inc_dispatcher([{_FuncName,TopType,_Pattern}|Rest]) ->
+    emit(["decode_partial_inc_disp(",{asis,TopType},",Data) ->",nl,
+	  "  ",{asis,list_to_atom(lists:concat([dec,"-inc-",TopType]))},
+	  "(Data);",nl]),
+    gen_partial_inc_dispatcher(Rest);
+gen_partial_inc_dispatcher([]) ->
+    emit(["decode_partial_inc_disp(Type,_Data) ->",nl,
+	  "  exit({error,{asn1,{undefined_type,Type}}}).",nl]).
 
 driver_parameter() ->
     Options = get(encoding_options),
@@ -1205,6 +1504,13 @@ construct_bif(T) ->
 
 def_to_tag(#tag{class=Class,number=Number}) ->
     {Class,Number};
+def_to_tag(#'ObjectClassFieldType'{type=Type}) -> 
+   case Type of
+       T when tuple(T),element(1,T)==fixedtypevaluefield ->
+	   {'UNIVERSAL',get_inner(Type)};
+       _ ->
+	   []
+   end;
 def_to_tag(Def) ->
     {'UNIVERSAL',get_inner(Def)}.
     

@@ -33,14 +33,14 @@ RELSYSDIR = $(RELEASE_PATH)/lib/webtool-$(VSN)
 # Target Specs
 # ---------------------------------------------------- 
 
-CONFIG_FILE = config.file
-
-WEBSERVER_CONFIG_FILES = root/conf/httpd.conf \
-                         root/conf/mime.types
+WEBSERVER_CONFIG_FILES = root/conf/mime.types
 
 HTDOCS_FILES =  root/doc/index.html \
 	        root/doc/tool_management.html \
 	        root/doc/start_info.html 
+
+SCRIPTS = bin/start_webtool \
+	  bin/start_webtool.bat
 
 # ----------------------------------------------------
 # FLAGS
@@ -68,9 +68,10 @@ release_spec: opt
 	$(INSTALL_DIR)  $(RELSYSDIR)/priv/root
 	$(INSTALL_DIR)  $(RELSYSDIR)/priv/root/conf
 	$(INSTALL_DIR)  $(RELSYSDIR)/priv/root/doc
-	$(INSTALL_DATA) $(CONFIG_FILE) $(RELSYSDIR)/priv
 	$(INSTALL_DATA) $(HTDOCS_FILES) $(RELSYSDIR)/priv/root/doc
 	$(INSTALL_DATA) $(WEBSERVER_CONFIG_FILES) $(RELSYSDIR)/priv/root/conf
+	$(INSTALL_DIR)  $(RELSYSDIR)/priv/bin
+	$(INSTALL_SCRIPT)  $(SCRIPTS) $(RELSYSDIR)/priv/bin
 
 release_docs_spec:
 

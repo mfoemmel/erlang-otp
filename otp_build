@@ -1,0 +1,504 @@
+#! /bin/sh
+
+# Global configuration variables
+if [ -z "$ONLY_ERTS" ]; then
+    AUTOCONF_SUBDIRS=". lib lib/* erts"
+else 
+    AUTOCONF_SUBDIRS=". erts" 
+fi
+
+# Utility functions
+usage ()
+{
+    echo "Available options:"
+    echo "setup [-a] - does autoconf, configure and opt."
+    echo "all [-a] <dir> - does autoconf, configure, primary, boot, release"
+    echo "autoconf - (re)build the configure scripts"
+    echo "configure [<configure parameters>] - does the actual configuration"
+    echo "opt [-a] - build a small Erlang system without bootstrap"
+    echo "primary - creates the primary bootstrap, the one shipped"
+    echo "boot [-a] - bootstraps and build small system (after primary)"
+    echo "release <target_dir> - creates a small release to <target_dir>"
+    echo "release [-a] <target_dir> - creates full release to <target_dir>"
+    echo "tests <dir> - Build testsuites to <dir>"
+    echo ""
+    echo "installer_win32 <dir> - creates a windows installer from <dir>" 
+    echo ""
+    echo "Before trying to build on windows, consider the following option"
+    echo "env_win32 - echo environment settings for win32, use with eval"
+    echo "Before trying to build for vxworks, consider the following option"
+    echo "env_vxworks <cpu>  - echo environment settings for vxworks, use with eval"
+}
+
+check_erltop ()
+{
+        ERLTOP_FORCED=false
+	if [ "X$ERL_TOP" = "X" ]; then
+		if [ -f ./otp_build -a -f ./erts/autoconf/config.guess ]; then
+		    ERLTOP_FORCED=true
+		    ERL_TOP=`/bin/pwd`
+		else
+		    echo "The environment variable ERL_TOP must be set." >&2
+		    exit 1
+		fi
+	fi
+}
+
+target_contains ()
+{
+	Y=`echo $TARGET | sed "s,$1,,g"`
+	[ X"$Y" != X"$TARGET" ]
+	return $?
+} 
+
+
+
+# Execution of the different options
+
+# Special static config flags for certain platforms are set here  
+set_config_flags ()
+{
+	if target_contains win32; then
+		CONFIG_FLAGS="--build=$BUILDSYS --host=win32 --target=win32" 
+	fi
+	if target_contains solaris; then 
+		CONFIG_FLAGS="--enable-threads"
+	elif target_contains linux; then 
+		CONFIG_FLAGS="--enable-threads"
+	fi
+	if target_contains "univel-sysv4"; then
+		CONFIG_FLAGS="--x-libraries=/usr/lib/X11"
+	fi
+
+	if target_contains free_source; then
+		CONFIG_FLAGS="$CONFIG_FLAGS --host=$TARGET"
+	fi
+	CONFIG_FLAGS="$CONFIG_FLAGS $*"
+	export CONFIG_FLAGS;
+}
+	
+do_autoconf ()		
+{
+	if [ ! -z "$OVERRIDE_CONFIGURE" ]; then
+	    echo "Autoconf disabled on target $TARGET, but is performed on host" >&2
+	    OVERRIDE_TARGET=
+	    export OVERRIDE_TARGET
+	    # We still use erts configure for erl_interface and VxWorks
+	    case "$TARGET" in
+		*vxworks*)
+		    AUTOCONF_SUBDIRS=`echo $AUTOCONF_SUBDIRS | \
+					sed -e 's,lib/erl_interface,,' \
+					    -e 's,lib/gs,,' \
+					    -e 's,lib/megaco,,'`
+		    ;;
+		*ose*)
+		    AUTOCONF_SUBDIRS=`echo $AUTOCONF_SUBDIRS | \
+					sed -e 's,lib/erl_interface,,'`
+		    ;;
+	    esac
+	    TARGET=`$ERL_TOP/erts/autoconf/config.guess`
+	fi
+	
+	# Remove TSP if not on linux (in open source tsp does not exist...)
+	# Code disabled, need to configure all to run release_docs on Solaris
+#	case "$TARGET" in
+#	    *linux*);;
+#	    *)
+#		AUTOCONF_SUBDIRS=`echo $AUTOCONF_SUBDIRS | sed 's,lib/tsp,,'`;;
+#	esac
+	for d in $AUTOCONF_SUBDIRS; do
+		if [ -f $d/configure.in ]; then
+			echo "=== running autoconf in $d"
+			( cd $d && autoconf ) || exit 1
+		fi
+		if [ -f $d/acconfig.h ]; then
+			echo "=== running autoheader in $d"
+			( cd $d && autoheader configure.in > config.h.in ) \
+			    || exit 1
+		fi
+	done
+}
+
+mk_targetdir ()
+{
+    if [ ! -d $ERL_TOP/$TARGET ]; then
+	echo "creating  $ERL_TOP/$TARGET"
+	mkdir $ERL_TOP/$TARGET
+    else
+	echo "existing $ERL_TOP/$TARGET is used for cache"
+    fi
+    # Don't want this to be kept eh?
+    rm -rf $ERL_TOP/$TARGET/config.cache
+}
+
+do_configure ()
+{
+    setup_make
+    mk_targetdir
+    if [ ! -z "$OVERRIDE_CONFIGURE" ]; then
+	case $TARGET in
+	    vxworks_*)
+		( cd erts/autoconf && \
+		  $ERL_TOP/erts/autoconf/configure.vxworks $TARGET )
+		  echo "Configuring for build host too..." >&2
+		  OVERRIDE_TARGET=
+		  export OVERRIDE_TARGET
+		  TARGET=`$ERL_TOP/erts/autoconf/config.guess`
+		  mk_targetdir;;
+	    ose_*)
+		( cd erts/autoconf && \
+		  $ERL_TOP/erts/autoconf/configure.ose $TARGET )
+		  echo "Configuring for build host too..." >&2
+		  OVERRIDE_TARGET=
+		  export OVERRIDE_TARGET
+		  TARGET=`$ERL_TOP/erts/autoconf/config.guess`
+		  mk_targetdir;;
+	    *)
+		echo "Unexpected target when ordinary configure is" \
+			"overridden" >&2
+		echo 'check if $OVERRIDE_CONFIGURE and $OVERRIDE_TAGET' \
+		        'environments are correct.' >&2
+		exit 1;;
+	esac
+    fi
+    set_config_flags $CONFIG_FLAGS "$@"
+    if [ -z "$ONLY_ERTS" ]; then
+	./configure --cache-file=$ERL_TOP/$TARGET/config.cache $CONFIG_FLAGS \
+	    || exit 1
+    else
+	echo "erts/configure --cache-file=$ERL_TOP/$TARGET/config.cache $CONFIG_FLAGS"
+	(cd $ERL_TOP/erts; ./configure --cache-file=$ERL_TOP/$TARGET/config.cache $CONFIG_FLAGS) || exit 1
+    fi
+}
+
+echo_setenv ()
+{
+    case "$DAILY_BUILD_SCRIPT$SHELL" in
+	true*)
+	    echo "$1=$2";;
+	*ash|*ksh|*/sh|*zsh|*ash)
+	    echo "$1=\"$2\";export $1$3";;
+	*csh)
+	    echo "setenv $1 \"$2\"$3";;
+    esac
+}
+
+echo_env_erltop ()
+{
+    if [ X"$ERL_TOP" = X"" -o "$ERLTOP_FORCED" = "true" ]; then
+	if [ -f ./otp_build ]; then
+	    # Seems to be current directory...
+	    echo_setenv ERL_TOP `/bin/pwd` ';'
+	else
+	    echo "You need to either set ERL_TOP first or stand in the same" \ 
+		"directory as this script resides in." >&2
+	    exit 1
+	fi
+    fi
+}
+
+echo_envinfo ()
+{
+    if [ X"$DAILY_BUILD_SCRIPT" = X"true" ]; then
+	echo '# Output generated for daily build script only '\
+	     '($DAILY_BUILD_SCRIPT=true)'
+    else
+	echo '# Please note:'
+	echo '# The command you are running is supposed to be run'\
+	     'using the shells'
+	echo '# "eval" builtin, like in:'
+	echo '# $ eval `./otp_build env_<something>`'
+	echo '# If you see this comment, you probably haven'"'"'t done that.'
+    fi
+}
+
+echo_env_vxworks ()
+{
+    if [ -z "$1" ]; then 
+	echo "env_vxworks requires CPU architecture as parameter (ppc603, ppc860 etc)." >&2
+	exit 1
+    fi
+    echo_env_erltop
+    echo_setenv OVERRIDE_CONFIGURE true ';'
+    echo_setenv OVERRIDE_TARGET vxworks_$1
+    echo_envinfo
+}
+
+echo_env_ose ()
+{
+    if [ -z "$1" ]; then 
+	echo "env_ose requires CPU architecture as parameter (ppc750, sfk etc)." >&2
+	exit 1
+    fi
+    echo_env_erltop
+    echo_setenv OVERRIDE_CONFIGURE true ';'
+    echo_setenv OVERRIDE_TARGET ose_$1
+    echo_envinfo
+}
+
+echo_env_win32 ()
+{
+    #echo_envinfo
+    if [ X"$SHELL" = X"" ]; then
+	echo "You need to export the shell variable first," \
+		"for bourne-like shells, type:" >&2
+	echo 'export SHELL' >&2
+	echo "and for csh-like shells, type:" >&2
+	echo 'setenv SHELL $SHELL' >&2
+	echo " - then try again." >&2
+	exit 1
+    fi
+    echo_env_erltop
+    P2=`echo $PATH | \
+	sed 's,",,g;s,:[cC]:,:/cygdrive/c,g;s,:[dD]:,:/cygdrive/d,g'`
+    P3=""
+    save_ifs=$IFS
+    IFS=:
+    for p in $P2; do
+	if [ -d "$p" ]; then
+	    C1="`(cygpath -d $p 2>/dev/null || cygpath -w $p)`" 2> /dev/null
+	    C2=`cygpath "$C1" 2> /dev/null` 2> /dev/null
+	else
+	    C2=""
+	fi
+	if [ ! -z "$C2" ]; then
+	    if [ -z "$P3" ];then 
+		P3="$C2"
+	    else 
+		P3="$P3:$C2"
+	    fi
+	fi
+    done
+    IFS=$save_ifs
+
+    echo_setenv OVERRIDE_TARGET win32 ';'
+    echo_setenv CC cc.sh ';'
+    echo_setenv CXX cc.sh ';'
+    echo_setenv AR ar.sh ';'
+    echo_setenv RANLIB true ';'
+    echo_setenv PATH "$ERL_TOP/erts/etc/win32/cygwin_tools:$P3"
+    echo_envinfo
+}
+
+lookup_prog_in_path ()
+{
+    PROG=$1
+    save_ifs=$IFS
+    IFS=:
+    for p in $PATH; do
+	# In cygwin the programs are not always executable and have .exe suffix...
+	if [ "X$TARGET" = "Xwin32" ]; then
+	    if [ -f $p/$PROG.exe ]; then
+		echo $p/$PROG
+		break;
+	    fi
+	else
+	    if [ -x $p/$PROG ]; then
+		echo $p/$PROG
+		break;
+	    fi
+	fi
+    done
+    IFS=$save_ifs
+}
+
+setup_make ()
+{
+    if [ -z "$MAKE" ]; then
+	case $TARGET in
+	    win32)
+		MAKE=make;;
+	    *)
+		if [ "X$CLEARCASE_MAKE_COMPAT" = "Xgnu" ]; then
+		    MAKE="clearmake -V"
+		else 
+		    if [ -n "`lookup_prog_in_path gmake`" ]; then
+			MAKE=gmake
+		    else
+			MAKE=make
+		    fi
+		fi;;
+       esac
+    fi
+    export MAKE
+}
+    
+do_noboot_lib_and_erts ()
+{
+    setup_make
+    EMULATORS=emulator
+    $MAKE MAKE="$MAKE" TARGET=$TARGET OTP_SMALL_BUILD=$OTP_SMALL_BUILD TYPE=$TYPE noboot || exit 1
+}
+
+do_primary_cross ()
+{
+    OVERRIDE_TARGET=
+    export OVERRIDE_TARGET
+    TARGET=`$ERL_TOP/erts/autoconf/config.guess`
+    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET primary_bootstrap || exit 1;
+    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET all_bootstraps || exit 1
+}
+
+do_primary ()
+{
+    setup_make
+    case $TARGET in
+	vxworks_*)
+	    do_primary_cross;;
+	ose_*)
+	    do_primary_cross;;
+	*)
+	    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET primary_bootstrap || exit 1;
+	    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET primary_bootstrap_cleanup || exit 1;;
+    esac
+}
+
+do_boot_cross ()
+{
+    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET depend || exit 1;
+    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET emulator || exit 1;
+    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET libs || exit 1;
+}
+
+do_boot ()
+{
+    setup_make
+    case $TARGET in
+	vxworks_*)
+	    do_boot_cross;;
+        ose_*)
+	    do_boot_cross;;
+	*)
+	    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET all || exit 1;;
+    esac
+}
+
+do_release ()
+{
+    setup_make
+    $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET RELEASE_ROOT=$1 release || exit 1
+}
+
+do_tests ()
+{
+    setup_make
+    if [ X"$1" = X"" ]; then
+	$MAKE MAKE="$MAKE" TARGET=$TARGET release_tests || exit 1
+    else
+	$MAKE MAKE="$MAKE" TARGET=$TARGET TESTSUITE_ROOT=$1 release_tests || exit 1
+    fi
+}
+
+do_installer_win32 ()
+{
+    setup_make
+    installer_dir=$ERL_TOP/erts/etc/win32/nsis
+    (cd $installer_dir; $MAKE MAKE="$MAKE" TARGET=$TARGET TESTROOT=$1 release) || exit 1
+}
+
+# main
+
+check_erltop
+
+cd $ERL_TOP
+
+# Target first guess, wont necessarily hold, may be changed for 
+# certain parameters.
+if [ X"$TARGET" = X"" ]; then
+	TARGET=`$ERL_TOP/erts/autoconf/config.guess`
+fi
+BUILDSYS=$TARGET
+
+case $TARGET in
+    *-cygwin)
+	if [ X"$BUILD_FOR_CYGWIN" = X"" ]; then
+	    if [ X"$OVERRIDE_TARGET" = X"" -a X"$1" != X"env_win32" ];then
+		echo "Building for windows, you should do the " \
+		    "following first:" >&2
+		echo 'eval `./otp_build env_win32`' >&2
+		echo 'please note that there are backticks (``) in' \
+		    'the command'
+		exit 1
+	    fi
+	fi;;
+	*)
+	    ;;
+esac
+
+if [ ! -z "$OVERRIDE_TARGET" ]; then
+    TARGET="$OVERRIDE_TARGET"
+fi
+if [ -z "$BOOTSTRAP_ROOT" ]; then
+    BOOTSTRAP_ROOT="$ERL_TOP"
+fi
+
+if [ X"$1" = X"" ]; then 
+	usage
+	exit 1
+fi
+
+if [ X"$2" = X"-a" ]; then
+    minus_a_flag=true
+    OTP_SMALL_BUILD=
+else
+    OTP_SMALL_BUILD=true
+    minus_a_flag=false
+fi
+export OTP_SMALL_BUILD
+
+TYPE=
+case "$1" in
+	all)
+		do_autoconf; 
+		do_configure; 
+		do_primary;
+		do_boot;
+		if [ $minus_a_flag = true ]; then 
+		    shift
+		fi;
+		do_release "$2";;
+	setup)
+		if [ $minus_a_flag = false ]; then 
+		    TYPE=opt
+		fi;
+		do_autoconf; 
+		do_configure; 
+		do_noboot_lib_and_erts;;
+	autoconf)
+		do_autoconf;;
+	configure)
+		shift;
+		do_configure "$@";;
+	opt)
+		if [ $minus_a_flag = false ]; then 
+		    TYPE=opt
+		fi;
+		do_noboot_lib_and_erts;;
+	primary)
+		do_primary;;
+	boot)
+		do_boot;;
+	release)
+		if [ $minus_a_flag = true ]; then 
+		    shift
+		fi;
+		do_release "$2";;
+	tests)
+		if [ $minus_a_flag = true ]; then 
+		    shift
+		fi;
+		do_tests "$2";;
+	installer_win32)
+		if [ $minus_a_flag = true ]; then 
+		    shift
+		fi;
+		do_installer_win32 "$2";;
+	env_win32)
+		echo_env_win32;;
+	env_vxworks)
+		echo_env_vxworks "$2";;
+	env_ose)
+		echo_env_ose "$2";;
+	*)
+		usage;;
+esac

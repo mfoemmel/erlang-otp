@@ -44,11 +44,17 @@ is_bif(Atom) when is_atom(Atom) ->
 	fp_sub -> true;
 	fp_mul -> true;
 	fp_div -> true;
+	fclearerror ->true;
 	fcheckerror -> true;
+	fnegate -> true;
 	conv_to_float -> true;
+	unsafe_untag_float -> true;
+	unsafe_tag_float -> true;
 	_ -> false
       end
   end;
+is_bif({erlang, element, 2, _}) ->
+    true;
 is_bif(Tuple) when is_tuple(Tuple) ->
   case element(1, Tuple) of
     mkfun -> true;
@@ -59,8 +65,7 @@ is_bif(Tuple) when is_tuple(Tuple) ->
     _ -> false
   end;
 is_bif(_) ->
-    false.
-
+  false.
 %%======================================================================
 %%
 %% False if a bif always succeeds, true otherwise
@@ -168,11 +173,16 @@ known_heap_need(Bif) when is_atom(Bif) ->
     fp_div -> true;
     fp_mul -> true;
     fp_sub -> true;
+    fcheckerror -> true;
+    fclearerror -> true;
+    fnegate -> true;
+    unsafe_tag_float -> true;
     _ -> false
   end;
 known_heap_need(Bif) ->
   case Bif of
     {erlang, element,2} -> true;
+    {erlang, element,2, _} -> true;
     {unsafe_element,_N} -> true;
     {unsafe_update_element,_N}  -> true;
     {erlang, self, 0} -> true;

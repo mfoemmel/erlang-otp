@@ -20,48 +20,147 @@
 
 <!--- ################################################################# --->
 
-<h2>Odbc 1.0</h2>
+<h2>Odbc 1.0.8</h2>
 
+<h3>Improvements and new features</h3>
+
+<ul>
+  <li>
+    Made ODBC more stable on Windows by using nativ calls
+    for reading on standard_in and writing to standard_out.<br>
+    (Own Id: OTP-4762)<br>
+    (Aux Id: seq7766)<p>
+  </li>
+</ul>
+
+
+<!--- ################################################################# --->
+
+<h2>Odbc 1.0.7</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+  <li>
+    The supervisors shudowntime and timeout in terminate for receiving a
+    port close message had to be better related.<br>
+    (Own Id: OTP-4755)<p>
+  </li>
+
+</ul>
 
 <!--- ----------------------------------------------------------------- --->
 
 <h3>Improvements and new features</h3>
 
 <ul>
-
   <li>
-    The Erlang ODBC application consists of both Erlang and C code. The C
-    code is delivered as a precompiled executable for windows and solaris.
-    For the purpose of recompilation or compiling on some other platform
-    there is a Makefile included.<br>
-    (Own Id: OTP-4193)<br>
-    (Aux Id: seq7190)<p>
+    Erlang odbc now uses the option exit_status too open_port.<br>
+    (Own Id: OTP-4753)<p>
   </li>
 
-  <li>
-    Expensive constructs such as lists:flatten/1, double buffering and
-    string compare has been replaced by more efficient constructs or when
-    possible totally eliminated.<br>
-    (Own Id: OTP-4362)<p>
-  </li>
+</ul>
+<!--- ################################################################# --->
+
+<h2>Odbc 1.0.6</h2>
+
+<h3>Improvements and new features</h3>
+
+<ul>
 
   <li>
-    New API that has an Erlang/OTP touch and feel instead of being a
-    C-interface with Erlang syntax. The old interface is deprecated and
-    will be removed in release R10.<br>
-    (*** POTENTIAL INCOMPATIBILITY ***)<br>
-    (Own Id: OTP-4498)<p>
+    Error handling has been enhanced and better documented<br>
+    (Own Id: OTP-4661)<p>
   </li>
+</ul>
 
+<!--- ################################################################# --->
+
+<h2>Odbc 1.0.5</h2>
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
   <li>
-    API functions that became deprecated in version 0.9.1 has been removed.<br>
-    (*** POTENTIAL INCOMPATIBILITY ***)<br>
-    (Own Id: OTP-4499)<p>
+    Some error messages originating from the sql-driver where corrupted so
+    that odbc only returned the end of the error message. This has now been
+    fixed.<br>
+    (Own Id: OTP-4636)<br>
+    (Aux Id: seq7766)<p>
+  </li>
+  
+</ul>
+
+<h3>Improvements and new features</h3>
+
+<ul>
+  <li>
+    The erlang odbc process will now die normally if a connection can not
+    be established. No connection no process it is expected. And as the
+    client has already received the error message that would be the reason
+    with which the erlang process would be stopped, the supervisor report
+    will be superfluous. Naturally you may still get supervisor reports if
+    the erlang process is stopped for any other reason than the above.<br>
+    (Own Id: OTP-4639)<br>
+    (Aux Id: seq7766)<p>
   </li>
 
 </ul>
 
+<!--- ################################################################# --->
 
+<h2>Odbc 1.0.4</h2>
+
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    API function commit/3 is now exported.<br>
+
+    (Own Id: OTP-4593)<br>
+    (Aux Id: seq7766)<p>
+  </li>
+
+</ul>
+
+<h3>Improvements and new features</h3>
+
+<ul>
+  <li>
+    Improved error messages so that the implementation not shall shine
+    through. <br> Added possibility to let a connection return rows as
+    tuples instead of lists.<br>
+    (Own Id: OTP-4605)<br>
+
+    (Aux Id: seq7766)<p>
+  </li>
+
+ <li>
+    If an ODBC API function times out it will cause the client to exit with
+    reason timeout. If this exit was caught and the client continued using
+    the connection, the next request could get the answer meant for the
+    previously timed out request, this is no longer the case.<br>
+    (Own Id: OTP-4606)<br>
+
+    (Aux Id: seq7766)<p>
+  </li>
+
+  <li>
+    Scrollable cursors are nice but causes some overhead. For some
+    connections speed might be more important than flexible data access and
+    then you can disable scrollable cursor for a connection, limiting the
+    API but gaining speed.<br>
+    (Own Id: OTP-4624)<p>
+  </li>
+      
+</ul>
+
+<!--- ################################################################# --->
 
 There are also release notes for
 <a href="notes_history.html">older versions</a>.

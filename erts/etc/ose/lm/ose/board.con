@@ -1,0 +1,99 @@
+#ifndef _BOARD_CON
+#define _BOARD_CON
+
+/*
+ * This file contains configurations for the Force PowerCore+ BSP.
+ *
+ */
+
+#define CHRP_MAP   1      /* 1=chrp 0=prep (mapA) */
+
+/* #define I82559_DELAY 0x140   */
+/* #define I82559_DELAY 0x1100 	*/
+#define I82559_DELAY 0x5000 	
+ 
+#define i82559_PRIORITY_1  4      /* ethernet */
+#define i82559_PRIORITY_0  5      /* ethernet */
+#define UD16550_PRIORITY0 12      /* Serial COM1 */
+#define UD16550_PRIORITY1 11      /* Serial COM2 */
+
+#define INTA_ROUTE_CHANNEL           9  
+#define INTB_ROUTE_CHANNEL          10
+#define INTC_ROUTE_CHANNEL          11
+#define INTD_ROUTE_CHANNEL          12
+#define IDE_PRIMARY_ROUTE_CHANNEL   14
+#define IDE_SECONDARY_ROUTE_CHANNEL 15   /* 15 default */
+
+#define UD16550_REGOFFSET 1
+
+#define UD16550_SERCLK 1846200
+
+#if CHRP_MAP
+
+/* Address Map B -- CHRP */
+#define CPU_SYS_MEM_BASE    0x00000000
+#define CPU_PCI_MEM_BASE    0x80000000
+#define CPU_PCIISA_MEM_BASE 0xFD000000
+#define CPU_PCIISA_IO_BASE  0xFE000000
+#define CPU_PCI_IO_BASE     0xFE800000
+#define PCI_CFGADDR_REG     0xFEC00000
+#define PCI_CFGDATA_REG     0xFEE00000
+#define PCI_INTACK          0xFEF00000
+#define SYSROM_BASE_0       0xFF000000
+#define SYSROM_BASE_1       0xFF800000
+
+#else
+
+!! PREP not used, as of yet !! 
+
+/* Address Map A -- PREP */
+#define CPU_SYS_MEM_BASE    0x00000000
+#define CPU_PCIISA_IO_BASE  0x80000000
+#define PCI_CFGADDR_REG     0x80000CF8   /* contiguous mode */
+#define PCI_CFGDATA_REG     0x80000CFC
+#define CPU_PCICFG_DIRECT   0x80800000
+#define CPU_PCI_IO_BASE     0x81000000
+#define PCI_INTACK          0xBFFFFFF0
+#define CPU_PCI_MEM_BASE    0xC0000000
+#define CPU_PCIISA_MEM_BASE 0xC0000000
+#define SYSROM_BASE_0       0xFF000000
+#define SYSROM_BASE_1       0xFF800000
+
+#endif
+
+#define i82559_VECTOR_1         INTA_ROUTE_CHANNEL
+#define i82559_VECTOR_0         INTB_ROUTE_CHANNEL  
+#define PMC_SLOT1_VECTOR        INTC_ROUTE_CHANNEL
+#define PMC_SLOT2_VECTOR        INTD_ROUTE_CHANNEL
+
+#define PMC_INT1_VECTOR   1
+#define UD16550_VECTOR1   3    /* */
+#define UD16550_VECTOR0   4    /* */
+#define PMC_INT2_VECTOR   5
+#define UD16550_VECTOR2   6    /* */
+#define UD16550_VECTOR3   6    /* */
+#define PMC_INT3_VECTOR   6
+#define PMC_INT4_VECTOR   7
+#define WATCHDOG_VECTOR   8
+#define UD16550_VECTOR4  12    /* */
+#define UD16550_VECTOR5  12    /* */
+#define PMC_INT5_VECTOR  12
+#define Z8536_VECTOR     13
+#define CPCI_ENUM_VECTOR 14
+
+#define NVRAM_BASEADDR CPU_PCIISA_IO_BASE
+#define NVRAM_ADDR_LSB (*(volatile U8 *)(NVRAM_BASEADDR + 0x73))
+#define NVRAM_ADDR_MSB (*(volatile U8 *)(NVRAM_BASEADDR + 0x75))
+#define NVRAM_DATA     (*(volatile U8 *)(NVRAM_BASEADDR + 0x77))
+#define NVRAM_ETHERNET 0x1C13 /* The offset/address for Ethernet address. */
+
+#define UD16550_BASEADDR0 CPU_PCIISA_IO_BASE+0x3f8
+#define UD16550_BASEADDR1 CPU_PCIISA_IO_BASE+0x2f8
+#define UD16550_BASEADDR2 CPU_PCIISA_IO_BASE+0x3e8
+#define UD16550_BASEADDR3 CPU_PCIISA_IO_BASE+0x2e8
+#define UD16550_BASEADDR4 CPU_PCIISA_IO_BASE+0x3d8
+#define UD16550_BASEADDR5 CPU_PCIISA_IO_BASE+0x2d8
+
+#define BSP_END_OF_INT() (bspEndOfInt())
+
+#endif /* # ifndef _BOARD_CON */

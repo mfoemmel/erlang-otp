@@ -1,6 +1,6 @@
 -module(eval_bits).
 
--export([expr_grp/5,match_bits/6]).
+-export([expr_grp/5,match_bits/7]).
 
 -import(lists, [member/2,foldl/3]).
 
@@ -119,7 +119,7 @@ bits_to_bytes([B7,B6,B5,B4,B3,B2,B1,B0|T], Acc) ->
 	(B2 bsl 2) bor (B1 bsl 1) bor B0,
     bits_to_bytes(T, [Byte|Acc]);
 bits_to_bytes([], Acc) -> lists:reverse(Acc);
-bits_to_bytes(_, _) -> exit(badarg).
+bits_to_bytes(_, _) -> error(badarg).
 
 %%% Big-endian serves as our native format here (regardless of what
 %%% the endianness of the machine is). This is convenient, since the
@@ -178,19 +178,19 @@ make_bit_type(_Line, Size, Type0) ->		%Integer or 'all'
 
 %%% Part 2: matching
 
-match_bits(Fs, Bin, Bs0, Mfun, Efun, Call_maketype) ->
-    case catch match_bits1(Fs, Bin, Bs0, Mfun, Efun, Call_maketype) of
+match_bits(Fs, Bin, Bs0, BBs, Mfun, Efun, Call_maketype) ->
+    case catch match_bits1(Fs, Bin, Bs0, BBs, Mfun, Efun, Call_maketype) of
 	{match,Bs} -> {match,Bs};
 	invalid -> throw(invalid);
-	_ -> nomatch
+	_Error -> nomatch
     end.
 
-match_bits1([], <<>>, Bs, _Mfun, _Efun, _Call_maketype) -> {match,Bs};
-match_bits1([F|Fs], Bits0, Bs0, Mfun, Efun, Call_maketype) ->
-    %%format("matching ~w ~w~n", [Field, Bits0]),
-    {Bs,Bits} = match_field(F, Bits0, Bs0, Mfun, Efun, Call_maketype),
+match_bits1([], <<>>, Bs, _BBs, _Mfun, _Efun, _Call_maketype) -> {match,Bs};
+match_bits1([F|Fs], Bits0, Bs0, BBs0, Mfun, Efun, Call_maketype) ->
+    %%format("matching ~w ~w~n", [F, Bits0]),
+    {Bs,BBs,Bits} = match_field(F, Bits0, Bs0, BBs0, Mfun, Efun, Call_maketype),
     %%format("left ~w~n", [Bits]),
-    match_bits1(Fs, Bits, Bs, Mfun, Efun, Call_maketype).
+    match_bits1(Fs, Bits, Bs, BBs, Mfun, Efun, Call_maketype).
 
 bits_to_int([1|_]=Bits, true) -> bits_to_int2(Bits, -1);
 bits_to_int(Bits, _) -> bits_to_int2(Bits, 0).
@@ -200,31 +200,37 @@ bits_to_int2([Bit|Rest], Acc) ->
     bits_to_int2(Rest, Acc+Acc+Bit).
 
 match_field({bin_element,_,{string,_,S},default,default},
-	    Bin, Bs, _Mfun, _Efun, _Call_maketype) ->
+	    Bin, Bs, BBs, _Mfun, _Efun, _Call_maketype) ->
     Tail = foldl(fun(C, <<C:8,Tail/binary>>) -> Tail;
 		    (C, Bits0) ->
 			 {Bits,Tail} = get_bits(Bits0, 8),
 			 C = bits_to_bytes(Bits),
 			 Tail
 		 end, Bin, S),
-    {Bs,Tail};
-match_field({bin_element,_,E,default,[binary|_]}, Bin, Bs0, Mfun, _Efun, _) ->
+    {Bs,BBs,Tail};
+match_field({bin_element,_,E,default,[binary|_]}, Bin, Bs0, BBs, 
+            Mfun, _Efun, _) ->
     {match,Bs} = Mfun(E, Bin, Bs0),
-    {Bs,<<>>};
-match_field({bin_element, _,E,Size0,Options0}, Bin, Bs0, Mfun, Efun,
+    {Bs,BBs,<<>>};
+match_field({bin_element, _,E,Size0,Options0}, Bin, Bs0, BBs, Mfun, Efun,
 	    Call_maketype) ->
     {Size1,Options} = maketype(Size0, Options0, Call_maketype),
-    match_check_size(Size1),
-    case Efun(Size1, Bs0) of
-	{value,all,Bs1} when binary(Bin) ->
-	    {match,Bs2} = Mfun(E, Bin, Bs1),
-	    {Bs2,<<>>};
-	{value,Size,Bs1} ->
+    match_check_size(Size1, BBs),
+    case Efun(Size1, BBs) of
+	{value,all,_} when binary(Bin) ->
+	    {match,Bs} = Mfun(E, Bin, Bs0),
+	    Val = <<>>,
+	    {Bs,add_bin_binding(E, Val, BBs),Val};
+	{value,Size,_} ->
 	    {Type,Unit} = type_and_unit(Options),
 	    {Val,Tail} = match_thing(Type, Options, Size*Unit, Bin),
-	    {match,Bs2} = Mfun(E, Val, Bs1),
-	    {Bs2,Tail}
+	    {match,Bs} = Mfun(E, Val, Bs0),
+	    {Bs,add_bin_binding(E, Val, BBs),Tail}
     end.
+
+add_bin_binding({var,_,Var}, Val, BBs) ->
+    erl_eval:add_binding(Var, Val, BBs);
+add_bin_binding(_, _, BBs) -> BBs.
 
 match_thing(binary, _Opts, Size, Bin) when Size rem 8 =:= 0, binary(Bin) ->
     split_binary(Bin, Size div 8);
@@ -242,12 +248,16 @@ match_thing(float, Opts, Size, Bin) ->
     {Float,Tail};
 match_thing(Type, Opts, Size, Bin) ->
     erlang:display({Type,Opts,Size,Bin}),
-    exit(badarg).
+    error(badarg).
 
-match_check_size({var,_,_}) -> ok;
-match_check_size({integer,_,_}) -> ok;
-match_check_size({value,_,_}) -> ok;		%From the debugger.
-match_check_size(_) -> throw(invalid).
+match_check_size({var,_,V}, Bs) -> 
+    case erl_eval:binding(V, Bs) of
+        {value,_} -> ok;
+	unbound -> throw(invalid) % or, rather, error({unbound,V})
+    end;
+match_check_size({integer,_,_}, _Bs) -> ok;
+match_check_size({value,_,_}, _Bs) -> ok;	%From the debugger.
+match_check_size(_, _Bs) -> throw(invalid).
 
 get_bits(Bin0, N) when binary(Bin0), N rem 8 =:= 0 ->
     <<Bin:N/binary-unit:1,Tail/binary>> = Bin0,

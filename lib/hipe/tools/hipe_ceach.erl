@@ -6,13 +6,16 @@
 %%  Module   :	hipe_ceach
 %%  Purpose  :  Compile each function in a module, possibly
 %%              applying a fun between each compilation.
+%%              Usefull for bug-hunting by pinpointing a function 
+%%              that when compiled causes a bug.
+%%
 %%  Notes    : 
 %%  History  :	* 2001-12-11 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2002/05/07 13:58:07 $
-%%              $Revision: 1.2 $
+%%              $Author: happi $
+%%              $Date: 2002/10/10 06:18:30 $
+%%              $Revision: 1.3 $
 %% ====================================================================
 %%  Exports  :
 %%

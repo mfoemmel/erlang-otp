@@ -23,7 +23,7 @@
 	 allow_garb/0,
 	 call/1,
 	 connect_nodes/1,
-	 disconnect_node/1,
+	 disconnect/1,
 	 dump_decision_tab/0,
 	 get_master_node_info/0,
 	 get_master_node_tables/0,
@@ -111,7 +111,7 @@ do_allow_garb() ->
     
 sublist([H|R], N, Acc) when N > 0 ->
     sublist(R, N-1, [H| Acc]);
-sublist(List, N, Acc) ->
+sublist(List, _N, Acc) ->
     {lists:reverse(Acc), List}.
 
 do_garb_decisions() ->
@@ -150,7 +150,7 @@ connect_nodes(Ns) ->
     end,
     {GoodNodes, AlreadyConnected}.
 
-disconnect_node(Node) ->
+disconnect(Node) ->
     mnesia_monitor:disconnect(Node),
     mnesia_lib:del(recover_nodes, Node).
 
@@ -172,7 +172,7 @@ call(Msg) ->
 
             %% We get an exit signal if server dies
             receive
-                {'EXIT', Pid, Reason} ->
+                {'EXIT', Pid, _Reason} ->
                     {error, {node_not_running, node()}}
             after 0 ->
                     ignore
@@ -196,7 +196,7 @@ note_decision(Tid, Outcome) ->
     Tab = val(latest_transient_decision),
     ?ets_insert(Tab, #transient_decision{tid = Tid, outcome = Outcome}).
 
-note_up(Node, Date, Time) ->
+note_up(Node, _Date, _Time) ->
     ?ets_delete(mnesia_decision, Node).
     
 note_down(Node, Date, Time) ->
@@ -248,7 +248,7 @@ do_log_decision(D, DoTell) ->
 	    ignore
     end.
 
-tell_im_certain([], D) ->
+tell_im_certain([], _D) ->
     ignore;
 tell_im_certain(Nodes, D) ->
     Msg = {im_certain, node(), D},
@@ -301,10 +301,10 @@ log_master_nodes(Args, UseDir, IsRunning) ->
 	    case disk_log:open(OpenArgs) of
 		{ok, Name} ->
 		    log_master_nodes2(Args, UseDir, IsRunning, ok);
-		{repaired, Name, {recovered,  R}, {badbytes, B}}
+		{repaired, Name, {recovered,  _R}, {badbytes, _B}}
 		  when Exists == true ->
 		    log_master_nodes2(Args, UseDir, IsRunning, ok);
-		{repaired, Name, {recovered,  R}, {badbytes, B}}
+		{repaired, Name, {recovered,  _R}, {badbytes, _B}}
 		  when Exists == false ->
 		    mnesia_log:write_trans_log_header(),
 		    log_master_nodes2(Args, UseDir, IsRunning, ok);
@@ -329,7 +329,7 @@ log_master_nodes2([{Tab, Nodes} | Tail], UseDir, IsRunning, WorstRes) ->
 	{error, Reason} ->
 	    log_master_nodes2(Tail, UseDir, IsRunning, {error, Reason})
     end;
-log_master_nodes2([], UseDir, IsRunning, WorstRes) ->
+log_master_nodes2([], _UseDir, IsRunning, WorstRes) ->
     case IsRunning of
 	yes ->
 	    WorstRes;
@@ -350,7 +350,7 @@ get_master_node_info() ->
 
 get_master_node_tables() ->
     Masters = get_master_node_info(),
-    [Tab || {master_nodes, Tab, Nodes} <- Masters].
+    [Tab || {master_nodes, Tab, _Nodes} <- Masters].
 
 get_master_nodes(Tab) ->
     case catch ?ets_lookup_element(mnesia_decision, Tab, 3) of
@@ -444,7 +444,7 @@ load_decision_tab() ->
     load_decision_tab(Cont, load_decision_tab),
     mnesia_log:close_decision_tab().
 
-load_decision_tab(eof, InitBy) ->
+load_decision_tab(eof, _InitBy) ->
     ok;
 load_decision_tab(Cont, InitBy) ->
     case mnesia_log:chunk_decision_tab(Cont) of
@@ -503,35 +503,35 @@ dump_decision_tab() ->
 note_log_decisions([What | Tail], InitBy) ->
     note_log_decision(What, InitBy),
     note_log_decisions(Tail, InitBy);
-note_log_decisions([], InitBy) ->
+note_log_decisions([], _InitBy) ->
     ok.
 
 note_log_decision(NewD, InitBy) when NewD#decision.outcome == pre_commit ->
     note_log_decision(NewD#decision{outcome = unclear}, InitBy);
 
-note_log_decision(NewD, InitBy) when record(NewD, decision) ->
+note_log_decision(NewD, _InitBy) when record(NewD, decision) ->
     Tid = NewD#decision.tid,
     sync_trans_tid_serial(Tid),
     OldD = decision(Tid),
     MergedD = merge_decisions(node(), OldD, NewD),
     note_outcome(MergedD);
 
-note_log_decision({trans_tid, serial, Serial}, startup) ->
+note_log_decision({trans_tid, serial, _Serial}, startup) ->
     ignore;
 
-note_log_decision({trans_tid, serial, Serial}, InitBy) ->
+note_log_decision({trans_tid, serial, Serial}, _InitBy) ->
     sync_trans_tid_serial(Serial);
 
-note_log_decision({mnesia_up, Node, Date, Time}, InitBy) ->
+note_log_decision({mnesia_up, Node, Date, Time}, _InitBy) ->
     note_up(Node, Date, Time);
 
-note_log_decision({mnesia_down, Node, Date, Time}, InitBy) ->
+note_log_decision({mnesia_down, Node, Date, Time}, _InitBy) ->
     note_down(Node, Date, Time);
 
-note_log_decision({master_nodes, Tab, Nodes}, InitBy) ->
+note_log_decision({master_nodes, Tab, Nodes}, _InitBy) ->
     note_master_nodes(Tab, Nodes);
 
-note_log_decision(H, InitBy) when H#log_header.log_kind == decision_log ->
+note_log_decision(H, _InitBy) when H#log_header.log_kind == decision_log ->
     V = mnesia_log:decision_log_version(),
     if
 	H#log_header.log_version == V->
@@ -544,7 +544,7 @@ note_log_decision(H, InitBy) when H#log_header.log_kind == decision_log ->
 	    fatal("Bad version of decision log: ~p~n", [H])
     end;
 
-note_log_decision(H, InitBy) when H#log_header.log_kind == decision_tab ->
+note_log_decision(H, _InitBy) when H#log_header.log_kind == decision_tab ->
     V = mnesia_log:decision_tab_version(),
     if
 	V == H#log_header.log_version ->
@@ -633,7 +633,7 @@ handle_call(Msg, From, State) when State#state.initiated == false ->
     Msgs = State#state.early_msgs,
     {noreply, State#state{early_msgs = [{call, Msg, From} | Msgs]}};
 
-handle_call({what_happened, Default, Tid}, From, State) ->
+handle_call({what_happened, Default, Tid}, _From, State) ->
     sync_trans_tid_serial(Tid),
     Outcome = outcome(Tid, Default),
     {reply, {ok, Outcome}, State};
@@ -667,19 +667,19 @@ handle_call({wait_for_decision, D}, From, State) ->
 	    {noreply, State2}
     end;
 
-handle_call({log_mnesia_up, Node}, From, State) ->
+handle_call({log_mnesia_up, Node}, _From, State) ->
     do_log_mnesia_up(Node),
     {reply, ok, State};
 
-handle_call({log_mnesia_down, Node}, From, State) ->
+handle_call({log_mnesia_down, Node}, _From, State) ->
     do_log_mnesia_down(Node),
     {reply, ok, State};
 
-handle_call({log_master_nodes, Tab, Nodes, UseDir, IsRunning}, From, State) ->
+handle_call({log_master_nodes, Tab, Nodes, UseDir, IsRunning}, _From, State) ->
     do_log_master_nodes(Tab, Nodes, UseDir, IsRunning),
     {reply, ok, State};
 
-handle_call(Msg, From, State) ->
+handle_call(Msg, _From, State) ->
     error("~p got unexpected call: ~p~n", [?MODULE, Msg]),
     {noreply, State}.
 
@@ -864,7 +864,7 @@ terminate(Reason, State) ->
 %% Purpose: Upgrade process when its code is to be changed
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%%----------------------------------------------------------------------
@@ -929,7 +929,7 @@ decision(Tid, [Tab | Tabs]) ->
 	    %% Recently switched transient decision table
 	    decision(Tid, Tabs)
     end;
-decision(Tid, []) ->
+decision(_Tid, []) ->
     no_decision.
 
 outcome(Tid, Default) ->
@@ -942,7 +942,7 @@ outcome(Tid, Default, [Tab | Tabs]) ->
 	Val ->
 	    Val
     end;
-outcome(Tid, Default, []) ->
+outcome(_Tid, Default, []) ->
     Default.
 
 filter_outcome(Val) ->
@@ -1117,7 +1117,7 @@ announce_all(ToNodes, [Tab | Tabs]) ->
 	    announce(ToNodes, List, [], false),
 	    announce_all(ToNodes, Tabs)
     end;
-announce_all(ToNodes, []) ->
+announce_all(_ToNodes, []) ->
     ok.
 
 announce(ToNodes, [Head | Tail], Acc, ForceSend) ->
@@ -1149,11 +1149,11 @@ arrange([To | ToNodes], C, Acc, ForceSend) when record(C, transient_decision) ->
     Acc2 = add_decision(To, C, Acc),
     arrange(ToNodes, C, Acc2, ForceSend);
 
-arrange([To | ToNodes], {mnesia_down, _Node, _Date, _Time}, Acc, ForceSend) ->
+arrange([_To | _ToNodes], {mnesia_down, _Node, _Date, _Time}, Acc, _ForceSend) ->
     %% The others have their own info about this
     Acc;
 
-arrange([To | ToNodes], {master_nodes, _Tab, _Nodes}, Acc, ForceSend) ->
+arrange([_To | _ToNodes], {master_nodes, _Tab, _Nodes}, Acc, _ForceSend) ->
     %% The others have their own info about this
     Acc;
 

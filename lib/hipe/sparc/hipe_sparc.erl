@@ -1038,6 +1038,7 @@ is_fop_op(Op) ->
     '+' -> true;
     '-' -> true;
     '*' -> true;
+    '/' -> true;
     _   -> false
   end.
 
@@ -1445,13 +1446,18 @@ all_uses(Ins) ->
     pseudo_push -> [pseudo_push_reg(Ins)];
     pseudo_pop -> [];
 
-    load_fp -> [load_fp_src(Ins), load_fp_off(Ins)];
-    store_fp -> [store_fp_dest(Ins), store_fp_src(Ins), store_fp_off(Ins)];
+    load_fp -> [load_fp_off(Ins), load_fp_src(Ins)];
+    store_fp ->
+      case store_fp_type(Ins) of
+	single -> [store_fp_dest(Ins), store_fp_off(Ins),store_fp_src(Ins)];
+	_ ->  [store_fp_dest(Ins), store_fp_off(Ins)| 
+	       format_fpreg([store_fp_src(Ins)])]
+      end;
     fb -> [fcc_reg(fb_fcc_reg(Ins))];
-    fop -> [fop_src1(Ins), fop_src2(Ins)];
-    fcmp -> [fcmp_src1(Ins), fcmp_src2(Ins)];
-    fmov -> [fmov_src(Ins)];
-    conv_fp -> [conv_fp_src(Ins)];
+    fop -> format_fpreg([fop_src1(Ins), fop_src2(Ins)]);
+    fcmp -> format_fpreg([fcmp_src1(Ins), fcmp_src2(Ins)]);
+    fmov -> format_fpreg([fmov_src(Ins)]);
+    conv_fp -> format_fpreg([conv_fp_src(Ins)]);
     load_address -> []
   end.
 
@@ -1513,13 +1519,17 @@ all_defines(Ins)->
     pseudo_pop -> [pseudo_pop_reg(Ins)];
     pseudo_spill -> [];
     pseudo_unspill -> [pseudo_unspill_reg(Ins)];
-    load_fp -> [load_fp_dest(Ins)];
+    load_fp -> 
+      case load_fp_type(Ins) of
+	single ->[load_fp_dest(Ins)];
+	_ -> format_fpreg([load_fp_dest(Ins)])
+      end;
     store_fp -> [];
     fb -> [];
-    fop -> [fop_dest(Ins)];
+    fop -> format_fpreg([fop_dest(Ins)]);
     fcmp -> [fcc_reg(fcmp_fcc_reg(Ins))];
-    fmov -> [fmov_dest(Ins)];
-    conv_fp -> [conv_fp_dest(Ins)];
+    fmov -> format_fpreg([fmov_dest(Ins)]);
+    conv_fp -> format_fpreg([conv_fp_dest(Ins)]);
     load_address -> [load_address_dest(Ins)]
   end.
 
@@ -1616,25 +1626,38 @@ all_def_uses(I) ->
 	{[pseudo_pop_reg(I)],
 	 []};
       load_fp -> 
-	{[load_fp_dest(I)],
-	 [load_fp_src(I), load_fp_off(I)]};
+	case load_fp_type(I) of
+	  single ->
+	    {[load_fp_dest(I)],
+	     [load_fp_src(I), load_fp_off(I)]};
+	  _ ->
+	    {format_fpreg([load_fp_dest(I)]),
+	     [load_fp_src(I), load_fp_off(I)]}
+	end;
       store_fp ->
-	{[],
-	 [store_fp_dest(I), store_fp_src(I), store_fp_off(I)]};
+	case store_fp_type(I) of
+	  single ->
+	    {[],
+	     [store_fp_src(I), store_fp_off(I), store_fp_dest(I)]};
+	  _ ->
+	    {[],
+	     [store_fp_off(I), store_fp_dest(I) |
+	      format_fpreg([store_fp_src(I)])]}
+	end;
       fb -> 
 	{[],
 	 [fcc_reg(fb_fcc_reg(I))]};
       fop -> 
-	{[fop_dest(I)],
-	 [fop_src1(I), fop_src2(I)]}; 
+	{format_fpreg([fop_dest(I)]),
+	 format_fpreg([fop_src1(I), fop_src2(I)])}; 
       fcmp -> 
 	{[fcc_reg(fcmp_fcc_reg(I))],
-	 [fcmp_src1(I), fcmp_src2(I)]};
+	 format_fpreg([fcmp_src1(I), fcmp_src2(I)])};
       fmov -> 
-	{[fmov_dest(I)],
-	 [fmov_src(I)]};
+	{format_fpreg([fmov_dest(I)]),
+	 format_fpreg([fmov_src(I)])};
       conv_fp -> 
-	{[conv_fp_dest(I)],
+	{format_fpreg([conv_fp_dest(I)]),
 	 [conv_fp_src(I)]};
       load_address -> 
 	{[load_address_dest(I)],
@@ -1658,6 +1681,30 @@ fp_reg_def_use(I) ->
 fpregs_and_regs_def_use(I) ->
   {Def,Use} = all_def_uses(I),
   {remove_immediates(Def), remove_immediates(Use)}.
+
+%%
+%% Makes sure the single precision registers that makes up a double 
+%% precision one is marked as defines and uses.
+%%
+
+format_fpreg(Reg)->
+  format_fpreg(Reg, []).
+
+format_fpreg([H|T], Acc)->
+  case is_fpreg(H) of
+    true ->
+      RegNr = fpreg_nr(H),
+      case hipe_sparc_specific_fp:is_precolored(RegNr) of
+	true ->
+	  format_fpreg(T, [H, mk_fpreg(RegNr+1)|Acc]);
+	_ ->
+	  format_fpreg(T, [H|Acc])
+      end;
+    _ ->
+      format_fpreg(T, [H|Acc])
+  end;
+format_fpreg([], Acc) ->
+  Acc.
 
 %%
 %% Remove immediates from a list

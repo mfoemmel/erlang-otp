@@ -35,12 +35,12 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([enc_giop_msg_type/1, enc_request/8, enc_request_split/8, enc_reply/6,
+-export([enc_giop_msg_type/1, enc_request/8, enc_request_split/8, enc_reply/7,
 	 enc_type/3, enc_type/5, enc_cancel_request/2,
 	 enc_locate_request/3, enc_locate_reply/3, enc_locate_reply/5, 
 	 enc_close_connection/1, enc_message_error/1, enc_fragment/1]).
 
--export([enc_reply_split/6, enc_giop_message_header/5, validate_request_body/3, 
+-export([enc_reply_split/7, enc_giop_message_header/5, validate_request_body/3, 
 	 validate_reply_body/3]).
 
 %%-----------------------------------------------------------------
@@ -220,6 +220,39 @@ enc_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_BI_DIR_IIOP,
     enc_used_contexts(Version, T, 
 		      [#'IOP_ServiceContext'{context_id=?IOP_BI_DIR_IIOP,
 					     context_data = Bytes}|Ctxs]);
+enc_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_FT_REQUEST,
+						  context_data = Ctx}|T], 
+		  Ctxs) ->
+    %% Encode ByteOrder
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = enc_type(?FT_FTRequestServiceContext, Version, Ctx, 
+			      Bytes0, Len0),
+    Bytes = list_to_binary(lists:reverse(Bytes1)),
+    enc_used_contexts(Version, T, 
+		      [#'IOP_ServiceContext'{context_id=?IOP_FT_REQUEST,
+					     context_data = Bytes}|Ctxs]);
+enc_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_FT_GROUP_VERSION,
+						  context_data = Ctx}|T], 
+		  Ctxs) ->
+    %% Encode ByteOrder
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = enc_type(?FT_FTGroupVersionServiceContext, Version, Ctx, 
+			      Bytes0, Len0),
+    Bytes = list_to_binary(lists:reverse(Bytes1)),
+    enc_used_contexts(Version, T, 
+		      [#'IOP_ServiceContext'{context_id=?IOP_FT_GROUP_VERSION,
+					     context_data = Bytes}|Ctxs]);
+enc_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_SecurityAttributeService,
+						  context_data = Ctx}|T], 
+		  Ctxs) ->
+    %% Encode ByteOrder
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = enc_type(?CSI_SASContextBody, Version, Ctx, 
+			      Bytes0, Len0),
+    Bytes = list_to_binary(lists:reverse(Bytes1)),
+    enc_used_contexts(Version, T, 
+		      [#'IOP_ServiceContext'{context_id=?IOP_SecurityAttributeService,
+					     context_data = Bytes}|Ctxs]);
 enc_used_contexts(Version, [H|T], Ctxs) ->
     enc_used_contexts(Version, T, [H|Ctxs]).
 
@@ -270,21 +303,21 @@ validate_request_body(Version, {RetType, InParameters, OutParameters}, Parameter
 %% Func: enc_reply/6
 %%-----------------------------------------------------------------
 %% ## NEW IIOP 1.2 ##
-enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters) 
+enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters, Ctx) 
   when Version == {1,2} ->
     ?PRINTDEBUG2("REPLY: ~w ~w ~w ~w", [Version, TypeCodes, Result, OutParameters]),
     Flags            = 1, %% LTH Not correct, just placeholder
     {Message, Len}   = enc_request_id(Version, ReqId, [], ?GIOP_HEADER_SIZE), 
     {Message1, Len1} = enc_reply_status(Version, RepStatus, Message, Len),
-    {Message2, Len2} = enc_service_context(Version, [], Message1, Len1),
+    {Message2, Len2} = enc_service_context(Version, Ctx, Message1, Len1),
     {Message3, Len3} = enc_reply_body(Version, TypeCodes, Result, OutParameters,
 				      Message2, Len2),
     enc_giop_message_header(Version, 'reply', Flags, Len3 - ?GIOP_HEADER_SIZE,
 			    lists:reverse(Message3));
-enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters) ->
+enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters, Ctx) ->
     ?PRINTDEBUG2("REPLY: ~w ~w ~w ~w", [Version, TypeCodes, Result, OutParameters]),
     Flags            = 1, %% LTH Not correct, just placeholder
-    {Message, Len}   = enc_service_context(Version, [], [], ?GIOP_HEADER_SIZE),
+    {Message, Len}   = enc_service_context(Version, Ctx, [], ?GIOP_HEADER_SIZE),
     {Message1, Len1} = enc_request_id(Version, ReqId, Message, Len), 
     {Message2, Len2} = enc_reply_status(Version, RepStatus, Message1, Len1),
     {Message3, Len3} = enc_reply_body(Version, TypeCodes, Result, OutParameters,
@@ -293,20 +326,20 @@ enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters) ->
 			    lists:reverse(Message3)).
 
 %% ## NEW IIOP 1.2 ##
-enc_reply_split(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters) 
+enc_reply_split(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters, Ctx) 
   when Version == {1,2} ->
     ?PRINTDEBUG2("REPLY: ~w ~w ~w ~w", [Version, TypeCodes, Result, OutParameters]),
     Flags            = 1, %% LTH Not correct, just placeholder
     {Message, Len0}   = enc_request_id(Version, ReqId, [], ?GIOP_HEADER_SIZE), 
     {Message1, Len1} = enc_reply_status(Version, RepStatus, Message, Len0),
-    {Message2, Len2} = enc_service_context(Version, [], Message1, Len1),
+    {Message2, Len2} = enc_service_context(Version, Ctx, Message1, Len1),
     {Body, Len} = enc_reply_body(Version, TypeCodes, Result, OutParameters, [], Len2),
     {lists:reverse(Message2), list_to_binary(lists:reverse(Body)),
      Len2 - ?GIOP_HEADER_SIZE, Len-Len2, Flags};
-enc_reply_split(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters) ->
+enc_reply_split(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters, Ctx) ->
     ?PRINTDEBUG2("REPLY: ~w ~w ~w ~w", [Version, TypeCodes, Result, OutParameters]),
     Flags            = 1, %% LTH Not correct, just placeholder
-    {Message, Len0}   = enc_service_context(Version, [], [], ?GIOP_HEADER_SIZE),
+    {Message, Len0}   = enc_service_context(Version, Ctx, [], ?GIOP_HEADER_SIZE),
     {Message1, Len1} = enc_request_id(Version, ReqId, Message, Len0), 
     {Message2, Len2} = enc_reply_status(Version, RepStatus, Message1, Len1),
     {Body, Len} = enc_reply_body(Version, TypeCodes, Result, OutParameters, [], Len2),
@@ -550,7 +583,8 @@ enc_type('tk_any', Version, Any, Bytes, Len) when record(Any, any) ->
 enc_type('tk_TypeCode', Version, Value, Bytes, Len) ->
     enc_type_code(Value, Version, Bytes, Len);
 enc_type('tk_Principal', Version, Value, Bytes, Len) ->
-    enc_sequence(Version, Value, 'tk_octet', Bytes, Len);
+    %% Set MaxLength no 0 (i.e. unlimited).
+    enc_sequence(Version, Value, 0, 'tk_octet', Bytes, Len);
 enc_type({'tk_objref', IFRId, Name}, Version, Value, Bytes, Len) ->
     enc_objref(Version, Name,Value, Bytes, Len);
 enc_type({'tk_struct', IFRId, Name, ElementList}, Version, Value, Bytes, Len) -> 
@@ -561,12 +595,12 @@ enc_type({'tk_union', IFRId, Name, DiscrTC, Default, ElementList},
 enc_type({'tk_enum', IFRId, Name, ElementList}, Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 4),
     {cdrlib:enc_enum(atom_to_list(Value), ElementList, Rest), Len1 + 4};
-enc_type({'tk_string', MaxLength}, Version, Value, Bytes, Len) -> % MaxLength not used
-    enc_string(Version, Value, Bytes, Len);
-enc_type({'tk_wstring', MaxLength}, Version, Value, Bytes, Len) -> % MaxLength not used
-    enc_wstring(Version, Value, Bytes, Len);
-enc_type({'tk_sequence', ElemTC, MaxLength}, Version, Value, Bytes, Len) -> % MaxLength not used
-    enc_sequence(Version, Value, ElemTC, Bytes, Len);
+enc_type({'tk_string', MaxLength}, Version, Value, Bytes, Len) ->
+    enc_string(Version, Value, MaxLength, Bytes, Len);
+enc_type({'tk_wstring', MaxLength}, Version, Value, Bytes, Len) ->
+    enc_wstring(Version, Value, MaxLength, Bytes, Len);
+enc_type({'tk_sequence', ElemTC, MaxLength}, Version, Value, Bytes, Len) ->
+    enc_sequence(Version, Value, MaxLength, ElemTC, Bytes, Len);
 enc_type({'tk_array', ElemTC, Size}, Version, Value, Bytes, Len) -> 
     enc_array(Version, Value, Size, ElemTC, Bytes, Len);
 enc_type({'tk_alias', IFRId, Name, TC}, Version, Value, Bytes, Len) ->
@@ -649,15 +683,33 @@ supplied value. Hence, check that the value is correct.",
 %%-----------------------------------------------------------------
 %% This is a special case used when encoding encapsualted data, i.e., contained
 %% in an octet-sequence.
-enc_sequence(Version, Sequence, 'tk_octet', Bytes, Len) when binary(Sequence) ->
+enc_sequence(Version, Sequence, MaxLength, 'tk_octet', Bytes, Len)
+  when binary(Sequence) ->
     {ByteSequence, Len1} = enc_align(Bytes, Len, 4),
     Size = size(Sequence),
-    ByteSequence1 = cdrlib:enc_unsigned_long(Size, ByteSequence),
-    {[Sequence |ByteSequence1], Len1 + 4 + Size};
-enc_sequence(Version, Sequence, TypeCode, Bytes, Len) ->
-    {ByteSequence, Len1} = enc_align(Bytes, Len, 4),
-    ByteSequence1 = cdrlib:enc_unsigned_long(length(Sequence), ByteSequence),
-    enc_sequence1(Version, Sequence, TypeCode, ByteSequence1, Len1 + 4).
+    if
+	Size > MaxLength, MaxLength > 0 ->
+	    orber:debug_level_print("[~p] cdr_encode:enc_sequnce(~p, ~p). Sequence exceeds max.", 
+				    [?LINE, Sequence, MaxLength], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 19), 
+				   completion_status=?COMPLETED_MAYBE});
+	true ->
+	    ByteSequence1 = cdrlib:enc_unsigned_long(Size, ByteSequence),
+	    {[Sequence |ByteSequence1], Len1 + 4 + Size}
+    end;
+enc_sequence(Version, Sequence, MaxLength, TypeCode, Bytes, Len) ->
+    Length = length(Sequence),
+    if
+	Length > MaxLength, MaxLength > 0 ->
+	    orber:debug_level_print("[~p] cdr_encode:enc_sequnce(~p, ~p). Sequence exceeds max.", 
+				    [?LINE, Sequence, MaxLength], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 19), 
+				   completion_status=?COMPLETED_MAYBE});
+	true ->
+	    {ByteSequence, Len1} = enc_align(Bytes, Len, 4),
+	    ByteSequence1 = cdrlib:enc_unsigned_long(Length, ByteSequence),
+	    enc_sequence1(Version, Sequence, TypeCode, ByteSequence1, Len1 + 4)
+    end.
 
 %%-----------------------------------------------------------------
 %% Func: enc_sequence1/4
@@ -686,34 +738,56 @@ enc_array(_,Array, Size, _, _, _) ->
 %%-----------------------------------------------------------------
 %% Func: enc_string/4
 %%-----------------------------------------------------------------
-enc_string(Version, String, Bytes, Len) ->
-    {ByteSequence, Len1} = enc_align(Bytes, Len, 4),
+enc_string(Version, String, MaxLength, Bytes, Len) ->
     StrLen = length(String),
-    ByteSequence1 = cdrlib:enc_unsigned_long(StrLen + 1, ByteSequence),
-    {cdrlib:enc_octet(0, [String | ByteSequence1]), Len1 + StrLen + 5}.
+    if
+	StrLen > MaxLength, MaxLength > 0 ->
+	    orber:debug_level_print("[~p] cdr_encode:enc_string(~p, ~p). String exceeds max.", 
+				    [?LINE, String, MaxLength], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 16), 
+				   completion_status=?COMPLETED_MAYBE});
+	true ->
+	    {ByteSequence, Len1} = enc_align(Bytes, Len, 4),
+	    ByteSequence1 = cdrlib:enc_unsigned_long(StrLen + 1, ByteSequence),
+	    {cdrlib:enc_octet(0, [String | ByteSequence1]), Len1 + StrLen + 5}
+    end.
+   
 
 %%-----------------------------------------------------------------
 %% Func: enc_wstring/4
 %%-----------------------------------------------------------------
-enc_wstring({1,2}, String, Bytes, Len) ->
+enc_wstring({1,2}, String, MaxLength, Bytes, Len) ->
     %% Encode the length of the string (ulong).
     {Bytes1, Len1} = enc_align(Bytes, Len, 4),
     %% For IIOP-1.2 the length is the total number of octets. Hence, since the wchar's
     %% we accepts is encoded as <<255, 255>> the total size is 2*length of the list.
-    StrLen = length(String) * 2,
-    Bytes2 = cdrlib:enc_unsigned_long(StrLen, Bytes1),
-    %% For IIOP-1.2 no terminating null character is used.
-    enc_sequence1({1,2}, String, 'tk_ushort', Bytes2, Len1+4);
-enc_wstring(Version, String, Bytes, Len) ->
+    ListLen = length(String),
+    if
+	ListLen > MaxLength, MaxLength > 0 ->
+	    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 16), 
+				   completion_status=?COMPLETED_MAYBE});
+	true ->
+	    StrLen = ListLen * 2,
+	    Bytes2 = cdrlib:enc_unsigned_long(StrLen, Bytes1),
+	    %% For IIOP-1.2 no terminating null character is used.
+	    enc_sequence1({1,2}, String, 'tk_ushort', Bytes2, Len1+4)
+    end;
+enc_wstring(Version, String, MaxLength, Bytes, Len) ->
     %% Encode the length of the string (ulong).
     {Bytes1, Len1} = enc_align(Bytes, Len, 4),
-    StrLen = length(String) + 1,
-    Bytes2 = cdrlib:enc_unsigned_long(StrLen, Bytes1),
-    {Bytes3, Len3} = enc_sequence1(Version, String, 'tk_wchar', Bytes2, Len1+4),
-    %% The terminating null character is also a wchar.
-    {cdrlib:enc_unsigned_short(0, Bytes3), Len3+2};
-enc_wstring(Version, String, Bytes, Len) ->
-    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE}).
+    ListLen = length(String),
+    if
+	ListLen > MaxLength, MaxLength > 0 ->
+	    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 16), 
+				   completion_status=?COMPLETED_MAYBE});
+	true ->
+	    StrLen = ListLen + 1,
+	    Bytes2 = cdrlib:enc_unsigned_long(StrLen, Bytes1),
+	    {Bytes3, Len3} = enc_sequence1(Version, String, 'tk_wchar', Bytes2, Len1+4),
+	    %% The terminating null character is also a wchar.
+	    {cdrlib:enc_unsigned_short(0, Bytes3), Len3+2}
+    end.
+
 
 %%-----------------------------------------------------------------
 %% Func: enc_union/5

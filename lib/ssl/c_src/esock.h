@@ -24,7 +24,7 @@
 #define ESOCK_H
 
 #ifdef __WIN32__
-#include <winsock2.h>
+#include "esock_winsock.h"
 #endif
 #include <stdio.h>
 
@@ -39,6 +39,7 @@
 
 #define ERRNO_NONE			0
 #define ERRNO_BLOCK			WSAEWOULDBLOCK
+#define ERRNO_CONNREFUSED		WSAECONNREFUSED
 #define ERRNO_PROGRESS			WSAEINPROGRESS
 #define ERRNO_PROTONOSUPPORT		WSAEPROTONOSUPPORT
 #define ERRNO_INVAL			WSAEINVAL
@@ -64,6 +65,7 @@
 
 #define ERRNO_NONE			0
 #define ERRNO_BLOCK			EAGAIN
+#define ERRNO_CONNREFUSED		ECONNREFUSED
 #define ERRNO_PROGRESS			EINPROGRESS
 #define ERRNO_PROTONOSUPPORT		EPROTONOSUPPORT
 #define ERRNO_INVAL			EINVAL
@@ -98,13 +100,29 @@
 #define ESOCK_SSL_CONNECT	5
 #define ESOCK_SSL_ACCEPT	6
 #define ESOCK_JOINED		7
-#define ESOCK_SSL_CLOSING	8
+#define ESOCK_SSL_SHUTDOWN	8
+#define ESOCK_DEFUNCT		9
 
 #ifdef __WIN32__
     typedef SOCKET FD;
 #else
     typedef int FD;
 #endif
+
+/* For the shutdown(fd, how) call */
+#ifdef __WIN32__
+#define SHUTDOWN_READ  SD_RECEIVE
+#define SHUTDOWN_WRITE SD_SEND
+#define SHUTDOWN_ALL   SD_BOTH
+#else
+#define SHUTDOWN_READ  0
+#define SHUTDOWN_WRITE 1
+#define SHUTDOWN_ALL   2
+#endif
+
+#define ORIG_LISTEN  0
+#define ORIG_ACCEPT  1
+#define ORIG_CONNECT 2
  
 typedef struct {
     int size;			/* Total size of buf */
@@ -123,13 +141,13 @@ typedef struct Connection {
     Proxy *proxy;
     void *opaque;		/* Any suitable ssl structure */
     int ssl_want;		/* read/write flags */
-    int ssl_verify_depth;	/* Certificate verify depth */
     int eof;			/* end of file (read) */
     int bp;			/* broken pipe (write) */
-    int close;
-    char *origin;
-    char *flags;
-    FILE *logfp;
+    int clean;			/* Clean SSL shutdown initiated */
+    int close;			/* Close if set */
+    int origin;			/* listen, accept or connect */
+    char *flags;		/* ssl parameters */
+    FILE *logfp;		/* connection log file (not used) */
     WriteQueue wq;
     struct Connection* next;
 } Connection;
@@ -144,51 +162,57 @@ struct _proxy {
     Proxy *next;
 };
 
-Connection *get_connection(FD fd);
+/* Commands, replies, and error responses */
 
-
-/* op codes commands are in capital and reply codes in lower case */
-
-#define ESOCK_CONNECT		1
-#define ESOCK_CONNECT_WAIT	2
+#define ESOCK_CONNECT_CMD	1
+#define ESOCK_CONNECT_WAIT_REP	2
 #define ESOCK_CONNECT_REP	3
 #define ESOCK_CONNECT_ERR	4
 
-#define ESOCK_TERMINATE		5
-#define ESOCK_CLOSE	        6
+#define ESOCK_TERMINATE_CMD	5
+#define ESOCK_CLOSE_CMD	        6
 
-#define ESOCK_LISTEN		7
+#define ESOCK_LISTEN_CMD	7
 #define ESOCK_LISTEN_REP	8
 #define ESOCK_LISTEN_ERR	9
 
-#define ESOCK_ACCEPT            10
-#define ESOCK_NOACCEPT          11
+#define ESOCK_ACCEPT_CMD        10
+#define ESOCK_NOACCEPT_CMD      11
 #define ESOCK_ACCEPT_REP	12
 #define ESOCK_ACCEPT_ERR	13
 
-#define ESOCK_FROMNET_CLOSE     14
+#define ESOCK_FROMNET_CLOSE_REP 14
 
 #define ESOCK_CONNECT_SYNC_ERR	15
 #define ESOCK_LISTEN_SYNC_ERR	16
 
-#define ESOCK_PROXY_PORT        23
-#define ESOCK_PROXY_JOIN	24
+#define ESOCK_PROXY_PORT_REP    23
+#define ESOCK_PROXY_JOIN_CMD	24
 #define ESOCK_PROXY_JOIN_REP	25
 #define ESOCK_PROXY_JOIN_ERR	26
 
-#define ESOCK_SET_SOCK_OPT      27
+#define ESOCK_SET_SOCKOPT_CMD   27
 #define ESOCK_IOCTL_OK          28
 #define ESOCK_IOCTL_ERR		29
 
-#define ESOCK_GETPEERNAME       30
+#define ESOCK_GETPEERNAME_CMD   30
 #define ESOCK_GETPEERNAME_REP   31
 #define ESOCK_GETPEERNAME_ERR   32
 
-#define ESOCK_GETSOCKNAME       33
+#define ESOCK_GETSOCKNAME_CMD   33
 #define ESOCK_GETSOCKNAME_REP   34
 #define ESOCK_GETSOCKNAME_ERR   35
 
-/* Set socket options codes  'ESOCK_SET_SOCK_OPT' */
+#define ESOCK_GETPEERCERT_CMD   36
+#define ESOCK_GETPEERCERT_REP   37
+#define ESOCK_GETPEERCERT_ERR   38
+
+#define ESOCK_GETVERSION_CMD    39
+#define ESOCK_GETVERSION_REP    40
+
+#define ESOCK_SET_SEED_CMD      41
+
+/* Option codes  for ESOCK_SET_SOCKOPT_CMD */
 #define ESOCK_SET_TCP_NODELAY	1
 
 /* SSL want to read or write */

@@ -18,15 +18,10 @@
 -ifdef(line_trace).
 -define(line,
 	put(test_server_loc,{?MODULE,?LINE}),
-	io:format(lists:concat([?MODULE,":",integer_to_list(?LINE)])),).
--else.
--ifdef(time_trace).
--define(line,
-	put(test_server_loc,{?MODULE,?LINE}),
-	put(test_server_loc_time, erlang:now()),).
+	io:format(lists:concat([?MODULE,",",integer_to_list(?LINE),": ~p"]),
+		  [erlang:now()]),).
 -else.
 -define(line,put(test_server_loc,{?MODULE,?LINE}),).
--endif.
 -endif.
 -define(t,test_server).
 -define(config,test_server:lookup_config).

@@ -1,17 +1,14 @@
-# Makefile for SSL
+# Makefile for SSL on Unix
 # 
-# Placed in obj directory. Made to suite the test suites (sic!).
+# Placed in obj directory. 
 #
-
 CC = gcc
 	
 BINDIR = %BINDIR%
-LDFLAGS = %LDFLAGS%
-LDLIBS = %LDLIBS%
+LIBS = %LIBS%
+SSL_LIBDIR = %SSL_LIBDIR% 
+OBJS = %OBJS%
 
-LIBDIR = `pwd`/../bin
-
-$(BINDIR)/ssl_esock: ssl_base.o esock_ssleay.o
-	$(CC) $(LDFLAGS) -L$(LIBDIR) -o $@ $? \
-		$(LDLIBS) -lssl -lcrypto
-
+$(BINDIR)/ssl_esock: $(OBJS)
+	$(CC) -L$(SSL_LIBDIR) -Wl,-R$(SSL_LIBDIR) -o $@ $^ \
+		$(LIBS) -lssl -lcrypto

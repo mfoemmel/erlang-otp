@@ -23,7 +23,10 @@
 
 -behaviour(megaco_encoder).
 
--export([encode_message/2, decode_message/2]).
+-export([encode_message/2, decode_message/2,
+	 encode_transaction/1, encode_transaction/2,
+	 encode_command_request/1,
+	 encode_action_reply/1]).
 
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_v1.hrl").
@@ -31,7 +34,7 @@
 
 %%----------------------------------------------------------------------
 %% Convert a 'MegacoMessage' record into a binary
-%% Return {ok, DeepIoList} | {error, Reason}
+%% Return {ok, Binary} | {error, Reason}
 %%----------------------------------------------------------------------
 
 encode_message([], MegaMsg) when record(MegaMsg, 'MegacoMessage') ->
@@ -58,6 +61,63 @@ encode_message(EncodingConfig, MegaMsg) when record(MegaMsg, 'MegacoMessage')  -
     {error, {bad_encoding_config, EncodingConfig}};
 encode_message(_EncodingConfig, _MegaMsg) ->
     {error, bad_megaco_message}.
+
+
+%%----------------------------------------------------------------------
+%% Convert a transaction record into a binary
+%% Return {ok, Binary} | {error, Reason}
+%%----------------------------------------------------------------------
+encode_transaction(Trans) ->
+    encode_transaction([], Trans).
+
+encode_transaction([], Trans) ->
+    case catch enc_Transaction(Trans) of
+	{'EXIT', Reason} ->
+	    {error, Reason};
+	Bin when binary(Bin) ->
+	    {ok, Bin};
+	DeepIoList ->
+	    Bin = erlang:list_to_binary(DeepIoList),
+	    {ok, Bin}
+    end;
+encode_transaction([{flex,_}], Trans) ->
+    case catch enc_Transaction(Trans) of
+	{'EXIT', Reason} ->
+	    {error, Reason};
+	Bin when binary(Bin) ->
+	    {ok, Bin};
+	DeepIoList ->
+	    Bin = erlang:list_to_binary(DeepIoList),
+	    {ok, Bin}
+    end;
+encode_transaction(EncodingConfig, _Trans) ->
+    {error, {bad_encoding_config, EncodingConfig}}.
+    
+
+%%----------------------------------------------------------------------
+%% Convert a CommandRequest record into a deep io list
+%% Return {ok, DeepIoList} | {error, Reason}
+%%----------------------------------------------------------------------
+encode_command_request(CmdReq) ->
+    case catch enc_CommandRequest(CmdReq) of
+	{'EXIT', Reason} ->
+	    {error, Reason};
+	DeepIoList ->
+	    {ok, DeepIoList}
+    end.
+
+%%----------------------------------------------------------------------
+%% Convert a action reply into a deep io list
+%% Return {ok, DeepIoList} | {error, Reason}
+%%----------------------------------------------------------------------
+encode_action_reply(ActRep) ->
+    case catch enc_ActionReply(ActRep) of
+	{'EXIT', Reason} ->
+	    {error, Reason};
+	DeepIoList ->
+	    {ok, DeepIoList}
+    end.
+
 
 %%----------------------------------------------------------------------
 %% Convert a binary into a 'MegacoMessage' record

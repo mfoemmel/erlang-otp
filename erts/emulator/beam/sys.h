@@ -33,12 +33,19 @@
 #endif
 #endif
 
-#ifndef ERTS_INLINE
+#ifdef ERTS_INLINE
+#  ifndef ERTS_CAN_INLINE
+#    define ERTS_CAN_INLINE 1
+#  endif
+#else
 #  if defined(__GNUC__)
+#    define ERTS_CAN_INLINE 1
 #    define ERTS_INLINE __inline__
 #  elif defined(__WIN32__)
+#    define ERTS_CAN_INLINE 1
 #    define ERTS_INLINE __inline
 #  else
+#    define ERTS_CAN_INLINE 0
 #    define ERTS_INLINE
 #  endif
 #endif
@@ -104,8 +111,14 @@ EXTERN_FUNCTION(int, real_printf, (const char *fmt, ...));
 
 #if __GNUC__
 #  define __noreturn __attribute__((noreturn))
+#  if __GNUC__ >= 3
+#    define __deprecated __attribute__((deprecated))
+#  else
+#    define __deprecated
+#  endif
 #else
 #  define __noreturn
+#  define __deprecated
 #endif
 
 /*
@@ -122,8 +135,11 @@ EXTERN_FUNCTION(int, real_printf, (const char *fmt, ...));
 */
 
 #if SIZEOF_VOID_P == 8
+#undef  ARCH_32
 #define ARCH_64
 #elif SIZEOF_VOID_P == 4
+#define ARCH_32
+#undef  ARCH_64
 #else
 #error Neither 32 nor 64 bit architecture
 #endif
@@ -142,6 +158,20 @@ typedef unsigned int Uint;
 typedef int          Sint;
 #else
 #error Found no appropriate type to use for 'Eterm', 'Uint' and 'Sint'
+#endif
+
+#ifndef HAVE_INT64
+#if SIZEOF_LONG == 8
+#define HAVE_INT64 1
+typedef unsigned long Uint64;
+typedef long          Sint64;
+#elif SIZEOF_LONG_LONG == 8
+#define HAVE_INT64 1
+typedef unsigned long long Uint64;
+typedef long long          Sint64;
+#else
+#define HAVE_INT64 0
+#endif
 #endif
 
 #if SIZEOF_LONG == 4
@@ -168,6 +198,10 @@ typedef short          Sint16;
 typedef unsigned char byte;
 #else
 #error Found no appropriate type to use for 'byte'
+#endif
+
+#if defined(ARCH_64) && !HAVE_INT64
+#error 64-bit architecture, but no appropriate type to use for Uint64 and Sint64 found 
 #endif
 
 /* Deal with memcpy() vs bcopy() etc. We want to use the mem*() functions,
@@ -280,6 +314,9 @@ EXTERN_FUNCTION(void, sys_async_ready, (int hndl));
 
 #endif
 
+/* Memory allocated from system dependent code (declared in utils.c) */
+extern Uint erts_sys_misc_mem_sz;
+
 /* Io constants to sys_printf and sys_putc */
 
 typedef enum {
@@ -331,6 +368,7 @@ extern int sys_init_time(void);
 extern void erts_deliver_time(SysTimeval *);
 extern void erts_time_remaining(SysTimeval *);
 extern int erts_init_time_sup(void);
+extern void erts_sys_init_float(void);
 
 /*
  * System interfaces for startup/sae code (functions found in respective sys.c)
@@ -338,7 +376,12 @@ extern int erts_init_time_sup(void);
 extern void erl_sys_init(void);
 extern void erl_sys_args(int *argc, char **argv);
 extern void erl_sys_schedule(int);
+#ifdef _OSE_
+extern void erl_sys_init_final(void);
+#else
 void sys_tty_reset(void);
+#endif
+
 
 EXTERN_FUNCTION(int, sys_max_files, (_VOID_));
 void sys_init_io(byte*, Uint);
@@ -346,16 +389,22 @@ Preload* sys_preloaded(void);
 EXTERN_FUNCTION(unsigned char*, sys_preload_begin, (Preload*));
 EXTERN_FUNCTION(void, sys_preload_end, (Preload*));
 EXTERN_FUNCTION(int, sys_get_key, (int));
-EXTERN_FUNCTION(void, elapsed_time_both, (unsigned long*, unsigned long*, unsigned long*, unsigned long*));
-EXTERN_FUNCTION(void, wall_clock_elapsed_time_both, (unsigned long*, unsigned long*));
-EXTERN_FUNCTION(void, get_time, (int*, int*, int*));
-EXTERN_FUNCTION(void, get_date, (int*, int*, int*));
-EXTERN_FUNCTION(void, get_localtime, (int*, int*, int*, int*, int*, int*));
-EXTERN_FUNCTION(void, get_universaltime, (int*, int*, int*, int*, int*, int*));
-EXTERN_FUNCTION(int, univ_to_local, (int*, int*, int*, int*, int*, int*));
-EXTERN_FUNCTION(int, local_to_univ, (int*, int*, int*, int*, int*, int*));
+void elapsed_time_both(unsigned long *ms_user, unsigned long *ms_sys, 
+		       unsigned long *ms_user_diff, unsigned long *ms_sys_diff);
+void wall_clock_elapsed_time_both(unsigned long *ms_total, 
+				  unsigned long *ms_diff);
+void get_time(int *hour, int *minute, int *second);
+void get_date(int *year, int *month, int *day);
+void get_localtime(int *year, int *month, int *day, 
+		   int *hour, int *minute, int *second);
+void get_universaltime(int *year, int *month, int *day, 
+		       int *hour, int *minute, int *second);
+int univ_to_local(int *year, int *month, int *day, 
+		  int *hour, int *minute, int *second);
+int local_to_univ(int *year, int *month, int *day, 
+		  int *hour, int *minute, int *second, int isdst);
 void get_now(Uint*, Uint*, Uint*);
-EXTERN_FUNCTION(void, set_break_quit, (void (*)(), void (*)()));
+EXTERN_FUNCTION(void, set_break_quit, (void (*)(void), void (*)(void)));
 
 
 
@@ -374,43 +423,6 @@ EXTERN_FUNCTION(void, sys_printf, (CIO, char*, _DOTS_));
 EXTERN_FUNCTION(void, sys_putc, (int, CIO));
 EXTERN_FUNCTION(void, sys_get_pid, (char *));
 EXTERN_FUNCTION(int, sys_putenv, (char *));
-
-/* Defined in sys.c (util.c when instrumented) */
-EXTERN_FUNCTION(void*, sys_alloc, (Uint));
-EXTERN_FUNCTION(void*, sys_realloc, (void*,Uint));
-EXTERN_FUNCTION(void,  sys_free, (void*));
-
-#ifdef INSTRUMENT
-/* Defined in sys.c */
-#ifndef sys_alloc2 /* Declare if not macros */
-EXTERN_FUNCTION(void*, sys_alloc2, (Uint));
-EXTERN_FUNCTION(void*, sys_realloc2, (void*, Uint));
-EXTERN_FUNCTION(void,  sys_free2, (void*));
-#endif /* !sys_alloc2 */
-
-
-EXTERN_FUNCTION(void *, instr_alloc, (int, void *(*)(Uint), Uint));
-EXTERN_FUNCTION(void *, instr_realloc,
-		(int, void *(*)(void *, Uint, Uint), void *, Uint, Uint));
-EXTERN_FUNCTION(void, instr_free, (void (*free_func)(void *), void *));
-
-EXTERN_FUNCTION(void*, sys_realloc3, (void*, Uint, Uint));
-
-#define sys_alloc_from(Where, Size) \
-  instr_alloc((Where), sys_alloc2, (Size))
-#define sys_realloc_from(Where, Ptr, Size) \
-  instr_realloc((Where), sys_realloc3, (Ptr), 0, (Size))
-
-#else /* #ifdef INSTRUMENT */
-
-#define sys_alloc_from(Where, Size) sys_alloc(Size)
-#define sys_realloc_from(Where,Ptr, Size) sys_realloc((Ptr),(Size))
-
-#define fix_alloc_from(Where, Desc) fix_alloc((Desc))
-#define safe_alloc_from(Where, Size) safe_alloc((Size))
-#define safe_realloc_from(Where, Ptr, Size) safe_realloc((Ptr), (Size))
-
-#endif /* #ifdef INSTRUMENT */
 
 /* Options to sys_alloc_opt */
 #define SYS_ALLOC_OPT_TRIM_THRESHOLD 0
@@ -431,13 +443,12 @@ typedef struct {
   Sint top_pad;
   Sint mmap_threshold;
   Sint mmap_max;
-#ifdef INSTRUMENT
-  Uint total;
-  Uint maximum;
-#endif
 } SysAllocStat;
 
 EXTERN_FUNCTION(void, sys_alloc_stat, (SysAllocStat *));
+
+void elib_ensure_initialized(void);
+
 
 #if (defined(VXWORKS) || defined(_OSE_))
 /* NOTE! sys_calloc2 does not exist on other 

@@ -132,7 +132,7 @@ write(Head, Bins) ->
 %% -> ok | throw({Head, Error})
 %% Same as file:write_file/2, but calls file:sync/1.
 write_file(Head, Bin) ->
-    R = case file:open(Head#head.filename, [binary, write]) of
+    R = case file:open(Head#head.filename, [binary, raw, write]) of
 	    {ok, Fd} ->
 		R1 = file:write(Fd, Bin),
 		R2 = file:sync(Fd),
@@ -252,7 +252,7 @@ read_n(Fd, Max) ->
     case file:read(Fd, Max) of
 	{ok, Bin} ->
 	    Bin;
-	_ ->
+	_Else ->
 	    eof
     end.
 
@@ -706,8 +706,9 @@ collect_node(Node, I, Pow, Acc) ->
 %% Special for dets.
 tree_to_bin(v, _F, _Max, Ws, WsSz) -> {Ws, WsSz};
 tree_to_bin(T, F, Max, Ws, WsSz) ->
-    {N, L, Ws1, WsSz1} = tree_to_bin2(T, F, Max, 0, [], Ws, WsSz),
-    {0, [], NWs, NWsSz} = F(N, lists:reverse(L), Ws1, WsSz1),
+    {N, L1, Ws1, WsSz1} = tree_to_bin2(T, F, Max, 0, [], Ws, WsSz),
+    {N1, L2, Ws2, WsSz2} = F(N, lists:reverse(L1), Ws1, WsSz1),
+    {0, [], NWs, NWsSz} = F(N1, lists:reverse(L2), Ws2, WsSz2),
     {NWs, NWsSz}.
 
 tree_to_bin2(Tree, F, Max, N, Acc, Ws, WsSz) when N >= Max ->

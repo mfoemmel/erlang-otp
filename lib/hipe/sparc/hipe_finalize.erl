@@ -162,18 +162,6 @@ switch_b(B) ->
 %% this pass the code cannot be converted back to a CFG.
 %%
 
-%finalize(CFG) ->
-%   Start = hipe_sparc_cfg:start(CFG),
-%   Vis = none_visited(),
-%   {Vis0, NestedCode} = finalize_succ(Start, CFG, Vis),
-%   AllCode = finalize_fail_entries(NestedCode, CFG,
-%				   hipe_sparc_cfg:fail_entrypoints(CFG),
-%				   Vis0),
-%   hipe_sparc:mk_sparc(hipe_sparc_cfg:function(CFG),
-%		  lists:flatten(AllCode),
-%		  hipe_sparc_cfg:var_range(CFG), 
-%		  hipe_sparc_cfg:label_range(CFG)).
-
 
 
 %finalize_succ(none, CFG, Vis) ->
@@ -211,12 +199,6 @@ switch_b(B) ->
 %	 end
 %   end.
 
-
-%finalize_fail_entries(Code, CFG, [], Vis) ->
-%   Code;
-%finalize_fail_entries(Code, CFG, [E|Es], Vis) ->
-%   {Vis0, MoreCode} = finalize_succ(E, CFG, Vis),
-%   finalize_fail_entries([Code, MoreCode], CFG, Es, Vis0).
 
 
 %

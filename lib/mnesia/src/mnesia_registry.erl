@@ -225,7 +225,6 @@ do_handle_ops(Tab, RecName, [{write, RegEntry} | Ops]) ->
     mnesia:write(Tab, Record, write),
     do_handle_ops(Tab, RecName, Ops);
 do_handle_ops(Tab, RecName, [{delete, Key} | Ops]) ->
-    Oid = {Tab, Key},
     mnesia:delete(Tab, Key, write),
     do_handle_ops(Tab, RecName, Ops);
 do_handle_ops(_Tab, _RecName, []) ->
@@ -263,7 +262,7 @@ calc_size([], Size) ->
     Size.
 
 max(New, Old) when New > Old -> New;
-max(New, Old) -> Old.
+max(_New, Old) -> Old.
 
 send_records([H | T], ReplyTo) ->
     KeySize = element(#registry_entry.key_size, H),
@@ -273,6 +272,6 @@ send_records([H | T], ReplyTo) ->
     Val = element(#registry_entry.val, H),
     ReplyTo ! {restore, KeySize, ValSize, ValType, Key, Val},
     send_records(T, ReplyTo);
-send_records([], ReplyTo) ->
+send_records([], _ReplyTo) ->
     ok.
 

@@ -107,7 +107,8 @@ dbg_s([C | Str]) when integer(C) ->
 
 get_env(App, KeyAtom) ->
     KeyStr = atom_to_list(KeyAtom),
-    ?DBG(1,"Command line -gs ~p\n",[init:get_argument(App)]),
+    ?DBG(1,"Result from init:get_argument(~w): ~p\n",
+	[KeyAtom,init:get_argument(App)]),
     case init:get_argument(App) of
 	{ok,[[KeyStr,ValStr]]} ->
 	    {ok,list_to_atom(ValStr)};
@@ -119,9 +120,9 @@ start_link(Gstk) ->
     ?DBG(1, "start_link(~w)~n", [Gstk]),
 %    io:format("STARTS ~p\n",[erlang:localtime()]),
     Mode = 
-%	case {os:type(),application:get_env(gs,backend_comm)} of
+	% FIXME: Want to use application:get_env() if we where an true app
 	case {os:type(),get_env(gs,backend_comm)} of
-	    {win32,undefined} ->
+	    {{win32,_Flavor},undefined} ->
 		use_socket;
 	    {_OS,undefined} ->
 		use_port;
@@ -269,9 +270,10 @@ init(Gstk, Mode) ->
 
 		% Wait in another process
 		spawn_link(?MODULE,wait_for_connection,[self(),ListenSocket]),
-		lists:concat([Wish," ",InitScript," -- ",ListenPort]);
+		lists:concat([Wish," ",InitScript," -- ",PrivDir," ",
+			      ListenPort]);
 	    use_port ->
-		Wish ++ " " ++ InitScript
+		lists:concat([Wish," ",InitScript," -- ",PrivDir])
 	end,
 
     ?DBG(1, "Port opts  :\n~p\n", [Options]),

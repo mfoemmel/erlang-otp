@@ -168,8 +168,7 @@ transf_of(L,Transf) ->
 
 start_invals(CFG) ->
     Entry = ?cfg:start(CFG),
-    Fail_entries = ?cfg:fail_entrypoints(CFG),
-    Start = [Entry|Fail_entries],
+    Start = [Entry],
     EntryInval = mk_def_set(?cfg:params(CFG),start_def(),set:empty()),
     { Start, hash:update(Entry,EntryInval,hash:empty()) }.
 

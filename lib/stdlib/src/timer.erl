@@ -21,7 +21,7 @@
 	 send_after/3, send_after/2,
 	 exit_after/3, exit_after/2, kill_after/2, kill_after/1,
 	 apply_interval/4, send_interval/3, send_interval/2,
-	 cancel/1, sleep/1, tc/3,
+	 cancel/1, sleep/1, tc/3, now_diff/2,
 	 seconds/1, minutes/1, hours/1, hms/3]).
 
 -export([start_link/0, start/0, 
@@ -29,8 +29,13 @@
 	 init/1, start_link/0,
 	 code_change/3, handle_cast/2, terminate/2]).
 
+%% internal exports for test purposes only
+-export([get_status/0]).
+
 %% Max
 -define(MAX_TIMEOUT, 16#0800000).
+-define(TIMER_TAB, timer_tab).
+-define(INTERVAL_TAB, timer_interval_tab).
 
 %%
 %% Interface functions
@@ -82,13 +87,14 @@ tc(M, F, A) ->
     Before = erlang:now(),
     Val = (catch apply(M, F, A)),
     After = erlang:now(),
-    Elapsed = (element(1,After)*1000000000000 +
-	       element(2,After)*1000000 + 
-	       element(3,After)) -
-	(element(1,Before)*1000000000000 +
-	 element(2,Before)*1000000 + element(3,Before)),
-    {Elapsed, Val}.
+    {now_diff(After, Before), Val}.
 
+%%
+%% Calculate the time difference (in microseconds) of two
+%% erlang:now() timestamps, T2-T1.
+%%
+now_diff({A2, B2, C2}, {A1, B1, C1}) ->
+    ((A2-A1)*1000000 + B2-B1)*1000000 + C2-C1.
 
 %%
 %% Convert seconds, minutes etc. to milliseconds.    
@@ -115,6 +121,8 @@ start_link() ->
 
 init([]) ->
     process_flag(trap_exit, true),
+    ets:new(?TIMER_TAB,[named_table,ordered_set,protected]),
+    ets:new(?INTERVAL_TAB,[named_table,protected]),
     {ok, [], infinity}.
 
 ensure_started() ->
@@ -142,10 +150,9 @@ req(Req, Arg) ->
 %%
 handle_call({apply_after, {Time, Op}, Started}, _From, Ts) 
   when integer(Time), Time >= 0 ->
-    SysTime = system_time(),
-    BRef = {SysTime, make_ref()},
-    Timer = {Started + 1000*Time, BRef, timeout, Op}, 
-    {Timeout, Ts0} = timer_timeout(insert_sort(Timer, Ts), SysTime),
+    BRef = {Started + 1000*Time, make_ref()},
+    Timer = {BRef, timeout, Op},
+    {Timeout, Ts0} = timer_timeout(insert_sort(Timer, Ts), system_time()),
     {reply, {ok, BRef}, Ts0, Timeout};
 
 handle_call({apply_interval, {Time, To, MFA}, Started}, _From, Ts) 
@@ -155,17 +162,20 @@ handle_call({apply_interval, {Time, To, MFA}, Started}, _From, Ts)
 	Pid when pid(Pid) ->
 	    catch link(Pid),
 	    SysTime = system_time(),
-	    BRef = {SysTime, make_ref()},
+	    Ref = make_ref(),
+	    BRef1 = {interval, Ref},
 	    Interval = Time*1000,
-	    Timer = {Started + Interval, BRef, {repeat, Interval, Pid}, MFA},
+	    BRef2 = {Started + Interval, Ref},
+	    Timer = {BRef2, {repeat, Interval, Pid}, MFA},
+	    ets:insert(?INTERVAL_TAB,{BRef1,BRef2,Pid}),
 	    {Timeout, Ts0} = timer_timeout(insert_sort(Timer, Ts), SysTime),
-	    {reply, {ok, BRef}, Ts0, Timeout};
+	    {reply, {ok, BRef1}, Ts0, Timeout};
 	_ ->
 	    {reply, {error, badarg}, Ts, next_timeout(Ts)}
     end;
 
-handle_call({cancel, {SysTime, Ref}, _}, _From, Ts) when reference(Ref) ->
-    Ts0 = delete_ref({SysTime, Ref}, Ts),
+handle_call({cancel, BRef = {_Time, Ref}, _}, _From, Ts) when reference(Ref) ->
+    Ts0 = delete_ref(BRef, Ts),
     {reply, {ok, cancel}, Ts0, next_timeout(Ts0)};
 handle_call({cancel, _BRef, _}, _From, Ts) ->
     {reply, {error, badarg}, Ts, next_timeout(Ts)};
@@ -173,25 +183,25 @@ handle_call({apply_after, _, _}, _From, Ts) ->
     {reply, {error, badarg}, Ts, next_timeout(Ts)};
 handle_call({apply_interval, _, _}, _From, Ts) ->
     {reply, {error, badarg}, Ts, next_timeout(Ts)};
-handle_call(Else, _From, Ts) ->			% Catch anything else
+handle_call(_Else, _From, Ts) ->			% Catch anything else
     {noreply, Ts, next_timeout(Ts)}.
 
 handle_info(timeout, Ts) ->                     % Handle timeouts 
     {Timeout, Ts0} = timer_timeout(Ts, system_time()),
     {noreply, Ts0, Timeout};
-handle_info({'EXIT',  Pid, Reason}, Ts) ->      % Oops someone died
+handle_info({'EXIT',  Pid, _Reason}, Ts) ->      % Oops someone died
     Ts0 = pid_delete(Pid, Ts),
     {noreply, Ts0, next_timeout(Ts0)};
-handle_info(Msg, Ts) ->                         % Other Msg's
+handle_info(_OtherMsg, Ts) ->                         % Other Msg's
     {noreply, Ts, next_timeout(Ts)}.
 
-handle_cast(Req, Ts) ->                         % Not predicted but handled
+handle_cast(_Req, Ts) ->                         % Not predicted but handled
     {noreply, Ts, next_timeout(Ts)}.
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     %% According to the man for gen server no timer can be set here.
     {ok, State}.				
 
@@ -202,60 +212,122 @@ code_change(OldVsn, State, Extra) ->
 %% {Time, BRef, Op, MFA}, where Time is in microseconds.
 %% Returns {Timeout, Timers}, where Timeout is in milliseconds.
 %%
-timer_timeout([], _) ->
-    {infinity, []};
+timer_timeout(Timers, SysTime) ->
+    case ets:first(?TIMER_TAB) of
+	'$end_of_table' -> 
+	    {infinity, []};
+	{Time, _Ref} when Time > SysTime ->
+	    Timeout = (Time - SysTime) div 1000,
+	    %% Returned timeout must fit in a small int
+	    {min(Timeout, ?MAX_TIMEOUT), Timers};
+	Key ->
+	    case ets:lookup(?TIMER_TAB, Key) of
+		[{Key, timeout, MFA}] ->
+		    ets:delete(?TIMER_TAB,Key),
+		    do_apply(MFA),
+		    timer_timeout(Timers, SysTime);
+		[{{Time, Ref}, Repeat = {repeat, Interv, To}, MFA}] ->
+		    ets:delete(?TIMER_TAB,Key),
+		    NewTime = Time + Interv,
+		    %% Update the interval entry (last in table)
+		    ets:insert(?INTERVAL_TAB,{{interval,Ref},{NewTime,Ref},To}),
+		    do_apply(MFA),
+		    Ts0 = insert_sort({{NewTime, Ref}, Repeat, MFA}, 
+				      Timers),
+		    timer_timeout(Ts0, SysTime)
+	    end
+    end.
 
-timer_timeout([{Time, BRef, Op, MFA} | Ts], SysTime) when Time > SysTime ->
-    Timeout = positive(Time - SysTime) div 1000,
-    %% Returned timeout must fit in a small int
-    {min(Timeout, ?MAX_TIMEOUT), [{Time, BRef, Op, MFA} | Ts]};
 
-timer_timeout([{Time, BRef, timeout, MFA} | Ts], SysTime) ->
-    do_apply(MFA),
-    timer_timeout(Ts, SysTime);
+% timer_timeout([], _) ->
+%     {infinity, []};
 
-timer_timeout([{Time, BRef, {repeat, Interv, To}, MFA} | Ts], SysTime) ->
-    do_apply(MFA),
-    Ts0 = insert_sort({Time + Interv, BRef, {repeat, Interv, To}, MFA}, Ts),
-    timer_timeout(Ts0, SysTime).
+% timer_timeout([{Time, BRef, Op, MFA} | Ts], SysTime) when Time > SysTime ->
+%     Timeout = positive(Time - SysTime) div 1000,
+%     %% Returned timeout must fit in a small int
+%     {min(Timeout, ?MAX_TIMEOUT), [{Time, BRef, Op, MFA} | Ts]};
+
+% timer_timeout([{Time, BRef, timeout, MFA} | Ts], SysTime) ->
+%     do_apply(MFA),
+%     timer_timeout(Ts, SysTime);
+
+% timer_timeout([{Time, BRef, {repeat, Interv, To}, MFA} | Ts], SysTime) ->
+%     do_apply(MFA),
+%     Ts0 = insert_sort({Time + Interv, BRef, {repeat, Interv, To}, MFA}, Ts),
+%     timer_timeout(Ts0, SysTime).
 
 %%
 %% Insert timer in a sorted timer list. 
 %%
-insert_sort(Timer, []) ->
-    [Timer];
-insert_sort({Time0, BRef0, Op0, MFA0}, 
-	    [{Time1, BRef1, Op1, MFA1} | Rest]) when Time0 < Time1 ->
-    [{Time0, BRef0, Op0, MFA0}, {Time1, BRef1, Op1, MFA1} | Rest];
-insert_sort({Time0, BRef0, Op0, MFA0}, 
-	    [{Time1, BRef1, Op1, MFA1} | Rest]) ->
-    [{Time1, BRef1, Op1, MFA1} | insert_sort({Time0, BRef0, Op0, MFA0}, Rest)].
+insert_sort(Timer, Timers) ->
+    ets:insert(?TIMER_TAB,Timer),
+    Timers.
+
+% insert_sort(Timer, []) ->
+%     [Timer];
+% insert_sort({Time0, BRef0, Op0, MFA0}, 
+% 	    [{Time1, BRef1, Op1, MFA1} | Rest]) when Time0 < Time1 ->
+%     [{Time0, BRef0, Op0, MFA0}, {Time1, BRef1, Op1, MFA1} | Rest];
+% insert_sort({Time0, BRef0, Op0, MFA0}, 
+% 	    [{Time1, BRef1, Op1, MFA1} | Rest]) ->
+%     [{Time1, BRef1, Op1, MFA1} | insert_sort({Time0, BRef0, Op0, MFA0}, Rest)].
+
 %%
 %% delete_ref 
 %%
-delete_ref(BRef, [{_,BRef,_,_} | Rest]) ->
-    Rest;
-delete_ref(BRef, [H|R]) ->
-    [H|delete_ref(BRef, R)];
-delete_ref(BRef, []) ->
-    [].
+
+delete_ref(BRef = {interval, _}, Timers) ->
+    case ets:lookup(?INTERVAL_TAB, BRef) of
+	[{_, BRef2, _Pid}] ->
+	    ets:delete(?INTERVAL_TAB, BRef),
+	    ets:delete(?TIMER_TAB, BRef2),
+	    Timers;
+	_ -> % TimerReference does not exist, do nothing
+	    Timers
+    end;
+delete_ref(BRef, Timers) ->
+    ets:delete(?TIMER_TAB,BRef),
+    Timers.
+
+
+% delete_ref(BRef, [{_,BRef,_,_} | Rest]) ->
+%     Rest;
+% delete_ref(BRef, [H|R]) ->
+%     [H|delete_ref(BRef, R)];
+% delete_ref(BRef, []) ->
+%     [].
 
 %%
 %% pid_delete
 %%
-pid_delete(Pid, [{Time, BRef, {repeat, Int, Pid}, Item}|R]) ->
-    pid_delete(Pid, R);
-pid_delete(Pid, [H|T]) ->
-    [H|pid_delete(Pid, T)];
-pid_delete(_,[]) ->
-    [].
+
+pid_delete(Pid, Timers) ->
+    IntervalTimerList = 
+	ets:select(?INTERVAL_TAB,
+		   [{{'_', '_','$1'},
+		     [{'==','$1',Pid}],
+		     ['$_']}]),
+    lists:foreach(fun({IntKey, TimerKey, _ }) ->
+			  ets:delete(?INTERVAL_TAB,IntKey),
+			  ets:delete(?TIMER_TAB,TimerKey) 
+		  end, IntervalTimerList),
+    Timers.
 
 %% Calculate time to the next timeout.Returned timeout must fit in a 
 %% small int.
-next_timeout([{Time, _, _, _} | R]) ->
-    min(positive((Time - system_time()) div 1000), ?MAX_TIMEOUT);
-next_timeout([]) ->
-    infinity.
+
+next_timeout(_Timers) ->
+    case ets:first(?TIMER_TAB) of
+	'$end_of_table' -> 
+	    infinity;
+	{Time, _ } ->
+	    min(positive((Time - system_time()) div 1000), ?MAX_TIMEOUT)
+    end.
+
+% next_timeout([{Time, _, _, _} | R]) ->
+%     min(positive((Time - system_time()) div 1000), ?MAX_TIMEOUT);
+% next_timeout([]) ->
+%     infinity.
 
 %% Help functions
 do_apply({M,F,A}) ->
@@ -272,12 +344,14 @@ do_apply({M,F,A}) ->
 
 max(X, Y) when X > Y ->
     X;
-max(X, Y) ->
+max(_X, Y) ->
     Y.
+
 min(X, Y) when X < Y ->
     X;
-min(X, Y) ->
+min(_X, Y) ->
     Y.
+
 positive(X) ->
     max(X, 0).
 
@@ -301,3 +375,26 @@ get_pid(Name) when atom(Name) ->
     get_pid(whereis(Name));
 get_pid(_) ->
     undefined.
+
+%%
+%% get_status() -> 
+%%    {{TimerTabName,TotalNumTimers},{IntervalTabName,NumIntervalTimers}}
+%%
+%% This function is for test purposes only, it is used by the test suite
+%% There is a small possibility that there is a mismatch of one entry 
+%% between the 2 tables if this call is made when the timer server is 
+%% in the middle of a transaction
+ 
+get_status() ->
+    Tup1 = ets:info(?TIMER_TAB),
+    {size,TotalNumTimers} = element(4,Tup1),
+    Tup2 = ets:info(?INTERVAL_TAB),
+    {size,NumIntervalTimers} = element(4,Tup2),
+    {{?TIMER_TAB,TotalNumTimers}, {?INTERVAL_TAB,NumIntervalTimers}}.
+
+    
+
+
+
+
+

@@ -35,6 +35,7 @@
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
+ERLANG_OSTYPE = @ERLANG_OSTYPE@
 
 CC = @CC@
 
@@ -70,13 +71,13 @@ EI_LIBDIR = $(ERL_TOP)/lib/erl_interface/obj$(TYPEMARKER)/$(TARGET)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-EI_INCLUDES = -I$(ERL_TOP)/lib/erl_interface/src
-DRIVER_INCLUDES = -I$(ERL_TOP)/erts/emulator/beam
+EI_INCLUDES = -I$(ERL_TOP)/lib/erl_interface/include
+DRIVER_INCLUDES = -I$(ERL_TOP)/erts/emulator/beam \
+	-I$(ERL_TOP)/erts/emulator/sys/$(ERLANG_OSTYPE)
 CFLAGS = $(DRIVER_INCLUDES) $(EI_INCLUDES) @DED_CFLAGS@
 LDFLAGS = @DED_LDFLAGS@
 
 LD_INCL_EI = -L$(EI_LIBDIR)
-LD_EI = -lei 
 
 # ----------------------------------------------------
 # Target Specs
@@ -85,29 +86,32 @@ LD_EI = -lei
 C_FILES = asn1_erl_driver.c
 
 
-ifeq ($(findstring win32,$(TARGET)),win32)
+ifeq ($(TARGET),win32)
+LD_EI = -lei_md 
 SHARED_OBJ_FILES = $(LIBDIR)/asn1_erl_drv.dll
-OBJ_FILES = $(OBJDIR)/asn1_erl_drv.obj
+OBJ_FILES = $(OBJDIR)/asn1_erl_drv.o
+CLIB_FLAGS =
+LN=cp
+else
+LD_EI = -lei 
+OBJ_FILES = $(OBJDIR)/asn1_erl_drv.o
+ifeq ($(findstring vxworks,$(TARGET)),vxworks)
+SHARED_OBJ_FILES = $(LIBDIR)/asn1_erl_drv.eld
+CLIB_FLAGS =
 else
 SHARED_OBJ_FILES = $(LIBDIR)/asn1_erl_drv.so
-OBJ_FILES = $(OBJDIR)/asn1_erl_drv.o
+CLIB_FLAGS = -lc
+endif
+LN= ln -s
 endif
 
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
 
-ifeq ($(findstring win32,$(TARGET)),win32)
-opt: 
-	@echo "This must be built with NMAKE on Windows"
-else
-
 opt: $(OBJDIR) $(LIBDIR) $(SHARED_OBJ_FILES)
 	rm -f ../priv/lib/asn1_erl_drv*
-	ln -s $(SHARED_OBJ_FILES) ../priv/lib
-
-endif
-
+	$(LN) $(SHARED_OBJ_FILES) ../priv/lib
 
 debug: opt
 
@@ -127,7 +131,7 @@ $(OBJ_FILES): $(C_FILES) $(OBJDIR)
 	$(CC) -c $(CFLAGS) -o $(OBJ_FILES) $(C_FILES) 
 
 $(SHARED_OBJ_FILES): $(OBJ_FILES) $(LIBDIR)
-	$(CC) $(LDFLAGS) $(LD_INCL_EI) -o $(SHARED_OBJ_FILES) $(OBJ_FILES) $(LD_EI) $(LIBS)
+	$(LD) $(LDFLAGS) $(LD_INCL_EI) -o $(SHARED_OBJ_FILES) $(OBJ_FILES) $(LD_EI) $(CLIB_FLAGS) $(LIBS) 
 
 $(LIBDIR):
 	-mkdir -p $(LIBDIR)

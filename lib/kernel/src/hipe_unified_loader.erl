@@ -481,8 +481,9 @@ patch_load_address({label,cold,Offset,_MFA},Address,
 		   {_ConstMap,_HotAddress,ColdAddress}, _Addresses) ->
   patch_label(Address,Offset,ColdAddress);
 patch_load_address({closure,{DestMFA,Uniq, Index}}, Address, _, Addresses) ->
-  patch_closure(DestMFA,Uniq,Index,Address,Addresses).
-
+  patch_closure(DestMFA,Uniq,Index,Address,Addresses);
+patch_load_address({c_const,CConst},Address, _Info, _Addresses) ->
+  patch_instr(Address, bif_address(CConst), c_const).
 
 patch_label(Address,Offset,Base) ->
   patch_instr(Address,Offset+Base,label).
@@ -975,7 +976,7 @@ write_bytes([],_) -> true.
 write(Vector,Addr,Index,Length) ->
   case hipe_bifs:array_length(Vector) of
     0 -> true;
-    N ->
+    _ ->
       write_vector(Vector,Addr,Index,Length)
   end.
 

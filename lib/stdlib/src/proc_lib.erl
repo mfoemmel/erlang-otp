@@ -24,37 +24,72 @@
 %% expected.
 %% 
 
--export([spawn/3,spawn_link/3,spawn/4,spawn_link/4,
-	 spawn_opt/4,
+-export([spawn/1,spawn_link/1, spawn/2, spawn_link/2,
+         spawn/3,spawn_link/3,spawn/4,spawn_link/4,
+         spawn_opt/2, spawn_opt/3, spawn_opt/4, spawn_opt/5,
 	 start/3, start/4, start/5, start_link/3, start_link/4,start_link/5,
 	 init_ack/1, init_ack/2,
-	 init_p/5,format/1,initial_call/1,translate_initial_call/1]).
+	 init_p/3,init_p/5,format/1,initial_call/1,translate_initial_call/1]).
+
+spawn(F) when function(F) ->
+    Parent = get_my_name(),
+    Ancestors = get_ancestors(),
+    erlang:spawn(proc_lib,init_p,[Parent,Ancestors,F]).
 
 spawn(M,F,A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     erlang:spawn(proc_lib,init_p,[Parent,Ancestors,M,F,A]).
 
+spawn_link(F) when function(F) ->
+    Parent = get_my_name(),
+    Ancestors = get_ancestors(),
+    erlang:spawn_link(proc_lib,init_p,[Parent,Ancestors,F]).
+
 spawn_link(M,F,A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     erlang:spawn_link(proc_lib,init_p,[Parent,Ancestors,M,F,A]).
+
+spawn(Node, F) when function(F) ->
+    Parent = get_my_name(),
+    Ancestors = get_ancestors(),
+    erlang:spawn(Node,proc_lib,init_p,[Parent,Ancestors,F]).
 
 spawn(Node,M,F,A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     erlang:spawn(Node,proc_lib,init_p,[Parent,Ancestors,M,F,A]).
 
+spawn_link(Node,F) when function(F) ->
+    Parent = get_my_name(),
+    Ancestors = get_ancestors(),
+    erlang:spawn_link(Node,proc_lib,init_p,[Parent,Ancestors,F]).
+
 spawn_link(Node,M,F,A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     erlang:spawn_link(Node,proc_lib,init_p,[Parent,Ancestors,M,F,A]).
 
+spawn_opt(F, Opts) when function(F) ->
+    Parent = get_my_name(),
+    Ancestors = get_ancestors(),
+    erlang:spawn_opt(proc_lib,init_p,[Parent,Ancestors,F],Opts).
+
+spawn_opt(Node, F, Opts) when function(F) ->
+    Parent = get_my_name(),
+    Ancestors = get_ancestors(),
+    erlang:spawn_opt(Node,proc_lib,init_p,[Parent,Ancestors,F],Opts).
 
 spawn_opt(M,F,A,Opts) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     erlang:spawn_opt(proc_lib,init_p,[Parent,Ancestors,M,F,A],Opts).
+
+spawn_opt(Node,M,F,A,Opts) ->
+    Parent = get_my_name(),
+    Ancestors = get_ancestors(),
+    erlang:spawn_opt(Node,proc_lib,init_p,[Parent,Ancestors,M,F,A],Opts).
 
 ensure_link(SpawnOpts) ->
     case lists:member(link, SpawnOpts) of
@@ -65,33 +100,42 @@ ensure_link(SpawnOpts) ->
     end.
 
 
+init_p(Parent,Ancestors,F) when function(F) ->
+    put('$ancestors',[Parent|Ancestors]),
+    put('$initial_call',F),
+    Result = (catch F()),
+    exit_p(Result,F).
 
 init_p(Parent,Ancestors,M,F,A) ->
     put('$ancestors',[Parent|Ancestors]),
     put('$initial_call',{M,F,A}),
     Result = (catch apply(M,F,A)),
-    exit_p(Result,M,F,A).
+    exit_p(Result,{M,F,A}).
 
-exit_p({'EXIT',Reason},M,F,A) ->
-    crash_report(Reason,M,F,A),
+exit_p({'EXIT',Reason},StartF) ->
+    crash_report(Reason,StartF),
     exit(Reason);
-exit_p(Reason,_,_,_) ->
+exit_p(Reason,_) ->
     Reason.
 
 start(M,F,A) ->
     start(M,F,A,infinity).
+
 start(M,F,A,Timeout) ->
     Pid = proc_lib:spawn(M,F,A),
     sync_wait(Pid, Timeout).
+
 start(M,F,A,Timeout,SpawnOpts) ->
     Pid = proc_lib:spawn_opt(M, F, A, SpawnOpts),
     sync_wait(Pid, Timeout).
 
 start_link(M,F,A) ->
     start_link(M,F,A,infinity).
+
 start_link(M,F,A,Timeout) ->
     Pid = proc_lib:spawn_link(M,F,A),
     sync_wait(Pid, Timeout).
+
 start_link(M,F,A,Timeout,SpawnOpts) ->
     Pid = proc_lib:spawn_opt(M, F, A, ensure_link(SpawnOpts)),
     sync_wait(Pid, Timeout).
@@ -149,6 +193,8 @@ init_call(Dict) ->
     case lists:keysearch('$initial_call',1,Dict) of
 	{value,{_,{M,F,A}}} ->
 	    {M,F,A};
+	{value,{_,F}} when function(F) ->
+	    F;
 	_ ->
 	    false
     end.
@@ -164,6 +210,8 @@ translate_initial_call(DictOrPid) ->
     case initial_call(DictOrPid) of
 	{M,F,A} ->
 	    trans_init(M,F,A);
+	F when function(F) ->
+	    F;
 	false ->
 	    {proc_lib,init_p,5}
     end.
@@ -192,21 +240,21 @@ trans_init(M,F,A) ->
 %% -----------------------------------------------------
 %% Generate a crash report.
 %% -----------------------------------------------------
-    
-crash_report(normal,_,_,_)      -> ok;
-crash_report(shutdown,_,_,_)    -> ok;
-crash_report(Reason,M,F,A) ->
-    OwnReport = my_info(Reason,M,F,A),
+
+crash_report(normal,_)      -> ok;
+crash_report(shutdown,_)    -> ok;
+crash_report(Reason,StartF) ->
+    OwnReport = my_info(Reason,StartF),
     LinkReport = linked_info(self()),
     Rep = [OwnReport,LinkReport],
     error_logger:error_report(crash_report, Rep),
     Rep.
 
-my_info(Reason,M,F,A) ->
+my_info(Reason,StartF) ->
     [{pid, self()},
      get_process_info(self(), registered_name),         
      {error_info, Reason}, 
-     {initial_call, {M, F, A}},
+     {initial_call, StartF},
      get_ancestors(self()),        
      get_process_info(self(), messages),
      get_process_info(self(), links),

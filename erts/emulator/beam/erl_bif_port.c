@@ -43,17 +43,17 @@ extern ErlDrvEntry fd_driver_entry;
 extern ErlDrvEntry vanilla_driver_entry;
 extern ErlDrvEntry spawn_driver_entry;
 
-static int open_port(Eterm pid, Eterm name, Eterm settings);
+static int open_port(Process* p, Eterm name, Eterm settings);
 static Port* id_or_name2port(Eterm id);
+static byte* convert_environment(Process* p, Eterm env);
 
-BIF_RETTYPE open_port_prim_2(BIF_ALIST_2)
-BIF_ADECL_2
+BIF_RETTYPE open_port_2(BIF_ALIST_2)
 {
     int port_num;
     Eterm port_val;
     char *str;
 
-    if ((port_num = open_port(BIF_P->id, BIF_ARG_1, BIF_ARG_2)) < 0) {
+    if ((port_num = open_port(BIF_P, BIF_ARG_1, BIF_ARG_2)) < 0) {
        if (port_num == -3) {
 	  BIF_ERROR(BIF_P, BADARG);
        }
@@ -73,7 +73,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE port_to_list_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
    int n;
    char* tmpp;
@@ -146,7 +145,6 @@ id_or_name2port(Eterm id)
 }
 
 BIF_RETTYPE port_command_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Port* p;
 
@@ -157,6 +155,9 @@ BIF_ADECL_2
 
     if (p->status & PORT_BUSY) {
 	erl_suspend(BIF_P, p->id);
+	if (erts_system_monitor_flags.busy_port) {
+	    monitor_generic(BIF_P, am_busy_port, p->id);
+	}
 	BIF_ERROR(BIF_P, RESCHEDULE);
     }
 
@@ -179,24 +180,24 @@ static int erts_port_call_need_init = 1;
 static byte *ensure_buff(Uint size)
 {
     if (erts_port_call_need_init) {
-	erts_port_call_buff = safe_alloc_from(380, (size_t) size);
+	erts_port_call_buff = erts_alloc(ERTS_ALC_T_PORT_CALL_BUF,
+					 (size_t) size);
 	erts_port_call_buff_size = size;
 	erts_port_call_need_init = 0;
     } else if (erts_port_call_buff_size < size) {
 	erts_port_call_buff_size = size;
-	erts_port_call_buff = safe_realloc(erts_port_call_buff,
+	erts_port_call_buff = erts_realloc(ERTS_ALC_T_PORT_CALL_BUF,
+					   (void *) erts_port_call_buff,
 					   (size_t) size);
     }
     return erts_port_call_buff;
 }
 BIF_RETTYPE port_call_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     return port_call_3(BIF_P,BIF_ARG_1,make_small(0),BIF_ARG_2);
 }
 
 BIF_RETTYPE port_call_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     Uint op;
     Port *p;
@@ -223,6 +224,9 @@ BIF_ADECL_3
 	BIF_ERROR(BIF_P, BADARG);
     }
     if ((drv = p->drv_ptr) == NULL) {
+	goto error;
+    }
+    if (drv->call == NULL) {
 	goto error;
     }
     if (!term_to_Uint(BIF_ARG_2, &op)) {
@@ -290,7 +294,6 @@ BIF_ADECL_3
     
 
 BIF_RETTYPE port_control_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     Port* p;
     Uint op;
@@ -310,7 +313,6 @@ BIF_ADECL_3
 }
 
 BIF_RETTYPE port_close_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Port* p;
     if ((p = id_or_name2port(BIF_ARG_1)) == NULL)
@@ -323,7 +325,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE port_connect_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Port* prt;
     Process* rp;
@@ -353,7 +354,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE port_set_data_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Port* prt;
     Eterm portid = BIF_ARG_1;
@@ -383,7 +383,6 @@ BIF_ADECL_2
 
 
 BIF_RETTYPE port_get_data_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Port* prt;
     Eterm portid = BIF_ARG_1;
@@ -408,7 +407,7 @@ BIF_ADECL_1
  * -3 if argument parsing failed.
  */
 static int
-open_port(Eterm pid, Eterm name, Eterm settings)
+open_port(Process* p, Eterm name, Eterm settings)
 {
     int i, port_num;
     Eterm option;
@@ -421,6 +420,7 @@ open_port(Eterm pid, Eterm name, Eterm settings)
     int binary_io;
     int soft_eof;
     int linebuf;
+    byte dir[MAXPATHLEN];
 
     /* These are the defaults */
     opts.packet_bytes = 0;
@@ -432,7 +432,7 @@ open_port(Eterm pid, Eterm name, Eterm settings)
     opts.envir = NULL;
     opts.exit_status = 0;
 #ifdef _OSE_
-    opts.process_type = OS_PRI_PROC;
+    opts.process_type = OS_BG_PROC;
     opts.priority = 20;
 #endif
     binary_io = 0;
@@ -475,18 +475,25 @@ open_port(Eterm pid, Eterm name, Eterm settings)
 			return -3;
 		} else if (option == am_env) {
 		    byte* bytes;
-		    if (is_not_binary(*tp)) {
+		    if ((bytes = convert_environment(p, *tp)) == NULL) {
 			return -3;
 		    }
-		    GET_BINARY_BYTES(*tp, bytes);
 		    opts.envir = (char *) bytes;
 		} else if (option == am_cd) {
-		    byte* bytes;
-		    if (is_not_binary(*tp)) {
+		    Eterm iolist;
+		    Eterm heap[4];
+		    int r;
+
+		    heap[0] = *tp;
+		    heap[1] = make_list(heap+2);
+		    heap[2] = make_small(0);
+		    heap[3] = NIL;
+		    iolist = make_list(heap);
+		    r = io_list_to_buf(iolist, (char*) dir, MAXPATHLEN);
+		    if (r < 0) {
 			return -3;
 		    }
-		    GET_BINARY_BYTES(*tp, bytes);
-		    opts.wd = (char *) bytes;
+		    opts.wd = (char *) dir;
 		} else {
 		   return -3;
 	       }
@@ -512,8 +519,28 @@ open_port(Eterm pid, Eterm name, Eterm settings)
 		opts.hide_window = 1;
 	    } else if (*nargs == am_exit_status) {
 		opts.exit_status = 1;
-	    } else {
+	    } 
+#ifdef _OSE_
+	    else if (option == am_ose_process_type) {
+	      if (is_not_atom(*tp))
 		return -3;
+	      if (*tp == am_ose_pri_proc)      opts.process_type = OS_PRI_PROC;
+	      else if (*tp == am_ose_int_proc) opts.process_type = OS_INT_PROC;
+	      else if (*tp == am_ose_bg_proc)  opts.process_type = OS_BG_PROC;
+	      else if (*tp == am_ose_ti_proc)  opts.process_type = OS_TI_PROC;
+	      else if (*tp == am_ose_phantom)  opts.process_type = OS_PHANTOM;
+	      else return -3;
+	    } 
+	    else if (option == am_ose_process_prio) {
+	      if (is_not_small(*tp))
+		return -3;
+	      opts.priority = signed_val(*tp);
+	      if((opts.priority <= 0) || (opts.priority > 31))
+		return -3;		
+	    }  
+#endif
+	    else {
+	      return -3;
 	    }
 	    if (is_nil(*++nargs)) 
 		break;
@@ -600,10 +627,11 @@ open_port(Eterm pid, Eterm name, Eterm settings)
 	    return -3;
     }
 
-    if (driver != &spawn_driver_entry && opts.exit_status)
+    if (driver != &spawn_driver_entry && opts.exit_status) {
        return -3;
+   }
 
-    if ((port_num = open_driver(driver, pid, name_buf, &opts)) < 0) {
+    if ((port_num = open_driver(driver, p->id, name_buf, &opts)) < 0) {
 	DEBUGF(("open_driver returned %d\n", port_num));
 	return port_num;
     }
@@ -620,4 +648,62 @@ open_port(Eterm pid, Eterm name, Eterm settings)
     }
 
     return port_num;
+}
+
+static byte* convert_environment(Process* p, Eterm env)
+{
+    Eterm all;
+    Eterm* hp;
+    Uint heap_size;
+    byte* bytes;
+    int n;
+
+    if ((n = list_length(env)) < 0) {
+	return NULL;
+    }
+    heap_size = 2*(5*n+1);
+    hp = HAlloc(p, heap_size);	/* HAlloc(): Can't leak; fast enough */
+    all = CONS(hp, make_small(0), NIL);
+    hp += 2;
+
+    while(is_list(env)) {
+	Eterm tmp;
+	Eterm* tp;
+
+	tmp = CAR(list_val(env));
+	if (is_not_tuple(tmp)) {
+	    return NULL;
+	}
+	tp = tuple_val(tmp);
+	if (tp[0] != make_arityval(2)) {
+	    return NULL;
+	}
+	tmp = CONS(hp, make_small(0), NIL);
+	hp += 2;
+	if (tp[2] != am_false) {
+	    tmp = CONS(hp, tp[2], tmp);
+	    hp += 2;
+	}
+	tmp = CONS(hp, make_small('='), tmp);
+	hp += 2;
+	tmp = CONS(hp, tp[1], tmp);
+	hp += 2;
+	all = CONS(hp, tmp, all);
+	hp += 2;
+	env = CDR(list_val(env));
+    }
+    if (is_not_nil(env)) {
+        return NULL;
+    }
+
+    if ((n = io_list_len(all)) < 0) {
+	return NULL;
+    }
+
+    /*
+     * Put the result in a binary (no risk for memory leak that way).
+     */
+    (void) erts_new_heap_binary(p, NULL, n, &bytes);
+    io_list_to_buf(all, bytes, n);
+    return bytes;
 }

@@ -1025,7 +1025,7 @@ static void start_que_request(Worker *w)
 
 #ifndef WIN32    
 /* Signal utilities */
-static RETSIGTYPE (*sys_sigset(int sig, RETSIGTYPE (*func)()))()
+static RETSIGTYPE (*sys_sigset(int sig, RETSIGTYPE (*func)(int)))(int)
 {
     struct sigaction act, oact;
 
@@ -1436,7 +1436,7 @@ static int create_worker(Worker *pworker, int save_que)
 	}
 	close(p1[0]);
 	close(p0[1]);
-	signal(SIGCHLD,SIG_IGN); 
+	signal(SIGCHLD, SIG_IGN); 
 	return worker_loop();
     }
 }

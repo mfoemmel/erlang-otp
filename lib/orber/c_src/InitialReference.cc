@@ -44,12 +44,12 @@ InitialReference::~InitialReference()
    */
 char* InitialReference::stringified_ior(char* newhost, int newport)
 {
-  strstream iorByteString;
-  strstream profileData;
+  STRINGSTREAM iorByteString;
+  STRINGSTREAM profileData;
 
-  strstreambuf *s;
-  strstreambuf *profileDataBuf;
-  strstreambuf *iorByteStringBuf;
+  STRINGBUF *s;
+  STRINGBUF *profileDataBuf;
+  STRINGBUF *iorByteStringBuf;
   long profileDataLength = 0;
   char *str;
 
@@ -108,9 +108,13 @@ char* InitialReference::stringified_ior(char* newhost, int newport)
 
   iorByteStringBuf->sputn(iorBytesFirstPart, 48);
   iorByteStringBuf->sputn(profileDataLengthBytes, 4);
+#ifdef HAVE_SSTREAM
+  iorByteStringBuf->sputn(profileData.str().data(), profileDataLength);
+#else
   str = profileData.str();
   iorByteStringBuf->sputn(str, profileDataLength);
   delete str;
+#endif
 
   createIOR(iorByteString, 48 + 4 + profileDataLength);
 
@@ -138,12 +142,17 @@ void InitialReference::enc_ulong(long l, char *byteArray)
 
 void InitialReference::createIOR(strstream& byte, long length)
 {
-  strstreambuf *stringbuf;
-  strstream string;
+  STRINGBUF *stringbuf;
+  STRINGSTREAM string;
 
   int i;
+#ifdef HAVE_SSTREAM
+  const char *c;
+  const char *bytestr = byte.str().c_str();
+#else
   char *c;
   char *bytestr = byte.str();
+#endif
   int b, n1, n2, c1, c2;
 
   stringbuf = string.rdbuf();
@@ -167,12 +176,16 @@ void InitialReference::createIOR(strstream& byte, long length)
 
   delete bytestr;
 
+#ifdef HAVE_SSTREAM
+  iorString = (char *)string.str().c_str();
+#else
   iorString = string.str();
+#endif
       
   return;
 }
 
-long InitialReference::align(strstreambuf* sbuf, long currentLength, 
+long InitialReference::align(STRINGBUF* sbuf, long currentLength, 
 			    int alignment)
 {
   long length = currentLength;

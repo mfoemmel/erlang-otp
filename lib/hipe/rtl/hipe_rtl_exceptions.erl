@@ -1,7 +1,7 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <02/03/09 10:33:34 happi>
+%% Time-stamp: <03/02/20 17:44:41 happi>
 %% ====================================================================
 %%  Filename : 	hipe_rtl_exceptions.erl
 %%  Module   :	hipe_rtl_exceptions
@@ -11,8 +11,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: happi $
-%%              $Date: 2002/09/28 12:34:11 $
-%%              $Revision: 1.16 $
+%%              $Date: 2003/02/20 17:12:35 $
+%%              $Revision: 1.18 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -54,7 +54,10 @@ gen_fail(I, VarMap, ConstTab, ExitInfo) ->
       case hipe_icode:fail_type(I) of
 	fault2 ->
 	  Reason = Arg1, Trace = Arg2,
-	  {gen_fault2(Reason,Trace,ExitInfo), Map0, ConstTab}
+	  {gen_fault2(Reason,Trace,ExitInfo), Map0, ConstTab};
+	'raise' ->
+	  Reason = Arg1, Type = Arg2,
+	  {gen_raise(Reason,Type,ExitInfo), Map0, ConstTab}
       end
   end.
 
@@ -63,33 +66,80 @@ gen_fail(I, VarMap, ConstTab, ExitInfo) ->
 %%
 gen_restore_catch(I, VarMap, ConstTab, Options) ->
   %% This is the exception handler, we have to get the exception value
-  %% into Dst.
-  {[Dst], Map0} = hipe_rtl_varmap:ivs2rvs([hipe_icode:restore_catch_dst(I)], VarMap),
+  %% into ReasonDst, and the exception type into TypeDst
+
   FValueVar = hipe_rtl:mk_new_var(),
   TmpVar = hipe_rtl:mk_new_var(),
   FreasonReg = hipe_rtl:mk_new_reg(),
   NoExitLbl = hipe_rtl:mk_new_label(),
   ExitLbl = hipe_rtl:mk_new_label(), 
+  ThrowLbl = hipe_rtl:mk_new_label(), 
+  ThrowLblName = hipe_rtl:label_name(ThrowLbl),
+  NoThrowLbl = hipe_rtl:mk_new_label(), 
+  NoThrowLblName = hipe_rtl:label_name(NoThrowLbl),
   NoExitLblName = hipe_rtl:label_name(NoExitLbl),
   ExitLblName = hipe_rtl:label_name(ExitLbl),
   EndLbl = hipe_rtl:mk_new_label(), 
   EndLblName  = hipe_rtl:label_name(EndLbl),
-  {[
-    %% NOTE: restore_catch must be the first instruction in the catch handler
-    hipe_rtl:mk_restore_catch([FValueVar]),
-    hipe_rtl_arch:pcb_load(FreasonReg, ?P_FREASON),
-    hipe_rtl:mk_branch(FreasonReg, eq, hipe_rtl:mk_imm(?FREASON_THROWN), 
-		       NoExitLblName, ExitLblName, 0.45),
-    ExitLbl,
-    hipe_rtl:mk_load_atom(TmpVar, 'EXIT'),
-    hipe_rtl_primops:gen_mk_tuple(Dst, [TmpVar, FValueVar], ?DoAddGC(Options)),
-    hipe_rtl:mk_goto(EndLblName),
-    NoExitLbl,
-    hipe_rtl:mk_move(Dst, FValueVar),
-    hipe_rtl:mk_goto(EndLblName),
-    EndLbl
-   ], 
-   Map0, ConstTab}.
+  case hipe_icode:restore_catch_type(I) of
+    'catch' ->
+      {[ReasonDst], Map0} = 
+	hipe_rtl_varmap:ivs2rvs([hipe_icode:restore_catch_reason_dst(I)],
+				VarMap),
+
+      {[
+	%% NOTE: restore_catch must be the first instruction 
+	%% in the catch handler
+	hipe_rtl:mk_restore_catch([FValueVar]),
+	hipe_rtl_arch:pcb_load(FreasonReg, ?P_FREASON),
+	hipe_rtl:mk_branch(FreasonReg, eq, hipe_rtl:mk_imm(?FREASON_THROWN), 
+			   NoExitLblName, ExitLblName, 0.45),
+	ExitLbl,
+	hipe_rtl:mk_load_atom(TmpVar, 'EXIT'),
+	hipe_rtl_primops:gen_mk_tuple(ReasonDst, [TmpVar, FValueVar], ?DoAddGC(Options)),
+	hipe_rtl:mk_goto(EndLblName),
+	NoExitLbl,
+	hipe_rtl:mk_move(ReasonDst, FValueVar),
+	hipe_rtl:mk_goto(EndLblName),
+	EndLbl
+       ], 
+       Map0, ConstTab};
+
+    %% HANDLE TRY
+    'try' ->
+
+      {[ReasonDst,TypeDst], Map0} = 
+	hipe_rtl_varmap:ivs2rvs([hipe_icode:restore_catch_reason_dst(I),
+				 hipe_icode:restore_catch_type_dst(I)], 
+				VarMap),
+
+      {[
+	%% NOTE: restore_catch must be the first instruction 
+	%% in the try handler
+	hipe_rtl:mk_restore_catch([FValueVar]),
+	hipe_rtl_arch:pcb_load(FreasonReg, ?P_FREASON),
+	hipe_rtl:mk_branch(FreasonReg, eq, hipe_rtl:mk_imm(?FREASON_THROWN), 
+			   ThrowLblName, NoThrowLblName, 0.45),
+	NoThrowLbl,
+	hipe_rtl:mk_branch(FreasonReg, eq, 
+			   hipe_rtl:mk_imm(?FREASON_USER_EXIT), 
+			   ExitLblName, NoExitLblName, 0.55),
+	ExitLbl,
+	hipe_rtl:mk_load_atom(TypeDst, 'EXIT'),
+	hipe_rtl:mk_move(ReasonDst, FValueVar),
+	hipe_rtl:mk_goto(EndLblName),
+	NoExitLbl,
+	hipe_rtl:mk_load_atom(TypeDst, 'ERROR'),
+	hipe_rtl:mk_move(ReasonDst, FValueVar),
+	hipe_rtl:mk_goto(EndLblName),
+	ThrowLbl,
+	hipe_rtl:mk_load_atom(TypeDst, 'throw'),
+	hipe_rtl:mk_move(ReasonDst, FValueVar),
+	hipe_rtl:mk_goto(EndLblName),
+	EndLbl
+       ], 
+       Map0, ConstTab}
+  end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% ____________________________________________________________________
@@ -176,6 +226,9 @@ gen_fault2(Reason, Trace, _ExitInfo) ->
   ETermVar = hipe_rtl:mk_new_var(),
   [hipe_rtl_primops:gen_mk_tuple(ETermVar, [Reason,Trace], ?DoAddGC([])),
    hipe_rtl:mk_enter({erlang,fault,1}, [ETermVar], c)].
+
+gen_raise(Reason, Type, _ExitInfo) ->
+  [hipe_rtl:mk_enter({hipe_bifs,raise,2}, [Reason,Type], c)].
 
 
 gen_exit_atom(Atom, ExitInfo) ->

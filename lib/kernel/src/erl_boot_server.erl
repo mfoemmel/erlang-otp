@@ -82,7 +82,7 @@ check_arg([Slave|Rest], Result) ->
     end;
 check_arg([], Result) ->
     {ok, Result};
-check_arg(_, Result) ->
+check_arg(_, _Result) ->
     error.
 
 add_slave(Slave) ->
@@ -163,7 +163,7 @@ init(Slaves) ->
 		 udp_port = UPort,
 		 listen_sock = L, 
 		 listen_port = Port,
-		 slaves = ordsets:list_to_set(Slaves),
+		 slaves = ordsets:from_list(Slaves),
 		 bootp = Pid
 		}}.
 
@@ -177,14 +177,14 @@ handle_call({delete,Address}, _, S0) ->
     S0#state.bootp ! {slaves, Slaves},
     {reply, ok, S0#state { slaves = Slaves }};
 handle_call(which, _, S0) ->
-    {reply, ordsets:set_to_list(S0#state.slaves), S0}.
+    {reply, ordsets:to_list(S0#state.slaves), S0}.
 
 handle_cast(_, Slaves) ->
     {noreply, Slaves}.
 
 handle_info({udp, U, IP, Port, Data}, S0) ->
     Token = ?EBOOT_REQUEST ++ S0#state.version,
-    Valid = member_address(IP, ordsets:set_to_list(S0#state.slaves)),
+    Valid = member_address(IP, ordsets:to_list(S0#state.slaves)),
     if Valid == true, Data == Token ->
 	    gen_udp:send(U,IP,Port,[?EBOOT_REPLY,S0#state.priority,
 				    int16(S0#state.listen_port),
@@ -193,7 +193,7 @@ handle_info({udp, U, IP, Port, Data}, S0) ->
        true ->
 	    {noreply, S0}
     end;
-handle_info(Info, S0) ->
+handle_info(_Info, S0) ->
     {noreply, S0}.
 
 terminate(_Reason, _S0) ->
@@ -236,7 +236,7 @@ boot_accept(Server, Listen, Tag) ->
     Server ! {Tag, continue},
     case Reply of
 	{ok, Socket} ->
-	    {ok,{IP,Port}} = inet:peername(Socket),
+	    {ok,{IP,_Port}} = inet:peername(Socket),
 	    true = member_address(IP, which_slaves()),
 	    boot_loop(Socket)
     end.
@@ -259,7 +259,7 @@ handle_command(S, [$F | File]) ->
 	    Msg = erl_posix_msg:message(Reason),
 	    gen_tcp:send(S, [$e | Msg])
     end;
-handle_command(S, Other) ->
+handle_command(S, _Other) ->
     gen_tcp:send(S, [$e | "unknown command"]).
 
 

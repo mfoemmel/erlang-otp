@@ -114,7 +114,7 @@ init([Type, DbD, ConfD, Opts]) ->
     MiscSup = {snmp_misc_sup,
 	      {snmp_misc_sup, start_link, [snmp_misc_sup]},
 	      permanent, infinity, supervisor, [snmp_misc_sup]},
-    MibStorage = {mib_storage,snmp_misc:get_option(snmp_mib_storage,Opts,ets)},
+    MibStorage = {mib_storage,snmp_misc:get_option(mib_storage,Opts,ets)},
     SymStoreVerbosity = 
 	{verbosity,
 	 snmp_misc:get_option(symbolic_store_verbosity,Opts,silence)},
@@ -201,7 +201,7 @@ init([Type, DbD, ConfD, Opts]) ->
 			    permanent, infinity, supervisor, [snmp_agent_sup]},
 		[AgentSup]
 	end,
-    ?vdebug("init done",[]),
+    ?vdebug("init done with:~n~p",[[MiscSup, SymbolicStore, LocalDb | Rest]]),
     {ok, {SupFlags, [MiscSup, SymbolicStore, LocalDb | Rest]}}.
 
 
@@ -211,7 +211,7 @@ add_v3_mibs(MibDir, Mibs) ->
     add_mib(filename:join(MibDir, "SNMP-MPD-MIB"),
 	    NMibs, ["SNMP-MPD-MIB"]).
 
-add_mib(DefaultMib, [], BaseNames) -> [DefaultMib];
+add_mib(DefaultMib, [], _BaseNames) -> [DefaultMib];
 add_mib(DefaultMib, [Mib | T], BaseNames) ->
     case lists:member(filename:basename(Mib), BaseNames) of
 	true -> [Mib | T]; % The user defined his own version of the mib

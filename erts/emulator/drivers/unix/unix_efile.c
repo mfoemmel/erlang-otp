@@ -124,11 +124,11 @@ extern STATUS copy(char *, char *);
 
 #ifdef VXWORKS /* Currently only used on vxworks */
 
-#define EF_ALLOC(S)		sys_alloc_from(200, (S))
-#define EF_REALLOC(P, S)	sys_realloc_from(200, (P), (S))
+#define EF_ALLOC(S)		driver_alloc((S))
+#define EF_REALLOC(P, S)	driver_realloc((P), (S))
 #define EF_SAFE_ALLOC(S)	ef_safe_alloc((S))
 #define EF_SAFE_REALLOC(P, S)	ef_safe_realloc((P), (S))
-#define EF_FREE(P)		do { if((P)) sys_free((P)); } while(0)
+#define EF_FREE(P)		do { if((P)) driver_free((P)); } while(0)
 
 extern void erl_exit(int n, char *fmt, _DOTS_);
 
@@ -770,6 +770,21 @@ efile_openfile(Efile_error* errInfo,	/* Where to return error codes. */
     return 1;
 }
 
+int 
+efile_may_openfile(Efile_error* errInfo, char *name) {
+    struct stat statbuf;	/* Information about the file */
+    int result;
+    
+    result = stat(name, &statbuf);
+    if (!check_error(result, errInfo))
+	return 0;
+    if (!ISREG(statbuf)) {
+	errno = EISDIR;
+	return check_error(-1, errInfo);
+    }
+    return 1;
+}
+
 void
 efile_closefile(int fd)
 {
@@ -821,8 +836,12 @@ efile_fileinfo(Efile_error* errInfo, Efile_info* pInfo,
 	return 0;
     }
 
+#if SIZEOF_OFF_T == 4
     pInfo->size_high = 0;
-    pInfo->size_low = statbuf.st_size;
+#else
+    pInfo->size_high = (Uint32)(statbuf.st_size >> 32);
+#endif
+    pInfo->size_low = (Uint32)statbuf.st_size;
 
 #ifdef NO_ACCESS
     /* Just look at read/write access for owner. */

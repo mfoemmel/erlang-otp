@@ -49,59 +49,63 @@ RELSYSDIR = $(RELEASE_PATH)/lib/odbc-$(VSN)
 # ----------------------------------------------------
 ifeq ($(findstring win32,$(TARGET)),win32)
 MAKEFILE = makefiles/Makefile.win32.src
+ENTRY_OBJ=$(ERL_TOP)/erts/obj/$(TARGET)/port_entry.o
+PORT_ENTRY_POINT=erl_port_entry
+ENTRY_LDFLAGS=-entry:$(PORT_ENTRY_POINT)
+WIN32_TARGET = $(WINBINDIR)/odbcserver.exe
+EXE_TARGET = $(WIN32_TARGET)
 else
 MAKEFILE = makefiles/Makefile.unix.src
+ifeq ($(OTP_RELEASE),yes)
+ifneq ($(BITS64),yes)
+ifeq ($(findstring solaris,$(TARGET)),solaris)
+UNIX_TARGET = $(BINDIR)/odbcserver
+EXE_TARGET = $(UNIX_TARGET)
+endif
+endif
+endif
 endif
 
 C_FILES = odbcserver.c 
 H_FILES = odbcserver.h
 
-MAKE_TARGET= $(OBJDIR)/Makefile
-
-WIN32_TARGET = $(WINBINDIR)/odbcserver.exe
-
-ifeq ($(OTP_RELEASE),yes)
-ifneq ($(BITS64),yes)
-ifeq ($(findstring solaris,$(TARGET)),solaris)
-UNIX_TARGET = $(BINDIR)/odbcserver
-endif
-endif
-endif
+MAKE_TARGET = $(OBJDIR)/Makefile
 
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
 ODBCROOT = /opt/local/pgm/odbc
 ODBCLDFLAGS = -L$(ODBCROOT)/lib
-ODBCLIBS = -lodbc
 ODBCINCLUDE = $(ODBCROOT)/include
 
-EIINCLUDE = $(EIROOT)/src
+EIINCLUDE = $(EIROOT)/include
 INCLUDES = -I. -I$(EIINCLUDE) -I$(ODBCINCLUDE)
 CFLAGS = @CFLAGS32@
 CC = @CC32@
 
+ifeq ($(TARGET),win32)
+ODBCLIBS = -lodbc32
+MULTITHREADFLAGS = -DWIN32 -DMULTITHREAD_WIN32
+MULTITHREADLIBS =
+EILIBS = -lei_md
+else
+ODBCLIBS = -lodbc
 MULTITHREADFLAGS = -D_REENTRANT -DMULTITHREAD_UNIX
 MULTITHREADLIBS = -lpthread
+EILIBS = -lei -lerl_interface
+endif
 
 EILDFLAGS = -L$(EIROOT)/obj$(TYPEMARKER)/$(TARGET)
-EILIBS = -lei -lerl_interface
 
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
 
-ifeq ($(findstring win32,$(TARGET)),win32)
-
-opt debug: $(MAKE_TARGET)
-	echo "Should be built with nmake -f makefile.win32 on NT"
-
+ifdef EXE_TARGET
+opt debug: create_dirs $(EXE_TARGET) $(MAKE_TARGET)
 else
-
-opt debug: create_dirs $(UNIX_TARGET) $(MAKE_TARGET)
-
+opt debug:
 endif
-
 
 clean:	
 	rm -f core *~ 
@@ -112,10 +116,17 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 
-ifneq ($(UNIX_TARGET),)
+ifdef UNIX_TARGET
 $(UNIX_TARGET): $(BINDIR) $(OBJDIR)/odbcserver.o
 	$(CC) $(CFLAGS) -o $@ $(OBJDIR)/odbcserver.o $(EILDFLAGS) \
 		$(ODBCLDFLAGS) $(MULTITHREADLIBS) $(EILIBS) $(ODBCLIBS)
+endif
+
+ifdef WIN32_TARGET
+$(WIN32_TARGET): $(BINDIR) $(OBJDIR)/odbcserver.o
+	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/odbcserver.o $(ENTRY_OBJ) \
+		$(EILDFLAGS) \
+		$(ODBCLDFLAGS) $(EILIBS) $(ODBCLIBS) $(ENTRY_LDFLAGS)
 endif
 
 $(OBJDIR)/odbcserver.o: $(OBJDIR) odbcserver.c
@@ -134,27 +145,18 @@ $(MAKE_TARGET): $(MAKEFILE)
 # ----------------------------------------------------
 # Release Target
 # ---------------------------------------------------- 
-# A release with TARGET=win32 and TEST=yes will not
-# compile the odbcserver.c file.
 
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
+ifdef EXE_TARGET
 	$(INSTALL_DIR) $(RELSYSDIR)/c_src
 	$(INSTALL_DATA) $(C_FILES) $(H_FILES) $(RELSYSDIR)/c_src
 	$(INSTALL_DATA) $(MAKE_TARGET) $(RELSYSDIR)/c_src
 	$(INSTALL_DIR) $(RELSYSDIR)/priv
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/bin
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/obj
-ifeq ($(findstring yes,$(TEST)),yes)
-else
-ifeq ($(findstring win32,$(TARGET)),win32)
-	$(INSTALL_PROGRAM) $(WIN32_TARGET) $(RELSYSDIR)/priv/bin
-else
-ifneq ($(UNIX_TARGET),)
-	$(INSTALL_PROGRAM) $(UNIX_TARGET) $(RELSYSDIR)/priv/bin
+	$(INSTALL_PROGRAM) $(EXE_TARGET) $(RELSYSDIR)/priv/bin
 endif
-endif	
-endif	
 
 release_docs_spec:

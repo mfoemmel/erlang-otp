@@ -117,7 +117,7 @@ open(Port, Opts) when integer(Port) ->
 %%
 %% Handle socks5 udp
 %%
-handle_socks5(input, {IP,Port,[_,_,Frag,AType | Data]}, Info) 
+handle_socks5(input, {IP,_Port,[_,_,Frag,AType | Data]}, Info) 
 when IP == Info#state.server ->
     if
 	Frag == 0 -> %% stand alone
@@ -184,9 +184,10 @@ input_data(_, _, Info) ->
 
 enqueue_data(true, ?SOCKS5_ATYP_V4,[A,B,C,D,P1,P0 | Data], Info) ->
     Queue = Info#state.frag_queue,
+    %% XXX Potential bug here - Data1 is not used.
     Data1 = merge_data([Data,Queue], Info#state.user_header),
     {input, {{A,B,C,D}, ?u16(P1,P0), Data}, reset_queue(Info)};
-enqueue_data(false, ?SOCKS5_ATYP_V4,[A,B,C,D,P1,P0 | Data], Info) ->
+enqueue_data(false, ?SOCKS5_ATYP_V4,[_A,_B,_C,_D,_P1,_P0 | Data], Info) ->
     Cnt = Info#state.frag_cnt,
     if
 	Cnt == 0 ->

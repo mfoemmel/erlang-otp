@@ -42,7 +42,7 @@ start() ->
     SupName = {local,?MODULE},
     supervisor:start_link(SupName, ?MODULE, []).
 
-stop(StartArgs) ->
+stop(_StartArgs) ->
     ok.
 
 init([]) -> % Supervisor

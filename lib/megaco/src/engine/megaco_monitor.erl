@@ -26,7 +26,9 @@
 %% Application internal exports
 -export([
 	 start_link/0,
+
 	 apply_after/4,
+	 apply_after/5,
 	 cancel_apply_after/1,
 
 	 lookup_request/1,
@@ -51,10 +53,14 @@
 -record(state, {parent_pid}).
 -record(apply_at_exit, {ref, pid, module, function, arguments}).
 
+%% -define(d(F,A), io:format("~p~p:" ++ F ++ "~n", [self(),?MODULE|A])).
+-define(d(F,A), ok).
+
 %%%----------------------------------------------------------------------
 %%% API
 %%%----------------------------------------------------------------------
 start_link() ->
+    ?d("start -> entry", []),
     gen_server:start_link({local, ?SERVER}, ?MODULE, [self()], []).
 
 lookup_request(Key) ->
@@ -81,12 +87,15 @@ insert_reply(Rec) ->
 delete_reply(Key) ->
     ets:delete(megaco_replies, Key).
 
-apply_after(M, F, A, Time) when atom(M), atom(F), list(A) ->
+apply_after(M, F, A, Time) ->
+    apply_after(spawn_method, M, F, A, Time).
+
+apply_after(Method, M, F, A, Time) when atom(M), atom(F), list(A) ->
     if
 	Time == infinity ->
 	    apply_after_infinity;
 	integer(Time) ->
-	    Msg = {apply_after, M, F, A},
+	    Msg = {apply_after, Method, M, F, A},
 	    Ref = erlang:send_after(Time, whereis(?SERVER), Msg),
 	    {apply_after, Ref}
     end.
@@ -129,9 +138,11 @@ cast(Msg) ->
 %%----------------------------------------------------------------------
 
 init([Parent]) ->
+    ?d("init -> entry", []),
     process_flag(trap_exit, true),
-    ets:new(megaco_requests,     [public, named_table, {keypos, 2}]),
-    ets:new(megaco_replies,      [public, named_table, {keypos, 2}]),
+    ets:new(megaco_requests, [public, named_table, {keypos, 2}]),
+    ets:new(megaco_replies,  [public, named_table, {keypos, 2}]),
+    ?d("init -> done", []),
     {ok, #state{parent_pid = Parent}}.
 
 %%----------------------------------------------------------------------
@@ -154,9 +165,9 @@ handle_call({apply_at_exit, M, F, A, Pid}, _From, S) ->
     put({?MODULE, Ref}, AAE),
     Reply = Ref,
     {reply, Reply, S};
+
 handle_call(Request, From, S) ->
-    ok = error_logger:format("~p(~p): handle_call(~p, ~p, ~p)~n",
-                             [?MODULE, self(), Request, From, S]),
+    error("handle_call(~p, ~p, ~p)", [Request, From, S]),
     Reply = {error, {bad_request, Request}},
     {reply, Reply, S}.
 
@@ -167,8 +178,7 @@ handle_call(Request, From, S) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 handle_cast(Msg, S) ->
-    ok = error_logger:format("~p(~p): handle_cast(~p, ~p)~n",
-                             [?MODULE, self(), Msg, S]),
+    error("handle_cast(~p, ~p)", [Msg, S]),
     {noreply, S}.
 
 %%----------------------------------------------------------------------
@@ -188,6 +198,11 @@ handle_info({cancel_apply_at_exit, Ref}, S) ->
 	    {noreply, S}
     end;
 
+handle_info({apply_after, Method, M, F, A}, S) ->
+    handle_apply(Method, M, F, A, apply_after),
+    {noreply, S};
+
+%% Handle the old format also...
 handle_info({apply_after, M, F, A}, S) ->
     handle_apply(M, F, A, apply_after),
     {noreply, S};
@@ -210,9 +225,12 @@ handle_info({'EXIT', Pid, Reason}, S) when Pid == S#state.parent_pid ->
     {stop, Reason, S};
 
 handle_info(Info, S) ->
-    ok = error_logger:format("~p(~p): handle_info(~p, ~p)~n",
-                             [?MODULE, self(), Info, S]),
+    error("handle_info(~p, ~p)", [Info, S]),
     {noreply, S}.
+
+
+error(F, A) ->
+    ok = error_logger:format("~p(~p): " ++ F ++ "~n", [?MODULE, self()|A]).
 
 %%----------------------------------------------------------------------
 %% Func: terminate/2
@@ -227,7 +245,7 @@ terminate(_Reason, _State) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change(_OldVsn, S, _Extra) ->
+code_change(_Vsn, S, _Extra) ->
     {ok, S}.
 
 %%%----------------------------------------------------------------------
@@ -236,3 +254,37 @@ code_change(_OldVsn, S, _Extra) ->
 
 handle_apply(M, F, A, _ErrorTag) ->
     spawn(M, F, A).
+
+handle_apply(spawn_method, M, F, A, _ErrorTag) ->
+    spawn(M, F, A);
+handle_apply(_Method, M, F, A, _ErrorTag) ->
+    (catch apply(M, F, A)).
+
+
+
+
+% d(F) ->
+%     d(F,[]).
+
+% d(F,A) ->
+%     %% d(true,F,A).
+%     d(get(dbg),F,A).
+
+% d(true,F,A) ->
+%     io:format("*** [~s] ~p:~p ***"
+% 	      "~n   " ++ F ++ "~n", 
+% 	      [format_timestamp(now()), self(),?MODULE|A]);
+% d(_, _, _) ->
+%     ok.
+
+% format_timestamp(Now) ->
+%     {N1, N2, N3}   = Now,
+%     {Date, Time}   = calendar:now_to_datetime(Now),
+%     {YYYY,MM,DD}   = Date,
+%     {Hour,Min,Sec} = Time,
+%     FormatDate = 
+%         io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+%                       [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),  
+%     lists:flatten(FormatDate).
+
+

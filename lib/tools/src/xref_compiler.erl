@@ -698,13 +698,13 @@ un_familiarize(_Type, _OType, E) ->
 i(E, Table) ->
     Start = 1,
     {N, _NE, _NI, NT} = find_nodes(E, Start, dict:new()),
-    {Vs, UVs0, L} = save_vars(dict:dict_to_list(NT), NT, [], [], []),
+    {Vs, UVs0, L} = save_vars(dict:to_list(NT), NT, [], [], []),
 
     VarsToSave = to_external(relation_to_family(relation(Vs))),
     Fun = fun({NN,S}, D) ->
 		  dict:store(NN, {extra,S,dict:fetch(NN, D)}, D)
 	  end,
-    D = foldl(Fun, dict:list_to_dict(L), VarsToSave),
+    D = foldl(Fun, dict:from_list(L), VarsToSave),
 
     UVs = reverse(sort(UVs0)),
     {_D, Is0} = make_instructions(N, UVs, D),

@@ -1,0 +1,7 @@
+{application, otp_mibs,
+ [{description, "SNMP managment information base for Erlang/OTP nodes."},
+  {vsn, "%VSN%"},
+  {modules, [otp_mib]},
+  {applications, [kernel, stdlib, snmp]},
+  {env,[]}]}.
+

@@ -90,7 +90,9 @@ EXAMPLES = \
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS +=
-ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/stdlib
+ERL_COMPILE_FLAGS += \
+	-I$(ERL_TOP)/lib/stdlib \
+	+warn_unused_vars
 YRL_FLAGS = 
 # ----------------------------------------------------
 # Targets

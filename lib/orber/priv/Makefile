@@ -37,7 +37,6 @@ HTML_FILES = \
 	blank.html \
 	info_frames.html \
 	main_frame.html \
-	orber_help.txt \
 	start_info.html
 
 #

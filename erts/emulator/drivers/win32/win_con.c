@@ -1508,7 +1508,7 @@ InitToolBar(HWND hwndParent)
     /*tbbitmap.hInst = beam_module; 
     tbbitmap.nID   = 1;*/
     tbbitmap.hInst = NULL;
-    tbbitmap.nID   = LoadBitmap(beam_module, MAKEINTRESOURCE(1));
+    tbbitmap.nID   = (UINT) LoadBitmap(beam_module, MAKEINTRESOURCE(1));
     SendMessage(hwndTB, TB_ADDBITMAP, (WPARAM) 4, 
 		(WPARAM) &tbbitmap); 
     SendMessage(hwndTB,TB_ADDBUTTONS, (WPARAM) 32,

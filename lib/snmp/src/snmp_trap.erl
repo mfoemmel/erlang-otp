@@ -228,7 +228,7 @@ try_find_type([Varbind | Varbinds], Mib) ->
     [localise_type(Varbind, Mib) | try_find_type(Varbinds, Mib)];
 try_find_type([], _) -> [].
 
-localise_type({VariableOid, Type}, Mib) 
+localise_type({VariableOid, Type}, _Mib) 
   when list(VariableOid), record(Type, asn1_type) ->
     {VariableOid, Type};
 localise_type({VariableOid, Value}, Mib) when list(VariableOid) ->
@@ -341,7 +341,7 @@ order(Varbinds) -> order(Varbinds, 1).
 order([H | T], No) -> [{No, H} | order(T, No + 1)];
 order([], _) -> [].
 
-unorder([{No, H} | T]) -> [H | unorder(T)];
+unorder([{_No, H} | T]) -> [H | unorder(T)];
 unorder([]) -> [].
 
 extract_order([{No, {VarOid, _Type}} | T], Index) ->
@@ -360,10 +360,10 @@ split_variables([{No, {VarOid, Type}} | T])
   when list(VarOid), record(Type, asn1_type) ->
     {A, B} = split_variables(T),
     {A, [{No, {VarOid, Type}} | B]};
-split_variables([{No, {VarName, Value}} | T]) ->
+split_variables([{_No, {VarName, Value}} | _T]) ->
     user_err("snmp_trap: Undefined variable ~w (~w)", [VarName, Value]),
     throw(error);
-split_variables([{No, {VarName, RowIndex, Value}} | T]) ->
+split_variables([{_No, {VarName, RowIndex, Value}} | _T]) ->
     user_err("snmp_trap: Undefined variable ~w ~w (~w)",
 	     [VarName, RowIndex, Value]),
     throw(error);
@@ -538,7 +538,7 @@ send_v2_trap(_TrapRec, [], _Vbs, _Recv, _NetIf, _SysUpTime) ->
     ok;
 send_v2_trap(TrapRec, V2Res, Vbs, Recv, NetIf, SysUpTime) ->
     ?vdebug("prepare to send v2 trap",[]),
-    {Oid, IVbs} = mk_v2_trap(TrapRec, Vbs, SysUpTime),
+    {_Oid, IVbs} = mk_v2_trap(TrapRec, Vbs, SysUpTime),
     TrapRecvs = get_trap_recvs(V2Res),
     InformRecvs = get_inform_recvs(V2Res),
     do_send_v2_trap(TrapRecvs, IVbs, NetIf),
@@ -548,7 +548,7 @@ send_v3_trap(_TrapRec, [], _Vbs, _Recv, _NetIf, _SysUpTime, _ContextName) ->
     ok;
 send_v3_trap(TrapRec, V3Res, Vbs, Recv, NetIf, SysUpTime, ContextName) ->
     ?vdebug("prepare to send v3 trap",[]),
-    {Oid, IVbs} = mk_v2_trap(TrapRec, Vbs, SysUpTime), % v2 refers to SMIv2;
+    {_Oid, IVbs} = mk_v2_trap(TrapRec, Vbs, SysUpTime), % v2 refers to SMIv2;
     TrapRecvs = get_trap_recvs(V3Res),                 % same SMI for v3
     InformRecvs = get_inform_recvs(V3Res),
     do_send_v3_trap(TrapRecvs, ContextName, IVbs, NetIf),
@@ -671,7 +671,7 @@ init_v2_inform(Addr, Timeout, Retry, Vbs, Recv, NetIf, Community,V,S) ->
     send_inform(Addr, Timeout*10, Retry, Msg, Recv, NetIf).
     
 
-send_inform(Addr, Timeout, -1, Msg,  Recv, NetIf) ->
+send_inform(Addr, _Timeout, -1, _Msg,  Recv, _NetIf) ->
     ?vinfo("~n   Delivery of send-pdu-request to net-if failed: reply timeout",
 	   []),
     deliver_recv(Recv, snmp_notification, {no_response, Addr});
@@ -680,7 +680,7 @@ send_inform(Addr, Timeout, Retry, Msg, Recv, NetIf) ->
     NetIf ! Msg,
     receive
 	{snmp_response_received, _Vsn, _Pdu, _From} ->
-	    ?vtrace("~n   send request for ~p acknowledged (~p)",[Recv,Retry]),
+	    ?vtrace("~n   received response for ~p (~p)",[Recv,Retry]),
 	    deliver_recv(Recv, snmp_notification, {got_response, Addr})
     after
 	Timeout ->
@@ -707,9 +707,16 @@ inform_sender_short_name(maw)  -> mais;
 inform_sender_short_name(mats) -> mais;
 inform_sender_short_name(_)    -> sais.
 
-deliver_recv(no_receiver, MsgId, _Result) ->
+deliver_recv(no_receiver, _MsgId, _Result) ->
+    ?vtrace("deliver_recv -> no receiver", []),
     ok;
 deliver_recv({Tag, Receiver}, MsgId, Result) ->
+    ?vtrace("deliver_recv -> entry with"
+	"~n   Tag:      ~p"
+	"~n   Receiver: ~p"
+	"~n   MsgId:    ~p"
+	"~n   Result:   ~p"
+	"", [Tag, Receiver, MsgId, Result]),
     Msg = {MsgId, Tag, Result},
     case Receiver of
 	Pid when pid(Pid) ->

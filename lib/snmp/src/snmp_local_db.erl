@@ -25,8 +25,8 @@
 
 
 %% External exports
--export([start_link/2, start_link/3, stop/0, dump/0, verbosity/1,
-	 register_notify_client/2, unregister_notify_client/1]).
+-export([start_link/2, start_link/3, stop/0, verbosity/1]).
+-export([dump/0, register_notify_client/2, unregister_notify_client/1]).
 -export([table_func/2, table_func/4,
 	 variable_get/1, variable_set/2, variable_delete/1, variable_inc/2,
 	 table_create/1, table_exists/1, table_delete/1,
@@ -47,10 +47,11 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, 
 	 code_change/3]).
 
--define(DEFAULT_AUTO_REPAIR,true_verbose).
+
+-define(DEFAULT_AUTO_REPAIR,true).
 -define(DEFAULT_VERBOSITY,silence).
 
--record(state,{pets,ets,notify_clients = []}).
+-record(state,{dets, ets, notify_clients = []}).
 
 
 %% Debugging (develop)
@@ -71,55 +72,63 @@ start_link(Dir, Prio) ->
     start_link(Dir,Prio,[]).
 
 start_link(Dir, Prio, Opts) when list(Opts) ->
-    gen_server:start_link({local, snmp_local_db}, snmp_local_db, [Dir,Prio,Opts],[]).
+    gen_server:start_link({local, snmp_local_db}, 
+			  snmp_local_db, [Dir,Prio,Opts],[]).
 
 stop() ->
-    gen_server:call(snmp_local_db, stop, infinity).
-
-dump() ->
-    gen_server:call(snmp_local_db, dump, infinity).
-
-verbosity(Verbosity) ->
-    gen_server:cast(snmp_local_db, {verbosity,Verbosity}).
-
+    call(stop).
 
 register_notify_client(Client,Module) ->
-    gen_server:call(snmp_local_db, {register_notify_client,Client,Module}, infinity).
+    call({register_notify_client,Client,Module}).
 
 
 unregister_notify_client(Client) ->
-    gen_server:call(snmp_local_db, {unregister_notify_client,Client},infinity).
+    call({unregister_notify_client,Client}).
+
+dump() ->
+    call(dump).
+
+verbosity(Verbosity) ->
+    cast({verbosity,Verbosity}).
+
+
+%%%-----------------------------------------------------------------
 
 init([Dir, Prio, Opts]) ->
     process_flag(priority, Prio),
     put(sname,ldb),
     put(verbosity,get_verbosity(Opts)),
     ?vlog("starting",[]),
-    FileName = filename:join(Dir, "snmp_local_db"),
-    PETS = 
-	case catch snmp_pets:open(FileName,get_auto_repair(Opts)) of
-	    {'EXIT', Reason} ->
-		?vdebug("pets open failed: ~p",[Reason]),
-		case catch snmp_pets:new(FileName, snmp_local_db1,
-					 [set, private]) of
-		    {ok, Pets} -> 
-			?vdebug("pets new done",[]),
-			Pets;
-		    {'EXIT', Reason} ->
-			error_msg("Error opening database ~w: ~w", 
-				  [FileName, Reason]),
-			exit(normal)
-		end;
-	    {ok, Pets} -> 
-		?vdebug("pets open done",[]),
-		Pets;
-	    {error, Reason} ->
-		error_msg("Error opening database ~w: ~w", [FileName, Reason]),
-		exit(normal)
-	end,
-    Ets = ets:new(snmp_local_db2, [set, private]),
+    Dets = do_dets_open(snmp_local_db1, Dir, get_auto_repair(Opts)),
+    Ets  = ets:new(snmp_local_db2, [set, private]),
     ?vdebug("started",[]),
-    {ok, #state{pets = PETS, ets = Ets}}.
+    {ok, #state{dets = Dets, ets = Ets}}.
+
+do_dets_open(Name, Dir, Repair) ->
+    case dets_open_file(Name, Dir, Repair) of
+	{ok, Dets} ->
+	    ?vdebug("pets open done",[]),
+	    Dets;
+	{error, Reason} ->
+	    error_msg("Error opening database ~w: ~w", [Name, Reason]),
+	    exit(normal)
+    end.
+    
+dets_open_file(Name, Dir, Repair) ->
+    Filename = dets_filename(Name, Dir),
+    case dets:info(Filename, size) of
+	undefined ->
+	    Args = [{file, Filename}, {repair, Repair}],
+	    dets:open_file(Name, Args);
+	Else ->
+	    Else
+    end.
+	    
+dets_filename(Name, Dir) ->
+    filename:join(dets_filename1(Dir), Name).
+    
+dets_filename1([])  -> ".";
+dets_filename1(Dir) -> Dir.
 
 
 %%-----------------------------------------------------------------
@@ -129,90 +138,89 @@ init([Dir, Prio, Opts]) ->
 %%-----------------------------------------------------------------
 %% Functions for debugging.
 %%-----------------------------------------------------------------
-print() -> gen_server:call(snmp_local_db, print, infinity).
-print(Table) -> gen_server:call(snmp_local_db, {print,Table,volatile},
-				infinity).
-print(Table, Db) -> gen_server:call(snmp_local_db, {print,Table,Db}, infinity).
+print()          -> call(print).
+print(Table)     -> call({print,Table,volatile}).
+print(Table, Db) -> call({print,Table,Db}).
 
 variable_get({Name, Db}) ->
-    gen_server:call(snmp_local_db, {variable_get, Name, Db}, infinity);
+    call({variable_get, Name, Db});
 variable_get(Name) ->
-    gen_server:call(snmp_local_db, {variable_get, Name, volatile}, infinity).
+    call({variable_get, Name, volatile}).
+
 variable_set({Name, Db}, Val) ->
-    gen_server:call(snmp_local_db, {variable_set, Name, Db, Val}, infinity);
+    call({variable_set, Name, Db, Val});
 variable_set(Name, Val) ->
-    gen_server:call(snmp_local_db, {variable_set, Name, volatile, Val},
-		    infinity).
+    call({variable_set, Name, volatile, Val}).
+
 variable_inc({Name, Db}, N) ->
-    gen_server:cast(snmp_local_db, {variable_inc, Name, Db, N});
+    cast({variable_inc, Name, Db, N});
 variable_inc(Name, N) ->
-    gen_server:cast(snmp_local_db, {variable_inc, Name, volatile, N}).
+    cast({variable_inc, Name, volatile, N}).
+
 variable_delete({Name, Db}) ->
-    gen_server:call(snmp_local_db, {variable_delete, Name, Db}, infinity);
+    call({variable_delete, Name, Db});
 variable_delete(Name) ->
-    gen_server:call(snmp_local_db, {variable_delete, Name, volatile},infinity).
+    call({variable_delete, Name, volatile}).
+
 
 table_create({Name, Db}) ->
-    gen_server:call(snmp_local_db, {table_create, Name, Db}, infinity);
+    call({table_create, Name, Db});
 table_create(Name) ->
-    gen_server:call(snmp_local_db, {table_create, Name, volatile}, infinity).
-table_exists({Name, Db}) ->
-    gen_server:call(snmp_local_db, {table_exists, Name, Db}, infinity);
-table_exists(Name) ->
-    gen_server:call(snmp_local_db, {table_exists, Name, volatile}, infinity).
-table_delete({Name, Db}) ->
-    gen_server:call(snmp_local_db, {table_delete, Name, Db}, infinity);
-table_delete(Name) ->
-    gen_server:call(snmp_local_db, {table_delete, Name, volatile}, infinity).
-table_delete_row({Name, Db}, RowIndex) ->
-    gen_server:call(snmp_local_db, {table_delete_row, Name, Db, RowIndex},
-		    infinity);
-table_delete_row(Name, RowIndex) ->
-    gen_server:call(snmp_local_db, {table_delete_row, Name, volatile,RowIndex},
-		    infinity).
-table_get_row({Name, Db}, RowIndex) ->
-    gen_server:call(snmp_local_db, {table_get_row, Name, Db, RowIndex},
-		    infinity);
-table_get_row(Name, RowIndex) ->
-    gen_server:call(snmp_local_db, {table_get_row, Name, volatile, RowIndex},
-		    infinity).
-table_get_element({Name, Db}, RowIndex, Col) ->
-    gen_server:call(snmp_local_db, {table_get_element, Name, Db,
-				    RowIndex, Col}, infinity);
-table_get_element(Name, RowIndex, Col) ->
-    gen_server:call(snmp_local_db, {table_get_element, Name, volatile,
-				    RowIndex,Col}, infinity).
-table_set_elements({Name, Db}, RowIndex, Cols) ->
-    gen_server:call(snmp_local_db, {table_set_elements, Name, Db,
-				    RowIndex, Cols}, infinity);
-table_set_elements(Name, RowIndex, Cols) ->
-    gen_server:call(snmp_local_db, {table_set_elements, Name, volatile,
-				    RowIndex, Cols}, infinity).
-table_next({Name, Db}, RestOid) ->
-    gen_server:call(snmp_local_db, {table_next, Name, Db, RestOid}, infinity);
-table_next(Name, RestOid) ->
-    gen_server:call(snmp_local_db, {table_next, Name, volatile, RestOid},
-		    infinity).
-table_max_col({Name, Db}, Col) ->
-    gen_server:call(snmp_local_db, {table_max_col, Name, Db, Col}, infinity);
-table_max_col(Name, Col) ->
-    gen_server:call(snmp_local_db, {table_max_col, Name, volatile, Col},
-		    infinity).
-table_create_row({Name, Db}, RowIndex, Row) ->
-    gen_server:call(snmp_local_db, {table_create_row, Name, Db,RowIndex, Row},
-		    infinity);
-table_create_row(Name, RowIndex, Row) ->
-    gen_server:call(snmp_local_db, {table_create_row, Name, volatile,
-				    RowIndex, Row}, infinity).
+    call({table_create, Name, volatile}).
 
+table_exists({Name, Db}) ->
+    call({table_exists, Name, Db});
+table_exists(Name) ->
+    call({table_exists, Name, volatile}).
+
+table_delete({Name, Db}) ->
+    call({table_delete, Name, Db});
+table_delete(Name) ->
+    call({table_delete, Name, volatile}).
+
+table_delete_row({Name, Db}, RowIndex) ->
+    call({table_delete_row, Name, Db, RowIndex});
+table_delete_row(Name, RowIndex) ->
+    call({table_delete_row, Name, volatile, RowIndex}).
+
+table_get_row({Name, Db}, RowIndex) ->
+    call({table_get_row, Name, Db, RowIndex});
+table_get_row(Name, RowIndex) ->
+    call({table_get_row, Name, volatile, RowIndex}).
+
+table_get_element({Name, Db}, RowIndex, Col) ->
+    call({table_get_element, Name, Db, RowIndex, Col});
+table_get_element(Name, RowIndex, Col) ->
+    call({table_get_element, Name, volatile, RowIndex, Col}).
+
+table_set_elements({Name, Db}, RowIndex, Cols) ->
+    call({table_set_elements, Name, Db, RowIndex, Cols});
+table_set_elements(Name, RowIndex, Cols) ->
+    call({table_set_elements, Name, volatile, RowIndex, Cols}).
+
+table_next({Name, Db}, RestOid) ->
+    call({table_next, Name, Db, RestOid});
+table_next(Name, RestOid) ->
+    call({table_next, Name, volatile, RestOid}).
+
+table_max_col({Name, Db}, Col) ->
+    call({table_max_col, Name, Db, Col});
+table_max_col(Name, Col) ->
+    call({table_max_col, Name, volatile, Col}).
+
+table_create_row({Name, Db}, RowIndex, Row) ->
+    call({table_create_row, Name, Db,RowIndex, Row});
+table_create_row(Name, RowIndex, Row) ->
+    call({table_create_row, Name, volatile, RowIndex, Row}).
 table_create_row(NameDb, RowIndex, Status, Cols) ->
     Row = table_construct_row(NameDb, RowIndex, Status, Cols),
     table_create_row(NameDb, RowIndex, Row).
 
 match({Name, Db}, Pattern) ->
-    gen_server:call(snmp_local_db, {match, Name, Db, Pattern}, infinity);    
+    call({match, Name, Db, Pattern});    
 match(Name, Pattern) ->
-    gen_server:call(snmp_local_db, {match, Name, volatile, Pattern}, infinity).
+    call({match, Name, volatile, Pattern}).
+
 
 %%-----------------------------------------------------------------
 %% Implements the variable functions.
@@ -229,6 +237,7 @@ handle_call({variable_set, Name, Db, Val}, _From, State) ->
 handle_call({variable_delete, Name, Db}, _From, State) -> 
     ?vlog("variable delete: ~p",[Name]),
     {reply, delete(Db, Name, State), State};
+
 
 %%-----------------------------------------------------------------
 %% Implements the table functions.
@@ -301,7 +310,7 @@ handle_call({table_get_row, Name, Db, Indexes}, _From, State) ->
 	  "~n   Indexes: ~p",[Name, Indexes]),
     Res = case lookup(Db, {Name, Indexes}, State) of
 	      undefined -> undefined;
-	      {value, {Row, Prev, Next}} -> Row
+	      {value, {Row, _Prev, _Next}} -> Row
 	  end,
     ?vdebug("table get row result: "
 	    "~n   ~p",[Res]),
@@ -313,7 +322,7 @@ handle_call({table_get_element, Name, Db, Indexes, Col}, _From, State) ->
 	  "~n   Col:     ~p", [Name, Indexes, Col]),
     Res = case lookup(Db, {Name, Indexes}, State) of
 	      undefined -> undefined;
-	      {value, {Row, Prev, Next}} -> {value, element(Col, Row)}
+	      {value, {Row, _Prev, _Next}} -> {value, element(Col, Row)}
 	  end,
     ?vdebug("table get element result: "
 	    "~n   ~p",[Res]),
@@ -340,7 +349,7 @@ handle_call({table_next, Name, Db, Indexes}, _From, State) ->
     ?vlog("table ~p next: "
 	  "~n   Indexes: ~p",[Name,Indexes]),
     Res = case lookup(Db, {Name, Indexes}, State) of
-	      {value, {Row, Prev, Next}} -> 
+	      {value, {_Row, _Prev, Next}} -> 
 		  if 
 		      Next == first -> endOfTable;
 		      true -> Next
@@ -361,46 +370,31 @@ handle_call({table_max_col, Name, Db, Col}, _From, State) ->
     {reply, Res, State};
 
 handle_call({match, Name, Db, Pattern}, _From, State) ->
-    ?vlog("~p match:"
-	  "~n   Pattern: ~p", [Name, Pattern]),
-    REts =
-	case Db of
-	    volatile -> State#state.ets;
-	    _ -> 
-		{_,_,Ets1} = State#state.pets,
-		Ets1
-	end,
-    L1 = ets:match(REts, {{Name,'_'},{Pattern,'_','_'}}),
+    ?vlog("~p match(~p):"
+	"~n   Pat: ~p", [Name, Db, Pattern]),
+    L1 = match(Db, Name, Pattern, State),
     {reply, lists:delete([undef], L1), State};
 
-handle_call(dump, _From, State) ->
+handle_call(dump, _From, #state{dets = Dets} = State) ->
     ?vlog("dump",[]),
-    Reply = dump(State),
-    {reply, Reply, State};
+    dets:sync(Dets),
+    {reply, ok, State};
 
-handle_call(print, _From, State) ->
+handle_call(print, _From, #state{dets = Dets, ets = Ets} = State) ->
     ?vlog("print",[]),
-    {_,_,Ets1} = State#state.pets,
-    L1 = ets:tab2list(Ets1),
-    L2 = ets:tab2list(State#state.ets),
-    {reply, {{pets, L1}, {ets, L2}}, State};
+    L1 = ets:tab2list(Ets),
+    L2 = dets:match_object(Dets, '_'),
+    {reply, {{ets, L1}, {dets, L2}}, State};
 
 handle_call({print, Table, Db}, _From, State) ->
     ?vlog("print: ~p",[Table]),
-    REts =
-	case Db of
-	    volatile -> State#state.ets;
-	    _ -> 
-		{_,_,Ets1} = State#state.pets,
-		Ets1
-	end,
-    L1 = ets:match(REts, {{Table,'_'},{'$1','_','_'}}),
-    {reply, lists:delete([undef], L1), State};
+    L = match(Db, Table, '$1', State),
+    {reply, lists:delete([undef], L), State};
 
 handle_call({register_notify_client, Client, Module}, _From, State) ->
     ?vlog("register_notify_client: "
-	  "~n   Client: ~p"
-	  "~n   Module: ~p", [Client, Module]),
+	"~n   Client: ~p"
+	"~n   Module: ~p", [Client, Module]),
     Nc = State#state.notify_clients,
     case lists:keysearch(Client,1,Nc) of
 	{value,{Client,Mod}} ->
@@ -458,41 +452,72 @@ terminate(Reason, State) ->
 %% Code change
 %%----------------------------------------------------------
 
-% downgrade from 3.2.2
-% (Releases earlier then 3.2.2 did not have notify_clients nor state)
-code_change({down, Vsn}, State, downgrade_to_pre_3_2_2) ->
-    ?debug("code_change(down) -> entry with~n"
-           "  Vsn:   ~p~n"
-           "  State: ~p~n"
-           "  Extra: ~p",
-           [Vsn,State,downgrade_to_pre_3_2_2]),
-    {ok, {State#state.pets,State#state.ets}};
-code_change({down, Vsn}, State, Extra) ->
-    ?debug("code_change(down) -> entry with~n"
-           "  Vsn:   ~p~n"
-           "  State: ~p~n"
-           "  Extra: ~p",
-           [Vsn,State,Extra]),
+%% downgrade from 3.4
+code_change({down, _Vsn}, State, downgrade_to_pre_3_4) ->
+%     ?debug("code_change(down) -> entry with~n"
+%            "  State: ~p~n"
+%            "  Extra: ~p",
+%            [State,downgrade_to_pre_3_4]),
+    Pets = dets_to_pets(State#state.dets),
+    {ok, {state, Pets, State#state.ets, State#state.notify_clients}};
+code_change({down, _Vsn}, State, _Extra) ->
+%     ?debug("code_change(down) -> entry with~n"
+%            "  Vsn:   ~p~n"
+%            "  State: ~p~n"
+%            "  Extra: ~p",
+%            [Vsn,State,Extra]),
     {ok, State};
 
-% upgrade to 3.2.2
-code_change(Vsn, {Pets,Ets}, upgrade_from_pre_3_2_2) ->
-    ?debug("code_change(up) -> entry with~n"
-           "  Vsn:   ~p~n"
-           "  Pets:  ~p~n"
-           "  Ets:   ~p~n"
-           "  Extra: ~p",
-           [Vsn,Pets,Ets,upgrade_from_pre_3_2_2]),
-    {ok, #state{pets = Pets, ets = Ets}};
-code_change(Vsn, State, Extra) ->
-    ?debug("code_change(up) -> entry with~n"
-           "  Vsn:   ~p~n"
-           "  State: ~p~n"
-           "  Extra: ~p",
-           [Vsn,State,Extra]),
+%% upgrade to 3.4
+code_change(_Vsn, {state, Pets, Ets, NC}, upgrade_from_pre_3_4) ->
+%     ?debug("code_change(up) -> entry with~n"
+%            "  Vsn:   ~p~n"
+%            "  Pets:  ~p~n"
+%            "  Ets:   ~p~n"
+%            "  Extra: ~p",
+%            [Vsn,Pets,Ets,upgrade_from_pre_3_4]),
+    Dets = pets_to_dets(Pets),
+    {ok, #state{dets = Dets, ets = Ets, notify_clients = NC}};
+code_change(_Vsn, State, _Extra) ->
+%     ?debug("code_change(up) -> entry with~n"
+%            "  Vsn:   ~p~n"
+%            "  State: ~p~n"
+%            "  Extra: ~p",
+%            [Vsn,State,Extra]),
     {ok, State}.
 
-    
+
+dets_to_pets(Dets) -> 
+    DetsFilename = dets:info(Dets,filename),
+    Dir          = filename:dirname(DetsFilename),
+    PetsFilename = filename:join(Dir, "snmp_local_db"),
+    Objs         = dets:match_object(Dets, '_'),
+    dets:close(Dets),
+    Pets         = pets_open(PetsFilename),
+    Fun          = fun(Obj) ->
+			   snmp_pets:insert(Pets,Obj)
+		   end,
+    lists:foreach(Fun,Objs),
+    Pets.
+
+pets_open(FileName) ->
+    %% Should really be snmp_local_db1 instead of snmp_local_db3
+    %% but since we used dets we cannot be sure that it is not in
+    %% use...
+    {ok, Pets} = snmp_pets:new(FileName, snmp_local_db3, [set, private]),
+    Pets.
+
+
+pets_to_dets({PetsFilename, _Fd, Ets} = Pets) -> % Dirty deeds done cheep
+    Dir  = filename:dirname(PetsFilename),
+    Objs = ets:tab2list(Ets),
+    snmp_pets:stop(Pets),
+    Dets = do_dets_open(snmp_local_db1, Dir, false),
+    Fun  = fun(Obj) ->
+		   dets:insert(Dets,Obj)
+	   end,
+    lists:foreach(Fun,Objs),
+    Dets.
 
 
 %%-----------------------------------------------------------------
@@ -504,7 +529,7 @@ code_change(Vsn, State, Extra) ->
 handle_create_row(Db, Name, Indexes, Row, State) ->		
     case table_find_first_after_maybe_same(Db, Name, Indexes, State) of
 	{{Name, Next}, {NRow, NPrev, NNext}} ->
-	    {value, {PRow, PPrev, PNext}} = lookup(Db, {Name, NPrev}, State),
+	    {value, {PRow, PPrev, _PNext}} = lookup(Db, {Name, NPrev}, State),
 	    if 
 		Next == NPrev ->
 		    % Insert before first
@@ -540,7 +565,7 @@ handle_delete(Db, Name, State) ->
     {value, {_, _, Next}} = lookup(Db, {Name, first}, State),
     delete(Db, {Name, first}, State),
     handle_delete(Db, Name, Next, State).
-handle_delete(Db, Name, first, State) -> true;
+handle_delete(_Db, _Name, first, _State) -> true;
 handle_delete(Db, Name, Indexes, State) ->
     {value, {_, _, Next}} = lookup(Db, {Name, Indexes}, State),
     delete(Db, {Name, Indexes}, State),
@@ -551,7 +576,7 @@ handle_delete(Db, Name, Indexes, State) ->
 %%-----------------------------------------------------------------
 table_search_next(Db, Name, Indexes, State) ->
     case catch table_find_first_after(Db, Name, Indexes, State) of
-	{{Name, Key}, {_, _, Next}} ->
+	{{Name, Key}, {_, _, _Next}} ->
 	    case Key of
 		first -> endOfTable;
 		_ -> Key
@@ -560,10 +585,10 @@ table_search_next(Db, Name, Indexes, State) ->
     end.
 
 table_find_first_after(Db, Name, Indexes, State) ->
-    {value, {Row, Prev, Next}} = lookup(Db, {Name, first}, State),
+    {value, {_Row, _Prev, Next}} = lookup(Db, {Name, first}, State),
     table_loop(Db, Name, Indexes, Next, State).
 
-table_loop(Db, Name, Indexes, first, State) -> 
+table_loop(Db, Name, _Indexes, first, State) -> 
     {value, FirstVal} = lookup(Db, {Name, first}, State),
     {{Name, first}, FirstVal};
 
@@ -577,10 +602,10 @@ table_loop(Db, Name, Indexes, Cur, State) ->
     end.
     
 table_find_first_after_maybe_same(Db, Name, Indexes, State) ->
-    {value, {Row, Prev, Next}} = lookup(Db, {Name, first}, State),
+    {value, {_Row, _Prev, Next}} = lookup(Db, {Name, first}, State),
     table_loop2(Db, Name, Indexes, Next, State).
 
-table_loop2(Db, Name, Indexes, first, State) -> 
+table_loop2(Db, Name, _Indexes, first, State) -> 
     {value, FirstVal} = lookup(Db, {Name, first}, State),
     {{Name, first}, FirstVal};
 
@@ -602,7 +627,7 @@ table_loop2(Db, Name, Indexes, Cur, State) ->
 %%-----------------------------------------------------------------
 table_max_col(Db, Name, Col, Max, Indexes, State) ->
     case lookup(Db, {Name, Indexes}, State) of
-	{value, {Row, Prev, Next}} -> 
+	{value, {Row, _Prev, Next}} -> 
 	    if 
 		Next == first -> 
 		    if 
@@ -614,7 +639,7 @@ table_max_col(Db, Name, Col, Max, Indexes, State) ->
 		    end;
 		integer(element(Col, Row)),
 		element(Col, Row) > Max -> 
-		    table_max_col(Db, Name, Col, element(Col, Row), Next, State);
+		    table_max_col(Db,Name, Col,element(Col, Row),Next, State);
 		true -> 
 		    table_max_col(Db, Name, Col, Max, Next, State)
 	    end;
@@ -624,28 +649,28 @@ table_max_col(Db, Name, Col, Max, Indexes, State) ->
 %%-----------------------------------------------------------------
 %% Interface to Pets.
 %%-----------------------------------------------------------------
-insert(volatile, Key, Val, State) -> 
+insert(volatile, Key, Val, #state{ets = Ets}) -> 
     ?vtrace("insert(volatile) -> ~n"
 	    "      Key: ~p~n"
 	    "      Val: ~p",
 	    [Key,Val]),
-    ets:insert(State#state.ets, {Key, Val}),
+    ets:insert(Ets, {Key, Val}),
     true;
-insert(persistent, Key, Val, State) -> 
+insert(persistent, Key, Val, #state{dets = Dets, notify_clients = NC}) -> 
     ?vtrace("insert(persistent) -> ~n"
 	    "      Key:  ~p~n"
 	    "      Val:  ~p",
 	    [Key,Val]),
-    snmp_pets:insert(State#state.pets, {Key, Val}),
-    notify_clients(insert,State#state.notify_clients),
+    dets:insert(Dets, {Key, Val}),
+    notify_clients(insert,NC),
     true;
-insert(permanent, Key, Val, State) -> 
+insert(permanent, Key, Val, #state{dets = Dets, notify_clients = NC}) -> 
     ?vtrace("insert(permanent) -> ~n"
 	    "      Key:  ~p~n"
 	    "      Val:  ~p",
 	    [Key,Val]),
-    snmp_pets:insert(State#state.pets, {Key, Val}),
-    notify_clients(insert,State#state.notify_clients),
+    dets:insert(Dets, {Key, Val}),
+    notify_clients(insert,NC),
     true;
 insert(UnknownDb, Key, Val, _) ->
     error_msg("Tried to insert ~w = ~w into unknown db ~w", 
@@ -655,43 +680,53 @@ insert(UnknownDb, Key, Val, _) ->
 delete(volatile, Key, State) -> 
     ets:delete(State#state.ets, Key),
     true;
-delete(persistent, Key, State) -> 
-    snmp_pets:delete(State#state.pets, Key),
-    notify_clients(delete,State#state.notify_clients),
+delete(persistent, Key, #state{dets = Dets, notify_clients = NC}) -> 
+    dets:delete(Dets, Key),
+    notify_clients(delete,NC),
     true;
-delete(permanent, Key, State) -> 
-    snmp_pets:delete(State#state.pets, Key),
-    notify_clients(delete,State#state.notify_clients),
+delete(permanent, Key, #state{dets = Dets, notify_clients = NC}) -> 
+    dets:delete(Dets, Key),
+    notify_clients(delete,NC),
     true;
 delete(UnknownDb, Key, _) ->
     error_msg("Tried to delete ~w from unknown db ~w", 
 		      [Key, UnknownDb]),
     false.
 
-lookup(volatile, Key, State) ->
-    lookup(State#state.ets, Key);
-lookup(persistent, Key, State) ->
-    {_,_,Pets} = State#state.pets,
-    lookup(Pets, Key);
-lookup(permanent, Key, State) ->
-    {_,_,Pets} = State#state.pets,
-    lookup(Pets, Key);
+
+match(volatile, Name, Pattern, #state{ets = Ets}) ->
+    ets:match(Ets, {{Name,'_'},{Pattern,'_','_'}});
+match(persistent, Name, Pattern, #state{dets = Dets}) ->
+    dets:match(Dets, {{Name,'_'},{Pattern,'_','_'}});
+match(permanent, Name, Pattern, #state{dets = Dets}) ->
+    dets:match(Dets, {{Name,'_'},{Pattern,'_','_'}});
+match(UnknownDb, Name, Pattern, _) ->
+    error_msg("Tried to match [~p,~p] from unknown db ~w", 
+	      [Name, Pattern, UnknownDb]),
+    [].
+
+lookup(volatile, Key, #state{ets = Ets}) ->
+    case ets:lookup(Ets, Key) of
+	[{_, Val}] -> {value, Val};
+	[] -> undefined
+    end;
+lookup(persistent, Key, #state{dets = Dets}) ->
+    case dets:lookup(Dets, Key) of
+	[{_, Val}] -> {value, Val};
+	[] -> undefined
+    end;
+lookup(permanent, Key, #state{dets = Dets}) ->
+    case dets:lookup(Dets, Key) of
+	[{_, Val}] -> {value, Val};
+	[] -> undefined
+    end;
 lookup(UnknownDb, Key, _) ->
     error_msg("Tried to lookup ~w in unknown db ~w", [Key, UnknownDb]),
     false.
 
-lookup(Ets, Key) ->
-    case ets:lookup(Ets, Key) of
-	[{_, Val}] -> {value, Val};
-	[] -> undefined
-    end.
-
-close(State) -> 
-    ets:delete(State#state.ets),
-    catch snmp_pets:dump_db(State#state.pets),
-    Res = snmp_pets:stop(State#state.pets),
-    notify_clients(close,State#state.notify_clients),
-    Res.
+close(#state{dets = Dets, ets = Ets}) -> 
+    ets:delete(Ets),
+    dets:close(Dets).
 
 
 %%-----------------------------------------------------------------
@@ -703,14 +738,6 @@ notify_clients(Event,Clients) ->
 notify_client({Client,Module},Event) ->
     catch Module:notify(Client,Event).
 
-%%-----------------------------------------------------------------
-%% Returns: ok | {error, Error}
-%%-----------------------------------------------------------------
-dump(State) ->
-    case catch snmp_pets:dump_db(State#state.pets) of
-	ok -> ok;
-	Error -> {error, Error}
-    end.
 
 %%------------------------------------------------------------------
 %%  Constructs a row with first elements the own part of RowIndex,
@@ -741,10 +768,10 @@ table_construct_row(Name, RowIndex, Status, Cols) ->
 table_get_elements(NameDb, RowIndex, Cols, _FirstOwnIndex) ->
     get_elements(Cols, table_get_row(NameDb, RowIndex)).
 
-get_elements(Cols, undefined) -> undefined;
+get_elements(_Cols, undefined) -> undefined;
 get_elements([Col | Cols], Row) ->
     [element(Col, Row) | get_elements(Cols, Row)];
-get_elements([], Row) -> [].
+get_elements([], _Row) -> [].
 
 %%----------------------------------------------------------------------
 %% This should/could be a generic function, but since Mnesia implements
@@ -752,7 +779,7 @@ get_elements([], Row) -> [].
 %%----------------------------------------------------------------------
 %% createAndGo
 table_set_status(NameDb, RowIndex, ?'RowStatus_createAndGo', StatusCol, Cols, 
-		 ChangedStatusFunc, ConsFunc) ->
+		 ChangedStatusFunc, _ConsFunc) ->
     case table_create_row(NameDb, RowIndex, ?'RowStatus_active', Cols) of
 	true -> snmp_generic:try_apply(ChangedStatusFunc,
 				       [NameDb, ?'RowStatus_createAndGo',
@@ -779,8 +806,8 @@ table_set_status(NameDb, RowIndex, ?'RowStatus_createAndWait', StatusCol, Cols,
     end;
     
 %% destroy
-table_set_status(NameDb, RowIndex, ?'RowStatus_destroy', StatusCol, Cols,
-		 ChangedStatusFunc, ConsFunc) ->
+table_set_status(NameDb, RowIndex, ?'RowStatus_destroy', _StatusCol, Cols,
+		 ChangedStatusFunc, _ConsFunc) ->
     case snmp_generic:try_apply(ChangedStatusFunc,
 				[NameDb, ?'RowStatus_destroy',
 				 RowIndex, Cols]) of
@@ -791,7 +818,7 @@ table_set_status(NameDb, RowIndex, ?'RowStatus_destroy', StatusCol, Cols,
     end;
 
 %% Otherwise, active or notInService
-table_set_status(NameDb, RowIndex, Val, StatusCol, Cols,
+table_set_status(NameDb, RowIndex, Val, _StatusCol, Cols,
 		 ChangedStatusFunc, ConsFunc) ->
     snmp_generic:table_set_cols(NameDb, RowIndex, Cols, ConsFunc),
     snmp_generic:try_apply(ChangedStatusFunc, [NameDb, Val, RowIndex, Cols]).
@@ -802,7 +829,7 @@ table_func(new, NameDb) ->
 	_ -> table_create(NameDb)
     end;
 
-table_func(delete, NameDb) ->
+table_func(delete, _NameDb) ->
     ok.
 
 table_func(get, RowIndex, Cols, NameDb) ->
@@ -841,7 +868,7 @@ table_func(set, RowIndex, Cols, NameDb) ->
 			       RowIndex,
 			       Cols);
 
-table_func(undo, RowIndex, Cols, NameDb) ->
+table_func(undo, _RowIndex, _Cols, _NameDb) ->
     {noError, 0}.
 
 
@@ -878,3 +905,12 @@ validate(verbosity,Verbosity) -> snmp_verbosity:validate(Verbosity).
 error_msg(Format, X) ->
     Form = lists:concat(["** Batabase error: ", Format, "\n"]),
     catch error_logger:error_msg(Form, X).
+
+%% ----------------------------------------------------------------
+
+call(Req) ->
+    gen_server:call(snmp_local_db, Req, infinity).
+
+cast(Msg) ->
+    gen_server:cast(snmp_local_db, Msg).
+

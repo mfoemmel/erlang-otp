@@ -75,6 +75,7 @@ struct erl_heap_fragment {
     *(p)->msg.last = (mp); \
     (p)->msg.last = &(mp)->next; \
     (p)->msg.len++; \
+    ERTS_PROC_MORE_MEM(sizeof(ErlMessage)); \
 } while(0)
 
 /* Unlink current message */
@@ -84,6 +85,7 @@ struct erl_heap_fragment {
      (p)->msg.len--; \
      if (__mp == NULL) \
          (p)->msg.last = (p)->msg.save; \
+     ERTS_PROC_LESS_MEM(sizeof(ErlMessage)); \
 } while(0)
 
 /* Reset message save point (after receive match) */

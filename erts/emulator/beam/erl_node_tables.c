@@ -38,13 +38,15 @@ Sint erts_no_of_not_connected_dist_entries;
 DistEntry *erts_this_dist_entry;
 ErlNode *erts_this_node;
 
+static Uint node_entries;
+static Uint dist_entries;
 
 static int references_atoms_need_init = 1;
 
 /* -- The distribution table ---------------------------------------------- */
 
 #ifdef DEBUG
-int
+static int
 is_in_de_list(DistEntry *dep, DistEntry *dep_list)
 {
     DistEntry *tdep;
@@ -76,7 +78,9 @@ dist_table_alloc(void *dep_tmpl)
     if(((DistEntry *) dep_tmpl) == erts_this_dist_entry)
 	return dep_tmpl;
 
-    dep = (DistEntry *) safe_alloc_from(154, sizeof(DistEntry));
+    dep = (DistEntry *) erts_alloc(ERTS_ALC_T_DIST_ENTRY, sizeof(DistEntry));
+
+    dist_entries++;
 
     dep->prev       = NULL;
     dep->refc       = 0;
@@ -137,7 +141,10 @@ dist_table_free(void *vdep)
 #ifdef DEBUG
     sys_memset(vdep, 0x77, sizeof(DistEntry));
 #endif
-    sys_free((void *) dep);
+    erts_free(ERTS_ALC_T_DIST_ENTRY, (void *) dep);
+
+    ASSERT(dist_entries > 1);
+    dist_entries--;
 }
 
 
@@ -155,7 +162,7 @@ erts_channel_no_to_dist_entry(Uint cno)
  * channel no. For other nodes, the atom index of the atom corresponding
  * to the node name is used as channel no.
  */
-    if(cno == 0)
+    if(cno == ERST_INTERNAL_CHANNEL_NO)
 	return erts_this_dist_entry;
 
     if((cno > MAX_ATOM_INDEX)
@@ -208,67 +215,38 @@ void erts_delete_dist_entry(DistEntry *dep)
 }
 
 Uint
-erts_dist_entry_size(DistEntry *dep)
-{
-    ErlLink *lnkp;
-    Uint size = sizeof(DistEntry);
-
-    if(dep->cache)
-	size += sizeof(ErlCache);
-
-    for(lnkp = dep->links; lnkp; lnkp = lnkp->next)
-	size += erts_link_size(lnkp);
-      
-    return size;
-}
-
-Uint
-erts_dist_entries_size(void)
-{
-    Uint size = 0;
-    DistEntry *dep;
-#ifdef DEBUG
-    int i = 0;
-#endif
-
-    for(dep = erts_visible_dist_entries; dep; dep = dep->next) {
-#ifdef DEBUG
-	i++;
-#endif
-	size += erts_dist_entry_size(dep);
-    }
-#ifdef DEBUG
-    ASSERT(i == erts_no_of_visible_dist_entries);
-    i = 0;
-#endif
-    for(dep = erts_hidden_dist_entries; dep; dep = dep->next) {
-#ifdef DEBUG
-	i++;
-#endif
-	size += erts_dist_entry_size(dep);
-    }
-#ifdef DEBUG
-    ASSERT(i == erts_no_of_hidden_dist_entries);
-    i = 0;
-#endif
-    for(dep = erts_not_connected_dist_entries; dep; dep = dep->next) {
-#ifdef DEBUG
-	i++;
-#endif
-	size += erts_dist_entry_size(dep);
-    }
-#ifdef DEBUG
-    ASSERT(i == erts_no_of_not_connected_dist_entries);
-#endif
-
-    return size;
-}
-
-
-Uint
 erts_dist_table_size(void)
 {
-    return hash_table_sz(&erts_dist_table) + erts_dist_entries_size();
+#ifdef DEBUG
+    HashInfo hi;
+    DistEntry *dep;
+    int i;
+
+    hash_get_info(&hi, &erts_dist_table);
+    ASSERT(dist_entries == hi.objs);
+
+    i = 0;
+    for(dep = erts_visible_dist_entries; dep; dep = dep->next)
+	i++;
+    ASSERT(i == erts_no_of_visible_dist_entries);
+    i = 0;
+    for(dep = erts_hidden_dist_entries; dep; dep = dep->next)
+	i++;
+    ASSERT(i == erts_no_of_hidden_dist_entries);
+    i = 0;
+    for(dep = erts_not_connected_dist_entries; dep; dep = dep->next)
+	i++;
+    ASSERT(i == erts_no_of_not_connected_dist_entries);
+
+    ASSERT(dist_entries == (erts_no_of_visible_dist_entries
+			    + erts_no_of_hidden_dist_entries
+			    + erts_no_of_not_connected_dist_entries
+			    + 1 /* erts_this_dist_entry */));
+#endif
+
+    return (hash_table_sz(&erts_dist_table)
+	    + dist_entries*sizeof(DistEntry)
+	    + erts_dist_cache_size());
 }
 
 void
@@ -425,7 +403,9 @@ node_table_alloc(void *venp_tmpl)
     if(((ErlNode *) venp_tmpl) == erts_this_node)
 	return venp_tmpl;
 
-    enp = (ErlNode *) safe_alloc_from(157, sizeof(ErlNode));
+    enp = (ErlNode *) erts_alloc(ERTS_ALC_T_NODE_ENTRY, sizeof(ErlNode));
+
+    node_entries++;
 
     enp->refc = 0;
     enp->creation = ((ErlNode *) venp_tmpl)->creation;
@@ -449,21 +429,21 @@ node_table_free(void *venp)
 #ifdef DEBUG
     sys_memset(venp, 0x55, sizeof(ErlNode));
 #endif
-    sys_free(venp);
-}
+    erts_free(ERTS_ALC_T_NODE_ENTRY, venp);
 
-static void
-erl_node_size(void *venp, void *vsp)
-{
-    *((Uint *) vsp) += sizeof(ErlNode);
+    ASSERT(node_entries > 1);
+    node_entries--;
 }
 
 Uint
 erts_node_table_size(void)
 {
-    Uint size = hash_table_sz(&erts_node_table);
-    hash_foreach(&erts_node_table, erl_node_size, (void *) &size);
-    return size;
+#ifdef DEBUG
+    HashInfo hi;
+    hash_get_info(&hi, &erts_node_table);
+    ASSERT(node_entries == hi.objs);
+#endif
+    return hash_table_sz(&erts_node_table) + node_entries*sizeof(ErlNode);
 }
 
 void
@@ -501,22 +481,21 @@ static void print_node(void *venp, void *vpndp)
 
     if(pndp->sysname == NIL
        || enp->sysname == pndp->sysname) {
+	if (pndp->no_sysname == 0) {
+	    erl_printf(pndp->to, "Creation:");
+	}
 	if(pndp->sysname == NIL) {
 	    erl_printf(pndp->to,"Name: ");
 	    display(enp->sysname, pndp->to);
 	    erl_printf(pndp->to," ");
 	}
-	erl_printf(pndp->to,"Creation: %d", enp->creation);
+	erl_printf(pndp->to, " %d", enp->creation);
 #ifdef DEBUG
-	erl_printf(pndp->to," Reference count: %d", enp->refc);
+	erl_printf(pndp->to, " (refc=%d)", enp->refc);
 #endif
 	pndp->no_sysname++;
-	erl_printf(pndp->to,"\n");
     }
     pndp->no_total++;
-    if(pndp->sysname == NIL) {
-	erl_printf(pndp->to,"-----------------\n");
-    }
 }
 
 void erts_print_node_info(CIO to,
@@ -531,7 +510,9 @@ void erts_print_node_info(CIO to,
     pnd.no_sysname = 0;
     pnd.no_total = 0;
     hash_foreach(&erts_node_table, print_node, (void *) &pnd);
-
+    if (pnd.no_sysname != 0) {
+	erl_printf(to, "\n");
+    }
     if(no_sysname)
 	*no_sysname = pnd.no_sysname;
     if(no_total)
@@ -564,9 +545,10 @@ void erts_init_node_tables(void)
     f.alloc = (HALLOC_FUN)		dist_table_alloc;
     f.free  = (HFREE_FUN)		dist_table_free;
 
-    erts_this_dist_entry = safe_alloc_from(154, sizeof(DistEntry));
+    erts_this_dist_entry = erts_alloc(ERTS_ALC_T_DIST_ENTRY, sizeof(DistEntry));
+    dist_entries = 1;
 
-    hash_init_from(153, &erts_dist_table, "dist_table", 11, f);
+    hash_init(ERTS_ALC_T_DIST_TABLE, &erts_dist_table, "dist_table", 11, f);
 
     erts_hidden_dist_entries			= NULL;
     erts_visible_dist_entries			= NULL;
@@ -593,9 +575,10 @@ void erts_init_node_tables(void)
     f.alloc = (HALLOC_FUN) 			node_table_alloc;
     f.free  = (HFREE_FUN)  			node_table_free;
 
-    hash_init_from(156, &erts_node_table, "node_table", 11, f);
+    hash_init(ERTS_ALC_T_NODE_TABLE, &erts_node_table, "node_table", 11, f);
 
-    erts_this_node = safe_alloc_from(157, sizeof(ErlNode));
+    erts_this_node = erts_alloc(ERTS_ALC_T_NODE_ENTRY, sizeof(ErlNode));
+    node_entries = 1;
 
     erts_this_node->refc			= 0;
     erts_this_node->sysname			= am_Noname;
@@ -754,7 +737,8 @@ insert_dist_referrer(ReferredDist *referred_dist,
 	    break;
 
     if(!drp) {
-	drp = (DistReferrer *) erts_safe_sl_alloc(sizeof(DistReferrer));
+	drp = (DistReferrer *) erts_alloc(ERTS_ALC_T_NC_TMP,
+					  sizeof(DistReferrer));
 	drp->next = referred_dist->referrers;
 	referred_dist->referrers = drp;
 	drp->id = id;
@@ -800,7 +784,8 @@ insert_node_referrer(ReferredNode *referred_node, int type, Eterm id)
 	    break;
 
     if(!nrp) {
-	nrp = (NodeReferrer *) erts_safe_sl_alloc(sizeof(NodeReferrer));
+	nrp = (NodeReferrer *) erts_alloc(ERTS_ALC_T_NC_TMP,
+					  sizeof(NodeReferrer));
 	nrp->next = referred_node->referrers;
 	referred_node->referrers = nrp;
 	if(IS_CONST(id))
@@ -897,7 +882,7 @@ insert_offheap(ErlOffHeap *oh, int type, Eterm id)
 		    erts_match_prog_foreach_offheap(pb->val,
 						    insert_offheap2,
 						    (void *) &a);
-		    nib = erts_safe_sl_alloc(sizeof(InsertedBin));
+		    nib = erts_alloc(ERTS_ALC_T_NC_TMP, sizeof(InsertedBin));
 		    nib->bin_val = pb->val;
 		    nib->next = inserted_bins;
 		    inserted_bins = nib;
@@ -969,13 +954,15 @@ setup_reference_table(void)
     inserted_bins = NULL;
 
     hash_get_info(&hi, &erts_node_table);
-    referred_nodes = erts_safe_sl_alloc(hi.objs*sizeof(ReferredNode));
+    referred_nodes = erts_alloc(ERTS_ALC_T_NC_TMP,
+				hi.objs*sizeof(ReferredNode));
     no_referred_nodes = 0;
     hash_foreach(&erts_node_table, init_referred_node, NULL);
     ASSERT(no_referred_nodes == hi.objs);
 
     hash_get_info(&hi, &erts_dist_table);
-    referred_dists = erts_safe_sl_alloc(hi.objs*sizeof(ReferredDist));
+    referred_dists = erts_alloc(ERTS_ALC_T_NC_TMP,
+				hi.objs*sizeof(ReferredDist));
     no_referred_dists = 0;
     hash_foreach(&erts_dist_table, init_referred_dist, NULL);
     ASSERT(no_referred_dists == hi.objs);
@@ -1018,6 +1005,9 @@ setup_reference_table(void)
     
     /* Insert all ports */
     for (i = 0; i < erts_max_ports; i++) {
+	if (erts_port[i].status == FREE)
+	    continue;
+
 	/* Insert links */
 	if(erts_port[i].links)
 	    insert_links(erts_port[i].links, erts_port[i].id);
@@ -1030,7 +1020,7 @@ setup_reference_table(void)
 			      CTRL_REF,
 			      erts_port[i].id,
 			      0);
-	}
+    }
 
     { /* Add binaries stored elsewhere ... */
 	ErlOffHeap oh;
@@ -1270,11 +1260,11 @@ delete_reference_table(void)
 	while(nrp) {
 	    tnrp = nrp;
 	    nrp = nrp->next;
-	    erts_sl_free((void *) tnrp);
+	    erts_free(ERTS_ALC_T_NC_TMP, (void *) tnrp);
 	}
     }
     if (referred_nodes)
-	erts_sl_free((void *) referred_nodes);
+	erts_free(ERTS_ALC_T_NC_TMP, (void *) referred_nodes);
 
     for(i = 0; i < no_referred_dists; i++) {
 	DistReferrer *drp;
@@ -1283,15 +1273,15 @@ delete_reference_table(void)
 	while(drp) {
 	    tdrp = drp;
 	    drp = drp->next;
-	    erts_sl_free((void *) tdrp);
+	    erts_free(ERTS_ALC_T_NC_TMP, (void *) tdrp);
 	}
     }
     if (referred_dists)
-	erts_sl_free((void *) referred_dists);
+	erts_free(ERTS_ALC_T_NC_TMP, (void *) referred_dists);
     while(inserted_bins) {
 	InsertedBin *ib = inserted_bins;
 	inserted_bins = inserted_bins->next;
-	erts_sl_free((void *)ib);
+	erts_free(ERTS_ALC_T_NC_TMP, (void *)ib);
     }
 }
 

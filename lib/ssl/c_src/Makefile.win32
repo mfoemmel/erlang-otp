@@ -6,18 +6,18 @@
 # INCLUDE       X:\MSDEV\INCLUDE
 # LIB           X:\MSDEV\LIB
 #
-# so that standard include files, and the ws2_32.lib can be found.
+# so that standard include files, and the socket library can be found.
 #
 # When ssl_esock.exe is run, the PATH environment variable must contain
 # the name of a directory that contains ssleay32.dll and libeay32.dll,
-# and winsock2.dll.
+# and windows socket dll.
 #
 
 # Roots
-# XXX Change this
-SSLEAY_ROOT = ..\usr\ssleay\win32
+!ifndef OPENSSL_ROOT
+!	error "Makefile.win32: ssl: OPENSSL_ROOT not set"
+!endif
 
-# XXX Should we set it?
 TARGET = win32
 
 BINDIR = ..\priv\bin\$(TARGET)
@@ -37,26 +37,31 @@ OBJDIR = ..\priv\obj\$(TARGET)
 
 # Includes
 #
-SSLEAY_INCLUDE = $(SSLEAY_ROOT)\inc32
+OPENSSL_INCLUDE = $(OPENSSL_ROOT)\inc32
 
-INCLUDES = /I. /I$(SSLEAY_INCLUDE)
+INCLUDES = /I. /I$(OPENSSL_INCLUDE)
 
 # Libraries
 #
-SSLEAY_LIBDIR = $(SSLEAY_ROOT)\out32dll
-SSLEAY_LIBS = \
-	$(SSLEAY_LIBDIR)\ssleay32.lib \
-	$(SSLEAY_LIBDIR)\libeay32.lib 
+OPENSSL_LIBDIR = $(OPENSSL_ROOT)\out32dll
+OPENSSL_LIBS = \
+	$(OPENSSL_LIBDIR)\ssleay32.lib \
+	$(OPENSSL_LIBDIR)\libeay32.lib 
 
+!ifdef ESOCK_WINSOCK2
 WINSOCK_LIB = ws2_32.lib 
+DEFS = -DESOCK_WINSOCK2
+!else
+WINSOCK_LIB = wsock32.lib
+!endif	
 
 # Compiler options
 # 
-# NOTE: Size of fd_set set here.
+# NOTE: Size of fd_set is set in esock_winsock.h but can be overridden
+# with a -D option here.
 #
-##OPTS = /MD /G5 /Ox /O2 /Ob2
 OPTS = /MDd /G5 /Ox /O2 /Ob2 /Z7
-DEFS = -DFD_SETSIZE=256 -D__WIN32__ -DWIN32
+DEFS = -D__WIN32__ -DWIN32 $(DEFS)
 CFLAGS = $(INCLUDES) /nologo $(OPTS) $(DEFS)
 
 # Object files
@@ -68,14 +73,14 @@ SSL_BASE_OBJS = \
 	$(OBJDIR)\esock_utils.obj \
 	$(OBJDIR)\esock_posix_str.obj
 
-SSLEAY_OBJS = \
-	$(OBJDIR)\esock_ssleay.obj
+OPENSSL_OBJS = \
+	$(OBJDIR)\esock_openssl.obj
 
 #
 # Targets
 #
 
-all:	$(SSL_BASE_OBJS) $(SSLEAY_OBJS)
+all:	$(SSL_BASE_OBJS) $(OPENSSL_OBJS) $(BINDIR)\ssl_esock.exe
 
 clean: 
 	del $(BINDIR)\*.exe
@@ -86,19 +91,28 @@ clean:
 {.}.c{$(OBJDIR)}.obj:
 	$(CC) $(CFLAGS) /c /Fo$@ $(*B).c
 
+# Binary
+#
+$(BINDIR)\ssl_esock.exe:	$(SSL_BASE_OBJS) $(OPENSSL_OBJS)
+	$(CC) /nologo  $(SSL_BASE_OBJS) $(OPENSSL_OBJS) $(OPENSSL_LIBS) \
+		$(WINSOCK_LIB) /Fe$(BINDIR)\ssl_esock.exe
+
+
+
 # Dependencies
 #
 $(OBJDIR)\esock.o:	esock.h debuglog.h esock_ssl.h esock_osio.h \
-			esock_utils.h
+			esock_utils.h esock_winsock.h
 $(OBJDIR)\debuglog.o:	debuglog.h esock_ssl.h esock_utils.h
-$(OBJDIR)\esock_osio.o:	esock_osio.h esock.h debuglog.h esock_utils.h
+$(OBJDIR)\esock_osio.o:	esock_osio.h esock.h debuglog.h esock_utils.h \
+			esock_winsock.h
 $(OBJDIR)\esock_utils.o:	esock_utils.h
-$(OBJDIR)\esock_posix_str.o:	esock_posix_str.h
+$(OBJDIR)\esock_posix_str.o:	esock_posix_str.h esock_winsock.h
 
-$(OBJDIR)\esock_ssleay.o: 	esock.h esock_ssl.h debuglog.h esock_utils.h \
-		                $(SSLEAY_INCLUDE)\crypto.h \
-		                $(SSLEAY_INCLUDE)\ssl.h \
-				$(SSLEAY_INCLUDE)\err.h
+$(OBJDIR)\esock_openssl.o: 	esock.h esock_ssl.h debuglog.h esock_utils.h \
+		                $(OPENSSL_INCLUDE)\crypto.h \
+		                $(OPENSSL_INCLUDE)\ssl.h \
+				$(OPENSSL_INCLUDE)\err.h
 
 
 

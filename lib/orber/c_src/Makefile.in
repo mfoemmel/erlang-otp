@@ -42,19 +42,16 @@ RELSYSDIR = $(RELEASE_PATH)/lib/orber-$(VSN)
 ifeq ($(findstring win32,$(TARGET)),win32)
 PROGRAMS = 
 C_FILES = 
-LIBRARY = InitialReference.lib
 else
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 PROGRAMS = 
 C_FILES = 
-LIBRARY =
 else
 PROGRAMS = \
 	obj_init_port
 C_FILES = \
 	$(PROGRAMS:%=%.c) \
 	setsockaddr_in.c 
-LIBRARY = $(OBJDIR)/libInitialReference.a
 endif
 endif
 
@@ -66,10 +63,8 @@ HH_FILES = \
 
 TARGET_FILES= $(PROGRAMS:%=$(BINDIR)/%)
 OBJ_FILES= $(C_FILES:%.c=$(OBJDIR)/%.o) 
-CC_OBJ_FILES = $(CC_FILES:%.cc=$(OBJDIR)/%.o)
 
 ALL_CFLAGS = @CFLAGS@ @DEFS@ $(CFLAGS) 
-ALL_CXXFLAGS = @CXXFLAGS@ @DEFS@ 
 
 # ----------------------------------------------------
 # Targets
@@ -86,12 +81,12 @@ orber:
 	echo "Nothing to build for VxWorks"
 
 else
-orber: $(TARGET_FILES) $(LIBRARY)
+orber: $(TARGET_FILES)
 endif
 endif
 
 clean:
-	rm -f $(TARGET_FILES) $(LIBRARY) $(CC_OBJ_FILES) 
+	rm -f $(TARGET_FILES) 
 	rm -f core *~
 
 docs:
@@ -106,18 +101,11 @@ $(OBJDIR):
 $(BINDIR):
 	-mkdir -p $(BINDIR)
 
-$(LIBRARY): $(CC_OBJ_FILES) 
-	-$(AR) rcv $@ $(CC_OBJ_FILES) 
-	-$(RANLIB) $@
-
 $(BINDIR)/obj_init_port: $(OBJ_FILES)
 	$(CC) -o $@ $(OBJ_FILES) $(LIBS)
 
 $(OBJDIR)/%.o: %.c
 	$(CC) -c -o $@ $(ALL_CFLAGS) $<
-
-$(OBJDIR)/InitialReference.o: InitialReference.cc InitialReference.hh
-	$(CXX) -c -o $@ $(ALL_CXXFLAGS) InitialReference.cc
 
 # ----------------------------------------------------
 # Release Target
@@ -144,7 +132,6 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/src
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/include
 	$(INSTALL_PROGRAM) $(TARGET_FILES) $(RELSYSDIR)/priv/bin
-	$(INSTALL_DATA) $(LIBRARY) $(RELSYSDIR)/priv/lib
 	$(INSTALL_DATA) $(CC_FILES) $(RELSYSDIR)/priv/src
 	$(INSTALL_DATA) $(HH_FILES) $(RELSYSDIR)/priv/include
 endif

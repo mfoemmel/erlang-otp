@@ -202,7 +202,7 @@ dec_VBs([48 | Bytes]) ->
 dec_individual_VBs([], _No, VBs) ->
     lists:reverse(VBs);
 dec_individual_VBs([48 | Bytes], OrgIndex, AccVBs) ->
-    {SizeOfThisVB, Bytes2} = dec_len(Bytes),
+    {_SizeOfThisVB, Bytes2} = dec_len(Bytes),
     {Oid, Rest} = dec_oid_tag(Bytes2),
     {{Type, Value}, Rest2} = dec_value(Rest),
     % perhaps we should check that we have eaten SizeOfThisVB bytes, but we
@@ -385,7 +385,7 @@ chk_msg_sec_model(MsgSecurityModel) ->
 %%----------------------------------------------------------------------
 %% Returns: {Len, Tail}
 %%----------------------------------------------------------------------
-dec_len([128|Tail]) ->
+dec_len([128|_Tail]) ->
     %% indefinite form - not allowed in SNMP
     exit({asn1_error, indefinite_length});
 
@@ -429,7 +429,7 @@ head(0,L,Res) ->
 
 head(Int,[H|Tail],Res) ->
     head(Int-1,Tail,[H|Res]);
-head(Int, [], Res) ->
+head(Int, [], _Res) ->
     exit({asn1_error, {bad_length, Int}}).
 
 %%%----------------------------------------------------------------------
@@ -476,7 +476,7 @@ enc_version('version-3') ->
     [2,1,3].
 
 enc_community(Com) ->
-    L2 = enc_oct_str_tag(Com).
+    enc_oct_str_tag(Com).
 
 enc_v3_header(#v3_hdr{msgID = MsgID,
 		      msgMaxSize = MsgMaxSize,
@@ -606,7 +606,7 @@ enc_value(_Type, noSuchInstance) ->
     [129,0];
 enc_value(_Type, endOfMibView) ->
     [130,0];
-enc_value('NULL', Val) ->
+enc_value('NULL', _Val) ->
     [5,0];
 enc_value(Type, Val) ->
     Bytes2 = enc_integer_notag(Val),
@@ -634,7 +634,7 @@ bits_to_str(Int) ->
 rev_int8(Val) ->
     rev_int(Val,0,1,128).
 
-rev_int(Val,Res,256,0) -> Res;
+rev_int(_Val,Res,256,0) -> Res;
 rev_int(Val,Res,OldBit,NewBit) when Val band OldBit =/= 0 ->
     rev_int(Val,Res+NewBit,OldBit*2,NewBit div 2);
 rev_int(Val,Res,OldBit,NewBit) ->

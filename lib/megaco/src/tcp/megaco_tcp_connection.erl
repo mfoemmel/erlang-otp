@@ -28,6 +28,10 @@
 -behaviour(gen_server).
 
 
+%% -define(d(F,A), io:format("~p~p:" ++ F ++ "~n", [self(),?MODULE|A])).
+-define(d(F,A), ok).
+
+
 %%-----------------------------------------------------------------
 %% Include files
 %%-----------------------------------------------------------------
@@ -121,20 +125,18 @@ handle_info({tcp_closed, _Socket}, TcpRec) ->
     {stop, shutdown, TcpRec};
 handle_info({tcp_error, _Socket}, TcpRec) ->
     {stop, shutdown, TcpRec};
-handle_info({tcp, Socket, <<3:8, _X:8, Length:16, Msg/binary>>}, TcpRec) 
+handle_info({tcp, Socket, <<3:8, _X:8, Length:16, Msg/binary>>}, 
+	    #megaco_tcp{socket = Socket} = TcpRec) 
   when Length < ?GC_MSG_LIMIT ->
-    Mod = TcpRec#megaco_tcp.module,
-    RH = TcpRec#megaco_tcp.receive_handle,
-    Socket = TcpRec#megaco_tcp.socket,
+    #megaco_tcp{module = Mod, receive_handle = RH} = TcpRec,
     incNumInMessages(Socket),
     incNumInOctets(Socket, 4+size(Msg)),
     apply(Mod, receive_message, [RH, self(), Socket, Msg]),
     inet:setopts(Socket, [{active, once}]),
     {noreply, TcpRec};
-handle_info({tcp, Socket, <<3:8, _X:8, Length:16, Msg/binary>>}, TcpRec) ->
-    Mod = TcpRec#megaco_tcp.module,
-    RH = TcpRec#megaco_tcp.receive_handle,
-    Socket = TcpRec#megaco_tcp.socket,
+handle_info({tcp, Socket, <<3:8, _X:8, Length:16, Msg/binary>>}, 
+	    #megaco_tcp{socket = Socket} = TcpRec) ->
+    #megaco_tcp{module = Mod, receive_handle = RH} = TcpRec,
     incNumInMessages(Socket),
     incNumInOctets(Socket, 4+size(Msg)),
     receive_message(Mod, RH, Socket, Length, Msg),
@@ -166,8 +168,8 @@ handle_received_message(Mod, RH, Parent, SH, Msg) ->
 %% Func: code_change/3
 %% Descrition: Handles code change messages during upgrade.
 %%-----------------------------------------------------------------
-code_change(_OldVsn, C, _Extra) ->
-    {ok, C}.
+code_change(_OldVsn, S, _Extra) ->
+    {ok, S}.
 
 
 
@@ -177,13 +179,13 @@ code_change(_OldVsn, C, _Extra) ->
 %%              
 %%-----------------------------------------------------------------
 incNumInMessages(Socket) ->
-    ets:update_counter(megaco_tcp_stats, 
-                       {Socket, medGwyGatewayNumInMessages}, 1).
+    incCounter({Socket, medGwyGatewayNumInMessages}, 1).
 
 incNumInOctets(Socket, NumOctets) ->
-    ets:update_counter(megaco_tcp_stats, 
-                       {Socket, medGwyGatewayNumInOctets}, NumOctets).
+    incCounter({Socket, medGwyGatewayNumInOctets}, NumOctets).
 
 incNumErrors(Socket) ->
-    ets:update_counter(megaco_tcp_stats, 
-                     {Socket, medGwyGatewayNumErrors}, 1).
+    incCounter({Socket, medGwyGatewayNumErrors}, 1).
+
+incCounter(Key, Inc) ->
+    ets:update_counter(megaco_tcp_stats, Key, Inc).

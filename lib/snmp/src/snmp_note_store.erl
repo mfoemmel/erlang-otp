@@ -161,7 +161,7 @@ set_state(S) ->
 	    {noreply, NState}
     end.
 
-terminate(Reason, State) ->
+terminate(Reason, _State) ->
     ?vdebug("terminate: ~p",[Reason]),
     ok.
 
@@ -170,28 +170,28 @@ terminate(Reason, State) ->
 %%----------------------------------------------------------
 
 % downgrade
-code_change({down, Vsn}, State, Extra) ->
-    ?debug("code_change(down) -> entry with~n"
-	   "  Vsn:   ~p~n"
-	   "  State: ~p~n"
-	   "  Extra: ~p",
-	   [Vsn,State,Extra]),
+code_change({down, _Vsn}, State, _Extra) ->
+%     ?debug("code_change(down) -> entry with~n"
+% 	   "  Vsn:   ~p~n"
+% 	   "  State: ~p~n"
+% 	   "  Extra: ~p",
+% 	   [Vsn,State,Extra]),
     NState = activate_timer(deactivate_timer(State)),
-    ?debug("code_change(down) -> ~n"
-	   "  NState: ~p",[NState]),
+%     ?debug("code_change(down) -> ~n"
+% 	   "  NState: ~p",[NState]),
     {ok, NState};
 
 % upgrade
-code_change(Vsn, State, Extra) ->
+code_change(_Vsn, State, _Extra) ->
     process_flag(trap_exit, true),
-    ?debug("code_change(up) -> entry with~n"
-	   "  Vsn:   ~p~n"
-	   "  State: ~p~n"
-	   "  Extra: ~p",
-	   [Vsn,State,Extra]),
+%     ?debug("code_change(up) -> entry with~n"
+% 	   "  Vsn:   ~p~n"
+% 	   "  State: ~p~n"
+% 	   "  Extra: ~p",
+% 	   [Vsn,State,Extra]),
     NState = restart_timer(State),
-    ?debug("code_change(up) -> ~n"
-	   "  NState: ~p",[NState]),
+%     ?debug("code_change(up) -> ~n"
+% 	   "  NState: ~p",[NState]),
     {ok, NState}.
 
 
@@ -288,12 +288,12 @@ gc(Tab) ->
     RealUpTime = snmp_misc:now(cs) - snmp:system_start_time(),
     gc(nothing_left, ets:tab2list(Tab), Tab, RealUpTime).
 
-gc(Flag, [{Key, {infinity, _}} | T], Tab, Now) -> gc(Flag, T, Tab, Now);
+gc(Flag, [{_Key, {infinity, _}} | T], Tab, Now) -> gc(Flag, T, Tab, Now);
 gc(Flag, [{Key, {BestBefore, _}} | T], Tab, Now) 
   when integer(BestBefore), BestBefore < Now ->
     ets:delete(Tab, Key),
     gc(Flag, T, Tab, Now);
-gc(Flag, [_ | T], Tab, Now) -> gc(work_to_do, T, Tab, Now);
+gc(_Flag, [_ | T], Tab, Now) -> gc(work_to_do, T, Tab, Now);
 gc(Flag, [], _Tab, _Now) -> Flag.
     
     

@@ -62,6 +62,10 @@ ifeq ($(TYPE),debug)
 ERL_COMPILE_FLAGS += -Ddebug
 endif
 
+ifeq ($(WARN_UNUSED_WARS),true)
+ERL_COMPILE_FLAGS += +warn_unused_vars
+endif
+
 # ifeq ($(USE_HIPE),true)
 # ERL_COMPILE_FLAGS += +native
 # endif

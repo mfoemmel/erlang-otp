@@ -98,6 +98,7 @@
 -define(TCP_REQ_LISTEN,    31).
 -define(TCP_REQ_RECV,      32).
 -define(TCP_REQ_UNRECV,    33).
+-define(TCP_REQ_SHUTDOWN,  34).
 
 
 -define(LISTEN_BACKLOG, 5).     %% default backlog

@@ -18,8 +18,10 @@
 -module(error_logger).
 
 -export([start/0,start_link/0,format/2,error_msg/1,error_msg/2,error_report/1,
-	 error_report/2,info_report/1,info_report/2,error_info/1,
-	 info_msg/1, info_msg/2, logfile/1,tty/1,swap_handler/1,
+	 error_report/2,info_report/1,info_report/2,warning_report/1,
+	 warning_report/2,error_info/1,
+	 info_msg/1,info_msg/2,warning_msg/1,warning_msg/2, 
+	 logfile/1,tty/1,swap_handler/1,
 	 simple_logger/0,simple_logger/1,add_report_handler/1,
 	 add_report_handler/2,delete_report_handler/1]).
 
@@ -65,6 +67,55 @@ format(Format, Args) ->
 error_report(Report) -> error_report(std_error, Report).
 error_report(Type, Report) ->
     notify({error_report, group_leader(), {self(), Type, Report}}).
+
+%%-----------------------------------------------------------------
+%% This function should be used for warning reports.  
+%% These might be mapped to error reports or info reports, 
+%% depending on emulator flags. Events that ore not mapped
+%% are tagged 'info_report'.
+%% The 'std_warning' info_report type can always be used and is 
+%% mapped to std_info or std_error accordingly.
+%%-----------------------------------------------------------------
+warning_report(Report) -> warning_report(std_warning, Report).
+warning_report(Type, Report) ->
+    {Tag, NType} = case  (catch error_logger:warning_map()) of
+		       info ->
+			   if 
+			       Type =:= std_warning ->
+				   {info_report,std_info};
+			       true ->
+				   {info_report,Type}
+			   end;
+		       warning ->
+			   {warning_report,Type};
+		       _Else ->
+			   if
+			       Type =:= std_warning ->
+				   {error_report, std_error};
+			       true ->
+				   {error_report, Type}
+			   end
+		   end,
+			   
+    notify({Tag, group_leader(), {self(), NType, Report}}).
+
+%%-----------------------------------------------------------------
+%% This function provides similar functions as error_msg for
+%% warning messages, like warning report it might get mapped to
+%% other types of reports.
+%%-----------------------------------------------------------------
+warning_msg(Format) ->
+    warning_msg(Format,[]).
+warning_msg(Format, Args) ->
+    Tag = case (catch error_logger:warning_map()) of
+	      warning ->
+		  warning_msg;
+	      info ->
+		  info_msg;
+	      _Else ->
+		  error
+	  end,
+    notify({Tag, group_leader(), {self(), Format, Args}}).
 
 %%-----------------------------------------------------------------
 %% This function should be used for information reports.  Events
@@ -219,6 +270,10 @@ display({Tag,{info_report,_,{_,Type,Report}}}) ->
 display({Tag,{info,_,{_,Error,_}}}) ->
     display2(Tag,Error,[]);
 display({Tag,{info_msg,_,{_,Format,Args}}}) ->
+    display2(Tag,Format,Args);
+display({Tag,{warning_report,_,{_,Type,Report}}}) ->
+    display2(Tag,Type,Report);
+display({Tag,{warning_msg,_,{_,Format,Args}}}) ->
     display2(Tag,Format,Args);
 display({Tag,{emulator,_,Chars}}) ->
     display2(Tag,Chars,[]).

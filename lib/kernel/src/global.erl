@@ -38,7 +38,7 @@
 
 %% Internal exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
-	 del_name/2, timer/2, sync_init/2, init_locker/5, resolve_it/4,
+	 code_change/3, timer/2, sync_init/2, init_locker/5, resolve_it/4,
 	 init_the_locker/1]).
 
 -export([info/0]).
@@ -59,6 +59,17 @@
 
 %-define(FORMAT(S, A), format(S, A)).
 -define(FORMAT(S, A), ok).
+
+%%% In certain places in the server, calling io:format hangs everything,
+%%% so we'd better use erlang:display/1.
+% format(S, A) ->
+%     erlang:display({format, cs(), S, A}),
+% %    io:format(S, A),
+%     ok.
+
+% cs() ->
+%     {Big, Small, Tiny} = now(),
+%     (Small rem 100) * 100 + (Tiny div 10000).
 
 %% Some notes on the internal structure:
 %% One invariant is that the list of locker processes is keyed; i.e.,
@@ -107,7 +118,7 @@
 %%-----------------------------------------------------------------
 -record(state, {connect_all, known = [], synced = [],
 		lockers = [], syncers = [], node_name = node(),
-		the_locker}).
+		the_locker, the_deleter}).
 
 start() -> gen_server:start({local, global_name_server}, global, [], []).
 start_link() -> gen_server:start_link({local, global_name_server},global,[],[]).
@@ -280,11 +291,9 @@ set_lock({ResourceId, LockRequesterId}, Nodes, Retries, Times) ->
 	gen_server:multi_call(Nodes, global_name_server, Msg),
     ?P2({set_lock, node(), self(), {ResourceId, LockRequesterId},
 		    Nodes, Retries, Times, Replies, catch erlang:fault(kaka)}),
-%    Replies = lock_on_nodes(lists:sort(Nodes), Id, []),
     ?P({set_lock, node(), ResourceId,
 	{LockRequesterId, node(LockRequesterId)}}),
     case check_replies(Replies, Id, Nodes) of
-%    case Replies of
 	true -> ?P({set_lock_true, node(), ResourceId}),
 		true;
 	false ->
@@ -298,15 +307,15 @@ set_lock({ResourceId, LockRequesterId}, Nodes, Retries, Times) ->
 	    ?P({waiting_for, Pid}),
 	    Ref = erlang:monitor(process, Pid),
 	    receive
-		{'DOWN', Ref, process, Pid, Reason} ->
-		    ?P({waited_for, Pid, Reason}),
+		{'DOWN', Ref, process, Pid, _Reason} ->
+		    ?P({waited_for, Pid, _Reason}),
 		    set_lock(Id, Nodes, Retries, Times)
 	    end
     end.
 
 check_replies([{_Node, true} | T], Id, Nodes) ->
     check_replies(T, Id, Nodes);
-check_replies([{_Node, Status} | T], Id, Nodes) ->
+check_replies([{_Node, Status} | _], Id, Nodes) ->
     gen_server:multi_call(Nodes, global_name_server, {del_lock, Id}),
     Status;
 check_replies([], _Id, _Nodes) ->
@@ -388,7 +397,8 @@ init([]) ->
     ets:new(global_names_ext, [set, named_table, protected]),
 
     %% multi
-    S = #state{the_locker = start_the_locker(self())},
+    S = #state{the_locker = start_the_locker(self()),
+	       the_deleter = start_the_deleter(self())},
 
     case init:get_argument(connect_all) of
 	{ok, [["false"]]} ->
@@ -568,7 +578,7 @@ handle_cast({init_connect, Vsn, Node, InitMsg}, S) ->
 	%% To be future compatible
 	Tuple when tuple(Tuple) ->
 	    List = tuple_to_list(Tuple),
-	    [HisVsn, HisTag | _] = List,
+	    [_HisVsn, HisTag | _] = List,
 	    %% use own version handling if his is newer.
 	    init_connect(?vsn, Node, InitMsg, HisTag, S#state.lockers, S);
 	_ when Vsn < 3 ->
@@ -742,15 +752,18 @@ handle_cast({async_del_name, Name, Pid}, S) ->
     ets:delete(global_names_ext, Name),
     {noreply, S};
 
-handle_cast({async_del_lock, ResourceId, Pid}, S) ->
+handle_cast({async_del_lock, _ResourceId, Pid}, S) ->
     del_locks2(ets:tab2list(global_locks), Pid),
 %    ets:match_delete(global_locks, {ResourceId, '_', Pid}),
     {noreply, S}.
 
 
-handle_info({'EXIT', Pid, _Reason}, S) when pid(Pid) ->
+handle_info({'EXIT', Deleter, _}=Exit, #state{the_deleter=Deleter}=S) ->
+    {stop, {deleter_died,Exit}, S#state{the_deleter=undefined}};
+handle_info({'EXIT', Pid, _}, #state{the_deleter=Deleter}=S) 
+  when pid(Pid) ->
     ?P2({global, exit, node(), Pid, node(Pid)}),
-    check_exit(Pid),
+    check_exit(Deleter, Pid),
     Syncers = lists:delete(Pid, S#state.syncers),
     Lockers = lists:keydelete(Pid, 2, S#state.lockers),
     ?PRINT({exit, Pid, lockers, node(), S#state.lockers}),
@@ -879,9 +892,9 @@ init_connect(Vsn, Node, InitMsg, HisTag, Lockers, S) ->
 				    MyLocker, HisLocker}),
 			    MyLocker ! {his_locker, HisLocker, HisKnown};
 			
-			{locker, HisLocker, HisKnown, HisTheLocker} -> %% multi
+			{locker, _HisLocker, HisKnown, HisTheLocker} -> %% multi
 			    ?PRINT({init_connect1, node(), self(), Node,
-				    MyLocker, HisLocker}),
+				    MyLocker, _HisLocker}),
 			    S#state.the_locker ! {his_the_locker, HisTheLocker,
 						  HisKnown, S#state.known}
 		    end;
@@ -892,18 +905,18 @@ init_connect(Vsn, Node, InitMsg, HisTag, Lockers, S) ->
 	true ->					% Vsn > 3
 	    ?P2(vsn4),
 	    case lists:keysearch(Node, 1, Lockers) of
-		{value, {_Node, MyLocker}} ->
+		{value, {_Node, _MyLocker}} ->
 		    %% We both have lockers; let them set the lock
 		    case InitMsg of
 			{locker, HisLocker, HisKnown} -> %% current version
 			    ?PRINT({init_connect1, node(), self(), Node,
-				    MyLocker, HisLocker}),
+				    _MyLocker, HisLocker}),
 			    HisLocker ! {his_locker_new, S#state.the_locker,
 					 {HisKnown, S#state.known}};
 			
-			{locker, HisLocker, HisKnown, HisTheLocker} -> %% multi
+			{locker, _HisLocker, HisKnown, HisTheLocker} -> %% multi
 			    ?PRINT({init_connect1, node(), self(), Node,
-				    MyLocker, HisLocker}),
+				    _MyLocker, _HisLocker}),
 			    S#state.the_locker ! {his_the_locker, HisTheLocker,
 						  HisKnown, S#state.known}
 		    end;
@@ -971,7 +984,7 @@ exchange(_Vsn, Node, {NameList, NameExtList}, Known) ->
 resolved(Node, Resolved, {HisKnown, _HisKnown_v2}, Names_ext, S) ->
     ?P2({resolved, node(), Node, S#state.known}),
     ?FORMAT("~p #### 2 resolved ~p~n",[node(),{Node, Resolved, HisKnown, Names_ext}]),
-    Vsn = erase({prot_vsn, Node}),
+    erase({prot_vsn, Node}),
     Ops = erase({save_ops, Node}) ++ Resolved,
     Known = S#state.known,
     Synced = S#state.synced,
@@ -1024,6 +1037,8 @@ terminate(_Reason, _S) ->
     ets:delete(global_names_ext),
     ets:delete(global_locks).
 
+code_change(_OldVsn, S, _Extra) ->
+    {ok, S}.
 
 %% Resend init_connect to ourselves.
 resend_pre_connect(Node) ->
@@ -1067,7 +1082,7 @@ where(Name) ->
 	[] -> undefined
     end.
 
-handle_set_lock({ResourceId, LockRequesterId}, Pid, S) ->
+handle_set_lock({ResourceId, LockRequesterId}, Pid, _S) ->
     case ets:lookup(global_locks, ResourceId) of
 	[{ResourceId, LockRequesterId, Pids}] ->
 	    case lists:member(Pid, Pids) of
@@ -1084,7 +1099,8 @@ handle_set_lock({ResourceId, LockRequesterId}, Pid, S) ->
 		    ?P({before,
 			LockRequesterId,
 			_LockRequesterId2,
-			S#state.lockers}),
+			_S#state.lockers}),
+%% maybe the index should be from the end, not from the front.
 		    false;
 		_ ->
 		    false
@@ -1179,7 +1195,7 @@ init_the_locker(Global) ->
     loop_the_locker(Global, #multi{}),
     erlang:fault(locker_exited).
 
-remove_node(Node, []) ->
+remove_node(_Node, []) ->
     [];
 remove_node(Node, [{Node, _HisTheLocker, _HisKnown, _MyTag} | Rest]) ->
     Rest;
@@ -1188,14 +1204,14 @@ remove_node(Node, [E | Rest]) ->
 
 find_node_tag(_Node, []) ->
     false;
-find_node_tag(Node, [{Node, _HisTheLocker, _HisKnown, MyTag} | Rest]) ->
+find_node_tag(Node, [{Node, _HisTheLocker, _HisKnown, MyTag} | _]) ->
     {true, MyTag};
-find_node_tag(Node, [E | Rest]) ->
+find_node_tag(Node, [_ | Rest]) ->
     find_node_tag(Node, Rest).
 
 loop_the_locker(Global, S) ->
     ?P2({others, node(), S#multi.others}),
-    Known = S#multi.known,
+%    Known = S#multi.known,
     Timeout = case S#multi.others of
 		  [] ->
 		      infinity;
@@ -1210,7 +1226,7 @@ loop_the_locker(Global, S) ->
 	    ?P2({his_the_locker, time(), node(), HisTheLocker,
 			    node(HisTheLocker)}),
 	    receive
-		{nodeup, Node, _Known, MyTag, P} when node(HisTheLocker) == Node ->
+		{nodeup, Node, _Known, MyTag, _P} when node(HisTheLocker) == Node ->
 		    ?P2({the_locker, nodeup, node(), Node,
 				    node(HisTheLocker), MyTag,
 				    process_info(self(), messages)}),
@@ -1252,8 +1268,8 @@ loop_the_locker(Global, S) ->
 	    end,
 	    Others = remove_node(Node, S#multi.others),
 	    loop_the_locker(Global, S#multi{others = Others});
-	{lock_set, Pid, false, _} ->
-	    ?P2({the_locker, spurious, node(), node(Pid)}),
+	{lock_set, _Pid, false, _} ->
+	    ?P2({the_locker, spurious, node(), node(_Pid)}),
 	    loop_the_locker(Global, S);
 	{lock_set, Pid, true, HisKnown} ->
 	    Node = node(Pid),
@@ -1261,50 +1277,52 @@ loop_the_locker(Global, S) ->
 
 	    NewKnown = gen_server:call(global_name_server, get_known),
 
-	    case find_node_tag(Node, S#multi.others) of
-		{true, MyTag} ->
+	    Others = 
+		case find_node_tag(Node, S#multi.others) of
+		    {true, MyTag} ->
 
-	    BothsKnown = HisKnown -- (HisKnown -- NewKnown),
-	    Known1 = if
-			 node() < Node ->
-			     [node() | NewKnown];
-			 true ->
-			     [node() | NewKnown] -- BothsKnown
-		     end,
+			BothsKnown = HisKnown -- (HisKnown -- NewKnown),
+			Known1 = if
+				     node() < Node ->
+					 [node() | NewKnown];
+				     true ->
+					 [node() | NewKnown] -- BothsKnown
+				 end,
 
-	    ?P2({lock1, node()}),
-	    LockId = {global, self()},
-	    IsLockSet = set_lock(LockId, Known1, 1),
-	    Pid ! {lock_set, self(), IsLockSet, NewKnown},
-	    ?P2({the_locker, spontaneous, node(), Node, IsLockSet}),
-	    case IsLockSet of
-		true ->
-		    Others = remove_node(Node, S#multi.others),
-	    gen_server:cast(global_name_server, {lock_is_set, Node, MyTag}),
-	    ?P1({lock_sync_done, time(), node(), {Pid, node(Pid)}, self()}),
-	    %% Wait for global to tell us to remove lock.
-	    receive
-		{cancel, Node, _Tag} ->
-		    %% All conflicts are resolved, remove lock.
-		    ?PRINT({node(), self(), locked1}),
-		    del_lock(LockId, Known1);
-		{'EXIT', Pid, _} ->
-		    ?PRINT({node(), self(), locked2}),
-		    %% Other node died; remove lock and ignore him.
-		    del_lock(LockId, Known1),
-		    link(Global)
-	    end,
-		    ok;				%do sync
-		false ->
-		    Others = S#multi.others,
-		    ok
-	    end;
-		false ->
-	    ?P2({the_locker, spontaneous, node(), Node, not_there}),
-		    Pid ! {lock_set, self(), false, NewKnown},
-		    Others = S#multi.others,
-		    ok
-	    end,
+			?P2({lock1, node()}),
+			LockId = {global, self()},
+			IsLockSet = set_lock(LockId, Known1, 1),
+			Pid ! {lock_set, self(), IsLockSet, NewKnown},
+			?P2({the_locker, spontaneous, node(), Node, IsLockSet}),
+			case IsLockSet of
+			    true ->
+				gen_server:cast(global_name_server, 
+						{lock_is_set, Node, MyTag}),
+				?P1({lock_sync_done, time(), node(), 
+				    {Pid, node(Pid)}, self()}),
+				%% Wait for global to tell us to remove lock.
+				receive
+				    {cancel, Node, _Tag} ->
+					%% All conflicts are resolved, 
+					%% remove lock.
+					?PRINT({node(), self(), locked1}),
+					del_lock(LockId, Known1);
+				    {'EXIT', Pid, _} ->
+					?PRINT({node(), self(), locked2}),
+					%% Other node died; 
+					%% remove lock and ignore him.
+					del_lock(LockId, Known1),
+					link(Global)
+				end,
+				remove_node(Node, S#multi.others);
+			    false ->
+				S#multi.others
+			end;
+		    false ->
+			?P2({the_locker, spontaneous, node(), Node, not_there}),
+			Pid ! {lock_set, self(), false, NewKnown},
+			S#multi.others
+		end,
 	    loop_the_locker(Global, S#multi{others = Others});
 	Other when element(1, Other) /= nodeup ->
 	    ?P2({the_locker, other_msg, Other}),
@@ -1325,51 +1343,61 @@ loop_the_locker(Global, S) ->
 		    LockId = {global, self()},
 		    ?P2({lock2, node()}),
 		    IsLockSet = set_lock(LockId, Known1, 1),
-		    case IsLockSet of
-			true ->
-		    HisTheLocker ! {lock_set, self(), IsLockSet, NewKnown},
-		    receive
-			{lock_set, P, true, _} when node(P) == Node ->
-			    ?P2({the_locker, both_set, node(), Node}),
-			    Others = Rest,
-			    %% do sync
-	    gen_server:cast(global_name_server, {lock_is_set, Node, MyTag}),
-	    ?P1({lock_sync_done, time(), node(), {Pid, node(Pid)}, self()}),
-	    %% Wait for global to tell us to remove lock.
-	    receive
-		{cancel, Node, _} ->
-		    %% All conflicts are resolved, remove lock.
-		    ?PRINT({node(), self(), locked1}),
-		    del_lock(LockId, Known1);
-		{'EXIT', Pid, _} ->
-		    ?PRINT({node(), self(), locked2}),
-		    %% Other node died; remove lock and ignore him.
-		    del_lock(LockId, Known1),
-		    link(Global)
-	    end,
-			    ok;
-			{lock_set, P, false, _} when node(P) == Node ->
-			    ?P2({the_locker, not_both_set, node(), Node}),
-			    del_lock(LockId, Known1),
-			    Others = S#multi.others,
-			    ok;
-			{cancel, Node, _} ->
-			    ?P2({the_locker, cancel2, node(), Node}),
-			    del_lock(LockId, Known1),
-			    Others = remove_node(Node, S#multi.others),
-			    ok;
-			{'EXIT', _, _} ->
-			    ?P2({the_locker, exit, node(), Node}),
-			    del_lock(LockId, Known1),
-			    Others = S#multi.others,
-			    ok
-		    end;
-			false ->
-			    ?P2({the_locker, not_locked, node(),
-					    Node}),
-			    Others = S#multi.others,
-			    ok
-		    end,
+		    Others = 
+			case IsLockSet of
+			    true ->
+				HisTheLocker ! {lock_set, self(), 
+						IsLockSet, NewKnown},
+				receive
+				    {lock_set, P, true, _} 
+				    when node(P) == Node ->
+					?P2({the_locker, both_set, 
+					    node(), Node}),
+					%% do sync
+					gen_server:cast(global_name_server, 
+							{lock_is_set, Node, 
+							 MyTag}),
+					?P1({lock_sync_done, time(), 
+					    node(), {Pid, node(Pid)}, self()}),
+					%% Wait for global 
+					%% to tell us to remove lock.
+					receive
+					    {cancel, Node, _} ->
+						%% All conflicts are resolved, 
+						%% remove lock.
+						?PRINT({node(), self(), 
+						    locked1}),
+						del_lock(LockId, Known1);
+					    {'EXIT', _, _} ->
+						?PRINT({node(), self(), 
+						    locked2}),
+						%% Other node died; 
+						%% remove lock and ignore him.
+						del_lock(LockId, Known1),
+						link(Global)
+					end,
+					Rest;
+				    {lock_set, P, false, _} 
+				    when node(P) == Node ->
+					?P2({the_locker, not_both_set, 
+					    node(), Node}),
+					del_lock(LockId, Known1),
+					S#multi.others;
+				    {cancel, Node, _} ->
+					?P2({the_locker, cancel2, 
+					    node(), Node}),
+					del_lock(LockId, Known1),
+					remove_node(Node, S#multi.others);
+				    {'EXIT', _, _} ->
+					?P2({the_locker, exit, node(), Node}),
+					del_lock(LockId, Known1),
+					S#multi.others
+				    end;
+			    false ->
+				?P2({the_locker, not_locked, node(),
+				    Node}),
+				S#multi.others
+			end,
 		    loop_the_locker(Global, S#multi{known=NewKnown,
 						    others = Others});
 		true ->
@@ -1543,18 +1571,18 @@ loop_locker(Node, Pid, Known0, Try, MyTag, BothsKnown, Global) ->
 d_lock(true, LockId, Known) -> del_lock(LockId, Known);
 d_lock(false, _, _) -> ok.
 
-try_again_locker(Node, Pid, Known, Try, MyTag, BothsKnown, HisKnown,
+try_again_locker(Node, Pid, _Known, Try, MyTag, _BothsKnown, HisKnown,
 		 Global) ->
-    ?PRINT({try_again, node(), self(), Node, Pid, Known, Try, MyTag}),
-    ?P1({try_again, time(), node(), self(), Node, Pid, Known, Try, MyTag}),
+    ?PRINT({try_again, node(), self(), Node, Pid, _Known, Try, MyTag}),
+    ?P1({try_again, time(), node(), self(), Node, Pid, _Known, Try, MyTag}),
     random_sleep(Try),
-    ?P1({try_again2, time(), node(), self(), Node, Pid, Known, Try, MyTag}),
+    ?P1({try_again2, time(), node(), self(), Node, Pid, _Known, Try, MyTag}),
     NewKnown = gen_server:call(global_name_server, get_known),
     case lists:member(Node, NewKnown) of
 	false ->
 	    BothsKnown1 = HisKnown -- (HisKnown -- NewKnown),
 	    ?PRINT({node(), self(), Node, again, notknown}),
-	    ?PRINT({bothknown, BothsKnown, BothsKnown1}),
+	    ?PRINT({bothknown, _BothsKnown, BothsKnown1}),
 	    loop_locker(Node, Pid, NewKnown, Try+1, MyTag,
 			BothsKnown1, Global);
 	true ->
@@ -1611,13 +1639,7 @@ exchange_names([{Name, Pid, Method} |Tail], Node, Ops, Res) ->
 		    error_logger:info_msg("global: badrpc ~w received when "
 					  "conflicting name ~w was found",
 					  [Badrpc, Name]),
-%		    erlang:display({badrpcc, node(),
-%				    node2, Node2,
-%				    node, Node,
-%				    pidnode, node(Pid)}),
 		    dounlink(Pid2),
-%		    ets:delete(global_names, Name),
-%		    Op = {delete, Name},
 		    ets:insert(global_names, {Name, Pid, Method}),
 		    Op = {insert, {Name, Pid, Method}},
 		    exchange_names(Tail, Node, [Op | Ops], [Op | Res]);
@@ -1630,7 +1652,7 @@ exchange_names([{Name, Pid, Method} |Tail], Node, Ops, Res) ->
 		    Op = {delete, Name},
 		    exchange_names(Tail, Node, [Op | Ops], [Op | Res])
 	    end;
-	[{Name, Pid2, _}] ->
+	[{Name, _Pid2, _}] ->
 	    %% The other node will solve the conflict.
 	    exchange_names(Tail, Node, Ops, Res);
 	_ ->
@@ -1713,30 +1735,20 @@ is_pid_used([{_ResourceId, _LockReqId, Pids} | Tail], Pid) ->
 %% This function needs to abcast the thingie since only the local
 %% server is linked to the registered process (or the owner of the
 %% lock).  All the other servers rely on the nodedown mechanism.
-check_exit(Pid) ->
-    del_names(ets:tab2list(global_names), Pid),
+check_exit(Deleter, Pid) ->
+    del_names(Deleter, Pid, ets:tab2list(global_names)),
     del_locks(ets:tab2list(global_locks), Pid).
 
-del_names([{Name, Pid, _Method} | Tail], Pid) ->
+del_names(Deleter, Pid, [{Name, Pid, _Method} | Tail]) ->
     %% First, delete the Pid from the local ets; then send to other nodes
     ets:delete(global_names, Name),
     ets:delete(global_names_ext, Name),
     dounlink(Pid),
-    spawn_link(?MODULE, del_name, [Name, Pid]),
-    del_names(Tail, Pid);
-del_names([_|T], Pid) ->
-    del_names(T, Pid);
-del_names([], _Pid) -> done.
-
-del_name(Name, Pid) ->
-    ?P2({del_name, node(), self(), Name, Pid, nodes()}),
-    trans({global, self()},
-	  fun() ->
-		  ?P2({del_name2, Name, Pid, nodes()}),
-		  gen_server:abcast(nodes(), global_name_server,
-				    {async_del_name, Name, Pid})
-	  end,
-	  nodes()).
+    Deleter ! {delete_name,self(),Name,Pid},
+    del_names(Deleter, Pid, Tail);
+del_names(Deleter, Pid, [_|T]) ->
+    del_names(Deleter, Pid, T);
+del_names(_Deleter, _Pid, []) -> done.
 
 del_locks([{ResourceId, LockReqId, Pids} | Tail], Pid) ->
     case {lists:member(Pid, Pids), Pids} of
@@ -1840,7 +1852,11 @@ random_sleep(Times) ->
 	    random:seed(A1, A2, A3 + erlang:phash(node(), 100000));
 	_ -> ok
     end,
-    T = random:uniform(1000*Times),
+    %% First time 1/4 seconds, then doubling each time up to 8 seconds max.
+    Tmax = if Times > 5 -> 8000;
+	      true -> ((1 bsl Times) * 1000) div 8
+	   end,
+    T = random:uniform(Tmax),
     ?P({random_sleep, node(), self(), Times, T}),
     receive after T -> ok end.
 
@@ -1920,8 +1936,53 @@ check_sync_nodes(SyncNodes) ->
 
 get_own_nodes() ->
     case global_group:get_own_nodes_with_errors() of
-	{error, Error} ->
-	    {error, {"global_groups definition error", Error}};
-	OkTup ->
-	    OkTup
+        {error, Error} ->
+            {error, {"global_groups definition error", Error}};
+        OkTup ->
+            OkTup
+    end.
+
+
+%%-----------------------------------------------------------------
+%% The deleter process is a sattelite process to global_name_server
+%% that does background batch deleting of names when a process
+%% that had globally registered names dies. It is started by and 
+%% linked to global_name_server.
+%%-----------------------------------------------------------------
+
+start_the_deleter(Global) ->
+    spawn_link(
+      fun () -> 
+	      loop_the_deleter(Global),
+	      process_flag(trap_exit, true)
+      end).
+
+loop_the_deleter(Global) ->
+    Deletions = collect_deletions(Global, []),
+    trans({global, self()},
+	  fun() ->
+		  lists:map(
+		    fun ({Name,Pid}) ->
+			    ?P2({delete_name2, Name, Pid, nodes()}),
+			    gen_server:abcast(nodes(), global_name_server,
+					      {async_del_name, Name, Pid})
+		    end, Deletions)
+	  end,
+	  nodes()),
+    loop_the_deleter(Global).
+
+collect_deletions(Global, Deletions) ->
+    receive
+	{delete_name,Global,Name,Pid} ->
+	    ?P2({delete_name, node(), self(), Name, Pid, nodes()}),
+	    collect_deletions(Global, [{Name,Pid}|Deletions]);
+	{'EXIT',Global,Reason} ->
+	    exit(Reason);
+	Other ->
+	    exit({unknown,Other})
+    after case Deletions of
+	      [] -> infinity;
+	      _  -> 0
+	  end ->
+	    lists:reverse(Deletions)
     end.

@@ -48,6 +48,11 @@ bif hipe_bifs:check_crc/1
 #bif hipe_bifs:tuple_to_float/1
 
 # atoms used by hipe_bifs:primop_address/1
+atom erl_fp_exception
+atom erts_mb
+atom erts_save_mb
+
+
 atom callemu
 atom suspend_msg
 atom suspend_msg_timeout
@@ -79,9 +84,7 @@ atom set_timeout
 atom clear_timeout
 atom cmp_2
 atom op_exact_eqeq_2
-atom test
-atom clear_fp_exception
-atom check_fp_exception
+atom handle_fp_exception
 atom conv_big_to_float
 atom bs_init
 atom bs_put_string
@@ -101,7 +104,10 @@ atom bs_put_integer
 atom bs_put_binary
 atom bs_put_binary_all
 atom bs_put_float
+atom bs_put_big_integer
+atom bs_put_small_float
 atom bs_get_matchbuffer
+atom bs_allocate
 atom sethi
 atom or
 atom address

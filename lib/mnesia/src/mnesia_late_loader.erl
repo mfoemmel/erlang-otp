@@ -58,11 +58,11 @@ init(Parent) ->
 
 loop(State) ->
     receive
-	{From, {async_late_disc_load, Tabs, Reason}} ->
+	{_From, {async_late_disc_load, Tabs, Reason}} ->
 	    mnesia_controller:schedule_late_disc_load(Tabs, Reason),
 	    loop(State);
 
-	{From, {maybe_async_late_disc_load, Tabs, Reason}} ->
+	{_From, {maybe_async_late_disc_load, Tabs, Reason}} ->
 	    GoodTabs =
 		[T || T <- Tabs,
 		      lists:member(node(),
@@ -85,11 +85,11 @@ loop(State) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% System upgrade
 
-system_continue(Parent, Debug, State) ->
+system_continue(_Parent, _Debug, State) ->
     loop(State).
 
-system_terminate(Reason, Parent, Debug, State) ->
+system_terminate(Reason, _Parent, _Debug, _State) ->
     exit(Reason).
 
-system_code_change(State, Module, OldVsn, Extra) ->
+system_code_change(State, _Module, _OldVsn, _Extra) ->
     {ok, State}.

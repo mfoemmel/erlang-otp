@@ -60,6 +60,9 @@
 /* Define if floating points exceptions are non-existing/not reliable */
 #undef NO_FPE_SIGNALS
 
+/* Defined if no found C compiler can handle jump tables */
+#undef NO_JUMP_TABLE
+
 /* Define if you wish to redefine FD_SETSIZE to be able to select on more fd */
 #undef REDEFINE_FD_SETSIZE
 
@@ -128,6 +131,9 @@
 /* Define if you need to include rpc/types.h to get INADDR_LOOPBACK defined */
 #undef DEF_INADDR_LOOPBACK_IN_RPC_TYPES_H
 
+/* Define if you need to include winsock2.h to get INADDR_LOOPBACK defined */
+#undef DEF_INADDR_LOOPBACK_IN_WINSOCK2_H
+
 /* Uncomment if you don't have a definition of INADDR_LOOPBACK */
 #undef HAVE_NO_INADDR_LOOPBACK
 
@@ -143,9 +149,6 @@
 /* Define if you have SO_BSDCOMPAT flag on sockets. */
 #undef HAVE_SO_BSDCOMPAT
 
-/* Define if you have a decl of fprintf that conflicts with int fprintf() */
-#undef HAVE_CONFLICTING_FPRINTF_DECLARATION
-
        
 /* Define if you have a decl of fread that conflicts with int fread() */
 #undef HAVE_CONFLICTING_FREAD_DECLARATION
@@ -159,9 +162,21 @@
 /* Define if you have pthread_atfork() (and use pthreads) */
 #undef HAVE_PTHREAD_ATFORK
 
+/* Define if you have pthread_mutexattr_settype() (and use pthreads) */
+#undef HAVE_PTHREAD_MUTEXATTR_SETTYPE
+
+/* Define if you have pthread_mutexattr_setkind_np() (and use pthreads) */
+#undef HAVE_PTHREAD_MUTEXATTR_SETKIND_NP
+
+/* Define if malloc should use a recursive mutex */
+#undef  USE_RECURSIVE_MALLOC_MUTEX
+
 /* Define if mutexes should be reinitialized (instead of unlocked)
    in child at fork. */
 #undef INIT_MUTEX_IN_CHILD_AT_FORK
+
+/* Define if SIGUSR1 and SIGUSR2 cannot be used. */
+#undef UNUSABLE_SIGUSRX
 
 /* Define if you have matherr() function and struct exception type. */
 #undef USE_MATHERR
@@ -186,11 +201,11 @@
 /* The number of bytes in a long.  */
 #undef SIZEOF_LONG
 
+/* The number of bytes in a long long.  */
+#undef SIZEOF_LONG_LONG
+
 /* The number of bytes in a short.  */
 #undef SIZEOF_SHORT
-
-/* The number of bytes in a unsigned long long.  */
-#undef SIZEOF_UNSIGNED_LONG_LONG
 
 /* The number of bytes in a void *.  */
 #undef SIZEOF_VOID_P
@@ -266,6 +281,9 @@
 
 /* Define if you have the writev function.  */
 #undef HAVE_WRITEV
+
+/* Define if you have the <arpa/nameser.h> header file.  */
+#undef HAVE_ARPA_NAMESER_H
 
 /* Define if you have the <dirent.h> header file.  */
 #undef HAVE_DIRENT_H

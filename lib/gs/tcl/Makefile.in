@@ -47,7 +47,8 @@ RELSYSDIR = $(RELEASE_PATH)/lib/gs-$(VSN)
 # ----------------------------------------------------
 # Common Macros
 # ----------------------------------------------------
-TCL_FILES =  ../priv/gstk.tcl
+TCL_FILES   = ../priv/gstk.tcl
+EXTRA_FILES = ../priv/gs-xdefaults
 
 # ----------------------------------------------------
 # Targets
@@ -71,7 +72,7 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec:
 	$(INSTALL_DIR) $(RELSYSDIR)/priv
-	$(INSTALL_DATA) $(TCL_FILES) $(RELSYSDIR)/priv
+	$(INSTALL_DATA) $(TCL_FILES) $(EXTRA_FILES) $(RELSYSDIR)/priv
 ifneq ($(TCL_TAR),)
 	gzip -dc $(TCL_TAR) | (cd $(RELSYSDIR)/priv && tar -xf -)
 endif

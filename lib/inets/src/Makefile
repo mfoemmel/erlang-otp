@@ -97,7 +97,7 @@ APPUP_SRC= $(APPUP_FILE).src
 APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 
 # ----------------------------------------------------
-# FLAGS
+# INETS FLAGS
 # ----------------------------------------------------
 # DONT_USE_VERBOSITY = -Ddont_use_verbosity=true
 INETS_FLAGS = -D'SERVER_SOFTWARE="inets/$(VSN)"' \
@@ -122,7 +122,16 @@ ifeq ($(INETS_DEBUG),e)
   INETS_FLAGS += -Dinets_error
 endif
 
+
+# ----------------------------------------------------
+# FLAGS
+# ----------------------------------------------------
 ERL_FLAGS += 
+
+ifeq ($(WARN_UNUSED_WARS),true)
+ERL_COMPILE_FLAGS += +warn_unused_vars
+endif
+
 ERL_COMPILE_FLAGS += $(INETS_FLAGS) \
                      +'{parse_transform,sys_pre_attributes}' \
                      +'{attribute,insert,app_vsn,$(APP_VSN)}'

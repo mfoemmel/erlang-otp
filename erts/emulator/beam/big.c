@@ -30,8 +30,7 @@
 ** compare two number vectors
 ** 32OK
 */
-static int I_comp(x, xl, y, yl)
-digit_t* x; dsize_t xl; digit_t* y; dsize_t yl;
+static int I_comp(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl)
 {
     if (xl < yl)
 	return -1;
@@ -58,8 +57,7 @@ digit_t* x; dsize_t xl; digit_t* y; dsize_t yl;
 ** assumption: (xl >= yl)
 ** 32OK
 */
-static dsize_t I_add(x, xl, y, yl, r)
-digit_t* x; dsize_t xl; digit_t* y; dsize_t yl; digit_t* r;
+static dsize_t I_add(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
 {
     dsize_t sz = xl;
     register digit_t yr, xr;
@@ -92,8 +90,7 @@ digit_t* x; dsize_t xl; digit_t* y; dsize_t yl; digit_t* r;
 ** Add a digits in v1 and store result in vr
 ** 32OK
 */
-static dsize_t D_add(x, xl, c, r)
-digit_t* x; dsize_t xl; digit_t c; digit_t* r;
+static dsize_t D_add(digit_t* x, dsize_t xl, digit_t c, digit_t* r)
 {
     dsize_t sz = xl;
     register digit_t xr;
@@ -116,8 +113,7 @@ digit_t* x; dsize_t xl; digit_t c; digit_t* r;
 **
 ** 32OK
 */
-static dsize_t I_sub(x, xl, y, yl, r)
-digit_t* x; dsize_t xl; digit_t* y; dsize_t yl; digit_t* r;
+static dsize_t I_sub(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
 {
     digit_t* r0 = r;
     register digit_t yr, xr;
@@ -152,8 +148,7 @@ digit_t* x; dsize_t xl; digit_t* y; dsize_t yl; digit_t* r;
 ** Subtract digit d from v1 and store result in vr
 ** 32OK
 */
-static dsize_t D_sub(x, xl, c, r)
-digit_t* x; dsize_t xl; digit_t c; digit_t* r;
+static dsize_t D_sub(digit_t* x, dsize_t xl, digit_t c, digit_t* r)
 {
     digit_t* r0 = r;
     register digit_t yr, xr;
@@ -177,8 +172,7 @@ digit_t* x; dsize_t xl; digit_t c; digit_t* r;
 ** subtract Z000...0 - y and store result in r, return new size
 ** 32OK
 */
-static dsize_t Z_sub(y, yl, r)
-digit_t* y; dsize_t yl; digit_t* r;
+static dsize_t Z_sub(digit_t* y, dsize_t yl, digit_t* r)
 {
     digit_t* r0 = r;
     register digit_t yr;
@@ -202,8 +196,7 @@ digit_t* y; dsize_t yl; digit_t* r;
 ** Assumption: digits in r must be 0 (upto the size of x)
 ** 32UPDATE
 */
-static dsize_t I_mul(x, xl, y, yl, r)
-digit_t* x; dsize_t xl; digit_t* y; dsize_t yl; digit_t* r;
+static dsize_t I_mul(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
 {
     digit_t* r0 = r;
     digit_t* rt = r;
@@ -265,8 +258,7 @@ digit_t* x; dsize_t xl; digit_t* y; dsize_t yl; digit_t* r;
 ** 32UPDATE
 */
 
-static dsize_t I_sqr(x, xl, r)
-    digit_t* x; dsize_t xl; digit_t* r;
+static dsize_t I_sqr(digit_t* x, dsize_t xl, digit_t* r)
 {
     digit_t d_next = *x;
     digit_t d;
@@ -328,8 +320,7 @@ static dsize_t I_sqr(x, xl, r)
 ** Multiply digits d with digits in x and store in r
 ** 32UPDATE
 */
-static dsize_t D_mul(x, xl, d, r)
-digit_t* x; dsize_t xl; digit_t d; digit_t* r;
+static dsize_t D_mul(digit_t* x, dsize_t xl, digit_t d, digit_t* r)
 {
     digit_t c = 0;
     dsize_t rl = xl;
@@ -374,8 +365,8 @@ digit_t* x; dsize_t xl; digit_t d; digit_t* r;
 ** 0 means borrow
 ** 32UPDATE
 */
-static dsize_t D_mulsub(x, xl, d, y, yl, r)
-digit_t* x; dsize_t xl; digit_t d; digit_t* y; dsize_t yl; digit_t* r;
+static dsize_t D_mulsub(digit_t* x, dsize_t xl, digit_t d,
+			digit_t* y, dsize_t yl, digit_t* r)
 {
     digit_t c = 0;
     digit_t b = 0;
@@ -415,8 +406,7 @@ digit_t* x; dsize_t xl; digit_t d; digit_t* y; dsize_t yl; digit_t* r;
 ** x and q may be equal
 ** 32UPDATE
 */
-static dsize_t D_div(x, xl, d, q, r)
-    digit_t* x; dsize_t xl; digit_t d; digit_t* q; digit_t* r;
+static dsize_t D_div(digit_t* x, dsize_t xl, digit_t d, digit_t* q, digit_t* r)
 {
     digit_t* xp = x + (xl-1);
     digit_t* qp = q + (xl-1);
@@ -466,9 +456,8 @@ static dsize_t D_div(x, xl, d, q, r)
 ** 32UPDATE
 */
 
-static dsize_t I_div(x, xl, y, yl, q, r, rlp)
-digit_t* x; dsize_t xl; digit_t* y; dsize_t yl; digit_t* q; 
-digit_t* r; dsize_t* rlp;
+static dsize_t I_div(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl,
+		     digit_t* q, digit_t* r, dsize_t* rlp)
 {
     digit_t* rp;
     digit_t* qp;
@@ -565,8 +554,7 @@ digit_t* r; dsize_t* rlp;
 ** Remainder of digits in x and a digit d
 ** 32UPDATE
 */
-static digit_t D_rem(x, xl, d)
-digit_t* x; dsize_t xl; digit_t d;
+static digit_t D_rem(digit_t* x, dsize_t xl, digit_t d)
 {
     digit_t rem = 0;
 
@@ -589,8 +577,7 @@ digit_t* x; dsize_t xl; digit_t d;
 **			   r must contain at least xl number of digits
 ** 32UPDATE
 */
-static dsize_t I_rem(x, xl, y, yl, r)
-digit_t* x; dsize_t xl; digit_t* y; dsize_t yl; digit_t* r;
+static dsize_t I_rem(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
 {
     digit_t* rp;
     digit_t b1 = y[yl-1];
@@ -658,8 +645,7 @@ digit_t* x; dsize_t xl; digit_t* y; dsize_t yl; digit_t* r;
 ** Remove trailing digits from bitwise operations
 ** 32UPDATE
 */
-static dsize_t I_btrail(r0, r, sign)
-    digit_t* r0; digit_t* r; short sign;
+static dsize_t I_btrail(digit_t* r0, digit_t* r, short sign)
 {
     /* convert negative numbers to one complement */
     if (sign) {
@@ -702,9 +688,8 @@ static dsize_t I_btrail(r0, r, sign)
 ** Bitwise and
 ** 32UPDATE
 */
-static dsize_t I_band(x, xl, xsgn, y, yl, ysgn, r)
-digit_t* x; dsize_t xl; short xsgn; 
-digit_t* y; dsize_t yl; short ysgn; digit_t* r;
+static dsize_t I_band(digit_t* x, dsize_t xl, short xsgn,
+		      digit_t* y, dsize_t yl, short ysgn, digit_t* r)
 {
     digit_t* r0 = r;
     short sign = xsgn && ysgn;
@@ -852,9 +837,8 @@ I_bor(digit_t* x, dsize_t xl, short xsgn, digit_t* y,
 /* 
 ** Bitwise xor
 */
-static dsize_t I_bxor(x, xl, xsgn, y, yl, ysgn, r)
-digit_t* x; dsize_t xl; short xsgn; 
-digit_t* y; dsize_t yl; short ysgn; digit_t* r;
+static dsize_t I_bxor(digit_t* x, dsize_t xl, short xsgn,
+		      digit_t* y, dsize_t yl, short ysgn, digit_t* r)
 {
     digit_t* r0 = r;
     short sign = xsgn != ysgn;
@@ -933,8 +917,7 @@ digit_t* y; dsize_t yl; short ysgn; digit_t* r;
 ** bnot +X  == -(X + 1)
 ** 32OK
 */
-static dsize_t I_bnot(x, xl, xsgn, r)
-digit_t* x; dsize_t xl; short xsgn; digit_t* r;
+static dsize_t I_bnot(digit_t* x, dsize_t xl, short xsgn, digit_t* r)
 {
     if (xsgn)
 	return D_add(x, xl, 1, r);
@@ -1037,8 +1020,7 @@ static dsize_t I_lshift(digit_t* x, dsize_t xl, Sint y,
 ** Return log(x)/log(2)
 ** 32OK
 */
-static int I_lg(x, xl)
-digit_t* x; dsize_t xl;
+static int I_lg(digit_t* x, dsize_t xl)
 {
     dsize_t sz = xl - 1;
     digit_t d = x[sz];
@@ -1185,7 +1167,8 @@ char* big_to_decimal(Eterm y, char *p, int n)
 	}
     }
     else {
-	digit_t* tmp  = (digit_t*) sys_alloc_from(2,sizeof(digit_t)*xl);
+	digit_t* tmp  = (digit_t*) erts_alloc(ERTS_ALC_T_TMP,
+					      sizeof(digit_t)*xl);
 	dsize_t tmpl = xl;
 
 	MOVE_DIGITS(tmp, x, xl);
@@ -1207,7 +1190,7 @@ char* big_to_decimal(Eterm y, char *p, int n)
 		}
 	    }
 	}
-	sys_free((char*)tmp);
+	erts_free(ERTS_ALC_T_TMP, (void *) tmp);
     }
     if (sign)
 	*q-- = '-';
@@ -1253,7 +1236,8 @@ Eterm big_to_list(Eterm x, Eterm **hp)
 	}
     }
     else {
-	digit_t* tmp  = (digit_t*) sys_alloc_from(2,sizeof(digit_t)*xl);
+	digit_t* tmp  = (digit_t*) erts_alloc(ERTS_ALC_T_TMP,
+					      sizeof(digit_t)*xl);
 	dsize_t tmpl = xl;
 
 	MOVE_DIGITS(tmp, dx, xl);
@@ -1277,7 +1261,7 @@ Eterm big_to_list(Eterm x, Eterm **hp)
 		}
 	    }
 	}
-	sys_free((char*)tmp);
+	erts_free(ERTS_ALC_T_TMP, (void *) tmp);
     }
 
     if (sign) {
@@ -1491,7 +1475,7 @@ Eterm bytes_to_big(byte *xp, dsize_t xsz, int xsgn, Eterm *r)
 	rwp++;
 	rsz++;
     }
-    return big_norm(r, rsz, xsgn);
+    return big_norm(r, rsz, (short) xsgn);
 }
 
 /*
@@ -1595,8 +1579,8 @@ Eterm big_plus(Eterm x, Eterm y, Eterm *r)
     Eterm* xp = big_val(x);
     Eterm* yp = big_val(y);
 
-    return B_plus_minus(BIG_V(xp),BIG_SIZE(xp),BIG_SIGN(xp),
-			BIG_V(yp),BIG_SIZE(yp),BIG_SIGN(yp), r);
+    return B_plus_minus(BIG_V(xp),BIG_SIZE(xp),(short) BIG_SIGN(xp),
+			BIG_V(yp),BIG_SIZE(yp),(short) BIG_SIGN(yp), r);
 }
 
 /*
@@ -1609,8 +1593,8 @@ Eterm big_minus(Eterm x, Eterm y, Eterm *r)
     Eterm* xp = big_val(x);
     Eterm* yp = big_val(y);
 
-    return B_plus_minus(BIG_V(xp),BIG_SIZE(xp),BIG_SIGN(xp),
-			BIG_V(yp),BIG_SIZE(yp),!BIG_SIGN(yp), r);
+    return B_plus_minus(BIG_V(xp),BIG_SIZE(xp),(short) BIG_SIGN(xp),
+			BIG_V(yp),BIG_SIZE(yp),(short) !BIG_SIGN(yp), r);
 }
 
 /*
@@ -1621,11 +1605,11 @@ Eterm big_minus_small(Eterm x, Eterm y, Eterm *r)
     Eterm* xp = big_val(x);
 
     if (BIG_SIGN(xp))
-	return big_norm(r, D_add(BIG_V(xp),BIG_SIZE(xp),y, BIG_V(r)), 
-			BIG_SIGN(xp));
+	return big_norm(r, D_add(BIG_V(xp),BIG_SIZE(xp), (digit_t) y, BIG_V(r)), 
+			(short) BIG_SIGN(xp));
     else
-	return big_norm(r, D_sub(BIG_V(xp),BIG_SIZE(xp),y, BIG_V(r)), 
-			BIG_SIGN(xp));
+	return big_norm(r, D_sub(BIG_V(xp),BIG_SIZE(xp), (digit_t) y, BIG_V(r)), 
+			(short) BIG_SIGN(xp));
 }
 
 /*
@@ -1727,7 +1711,7 @@ Eterm big_neg(Eterm x, Eterm *r)
     short xsgn = BIG_SIGN(xp);
     
     MOVE_DIGITS(BIG_V(r), BIG_V(xp), xsz);
-    return big_norm(r, xsz, !xsgn);
+    return big_norm(r, xsz, (short) !xsgn);
 }
 
 Eterm big_band(Eterm x, Eterm y, Eterm *r)
@@ -1819,19 +1803,19 @@ Eterm big_plus_small(Eterm x, Uint y, Eterm *r)
     Eterm* xp = big_val(x);
 
     if (BIG_SIGN(xp))
-	return big_norm(r, D_sub(BIG_V(xp),BIG_SIZE(xp),y, BIG_V(r)), 
-			BIG_SIGN(xp));
+	return big_norm(r, D_sub(BIG_V(xp),BIG_SIZE(xp), (digit_t) y, 
+				 BIG_V(r)), (short) BIG_SIGN(xp));
     else
-	return big_norm(r, D_add(BIG_V(xp),BIG_SIZE(xp),y, BIG_V(r)), 
-			BIG_SIGN(xp));
+	return big_norm(r, D_add(BIG_V(xp),BIG_SIZE(xp), (digit_t) y, 
+				 BIG_V(r)), (short) BIG_SIGN(xp));
 }
 
 Eterm big_times_small(Eterm x, Uint y, Eterm *r)
 {
     Eterm* xp = big_val(x);
 
-    return big_norm(r, D_mul(BIG_V(xp),BIG_SIZE(xp),y, BIG_V(r)),
-		    BIG_SIGN(xp));
+    return big_norm(r, D_mul(BIG_V(xp),BIG_SIZE(xp), (digit_t) y, 
+			     BIG_V(r)), (short) BIG_SIGN(xp));
 }
 
 int big_fits_in_sint32(Eterm b)

@@ -101,6 +101,9 @@
 %% get_default(ServerName) -> [{Option, Value}]
 %% set_default(ServerName, [{Option, Value}]) -> ok | Error
 %% format_error(Error) -> io_string()
+%% m(Module) -> [Result] | Error
+%% m(File) -> [Result] | Error
+%% d(Directory) -> [Result] | Error
 
 %% -> [Faulty] | Error; Faulty = {undefined, Calls} | {unused, Funs}
 %% No user variables have been assigned digraphs, so there is no
@@ -108,7 +111,9 @@
 m(Module) when atom(Module) ->
     case xref_utils:find_beam(Module) of
 	{ok, File} ->
-	    Fun = fun(S) -> xref_base:add_module(S, File) end,
+	    Fun = fun(S) -> 
+                          xref_base:add_module(S, File, {builtins,true})
+                  end,
 	    case catch do_functions_analysis(Fun) of
 		{error, _, {no_debug_info, _}} ->
 		    catch do_modules_analysis(Fun);
@@ -123,7 +128,9 @@ m(File) ->
 	    {error, xref_base, {invalid_filename, File}};
 	{Dir, BaseName} ->
 	    BeamFile = filename:join(Dir, BaseName),
-	    Fun = fun(S) -> xref_base:add_module(S, BeamFile) end,
+	    Fun = fun(S) -> 
+                          xref_base:add_module(S, BeamFile, {builtins, true})
+                  end,
 	    case catch do_functions_analysis(Fun) of
 		{error, _, {no_debug_info, _}} ->
 		    catch do_modules_analysis(Fun);
@@ -134,7 +141,9 @@ m(File) ->
 
 %% -> [Faulty] | Error; Faulty = {undefined, Calls} | {unused, Funs}
 d(Directory) ->
-    Fun = fun(S) -> xref_base:add_directory(S, Directory) end,
+    Fun = fun(S) ->
+                  xref_base:add_directory(S, Directory, {builtins, true})
+          end,
     Fun1 = fun(S) ->
 		   case Fun(S) of
 		       {ok, [], _S} -> 
@@ -554,8 +563,11 @@ do_functions_analysis(FFun) ->
 		 Error2 -> throw(Error2)
 	     end,
     {Undef, State4} = do_analysis(State3, undefined_function_calls),
-    {Unused, _} = do_analysis(State4, locals_not_used),
-    [{undefined,to_external(Undef)}, {unused,to_external(Unused)}].
+    {Unused, State5} = do_analysis(State4, locals_not_used),
+    {Deprecated, _} = do_analysis(State5, deprecated_function_calls),
+    [{deprecated,to_external(Deprecated)},
+     {undefined,to_external(Undef)}, 
+     {unused,to_external(Unused)}].
 
 do_modules_analysis(FFun) ->
     {ok, State} = xref_base:new({xref_mode, modules}),
@@ -566,8 +578,10 @@ do_modules_analysis(FFun) ->
 		 {ok, _, S} -> S;
 		 Error2 -> throw(Error2)
 	     end,
-    {Undef, _} = do_analysis(State3, undefined_functions),
-    [{undefined,to_external(Undef)}].
+    {Undef, State4} = do_analysis(State3, undefined_functions),
+    {Deprecated, _} = do_analysis(State4, deprecated_functions),
+    [{deprecated,to_external(Deprecated)},
+     {undefined,to_external(Undef)}].
 
 do_analysis(State, Analysis) ->
     case xref_base:analyze(State, Analysis) of

@@ -18,7 +18,7 @@
 -module(mnesia_event).
 
 -behaviour(gen_event).
--behaviour(mnesia_event).
+%-behaviour(mnesia_event).
 
 %% gen_event callback interface
 -export([init/1,
@@ -85,7 +85,7 @@ handle_call(Msg, State) ->
 %%     AnyVal
 %%-----------------------------------------------------------------
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%----------------------------------------------------------------------
@@ -93,7 +93,7 @@ terminate(Reason, State) ->
 %% Purpose: Upgrade process when its code is to be changed
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%-----------------------------------------------------------------
@@ -113,10 +113,10 @@ handle_table_event({Oper, Record, TransId}, State) ->
 		[Oper, TransId, Record]),
     {ok, State}.  
 
-handle_system_event({mnesia_checkpoint_activated, Checkpoint}, State) ->
+handle_system_event({mnesia_checkpoint_activated, _Checkpoint}, State) ->
     {ok, State};
 
-handle_system_event({mnesia_checkpoint_deactivated, Checkpoint}, State) ->
+handle_system_event({mnesia_checkpoint_deactivated, _Checkpoint}, State) ->
     {ok, State};
 
 handle_system_event({mnesia_up, Node}, State) ->
@@ -139,7 +139,7 @@ handle_system_event({mnesia_down, Node}, State) ->
 			"from ~p. ~n",
 		    report_info(Msg, [Node]),
 		    case catch apply(UserMod, UserFunc, [Node]) of
-			{'EXIT', {undef, Reason}} ->
+			{'EXIT', {undef, _Reason}} ->
 			    %% Backward compatibility
 			    apply(UserMod, UserFunc, []);
 			{'EXIT', Reason} ->
@@ -156,11 +156,15 @@ handle_system_event({mnesia_down, Node}, State) ->
     end;
 
 handle_system_event({mnesia_overload, Details}, State) ->
-    report_error("Mnesia is overloaded: ~p~n", [Details]),
+    report_warning("Mnesia is overloaded: ~p~n", [Details]),
     {ok, State}; 
 
 handle_system_event({mnesia_info, Format, Args}, State) ->
     report_info(Format, Args),
+    {ok, State}; 
+
+handle_system_event({mnesia_warning, Format, Args}, State) ->
+    report_warning(Format, Args),
     {ok, State}; 
 
 handle_system_event({mnesia_error, Format, Args}, State) ->
@@ -194,6 +198,22 @@ report_info(Format0, Args0) ->
 	    io:format(Pid, Format, Args)
     end.
 
+report_warning(Format0, Args0) ->
+    Format = "Mnesia(~p): ** WARNING ** " ++ Format0,
+    Args = [node() | Args0],
+    case erlang:function_exported(error_logger, warning_msg, 2) of
+	true -> 
+	    error_logger:warning_msg(Format, Args);
+	false ->
+	    error_logger:format(Format, Args)
+    end,
+    case global:whereis_name(mnesia_global_logger) of
+	undefined ->
+	    ok;
+	Pid ->
+	    io:format(Pid, Format, Args)
+    end.
+
 report_error(Format0, Args0) ->
     Format = "Mnesia(~p): ** ERROR ** " ++ Format0,
     Args = [node() | Args0],
@@ -207,25 +227,37 @@ report_error(Format0, Args0) ->
 
 report_fatal(Format, Args, BinaryCore, CoreDumped) ->
     UseDir = mnesia_monitor:use_dir(),
+    CoreDir = mnesia_monitor:get_env(core_dir),
     if
-	UseDir == true,
-	CoreDumped == false,
-	binary(BinaryCore) ->
-	    CoreFile = core_file(),
-	    report_error("(core dumped to file: ~p)~n ** FATAL ** " ++ Format,
-			 [CoreFile] ++ Args),
-	    file:write_file(CoreFile, BinaryCore);
+	list(CoreDir),CoreDumped == false,binary(BinaryCore) ->	    
+	    core_file(CoreDir,BinaryCore,Format,Args);
+	(UseDir == true),CoreDumped == false,binary(BinaryCore) ->
+	    core_file(CoreDir,BinaryCore,Format,Args);
 	true ->
 	    report_error("(ignoring core) ** FATAL ** " ++ Format, Args)
     end.
 
-core_file() ->
+core_file(CoreDir,BinaryCore,Format,Args) ->
     %% Integers = tuple_to_list(date()) ++ tuple_to_list(time()),
     Integers = tuple_to_list(now()),
     Fun = fun(I) when I < 10 -> ["_0",I];
 	     (I) -> ["_",I]
 	  end,
     List = lists:append([Fun(I) || I <- Integers]),
-    filename:absname(lists:concat(["MnesiaCore.", node()] ++ List)).
+    CoreFile = if list(CoreDir) ->
+		       filename:absname(lists:concat(["MnesiaCore.", node()] ++ List), 
+					CoreDir);
+		  true ->
+		       filename:absname(lists:concat(["MnesiaCore.", node()] ++ List))
+	       end,
+    case file:write_file(CoreFile, BinaryCore) of
+	ok ->
+	    report_error("(core dumped to file: ~p)~n ** FATAL ** " ++ Format,
+			 [CoreFile] ++ Args);
+	{error, Reason} ->
+	    report_error("(could not write core file: ~p)~n ** FATAL ** " ++ Format,
+			 [Reason] ++ Args)
+    end.
+
 
 	

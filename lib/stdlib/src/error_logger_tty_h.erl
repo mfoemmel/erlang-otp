@@ -105,7 +105,7 @@ write_events1([]) ->
     ok.
 
 write_event({Time, {error, _GL, {Pid, Format, Args}}}) ->
-    T = write_time(Time),
+    T = write_time(maybe_utc(Time)),
     case catch io_lib:format(add_node(Format,Pid), Args) of
 	S when list(S) ->
 	    format(T ++ S);
@@ -114,7 +114,7 @@ write_event({Time, {error, _GL, {Pid, Format, Args}}}) ->
 	    format(T ++ F, [Format,Args])
     end;
 write_event({Time, {emulator, _GL, Chars}}) ->
-    T = write_time(Time),
+    T = write_time(maybe_utc(Time)),
     case catch io_lib:format(Chars, []) of
 	S when list(S) ->
 	    format(T ++ S);
@@ -122,18 +122,31 @@ write_event({Time, {emulator, _GL, Chars}}) ->
 	    format(T ++ "ERROR: ~p ~n", [Chars])
     end;
 write_event({Time, {info, _GL, {Pid, Info, _}}}) ->
-    T = write_time(Time),
+    T = write_time(maybe_utc(Time)),
     format(T ++ add_node("~p~n",Pid),[Info]);
 write_event({Time, {error_report, _GL, {Pid, std_error, Rep}}}) ->
-    T = write_time(Time),
+    T = write_time(maybe_utc(Time)),
     S = format_report(Rep),
     format(T ++ S ++ add_node("", Pid));
 write_event({Time, {info_report, _GL, {Pid, std_info, Rep}}}) ->
-    T = write_time(Time, "INFO REPORT"),
+    T = write_time(maybe_utc(Time), "INFO REPORT"),
     S = format_report(Rep),
     format(T ++ S ++ add_node("", Pid));
 write_event({Time, {info_msg, _GL, {Pid, Format, Args}}}) ->
-    T = write_time(Time, "INFO REPORT"),
+    T = write_time(maybe_utc(Time), "INFO REPORT"),
+    case catch io_lib:format(add_node(Format,Pid), Args) of
+	S when list(S) ->
+	    format(T ++ S);
+	_ ->
+	    F = add_node("ERROR: ~p - ~p~n", Pid),
+	    format(T ++ F, [Format,Args])
+    end;
+write_event({Time, {warning_report, _GL, {Pid, std_warning, Rep}}}) ->
+    T = write_time(maybe_utc(Time), "WARNING REPORT"),
+    S = format_report(Rep),
+    format(T ++ S ++ add_node("", Pid));
+write_event({Time, {warning_msg, _GL, {Pid, Format, Args}}}) ->
+    T = write_time(maybe_utc(Time), "WARNING REPORT"),
     case catch io_lib:format(add_node(Format,Pid), Args) of
 	S when list(S) ->
 	    format(T ++ S);
@@ -143,6 +156,13 @@ write_event({Time, {info_msg, _GL, {Pid, Format, Args}}}) ->
     end;
 write_event({_Time, _Error}) ->
     ok.
+maybe_utc(Time) ->
+    case application:get_env(stdlib,utc_log) of
+	{ok,true} ->
+	    {utc,calendar:local_time_to_universal_time(Time)};
+	_ ->
+	    Time
+    end.
 
 format(String)       -> io:format(user, String, []).
 format(String, Args) -> io:format(user, String, Args).
@@ -194,7 +214,9 @@ string_p1([]) -> true;
 string_p1(_) ->  false.
 
 write_time(Time) -> write_time(Time, "ERROR REPORT").
-
+write_time({utc,{{Y,Mo,D},{H,Mi,S}}},Type) ->
+    io_lib:format("~n=~s==== ~p-~s-~p::~s:~s:~s UTC ===~n",
+		  [Type,D,month(Mo),Y,t(H),t(Mi),t(S)]);
 write_time({{Y,Mo,D},{H,Mi,S}},Type) ->
     io_lib:format("~n=~s==== ~p-~s-~p::~s:~s:~s ===~n",
 		  [Type,D,month(Mo),Y,t(H),t(Mi),t(S)]).

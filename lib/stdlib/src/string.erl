@@ -24,6 +24,9 @@
 	 sub_string/2,sub_string/3,centre/2,centre/3]).
 -export([re_sh_to_awk/1,re_parse/1,re_match/2,re_sub/3,re_gsub/3,re_split/2]).
 
+-deprecated([{re_sh_to_awk,1},{re_parse,1},{re_match,2},{re_sub,3},
+             {re_gsub,3},{re_split,2},{index,2}]).
+
 -import(lists,[reverse/1,member/2]).
 
 %% Robert's bit
@@ -50,17 +53,17 @@ concat(S1, S2) -> S1 ++ S2.
 
 chr(S, C) -> chr(S, C, 1).
 
-chr([C|Cs], C, I) -> I;
+chr([C|_Cs], C, I) -> I;
 chr([_|Cs], C, I) -> chr(Cs, C, I+1);
-chr([], C, I) -> 0.
+chr([], _C, _I) -> 0.
 
 rchr(S, C) -> rchr(S, C, 1, 0).
 
-rchr([C|Cs], C, I, L) ->			%Found one, now find next!
+rchr([C|Cs], C, I, _L) ->			%Found one, now find next!
     rchr(Cs, C, I+1, I);
 rchr([_|Cs], C, I, L) ->
     rchr(Cs, C, I+1, L);
-rchr([], C, I, L) -> L.
+rchr([], _C, _I, L) -> L.
 
 %% str(String, SubString)
 %% rstr(String, SubString)
@@ -76,7 +79,7 @@ str([C|S], [C|Sub], I) ->
 	false -> str(S, [C|Sub], I+1)
     end;
 str([_|S], Sub, I) -> str(S, Sub, I+1);
-str([], Sub, I) -> 0.
+str([], _Sub, _I) -> 0.
 
 rstr(S, Sub) -> rstr(S, Sub, 1, 0).
 
@@ -86,11 +89,11 @@ rstr([C|S], [C|Sub], I, L) ->
 	false -> rstr(S, [C|Sub], I+1, L)
     end;
 rstr([_|S], Sub, I, L) -> rstr(S, Sub, I+1, L);
-rstr([], Sub, I, L) -> L.
+rstr([], _Sub, _I, L) -> L.
 
 prefix([C|Pre], [C|String]) -> prefix(Pre, String);
-prefix([], String) -> true;
-prefix(Pre, String) -> false.
+prefix([], _String) -> true;
+prefix(_Pre, _String) -> false.
 
 index(S, Sub) -> str(S, Sub).
 
@@ -104,7 +107,7 @@ span([C|S], Cs, I) ->
 	true -> span(S, Cs, I+1);
 	false -> I
     end;
-span([], Cs, I) -> I.
+span([], _Cs, I) -> I.
 
 cspan(S, Cs) -> cspan(S, Cs, 0).
 
@@ -113,20 +116,25 @@ cspan([C|S], Cs, I) ->
 	true -> I;
 	false -> cspan(S, Cs, I+1)
     end;
-cspan([], Cs, I) -> I.
+cspan([], _Cs, I) -> I.
 
 %% substr(String, Start)
 %% substr(String, Start, Length)
 %%  Extract a sub-string from String.
+substr(String, 1) when list(String) -> 
+    String;
+substr(String, S) when list(String), integer(S), S > 1 ->
+    substr2(String, S).
 
-substr([_|String], S) when S > 1 -> substr(String, S-1);
-substr(String, 1) -> String.
-
-substr(String, S, L) when L >= 0 ->
-    substr1(substr(String, S), L).
+substr(String, S, L) 
+  when list(String), integer(S), S >= 1, integer(L), L >= 0 ->
+    substr1(substr2(String, S), L).
 
 substr1([C|String], L) when L > 0 -> [C|substr1(String, L-1)];
-substr1(String, L) -> [].			%Be nice!
+substr1(_String, _L) -> [].			%Be nice!
+
+substr2(String, 1) -> String;
+substr2([_|String], S) -> substr2(String, S-1).
 
 %% tokens(String, Seperators).
 %%  Return a list of tokens seperated by characters in Seperators.
@@ -139,7 +147,7 @@ tokens1([C|S], Seps, Toks) ->
 	true -> tokens1(S, Seps, Toks);
 	false -> tokens2(S, Seps, Toks, [C])
     end;
-tokens1([], Seps, Toks) ->
+tokens1([], _Seps, Toks) ->
     reverse(Toks).
 
 tokens2([C|S], Seps, Toks, Cs) ->
@@ -147,23 +155,27 @@ tokens2([C|S], Seps, Toks, Cs) ->
 	true -> tokens1(S, Seps, [reverse(Cs)|Toks]);
 	false -> tokens2(S, Seps, Toks, [C|Cs])
     end;
-tokens2([], Seps, Toks, Cs) ->
+tokens2([], _Seps, Toks, Cs) ->
     reverse([reverse(Cs)|Toks]).
 
 chars(C, N) -> chars(C, N, []).
 
 chars(C, N, Tail) when N > 0 ->
-    [C|chars(C, N-1, Tail)];
-chars(C, 0, Tail) ->
+    chars(C, N-1, [C|Tail]);
+chars(_C, 0, Tail) ->
     Tail.
 
 %% Torbjörn's bit.
 
 %%% COPIES %%%
 
-copies(_, 0) -> [];
-copies(CharList, Num) ->
-    CharList ++ copies(CharList, Num-1).
+copies(CharList, Num) when list(CharList), Num >= 0 ->
+    copies(CharList, Num, []).
+
+copies(_CharList, 0, R) ->
+    R;
+copies(CharList, Num, R) ->
+    copies(CharList, Num-1, CharList++R).
 
 %%% WORDS %%%
 
@@ -174,7 +186,7 @@ words(String, Char) when integer(Char) ->
 
 w_count([], _, Num) -> Num+1;
 w_count([H|T], H, Num) -> w_count(strip(T, left, H), H, Num+1);
-w_count([H|T], Char, Num) -> w_count(T, Char, Num).
+w_count([_H|T], Char, Num) -> w_count(T, Char, Num).
 
 %%% SUB_WORDS %%%
 
@@ -184,16 +196,16 @@ sub_word(String, Index, Char) when integer(Index), integer(Char) ->
     case words(String, Char) of
 	Num when Num < Index ->
 	    [];
-	Num ->
+	_Num ->
 	    s_word(strip(String, left, Char), Index, Char, 1, [])
     end.
 
 s_word([], _, _, _,Res) -> reverse(Res);
-s_word([Char|T],Index,Char,Index,Res) -> reverse(Res);
+s_word([Char|_],Index,Char,Index,Res) -> reverse(Res);
 s_word([H|T],Index,Char,Index,Res) -> s_word(T,Index,Char,Index,[H|Res]);
 s_word([Char|T],Stop,Char,Index,Res) when Index < Stop -> 
     s_word(strip(T,left,Char),Stop,Char,Index+1,Res);
-s_word([H|T],Stop,Char,Index,Res) when Index < Stop -> 
+s_word([_|T],Stop,Char,Index,Res) when Index < Stop -> 
     s_word(T,Stop,Char,Index,Res).
 
 %%% STRIP %%%
@@ -212,21 +224,17 @@ strip(String, both, Char) ->
 
 strip_left([Sc|S], Sc) ->
     strip_left(S, Sc);
-strip_left([C|S], Sc) -> [C|S];
-strip_left([], Sc) -> [].
+strip_left([_|_]=S, _Sc) -> S;
+strip_left([], _Sc) -> [].
 
 strip_right([Sc|S], Sc) ->
-    strip_right_1(S, Sc, 1);
+    case strip_right(S, Sc) of
+	[] -> [];
+	T  -> [Sc|T]
+    end;
 strip_right([C|S], Sc) ->
     [C|strip_right(S, Sc)];
-strip_right([], Sc) ->
-    [].
-
-strip_right_1([Sc|S], Sc, Scn) ->
-    strip_right_1(S, Sc, Scn+1);
-strip_right_1([C|S], Sc, Scn) ->
-    chars(Sc, Scn, [C|strip_right(S, Sc)]);
-strip_right_1([], Sc, Scn) ->
+strip_right([], _) ->
     [].
 
 %%% LEFT %%%
@@ -261,7 +269,7 @@ r_pad(String, Num, Char) -> chars(Char, Num, String).
 
 centre(String, Len) -> centre(String ,Len, $\s).
 
-centre(String, 0, _) -> [];			%Strange cases to centre string
+centre(_String, 0, _) -> [];			%Strange cases to centre string
 centre(String, Len, Char) ->
     Slen = length(String),
     if
@@ -306,13 +314,13 @@ re_match(String, RegExp) ->
 
 re_sub(String, RegExp, New) ->
     case regexp:sub(String, RegExp, New) of
-	{ok,Res,N} -> {ok,Res};
+	{ok,Res,_N} -> {ok,Res};
 	{error,E} -> {error,E}
     end.
 
 re_gsub(String, RegExp, New) ->
     case regexp:gsub(String, RegExp, New) of
-	{ok,Res,N} -> {ok,Res};
+	{ok,Res,_N} -> {ok,Res};
 	{error,E} -> {error,E}
     end.
 

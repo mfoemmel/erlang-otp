@@ -88,10 +88,43 @@ t() ->
 
 t(Dirs) when list(Dirs) ->
     io:format("~n", []),
+    display_os_info(),
+    display_system_info(),
+    display_app_info(),
+    io:format("~n", []),
     EDirs = expand_dirs(Dirs, []),
     Results = t1(EDirs, []), 
     store_results(Results).
 
+display_os_info() ->
+    V = case os:version() of
+	    {Major, Minor, Release} ->
+		lists:flatten(
+		  io_lib:format("~w.~w.~w", [Major, Minor, Release]));
+	    Str ->
+		Str
+	end,
+    case os:type() of
+	{OsFam, OsName} ->
+	    io:format("OS:                  ~p-~p: ~s~n", [OsFam, OsName, V]);
+	OsFam ->
+	    io:format("OS:                  ~p: ~s~n", [OsFam, V])
+    end.
+	    
+display_system_info() ->
+    SysArch = string:strip(erlang:system_info(system_architecture),right,$\n),
+    SysVer  = string:strip(erlang:system_info(system_version),right,$\n),
+    io:format("System architecture: ~s~n", [SysArch]),
+    io:format("System version:      ~s~n", [SysVer]),
+    ok.
+    
+    
+display_app_info() ->
+    MI = megaco:module_info(),
+    {value, {attributes, Attr}} = lists:keysearch(attributes, 1, MI),
+    {value, {app_vsn,    Ver}}   = lists:keysearch(app_vsn, 1, Attr),
+    io:format("Megaco version:      ~s~n", [Ver]).
+    
 
     
 t1([], Results) ->

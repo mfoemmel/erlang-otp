@@ -1,0 +1,671 @@
+/* ``The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved via the world wide web at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+ * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+ * AB. All Rights Reserved.''
+ * 
+ *     $Id$
+ */
+/* 
+ * Interface functions to different versions of gethostbyname
+ */
+
+#include "config.h"
+
+#ifdef VXWORKS
+#include <vxWorks.h>
+#include <stdio.h>
+#include <semLib.h>
+#include <hostLib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <errno.h>
+/* #include "netdb.h" */
+#include <symLib.h>
+#include <sysSymTbl.h>
+
+#elif __WIN32__
+#include <winsock2.h>
+#include <windows.h>
+#include <winbase.h>
+
+#else /* unix of some kind */
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#endif 
+
+/* common to all platforms */
+#include "eidef.h"
+#include "ei_resolve.h"
+#include "ei_locking.h"
+
+#ifdef HAVE_GETHOSTBYNAME_R
+
+void ei_init_resolve(void)
+{
+    return;			/* Do nothing */
+}
+
+#else /* !HAVE_GETHOSTBYNAME_R */
+
+/* we have our own in that case */
+
+/* Make sure this semaphore has been initialized somewhere first. This
+ * should probably be done from erl_init() but we do it in the first
+ * call to gethostbyname_r() or gethostbyaddr_r().
+ */
+/* FIXME we don't want globals here, but maybe ok? */
+#ifdef _REENTRANT
+static ei_mutex_t *ei_gethost_sem = NULL;
+#endif /* _REENTRANT */
+static ei_resolve_initialized = 0;
+#ifndef __WIN32__
+int h_errno;
+#endif
+
+#ifdef DEBUG
+#define DEBUGF(X) fprintf X
+#else
+#define DEBUGF(X) /* Nothing */
+#endif
+
+#ifdef VXWORKS
+/* FIXME problem for threaded ? */
+static struct hostent *(*sens_gethostbyname)(const char *name,
+					     char *, int) = NULL;
+static struct hostent *(*sens_gethostbyaddr)(const char *addr,
+					     int, int) = NULL;
+#endif
+
+#ifdef VXWORKS
+static int verify_dns_configuration(void);
+#endif
+
+/*
+ * If we find SENS resolver, use the functions found there, i.e.
+ * resolvGetHostByName() and resolvGetHostByAddr(). Otherwise we use
+ * our own, which are just wrappers around hostGetByName() and
+ * hostGetByAddr(). Here we look up the functions.
+ */
+void ei_init_resolve(void)
+{
+
+#ifdef VXWORKS
+  void *sym;
+  SYM_TYPE symtype;
+
+  if (symFindByName(sysSymTbl,"resolvGetHostByName",
+		    (char **)&sym,&symtype) == OK && 
+      verify_dns_configuration()) {
+      sens_gethostbyname = sym;
+      DEBUGF((stderr,"found SENS resolver - using it for gethostbyname()\n"));
+      if (symFindByName(sysSymTbl,"resolvGetHostByAddr",
+			(char **)&sym,&symtype) == OK) {
+	  sens_gethostbyaddr = sym;
+	  DEBUGF((stderr,"found SENS resolver - "
+		  "using it for gethostbyaddr()\n"));
+      }
+      else {
+	  DEBUGF((stderr,"SENS resolver not found - "
+		  "using default gethostbyaddr()\n"));
+      }
+  }
+  else {
+      DEBUGF((stderr,"SENS resolver not found - "
+	      "using default gethostbyname()\n"));
+  }
+#endif /* VXWORKS */
+
+#ifdef _REENTRANT
+  ei_gethost_sem = ei_mutex_create();
+#endif /* _REENTRANT */
+
+  ei_resolve_initialized = 1;
+}
+
+#ifdef VXWORKS
+/*
+** Function to verify the DNS configuration on VwXorks SENS.
+** Actually configures to a default value if unconfigured...
+*/
+static int verify_dns_configuration(void) 
+{
+    /* FIXME problem for threaded ? */ 
+    static char resolv_params[200]; /* Enough for a RESOLV_PARAMS_S struct */
+    void (*rpg)(char *);
+    STATUS (*rps)(char *);
+    SYM_TYPE dummy;
+    if (!(symFindByName(sysSymTbl,"resolvParamsGet", (char **) &rpg, &dummy) 
+	  == OK &&
+	  symFindByName(sysSymTbl,"resolvParamsSet", (char **) &rps, &dummy) 
+	  == OK))
+	return -1;
+    (*rpg)(resolv_params);
+    if (*resolv_params == '\0') {
+	/* It exists, but is not configured, erl_connect would fail
+	   if we left it this way... The best we can do is to configure
+	   it to use the local host database on the card, as a fallback */
+	*resolv_params = (char) 1;
+	DEBUGF((stderr,"Trying to fix up DNS configuration.\n"));
+	if (((*rps)(resolv_params)) != OK)
+	    return -1;
+    }
+    return 0;
+}
+
+#endif    
+
+/* 
+ * Copy the contents of one struct hostent to another, i.e. don't just
+ * copy the pointers, copy all the data and create new pointers, etc.
+ * User must provide a secondary buffer to which the host data can be copied.
+ *
+ * Returns 0 on success or -1 if buffer is too small for host data 
+*/
+
+/* a couple of helpers
+ * align: increment buf until it is dword-aligned, reduce len by same amount.
+ * advance:  increment buf by n bytes, reduce len by same amount .
+ */
+#define align_buf(buf,len) for (;(((unsigned)buf)&0x3); (buf)++, len--)
+#define advance_buf(buf,len,n) ((buf)+=(n),(len)-=(n))
+
+/* "and now the tricky part..." */
+static int copy_hostent(struct hostent *dest, struct hostent *src, char *buffer, int buflen)
+{
+  char **pptr;
+  int len;
+
+  /* fix initial buffer alignment */
+  align_buf(buffer, buflen);
+
+  /* copy the data into our buffer... */
+  /* first the easy ones! */
+  dest->h_length = src->h_length;
+  dest->h_addrtype = src->h_addrtype;
+
+  /* h_name */
+  dest->h_name = buffer;
+  len = strlen(src->h_name);
+  if (buflen < len+1) return -1;
+  memmove((char *)dest->h_name,src->h_name,len);
+  buffer[len] = (char)0;
+  advance_buf(buffer,buflen,len+1);
+
+  /* traverse alias list, collecting the pointers */
+  align_buf(buffer, buflen);
+  pptr = (char **)buffer;
+  dest->h_aliases = pptr;          /* save head of pointer array */
+  while (*(src->h_aliases)) {
+    if (buflen < sizeof(*pptr)) return -1;
+    *pptr = *src->h_aliases;
+    advance_buf(buffer,buflen,sizeof(*pptr));
+    src->h_aliases++;
+    pptr++;
+  }  
+  if (buflen < sizeof(*pptr)) return -1;
+  *pptr = NULL;
+  advance_buf(buffer,buflen,sizeof(*pptr));
+
+  /* go back to saved position & transfer the alias data */
+  pptr = dest->h_aliases;
+  while (*pptr) {
+    len = strlen(*pptr);
+    if (buflen < len+1) return -1;
+    memmove(buffer,*pptr,len);     /* copy data to local buffer */
+    buffer[len] = (char)0;
+    *pptr = buffer;                /* point to own copy now */
+    advance_buf(buffer,buflen,len+1);
+    pptr++;
+  }
+
+  /* traverse address list, collecting the pointers */
+  align_buf(buffer, buflen);
+  pptr = (char **)buffer;
+  dest->h_addr_list = pptr;        /* save head of pointer array */
+  while (*(src->h_addr_list)) {
+    if (buflen < sizeof(*pptr)) return -1;
+    *pptr = *src->h_addr_list;
+    advance_buf(buffer,buflen,sizeof(*pptr));
+    src->h_addr_list++;
+    pptr++;
+  }  
+  if (buflen < sizeof(*pptr)) return -1;
+  *pptr = NULL;
+  advance_buf(buffer,buflen,sizeof(*pptr));
+
+  /* go back to saved position & transfer the addresses */
+  /* align_buf(buffer, buflen); */
+  pptr = dest->h_addr_list;
+  while (*pptr) {
+    len = src->h_length;
+    if (buflen < len+1) return -1;
+    memmove(buffer,*pptr,len);     /* copy data to local buffer */
+    buffer[len]=(char)0;           /* not sure if termination is necessary */
+    *pptr = buffer;                /* point to own copy now */
+    advance_buf(buffer,buflen,len+1);
+    pptr++;
+  }
+
+  if (buflen < 0) return -1;
+  return 0;
+}
+
+/* This function is a pseudo-reentrant version of gethostbyname(). It
+ * uses locks to serialize the call to the regular (non-reentrant)
+ * gethostbyname() and then copies the data into the user-provided
+ * buffers. It's not pretty but it works. 
+ *
+ * name - name of host to look up
+ * hostp - user-supplied structure for returning host entry
+ * buffer - user-supplied buffer: storage for the copied host data
+ * buflen - length of user-supplied buffer
+ * h_errnop - buffer for return status
+ *
+ * Returns values as for gethostbyname(). Additionally, sets
+ * errno=ERANGE and returns NULL if buffer is too small for host data. 
+ */
+
+static struct hostent *my_gethostbyname_r(const char *name, 
+					  struct hostent *hostp, 
+					  char *buffer, 
+					  int buflen, 
+					  int *h_errnop)
+{
+  struct hostent dest;
+  struct hostent *src;
+  struct hostent *rval = NULL;
+
+  /* FIXME this should have been done in erl_init()? */
+  if (!ei_resolve_initialized) ei_init_resolve(); 
+
+#ifdef _REENTRANT
+  /* === BEGIN critical section === */
+  if (ei_mutex_lock(ei_gethost_sem,0) != 0) {
+    *h_errnop = NO_RECOVERY;
+    return NULL;
+  }
+#endif /* _REENTRANT */
+
+  /* lookup the data */
+  if ((src = ei_gethostbyname(name))) {
+    /* copy to caller's buffer */
+    if (!copy_hostent(&dest,src,buffer,buflen)) {
+      /* success */ 
+      *hostp = dest;               
+      *h_errnop = 0;
+      rval = hostp;
+    }
+    
+    else {
+      /* failure - buffer size */
+#ifdef __WIN32__
+      SetLastError(ERROR_INSUFFICIENT_BUFFER);
+#else
+      errno = ERANGE;
+#endif
+      *h_errnop = 0;
+    }
+  }
+  
+  else {
+    /* failure - lookup */
+#ifdef __WIN32__
+    *h_errnop = WSAGetLastError();
+#else
+    *h_errnop = h_errno;
+#endif
+  }
+
+#ifdef _REENTRANT
+  /* === END critical section === */
+  ei_mutex_unlock(ei_gethost_sem);
+#endif /* _REENTRANT */
+  return rval;
+}
+
+static struct hostent *my_gethostbyaddr_r(const char *addr,
+					  int length, 
+					  int type, 
+					  struct hostent *hostp,
+					  char *buffer,  
+					  int buflen, 
+					  int *h_errnop)
+{
+  struct hostent dest;
+  struct hostent *src;
+  struct hostent *rval = NULL;
+
+  /* FIXME this should have been done in erl_init()? */
+  if (!ei_resolve_initialized) ei_init_resolve();
+
+#ifdef _REENTRANT
+  /* === BEGIN critical section === */
+  if (ei_mutex_lock(ei_gethost_sem,0) != 0) {
+    *h_errnop = NO_RECOVERY;
+    return NULL;
+  }
+#endif /* _REENTRANT */
+
+  /* lookup the data */
+  if ((src = ei_gethostbyaddr(addr,length,type))) {
+    /* copy to caller's buffer */
+    if (!copy_hostent(&dest,src,buffer,buflen)) {
+      /* success */
+      *hostp = dest;                
+      *h_errnop = 0;
+      rval = hostp;
+    }
+
+    else {
+      /* failure - buffer size */
+#ifdef __WIN32__
+      SetLastError(ERROR_INSUFFICIENT_BUFFER);
+#else
+      errno = ERANGE;
+#endif
+      *h_errnop = 0;
+    }
+  }
+
+  else {
+    /* failure - lookup */
+#ifdef __WIN32__
+    *h_errnop = WSAGetLastError();
+#else
+    *h_errnop = h_errno;
+#endif
+  }
+
+
+#ifdef _REENTRANT
+  /* === END critical section === */
+  ei_mutex_unlock(ei_gethost_sem);
+#endif /* _REENTRANT */
+  return rval;
+}
+
+
+#endif /* !HAVE_GETHOSTBYNAME_R */
+
+
+#ifdef __WIN32__
+struct hostent *ei_gethostbyname(const char *name)
+{
+    return gethostbyname(name);
+}
+
+struct hostent *ei_gethostbyaddr(const char *addr, int len, int type)
+{
+    return gethostbyaddr(addr, len, type);
+}
+
+#elif VXWORKS
+
+
+/* these are a couple of substitutes for the real thing when we run on
+ * stock vxworks (i.e. no sens).
+ *
+ * len and type are ignored, but we make up some reasonable values and
+ * insert them
+ */
+static struct hostent *my_gethostbyname(const char *name)
+{
+  /* FIXME problem for threaded ? */
+  static struct hostent h;
+  static char hostname[EI_MAXHOSTNAMELEN+1];
+  static char *aliases[1] = {NULL};
+  static char *addrp[2] = {NULL,NULL};
+  static unsigned long addr = 0;
+
+  strcpy(hostname,name);
+  if ((addr = (unsigned long)hostGetByName(hostname)) == ERROR) {
+    h_errno = HOST_NOT_FOUND;
+    return NULL;
+  }
+
+  h_errno = 0;
+  h.h_name = hostname;
+  h.h_aliases = aliases;
+  h.h_length = 4;
+  h.h_addrtype = AF_INET;
+  addrp[0] = (char *)&addr;
+  h.h_addr_list = addrp;
+  
+  return &h;
+}
+
+static struct hostent *my_gethostbyaddr(const char *addr, int len, int type)
+{
+  /* FIXME problem for threaded ? */
+  static struct hostent h;
+  static char hostname[EI_MAXHOSTNAMELEN+1];
+  static char *aliases[1] = { NULL };
+  static unsigned long inaddr;
+  static char *addrp[2] = {(char *)&inaddr, NULL};
+
+  memmove(&inaddr,addr,sizeof(inaddr));
+  
+  if ((hostGetByAddr(inaddr,hostname)) == ERROR) {
+    h_errno = HOST_NOT_FOUND;
+    return NULL;
+  }
+  
+  h_errno = 0;
+  h.h_name = hostname;
+  h.h_aliases = aliases;
+  h.h_length = 4;
+  h.h_addrtype = AF_INET;
+  h.h_addr_list = addrp;
+
+  return &h;
+}
+
+/* use sens functions for these, if found. */
+struct hostent *ei_gethostbyname(const char *name)
+{
+  struct hostent *h = NULL;
+  
+  if (!sens_gethostbyname) {
+    h = my_gethostbyname(name);
+  }
+  else {
+    /* FIXME problem for threaded ? */
+    static char buf[1024];
+    h = sens_gethostbyname(name,buf,1024);
+  }
+
+  return h;
+}
+
+struct hostent *ei_gethostbyaddr(const char *addr, int len, int type)
+{
+  struct hostent *h = NULL;
+  
+  if (!sens_gethostbyaddr) { 
+    h = my_gethostbyaddr(addr,len,type);
+  }
+  else {
+    /* FIXME problem for threaded ? */
+    static char buf[1024];
+    h = sens_gethostbyaddr(addr,buf,1024);
+  }
+
+  return h;
+}
+
+struct hostent *ei_gethostbyaddr_r(const char *addr,
+				int length, 
+				int type, 
+				struct hostent *hostp,
+				char *buffer,  
+				int buflen, 
+				int *h_errnop)
+{
+  struct hostent *h = NULL;
+  
+  /* use own func if sens function not available */
+  if (!sens_gethostbyaddr) {
+    h = my_gethostbyaddr_r(addr,length,type,hostp,buffer,buflen,h_errnop);
+  }
+  else {
+    if (!(h = sens_gethostbyaddr(addr,buffer,buflen))) {
+      /* sens returns status via errno */
+      *h_errnop = errno; 
+    }
+    else {
+      *hostp = *h;
+      *h_errnop = 0;
+    }
+  }
+      
+  return h;
+}
+
+struct hostent *ei_gethostbyname_r(const char *name, 
+				    struct hostent *hostp, 
+				    char *buffer, 
+				    int buflen, 
+				    int *h_errnop)
+{
+  struct hostent *h = NULL;
+  
+  /* use own func if sens function not available */
+  if (!sens_gethostbyname) {
+    h = my_gethostbyname_r(name,hostp,buffer,buflen,h_errnop);
+  }
+  else {
+    if (!(h = sens_gethostbyname(name,buffer,buflen))) {
+      /* sens returns status via errno */
+      *h_errnop = errno; 
+    }
+    else {
+      *hostp = *h;
+      *h_errnop = 0;
+    }
+  }
+      
+  return h;
+}
+
+#else /* unix of some kind */
+
+/*
+ * On Solaris there are undocumented functions res_gethostbyname()
+ * and res_gethostbyaddr() that go directly on DNS. Setting
+ * the environ variable ERL_RESOLV to "nodns" or "dns" (or actually
+ * anything). FIXME variable not documented
+ */
+
+#ifdef HAVE_RES_GETHOSTBYNAME
+
+/* FIXME we can't have global data... */
+
+static int initialized = 0;
+static int use_dns_resolver = 0;
+
+static void initialize(void)
+ {
+     /* The first time we read environment and use the selected resolver */
+     char *s = getenv("ERL_RESOLV");
+     /* if set and not empty and set to anyting but "nodns" */
+     if (s && *s && strcmp(s, "nodns") != 0) {
+	 use_dns_resolver = 1;
+     }
+     initialized = 1;
+}
+#endif /* HAVE_RES_GETHOSTBYNAME */
+
+
+#ifdef HAVE_RES_GETHOSTBYNAME
+/* There is no header file for these */
+struct hostent *res_gethostbyname(const char *name);
+struct hostent *res_gethostbyaddr(const char *addr, int len, int type);
+#endif /* HAVE_RES_GETHOSTBYNAME */
+
+struct hostent *ei_gethostbyname(const char *name)
+{
+#ifdef HAVE_RES_GETHOSTBYNAME
+    if (!initialized) initialize();
+
+    if (use_dns_resolver)
+	return res_gethostbyname(name);
+    else 
+#endif /* HAVE_RES_GETHOSTBYNAME */
+	return gethostbyname(name);
+}
+
+struct hostent *ei_gethostbyaddr(const char *addr, int len, int type)
+{
+#ifdef HAVE_RES_GETHOSTBYNAME
+    if (!initialized) initialize();
+
+    if (use_dns_resolver)
+	return res_gethostbyaddr(addr, len, type);
+    else 
+#endif /* HAVE_RES_GETHOSTBYNAME */
+	return gethostbyaddr(addr, len, type);
+}
+
+struct hostent *ei_gethostbyaddr_r(const char *addr,
+				int length, 
+				int type, 
+				struct hostent *hostp,
+				char *buffer,  
+				int buflen, 
+				int *h_errnop)
+{
+#ifndef HAVE_GETHOSTBYNAME_R
+  return my_gethostbyaddr_r(addr,length,type,hostp,buffer,buflen,h_errnop);
+#else
+#ifdef __GLIBC__
+  struct hostent *result;
+
+  gethostbyaddr_r(addr, length, type, hostp, buffer, buflen, &result,
+		h_errnop);
+
+  return result;
+#else
+  return gethostbyaddr_r(addr,length,type,hostp,buffer,buflen,h_errnop);
+#endif
+#endif
+}
+
+struct hostent *ei_gethostbyname_r(const char *name, 
+				    struct hostent *hostp, 
+				    char *buffer, 
+				    int buflen, 
+				    int *h_errnop)
+{
+#ifndef HAVE_GETHOSTBYNAME_R
+  return my_gethostbyname_r(name,hostp,buffer,buflen,h_errnop);
+#else
+#ifdef __GLIBC__
+  struct hostent *result;
+
+  gethostbyname_r(name, hostp, buffer, buflen, &result, h_errnop);
+
+  return result;
+#else
+  return gethostbyname_r(name,hostp,buffer,buflen,h_errnop);
+#endif
+#endif
+}
+
+#endif /* vxworks, win, unix */
+

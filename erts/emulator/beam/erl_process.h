@@ -29,6 +29,44 @@
 
 #define ERTS_DEFAULT_MAX_PROCESSES (1 << 15)
 
+
+extern Uint erts_tot_proc_mem;
+
+
+#define ERTS_PROC_MORE_MEM(Size) (erts_tot_proc_mem += (Size))
+
+#define ERTS_PROC_LESS_MEM(Size) \
+    (ASSERT_EXPR(erts_tot_proc_mem >= (Size)), erts_tot_proc_mem -= (Size))
+
+#define ERTS_HEAP_ALLOC(Type, Size)					\
+    (ERTS_PROC_MORE_MEM((Size)),					\
+     erts_alloc((Type), (Size)))
+
+#define ERTS_HEAP_REALLOC(Type, Ptr, OldSize, NewSize)			\
+    (ERTS_PROC_LESS_MEM((OldSize)),					\
+     ERTS_PROC_MORE_MEM((NewSize)),					\
+     erts_realloc((Type), (Ptr), (NewSize)))
+
+#define ERTS_HEAP_FREE(Type, Ptr, Size)					\
+    (ERTS_PROC_LESS_MEM((Size)),					\
+     erts_free((Type), (Ptr)))
+
+#ifdef SHARED_HEAP
+
+#define ERTS_STACK_ALLOC(Size)						\
+    (ERTS_PROC_MORE_MEM((Size)),					\
+     erts_alloc(ERTS_ALC_T_STACK, (Size)))
+
+#define ERTS_STACK_REALLOC(Ptr, OldSize, NewSize)			\
+    (ERTS_PROC_LESS_MEM((OldSize)),					\
+     ERTS_PROC_MORE_MEM((NewSize)),					\
+     erts_realloc(ERTS_ALC_T_STACK, (Ptr), (OldSize), (NewSize)))
+
+#define ERTS_STACK_FREE(Ptr, Size)					\
+    (ERTS_PROC_LESS_MEM((Size)),					\
+     erts_free(ERTS_ALC_T_STACK, (Ptr)))
+#endif
+
 /*
 ** Timer entry:
 */
@@ -147,10 +185,7 @@ typedef struct process {
     ErlOffHeap off_heap;	/* Off-heap data updated by copy_struct(). */
 #endif
     struct reg_proc *reg;	/* NULL iff not registered */
-    Eterm reg_atom;		/* atom for formerly registered name, */
-				/* when exiting */
-
-    struct erl_link* links;         /* List of links */
+    struct erl_link* links;	/* List of links */
 
     ErlMessageQueue msg;	/* Message queue */
 #ifndef SHARED_HEAP
@@ -217,6 +252,12 @@ typedef struct process {
 				 * in this process.
 				 */
 #endif
+
+    /*
+     * Information mainly for post-mortem use (erl crash dump).
+     */
+    Eterm parent;		/* Pid of process that created this process. */
+    long started;		/* Time when started. */
 } Process;
 
 #ifdef HEAP_FRAG_ELIM_TEST
@@ -318,6 +359,18 @@ extern Uint erts_max_processes;
 Uint erts_process_tab_index_mask;
 extern Uint erts_default_process_flags;
 extern Eterm erts_default_tracer;
+/* If any of the erts_system_monitor_* variables are set (enabled),
+** erts_system_monitor must be != NIL, to allow testing on just
+** the erts_system_monitor_* variables.
+*/
+extern Eterm erts_system_monitor;
+extern Uint erts_system_monitor_long_gc;
+extern Uint erts_system_monitor_large_heap;
+struct erts_system_monitor_flags_t {
+    unsigned int busy_port : 1;
+    unsigned int busy_dist_port : 1;
+};
+extern struct erts_system_monitor_flags_t erts_system_monitor_flags;
 
 #define INVALID_PID(p, pid)	((p) == NULL				\
 				 || (p)->id != (pid)			\
@@ -413,11 +466,12 @@ void schedule_exit(Process*, Eterm);
 void do_exit(Process*, Eterm);
 void set_timer(Process*, Uint);
 void cancel_timer(Process*);
-int keep_zombies(int, int*);
-void process_info_zombies(CIO);
 
 void erts_init_empty_process(Process *p);
 void erts_cleanup_empty_process(Process* p);
 void erts_stack_dump(Process *, CIO);
+void erts_program_counter_info(Process *, CIO);
+
+void erts_deep_process_dump(CIO);
 
 #endif

@@ -78,10 +78,10 @@ variable_inc(Name, N) ->
 %% RowIndex   is a flat list of the indexes for the row.
 %% Cols       is a list of column numbers.
 %%------------------------------------------------------------------
-table_func(new, Name) ->
+table_func(new, _Name) ->
     ok;
 
-table_func(delete, Name) ->
+table_func(delete, _Name) ->
     ok.
 
 table_func(get, RowIndex, Cols, Name) ->
@@ -132,7 +132,7 @@ table_func(set, RowIndex, Cols, Name) ->
 	    {commitFailed, Col}
     end;
 
-table_func(undo, RowIndex, Cols, Name) ->
+table_func(undo, _RowIndex, _Cols, _Name) ->
     {noError, 0}.
 
 
@@ -159,7 +159,7 @@ table_get_elements(Name, RowIndex, Cols, FirstOwnIndex) ->
 
 get_elements([Col | Cols], Row) ->
     [element(Col, Row) | get_elements(Cols, Row)];
-get_elements([], Row) -> [].
+get_elements([], _Row) -> [].
 
 %%-----------------------------------------------------------------
 %% Args: DbRow is a mnesia row ({name, Keys, Cols, ...}).
@@ -172,7 +172,7 @@ make_row(DbRow, 0) ->
 make_row(DbRow, FirstOwnIndex) ->
     list_to_tuple(make_row2(make_row_list(DbRow), FirstOwnIndex)).
 make_row2(RowList, 1) -> RowList;
-make_row2([OtherIndex | RowList], N) ->
+make_row2([_OtherIndex | RowList], N) ->
     make_row2(RowList, N-1).
 
 make_row_list(Row) ->
@@ -188,8 +188,8 @@ make_row_list(2, Row, Acc) ->
     end.
 
 %% createAndGo
-table_set_status(Name, RowIndex, ?'RowStatus_createAndGo', StatusCol, Cols, 
-                 ChangedStatusFunc, ConsFunc) ->
+table_set_status(Name, RowIndex, ?'RowStatus_createAndGo', _StatusCol, Cols, 
+                 ChangedStatusFunc, _ConsFunc) ->
     Row = table_construct_row(Name, RowIndex, ?'RowStatus_active', Cols),
     mnesia:write(Row),
     snmp_generic:try_apply(ChangedStatusFunc, [Name, ?'RowStatus_createAndGo',
@@ -199,8 +199,8 @@ table_set_status(Name, RowIndex, ?'RowStatus_createAndGo', StatusCol, Cols,
 %% createAndWait - set status to notReady, and try to 
 %% make row consistent.
 %%------------------------------------------------------------------
-table_set_status(Name, RowIndex, ?'RowStatus_createAndWait', StatusCol, Cols, 
-                 ChangedStatusFunc, ConsFunc) ->
+table_set_status(Name, RowIndex, ?'RowStatus_createAndWait', _StatusCol, 
+                 Cols, ChangedStatusFunc, ConsFunc) ->
     Row = table_construct_row(Name, RowIndex, ?'RowStatus_notReady', Cols),
     mnesia:write(Row),
     case snmp_generic:try_apply(ConsFunc, [RowIndex, Row]) of
@@ -211,8 +211,8 @@ table_set_status(Name, RowIndex, ?'RowStatus_createAndWait', StatusCol, Cols,
     end;
     
 %% destroy
-table_set_status(Name, RowIndex, ?'RowStatus_destroy', StatusCol, Cols,
-                 ChangedStatusFunc, ConsFunc) ->
+table_set_status(Name, RowIndex, ?'RowStatus_destroy', _StatusCol, Cols,
+                 ChangedStatusFunc, _ConsFunc) ->
     case snmp_generic:try_apply(ChangedStatusFunc,
 				[Name, ?'RowStatus_destroy', RowIndex, Cols]) of
         {noError, 0} ->
@@ -228,7 +228,7 @@ table_set_status(Name, RowIndex, ?'RowStatus_destroy', StatusCol, Cols,
     end;
  
 %% Otherwise, active or notInService
-table_set_status(Name, RowIndex, Val, StatusCol, Cols,
+table_set_status(Name, RowIndex, Val, _StatusCol, Cols,
                  ChangedStatusFunc, ConsFunc) ->
     table_set_cols(Name, RowIndex, Cols, ConsFunc),
     snmp_generic:try_apply(ChangedStatusFunc, [Name, Val, RowIndex, Cols]).

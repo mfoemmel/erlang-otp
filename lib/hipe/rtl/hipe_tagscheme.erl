@@ -27,13 +27,14 @@
 	 fixnum_addsub/5, fixnum_mul/4,
 	 fixnum_andorxor/4, fixnum_not/2]).
 -export([unsafe_car/2, unsafe_cdr/2,
-	 unsafe_constant_element/3, unsafe_update_element/3, element/4]).
+	 unsafe_constant_element/3, unsafe_update_element/3, element/6]).
 -export([unsafe_closure_element/3]).
 -export([mk_fun_header/0, tag_fun/2, untag_fun/2,
 	 if_fun_get_arity_and_address/5]).
 -export([unsafe_untag_float/2, unsafe_tag_float/3]).
--export([unsafe_mk_sub_binary/4, unsafe_mk_float/3]).
-
+-export([unsafe_mk_sub_binary/4, unsafe_mk_float/3, unsafe_mk_big/4, unsafe_load_float/3]).
+-export([test_subbinary/3, test_heap_binary/3]).
+-export([finalize_bin/4, mk_var_header/3, get_base/2]).
 -include("hipe_icode2rtl.hrl").
 -include("hipe_literals.hrl").
 -undef(TAG_PRIMARY_BOXED).
@@ -447,44 +448,157 @@ unsafe_update_element(Tuple, Index, Value) ->   % Index is an immediate
 %      hipe_rtl:mk_alu(Tmp2, Tmp1, 'sub', hipe_rtl:mk_imm(OffAdj)),
 %      hipe_rtl:mk_load(Dst, Tuple, Tmp2)].
 
-element(Dst, Index, Tuple, FailLab) ->
-    FailLabName = hipe_rtl:label_name(FailLab),
-    FixnumOkLab = hipe_rtl:mk_new_label(),
-    BoxedOkLab = hipe_rtl:mk_new_label(),
-    TupleOkLab = hipe_rtl:mk_new_label(),
-    IndexOkLab = hipe_rtl:mk_new_label(),
-    Ptr = hipe_rtl:mk_new_reg(),
-    Header = hipe_rtl:mk_new_reg(),
-    Tmp = hipe_rtl:mk_new_reg(),
-    UIndex = hipe_rtl:mk_new_reg(),
-    Arity = hipe_rtl:mk_new_reg(),
-    InvIndex = hipe_rtl:mk_new_reg(),
+element(Dst, Index, Tuple, FailLab, {tuple, A}, IndexInfo) ->
+  FailLabName = hipe_rtl:label_name(FailLab),
+  FixnumOkLab = hipe_rtl:mk_new_label(),
+  IndexOkLab = hipe_rtl:mk_new_label(),
+  Ptr = hipe_rtl:mk_new_reg(),
+  UIndex = hipe_rtl:mk_new_reg(),
+  Arity = hipe_rtl:mk_imm(A),
+  InvIndex = hipe_rtl:mk_new_reg(),
+  Offset = hipe_rtl:mk_new_reg(),
 
-    Offset = hipe_rtl:mk_new_reg(),
-    %% this is 2+1+3+2+2+2 = 12 insns with 4 branches, 2 loads, and 6 alus :-(
-    [test_fixnum(Index, hipe_rtl:label_name(FixnumOkLab),
-		 FailLabName, 0.99),
-     FixnumOkLab,
-     test_is_boxed(Tuple, hipe_rtl:label_name(BoxedOkLab),
+  case IndexInfo of
+    valid ->
+      %% This is no branch, 1 load and 3 alus = 4 instr
+      [hipe_rtl:mk_alu(UIndex, Index, 'sra',hipe_rtl:mk_imm(?TAG_IMMED1_SIZE)),
+       hipe_rtl:mk_alu(Ptr, Tuple, 'sub', hipe_rtl:mk_imm(?TAG_PRIMARY_BOXED)),
+       hipe_rtl:mk_alu(Offset, UIndex, 'sll', hipe_rtl:mk_imm(2)),
+       hipe_rtl:mk_load(Dst, Ptr, Offset)];
+    fixnums ->
+      %% This is 1 branch, 1 load and 4 alus = 6 instr
+      [hipe_rtl:mk_alu(UIndex, Index,'sra',hipe_rtl:mk_imm(?TAG_IMMED1_SIZE)),
+       hipe_rtl:mk_alu(Ptr, Tuple, 'sub',hipe_rtl:mk_imm(?TAG_PRIMARY_BOXED))|
+       gen_element_tail(Dst, Ptr, InvIndex, Arity, Offset, UIndex, 
+			FailLabName, IndexOkLab)];
+    _ ->
+      %% This is 3 branches, 1 load and 5 alus = 9 instr
+      [test_fixnum(Index, hipe_rtl:label_name(FixnumOkLab),
 		   FailLabName, 0.99),
-     BoxedOkLab,
-     hipe_rtl:mk_alu(Ptr, Tuple, 'sub', hipe_rtl:mk_imm(?TAG_PRIMARY_BOXED)),
-     hipe_rtl:mk_load(Header, Ptr, hipe_rtl:mk_imm(0)),
-     hipe_rtl:mk_alub(Tmp, Header, 'and', hipe_rtl:mk_imm(?TAG_HEADER_MASK), 'eq',
-	      hipe_rtl:label_name(TupleOkLab), FailLabName, 0.99),
-     TupleOkLab,
-     hipe_rtl:mk_alu(UIndex, Index, 'sra', hipe_rtl:mk_imm(?TAG_IMMED1_SIZE)),
-     hipe_rtl:mk_alu(Arity, Header, 'srl', hipe_rtl:mk_imm(?HEADER_ARITY_OFFS)),
-     %% now check that 1 <= UIndex <= Arity
-     %% if UIndex < 1, then (Arity - UIndex) >= Arity
-     %% if UIndex > Arity, then (Arity - UIndex) < 0, which is >=u Arity
-     %% otherwise, 0 <= (Arity - UIndex) < Arity
-     hipe_rtl:mk_alu(InvIndex, Arity, 'sub', UIndex),
-     hipe_rtl:mk_branch(InvIndex, 'geu', Arity, FailLabName,
-		   hipe_rtl:label_name(IndexOkLab), 0.01),
-     IndexOkLab,
-     hipe_rtl:mk_alu(Offset, UIndex, 'sll', hipe_rtl:mk_imm(2)),
-     hipe_rtl:mk_load(Dst, Ptr, Offset)].
+       FixnumOkLab,
+       hipe_rtl:mk_alu(UIndex, Index,'sra',hipe_rtl:mk_imm(?TAG_IMMED1_SIZE)),
+       hipe_rtl:mk_alu(Ptr, Tuple, 'sub',hipe_rtl:mk_imm(?TAG_PRIMARY_BOXED))|
+       gen_element_tail(Dst, Ptr, InvIndex, Arity, Offset, UIndex, 
+			FailLabName, IndexOkLab)]
+  end;
+element(Dst, Index, Tuple, FailLab, tuple, IndexInfo) ->
+  FailLabName = hipe_rtl:label_name(FailLab),
+  FixnumOkLab = hipe_rtl:mk_new_label(),
+  IndexOkLab = hipe_rtl:mk_new_label(),
+  Ptr = hipe_rtl:mk_new_reg(),
+  Header = hipe_rtl:mk_new_reg(),
+  UIndex = hipe_rtl:mk_new_reg(),
+  Arity = hipe_rtl:mk_new_reg(),
+  InvIndex = hipe_rtl:mk_new_reg(),
+  Offset = hipe_rtl:mk_new_reg(),
+
+  case IndexInfo of
+    fixnums ->
+      %% This is 1 branch, 2 loads and 5 alus = 8 instr
+      [hipe_rtl:mk_alu(Ptr, Tuple, 'sub', hipe_rtl:mk_imm(?TAG_PRIMARY_BOXED)),
+       hipe_rtl:mk_load(Header, Ptr, hipe_rtl:mk_imm(0)),
+       hipe_rtl:mk_alu(UIndex, Index, 'sra',hipe_rtl:mk_imm(?TAG_IMMED1_SIZE)),
+       hipe_rtl:mk_alu(Arity,Header,'srl',hipe_rtl:mk_imm(?HEADER_ARITY_OFFS))|
+       gen_element_tail(Dst, Ptr, InvIndex, Arity, Offset, UIndex, 
+			FailLabName, IndexOkLab)];
+    Num when is_integer(Num) ->
+      %% This is 1 branch, 1 load and 3 alus = 5 instr
+      [hipe_rtl:mk_alu(Ptr, Tuple, 'sub', hipe_rtl:mk_imm(?TAG_PRIMARY_BOXED))|
+       gen_element_tail(Dst, Ptr, InvIndex, hipe_rtl:mk_imm(Num), 
+			Offset, UIndex, FailLabName, IndexOkLab)];
+    _ ->
+      %% This is 2 branches, 2 loads and 6 alus = 10 instr
+      [test_fixnum(Index, hipe_rtl:label_name(FixnumOkLab),
+		   FailLabName, 0.99),
+       FixnumOkLab,      
+       hipe_rtl:mk_alu(Ptr, Tuple, 'sub', hipe_rtl:mk_imm(?TAG_PRIMARY_BOXED)),
+       hipe_rtl:mk_load(Header, Ptr, hipe_rtl:mk_imm(0)),
+       hipe_rtl:mk_alu(UIndex, Index, 'sra',hipe_rtl:mk_imm(?TAG_IMMED1_SIZE)),
+       hipe_rtl:mk_alu(Arity,Header,'srl',hipe_rtl:mk_imm(?HEADER_ARITY_OFFS))|
+       gen_element_tail(Dst, Ptr, InvIndex, Arity, Offset, UIndex, 
+			FailLabName, IndexOkLab)]
+  end;
+element(Dst, Index, Tuple, FailLab, _TupleInfo, IndexInfo) ->
+  FailLabName = hipe_rtl:label_name(FailLab),
+  FixnumOkLab = hipe_rtl:mk_new_label(),
+  BoxedOkLab = hipe_rtl:mk_new_label(),
+  TupleOkLab = hipe_rtl:mk_new_label(),
+  IndexOkLab = hipe_rtl:mk_new_label(),
+  Ptr = hipe_rtl:mk_new_reg(),
+  Header = hipe_rtl:mk_new_reg(),
+  Tmp = hipe_rtl:mk_new_reg(),
+  UIndex = hipe_rtl:mk_new_reg(),
+  Arity = hipe_rtl:mk_new_reg(),
+  InvIndex = hipe_rtl:mk_new_reg(),
+  
+  Offset = hipe_rtl:mk_new_reg(),
+
+  case IndexInfo of
+    fixnums ->
+      %% This is 3 branches, 2 loads and 5 alus = 10 instr
+      [test_is_boxed(Tuple, hipe_rtl:label_name(BoxedOkLab),
+		     FailLabName, 0.99),
+       BoxedOkLab,
+       hipe_rtl:mk_alu(Ptr, Tuple, 'sub', hipe_rtl:mk_imm(?TAG_PRIMARY_BOXED)),
+       hipe_rtl:mk_load(Header, Ptr, hipe_rtl:mk_imm(0)),
+       hipe_rtl:mk_alub(Tmp, Header, 'and', 
+			hipe_rtl:mk_imm(?TAG_HEADER_MASK), 'eq',
+			hipe_rtl:label_name(TupleOkLab), FailLabName, 0.99),
+       TupleOkLab,
+       hipe_rtl:mk_alu(UIndex, Index, 'sra',hipe_rtl:mk_imm(?TAG_IMMED1_SIZE)),
+       hipe_rtl:mk_alu(Arity, Header, 'srl',
+		       hipe_rtl:mk_imm(?HEADER_ARITY_OFFS))|
+       gen_element_tail(Dst, Ptr, InvIndex, Arity, Offset, 
+			UIndex, FailLabName, IndexOkLab)];
+
+    Num when is_integer(Num) ->
+      %% This is 3 branches, 2 loads and 4 alus = 9 instr
+      [test_is_boxed(Tuple, hipe_rtl:label_name(BoxedOkLab),
+		     FailLabName, 0.99),
+       BoxedOkLab,
+       hipe_rtl:mk_alu(Ptr, Tuple, 'sub', hipe_rtl:mk_imm(?TAG_PRIMARY_BOXED)),
+       hipe_rtl:mk_load(Header, Ptr, hipe_rtl:mk_imm(0)),
+       hipe_rtl:mk_alub(Tmp, Header, 'and', 
+			hipe_rtl:mk_imm(?TAG_HEADER_MASK), 'eq',
+			hipe_rtl:label_name(TupleOkLab), FailLabName, 0.99),
+       TupleOkLab,
+       hipe_rtl:mk_alu(Arity, Header, 'srl', 
+		       hipe_rtl:mk_imm(?HEADER_ARITY_OFFS))|
+       gen_element_tail(Dst, Ptr, InvIndex, Arity, Offset, 
+			hipe_rtl:mk_imm(Num), FailLabName, IndexOkLab)];
+    _ ->
+      %% This is 4 branches, 2 loads, and 6 alus = 12 instr :(
+      [test_fixnum(Index, hipe_rtl:label_name(FixnumOkLab),
+		   FailLabName, 0.99),
+       FixnumOkLab,      
+       test_is_boxed(Tuple, hipe_rtl:label_name(BoxedOkLab),
+		     FailLabName, 0.99),
+       BoxedOkLab,
+       hipe_rtl:mk_alu(Ptr, Tuple, 'sub', hipe_rtl:mk_imm(?TAG_PRIMARY_BOXED)),
+       hipe_rtl:mk_load(Header, Ptr, hipe_rtl:mk_imm(0)),
+       hipe_rtl:mk_alub(Tmp, Header, 'and', 
+			hipe_rtl:mk_imm(?TAG_HEADER_MASK), 'eq',
+			hipe_rtl:label_name(TupleOkLab), FailLabName, 0.99),
+       TupleOkLab,
+       hipe_rtl:mk_alu(UIndex, Index, 'sra',hipe_rtl:mk_imm(?TAG_IMMED1_SIZE)),
+       hipe_rtl:mk_alu(Arity, Header, 'srl',
+		       hipe_rtl:mk_imm(?HEADER_ARITY_OFFS))|
+       gen_element_tail(Dst, Ptr, InvIndex, Arity, Offset, UIndex, 
+			FailLabName, IndexOkLab)]
+  end.
+
+gen_element_tail(Dst, Ptr, InvIndex, Arity, Offset, 
+		 UIndex, FailLabName, IndexOkLab)->
+  %% now check that 1 <= UIndex <= Arity
+  %% if UIndex < 1, then (Arity - UIndex) >= Arity
+  %% if UIndex > Arity, then (Arity - UIndex) < 0, which is >=u Arity
+  %% otherwise, 0 <= (Arity - UIndex) < Arity
+  [hipe_rtl:mk_alu(InvIndex, Arity, 'sub', UIndex),
+   hipe_rtl:mk_branch(InvIndex, 'geu', Arity, FailLabName,
+		      hipe_rtl:label_name(IndexOkLab), 0.01),
+   IndexOkLab,
+   hipe_rtl:mk_alu(Offset, UIndex, 'sll', hipe_rtl:mk_imm(2)),
+   hipe_rtl:mk_load(Dst, Ptr, Offset)].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 unsafe_closure_element(Dst, Index, Closure) ->	% Index is an immediate
@@ -533,13 +647,15 @@ unsafe_untag_float(Dst, Src) ->
     [hipe_rtl:mk_fload(Dst, Src, hipe_rtl:mk_imm(2))].
 
 unsafe_tag_float(Dst, Src, Options) ->
-  HP = hipe_rtl:mk_reg(hipe_rtl_arch:heap_pointer_reg()),
+  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
   Head = hipe_rtl:mk_imm(mk_header(2, ?TAG_HEADER_FLOAT)),
   
-  Code = [hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), Head),
+  Code = [GetHPInsn,
+	  hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), Head),
 	  hipe_rtl:mk_fstore(HP, hipe_rtl:mk_imm(4), Src),
 	  tag_flonum(Dst, HP),
-	  hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(12))],
+	  hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(12)),
+	  PutHPInsn],
   case ?AddGC(Options) of
     true -> [hipe_rtl:mk_gctest(3)|Code];
     false -> Code
@@ -549,22 +665,180 @@ unsafe_tag_float(Dst, Src, Options) ->
 %
 % Binary stuff
 %
+finalize_bin(Dst, Base, Offset, TrueLblName) ->
+  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
+  TmpOffset = hipe_rtl:mk_new_reg(),
+  Tmp1 = hipe_rtl:mk_new_reg(),
+  Tmp2 = hipe_rtl:mk_new_reg(),
+  TmpOver = hipe_rtl:mk_new_reg(),
+  NewOver = hipe_rtl:mk_new_reg(),
+  OldOver = hipe_rtl:mk_new_reg(),
+  HeapLbl = hipe_rtl:mk_new_label(),
+  REFCLbl = hipe_rtl:mk_new_label(),
+  ProcBinHeader = hipe_rtl:mk_imm(mk_header(?PROC_BIN_BYTESIZE-1, ?TAG_HEADER_REFC_BIN)),
+  
+  [GetHPInsn,
+   tag_boxed(Dst, HP),
+   hipe_rtl:mk_alu(TmpOffset, Offset, sra, hipe_rtl:mk_imm(3)),
+   hipe_rtl:mk_branch(TmpOffset, le, hipe_rtl:mk_imm(?MAX_HEAP_BIN_SIZE), 
+		      hipe_rtl:label_name(HeapLbl), hipe_rtl:label_name(REFCLbl)),
+   HeapLbl,
+   hipe_rtl:mk_alu(Tmp1, HP, add, TmpOffset),
+   hipe_rtl:mk_alu(Tmp2, Tmp1, add, hipe_rtl:mk_imm(11)),
+   hipe_rtl:mk_alu(HP, Tmp2, 'and', hipe_rtl:mk_imm(16#fffffffc)),
+   PutHPInsn,
+   hipe_rtl:mk_goto(TrueLblName),
+   REFCLbl,
+   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_THING_WORD), ProcBinHeader),
+   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_BINSIZE), TmpOffset),
+   hipe_rtl:mk_alu(TmpOver, TmpOffset, srl, hipe_rtl:mk_imm(round(math:log(?OVERHEAD_FACTOR)/math:log(2)))),
+   hipe_rtl_arch:pcb_load(OldOver, ?P_OFF_HEAP_OVERHEAD),
+   hipe_rtl:mk_alu(NewOver, OldOver, 'add', TmpOver),
+   hipe_rtl_arch:pcb_store(?P_OFF_HEAP_OVERHEAD, NewOver),
+   hipe_rtl_arch:pcb_load(Tmp1, ?P_OFF_HEAP_MSO),
+   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_NEXT), Tmp1),
+   hipe_rtl_arch:pcb_store(?P_OFF_HEAP_MSO, HP),
+   hipe_rtl:mk_alu(Tmp2, Base, sub, hipe_rtl:mk_imm(?BINARY_ORIG_BYTES)),
+   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_VAL), Tmp2),
+   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_BYTES), Base),
+   hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(?PROC_BIN_BYTESIZE*4)),
+   PutHPInsn,
+   hipe_rtl:mk_goto(TrueLblName)].
+
+get_base(Base, ByteSize) ->
+  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(), 
+  Header = hipe_rtl:mk_new_reg(),
+  Tmp1 = hipe_rtl:mk_new_reg(),
+  Tmp2 = hipe_rtl:mk_new_reg(),
+  EvenWordSize = hipe_rtl:mk_new_reg(),
+  [GetHPInsn,
+   hipe_rtl:mk_alu(Tmp1, ByteSize, add, hipe_rtl:mk_imm(3)),
+   hipe_rtl:mk_alu(EvenWordSize, Tmp1, sra, hipe_rtl:mk_imm(2)),
+   hipe_rtl:mk_alu(Tmp2, EvenWordSize, add, hipe_rtl:mk_imm(1)),
+   hipe_rtl:mk_alu(Base, HP, add, hipe_rtl:mk_imm(8)),
+   mk_var_header(Header, Tmp2, ?TAG_HEADER_HEAP_BIN),
+   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), Header),
+   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(4), ByteSize),
+   PutHPInsn].
 
 unsafe_mk_sub_binary(Dst, Size, Offs, Orig) -> 
-    HP = hipe_rtl:mk_reg(hipe_rtl_arch:heap_pointer_reg()),  
+    {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
     Head = hipe_rtl:mk_imm(mk_header(2, ?TAG_HEADER_SUB_BIN)),
-    [hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), Head),
+    [GetHPInsn,
+     hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), Head),
      hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(4), Size),
      hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(8), Offs),
      hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(12), Orig),
      tag_boxed(Dst, HP),
-     hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(16))].
+     hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(16)),
+     PutHPInsn].
 
 unsafe_mk_float(Dst, FloatLo, FloatHi) ->
-    HP = hipe_rtl:mk_reg(hipe_rtl_arch:heap_pointer_reg()),   
+    {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
     Head = hipe_rtl:mk_imm(mk_header(2, ?TAG_HEADER_FLOAT)),
-    [hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), Head),
+    [GetHPInsn,
+     hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), Head),
      hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(4), FloatLo),
      hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(8), FloatHi),
      tag_boxed(Dst, HP),
-     hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(12))].
+     hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(12)),
+     PutHPInsn].
+
+unsafe_load_float(Dst1, Dst2, Src) ->
+  case get(hipe_target_arch) of
+    x86 ->
+      [hipe_rtl:mk_load(Dst1, Src, hipe_rtl:mk_imm(2)),
+       hipe_rtl:mk_load(Dst2, Src, hipe_rtl:mk_imm(6))];
+    ultrasparc ->
+      [hipe_rtl:mk_load(Dst2, Src, hipe_rtl:mk_imm(2)),
+       hipe_rtl:mk_load(Dst1, Src, hipe_rtl:mk_imm(6))]
+  end.
+
+
+
+unsafe_mk_big(Dst, Src, Signedness, ultrasparc) ->
+  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
+  PosHead = hipe_rtl:mk_imm(mk_header(1, ?TAG_HEADER_POS_BIG)),
+  NegHead = hipe_rtl:mk_imm(mk_header(1, ?TAG_HEADER_NEG_BIG)),
+  PosLabel = hipe_rtl:mk_new_label(),
+  NegLabel = hipe_rtl:mk_new_label(),
+  JoinLabel = hipe_rtl:mk_new_label(),
+  Tmp1 = hipe_rtl:mk_new_reg(),
+  [GetHPInsn | case Signedness of
+    unsigned ->
+      [hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), PosHead),
+       hipe_rtl:mk_alu(Tmp1, Src, sll, hipe_rtl:mk_imm(16)),
+       hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(16)),
+       hipe_rtl:mk_alu(Src, Src, 'or', Tmp1),
+       hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(4), Src),
+       tag_boxed(Dst, HP),
+       hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(8)),
+       PutHPInsn];
+    signed ->
+      [hipe_rtl:mk_alub(Tmp1, Src, 'and', hipe_rtl:mk_imm(1 bsl 31), eq, hipe_rtl:label_name(PosLabel), hipe_rtl:label_name(NegLabel)),
+       PosLabel,
+       hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), PosHead),
+       hipe_rtl:mk_goto(hipe_rtl:label_name(JoinLabel)),
+       NegLabel,
+       hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), NegHead),
+       JoinLabel,
+       hipe_rtl:mk_alu(Tmp1, Src, sll, hipe_rtl:mk_imm(16)),
+       hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(16)),
+       hipe_rtl:mk_alu(Src, Src, 'or', Tmp1),
+       hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(4), Src),
+       tag_boxed(Dst, HP),
+       hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(8)),
+       PutHPInsn]
+  end];
+unsafe_mk_big(Dst, Src, Signedness, x86) ->
+  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
+  PosHead = hipe_rtl:mk_imm(mk_header(1, ?TAG_HEADER_POS_BIG)),
+  NegHead = hipe_rtl:mk_imm(mk_header(1, ?TAG_HEADER_NEG_BIG)),
+  PosLabel = hipe_rtl:mk_new_label(),
+  NegLabel = hipe_rtl:mk_new_label(),
+  JoinLabel = hipe_rtl:mk_new_label(),
+  Tmp1 = hipe_rtl:mk_new_reg(),
+  [GetHPInsn | case Signedness of
+    unsigned ->
+      [hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), PosHead),
+       hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(4), Src),
+       tag_boxed(Dst, HP),
+       hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(8)),
+       PutHPInsn];
+    signed ->
+      [hipe_rtl:mk_alub(Tmp1, Src, 'and', hipe_rtl:mk_imm(1 bsl 31), eq, hipe_rtl:label_name(PosLabel), hipe_rtl:label_name(NegLabel)),
+       PosLabel,
+       hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), PosHead),
+       hipe_rtl:mk_goto(hipe_rtl:label_name(JoinLabel)),
+       NegLabel,
+       hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), NegHead),
+       JoinLabel,
+       hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(4), Src),
+       tag_boxed(Dst, HP),
+       hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(8)),
+       PutHPInsn]
+  end].
+
+test_subbinary(Binary, TrueLblName, FalseLblName) ->
+  Tmp1 = hipe_rtl:mk_new_reg(),
+  Tmp2 = hipe_rtl:mk_new_reg(),
+  [hipe_rtl:mk_load(Tmp1, Binary, hipe_rtl:mk_imm(-2)),
+   hipe_rtl:mk_alu(Tmp2, Tmp1, 'and', hipe_rtl:mk_imm(?TAG_HEADER_MASK)),
+   hipe_rtl:mk_branch(Tmp2, eq, hipe_rtl:mk_imm(?TAG_HEADER_SUB_BIN), TrueLblName, FalseLblName)].
+
+test_heap_binary(Binary, TrueLblName, FalseLblName) ->
+  Tmp1 = hipe_rtl:mk_new_reg(),
+  Tmp2 = hipe_rtl:mk_new_reg(),
+  [hipe_rtl:mk_load(Tmp1, Binary, hipe_rtl:mk_imm(-2)),
+   hipe_rtl:mk_alu(Tmp2, Tmp1, 'and', hipe_rtl:mk_imm(?TAG_HEADER_MASK)),
+   hipe_rtl:mk_branch(Tmp2, eq, hipe_rtl:mk_imm(?TAG_HEADER_HEAP_BIN), TrueLblName, FalseLblName)].
+
+mk_var_header(Header, Size, Tag) ->
+  Tmp = hipe_rtl:mk_new_reg(),
+  [hipe_rtl:mk_alu(Tmp, Size, sll, hipe_rtl:mk_imm(?HEADER_ARITY_OFFS)),
+   hipe_rtl:mk_alu(Header, Tmp, 'add', hipe_rtl:mk_imm(Tag))].
+
+
+   
+   
+   

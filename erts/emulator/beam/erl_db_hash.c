@@ -115,7 +115,7 @@ struct mp_info {
 /*
 ** Forward decl's (static functions)
 */
-static HashDbTerm** alloc_seg(Uint *);
+static HashDbTerm** alloc_seg(DbTableHash *tb);
 static int realloc_counter(HashDbTerm** bp, Uint sz, 
 			   Eterm new_counter, int counterpos);
 static HashDbTerm* next(DbTableHash *tb, Uint *iptr, HashDbTerm *list);
@@ -159,12 +159,12 @@ int db_fixtable_hash(DbTableHash *tb, Eterm arg)
 	HashDbTerm *b = *bp;
 
 	tb->fixdel = fx->next;
-	erts_sl_free((void *) fx);
+	erts_free(ERTS_ALC_T_DB_FIX_DEL, (void *) fx);
 
 	while (b != NULL) {
 	    if (b->hvalue == INVALID_HASH) {
 		*bp = b->next;
-		tb->memory -= SIZ_DBTERM(b);
+		ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(b));
 		free_term(b);
 		b = *bp;
 	    } else {
@@ -179,16 +179,19 @@ int db_fixtable_hash(DbTableHash *tb, Eterm arg)
 
 int db_create_hash(Process *p, DbTableHash *tb)
 {
-    tb->memory = (sizeof(DbTable) / sizeof (Eterm));
+    ERTS_DB_TAB_MORE_MEM(tb, sizeof(DbTable) / sizeof (Eterm));
     tb->szm = SZMASK;
     tb->nslots = SEGSZ;
     tb->nactive = SEGSZ;
     tb->p = 0;
     tb->nsegs = 1;
-    tb->seg = (HashDbTerm***) sys_alloc_from(54,sizeof(HashDbTerm**));
-    tb->memory += (sizeof(HashDbTerm**) / sizeof(Eterm));
-    tb->seg[0] = alloc_seg(&(tb->memory));
+    tb->seg = (HashDbTerm***) erts_alloc(ERTS_ALC_T_DB_SEG_TAB,
+					 sizeof(HashDbTerm**));
+    if (tb->seg)
+	ERTS_DB_TAB_MORE_MEM(tb, sizeof(HashDbTerm**) / sizeof(Eterm));
+    tb->seg[0] = alloc_seg(tb);
     tb->fixdel = NULL;
+
     return DB_ERROR_NONE;
 }
 
@@ -253,6 +256,7 @@ int db_next_hash(Process *p, DbTableHash *tb,
 int db_update_counter_hash(Process *p, DbTableHash *tb,
 			   Eterm key,
 			   Eterm incr, 
+			   int warp,
 			   int counterpos,
 			   Eterm *ret)
 {
@@ -282,7 +286,7 @@ int db_update_counter_hash(Process *p, DbTableHash *tb,
     return db_do_update_counter(p, (void *) bp, b->dbterm.tpl,
 				counterpos, 
 				(int (*)(void *, Uint, Eterm, int))
-				&realloc_counter, incr, ret);
+				&realloc_counter, incr, warp, ret);
 }
 
 int db_put_hash(Process *proc, DbTableHash *tb,
@@ -307,11 +311,14 @@ int db_put_hash(Process *proc, DbTableHash *tb,
 	    && EQ(key, GETKEY(tb, b->dbterm.tpl))) {
 	    if (tb->status & DB_SET) {
 		HashDbTerm* bnext = b->next;
-		tb->memory -= b->dbterm.size;
+		ERTS_DB_TAB_LESS_MEM(tb, b->dbterm.size);
+		if (b->hvalue == INVALID_HASH) {
+		    tb->nitems++;
+		}
 		q = get_term(b, obj, hval);
 		q->next = bnext;
 		q->hvalue = hval; /* In case of INVALID_HASH */
-		tb->memory += q->dbterm.size;
+		ERTS_DB_TAB_MORE_MEM(tb, q->dbterm.size);
 		*bp = q;
 		*ret = am_true;
 		return DB_ERROR_NONE;
@@ -321,6 +328,9 @@ int db_put_hash(Process *proc, DbTableHash *tb,
                 HashDbTerm* p = b;
 		
                 if (eq(make_tuple(b->dbterm.tpl), obj)) {
+		    if (b->hvalue == INVALID_HASH) {
+			tb->nitems++;
+		    }
 		    b->hvalue = hval;
 		    *ret = am_true;
 		    return DB_ERROR_NONE;
@@ -331,6 +341,9 @@ int db_put_hash(Process *proc, DbTableHash *tb,
 		       ((b->hvalue == hval) || b->hvalue == INVALID_HASH) && 
                        EQ(key, GETKEY(tb, b->dbterm.tpl))) {
                     if (eq(make_tuple(b->dbterm.tpl), obj)) {
+			if (b->hvalue == INVALID_HASH) {
+			    tb->nitems++;
+			}
 			b->hvalue = hval;
 			*ret = am_true;
 			return DB_ERROR_NONE;
@@ -341,14 +354,14 @@ int db_put_hash(Process *proc, DbTableHash *tb,
 
                 q = get_term(NULL, obj, hval);
                 q->next = p;
-		tb->memory += SIZ_DBTERM(q);
+		ERTS_DB_TAB_MORE_MEM(tb, SIZ_DBTERM(q));
                 *tp = q;
 		goto Lupdate;
 	    }
 	    else {  /* if (tb->status & DB_DUPLICATE_BAG) */
 		q = get_term(NULL, obj, hval);
 		q->next = b;
-		tb->memory += SIZ_DBTERM(q);
+		ERTS_DB_TAB_MORE_MEM(tb, SIZ_DBTERM(q));
 		*bp = q;
 		goto Lupdate;
 	    }
@@ -359,7 +372,7 @@ int db_put_hash(Process *proc, DbTableHash *tb,
 
     q = get_term(NULL, obj, hval);
     q->next = b;
-    tb->memory += SIZ_DBTERM(q);
+    ERTS_DB_TAB_MORE_MEM(tb, SIZ_DBTERM(q));
     *bp = q;
 
  Lupdate:
@@ -567,7 +580,7 @@ int db_erase_bag_exact2(DbTableHash *tb,
 	    if ((arityval(b->dbterm.tpl[0]) == 2) && 
 		EQ(value, b->dbterm.tpl[2])) {
 		*bp = b->next;
-		tb->memory -= SIZ_DBTERM(b);
+		ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(b));
 		free_term(b);
 		tb->nitems--;
 		b = *bp;
@@ -608,7 +621,7 @@ int db_erase_hash(Process *p, DbTableHash *tb,
 	    if (tb->status & DB_FIXED) {
 		/* Pseudo remove */
 		FixedDeletion *fixd = (FixedDeletion *) 
-		    erts_sl_alloc_from(59, sizeof(FixedDeletion));
+		    erts_alloc(ERTS_ALC_T_DB_FIX_DEL, sizeof(FixedDeletion));
 		fixd->slot = ix;
 		fixd->next = tb->fixdel;
 		tb->fixdel = fixd;
@@ -619,7 +632,7 @@ int db_erase_hash(Process *p, DbTableHash *tb,
 		b = b->next;
 	    } else {
 		*bp = b->next;
-		tb->memory -= SIZ_DBTERM(b);
+		ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(b));
 		free_term(b);
 		tb->nitems--;
 		b = *bp;
@@ -667,7 +680,7 @@ int db_erase_object_hash(Process *p, DbTableHash *tb,
 	    if (tb->status & DB_FIXED) {
 		/* Pseudo remove */
 		FixedDeletion *fixd = (FixedDeletion *) 
-		    erts_sl_alloc_from(59, sizeof(FixedDeletion));
+		    erts_alloc(ERTS_ALC_T_DB_FIX_DEL, sizeof(FixedDeletion));
 		fixd->slot = ix;
 		fixd->next = tb->fixdel;
 		tb->fixdel = fixd;
@@ -678,7 +691,7 @@ int db_erase_object_hash(Process *p, DbTableHash *tb,
 		b = b->next;
 	    } else {
 		*bp = b->next;
-		tb->memory -= SIZ_DBTERM(b);
+		ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(b));
 		free_term(b);
 		tb->nitems--;
 		b = *bp;
@@ -913,7 +926,8 @@ int db_select_hash(Process *p, DbTableHash *tb,
 	    erts_match_set_free(mpi.mp);	\
 	}					\
 	if (mpi.lists != mpi.dlists) {		\
-	    sys_free(mpi.lists);		\
+	    erts_free(ERTS_ALC_T_DB_SEL_LIST,	\
+		      (void *) mpi.lists);	\
 	}					\
 	*ret = (Term);				\
 	return RetVal;				\
@@ -1098,7 +1112,8 @@ int db_select_count_hash(Process *p,
 	    erts_match_set_free(mpi.mp);	\
 	}					\
 	if (mpi.lists != mpi.dlists) {		\
-	    sys_free(mpi.lists);		\
+	    erts_free(ERTS_ALC_T_DB_SEL_LIST,	\
+		      (void *) mpi.lists);	\
 	}					\
 	*ret = (Term);				\
 	return RetVal;				\
@@ -1221,7 +1236,8 @@ int db_select_delete_hash(Process *p,
 	    erts_match_set_free(mpi.mp);	\
 	}					\
 	if (mpi.lists != mpi.dlists) {		\
-	    sys_free(mpi.lists);		\
+	    erts_free(ERTS_ALC_T_DB_SEL_LIST,	\
+		      (void *) mpi.lists);	\
 	}					\
 	*ret = (Term);				\
 	return RetVal;				\
@@ -1264,7 +1280,7 @@ int db_select_delete_hash(Process *p,
 			   0,&dummy)) == am_true) {
 	    if (tb->status & DB_FIXED) {
 		FixedDeletion *fixd = (FixedDeletion *)
-		    erts_sl_alloc_from(59, sizeof(FixedDeletion));
+		    erts_alloc(ERTS_ALC_T_DB_FIX_DEL, sizeof(FixedDeletion));
 		int ix;
 		HASH(tb, (*current_list)->hvalue, ix);
 		fixd->slot = ix;
@@ -1276,7 +1292,7 @@ int db_select_delete_hash(Process *p,
 	    } else {
 		HashDbTerm *del = *current_list;
 		*current_list = (*current_list)->next;
-		tb->memory -= SIZ_DBTERM(del);
+		ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(del));
 		free_term(del);
 		tb->nitems--;
 		did_erase = 1;
@@ -1400,13 +1416,13 @@ int db_select_delete_continue_hash(Process *p,
 	    if (do_delete) {
 		HashDbTerm *del = *current_list;
 		*current_list = (*current_list)->next;
-		tb->memory -= SIZ_DBTERM(del);
+		ERTS_DB_TAB_LESS_MEM(tb, SIZ_DBTERM(del));
 		free_term(del);
 		tb->nitems--;
 		did_erase = 1;
 	    } else {
 		FixedDeletion *fixd = (FixedDeletion *) 
-		    erts_sl_alloc_from(59, sizeof(FixedDeletion));
+		    erts_alloc(ERTS_ALC_T_DB_FIX_DEL, sizeof(FixedDeletion));
 		fixd->slot = chain_pos;
 		fixd->next = tb->fixdel;
 		tb->fixdel = fixd;
@@ -1582,7 +1598,7 @@ int db_mark_all_deleted_hash(DbTableHash *tb)
     for (i = 0; i < tb->nactive; i++) {
 	if ((list = BUCKET(tb,i)) != 0) {
 	    fixd = (FixedDeletion *)
-		erts_sl_alloc_from(59, sizeof(FixedDeletion));
+		erts_alloc(ERTS_ALC_T_DB_FIX_DEL, sizeof(FixedDeletion));
 	    fixd->slot = i;
 	    fixd->next = tb->fixdel;
 	    tb->fixdel = fixd;
@@ -1635,7 +1651,7 @@ void free_hash_table(DbTableHash *tb)
     while (tb->fixdel != NULL) {
 	FixedDeletion *fx = tb->fixdel;
 	tb->fixdel = fx->next;
-	erts_sl_free((void *) fx);
+	erts_free(ERTS_ALC_T_DB_FIX_DEL, (void *) fx);
     }
     while(n--) {
 	HashDbTerm** bp = *sp;
@@ -1651,11 +1667,13 @@ void free_hash_table(DbTableHash *tb)
 		    p = nxt;
 		}
 	    }
-	    sys_free(*sp);
+	    erts_free(ERTS_ALC_T_DB_SEG, *sp);
 	}
 	sp++;
     }
-    sys_free(tb->seg);
+    erts_free(ERTS_ALC_T_DB_SEG_TAB, tb->seg);
+
+    ERTS_DB_TAB_LESS_MEM(tb, tb->memory);
 }
 
 
@@ -1695,8 +1713,9 @@ static int analyze_pattern(DbTableHash *tb, Eterm pattern,
     }
 
     if (num_heads > 10) {
-	buff = safe_alloc_from(43, sizeof(Eterm) * num_heads * 3);
-	mpi->lists = safe_alloc_from(44, sizeof(*(mpi->lists)) * num_heads);
+	buff = erts_alloc(ERTS_ALC_T_DB_TMP, sizeof(Eterm) * num_heads * 3);
+	mpi->lists = erts_alloc(ERTS_ALC_T_DB_SEL_LIST,
+				sizeof(*(mpi->lists)) * num_heads);
 	
     }
 
@@ -1710,14 +1729,14 @@ static int analyze_pattern(DbTableHash *tb, Eterm pattern,
 	ttpl = CAR(list_val(lst));
 	if (!is_tuple(ttpl)) {
 	    if (buff != sbuff) { 
-		sys_free(buff);
+		erts_free(ERTS_ALC_T_DB_TMP, buff);
 	    }
 	    return DB_ERROR_BADPARAM;
 	}
 	ptpl = tuple_val(ttpl);
 	if (ptpl[0] != make_arityval(3U)) {
 	    if (buff != sbuff) { 
-		sys_free(buff);
+		erts_free(ERTS_ALC_T_DB_TMP, buff);
 	    }
 	    return DB_ERROR_BADPARAM;
 	}
@@ -1763,30 +1782,34 @@ static int analyze_pattern(DbTableHash *tb, Eterm pattern,
 	}
     }
 
-    if (mpi->something_can_match) {
-	if ((mpi->mp = db_match_compile(matches, guards, bodies,
-					num_heads, DCOMP_TABLE, NULL)) 
-	    == NULL) {
-	    if (buff != sbuff) { 
-		sys_free(buff);
-	    }
-	    return DB_ERROR_BADPARAM;
+    /*
+     * It would be nice not to compile the match_spec if nothing could match,
+     * but then the select calls would not fail like they should on bad 
+     * match specs that happen to specify non existent keys etc.
+     */
+    if ((mpi->mp = db_match_compile(matches, guards, bodies,
+				    num_heads, DCOMP_TABLE, NULL)) 
+	== NULL) {
+	if (buff != sbuff) { 
+	    erts_free(ERTS_ALC_T_DB_TMP, buff);
 	}
+	return DB_ERROR_BADPARAM;
     }
     if (buff != sbuff) { 
-	sys_free(buff);
+	erts_free(ERTS_ALC_T_DB_TMP, buff);
     }
     return DB_ERROR_NONE;
 }
 
-static HashDbTerm** alloc_seg(Uint *pmemory)
+static HashDbTerm** alloc_seg(DbTableHash *tb)
 {
     HashDbTerm** bp;
     int sz = sizeof(HashDbTerm*)*SEGSZ;
 
-    if ((bp = (HashDbTerm**) sys_alloc_from(51,sz)) == NULL)
+    bp = (HashDbTerm**) erts_alloc_fnf(ERTS_ALC_T_DB_SEG, sz);
+    if (!bp)
 	return NULL;
-    *pmemory += (sz / sizeof(Eterm));
+    ERTS_DB_TAB_MORE_MEM(tb, sz / sizeof(Eterm));
     memset(bp, 0, sz);
     return bp;
 }
@@ -1843,7 +1866,7 @@ static void free_term(HashDbTerm* p)
 {
 
     db_free_term_data(&(p->dbterm));
-    sys_free(p);
+    erts_free(ERTS_ALC_T_DB_TERM, (void *) p);
 }
 
 
@@ -1860,7 +1883,7 @@ static void grow(DbTableHash* tb)
 	/* Time to get a new array */    
 	if ((tb->nactive & SZMASK) == 0) {
 	    int nxt = tb->nactive >> SZEXP;
-	    HashDbTerm** new_segment = alloc_seg(&(tb->memory));
+	    HashDbTerm** new_segment = alloc_seg(tb);
 	    HashDbTerm*** new_seg;
 
 	    if (new_segment == NULL)
@@ -1874,11 +1897,14 @@ static void grow(DbTableHash* tb)
 		else
 		    sz = tb->nsegs + SEG_INCREAMENT;
 		new_seg = (HashDbTerm***) 
-		    safe_realloc(tb->seg,
+		    erts_realloc(ERTS_ALC_T_DB_SEG_TAB,
+				 tb->seg,
 				 sizeof(HashDbTerm**)*sz);
 
-		tb->memory += (((sz - tb->nsegs) * sizeof(HashDbTerm**)) /
-			       sizeof(Eterm));
+		ERTS_DB_TAB_MORE_MEM(tb,
+				     (((sz - tb->nsegs)
+				       * sizeof(HashDbTerm**))
+				      / sizeof(Eterm)));
 		tb->seg = new_seg;
 		tb->nsegs = sz;
 		for (i = nxt+1; i < sz; i++)
@@ -1947,8 +1973,8 @@ static void shrink(DbTableHash* tb)
     if ((tb->nactive & SZMASK) == SZMASK) {
 	int six = (tb->nactive >> SZEXP)+1;
 
-	sys_free(tb->seg[six]);
-	tb->memory -= ((sizeof(HashDbTerm*)*SEGSZ)/sizeof(Eterm));
+	erts_free(ERTS_ALC_T_DB_SEG, (void *) tb->seg[six]);
+	ERTS_DB_TAB_LESS_MEM(tb, ((sizeof(HashDbTerm*)*SEGSZ)/sizeof(Eterm)));
 	tb->seg[six] = 0;
 	tb->nslots -= SEGSZ;
     }

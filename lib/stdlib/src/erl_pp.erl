@@ -33,6 +33,7 @@
 
 %% The following exports are here for backwards compatibility.
 -export([seq/1,seq/2]).
+-deprecated([{seq,1},{seq,2}]).
 
 -import(lists, [flatten/1]).
 -import(io_lib, [write/1,format/2,write_char/1,write_string/1,indentation/2]).
@@ -60,30 +61,42 @@ form({function,Line,Name,Arity,Clauses}, Hook) ->
 form({rule,Line,Name,Arity,Clauses}, Hook) ->
     rule({rule,Line,Name,Arity,Clauses}, Hook);
 %% These are specials to make it easier for the compiler.
-form({error,E}, Hook) ->
+form({error,E}, _Hook) ->
     format("~p~n", [{error,E}]);
-form({warning,W}, Hook) ->
+form({warning,W}, _Hook) ->
     format("~p~n", [{warning,W}]);
-form({eof,Line}, Hook) -> "\n".
+form({eof,_Line}, _Hook) -> "\n".
 
 attribute(Thing) ->
     attribute(Thing, none).
 
-attribute({attribute,Line,Name,Arg}, Hook) ->
+attribute({attribute,_Line,Name,Arg}, Hook) ->
     attribute(Name, Arg, Hook).
 
-attribute(export, Falist, Hook) ->
+attribute(export, Falist, _Hook) ->
     format("-export(~s).\n", [falist(Falist)]);
-attribute(import, {From,Falist}, Hook) ->
+attribute(import, Name, _Hook) when list(Name) ->
+    format("-import(~s).\n", [pname(Name)]);
+attribute(import, {From,Falist}, _Hook) when list(From) ->
+    format("-import(~s, ~s).\n", [pname(From),falist(Falist)]);
+attribute(import, {From,Falist}, _Hook) ->
     format("-import(~w, ~s).\n", [From,falist(Falist)]);
-attribute(file, {Name,Line}, Hook) ->
+attribute(file, {Name,Line}, _Hook) ->
     format("-file(~p, ~w).\n", [Name,Line]);
 attribute(record, {Name,Is}, Hook) ->
     Nl = flatten(write(Name)),
     format("-record(~w, ~s).\n",
 	   [Name,record_fields(Is, 10+length(Nl), Hook)]);
-attribute(Name, Arg, Hook) ->
+attribute(module, Name, _Hook) when list(Name) ->
+    format("-module(~s).\n", [pname(Name)]);
+attribute(Name, Arg, _Hook) ->
     format("-~w(~w).\n", [Name,Arg]).
+
+pname(['' | As]) ->
+    [$. | pname(As)];
+pname([A]) -> write(A);
+pname([A | As]) ->
+    [write(A),$.|pname(As)].
 
 falist([]) -> "[]";
 falist(Fas) -> falist(Fas, $[).
@@ -94,8 +107,8 @@ falist([], _) -> [$]].
 
 function(F) -> function(F, none).
 
-function({function,Line,Name,Arity,Cs}, Hook) ->
-    [clauses(fun (C, I, H) -> func_clause(Name, C, H) end, 0, Hook, Cs),".\n"].
+function({function,_Line,Name,_Arity,Cs}, Hook) ->
+    [clauses(fun (C, _, H) -> func_clause(Name, C, H) end, 0, Hook, Cs),".\n"].
 
 func_clause(Name, {clause,Line,Head,Guard,Body}, Hook) ->
     [expr({call,Line,{atom,Line,Name},Head}, 0, Hook),
@@ -104,8 +117,8 @@ func_clause(Name, {clause,Line,Head,Guard,Body}, Hook) ->
 
 rule(R) -> rule(R, none).
 
-rule({rule,Line,Name,Arity,Cs}, Hook) ->
-    [clauses(fun (C, I, H) -> rule_clause(Name, C, H) end, 0, Hook, Cs),".\n"].
+rule({rule,_Line,Name,_Arity,Cs}, Hook) ->
+    [clauses(fun (C, _, H) -> rule_clause(Name, C, H) end, 0, Hook, Cs),".\n"].
 
 rule_clause(Name, {clause,Line,Head,Guard,Body}, Hook) ->
     [expr({call,Line,{atom,Line,Name},Head}, 0, Hook),
@@ -184,7 +197,7 @@ expr({nil,_}, _, _, _) -> "[]";
 expr({cons,_,H,T}, I, _, Hook) ->
     I1 = I + 1,
     [$[,expr(H, I1, 0, Hook)|tail(T, I1, Hook)];
-expr({lc,_,E,Qs}, I, Prec, Hook) ->
+expr({lc,_,E,Qs}, I, _Prec, Hook) ->
     ["[ ",
      expr(E, I+2, 0, Hook),
      " ||", nl_indent(I+4),
@@ -201,7 +214,7 @@ expr({record_index, _, Name, F}, I, Prec, Hook) ->
     El = ["#",Nl,".",expr(F, I+length(Nl)+2, R, Hook)],
     maybe_paren(P, Prec, El);
 expr({record, _, Name, Fs}, I, Prec, Hook) ->
-    {P,R} = preop_prec('#'),
+    {P,_R} = preop_prec('#'),
     Nl = flatten(write(Name)),
     El = ["#",Nl,record_fields(Fs, I+length(Nl)+1, Hook)],
     maybe_paren(P, Prec, El);
@@ -212,13 +225,17 @@ expr({record_field, _, Rec, Name, F}, I, Prec, Hook) ->
     El = [Rl,"#",Nl,".",expr(F, indentation(Rl, I)+length(Nl)+2, R, Hook)],
     maybe_paren(P, Prec, El);
 expr({record, _, Rec, Name, Fs}, I, Prec, Hook) ->
-    {L,P,R} = inop_prec('#'),
+    {L,P,_R} = inop_prec('#'),
     Rl = expr(Rec, I, L, Hook),
     Nl = flatten(write(Name)),
     El = [Rl,"#",Nl,record_fields(Fs, indentation(Rl, I)+length(Nl)+1, Hook)],
     maybe_paren(P, Prec, El);
+expr({record_field, _, {atom,_,''}, F}, I, Prec, Hook) ->
+    {_,P,R} = inop_prec('.'),
+    El = [".",expr(F, I + 1, R, Hook)],
+    maybe_paren(P, Prec, El);
 expr({record_field, _, Rec, F}, I, Prec, Hook) ->
-    {L,P,R} = inop_prec('#'),
+    {L,P,R} = inop_prec('.'),
     Rl = expr(Rec, I, L, Hook),
     El = [Rl,".",expr(F, indentation(Rl, I)+1, R, Hook)],
     maybe_paren(P, Prec, El);
@@ -256,19 +273,19 @@ expr({'receive',_,Cs,To,ToOpt}, I, _, Hook) ->
      expr(To, I1, 0, Hook),
      body(ToOpt, I1+4, Hook),
      nl_indent(I), "end"];
-expr({'fun',_,{function,F,A}}, I, Prec, Hook) ->
+expr({'fun',_,{function,F,A}}, _I, _Prec, _Hook) ->
     ["fun ",write(F),$/,write(A)];
-expr({'fun',_,{clauses,Cs}}, I, Prec, Hook) ->
+expr({'fun',_,{clauses,Cs}}, I, _Prec, Hook) ->
     ["fun ",
      fun_clauses(Cs, I+4, Hook),
      " end"];
-expr({'fun',_,{clauses,Cs},Extra}, I, Prec, Hook) ->
+expr({'fun',_,{clauses,Cs},Extra}, I, _Prec, Hook) ->
     [io_lib:format("% fun-info: ~p~n", [Extra]),
      string:chars($\s, I),
      "fun ",
      fun_clauses(Cs, I+4, Hook),
      " end"];
-expr({'query',_,Lc}, I, Prec, Hook) ->
+expr({'query',_,Lc}, I, _Prec, Hook) ->
     ["query ",
      expr(Lc, I+6, 0, Hook),
      " end"];
@@ -277,17 +294,20 @@ expr({call,_,Name,Args}, I, Prec, Hook) ->
     Nl = expr(Name, I, F, Hook),
     El = [Nl|expr_list(Args, "(", ")", indentation(Nl, I), Hook)],
     maybe_paren(P, Prec, El);
-expr({'try',_,Es,Cs}, I, _, Hook) ->
+expr({'try',_,Es,Scs,Ccs}, I, _, Hook) ->
     I1 = I + 4,
     ["try",nl_indent(I1),
      exprs(Es, I1, Hook),
-     if Cs == [] ->
-	     [nl_indent(I),"end"];
+     nl_indent(I),
+     if Scs == [] ->
+	     [];
 	true ->
-	     [nl_indent(I), "catch",
-	      nl_indent(I1),cr_clauses(Cs, I1, Hook),
-	      nl_indent(I),"end"]
-     end];
+	     ["of",nl_indent(I1),
+	      cr_clauses(Scs, I1, Hook),nl_indent(I)]
+     end,
+     "catch",nl_indent(I1),
+     cr_clauses(Ccs, I1, Hook),nl_indent(I),
+     "end"];
 expr({'catch',_,Expr}, I, Prec, Hook) ->
     {P,R} = preop_prec('catch'),
     El = ["catch ",expr(Expr, I+6, R, Hook)],
@@ -321,7 +341,7 @@ expr({bin,_,Fs}, I, _, Hook) ->
 expr({value,_,Val}, _, _,_) ->
     write(Val);
 %% Now do the hook.
-expr(Other, Indentation, Precedence, none) ->
+expr(Other, _Indentation, _Precedence, none) ->
     format("INVALID-FORM:~w:",[Other]);
 expr(Expr, Indentation, Precedence, {Mod,Func,Eas}) when Mod /= 'fun' ->
     apply(Mod, Func, [Expr,Indentation,Precedence,{Mod,Func,Eas}|Eas]);
@@ -337,7 +357,7 @@ bit_elems([E], I, Hook) ->
 bit_elems([E|Es], I, Hook) ->
     [ bit_elem(E, I, Hook), ",", nl_indent(I),
       bit_elems(Es, I, Hook) ];
-bit_elems([],I,Hook) ->
+bit_elems([],_I,_Hook) ->
     [].
 
 bit_elem({bin_element,_,Expr,Sz,Types}, I, Hook) ->
@@ -372,7 +392,7 @@ record_fields(Fs, I, Hook) ->
      "}"].
 
 record_field({record_field,_,F,Val}, I, Hook) ->
-    {L,P,R} = inop_prec('='),
+    {L,_P,R} = inop_prec('='),
     Fl = expr(F, I, L, Hook),
     [Fl," = ",expr(Val, indentation(Fl, I)+3, R, Hook)];
 record_field({record_field,_,F}, I, Hook) ->
@@ -433,7 +453,7 @@ clauses(Type, I, Hook, Cs) ->
 
 separated_list(Fun, S, I, Hook, [E1|Es]) ->
     [Fun(E1, I, Hook)|lists:map( fun (E) -> [S,Fun(E, I, Hook)] end, Es)];
-separated_list(Fun, S, I, Hook, []) -> "".
+separated_list(_Fun, _S, _I, _Hook, []) -> "".
 
 %% lc_quals(Qualifiers, Indentation, Hook)
 %% List comprehension qualifiers
@@ -452,7 +472,7 @@ lc_qual(Q, I, Hook) ->
 %%
 
 maybe_paren(P, Prec, Expr) when P < Prec -> [$(,Expr,$)];
-maybe_paren(P, Prec, Expr) -> Expr.
+maybe_paren(_P, _Prec, Expr) -> Expr.
 
 nl_indent(I) when I >= 0 -> [$\n|string:chars($\s, I)];
-nl_indent(I) -> " ".
+nl_indent(_) -> " ".

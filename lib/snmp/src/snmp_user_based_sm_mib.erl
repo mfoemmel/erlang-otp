@@ -216,7 +216,7 @@ get_user_from_security_name(EngineID, SecName) ->
 	    case catch snmp_generic:table_foreach(db(usmUserTable), F) of
 		{ok, Row} ->
 		    Row;
-		Else ->
+		_Else ->
 		    undefined
 	    end
     end.
@@ -630,7 +630,7 @@ set_key_change(RowIndex, Cols, KeyChangeCol, Type) ->
 %% Extract the UserName part from a RowIndex.
 get_user_name([L1 | Rest])         -> get_user_name(L1, Rest).
 get_user_name(0, [_L2 | UserName]) -> UserName;
-get_user_name(N, [H | T])          -> get_user_name(N-1, T).
+get_user_name(N, [_H | T])          -> get_user_name(N-1, T).
 
 extract_row(RowPtr)                     -> extract_row(?usmUserEntry, RowPtr).
 extract_row([H | T], [H | T2])          -> extract_row(T, T2);
@@ -725,7 +725,7 @@ mk_key_change(Alg, OldKey, NewKey, KeyLen, Random) ->
     Random ++ Delta.
 
 %% Extracts a new Key from a KeyChange value, sent by a manager.
-extract_new_key(?usmNoAuthProtocol, OldKey, KeyChange) ->
+extract_new_key(?usmNoAuthProtocol, OldKey, _KeyChange) ->
     OldKey;
 extract_new_key(Hash, OldKey, KeyChange) ->
     KeyLen = length(OldKey),

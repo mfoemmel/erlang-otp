@@ -171,7 +171,7 @@ tm_exit_pending([Pid | Pids], Tid) ->
 enter_still_pending([Tid | Tids], Tab) ->
     ?ets_insert(Tab, #pending{tid = Tid}),
     enter_still_pending(Tids, Tab);
-enter_still_pending([], Tab) ->
+enter_still_pending([], _Tab) ->
     ok.
 
 
@@ -257,7 +257,7 @@ map_call(Fun, [Name | Names], Res) ->
 	    %% too much in the add_copy case. How do we remove them?
 	    map_call(Fun, Names, {error, Reason})
     end;
-map_call(Fun, [], Res) ->
+map_call(_Fun, [], Res) ->
     Res.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -480,7 +480,7 @@ select_writers(Cp, Tab) ->
 
 filter_remote(Cp, Writers) when Cp#checkpoint_args.allow_remote == true ->
     Writers;
-filter_remote(Cp, Writers) ->
+filter_remote(_Cp, Writers) ->
     This = node(),
     case lists:member(This, Writers) of
 	true -> [This];
@@ -503,12 +503,12 @@ do_activate(Cp) ->
 		     [Name, BadNodes]}}
     end.
 	
-check_prep([{ok, Name, IgnoreNew, Node} | Replies], Name, Nodes, IgnoreNew) ->
+check_prep([{ok, Name, IgnoreNew, _Node} | Replies], Name, Nodes, IgnoreNew) ->
     check_prep(Replies, Name, Nodes, IgnoreNew);
-check_prep([{error, Reason} | Replies], Name, Nodes, IgnoreNew) ->
+check_prep([{error, Reason} | _Replies], Name, _Nodes, _IgnoreNew) ->
     {error, {"Cannot prepare checkpoint (bad reply)",
 	     [Name, Reason]}};
-check_prep([{badrpc, Reason} | Replies], Name, Nodes, IgnoreNew) ->
+check_prep([{badrpc, Reason} | _Replies], Name, _Nodes, _IgnoreNew) ->
     {error, {"Cannot prepare checkpoint (badrpc)",
 	     [Name, Reason]}};
 check_prep([], Name, Nodes, IgnoreNew) ->
@@ -532,11 +532,11 @@ collect_pending(Name, Nodes, IgnoreNew) ->
 compute_union([{ok, Pending} | Replies], Nodes, Name, UnionTab, IgnoreNew) ->
     add_pending(Pending, UnionTab),
     compute_union(Replies, Nodes, Name, UnionTab, IgnoreNew);
-compute_union([{error, Reason} | Replies], Nodes, Name, UnionTab, IgnoreNew) ->
+compute_union([{error, Reason} | _Replies], Nodes, Name, UnionTab, _IgnoreNew) ->
     deactivate(Nodes, Name),
     ?ets_delete_table(UnionTab),
     {error, Reason};
-compute_union([{badrpc, Reason} | Replies], Nodes, Name, UnionTab, IgnoreNew) ->
+compute_union([{badrpc, Reason} | _Replies], Nodes, Name, UnionTab, _IgnoreNew) ->
     deactivate(Nodes, Name),
     ?ets_delete_table(UnionTab),
     {error, {badrpc, Reason}};
@@ -547,13 +547,13 @@ add_pending([P | Pending], UnionTab) ->
     add_pending_node(P#pending.disc_nodes, P#pending.tid, UnionTab),
     add_pending_node(P#pending.ram_nodes, P#pending.tid, UnionTab),
     add_pending(Pending, UnionTab);
-add_pending([], UnionTab) ->
+add_pending([], _UnionTab) ->
     ok.
 
 add_pending_node([Node | Nodes], Tid, UnionTab) ->
     ?ets_insert(UnionTab, {Node, Tid}),
     add_pending_node(Nodes, Tid, UnionTab);
-add_pending_node([], Tid, UnionTab) ->
+add_pending_node([], _Tid, _UnionTab) ->
     ok.
 
 send_activate([Node | Nodes], AllNodes, Name, UnionTab, IgnoreNew) ->
@@ -571,7 +571,7 @@ send_activate([Node | Nodes], AllNodes, Name, UnionTab, IgnoreNew) ->
 	    ?ets_delete_table(UnionTab),
 	    {error, {"Activation failed", Name, Node, Reason}}
     end;
-send_activate([], AllNodes, Name, UnionTab, IgnoreNew) ->
+send_activate([], AllNodes, Name, UnionTab, _IgnoreNew) ->
     ?ets_delete_table(UnionTab),
     {ok, Name, AllNodes}.
 
@@ -607,7 +607,7 @@ call(Name, Msg) ->
 abcast(Nodes, Name, Msg) ->
     rpc:eval_everywhere(Nodes, ?MODULE, cast, [Name, Msg]).
 
-reply(nopid, Name, Reply) ->
+reply(nopid, _Name, _Reply) ->
     ignore;
 reply(ReplyTo, Name, Reply) ->
     ReplyTo ! {Name, ReplyTo, Reply}.
@@ -617,7 +617,7 @@ start_retainer(Cp) ->
     % Will never be restarted
     Name = Cp#checkpoint_args.name,
     case supervisor:start_child(mnesia_checkpoint_sup, [Cp]) of
-	{ok, Pid} ->
+	{ok, _Pid} ->
 	    {ok, Name, Cp#checkpoint_args.ignore_new, node()};
 	{error, Reason} ->
 	    {error, {"Cannot create checkpoint retainer",
@@ -691,7 +691,7 @@ tab2retainer({Tab, Name}) ->
     FlatName = lists:flatten(io_lib:write(Name)),
     mnesia_lib:dir(lists:concat([?MODULE, "_", Tab, "_", FlatName, ".RET"])).
 
-retainer_create(Cp, R, Tab, Name, disc_only_copies) ->
+retainer_create(_Cp, R, Tab, Name, disc_only_copies) ->
     Fname = tab2retainer({Tab, Name}),
     file:delete(Fname),
     Args = [{file, Fname}, {type, set}, {keypos, 2}, {repair, false}],
@@ -703,7 +703,7 @@ retainer_create(Cp, R, Tab, Name, Storage) ->
     Overriders = Cp#checkpoint_args.ram_overrides_dump,
     ReallyR = R#retainer.really_retain,
     ReallyCp = lists:member(Tab, Overriders),
-    ReallyR2 = prepare_ram_tab(Cp, Tab, T, Storage, ReallyR, ReallyCp),
+    ReallyR2 = prepare_ram_tab(Tab, T, Storage, ReallyR, ReallyCp),
     dbg_out("Checkpoint retainer created ~p ~p~n", [Name, Tab]),
     R#retainer{store = {ets, T}, really_retain = ReallyR2}.
 
@@ -711,7 +711,7 @@ retainer_create(Cp, R, Tab, Name, Storage) ->
 %% If the really_retain flag already has been set to false,
 %% it should remain false even if we change storage type
 %% while the checkpoint is activated.
-prepare_ram_tab(Cp, Tab, T, ram_copies, true, false) ->
+prepare_ram_tab(Tab, T, ram_copies, true, false) ->
     Fname = mnesia_lib:tab2dcd(Tab),
     case mnesia_lib:exists(Fname) of
 	true -> 
@@ -736,7 +736,7 @@ prepare_ram_tab(Cp, Tab, T, ram_copies, true, false) ->
 	    ok
     end,
     false;
-prepare_ram_tab(_, _, _, _, ReallyRetain, _) ->
+prepare_ram_tab(_, _, _, ReallyRetain, _) ->
     ReallyRetain.
 
 traverse_dcd({Cont, [LogH | Rest]}, Log, Fun) 
@@ -747,7 +747,7 @@ traverse_dcd({Cont, [LogH | Rest]}, Log, Fun)
 traverse_dcd({Cont, Recs}, Log, Fun) ->     %% trashed data?? 
     lists:foreach(Fun, Recs), 
     traverse_dcd(mnesia_log:chunk_log(Log, Cont), Log, Fun);
-traverse_dcd(eof, Log, Fun) ->
+traverse_dcd(eof, _Log, _Fun) ->
     ok.
 
 retainer_get({ets, Store}, Key) -> ?ets_lookup(Store, Key);
@@ -792,8 +792,8 @@ retainer_delete({dets, Store}) ->
 retainer_loop(Cp) ->
     Name = Cp#checkpoint_args.name,
     receive
-	{From, {retain, Tid, Tab, Key, OldRecs}}
-	        when Cp#checkpoint_args.wait_for_old == [] ->
+	{_From, {retain, Tid, Tab, Key, OldRecs}}
+	when Cp#checkpoint_args.wait_for_old == [] ->
 	    R = val({Tab, {retainer, Name}}),
 	    case R#retainer.really_retain of
 		true ->
@@ -827,7 +827,7 @@ retainer_loop(Cp) ->
 	    %% assume that entire Mnesia is terminating
 	    exit(shutdown);
 
-	{From, {mnesia_down, Node}} ->
+	{_From, {mnesia_down, Node}} ->
 	    Cp2 = do_del_retainers(Cp, Node),
 	    retainer_loop(Cp2);
 	{From, get_checkpoint} ->
@@ -858,13 +858,12 @@ retainer_loop(Cp) ->
 	    retainer_loop(Cp2);
 
 	{From, {iter_end, Iter}} when Cp#checkpoint_args.wait_for_old == [] ->
-	    R = val({Iter#iter.tab_name, {retainer, Name}}),
 	    retainer_fixtable(Iter#iter.oid_tab, false),
 	    Iters = Cp#checkpoint_args.iterators -- [Iter],
 	    reply(From, Name, ok),
 	    retainer_loop(Cp#checkpoint_args{iterators = Iters});	
 
-	{From, {exit_pending, Tid}}
+	{_From, {exit_pending, Tid}}
 	    when list(Cp#checkpoint_args.wait_for_old) ->
 	    StillPending = lists:delete(Tid, Cp#checkpoint_args.wait_for_old),
 	    Cp2 = Cp#checkpoint_args{wait_for_old = StillPending},
@@ -885,7 +884,7 @@ retainer_loop(Cp) ->
             reply(From, Name, activated),
 	    retainer_loop(Cp2);
 
-	{'EXIT', From, Reason} ->
+	{'EXIT', From, _Reason} ->
 	    Iters = [Iter || Iter <- Cp#checkpoint_args.iterators,
 			     check_iter(From, Iter)],
 	    retainer_loop(Cp#checkpoint_args{iterators = Iters});
@@ -977,8 +976,6 @@ do_del_retainer2(Cp, R, Node) ->
 do_del_retainer(Cp, R0, Node) ->
     {R, Rest} = find_retainer(R0, Cp#checkpoint_args.retainers, []),
     R2 = do_del_retainer2(Cp, R, Node),
-    Tab = R#retainer.tab_name,
-    Pos = #retainer.tab_name,
     Rs = [R2|Rest],
     Cp#checkpoint_args{retainers = Rs, nodes = writers(Rs)}.
 
@@ -1105,7 +1102,7 @@ do_change_copy(Cp, Tab, FromType, ToType) ->
 check_iter(From, Iter) when Iter#iter.pid == From ->
     retainer_fixtable(Iter#iter.oid_tab, false),
     false;
-check_iter(From, Iter) ->
+check_iter(_From, _Iter) ->
     true.
 
 init_tabs(R, Iter) ->
@@ -1177,9 +1174,9 @@ stop_iteration(Reason) ->
 get_records(Iter, Key) ->
     get_records(Iter, Key, 500, []). % 500 keys
 
-get_records(Iter, Key, 0, Acc) ->
+get_records(_Iter, Key, 0, Acc) ->
     {Key, lists:append(lists:reverse(Acc))};
-get_records(Iter, '$end_of_table', I, Acc) ->
+get_records(_Iter, '$end_of_table', _I, Acc) ->
     {'$end_of_table', lists:append(lists:reverse(Acc))};
 get_records(Iter, Key, I, Acc) ->
     Recs = get_val(Iter, Key),
@@ -1209,13 +1206,13 @@ get_checkpoint_val(Iter, Key) when Iter#iter.source == retainer ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% System upgrade
 
-system_continue(Parent, Debug, Cp) ->
+system_continue(_Parent, _Debug, Cp) ->
     retainer_loop(Cp).
 
-system_terminate(Reason, Parent, Debug, Cp) ->
+system_terminate(_Reason, _Parent,_Debug, Cp) ->
     do_stop(Cp).
 
-system_code_change(Cp, Module, OldVsn, Extra) ->
+system_code_change(Cp, _Module, _OldVsn, _Extra) ->
     {ok, Cp}.
 
 convert_cp_record(Cp) when record(Cp, checkpoint) ->

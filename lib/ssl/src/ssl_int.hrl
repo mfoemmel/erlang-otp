@@ -57,6 +57,16 @@
 -define(GETSOCKNAME_REP, 34).
 -define(GETSOCKNAME_ERR, 35).
 
+-define(GETPEERCERT,	36).
+-define(GETPEERCERT_REP, 37).
+-define(GETPEERCERT_ERR, 38).
+
+-define(GETVERSION, 39).
+-define(GETVERSION_REP, 40).
+
+-define(SET_SEED, 41).
+
+
 %% Set socket options codes  'SET_SOCK_OPT' 
 -define(SET_TCP_NODELAY, 1).
 

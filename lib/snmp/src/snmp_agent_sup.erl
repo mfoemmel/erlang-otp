@@ -40,9 +40,10 @@ start_subagent(ParentAgent, Subtree, Mibs) ->
     Max = find_max(supervisor:which_children(snmp_agent_sup), 1),
     [{_, Prio}] = ets:lookup(snmp_agent_table, priority),
     Ref = make_ref(),
+    Options = [{priority, Prio}, {mibs,Mibs}, {misc_sup, snmp_misc_sup}],
     Agent = {{sub_agent, Max},
 	     {snmp_agent, start_link,
-	      [ParentAgent, Ref, [{mibs,Mibs}, {misc_sup, snmp_misc_sup}]]},
+	      [ParentAgent, Ref, Options]},
 	     permanent, 2000, worker, [snmp_agent]},
     case supervisor:start_child(snmp_agent_sup, Agent) of
 	{ok, SA} -> 
@@ -62,6 +63,7 @@ stop_subagent(SubAgentPid) ->
     end.
 
 init([Prio, Children]) ->
+    process_flag(priority, Prio),
     %% 20 restarts in ten minutes.  If the agent crashes and restarts,
     %% it may very well crash again, because the management application
     %% tries to resend the very same request.  This depends on the resend
@@ -74,6 +76,6 @@ find_max([{{sub_agent, N}, _, _, _} | T], M) when N >= M -> find_max(T, N+1);
 find_max([_|T], M) -> find_max(T, M);
 find_max([], M) -> M.
 
-find_name([{Name, Pid, _, _} | T], Pid)-> Name;
+find_name([{Name, Pid, _, _} | _T], Pid)-> Name;
 find_name([_|T], Pid) -> find_name(T, Pid);
-find_name([], Pid) -> undefined.
+find_name([], _Pid) -> undefined.

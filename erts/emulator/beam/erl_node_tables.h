@@ -40,6 +40,8 @@
 #include "hash.h"
 #include "erl_process.h"
 
+#define ERST_INTERNAL_CHANNEL_NO 0
+
 struct erl_link;
 struct process;
 
@@ -105,8 +107,6 @@ DistEntry *erts_sysname_to_connected_dist_entry(Eterm);
 DistEntry *erts_find_or_insert_dist_entry(Eterm);
 DistEntry *erts_find_dist_entry(Eterm);
 void erts_delete_dist_entry(DistEntry *);
-Uint erts_dist_entry_size(DistEntry *);
-Uint erts_dist_entries_size(void);
 Uint erts_dist_table_size(void);
 void erts_dist_table_info(CIO);
 void erts_set_dist_entry_not_connected(DistEntry *);

@@ -108,7 +108,7 @@ reg3p(S, L) -> {L,S}.
 reg4([$(|S0]) ->
     case reg(S0) of
 	{R,[$)|S1]} -> {R,S1};
-	{R,S} -> throw({error,{unterminated,"("}})
+	{_R,_S} -> throw({error,{unterminated,"("}})
     end;
 reg4([$\\,O1,O2,O3|S]) when
   O1 >= $0, O1 =< $7, O2 >= $0, O2 =< $7, O3 >= $0, O3 =< $7 ->
@@ -121,12 +121,12 @@ reg4([$.|S]) -> {{comp_class,"\n"},S};
 reg4("[^" ++ S0) ->
     case char_class(S0) of
 	{Cc,[$]|S1]} -> {{comp_class,Cc},S1};
-	{Cc,S} -> throw({error,{unterminated,"["}})
+	{_Cc,_S} -> throw({error,{unterminated,"["}})
     end;
 reg4([$[|S0]) ->
     case char_class(S0) of
 	{Cc,[$]|S1]} -> {{char_class,Cc},S1};
-	{Cc,S1} -> throw({error,{unterminated,"["}})
+	{_Cc,_S1} -> throw({error,{unterminated,"["}})
     end;
 %reg4([$"|S0]) ->
 %    case char_string(S0) of
@@ -134,7 +134,7 @@ reg4([$[|S0]) ->
 %	{St,S1} -> throw({error,{unterminated,"\""}})
 %    end;
 reg4([C|S]) when C /= $*, C /= $+, C /= $?, C /= $] -> {C,S};
-reg4([C|S]) -> throw({error,{illegal,[C]}});
+reg4([C|_S]) -> throw({error,{illegal,[C]}});
 reg4([]) -> {epsilon,[]}.
 
 escape_char($n) -> $\n;				%\n = LF
@@ -162,7 +162,7 @@ char_class([C1|S0], Cc) when C1 /= $] ->
 	{Cf,[$-,C2|S1]} when C2 /= $] ->
 	    case char(C2, S1) of
 		{Cl,S2} when Cf < Cl -> char_class(S2, [{Cf,Cl}|Cc]); 
-		{Cl,S2} -> throw({error,{char_class,[Cf,$-,Cl]}})
+		{Cl,_S2} -> throw({error,{char_class,[Cf,$-,Cl]}})
 	    end;
 	{C,S1} -> char_class(S1, [C|Cc])
     end;
@@ -225,7 +225,7 @@ re_apply({comp_class,Cc}, More, [C|S], P) ->
     end;
 re_apply(C, More, [C|S], P) when integer(C) ->
     re_apply_more(More, S, P+1);
-re_apply(RE, More, S, P) -> nomatch.
+re_apply(_RE, _More, _S, _P) -> nomatch.
 
 %% re_apply_more([RegExp], String, Length) -> re_app_res().
 
@@ -234,17 +234,17 @@ re_apply_more([], S, P) -> {match,P,S}.
 
 %% in_char_class(Char, Class) -> bool().
 
-in_char_class(C, [{C1,C2}|Cc]) when C >= C1, C =< C2 -> true;
-in_char_class(C, [C|Cc]) -> true;
+in_char_class(C, [{C1,C2}|_Cc]) when C >= C1, C =< C2 -> true;
+in_char_class(C, [C|_Cc]) -> true;
 in_char_class(C, [_|Cc]) -> in_char_class(C, Cc);
-in_char_class(C, []) -> false.
+in_char_class(_C, []) -> false.
 
 %% re_apply_or(Match1, Match2) -> re_app_res().
 %%  If we want the best match then choose the longest match, else just
 %%  choose one by trying sequentially.
 
-re_apply_or({match,P1,S1}, {match,P2,S2}) when P1 >= P2 -> {match,P1,S1};
-re_apply_or({match,P1,S1}, {match,P2,S2}) -> {match,P2,S2};
+re_apply_or({match,P1,S1},   {match,P2,_S2}) when P1 >= P2 -> {match,P1,S1};
+re_apply_or({match,_P1,_S1}, {match,P2,S2}) -> {match,P2,S2};
 re_apply_or(nomatch, R2) -> R2;
 re_apply_or(R1, nomatch) -> R1.
 
@@ -296,7 +296,7 @@ special_char($.) -> true;
 special_char($[) -> true;
 special_char($]) -> true;
 special_char($") -> true;
-special_char(C) -> false.
+special_char(_C) -> false.
 
 %% parse(RegExp) -> {ok,RE} | {error,E}.
 %%  Parse the regexp described in the string RegExp.
@@ -304,7 +304,7 @@ special_char(C) -> false.
 parse(S) ->
     case catch reg(S) of
 	{R,[]} -> {ok,R};
-	{R,[C|_]} -> {error,{illegal,[C]}};
+	{_R,[C|_]} -> {error,{illegal,[C]}};
 	{error,E} -> {error,E}
     end.
 
@@ -327,7 +327,7 @@ match(S, RE) ->
     case match(RE, S, 1, 0, -1) of
 	{Start,Len} when Len >= 0 ->
 	    {match,Start,Len};
-	{Start,Len} -> nomatch
+	{_Start,_Len} -> nomatch
     end.
 
 match(RE, S, St, Pos, L) ->
@@ -357,10 +357,10 @@ first_match(S, RE) ->
 
 first_match(RE, S, St) when S /= [] ->
     case re_apply(S, St, RE) of
-	{match,P,Rest} -> {St,P-St};
+	{match,P,_Rest} -> {St,P-St};
 	nomatch -> first_match(RE, tl(S), St+1)
     end;
-first_match(RE, [], St) -> nomatch.
+first_match(_RE, [], _St) -> nomatch.
 
 %% -type matches(String, RegExp) -> {match,[{Start,Length}]} | {error,E}.
 %%  Return the all the non-overlapping matches of RegExp in String.
@@ -403,12 +403,12 @@ sub_match(S, RE, St) ->
 sub_repl([{St,L}|Ss], Rep, S, Pos) ->
     Rs = sub_repl(Ss, Rep, S, St+L),
     substr(S, Pos, St-Pos) ++ sub_repl(Rep, substr(S, St, L), Rs);
-sub_repl([], Rep, S, Pos) -> substr(S, Pos).
+sub_repl([], _Rep, S, Pos) -> substr(S, Pos).
 
 sub_repl([$&|Rep], M, Rest) -> M ++ sub_repl(Rep, M, Rest);
 sub_repl("\\&" ++ Rep, M, Rest) -> [$&|sub_repl(Rep, M, Rest)];
 sub_repl([C|Rep], M, Rest) -> [C|sub_repl(Rep, M, Rest)];
-sub_repl([], M, Rest) -> Rest.
+sub_repl([], _M, Rest) -> Rest.
 
 %% -type gsub(String, RegExp, Replace) -> subres().
 %%  Substitute every match of the regular expression RegExp with the
@@ -442,11 +442,11 @@ split(String, RE) -> {ok,split_apply(String, RE, false)}.
 
 split_apply(S, RE, Trim) -> split_apply(S, 1, RE, Trim, []).
 
-split_apply([], P, RE, true, []) -> [];
-split_apply([], P, RE, T, Sub) -> [reverse(Sub)];
+split_apply([], _P, _RE, true, []) -> [];
+split_apply([], _P, _RE, _T, Sub) -> [reverse(Sub)];
 split_apply(S, P, RE, T, Sub) ->
     case re_apply(S, P, RE) of
-	{match,P,Rest} ->
+	{match,P,_Rest} ->
 	    split_apply(tl(S), P+1, RE, T, [hd(S)|Sub]);
 	{match,P1,Rest} ->
 	    [reverse(Sub)|split_apply(Rest, P1, RE, T, [])];

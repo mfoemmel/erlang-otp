@@ -20,6 +20,10 @@ ifndef EBIN
 EBIN = ../ebin
 endif
 
+ifndef DOCS
+DOCS = ../doc
+endif
+
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
@@ -39,13 +43,15 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 MODULES = hipe_bwd_cprop hipe_dead_code \
 	  hipe_schedule hipe_schedule_prio \
-	  hipe_target_machine hipe_ultra_mod2 hipe_ultra_prio
+	  hipe_target_machine hipe_ultra_mod2 hipe_ultra_prio \
+	  hipe_spill_minimize
 
 # hipe_expr_table hipe_def_table hipe_reach 
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
 
 # APP_FILE= 
 # APP_SRC= $(APP_FILE).src
@@ -67,11 +73,14 @@ ERL_COMPILE_FLAGS +=
 
 debug opt: $(TARGET_FILES) 
 
-docs:
+docs: $(DOC_FILES)
 
 clean:
 	rm -f $(TARGET_FILES)
 	rm -f core
+
+$(DOCS)/%.html:%.erl
+	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s erlang halt
 
 # ----------------------------------------------------
 # Special Build Targets
@@ -91,6 +100,8 @@ release_spec: opt
 release_docs_spec:
 
 
+
+$(EBIN)/hipe_spill_minimize.beam: ../main/hipe.hrl
 
 
 

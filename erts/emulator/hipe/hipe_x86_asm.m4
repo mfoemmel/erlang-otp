@@ -4,34 +4,52 @@ changecom(`/*', `*/')dnl
  */
 
 /*
+ * Tunables.
+ */
+define(NR_ARG_REGS,3)dnl admissible values are 0 to 5, inclusive
+define(HP_IN_ESI,1)dnl change to 0 to not reserve a global register for HP
+define(SIMULATE_NSP,0)dnl change to 1 to simulate call/ret insns
+
+/*
  * Reserved registers.
  */
 `#define P	%ebp'
-`#define HP	%esi'
+
+`#define X86_HP_IN_ESI	'HP_IN_ESI
+`#if X86_HP_IN_ESI
+#define SAVE_HP		movl %esi, P_HP(P)
+#define RESTORE_HP	movl P_HP(P), %esi
+#else
+#define SAVE_HP		/*empty*/
+#define RESTORE_HP	/*empty*/
+#endif'
+
+`#define NSP		%esp
+#define SAVE_CSP	movl %esp, P_CSP(P)
+#define RESTORE_CSP	movl P_CSP(P), %esp'
 
 /*
  * Context switching macros.
  */
 `#define SWITCH_C_TO_ERLANG_QUICK	\
-	movl	%esp, P_CSP(P);	\
-	movl	P_NSP(P), %esp'
+	SAVE_CSP; \
+	movl P_NSP(P), NSP'
 
 `#define SWITCH_ERLANG_TO_C_QUICK	\
-	movl	%esp, P_NSP(P);	\
-	movl	P_CSP(P), %esp'
+	movl NSP, P_NSP(P); \
+	RESTORE_CSP'
 
 `#define SWITCH_C_TO_ERLANG	\
-	movl	P_HP(P), HP;	\
+	RESTORE_HP;		\
 	SWITCH_C_TO_ERLANG_QUICK'
 
 `#define SWITCH_ERLANG_TO_C	\
-	movl	HP, P_HP(P);	\
+	SAVE_HP;		\
 	SWITCH_ERLANG_TO_C_QUICK'
 
 /*
  * Argument (parameter) registers.
  */
-define(NR_ARG_REGS,3)dnl admissible values are 0 to 5, inclusive
 `#define X86_NR_ARG_REGS	'NR_ARG_REGS
 
 ifelse(eval(NR_ARG_REGS >= 1),0,,
@@ -51,13 +69,22 @@ ifelse(eval(NR_ARG_REGS >= 5),0,,
 '')dnl
 
 /*
- * Temporary registers in runtime glue code.
- * 1. They are C callee-save.
- * 2. They may alias some general argument registers.
- * 3. TEMP1 DOES NOT alias any native BIF argument register.
+ * TEMP_RV:
+ *	Used in nbif_stack_trap_ra to preserve the return value.
+ *	Must be a C callee-save register.
+ *	Must be otherwise unused in the return path.
  */
-`#define TEMP0	%ebx'
-`#define TEMP1	%edi'
+`#define TEMP_RV	%ebx'
+
+/*
+ * TEMP_NSP:
+ *	Used in BIF wrappers to permit copying stacked parameter from
+ *	the native stack to the C stack.
+ *	Set up by NBIF_COPY_NSP(arity) and used by NBIF_ARG(arity,argno).
+ *	TEMP_NSP may alias the last BIF argument register.
+ *	NBIF_COPY_NSP and NBIF_ARG currently fail if ARITY > NR_ARG_REGS!
+ */
+`#define TEMP_NSP	%edi'
 
 dnl XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 dnl X								X
@@ -81,6 +108,32 @@ define(SAR_N,`ifelse(eval($1 >= 0),0,,`SAR_N(eval($1-1))SAR_1($1)')')dnl
 define(STORE_ARG_REGS,`SAR_N(eval(NR_ARG_REGS-1))')dnl
 `#define STORE_ARG_REGS	'STORE_ARG_REGS
 
+dnl
+dnl NSP_CALL(FUN)
+dnl Emit a CALL FUN instruction, or simulate it.
+dnl FUN must not be an NSP-based memory operand.
+dnl
+ifelse(eval(SIMULATE_NSP),0,
+``#define NSP_CALL(FUN)	call FUN'',
+``#define NSP_CALL(FUN)	subl $4,NSP; movl $1f,(NSP); jmp FUN; 1:'')dnl
+
+dnl
+dnl NSP_RETN(NPOP)
+dnl Emit a RET $NPOP instruction, or simulate it.
+dnl NPOP should be non-zero.
+dnl
+ifelse(eval(SIMULATE_NSP),0,
+``#define NSP_RETN(NPOP)	ret $NPOP'',
+``#define NSP_RETN(NPOP)	movl (NSP),TEMP_RV; addl $4+NPOP,NSP; jmp *TEMP_RV'')dnl
+
+dnl
+dnl NSP_RET0
+dnl Emit a RET instruction, or simulate it.
+dnl
+ifelse(eval(SIMULATE_NSP),0,
+``#define NSP_RET0	ret'',
+``#define NSP_RET0	movl (NSP),TEMP_RV; addl $4,NSP; jmp *TEMP_RV'')dnl
+
 dnl XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 dnl X								X
 dnl X			hipe_x86_bifs.m4 support		X
@@ -88,23 +141,24 @@ dnl X								X
 dnl XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 dnl
-dnl NBIF_COPY_ESP(ARITY)
-dnl if ARITY > NR_ARG_REGS then TEMP1 := %esp.
-dnl Allows the stacked formals to be referenced via TEMP1 after the stack switch.
+dnl NBIF_COPY_NSP(ARITY)
+dnl if ARITY > NR_ARG_REGS then TEMP_NSP := %esp.
+dnl Allows the stacked formals to be referenced via TEMP_NSP after the stack switch.
 dnl
-define(NBIF_COPY_ESP,`ifelse(eval($1 > NR_ARG_REGS),0,,`movl	%esp, TEMP1')')dnl
-`/* #define NBIF_COPY_ESP_0	'NBIF_COPY_ESP(0)` */'
-`/* #define NBIF_COPY_ESP_1	'NBIF_COPY_ESP(1)` */'
-`/* #define NBIF_COPY_ESP_2	'NBIF_COPY_ESP(2)` */'
-`/* #define NBIF_COPY_ESP_3	'NBIF_COPY_ESP(3)` */'
+define(NBIF_COPY_NSP,`ifelse(eval($1 > NR_ARG_REGS),0,,`movl	%esp, TEMP_NSP')')dnl
+`/* #define NBIF_COPY_NSP_0	'NBIF_COPY_NSP(0)` */'
+`/* #define NBIF_COPY_NSP_1	'NBIF_COPY_NSP(1)` */'
+`/* #define NBIF_COPY_NSP_2	'NBIF_COPY_NSP(2)` */'
+`/* #define NBIF_COPY_NSP_3	'NBIF_COPY_NSP(3)` */'
+`/* #define NBIF_COPY_NSP_5	'NBIF_COPY_NSP(5)` */'
 
 dnl
 dnl NBIF_ARG(ARITY,ARGNO)
 dnl Generates an operand for this formal parameter.
 dnl It will be a register operand when 0 <= ARGNO < NR_ARG_REGS.
-dnl It will be a memory operand when ARGNO >= NR_ARG_REGS.
+dnl It will be a memory operand via TEMP_NSP when ARGNO >= NR_ARG_REGS.
 dnl
-define(NBIF_ARG,`ifelse(eval($2 >= NR_ARG_REGS),0,`ARG'$2,eval(($1-NR_ARG_REGS)*4-($2-NR_ARG_REGS)*4)`(TEMP1)')')dnl
+define(NBIF_ARG,`ifelse(eval($2 >= NR_ARG_REGS),0,`ARG'$2,eval(($1-NR_ARG_REGS)*4-($2-NR_ARG_REGS)*4)`(TEMP_NSP)')')dnl
 `/* #define NBIF_ARG_1_0	'NBIF_ARG(1,0)` */'
 `/* #define NBIF_ARG_2_0	'NBIF_ARG(2,0)` */'
 `/* #define NBIF_ARG_2_1	'NBIF_ARG(2,1)` */'
@@ -117,23 +171,24 @@ dnl NBIF_RET(ARITY)
 dnl Generates a return from a native BIF, taking care to pop
 dnl any stacked formal parameters.
 dnl
-define(RET_POP,`ifelse(eval($1 > NR_ARG_REGS),0,,`$'eval(4*($1 - NR_ARG_REGS)))')dnl
-dnl NBIF_RET(ARITY)
-define(NBIF_RET,`ret	RET_POP($1)')dnl
+define(RET_POP,`ifelse(eval($1 > NR_ARG_REGS),0,0,eval(4*($1 - NR_ARG_REGS)))')dnl
+define(NBIF_RET_N,`ifelse(eval($1),0,`NSP_RET0',`NSP_RETN($1)')')dnl
+define(NBIF_RET,`NBIF_RET_N(eval(RET_POP($1)))')dnl
 `/* #define NBIF_RET_0	'NBIF_RET(0)` */'
 `/* #define NBIF_RET_1	'NBIF_RET(1)` */'
 `/* #define NBIF_RET_2	'NBIF_RET(2)` */'
 `/* #define NBIF_RET_3	'NBIF_RET(3)` */'
+`/* #define NBIF_RET_5	'NBIF_RET(5)` */'
 
 dnl
 dnl NBIF_SAVE_RESCHED_ARGS(ARITY)
 dnl Used in the expensive_bif_interface_{1,2}() macros to copy
 dnl caller-save registers to non-volatile locations.
 dnl Currently, 1 <= ARITY <= 2, so this simply moves the argument
-dnl registers to the callee-save temps.
+dnl registers to the argument slots in the PCB.
 dnl
 define(NBIF_MIN,`ifelse(eval($1 > $2),0,$1,$2)')dnl
-define(NBIF_SVA_1,`ifelse(eval($1 < NR_ARG_REGS),0,,`movl ARG$1, TEMP$1 ; ')')dnl
+define(NBIF_SVA_1,`ifelse(eval($1 < NR_ARG_REGS),0,,`movl ARG$1, P_ARG$1(P); ')')dnl
 define(NBIF_SVA_N,`ifelse(eval($1 >= 0),0,,`NBIF_SVA_N(eval($1-1))NBIF_SVA_1($1)')')dnl
 define(NBIF_SAVE_RESCHED_ARGS,`NBIF_SVA_N(eval(NBIF_MIN($1,NR_ARG_REGS)-1))')dnl
 `/* #define NBIF_SAVE_RESCHED_ARGS_1 'NBIF_SAVE_RESCHED_ARGS(1)` */'

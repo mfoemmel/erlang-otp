@@ -214,7 +214,7 @@ stop(_) ->
 %% those changes until the agent is restarted.  So we just return
 %% ok.
 %%-----------------------------------------------------------------
-config_change(Changed, New, Removed) ->
+config_change(_Changed, _New, _Removed) ->
     ok.
 
 

@@ -35,7 +35,6 @@
              snmp_note_store,
 	     snmp_notification_mib,
              snmp_pdus,
-             snmp_pets,
              snmp_set,
              snmp_set_lib,
              snmp_shadow_table,

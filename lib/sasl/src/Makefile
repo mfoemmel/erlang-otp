@@ -34,7 +34,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/sasl-$(VSN)
 # ----------------------------------------------------
 MODULES= alarm_handler sasl sasl_report \
 	sasl_report_file_h sasl_report_tty_h format_lib_supp \
-	misc_supp otp_mib overload rb rb_format_supp release_handler \
+	misc_supp overload rb rb_format_supp release_handler \
 	release_handler_1 si si_sasl_supp systools \
 	systools_make systools_rc systools_relup systools_lib \
 	erlsrv

@@ -58,7 +58,8 @@ all(suite) ->
      binary_term_id,
      codec,
      sdp,
-     mib
+     mib,
+     ack
     ].
 
 tickets(suite) ->
@@ -108,4 +109,7 @@ sdp(suite) ->
 
 mib(suite) ->
     [{megaco_mib_test, all}].
+
+ack(suite) ->
+    [{megaco_ack_test, all}].
 

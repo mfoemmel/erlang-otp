@@ -50,8 +50,6 @@
 	 alu_src/1,
 	 alu_dst/1,
 
-	 is_shift/1,
-
 	 mk_call/2,
 	 is_call/1,
 	 call_fun/1,
@@ -81,11 +79,16 @@
 	 fmov_src/1,
 	 fmov_dst/1,
 
-	 mk_fop/3,
-	 is_fop/1,
-	 fop_src/1,
-	 fop_dst/1,
-	 fop_op/1,
+	 mk_fp_unop/2,
+	 is_fp_unop/1,
+	 fp_unop_arg/1,
+	 fp_unop_op/1,
+
+	 mk_fp_binop/3,
+	 is_fp_binop/1,
+	 fp_binop_src/1,
+	 fp_binop_dst/1,
+	 fp_binop_op/1,
 
 	 mk_inc/1,
 	 is_inc/1,
@@ -170,6 +173,12 @@
 	 is_ret/1,
 	 ret_npop/1,
 
+	 mk_shift/3,
+	 is_shift/1,
+	 shift_op/1,
+	 shift_src/1,
+	 shift_dst/1,
+
 	 mk_defun/8,
 	 defun_mfa/1,
 	 defun_formals/1,
@@ -241,25 +250,6 @@ alu_op(Alu) -> Alu#alu.aluop.
 alu_src(Alu) -> Alu#alu.src.
 alu_dst(Alu) -> Alu#alu.dst.
 
-is_shift(Instr) ->
-    case is_alu(Instr) of
-	false ->
-	    false;
-	true ->
-	    case alu_op(Instr) of
-		sal ->
-		    true;
-		sar ->
-		    true;
-		shl ->
-		    true;
-		shr ->
-		    true;
-		_ ->
-		    false
-	    end
-    end.
-
 mk_call(Fun, SDesc) -> #call{'fun'=Fun, sdesc=SDesc}.
 is_call(Insn) -> is_insn_type(Insn, call).
 call_fun(Call) -> Call#call.'fun'.
@@ -289,11 +279,16 @@ is_fmov(F) -> is_insn_type(F, fmov).
 fmov_src(F) -> F#fmov.src.
 fmov_dst(F) -> F#fmov.dst.
 
-mk_fop(Op, Src, Dst) -> #fop{op=Op, src=Src, dst=Dst}.
-is_fop(F) -> is_insn_type(F, fop).
-fop_src(F) -> F#fop.src.
-fop_dst(F) -> F#fop.dst.
-fop_op(F) -> F#fop.op.
+mk_fp_unop(Op, Arg) -> #fp_unop{op=Op, arg=Arg}.
+is_fp_unop(F) -> is_insn_type(F, fp_unop).
+fp_unop_arg(F) -> F#fp_unop.arg.
+fp_unop_op(F) -> F#fp_unop.op.
+
+mk_fp_binop(Op, Src, Dst) -> #fp_binop{op=Op, src=Src, dst=Dst}.
+is_fp_binop(F) -> is_insn_type(F, fp_binop).
+fp_binop_src(F) -> F#fp_binop.src.
+fp_binop_dst(F) -> F#fp_binop.dst.
+fp_binop_op(F) -> F#fp_binop.op.
 
 mk_inc(Dst) -> #inc{dst=Dst}.
 is_inc(Insn) -> is_insn_type(Insn, inc).
@@ -404,8 +399,16 @@ mk_ret(NPop) -> #ret{npop=NPop}.
 is_ret(Insn) -> is_insn_type(Insn, ret).
 ret_npop(Ret) -> Ret#ret.npop.
 
+mk_shift(ShiftOp, Src, Dst) ->
+  #shift{shiftop=ShiftOp, src=Src, dst=Dst}.
+is_shift(Insn) -> is_insn_type(Insn, shift).
+shift_op(Shift) -> Shift#shift.shiftop.
+shift_src(Shift) -> Shift#shift.src.
+shift_dst(Shift) -> Shift#shift.dst.
+
+
 mk_defun(MFA, Formals, IsClosure, IsLeaf, Code, Data, VarRange, LabelRange) ->
-   #defun{mfa=MFA, formals=Formals, code=Code, data=Data,
+  #defun{mfa=MFA, formals=Formals, code=Code, data=Data,
 	  isclosure=IsClosure, isleaf=IsLeaf,
 	  var_range=VarRange, label_range=LabelRange}.
 defun_mfa(DF) -> DF#defun.mfa.

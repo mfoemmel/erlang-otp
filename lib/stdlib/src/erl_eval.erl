@@ -13,13 +13,14 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id $
 %%
 -module(erl_eval).
 
 %% An evaluator for Erlang abstract syntax.
 
--export([exprs/2,exprs/3,expr/2,expr/3,expr_list/2,expr_list/3]).
+-export([exprs/2,exprs/3,exprs/4,expr/2,expr/3,expr/4,
+         expr_list/2,expr_list/3,expr_list/4]).
 -export([new_bindings/0,bindings/1,binding/2,add_binding/3,del_binding/2]).
 
 -export([is_constant_expr/1, partial_eval/1]).
@@ -29,14 +30,17 @@
 
 %% The following exports are here for backwards compatibility.
 -export([seq/2,seq/3,arg_list/2,arg_list/3]).
+-deprecated([{seq,2},{seq,3},{arg_list,2},{arg_list,3}]).
 
--import(lists, [reverse/1,flatmap/2,foldl/3]).
+-export([check_command/2, fun_data/1]).
+
+-import(lists, [reverse/1,flatmap/2,foldl/3,member/2,map/2]).
 
 %% seq(ExpressionSeq, Bindings)
 %% seq(ExpressionSeq, Bindings, LocalFuncHandler)
 %% arg_list(ExpressionList, Bindings)
 %% arg_list(ExpressionList, Bindings, LocalFuncHandler)
-%%  These calls are here for backwards compatibility (BC sucks!).
+%%  These calls are here for backwards compatibility.
 
 seq(Exprs, Bs)     -> exprs(Exprs, Bs).
 seq(Exprs, Bs, Lf) -> exprs(Exprs, Bs, Lf).
@@ -46,185 +50,256 @@ arg_list(Es, Bs, Lf) -> expr_list(Es, Bs, Lf).
 
 %% exprs(ExpressionSeq, Bindings)
 %% exprs(ExpressionSeq, Bindings, LocalFuncHandler)
+%% exprs(ExpressionSeq, Bindings, LocalFuncHandler, ExternalFuncHandler)
 %%  Returns:
 %%	{value,Value,NewBindings}
+%%    or {'EXIT', Reason}
+%% Only exprs/2 checks the command by calling erl_lint. The reason is
+%% that if there is a function handler present, then it is possible
+%% that there are valid constructs in Expression to be taken care of
+%% by a function handler but considerad errors by erl_lint.
 
 exprs(Exprs, Bs) ->
-    exprs(Exprs, Bs, none).
+    case check_command(Exprs, Bs) of
+        ok -> 
+            RBs = none,
+            exprs(Exprs, Bs, none, none, RBs);
+        {error,{_Line,_Mod,Error}} ->
+	    exit({Error,[{?MODULE,exprs,2}]})
+    end.
 
 exprs(Exprs, Bs, Lf) ->
-    exprs(Exprs, Bs, true, Lf).
+    RBs = none,
+    exprs(Exprs, Bs, Lf, none, RBs).
 
-exprs([E|Es], Bs0, _, Lf) ->
-    {value,V,Bs} = expr(E, Bs0, Lf),
-    exprs(Es, Bs, V, Lf);
-exprs([], Bs, V, _) ->
-    {value,V,Bs}.
+exprs(Exprs, Bs, Lf, Ef) ->
+    RBs = none,
+    exprs(Exprs, Bs, Lf, Ef, RBs).
+
+exprs([E], Bs0, Lf, Ef, RBs) ->
+    expr(E, Bs0, Lf, Ef, RBs);
+exprs([E|Es], Bs0, Lf, Ef, RBs) ->
+    RBs1 = none,
+    {value,_V,Bs} = expr(E, Bs0, Lf, Ef, RBs1),
+    exprs(Es, Bs, Lf, Ef, RBs).
 
 %% expr(Expression, Bindings)
 %% expr(Expression, Bindings, LocalFuncHandler)
+%% expr(Expression, Bindings, LocalFuncHandler, ExternalFuncHandler)
 %%  Returns:
-%%	{value,Value,NewBindings}
+%%	 {value,Value,NewBindings}
+%%    or {'EXIT', Reason}
+%%
+%% Only expr/2 checks the command by calling erl_lint. See exprs/2.
 
 expr(E, Bs) ->
-    expr(E, Bs, none).
+    case check_command([E], Bs) of
+        ok -> 
+            RBs = none,
+            expr(E, Bs, none, none, RBs);
+        {error,{_Line,_Mod,Error}} ->
+	    exit({Error,[{?MODULE,expr,2}]})
+    end.
 
-expr({var,_,V}, Bs, _) ->
+expr(E, Bs, Lf) ->
+    RBs = none,
+    expr(E, Bs, Lf, none, RBs).
+
+expr(E, Bs, Lf, Ef) ->
+    RBs = none,
+    expr(E, Bs, Lf, Ef, RBs).
+
+%% Check a command (a list of expressions) by calling erl_lint.
+%%
+%% There may be bindings {module,A} in Bs (put there by shell.erl),
+%% but they are harmless.
+
+check_command(Es, Bs) ->
+    case erl_lint:exprs(Es, bindings(Bs)) of
+        {ok,_Ws} ->
+            ok;
+        {error,[{_File,[Error|_]}],_Ws} ->
+            {error,Error}
+    end.
+
+%% Check whether a term F is a function created by this module.
+%% Returns 'false' if not, otherwise {fun_data,Imports,Clauses}.
+
+fun_data(F) when is_function(F) ->
+    case erlang:fun_info(F, module) of
+        {module,erl_eval} ->
+            {env, [FBs,_FEf,_FLf,FCs]} = erlang:fun_info(F, env),
+            {fun_data,FBs,FCs};
+        _ ->
+            false
+    end;
+fun_data(_T) ->
+    false.
+
+%% {?MODULE,expr,3} is still returned when calling exit/1, dispite the
+%% fact that expr now takes five arguments...
+
+expr({var,_,V}, Bs, _Lf, _Ef, RBs) ->
     case binding(V, Bs) of
 	{value,Val} ->
-	    {value,Val,Bs};
-	unbound ->
+            ret_expr(Val, Bs, RBs);
+	unbound -> % Should not happen.
 	    exit({{unbound,V},[{?MODULE,expr,3}]})
     end;
-expr({char,_,C}, Bs, _) ->
-    {value,C,Bs};
-expr({integer,_,I}, Bs, _) ->
-    {value,I,Bs};
-expr({float,_,F}, Bs, _) ->
-    {value,F,Bs};
-expr({atom,_,A}, Bs, _) ->
-    {value,A,Bs};
-expr({string,_,S}, Bs, _) ->
-    {value,S,Bs};
-expr({nil, _}, Bs, _) ->
-    {value,[],Bs};
-expr({cons,_,H0,T0}, Bs0, Lf) ->
-    {value,H,Bs1} = expr(H0, Bs0, Lf),
-    {value,T,Bs2} = expr(T0, Bs0, Lf),
-    {value,[H|T],merge_bindings(Bs1, Bs2)};
-expr({lc,_,E,Qs}, Bs, Lf) ->
-    eval_lc(E, Qs, Bs, Lf);
-expr({tuple,_,Es}, Bs0, Lf) ->
-    {Vs,Bs} = expr_list(Es, Bs0, Lf),
-    {value,list_to_tuple(Vs),Bs};
-expr({record_field,_,_,_}=Mod, Bs0, Lf) ->
-    Mod1 = expand_module_name(Mod, Bs0),
-    {value,M,Bs1} = expr(Mod1, Bs0, Lf),
-    {value,M,Bs1};
-expr({record_index,_,Name,_}, _, _) ->
-    exit({undef_record,Name});
-expr({record,_,Name,_}, _, _) ->
-    exit({undef_record,Name});
-expr({record_field,_,_,Name,_}, _, _) ->
-    exit({undef_record,Name});
-expr({record,_,_,Name,_}, _, _) ->
-    exit({undef_record,Name});
-expr({block,_,Es}, Bs, Lf) ->
-    exprs(Es, Bs, Lf);
-expr({'if',_,Cs}, Bs, Lf) ->
-    if_clauses(Cs, Bs, Lf);
-expr({'case',_,E,Cs}, Bs0, Lf) ->
-    {value,Val,Bs} = expr(E, Bs0, Lf),
-    case_clauses(Val, Cs, Bs, Lf);
-expr({'receive',_,Cs}, Bs, Lf) ->
-    receive_clauses(Cs, Bs, Lf,  []);
-expr({'receive',_, Cs, E, TB}, Bs0, Lf) ->
-    {value,T,Bs} = expr(E, Bs0, Lf),
-    receive_clauses(T, Cs, {TB,Bs}, Bs0, Lf, []);
-expr({'fun',Line,{clauses,Cs}}, Bs, Lf) ->
-    %% This is a really ugly hack!
-    case length(element(3,hd(Cs))) of
-	0 -> {value,fun () -> eval_fun(Cs, [], Bs, Lf) end,Bs};
-	1 -> {value,fun (A) -> eval_fun(Cs, [A], Bs, Lf) end,Bs};
-	2 -> {value,fun (A,B) -> eval_fun(Cs, [A,B], Bs, Lf) end,Bs};
-	3 -> {value,fun (A,B,C) -> eval_fun(Cs, [A,B,C], Bs, Lf) end,Bs};
-	4 -> {value,fun (A,B,C,D) -> eval_fun(Cs, [A,B,C,D], Bs, Lf) end,Bs};
-	5 -> {value,
-	      fun (A,B,C,D,E) -> eval_fun(Cs, [A,B,C,D,E], Bs, Lf) end,
-	      Bs};
-	6 -> {value,
-	      fun (A,B,C,D,E,F) -> eval_fun(Cs, [A,B,C,D,E,F], Bs, Lf) end,
-	      Bs};
-	7 -> {value,
-	      fun (A,B,C,D,E,F,G) -> eval_fun(Cs, [A,B,C,D,E,F,G], Bs, Lf) end,
-	      Bs};
-	8 -> {value,
-	      fun (A,B,C,D,E,F,G,H) -> eval_fun(Cs, [A,B,C,D,E,F,G,H], Bs, Lf) end,
-	      Bs};
-	9 -> {value,
-	      fun (A,B,C,D,E,F,G,H,I) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I], Bs, Lf) end,
-	      Bs};
-	10 -> {value,
-	      fun (A,B,C,D,E,F,G,H,I,J) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J], Bs, Lf) end,
-	      Bs};
-	11 -> {value,
-	      fun (A,B,C,D,E,F,G,H,I,J,K) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K], Bs, Lf) end,
-	      Bs};
-	12 -> {value,
-	      fun (A,B,C,D,E,F,G,H,I,J,K,L) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L], Bs, Lf) end,
-	      Bs};
-	13 -> {value,
-	      fun (A,B,C,D,E,F,G,H,I,J,K,L,M) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M], Bs, Lf) end,
-	      Bs};
-	14 -> {value,
-	      fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N], Bs, Lf) end,
-	      Bs};
-	15 -> {value,
-	      fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N,O) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O], Bs, Lf) end,
-	      Bs};
-	16 -> {value,
-	      fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P], Bs, Lf) end,
-	      Bs};
-	17 -> {value,
-	      fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q], Bs, Lf) end,
-	      Bs};
-	18 -> {value,
-	      fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R], Bs, Lf) end,
-	      Bs};
-	19 -> {value,
-	      fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S], Bs, Lf) end,
-	      Bs};
-	20 -> {value,
-	      fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T], Bs, Lf) end,
-	      Bs};
-	_Other ->
-	    exit({'argument_limit',{'fun',Line,Cs}})
+expr({char,_,C}, Bs, _Lf, _Ef, RBs) ->
+    ret_expr(C, Bs, RBs);
+expr({integer,_,I}, Bs, _Lf, _Ef, RBs) ->
+    ret_expr(I, Bs, RBs);
+expr({float,_,F}, Bs, _Lf, _Ef, RBs) ->
+    ret_expr(F, Bs, RBs);
+expr({atom,_,A}, Bs, _Lf, _Ef, RBs) ->
+    ret_expr(A, Bs, RBs);
+expr({string,_,S}, Bs, _Lf, _Ef, RBs) ->
+    ret_expr(S, Bs, RBs);
+expr({nil, _}, Bs, _Lf, _Ef, RBs) ->
+    ret_expr([], Bs, RBs);
+expr({cons,_,H0,T0}, Bs0, Lf, Ef, RBs) ->
+    {value,H,Bs1} = expr(H0, Bs0, Lf, Ef, none),
+    {value,T,Bs2} = expr(T0, Bs0, Lf, Ef, none),
+    ret_expr([H|T], merge_bindings(Bs1, Bs2), RBs);
+expr({lc,_,E,Qs}, Bs, Lf, Ef, RBs) ->
+    eval_lc(E, Qs, Bs, Lf, Ef, RBs);
+expr({tuple,_,Es}, Bs0, Lf, Ef, RBs) ->
+    {Vs,Bs} = expr_list(Es, Bs0, Lf, Ef),
+    ret_expr(list_to_tuple(Vs), Bs, RBs);
+expr({record_field,_,_,_}=Mod, Bs, _Lf, _Ef, RBs) ->
+    case expand_module_name(Mod, Bs) of
+	{atom,_,A} ->
+	    ret_expr(A, Bs, RBs);    %% This is the "x.y" syntax
+	_ ->
+	    exit({{badexpr, '.'},[{erl_eval,expr,3}]})
     end;
-expr({call,_,{remote,_,Mod,Func},As0}, Bs0, Lf) ->
+expr({record_field,_,_,Name,_}, _Bs, _Lf, _Ef, _RBs) ->
+    exit({{undef_record,Name},[{erl_eval,expr,3}]});
+expr({record_index,_,Name,_}, _Bs, _Lf, _Ef, _RBs) ->
+    exit({{undef_record,Name},[{erl_eval,expr,3}]});
+expr({record,_,Name,_}, _Bs, _Lf, _Ef, _RBs) ->
+    exit({{undef_record,Name},[{erl_eval,expr,3}]});
+expr({record,_,_,Name,_}, _Bs, _Lf, _Ef, _RBs) ->
+    exit({{undef_record,Name},[{erl_eval,expr,3}]});
+expr({block,_,Es}, Bs, Lf, Ef, RBs) ->
+    exprs(Es, Bs, Lf, Ef, RBs);
+expr({'if',_,Cs}, Bs, Lf, Ef, RBs) ->
+    if_clauses(Cs, Bs, Lf, Ef, RBs);
+expr({'case',_,E,Cs}, Bs0, Lf, Ef, RBs) ->
+    {value,Val,Bs} = expr(E, Bs0, Lf, Ef, none),
+    case_clauses(Val, Cs, Bs, Lf, Ef, RBs);
+expr({'try',_,_Es,_Scs,_Ccs}, _Bs0, _Lf, _Ef, _RBs) ->
+    exit({try_not_yet_implemented,[{erl_eval,expr,3}]});
+%expr({'try',_,Es,Scs,Ccs}, Bs0, Lf, Ef, RBs) ->
+%    try exprs(Es, Bs0, Lf, Ef, RBs) of
+%        {value,Val,Bs} when [] =/= Scs ->
+%           case_clauses(Val, Scs, Bs, Lf, Ef, RBs);
+%        {value,V,Bs} ->
+%            ret_expr(V, Bs, RBs)
+%    catch Exception ->
+%        case_clauses(Exception, Ccs, Bs0, Lf, Ef, RBs)
+%    end;
+expr({'receive',_,Cs}, Bs, Lf, Ef, RBs) ->
+    receive_clauses(Cs, Bs, Lf, Ef, [], RBs);
+expr({'receive',_, Cs, E, TB}, Bs0, Lf, Ef, RBs) ->
+    {value,T,Bs} = expr(E, Bs0, Lf, Ef, none),
+    receive_clauses(T, Cs, {TB,Bs}, Bs0, Lf, Ef, [], RBs);
+expr({'fun',_Line,{function,Name,Arity}}, _Bs0, _Lf, _Ef, _RBs) -> % R8
+    exit({undef,[{erl_eval,Name,Arity}]});
+expr({'fun',Line,{clauses,Cs}} = Ex, Bs, Lf, Ef, RBs) ->
+    %% Save only used variables in the function environment.
+    {ok,Used} = erl_lint:used_vars([Ex], Bs),
+    En = orddict:filter(fun(K,_V) -> member(K,Used) end, Bs),
+    %% This is a really ugly hack!
+    F = 
+    case length(element(3,hd(Cs))) of
+	0 -> fun () -> eval_fun(Cs, [], En, Lf, Ef) end;
+	1 -> fun (A) -> eval_fun(Cs, [A], En, Lf, Ef) end;
+	2 -> fun (A,B) -> eval_fun(Cs, [A,B], En, Lf, Ef) end;
+	3 -> fun (A,B,C) -> eval_fun(Cs, [A,B,C], En, Lf, Ef) end;
+	4 -> fun (A,B,C,D) -> eval_fun(Cs, [A,B,C,D], En, Lf, Ef) end;
+	5 -> fun (A,B,C,D,E) -> eval_fun(Cs, [A,B,C,D,E], En, Lf, Ef) end;
+	6 -> fun (A,B,C,D,E,F) -> eval_fun(Cs, [A,B,C,D,E,F], En, Lf, Ef) end;
+	7 -> fun (A,B,C,D,E,F,G) -> 
+           eval_fun(Cs, [A,B,C,D,E,F,G], En, Lf, Ef) end;
+	8 -> fun (A,B,C,D,E,F,G,H) -> 
+           eval_fun(Cs, [A,B,C,D,E,F,G,H], En, Lf, Ef) end;
+	9 -> fun (A,B,C,D,E,F,G,H,I) -> 
+           eval_fun(Cs, [A,B,C,D,E,F,G,H,I], En, Lf, Ef) end;
+	10 -> fun (A,B,C,D,E,F,G,H,I,J) -> 
+           eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J], En, Lf, Ef) end;
+	11 -> fun (A,B,C,D,E,F,G,H,I,J,K) -> 
+           eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K], En, Lf, Ef) end;
+	12 -> fun (A,B,C,D,E,F,G,H,I,J,K,L) -> 
+           eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L], En, Lf, Ef) end;
+	13 -> fun (A,B,C,D,E,F,G,H,I,J,K,L,M) -> 
+           eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M], En, Lf, Ef) end;
+	14 -> fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N) -> 
+           eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N], En, Lf, Ef) end;
+	15 -> fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N,O) -> 
+           eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O], En, Lf, Ef) end;
+	16 -> fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P) -> 
+           eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P], En, Lf, Ef) end;
+	17 -> fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q) -> 
+           eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q], En, Lf, Ef) end;
+	18 -> fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R) -> 
+           eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R], En, Lf, Ef) end;
+	19 -> fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S) -> 
+           eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S], 
+                    En, Lf, Ef) end;
+	20 -> fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T) -> 
+           eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T], 
+                    En, Lf, Ef) end;
+	_Other ->
+	    exit({{'argument_limit',{'fun',Line,Cs}},[{erl_eval,expr,3}]})
+    end,
+    ret_expr(F, Bs, RBs);
+expr({call,_,{remote,_,Mod,Func},As0}, Bs0, Lf, Ef, RBs) ->
     Mod1 = expand_module_name(Mod, Bs0),
-    {value,M,Bs1} = expr(Mod1, Bs0, Lf),
-    {value,F,Bs2} = expr(Func, Bs0, Lf),
-    {As,Bs3} = expr_list(As0, merge_bindings(Bs1, Bs2), Lf),
-    {value,apply(M, F, As),Bs3};
-expr({call,_,Func0,As0}, Bs0, Lf) ->		%Local functions handler
-    {value,Func,Bs1} = expr(Func0, Bs0, Lf),
+    {value,M,Bs1} = expr(Mod1, Bs0, Lf, Ef, none),
+    {value,F,Bs2} = expr(Func, Bs0, Lf, Ef, none),
+    {As,Bs3} = expr_list(As0, merge_bindings(Bs1, Bs2), Lf, Ef),
+    do_apply({M,F}, As, Bs3, Ef, RBs);
+expr({call,_,Func0,As0}, Bs0, Lf, Ef, RBs) ->
+    {value,Func,Bs1} = expr(Func0, Bs0, Lf, Ef, none),
     if
-	function(Func) ->
-	    {As,Bs2} = expr_list(As0, Bs1, Lf),
-	    {value,apply(Func, As),Bs2};
-	true ->
+        is_atom(Func) ->
 	    case erl_internal:bif(Func, length(As0)) of
 		true ->
-		    {As,Bs2} = expr_list(As0, Bs1, Lf),
-		    {value,bif(Func, As),Bs2};
+		    {As,Bs2} = expr_list(As0, Bs1, Lf, Ef),
+                    bif(Func, As, Bs2, Ef, RBs);
 		false ->
-		    local_func(Func, As0, Bs1, Lf)
-	    end
+                    local_func(Func, As0, Bs1, Lf, RBs)
+	    end;
+        true -> % function or {Mod,Fun}
+	    {As,Bs2} = expr_list(As0, Bs1, Lf, Ef),
+            do_apply(Func, As, Bs2, Ef, RBs)
     end;
-expr({'catch',_,Expr}, Bs0, Lf) ->
+expr({'catch',_,Expr}, Bs0, Lf, Ef, RBs) ->
     Ref = make_ref(),
-    case catch {Ref,expr(Expr, Bs0, Lf)} of
-	{Ref,{value,_,_}=Ret} ->		%Nothing was thrown (guaranteed).
-	    Ret;
+    case catch {Ref,expr(Expr, Bs0, Lf, Ef, none)} of
+	{Ref,{value,V,Bs}} ->	  % Nothing was thrown (guaranteed).
+            ret_expr(V, Bs, RBs);
 	Other ->
-	    {value,Other,Bs0}
+            ret_expr(Other, Bs0, RBs)
     end;
-expr({match,_,Lhs,Rhs0}, Bs0, Lf) ->
-    {value,Rhs,Bs1} = expr(Rhs0, Bs0, Lf),
+expr({match,_,Lhs,Rhs0}, Bs0, Lf, Ef, RBs) ->
+    {value,Rhs,Bs1} = expr(Rhs0, Bs0, Lf, Ef, none),
     case match(Lhs, Rhs, Bs1) of
 	{match,Bs} ->
-	    {value,Rhs,Bs};
+            ret_expr(Rhs, Bs, RBs);
 	nomatch ->
 	    exit({{badmatch,Rhs},[{erl_eval,expr,3}]})
     end;
-expr({op,_,Op,A0}, Bs0, Lf) ->
-    {value,A,Bs} = expr(A0, Bs0, Lf),
-    {value,eval_op(Op, A),Bs};
-expr({op,_,'andalso',L0,R0}, Bs0, Lf) ->
-    {value,L,Bs1} = expr(L0, Bs0, Lf),
+expr({op,_,Op,A0}, Bs0, Lf, Ef, RBs) ->
+    {value,A,Bs} = expr(A0, Bs0, Lf, Ef, none),
+    ret_expr(eval_op(Op, A), Bs, RBs);
+expr({op,_,'andalso',L0,R0}, Bs0, Lf, Ef, RBs) ->
+    {value,L,Bs1} = expr(L0, Bs0, Lf, Ef, none),
     V = case L of
 	    true ->
-		{value,R,_} = expr(R0, Bs1, Lf),
+		{value,R,_} = expr(R0, Bs1, Lf, Ef, none),
 		case R of
 		    true -> true;
 		    false -> false;
@@ -233,13 +308,13 @@ expr({op,_,'andalso',L0,R0}, Bs0, Lf) ->
 	    false -> false;
 	    _ -> exit({{badarg,L},[{erl_eval,expr,3}]})
 	end,
-    {value,V,Bs1};
-expr({op,_,'orelse',L0,R0}, Bs0, Lf) ->
-    {value,L,Bs1} = expr(L0, Bs0, Lf),
+    ret_expr(V, Bs1, RBs);
+expr({op,_,'orelse',L0,R0}, Bs0, Lf, Ef, RBs) ->
+    {value,L,Bs1} = expr(L0, Bs0, Lf, Ef, none),
     V = case L of
 	    true -> true;
 	    false ->
-		{value,R,_} = expr(R0, Bs1, Lf),
+		{value,R,_} = expr(R0, Bs1, Lf, Ef, none),
 		case R of
 		    true -> true;
 		    false -> false;
@@ -247,116 +322,199 @@ expr({op,_,'orelse',L0,R0}, Bs0, Lf) ->
 		end;
 	    _ -> exit({{badarg,L},[{erl_eval,expr,3}]})
 	end,
-    {value,V,Bs1};
-expr({op,_,Op,L0,R0}, Bs0, Lf) ->
-    {value,L,Bs1} = expr(L0, Bs0, Lf),
-    
-    {value,R,Bs2} = expr(R0, Bs0, Lf),
-    {value,eval_op(Op, L, R),merge_bindings(Bs1, Bs2)};
-expr({bin,_,Fs}, Bs0, Lf) ->
-    eval_bits:expr_grp(Fs,Bs0,
-		       fun(E, B) -> expr(E, B, Lf) end,
-		       [],
-		       true);
-expr({remote,_,_,_}, _, _) ->
+    ret_expr(V, Bs1, RBs);
+expr({op,_,Op,L0,R0}, Bs0, Lf, Ef, RBs) ->
+    {value,L,Bs1} = expr(L0, Bs0, Lf, Ef, none),
+    {value,R,Bs2} = expr(R0, Bs0, Lf, Ef, none),
+    ret_expr(eval_op(Op, L, R), merge_bindings(Bs1, Bs2), RBs);
+expr({bin,_,Fs}, Bs0, Lf, Ef, RBs) ->
+    {value, V, Bs} = 
+        eval_bits:expr_grp(Fs,Bs0,
+                           fun(E, B) -> expr(E, B, Lf, Ef, none) end,
+                           [],
+                           true),
+    ret_expr(V, Bs, RBs);
+expr({remote,_,_,_}, _Bs, _Lf, _Ef, _RBs) ->
     exit({{badexpr,':'},[{erl_eval,expr,3}]});
-expr({record_field,_,_,_}, _, _) ->
-    exit({{badexpr, '.'},[{erl_eval,expr,3}]});
-expr({value,_,Val}, Bs, _) ->			%Special case straight values.
-    {value,Val,Bs}.
+expr({value,_,Val}, Bs, _Lf, _Ef, RBs) ->    % Special case straight values.
+    ret_expr(Val, Bs, RBs).
 
-%% local_func(Function, Arguments, Bindings, LocalFuncHandler) ->
-%%	{value,Value,Bindings} when
-%%	LocalFuncHandler = {value,F}|{value,F,Eas}|{eval,F}|{eval,F,Eas}|none.
+%% local_func(Function, Arguments, Bindings, LocalFuncHandler, RBs) ->
+%%	{value,Value,Bindings} | Value when
+%%	LocalFuncHandler = {value,F} | {value,F,Eas} |
+%%                         {eval,F}  | {eval,F,Eas}  | none.
 
-local_func(Func, As0, Bs0, {value,F}) ->
+local_func(Func, As0, Bs0, {value,F}, RBs) when RBs == value ->
+    {As1,_Bs1} = expr_list(As0, Bs0, {value,F}),
+    %% Make tail recursive calls when possible.
+    F(Func, As1);
+local_func(Func, As0, Bs0, {value,F}, RBs) ->
     {As1,Bs1} = expr_list(As0, Bs0, {value,F}),
-    {value,apply(F, [Func,As1]),Bs1};
-local_func(Func, As0, Bs0, {value,F,Eas}) ->
+    ret_expr(F(Func, As1), Bs1, RBs);
+local_func(Func, As0, Bs0, {value,F,Eas}, RBs) when RBs == value ->
+    {As1,_Bs1} = expr_list(As0, Bs0, {value,F,Eas}),
+    apply(F, [Func,As1|Eas]);
+local_func(Func, As0, Bs0, {value,F,Eas}, RBs) ->
     {As1,Bs1} = expr_list(As0, Bs0, {value,F,Eas}),
-    {value,apply(F, [Func,As1|Eas]),Bs1};
-local_func(Func, As, Bs, {eval,F}) ->
-    apply(F, [Func,As,Bs]);
-local_func(Func, As, Bs, {eval,F,Eas}) ->
-    apply(F, [Func,As,Bs|Eas]);
+    ret_expr(apply(F, [Func,As1|Eas]), Bs1, RBs);
+local_func(Func, As, Bs, {eval,F}, RBs) ->
+    local_func2(F(Func, As, Bs), RBs);
+local_func(Func, As, Bs, {eval,F,Eas}, RBs) ->
+    local_func2(apply(F, [Func,As,Bs|Eas]), RBs);
 %% These two clauses are for backwards compatibility.
-local_func(Func, As0, Bs0, {M,F}) ->
+local_func(Func, As0, Bs0, {M,F}, RBs) ->
     {As1,Bs1} = expr_list(As0, Bs0, {M,F}),
-    {value,apply(M, F, [Func,As1]),Bs1};
-local_func(Func, As, _, {M,F,Eas}) ->
-    apply(M, F, [Func,As|Eas]);
+    ret_expr(M:F(Func,As1), Bs1, RBs);
+local_func(Func, As, _Bs, {M,F,Eas}, RBs) ->
+    local_func2(apply(M, F, [Func,As|Eas]), RBs);
 %% Default unknown function handler to undefined function.
-local_func(Func, As0, _, none) ->
+local_func(Func, As0, _Bs0, none, _RBs) ->
     exit({undef,[{erl_eval,Func,length(As0)}]}).
 
-%% eval_lc(Expr, [Qualifier], Bindings, LocalFunctionHandler) ->
-%%	{value,Value,Bindings}.
+local_func2({value,V,Bs}, RBs) ->
+    ret_expr(V, Bs, RBs);
+local_func2({eval,F,As,Bs}, RBs) -> % This reply is not documented.
+    %% The shell found F. erl_eval tries to do a tail recursive call,
+    %% something the shell cannot do. Do not use Ef here.
+    do_apply(F, As, Bs, none, RBs).
+
+%% bif(Name, Arguments, RBs)
+%%  Evaluate the Erlang auto-imported function Name. erlang:apply/2,3
+%%  are "hidden" from the external function handler.
+
+bif(apply, [erlang,apply,As], Bs, Ef, RBs) ->
+    bif(apply, As, Bs, Ef, RBs);
+bif(apply, [M,F,As], Bs, Ef, RBs) ->
+    do_apply({M,F}, As, Bs, Ef, RBs);
+bif(apply, [F,As], Bs, Ef, RBs) ->
+    do_apply(F, As, Bs, Ef, RBs);
+bif(Name, As, Bs, Ef, RBs) ->
+    do_apply({erlang,Name}, As, Bs, Ef, RBs).
+
+%% do_apply(MF, Arguments, Bindings, ExternalFuncHandler, RBs) ->
+%%	{value,Value,Bindings} | Value when
+%%	ExternalFuncHandler = {value,F} | none.
+%% MF is a tuple {Module,Function} or a fun.
+
+do_apply(Func, As, Bs0, Ef, RBs) ->
+    Info = if
+               is_function(Func) -> erlang:fun_info(Func, module);
+               true -> no
+           end,
+    case {Info,Ef} of
+        {{module,?MODULE},_} ->
+            {env, [FBs, FEf, FLf, FCs]} = erlang:fun_info(Func, env),
+            %% If we are evaluting within another function body 
+            %% (RBs =/= none), we return RBs when this function body
+            %% has been evalutated, otherwise we return Bs0, the
+            %% bindings when evalution of this function body started.
+            NRBs = if
+                       RBs == none -> Bs0;
+                       true -> RBs
+                   end,
+            eval_fun(FCs, As, FBs, FLf, FEf, NRBs);
+        {_,none} when RBs == value ->
+            %% Make tail recursive calls when possible.
+            apply(Func, As);
+        {_,none} ->
+            ret_expr(apply(Func, As), Bs0, RBs);
+        {_,{value,F}} when RBs == value ->
+            F(Func,As);
+        {_,{value,F}} ->
+            ret_expr(F(Func, As), Bs0, RBs)
+    end.
+
+%% eval_lc(Expr, [Qualifier], Bindings, LocalFunctionHandler, 
+%%         ExternalFuncHandler, RetBindings) ->
+%%	{value,Value,Bindings} | Value
 %%  This is evaluating list comprehensions "straight out of the book".
 
-eval_lc(E, Qs, Bs, Lf) ->
-    {value,eval_lc1(E, Qs, Bs, Lf),Bs}.
+eval_lc(E, Qs, Bs, Lf, Ef, RBs) ->
+    ret_expr(eval_lc1(E, Qs, Bs, Lf, Ef), Bs, RBs).
 
-eval_lc1(E, [{generate,_,P,L0}|Qs], Bs0, Lf) ->
-    {value,L1,Bs1} = expr(L0, Bs0, Lf),
+eval_lc1(E, [{generate,_,P,L0}|Qs], Bs0, Lf, Ef) ->
+    RBs = none,
+    {value,L1,_Bs1} = expr(L0, Bs0, Lf, Ef, RBs),
     flatmap(fun (V) ->
-		    case match(P, V, new_bindings()) of
+		    case match(P, V, new_bindings(), Bs0) of
 			{match,Bsn} ->
-			    Bs2 = add_bindings(Bsn, Bs1),
-			    eval_lc1(E, Qs, Bs2, Lf);
+			    Bs2 = add_bindings(Bsn, Bs0),
+			    eval_lc1(E, Qs, Bs2, Lf, Ef);
 			nomatch -> []
 		    end end, L1);
-eval_lc1(E, [F|Qs], Bs0, Lf) ->
+eval_lc1(E, [F|Qs], Bs0, Lf,  Ef) ->
     case erl_lint:is_guard_test(F) of
 	true ->
-	    case guard_test(F, Bs0, Lf) of
-		{value,true,Bs1} -> eval_lc1(E, Qs, Bs1, Lf);
-		{value,false,_} -> []
+	    case guard_test(F, Bs0, Lf, Ef) of
+		{value,true,Bs1} -> eval_lc1(E, Qs, Bs1, Lf, Ef);
+                {value,false,_} -> []
 	    end;
 	false ->
-	    case expr(F, Bs0, Lf) of
-		{value,true,Bs1} -> eval_lc1(E, Qs, Bs1, Lf);
+            RBs = none,
+	    case expr(F, Bs0, Lf, Ef, RBs) of
+		{value,true,Bs1} -> eval_lc1(E, Qs, Bs1, Lf, Ef);
 		{value,false,_} -> [];
 		_Other -> exit({bad_filter,[{erl_eval,expr,3}]})
 	    end
     end;
-eval_lc1(E, [], Bs, Lf) ->
-    {value,V,_} = expr(E, Bs, Lf),
+eval_lc1(E, [], Bs, Lf, Ef) ->
+    RBs = none,
+    {value,V,_} = expr(E, Bs, Lf, Ef, RBs),
     [V].
 
-%% eval_fun(Clauses, Arguments, Bindings, LocalFunctionHandler) ->
-%%	Value
+%% RBs is the bindings to return when the evalution of a function
+%% (fun) has finished. If RBs == none, then the evalution took place
+%% outside a function. If RBs == value, only the value (not the bindings)
+%% is to be returned (to a compiled function).
 
-eval_fun([{clause,_,H,G,B}|Cs], As, Bs0, Lf) ->
+ret_expr(V, _Bs, RBs) when RBs == value ->
+    V;
+ret_expr(V, Bs, RBs) when RBs == none ->
+    {value,V,Bs};
+ret_expr(V, _Bs, RBs) when is_list(RBs) ->
+    {value,V,RBs}.
+
+%% eval_fun(Clauses, Arguments, Bindings, LocalFunctionHandler, 
+%%          ExternalFunctionHandler) -> Value
+%% This function is called when the fun is called from compiled code
+%% or from apply.
+
+eval_fun(Cs, As, Bs0, Lf, Ef) ->
+    eval_fun(Cs, As, Bs0, Lf, Ef, value).
+
+eval_fun([{clause,_,H,G,B}|Cs], As, Bs0, Lf, Ef, RBs) ->
     case match_list(H, As, new_bindings()) of
-	{match,Bsn} ->				%The new bindings for the head
-	    Bs1 = add_bindings(Bsn, Bs0),	% which then shadow!
-	    case guard(G, Bs1, Lf) of
-		true ->
-		    {value,V,_} = exprs(B, Bs1, Lf),
-		    V;
-		false -> eval_fun(Cs, As, Bs0, Lf)
+	{match,Bsn} ->                      % The new bindings for the head
+	    Bs1 = add_bindings(Bsn, Bs0),   % which then shadow!
+	    case guard(G, Bs1, Lf, Ef) of
+		true -> exprs(B, Bs1, Lf, Ef, RBs);
+		false -> eval_fun(Cs, As, Bs0, Lf, Ef, RBs)
 	    end;
 	nomatch ->
-	    eval_fun(Cs, As, Bs0, Lf)
+	    eval_fun(Cs, As, Bs0, Lf, Ef, RBs)
     end;
-eval_fun([], As, _, _) ->
+eval_fun([], As, _Bs, _Lf, _Ef, _RBs) ->
     exit({function_clause,[{?MODULE,'-inside-a-shell-fun-',As},
 			   {erl_eval,expr,3}]}).
 
 %% expr_list(ExpressionList, Bindings)
 %% expr_list(ExpressionList, Bindings, LocalFuncHandler)
+%% expr_list(ExpressionList, Bindings, LocalFuncHandler, ExternalFuncHandler)
 %%  Evaluate a list of expressions "in parallel" at the same level.
 
 expr_list(Es, Bs) ->
-    expr_list(Es, [], Bs, Bs, none).
+    expr_list(Es, Bs, none, none).
 
 expr_list(Es, Bs, Lf) ->
-    expr_list(Es, [], Bs, Bs, Lf).
+    expr_list(Es, Bs, Lf, none).
 
-expr_list([E|Es], Vs, BsOrig, Bs0, Lf) ->
-    {value,V,Bs1} = expr(E, BsOrig, Lf),
-    expr_list(Es, [V|Vs], BsOrig, merge_bindings(Bs1, Bs0), Lf);
-expr_list([], Vs, _, Bs, _) ->
+expr_list(Es, Bs, Lf, Ef) ->
+    expr_list(Es, [], Bs, Bs, Lf, Ef).    
+
+expr_list([E|Es], Vs, BsOrig, Bs0, Lf, Ef) ->
+    {value,V,Bs1} = expr(E, BsOrig, Lf, Ef, none),
+    expr_list(Es, [V|Vs], BsOrig, merge_bindings(Bs1, Bs0), Lf, Ef);
+expr_list([], Vs, _, Bs, _Lf, _Ef) ->
     {reverse(Vs),Bs}.
 
 eval_op('*', A1, A2) -> A1 * A2;
@@ -390,77 +548,67 @@ eval_op('-', A) -> -A;
 eval_op('bnot', A) -> bnot A;
 eval_op('not', A) -> not A.
 
-%% bif(Name, Arguments)
-%%  Evaluate the Erlang builtin function Name. N.B. Special case apply
-%%  here, apply/2 needs to be explicit.
+%% if_clauses(Clauses, Bindings, LocalFuncHandler, ExtFuncHandler, RBs)
 
-bif(apply, [M,F,As]) ->
-    apply(M, F, As);
-bif(apply, [F,As]) ->
-    apply(F, As);
-bif(Name, As) ->
-    apply(erlang, Name, As).
-
-%% if_clauses(Clauses, Bindings, LocalFuncHandler)
-
-if_clauses([{clause,_,[],G,B}|Cs], Bs, Lf) ->
-    case guard(G, Bs, Lf) of
-	true -> exprs(B, Bs, Lf);
-	false -> if_clauses(Cs, Bs, Lf)
+if_clauses([{clause,_,[],G,B}|Cs], Bs, Lf, Ef, RBs) ->
+    case guard(G, Bs, Lf, Ef) of
+	true -> exprs(B, Bs, Lf, Ef, RBs);
+	false -> if_clauses(Cs, Bs, Lf, Ef, RBs)
     end;
-if_clauses([], _, _) ->
+if_clauses([], _Bs, _Lf, _Ef, _RBs) ->
     exit({if_clause,[{erl_eval,expr,3}]}).
 
-%% case_clauses(Value, Clauses, Bindings, LocalFuncHandler)
+%% case_clauses(Value, Clauses, Bindings, LocalFuncHandler, ExtFuncHandler)
 
-case_clauses(Val, Cs, Bs, Lf) ->
-    case match_clause(Cs, [Val], Bs, Lf) of
+case_clauses(Val, Cs, Bs, Lf, Ef, RBs) ->
+    case match_clause(Cs, [Val], Bs, Lf, Ef) of
 	{B, Bs1} ->
-	    exprs(B, Bs1, Lf);
+	    exprs(B, Bs1, Lf, Ef, RBs);
 	nomatch ->
 	    exit({{case_clause,Val},[{erl_eval,expr,3}]})
     end.
 
 %%
-%% receive(Clauses, Bindings, LocalFuncHandler, Messages) 
+%% receive_clauses(Clauses, Bindings, LocalFuncHnd,ExtFuncHnd, Messages, RBs) 
 %%
-receive_clauses(Cs, Bs, Lf, Ms) ->
+receive_clauses(Cs, Bs, Lf, Ef, Ms, RBs) ->
     receive
 	Val ->
-	    case match_clause(Cs, [Val], Bs, Lf) of
+	    case match_clause(Cs, [Val], Bs, Lf, Ef) of
 		{B, Bs1} ->
 		    merge_queue(Ms),
-		    exprs(B, Bs1, Lf);
+		    exprs(B, Bs1, Lf, Ef, RBs);
 		nomatch ->
-		    receive_clauses(Cs, Bs, Lf, [Val|Ms])
+		    receive_clauses(Cs, Bs, Lf, Ef, [Val|Ms], RBs)
 	    end
     end.
 %%
-%% receive_clauses(TimeOut, Clauses, TimeoutBody, Bindings, LocalFuncHandler)
+%% receive_clauses(TimeOut, Clauses, TimeoutBody, Bindings, 
+%%                 ExternalFuncHandler, LocalFuncHandler, RBs)
 %%
-receive_clauses(T, Cs, TB, Bs, Lf, Ms) ->
+receive_clauses(T, Cs, TB, Bs, Lf, Ef, Ms, RBs) ->
     {_,_} = statistics(runtime),
     receive
 	Val ->
-	    case match_clause(Cs, [Val], Bs, Lf) of
+	    case match_clause(Cs, [Val], Bs, Lf, Ef) of
 		{B, Bs1} ->
 		    merge_queue(Ms),
-		    exprs(B, Bs1, Lf);
+		    exprs(B, Bs1, Lf, Ef, RBs);
 		nomatch ->
 		    {_,T1} = statistics(runtime),
 		    if
 			T == infinity ->
-			    receive_clauses(T, Cs, TB, Bs, Lf, [Val|Ms]);
+			    receive_clauses(T, Cs, TB,Bs,Lf,Ef,[Val|Ms],RBs);
 			T-T1 =< 0 ->
-			    receive_clauses(0, Cs, TB, Bs, Lf, [Val|Ms]);
+			    receive_clauses(0, Cs, TB,Bs,Lf,Ef,[Val|Ms],RBs);
 			true ->
-			    receive_clauses(T-T1, Cs, TB, Bs, Lf, [Val|Ms])
+			    receive_clauses(T-T1, Cs,TB,Bs,Lf,Ef,[Val|Ms],RBs)
 		    end
 	    end
     after T ->
 	    merge_queue(Ms),
 	    {B, Bs1} = TB,
-	    exprs(B, Bs1, Lf)
+	    exprs(B, Bs1, Lf, Ef, RBs)
     end.
 
 merge_queue(Ms) ->
@@ -481,69 +629,84 @@ send_all([], _) -> true.
     
 %% match_clause -> {Body, Bindings} or nomatch
 
-match_clause([{clause,_,H,G,B}|Cs], Vals, Bs, Lf) ->
+match_clause(Cs, Vs, Bs, Lf) ->
+    match_clause(Cs, Vs, Bs, Lf, none).
+
+match_clause([{clause,_,H,G,B}|Cs], Vals, Bs, Lf, Ef) ->
     case match_list(H, Vals, Bs) of
 	{match, Bs1} ->
-	    case guard(G, Bs1, Lf) of
+	    case guard(G, Bs1, Lf, Ef) of
 		true -> {B, Bs1};
-		false -> match_clause(Cs, Vals, Bs, Lf)
+		false -> match_clause(Cs, Vals, Bs, Lf, Ef)
 	    end;
-	nomatch -> match_clause(Cs, Vals, Bs, Lf)
+	nomatch -> match_clause(Cs, Vals, Bs, Lf, Ef)
     end;
-match_clause([], _, _, _) ->
+match_clause([], _Vals, _Bs, _Lf, _Ef) ->
     nomatch.
 
 
-%% guard(GuardTests, Bindings, LocalFuncHandler) -> true | false.
+%% guard(GuardTests, Bindings, LocalFuncHandler, ExtFuncHandler) -> bool()
 %%  Evaluate a guard.  We test if the guard is a true guard.
 
-guard(L=[G|_], Bs0, Lf) when list(G) ->
-    guard1(L, Bs0, Lf);
-guard(L, Bs0, Lf) ->
-    guard0(L, Bs0, Lf).
+guard(L=[G|_], Bs0, Lf, Ef) when list(G) ->
+    guard1(L, Bs0, Lf, Ef);
+guard(L, Bs0, Lf, Ef) ->
+    guard0(L, Bs0, Lf, Ef).
 
 %% disjunction of guard conjunctions
-guard1([G|Gs], Bs0, Lf) when list(G) ->
-    case guard0(G, Bs0, Lf) of
+guard1([G|Gs], Bs0, Lf, Ef) when list(G) ->
+    case guard0(G, Bs0, Lf, Ef) of
 	true ->
 	    true;
 	false ->
-	    guard1(Gs, Bs0, Lf)
+	    guard1(Gs, Bs0, Lf, Ef)
     end;
-guard1([], _, _) -> false.
+guard1([], _Bs, _Lf, _Ef) -> false.
 
 %% guard conjunction
-guard0([G|Gs], Bs0, Lf) ->
+guard0([G|Gs], Bs0, Lf, Ef) ->
     case erl_lint:is_guard_test(G) of
 	true ->
-	    case guard_test(G, Bs0, Lf) of
-		{value,true,Bs} -> guard0(Gs, Bs, Lf);
-		{value,false,_} -> false
+	    case guard_test(G, Bs0, Lf, Ef) of
+		{value,true,Bs} -> guard0(Gs, Bs, Lf, Ef);
+                {value,false,_} -> false
 	    end;
 	false ->
 	    exit({guard_expr,[{erl_eval,expr,3}]})
     end;
-guard0([], _, _) -> true.
+guard0([], _Bs, _Lf, _Ef) -> true.
 	
-%% guard_test(GuardTest, Bindings, LocalFuncHandler) ->
+%% guard_test(GuardTest, Bindings, LocalFuncHandler, ExtFuncHandler) ->
 %%	{value,bool(),NewBindings}.
-%%  Evaluate one guard test.  This should never fail, just return true
-%%  or false.  We DEMAND that this is valid guard test.
+%%  Evaluate one guard test. Never fails, returns bool().
 
-guard_test({call,_,{atom,_,Name},As0}, Bs0, Lf) ->
-    case catch expr_list(As0, Bs0, Lf) of
-	{As1,Bs1} -> {value,type_test(Name, As1),Bs1};
+guard_test({call,_,{atom,_,Name},As0}, Bs0, Lf, Ef) ->
+    case catch expr_list(As0, Bs0, Lf, Ef) of
+	{As1,Bs1} -> {value,type_test(Name, As1),Bs1}; % Ignore Ef.
 	_Other -> {value,false,Bs0}
     end;
-guard_test({op,_,Op,Lhs0,Rhs0}, Bs0, Lf) ->
+guard_test({op,_,Op,A0}, Bs0, Lf, Ef) ->
     case catch begin
-		   {[Lhs,Rhs],Bs1} = expr_list([Lhs0,Rhs0], Bs0, Lf),
+		   {[A],Bs1} = expr_list([A0], Bs0, Lf, Ef),
+		   {value,eval_op(Op, A),Bs1}
+	       end of
+	{value,true,Bs2} -> {value,true,Bs2};
+	_Other -> {value,false,Bs0}
+    end;
+guard_test({op,_,Op,Lhs0,Rhs0}, Bs0, Lf, Ef) ->
+    case catch begin
+		   {[Lhs,Rhs],Bs1} = expr_list([Lhs0,Rhs0], Bs0, Lf, Ef),
 		   {value,eval_op(Op, Lhs, Rhs),Bs1}
 	       end of
-	{value,Bool,Bs2} -> {value,Bool,Bs2};
+	{value,true,Bs2} -> {value,true,Bs2};
 	_Other -> {value,false,Bs0}
     end;
-guard_test({atom,_,true}, Bs, _) -> {value,true,Bs}.
+guard_test({atom,_,true}, Bs, _Lf, _Ef) -> {value,true,Bs};
+guard_test({atom,_,false}, Bs, _Lf, _Ef) -> {value,false,Bs};
+guard_test({var,_,V}, Bs, _Lf, _Ef) ->
+    {value,Val} = binding(V, Bs),
+    {value,Val == true,Bs};
+guard_test(_Other, Bs, _Lf, _Ef) -> {value,false,Bs}.
 
 type_test(integer, [A]) -> erlang:is_integer(A);
 type_test(float, [A]) ->  erlang:is_float(A);
@@ -570,7 +733,14 @@ type_test(Test, As) -> erlang:apply(erlang, Test, As).
 %%  Try to match Pattern against Term with the current bindings.
 
 match(Pat, Term, Bs) ->
-    case catch match1(Pat, Term, Bs) of
+    match(Pat, Term, Bs, Bs).
+
+%% Bs are the bindings that are augmented with new bindings. BBs are
+%% the bindings used for "binsize" variables (in <<X:Y>>, Y is a
+%% binsize variable).
+
+match(Pat, Term, Bs, BBs) ->
+    case catch match1(Pat, Term, Bs, BBs) of
 	invalid ->
 	    exit({{illegal_pattern,Pat},[{erl_eval,expr,3}]});
 	Other ->
@@ -581,29 +751,29 @@ string_to_conses([], _, Tail) -> Tail;
 string_to_conses([E|Rest], Line, Tail) ->
     {cons, Line, {integer, Line, E}, string_to_conses(Rest, Line, Tail)}.
 
-match1({atom,_,A0}, A, Bs) ->
+match1({atom,_,A0}, A, Bs, _BBs) ->
     case A of
 	A0 -> {match,Bs};
 	_ -> throw(nomatch)
     end;
-match1({integer,_,I0}, I, Bs) ->
+match1({integer,_,I0}, I, Bs, _BBs) ->
     case I of
 	I0 -> {match,Bs};
 	_ -> throw(nomatch)
     end;
-match1({float,_,F0}, F, Bs) ->
+match1({float,_,F0}, F, Bs, _BBs) ->
     case F of
 	F0 -> {match,Bs};
 	_ -> throw(nomatch)
     end;
-match1({char,_,C0}, C, Bs) ->
+match1({char,_,C0}, C, Bs, _BBs) ->
     case C of
 	C0 -> {match,Bs};
 	_ -> throw(nomatch)
     end;
-match1({var,_,'_'}, _, Bs) ->			%Anonymous variable matches
+match1({var,_,'_'}, _, Bs, _BBs) ->		%Anonymous variable matches
     {match,Bs};					% everything, no new bindings
-match1({var,_,Name}, Term, Bs) ->
+match1({var,_,Name}, Term, Bs, _BBs) ->
     case binding(Name, Bs) of
 	{value,Term} ->
 	    {match,Bs};
@@ -612,63 +782,63 @@ match1({var,_,Name}, Term, Bs) ->
 	unbound ->
 	    {match,add_binding(Name, Term, Bs)}
     end;
-match1({match,_,Pat1,Pat2}, Term, Bs0) ->
-    {match, Bs1} = match1(Pat1, Term, Bs0),
-    match1(Pat2, Term, Bs1);
-match1({string,_,S0}, S, Bs) ->
+match1({match,_,Pat1,Pat2}, Term, Bs0, BBs) ->
+    {match, Bs1} = match1(Pat1, Term, Bs0, BBs),
+    match1(Pat2, Term, Bs1, BBs);
+match1({string,_,S0}, S, Bs, _BBs) ->
     case S of
 	S0 -> {match,Bs};
 	_ -> throw(nomatch)
     end;
-match1({nil,_}, Nil, Bs) ->
+match1({nil,_}, Nil, Bs, _BBs) ->
     case Nil of
 	[] -> {match,Bs};
 	_ -> throw(nomatch)
     end;
-match1({cons,_,H,T}, [H1|T1], Bs0) ->
-    {match,Bs} = match1(H, H1, Bs0),
-    match1(T, T1, Bs);
-match1({cons,_,_,_}, _, _) ->
+match1({cons,_,H,T}, [H1|T1], Bs0, BBs) ->
+    {match,Bs} = match1(H, H1, Bs0, BBs),
+    match1(T, T1, Bs, BBs);
+match1({cons,_,_,_}, _, _Bs, _BBs) ->
     throw(nomatch);
-match1({tuple,_,Elts}, Tuple, Bs) when tuple(Tuple),
+match1({tuple,_,Elts}, Tuple, Bs, BBs) when tuple(Tuple),
 				       length(Elts) == size(Tuple) ->
-    match_tuple(Elts, Tuple, 1, Bs);
-match1({tuple,_,_}, _, _) ->
+    match_tuple(Elts, Tuple, 1, Bs, BBs);
+match1({tuple,_,_}, _, _Bs, _BBs) ->
     throw(nomatch);
-match1({bin, _, Fs}, B, Bs0) when binary(B) ->
-    eval_bits:match_bits(Fs, B, Bs0,
-			 fun(L, R, Bs) -> match1(L, R, Bs) end,
-			 fun(E, Bs) -> expr(E, Bs, none) end,
+match1({bin, _, Fs}, B, Bs0, BBs) when binary(B) ->
+    eval_bits:match_bits(Fs, B, Bs0, BBs,
+			 fun(L, R, Bs) -> match1(L, R, Bs, BBs) end,
+			 fun(E, Bs) -> expr(E, Bs, none, none, none) end,
 			 true);
-match1({bin,_,_}, _, _) ->
+match1({bin,_,_}, _, _Bs, _BBs) ->
     throw(nomatch);
-match1({op,_,'++',{nil,_},R}, Term, Bs) ->
-    match1(R, Term, Bs);
-match1({op,_,'++',{cons,Li,{integer,L2,I},T},R}, Term, Bs) ->
-    match1({cons,Li,{integer,L2,I},{op,Li,'++',T,R}}, Term, Bs);
-match1({op,_,'++',{string,Li,L},R}, Term, Bs) ->
-    match1(string_to_conses(L, Li, R), Term, Bs);
-match1({op,Line,Op,A}, Term, Bs) ->
+match1({op,_,'++',{nil,_},R}, Term, Bs, BBs) ->
+    match1(R, Term, Bs, BBs);
+match1({op,_,'++',{cons,Li,{integer,L2,I},T},R}, Term, Bs, BBs) ->
+    match1({cons,Li,{integer,L2,I},{op,Li,'++',T,R}}, Term, Bs, BBs);
+match1({op,_,'++',{string,Li,L},R}, Term, Bs, BBs) ->
+    match1(string_to_conses(L, Li, R), Term, Bs, BBs);
+match1({op,Line,Op,A}, Term, Bs, BBs) ->
     case partial_eval({op,Line,Op,A}) of
 	{op,Line,Op,A} ->
 	    throw(invalid);
 	X ->
-	    match1(X, Term, Bs)
+	    match1(X, Term, Bs, BBs)
     end;
-match1({op,Line,Op,L,R}, Term, Bs) ->
+match1({op,Line,Op,L,R}, Term, Bs, BBs) ->
     case partial_eval({op,Line,Op,L,R}) of
 	{op,Line,Op,L,R} ->
 	    throw(invalid);
 	X ->
-	    match1(X, Term, Bs)
+	    match1(X, Term, Bs, BBs)
     end;
-match1(_, _, _) ->
+match1(_, _, _Bs, _BBs) ->
     throw(invalid).
 
-match_tuple([E|Es], Tuple, I, Bs0) ->
-    {match,Bs} = match1(E, element(I, Tuple), Bs0),
-    match_tuple(Es, Tuple, I+1, Bs);
-match_tuple([], _, _, Bs) ->
+match_tuple([E|Es], Tuple, I, Bs0, BBs) ->
+    {match,Bs} = match1(E, element(I, Tuple), Bs0, BBs),
+    match_tuple(Es, Tuple, I+1, Bs, BBs);
+match_tuple([], _, _, Bs, _BBs) ->
     {match,Bs}.
 
 %% match_list(PatternList, TermList, Bindings) ->
@@ -692,7 +862,7 @@ match_list([], [], Bs) ->
 
 new_bindings() -> orddict:new().
 
-bindings(Bs) -> orddict:dict_to_list(Bs).
+bindings(Bs) -> orddict:to_list(Bs).
 
 binding(Name, Bs) ->
     case orddict:find(Name, Bs) of
@@ -706,7 +876,7 @@ del_binding(Name, Bs) -> orddict:erase(Name, Bs).
 
 add_bindings(Bs1, Bs2) ->
     foldl(fun ({Name,Val}, Bs) -> orddict:store(Name, Val, Bs) end,
-	  Bs2, orddict:dict_to_list(Bs1)).
+	  Bs2, orddict:to_list(Bs1)).
 
 merge_bindings(Bs1, Bs2) ->
     foldl(fun ({Name,Val}, Bs) ->
@@ -715,7 +885,7 @@ merge_bindings(Bs1, Bs2) ->
 		      {ok,V1} -> exit({{badmatch,V1},[{erl_eval,expr,3}]});
 		      error -> orddict:store(Name, Val, Bs)
 		  end end,
-	  Bs2, orddict:dict_to_list(Bs1)).
+	  Bs2, orddict:to_list(Bs1)).
 
 
 %%----------------------------------------------------------------------------
@@ -759,15 +929,15 @@ ev_expr({integer,_,X}) -> X;
 ev_expr({float,_,X})   -> X;
 ev_expr({atom,_,X})    -> X;
 ev_expr({tuple,_,Es}) ->
-    list_to_tuple(lists:map(fun(X) -> ev_expr(X) end, Es));
+    list_to_tuple(map(fun(X) -> ev_expr(X) end, Es));
 ev_expr({nil,_}) -> [];
 ev_expr({cons,_,H,T}) -> [ev_expr(H) | ev_expr(T)].
 %ev_expr({call,Line,{atom,_,F},As}) ->
 %    true = erl_internal:guard_bif(F, length(As)),
-%    apply(erlang, F, lists:map(fun(X) -> ev_expr(X) end, As));
+%    apply(erlang, F, map(fun(X) -> ev_expr(X) end, As));
 %ev_expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,F}},As}) ->
 %    true = erl_internal:guard_bif(F, length(As)),
-%    apply(erlang, F, lists:map(fun(X) -> ev_expr(X) end, As)).
+%    apply(erlang, F, map(fun(X) -> ev_expr(X) end, As)).
 
 				    
 %% (we can use 'apply' here now, instead of enumerating the operators)
@@ -846,3 +1016,4 @@ expand_module_name(M, _) ->
 		    exit({{bad_module_name, Mod}, [{erl_eval,expr,3}]})
 	    end
     end.
+

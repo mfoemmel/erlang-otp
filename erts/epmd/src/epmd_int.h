@@ -261,18 +261,6 @@
                         ((unsigned char*)(s))[1] = (i)         & 0xff;}
 
 /* ************************************************************************ */
-/* Prototypes                                                               */
-
-#if ((defined(__STDC__) || defined(_MSC_VER) || defined(SABER)) && !defined(NO_PROTOTYPE)) || defined(__cplusplus) || defined(USE_PROTOTYPE)
-#  define _USING_PROTOTYPES_ 1
-#  define _ANSI_ARGS_(x)	x
-#  define CONST const
-#  define EXTERN
-#else
-#  define _ANSI_ARGS_(x)	()
-#  define CONST
-#  define EXTERN extern
-#endif
 
 /* Stuctures used by server */
 
@@ -330,19 +318,19 @@ typedef struct {
   char **argv;
 } EpmdVars;
 
-EXTERN void dbg_printf     _ANSI_ARGS_((EpmdVars*,int,const char*,...));
-EXTERN void dbg_tty_printf _ANSI_ARGS_((EpmdVars*,int,const char*,...));
-EXTERN void dbg_perror     _ANSI_ARGS_((EpmdVars*,const char*,...));
-EXTERN void kill_epmd _ANSI_ARGS_((EpmdVars*));
-EXTERN void epmd_call _ANSI_ARGS_((EpmdVars*,int));
-EXTERN void run _ANSI_ARGS_((EpmdVars*));
-EXTERN void epmd_cleanup_exit _ANSI_ARGS_((EpmdVars*, int));
-EXTERN int epmd_conn_close _ANSI_ARGS_((EpmdVars*,Connection*));
+void dbg_printf(EpmdVars*,int,const char*,...);
+void dbg_tty_printf(EpmdVars*,int,const char*,...);
+void dbg_perror(EpmdVars*,const char*,...);
+void kill_epmd(EpmdVars*);
+void epmd_call(EpmdVars*,int);
+void run(EpmdVars*);
+void epmd_cleanup_exit(EpmdVars*, int);
+int epmd_conn_close(EpmdVars*,Connection*);
 
 #ifdef DONT_USE_MAIN
-EXTERN int  start_epmd _ANSI_ARGS_((char *,char *,char *,char *,char *,char *,char *,char *,char *,char *));
-EXTERN int  epmd _ANSI_ARGS_((int,char **));
-EXTERN int  epmd_dbg _ANSI_ARGS_((int,int));
+int  start_epmd(char *,char *,char *,char *,char *,char *,char *,char *,char *,char *);
+int  epmd(int,char **);
+int  epmd_dbg(int,int);
 #endif
 
 

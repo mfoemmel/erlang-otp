@@ -74,7 +74,7 @@ extern unsigned erts_bin_offset;
 
 void erts_bs_init(void);
 Eterm erts_bs_final(Process* p);
-
+Uint erts_bits_bufs_size(void);
 int erts_bs_put_integer(Eterm Integer, Uint num_bits, unsigned flags);
 int erts_bs_put_binary(Eterm Bin, Uint num_bits);
 int erts_bs_put_binary_all(Eterm Bin);

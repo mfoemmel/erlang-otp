@@ -44,92 +44,12 @@
 
 -module(erl_scan).
 
--copyright('Copyright (c) 1991-98 Ericsson Telecom AB').
-
 -export([string/1,string/2,tokens/3,format_error/1,reserved_word/1]).
 
--import(lists, [reverse/1,member/2]).
-
-%% tokens(Continuation, CharList, StartPos) ->
-%%	{done, {ok, [Tok], EndPos}, Rest} |
-%%	{done, {error,{ErrorPos,erl_scan,What}, EndPos}, Rest} |
-%%	{more, Continuation'}
-%%  This is the main function into the re-entrant scanner. It calls the
-%%  re-entrant pre-scanner until this says done, then calls scan/1 on
-%%  the result.
-%%
-%%  The continuation has the form:
-%%      {RestChars,CharsSoFar,CurrentPos,StartPos}
-
-tokens([], Chars, Pos) ->			%First call
-    tokens({[],[],Pos,Pos}, Chars, Pos);
-tokens({Chars,SoFar0,Cp,Sp}, MoreChars, _) ->
-    In = Chars ++ MoreChars,
-    case pre_scan(In, SoFar0, Cp) of
-	{done,Rest,SoFar1,Ep} ->		%Got complete tokens
-	    Res = case scan(reverse(SoFar1), Sp) of
-		      {ok,Toks} -> {ok,Toks,Ep};
-		      {error,E} -> {error,E,Ep}
-		  end,
-	    {done,Res,Rest};
-	{more,eof,SoFar1,Cp1} ->		%Missing end token
-	    Res = case is_end(SoFar1) of
-		      true -> {eof,Cp1};
-		      false -> pre_error(scan, Cp1, Cp1)
-		  end,
-	    {done,Res,[]};
-	{more,Rest,SoFar1,Cp1} ->		%Missing end token
-	    {more,{Rest,SoFar1,Cp1,Sp}};
-	Other ->				%An error has occurred
-	    {done,Other,[]}
-    end.
-
-%% string([Char]) ->
-%% string([Char], StartPos) ->
-%%    {ok, [Tok], EndPos} |
-%%    {error,{Pos,erl_scan,What}, EndPos}
-
-string(Cs) -> string(Cs, 1).
-
-string(Cs, Sp) ->
-    %% Add an 'eof' to always get correct handling.
-    case string_pre_scan(Cs ++ eof, [], Sp) of
-	{done,_Rest,SoFar,Ep} ->		%Got tokens
-	    case scan(reverse(SoFar), Sp) of
-		{ok,Toks} -> {ok,Toks,Ep};
-		{error,E} -> {error,E,Ep}
-	    end;
-	Other -> Other				%An error has occurred
-    end.
-
-%% string_pre_scan(Cs, SoFar0, StartPos) ->
-%%      {done,Rest,SoFar,EndPos} | {error,E,EndPos}.
-
-string_pre_scan(Cs, SoFar0, Sp) ->
-    case pre_scan(Cs, SoFar0, Sp) of
-	{done,Rest,SoFar1,Ep} ->		%Got complete tokens
-	    string_pre_scan(Rest, SoFar1, Ep);
-	{more,Rest,SoFar1,Ep} ->		%Missing end token
-	    {done,Rest,SoFar1,Ep};
-	Other -> Other				%An error has occurred
-    end.
-
-%% is_end(OutChars) -> bool().
-%%  Have hit end-of-file before . <blank>, check if just "blanks" or if
-%%  this is a premature end.
-
-is_end([C|Cs]) when C >= $\000, C =< $\s ->
-    is_end(Cs);
-is_end([C|Cs]) when C >= $\200, C =< $\240 ->
-    is_end(Cs);
-is_end([_|_]) -> false;
-is_end([]) -> true.
+-import(lists, [reverse/1,reverse/2,member/2]).
 
 %% format_error(Error)
 %%  Return a string describing the error.
-
-string_thing($') -> "atom";
-string_thing(_) -> "string".
 
 format_error({string,Quote,Head}) ->
     ["unterminated " ++ string_thing(Quote) ++
@@ -139,266 +59,269 @@ format_error(char) -> "unterminated character";
 format_error(scan) -> "premature end";
 format_error({base,Base}) -> io_lib:fwrite("illegal base '~w'", [Base]);
 format_error(float) -> "bad float";
-
+%%
 format_error(Other) -> io_lib:write(Other).
+
+string_thing($') -> "atom";
+string_thing(_) -> "string".
+
 
-%% Re-entrant pre-scanner.
-%%
-%% If the input list of characters is insufficient to build a term the
-%% scanner returns a request for more characters and a continuation to be
-%% used when trying to build a term with more characters. To indicate
-%% end-of-file the input character list should be replaced with 'eof'
-%% as an empty list has meaning.
-%%
-%% When more characters are need inside a comment, string or quoted
-%% atom, which can become rather long, instead of pushing the
-%% characters read so far back onto RestChars to be reread, a special
-%% reentry token is returned indicating the middle of a construct.
-%% The token is the start character as an atom, '%', '"' and '\''.
-
-%% pre_scan([Char], SoFar, StartPos) ->
-%%	{done,RestChars,ScannedChars,NewPos} |
-%%	{more,RestChars,ScannedChars,NewPos} |
-%%	{error,{ErrorPos,erl_scan,Description},NewPos}.
-%%  Main pre-scan function. It has been split into 2 functions because of
-%%  efficiency, with a good indexing compiler it would be unnecessary.
-
-pre_scan([C|Cs], SoFar, Pos) ->
-    pre_scan(C, Cs, SoFar, Pos);
-pre_scan(Other, SoFar, Pos) ->
-    {more,Other,SoFar,Pos}.
-
-%% pre_scan(Char, [Char], SoFar, Pos)
-
-pre_scan($$, Cs0, SoFar0, Pos) ->
-    case pre_char(Cs0, [$$|SoFar0]) of
-	{Cs,SoFar} ->
-	    pre_scan(Cs, SoFar, Pos);
-	more ->
-	    {more,[$$|Cs0],SoFar0, Pos};
-	error ->
-	    pre_error(char, Pos, Pos)
-    end;
-pre_scan($', Cs, SoFar, Pos) ->
-    pre_string(Cs, $', '\'', Pos, [$'|SoFar], Pos);
-pre_scan({'\'',Sp}, Cs, SoFar, Pos) ->		%Re-entering quoted atom
-    pre_string(Cs, $', '\'', Sp, SoFar, Pos);
-pre_scan($", Cs, SoFar, Pos) ->
-    pre_string(Cs, $", '"', Pos, [$"|SoFar], Pos);
-pre_scan({'"',Sp}, Cs, SoFar, Pos) ->		%Re-entering string
-    pre_string(Cs, $", '"', Sp, SoFar, Pos);
-pre_scan($%, Cs, SoFar, Pos) ->
-    pre_comment(Cs, SoFar, Pos);
-pre_scan('%', Cs, SoFar, Pos) ->		%Re-entering comment
-    pre_comment(Cs, SoFar, Pos);
-pre_scan($., Cs, SoFar, Pos) ->
-    pre_dot(Cs, SoFar, Pos);
-pre_scan($\n, Cs, SoFar, Pos) ->
-    pre_scan(Cs, [$\n|SoFar], Pos+1);
-pre_scan(C, Cs, SoFar, Pos) ->
-    pre_scan(Cs, [C|SoFar], Pos).
-
-%% pre_string([Char], Quote, Reent, StartPos, SoFar, Pos)
-
-pre_string([Q|Cs], Q, _Reent, _Sp, SoFar, Pos) ->
-    pre_scan(Cs, [Q|SoFar], Pos);
-pre_string([$\n|Cs], Q, Reent, Sp,SoFar, Pos) ->
-    pre_string(Cs, Q, Reent, Sp, [$\n|SoFar], Pos+1);
-pre_string([$\\|Cs0], Q, Reent, Sp, SoFar0, Pos) ->
-    case pre_escape(Cs0, SoFar0) of
-	{Cs,SoFar} ->
-	    pre_string(Cs, Q, Reent, Sp, SoFar, Pos);
-	more ->
-	    {more,[{Reent,Sp},$\\|Cs0],SoFar0,Pos};
-	error ->
-	    pre_string_error(Q, Sp, SoFar0, Pos)
-    end;
-pre_string([C|Cs], Q, Reent, Sp, SoFar, Pos) ->
-    pre_string(Cs, Q, Reent, Sp, [C|SoFar], Pos);
-pre_string([], _Q, Reent, Sp, SoFar, Pos) ->
-    {more,[{Reent,Sp}],SoFar,Pos};
-pre_string(eof, Q, _, Sp, SoFar, Pos) ->
-    pre_string_error(Q, Sp, SoFar, Pos).
-
-pre_string_error(Q, Sp, SoFar, Pos) ->
-    S = reverse(string:substr(SoFar, 1, string:chr(SoFar, Q)-1)),
-    pre_error({string,Q,string:substr(S, 1, 16)}, Sp, Pos).
-
-pre_char([C|Cs], SoFar) -> pre_char(C, Cs, SoFar);
-pre_char([], _) -> more;
-pre_char(eof, _) -> error.
-
-pre_char($\\, Cs, SoFar) ->
-    pre_escape(Cs, SoFar);
-pre_char(C, Cs, SoFar) ->
-    {Cs,[C|SoFar]}.
-
-pre_escape([$^|Cs0], SoFar) ->
-    case Cs0 of
-	[C3|Cs] ->
-	    {Cs,[C3,$^,$\\|SoFar]};
-	[] -> more;
-	eof -> error
-    end;
-pre_escape([C|Cs], SoFar) ->
-    {Cs,[C,$\\|SoFar]};
-pre_escape([], _SoFar) -> more;
-pre_escape(eof, _SoFar) -> error.
-
-%% pre_comment([Char], SoFar, Pos)
-%%  Comments are replaced by one SPACE.
-
-pre_comment([$\n|Cs], SoFar, Pos) ->
-    pre_scan(Cs, [$\n,$\s|SoFar], Pos+1);	%Terminate comment
-pre_comment([_|Cs], SoFar, Pos) ->
-    pre_comment(Cs, SoFar, Pos);
-pre_comment([], SoFar, Pos) ->
-    {more,['%'],SoFar,Pos};
-pre_comment(eof, Sofar, Pos) ->
-    pre_scan(eof, [$\s|Sofar], Pos).
-
-%% pre_dot([Char], SoFar, Pos)
-%%  Dot is terminated by a whitespace, comment or 'eof'.
-
-pre_dot([$%|Cs], SoFar, Pos) ->			%Special case .%
-    {done,[$%|Cs],[$\s,$.|SoFar],Pos};		% and don't consume it!
-pre_dot([$\n|Cs], SoFar, Pos) ->
-    {done,Cs,[$\n,$.|SoFar],Pos+1};
-pre_dot([C|Cs], SoFar, Pos) when C >= $\000, C =< $\s ->
-    {done,Cs,[C,$.|SoFar],Pos};
-pre_dot([C|Cs], SoFar, Pos) when C >= $\200, C =< $\240 ->
-    {done,Cs,[C,$.|SoFar],Pos};
-pre_dot([C|Cs], SoFar, Pos) ->
-    pre_scan([C|Cs], [$.|SoFar], Pos);
-pre_dot([], SoFar, Pos) ->
-    {more,[$.],SoFar,Pos};
-pre_dot(eof, SoFar, Pos) ->
-    {done,eof,[$\s,$.|SoFar],Pos}.
-
-pre_error(E, Epos, Pos) ->
-    {error,{Epos,erl_scan,E}, Pos}.
-
-%% scan(CharList, StartPos)
-%%  This takes a list of characters and tries to tokenise them.
-%%
-%%  The token list is built in reverse order (in a stack) to save appending
-%%  and then reversed when all the tokens have been collected. Most tokens
-%%  are built in the same way.
+%% string(CharList, StartPos)
+%%  Takes a list of characters and tries to tokenise them.
 %%
 %%  Returns:
 %%	{ok,[Tok]}
-%%	{error,{ErrorPos,erl_scan,What}}
+%%	{error,{ErrorPos,?MODULE,What},EndPos}
 
-scan(Cs, Pos) ->
-    scan1(Cs, [], Pos).
+string(Cs) ->
+    string(Cs, 1).
 
-%% scan1(Characters, TokenStack, Position)
-%%  Scan a list of characters into tokens.
+string(Cs, Pos) when list(Cs), integer(Pos) ->
+%     %% Debug replacement line for chopping string into 1-char segments
+%     scan([], [], [], Pos, Cs, []).
+    scan(Cs, [], [], Pos, [], []).
 
-scan1([$\n|Cs], Toks, Pos) ->            	        %Skip newline
-    scan1(Cs, Toks, Pos+1);
-scan1([C|Cs], Toks, Pos) when C >= $\000, C =< $\s -> 	%Skip control chars
-    scan1(Cs, Toks, Pos);
-scan1([C|Cs], Toks, Pos) when C >= $\200, C =< $\240 ->
-    scan1(Cs, Toks, Pos);
-scan1([C|Cs], Toks, Pos) when C >= $a, C =< $z ->	%Atoms
-    scan_atom(C, Cs, Toks, Pos);
-scan1([C|Cs], Toks, Pos) when C >= $ß, C =< $ÿ, C /= $÷ ->
-    scan_atom(C, Cs, Toks, Pos);
-scan1([C|Cs], Toks, Pos) when C >= $A, C =< $Z ->	%Variables
-    scan_variable(C, Cs, Toks, Pos);
-scan1([C|Cs], Toks, Pos) when C >= $À, C =< $Þ, C /= $× ->
-    scan_variable(C, Cs, Toks, Pos);
-scan1([C|Cs], Toks, Pos) when C >= $0, C =< $9 ->	%Numbers
-    scan_number(C, Cs, Toks, Pos);
-scan1([$_|Cs], Toks, Pos) ->				%_ variables
-    scan_variable($_, Cs, Toks, Pos);
-scan1([$$|Cs0], Toks, Pos) ->				%Character constant
-    {C,Cs,Pos1} = scan_char(Cs0, Pos),
-    scan1(Cs, [{char,Pos,C}|Toks], Pos1);
-scan1([$'|Cs0], Toks, Pos) ->				%Quoted atom
-    {S,Cs1,Pos1} = scan_string(Cs0, $', Pos),
-    case catch list_to_atom(S) of
-	A when atom(A) ->
-	    scan1(Cs1, [{atom,Pos,A}|Toks], Pos1);
-	_Error -> scan_error({illegal,atom}, Pos)
-    end;
-scan1([$"|Cs0], Toks, Pos) ->				%String
-    {S,Cs1,Pos1} = scan_string(Cs0, $", Pos),
-    scan1(Cs1, [{string,Pos,S}|Toks], Pos1);
+%% tokens(Continuation, CharList, StartPos) ->
+%%	{done, {ok, [Tok], EndPos}, Rest} |
+%%	{done, {error,{ErrorPos,?MODULE,What}, EndPos}, Rest} |
+%%	{more, Continuation'}
+%%  This is the main function into the re-entrant scanner. 
+%%
+%%  The continuation has the form:
+%%      {RestChars,ScanStateStack,ScannedTokens,
+%%       CurrentPos,ContState,ErrorStack,ContFunArity5}
+
+tokens([], Chars, Pos) ->
+    tokens({[],[],[],Pos,io,[],fun scan/6}, Chars, Pos);
+tokens({Cs,_Stack,_Toks,Pos,eof,_Fun}, eof, _) ->
+    {done,{eof,Pos},Cs};
+tokens({Cs,Stack,Toks,Pos,_State,Errors,Fun}, eof, _) ->
+    Fun(Cs++eof, Stack, Toks, Pos, eof, Errors);
+tokens({Cs,Stack,Toks,Pos,State,Errors,Fun}, Chars, _) ->
+    Fun(Cs++Chars, Stack, Toks, Pos, State, Errors).
+
+
+%% Scan loop.
+%%
+%% The scan_*/6 and sub_scan_*/6 functions does tail recursive calls 
+%% between themselves to change state. State data is kept on the Stack. 
+%% Results are passed on the Stack and on the stream (Cs). The variable 
+%% State in this loop is not the scan loop state, but the state for 
+%% instream handling by more/7 and done/5. The variable Stack is not
+%% always a stack, it is just stacked state data for the scan loop, and
+%% the variable Errors is a reversed list of scan error {Error,Pos} tuples.
+%%
+%% All the scan_*/6 functions have the same arguments (in the same order), 
+%% to keep the tail recursive calls (jumps) fast.
+%%
+%% When more data is needed from the stream, the tail recursion loop is
+%% broken by calling more/7 that either returns to the I/O-server to 
+%% get more data or fetches it from a string, or by calling done/5 when
+%% scanning is done.
+%%
+%% The last argument to more/7 is a fun to jump back to with more data 
+%% to continue scanning where it was interrupted.
+%%
+%% more/7 and done/5 handles scanning from I/O-server (Stream) or from String.
+%%
+
+%% String
+more(Cs, Stack, Toks, Pos, eos, Errors, Fun) ->
+    erlang:fault(badstate, [Cs,Stack,Toks,Pos,eos,Errors,Fun]);
+% %% Debug clause for chopping string into 1-char segments
+% more(Cs, Stack, Toks, Pos, [H|T], Errors, Fun) ->
+%     Fun(Cs++[H], Stack, Toks, Pos, T, Errors);
+more(Cs, Stack, Toks, Pos, [], Errors, Fun) ->
+    Fun(Cs++eof, Stack, Toks, Pos, eos, Errors);
+%% Stream
+more(Cs, Stack, Toks, Pos, eof, Errors, Fun) ->
+    erlang:fault(badstate, [Cs,Stack,Toks,Pos,eof,Errors,Fun]);
+more(Cs, Stack, Toks, Pos, io, Errors,Fun) ->
+    {more,{Cs,Stack,Toks,Pos,io,Errors,Fun}}.
+
+%% String
+done(eof, [], Toks, Pos, eos) ->
+    {ok,reverse(Toks),Pos};
+done(eof, Errors, _Toks, Pos, eos) ->
+    {Error,ErrorPos} = lists:last(Errors),
+    {error,{ErrorPos,?MODULE,Error},Pos};
+done(Cs, Errors, Toks, Pos, eos) ->
+    scan(Cs, [], Toks, Pos, eos, Errors);
+% %% Debug clause for chopping string into 1-char segments
+% done(Cs, Errors, Toks, Pos, [H|T]) ->
+%    scan(Cs++[H], [], Toks, Pos, T, Errors);
+done(Cs, Errors, Toks, Pos, []) ->
+    scan(Cs++eof, [], Toks, Pos, eos, Errors);
+%% Stream
+done(Cs, [], [{dot,_}|_]=Toks, Pos, io) ->
+    {done,{ok,reverse(Toks),Pos},Cs};
+done(Cs, [], [_|_], Pos, io) ->
+    {done,{error,{Pos,?MODULE,scan},Pos},Cs};
+done(Cs, [], [], Pos, eof) ->
+    {done,{eof,Pos},Cs};
+done(Cs, [], [{dot,_}|_]=Toks, Pos, eof) ->
+    {done,{ok,reverse(Toks),Pos},Cs};
+done(Cs, [], _Toks, Pos, eof) ->
+    {done,{error,{Pos,?MODULE,scan},Pos},Cs};
+done(Cs, Errors, _Toks, Pos, io) ->
+    {Error,ErrorPos} = lists:last(Errors),
+    {done,{error,{ErrorPos,?MODULE,Error},Pos},Cs};
+done(Cs, Errors, _Toks, Pos, eof) ->
+    {Error,ErrorPos} = lists:last(Errors),
+    {done,{error,{ErrorPos,?MODULE,Error},Pos},Cs}.
+
+
+%% The actual scan loop
+%% Stack is assumed to be [].
+
+scan([$\n|Cs], Stack, Toks, Pos, State, Errors) ->      % Newline - skip
+    scan(Cs, Stack, Toks, Pos+1, State, Errors);
+scan([C|Cs], Stack, Toks, Pos, State, Errors) 
+  when C >= $\000, C =< $\s ->                          % Control chars - skip
+    scan(Cs, Stack, Toks, Pos, State, Errors);
+scan([C|Cs], Stack, Toks, Pos, State, Errors) 
+  when C >= $\200, C =< $\240 ->                        % Control chars -skip
+    scan(Cs, Stack, Toks, Pos, State, Errors);
+scan([C|Cs], _Stack, Toks, Pos, State, Errors) 
+  when C >= $a, C =< $z ->                              % Atoms
+    sub_scan_name(Cs, [C,fun scan_atom/6], Toks, Pos, State, Errors);
+scan([C|Cs], _Stack, Toks, Pos, State, Errors) 
+  when C >= $ß, C =< $ÿ, C /= $÷ ->                     % Atoms
+    sub_scan_name(Cs, [C,fun scan_atom/6], Toks, Pos, State, Errors);
+scan([C|Cs], _Stack, Toks, Pos, State, Errors) 
+  when C >= $A, C =< $Z ->                              % Variables
+    sub_scan_name(Cs, [C,fun scan_variable/6], Toks, Pos, State, Errors);
+scan([C|Cs], _Stack, Toks, Pos, State, Errors) 
+  when C >= $À, C =< $Þ, C /= $× ->                     % Variables
+    sub_scan_name(Cs, [C,fun scan_variable/6], Toks, Pos, State, Errors);
+scan([$_|Cs], _Stack, Toks, Pos, State, Errors) ->      % _Variables
+    sub_scan_name(Cs, [$_,fun scan_variable/6], Toks, Pos, State, Errors);
+scan([C|Cs], _Stack, Toks, Pos, State, Errors)
+    when C >= $0, C =< $9 ->                            % Numbers
+    scan_number(Cs, [C], Toks, Pos, State, Errors);
+scan([$$|Cs], Stack, Toks, Pos, State, Errors) ->	% Character constant
+    scan_char(Cs, Stack, Toks, Pos, State, Errors);
+scan([$'|Cs], _Stack, Toks, Pos, State, Errors) ->      % Quoted atom
+    scan_qatom(Cs, [$',Pos], Toks, Pos, State, Errors);
+scan([$"|Cs], _Stack, Toks, Pos, State, Errors) ->      % String
+    scan_string(Cs, [$",Pos], Toks, Pos, State, Errors);
+scan([$%|Cs], Stack, Toks, Pos, State, Errors) ->       % Comment
+    scan_comment(Cs, Stack, Toks, Pos, State, Errors);
 %% Punctuation characters and operators, first recognise multiples.
-scan1([$<,$<|Cs], Toks, Pos) ->
-    scan1(Cs, [{'<<',Pos}|Toks], Pos);
-scan1([$>,$>|Cs], Toks, Pos) ->
-    scan1(Cs, [{'>>',Pos}|Toks], Pos);
-scan1([$>,$=|Cs], Toks, Pos) ->
-    scan1(Cs, [{'>=',Pos}|Toks], Pos);
-scan1([$<,$-|Cs], Toks, Pos) ->
-    scan1(Cs, [{'<-',Pos}|Toks], Pos);
-scan1([$<,$=|Cs], Toks, Pos) ->
-    scan1(Cs, [{'<=',Pos}|Toks], Pos);
-scan1([$-,$>|Cs], Toks, Pos) ->
-    scan1(Cs, [{'->',Pos}|Toks], Pos);
-scan1([$-,$-|Cs], Toks, Pos) ->
-    scan1(Cs, [{'--',Pos}|Toks], Pos);
-scan1([$+,$+|Cs], Toks, Pos) ->
-    scan1(Cs, [{'++',Pos}|Toks], Pos);
-scan1([$=,$<|Cs], Toks, Pos) ->
-    scan1(Cs, [{'=<',Pos}|Toks], Pos);
-scan1([$=,$=|Cs], Toks, Pos) ->
-    scan1(Cs, [{'==',Pos}|Toks], Pos);
-scan1([$=,$:,$=|Cs], Toks, Pos) ->
-    scan1(Cs, [{'=:=',Pos}|Toks], Pos);
-scan1([$=,$/,$=|Cs], Toks, Pos) ->
-    scan1(Cs, [{'=/=',Pos}|Toks], Pos);
-scan1([$/,$=|Cs], Toks, Pos) ->
-    scan1(Cs, [{'/=',Pos}|Toks], Pos);
-scan1([$|,$||Cs], Toks, Pos) ->
-    scan1(Cs, [{'||',Pos}|Toks], Pos);
-scan1([$:,$-|Cs], Toks, Pos) ->
-    scan1(Cs, [{':-',Pos}|Toks], Pos);
-scan1([$.|Cs], Toks, Pos) ->
-    scan_dot(Cs, Toks, Pos);
-scan1([C|Cs], Toks, Pos) ->				%Punctuation character
-    P = list_to_atom([C]),
-    scan1(Cs, [{P,Pos}|Toks], Pos);
-scan1([], Toks0, _Pos) ->
-    Toks = reverse(Toks0),
-    {ok,Toks}.
+%% Clauses are rouped by first character (a short with the same head has
+%% to come after a longer).
+%%
+%% << <- <=
+scan("<<"++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'<<',Pos}|Toks], Pos, State, Errors);
+scan("<-"++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'<-',Pos}|Toks], Pos, State, Errors);
+scan("<="++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'<=',Pos}|Toks], Pos, State, Errors);
+scan("<"=Cs, Stack, Toks, Pos, State, Errors) ->
+    more(Cs, Stack, Toks, Pos, State, Errors, fun scan/6);
+%% >> >=
+scan(">>"++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'>>',Pos}|Toks], Pos, State, Errors);
+scan(">="++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'>=',Pos}|Toks], Pos, State, Errors);
+scan(">"=Cs, Stack, Toks, Pos, State, Errors) ->
+    more(Cs, Stack, Toks, Pos, State, Errors, fun scan/6);
+%% -> --
+scan("->"++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'->',Pos}|Toks], Pos, State, Errors);
+scan("--"++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'--',Pos}|Toks], Pos, State, Errors);
+scan("-"=Cs, Stack, Toks, Pos, State, Errors) ->
+    more(Cs, Stack, Toks, Pos, State, Errors, fun scan/6);
+%% ++
+scan("++"++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'++',Pos}|Toks], Pos, State, Errors);
+scan("+"=Cs, Stack, Toks, Pos, State, Errors) ->
+    more(Cs, Stack, Toks, Pos, State, Errors, fun scan/6);
+%% =:= =/= =< ==
+scan("=:="++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'=:=',Pos}|Toks], Pos, State, Errors);
+scan("=:"=Cs, Stack, Toks, Pos, State, Errors) ->
+    more(Cs, Stack, Toks, Pos, State, Errors, fun scan/6);
+scan("=/="++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'=/=',Pos}|Toks], Pos, State, Errors);
+scan("=/"=Cs, Stack, Toks, Pos, State, Errors) ->
+    more(Cs, Stack, Toks, Pos, State, Errors, fun scan/6);
+scan("=<"++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'=<',Pos}|Toks], Pos, State, Errors);
+scan("=="++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'==',Pos}|Toks], Pos, State, Errors);
+scan("="=Cs, Stack, Toks, Pos, State, Errors) ->
+    more(Cs, Stack, Toks, Pos, State, Errors, fun scan/6);
+%% /=
+scan("/="++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'/=',Pos}|Toks], Pos, State, Errors);
+scan("/"=Cs, Stack, Toks, Pos, State, Errors) ->
+    more(Cs, Stack, Toks, Pos, State, Errors, fun scan/6);
+%% ||
+scan("||"++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'||',Pos}|Toks], Pos, State, Errors);
+scan("|"=Cs, Stack, Toks, Pos, State, Errors) ->
+    more(Cs, Stack, Toks, Pos, State, Errors, fun scan/6);
+%% :-
+scan(":-"++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{':-',Pos}|Toks], Pos, State, Errors);
+scan(":"=Cs, Stack, Toks, Pos, State, Errors) ->
+    more(Cs, Stack, Toks, Pos, State, Errors, fun scan/6);
+%% Full stop and plain '.'
+scan("."++Cs, Stack, Toks, Pos, State, Errors) ->
+    scan_dot(Cs, Stack, Toks, Pos, State, Errors);
+%% All single-char punctuation characters and operators (except '.')
+scan([C|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{list_to_atom([C]),Pos}|Toks], Pos, State, Errors);
+%%
+scan([], Stack, Toks, Pos, State, Errors) ->
+    more([], Stack, Toks, Pos, State, Errors, fun scan/6);
+scan(Eof, _Stack, Toks, Pos, State, Errors) ->
+    done(Eof, Errors, Toks, Pos, State).
 
-%% scan_atom(FirstChar, CharList, Tokens, Pos)
-%% scan_Variable(FirstChar, CharList, Tokens, Pos)
-
-scan_atom(C, Cs0, Toks, Pos) ->
-    {Wcs,Cs} = scan_name(Cs0, []),
-    case catch list_to_atom([C|reverse(Wcs)]) of
-	Name when atom(Name) ->
-	    case reserved_word(Name) of
-		true -> scan1(Cs, [{Name,Pos}|Toks], Pos);
-		false -> scan1(Cs, [{atom,Pos,Name}|Toks], Pos)
+
+scan_atom(Cs, Name, Toks, Pos, State, Errors) ->
+    case catch list_to_atom(Name) of
+	Atom when atom(Atom) ->
+	    case reserved_word(Atom) of
+		true ->
+		    scan(Cs, [], [{Atom,Pos}|Toks], Pos, State, Errors);
+		false ->
+		    scan(Cs, [], [{atom,Pos,Atom}|Toks], Pos, State, Errors)
 	    end;
-	_Error -> scan_error({illegal,atom}, Pos)
+	_ ->
+	    scan(Cs, [], Toks, Pos, State, [{{illegal,atom},Pos}|Errors])
     end.
 
-scan_variable(C, Cs0, Toks, Pos) ->
-    {Wcs,Cs} = scan_name(Cs0, []),
-    case catch list_to_atom([C|reverse(Wcs)]) of
-	Name when atom(Name) ->
-	    scan1(Cs, [{var,Pos,Name}|Toks], Pos);
-	_Error -> scan_error({illegal,var}, Pos)
+scan_variable(Cs, Name, Toks, Pos, State, Errors) ->
+    case catch list_to_atom(Name) of
+	A when atom(A) ->
+	    scan(Cs, [], [{var,Pos,A}|Toks], Pos, State, Errors);
+	_ ->
+	    scan(Cs, [], Toks, Pos, State, [{{illegal,var},Pos}|Errors])
     end.
 
-%% scan_name(Cs) -> lists:splitwith(fun (C) -> name_char(C) end, Cs).
 
-scan_name([C|Cs], Ncs) ->
+%% Scan for a name - unqouted atom or variable, after the first character.
+%%
+%% Stack argument: return fun.
+%% Returns the scanned name on the stack, unreversed.
+%%
+sub_scan_name([C|Cs]=Css, Stack, Toks, Pos, State, Errors) ->
     case name_char(C) of
 	true ->
-	    scan_name(Cs, [C|Ncs]);
+	    sub_scan_name(Cs, [C|Stack], Toks, Pos, State, Errors);
 	false ->
-	    {Ncs,[C|Cs]}			%Must rebuild here, sigh!
+	    [Fun|Name] = reverse(Stack),
+	    Fun(Css, Name, Toks, Pos, State, Errors)
     end;
-scan_name([], Ncs) ->
-    {Ncs,[]}.
+sub_scan_name([], Stack, Toks, Pos, State, Errors) ->
+    more([], Stack, Toks, Pos, State, Errors, fun sub_scan_name/6);
+sub_scan_name(Eof, Stack, Toks, Pos, State, Errors) ->
+    [Fun|Name] = reverse(Stack),
+    Fun(Eof, Name, Toks, Pos, State, Errors).
 
 name_char(C) when C >= $a, C =< $z -> true;
 name_char(C) when C >= $ß, C =< $ÿ, C /= $÷ -> true;
@@ -409,55 +332,134 @@ name_char($_) -> true;
 name_char($@) -> true;
 name_char(_) -> false.
 
-%% scan_string(CharList, QuoteChar, Pos) -> {StringChars,RestChars,NewPos}.
+
+scan_char([$\\|Cs], Stack, Toks, Pos, State, Errors) ->
+    sub_scan_escape(Cs,[fun scan_char_escape/6|Stack], 
+		    Toks, Pos, State, Errors);
+scan_char([$\n|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{char,Pos,$\n}|Toks], Pos+1, State, Errors);
+scan_char([], Stack, Toks, Pos, State, Errors) ->
+    more([], Stack, Toks, Pos, State, Errors, fun scan_char/6);
+scan_char(Cs, Stack, Toks, Pos, State, Errors) ->
+    scan_char_escape(Cs, Stack, Toks, Pos, State, Errors).
 
-scan_string(Cs, Q, Pos) ->
-    scan_string(Cs, [], Q, Pos).
+scan_char_escape([nl|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{char,Pos,$\n}|Toks], Pos+1, State, Errors);
+scan_char_escape([C|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{char,Pos,C}|Toks], Pos, State, Errors);
+scan_char_escape(Eof, _Stack, _Toks, Pos, State, Errors) ->
+    done(Eof, [{char,Pos}|Errors], [], Pos, State).
 
-scan_string([Q|Cs], Scs, Q, Pos) ->
-    {reverse(Scs),Cs,Pos};
-scan_string([$\n|Cs], Scs, Q, Pos) ->
-    scan_string(Cs, [$\n|Scs], Q, Pos+1);
-scan_string([$\\|Cs0], Scs, Q, Pos) ->
-    {C,Cs,Pos1} = scan_escape(Cs0, Pos),
-    scan_string(Cs, [C|Scs], Q, Pos1);
-scan_string([C|Cs], Scs, Q, Pos) ->
-    scan_string(Cs, [C|Scs], Q, Pos).
 
-%% scan_char(Chars, Pos) -> {Char,RestChars,NewPos}.
-%%  Read a single character from a character constant. The pre-scan
-%%  phase has checked for errors here.
 
-scan_char([$\\|Cs], Pos) ->
-    scan_escape(Cs, Pos);
-scan_char([$\n|Cs], Pos) ->                  %Newline
-    {$\n,Cs,Pos+1};
-scan_char([C|Cs], Pos) ->
-    {C,Cs,Pos}.
+scan_string([$"|Cs], Stack, Toks, Pos, State, Errors) ->
+    [StartPos,$"|S] = reverse(Stack),
+    scan(Cs, [], [{string,StartPos,S}|Toks], Pos, State, Errors);
+scan_string([$\n|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan_string(Cs, [$\n|Stack], Toks, Pos+1, State, Errors);
+scan_string([$\\|Cs], Stack, Toks, Pos, State, Errors) ->
+    sub_scan_escape(Cs, [fun scan_string_escape/6|Stack], 
+		    Toks, Pos, State, Errors);
+scan_string([C|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan_string(Cs, [C|Stack], Toks, Pos, State, Errors);
+scan_string([], Stack, Toks, Pos, State, Errors) ->
+    more([], Stack, Toks, Pos, State, Errors, fun scan_string/6);
+scan_string(Eof, Stack, _Toks, Pos, State, Errors) ->
+    [StartPos,$"|S] = reverse(Stack),
+    SS = string:substr(S, 1, 16),
+    done(Eof, [{{string,$",SS},StartPos}|Errors], [], Pos, State).
 
-scan_escape([O1,O2,O3|Cs], Pos) when            %\<1-3> octal digits
-    O1 >= $0, O1 =< $7, O2 >= $0, O2 =< $7, O3 >= $0, O3 =< $7 ->
+scan_string_escape([nl|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan_string(Cs, [$\n|Stack], Toks, Pos+1, State, Errors);
+scan_string_escape([C|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan_string(Cs, [C|Stack], Toks, Pos, State, Errors);
+scan_string_escape(Eof, Stack, _Toks, Pos, State, Errors) ->
+    [StartPos,$"|S] = reverse(Stack),
+    SS = string:substr(S, 1, 16),
+    done(Eof, [{{string,$",SS},StartPos}|Errors], [], Pos, State).
+
+
+
+scan_qatom([$'|Cs], Stack, Toks, Pos, State, Errors) ->
+    [StartPos,$'|S] = reverse(Stack),
+    case catch list_to_atom(S) of
+	A when atom(A) ->
+	    scan(Cs, [], [{atom,StartPos,A}|Toks], Pos, State, Errors);
+	_ ->
+	    scan(Cs, [], Toks, Pos, State, [{{illegal,atom},StartPos}|Errors])
+    end;
+scan_qatom([$\n|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan_qatom(Cs, [$\n|Stack], Toks, Pos+1, State, Errors);
+scan_qatom([$\\|Cs], Stack, Toks, Pos, State, Errors) ->
+    sub_scan_escape(Cs, [fun scan_qatom_escape/6|Stack], 
+		    Toks, Pos, State, Errors);
+scan_qatom([C|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan_qatom(Cs, [C|Stack], Toks, Pos, State, Errors);
+scan_qatom([], Stack, Toks, Pos, State, Errors) ->
+    more([], Stack, Toks, Pos, State, Errors, fun scan_qatom/6);
+scan_qatom(Eof, Stack, _Toks, Pos, State, Errors) ->
+    [StartPos,$'|S] = reverse(Stack),
+    SS = string:substr(S, 1, 16),
+    done(Eof, [{{string,$',SS},StartPos}|Errors], [], Pos, State).
+
+scan_qatom_escape([nl|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan_qatom(Cs, [$\n|Stack], Toks, Pos+1, State, Errors);
+scan_qatom_escape([C|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan_qatom(Cs, [C|Stack], Toks, Pos, State, Errors);
+scan_qatom_escape(Eof, Stack, _Toks, Pos, State, Errors) ->
+    [StartPos,$'|S] = reverse(Stack),
+    SS = string:substr(S, 1, 16),
+    done(Eof, [{{string,$',SS},StartPos}|Errors], [], Pos, State).
+
+
+%% Scan for a character escape sequence, in character literal or string. 
+%% A string is a syntactical sugar list (e.g "abc") 
+%% or a quoted atom (e.g 'EXIT').
+%%
+%% Stack argument: return fun.
+%% Returns the resulting escape character on the stream.
+%% The return atom 'nl' means that the escape sequence Backslash Newline
+%% was found, i.e an actual Newline in the input.
+%%
+%% \<1-3> octal digits
+sub_scan_escape([O1,O2,O3|Cs], [Fun|Stack], Toks, Pos, State, Errors) 
+  when O1 >= $0, O1 =< $7, O2 >= $0, O2 =< $7, O3 >= $0, O3 =< $7 ->
     Val = (O1*8 + O2)*8 + O3 - 73*$0,
-    {Val,Cs,Pos};
-scan_escape([O1,O2|Cs], Pos) when
-    O1 >= $0, O1 =< $7, O2 >= $0, O2 =< $7 ->
+    Fun([Val|Cs], Stack, Toks, Pos, State, Errors);
+sub_scan_escape([O1,O2]=Cs, Stack, Toks, Pos, State, Errors) 
+  when O1 >= $0, O1 =< $7, O2 >= $0, O2 =< $7 ->
+    more(Cs, Stack, Toks, Pos, State, Errors, fun sub_scan_escape/6);
+sub_scan_escape([O1,O2|Cs], [Fun|Stack], Toks, Pos, State, Errors) 
+  when O1 >= $0, O1 =< $7, O2 >= $0, O2 =< $7 ->
     Val = (O1*8 + O2) - 9*$0,
-    {Val,Cs,Pos};
-scan_escape([O1|Cs], Pos) when
-    O1 >= $0, O1 =< $7 ->
-    {O1 - $0,Cs,Pos};
-scan_escape([$^,C|Cs], Pos) ->			%\^X -> CTL-X
+    Fun([Val|Cs], Stack, Toks, Pos, State, Errors);
+sub_scan_escape([O1]=Cs, Stack, Toks, Pos, State, Errors) 
+  when O1 >= $0, O1 =< $7 ->
+    more(Cs, Stack, Toks, Pos, State, Errors, fun sub_scan_escape/6);
+sub_scan_escape([O1|Cs], [Fun|Stack], Toks, Pos, State, Errors) 
+  when O1 >= $0, O1 =< $7 ->
+    Val = O1 - $0,
+    Fun([Val|Cs], Stack, Toks, Pos, State, Errors);
+%% \^X -> CTL-X
+sub_scan_escape([$^,C|Cs], [Fun|Stack], Toks, Pos, State, Errors) ->
     Val = C band 31,
-    {Val,Cs,Pos};
-%scan_escape([$\n,C1|Cs],Pos) ->
-%    {C1,Cs,Pos+1};
-%scan_escape([C,C1|Cs],Pos) when C >= $\000, C =< $\s ->
-%    {C1,Cs,Pos};
-scan_escape([$\n|Cs],Pos) ->
-    {$\n,Cs,Pos+1};
-scan_escape([C0|Cs],Pos) ->
-    C = escape_char(C0),
-    {C,Cs,Pos}.
+    Fun([Val|Cs], Stack, Toks, Pos, State, Errors);
+sub_scan_escape([$^]=Cs, Stack, Toks, Pos, State, Errors) ->
+    more(Cs, Stack, Toks, Pos, State, Errors, fun sub_scan_escape/6);
+sub_scan_escape([$^|Eof], [Fun|Stack], Toks, Pos, State, Errors) ->
+    Fun(Eof, Stack, Toks, Pos, State, Errors);
+%% \NL (backslash newline)
+sub_scan_escape([$\n|Cs],[Fun|Stack], Toks, Pos, State, Errors) ->
+    Fun([nl|Cs], Stack, Toks, Pos, State, Errors);
+%% \X - familiar escape sequences
+sub_scan_escape([C|Cs], [Fun|Stack], Toks, Pos, State, Errors) ->
+    Val = escape_char(C),
+    Fun([Val|Cs], Stack, Toks, Pos, State, Errors);
+%%
+sub_scan_escape([], Stack, Toks, Pos, State, Errors) ->
+    more([], Stack, Toks, Pos, State, Errors, fun sub_scan_escape/6);
+sub_scan_escape(Eof, [Fun|Stack], Toks, Pos, State, Errors) ->
+    Fun(Eof, Stack, Toks, Pos, State, Errors).
 
 escape_char($n) -> $\n;				%\n = LF
 escape_char($r) -> $\r;				%\r = CR
@@ -470,103 +472,111 @@ escape_char($s) -> $\s;				%\s = SPC
 escape_char($d) -> $\d;				%\d = DEL
 escape_char(C) -> C.
 
-%% scan_number(Char, CharList, TokenStack, Pos)
-%%  We can handle simple radix notation:
-%%    <digit>#<digits>		- the digits read in that base
-%%    <digits>			- the digits in base 10
-%%    <digits>.<digits>
-%%    <digits>.<digits>E+-<digits>
-%%
-%%  Except for explicitly based integers we build a list of all the
-%%  characters and then use list_to_integer/1 or list_to_float/1 to
-%%  generate the value.
-
-%%  SPos == Start position
-%%  CPos == Current position
-
-scan_number(C, Cs0, Toks, Pos) ->
-    {Ncs,Cs,Pos1} = scan_integer(Cs0, [C], Pos),
-    scan_after_int(Cs, Ncs, Toks, Pos, Pos1).
-
-scan_integer([C|Cs], Stack, Pos) when C >= $0, C =< $9 ->
-    scan_integer(Cs, [C|Stack], Pos);
-scan_integer(Cs, Stack, Pos) ->
-    {Stack,Cs,Pos}.
-
-scan_after_int([$.,C|Cs0], Ncs0, Toks, SPos, CPos) when C >= $0, C =< $9 ->
-    {Ncs,Cs,CPos1} = scan_integer(Cs0, [C,$.|Ncs0], CPos),
-    scan_after_fraction(Cs, Ncs, Toks, SPos, CPos1);	
-scan_after_int([$#|Cs], Ncs, Toks, SPos, CPos) ->
-    case list_to_integer(reverse(Ncs)) of
-	Base when Base >= 2, Base =< 16 ->
-	    scan_based_int(Cs, 0, Base, Toks, SPos, CPos);
-	Base ->
-	    scan_error({base,Base}, CPos)
+
+scan_number([$.,C|Cs], Stack, Toks, Pos, State, Errors) when C >= $0, C =< $9 ->
+    scan_fraction(Cs, [C,$.|Stack], Toks, Pos, State, Errors);
+scan_number([$.]=Cs, Stack, Toks, Pos, State, Errors) ->
+    more(Cs, Stack, Toks, Pos, State, Errors, fun scan_number/6);
+scan_number([C|Cs], Stack, Toks, Pos, State, Errors) when C >= $0, C =< $9 ->
+    scan_number(Cs, [C|Stack], Toks, Pos, State, Errors);
+scan_number([$#|Cs], Stack, Toks, Pos, State, Errors) ->
+    case catch list_to_integer(reverse(Stack)) of
+	B when integer(B), B >= 2, B =< 1+$Z-$A+10 ->
+	    scan_based_int(Cs, [B], Toks, Pos, State, Errors);
+	B ->
+	    scan(Cs, [], Toks, Pos, State, [{{base,B},Pos}|Errors])
     end;
-scan_after_int(Cs, Ncs, Toks, SPos, CPos) ->
-    N = list_to_integer(reverse(Ncs)),
-    scan1(Cs, [{integer,SPos,N}|Toks], CPos).
-
-scan_based_int([C|Cs], SoFar, Base, Toks, SPos, CPos) when
-    C >= $0, C =< $9, C < Base + $0 ->
-    Next = SoFar * Base + (C - $0),
-    scan_based_int(Cs, Next, Base, Toks, SPos, CPos);
-scan_based_int([C|Cs], SoFar, Base, Toks, SPos, CPos) when
-    C >= $a, C =< $f, C < Base + $a - 10 ->
-    Next = SoFar * Base + (C - $a + 10),
-    scan_based_int(Cs, Next, Base, Toks, SPos, CPos);
-scan_based_int([C|Cs], SoFar, Base, Toks, SPos, CPos) when
-    C >= $A, C =< $F, C < Base + $A - 10 ->
-    Next = SoFar * Base + (C - $A + 10),
-    scan_based_int(Cs, Next, Base, Toks, SPos, CPos);
-scan_based_int(Cs, SoFar, _, Toks, SPos, CPos) ->
-    scan1(Cs, [{integer,SPos,SoFar}|Toks], CPos).
-
-scan_after_fraction([$E|Cs], Ncs, Toks, SPos, CPos) ->
-    scan_exponent(Cs, [$E|Ncs], Toks, SPos, CPos);
-scan_after_fraction([$e|Cs], Ncs, Toks, SPos, CPos) ->
-    scan_exponent(Cs, [$E|Ncs], Toks, SPos, CPos);
-scan_after_fraction(Cs, Ncs, Toks, SPos, CPos) ->
-    case catch list_to_float(reverse(Ncs)) of
-	N when float(N) ->
-	    scan1(Cs, [{float,SPos,N}|Toks], CPos);
-	_Error -> scan_error({illegal,float}, SPos)
+scan_number([], Stack, Toks, Pos, State, Errors) ->
+    more([], Stack, Toks, Pos, State, Errors, fun scan_number/6);
+scan_number(Cs, Stack, Toks, Pos, State, Errors) ->
+    case catch list_to_integer(reverse(Stack)) of
+	N when integer(N) ->
+	    scan(Cs, [], [{integer,Pos,N}|Toks], Pos, State, Errors);
+	_ ->
+	    scan(Cs, [], Toks, Pos, State, [{{illegal,integer},Pos}|Errors])
     end.
 
-%% scan_exponent(CharList, NumberCharStack, TokenStack, StartPos, CurPos)
-%%  Generate an error here if E{+|-} not followed by any digits.
+scan_based_int([C|Cs], [B|Stack], Toks, Pos, State, Errors) 
+  when C >= $0, C =< $9, C < $0+B ->
+    scan_based_int(Cs, [B,C|Stack], Toks, Pos, State, Errors);
+scan_based_int([C|Cs], [B|Stack], Toks, Pos, State, Errors) 
+  when C >= $A, B > 10, C < $A+B-10 ->
+    scan_based_int(Cs, [B,C|Stack], Toks, Pos, State, Errors);
+scan_based_int([C|Cs], [B|Stack], Toks, Pos, State, Errors) 
+  when C >= $a, B > 10, C < $a+B-10 ->
+    scan_based_int(Cs, [B,C|Stack], Toks, Pos, State, Errors);
+scan_based_int([], Stack, Toks, Pos, State, Errors) ->
+    more([], Stack, Toks, Pos, State, Errors, fun scan_based_int/6);
+scan_based_int(Cs, [B|Stack], Toks, Pos, State, Errors) ->
+    case catch erlang:list_to_integer(reverse(Stack), B) of
+	N when integer(N) ->
+	    scan(Cs, [], [{integer,Pos,N}|Toks], Pos, State, Errors);
+	_ ->
+	    scan(Cs, [], Toks, Pos, State, [{{illegal,integer},Pos}|Errors])
+    end.
 
-scan_exponent([$+|Cs], Ncs, Toks, SPos, CPos) ->
-    scan_exponent1(Cs, [$+|Ncs], Toks, SPos, CPos);
-scan_exponent([$-|Cs], Ncs, Toks, SPos, CPos) ->
-    scan_exponent1(Cs, [$-|Ncs], Toks, SPos, CPos);
-scan_exponent(Cs, Ncs, Toks, SPos, CPos) ->
-    scan_exponent1(Cs, Ncs, Toks, SPos, CPos).
+scan_fraction([C|Cs], Stack, Toks, Pos, State, Errors) when C >= $0, C =< $9 ->
+    scan_fraction(Cs, [C|Stack], Toks, Pos, State, Errors);
+scan_fraction([$e|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan_exponent_sign(Cs, [$E|Stack], Toks, Pos, State, Errors);
+scan_fraction([$E|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan_exponent_sign(Cs, [$E|Stack], Toks, Pos, State, Errors);
+scan_fraction([], Stack, Toks, Pos, State, Errors) ->
+    more([], Stack, Toks, Pos, State, Errors, fun scan_fraction/6);
+scan_fraction(Cs, Stack, Toks, Pos, State, Errors) ->
+    case catch list_to_float(reverse(Stack)) of
+	F when float(F) ->
+	    scan(Cs, [], [{float,Pos,F}|Toks], Pos, State, Errors);
+	_ ->
+	    scan(Cs, [], Toks, Pos, State, [{{illegal,float},Pos}|Errors])
+    end.
 
-scan_exponent1([C|Cs0], Ncs0, Toks, SPos, CPos) when C >= $0, C =< $9 ->
-    {Ncs,Cs,CPos1} = scan_integer(Cs0, [C|Ncs0], CPos),
-    case catch list_to_float(reverse(Ncs)) of
-	N when float(N) ->
-	    scan1(Cs, [{float,SPos,N}|Toks], CPos1);
-	_Error -> scan_error({illegal,float}, SPos)
-    end;
-scan_exponent1(_, _, _, _, CPos) ->
-    scan_error(float, CPos).
+scan_exponent_sign([$+|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan_exponent(Cs, [$+|Stack], Toks, Pos, State, Errors);
+scan_exponent_sign([$-|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan_exponent(Cs, [$-|Stack], Toks, Pos, State, Errors);
+scan_exponent_sign([], Stack, Toks, Pos, State, Errors) ->
+    more([], Stack, Toks, Pos, State, Errors, fun scan_exponent_sign/6);
+scan_exponent_sign(Cs, Stack, Toks, Pos, State, Errors) ->
+    scan_exponent(Cs, Stack, Toks, Pos, State, Errors).
+        
+scan_exponent([C|Cs], Stack, Toks, Pos, State, Errors) when C >= $0, C =< $9 ->
+    scan_exponent(Cs, [C|Stack], Toks, Pos, State, Errors);
+scan_exponent([], Stack, Toks, Pos, State, Errors) ->
+    more([], Stack, Toks, Pos, State, Errors, fun scan_exponent/6);
+scan_exponent(Cs, Stack, Toks, Pos, State, Errors) ->
+    case catch list_to_float(reverse(Stack)) of
+	F when float(F) ->
+	    scan(Cs, [], [{float,Pos,F}|Toks], Pos, State, Errors);
+	_ ->
+	    scan(Cs, [], Toks, Pos, State, [{{illegal,float},Pos}|Errors])
+    end.
 
-%% scan_dot(CharList, Tokens, Position)
-%%  Scan a dot to see if is a terminating token.
+
+scan_comment([$\n|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, Toks, Pos+1, State, Errors);
+scan_comment([_|Cs], Stack, Toks, Pos, State, Errors) ->
+    scan_comment(Cs, Stack, Toks, Pos, State, Errors);
+scan_comment([], Stack, Toks, Pos, State, Errors) ->
+    more([], Stack, Toks, Pos, State, Errors, fun scan_comment/6).
 
-scan_dot([$\n|Cs], Toks, Pos) ->
-    scan1(Cs, [{dot,Pos}|Toks], Pos+1);
-scan_dot([C|Cs], Toks, Pos) when C >= $\000, C =< $\s ->
-    scan1(Cs, [{dot,Pos}|Toks], Pos);
-scan_dot([C|Cs], Toks, Pos) when C >= $\200, C =< $\240 ->
-    scan1(Cs, [{dot,Pos}|Toks], Pos);
-scan_dot(Cs, Toks, Pos) ->
-    scan1(Cs, [{'.',Pos}|Toks], Pos).
 
-scan_error(In, Pos) ->
-    {error,{Pos,erl_scan,In}}.
+
+scan_dot([$%|_]=Cs, _Stack, Toks, Pos, State, Errors) ->
+    done(Cs, Errors, [{dot,Pos}|Toks], Pos, State);
+scan_dot([$\n|Cs], _Stack, Toks, Pos, State, Errors) ->
+    done(Cs, Errors, [{dot,Pos}|Toks], Pos+1, State);
+scan_dot([C|Cs], _Stack, Toks, Pos, State, Errors) when C>=$\000, C=<$\s ->
+    done(Cs, Errors, [{dot,Pos}|Toks], Pos, State);
+scan_dot([C|Cs], _Stack, Toks, Pos, State, Errors) when C>=$\200, C=<$\240 ->
+    done(Cs, Errors, [{dot,Pos}|Toks], Pos, State);
+scan_dot([], Stack, Toks, Pos, State, Errors) ->
+    more([], Stack, Toks, Pos, State, Errors, fun scan_dot/6);
+scan_dot(eof, _Stack, Toks, Pos, State, Errors) ->
+    done(eof, Errors, [{dot,Pos}|Toks], Pos, State);
+scan_dot(Cs, Stack, Toks, Pos, State, Errors) ->
+    scan(Cs, Stack, [{'.',Pos}|Toks], Pos, State, Errors).
+
 
 %% reserved_word(Atom) -> Bool
 %%   return 'true' if Atom is an Erlang reserved word, else 'false'.

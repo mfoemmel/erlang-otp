@@ -671,7 +671,7 @@ start() ->
 	   end,
 	   fun(_Parent, go) ->
 		   put(trace_state, idle),
-		   put(profile_state, {idle, {error, no_profile}}),
+		   put(profile_state, {idle, undefined}),
 		   put(pending_stop, []),
 		   server_loop([])
 	   end) of
@@ -980,7 +980,10 @@ handle_req(#profile_stop{}, Tag, State) ->
 handle_req(#analyse{dest = Dest,
 		    flags = Flags} = Request, Tag, State) ->
     case get(profile_state) of
-	{idle, ok} ->
+	{idle, undefined} ->
+	    reply(Tag, {error, no_profile}),
+	    State;
+	{idle, _} ->
 	    case ensure_open(Dest, [write | Flags]) of
 		{error, _} = Error ->
 		    reply(Tag, Error),
@@ -1012,9 +1015,6 @@ handle_req(#analyse{dest = Dest,
 			    file:close(DestPid)
 		    end
 	    end;
-	{idle, Error} ->
-	    reply(Tag, Error),
-	    State;
 	_ ->
 	    reply(Tag, {error, profiling}),
 	    State
@@ -1041,11 +1041,10 @@ handle_req(#get_state{}, Tag, State) ->
 
 handle_req(#save_profile{file = File}, Tag, State) ->
     case get(profile_state) of
-	{idle, ok} ->
+	{idle, undefined} ->
+	    reply(Tag, {error, no_profile});
+	{idle, _} ->
 	    reply(Tag, ets:tab2file(get(profile_table), File)),
-	    State;
-	{idle, Error} ->
-	    reply(Tag, Error),
 	    State;
 	_ ->
 	    reply(Tag, {error, profiling}),
@@ -1403,24 +1402,43 @@ handler(end_of_trace, {init, GroupLeader, Table, Dump}) ->
     info(GroupLeader, Dump, "Empty trace!~n", []),
     end_of_trace(Table, undefined),
     done;
+handler(end_of_trace, {error, Reason, _, GroupLeader, Dump}) ->
+    info(GroupLeader, Dump, "~nEnd of erroneous trace!~n", []),
+    exit(Reason);
 handler(end_of_trace, {_, TS, GroupLeader, Table, Dump}) ->
     dump(Dump, end_of_trace),
-    info(GroupLeader, Dump, "End of trace!~n", []),
+    info(GroupLeader, Dump, "~nEnd of trace!~n", []),
     end_of_trace(Table, TS),
     done;
 handler(Trace, {init, GroupLeader, Table, Dump}) ->
     dump(Dump, start_of_trace),
     info(GroupLeader, Dump, "Reading trace data...~n", []),
-    TS = trace_handler(Trace, Table, Dump),
-    ets:insert(Table, #misc{id = first_ts, data = TS}),
-    ets:insert(Table, #misc{id = last_ts_n, data = {TS, 1}}),
-    {1, TS, GroupLeader, Table, Dump};
-handler(Trace, {M, _, GroupLeader, Table, Dump}) ->
+    case catch trace_handler(Trace, Table, GroupLeader, Dump) of
+	{'EXIT', Reason} ->
+	    dump(Dump, {error, Reason}),
+	    end_of_trace(Table, undefined),
+	    {error, Reason, 1, GroupLeader, Dump};
+	TS ->
+	    ets:insert(Table, #misc{id = first_ts, data = TS}),
+	    ets:insert(Table, #misc{id = last_ts_n, data = {TS, 1}}),
+	    {1, TS, GroupLeader, Table, Dump}
+    end;
+handler(_, {error, Reason, M, GroupLeader, Dump}) ->
     N = M+1,
     info_dots(GroupLeader, Dump, N),
-    TS = trace_handler(Trace, Table, Dump),
-    ets:insert(Table, #misc{id = last_ts_n, data = {TS, N}}),
-    {N, TS, GroupLeader, Table, Dump}.
+    {error, Reason, N, GroupLeader, Dump};
+handler(Trace, {M, TS0, GroupLeader, Table, Dump}) ->
+    N = M+1,
+    info_dots(GroupLeader, Dump, N),
+    case catch trace_handler(Trace, Table, GroupLeader, Dump) of
+	{'EXIT', Reason} ->
+	    dump(Dump, {error, Reason}),
+	    end_of_trace(Table, TS0),
+	    {error, Reason, N, GroupLeader, Dump};
+	TS ->
+	    ets:insert(Table, #misc{id = last_ts_n, data = {TS, N}}),
+	    {N, TS, GroupLeader, Table, Dump}
+    end.
 
 
 
@@ -1437,7 +1455,7 @@ end_of_trace(Table, TS) ->
       end,
       Procs),
     erase(),
-    end_of_trace.
+    ok.
 
 
 
@@ -1454,13 +1472,20 @@ info_dots(GroupLeader, _, N) ->
 	    ok
     end.
 
+info_suspect_call(GroupLeader, GroupLeader, _, _) ->
+    ok;
+info_suspect_call(GroupLeader, _, Func, Pid) ->
+    io:format(GroupLeader,
+	      "~nWarning: ~p called in ~p - trace may become corrupt!~n",
+	      parsify([Func, Pid])).
+
 info(GroupLeader, GroupLeader, _, _) ->
     ok;
 info(GroupLeader, _, Format, List) ->
     io:format(GroupLeader, Format, List).
 
-dump_stack(undefined, _, Term) ->
-    Term;
+dump_stack(undefined, _, _) ->
+    false;
 dump_stack(Dump, Stack, Term) ->
     {Depth, _D} = 
 	case Stack of
@@ -1475,13 +1500,13 @@ dump_stack(Dump, Stack, Term) ->
 		end
 	end,
      io:format(Dump, "~s~p.~n", [lists:duplicate(Depth, "  "), parsify(Term)]),
-    Term.
+    true.
 
-dump(undefined, Term) ->
-    Term;
+dump(undefined, _) ->
+    false;
 dump(Dump, Term) ->
     io:format(Dump, "~p.~n", [parsify(Term)]),
-    Term.
+    true.
 
 
 
@@ -1491,21 +1516,30 @@ dump(Dump, Term) ->
 
 
 
-trace_handler({trace_ts, Pid, call, _MFA, _TS} = Trace, _Table, Dump) ->
+trace_handler({trace_ts, Pid, call, _MFA, _TS} = Trace, 
+	      _Table, _, Dump) ->
     Stack = get(Pid),
     dump_stack(Dump, Stack, Trace),
     exit({incorrect_trace_data, ?MODULE, ?LINE,
 	  [Trace, Stack]});
 trace_handler({trace_ts, Pid, call, {_M, _F, Arity} = Func, 
 	       {cp, CP}, TS} = Trace,
-	      Table, Dump)
+	      Table, GroupLeader, Dump)
   when integer(Arity) ->
     dump_stack(Dump, get(Pid), Trace),
+    case Func of
+	{erlang, trace, 3} ->
+	    info_suspect_call(GroupLeader, Dump, Func, Pid);
+	{erlang, trace_pattern, 3} ->
+	    info_suspect_call(GroupLeader, Dump, Func, Pid);
+	_ ->
+	    ok
+    end,
     trace_call(Table, Pid, Func, TS, CP),
     TS;
 trace_handler({trace_ts, Pid, call, {_M, _F, Args} = MFArgs, 
 	       {cp, CP}, TS} = Trace,
-	      Table, Dump)
+	      Table, _, Dump)
   when list(Args) ->
     dump_stack(Dump, get(Pid), Trace),
     Func = mfarity(MFArgs),
@@ -1514,18 +1548,18 @@ trace_handler({trace_ts, Pid, call, {_M, _F, Args} = MFArgs,
 %%
 %% return_to
 trace_handler({trace_ts, Pid, return_to, undefined, TS} = Trace,
-	      Table, Dump) ->
+	      Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_return_to(Table, Pid, undefined, TS),
     TS;
 trace_handler({trace_ts, Pid, return_to, {_M, _F, Arity} = Func, TS} = Trace,
-	      Table, Dump)
+	      Table, _, Dump)
   when integer(Arity) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_return_to(Table, Pid, Func, TS),
     TS;
 trace_handler({trace_ts, Pid, return_to, {_M, _F, Args} = MFArgs, TS} = Trace,
-	      Table, Dump)
+	      Table, _, Dump)
   when list(Args) ->
     dump_stack(Dump, get(Pid), Trace),
     Func = mfarity(MFArgs),
@@ -1534,37 +1568,37 @@ trace_handler({trace_ts, Pid, return_to, {_M, _F, Args} = MFArgs, TS} = Trace,
 %%
 %% spawn
 trace_handler({trace_ts, Pid, spawn, Child, MFArgs, TS} = Trace,
-	      Table, Dump) ->
+	      Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_spawn(Table, Child, MFArgs, TS, Pid),
     TS;
 trace_handler({trace_ts, Pid, spawn, Child, TS} = Trace,
-	      Table, Dump) ->
+	      Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_spawn(Table, Child, undefined, TS, Pid),
     TS;
 %%
 %% exit
 trace_handler({trace_ts, Pid, exit, _Reason, TS} = Trace,
-	      Table, Dump) ->
+	      Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_exit(Table, Pid, TS),
     TS;
 %%
 %% out
 trace_handler({trace_ts, Pid, out, 0, TS} = Trace,
-	      Table, Dump) ->
+	      Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_out(Table, Pid, undefined, TS),
     TS;
 trace_handler({trace_ts, Pid, out, {_M, _F, Arity} = Func, TS} = Trace,
-	      Table, Dump)
+	      Table, _, Dump)
   when integer(Arity) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_out(Table, Pid, Func, TS),
     TS;
 trace_handler({trace_ts, Pid, out, {_M, _F, Args} = MFArgs, TS} = Trace,
-	      Table, Dump)
+	      Table, _, Dump)
   when list(Args) ->
     dump_stack(Dump, get(Pid), Trace),
     Func = mfarity(MFArgs),
@@ -1573,18 +1607,18 @@ trace_handler({trace_ts, Pid, out, {_M, _F, Args} = MFArgs, TS} = Trace,
 %%
 %% in
 trace_handler({trace_ts, Pid, in, 0, TS} = Trace,
-	      Table, Dump) ->
+	      Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_in(Table, Pid, undefined, TS),
     TS;
 trace_handler({trace_ts, Pid, in, {_M, _F, Arity} = Func, TS} = Trace,
-	      Table, Dump)
+	      Table, _, Dump)
   when integer(Arity) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_in(Table, Pid, Func, TS),
     TS;
 trace_handler({trace_ts, Pid, in, {_M, _F, Args} = MFArgs, TS} = Trace,
-	      Table, Dump)
+	      Table, _, Dump)
   when list(Args) ->
     dump_stack(Dump, get(Pid), Trace),
     Func = mfarity(MFArgs),
@@ -1593,68 +1627,68 @@ trace_handler({trace_ts, Pid, in, {_M, _F, Args} = MFArgs, TS} = Trace,
 %%
 %% gc_start
 trace_handler({trace_ts, Pid, gc_start, _Func, TS} = Trace,
-	      Table, Dump) ->
+	      Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_gc_start(Table, Pid, TS),
     TS;
 %%
 %% gc_end
 trace_handler({trace_ts, Pid, gc_end, _Func, TS} = Trace,
-	      Table, Dump) ->
+	      Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_gc_end(Table, Pid, TS),
     TS;
 %%
 %% link
 trace_handler({trace_ts, Pid, link, _OtherPid, TS} = Trace,
-	      _Table, Dump) ->
+	      _Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% unlink
 trace_handler({trace_ts, Pid, unlink, _OtherPid, TS} = Trace,
-	      _Table, Dump) ->
+	      _Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% getting_linked
 trace_handler({trace_ts, Pid, getting_linked, _OtherPid, TS} = Trace,
-	      _Table, Dump) ->
+	      _Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% getting_unlinked
 trace_handler({trace_ts, Pid, getting_unlinked, _OtherPid, TS} = Trace,
-	      _Table, Dump) ->
+	      _Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% register
 trace_handler({trace_ts, Pid, register, _Name, TS} = Trace,
-	      _Table, Dump) ->
+	      _Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% unregister
 trace_handler({trace_ts, Pid, unregister, _Name, TS} = Trace,
-	      _Table, Dump) ->
+	      _Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% send
 trace_handler({trace_ts, Pid, send, _OtherPid, _Msg, TS} = Trace,
-	      _Table, Dump) ->
+	      _Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% 'receive'
 trace_handler({trace_ts, Pid, 'receive', _Msg, TS} = Trace,
-	      _Table, Dump) ->
+	      _Table, _, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% Others
-trace_handler(Trace, _Table, Dump) ->
+trace_handler(Trace, _Table, _, Dump) ->
     dump(Dump, Trace),
     exit({incorrect_trace_data, ?MODULE, ?LINE, [Trace]}).
 

@@ -19,6 +19,7 @@
 
 -export([connect/3, connect/4, listen/2, accept/1, accept/2, close/1]).
 -export([send/2, recv/2, recv/3, unrecv/2]).
+-export([shutdown/2]).
 -export([controlling_process/2]).
 -export([fdopen/2]).
 
@@ -41,7 +42,17 @@ getaddrs(Address,Timer) -> inet:getaddrs_tm(Address,inet6,Timer).
 %%
 %% Send data on a socket
 %%
-send(Socket, Packet) -> prim_inet:send(Socket, Packet).
+send(Socket, Packet) -> 
+    %% XXX This result mapping is a kludge, that should really be fixed
+    %% in prim_inet, but I do not want to make a patch on ERTS right 
+    %% now, which a change in prim_inet would imply. 
+    %% / raimo
+    case prim_inet:send(Socket, Packet) of
+	{error, _} ->
+	    {error, einval};
+	Result ->
+	    Result
+    end.
 
 %%
 %% Receive data from a socket (inactive only)
@@ -57,8 +68,14 @@ close(Socket) ->
     inet:tcp_close(Socket).
 
 %%
+%% Shutdown one end of a socket
+%%
+shutdown(Socket, How) ->
+    prim_inet:shutdown(Socket, How).
+
+%%
 %% Set controlling process
-%% FIXE ME: move messages to new owner!!!
+%% FIXME: move messages to new owner!!!
 %%
 controlling_process(Socket, NewOwner) ->
     inet:tcp_controlling_process(Socket, NewOwner).
@@ -75,7 +92,7 @@ connect(Address, Port, Opts, Timeout) when integer(Timeout), Timeout >= 0 ->
     do_connect(Address, Port, Opts, Timeout).
 
 do_connect(Addr = {A,B,C,D,E,F,G,H}, Port, Opts, Time) when 
-  ?ip6(A,B,C,D,E,F,G,H), integer(Port) ->
+  ?ip6(A,B,C,D,E,F,G,H), integer(Port), Port > 0, Port =< 65535 ->
     case inet:connect_options(Opts, inet6) of
 	{error, Reason} -> exit(Reason);
 	{ok, R} ->
@@ -96,7 +113,7 @@ do_connect(Addr = {A,B,C,D,E,F,G,H}, Port, Opts, Time) when
 %% 
 %% Listen
 %%
-listen(Port, Opts) when Port >= 0, Port =< 16#ffff ->
+listen(Port, Opts) when integer(Port), Port >= 0, Port =< 65535 ->
     case inet:listen_options([{port,Port} | Opts], inet6) of
 	{error, Reason} -> exit(Reason);
 	{ok, R} ->

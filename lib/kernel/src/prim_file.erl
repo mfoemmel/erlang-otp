@@ -242,7 +242,7 @@ pwrite(#file_descriptor{module = ?MODULE, data = {Port, _}}, L) when list(L) ->
 pwrite(#file_descriptor{module = ?MODULE}, _) ->
     {error, einval}.
 
-pwrite_int(Port, [], 0, [], []) ->
+pwrite_int(_, [], 0, [], []) ->
     ok;
 pwrite_int(Port, [], N, Spec, Data) ->
     Header = list_to_binary([<<?FILE_PWRITEV, N:32>> | lists:reverse(Spec)]),
@@ -267,7 +267,7 @@ pwrite_int(Port, [{Offs, Bytes} | T], N, Spec, Data)
     pwrite_int(Port, T, N+1, 
 	       [<<Offs:64/signed, Size:64>> | Spec], 
 	       [Bin | Data]);
-pwrite_int(Port, [_|_], _N, _Spec, _Data) ->
+pwrite_int(_, [_|_], _N, _Spec, _Data) ->
     {error, einval}.
 
 
@@ -329,7 +329,7 @@ pread(#file_descriptor{module = ?MODULE, data = {Port, _}}, L) when list(L) ->
 pread(#file_descriptor{module = ?MODULE}, _) ->
     {error, einval}.
 
-pread_int(Port, [], 0, []) ->
+pread_int(_, [], 0, []) ->
     {ok, []};
 pread_int(Port, [], N, Spec) ->
     Command = list_to_binary([<<?FILE_PREADV, 0:32, N:32>> 
@@ -344,7 +344,7 @@ pread_int(Port, [{Offs, Size} | T], N, Spec)
   when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
        integer(Size), 0 =< Size, Size < ?LARGEFILESIZE ->
     pread_int(Port, T, N+1, [<<Offs:64/signed, Size:64>> | Spec]);
-pread_int(Port, [_|_], _N, _Spec) ->
+pread_int(_, [_|_], _N, _Spec) ->
     {error, einval}.
 
 
@@ -392,8 +392,8 @@ copy(#file_descriptor{module = ?MODULE} = Source,
        atom(Length) ->
     %% XXX Should be moved down to the driver for optimization.
     file:copy_opened(Source, Dest, Length);
-copy(#file_descriptor{module = ?MODULE} = Source,
-     #file_descriptor{module = ?MODULE} = Dest,
+copy(#file_descriptor{module = ?MODULE},
+     #file_descriptor{module = ?MODULE},
      _) ->
     {error, einval}.
 
@@ -408,7 +408,7 @@ ipread_s32bu_p32bu(#file_descriptor{module = ?MODULE, data = {Port, _}},
 		       Offs:64, MaxSize:32>>);
 ipread_s32bu_p32bu(#file_descriptor{module = ?MODULE} = Handle,
 		   Offs,
-		   MaxSize)
+		   _MaxSize)
   when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE ->
     ipread_s32bu_p32bu(Handle, Offs, (1 bsl 31)-1).
 
@@ -480,7 +480,7 @@ write_file(File, Bin) ->
 %% Returns {ok, Port}, the Port should be used as first argument in all
 %% the following functions. Returns {error, Reason} upon failure.
 start() ->
-    case catch erlang:open_port_prim({spawn, ?DRV}, []) of
+    case catch erlang:open_port({spawn, ?DRV}, []) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
 	Port ->
@@ -798,8 +798,8 @@ list_dir_int(Port, Dir) ->
 %% Returns {ok, Port} when succesful.
 
 drv_open(Driver, Portopts) ->
-    case catch erlang:open_port_prim({spawn, Driver}, Portopts) of
-	{'EXIT', Reason} ->
+    case catch erlang:open_port({spawn, Driver}, Portopts) of
+	{'EXIT', _Reason} ->
 	    {error, emfile};
 	Port ->
 	    {ok, Port}
@@ -883,7 +883,7 @@ drv_get_responses([Port, Result]) ->
 
 %% Converts a list of mode atoms into an mode word for the driver.
 %% Returns {ok, Mode, Portopts, Setopts} where Portopts is a list of 
-%% options for erlang:open_port_prim/2 and Setopts is a list of 
+%% options for erlang:open_port/2 and Setopts is a list of 
 %% setopt commands to send to the port, or {error, einval} upon failure.
 
 open_mode(List) when list(List) ->
@@ -1136,7 +1136,7 @@ lists_split(List, N) when list(List), integer(N) ->
 
 lists_split(List, 0, Rev) ->
     {lists:reverse(Rev), List};
-lists_split([], N, Rev) ->
+lists_split([], _, _) ->
     premature_end_of_list;
 lists_split([Hd | Tl], N, Rev) ->
     lists_split(Tl, N-1, [Hd | Rev]).

@@ -54,6 +54,7 @@
 	 add_pathz/1,
 	 del_path/1,
 	 replace_path/2,
+	 rehash/0,
 	 start/0, start/1,
 	 start_link/0, start_link/1,
 	 which/1,
@@ -133,6 +134,8 @@ add_pathsz(Dirs)   ->  call({add_paths,last,Dirs}).
 add_pathsa(Dirs)   ->  call({add_paths,first,Dirs}).
 del_path(Name)     ->  call({del_path,Name}).
 replace_path(Name,Dir)   ->  call({replace_path,Name,Dir}).
+rehash()          ->   call(rehash).
+     
 
 call(Req) ->
     gen_server:call(code_server,Req,infinity).
@@ -298,12 +301,12 @@ decorate([], _) -> [];
 decorate([File|Tail], Dir) ->
     [{Dir, File} | decorate(Tail, Dir)].
 
-filter(Ext, Dir, {error,_}) ->     
+filter(_Ext, Dir, {error,_}) ->     
     io:format("** Bad path can't read ~s~n", [Dir]), [];
 filter(Ext, _, {ok,Files}) -> 
     filter2(Ext, length(Ext), Files).
 
-filter2(Ext,Extlen, []) -> [];
+filter2(_Ext, _Extlen, []) -> [];
 filter2(Ext, Extlen,[File|Tail]) ->
     case has_ext(Ext,Extlen, File) of 
 	true -> [File | filter2(Ext, Extlen, Tail)];

@@ -122,7 +122,7 @@ receive_release_tid_acc([Node | Nodes], Tid) ->
 	{mnesia_down, Node} -> 
 	    receive_release_tid_acc(Nodes, Tid)
     end;
-receive_release_tid_acc([], Tid) ->
+receive_release_tid_acc([], _Tid) ->
     ok.
 
 loop(State) ->
@@ -256,7 +256,7 @@ try_lock(Tid, Op, Pid, Oid) ->
 try_lock(Tid, Op, SimpleOp, Lock, Pid, Oid) ->
     case can_lock(Tid, Lock, Oid, {no, bad_luck}) of
 	yes ->
-	    Reply = grant_lock(Tid, Pid, SimpleOp, Lock, Oid),
+	    Reply = grant_lock(Tid, SimpleOp, Lock, Oid),
 	    reply(Pid, Reply);
 	{no, Lucky} ->
 	    C = #cyclic{op = SimpleOp, lock = Lock, oid = Oid, lucky = Lucky},
@@ -271,7 +271,7 @@ try_lock(Tid, Op, SimpleOp, Lock, Pid, Oid) ->
 	    ?ets_insert(mnesia_tid_locks, {Tid, Oid, {queued, Op}})
     end.
 
-grant_lock(Tid, ClientPid, read, Lock, {Tab, Key})
+grant_lock(Tid, read, Lock, {Tab, Key})
   when Key /= ?ALL, Tab /= ?GLOBAL ->
     case node(Tid#tid.pid) == node() of
 	true ->
@@ -290,10 +290,10 @@ grant_lock(Tid, ClientPid, read, Lock, {Tab, Key})
 		    {granted, Val}
 	    end
     end;
-grant_lock(Tid, _ClientPid, read, Lock, Oid) ->
+grant_lock(Tid, read, Lock, Oid) ->
     set_lock(Tid, Oid, Lock),
     {granted, ok};
-grant_lock(Tid, _ClientPid, write, Lock, Oid) ->
+grant_lock(Tid, write, Lock, Oid) ->
     set_lock(Tid, Oid, Lock),
     granted.
 
@@ -347,7 +347,7 @@ check_lock(Tid, Oid, [Lock | Locks], TabLocks, X, AlreadyQ, Type) ->
 check_lock(_, _, [], [], X, {queue, bad_luck}, _) ->
     X;  %% The queue should be correct already no need to check it again
 
-check_lock(_Tid, _Oid, [], [], X = {queue, Tid}, AlreadyQ, _) ->
+check_lock(_, _, [], [], X = {queue, _Tid}, _AlreadyQ, _) ->
     X;  
 
 check_lock(Tid, Oid, [], [], X, AlreadyQ, Type) ->
@@ -403,7 +403,7 @@ max([H|R]) ->
 
 max([H|R], Tid) when H#queue.tid > Tid ->
     max(R, H#queue.tid);
-max([H|R], Tid) ->
+max([_|R], Tid) ->
     max(R, Tid);
 max([], Tid) ->
     Tid.
@@ -419,7 +419,7 @@ set_read_lock_on_all_keys(Tid, From, Tab, [RealKey | Tail], Orig, Ack) ->
     Oid = {Tab, RealKey},
     case can_lock(Tid, read, Oid, {no, bad_luck}) of
 	yes ->
-	    {granted, Val} = grant_lock(Tid, from, read, read, Oid),
+	    {granted, Val} = grant_lock(Tid, read, read, Oid),
 	    case opt_lookup_in_client(Val, Oid, read) of  % Ought to be invoked
 		C when record(C, cyclic) ->               % in the client
 		    reply(From, {not_granted, C});
@@ -434,7 +434,7 @@ set_read_lock_on_all_keys(Tid, From, Tab, [RealKey | Tail], Orig, Ack) ->
 	    C = #cyclic{op = read, lock = read, oid = Oid, lucky = Lucky},
 	    reply(From, {not_granted, C})
     end;
-set_read_lock_on_all_keys(Tid, From, Tab, [], Orig, Ack) ->
+set_read_lock_on_all_keys(_Tid, From, _Tab, [], Orig, Ack) ->
     reply(From, {granted, Ack, Orig}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -469,7 +469,7 @@ do_release_tid(Tid) ->
     UniqueLocks = keyunique(lists:sort(Locks),[]),
     rearrange_queue(UniqueLocks).
 
-keyunique([{Tid, Oid, Op}|R], Acc = [{_, Oid, _}|_]) ->
+keyunique([{_Tid, Oid, _Op}|R], Acc = [{_, Oid, _}|_]) ->
     keyunique(R, Acc);
 keyunique([H|R], Acc) ->
     keyunique(R, [H|Acc]);
@@ -482,7 +482,7 @@ release_locks([Lock | Locks]) ->
 release_locks([]) ->
     ok.
 
-release_lock({Tid, Oid, {queued, Op}}) ->
+release_lock({Tid, Oid, {queued, _}}) ->
     ?ets_match_delete(mnesia_lock_queue, 
 		      #queue{oid=Oid, tid = Tid, op = '_',
 			     pid = '_', lucky = '_'});
@@ -494,7 +494,7 @@ release_lock({Tid, Oid, Op}) ->
 	    ?ets_match_delete(mnesia_held_locks, {Oid, Op, Tid})
     end.
 
-rearrange_queue([{Tid, {Tab, Key}, Op} | Locks]) ->
+rearrange_queue([{_Tid, {Tab, Key}, _} | Locks]) ->
     if
 	Key /= ?ALL->	    
 	    Queue =  
@@ -530,7 +530,7 @@ try_waiters_obj([]) ->
 
 try_waiters_tab([W | Waiters]) ->
     case W#queue.oid of
-	{Tab, ?ALL} ->
+	{_Tab, ?ALL} ->
 	    case try_waiter(W) of
 		queued ->
 		    no;
@@ -561,11 +561,11 @@ try_waiter(Oid, Op, SimpleOp, Lock, ReplyTo, Tid) ->
 	    ?ets_match_delete(mnesia_lock_queue, 
 			      #queue{oid=Oid, tid = Tid, op = Op,
 				     pid = ReplyTo, lucky = '_'}),
-	    Reply = grant_lock(Tid, ReplyTo, SimpleOp, Lock, Oid),	    
+	    Reply = grant_lock(Tid, SimpleOp, Lock, Oid),	    
 	    ReplyTo ! {?MODULE, node(), Reply},
 	    locked;
-	{queue, Why} ->
-	    ?dbg("Keep ~p ~p ~p ~p~n", [Tid, Oid, Lock, Why]),
+	{queue, _Why} ->
+	    ?dbg("Keep ~p ~p ~p ~p~n", [Tid, Oid, Lock, _Why]),
 	    queued; % Keep waiter in queue	
 	{no, Lucky} ->
 	    C = #cyclic{op = SimpleOp, lock = Lock, oid = Oid, lucky = Lucky},
@@ -645,7 +645,7 @@ get_rwlocks_on_nodes([Node | Tail], Orig, OtherNode, Store, Tid, Oid) ->
     add_debug(Node),
     ?ets_insert(Store, {nodes, Node}),
     get_rwlocks_on_nodes(Tail, Orig, OtherNode, Store, Tid, Oid);
-get_rwlocks_on_nodes([], Orig, Node, Store, Tid, Oid) ->
+get_rwlocks_on_nodes([], Orig, _Node, Store, _Tid, Oid) ->
     receive_wlocks(Orig, read_write_lock, Store, Oid).
 
 %% Return a list of nodes or abort transaction
@@ -686,10 +686,10 @@ sticky_lock(Tid, Store, {Tab, Key} = Oid, Lock) ->
 do_sticky_lock(Tid, Store, {Tab, Key} = Oid, Lock) ->
     ?MODULE ! {self(), {test_set_sticky, Tid, Oid, Lock}},
     receive
-	{?MODULE, N, granted} ->
+	{?MODULE, _N, granted} ->
 	    ?ets_insert(Store, {{locks, Tab, Key}, write}),
 	    granted;
-	{?MODULE, N, {granted, Val}} -> %% for rwlocks
+	{?MODULE, _N, {granted, Val}} -> %% for rwlocks
 	    case opt_lookup_in_client(Val, Oid, write) of
 		C when record(C, cyclic) ->
 		    exit({aborted, C});
@@ -697,26 +697,26 @@ do_sticky_lock(Tid, Store, {Tab, Key} = Oid, Lock) ->
 		    ?ets_insert(Store, {{locks, Tab, Key}, write}),
 		    Val2
 	    end;
-	{?MODULE, N, {not_granted, Reason}} ->
+	{?MODULE, _N, {not_granted, Reason}} ->
 	    exit({aborted, Reason});
 	{?MODULE, N, not_stuck} ->
 	    not_stuck(Tid, Store, Tab, Key, Oid, Lock, N),
 	    dirty_sticky_lock(Tab, Key, [N], Lock);
 	{mnesia_down, N} ->
 	    exit({aborted, {node_not_running, N}});
-	{?MODULE, N, {stuck_elsewhere, N2}} ->
+	{?MODULE, N, {stuck_elsewhere, _N2}} ->
 	    stuck_elsewhere(Tid, Store, Tab, Key, Oid, Lock),
 	    dirty_sticky_lock(Tab, Key, [N], Lock)
     end.
 
-not_stuck(Tid, Store, Tab, Key, Oid, Lock, N) ->
+not_stuck(Tid, Store, Tab, _Key, Oid, _Lock, N) ->
     rlock(Tid, Store, {Tab, ?ALL}),   %% needed?
     wlock(Tid, Store, Oid),           %% perfect sync
     wlock(Tid, Store, {Tab, ?STICK}), %% max one sticker/table
     Ns = val({Tab, where_to_write}),
     rpc:abcast(Ns, ?MODULE, {stick, Oid, N}).
 
-stuck_elsewhere(Tid, Store, Tab, Key, Oid, Lock) ->
+stuck_elsewhere(Tid, Store, Tab, _Key, Oid, _Lock) ->
     rlock(Tid, Store, {Tab, ?ALL}),   %% needed?
     wlock(Tid, Store, Oid),           %% perfect sync
     wlock(Tid, Store, {Tab, ?STICK}), %% max one sticker/table
@@ -809,7 +809,7 @@ get_wlocks_on_nodes([Node | Tail], Orig, Store, Request, Oid) ->
     ?ets_insert(Store, {nodes, Node}),
     add_debug(Node),
     get_wlocks_on_nodes(Tail, Orig, Store, Request, Oid);
-get_wlocks_on_nodes([], Orig, Store, Request, Oid) ->
+get_wlocks_on_nodes([], Orig, Store, _Request, Oid) ->
     receive_wlocks(Orig, Orig, Store, Oid).
 
 receive_wlocks([Node | Tail], Res, Store, Oid) ->
@@ -844,7 +844,7 @@ receive_wlocks([Node | Tail], Res, Store, Oid) ->
 receive_wlocks([], Res, _Store, _Oid) ->
     Res.
 
-flush_remaining([], SkipNode, Res) ->
+flush_remaining([], _SkipNode, Res) ->
     exit(Res);
 flush_remaining([SkipNode | Tail ], SkipNode, Res) ->
     del_debug(SkipNode),
@@ -865,16 +865,16 @@ opt_lookup_in_client(lookup_in_client, Oid, Lock) ->
 	{'EXIT', _} ->
 	    %% Table has been deleted from this node,
 	    %% restart the transaction.
-	    C = #cyclic{op = read, lock = Lock, oid = Oid, lucky = nowhere};
+	    #cyclic{op = read, lock = Lock, oid = Oid, lucky = nowhere};
 	Val -> 
 	    Val
     end;
-opt_lookup_in_client(Val, Oid, Lock) ->
+opt_lookup_in_client(Val, _Oid, _Lock) ->
     Val.
 
 return_granted_or_nodes({_, ?ALL}   , Nodes) -> Nodes;
 return_granted_or_nodes({?GLOBAL, _}, Nodes) -> Nodes;
-return_granted_or_nodes(_           , Nodes) -> granted.
+return_granted_or_nodes(_           , _Nodes) -> granted.
     
 %% We store a {Tab, read, From} item in the 
 %% locks table on the node where we actually do pick up the object
@@ -905,7 +905,7 @@ rlock(Tid, Store, Oid) ->
 	    end
     end.
 
-dirty_rpc(nowhere, Tab, Key, Lock) ->
+dirty_rpc(nowhere, Tab, Key, _Lock) ->
     mnesia:abort({no_exists, {Tab, Key}});
 dirty_rpc(Node, _Tab, ?ALL, _Lock) ->
     [Node];
@@ -919,7 +919,7 @@ dirty_rpc(Node, Tab, Key, Lock) ->
 		Node ->
 		    ErrorTag = mnesia_lib:dirty_rpc_error_tag(Reason),
 		    mnesia:abort({ErrorTag, Args});
-		NewNode ->
+		_NewNode ->
 		    %% Table has been deleted from the node,
 		    %% restart the transaction.
 		    C = #cyclic{op = read, lock = Lock, oid = {Tab, Key}, lucky = nowhere},
@@ -949,10 +949,10 @@ rlock_get_reply(Node, Store, Tab, {granted, V, RealKeys}) ->
     lists:foreach(L, RealKeys),
     ?ets_insert(Store, {nodes, Node}),
     V;
-rlock_get_reply(Node, Store, Oid, {not_granted , Reason}) ->
+rlock_get_reply(_Node, _Store, _Oid, {not_granted , Reason}) ->
     exit({aborted, Reason});
 
-rlock_get_reply(Node, Store, Oid, {switch, N2, Req}) ->
+rlock_get_reply(_Node, Store, Oid, {switch, N2, Req}) ->
     ?ets_insert(Store, {nodes, N2}),
     {?MODULE, N2} ! Req,
     rlock_get_reply(N2, Store, Oid, l_req_rec(N2, Store)).
@@ -984,7 +984,7 @@ global_lock(Tid, Store, Item, read, Ns) ->
 send_requests([Node | Nodes], X) ->
     {?MODULE, Node} ! {self(), X},
     send_requests(Nodes, X);
-send_requests([], X) ->
+send_requests([], _X) ->
     ok.
 
 rec_requests([Node | Nodes], Oid, Store) ->
@@ -995,7 +995,7 @@ rec_requests([Node | Nodes], Oid, Store) ->
 	_ ->
 	    rec_requests(Nodes, Oid, Store)
     end;
-rec_requests([], Oid, Store) ->
+rec_requests([], _Oid, _Store) ->
     ok.
 
 get_held_locks() ->
@@ -1011,12 +1011,12 @@ do_stop() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% System upgrade
 
-system_continue(Parent, Debug, State) ->
+system_continue(_Parent, _Debug, State) ->
     loop(State).
 
-system_terminate(Reason, Parent, Debug, State) ->
+system_terminate(_Reason, _Parent, _Debug, _State) ->
     do_stop().
 
-system_code_change(State, Module, OldVsn, Extra) ->
+system_code_change(State, _Module, _OldVsn, _Extra) ->
     {ok, State}.
 

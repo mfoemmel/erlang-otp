@@ -1,6 +1,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <02/09/17 23:07:37 happi>
+%% Time-stamp: <02/10/09 18:51:08 happi>
 %% ====================================================================
 %%  Filename : 	hipe_sparc_ra.erl
 %%  Module   :	hipe_sparc_ra
@@ -10,8 +10,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: happi $
-%%              $Date: 2002/09/17 21:17:05 $
-%%              $Revision: 1.19 $
+%%              $Date: 2002/10/10 06:18:29 $
+%%              $Revision: 1.20 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -67,7 +67,7 @@ allocate(_Fun, SparcCfg, Options) ->
       _ -> 
 	{NewCfg, [], NextPos}
     end,
-  
+
   {NewCfg3, NextPos3}  = 
     hipe_sparc_caller_saves:rewrite(
       NewCfg2, TempMap, FpMap, NextPos2, Options),

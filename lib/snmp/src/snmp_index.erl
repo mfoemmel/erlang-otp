@@ -89,7 +89,7 @@ delete({OrdSet, KeyTypes}, Key) ->
     ets:delete(OrdSet, key_to_oid_i(Key, KeyTypes)),
     {OrdSet, KeyTypes}.
 
-delete({OrdSet, KeyTypes}) ->
+delete({OrdSet, _KeyTypes}) ->
     ets:delete(OrdSet).
 
 key_to_oid({_OrdSet, KeyTypes}, Key) ->

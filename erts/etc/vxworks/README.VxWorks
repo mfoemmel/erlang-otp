@@ -1,10 +1,14 @@
-README, Erlang/OTP R8B for VxWorks on PPC860 and PPC603
+README, Erlang/OTP R9C for VxWorks on PPC860 and PPC603
 -----------------------------------------------------------------------
-20011010 -- Patrik Nyblom, support@erlang.ericsson.se
+20020801 -- Patrik Nyblom, support@erlang.ericsson.se
 
-R8B is a full OTP release for PPC603 and PPC860, i.e. all 
-applications that can possibly be run on an embedded system with
-limited memory is included. 
+R9C is a libraries only release for VxWorks. Only the libraries of
+erl_interface (ei+erl_inteface) and ic are expected to be used. Still
+the whole erlang system is distributed, although no support will be
+given for anything else but the libraries. The information in this
+file still applies to the full erlang distribution and parts of it are 
+therefore somewhat irrelevant to commercial users.
+
 
 Included OTP applications
 -------------------------
@@ -38,14 +42,13 @@ stdlib
 tools 
 tv
 
-[1]  Only ram_copies fully supported, The VxWorks filesystems are not 
+[1]  Only ram_copies work, The VxWorks filesystems are not 
      reliable enough for disk_copies to be fully supported.
-[2]  CGI scripts not supported on VxWorks.
+[2]  CGI scripts do not work on VxWorks.
 
 Omitted applications
 --------------------
 
-comet
 crypto
 emacs
 etk
@@ -64,8 +67,7 @@ VxWorks.
 Graphical interfaces
 --------------------
 
-For applications using graphical interfaces, only the backend part is
-supported.
+For applications using graphical interfaces, only the backend part works.
 
 Compilers
 ---------
@@ -75,13 +77,9 @@ systems memory capabilities are too restricting to allow native
 compiling. The expected host system is a Sun Solaris machine, although
 Erlang compilation may be done on most platforms.
 
-Supported boards and configuration
+Supported boards and configuration (only libraries supported)
 ----------------------------------
-The following boards and configurations are fully supported:
-
-* Motorola MV2603 with Wind Rivers BSP, VxWorks 5.3.1, SENS 1.1 and
-  patch for SPR23938 (recvmsg returning negative value) and a minimum
-  of 32 Mb memory.
+The following boards and configurations are supported:
 
 * Force PowerCore 603 with Force pcore603 BSP and VxWorks 3.5.1 (no
   SENS or SENS 1.1 + SPR23938) and a minimum of 32 Mb memory.
@@ -331,4 +329,3 @@ static int echo_stop()
 {
     return erlang_port = -1;
 }
-

@@ -362,7 +362,7 @@ toname(Else) ->
 system_continue(_Parent, _Dbg, S) ->
     loop(S).
 
-system_terminate(Reason, _Parent, _Dbg, S) ->
+system_terminate(Reason, _Parent, _Dbg, _S) ->
     exit(Reason).
 
 system_code_change(S, _Module, _OldVsn, downgrade_to_pre_3_3_8) ->

@@ -34,7 +34,7 @@
 
 -export([t/0, t/1]).
 
--export([tickets/0]).
+-export([tickets/0, tickets/1]).
 
 -export([all/1, 
 
@@ -68,9 +68,19 @@
 	 pretty_msg22d/1, 
 	 pretty_msg22e/1, 
 	 pretty_msg22f/1, 
-	 pretty_msg23/1, 
+	 pretty_msg23a/1, 
+	 pretty_msg23b/1, 
+	 pretty_msg23c/1, 
+	 pretty_msg23d/1, 
 	 pretty_msg24/1, 
 	 pretty_msg25/1, 
+	 pretty_msg30a/1, 
+	 pretty_msg30b/1, 
+	 pretty_msg30c/1, 
+	 pretty_msg30d/1, 
+	 pretty_trans01/1,
+	 pretty_trans02/1,
+	 pretty_trans03/1,
 
 	 compact/1, 
 	 compact_msg1a/1, compact_msg1b/1, 
@@ -100,9 +110,19 @@
 	 compact_msg22d/1, 
 	 compact_msg22e/1, 
 	 compact_msg22f/1, 
-	 compact_msg23/1, 
+	 compact_msg23a/1, 
+	 compact_msg23b/1, 
+	 compact_msg23c/1, 
+	 compact_msg23d/1, 
 	 compact_msg24/1, 
 	 compact_msg25/1, 
+	 compact_msg30a/1, 
+	 compact_msg30b/1, 
+	 compact_msg30c/1, 
+	 compact_msg30d/1, 
+	 compact_trans01/1,
+	 compact_trans02/1,
+	 compact_trans03/1,
 
 	 flex_pretty/1, 
 	 flex_pretty_init/1, 
@@ -134,9 +154,19 @@
 	 flex_pretty_msg22d/1, 
 	 flex_pretty_msg22e/1, 
 	 flex_pretty_msg22f/1, 
-	 flex_pretty_msg23/1, 
+	 flex_pretty_msg23a/1, 
+	 flex_pretty_msg23b/1, 
+	 flex_pretty_msg23c/1, 
+	 flex_pretty_msg23d/1, 
 	 flex_pretty_msg24/1, 
 	 flex_pretty_msg25/1, 
+	 flex_pretty_msg30a/1, 
+	 flex_pretty_msg30b/1, 
+	 flex_pretty_msg30c/1, 
+	 flex_pretty_msg30d/1, 
+	 flex_pretty_trans01/1, 
+	 flex_pretty_trans02/1, 
+	 flex_pretty_trans03/1, 
 
 	 flex_compact/1, 
 	 flex_compact_init/1, 
@@ -168,9 +198,19 @@
 	 flex_compact_msg22d/1, 
 	 flex_compact_msg22e/1, 
 	 flex_compact_msg22f/1, 
-	 flex_compact_msg23/1, 
+	 flex_compact_msg23a/1, 
+	 flex_compact_msg23b/1, 
+	 flex_compact_msg23c/1, 
+	 flex_compact_msg23d/1, 
 	 flex_compact_msg24/1, 
 	 flex_compact_msg25/1, 
+	 flex_compact_msg30a/1, 
+	 flex_compact_msg30b/1, 
+	 flex_compact_msg30c/1, 
+	 flex_compact_msg30d/1, 
+	 flex_compact_trans01/1, 
+	 flex_compact_trans02/1, 
+	 flex_compact_trans03/1, 
 
 	 flex_compact_dm_timers1/1, 
 	 flex_compact_dm_timers2/1, 
@@ -209,9 +249,19 @@
 	 bin_msg22d/1, 
 	 bin_msg22e/1, 
 	 bin_msg22f/1, 
-	 bin_msg23/1, 
+	 bin_msg23a/1, 
+	 bin_msg23b/1, 
+	 bin_msg23c/1, 
+	 bin_msg23d/1, 
 	 bin_msg24/1, 
 	 bin_msg25/1, 
+	 bin_msg30a/1, 
+	 bin_msg30b/1, 
+	 bin_msg30c/1, 
+	 bin_msg30d/1, 
+	 bin_trans01/1, 
+	 bin_trans02/1, 
+	 bin_trans03/1, 
 
 	 ber/1, 
 	 ber_msg1a/1, ber_msg1b/1, 
@@ -241,9 +291,19 @@
 	 ber_msg22d/1, 
 	 ber_msg22e/1, 
 	 ber_msg22f/1, 
-	 ber_msg23/1, 
+	 ber_msg23a/1, 
+	 ber_msg23b/1, 
+	 ber_msg23c/1, 
+	 ber_msg23d/1, 
 	 ber_msg24/1, 
 	 ber_msg25/1, 
+	 ber_msg30a/1, 
+	 ber_msg30b/1, 
+	 ber_msg30c/1, 
+	 ber_msg30d/1, 
+	 ber_trans01/1, 
+	 ber_trans02/1, 
+	 ber_trans03/1, 
 
 	 ber_bin/1, 
 	 ber_bin_msg1a/1, ber_bin_msg1b/1, 
@@ -273,9 +333,19 @@
 	 ber_bin_msg22d/1, 
 	 ber_bin_msg22e/1, 
 	 ber_bin_msg22f/1, 
-	 ber_bin_msg23/1, 
+	 ber_bin_msg23a/1, 
+	 ber_bin_msg23b/1, 
+	 ber_bin_msg23c/1, 
+	 ber_bin_msg23d/1, 
 	 ber_bin_msg24/1, 
 	 ber_bin_msg25/1, 
+	 ber_bin_msg30a/1, 
+	 ber_bin_msg30b/1, 
+	 ber_bin_msg30c/1, 
+	 ber_bin_msg30d/1, 
+	 ber_bin_trans01/1, 
+	 ber_bin_trans02/1, 
+	 ber_bin_trans03/1, 
 
 	 per/1,
 	 per_msg1a/1, per_msg1b/1, 
@@ -305,9 +375,19 @@
 	 per_msg22d/1, 
 	 per_msg22e/1, 
 	 per_msg22f/1, 
-	 per_msg23/1, 
+	 per_msg23a/1, 
+	 per_msg23b/1, 
+	 per_msg23c/1, 
+	 per_msg23d/1, 
 	 per_msg24/1, 
 	 per_msg25/1, 
+	 per_msg30a/1, 
+	 per_msg30b/1, 
+	 per_msg30c/1, 
+	 per_msg30d/1, 
+	 per_trans01/1, 
+	 per_trans02/1, 
+	 per_trans03/1, 
 
 	 per_bin/1,
 	 per_bin_msg1a/1, per_bin_msg1b/1, 
@@ -337,9 +417,19 @@
 	 per_bin_msg22d/1, 
 	 per_bin_msg22e/1, 
 	 per_bin_msg22f/1, 
-	 per_bin_msg23/1, 
+	 per_bin_msg23a/1, 
+	 per_bin_msg23b/1, 
+	 per_bin_msg23c/1, 
+	 per_bin_msg23d/1, 
 	 per_bin_msg24/1, 
 	 per_bin_msg25/1, 
+	 per_bin_msg30a/1, 
+	 per_bin_msg30b/1, 
+	 per_bin_msg30c/1, 
+	 per_bin_msg30d/1, 
+	 per_bin_trans01/1, 
+	 per_bin_trans02/1, 
+	 per_bin_trans03/1, 
 
 	 tickets/1, 
 
@@ -360,6 +450,8 @@
 	 pretty_otp4632_msg2/1, 
 	 pretty_otp4632_msg3/1, 
 	 pretty_otp4632_msg4/1, 
+	 pretty_otp4710_msg1/1, 
+	 pretty_otp4710_msg2/1, 
 
 
 	 time_test/1,
@@ -466,7 +558,7 @@ tickets() ->
 		    Result = 
 			case (catch apply(?MODULE, Case, [C])) of
 			    {'EXIT', Reason} ->
- 				io:format("~n~p exited:~n   ~p", 
+ 				io:format("~n~p exited:~n   ~p~n", 
  					  [Case, Reason]),
 				{error, {Case, Reason}};
 			    Res ->
@@ -496,7 +588,7 @@ do_tt(DeleteCases) ->
 		    Result = 
 			case (catch apply(?MODULE, Case, [C])) of
 			    {'EXIT', Reason} ->
- 				io:format("~n~p exited:~n   ~p", 
+ 				io:format("~n~p exited:~n   ~p~n", 
  					  [Case, Reason]),
 				{error, {Case, Reason}};
 			    Res ->
@@ -519,7 +611,7 @@ tt(Path, DeleteCases) ->
     Res    = do_tt(DeleteCases),
     TopDir = filename:join(Path, "time_test") ++ "/",
     file:make_dir(TopDir),
-    io:format("storing: ", []),
+    io:format("~nstoring: ", []),
     tt_store(TopDir, Res),
     %% Formats: "postscript" | "png" | "pbm" 
     tt_store_gnuplot(TopDir, Res, "postscript"),
@@ -578,34 +670,25 @@ tt_bins(Path) when list(Path) ->
 tt_store(TopDir, []) ->
     io:format("~n", []),
     ok;
-tt_store(TopDir, [H|T]) ->
+tt_store(TopDir, [{error, _}|T]) ->
+    io:format("e", []),
+    tt_store(TopDir, T);
+tt_store(TopDir, [{ok,{Case,Res}}|T]) ->
     io:format(".", []),
-    tt_check_store(H, (catch tt_store_case(TopDir, H))),
+    tt_check_store((catch tt_store_case(TopDir, Case, Res))),
     tt_store(TopDir, T).
 
-tt_check_store(_, ok) ->
+tt_check_store(ok) ->
     ok;
-tt_check_store({error, {Case, Reason}}, _) ->
-    io:format("ERROR: test ~p failed: "
-	      "~n   Reason: ~p~n", [Case, Reason]);
-tt_check_store({ok, {Codec, _Res}}, {error, Reason}) ->
-    io:format("ERROR: failed storing: "
-	      "~n   Reason: ~p"
-	      "~n   Codec:  ~p~n", [Reason, Codec]);
-tt_check_store(O, {error, Reason}) ->
-    io:format("ERROR: failed storing: "
-	      "~n   Reason: ~p"
-	      "~n   O:      ~p~n", [Reason, O]);
-tt_check_store(CodecRes, StoreRes) ->
-    io:format("ERROR: failed storing: "
-	      "~n   StoreRes: ~p"
-	      "~n   CodecRes: ~p~n", [StoreRes, CodecRes]).
+tt_check_store({error, Reason}) ->
+    io:format("~n"
+	      "ERROR: failed storing: "
+	      "~n   Reason: ~p~n", [Reason]);
+tt_check_store(StoreRes) ->
+    io:format("~n"
+	      "ERROR: failed storing: "
+	      "~n   StoreRes: ~p~n", [StoreRes]).
 
-
-tt_store_case(TopDir, {ok, {Case, Res}}) ->
-    tt_store_case(TopDir, Case, Res);
-tt_store_case(_, ok) ->
-    ok.
 
 tt_store_case(TopDir, Case, Res) ->
     Dir = TopDir ++ atom_to_list(Case),
@@ -976,6 +1059,7 @@ init_per_testcase(Case, Config) ->
 	    true ->
 		[{tc_timeout, timer:minutes(10)}|Config];
 	    false ->
+		put(verbosity,trc),
 		Config
 	end,
     megaco_test_lib:init_per_testcase(Case, C).
@@ -1022,6 +1106,7 @@ init_per_testcase(Case, Config) ->
 %     erase(severity),
 %     megaco_test_lib:fin_per_testcase(Case, Config);
 fin_per_testcase(Case, Config) ->
+    erase(verbosity),
     megaco_test_lib:fin_per_testcase(Case, Config).
 
 
@@ -1047,7 +1132,7 @@ text(suite) ->
 binary(suite) ->
     [
      bin,
-     ber,
+     ber ,
      ber_bin,
      per,
      per_bin %% ,
@@ -1065,7 +1150,6 @@ time_test(suite) ->
      ber_bin_time_test,
      per_time_test,
      per_bin_time_test,
-     %% per_bin_opt_time_test,
      erl_dist_time_test,
      erl_dist_compressed_time_test
     ].
@@ -1100,9 +1184,19 @@ pretty(suite) ->
      pretty_msg22d,
      pretty_msg22e,
      pretty_msg22f,
-     pretty_msg23,
+     pretty_msg23a,
+     pretty_msg23b,
+     pretty_msg23c,
+     pretty_msg23d,
      pretty_msg24,
-     pretty_msg25
+     pretty_msg25,
+     pretty_msg30a,
+     pretty_msg30b,
+     pretty_msg30c,
+     pretty_msg30d,
+     pretty_trans01,
+     pretty_trans02,
+     pretty_trans03
     ].
 
 
@@ -1135,9 +1229,19 @@ compact(suite) ->
      compact_msg22d,
      compact_msg22e,
      compact_msg22f,
-     compact_msg23,
+     compact_msg23a,
+     compact_msg23b,
+     compact_msg23c,
+     compact_msg23d,
      compact_msg24,
-     compact_msg25
+     compact_msg25,
+     compact_msg30a,
+     compact_msg30b,
+     compact_msg30c,
+     compact_msg30d,
+     compact_trans01,
+     compact_trans02,
+     compact_trans03
     ].
 
 
@@ -1174,9 +1278,19 @@ flex_pretty_cases() ->
      flex_pretty_msg22d,
      flex_pretty_msg22e,
      flex_pretty_msg22f,
-     flex_pretty_msg23,
+     flex_pretty_msg23a,
+     flex_pretty_msg23b,
+     flex_pretty_msg23c,
+     flex_pretty_msg23d,
      flex_pretty_msg24,
-     flex_pretty_msg25
+     flex_pretty_msg25,
+     flex_pretty_msg30a,
+     flex_pretty_msg30b,
+     flex_pretty_msg30c,
+     flex_pretty_msg30d,
+     flex_pretty_trans01,
+     flex_pretty_trans02,
+     flex_pretty_trans03
     ].
 
 
@@ -1213,9 +1327,19 @@ flex_compact_cases() ->
      flex_compact_msg22d,
      flex_compact_msg22e,
      flex_compact_msg22f,
-     flex_compact_msg23,
+     flex_compact_msg23a,
+     flex_compact_msg23b,
+     flex_compact_msg23c,
+     flex_compact_msg23d,
      flex_compact_msg24,
      flex_compact_msg25,
+     flex_compact_msg30a,
+     flex_compact_msg30b,
+     flex_compact_msg30c,
+     flex_compact_msg30d,
+     flex_compact_trans01,
+     flex_compact_trans02,
+     flex_compact_trans03,
 
      flex_compact_dm_timers1,
      flex_compact_dm_timers2,
@@ -1255,9 +1379,19 @@ bin(suite) ->
      bin_msg22d,
      bin_msg22e,
      bin_msg22f,
-     bin_msg23,
+     bin_msg23a,
+     bin_msg23b,
+     bin_msg23c,
+     bin_msg23d,
      bin_msg24,
-     bin_msg25
+     bin_msg25,
+     bin_msg30a,
+     bin_msg30b,
+     bin_msg30c,
+     bin_msg30d,
+     bin_trans01,
+     bin_trans02,
+     bin_trans03
     ].
 
 
@@ -1290,9 +1424,19 @@ ber(suite) ->
      ber_msg22d,
      ber_msg22e,
      ber_msg22f,
-     ber_msg23,
+     ber_msg23a,
+     ber_msg23b,
+     ber_msg23c,
+     ber_msg23d,
      ber_msg24,
-     ber_msg25
+     ber_msg25,
+     ber_msg30a,
+     ber_msg30b,
+     ber_msg30c,
+     ber_msg30d,
+     ber_trans01,
+     ber_trans02,
+     ber_trans03
     ].
 
 
@@ -1325,9 +1469,19 @@ ber_bin(suite) ->
      ber_bin_msg22d,
      ber_bin_msg22e,
      ber_bin_msg22f,
-     ber_bin_msg23,
+     ber_bin_msg23a,
+     ber_bin_msg23b,
+     ber_bin_msg23c,
+     ber_bin_msg23d,
      ber_bin_msg24,
-     ber_bin_msg25
+     ber_bin_msg25,
+     ber_bin_msg30a,
+     ber_bin_msg30b,
+     ber_bin_msg30c,
+     ber_bin_msg30d,
+     ber_bin_trans01,
+     ber_bin_trans02,
+     ber_bin_trans03
     ].
 
 
@@ -1360,9 +1514,19 @@ per(suite) ->
      per_msg22d,
      per_msg22e,
      per_msg22f,
-     per_msg23,
+     per_msg23a,
+     per_msg23b,
+     per_msg23c,
+     per_msg23d,
      per_msg24,
-     per_msg25
+     per_msg25,
+     per_msg30a,
+     per_msg30b,
+     per_msg30c,
+     per_msg30d,
+     per_trans01,
+     per_trans02,
+     per_trans03
     ].
 
 
@@ -1399,45 +1563,20 @@ per_bin(suite) ->
      per_bin_msg22d,
      per_bin_msg22e,
      per_bin_msg22f,
-     per_bin_msg23,
+     per_bin_msg23a,
+     per_bin_msg23b,
+     per_bin_msg23c,
+     per_bin_msg23d,
      per_bin_msg24,
-     per_bin_msg25
+     per_bin_msg25,
+     per_bin_msg30a,
+     per_bin_msg30b,
+     per_bin_msg30c,
+     per_bin_msg30d,
+     per_bin_trans01,
+     per_bin_trans02,
+     per_bin_trans03
     ].
-
-
-% per_bin_opt(suite) ->
-%     [
-%      per_bin_opt_msg1a, per_bin_opt_msg1b, 
-%      per_bin_opt_msg2, 
-%      per_bin_opt_msg3, 
-%      per_bin_opt_msg4, 
-%      per_bin_opt_msg5, 
-%      per_bin_opt_msg6a, per_bin_opt_msg6b, 
-%      per_bin_opt_msg7, 
-%      per_bin_opt_msg8a, per_bin_opt_msg8b, 
-%      per_bin_opt_msg9, 
-%      per_bin_opt_msg10, 
-%      per_bin_opt_msg11,
-%      per_bin_opt_msg12,
-%      per_bin_opt_msg13,
-%      per_bin_opt_msg14,
-%      per_bin_opt_msg15,
-%      per_bin_opt_msg16,
-%      per_bin_opt_msg17,
-%      per_bin_opt_msg18,
-%      per_bin_opt_msg19,
-%      per_bin_opt_msg20,
-%      per_bin_opt_msg21,
-%      per_bin_opt_msg22a,
-%      per_bin_opt_msg22b,
-%      per_bin_opt_msg22c,
-%      per_bin_opt_msg22d,
-%      per_bin_opt_msg22e,
-%      per_bin_opt_msg22f,
-%      per_bin_opt_msg23,
-%      per_bin_opt_msg24,
-%      per_bin_opt_msg25
-%     ].
 
 
 tickets(suite) ->
@@ -1466,7 +1605,9 @@ pretty_tickets(suite) ->
      pretty_otp4632_msg1,
      pretty_otp4632_msg2,
      pretty_otp4632_msg3,
-     pretty_otp4632_msg4
+     pretty_otp4632_msg4,
+     pretty_otp4710_msg1,
+     pretty_otp4710_msg2
     ].
 
 
@@ -1682,11 +1823,32 @@ pretty_msg22f(Config) when list(Config) ->
     {equal, 'MegacoMessage'} = do(megaco_pretty_text_encoder, [], msg22f()),
     ok.
 
-pretty_msg23(suite) ->
+pretty_msg23a(suite) ->
     [];
-pretty_msg23(Config) when list(Config) ->
+pretty_msg23a(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
-    {equal, 'MegacoMessage'} = do(megaco_pretty_text_encoder, [], msg23()),
+    {equal, 'MegacoMessage'} = do(megaco_pretty_text_encoder, [], msg23a()),
+    ok.
+
+pretty_msg23b(suite) ->
+    [];
+pretty_msg23b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_pretty_text_encoder, [], msg23b()),
+    ok.
+
+pretty_msg23c(suite) ->
+    [];
+pretty_msg23c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_pretty_text_encoder, [], msg23c()),
+    ok.
+
+pretty_msg23d(suite) ->
+    [];
+pretty_msg23d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_pretty_text_encoder, [], msg23d()),
     ok.
 
 pretty_msg24(suite) ->
@@ -1701,6 +1863,55 @@ pretty_msg25(suite) ->
 pretty_msg25(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     {equal, 'MegacoMessage'} = do(megaco_pretty_text_encoder, [], msg25()),
+    ok.
+
+pretty_msg30a(suite) ->
+    [];
+pretty_msg30a(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    put(verbosity,trc),
+    {equal, 'MegacoMessage'} = do(megaco_pretty_text_encoder, [], msg30a()),
+    erase(verbosity),
+    ok.
+
+pretty_msg30b(suite) ->
+    [];
+pretty_msg30b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_pretty_text_encoder, [], msg30b()),
+    ok.
+
+pretty_msg30c(suite) ->
+    [];
+pretty_msg30c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_pretty_text_encoder, [], msg30c()),
+    ok.
+
+pretty_msg30d(suite) ->
+    [];
+pretty_msg30d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_pretty_text_encoder, [], msg30d()),
+    ok.
+
+
+pretty_trans01(suite) ->
+    [];
+pretty_trans01(Config) when list(Config) ->
+    do(megaco_pretty_text_encoder, [], trans01()),
+    ok.
+
+pretty_trans02(suite) ->
+    [];
+pretty_trans02(Config) when list(Config) ->
+    do(megaco_pretty_text_encoder, [], trans02()),
+    ok.
+
+pretty_trans03(suite) ->
+    [];
+pretty_trans03(Config) when list(Config) ->
+    do(megaco_pretty_text_encoder, [], trans03()),
     ok.
 
 
@@ -1978,12 +2189,40 @@ flex_pretty_msg22f(Config) when list(Config) ->
 	do(megaco_pretty_text_encoder, [Conf], msg22f()),
     ok.
 
-flex_pretty_msg23(suite) ->
+flex_pretty_msg23a(suite) ->
     [];
-flex_pretty_msg23(Config) when list(Config) ->
+flex_pretty_msg23a(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Conf = flex_scanner_conf(Config), 
-    {equal, 'MegacoMessage'} = do(megaco_pretty_text_encoder, [Conf], msg23()),
+    {equal, 'MegacoMessage'} = 
+	do(megaco_pretty_text_encoder, [Conf], msg23a()),
+    ok.
+
+flex_pretty_msg23b(suite) ->
+    [];
+flex_pretty_msg23b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config), 
+    {equal, 'MegacoMessage'} = 
+	do(megaco_pretty_text_encoder, [Conf], msg23b()),
+    ok.
+
+flex_pretty_msg23c(suite) ->
+    [];
+flex_pretty_msg23c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config), 
+    {equal, 'MegacoMessage'} = 
+	do(megaco_pretty_text_encoder, [Conf], msg23c()),
+    ok.
+
+flex_pretty_msg23d(suite) ->
+    [];
+flex_pretty_msg23d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config), 
+    {equal, 'MegacoMessage'} = 
+	do(megaco_pretty_text_encoder, [Conf], msg23d()),
     ok.
 
 flex_pretty_msg24(suite) ->
@@ -2000,6 +2239,62 @@ flex_pretty_msg25(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Conf = flex_scanner_conf(Config), 
     {equal, 'MegacoMessage'} = do(megaco_pretty_text_encoder, [Conf], msg25()),
+    ok.
+
+flex_pretty_msg30a(suite) ->
+    [];
+flex_pretty_msg30a(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config), 
+    {equal, 'MegacoMessage'} = do(megaco_pretty_text_encoder, [Conf], msg30a()),
+    ok.
+
+flex_pretty_msg30b(suite) ->
+    [];
+flex_pretty_msg30b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config), 
+    {equal, 'MegacoMessage'} = 
+	do(megaco_pretty_text_encoder, [Conf], msg30b()),
+    ok.
+
+flex_pretty_msg30c(suite) ->
+    [];
+flex_pretty_msg30c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config), 
+    {equal, 'MegacoMessage'} = 
+	do(megaco_pretty_text_encoder, [Conf], msg30c()),
+    ok.
+
+flex_pretty_msg30d(suite) ->
+    [];
+flex_pretty_msg30d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config), 
+    {equal, 'MegacoMessage'} = 
+	do(megaco_pretty_text_encoder, [Conf], msg30d()),
+    ok.
+
+flex_pretty_trans01(suite) ->
+    [];
+flex_pretty_trans01(Config) when list(Config) ->
+    Conf = flex_scanner_conf(Config), 
+    do(megaco_pretty_text_encoder, [], trans01()),
+    ok.
+
+flex_pretty_trans02(suite) ->
+    [];
+flex_pretty_trans02(Config) when list(Config) ->
+    Conf = flex_scanner_conf(Config), 
+    do(megaco_pretty_text_encoder, [], trans02()),
+    ok.
+
+flex_pretty_trans03(suite) ->
+    [];
+flex_pretty_trans03(Config) when list(Config) ->
+    Conf = flex_scanner_conf(Config), 
+    do(megaco_pretty_text_encoder, [], trans03()),
     ok.
 
 
@@ -2221,11 +2516,32 @@ compact_msg22f(Config) when list(Config) ->
 	do(megaco_compact_text_encoder, [], msg22f()),
     ok.
 
-compact_msg23(suite) ->
+compact_msg23a(suite) ->
     [];
-compact_msg23(Config) when list(Config) ->
+compact_msg23a(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
-    {equal, 'MegacoMessage'} = do(megaco_compact_text_encoder, [], msg23()),
+    {equal, 'MegacoMessage'} = do(megaco_compact_text_encoder, [], msg23a()),
+    ok.
+
+compact_msg23b(suite) ->
+    [];
+compact_msg23b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_compact_text_encoder, [], msg23b()),
+    ok.
+
+compact_msg23c(suite) ->
+    [];
+compact_msg23c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_compact_text_encoder, [], msg23c()),
+    ok.
+
+compact_msg23d(suite) ->
+    [];
+compact_msg23d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_compact_text_encoder, [], msg23d()),
     ok.
 
 compact_msg24(suite) ->
@@ -2240,6 +2556,58 @@ compact_msg25(suite) ->
 compact_msg25(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     {equal, 'MegacoMessage'} = do(megaco_compact_text_encoder, [], msg25()),
+    ok.
+
+compact_msg30a(suite) ->
+    [];
+compact_msg30a(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = 
+	do(megaco_compact_text_encoder, [], msg30a()),
+    ok.
+
+compact_msg30b(suite) ->
+    [];
+compact_msg30b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = 
+	do(megaco_compact_text_encoder, [], msg30b()),
+    ok.
+
+compact_msg30c(suite) ->
+    [];
+compact_msg30c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = 
+	do(megaco_compact_text_encoder, [], msg30c()),
+    ok.
+
+
+compact_msg30d(suite) ->
+    [];
+compact_msg30d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = 
+	do(megaco_compact_text_encoder, [], msg30d()),
+    ok.
+
+
+compact_trans01(suite) ->
+    [];
+compact_trans01(Config) when list(Config) ->
+    do(megaco_compact_text_encoder, [], trans01()),
+    ok.
+
+compact_trans02(suite) ->
+    [];
+compact_trans02(Config) when list(Config) ->
+    do(megaco_compact_text_encoder, [], trans02()),
+    ok.
+
+compact_trans03(suite) ->
+    [];
+compact_trans03(Config) when list(Config) ->
+    do(megaco_compact_text_encoder, [], trans03()),
     ok.
 
 
@@ -2533,13 +2901,40 @@ flex_compact_msg22f(Config) when list(Config) ->
 	do(megaco_compact_text_encoder, [Conf], msg22f()),
     ok.
 
-flex_compact_msg23(suite) ->
+flex_compact_msg23a(suite) ->
     [];
-flex_compact_msg23(Config) when list(Config) ->
+flex_compact_msg23a(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Conf = flex_scanner_conf(Config), 
     {equal, 'MegacoMessage'} = 
-	do(megaco_compact_text_encoder, [Conf], msg23()),
+	do(megaco_compact_text_encoder, [Conf], msg23a()),
+    ok.
+
+flex_compact_msg23b(suite) ->
+    [];
+flex_compact_msg23b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config), 
+    {equal, 'MegacoMessage'} = 
+	do(megaco_compact_text_encoder, [Conf], msg23b()),
+    ok.
+
+flex_compact_msg23c(suite) ->
+    [];
+flex_compact_msg23c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config), 
+    {equal, 'MegacoMessage'} = 
+	do(megaco_compact_text_encoder, [Conf], msg23c()),
+    ok.
+
+flex_compact_msg23d(suite) ->
+    [];
+flex_compact_msg23d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config), 
+    {equal, 'MegacoMessage'} = 
+	do(megaco_compact_text_encoder, [Conf], msg23d()),
     ok.
 
 flex_compact_msg24(suite) ->
@@ -2560,6 +2955,64 @@ flex_compact_msg25(Config) when list(Config) ->
 	do(megaco_compact_text_encoder, [Conf], msg25()),
     ok.
 
+flex_compact_msg30a(suite) ->
+    [];
+flex_compact_msg30a(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config), 
+    {equal, 'MegacoMessage'} = 
+	do(megaco_compact_text_encoder, [Conf], msg30a()),
+    ok.
+
+flex_compact_msg30b(suite) ->
+    [];
+flex_compact_msg30b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config), 
+    {equal, 'MegacoMessage'} = 
+	do(megaco_compact_text_encoder, [Conf], msg30b()),
+    ok.
+
+flex_compact_msg30c(suite) ->
+    [];
+flex_compact_msg30c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config), 
+    {equal, 'MegacoMessage'} = 
+	do(megaco_compact_text_encoder, [Conf], msg30c()),
+    ok.
+
+flex_compact_msg30d(suite) ->
+    [];
+flex_compact_msg30d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Conf = flex_scanner_conf(Config), 
+    {equal, 'MegacoMessage'} = 
+	do(megaco_compact_text_encoder, [Conf], msg30d()),
+    ok.
+
+
+flex_compact_trans01(suite) ->
+    [];
+flex_compact_trans01(Config) when list(Config) ->
+    Conf = flex_scanner_conf(Config), 
+    do(megaco_compact_text_encoder, [], trans01()),
+    ok.
+
+flex_compact_trans02(suite) ->
+    [];
+flex_compact_trans02(Config) when list(Config) ->
+    Conf = flex_scanner_conf(Config), 
+    do(megaco_compact_text_encoder, [], trans02()),
+    ok.
+
+flex_compact_trans03(suite) ->
+    [];
+flex_compact_trans03(Config) when list(Config) ->
+    Conf = flex_scanner_conf(Config), 
+    do(megaco_compact_text_encoder, [], trans03()),
+    ok.
+
 
 flex_compact_dm_timers1(suite) ->
     [];
@@ -2568,7 +3021,7 @@ flex_compact_dm_timers1(Config) when list(Config) ->
     M = build_dm_timers_message("1", "2", "3"),
     B = list_to_binary(M),
     Conf = flex_scanner_conf(Config), 
-    case d(megaco_compact_text_encoder, [Conf], B) of
+    case dm(megaco_compact_text_encoder, [Conf], B) of
 	{ok, M1} when record(M1,'MegacoMessage') ->
 	    t("flex_compact_dm_timers1 -> "
 	      "~n   M:  ~s"
@@ -2586,7 +3039,7 @@ flex_compact_dm_timers2(Config) when list(Config) ->
     M = build_dm_timers_message("02", "03", "04"),
     B = list_to_binary(M),
     Conf = flex_scanner_conf(Config), 
-    case d(megaco_compact_text_encoder, [Conf], B) of
+    case dm(megaco_compact_text_encoder, [Conf], B) of
 	{ok, M1} when record(M1,'MegacoMessage') ->
 	    t("flex_compact_dm_timers2 -> "
 	      "~n   M:  ~s"
@@ -2604,7 +3057,7 @@ flex_compact_dm_timers3(Config) when list(Config) ->
     M = build_dm_timers_message("1", "02", "31"),
     B = list_to_binary(M),
     Conf = flex_scanner_conf(Config), 
-    case d(megaco_compact_text_encoder, [Conf], B) of
+    case dm(megaco_compact_text_encoder, [Conf], B) of
 	{ok, M1} when record(M1,'MegacoMessage') ->
 	    t("flex_compact_dm_timers3 -> "
 	      "~n   M:  ~s"
@@ -2622,7 +3075,7 @@ flex_compact_dm_timers4(Config) when list(Config) ->
     M = build_dm_timers_message("10", "21", "99"),
     B = list_to_binary(M),
     Conf = flex_scanner_conf(Config), 
-    case d(megaco_compact_text_encoder, [Conf], B) of
+    case dm(megaco_compact_text_encoder, [Conf], B) of
 	{ok, M1} when record(M1,'MegacoMessage') ->
 	    t("flex_compact_dm_timers4 -> "
 	      "~n   M:  ~s"
@@ -2640,7 +3093,7 @@ flex_compact_dm_timers5(Config) when list(Config) ->
     M = build_dm_timers_message("99", "23", "11"),
     B = list_to_binary(M),
     Conf = flex_scanner_conf(Config), 
-    case d(megaco_compact_text_encoder, [Conf], B) of
+    case dm(megaco_compact_text_encoder, [Conf], B) of
 	{ok, M1} when record(M1,'MegacoMessage') ->
 	    t("flex_compact_dm_timers5 -> "
 	      "~n   M:  ~s"
@@ -2658,7 +3111,7 @@ flex_compact_dm_timers6(Config) when list(Config) ->
     M = build_dm_timers_message("77", "09", "1"),
     B = list_to_binary(M),
     Conf = flex_scanner_conf(Config), 
-    case d(megaco_compact_text_encoder, [Conf], B) of
+    case dm(megaco_compact_text_encoder, [Conf], B) of
 	{ok, M1} when record(M1,'MegacoMessage') ->
 	    t("flex_compact_dm_timers6 -> "
 	      "~n   M:  ~s"
@@ -2965,11 +3418,32 @@ bin_msg22f(Config) when list(Config) ->
     {equal, 'MegacoMessage'} = do(megaco_binary_encoder, [], msg22f()),
     ok.
 
-bin_msg23(suite) ->
+bin_msg23a(suite) ->
     [];
-bin_msg23(Config) when list(Config) ->
+bin_msg23a(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
-    {equal, 'MegacoMessage'} = do(megaco_binary_encoder, [], msg23()),
+    {equal, 'MegacoMessage'} = do(megaco_binary_encoder, [], msg23a()),
+    ok.
+
+bin_msg23b(suite) ->
+    [];
+bin_msg23b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_binary_encoder, [], msg23b()),
+    ok.
+
+bin_msg23c(suite) ->
+    [];
+bin_msg23c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_binary_encoder, [], msg23c()),
+    ok.
+
+bin_msg23d(suite) ->
+    [];
+bin_msg23d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_binary_encoder, [], msg23d()),
     ok.
 
 bin_msg24(suite) ->
@@ -2984,6 +3458,52 @@ bin_msg25(suite) ->
 bin_msg25(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     {equal, 'MegacoMessage'} = do(megaco_binary_encoder, [], msg25()),
+    ok.
+
+bin_msg30a(suite) ->
+    [];
+bin_msg30a(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_binary_encoder, [], msg30a()),
+    ok.
+
+bin_msg30b(suite) ->
+    [];
+bin_msg30b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_binary_encoder, [], msg30b()),
+    ok.
+
+bin_msg30c(suite) ->
+    [];
+bin_msg30c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_binary_encoder, [], msg30c()),
+    ok.
+
+bin_msg30d(suite) ->
+    [];
+bin_msg30d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_binary_encoder, [], msg30d()),
+    ok.
+
+bin_trans01(suite) ->
+    [];
+bin_trans01(Config) when list(Config) ->
+    do(megaco_binary_encoder, [], trans01()),
+    ok.
+
+bin_trans02(suite) ->
+    [];
+bin_trans02(Config) when list(Config) ->
+    do(megaco_binary_encoder, [], trans02()),
+    ok.
+
+bin_trans03(suite) ->
+    [];
+bin_trans03(Config) when list(Config) ->
+    do(megaco_binary_encoder, [], trans03()),
     ok.
 
    
@@ -3199,17 +3719,38 @@ ber_msg22f(Config) when list(Config) ->
     {equal, 'MegacoMessage'} = do(megaco_ber_encoder, [], msg22f()),
     ok.
 
-ber_msg23(suite) ->
+ber_msg23a(suite) ->
     [];
-ber_msg23(Config) when list(Config) ->
+ber_msg23a(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
-    {equal, 'MegacoMessage'} = do(megaco_ber_encoder, [], msg23()),
+    {equal, 'MegacoMessage'} = do(megaco_ber_encoder, [], msg23a()),
+    ok.
+
+ber_msg23b(suite) ->
+    [];
+ber_msg23b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_ber_encoder, [], msg23b()),
+    ok.
+
+ber_msg23c(suite) ->
+    [];
+ber_msg23c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_ber_encoder, [], msg23c()),
+    ok.
+
+ber_msg23d(suite) ->
+    [];
+ber_msg23d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_ber_encoder, [], msg23d()),
     ok.
 
 ber_msg24(suite) ->
     [];
 ber_msg24(Config) when list(Config) ->
-    ?ACQUIRE_NODES(1, Config),
+    %% ?ACQUIRE_NODES(1, Config),
     {equal, 'MegacoMessage'} = do(megaco_ber_encoder, [], msg24()),
     ok.
 
@@ -3220,7 +3761,53 @@ ber_msg25(Config) when list(Config) ->
     {equal, 'MegacoMessage'} = do(megaco_ber_encoder, [], msg25()),
     ok.
 
-   
+ber_msg30a(suite) ->
+    [];
+ber_msg30a(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_ber_encoder, [], msg30a()),
+    ok.
+
+ber_msg30b(suite) ->
+    [];
+ber_msg30b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_ber_encoder, [], msg30b()),
+    ok.
+
+ber_msg30c(suite) ->
+    [];
+ber_msg30c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_ber_encoder, [], msg30c()),
+    ok.
+
+ber_msg30d(suite) ->
+    [];
+ber_msg30d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_ber_encoder, [], msg30d()),
+    ok.
+
+ber_trans01(suite) ->
+    [];
+ber_trans01(Config) when list(Config) ->
+    do(megaco_ber_encoder, [], trans01()),
+    ok.
+
+ber_trans02(suite) ->
+    [];
+ber_trans02(Config) when list(Config) ->
+    do(megaco_ber_encoder, [], trans02()),
+    ok.
+
+ber_trans03(suite) ->
+    [];
+ber_trans03(Config) when list(Config) ->
+    do(megaco_ber_encoder, [], trans03()),
+    ok.
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 ber_bin_msg1a(suite) ->
@@ -3433,11 +4020,32 @@ ber_bin_msg22f(Config) when list(Config) ->
     {equal, 'MegacoMessage'} = do(megaco_ber_bin_encoder, [], msg22f()),
     ok.
 
-ber_bin_msg23(suite) ->
+ber_bin_msg23a(suite) ->
     [];
-ber_bin_msg23(Config) when list(Config) ->
+ber_bin_msg23a(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
-    {equal, 'MegacoMessage'} = do(megaco_ber_bin_encoder, [], msg23()),
+    {equal, 'MegacoMessage'} = do(megaco_ber_bin_encoder, [], msg23a()),
+    ok.
+
+ber_bin_msg23b(suite) ->
+    [];
+ber_bin_msg23b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_ber_bin_encoder, [], msg23b()),
+    ok.
+
+ber_bin_msg23c(suite) ->
+    [];
+ber_bin_msg23c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_ber_bin_encoder, [], msg23c()),
+    ok.
+
+ber_bin_msg23d(suite) ->
+    [];
+ber_bin_msg23d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_ber_bin_encoder, [], msg23d()),
     ok.
 
 ber_bin_msg24(suite) ->
@@ -3452,6 +4060,52 @@ ber_bin_msg25(suite) ->
 ber_bin_msg25(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     {equal, 'MegacoMessage'} = do(megaco_ber_bin_encoder, [], msg25()),
+    ok.
+
+ber_bin_msg30a(suite) ->
+    [];
+ber_bin_msg30a(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_ber_bin_encoder, [], msg30a()),
+    ok.
+
+ber_bin_msg30b(suite) ->
+    [];
+ber_bin_msg30b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_ber_bin_encoder, [], msg30b()),
+    ok.
+
+ber_bin_msg30c(suite) ->
+    [];
+ber_bin_msg30c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_ber_bin_encoder, [], msg30c()),
+    ok.
+
+ber_bin_msg30d(suite) ->
+    [];
+ber_bin_msg30d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_ber_bin_encoder, [], msg30d()),
+    ok.
+
+ber_bin_trans01(suite) ->
+    [];
+ber_bin_trans01(Config) when list(Config) ->
+    do(megaco_ber_bin_encoder, [], trans01()),
+    ok.
+
+ber_bin_trans02(suite) ->
+    [];
+ber_bin_trans02(Config) when list(Config) ->
+    do(megaco_ber_bin_encoder, [], trans02()),
+    ok.
+
+ber_bin_trans03(suite) ->
+    [];
+ber_bin_trans03(Config) when list(Config) ->
+    do(megaco_ber_bin_encoder, [], trans03()),
     ok.
 
 
@@ -3667,11 +4321,32 @@ per_msg22f(Config) when list(Config) ->
     {equal, 'MegacoMessage'} = do(megaco_per_encoder, [], msg22f()),
     ok.
 
-per_msg23(suite) ->
+per_msg23a(suite) ->
     [];
-per_msg23(Config) when list(Config) ->
+per_msg23a(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
-    {equal, 'MegacoMessage'} = do(megaco_per_encoder, [], msg23()),
+    {equal, 'MegacoMessage'} = do(megaco_per_encoder, [], msg23a()),
+    ok.
+
+per_msg23b(suite) ->
+    [];
+per_msg23b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_per_encoder, [], msg23b()),
+    ok.
+
+per_msg23c(suite) ->
+    [];
+per_msg23c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_per_encoder, [], msg23c()),
+    ok.
+
+per_msg23d(suite) ->
+    [];
+per_msg23d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_per_encoder, [], msg23d()),
     ok.
 
 per_msg24(suite) ->
@@ -3686,6 +4361,52 @@ per_msg25(suite) ->
 per_msg25(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     {equal, 'MegacoMessage'} = do(megaco_per_encoder, [], msg25()),
+    ok.
+
+per_msg30a(suite) ->
+    [];
+per_msg30a(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_per_encoder, [], msg30a()),
+    ok.
+
+per_msg30b(suite) ->
+    [];
+per_msg30b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_per_encoder, [], msg30b()),
+    ok.
+
+per_msg30c(suite) ->
+    [];
+per_msg30c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_per_encoder, [], msg30c()),
+    ok.
+
+per_msg30d(suite) ->
+    [];
+per_msg30d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_per_encoder, [], msg30d()),
+    ok.
+
+per_trans01(suite) ->
+    [];
+per_trans01(Config) when list(Config) ->
+    do(megaco_per_encoder, [], trans01()),
+    ok.
+
+per_trans02(suite) ->
+    [];
+per_trans02(Config) when list(Config) ->
+    do(megaco_per_encoder, [], trans02()),
+    ok.
+
+per_trans03(suite) ->
+    [];
+per_trans03(Config) when list(Config) ->
+    do(megaco_per_encoder, [], trans03()),
     ok.
 
 
@@ -3901,11 +4622,32 @@ per_bin_msg22f(Config) when list(Config) ->
     {equal, 'MegacoMessage'} = do(megaco_per_bin_encoder, [], msg22f()),
     ok.
 
-per_bin_msg23(suite) ->
+per_bin_msg23a(suite) ->
     [];
-per_bin_msg23(Config) when list(Config) ->
+per_bin_msg23a(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
-    {equal, 'MegacoMessage'} = do(megaco_per_bin_encoder, [], msg23()),
+    {equal, 'MegacoMessage'} = do(megaco_per_bin_encoder, [], msg23a()),
+    ok.
+
+per_bin_msg23b(suite) ->
+    [];
+per_bin_msg23b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_per_bin_encoder, [], msg23b()),
+    ok.
+
+per_bin_msg23c(suite) ->
+    [];
+per_bin_msg23c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_per_bin_encoder, [], msg23c()),
+    ok.
+
+per_bin_msg23d(suite) ->
+    [];
+per_bin_msg23d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_per_bin_encoder, [], msg23d()),
     ok.
 
 per_bin_msg24(suite) ->
@@ -3922,239 +4664,51 @@ per_bin_msg25(Config) when list(Config) ->
     {equal, 'MegacoMessage'} = do(megaco_per_bin_encoder, [], msg25()),
     ok.
 
+per_bin_msg30a(suite) ->
+    [];
+per_bin_msg30a(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_per_bin_encoder, [], msg30a()),
+    ok.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+per_bin_msg30b(suite) ->
+    [];
+per_bin_msg30b(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_per_bin_encoder, [], msg30b()),
+    ok.
 
-% per_bin_opt_msg1a(suite) ->
-%     [];
-% per_bin_opt_msg1a(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg1a()),
-%     ok.
+per_bin_msg30c(suite) ->
+    [];
+per_bin_msg30c(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_per_bin_encoder, [], msg30c()),
+    ok.
 
-% per_bin_opt_msg1b(suite) ->
-%     [];
-% per_bin_opt_msg1b(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg1b()),
-%     ok.
+per_bin_msg30d(suite) ->
+    [];
+per_bin_msg30d(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    {equal, 'MegacoMessage'} = do(megaco_per_bin_encoder, [], msg30d()),
+    ok.
 
-% per_bin_opt_msg2(suite) ->
-%     [];
-% per_bin_opt_msg2(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg2()),
-%     ok.
+per_bin_trans01(suite) ->
+    [];
+per_bin_trans01(Config) when list(Config) ->
+    do(megaco_per_bin_encoder, [], trans01()),
+    ok.
 
-% per_bin_opt_msg3(suite) ->
-%     [];
-% per_bin_opt_msg3(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg3()),
-%     ok.
+per_bin_trans02(suite) ->
+    [];
+per_bin_trans02(Config) when list(Config) ->
+    do(megaco_per_bin_encoder, [], trans02()),
+    ok.
 
-% per_bin_opt_msg4(suite) ->
-%     [];
-% per_bin_opt_msg4(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg4()),
-%     ok.
-
-% per_bin_opt_msg5(suite) ->
-%     [];
-% per_bin_opt_msg5(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg5()),
-%     ok.
-
-% per_bin_opt_msg6a(suite) ->
-%     [];
-% per_bin_opt_msg6a(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg6a()),
-%     ok.
-
-% per_bin_opt_msg6b(suite) ->
-%     [];
-% per_bin_opt_msg6b(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg6b()),
-%     ok.
-
-% per_bin_opt_msg7(suite) ->
-%     [];
-% per_bin_opt_msg7(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg7()),
-%     ok.
-
-% per_bin_opt_msg8a(suite) ->
-%     [];
-% per_bin_opt_msg8a(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg8a()),
-%     ok.
-
-% per_bin_opt_msg8b(suite) ->
-%     [];
-% per_bin_opt_msg8b(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg8b()),
-%     ok.
-
-% per_bin_opt_msg9(suite) ->
-%     [];
-% per_bin_opt_msg9(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg9()),
-%     ok.
-
-% per_bin_opt_msg10(suite) ->
-%     [];
-% per_bin_opt_msg10(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg10()),
-%     ok.
-
-% per_bin_opt_msg11(suite) ->
-%     [];
-% per_bin_opt_msg11(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg11()),
-%     ok.
-
-% per_bin_opt_msg12(suite) ->
-%     [];
-% per_bin_opt_msg12(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg12()),
-%     ok.
-
-% per_bin_opt_msg13(suite) ->
-%     [];
-% per_bin_opt_msg13(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg13()),
-%     ok.
-
-% per_bin_opt_msg14(suite) ->
-%     [];
-% per_bin_opt_msg14(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg14()),
-%     ok.
-
-% per_bin_opt_msg15(suite) ->
-%     [];
-% per_bin_opt_msg15(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg15()),
-%     ok.
-
-% per_bin_opt_msg16(suite) ->
-%     [];
-% per_bin_opt_msg16(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg16()),
-%     ok.
-
-% per_bin_opt_msg17(suite) ->
-%     [];
-% per_bin_opt_msg17(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg17()),
-%     ok.
-
-% per_bin_opt_msg18(suite) ->
-%     [];
-% per_bin_opt_msg18(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg18()),
-%     ok.
-
-% per_bin_opt_msg19(suite) ->
-%     [];
-% per_bin_opt_msg19(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg19()),
-%     ok.
-
-% per_bin_opt_msg20(suite) ->
-%     [];
-% per_bin_opt_msg20(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg20()),
-%     ok.
-
-% per_bin_opt_msg21(suite) ->
-%     [];
-% per_bin_opt_msg21(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg21()),
-%     ok.
-
-% per_bin_opt_msg22a(suite) ->
-%     [];
-% per_bin_opt_msg22a(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg22a()),
-%     ok.
-
-% per_bin_opt_msg22b(suite) ->
-%     [];
-% per_bin_opt_msg22b(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg22b()),
-%     ok.
-
-% per_bin_opt_msg22c(suite) ->
-%     [];
-% per_bin_opt_msg22c(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg22c()),
-%     ok.
-
-% per_bin_opt_msg22d(suite) ->
-%     [];
-% per_bin_opt_msg22d(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg22d()),
-%     ok.
-
-% per_bin_opt_msg22e(suite) ->
-%     [];
-% per_bin_opt_msg22e(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg22e()),
-%     ok.
-
-% per_bin_opt_msg22f(suite) ->
-%     [];
-% per_bin_opt_msg22f(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg22f()),
-%     ok.
-
-% per_bin_opt_msg23(suite) ->
-%     [];
-% per_bin_opt_msg23(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg23()),
-%     ok.
-
-% per_bin_opt_msg24(suite) ->
-%     [];
-% per_bin_opt_msg24(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg24()),
-%     ok.
-
-% per_bin_opt_msg25(suite) ->
-%     [];
-% per_bin_opt_msg25(Config) when list(Config) ->
-%     ?ACQUIRE_NODES(1, Config),
-%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg25()),
-%     ok.
+per_bin_trans03(suite) ->
+    [];
+per_bin_trans03(Config) when list(Config) ->
+    do(megaco_per_bin_encoder, [], trans03()),
+    ok.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -4197,7 +4751,7 @@ compact_otp4011_msg3(Config) when list(Config) ->
 
 
 compact_otp4011(M) ->
-    case d(megaco_compact_text_encoder, [], list_to_binary(M)) of
+    case dm(megaco_compact_text_encoder, [], list_to_binary(M)) of
 	{ok, _} ->
 	    exit({decoded_erroneous_message,M});
 	{error, {decode_error, Error}} when list(Error) -> % Expected result
@@ -4240,7 +4794,7 @@ compact_otp4013_msg1(Config) when list(Config) ->
     d("compact_otp4013_msg1 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     M = "MEGCAO/1 MG1 T=12345678{C=-{SC=root{SV{MT=RS,RE=901}}}}",
-    case d(megaco_compact_text_encoder, [], list_to_binary(M)) of
+    case dm(megaco_compact_text_encoder, [], list_to_binary(M)) of
 	{ok, _} ->
 	    exit({decoded_erroneous_message,M});
 	{error, {decode_error, Error}} when list(Error) -> % Expected result
@@ -4265,7 +4819,7 @@ compact_otp4085_msg1(Config) when list(Config) ->
     d("compact_otp4085_msg1 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     M = compact_otp4085_erroneous_msg(),
-    case d(megaco_compact_text_encoder, [], list_to_binary(M)) of
+    case dm(megaco_compact_text_encoder, [], list_to_binary(M)) of
 	{ok, M} ->
 	    exit({decoded_erroneous_message,M});
 	{error, {decode_error, Error}} when list(Error) -> % Expected result
@@ -4301,7 +4855,7 @@ compact_otp4085_msg2(Config) when list(Config) ->
     d("compact_otp4085_msg1 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     M1 = compact_otp4085_erroneous_msg() ++ "}",
-    case d(megaco_compact_text_encoder, [], list_to_binary(M1)) of
+    case dm(megaco_compact_text_encoder, [], list_to_binary(M1)) of
 	{ok, M2} ->
 	    l("compact_otp4085_msg1 -> successfull decode"
 	      "~n   M2: ~p", [M2]),
@@ -4331,7 +4885,7 @@ compact_otp4280_msg1(Config) when list(Config) ->
     d("compact_otp4280_msg1 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     BinMsg = list_to_binary(compact_otp4280_msg()),
-    case d(megaco_compact_text_encoder, [], BinMsg) of
+    case dm(megaco_compact_text_encoder, [], BinMsg) of
 	{ok, Msg} ->
 	    ok;
 	{error, {decode_error, Error}} when list(Error) -> 
@@ -4366,7 +4920,7 @@ compact_otp4299_msg1(Config) when list(Config) ->
     d("compact_otp4299_msg1 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     BinMsg = list_to_binary(compact_otp4299_msg()),
-    case d(megaco_compact_text_encoder, [], BinMsg) of
+    case dm(megaco_compact_text_encoder, [], BinMsg) of
 	{ok, Msg} ->
 	    ok;
 
@@ -4388,7 +4942,7 @@ compact_otp4299_msg2(Config) when list(Config) ->
     {Pid, Conf} = compact_otp4299_msg2_init(),
     
     BinMsg = list_to_binary(compact_otp4299_msg()),
-    Res = d(megaco_compact_text_encoder, [Conf], BinMsg),
+    Res = dm(megaco_compact_text_encoder, [Conf], BinMsg),
     compact_otp4299_msg2_finish(Pid),
 
     case Res of
@@ -4442,7 +4996,7 @@ compact_otp4359_msg1(Config) when list(Config) ->
     d("compact_otp4359_msg1 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     BinMsg = list_to_binary(compact_otp4359_msg()),
-    case d(megaco_compact_text_encoder, [], BinMsg) of
+    case dm(megaco_compact_text_encoder, [], BinMsg) of
 	{ok, #'MegacoMessage'{mess = Mess}} ->
 	    {transactions, Trans} = Mess#'Message'.messageBody,
 	    case Trans of
@@ -4471,9 +5025,9 @@ pretty_otp4632_msg1(Config) when list(Config) ->
     d("pretty_otp4632_msg1 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     Msg0 = pretty_otp4632_msg1(),
-    case e(megaco_pretty_text_encoder, [], Msg0) of
+    case em(megaco_pretty_text_encoder, [], Msg0) of
 	{ok, BinMsg} when binary(BinMsg) ->
-	    {ok, Msg1} = d(megaco_pretty_text_encoder, [], BinMsg),
+	    {ok, Msg1} = dm(megaco_pretty_text_encoder, [], BinMsg),
 	    {equal, _} = chk_MegacoMessage(Msg0,Msg1),
 	    Msg0 = Msg1,
 	    ok;
@@ -4492,9 +5046,9 @@ pretty_otp4632_msg2(Config) when list(Config) ->
     d("pretty_otp4632_msg2 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     Msg0 = pretty_otp4632_msg2(),
-    case e(megaco_pretty_text_encoder, [], Msg0) of
+    case em(megaco_pretty_text_encoder, [], Msg0) of
 	{ok, BinMsg} when binary(BinMsg) ->
-	    {ok, Msg1} = d(megaco_pretty_text_encoder, [], BinMsg),
+	    {ok, Msg1} = dm(megaco_pretty_text_encoder, [], BinMsg),
 	    {equal, _} = chk_MegacoMessage(Msg0,Msg1),
 	    Msg0 = Msg1,
 	    ok;
@@ -4515,11 +5069,11 @@ pretty_otp4632_msg3(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msg0 = pretty_otp4632_msg3(),
     BinMsg0 = list_to_binary(Msg0),
-    case d(megaco_pretty_text_encoder, [], BinMsg0) of
+    case dm(megaco_pretty_text_encoder, [], BinMsg0) of
 	{ok, Msg} when record(Msg, 'MegacoMessage') ->
-	    {ok, BinMsg1} = e(megaco_pretty_text_encoder, [], Msg),
+	    {ok, BinMsg1} = em(megaco_pretty_text_encoder, [], Msg),
 	    Msg1 = binary_to_list(BinMsg1),
-	    io:format("Msg1:~n~s~n", [Msg1]),
+	    %% io:format("Msg1:~n~s~n", [Msg1]),
 	    Msg0 = Msg1,
 	    ok;
 	Else ->
@@ -4540,9 +5094,9 @@ pretty_otp4632_msg4(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msg0 = pretty_otp4632_msg4(),
     BinMsg0 = list_to_binary(Msg0),
-    case d(megaco_pretty_text_encoder, [], BinMsg0) of
+    case dm(megaco_pretty_text_encoder, [], BinMsg0) of
 	{ok, Msg} when record(Msg, 'MegacoMessage') ->
-	    {ok, BinMsg1} = e(megaco_pretty_text_encoder, [], Msg),
+	    {ok, BinMsg1} = em(megaco_pretty_text_encoder, [], Msg),
 	    Msg1 = binary_to_list(BinMsg1),
 	    %% io:format("Msg1:~n~s~n", [Msg1]),
 	    pretty_otp4632_msg4_chk(Msg0,Msg1);
@@ -4569,6 +5123,73 @@ pretty_otp4632_msg4_chk([$R,$e,$a,$s,$o,$n,$ ,$=,$ ,$9,$0,$1|Rest0],
     ok;
 pretty_otp4632_msg4_chk([_|Rest0], [_|Rest1]) ->
     pretty_otp4632_msg4_chk(Rest0,Rest1).
+
+
+pretty_otp4710_msg1(suite) ->
+    [];
+pretty_otp4710_msg1(Config) when list(Config) ->
+    d("pretty_otp4710_msg1 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Msg0 = pretty_otp4710_msg1(),
+    case em(megaco_pretty_text_encoder, [], Msg0) of
+	{ok, BinMsg} when binary(BinMsg) ->
+	    {ok, Msg1} = dm(megaco_pretty_text_encoder, [], BinMsg),
+	    {equal, _} = chk_MegacoMessage(Msg0,Msg1),
+	    Msg0 = Msg1,
+	    ok;
+	Else ->
+	    t("pretty_otp4710_msg1 -> "
+	      "~n   Else: ~w", [Else]),
+	    exit({unexpected_decode_result, Else})
+    end.
+
+pretty_otp4710_msg1() ->
+    msg40().
+
+
+pretty_otp4710_msg2(suite) ->
+    [];
+pretty_otp4710_msg2(Config) when list(Config) ->
+    d("pretty_otp4710_msg2 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Msg0 = pretty_otp4710_msg2(),
+    BinMsg0 = list_to_binary(Msg0),
+    case dm(megaco_pretty_text_encoder, [], BinMsg0) of
+	{ok, Msg} when record(Msg, 'MegacoMessage') ->
+	    {ok, BinMsg1} = em(megaco_pretty_text_encoder, [], Msg),
+	    Msg1 = binary_to_list(BinMsg1),
+	    %% io:format("Msg1:~n~s~n", [Msg1]),
+	    pretty_otp4710_msg2_chk(Msg0,Msg1);
+	Else ->
+	    t("pretty_otp4710_msg2 -> "
+	      "~n   Else: ~w", [Else]),
+	    exit({unexpected_decode_result, Else})
+    end.
+
+pretty_otp4710_msg2() ->
+    "Authentication = 0xEFCDAB89:0x12345678:0x1234567889ABCDEF76543210\nMEGACO/1 [124.124.124.222]\nTransaction = 9998 {\n\tContext = - {\n\t\tServiceChange = root {\n\t\t\tServices {\n\t\t\t\tMethod = Restart,\n\t\t\t\tServiceChangeAddress = 55555,\n\t\t\t\tProfile = resgw/1,\n\t\t\t\tReason = \"901 mg col boot\"\n\t\t\t}\n\t\t}\n\t}\n}".
+
+pretty_otp4710_msg2_chk(Msg,Msg) ->
+    ok;
+pretty_otp4710_msg2_chk(
+  [$A,$u,$t,$h,$e,$n,$t,$i,$c,$a,$t,$i,$o,$n,$=,$ |Msg0],
+  [$A,$u,$t,$h,$e,$n,$t,$i,$c,$a,$t,$i,$o,$n,$=,$ |Msg1]) ->
+    {AH0, Rest0} = pretty_otp4710_msg2_chk_ah(Msg0, []),
+    {AH1, Rest1} = pretty_otp4710_msg2_chk_ah(Msg1, []),
+    case AH0 == AH1 of
+	true ->
+	    exit({message_not_equal, Rest0, Rest1});
+	false ->
+	    exit({auth_header_not_equal, AH0, AH1})
+    end.
+
+pretty_otp4710_msg2_chk_ah([], _Acc) ->
+    exit(no_auth_header_found);
+pretty_otp4710_msg2_chk_ah([$M,$E,$G,$A,$C,$O,$/,_|Rest], Acc) ->
+    {lists:reverse(Acc), Rest};
+pretty_otp4710_msg2_chk_ah([C|R], Acc) ->
+    pretty_otp4710_msg2_chk_ah(R, [C|Acc]).
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -4822,7 +5443,8 @@ do_time_test_encode(Timeout, Codec, Desc, Conf, Msg) ->
         {error, Pid, Error} ->
             {error, Error};
 	{'EXIT', Pid, Reason} ->
-	    ?LOG("time tester ~s exited: ~n~p~n", [Desc, Reason]),
+	    %% ?LOG("time tester(e) ~s exited: ~n~p~n", [Desc, Reason]),
+	    %% io:format("~ntime tester(e) ~s exited: ~n~p~n", [Desc, Reason]),
 	    exit({time_tester_crash, Reason})
     after Timeout ->
 	    exit(no_result_from_time_tester)
@@ -4851,7 +5473,8 @@ do_time_test_decode(Timeout, Codec, Desc, Conf, Msg) ->
         {error, Pid, Error} ->
             {error, Error};
 	{'EXIT', Pid, Reason} ->
-	    ?LOG("time tester ~s exited: ~n~p~n", [Desc, Reason]),
+	    %% ?LOG("time tester(d) ~s exited: ~n~p~n", [Desc, Reason]),
+	    %% io:format("~ntime tester(d) ~s exited: ~n~p~n", [Desc, Reason]),
 	    exit({time_tester_crash, Reason})
     after Timeout ->
 	    exit(no_result_from_time_tester)
@@ -4978,9 +5601,16 @@ do_time_test_msgs() ->
      {msg20,  msg20()}, 
      {msg21,  msg21()}, 
      {msg22a, msg22a()}, 
-     {msg23,  msg23()}, 
+     {msg23a, msg23a()}, 
+     {msg23b, msg23b()}, 
+     {msg23c, msg23c()}, 
+     {msg23d, msg23d()}, 
      {msg24,  msg24()}, 
-     {msg25,  msg25()}].
+     {msg25,  msg25()}, 
+     {msg30a, msg30a()}, 
+     {msg30b, msg30b()}, 
+     {msg30c, msg30c()}, 
+     {msg30d, msg30d()}].
     
 %      {msg22b, msg22b()}, 
 %      {msg22c, msg22c()}, 
@@ -4989,9 +5619,17 @@ do_time_test_msgs() ->
 
 do(Codec, Conf, M1) ->
     %% d("do -> entry", []),
+%     io:format("do -> entry with"
+% 	      "~n   Codec: ~p"
+% 	      "~n   Conf:  ~p"
+% 	      "~n   M1:    ~p"
+% 	      "~n", [Codec, Conf, M1]),
     case (catch encode_decode(Codec, Conf, M1)) of
-	{ok, M2} ->
+	{ok, M2} when record(M2, 'MegacoMessage') ->
 	    %% d("do -> check messages", []),
+% 	    io:format("do -> encode_decode done now check messages"
+% 		      "~n   M2: ~p"
+% 		      "~n", [M2]),
 	    case (catch chk_MegacoMessage(M1, M2)) of
 		{equal, M} -> 
 		    {equal, M};
@@ -5002,6 +5640,8 @@ do(Codec, Conf, M1) ->
 		{not_equal, What} ->
 		    exit({not_equal, What, M1, M2})
 	    end;
+	ok ->
+	    ok;
 	{error, {encode_error, {asn1, {undef, L}}} = Reason} when list(L) ->
 	    %% Very crude way to find out if the problems is that per_bin
 	    %% is not available in the "current" asn1 version
@@ -5018,51 +5658,92 @@ do(Codec, Conf, M1) ->
     end.
 
 
-encode_decode(Codec, Conf, M1) ->
-%     d("encode_decode -> entry with"
-%       "~n   Codec: ~p"
-%       "~n   Conf:  ~p"
-%       "~n   M1:    ~p", [Codec, Conf, M1]),
-    case e(Codec,Conf,M1) of
+encode_decode(Codec, Conf, M1) when record(M1, 'MegacoMessage') ->
+    %%     d("encode_decode -> entry with"
+    %%       "~n   Codec: ~p"
+    %%       "~n   Conf:  ~p"
+    %%       "~n   M1:    ~p", [Codec, Conf, M1]),
+    case em(Codec,Conf,M1) of
 	{ok,B} ->
-	    d(Codec,Conf,B);
+	    dm(Codec,Conf,B);
+	Error ->
+	    Error
+    end;
+encode_decode(Codec, Conf, Trans) ->
+    %%     d("encode_decode -> entry with"
+    %%       "~n   Codec: ~p"
+    %%       "~n   Conf:  ~p"
+    %%       "~n   M1:    ~p", [Codec, Conf, M1]),
+    case et(Codec,Conf,Trans) of
+	{ok,B} ->
+	    ok;
 	Error ->
 	    Error
     end.
+
     
 
-e(Codec,Config,Msg) ->
-%     d("e -> entry with"
-%       "~n   Codec:  ~p"
-%       "~n   Config: ~p", [Codec, Config]),
-    %% io:format("Msg: ~n~p~n", [Msg]),
+em(Codec,Config,Msg) ->
+    io:format("em -> entry with"
+	      "~n   Codec:  ~p"
+	      "~n   Config: ~p"
+	      "~n   Msg:    ~p"
+	      "~n", [Codec, Config, Msg]),
+    %%     io:format("em -> entry~n", []),
     case (catch apply(Codec,encode_message,[Config,Msg])) of
 	{ok,EncodedMsg} when binary(EncodedMsg) ->
-%  	    t("e -> decode ok, size: ~p"
-% 	      "~n   ~p", [size(EncodedMsg),binary_to_list(EncodedMsg)]),
+	    %% t("e -> encode ok, size: ~p"
+	    %%   "~n   ~p", [size(EncodedMsg),binary_to_list(EncodedMsg)]),
+  	    io:format("encode ok (~p) ", [size(EncodedMsg)]),
 	    {ok,EncodedMsg};
 	{'EXIT',Reason} ->
-% 	    e("e -> encode exit signal:"
-% 	      "~n   Reason: ~p", [Reason]),
+	    %% 	    e("e -> encode exit signal:"
+	    %% 	      "~n   Reason: ~p", [Reason]),
 	    {error, {encode_exit, Reason, Msg}};
 	{error,Reason} ->
-% 	    e("e -> encode error:"
-% 	      "~n   Reason: ~p", [Reason]),
+	    %% 	    e("e -> encode error:"
+	    %% 	      "~n   Reason: ~p", [Reason]),
 	    {error, {encode_error, Reason, Msg}};
 	Other ->
-% 	    l("e -> unknown reply:"
-% 	      "~n   Other: ~p", [Other]),
+	    %% 	    l("e -> unknown reply:"
+	    %% 	      "~n   Other: ~p", [Other]),
 	    Other
     end.
 
-d(Codec, Config, BinMsg) when binary(BinMsg) ->
+et(Codec,Config,Trans) ->
+    %%     d("e -> entry with"
+    %%       "~n   Codec:  ~p"
+    %%       "~n   Config: ~p", [Codec, Config]),
+    io:format("et -> entry with"
+	      "~n   Trans: ~p"
+	      "~n", [Trans]),
+    case (catch apply(Codec,encode_transaction,[Config,Trans])) of
+	{ok,EncodedTrans} when binary(EncodedTrans) ->
+  	    io:format("encode ok (~p) ", [size(EncodedTrans)]),
+	    {ok,EncodedTrans};
+	{'EXIT',Reason} ->
+	    %% 	    e("e -> encode exit signal:"
+	    %% 	      "~n   Reason: ~p", [Reason]),
+	    {error, {encode_exit, Reason, Trans}};
+	{error,Reason} ->
+	    %% 	    e("e -> encode error:"
+	    %% 	      "~n   Reason: ~p", [Reason]),
+	    {error, {encode_error, Reason, Trans}};
+	Other ->
+	    %% 	    l("e -> unknown reply:"
+	    %% 	      "~n   Other: ~p", [Other]),
+	    Other
+    end.
+
+dm(Codec, Config, BinMsg) when binary(BinMsg) ->
 %     d("d -> entry with"
 %       "~n   Codec:  ~p"
 %       "~n   Config: ~p", [Codec, Config]),
     %% io:format("Msg: ~n~s~n", [binary_to_list(BinMsg)]),
     case (catch apply(Codec,decode_message,[Config, BinMsg])) of
 	{ok,DecodedMsg} ->
-% 	    t("d -> ~n   ~p",[DecodedMsg]),
+	    io:format("decode ok~n", []),
+ 	    t("d -> ~n   ~p",[DecodedMsg]),
 	    {ok,DecodedMsg};
 	{'EXIT',Reason} ->
 	    e("d -> exit signal:"
@@ -5081,6 +5762,37 @@ d(Codec, Config, BinMsg) when binary(BinMsg) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+msg_actions([], Actions) ->
+    lists:reverse(Actions);
+msg_actions([{CtxId, CmdReqs}|ActionInfo], Actions) ->
+    Action = #'ActionRequest'{contextId       = CtxId,
+			      commandRequests = CmdReqs},
+    msg_actions(ActionInfo, [Action|Actions]).
+
+megaco_trans_req([], Transactions) ->
+    {transactions, lists:reverse(Transactions)};
+megaco_trans_req([{TransId, ActionInfo}|TransInfo], Transactions) ->
+    Actions  = msg_actions(ActionInfo, []),
+    TransReq = {transactionRequest,
+		#'TransactionRequest'{transactionId = TransId,
+				      actions       = Actions}},
+    megaco_trans_req(TransInfo, [TransReq|Transactions]).
+
+megaco_message(Version, Mid, Body) ->
+    #'MegacoMessage'{mess = #'Message'{version     = Version,
+                                       mId         = Mid,
+                                       messageBody = Body}}.
+
+megaco_message(Auth, Version, Mid, Body) ->
+    #'MegacoMessage'{authHeader = Auth,
+		     mess = #'Message'{version     = Version,
+                                       mId         = Mid,
+                                       messageBody = Body}}.
+
+msg_request(Mid, TransInfo) ->
+    TransReq = megaco_trans_req(TransInfo, []),
+    megaco_message(1, Mid, TransReq).
+
 msg_request(Mid, TransId, ContextId, CmdReq) when list(CmdReq) ->
     Actions = [#'ActionRequest'{contextId = ContextId,
                                 commandRequests = CmdReq}],
@@ -5088,21 +5800,45 @@ msg_request(Mid, TransId, ContextId, CmdReq) when list(CmdReq) ->
            [{transactionRequest,
              #'TransactionRequest'{transactionId = TransId,
                                    actions = Actions}}]},
-    #'MegacoMessage'{mess = #'Message'{version = 1,
-                                       mId = Mid,
-                                       messageBody = Req}}.
+    megaco_message(1, Mid, Req).
+
+msg_request(Auth, Mid, TransId, ContextId, CmdReq) when list(CmdReq) ->
+    Actions = [#'ActionRequest'{contextId = ContextId,
+                                commandRequests = CmdReq}],
+    Req = {transactions,
+           [{transactionRequest,
+             #'TransactionRequest'{transactionId = TransId,
+                                   actions = Actions}}]},
+    megaco_message(Auth, 1, Mid, Req).
 
 msg_reply(Mid, TransId, ContextId, CmdReply) when list(CmdReply) ->
-    Actions = [#'ActionReply'{contextId = ContextId,
-                              commandReply = CmdReply}],
+    Actions = [cre_actionReply(ContextId, CmdReply)],
     Req = {transactions,
-           [{transactionReply,
-             #'TransactionReply'{transactionId = TransId,
-                                 transactionResult = 
-				 {actionReplies, Actions}}}]},
-    #'MegacoMessage'{mess = #'Message'{version = 1,
-                                       mId = Mid,
-                                       messageBody = Req}}.
+           [{transactionReply, cre_transactionReply(TransId, Actions)}]},
+    cre_megacoMessage(1, Mid, Req).
+
+msg_ack(Mid, [Range|_] = Ranges) when tuple(Range) ->
+    msg_ack(Mid, [Ranges]);
+
+msg_ack(Mid, Ranges) ->
+    %% TRAs = make_tras(Ranges, []),
+    TRAs = make_tras(Ranges),
+    Req  = {transactions, TRAs},
+    cre_megacoMessage(1, Mid, Req).
+
+make_tras(TRARanges) ->
+    F = fun(R) -> {transactionResponseAck, make_tra(R)} end,
+    lists:map(F, TRARanges).
+
+% make_tras([], TRAs) ->
+%     lists:reverse(TRAs);
+% make_tras([TRARange|TRARanges], TRAs) ->
+%     TRA = {transactionResponseAck, make_tra(TRARange)},
+%     make_tras(TRARanges, [TRA|TRAs]).
+
+make_tra(Ranges) ->
+    F = fun({F,L}) -> cre_transactionAck(F,L) end,
+    lists:map(F, Ranges).
 
 
 %% -------------------------------------------------------------------------
@@ -5552,15 +6288,66 @@ msg22(Mid, N) ->
 
 %% --------------------------
 
-msg23() ->
-    msg23(?MG2_MID).
-msg23(Mid) ->
+msg23a() ->
+    msg23a(?MG2_MID).
+msg23a(Mid) ->
     TimeStamp = cre_timeNotation("19990729","24020002"),
     Event     = cre_observedEvent("al/on",TimeStamp),
     Desc      = cre_observedEventsDesc(1235,[Event]),
     NotifyReq = cre_notifyReq([#megaco_term_id{id = ?A5555}],Desc),
     CmdReq    = cre_commandReq({notifyReq, NotifyReq}),
     msg_request(Mid, 50008, 5000, [CmdReq]).
+
+
+msg23b() ->
+    msg23b(?MG2_MID).
+msg23b(Mid) ->
+    TimeStamp  = cre_timeNotation("19990729","24020002"),
+    Event      = cre_observedEvent("al/on",TimeStamp),
+    Desc       = cre_observedEventsDesc(1235,[Event]),
+    NotifyReq1 = cre_notifyReq([#megaco_term_id{id = ?A5555}],Desc),
+    CmdReq1    = cre_commandReq({notifyReq, NotifyReq1}),
+    NotifyReq2 = cre_notifyReq([#megaco_term_id{id = ?A5556}],Desc),
+    CmdReq2    = cre_commandReq({notifyReq, NotifyReq2}),
+    ActionInfo = [{5000, [CmdReq1]}, {5001, [CmdReq2]}],
+    TransInfo  = [{50008, ActionInfo}],
+    msg_request(Mid, TransInfo).
+
+
+msg23c() ->
+    msg23c(?MG2_MID).
+msg23c(Mid) ->
+    TimeStamp  = cre_timeNotation("19990729","24020002"),
+    Event      = cre_observedEvent("al/on",TimeStamp),
+    Desc       = cre_observedEventsDesc(1235,[Event]),
+    NotifyReq1 = cre_notifyReq([#megaco_term_id{id = ?A5555}],Desc),
+    CmdReq1    = cre_commandReq({notifyReq, NotifyReq1}),
+    NotifyReq2 = cre_notifyReq([#megaco_term_id{id = ?A5556}],Desc),
+    CmdReq2    = cre_commandReq({notifyReq, NotifyReq2}),
+    ActionInfo1 = [{5000, [CmdReq1]}],
+    ActionInfo2 = [{5001, [CmdReq2]}],
+    TransInfo   = [{50008, ActionInfo1}, {50009, ActionInfo2}],
+    msg_request(Mid, TransInfo).
+
+
+msg23d() ->
+    msg23d(?MG2_MID).
+msg23d(Mid) ->
+    TimeStamp  = cre_timeNotation("19990729","24020002"),
+    Event      = cre_observedEvent("al/on",TimeStamp),
+    Desc       = cre_observedEventsDesc(1235,[Event]),
+    NotifyReq1 = cre_notifyReq([#megaco_term_id{id = ?A5555}],Desc),
+    CmdReq1    = cre_commandReq({notifyReq, NotifyReq1}),
+    NotifyReq2 = cre_notifyReq([#megaco_term_id{id = ?A5556}],Desc),
+    CmdReq2    = cre_commandReq({notifyReq, NotifyReq2}),
+    NotifyReq3 = cre_notifyReq([#megaco_term_id{id = ?A4444}],Desc),
+    CmdReq3    = cre_commandReq({notifyReq, NotifyReq1}),
+    NotifyReq4 = cre_notifyReq([#megaco_term_id{id = ?A4445}],Desc),
+    CmdReq4    = cre_commandReq({notifyReq, NotifyReq2}),
+    ActionInfo1 = [{5000, [CmdReq1]}, {5001, [CmdReq2]}],
+    ActionInfo2 = [{5003, [CmdReq3]}, {5004, [CmdReq4]}],
+    TransInfo   = [{50008, ActionInfo1}, {50009, ActionInfo2}],
+    msg_request(Mid, TransInfo).
 
 
 %% --------------------------
@@ -5599,6 +6386,95 @@ msg25(Mid) ->
     msg_reply(Mid, 50009, 5000, 
 	      [{subtractReply, Reply1}, {subtractReply, Reply2}]).
 
+
+msg30a() ->
+    msg_ack(?MG2_MID, [{9,9}]).
+
+msg30b() ->
+    msg_ack(?MG2_MID, [{9,13}]).
+
+msg30c() ->
+    msg_ack(?MG2_MID, 
+	    [{9,13},   {15,15},  {33,40},  {50,60},  {70,80},  {85,90},
+	     {101,105},{109,119},{121,130},{140,160},{170,175},{180,189},
+	     {201,205},{209,219},{221,230},{240,260},{270,275},{280,289},
+	     {301,305},{309,319},{321,330},{340,360},{370,375},{380,389},
+	     {401,405},{409,419},{421,430},{440,460},{470,475},{480,489},
+	     {501,505},{509,519},{521,530},{540,560},{570,575},{580,589}
+	    ]).
+
+%% Don't think this will be used by the megaco stack, but since it
+%% seem's to be a valid construction...
+msg30d() ->
+    msg_ack(?MG2_MID, 
+	    [[{9,13},   {15,15},  {33,40},  {50,60},  {70,80},  {85,90}],
+	     [{101,105},{109,119},{121,130},{140,160},{170,175},{180,189}],
+	     [{201,205},{209,219},{221,230},{240,260},{270,275},{280,289}],
+	     [{301,305},{309,319},{321,330},{340,360},{370,375},{380,389}],
+	     [{401,405},{409,419},{421,430},{440,460},{470,475},{480,489}],
+	     [{501,505},{509,519},{521,530},{540,560},{570,575},{580,589}]
+	    ]).
+
+
+    
+msg40() ->
+    msg40(?MG1_MID_NO_PORT, "901 mg col boot").
+msg40(Mid, Reason) when list(Reason) ->
+    Address = {portNumber, ?DEFAULT_PORT},
+    Profile = cre_serviceChangeProf("resgw",1),
+    Parm    = cre_serviceChangeParm(restart,Address,[Reason],Profile),
+    Req     = cre_serviceChangeReq([?megaco_root_termination_id],Parm),
+    CmdReq  = cre_commandReq({serviceChangeReq, Req}),
+    Auth    = cre_authHeader(),
+    msg_request(Auth, Mid, 9998, ?megaco_null_context_id, [CmdReq]).
+
+
+trans01() ->
+    trans01("901 mg col boot").
+trans01(Reason) ->
+    TransId   = 9901,
+    ContextId = ?megaco_null_context_id,
+    Address   = {portNumber, ?DEFAULT_PORT},
+    Profile   = cre_serviceChangeProf("resgw",1),
+    Parm      = cre_serviceChangeParm(restart,Address,[Reason],Profile),    
+    Req       = cre_serviceChangeReq([?megaco_root_termination_id],Parm),
+    CmdReq    = cre_commandReq({serviceChangeReq, Req}),
+    Action    = cre_actionRequest(ContextId, [CmdReq]),
+    {transactionRequest,cre_transactionRequest(TransId,[Action])}.
+
+trans02() ->
+    TransId   = 9902,
+    ContextId = 5000,
+    TimeStamp = cre_timeNotation("19990729","24020002"),
+    Event     = cre_observedEvent("al/on",TimeStamp),
+    Desc      = cre_observedEventsDesc(1235,[Event]),
+    NotifyReq = cre_notifyReq([#megaco_term_id{id = ?A5555}],Desc),
+    CmdReq    = cre_commandReq({notifyReq, NotifyReq}),
+    Action    = cre_actionRequest(ContextId, [CmdReq]),
+    {transactionRequest,cre_transactionRequest(TransId, [Action])}.
+
+trans03() ->
+    TransId   = 9903,
+    ContextId = 5000,
+    Stat11 = cre_statisticsParm("nt/os","45123"),
+    Stat12 = cre_statisticsParm("nt/dur", "40"),
+    Stats1 = [Stat11, Stat12],
+    Reply1 = cre_ammsReply([#megaco_term_id{id = ?A5555}],
+			   [{statisticsDescriptor, Stats1}]),
+    Stat21 = cre_statisticsParm("rtp/ps","1245"),
+    Stat22 = cre_statisticsParm("nt/os", "62345"),
+    Stat23 = cre_statisticsParm("rtp/pr", "780"),
+    Stat24 = cre_statisticsParm("nt/or", "45123"),
+    Stat25 = cre_statisticsParm("rtp/pl", "10"),
+    Stat26 = cre_statisticsParm("rtp/jit", "27"),
+    Stat27 = cre_statisticsParm("rtp/delay","48"),
+    Stats2 = [Stat21, Stat22],
+    Reply2 = cre_ammsReply([#megaco_term_id{id = ?A5556}],
+			   [{statisticsDescriptor, Stats2}]),
+    Replies = [{subtractReply, Reply1}, {subtractReply, Reply2}],
+    Action  = cre_actionReply(ContextId, Replies),
+    {transactionReply,cre_transactionReply(TransId, [Action])}.
+    
 
 %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 %% Compact text messages
@@ -6854,6 +7730,44 @@ chk_terminationId_id(I1,I2) ->
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+cre_megacoMessage(V, Mid, Body) ->
+    #'MegacoMessage'{mess = #'Message'{version     = V,
+                                       mId         = Mid,
+                                       messageBody = Body}}.
+
+cre_authHeader() ->
+    SecParmIdx = [239, 205, 171, 137], 
+    SeqNum     = [18, 52, 86, 120], 
+    AD         = [18, 52, 86, 120, 137, 171, 205, 239, 118, 84, 50, 16],
+    cre_authHeader(SecParmIdx, SeqNum, AD).
+
+cre_authHeader(Idx, Num, D) ->
+    #'AuthenticationHeader'{secParmIndex = Idx, 
+			    seqNum       = Num, 
+			    ad           = D}.
+
+
+cre_transactionRequest(TransId, Actions) ->
+    #'TransactionRequest'{transactionId = TransId,
+			  actions       = Actions}.
+
+cre_transactionReply(TransId, Actions) ->
+    #'TransactionReply'{transactionId     = TransId,
+			transactionResult = {actionReplies, Actions}}.
+
+cre_transactionAck(Serial, Serial) ->
+    #'TransactionAck'{firstAck = Serial};
+cre_transactionAck(First, Last) ->
+    #'TransactionAck'{firstAck = First, lastAck = Last}.
+    
+cre_actionRequest(ContextId, CmdReqs) ->
+    #'ActionRequest'{contextId       = ContextId,
+		     commandRequests = CmdReqs}.
+
+cre_actionReply(ContextId, CmdReply) ->
+    #'ActionReply'{contextId    = ContextId,
+		   commandReply = CmdReply}.
 
 %% Parameter related
 cre_propertyParm(Name, Val) ->

@@ -43,15 +43,19 @@ alloc(X86Defun, SpillIndex, SpillLimit, Options) ->
     hipe_x86_ra_ls_postconditions:check_and_rewrite(
       X86Defun, Coloring, [], Options),
   %%hipe_x86_pp:pp(NewX86Defun),
+  TempMap = hipe_temp_map:cols2tuple(Coloring, hipe_x86_specific),
+  {TempMap2, NewSpillIndex2} = 
+    hipe_spill_minimize:stackalloc(X86Cfg, [], 
+				   SpillIndex, Options, 
+				   hipe_x86_specific, 
+				   TempMap),
+	       
+  Coloring2 = 
+    hipe_spill_minimize:mapmerge(hipe_temp_map:to_substlist(TempMap), 
+				 TempMap2),
+  ?add_spills(Options, NewSpillIndex),
+  {NewX86Defun, Coloring2}.
 
-  case DontSpill of
-    [] -> 
-      ?add_spills(Options, NewSpillIndex),
-      {NewX86Defun, Coloring};
-    _ -> 
-      ?add_spills(Options, NewSpillIndex),
-      {NewX86Defun, Coloring}
-  end.
 
 
 

@@ -864,6 +864,8 @@ collector(Fd,[{_,{Client,{Trace,State}}}|Rest]) ->
 collector(_Fd,[]) ->
     ok.
 
+update_procinfo({drop,_N}=Trace) ->
+    Trace;
 update_procinfo(Trace) when element(1,Trace)==seq_trace ->
     Info = element(3,Trace),
     Info1 = 
@@ -878,16 +880,24 @@ update_procinfo(Trace) when element(1,Trace)==seq_trace ->
 		Other
 	end,
     setelement(3,Trace,Info1);
+update_procinfo(Trace) when element(3,Trace)==send ->
+    PI = get_procinfo(element(5,Trace)),
+    setelement(5,Trace,PI);
 update_procinfo(Trace) ->
     Pid = element(2,Trace),
     ProcInfo = get_procinfo(Pid),
     setelement(2,Trace,ProcInfo).
 
-get_procinfo(Pid) ->
+get_procinfo(Pid) when pid(Pid) ->
     case ets:lookup(?MODULE,Pid) of
 	[PI] -> PI;
 	[] -> Pid
-    end.
+    end;
+get_procinfo(Name) when atom(Name) ->
+    case ets:match_object(?MODULE,{'_',Name,node()}) of
+	[PI] -> PI;
+	[] -> Name
+    end.	 
 
 get_first([Client|Clients]) ->
     Client ! {get,self()},

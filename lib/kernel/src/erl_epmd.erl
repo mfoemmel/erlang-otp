@@ -25,20 +25,14 @@
 	 register_node/2, open/0, open/1, open/2]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
+	 terminate/2, code_change/3]).
 
 -import(lists, [reverse/1]).
 
 -record(state, {socket, port_no = -1, name = ""}).
 
--define(int16(X), [(X bsr 8) band 16#ff, X band 16#ff]).
-
--define(u16(X1,X2),
-	(((X1) bsl 8) bor X2)).
- 
--define(u32(X1,X2,X3,X4), 
-	(((X1) bsl 24) bor ((X2) bsl 16) bor ((X3) bsl 8) bor X4)).
-
+-include("inet_int.hrl").
 -include("erl_epmd.hrl").
 
 
@@ -160,6 +154,11 @@ terminate(_, #state{socket = Socket}) when Socket > 0 ->
 terminate(_, _) ->
     ok.
 
+%%----------------------------------------------------------------------
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
@@ -169,12 +168,18 @@ terminate(_, _) ->
 %%
 open() -> open({127,0,0,1}).  % The localhost IP address.
 
-open(EpmdAddr) ->
-    inet_tcp:connect(EpmdAddr, ?erlang_daemon_port, []).
-open(EpmdAddr, Timeout) ->
-    inet_tcp:connect(EpmdAddr, ?erlang_daemon_port, [], Timeout).
+open({A,B,C,D}=EpmdAddr) when ?ip(A,B,C,D) ->
+    gen_tcp:connect(EpmdAddr, ?erlang_daemon_port, [inet]);
+open({A,B,C,D,E,F,G,H}=EpmdAddr) when ?ip6(A,B,C,D,E,F,G,H) ->
+    gen_tcp:connect(EpmdAddr, ?erlang_daemon_port, [inet6]).
+
+open({A,B,C,D}=EpmdAddr, Timeout) when ?ip(A,B,C,D) ->
+    gen_tcp:connect(EpmdAddr, ?erlang_daemon_port, [inet], Timeout);
+open({A,B,C,D,E,F,G,H}=EpmdAddr, Timeout) when ?ip6(A,B,C,D,E,F,G,H) ->
+    gen_tcp:connect(EpmdAddr, ?erlang_daemon_port, [inet6], Timeout).
+
 close(Socket) ->
-    inet_tcp:close(Socket).
+    gen_tcp:close(Socket).
 
 
 do_register_node_v0(NodeName, TcpPort) ->
@@ -182,7 +187,7 @@ do_register_node_v0(NodeName, TcpPort) ->
 	{ok, Socket} ->
 	    Name = cstring(NodeName),
 	    Len = 1+2+length(Name),
-	    inet_tcp:send(Socket, [?int16(Len), ?EPMD_ALIVE,
+	    gen_tcp:send(Socket, [?int16(Len), ?EPMD_ALIVE,
 				   ?int16(TcpPort), Name]),
 	    wait_for_reg_reply_v0(Socket, []);
 	Error ->
@@ -196,7 +201,7 @@ do_register_node(NodeName, TcpPort) ->
 	    Extra = "",
 	    Elen = length(Extra),
 	    Len = 1+2+1+1+2+2+2+length(Name)+2+Elen,
-	    inet_tcp:send(Socket, [?int16(Len), ?EPMD_ALIVE2_REQ,
+	    gen_tcp:send(Socket, [?int16(Len), ?EPMD_ALIVE2_REQ,
 				   ?int16(TcpPort),
 				   $M,
 				   0,
@@ -267,7 +272,7 @@ wait_for_reg_reply(Socket, SoFar) ->
 	{tcp_closed, Socket} ->
 	    {error, epmd_close}
     after 10000 ->
-	    inet_tcp:close(Socket),
+	    gen_tcp:close(Socket),
 	    {error, no_reg_reply_from_epmd}
     end.
     
@@ -285,7 +290,7 @@ wait_for_reg_reply_v0(Socket, SoFar) ->
 	{tcp_closed, Socket} ->
 	    {error, duplicate_name}		% A guess -- the most likely reason.
     after 10000 ->
-	    inet_tcp:close(Socket),
+	    gen_tcp:close(Socket),
 	    {error, no_reg_reply_from_epmd}
     end.
 %%
@@ -296,9 +301,9 @@ get_port_v0(Node, EpmdAddress) ->
 	{ok, Socket} ->
 	    Name = cstring(Node),
 	    Len = 1+length(Name),
-	    inet_tcp:send(Socket, [?int16(Len),?EPMD_PORT_PLEASE, Name]),
+	    gen_tcp:send(Socket, [?int16(Len),?EPMD_PORT_PLEASE, Name]),
 	    wait_for_port_reply_v0(Socket, []);
-	Error -> 
+	_Error -> 
 	    noport
     end.
 
@@ -311,7 +316,7 @@ get_port(Node, EpmdAddress, Timeout) ->
 	{ok, Socket} ->
 	    Name = to_string(Node),
 	    Len = 1+length(Name),
-	    inet_tcp:send(Socket, [?int16(Len),?EPMD_PORT_PLEASE2_REQ, Name]),
+	    gen_tcp:send(Socket, [?int16(Len),?EPMD_PORT_PLEASE2_REQ, Name]),
 	    Reply = wait_for_port_reply(Socket, []),
 	    case Reply of
 		closed ->
@@ -319,7 +324,7 @@ get_port(Node, EpmdAddress, Timeout) ->
 		Other ->
 		    Other
 	    end;
-	Error -> 
+	_Error -> 
 	    noport
     end.
 
@@ -339,7 +344,7 @@ wait_for_port_reply_v0(Socket, SoFar) ->
 	{tcp_closed, Socket} ->
 	    noport
     after 10000 ->
-	    inet_tcp:close(Socket),
+	    gen_tcp:close(Socket),
 	    noport
     end.
 
@@ -363,7 +368,7 @@ wait_for_port_reply(Socket, SoFar) ->
 	{tcp_closed, Socket} ->
 	    closed
     after 10000 ->
-	    inet_tcp:close(Socket),
+	    gen_tcp:close(Socket),
 	    noport
     end.
 
@@ -383,16 +388,16 @@ wait_for_port_reply_cont(Socket, SoFar) ->
 	{tcp_closed, Socket} ->
 	    noport
     after 10000 ->
-	    inet_tcp:close(Socket),
+	    gen_tcp:close(Socket),
 	    noport
     end.
 
 wait_for_port_reply_cont2(Socket, Data) ->
-    [A, B, Type, Proto, HighA, HighB,
+    [A, B, _Type, _Proto, HighA, HighB,
      LowA, LowB, NLenA, NLenB | Rest] = Data,
-    Name = wait_for_port_reply_name(Socket,
-				    ?u16(NLenA, NLenB),
-				    Rest),
+    wait_for_port_reply_name(Socket,
+			     ?u16(NLenA, NLenB),
+			     Rest),
     Low = ?u16(LowA, LowB),
     High = ?u16(HighA, HighB),
     Version = best_version(Low, High),
@@ -404,8 +409,8 @@ wait_for_port_reply_cont2(Socket, Data) ->
 %%% currently.
 wait_for_port_reply_name(Socket, Len, Sofar) ->
     receive
-	{tcp, Socket, Data} ->
-%	    io:format("data = ~p~n", Data),
+	{tcp, Socket, _Data} ->
+%	    io:format("data = ~p~n", _Data),
 	    wait_for_port_reply_name(Socket, Len, Sofar);
 	{tcp_closed, Socket} ->
 	    "foobar"
@@ -419,18 +424,18 @@ best_version(Low, High) ->
 
 %%% We silently assume that the low's are not greater than the high's.
 %%% We should report if the intervals don't overlap.
-select_best_version(L1, H1, L2, H2) when L1 > H2 ->
+select_best_version(L1, _H1, _L2, H2) when L1 > H2 ->
     0;
-select_best_version(L1, H1, L2, H2) when L2 > H1 ->
+select_best_version(_L1, H1, L2, _H2) when L2 > H1 ->
     0;
-select_best_version(L1, H1, L2, H2) when L2 > H1 ->
+select_best_version(_L1, H1, L2, _H2) when L2 > H1 ->
     0;
-select_best_version(L1, H1, L2, H2) ->
+select_best_version(_L1, H1, _L2, H2) ->
     min(H1, H2).
 
 min(A, B) when A < B ->
     A;
-min(A, B) ->
+min(_A, B) ->
     B.
 
 wait_for_close(Socket, Reply) ->
@@ -438,7 +443,7 @@ wait_for_close(Socket, Reply) ->
 	{tcp_closed, Socket} -> 
 	    Reply
     after 10000 ->
-	    inet_tcp:close(Socket),
+	    gen_tcp:close(Socket),
 	    Reply
     end.
 
@@ -460,12 +465,12 @@ get_names(EpmdAddress) ->
     case open(EpmdAddress) of
 	{ok, Socket} ->
 	    do_get_names(Socket);
-	Error ->
+	_Error ->
 	    {error, address}
     end.
 
 do_get_names(Socket) ->
-    inet_tcp:send(Socket, [?int16(1),?EPMD_NAMES]),
+    gen_tcp:send(Socket, [?int16(1),?EPMD_NAMES]),
     receive
 	{tcp, Socket, [P0,P1,P2,P3|T]} ->
 	    EpmdPort = ?u32(P0,P1,P2,P3),
@@ -524,7 +529,4 @@ parse_line(_) -> error.
 
 parse_name([$\s | Buf], Name) -> {reverse(Name), Buf};
 parse_name([C | Buf], Name) -> parse_name(Buf, [C|Name]);
-parse_name([], Name) -> error.
-
-
-
+parse_name([], _Name) -> error.

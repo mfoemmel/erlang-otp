@@ -1,9 +1,6 @@
-<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
 <html>
 <head>
-   <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
-   <meta name="GENERATOR" content="Mozilla/4.5 [en] (X11; I; SunOS 5.7 sun4u) [Netscape]">
-   <title>Observer Release Notes</title>
+  <title>Observer Release Notes</title>
   <style type="text/css">
 <!--
     body          { background: white; margin: 3em }
@@ -15,13 +12,15 @@
 -->
   </style>
 </head>
-<body bgcolor="#FFFFFF">
 
-<center>
-<h1>
-Observer Release Notes</h1></center>
+<body bgcolor=white>
 
-<h2>Observer 0.9.3</h2>
+<center><h1>Observer Release Notes</h1></center>
+
+
+<!--- ################################################################# --->
+
+<h2>Observer 0.9.5</h2>
 
 
 <!--- ----------------------------------------------------------------- --->
@@ -31,21 +30,43 @@ Observer Release Notes</h1></center>
 <ul>
 
   <li>
-     Added priv directory.<br>
-     (Own Id: OTP-4527)<br>
+    Minor updates to <code>etop</code> GUI. <br> <code>etop</code> now also
+    works on <code>nonode@nohost</code> using <code>etop:start()</code>
+    <br> Process info is added to the "to-process" in <code>send</code>
+    trace messages<br>
+    (Own Id: OTP-4735)<p>
+  </li>
+
+  <li>
+    CrashdumpViewer can now handle dumps created on Windows.<br>
+    (Own Id: OTP-4750)<p>
   </li>
 
 </ul>
 
+
+<!--- ################################################################# --->
+
+<h2>Observer 0.9.4</h2>
+
+
 <!--- ----------------------------------------------------------------- --->
 
-<h2>Observer 0.9</h2>
-The Observer application is a collection of tools for tracing and
-investigation of distributed systems.
+<h3>Improvements and new features</h3>
 
-<h3>Known bugs and problems</h3>
 <ul>
-<li>Observer is still in beta stadium. 
+
+  <li>
+    Added new tool: crashdump_viewer<br>
+    (Own Id: OTP-4654)<p>
+  </li>
+
 </ul>
+
+
+
+There are also release notes for
+<a href="notes_history.html">older versions</a>.
+
 </body>
 </html>

@@ -20,7 +20,6 @@ extern Eterm check_process_code_2(Process*, Eterm, Eterm);
 extern Eterm garbage_collect_1(Process*, Eterm);
 
 Eterm hipe_x86_check_process_code_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Eterm ret;
 
@@ -31,7 +30,6 @@ BIF_ADECL_2
 }
 
 Eterm hipe_x86_garbage_collect_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm ret;
 
@@ -149,7 +147,7 @@ void hipe_update_stack_trap(Process *p, const struct sdesc *sdesc)
 
     nsp = p->hipe.nsp;
     nsp_end = p->hipe.nstend;
-    if( (char*)nsp_end - (char*)nsp < MINSTACK*sizeof(Eterm*) ) {
+    if( (unsigned)((char*)nsp_end - (char*)nsp) < MINSTACK*sizeof(Eterm*) ) {
 	p->hipe.nstgraylim = NULL;
 	return;
     }

@@ -26,15 +26,14 @@
 #include "index.h"
 
 
-void index_info(to, t)
-CIO to; IndexTable* t;
+void index_info(CIO to, IndexTable *t)
 {
     hash_info(to, &t->htable);
-    erl_printf(to, "Index Table(%s), ", t->htable.name);
-    erl_printf(to, "size(%d), ", t->size);
-    erl_printf(to, "limit(%d), ", t->limit);
-    erl_printf(to, "used(%d), ", t->sz);
-    erl_printf(to, "rate(%d)\n", t->rate);
+    erl_printf(to, "=index_table:%s\n", t->htable.name);
+    erl_printf(to, "size: %d\n",	t->size);
+    erl_printf(to, "limit: %d\n",	t->limit);
+    erl_printf(to, "used: %d\n",	t->sz);
+    erl_printf(to, "rate: %d\n",	t->rate);
 }
 
 
@@ -55,20 +54,20 @@ index_table_sz(IndexTable *t)
 ** init a pre allocated or static hash structure
 ** and allocate buckets.
 */
-IndexTable* index_init(t, name, size, limit, rate, fun)
-IndexTable* t; char* name; int size; int limit; int rate; HashFunctions fun;
+IndexTable *index_init(ErtsAlcType_t type, IndexTable* t, char* name,
+		       int size, int limit, int rate, HashFunctions fun)
 {
     int sz = size*sizeof(IndexSlot*);
-    hash_init(&t->htable, name, 3*size/4, fun);
+
+    hash_init(type, &t->htable, name, 3*size/4, fun);
 
     t->size = size;
     t->limit = limit;
     t->rate = rate;
     t->sz = 0;
     t->is_allocated = 0;
-    t->table = (IndexSlot**) sys_alloc_from(120,sz);
-    if (t->table == NULL)
-	erl_exit(1, "can't allocate index table (%d)\n", sz);
+    t->type = type;
+    t->table = (IndexSlot**) erts_alloc(type, sz);
     sys_memzero(t->table, sz);
     return t;
 }
@@ -76,27 +75,23 @@ IndexTable* t; char* name; int size; int limit; int rate; HashFunctions fun;
 /*
 ** Create a new hash table
 */
-IndexTable* index_new(name, size, limit, rate, fun)
-char* name; int size; int limit; int rate; HashFunctions fun;
+IndexTable *index_new(ErtsAlcType_t type, char* name, int size, int limit,
+		      int rate, HashFunctions fun)
 {
     IndexTable* t;
-
-    if ((t = (IndexTable*) sys_alloc_from(121,sizeof(IndexTable))) == (IndexTable*) 0)
-	return (IndexTable*) 0;
-
-    index_init(t, name, size, limit, rate, fun);
+    t = erts_alloc(type, sizeof(IndexTable));
+    index_init(type, t, name, size, limit, rate, fun);
     t->is_allocated = 1;
     return t;
 }
 
-void index_delete(t)
-IndexTable* t;
+void index_delete(IndexTable* t)
 {
     hash_delete(&t->htable);
 
-    sys_free(t->table);
+    erts_free(t->type, t->table);
     if (t->is_allocated)
-	sys_free(t);
+	erts_free(t->type, t);
 }
 
 
@@ -133,10 +128,9 @@ index_put(IndexTable* t, void* tmpl)
 	if (ix >= t->limit)
 	    erl_exit(1, "no more index entries in %s (max=%d)\n",
 		     t->htable.name, t->limit);
-	t->table = (IndexSlot**) sys_realloc(t->table, 
-					     sz*sizeof(IndexSlot*));
-	if (t->table == NULL)
-	    erl_exit(1, "can't allocate %s (%d)\n", t->htable.name, sz);
+	t->table = (IndexSlot**) erts_realloc(t->type,
+					      (void *) t->table, 
+					      sz*sizeof(IndexSlot*));
 	sys_memzero(t->table+t->size,
 		    (sz - t->size)*sizeof(void*));
 	t->size = sz;
@@ -149,8 +143,7 @@ index_put(IndexTable* t, void* tmpl)
 }
 
 
-int index_get(t, tmpl)
-IndexTable* t; void* tmpl;
+int index_get(IndexTable* t, void* tmpl)
 {
     IndexSlot* p = (IndexSlot*) hash_get(&t->htable, tmpl);
 
@@ -160,8 +153,7 @@ IndexTable* t; void* tmpl;
 }
 
 
-int index_erase(t, tmpl)
-IndexTable* t; void* tmpl;
+int index_erase(IndexTable* t, void* tmpl)
 {
     IndexSlot* p = (IndexSlot*) hash_erase(&t->htable, tmpl);
 
@@ -175,9 +167,7 @@ IndexTable* t; void* tmpl;
 /* Iterates over the used indices in the table. 'prev' should be the
    previously used index, or -1 to start. Returns -1 when finished.
 */
-int index_iter(t, prev)
-IndexTable* t;
-int prev;
+int index_iter(IndexTable* t, int prev)
 {
    int i = prev;
 

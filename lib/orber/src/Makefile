@@ -64,7 +64,6 @@ MODULES= \
 	orber_iiop_pm \
 	orber_iiop_outsup \
 	orber_iiop_outproxy \
-	orber_iiop_outrequest \
 	orber_iiop_socketsup \
 	orber_socket \
 	orber_ifr \
@@ -146,12 +145,15 @@ GEN_HRL_FILES3 = \
 	oe_OrberIFR.hrl \
 	OrberApp.hrl
 
-GEN_HRL_FILES = $(GEN_HRL_FILES1) $(GEN_HRL_FILES2) $(GEN_HRL_FILES3)
+GEN_HRL_FILES_EXT = $(GEN_HRL_FILES1)
+
+GEN_HRL_FILES_LOC = $(GEN_HRL_FILES2) $(GEN_HRL_FILES3)
 
 
 GEN_FILES = \
 	$(GEN_ERL_FILES) \
-	$(GEN_HRL_FILES)
+	$(GEN_HRL_FILES_LOC) \
+	$(GEN_HRL_FILES_EXT)
 
 TARGET_FILES =  \
 	$(GEN_ERL_FILES:%.erl=$(EBIN)/%.$(EMULATOR)) \
@@ -221,9 +223,9 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR) $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(ERL_FILES) $(YRL_FILE) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(ERL_FILES) $(YRL_FILE) $(GEN_HRL_FILES_LOC) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/include
-	$(INSTALL_DATA) $(EXTERNAL_HRL_FILES) $(GEN_HRL_FILES) $(RELSYSDIR)/include
+	$(INSTALL_DATA) $(EXTERNAL_HRL_FILES) $(GEN_HRL_FILES_EXT) $(RELSYSDIR)/include
 
 
 release_docs_spec:

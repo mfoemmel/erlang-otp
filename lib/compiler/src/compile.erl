@@ -24,7 +24,7 @@
 -export([file/1,file/2,format_error/1,iofile/1]).
 -export([forms/1,forms/2]).
 -export([output_generated/1]).
--export([options/0,options/1]).
+-export([options/0]).
 
 %% Erlc interface.
 -export([compile/3,compile_beam/3,compile_asm/3]).
@@ -100,7 +100,7 @@ filter_opts(Opts0) ->
 output_generated(Opts) ->
     any(fun ({save_binary,_F}) -> true;
 	    (_Other) -> false
-	end, passes(file, ?DEF_VERSION, Opts)).
+	end, passes(file, Opts)).
 
 expand_opt(report, Os) -> [report_errors,report_warnings|Os];
 expand_opt(return, Os) -> [return_errors,return_warnings|Os];
@@ -117,14 +117,10 @@ format_error({native, E}) ->
 format_error({native_crash, E}) ->
     io_lib:fwrite("native-code compilation crashed with reason: ~P.",
 		  [E, 25]);
-format_error(jam_is_dead) ->
-    "JAM is dead!";
-format_error(v1_is_dead) ->
-    "The v1 compiler is no longer supported.";
-format_error(v2_is_dead) ->
-    "The v2 compiler is no longer supported.";
 format_error({open,E}) ->
     io_lib:format("open error '~s'", [file:format_error(E)]);
+format_error({epp,E}) ->
+    epp:format_error(E);
 format_error(write_error) ->
     "error writing file";
 format_error({rename,S}) ->
@@ -160,13 +156,11 @@ internal(Master, Input, Opts) ->
 		      Other
 	      end}.
 
-internal({forms,Forms}, Opts0) ->
-    {Ver,Opts} = compiler_version(Opts0),
-    Ps = passes(forms, Ver, Opts),
+internal({forms,Forms}, Opts) ->
+    Ps = passes(forms, Opts),
     internal_comp(Ps, "", "", #compile{code=Forms,options=Opts});
-internal({file,File}, Opts0) ->
-    {Ver,Opts} = compiler_version(Opts0),
-    Ps = passes(file, Ver, Opts),
+internal({file,File}, Opts) ->
+    Ps = passes(file, Opts),
     case member(from_beam, Opts) of
 	true -> internal_comp(Ps, File, ".beam", #compile{options=Opts});
 	false ->
@@ -215,15 +209,8 @@ os_process_size() ->
 	    0
     end.	    
 
-run_tc(NameFun, St) ->
-    run_tc(NameFun, statistics(runtime), St).
-
-run_tc({Name,Fun}, Before0, St) ->
-    %% This division into two functions is a hack.  If we would had stack
-    %% trimming, dead variables would have been removed from the stack.
-    %% Well, anyway, the St variable will not be saved on the stack,
-    %% because it is not referenced after the catch.
-
+run_tc({Name,Fun}, St) ->
+    Before0 = statistics(runtime),
     Val = (catch Fun(St)),
     After0 = statistics(runtime),
     {Before_c, _} = Before0,
@@ -255,9 +242,9 @@ comp_ret_err(St) ->
 %% passes(form|file, [Option]) -> [{Name,PassFun}]
 %%  Figure out which passes that need to be run.
 
-passes(forms, Ver, Opts) ->
-    select_passes(standard_passes(Ver), Opts);
-passes(file, Ver, Opts) ->
+passes(forms, Opts) ->
+    select_passes(standard_passes(), Opts);
+passes(file, Opts) ->
     case member(from_beam, Opts) of
 	true ->
 	    Ps = [?pass(read_beam_file),
@@ -270,17 +257,16 @@ passes(file, Ver, Opts) ->
 			 [?pass(beam_consult_asm),?pass(beam_asm),
 			  {unless,binary,?pass(save_binary)}];
 		     false ->
-			 [?pass(parse_module)|standard_passes(Ver)]
+			 [?pass(parse_module)|standard_passes()]
 		 end,
 	    Fs = select_passes(Ps, Opts),
     
 	    %% If the last pass saves the resulting binary to a file,
 	    %% insert a first pass to remove the file.
-	    [?pass(error_if_jam)|
-	     case last(Fs)  of
-		 {save_binary,_Fun} -> [?pass(remove_file)|Fs];
-		 _Other -> Fs
-	     end]
+	    case last(Fs)  of
+		{save_binary,_Fun} -> [?pass(remove_file)|Fs];
+		_Other -> Fs
+	    end
     end.
 
 %% select_passes([Command], Opts) ->  [{Name,Function}]
@@ -357,17 +343,15 @@ select_cond(Flag, ShouldBe, Pass, Ps, Opts) ->
 
 %% The standard passes (almost) always run.
 
-standard_passes(v1) -> [?pass(v1_is_dead)];
-standard_passes(v2) -> [?pass(v2_is_dead)];
-standard_passes(v3) ->
+standard_passes() ->
     [?pass(transform_module),
      {iff,'P',{src_listing,"P"}},
      ?pass(lint_module),
+     {iff,debug_info,?pass(save_abstract_code)},
      ?pass(expand_module),
      {iff,dexp,{listing,"expand"}},
      {iff,'E',{src_listing,"E"}},
      {iff,'abstr',{listing,"abstr"}},
-     {iff,debug_info,?pass(save_abstract_code)},
 
      %% Core Erlang passes.
      {pass,v3_core},
@@ -391,6 +375,8 @@ standard_passes(v3) ->
        {iff,dblk,{listing,"block"}},
        {pass,beam_bs},
        {iff,dbs,{listing,"bs"}},
+       {unless,no_dopt,{pass,beam_dead}},
+       {iff,ddead,{listing,"dead"}},
        {unless,no_jopt,{pass,beam_jump}},
        {iff,djmp,{listing,"jump"}},
        {unless,no_topt,{pass,beam_type}},
@@ -404,21 +390,6 @@ standard_passes(v3) ->
      ?pass(beam_asm),
      {iff,native,?pass(native_compile)},
      {unless,binary,?pass(save_binary)}].
-
-compiler_version(Opts) ->
-    compiler_version(Opts, []).
-
-compiler_version([O|Opts], Acc) ->
-    case is_compiler_version(O) of
-	true  -> {O,[O|[Opt || Opt <- Opts, not is_compiler_version(Opt)]++Acc]};
-	false -> compiler_version(Opts, [O|Acc])
-    end;
-compiler_version([], Acc) -> {?DEF_VERSION,[?DEF_VERSION|Acc]}.
-
-is_compiler_version(v1) -> true;
-is_compiler_version(v2) -> true;
-is_compiler_version(v3) -> true;
-is_compiler_version(_)  -> false.
 
 %%%
 %%% Compiler passes.
@@ -481,7 +452,7 @@ beam_consult_asm(St) ->
 	    {Module, Forms} = preprocess_asm_forms(Forms0),
 	    {ok,St#compile{module=Module, code=Forms}};
 	{error,E} ->
-	    Es = [{St#compile.ifile,[{none,compile,{open,E}}]}],
+	    Es = [{St#compile.ifile,[{none,?MODULE,{open,E}}]}],
 	    {error,St#compile{errors=St#compile.errors ++ Es}}
     end.
 
@@ -498,7 +469,7 @@ read_beam_file(St) ->
 		    {ok,St#compile{module=Mod,code=Beam,ofile=Infile}}
 	    end;
 	{error,E} ->
-	    Es = [{St#compile.ifile,[{none,compile,{open,E}}]}],
+	    Es = [{St#compile.ifile,[{none,?MODULE,{open,E}}]}],
 	    {error,St#compile{errors=St#compile.errors ++ Es}}
     end.
 
@@ -510,22 +481,6 @@ is_too_old(BeamFile) ->
 	    lists:member(no_new_funs, Opts);
 	_ -> false
     end.
-
-error_if_jam(St) ->	
-    case member(jam, St#compile.options) of
-	true  ->
-	    Es = [{St#compile.ifile,[{none,compile,jam_is_dead}]}],
-	    {error,St#compile{errors=St#compile.errors ++ Es}};
-	false -> {ok,St}
-    end.
-
-v1_is_dead(St) ->
-    Es = [{St#compile.ifile,[{none,compile,v1_is_dead}]}],
-    {error,St#compile{errors=St#compile.errors ++ Es}}.
-
-v2_is_dead(St) ->
-    Es = [{St#compile.ifile,[{none,compile,v2_is_dead}]}],
-    {error,St#compile{errors=St#compile.errors ++ Es}}.
 
 parse_module(St) ->
     Opts = St#compile.options,
@@ -539,7 +494,7 @@ parse_module(St) ->
 	{ok,Forms} ->
 	    {ok,St#compile{code=Forms}};
 	{error,E} ->
-	    Es = [{St#compile.ifile,[{none,compile,{open,E}}]}],
+	    Es = [{St#compile.ifile,[{none,?MODULE,{epp,E}}]}],
 	    {error,St#compile{errors=St#compile.errors ++ Es}}
     end.
 
@@ -653,16 +608,17 @@ expand_module(St0) ->
 save_abstract_code(St) ->
     {ok,St#compile{abstract_code=abstract_code(St)}}.
 
-abstract_code(#compile{code={_Mod,_Exp,Forms}}) ->
-    Abstr = {abstract_v2,Forms},
+abstract_code(#compile{code=Code}) ->
+    Abstr = {raw_abstract_v1,Code},
     case catch erlang:term_to_binary(Abstr, [compressed]) of
 	{'EXIT',_} -> term_to_binary(Abstr);
 	Other -> Other
     end.
 
-beam_asm(#compile{code=Code0,abstract_code=Abst,options=Opts0}=St) ->
+beam_asm(#compile{ifile=File,code=Code0,abstract_code=Abst,options=Opts0}=St) ->
+    Source = filename:absname(File),
     Opts = filter(fun is_informative_option/1, Opts0),
-    case beam_asm:module(Code0, Abst, Opts) of
+    case beam_asm:module(Code0, Abst, Source, Opts) of
 	{ok,Code} -> {ok,St#compile{code=Code,abstract_code=[]}};
 	{error,Es} -> {error,St#compile{errors=St#compile.errors ++ Es}}
     end.
@@ -783,10 +739,10 @@ report_warnings(St) ->
 %% list_errors(File, ErrorDescriptors) -> ok
 
 list_errors(F, [{Line,Mod,E}|Es]) ->
-    io:fwrite("~s:~w: ~s\n", [F,Line,apply(Mod, format_error, [E])]),
+    io:fwrite("~s:~w: ~s\n", [F,Line,Mod:format_error(E)]),
     list_errors(F, Es);
 list_errors(F, [{Mod,E}|Es]) ->
-    io:fwrite("~s: ~s\n", [F,apply(Mod, format_error, [E])]),
+    io:fwrite("~s: ~s\n", [F,Mod:format_error(E)]),
     list_errors(F, Es);
 list_errors(_F, []) -> ok.
 
@@ -869,12 +825,7 @@ listing(LFun, Ext, St) ->
     end.
 
 options() ->
-    help(standard_passes(?DEF_VERSION)).
-
-%% Intentionally undocumented.
-
-options(Version) ->
-    help(standard_passes(Version)).
+    help(standard_passes()).
 
 help([{iff,Flag,{src_listing,Ext}}|T]) ->
     io:fwrite("~p - Generate .~s source listing file\n", [Flag,Ext]),

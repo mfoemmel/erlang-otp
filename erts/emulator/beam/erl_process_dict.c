@@ -60,10 +60,19 @@
   (atom_tab(atom_val(term))->slot.bucket.hvalue) :	\
   make_hash2(Term)))
 
+#define PD_SZ2BYTES(Sz) (sizeof(ProcDict) + ((Sz) - 1)*sizeof(Eterm))
+
 /* Memory allocation macros */
-#define PD_ALLOC(Siz) safe_alloc_from(340, (Siz))
-#define PD_FREE(Ptr) sys_free(Ptr)
-#define PD_REALLOC(Ptr, Siz) safe_realloc(Ptr, Siz)
+#define PD_ALLOC(Sz)				\
+    (ERTS_PROC_MORE_MEM((Sz)),			\
+     erts_alloc(ERTS_ALC_T_PROC_DICT, (Sz)))
+#define PD_FREE(P, Sz)				\
+    (ERTS_PROC_LESS_MEM((Sz)),			\
+     erts_free(ERTS_ALC_T_PROC_DICT, (P)))
+#define PD_REALLOC(P, OSz, NSz) 		\
+    (ERTS_PROC_LESS_MEM((OSz)),			\
+     ERTS_PROC_MORE_MEM((NSz)),			\
+     erts_realloc(ERTS_ALC_T_PROC_DICT, (P), (NSz)))
 
 
 #define TCAR(Term) CAR(list_val(Term))
@@ -134,9 +143,10 @@ static char* print_pid(Process *p);
 */
 
 /*
-** Called from break handler
-*/
-void dictionary_dump(ProcDict *pd, CIO to)
+ * Called from break handler
+ */
+void
+erts_dictionary_dump(ProcDict *pd, CIO to)
 {
     unsigned int i;
 #ifdef DEBUG
@@ -184,6 +194,50 @@ void dictionary_dump(ProcDict *pd, CIO to)
 #endif /* DEBUG (else) */
 }
 
+void
+erts_deep_dictionary_dump(ProcDict* pd, void (*cb)(Eterm obj, CIO fd), CIO to)
+{
+    unsigned int i;
+    Eterm t;
+
+    if (pd != NULL) {
+	for (i = 0; i < HASH_RANGE(pd); ++i) {
+	    t = ARRAY_GET(pd, i);
+	    if (is_list(t)) {
+		for (; t != NIL; t = TCDR(t)) {
+		    cb(TCAR(t), to);
+		}
+	    } else if (is_tuple(t)) {
+		cb(t, to);
+	    }
+	}
+    }
+}
+
+Uint
+erts_dicts_mem_size(Process *p)
+{
+    Uint size = 0;
+    if (p->dictionary)
+	size += PD_SZ2BYTES(p->dictionary->size);
+    if (p->debug_dictionary)
+	size += PD_SZ2BYTES(p->debug_dictionary->size);
+    return size;
+}
+
+void
+erts_erase_dicts(Process *p)
+{
+    if (p->dictionary)
+	pd_hash_erase_all(p);
+    if (p->debug_dictionary) {
+	p->dictionary = p->debug_dictionary;
+	pd_hash_erase_all(p);
+    }
+    p->dictionary = NULL;
+    p->debug_dictionary = NULL;
+}
+
 /* 
 ** Called from process_info
 */
@@ -198,7 +252,6 @@ Eterm dictionary_copy(Process *p, ProcDict *pd)
 ** BIF interface
 */
 BIF_RETTYPE get_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     Eterm ret;
     PD_CHECK(BIF_P->dictionary);
@@ -208,7 +261,6 @@ BIF_ADECL_0
 }
 
 BIF_RETTYPE get_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm ret;
     PD_CHECK(BIF_P->dictionary);
@@ -220,7 +272,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE get_keys_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm ret;
     PD_CHECK(BIF_P->dictionary);
@@ -233,7 +284,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE put_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Eterm ret;
     PD_CHECK(BIF_P->dictionary);
@@ -246,7 +296,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE erase_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     Eterm ret;
     PD_CHECK(BIF_P->dictionary);
@@ -257,7 +306,6 @@ BIF_ADECL_0
 }
 
 BIF_RETTYPE erase_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm ret;
     PD_CHECK(BIF_P->dictionary);
@@ -277,7 +325,6 @@ BIF_ADECL_1
 */
 
 BIF_RETTYPE dollar_put_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     BIF_RETTYPE save_ret;
     ProcDict *save_pd = BIF_P->dictionary;
@@ -289,7 +336,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE dollar_get_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     BIF_RETTYPE save_ret;
     ProcDict *save_pd = BIF_P->dictionary;
@@ -301,7 +347,6 @@ BIF_ADECL_0
 }
 
 BIF_RETTYPE dollar_get_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     BIF_RETTYPE save_ret;
     ProcDict *save_pd = BIF_P->dictionary;
@@ -313,7 +358,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE dollar_get_keys_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     BIF_RETTYPE save_ret;
     ProcDict *save_pd = BIF_P->dictionary;
@@ -325,7 +369,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE dollar_erase_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     BIF_RETTYPE save_ret;
     ProcDict *save_pd = BIF_P->dictionary;
@@ -337,7 +380,6 @@ BIF_ADECL_0
 }
 
 BIF_RETTYPE dollar_erase_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     BIF_RETTYPE save_ret;
     ProcDict *save_pd = BIF_P->dictionary;
@@ -411,7 +453,7 @@ static int pd_hash_erase(Process *p, Eterm id, Eterm *ret)
 static int pd_hash_erase_all(Process *p)
 {
     if (p->dictionary != NULL) {
-	PD_FREE(p->dictionary);
+	PD_FREE(p->dictionary, PD_SZ2BYTES(p->dictionary->size));
 	p->dictionary = NULL;
     }
     return PDICT_OK;
@@ -739,8 +781,10 @@ static void array_shrink(ProcDict **ppd, unsigned int need)
     if (siz > (*ppd)->size)
 	return; /* Only shrink */
 
-    *ppd = PD_REALLOC(((void *) *ppd), 
-		      sizeof(ProcDict) + (siz - 1) * sizeof(Eterm));
+    *ppd = PD_REALLOC(((void *) *ppd),
+		      PD_SZ2BYTES((*ppd)->size),
+		      PD_SZ2BYTES(siz));
+
     (*ppd)->size = siz;
     if ((*ppd)->size < (*ppd)->used)
 	(*ppd)->used = (*ppd)->size;
@@ -751,10 +795,11 @@ static Eterm array_put(ProcDict **ppdict, unsigned int ndx, Eterm term)
 {
     unsigned int i;
     Eterm ret;
-    if (*ppdict == NULL) { 
+    if (*ppdict == NULL) {
 	Uint siz = next_array_size(ndx+1);
 	ProcDict *p;
-        p = PD_ALLOC(sizeof(ProcDict) + (siz - 1) * sizeof(Eterm));
+
+        p = PD_ALLOC(PD_SZ2BYTES(siz));
 	for (i = 0; i < siz; ++i) 
 	    p->data[i] = NIL;
 	p->size = siz;
@@ -763,8 +808,9 @@ static Eterm array_put(ProcDict **ppdict, unsigned int ndx, Eterm term)
     } else if (ndx >= (*ppdict)->size) {
 	Uint osize = (*ppdict)->size;
 	Uint nsize = next_array_size(ndx+1);
-	*ppdict = PD_REALLOC(((void *) *ppdict), sizeof(ProcDict) + 
-			  (nsize - 1) * sizeof(Eterm));
+	*ppdict = PD_REALLOC(((void *) *ppdict),
+			     PD_SZ2BYTES(osize),
+			     PD_SZ2BYTES(nsize));
 	for (i = osize; i < nsize; ++i)
 	    (*ppdict)->data[i] = NIL;
 	(*ppdict)->size = nsize;

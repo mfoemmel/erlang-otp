@@ -44,6 +44,8 @@ patch_instr(Address, Val, Type) ->
       hipe_bifs:write_u32(Address, Val);
     atom ->
       hipe_bifs:write_u32(Address, Val);
+    c_const ->
+      hipe_bifs:write_u32(Address, Val);
     _ ->
       ?debug_msg("Error: Undefined Callback, FIXME\n",[]),
       ?EXIT(undefinedcallback)

@@ -39,7 +39,7 @@ expand_gc([I|Is], CFG) ->
       %% but the gc parameter is in words (tagged as fixnum).
       WordsNeeded = hipe_rtl:gctest_words(I),
       Tmp = hipe_rtl:mk_new_reg(),
-      HP = hipe_rtl:mk_reg(hipe_rtl_arch:heap_pointer_reg()),
+      {GetHPInsn, HP, _PutHPInsn} = hipe_rtl_arch:heap_pointer(),
       H_LIMIT = hipe_rtl:mk_reg(hipe_rtl_arch:heap_limit_reg()),
       GCLabel = hipe_rtl:label_name(hipe_rtl:mk_new_label()),	 
    
@@ -66,7 +66,7 @@ expand_gc([I|Is], CFG) ->
       GCCode = [hipe_rtl:mk_call([], gc_1, [GCAmount], c, ContLabel, [])],
       CFG2 = hipe_rtl_cfg:bb_add(CFG1, GCLabel, hipe_bb:mk_bb(GCCode)),
 
-      {Code, CFG2};
+      {[GetHPInsn | Code], CFG2};
     _ ->
       {[I|CodeRest], CFG0}
   end.

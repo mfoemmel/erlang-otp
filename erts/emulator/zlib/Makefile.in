@@ -17,7 +17,7 @@ ifeq ($(findstring ose,$(TARGET)),ose)
 else
   TYPE_FLAGS = -O3
 endif
-CFLAGS = @CFLAGS@ @DEFS@ $(TYPE_FLAGS)
+CFLAGS = @CFLAGS@ @DEFS@ @THR_DEFS@ $(TYPE_FLAGS)
 #CFLAGS=-O -DMAX_WBITS=14 -DMAX_MEM_LEVEL=7
 #CFLAGS=-g -DDEBUG
 #CFLAGS=-O3 -Wall -Wwrite-strings -Wpointer-arith -Wconversion \
@@ -34,16 +34,28 @@ OBJS = $(O:%=$(OBJDIR)/%)
 
 include $(ERL_TOP)/make/target.mk
 
-# ifeq ($(TYPE),debug)
-# CFLAGS += @DEBUG_FLAGS@
-# OBJDIR = $(ERL_TOP)/erts/obj.debug/$(TARGET)
-# else
+# On windows we need a separate zlib during debug build
+ifeq ($(TARGET),win32)
+ifeq ($(TYPE),debug)
+CFLAGS = $(subst -O2, -g, @CFLAGS@ @DEFS@ @DEBUG_FLAGS@)
+OBJDIR = $(ERL_TOP)/erts/obj.debug/$(TARGET)
+else
 OBJDIR = $(ERL_TOP)/erts/obj/$(TARGET)
-# endif
+endif
+else
+# On other platforms we use no special debug version of zlib
+OBJDIR = $(ERL_TOP)/erts/obj/$(TARGET)
+endif
 
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
-all: $(OBJDIR)/libz.a
+ifeq ($(TARGET), win32)
+LIBRARY=$(OBJDIR)/z.lib
+else
+LIBRARY=$(OBJDIR)/libz.a
+endif
+
+all: $(LIBRARY)
 
 # ----------------------------------------------------
 # Release Target
@@ -61,10 +73,14 @@ clean:
 
 #### end OTP targets
 
-$(OBJDIR)/libz.a: $(OBJS)
+ifeq ($(TARGET), win32)
+$(LIBRARY): $(OBJS)
+	$(AR) -out:$@ $(OBJS)
+else
+$(LIBRARY): $(OBJS)
 	$(AR) $(ARFLAGS) $@ $(OBJS)
 	-@ ($(RANLIB) $@ || true) 2>/dev/null
-
+endif
 
 $(OBJDIR)/%.o: %.c
 	$(CC) -c $(CFLAGS) -o $@ $<

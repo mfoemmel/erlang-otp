@@ -17,7 +17,7 @@
  */
 
 /*
- * There are three primary kinds of exception codes:
+ * There are three primary exception classes:
  *
  *	- exit			Process termination - not an error.
  *	- error			Error (will be logged).
@@ -36,63 +36,102 @@
  */
 
 /*
- * The low 5 bits of the error code are used for indexing.
+ * Bits 0-1 index the 'exception class tag' table.
  */
-#define EXF_INDEXBITS 0x1f
+#define EXC_CLASSBITS 0x0003
+#define GET_EXC_CLASS(x) ((x) & EXC_CLASSBITS)
 
 /*
  * Exit code flags
  */
-#define EXF_THROWN	(0x01<<5)	/* nonlocal return */
-#define EXF_LOG		(0x02<<5)	/* write to logger on termination */
-#define EXF_TRACE	(0x04<<5)	/* build backtrace */
-#define EXF_ARGLIST	(0x08<<5)	/* has arglist for top of trace */
-#define EXF_PANIC	(0x10<<5)	/* ignore catches */
+#define EXF_PANIC	(1<<2)	/* ignore catches */
+#define EXF_THROWN	(1<<3)	/* nonlocal return */
+#define EXF_LOG		(1<<4)	/* write to logger on termination */
+#define EXF_TRACE	(1<<5)	/* build backtrace */
+#define EXF_ARGLIST	(1<<6)	/* has arglist for top of trace */
+
+#define EXC_FLAGBITS 0x007c
 
 /*
- * Basic flag combinations.
+ * The primary fields of an exception code
  */
-#define EXF_EXIT	0x0000
-#define EXF_ERROR	EXF_LOG
-#define EXF_PRIMARY	(EXF_EXIT | EXF_ERROR | EXF_THROWN)
-#define EXF_FAULT	(EXF_ERROR | EXF_TRACE)
+#define EXF_PRIMARY	(EXF_PANIC | EXF_THROWN | EXF_LOG)
+#define PRIMARY_EXCEPTION(x) ((x) & (EXF_PRIMARY | EXC_CLASSBITS))
 
+/*
+ * Exception class tags (indices into the 'exception_tag' array)
+ */
+#define EXTAG_EXIT	0
+#define EXTAG_ERROR	1
+#define EXTAG_THROWN	2
+
+#define NUMBER_EXC_TAGS 3	/* The number of exception class tags */
+
+/*
+ * Bits 7-11 of the error code are used for indexing into
+ * the short-hand error descriptor table.
+ */
+#define EXC_INDEXBITS 0x0f80
+#define GET_EXC_INDEX(x) (((x) & EXC_INDEXBITS) >> 7)
 
 /*
  * Exit codes. Note that indices are assigned low numbers starting at 0
  * to allow them to be used as array indices. The primary exceptions
  * share index 0.
  */
-#define EXC_EXIT (0 | EXF_EXIT)		/* Generic exit
-					 * (final exit term in p->fvalue) */
-#define EXC_ERROR (0 | EXF_ERROR)	/* Generic error
-					 * (final exit term in p->fvalue) */
-#define EXC_THROWN (0 | EXF_THROWN)	/* Generic nonlocal return
+#define EXC_PRIMARY 0
+#define EXC_EXIT   (EXTAG_EXIT)
+					/* Generic exit (final exit
+					 * term in p->fvalue) */
+#define EXC_ERROR  (EXTAG_ERROR | EXF_LOG)
+					/* Generic error (final exit 
+					 * term in p->fvalue) */
+#define EXC_THROWN (EXTAG_THROWN | EXF_THROWN)
+					/* Generic nonlocal return
 					 * (thrown term in p->fvalue) */
-#define EXC_USER_ERROR (0 | EXF_FAULT)	/* Fault
-					 * (exit reason in p->fvalue) */
-#define EXC_USER_ERROR2 (0 | EXF_FAULT | EXF_ARGLIST)
-					/* Fault with arglist term
-					 * (exit reason in p->fvalue) */
-#define EXC_NORMAL (1 | EXF_EXIT)	/* Normal exit (reason 'normal') */
-#define EXC_INTERNAL_ERROR (2 | EXF_FAULT | EXF_PANIC)
-					/* Things that shouldn't happen */
-#define EXC_BADARG (3 | EXF_FAULT)	/* Bad argument to a BIF */
-#define EXC_BADARITH (4 | EXF_FAULT)	/* Bad arithmetic */
-#define EXC_BADMATCH (5 | EXF_FAULT)	/* Bad match in function body */
-#define EXC_FUNCTION_CLAUSE (6 | EXF_FAULT) /* No matching function head */
-#define EXC_CASE_CLAUSE (7 | EXF_FAULT) /* No matching case clause */
-#define EXC_IF_CLAUSE (8 | EXF_FAULT)	/* No matching if clause */
-#define EXC_UNDEF (9 | EXF_FAULT) 	/* No farity that matches */
-#define EXC_BADFUN (10 | EXF_FAULT)	/* Not an existing fun */
-#define EXC_BADARITY (11 | EXF_FAULT)	/* Attempt to call fun with
-					 * wrong number of arguments. */
-#define EXC_TIMEOUT_VALUE (12 | EXF_FAULT) /* Bad time out value */
-#define EXC_NOPROC (13 | EXF_FAULT)	/* No process or port */
-#define EXC_NOTALIVE (14 | EXF_FAULT)	/* Not distributed */
-#define EXC_SYSTEM_LIMIT (15 | EXF_FAULT) /* Ran out of something */
 
-#define NUMBER_EXIT_CODES 16	/* The number of exit code indices */
+#define EXC_FAULT  (EXC_ERROR | EXF_TRACE)
+					/* Fault = error + trace */
+#define EXC_USER_ERROR EXC_FAULT	/* Alias for fault */
+#define EXC_USER_ERROR2 (EXC_FAULT | EXF_ARGLIST)
+					/* Fault with given arglist term
+					 * (exit reason in p->fvalue) */
+
+#define EXC_NORMAL		((1 << 7) | EXC_EXIT)
+					/* Normal exit (reason 'normal') */
+#define EXC_INTERNAL_ERROR	((2 << 7) | EXC_FAULT | EXF_PANIC)
+					/* Things that shouldn't happen */
+#define EXC_BADARG		((3 << 7) | EXC_FAULT)
+					/* Bad argument to a BIF */
+#define EXC_BADARITH		((4 << 7) | EXC_FAULT)
+					/* Bad arithmetic */
+#define EXC_BADMATCH		((5 << 7) | EXC_FAULT)
+					/* Bad match in function body */
+#define EXC_FUNCTION_CLAUSE	((6 << 7) | EXC_FAULT)
+					 /* No matching function head */
+#define EXC_CASE_CLAUSE		((7 << 7) | EXC_FAULT)
+					/* No matching case clause */
+#define EXC_IF_CLAUSE		((8 << 7) | EXC_FAULT)
+					/* No matching if clause */
+#define EXC_UNDEF		((9 << 7) | EXC_FAULT)
+				 	/* No farity that matches */
+#define EXC_BADFUN		((10 << 7) | EXC_FAULT)
+					/* Not an existing fun */
+#define EXC_BADARITY		((11 << 7) | EXC_FAULT)
+					/* Attempt to call fun with
+					 * wrong number of arguments. */
+#define EXC_TIMEOUT_VALUE	((12 << 7) | EXC_FAULT)
+					/* Bad time out value */
+#define EXC_NOPROC		((13 << 7) | EXC_FAULT)
+					/* No process or port */
+#define EXC_NOTALIVE		((14 << 7) | EXC_FAULT)
+					/* Not distributed */
+#define EXC_SYSTEM_LIMIT	((15 << 7) | EXC_FAULT)
+					/* Ran out of something */
+#define EXC_TRY_CLAUSE		((16 << 7) | EXC_FAULT)
+					/* No matching try clause */
+
+#define NUMBER_EXIT_CODES 17	/* The number of exit code indices */
 
 /*
  * Internal pseudo-error codes.
@@ -128,3 +167,8 @@
  * The table translating an exception code to an atom.
  */
 Eterm error_atom[NUMBER_EXIT_CODES];
+
+/*
+ * The exception tag table.
+ */
+Eterm exception_tag[NUMBER_EXC_TAGS];

@@ -18,7 +18,7 @@
 %% This module exports the public interface of the Mnesia DBMS engine
 
 -module(mnesia).
--behaviour(mnesia_access).
+%-behaviour(mnesia_access).
 
 -export([
 	 %% Start, stop and debugging
@@ -173,7 +173,7 @@ has_var([H|T]) ->
     end;
 has_var(_) -> false.
 
-e_has_var(X, 0) -> false;
+e_has_var(_, 0) -> false;
 e_has_var(X, Pos) ->
     case has_var(element(Pos, X))of
 	false -> e_has_var(X, Pos-1);
@@ -230,7 +230,7 @@ stop() ->
 
 change_config(extra_db_nodes, Ns) when list(Ns) ->
     mnesia_controller:connect_nodes(Ns);
-change_config(BadKey, BadVal) ->
+change_config(BadKey, _BadVal) ->
     {error, {badarg, BadKey}}.
      
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -372,13 +372,13 @@ transaction(State, Fun, Args, Retries, Mod, Kind)
 transaction(State, Fun, Args, Retries, Mod, Kind)
   when function(Fun), list(Args), integer(Retries), Retries >= 0, atom(Mod) ->
     mnesia_tm:transaction(State, Fun, Args, Retries, Mod, Kind);
-transaction(State, Fun, Args, Retries, Mod, Kind) ->
+transaction(_State, Fun, Args, Retries, Mod, _Kind) ->
     {aborted, {badarg, Fun, Args, Retries, Mod}}.
 
 non_transaction(State, Fun, Args, ActivityKind, Mod) 
   when function(Fun), list(Args), atom(Mod) ->
     mnesia_tm:non_transaction(State, Fun, Args, ActivityKind, Mod);
-non_transaction(State, Fun, Args, ActivityKind, Mod) ->
+non_transaction(_State, Fun, Args, _ActivityKind, _Mod) ->
     {aborted, {badarg, Fun, Args}}.
 
 async_dirty(Fun) ->
@@ -456,7 +456,7 @@ lock(Tid, Ts, LockItem, LockKind) ->
 		_ ->
 		    abort({bad_type, LockItem})
 	    end;
-	Protocol ->
+	_Protocol ->
 	    []
     end.
 
@@ -485,7 +485,7 @@ lock_record(Tid, Ts, Tab, Key, LockKind) when atom(Tab) ->
 	_ ->
 	    abort({bad_type, Tab, LockKind})
     end;
-lock_record(Tid, Ts, Tab, _Key, _LockKind) ->
+lock_record(_Tid, _Ts, Tab, _Key, _LockKind) ->
     abort({bad_type, Tab}).
 
 lock_table(Tid, Ts, Tab, LockKind) when atom(Tab) ->
@@ -502,7 +502,7 @@ lock_table(Tid, Ts, Tab, LockKind) when atom(Tab) ->
 	_ ->
 	    abort({bad_type, Tab, LockKind})
     end;
-lock_table(Tid, Ts, Tab, LockKind) ->
+lock_table(_Tid, _Ts, Tab, _LockKind) ->
     abort({bad_type, Tab}).
 
 global_lock(Tid, Ts, Item, Kind, Nodes) when list(Nodes) ->
@@ -519,7 +519,7 @@ global_lock(Tid, Ts, Item, Kind, Nodes) when list(Nodes) ->
 	_Protocol ->
 	    []
     end;
-global_lock(Tid, Ts, Item, Kind, Nodes) ->
+global_lock(_Tid, _Ts, _Item, _Kind, Nodes) ->
     abort({bad_type, Nodes}).
 
 good_global_nodes(Nodes) ->
@@ -570,7 +570,7 @@ write(Tid, Ts, Tab, Val, LockKind)
 	Protocol ->
 	    do_dirty_write(Protocol, Tab, Val)
     end;
-write(Tid, Ts, Tab, Val, LockKind) ->
+write(_Tid, _Ts, Tab, Val, LockKind) ->
     abort({bad_type, Tab, Val, LockKind}).
 
 write_to_store(Tab, Store, Oid, Val) ->
@@ -634,7 +634,7 @@ delete(Tid, Ts, Tab, Key, LockKind)
 	Protocol ->
 	      do_dirty_delete(Protocol, Tab, Key)
     end; 
-delete(Tid, Ts, Tab, Key, LockKind) ->
+delete(_Tid, _Ts, Tab, _Key, _LockKind) ->
     abort({bad_type, Tab}).
 
 delete_object(Val) when tuple(Val), size(Val) > 2 ->
@@ -694,7 +694,7 @@ delete_object(Tid, Ts, Tab, Val, LockKind)
 	Protocol ->
 	      do_dirty_delete_object(Protocol, Tab, Val)
     end; 
-delete_object(Tid, Ts, Tab, Key, LockKind) ->
+delete_object(_Tid, _Ts, Tab, _Key, _LockKind) ->
     abort({bad_type, Tab}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -740,10 +740,10 @@ read(Tid, Ts, Tab, Key, LockKind)
 			  abort({bad_type, Tab, LockKind})
 		  end,
 	      add_written(?ets_lookup(Store, Oid), Tab, Objs);
-	  Protocol ->
+	  _Protocol ->
 	      dirty_read(Tab, Key)
     end; 
-read(Tid, Ts, Tab, Key, LockKind) ->
+read(_Tid, _Ts, Tab, _Key, _LockKind) ->
     abort({bad_type, Tab}).
 
 %%%%%%%%%%%%%%%%%%%%%
@@ -767,7 +767,7 @@ foldl(ActivityId, Opaque, Fun, Acc, Tab, LockKind) ->
     Res = (catch do_foldl(ActivityId, Opaque, Tab, dirty_first(Tab), Fun, Acc, Type, Prev)),
     close_iteration(Res, Tab).
 
-do_foldl(A, O, Tab, '$end_of_table', Fun, RAcc, Type, Stored) ->
+do_foldl(A, O, Tab, '$end_of_table', Fun, RAcc, _Type, Stored) ->
     lists:foldl(fun(Key, Acc) -> 
 			lists:foldl(Fun, Acc, read(A, O, Tab, Key, read))
 		end, RAcc, Stored);
@@ -809,7 +809,7 @@ foldr(ActivityId, Opaque, Fun, Acc, Tab, LockKind) ->
     Res = (catch do_foldr(ActivityId, Opaque, Tab, dirty_last(Tab), Fun, Acc, Type, Prev)),
     close_iteration(Res, Tab).
 
-do_foldr(A, O, Tab, '$end_of_table', Fun, RAcc, Type, Stored) ->
+do_foldr(A, O, Tab, '$end_of_table', Fun, RAcc, _Type, Stored) ->
     lists:foldl(fun(Key, Acc) -> 
 			lists:foldl(Fun, Acc, read(A, O, Tab, Key, read))
 		end, RAcc, Stored);
@@ -866,7 +866,7 @@ add_previous(_Tid, Ts, _Type, Tab) ->
 %% it is correct with respect to what this particular transaction
 %% has already written, deleted .... etc
 
-add_written([], Tab, Objs) -> 
+add_written([], _Tab, Objs) -> 
     Objs;  % standard normal fast case
 add_written(Written, Tab, Objs) ->
     case val({Tab, setorbag}) of
@@ -887,7 +887,7 @@ add_written_to_bag([{_, Val, write} | Tail], Objs, Ack) ->
     add_written_to_bag(Tail, lists:delete(Val, Objs), [Val | Ack]);
 add_written_to_bag([], Objs, Ack) -> 
     Objs ++ lists:reverse(Ack); %% Oldest write first as in ets
-add_written_to_bag([{_, _ , delete} | Tail], Objs, Ack) ->
+add_written_to_bag([{_, _ , delete} | Tail], _Objs, _Ack) ->
     %% This transaction just deleted all objects
     %% with this key
     add_written_to_bag(Tail, [], []);
@@ -923,10 +923,10 @@ match_object(Tid, Ts, Tab, Pat, LockKind)
 	    end,
 	    Objs = dirty_match_object(Tab, Pat),
 	    add_written_match(Ts#tidstore.store, Pat, Tab, Objs);
-	Protocol ->
+	_Protocol ->
 	    dirty_match_object(Tab, Pat)
     end;
-match_object(Tid, Ts, Tab, Pat, LockKind) ->
+match_object(_Tid, _Ts, Tab, Pat, _LockKind) ->
     abort({bad_type, Tab, Pat}).
 
 add_written_match(S, Pat, Tab, Objs) ->
@@ -939,19 +939,47 @@ find_ops(S, Tab, Pat) ->
 		  {{{Tab, '_'}, Pat, delete_object}, [], ['$_']}],
     ets:select(S, GetWritten).
     
-add_match([], Objs, Type) ->
+add_match([], Objs, _Type) ->
     Objs;
+add_match(Written, Objs, ordered_set) ->
+    %% Must use keysort which is stable
+    add_ordered_match(lists:keysort(1,Written), Objs, []);
 add_match([{Oid, _, delete}|R], Objs, Type) ->
     add_match(R, deloid(Oid, Objs), Type);
-add_match([{Oid, Val, delete_object}|R], Objs, Type) ->
+add_match([{_Oid, Val, delete_object}|R], Objs, Type) ->
     add_match(R, lists:delete(Val, Objs), Type);
-add_match([{Oid, Val, write}|R], Objs, Type) ->
-    case Type of
-	bag ->
-	    add_match(R, [Val | lists:delete(Val, Objs)], Type);
-	_ ->
-	    add_match(R, [Val | deloid(Oid,Objs)],Type)
-    end.
+add_match([{_Oid, Val, write}|R], Objs, bag) ->
+    add_match(R, [Val | lists:delete(Val, Objs)], bag);
+add_match([{Oid, Val, write}|R], Objs, set) ->
+    add_match(R, [Val | deloid(Oid,Objs)],set).
+
+%% For ordered_set only !!
+add_ordered_match(Written = [{{_, Key}, _, _}|_], [Obj|Objs], Acc) 
+  when Key > element(2, Obj) ->
+    add_ordered_match(Written, Objs, [Obj|Acc]);
+add_ordered_match([{{_, Key}, Val, write}|Rest], Objs =[Obj|_], Acc) 
+  when Key < element(2, Obj) ->
+    add_ordered_match(Rest, [Val|Objs],Acc);
+add_ordered_match([{{_, Key}, _, _DelOP}|Rest], Objs =[Obj|_], Acc) 
+  when Key < element(2, Obj) ->
+    add_ordered_match(Rest,Objs,Acc);
+%% Greater than last object
+add_ordered_match([{_, Val, write}|Rest], [], Acc) ->
+    add_ordered_match(Rest, [Val], Acc);
+add_ordered_match([_|Rest], [], Acc) ->
+    add_ordered_match(Rest, [], Acc);
+%% Keys are equal from here 
+add_ordered_match([{_, Val, write}|Rest], [_Obj|Objs], Acc) ->
+    add_ordered_match(Rest, [Val|Objs], Acc);
+add_ordered_match([{_, _Val, delete}|Rest], [_Obj|Objs], Acc) ->
+    add_ordered_match(Rest, Objs, Acc);
+add_ordered_match([{_, Val, delete_object}|Rest], [Val|Objs], Acc) ->
+    add_ordered_match(Rest, Objs, Acc);
+add_ordered_match([{_, _, delete_object}|Rest], Objs, Acc) ->
+    add_ordered_match(Rest, Objs, Acc);
+add_ordered_match([], Objs, Acc) ->
+    lists:reverse(Acc, Objs).
+
 
 %%%%%%%%%%%%%%%%%%
 % select 
@@ -968,7 +996,7 @@ select(Tab, Pat, LockKind)
 	_ ->
 	    abort(no_transaction)
     end;
-select(Tab, Pat, Lock) ->
+select(Tab, Pat, _Lock) ->
     abort({badarg, Tab, Pat}).
 
 select(Tid, Ts, Tab, Spec, LockKind) ->
@@ -1006,23 +1034,24 @@ fun_select(Tid, Ts, Tab, Spec, LockKind, TabPat, SelectFun) ->
 		    TabRecs = SelectFun(FixedSpec),
 		    FixedRes = add_match(Written, TabRecs, Type),
 		    CMS = ets:match_spec_compile(Spec),
-		    case Type of 
-			ordered_set -> 
-			    ets:match_spec_run(lists:sort(FixedRes), CMS);
-			_ ->
-			    ets:match_spec_run(FixedRes, CMS)
-		    end
+% 		    case Type of 
+% 			ordered_set -> 
+% 			    ets:match_spec_run(lists:sort(FixedRes), CMS);
+% 			_ ->
+% 			    ets:match_spec_run(FixedRes, CMS)
+% 		    end
+		    ets:match_spec_run(FixedRes, CMS)
 	    end;
-	Protocol ->
+	_Protocol ->
 	    SelectFun(Spec)
     end. 
 
 get_record_pattern([]) ->
     [];
-get_record_pattern([{M,C,B}|R]) ->
+get_record_pattern([{M,C,_B}|R]) ->
     [{M,C,['$_']} | get_record_pattern(R)].
 
-deloid(Oid, []) ->
+deloid(_Oid, []) ->
     [];
 deloid({Tab, Key}, [H | T]) when element(2, H) == Key ->
     deloid({Tab, Key}, T);
@@ -1050,13 +1079,13 @@ all_keys(Tid, Ts, Tab, LockKind)
 	_ ->
 	    Keys
     end;
-all_keys(Tid, Ts, Tab, LockKind) ->    
+all_keys(_Tid, _Ts, Tab, _LockKind) ->    
     abort({bad_type, Tab}).
 
 index_match_object(Pat, Attr) when tuple(Pat), size(Pat) > 2 ->
     Tab = element(1, Pat),
     index_match_object(Tab, Pat, Attr, read);
-index_match_object(Pat, Attr) ->
+index_match_object(Pat, _Attr) ->
     abort({bad_type, Pat}).
 
 index_match_object(Tab, Pat, Attr, LockKind) ->
@@ -1089,10 +1118,10 @@ index_match_object(Tid, Ts, Tab, Pat, Attr, LockKind)
 		BadPos ->
 		    abort({bad_type, Tab, BadPos})
 	    end;
-	Protocol ->
+	_Protocol ->
 	    dirty_index_match_object(Tab, Pat, Attr)
     end;
-index_match_object(Tid, Ts, Tab, Pat, Attr, LockKind) ->
+index_match_object(_Tid, _Ts, Tab, Pat, _Attr, _LockKind) ->
     abort({bad_type, Tab, Pat}).
 
 index_read(Tab, Key, Attr) ->
@@ -1126,10 +1155,10 @@ index_read(Tid, Ts, Tab, Key, Attr, LockKind)
 		_ ->
 		    abort({bad_type, Tab, LockKind})
 	    end;
-	Protocol ->
+	_Protocol ->
 	    dirty_index_read(Tab, Key, Attr)
     end;
-index_read(Tid, Ts, Tab, Key, Attr, LockKind) ->
+index_read(_Tid, _Ts, Tab, _Key, _Attr, _LockKind) ->
     abort({bad_type, Tab}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1147,7 +1176,7 @@ dirty_write(Tab, Val) ->
 do_dirty_write(SyncMode, Tab, Val)
   when atom(Tab), Tab /= schema, tuple(Val), size(Val) > 2 ->
     case ?catch_val({Tab, record_validation}) of
-	{RecName, Arity, Type}
+	{RecName, Arity, _Type}
 	when size(Val) == Arity, RecName == element(1, Val) ->
 	    Oid = {Tab, element(2, Val)},
 	    mnesia_tm:dirty(SyncMode, {Oid, Val, write});
@@ -1156,7 +1185,7 @@ do_dirty_write(SyncMode, Tab, Val)
 	_ ->
 	    abort({bad_type, Val})
     end;
-do_dirty_write(SyncMode, Tab, Val) ->
+do_dirty_write(_SyncMode, Tab, Val) ->
     abort({bad_type, Tab, Val}).
 
 dirty_delete({Tab, Key}) ->
@@ -1170,7 +1199,7 @@ dirty_delete(Tab, Key) ->
 do_dirty_delete(SyncMode, Tab, Key) when atom(Tab), Tab /= schema  ->
     Oid = {Tab, Key},
     mnesia_tm:dirty(SyncMode, {Oid, Oid, delete});
-do_dirty_delete(SyncMode, Tab, Key) ->
+do_dirty_delete(_SyncMode, Tab, _Key) ->
     abort({bad_type, Tab}).
 
 dirty_delete_object(Val) when tuple(Val), size(Val) > 2 ->
@@ -1186,14 +1215,14 @@ do_dirty_delete_object(SyncMode, Tab, Val)
     when atom(Tab), Tab /= schema, tuple(Val), size(Val) > 2 ->
     Oid = {Tab, element(2, Val)},
     mnesia_tm:dirty(SyncMode, {Oid, Val, delete_object});
-do_dirty_delete_object(SyncMode, Tab, Val) ->
+do_dirty_delete_object(_SyncMode, Tab, Val) ->
     abort({bad_type, Tab, Val}).
 
 %% A Counter is an Oid being {CounterTab, CounterName}
 
 dirty_update_counter({Tab, Key}, Incr) ->
     dirty_update_counter(Tab, Key, Incr);
-dirty_update_counter(Counter, Incr) ->
+dirty_update_counter(Counter, _Incr) ->
     abort({bad_type, Counter}).
 
 dirty_update_counter(Tab, Key, Incr) ->
@@ -1208,7 +1237,7 @@ do_dirty_update_counter(SyncMode, Tab, Key, Incr)
 	_ ->
 	    abort({combine_error, Tab, update_counter})
     end;
-do_dirty_update_counter(SyncMode, Tab, Key, Incr) ->
+do_dirty_update_counter(_SyncMode, Tab, _Key, Incr) ->
     abort({bad_type, Tab, Incr}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1228,7 +1257,7 @@ dirty_read(Tab, Key)
 %%        Val ->
 %%            Val
 %%    end;
-dirty_read(Tab, Key) ->
+dirty_read(Tab, _Key) ->
     abort({bad_type, Tab}).
 
 dirty_match_object(Pat) when tuple(Pat), size(Pat) > 2 ->
@@ -1263,7 +1292,7 @@ remote_dirty_match_object(Tab, Pat, [Pos | Tail]) when Pos =< size(Pat) ->
     end;
 remote_dirty_match_object(Tab, Pat, []) ->
     mnesia_lib:db_match_object(Tab, Pat);
-remote_dirty_match_object(Tab, Pat, PosList) ->
+remote_dirty_match_object(Tab, Pat, _PosList) ->
     abort({bad_type, Tab, Pat}).
 
 dirty_select(Tab, Spec) when atom(Tab), Tab /= schema, list(Spec) ->
@@ -1325,7 +1354,7 @@ dirty_all_keys(Tab) ->
 dirty_index_match_object(Pat, Attr) when tuple(Pat), size(Pat) > 2 ->
     Tab = element(1, Pat),
     dirty_index_match_object(Tab, Pat, Attr);
-dirty_index_match_object(Pat, Attr) ->
+dirty_index_match_object(Pat, _Attr) ->
     abort({bad_type, Pat}).
 
 dirty_index_match_object(Tab, Pat, Attr) 
@@ -1348,7 +1377,7 @@ dirty_index_match_object(Tab, Pat, Attr)
 	BadPos ->
 	    abort({bad_type, Tab, BadPos})
     end;
-dirty_index_match_object(Tab, Pat, Attr) ->
+dirty_index_match_object(Tab, Pat, _Attr) ->
     abort({bad_type, Tab, Pat}).
 
 dirty_index_read(Tab, Key, Attr) when atom(Tab), Tab /= schema ->
@@ -1359,7 +1388,7 @@ dirty_index_read(Tab, Key, Attr) when atom(Tab), Tab /= schema ->
 	true ->
 	    abort({bad_type, Tab, Attr, Key})
     end;
-dirty_index_read(Tab, Key, Attr) ->
+dirty_index_read(Tab, _Key, _Attr) ->
     abort({bad_type, Tab}).
 
 dirty_slot(Tab, Slot) when atom(Tab), Tab /= schema, integer(Slot)  ->
@@ -1379,12 +1408,12 @@ dirty_last(Tab) ->
 
 dirty_next(Tab, Key) when atom(Tab), Tab /= schema ->
     dirty_rpc(Tab, mnesia_lib, db_next_key, [Tab, Key]);
-dirty_next(Tab, Key) ->
+dirty_next(Tab, _Key) ->
     abort({bad_type, Tab}).
 
 dirty_prev(Tab, Key) when atom(Tab), Tab /= schema ->
     dirty_rpc(Tab, mnesia_lib, db_prev_key, [Tab, Key]);
-dirty_prev(Tab, Key) ->
+dirty_prev(Tab, _Key) ->
     abort({bad_type, Tab}).
 
 
@@ -1392,7 +1421,7 @@ dirty_rpc(Tab, M, F, Args) ->
     Node = val({Tab, where_to_read}),
     do_dirty_rpc(Tab, Node, M, F, Args).
 
-do_dirty_rpc(Tab, nowhere, _, _, Args) ->
+do_dirty_rpc(_Tab, nowhere, _, _, Args) ->
     mnesia:abort({no_exists, Args});
 do_dirty_rpc(Tab, Node, M, F, Args) ->
     case rpc:call(Node, M, F, Args) of
@@ -1437,7 +1466,7 @@ table_info(Tab, Item) ->
     case get(mnesia_activity_state) of
 	undefined ->
 	    any_table_info(Tab, Item);
-	{?DEFAULT_ACCESS, Tid, Ts} ->
+	{?DEFAULT_ACCESS, _Tid, _Ts} ->
 	    any_table_info(Tab, Item);
 	{Mod, Tid, Ts} ->
 	    Mod:table_info(Tid, Ts, Tab, Item);
@@ -1487,7 +1516,7 @@ any_table_info(Tab, Item) when atom(Tab) ->
 		    Val
 	    end
     end;
-any_table_info(Tab, Item) ->
+any_table_info(Tab, _Item) ->
     abort({bad_type, Tab}).
 
 raw_table_info(Tab, Item) ->
@@ -1508,11 +1537,11 @@ info_reply({'EXIT', _Reason}, Tab, Item) ->
     bad_info_reply(Tab, Item);
 info_reply({error, _Reason}, Tab, Item) ->
     bad_info_reply(Tab, Item);
-info_reply(Val, _Tab, Item) ->
+info_reply(Val, _Tab, _Item) ->
     Val.
 
-bad_info_reply(Tab, size) -> 0;
-bad_info_reply(Tab, memory) -> 0;
+bad_info_reply(_Tab, size) -> 0;
+bad_info_reply(_Tab, memory) -> 0;
 bad_info_reply(Tab, Item) -> abort({no_exists, Tab, Item}).
 
 %% Raw info about all tables
@@ -1538,7 +1567,7 @@ info() ->
 			  Held),
 
 	    io:format( "---> Processes waiting for locks <--- ~n", []),
-	    lists:foreach(fun({Oid, Op, Pid, Tid, OwnerTid}) ->
+	    lists:foreach(fun({Oid, Op, _Pid, Tid, OwnerTid}) ->
 				  io:format("Tid ~p waits for ~p lock "
 					    "on oid ~p owned by ~p ~n", 
 					    [Tid, Op, Oid, OwnerTid])
@@ -2131,17 +2160,17 @@ snmp_close_table(Tab) ->
 
 snmp_get_row(Tab, RowIndex) when atom(Tab), Tab /= schema ->
     dirty_rpc(Tab, mnesia_snmp_hook, get_row, [Tab, RowIndex]);
-snmp_get_row(Tab, RowIndex) ->
+snmp_get_row(Tab, _RowIndex) ->
     abort({bad_type, Tab}).
 
 snmp_get_next_index(Tab, RowIndex) when atom(Tab), Tab /= schema ->
     dirty_rpc(Tab, mnesia_snmp_hook, get_next_index, [Tab, RowIndex]);
-snmp_get_next_index(Tab, RowIndex) ->
+snmp_get_next_index(Tab, _RowIndex) ->
     abort({bad_type, Tab}).
 
 snmp_get_mnesia_key(Tab, RowIndex) when atom(Tab), Tab /= schema ->
     dirty_rpc(Tab, mnesia_snmp_hook, get_mnesia_key, [Tab, RowIndex]);
-snmp_get_mnesia_key(Tab, RowIndex) ->
+snmp_get_mnesia_key(Tab, _RowIndex) ->
     abort({bad_type, Tab}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

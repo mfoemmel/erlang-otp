@@ -154,18 +154,16 @@ sys_chars_to_double(char* buf, double* fp)
     if (*s)			/* That should be it */
       return -1;
 
-#if defined(HP9000) || defined(ISC32)
     errno = 0;
-#endif
+
     ERTS_FP_CHECK_INIT();
-    *fp = atof(buf);
+    *fp = strtod(buf, NULL);
     ERTS_FP_ERROR(*fp, return -1);
+
 #ifdef DEBUG
     if (errno == ERANGE)
 	fprintf(stderr, "errno = ERANGE in list_to_float\n\r");
 #endif
-
-#if defined(HP9000) || defined(ISC32)
     if (errno == ERANGE)
 	return -1;
 /*
@@ -176,7 +174,6 @@ sys_chars_to_double(char* buf, double* fp)
 **   }				
 */
 
-#endif
     return 0;
 }
 

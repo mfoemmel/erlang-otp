@@ -50,7 +50,6 @@ MODULES= \
 	erl_bits \
 	erl_compile \
 	erl_eval \
-	erl_id_trans \
 	erl_internal \
 	erl_lint \
 	erl_parse \
@@ -130,7 +129,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS +=
-ERL_COMPILE_FLAGS += -I../include -I../../kernel/include
+ERL_COMPILE_FLAGS += -I../include -I../../kernel/include +warn_unused_vars
 
 # ----------------------------------------------------
 # Targets
@@ -147,12 +146,6 @@ docs:
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
-
-# Dirty workaround to make sure that the atom "try" is always quoted.
-# Can be removed in R10. (I really mean it.)
-erl_parse.erl: erl_parse.yrl
-	$(ERLC) $(YRL_FLAGS) erl_parse.yrl
-	$(PERL) -pi -e "s/try,/'try',/g" erl_parse.erl
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@

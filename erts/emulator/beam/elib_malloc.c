@@ -22,6 +22,8 @@
 #  include "config.h"
 #endif
 
+#include "sys.h"
+
 #ifdef ENABLE_ELIB_MALLOC
 
 #undef THREAD_SAFE_ELIB_MALLOC
@@ -31,14 +33,15 @@
 #define THREAD_SAFE_ELIB_MALLOC 0
 #endif
 
-#include "sys.h"
 #include "erl_driver.h"
+#define ERL_THREADS_EMU_INTERNAL__
 #include "erl_threads.h"
 #include "elib_stat.h"
 #if THREAD_SAFE_ELIB_MALLOC && defined(POSIX_THREADS)
 #include <pthread.h>
 #endif
 #include <stdio.h>
+#include <stdlib.h>
 
 /* To avoid clobbering of names becaure of reclaim on VxWorks,
    we undefine all possible malloc, calloc etc. */
@@ -81,18 +84,38 @@
 
 #ifdef POSIX_THREADS
 
-#ifdef PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP
-#  define USE_RECURSIVE_MUTEX 1
-#else
-#  define USE_RECURSIVE_MUTEX 0
+#ifndef USE_RECURSIVE_MALLOC_MUTEX
+#define USE_RECURSIVE_MALLOC_MUTEX 0
 #endif
 
-#if USE_RECURSIVE_MUTEX
+#if USE_RECURSIVE_MALLOC_MUTEX
+
+
+#ifndef HAVE_PTHREAD_MUTEXATTR_SETTYPE
+#define HAVE_PTHREAD_MUTEXATTR_SETTYPE 0
+#endif
+
+#ifndef HAVE_PTHREAD_MUTEXATTR_SETKIND_NP
+#define HAVE_PTHREAD_MUTEXATTR_SETKIND_NP 0
+#endif
+
+#if HAVE_PTHREAD_MUTEXATTR_SETTYPE
+#define PTHR_MTXATTR_SETTYPE pthread_mutexattr_settype
+#elif HAVE_PTHREAD_MUTEXATTR_SETKIND_NP
+#define PTHR_MTXATTR_SETTYPE pthread_mutexattr_setkind_np
+#else
+#error "Dont know how to set pthread mutex attributes"
+#endif
+
+#ifndef PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP
+#error "No PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP found"
+#endif
+
 static pthread_mutex_t malloc_mutex = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
-#else /* #if USE_RECURSIVE_MUTEX */
+#else /* #if USE_RECURSIVE_MALLOC_MUTEX */
 static pthread_mutex_t malloc_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  malloc_cond  = PTHREAD_COND_INITIALIZER;
-#endif  /* #if USE_RECURSIVE_MUTEX */
+#endif  /* #if USE_RECURSIVE_MALLOC_MUTEX */
 
 #ifdef DEBUG
 #define LOCK   do { ASSERT(0 == pthread_mutex_lock(&malloc_mutex)); } while(0)
@@ -115,10 +138,10 @@ static void cleanup_after_fork(void) { UNLOCK; }
 static void
 child_cleanup_after_fork(void)
 {
-#if USE_RECURSIVE_MUTEX
+#if USE_RECURSIVE_MALLOC_MUTEX
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
-    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE_NP);
+    PTHR_MTXATTR_SETTYPE(&attr, PTHREAD_MUTEX_RECURSIVE_NP);
     pthread_mutex_init(&malloc_mutex, &attr);
     pthread_mutexattr_destroy(&attr);
 #else
@@ -134,9 +157,8 @@ do { LOCK; if (elib_need_init) locked_elib_init(NULL,(EWord)0); } while(0)
 
 #else /* #ifdef POSIX_THREADS */
 
-#define USE_RECURSIVE_MUTEX 0
-
-extern erts_mutex_t erts_mutex_sys(int mno);
+#undef USE_RECURSIVE_MALLOC_MUTEX
+#define USE_RECURSIVE_MALLOC_MUTEX 0
 
 erts_mutex_t heap_lock;
 #define LOCK erts_mutex_lock(heap_lock)
@@ -148,6 +170,9 @@ do { if (elib_need_init) elib_init(NULL,(EWord)0); LOCK; } while(0)
 #endif /* #ifdef POSIX_THREADS */
 
 #else /* #if THREAD_SAFE_ELIB_MALLOC */
+
+#undef USE_RECURSIVE_MALLOC_MUTEX
+#define USE_RECURSIVE_MALLOC_MUTEX 0
 
 #define LOCK   
 #define UNLOCK 
@@ -182,6 +207,7 @@ typedef unsigned char EByte;       /* Assume 8-bit byte */
 #if defined(__STDC__)
 void *ELIB_PREFIX(malloc, (size_t));
 void *ELIB_PREFIX(calloc, (size_t, size_t));
+void ELIB_PREFIX(cfree, (EWord *));
 void ELIB_PREFIX(free, (EWord *));
 void *ELIB_PREFIX(realloc, (EWord *, size_t));
 void* ELIB_PREFIX(memresize, (EWord *, int));
@@ -193,6 +219,14 @@ int ELIB_PREFIX(memsize, (EWord *));
 size_t elib_sizeof(void *);
 void elib_init(EWord *, EWord);
 void elib_force_init(EWord *, EWord);
+#endif
+
+#if defined(__STDC__)
+/* define prototypes for missing */
+void* memalign(size_t a, size_t s);
+void* pvalloc(size_t nb);
+void* memresize(void *p, int nb);
+int memsize(void *p);
 #endif
 
 /* bytes to pages */
@@ -217,6 +251,8 @@ void elib_force_init(EWord *, EWord);
 /* PARAMETERS */
 
 #if defined(ELIB_HEAP_SBRK)
+
+#undef PAGE_SIZE
 
 /* Get the system page size (NEED MORE DEFINES HERE) */
 #ifdef _SC_PAGESIZE
@@ -401,8 +437,7 @@ static FUNCTION(void, deallocate, (AllocatedBlock*, int));
 
 #else
 
-static void unlink_block(p, sz)
-FreeBlock* p; EWord sz;
+static void unlink_block(FreeBlock* p, EWord sz)
 {
     if ((*p->prev = p->next) != 0)
 	p->next->prev = p->prev;
@@ -411,22 +446,19 @@ FreeBlock* p; EWord sz;
 /*
 ** Mark block p as allocated (includes changing the free bit)
 */
-static void mark_allocated(p,szp)
-AllocatedBlock* p; EWord szp;
+static void mark_allocated(AllocatedBlock* p, EWord szp)
 {
     p->hdr = (p->hdr & FREE_ABOVE_BIT) | szp;
     p->v[szp] &= ~FREE_ABOVE_BIT;  /* OBJECT BELOW P !!! */
 }
 
-static void mark_free(p, szp)
-FreeBlock* p; EWord szp;
+static void mark_free(FreeBlock* p, EWord szp)
 {
     p->hdr = FREE_BIT | szp;
     p->v[szp-3] = szp;
 }
 
-static int log2(n)
-EWord n;
+static int log2(EWord n)
 {
     int lg = 0;
 
@@ -440,8 +472,7 @@ EWord n;
 /*
 ** Link a free block into a free list
 */
-static void link_block(p, sz)
-FreeBlock* p; EWord sz;
+static void link_block(FreeBlock* p, EWord sz)
 {
     FreeBlock** hp;
 
@@ -468,8 +499,7 @@ FreeBlock* p; EWord sz;
 **
 ** nw is SIZE aligned and szp is SIZE aligned + 1
 */
-static void split_block(p, nw, szp)
-FreeBlock* p; EWord nw; EWord szp;
+static void split_block(FreeBlock* p, EWord nw, EWord szp)
 {
     EWord szq;
     FreeBlock* q;
@@ -497,8 +527,7 @@ FreeBlock* p; EWord nw; EWord szp;
 /*
 ** Find a free block
 */
-static FreeBlock* alloc_block(nw)
-EWord nw;
+static FreeBlock* alloc_block(EWord nw)
 {
     FreeBlock* p;
     EWord szp;
@@ -570,7 +599,7 @@ void elib_init(EWord* addr, EWord sz)
     if (!elib_need_init)
 	return;
 #if THREAD_SAFE_ELIB_MALLOC && !defined(POSIX_THREADS)
-    heap_lock = erts_mutex_sys(0);
+    heap_lock = erts_mutex_sys(ERTS_MUTEX_SYS_ELIB_MALLOC);
 #endif
     LOCK;
     locked_elib_init(addr, sz);
@@ -584,7 +613,7 @@ static void locked_elib_init(EWord* addr, EWord sz)
 
 #if THREAD_SAFE_ELIB_MALLOC
 
-#if defined(POSIX_THREADS) && !USE_RECURSIVE_MUTEX
+#if defined(POSIX_THREADS) && !USE_RECURSIVE_MALLOC_MUTEX
     {
 	static pthread_t initer_tid;
 
@@ -623,7 +652,7 @@ static void locked_elib_init(EWord* addr, EWord sz)
 
 #if THREAD_SAFE_ELIB_MALLOC
 
-#if !USE_RECURSIVE_MUTEX
+#if !USE_RECURSIVE_MALLOC_MUTEX
     UNLOCK;
 #endif
     {	/* Recursive calls to malloc are allowed here... */
@@ -642,7 +671,7 @@ static void locked_elib_init(EWord* addr, EWord sz)
 
 
     }
-#if !USE_RECURSIVE_MUTEX
+#if !USE_RECURSIVE_MALLOC_MUTEX
     LOCK;
     elib_is_initing = 0;
 #endif
@@ -651,8 +680,12 @@ static void locked_elib_init(EWord* addr, EWord sz)
 
     elib_need_init = 0;
 
-#if THREAD_SAFE_ELIB_MALLOC && defined(POSIX_THREADS) && !USE_RECURSIVE_MUTEX
+#if THREAD_SAFE_ELIB_MALLOC \
+    && defined(POSIX_THREADS) \
+    && !USE_RECURSIVE_MALLOC_MUTEX
+
     pthread_cond_broadcast(&malloc_cond);
+
 #endif
 
 }
@@ -742,8 +775,7 @@ static void init_elib_malloc(EWord* addr, EWord sz)
 }
 
 #ifdef ELIB_HEAP_USER
-void elib_force_init(addr, sz)
-EWord* addr; EWord sz;
+void elib_force_init(EWord* addr, EWord sz)
 {
     elib_need_init = 1;
     elib_init(addr,sz);
@@ -755,8 +787,7 @@ EWord* addr; EWord sz;
 /*
 ** need in number of words (should include head and tail words)
 */
-static int expand_sbrk(sz)
-EWord sz;
+static int expand_sbrk(EWord sz)
 {
     EWord* p;
     EWord  bytes = sz * sizeof(EWord);
@@ -806,7 +837,7 @@ EWord sz;
 /*
 ** Scan heap and check for corrupted heap
 */
-int elib_check_heap()
+int elib_check_heap(void)
 {
     AllocatedBlock* p = heap_head;
     EWord sz;
@@ -842,8 +873,7 @@ int elib_check_heap()
 ** 
 ** 
 */
-int elib_heap_map(v, vsz)
-EByte* v; int vsz;
+int elib_heap_map(EByte* v, int vsz)
 {
     AllocatedBlock* p = heap_head;
     EWord sz;
@@ -890,8 +920,7 @@ EByte* v; int vsz;
 ** (0-10],(10-100],(100-1000],(1000-10000] ...
 ** (0-2], (2-4], (4-8], (8-16], ....
 */
-static int i_logb(size, base)
-EWord size; int base;
+static int i_logb(EWord size, int base)
 {
     int lg = 0;
     while(size >= base) {
@@ -901,8 +930,7 @@ EWord size; int base;
     return lg;
 }
 
-int elib_histo(vf, va, vsz, base)
-EWord* vf; EWord* va; int vsz; int base;
+int elib_histo(EWord* vf, EWord* va, int vsz, int base)
 {
     AllocatedBlock* p = heap_head;
     EWord sz;
@@ -970,8 +998,7 @@ EWord* vf; EWord* va; int vsz; int base;
 ** Free
 ** maxMaxFree     
 */
-void elib_stat(info)
-struct elib_stat* info;
+void elib_stat(struct elib_stat* info)
 {
     EWord blks = 0;
     EWord sz_free = 0;
@@ -1014,8 +1041,7 @@ struct elib_stat* info;
 /*
 ** Dump the heap
 */
-void elib_heap_dump(label)
-char* label;
+void elib_heap_dump(char* label)
 {
     AllocatedBlock* p = heap_head;
     EWord sz;
@@ -1040,8 +1066,7 @@ char* label;
 **  Scan heaps and count:
 **  free_size, allocated_size, max_free_block
 */
-void elib_statistics(to)
-void* to;
+void elib_statistics(void* to)
 {
     struct elib_stat info;
     EWord frag;
@@ -1215,8 +1240,7 @@ static AllocatedBlock* allocate(EWord nb, EWord a, int clear)
 ** p points to the block header!
 **
 */
-static void deallocate(p, stat_count)
-AllocatedBlock* p; int stat_count;
+static void deallocate(AllocatedBlock* p, int stat_count)
 {
     FreeBlock* q;
     EWord szq;
@@ -1256,8 +1280,7 @@ AllocatedBlock* p; int stat_count;
 ** Reallocate memory
 ** If preserve is true then data is moved if neccesary
 */
-static AllocatedBlock* reallocate(p, nb, preserve)
-AllocatedBlock* p; EWord nb; int preserve;
+static AllocatedBlock* reallocate(AllocatedBlock* p, EWord nb, int preserve)
 {
     EWord szp;
     EWord szq;
@@ -1336,7 +1359,7 @@ AllocatedBlock* p; EWord nb; int preserve;
 ** What malloc() and friends should do (and return) when the heap is
 ** exhausted.  [sverkerw]
 */
-static void* heap_exhausted()
+static void* heap_exhausted(void)
 {
     /* Choose behaviour */
 #if 0
@@ -1350,8 +1373,7 @@ static void* heap_exhausted()
 /*
 ** Allocate size bytes of memory
 */
-void* ELIB_PREFIX(malloc, (nb))
-size_t nb;
+void* ELIB_PREFIX(malloc, (size_t nb))
 {
     void *res;
     AllocatedBlock* p;
@@ -1373,8 +1395,7 @@ size_t nb;
 }
 
 
-void* ELIB_PREFIX(calloc, (nelem, size))
-size_t nelem; size_t size;
+void* ELIB_PREFIX(calloc, (size_t nelem, size_t size))
 {
     void *res;
     int nb;
@@ -1400,8 +1421,7 @@ size_t nelem; size_t size;
 ** Free memory allocated by malloc
 */
 
-void ELIB_PREFIX(free, (p))
-EWord* p;
+void ELIB_PREFIX(free, (EWord* p))
 {
     LOCK_AND_INIT;
 
@@ -1422,8 +1442,7 @@ void ELIB_PREFIX(cfree, (EWord* p))
 **
 */
 
-void* ELIB_PREFIX(realloc, (p, nb))
-EWord* p; size_t nb;
+void* ELIB_PREFIX(realloc, (EWord* p, size_t nb))
 {
     void *res = NULL;
     AllocatedBlock* pp;
@@ -1458,8 +1477,7 @@ EWord* p; size_t nb;
 /*
 ** Resize the memory area pointed to by p with nb number of bytes
 */
-void* ELIB_PREFIX(memresize, (p, nb))
-EWord* p; int nb;
+void* ELIB_PREFIX(memresize, (EWord* p, int nb))
 {
     void *res = NULL;
     AllocatedBlock* pp;
@@ -1494,8 +1512,7 @@ EWord* p; int nb;
 
 /* Create aligned memory a must be a power of 2 !!! */
 
-void* ELIB_PREFIX(memalign, (a, nb))
-int a; int nb;
+void* ELIB_PREFIX(memalign, (int a, int nb))
 {
     void *res;
     AllocatedBlock* p;
@@ -1549,8 +1566,7 @@ EWord* p;
 ** Returns 0 if not pointing into a block
 */
 
-static EWord* ptr_to_block(ptr)
-char* ptr;
+static EWord* ptr_to_block(char* ptr)
 {
     AllocatedBlock* p = heap_head;
     EWord sz;
@@ -1571,8 +1587,7 @@ char* ptr;
 **     -1  - if points inside block
 **
 */
-static int check_pointer(ptr)
-char* ptr;
+static int check_pointer(char* ptr)
 {
     if (IN_HEAP(ptr)) {
 	if (ptr_to_block(ptr) == 0)
@@ -1589,8 +1604,7 @@ char* ptr;
 **     -1 - if area overlap a heap block
 **      1 - if area is outside heap
 */
-static int check_area(ptr, n)
-char* ptr; int n;
+static int check_area(char* ptr, int n)
 {
     if (IN_HEAP(ptr)) {
 	if (IN_HEAP(ptr+n-1)) {
@@ -1610,9 +1624,7 @@ char* ptr; int n;
 /*
 ** Check if a block write will overwrite heap block
 */
-static void check_write(ptr, n, file, line, fun)
-char* ptr; int n;
-char* file; int line; char* fun;
+static void check_write(char* ptr, int n, char* file, int line, char* fun)
 {
     if (check_area(ptr, n) == -1) {
 	elib_printf(stderr, "RUNTIME ERROR: %s heap overwrite\n", fun);
@@ -1624,8 +1636,7 @@ char* file; int line; char* fun;
 /*
 ** Check if a pointer is an allocated object
 */
-static void check_allocated_block(ptr, file, line, fun)
-char* ptr; char* file; int line; char* fun;
+static void check_allocated_block(char* ptr, char* file, int line, char* fun)
 {
     EWord* q;
 
@@ -1649,21 +1660,17 @@ char* ptr; char* file; int line; char* fun;
 ** --------------------------------------------------------------------------
 */
 
-void* elib_dbg_malloc(n, file, line)
-int n; char* file; int line;
+void* elib_dbg_malloc(int n, char* file, int line)
 {
     return elib__malloc(n);
 }
 
-void* elib_dbg_calloc(n, s, file, line)
-int n; int s; char* file; int line;
+void* elib_dbg_calloc(int n, int s, char* file, int line)
 {
     return elib__calloc(n, s);
 }
 
-void* elib_dbg_realloc(p, n, file, line)
-EWord* p; int n;
-char* file; int line;
+void* elib_dbg_realloc(EWord* p, int n, char* file, int line)
 {
     if (p == 0)
 	return elib__malloc(n);
@@ -1671,9 +1678,7 @@ char* file; int line;
     return elib__realloc(p, n);
 }
 
-void elib_dbg_free(p, file, line)
-EWord* p;
-char* file; int line;
+void elib_dbg_free(EWord* p, char* file, int line)
 {
     if (p == 0)
 	return;
@@ -1689,8 +1694,7 @@ void elib_dbg_cfree(EWord* p, char* file, int line)
     elib__cfree(p);
 }
 
-void* elib_dbg_memalign(a, n, file, line)
-int a; int n; char* file; int line;
+void* elib_dbg_memalign(int a, int n, char* file, int line)
 {
     return elib__memalign(a, n);
 }
@@ -1705,9 +1709,7 @@ void* elib_dbg_pvalloc(int n, char* file, int line)
     return elib__pvalloc(n);
 }
 
-void* elib_dbg_memresize(p, n, file, line)
-EWord* p; int n;
-char* file; int line;
+void* elib_dbg_memresize(EWord* p, int n, char* file, int line)
 {
     if (p == 0)
 	return elib__malloc(n);
@@ -1715,8 +1717,7 @@ char* file; int line;
     return elib__memresize(p, n);
 }
 
-int elib_dbg_memsize(p, file, line)
-void* p; char* file; int line;
+int elib_dbg_memsize(void* p, char* file, int line)
 {
     check_allocated_block(p, file, line, "elib_memsize");
     return elib__memsize(p);
@@ -1728,26 +1729,22 @@ void* p; char* file; int line;
 ** --------------------------------------------------------------------------
 */
 
-void* elib_malloc(n)
-int n;
+void* elib_malloc(int n)
 {
     return elib_dbg_malloc(n, "", -1);
 }
 
-void* elib_calloc(n, s)
-int n, s;
+void* elib_calloc(int n, int s)
 {
     return elib_dbg_calloc(n, s, "", -1);
 }
 
-void* elib_realloc(p, n)     
-EWord* p; int n;
+void* elib_realloc(EWord* p, int n)
 {
     return elib_dbg_realloc(p, n, "", -1);
 }
 
-void elib_free(p)
-EWord* p;
+void elib_free(EWord* p)
 {
     elib_dbg_free(p, "", -1);
 }
@@ -1757,8 +1754,7 @@ void elib_cfree(EWord* p)
     elib_dbg_cfree(p, "", -1);
 }
 
-void* elib_memalign(a, n)
-int a; int n;
+void* elib_memalign(int a, int n)
 {
     return elib_dbg_memalign(a, n, "", -1);
 }
@@ -1773,15 +1769,13 @@ void* elib_pvalloc(int n)
     return elib_dbg_pvalloc(n, "", -1);
 }
 
-void* elib_memresize(p, n)
-EWord* p; int n;
+void* elib_memresize(EWord* p, int n)
 {
     return elib_dbg_memresize(p, n, "", -1);
 }
 
 
-int elib_memsize(p)
-EWord* p;
+int elib_memsize(EWord* p)
 {
     return elib_dbg_memsize(p, "", -1);
 }
@@ -1796,21 +1790,17 @@ EWord* p;
 
 #if defined(ELIB_ALLOC_IS_CLIB)
 
-void* malloc(nb)
-size_t nb;
+void* malloc(size_t nb)
 {
     return elib_malloc(nb);
 }
 
-void* calloc(nelem, size)
-size_t nelem;
-size_t size;
+void* calloc(size_t nelem, size_t size)
 {
     return elib_calloc(nelem, size);
 }
 
-void free(p)
-void *p;
+void free(void *p)
 {
     elib_free(p);
 }
@@ -1820,17 +1810,13 @@ void cfree(void *p)
     elib_cfree(p);
 }
 
-void* realloc(p, nb)
-void* p;
-size_t nb;
+void* realloc(void* p, size_t nb)
 {
     return elib_realloc(p, nb);
 }
 
 
-void* memalign(a, s)
-size_t a;
-size_t s;
+void* memalign(size_t a, size_t s)
 {
     return elib_memalign(a, s);
 }
@@ -1845,14 +1831,12 @@ void* pvalloc(size_t nb)
     return elib_pvalloc(nb);
 }
 
-void* memresize(p, nb)
-void* p; int nb;
+void* memresize(void* p, int nb)
 {
     return elib_memresize(p, nb);
 }
 
-int memsize(p)
-void* p;
+int memsize(void* p)
 {
     return elib_memsize(p);
 }
@@ -1861,8 +1845,7 @@ void* p;
 
 #endif /* ENABLE_ELIB_MALLOC */
 
-void
-elib_ensure_initialized(void)
+void elib_ensure_initialized(void)
 {
 #ifdef ENABLE_ELIB_MALLOC
 #ifndef ELIB_DONT_INITIALIZE

@@ -71,14 +71,14 @@ loop(Win) ->
 
 gui_cmd(ignore, Win) ->
     Win;
-gui_cmd(stopped, Win) ->
+gui_cmd(stopped, _Win) ->
     exit(normal);
 gui_cmd({win, Win2}, _Win) ->
     Win2;
 gui_cmd({module, Mod}, Win) ->
     Funcs = int:functions(Mod),
     dbg_ui_break_win:update_functions(Win, Funcs);
-gui_cmd({break, Data, Action}, Win) ->
+gui_cmd({break, Data, Action}, _Win) ->
     case Data of
 	[Mod, Line] ->
 	    int:break(Mod, Line),

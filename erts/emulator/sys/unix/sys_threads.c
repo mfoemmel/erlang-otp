@@ -26,10 +26,11 @@
 #endif
 
 #include "sys.h"
+#include "erl_alloc.h"
 #include "erl_driver.h"
+#define ERL_THREADS_EMU_INTERNAL__
 #include "erl_threads.h"
 #include <signal.h>
-
 
 #if defined(POSIX_THREADS)
 #include <pthread.h>
@@ -46,8 +47,6 @@
 
 #endif
 
-#define MAX_SYS_MUTEX 10
-
 struct _thread_data
 {
     void* (*func)(void*);
@@ -57,27 +56,64 @@ struct _thread_data
 /**************************************************************************/
 #if defined(POSIX_THREADS)
 
-static pthread_mutex_t sys_mutex[MAX_SYS_MUTEX];
+void __noreturn erl_exit(int n, char*, ...);
 
-erts_mutex_t erts_mutex_create()
+typedef struct Mutex_t_ Mutex_t;
+
+#ifndef HAVE_PTHREAD_ATFORK
+#define HAVE_PTHREAD_ATFORK 0
+#endif
+
+struct Mutex_t_ {
+    pthread_mutex_t mtx;
+#if HAVE_PTHREAD_ATFORK
+    Mutex_t *prev;
+    Mutex_t *next;
+    int default_atfork;
+#endif
+};
+
+#if HAVE_PTHREAD_ATFORK
+static struct {
+    Mutex_t *start;
+    Mutex_t *end;
+    pthread_mutex_t mtx;
+} def_atfork_list = {NULL, NULL, PTHREAD_MUTEX_INITIALIZER};
+#else
+#warning "pthread_atfork() is missing! Cannot enforce fork safety"
+#endif
+
+static Mutex_t sys_mutex[ERTS_MAX_SYS_MUTEX];
+
+erts_mutex_t erts_mutex_create(void)
 {
-    pthread_mutex_t* mp = (pthread_mutex_t*)
-	sys_alloc(sizeof(pthread_mutex_t));
-    if ((mp != NULL) && pthread_mutex_init(mp,NULL)) {
-	sys_free((void*)mp);
+    Mutex_t* mp = (Mutex_t *) erts_alloc_fnf(ERTS_ALC_T_MUTEX,
+					     sizeof(Mutex_t));
+    if ((mp != NULL) && pthread_mutex_init(&mp->mtx,NULL)) {
+	erts_free(ERTS_ALC_T_MUTEX, (void *) mp);
 	return NULL;
     }
+#if HAVE_PTHREAD_ATFORK
+    mp->prev = NULL;
+    mp->next = NULL;
+    mp->default_atfork = 0;
+#endif
     return (erts_mutex_t) mp;
 }
 
 erts_mutex_t erts_mutex_sys(int mno)
 {
-    pthread_mutex_t* mp;    
-    if (mno >= MAX_SYS_MUTEX || mno < 0)
+    Mutex_t* mp;    
+    if (mno >= ERTS_MAX_SYS_MUTEX || mno < 0)
 	return NULL;
     mp = &sys_mutex[mno];
-    if (pthread_mutex_init(mp,NULL))
+    if (pthread_mutex_init(&mp->mtx,NULL))
 	return NULL;
+#if HAVE_PTHREAD_ATFORK
+    mp->prev = NULL;
+    mp->next = NULL;
+    mp->default_atfork = 0;
+#endif
     return (erts_mutex_t) mp;
 }
 
@@ -92,37 +128,185 @@ int erts_atfork_sys(void (*prepare)(void),
 #if HAVE_PTHREAD_ATFORK
   return pthread_atfork(prepare, parent, child) == 0 ? 0 : -1;
 #else
-#warning "pthread_atfork() is missing! Cannot enforce fork safety"
   return -1;
 #endif
 }
 
+#if HAVE_PTHREAD_ATFORK
+static void lock_mutexes(void)
+{
+    int res;
+    Mutex_t *m;
+
+    res = pthread_mutex_lock(&def_atfork_list.mtx);
+    if (res != 0) {
+    error:
+	erl_exit(1, "Failed to lock mutex when forking\n");
+    }
+    for (m = def_atfork_list.start; m; m = m->next) {
+	res = pthread_mutex_lock(&m->mtx);
+	if (res != 0)
+	    goto error;
+    }
+}
+
+static void unlock_mutexes(void)
+{
+    int res;
+    Mutex_t *m;
+
+    for (m = def_atfork_list.end; m; m = m->prev) {
+	res = pthread_mutex_unlock(&m->mtx);
+	if (res != 0) 
+	    goto error;
+    }
+
+    res = pthread_mutex_unlock(&def_atfork_list.mtx);
+    if (res != 0) {
+    error:
+	erl_exit(1, "Failed to unlock mutex when forking\n");
+    }
+}
+
+#if INIT_MUTEX_IN_CHILD_AT_FORK
+
+static void reinit_mutexes(void)
+{
+    int res;
+    Mutex_t *mp;
+    for (mp = def_atfork_list.end; mp; mp = mp->prev) {
+	res = pthread_mutex_init(&mp->mtx, NULL);
+	if (res != 0)
+	    goto error;
+    }
+
+    res = pthread_mutex_init(&def_atfork_list.mtx, NULL);
+    if (res != 0) {
+    error:
+	    erl_exit(1, "Failed to reinitialize mutex when forking\n");
+    }
+}
+
+#endif
+
+int erts_mutex_set_default_atfork(erts_mutex_t mtx)
+{
+    Mutex_t *mp = (Mutex_t *) mtx;
+    static int need_init = 1;
+    int res;
+
+    if (mp->default_atfork)
+	return 0;
+
+    res = pthread_mutex_lock(&def_atfork_list.mtx);
+    if (res != 0)
+	return res;
+
+    if (need_init) {
+	
+	res = pthread_atfork(lock_mutexes,
+			     unlock_mutexes,
+#if INIT_MUTEX_IN_CHILD_AT_FORK
+			     reinit_mutexes
+#else
+			     unlock_mutexes
+#endif
+	    );
+	if (res != 0) {
+	    pthread_mutex_unlock(&def_atfork_list.mtx);
+	    return res;
+	}
+	need_init = 0;
+    }
+
+    mp->prev = NULL;
+    if (def_atfork_list.start) {
+	mp->next = def_atfork_list.start;
+	def_atfork_list.start->prev = mp;
+	def_atfork_list.start = mp;
+    }
+    else {
+	mp->next = NULL;
+	def_atfork_list.start = def_atfork_list.end = mp;
+    }
+    mp->default_atfork = 1;
+
+    return pthread_mutex_unlock(&def_atfork_list.mtx);
+}
+
+int erts_mutex_unset_default_atfork(erts_mutex_t mtx)
+{
+    Mutex_t *mp = (Mutex_t *) mtx;
+    if (mp->default_atfork) {
+
+	pthread_mutex_lock(&def_atfork_list.mtx);
+
+	if (mp->prev) {
+	    ASSERT(def_atfork_list.start != mp);
+	    mp->prev->next = mp->next;
+	}
+	else {
+	    ASSERT(def_atfork_list.start == mp);
+	    def_atfork_list.start = mp->next;
+	}
+	if (mp->next) {
+	    ASSERT(def_atfork_list.end != mp);
+	    mp->next->prev = mp->prev;
+	}
+	else {
+	    ASSERT(def_atfork_list.end == mp);
+	    def_atfork_list.end = mp->prev;
+	}
+
+	pthread_mutex_unlock(&def_atfork_list.mtx);
+    }
+    return 0;
+}
+
+#else /* #if HAVE_PTHREAD_ATFORK */
+
+int erts_mutex_set_default_atfork(erts_mutex_t mtx)
+{
+    return 0;
+}
+
+int erts_mutex_unset_default_atfork(erts_mutex_t mtx)
+{
+    return 0;
+}
+
+#endif
+
+
 int erts_mutex_destroy(erts_mutex_t mtx)
 {
     if (mtx != NULL) {
-	int code = pthread_mutex_destroy((pthread_mutex_t*)mtx);
-	sys_free(mtx);
-	return code;
+	Mutex_t *mp = (Mutex_t *) mtx;
+	int res;
+	erts_mutex_unset_default_atfork(mtx);
+	res = pthread_mutex_destroy(&mp->mtx);
+	erts_free(ERTS_ALC_T_MUTEX, (void *) mtx);
+	return res;
     }
     return -1;
 }
 
 int erts_mutex_lock (erts_mutex_t mtx)
 {
-    return pthread_mutex_lock((pthread_mutex_t*) mtx);
+    return pthread_mutex_lock(&((Mutex_t*) mtx)->mtx);
 }
 
 int erts_mutex_unlock (erts_mutex_t mtx)
 {
-    return pthread_mutex_unlock((pthread_mutex_t*) mtx);
+    return pthread_mutex_unlock(&((Mutex_t*) mtx)->mtx);
 }
 
 erts_cond_t erts_cond_create()
 {
     pthread_cond_t* cv = (pthread_cond_t*)
-	sys_alloc(sizeof(pthread_cond_t));
+	erts_alloc_fnf(ERTS_ALC_T_COND_VAR, sizeof(pthread_cond_t));
     if ((cv != NULL) && pthread_cond_init(cv,NULL)) {
-	sys_free((void*)cv);
+	erts_free(ERTS_ALC_T_COND_VAR, (void *) cv);
 	return NULL;
     }
     return (erts_cond_t) cv;
@@ -132,7 +316,7 @@ int erts_cond_destroy(erts_cond_t cv)
 {
     if (cv != NULL) {
 	int code = pthread_cond_destroy((pthread_cond_t*)cv);
-	sys_free(cv);
+	erts_free(ERTS_ALC_T_COND_VAR, (void *) cv);
 	return code;
     }
     return -1;
@@ -152,7 +336,7 @@ int erts_cond_wait(erts_cond_t cv, erts_mutex_t mtx)
 {
     int res;
     do {
-      res = pthread_cond_wait((pthread_cond_t*) cv, (pthread_mutex_t*) mtx);
+      res = pthread_cond_wait((pthread_cond_t*) cv, &((Mutex_t*) mtx)->mtx);
     } while(res == EINTR);
     return res;
 }
@@ -177,7 +361,7 @@ int erts_cond_timedwait(erts_cond_t cv, erts_mutex_t mtx, long time)
     ts.tv_nsec = us*1000;
     do {
       res = pthread_cond_timedwait((pthread_cond_t*) cv, 
-				   (pthread_mutex_t*) mtx,
+				   &((Mutex_t*) mtx)->mtx,
 				   &ts);
     } while(res == EINTR);
     return res;
@@ -190,7 +374,7 @@ static void* erts_thread_func_wrap(void* args)
 
     td.func = ((struct _thread_data*) args)->func;
     td.arg  = ((struct _thread_data*) args)->arg;
-    sys_free(args);
+    erts_free(ERTS_ALC_T_THREAD_REF, (void *) args);
     
     sigemptyset(&new);
     sigaddset(&new, SIGINT);   /* block interrupt */
@@ -212,7 +396,8 @@ int erts_thread_create(erts_thread_t* tpp,
     int code;
     struct _thread_data* td;
 
-    td = (struct _thread_data*)sys_alloc(sizeof(struct _thread_data));
+    td = (struct _thread_data*)
+	erts_alloc_fnf(ERTS_ALC_T_THREAD_REF, sizeof(struct _thread_data));
     if (td == NULL)
 	return -1;
     td->func = func;
@@ -226,7 +411,7 @@ int erts_thread_create(erts_thread_t* tpp,
 			       (void*) td)) == 0)
 	*tpp = (erts_thread_t) thr;
     else
-	sys_free(td);
+	erts_free(ERTS_ALC_T_THREAD_REF, (void *) td);
     pthread_attr_destroy(&attr);
     return code;
 }
@@ -261,18 +446,27 @@ int erts_thread_sigwait(const sigset_t *set, int *sig)
   return sigwait(set, sig);
 }
 
+void
+erts_sys_threads_init(void)
+{
+    /* NOTE: erts_sys_threads_init() is called before allocators are
+     * initialized; therefore, it's not allowed to call erts_alloc()
+     * (and friends) from here.
+     */
+    
+}
 /**************************************************************************/
 
 #elif defined(SOLARIS_THREADS)
 
-static mutex_t sys_mutex[MAX_SYS_MUTEX];
+static mutex_t sys_mutex[ERTS_MAX_SYS_MUTEX];
 
 erts_mutex_t erts_mutex_create()
 {
     mutex_t* mp = (mutex_t*)
-	sys_alloc(sizeof(mutex_t));
+	erts_alloc_fnf(ERTS_ALC_T_MUTEX, sizeof(mutex_t));
     if ((mp != NULL) && mutex_init(mp, USYNC_THREAD, NULL)) {
-	sys_free((void*)mp);
+	erts_free(ERTS_ALC_T_MUTEX, (void *) mp);
 	return NULL;
     }
     return (erts_mutex_t) mp;
@@ -281,7 +475,7 @@ erts_mutex_t erts_mutex_create()
 erts_mutex_t erts_mutex_sys(int mno)
 {
     mutex_t* mp;    
-    if (mno >= MAX_SYS_MUTEX || mno < 0)
+    if (mno >= ERTS_MAX_SYS_MUTEX || mno < 0)
 	return NULL;
     mp = &sys_mutex[mno];
     if (mutex_init(mp, USYNC_THREAD, NULL))
@@ -297,11 +491,21 @@ int erts_atfork_sys(void (*prepare)(void),
   return 0;
 }
 
+int erts_mutex_set_default_atfork(erts_mutex_t mtx)
+{
+    return 0;
+}
+
+int erts_mutex_unset_default_atfork(erts_mutex_t mtx)
+{
+    return 0;
+}
+
 int erts_mutex_destroy(erts_mutex_t mtx)
 {
     if (mtx != NULL) {
 	int code = mutex_destroy((mutex_t*)mtx);
-	sys_free(mtx);
+	erts_free(ERTS_ALC_T_MUTEX, (void *) mtx);
 	return code;
     }
     return -1;
@@ -319,10 +523,9 @@ int erts_mutex_unlock (erts_mutex_t mtx)
 
 erts_cond_t erts_cond_create()
 {
-    cond_t* cv = (cond_t*)
-	sys_alloc(sizeof(cond_t));
+    cond_t* cv = (cond_t*) erts_alloc_fnf(ERTS_ALC_T_COND_VAR, sizeof(cond_t));
     if ((cv != NULL) && cond_init(cv,USYNC_THREAD,NULL)) {
-	sys_free((void*)cv);
+	erts_free(ERTS_ALC_T_COND_VAR, (void *) cv);
 	return NULL;
     }
     return (erts_cond_t) cv;
@@ -332,7 +535,7 @@ int erts_cond_destroy(erts_cond_t cv)
 {
     if (cv != NULL) {
 	int code = cond_destroy((cond_t*)cv);
-	sys_free(cv);
+	erts_free(ERTS_ALC_T_COND_VAR, (void *) cv);
 	return code;
     }
     return -1;
@@ -389,7 +592,7 @@ static void* erts_thread_func_wrap(void* args)
 
     td.func = ((struct _thread_data*) args)->func;
     td.arg  = ((struct _thread_data*) args)->arg;
-    sys_free(args);
+    erts_free(ERTS_ALC_T_THREAD_REF, (void *) args);
 
     sigemptyset(&new);
     sigaddset(&new, SIGINT);   /* block interrupt */
@@ -410,7 +613,8 @@ int erts_thread_create(erts_thread_t* tpp,
     int code;
     struct _thread_data* td;
 
-    td = (struct _thread_data*)sys_alloc(sizeof(struct _thread_data));
+    td = (struct _thread_data*)
+	erts_alloc(ERTS_ALC_T_THREAD_REF, sizeof(struct _thread_data));
     if (td == NULL)
 	return -1;    
     td->func = func;
@@ -421,7 +625,7 @@ int erts_thread_create(erts_thread_t* tpp,
 			   detached ? THR_DETACHED : 0, &thr)) == 0)
 	*tpp = (erts_thread_t) thr;
     else
-	sys_free(td);
+	erts_free(ERTS_ALC_T_THREAD_REF, (void *) td);
     return code;
 }
 
@@ -456,9 +660,20 @@ int erts_thread_sigwait(const sigset_t *set, int *sig)
   return (*sig >= 0) ? 0 : -1;
 }
 
+
+void
+erts_sys_threads_init(void)
+{
+    /* NOTE: erts_sys_threads_init() is called before allocators are
+     * initialized; therefore, it's not allowed to call erts_alloc()
+     * (and friends) from here.
+     */
+    
+}
+
 #else
 
-erts_mutex_t erts_mutex_create()
+erts_mutex_t erts_mutex_create(void)
 {
     return NULL;
 }
@@ -555,6 +770,16 @@ int erts_thread_sigmask(int how, const sigset_t *set, sigset_t *oset)
 int erts_thread_sigwait(const sigset_t *set, int *sig)
 {
   return -1;
+}
+
+void
+erts_sys_threads_init(void)
+{
+    /* NOTE: erts_sys_threads_init() is called before allocators are
+     * initialized; therefore, it's not allowed to call erts_alloc()
+     * (and friends) from here.
+     */
+    
 }
 
 #endif

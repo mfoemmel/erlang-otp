@@ -86,7 +86,7 @@ maybe_create_persistent_var({Var, Val}) ->
 create_persistent_var({Var, Val}) ->
     snmp_generic:variable_set({Var, persistent}, Val).
 
-variable_func(Op) -> ok.
+variable_func(_Op) -> ok.
 
 variable_func(get, Name) ->
     [{_, Val}] = ets:lookup(snmp_agent_table, Name),
@@ -145,7 +145,7 @@ sys_object_id(set, NewVal) ->
 %% values each time.  This function will only be called with
 %% new/delete.
 %%-----------------------------------------------------------------
-dummy(Op) -> ok.
+dummy(_Op) -> ok.
 
 %%-----------------------------------------------------------------
 %% This is the instrumentation function for snmpSetSerialNo

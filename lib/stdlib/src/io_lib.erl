@@ -67,9 +67,10 @@
 -export([quote_atom/2,char_list/1,deep_char_list/1,printable_list/1]).
 
 %% Utilities for collecting characters.
--export([collect_chars/3,collect_line/2]).
+-export([collect_chars/3,collect_line/2,collect_line/3,get_until/3]).
 
 -export([scan/1,scan/2,scan/3,reserved_word/1]).
+-deprecated([{scan,1},{scan,2},{scan,3},{reserved_word,1}]).
 
 %% Backward compatibility functions.
 
@@ -94,7 +95,7 @@ fread(Cont, Chars, Format) ->
 
 format(Format, Args) ->
     case catch io_lib_format:fwrite(Format, Args) of
-	{'EXIT', Reason} ->
+	{'EXIT',_} ->
 	    erlang:fault(badarg, [Format, Args]);
 	Other ->
 	    Other
@@ -122,23 +123,23 @@ write(Term, D, true) ->
 write(Term, D, false) ->
     write(Term, D).
 
-write(Term, 0) -> "...";
-write(Term, D) when integer(Term) -> integer_to_list(Term);
-write(Term, D) when float(Term) -> io_lib_format:fwrite_g(Term);
-write(Atom, D) when atom(Atom) -> write_atom(Atom);
-write(Term, D) when port(Term) -> write_port(Term);
-write(Term, D) when pid(Term) -> pid_to_list(Term);
-write(Term, D) when reference(Term) -> write_ref(Term);
+write(_Term, 0) -> "...";
+write(Term, _D) when integer(Term) -> integer_to_list(Term);
+write(Term, _D) when float(Term) -> io_lib_format:fwrite_g(Term);
+write(Atom, _D) when atom(Atom) -> write_atom(Atom);
+write(Term, _D) when port(Term) -> write_port(Term);
+write(Term, _D) when pid(Term) -> pid_to_list(Term);
+write(Term, _D) when reference(Term) -> write_ref(Term);
 write(Term, D) when binary(Term) -> write_binary(Term, D);
-write([], D) -> "[]";
-write({}, D) -> "{}";
+write([], _D) -> "[]";
+write({}, _D) -> "{}";
 write([H|T], D) ->
     if
 	D == 1 -> "[...]";
 	true ->
 	    [$[,[write(H, D-1)|write_tail(T, D-1)],$]]
     end;
-write(F, D) when function(F) ->
+write(F, _D) when function(F) ->
     erlang:fun_to_list(F);
 write(T, D) when tuple(T) ->
     if
@@ -150,7 +151,7 @@ write(T, D) when tuple(T) ->
     end;
 write(T, D) ->
      case catch write_vector(T, D) of
- 	{'EXIT',Reason}=Bad ->
+ 	{'EXIT',_}=Bad ->
 	     write(Bad, D);
  	Other -> Other
      end.
@@ -159,8 +160,8 @@ write(T, D) ->
 %% write_tail(List, Depth)
 %%  Test the terminating case first as this looks better with depth.
 
-write_tail([], D) -> "";
-write_tail(List, 1) -> "|...";
+write_tail([], _D) -> "";
+write_tail(_, 1) -> "|...";
 write_tail([H|T], D) ->
     [$,,write(H, D-1)|write_tail(T, D-1)];
 write_tail(Other, D) ->
@@ -172,8 +173,8 @@ write_port(Port) ->
 write_ref(Ref) ->
     erlang:ref_to_list(Ref).
 
-write_bin_tail([], D, L) -> "";
-write_bin_tail(List, 1, L) -> ",...";
+write_bin_tail([], _D, _L) -> "";
+write_bin_tail(_, 1, _L) -> ",...";
 write_bin_tail([H|T], D, L) ->
     [$,,write(H, D-1)|write_bin_tail(T, D-1, L)].
 
@@ -218,7 +219,7 @@ write_vector_contents(Vec, I, D, []) when I >= 1 ->
     write_vector_contents(Vec, I-1, D, [write(vector:get(I, Vec), D)]);
 write_vector_contents(Vec, I, D, Acc) when I >= 1 ->
     write_vector_contents(Vec, I-1, D, [write(vector:get(I, Vec), D),$,|Acc]);
-write_vector_contents(Vec, I, D, Acc) -> Acc.
+write_vector_contents(_Vec, _I, _D, Acc) -> Acc.
 
 %% write_atom(Atom) -> [Char]
 %%  Generate the list of characters needed to print an atom.
@@ -285,7 +286,7 @@ string_char(C, _, Tail) when C >= $\s, C =< $~ ->
     [C|Tail];
 string_char(C, _, Tail) when C >= $\240, C =< $\377 ->
     [C|Tail];
-string_char($\n, Q, Tail) -> [$\\,$n|Tail];	%\n = LF
+string_char($\n, _, Tail) -> [$\\,$n|Tail];	%\n = LF
 string_char($\r, _, Tail) -> [$\\,$r|Tail];	%\r = CR
 string_char($\t, _, Tail) -> [$\\,$t|Tail];	%\t = TAB
 string_char($\v, _, Tail) -> [$\\,$v|Tail];	%\v = VT
@@ -315,7 +316,7 @@ write_char(C) when C >= $\000, C =< $\377 ->
 char_list([C|Cs]) when integer(C), C >= $\000, C =< $\377 ->
     char_list(Cs);
 char_list([]) -> true;
-char_list(Other) -> false.			%Everything else is false
+char_list(_) -> false.			%Everything else is false
 
 deep_char_list(Cs) ->
     deep_char_list(Cs, []).
@@ -327,7 +328,7 @@ deep_char_list([C|Cs], More) when integer(C), C >= $\000, C =< $\377 ->
 deep_char_list([], [Cs|More]) ->
     deep_char_list(Cs, More);
 deep_char_list([], []) -> true;
-deep_char_list(Other, More) ->			%Everything else is false
+deep_char_list(_, _More) ->			%Everything else is false
     false.
 
 %% printable_list([Char]) -> bool()
@@ -346,7 +347,7 @@ printable_list([$\b|Cs]) -> printable_list(Cs);
 printable_list([$\f|Cs]) -> printable_list(Cs);
 printable_list([$\e|Cs]) -> printable_list(Cs);
 printable_list([]) -> true;
-printable_list(Other) -> false.			%Everything else is false
+printable_list(_) -> false.			%Everything else is false
 
 %% List = nl()
 %%  Return a list of characters to generate a newline.
@@ -358,6 +359,39 @@ nl() ->
 %% Utilities for collecting characters in input files
 %%
 
+
+%% collect_chars(State, Data, Count). New in R9C.
+%%  Returns:
+%%      {stop,Result,RestData}
+%%      NewState
+collect_chars(start, Data, N) when binary(Data) ->
+    Size = size(Data),
+    if Size > N ->
+	    {B1,B2} = split_binary(Data, N),
+	    {stop,B1,B2};
+       Size < N ->
+	    {binary,[Data],N-Size};
+       true ->
+	    {stop,Data,eof}
+    end;
+collect_chars(start,Data,N) when list(Data) ->
+    collect_chars_list([], N, Data);
+collect_chars(start, eof, _) ->
+    {stop,eof,eof};
+collect_chars({binary,Stack,_N}, eof, _) ->
+    {stop,binrev(Stack),eof};
+collect_chars({binary,Stack,N}, Data, _) ->
+    Size = size(Data),
+    if Size > N ->
+	    {B1,B2} = split_binary(Data, N),
+	    {stop,binrev(Stack, [B1]),B2};
+       Size < N ->
+	    {binary,[Data|Stack],N-Size};
+       true ->
+	    {stop,binrev(Stack, [Data]),eof}
+    end;
+collect_chars({list,Stack,N}, Data, _) ->
+    collect_chars_list(Stack, N, Data);
 %% collect_chars(Continuation, MoreChars, Count)
 %%  Returns:
 %%	{done,Result,RestChars}
@@ -365,21 +399,30 @@ nl() ->
 
 collect_chars([], Chars, N) ->
     collect_chars1(N, Chars, []);
-collect_chars({Left,Sofar}, Chars, N) ->
+collect_chars({Left,Sofar}, Chars, _N) ->
     collect_chars1(Left, Chars, Sofar).
 
 collect_chars1(N, Chars, Stack) when N =< 0 ->
     {done,lists:reverse(Stack, []),Chars};
 collect_chars1(N, [C|Rest], Stack) ->
     collect_chars1(N-1, Rest, [C|Stack]);
-collect_chars1(N, eof, []) ->
+collect_chars1(_N, eof, []) ->
     {done,eof,[]};
-collect_chars1(N, eof, Stack) ->
+collect_chars1(_N, eof, Stack) ->
     {done,lists:reverse(Stack, []),[]};
 collect_chars1(N, [], Stack) ->
     {more,{N,Stack}}.
 
-%% collect_line(Continutation, MoreChars)
+collect_chars_list(Stack, 0, Data) ->
+    {stop,reverse(Stack),Data};
+collect_chars_list(Stack, _N, eof) ->
+    {stop,reverse(Stack),eof};
+collect_chars_list(Stack, N, []) ->
+    {list,Stack,N};
+collect_chars_list(Stack,N, [H|T]) ->
+    collect_chars_list([H|Stack], N-1, T).
+
+%% collect_line(Continuation, MoreChars)
 %%  Returns:
 %%	{done,Result,RestChars}
 %%	{more,Continuation}
@@ -401,3 +444,97 @@ collect_line1(eof, Stack) ->
     {done,lists:reverse(Stack, []),[]};
 collect_line1([], Stack) ->
     {more,{Stack}}.
+
+%% collect_line(State, Data, _). New in R9C.
+%%  Returns:
+%%	{stop,Result,RestData}
+%%	NewState
+
+collect_line(start, Data, _) when binary(Data) ->
+%    erlang:display({?MODULE,?LINE,[start,Data]}),
+    collect_line_bin([], Data, 0);
+collect_line(start, Data, _) when list(Data) ->
+%    erlang:display({?MODULE,?LINE,[start,Data]}),
+    collect_line_list([], Data);
+collect_line(start, eof, _) ->
+%    erlang:display({?MODULE,?LINE,[start,eof]}),
+    {stop,eof,eof};
+collect_line(Stack, Data, _) when binary(Data) ->
+%    erlang:display({?MODULE,?LINE,[Stack,Data]}),
+    collect_line_bin(Stack, Data, 0);
+collect_line(Stack, Data, _) when list(Data) ->
+%    erlang:display({?MODULE,?LINE,[Stack,Data]}),
+    collect_line_list(Stack, Data);
+collect_line([B|_]=Stack, eof, _) when binary(B) ->
+%    erlang:display({?MODULE,?LINE,[Stack,eof]}),
+    {stop,binrev(Stack),eof};
+collect_line(Stack, eof, _) ->
+%    erlang:display({?MODULE,?LINE,[Stack,eof]}),
+    {stop,reverse(Stack),eof}.
+
+collect_line_bin([<<$\r>>|Stack], <<$\n,B2/binary>>, 0) ->
+    %% Special case for splitted CRLF
+    {stop,binrev(Stack, [$\n]),B2};
+collect_line_bin(Stack, B, N) when N < size(B) ->
+    case B of
+	<<B1:N/binary,$\r,$\n,B2/binary>> ->
+	    %% Base case for CRLF
+	    {stop,binrev(Stack, [B1,$\n]),B2};
+	<<_:N/binary,$\n,_/binary>> when Stack==[] ->
+	    %% Optimization for NL, very common case
+	    {B1,B2} = split_binary(B, N+1),
+	    {stop,B1,B2};
+	<<B1:N/binary,$\n,B2/binary>> ->
+	    %% Base case for NL
+	    {stop,binrev(Stack, [B1,$\n]),B2};
+	<<B1:N/binary,$\r>> ->
+	    %% Special case for splitted CRLF
+	    [<<$\r>>,B1|Stack];
+	_ ->
+	    %% Iteration within binary
+	    collect_line_bin(Stack, B, N+1)
+    end;
+collect_line_bin(Stack, B, _N) ->
+    %% Iteration to text binay
+    [B|Stack].
+
+collect_line_list([$\r|Stack], [$\n|T]) ->
+    {stop,reverse(Stack, [$\n]),T};
+collect_line_list(Stack, [$\n|T]) ->
+    {stop,reverse(Stack, [$\n]),T};
+collect_line_list(Stack, [H|T]) ->
+    collect_line_list([H|Stack], T);
+collect_line_list(Stack, []) ->
+    Stack.
+
+%% Translator function to emulate a new (R9C and later) 
+%% I/O client when you have an old one.
+%%
+%% Implements a middleman that is get_until server and get_chars client.
+
+get_until(start, Data, XtraArg) ->
+    get_until([], Data, XtraArg);
+get_until(Cont, Data, {Mod, Func, XtraArgs}) ->
+    Chars = if binary(Data) ->
+		    binary_to_list(Data);
+	       true ->
+		    Data
+	    end,
+    case apply(Mod, Func, [Cont,Chars|XtraArgs]) of
+	{done,Result,Buf} ->
+	    {stop,Result,Buf};
+	{more,NewCont} ->
+	    NewCont
+    end.
+
+binrev(L) ->
+    list_to_binary(lists:reverse(L, [])).
+
+binrev(L, T) ->
+    list_to_binary(lists:reverse(L, T)).
+
+reverse(L) ->
+    lists:reverse(L, []).
+
+reverse(L, T) ->
+    lists:reverse(L, T).

@@ -26,6 +26,9 @@
 
 -behaviour(gen_server).
 
+%% -define(d(F,A), io:format("~p~p:" ++ F ++ "~n", [self(),?MODULE|A])).
+-define(d(F,A), ok).
+
 %%-----------------------------------------------------------------
 %% Include files
 %%-----------------------------------------------------------------
@@ -115,7 +118,7 @@ listen(SupPid, Parameters) ->
     ProcList = supervisor:which_children(SupPid),
     case lists:keysearch(megaco_tcp, 1, ProcList) of
 	{value, {_Name, Pid, _Type, _Modules}} ->
-	    gen_server:call(Pid, {add_listener, Parameters}, infinity);
+	    call(Pid, {add_listener, Parameters});
 	false ->
 	    {error, no_tcp_server}
     end.	    
@@ -169,6 +172,9 @@ connect(SupPid, Parameters) ->
 %% Description: Function is used for sending data on the TCP socket
 %%-----------------------------------------------------------------
 send_message(Socket, Data) ->
+    ?d("send_message -> entry with"
+	"~n   Socket:     ~p"
+	"~n   size(Data): ~p", [Socket, size(Data)]),
     {Size, NewData} = add_tpkt_header(Data),
     Res = gen_tcp:send(Socket, NewData),
     case Res of
@@ -258,12 +264,19 @@ create_snmp_counters(Socket) ->
                 medGwyGatewayNumErrors],
     create_snmp_counters(Socket, Counters).
 
-create_snmp_counters(Socket, []) ->
-    ok;
-create_snmp_counters(Socket, [Counter|Counters]) ->
-    Key = {Socket, Counter},
-    ets:insert(megaco_tcp_stats, {Key, 0}),
-    create_snmp_counters(Socket, Counters).
+% create_snmp_counters(Socket, []) ->
+%     ok;
+% create_snmp_counters(Socket, [Counter|Counters]) ->
+%     Key = {Socket, Counter},
+%     ets:insert(megaco_tcp_stats, {Key, 0}),
+%     create_snmp_counters(Socket, Counters).
+
+create_snmp_counters(Socket, Counters) ->
+    F = fun(Counter) ->
+		Key = {Socket, Counter},
+		ets:insert(megaco_tcp_stats, {Key, 0})
+	end,
+    lists:foreach(F, Counters).
 
 
 %%-----------------------------------------------------------------
@@ -335,13 +348,15 @@ handle_info(Info, State) ->
 %% Func: code_change/3
 %% Descrition: Handles code change messages during upgrade.
 %%-----------------------------------------------------------------
-code_change(_OldVsn, State, upgrade_from_1_1_0) ->
+code_change(_Vsn, State, upgrade_from_1_1_0) ->
+%     io:format("~pmegaco_tcp:code_change(upgrade_from_1_1_0)~n", [self()]),
     megaco_stats:init(megaco_tcp_stats),
     {ok, State};
-code_change(_OldVsn, State, downgrade_to_1_1_0) ->
+code_change(_Vsn, State, downgrade_to_1_1_0) ->
+%     io:format("~pmegaco_tcp:code_change(downgrade_to_1_1_0)~n", [self()]),
     ets:delete(megaco_tcp_stats),
     {ok, State};
-code_change(_OldVsn, State, _Extra) ->
+code_change(_Vsn, State, _Extra) ->
     {ok, State}.
 
 %%-----------------------------------------------------------------
@@ -498,13 +513,21 @@ get_pid_from_supervisor(SupPid, ProcName) ->
 %%              
 %%-----------------------------------------------------------------
 incNumOutMessages(Socket) ->
-    ets:update_counter(megaco_tcp_stats, 
-		       {Socket, medGwyGatewayNumOutMessages}, 1).
+    incCounter({Socket, medGwyGatewayNumOutMessages}, 1).
 
 incNumOutOctets(Socket, NumOctets) ->
-    ets:update_counter(megaco_tcp_stats, 
-		       {Socket, medGwyGatewayNumOutOctets}, NumOctets).
+    incCounter({Socket, medGwyGatewayNumOutOctets}, NumOctets).
+
+incCounter(Key, Inc) ->
+    ets:update_counter(megaco_tcp_stats, Key, Inc).
 
 % incNumErrors(Socket) ->
 %     ets:update_counter(megaco_tcp_stats, 
 % 		       {Socket, medGwyGatewayNumErrors}, 1).
+
+
+%%-----------------------------------------------------------------
+
+
+call(Pid, Req) ->
+    gen_server:call(Pid, Req, infinity).

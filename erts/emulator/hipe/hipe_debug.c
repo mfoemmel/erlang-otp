@@ -229,7 +229,6 @@ void hipe_print_pcb(Process *p)
     U("next       ", next);
     /*XXX: ErlOffHeap off_heap; */
     U("reg        ", reg);
-    U("reg_atom   ", reg_atom);
     U("links      ", links);
 #ifndef SHARED_HEAP
     /*XXX: ErlMessageQueue msg; */

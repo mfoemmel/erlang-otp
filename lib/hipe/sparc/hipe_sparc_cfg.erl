@@ -29,26 +29,6 @@ init(Sparc) ->
 		      hipe_sparc:sparc_arity(Sparc)),
    take_bbs(Code, CFG).
 
-%init(Sparc,Entries) ->
-%   Code = hipe_sparc:sparc_code(Sparc),
-%   StartLabel = hipe_sparc:label_name(hd(Code)),
-%   Extra = hipe_sparc:sparc_fun(Sparc),
-%   CFG = mk_empty_cfg(StartLabel,
-%		      hipe_sparc:sparc_var_range(Sparc),
-%		      hipe_sparc:sparc_label_range(Sparc),
-%%		      hipe_sparc:sparc_data(Sparc),
-%		      Extra),
-%  CFG1 = lists:foldl(fun (Ep,CFGAcc) -> 
-%			 hipe_sparc_cfg:add_fail_entrypoint(CFGAcc,Ep)
-%		     end,
-%		     CFG,
-%		     Entries),
-%   take_bbs(Code, CFG1).
-
-
-is_fail_entrypoint(Label) ->
-   lists:member(entry, hipe_sparc:info(Label)).
-
 %% True if instr has no effect.
 is_comment(Instr) ->
   hipe_sparc:is_comment(Instr).
@@ -156,11 +136,8 @@ predictionorder(CFG) ->
   Start = start(CFG),
   Succ = succ_map(CFG),
   {_Vis, PO1} = prediction_list([Start], none_visited(), Succ, [], CFG),
-%%  {_, PO} = prediction_list(
-%%	      fail_entrypoints(CFG) ++ other_entrypoints(CFG), _Vis, 
-%%	      Succ, PO1, CFG), 
  lists:reverse(PO1).
-%%  PO1.
+
 
 prediction_list([X|Xs], Vis, Succ, PO, CFG) ->
   case visited(X,Vis) of 

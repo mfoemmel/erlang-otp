@@ -77,7 +77,19 @@
 %% - from_orddict(L): turns an ordered list L of {Key, Value} pairs into
 %%   a tree. The list must not contain duplicate keys.
 %%
+%% - smallest(T): returns {X, V}, where X is the smallest key in tree T,
+%%   and V is the value associated with X in T. Assumes that the tree T
+%%   is nonempty.
+%%
+%% - largest(T): returns {X, V}, where X is the largest key in tree T,
+%%   and V is the value associated with X in T. Assumes that the tree T
+%%   is nonempty.
+%%
 %% - take_smallest(T): returns {X, V, T1}, where X is the smallest key
+%%   in tree T, V is the value associated with X in T, and T1 is the
+%%   tree T with key X deleted. Assumes that the tree T is nonempty.
+%%
+%% - take_largest(T): returns {X, V, T1}, where X is the largest key
 %%   in tree T, V is the value associated with X in T, and T1 is the
 %%   tree T with key X deleted. Assumes that the tree T is nonempty.
 %%
@@ -99,7 +111,8 @@
 -export([empty/0, is_empty/1, size/1, lookup/2, get/2, insert/3,
 	 update/3, enter/3, delete/2, delete_any/2, balance/1,
 	 is_defined/2, keys/1, values/1, to_list/1, from_orddict/1,
-	 take_smallest/1, iterator/1, next/1]).
+	 smallest/1, largest/1, take_smallest/1, take_largest/1,
+	 iterator/1, next/1]).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -362,7 +375,33 @@ take_smallest1({Key, Value, nil, Larger}) ->
 take_smallest1({Key, Value, Smaller, Larger}) ->
     {Key1, Value1, Smaller1} = take_smallest1(Smaller),
     {Key1, Value1, {Key, Value, Smaller1, Larger}}.
-    
+
+smallest({_, Tree}) ->
+    smallest_1(Tree).
+
+smallest_1({Key, Value, nil, _Larger}) ->
+    {Key, Value};
+smallest_1({_Key, _Value, Smaller, _Larger}) ->
+    smallest_1(Smaller).
+
+take_largest({Size, Tree}) ->
+    {Key, Value, Smaller} = take_largest1(Tree),
+    {Key, Value, {Size - 1, Smaller}}.
+
+take_largest1({Key, Value, Smaller, nil}) ->
+    {Key, Value, Smaller};
+take_largest1({Key, Value, Smaller, Larger}) ->
+    {Key1, Value1, Larger1} = take_largest1(Larger),
+    {Key1, Value1, {Key, Value, Smaller, Larger1}}.
+
+largest({_, Tree}) ->
+    largest_1(Tree).
+
+largest_1({Key, Value, _Smaller, nil}) ->
+    {Key, Value};
+largest_1({_Key, _Value, _Smaller, Larger}) ->
+    largest_1(Larger).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 to_list({_, T}) ->

@@ -31,20 +31,20 @@
 #define DEBUGMSGF(x)  if (debugmsg) __debugprintclistf x;
 #define LOGF(fp, x) if (fp) { __locallogfp = fp; __debuglogf x; }
 #else
-#define DEBUGF(x)  if (debug) __debugprintf ## x;
-#define DEBUGMSGF(x)  if (debugmsg) __debugprintclistf ## x;
-#define LOGF(fp, x) if (fp) { __locallogfp = fp; __debuglogf ## x; }
+#define DEBUGF(x)  if (debug) __debugprintf x;
+#define DEBUGMSGF(x)  if (debugmsg) __debugprintclistf x;
+#define LOGF(fp, x) if (fp) { __locallogfp = fp; __debuglogf x; }
 #endif
 #define SSLDEBUGF()  if (debug) { esock_ssl_print_errors_fp(stderr); \
-    if (syslogfp) esock_ssl_print_errors_fp(syslogfp); }
+    if (ssllogfp) esock_ssl_print_errors_fp(ssllogfp); }
 
 int  debug;
 int  debugmsg;
-FILE *syslogfp;
+FILE *ssllogfp;
 FILE *__locallogfp;
 
-void open_syslog(char *path);
-void close_syslog(void);
+void open_ssllog(char *path);
+void close_ssllog(void);
 FILE *openlog(char *);
 void closelog(FILE *);
 int __debugprintf(const char *, ...);

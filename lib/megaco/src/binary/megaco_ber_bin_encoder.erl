@@ -23,9 +23,11 @@
 
 -behaviour(megaco_encoder).
 
--export([encode_message/2, decode_message/2]).
+-export([encode_message/2, decode_message/2,
+	 encode_transaction/2]).
 
 -define(ASN1_MOD, megaco_ber_bin_media_gateway_control).
+
 
 %%----------------------------------------------------------------------
 %% Convert a 'MegacoMessage' record into a binary
@@ -33,7 +35,18 @@
 %%----------------------------------------------------------------------
 
 encode_message(EncodingConfig, MegaMsg) ->
-    megaco_binary_encoder:encode_message(EncodingConfig, MegaMsg, ?ASN1_MOD, io_list).
+    megaco_binary_encoder:encode_message(EncodingConfig, MegaMsg, 
+					 ?ASN1_MOD, io_list).
+
+
+%%----------------------------------------------------------------------
+%% Convert a transaction record into a binary
+%% Return {ok, Binary} | {error, Reason}
+%%----------------------------------------------------------------------
+encode_transaction(EncodingConfig, Trans) ->
+    megaco_binary_encoder:encode_transaction(EncodingConfig, Trans, 
+					     ?ASN1_MOD, io_list).
+
 
 %%----------------------------------------------------------------------
 %% Convert a binary into a 'MegacoMessage' record
@@ -41,4 +54,5 @@ encode_message(EncodingConfig, MegaMsg) ->
 %%----------------------------------------------------------------------
 
 decode_message(EncodingConfig, Binary) ->
-    megaco_binary_encoder:decode_message(EncodingConfig, Binary, ?ASN1_MOD, binary).
+    megaco_binary_encoder:decode_message(EncodingConfig, Binary, 
+					 ?ASN1_MOD, binary).

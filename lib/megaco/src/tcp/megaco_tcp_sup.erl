@@ -79,17 +79,10 @@ start_accept_child(SupPid, Data) ->
 %% Description: Init funcion for the supervisor
 %%-----------------------------------------------------------------
 init([]) ->
-    SupPid = self(),
-    SupFlags = {one_for_one, 5, 1000},	%Max 5 restarts in 1 second
-    ChildSpec = [{megaco_tcp_accept_sup,
-		  {megaco_tcp_accept_sup, start_link, []},
-		  permanent, 10000, supervisor, [megaco_tcp_accept_sup]},
-		 {megaco_tcp_connection_sup,
-		  {megaco_tcp_connection_sup, start_link, []},
-		  permanent, 10000, supervisor, [megaco_tcp_connection_sup]},
-		 {megaco_tcp,
-		  {megaco_tcp, start_link, [{SupPid, []}]},
-		  permanent, 10000, supervisor, [megaco_tcp_connection_sup]}],
+    SupFlags = {one_for_one, 5, 1000},	% Max 5 restarts in 1 second
+    ChildSpec = [sup_spec(megaco_tcp_accept_sup, []),
+		 sup_spec(megaco_tcp_connection_sup,[]),
+		 worker_spec(megaco_tcp, [{self(), []}], [gen_server])],
     {ok, {SupFlags, ChildSpec}}.
 
 %%-----------------------------------------------------------------
@@ -98,3 +91,18 @@ init([]) ->
 %%-----------------------------------------------------------------
 terminate(_Reason, _State) ->
     ok.
+
+
+%%-----------------------------------------------------------------
+%% Local functions
+%%-----------------------------------------------------------------
+
+sup_spec(Name, Args) ->
+    {Name, 
+     {Name, start_link, Args}, 
+     permanent, 10000, supervisor, [Name, supervisor]}.
+
+worker_spec(Name, Args, Mods) ->
+    {Name, {Name, start_link, Args}, 
+     permanent, 10000, worker, [Name] ++ Mods}.
+

@@ -8,6 +8,90 @@ dnl
 
 dnl ----------------------------------------------------------------------
 dnl
+dnl LM_FIND_EMU_CC
+dnl
+dnl
+dnl Tries fairly hard to find a C compiler that can handle jump tables.
+dnl Defines the @EMU_CC@ variable for the makefiles and 
+dnl inserts NO_JUMP_TABLE in the header if one cannot be found...
+dnl
+
+AC_DEFUN(LM_FIND_EMU_CC,
+	[AC_CACHE_CHECK(for a compiler that handles jumptables,
+			ac_cv_prog_emu_cc,
+			[
+AC_TRY_COMPILE([],[
+    __label__ lbl1;
+    __label__ lbl2;
+    int x = magic();
+    static void *jtab[2];
+
+    jtab[0] = &&lbl1;
+    jtab[1] = &&lbl2;
+    goto *jtab[x];
+lbl1:
+    return 1;
+lbl2:
+    return 2;
+],ac_cv_prog_emu_cc=$CC,ac_cv_prog_emu_cc=no)
+
+if test $ac_cv_prog_emu_cc = no; then
+	for ac_progname in emu_cc.sh gcc; do
+  		IFS="${IFS= 	}"; ac_save_ifs="$IFS"; IFS=":"
+  		ac_dummy="$PATH"
+  		for ac_dir in $ac_dummy; do
+    			test -z "$ac_dir" && ac_dir=.
+    			if test -f $ac_dir/$ac_progname; then
+      				ac_cv_prog_emu_cc=$ac_dir/$ac_progname
+      				break
+    			fi
+  		done
+  		IFS="$ac_save_ifs"
+		if test $ac_cv_prog_emu_cc != no; then
+			break
+		fi
+	done
+fi
+
+if test $ac_cv_prog_emu_cc != no; then
+	save_CC=$CC
+	save_CFLAGS=$CFLAGS
+	save_CPPFLAGS=$CPPFLAGS
+	CC=$ac_cv_prog_emu_cc
+	CFLAGS=""
+	CPPFLAGS=""
+	AC_TRY_COMPILE([],[
+    	__label__ lbl1;
+    	__label__ lbl2;
+    	int x = magic();
+    	static void *jtab[2];
+
+    	jtab[0] = &&lbl1;
+    	jtab[1] = &&lbl2;
+    	goto *jtab[x];
+	lbl1:
+    	return 1;
+	lbl2:
+    	return 2;
+	],ac_cv_prog_emu_cc=$CC,ac_cv_prog_emu_cc=no)
+	CC=$save_CC
+	CFLAGS=$save_CFLAGS
+	CPPFLAGS=$save_CPPFLAGS
+fi
+])
+if test $ac_cv_prog_emu_cc = no; then
+	AC_DEFINE(NO_JUMP_TABLE)
+	EMU_CC=$CC
+else
+	EMU_CC=$ac_cv_prog_emu_cc
+fi
+AC_SUBST(EMU_CC)
+])		
+			
+
+
+dnl ----------------------------------------------------------------------
+dnl
 dnl LM_PROG_INSTALL_DIR
 dnl
 dnl Figure out how to create directories with parents.
@@ -115,8 +199,19 @@ if test ${ac_cv_decl_inaddr_loopback} = no; then
      "yes" )
         AC_DEFINE(DEF_INADDR_LOOPBACK_IN_RPC_TYPES_H) ;;
       * )
-	# couldn't find it anywhere
-        AC_DEFINE(HAVE_NO_INADDR_LOOPBACK) ;;
+  	AC_CACHE_CHECK([for INADDR_LOOPBACK in winsock2.h],
+                   ac_cv_decl_inaddr_loopback_winsock2,
+                   AC_TRY_COMPILE([#include <winsock2.h>],
+                                   [int i = INADDR_LOOPBACK;],
+                                   ac_cv_decl_inaddr_loopback_winsock2=yes,
+                                   ac_cv_decl_inaddr_loopback_winsock2=no))
+	case "${ac_cv_decl_inaddr_loopback_winsock2}" in
+     		"yes" )
+			AC_DEFINE(DEF_INADDR_LOOPBACK_IN_WINSOCK2_H) ;;
+		* )
+			# couldn't find it anywhere
+        		AC_DEFINE(HAVE_NO_INADDR_LOOPBACK) ;;
+	esac;;
    esac
 fi
 ])

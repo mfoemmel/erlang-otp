@@ -19,6 +19,8 @@
 #ifndef __ERLFUNTABLE_H__
 #define __ERLFUNTABLE_H__
 
+extern Hash erts_fun_table;
+
 /*
  * Fun entry.
  */

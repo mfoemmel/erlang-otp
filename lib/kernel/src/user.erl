@@ -19,31 +19,35 @@
 
 %% Basic standard i/o server for user interface port.
 
--export([start/0, start/1, start_out/0, server/1, server/2]).
-	 
+-export([start/0, start/1, start_out/0]).
+
+-define(NAME, user).
+
+%% Internal exports
+-export([server/1, server/2]).
 
 %%
 %% The basic server and start-up.
 %%
 
 start() ->
-    start_port([eof]).
+    start_port([eof,binary]).
 
 start([Mod,Fun|Args]) ->
     %% Mod,Fun,Args should return a pid. That process is supposed to act
     %% as the io port.
     Pid = apply(Mod, Fun, Args),  % This better work!
-    Id = spawn(user, server, [Pid]),
-    register(user, Id),
+    Id = spawn(?MODULE, server, [Pid]),
+    register(?NAME, Id),
     Id.
 
 start_out() ->
     %% Output-only version of start/0
-    start_port([out]).
+    start_port([out,binary]).
 
 start_port(PortSettings) ->
-    Id = spawn(user,server,[{fd,0,1},PortSettings]),
-    register(user,Id),
+    Id = spawn(?MODULE,server,[{fd,0,1},PortSettings]),
+    register(?NAME,Id),
     Id.
 
 server(Pid) when pid(Pid) ->
@@ -57,91 +61,118 @@ server(PortName,PortSettings) ->
     run(Port).
 
 run(P) ->
+    put(read_mode,list),
     case init:get_argument(noshell) of
 	%% non-empty list -> noshell
-	{ok, [H|T]} -> 
+	{ok, [_|_]} -> 
 	    put(noshell, true),
-	    server_loop(P, []);
+	    server_loop(P, queue:new());
 	_ ->
 	    group_leader(self(), self()),
-	    catch_loop(P, shell:start())
+	    catch_loop(P, start_new_shell())
     end.
 
 catch_loop(Port, Shell) ->
-    case catch server_loop(Port, []) of
+    catch_loop(Port, Shell, queue:new()).
+
+catch_loop(Port, Shell, Q) ->
+    case catch server_loop(Port, Q) of
 	new_shell ->
 	    exit(Shell, kill),
-	    catch_loop(Port, shell:start());
+	    catch_loop(Port, start_new_shell());
+	{unknown_exit,Shell,_} ->			% shell has exited
+	    put_chars("*** ERROR: Shell process terminated! ***\n", Port, []),
+	    catch_loop(Port, start_new_shell());
+	{unknown_exit,_,Q1} ->
+	    catch_loop(Port, Shell, Q1);	     
 	{'EXIT',R} ->
 	    exit(R)
     end.
 
-server_loop(Port, Buf0) ->
+start_new_shell() ->
+    Shell = shell:start(),
+    link(Shell),
+    Shell.
+
+server_loop(Port, Q) ->
     receive
 	{Port,{data,Bytes}} ->
-	    Nosh = get(noshell),
-	    case lists:member(7,Bytes) of
-		true when  Nosh == undefined ->
-		    throw(new_shell);
+	    case get(noshell) of
+		undefined ->
+		    case string_chr(Bytes, 7) of
+			0 ->
+			    server_loop(Port, queue:snoc(Q, Bytes));
+			_ ->
+			    throw(new_shell)
+		    end;
 		_ ->
-		    server_loop(Port,lists:append(Buf0,Bytes))
+		    server_loop(Port, queue:snoc(Q, Bytes))
 	    end;
 	{io_request,From,ReplyAs,Request} when pid(From) ->
-	    Buf = io_request(Request, From, ReplyAs, Port, Buf0),
-	    server_loop(Port, Buf);
+	    server_loop(Port, do_io_request(Request, From, ReplyAs, Port, Q));
 	{Port, eof} ->
 	    put(eof, true),
-	    server_loop(Port, Buf0);
+	    server_loop(Port, Q);
+
 	%% Ignore messages from port here.
-	{'EXIT',Port,badsig} ->			%Ignore badsig errors
-	    server_loop(Port, Buf0);
-	{'EXIT',Port,What} ->			%Port has exited
+	{'EXIT',Port,badsig} ->			% Ignore badsig errors
+	    server_loop(Port, Q);
+	{'EXIT',Port,What} ->			% Port has exited
 	    exit(What);
-	Other ->				%Ignore other messages
-	    server_loop(Port, Buf0)
+
+	%% Check if shell has exited
+	{'EXIT',SomePid,_What} ->
+	    case get(noshell) of
+		undefined ->
+		    throw({unknown_exit,SomePid,Q});
+		_ ->
+		    server_loop(Port, Q)	% Ignore
+	    end;
+
+	_Other ->				% Ignore other messages
+	    server_loop(Port, Q)
     end.
 
 %% NewSaveBuffer = io_request(Request, FromPid, ReplyAs, Port, SaveBuffer)
 
-io_request(Req, From, ReplyAs, Port, Buf0) ->
-    case io_request(Req, Port, Buf0) of
-	{Status,Reply,Buf} ->
+do_io_request(Req, From, ReplyAs, Port, Q0) ->
+    case io_request(Req, Port, Q0) of
+	{_Status,Reply,Q1} ->
 	    io_reply(From, ReplyAs, Reply),
-	    Buf;
+	    Q1;
 	{exit,What} ->
 	    send_port(Port, close),
 	    exit(What)
     end.
 
-io_request({put_chars,Chars}, Port, Buf) ->
-    case io_lib:deep_char_list(Chars) of	%Check deep list
-	true ->
-	    put_port(Chars, Port),
-	    {ok,ok,Buf};
-	false ->
-	    {error,{error,put_chars},Buf}
-    end;
-io_request({put_chars,Mod,Func,Args}, Port, Buf) ->
-    io_request({put_chars,catch apply(Mod,Func,Args)}, Port, Buf);
-io_request({get_until,Prompt,M,F,As}, Port, Buf) ->
-    case get(eof) of
-	undefined ->
-	    get_until(Prompt, M, F, As, Port, Buf);
-	true when Buf == [] ->
-	    {ok, eof, Buf};
-	_ ->
-	    get_until(Prompt, M, F, As, Port, Buf)
-    end;
-io_request({requests,Reqs}, Port, Buf) ->
-    io_requests(Reqs, {ok,ok,Buf}, Port);
-io_request(R, Port, Buf) ->			%Unknown request
-    {ok,{error,{request,R}},Buf}.		%Ignore but give error (?)
+io_request({put_chars,Chars}, Port, Q) -> % Binary new in R9C
+    put_chars(Chars, Port, Q);
+io_request({put_chars,Mod,Func,Args}, Port, Q) ->
+    put_chars(catch apply(Mod,Func,Args), Port, Q);
+io_request({get_chars,Prompt,N}, Port, Q) -> % New in R9C
+    get_chars(Prompt, io_lib, collect_chars, N, Port, Q);
+%% These are new in R9C
+io_request({get_chars,Prompt,Mod,Func,XtraArg}, Port, Q) ->
+%    erlang:display({?MODULE,?LINE,Q}),
+    get_chars(Prompt, Mod, Func, XtraArg, Port, Q);
+io_request({get_line,Prompt}, Port, Q) ->
+%    erlang:display({?MODULE,?LINE,Q}),
+    get_chars(Prompt, io_lib, collect_line, [], Port, Q);
+io_request({setopts,Opts}, Port, Q) when list(Opts) ->
+    setopts(Opts, Port, Q);
+%% End of new in R9C
+io_request({get_until,Prompt,M,F,As}, Port, Q) ->
+    get_chars(Prompt, io_lib, get_until, {M,F,As}, Port, Q);
+io_request({requests,Reqs}, Port, Q) ->
+    io_requests(Reqs, {ok,ok,Q}, Port);
+io_request(R, _Port, Q) ->			%Unknown request
+    {error,{error,{request,R}},Q}.		%Ignore but give error (?)
 
 %% Status = io_requests(RequestList, PrevStat, Port)
 %%  Process a list of output requests as long as the previous status is 'ok'.
 
-io_requests([R|Rs], {ok,Res,Buf}, Port) ->
-    io_requests(Rs, io_request(R, Port, Buf), Port);
+io_requests([R|Rs], {ok,_Res,Q}, Port) ->
+    io_requests(Rs, io_request(R, Port, Q), Port);
 io_requests([_|_], Error, _) ->
     Error;
 io_requests([], Stat, _) ->
@@ -165,83 +196,141 @@ send_port(Port, Command) ->
 
 io_reply(From, ReplyAs, Reply) ->
     From ! {io_reply,ReplyAs,Reply}.
+
+%% put_chars
+put_chars(Chars, Port, Q) when binary(Chars) ->
+    put_port(Chars, Port),
+    {ok,ok,Q};
+put_chars(Chars, Port, Q) ->
+    case catch list_to_binary(Chars) of
+	Binary when binary(Binary) ->
+	    put_chars(Binary, Port, Q);
+	_ ->
+	    {error,{error,put_chars},Q}
+    end.
+
+%% setopts
+setopts(Opts0, _Port, Q) ->
+    Opts = proplists:substitute_negations([{list,binary}], Opts0),
+    case proplists:get_value(binary, Opts) of
+	true ->
+	    put(read_mode,binary),
+	    {ok,ok,Q};
+	false ->
+	    put(read_mode,list),
+	    {ok,ok,Q};
+	_ ->
+	    {error,{error,badarg},Q}
+    end.
 
-%% get_until(Prompt, Module, Function, Arguments, Port, Buffer)
-%%  Gets characters from the input port as long as the applied function
-%%  returns {more,Continuation}. Does not block output until input has been
-%%  received.
+%% get_chars(Prompt, Module, Function, XtraArg, Port, Queue)
+%%  Gets characters from the input port until the applied function
+%%  returns {stop,Result,RestBuf}. Does not block output until input 
+%%  has been received.
 %%  Returns:
-%%	{Status,Result,NewSaveBuffer}
+%%	{Status,Result,NewQueue}
 %%	{exit,Reason}
 
-get_until(Prompt, M, F, As, Port, Buf) ->
+%% Entry function.
+get_chars(Prompt, M, F, Xa, Port, Q) ->
     prompt(Port, Prompt),
-    get_until1(Prompt, M, F, As, Port, Buf).
+    case {get(eof),queue:is_empty(Q)} of
+	{true,true} ->
+	    {ok,eof,Q};
+	_ ->
+	    get_chars(Prompt, M, F, Xa, Port, Q, start)
+    end.
 
-get_until1(Prompt, M, F, As, Port, []) ->
-    receive
-	{Port,{data,Bytes}} ->
-	    Nosh = get(noshell),
-	    case lists:member(7,Bytes) of
-		true when Nosh == undefined ->
-		    throw(new_shell);
-		_ ->
-		    get_until2(catch apply(M, F, [[],Bytes|As]),
-			       M, F, As, Port)
-	    end;
-	{Port, eof} ->
-	    put(eof, true),
-	    {ok, eof, []};
-%%	{io_request,From,ReplyAs,Request} when pid(From) ->
-%%	    get_until1_out(Request, From, ReplyAs, Prompt, M, F, As, Port);
-	{io_request,From,ReplyAs,{put_chars,Chars}} when pid(From) ->
-	    get_until1_out({put_chars,Chars}, From, ReplyAs,
-			   Prompt, M, F, As, Port);
-	{io_request,From,ReplyAs,{put_chars,M1,F1,A1}} when pid(From) ->
-	    get_until1_out({put_chars,M1,F1,A1}, From, ReplyAs,
-			   Prompt, M, F, As, Port);
-	{'EXIT',From,What} when node(From) == node() ->
-	    {exit,What}
-    end;
-
-get_until1(Prompt, M, F, As, Port, Buf) ->
-    get_until2(catch apply(M, F, [[],Buf|As]), M, F, As, Port).
-
-get_until1_out(Req, From, ReplyAs, Prompt, M, F, As, Port) ->
-    io_request(Req, From, ReplyAs, Port, []),	%No new buf here!
-    prompt(Port, Prompt),
-    get_until1(Prompt, M, F, As, Port, []).
-
-get_until2({more,Cont}, M, F, As, Port) ->
-    case get(eof) of
-	undefined ->
+%% First loop. Wait for port data. Respond to output requests.
+get_chars(Prompt, M, F, Xa, Port, Q, State) ->
+    case queue:is_empty(Q) of
+	true ->
 	    receive
 		{Port,{data,Bytes}} ->
-		    Nosh = get(noshell),
-		    case lists:member(7,Bytes) of
-			true when Nosh == undefined ->
-			    throw(new_shell);
-			_ ->
-			    get_until2(catch apply(M, F, [Cont,Bytes|As]),
-				       M, F, As, Port)
-		    end;
+		    get_chars_bytes(State, M, F, Xa, Port, Q, Bytes);
 		{Port, eof} ->
 		    put(eof, true),
-		    get_until2(catch apply(M, F, [Cont,eof|As]),M, F,As, Port);
+		    {ok, eof, []};
+		%%{io_request,From,ReplyAs,Request} when pid(From) ->
+		%%    get_chars_req(Prompt, M, F, Xa, Port, queue:new(), State,
+		%%		  Request, From, ReplyAs);
+		{io_request,From,ReplyAs,{put_chars,Chars}} when pid(From) ->
+		    get_chars_req(Prompt, M, F, Xa, Port, Q, State,
+				  {put_chars,Chars}, From, ReplyAs);
+		{io_request,From,ReplyAs,{put_chars,M1,F1,A1}} when pid(From) ->
+		    get_chars_req(Prompt, M, F, Xa, Port, Q, State,
+				  {put_chars,M1,F1,A1}, From, ReplyAs);
 		{'EXIT',From,What} when node(From) == node() ->
 		    {exit,What}
 	    end;
+	false ->
+	    get_chars_apply(State, M, F, Xa, Port, Q)
+    end.
+
+get_chars_req(Prompt, M, F, XtraArg, Port, Q, State,
+	      Req, From, ReplyAs) ->
+    do_io_request(Req, From, ReplyAs, Port, queue:new()), %Keep Q over this call
+    prompt(Port, Prompt),
+    get_chars(Prompt, M, F, XtraArg, Port, Q, State).
+
+%% Second loop. Pass data to client as long as it wants more.
+%% A ^G in data interrupts loop if 'noshell' is not undefined.
+get_chars_bytes(State, M, F, Xa, Port, Q, Bytes) ->
+    case get(noshell) of
+	undefined ->
+	    case string_chr(Bytes, 7) of
+		0 ->
+		    get_chars_apply(State, M, F, Xa, Port, 
+				    queue:snoc(Q, Bytes));
+		_ ->
+		    throw(new_shell)
+	    end;
 	_ ->
-	    get_until2(catch apply(M, F, [Cont,eof|As]),M, F,As, Port)
-    end;
-get_until2({done,Result,Buf}, M, F, As, Port) ->
-    {ok,Result,Buf};
-get_until2(Other, M, F, As, Port) ->
-    {error,{error,get_until},[]}.
+	    get_chars_apply(State, M, F, Xa, Port, queue:snoc(Q, Bytes))
+    end.
+
+get_chars_apply(State0, M, F, Xa, Port, Q) ->
+    case catch M:F(State0, cast(queue:head(Q)), Xa) of
+	{stop,Result,<<>>} ->
+	    {ok,Result,queue:tail(Q)};
+	{stop,Result,[]} ->
+	    {ok,Result,queue:tail(Q)};
+	{stop,Result,eof} ->
+	    {ok,Result,queue:tail(Q)};
+	{stop,Result,Buf} ->
+	    {ok,Result,queue:cons(Buf, queue:tail(Q))};
+	{'EXIT',_} ->
+	    {error,{error,err_func(M, F, Xa)},[]};
+	State1 ->
+	    get_chars_more(State1, M, F, Xa, Port, queue:tail(Q))
+    end.
+
+get_chars_more(State, M, F, Xa, Port, Q) ->
+    case queue:is_empty(Q) of
+	true ->
+	    case get(eof) of
+		undefined ->
+		    receive
+			{Port,{data,Bytes}} ->
+			    get_chars_bytes(State, M, F, Xa, Port, Q, Bytes);
+			{Port,eof} ->
+			    put(eof, true),
+			    get_chars_apply(State, M, F, Xa, Port, 
+					    queue:snoc(Q, eof));
+			{'EXIT',From,What} when node(From) == node() ->
+			    {exit,What}
+		    end;
+		_ ->
+		    get_chars_apply(State, M, F, Xa, Port, queue:snoc(Q, eof))
+	    end;
+	false ->
+	    get_chars_apply(State, M, F, Xa, Port, Q)
+    end.
+
+
 
 %% prompt(Port, Prompt)
 %%  Print Prompt onto port Port, special case just atoms and print unquoted.
-
 prompt(Port, Prompt) when atom(Prompt) ->
     List = io_lib:format('~s', [Prompt]),
     put_port(List, Port);
@@ -255,3 +344,44 @@ prompt(Port, {format,Format,Args}) ->
 prompt(Port, Prompt) ->
     List = io_lib:write(Prompt),
     put_port(List, Port).
+
+%% Convert error code to make it look as before
+err_func(io_lib, get_until, {_,F,_}) ->
+    F;
+err_func(_, F, _) ->
+    F.
+
+%% Search for a character in a list or binary
+string_chr(Bin, Character) when binary(Bin), integer(Character) ->
+    string_chr_bin(0, Bin, Character);
+string_chr(List, Character) when list(List), integer(Character) ->
+    string_chr_list(1, List, Character).
+
+string_chr_bin(I, B, C) when I < size(B) ->
+    J = I+1,
+    case B of
+	<<_:I/binary,C,_/binary>> ->
+	    J;
+	_ ->
+	    string_chr_bin(J, B, C)
+    end;
+string_chr_bin(_, _, _) ->
+    0.
+
+string_chr_list(_, [], _) ->
+    0;
+string_chr_list(I, [C|_], C) ->
+    I;
+string_chr_list(I, [_|T], C) ->
+    string_chr_list(I+1, T, C).
+
+%% Convert a buffer between list and binary
+cast(Data) ->
+    cast(Data, get(read_mode)).
+
+cast(List, binary) when list(List) ->
+    list_to_binary(List);
+cast(Binary, list) when binary(Binary) ->
+    binary_to_list(Binary);
+cast(Data, _) ->
+    Data.

@@ -79,6 +79,8 @@ format_error({illegal_guard,{F,A}}) ->
     io_lib:format("illegal guard expression in ~w/~w", [F,A]);
 format_error({illegal_pattern,{F,A}}) ->
     io_lib:format("illegal pattern in ~w/~w", [F,A]);
+format_error({illegal_try,{F,A}}) ->
+    io_lib:format("illegal try expression in ~w/~w", [F,A]);
 format_error({pattern_mismatch,{F,A}}) ->
     io_lib:format("pattern count mismatch in ~w/~w", [F,A]);
 format_error({return_mismatch,{F,A}}) ->
@@ -249,7 +251,8 @@ gexpr(#c_call{module=#c_atom{val=erlang},
     gexpr_list(As, Def, St);
 gexpr(#c_primop{name=N,args=As}, Def, _Rt, St0) when record(N, c_atom) ->
     gexpr_list(As, Def, St0);
-gexpr(#c_try{expr=E,vars=[#c_var{},#c_var{}],body=#c_atom{val=false}},
+gexpr(#c_try{arg=E,vars=[#c_var{name=X}],body=#c_var{name=X},
+	     evars=[#c_var{},#c_var{}],handler=#c_atom{val=false}},
       Def, Rt, St) ->
     gbody(E, Def, Rt, St);
 gexpr(_, _, _, St) ->
@@ -319,10 +322,16 @@ expr(#c_primop{name=N,args=As}, Def, _Rt, St0) when record(N, c_atom) ->
     expr_list(As, Def, St0);
 expr(#c_catch{body=B}, Def, Rt, St) ->
     return_match(Rt, 1, body(B, Def, 1, St));
-expr(#c_try{expr=E,vars=Vs,body=B}, Def, Rt, St0) ->
-    St1 = body(E, Def, Rt, St0),
-    {Lvs,St2} = variable_list(Vs, St1),
-    body(B, union(Lvs, Def), Rt, St2);
+expr(#c_try{arg=A,vars=Vs,body=B,evars=Evs,handler=H}, Def, Rt, St0) ->
+    St1 = case length(Evs) of
+	      2 -> St0;
+	      _ -> add_error({illegal_try,St0#lint.func}, St0)
+	  end,
+    St2 = body(A, Def, let_varcount(Vs), St1),
+    {Ns,St3} = variable_list(Vs, St2),
+    St4 = body(B, union(Ns, Def), Rt, St3),
+    {Ens,St5} = variable_list(Evs, St4),
+    body(H, union(Ens, Def), Rt, St5);
 expr(_, _, _, St) ->
     %%io:fwrite("clint: ~p~n", [Other]),
     add_error({illegal_expr,St#lint.func}, St).

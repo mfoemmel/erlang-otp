@@ -22,9 +22,9 @@
 
 -export([constants/0, mark_dirty/1, read_file_header/2,
          check_file_header/2, do_perform_save/1, initiate_file/11,
-         prep_table_copy/9, init_freelist/2, fsck_input/3,
+         prep_table_copy/9, init_freelist/2, fsck_input/4,
          bulk_input/3, output_objs/4, write_cache/1, may_grow/3,
-         find_object/2, re_hash/2, slot_objs/2, scan_objs/7,
+         find_object/2, re_hash/2, slot_objs/2, scan_objs/8,
          db_hash/2, no_slots/1, table_parameters/1]).
 
 -export([file_info/1, v_segments/1]).
@@ -682,11 +682,19 @@ output_slot([], Next, Slot, CT) ->
     ?VSET(I, CT, [Addr+Size | [BinObject | L]]).
 
 %% Does not close Fd.
-fsck_input(Head, Fd, Cntrs) ->
+fsck_input(Head, Fd, Cntrs, _FileHeader) ->
+    %% The file is not compressed, so the object size cannot exceed
+    %% the filesize, for all objects.
+    MaxSz = case file:position(Fd, eof) of
+                {ok, Pos} ->
+                    Pos;
+                _ ->
+                    (1 bsl 32) - 1
+            end,
     State0 = fsck_read(?BASE, Fd, []),
-    fsck_input(Head, State0, Fd, Cntrs).
+    fsck_input1(Head, State0, Fd, MaxSz, Cntrs).
 
-fsck_input(Head, State, Fd, Cntrs) ->
+fsck_input1(Head, State, Fd, MaxSz, Cntrs) ->
     fun(close) ->
 	    ok;
        (read) ->
@@ -695,11 +703,12 @@ fsck_input(Head, State, Fd, Cntrs) ->
 		    end_of_input;
 		{done, L} ->
 		    R = count_input(Cntrs, L, []),
-		    {R, fsck_input(Head, done, Fd, Cntrs)};
+		    {R, fsck_input1(Head, done, Fd, MaxSz, Cntrs)};
 		{cont, L, Bin, Pos} ->
 		    R = count_input(Cntrs, L, []),
-		    NewState = fsck_read(Bin, Pos, Fd, Head, []),
-		    {R, fsck_input(Head, NewState, Fd, Cntrs)}
+                    FR = fsck_objs(Bin, Head#head.keypos, Head, []),
+		    NewState = fsck_read(FR, Pos, Fd, MaxSz, Head),
+		    {R, fsck_input1(Head, NewState, Fd, MaxSz, Cntrs)}
 	    end
     end.
 
@@ -724,14 +733,14 @@ fsck_read(Pos, F, L) ->
 	    {done, L}
     end.
 
-fsck_read(Bin, Pos, F, Head, L) ->
-    case fsck_objs(Bin, Head#head.keypos, Head, L) of
-        {more, NewBin, Sz, NL} ->
-            read_more_bytes(NewBin, Sz, Pos, F, NL);
-        {new, Skip, NL} ->
-            NewPos = Pos + Skip,
-            fsck_read(NewPos, F, NL)
-    end.
+fsck_read({more, Bin, Sz, L}, Pos, F, MaxSz, Head) when Sz > MaxSz ->
+    FR = skip_bytes(Bin, ?BUMP, Head#head.keypos, Head, L),
+    fsck_read(FR, Pos, F, MaxSz, Head);
+fsck_read({more, Bin, Sz, L}, Pos, F, _MaxSz, _Head) ->
+    read_more_bytes(Bin, Sz, Pos, F, L);
+fsck_read({new, Skip, L}, Pos, F, _MaxSz, _Head) ->
+    NewPos = Pos + Skip,
+    fsck_read(NewPos, F, L).
 
 read_more_bytes(B, Min, Pos, F, L) ->
     Max = if 
@@ -1428,7 +1437,7 @@ get_segp(Pos) ->
 sz2pos(N) ->
     1 + dets_utils:log2(N+1).
 
-scan_objs(Bin, From, To, L, Ts, R, _Type) ->
+scan_objs(_Head, Bin, From, To, L, Ts, R, _Type) ->
     scan_objs(Bin, From, To, L, Ts, R).
 
 scan_objs(Bin, From, To, L, Ts, -1) ->

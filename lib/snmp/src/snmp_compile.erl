@@ -33,7 +33,7 @@
 
 %% Returns: {ok, File}|{error, Reason}
 compile([AtomFilename]) when atom(AtomFilename) ->
-    compile(atom_to_list(AtomFilename), []), %from cmd line
+    compile(atom_to_list(AtomFilename), []), % from cmd line
     halt();
 compile(FileName) -> compile(FileName, []).
 
@@ -42,30 +42,33 @@ look_at(Mib) ->
 
 %%----------------------------------------------------------------------
 %% Options:
-%%          {deprecated, Bool}                            false
-%%          {group_check, Bool}                           true
-%%          {db, volatile|persistent|mnesia}              volatile
-%%          {i, [import_dir_string()]}                    ["./"]
-%%          {il, [import_lib_dir_string()]}               []
-%%          {i, [import_dir_string()]}                    [""]
-%%          {warnings, Bool}                              true
-%%          {outdir, string()}                            "./"
-%%          {description, Bool}                           false
-%%          {verbosity, trace|debug|log|info|silence}     silence
+%%          {deprecated,  bool()}                         true
+%%          {group_check, bool()}                         true
+%%          {db,          volatile|persistent|mnesia}     volatile
+%%          {i,           [import_dir_string()]}          ["./"]
+%%          {il,          [import_lib_dir_string()]}      []
+%%          {warnings,    bool()}                         true
+%%          {outdir,      string()}                       "./"
+%%          {description, bool()}                         false
+%% (hidden) {verbosity,   trace|debug|log|info|silence}   silence
+%% (hidden) version 
+%% (hidden) options 
 %%----------------------------------------------------------------------
 
 compile(FileName, Options) when list(FileName) ->
     true = snmp_misc:is_string(FileName),
-    Opts = insert_default_options(Options, [{deprecated, false},
-					    {group_check, true},
-					    {i, ["./"]},
-					    {db, volatile},
-					    {warnings, true},
-					    {outdir, "./"},
-					    {il,[]}]),
+    Opts = update_options(Options, [{deprecated,  true},
+				    {group_check, true},
+				    {i,           ["./"]},
+				    {db,          volatile},
+				    {warnings,    true},
+				    {outdir,      "./"},
+				    {il,          []}]),
     case check_options(Opts) of
 	ok ->
-	    Pid=spawn_link(snmp_compile,init,[self(),FileName,Opts]),
+	    maybe_display_version(Opts),
+	    maybe_display_options(Opts),
+	    Pid = spawn_link(snmp_compile,init,[self(),FileName,Opts]),
 	    receive
 		{mc_result,R} -> R;
 		{'EXIT',Pid, Reason} when Reason =/= normal ->
@@ -74,19 +77,93 @@ compile(FileName, Options) when list(FileName) ->
 	{error, Reason} -> {error, Reason}
     end.
 
-insert_default_options(Options, []) -> Options;
-insert_default_options(Options, [{Key,DefVal}|DefaultOptions]) ->
+maybe_display_version(Opts) ->
+    case lists:member(version, Opts) of
+	true ->
+	    Vsn = (catch get_version()),
+	    io:format("version: ~s~n", [Vsn]);
+	false ->
+	    ok
+    end.
+
+get_version() ->
+    MI   = ?MODULE:module_info(),
+    Attr = get_info(attributes, MI),
+    Vsn  = get_info(app_vsn, Attr),
+    Comp = get_info(compile, MI),
+    Time = get_info(time, Comp),
+    {Year, Month, Day, Hour, Min, Sec} = Time,
+    io_lib:format("~s [~.4w-~.2.0w-~.2.0w ~.2.0w:~.2.0w:~.2.0w]", 
+		  [Vsn, Year, Month, Day, Hour, Min, Sec]).
+
+maybe_display_options(Opts) ->
+    case lists:member(options, Opts) of
+	true ->
+	    {F, A} = get_options(Opts, [], []),
+	    io:format("options: " ++ F ++ "~n", A);
+	false ->
+	    ok
+    end.
+
+get_options([], Formats, Args) ->
+    {lists:concat(lists:reverse(Formats)), lists:reverse(Args)};
+get_options([{deprecated, Val}|Opts], Formats, Args) ->
+    get_options(Opts, ["~n   deprecated:  ~w"|Formats], [Val|Args]);
+get_options([{group_check, Val}|Opts], Formats, Args) ->
+    get_options(Opts, ["~n   group_check: ~w"|Formats], [Val|Args]);
+get_options([{db, Val}|Opts], Formats, Args) ->
+    get_options(Opts, ["~n   db:          ~w"|Formats], [Val|Args]);
+get_options([{i, Val}|Opts], Formats, Args) ->
+    get_options(Opts, ["~n   i:           ~p"|Formats], [Val|Args]);
+get_options([{il, Val}|Opts], Formats, Args) ->
+    get_options(Opts, ["~n   il:          ~p"|Formats], [Val|Args]);
+get_options([{outdir, Val}|Opts], Formats, Args) ->
+    get_options(Opts, ["~n   outdir:      ~s"|Formats], [Val|Args]);
+get_options([{description, Val}|Opts], Formats, Args) ->
+    get_options(Opts, ["~n   description: ~w"|Formats], [Val|Args]);
+get_options([{warnings, Val}|Opts], Formats, Args) ->
+    get_options(Opts, ["~n   warnings:    ~w"|Formats], [Val|Args]);
+get_options([{verbosity, Val}|Opts], Formats, Args) ->
+    get_options(Opts, ["~n   verbosity:   ~w"|Formats], [Val|Args]);
+get_options([_|Opts], Formats, Args) ->
+    get_options(Opts, Formats, Args).
+    
+
+get_info(Key, Info) ->
+    case lists:keysearch(Key, 1, Info) of
+	{value, {Key, Val}} ->
+	    Val;
+	false ->
+	    throw("undefined")
+    end.
+
+update_options([], Options) -> 
+    Options;
+update_options([{Key,DefVal}|DefOpts], Options) ->
     case snmp_misc:assq(Key, Options) of
 	false ->
-	    [{Key, DefVal} | insert_default_options(Options, DefaultOptions)];
+	    update_options(DefOpts, [{Key,DefVal}|Options]);
 	{value, Val} when Key == i ->
-	    [{Key, Val++DefVal}
-	     | insert_default_options(Options,DefaultOptions)];
+	    Options1 = 
+		lists:keyreplace(Key, 1, Options, {Key, Val++DefVal}),
+	    update_options(DefOpts, Options1);
 	{value, Val} when Key == il ->
-	    [{Key, Val++DefVal}
-	     | insert_default_options(Options,DefaultOptions)];
-	{value, Val} ->
-	    [{Key, Val} | insert_default_options(Options,DefaultOptions)]
+	    Options1 = 
+		lists:keyreplace(Key, 1, Options, {Key, Val++DefVal}),
+	    update_options(DefOpts, Options1);
+	{value, DefVal} -> %% Same value, no need to update
+	    update_options(DefOpts, Options);
+	{value, Val} ->    %% New value, so update
+	    Options1 = 
+		lists:keyreplace(Key, 1, Options, {Key, DefVal}),
+	    update_options(DefOpts, Options1)
+    end;
+update_options([Opt|DefOpts], Options) ->
+    case lists:member(Opt, Options) of
+	true ->
+	    update_options(DefOpts, Options);
+	false ->
+	    update_options(DefOpts, [Opt|Options])
     end.
 
 check_options([]) -> ok;
@@ -117,6 +194,10 @@ check_options([{description, Atom}| T]) when atom(Atom) ->
     check_options(T);
 check_options([{verbosity, V} | T]) when atom(V) ->
     snmp_compile_lib:vvalidate(V),
+    check_options(T);
+check_options([version| T]) ->
+    check_options(T);
+check_options([options| T]) ->
     check_options(T);
 check_options([Opt|_]) ->
     {error, {invalid_option, Opt}}.
@@ -213,39 +294,41 @@ c_impl(File) ->
       "   ~p",[CData]),
     save(File, MibName,get(options)).
 
-compile_parsed_data({MibVer,MibName,{{import,Imports},Line}, Definitions})->
+compile_parsed_data({MibVer,MibName,{{import,Imports},Line}, Definitions}) ->
     snmp_compile_lib:import(Imports),
     DeprecatedFlag = get_deprecated(get(options)),
     d("compile_parsed_data -> DeprecatedFlag: ~p",[DeprecatedFlag]),
     definitions_loop(Definitions, DeprecatedFlag),
     MibName.
 
+
+update_status(Name, Status) ->
+    #cdata{status_ets = Ets} = get(cdata),
+    ets:insert(Ets, {Name, Status}).
+    
+
 %% A deprecated object
 definitions_loop([{{object_type,ObjName,_Type,_Access,
-		    _Kind,deprecated,
+		    _Kind, deprecated,
 		    {'DESCRIPTION', Message1},
 		    _Index},Line}|T],
-		 DeprecatedFlag) 
-    when  DeprecatedFlag == false ->
-%     l("defloop -> object_type (deprecated):~n"
-%       "   ObjName: ~p~n"
-%       "   Line:    ~p",[ObjName,Line]),
+		 false) ->
     %% May be implemented but the compiler chooses not to.
-    i("~w is deprecated. Ignored.",[ObjName],Line),
-    definitions_loop(T,false);
+    i("object_type ~w is deprecated => ignored",[ObjName],Line),    
+    update_status(ObjName, deprecated), 
+    definitions_loop(T, false);
 
 %% A obsolete object
-definitions_loop([{{object_type,ObjName,_Type,_Access,
-		    _Kind,obsolete,
+definitions_loop([{{object_type, ObjName, _Type, _Access,
+		    _Kind, obsolete,
 		    {'DESCRIPTION', Message1},
-		    _Index},Line}|T], 
-		 DeprecatedFlag) ->
-    l("defloop -> object_type (obsolete):~n"
-      "   ObjName: ~p~n"
-      "   Line:    ~p",[ObjName,Line]),
+		    _Index}, Line}|T], 
+		 Deprecated) ->
+    l("object_type ~w (~w) is obsolete => ignored",[ObjName,Line]),
     %% No need to implement a obsolete object
+    update_status(ObjName, obsolete),
     ensure_macro_imported('OBJECT-TYPE', Line),
-    definitions_loop(T, DeprecatedFlag);
+    definitions_loop(T, Deprecated);
 
 %% Defining a table
 definitions_loop([{{object_type,NameOfTable,
@@ -258,7 +341,7 @@ definitions_loop([{{object_type,NameOfTable,
 		    {'DESCRIPTION', Message2},
 		    {NameOfTable,[1]}},Eline},
 		  {{sequence,SeqName,{fieldList,FieldList}},Sline}|ColsEtc],
-		 DeprecatedFlag) ->
+		 Deprecated) ->
     l("defloop -> [object_type(sequence_of),object_type(type,[1]),sequence]:~n"
       "   NameOfTable:  ~p~n"
       "   SeqName:      ~p~n"
@@ -278,6 +361,9 @@ definitions_loop([{{object_type,NameOfTable,
        Tindex,Tline,
        NameOfEntry,TEline,IndexingInfo,Estatus,Eline,
        FieldList,Sline]),
+    update_status(NameOfTable, Tstatus),
+    update_status(NameOfEntry, Estatus),
+    update_status(SeqName,     undefined),
     ensure_macro_imported('OBJECT-TYPE', Tline),
     test_table(NameOfTable,Taccess,Kind,Tindex,Tline),
     {Tfather,Tsubindex} = Tindex,
@@ -296,10 +382,12 @@ definitions_loop([{{object_type,NameOfTable,
 				    NameOfTable,[]),
     TableInfo = snmp_compile_lib:make_table_info(Eline, NameOfTable,
 						 IndexingInfo,ColMEs),
-    snmp_compile_lib:add_cdata(#cdata.mes, [TableEntryME,
-			      TableME#me{assocList=[{table_info, TableInfo}]} |
-				       ColMEs]),
-    definitions_loop(RestObjs, 	DeprecatedFlag);
+    snmp_compile_lib:add_cdata(#cdata.mes, 
+			       [TableEntryME,
+				TableME#me{assocList=[{table_info, 
+						       TableInfo}]} |
+				ColMEs]),
+    definitions_loop(RestObjs, Deprecated);
 
 definitions_loop([{{object_type,NameOfTable,
 		    {{sequence_of, SeqName},_},Taccess,Kind, Tstatus,
@@ -311,7 +399,7 @@ definitions_loop([{{object_type,NameOfTable,
 		    {'DESCRIPTION', Message2},
 		    BadOID},Eline},
 		  {{sequence,SeqName,{fieldList,FieldList}},Sline}|ColsEtc],
-		 DeprecatedFlag) ->
+		 Deprecated) ->
     l("defloop -> "
       "[object_type(sequence_of),object_type(type),sequence(fieldList)]:~n"
       "   NameOfTable:  ~p~n"
@@ -332,6 +420,9 @@ definitions_loop([{{object_type,NameOfTable,
        Tindex,Tline,
        NameOfEntry,IndexingInfo,Estatus,BadOID,Eline,
        FieldList,Sline]),
+    update_status(NameOfTable, Tstatus),
+    update_status(NameOfEntry, Estatus),
+    update_status(SeqName,     undefined),
     ensure_macro_imported('OBJECT-TYPE', Tline),
     snmp_compile_lib:print_error("Bad TableEntry OID definition (~w)",
 				 [BadOID],Eline),
@@ -349,18 +440,20 @@ definitions_loop([{{object_type,NameOfTable,
 		       access      = 'not-accessible',
 		       assocList   = [{table_entry_with_sequence,SeqName}],
 		       description = Description2 
-		        },
+		      },
     {ColMEs,RestObjs} = define_cols(ColsEtc,1,FieldList,NameOfEntry,
 				    NameOfTable,[]),
     TableInfo = snmp_compile_lib:make_table_info(Eline, NameOfTable,
 						 IndexingInfo,ColMEs),
-    snmp_compile_lib:add_cdata(#cdata.mes, [TableEntryME,
-			      TableME#me{assocList=[{table_info, TableInfo}]} |
-					    ColMEs]),
-    definitions_loop(RestObjs, 	DeprecatedFlag);
+    snmp_compile_lib:add_cdata(#cdata.mes, 
+			       [TableEntryME,
+				TableME#me{assocList=[{table_info, 
+						       TableInfo}]} |
+				ColMEs]),
+    definitions_loop(RestObjs, Deprecated);
 
 definitions_loop([{{new_type,Macro,NewTypeName,OldType},Line}|T],
-		 DeprecatedFlag) ->
+		 Deprecated) ->
     l("defloop -> new_type:~n"
       "   Macro:       ~p~n"
       "   NewTypeName: ~p~n"
@@ -379,14 +472,14 @@ definitions_loop([{{new_type,Macro,NewTypeName,OldType},Line}|T],
 				       [ASN1#asn1_type{aliasname=NewTypeName,
 						       imported = false}])
     end,
-    definitions_loop(T,	DeprecatedFlag );
+    definitions_loop(T,	Deprecated);
 
 %% Plain variable
 definitions_loop([{{object_type,NewVarName,
 		    Type,Access,{variable,DefVal}, Status,
 		    {'DESCRIPTION', Message1}, 
 		    {FatherName,SubIndex}},Line} |T],
-		 DeprecatedFlag) ->
+		 Deprecated) ->
     l("defloop -> object_type (variable):~n"
       "   NewVarName: ~p~n"
       "   Type:       ~p~n"
@@ -398,6 +491,7 @@ definitions_loop([{{object_type,NewVarName,
       "   Line:       ~p",
       [NewVarName,Type,Access,DefVal,Status,
        FatherName,SubIndex,Line]),
+    update_status(NewVarName, Status),
     snmp_compile_lib:test_father(FatherName, NewVarName, SubIndex, Line),
     ASN1type = snmp_compile_lib:make_ASN1type(Type),
     snmp_compile_lib:register_oid(Line, NewVarName, FatherName, SubIndex),
@@ -411,10 +505,10 @@ definitions_loop([{{object_type,NewVarName,
     VI=snmp_compile_lib:make_variable_info(NewME2), 
     snmp_compile_lib:add_cdata(#cdata.mes,
 			       [NewME2#me{assocList = [{variable_info, VI}]}]),
-    definitions_loop(T, DeprecatedFlag);
+    definitions_loop(T, Deprecated);
 
 definitions_loop([{{internal,Macro,NewVarName,FatherName,SubIndex},Line}|T],
-		 DeprecatedFlag) ->
+		 Deprecated) ->
     l("defloop -> internal:~n"
       "   Macro:      ~p~n"
       "   NewVarName: ~p~n"
@@ -426,13 +520,13 @@ definitions_loop([{{internal,Macro,NewVarName,FatherName,SubIndex},Line}|T],
     snmp_compile_lib:add_cdata(
       #cdata.mes,
       [snmp_compile_lib:makeInternalNode2(false, NewVarName)]),
-    definitions_loop(T, DeprecatedFlag);    
+    definitions_loop(T, Deprecated);    
 
 %% A trap message
 definitions_loop([{{trap,TrapName,EnterPrise, Variables, 
 		    {'DESCRIPTION', Message1},
 		    SpecificCode},Line}|T],
-		 DeprecatedFlag) ->
+		 Deprecated) ->
     l("defloop -> trap:~n"
       "   TrapName:     ~p~n"
       "   EnterPrise:   ~p~n"
@@ -440,6 +534,7 @@ definitions_loop([{{trap,TrapName,EnterPrise, Variables,
       "   SpecificCode: ~p~n"
       "   Line:         ~p",
       [TrapName,EnterPrise,Variables,SpecificCode,Line]),
+    update_status(TrapName, undefined),
     CDATA = get(cdata),
     snmp_compile_lib:check_trap_name(EnterPrise, Line, CDATA#cdata.mes),
     Descriptions = make_description(Message1),
@@ -454,10 +549,11 @@ definitions_loop([{{trap,TrapName,EnterPrise, Variables,
     snmp_misc:map({snmp_compile_lib,check_trap}, [Trap, Line], 
 		  CDATA#cdata.traps),
     snmp_compile_lib:add_cdata(#cdata.traps, [Trap]),
-    definitions_loop(T, DeprecatedFlag);    
+    definitions_loop(T, Deprecated);    
 
-definitions_loop([{{object_type,NameOfEntry,Type,Eaccess,{table_entry,Index},
-		    Estatus,SubIndex},Eline}|T],DeprecatedFlag) ->
+definitions_loop([{{object_type, NameOfEntry, Type, Eaccess,
+		    {table_entry,Index},
+		    Estatus,SubIndex},Eline}|T], Deprecated) ->
     l("defloop -> object_type (table_entry):~n"
       "   NameOfEntry: ~p~n"
       "   Type:        ~p~n"
@@ -468,14 +564,33 @@ definitions_loop([{{object_type,NameOfEntry,Type,Eaccess,{table_entry,Index},
       "   SubIndex:    ~p~n"
       "   Eline:       ~p",
       [NameOfEntry,Type,Eaccess,Index,Estatus,SubIndex,Eline]),
+    update_status(NameOfEntry, Estatus),
     snmp_compile_lib:print_error("Misplaced TableEntry definition (~w)",
 				 [NameOfEntry],Eline),
-    definitions_loop(T, DeprecatedFlag);
+    definitions_loop(T, Deprecated);
+
+definitions_loop([{{notification,TrapName,Variables,deprecated,
+		    {'DESCRIPTION', Message1},
+		    {FatherName,SubIndex}},Line}|T],
+		 false) ->
+    i("notification ~w is deprecated => ignored",[TrapName],Line),    
+    update_status(TrapName, deprecated),
+    ensure_macro_imported('NOTIFICATION-TYPE', Line),
+    definitions_loop(T, false);    
+
+definitions_loop([{{notification,TrapName,Variables,obsolete,
+		    {'DESCRIPTION', Message1},
+		    {FatherName,SubIndex}},Line}|T],
+		 Deprecated) ->
+    l("notification ~w (~w) is obsolete => ignored", [TrapName,Line]),
+    update_status(TrapName, obsolete),
+    ensure_macro_imported('NOTIFICATION-TYPE', Line),
+    definitions_loop(T, Deprecated);    
 
 definitions_loop([{{notification,TrapName,Variables,Status,
 		    {'DESCRIPTION', Message1},
 		    {FatherName,SubIndex}},Line}|T],
-		 DeprecatedFlag) ->
+		 Deprecated) ->
     l("defloop -> notification:~n"
       "   TrapName:    ~p~n"
       "   Variables:   ~p~n"
@@ -484,123 +599,75 @@ definitions_loop([{{notification,TrapName,Variables,Status,
       "   SubIndex:    ~p~n"
       "   Line:        ~p",
       [TrapName,Variables,Status,FatherName,SubIndex,Line]),
+    update_status(TrapName, Status),
     ensure_macro_imported('NOTIFICATION-TYPE', Line),
     CDATA = get(cdata),
     snmp_compile_lib:register_oid(Line,TrapName,FatherName,SubIndex),
     Descriptions = make_description(Message1),
     OidObjects   = snmp_misc:map({snmp_compile_lib,trap_variable_info},
-				  [Line, CDATA#cdata.mes],
-				  Variables),
+				 [Line, CDATA#cdata.mes],
+				 Variables),
     Notif = #notification{trapname    = TrapName,
 			  description = Descriptions,
 			  oidobjects  = OidObjects},
     snmp_compile_lib:check_notification(Notif, Line, CDATA#cdata.traps),
     snmp_compile_lib:add_cdata(#cdata.traps, [Notif]),
-    definitions_loop(T, DeprecatedFlag);    
+    definitions_loop(T, Deprecated);    
 
-definitions_loop([{{module_compliance,Name},Line}|T], DeprecatedFlag) ->
+definitions_loop([{{module_compliance,Name},Line}|T], Deprecated) ->
     l("defloop -> module_compliance:~n"
       "   Name: ~p~n"
       "   Line: ~p",[Name,Line]),
     ensure_macro_imported('MODULE-COMPLIANCE', Line),
-    definitions_loop(T, DeprecatedFlag);
+    definitions_loop(T, Deprecated);
 
-definitions_loop([{{object_group,Name,GroupObjects,deprecated},Line}|T],
-		 DeprecatedFlag) ->
-    l("defloop -> object_group (deprecated):~n"
-      "   Name:         ~p~n"
+definitions_loop([{{object_group,Name,GroupObjects,Status},Line}|T],
+		 Deprecated) ->
+    l("defloop -> object_group ~p:~n"
+      "   Status:       ~p~n"
       "   GroupObjects: ~p~n"
-      "   Line:         ~p",[Name,GroupObjects,Line]),
+      "   Line:         ~p",[Name,Status,GroupObjects,Line]),
+    ensure_macro_imported('OBJECT-GROUP', Line),
     GroupBool = get_group_check(get(options)),
-    case GroupBool of
-	true ->
-	    %% May be implemented but the compiler chooses not to.
-	    i("~w is deprecated. Ignored.",[Name],Line),
-	    definitions_loop(T, DeprecatedFlag);
-	_ ->
-	    definitions_loop(T, DeprecatedFlag)
-    end;
-
-definitions_loop([{{object_group,Name,GroupObjects,obsolete},Line}|T],
-		 DeprecatedFlag) ->
-    l("defloop -> object_group (obsolete):~n"
-      "   Name:         ~p~n"
-      "   GroupObjects: ~p~n"
-      "   Line:         ~p",[Name,GroupObjects,Line]),
-    %% No need to implement a obsolete group
-    ensure_macro_imported('OBJECT-GROUP', Line),
-    definitions_loop(T,DeprecatedFlag);
-
-definitions_loop([{{object_group,Name,GroupObjects,_Status},Line}|T],
-		 DeprecatedFlag) ->
-    l("defloop -> object_group:~n"
-      "   Name:         ~p~n"
-      "   GroupObjects: ~p~n"
-      "   Line:         ~p",[Name,GroupObjects,Line]),
-    ensure_macro_imported('OBJECT-GROUP', Line),
-    GroupBool = hd([Value || {Option,Value} <-get(options), 
-			     Option==group_check]),
     case GroupBool of
 	true ->
 	    snmp_compile_lib:add_cdata(#cdata.objectgroups,
 				       [{Name,GroupObjects,Line}]),
-	    CDATA=get(cdata),
-	    Objects=snmp_compile_lib:check_access_group(CDATA#cdata.mes),
-	    snmp_compile_lib:check_def(Objects,GroupObjects,Line),
-	    definitions_loop(T, DeprecatedFlag);
+	    %% Check that the group members has been defined 
+	    %% and that they have the correct status
+	    snmp_compile_lib:check_object_group(Name, GroupObjects,
+						Line, Status);
 	_ ->
-	    definitions_loop(T, DeprecatedFlag)
-    end;
+	    ok
+    end,
+    definitions_loop(T, Deprecated);
 
-definitions_loop([{{notification_group,Name,GroupObjects,deprecated},Line}|T],
-		 DeprecatedFlag) ->
-    l("defloop -> notification_group (deprecated):~n"
-      "   Name:         ~p~n"
+definitions_loop([{{notification_group,Name,GroupObjects,Status},Line}
+		  |T], Deprecated) ->
+    l("defloop -> notification_group ~p: ~n"
+      "   Status:       ~p~n"
       "   GroupObjects: ~p~n"
-      "   Line:         ~p",[Name,GroupObjects,Line]),
-    GroupBool = get_group_check(get(options)),
-    case GroupBool of
-	true ->
-	    %% May be implemented but the compiler chooses not to.
-	    i("~w is deprecated. Ignored.",[Name],Line),
-	    definitions_loop(T, DeprecatedFlag);
-	_ ->
-	    definitions_loop(T, DeprecatedFlag)
-    end;
-
-definitions_loop([{{notification_group,Name,GroupObjects,obsolete},Line}|T],
-		 DeprecatedFlag) ->
-    l("defloop -> notification_group (obsolete):~n"
-      "   Name:         ~p~n"
-      "   GroupObjects: ~p~n"
-      "   Line:         ~p",[Name,GroupObjects,Line]),
-    %% No need to implement a obsolete object
-    ensure_macro_imported('NOTIFICATION-GROUP', Line),
-    definitions_loop(T, DeprecatedFlag);
-
-definitions_loop([{{notification_group,Name,NotificationObjects,_Status},Line}
-		  |T], DeprecatedFlag) ->
-    l("defloop -> notification_group: ~n"
-      "   Name:                ~p~n"
-      "   NotificationObjects: ~p~n"
-      "   Line:                ~p",[Name,NotificationObjects,Line]),
+      "   Line:         ~p",[Name,Status,GroupObjects,Line]),
     ensure_macro_imported('NOTIFICATION-GROUP', Line),
     GroupBool = get_group_check(get(options)),
     case GroupBool of
 	true ->
-	    snmp_compile_lib:add_cdata(#cdata.notificationgroups,[{Name,NotificationObjects,Line}]),
-	    CDATA=get(cdata),
-	    Objects = snmp_compile_lib:check_notification_trap(CDATA#cdata.traps),
-	    snmp_compile_lib:check_def(Objects,NotificationObjects,Line),
-	    definitions_loop(T, DeprecatedFlag);
+	    snmp_compile_lib:add_cdata(#cdata.notificationgroups,
+				       [{Name,GroupObjects,Line}]),
+
+	    %% Check that the group members has been defined 
+	    %% and that they have the correct status
+	    snmp_compile_lib:check_notification_group(Name, GroupObjects,
+						      Line, Status);
 	_ ->
-	    definitions_loop(T, DeprecatedFlag)
-    end;
+	    ok
+    end,
+    definitions_loop(T, Deprecated);
 
 definitions_loop([{{object_type,NameOfTable,
 		    {{sequence_of, SeqName},_},Taccess,Kind,
 		    Tstatus,Tindex},Tline}, Entry,Seq|T],
-		DeprecatedFlag) ->
+		Deprecated) ->
     l("defloop -> object_type (sequence_of)~n"
       "   NameOfTable: ~p~n"
       "   SeqName:     ~p~n"
@@ -608,6 +675,7 @@ definitions_loop([{{object_type,NameOfTable,
       "   Entry:       ~p~n"
       "   Seq:         ~p",
       [NameOfTable,SeqName,Tline,Entry,Seq]),
+    update_status(NameOfTable, Tstatus),
     case Entry of
 	{{object_type,NameOfEntry,{{type,SeqName},_line},
 		    'not-accessible',
@@ -629,29 +697,30 @@ definitions_loop([{{object_type,NameOfTable,
 	      "Invalid TableEntry '~p' (check STATUS, Sequence name, Oid)",
 	      [safe_elem(1,safe_elem(2,Entry))],Tline)
     end,
-    definitions_loop(T, DeprecatedFlag);
+    definitions_loop(T, Deprecated);
 
 definitions_loop([{{object_type,NameOfTable,
 		    {{sequence_of, SeqName},_},Taccess,Kind,
 		    Tstatus,Tindex},Tline}|T],
-		DeprecatedFlag) ->
+		Deprecated) ->
     l("defloop -> object_type (sequence_of):~n"
       "   object_type: ~p~n"
       "   sequence_of: ~p~n"
       "   Tline:       ~p",[NameOfTable,SeqName,Tline]),
+    update_status(NameOfTable, Tstatus),
     snmp_compile_lib:print_error("Invalid statements following table ~p.",
 				 [NameOfTable],Tline),
-    definitions_loop(T, DeprecatedFlag);
+    definitions_loop(T, Deprecated);
 
 definitions_loop([{{sequence,SeqName,{fieldList,FieldList}},Line}|T],
-		 DeprecatedFlag) ->
+		 Deprecated) ->
     l("defloop -> sequence (fieldList):~n"
       "   SeqName: ~p~n"
       "   Line:    ~p",[SeqName,Line]),
     w("Unexpected SEQUENCE ~w, ignoring.",[SeqName],Line),
-    definitions_loop(T,DeprecatedFlag);
+    definitions_loop(T, Deprecated);
 
-definitions_loop([{Obj,Line}|T], DeprecatedFlag) ->
+definitions_loop([{Obj,Line}|T], Deprecated) ->
     i("defloop -> unknown Error ~n"
       "   Obj:  ~p~n"
       "   Line: ~p",[Obj,Line]),
@@ -659,9 +728,9 @@ definitions_loop([{Obj,Line}|T], DeprecatedFlag) ->
 	 "Can't describe the error better than this: ~999p ignored."
 	 " Please send a trouble report to support@erlang.ericsson.se.",
 				 [Obj],Line),
-    definitions_loop(T, DeprecatedFlag);
+    definitions_loop(T, Deprecated);
 
-definitions_loop([], _DeprecatedFlag) ->
+definitions_loop([], _Deprecated) ->
     l("defloop -> done",[]),
     ok.
 
@@ -685,7 +754,8 @@ define_cols([{{object_type,NameOfCol,Type1,Access,{variable,Defval},Status,
       "   NameOfEntry ~p~n"
       "   Oline:      ~p",
       [NameOfCol,Type1,Access,Status,NameOfEntry,Oline]),
-    DeprecatedBool = get_deprecated(get(options)),
+    update_status(NameOfCol, Status),
+    Deprecated = get_deprecated(get(options)),
     ASN1type = snmp_compile_lib:make_ASN1type(Type1),
     case (snmp_compile_lib:make_ASN1type(Type2))#asn1_type.bertype of
 	T2 when T2 == ASN1type#asn1_type.bertype -> ok;
@@ -699,22 +769,25 @@ define_cols([{{object_type,NameOfCol,Type1,Access,{variable,Defval},Status,
 	    Status == obsolete ->
 		%% Be quiet and don't implement
 		'not-accessible';
-	    Status == deprecated, DeprecatedBool == false ->
+	    Status == deprecated, Deprecated == false ->
 		%% The compiler chooses not to implement the column.
-		i("~w is deprecated. Ignored.",[NameOfCol],Oline),
+		i("object_type ~w is deprecated => ignored",
+		  [NameOfCol],Oline),
 		'not-accessible';
-	   true -> Access
+	    true -> Access
 	end,
     snmp_compile_lib:register_oid(Oline,NameOfCol,NameOfEntry,[SubIndex]),
     Description1 = make_description(Message1),
     ColumnME = snmp_compile_lib:resolve_defval(
 		 #me{oid         = SubIndex,
-		     aliasname   = NameOfCol, asn1_type = ASN1type,
-		     entrytype   = table_column, access = NewAccess,
+		     aliasname   = NameOfCol, 
+		     asn1_type   = ASN1type,
+		     entrytype   = table_column, 
+		     access      = NewAccess,
 		     description = Description1,
 		     assocList   = [{table_name,TableName} | Defval]}),
     define_cols(Rest,SubIndex+1,Fields,NameOfEntry,TableName,
-	     [ColumnME|ColMEs]);
+		[ColumnME|ColMEs]);
 
 %% A "hole" (non-consecutive columns) in the table.
 %% Implemented as a not-accessible column so Col always is index in
@@ -732,6 +805,7 @@ define_cols([{{object_type,NameOfCol,Type1,Access,Kind,Status,
       "   NameOfEntry ~p~n"
       "   Oline:      ~p",
       [NameOfCol,Type1,Access,Status,NameOfEntry,Oline]),
+    update_status(NameOfCol, Status),
     Int = {{type, 'INTEGER'},Oline},
     GeneratedColumn =  
 	%% be sure to use an invalid column name here!
@@ -867,7 +941,8 @@ save(Filename, MibName,Options) ->
 
 snmp_parse(FileName) ->
     case snmp_tok:start_link(reserved_words(),
-		     [{file, FileName ++ ".mib"},{forget_stringdata, true}]) of
+			     [{file, FileName ++ ".mib"},
+			      {forget_stringdata, true}]) of
 	{error,ReasonStr} ->
 	    snmp_compile_lib:error(lists:flatten(ReasonStr),[]);
 	{ok, TokPid} ->

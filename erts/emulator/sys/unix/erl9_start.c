@@ -65,6 +65,9 @@ main(int argc, char** argv)
 	abort();
     }
     
+    /* Needs to be called before any memory allocation */
+    erts_short_init();
+
     while (fgets(sbuf, sizeof sbuf, fp)) {
 	if (sbuf[0] == '#') {
 	    continue;		/* Comment */
@@ -101,7 +104,6 @@ main(int argc, char** argv)
 		abort();
 	    }
 
-	    erts_short_init();
  	    if (getenv("ERLBREAKHANDLER")) {
 		init_break_handler();
 	    }

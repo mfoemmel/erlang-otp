@@ -179,17 +179,21 @@ check_instruction(down, {remove, {Module, Pre, Post}}, AllInstr, Modules)
 	    error({nonexisting_removed_module, Module})
     end;
 
-check_instruction(_, {load_module, Module, Pre, Post, Depend}, _, Modules) 
+check_instruction(_, {load_module, Module, Pre, Post, Depend}, 
+		  AllInstr, Modules) 
   when atom(Module), atom(Pre), atom(Post), list(Depend) ->
     check_module(Module, Modules),
     check_module_depend(Module, Depend, Modules),
+    check_module_depend(Module, Depend, updated_modules(AllInstr, [])),
     check_purge(Pre),
     check_purge(Post);
 
-check_instruction(_, {update, Module, Change, Pre, Post, Depend}, _, Modules) 
+check_instruction(_, {update, Module, Change, Pre, Post, Depend}, 
+		  AllInstr, Modules) 
   when atom(Module), atom(Pre), atom(Post), list(Depend) ->
     check_module(Module, Modules),
     check_module_depend(Module, Depend, Modules),
+    check_module_depend(Module, Depend, updated_modules(AllInstr, [])),
     check_change(Change),
     check_purge(Pre),
     check_purge(Post);
@@ -198,6 +202,25 @@ check_instruction(_, Instr, _AllInstr, _Modules) ->
     error({error, {unknown_instruction, Instr}}).
 
 
+%% If Module X depends on Module Y, then module Y must have an update
+%% instruction of some sort (otherwise the depend is faulty).
+updated_modules([], Modules) ->
+    Modules;
+updated_modules([Instr|Instrs], Modules) ->
+    Module = instruction_module(Instr),
+    updated_modules(Instrs, [Module|Modules]).
+    
+instruction_module({add_module, Module}) ->
+    Module;
+instruction_module({remove, {Module, _, _}}) ->
+    Module;
+instruction_module({load_module, Module, _, _, _}) ->
+    Module;
+instruction_module({update, Module, _, _, _, _}) ->
+    Module;
+instruction_module(Instr) ->
+    error({error, {unknown_instruction, Instr}}).
+    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 check_version(V) when list(V) ->

@@ -224,7 +224,7 @@ get_largest_family([{SubTree, Mask, Type} | T], Oid, Res) ->
 						   Type, Res));
 	false -> get_largest_family(T, Oid, Res)
     end;
-get_largest_family([], Oid, Res) -> Res.
+get_largest_family([], _Oid, Res) -> Res.
 
 %%-----------------------------------------------------------------
 %% We keep only the largest (first longest SubTree, and then 
@@ -232,7 +232,7 @@ get_largest_family([], Oid, Res) -> Res.
 %%-----------------------------------------------------------------
 add_res(Len, SubTree, Type, undefined) ->
     {Len, SubTree, Type};
-add_res(Len, SubTree, Type, {MaxLen, MaxS, MaxT}) when Len > MaxLen ->
+add_res(Len, SubTree, Type, {MaxLen, _MaxS, _MaxT}) when Len > MaxLen ->
     {Len, SubTree, Type};
 add_res(Len, SubTree, Type, {MaxLen, MaxS, MaxT}) when Len == MaxLen ->
     if
@@ -245,12 +245,12 @@ add_res(_Len, _SubTree, _Type, MaxRes) -> MaxRes.
 %% 1 in mask is exact match, 0 is wildcard.
 %% If mask is shorter than SubTree, its regarded
 %% as being all ones.
-check_mask(Oid, [], Mask) -> true;
+check_mask(_Oid, [], _Mask) -> true;
 check_mask([X | Xs], [X | Ys], [1 | Ms]) ->
     check_mask(Xs, Ys, Ms);
 check_mask([X | Xs], [X | Ys], []) ->
     check_mask(Xs, Ys, []);
-check_mask([X | Xs], [Y | Ys], [0 | Ms]) ->
+check_mask([_X | Xs], [_Y | Ys], [0 | Ms]) ->
     check_mask(Xs, Ys, Ms);
 check_mask(_, _, _) -> false.
 
@@ -263,7 +263,7 @@ validate_all_mib_view([#varbind{oid = Oid, org_index = Index} | Varbinds],
 	true -> validate_all_mib_view(Varbinds, MibView);
 	false -> {false, Index}
     end;
-validate_all_mib_view([], MibView) ->
+validate_all_mib_view([], _MibView) ->
     true.
 
 %%-----------------------------------------------------------------
@@ -284,7 +284,7 @@ is_definitely_not_in_mib_view(Oid, [{SubTree, Mask,?view_included}|T]) ->
 	true -> false;
 	false -> is_definitely_not_in_mib_view(Oid, T)
     end;
-is_definitely_not_in_mib_view(Oid, [{SubTree, Mask,?view_excluded}|T]) ->
+is_definitely_not_in_mib_view(Oid, [{_SubTree, _Mask,?view_excluded}|T]) ->
     is_definitely_not_in_mib_view(Oid, T);
 is_definitely_not_in_mib_view(_Oid, []) ->
     true.
@@ -293,14 +293,14 @@ is_definitely_not_in_mib_view(_Oid, []) ->
 %% As check_mask, BUT if Oid < SubTree and sofar good, we
 %% return true. As Oid get larger we may decide.
 %%-----------------------------------------------------------------
-check_maybe_mask(Oid, [], Mask) -> true;
+check_maybe_mask(_Oid, [], _Mask) -> true;
 check_maybe_mask([X | Xs], [X | Ys], [1 | Ms]) ->
     check_maybe_mask(Xs, Ys, Ms);
 check_maybe_mask([X | Xs], [X | Ys], []) ->
     check_maybe_mask(Xs, Ys, []);
-check_maybe_mask([X | Xs], [Y | Ys], [0 | Ms]) ->
+check_maybe_mask([_X | Xs], [_Y | Ys], [0 | Ms]) ->
     check_maybe_mask(Xs, Ys, Ms);
-check_maybe_mask([X | Xs], [Y | Ys], _) ->
+check_maybe_mask([_X | _Xs], [_Y | _Ys], _) ->
     false;
 check_maybe_mask(_, _, _) -> 
     true.

@@ -340,12 +340,12 @@ open_log(Name, Header, Fname, Exists, Repair, Mode) ->
 	{repaired, Log, _, {badbytes, 0}} ->
 	    write_header(Log, Header),
 	    Log;
-	{repaired, Log, Recover, BadBytes} ->
+	{repaired, Log, _Recover, BadBytes} ->
 	    mnesia_lib:important("Data may be missing, log ~p repaired: Lost ~p bytes~n", 
 				 [Fname, BadBytes]),
 	    Log;
 	{error, Reason} when Repair == true ->
-	    Res = file:delete(Fname),
+	    file:delete(Fname),
 	    mnesia_lib:important("Data may be missing, Corrupt logfile deleted: ~p, ~p ~n", 
 				 [Fname, Reason]),
 	    %% Create a new 
@@ -431,7 +431,7 @@ prepare_prev(Diff, startup, Prev, false) ->
 	false ->
 	    already_dumped
     end;
-prepare_prev(Diff, InitBy, Prev, false) ->
+prepare_prev(Diff, _InitBy, Prev, false) ->
     Head = trans_log_header(),
     case mnesia_monitor:reopen_log(latest_log, Prev, Head) of
 	ok ->
@@ -452,7 +452,7 @@ init_log_dump() ->
 chunk_log(Cont) ->
     chunk_log(previous_log, Cont).
 
-chunk_log(Log, eof) ->
+chunk_log(_Log, eof) ->
     eof;
 chunk_log(Log, Cont) ->
     case catch disk_log:chunk(Log, Cont) of
@@ -559,7 +559,6 @@ view(File) ->
 	false ->
 	    nolog;
 	true ->
-	    Repair = mnesia_monitor:get_env(auto_repair),
 	    N = view_only,
 	    Args = [{file, File}, {name, N}, {mode, read_only}],
 	    case disk_log:open(Args) of
@@ -605,7 +604,7 @@ backup(Opaque, Args) when list(Args) ->
     %% Backup all tables with max redundancy
     CpArgs = [{ram_overrides_dump, false}, {max, val({schema, tables})}],
     case mnesia_checkpoint:activate(CpArgs) of
-	{ok, Name, Nodes} ->
+	{ok, Name, _Nodes} ->
 	    Res = backup_checkpoint(Name, Opaque, Args),
 	    mnesia_checkpoint:deactivate(Name),
 	    Res;
@@ -743,7 +742,7 @@ abort_write(B, What, Args, Reason) ->
     dbg_out("Failed to perform backup. M=~p:F=~p:A=~p -> ~p~n",
 	    [Mod, What, Args, Reason]),
     case catch apply(Mod, abort_write, [Opaque]) of
-	{ok, Res} ->
+	{ok, _Res} ->
 	    throw({error, Reason});
 	Other ->
 	    error("Failed to abort backup. ~p:~p~p -> ~p~n",
@@ -817,7 +816,7 @@ handle_more(Pid, B, Tab, FirstName, FirstSource, Name) ->
 	    abort_write(B, {?MODULE, backup_tab}, [Tab, B], {error, Reason})
     end.
 
-handle_last(Pid, {Count, B}) when Pid == self() ->
+handle_last(Pid, {_Count, B}) when Pid == self() ->
     B;
 handle_last(Pid, _Acc) ->
     unlink(Pid),
@@ -829,7 +828,7 @@ iterate(B, Name, Tab, Pid, Source, Age, Pass, Acc) ->
 	if
 	    Pid == self() ->
 		RecName = val({Tab, record_name}),
-		fun(Recs, A) -> copy_records(RecName, Tab, Recs, Pass, A) end;
+		fun(Recs, A) -> copy_records(RecName, Tab, Recs, A) end;
 	    true ->
 		fun(Recs, A) -> send_records(Pid, Tab, Recs, Pass, A) end
 	end,
@@ -841,9 +840,9 @@ iterate(B, Name, Tab, Pid, Source, Age, Pass, Acc) ->
 	    abort_write(B, {?MODULE, iterate}, [self(), B, Tab], R)
     end.
 
-copy_records(RecName, Tab, [], Pass, Acc) ->
+copy_records(_RecName, _Tab, [], Acc) ->
     Acc;
-copy_records(RecName, Tab, Recs, Pass, {Count, B}) ->
+copy_records(RecName, Tab, Recs, {Count, B}) ->
     Recs2 = rec_filter(B, Tab, RecName, Recs),
     B2 = safe_write(B, Recs2),
     {Count + 1, B2}.
@@ -893,9 +892,9 @@ rec_filter(B, schema, _RecName, Recs) ->
 	    %% No schema table cookie
 	    Recs
     end;
-rec_filter(B, Tab, Tab, Recs) ->
+rec_filter(_B, Tab, Tab, Recs) ->
     Recs;
-rec_filter(B, Tab, RecName, Recs) ->
+rec_filter(_B, Tab, _RecName, Recs) ->
     [setelement(1, Rec, Tab) || Rec <- Recs].
 
 ets2dcd(Tab) ->
@@ -920,7 +919,7 @@ ets2dcd(Tab, Ftype) ->
     file:delete(mnesia_lib:tab2dcl(Tab)),
     ok.
 
-ets2dcd('$end_of_table', Tab, Log) ->
+ets2dcd('$end_of_table', _Tab, _Log) ->
     ok;
 ets2dcd({Recs, Cont}, Tab, Log) -> 
     ok = disk_log:alog_terms(Log, Recs),     
@@ -961,7 +960,7 @@ insert_dcdchunk({Cont, [LogH | Rest]}, Log, Tab)
 insert_dcdchunk({Cont, Recs}, Log, Tab) ->     
     true = ets:insert(Tab, Recs),
     insert_dcdchunk(chunk_log(Log, Cont), Log, Tab);
-insert_dcdchunk(eof, Log, Tab) ->
+insert_dcdchunk(eof, _Log, _Tab) ->
     ok.
 
 load_dcl(Tab, Rep) ->
@@ -986,16 +985,16 @@ load_dcl(Tab, Rep) ->
 insert_logchunk({C2, Recs}, Tab, C) ->
     N = add_recs(Recs, C),
     insert_logchunk(chunk_log(Tab, C2), Tab, C+N);
-insert_logchunk(eof, Tab, C) ->
+insert_logchunk(eof, _Tab, C) ->
     C.
 
-add_recs([{{Tab, Key}, Val, write} | Rest], N) ->
+add_recs([{{Tab, _Key}, Val, write} | Rest], N) ->
     true = ets:insert(Tab, Val),
     add_recs(Rest, N+1);
-add_recs([{{Tab, Key}, Val, delete} | Rest], N) ->
+add_recs([{{Tab, Key}, _Val, delete} | Rest], N) ->
     true = ets:delete(Tab, Key),
     add_recs(Rest, N+1);
-add_recs([{{Tab, Key}, Val, delete_object} | Rest], N) ->
+add_recs([{{Tab, _Key}, Val, delete_object} | Rest], N) ->
     true = ets:match_delete(Tab, Val),
     add_recs(Rest, N+1);
 add_recs([{{Tab, Key}, Val, update_counter} | Rest], N) ->
@@ -1013,7 +1012,7 @@ add_recs([LogH|Rest], N)
        LogH#log_header.log_kind == dcl_log, 
        LogH#log_header.log_version >= "1.0" ->    
     add_recs(Rest, N);
-add_recs([{{Tab, Key}, Val, clear_table} | Rest], N) ->
+add_recs([{{Tab, _Key}, _Val, clear_table} | Rest], N) ->
     true = ets:match_delete(Tab, '_'),
     add_recs(Rest, N+ets:info(Tab, size));  
 add_recs([], N) ->

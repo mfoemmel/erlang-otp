@@ -330,7 +330,7 @@ do_insert_edge(E, V1, V2, Label, #graph{ntab=NT,etab=ET}) ->
     ets:insert(ET, {E,V1,V2,Label}),
     E.
 
-acyclic_add_edge(_E, V1, V2, _L, _G) when V1 == V2 ->
+acyclic_add_edge(_E, V1, V2, _L, _G) when V1 =:= V2 ->
     {error, {bad_edge, [V1, V2]}};
 acyclic_add_edge(E,V1,V2,Label,G) ->
     case get_path(G,V2,V1) of
@@ -386,7 +386,7 @@ get_path(G, V1, V2) ->
 %%
 prune_path(Counter, {Min,_Max}) when Counter < Min ->
     short;
-prune_path(_Counter, {_Min,Max}) when Max == infinity ->
+prune_path(_Counter, {_Min,Max}) when Max =:= infinity ->
     ok;
 prune_path(Counter, {_Min,Max}) when Counter > Max ->
     long;
@@ -440,7 +440,7 @@ spath(Q, G, Sink, T) ->
 	{{value, E}, Q1} ->
 	    {_E, V1, V2, _Label} = edge(G, E),
 	    if 
-		Sink == V2 ->
+		Sink =:= V2 ->
 		    follow_path(V1, T, [V2]);
 		true ->
 		    case vertex(T, V2) of

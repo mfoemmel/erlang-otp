@@ -94,7 +94,7 @@
 
 open(Data, ModeList) when list(ModeList) ->
     case load_driver() of
-	{ok, Drv} ->
+	{ok, _Drv} ->
 	    case open_mode(ModeList) of
 		{error, _} = Error ->
 		    Error;
@@ -346,8 +346,8 @@ load_driver() ->
 -endif.
 
 ll_open(Data, Mode, Opts) ->
-    case (catch erlang:open_port_prim({spawn, ?RAM_FILE_DRV}, Opts)) of
-	{'EXIT', Reason} ->
+    case (catch erlang:open_port({spawn, ?RAM_FILE_DRV}, Opts)) of
+	{'EXIT', _Reason} ->
 	    {error, emfile};
 	Port ->
 	    case call_port(Port, [?RAM_FILE_OPEN, i32(Mode) | Data]) of
@@ -376,7 +376,7 @@ get_response(Port) ->
     receive
 	{Port, {data, [Response|Rest]}} ->
 	    translate_response(Response, Rest);
-	{'EXIT', Port, Reason} ->
+	{'EXIT', Port, _Reason} ->
 	    {error, port_died}
     end.
 
@@ -409,7 +409,7 @@ mode_list(_) ->
 
 %% Converts a list of mode atoms into an mode word for the driver.
 %% Returns {Mode, Opts} wher Opts is a list of options for 
-%% erlang:open_port_prim/2, or {error, einval} upon failure.
+%% erlang:open_port/2, or {error, einval} upon failure.
 
 open_mode(List) when list(List) ->
     case open_mode(List, {0, []}) of

@@ -40,7 +40,7 @@
 
 -import(lists, [reverse/1]).
 
--record(fd, {port, number}).  %% XXX should include file_int.hrl ?
+-include_lib("kernel/include/file.hrl").
 
 %% --------------------------------------------------------------------------
 %% Parse services internet style
@@ -350,7 +350,7 @@ get_line([C | Cs], Acc) -> get_line(Cs, [C|Acc]).
 %% Read a line
 %%
 read_line(Fd) when pid(Fd) -> io:get_line(Fd, '');
-read_line(Fd) when record(Fd, fd) ->
+read_line(Fd) when record(Fd, file_descriptor) ->
     collect_line(Fd, []).
 
 collect_line(Fd, Cs) ->
@@ -459,123 +459,135 @@ address(_) ->
     {error, einval}.
 
 %%
-%% Parse Ipv4 address: d1.d2.d3.d4
+%% Parse IPv4 address: 
+%%    d1.d2.d3.d4
+%%    d1.d2.d4
+%%    d1.d4
+%%    d4
 %%
 %% Return {ok, IP} | {error, einval}
 %%
 ipv4_address(Cs) ->
-    case catch ipv4_addr(Cs, []) of
+    case catch ipv4_addr(Cs) of
 	{'EXIT',_} -> {error,einval};
 	Addr -> {ok,Addr}
     end.
 
-ipv4_addr([C | Cs], IP) when C >= $0, C =< $9 -> ipv4_addr(Cs, C-$0, IP).
+ipv4_addr(Cs) -> 
+    ipv4_addr(d3(Cs), []).
 
-ipv4_addr([$.|Cs], N, IP) when N < 256 -> ipv4_addr(Cs, [N|IP]);
-ipv4_addr([C|Cs], N, IP) when C >= $0, C =< $9 ->
-    ipv4_addr(Cs, N*10 + (C-$0), IP);
-ipv4_addr([], D, [C,B,A]) when D < 256 -> {A,B,C,D}.
-
-%%
-%% ipv6 addresses:
-%%
-%% Syntax:
-%% addr ->
-%%       :: addr2
-%%       addr1
-%%
-%% addr1 ->
-%%       x4  : addr1
-%%       x4 :: addr2
-%%       d3  . addr3
-%%       x4
-%%
-%% addr2 ->
-%%       x4 : addr2
-%%       d3 . addr3
-%%       x4
-%%       empty
-%%
-%% addr3 ->
-%%       d3 . addr3
-%%       d3
-%%
-%%  return {ok, Addr} | {error, einval}
-%%
-%%
-ipv6_address([$:,$: | Cs]) ->
-    case catch ipv6_addr2(Cs, [], []) of
-	{'EXIT',_} -> {error, einval};
-	Addr -> {ok, Addr}
+ipv4_addr({Cs0,[]}, A) when length(A) =< 3 ->
+    case [tod(Cs0)|A] of
+	[D4,D3,D2,D1] ->
+	    {D1,D2,D3,D4};
+	[D4,D2,D1] ->
+	    {D1,D2,0,D4};
+	[D4,D1] ->
+	    {D1,0,0,D4};
+	[D4] ->
+	    {0,0,0,D4}
     end;
+ipv4_addr({Cs0,"."++Cs1}, A) when length(A) =< 2 ->
+    ipv4_addr(d3(Cs1), [tod(Cs0)|A]).
+
+d3(Cs) -> d3(Cs, []).
+
+d3([C|Cs], R) when C >= $0, C =< $9, length(R) =< 2 ->
+    d3(Cs, [C|R]);
+d3(Cs, [_|_]=R) ->
+    {lists:reverse(R),Cs}.
+
+tod(Cs) ->
+    case erlang:list_to_integer(Cs) of
+	D when D >= 0, D =< 255 ->
+	    D;
+	_ ->
+	    erlang:fault(badarg, [Cs])
+    end.
+
+%%
+%% Parse IPv6 address: 
+%%     x1:x2:x3:x4:x5:x6:x7:x8
+%%     x1:x2::x7:x8
+%%     ::x7:x8
+%%     x1:x2::
+%%     ::
+%%     x1:x2:x3:x4:x5:x6:d7a.d7b.d8a.d8b
+%%     x1:x2::x5:x6:d7a.d7b.d8a.d8b
+%%     ::x5:x6:d7a.d7b.d8a.d8b
+%%     x1:x2::d7a.d7b.d8a.d8b
+%%     ::d7a.d7b.d8a.d8b
+%%
+%% Return {ok, IP} | {error, einval}
+%%
 ipv6_address(Cs) ->
-    case catch ipv6_addr1(Cs, []) of
-	{'EXIT',_} -> {error, einval};
-	Addr -> {ok, Addr}
+    case catch ipv6_addr(Cs) of
+	{'EXIT',_} -> {error,einval};
+	Addr -> {ok,Addr}
     end.
 
-ipv6_addr1(Cs, A0) ->
-    case x4(Cs) of
-	{_,Ds,[$:,$: | Cs1]} -> ipv6_addr2(Cs1,[],[tox(Ds) | A0]);
-	{_,Ds,[$: | Cs1]}    -> ipv6_addr1(Cs1,[tox(Ds)|A0]);
-	{_,Ds,[$. | Cs1]}    -> ipv6_addr3(Cs1,[tod(Ds)],A0,[],false);
-	{_,Ds,[]}            -> mkaddr([tox(Ds)|A0], [], [], false)
-    end.
+ipv6_addr("::") ->
+    ipv6_addr_done([], []);
+ipv6_addr("::"++Cs) ->
+    ipv6_addr(x4(Cs), [], []);
+ipv6_addr(Cs) ->
+    ipv6_addr(x4(Cs), []).
 
-ipv6_addr2([],A0,A2) ->
-    mkaddr(A2, A0, [], true);
-ipv6_addr2(Cs,A0,A2) ->
-    case x4(Cs) of
-	{_,Ds,[$:|Cs1]}   -> ipv6_addr2(Cs1,[tox(Ds)|A0],A2);
-	{_,Ds,[]}         -> mkaddr(A2, [tox(Ds)|A0],[],true);
-	{dec,Ds,[$.|Cs1]} -> ipv6_addr3(Cs1,[tod(Ds)],A2,A0,true)
-    end.
+%% Before "::"
+ipv6_addr({Cs0,[]}, A) when length(A) == 7 ->
+    ipv6_addr_done([tox(Cs0)|A]);
+ipv6_addr({Cs0,"::"}, A) when length(A) =< 6 ->
+    ipv6_addr_done([tox(Cs0)|A], []);
+ipv6_addr({Cs0,"::"++Cs1}, A) when length(A) =< 5 ->
+    ipv6_addr(x4(Cs1), [tox(Cs0)|A], []);
+ipv6_addr({Cs0,":"++Cs1}, A) when length(A) =< 6 ->
+    ipv6_addr(x4(Cs1), [tox(Cs0)|A]);
+ipv6_addr({Cs0,"."++Cs1}, A) when length(A) == 6 ->
+    ipv6_addr(d3(Cs1), A, [], [tod(Cs0)]).
 
-ipv6_addr3(Cs,A0,A2,A3,Expand) ->
-    case x4(Cs) of
-	{dec,Ds,[$.|Cs1]} -> ipv6_addr3(Cs1,[tod(Ds)|A0],A2,A3,Expand);
-	{dec,Ds,[]} -> mkaddr(A2,A3,[tod(Ds)|A0],Expand)
-    end.
+%% After "::"
+ipv6_addr({Cs0,[]}, A, B) when length(A)+length(B) =< 6 ->
+    ipv6_addr_done(A, [tox(Cs0)|B]);
+ipv6_addr({Cs0,":"++Cs1}, A, B) when length(A)+length(B) =< 5 ->
+    ipv6_addr(x4(Cs1), A, [tox(Cs0)|B]);
+ipv6_addr({Cs0,"."++Cs1}, A, B) when length(A)+length(B) =< 5 ->
+    ipv6_addr(x4(Cs1), A, B, [tod(Cs0)]).
 
-x4(Cs) ->
-    x4(Cs, 4, [], dec).
+%% After "."
+ipv6_addr({Cs0,[]}, A, B, C) when length(C) == 3 ->
+    ipv6_addr_done(A, B, [tod(Cs0)|C]);
+ipv6_addr({Cs0,"."++Cs1}, A, B, C) when length(C) =< 2 ->
+    ipv6_addr(d3(Cs1), A, B, [tod(Cs0)|C]).
 
-x4(Cs, 0, Ds, Type) -> {Type,Ds,Cs};
-x4([C|Cs],N,Ds,Type) ->
-    if
-	C >= $0, C =< $9 -> x4(Cs,N-1,[(C-$0)|Ds],Type);
-	C >= $a, C =< $f -> x4(Cs,N-1,[((C-$a)+10)|Ds],Type);
-	C >= $A, C =< $F -> x4(Cs,N-1,[((C-$A)+10)|Ds],hex);
-	true -> {Type, ds4(Ds), [C|Cs]}
-    end;
-x4([],N,Ds,Type) ->
-    {Type, ds4(Ds), []}.
+ipv6_addr_done(Ar, Br, [D4,D3,D2,D1]) ->
+    ipv6_addr_done(Ar, [((D3 bsl 8) bor D4),((D1 bsl 8) bor D2)|Br]).
 
-tox([X0,X1,X2,X3]) -> X0 + (X1 bsl 4) + (X2 bsl 8) + (X3 bsl 12).
+ipv6_addr_done(Ar, Br) ->
+    ipv6_addr_done(Br++dup(8-length(Ar)-length(Br), 0, Ar)).
 
-tod([D0,D1,D2,0]) ->
-    D = D0 + D1*10 + D2*100,
-    if D =< 255 -> D end.
+ipv6_addr_done(Ar) ->
+    list_to_tuple(lists:reverse(Ar)).
 
-%% mkaddr([], [], [D,C,B,A], false) ->  (add this clause to support old ipv4)
-%%    {A,B,C,D};
-mkaddr(E, F, [], false) when length(E) + length(F) == 8 ->
-    list_to_tuple(reverse(E) ++ reverse(F));
-mkaddr(E, F, [D,C,B,A], false) when length(E) + length(F) == 6 ->
-    list_to_tuple(reverse(E) ++ reverse(F) ++ [A*256+B, C*256+D]);
-mkaddr(E, F, [], true) when length(E)+length(F) =< 8 ->
-    list_to_tuple(reverse(E) ++ zero(8-(length(E)+length(F))) ++ reverse(F));
-mkaddr(E, F, [D,C,B,A], true) when length(E)+length(F) =< 6 -> 
-    list_to_tuple(reverse(E) ++ zero(6-(length(E)+length(F))) ++ reverse(F) ++
-		  [A*256+B, C*256+D]).
+x4(Cs) -> x4(Cs, []).
 
-ds4([D0]) -> [D0,0,0,0];
-ds4([D0,D1]) -> [D0,D1,0,0];
-ds4([D0,D1,D2]) -> [D0,D1,D2,0].
+x4([C|Cs], R) when C >= $0, C =< $9, length(R) =< 3 ->
+    x4(Cs, [C|R]);
+x4([C|Cs], R) when C >= $a, C =< $f, length(R) =< 3 ->
+    x4(Cs, [C|R]);
+x4([C|Cs], R) when C >= $A, C =< $F, length(R) =< 3 ->
+    x4(Cs, [C|R]);
+x4(Cs, [_|_]=R) ->
+    {lists:reverse(R),Cs}.
 
-zero(0) -> [];
-zero(N) -> [0 | zero(N-1)].
+tox(Cs) ->
+    erlang:list_to_integer(Cs, 16).
 
+dup(0, _, L) ->
+    L;
+dup(N, E, L) when integer(N), N >= 1 ->
+    dup(N-1, E, [E|L]);
+dup(N, E, L) ->
+    erlang:fault(badarg, [N,E,L]).
 
 %% Convert IPv4 adress to ascii
 %% Convert IPv6 / IPV4 adress to ascii (plain format)
@@ -591,16 +603,62 @@ ntoa({0,0,0,0,0,0,A,B}) -> "::" ++ dig_to_dec(A) ++ "." ++ dig_to_dec(B);
 %% IPV4 non ipv6 host address
 ntoa({0,0,0,0,0,16#ffff,A,B}) -> 
     "::FFFF:" ++ dig_to_dec(A) ++ "." ++ dig_to_dec(B);
-%% general XXX fix :: when possible
-ntoa({A,B,C,D,E,F,G,H}) ->
-    dig_to_hex(A) ++ ":" ++
-	dig_to_hex(B) ++ ":" ++
-	dig_to_hex(C) ++ ":" ++
-	dig_to_hex(D) ++ ":" ++
-	dig_to_hex(E) ++ ":" ++
-	dig_to_hex(F) ++ ":" ++
-	dig_to_hex(G) ++ ":" ++
-	dig_to_hex(H).
+ntoa({_,_,_,_,_,_,_,_}=T) ->
+    %% Find longest sequence of zeros, at least 2, to replace with "::"
+    ntoa(tuple_to_list(T), []).
+
+%% Find first double zero
+ntoa([], R) ->
+    ntoa_done(R);
+ntoa([0,0|T], R) ->
+    ntoa(T, R, 2);
+ntoa([D|T], R) ->
+    ntoa(T, [D|R]).
+
+%% Count consecutive zeros
+ntoa([], R, _) ->
+    ntoa_done(R, []);
+ntoa([0|T], R, N) ->
+    ntoa(T, R, N+1);
+ntoa([D|T], R, N) ->
+    ntoa(T, R, N, [D]).
+
+%% Find alternate double zero
+ntoa([], R1, _N1, R2) ->
+    ntoa_done(R1, R2);
+ntoa([0,0|T], R1, N1, R2) ->
+    ntoa(T, R1, N1, R2, 2);
+ntoa([D|T], R1, N1, R2) ->
+    ntoa(T, R1, N1, [D|R2]).
+
+%% Count consecutive alternate zeros
+ntoa(T, R1, N1, R2, N2) when N2 > N1 ->
+    %% Alternate zero sequence is longer - use it instead
+    ntoa(T, R2++dup(N1, 0, R1), N2);
+ntoa([], R1, _N1, R2, N2) ->
+    ntoa_done(R1, dup(N2, 0, R2));
+ntoa([0|T], R1, N1, R2, N2) ->
+    ntoa(T, R1, N1, R2, N2+1);
+ntoa([D|T], R1, N1, R2, N2) ->
+    ntoa(T, R1, N1, [D|dup(N2, 0, R2)]).
+
+ntoa_done(R1, R2) ->
+    lists:append(
+      separate(":", lists:map(fun dig_to_hex/1, lists:reverse(R1)))++
+      ["::"|separate(":", lists:map(fun dig_to_hex/1, lists:reverse(R2)))]).
+
+ntoa_done(R) ->
+    lists:append(separate(":", lists:map(fun dig_to_hex/1, lists:reverse(R)))).
+
+separate(_E, []) ->
+    [];
+separate(E, [_|_]=L) ->
+    separate(E, L, []).
+
+separate(E, [H|[_|_]=T], R) ->
+    separate(E, T, [E,H|R]);
+separate(_E, [H], R) ->
+    lists:reverse(R, [H]).
 
 %% convert to A.B decimal form
 dig_to_dec(0) -> [$0,$.,$0];
@@ -610,19 +668,7 @@ dig_to_dec(X) ->
 
 %% Convert a integer to hex string
 dig_to_hex(X) ->
-    shex(hex(X bsr 12), hex(X bsr 8), hex(X bsr 4), hex(X)).
-
-% short hex form
-shex($0,$0,$0,D) -> [D];
-shex($0,$0,C,D) -> [C,D];
-shex($0,B,C,D) -> [B,C,D];
-shex(A,B,C,D) -> [A,B,C,D].
-
-hex(X) ->
-    X4 = (X band 16#f),
-    if X4 < 10 -> X4 + $0;
-       true -> (X4-10) + $A
-    end.
+    erlang:integer_to_list(X, 16).
 
 %%
 %% Count number of '.' in a name
@@ -633,21 +679,21 @@ dots(Name) -> dots(Name, 0).
 
 dots([$.], N) -> {N, true};
 dots([$. | T], N) -> dots(T, N+1);
-dots([C | T], N) -> dots(T, N);
+dots([_C | T], N) -> dots(T, N);
 dots([], N) -> {N, false}.
 
 
 split_line(Line) ->
     split_line(Line, []).
 
-split_line([$# | Xs], Tokens) -> reverse(Tokens);
-split_line([$\s| L], Tokens) ->   split_line(L, Tokens);
+split_line([$# | _], Tokens) ->  reverse(Tokens);
+split_line([$\s| L], Tokens) ->  split_line(L, Tokens);
 split_line([$\t | L], Tokens) -> split_line(L, Tokens);
 split_line([$\n | L], Tokens) -> split_line(L, Tokens);
 split_line([], Tokens) -> reverse(Tokens);
 split_line([C|Cs], Tokens) -> split_mid(Cs, [C], Tokens).
 
-split_mid([$# | Cs], Acc, Tokens) -> split_end(Acc, Tokens);
+split_mid([$# | _Cs], Acc, Tokens) -> split_end(Acc, Tokens);
 split_mid([$\s | Cs], Acc, Tokens) -> split_line(Cs, [reverse(Acc) | Tokens]);
 split_mid([$\t | Cs], Acc, Tokens) -> split_line(Cs, [reverse(Acc) | Tokens]);
 split_mid([$\r, $\n | Cs], Acc, Tokens) -> split_line(Cs, [reverse(Acc) | Tokens]);

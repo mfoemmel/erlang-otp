@@ -103,7 +103,7 @@ disk_table(delete) ->
 		 [delete_table_copy, Tab, node()]) of
 	{atomic, ok} ->
 	    snmp_shadow_table:table_func(delete, ?diskShadowArgs);
-	{aborted, Reason} ->
+	{aborted, _Reason} ->
 	    case lists:member(Tab, mnesia:system_info(tables)) of
 		true ->
 		    catch delete_all(Tab),

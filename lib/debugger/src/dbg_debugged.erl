@@ -41,7 +41,7 @@ eval(Mod, Func, Args) ->
 %% Internal exports
 %%====================================================================
 
-follow(Fol,M,F,As) ->
+follow(_Fol, M, F, As) ->
     apply(M, F, As).
 
 
@@ -79,7 +79,7 @@ handle_command(Meta, {'receive',Msg}) ->
 	    Meta ! {self(),rec_acked}
     end,
     msg_loop(Meta);
-handle_command(Meta, {exit,Reason}) ->
+handle_command(_Meta, {exit,Reason}) ->
     exit(Reason);
 handle_command(Meta, {bif,Mod,Name,As,Where,Followed}) ->
     Res = bif(Mod, Name, As, Followed, Where),
@@ -127,13 +127,13 @@ catch_bif(Meta, Mod, Name, As, Followed, Where) ->
 
 bif(Mod, Name, As, false, Where) ->
     erts_debug:apply(Mod, Name, As, Where);
-bif(erlang, spawn, [M,F,As], Attached, Where) ->
+bif(erlang, spawn, [M,F,As], Attached, _Where) ->
     spawn(?MODULE,follow,[Attached,M,F,As]);
-bif(erlang, spawn_link, [M,F,As], Attached, Where) ->
+bif(erlang, spawn_link, [M,F,As], Attached, _Where) ->
     spawn_link(?MODULE,follow,[Attached,M,F,As]);
-bif(erlang, spawn, [N,M,F,As], Attached, Where) ->
+bif(erlang, spawn, [N,M,F,As], Attached, _Where) ->
     spawn(N,?MODULE,follow,[Attached,M,F,As]);
-bif(erlang, spawn_link, [N,M,F,As], Attached, Where) ->
+bif(erlang, spawn_link, [N,M,F,As], Attached, _Where) ->
     spawn_link(N,?MODULE,follow,[Attached,M,F,As]).
 
 %%---------------------------------------------------

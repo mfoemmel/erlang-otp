@@ -249,8 +249,13 @@ i1(Ps) ->
     iformat("Total", "", w(H), w(R), w(M)),
     iformat("", "", w(S), "", "").
 
-mfa_string({M, F, A}) ->
-    io_lib:format("~w:~w/~w", [M, F, A]);
+mfa_string(Fun) when function(Fun) ->
+    {module,M} = erlang:fun_info(Fun, module),
+    {name,F} = erlang:fun_info(Fun, name),
+    {arity,A} = erlang:fun_info(Fun, arity),
+    mfa_string({M,F,A});
+mfa_string({M,F,A}) ->
+    io_lib:format("~w:~w/~w", [M,F,A]);
 mfa_string(X) ->
     w(X).
 
@@ -284,12 +289,12 @@ display_info(Pid, {R,M,H,S}) ->
     end.
 
 %% We have to do some assumptions about the initial call.
-%% If the initial call is proc_lib:init_p/5 we can find more information
+%% If the initial call is proc_lib:init_p/3,5 we can find more information
 %% calling the function proc_lib:initial_call/1.
 
 initial_call(Info)  ->
     case fetch(initial_call, Info) of
-	{proc_lib, init_p, 5} ->
+	{proc_lib, init_p, _} ->
 	    proc_lib:translate_initial_call(Info);
 	ICall ->
 	    ICall
@@ -551,7 +556,7 @@ pline(Name, Info, Pid) ->
     LM = length(fetch(messages, Info)),
     rformat(io_lib:format("~w",[Name]),
 	    io_lib:format("~w",[Pid]),
-	    io_lib:format("~w",[Call]),
+	    io_lib:format("~s",[mfa_string(Call)]),
 	    integer_to_list(Reds), integer_to_list(LM)).
 
 rformat(Name, Pid, Call, Reds, LM) ->
@@ -608,215 +613,12 @@ lengths([], L)    -> L.
 w(X) ->
     io_lib:write(X).
 
-
-
 %%
-%% memory/[0,1] help functions
+%% memory/[0,1]
 %%
 
-get_proc_mem() ->
-    lists:foldl(fun (P, Acc) ->
-			case process_info(P, memory) of
-			    {memory, M} ->
-				Acc + M;
-			    _ ->
-				Acc
-			end
-		end,
-		erlang:system_info(global_heaps_size),
-		processes()).
-
-get_non_proc_mem([{ports, Alloc}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{static, Alloc}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{atom_space, Alloc, _Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{binary, Alloc}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{atom_table, Alloc}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{module_table, Alloc}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{export_table, Alloc}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{register_table, Alloc}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{loaded_code, Alloc}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{bif_timer, Alloc}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{dist_table, Alloc}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{node_table, Alloc}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{link_lh, _Alloc}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc);
-get_non_proc_mem([{process_desc, Alloc, Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc-Used);
-get_non_proc_mem([{proc_bin_desc, Alloc, Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc-Used);
-get_non_proc_mem([{link_desc, Alloc, Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc-Used);
-get_non_proc_mem([{link_sh_desc, Alloc, Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc-Used);
-get_non_proc_mem([{atom_desc, Alloc, _Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{export_desc, Alloc, _Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{module_desc, Alloc, _Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{preg_desc, Alloc, _Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{plist_desc, Alloc, _Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{_Mem, _Alloc, _Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc);
-get_non_proc_mem([{_Mem, _Alloc}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc);
-get_non_proc_mem([], Acc) ->
-    Acc.
-
-get_mem(MemType, allocated, [{MemType, Alloc, _Used}|_MemList]) ->
-    Alloc;
-get_mem(MemType, used, [{MemType, _Alloc, Used}|_MemList]) ->
-    Used;
-get_mem(MemType, _, [{MemType, Alloc}|_MemList]) ->
-    Alloc;
-get_mem(MemType, Type, [_|MemList]) ->
-    get_mem(MemType, Type, MemList);
-get_mem(_, _, []) ->
-    throw(badarg).
-
-get_ets_mem() ->
-    get_ets_mem(ets:all(), 0).
-get_ets_mem([T|Ts], Acc) ->
-    case ets:info(T, memory) of
-        M when integer(M) ->
-            get_ets_mem(Ts, Acc+(M*erlang:system_info(wordsize)));
-        _ ->
-            get_ets_mem(Ts, Acc)
-    end;
-get_ets_mem([], Acc) ->
-    Acc.
-
-
-mem(total, Proc, MemList, Ets) ->
-    case catch get_mem(total, allocated, MemList) of
-	Tot when integer(Tot) ->
-	    Tot;
-	_ ->
-	    mem(processes, Proc, MemList, Ets)
-		+ mem(system, Proc, MemList, Ets)
-    end;
-mem(processes, Proc, _MemList, _Ets) ->
-    Proc;
-mem(system, Proc, MemList, Ets) ->
-    case catch get_mem(total, allocated, MemList) of
-	Tot when integer(Tot) ->
-	    Tot - mem(processes, Proc, MemList, Ets);
-	_ ->
-	    get_non_proc_mem(MemList, 0) + mem(ets, Proc, MemList, Ets)
-    end;
-mem(atom, _Proc, MemList, _Ets) ->
-    get_mem(atom_space, allocated, MemList)
-        + get_mem(atom_table, allocated, MemList)
-        + get_mem(atom_desc, allocated, MemList);
-mem(atom_used, _Proc, MemList, _Ets) ->
-    get_mem(atom_space, used, MemList)
-        + get_mem(atom_table, used, MemList)
-        + get_mem(atom_desc, used, MemList);
-mem(binary, _Proc, MemList, _Ets) ->
-    get_mem(binary, allocated, MemList);
-mem(code, _Proc, MemList, _Ets) ->
-    get_mem(module_table, allocated, MemList)
-        + get_mem(export_table, allocated, MemList)
-        + get_mem(loaded_code, allocated, MemList)
-        + get_mem(export_desc, allocated, MemList)
-        + get_mem(module_desc, allocated, MemList);
-mem(ets, _Proc, _MemList, Ets) ->
-    Ets;
-mem(maximum, _Proc, MemList, _Ets) ->
-    case catch get_mem(maximum, allocated, MemList) of
-	Max when integer(Max) ->
-	    Max;
-	_ ->
-	    unknown
-    end;
-mem(_, _, _, _) ->
-    badarg.
-
-non_proc_mem_list() ->
-    Ports = lists:foldl(fun (P, Acc) ->
-				case erlang:port_info(P, memory) of
-				    {memory, M} ->
-					Acc+M;
-				    _ ->
-					Acc
-				end
-			end,
-			0,
-			erlang:ports()),
-    [{ports, Ports} | erlang:system_info(allocated_areas)].
-
-get_proc_mem_if_needed(total) ->            get_proc_mem();
-get_proc_mem_if_needed(processes) ->        get_proc_mem();
-get_proc_mem_if_needed(_) ->                0.
-
-get_non_proc_mem_if_needed(total) ->     non_proc_mem_list();
-get_non_proc_mem_if_needed(processes) -> non_proc_mem_list();
-get_non_proc_mem_if_needed(system) ->    non_proc_mem_list();
-get_non_proc_mem_if_needed(atom) ->      non_proc_mem_list();
-get_non_proc_mem_if_needed(atom_used) -> non_proc_mem_list();
-get_non_proc_mem_if_needed(binary) ->    non_proc_mem_list();
-get_non_proc_mem_if_needed(code) ->      non_proc_mem_list();
-get_non_proc_mem_if_needed(maximum) ->   non_proc_mem_list();
-get_non_proc_mem_if_needed(_) ->         [].
-
-get_ets_mem_if_needed(total) ->             get_ets_mem();
-get_ets_mem_if_needed(system) ->            get_ets_mem();
-get_ets_mem_if_needed(ets) ->               get_ets_mem();
-get_ets_mem_if_needed(_) ->                 0.
-
-get_maximum_list(Proc, MemList, Ets) ->
-    case mem(maximum, Proc, MemList, Ets) of
-	unknown ->
-	    [];
-	Max ->
-	    [{maximum, Max}]
-    end.
-
-
-%%
-%% memory information.
-%%
-memory() ->
-    MemList = non_proc_mem_list(),
-    Ets = get_ets_mem(),
-    Proc = get_proc_mem(),
-    [{total,        mem(total,        Proc, MemList, Ets)},
-     {processes,    mem(processes,    Proc, MemList, Ets)},
-     {system,       mem(system,       Proc, MemList, Ets)},
-     {atom,         mem(atom,         Proc, MemList, Ets)},
-     {atom_used,    mem(atom_used,    Proc, MemList, Ets)},
-     {binary,       mem(binary,       Proc, MemList, Ets)},
-     {code,         mem(code,         Proc, MemList, Ets)},
-     {ets,          mem(ets,          Proc, MemList, Ets)}|
-     get_maximum_list(                Proc, MemList, Ets)].
-
-memory(Type) ->
-    case mem(Type,
-	     get_proc_mem_if_needed(Type),
-	     get_non_proc_mem_if_needed(Type),
-	     get_ets_mem_if_needed(Type)) of
-	Result when integer(Result) ->
-	    Result;
-	unknown when Type == maximum ->
-	    erlang:fault(badarg, [Type]);
-	Error ->
-	    erlang:fault(Error, [Type])
-    end.
-
+memory()         -> erlang:memory().
+memory(TypeSpec) -> erlang:memory(TypeSpec).
 
 %%
 %% Cross Reference Check

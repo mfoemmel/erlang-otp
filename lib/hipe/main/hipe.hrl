@@ -12,8 +12,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: happi $
-%%              $Date: 2002/09/20 10:34:06 $
-%%              $Revision: 1.31 $
+%%              $Date: 2002/10/17 11:55:55 $
+%%              $Revision: 1.35 $
 %% ====================================================================
 %%
 %%
@@ -50,7 +50,7 @@
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--define(version(),{2,0,0}).
+-define(version(),{2,0,2}).
 -define(majorvnr,element(1,?version())).
 -define(minorvnr,element(2,?version())).
 -define(incrementvnr,element(3,?version())).

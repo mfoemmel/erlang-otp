@@ -9,9 +9,9 @@
 %%  History  :	* 2000-11-07 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: pegu2945 $
-%%              $Date: 2002/07/03 14:42:39 $
-%%              $Revision: 1.8 $
+%%              $Author: tobiasl $
+%%              $Date: 2003/03/21 16:21:28 $
+%%              $Revision: 1.9 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -126,8 +126,6 @@ need(I) ->
   case hipe_icode:type(I) of 
     call ->
       primop_need(I);
-    unsafe_tag_float ->
-      3;
     _ -> 
       0
   end.
@@ -142,6 +140,8 @@ primop_need(I) ->
     {mkfun,_MFA,_MagicNum,_Index} ->
       NumFree = length(hipe_icode:call_args(I)),
       ?ERL_FUN_SIZE + NumFree;
+    unsafe_tag_float ->
+      3;
     _ ->
       0
   end.

@@ -8,7 +8,7 @@
 %%              "linear-scan algoritm".
 %%  Notes    :  * This is an implementation of 
 %%                "Linear Scan Register Allocation" by 
-%%                Massimiliano Poletto & Vivek Sarkar described in
+%%                Massimiliano Poletto &amp; Vivek Sarkar described in
 %%                ACM TOPLAS Vol 21, No 5, September 1999.
 %%
 %%              * This implementation is target-independent and
@@ -20,12 +20,11 @@
 %%  History  :	* 2000-04-07 Erik Johansson (happi@csd.uu.se): Created.
 %%                              * 2001-07-16 EJ: Made less sparc-specific.
 %% </pre>
-%% <!--
+%% @end
 %% CVS:
 %%    $Author: richardc $
-%%    $Date: 2002/10/01 12:45:59 $
-%%    $Revision: 1.20 $
-%% -->
+%%    $Date: 2003/04/16 16:19:01 $
+%%    $Revision: 1.21 $
 %% =====================================================================
 %% Exported functions (short description):
 %%   regalloc(CFG,PhysRegs,Entrypoints, Options) -> 
@@ -41,7 +40,6 @@
 %%      {Name, {spill, SpillIndex}}
 %%    The NumberOfSpills is either 0 indicating no spill or the 
 %%     SpillIndex of the last spilled register.
-%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_ls_regalloc).
@@ -54,7 +52,8 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @spec
-%% regalloc(CFG, PhysRegs, Entrypoints, DontSpill, Options, Target) ->
+%% regalloc(CFG, PhysRegs, Entrypoints, SpillIndex, DontSpill, Options,
+%%          Target) ->
 %%    {Coloring, NumberOfSpills}
 %%  CFG = cfg()
 %%  PhysRegs = [reg()]

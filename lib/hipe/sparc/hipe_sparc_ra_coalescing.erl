@@ -19,7 +19,7 @@ lf_alloc(SparcCfg, Options) ->
 lf_alloc(SparcCfg, SpillLimit, Options) ->
   ?inc_counter(ra_iteration_counter,1), 
  
-   {Map, NewSpillIndex} = 
+   {Map, _NewSpillIndex} = 
     hipe_coalescing_regalloc:regalloc(SparcCfg, 0,
 				      SpillLimit, hipe_sparc_specific),
 
@@ -31,11 +31,21 @@ lf_alloc(SparcCfg, SpillLimit, Options) ->
 
   case DontSpill of
     [] -> 
-      ?add_spills(Options, NewSpillIndex),
+      %% Code to minimize stack size by allocation of temps to spillpositions
+      {TempMap2, NewSpillIndex2} = 
+	hipe_spill_minimize:stackalloc(NewCfg, [], 
+				       0, Options, 
+				       hipe_sparc_specific, 
+				       TempMap),
+      TempMap3 = hipe_spill_minimize:mapmerge(hipe_temp_map:to_substlist(TempMap), 
+					      TempMap2),
+      TempMap4 = hipe_temp_map:cols2tuple( TempMap3, hipe_sparc_specific),
+          
+      ?add_spills(Options, NewSpillIndex2),
       %%{SparcCfg2, NextPos} = hipe_sparc_caller_saves:rewrite(
       %%NewCfg, TempMap, NewSpillIndex, Options),
       %%{SparcCfg2, TempMap, NextPos};
-      {NewCfg, TempMap, NewSpillIndex};
+      {NewCfg, TempMap4, NewSpillIndex2};
     _ -> 
       %% Since SpillLimit is used as a low-water-mark
       %% the list of temps not to spill is uninteresting.

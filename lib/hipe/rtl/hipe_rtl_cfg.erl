@@ -2,8 +2,10 @@
 
 -export([function/1,
 	 params/1, 
+	 params_update/2,
 	 arity/1,
 	 linearize/1,
+	 is_branch/1,
 	 pp/2]).
 
 -include("../main/hipe.hrl").
@@ -31,9 +33,6 @@ init(Rtl) ->
   CFG = hipe_rtl_cfg:info_update(CFG0, hipe_rtl:rtl_info(Rtl)),
   take_bbs(Code, CFG).
 
-
-is_fail_entrypoint(Label) ->
-  lists:member(entry, hipe_rtl:info(Label)).
 
 %% True if instr has no effect.
 is_comment(Instr) ->

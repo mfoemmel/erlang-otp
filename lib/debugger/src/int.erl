@@ -108,7 +108,7 @@ i2([AbsMod], Dist) when atom(AbsMod); list(AbsMod) ->
     int_mod(AbsMod, Dist);
 i2(AbsMod, Dist) when atom(AbsMod); list(AbsMod) ->
     int_mod(AbsMod, Dist);
-i2([], Dist) ->
+i2([], _Dist) ->
     error.
 
 %%--------------------------------------------------------------------
@@ -125,7 +125,7 @@ n2([AbsMod], Dist) when atom(AbsMod); list(AbsMod) ->
     del_mod(AbsMod, Dist);
 n2(AbsMod, Dist) when atom(AbsMod); list(AbsMod) ->
     del_mod(AbsMod, Dist);
-n2([], Dist) ->
+n2([], _Dist) ->
     error.
 
 %%--------------------------------------------------------------------
@@ -485,7 +485,7 @@ eval(Mod, Func, Args) ->
 int_mod(AbsMod, Dist) ->
     case check(AbsMod) of
 	{ok, Res} -> load(Res, Dist);
-	Error ->
+	_Error ->
 	    io:format("** Invalid beam file or no abstract code: ~p\n",
 		      [AbsMod]),
 	    error
@@ -515,7 +515,7 @@ load({Mod, Src, Beam, Exp, Abst}, Dist) ->
 check_module(Mod) ->
     case code:which(Mod) of
 	Beam when list(Beam) ->
-	    case find_src(Mod, Beam) of
+	    case find_src(Beam) of
 		Src when list(Src) ->
 		    case check_beam(Beam) of
 			{ok, Exp, Abst} ->
@@ -552,7 +552,7 @@ check_file(Name0) ->
 	true -> {error, badarg}
     end.
 
-find_src(Mod, Beam) ->
+find_src(Beam) ->
     Src0 = filename:rootname(Beam) ++ ".erl",
     case is_file(Src0) of
 	true -> Src0;
@@ -571,7 +571,7 @@ find_beam(Mod, Src) ->
     SrcDir = filename:dirname(Src),
     EbinDir = filename:join(filename:dirname(SrcDir), "ebin"),
     CodePath = [SrcDir, EbinDir | code:get_path()],
-    lists:foldl(fun(Dir, Beam) when list(Beam) -> Beam;
+    lists:foldl(fun(_, Beam) when is_list(Beam) -> Beam;
 		   (Dir, error) ->
 			File = filename:join(Dir, ModS)++".beam",
 			case is_file(File) of
@@ -584,7 +584,7 @@ find_beam(Mod, Src) ->
 
 check_beam(Beam) ->
     case beam_lib:chunks(Beam, [exports,"Abst"]) of
-	{ok, {Mod, [{exports, Exp}, {"Abst", Abst}]}} when Abst/=<<>> ->
+	{ok, {_Mod, [{exports, Exp}, {"Abst", Abst}]}} when Abst/=<<>> ->
 	    {ok, Exp, Abst};
 	_ -> error
     end.

@@ -110,7 +110,7 @@ terminate(_, State) ->
 
 handle_call(null, State) ->
     {ok, null, State}.
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%-----------------------------------------------------------------

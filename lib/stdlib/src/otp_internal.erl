@@ -175,5 +175,34 @@ obsolete(erlang, hash, 2) ->
 obsolete(file, file_info, 1) ->
     {true, {file, read_file_info, 1}};
 
+obsolete(dict, dict_to_list, 1) ->
+    {true, {dict, to_list, 1}};
+obsolete(dict, list_to_dict, 1) ->
+    {true, {dict, from_list, 1}};
+obsolete(orddict, dict_to_list, 1) ->
+    {true, {orddict, to_list, 1}};
+obsolete(orddict, list_to_dict, 1) ->
+    {true, {orddict, from_list, 1}};
+
+obsolete(sets, new_set, 0) ->
+    {true, {sets, new, 0}};
+obsolete(sets, set_to_list, 1) ->
+    {true, {sets, to_list, 1}};
+obsolete(sets, list_to_set, 1) ->
+    {true, {sets, from_list, 1}};
+obsolete(sets, subset, 2) ->
+    {true, {sets, is_subset, 2}};
+obsolete(ordsets, new_set, 0) ->
+    {true, {ordsets, new, 0}};
+obsolete(ordsets, set_to_list, 1) ->
+    {true, {ordsets, to_list, 1}};
+obsolete(ordsets, list_to_set, 1) ->
+    {true, {ordsets, from_list, 1}};
+obsolete(ordsets, subset, 2) ->
+    {true, {ordsets, is_subset, 2}};
+
+obsolete(calendar, local_time_to_universal_time, 1) ->
+    {true, {calendar, local_time_to_universal_time_dst, 1}};
+
 obsolete(_, _, _) ->
     false.

@@ -1,1 +1,465 @@
-in progress...
+README - Erlang/OTP R9C for OSE Delta 4.4 on PowerPC750
+=========================================================
+2003-04-03 -- Peter Andersson, support@erlang.ericsson.se
+
+Erlang/OTP for OSE Delta on PowerPC750 is based on the R9C release for
+other platforms such as Unix, Windows and VxWorks.
+
+This Erlang release contains a directory named build_erl_ose. Stored
+in this directory is a tar-file (erl_ose_R9C.tar) which contains
+make-, configuration- and source files for building a complete
+Erlang/OSE system for a PowerPC750 target. When the tar-file is
+unpacked, the following directory structure is created:
+
+	erl_utils	misc. shared code (startup files etc.)
+	lm/erl		for building Erlang as an OSE PRH load module
+	lm/ose		config. files for building an OSE executable
+	monolith        for building Erlang and OSE as a monolith          
+	port_progs	port program examples
+	drivers		driver examples
+	host		applications to run on host
+
+OTP Applications
+----------------
+All applications that can be run on an embedded system (one that
+doesn't necessarily have access to local disk and has limited RAM) are
+included in this release. These applications will be added to the list
+of included OTP applications below once they have passed all
+associated tests. Hence, an application that is not listed may still
+work fine, it could well be that this just hasn't been verified
+yet. Applications that will not be supported on this platform are
+listed under "Omitted Applications".
+
+Included OTP Applications
+-------------------------
+kernel
+stdlib
+
+Omitted Applications
+--------------------
+gs
+emacs
+etk
+odbc
+toolbar
+
+Graphical interfaces
+--------------------
+
+For applications using graphical interfaces, only the backend part is
+supported.
+
+Compilers
+---------
+All compilers are expected to be run on a cross host. The OSE systems
+memory capabilities are too restricting to allow native compiling. The
+expected host system is a Sun Solaris machine, although Erlang
+compilation may be done on most platforms.
+
+Supported boards and configurations
+-----------------------------------
+The following boards and configurations are fully supported:
+
+* Force PowerCore CPCI-680 with a minimum of 64 Mb memory, OSE
+  powercore680 BSP, OSE Delta 4.4.
+
+Hardware floating point support is not yet used in any of the
+supported configurations.
+
+Configuration of OSE Delta
+--------------------------
+Erlang/OTP is dependent on the following OSE components:
+
+- Kernel
+- Time Out Server
+- Real Time Clock
+- Heap Manager
+- Shell
+- Pthreads
+- Board Support Package
+- Embedded File System
+- Internet Protocols
+ 
+The configuration of OSE that has been used for Erlang so far is based
+on the OSE configuration examples. For details, see the Makefiles and
+the .con files that are included in the build_erl_ose subdirectories 
+of this release. Some notes:
+
+The Erlang Runtime System (ERTS) requires a minimum of 6 Mb RAM (4 Mb
+heap space plus 2 Mb user signal pool space) to start up and enter
+idle state. How much memory is required for user applications to
+function properly must be investigated for each application. It
+depends on data usage, message buffering etc.
+
+ERTS uses a local pool (specified by DEF_BLOCK in osemain.con) for
+allocating signals. The required size of this pool depends mainly on
+the behaviour of the Erlang applications. I/O or external
+communication (e.g. TCP/IP or port communication) uses OSE signals for
+passing data between OSE processes and hence requires available pool
+memory.
+
+For ERTS to work properly, the following signal sizes (specified by
+DEF_BLOCK) are recommended: 255, 1066, 4095, 1048575. Recommended
+stack sizes are: 1023, 8191, 65535, 524288.
+
+It is quite possible that the MAXPROCS and MAX_ATTACHED values
+(ospp.con) need to be larger than default.
+
+It may be useful to have somewhere to store an Erlang crash dump
+file. The best choice is of course to use persistent memory (flash or
+disk) if available. If there is no local filesystem or NFS,
+configuring a RAM disk is a good idea.
+
+This Erlang/OTP release uses the default OSE error handler
+implementation supplied by OSE Systems. No automatic restart
+functionality has been implemented.
+
+In the Makefile that comes with the release, the serial ports are
+configured according to this: COM1 is used for debug printouts by
+means of the low level dbgprintf driver in OSE (e.g. useful when
+running the target application from a remote connection), COM2 is used
+to access a local shell started with EFS (see startefs.c).
+
+There are two options for building Erlang for OSE. One is to link ERTS
+and OSE statically and generate one single executable from the
+result. The second possibility is to build ERTS separately and use the
+OSE Program Handler component to load ERTS into memory as a so called
+load module. However, PRH does not perform dynamic linking, only
+relocation, as the module is loaded. Therefore the linker must be able
+to resolve all references as the ERTS load module (the elf-file) is
+built and hence common OSE and ERTS code is copied, not shared, in
+this mode. Of course, the load module approach has the advantage that
+it is possible to upgrade ERTS without stopping OSE.
+
+Configuration of Erlang
+-----------------------
+The Erlang Runtime System runs as one OSE process, named erts, which
+in turn spawns and uses a separate process for handling select on
+sockets. If Erlang is started in interactive mode, two OSE processes
+are also started for non-blocking I/O. Erlang port programs are also
+separate OSE processes, started when erlang:open_port/2 is called. All
+processes are started as OSE background processes for time sharing
+without priorities.
+
+ERTS starts a separate background OSE process (the Program Server) for
+handling registration and unregistration of dynamic Erlang linked-in
+drivers and port programs (implemented as PRH load modules).
+
+The Erlang Port Mapper Deamon (EPMD) also runs as a background OSE
+process. This process is started once, either when Erlang is started
+for the first time, or explicitly using a shell command.
+
+ERTS requires that a block, called erl_block, is defined in
+osemain.con. Furthermore, when building Erlang and OSE as a monolith,
+a dummy erl_block process (erl_tmp) should be defined in
+osemain.con. (ERTS uses the ID of erl_tmp to identify erl_block, see
+erl.exec.c).
+
+The shell commands implemented in erl.exec.c need to be registered at
+OSE startup by means of a late start hook, erlHooks, in osemain.con.
+
+Environment variables for Erlang should be defined as block variables
+in osemain.con. The following variables must exist and have correct
+values:
+
+HOME		home directory of the current user 
+ROOTDIR		root directory of the Erlang installation
+
+The following variables are optional:
+
+ERL_CRASH_DUMP	crash dump file location (default is CWD) 
+ERL_MAX_PORTS	specifies the maximum number of Erlang ports allowed 
+		(default is 1024)
+
+In distributed short name mode, Erlang will use the OSE resolver to
+look up host information from DNS. There are two ways to let Erlang
+locate a name server. One is to specify the location of a hosts and a
+resolv file using variables HOSTSFILE and RESOLVFILE. Second is to
+specify the IP address of a name server with variable NAMESERVER and
+domain with variable DOMAIN. To learn the local host name, Erlang will
+read variable HOSTNAME. If this variable isn't defined, Erlang will
+read the host name from a name server. Hence, if Erlang is in long
+name mode, HOSTNAME must be defined.
+
+Building and installing Erlang/OTP for OSE Delta
+------------------------------------------------ 
+To build Erlang/OTP for OSE Delta and install it on a target system,
+the following knowledge is expected:
+
+ * Building, installing and configuring OSE Delta.
+
+ * Network (TCP/IP) configuration.
+
+ * Erlang basic operation and configuration.
+
+DIAB is the compiler currently used for compiling and linking, both
+OSE Delta and Erlang/OTP (with exception for a few files, see known
+bugs and problems). Gmake or clearmake are the expected make programs.
+
+Follow these steps to build a monolith:
+
+1. Build the Erlang/OTP release for the target in question
+(e.g. ose_ppc750) if this has not already been done. Follow separate
+instructions for this procedure. erl_ose_P9C.tar (mentioned in the
+introduction) should be located in the build_erl_ose directory after
+this step.
+
+2. Unpack the tar file.
+
+3. The monolith directory of the release contains a Makefile and a few
+configuration and utility files for building an executable. Modify the
+path to the OSE installation in the Makefile. Run gmake with flag
+erlopt (normal) or erldbg (debug) to compile the OSE Delta system and
+configuration files as well as the miscellaneous Erlang utility files
+(such as erl.exec.c). All object code will be linked and the binary
+image file (.bin) will be created.
+
+4. To install the binary image file on target, use tftp to transfer it
+from host. Make sure the image file is placed on a start address that
+corresponds to IMAGE_START in the Makefile.
+
+Follow these steps to build an ERTS load module:
+
+1-2. Follow monolith step 1-2 above to build the Erlang/OTP release.
+
+3. Use the make- and configuration files in the lm/ose directory to
+build an executable OSE image file (run 'gmake ose').
+
+4. Build an Erlang load module separately from OSE by using the same
+directives as in monolith step 3 above. The make- and configuration
+files are in the lm/erl directory. A file on elf format will be
+created rather than a binary image.
+
+5. Follow monolith step 4 above to install and start OSE on target.
+
+6. On target, connect a tftp archive server (tftp_asf) to PRH and use
+PRH to load the Erlang load module from the host. Finally start the
+load module. Note that this does not start Erlang. It must be done
+explicitly (see instructions below).
+
+7. If you are going to build and load Erlang linked-in drivers
+separately as load modules (see Writing Erlang Linked-in Drivers for
+OSE Delta below), you need to create an Erlang user library file
+(liberl_user.a) for the drivers to link with. Run gmake with flag
+erllib in the lm/erl directory.
+
+Starting and Stopping ERTS
+--------------------------
+When OSE Delta has been started on target, use the local command shell
+or a remote Telnet shell to start ERTS. The shell command start_erl
+spawns the erts process and starts the emulator. start_erl takes any
+valid Erlang flag as input. Example:
+
+  $ start_erl -sname erl_ose -kernel raw_files false -master
+  boots@blackbush -loader inet -hosts 134.138.177.125 -setcookie
+  maryland
+
+Note the kernel variable raw_files. Setting the value of this variable
+to false causes the raw option to be ignored in any call to
+file:open/2. (Opening files in raw mode is impossible if there's no
+local file system). If the flag is omitted, raw_files defaults to
+true.
+
+Read the System Principles chapter in the Erlang/OTP System
+Documentation to learn more about general start flags and, for
+example, how to start a target slave node without local disk access.
+
+ERTS can be started in interactive or embedded mode. This works the
+same way as for Erlang on any other platform. The same is true for
+stopping the emulator.
+
+If you wish to start the epmd process before starting ERTS, run
+start_epmd from the shell prompt (otherwise epmd starts with ERTS).
+
+Memory handling
+---------------
+For heap memory management, the Erlang emulator uses the elib_malloc
+library which is released as part of Erlang/OTP. When ERTS is started
+it reads the block environment variables OSE_EXT_HEAP_SIZE and
+OSE_EXT_HEAP_ADDR. These variables should be defined in osemain.con
+and should specify the size of the memory area to be reserved for ERTS
+and the start address of the same area.
+
+The command erl_mem_show may be called from an OSE shell prompt (when
+ERTS is running) to show information about the current heap memory
+usage.
+
+The start function for the Erlang emulator also reads block variables
+ERL_HEAP_SIZE and ERL_HEAP_ADDR. If the heap memory for OSE needs to
+be extended (with heap_extend_heap) before Erlang is started, you may
+specify the size and start address of a memory area with these
+variables.
+
+Writing Erlang Port Programs for OSE Delta
+---------------------------------------------------------
+Port programs need to be implemented differently for OSE Delta than
+for other platforms. The main reason is that they run as OSE processes
+and communicate with Erlang by means of OSE signals rather than by
+sending and receiving data on file descriptors.
+
+A port program is started in Erlang by calling function
+erlang:open_port/2, like this:
+	
+	open_port({spawn,PortProgName}, PortSettings)
+
+PortProgName is the name of the port program. For Erlang to recognise
+a port program, the OSE process entry point must be registered with
+ERTS. To register a port program that is statically linked with ERTS,
+declare the entrypoint - which must be the same as the port program
+name - in erl_user_pgm.c (this file is compiled and linked when
+building ERTS). For details, see the instructions in the same file. To
+register a port program which is separately built and is supposed to
+be loaded by OSE PRH, you need to have the following lines of code in
+a function being called at the time the module is loaded or started:
+
+	ERL_PORT_PROG_DECL (<PortProgName>);
+	ERL_PORT_PROG_REG  (<PortProgName>);
+
+When the port program is no longer to be used, it may be unregistered
+with:
+
+	ERL_PORT_PROG_UNREG(<PortProgName>)
+
+The file that uses these macros must include ose_erl_port_prog.h. You
+will find a static port program example in erl_stat_port_ex.c and an 
+example of a dynamic program in erl_port_ex.c. They are located in the 
+port_progs directory.
+
+When open_port/2 is called, ERTS will create and start a new OSE
+process with the registered name of the port program as entry
+point. To declare the port program start function, instead of
+using OS_PROCESS, use:
+
+	ERL_PORT_PROG(<PortProgName>)
+
+The PortSettings argument to open_port/2 is a list that may contain
+the following settings:
+
+	stream
+	{ose_process_type,ProcType}
+	{ose_process_prio,Priority}
+	exit_status
+	in
+	out
+	binary
+					
+Atom stream is the only valid communication protocol setting. This is
+also the default mode if stream is not specified explicitly. ProcType
+is the atom ose_pri_proc, ose_bg_proc, ose_int_proc, ose_phantom or
+ose_ti_proc. The emulator starts the port program as an OSE process of
+the corresponding type. If this setting is not specified, ose_bg_proc
+(OS_BG_PROC) is used as default. Priority is an integer value
+0-31. The port program will run as an OSE process with this
+priority. Default is 20. exit_status may be used to keep a port alive
+if the port program terminates and to let the connected Erlang process
+receive a notification about the event. It works as documented in the
+manual page for module erlang, except the exit status integer value
+the Erlang process receives contains no information. It's a dummy
+value. For information on the in, out and binary settings, please see
+the manual page.
+
+The OSE signal type the port program should use to communicate with
+ERTS is declared in port_signals.sig. Data sent from an Erlang process
+is received by the port program in the buf element of the PortData
+signal. The length of the data is indicated by the element len. The
+port program will use the same data structure the same way for sending
+data to an Erlang process (the signals should be sent to the erts
+process). For examples of this, see the previously mentioned port 
+program example files.
+
+Writing Erlang Linked-in Drivers for OSE Delta
+---------------------------------------------------------
+Linked-in drivers are implemented in a very similar way for Erlang on
+OSE Delta as for Erlang on other platforms. Please see the Tutorial
+section of the Erlang/OTP System Documentation for details. ERTS
+handles drivers similarly to port programs. The important difference
+is of course that a port program runs as a separate OSE process, while
+as a driver is implemented by a set of runtime system callback
+functions.
+
+A driver must register with ERTS for the runtime system to be able to
+call the driver's initialisation function. If you link the driver
+statically with ERTS, you should declare the driver name in
+erl_user_pgm.c (this file is compiled and linked when building
+ERTS). For details, see the instructions in the same file. To register
+a driver which is separately built and is supposed to be loaded by OSE
+PRH, you need to have the following lines of code in a function being
+called at the time the module is loaded or started:
+
+	ERL_DRIVER_REG(DriverName);
+	ERL_DRIVER_REG(DriverName);
+
+The initialisation function of the driver should look like this:
+
+	ERL_DRIVER_INIT(DriverName)
+	{
+	  DRIVER_INTERFACE_INIT();
+	  ...
+	  return &driver_entry;
+	}
+
+The file that uses these macros must include ose_erl_driver.h. Note
+that it must not include erl_driver.h (which is the common header file
+for Erlang drivers on other platforms). You will find a static driver
+example in erl_stat_portdrv_ex.c and a dynamic driver example in 
+erl_portdrv_ex.c. The files are located in the drivers directory.
+
+To load a driver from Erlang, call:
+
+	erl_ddll:load_driver("", DriverName)
+
+ERTS will as a result invoke PRH to localise and load a module with
+name DriverName (from whatever archive server you've previously
+connected to PRH). If you have a module with an elf extension, don't
+specify this extension in DriverName. The function will look for
+DriverName.elf automatically. Note that this function must be also be
+called for statically linked drivers for Erlang to be able to
+recognise the driver when open_port/2 is called (see below). There
+will be no attempt to load a module for a driver that has been
+registered as static (i.e. declared in erl_user_pgm.c).
+
+Drivers are started from Erlang the same way as port programs:
+
+	open_port({spawn,DriverName}, PortSettings)
+
+See the section Writing Erlang Port Programs for OSE Delta above for
+details. DriverName is the name of the driver as well as the load
+module (for dynamic drivers).
+
+To remove a driver, call:
+
+	erl_ddll:unload_driver(DriverName)
+
+This unregisters the driver and invokes PRH to unload the corresponding
+load module (if the driver is dynamic).
+
+It is possible to load a dynamic driver module from outside of Erlang
+(e.g. from the OSE shell). However, erl_ddll:load_driver/2 must still
+always be called before the driver can be started. There is no
+explicit way to unregister a driver since this is handled by
+erl_ddll:unload_driver/1, which must always be used to remove a
+driver.
+
+Known Bugs and problems
+-----------------------
+The emulator loop, implemented in beam_emu.c, uses a jump table for
+optimal performance. This requires a compiler extension that e.g. DIAB
+doesn't provide. For this reason, when compiling ERTS for PPC750, this
+particular file must be compiled with gcc. Note that this is true for
+optimized (opt) compilation, not for debug compilation.
+
+The emulator files ggc.c and erl_process.c are incorrectly compiled by
+DIAB for PPC750 if the general optimization switch, -XO, is used. For
+now, gcc may instead be used for these two files.
+
+DIAB's "local static variables optimization" (default when compiling
+with -XO) screws up addressing of some global variables and needs to
+be disabled.
+
+A bug in the OSE INET implementation made it impossible to disable the
+Nagle algorithm. This gave distibuted Erlang bad performance in TCP/IP
+communication. The bug has been fixed by OSE Systems and a patch
+exists for OSE Delta v4.4 for PowerPC.
+
+
+

@@ -28,7 +28,7 @@
 
 %%--------------- INCLUDES ---------------------------------------------
 -include_lib("orber/include/corba.hrl").
--include_lib("cosTransactions/src/CosTransactions.hrl").
+-include_lib("cosTransactions/include/CosTransactions.hrl").
 
 %%-------- CONSTANTS ---------------------------------------------------
 %% Timeouts

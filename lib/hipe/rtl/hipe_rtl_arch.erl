@@ -9,9 +9,9 @@
 %%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2002/10/01 12:44:28 $
-%%              $Revision: 1.7 $
+%%              $Author: mikpe $
+%%              $Date: 2003/03/05 14:13:34 $
+%%              $Revision: 1.8 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -19,7 +19,7 @@
 
 -module(hipe_rtl_arch).
 -export([first_virtual_reg/0, 
-	 heap_pointer_reg/0,
+	 heap_pointer/0,
 	 heap_limit_reg/0,
 	 fcalls_reg/0,
 	 add_ra_reg/1,
@@ -31,6 +31,7 @@
 	 call_bif/5
 	]).
 
+-include("hipe_literals.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% ____________________________________________________________________
@@ -50,13 +51,26 @@ first_virtual_reg() ->
 	    hipe_x86_registers:first_virtual()
     end.
 
-heap_pointer_reg() ->
+heap_pointer() ->	% {GetHPInsn, HPReg, PutHPInsn}
     case get(hipe_target_arch) of
 	ultrasparc ->
-	    hipe_sparc_registers:heap_pointer();
+	    {hipe_rtl:mk_comment('get_heap_pointer'),
+	     hipe_rtl:mk_reg(hipe_sparc_registers:heap_pointer()),
+	     hipe_rtl:mk_comment('put_heap_pointer')};
 	x86 ->
-	    hipe_x86_registers:heap_pointer()
+	    x86_heap_pointer()
     end.
+
+-ifdef(X86_HP_IN_ESI).
+x86_heap_pointer() ->
+    {hipe_rtl:mk_comment('get_heap_pointer'),
+     hipe_rtl:mk_reg(hipe_x86_registers:heap_pointer()),
+     hipe_rtl:mk_comment('put_heap_pointer')}.
+-else.
+x86_heap_pointer() ->
+    Reg = hipe_rtl:mk_new_reg(),
+    {pcb_load(Reg, ?P_HP), Reg, pcb_store(?P_HP, Reg)}.
+-endif.
 
 heap_limit_reg() ->
     case get(hipe_target_arch) of

@@ -616,18 +616,25 @@ handle_call({dir, Len, Dir}, _From, State) when State#state.chunk == false ->
     case Result of
 	pos_prel ->
 	    debug("  dbg : await the data connection", []),
-	    DSock   = accept_data(LSock),
+	    DSock = accept_data(LSock),
 	    debug("  dbg : await the data", []),
-	    DirData = recv_data(DSock),
-	    debug(" data : DirData: ~p~n",[DirData]),
-	    Reply0 = case result(CSock) of
-			 pos_compl ->
-			     {ok, DirData};
-			 _ ->
-			     {error, epath}
-		     end,
+	    Reply0 = 
+		case recv_data(DSock) of
+		    {ok, DirData} ->
+			debug(" data : DirData: ~p~n",[DirData]),
+			case result(CSock) of
+			    pos_compl ->
+				{ok, DirData};
+			    _ ->
+				{error, epath}
+			end;
+		    {error, Reason} ->
+			sock_close(DSock),
+			verbose(" data : error: ~p, ~p~n",[Reason, result(CSock)]),
+			{error, epath}
+		end,
+	    
 	    debug(" ctrl : reply: ~p~n",[Reply0]),
-	    sock_close(DSock),
 	    reset_type(ascii, Type, CSock),
 	    {reply, Reply0, State};
 	{closed, _Why} ->
@@ -936,7 +943,7 @@ recv_data(Sock) ->
     recv_data(Sock, [], 0).
 recv_data(Sock, Sofar, ?OPER_TIMEOUT) ->
     sock_close(Sock),
-    lists:flatten(lists:reverse(Sofar));
+    {ok, lists:flatten(lists:reverse(Sofar))};
 recv_data(Sock, Sofar, Retry) ->
     case sock_read(Sock) of
 	{ok, Data} ->
@@ -947,9 +954,9 @@ recv_data(Sock, Sofar, Retry) ->
 	    recv_data(Sock, Sofar, Retry+1);
 	{error, Reason} ->
 	    SoFar1 = lists:flatten(lists:reverse(Sofar)),
-	    exit({socket_error, Reason, Sock, SoFar1, Retry});
+	    {error, {socket_error, Reason, SoFar1, Retry}};
 	{closed, _} ->
-	    lists:flatten(lists:reverse(Sofar))
+	    {ok, lists:flatten(lists:reverse(Sofar))}
     end.
 
 %%
@@ -1014,7 +1021,8 @@ recv_chunk2(#state{dsock = DSock} = State, Retry) ->
 	    {ok, Bin};
 	{error, timeout} ->
            recv_chunk2(State, Retry+1);
-	{closed, _} ->
+	{closed, Reason} ->
+	    debug("  dbg : socket closed: ~p", [Reason]),
 	    ok
     end.
 
@@ -1306,10 +1314,25 @@ sock_read(Sock) ->
   case gen_tcp:recv(Sock, 0, ?BYTE_TIMEOUT) of
       {ok, Bytes} ->
 	  {ok, Bytes};
+
       {error, closed} ->
 	  {closed, closed};			% Yes
+
+      %% --- OTP-4770 begin ---
+      %%
+      %% This seems to happen on windows
+      %% "Someone" tried to close an already closed socket...
+      %%
+
+      {error, enotsock} -> 
+	  {closed, enotsock};
+
+      %%
+      %% --- OTP-4770 end ---
+
       {error, etimedout} ->
 	  {error, timeout};
+
       Other ->
 	  Other
   end.

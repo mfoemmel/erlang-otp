@@ -166,6 +166,6 @@ gen_guard_bnot_2([Res], Args, Op, EndLabel, FailLabel) ->
 %% guard element
 %%
 gen_guard_element_2(Dst1, Index, Tuple, TrueLblName, FailLbl) ->
-  [hipe_tagscheme:element(Dst1, Index, Tuple, hipe_rtl:mk_label(FailLbl)),
-   hipe_rtl:mk_goto(TrueLblName)
-  ].
+  [hipe_tagscheme:element(Dst1, Index, Tuple,
+                         hipe_rtl:mk_label(FailLbl), [], []),
+   hipe_rtl:mk_goto(TrueLblName)].

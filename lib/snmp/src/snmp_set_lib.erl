@@ -101,16 +101,16 @@ is_varbind_ok(#ivarbind{status = Status,
     checkValEncoding(MibEntry, Varbind),
     true.
 
-variableExists(noError, false, Varbind) -> throw(notWritable);
-variableExists(noError, MibEntry, Varbind) -> true;
+variableExists(noError, false, _Varbind) -> throw(notWritable);
+variableExists(noError, _MibEntry, _Varbind) -> true;
 %% ErrorStatus == noSuchObject | noSuchInstance
-variableExists(noSuchObject, MibEntry, Varbind) -> throw(notWritable);
-variableExists(ErrorStatus, MibEntry, Varbind) -> throw(noCreation).
+variableExists(noSuchObject, _MibEntry, _Varbind) -> throw(notWritable);
+variableExists(_ErrorStatus, _MibEntry, _Varbind) -> throw(noCreation).
 
-variableIsWritable(#me{access = 'read-write'}, Varbind) -> true;
-variableIsWritable(#me{access = 'read-create'}, Varbind) -> true;
-variableIsWritable(#me{access = 'write-only'}, Varbind) -> true;
-variableIsWritable(MibEntry, Varbind) -> throw(notWritable).
+variableIsWritable(#me{access = 'read-write'}, _Varbind) -> true;
+variableIsWritable(#me{access = 'read-create'}, _Varbind) -> true;
+variableIsWritable(#me{access = 'write-only'}, _Varbind) -> true;
+variableIsWritable(_MibEntry, _Varbind) -> throw(notWritable).
 
 %% Uses make_value_a_correct_value to check type, length and range.
 %% Returns: true | <error-atom>
@@ -127,7 +127,7 @@ checkASN1Type(_,_) -> throw(wrongType).
 
 
 %% tricky...
-checkValEncoding(MibEntry, Varbind) -> true.
+checkValEncoding(_MibEntry, _Varbind) -> true.
 
 %%-----------------------------------------------------------------
 %% Func: consistency_check/1
@@ -157,7 +157,7 @@ consistency_check([{TableOid, TableVbs} | Varbinds], Done) ->
 consistency_check([IVarbind | Varbinds], Done) ->
     ?vtrace("consistency check: ~p",[IVarbind]),
     #ivarbind{varbind = Varbind, mibentry = MibEntry} = IVarbind,
-    #varbind{oid = Oid, value = Value, org_index = OrgIndex} = Varbind,
+    #varbind{value = Value, org_index = OrgIndex} = Varbind,
     case is_set_ok_variable(MibEntry, Value) of
 	noError -> consistency_check(Varbinds, [IVarbind | Done]);
 	Reason ->
@@ -173,7 +173,7 @@ consistency_check([], _Done) ->
 deletePrefixes(Prefix, [#ivarbind{varbind = Varbind} | Vbs]) ->
     #varbind{oid = Oid, value = Value} = Varbind,
     [{snmp_misc:diff(Oid, Prefix), Value} | deletePrefixes(Prefix, Vbs)];
-deletePrefixes(Prefix, []) -> [].
+deletePrefixes(_Prefix, []) -> [].
 
 %% Val = <a-value>
 is_set_ok_variable(#me{mfa = {Module, Func, Args}}, Val) ->
@@ -230,7 +230,7 @@ undo_varbinds([{TableOid, TableVbs} | Varbinds]) ->
     end;
 undo_varbinds([IVarbind | Varbinds]) ->
     #ivarbind{varbind = Varbind, mibentry = MibEntry} = IVarbind,
-    #varbind{oid = Oid, value = Value, org_index = OrgIndex} = Varbind,
+    #varbind{value = Value, org_index = OrgIndex} = Varbind,
     case undo_variable(MibEntry, Value) of
 	noError -> undo_varbinds(Varbinds);
 	Reason ->
@@ -306,7 +306,7 @@ set_value_to_tab_mibentry(#me{mfa = {Module, Func, Args}},
 		       sort_varbinds_rows(SetArgs)).
 
 
-set_value_all_rows(Module, Func, Args, []) -> {noError, 0};
+set_value_all_rows(_Module, _Func, _Args, []) -> {noError, 0};
 set_value_all_rows(Module, Func, Args, [Row | Rows]) ->
     [{RowIndex, Cols}] = delete_org_index([Row]),
     Res = dbg_apply(Module, Func, [set, RowIndex, Cols | Args]),
@@ -325,7 +325,7 @@ delete_org_index(Indexes) ->
 col_to_orgindex(ColNumber, OrgCols) ->
     snmp_svbl:col_to_orgindex(ColNumber, OrgCols).
 
-find_org_index(ExternIndex, SortedVarbinds) when ExternIndex == 0 -> 0;
+find_org_index(ExternIndex, _SortedVarbinds) when ExternIndex == 0 -> 0;
 find_org_index(ExternIndex, SortedVarbinds) ->
     VBs = lists:flatten(SortedVarbinds),
     case length(VBs) of
@@ -333,7 +333,7 @@ find_org_index(ExternIndex, SortedVarbinds) ->
 	    IVB = lists:nth(ExternIndex, VBs),
 	    VB = IVB#ivarbind.varbind,
 	    VB#varbind.org_index;
-	Else ->
+	_Else ->
 	    0
     end.
 

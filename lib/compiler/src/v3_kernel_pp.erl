@@ -61,26 +61,22 @@ format_anno(Anno, Ctxt, ObjFun) ->
      "-| ",io_lib:write(Anno),
      " )"].
 
+%% format_1(Kexpr, Context) -> string().
+
 format_1(#k_atom{val=A}, _Ctxt) -> core_atom(A);
-%%format_1(#k_char{val=C}, Ctxt) -> io_lib:write_char(C);
+%%format_1(#k_char{val=C}, _Ctxt) -> io_lib:write_char(C);
 format_1(#k_float{val=F}, _Ctxt) -> float_to_list(F);
 format_1(#k_int{val=I}, _Ctxt) -> integer_to_list(I);
 format_1(#k_nil{}, _Ctxt) -> "[]";
 format_1(#k_string{val=S}, _Ctxt) -> io_lib:write_string(S);
 format_1(#k_var{name=V}, _Ctxt) ->
-    %% See core_pp for details.
     if atom(V) ->
-	    S = atom_to_list(V),
-	    case S of
-		[C | _] when C >= $A, C =< $Z ->
-		    S;
-		[$_ | _] ->
-		    [$_, $X | S];
-		_ ->
-		    [$_ | S]
+	    case atom_to_list(V) of
+		[$_|Cs] -> "_X" ++ Cs;
+		[C|Cs] when C >= $A, C =< $Z -> [C|Cs];
+		Cs -> [$_|Cs]
 	    end;
-       integer(V) ->
-	    [$_ | integer_to_list(V)]
+       integer(V) -> [$_|integer_to_list(V)]
     end;
 format_1(#k_cons{hd=H,tl=T}, Ctxt) ->
     Txt = ["["|format(H, ctxt_bump_indent(Ctxt, 1))],
@@ -116,7 +112,7 @@ format_1(#k_seq{arg=A,body=B}, Ctxt) ->
 format_1(#k_match{vars=Vs,body=Bs,ret=Rs}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.item_indent),
     ["match ",
-     format_hseq(Vs, ",", ctxt_bump_indent(Ctxt, 2), fun format/2),
+     format_hseq(Vs, ",", ctxt_bump_indent(Ctxt, 6), fun format/2),
      nl_indent(Ctxt1),
      format(Bs, Ctxt1),
      nl_indent(Ctxt),
@@ -182,26 +178,45 @@ format_1(#k_protected{body=B,ret=Rs}, Ctxt) ->
 format_1(#k_call{op=Op,args=As,ret=Rs}, Ctxt) ->
     Txt = ["call (",format(Op, ctxt_bump_indent(Ctxt, 6)),$)],
     Ctxt1 = ctxt_bump_indent(Ctxt, 2),
-    [Txt,$(,format_hseq(As, ", ", Ctxt1, fun format/2),$),
+    [Txt,format_args(As, Ctxt1),
      format_ret(Rs, Ctxt1)
     ];
 format_1(#k_enter{op=Op,args=As}, Ctxt) ->
     Txt = ["enter (",format(Op, ctxt_bump_indent(Ctxt, 7)),$)],
     Ctxt1 = ctxt_bump_indent(Ctxt, 2),
-    [Txt,$(,format_hseq(As, ", ", Ctxt1, fun format/2),$)];
+    [Txt,format_args(As, Ctxt1)];
 format_1(#k_bif{op=Op,args=As,ret=Rs}, Ctxt) ->
     Txt = ["bif (",format(Op, ctxt_bump_indent(Ctxt, 5)),$)],
     Ctxt1 = ctxt_bump_indent(Ctxt, 2),
-    [Txt,$(,format_hseq(As, ", ", Ctxt1, fun format/2),$),
+    [Txt,format_args(As, Ctxt1),
      format_ret(Rs, Ctxt1)
     ];
 format_1(#k_test{op=Op,args=As}, Ctxt) ->
     Txt = ["test (",format(Op, ctxt_bump_indent(Ctxt, 6)),$)],
     Ctxt1 = ctxt_bump_indent(Ctxt, 2),
-    [Txt,$(,format_hseq(As, ", ", Ctxt1, fun format/2),$)];
+    [Txt,format_args(As, Ctxt1)];
 format_1(#k_put{arg=A,ret=Rs}, Ctxt) ->
     [format(A, Ctxt),
      format_ret(Rs, ctxt_bump_indent(Ctxt, 1))
+    ];
+format_1(#k_try{arg=A,vars=Vs,body=B,evars=Evs,handler=H,ret=Rs}, Ctxt) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
+    ["try",
+     nl_indent(Ctxt1),
+     format(A, Ctxt1),
+     nl_indent(Ctxt),
+     "of ",
+     format_hseq(Vs, ", ", ctxt_bump_indent(Ctxt, 3), fun format/2),
+     nl_indent(Ctxt1),
+     format(B, Ctxt1),
+     nl_indent(Ctxt),
+     "catch ",
+     format_hseq(Evs, ", ", ctxt_bump_indent(Ctxt, 6), fun format/2),
+     nl_indent(Ctxt1),
+     format(H, Ctxt1),
+     nl_indent(Ctxt),
+     "end",
+     format_ret(Rs, Ctxt1)
     ];
 format_1(#k_catch{body=B,ret=Rs}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
@@ -245,7 +260,7 @@ format_1(#k_fdef{func=F,arity=A,vars=Vs,body=B}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
     ["fdef ",
      format_fa_pair({F,A}, ctxt_bump_indent(Ctxt, 5)),
-     $(,format_hseq(Vs, ", ", ctxt_bump_indent(Ctxt, 15), fun format/2),$),
+     format_args(Vs, ctxt_bump_indent(Ctxt, 14)),
      " =",
      nl_indent(Ctxt1),
      format(B, Ctxt1)
@@ -289,9 +304,9 @@ format_1(#iset{vars=Vs,arg=A,body=B}, Ctxt) ->
     ];
 format_1(#ifun{vars=Vs,body=B}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
-    ["fun (",
-     format_hseq(Vs, ", ", ctxt_bump_indent(Ctxt, 5), fun format/2),
-     ") ->",
+    ["fun ",
+     format_args(Vs, ctxt_bump_indent(Ctxt, 4)),
+     " ->",
      nl_indent(Ctxt1)
      | format(B, Ctxt1)
     ];
@@ -307,8 +322,14 @@ format_1(Type, _Ctxt) ->
 format_ret(Rs, Ctxt) ->
     [" >> ",
      "<",
-     format_hseq(Rs, ",", Ctxt, fun format/2),
+     format_hseq(Rs, ",", ctxt_bump_indent(Ctxt, 5), fun format/2),
      ">"].
+
+%% format_args([Arg], Context) -> Txt.
+%%  Format arguments.
+
+format_args(As, Ctxt) ->
+  [$(,format_hseq(As, ", ", ctxt_bump_indent(Ctxt, 1), fun format/2),$)].
 
 %% format_hseq([Thing], Separator, Context, Fun) -> Txt.
 %%  Format a sequence horizontally.
@@ -340,7 +361,7 @@ format_attribute({Name,Val}, Ctxt) when list(Val) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, width(Txt,Ctxt)+4),
     [Txt," = ",
      $[,format_vseq(Val, "", ",", Ctxt1,
-		    fun (A, _) -> io_lib:write(A) end),$]
+		    fun (A, _C) -> io_lib:write(A) end),$]
     ];
 format_attribute({Name,Val}, Ctxt) ->
     Txt = format(#k_atom{val=Name}, Ctxt),
@@ -411,11 +432,11 @@ unindent([$\t|T], N, Ctxt, C) ->
     end;
 unindent([L|T], N, Ctxt, C) when list(L) ->
     unindent(L, N, Ctxt, [T|C]);
-unindent([H|T], _, _Ctxt, C) ->
+unindent([H|T], _N, _Ctxt, C) ->
     [H|[T|C]];
 unindent([], N, Ctxt, [H|T]) ->
     unindent(H, N, Ctxt, T);
-unindent([], _, _Ctxt, []) -> [].
+unindent([], _, _, []) -> [].
 
 
 width(Txt, Ctxt) ->
@@ -423,7 +444,7 @@ width(Txt, Ctxt) ->
 
 width([$\t|T], A, Ctxt, C) ->
     width(T, A + Ctxt#ctxt.tab_width, Ctxt, C);
-width([$\n|T], _, Ctxt, C) ->
+width([$\n|T], _A, Ctxt, C) ->
     width(unindent([T|C], Ctxt), Ctxt);
 width([H|T], A, Ctxt, C) when list(H) ->
     width(H, A, Ctxt, [T|C]);
@@ -431,7 +452,7 @@ width([_|T], A, Ctxt, C) ->
     width(T, A + 1, Ctxt, C);
 width([], A, Ctxt, [H|T]) ->
     width(H, A, Ctxt, T);
-width([], A, _Ctxt, []) -> A.
+width([], A, _, []) -> A.
 
 ctxt_bump_indent(Ctxt, Dx) ->
     Ctxt#ctxt{indent=Ctxt#ctxt.indent + Dx}.

@@ -19,7 +19,7 @@
 
 -module(beam_asm).
 
--export([module/3,format_error/1]).
+-export([module/4,format_error/1]).
 -export([objfile_extension/0]).
 -export([encode/2]).
 
@@ -28,8 +28,8 @@
 
 -define(bs_aligned, 1).
 
-module(Code, Abst, Opts) ->
-    case assemble(Code, Abst, Opts) of
+module(Code, Abst, SourceFile, Opts) ->
+    case assemble(Code, Abst, SourceFile, Opts) of
 	{error, Error} ->
 	    {error, [{none, ?MODULE, Error}]};
 	Bin when binary(Bin) ->
@@ -45,16 +45,13 @@ format_error({too_big, Number, Bits}) ->
 format_error({crashed, Why}) ->
     io_lib:format("beam_asm_int: EXIT: ~p", [Why]).
 
-assemble({Mod,Exp,Attr,Asm,NumLabels}, Abst, Opts) ->
+assemble({Mod,Exp,Attr,Asm,NumLabels}, Abst, SourceFile, Opts) ->
     {1,Dict0} = beam_dict:atom(Mod, beam_dict:new()),
-    assemble(Exp, Attr, Asm, NumLabels, Dict0, Abst, Opts).
-
-assemble(Exp, Attr, Asm, NumLabels, Dict0, Abst, Opts) ->
     NumFuncs = length(Asm),
-    {Code,Dict1} = assemble(Asm, Exp, Dict0, []),
-    build_file(Code, Attr, Dict1, NumLabels, NumFuncs, Abst, Opts).
+    {Code,Dict1} = assemble_1(Asm, Exp, Dict0, []),
+    build_file(Code, Attr, Dict1, NumLabels, NumFuncs, Abst, SourceFile, Opts).
 
-assemble([{function,Name,Arity,Entry,Asm}|T], Exp, Dict0, Acc) ->
+assemble_1([{function,Name,Arity,Entry,Asm}|T], Exp, Dict0, Acc) ->
     Dict1 = case member({Name,Arity}, Exp) of
 		true ->
 		    beam_dict:export(Name, Arity, Entry, Dict0);
@@ -62,8 +59,8 @@ assemble([{function,Name,Arity,Entry,Asm}|T], Exp, Dict0, Acc) ->
 		    beam_dict:local(Name, Arity, Entry, Dict0)
 	    end,
     {Code, Dict2} = assemble_function(Asm, Acc, Dict1),
-    assemble(T, Exp, Dict2, Code);
-assemble([], _Exp, Dict0, Acc) ->
+    assemble_1(T, Exp, Dict2, Code);
+assemble_1([], _Exp, Dict0, Acc) ->
     {IntCodeEnd,Dict1} = make_op(int_code_end, Dict0),
     {list_to_binary(lists:reverse(Acc, [IntCodeEnd])),Dict1}.
 
@@ -73,7 +70,7 @@ assemble_function([H|T], Acc, Dict0) ->
 assemble_function([], Code, Dict) ->
     {Code, Dict}.
 
-build_file(Code, Attr, Dict, NumLabels, NumFuncs, Abst, Opts) ->
+build_file(Code, Attr, Dict, NumLabels, NumFuncs, Abst, SourceFile, Opts) ->
     %% Create the code chunk.
 
     CodeChunk = chunk(<<"Code">>,
@@ -124,7 +121,7 @@ build_file(Code, Attr, Dict, NumLabels, NumFuncs, Abst, Opts) ->
     %% Create the attributes and compile info chunks.
 
     Essentials = [AtomChunk,CodeChunk,StringChunk,ImportChunk,ExpChunk,LambdaChunk],
-    {Attributes,Compile} = build_attributes(Opts, Attr, Essentials),
+    {Attributes,Compile} = build_attributes(Opts, SourceFile, Attr, Essentials),
     AttrChunk = chunk(<<"Attr">>, Attributes),
     CompileChunk = chunk(<<"CInf">>, Compile),
 
@@ -178,14 +175,14 @@ flatten_exports(Exps) ->
 flatten_imports(Imps) ->
     list_to_binary(map(fun({M,F,A}) -> <<M:32,F:32,A:32>> end, Imps)).
 
-build_attributes(Opts, Attr, Essentials) ->
-    Time = case member(slim, Opts) of
+build_attributes(Opts, SourceFile, Attr, Essentials) ->
+    Misc = case member(slim, Opts) of
 	       false ->
 		   {{Y,Mo,D},{H,Mi,S}} = erlang:universaltime(),
-		   [{time,{Y,Mo,D,H,Mi,S}}];
+		   [{time,{Y,Mo,D,H,Mi,S}},{source,SourceFile}];
 	       true -> []
 	   end,
-    Compile = [{options,Opts},{version,?COMPILER_VSN}|Time],
+    Compile = [{options,Opts},{version,?COMPILER_VSN}|Misc],
     {term_to_binary(calc_vsn(Attr, Essentials)),term_to_binary(Compile)}.
 
 %%
@@ -228,6 +225,8 @@ make_op({'%live',_R}, Dict) ->
     {[],Dict};
 make_op({bif, Bif, nofail, [], Dest}, Dict) ->
     encode_op(bif0, [{extfunc, erlang, Bif, 0}, Dest], Dict);
+make_op({bif, raise, _Fail, [_,_]=Args, _Dest}, Dict) ->
+    encode_op(raise, Args, Dict);
 make_op({bif, Bif, Fail, Args, Dest}, Dict) ->
     Arity = length(Args),
     case bif_type(Bif, Arity) of
@@ -276,9 +275,9 @@ encode_args([Arg| T], Dict0) ->
 encode_args([], Dict) ->
     {[], Dict}.
 
-encode_arg({x, X}, Dict) ->
+encode_arg({x, X}, Dict) when X >= 0 ->
     {encode(?tag_x, X), Dict};
-encode_arg({y, Y}, Dict) ->
+encode_arg({y, Y}, Dict) when Y >= 0 ->
     {encode(?tag_y, Y), Dict};
 encode_arg({atom, Atom}, Dict0) when atom(Atom) ->
     {Index, Dict} = beam_dict:atom(Atom, Dict0),

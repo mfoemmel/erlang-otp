@@ -86,7 +86,6 @@
 	 elems/2,
 	 ensure_loaded/1,
 	 error/2,
-	 error/2,
 	 error_desc/1,
 	 etype/1,
 	 exists/1,
@@ -148,6 +147,7 @@
 	 view/0,
 	 view/1,
 	 view/2,
+	 warning/2,
 
 	 is_debug_compiled/0,
 	 activate_debug_fun/5,
@@ -159,7 +159,7 @@
 
 search_delete(Obj, List) ->
     search_delete(Obj, List, [], none).
-search_delete(Obj, [Obj|Tail], Ack, Res) ->
+search_delete(Obj, [Obj|Tail], Ack, _Res) ->
     search_delete(Obj, Tail, Ack, Obj);
 search_delete(Obj, [H|T], Ack, Res) ->
     search_delete(Obj, T, [H|Ack], Res);
@@ -168,7 +168,7 @@ search_delete(_, [], Ack, Res) ->
 
 key_search_delete(Key, Pos, TupleList) ->
     key_search_delete(Key, Pos, TupleList, none, []).
-key_search_delete(Key, Pos, [H|T], Obj, Ack) when element(Pos, H) == Key ->
+key_search_delete(Key, Pos, [H|T], _Obj, Ack) when element(Pos, H) == Key ->
     key_search_delete(Key, Pos, T, H, Ack);
 key_search_delete(Key, Pos, [H|T], Obj, Ack) ->
     key_search_delete(Key, Pos, T, Obj, [H|Ack]);
@@ -179,7 +179,7 @@ key_search_all(Key, Pos, TupleList) ->
     key_search_all(Key, Pos, TupleList, []).
 key_search_all(Key, N, [H|T], Ack) when element(N, H) == Key ->
     key_search_all(Key, N, T, [H|Ack]);
-key_search_all(Key, N, [H|T], Ack) ->
+key_search_all(Key, N, [_|T], Ack) ->
     key_search_all(Key, N, T, Ack);
 key_search_all(_, _, [], Ack) -> Ack.
 
@@ -335,7 +335,7 @@ search_key(Key, [{Val, List} | Tail]) ->
 	true -> Val;
 	false -> search_key(Key, Tail)
     end;
-search_key(Key, []) ->
+search_key(_Key, []) ->
     unknown.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -398,7 +398,7 @@ pr_other(Var, Other) ->
 	    no -> {node_not_running, node()};
 	    _ -> {no_exists, Var}
 	end,
-    dbg_out("~p (~p) val(mnesia_gvar, ~w) -> ~p ~p ~n",
+    verbose("~p (~p) val(mnesia_gvar, ~w) -> ~p ~p ~n",
 	    [self(), process_info(self(), registered_name),
 	     Var, Other, Why]),
     case Other of
@@ -459,7 +459,7 @@ etype([]) -> nil;
 etype(X) when list(X) -> list;
 etype(X) when tuple(X) -> tuple;
 etype(X) when atom(X) -> atom;
-etype(X) -> othertype.
+etype(_) -> othertype.
 
 remote_copy_holders(Cs) ->
     copy_holders(Cs) -- [node()].
@@ -749,7 +749,7 @@ vcore_elem({gvar, L}) ->
 vcore_elem({transactions, Info}) ->
     mnesia_tm:display_info(user, Info);
 
-vcore_elem({Item, Info}) ->
+vcore_elem({_Item, Info}) ->
     show("~p~n", [Info]).
 
 fix_error(X) ->
@@ -758,7 +758,7 @@ fix_error(X) ->
 	{aborted, Reason} -> Reason;
 	{abort, Reason} -> Reason;
 	Y when atom(Y) -> Y;
-	{'EXIT', {Reason, {Mod, _, _}}} when atom(Mod) ->
+	{'EXIT', {_Reason, {Mod, _, _}}} when atom(Mod) ->
 	    save(X),
 	    case atom_to_list(Mod) of
 		[$m, $n, $e|_] -> badarg;
@@ -829,7 +829,7 @@ report_fatal(Format, Args, Core) ->
 
 %% We sleep longer and longer the more we try
 %% Made some testing and came up with the following constants
-random_time(Retries, Counter0) ->    
+random_time(Retries, _Counter0) ->    
 %    UpperLimit = 2000,
 %    MaxIntv = trunc(UpperLimit * (1-(4/((Retries*Retries)+4)))),
     UpperLimit = 500,
@@ -895,6 +895,11 @@ important(Format, Args) ->
     save({Format, Args}),
     report_system_event({mnesia_info, Format, Args}).
 
+%% Warning messages are reported regardless of debug level
+warning(Format, Args) ->
+    save({Format, Args}),
+    report_system_event({mnesia_warning, Format, Args}).
+
 %% error messages are reported regardless of debug level
 error(Format, Args) ->
     save({Format, Args}),
@@ -925,7 +930,7 @@ save2(DbgInfo) ->
     Key = {'$$$_report', current_pos},
     P =
 	case ?ets_lookup_element(mnesia_gvar, Key, 2) of
-	    10 -> -1;
+	    30 -> -1;
 	    I -> I
 	end,
     set({'$$$_report', current_pos}, P+1),
@@ -1095,12 +1100,11 @@ db_erase_tab(Tab) ->
     db_erase_tab(val({Tab, storage_type}), Tab).
 db_erase_tab(ram_copies, Tab) -> ?ets_delete_table(Tab);
 db_erase_tab(disc_copies, Tab) -> ?ets_delete_table(Tab);
-db_erase_tab(disc_only_copies, Tab) -> ignore.
+db_erase_tab(disc_only_copies, _Tab) -> ignore.
 
 %% assuming that Tab is a valid ets-table
 dets_to_ets(Tabname, Tab, File, Type, Rep, Lock) ->
     {Open, Close} = mkfuns(Lock),
-    Fun = fun(Obj) -> ?ets_insert(Tab, Obj), continue end,
     case Open(Tabname, [{file, File}, {type, disk_type(Tab, Type)},
 			{keypos, 2}, {repair, Rep}]) of
 	{ok, Tabname} ->
@@ -1112,7 +1116,7 @@ dets_to_ets(Tabname, Tab, File, Type, Rep, Lock) ->
     end.
 
 trav_ret(Tabname, Tabname) -> loaded;
-trav_ret(Other, Tabname) -> Other.
+trav_ret(Other, _Tabname) -> Other.
 
 mkfuns(yes) ->
     {fun(Tab, Args) -> dets_sync_open(Tab, Args) end,
@@ -1124,7 +1128,7 @@ mkfuns(no) ->
 disk_type(Tab) ->
     disk_type(Tab, val({Tab, setorbag})).
 
-disk_type(Tab, ordered_set) ->
+disk_type(_Tab, ordered_set) ->
     set;
 disk_type(_, Type) ->
     Type.
@@ -1236,7 +1240,7 @@ update_debug_info(Info) ->
     dbg_out("update_debug_info(~p)~n", [Info]),
     ok.
 
-deactivate_debug_fun(FunId, File, Line) ->
+deactivate_debug_fun(FunId, _File, _Line) ->
     catch ?ets_delete(?DEBUG_TAB, FunId),
     ok.
 

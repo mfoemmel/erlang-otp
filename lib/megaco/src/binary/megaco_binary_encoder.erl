@@ -23,8 +23,10 @@
 
 -behaviour(megaco_encoder).
 
--export([encode_message/2, decode_message/2]).
--export([encode_message/4, decode_message/4]).
+-export([encode_message/2, decode_message/2,
+	 encode_transaction/1, encode_transaction/2]).
+-export([encode_message/4, decode_message/4, 
+	 encode_transaction/4]).
 
 -include_lib("megaco/src/engine/megaco_message_internal.hrl").
 
@@ -37,6 +39,20 @@ encode_message(EncodingConfig, MegaMsg) ->
     AsnMod = megaco_ber_media_gateway_control,
     encode_message(EncodingConfig, MegaMsg, AsnMod, io_list).
 
+
+%%----------------------------------------------------------------------
+%% Convert a transaction into a binary
+%% Return {ok, Binary} | {error, Reason}
+%%----------------------------------------------------------------------
+
+encode_transaction(Trans) ->
+    encode_transaction([], Trans).
+					
+encode_transaction(EncodingConfig, Trans) ->
+    AsnMod = megaco_ber_media_gateway_control,
+    encode_transaction(EncodingConfig, Trans, AsnMod, io_list).
+
+
 %%----------------------------------------------------------------------
 %% Convert a binary into a 'MegacoMessage' record
 %% Return {ok, MegacoMessageRecord} | {error, Reason}
@@ -45,6 +61,7 @@ encode_message(EncodingConfig, MegaMsg) ->
 decode_message(EncodingConfig, Binary) ->
     AsnMod = megaco_ber_bin_media_gateway_control,
     decode_message(EncodingConfig, Binary, AsnMod, binary).
+
 
 %%----------------------------------------------------------------------
 %% Convert a 'MegacoMessage' record into a binary
@@ -57,7 +74,9 @@ encode_message(Config, MegaMsg, AsnMod, binary)
 	[native] ->
 	    asn1rt:encode(AsnMod, 'MegacoMessage', MegaMsg);
 	_ ->
-	    MegaMsg2 = megaco_binary_transformer:tr_message(MegaMsg, encode, Config),
+	    MegaMsg2 = megaco_binary_transformer:tr_message(MegaMsg, 
+							    encode, 
+							    Config),
 	    asn1rt:encode(AsnMod, 'MegacoMessage', MegaMsg2)
     end;
 encode_message(Config, MegaMsg, AsnMod, io_list) ->
@@ -75,7 +94,38 @@ encode_message(Config, MegaMsg, _AsnMod, _Type)
     {error, {bad_encoding_config, Config}};
 encode_message(_Config, MegaMsg, _AsnMod, _Type) ->
     {error, {no_megaco_message, MegaMsg}}.
-	 
+
+
+%%----------------------------------------------------------------------
+%% Convert a transaction into a binary
+%% Return {ok, Binary} | {error, Reason}
+%%----------------------------------------------------------------------
+
+encode_transaction(Config, Trans, AsnMod, binary) when list(Config) ->
+    case Config of
+	[native] ->
+	    asn1rt:encode(AsnMod, 'Transaction', Trans);
+	_ ->
+	    Trans2 = 
+		megaco_binary_transformer:tr_transaction(Trans, 
+							 encode, 
+							 Config),
+	    asn1rt:encode(AsnMod, 'Transaction', Trans2)
+    end;
+encode_transaction(Config, Trans, AsnMod, io_list) ->
+    case encode_transaction(Config, Trans, AsnMod, binary) of
+	{ok, Bin} when binary(Bin) ->
+	    {ok, Bin};
+	{ok, DeepIoList} ->
+	    Bin = erlang:list_to_binary(DeepIoList),
+	    {ok, Bin};
+	{error, Reason} ->
+	    {error, Reason} 
+    end;
+encode_transaction(Config, _Trans, _AsnMod, _Type) ->
+    {error, {bad_encoding_config, Config}}.
+
+
 %%----------------------------------------------------------------------
 %% Convert a binary into a 'MegacoMessage' record
 %% Return {ok, MegacoMessageRecord} | {error, Reason}

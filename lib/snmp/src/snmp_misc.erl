@@ -129,7 +129,7 @@ now(sec) ->
 	(element(3,Now) div 1000000).
     
 
-andApplyAll(Module, []) -> true;
+andApplyAll(_Module, []) -> true;
 andApplyAll(Module, [{Func, Args} | FAs]) ->
     case apply(Module, Func, Args) of
 	true -> andApplyAll(Module, FAs);
@@ -139,7 +139,7 @@ andApplyAll(Module, [{Func, Args} | FAs]) ->
 is_string([]) -> true;
 is_string([Tkn | Str]) when integer(Tkn), Tkn >= 0, Tkn =< 255 ->
     is_string(Str);
-is_string(X) -> false.
+is_string(_) -> false.
 
 
 is_oid([E1, E2| Rest]) when length(Rest) =< 126, E1 *40 + E2 =< 255 ->
@@ -156,7 +156,7 @@ is_oid2(_) -> false.
 is_bitstring([]) -> true;
 is_bitstring([Nbr | RestBitstring]) when integer(Nbr), Nbr >= 0, Nbr =< 1 ->
     is_bitstring(RestBitstring);
-is_bitstring(X) -> false.
+is_bitstring(_) -> false.
     
 
 %% Check if a Tag is a member in a TagList.  Tags and TagLists are defined
@@ -177,9 +177,9 @@ check_tag_list([Char | T], Res, Gat) ->
 check_tag_list([], Res, Gat) ->
     tag_delimiter_found(Res, Gat, []).
 
-tag_delimiter_found(Gat, Gat, T) ->
+tag_delimiter_found(Gat, Gat, _T) ->
     true;
-tag_delimiter_found(_Res, Gat, []) ->
+tag_delimiter_found(_Res, _Gat, []) ->
     false;
 tag_delimiter_found(_Res, Gat, T) ->
     check_tag_list(T, [], Gat).
@@ -187,7 +187,7 @@ tag_delimiter_found(_Res, Gat, T) ->
 
 %% Pre: length(TAddr1) == length(TAddr2)
 %%      length(TMask) == 0 | length(TAddr1)
-is_tmask_match(TAddr1, TAddr2, []) ->
+is_tmask_match(_TAddr1, _TAddr2, []) ->
     true;
 is_tmask_match([H1 | T1], [H2 | T2], [M1 | M2]) ->
     if
@@ -274,12 +274,12 @@ filter(Pred, ExtraArgs, [H | T]) ->
         true -> [H | filter(Pred, ExtraArgs, T)];
         false -> filter(Pred, ExtraArgs, T)
     end;
-filter(Pred, ExtraArgs, []) -> [].
+filter(_Pred, _ExtraArgs, []) -> [].
  
-foreach(Function,ExtraArgs,[H | T]) ->
+foreach(Function, ExtraArgs, [H | T]) ->
     apply(Function, [H | ExtraArgs]),
     foreach(Function, ExtraArgs, T);
-foreach(Function,ExtraArgs,[]) -> true.
+foreach(_Function, _ExtraArgs, []) -> true.
 
 map(F, Eas, List) -> [ apply(F, [E|Eas]) || E <- List ].
 
@@ -294,7 +294,7 @@ str_xor([], []) ->
 %% Returns: A list of length M where element Y is the result of
 %%          applying Func on [Elem(Y, List1), ..., Elem(Y, ListN)].
 %%-----------------------------------------------------------------
-multi_map(Func, [[] | ListOfLists]) -> [];
+multi_map(_Func, [[] | _ListOfLists]) -> [];
 multi_map(Func, ListOfLists) ->
     [apply(Func, map({erlang, hd}, [], ListOfLists)) |
      multi_map(Func, map({erlang, tl}, [], ListOfLists))].
@@ -357,7 +357,7 @@ read_mib(FileName) ->
 			true ->
 			    {error, 'wrong mib format version tag'}
 		    end;
-		Q -> {error, 'bad format'}
+		_ -> {error, 'bad format'}
 	    end;
 	{error, Reason} -> {error, Reason}
     end.
@@ -456,7 +456,7 @@ update_trap(_Trap) -> false.
 bits_to_int(Val,Kibbles) ->
     bits_to_int(Val,Kibbles,0).
 
-bits_to_int([],Kibbles,Res) -> Res;
+bits_to_int([],_Kibbles,Res) -> Res;
 bits_to_int([Kibble|Ks],Kibbles,Res) ->
     case snmp_misc:assq(Kibble,Kibbles) of
 	{value,V} ->
@@ -476,7 +476,7 @@ ensure_trailing_dir_delimiter([]) -> "/";
 ensure_trailing_dir_delimiter(DirSuggestion) ->
     case lists:last(DirSuggestion) of
 	$/ -> DirSuggestion;
-	Q -> lists:append(DirSuggestion,"/")
+	_ -> lists:append(DirSuggestion,"/")
     end.
 
 %%%--------------------------------------------------
@@ -530,7 +530,7 @@ make_mini_mib_elem([_|T]) ->
 %% returns: Oid|false
 oid(MiniMib, AliasName) ->
     case lists:keysearch(AliasName, 2, MiniMib) of
-	{value, {Oid, Aliasname, _Type}} -> Oid;
+	{value, {Oid, _Aliasname, _Type}} -> Oid;
 	false -> false
     end.
 
@@ -556,7 +556,7 @@ aliasname_impl([{Oid, Aliasname, Type}|T], OidX, Res) when Oid =< OidX ->
 	false ->
 	    aliasname_impl(T, OidX, Res)
     end;
-aliasname_impl([{Oid, Aliasname, Type}|T], OidX, Res) ->
+aliasname_impl([{_Oid, _Aliasname, _Type}|_T], _OidX, Res) ->
     Res.
 
 format_pdu(PDU, MiniMib) when record(PDU, pdu) ->
@@ -637,12 +637,12 @@ symbolify_oid(MiniMib, Oid) ->
  	    {[Aliasname| Rest], Type}
     end.
 
-format_val('OCTET STRING', 'BITS', Val, MiniMib) ->
+format_val('OCTET STRING', 'BITS', Val, _MiniMib) ->
     io_lib:format("~w", [snmp_pdus:octet_str_to_bits(Val)]);
 format_val('OBJECT IDENTIFIER', _, Val, MiniMib) ->
     {NVal, _} = symbolify_oid(MiniMib, Val),
     io_lib:format("~w", [NVal]);
-format_val(_, _, Val, MiniMib) ->
+format_val(_, _, Val, _MiniMib) ->
     io_lib:format("~p", [Val]).
     
 
@@ -667,7 +667,7 @@ read(File, CheckFunc) ->
 open_file(File) ->
     case file:open(File, read) of
 	{ok, Fd} -> Fd;
-	Error ->
+	_Error ->
 	    error("Cannot open file ~p", [File])
     end.
 
@@ -683,7 +683,7 @@ read_noexit(File, CheckFunc) ->
 		    file:close(Fd),
 		    {ok, Res}
 	    end;
-	Error ->
+	_Error ->
 	    {error, open_file}
     end.
 
@@ -721,7 +721,7 @@ read(Io, Prompt, StartLine) ->
 	    end;
 	{error,E,EndLine} ->
 	    {error,EndLine,E};
-	{eof,EndLine} ->
+	{eof,_EndLine} ->
 	    eof;
 	Other ->
 	    Other

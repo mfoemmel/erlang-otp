@@ -32,7 +32,6 @@
 %%%-----------------------------------------------------------------
 
 -define(DEFAULT_HELPER_TIMEOUT, 30000). % In milli seconds
--define(HELPER_TIMEOUT_VSN_1_6_0, 30000). % In milli seconds
 
 %%%-define(MEM_SHOW, 1).
 -include("memsup.hrl").
@@ -218,33 +217,6 @@ handle_info(_, State) ->
 terminate(_Reason, _State) ->
     ok.
 
-code_change(_OldVsn, State, upgrade_from_1_6_0) ->
-    {state, TO, MU, WMU, SMW, PMW, CP, LT, WT, EWT, EP} = State,
-    NewState = #state{timeout = TO, 
-		      mem_usage = MU, 
-		      worst_mem_user = WMU,
-		      sys_mem_watermark = SMW, 
-		      proc_mem_watermark = PMW,
-		      collect_procmem = CP,
-		      last_timeout = LT,
-		      wd_timer = WT,
-		      ext_wd_timer = EWT,
-		      ext_pending = EP,
-		      helper_timeout = ?HELPER_TIMEOUT_VSN_1_6_0},
-    {ok, NewState};
-code_change(_OldVsn, State, downgrade_to_1_6_0) ->
-    #state{timeout = TO, 
-	   mem_usage = MU, 
-	   worst_mem_user = WMU,
-	   sys_mem_watermark = SMW, 
-	   proc_mem_watermark = PMW,
-	   collect_procmem = CP,
-	   last_timeout = LT,
-	   wd_timer = WT,
-	   ext_wd_timer = EWT,
-	   ext_pending = EP} = State,
-    NewState = {state, TO, MU, WMU, SMW, PMW, CP, LT, WT, EWT, EP},
-    {ok, NewState};
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
     

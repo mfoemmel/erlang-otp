@@ -258,7 +258,7 @@ compile_part([$*], Upto, Result) ->
 compile_part([$*|Rest], Upto, Result) ->
     compile_part(Rest, Upto, [star|Result]);
 compile_part([$[|Rest], Upto, Result) ->
-    case compile_charset(Rest, ordsets:new_set()) of
+    case compile_charset(Rest, ordsets:new()) of
 	{ok, Charset, Rest1} ->
 	    compile_part(Rest1, Upto, [Charset|Result]);
 	error ->

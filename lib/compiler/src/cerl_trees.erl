@@ -33,7 +33,7 @@
 	       ann_c_case/3, ann_c_catch/2, ann_c_clause/4,
 	       ann_c_cons/3, ann_c_fun/3, ann_c_let/4, ann_c_letrec/3,
 	       ann_c_module/5, ann_c_primop/3, ann_c_receive/4,
-	       ann_c_seq/3, ann_c_try/4, ann_c_tuple/2, ann_c_values/2,
+	       ann_c_seq/3, ann_c_try/6, ann_c_tuple/2, ann_c_values/2,
 	       apply_args/1, apply_op/1, binary_segs/1, bin_seg_val/1,
 	       bin_seg_size/1, bin_seg_unit/1, bin_seg_type/1,
 	       bin_seg_flags/1, call_args/1, call_module/1, call_name/1,
@@ -45,15 +45,16 @@
 	       module_defs/1, module_exports/1, module_name/1,
 	       module_vars/1, primop_args/1, primop_name/1,
 	       receive_action/1, receive_clauses/1, receive_timeout/1,
-	       seq_arg/1, seq_body/1, set_ann/2, subtrees/1, try_body/1,
-	       try_expr/1, try_vars/1, tuple_es/1, type/1,
-	       update_c_alias/3, update_c_apply/3, update_c_binary/2,
-	       update_c_bin_seg/6, update_c_call/4, update_c_case/3,
-	       update_c_catch/2, update_c_clause/4, update_c_cons/3,
-	       update_c_fun/3, update_c_let/4, update_c_letrec/3,
-	       update_c_module/5, update_c_primop/3, update_c_receive/4,
-	       update_c_seq/3, update_c_try/4, update_c_tuple/2,
-	       update_c_values/2, values_es/1, var_name/1]).
+	       seq_arg/1, seq_body/1, set_ann/2, subtrees/1, try_arg/1,
+	       try_body/1, try_vars/1, try_evars/1, try_handler/1,
+	       tuple_es/1, type/1, update_c_alias/3, update_c_apply/3,
+	       update_c_binary/2, update_c_bin_seg/6, update_c_call/4,
+	       update_c_case/3, update_c_catch/2, update_c_clause/4,
+	       update_c_cons/3, update_c_fun/3, update_c_let/4,
+	       update_c_letrec/3, update_c_module/5, update_c_primop/3,
+	       update_c_receive/4, update_c_seq/3, update_c_try/6,
+	       update_c_tuple/2, update_c_values/2, values_es/1,
+	       var_name/1]).
 
 
 %% ---------------------------------------------------------------------
@@ -95,7 +96,7 @@ size(T) ->
 %%	   
 %% @doc Maps a function onto the nodes of a tree. This replaces each
 %% node in the tree by the result of applying the given function on
-%% the original node.
+%% the original node, bottom-up.
 %%
 %% @see mapfold/3
 
@@ -158,9 +159,11 @@ map_1(F, T) ->
 			     map(F, receive_timeout(T)),
 			     map(F, receive_action(T)));
  	'try' ->
- 	    update_c_try(T, map(F, try_expr(T)),
+ 	    update_c_try(T, map(F, try_arg(T)),
 			 map_list(F, try_vars(T)),
-			 map(F, try_body(T)));
+			 map(F, try_body(T)),
+			 map_list(F, try_evars(T)),
+			 map(F, try_handler(T)));
  	'catch' ->
 	    update_c_catch(T, map(F, catch_body(T)));
 	binary ->
@@ -254,9 +257,11 @@ fold_1(F, S, T) ->
 			 receive_timeout(T)),
 		 receive_action(T));
  	'try' ->
-	    fold(F, fold_list(F, fold(F, S, try_expr(T)),
-			      try_vars(T)),
-		 try_body(T));
+	    fold(F, fold_list(F, fold(F, fold_list(F, fold(F, S, try_arg(T)),
+						   try_vars(T)),
+				      try_body(T)),
+			      try_evars(T)),
+		 try_handler(T));
  	'catch' ->
 	    fold(F, S, catch_body(T));
 	binary ->
@@ -379,10 +384,12 @@ mapfold(F, S0, T) ->
 	    {A, S3} = mapfold(F, S2, receive_action(T)),
 	    F(update_c_receive(T, Cs, E, A), S3);
  	'try' ->
-	    {E, S1} = mapfold(F, S0, try_expr(T)),
+	    {E, S1} = mapfold(F, S0, try_arg(T)),
 	    {Vs, S2} = mapfold_list(F, S1, try_vars(T)),
 	    {B, S3} = mapfold(F, S2, try_body(T)),
-	    F(update_c_try(T, E, Vs, B), S3);
+	    {Evs, S4} = mapfold_list(F, S3, try_evars(T)),
+	    {H, S5} = mapfold(F, S4, try_handler(T)),
+	    F(update_c_try(T, E, Vs, B, Evs, H), S5);
  	'catch' ->
 	    {B, S1} = mapfold(F, S0, catch_body(T)),
 	    F(update_c_catch(T, B), S1);
@@ -524,8 +531,22 @@ variables(T, S) ->
 	'try' ->
 	    Vs = variables(try_body(T), S),
 	    Vs1 = var_list_names(try_vars(T)),
-	    Vs2 = ordsets:subtract(Vs, Vs1),
-	    ordsets:union(variables(try_expr(T), S), Vs2);
+	    Vs2 = case S of
+		      true ->
+			  ordsets:subtract(Vs, Vs1);
+		      false ->
+			  ordsets:union(Vs, Vs1)
+		  end,
+	    Vs3 = variables(try_handler(T), S),
+	    Vs4 = var_list_names(try_evars(T)),
+	    Vs5 = case S of
+		      true ->
+			  ordsets:subtract(Vs3, Vs4);
+		      false ->
+			  ordsets:union(Vs3, Vs4)
+		  end,
+	    ordsets:union(variables(try_arg(T), S),
+			  ordsets:union(Vs2, Vs5));
 	'catch' ->
 	    variables(catch_body(T), S);
 	binary ->
@@ -705,11 +726,13 @@ label(T, N, Env) ->
 	    {As, N4} = label_ann(T, N3),
 	    {ann_c_receive(As, Cs, E, A), N4};
  	'try' ->
-	    {E, N1} = label(try_expr(T), N, Env),
+	    {E, N1} = label(try_arg(T), N, Env),
 	    {Vs, N2, Env1} = label_vars(try_vars(T), N1, Env),
 	    {B, N3} = label(try_body(T), N2, Env1),
-	    {As, N4} = label_ann(T, N3),
-	    {ann_c_try(As, E, Vs, B), N4};
+	    {Evs, N4, Env2} = label_vars(try_evars(T), N3, Env),
+	    {H, N5} = label(try_handler(T), N4, Env2),
+	    {As, N6} = label_ann(T, N5),
+	    {ann_c_try(As, E, Vs, B, Evs, H), N6};
  	'catch' ->
 	    {B, N1} = label(catch_body(T), N, Env),
 	    {As, N2} = label_ann(T, N1),
@@ -775,4 +798,3 @@ filter_labels([A | As]) ->
     [A | filter_labels(As)];
 filter_labels([]) ->
     [].
-

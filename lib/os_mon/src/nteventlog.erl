@@ -67,7 +67,7 @@ init([Identifier,MFA]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
-handle_call(Request, From, State) ->
+handle_call(Request, _From, State) ->
     case Request of
 	stop ->
 	    {stop, normal, stopped, State};
@@ -81,7 +81,7 @@ handle_call(Request, From, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
-handle_cast(Msg, State) ->
+handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %%----------------------------------------------------------------------
@@ -107,7 +107,7 @@ handle_info(Info, State) ->
 %% Purpose: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%----------------------------------------------------------------------
-terminate(Reason, {Port, MFO}) ->
+terminate(_Reason, {Port, _MFO}) ->
     Port ! {self(), close},
     ok.
 

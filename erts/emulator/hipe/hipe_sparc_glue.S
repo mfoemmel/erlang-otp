@@ -396,12 +396,14 @@ nbif_3_simple_exception:
 	 * A BIF failed with freason TRAP:
 	 * - the BIF stored the callee's Export* in p->def_arg_reg[0]
 	 * - the BIF stored the actual parameters in p->def_arg_reg[1..]
+	 * - the BIF's arity is in ARG4
 	 * - the native RA was saved in TEMP3 before the BIF call
 	 * - the native heap/stack/reds registers are saved in P
 	 */
 	mov	HIPE_MODE_SWITCH_RES_TRAP, TEMP0
 .bif_exit:
 	ld	[P+P_CRA], %i7			! restore C return address
+	st	ARG4, [P+P_ARITY]
 	st	TEMP3, [P+P_NRA]		! RA
 	jmp	%i7+8
 	restore	%g0,TEMP0,%o0
@@ -429,38 +431,6 @@ nbif_hairy_exception:
 	st	TEMP2,[P+P_ARG1]
 	ba	.bif_exit
 	mov	HIPE_MODE_SWITCH_RES_RESCHEDULE, TEMP0
-
-/*
- * nbif_test
- * placeholder for hand-written code to exercise the mode-switch interface
- */
-	.global	nbif_test
-	.align	4
-nbif_test:
-	jmp RA+8				! retl
-	mov ERL_NIL,%o0
-
-/*
- * nbif_clear_fp_exception
- * see the ERTS_FP_CHECK_INIT() macro
- */
-	.global	nbif_clear_fp_exception
-	.align	4
-nbif_clear_fp_exception:
-	sethi   %hi(erl_fp_exception), %o1
-	jmp	RA+8				! retl
-	st	%g0, [%o1+%lo(erl_fp_exception)]
-
-/*
- * nbif_check_fp_exception
- * see the ERTS_FP_ERROR() macro
- */
-	.global	nbif_check_fp_exception
-	.align	4
-nbif_check_fp_exception:
-	sethi	%hi(erl_fp_exception), %o1
-	jmp	RA+8				! retl
-	ld	[%o1+%lo(erl_fp_exception)], %o0
 
 /*
  * nbif_stack_trap_ra: trap return address for maintaining

@@ -104,10 +104,10 @@ start(Id, Pgm0, Hosts) ->
 start_it("inet", Id, Pid, Hosts) ->
     process_flag(trap_exit, true),
     %% Setup reserved port for ose_inet driver (only OSE, fails on others)
-    case catch erlang:open_port_prim({spawn,ose_inet},[binary]) of
-	{'EXIT',Why} ->
+    case catch erlang:open_port({spawn,ose_inet},[binary]) of
+	{'EXIT',_Why} ->
 	    ?dbg(ose_inet_port_open_fail, Why);
-	OseInetPort ->
+	_OseInetPort ->
 	    ?dbg(ose_inet_port, OseInetPort)
     end,
     ?dbg(inet, {Id,Pid,Hosts}),
@@ -148,7 +148,7 @@ start_it("efile", Id, Pid, _Hosts) ->
     loop(State, Pid, []);
 start_it(Pgm, Id, Pid, _Hosts) ->
     process_flag(trap_exit, true),
-    Port = erlang:open_port_prim({spawn,Pgm}, [binary]),
+    Port = erlang:open_port({spawn,Pgm}, [binary]),
     init_ack(Pid),
     State = #state {
 		    id = Id,

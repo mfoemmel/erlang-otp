@@ -34,11 +34,11 @@
 	 transform_to_EXTERNAL1994/1]).
 
 
-check_bool(Bool,asn1_DEFAULT) ->
+check_bool(_Bool,asn1_DEFAULT) ->
     true;
 check_bool(Bool,Bool) when Bool == true; Bool == false ->
     true;
-check_bool(Bool1,Bool2) ->
+check_bool(_Bool1,Bool2) ->
     throw({error,Bool2}).
 
 check_int(_,asn1_DEFAULT,_) ->
@@ -52,7 +52,7 @@ check_int(DefValue,Value,NNL) when atom(Value) ->
 	_ ->
 	    throw({error,DefValue})
     end;
-check_int(DefaultValue,Value,_) ->
+check_int(DefaultValue,_Value,_) ->
     throw({error,DefaultValue}).
 
 % check_bitstring([H|T],[H|T],_) when integer(H) ->
@@ -75,17 +75,17 @@ check_bitstring(Int,Val,NBL) when integer(Int),list(Val) ->
     BL = int_to_bit_list(Int,[],length(Val)),
     check_bitstring(BL,Val,NBL);
 %% Default value and user value as lists of ones and zeros
-check_bitstring(L1=[H1|T1],L2=[H2|T2],NBL=[H|T]) when integer(H1),integer(H2) ->
+check_bitstring(L1=[H1|_T1],L2=[H2|_T2],NBL=[_H|_T]) when integer(H1),integer(H2) ->
     L2new = remove_trailing_zeros(L2),
     check_bitstring(L1,L2new,NBL);
 %% Default value as a list of 1 and 0 and user value as a list of atoms
-check_bitstring(L1=[H1|T1],L2=[H2|T2],NBL) when integer(H1),atom(H2) ->
+check_bitstring(L1=[H1|_T1],L2=[H2|_T2],NBL) when integer(H1),atom(H2) ->
     case bit_list_to_nbl(L1,NBL,0,[]) of
 	L3 -> check_bitstring(L3,L2,NBL);
 	_ -> throw({error,L2})
     end;
 %% Both default value and user value as a list of atoms
-check_bitstring(L1=[H1|T1],L2=[H2|T2],_) when atom(H1),atom(H2) ->
+check_bitstring(L1=[H1|T1],L2=[H2|_T2],_) when atom(H1),atom(H2) ->
     length(L1) == length(L2),
     case lists:member(H1,L2) of
 	true ->
@@ -93,14 +93,14 @@ check_bitstring(L1=[H1|T1],L2=[H2|T2],_) when atom(H1),atom(H2) ->
 	false -> throw({error,L2})
     end;
 %% Default value as a list of atoms and user value as a list of 1 and 0
-check_bitstring(L1=[H1|T1],L2=[H2|T2],NBL) when atom(H1),integer(H2) ->
+check_bitstring(L1=[H1|_T1],L2=[H2|_T2],NBL) when atom(H1),integer(H2) ->
     case bit_list_to_nbl(L2,NBL,0,[]) of
 	L3 ->
 	    check_bitstring(L1,L3,NBL);
 	_ -> throw({error,L2})
     end;
 %% User value in compact format
-check_bitstring(DefVal,CBS={Unused,Bin},NBL) ->
+check_bitstring(DefVal,CBS={_,_},NBL) ->
     NewVal = cbs_to_bit_list(CBS),
     check_bitstring(DefVal,NewVal,NBL);
 check_bitstring(DV,V,_) ->
@@ -145,7 +145,7 @@ check_bitstring1([H|T],NBL) ->
 	    check_bitstring1(T,NBL);
 	V -> throw({error,V})
     end;
-check_bitstring1([],NBL) ->
+check_bitstring1([],_) ->
     true.
 
 cbs_to_bit_list({Unused,<<B7:1,B6:1,B5:1,B4:1,B3:1,B2:1,B1:1,B0:1,Rest/binary>>}) when size(Rest) >= 1 ->
@@ -190,7 +190,7 @@ check_objectidentifier(OI,OI) ->
     true;
 check_objectidentifier(DOI,OI) when tuple(DOI),tuple(OI) ->
     check_objectidentifier1(tuple_to_list(DOI),tuple_to_list(OI));
-check_objectidentifier(DOI,OI) ->
+check_objectidentifier(_,OI) ->
     throw({error,OI}).
 
 check_objectidentifier1([V|Rest1],[V|Rest2]) ->
@@ -249,7 +249,7 @@ check_real(_,asn1_DEFAULT) ->
     true;
 check_real(R,R) ->
     true;
-check_real(DR,R) ->
+check_real(_,_) ->
     throw({error,{not_implemented_yet,check_real}}).
 
 check_enum(_,asn1_DEFAULT,_) ->

@@ -38,8 +38,9 @@
 
          %% incr_counter/2,
          incr_trans_id_counter/1,
+         incr_trans_id_counter/2,
          verify_val/2,
-        
+
          lookup_local_conn/1,
          connect/4,
          disconnect/1,
@@ -48,6 +49,7 @@
 	 init_conn_data/4
 
         ]).
+
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -59,11 +61,15 @@
 -include_lib("megaco/include/megaco.hrl").
 -include("megaco_internal.hrl").
 
+%% -define(d(F,A), io:format("~p~p:" ++ F ++ "~n", [self(),?MODULE|A])).
+-define(d(F,A), ok).
+
 %%%----------------------------------------------------------------------
 %%% API
 %%%----------------------------------------------------------------------
 
 start_link() ->
+    ?d("start_link -> entry", []),
     gen_server:start_link({local, ?SERVER}, ?MODULE, [self()], []).
 
 start_user(UserMid, Config) ->
@@ -74,7 +80,7 @@ stop_user(UserMid) ->
 
 user_info(UserMid, all) ->
     All = ets:match_object(megaco_config, {{UserMid, '_'}, '_'}),
-    [{Item, Val} || {{_, Item}, Val} <- All];
+    [{Item, Val} || {{_, Item}, Val} <- All, Item /= ack_sender];
 user_info(UserMid, receive_handle) ->
     case call({receive_handle, UserMid}) of
 	{ok, RH} ->
@@ -83,6 +89,8 @@ user_info(UserMid, receive_handle) ->
 	    exit(Reason)
     end;
 user_info(UserMid, conn_data) ->
+    ?d("user_info(conn_data) -> entry with"
+	"~n   UserMid: ~p", [UserMid]),    
     HandlePat = #megaco_conn_handle{local_mid = UserMid, remote_mid = '_'},
     Pat = #conn_data{conn_handle      	= HandlePat,
                      serial           	= '_',
@@ -90,6 +98,11 @@ user_info(UserMid, conn_data) ->
                      request_timer    	= '_',
                      long_request_timer = '_',
                      auto_ack         	= '_',
+
+                     accu_ack_timer   	= '_',
+                     accu_ack_maxcount	= '_',
+                     ack_sender	        = '_',
+
                      pending_timer     	= '_',
                      reply_timer      	= '_',
                      control_pid      	= '_',
@@ -105,8 +118,12 @@ user_info(UserMid, conn_data) ->
                      reply_action     	= '_',
                      reply_data       	= '_'},
     %% ok = io:format("PATTERN: ~p~n", [Pat]),
+    ?d("user_info(conn_data) -> ~n"
+	"~p", [ets:tab2list(megaco_local_conn)]),
     ets:match_object(megaco_local_conn, Pat);
 user_info(UserMid, connections) ->
+    ?d("user_info(connections) -> entry with"
+	"~n   UserMid: ~p", [UserMid]),    
     [C#conn_data.conn_handle || C <- user_info(UserMid, conn_data)];
 user_info(UserMid, mid) ->
     ets:lookup_element(megaco_config, {UserMid, mid}, 2);
@@ -143,6 +160,14 @@ conn_info(CH, Item) when record(CH, megaco_conn_handle) ->
     end;
 conn_info(CD, Item) when record(CD, conn_data) ->
     case Item of
+	all ->
+	    Tags0 = record_info(fields, conn_data),
+	    Tags1 = replace(serial, trans_id, Tags0),
+	    Tags  = [mid, local_mid, remote_mid] ++ 
+		replace(max_serial, max_trans_id, Tags1),
+	    [{Tag, conn_info(CD,Tag)} || Tag <- Tags, 
+					 Tag /= conn_data, 
+					 Tag /= ack_sender];
         conn_data          -> CD;
         conn_handle        -> CD#conn_data.conn_handle;
         mid                -> (CD#conn_data.conn_handle)#megaco_conn_handle.local_mid;
@@ -153,6 +178,10 @@ conn_info(CD, Item) when record(CD, conn_data) ->
         request_timer      -> CD#conn_data.request_timer;
         long_request_timer -> CD#conn_data.long_request_timer;
         auto_ack           -> CD#conn_data.auto_ack;
+
+        accu_ack_timer     -> CD#conn_data.accu_ack_timer;
+        accu_ack_maxcount  -> CD#conn_data.accu_ack_maxcount;
+
         pending_timer      -> CD#conn_data.pending_timer;
         reply_timer        -> CD#conn_data.reply_timer;
         control_pid        -> CD#conn_data.control_pid;
@@ -178,6 +207,14 @@ conn_info(CD, Item) when record(CD, conn_data) ->
     end;
 conn_info(BadHandle, _Item) ->
     {error, {no_such_connection, BadHandle}}.
+
+replace(_, _, []) ->
+    [];
+replace(Item, WithItem, [Item|List]) ->
+    [WithItem|List];
+replace(Item, WithItem, [OtherItem|List]) ->
+    [OtherItem | replace(Item, WithItem, List)].
+
 
 update_conn_info(CH, Item, Val) when record(CH, megaco_conn_handle) ->
     call({update_conn_data, CH, Item, Val});
@@ -225,6 +262,11 @@ lookup_local_conn(Handle) ->
 
 
 connect(RH, RemoteMid, SendHandle, ControlPid) ->
+    ?d("connect -> entry with "
+	"~n   RH:         ~p"
+	"~n   RemoteMid:  ~p"
+	"~n   SendHandle: ~p"
+	"~n   ControlPid: ~p", [RH, RemoteMid, SendHandle, ControlPid]),
     case RemoteMid of
 	{MidType, _MidValue} when atom(MidType) ->
 	    call({connect, RH, RemoteMid, SendHandle, ControlPid});
@@ -260,16 +302,22 @@ incr_counter(Item, Incr) ->
 
 %% A wrapping transaction id counter
 incr_trans_id_counter(ConnHandle) ->
+    incr_trans_id_counter(ConnHandle, 1).
+incr_trans_id_counter(ConnHandle, Incr) when integer(Incr), Incr > 0 ->
+    ?d("incr_trans_id_counter -> entry with"
+	"~n   ConnHandle: ~p"
+	"~n   Incr:       ~p",[ConnHandle, Incr]),
     case megaco_config:lookup_local_conn(ConnHandle) of
         [] ->
             {error, {no_such_connection, ConnHandle}};
         [ConnData] ->
             LocalMid  = ConnHandle#megaco_conn_handle.local_mid,
-            Item       = {LocalMid, trans_id_counter},
-            case catch ets:update_counter(megaco_config, Item, 1) of
+            Item      = {LocalMid, trans_id_counter},
+            case (catch ets:update_counter(megaco_config, Item, Incr)) of
                 {'EXIT', _} ->
                     %% The transaction counter needs to be initiated
-                    reset_trans_id_counter(ConnData, ConnHandle, LocalMid, Item);
+                    reset_trans_id_counter(ConnData, ConnHandle, LocalMid, 
+					   Item, Incr);
                 Serial ->
                     ConnData2 = ConnData#conn_data{serial = Serial},
                     Max       = ConnData#conn_data.max_serial,
@@ -281,18 +329,21 @@ incr_trans_id_counter(ConnHandle) ->
                         true ->
                             %% The transaction id range is exhausted
                             %% Let's wrap the counter
-                            reset_trans_id_counter(ConnData2, ConnHandle, LocalMid, Item)
+                            reset_trans_id_counter(ConnData2, ConnHandle, 
+						   LocalMid, Item, Incr)
                     end
             end
     end.
 
-reset_trans_id_counter(ConnData, ConnHandle, LocalMid, Item) ->
+% reset_trans_id_counter(ConnData, ConnHandle, LocalMid, Item) ->
+%     reset_trans_id_counter(ConnData, ConnHandle, LocalMid, Item, 1).
+reset_trans_id_counter(ConnData, ConnHandle, LocalMid, Item, Incr) ->
     case whereis(?SERVER) == self() of
         false ->
             call({incr_trans_id_counter, ConnHandle});
         true ->
             Serial    = user_info(LocalMid, min_trans_id),
-            ConnData2 = ConnData#conn_data{serial = Serial},
+            ConnData2 = ConnData#conn_data{serial = Serial + (Incr-1)},
             Max       = ConnData#conn_data.max_serial,
             if
                 Max == infinity,
@@ -307,6 +358,7 @@ reset_trans_id_counter(ConnData, ConnHandle, LocalMid, Item) ->
                     {error, {bad_trans_id, Serial, Max}}
             end
     end.
+
 
 call(Request) ->
     case catch gen_server:call(?SERVER, Request, infinity) of
@@ -329,11 +381,15 @@ call(Request) ->
 %%----------------------------------------------------------------------
 
 init([Parent]) ->
+    ?d("init -> entry with "
+	"~n   Parent: ~p", [Parent]),
     process_flag(trap_exit, true),
     case (catch do_init()) of
 	ok ->
+	    ?d("init -> init ok", []),
 	    {ok, #state{parent_pid = Parent}};
 	Else ->
+	    ?d("init -> init error: ~p", [Else]),
 	    {stop, Else}
     end.
 
@@ -377,6 +433,11 @@ init_user_defaults() ->
     init_user_default(request_timer,      #megaco_incr_timer{}),
     init_user_default(long_request_timer, infinity),
     init_user_default(auto_ack,           false),
+
+    init_user_default(accu_ack_timer,     0),
+    init_user_default(accu_ack_maxcount,  10),
+    init_user_default(ack_sender,         undefined),
+
     init_user_default(pending_timer,      timer:seconds(30)),
     init_user_default(reply_timer,        timer:seconds(30)),
     init_user_default(send_mod,           megaco_tcp),
@@ -439,6 +500,11 @@ handle_call({receive_handle, UserMid}, _From, S) ->
 	    {reply, {ok, RH}, S}
     end;
 handle_call({connect, RH, RemoteMid, SendHandle, ControlPid}, _From, S) ->
+    ?d("handle_call(connect) -> entry with "
+	"~n   RH:         ~p"
+	"~n   RemoteMid:  ~p"
+	"~n   SendHandle: ~p"
+	"~n   ControlPid: ~p", [RH, RemoteMid, SendHandle, ControlPid]),
     Reply = handle_connect(RH, RemoteMid, SendHandle, ControlPid),
     {reply, Reply, S};
 handle_call({connect_remote, CH, UserNode, Ref}, _From, S) ->
@@ -474,6 +540,7 @@ handle_call({update_user_info, UserMid, Item, Val}, _From, S) ->
             Reply = do_update_user(UserMid, Item, Val),
             {reply, Reply, S}
     end;
+
 handle_call(Request, From, S) ->
     ok = error_logger:format("~p(~p): handle_call(~p, ~p, ~p)~n",
                              [?MODULE, self(), Request, From, S]),
@@ -520,14 +587,6 @@ terminate(_Reason, _State) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-
-code_change(_Vsn, S, upgrade_from_1_1_0) ->
-    ets:new(megaco_stats, [set, public, named_table]),
-    {ok, S};
-
-code_change(_Vsn, S, downgrade_to_1_1_0) ->
-    ets:delete(megaco_stats),
-    {ok, S};
 
 code_change(_Vsn, S, _Extra) ->
     {ok, S}.
@@ -583,6 +642,11 @@ verify_val(Item, Val) ->
         request_timer                   -> verify_timer(Val);
         long_request_timer              -> verify_timer(Val);
         auto_ack                        -> verify_bool(Val);
+
+        accu_ack_timer                  -> verify_timer(Val);
+        accu_ack_maxcount               -> verify_int(Val);
+	ack_sender when Val == undefined -> true;
+
         pending_timer                   -> verify_timer(Val);
         reply_timer                     -> verify_timer(Val);
         control_pid      when pid(Val)  -> true;
@@ -678,7 +742,13 @@ replace_conn_data(CD, Item, Val) ->
         max_trans_id       -> CD#conn_data{max_serial = Val};
         request_timer      -> CD#conn_data{request_timer = Val};
         long_request_timer -> CD#conn_data{long_request_timer = Val};
-        auto_ack           -> CD#conn_data{auto_ack = Val};
+
+	auto_ack           -> update_auto_ack(CD, Val);
+	accu_ack_timer     -> update_accu_ack_timer(CD, Val);
+	accu_ack_maxcount  -> update_accu_ack_maxcount(CD, Val);
+	%% ack_sender      - Automagically updated by 
+	%%                   update_auto_ack & update_accu_ack_timer
+
         pending_timer      -> CD#conn_data{pending_timer = Val};
         reply_timer        -> CD#conn_data{reply_timer = Val};
         control_pid        -> CD#conn_data{control_pid = Val};
@@ -695,16 +765,56 @@ replace_conn_data(CD, Item, Val) ->
         reply_data         -> CD#conn_data{reply_data = Val}
     end.
 
+%% update auto_ack
+update_auto_ack(#conn_data{ack_sender = Pid} = CD, 
+		false) when pid(Pid) ->
+    megaco_ack_sender:stop(Pid),
+    CD#conn_data{auto_ack = false, ack_sender = Pid};
+
+update_auto_ack(#conn_data{accu_ack_timer = To, 
+			   ack_sender     = undefined} = CD, 
+		true) when To > 0 ->
+    #conn_data{conn_handle = CH, accu_ack_maxcount = Max} = CD,
+    {ok, Pid} = megaco_acks_sup:start_ack_sender(CH, To, Max),
+    CD#conn_data{auto_ack = true, ack_sender = Pid};
+
+update_auto_ack(CD, Val) ->
+    CD#conn_data{auto_ack = Val}.
+
+% update accu_ack_timer
+update_accu_ack_timer(#conn_data{auto_ack   = true, 
+				 ack_sender = undefined} = CD, 
+		      To) when To > 0 ->
+    #conn_data{conn_handle = CH, accu_ack_maxcount = Max} = CD,
+    {ok, Pid} = megaco_acks_sup:start_ack_sender(CH, To, Max),
+    CD#conn_data{accu_ack_timer = To, ack_sender = Pid};
+
+update_accu_ack_timer(#conn_data{ack_sender = Pid} = CD, 0) when pid(Pid) ->
+    megaco_ack_sender:stop(Pid),
+    CD#conn_data{accu_ack_timer = 0, ack_sender = undefined};
+
+update_accu_ack_timer(#conn_data{ack_sender = Pid} = CD, To) 
+  when To > 0, pid(Pid) ->
+    megaco_ack_sender:timeout(Pid, To),
+    CD#conn_data{accu_ack_timer = To}.
+
+% update accu_ack_maxcount
+update_accu_ack_maxcount(#conn_data{ack_sender = Pid} = CD, Max) 
+  when pid(Pid) ->
+    megaco_ack_sender:maxcount(Pid, Max),
+    CD#conn_data{accu_ack_maxcount = Max};
+
+update_accu_ack_maxcount(CD, Max) ->
+    CD#conn_data{accu_ack_maxcount = Max}.
+
+    
+
 handle_connect(RH, RemoteMid, SendHandle, ControlPid) ->
-%     io:format("~p:handle_connect -> entry with"
-% 	      "~n   RH:         ~p"
-% 	      "~n   RemoteMid:  ~p"
-% 	      "~n   SendHandle: ~p"
-% 	      "~n   ControlPid: ~p~n", 
-% 	      [?MODULE, RH, RemoteMid, SendHandle, ControlPid]),
-    LocalMid = RH#megaco_receive_handle.local_mid,
+    LocalMid   = RH#megaco_receive_handle.local_mid,
     ConnHandle = #megaco_conn_handle{local_mid  = LocalMid,
 				     remote_mid = RemoteMid},
+    ?d("handle_connect -> entry with"
+	"~n   ConnHandle: ~p", [ConnHandle]),
     case ets:lookup(megaco_local_conn, ConnHandle) of
         [] ->
 	    PrelMid = preliminary_mid,
@@ -715,17 +825,23 @@ handle_connect(RH, RemoteMid, SendHandle, ControlPid) ->
 			{'EXIT', _} ->
 			    {error, {no_such_user, LocalMid}};
 			ConnData ->
+			    ?d("handle_connect -> new connection"
+				"~n   ConnData: ~p", [ConnData]),
 			    %% Brand new connection, use 
 			    %% When is the preliminary_mid used?
 			    create_snmp_counters(ConnHandle),
-			    ets:insert(megaco_local_conn, ConnData),
-			    {ok, ConnData}
+			    ConnData2 = ack_sender_start(ConnData),
+			    ets:insert(megaco_local_conn, ConnData2),
+			    {ok, ConnData2}
 		    end;
 		[PrelData] ->
-		    %% OK, we nee to fix the snmp counters. Used 
-		    %% temporary (preliminary_mid) conn_handle.
+		    ?d("handle_connect -> connection upgrade"
+			"~n   PrelData: ~p", [PrelData]),
+		    %% OK, we need to fix the snmp counters. Used 
+		    %% with the temporary (preliminary_mid) conn_handle.
 		    create_snmp_counters(ConnHandle),
 		    ConnData = PrelData#conn_data{conn_handle = ConnHandle},
+		    ack_sender_upgrade(ConnData),
 		    ets:insert(megaco_local_conn, ConnData),
 		    ets:delete(megaco_local_conn, PrelHandle),
 		    update_snmp_counters(ConnHandle, PrelHandle),
@@ -743,6 +859,33 @@ handle_connect(RH, RemoteMid, SendHandle, ControlPid) ->
         [_ConnData] ->
             {error, {already_connected, ConnHandle}}
     end.
+
+ack_sender_start(#conn_data{conn_handle       = CH,
+			    auto_ack          = true, 
+			    accu_ack_timer    = To,
+			    accu_ack_maxcount = Max,
+			    ack_sender        = undefined} = CD)
+  when To > 0 ->
+    {ok, Pid} = megaco_acks_sup:start_ack_sender(CH, To, Max),
+    ?d("ack_sende_start -> entry when"
+	"~n   CH:  ~p"
+	"~n   To:  ~p"
+	"~n   Max: ~p", [CH, To, Max]),
+    CD#conn_data{ack_sender = Pid};
+ack_sender_start(CD) ->
+    CD.
+
+ack_sender_upgrade(#conn_data{conn_handle = CH,
+			      auto_ack    = true,
+			      ack_sender  = Pid})
+  when pid(Pid) ->
+    ?d("ack_sende_upgrade -> entry when"
+	"~n   CH:  ~p"
+	"~n   Pid: ~p", [CH, Pid]),
+    megaco_ack_sender:upgrade(Pid, CH);
+ack_sender_upgrade(_CD) ->
+    ok.
+
 
 handle_connect_remote(ConnHandle, UserNode, Ref) ->
     Pat = #remote_conn_data{conn_handle = ConnHandle,
@@ -772,6 +915,10 @@ init_conn_data(RH, RemoteMid, SendHandle, ControlPid) ->
                request_timer      = user_info(Mid, request_timer),
                long_request_timer = user_info(Mid, long_request_timer),
                auto_ack           = user_info(Mid, auto_ack),
+
+	       accu_ack_timer     = user_info(Mid, accu_ack_timer),
+	       accu_ack_maxcount  = user_info(Mid, accu_ack_maxcount),
+
                pending_timer      = user_info(Mid, pending_timer),
                reply_timer        = user_info(Mid, reply_timer),
                control_pid        = ControlPid,
@@ -820,12 +967,19 @@ make_receive_handle(UserMid) ->
 create_snmp_counters(CH) ->
     create_snmp_counters(CH, snmp_counters()).
 
-create_snmp_counters(CH, []) ->
-    ok;
-create_snmp_counters(CH, [Counter|Counters]) ->
-    Key = {CH, Counter},
-    ets:insert(megaco_stats, {Key, 0}),
-    create_snmp_counters(CH, Counters).
+% create_snmp_counters(CH, []) ->
+%     ok;
+% create_snmp_counters(CH, [Counter|Counters]) ->
+%     Key = {CH, Counter},
+%     ets:insert(megaco_stats, {Key, 0}),
+%     create_snmp_counters(CH, Counters).
+
+create_snmp_counters(CH, Counters) ->
+    F = fun(Counter) -> 
+		Key = {CH, Counter},
+		ets:insert(megaco_stats, {Key, 0}) 
+	end,
+    lists:foreach(F, Counters).
 
 
 update_snmp_counters(CH, PrelCH) ->
@@ -848,4 +1002,6 @@ global_snmp_counters() ->
 snmp_counters() ->
     [medGwyGatewayNumTimerRecovery,
      medGwyGatewayNumErrors].
+
+
 

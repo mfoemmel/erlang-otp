@@ -21,6 +21,8 @@
 
 -export([fread/2,fread/3]).
 
+-import(lists, [reverse/1,reverse/2]).
+
 %% fread(Continuation, CharList, FormatString)
 %%  This is the main function into the re-entrant formatted reader. It
 %%  repeatedly collects lines and calls fread/2 to format the input until
@@ -28,7 +30,7 @@
 
 fread([], Chars, Format) ->
     fread({[],Format,0,[]}, Chars, Format);
-fread({Rest,RestFormat,N,Inputs}, MoreChars, Format) ->
+fread({Rest,RestFormat,N,Inputs}, MoreChars, _Format) ->
     %%io:format("FREAD: ~w `~s'~n", [{Rest,RestFormat,N,Inputs},MoreChars]),
     fread_collect(MoreChars, [], Rest, RestFormat, N, Inputs).
 
@@ -41,16 +43,21 @@ fread_collect([C|More], Stack, Rest, RestFormat, N, Inputs) ->
 fread_collect([], Stack, Rest, RestFormat, N, Inputs) ->
     {more,{reverse(Stack, Rest),RestFormat,N,Inputs}};
 fread_collect(eof, Stack, Rest, RestFormat, N, Inputs) ->
-    fread(RestFormat, Rest ++ reverse(Stack) ++ eof, N, Inputs, []).
+    fread(RestFormat, Rest ++ reverse(Stack), N, Inputs, eof).
 
 fread(Format, Line, N0, Inputs0, More) ->
     %%io:format("FREAD1: `~s' `~s'~n", [Format,Line]),
     case fread(Format, Line, N0, Inputs0) of
 	{ok,Input,Rest} ->
-	    {done,{ok,Input},Rest ++ More};
+	    {done,{ok,Input},case More of eof -> Rest; _ -> Rest ++ More end};
 	{more,RestFormat,N,Inputs} ->
-	    %% Don't forget the newline.
-	    {more,{More,RestFormat,N+1,Inputs}};
+	    case More of
+		eof ->
+		    {done,fread_error(format),eof};
+		_ ->
+		    %% Don't forget to count the newline.
+		    {more,{More,RestFormat,N+1,Inputs}}
+	    end;
 	Other ->				%An error has occurred
 	    {done,Other,More}
     end.
@@ -58,6 +65,8 @@ fread(Format, Line, N0, Inputs0, More) ->
 %% Conventions
 %%   ~s 	String White terminated
 %%   ~d         Integer terminated by ~[0-9]
+%%   ~u         Unsigned integer in base 2..36, no leading whitespace
+%%   ~-         Optional sign character, no leading whitespace
 %%   ~f         Float
 %%   ~a         as ~s but converted to an atom
 %%   ~c		characters without any stripping
@@ -73,16 +82,26 @@ fread([$~|Format0], Line, N, Results) ->
     fread1(Format, F, Sup, Line, N, Results, Format0);
 fread([$\s|Format], Line, N, Results) ->
     fread_skip_white(Format, Line, N, Results);
+fread([$\t|Format], Line, N, Results) ->
+    fread_skip_white(Format, Line, N, Results);
+fread([$\r|Format], Line, N, Results) ->
+    fread_skip_white(Format, Line, N, Results);
+fread([$\n|Format], Line, N, Results) ->
+    fread_skip_white(Format, Line, N, Results);
 fread([C|Format], [C|Line], N, Results) ->
     fread(Format, Line, N+1, Results);
-fread([F|Format], [C|Line], N, Results) ->
+fread([_F|_Format], [_C|_Line], _N, _Results) ->
     fread_error(input);
-fread([], Line, N, Results) ->
+fread([], Line, _N, Results) ->
     {ok,reverse(Results),Line}.
 
 fread_skip_white(Format, [$\s|Line], N, Results) ->
     fread_skip_white(Format, Line, N+1, Results);
 fread_skip_white(Format, [$\t|Line], N, Results) ->
+    fread_skip_white(Format, Line, N+1, Results);
+fread_skip_white(Format, [$\r|Line], N, Results) ->
+    fread_skip_white(Format, Line, N+1, Results);
+fread_skip_white(Format, [$\n|Line], N, Results) ->
     fread_skip_white(Format, Line, N+1, Results);
 fread_skip_white(Format, Line, N, Results) ->
     fread(Format, Line, N, Results).
@@ -109,18 +128,18 @@ fread_field(Format, F, Sup) ->
 %%  The main dispatch function for the formatting commands. Done in two
 %%  stages so format commands that need no input can always be processed.
 
-fread1([$l|Format], F, Sup, Line, N, Res, AllFormat) ->
+fread1([$l|Format], _F, Sup, Line, N, Res, _AllFormat) ->
     fread(Format, Line, N, fread_result(Sup, N, Res));
-fread1(Format, F, Sup, [], N, Res, AllFormat) ->
+fread1(_Format, _F, _Sup, [], N, Res, AllFormat) ->
     %% Need more input here.
     {more,[$~|AllFormat],N,Res};
-fread1(Format, F, Sup, eof, N, [], AllFormat) ->
+fread1(_Format, _F, _Sup, eof, _N, [], _AllFormat) ->
     %% This is at start of format string so no error.
     eof;
-fread1(Format, F, Sup, eof, N, Res, AllFormat) ->
+fread1(_Format, _F, _Sup, eof, _N, _Res, _AllFormat) ->
     %% This is an error as there is no more input.
     fread_error(input);
-fread1(Format, F, Sup, Line, N, Res, AllFormat) ->
+fread1(Format, F, Sup, Line, N, Res, _AllFormat) ->
     fread1(Format, F, Sup, Line, N, Res).
 
 fread1([$f|Format], none, Sup, Line0, N0, Res) ->
@@ -131,10 +150,45 @@ fread1([$f|Format], F, Sup, Line0, N, Res) ->
     fread_float(Cs, Sup, Format, Line, N+F, Res);
 fread1([$d|Format], none, Sup, Line0, N0, Res) ->
     {Line,N,Cs} = fread_int_cs(Line0, N0),
-    fread_integer(Cs, Sup, Format, Line, N, Res);
+    fread_integer(Cs, 10, Sup, Format, Line, N, Res);
 fread1([$d|Format], F, Sup, Line0, N, Res) ->
     {Line,Cs} = fread_chars(Line0, F),
-    fread_integer(Cs, Sup, Format, Line, N+F, Res);
+    fread_integer(Cs, 10, Sup, Format, Line, N+F, Res);
+fread1([$u|Format], none, Sup, Line0, N0, Res) ->
+    {Line,N,Cs} = fread_digits(Line0, N0, 10, []),
+    fread_unsigned(Cs, 10, Sup, Format, Line, N, Res);
+fread1([$u|Format], F, Sup, Line0, N0, Res) when F >= 2, F =< 1+$Z-$A+10 ->
+    {Line,N,Cs} = fread_digits(Line0, N0, F, []),
+    fread_unsigned(Cs, F, Sup, Format, Line, N, Res);
+fread1([$-|Format], _F, Sup, Line, N, Res) ->
+    fread_sign_char(Sup, Format, Line, N, Res);
+fread1([$#|Format], none, Sup, Line0, N0, Res) ->
+    case catch
+	begin
+	    {Line1,N1,B1} = fread_base(Line0, N0),
+	    B = abs(B1),
+	    true = (B >= 2) and (B =< 1+$Z-$A+10),
+	    {Line2,N2,Cs2} = fread_digits(Line1, N1, B, []),
+	    fread_based(reverse(Cs2), B1, Sup, Format, Line2, N2, Res)
+	end of
+	{'EXIT',_} ->
+	    fread_error(based);
+	Other ->
+	    Other
+    end;
+fread1([$#|Format], F, Sup, Line0, N, Res) ->
+    case catch
+	begin
+	    {Line1,Cs1} = fread_chars(Line0, F),
+	    {Line2,_,B2} = fread_base(reverse(Cs1), N),
+	    true = ((B2 >= 2) and (B2 =< 1+$Z-$A+10)),
+	    fread_based(Line2, B2, Sup, Format, Line1, N+F, Res)
+	end	of
+	{'EXIT',_} ->
+	    fread_error(based);
+	Other ->
+	    Other
+    end;
 fread1([$s|Format], none, Sup, Line0, N0, Res) ->
     {Line,N,Cs} = fread_string_cs(Line0, N0),
     fread_string(Cs, Sup, Format, Line, N, Res);
@@ -153,34 +207,66 @@ fread1([$c|Format], none, Sup, Line0, N, Res) ->
 fread1([$c|Format], F, Sup, Line0, N, Res) ->
     {Line,Cs} = fread_chars(Line0, F),
     fread_chars(Cs, Sup, Format, Line, N+F, Res);
-fread1([$~|Format], F, Sup, [$~|Line], N, Res) ->
+fread1([$~|Format], _F, _Sup, [$~|Line], N, Res) ->
     fread(Format, Line, N+1, Res);
-fread1(Format, F, Sup, Line, N, Res) ->
+fread1(_Format, _F, _Sup, _Line, _N, _Res) ->
     fread_error(format).
 
 %% fread_float(FloatChars, Suppress, Format, Line, N, Results)
 
 fread_float(Cs, Sup, Format, Line, N, Res) ->
     case catch list_to_float(fread_skip_white(reverse(Cs))) of
-	{'EXIT',R} ->
+	{'EXIT',_} ->
 	    fread_error(float);
 	Float ->
 	    fread(Format, Line, N, fread_result(Sup, Float, Res))
     end.
 
-%% fread_integer(IntegerChars, Suppress, Format, Line, N, Results)
+%% fread_integer(IntegerChars, Base, Suppress, Format, Line, N, Results)
 
-fread_integer(Cs, Sup, Format, Line, N, Res) ->
-    case catch list_to_integer(fread_skip_white(reverse(Cs))) of
-	{'EXIT',R} ->
+fread_integer(Cs, Base, Sup, Format, Line, N, Res) ->
+    case catch erlang:list_to_integer(fread_skip_white(reverse(Cs)), Base) of
+	{'EXIT',_} ->
 	    fread_error(integer);
 	Integer ->
 	    fread(Format, Line, N, fread_result(Sup, Integer, Res))
     end.
 
+
+%% fread_unsigned(IntegerChars, Base, Suppress, Format, Line, N, Results)
+
+fread_unsigned(Cs, Base, Sup, Format, Line, N, Res) ->
+    case catch erlang:list_to_integer(fread_skip_white(reverse(Cs)), Base) of
+	{'EXIT',_} ->
+	    fread_error(unsigned);
+	Integer ->
+	    fread(Format, Line, N, fread_result(Sup, Integer, Res))
+    end.
+    
+
+%% fread_based(IntegerChars, Base, Suppress, Format, Line, N, Results)
+
+fread_based(Cs0, B, Sup, Format, Line, N, Res) ->
+    {Cs,Base} = if B < 0 -> {[$-|Cs0],-B};
+		   true ->  {Cs0,B}
+		end,
+    I = erlang:list_to_integer(Cs, Base),
+    fread(Format, Line, N, fread_result(Sup, I, Res)).
+    
+
+%% fread_sign_char(Suppress, Format, Line, N, Results)
+
+fread_sign_char(Sup, Format, [$-|Line], N, Res) ->
+    fread(Format, Line, N+1, fread_result(Sup, -1, Res));
+fread_sign_char(Sup, Format, [$+|Line], N, Res) ->
+    fread(Format, Line, N+1, fread_result(Sup, +1, Res));
+fread_sign_char(Sup, Format, Line, N, Res) ->
+    fread(Format, Line, N, fread_result(Sup, 1, Res)).
+
+
 %% fread_string(StringChars, Suppress, Format, Line, N, Results)
 
-fread_string(error, Sup, Format, Line, N, Res) ->
+fread_string(error, _Sup, _Format, _Line, _N, _Res) ->
     fread_error(string);
 fread_string(Cs0, Sup, Format, Line, N, Res) ->
     Cs = fread_skip_white(reverse(fread_skip_white(Cs0))),
@@ -188,7 +274,7 @@ fread_string(Cs0, Sup, Format, Line, N, Res) ->
 
 %% fread_atom(AtomChars, Suppress, Format, Line, N, Results)
 
-fread_atom(error, Sup, Format, Line, N, Res) ->
+fread_atom(error, _Sup, _Format, _Line, _N, _Res) ->
     fread_error(atom);
 fread_atom(Cs0, Sup, Format, Line, N, Res) ->
     Cs = fread_skip_white(reverse(fread_skip_white(Cs0))),
@@ -196,7 +282,7 @@ fread_atom(Cs0, Sup, Format, Line, N, Res) ->
 
 %% fread_chars(Characters, Suppress, Format, Line, N, Results)
 
-fread_chars(error, Sup, Format, Line, N, Res) ->
+fread_chars(error, _Sup, _Format, _Line, _N, _Res) ->
     fread_error(character);
 fread_chars(Cs, Sup, Format, Line, N, Res) ->
     fread(Format, Line, N, fread_result(Sup, reverse(Cs), Res)).
@@ -207,10 +293,10 @@ fread_chars(Line, C) ->
     fread_chars(C, Line, []).
 
 fread_chars(0, Line, Cs) -> {Line,Cs};
-fread_chars(N, [$\n|Line], Cs) -> {[$\n|Line],error};
+fread_chars(_N, [$\n|Line], _Cs) -> {[$\n|Line],error};
 fread_chars(N, [C|Line], Cs) ->
     fread_chars(N-1, Line, [C|Cs]);
-fread_chars(N, [], Cs) -> {[],error}.
+fread_chars(_N, [], _Cs) -> {[],error}.
 
 %% fread_int_cs(Line, N)
 
@@ -254,10 +340,12 @@ fread_string_cs(Line0, N0) ->
 %% fread_skip_nonwhite(Line, N, Characters)
 %% fread_sign(Line, N, Characters)
 %% fread_digits(Line, N, Characters)
+%% fread_digits(Line, N, Base, Characters)
 %%  Read segments of things, return "thing" characters in reverse order.
 
 fread_skip_white([$\s|Line]) -> fread_skip_white(Line);
 fread_skip_white([$\t|Line]) -> fread_skip_white(Line);
+fread_skip_white([$\r|Line]) -> fread_skip_white(Line);
 fread_skip_white([$\n|Line]) -> fread_skip_white(Line);
 fread_skip_white(Line) -> Line.
 
@@ -271,6 +359,7 @@ fread_skip_white(Line, N) -> {Line,N}.
 
 fread_skip_nonwhite([$\s|Line], N, Cs) -> {[$\s|Line],N,Cs};
 fread_skip_nonwhite([$\t|Line], N, Cs) -> {[$\t|Line],N,Cs};
+fread_skip_nonwhite([$\r|Line], N, Cs) -> {[$\r|Line],N,Cs};
 fread_skip_nonwhite([$\n|Line], N, Cs) -> {[$\n|Line],N,Cs};
 fread_skip_nonwhite([C|Line], N, Cs) ->
     fread_skip_nonwhite(Line, N+1, [C|Cs]);
@@ -280,26 +369,29 @@ fread_sign([$+|Line], N, Cs) -> {Line,N+1,[$+|Cs]};
 fread_sign([$-|Line], N, Cs) -> {Line,N+1,[$-|Cs]};
 fread_sign(Line, N, Cs) -> {Line,N,Cs}.
 
+fread_base(Line0, N0) ->
+    {[$#|Line1],N1,Cs1} = fread_int_cs(Line0, N0),
+    B = list_to_integer(reverse(Cs1)),
+    {Line1,N1+1,B}.
+
 fread_digits([C|Line], N, Cs) when C >= $0, C =< $9 ->
     fread_digits(Line, N+1, [C|Cs]);
 fread_digits(Line, N, Cs) -> {Line,N,Cs}.
 
+fread_digits([C|Line], N, Base, Cs) when C >= $0, C =< $9 ->
+    fread_digits(Line, N+1, Base, [C|Cs]);
+fread_digits([C|Line], N, Base, Cs) when C >= $A, C < $A+Base-10 ->
+    fread_digits(Line, N+1, Base, [C|Cs]);
+fread_digits([C|Line], N, Base, Cs) when C >= $a, C < $a+Base-10 ->
+    fread_digits(Line, N+1, Base, [C|Cs]);
+fread_digits(Line, N, _Base, Cs) -> {Line,N,Cs}.
+
+
+
 %% fread_result(Suppress, Value, Results)
 
-fread_result(true, V, Res) -> Res;
+fread_result(true, _V, Res) -> Res;
 fread_result(false, V, Res) -> [V|Res].
 
 fread_error(In) ->
     {error,{fread,In}}.
-
-%%
-%% Utilities
-%%
-
-reverse(List) ->
-    reverse(List, []).
-
-reverse([], Stack) ->
-    Stack;
-reverse([H|T], Stack) ->
-    reverse(T, [H|Stack]).

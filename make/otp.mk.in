@@ -5,13 +5,13 @@
 # Copyright (C) 1996, Ericsson Telecommunications
 # Author: Lars Thorsen
 # ----------------------------------------------------
-.SUFFIXES: .erl .jam .beam .yrl .xrl .bin .mib .hrl .sgml .html .ps .3 .1 \
+.SUFFIXES: .erl .beam .yrl .xrl .bin .mib .hrl .sgml .html .ps .3 .1 \
 	.fig .dvi .tex .class .java .pdf .psframe .pscrop .el .elc
 
 # ----------------------------------------------------
 #	Common macros
 # ----------------------------------------------------
-DEFAULT_TARGETS =  opt debug instr release release_docs clean docs
+DEFAULT_TARGETS =  opt debug release release_docs clean docs
 
 # Slash separated list of return values from $(origin VAR)
 # that are untrusted - set default in this file instead.
@@ -87,9 +87,7 @@ else
 endif
 ERLC_WFLAGS = -W
 ERLC = erlc $(ERLC_WFLAGS) $(ERLC_FLAGS)
-ERL.beam =  erl.beam -boot start_clean
-ERL.jam = erl -boot start_clean
-ERL = $(ERL.$(EMULATOR))
+ERL = erl -boot start_clean
 
 ifneq (,$(findstring $(origin EBIN),$(DUBIOUS_ORIGINS)))
 EBIN = ../ebin
@@ -99,14 +97,8 @@ ifneq (,$(findstring $(origin ESRC),$(DUBIOUS_ORIGINS)))
 ESRC = .
 endif
 
-$(EBIN)/%.jam: $(ESRC)/%.erl
-	$(ERLC) -bjam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
-
 $(EBIN)/%.beam: $(ESRC)/%.erl
 	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
-
-.erl.jam:
-	$(ERLC) -bjam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(dir $@) $<
 
 .erl.beam:
 	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(dir $@) $<
@@ -152,7 +144,7 @@ $(SNMP_HRL_TARGET_DIR)/%.hrl: $(SNMP_BIN_TARGET_DIR)/%.bin
 # ----------------------------------------------------
 #	Java language section
 # ----------------------------------------------------
-JAVA= javac
+JAVA= @JAVAC@
 
 ifneq (,$(findstring $(origin JAVA_DEST_ROOT),$(DUBIOUS_ORIGINS)))
 JAVA_DEST_ROOT = ../priv/

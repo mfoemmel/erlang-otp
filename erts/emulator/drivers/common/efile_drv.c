@@ -322,11 +322,11 @@ struct t_data
 };
 
 
-#define EF_ALLOC(S)		sys_alloc_from(200, (S))
-#define EF_REALLOC(P, S)	sys_realloc_from(200, (P), (S))
+#define EF_ALLOC(S)		driver_alloc((S))
+#define EF_REALLOC(P, S)	driver_realloc((P), (S))
 #define EF_SAFE_ALLOC(S)	ef_safe_alloc((S))
 #define EF_SAFE_REALLOC(P, S)	ef_safe_realloc((P), (S))
-#define EF_FREE(P)		do { if((P)) sys_free((P)); } while(0)
+#define EF_FREE(P)		do { if((P)) driver_free((P)); } while(0)
 
 static void *ef_safe_alloc(Uint s)
 {
@@ -1302,19 +1302,24 @@ static void invoke_open(void *data)
     } else {
 	char* mode = NULL;
 
-	if ((d->flags & (EFILE_MODE_READ|EFILE_MODE_WRITE)) ==
-	    (EFILE_MODE_READ|EFILE_MODE_WRITE)) {
+	if (((d->flags & (EFILE_MODE_READ_WRITE)) == EFILE_MODE_READ_WRITE) ||
+	    (d->flags & EFILE_MODE_APPEND)) {
 	    status = 0;
 	    d->errInfo.posix_errno = EINVAL;
 	} else {
-	    mode = (d->flags & EFILE_MODE_READ) ? "rb" : "wb";
-	    d->fd = (Sint) gzopen(d->b, mode);
-	    if ((gzFile)d->fd == NULL) {
-		if (errno == 0) {
-		    errno = ENOMEM;
+	    status = efile_may_openfile(&d->errInfo, d->b);
+	    if (status || (d->errInfo.posix_errno != EISDIR)) {
+		mode = (d->flags & EFILE_MODE_READ) ? "rb" : "wb";
+		d->fd = (Sint) gzopen(d->b, mode);
+		if ((gzFile)d->fd) {
+		    status = 1;
+		} else {
+		    if (errno == 0) {
+			errno = ENOMEM;
+		    }
+		    d->errInfo.posix_errno = errno;
+		    status = 0;
 		}
-		d->errInfo.posix_errno = errno;
-		status = 0;
 	    }
 	}
     }

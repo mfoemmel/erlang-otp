@@ -34,36 +34,55 @@
 %%  while flat_size(B) returns 12.
 
 size(Term) ->
-    {Sum,Seen} = size(Term, [], 0),
+    {Sum,_} = size(Term, gb_trees:empty(), 0),
     Sum.
 
-size(Term, Seen0, Sum0) ->
+size([H|T]=Term, Seen0, Sum0) ->
+    case remember_term(Term, Seen0) of
+	seen -> {Sum0,Seen0};
+	Seen1 ->
+	    {Sum,Seen} = size(H, Seen1, Sum0+2),
+	    size(T, Seen, Sum)
+    end;
+size(Tuple, Seen0, Sum0) when is_tuple(Tuple) ->
+    case remember_term(Tuple, Seen0) of
+	seen -> {Sum0,Seen0};
+	Seen ->
+	    Sum = Sum0 + 1 + size(Tuple),
+	    tuple_size(1, size(Tuple), Tuple, Seen, Sum)
+    end;
+size(Term, Seen0, Sum) ->
     case erts_debug:flat_size(Term) of
-	0 -> {Sum0,Seen0};
+	0 -> {Sum,Seen0};
 	Sz ->
-	    case is_seen(Term, Seen0) of
-		yes -> {Sum0,Seen0};
-		no ->
-		    Seen1 = [Term|Seen0],
-		    case Term of
-			[H|T] ->
-			    {Sum,Seen} = size(H, Seen1, Sum0+2),
-			    size(T, Seen, Sum);
-			Tuple when tuple(Tuple) ->
-			    Sum = Sum0 + 1 - size(Tuple),
-			    size(tuple_to_list(Tuple), Seen1, Sum);
-			Other ->
-			    {Sum0+Sz,Seen1}
-		    end
+	    case remember_term(Term, Seen0) of
+		seen -> {Sum,Seen0};
+		Seen -> {Sum+Sz,Seen}
 	    end
     end.
 
-is_seen(Term, [H|T]) ->
+tuple_size(I, Sz, _, Seen, Sum) when I > Sz ->
+    {Sum,Seen};
+tuple_size(I, Sz, Tuple, Seen0, Sum0) ->
+    {Sum,Seen} = size(element(I, Tuple), Seen0, Sum0),
+    tuple_size(I+1, Sz, Tuple, Seen, Sum).
+	    
+remember_term(Term, Seen) ->
+    case gb_trees:lookup(Term, Seen) of
+	none -> gb_trees:insert(Term, [Term], Seen);
+	{value,Terms} ->
+	    case is_term_seen(Term, Terms) of
+		false -> gb_trees:update(Term, [Term|Terms], Seen);
+		true -> seen
+	    end
+    end.
+
+is_term_seen(Term, [H|T]) ->
     case erts_debug:same(Term, H) of
-	true -> yes;
-	false -> is_seen(Term, T)
+	true -> true;
+	false -> is_term_seen(Term, T)
     end;
-is_seen(Term, []) -> no.
+is_term_seen(_, []) -> false.
 
 %% df(Mod)               -- Disassemble Mod to file Mod.dis.
 %% df(Mod, Func)         -- Disassemble Mod:Func/Any to file Mod_Func.dis.
@@ -75,7 +94,7 @@ df(Mod) when atom(Mod) ->
 	    Name = lists:concat([Mod, ".dis"]),
 	    Fs = [{Mod,Func,Arity} || {Func,Arity} <- Fs0],
 	    dff(Name, Fs);
-	{'EXIT',Reason} ->
+	{'EXIT',_} ->
 	    {undef,Mod}
     end.
 
@@ -85,7 +104,7 @@ df(Mod, Func) when atom(Mod), atom(Func) ->
 	    Name = lists:concat([Mod,"_",Func,".dis"]),
 	    Fs = [{Mod,Func1,Arity} || {Func1,Arity} <- Fs0, Func1 == Func],
 	    dff(Name, Fs);
-	{'EXIT',Reason} ->
+	{'EXIT',_} ->
 	    {undef,Mod}
     end.
 
@@ -96,7 +115,7 @@ df(Mod, Func, Arity) when atom(Mod), atom(Func) ->
 	    Fs = [{Mod,Func1,Arity1} || {Func1,Arity1} <- Fs0,
 					Func1 == Func, Arity1 == Arity],
 	    dff(Name, Fs);
-	{'EXIT',Reason} ->
+	{'EXIT',_} ->
 	    {undef,Mod}
     end.
 
@@ -111,14 +130,11 @@ dff(Name, Fs) when list(Name) ->
 	    {error,{badopen,Reason}}
     end.
 
-disassemble_function(File, {M,F,A}=MFA) ->
+disassemble_function(File, {_,_,_}=MFA) ->
     cont_dis(File, erts_debug:disassemble(MFA), MFA).
 
-cont_dis(File, false, MFA) ->
-    ok;
+cont_dis(_, false, _) -> ok;
 cont_dis(File, {Addr,Str,MFA}, MFA) ->
     io:put_chars(File, binary_to_list(Str)),
     cont_dis(File, erts_debug:disassemble(Addr), MFA);
-cont_dis(File, {Addr,Str,Other}, MFA) ->
-    ok.
-
+cont_dis(_, {_,_,_}, _) -> ok.

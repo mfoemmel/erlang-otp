@@ -23,7 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #ifdef __WIN32__
-#include <winsock2.h>
+#include "esock_winsock.h"
 #include <process.h>
 #include <io.h>
 #include <fcntl.h>

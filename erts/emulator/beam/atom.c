@@ -57,7 +57,6 @@ void atom_info(to)
 CIO to;
 {
     index_info(to, &atom_table);
-    erl_printf(to,"Atom space  %d/%d\n", atom_space, reserved_atom_space);
 }
 
 /*
@@ -68,13 +67,7 @@ more_atom_space(void)
 {
     AtomText* ptr;
 
-    ptr = (AtomText*) erts_definite_alloc(sizeof(AtomText));
-    
-    if (!ptr) {
-	ptr = (AtomText*) sys_alloc_from(1,sizeof(AtomText));
-	if (!ptr)
-	    erl_exit(1, "out of memory -- panic");
-    }
+    ptr = (AtomText*) erts_alloc(ERTS_ALC_T_ATOM_TXT, sizeof(AtomText));
 
     ptr->next = text_list;
     text_list = ptr;
@@ -144,7 +137,7 @@ atom_cmp(Atom* tmpl, Atom* obj)
 static Atom*
 atom_alloc(Atom* tmpl)
 {
-    Atom* obj = (Atom*) fix_alloc_from(11, atom_desc);
+    Atom* obj = (Atom*) erts_alloc(ERTS_ALC_T_ATOM, sizeof(Atom));
 
     obj->name = atom_text_alloc(tmpl->len);
     sys_memcpy(obj->name, tmpl->name, tmpl->len);
@@ -176,7 +169,7 @@ atom_alloc(Atom* tmpl)
 static void
 atom_free(Atom* obj)
 {
-    fix_free(atom_desc, (void*) obj);
+    erts_free(ERTS_ALC_T_ATOM, (void*) obj);
 }
 
 Eterm
@@ -207,7 +200,8 @@ init_atom_table(void)
     atom_space = 0;
     text_list = NULL;
 
-    index_init(&atom_table, "atom_tab", ATOM_SIZE, ATOM_LIMIT, ATOM_RATE, f);
+    index_init(ERTS_ALC_T_ATOM_TABLE, &atom_table, "atom_tab", ATOM_SIZE,
+	       ATOM_LIMIT, ATOM_RATE, f);
     more_atom_space();
 
     /* Ordinary atoms */
@@ -226,10 +220,15 @@ init_atom_table(void)
 void
 dump_atoms(CIO fd)
 {
-   int i = -1;
+    int i = atom_table.size;
 
-   while ((i = index_iter(&atom_table, i)) != -1) {
-      print_atom(i, fd);
-      erl_putc('\n', fd);
-   }
+    /*
+     * Print out the atom table starting from the end.
+     */
+    while (--i >= 0) {
+	if (atom_table.table[i] != NULL) {
+	    print_atom(i, fd);
+	    erl_putc('\n', fd);
+	}
+    }
 }

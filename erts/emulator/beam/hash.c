@@ -96,11 +96,11 @@ void hash_info(CIO to, Hash* h)
 
     hash_get_info(&hi, h);
 
-    erl_printf(to, "Hash Table(%s), ", hi.name);
-    erl_printf(to, "size(%d), ",       hi.size);
-    erl_printf(to, "used(%d), ",       hi.used);
-    erl_printf(to, "objs(%d), ",       hi.objs);
-    erl_printf(to, "depth(%d)\n",      hi.depth);
+    erl_printf(to, "=hash_table:%s\n", hi.name);
+    erl_printf(to, "size: %d\n",       hi.size);
+    erl_printf(to, "used: %d\n",       hi.used);
+    erl_printf(to, "objs: %d\n",       hi.objs);
+    erl_printf(to, "depth: %d\n",      hi.depth);
 }
 
 
@@ -121,20 +121,12 @@ hash_table_sz(Hash *h)
 ** init a pre allocated or static hash structure
 ** and allocate buckets.
 */
-#ifdef INSTRUMENT
-Hash* hash_init_from(int from_buckets, Hash* h, char* name, int size,
-		     HashFunctions fun)
-#else
-Hash* hash_init(Hash* h, char* name, int size, HashFunctions fun)
-#define from_buckets (-1)
-#endif
+Hash* hash_init(ErtsAlcType_t type, Hash* h, char* name, int size, HashFunctions fun)
 {
     int sz;
     int ix = 0;
 
-#ifdef INSTRUMENT
-    h->from_buckets = from_buckets;
-#endif
+    h->type = type;
 
     while (h_size_table[ix] != -1 && h_size_table[ix] < size)
 	ix++;
@@ -144,8 +136,7 @@ Hash* hash_init(Hash* h, char* name, int size, HashFunctions fun)
     size = h_size_table[ix];
     sz = size*sizeof(HashBucket*);
 
-    if ((h->bucket = (HashBucket**) sys_alloc_from(from_buckets, sz)) == NULL)
-	erl_exit(1, "can't allocate hash buckets (%d)\n", sz);
+    h->bucket = (HashBucket**) erts_alloc(h->type, sz);
 
     sys_memzero(h->bucket, sz);
     h->is_allocated = 0;
@@ -157,31 +148,20 @@ Hash* hash_init(Hash* h, char* name, int size, HashFunctions fun)
     h->ix = ix;
     h->used = 0;
     return h;
-#undef from_buckets
 }
 
 /*
 ** Create a new hash table
 */
-#ifdef INSTRUMENT
-Hash* hash_new_from(int from_table, int from_buckets, char* name, int size,
-		    HashFunctions fun)
-#else
-Hash* hash_new(char* name, int size, HashFunctions fun)
-#define from_table (-1)
-#define from_buckets (-1)
-#endif
+Hash* hash_new(ErtsAlcType_t type, char* name, int size, HashFunctions fun)
 {
     Hash* h;
 
-    if ((h = (Hash*) sys_alloc_from(from_table, sizeof(Hash))) == (Hash*) 0)
-	return (Hash*) 0;
+    h = erts_alloc(type, sizeof(Hash));
 
-    h = hash_init_from(from_buckets, h, name, size, fun);
+    h = hash_init(type, h, name, size, fun);
     h->is_allocated =  1;
     return h;
-#undef from_table
-#undef from_buckets
 }
 
 /*
@@ -201,9 +181,9 @@ void hash_delete(Hash* h)
 	    b = b_next;
 	}
     }
-    sys_free(h->bucket);
+    erts_free(h->type, h->bucket);
     if (h->is_allocated)
-	sys_free((void*) h);
+	erts_free(h->type, (void*) h);
 }
 
 /*
@@ -215,11 +195,6 @@ static void rehash(Hash* h, int grow)
     int old_size = h->size;
     HashBucket** new_bucket;
     int i;
-#ifdef INSTRUMENT
-    int from_buckets = h->from_buckets;
-#else
-#define from_buckets (-1)
-#endif
 
     if (grow) {
 	if ((h_size_table[h->ix+1]) == -1)
@@ -236,8 +211,7 @@ static void rehash(Hash* h, int grow)
     h->size80percent = (4*h->size)/5;
     sz = h->size*sizeof(HashBucket*);
 
-    if ((new_bucket = (HashBucket**) sys_alloc_from(from_buckets,sz)) == NULL)
-	erl_exit(1, "can't allocate hash buckets (%d)\n", sz);
+    new_bucket = (HashBucket **) erts_alloc(h->type, sz);
     sys_memzero(new_bucket, sz);
 
     h->used = 0;
@@ -254,9 +228,8 @@ static void rehash(Hash* h, int grow)
 	    b = b_next;
 	}
     }
-    sys_free(h->bucket);
+    erts_free(h->type, (void *) h->bucket);
     h->bucket = new_bucket;
-#undef from_buckets
 }
 
 /*

@@ -30,6 +30,8 @@
 	 last_day_of_the_month/2,
 	 local_time/0, 
 	 local_time_to_universal_time/1, 
+	 local_time_to_universal_time/2, 
+	 local_time_to_universal_time_dst/1, 
 	 now_to_datetime/1,			% = now_to_universal_time/1
 	 now_to_local_time/1,
 	 now_to_universal_time/1,
@@ -41,6 +43,8 @@
 	 universal_time_to_local_time/1,
 	 valid_date/1,
 	 valid_date/3]).
+
+-deprecated([{local_time_to_universal_time,1}]).
 
 -define(SECONDS_PER_MINUTE, 60).
 -define(SECONDS_PER_HOUR, 3600).
@@ -167,6 +171,26 @@ local_time() ->
 local_time_to_universal_time(DateTime) ->
     erlang:localtime_to_universaltime(DateTime).
 
+local_time_to_universal_time(DateTime, IsDst) ->
+    erlang:localtime_to_universaltime(DateTime, IsDst).
+
+local_time_to_universal_time_dst(DateTime) ->
+    UtDst = erlang:localtime_to_universaltime(DateTime, true),
+    Ut    = erlang:localtime_to_universaltime(DateTime, false),
+    %% Reverse check the universal times
+    LtDst = erlang:universaltime_to_localtime(UtDst),
+    Lt    = erlang:universaltime_to_localtime(Ut),
+    %% Return the valid universal times
+    case {LtDst,Lt} of
+	{DateTime,DateTime} ->
+	    [UtDst,Ut];
+	{DateTime,_} ->
+	    [UtDst];
+	{_,DateTime} ->
+	    [Ut];
+	{_,_} ->
+	    []
+    end.
 
 %% now_to_universal_time(Now)
 %% now_to_datetime(Now)

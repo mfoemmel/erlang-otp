@@ -72,6 +72,7 @@ N+M  | Object N+M        |		    /
 ***********************************************************************/
 
 #include "sys.h"
+#include "erl_alloc.h"
 #include "erl_driver.h"
 
 /*
@@ -143,12 +144,20 @@ typedef struct _EventData EventData;
 static int set_driver_select(int port, HANDLE event, IoHandler handler);
 static int cancel_driver_select(HANDLE event);
 static void new_waiter(void);
-static void* checked_alloc(unsigned);
-static void* checked_realloc(void *,unsigned);
 static void my_do_break(int, int);
 static DWORD WINAPI threaded_waiter(LPVOID param);
 #ifdef DEBUG
 static void consistency_check(struct _Waiter* w);
+static void* debug_alloc(ErtsAlcType_t, Uint);
+static void* debug_realloc(ErtsAlcType_t, void *, Uint);
+
+#  define SEL_ALLOC	debug_alloc
+#  define SEL_REALLOC	debug_realloc
+#  define SEL_FREE	erts_free
+#else
+#  define SEL_ALLOC	erts_alloc
+#  define SEL_REALLOC	erts_realloc
+#  define SEL_FREE	erts_free
 #endif
 
 BOOL WINAPI ctrl_handler(DWORD);
@@ -228,13 +237,12 @@ static volatile int standby_wait_counter;
 static CRITICAL_SECTION standby_crit;
 static HANDLE standby_wait_event;
 
-
-void
-init_sys_select(void)
+void init_sys_select(void)
 {
     num_waiters = 0;
     allocated_waiters = 64;
-    waiter = checked_alloc(sizeof(Waiter *)*allocated_waiters);
+    waiter = SEL_ALLOC(ERTS_ALC_T_WAITER_OBJ,
+		       sizeof(Waiter *)*allocated_waiters);
     InitializeCriticalSection(&standby_crit);
     standby_wait_counter = 0;
     event_io_ready = CreateManualEvent(FALSE);
@@ -274,18 +282,19 @@ static void wait_standby(void)
  * driver_select --
  * 	Orders the emulator to inform the driver owning
  *	the filedescriptor when there is input available or output is possible.
+ *   int port;      The port number. 
+ *   HANDLE event;  The event to wait for. 
+ *   int mode;	    Read or write mode. 
+ *   int on;	    TRUE for enabling, FALSE for disabling.
  *
  * Results:
  *	None.
  * ----------------------------------------------------------------------
  */
-int
-driver_select(port, event, mode, on)
-    int port;			/* The port number. */
-    HANDLE event;		/* The event to wait for. */
-    int mode;			/* Read or write mode. */
-    int on;			/* TRUE for enabling, FALSE for disabling. */
+int driver_select(ErlDrvPort xport, ErlDrvEvent xevent, int mode, int on)
 {
+    unsigned long port = (unsigned long) xport;
+    HANDLE event = (HANDLE) xevent;
     DEBUGF(("driver_select(%d, 0x%x, %d, %d)\n", port, event, mode, on));
 
     ASSERT(event != INVALID_HANDLE_VALUE);
@@ -311,23 +320,19 @@ driver_select(port, event, mode, on)
     }
 }
 
-int
-driver_event(port, event, event_data)
-     int port;
-     HANDLE event;
-     ErlDrvEventData event_data;
+int driver_event(ErlDrvPort port, ErlDrvEvent event, ErlDrvEventData event_data)
 {
     return -1;
 }
 
-
-static int
-set_driver_select(port, event, handler)
-    int port;			/* The port number. */
-    HANDLE event;		/* The event to wait for. */
-    IoHandler handler;		/* Handler function to be called
-				 * when selected.
-				 */
+
+static int set_driver_select(int port, HANDLE event, IoHandler handler)
+     /*
+      * int port;			 The port number.
+      * HANDLE event;		         The event to wait for. 
+      * IoHandler handler;		 Handler function to be called
+      *                                  when selected.
+      */
 {
     int i;
     int best_waiter = -1;	/* The waiter with lowest number of events. */
@@ -402,10 +407,8 @@ set_driver_select(port, event, handler)
     return 0;
 }
 
-
-static int
-cancel_driver_select(event)
-    HANDLE event;		/* The event to stop waiting for. */
+
+static int cancel_driver_select(HANDLE event)
 {
     int i;
     int result = -1;
@@ -487,10 +490,8 @@ cancel_driver_select(event)
     return result;
 }
 
-
-void
-win_check_io(wait)
-int wait;
+
+void win_check_io(int wait)
 {
     register int i;
     int n;
@@ -609,16 +610,17 @@ int wait;
 
     START_WAITERS();
 }
-
 
-static void
-my_do_break(int dummy1, int dummy2)
+
+static void my_do_break(int dummy1, int dummy2)
 {
     do_break();
 }
 
-BOOL WINAPI
-ctrl_handler(DWORD dwCtrlType)
+void erts_set_ignore_break(void) {
+}
+
+BOOL WINAPI ctrl_handler(DWORD dwCtrlType)
 {
     switch (dwCtrlType) {
     case CTRL_C_EVENT:
@@ -643,38 +645,22 @@ void init_break_handler()
     SetConsoleCtrlHandler(ctrl_handler, TRUE);
 }
 
-static void*
-checked_alloc(size)
-     unsigned int size;		/* Amount to allocate. */
-{
-    void* p;
-
-    if ((p = sys_alloc(size)) == NULL)
-	erl_exit(1, "Can't allocate %d bytes of memory\n", size);
 #ifdef DEBUG
+static void *debug_alloc(ErtsAlcType_t type, Uint size)
+{
+    void* p = erts_alloc(type, size);
     memset(p, CleanLandFill, size);
-#endif
     return p;
 }
-
-static void*
-checked_realloc(ptr,size)
-     void *ptr;
-     unsigned int size;		/* Amount to allocate. */
+static void *debug_realloc(ErtsAlcType_t type, void *ptr, Uint size)
 {
-    void* p;
-
-    if ((p = sys_realloc(ptr,size)) == NULL)
-	erl_exit(1, "Can't reallocate %d bytes of memory\n", size);
-#ifdef DEBUG
+    void* p = erts_realloc(type, ptr, size);
     memset(p, CleanLandFill, size);
-#endif
     return p;
 }
+#endif
 
-
-static void
-new_waiter(void)
+static void new_waiter(void)
 {
     register Waiter* w;
     DWORD tid;			/* Id for thread. */
@@ -683,7 +669,9 @@ new_waiter(void)
 
     if (num_waiters == allocated_waiters) {
 	allocated_waiters += 64;
-	waiter = checked_realloc(waiter,sizeof(Waiter *)*allocated_waiters);
+	waiter = SEL_REALLOC(ERTS_ALC_T_WAITER_OBJ,
+			     (void *) waiter,
+			     sizeof(Waiter *)*allocated_waiters);
     }
 	
     /*
@@ -692,7 +680,7 @@ new_waiter(void)
 		 MAXIMUM_WAIT_OBJECTS * MAXIMUM_WAIT_OBJECTS);
     }
     */
-    w = (Waiter *) checked_alloc(sizeof(Waiter));
+    w = (Waiter *) SEL_ALLOC(ERTS_ALC_T_WAITER_OBJ, sizeof(Waiter));
     waiter[num_waiters] = w;
 
     w->events[0] = CreateAutoEvent(FALSE);
@@ -736,8 +724,7 @@ new_waiter(void)
 }
 
 #ifdef DEBUG
-static void
-consistency_check(Waiter* w)
+static void consistency_check(Waiter* w)
 {
     int i;
     
@@ -753,9 +740,7 @@ consistency_check(Waiter* w)
 #endif
 
 
-
-static DWORD WINAPI
-threaded_waiter(LPVOID param)
+static DWORD WINAPI threaded_waiter(LPVOID param)
 {
     register Waiter* w = (Waiter *) param;
 
@@ -822,5 +807,4 @@ threaded_waiter(LPVOID param)
 	}
     }
 }
-
 

@@ -113,7 +113,7 @@ delete_sasl_error_logger(Type) ->
     error_logger:delete_report_handler(mod(Type)).
 
 mod(tty) -> sasl_report_tty_h;
-mod({file, File}) -> sasl_report_file_h.
+mod({file, _File}) -> sasl_report_file_h.
 
 args({file, File}, Type) -> {File, type(Type)};
 args(_, Type) -> type(Type).
@@ -131,7 +131,7 @@ delete_error_logger_mf(undefined) -> ok;
 delete_error_logger_mf(_) ->
     error_logger:delete_report_handler(log_mf_h).
 
-pred({Type, GL, Msg}) when node(GL) /= node() -> false;
+pred({_Type, GL, _Msg}) when node(GL) /= node() -> false;
 pred(_) -> true.
 
 %%%-----------------------------------------------------------------

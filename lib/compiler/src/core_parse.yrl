@@ -350,14 +350,15 @@ arg_list -> '(' ')' : [].
 arg_list -> '(' anno_expressions ')' : '$2'.
 
 try_expr ->
-    'try' anno_expression 'catch' '(' anno_variables ')' '->' anno_expression :
-	if length('$5') == 2 ->
-		#c_try{expr='$2',vars='$5',body='$8'};
+    'try' anno_expression 'of' let_vars '->' anno_expression
+	'catch' let_vars '->' anno_expression :
+	if length('$8') == 2 ->
+		#c_try{arg='$2',vars='$4',body='$6',evars='$8',handler='$10'};
 	   true ->
-		return_error(tok_line('$4'), "syntax error after (")
+		return_error(tok_line('$7'), "syntax error after catch")
 	end.
 
-catch_expr -> 'catch' anno_expression : #c_catch{body='$2'}. 
+catch_expr -> 'catch' anno_expression : #c_catch{body='$2'}.
 
 receive_expr -> 'receive' timeout : 
 	{T,A} = '$2',

@@ -21,6 +21,7 @@
 
 -export([connect/3, connect/4, listen/2, accept/1, accept/2, close/1]).
 -export([send/2, recv/2, recv/3, unrecv/2]).
+-export([shutdown/2]).
 -export([controlling_process/2]).
 -export([fdopen/2]).
 
@@ -63,6 +64,12 @@ recv(Socket, Length) -> prim_inet:recv(Socket, Length).
 recv(Socket, Length, Timeout) -> prim_inet:recv(Socket, Length, Timeout).
 
 unrecv(Socket, Data) -> prim_inet:unrecv(Socket, Data).
+
+%%
+%% Shutdown one end of a socket
+%%
+shutdown(Socket, How) ->
+    prim_inet:shutdown(Socket, How).
     
 %%
 %% Close a socket (async)

@@ -228,7 +228,7 @@ do_select(ActivityId, Opaque, Tab, MatchSpec, LockKind) ->
 		    SelectAllFun =
 			fun(PatchedMatchSpec) ->
 				Match = [mnesia:dirty_select(Name, PatchedMatchSpec)
-					 || {Name, Node} <- NameNodes],
+					 || {Name, _Node} <- NameNodes],
 				lists:append(Match)
 			end,
 		    case [{Name, Node} || {Name, Node} <- NameNodes, Node /= node()] of
@@ -283,7 +283,7 @@ do_remote_select(ReplyTo, Ref, [{Name, Node} | NameNodes], MatchSpec) ->
 	true ->
 	    do_remote_select(ReplyTo, Ref, NameNodes, MatchSpec)
     end;
-do_remote_select(ReplyTo, Ref, [], MatchSpec) ->
+do_remote_select(_ReplyTo, _Ref, [], _MatchSpec) ->
     ok.
 
 local_collect(Ref, Pid, LocalMatch, OldSelectFun) ->
@@ -306,20 +306,12 @@ remote_collect(Ref, LocalRes = ok, Acc, OldSelectFun) ->
     after 0 ->
 	    Acc
     end;
-remote_collect(Ref, LocalRes = {error, Reason}, Acc, OldSelectFun) ->
+remote_collect(Ref, LocalRes = {error, Reason}, _Acc, OldSelectFun) ->
     receive
 	{remote_select, Ref, _Node, _RemoteRes} ->
 	    remote_collect(Ref, LocalRes, [], OldSelectFun)
     after 0 ->
-	    case Reason of
-		{undef, [{ M, F, _} | _]} when M == ?MODULE, F == remote_select ->
-		    %% Oops, the other node has not been upgraded
-		    %% to 4.0.3 yet. Lets do it the old way.
-		    %% Remove this in next release.
-		    OldSelectFun();
-		_ ->
-		    mnesia:abort(Reason)
-	    end
+	    mnesia:abort(Reason)
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -349,7 +341,7 @@ expand_cstruct(Cs, Mode) ->
     BadPool = {bad_type, Tab, {node_pool, Pool}},
     mnesia_schema:verify(list, mnesia_lib:etype(Pool), BadPool),
     NotAtom = fun(A) when atom(A) -> false;
-		 (A) -> true
+		 (_A) -> true
 	      end,
     mnesia_schema:verify([], [P || P <- Pool, NotAtom(P)], BadPool),
 
@@ -358,7 +350,7 @@ expand_cstruct(Cs, Mode) ->
     NDO = mnesia_schema:pick(Tab, n_disc_only_copies, Props, 0),
     
     PosInt = fun(I) when integer(I), I >= 0 -> true;
-		(I) -> false
+		(_I) -> false
 	     end,
     mnesia_schema:verify(true, PosInt(NR),
 			 {bad_type, Tab, {n_ram_copies, NR}}),
@@ -413,7 +405,7 @@ verify_n_fragments(N, Cs, Mode) when integer(N), N >= 1 ->
 	    mnesia_schema:verify(1, N, Reason),
 	    Cs
     end;
-verify_n_fragments(N, Cs, Mode) ->
+verify_n_fragments(N, Cs, _Mode) ->
     mnesia:abort({bad_type, Cs#cstruct.name, {n_fragments, N}}).
 
 pick_props(Tab, Cs, {ForeignTab, Attr}) ->
@@ -521,7 +513,7 @@ set_frag_node(Cs, Pos, Head) ->
 rearrange_dist(Cs, [{Node, Count} | ModDist], Dist, Pool) ->
     Dist2 = insert_dist(Cs, Node, Count, Dist, Pool),
     rearrange_dist(Cs, ModDist, Dist2, Pool);
-rearrange_dist(Cs, [], Dist, _) ->
+rearrange_dist(_Cs, [], Dist, _) ->
     Dist.
 
 insert_dist(Cs, Node, Count, [Head | Tail], Pool) ->
@@ -538,12 +530,12 @@ insert_dist(Cs, Node, Count, [Head | Tail], Pool) ->
 	BadNode ->
 	    mnesia:abort({bad_type, Cs#cstruct.name, BadNode})
     end;
-insert_dist(Cs, Node, Count, [], Pool) ->
+insert_dist(_Cs, Node, Count, [], _Pool) ->
     [{Node, Count}];
-insert_dist(Cs, Node, Count, Dist, Pool) ->
+insert_dist(_Cs, _Node, _Count, Dist, _Pool) ->
     mnesia:abort({bad_type, Dist}).
     
-node_diff(Node, Count, Node2, Count2, Pool) when Count < Count2 ->
+node_diff(_Node, Count, _Node2, Count2, _Pool) when Count < Count2 ->
     less;
 node_diff(Node, Count, Node2, Count2, Pool) when Count == Count2 ->
     Pos = list_pos(Node, Pool, 1),
@@ -554,13 +546,13 @@ node_diff(Node, Count, Node2, Count2, Pool) when Count == Count2 ->
 	Pos > Pos2 ->
 	    greater
     end;
-node_diff(Node, Count, Node2, Count2, Pool) when Count > Count2 ->
+node_diff(_Node, Count, _Node2, Count2, _Pool) when Count > Count2 ->
     greater.
 
 %% Returns position of element in list
-list_pos(H,  [H | T], Pos) ->
+list_pos(H,  [H | _T], Pos) ->
     Pos;
-list_pos(E,  [H | T], Pos) ->
+list_pos(E,  [_H | T], Pos) ->
     list_pos(E,  T, Pos + 1).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -675,7 +667,6 @@ make_add_frag(Tab, SortedNs) ->
     NR = length(Cs#cstruct.ram_copies), 
     ND = length(Cs#cstruct.disc_copies), 
     NDO = length(Cs#cstruct.disc_only_copies),
-    Pool = lookup_prop(Tab, node_pool),
     NewCs = Cs#cstruct{name = NewFrag,
 		       frag_properties = [{base_table, Tab}],
 		       ram_copies = [],
@@ -771,7 +762,7 @@ do_split(FH, OldN, FragNames, [Rec | Recs], Ops) ->
 		    mnesia:abort({"add_frag: Fragment not locked", NewN})
 	    end
     end;
-do_split(_FH, OldN, _FragNames, [], Ops) ->
+do_split(_FH, _OldN, _FragNames, [], Ops) ->
     Ops.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -990,7 +981,7 @@ set_frag_hash(Tab, Props) ->
 	    mnesia_lib:unset({Tab, frag_hash})
     end.
 
-props_to_frag_hash(Tab, []) ->
+props_to_frag_hash(_Tab, []) ->
     no_hash;
 props_to_frag_hash(Tab, Props) ->
     case mnesia_schema:pick(Tab, base_table, Props, undefined) of
@@ -1095,10 +1086,10 @@ n_to_frag_name(Tab, N) ->
     mnesia:abort({bad_type, Tab, N}).
 
 %% Returns name of fragment table
-key_to_frag_number({Tab, ForeignKey}, Key) ->
+key_to_frag_number({Tab, ForeignKey}, _Key) ->
     FH = val({Tab, frag_hash}),
     case FH#frag_state.foreign_key of
-	{ForeignTab, _Pos} ->
+	{_ForeignTab, _Pos} ->
 	    key_to_n(FH, ForeignKey);
 	undefined ->
 	    mnesia:abort({combine_error, Tab, frag_properties,
@@ -1182,7 +1173,7 @@ sort_dist(Dist) ->
     shallow_dist(Dist3).
 
 deep_dist([Head | Tail], Deep) ->
-    {Kind, Node, Count} = Head,
+    {Kind, _Node, Count} = Head,
     {Tag, Same, Other} = pick_count(Kind, Count, [Head | Tail]),
     deep_dist(Other, [{Tag, Same} | Deep]);
 deep_dist([], Deep) ->
@@ -1201,10 +1192,10 @@ pick_count(Kind, Count, [{Kind2, Node2, Count2} | Tail]) ->
 	true ->
 	    {Count, Same, [{Kind2, Node2, Count2} | Other]}
     end;
-pick_count(Kind, Count, []) ->
+pick_count(_Kind, Count, []) ->
     {Count, [], []}.
 
-shallow_dist([{Tag, Shallow} | Deep]) ->
+shallow_dist([{_Tag, Shallow} | Deep]) ->
     Shallow ++ shallow_dist(Deep);
 shallow_dist([]) ->
     [].

@@ -19,6 +19,11 @@ Optimizations:
 * replace jcc cc,L1; jmp L0; L1: with jcc <not cc> L0; L1: (length:len/2)
 * Kill move X,X insns, either in frame or finalise
 * Instruction scheduling module
+* We can now choose to not have HP in %esi. However, this currently loses
+  performance due to (a) repeated moves to/from P_HP(P), and (b) spills of
+  the temp that contains a copy of P_HP(P). Both of these problems should be
+  fixed, and then, if we don't have any noticeable performance degradation, we
+  should permanently change to a non-reserved HP strategy.
 
 Loader:
 

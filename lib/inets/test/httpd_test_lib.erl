@@ -21,7 +21,7 @@
 
 
 %% Poll functions
--export([ppoll/6, epoll/6, poll/6, poll/7, cpoll/6, cpoll/7]).
+-export([ppoll/6, epoll/6, poll/6, poll/7, poll/9, cpoll/6, cpoll/7, cpoll/9]).
 -export([validate_ppoll/8]).
 
 -export([end_of_header/1]).
@@ -262,9 +262,12 @@ validate_epoll_options1(Header, [Unknown|Rest], N, P) ->
 %%
 
 cpoll(Mode, Host, Port, Node, Request, StatusCode) ->
-    cpoll(Mode, Host, Port, Node, Request, StatusCode, 30000).
+    cpoll(Mode, Host, Port, Node, Request, StatusCode, 30000, 500, 6).
 
 cpoll(Mode, Host, Port, Node, Request, StatusCode, Timeout) ->
+    cpoll(Mode, Host, Port, Node, Request, StatusCode, Timeout, 500, 6).
+
+cpoll(Mode, Host, Port, Node, Request, StatusCode, Timeout, ETo, ECnt) ->
     ?DEBUG("poll -> connect to server: ~s:~p", [Host, Port]),
     case ?CONNECT(Mode, Host, Port) of
 	{ok, Socket} ->
@@ -278,8 +281,9 @@ cpoll(Mode, Host, Port, Node, Request, StatusCode, Timeout) ->
 		    ?FAIL({send_failed, Error})
 	    end;
 	Error ->
-	    poll_connect_error(Error),
-	    cpoll(Mode, Host, Port, Node, Request, StatusCode, Timeout)
+	    poll_connect_error(Error, ETo, ECnt),
+	    cpoll(Mode, Host, Port, Node, Request, StatusCode, Timeout,
+		  ETo*2, ECnt-1)
     end.
 	    
 
@@ -288,9 +292,12 @@ cpoll(Mode, Host, Port, Node, Request, StatusCode, Timeout) ->
 %%
 
 poll(Mode, Host, Port, Node, Request, StatusCode) ->
-    poll(Mode, Host, Port, Node, Request, StatusCode, 30000).
+    poll(Mode, Host, Port, Node, Request, StatusCode, 30000, 500, 6).
 
 poll(Mode, Host, Port, Node, Request, StatusCode, Timeout) ->
+    poll(Mode, Host, Port, Node, Request, StatusCode, Timeout, 500, 6).
+
+poll(Mode, Host, Port, Node, Request, StatusCode, Timeout, ETo, ECnt) ->
     ?DEBUG("poll -> connect to server: ~s:~p", [Host, Port]),
     case ?CONNECT(Mode, Host, Port) of
 	{ok, Socket} ->
@@ -304,27 +311,31 @@ poll(Mode, Host, Port, Node, Request, StatusCode, Timeout) ->
 		    ?FAIL({send_failed, Error})
 	    end;
 	Error ->
-	    poll_connect_error(Error),
-	    poll(Mode, Host, Port, Node, Request, StatusCode, Timeout)
+	    poll_connect_error(Error, ETo, ECnt),
+	    poll(Mode, Host, Port, Node, Request, StatusCode, Timeout, 
+		 ETo*2, ECnt-1)
     end.
 	    
 
-poll_connect_error({error,enfile}) ->
+poll_connect_error({error,Reason}, _, 0) ->
+    ?LOG("final connect error: ~p", [Reason]),
+    ?FAIL({connect_failed, Reason});
+poll_connect_error({error,enfile}, To, _) ->
     ?LOG("connect error: ~p", [enfile]),
-    ?SLEEP(200);
-poll_connect_error({error,emfile}) ->
+    ?SLEEP(To);
+poll_connect_error({error,emfile}, To, _) ->
     ?LOG("connect error: ~p", [emfile]),
-    ?SLEEP(200);
-poll_connect_error({error,econnreset}) ->
+    ?SLEEP(To);
+poll_connect_error({error,econnreset}, To, _) ->
     ?LOG("connect error: ~p", [econnreset]),
-    ?SLEEP(400);
-poll_connect_error({error,econnrefused}) ->
+    ?SLEEP(To);
+poll_connect_error({error,econnrefused}, To, _) ->
     ?LOG("connect error: ~p", [econnrefused]),
-    ?SLEEP(400);
-poll_connect_error({error,esslconnect}) ->
+    ?SLEEP(To);
+poll_connect_error({error,esslconnect}, To, _) ->
     ?LOG("connect error: ~p", [esslconnect]),
-    ?SLEEP(600);
-poll_connect_error(Error) ->
+    ?SLEEP(To);
+poll_connect_error(Error, _, _) ->
     ?FAIL({connect_failed, Error}).
 
 

@@ -71,7 +71,7 @@
 	 aux_ticker/4]).
 
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,
-	 terminate/2]).
+	 terminate/2,code_change/3]).
 
 -import(error_logger,[error_msg/2]).
 
@@ -211,7 +211,7 @@ request(Req) ->
     case whereis(net_kernel) of
 	P when pid(P) ->
 	    gen_server:call(net_kernel,Req,infinity);
-	Other -> ignored
+	_ -> ignored
     end.
 
 %% This function is used to dynamically start the
@@ -236,7 +236,7 @@ start_link([Name, LongOrShortNames, Ticktime]) ->
 	    {ok, Pid};
 	{error, {already_started, Pid}} ->
 	    {ok, Pid};
-	Error ->
+	_Error ->
 	    exit(nodistribution)
     end.
 
@@ -283,7 +283,7 @@ init({Name, LongOrShortNames, TickT}) ->
 %% The response is delayed until the connection is up and
 %% running.
 %%
-handle_call({connect, _, Node}, From, State) when Node == node() ->
+handle_call({connect, _, Node}, _From, State) when Node == node() ->
     {reply, true, State};
 handle_call({connect, Type, Node}, From, State) ->
     verbose({connect, Type, Node}, 1, State),
@@ -313,9 +313,9 @@ handle_call({connect, Type, Node}, From, State) ->
 %%
 %% Close the connection to Node.
 %%
-handle_call({disconnect, Node}, From, State) when Node == node() ->
+handle_call({disconnect, Node}, _From, State) when Node == node() ->
     {reply, false, State};
-handle_call({disconnect, Node}, From, State) ->
+handle_call({disconnect, Node}, _From, State) ->
     verbose({disconnect, Node}, 1, State),
     {Reply, State1} = do_disconnect(Node, State),
     {reply, Reply, State1};
@@ -362,14 +362,14 @@ handle_call({monitor_nodes, Flag}, {Pid, _}, State0) ->
 %% authentication, used by auth. Simply works as this:
 %% if the message comes through, the other node IS authorized.
 %% 
-handle_call({is_auth, Node}, _From, State) ->
+handle_call({is_auth, _Node}, _From, State) ->
     {reply,yes,State};
 
 %% 
 %% Not applicable any longer !?
 %% 
-handle_call({apply,Mod,Fun,Args}, {From,Tag}, State) when pid(From),
-                                                         node(From) == node() ->
+handle_call({apply,_Mod,_Fun,_Args}, {From,Tag}, State) 
+  when pid(From), node(From) == node() ->
     gen_server:reply({From,Tag}, not_implemented),
 %    Port = State#state.port,
 %    catch apply(Mod,Fun,[Port|Args]),
@@ -414,7 +414,7 @@ handle_call(ticktime, _, #state{tick = #tick{time = T}} = State) ->
 handle_call(ticktime, _, #state{tick = #tick_change{time = T}} = State) ->
     {reply, {ongoing_change_to, T}, State};
 
-handle_call({new_ticktime,T,TP}, _, #state{tick = #tick{time = T}} = State) ->
+handle_call({new_ticktime,T,_TP}, _, #state{tick = #tick{time = T}} = State) ->
     ?tckr_dbg(no_tick_change),
     {reply, unchanged, State};
 
@@ -446,6 +446,13 @@ handle_call({new_ticktime,_,_},
 
 handle_cast(_, State) ->
     {noreply,State}.
+
+%% ------------------------------------------------------------
+%% code_change.
+%% ------------------------------------------------------------
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok,State}.
 
 %% ------------------------------------------------------------
 %% terminate.
@@ -622,7 +629,7 @@ handle_info({From,registered_send,To,Mess},State) ->
 
 %% badcookies SHOULD not be sent 
 %% (if someone does erlang:set_cookie(node(),foo) this may be)
-handle_info({From, badcookie, To ,Mess}, State) ->
+handle_info({From,badcookie,_To,_Mess}, State) ->
     error_logger:error_msg("~n** Got OLD cookie from ~w~n",
 			   [getnode(From)]),
     {_Reply, State1} = do_disconnect(getnode(From), State),
@@ -844,7 +851,7 @@ up_pending_nodedown(Conn, Node, Type, State) ->
     State#state{conn_owners = [{AcceptPid,Node}|Owners], pend_owners = Pend}.
 
 
-up_nodedown(Conn, Node, Type, State) ->
+up_nodedown(_Conn, Node, Type, State) ->
     mark_sys_dist_nodedown(Node),
     case Type of
 	normal ->
@@ -914,7 +921,7 @@ disconnect_pid(Pid, State) ->
     exit(Pid, disconnect),
     %% Sync wait for connection to die!!!
     receive
-	{'EXIT', Pid, Reason} ->
+	{'EXIT',Pid,_Reason} ->
 	    {_,State1} = handle_exit(Pid, State),
 	    {true, State1}
     end.
@@ -999,7 +1006,7 @@ aux_ticker1(NetKernel, TickInterval, NoOfTicks) ->
 	    aux_ticker1(NetKernel, TickInterval, NoOfTicks-1)
     end.
 
-send(From,To,Mess) ->
+send(_From,To,Mess) ->
     case whereis(To) of
 	undefined ->
 	    Mess;
@@ -1102,7 +1109,7 @@ get_proto_mod(Family,Protocol,[L|Ls]) ->
        true ->
 	    get_proto_mod(Family,Protocol,Ls)
     end;
-get_proto_mod(Family,Protocol,[]) ->    
+get_proto_mod(_Family, _Protocol, []) ->    
     error.
 
 %% -----------------------------------------------------------
@@ -1128,7 +1135,7 @@ lookup_pend(Node, [NodeUp|_]) when NodeUp#pend_nodeup.node == Node ->
     {ok, NodeUp};
 lookup_pend(Node, [_|Pending]) ->
     lookup_pend(Node, Pending);
-lookup_pend(Node, []) ->
+lookup_pend(_Node, []) ->
     false.
 
 del_pend(Node, [NodeUp|T]) when NodeUp#pend_nodeup.node == Node ->
@@ -1157,7 +1164,7 @@ del_pend(_, []) ->
 %%    end.
 
 init_node(Name, LongOrShortNames) ->
-    {NameWithoutHost,Host} = lists:splitwith(fun($@)->false;(_)->true end,
+    {NameWithoutHost,_Host} = lists:splitwith(fun($@)->false;(_)->true end,
 				  atom_to_list(Name)),
     case create_name(Name, LongOrShortNames) of
 	{ok,Node} ->
@@ -1190,7 +1197,7 @@ create_name(Name, LongOrShortNames) ->
 	    {error,badarg}
     end;
 
-create_name(Name, _) ->
+create_name(_Name, _) ->
     {error, badarg}.
 
 create_hostpart(Name,LongOrShortNames) ->
@@ -1278,15 +1285,21 @@ start_protos(Name, [Proto | Ps], Node, Ls) ->
     Mod = list_to_atom(Proto ++ "_dist"),
     case catch Mod:listen(Name) of
 	{ok, {Socket, Address, Creation}} ->
-	    AcceptPid = Mod:accept(Socket),
-	    (catch erlang:setnode(Node, Creation)), %% May fail.
-	    auth:sync_cookie(),
-	    L = #listen {
-	      listen = Socket,
-	      address = Address,
-	      accept = AcceptPid,
-	      module = Mod },
-	    start_protos(Name,Ps, Node, [L|Ls]);
+	    case set_node(Node, Creation) of
+		ok ->
+		    AcceptPid = Mod:accept(Socket),
+		    auth:sync_cookie(),
+		    L = #listen {
+		      listen = Socket,
+		      address = Address,
+		      accept = AcceptPid,
+		      module = Mod },
+		    start_protos(Name,Ps, Node, [L|Ls]);
+		_ ->
+		    Mod:close(Socket),
+		    error_logger:info_msg("Invalid node name: ~p~n", [Node]),
+		    start_protos(Name, Ps, Node, Ls)
+	    end;
 	{'EXIT', {undef,_}} ->
 	    error_logger:info_msg("Protocol: ~p: not supported~n", [Proto]),
 	    start_protos(Name,Ps, Node, Ls);
@@ -1305,8 +1318,18 @@ start_protos(Name, [Proto | Ps], Node, Ls) ->
 				  [Proto, Reason]),
 	    start_protos(Name,Ps, Node, Ls)
     end;
-start_protos(_,[], Node, Ls) ->
+start_protos(_,[], _Node, Ls) ->
     Ls.
+
+set_node(Node, Creation) when node() == nonode@nohost ->
+    case catch erlang:setnode(Node, Creation) of
+	true ->
+	    ok;
+	{'EXIT',Reason} ->
+	    {error,Reason}
+    end;
+set_node(Node, _Creation) when node() == Node ->
+    ok.
 
 %std_monitors() -> [global_name_server].
 std_monitors() -> [global_group].

@@ -1,0 +1,183 @@
+#!/bin/sh
+#
+# This is a script to start Erlang/OTP for debugging. PATH is set to
+# include this script so if slave nodes are started they will use this
+# script as well.
+#
+#  usage:  cerl [ OPTIONS ] [ ARGS ]
+#
+#  The OPTIONS are
+#
+#   -rootdir $MYROOTDIR
+#               Run an installed emulator built from this source
+#   -debug      Run debug compiled emulator
+#   -gdb        Run the debug compiled emulator in emacs and gdb.
+#               You have to start beam in gdb using "run".
+#   -break F    Run the debug compiled emulator in emacs and gdb and set break.
+#               The session is started, i.e. "run" is already don for you.
+#   -xxgdb      FIXME currently disabled
+#   -purify     Run emulator compiled for purify
+#   -quantify   Run emulator compiled for quantify
+#   -purecov    Run emulator compiled for purecov
+#   -nox        Unset the DISPLAY variable to disable us of X Windows
+#
+# FIXME For GDB you can also set the break point using "-break FUNCTION".
+# FIXME For GDB you can also point out your own .gdbini......
+
+# These are marked for export
+export ROOTDIR
+export PROGNAME
+export EMU
+export BINDIR
+export PATH
+
+cxargs_add() {
+    while [ $# -gt 0 ]; do
+      cargs="$cargs $1"
+      xargs="$xargs $1"
+      shift
+    done
+}
+
+GDB=no
+GDBBP=
+TYPE=
+
+# Default rootdir
+ROOTDIR=%SRC_ROOTDIR%
+BINDIR=$ROOTDIR/bin/%TARGET%
+PROGNAME=$ROOTDIR/bin/cerl
+EMU=beam
+
+cargs=""
+xargs=""
+
+if [ "x$EMACS" = "x" ]; then
+  EMACS=emacs
+fi
+
+while [ $# -gt 0 ]
+do
+case "$1" in
+  +*)
+      # A system parameter!
+      cxargs_add $1
+      shift
+      # If next argument does not begin with a hyphen or a plus,
+      # it is used as the value of the system parameter.
+      if [ $# -gt 0 ]; then
+	case $1 in
+	    -*|+*)
+		;;
+	    *)
+		cxargs_add $1
+		shift;;
+	esac
+     fi;;
+  "-instr")
+      cxargs_add $1
+      shift
+      ;;
+  "-rootdir")
+      shift
+      cargs="$cargs -rootdir $1"
+      ROOTDIR="$1"
+      BINDIR=$ROOTDIR/erts-%VSN%/bin
+      shift
+      ;;
+  "-display")
+      shift
+      DISPLAY="$1"
+      export DISPLAY
+      shift
+      ;;
+  "-nox")
+      shift
+      unset DISPLAY
+      ;;
+  "-debug")
+      shift
+      cargs="$cargs -debug"
+      TYPE=.debug
+      ;;
+  "-gdb")
+      shift
+      cargs="$cargs -debug"
+      TYPE=.debug
+      GDB=gdb
+      ;;
+  "-break")
+      shift
+      cargs="$cargs -debug"   # FIXME will give multiple -debug....
+      TYPE=.debug
+      GDB=gdb
+      GDBBP="$GDBBP (insert-string \"break $1\") (comint-send-input)"
+      shift
+      ;;
+#  "-xxgdb")
+#      shift
+#      cargs="$cargs -debug"
+#      TYPE=.debug
+#      GDB=xxgdb
+#      ;;
+  "-shared")
+      shift
+      cargs="$cargs -shared"
+      TYPE=.shared
+      ;;
+  "-purify")
+      shift
+      cargs="$cargs -purify"
+      TYPE=.purify
+      ;;
+  "-quantify")
+      shift
+      cargs="$cargs -quantify"
+      TYPE=.quantify
+      ;;
+  "-purecov")
+      shift
+      cargs="$cargs -purecov"
+      TYPE=.purecov
+      ;;
+  *)
+      break
+      ;;
+esac
+done
+
+
+PATH=$BINDIR:$ROOTDIR/bin:$PATH
+EXEC=$BINDIR/erlexec
+
+PROGNAME="$PROGNAME $cargs"
+EMU=$EMU$TYPE
+
+if [ $GDB != "no" ]; then
+
+  # We create a command to fire up emacs with
+  beam_args=`$EXEC -emu_args_exit ${1+"$@"}`
+  exec $EMACS --eval \
+    "(progn (gdb \"gdb $EMU\") \
+      (insert-string \"set args $beam_args\") \
+      (comint-send-input) \
+      $GDBBP \
+     )"
+
+# Leftovers, look at later....
+#  GF=/tmp/erlgdb.$$
+#  trap 'rm -f $GF; exit 0' 0 1 2 3 15
+#  echo "break $BREAK_POINT" >> $GF
+#  echo "run -- -root $ROOTDIR -progname \"$PROGNAME\" -- -home $HOME $@" >> $GF
+#  $GDB -command=$GF $EMU
+
+  #echo "(load \"/usr/share/emacs/21.2/lisp/gud.elc\")">autorun_gdb.el
+  #echo "(gdb \"$1\")" >> autorun_gdb.el
+  #$EMACS -l autorun_gdb.el &
+  #echo   usage e.g.:  ejj.sh  my_prog test.cir
+
+else
+
+  exec $EXEC $xargs ${1+"$@"}
+
+fi

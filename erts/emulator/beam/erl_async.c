@@ -70,14 +70,17 @@ static void async_add(ErlAsync*, AsyncQueue*);
 int init_async(int hndl)
 {
     AsyncQueue* q;
-    int i;
+    int i, res;
 
     async_ready_lck = erts_mutex_create();
     async_ready_list = NULL;
     async_id = 0;
 
-    async_q = q = (AsyncQueue*) sys_alloc_from(230, (erts_async_max_threads*
-						     sizeof(AsyncQueue)));
+    async_q = q = (AsyncQueue*)
+	(erts_async_max_threads
+	 ? erts_alloc(ERTS_ALC_T_ASYNC_Q,
+		      erts_async_max_threads * sizeof(AsyncQueue))
+	 : NULL);
     for (i = 0; i < erts_async_max_threads; i++) {
 	q->lck = erts_mutex_create();
 	q->cv  = erts_cond_create();
@@ -85,7 +88,9 @@ int init_async(int hndl)
 	q->tail = NULL;
 	q->len = 0;
 	q->hndl = hndl;
-	erts_thread_create(&q->thr, async_main, (void*)q, 0);
+	res = erts_thread_create(&q->thr, async_main, (void*)q, 0);
+	if (!q->lck || !q->cv || res < 0)
+	    erl_exit(1, "Failed to start thread pool\n");
 	q++;
     }
     return 0;
@@ -98,7 +103,8 @@ int exit_async()
 
     /* terminate threads */
     for (i = 0; i < erts_async_max_threads; i++) {
-	ErlAsync* a = (ErlAsync*) sys_alloc_from(231,sizeof(ErlAsync));
+	ErlAsync* a = (ErlAsync*) erts_alloc(ERTS_ALC_T_ASYNC,
+					     sizeof(ErlAsync));
 	a->port = -1;
 	async_add(a, &async_q[i]);
     }
@@ -110,7 +116,7 @@ int exit_async()
 	erts_cond_destroy(async_q[i].cv);
     }
     erts_mutex_destroy(async_ready_lck);
-    sys_free(async_q);
+    erts_free(ERTS_ALC_T_ASYNC_Q, (void *) async_q);
     return 0;
 }
 
@@ -184,7 +190,7 @@ static int async_del(long id)
 		if (a->async_free != NULL)
 		    a->async_free(a->async_data);
 		async_detach(a->hndl);
-		sys_free(a);
+		erts_free(ERTS_ALC_T_ASYNC, a);
 		return 1;
 	    }
 	}
@@ -201,7 +207,7 @@ static void* async_main(void* arg)
 	ErlAsync* a = async_get(q);
 
 	if (a->port == -1) { /* TIME TO DIE SIGNAL */
-	    sys_free(a);
+	    erts_free(ERTS_ALC_T_ASYNC, (void *) a);
 	    break;
 	}
 	else {
@@ -243,7 +249,7 @@ int check_async_ready()
 		(*a->async_free)(a->async_data);
 	}
 	async_detach(a->hndl);
-	sys_free(a);
+	erts_free(ERTS_ALC_T_ASYNC, (void *) a);
 	a = a_next;
     }
     return count;
@@ -267,7 +273,7 @@ long driver_async(ErlDrvPort ix, unsigned int* key,
 		  void (*async_invoke)(void*), void* async_data,
 		  void (*async_free)(void*))
 {
-    ErlAsync* a = (ErlAsync*) sys_alloc_from(232, sizeof(ErlAsync));
+    ErlAsync* a = (ErlAsync*) erts_alloc(ERTS_ALC_T_ASYNC, sizeof(ErlAsync));
     Port* ptr;
     long id;
     unsigned int qix;
@@ -312,7 +318,7 @@ long driver_async(ErlDrvPort ix, unsigned int* key,
 	if (a->async_free != NULL)
 	    (*a->async_free)(a->async_data);
     }
-    sys_free(a);
+    erts_free(ERTS_ALC_T_ASYNC, (void *) a);
 
     return id;
 }

@@ -116,7 +116,7 @@ handle_connection_err(SocketType, Socket, ConfigDb, Reason) ->
 
 
 handle_error(timeout, _, _) ->
-    ?vdebug("Accept timeout",[]),
+    ?vtrace("Accept timeout",[]),
     ok;
 
 handle_error({enfile, _}, _, _) ->
@@ -134,6 +134,10 @@ handle_error(closed, _, _) ->
     %% This propably only means that the application is stopping, 
     %% but just in case
     exit(closed);
+
+handle_error(econnaborted, _, _) ->
+    ?vlog("Accept aborted",[]),
+    ok;
 
 handle_error(esslaccept, _, _) ->
     %% The user has selected to cancel the installation of 

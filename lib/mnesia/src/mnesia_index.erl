@@ -83,7 +83,7 @@ add_index2([{Pos, Ixt} |Tail], Type, Tab, K, Obj, OldRecs) ->
     end,
     db_put(Ixt, {element(Pos, Obj), K}),
     add_index2(Tail, Type, Tab, K, Obj, OldRecs);
-add_index2([], _, Tab, K, Obj, _) -> ok.
+add_index2([], _, _Tab, _K, _Obj, _) -> ok.
 
 delete_index(Index, Tab, K) ->
     delete_index2(Index#index.pos_list, Tab, K).
@@ -92,10 +92,10 @@ delete_index2([{Pos, Ixt} | Tail], Tab, K) ->
     DelObjs = mnesia_lib:db_get(Tab, K), 
     del_ixes(Ixt, DelObjs, Pos, K),
     delete_index2(Tail, Tab, K);
-delete_index2([], Tab, K) -> ok.
+delete_index2([], _Tab, _K) -> ok.
 
 
-del_ixes(Ixt, [], Pos, L) -> ok;
+del_ixes(_Ixt, [], _Pos, _L) -> ok;
 del_ixes(Ixt, [Obj | Tail], Pos, Key) ->
     db_match_erase(Ixt, {element(Pos, Obj), Key}),
     del_ixes(Ixt, Tail, Pos, Key).
@@ -103,7 +103,7 @@ del_ixes(Ixt, [Obj | Tail], Pos, Key) ->
 del_object_index(Index, Tab, K, Obj, Old) ->
     del_object_index2(Index#index.pos_list, Index#index.setorbag, Tab, K, Obj, Old).
 
-del_object_index2([], _, Tab, K, Obj, Old) -> ok;
+del_object_index2([], _, _Tab, _K, _Obj, _Old) -> ok;
 del_object_index2([{Pos, Ixt} | Tail], SoB, Tab, K, Obj, Old) ->
     case SoB of
 	bag -> 
@@ -118,15 +118,15 @@ del_object_bag(Tab, Key, Obj, Pos, Ixt, undefined) ->
     del_object_bag(Tab, Key, Obj, Pos, Ixt, Old);
 %% If Tab type is bag we need remove index identifier if Tab 
 %% contains less than 2 elements. 
-del_object_bag(Tab, Key, Obj, Pos, Ixt, Old) when length(Old) < 2 ->
+del_object_bag(_Tab, Key, Obj, Pos, Ixt, Old) when length(Old) < 2 ->
     del_ixes(Ixt, [Obj], Pos, Key);
-del_object_bag(Tab, Key, Obj, Pos, Ixt, Old) -> ok.
+del_object_bag(_Tab, _Key, _Obj, _Pos, _Ixt, _Old) -> ok.
 
 clear_index(Index, Tab, K, Obj) ->
     clear_index2(Index#index.pos_list, Tab, K, Obj).
 
-clear_index2([], Tab, K, Obj) -> ok;
-clear_index2([{Pos, Ixt} | Tail], Tab, K, Obj) ->
+clear_index2([], _Tab, _K, _Obj) -> ok;
+clear_index2([{_Pos, Ixt} | Tail], Tab, K, Obj) ->
     db_match_erase(Ixt, Obj),
     clear_index2(Tail, Tab, K, Obj).
 
@@ -139,11 +139,11 @@ dirty_match_object(Tab, Pat, Pos) ->
 	    IxKey = element(Pos, Pat),
 	    RealKeys = realkeys(Tab, Pos, IxKey),
 	    merge(RealKeys, Tab, Pat, []);
-	Else ->
+	_Else ->
 	    mnesia_lib:db_match_object(Tab, Pat)
     end.
 
-merge([{IxKey, RealKey} | Tail], Tab, Pat, Ack) ->
+merge([{_IxKey, RealKey} | Tail], Tab, Pat, Ack) ->
     %% Assume that we are on the node where the replica is
     Pat2 = setelement(2, Pat, RealKey),
     Recs = mnesia_lib:db_match_object(Tab, Pat2),
@@ -246,7 +246,7 @@ delete_transient_index(Tab, Pos, _Storage) ->
 %%%%% misc functions for the index create/init/delete functions above
 
 %% assuming that the file exists.
-init_disc_index(Tab, []) ->
+init_disc_index(_Tab, []) ->
     done;
 init_disc_index(Tab, [Pos | Tail]) when integer(Pos) ->
     Fn = tab2filename(Tab, Pos),
@@ -275,7 +275,7 @@ create_fun(Cont, Tab, Pos) ->
 			mnesia_lib:db_init_chunk(disc_only_copies, Tab, KeysPerChunk);
 		    '$end_of_table' -> 
 			'$end_of_table';
-		    Else ->
+		    _Else ->
 			mnesia_lib:db_chunk(disc_only_copies, Cont)
 		end,
 	    case Data of
@@ -298,7 +298,7 @@ make_ram_index(Tab, [Pos | Tail]) ->
 add_ram_index(Tab, Pos) when integer(Pos) ->
     verbose("Creating index for ~w ~n", [Tab]),
     Index = mnesia_monitor:mktab(mnesia_index, [bag, public]),
-    Insert = fun(Rec, Acc) ->
+    Insert = fun(Rec, _Acc) ->
 		     true = ?ets_insert(Index, {element(Pos, Rec), element(2, Rec)})
 	     end,
     mnesia_lib:db_fixtable(ram_copies, Tab, true),
@@ -306,7 +306,7 @@ add_ram_index(Tab, Pos) when integer(Pos) ->
     mnesia_lib:db_fixtable(ram_copies, Tab, false),
     mnesia_lib:set({Tab, {index, Pos}}, Index),
     add_index_info(Tab, val({Tab, setorbag}), {Pos, {ram, Index}});
-add_ram_index(Tab, snmp) ->
+add_ram_index(_Tab, snmp) ->
     ok.
 
 add_index_info(Tab, Type, IxElem) ->

@@ -10,8 +10,8 @@
 %%               New scheme for handling of catches.
 %%  CVS      :
 %%              $Author: happi $
-%%              $Date: 2002/05/13 16:51:07 $
-%%              $Revision: 1.9 $
+%%              $Date: 2003/04/11 15:06:24 $
+%%              $Revision: 1.11 $
 %% ====================================================================
 %%  TODO     :  
 %%
@@ -23,7 +23,8 @@
 %%
 %% Code like:
 %%
-%%   L1: push_catch L3
+%%   L1: push_catch -> L3, L2
+%%   L2:
 %%       ...
 %%       fail(R,exit) 
 %% 
@@ -40,7 +41,8 @@
 %% 
 %% Code like:
 %%
-%%   L1: push_catch L3
+%%   L1: push_catch -> L3, L4
+%%   L4:
 %%       ...
 %%       V2 = call(foo:bar/0,[])
 %%   L2: remove_catch L3
@@ -210,10 +212,11 @@ in_catch([I|Is], Cs, State) ->
     
     restore_catch ->
       Id = hipe_icode:restore_catch_label(I),
-      Var = hipe_icode:restore_catch_dst(I),
+      Var = hipe_icode:restore_catch_reason_dst(I),
+      Var1 = hipe_icode:restore_catch_type_dst(I),
       Lbl = hipe_icode:mk_new_label(),
       %% msg("\n ~w restore to ~w\n",[Id,Var]),
-      State2 = set_dest(State, Id, Var),
+      State2 = set_dest(State, Id, {Var,Var1}),
       State3 = set_shortcut(State2, Id, Lbl),
       case Cs of
 	[Id|Rest] ->
@@ -248,13 +251,9 @@ rewrite([I|Is], Catches, State, Acc, MFA) ->
     label ->
       L = hipe_icode:label_name(I),
       CatchesIn = catches_in(L,State),
-      rewrite(Is, CatchesIn, State, 
-	      [hipe_icode:info_update(I,
-				      [X ||
-					X<-hipe_icode:info(I), X =/= entry]	   )|Acc], MFA);
+      rewrite(Is, CatchesIn, State, [I|Acc],MFA);
     remove_catch ->
       Id = hipe_icode:remove_catch_label(I),
-      % msg("Leaving catch: ~w\n",[Id]),
       case Catches of
 	[Id|Rest]  ->
 	  rewrite(Is, Rest, State, Acc, MFA);
@@ -336,7 +335,7 @@ rewrite([I|Is], Catches, State, Acc, MFA) ->
     fail ->
       case Catches of
 	[C|Rest] ->
-	  Dst = get_dest(C,State),
+	  {Dst1,_Dest2} = get_dest(C,State),
 	  Shortcut = hipe_icode:label_name(get_shortcut(C, State)),
 	  Code = 
 	    case hipe_icode:fail_type(I) of
@@ -347,7 +346,7 @@ rewrite([I|Is], Catches, State, Acc, MFA) ->
 		ExitV = hipe_icode:mk_new_var(),
 		MkAtom = hipe_icode:mk_mov(ExitV, hipe_icode:mk_const('EXIT')),
 		[Src] = hipe_icode:fail_reason(I),
-		T = hipe_icode:mk_primop([Dst], mktuple, [ExitV, Src],
+		T = hipe_icode:mk_primop([Dst1], mktuple, [ExitV, Src],
 					 hipe_icode:label_name(Cont), []),
 		%% The code will be reversed, and is created reversed
 		%% now.
@@ -374,7 +373,7 @@ rewrite([I|Is], Catches, State, Acc, MFA) ->
 		MkAtomInstr = hipe_icode:mk_mov(ExitVar, 
 						hipe_icode:mk_const('EXIT')),
 		MkTuple2Instr =
-		  hipe_icode:mk_primop([Dst], mktuple, [ExitVar, TmpVar],
+		  hipe_icode:mk_primop([Dst1], mktuple, [ExitVar, TmpVar],
 				       hipe_icode:label_name(Cont2Lab), []),
 		%% The code will be reversed, and is created reversed
 		%% now.
@@ -400,7 +399,7 @@ rewrite([I|Is], Catches, State, Acc, MFA) ->
 		MkAtomInstr = hipe_icode:mk_mov(ExitVar, 
 						hipe_icode:mk_const('EXIT')),
 		MkTuple2Instr =
-		  hipe_icode:mk_primop([Dst], mktuple, [ExitVar, TmpVar],
+		  hipe_icode:mk_primop([Dst1], mktuple, [ExitVar, TmpVar],
 				       hipe_icode:label_name(Cont2Lab), []),
 		%% The code will be reversed, and is created reversed
 		%% now.
@@ -418,7 +417,7 @@ rewrite([I|Is], Catches, State, Acc, MFA) ->
 		%% The code will be reversed, and is created reversed
 		%% now. 
 		[hipe_icode:mk_goto(Shortcut),
-		 hipe_icode:mk_mov(Dst, Src)|Acc]
+		 hipe_icode:mk_mov(Dst1, Src)|Acc]
 	    end,
 
 	  rewrite(Is, [C|Rest], State, Code, MFA);
@@ -452,8 +451,7 @@ empty_state(CFG) ->
 	 cfg=CFG,
 	 pred_map=hipe_icode_cfg:pred_map(CFG),
 	 succ_map=hipe_icode_cfg:succ_map(CFG),
-	 start=[hipe_icode_cfg:start(CFG) | 
-		hipe_icode_cfg:fail_entrypoints(CFG)],
+	 start=[hipe_icode_cfg:start(CFG)],
 	 entry=hipe_icode_cfg:start(CFG),
 	 catches_out = empty_map(),
 	 dest = empty_map(),

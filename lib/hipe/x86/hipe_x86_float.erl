@@ -8,6 +8,7 @@
 
 map(Defun) ->
   CFG0 = hipe_x86_cfg:init(Defun),
+  %%hipe_x86_cfg:pp(CFG0),
   Liveness = hipe_x86_liveness:analyse(CFG0),
   StartLabel = hipe_x86_cfg:start_label(CFG0),
   SuccMap = hipe_x86_cfg:succ_map(CFG0),
@@ -30,29 +31,21 @@ do_blocks(Pred,[Lbl|Lbls], CFG, Liveness, Map, SuccMap, BlockMap) ->
       ReverseCode = lists:reverse(Code),
       {NewCode0, NewMap, NewBlockMap1, Dirty} = 
 	do_block(ReverseCode, LiveOut, Map, NewBlockMap),
-      NewCFG1 =
+      {NewCFG1, NewSuccMap} =
 	case Dirty of
 	  true ->
 	    NewBlock = hipe_bb:code_update(Block, NewCode0),
-	    hipe_x86_cfg:bb_update(CFG, Lbl, NewBlock);
+	    {hipe_x86_cfg:bb_update(CFG, Lbl, NewBlock), SuccMap};
 	  _ ->
-	    CFG
+	    {CFG, SuccMap}
 	end,
       {NewCFG3, NewBlockMap2} = 
 	do_blocks(Lbl,Succ, NewCFG1, Liveness, NewMap, 
-		  SuccMap, NewBlockMap1),
+ 		  NewSuccMap, NewBlockMap1),
       do_blocks(Pred,Lbls, NewCFG3, Liveness, 
-		Map, SuccMap, NewBlockMap2);
-    {value, {fail, not_handled}} ->
-      {NewCFG, NewBlockMap} =
-	do_fail(Lbl, CFG, BlockMap),
-      Succ = hipe_x86_cfg:succ(SuccMap, Lbl),
-      {NewCFG3, NewBlockMap2} = 
-	do_blocks(Lbl,Succ, NewCFG, Liveness, [],
-		  SuccMap, NewBlockMap),
-      do_blocks(Pred,Lbls, NewCFG3, Liveness, 
-		Map, SuccMap, NewBlockMap2);
-    {value, {fail, handled}} ->
+		Map, NewSuccMap, NewBlockMap2);
+
+    {value, fail} ->
       %% Don't have to follow this trace any longer.
       do_blocks(Pred,Lbls, CFG, Liveness, 
 		Map, SuccMap, BlockMap);
@@ -70,28 +63,12 @@ do_blocks(Pred,[Lbl|Lbls], CFG, Liveness, Map, SuccMap, BlockMap) ->
 		    NewSuccMap, BlockMap)
       end
   end;
-do_blocks(Pred,[], CFG, _,_,Map,BlockMap) ->
-  %% At the end of each trace that doesn't merge with an earlier
-  %% one, the stack must be empty!
-  if length(Map)/=0 -> 
-      ?EXIT({'FpStackNotEmptyAtEndOfTrace',{label,Pred}});
-     true->
-      {CFG, BlockMap}
-  end.
+do_blocks(_Pred,[], CFG, _Liveness, _Map, _SuccMap, BlockMap) ->
+  {CFG, BlockMap}.
 
-do_fail(Lbl, CFG, BlockMap)->
-  %% Remove any floats on the stack that might be left 
-  %% after a failed call.
-  Block = hipe_x86_cfg:bb(CFG, Lbl),
-  Code = hipe_bb:code(Block),
-  NewCode = free_all()++Code,
-  NewBlock = hipe_bb:code_update(Block, NewCode),
-  NewCFG1 = hipe_x86_cfg:bb_update(CFG, Lbl, NewBlock),	    
-  NewBlockMap = gb_trees:update(Lbl,{fail,handled}, BlockMap),
-  {NewCFG1, NewBlockMap}.
+do_block(Ins, LiveOut, Map, BlockMap)->
+  do_block(Ins, LiveOut, Map, BlockMap, false).
 
-do_block([I|Is], LiveOut, Map, BlockMap) ->
-  do_block([I|Is], LiveOut, Map, BlockMap, false).
 do_block([I|Is], LiveOut, Map, BlockMap, Dirty) ->
   case handle_insn(I) of
     false -> 
@@ -107,25 +84,25 @@ do_block([I|Is], LiveOut, Map, BlockMap, Dirty) ->
 			 ordsets:subtract(LiveOut, Def),Use)),
 
       {NewCode, NewMap, NewBlockMap, NewDirty} = 
-	do_block(Is, NewLiveOut, Map, BlockMap,Dirty),
+	do_block(Is, NewLiveOut, Map, BlockMap, Dirty),
       {NewI, NewMap1, NewBlockMap1} = 
 	do_insn(I, LiveOut, NewMap, NewBlockMap),
       NewDirty1 =
-	if NewDirty == true -> true;
+	if Dirty == true -> true; 
+	   NewDirty == true -> true;
 	   NewI =:= [I] -> false;
 	   true -> true
 	end,
       {NewCode++NewI, NewMap1, NewBlockMap1, NewDirty1}
   end;
 
-do_block([],LiveOut, Map, BlockMap, Dirty) ->
-  %% Make sure we don't have anything on the stack
-  %% that isn't live out from this point.
-  case ordsets:subtract(ordsets:from_list(Map),LiveOut) of
-    [] -> {[], Map, BlockMap, Dirty};
-    Dead -> 
-      {Insn, NewMap} = pop_dead(ordsets:to_list(Dead),Map),
-      {Insn, NewMap, BlockMap, true}
+do_block([], LiveOut, Map, BlockMap, Dirty) ->
+  case lists:filter(fun(X)->not lists:member(X, LiveOut)end, Map) of
+    [] ->
+      {[], Map, BlockMap, Dirty}; 
+    Pop ->
+      {PopIns, NewMap} = pop_dead(Pop, Map),
+      {PopIns, NewMap, BlockMap, true}
   end.
 
 do_shuffle(Pred,Lbl,CFG, OldMap, NewMap)->
@@ -133,9 +110,13 @@ do_shuffle(Pred,Lbl,CFG, OldMap, NewMap)->
   Push = NewMap -- OldMap,
   Pop = OldMap -- NewMap,
   {PopInsn, OldMap0} = pop_dead(Pop, OldMap),
-  {PushInsn, OldMap1} = push_list(Push, OldMap0),
+  {PushInsn, OldMap1} = 
+    case Push of
+      []-> {[], OldMap0};
+      _-> push_list(lists:reverse(Push), OldMap0)
+    end,
   Code =
-    if OldMap1==NewMap ->
+    if OldMap1=:=NewMap ->
 	%% It was enough to push and pop.
 	PopInsn ++ PushInsn ++
 	  [hipe_x86:mk_jmp_label(Lbl)];
@@ -146,6 +127,7 @@ do_shuffle(Pred,Lbl,CFG, OldMap, NewMap)->
 	PopInsn++PushInsn++SwitchInsns++
 	  [hipe_x86:mk_jmp_label(Lbl)]
     end,
+
   %% Update the CFG.
   NewLabel = hipe_gensym:get_next_label(x86),
   {LLo,_} = hipe_x86_cfg:label_range(CFG),
@@ -174,12 +156,13 @@ find_swap_cycles(OldMap, Moves, NotHandled, Cycles)->
 	true->
 	  %% The cycle that contains the first element on the stack
 	  %% must be processed last.
-	  NewCycle = [format_cycle(Cycle)],
+	  NewCycle = format_cycle(Cycle),
 	  find_swap_cycles(OldMap, Moves, NewNotHandled,
 			   Cycles++[NewCycle]);
 	_ ->
+	  NewCycle = format_cycle(Cycle),
 	  find_swap_cycles(OldMap, Moves, NewNotHandled,
-			   [Cycle|Cycles])
+			   [NewCycle|Cycles])
       end
   end.
 
@@ -197,7 +180,7 @@ format_cycle(C)->
   NewCycle = [X - 1 || X <- C],
   case lists:member(0,NewCycle) of
     true -> format_cycle(NewCycle, []);
-    _ -> NewCycle ++ hd(NewCycle)
+    _ -> NewCycle ++ [hd(NewCycle)]
   end.
 format_cycle([H|T], NewCycle)->
   case H of
@@ -208,10 +191,13 @@ format_cycle([H|T], NewCycle)->
 do_switching(Cycles)->
   do_switching(Cycles, []).
 do_switching([C|Cycles], Insns)->
-  if length(C)<2 -> do_switching(Cycles, Insns);
-     true ->
-      NewInsns = Insns ++ [hipe_x86:mk_fop(fxch, mk_st(X), []) || X <- C],
-      do_switching(Cycles, NewInsns)
+  case length(C) of
+    0 -> do_switching(Cycles, Insns);
+    1 -> [X] = C,
+	 NewInsns = Insns ++ [hipe_x86:mk_fp_unop(fxch, mk_st(X))],
+	 do_switching(Cycles, NewInsns);
+    _ -> NewInsns = Insns ++ [hipe_x86:mk_fp_unop(fxch, mk_st(X)) || X<-C],
+	 do_switching(Cycles, NewInsns)
   end;
 do_switching([],Insns) ->
   Insns.
@@ -230,29 +216,38 @@ redirect(Insn, OldLbl, NewLbl)->
 
 do_insn(I, LiveOut, Map, BlockMap) ->
   case I of
-    #pseudo_call{'fun'={_,Fun},exnlab = ExnLab}->
-      case (Fun=='check_fp_exception') or
-	(Fun == 'conv_big_to_float') of
-	true ->
+    #move{src=#x86_imm{value=Value}}->
+      case Value of
+	{'erl_fp_check_exception', Type} ->
+	  Store = pseudo_pop(Map),
+	  {Store ++ [hipe_x86:mk_fp_unop('fwait', []),
+	    I#move{src=#x86_imm{value={'erl_fp_exception',Type}}}],
+	   Map, BlockMap};
+	_ ->
+	  {[I], Map, BlockMap}
+      end;
+    #pseudo_call{'fun'=Fun, contlab = ContLab}->
+      case Fun of
+	%% We don't want to spill anything if an exception has been thrown.
+	{_, 'handle_fp_exception'} ->
 	  NewBlockMap = 
-	    case gb_trees:lookup(ExnLab, BlockMap) of
-	      {value,{fail,handled}} ->
+	    case gb_trees:lookup(ContLab, BlockMap) of
+	      {value, fail} ->
 		BlockMap;
 	      {value, _} ->
-		gb_trees:update(ExnLab, {fail, not_handled},
-				BlockMap);
+		gb_trees:update(ContLab, fail, BlockMap);
 	      _ ->
-		gb_trees:insert(ExnLab, {fail, not_handled},
-				BlockMap)
+		gb_trees:insert(ContLab, fail, BlockMap)
 	    end,
-	  {pop_all(Map)++[I],[],NewBlockMap};
+	  {[I], [], NewBlockMap};
 	_ ->
 	  {pop_all(Map)++[I],[],BlockMap}
       end;
-    #pseudo_tailcall_prepare{}->
-      {pop_all(Map)++[I],[],BlockMap};
-    #fop{}->
-      {NewI, NewMap} = do_fop(I, LiveOut, Map),
+    #fp_unop{}->
+      {NewI, NewMap} = do_fp_unop(I, LiveOut, Map),
+      {NewI, NewMap, BlockMap};
+    #fp_binop{}->
+      {NewI, NewMap} = do_fp_binop(I, LiveOut, Map),
       {NewI, NewMap, BlockMap};
     #fmov{src=Src, dst=Dst}->
       if Src=:=Dst->
@@ -274,11 +269,16 @@ do_insn(I, LiveOut, Map, BlockMap) ->
       {[I], Map, BlockMap}
   end.
 
-do_fmov(Src, Dst=#x86_mem{},_LiveOut, Map) ->
+do_fmov(Src, Dst=#x86_mem{},LiveOut, Map) ->
 %%% Storing a float from the stack into memory.
   {SwitchInsn, NewMap0} = switch_first(Src, Map),
-  NewMap1 = pop(NewMap0),
-  {SwitchInsn ++[hipe_x86:mk_fop(fstp, [], Dst)], NewMap1};
+  case is_liveOut(Src, LiveOut) of
+    true->
+      {SwitchInsn ++[hipe_x86:mk_fp_unop(fst, Dst)], NewMap0};
+    _ ->
+      NewMap1 = pop(NewMap0),
+      {SwitchInsn ++[hipe_x86:mk_fp_unop(fstp, Dst)], NewMap1}
+  end;
 
 do_fmov(Src=#x86_mem{}, Dst, _LiveOut, Map) ->
 %%% Pushing a float into the stack.
@@ -337,34 +337,34 @@ do_conv(Src=#x86_temp{reg=Reg},Dst,Map)->
   NewMap = [Dst|NewMap0],
   case length(PushOp) of
     1 -> %% No popping of memory object on fpstack
-      {Move++[hipe_x86:mk_fop(fild, NewSrc, [])], NewMap};
+      {Move++[hipe_x86:mk_fp_unop(fild, NewSrc)], NewMap};
     _ -> %% H contains pop instructions. Must be kept!
       Head = butlast(PushOp),
-      {Move++Head++[hipe_x86:mk_fop(fild, NewSrc, [])], NewMap}
+      {Move++Head++[hipe_x86:mk_fp_unop(fild, NewSrc)], NewMap}
   end.
 
 
-do_fop(I = #fop{dst=Dst, op=fchs}, Liveout, Map ) ->
+do_fp_unop(I = #fp_unop{arg=Arg, op=fchs}, Liveout, Map ) ->
   %% This is fchs, the only operation without a
   %% popping version. Needs special handling.
-  case is_liveOut(Dst, Liveout) of
+  case is_liveOut(Arg, Liveout) of
     true ->
-      {SwitchInsn, NewMap} = switch_first(Dst, Map),	
-      {SwitchInsn++[I#fop{dst=[]}], NewMap};
+      {SwitchIns, NewMap} = switch_first(Arg, Map),
+      {SwitchIns++[I#fp_unop{arg=[]}], NewMap};
     false ->
       %% Don't need to keep this instruction!
-      %% However, we may need to pop Dst from the stack.
-      case in_map(Dst, Map) of
+      %% However, we may need to pop Src from the stack.
+      case in_map(Arg, Map) of
 	true ->
-	  {SwitchInsn, NewMap0} = switch_first(Dst, Map),
+	  {SwitchInsn, NewMap0} = switch_first(Arg, Map),
 	  NewMap = pop(NewMap0),
 	  {SwitchInsn++pop_insn(), NewMap};
 	_ ->
 	  {[],Map}
       end
-  end;
+  end.
 
-do_fop(#fop{src=Src, dst=Dst, op=Op},
+do_fp_binop(#fp_binop{src=Src, dst=Dst, op=Op},
        LiveOut, Map) ->
   case {is_liveOut(Src, LiveOut), is_liveOut(Dst, LiveOut)} of
     {true, true} ->
@@ -374,7 +374,7 @@ do_fop(#fop{src=Src, dst=Dst, op=Op},
     {false, true} ->
       keep_dst(Op, Src, Dst, Map);
     {false, false} ->
-      %% Both Dst and Src is popped.
+      %% Both Dst and Src are popped.
       keep_none(Op, Src, Dst, Map)
   end.
 
@@ -382,7 +382,7 @@ keep_both(Op, Src, Dst, Map)->
   %% Keep both Dst and Src if it is there.
   {SwitchInsn, NewMap} = switch_first(Dst, Map),	
   NewSrc = get_new_opnd(Src, NewMap),
-  Insn = format_fop(Op, NewSrc, mk_st(0)),
+  Insn = format_fp_binop(Op, NewSrc, mk_st(0)),
   {SwitchInsn++Insn, NewMap}.
 
 keep_src(Op, Src, Dst, Map)->
@@ -390,31 +390,47 @@ keep_src(Op, Src, Dst, Map)->
   {SwitchInsn, NewMap0} = switch_first(Dst, Map),
   NewSrc = get_new_opnd(Src, NewMap0),
   NewMap = pop(NewMap0),
-  Insn = format_fop(Op, NewSrc, mk_st(0)),
+  Insn = format_fp_binop(Op, NewSrc, mk_st(0)),
   {SwitchInsn++Insn++pop_insn(), NewMap}.
 
 keep_dst(Op, Src, Dst, Map)->
   %% Keep Dst but pop Src.
   %% Dst must be in stack.
-  {PushInsn, NewMap0} = 
-    case in_map(Dst, Map) of
-      true -> {[], Map};
-      _ -> push(Dst, Map) 
-    end,
-  case in_map(Src, NewMap0) of
+  DstInMap = in_map(Dst, Map),
+  SrcInMap = in_map(Src, Map),
+
+  case SrcInMap of
     true->
-      %% Src must be popped.
-      {SwitchInsn, NewMap1} = switch_first(Src, NewMap0),
-      NewDst = get_new_opnd(Dst,NewMap1),
-      NewOp = mk_op_pop(Op),
-      NewMap = pop(NewMap1),
-      Insn = format_fop(NewOp, mk_st(0), NewDst),
-      {PushInsn++SwitchInsn++
-       Insn,NewMap};
+      case DstInMap of
+	true ->
+	  %% Src must be popped. If Dst is on top of the stack we can
+	  %% alter the operation rather than shuffle the stack.
+	  {SwitchInsn, Insn, NewMap} =
+	    if hd(Map) == Dst ->
+		NewOp = mk_op_pop(reverse_op(Op)),
+		NewDst = get_new_opnd(Src, Map),
+		TmpMap = lists:map(fun(X)->if X==Src->Dst;true->X end end,Map),
+		{[], format_fp_binop(NewOp, mk_st(0), NewDst), pop(TmpMap)};
+	       true ->
+		{SwitchInsn1, NewMap0} = switch_first(Src, Map),
+		NewDst = get_new_opnd(Dst,NewMap0),
+		NewOp = mk_op_pop(Op),
+		{SwitchInsn1,format_fp_binop(NewOp, mk_st(0), NewDst), pop(NewMap0)}
+	    end,
+	  {SwitchInsn++Insn,NewMap};
+	_ ->
+	  %% Src is on the stack, but Dst isn't. Use memory command to avoid
+	  %% unnecessary loading instructions.
+	  {SwitchInsn, NewMap0} = switch_first(Src, Map),
+	  NewOp = reverse_op(Op),
+	  NewMap = [Dst]++tl(NewMap0),
+	  Insn = format_fp_binop(NewOp, Dst, mk_st(0)),
+	  {SwitchInsn++Insn, NewMap}
+      end;
     _ ->
       %% Src isn't in the map so it doesn't have to be popped.
       {SwitchInsn, NewMap} = switch_first(Dst, Map),
-      {SwitchInsn++[#fop{dst=[],src=Src,op=Op}], NewMap}
+      {SwitchInsn++[#fp_unop{arg=Src,op=Op}], NewMap}
   end.
 
 keep_none(Op, Src, Dst, Map)->
@@ -433,24 +449,24 @@ keep_none(Op, Src, Dst, Map)->
       NewMap2 = pop(NewMap1),
       %% Then Dst has to be popped.
       {PopInsn,NewMap} = pop_member(Dst,NewMap2),
-      Insn = format_fop(NewOp, mk_st(0), NewDst),
+      Insn = format_fp_binop(NewOp, mk_st(0), NewDst),
       {PushInsn++SwitchInsn1++Insn++PopInsn,
        NewMap};
     _ ->
       %% Src isn't in the map so it doesn't have to be popped.
       {SwitchInsn, NewMap1} = switch_first(Dst, NewMap0),
       NewMap = pop(NewMap1),
-      {SwitchInsn++[#fop{dst=[],src=Src,op=Op}]++pop_insn(),
+      {SwitchInsn++[#fp_unop{arg=Src,op=Op}]++pop_insn(),
        NewMap}
   end.
 
-format_fop(Op, Src=#x86_temp{}, Dst=#x86_fpreg{reg=Reg}) ->
+format_fp_binop(Op, Src=#x86_temp{}, Dst=#x86_fpreg{reg=Reg}) ->
   %% Handle that st(0) is sometimes implicit.
-  if Reg==0-> [hipe_x86:mk_fop(Op, Src, [])];
-     true-> [hipe_x86:mk_fop(Op, Src, Dst)]
+  if Reg==0-> [hipe_x86:mk_fp_unop(Op, Src)];
+     true-> [hipe_x86:mk_fp_binop(Op, Src, Dst)]
   end;
-format_fop(Op, Src, Dst) ->
-  [hipe_x86:mk_fop(Op, Src, Dst)].
+format_fp_binop(Op, Src, Dst) ->
+  [hipe_x86:mk_fp_binop(Op, Src, Dst)].
 
 in_map(X, Map) ->
   lists:member(X, Map).
@@ -470,21 +486,14 @@ push(X, Map0) ->
     end,
   NewX = get_new_opnd(X,Map),
   NewMap = [X | Map],
-  PushOp = [hipe_x86:mk_fop(fld, NewX, [])],
+  PushOp = [hipe_x86:mk_fp_unop(fld, NewX)],
   {PopInsn++PushOp, NewMap}.
-
-free_all()->
-  free_all(7,[]).
-free_all(-1,Code)->
-  Code;
-free_all(X,Code)->
-  free_all(X-1,[hipe_x86:mk_fop('ffree',mk_st(X),[])|Code]).
 
 pop([_|Map]) ->
   Map.
 
 pop_insn() ->
-  [hipe_x86:mk_fop('fstp',mk_st(0),[])].
+  [hipe_x86:mk_fp_unop('fstp',mk_st(0))].
 
 pop_dead(Dead, Map) ->
   Dead0 = [X || X <- Map, lists:member(X,Dead)],
@@ -494,10 +503,10 @@ pop_dead([D|Dead], Map, Code) ->
   {I, NewMap0} = switch_first(D, Map),
   NewMap = pop(NewMap0),
   Store = case D of
-	    #x86_temp{}->[hipe_x86:mk_fop('fstp', [], D)];
-	    _ -> ?EXIT({pseudoFloatInStackOnCall,{D}})
-		   %%pop_insn()
-		   end,
+	    #x86_temp{}->[hipe_x86:mk_fp_unop('fstp', D)];
+	    _ -> 
+	      pop_insn()
+	  end,
   pop_dead(Dead,NewMap,Code++I++Store);
 pop_dead([],Map,Code) ->
   {Code,Map}.
@@ -508,14 +517,14 @@ pop_all(Map) ->
 
 pop_member(Member, Map)->
   {Head,[_|T]} = lists:splitwith(fun(X)->X/=Member end,Map),
-  {[hipe_x86:mk_fop('fstp', mk_st(get_pos(Member, Map, 0)),[])],
+  {[hipe_x86:mk_fp_unop('fstp', mk_st(get_pos(Member, Map, 0)))],
    Head++T}.
 
 pop_a_temp(Map) ->
   Temp = find_a_temp(Map),
   {SwitchInsn, NewMap0} = switch_first(Temp, Map),
   NewMap = pop(NewMap0),
-  {SwitchInsn++[hipe_x86:mk_fop('fstp', [], Temp)], NewMap}.
+  {SwitchInsn++[hipe_x86:mk_fp_unop('fstp', Temp)], NewMap}.
 
 find_a_temp([H = #x86_temp{}|_])->
   H;
@@ -534,7 +543,7 @@ switch_first(X, Map = [H|_]) ->
     _ ->	    
       {[_|Head], [_|Tail]} = lists:splitwith(fun(Y)->Y/=X end, Map),
       NewMap = [X|Head]++[H|Tail],
-      Ins = hipe_x86:mk_fop(fxch, mk_st(Pos), []),
+      Ins = hipe_x86:mk_fp_unop(fxch, mk_st(Pos)),
       {[Ins], NewMap}
   end;
 switch_first(X, Map) ->
@@ -566,9 +575,12 @@ is_fp(#x86_temp{type=Type}) ->
 
 handle_insn(I) ->
   case I of
+    #move{src=#x86_imm{}} -> true;
     #fmov{} -> true;
-    #fop{} -> true;
+    #fp_unop{} -> true;
+    #fp_binop{} -> true;
     #pseudo_call{}->true;
+%%    #ret{}-> true;
     _ -> false
   end.
 
@@ -577,6 +589,15 @@ is_liveOut(X, LiveOut) ->
 
 mk_st(X) ->
   hipe_x86:mk_fpreg(X, false).
+
+reverse_op(Op) ->
+  case Op of
+    'fsub' -> 'fsubr';
+    'fdiv' -> 'fdivr';
+    'fsubr'-> 'fsub';
+    'fdivr' -> 'fdiv';
+    _ -> Op
+  end.
 
 mk_op_pop(Op) ->
   case Op of
@@ -592,3 +613,30 @@ mk_op_pop(Op) ->
 butlast([X|Xs]) -> butlast(Xs,X).
 butlast([],_) -> [];
 butlast([X|Xs],Y) -> [Y|butlast(Xs,X)].
+
+%%pp_insn(Op, Src, Dst)->
+%%  pp([hipe_x86:mk_fp_binop(Op, Src, Dst)]).
+
+%%pp([I|Ins])->
+%%  hipe_x86_pp:pp_insn(I),
+%%  pp(Ins);
+%%pp([]) ->
+%%  [].
+
+pseudo_pop(Map) when (length(Map)>0) ->
+  Dst = hipe_x86:mk_new_temp('double'),
+  pseudo_pop(Dst, length(Map), []);
+pseudo_pop(_) ->
+  [].
+
+pseudo_pop(Dst, St, Acc) when (St>1)->
+%% Store all members of the stack to a single temporary to force 
+%% any floating point overflow exceptions to occur even though we
+%% don't have overflow for the extended double precision in the x87.
+  pseudo_pop(Dst, St-1, 
+	     [hipe_x86:mk_fp_unop('fxch', mk_st(St-1)),
+	      hipe_x86:mk_fp_unop('fst', Dst),
+	      hipe_x86:mk_fp_unop('fxch', mk_st(St-1))
+	      |Acc]);
+pseudo_pop(Dst, _St, Acc) ->
+  [hipe_x86:mk_fp_unop('fst', Dst)|Acc].

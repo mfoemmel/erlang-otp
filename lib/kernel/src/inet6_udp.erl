@@ -36,7 +36,7 @@ getaddr(Address,Timer) -> inet:getaddr(Address, inet6, Timer).
 
 open(Port) -> open(Port, []).
 
-open(Port, Opts) when Port >= 0, Port =< 16#ffff ->
+open(Port, Opts) when integer(Port), Port >= 0, Port =< 65535 ->
     case inet:udp_options([{port,Port} | Opts], inet6) of
 	{error, Reason} -> exit(Reason);
 	{ok, R} ->
@@ -44,18 +44,18 @@ open(Port, Opts) when Port >= 0, Port =< 16#ffff ->
 	    BAddr    = R#udp_opts.ifaddr,
 	    BPort    = R#udp_opts.port,
 	    SockOpts = R#udp_opts.opts,
-	    inet:open(Fd,BAddr,BPort,SockOpts,dgram,inet,?MODULE)
+	    inet:open(Fd,BAddr,BPort,SockOpts,dgram,inet6,?MODULE)
     end.
 
 send(S, Addr = {A,B,C,D,E,F,G,H}, P, Data) 
-  when ?ip6(A,B,C,D,E,F,G,H),P>=0,P=<16#ffff ->
+  when ?ip6(A,B,C,D,E,F,G,H), integer(P), P > 0, P =< 65535 ->
     prim_inet:sendto(S, Addr, P, Data).
 
 send(S, Data) ->
     prim_inet:sendto(S, {0,0,0,0,0,0,0,0}, 0, Data).
     
 connect(S, Addr = {A,B,C,D,E,F,G,H}, P) 
-  when ?ip6(A,B,C,D,E,F,G,H), P>=0, P=<16#ffff->
+  when ?ip6(A,B,C,D,E,F,G,H), integer(P), P > 0, P =< 65535 ->
     prim_inet:connect(S, Addr, P).
 
 recv(S,Len) ->

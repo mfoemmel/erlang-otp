@@ -46,7 +46,7 @@ is_snmp_type([fix_string | T]) -> is_snmp_type(T);
 is_snmp_type([]) -> true;
 is_snmp_type(_) -> false.
 
-create_table([], MnesiaTab, Storage) ->
+create_table([], MnesiaTab, _Storage) ->
     mnesia:abort({badarg, MnesiaTab, {snmp, empty_snmpstruct}});
 
 create_table([{key, Us}], MnesiaTab, Storage) ->
@@ -122,13 +122,13 @@ key_to_oid(Tab, Key, [{key, Types}]) ->
 	    key_to_oid_i(MnesiaOid, Key, Types)
     end.
 
-key_to_oid_i(MnesiaOid, Key, integer) when integer(Key) -> [Key];
-key_to_oid_i(MnesiaOid, Key, fix_string) when list(Key) -> Key;
-key_to_oid_i(MnesiaOid, Key, string) when list(Key) -> [length(Key) | Key];
+key_to_oid_i(_MnesiaOid, Key, integer) when integer(Key) -> [Key];
+key_to_oid_i(_MnesiaOid, Key, fix_string) when list(Key) -> Key;
+key_to_oid_i(_MnesiaOid, Key, string) when list(Key) -> [length(Key) | Key];
 key_to_oid_i(MnesiaOid, Key, Type) ->
     exit({bad_snmp_key, [MnesiaOid, Key, Type]}).
 
-keys_to_oid(MnesiaOid, 0, _Key, Oid, _Types) -> Oid;
+keys_to_oid(_MnesiaOid, 0, _Key, Oid, _Types) -> Oid;
 keys_to_oid(MnesiaOid, N, Key, Oid, Types) ->
     Type = element(N, Types),
     KeyPart = element(N, Key),
@@ -261,11 +261,11 @@ b_loop(Parent, Tree, Us) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% System upgrade
 
-system_continue(Parent, Debug, {Tree, Us}) ->
+system_continue(Parent, _Debug, {Tree, Us}) ->
     b_loop(Parent, Tree, Us).
 
-system_terminate(Reason, Parent, Debug, Tree) ->
+system_terminate(Reason, _Parent, _Debug, _Tree) ->
     exit(Reason).
 
-system_code_change(State, Module, OldVsn, Extra) ->
+system_code_change(State, _Module, _OldVsn, _Extra) ->
     {ok, State}.

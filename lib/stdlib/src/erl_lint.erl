@@ -23,7 +23,9 @@
 -module(erl_lint).
 
 -export([module/1,module/2,module/3,format_error/1]).
--export([is_pattern_expr/1,is_guard_test/1,is_guard_expr/1]).
+-export([exprs/2,used_vars/2]). % Used from erl_eval.erl.
+-export([is_pattern_expr/1,is_guard_test/1,is_guard_test/2]).
+-export([is_guard_expr/1]).
 -export([bool_option/4,value_option/3,value_option/7]).
 
 -import(lists, [member/2,map/2,foldl/3,foldr/3,mapfoldl/3,all/2]).
@@ -59,11 +61,8 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 %% lists are packed, and reversed, into a list of {FileName,ErrorDescList}
 %% pairs which are returned.
 
--include("./erl_bits.hrl").
-%% FIXME.
-%-include("../include/erl_bits.hrl").
+-include_lib("stdlib/include/erl_bits.hrl").
 
-%% FIXME.
 %%-define(DEBUGF(X,Y), io:format(X, Y)).
 -define(DEBUGF(X,Y), void).
 
@@ -111,6 +110,9 @@ format_error(invalid_call) ->
     "invalid function call";
 format_error(invalid_record) ->
     "invalid record expression";
+
+format_error(no_generator) ->
+    "list comprehension has no generator (perhaps \"|\" mistyped as \"||\"?)";
 
 format_error({attribute,A}) ->
     io_lib:format("attribute '~w' after function definitions", [A]);
@@ -208,6 +210,23 @@ format_error({ill_defined_behaviour_callbacks,Behaviour}) ->
 pseudolocals() ->
     [{module_info,0}, {module_info,1}, {record_info,2}].
 
+%%
+%% Used by erl_eval.erl to check commands.
+%% 
+
+exprs(Exprs, BindingsList) ->
+    Vs = map(fun({V,_Val}) -> {V,{bound,used}} end, BindingsList),
+    Vt = orddict:from_list(Vs),
+    {_Evt,St} = exprs(Exprs, Vt, start()),
+    return_status(St).
+
+used_vars(Exprs, BindingsList) ->
+    Vs = map(fun({V,_Val}) -> {V,{bound,{unused,[]}}} end, BindingsList),
+    Vt = orddict:from_list(Vs),
+    {Evt,_St} = exprs(Exprs, Vt, start()),
+    {ok, foldl(fun({V,{_,used}}, L) -> [V | L];
+                  (_, L) -> L end, [], Evt)}.
+
 %% module([Form]) ->
 %% module([Form], FileName) ->
 %% module([Form], FileName, [CompileOption]) ->
@@ -240,12 +259,12 @@ start(File) ->
 
 start(File, Opts) ->
     #lint{state=start,
-          exports=ordsets:list_to_set([{module_info,0},
-                                       {module_info,1}]),
+          exports=ordsets:from_list([{module_info,0},
+                                     {module_info,1}]),
           mod_imports=dict:from_list([{erlang,erlang}]),
           compile=Opts,
           %% Internal pseudo-functions must appear as defined/reached.
-          defined=ordsets:list_to_set(pseudolocals()),
+          defined=ordsets:from_list(pseudolocals()),
           called=orddict:from_list([{F, [0]} || F <- pseudolocals()]),
           calls=orddict:from_list([{{module_info,1}, pseudolocals()}]),
           warn_format=value_option(warn_format, 1, warn_format, 1,
@@ -423,7 +442,7 @@ behaviour_check(Bs, St) ->
     foldl(fun ({Line,B}, St0) ->
                   St1 = add_warning(Mult, Line, {several_behaviours,B}, St0),
                   {Bfs, St2} = behaviour_callbacks(Line, B, St1),
-                  Missing = ordsets:subtract(ordsets:list_to_set(Bfs),
+                  Missing = ordsets:subtract(ordsets:from_list(Bfs),
                                              St2#lint.exports),
                   func_warning(Line, undefined_behaviour_func,
                                Missing, St2)
@@ -491,7 +510,7 @@ import(Line, {Mod,Fs}, St) ->
     Mod1 = package_to_string(Mod),
     case packages:is_valid(Mod1) of
         true ->
-            Mfs = ordsets:list_to_set(Fs),
+            Mfs = ordsets:from_list(Fs),
             case check_imports(Line, Mfs, St#lint.imports) of
                 [] ->
                     St#lint{imports=add_imports(list_to_atom(Mod1), Mfs,
@@ -716,29 +735,44 @@ pattern_list(Ps, Vt, Old, St) ->
 %%      true | false.
 %%  Test if a general expression is a valid pattern expression.
 
-is_pattern_expr({char,_Line,_C}) -> true;
-is_pattern_expr({integer,_Line,_I}) -> true;
-is_pattern_expr({float,_Line,_F}) -> true;
-is_pattern_expr({atom,_Line,_A}) -> true;
-is_pattern_expr({tuple,_Line,Es}) ->
+is_pattern_expr(Expr) ->
+    case is_pattern_expr_1(Expr) of
+	false -> false;
+	true ->
+	    %% Expression is syntactically correct - make sure that it
+	    %% also can be evaluated.
+	    case erl_eval:partial_eval(Expr) of
+		{integer,_,_} -> true;
+		{char,_,_} -> true;
+		{float,_,_} -> true;
+		{atom,_,_} -> true;
+		_ -> false
+	    end
+    end.
+
+is_pattern_expr_1({char,_Line,_C}) -> true;
+is_pattern_expr_1({integer,_Line,_I}) -> true;
+is_pattern_expr_1({float,_Line,_F}) -> true;
+is_pattern_expr_1({atom,_Line,_A}) -> true;
+is_pattern_expr_1({tuple,_Line,Es}) ->
     all(fun is_pattern_expr/1, Es);
-is_pattern_expr({nil,_Line}) -> true;
-is_pattern_expr({cons,_Line,H,T}) ->
-    case is_pattern_expr(H) of
-        true -> is_pattern_expr(T);
+is_pattern_expr_1({nil,_Line}) -> true;
+is_pattern_expr_1({cons,_Line,H,T}) ->
+    case is_pattern_expr_1(H) of
+        true -> is_pattern_expr_1(T);
         false -> false
     end;
-is_pattern_expr({op,_Line,Op,A}) ->
+is_pattern_expr_1({op,_Line,Op,A}) ->
     case erl_internal:arith_op(Op, 1) of
-        true -> is_pattern_expr(A);
+        true -> is_pattern_expr_1(A);
         false -> false
     end;
-is_pattern_expr({op,_Line,Op,A1,A2}) ->
+is_pattern_expr_1({op,_Line,Op,A1,A2}) ->
     case erl_internal:arith_op(Op, 2) of
         true -> all(fun is_pattern_expr/1, [A1,A2]);
         false -> false
     end;
-is_pattern_expr(_Other) -> false.
+is_pattern_expr_1(_Other) -> false.
 
 %% pattern_bin(Line, [Element], VarTable, Old, State) -> 
 %%           {UpdVarTable,BinVarTable,State}.
@@ -757,7 +791,7 @@ pattern_bin(Line, Es, Vt, Old, St0) ->
 
 pattern_element({bin_element,Line,E,Sz0,Ts}, Vt, Old, {Size0,Esvt,Bvt,St0}) ->
     {Pevt,St1} = pat_bit_expr(E, Old, St0),
-    {Sz1,Bvt1,St2} = pat_bit_size(Sz0, Vt, St1),
+    {Sz1,Bvt1,St2} = pat_bit_size(Sz0, vtmerge(Vt, Esvt), St1),
     {Sz2,Bt,St3} = bit_type(Line, Sz1, Ts, St2),
     {Sz3,St4} = bit_size_check(Line, Sz2, Bt, St3),
     {Size1,St5} = add_bit_size(Line, Sz3, Size0, false, St4),
@@ -821,7 +855,7 @@ bit_size({atom,_Line,all}, _Vt, St, _Check) -> {all,[],St};
 bit_size(Size, Vt, St, Check) ->
     %% Try to safely evaluate Size if constant to get size,
     %% otherwise just treat it as an expression.
-    case is_gexpr(Size) of
+    case is_gexpr(Size, St#lint.records) of
         true ->
             case erl_eval:partial_eval(Size) of
                 {integer,_ILn,I} -> {I,[],St};
@@ -906,22 +940,17 @@ guard_tests([], _Vt, St) -> {[],St}.
 %%      {UsedVarTable,State'}
 %%  Check one guard test, returns NewVariables.  We now allow more
 %%  expressions in guards including the new is_XXX type tests, but
-%%  only allow the ols type tests at the top level.
+%%  only allow the old type tests at the top level.
 
 %% Specially handle record type test here.
 guard_test({call,Line,{atom,Lr,record},[E,A]}, Vt, St0) ->
-    guard_test({call,Line,{atom,Lr,is_record},[E,A]}, Vt, St0);
-guard_test({call,_Line,{atom,_Lr,is_record},[E,{atom,Ln,Name}]}, Vt, St0) ->
-    {Rvt,St1} = gexpr(E, Vt, St0),
-    {Rvt,exist_record(Ln, Name, St1)};
-guard_test({call,Line,{atom,_Lr,is_record},[_E,_R]}, _Vt, St) ->
-    {[],add_error(Line, illegal_guard_expr, St)};
-guard_test({call,Line,{atom,_La,F},As}, Vt, St0) ->
+    gexpr({call,Line,{atom,Lr,is_record},[E,A]}, Vt, St0);
+guard_test({call,_Line,{atom,_La,F},As}=G, Vt, St0) ->
     {Asvt,St1} = gexpr_list(As, Vt, St0),       %Always check this.
     A = length(As),
     case erl_internal:type_test(F, A) of
-        true -> {Asvt,St1};
-        false -> {Asvt,add_error(Line, illegal_guard_expr, St1)}
+        true when F =/= is_record -> {Asvt,St1};
+        _ -> gexpr(G, Vt, St0)
     end;
 guard_test(G, Vt, St) ->
     %% Everything else is a guard expression.
@@ -970,6 +999,15 @@ gexpr({record,Line,Name,Inits}, Vt, St) ->
                  end);
 gexpr({bin,Line,Fs}, Vt,St) ->
     expr_bin(Line, Fs, Vt, St, fun gexpr/3);
+gexpr({call,_Line,{atom,_Lr,is_record},[E,{atom,Ln,Name}]}, Vt, St0) ->
+    {Rvt,St1} = gexpr(E, Vt, St0),
+    {Rvt,exist_record(Ln, Name, St1)};
+gexpr({call,Line,{atom,_Lr,is_record},[E,R]}, Vt, St0) ->
+    {Asvt,St1} = gexpr_list([E,R], Vt, St0),
+    {Asvt,add_error(Line, illegal_guard_expr, St1)};
+gexpr({call,Line,{remote,_Lr,{atom,_Lm,erlang},{atom,Lf,is_record}},[E,A]}, 
+      Vt, St0) ->
+    gexpr({call,Line,{atom,Lf,is_record},[E,A]}, Vt, St0);
 gexpr({call,Line,{atom,_La,F},As}, Vt, St0) ->
     {Asvt,St1} = gexpr_list(As, Vt, St0),
     A = length(As),
@@ -980,24 +1018,23 @@ gexpr({call,Line,{atom,_La,F},As}, Vt, St0) ->
 gexpr({call,Line,{remote,_Lr,{atom,_Lm,erlang},{atom,_Lf,F}},As}, Vt, St0) ->
     {Asvt,St1} = gexpr_list(As, Vt, St0),
     A = length(As),
-    case erl_internal:guard_bif(F, A) of
+    case erl_internal:guard_bif(F, A) orelse is_gexpr_op(F, A) of
         true -> {Asvt,St1};
         false -> {Asvt,add_error(Line, illegal_guard_expr, St1)}
     end;
+gexpr({call,L,{tuple,Lt,[{atom,Lm,erlang},{atom,Lf,F}]},As}, Vt, St) ->
+    gexpr({call,L,{remote,Lt,{atom,Lm,erlang},{atom,Lf,F}},As}, Vt, St);
 gexpr({op,Line,Op,A}, Vt, St0) ->
     {Avt,St1} = gexpr(A, Vt, St0),
-    case catch erl_internal:op_type(Op, 1) of
-        arith -> {Avt,St1};
-        bool -> {Avt,St1};
-        _Other -> {Avt,add_error(Line, illegal_guard_expr, St1)}
+    case is_gexpr_op(Op, 1) of
+        true -> {Avt,St1};
+        false -> {Avt,add_error(Line, illegal_guard_expr, St1)}
     end;
 gexpr({op,Line,Op,L,R}, Vt, St0) ->
     {Avt,St1} = gexpr_list([L,R], Vt, St0),
-    case catch erl_internal:op_type(Op, 2) of
-        arith -> {Avt,St1};
-        bool -> {Avt,St1};
-        comp -> {Avt,St1};
-        _Other -> {Avt,add_error(Line, illegal_guard_expr, St1)}
+    case is_gexpr_op(Op, 2) of
+        true -> {Avt,St1};
+        false -> {Avt,add_error(Line, illegal_guard_expr, St1)}
     end;
 %% Everything else is illegal! You could put explicit tests here to
 %% better error diagnostics.
@@ -1015,82 +1052,95 @@ gexpr_list(Es, Vt, St) ->
 
 %% is_guard_test(Expression) -> true | false.
 %%  Test if a general expression is a guard test.
+is_guard_test(E) ->
+    is_guard_test(E, []).
 
-is_guard_test({call,Line,{atom,Lr,record},[E,A]}) ->
-    is_guard_test({call,Line,{atom,Lr,is_record},[E,A]});
-is_guard_test({call,_Line,{atom,_Lr,is_record},[E,{atom,_Ln,_Name}]}) ->
-    is_gexpr(E);
-is_guard_test({call,_Line,{atom,_La,Test},As}) ->
+%% is_guard_test(Expression, RecordDefs) -> true | false.
+is_guard_test({call,Line,{atom,Lr,record},[E,A]}, RDs) ->
+    is_gexpr({call,Line,{atom,Lr,is_record},[E,A]}, RDs);
+is_guard_test({call,_Line,{atom,_La,Test},As}=Call, RDs) ->
     case erl_internal:type_test(Test, length(As)) of
-        true -> is_gexpr_list(As);
-        false -> false
+        true -> is_gexpr_list(As, RDs);
+        false -> is_gexpr(Call, RDs)
     end;
-is_guard_test(G) ->
+is_guard_test(G, RDs) ->
     %%Everything else is a guard expression.
-    is_gexpr(G).
+    is_gexpr(G, RDs).
 
 %% is_guard_expr(Expression) -> true | false.
 %%  Test if an expression is a guard expression.
 
-is_guard_expr(E) -> is_gexpr(E). 
+is_guard_expr(E) -> is_gexpr(E, []). 
 
-is_gexpr({var,_L,_V}) -> true;
-is_gexpr({char,_L,_C}) -> true;
-is_gexpr({integer,_L,_I}) -> true;
-is_gexpr({float,_L,_F}) -> true;
-is_gexpr({atom,_L,_A}) -> true;
-is_gexpr({string,_L,_S}) -> true;
-is_gexpr({nil,_L}) -> true;
-is_gexpr({cons,_L,H,T}) -> is_gexpr_list([H,T]);
-is_gexpr({tuple,_L,Es}) -> is_gexpr_list(Es);
-%%is_gexpr({struct,_L,_Tag,Es}) ->
-%%    is_gexpr_list(Es);
-is_gexpr({record_index,_L,_Name,Field}) ->
-    is_gexpr(Field);
-is_gexpr({record_field,_L,_,_}=M) ->
+is_gexpr({var,_L,_V}, _RDs) -> true;
+is_gexpr({char,_L,_C}, _RDs) -> true;
+is_gexpr({integer,_L,_I}, _RDs) -> true;
+is_gexpr({float,_L,_F}, _RDs) -> true;
+is_gexpr({atom,_L,_A}, _RDs) -> true;
+is_gexpr({string,_L,_S}, _RDs) -> true;
+is_gexpr({nil,_L}, _RDs) -> true;
+is_gexpr({cons,_L,H,T}, RDs) -> is_gexpr_list([H,T], RDs);
+is_gexpr({tuple,_L,Es}, RDs) -> is_gexpr_list(Es, RDs);
+%%is_gexpr({struct,_L,_Tag,Es}, RDs) ->
+%%    is_gexpr_list(Es, RDs);
+is_gexpr({record_index,_L,_Name,Field}, RDs) ->
+    is_gexpr(Field, RDs);
+is_gexpr({record_field,_L,_,_}=M, _RDs) ->
     case erl_parse:package_segments(M) of
         error -> false;
       _ -> true
     end;
-is_gexpr({record_field,_L,Rec,_Name,Field}) ->
-    is_gexpr_list([Rec,Field]);
-is_gexpr({record,_L,_Name,Inits}) ->
-    is_gexpr_fields(Inits);
-is_gexpr({bin,_L,Fs}) ->
+is_gexpr({record_field,_L,Rec,_Name,Field}, RDs) ->
+    is_gexpr_list([Rec,Field], RDs);
+is_gexpr({record,L,Name,Inits}, RDs) ->
+    is_gexpr_fields(Inits, L, Name, RDs);
+is_gexpr({bin,_L,Fs}, RDs) ->
     all(fun ({bin_element,_Line,E,Sz,_Ts}) -> 
-                is_gexpr(E) and is_gexpr(Sz) 
+                is_gexpr(E, RDs) and (Sz == default orelse is_gexpr(Sz, RDs))
         end, Fs);
-is_gexpr({call,_L,{atom,_Lf,F},As}) ->
-    case erl_internal:guard_bif(F, length(As)) of
-        true -> is_gexpr_list(As);
+is_gexpr({call,_L,{atom,_Lf,F},As}, RDs) ->
+    A = length(As),
+    case erl_internal:guard_bif(F, A) of
+        true -> is_gexpr_list(As, RDs);
         false -> false
     end;
-is_gexpr({call,_L,{remote,_Lr,{atom,_Lm,erlang},{atom,_Lf,F}},As}) ->
-    case erl_internal:guard_bif(F, length(As)) of
-        true -> is_gexpr_list(As);
+is_gexpr({call,_L,{remote,_Lr,{atom,_Lm,erlang},{atom,_Lf,F}},As}, RDs) ->
+    A = length(As),
+    case erl_internal:guard_bif(F, A) orelse is_gexpr_op(F, A) of
+        true -> is_gexpr_list(As, RDs);
         false -> false
     end;
-is_gexpr({op,_L,Op,A}) ->
-    case catch erl_internal:op_type(Op, 1) of
-        arith -> is_gexpr(A);
-        bool -> is_gexpr(A);
-        comp -> is_gexpr(A);
-        _Other -> false
+is_gexpr({call,L,{tuple,Lt,[{atom,Lm,erlang},{atom,Lf,F}]},As}, RDs) ->
+    is_gexpr({call,L,{remote,Lt,{atom,Lm,erlang},{atom,Lf,F}},As}, RDs);
+is_gexpr({op,_L,Op,A}, RDs) ->
+    case is_gexpr_op(Op, 1) of
+        true -> is_gexpr(A, RDs);
+        false -> false
     end;
-is_gexpr({op,_L,Op,A1,A2}) ->
-    case catch erl_internal:op_type(Op, 2) of
-        arith -> is_gexpr_list([A1,A2]);
-        bool -> is_gexpr_list([A1,A2]);
-        comp -> is_gexpr_list([A1,A2]);
-        _Other -> false
+is_gexpr({op,_L,Op,A1,A2}, RDs) ->
+    case is_gexpr_op(Op, 2) of
+        true -> is_gexpr_list([A1,A2], RDs);
+        false -> false
     end;
-is_gexpr(_Other) -> false.
+is_gexpr(_Other, _RDs) -> false.
 
-is_gexpr_list(Es) -> all(fun (E) -> is_gexpr(E) end, Es).
+is_gexpr_op(Op, A) ->
+    case catch erl_internal:op_type(Op, A) of
+        arith -> true;
+        bool -> true;
+        comp -> true;
+        _Other -> false
+    end.
 
-is_gexpr_fields(Fs) ->
-    all(fun ({record_field,_Lf,_Name,V}) -> is_gexpr(V);
-            (_Other) -> false end, Fs).
+is_gexpr_list(Es, RDs) -> all(fun (E) -> is_gexpr(E, RDs) end, Es).
+
+is_gexpr_fields(Fs, L, Name, RDs) ->
+    IFs = case orddict:find(Name, RDs) of
+              {ok,Fields} -> init_fields(Fs, L, Fields);
+              error  -> Fs
+          end,
+    all(fun ({record_field,_Lf,_Name,V}) -> is_gexpr(V, RDs);
+            (_Other) -> false end, IFs).
 
 %% exprs(Sequence, VarTable, State) ->
 %%      {UsedVarTable,State'}
@@ -1119,7 +1169,7 @@ expr({string,_Line,_S}, _Vt, St) -> {[],St};
 expr({nil,_Line}, _Vt, St) -> {[],St};
 expr({cons,_Line,H,T}, Vt, St) ->
     expr_list([H,T], Vt, St);
-expr({lc,_Line,E,Qs}, Vt0, St0) ->
+expr({lc,Line,E,Qs}, Vt0, St0) ->
     {Vt1, Uvt, St1} = lc_quals(Qs, Vt0, St0),
     {Evt,St2} = expr(E, Vt1, St1),
     Vt2 = vtupdate(Evt, Vt1),
@@ -1130,7 +1180,8 @@ expr({lc,_Line,E,Qs}, Vt0, St0) ->
     %% Local variables that have not been shadowed.
     {_,St5} = check_unused_vars(Vt2, Vt0, St4),
     Vt3 = vtmerge(vtsubtract(Vt2, Uvt), Uvt),
-    {vtold(Vt3, Vt0),St5};                      %Don't export local variables
+    St = warn_no_generator(Line, Qs, St5),
+    {vtold(Vt3, Vt0),St};                      %Don't export local variables
 expr({tuple,_Line,Es}, Vt, St) ->
     expr_list(Es, Vt, St);
 %%expr({struct,Line,Tag,Es}, Vt, St) ->
@@ -1202,8 +1253,8 @@ expr({'fun',Line,Body}, Vt, St) ->
     end;
 expr({call,Line,{remote,_Lr,M,F},As}, Vt, St0) ->
     case expand_package(M, St0) of
-        {error, St1} ->
-            expr_list([M,F|As], Vt, St1);
+        {error, _} ->
+            expr_list([M,F|As], Vt, St0);
         {{atom,_La,M1}, St1} ->
             case F of
                 {atom,Lf,F1} ->
@@ -1235,13 +1286,26 @@ expr({call,Line,{atom,La,F},As}, Vt, St0) ->
                           end
                   end}
     end;
+expr({call,Line,{record_field,_,_,_}=F,As}, Vt, St0) ->
+    case expand_package(F, St0) of
+        {error, _} ->
+	    expr_list([F|As], Vt, St0);
+        {A, St1} ->
+	    expr({call,Line,A,As}, Vt, St1)
+    end;
 expr({call,Line,F,As}, Vt, St0) ->
     St = warn_invalid_call(Line,F,St0),
     expr_list([F|As], Vt, St);                  %They see the same variables
-expr({'try',Line,Es,Cs}, Vt, St0) ->
-    {Evt,St1} = exprs(Es, Vt, St0),
-    {Cvt,St2} = icrt_clauses(Cs, {'try',Line}, Vt, St1),
-    {vtmerge(Evt, Cvt),St2};
+expr({'try',Line,Es,Scs,Ccs}, Vt, St0) ->
+    %% No new variables are added in exprs, flag new variables as unsafe.
+    {Evt0,St1} = exprs(Es, Vt, St0),
+    Uvt = vtunsafe(vtnames(vtnew(Evt0, Vt)), {'try',Line}, []),
+    Evt1 = vtupdate(Uvt, vtupdate(Evt0, Vt)),
+    %% However, these clauses can export!
+    {Svt,St2} = icrt_clauses(Scs, Evt1, St1),
+    {Cvt,St3} = icrt_clauses(Ccs, Evt1, St2),
+    {Rvt,St4} = icrt_export(Svt ++ Cvt, Vt, {'try',Line}, St3),
+    {vtmerge(Evt1, Rvt),St4};
 expr({'catch',Line,E}, Vt, St0) ->
     %% No new variables added, flag new variables as unsafe.
     {Evt,St1} = expr(E, Vt, St0),
@@ -1254,6 +1318,13 @@ expr({match,_Line,P,E}, Vt, St0) ->
 %% No comparison or boolean operators yet.
 expr({op,_Line,_Op,A}, Vt, St) ->
     expr(A, Vt, St);
+expr({op,Line,Op,L,R}, Vt, St0) when Op == 'orelse'; Op == 'andalso' ->
+    {Evt1,St1} = expr(L, Vt, St0),
+    Vt1 = vtupdate(Evt1, Vt),
+    {Evt2,St2} = expr(R, Vt1, St1),
+    Vt2 = vtmerge(Evt2, Vt1),
+    {Vt3,St3} = icrt_export([Vt1,Vt2], Vt1, {Op,Line},St2),
+    {vtmerge(Evt1, Vt3),St3};
 expr({op,_Line,_Op,L,R}, Vt, St) ->
     expr_list([L,R], Vt, St);                   %They see the same variables
 %% The following are not allowed to occur anywhere!
@@ -1274,6 +1345,13 @@ expr_list(Es, Vt, St) ->
 record_expr(Line, Rec, Vt, St0) ->
     St1 = warn_invalid_record(Line, Rec, St0),
     expr(Rec, Vt, St1).
+
+%% warn_no_generator(Line, Qs, State0) -> State
+%% Adds warning if a list comprehension has no generator.
+
+warn_no_generator(_, [{generate,_,_,_}|_], St) -> St;
+warn_no_generator(Line, [_|T], St) -> warn_no_generator(Line, T, St);
+warn_no_generator(Line, [], St) -> add_warning(Line, no_generator, St).
 
 %% warn_invalid_record(Line, Record, State0) -> State
 %% Adds warning if the record is invalid.
@@ -1564,7 +1642,7 @@ lc_quals([{generate,Line,P,E} | Qs], Vt, Uvt, St0) ->
     Vt3 = vtupdate(Pvt, vtsubtract(Vt2, Pvt)),
     lc_quals(Qs, Vt3, NUvt, St5);
 lc_quals([F|Qs], Vt, Uvt, St0) ->
-    {Fvt,St1} = case is_guard_test(F) of
+    {Fvt,St1} = case is_guard_test(F, St0#lint.records) of
                     true -> guard_test(F, Vt, St0);
                     false -> expr(F, Vt, St0)
                 end,
@@ -1756,7 +1834,7 @@ vtunsafe(Vs, In, Vt0) ->
     vtupdate([{V,{{unsafe,In},{unused,[]}}} || V <- Vs], Vt0).
 
 %% vtmerge(VarTable, VarTable) -> VarTable.
-%%  Merge two variables tables generating a new vartable.  Give prioriy to
+%%  Merge two variables tables generating a new vartable. Give priority to
 %%  errors then warnings.
 
 vtmerge(Vt1, Vt2) ->
@@ -1982,47 +2060,72 @@ args_length({nil,_L}) -> 0.
 check_format_string(Fmt) ->
     extract_sequences(Fmt, []).
 
-extract_sequences(Fmt, Need) ->
+extract_sequences(Fmt, Need0) ->
     case string:chr(Fmt, $~) of
-        0 -> {ok,Need};                         %That's it
+        0 -> {ok,lists:reverse(Need0)};         %That's it
         Pos ->
             Fmt1 = string:substr(Fmt, Pos+1),   %Skip ~
-            case extract_sequence(Fmt1, []) of
-                {ok,Nd,Rest} -> extract_sequences(Rest, Need ++ Nd);
+            case extract_sequence(1, Fmt1, Need0) of
+                {ok,Need1,Rest} -> extract_sequences(Rest, Need1);
                 Error -> Error
             end
     end.
-            
-extract_sequence([C|Fmt], Need) when C >= $0, C =< $9 ->
-    extract_sequence(Fmt, Need);
-extract_sequence([$-|Fmt], Need) ->
-    extract_sequence(Fmt, Need);
-extract_sequence([$+|Fmt], Need) ->
-    extract_sequence(Fmt, Need);
-extract_sequence([$.|Fmt], Need) ->
-    extract_sequence(Fmt, Need);
-extract_sequence([$*|Fmt], Need) ->
-    extract_sequence(Fmt, Need ++ [int]);
-extract_sequence([C|Fmt], Need) ->
-    case control_type(C) of
-        error -> {error,"invalid control ~" ++ [C]};
-        Nd -> {ok,Need ++ Nd,Fmt}
-    end;
-extract_sequence([], _Need) -> {error,"truncated"}.
 
-control_type($~) -> [];
-control_type($c) -> [int];
-control_type($f) -> [float];
-control_type($e) -> [float];
-control_type($g) -> [float];
-control_type($s) -> [string];
-control_type($w) -> [term];
-control_type($p) -> [term];
-control_type($W) -> [term,int];
-control_type($P) -> [term,int];
-control_type($n) -> [];
-control_type($i) -> [term];
-control_type(_C) -> error.
+extract_sequence(1, [$-,C|Fmt], Need) when C >= $0, C =< $9 ->
+    extract_sequence_digits(1, Fmt, Need);
+extract_sequence(1, [C|Fmt], Need) when C >= $0, C =< $9 ->
+    extract_sequence_digits(1, Fmt, Need);
+extract_sequence(1, [$-,$*|Fmt], Need) ->
+    extract_sequence(2, Fmt, [int|Need]);
+extract_sequence(1, [$*|Fmt], Need) ->
+    extract_sequence(2, Fmt, [int|Need]);
+extract_sequence(1, Fmt, Need) ->
+    extract_sequence(2, Fmt, Need);
+extract_sequence(2, [$.,C|Fmt], Need) when C >= $0, C =< $9 ->
+    extract_sequence_digits(2, Fmt, Need);
+extract_sequence(2, [$.,$*|Fmt], Need) ->
+    extract_sequence(3, Fmt, [int|Need]);
+extract_sequence(2, [$.|Fmt], Need) ->
+    extract_sequence(3, Fmt, Need);
+extract_sequence(2, Fmt, Need) ->
+    extract_sequence(4, Fmt, Need);
+extract_sequence(3, [$.,$*|Fmt], Need) ->
+    extract_sequence(4, Fmt, [int|Need]);
+extract_sequence(3, [$.,_|Fmt], Need) ->
+    extract_sequence(4, Fmt, Need);
+extract_sequence(3, Fmt, Need) ->
+    extract_sequence(4, Fmt, Need);
+extract_sequence(4, [C|Fmt], Need0) ->
+    case control_type(C, Need0) of
+        error -> {error,"invalid control ~" ++ [C]};
+        Need1 -> {ok,Need1,Fmt}
+    end;
+extract_sequence(_, [], _Need) -> {error,"truncated"}.
+
+extract_sequence_digits(Fld, [C|Fmt], Need) when C >= $0, C =< $9 ->
+    extract_sequence_digits(Fld, Fmt, Need);
+extract_sequence_digits(Fld, Fmt, Need) ->
+    extract_sequence(Fld+1, Fmt, Need).
+
+control_type($~, Need) -> Need;
+control_type($c, Need) -> [int|Need];
+control_type($f, Need) -> [float|Need];
+control_type($e, Need) -> [float|Need];
+control_type($g, Need) -> [float|Need];
+control_type($s, Need) -> [string|Need];
+control_type($w, Need) -> [term|Need];
+control_type($p, Need) -> [term|Need];
+control_type($W, Need) -> [int,term|Need]; %% Note: reversed
+control_type($P, Need) -> [int,term|Need]; %% Note: reversed
+control_type($b, Need) -> [term|Need];
+control_type($B, Need) -> [term|Need];
+control_type($x, Need) -> [string,term|Need]; %% Note: reversed
+control_type($X, Need) -> [string,term|Need]; %% Note: reversed
+control_type($+, Need) -> [term|Need];
+control_type($#, Need) -> [term|Need];
+control_type($n, Need) -> Need;
+control_type($i, Need) -> [term|Need];
+control_type(_C, _Need) -> error.
 
 %% In syntax trees, module/package names are atoms or lists of atoms.
 
@@ -2052,11 +2155,11 @@ expand_package({atom,L,A} = M, St0) ->
             end
     end;
 expand_package(M, St0) ->
+    L = element(2, M),
     case erl_parse:package_segments(M) of
         error ->
             {error, St0};
         M1 ->
-            L = element(2, M),
             Name = package_to_string(M1),
             case packages:is_valid(Name) of
                 true ->

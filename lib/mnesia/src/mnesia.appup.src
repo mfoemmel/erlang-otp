@@ -1,61 +1,6 @@
 {"%VSN%",
  [ 
-   {"4.1.2", 
-    [
-     {update, mnesia_loader, soft, soft_purge, soft_purge, []},
-     {update, mnesia_tm, soft, soft_purge, soft_purge, []}
-    ]
-   },
-   {"4.1.1", 
-    [
-     {update, mnesia_loader, soft, soft_purge, soft_purge, []},
-     {update, mnesia_controller, soft, soft_purge, soft_purge, []},
-     {update, mnesia, soft, soft_purge, soft_purge, []},
-     {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
-     {update, mnesia_bup, soft, soft_purge, soft_purge, []},
-     {update, mnesia_log, soft, soft_purge, soft_purge, []},
-     {update, mnesia_tm, soft, soft_purge, soft_purge, []}
-    ]
-   },
-   {"4.1", 
-    [
-     {update, mnesia_loader, soft, soft_purge, soft_purge, []},
-     {update, mnesia_controller, soft, soft_purge, soft_purge, []},
-     {update, mnesia, soft, soft_purge, soft_purge, []},
-     {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
-     {update, mnesia_bup, soft, soft_purge, soft_purge, []},
-     {update, mnesia_tm, soft, soft_purge, soft_purge, []},
-     {update, mnesia_log, soft, soft_purge, soft_purge, []}
-    ]
-   }
   ],
  [
-  {"4.1.2", 
-    [
-     {update, mnesia_loader, soft, soft_purge, soft_purge, []},
-     {update, mnesia_tm, soft, soft_purge, soft_purge, []}
-    ]
-   },
-   {"4.1.1", 
-    [
-     {update, mnesia_loader, soft, soft_purge, soft_purge, []},
-     {update, mnesia_controller, soft, soft_purge, soft_purge, []},
-     {update, mnesia, soft, soft_purge, soft_purge, []},
-     {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
-     {update, mnesia_bup, soft, soft_purge, soft_purge, []},
-     {update, mnesia_log, soft, soft_purge, soft_purge, []}
-    ]
-   },
-   {"4.1", 
-    [
-     {update, mnesia_loader, soft, soft_purge, soft_purge, []},
-     {update, mnesia_controller, soft, soft_purge, soft_purge, []},
-     {update, mnesia, soft, soft_purge, soft_purge, []},
-     {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
-     {update, mnesia_bup, soft, soft_purge, soft_purge, []},
-     {update, mnesia_tm, soft, soft_purge, soft_purge, []},
-     {update, mnesia_log, soft, soft_purge, soft_purge, []}
-    ]
-   }
- ] 
+  ] 
 }.

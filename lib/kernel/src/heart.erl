@@ -28,13 +28,15 @@
 %%%
 %%% It recognizes the flag '-heart'
 %%%-----------------------------------------------------------------
--export([start/0, init/2, set_cmd/1, clear_cmd/0, cycle/0]).
+-export([start/0, init/2, set_cmd/1, clear_cmd/0, get_cmd/0, cycle/0]).
 
 -define(START_ACK, 1).
 -define(HEART_BEAT, 2).
 -define(SHUT_DOWN, 3).
--define(HEART_CMD, 4).
--define(HEART_CMD_CLEAR, 5).
+-define(SET_CMD, 4).
+-define(CLEAR_CMD, 5).
+-define(GET_CMD, 6).
+-define(HEART_CMD, 7).
 
 -define(TIMEOUT, 5000).
 -define(CYCLE_TIMEOUT, 10000).
@@ -78,6 +80,10 @@ init(Starter, Parent) ->
 
 set_cmd(Cmd) ->
     heart ! {self(), set_cmd, Cmd},
+    wait().
+
+get_cmd() ->
+    heart ! {self(), get_cmd},
     wait().
 
 clear_cmd() ->
@@ -166,6 +172,9 @@ loop(Parent, Port, Cmd) ->
 	    send_heart_cmd(Port, ""),
 	    wait_ack(Port),
 	    loop(Parent, Port, "");
+	{From, get_cmd} ->
+	    From ! {heart, get_heart_cmd(Port)},
+	    loop(Parent, Port, Cmd);
 	{From, cycle} ->
 	    %% Calls back to loop
 	    do_cycle_port_program(From, Parent, Port, Cmd);  
@@ -176,7 +185,7 @@ loop(Parent, Port, Cmd) ->
 	    exit(Reason);
 	{'EXIT', Port, badsig} ->  % we can ignore badsig-messages!
 	    loop(Parent, Port, Cmd);
-	{'EXIT', Port, Reason} ->
+	{'EXIT', Port, _Reason} ->
 	    exit({port_terminated, {heart, loop, [Parent, Port, Cmd]}});
 	_ -> 
 	    loop(Parent, Port, Cmd)
@@ -197,7 +206,7 @@ do_cycle_port_program(Caller, Parent, Port, Cmd) ->
 	{ok, NewPort} ->
 	    send_shutdown(Port),
 	    receive
-		{'EXIT', Port, Reason} ->
+		{'EXIT', Port, _Reason} ->
 		    send_heart_cmd(NewPort, Cmd),
 		    Caller ! {heart, ok},
 		    loop(Parent,NewPort,Cmd)
@@ -224,9 +233,16 @@ send_heart_beat(Port) -> Port ! {self(), {command, [?HEART_BEAT]}}.
 
 %% Set a new HEART_COMMAND.
 send_heart_cmd(Port, []) ->
-    Port ! {self(), {command, [?HEART_CMD_CLEAR]}};
+    Port ! {self(), {command, [?CLEAR_CMD]}};
 send_heart_cmd(Port, Cmd) ->
-    Port ! {self(), {command, [?HEART_CMD|Cmd]}}.
+    Port ! {self(), {command, [?SET_CMD|Cmd]}}.
+
+get_heart_cmd(Port) ->
+    Port ! {self(), {command, [?GET_CMD]}},
+    receive
+	{Port, {data, [?HEART_CMD | Cmd]}} ->
+	    {ok,Cmd}
+    end.
 
 %% Sends shutdown command to the port.
 send_shutdown(Port) -> Port ! {self(), {command, [?SHUT_DOWN]}}.

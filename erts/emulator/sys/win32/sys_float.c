@@ -36,18 +36,18 @@ sys_chars_to_double(buf, fp)
 char* buf; double* fp;
 {
     char *s = buf;
-
+    
     /* Robert says that something like this is what he really wanted:
      *
      * 7 == sscanf(Tbuf, "%[+-]%[0-9].%[0-9]%[eE]%[+-]%[0-9]%s", ....);
      * if (*s2 == 0 || *s3 == 0 || *s4 == 0 || *s6 == 0 || *s7)
      *   break;
      */
-
+    
     /* Scan string to check syntax. */
     if (*s == '+' || *s == '-')
       s++;
-	    
+    
     if (!isdigit(*s))		/* Leading digits. */
       return -1;
     while (isdigit(*s)) s++;
@@ -68,8 +68,11 @@ char* buf; double* fp;
     if (*s)			/* That should be it */
       return -1;
     
-    if (sscanf(buf, "%lf", fp) != 1)
+    errno = 0;
+    *fp = strtod(buf, NULL);
+    if (errno == ERANGE)
 	return -1;
+    
     return 0;
 }
 

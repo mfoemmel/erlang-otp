@@ -161,16 +161,31 @@ all(suite) ->
 %% -----
 %%
 
+% fix_start(ip_simple_restart2, Conf0) ->
+%     [{starting,file}|Conf0];
+% fix_start(ip_simple_restart3, Conf0) ->
+%     [{starting,file}|Conf0];
+% fix_start(ssl_simple_restart2, Conf0) ->
+%     [{starting,file}|Conf0];
+% fix_start(ssl_simple_restart3, Conf0) ->
+%     [{starting,file}|Conf0];
+% fix_start(_, Conf0) ->
+%     [{starting,list}|Conf0].
+fix_start(_, Conf0) ->
+    [{starting,file}|Conf0].
+
+
 init_per_testcase(Case, Conf0) when list(Conf0) ->
     ?LOG("init_per_testcase -> entry with"
 	 "~n   Case:  ~p"
 	 "~n   Conf0: ~p", [Case, Conf0]),
-    Conf1 = wd_start(Conf0, ?MINS(3)),
-    Conf2 = ?UPDATE(data_dir,?inets_data_dir, Conf1),
-    Conf3 = ?UPDATE(priv_dir,?inets_priv_dir, Conf2),
+    Conf1 = fix_start(Case, Conf0),
+    Conf2 = wd_start(Conf1, ?MINS(3)),
+    Conf3 = ?UPDATE(data_dir,?inets_data_dir, Conf2),
+    Conf4 = ?UPDATE(priv_dir,?inets_priv_dir, Conf3),
     ?LOG("init_per_testcase -> "
-	 "~n   Conf3: ~p", [Conf3]),
-    Conf3.
+	 "~n   Conf4: ~p", [Conf4]),
+    Conf4.
 
 fin_per_testcase(Case, Config) when list(Config) ->
     ?LOG("fin_per_testcase -> entry with"
@@ -229,8 +244,8 @@ ssl(suite) ->
 	 ssl_misc,
 	 ssl_block,
 	 ssl_restart
-	],
-    ?EXPANDABLE(init_ssl, Cases, stop_ssl).
+	]. %,
+%     ?EXPANDABLE(init_ssl, Cases, stop_ssl).
 
 
 ssl_mod(suite) ->
@@ -305,7 +320,23 @@ init_ssl(doc) -> [];
 init_ssl(Config) when list(Config) ->
     ?DEBUG("ssl test init", []),
     set_ssl_portprogram_dir(Config),
-    init_suite(Config, ssl, 8099).
+    Conf = init_suite(Config, ssl, 8099),
+    Node = ?CONFIG(nodename, Conf),
+    %% Test start ssl to se that it is actually possible
+    ?DEBUG("test start ssl on node ~p", [Node]),
+    case rpc:call(Node, ssl, start, []) of
+	ok ->
+	    ?DEBUG("ssl successfully started", []),
+	    rpc:call(Node, ssl, stop, []);
+	{error, {already_started, _}} ->
+	    ?DEBUG("ssl already started", []),
+	    rpc:call(Node, ssl, stop, []);
+	Error ->
+	    ?DEBUG("failed starting ssl", []),
+	    ?FAIL({failed_starting_ssl, Error})
+    end,
+    Conf.
+    
 
 stop_ssl(suite) -> [];
 stop_ssl(doc) -> [];
@@ -327,8 +358,8 @@ ip_comm(suite) ->
 	 ip_block,
 	 ip_restart,
 	 ip_misc
-	],
-    ?EXPANDABLE(init_ip_comm, Cases, stop_ip_comm).
+	]. % ,
+%     ?EXPANDABLE(init_ip_comm, Cases, stop_ip_comm).
 
 
 
@@ -1039,17 +1070,18 @@ get_100response(Socket)->
 	    case string:str(Data,"\r\n") of
 		0 ->
 		    get_100response(Socket);
-		N ->
+		_N ->
 		    case Data of
-			[$H,$T,$T,$P,$/,$1,$.,$1,$ ,$1,$0,$0 |Rest]->
+			[$H,$T,$T,$P,$/,$1,$.,$1,$ ,$1,$0,$0 |_Rest]->
 			    ?DEBUG("get_100response()-> Got 100 Continue",[]),
 			    ok;
 			_ ->
 			    error
 		    end
 	    end;
-	Error ->
-	    ?DEBUG("get_100response()-> Error in recieving 100 Continue",[]),
+	_Error ->
+	    ?DEBUG("get_100response()-> Error (~p) in recieving 100 Continue",
+		[_Error]),
 	    error
     end.
 
@@ -1113,10 +1145,12 @@ validateRangeRequest(Socket,Response,ValidBody,C,O,DE)->
 	{tcp,Socket,Data} ->
 	    case string:str(Data,"\r\n") of
 		0->
-		    validateRangeRequest(Socket,Response++Data,ValidBody,C,O,DE);
-		N ->
+		    validateRangeRequest(Socket,
+					 Response ++ Data,
+					 ValidBody, C, O, DE);
+		_N ->
 		    case Response++Data of
-			[$H,$T,$T,$P,$/,$1,$.,$1,$ ,C,O,DE |Rest]->
+			[$H,$T,$T,$P,$/,$1,$.,$1,$ ,C,O,DE | _Rest]->
 			    ?DEBUG("validate()-> Got "++[C,O,DE] ++ " Continue",[]),
 			    case [C,O,DE] of
 				"206" ->
@@ -1128,36 +1162,39 @@ validateRangeRequest(Socket,Response,ValidBody,C,O,DE)->
 			    error
 		    end
 	    end;
-	Error ->
-	    ?DEBUG("validateRangeRequest()-> Error in receiving  the response",[]),
+	_Error ->
+	    ?DEBUG("validateRangeRequest() -> "
+		"Error (~p) in receiving the response", [_Error]),
 	    error
     end.
 
 validateRangeRequest1(Socket,Response,ValidBody)->	
     ?DEBUG("validateRangeRequest()->",[]),
     case httpd_test_lib:end_of_header(Response) of
-	false->
+	false ->
 	    receive
 		{tcp,Socket,Data} ->
 		    validateRangeRequest1(Socket,Response++Data,ValidBody);
 		_->
 		    error
 	    end;
-	{true,Head1,Body,Size}->
+	{true, Head1, Body, Size} ->
 	    %%In this case size will be 0 if it is a multipart so dint use it.
-	    validateRangeRequest2(Socket,Head1,Body,ValidBody,getRangeSize(Head1))
+	    validateRangeRequest2(Socket, Head1, Body, ValidBody,
+				  getRangeSize(Head1))
     end.
 
 validateRangeRequest2(Socket,Head,Body,ValidBody,{multiPart,Boundary})->
     ?DEBUG("validateRangeRequest2()->SoFar:~p~nMultipart:true~n",[Body]),
     case endReached(Body,Boundary) of
 	true ->
-	    validateMultiPartRangeRequest(Body,ValidBody,Boundary);
+	    validateMultiPartRangeRequest(Body, ValidBody, Boundary);
 	false->
 	    receive
-		{tcp,Socket,Data}->
-		    validateRangeRequest2(Socket,Head,Body++Data,ValidBody,{multiPart,Boundary});
-		{tcp_closed,Socket} ->
+		{tcp, Socket, Data} ->
+		    validateRangeRequest2(Socket, Head, Body ++ Data,
+					  ValidBody, {multiPart, Boundary});
+		{tcp_closed, Socket} ->
 		    error;
 		_ ->
 		    error
@@ -1473,10 +1510,10 @@ mod_cgi_chunked_encoding_test(Config) when list(Config) ->
     ok = stop_all(Config).
 
 
-mod_cgi_chunked_encoding_test(M,H,P,N,[])->
+mod_cgi_chunked_encoding_test(_M, _H, _P, _N,[])->
     ok;
-mod_cgi_chunked_encoding_test(M,H,P,N,[Request1|Requests])->
-    %%mod_cgi
+mod_cgi_chunked_encoding_test(M, H, P, _N, [Request1|Requests])->
+    %% mod_cgi
     ?INFO("RequestURL: ~s",[Request1]),
     ?line {ok, Socket1} = ?CONNECT(M, H, P),
     ?line ?SEND(M, Socket1,Request1),
@@ -1489,7 +1526,7 @@ control_chunked(Mode,Socket,Status)->
 
 control_chunked(Mode,Socket,Status,{head,HeadContent})->
     case httpd_util:split(HeadContent,"\r\n\r\n|\n\n",2) of
-	{ok,[Head,Body]}->
+	{ok,[Head,Body]} ->
 	    case control_chunked_head(Head,Status) of
 		ok ->
 		    gather_chunks(Mode,Socket,lists:reverse(Body));
@@ -1539,7 +1576,7 @@ control_chunks1(Chunks)->
 	0 ->
 	    %%Cant control that there is anything left since there might be trailers
 	    ok;
-	N->
+	_N->
 	    %%Remove SizeCRLF Size number of signs and the trailing CRLF and control next part
 	   case remove_chunk(Chunks,Size) of
 	       {ok,Chunks1}->
@@ -1688,13 +1725,13 @@ create_config(Config, Port, Type, Host, Options) ->
 	      "/logs/security_log_", integer_to_list(Port)]),
        cline(["ErrorDiskLog ", PrivDir, 
 	      "/logs/error_disk_log_", integer_to_list(Port)]),
-       cline(["ErrorDiskLogSize ", "200000 ", "10"]),
+       cline(["ErrorDiskLogSize ", "190000 ", "11"]),
        cline(["TransferDiskLog ", PrivDir, 
 	      "/logs/access_disk_log_", integer_to_list(Port)]),
        cline(["TransferDiskLogSize ", "200000 ", "10"]),
        cline(["SecurityDiskLog ", PrivDir, 
 	      "/logs/security_disk_log_", integer_to_list(Port)]),
-       cline(["SecurityDiskLogSize ", "200000 ", "10"]),
+       cline(["SecurityDiskLogSize ", "210000 ", "9"]),
        cline(["MaxClients 10"]),
        cline(["MaxHeaderSize ",MaxHdrSz]),
        cline(["MaxHeaderAction ",MaxHdrAct]),
@@ -1780,7 +1817,8 @@ create_config(Config, Port, Type, Host, Options) ->
     ?DEBUG("NewConfigFile: ~p", [NewConfigFile]),
     ?line ok = file:write_file(NewConfigFile,C),
     ?LOG("Config file written to ~s", [NewConfigFile]),
-    NewConfigFile.
+    {ok, ConfigList} = httpd:load(NewConfigFile),
+    {NewConfigFile,ConfigList}.
 
 
 cline(List) ->
@@ -2092,7 +2130,7 @@ simple_block2(M,H,P,N) ->
 %% 3) unblock, get admin state => unblocked,
 %% 
 
-simple_block3(M,H,P,N) ->
+simple_block3(_M, H, P, N) ->
     ?line unblocked = get_admin_state(N,H,P),
     ?line block_server(N,H,P),
     ?line blocked = get_admin_state(N,H,P),
@@ -2107,7 +2145,7 @@ simple_block3(M,H,P,N) ->
 %% 3) unblock, get admin state => unblocked,
 %% 
 
-simple_block4(M,H,P,N) ->
+simple_block4(_M, H, P, N) ->
     ?DEBUG("simple_block4() -> "
 	   "start: get the admin state, should be unblocked", []),
     ?line unblocked = get_admin_state(N,H,P),
@@ -2130,7 +2168,7 @@ simple_block4(M,H,P,N) ->
 %% 3) unblock, get admin state => unblocked,
 %% 
 
-simple_block5(M,H,P,N) ->
+simple_block5(_M, H, P, N) ->
     ?line unblocked = get_admin_state(N,H,P),
     ?line block_nd_server(N,H,P,5000),
     ?line blocked = get_admin_state(N,H,P),
@@ -2141,7 +2179,7 @@ simple_block5(M,H,P,N) ->
 %% Tests that the server is forced into blocked state
 %% when an disturbing block is issued on an active server:
 %% E.g. the ongoing requests are terminated
-block_when_active(M,H,P,N) ->
+block_when_active(M, H, P, N) ->
     ?DEBUG("block_when_active() -> entry",[]),
     Old = ?ETRAP_GET(),
     ?DEBUG("block_when_active() -> trap_exit = ~p",[Old]),
@@ -2169,7 +2207,7 @@ block_when_active(M,H,P,N) ->
 %% Tests that the server which is in active usage state is 
 %% allowed to complete all onging requests when an disturbing 
 %% block with timeout is performed.
-block_when_active_to1(M,H,P,N) ->
+block_when_active_to1(M, H, P, N) ->
     Old = ?ETRAP_GET(),
     ?ETRAP_SET(true),
     ?DEBUG("block_when_active_to1 -> entry",[]),
@@ -2188,7 +2226,7 @@ block_when_active_to1(M,H,P,N) ->
     ?line Blocker = blocker(N,H,P,35000),
     ?DEBUG("block_when_active_to1 -> "
 	"await completion of the blocker process",[]),
-    ?line await_normal_process_exit(Blocker, "blocker", Old, 40000),
+    ?line await_normal_process_exit(Blocker, "blocker", Old, 50000),
     ?DEBUG("block_when_active_to2 -> "
 	"await completion of the poller process",[]),
     ?line await_normal_process_exit(Poller, "poller", Old, 30000),
@@ -2199,7 +2237,7 @@ block_when_active_to1(M,H,P,N) ->
 %% Tests that the server is forced into blocked state
 %% when an disturbing block with timeout times out on an active server:
 %% E.g. the ongoing requests are terminated
-block_when_active_to2(M,H,P,N) ->
+block_when_active_to2(M, H, P, N) ->
     Old = ?ETRAP_GET(),
     ?ETRAP_SET(true),
     ?DEBUG("block_when_active_to2 -> entry",[]),
@@ -2235,7 +2273,7 @@ do_block_server(N,H,P,Timeout) ->
 	    
 %% Tests that the non-disturbing block does not
 %% disturb the ongoing request
-nd_block_when_active1(M,H,P,N) ->
+nd_block_when_active1(M, H, P, N) ->
     Old = ?ETRAP_GET(),
     ?ETRAP_SET(true),
     ?DEBUG("nd_block_when_active1 -> entry",[]),
@@ -2260,7 +2298,7 @@ nd_block_when_active1(M,H,P,N) ->
 
 %% Tests that the non-disturbing block times out and that 
 %% the server retains the original state, e.g. unblocked
-nd_block_when_active2(M,H,P,N) ->
+nd_block_when_active2(M, H, P, N) ->
     Old = ?ETRAP_GET(),
     ?ETRAP_SET(true),
     ?DEBUG("nd_block_when_active2 -> entry",[]),
@@ -2290,7 +2328,7 @@ nd_block_when_active2(M,H,P,N) ->
 
 %% Tests that the non-disturbing block is cancelled
 %% when the blocker process dies
-nd_block_blocker_crash1(M,H,P,N) ->
+nd_block_blocker_crash1(M, H, P, N) ->
     Old = ?ETRAP_GET(),
     ?ETRAP_SET(true),
     ?DEBUG("nd_block_blocker_crash1 -> entry",[]),
@@ -2301,26 +2339,27 @@ nd_block_blocker_crash1(M,H,P,N) ->
     ?DEBUG("nd_block_blocker_crash1 -> then unblock",[]),
     ?line unblock_server(N,H,P),
     ?DEBUG("nd_block_blocker_crash1 -> and now start the poll process",[]),
-    ?line Poller = long_poll(M,H,P,N,"200",60000),
+    ?line Poller = long_poll(M,H,P,N,"200",120000),
     ?DEBUG("nd_block_blocker_crash1 -> "
 	"sleep some to make sure the poll is underway",[]),
-    ?SLEEP(5000),
+    ?SLEEP(2000),
     ?DEBUG("nd_block_blocker_crash1 -> "
 	"now do the non-disturbing block",[]),
     ?line Blocker = blocker_nd(N,H,P,10000,ok),
     ?DEBUG("nd_block_blocker_crash1 -> "
 	"sleep some to make sure the block is underway",[]),
-    ?SLEEP(5000),
+    ?SLEEP(2000),
     ?DEBUG("nd_block_blocker_crash1 -> and now kill the blocker",[]),
     exit(Blocker,simulate_blocker_crash),
     ?DEBUG("nd_block_blocker_crash1 -> and now await poller completion",[]),
-    ?line await_normal_process_exit(Poller, "poller", Old, 60000),
+    ?line await_normal_process_exit(Poller, "poller", Old, 120000),
+    ?DEBUG("nd_block_blocker_crash1 -> exit",[]),
     ?ETRAP_SET(Old),
     ok.
 
-%% Tests that the non-disturbing block is cancelled
+%% Tests that the disturbing block is cancelled
 %% when the blocker process dies
-nd_block_blocker_crash2(M,H,P,N) ->
+nd_block_blocker_crash2(M, H, P, N) ->
     Old = ?ETRAP_GET(),
     ?ETRAP_SET(true),
     ?DEBUG("nd_block_blocker_crash2 -> entry",[]),
@@ -2331,20 +2370,21 @@ nd_block_blocker_crash2(M,H,P,N) ->
     ?DEBUG("nd_block_blocker_crash2 -> then unblock",[]),
     ?line unblock_server(N,H,P),
     ?DEBUG("nd_block_blocker_crash2 -> and now start the poll process",[]),
-    ?line Poller = long_poll(M,H,P,N,"200",60000),
+    ?line Poller = long_poll(M,H,P,N,"200",120000),
     ?DEBUG("nd_block_blocker_crash2 -> "
 	"sleep some to make sure the poll is underway",[]),
     ?SLEEP(5000),
     ?DEBUG("nd_block_blocker_crash2 -> "
 	"now do the disturbing block with timeout",[]),
-    ?line Blocker = blocker(N,H,P,10000),
+    ?line Blocker = blocker(N,H,P,20000),
     ?DEBUG("nd_block_blocker_crash2 -> "
 	"sleep some to make sure the block is underway",[]),
     ?SLEEP(5000),
     ?DEBUG("nd_block_blocker_crash2 -> and now kill the blocker",[]),
     exit(Blocker,simulate_blocker_crash),
     ?DEBUG("nd_block_blocker_crash2 -> and now await poller completion",[]),
-    ?line await_normal_process_exit(Poller, "poller", Old, 60000),
+    ?line await_normal_process_exit(Poller, "poller", Old, 120000),
+    ?DEBUG("nd_block_blocker_crash2 -> exit",[]),
     ?ETRAP_SET(Old),
     ok.
 
@@ -3206,8 +3246,11 @@ start_all(Config, Mnesia, Options) ->
     ?DEBUG("start_all(): NodeName = ~p", [NodeName]),
     SockType = ?CONFIG(sock_type, Config),
     ?DEBUG("start_all(): SockType = ~p", [SockType]),
-    ConfigFile = create_config(Config, Port, SockType, Host, Options),
+    {ConfigFile, ConfigList} = 
+	create_config(Config, Port, SockType, Host, Options),
     ?DEBUG("start_all(): ConfigFile = ~p", [ConfigFile]),
+
+    Start = ?CONFIG(starting, Config),
 
     case Mnesia of
 	true ->
@@ -3222,18 +3265,18 @@ start_all(Config, Mnesia, Options) ->
 	     {auth_verbosity,             ?AUTH_VERBOSITY}, 
 	     {security_verbosity,         ?SEC_VERBOSITY}],
     V = inets_test_lib:get_config(verbosity, Config, VConf),
-    ?line ?LOG("Starting HTTP server: ~s", [ConfigFile]),
-    case (catch httpd_start(NodeName, ConfigFile, V)) of
+    ?line ?LOG("Starting HTTP server on node ~p: ~s", [NodeName, ConfigFile]),
+    case (catch httpd_start(Start, NodeName, ConfigFile, ConfigList, V)) of
 	 {ok, Pid} when pid(Pid) ->
 	    ?DEBUG("HTTP server: ~p", [Pid]),
 	    await_started(Config,NodeName,Host,Port),
 	    ok;
 	{error, {already_started, Pid1}} when pid(Pid1) ->
 	    ?LOG("already started (~p): stop and try again", [Pid1]),
-	    Res = httpd_stop(NodeName, ConfigFile),
+	    Res = httpd_stop(Start, NodeName, ConfigFile, ConfigList),
 	    ?DEBUG("stop result: ~p", [Res]),
 	    ?SLEEP(1000), %% give it some time to die
-	    case (catch httpd_start(NodeName, ConfigFile, V)) of
+	    case (catch httpd_start(Start, NodeName, ConfigFile, ConfigList, V)) of
 		{ok, Pid2} when pid(Pid2) ->
 		    ?DEBUG("HTTP server: ~p", [Pid2]),
 		    await_started(Config, NodeName, Host, Port),
@@ -3241,7 +3284,8 @@ start_all(Config, Mnesia, Options) ->
 		{error, {already_started, Pid3}} when pid(Pid3) ->
 		    ?LOG("already started (~p): send a kill signal and then try", [Pid3]),
 		    exit(Pid3, kill),
-		    case (catch httpd_start(NodeName, ConfigFile, V)) of
+		    ?SLEEP(1000), %% give it some time to die
+		    case (catch httpd_start(Start, NodeName, ConfigFile, ConfigList, V)) of
 			{ok, Pid4} when pid(Pid4) ->
 			    ?DEBUG("HTTP server: ~p", [Pid4]),
 			    await_started(Config, NodeName, Host, Port),
@@ -3266,7 +3310,7 @@ stop_all(Config) when list(Config) ->
     Port     = ?CONFIG(port, Config),
     NodeName = ?CONFIG(nodename, Config),
     ?HTTPD_STATUS("http server final status: ", httpd_status(NodeName,Port)),
-    ?line httpd_stop(NodeName, Addr,Port).
+    ?line httpd_stop(NodeName, Addr, Port).
 
 
 await_started(Config,NodeName,Host,Port) ->
@@ -3312,11 +3356,11 @@ init_suite(Config0, Type, Port) ->
     NodeName = node(),
     ?DEBUG("init_suite() => NodeName: ~p", [NodeName]),
     [
-     {nodename, NodeName},
-     {hostname, Host},
+     {nodename,  NodeName},
+     {hostname,  Host},
      {sock_type, Type}, 
-     {port, Port},
-     {address,getaddr()}|Config].
+     {port,      Port},
+     {address,   getaddr()} | Config].
 
 getaddr() ->
     {ok,HostName} = inet:gethostname(),
@@ -3418,19 +3462,6 @@ set_ssl_portprogram_dir(Config) ->
     ?DEBUG("set_ssl_portprogram_dir -> SSLLibDir = ~s",[SSLLibDir]),
     os:putenv("ERL_SSL_PORTPROGRAM_DIR", SSLLibDir),
 
-    %% Why is this needed when run with the inets test server and not
-    %% when run by the test server?
-%     case os:getenv("LD_LIBRARY_PATH") of
-% 	false ->
-% 	    %% ignore
-% 	    ok;
-% 	LD0 ->
-% 	    LibDir = filename:join(NDirList ++ ["all_SUITE_data", "lib"]),
-% 	    LD1    = lists:concat([LibDir, ":", LD0]),
-% 	    ?DEBUG("set_ssl_portprogram_dir -> new LD_LIBRARY_PATH:~n~s", 
-% 		   [LD1]),
-% 	    os:putenv("LD_LIBRARY_PATH", LD1)
-%     end.
     LD = filename:join(NDirList ++ ["all_SUITE_data", "lib"]),
     ?DEBUG("set_ssl_portprogram_dir -> new LD_LIBRARY_PATH:~n~s", [LD]),
     os:putenv("LD_LIBRARY_PATH", LD).
@@ -3493,18 +3524,22 @@ wd_stop(Conf) ->
     end.
     
 
-httpd_status(NodeName,Port) ->
+httpd_status(NodeName, Port) ->
     rpc:call(NodeName,httpd,get_status,[Port,5000]).
 
-httpd_stop(NodeName, ConfigFile) ->
-    rpc:call(NodeName, httpd, stop,[ConfigFile]).
-    
-httpd_stop(NodeName,Addr,Port) ->
+httpd_stop(file, NodeName, ConfigFile, _) ->
+    rpc:call(NodeName, httpd, stop,[ConfigFile]);
+httpd_stop(list, NodeName, _, ConfigList) ->
+    rpc:call(NodeName, httpd, stop2,[ConfigList]).
+
+httpd_stop(NodeName, Addr, Port) ->
     rpc:call(NodeName, httpd, stop,[Addr,Port]).
     
-httpd_start(NodeName, ConfigFile, Verbosity) ->
-    rpc:call(NodeName, httpd, start,[ConfigFile, Verbosity]).
-    
+httpd_start(file, NodeName, ConfigFile, _, Verbosity) ->
+    rpc:call(NodeName, httpd, start,[ConfigFile, Verbosity]);
+httpd_start(list, NodeName, _, ConfigList, Verbosity) ->
+    rpc:call(NodeName, httpd, start2,[ConfigList, Verbosity]).
+
 
 
 
@@ -3627,13 +3662,13 @@ formatIp(IpAddress,Pos)when Pos > 0->
 		$.->
 		   formatIp(IpAddress,Pos-3);
 		_->
-		    lists:sublist(IpAddress,Pos-2)++"."
+		    lists:sublist(IpAddress,Pos-2) ++ "."
 	    end;
 	_ ->
 	    formatIp(IpAddress,Pos-1)
     end;
 %%Ok the ipaddress is N,N,N,NNN use an ipaddress that isnt the servers
-formatIp(IpAddress,Pos)->
+formatIp(IpAddress, _Pos)->
     "1"++IpAddress.
     
 %%Prints the data to the file 

@@ -53,7 +53,7 @@ test0(N,X) ->
 
 new(B) ->
     Board = mk_board(B),
-    {ordsets:list_to_set([18,19,20,21,26,29,34,37,42,43,44,45]),Board}.
+    {ordsets:from_list([18,19,20,21,26,29,34,37,42,43,44,45]),Board}.
 
 mk_board(t) ->
     Tup = list_to_tuple(gen_list(64,grey)),
@@ -122,7 +122,7 @@ set(Pos,Colour,{Bset,Board}) ->
     end.
     
 empty_neighbour(Pos,Board) ->
-    ordsets:list_to_set(empty_neighbour(Pos,Board,deltas())).
+    ordsets:from_list(empty_neighbour(Pos,Board,deltas())).
 
 empty_neighbour(_,_,[]) -> [];
 empty_neighbour(Pos,Board,[H|T]) ->

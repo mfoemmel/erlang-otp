@@ -805,13 +805,24 @@ call(Obj, Func, Args, TypesOrMod, Timeout) ->
 
 call_helper(Obj, Func, Args, TypesOrMod, Timeout, Ctx) ->
     case iop_ior:get_key(Obj) of
+	{'internal', Key, _, Flags, Mod} when atom(TypesOrMod) ->
+	    Pid = orber_objectkeys:get_pid(Key),
+	    call_internal(Pid, Obj, Func, Args, TypesOrMod, 
+			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod, 
+			  Timeout, Ctx, true);
+	{'internal_registered', Key, _, Flags, Mod} when atom(TypesOrMod) ->
+	    call_internal(Key, Obj, Func, Args, TypesOrMod,
+			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod, 
+			  Timeout, Ctx, true);
 	{'internal', Key, _, Flags, Mod} ->
 	    Pid = orber_objectkeys:get_pid(Key),
 	    call_internal(Pid, Obj, Func, Args, TypesOrMod, 
-			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod, Timeout, Ctx);
+			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod, Timeout, Ctx, 
+			  check_version(Mod:module_info(attributes)));
 	{'internal_registered', Key, _, Flags, Mod} ->
 	    call_internal(Key, Obj, Func, Args, TypesOrMod,
-			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod, Timeout, Ctx);
+			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod, Timeout, Ctx, 
+			  check_version(Mod:module_info(attributes)));
 	{'external', Key} when atom(TypesOrMod) ->		   
 	    case catch TypesOrMod:oe_tc(Func) of
 		{'EXIT', What} ->
@@ -837,10 +848,16 @@ extract_extra_data([{context, Ctx}|T], ED) ->
 extract_extra_data([{timeout, Timeout}|T], ED) ->
     extract_extra_data(T, ED#extra{timeout = Timeout}).
 
-call_internal(Pid, Obj, Func, Args, Types, Check, Mod, Timeout, Ctx) 
+call_internal(Pid, Obj, Func, Args, Types, Check, Mod, Timeout, Ctx, ICV) 
   when pid(Pid), node(Pid) == node() ->
-    typecheck_request(Check, Args, Mod, Func),
-    case catch gen_server:call(Pid, {Obj, Ctx, Func, Args}, Timeout) of
+    typecheck_request(Check, Args, Types, Func),
+    Data = case ICV of
+	       true ->
+		   {Obj, Ctx, Func, Args};
+	       false ->
+		   {Obj, Func, Args}
+	   end,
+    case catch gen_server:call(Pid, Data, Timeout) of
 	{'EXCEPTION', E} ->
             typecheck_reply(Check, {'EXCEPTION', E}, Mod, Func),
 	    raise(E);
@@ -852,16 +869,22 @@ call exit(~p).", [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
 	    raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 4), 
 				     completion_status=?COMPLETED_NO});
 	Res ->
-            typecheck_reply(Check, Res, Mod, Func),
+            typecheck_reply(Check, Res, Types, Func),
 	    Res
     end;
-call_internal(Pid, Obj, Func, Args, Types, Check, Mod, Timeout, Ctx) 
+call_internal(Pid, Obj, Func, Args, Types, Check, Mod, Timeout, Ctx, ICV) 
   when pid(Pid) ->
-    typecheck_request(Check, Args, Mod, Func),
+    typecheck_request(Check, Args, Types, Func),
+    Data = case ICV of
+	       true ->
+		   {Obj, Ctx, Func, Args};
+	       false ->
+		   {Obj, Func, Args}
+	   end,
     case catch rpc:call(node(Pid), corba, call_relay, 
-			[Pid, {Obj, Ctx, Func, Args}, Timeout]) of
+			[Pid, Data, Timeout]) of
 	{'EXCEPTION', E} ->
-            typecheck_reply(Check, {'EXCEPTION', E}, Mod, Func),
+            typecheck_reply(Check, {'EXCEPTION', E}, Types, Func),
 	    raise(E);
 	{badrpc, {'EXIT',R}} ->
 	    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p); 
@@ -879,13 +902,13 @@ Unable to invoke operation due to: ~p", [?LINE, Func, Args, Types, Reason], ?DEB
 	    raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 5), 
 				     completion_status=?COMPLETED_MAYBE});
 	Res ->
-            typecheck_reply(Check, Res, Mod, Func),
+            typecheck_reply(Check, Res, Types, Func),
 	    Res
     end;
 
 %% This case handles if the reference is created as a Pseudo object. Just call apply/3.
-call_internal({pseudo, Module}, Obj, Func, Args, Types, Check, Mod, Timeout, Ctx) ->
-    typecheck_request(Check, Args, Mod, Func),
+call_internal({pseudo, Module}, Obj, Func, Args, Types, Check, Mod, Timeout, Ctx, _) ->
+    typecheck_request(Check, Args, Types, Func),
     State = binary_to_term(get_subobject_key(Obj)),
     case catch apply(Module, Func, [Obj, State|Args]) of
 	{noreply, _} ->
@@ -893,18 +916,18 @@ call_internal({pseudo, Module}, Obj, Func, Args, Types, Check, Mod, Timeout, Ctx
 	{noreply, _, _} ->
 	    ok;
 	{reply, Reply, _} ->
-            typecheck_reply(Check, Reply, Mod, Func),
+            typecheck_reply(Check, Reply, Types, Func),
 	    Reply;
 	{reply, Reply, _, _} ->
-            typecheck_reply(Check, Reply, Mod, Func),
+            typecheck_reply(Check, Reply, Types, Func),
 	    Reply;
 	{stop, _, Reply, _} ->
-            typecheck_reply(Check, Reply, Mod, Func),
+            typecheck_reply(Check, Reply, Types, Func),
 	    Reply;
 	{stop, _, _} ->
 	    ok;
 	{'EXCEPTION', E} ->
-            typecheck_reply(Check, {'EXCEPTION', E}, Mod, Func),
+            typecheck_reply(Check, {'EXCEPTION', E}, Types, Func),
 	    raise(E);
 	{'EXIT', What} ->
 	    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p); 
@@ -918,16 +941,22 @@ Pseudo object failed due to bad return value (~p).",
 	    raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 6),
 				     completion_status=?COMPLETED_MAYBE})
     end;
-call_internal(Registered, Obj, Func, Args, Types, Check, Mod, Timeout, Ctx) 
+call_internal(Registered, Obj, Func, Args, Types, Check, Mod, Timeout, Ctx, ICV) 
   when atom(Registered)->
-    typecheck_request(Check, Args, Mod, Func),
+    typecheck_request(Check, Args, Types, Func),
     case whereis(Registered) of
 	undefined ->
 	    raise(#'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO});
 	P ->
-	    case catch gen_server:call(P, {Obj, Ctx, Func, Args}, Timeout) of
+	    Data = case ICV of
+		       true ->
+			   {Obj, Ctx, Func, Args};
+		       false ->
+			   {Obj, Func, Args}
+		   end,
+	    case catch gen_server:call(P, Data, Timeout) of
 		{'EXCEPTION', E} ->
-		    typecheck_reply(Check, {'EXCEPTION', E}, Mod, Func),
+		    typecheck_reply(Check, {'EXCEPTION', E}, Types, Func),
 		    raise(E);
 		{'EXIT',{timeout, _}} ->
 		    raise(#'TIMEOUT'{completion_status=?COMPLETED_MAYBE});	
@@ -937,7 +966,7 @@ call exit(~p).", [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
 		    raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 5), 
 			  	             completion_status=?COMPLETED_MAYBE});
 		Res ->
-                    typecheck_reply(Check, Res, Mod, Func),
+                    typecheck_reply(Check, Res, Types, Func),
 		    Res
 	    end
     end.
@@ -1054,19 +1083,19 @@ Result.........: ~p
 	    ok
     end.
 
-call_relay(Pid, {Obj, Ctx, Func, Args}, Timeout) ->
+call_relay(Pid, Data, Timeout) ->
     case whereis(orber_objkeyserver) of
 	undefined ->
 	    raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_MAYBE});
 	_ ->
-	    case catch gen_server:call(Pid, {Obj, Ctx, Func, Args}, Timeout) of
+	    case catch gen_server:call(Pid, Data, Timeout) of
 		{'EXCEPTION', E} ->
 		    raise(E);
 		{'EXIT',{timeout, _}} ->
 		    raise(#'TIMEOUT'{completion_status=?COMPLETED_MAYBE});
 		{'EXIT',R} ->
-		    orber:dbg("[~p] corba:call_internal(~p, ~p); 
-call exit(~p).", [?LINE, Func, Args, R], ?DEBUG_LEVEL),
+		    orber:dbg("[~p] corba:call_internal(~p); 
+call exit(~p).", [?LINE, Data, R], ?DEBUG_LEVEL),
 		    exit(R);
 		Res ->
 		    Res
@@ -1084,13 +1113,22 @@ cast(Obj, Func, Args, TypesOrMod, [{context, Ctx}]) ->
 
 cast_helper(Obj, Func, Args, TypesOrMod, Ctx) ->
     case iop_ior:get_key(Obj) of
+	{'internal', Key, _, Flags, Mod} when atom(TypesOrMod) ->
+	    Pid = orber_objectkeys:get_pid(Key),
+	    cast_internal(Pid, Obj, Func, Args, TypesOrMod, 
+			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod, Ctx, true);
+	{'internal_registered', Key, _, Flags, Mod} when atom(TypesOrMod) ->
+	    cast_internal(Key, Obj, Func, Args, TypesOrMod, 
+			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod, Ctx, true);
 	{'internal', Key, _, Flags, Mod} ->
 	    Pid = orber_objectkeys:get_pid(Key),
 	    cast_internal(Pid, Obj, Func, Args, TypesOrMod, 
-			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod, Ctx);
+			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod, Ctx,
+			  check_version(Mod:module_info(attributes)));
 	{'internal_registered', Key, _, Flags, Mod} ->
 	    cast_internal(Key, Obj, Func, Args, TypesOrMod, 
-			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod, Ctx);
+			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod, Ctx,
+			  check_version(Mod:module_info(attributes)));
 	{'external', Key} when atom(TypesOrMod) ->
 	    case catch TypesOrMod:oe_tc(Func) of
 		{'EXIT', What} ->
@@ -1111,14 +1149,26 @@ Reason: ~p", [?LINE, TypesOrMod, What], ?DEBUG_LEVEL),
 			       Obj, Ctx)
     end.
 
-cast_internal(Pid, Obj, Func, Args, Types, Check, Mod, Ctx) 
+cast_internal(Pid, Obj, Func, Args, Types, Check, Mod, Ctx, ICV) 
   when pid(Pid), node(Pid) == node() ->
-    typecheck_request(Check, Args, Mod, Func),
-    catch gen_server:cast(Pid, {Obj, Ctx, Func, Args}),
+    typecheck_request(Check, Args, Types, Func),
+    Data = case ICV of
+	       true ->
+		   {Obj, Ctx, Func, Args};
+	       false ->
+		   {Obj, Func, Args}
+	   end,
+    catch gen_server:cast(Pid, Data),
     ok;
-cast_internal(Pid, Obj, Func, Args, Types, Check, Mod, Ctx) when pid(Pid) ->
-    typecheck_request(Check, Args, Mod, Func),
-    case catch rpc:call(node(Pid), corba, cast_relay, [Pid, {Obj, Ctx, Func, Args}]) of
+cast_internal(Pid, Obj, Func, Args, Types, Check, Mod, Ctx, ICV) when pid(Pid) ->
+    typecheck_request(Check, Args, Types, Func),
+    Data = case ICV of
+	       true ->
+		   {Obj, Ctx, Func, Args};
+	       false ->
+		   {Obj, Func, Args}
+	   end,
+    case catch rpc:call(node(Pid), corba, cast_relay, [Pid, Data]) of
 	{'EXCEPTION', E} ->
             typecheck_reply(Check, {'EXCEPTION', E}, Mod, Func),
 	    raise(E);
@@ -1139,27 +1189,33 @@ Communication with node: ~p failed with reason: ~p.",
     end;
 
 %% This case handles if the reference is created as a Pseudo object. Just call apply/3.
-cast_internal({pseudo, Module}, Obj, Func, Args, Types, Check, Mod, Ctx) ->
-    typecheck_request(Check, Args, Mod, Func),
+cast_internal({pseudo, Module}, Obj, Func, Args, Types, Check, Mod, Ctx, _) ->
+    typecheck_request(Check, Args, Types, Func),
     State = binary_to_term(get_subobject_key(Obj)),
     catch apply(Module, Func, [Obj, State|Args]),
     ok;
-cast_internal(Registered, Obj, Func, Args, Types, Check, Mod, Ctx) ->
-    typecheck_request(Check, Args, Mod, Func),
+cast_internal(Registered, Obj, Func, Args, Types, Check, Mod, Ctx, ICV) ->
+    typecheck_request(Check, Args, Types, Func),
     case whereis(Registered) of
 	undefined ->
 	    raise(#'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO});
 	P ->
-	    gen_server:cast(P, {Obj, Ctx, Func, Args})
+	    Data = case ICV of
+		       true ->
+			   {Obj, Ctx, Func, Args};
+		       false ->
+			   {Obj, Func, Args}
+		   end,
+	    gen_server:cast(P, Data)
     end.
 	
-cast_relay(Pid, {Obj, Ctx, Func, Args}) ->
+cast_relay(Pid, Data) ->
     case whereis(orber_objkeyserver) of
 	undefined ->
 	    raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 1), 
 				     completion_status=?COMPLETED_NO});
 	_ ->
-	    gen_server:cast(Pid, {Obj, Ctx, Func, Args})
+	    gen_server:cast(Pid, Data)
     end.
 
 %%-----------------------------------------------------------------
@@ -1197,17 +1253,36 @@ request_from_iiop({Mod, _, _, _, _, _}, oe_get_interface,
 		  _, _, _, _ServiceCtx) when atom(Mod) ->
     case catch Mod:oe_get_interface() of
 	{'EXIT', What} ->
-	    orber:dbg("[~p] corba:request_from_iiop(~p); 
-The call-back module does not exist or incorrect IC-version used.
-Reason: ~p", [?LINE, Mod, What], ?DEBUG_LEVEL),
-	    {'EXCEPTION', #'TRANSIENT'{minor=(?ORBER_VMCID bor 7),
-				       completion_status=?COMPLETED_NO}};
+	    case catch Mod:handle_call({false, oe_get_interface, []}, false, false) of
+		{reply, OpDef, _} ->
+		    OpDef;
+		_->
+		    []
+	    end;	    
 	undefined ->
 	    {'EXCEPTION', #'BAD_OPERATION'{minor = (?ORBER_VMCID bor 4),
 					   completion_status='COMPLETED_NO'}};
 	Interface ->
 	    Interface
     end;
+%% This case will not be used as long as the previous case exists. When we choose
+%% to no longer support the old style of stubs/skeletons generated by IC the case
+%% above must be deleted.
+%request_from_iiop({Mod, _, _, _, _, _}, oe_get_interface, 
+%		  _, _, _, _ServiceCtx) when atom(Mod) ->
+%    case catch Mod:oe_get_interface() of
+%	{'EXIT', What} ->
+%	    orber:dbg("[~p] corba:request_from_iiop(~p); 
+%The call-back module does not exist or incorrect IC-version used.
+%Reason: ~p", [?LINE, Mod, What], ?DEBUG_LEVEL),
+%	    {'EXCEPTION', #'TRANSIENT'{minor=(?ORBER_VMCID bor 7),
+%				       completion_status=?COMPLETED_NO}};
+%	undefined ->
+%	    {'EXCEPTION', #'BAD_OPERATION'{minor = (?ORBER_VMCID bor 4),
+%					   completion_status='COMPLETED_NO'}};
+%	Interface ->
+%	    Interface
+%    end;
 request_from_iiop({Mod, pseudo, Module, UserDef, OrberDef, Flags} = ObjRef, 
 		  Func, Args, Types, ResponseExpected, ServiceCtx) ->
     State = binary_to_term(get_subobject_key(ObjRef)),
@@ -1258,27 +1333,64 @@ confirm that the return value is correct (e.g. {reply, Reply, State})",
 
 request_from_iiop({Mod, Type, Key, UserDef, OrberDef, Flags} = ObjRef, 
 		  Func, Args, Types, true, ServiceCtx) ->
-    case catch gen_server:call(convert_key_to_pid(Key), 
-			       {ObjRef, ServiceCtx, Func, Args}, infinity) of
-	{'EXIT', What} ->
-	    orber:dbg("[~p] corba:request_from_iiop(~p, ~p, ~p); 
-gen_server:call exit: ~p", [?LINE, Func, Args, Types, What], ?DEBUG_LEVEL),
-	    {'EXCEPTION', #'TRANSIENT'{minor=(?ORBER_VMCID bor 4),
-				       completion_status=?COMPLETED_MAYBE}};
-	Result ->
-	    Result
+    case check_version(Mod:module_info(attributes)) of
+	true ->
+	    case catch gen_server:call(convert_key_to_pid(Key), 
+				       {ObjRef, ServiceCtx, Func, Args}, infinity) of
+		{'EXIT', What} ->
+		    orber:dbg("[~p] corba:request_from_iiop(~p, ~p, ~p); gen_server:call exit: ~p", [?LINE, Func, Args, Types, What], ?DEBUG_LEVEL),
+		    {'EXCEPTION', #'TRANSIENT'{minor=(?ORBER_VMCID bor 4),
+					       completion_status=?COMPLETED_MAYBE}};
+		Result ->
+		    Result
+	    end;
+	false ->
+	    case catch gen_server:call(convert_key_to_pid(Key), 
+				       {ObjRef, Func, Args}, infinity) of
+		{'EXIT', What} ->
+		    orber:dbg("[~p] corba:request_from_iiop(~p, ~p, ~p); gen_server:call exit: ~p", [?LINE, Func, Args, Types, What], ?DEBUG_LEVEL),
+		    {'EXCEPTION', #'TRANSIENT'{minor=(?ORBER_VMCID bor 4),
+					       completion_status=?COMPLETED_MAYBE}};
+		Result ->
+		    Result
+	    end
     end;
 request_from_iiop({Mod, Type, Key, UserDef, OrberDef, Flags} = ObjRef, 
 		  Func, Args, Types, _, ServiceCtx) ->
-    case catch gen_server:cast(convert_key_to_pid(Key), {ObjRef, ServiceCtx, Func, Args}) of
-	{'EXIT', What} ->
-	    orber:dbg("[~p] corba:request_from_iiop(~p, ~p, ~p); 
-gen_server:cast exit: ~p", [?LINE, Func, Args, Types, What], ?DEBUG_LEVEL),
-	    {'EXCEPTION', #'TRANSIENT'{minor=(?ORBER_VMCID bor 4),
-				       completion_status=?COMPLETED_MAYBE}};
-	Result ->
-	    Result
+    case check_version(Mod:module_info(attributes)) of
+	true ->
+	    case catch gen_server:cast(convert_key_to_pid(Key), 
+				       {ObjRef, ServiceCtx, Func, Args}) of
+		{'EXIT', What} ->
+		    orber:dbg("[~p] corba:request_from_iiop(~p, ~p, ~p); gen_server:cast exit: ~p", [?LINE, Func, Args, Types, What], ?DEBUG_LEVEL),
+		    {'EXCEPTION', #'TRANSIENT'{minor=(?ORBER_VMCID bor 4),
+					       completion_status=?COMPLETED_MAYBE}};
+	        Result ->
+	            Result
+            end;
+	false ->
+	    case catch gen_server:cast(convert_key_to_pid(Key), 
+				       {ObjRef, Func, Args}) of
+		{'EXIT', What} ->
+		    orber:dbg("[~p] corba:request_from_iiop(~p, ~p, ~p); gen_server:cast exit: ~p", [?LINE, Func, Args, Types, What], ?DEBUG_LEVEL),
+		    {'EXCEPTION', #'TRANSIENT'{minor=(?ORBER_VMCID bor 4),
+					       completion_status=?COMPLETED_MAYBE}};
+	        Result ->
+	            Result
+            end
     end.
+
+check_version([]) ->
+    false;
+check_version([{ic_compiled,"4_2"}|_])  ->
+    true;
+%% The ic_compiled attribute was introduced in 4.1.3.
+check_version([{ic_compiled,[$4,$_,$1|_]}|_])  ->
+    false;
+check_version([{ic_compiled,_}|_])  ->
+    true;
+check_version([_|Rest])  ->
+    check_version(Rest).
 
 %%------------------------------------------------------------
 %% Internal stuff

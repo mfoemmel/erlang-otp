@@ -55,8 +55,8 @@ typedef struct export
 void init_export_table(void);
 void export_info(CIO);
 
-Export* erts_find_export_entry(Eterm m, Eterm f, int a);
-Export* erts_export_put(Eterm mod, Eterm func, int arity);
+Export* erts_find_export_entry(Eterm m, Eterm f, unsigned int a);
+Export* erts_export_put(Eterm mod, Eterm func, unsigned int arity);
 
 extern IndexTable export_table;
 

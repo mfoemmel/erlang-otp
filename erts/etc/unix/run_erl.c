@@ -55,8 +55,10 @@
 #define LOG_MIN_MAXSIZE         1000      /* Smallast value for changing log file */
 #define LOG_STUBNAME            "erlang.log."
 #define LOG_PERM                0664
-#define LOG_ACTIVITY_MINUTES    5
-#define LOG_ALIVE_MINUTES       15
+#define DEFAULT_LOG_ACTIVITY_MINUTES    5
+#define DEFAULT_LOG_ALIVE_MINUTES       15
+#define DEFAULT_LOG_ALIVE_FORMAT        "%a %b %e %T %Z %Y"
+#define ALIVE_BUFFSIZ                   256
 
 #define PERM            0600
 #define STATUSFILENAME  "/run_erl.log"
@@ -88,7 +90,7 @@ static void stderr_error(int priority, const char *format,...);
 static void catch_sigpipe(int);
 static int next_log(int log_num);
 static int prev_log(int log_num);
-static int find_next_log_num();
+static int find_next_log_num(void);
 static int open_log(int log_num, int flags);
 static void write_to_log(int* lfd, int* log_num, char* buf, int len);
 static void daemon_init(void);
@@ -107,6 +109,10 @@ static struct sigaction sig_act;
 static int fifowrite = 0;
 static int log_generations = DEFAULT_LOG_GENERATIONS;
 static int log_maxsize     = DEFAULT_LOG_MAXSIZE;
+static int log_alive_minutes = DEFAULT_LOG_ALIVE_MINUTES;
+static int log_activity_minutes = DEFAULT_LOG_ACTIVITY_MINUTES;
+static int log_alive_in_gmt = 0;
+static char log_alive_format[ALIVE_BUFFSIZ+1];
 static int run_daemon = 0;
 static char *program_name;
 
@@ -124,7 +130,7 @@ static char *program_name;
 
 #ifdef NO_SYSLOG
 #define OPEN_SYSLOG() ((void) 0)
-#define ERROR(Parameters) stderr_error##Parameters
+#define ERROR(Parameters) stderr_error Parameters
 #else
 #define OPEN_SYSLOG()\
 openlog(simple_basename(program_name),LOG_PID|LOG_CONS|LOG_NOWAIT,LOG_USER)
@@ -132,9 +138,9 @@ openlog(simple_basename(program_name),LOG_PID|LOG_CONS|LOG_NOWAIT,LOG_USER)
 #define ERROR(Parameters)			\
 do {						\
     if (run_daemon) {			        \
-	syslog##Parameters;			\
+	syslog Parameters;			\
     } else {					\
-	stderr_error##Parameters;		\
+	stderr_error Parameters;		\
     }						\
 } while (0)
 #endif
@@ -143,8 +149,8 @@ do {						\
 do {									   \
     if ((Need) >= FILENAME_BUFSIZ) {					   \
 	ERROR((LOG_ERR,"%s: Filename length (%d) exceeds maximum length "  \
-	      "of %d characters, exiting.", (Need),			   \
-	      program_name, FILENAME_BUFSIZ));				   \
+	      "of %d characters, exiting.",				   \
+	      program_name, (Need), FILENAME_BUFSIZ));			   \
 	exit(1);							   \
     }									   \
 } while (0)
@@ -184,7 +190,36 @@ int main(int argc, char **argv)
 #endif
 
   /* Get values for LOG file handling from the environment */
-
+  if ((p = getenv("RUN_ERL_LOG_ALIVE_MINUTES"))) {
+      log_alive_minutes = atoi(p);
+      if (!log_alive_minutes) {
+	  ERROR((LOG_ERR,"Minumum value for RUN_ERL_LOG_ALIVE_MINUTES is 1 "
+		 "(current value is %s)\n",p));
+      }
+      log_activity_minutes = log_alive_minutes / 3;
+      if (!log_activity_minutes) {
+	  ++log_activity_minutes;
+      }
+  }
+  if ((p = getenv("RUN_ERL_LOG_ACTIVITY_MINUTES"))) {
+     log_activity_minutes = atoi(p);
+      if (!log_activity_minutes) {
+	  ERROR((LOG_ERR,"Minumum value for RUN_ERL_LOG_ACTIVITY_MINUTES is 1 "
+		 "(current value is %s)\n",p));
+      }
+  } 
+  if ((p = getenv("RUN_ERL_LOG_ALIVE_FORMAT"))) {
+      if (strlen(p) > ALIVE_BUFFSIZ) {
+	  ERROR((LOG_ERR, "RUN_ERL_LOG_ALIVE_FORMAT can contain a maximum of "
+		 "%d characters\n", ALIVE_BUFFSIZ));
+      }
+      strcpy(log_alive_format,p);
+  } else {
+      strcpy(log_alive_format,DEFAULT_LOG_ALIVE_FORMAT);
+  }
+  if ((p = getenv("RUN_ERL_LOG_ALIVE_IN_UTC")) && strcmp(p,"0")) {
+      ++log_alive_in_gmt;
+  }
   if ((p = getenv("RUN_ERL_LOG_GENERATIONS"))) {
     log_generations = atoi(p);
     if (log_generations < LOG_MIN_GENERATIONS)
@@ -347,6 +382,7 @@ static void pass_on(pid_t childpid, int mfd)
   struct timeval timeout;
   time_t last_activity;
   char buf[BUFSIZ];
+  char log_alive_buffer[ALIVE_BUFFSIZ+1];
   int lognum;
   int rfd, wfd=0, lfd=0;
   int maxfd;
@@ -378,7 +414,7 @@ static void pass_on(pid_t childpid, int mfd)
     FD_SET(rfd, &readfds);
     FD_SET(mfd, &readfds);
     time(&last_activity);
-    timeout.tv_sec  = LOG_ALIVE_MINUTES*60; /* don't assume old BSD bug */
+    timeout.tv_sec  = log_alive_minutes*60; /* don't assume old BSD bug */
     timeout.tv_usec = 0;
     ready = select(maxfd + 1, &readfds, NULL, NULL, &timeout);
     if (ready < 0) {
@@ -389,12 +425,26 @@ static void pass_on(pid_t childpid, int mfd)
       /* Check how long time we've been inactive */
       time_t now;
       time(&now);
-      if(!ready || now - last_activity > LOG_ACTIVITY_MINUTES*60) {
+      if(!ready || now - last_activity > log_activity_minutes*60) {
 	/* Either a time out: 15 minutes without action, */
 	/* or something is coming in right now, but it's a long time */
 	/* since last time, so let's write a time stamp this message */
-	sprintf(buf, "\n===== %s%s", ready?"":"ALIVE ", ctime(&now));
-	write_to_log(&lfd, &lognum, buf, strlen(buf));
+	  struct tm *tmptr;
+	  if (log_alive_in_gmt) {
+	      tmptr = gmtime(&now);
+	  } else {
+	      tmptr = localtime(&now);
+	  }
+	  if (!strftime(log_alive_buffer, ALIVE_BUFFSIZ, log_alive_format,
+			tmptr)) {
+	      strcpy(log_alive_buffer,
+		     "(could not format time in 256 positions "
+		     "with current format string.)");
+	  }
+	  log_alive_buffer[ALIVE_BUFFSIZ] = '\0';
+
+	  sprintf(buf, "\n===== %s%s\n", ready?"":"ALIVE ", log_alive_buffer);
+	  write_to_log(&lfd, &lognum, buf, strlen(buf));
       }
     }
   
@@ -615,6 +665,8 @@ static int find_next_log_num() {
 static int open_log(int log_num, int flags) {
   char buf[FILENAME_MAX];
   time_t now;
+  struct tm *tmptr;
+  char log_buffer[ALIVE_BUFFSIZ+1];
   int lfd;
 
   /* Remove the next log (to keep a "hole" in the log sequence) */
@@ -630,7 +682,20 @@ static int open_log(int log_num, int flags) {
 
   /* Write a LOGGING STARTED and time stamp into the log file */
   time(&now);
-  sprintf(buf, "\n=====\n===== LOGGING STARTED %s=====\n", ctime(&now));
+  if (log_alive_in_gmt) {
+      tmptr = gmtime(&now);
+  } else {
+      tmptr = localtime(&now);
+  }
+  if (!strftime(log_buffer, ALIVE_BUFFSIZ, log_alive_format,
+		tmptr)) {
+      strcpy(log_buffer,
+	     "(could not format time in 256 positions "
+	     "with current format string.)");
+  }
+  log_buffer[ALIVE_BUFFSIZ] = '\0';
+
+  sprintf(buf, "\n=====\n===== LOGGING STARTED %s\n=====\n", log_buffer);
   if(write(lfd, buf, strlen(buf)) != strlen(buf))
     status("Error in writing to log.\n");
 
@@ -673,11 +738,7 @@ static void write_to_log(int* lfd, int* log_num, char* buf, int len) {
  */
 static int create_fifo(char *name, int perm)
 {
-#ifdef HAVE_MACH_O_DYLD_H
-  if ((mkfifo(name, perm) < 0) && (errno != EEXIST))
-#else
-    if ((mknod(name, S_IFIFO | perm, 0) < 0) && (errno != EEXIST))
-#endif
+  if ((mknod(name, S_IFIFO | perm, 0) < 0) && (errno != EEXIST))
     return -1;
   return 0;
 }

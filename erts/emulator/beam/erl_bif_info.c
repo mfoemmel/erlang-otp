@@ -27,11 +27,11 @@
 #include "erl_driver.h"
 #include "bif.h"
 #include "big.h"
-#include "dist.h"
 #include "erl_version.h"
 #include "erl_db_util.h"
 #include "erl_message.h"
 #include "erl_binary.h"
+#include "erl_instrument.h"
 #ifdef ELIB_ALLOC_IS_CLIB
 #include "elib_stat.h"
 #endif
@@ -63,9 +63,6 @@ static char erts_system_version[] = ("Erlang (" EMULATOR ")"
 #endif	
 #ifdef DEBUG
 				     " [debug-compiled]"
-#endif	
-#ifdef INSTRUMENT
-				     " [instrumented]"
 #endif	
 #ifdef USE_THREADS
 				     " [threads:%d]"
@@ -155,7 +152,25 @@ make_link_list(Process *p, ErlLink *ls)
 #endif
     
     return res;
+}
 
+char*
+erts_get_system_version(int *lenp)
+{
+#ifdef USE_THREADS
+    static char sbuf[sizeof(erts_system_version) + 20];
+
+    sprintf(sbuf, erts_system_version, erts_async_max_threads);
+    if (lenp != NULL) {
+	*lenp = sys_strlen(sbuf);
+    }
+    return sbuf;
+#else
+    if (lenp != NULL) {
+	*lenp = sizeof(erts_system_version) - 1;
+    }
+    return erts_system_version;
+#endif
 }
 
 Eterm
@@ -236,7 +251,6 @@ process_info_1(Process* p, Eterm pid)
 }
 
 BIF_RETTYPE process_info_2(BIF_ALIST_2) 
-BIF_ADECL_2
 {
     Eterm item, term, list;
     Eterm res;
@@ -263,10 +277,7 @@ BIF_ADECL_2
 
     /* if the process is not active return undefined */
     if (INVALID_PID(rp, BIF_ARG_1)) {
-	if (rp != NULL && rp->status == P_EXITING)
-	    ;
-	else
-	    BIF_RET(am_undefined);
+	BIF_RET(am_undefined);
     }
     res = NIL;
 
@@ -274,12 +285,7 @@ BIF_ADECL_2
 	if (rp->reg != NULL) {
 	    hp = HAlloc(BIF_P, 3);
 	    res = rp->reg->name;
-	}
-	else if (rp->reg_atom != THE_NON_VALUE && rp->status == P_EXITING) {
-	    hp = HAlloc(BIF_P, 3);
-	    res = rp->reg_atom;
-	}
-	else {
+	} else {
 	    BIF_RET(NIL);
 	}
     } else if (item == am_current_function) {
@@ -415,10 +421,10 @@ BIF_ADECL_2
 	/* lnk->item is the monitor link origin end */
 	for (lnk = rp->links; lnk; lnk = lnk->next) {
 	    if (mi_i >= mi_max) {
-		mi = (mi ? erts_safe_sl_realloc(mi,
-						mi_max*sizeof(*mi),
-						(mi_max+MI_INC)*sizeof(*mi))
-		      : erts_safe_sl_alloc(MI_INC*sizeof(*mi)));
+		mi = (mi ? erts_realloc(ERTS_ALC_T_TMP,
+					mi,
+					(mi_max+MI_INC)*sizeof(*mi))
+		      : erts_alloc(ERTS_ALC_T_TMP, MI_INC*sizeof(*mi)));
 		mi_max += MI_INC;
 	    }
 	    if (lnk->type == LNK_LINK1 && rp->id == lnk->item) {
@@ -491,7 +497,7 @@ BIF_ADECL_2
 	    }
 	}
 	if (mi)
-	    erts_sl_free((void *) mi);
+	    erts_free(ERTS_ALC_T_TMP, (void *) mi);
 #undef  MI_INC
     } else if (item == am_monitored_by) {
 	int sz = 0;
@@ -553,9 +559,6 @@ BIF_ADECL_2
 	    size += (rp->old_hend - rp->old_heap) * sizeof(Eterm);
 #endif
 
-	if (rp->reg) {
-	    size += sizeof(RegProc);
-	}
 	size += rp->msg.len * sizeof(ErlMessage);
 
 	if (rp->arg_reg != rp->def_arg_reg) {
@@ -563,16 +566,18 @@ BIF_ADECL_2
 	}
 	
 	if (rp->ct) {
-	    size += (sizeof(struct saved_calls)
-		     + (rp->ct->len - 1) * sizeof(Export *));
+	    size += (sizeof(*(rp->ct))
+		     + (rp->ct->len-1) * sizeof(rp->ct->ct[0]));
 	}
+
+	size += erts_dicts_mem_size(rp);
 
 	(void) erts_bld_uint(NULL, &hsz, size);
 	hp = HAlloc(BIF_P, hsz);
 	res = erts_bld_uint(&hp, NULL, size);
     } else if (item == am_garbage_collection){
 	hp = HAlloc(BIF_P, 3+2+3);
-	res = TUPLE2(hp, am_fullsweep_after, make_small(MAX_GEN_GCS(BIF_P)));
+	res = TUPLE2(hp, am_fullsweep_after, make_small(MAX_GEN_GCS(rp)));
 	hp += 3;
 	res = CONS(hp, res, NIL);
 	hp += 2;
@@ -616,13 +621,6 @@ BIF_ADECL_2
 	 */
 	res = copy_object(rp->seq_trace_token, BIF_P);
 	hp = HAlloc(BIF_P, 3);
-    } else if (item == am_exit) {
-	if (rp->status == P_EXITING) {
-	    res = copy_object(rp->fvalue, BIF_P);
-	    hp = HAlloc(BIF_P, 3);
-	} else {
-	    BIF_RET(NIL);
-	}
     } else if (item == am_catchlevel) {
 	hp = HAlloc(BIF_P, 3);
 	res = make_small(catchlevel(BIF_P));
@@ -681,24 +679,48 @@ info_1_tuple(Process* BIF_P,	/* Pointer to current process. */
 
     sel = *tp++;
 
-    if (0) {
-	;
-#ifdef INSTRUMENT
+
+
+    if (sel == am_memory) {
+	if (arity != 2)
+	    return am_badarg;
+	return erts_memory(NULL, BIF_P, *tp);
     } else if (sel == am_allocated) {
-	int len;
+	if (arity == 2) {
+	    int len;
 
-	if (!is_string(*tp))
-	    return THE_NON_VALUE;
+	    if (!is_string(*tp))
+		return THE_NON_VALUE;
        
-	if ((len = intlist_to_buf(*tp, tmp_buf, TMP_BUF_SIZE-1)) < 0)
-	    return THE_NON_VALUE;
-	tmp_buf[len] = '\0';
+	    if ((len = intlist_to_buf(*tp, tmp_buf, TMP_BUF_SIZE-1)) < 0)
+		return THE_NON_VALUE;
+	    tmp_buf[len] = '\0';
 
-	if (dump_memory_data(tmp_buf))
-	    BIF_RET(am_true);
+	    if (erts_instr_dump_memory_map(tmp_buf))
+		return am_true;
+	    else
+		return am_false;
+	}
+	else if (arity == 3 && tp[0] == am_status) {
+	    if (is_atom(tp[1]))
+		return erts_instr_get_stat(BIF_P, tp[1], 1);
+	    else {
+		int len;
+		if (!is_string(tp[1]))
+		    return THE_NON_VALUE;
+       
+		if ((len = intlist_to_buf(tp[1], tmp_buf, TMP_BUF_SIZE-1)) < 0)
+		    return THE_NON_VALUE;
+		tmp_buf[len] = '\0';
+
+		if (erts_instr_dump_stat(tmp_buf, 1))
+		    return am_true;
+		else
+		    return am_false;
+	    }
+	}
 	else
-	    return THE_NON_VALUE;	/* Return {error, Errno} instead? */
-#endif
+	    return THE_NON_VALUE;
 #ifdef PURIFY
     } else if (sel == am_purify) {
 	if (*tp == am_memory) {
@@ -783,11 +805,14 @@ info_1_tuple(Process* BIF_P,	/* Pointer to current process. */
 
 	return make_link_list(BIF_P, links);
     }
+    else if (sel == am_allocator && arity == 2) {
+	return erts_allocator_info_term(BIF_P, *tp);
+    }
+
     return THE_NON_VALUE;
 }
 
 BIF_RETTYPE system_info_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm res;
     Eterm* hp;
@@ -804,6 +829,12 @@ BIF_ADECL_1
 	if (is_non_value(res))
 	    goto error;
 	return res;
+    } else if (BIF_ARG_1 == am_memory) {
+	BIF_RET(erts_memory(NULL, BIF_P, THE_NON_VALUE));
+    } else if (BIF_ARG_1 == am_allocated_areas) {
+	BIF_RET(erts_allocated_areas(NULL, BIF_P));
+    } else if (BIF_ARG_1 == am_allocated) {
+	BIF_RET(erts_instr_get_memory_map(BIF_P));
     } else if (BIF_ARG_1 == am_hipe_architecture) {
 #if defined(HIPE)
 #  define MAKE_STR2(x) #x
@@ -856,16 +887,8 @@ BIF_ADECL_1
     else if (BIF_ARG_1 == am_system_version) {
 	char *sys_ver;
 	int sys_ver_len;
-#ifdef USE_THREADS
-	char sbuf[sizeof(erts_system_version) + 20];
 
-	sprintf(sbuf, erts_system_version, erts_async_max_threads);
-	sys_ver = &sbuf[0];
-	sys_ver_len = sys_strlen(sys_ver);
-#else
-	sys_ver = &erts_system_version[0];
-	sys_ver_len = sizeof(erts_system_version) - 1;
-#endif
+	sys_ver = erts_get_system_version(&sys_ver_len);
 	hp = HAlloc(BIF_P, sys_ver_len*2);
 	BIF_RET(buf_to_intlist(&hp, sys_ver, sys_ver_len, NIL));
     } else if (BIF_ARG_1 == am_system_architecture) {
@@ -876,237 +899,8 @@ BIF_ADECL_1
 	hp = HAlloc(BIF_P, n*2);
 	BIF_RET(buf_to_intlist(&hp, tmp_buf, n, NIL));
     } 
-
-#ifdef INSTRUMENT
-    else if (BIF_ARG_1 == am_allocated) {
-	Eterm val;
-
-	val = collect_memory(BIF_P);
-	BIF_RET(val);
-    }
-#endif
-    else if (BIF_ARG_1 == am_allocated_areas) {
-	/* Keep c:memory() (in stdlib) up to date if changed */
-#ifdef DEBUG
-	Eterm *endp;
-#endif
-#ifdef INSTRUMENT
-	SysAllocStat sas;
-	DECL_AM(total);
-	DECL_AM(maximum);
-#endif
-	int i;
-	ErtsDefiniteAllocInfo edai;
-	DECL_AM(static);
-	DECL_AM(definite_alloc);
-	DECL_AM(atom_space);
-	DECL_AM(binary);
-	DECL_AM(atom_table);
-	DECL_AM(module_table);
-	DECL_AM(export_table);
-	DECL_AM(dist_table);
-	DECL_AM(node_table);
-	DECL_AM(register_table);
-	DECL_AM(loaded_code);
-	DECL_AM(bif_timer);
-	DECL_AM(link_lh);
-	DECL_AM(process_desc);
-	DECL_AM(table_desc);
-	DECL_AM(link_desc);
-	DECL_AM(link_sh_desc);
-	DECL_AM(atom_desc);
-	DECL_AM(export_desc);
-	DECL_AM(module_desc);
-	DECL_AM(preg_desc);
-	DECL_AM(plist_desc);
-	DECL_AM(fun_desc);
-	Uint atom_tab_sz = index_table_sz(&atom_table);
-	Uint mod_tab_sz = index_table_sz(&module_table);
-	Uint exp_tab_sz = index_table_sz(&export_table);
-	Uint reg_tab_sz = hash_table_sz(&process_reg);
-	Uint dist_tab_sz = erts_dist_table_size();
-	Uint node_tab_sz = erts_node_table_size();
-	Uint timer_sz = bif_timer_memory_size();
-	Uint proc_desc_sz = fix_info(process_desc);
-	Uint proc_desc_used = fix_used(process_desc);
-	Uint tab_desc_sz = fix_info(table_desc);
-	Uint tab_desc_used = fix_used(table_desc);
-	Uint atom_desc_sz = fix_info(atom_desc);
-	Uint atom_desc_used = fix_used(atom_desc);
-	Uint exp_desc_sz = fix_info(export_desc);
-	Uint exp_desc_used = fix_used(export_desc);
-	Uint mod_desc_sz = fix_info(module_desc);
-	Uint mod_desc_used = fix_used(module_desc);
-	Uint preg_desc_sz = fix_info(preg_desc);
-	Uint preg_desc_used = fix_used(preg_desc);
-	Uint link_desc_sz = fix_info(link_desc);
-	Uint link_desc_used = fix_used(link_desc);
-	Uint link_sh_desc_sz = fix_info(link_sh_desc);
-	Uint link_sh_desc_used = fix_used(link_sh_desc);
-	Uint plist_desc_sz = fix_info(plist_desc);
-	Uint plist_desc_used = fix_used(plist_desc);
-	Uint fun_desc_sz = fix_info(erts_fun_desc);
-	Uint fun_desc_used = fix_used(erts_fun_desc);
-	int code_sz = 0;
-	Uint static_sz;
-	Eterm tuples[25];
-	Uint *hp;
-	Uint **hpp;
-	Uint sz;
-	Uint *szp;
-
-	for (i = 0; i < module_code_size; i++) {
-	    if (module_code(i) != NULL &&
-		((module_code(i)->code_length != 0) ||
-		 (module_code(i)->old_code_length != 0))) {
-		code_sz += module_code(i)->code_length;
-		if (module_code(i)->old_code_length != 0) {
-		    code_sz += module_code(i)->old_code_length;
-		}
-	    }
-	}
-
-#ifdef INSTRUMENT
-	sys_alloc_stat(&sas);
-#endif
-
-	erts_definite_alloc_info(&edai);
-
-	static_sz =
-	    erts_max_processes*sizeof(Process*)	/* Process table */
-	    + erts_max_ports*sizeof(Port)	/* Port table */
-	    + TMP_BUF_SIZE*sizeof(byte)		/* Tmp buffer */
-	    + ERL_MESSAGE_BUF_SZ*sizeof(ErlMessage) /* Default message buf */
-	    + 14*sizeof(Eterm)			/* XXX dmem in dist.c */
-	    + 64+1				/* XXX dbuf in erl_message.c */ 
-	    /* XXX continue ... */;
-
-
-
-	/* First find out the heap size needed ... */
-	hpp = NULL;
-	szp = &sz;
-	sz = 0;
-
-    build_allocated_areas_term:
-	i = 0;
-	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
-				     AM_definite_alloc,
-				     erts_bld_uint(hpp, szp, edai.block),
-				     erts_bld_uint(hpp, szp, edai.used));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
-				     AM_static,
-				     erts_bld_uint(hpp, szp, static_sz));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
-				     AM_atom_space,
-				     erts_bld_uint(hpp, szp,
-						   reserved_atom_space),
-				     erts_bld_uint(hpp, szp, atom_space));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
-				     AM_binary,
-				     erts_bld_uint(hpp, szp,
-						   tot_bin_allocated));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
-				     AM_atom_table,
-				     erts_bld_uint(hpp, szp, atom_tab_sz));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
-				     AM_module_table,
-				     erts_bld_uint(hpp, szp, mod_tab_sz));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
-				     AM_export_table,
-				     erts_bld_uint(hpp, szp, exp_tab_sz));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
-				     AM_register_table,
-				     erts_bld_uint(hpp, szp, reg_tab_sz));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
-				     AM_loaded_code,
-				     erts_bld_uint(hpp, szp, code_sz));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
-				     AM_dist_table,
-				     erts_bld_uint(hpp, szp, dist_tab_sz));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
-				     AM_node_table,
-				     erts_bld_uint(hpp, szp, node_tab_sz));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
-				     AM_bif_timer,
-				     erts_bld_uint(hpp, szp, timer_sz));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
-				     AM_link_lh,
-				     erts_bld_uint(hpp, szp,
-						   erts_tot_link_lh_size));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
-				     AM_process_desc,
-				     erts_bld_uint(hpp, szp, proc_desc_sz),
-				     erts_bld_uint(hpp, szp, proc_desc_used));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
-				     AM_table_desc,
-				     erts_bld_uint(hpp, szp, tab_desc_sz),
-				     erts_bld_uint(hpp, szp, tab_desc_used));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
-				     AM_atom_desc,
-				     erts_bld_uint(hpp, szp, atom_desc_sz),
-				     erts_bld_uint(hpp, szp, atom_desc_used));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
-				     AM_export_desc,
-				     erts_bld_uint(hpp, szp, exp_desc_sz),
-				     erts_bld_uint(hpp, szp, exp_desc_used));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
-				     AM_module_desc,
-				     erts_bld_uint(hpp, szp, mod_desc_sz),
-				     erts_bld_uint(hpp, szp, mod_desc_used));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
-				     AM_preg_desc,
-				     erts_bld_uint(hpp, szp, preg_desc_sz),
-				     erts_bld_uint(hpp, szp, preg_desc_used));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
-				     AM_link_desc,
-				     erts_bld_uint(hpp, szp, link_desc_sz),
-				     erts_bld_uint(hpp, szp, link_desc_used));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
-				     AM_link_sh_desc,
-				     erts_bld_uint(hpp, szp, link_sh_desc_sz),
-				     erts_bld_uint(hpp, szp,
-						   link_sh_desc_used));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
-				     AM_plist_desc,
-				     erts_bld_uint(hpp, szp, plist_desc_sz),
-				     erts_bld_uint(hpp, szp,
-						   plist_desc_used));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
-				     AM_fun_desc,
-				     erts_bld_uint(hpp, szp, fun_desc_sz),
-				     erts_bld_uint(hpp, szp, fun_desc_used));
-#ifdef INSTRUMENT
-	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
-				     AM_total,
-				     erts_bld_uint(hpp, szp, sas.total));
-	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
-				     AM_maximum,
-				     erts_bld_uint(hpp, szp, sas.maximum));
-#endif
-
-	ASSERT(i <= sizeof(tuples)/sizeof(Eterm));
-
-	res = erts_bld_list(hpp, szp, i, tuples);
-
-
-	if (szp) {
-	    /* ... and then build the term */
-	    hp = HAlloc(BIF_P, sz);
-#ifdef DEBUG
-	    endp = hp + sz;
-#endif
-
-	    szp = NULL;
-	    hpp = &hp;
-	    goto build_allocated_areas_term;
-	}
-
-#ifdef DEBUG
-	ASSERT(endp == hp);
-#endif
-
-	BIF_RET(res);
+    else if (BIF_ARG_1 == am_memory_types) {
+	return erts_instr_get_type_info(BIF_P);
     }
     else if (BIF_ARG_1 == am_os_type) {
        Eterm type = am_atom_put(os_type, strlen(os_type));
@@ -1119,231 +913,7 @@ BIF_ADECL_1
        BIF_RET(tup);
     }
     else if (BIF_ARG_1 == am_allocator) {
-
-#ifndef HAVE_MMAP
-#define HAVE_MMAP 0
-#endif
-#ifdef DEBUG
-      Uint *endp;
-#endif
-      Uint **hpp;
-      Uint sz;
-      Uint *szp;
-      Eterm features;
-      Eterm settings;
-      Eterm atoms[13];
-      Uint terms[13];
-      Uint length;
-      SysAllocStat sas;
-      ErtsSlAllocStat esas;
-      ErtsDefiniteAllocInfo edai;
-      Eterm sla_setts;
-      DECL_AM(enabled);
-      DECL_AM(definite_alloc);
-
-      sys_alloc_stat(&sas);
-      erts_sl_alloc_stat(&esas, 0);
-      erts_definite_alloc_info(&edai);
-
-
-      /* First find out the heap size needed ... */
-      hpp = NULL;
-      szp = &sz;
-      sz = 0;
-
-    build_allocator_term:
-
-      length = 0;
-      features = NIL;
-      settings = NIL;
-
-      if(sas.trim_threshold >= 0) {
-	  DECL_AM(trim_threshold);
-	  atoms[length]   = AM_trim_threshold;
-	  terms[length++] = erts_bld_uint(hpp, szp, (Uint) sas.trim_threshold);
-      }
-      if(sas.top_pad >= 0) {
-	  DECL_AM(top_pad);
-	  atoms[length]   = AM_top_pad;
-	  terms[length++] = erts_bld_uint(hpp, szp, (Uint) sas.top_pad);
-      }
-
-      atoms[length] = AM_definite_alloc;
-      terms[length++] = erts_bld_uint(hpp, szp, (Uint) edai.block);
-
-      settings = erts_bld_2tup_list(hpp, szp, length, atoms, terms);
-
-      if (esas.sl_alloc_enabled) {
-	  DECL_AM(release);
-	  DECL_AM(singleblock_carrier_threshold);
-	  DECL_AM(max_mmap_carriers);
-	  DECL_AM(binaries);
-
-	  length = 0;
-
-	  atoms[length]   = AM_enabled;
-	  terms[length++] = am_true;
-
-	  atoms[length]   = AM_release;
-	  terms[length++] = erts_bld_string(hpp,
-					    szp,
-					    (!esas.old_sl_alloc_enabled
-					     ? ERTS_SL_ALLOC_RELEASE
-					     : ERTS_OLD_SL_ALLOC_RELEASE));
-
-	  atoms[length]   = AM_singleblock_carrier_threshold;
-	  terms[length++] = erts_bld_uint(hpp, szp,
-					  esas.singleblock_carrier_threshold);
-
-	  atoms[length]   = AM_max_mmap_carriers;
-	  terms[length++] = erts_bld_uint(hpp, szp, esas.max_mmap_carriers);
-
-	  if (!esas.old_sl_alloc_enabled) {
-	      DECL_AM(singleblock_carrier_move_threshold);
-	      DECL_AM(mmap_singleblock_carrier_load_threshold);
-	      DECL_AM(main_carrier_size);
-	      DECL_AM(smallest_multiblock_carrier_size);
-	      DECL_AM(largest_multiblock_carrier_size);
-	      DECL_AM(multiblock_carrier_growth_stages);
-	      DECL_AM(max_block_search_depth);
-
-	      atoms[length]   = AM_singleblock_carrier_move_threshold;
-	      terms[length++] =
-		  erts_bld_uint(hpp, szp,
-				esas.singleblock_carrier_move_threshold);
-
-	      atoms[length]   = AM_mmap_singleblock_carrier_load_threshold;
-	      terms[length++] =
-		  erts_bld_uint(hpp, szp,
-				esas.mmap_singleblock_carrier_load_threshold);
-
-	      atoms[length]   = AM_main_carrier_size;
-	      terms[length++] =
-		  erts_bld_uint(hpp, szp, esas.main_carrier_size);
-
-	      atoms[length]   = AM_smallest_multiblock_carrier_size;
-	      terms[length++] =
-		  erts_bld_uint(hpp, szp,
-				esas.smallest_multiblock_carrier_size);
-
-	      atoms[length]   = AM_largest_multiblock_carrier_size;
-	      terms[length++] =
-		  erts_bld_uint(hpp, szp, esas.largest_multiblock_carrier_size);
-
-	      atoms[length]   = AM_multiblock_carrier_growth_stages;
-	      terms[length++] =
-		  erts_bld_uint(hpp, szp,
-				esas.multiblock_carrier_growth_stages);
-
-	      atoms[length]   = AM_max_block_search_depth;
-	      terms[length++] =
-		  erts_bld_uint(hpp, szp, esas.max_block_search_depth);
-
-	  }
-
-	  atoms[length]   = AM_binaries;
-	  terms[length++] = erts_sl_alloc_binaries ? am_true : am_false;
-
-      }
-      else {
-	  length = 0;
-	  atoms[length]   = AM_enabled;
-	  terms[length++] = am_false;
-      }
-
-      sla_setts = erts_bld_2tup_list(hpp, szp, length, atoms, terms);
-      settings = erts_bld_cons(hpp,
-			       szp,
-			       erts_bld_tuple(hpp,
-					      szp,
-					      2,
-					      am_sl_alloc,
-					      sla_setts),
-			       settings);
-
-      length = 0;
-
-      if(esas.sl_alloc_enabled) {
-#if HAVE_MMAP
-	DECL_AM(mmap);
-#endif
-	terms[length++] = am_sl_alloc;
-#if HAVE_MMAP
-	terms[length++] = AM_mmap;
-#endif
-      }
-
-      if (edai.block > 0) {
-	  terms[length++] = AM_definite_alloc;
-      }
-
-#if !defined(NO_FIX_ALLOC) && !defined(PURIFY)
-      terms[length++] = am_fix_alloc;
-#endif
-
-      features = length ? erts_bld_list(hpp, szp, length, terms) : NIL;
-
-#if defined(ELIB_ALLOC_IS_CLIB)
-      {
-	Eterm version;
-	int i;
-	int ver[5];
-	i = sscanf(ERLANG_VERSION,
-		   "%d.%d.%d.%d.%d",
-		   &ver[0], &ver[1], &ver[2], &ver[3], &ver[4]);
-
-	version = NIL;
-	for(i--; i >= 0; i--)
-	  version = erts_bld_cons(hpp, szp, make_small(ver[i]), version);
-
-	res = erts_bld_tuple(hpp, szp, 4,
-			     am_elib_malloc, version, features, settings);
-      }
-#elif defined(__GLIBC__)
-      {
-	DECL_AM(glibc);
-	Eterm version;
-
-	version = erts_bld_cons(hpp,
-				szp,
-				make_small(__GLIBC__),
-#ifdef __GLIBC_MINOR__
-				erts_bld_cons(hpp,
-					      szp,
-					      make_small(__GLIBC_MINOR__),
-					      NIL)
-#else
-				NIL
-#endif
-	    );
-
-	res = erts_bld_tuple(hpp, szp, 4,
-			     AM_glibc, version, features, settings);
-      }
-
-#else /* unknown allocator */
-
-      res = erts_bld_tuple(hpp, szp, 4,
-			   am_undefined, NIL, features, settings);
-
-#endif
-
-      if (szp) {
-	  /* ... and then build the term */
-	  hp = HAlloc(BIF_P, sz);
-#ifdef DEBUG
-	  endp = hp + sz;
-#endif
-	  hpp = &hp;
-	  szp = NULL;
-	  goto build_allocator_term;
-      }
-
-#ifdef DEBUG
-      ASSERT(endp == hp);
-#endif
-
-      BIF_RET(res);
+	BIF_RET(erts_allocator_options((void *) BIF_P));
     }
     else if (BIF_ARG_1 == am_thread_pool_size) {
 #ifdef USE_THREADS
@@ -1357,9 +927,6 @@ BIF_ADECL_1
 	n = 0;
 #endif
 	BIF_RET(make_small(n));
-    }
-    else if (BIF_ARG_1 == am_sl_alloc) {
-	BIF_RET(erts_sl_alloc_stat_eterm(BIF_P, 1));
     }
     else if (BIF_ARG_1 == am_elib_malloc) {
 #ifdef ELIB_ALLOC_IS_CLIB
@@ -1571,14 +1138,29 @@ BIF_ADECL_1
 		     make_small(low & 0xFFFF));
 	BIF_RET(res);
 #endif
+    } else if (BIF_ARG_1 == am_threads) {
+#ifdef USE_THREADS
+	return am_true;
+#else
+	return am_false;
+#endif
     } else if (BIF_ARG_1 == am_creation) {
 	return make_small(erts_this_node->creation);
-    } else if (BIF_ARG_1 == am_node_and_dist_references) {
-	/*
-	 * OBSERVE! Only supposed to be used for testing, and debugging.
-	 */
-	BIF_RET(erts_get_node_and_dist_references(BIF_P));
     } else {
+	/* Arguments that are unusual... */
+	DECL_AM(node_and_dist_references);
+	DECL_AM(stop_memory_trace);
+
+	if (BIF_ARG_1 == AM_node_and_dist_references) {
+	    /*
+	     * OBSERVE! Only supposed to be used for testing, and debugging.
+	     */
+	    BIF_RET(erts_get_node_and_dist_references(BIF_P));
+	} else if (BIF_ARG_1 == AM_stop_memory_trace) {
+	    erts_mtrace_stop();
+	    BIF_RET(am_true);
+	}
+	    
     error:
 	BIF_ERROR(BIF_P, BADARG);
     }
@@ -1655,7 +1237,6 @@ port_info_1(Process* p, Eterm pid)
 */
 
 BIF_RETTYPE port_info_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Eterm portid = BIF_ARG_1;
     Eterm item = BIF_ARG_2;
@@ -1828,6 +1409,10 @@ fun_info_2(Process* p, Eterm fun, Eterm what)
 	    hp = HAlloc(p, 3);
 	    val = make_small(funp->arity);
 	    break;
+	case am_name:
+	    hp = HAlloc(p, 3);
+	    val = funp->fe->address[-2];
+	    break;
 	default:
 	    goto error;
 	}
@@ -1842,7 +1427,6 @@ fun_info_2(Process* p, Eterm fun, Eterm what)
 /* this is a general call which return some possibly useful information */
 
 BIF_RETTYPE statistics_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm res;
     Eterm* hp;
@@ -1913,4 +1497,13 @@ BIF_ADECL_1
     BIF_ERROR(BIF_P, BADARG);
 }
 
+BIF_RETTYPE error_logger_warning_map_0(BIF_ALIST_0)
+{
+    BIF_RET(erts_error_logger_warnings);
+}
 
+void
+erts_bif_info_init(void)
+{
+
+}

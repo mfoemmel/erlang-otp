@@ -31,19 +31,28 @@ module({Mod,Exp,Attr,Fs0,Lc}, Opt) ->
     Fs = map(fun(F) -> function(F, Rs) end, Fs0),
     {ok,{Mod,Exp,Attr,Fs,Lc}}.
 
-function({function,Name,Arity,CLabel,Asm0}, Rs) ->
-    Asm = opt(Asm0, Rs, [], tdb_new()),
-    {function,Name,Arity,CLabel,Asm}.
+function({function,Name,Arity,CLabel,Asm0}=Func, Rs) ->
+    case opt(Asm0, Rs, [], tdb_new()) of
+	Asm0 -> Func;
+	Asm ->
+	    %% Some labels may no longer be referenced.
+	    beam_jump:function({function,Name,Arity,CLabel,Asm})
+    end.
 
 %% opt([Instruction], Accumulator, TypeDb) -> {[Instruction'],TypeDb'}
 %%  Keep track of type information; try to simplify.
 
+opt([{block,Body1}|Is], Rs, [{block,Body0}|Acc], Ts) ->
+    Body = beam_block:merge_blocks(Body0, Body1),
+    opt([{block,Body}|Is], Rs, Acc, Ts);
 opt([{block,Body0}|Is], Rs, Acc, Ts0) ->
     {Body,Ts} = simplify(Body0, Ts0, Rs, []),
     opt(Is, Rs, [{block,Body}|Acc], Ts);
-opt([I|Is], Rs, Acc, Ts0) ->
-    Ts = update(I, Ts0),
-    opt(Is, Rs, [I|Acc], Ts);
+opt([I0|Is], Rs, Acc, Ts0) ->
+    case simplify([I0], Ts0, Rs, []) of
+	{[],Ts} -> opt(Is, Rs, Acc, Ts);
+	{[I],Ts} -> opt(Is, Rs, [I|Acc], Ts)
+    end;
 opt([], _, Acc, _) -> reverse(Acc).
 
 %% simplify(Instruction, TypeDb) -> NewInstruction
@@ -91,6 +100,40 @@ simplify([{set,[D0],[A,B],{bif,Op0,{f,0}}}=I|Is]=Is0, Ts0, Rs0, Acc0)
 	    Ts = tdb_update([{D0,float}], Ts0),
 	    simplify(Is, Ts, Rs, Acc)
     end;
+simplify([{set,[D],[TupleReg],{get_tuple_element,0}}=I|Is0], Ts0, Rs0, Acc0) ->
+    case tdb_find(TupleReg, Ts0) of
+	{tuple,_,[Contents]} ->
+	    Ts = tdb_update([{D,Contents}], Ts0),
+	    {Rs,Acc} = flush(Rs0, Is0, Acc0),
+	    simplify(Is0, Ts, Rs, [{set,[D],[Contents],move}|Acc]);
+	_ ->
+	    Ts = update(I, Ts0),
+	    {Rs,Acc} = flush(Rs0, Is0, Acc0),
+	    simplify(Is0, Ts, Rs, [I|Acc])
+    end;
+simplify([{test,is_tuple,_,[R]}=I|Is], Ts, Rs, Acc) ->
+    case tdb_find(R, Ts) of
+	{tuple,_,_} -> simplify(Is, Ts, Rs, Acc);
+	_ ->
+	    simplify(Is, Ts, Rs, [I|Acc])
+    end;
+simplify([{test,test_arity,_,[R,Arity]}=I|Is], Ts0, Rs, Acc) ->
+    case tdb_find(R, Ts0) of
+	{tuple,Arity,_} ->
+	    simplify(Is, Ts0, Rs, Acc);
+	_Other ->
+	    Ts = update(I, Ts0),
+	    simplify(Is, Ts, Rs, [I|Acc])
+    end;
+simplify([{test,is_eq_exact,Fail,[R,{atom,_}=Atom]}=I|Is0], Ts0, Rs0, Acc0) ->
+    Acc1 = case tdb_find(R, Ts0) of
+	       {atom,_}=Atom -> Acc0;
+	       {atom,_} -> [{jump,Fail}|Acc0];
+	       _ -> [I|Acc0]
+	   end,
+    Ts = update(I, Ts0),
+    {Rs,Acc} = flush(Rs0, Is0, Acc1),
+    simplify(Is0, Ts, Rs, Acc);
 simplify([I|Is]=Is0, Ts0, Rs0, Acc0) ->
     Ts = update(I, Ts0),
     {Rs,Acc} = flush(Rs0, Is0, Acc0),
@@ -117,9 +160,11 @@ update({set,[D],[S],move}, Ts0) ->
 	  end,
     tdb_update(Ops, Ts0);
 update({set,[D],[{integer,I},Reg],{bif,element,_}}, Ts0) ->
-    tdb_update([{Reg,{tuple,I}},{D,kill}], Ts0);
+    tdb_update([{Reg,{tuple,I,[]}},{D,kill}], Ts0);
 update({set,[D],[_Index,Reg],{bif,element,_}}, Ts0) ->
-    tdb_update([{Reg,{tuple,0}},{D,kill}], Ts0);
+    tdb_update([{Reg,{tuple,0,[]}},{D,kill}], Ts0);
+update({set,[D],[S],{get_tuple_element,0}}, Ts) ->
+    tdb_update([{D,{tuple_element,S,0}}], Ts);
 update({set,[D],[S],{bif,float,{f,0}}}, Ts0) ->
     %% Make sure we reject non-numeric literal argument.
     case possibly_numeric(S) of
@@ -149,13 +194,26 @@ update({set,[D],_Src,_Op}, Ts0) ->
 update({set,[D1,D2],_Src,_Op}, Ts0) ->
     tdb_update([{D1,kill},{D2,kill}], Ts0);
 update({allocate,_,_}, Ts) -> Ts;
+update({init,D}, Ts) ->
+    tdb_update([{D,kill}], Ts);
+update({kill,D}, Ts) ->
+    tdb_update([{D,kill}], Ts);
 update({'%live',_}, Ts) -> Ts;
 
 %% Instructions outside of blocks.
 update({test,is_float,_Fail,[Src]}, Ts0) ->
     tdb_update([{Src,float}], Ts0);
 update({test,test_arity,_Fail,[Src,Arity]}, Ts0) ->
-    tdb_update([{Src,{tuple,Arity}}], Ts0);
+    tdb_update([{Src,{tuple,Arity,[]}}], Ts0);
+update({test,is_eq_exact,_,[Reg,{atom,_}=Atom]}, Ts) ->
+    case tdb_find(Reg, Ts) of
+	error ->
+	    Ts;
+	{tuple_element,TupleReg,0} ->
+	    tdb_update([{TupleReg,{tuple,1,[Atom]}}], Ts);
+	_ ->
+	    Ts
+    end;
 update({test,_Test,_Fail,_Other}, Ts) -> Ts;
 update({call_ext,1,{extfunc,math,Math,1}}, Ts) ->
     case is_math_bif(Math, 1) of
@@ -176,9 +234,10 @@ update({call_ext,3,{extfunc,erlang,setelement,3}}, Ts0) ->
     tdb_update([{{x,0},Op}], Ts1);
 update({call,_Arity,_Func}, Ts) -> tdb_kill_xregs(Ts);
 update({call_ext,_Arity,_Func}, Ts) -> tdb_kill_xregs(Ts);
+update({make_fun2,_,_,_,_}, Ts) -> tdb_kill_xregs(Ts);
 
 %% The instruction is unknown.  Kill all information.
-update(_, _) -> tdb_new().
+update(_I, _Ts) -> tdb_new().
 
 is_math_bif(cos, 1) -> true;
 is_math_bif(cosh, 1) -> true;
@@ -211,7 +270,7 @@ possibly_numeric(_) -> false.
 
 max_tuple_size(Reg, Ts) ->
     case tdb_find(Reg, Ts) of
-	{tuple,Sz} -> Sz;
+	{tuple,Sz,_} -> Sz;
 	_Other -> 0
     end.
 
@@ -363,9 +422,11 @@ checkerror_2([], OrigIs) -> [{set,[],[],fcheckerror}|OrigIs].
 %%% Routines for maintaining a type database.  The type database 
 %%% associates type information with registers.
 %%%
-%%% {tuple,Size} means that the corresponding register contains a
+%%% {tuple,Size,First} means that the corresponding register contains a
 %%% tuple with *at least* Size elements.  An tuple with unknown
-%%% size is represented as {tuple,0}.
+%%% size is represented as {tuple,0}. First is either [] (meaning that
+%%% the tuple's first element is unknown) or [FirstElement] (the contents
+%%% of the first element).
 %%%
 %%% 'float' means that the register contains a float.
 
@@ -432,7 +493,20 @@ remove_key(Key, [{Key,_Op}|Ops]) -> remove_key(Key, Ops);
 remove_key(_, Ops) -> Ops.
     
 merge_type_info(I, I) -> I;
-merge_type_info({tuple,Sz1}, {tuple,Sz2}=Max) when Sz1 < Sz2 -> Max;
-merge_type_info({tuple,_}=Max, {tuple,_}) -> Max;
-merge_type_info(float, {tuple,_}) -> float;
-merge_type_info({tuple,_}=Tuple, float) -> Tuple.
+merge_type_info({tuple,Sz1,Same}, {tuple,Sz2,Same}=Max) when Sz1 < Sz2 ->
+    Max;
+merge_type_info({tuple,Sz1,Same}=Max, {tuple,Sz2,Same}) when Sz1 > Sz2 ->
+    Max;
+merge_type_info({tuple,Sz1,[]}, {tuple,Sz2,First}) ->
+    merge_type_info({tuple,Sz1,First}, {tuple,Sz2,First});
+merge_type_info({tuple,Sz1,First}, {tuple,Sz2,_}) ->
+    merge_type_info({tuple,Sz1,First}, {tuple,Sz2,First});
+merge_type_info(NewType, _) ->
+    verify_type(NewType),
+    NewType.
+
+verify_type({tuple,Sz,[]}) when is_integer(Sz) -> ok;
+verify_type({tuple,Sz,[_]}) when is_integer(Sz) -> ok;
+verify_type({tuple_element,_,_}) -> ok;
+verify_type(float) -> ok;
+verify_type({atom,_}) -> ok.

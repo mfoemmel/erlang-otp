@@ -57,7 +57,7 @@ fill_ets(DB,[Obj|Objs],Opt,Fun,w) ->
     
     
 gen_out_opts(DB) ->
-    ObjTypes = lists:flatten(ordsets:list_to_set(ets:match(DB,{'$1','_','_',write}))),
+    ObjTypes = lists:flatten(ordsets:from_list(ets:match(DB,{'$1','_','_',write}))),
     p("out_opts([Option|Options],Gstkid,TkW,DB,ExtraArg,S,P,C) ->\n"),
     p("  {Opt,Val} =\n"),
     p("    case Option of \n"),
@@ -96,7 +96,7 @@ gen_opt_case_clauses([{Opt,Fun}|OptFuncs]) ->
     gen_opt_case_clauses(OptFuncs).
 
 gen_read(DB) ->
-    ObjTypes = lists:flatten(ordsets:list_to_set(ets:match(DB,{'$1','_','_',read}))),
+    ObjTypes = lists:flatten(ordsets:from_list(ets:match(DB,{'$1','_','_',read}))),
     p("read_option(DB,Gstkid,TkW,Option,ExtraArg) ->\n"),
     p("  Key = case Option of\n"),
     p("    Atom when atom(Atom) -> Atom;\n"),
@@ -138,9 +138,9 @@ obj_prio() -> [rectangle,line,gridline,image,button,canvas,checkbutton,radiobutt
 opt_prio() -> [x,y,width,height,move,coords,data].
 
 merge_types(Types) ->
-    T2 = ordsets:list_to_set(Types),
-    P2 = ordsets:list_to_set(obj_prio()),
-    lists:append(obj_prio(),ordsets:set_to_list(ordsets:subtract(T2,P2))).
+    T2 = ordsets:from_list(Types),
+    P2 = ordsets:from_list(obj_prio()),
+    obj_prio() ++ ordsets:subtract(T2, P2).
 
 merge_opts([],L) -> L;
 merge_opts([Opt|Opts],Dict) ->

@@ -29,8 +29,14 @@
 #include "big.h"
 #include "erl_binary.h"
 
-/* Use sl_alloc for off heap binaries? */
-int erts_sl_alloc_binaries;
+
+Uint erts_allocated_binaries;
+
+void
+erts_init_binary(void)
+{
+    erts_allocated_binaries = 0;
+}
 
 /*
  * Create a brand new binary from scratch.
@@ -55,7 +61,7 @@ new_binary(Process *p, byte *buf, int len)
     /*
      * Allocate the binary struct itself.
      */
-    bptr = OH_BIN_SAFE_ALLOC(61, len+sizeof(Binary));
+    bptr = erts_bin_nrml_alloc(len);
     bptr->flags = 0;
     bptr->orig_size = len;
     bptr->refc = 1;
@@ -77,9 +83,26 @@ new_binary(Process *p, byte *buf, int len)
     /*
      * Miscellanous updates. Return the tagged binary.
      */
-    tot_bin_allocated += len;
     MSO(p).overhead += pb->size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
     return make_binary(pb);
+}
+
+/*
+ * Create a brand new binary from scratch on the heap.
+ */
+
+Eterm
+erts_new_heap_binary(Process *p, byte *buf, int len, byte** datap)
+{
+    ErlHeapBin* hb = (ErlHeapBin *) HAlloc(p, heap_bin_size(len));
+
+    hb->thing_word = header_heap_bin(len);
+    hb->size = len;
+    if (buf != NULL) {
+	sys_memcpy(hb->data, buf, len);
+    }
+    *datap = (byte*) hb->data;
+    return make_binary(hb);
 }
 
 /* Like new_binary, but uses ArithAlloc. */
@@ -102,7 +125,7 @@ Eterm new_binary_arith(Process *p, byte *buf, int len)
     /*
      * Allocate the binary struct itself.
      */
-    bptr = OH_BIN_SAFE_ALLOC(61, len+sizeof(Binary));
+    bptr = erts_bin_nrml_alloc(len);
     bptr->flags = 0;
     bptr->orig_size = len;
     bptr->refc = 1;
@@ -124,7 +147,6 @@ Eterm new_binary_arith(Process *p, byte *buf, int len)
     /*
      * Miscellanous updates. Return the tagged binary.
      */
-    tot_bin_allocated += len;
     MSO(p).overhead += pb->size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
     return make_binary(pb);
 }
@@ -138,11 +160,7 @@ erts_realloc_binary(Eterm bin, size_t size)
 	binary_size(bin) = size;
     } else {			/* REFC */
 	ProcBin* pb = (ProcBin *) bval;
-	Binary* newbin =
-	    OH_BIN_SAFE_REALLOC(pb->val,
-				sizeof(Binary) + pb->val->orig_size,
-				sizeof(Binary) + size);
-	tot_bin_allocated += (size - newbin->orig_size);
+	Binary* newbin = erts_bin_realloc(pb->val, size);
 	newbin->orig_size = size;
 	pb->val = newbin;
 	pb->size = size;
@@ -153,7 +171,6 @@ erts_realloc_binary(Eterm bin, size_t size)
 }
 
 BIF_RETTYPE binary_to_list_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Uint size;
     Eterm previous;
@@ -177,7 +194,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE binary_to_list_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     Eterm previous;
     byte* bytes;
@@ -218,7 +234,6 @@ BIF_ADECL_3
 /* One large binary object                               */
 
 BIF_RETTYPE list_to_binary_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm bin;
     int i;
@@ -243,7 +258,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE split_binary_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Uint pos;
     ErlSubBin* sb1;
@@ -293,8 +307,7 @@ erts_cleanup_mso(ProcBin* pb)
 	    if (pb->val->flags & BIN_FLAG_MATCH_PROG) {
 		erts_match_set_free(pb->val);
 	    } else {
-		tot_bin_allocated -= pb->val->orig_size;
-		OH_BIN_FREE(pb->val);
+		erts_bin_free(pb->val);
 	    }
 	}
 	pb = next;

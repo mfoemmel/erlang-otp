@@ -47,7 +47,7 @@ init() ->
 		    ok;
 		Other ->
 		    %% Setup reserved port for ose_inet driver (only OSE)
-		    case catch erlang:open_port_prim({spawn,ose_inet},[binary]) of
+		    case catch erlang:open_port({spawn,ose_inet}, [binary]) of
 			{'EXIT',Why} ->
 			    error("can't open port for ose_inet: ~p", [Why]);
 			OseInetPort ->

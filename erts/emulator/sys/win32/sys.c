@@ -21,6 +21,7 @@
  */
 
 #include "sys.h"
+#include "erl_alloc.h"
 #include "erl_sys_driver.h"
 #include "global.h"
 
@@ -28,12 +29,6 @@ void erts_sys_init_float(void);
 void init_sys_select(void);
 
 void win_check_io(int wait);
-
-#ifdef USE_THREADS
-void async_ready(int, int);
-int init_async(int);
-int exit_async(void);
-#endif
 
 void erl_start(int, char**);
 void erl_exit(int n, char*, _DOTS_);
@@ -82,7 +77,6 @@ HANDLE erts_service_event;
 #define APPL_WIN32 3
 
 static FUNCTION(int, driver_write, (long, HANDLE, byte*, int));
-static FUNCTION(void*, checked_alloc, (unsigned));
 static void common_stop(int);
 static int create_file_thread(struct async_io* aio, int mode);
 static DWORD WINAPI threaded_reader(LPVOID param);
@@ -99,6 +93,13 @@ BOOL WINAPI ctrl_handler(DWORD dwCtrlType);
 
 #define PORT_FREE (-1)
 #define PORT_EXITING (-2)
+
+#define DRV_BUF_ALLOC(SZ) \
+  erts_alloc_fnf(ERTS_ALC_T_DRV_DATA_BUF, (SZ))
+#define DRV_BUF_REALLOC(P, SZ) \
+  erts_realloc_fnf(ERTS_ALC_T_DRV_DATA_BUF, (P), (SZ))
+#define DRV_BUF_FREE(P) \
+  erts_free(ERTS_ALC_T_DRV_DATA_BUF, (P))
 
 /********************* General functions ****************************/
 
@@ -396,6 +397,7 @@ typedef struct driver_data {
 				 */
     int inBufSize;		/* Size of input buffer. */
     byte *inbuf;		/* Buffer to use for overlapped read. */
+    int outBufSize;		/* Size of output buffer. */
     byte *outbuf;		/* Buffer to use for overlapped write. */
     ErlDrvPort port_num;		/* The port number. */
     int packet_bytes;		/* 0: continous stream, 1, 2, or 4: the number
@@ -536,9 +538,11 @@ new_driver_data(port_num, packet_bytes, wait_objs_required, use_threads)
 	    dp->bytesInBuffer = 0;
 	    dp->totalNeeded = packet_bytes;
 	    dp->inBufSize = PORT_BUFSIZ;
-	    dp->inbuf = sys_alloc(dp->inBufSize);
+	    dp->inbuf = DRV_BUF_ALLOC(dp->inBufSize);
 	    if (dp->inbuf == NULL)
 		return NULL;
+	    erts_sys_misc_mem_sz += dp->inBufSize;
+	    dp->outBufSize = 0;
 	    dp->outbuf = NULL;
 	    dp->port_num = port_num;
 	    dp->packet_bytes = packet_bytes;
@@ -566,13 +570,23 @@ new_driver_data(port_num, packet_bytes, wait_objs_required, use_threads)
 static void
 release_driver_data(DriverData* dp)
 {
-    if (dp->inbuf != NULL)
-	sys_free(dp->inbuf);
-    dp->inbuf = NULL;
+    if (dp->inbuf != NULL) {
+	ASSERT(erts_sys_misc_mem_sz >= dp->inBufSize);
+	erts_sys_misc_mem_sz -= dp->inBufSize;
+	DRV_BUF_FREE(dp->inbuf);
+	dp->inBufSize = 0;
+	dp->inbuf = NULL;
+    }
+    ASSERT(dp->inBufSize == 0);
 
-    if (dp->outbuf != NULL)
-	sys_free(dp->outbuf);
-    dp->outbuf = NULL;
+    if (dp->outbuf != NULL) {
+	ASSERT(erts_sys_misc_mem_sz >= dp->outBufSize);
+	erts_sys_misc_mem_sz -= dp->outBufSize;
+	DRV_BUF_FREE(dp->outbuf);
+	dp->outBufSize = 0;
+	dp->outbuf = NULL;
+    }
+    ASSERT(dp->outBufSize == 0);
 
     if (dp->port_pid != INVALID_HANDLE_VALUE) {
 	CloseHandle(dp->port_pid);
@@ -839,7 +853,8 @@ spawn_init()
     int i;
   
     driver_data = (struct driver_data *)
-	checked_alloc(max_files * sizeof(struct driver_data));
+	erts_alloc(ERTS_ALC_T_DRV_TAB, max_files * sizeof(struct driver_data));
+    erts_sys_misc_mem_sz += max_files * sizeof(struct driver_data);
     for (i = 0; i < max_files; i++)
 	driver_data[i].port_num = PORT_FREE;
     return 0;
@@ -858,6 +873,7 @@ spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
     int ok;
     int neededSelects = 0;
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
+    char* envir = opts->envir;
     
     if (opts->read_write & DO_READ)
 	neededSelects++;
@@ -912,16 +928,20 @@ spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
      */
 
     DEBUGF(("Spawning \"%s\"\n", name));
+    envir = win_build_environment(envir);
     ok = CreateChildProcess(name, 
 			    hChildStdin, 
 			    hChildStdout,
 			    hChildStderr,
 			    &dp->port_pid,
 			    opts->hide_window,
-			    (LPVOID) opts->envir,
+			    (LPVOID) envir,
 			    (LPTSTR) opts->wd);
     CloseHandle(hChildStdin);
     CloseHandle(hChildStdout);
+    if (envir != NULL) {
+	erts_free(ERTS_ALC_T_ENVIRONMENT, envir);
+    }
 
     if (!ok) {
 	dp->port_pid = INVALID_HANDLE_VALUE;
@@ -1074,14 +1094,14 @@ CreateChildProcess(origcmd, hStdin, hStdout, hStderr, phPid, hide, env, wd)
      * contain spaces).
      */
     cmdlength = parse_command(origcmd);
-    thecommand = checked_alloc(cmdlength+1);
+    thecommand = (char *) erts_alloc(ERTS_ALC_T_TMP, cmdlength+1);
     strncpy(thecommand, origcmd, cmdlength);
     thecommand[cmdlength] = '\0';
     DEBUGF(("spawn command: %s\n", thecommand));
     
     applType = ApplicationType(thecommand, execPath);
     DEBUGF(("ApplicationType returned for (%s) is %d\n", thecommand, applType));
-    sys_free(thecommand);
+    erts_free(ERTS_ALC_T_TMP, (void *) thecommand);
     if (applType == APPL_NONE) {
 	return FALSE;
     }
@@ -1763,6 +1783,9 @@ output(ErlDrvData drv_data, char* buf, int len)
 
     pb = dp->packet_bytes;
 
+    if ((pb+len) == 0)
+	return ; /* 0; */
+
     /*
      * Check that the message can be sent with given header length.
      */
@@ -1776,10 +1799,18 @@ output(ErlDrvData drv_data, char* buf, int len)
      * Allocate memory for both the message and the header.
      */
 
-    if ((dp->outbuf = sys_alloc(pb+len)) == NULL) {
+    ASSERT(dp->outbuf == NULL);
+    ASSERT(dp->outBufSize == 0);
+
+    ASSERT(!dp->outbuf);
+    dp->outbuf = DRV_BUF_ALLOC(pb+len);
+    if (!dp->outbuf) {
 	driver_failure_posix(port_num, ENOMEM);
 	return ; /* -1; */
     }
+
+    dp->outBufSize = pb+len;
+    erts_sys_misc_mem_sz += dp->outBufSize;
 
     /*
      * Store header bytes (if any).
@@ -1800,16 +1831,18 @@ output(ErlDrvData drv_data, char* buf, int len)
      * Start the write.
      */
 
-    if ((pb+len) == 0)
-	return ; /* 0; */
-    memcpy(current, buf, len);
+    if (len)
+	memcpy(current, buf, len);
     
     if (!async_write_file(&dp->out, dp->outbuf, pb+len)) {
 	set_busy_port(port_num, 1);
     } else {
 	dp->out.ov.Offset += pb+len; /* For vanilla driver. */
 	/* XXX OffsetHigh should be changed too. */
-	sys_free(dp->outbuf);
+	ASSERT(erts_sys_misc_mem_sz >= dp->outBufSize);
+	erts_sys_misc_mem_sz -= dp->outBufSize;
+	DRV_BUF_FREE(dp->outbuf);
+	dp->outBufSize = 0;
 	dp->outbuf = NULL;
     }
     /*return 0;*/
@@ -1903,12 +1936,15 @@ ready_input(ErlDrvData drv_data, ErlDrvEvent ready_event)
 		    if (dp->inBufSize < dp->totalNeeded) {
 			char* new_buf;
 		    
-			dp->inBufSize = dp->totalNeeded;
-			new_buf = sys_realloc(dp->inbuf, dp->totalNeeded);
+			new_buf = DRV_BUF_REALLOC(dp->inbuf, dp->totalNeeded);
 			if (new_buf == NULL) {
 			    error = ERROR_NOT_ENOUGH_MEMORY;
 			    break; /* Break out of loop into error handler. */
 			}
+			ASSERT(erts_sys_misc_mem_sz >= dp->inBufSize);
+			erts_sys_misc_mem_sz -= dp->inBufSize;
+			dp->inBufSize = dp->totalNeeded;
+			erts_sys_misc_mem_sz += dp->inBufSize;
 			dp->inbuf = new_buf;
 		    }
 		}
@@ -2002,12 +2038,18 @@ ready_output(ErlDrvData drv_data, ErlDrvEvent ready_event)
 	erl_printf(COUT,"WARNING: Unexpected call to ready_output with outbuf "
 		   "set to NULL!\r\n");
     } else {
-	sys_free(dp->outbuf);
+	ASSERT(erts_sys_misc_mem_sz >= dp->outBufSize);
+	erts_sys_misc_mem_sz -= dp->outBufSize;
+	DRV_BUF_FREE(dp->outbuf);
+	dp->outBufSize = 0;
 	dp->outbuf = NULL;
     }
 #else
     ASSERT(dp->outbuf != NULL);
-    sys_free(dp->outbuf);
+    ASSERT(erts_sys_misc_mem_sz >= dp->outBufSize);
+    erts_sys_misc_mem_sz -= dp->outBufSize;
+    DRV_BUF_FREE(dp->outbuf);
+    dp->outBufSize = 0;
     dp->outbuf = NULL;
 #endif
     error = get_overlapped_result(&dp->out, &bytesWritten, TRUE);
@@ -2032,7 +2074,9 @@ void sys_get_pid(char *buffer){
 }
 
 int sys_putenv(char *buffer){
-    char *env = safe_alloc(strlen(buffer)+1);
+    Uint sz = strlen(buffer)+1;
+    char *env = erts_alloc(ERTS_ALC_T_PUTENV_STR, sz);
+    erts_sys_misc_mem_sz += sz;
     strcpy(env,buffer);
     return(_putenv(env));
 }
@@ -2049,7 +2093,7 @@ sys_init_io(byte *buf, Uint size)
        We estimate the number to twice the amount of ports. 
        We really dont know on windows, do we? */
     max_files = 2*erts_max_ports;
-
+    
 #ifdef USE_THREADS
     {
 	/* This is special stuff, starting a driver from the 
@@ -2068,107 +2112,25 @@ sys_init_io(byte *buf, Uint size)
 #endif
 }
 
-#ifdef INSTRUMENT
-/* When instrumented sys_alloc and friends are implemented in utils.c */
-#define SYS_ALLOC_ELSEWHERE
-#endif
-
-/* A = alloc |realloc | free */
-#ifdef SYS_ALLOC_ELSEWHERE
-
-/* sys_A implemented elsewhere (calls sys_A2) ... */ 
-#ifndef sys_alloc2
-/* ... and sys_A2 makros not used; use this implementation as sys_A2 */
-#define SYS_ALLOC   sys_alloc2
-#define SYS_REALLOC sys_realloc2
-#define SYS_FREE    sys_free2
-#else  /* ifndef sys_alloc2 */
-/* ... and sys_A2 makros used; don't use this implementation as sys_A2 */
-#endif /* ifndef sys_alloc2 */
-
-#else /* #ifdef SYS_ALLOC_ELSEWHERE */
-
-/* sys_A not implemented elsewhere ... */
-#ifndef sys_alloc2
-/* ... and sys_A2 makros not used; skip sys_A2 and use
-   this implementation as sys_A */
-#define SYS_ALLOC   sys_alloc
-#define SYS_REALLOC sys_realloc
-#define SYS_FREE    sys_free
-
-#else /* ifndef sys_alloc2 */
-
-/* ... and sys_A2 makros used; need sys_A (symbols) */
-void* sys_alloc(Uint size)              { return sys_alloc2(size);        }
-void* sys_realloc(void* ptr, Uint size) { return sys_realloc2(ptr, size); }
-void* sys_free(void* ptr)               { return sys_free2(ptr);          }
-#endif /* ifndef sys_alloc2 */
-
-#endif /* #ifdef SYS_ALLOC_ELSEWHERE */
-
-#ifdef SYS_ALLOC
- 
-#ifdef DEBUG
-int tot_allocated = 0;
-int alloc_calls = 0, realloc_calls = 0, free_calls = 0;
-#endif
-
-/* Allocate memory */
-void* SYS_ALLOC(Uint size)
+void erts_sys_alloc_init(void)
 {
-#ifdef DEBUG
-    Uint* p = (Uint*) malloc(2*sizeof(Uint)+((size_t)size));
-    alloc_calls++;
-  
-    if (p != NULL) {
-	*p = (size_t) size;
-	tot_allocated += (size_t) size;
-	return (void*)(((char*)p) + 2*sizeof(Uint));
-    }
-    /* memset(p, 0, size); */
-    return p;
-#else
-    return (void*) malloc((size_t)size);
-#endif
+    elib_ensure_initialized();
 }
 
-/* Allocate memory */
-void* SYS_REALLOC(void* ptr, Uint size)
+void *erts_sys_alloc(ErtsAlcType_t t, void *x, Uint sz)
 {
-#ifdef DEBUG
-    if (ptr == NULL)
-	return SYS_ALLOC(size);
-    else {
-	Uint* p = (Uint*) ((char*)ptr - 2*sizeof(Uint));
-	realloc_calls++;
-	tot_allocated -= *p;
-	p = (Uint*) realloc((char*)p, 2*sizeof(Uint)+((size_t)size));
-	if (p != NULL) {
-	    *p = (size_t) size;
-	    tot_allocated += (size_t) size;
-	    return (void*)(((char*)p) + 2*sizeof(Uint));
-	}
-	return p;
-    }
-#else
-    return (void*) realloc((char*)ptr, (size_t)size);
-#endif
+    return malloc((size_t) sz);
 }
 
-/* Deallocate memory */
-void SYS_FREE(void* ptr)
+void *erts_sys_realloc(ErtsAlcType_t t, void *x, void *p, Uint sz)
 {
-#ifdef DEBUG
-    Uint* p = (Uint*) ((char*)ptr-2*sizeof(Uint));
-    free_calls++;
-    tot_allocated -= *p;
-    free((char*)p);
-#else
-    free((char*)ptr);
-#endif
+    return realloc(p, (size_t) sz);
 }
 
-#endif /* #ifdef SYS_ALLOC */
+void erts_sys_free(ErtsAlcType_t t, void *x, void *p)
+{
+    free(p);
+}
 
 /* XXX It isn't possible to do this safely without "*nsprintf"
    (i.e. something that puts a limit on the number of chars printed)
@@ -2272,8 +2234,12 @@ Preload* sys_preloaded(void)
 	}
 
 	data += 2;
-	preloaded = sys_alloc((num_preloaded+1)*sizeof(Preload));
-	res_name = sys_alloc((num_preloaded+1)*sizeof(unsigned));
+	preloaded = erts_alloc(ERTS_ALC_T_PRELOADED,
+			       (num_preloaded+1)*sizeof(Preload));
+	res_name = erts_alloc(ERTS_ALC_T_PRELOADED,
+			      (num_preloaded+1)*sizeof(unsigned));
+	erts_sys_misc_mem_sz += (num_preloaded+1)*sizeof(Preload);
+	erts_sys_misc_mem_sz += (num_preloaded+1)*sizeof(unsigned);
 	for (i = 0; i < num_preloaded; i++) {
 	    int n;
 
@@ -2283,7 +2249,8 @@ Preload* sys_preloaded(void)
 	    data += 2;
 	    n = GETWORD(data);
 	    data += 2;
-	    preloaded[i].name = sys_alloc(n+1);
+	    preloaded[i].name = erts_alloc(ERTS_ALC_T_PRELOADED, n+1);
+	    erts_sys_misc_mem_sz += n+1;
 	    sys_memcpy(preloaded[i].name, data, n);
 	    preloaded[i].name[n] = '\0';
 	    data += n;
@@ -2362,17 +2329,6 @@ sys_get_key(int fd)
 	}
     }
     return '*';		/* Error! */
-}
-
-static void*
-checked_alloc(size)
-     unsigned int size;		/* Amount to allocate. */
-{
-    void* p;
-
-    if ((p = sys_alloc(size)) == NULL)
-	erl_exit(1, "Can't allocate %d bytes of memory\n", size);
-    return p;
 }
 
 /*
@@ -2539,7 +2495,7 @@ erl_assert_error(char* expr, char* file, int line)
     DebugBreak();
 }
 
-#endif // DEBUG
+#endif /* DEBUG */
 
 /*
  * the last two only used for standalone erlang
@@ -2584,6 +2540,7 @@ erl_sys_init()
 	    beam_module = GetModuleHandle("beam.debug.dll");
 #else
             beam_module = GetModuleHandle("beam.dll");
+	    
 #endif
 #endif
     init_console();

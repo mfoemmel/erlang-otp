@@ -25,7 +25,6 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 include ../vsn.mk
 VSN=$(MEGACO_VSN)
 
-
 # ----------------------------------------------------
 # Release directory specification
 # ----------------------------------------------------
@@ -45,6 +44,7 @@ ifeq ($(TT_DIR),)
 TT_DIR = /tmp
 endif
 
+
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
@@ -55,7 +55,23 @@ HRL_FILES = megaco_test_lib.hrl
 
 ERL_FILES = $(MODULES:%=%.erl)
 
-TARGET_FILES = $(MODULES:%=%.$(EMULATOR))
+SOURCE = $(ERL_FILES) $(HRL_FILES) 
+
+TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+
+SPECS = megaco.spec megaco.spec.vxworks 
+
+
+EMAKEFILE  = Emakefile
+MAKE_EMAKE = $(wildcard $(ERL_TOP)/make/make_emakefile)
+
+ifeq ($(MAKE_EMAKE),)
+BUILDTARGET   = $(TARGET_FILES)
+RELTEST_FILES = $(SPECS) $(SOURCE) $(TARGET_FILES)
+else
+BUILDTARGET   = emakebuild
+RELTEST_FILES = $(EMAKEFILE) $(SPECS) $(SOURCE)
+endif
 
 
 # ----------------------------------------------------
@@ -71,8 +87,9 @@ ERL_FLAGS += \
            -pa $(ERL_TOP)/lib/et/ebin
 
 ERL_COMPILE_FLAGS += \
-           -pa $(ERL_TOP)/lib/test_server/ebin \
            -I$(ERL_TOP)/lib/test_server/include
+
+EBIN = .
 
 ERL_PATH = -pa ../../megaco/examples/simple \
            -pa ../../megaco/ebin \
@@ -88,15 +105,33 @@ else
 EHALT = -s erlang halt
 endif
 
-
+ifeq ($(USE_ET_VIEWER),true)
+ET_VIEWER =
+else
+ET_VIEWER = -s et_viewer
+endif
 
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
 
-tests debug opt: $(TARGET_FILES)
+tests debug opt: $(BUILDTARGET)
+
+.PHONY: emakebuild
+
+emakebuild: $(EMAKEFILE)
+
+targets: $(EMAKEFILE)
+	erl $(ERL_FLAGS) -make
+
+old_targets: $(TARGET_FILES)
+
+$(EMAKEFILE): Makefile
+	$(MAKE_EMAKE) $(ERL_COMPILE_FLAGS) -o$(EBIN) '*_SUITE_make' > $(EMAKEFILE)
+	$(MAKE_EMAKE) $(ERL_COMPILE_FLAGS) -o$(EBIN) $(MODULES) >> $(EMAKEFILE)
 
 clean:
+	rm -f $(EMAKEFILE)
 	rm -f $(TARGET_FILES) 
 	rm -f errs core *~
 
@@ -129,9 +164,14 @@ timeb: make
             -run megaco_codec_test tt_bins $(TT_DIR) \
             -s erlang halt
 
+ex: make
+	erl -noshell -sname megaco $(ERL_PATH) \
+            -s megaco_test_lib t megaco_examples_test \
+            -s erlang halt
+
 codec: make
 	erl -noshell -sname megaco $(ERL_PATH) \
-            -s megaco_test_lib t megaco_codec_test tickets \
+            -s megaco_test_lib t megaco_codec_test \
             -s erlang halt
 
 codec_tickets: make
@@ -156,20 +196,24 @@ appup: make
 
 mess: make
 	erl -noshell -sname megaco $(ERL_PATH) \
-            -s et_viewer \
+            $(ET_VIEWER) \
             -s megaco_test_lib t megaco_mess_test \
-            -s erlang halt
+            $(EHALT)
 
 mib: make
 	erl -noshell -sname megaco $(ERL_PATH) \
             -s megaco_test_lib t megaco_mib_test \
             $(EHALT)
 
-# mess: make
-# 	erl -noshell -sname megaco $(ERL_PATH) \
-#             -s et_viewer \
-#             -s megaco_test_lib t megaco_mess_test \
-#             -s erlang halt
+mreq: make
+	erl -noshell -sname megaco $(ERL_PATH) \
+            -s megaco_test_lib t megaco_mreq_test \
+            $(EHALT)
+
+ack: make
+	erl -noshell -sname megaco $(ERL_PATH) \
+            -s megaco_test_lib t megaco_ack_test \
+            $(EHALT)
 
 tid: make
 	erl -noshell -sname megaco $(ERL_PATH) \
@@ -221,8 +265,6 @@ release_docs_spec:
 
 release_tests_spec: tests
 	$(INSTALL_DIR)  $(RELSYSDIR)
-	$(INSTALL_DATA) $(TEST_SPEC_FILE) $(HRL_FILES) $(ERL_FILES) \
-                        $(RELSYSDIR)
-	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)
+	$(INSTALL_DATA) $(RELTEST_FILES) $(RELSYSDIR)
 	chmod -f -R u+w $(RELSYSDIR)
 

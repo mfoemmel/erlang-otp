@@ -335,6 +335,19 @@ read_reports(No, Fd, Fname, Max, Type) ->
 			Res
 		end,
 	    add_report_data(NewRes, No, Fname);
+	{error, [Problem | Res]} ->
+	    file:close(Fd),
+	    io:format("Error: ~p~n",[Problem]),
+	    io:format("Salvaged ~p entries from corrupt report file ~s...~n",
+		      [length(Res),Fname]),
+	    NewRes = 
+		if
+		    length([Problem|Res]) > Max ->
+			lists:sublist([Problem|Res], 1, Max);
+		    true ->
+			[Problem|Res]
+		end,
+	    add_report_data(NewRes, No, Fname);
 	Else ->
 	    io:format("err ~p~n", [Else]),
 	    [{No, unknown, "Can't read reports from file " ++ Fname,
@@ -378,7 +391,7 @@ read_reports(Fd, Res, Type) ->
 		    read_reports(Fd, Res, Type)
 	    end;
 	{error, Error} ->
-	    [{unknown, Error, [], FilePos} | Res];
+	    {error, [{unknown, Error, [], FilePos} | Res]};
 	eof ->
 	    {ok, Res};
 	{'EXIT', Reason} ->
@@ -391,10 +404,16 @@ read_report(Fd) ->
             Size = get_int16(Hi,Lo),
             case io:get_chars(Fd,'',Size) of
                 eof ->
-                    {error,reading};
+                    {error,"Premature end of file"};
                 List ->
                     Bin = list_to_binary(List),
-                    {ok, binary_to_term(Bin)}
+		    Ref = make_ref(),
+		    case (catch {Ref,binary_to_term(Bin)}) of
+			{'EXIT',_} ->
+			    {error, "Inclomplete erlang term in log"};
+			{Ref,Term} ->
+			    {ok, Term}
+		    end
 	    end;
         eof ->
             eof

@@ -147,14 +147,12 @@ typedef struct ram_file {
 } RamFile;
 
 #ifdef LOADABLE
-static int rfile_finish(drv)
-DriverEntry* drv;
+static int rfile_finish(DriverEntry* drv)
 {
     return 0;
 }
 
-DriverEntry* driver_init(handle)
-void* handle;
+DriverEntry* driver_init(void *handle)
 {
     ram_file_driver_entry.handle = handle;
     ram_file_driver_entry.driver_name = "ram_file_drv";
@@ -169,7 +167,7 @@ void* handle;
 }
 #endif
 
-static int rfile_init()
+static int rfile_init(void)
 {
     return 0;
 }
@@ -203,8 +201,7 @@ static void rfile_stop(ErlDrvData e)
  * Sends back an error reply to Erlang.
  */
 
-static int error_reply(f, err)
-RamFile* f; int err;
+static int error_reply(RamFile *f, int err)
 {
     char response[256];		/* Response buffer. */
     char* s;
@@ -224,8 +221,7 @@ RamFile* f; int err;
     return 0;
 }
 
-static int reply(f, ok, err)
-RamFile* f; int ok; int err;
+static int reply(RamFile *f, int ok, int err)
 {
     if (!ok)
 	error_reply(f, err);
@@ -236,8 +232,7 @@ RamFile* f; int ok; int err;
     return 0;
 }
 
-static int numeric_reply(f, result)
-RamFile* f; int result;
+static int numeric_reply(RamFile *f, int result)
 {
     uchar tmp[5];
 
@@ -257,8 +252,7 @@ RamFile* f; int result;
 
 /* install bin as the new binary reset all pointer */
 
-static void ram_file_set(f, bin, bsize, len)
-RamFile* f; ErlDrvBinary* bin; int bsize; int len;
+static void ram_file_set(RamFile *f, ErlDrvBinary *bin, int bsize, int len)
 {
     char* start;
 
@@ -271,8 +265,7 @@ RamFile* f; ErlDrvBinary* bin; int bsize; int len;
     f->bin = bin;
 }
 
-static int ram_file_init(f, buf, count, error)
-RamFile* f; uchar* buf; int count; int* error;
+static int ram_file_init(RamFile *f, uchar *buf, int count, int *error)
 {
     int bsize = ((count + BFILE_BLOCK - 1) / BFILE_BLOCK) * BFILE_BLOCK;
     ErlDrvBinary* bin;
@@ -291,8 +284,7 @@ RamFile* f; uchar* buf; int count; int* error;
     return count;
 }
 
-static int ram_file_expand(f, size, error)
-RamFile* f; int size; int* error;
+static int ram_file_expand(RamFile *f, int size, int *error)
 {
     int bsize = ((size + BFILE_BLOCK - 1) / BFILE_BLOCK) * BFILE_BLOCK;
     ErlDrvBinary* bin;
@@ -318,8 +310,7 @@ RamFile* f; int size; int* error;
 }
 
 
-static int ram_file_write(f, buf, length, location, error)
-RamFile* f; uchar* buf; int length; int* location; int* error;
+static int ram_file_write(RamFile *f, uchar *buf, int length, int *location, int *error)
 {
     uchar* ptr;
 
@@ -345,8 +336,7 @@ RamFile* f; uchar* buf; int length; int* location; int* error;
     return length;
 }
 
-static int ram_file_read(f, length, bp, location, error)
-RamFile* f; int length; ErlDrvBinary** bp; int *location; int* error;
+static int ram_file_read(RamFile *f, int length, ErlDrvBinary **bp, int *location, int *error)
 {
     ErlDrvBinary* bin;
     uchar* ptr;
@@ -372,8 +362,7 @@ RamFile* f; int length; ErlDrvBinary** bp; int *location; int* error;
     return length;
 }
 
-static int ram_file_seek(f, offset, whence, error)
-RamFile* f; int offset; int whence; int* error;
+static int ram_file_seek(RamFile *f, int offset, int whence, int *error)
 {
     int pos;
 
@@ -416,8 +405,7 @@ RamFile* f; int offset; int whence; int* error;
         (p)[2] = uu_encode(((c2) << 2) | ((c3) >> 6)), \
         (p)[3] = uu_encode(c3)
 
-static int ram_file_uuencode(f)
-RamFile* f;
+static int ram_file_uuencode(RamFile *f)
 {
     int code_len = UULINE(UNIX_LINE);
     int len = (f->ptr_max - f->bin_start);
@@ -475,8 +463,7 @@ RamFile* f;
 
 #define uu_decode(x)  ((x)-32)
 
-static int ram_file_uudecode(f)
-RamFile* f;
+static int ram_file_uudecode(RamFile *f)
 {
     int len = (f->ptr_max - f->bin_start);
     int usize = ( (len+3) / 4 ) * 3;
@@ -539,8 +526,7 @@ RamFile* f;
 }
 
 
-static int ram_file_compress(f)
-RamFile* f;
+static int ram_file_compress(RamFile *f)
 {
     int size = f->ptr_max - f->bin_start;
     ErlDrvBinary* bin;
@@ -557,8 +543,7 @@ RamFile* f;
 /* First attempt is to double the size of input */
 /* loop until we don't get Z_BUF_ERROR */
 
-static int ram_file_uncompress(f)
-RamFile* f;
+static int ram_file_uncompress(RamFile *f)
 {
     int size = f->ptr_max - f->bin_start;
     ErlDrvBinary* bin;

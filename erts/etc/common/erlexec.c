@@ -31,14 +31,15 @@
 
 #ifdef __WIN32__
 #  include "erl_version.h"
-#  include <winreg.h>
+#  include "init_file.h"
 #endif
 
 #define NO 0
 #define YES 1
 
 #ifdef __WIN32__
-#define REGISTRY_PATH "Software\\Ericsson\\Erlang\\"
+#define INI_FILENAME "erl.ini"
+#define INI_SECTION "erlang"
 #define DIRSEP "\\"
 #define PATHSEP ";"
 #define NULL_DEVICE "nul"
@@ -51,6 +52,58 @@
 #endif
 #define QUOTE(s) s
 
+/* +M alloc_util allocators */
+static const char plusM_au_allocs[]= {
+    'B',	/* binary_alloc		*/
+    'D',	/* std_alloc		*/
+    'E',	/* ets_alloc		*/
+    'H',	/* eheap_alloc		*/
+    'L',	/* ll_alloc		*/
+    'S',	/* sl_alloc		*/
+    'T',	/* temp_alloc		*/
+    '\0'
+};
+
+/* +M alloc_util allocator specific arguments */
+static char *plusM_au_alloc_switches[] = {
+    "as",
+    "asbcst",
+    "e",
+    "lmbcs",
+    "mbcgs",
+    "mbsd",
+    "mmbcs",
+    "mmmbc",
+    "mmsbc",
+    "msbclt",
+    "rsbcmt",
+    "rsbcst",
+    "sbct",
+    "smbcs",
+    NULL
+};
+
+/* +M other arguments */
+static char *plusM_other_switches[] = {
+    "ea",
+    "ummc",
+    "uycs",
+    "im",
+    "is",
+    "it",
+    "Mamcbf",
+    "Mrmcbf",
+    "Mmcs",
+    "Mcci",
+    "Fe",
+    "Ye",
+    "Ym",
+    "Ytp",
+    "Ytt",
+    NULL
+};
+
+
 /*
  * Define sleep(seconds) in terms of Sleep() on Windows.
  */
@@ -60,7 +113,6 @@
 #endif
 
 #define ELIB_SUFFIX	".elib"
-#define INSTR_SUFFIX	".instr"
 #define SHARED_SUFFIX	".shared"
 
 void usage(const char *switchname);
@@ -72,16 +124,17 @@ void error(char* format, ...);
  */
 
 static void mergeargs(int *argc, char ***argv, char **addargs);
-static char **build_args_from_env(void);
+static char **build_args_from_env(char *env_var);
 static void get_parameters(int argc, char** argv);
 static void add_arg(char *new_arg);
 static void add_args(char *first_arg, ...);
+static void ensure_EargsSz(int sz);
 static void add_Eargs(char *new_arg);
 static void *emalloc(size_t size);
 static void *erealloc(void *p, size_t size);
 static void efree(void *p);
 static char* strsave(char* string);
-static int is_one_of_strs(char *str, char *strs[]);
+static int is_one_of_strings(char *str, char *strs[]);
 static char *write_str(char *to, char *from);
 static void get_home(void);
 #ifdef __WIN32__
@@ -92,13 +145,8 @@ static char* possibly_quote(char* arg);
 /* 
  * Functions from win_erlexec.c
  */
-#ifdef WIN32_WERL
-int
-start_win_emulator(char* emu, char** argv, int start_detached);
-#else
-int
-start_emulator(char* emu, char** argv, int start_detached);
-#endif
+int start_win_emulator(char* emu, char** argv, int start_detached);
+int start_emulator(char* emu, char** argv, int start_detached);
 #endif
 
 
@@ -109,17 +157,17 @@ start_emulator(char* emu, char** argv, int start_detached);
 int nohup = 0;
 int keep_window = 0;
 
-static char* Eargsp[100];	/* Emulator arguments (to appear first). */
+static char **Eargsp = NULL;	/* Emulator arguments (to appear first). */
+static int EargsSz = 0;		/* Size of Eargsp */
 static int EargsCnt = 0;	/* Number of emulator arguments. */
-static char *argsp[100];	/* Common arguments. */
+static char **argsp = NULL;	/* Common arguments. */
 static int argsCnt = 0;		/* Number of common arguments */
+static int argsSz = 0;		/* Size of argsp */
 static char tmpStr[10240];	/* Temporary string buffer. */
 static int verbose = 0;		/* If non-zero, print some extra information. */
 static int start_detached = 0;	/* If non-zero, the emulator should be
 				 * started detached (in the background).
 				 */
-static int instrumented = 0;	/* If non-zero, start beam.instr or beam.instr.exe
-				 * instead of beam or beam.exe. */
 static int shared = 0;		/* If non-zero, start beam.shared or beam.shared.exe
 				 * instead of beam or beam.exe. */
 
@@ -129,11 +177,15 @@ static char* key_val_name = ERLANG_VERSION; /* Used by the registry
 					   */
 static char* boot_script = NULL; /* used by option -start_erl and -boot */
 static char* config_script = NULL; /* used by option -start_erl and -config */
+
+static HANDLE this_module_handle;
+static int run_werl;
+
 #endif
 
 /*
  * Needed parameters to be fetched from the environment (Unix)
- * or the registry (Win32).
+ * or the ini file (Win32).
  */
 
 static char* bindir;		/* Location of executables. */
@@ -143,11 +195,11 @@ static char* progname;		/* Name of this program. */
 static char* home;		/* Path of user's home directory. */
 
 /*
- * Add the elib and instr suffixes to the program name if needed,
+ * Add the elib and shared suffixes to the program name if needed,
  * except on Windows, where we insert it just before ".EXE".
  */
 static char*
-add_extra_suffixes(char *prog, int elib, int instr, int shared)
+add_extra_suffixes(char *prog, int elib, int shared)
 {
    char *res;
    char *p;
@@ -162,7 +214,7 @@ add_extra_suffixes(char *prog, int elib, int instr, int shared)
 		don't need an extra suffix for it */
 #endif
 
-   if (!elib && !instr && !shared) {
+   if (!elib && !shared) {
        return prog;
    }
 
@@ -171,7 +223,6 @@ add_extra_suffixes(char *prog, int elib, int instr, int shared)
    /* Worst-case allocation */
    p = emalloc(len +
 	       strlen(ELIB_SUFFIX) +
-	       strlen(INSTR_SUFFIX) +
 	       strlen(SHARED_SUFFIX) +
 	       + 1);
    res = p;
@@ -196,9 +247,6 @@ add_extra_suffixes(char *prog, int elib, int instr, int shared)
    if (shared) {
        p = write_str(p, SHARED_SUFFIX);
    }
-   if (instr) {
-       p = write_str(p, INSTR_SUFFIX);
-   }
 #ifdef __WIN32__
    if (exe) {
        p = write_str(p, ".exe");
@@ -208,18 +256,12 @@ add_extra_suffixes(char *prog, int elib, int instr, int shared)
    return res;
 }
 
-#ifdef WIN32_WERL
-int
-WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
-		    PSTR szCmdLine, int iCmdShow)
-{
-    int argc = __argc;
-    char **argv = __argv;
+#ifdef __WIN32__
+__declspec(dllexport) int win_erlexec(int argc, char **argv, HANDLE module, int windowed)
 #else
-int
-main(int argc, char **argv)
-{
+int main(int argc, char **argv)
 #endif
+{
     int haltAfterwards = 0;	/* If true, put 's erlang halt' at the end
 				 * of the arguments. */
     int isdistributed = 0;
@@ -230,18 +272,25 @@ main(int argc, char **argv)
     char *malloc_lib;
     int use_elib;
     int process_args = 1;
+    int print_args_exit = 0;
 
 #ifdef __WIN32__
+    this_module_handle = module;
+    run_werl = windowed;
     /* if we started this erl just to get a detached emulator, 
      * the arguments are already prepared for beam, so we skip
      * directly to start_emulator */
     s = getenv("ERL_CONSOLE_MODE");
     if (s != NULL && strcmp(s, "detached")==0) {
-	memcpy(Eargsp, argv, argc * sizeof(argv[1]));
+	ensure_EargsSz(argc + 1);
+	memcpy((void *) Eargsp, (void *) argv, argc * sizeof(char *));
+	Eargsp[argc] = NULL;
 	goto skip_arg_massage;
     }   
 #endif
-    mergeargs(&argc, &argv, build_args_from_env());
+    mergeargs(&argc, &argv, build_args_from_env("ERL_FLAGS"));
+    mergeargs(&argc, &argv,
+	      build_args_from_env("ERL_" OTP_SYSTEM_VERSION "_FLAGS"));
 
     i = 1;
 #ifdef __WIN32__
@@ -266,21 +315,19 @@ main(int argc, char **argv)
     malloc_lib = getenv("ERL_MALLOC_LIB");
     while (i < argc) {
 	if (argv[i][0] == '+') {
-	    if (argv[i][1] == 'm') {
-		if (argv[i][2] == '\0') {
+	    if (argv[i][1] == 'M' && argv[i][2] == 'Y' && argv[i][3] == 'm') {
+		if (argv[i][4] == '\0') {
 		    if (++i < argc)
 			malloc_lib = argv[i];
 		    else
-			usage("+m");
+			usage("+MYm");
 		}
 		else
-		    malloc_lib = &argv[i][2];
+		    malloc_lib = &argv[i][4];
 	    }
 	}
 	else if (argv[i][0] == '-') {
-	    if (strcmp(argv[i], "-instr") == 0) {
-		instrumented = 1;
-	    } else if (strcmp(argv[i], "-shared") == 0) {
+	    if (strcmp(argv[i], "-shared") == 0) {
 		shared = 1;
 	    }
 	}
@@ -299,10 +346,10 @@ main(int argc, char **argv)
 	    use_elib = 1;
 #endif
 	else
-	    usage("+m");
+	    usage("+MYm");
     }
 #if !defined(__WIN32__)
-    emu = add_extra_suffixes(emu, use_elib, instrumented, shared);
+    emu = add_extra_suffixes(emu, use_elib, shared);
     sprintf(tmpStr, "%s" DIRSEP "%s" BINARY_EXT, bindir, emu);
     emu = strsave(tmpStr);
 #endif
@@ -383,8 +430,10 @@ main(int argc, char **argv)
 		    break;
 
 		  case 'i':
-		    if (strcmp(argv[i], "-instr") == 0)
-			;	/* already handled above */
+		    if (strcmp(argv[i], "-instr") == 0) {
+			add_Eargs("-Mim");
+			add_Eargs("true");
+		    }
 		    else
 			add_arg(argv[i]);
 		    break;
@@ -395,6 +444,8 @@ main(int argc, char **argv)
 			add_arg(argv[i]);
 		    } else if (strcmp(argv[i], "-emu_args") == 0) { /* -emu_args */
 			verbose = 1;
+		    } else if (strcmp(argv[i], "-emu_args_exit") == 0) {
+			print_args_exit = 1;
 		    } else if (strcmp(argv[i], "-env") == 0) { /* -env VARNAME VARVALUE */
 			if (i+2 >= argc)
 			    usage("-env");
@@ -513,14 +564,12 @@ main(int argc, char **argv)
 		switch (argv[i][1]) {
 		  case 'i':
 		  case 'b':
-		  case 'd':
 		  case 's':
 		  case 'h':
 		  case '#':
 		  case 'P':
 		  case 'A':
-		  case 't':
-		  case 'T':
+		  case 'W':
 		      if (argv[i][2] != '\0')
 			  goto the_default;
 		      if (i+1 >= argc)
@@ -530,11 +579,41 @@ main(int argc, char **argv)
 		      add_Eargs(argv[i+1]);
 		      i++;
 		      break;
-		  case 'S': {
-		      char *sub_flags[] = {"e", "r", "mmc", "mcs", "scs",
-					   "lcs", "sbct", "mbsd", "mbcgs",
-					   "sbcmt", "msbclt", "b", NULL};
-		      if (is_one_of_strs(argv[i]+2, sub_flags)) {
+		  case 'B':
+		      argv[i][0] = '-';
+		      if (argv[i][2] != '\0') {
+			  if (argv[i][2] != 'i') {
+			  usage(argv[i]);
+			} else {
+			  add_Eargs(argv[i]);
+			  break;
+			}
+		      }
+		      if (i+1 < argc) {
+			if ((argv[i+1][0] != '-') &&
+			    (argv[i+1][0] != '+')) {
+			  if (argv[i+1][0] == 'i') {
+			    add_Eargs(argv[i]);
+			    add_Eargs(argv[i+1]);
+			    i++;
+			    break;
+			  } else {
+			    usage(argv[i]);
+			  }
+			}
+		      }
+		      add_Eargs(argv[i]);
+		      break;
+		  case 'M': {
+		      int x;
+		      for (x = 0; plusM_au_allocs[x]; x++)
+			  if (plusM_au_allocs[x] == argv[i][2])
+			      break;
+		      if ((plusM_au_allocs[x]
+			   && is_one_of_strings(&argv[i][3],
+						plusM_au_alloc_switches))
+			  || is_one_of_strings(&argv[i][2],
+					       plusM_other_switches)) {
 			  if (i+1 >= argc
 			      || argv[i+1][0] == '-'
 			      || argv[i+1][0] == '+')
@@ -548,11 +627,6 @@ main(int argc, char **argv)
 			  goto the_default;
 		      break;
 		  }
-		  case 'm':
-		      /* Already handled */
-		      if (argv[i][2] == '\0')
-			  i++;
-		      break;
 		  default:
 		  the_default:
 		    argv[i][0] = '-'; /* Change +option to -option. */
@@ -594,6 +668,7 @@ main(int argc, char **argv)
 	 * The path must be searched for this 
 	 * to work, i.e execvp() must be used. 
 	 */
+	ensure_EargsSz(EargsCnt+2);
 	for (i = EargsCnt; i > 0; i--)
 	    Eargsp[i+1] = Eargsp[i-1]; /* Two args to insert */
 	EargsCnt += 2; /* Two args to insert */
@@ -608,10 +683,18 @@ main(int argc, char **argv)
     add_Eargs("-progname");
     add_Eargs(progname);
     add_Eargs("--");
+    ensure_EargsSz(EargsCnt + argsCnt + 1);
     for (i = 0; i < argsCnt; i++)
 	Eargsp[EargsCnt++] = argsp[i];
     Eargsp[EargsCnt] = NULL;
     
+    if (print_args_exit) {
+	for (i = 1; i < EargsCnt; i++)
+	    printf("%s ", Eargsp[i]);
+	printf("\n");
+	exit(0);
+    }
+
     if (verbose) {
 	printf("Executing: %s", emu);
 	for (i = 0; i < EargsCnt; i++)
@@ -619,15 +702,21 @@ main(int argc, char **argv)
 	printf("\n\n");
     }
 
-    
+
 #ifdef __WIN32__
 
-skip_arg_massage: ;
-#ifdef WIN32_WERL
-    return start_win_emulator(emu, Eargsp, start_detached);
-#else
-    return start_emulator(emu, Eargsp, start_detached);
-#endif
+    if (EargsSz != EargsCnt + 1)
+	Eargsp = (char **) erealloc((void *) Eargsp, (EargsCnt + 1) * 
+				    sizeof(char *));
+    efree((void *) argsp);
+
+ skip_arg_massage:
+
+    if (run_werl) {
+      return start_win_emulator(emu, Eargsp, start_detached);
+    } else {
+      return start_emulator(emu, Eargsp, start_detached);
+    }
 
 #else
     if (start_detached) {
@@ -671,16 +760,9 @@ usage(const char *switchname)
 	  "[-start_erl [datafile]] "
 #endif
 	  "[-make] [-man [manopts] MANPAGE] [-x] [-emu_args] "
-	  "[+d SIZE_IN_KB] [+t SIZE_IN_KB] [+T SIZE_IN_KB] [+i BOOT_MODULE] "
-	  "[+b BOOT_FUN] [+s STACK_SIZE] [+h HEAP_SIZE] [+# ITEMS] "
-	  "[+P MAX_PROCS] [+A THREADS] [+m MALLOC_LIB] "
-
-	  "[+Se BOOL] [+Sr RELEASE] [+Ssbct SIZE_IN_KB] [+Smmc AMOUNT] "
-	  "[+Ssbcmt RATIO] [+Smsbclt RATIO] [+Smcs SIZE_IN_KB] "
-	  "[+Sscs SIZE_IN_KB] [+Slcs SIZE_IN_KB] [+Smbcgs STAGES] "
-	  "[+Smbsd BLOCKS] [+Sb BOOL] "
-
-	  "[args ...]\n");
+	  "[+i BOOT_MODULE] [+b BOOT_FUN] [+s STACK_SIZE] "
+	  "[+h HEAP_SIZE] [+# ITEMS] [+P MAX_PROCS] [+A THREADS] "
+	  "[+M<SUBSWITCH> <ARGUMENT>] [args ...]\n");
   exit(1);
 }
 
@@ -731,6 +813,9 @@ start_epmd(char *epmd)
 static void
 add_arg(char *new_arg)
 {
+    if (argsCnt >= argsSz)
+	argsp = (char **) erealloc((void *) argsp,
+				   sizeof(char *) * (argsSz += 20));
     argsp[argsCnt++] = QUOTE(new_arg);
 }
 
@@ -749,8 +834,19 @@ add_args(char *first_arg, ...)
 }
 
 static void
+ensure_EargsSz(int sz)
+{
+    if (EargsSz < sz)
+	Eargsp = (char **) erealloc((void *) Eargsp,
+				    sizeof(char *) * (EargsSz = sz));
+}
+
+static void
 add_Eargs(char *new_arg)
 {
+    if (EargsCnt >= EargsSz)
+	Eargsp = (char **) erealloc((void *) Eargsp,
+				    sizeof(char *) * (EargsSz += 20));
     Eargsp[EargsCnt++] = QUOTE(new_arg);
 }
 
@@ -793,7 +889,7 @@ efree(void *p)
 }
 
 static int
-is_one_of_strs(char *str, char *strs[])
+is_one_of_strings(char *str, char *strs[])
 {
     int i, j;
     for (i = 0; strs[i]; i++) {
@@ -889,77 +985,90 @@ static void get_start_erl_data(char *file)
        
 }
 
-static HKEY
-open_key(char* key_name)
+
+static char *replace_filename(char *path, char *new_base) 
 {
-    HKEY key;
-    char actual_key[512];
-    
-    sprintf(actual_key, REGISTRY_PATH "%s", key_name);
-    if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, actual_key, 0, KEY_READ, &key)
-	!= ERROR_SUCCESS)
-	error("No %s key found in registry", actual_key);
-    
-    return key;
+    int plen = strlen(path);
+    char *res = malloc((plen+strlen(new_base)+1)*sizeof(char));
+    char *p;
+
+    strcpy(res,path);
+    for (p = res+plen-1 ;p >= res && *p != '\\'; --p)
+        ;
+    *(p+1) ='\0';
+    strcat(res,new_base);
+    return res;
 }
 
-static char*
-get_value(HKEY key, char* value_name, BOOL mustExist)
+static char *path_massage(char *long_path)
 {
-    DWORD size;			/* Size required for value. */
+    int i;
+    char *p;
+    int l = strlen(long_path) + 1;
 
-    if (RegQueryValueEx(key, value_name, NULL, NULL, NULL, &size)
-	!= ERROR_SUCCESS) {
-	if (mustExist) {
-	    error("No value provided for %s%s in registry",
-		  REGISTRY_PATH, value_name);
-	}
-    } else {
-	char* value = emalloc(size);
-	value[0] = '\0';
-	RegQueryValueEx(key, value_name, NULL, NULL, value, &size);
-	if (verbose) {
-	    printf("%s%s = %s\n", REGISTRY_PATH, value_name, value);
-	}
-	return value;
+    p = malloc(l);
+    if (GetShortPathName(long_path,p,l) <= 0) {
+	strcpy(p,long_path);
     }
-    return NULL;
+    return p;
+}
+    
+static char *do_lookup_in_section(InitSection *inis, char *name, 
+				  char *section, char *filename, int is_path)
+{
+    char *p = lookup_init_entry(inis, name);
+
+    if (p == NULL) {
+	error("Could not find key %s in section %s of file %s",
+	      name,section,filename);
+    }
+
+    if (is_path) {
+	return path_massage(p);
+    } else {
+	return strsave(p);
+    }
 }
 
-static void
-get_parameters(int argc, char** argv)
-{
-    HKEY key;			/* Handle to open key. */
-    char* tcl_library;
-    char* tk_library;
-    char* wish;
-    char sbuf[2048];
 
-    key = open_key(key_val_name);
-    progname = get_value(key, "Progname", TRUE);
-    bindir = get_value(key, "Bindir", TRUE);
-    rootdir = get_value(key, "Rootdir", TRUE);
+static void get_parameters(int argc, char** argv)
+{
+    char buffer[MAX_PATH];
+    char *ini_filename;
+    HANDLE module = GetModuleHandle(NULL); /* This might look strange, but we want the erl.ini 
+					      that resides in the same dir as erl.exe, not 
+					      an erl.ini in our directory */
+    InitFile *inif;
+    InitSection *inis;
+
+    if (module == NULL) {
+        error("Cannot GetModuleHandle()");
+    }
+
+    if (GetModuleFileName(module,buffer,MAX_PATH) == 0) {
+        error("Could not GetModuleFileName");
+    }
+
+    ini_filename = replace_filename(buffer,INI_FILENAME);
+
+    if ((inif = load_init_file(ini_filename)) == NULL) {
+	error("Could not load init file %s",ini_filename);
+    }
+
+    if ((inis = lookup_init_section(inif,INI_SECTION)) == NULL) {
+	error("Could not find section %s in init file %s",
+	      INI_SECTION, ini_filename);
+    }
+
+    progname = do_lookup_in_section(inis, "Progname", INI_SECTION, 
+				    ini_filename,0);
+    bindir = do_lookup_in_section(inis, "Bindir", INI_SECTION, ini_filename,1);
+    rootdir = do_lookup_in_section(inis, "Rootdir", INI_SECTION, 
+				   ini_filename,1);
     emu = argv[0];
 
-    /*
-     * Get values for GS and store in environment.
-     */
-
-    tcl_library = get_value(key, "TclLibrary", FALSE);
-    tk_library = get_value(key, "TkLibrary", FALSE);
-    wish = get_value(key, "Wish", FALSE);
-    if (tcl_library != NULL && tk_library != NULL) {
-	sprintf(sbuf, "TCL_LIBRARY=%s", tcl_library);
-	putenv(strsave(sbuf));
-	sprintf(sbuf, "TK_LIBRARY=%s", tk_library);
-	putenv(strsave(sbuf));
-    }
-    if (wish != NULL) {
-	sprintf(sbuf, "_GS_WISH_EXECUTABLE_=%s", wish);
-	putenv(strsave(sbuf));
-    }
-
-    RegCloseKey(key);
+    free_init_file(inif);
+    free(ini_filename);
 }
 
 static void
@@ -1010,7 +1119,7 @@ get_home(void)
 #endif
 
 
-static char **build_args_from_env(void)
+static char **build_args_from_env(char *env_var)
 {
     int argc = 0;
     char **argv = NULL;
@@ -1031,7 +1140,7 @@ static char **build_args_from_env(void)
     }
 
 
-    if (!(p = getenv("ERL_FLAGS")))
+    if (!(p = getenv(env_var)))
 	return NULL;
     argv = emalloc(sizeof(char *) * (alloced = 10));
     state = Start;

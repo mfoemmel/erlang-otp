@@ -26,7 +26,8 @@
 -include("httpd_verbosity.hrl").
 
 %% public
--export([start/2, start_link/2, stop/1, stop/2, init/1]).
+-export([start/2, start_link/2, start2/2, start_link2/2, stop/1, stop/2, stop2/1]).
+-export([init/1]).
 
 
 -define(D(F, A), io:format("~p:" ++ F ++ "~n", [?MODULE|A])).
@@ -65,6 +66,35 @@ start_link(ConfigFile, Verbosity) ->
     end.
 
     
+start2(ConfigList, Verbosity) ->
+    case start_link2(ConfigList, Verbosity) of
+	{ok, Pid} ->
+	    unlink(Pid),
+	    {ok, Pid};
+
+	Else ->
+	    Else
+    end.
+
+    
+start_link2(ConfigList, Verbosity) ->
+    case get_addr_and_port2(ConfigList) of
+	{ok, Addr, Port} ->
+	    Name    = make_name(Addr, Port),
+	    SupName = {local, Name},
+	    supervisor:start_link(SupName, ?MODULE, 
+				  [undefined, ConfigList, Verbosity, Addr, Port]);
+
+	{error, Reason} ->
+	    error_logger:error_report(Reason),
+	    {stop, Reason};
+
+	Else ->
+	    error_logger:error_report(Else),
+	    {stop, Else}
+    end.
+
+    
 
 stop(Pid) when pid(Pid) ->
     do_stop(Pid);
@@ -90,6 +120,11 @@ stop(Addr, Port) when integer(Port) ->
 	    not_started
     end.
     
+stop2(ConfigList) when list(ConfigList) ->
+    {ok, Addr, Port} = get_addr_and_port2(ConfigList),
+    stop(Addr, Port).
+
+
 do_stop(Pid) ->
     exit(Pid, shutdown).
 
@@ -130,13 +165,17 @@ make_name(Addr,Port) ->
 get_addr_and_port(ConfigFile) ->
     case httpd_conf:load(ConfigFile) of
 	{ok, ConfigList} ->
-	    Port = httpd_util:key1search(ConfigList, port, 80),
-	    Addr = httpd_util:key1search(ConfigList, bind_address),
+	    {ok, Addr, Port} = get_addr_and_port2(ConfigList),
 	    {ok, ConfigList, Addr, Port};
 	Error ->
 	    Error
     end.
 
+
+get_addr_and_port2(ConfigList) ->
+    Port = httpd_util:key1search(ConfigList, port, 80),
+    Addr = httpd_util:key1search(ConfigList, bind_address),
+    {ok, Addr, Port}.
 
 get_acc_sup_verbosity(V) ->
     case key1search(V, all) of

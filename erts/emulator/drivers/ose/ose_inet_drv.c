@@ -160,7 +160,6 @@ union iSIGNAL {
 };
 
 extern PROCESS start_sock_select();
-extern PROCESS ose_inet_;
 extern void stop_sock_select(PROCESS);
 extern void select_release(void);
 
@@ -175,7 +174,7 @@ void add_ose_inet_drv_entry() {
 
 static int ose_inet_init(void) {
   printf("ose inet drv init (max sockets = %d, max ports = %d)\n", MAX_SOCKS, erts_max_ports);
-  driver_data = (InetDrvData **)sys_alloc(erts_max_ports*sizeof(InetDrvData *));
+  driver_data = (InetDrvData **)driver_alloc(erts_max_ports*sizeof(InetDrvData *));
   memset((void*)driver_data, 0, erts_max_ports*sizeof(InetDrvData *));
   memset((void*)ports, 0, MAX_SOCKS*sizeof(ErlDrvPort));
   return 0;
@@ -222,7 +221,7 @@ static void ose_inet_stop(ErlDrvData e) {
   /* clear memory */
   for(i = 0; i < erts_max_ports; i++) {
     if((dd = driver_data[i]) != NULL)
-      sys_free(dd);
+      driver_free(dd);
   }
 
   kill_proc(erl_sock_select_);
@@ -261,7 +260,7 @@ static void ose_inet_input(ErlDrvData empty, ErlDrvEvent sig) {
 				      (ErlDrvEvent)sock);
       }
     send_event_ack(sender((union SIGNAL **)&inet_sig), sock);    
-    free_buf((union SIGNAL **)&inet_sig);
+    ose_sig_free_buf((union SIGNAL **)&inet_sig);
     return;
 
   case INET_EVENT_WRITE:  
@@ -282,7 +281,7 @@ static void ose_inet_input(ErlDrvData empty, ErlDrvEvent sig) {
 				       (ErlDrvEvent)sock);
       }
     send_event_ack(sender((union SIGNAL **)&inet_sig), sock); 
-    free_buf((union SIGNAL **)&inet_sig);
+    ose_sig_free_buf((union SIGNAL **)&inet_sig);
     return;  
 
   case SOCK_SELECT_ERROR:
@@ -291,7 +290,7 @@ static void ose_inet_input(ErlDrvData empty, ErlDrvEvent sig) {
 	    inet_sig->sock_select_error.error, ports[sock]);
     /* what to do here? exit!? */
     send_event_ack(sender((union SIGNAL **)&inet_sig), sock); 
-    free_buf((union SIGNAL **)&inet_sig);
+    ose_sig_free_buf((union SIGNAL **)&inet_sig);
     return;
 
   default:
@@ -299,7 +298,7 @@ static void ose_inet_input(ErlDrvData empty, ErlDrvEvent sig) {
     fprintf(stderr, "Unknown signal %li from process: %li\n", 
 	    inet_sig->sig_no, sender((union SIGNAL **)&inet_sig));
     send_event_ack(sender((union SIGNAL **)&inet_sig), sock); 
-    free_buf((union SIGNAL **)&inet_sig);
+    ose_sig_free_buf((union SIGNAL **)&inet_sig);
   }
 }
 
@@ -327,7 +326,7 @@ int ose_inet_socket(int domain, int type, int protocol) {
   struct sockState *ss;
 
   if((sock = socket(domain, type, protocol)) >= 0) {
-    ss = sys_alloc(sizeof(struct sockState));
+    ss = driver_alloc(sizeof(struct sockState));
     ss->read = ss->write = NOT_SELECTED;
     sock_status[sock] = ss;
   }
@@ -340,7 +339,7 @@ int ose_inet_close(int sock) {
   printf("\nClosing socket %d (port %d)\n", sock, ports[sock]);
 #endif
   send_sock_select(sock, (DO_READ | DO_WRITE), 0);
-  sys_free(sock_status[sock]);
+  driver_free(sock_status[sock]);
   sock_status[sock] = NULL;
   ports[sock] = 0;
   if((res = close(sock)) == -1)
@@ -352,7 +351,7 @@ int ose_inet_accept(int s, struct sockaddr *addr, int *lenp) {
   struct sockState *ss;
   int sock = accept(s, addr, lenp);
   if(sock != -1) {
-    ss = sys_alloc(sizeof(struct sockState));
+    ss = driver_alloc(sizeof(struct sockState));
     ss->read = ss->write = NOT_SELECTED;
     sock_status[sock] = ss;
   }
@@ -379,7 +378,6 @@ int ose_inet_sendv(int s, SysIOVec *iov, int size)
 
   while (cnt < size) {    
     if (iov[cnt].iov_base && (iov[cnt].iov_len > 0)) {
-      /* Non-empty vector */
       if((w = inet_send(s, iov[cnt].iov_base, iov[cnt].iov_len, 0)) < 0) {
 	if((errno == ENOBUFS) || (errno == EINTR) || (errno == EWOULDBLOCK)) {
 	  return sofar;
@@ -395,7 +393,7 @@ int ose_inet_sendv(int s, SysIOVec *iov, int size)
   }
   return sofar;
 }
-      
+    
 int ose_inet_sendto(int s, const void *msg, int len, int flags, 
 		    const struct sockaddr *to, int tolen) {
   int result;
@@ -411,8 +409,9 @@ static int wait_for_if(const char *ifname)
 {
   union iSIGNAL   *sig;
   static const    SIGSELECT sel[2] = {1, INET_IF_UP_REPLY};
+  PROCESS inet_;
 
-  sig = (union iSIGNAL *)alloc(sizeof(struct InetIfUp), INET_IF_UP_REQUEST);
+  sig = (union iSIGNAL *)ose_sig_alloc(sizeof(struct InetIfUp), INET_IF_UP_REQUEST);
 
   /* No interface specified, pick the first one. */
   if(ifname == 0 || *ifname == '\0')
@@ -420,16 +419,17 @@ static int wait_for_if(const char *ifname)
   else
     strcpy(sig->up.ifName, ifname);
       
+  hunt("ose_inet", 0, &inet_, NULL);
   /* Request a notification signal when the interface is up. */
-  send((union SIGNAL **)&sig, ose_inet_);
+  send((union SIGNAL **)&sig, inet_);
   sig = (union iSIGNAL *)receive((SIGSELECT *)sel);
-      
+  
   /* Verify the INET reply status value. */
   if(sig->up.status != 0)
     fprintf(stderr, "Bad status code for INET_IF_UP_REQUEST\n");
 
   /* Don't forget to release the buffer. */
-  free_buf((union SIGNAL **)&sig);
+  ose_sig_free_buf((union SIGNAL **)&sig);
 
   return 0;
 }
@@ -475,7 +475,7 @@ int ose_gethostname(char *name, int namelen) {
     }
 
     buflen = MAX_IF_NUM * SDL_IFREQSIZE;
-    ifreq_buf = (char *)sys_alloc(buflen * sizeof(char));
+    ifreq_buf = (char *)driver_alloc(buflen * sizeof(char));
     ifconf.ifc_len = buflen;
     ifconf.ifc_buf = ifreq_buf;
     if(ioctl(sock, SIOCGIFCONF, (char *)&ifconf) == -1)
@@ -499,19 +499,19 @@ int ose_gethostname(char *name, int namelen) {
 
     ifr = (struct ifreq *)((char *)ifr + SDL_IFREQSIZE); /* point to if1 */
     if((sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) { 
-      sys_free(ifreq_buf);
+      driver_free(ifreq_buf);
       error(errno);
       return -1;
     }
     if(ioctl(sock, SIOCGIFADDR, (char *)ifr) == -1) { 
-      sys_free(ifreq_buf);
+      driver_free(ifreq_buf);
       error(errno);
       return -1;
     }
     sockaddr = (struct sockaddr_in *)&(ifr->ifr_addr);
     inaddr = (sockaddr->sin_addr);
     len = IP_LEN(inet_ntoa(inaddr));
-    sys_free(ifreq_buf);
+    driver_free(ifreq_buf);
 
 #ifdef DEBUG
     printf("Attempting to resolv address: %s\n", inet_ntoa(inaddr));
@@ -538,7 +538,7 @@ int ose_gethostname(char *name, int namelen) {
       result = 0;
     }
     else result = -1;
-    free_buf((union SIGNAL **)&host);
+    ose_sig_free_buf((union SIGNAL **)&host);
     return result;
   }
 }
@@ -578,9 +578,9 @@ static ErlDrvData ose_tcp_inet_start(ErlDrvPort port, char* command) {
 #ifdef DEBUG
       printf("\nDriver data in slot %d, clearing!\n", (int)port);
 #endif
-      sys_free(dd);
+      driver_free(dd);
     }
-    dd = (InetDrvData *)sys_alloc(sizeof(InetDrvData));
+    dd = (InetDrvData *)driver_alloc(sizeof(InetDrvData));
     dd->erl_drv_data = result;
     dd->entry = tcp_inet_driver_entry;
     driver_data[(int)port] = dd;
@@ -634,8 +634,8 @@ static ErlDrvData ose_udp_inet_start(ErlDrvPort port, char* command) {
        is stopped, therefore check here if position has been previously 
        used and if so, clear it */ 
     if((dd = driver_data[(int)port]) != NULL)
-      sys_free(dd);
-    dd = (InetDrvData *)sys_alloc(sizeof(InetDrvData));
+      driver_free(dd);
+    dd = (InetDrvData *)driver_alloc(sizeof(InetDrvData));
     dd->erl_drv_data = result;
     dd->entry = udp_inet_driver_entry;
     driver_data[(int)port] = dd;
@@ -666,7 +666,7 @@ static void ose_udp_inet_stop(ErlDrvData e) {
 static void send_event_ack(PROCESS to_, int sock) {
   union eventSig *sig;
   if(to_ != current_process()) { /* don't ack yourself */
-    sig = (union eventSig *)alloc(sizeof(struct InetEventAck), INET_EVENT_ACK);
+    sig = (union eventSig *)ose_sig_alloc(sizeof(struct InetEventAck), INET_EVENT_ACK);
     sig->inet_ev_ack.sock = sock;
     send((union SIGNAL **)&sig, to_);
   }
@@ -675,7 +675,7 @@ static void send_event_ack(PROCESS to_, int sock) {
 static void send_sock_select(int sock, int mode, int on) {
   union eventSig *sig;
 
-  sig = (union eventSig *)alloc(sizeof(struct SockSelect), SOCK_SELECT);
+  sig = (union eventSig *)ose_sig_alloc(sizeof(struct SockSelect), SOCK_SELECT);
   sig->sock_select.sock = sock;
   sig->sock_select.mode = mode;
   sig->sock_select.on = on;

@@ -17,10 +17,17 @@ include(`hipe/hipe_x86_asm.m4')
  *   This is used for:
  *   - demonitor/1, exit/2, group_leader/2, link/1, monitor/2,
  *     port_command/2, send/2, unlink/1: can fail with RESCHEDULE
+ * - Appropriate BIF exception test for debug and non-debug mode.
  *
  * XXX: TODO:
  * - Can a BIF with arity 0 fail? beam_emu doesn't think so.
  */
+
+`#if THE_NON_VALUE == 0
+#define TEST_GOT_EXN	testl	%eax,%eax
+#else
+#define TEST_GOT_EXN	cmpl	$THE_NON_VALUE,%eax
+#endif'
 
 /*
  * standard_bif_interface_0(nbif_name, cbif_name)
@@ -51,7 +58,7 @@ $1:
 	SWITCH_C_TO_ERLANG
 
 	/* throw exception if failure, otherwise return */
-	testl	%eax,%eax
+	TEST_GOT_EXN
 	jz	nbif_0_simple_exception
 	NBIF_RET(0)
 	.size	$1,.-$1
@@ -67,7 +74,7 @@ define(standard_bif_interface_1,
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	NBIF_COPY_ESP(1)
+	NBIF_COPY_NSP(1)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C
@@ -82,7 +89,7 @@ $1:
 	SWITCH_C_TO_ERLANG
 
 	/* throw exception if failure, otherwise return */
-	testl	%eax,%eax
+	TEST_GOT_EXN
 	jz	nbif_1_simple_exception
 	NBIF_RET(1)
 	.size	$1,.-$1
@@ -98,7 +105,7 @@ define(standard_bif_interface_2,
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	NBIF_COPY_ESP(2)
+	NBIF_COPY_NSP(2)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C
@@ -114,7 +121,7 @@ $1:
 	SWITCH_C_TO_ERLANG
 
 	/* throw exception if failure, otherwise return */
-	testl	%eax,%eax
+	TEST_GOT_EXN
 	jz	nbif_2_simple_exception
 	NBIF_RET(2)
 	.size	$1,.-$1
@@ -130,7 +137,7 @@ define(standard_bif_interface_3,
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	NBIF_COPY_ESP(3)
+	NBIF_COPY_NSP(3)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C
@@ -147,7 +154,7 @@ $1:
 	SWITCH_C_TO_ERLANG
 
 	/* throw exception if failure, otherwise return */
-	testl	%eax,%eax
+	TEST_GOT_EXN
 	jz	nbif_3_simple_exception
 	NBIF_RET(3)
 	.size	$1,.-$1
@@ -170,7 +177,7 @@ define(expensive_bif_interface_1,
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	NBIF_COPY_ESP(1)
+	NBIF_COPY_NSP(1)
 
 	/* save actual parameters in case we must reschedule */
 	NBIF_SAVE_RESCHED_ARGS(1)
@@ -188,7 +195,7 @@ $1:
 	SWITCH_C_TO_ERLANG
 
 	/* throw exception if failure, otherwise return */
-	testl	%eax,%eax
+	TEST_GOT_EXN
 	jz	$1_failed
 	NBIF_RET(1)
 $1_failed:
@@ -207,7 +214,7 @@ define(expensive_bif_interface_2,
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	NBIF_COPY_ESP(2)
+	NBIF_COPY_NSP(2)
 
 	/* save actual parameters in case we must reschedule */
 	NBIF_SAVE_RESCHED_ARGS(2)
@@ -226,7 +233,7 @@ $1:
 	SWITCH_C_TO_ERLANG
 
 	/* throw exception if failure, otherwise return */
-	testl	%eax,%eax
+	TEST_GOT_EXN
 	jz	$1_failed
 	NBIF_RET(2)
 $1_failed:
@@ -279,7 +286,7 @@ define(nofail_primop_interface_1,
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	NBIF_COPY_ESP(1)
+	NBIF_COPY_NSP(1)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C
@@ -308,7 +315,7 @@ define(nofail_primop_interface_2,
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	NBIF_COPY_ESP(2)
+	NBIF_COPY_NSP(2)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C
@@ -403,7 +410,7 @@ define(noproc_primop_interface_1,
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	NBIF_COPY_ESP(1)
+	NBIF_COPY_NSP(1)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C_QUICK
@@ -431,7 +438,7 @@ define(noproc_primop_interface_2,
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	NBIF_COPY_ESP(2)
+	NBIF_COPY_NSP(2)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C_QUICK
@@ -460,7 +467,7 @@ define(noproc_primop_interface_3,
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	NBIF_COPY_ESP(3)
+	NBIF_COPY_NSP(3)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C_QUICK
@@ -477,6 +484,38 @@ $1:
 
 	/* return */
 	NBIF_RET(3)
+	.size	$1,.-$1
+	.type	$1,@function
+#endif')
+
+define(noproc_primop_interface_5,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	.section ".text"
+	.align	4
+	.global	$1
+$1:
+	/* copy native stack pointer */
+	NBIF_COPY_NSP(5)
+
+	/* switch to C stack */
+	SWITCH_ERLANG_TO_C_QUICK
+
+	/* make the call on the C stack */
+	pushl	NBIF_ARG(5,4)
+	pushl	NBIF_ARG(5,3)
+	pushl	NBIF_ARG(5,2)
+	pushl	NBIF_ARG(5,1)
+	pushl	NBIF_ARG(5,0)
+	call	$2
+	addl	`$'20, %esp
+
+	/* switch to native stack */
+	SWITCH_C_TO_ERLANG_QUICK
+
+	/* return */
+	NBIF_RET(5)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -575,6 +614,7 @@ nofail_primop_interface_0(nbif_bs_final, erts_bs_final)
  * Primops without any P parameter.
  * These cannot CONS or gc.
  */
+noproc_primop_interface_1(nbif_bs_allocate, hipe_bs_allocate)
 noproc_primop_interface_1(nbif_bs_start_match, erts_bs_start_match)
 noproc_primop_interface_1(nbif_bs_skip_bits, erts_bs_skip_bits)
 noproc_primop_interface_0(nbif_bs_skip_bits_all, erts_bs_skip_bits_all)
@@ -588,8 +628,11 @@ noproc_primop_interface_1(nbif_bs_put_binary_all, erts_bs_put_binary_all)
 noproc_primop_interface_3(nbif_bs_put_float, erts_bs_put_float)
 noproc_primop_interface_2(nbif_bs_put_string, erts_bs_put_string)
 noproc_primop_interface_0(nbif_bs_get_matchbuffer, hipe_bs_get_matchbuffer)
+noproc_primop_interface_5(nbif_bs_put_big_integer, hipe_bs_put_big_integer)
+noproc_primop_interface_5(nbif_bs_put_small_float, hipe_bs_put_small_float)
 noproc_primop_interface_2(nbif_cmp_2, cmp)
 noproc_primop_interface_2(nbif_eq_2, eq)
+noproc_primop_interface_0(nbif_handle_fp_exception, erts_restore_x87)
 
 /*
  * BIFs that may trigger a native stack walk with p->narity != 0.

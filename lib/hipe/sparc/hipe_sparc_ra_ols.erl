@@ -44,8 +44,7 @@ alloc(SparcCfg, Options) ->
 
 			      (hipe_sparc_registers:allocatable() -- 
                                    hipe_sparc_registers:fixed()),
-			      [hipe_sparc_cfg:start(SparcCfg)] ++ 
-				   hipe_sparc_cfg:fail_entrypoints(SparcCfg),
+			      [hipe_sparc_cfg:start(SparcCfg)] ,
 			      0,
 			      hipe_sparc_specific:number_of_temporaries(SparcCfg),
 			      Options,

@@ -221,7 +221,7 @@ C BIFs are called on the C stack, not the current native stack.
 
 A C BIF returns a single tagged Erlang value. To indicate an
 exceptional condition, it puts an error code in p->freason
-and returns zero (THE_NON_VALUE).
+and returns THE_NON_VALUE (zero, except in debug mode).
 
 If p->freason == TRAP, then the BIF redirects its call to some
 other function, given by p->fvalue and p->def_arg_reg[].

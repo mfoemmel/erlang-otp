@@ -60,6 +60,7 @@
 -record(k_receive_accept, {anno=[]}).
 -record(k_receive_reject, {anno=[]}).
 -record(k_receive_next, {anno=[]}).
+-record(k_try, {anno=[],arg,vars,body,evars,handler,ret=[]}).
 -record(k_catch, {anno=[],body,ret=[]}).
 
 -record(k_match, {anno=[],vars,body,ret=[]}).

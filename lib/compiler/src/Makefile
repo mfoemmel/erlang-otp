@@ -53,6 +53,7 @@ MODULES =  \
 	v3_codegen \
 	beam_bs \
 	beam_block \
+	beam_dead \
 	beam_jump \
 	beam_type \
 	beam_clean \
@@ -72,10 +73,15 @@ MODULES =  \
 
 BEAM_H = $(wildcard ../priv/beam_h/*.h)
 
-HRL_FILES=
+HRL_FILES= \
+	core_parse.hrl \
+	v3_kernel.hrl \
+	v3_life.hrl
+EXTRA_FILES= beam_opcodes.hrl
+
 ERL_FILES= $(MODULES:%=%.erl)
 INSTALL_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
-TARGET_FILES= beam_opcodes.hrl $(INSTALL_FILES)
+TARGET_FILES= $(INSTALL_FILES)
  
 APP_FILE= compiler.app
 APP_SRC= $(APP_FILE).src
@@ -101,19 +107,12 @@ docs:
 
 clean:
 	rm -f $(TARGET_FILES)
+	rm -f beam_opcodes.erl beam_opcodes.hrl core_parse.erl
 	rm -f core
 
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
-# Dirty workaround to handle non-quoted "try"s.
-# Can be removed in R10. (I really mean it.)
-
-# Dirty workaround to make sure that the atom "try" is always quoted.
-# Can be removed in R10. (I really mean it.)
-core_parse.erl: core_parse.yrl
-	$(ERLC) $(YRL_FLAGS) core_parse.yrl
-	$(PERL) -pi -e "s/try,/'try',/g" core_parse.erl
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
@@ -139,7 +138,8 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(ERL_FILES) $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(EXTRA_FILES) \
+		$(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(INSTALL_FILES) $(RELSYSDIR)/ebin
 

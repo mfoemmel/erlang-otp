@@ -34,3 +34,11 @@ SPECIAL_TARGETS =
 # ----------------------------------------------------
 include $(ERL_TOP)/make/otp_subdir.mk
 
+conf: do_configure
+
+do_configure: configure 
+	./configure $(FLEX_SCANNER_LINENO)
+
+configure: configure.in
+	autoconf
+

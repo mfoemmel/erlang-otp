@@ -48,12 +48,11 @@ GSTK_GENERIC = gstk_generic.erl
 HRL_FILES = gstk.hrl
 GEN_HRL_FILES = gstk_generic.hrl
 GSTK_GENERIC_TARGET = $(EBIN)/gstk_generic.$(EMULATOR)
-KEEP_AS_IS = $(EBIN)/gs-color-xdefaults $(EBIN)/fup.bm
 
 ERL_FILES= $(MODULES:%=%.erl)
 
 TARGET_FILES= $(MODULES:%=../ebin/%.$(EMULATOR)) $(GEN_HRL_FILES) \
-	$(GSTK_GENERIC_TARGET) $(KEEP_AS_IS) $(APP_TARGET) $(APPUP_TARGET)
+	$(GSTK_GENERIC_TARGET) $(APP_TARGET) $(APPUP_TARGET)
 
 APP_FILE= gs.app
 APPUP_FILE= gs.appup
@@ -90,14 +89,6 @@ clean:
 gstk_generic.hrl: gs_make.erl
 	$(ERL) -pa $(EBIN) -s gs_make -s erlang halt -noshell
 
-$(EBIN)/gs-color-xdefaults: gs-color-xdefaults
-	rm -f $@
-	cp gs-color-xdefaults $@
-
-$(EBIN)/fup.bm: fup.bm
-	rm -f $@
-	cp fup.bm $@
-
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
@@ -114,7 +105,7 @@ release_spec: opt
 	$(INSTALL_DATA) $(APP_SRC) $(ERL_FILES) $(HRL_FILES) $(GEN_HRL_FILES) \
 		$(GSTK_GENERIC) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
-	$(INSTALL_DATA) $(TARGET_FILES) $(KEEP_AS_IS) $(RELSYSDIR)/ebin
+	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 
 
 release_docs_spec:

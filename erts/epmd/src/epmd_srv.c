@@ -86,28 +86,27 @@
 
 /* forward declarations */
 
-static void do_request _ANSI_ARGS_((EpmdVars*,int,Connection*,char*,int));
-static int do_accept _ANSI_ARGS_((EpmdVars*,int));
-static void do_read _ANSI_ARGS_((EpmdVars*,Connection*));
-static time_t current_time _ANSI_ARGS_((EpmdVars*));
+static void do_request(EpmdVars*,int,Connection*,char*,int);
+static int do_accept(EpmdVars*,int);
+static void do_read(EpmdVars*,Connection*);
+static time_t current_time(EpmdVars*);
 
-static Connection *conn_init _ANSI_ARGS_((EpmdVars*));
-static int conn_open _ANSI_ARGS_((EpmdVars*,int));
-static int conn_close_fd _ANSI_ARGS_((EpmdVars*,int));
+static Connection *conn_init(EpmdVars*);
+static int conn_open(EpmdVars*,int);
+static int conn_close_fd(EpmdVars*,int);
 
-static void node_init _ANSI_ARGS_((EpmdVars*));
-static Node *node_reg _ANSI_ARGS_((EpmdVars*,char*,int,int));
-static Node *node_reg2 _ANSI_ARGS_ ((EpmdVars*,char*, int, int, unsigned char, unsigned char, int, int, char*));
-static int node_unreg _ANSI_ARGS_((EpmdVars*,char*));
-static int node_unreg_sock _ANSI_ARGS_((EpmdVars*,int));
+static void node_init(EpmdVars*);
+static Node *node_reg(EpmdVars*,char*,int,int);
+static Node *node_reg2(EpmdVars*,char*, int, int, unsigned char, unsigned char, int, int, char*);
+static int node_unreg(EpmdVars*,char*);
+static int node_unreg_sock(EpmdVars*,int);
 
-static int reply _ANSI_ARGS_((EpmdVars*,int,char *,int));
-static void dbg_print_buf _ANSI_ARGS_((EpmdVars*,char *,int));
-static void print_names _ANSI_ARGS_((EpmdVars*));
+static int reply(EpmdVars*,int,char *,int);
+static void dbg_print_buf(EpmdVars*,char *,int);
+static void print_names(EpmdVars*);
 
 
-void run(g)
-     EpmdVars *g;
+void run(EpmdVars *g)
 {
   int listensock;
   int i;
@@ -261,9 +260,7 @@ void run(g)
  *
  */
 
-static void do_read(g,s)
-  EpmdVars *g;
-  Connection *s;
+static void do_read(EpmdVars *g,Connection *s)
 {
   int val, pack_size;
 
@@ -374,9 +371,7 @@ static void do_read(g,s)
     }
 }
 
-static int do_accept(g,listensock)
-     EpmdVars *g;
-     int listensock;
+static int do_accept(EpmdVars *g,int listensock)
 {
     int msgsock;
     struct SOCKADDR_IN icli_addr; /* workaround for QNX bug - cannot */
@@ -772,8 +767,7 @@ static void do_request(g, fd, s, buf, bsize)
  *
  ****************************************************************************/
 
-static Connection *conn_init(g)
-     EpmdVars *g;
+static Connection *conn_init(EpmdVars *g)
 {
   int nbytes = g->max_conn * sizeof(Connection);
   Connection *connections = (Connection *)malloc(nbytes);
@@ -792,9 +786,7 @@ static Connection *conn_init(g)
   return connections;
 }
 
-static int conn_open(g,fd)
-     EpmdVars *g;
-     int fd;
+static int conn_open(EpmdVars *g,int fd)
 {
   int i;
   Connection *s;
@@ -831,9 +823,7 @@ static int conn_open(g,fd)
   return FALSE;
 }
 
-static int conn_close_fd(g,fd)
-     EpmdVars *g;
-     int fd;
+static int conn_close_fd(EpmdVars *g,int fd)
 {
   int i;
 
@@ -848,9 +838,7 @@ static int conn_close_fd(g,fd)
 }
 
 
-int epmd_conn_close(g,s)
-     EpmdVars *g;
-     Connection *s;
+int epmd_conn_close(EpmdVars *g,Connection *s)
 {
   dbg_tty_printf(g,2,"closing connection on file descriptor %d",s->fd);
 
@@ -870,8 +858,7 @@ int epmd_conn_close(g,s)
  ****************************************************************************/
 
 
-static void node_init(g)
-     EpmdVars *g;
+static void node_init(EpmdVars *g)
 {
   g->nodes.reg         = NULL;
   g->nodes.unreg       = NULL;
@@ -884,9 +871,7 @@ static void node_init(g)
    EPMD_ALIVE_CLOSE_REQ. Note that this call shouild be called
    *before* calling conn_close() */
 
-static int node_unreg(g,name)
-     EpmdVars *g;
-     char *name;
+static int node_unreg(EpmdVars *g,char *name)
 {
   Node **prev = &g->nodes.reg;	/* Point to cell pointing to... */
   Node *node  = g->nodes.reg;	/* Point to first node */
@@ -921,9 +906,7 @@ static int node_unreg(g,name)
 }
 
 
-static int node_unreg_sock(g,fd)
-     EpmdVars *g;
-     int fd;
+static int node_unreg_sock(EpmdVars *g,int fd)
 {
   Node **prev = &g->nodes.reg;	/* Point to cell pointing to... */
   Node *node  = g->nodes.reg;	/* Point to first node */
@@ -973,10 +956,7 @@ static int node_unreg_sock(g,fd)
  *     Perhaps use the oldest or something.
  */
 
-static Node *node_reg(g, name, fd, port)
-     EpmdVars *g;
-     char *name;
-     int fd, port;
+static Node *node_reg(EpmdVars *g,char *name,int fd, int port)
 {
     return node_reg2(g, name, fd, port, 0, 0, 0, 0, NULL);
 }
@@ -1107,8 +1087,7 @@ static Node *node_reg2(EpmdVars *g,
 }
   
 
-static time_t current_time(g)
-     EpmdVars *g;
+static time_t current_time(EpmdVars *g)
 {
   time_t t = time((time_t *)0);
   dbg_printf(g,3,"time in seconds: %d",t);
@@ -1116,11 +1095,7 @@ static time_t current_time(g)
 }
 
 
-static int reply(g,fd,buf,len)
-     EpmdVars *g;
-     int fd;
-     char *buf;
-     int len;
+static int reply(EpmdVars *g,int fd,char *buf,int len)
 {
   int val;
 
@@ -1147,11 +1122,7 @@ static int reply(g,fd,buf,len)
 
 #define LINEBYTECOUNT 16
 
-static void print_buf_hex(buf,len,prefix)
-     unsigned char *buf;
-     int len;
-
-char *prefix;
+static void print_buf_hex(unsigned char *buf,int len,char *prefix)
 {
   int rows, row;
 
@@ -1196,10 +1167,7 @@ char *prefix;
     }
 }
 
-static void dbg_print_buf(g,buf,len)
-     EpmdVars *g;
-     char *buf;
-     int len;
+static void dbg_print_buf(EpmdVars *g,char *buf,int len)
 {
   int plen;
 
@@ -1217,8 +1185,7 @@ static void dbg_print_buf(g,buf,len)
     fprintf(stderr,"***** ......and more\r\n");
 }
 
-static void print_names(g)
-     EpmdVars *g;
+static void print_names(EpmdVars *g)
 {
   int count = 0;
   Node *node;

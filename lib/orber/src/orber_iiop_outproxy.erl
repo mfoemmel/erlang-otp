@@ -36,7 +36,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/0, start/1, request/5, locate/4]).
+-export([start/0, start/1, request/5, cancel/2, cancel/3]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -49,7 +49,9 @@
 %%-----------------------------------------------------------------
 -define(DEBUG_LEVEL, 7).
 
--record(state, {stype, socket, db, timeout, client_timeout}).
+-record(state, {stype, socket, db, timeout, client_timeout, host, port,
+		error_reason = {'EXCEPTION', #'COMM_FAILURE'
+				{completion_status=?COMPLETED_MAYBE}}}).
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -61,13 +63,39 @@ start(Opts) ->
     gen_server:start_link(orber_iiop_outproxy, Opts, []).
 
 request(Pid, true, Timeout, Msg, RequestId) ->
-    gen_server:call(Pid, {request, Timeout, Msg, RequestId}, infinity);
-request(Pid, ResponseExpected, Timeout, Msg, RequestId) ->
+    %% Why not simply use gen_server:call? We must be able to receive
+    %% more than one reply (i.e. fragmented messages).
+    MRef = erlang:monitor(process, Pid),
+    gen_server:cast(Pid, {request, Timeout, Msg, RequestId, self(), MRef}),
+    receive
+	{MRef, Reply} ->
+	    erlang:demonitor(MRef),
+            receive 
+                {'DOWN', Mref, _, _, _} -> 
+                    Reply
+            after 0 -> 
+                    Reply
+            end;
+	{'DOWN', Mref, _, Pid, Reason} when pid(Pid) ->
+            receive
+		%% Clear EXIT message from queue
+                {'EXIT', Pid, What} -> 
+                    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_MAYBE})
+            after 0 ->
+                    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_MAYBE})
+            end;
+	{fragmented, GIOPHdr, Bytes, RequestId, MRef} ->
+	    collect_fragments(GIOPHdr, [], Bytes, Pid, RequestId, MRef)
+    end;
+request(Pid, _, _, Msg, RequestId) ->
     %% No response expected
-    gen_server:call(Pid, {oneway_request, Timeout, Msg}, infinity).
+    gen_server:cast(Pid, {oneway_request, Msg}).
 
-locate(Pid, Msg, RequestId, Timeout) ->
-    gen_server:call(Pid, {locate, Msg, RequestId, Timeout}, infinity).
+cancel(Pid, RequestId) ->
+    gen_server:cast(Pid, {cancel, RequestId}).
+
+cancel(Pid, RequestId, MRef) ->
+    gen_server:cast(Pid, {cancel, RequestId, MRef, self()}).
 
 %%-----------------------------------------------------------------
 %% Internal interface functions
@@ -100,150 +128,149 @@ init({connect, Host, Port, SocketType, SocketOptions}) ->
 	    Timeout = orber:iiop_connection_timeout(),
 	    {ok, #state{stype = SocketType, socket = Socket,
 			db = ets:new(orber_outgoing_requests, [set]),
-			timeout = Timeout,
-			client_timeout = orber:iiop_timeout()}, Timeout}
+			timeout = Timeout, client_timeout = orber:iiop_timeout(),
+			host = Host, port = Port}, Timeout}
     end.
 
 %%-----------------------------------------------------------------
 %% Func: terminate/2
 %%-----------------------------------------------------------------
-terminate(normal, #state{db = OutRequests}) ->
+terminate(Reason, #state{db = OutRequests, error_reason = ER}) ->
     %% Kill all proxies and delete table before terminating
-    kill_all_requests(OutRequests, ets:first(OutRequests)),
+    notify_clients(OutRequests, ets:first(OutRequests), ER),
     ets:delete(OutRequests),
-    ok;
-terminate(Reason, #state{db = OutRequests}) ->
-    %% Kill all proxies and delete table before terminating
-    kill_all_requests(OutRequests, ets:first(OutRequests)),
-    ets:delete(OutRequests),
-    orber:dbg("[~p] orber_iiop_outproxy:terminate(~p)", [?LINE, Reason], ?DEBUG_LEVEL),
     ok.
 
-kill_all_requests(_, '$end_of_table') ->
+notify_clients(_, '$end_of_table', ER) ->
     ok;
-kill_all_requests(OutRequests, Key) ->
-    [{_, Pid}] = ets:lookup(OutRequests, Key),
-    exit(Pid, kill),
-    kill_all_requests(OutRequests, ets:next(OutRequests, Key)).
+notify_clients(OutRequests, Key, ER) ->
+    case ets:lookup(OutRequests, Key) of
+	[{_, Pid, TRef, MRef}] ->
+	    cancel_timer(TRef),
+	    Pid ! {MRef, ER},
+	    notify_clients(OutRequests, ets:next(OutRequests, Key), ER)
+    end.
 
 %%-----------------------------------------------------------------
 %% Func: handle_call/3
 %%-----------------------------------------------------------------
-handle_call({request, Timeout, Msg, RequestId}, From, State) ->
-    {ok, Pid} = orber_iiop_outrequest:start(From, State#state.client_timeout),
-    ets:insert(State#state.db, {RequestId, Pid}),
-    orber_iiop_outrequest:request(Pid, State#state.socket, State#state.stype, 
-				  Timeout, Msg),
-    {noreply, State, State#state.timeout};
-handle_call({oneway_request, Timeout, Msg}, From, State) ->
-    orber_socket:write(State#state.stype, State#state.socket, Msg),
-    {reply, ok, State, State#state.timeout};
-handle_call({locate, Request, RequestId, Timeout}, From, State) ->
-    {ok,  Pid} = orber_iiop_outrequest:start(From, State#state.client_timeout),
-    ets:insert(State#state.db, {RequestId, Pid}),
-    orber_iiop_outrequest:locate(Pid, Request, State#state.socket, 
-				 State#state.stype, Timeout),
-    {noreply, State, State#state.timeout};
 handle_call(stop, From, State) ->
     {stop, normal, ok, State};
-handle_call(X, _, State) ->
-    ?PRINTDEBUG2("No match for ~p in orber_iiop_outproxy:handle_call", [X]),
+handle_call(X, From, State) ->
+    orber:dbg("[~p] orber_iiop_outproxy:handle_call(~p); 
+Un-recognized call from ~p", [?LINE, X, From], ?DEBUG_LEVEL),
     {noreply, State, State#state.timeout}.
 
 %%-----------------------------------------------------------------
 %% Func: handle_cast/2
 %%-----------------------------------------------------------------
+handle_cast({request, Timeout, Msg, RequestId, From, MRef}, 
+	    #state{client_timeout = DefaultTimeout} = State) ->
+    orber_socket:write(State#state.stype, State#state.socket, Msg),
+    true = ets:insert(State#state.db, {RequestId, From, 
+				       start_timer(Timeout, DefaultTimeout, RequestId),
+				       MRef}),
+    {noreply, State, State#state.timeout};
+handle_cast({oneway_request, Msg}, State) ->
+    orber_socket:write(State#state.stype, State#state.socket, Msg),
+    {noreply, State, State#state.timeout};
+handle_cast({cancel, ReqId}, State) ->
+    case ets:lookup(State#state.db, ReqId) of
+	[{ReqId, From, TRef, MRef}] ->
+	    cancel_timer(TRef),
+	    ets:delete(State#state.db, ReqId),
+	    orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p); 
+Request cancelled", [?LINE, State], ?DEBUG_LEVEL),
+	    {noreply, State, State#state.timeout};
+	_ ->
+	    {noreply, State, State#state.timeout}
+    end;
+handle_cast({cancel, ReqId, MRef, From}, State) ->
+    case ets:lookup(State#state.db, ReqId) of
+	[{ReqId, From, TRef, MRef}] ->
+	    cancel_timer(TRef),
+	    ets:delete(State#state.db, ReqId),
+	    From ! {MRef, ReqId, cancelled},
+	    orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p); 
+Request cancelled", [?LINE, State], ?DEBUG_LEVEL),
+	    {noreply, State, State#state.timeout};
+	_ ->
+	    From ! {MRef, ReqId, cancelled},
+	    {noreply, State, State#state.timeout}
+    end;
 handle_cast(stop, State) ->
     {stop, normal, State};
-handle_cast(_, State) ->
+handle_cast(X, State) ->
+    orber:dbg("[~p] orber_iiop_outproxy:handle_cast(~p); 
+Un-recognized cast.", [?LINE, X], ?DEBUG_LEVEL),
     {noreply, State, State#state.timeout}.
 
 %%-----------------------------------------------------------------
 %% Func: handle_info/2
 %%-----------------------------------------------------------------
-%% Trapping exits 
-handle_info({tcp_closed, Socket}, State) ->
-    {stop, normal, State}; 
 handle_info({tcp, Socket, Bytes}, State) ->
     handle_reply(Bytes, State);
-handle_info({tcp_error, Socket, Reason}, #state{socket = Socket}) ->
-    corba:raise(#'INV_FLAG'{completion_status=?COMPLETED_NO});
-handle_info({ssl_closed, Socket}, State) ->
-    {stop, normal, State};
 handle_info({ssl, Socket, Bytes}, State) ->
     handle_reply(Bytes, State);
-handle_info({ssl_error, Socket}, #state{socket = Socket}) ->
-    corba:raise(#'INV_FLAG'{completion_status=?COMPLETED_NO});
-handle_info({'EXIT', Pid, Reason}, State) ->
-    [{K, _}] = ets:match_object(State#state.db, {'$1', Pid}),
-    ets:delete(State#state.db, K),
-    {noreply, State, State#state.timeout};
+handle_info({tcp_closed, Socket}, State) ->
+    {stop, normal, State}; 
+handle_info({ssl_closed, Socket}, State) ->
+    {stop, normal, State};
+handle_info({tcp_error, Socket, Reason}, #state{socket = Socket, host = Host,
+						port = Port} = State) ->
+    orber:error("[~p] IIOP proxy received the TCP error message: ~p 
+The server-side ORB is located at '~p:~p'
+See the gen_tcp/inet documentation for more information.", 
+		[?LINE, Reason, Host, Port], ?DEBUG_LEVEL),
+    {stop, normal, State};
+handle_info({ssl_error, Socket, Reason}, #state{socket = Socket, host = Host,
+						port = Port} = State) ->
+    orber:error("[~p] IIOP proxy received the SSL error message: ~p 
+The server-side ORB is located at '~p:~p'
+See the SSL-application documentation for more information.", 
+		[?LINE, Reason, Host, Port], ?DEBUG_LEVEL),
+    {stop, normal, State};
+handle_info({timeout, TRef, ReqId}, State) ->
+    case ets:lookup(State#state.db, ReqId) of
+	[{ReqId, Pid, _, MRef}] ->
+	    ets:delete(State#state.db, ReqId),
+	    Pid ! {MRef, {'EXCEPTION', #'TIMEOUT'{completion_status=?COMPLETED_MAYBE}}},
+	    orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p, ~p); 
+Request timed out", [?LINE, State#state.host, State#state.port], ?DEBUG_LEVEL),
+	    {noreply, State, State#state.timeout};
+	_ ->
+	    {noreply, State, State#state.timeout}
+    end;
 handle_info(stop, State) ->
     {stop, normal, State};
 handle_info(timeout, State) ->
     case ets:info(State#state.db, size) of
 	0 ->
-	    %% No pending requests, close the connection.
-	    ?PRINTDEBUG2("IIOP connection timeout", []),
+	    orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p, ~p); 
+Outgoing connection timed out after ~p msec", 
+		      [?LINE, State#state.host, State#state.port,
+		       State#state.timeout], ?DEBUG_LEVEL),
 	    {stop, normal, State};
 	Amount ->
 	    %% Still pending request, cannot close the connection.
-	    ?PRINTDEBUG2("IIOP connection not timed out; ~p pending request(s)", 
-			 [Amount]),
 	    {noreply, State, State#state.timeout}
     end;
 handle_info(X, State) ->
-    ?PRINTDEBUG2("No match for ~p in orber_iiop_outproxy:handle_info", [X]),
+    orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p); 
+Un-recognized info.", [?LINE, X], ?DEBUG_LEVEL),
     {noreply, State, State#state.timeout}.
 
 
 handle_reply(Bytes, State) ->
     %% Check IIOP headers and fetch request id
     case catch checkheaders(cdr_decode:dec_giop_message_header(Bytes)) of
-	{'EXCEPTION', DecodeException} ->
-	    orber:dbg("[~p] orber_iiop_outproxy:handle_reply(~p); decode exception(~p).", 
-				    [?LINE, Bytes, DecodeException], ?DEBUG_LEVEL),
-	    {noreply, State, State#state.timeout};
-	{'EXIT', message_error} ->
-	    orber:dbg("[~p] orber_iiop_outproxy:handle_reply(~p); message error.", 
-				    [?LINE, Bytes], ?DEBUG_LEVEL),
-	    ME = cdr_encode:enc_message_error(orber:giop_version()),
-	    orber_socket:write(State#state.stype, State#state.socket, ME),
-	    {noreply, State, State#state.timeout};
-	{'EXIT', R} ->
-	    orber:dbg("[~p] orber_iiop_outproxy:handle_reply(~p); got exit(~p)", 
-				    [?LINE, Bytes, R], ?DEBUG_LEVEL),
-	    {noreply, State, State#state.timeout};
-	close_connection ->
-	    orber:dbg("[~p] orber_iiop_outproxy:handle_reply();
-The Server-side ORB closed the connection.", [?LINE], ?DEBUG_LEVEL),
-	    {stop, normal, State};
-	{error, no_reply} ->
-	    {noreply, State, State#state.timeout};
-	{fragment, GIOPHdr, ReqId} ->
-	    case ets:lookup(State#state.db, ReqId) of
-		[{_, Pid}] ->
-		    %% Send reply to the correct request process
-		    orber_iiop_outrequest:fragment(Pid, GIOPHdr), 
-		    {noreply, State, State#state.timeout};
-		_ ->
-		    {noreply, State, State#state.timeout}
-	    end;
-	{fragmented, GIOPHdr, ReqId} ->
-	    case ets:lookup(State#state.db, ReqId) of
-		[{_, Pid}] ->
-		    %% Send reply to the correct request process
-		    orber_iiop_outrequest:fragmented(Pid, GIOPHdr, Bytes), 
-		    {noreply, State, State#state.timeout};
-		_ ->
-		    {noreply, State, State#state.timeout}
-	    end;
 	{'reply', ReplyHeader, Rest, Len, ByteOrder} ->
 	    case ets:lookup(State#state.db, ReplyHeader#reply_header.request_id) of
-		[{_, Pid}] ->
+		[{_, Pid, TRef, MRef}] ->
 		    %% Send reply to the correct request process
-		    orber_iiop_outrequest:reply(Pid, ReplyHeader, Rest, 
-						Len, ByteOrder, Bytes),
+		    cancel_timer(TRef),
+		    Pid ! {MRef, {reply, ReplyHeader, Rest, Len, ByteOrder, Bytes}},
+		    ets:delete(State#state.db, ReplyHeader#reply_header.request_id),
 		    {noreply, State, State#state.timeout};
 		_ ->
 		    {noreply, State, State#state.timeout}
@@ -251,14 +278,68 @@ The Server-side ORB closed the connection.", [?LINE], ?DEBUG_LEVEL),
 	{'locate_reply', LocateReplyHeader, LocateRest, LocateLen, LocateByteOrder} ->
 	    case ets:lookup(State#state.db, 
 			    LocateReplyHeader#locate_reply_header.request_id) of
-		[{_, Pid}] ->
+		[{_, Pid, TRef, MRef}] ->
 		    %% Send reply to the correct request process
-		    orber_iiop_outrequest:locate_reply(Pid, LocateReplyHeader, LocateRest,
-						       LocateLen, LocateByteOrder),
+		    cancel_timer(TRef),
+		    Pid ! {MRef, {locate_reply, LocateReplyHeader, 
+				  LocateRest, LocateLen, LocateByteOrder}},
+		    ets:delete(State#state.db, 
+			       LocateReplyHeader#locate_reply_header.request_id),
 		    {noreply, State, State#state.timeout};
 		_ ->
 		    {noreply, State, State#state.timeout}
 	    end;
+	{fragment, GIOPHdr, ReqId, false} ->
+	    %% Last fragment, cancel timer and remove from DB.
+	    case ets:lookup(State#state.db, ReqId) of
+		[{_, Pid, TRef, MRef}] ->
+		    cancel_timer(TRef),
+		    Pid ! {fragment, GIOPHdr, ReqId, MRef}, 
+		    ets:delete(State#state.db, ReqId),
+		    {noreply, State, State#state.timeout};
+		_ ->
+		    %% Probably cancelled
+		    {noreply, State, State#state.timeout}
+	    end;
+	{fragment, GIOPHdr, ReqId, _} ->
+	    %% More fragments expected
+	    case ets:lookup(State#state.db, ReqId) of
+		[{_, Pid, _, MRef}] ->
+		    Pid ! {fragment, GIOPHdr, ReqId, MRef}, 
+		    {noreply, State, State#state.timeout};
+		_ ->
+		    %% Probably cancelled
+		    {noreply, State, State#state.timeout}
+	    end;
+	{fragmented, GIOPHdr, ReqId} ->
+	    %% This the initial message (i.e. a LocateReply or Reply).
+	    case ets:lookup(State#state.db, ReqId) of
+		[{_, Pid, TRef, MRef}] ->
+		    Pid ! {fragmented, GIOPHdr, Bytes, ReqId, MRef},
+		    {noreply, State, State#state.timeout};
+		_ ->
+		    {noreply, State, State#state.timeout}
+	    end;
+	{'EXCEPTION', DecodeException} ->
+	    orber:dbg("[~p] orber_iiop_outproxy:handle_reply(~p); decode exception(~p).", 
+		      [?LINE, Bytes, DecodeException], ?DEBUG_LEVEL),
+	    {noreply, State, State#state.timeout};
+	{'EXIT', message_error} ->
+	    orber:dbg("[~p] orber_iiop_outproxy:handle_reply(~p); message error.", 
+		      [?LINE, Bytes], ?DEBUG_LEVEL),
+	    ME = cdr_encode:enc_message_error(orber:giop_version()),
+	    orber_socket:write(State#state.stype, State#state.socket, ME),
+	    {noreply, State, State#state.timeout};
+	{'EXIT', R} ->
+	    orber:dbg("[~p] orber_iiop_outproxy:handle_reply(~p); got exit(~p)", 
+		      [?LINE, Bytes, R], ?DEBUG_LEVEL),
+	    {noreply, State, State#state.timeout};
+	close_connection ->
+	    orber:dbg("[~p] orber_iiop_outproxy:handle_reply();
+The Server-side ORB closed the connection.", [?LINE], ?DEBUG_LEVEL),
+	    {stop, normal, State};
+	{error, no_reply} ->
+	    {noreply, State, State#state.timeout};
 	X ->
 	    orber:dbg("[~p] orber_iiop_outproxy:handle_reply(~p); message error(~p).", 
 		      [?LINE, Bytes, X], ?DEBUG_LEVEL),
@@ -278,18 +359,19 @@ code_change(OldVsn, State, Extra) ->
 checkheaders(#giop_message{message_type = ?GIOP_MSG_CLOSE_CONNECTION}) ->
     close_connection;
 checkheaders(#giop_message{message_type = ?GIOP_MSG_FRAGMENT,
-			   giop_version = {1,2}} = GIOPHdr) ->
-    %% A fragment; we must hav received a Request or LocateRequest
+			   giop_version = {1,2},
+			   fragments = MoreFrag} = GIOPHdr) ->
+    %% A fragment; we must have received a Request or LocateRequest
     %% with fragment-flag set to true.
     %% We need to decode the header to get the request-id.
-    ReqId = cdr_decode:peak_request_id(GIOPHdr#giop_message.byte_order,
+    ReqId = cdr_decode:peek_request_id(GIOPHdr#giop_message.byte_order,
 				       GIOPHdr#giop_message.message),
-    {fragment, GIOPHdr, ReqId};
+    {fragment, GIOPHdr, ReqId, MoreFrag};
 checkheaders(#giop_message{fragments = true,
 			   giop_version = {1,2}} = GIOPHdr) ->
     %% Must be a Reply or LocateReply which have been fragmented.
     %% We need to decode the header to get the request-id.
-    ReqId = cdr_decode:peak_request_id(GIOPHdr#giop_message.byte_order,
+    ReqId = cdr_decode:peek_request_id(GIOPHdr#giop_message.byte_order,
 				       GIOPHdr#giop_message.message),
     {fragmented, GIOPHdr, ReqId};
 checkheaders(#giop_message{fragments = false, 
@@ -308,6 +390,129 @@ checkheaders(#giop_message{fragments = false,
 					   ?GIOP_HEADER_SIZE,
 					   GIOPHdr#giop_message.byte_order),
     {'locate_reply', LocateReplyHeader, Rest, Len, GIOPHdr#giop_message.byte_order};
-checkheaders(_) ->
+checkheaders(What) ->
+    orber:dbg("[~p] orber_iiop_outproxy:checkheaders(~p)
+Un-recognized GIOP header.", [?LINE, What], ?DEBUG_LEVEL),
     {error, no_reply}.
 
+
+cancel_timer(infinity) -> 
+    ok;
+cancel_timer(TRef) ->
+    erlang:cancel_timer(TRef).
+
+start_timer(infinity, infinity, _) -> 
+    infinity;
+start_timer(infinity, Timeout, RequestId) ->
+    erlang:start_timer(Timeout, self(), RequestId);
+start_timer(Timeout, _, RequestId) ->
+    erlang:start_timer(Timeout, self(), RequestId).
+
+
+
+collect_fragments(GIOPHdr1, InBuffer, Bytes, Proxy, RequestId, MRef) ->
+    receive
+	%% There are more framents to come; just collect this message and wait for
+	%% the rest.
+	{fragment, #giop_message{byte_order = ByteOrder,
+				 message    = Message,
+				 fragments  = true} = GIOPHdr2, RequestId, MRef} ->
+	    case catch cdr_decode:dec_message_header(null, GIOPHdr2, Message) of
+		{_, #fragment_header{}, FragBody, _, _} ->
+		    collect_fragments(GIOPHdr1, [FragBody|InBuffer], 
+				      Bytes, Proxy, RequestId, MRef);
+		Other ->
+		    cancel(Proxy, RequestId, MRef),
+		    clear_queue(Proxy, RequestId, MRef),
+		    orber:dbg("[~p] orber_iiop:collect_fragments(~p)", 
+			      [?LINE, Other], ?DEBUG_LEVEL),
+		    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 18), 
+					   completion_status=?COMPLETED_YES})
+	    end;
+	%% This is the last fragment. Now we can but together the fragments, decode
+	%% the reply and send it to the client.
+	{fragment, #giop_message{byte_order = ByteOrder,
+				 message    = Message} = GIOPHdr2, RequestId, MRef} ->
+	    erlang:demonitor(MRef),
+            receive 
+                {'DOWN', Mref, _, _, _} -> 
+		    ok
+            after 0 -> 
+		    ok
+            end,
+	    case catch cdr_decode:dec_message_header(null, GIOPHdr2, Message) of
+		{_, #fragment_header{}, FragBody, _, _} ->
+		    %% This buffer is all the fragments concatenated.
+		    Buffer = lists:reverse([FragBody|InBuffer]),
+		    
+		    %% Create a GIOP-message which is exactly as if hadn't been fragmented.
+		    NewGIOP = GIOPHdr1#giop_message
+				{message = list_to_binary([GIOPHdr1#giop_message.message|Buffer]),
+				 fragments = false},
+		    case checkheaders(NewGIOP) of
+			{'reply', ReplyHeader, Rest, Len, ByteOrder} ->
+			    %% We must keep create a copy of all bytes, as if the 
+			    %% message wasn't fragmented, to be able handle TypeCode
+			    %% indirection.
+			    {'reply', ReplyHeader, Rest, Len, ByteOrder, 
+			     list_to_binary([Bytes|Buffer])};
+			{'locate_reply', ReplyHdr, Rest, Len, ByteOrder} ->
+			    {'locate_reply', ReplyHdr, Rest, Len, ByteOrder};
+			Error ->
+			    orber:dbg("[~p] orber_iiop:collect_fragments(~p, ~p);
+Unable to decode Reply or LocateReply header",[?LINE, NewGIOP, Error], ?DEBUG_LEVEL),
+			    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 18),
+						   completion_status=?COMPLETED_YES})
+		    end;
+		Other ->
+		    orber:dbg("[~p] orber_iiop:collect_fragments(~p);", 
+			      [?LINE, Other], ?DEBUG_LEVEL),
+		    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 18),
+					   completion_status=?COMPLETED_YES})
+	    end;
+	{MRef, {'EXCEPTION', E}} ->
+	    orber:dbg("[~p] orber_iiop:collect_fragments(~p);", 
+		      [?LINE, E], ?DEBUG_LEVEL),
+	    erlang:demonitor(MRef),
+            receive 
+                {'DOWN', Mref, _, _, _} -> 
+		    corba:raise(E)
+            after 0 -> 
+		    corba:raise(E)
+            end;
+	{'DOWN', Mref, _, Proxy, Reason} when pid(Proxy) ->
+	    orber:dbg("[~p] orber_iiop:collect_fragments(~p);
+Monitor generated a DOWN message.", [?LINE, Reason], ?DEBUG_LEVEL),
+            receive
+		%% Clear EXIT message from queue
+                {'EXIT', Proxy, What} -> 
+                    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_MAYBE})
+            after 0 ->
+                    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_MAYBE})
+            end
+    end.
+
+clear_queue(Proxy, RequestId, MRef) ->
+    receive 
+	{fragment, _, RequestId, MRef} ->
+	    clear_queue(Proxy, RequestId, MRef);
+	{MRef, RequestId, cancelled} ->
+	    %% This is the last message that the proxy will send
+	    %% after we've cancelled the request.
+	    erlang:demonitor(MRef),
+	    receive 
+		{'DOWN', Mref, _, _, _} -> 
+		    ok
+	    after 0 -> 
+		    ok
+	    end;
+	{'DOWN', Mref, _, Proxy, Reason} ->
+	    %% The proxy terminated. Clear EXIT message from queue
+            receive
+                {'EXIT', Proxy, What} -> 
+                    ok
+            after 0 ->
+                    ok
+            end
+    end.
+	    

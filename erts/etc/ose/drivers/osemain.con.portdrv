@@ -1,0 +1,4 @@
+SEPARATELY_LINKED(YES)
+USER_START(NO)
+BG_PROC(erl_portdrv_ex_reg, erl_portdrv_ex_reg, 512, DEFAULT, 0, NULL)
+START_OSE_HOOK2(heap_init_flib)

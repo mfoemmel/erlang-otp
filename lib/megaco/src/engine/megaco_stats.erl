@@ -45,12 +45,15 @@ init(Name, GlobalCounters) ->
     create_global_snmp_counters(Name, GlobalCounters).
 
 
-create_global_snmp_counters(Name, []) ->
-    ok;
-create_global_snmp_counters(Name, [Counter|Counters]) ->
-    ets:insert(Name, {Counter, 0}),
-    create_global_snmp_counters(Name, Counters).
+% create_global_snmp_counters(_Name, []) ->
+%     ok;
+% create_global_snmp_counters(Name, [Counter|Counters]) ->
+%     ets:insert(Name, {Counter, 0}),
+%     create_global_snmp_counters(Name, Counters).
 
+create_global_snmp_counters(Name, Counters) ->
+    F = fun(Counter) -> ets:insert(Name, {Counter, 0}) end,
+    lists:foreach(F, Counters).
 
 
 %%-----------------------------------------------------------------
@@ -61,7 +64,7 @@ get_stats(Ets) ->
     Handles = get_handles_and_global_counters(Ets),
     (catch do_get_stats(Ets, Handles, [])).
 
-do_get_stats(Ets, [], Acc) ->
+do_get_stats(_Ets, [], Acc) ->
     {ok, lists:reverse(Acc)};
 do_get_stats(Ets, [Handle|Handles], Acc) ->
     case get_stats(Ets, Handle) of
@@ -106,7 +109,7 @@ reset_stats(Ets) ->
     Handles = get_handles_and_global_counters(Ets),
     (catch do_reset_stats(Ets, Handles, [])).
 
-do_reset_stats(Ets, [], Acc) ->
+do_reset_stats(_Ets, [], Acc) ->
     {ok, lists:reverse(Acc)};
 do_reset_stats(Ets, [Handle|Handles], Acc) ->
     case reset_stats(Ets, Handle) of
@@ -169,8 +172,3 @@ remove_duplicates([H|T], L) ->
             remove_duplicates(T, [H|L])
     end.
 
-% i(F) ->
-%     i(F, []).
-
-% i(F, A) ->
-%     io:format("~p:" ++ F ++ "~n", [?MODULE|A]).

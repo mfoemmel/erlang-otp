@@ -196,17 +196,27 @@ translate_instruction(I, Map, ConstTab) ->
       Ins = [hipe_sparc:store_fp_create(Dst, Off, Src)],
       {Ins, Map2, ConstTab};
     fp ->
-      Op = rtl_op2sparc_op(hipe_rtl:fp_op(I)),
       {Dst, Map0} = rv2sr(hipe_rtl:fp_dst(I), Map),
       {Src1, Map1} = rv2sr(hipe_rtl:fp_src1(I), Map0),
       {Src2, Map2} = rv2sr(hipe_rtl:fp_src2(I), Map1),
+      Op = rtl_op2sparc_op(hipe_rtl:fp_op(I)),
       Ins = [hipe_sparc:fop_create(Dst, Src1, Op, Src2)],
       {Ins, Map2, ConstTab};
+    fp_unop ->
+      {Dst, Map0} = rv2sr(hipe_rtl:fp_unop_dst(I), Map),
+      {Src, Map1} = rv2sr(hipe_rtl:fp_unop_src(I), Map0),
+      Ins = 
+	case rtl_op2sparc_op(hipe_rtl:fp_op(I)) of
+	  'fchs' ->
+	    [hipe_sparc:fmov_create(Dst,double,Src,true,false,[])];
+	  Op ->
+	    exit({?MODULE, {"unknown fp_unop", Op}})
+	end,
+      {Ins, Map1, ConstTab};
     fmov ->
       {Dst, Map0} = rv2sr(hipe_rtl:fmov_dst(I), Map),
       {Src, Map1} = rv2sr(hipe_rtl:fmov_src(I), Map0),
-      Neg = hipe_rtl:fmov_negate(I),
-      Ins = [hipe_sparc:fmov_create(Dst,double,Src,Neg,false,[])],
+      Ins = [hipe_sparc:fmov_create(Dst,double,Src,false,false,[])],
       {Ins, Map1, ConstTab};
     fconv ->
       {Dst, Map0} = rv2sr(hipe_rtl:fconv_dst(I), Map),
@@ -316,10 +326,19 @@ translate_load_address(I, Map, ConstTab) ->
   {Ins, Map0, ConstTab}.
 
 translate_store(I, Map, ConstTab) ->
+%%byte and halfword stores added
   {Dst, Map0} = rv2sr(hipe_rtl:store_dst(I), Map),
   {Src, Map1} = rv2sr(hipe_rtl:store_src(I), Map0),
   {Off, Map2} = rv2sr(hipe_rtl:store_offset(I), Map1),
-  Ins = [hipe_sparc:store_create(Dst, Off, Src)],
+  Ins= 
+    case  hipe_rtl:store_size(I) of
+      word ->
+	[hipe_sparc:store_create(Dst, Off, w, Src,[])];
+      halfword ->
+	[hipe_sparc:store_create(Dst, Off, h, Src,[])];
+      byte ->
+	[hipe_sparc:store_create(Dst, Off, b, Src,[])]
+    end,
   {Ins, Map2, ConstTab}.
 
 translate_call(I, Map, ConstTab) ->
@@ -579,6 +598,7 @@ ret_vars(_, Acc) -> Acc.
 rtl_op2sparc_op(add) -> '+';
 rtl_op2sparc_op(sub) -> '-';
 rtl_op2sparc_op(fadd) -> '+';
+rtl_op2sparc_op(fchs) -> 'fchs';
 rtl_op2sparc_op(fsub) -> '-';
 rtl_op2sparc_op(fmul) -> '*';
 rtl_op2sparc_op(fdiv) -> '/';

@@ -65,8 +65,11 @@ load_mod1(Mod, File, Binary, Db) ->
 store_module(Mod, File, Binary, Db) ->
     {interpreter_module, Exp, Abst, Src, MD5} = binary_to_term(Binary),
     Forms = case abstr(Abst) of
-		{abstract_v1, Forms0} -> Forms0;
-		{abstract_v2, Forms0} -> Forms0
+		{abstract_v1,Forms0} -> Forms0;
+		{abstract_v2,Forms0} -> Forms0;
+		{raw_abstract_v1,Code} ->
+		    {_,_,Forms0,_} = sys_pre_expand:module(Code, []),
+		    Forms0
 	    end,
     dbg_idb:insert(Db, mod_file, File),
     dbg_idb:insert(Db, exports, Exp),
@@ -99,40 +102,40 @@ store_funs_1([{Name,Index,Uniq,_,_,Arity,Cs}|Fs], Db, Mod) ->
     dbg_idb:insert(Db, {Mod,Name,Arity,false}, Cs),
     dbg_idb:insert(Db, {'fun',Mod,Index,Uniq}, {Name,Arity,Cs}),
     store_funs_1(Fs, Db, Mod);
-store_funs_1([], Db, Mod) -> ok.
+store_funs_1([], _, _) -> ok.
 
-store_forms([{function,Line,module_info,0,Cs0}|Fs], Mod, Db, Exp, Attr) ->
+store_forms([{function,_,module_info,0,_}|Fs], Mod, Db, Exp, Attr) ->
     Cs = [{clause,0,[],[], [{module_info_0,0,Mod}]}],
     dbg_idb:insert(Db, {Mod,module_info,0,true}, Cs),
     store_forms(Fs, Mod, Db, Exp, Attr);
-store_forms([{function,Line,module_info,1,Cs0}|Fs], Mod, Db, Exp, Attr) ->
+store_forms([{function,_,module_info,1,_}|Fs], Mod, Db, Exp, Attr) ->
     Cs = [{clause,0,[{var,0,'What'}],[], [{module_info_1,0,Mod,[{var,0,'What'}]}]}],
     dbg_idb:insert(Db, {Mod,module_info,1,true}, Cs),
     store_forms(Fs, Mod, Db, Exp, Attr);
-store_forms([{function,Line,Name,Arity,Cs0}|Fs], Mod, Db, Exp, Attr) ->
+store_forms([{function,_,Name,Arity,Cs0}|Fs], Mod, Db, Exp, Attr) ->
     FA = {Name,Arity},
     put(current_function, FA),
     Cs = clauses(Cs0),
     Exported = lists:member(FA, Exp),
     dbg_idb:insert(Db, {Mod,Name,Arity,Exported}, Cs),
     store_forms(Fs, Mod, Db, Exp, Attr);
-store_forms([{attribute,Line,Name,Val}|Fs], Mod, Db, Exp, Attr) ->
+store_forms([{attribute,_,Name,Val}|Fs], Mod, Db, Exp, Attr) ->
     store_forms(Fs, Mod, Db, Exp, [{Name,Val}|Attr]);
-store_forms([F|Fs], Mod, Db, Exp, Attr) ->
+store_forms([F|_], _Mod, _Db, _Exp, _Attr) ->
     exit({unknown_form,F});
-store_forms([], _, _, Exp, Attr) ->
+store_forms([], _, _, _, Attr) ->
     lists:reverse(Attr).
 
 store_mod_line_no(Mod, Db, Contents) ->
     store_mod_line_no(Mod, Db, Contents, 1, 0, []).
 
-store_mod_line_no(Mod, Db, [], LineNo, Pos, NewCont) ->
+store_mod_line_no(_, _, [], _, _, NewCont) ->
     list_to_binary(lists:reverse(NewCont));
 store_mod_line_no(Mod, Db, Contents, LineNo, Pos, NewCont) when integer(LineNo) ->
     {ContTail,Pos1,NewCont1} = store_line(Mod, Db, Contents, LineNo, Pos, NewCont),
     store_mod_line_no(Mod, Db, ContTail, LineNo+1, Pos1, NewCont1).
 
-store_line(Mod, Db, Contents, LineNo, Pos, NewCont) ->
+store_line(_, Db, Contents, LineNo, Pos, NewCont) ->
     {ContHead,ContTail,PosNL} = get_nl(Contents,Pos+8,[]),
     dbg_idb:insert(Db,LineNo,{Pos+8,PosNL}),
     {ContTail,PosNL+1,[make_lineno(LineNo, 8, ContHead)|NewCont]}.
@@ -192,17 +195,17 @@ pattern({cons,Line,H0,T0}) ->
 pattern({tuple,Line,Ps0}) ->
     Ps1 = pattern_list(Ps0),
     {tuple,Line,Ps1};
-pattern({op,Line1,'-',{integer,Line,I}}) ->
+pattern({op,_,'-',{integer,Line,I}}) ->
     {value,Line,-I};
-pattern({op,Line1,'+',{integer,Line,I}}) ->
+pattern({op,_,'+',{integer,Line,I}}) ->
     {value,Line,I};
-pattern({op,Line1,'-',{char,Line,I}}) ->
+pattern({op,_,'-',{char,Line,I}}) ->
     {value,Line,-I};
-pattern({op,Line1,'+',{char,Line,I}}) ->
+pattern({op,_,'+',{char,Line,I}}) ->
     {value,Line,I};
-pattern({op,Line1,'-',{float,Line,I}}) ->
+pattern({op,_,'-',{float,Line,I}}) ->
     {value,Line,-I};
-pattern({op,Line1,'+',{float,Line,I}}) ->
+pattern({op,_,'+',{float,Line,I}}) ->
     {value,Line,I};
 pattern({bin,Line,Grp}) ->
     Grp1 = pattern_list(Grp),
@@ -232,24 +235,30 @@ and_guard([G0|Gs]) ->
     [G1|and_guard(Gs)];
 and_guard([]) -> [].
 
-%%  All function calls here must be type tests and only comparison
-%%  operators are allowed here!
-
-guard_test({call,Line,{remote,Lr,{atom,Lm,erlang},{atom,Lf,F}},As0}) ->
+guard_test({call,Line,{remote,_,{atom,_,erlang},{atom,_,F}},As0}) ->
     As = gexpr_list(As0),
     case map_guard_bif(F, length(As0)) of
 	{ok,Name} ->
 	    {safe_bif,Line,erlang,Name,As};
-	false ->
-	    {safe_bif,Line,erlang,F,As};
-	Other ->
-	    erlang:fault({badguard,?LINE,F,Other})
+	error ->
+	    {safe_bif,Line,erlang,F,As}
     end;
-guard_test({op,Line,Op,L0,R0}) ->
-    true = erl_internal:comp_op(Op, 2) orelse erl_internal:bool_op(Op, 2),
+guard_test({op,Line,Op,L0}) ->
+    true = erl_internal:arith_op(Op, 1),	%Assertion.
     L1 = gexpr(L0),
-    R1 = gexpr(R0),			%They see the same variables
-    {safe_bif,Line,erlang,Op,[L1,R1]}.
+    {safe_bif,Line,erlang,Op,[L1]};
+guard_test({op,Line,Op,L0,R0}) ->
+    true = erl_internal:comp_op(Op, 2) orelse	%Assertion.
+	erl_internal:bool_op(Op, 2) orelse
+        erl_internal:arith_op(Op, 2),
+    L1 = gexpr(L0),
+    R1 = gexpr(R0),				%They see the same variables
+    {safe_bif,Line,erlang,Op,[L1,R1]};
+guard_test({integer,_,_}=I) -> I;
+guard_test({char,_,_}=C) -> C;
+guard_test({float,_,_}=F) -> F;
+guard_test({atom,_,_}=A) -> A;
+guard_test({nil,_}=N) -> N.
 
 map_guard_bif(integer, 1) -> {ok,is_integer};
 map_guard_bif(float, 1) -> {ok,is_float};
@@ -263,7 +272,7 @@ map_guard_bif(reference, 1) -> {ok,is_reference};
 map_guard_bif(port, 1) -> {ok,is_port};
 map_guard_bif(binary, 1) -> {ok,is_binary};
 map_guard_bif(function, 1) -> {ok,is_function};
-map_guard_bif(_, _) -> false.
+map_guard_bif(_, _) -> error.
 
 gexpr({var,Line,V}) -> {var,Line,V};
 gexpr({integer,Line,I}) -> {value,Line,I};
@@ -289,9 +298,9 @@ gexpr({bin_element,Line,Expr0,Size0,Type}) ->
     {bin_element,Line,Expr,Size,Type};
 %%% The previous passes have added the module name 'erlang' to
 %%% all BIF calls, even in guards.
-gexpr({call,Line,{remote,L1,{atom,L2,erlang},{atom,La,self}},[]}) ->
+gexpr({call,_,{remote,_,{atom,_,erlang},{atom,_,self}},[]}) ->
     self;
-gexpr({call,Line,{remote,L1,{atom,L2,erlang},{atom,La,F}},As0}) ->
+gexpr({call,Line,{remote,_,{atom,_,erlang},{atom,_,F}},As0}) ->
     As = gexpr_list(As0),
     {safe_bif,Line,erlang,F,As};
 gexpr({op,Line,Op,A0}) ->
@@ -299,7 +308,8 @@ gexpr({op,Line,Op,A0}) ->
     A1 = gexpr(A0),
     {safe_bif,Line,erlang,Op,[A1]};
 gexpr({op,Line,Op,L0,R0}) ->
-    true = erl_internal:arith_op(Op, 2) orelse erl_internal:comp_op(Op, 2),
+    true = erl_internal:arith_op(Op, 2) orelse erl_internal:comp_op(Op, 2)
+	orelse erl_internal:bool_op(Op, 2),
     L1 = gexpr(L0),
     R1 = gexpr(R0),			%They see the same variables
     {safe_bif,Line,erlang,Op,[L1,R1]}.
@@ -354,7 +364,7 @@ expr({'receive',Line,Cs0,To0,ToEs0}) ->
     ToEs1 = exprs(ToEs0),
     Cs1 = icr_clauses(Cs0),
     {'receive',Line,Cs1,To1,ToEs1};
-expr({'fun',Line,{clauses,Cs0},{OldUniq,Hvss,Free}}) ->
+expr({'fun',_,{clauses,_},{_OldUniq,_Hvss,_Free}}) ->
     %% Old format (abstract_v1).
     exit({?MODULE,old_funs});
 expr({'fun',Line,{clauses,Cs0},{Index,OldUniq,Hvss,Free,Name}}) ->
@@ -362,7 +372,7 @@ expr({'fun',Line,{clauses,Cs0},{Index,OldUniq,Hvss,Free,Name}}) ->
 
     OldIndex = get(fun_count),
     Cs = fun_clauses(Cs0, Hvss, Free),
-    [{clause,_,H,G,B}|_] = Cs,
+    [{clause,_,H,_,_}|_] = Cs,
     Arity = length(H),
     put(fun_count, OldIndex+1),
     Uniq = get(mod_md5),
@@ -379,7 +389,7 @@ expr({'fun',Line,{function,F,A},{Index,OldUniq,Name}}) ->
 
     put(funs, [{Name,Index,Uniq,OldIndex,OldUniq,A,Cs}|get(funs)]),
     {make_fun,Line,Index,Uniq,[]};
-expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,self}},[]}) ->
+expr({call,_,{remote,_,{atom,_,erlang},{atom,_,self}},[]}) ->
     self;
 expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,throw}},As0}) when length(As0) == 1 ->
     [As] = expr_list(As0),
@@ -416,6 +426,12 @@ expr({'catch',Line,E0}) ->
     %% No new variables added.
     E1 = expr(E0),
     {'catch',Line,E1};
+expr({'try',Line,Es0,CaseCs0,CatchCs0}) ->
+    %% No new variables added.
+    Es = expr_list(Es0),
+    CaseCs = icr_clauses(CaseCs0),
+    CatchCs = icr_clauses(CatchCs0),
+    {'try',Line,Es,CaseCs,CatchCs};
 expr({'query', Line, E0}) ->
     E = expr(E0),
     {'query', Line, E};
@@ -460,35 +476,36 @@ expr({bin_element,Line,Expr,Size,Type}) ->
     Size1 = expr(Size),
     {bin_element,Line,Expr1,Size1,Type};
 expr(Other) ->
+    io:format("~p\n", [Other]),
     exit({?MODULE,{unknown_expr,Other}}).
 
 %% is_guard_test(Expression) -> true | false.
 %%  Test if a general expression is a guard test.  Cannot use erl_lint
 %%  here as sys_pre_expand has transformed source.
 
-is_guard_test({op,Line,Op,L,R}) ->
+is_guard_test({op,_,Op,L,R}) ->
     case erl_internal:comp_op(Op, 2) of
 	true -> is_gexpr_list([L,R]);
 	false -> false
     end;
-is_guard_test({call,Line,{remote,Lr,{atom,Le,erlang},{atom,La,Test}},As}) ->
+is_guard_test({call,_,{remote,_,{atom,_,erlang},{atom,_,Test}},As}) ->
     case erl_internal:type_test(Test, length(As)) of
 	true -> is_gexpr_list(As);
 	false -> false
     end;
-is_guard_test({atom,Line,true}) -> true;
-is_guard_test(Other) -> false.
+is_guard_test({atom,_,true}) -> true;
+is_guard_test(_) -> false.
 
-is_gexpr({var,L,V}) -> true;
-is_gexpr({atom,L,A}) -> true;
-is_gexpr({integer,L,I}) -> true;
-is_gexpr({char,L,I}) -> true;
-is_gexpr({float,L,F}) -> true;
-is_gexpr({string,L,S}) -> true;
-is_gexpr({nil,L}) -> true;
-is_gexpr({cons,L,H,T}) -> is_gexpr_list([H,T]);
-is_gexpr({tuple,L,Es}) -> is_gexpr_list(Es);
-is_gexpr({call,L,{remote,Lr,{atom,Le,erlang},{atom,La,F}},As}) ->
+is_gexpr({var,_,_}) -> true;
+is_gexpr({atom,_,_}) -> true;
+is_gexpr({integer,_,_}) -> true;
+is_gexpr({char,_,_}) -> true;
+is_gexpr({float,_,_}) -> true;
+is_gexpr({string,_,_}) -> true;
+is_gexpr({nil,_}) -> true;
+is_gexpr({cons,_,H,T}) -> is_gexpr_list([H,T]);
+is_gexpr({tuple,_,Es}) -> is_gexpr_list(Es);
+is_gexpr({call,_,{remote,_,{atom,_,erlang},{atom,_,F}},As}) ->
     Ar = length(As),
     case erl_internal:guard_bif(F, Ar) of
 	true -> is_gexpr_list(As);
@@ -498,17 +515,17 @@ is_gexpr({call,L,{remote,Lr,{atom,Le,erlang},{atom,La,F}},As}) ->
 		false -> false
 	    end
     end;
-is_gexpr({op,L,Op,A}) ->
+is_gexpr({op,_,Op,A}) ->
     case erl_internal:arith_op(Op, 1) of
 	true -> is_gexpr(A);
 	false -> false
     end;
-is_gexpr({op,L,Op,A1,A2}) ->
+is_gexpr({op,_,Op,A1,A2}) ->
     case erl_internal:arith_op(Op, 2) of
 	true -> is_gexpr_list([A1,A2]);
 	false -> false
     end;
-is_gexpr(Other) -> false.
+is_gexpr(_) -> false.
 
 is_gexpr_list(Es) -> lists:all(fun (E) -> is_gexpr(E) end, Es).
 
@@ -534,7 +551,7 @@ icr_clauses([]) -> [].
 fun_clauses([{clause,L,H,G,B}|Cs], [Hvs|Hvss], Free) ->
     [{clause,L,head(H++free_vars(Free, Hvs, L)),guard(G),exprs(B)}|
      fun_clauses(Cs, Hvss, Free)];
-fun_clauses([], [], Free) -> [].
+fun_clauses([], [], _) -> [].
 
 free_vars(Vs, Hvs, Line) ->
     [ case lists:member(V, Hvs) of
@@ -557,7 +574,7 @@ new_vars(N, L) -> new_vars(N, L, []).
 new_vars(N, L, Vs) when N > 0 ->
     V = {var,L,new_var_name()},
     new_vars(N-1, L, [V|Vs]);
-new_vars(0, L, Vs) -> Vs.
+new_vars(0, _, Vs) -> Vs.
 
 bif_type(erlang, Name) -> bif_type(Name);
 bif_type(_, _) -> unsafe.

@@ -78,6 +78,8 @@ GEN_ERL_FILES =  \
 	ETraP_Server.erl
 #	CosTransactions_Synchronization.erl \
 
+EXTERNAL_INC_PATH = ../include
+
 GEN_HRL_FILES = \
 	oe_CosTransactions.hrl \
 	CosTransactions.hrl \
@@ -92,8 +94,9 @@ GEN_HRL_FILES = \
 	ETraP_Server.hrl
 #	CosTransactions_Synchronization.hrl \
 
+EXTERNAL_GEN_HRL_FILES = $(GEN_HRL_FILES:%=$(EXTERNAL_INC_PATH)/%)
 
-GEN_FILES = $(GEN_ERL_FILES) $(GEN_HRL_FILES)
+GEN_FILES = $(GEN_ERL_FILES) $(EXTERNAL_GEN_HRL_FILES)
 
 TARGET_FILES = \
 	$(GEN_ERL_FILES:%.erl=$(EBIN)/%.$(EMULATOR)) \
@@ -149,9 +152,9 @@ docs:
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
-$(GEN_FILES): CosTransactions.idl
+$(GEN_ERL_FILES) $(EXTERNAL_GEN_HRL_FILES): CosTransactions.idl
 	erlc $(ERL_FLAGS) +'{cfgfile,"CosTransactions.cfg"}' CosTransactions.idl
-
+	mv $(GEN_HRL_FILES) $(EXTERNAL_INC_PATH)
 
 # ----------------------------------------------------
 # Release Target
@@ -164,6 +167,6 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(GEN_ERL_FILES) $(IDL_FILE) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/include
-	$(INSTALL_DATA) $(GEN_HRL_FILES) $(RELSYSDIR)/include
+	$(INSTALL_DATA) $(EXTERNAL_GEN_HRL_FILES) $(RELSYSDIR)/include
 
 release_docs_spec:

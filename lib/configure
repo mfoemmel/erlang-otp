@@ -540,14 +540,15 @@ ac_config_sub=$ac_aux_dir/config.sub
 ac_configure=$ac_aux_dir/configure # This should be Cygnus configure.
 
 
-subdirs=""
+
+appdirs=""
 for d in * ; do
-    if test -f $d/configure ; then
-	subdirs="$subdirs $d"
+    if test -f "$d/configure" ; then
+	appdirs="$appdirs $d/."
     fi
 done
 
-subdirs="$subdirs"
+subdirs="$appdirs"
 
 
 trap '' 1 2 15
@@ -781,7 +782,7 @@ if test "$no_recursion" != yes; then
     esac
   done
 
-  for ac_config_dir in $subdirs; do
+  for ac_config_dir in $appdirs; do
 
     # Do not complain, so a configure script can configure whichever
     # parts of a large source tree are present.
@@ -848,5 +849,4 @@ if test "$no_recursion" != yes; then
     cd $ac_popdir
   done
 fi
-
 

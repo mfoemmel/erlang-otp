@@ -1,7 +1,7 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <02/05/13 14:52:20 happi>
+%% Time-stamp: <2003-04-02 18:06:28 richardc>
 %% ====================================================================
 %%  Filename : 	map.erl
 %%  Module   :	map
@@ -10,9 +10,9 @@
 %%  History  :	* 2001-03-15 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: jesperw $
-%%              $Date: 2002/09/19 14:14:16 $
-%%              $Revision: 1.37 $
+%%              $Author: tobiasl $
+%%              $Date: 2003/05/07 17:44:23 $
+%%              $Revision: 1.48 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -21,7 +21,7 @@
 -module(hipe_rtl_primops). 
 -export([gen_primop/3,gen_enter_fun/2]).
 -export([gen_mk_tuple/3]).
--export([gen_lists_map/5]).
+-export([type/2]).
 
 %%------------------------------------------------------------------------
 
@@ -41,7 +41,7 @@ gen_primop({Op, Dst, Args, Cont, Fail, Annot},
 	   {VarMap,  ConstTab},
 	   {Options, ExitInfo}) ->
   GotoCont = hipe_rtl:mk_goto(Cont),
-
+  
   case Op of
     %% ------------------------------------------------
     %% Binary Syntax
@@ -116,18 +116,18 @@ gen_primop({Op, Dst, Args, Cont, Fail, Annot},
 
 
 	  %% These are just calls to the bifs...
-						%	    '*' ->
-						%		gen_call_bif(Dst, Args, Cont, Fail, Op, badarith, ExitInfo);
-						%	    '/' ->
-						%		gen_call_bif(Dst, Args, Cont, Fail, Op, badarith, ExitInfo);
-						%	    'div' ->
-						%		gen_call_bif(Dst, Args, Cont, Fail, Op, badarith, ExitInfo);
-						%	    'rem' ->
-						%		gen_call_bif(Dst, Args, Cont, Fail, Op, badarith, ExitInfo);
-						%	    'bsl' ->
-						%		gen_call_bif(Dst, Args, Cont, Fail, Op, badarith, ExitInfo);
-						%	    'bsr' ->
-						%		gen_call_bif(Dst, Args, Cont, Fail, Op, badarith, ExitInfo);
+%	    '*' ->
+%		gen_call_bif(Dst, Args, Cont, Fail, Op, badarith, ExitInfo);
+%	    '/' ->
+%		gen_call_bif(Dst, Args, Cont, Fail, Op, badarith, ExitInfo);
+%	    'div' ->
+%		gen_call_bif(Dst, Args, Cont, Fail, Op, badarith, ExitInfo);
+%	    'rem' ->
+%		gen_call_bif(Dst, Args, Cont, Fail, Op, badarith, ExitInfo);
+%	    'bsl' ->
+%		gen_call_bif(Dst, Args, Cont, Fail, Op, badarith, ExitInfo);
+%	    'bsr' ->
+%		gen_call_bif(Dst, Args, Cont, Fail, Op, badarith, ExitInfo);
 
 	  %% List handling
 	  cons ->
@@ -153,7 +153,7 @@ gen_primop({Op, Dst, Args, Cont, Fail, Annot},
 	    end;
 
 
-	  %% Typle handling
+	  %% Tuple handling
 	  mktuple ->
 	    case Dst of
 	      [] -> %% The result is not used.
@@ -193,12 +193,23 @@ gen_primop({Op, Dst, Args, Cont, Fail, Annot},
 	      end,
 	    [Index, Tuple] = Args,
 	    [gen_element_2(Dst1, Fail, Index, Tuple, 
-			   Cont, Annot, ExitInfo)];
-	  element -> %% Obsolete.
-	    [Dst1,  _Flag] = Dst,
-	    [Index, Tuple] = Args,
+			   Cont, Annot, ExitInfo, [], [])];
+	  {erlang,element,2, TypeInfo} ->
+	    Dst1 =
+	      case Dst of
+		[] -> %% The result is not used.
+		  hipe_rtl:mk_new_var();
+		[Dst0] -> Dst0
+	      end,
+	    [TupleInfo, IndexInfo] = TypeInfo,	    
+	    [Index, Tuple] = Args,	    
 	    [gen_element_2(Dst1, Fail, Index, Tuple, 
-			   Cont, Annot, ExitInfo)];
+			   Cont, Annot, ExitInfo, TupleInfo, IndexInfo)];
+%	  element -> %% Obsolete.
+%	    [Dst1,  _Flag] = Dst,
+%	    [Index, Tuple] = Args,
+%	    [gen_element_2(Dst1, Fail, Index, Tuple, 
+%			   Cont, Annot, ExitInfo)];
 
 	  %% GC test
 	  {gc_test, Need} ->
@@ -305,17 +316,48 @@ gen_primop({Op, Dst, Args, Cont, Fail, Annot},
 		hipe_rtl:mk_fp(Dst1, Arg1, 'fdiv', Arg2)
 	    end;	  
 
+	  fnegate ->
+	    [Arg] = Args,
+	    case Dst of
+	      [] ->
+		hipe_rtl:mk_fp_unop(hipe_rtl:mk_new_fpreg(), Arg, 'fchs');
+	      [Dst1] ->
+		hipe_rtl:mk_fp_unop(Dst1, Arg, 'fchs')
+	    end;	  
+
+	  fclearerror ->
+	    gen_fclearerror();
+
 	  fcheckerror ->
 	    gen_fcheckerror(Cont, Fail, ExitInfo);
 
 	  conv_to_float ->
 	    case Dst of
 	      [] ->
-		gen_conv_to_float(hipe_rtl:mk_new_var(), Args, Cont, Fail, ExitInfo);
+		gen_conv_to_float(hipe_rtl:mk_new_fpreg(), Args, Cont, Fail, ExitInfo);
 	      [Dst1] ->
 		gen_conv_to_float(Dst1, Args, Cont, Fail, ExitInfo)
 	    end;
 
+	  unsafe_untag_float ->
+	    [Arg] = Args,
+	    case Dst of
+	      [] ->
+		hipe_tagscheme:unsafe_untag_float(hipe_rtl:mk_new_fpreg(),
+						  Arg); 
+	      [Dst1]->
+		hipe_tagscheme:unsafe_untag_float(Dst1, Arg)
+	    end;
+	  
+	  unsafe_tag_float ->
+	    [Arg] = Args,
+	    case Dst of
+	      [] ->
+		hipe_tagscheme:unsafe_tag_float(hipe_rtl:mk_new_var(),
+						Arg, Options);
+	      [Dst1]->
+		hipe_tagscheme:unsafe_tag_float(Dst1, Arg, Options)
+	    end;
 
 	  _ ->
 	    generic_primop(Dst, Op, Args, Cont, Fail, ExitInfo)
@@ -443,14 +485,16 @@ gen_bnot_2([Res], Args, Cont, Fail, _Annot, Op, ExitInfo) ->
 
 gen_cons(Dst, [Arg1, Arg2], Options) ->
   Tmp = hipe_rtl:mk_new_reg(),
-  HP = hipe_rtl:mk_reg(hipe_rtl_arch:heap_pointer_reg()),
+  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
   Code = 
     [
+     GetHPInsn,
      hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), Arg1),
      hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(4), Arg2),
      hipe_rtl:mk_move(Tmp, HP),
      hipe_tagscheme:tag_cons(Dst, Tmp),
-     hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(8))],
+     hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(8)),
+     PutHPInsn],
   case ?AddGC(Options) of
     true -> [hipe_rtl:mk_gctest(2)|Code];
     false -> Code
@@ -493,7 +537,7 @@ gen_cons(Dst, [Arg1, Arg2], Options) ->
 %%    return make_fun(funp);
 %%
 gen_mkfun([Dst], {Mod,FunId,Arity}, MagicNr, Index, FreeVars, _Fail) ->
-  HP = hipe_rtl:mk_reg(hipe_rtl_arch:heap_pointer_reg()),
+  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
   NumFree = length(FreeVars),
 
   %%  Copy arguments to the fun thing
@@ -501,7 +545,7 @@ gen_mkfun([Dst], {Mod,FunId,Arity}, MagicNr, Index, FreeVars, _Fail) ->
   %%    for (i = 0; i < num_free; i++) {
   %%	*hp++ = reg[i];
   %%    }
-  CopyFreeVarsCode = gen_free_vars(FreeVars),
+  CopyFreeVarsCode = gen_free_vars(FreeVars, HP),
 
   %%  Fill in fields
   %%    funp->thing_word = HEADER_FUN;
@@ -525,9 +569,10 @@ gen_mkfun([Dst], {Mod,FunId,Arity}, MagicNr, Index, FreeVars, _Fail) ->
   TagCode = [hipe_tagscheme:tag_fun(Dst, HP),
 	     %%  AdjustHPCode 
 	     hipe_rtl:mk_alu(HP, HP, add,
-			     hipe_rtl:mk_imm((?ERL_FUN_SIZE + NumFree) * 4))],
+			     hipe_rtl:mk_imm((?ERL_FUN_SIZE + NumFree) * 4)),
+	     PutHPInsn],
 
-  [CopyFreeVarsCode, SkeletonCode, LinkCode, TagCode]. 
+  [[GetHPInsn | CopyFreeVarsCode], SkeletonCode, LinkCode, TagCode].
 
 
 gen_fun_thing_skeleton(FunP, FunName={_Mod,_FunId,Arity}, NumFree, 
@@ -590,19 +635,9 @@ store_struct_field(StructP, Offset, Src) ->
 load_struct_field(Dest, StructP, Offset) ->
   hipe_rtl:mk_load(Dest, StructP, hipe_rtl:mk_imm(Offset)).
 
-
-%%load_eft_field(Dst,Offset) ->
-%%  hipe_rtl:mk_load(Dst, hipe_rtl:mk_reg(hipe_rtl_arch:heap_pointer_reg()),
-%%		   hipe_rtl:mk_imm(Offset)).
-%%store_eft_field(Src, Offset) ->
-%%  hipe_rtl:mk_store(hipe_rtl:mk_reg(hipe_rtl_arch:heap_pointer_reg()),
-%%		    hipe_rtl:mk_imm(Offset), Src).
-
-gen_free_vars(Vars) -> 
+gen_free_vars(Vars, HPReg) ->
   HPVar = hipe_rtl:mk_new_var(),  
-  [hipe_rtl:mk_alu(HPVar,
-		   hipe_rtl:mk_reg(hipe_rtl_arch:heap_pointer_reg()), add,
-		   hipe_rtl:mk_imm(?EFT_ENV)) |
+  [hipe_rtl:mk_alu(HPVar, HPReg, add, hipe_rtl:mk_imm(?EFT_ENV)) |
    gen_free_vars(Vars, HPVar, 0, [])].
 
 gen_free_vars([Var|Vars], EnvPVar, Offset, AccCode) ->
@@ -715,14 +750,16 @@ check_arity(ArityReg, Arity, BadArityLab) ->
 %%
 
 gen_mk_tuple(Dst, Elements, Options) ->
-  HP = hipe_rtl:mk_reg(hipe_rtl_arch:heap_pointer_reg()),
+  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
   Arity = length(Elements),
 
   Code = [
+	  GetHPInsn,
 	  gen_tuple_header(HP, Arity),
 	  set_tuple_elements(HP, 4, Elements, []),
 	  hipe_tagscheme:tag_tuple(Dst, HP),
-	  hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm((Arity+1)*4))],
+	  hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm((Arity+1)*4)),
+	  PutHPInsn],
   case ?AddGC(Options) of
     true -> [hipe_rtl:mk_gctest(Arity + 1)|Code];
     false -> Code
@@ -761,10 +798,11 @@ gen_unsafe_tl(Dst, [Arg]) -> hipe_tagscheme:unsafe_cdr(Dst, Arg).
 %%
 %% element
 %%
-gen_element_2(Dst, Fail, Index, Tuple, Cont, _Annot, ExitInfo) ->
+gen_element_2(Dst, Fail, Index, Tuple, Cont, _Annot, 
+	      ExitInfo, TupleInfo, IndexInfo) ->
   FailLbl = hipe_rtl:mk_new_label(),
   FailCode = hipe_rtl_exceptions:gen_fail_code(Fail, Dst, badarg, ExitInfo),
-  [hipe_tagscheme:element(Dst, Index, Tuple, FailLbl),
+  [hipe_tagscheme:element(Dst, Index, Tuple, FailLbl, TupleInfo, IndexInfo),
    hipe_rtl:mk_goto(Cont),
    FailLbl,
    FailCode].
@@ -798,124 +836,36 @@ gen_tuple_header(Ptr, Arity) ->
 
 
 %% ____________________________________________________________________
-%% 
+%%
+%% Floating point handling 
+%%
 
-%%map(F, L) ->
-
-%%Check F is fun of arity 1
-%% Res = tagcons(Htop)
-
-%% Prev = Htop
-%%lbl0
-%% is_cons(L) -> lbl1
-%% goto done
-%%lbl1: 
-%% gc(2)
-%% Prev[0] = tagcons(Htop)
-%% Prev = Htop +1
-%% Htop[0] = []
-%% Htop[1] = []
-%% Htop +=2
-%% E = hd(L)
-%% *Prev[-1] = F(E)
-%% L = tl(L)
-%% goto lbl0 
-%%done: 
-%% if Res == Htop goto nil
-%% R =  tagcons(Res)
-%% goto end
-%%nil:
-%% R = []
-%%end
-%% RET R
-
-gen_lists_map(F,L,Res,Cont,Fail) ->
-  HP = hipe_rtl:mk_reg(hipe_rtl_arch:heap_pointer_reg()),
-
-  BadLab = hipe_rtl:mk_new_label(),
-  OkLab =  hipe_rtl:mk_new_label(),
-  LoopLab =  hipe_rtl:mk_new_label(),
-  ConsLab =  hipe_rtl:mk_new_label(),
-  DoneLab =  hipe_rtl:mk_new_label(),
-  Continuation = hipe_rtl:mk_new_label(),
-  NilLab =  hipe_rtl:mk_new_label(),
-
-  ArityReg = hipe_rtl:mk_new_reg(),
-  NAddressReg =  hipe_rtl:mk_new_var(),
-  Nil = hipe_rtl:mk_new_var(),
-  Prev = hipe_rtl:mk_new_var(),
-  Tmp = hipe_rtl:mk_new_var(),
-  E = hipe_rtl:mk_new_var(),
-  Dst = hipe_rtl:mk_new_var(),
-  Same = hipe_rtl:mk_new_var(),
-
-  lists:flatten(
-    [
-     hipe_tagscheme:if_fun_get_arity_and_address(
-       ArityReg, 
-       NAddressReg, F, 
-       hipe_rtl:label_name(BadLab),
-       0.9),
-
-     hipe_rtl:mk_branch(ArityReg, eq, hipe_rtl:mk_imm(1),  
-			hipe_rtl:label_name(OkLab), 
-			hipe_rtl:label_name(BadLab),
-			0.9),
-     BadLab,
-     hipe_rtl:mk_call([Res],{lists,map,2},[F,L],
-						%		      {baz,m,2},[F,L],
-		      c,
-		      Cont,
-		      Fail),
-     OkLab, 
-     hipe_rtl:mk_move(Nil,hipe_rtl:mk_imm(hipe_tagscheme:mk_nil())),
-     hipe_tagscheme:tag_cons(Res,HP),
-     hipe_rtl:mk_move(Prev,HP),
-     LoopLab,
-     hipe_tagscheme:test_cons(L, hipe_rtl:label_name(ConsLab), 
-			      hipe_rtl:label_name(DoneLab), 0.9),
-     ConsLab,
-     hipe_rtl:mk_gctest(2),
-     hipe_tagscheme:tag_cons(Tmp, HP),
-     hipe_rtl:mk_store(Prev, hipe_rtl:mk_imm(0),Tmp),
-     hipe_rtl:mk_alu(Prev, HP, add, hipe_rtl:mk_imm(4)),
-     hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0),Nil),
-     hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(4),Nil),
-     hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(8)),
-     hipe_tagscheme:unsafe_car(E,L),
-     hipe_rtl:mk_call([Dst], NAddressReg, 
-		      [E,F],
-		      closure, 
-		      hipe_rtl:label_name(Continuation), 
-		      Fail),
-     Continuation,
-     hipe_rtl:mk_store(Prev, hipe_rtl:mk_imm(-4),Dst),
-     hipe_tagscheme:unsafe_cdr(L,L),
-     hipe_rtl:mk_goto(hipe_rtl:label_name(LoopLab)),
-     DoneLab,
-     hipe_tagscheme:tag_cons(Same,HP),
-     hipe_rtl:mk_branch(Res, eq, Same,
-			hipe_rtl:label_name(NilLab), 
-			Cont, 0.1),
-     NilLab,
-     hipe_rtl:mk_move(Res,Nil),
-     hipe_rtl:mk_goto(Cont)]).
+gen_fclearerror() ->
+  Addr = hipe_rtl:mk_new_reg(),
+  [hipe_rtl:mk_load_address(Addr, erl_fp_exception, c_const),
+   hipe_rtl:mk_store(Addr, hipe_rtl:mk_imm(0), hipe_rtl:mk_imm(0))].
 
 gen_fcheckerror(ContLbl, FailLbl, ExitInfo)->
   Tmp = hipe_rtl:mk_new_reg(),
-  ContLbl0 = hipe_rtl:mk_new_label(),
-  Fail = hipe_rtl:mk_new_label(),
+  TmpFailLbl0 = hipe_rtl:mk_new_label(),
+  TmpFailLbl1 = hipe_rtl:mk_new_label(),
   Result = hipe_rtl:mk_new_var(),
 
-  [hipe_rtl:mk_call([Tmp], check_fp_exception, [], primop, 
-		    hipe_rtl:label_name(ContLbl0), 
-		    hipe_rtl:label_name(Fail)),
-   ContLbl0,
-   hipe_rtl:mk_branch(Tmp, eq, hipe_rtl:mk_imm(0), 
-		      ContLbl, hipe_rtl:label_name(Fail)),
-   Fail,
-   hipe_rtl_exceptions:gen_fail_code(FailLbl, Result, badarith, ExitInfo)].
+  Addr = hipe_rtl:mk_new_reg(),
 
+  FailCode = fp_fail_code(TmpFailLbl0, TmpFailLbl1, 
+			  FailLbl, Result, ExitInfo),
+  ExceptionAtom = 
+    case get(hipe_target_arch) of
+      x86 -> erl_fp_check_exception;
+      ultrasparc -> erl_fp_exception
+    end,
+  
+  [hipe_rtl:mk_load_address(Addr, ExceptionAtom, c_const),
+   hipe_rtl:mk_load(Tmp, Addr, hipe_rtl:mk_imm(0)),
+   hipe_rtl:mk_branch(Tmp, eq, hipe_rtl:mk_imm(0), 
+		      ContLbl, hipe_rtl:label_name(TmpFailLbl0))]++
+    FailCode.
 
 gen_conv_to_float(Dst, [Src], ContLbl, FailLbl, ExitInfo) ->
   case hipe_rtl:is_var(Src) of
@@ -932,8 +882,11 @@ gen_conv_to_float(Dst, [Src], ContLbl, FailLbl, ExitInfo) ->
       TestFp = hipe_tagscheme:test_flonum(Src, hipe_rtl:label_name(TrueFp),
 					  hipe_rtl:label_name(ContFp), 0.5),
       GotoCont = hipe_rtl:mk_goto(ContLbl),
-      TmpFailLbl = hipe_rtl:mk_new_label(),
+      TmpFailLbl0 = hipe_rtl:mk_new_label(),
+      TmpFailLbl1 = hipe_rtl:mk_new_label(),
       Result = hipe_rtl:mk_new_var(),
+      FailCode = fp_fail_code(TmpFailLbl0, TmpFailLbl1, 
+			      FailLbl, Result, ExitInfo),
 
       TestFixNum ++
 	[TrueFixNum, 
@@ -948,14 +901,107 @@ gen_conv_to_float(Dst, [Src], ContLbl, FailLbl, ExitInfo) ->
 	 ContFp] ++
 	[hipe_rtl:mk_call([Tmp],conv_big_to_float,[Src], c,
 			  hipe_rtl:label_name(ContBigNum),
-			  hipe_rtl:label_name(TmpFailLbl)), 
-	 TmpFailLbl,
-	 hipe_rtl_exceptions:gen_fail_code(FailLbl, Result, badarith, ExitInfo),
-	 ContBigNum,
+			  hipe_rtl:label_name(TmpFailLbl0))]++
+	FailCode ++
+	[ContBigNum,
 	 hipe_tagscheme:unsafe_untag_float(Dst, Tmp)];
     _ ->
       %% This must be an attempt to convert an illegal term.
       Result = hipe_rtl:mk_new_var(),
       [hipe_rtl_exceptions:gen_fail_code(FailLbl, Result, badarith, ExitInfo)]
   end.
+
+fp_fail_code(TmpFailLbl0, TmpFailLbl1, FailLbl, Result, ExitInfo)->
+  case get(hipe_target_arch) of
+    x86 ->
+      [TmpFailLbl0,
+       hipe_rtl:mk_call([], handle_fp_exception, [], c,
+			hipe_rtl:label_name(TmpFailLbl1), []),
+       TmpFailLbl1,
+       hipe_rtl_exceptions:gen_fail_code(FailLbl, Result, 
+					 badarith, ExitInfo)];
+    ultrasparc ->
+      [TmpFailLbl0,
+       hipe_rtl_exceptions:gen_fail_code
+       (FailLbl, Result, badarith, ExitInfo)]
+  end.
+  
+%% ____________________________________________________________________
+%%
+%% Type handling.
+%%
+
+type('+', Args)->
+  erl_bif_types:type(erlang, '+', 2, Args);
+type('-', Args)->
+  erl_bif_types:type(erlang, '-', 2, Args);
+type(cons, [HeadType, TailType])->
+  erl_types:t_cons(HeadType, TailType);
+type(unsafe_tl, [Type]) ->
+  case erl_types:t_is_cons(Type) of
+    true -> erl_types:t_cons_tl(Type);
+    _ -> erl_types:t_undefined()
+  end;
+type(unsafe_hd, [Type]) ->
+  case erl_types:t_is_cons(Type) of
+    true -> erl_types:t_cons_hd(Type);
+    _ -> erl_types:t_undefined()
+  end;
+type(mktuple, TypeList) ->
+  erl_types:t_tuple(TypeList);
+type(unsafe_element, [IndexType, TupleType]) ->
+  case erl_types:t_number_vals(IndexType) of
+    [N] when is_integer(N)->
+      type({unsafe_element, N}, TupleType);
+    _ ->
+      case erl_types:t_is_tuple(TupleType) of
+	false ->
+	  erl_types:t_any();
+	_ ->
+	  case erl_types:t_tuple_args(TupleType) of
+	    [H|T] = List when is_list(List) ->
+	      case lists:all(fun(X)->X=:=H end, T) of
+		true -> H;
+		_ -> erl_types:t_any()
+	      end;
+	    _ ->
+	      erl_types:t_any()
+	  end
+      end
+  end;
+type({unsafe_element, N}, [Type]) ->
+  case erl_types:t_is_tuple(Type) of
+    false ->
+      erl_types:t_any();  
+    _ ->
+      case erl_types:t_tuple_args(Type) of
+	ArgTypes when is_list(ArgTypes) ->
+	  lists:nth(N, ArgTypes);
+	T -> T
+      end
+  end;
+type(unsafe_tag_float, _) ->
+  erl_types:t_float();
+type('bor', Args)->
+  erl_bif_types:type(erlang, 'bor', 2, Args);
+type('band', Args)->
+  erl_bif_types:type(erlang, 'band', 2, Args);
+type('bxor', Args)->
+  erl_bif_types:type(erlang, 'bxor', 2, Args);
+type('bnot', Args)->
+  erl_bif_types:type(erlang, 'bnot', 2, Args);
+type({hipe_bs_primop, {bs_get_integer, _, _}}, _) ->
+  %%TODO: Here we could find out if this is a fixnum.
+  erl_types:t_integer();
+type({hipe_bs_primop, {bs_get_float, _, _}}, _) ->
+  erl_types:t_float();
+type({hipe_bs_primop, {bs_get_binary, _, _}}, _) ->
+  erl_types:t_binary();
+type({hipe_bs_primop, {bs_get_binary_all, _}}, _) ->
+  erl_types:t_binary();
+type({hipe_bs_primop, bs_final}, _) ->
+  erl_types:t_binary();
+type(_Op, _) ->
+  %%io:format("Don't have any information for ~w\n", [Op]),
+  erl_types:t_any().
 

@@ -212,7 +212,7 @@ handle_event({gs, Ent, keypress, Data, [Key|_]}, WinInfo) ->
 	    end;
 	_Type -> ignore
     end;
-handle_event({gs, Id, click, _Data, ["Ok"|_]}, WinInfo) ->
+handle_event({gs, _Id, click, _Data, ["Ok"|_]}, WinInfo) ->
     case check_input(WinInfo#winInfo.entries) of
 	error -> ignore;
 	Data when WinInfo#winInfo.type/=function ->
@@ -232,7 +232,7 @@ handle_event({gs, _Id, click, _Data, ["Cancel"|_]}, _WinInfo) ->
     stopped;
 handle_event({gs, _Id, click, Trigger, _Arg}, WinInfo) ->
     {win, WinInfo#winInfo{trigger=Trigger}};
-handle_event(GSEvent, _WinInfo) ->
+handle_event(_GSEvent, _WinInfo) ->
     ignore.
 
 check_input(Entries) ->
@@ -242,7 +242,7 @@ check_input([{Entry, Type} | Entries], Data) ->
     case erl_scan:string(Str) of
 	{ok, [{Type, _Line, Val}], _EndLine} ->
 	    check_input(Entries, [Val|Data]);
-	Error -> error
+	_Error -> error
     end;
 check_input([], Data) -> lists:reverse(Data).
 

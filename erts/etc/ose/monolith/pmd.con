@@ -1,0 +1,17 @@
+PMD_AREA ( 0x380000, 0x80000 )
+
+WORK_AREA_SIZE ( 0x20000 )
+
+DECLARE( extern char __TEXT_START[] )
+DECLARE( extern char __DATA_ROM[] )
+DECLARE( extern char __DATA_RAM[] )
+DECLARE( extern char __DATA_END[] )
+DECLARE( extern char __BSS_START[] )
+DECLARE( extern char __BSS_END[] )
+DECLARE( extern char __MMS_BSS_START[] )
+DECLARE( extern char __MMS_BSS_END[] )
+
+REGION ( TEXT, __TEXT_START, __DATA_ROM - __TEXT_START, \"Kernel text\" )
+REGION ( TEXT, __DATA_ROM, __DATA_END - __DATA_RAM, \"Kernel const data\" )
+REGION ( DATA, __DATA_RAM, __DATA_END - __DATA_RAM, \"Kernel data\" )
+REGION ( BSS, __BSS_START, __MMS_BSS_END - __BSS_START, \"Kernel bss\" )

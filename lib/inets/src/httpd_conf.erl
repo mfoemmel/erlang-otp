@@ -16,7 +16,8 @@
 %%     $Id$
 %%
 -module(httpd_conf).
--export([load/1, load/2, store/1, store/2, 
+-export([load/1, load_mime_types/1, 
+	 load/2, store/1, store/2, 
 	 remove_all/1, remove/1,
 	 is_directory/1, is_file/1, 
 	 make_integer/1, clean/1, custom_clean/3, check_enum/2]).
@@ -54,6 +55,7 @@ load(ConfigFile) ->
 	{error, Reason} ->
 	    {error, ?NICE("Error while reading config file: "++Reason)}
     end.
+
 
 bootstrap([]) ->
     {error, ?NICE("Modules must be specified in the config file")};
@@ -95,6 +97,8 @@ verify_modules([Mod|Rest]) ->
 %% Reads the entire configuration file and returns list of strings or
 %% and error.
 %%
+
+
 read_config_file(FileName) ->
     case file:open(FileName, read) of
 	{ok, Stream} ->
@@ -318,7 +322,9 @@ load([$S,$e,$r,$v,$e,$r,$A,$d,$m,$i,$n,$ |ServerAdmin], []) ->
 load([$S,$e,$r,$v,$e,$r,$R,$o,$o,$t,$ |ServerRoot], []) ->
     case is_directory(clean(ServerRoot)) of
 	{ok, Directory} ->
-	    case load_mime_types(clean(ServerRoot)) of
+	    MimeTypesFile = 
+		filename:join([clean(ServerRoot),"conf", "mime.types"]),
+	    case load_mime_types(MimeTypesFile) of
 		{ok, MimeTypesList} ->
 		    {ok, [], [{server_root,string:strip(Directory,right,$/)},
 			      {mime_types,MimeTypesList}]};
@@ -411,16 +417,15 @@ load([$S,$S,$L,$P,$a,$s,$s,$w,$o,$r,$d,$C,$a,$l,$l,$b,$a,$c,$k,$F,$u,$n,$c,$t,$i
 	      list_to_atom(clean(SSLPasswordCallbackFunction))}}.
 
 
-
 %%
 %% load_mime_types/1 -> {ok, MimeTypes} | {error, Reason}
 %%
-load_mime_types(ServerRoot) ->
-    case file:open(filename:join([ServerRoot,"conf", "mime.types"]), read) of
+load_mime_types(MimeTypesFile) ->
+    case file:open(MimeTypesFile, read) of
 	{ok, Stream} ->
 	    parse_mime_types(Stream, []);
 	{error, _} ->
-	    {error, ?NICE("Can't open "++filename:join([ServerRoot,"conf", "mime.types"]))}
+	    {error, ?NICE("Can't open " ++ MimeTypesFile)}
     end.
 
 parse_mime_types(Stream,MimeTypesList) ->
@@ -477,21 +482,21 @@ store(ConfigDB, ConfigList, Modules,[]) ->
 store(ConfigDB, ConfigList, Modules, [ConfigListEntry|Rest]) ->
     ?vtrace("store -> entry with"
 	    "~n   ConfigListEntry: ~p",[ConfigListEntry]),
-    ?CDEBUG("store -> ~n"
-	    "      ConfigListEntry: ~p",[ConfigListEntry]),
+    ?CDEBUG("store -> "
+	"~n   ConfigListEntry: ~p",[ConfigListEntry]),
     case store_traverse(ConfigListEntry,ConfigList,Modules) of
 	{ok, ConfigDBEntry} when tuple(ConfigDBEntry) ->
-	    ?vtrace("store -> ~n"
-		    "      ConfigDBEntry(tuple): ~p",[ConfigDBEntry]),
-	    ?CDEBUG("store -> ~n"
-		    "      ConfigDBEntry(tuple): ~p",[ConfigDBEntry]),
+	    ?vtrace("store -> ConfigDBEntry(tuple): "
+		    "~n   ~p",[ConfigDBEntry]),
+	    ?CDEBUG("store -> ConfigDBEntry(tuple): "
+		    "~n   ~p",[ConfigDBEntry]),
 	    ets:insert(ConfigDB,ConfigDBEntry),
 	    store(ConfigDB,ConfigList,Modules,Rest);
 	{ok, ConfigDBEntry} when list(ConfigDBEntry) ->
-	    ?vtrace("store -> ~n"
-		    "      ConfigDBEntry(list): ~p",[ConfigDBEntry]),
-	    ?CDEBUG("store -> ~n"
-		    "      ConfigDBEntry(list): ~p",[ConfigDBEntry]),
+	    ?vtrace("store -> ConfigDBEntry(list): "
+		    "~n   ~p",[ConfigDBEntry]),
+	    ?CDEBUG("store -> ConfigDBEntry(list): "
+		"~n   ~p",[ConfigDBEntry]),
 	    lists:foreach(fun(Entry) ->
 				  ets:insert(ConfigDB,Entry)
 			  end,ConfigDBEntry),
@@ -527,7 +532,7 @@ store_traverse(ConfigListEntry, ConfigList, [Module|Rest]) ->
 
 store({mime_types,MimeTypesList},ConfigList) ->
     Port = httpd_util:key1search(ConfigList, port),
-    Addr = httpd_util:key1search(ConfigList,bind_address),
+    Addr = httpd_util:key1search(ConfigList, bind_address),
     Name = httpd_util:make_name("httpd_mime",Addr,Port),
     ?CDEBUG("store(mime_types) -> Name: ~p",[Name]),
     {ok, MimeTypesDB} = store_mime_types(Name,MimeTypesList),

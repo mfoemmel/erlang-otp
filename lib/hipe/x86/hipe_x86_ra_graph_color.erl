@@ -9,9 +9,9 @@
 %%  History  :	* 2001-07-26 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: toli6207 $
-%%              $Date: 2002/07/05 14:58:05 $
-%%              $Revision: 1.8 $
+%%              $Author: happi $
+%%              $Date: 2002/10/17 11:55:56 $
+%%              $Revision: 1.9 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -43,7 +43,17 @@ alloc(X86Defun, SpillLimit, SpillIndex, Options) ->
   case DontSpill of
     [] -> %% No new temps, we are done.
       ?add_spills(Options, NewSpillIndex),
-      {NewX86Defun, Coloring};
+      TempMap = hipe_temp_map:cols2tuple(Coloring, hipe_x86_specific),
+      {TempMap2, NewSpillIndex2} = 
+	hipe_spill_minimize:stackalloc(X86Cfg, [], 
+				       SpillIndex, Options, 
+				       hipe_x86_specific, 
+				       TempMap),
+	  
+      Coloring2 = 
+	hipe_spill_minimize:mapmerge(hipe_temp_map:to_substlist(TempMap), 
+				     TempMap2),
+      {NewX86Defun, Coloring2};
     _ -> 
       %% Since SpillLimit is used as a low-water-mark
       %% the list of temps not to spill is uninteresting.

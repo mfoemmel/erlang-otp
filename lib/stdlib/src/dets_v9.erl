@@ -22,22 +22,22 @@
 
 -export([constants/0, mark_dirty/1, read_file_header/2,
          check_file_header/2, do_perform_save/1, initiate_file/11,
-         prep_table_copy/9, init_freelist/2, fsck_input/3,
+         prep_table_copy/9, init_freelist/2, fsck_input/4,
          bulk_input/3, output_objs/4, bchunk_init/2,
          try_bchunk_header/2, compact_init/3, read_bchunks/2,
          write_cache/1, may_grow/3, find_object/2, slot_objs/2,
-         scan_objs/7, db_hash/2, no_slots/1, table_parameters/1]).
+         scan_objs/8, db_hash/2, no_slots/1, table_parameters/1]).
 
 -export([file_info/1, v_segments/1]).
 
 -export([cache_segps/3]).
 
+-compile({inline, [{max_objsize,1},{maxobjsize,1}]}).
 -compile({inline, [{write_segment_file,6}]}). 
 -compile({inline, [{sz2pos,1},{adjsz,1}]}).
 -compile({inline, [{skip_bytes,6},{make_object,4}]}).
 -compile({inline, [{segp_cache,2},{get_segp,1},{get_arrpart,1}]}).
 -compile({inline, [{h,1}]}).
--compile({inline, [{update_no_colls,3}]}).
 
 -include("dets.hrl").
 
@@ -64,6 +64,11 @@
 %%           Version 9(b) has instead:
 %%    112    28 counters for the buddy system sizes 2^4 to 2^31.
 %%    144    Reserved for future versions. Initially zeros.
+%%           Version 9(c) has instead:
+%%    112    28 counters for the buddy system sizes (as for 9(b)).
+%%    16     MD5-sum for the 44 plus 112 bytes before the MD5-sum.
+%%           (FreelistsPointer, Cookie and ClosedProperly are not digested.)
+%%    128    Reserved for future versions. Initially zeros.
 %%  ---
 %%  ------------------ end of file header
 %%    4*256  SegmentArray Pointers.
@@ -171,11 +176,14 @@
 %%% File header
 %%%
 
--define(RESERVED, 144).        % Reserved for future use.
+-define(RESERVED, 128).        % Reserved for future use.
 
 -define(COLL_CNTRS, (28*4)).     % Counters for the buddy system.
+-define(MD5SZ, 16).
 
--define(HEADSZ, 56+?COLL_CNTRS). % The size of the file header, in bytes.
+-define(HEADSZ, 
+        56+?COLL_CNTRS+?MD5SZ). % The size of the file header, in bytes,
+                                % not including the reserved part.
 -define(HEADEND, (?HEADSZ+?RESERVED)). 
                                % End of header and reserved area.
 -define(SEGSZ, 512).           % Size of a segment, in words. SZOBJP*SEGSZP.
@@ -214,6 +222,7 @@
 %%% Version 9(b) tables use the first 112 of these bytes for storing
 %%% number of objects for each size of the buddy system. An empty 9(b)
 %%% table cannot be distinguished from an empty 9(a) table.
+%%% 9(c) has an MD5-sum for the file header.
 
 -define(FILE_FORMAT_VERSION, 9).
 
@@ -251,7 +260,7 @@
 	   n,m,next,
 	   min,max,
 	   no_objects,no_keys,
-	   no_colls  % [{LogSz,NoColls}]
+	   no_colls  % [{LogSz,NoColls}], NoColls >= 0
 	  }).
 
 -define(ACTUAL_SEG_SIZE, (?SEGSZ*4)).
@@ -328,7 +337,7 @@ init_file(Fd, Tab, Fname, Type, Kp, MinSlots, MaxSlots, Ram, CacheSz,
       fptr = Fd,
       no_objects = NoObjects,
       no_keys = NoKeys,
-      maxobjsize = undefined,
+      maxobjsize = 0,
       n = N,
       type = Type,
       update_mode = dirty,
@@ -336,6 +345,7 @@ init_file(Fd, Tab, Fname, Type, Kp, MinSlots, MaxSlots, Ram, CacheSz,
       no_collections = orddict:new(),
       auto_save = Auto,
       hash_bif = HashMethod,
+      has_md5 = true,
       keypos = Kp,
       min_no_slots = MinSlots,
       max_no_slots = MaxSlots,
@@ -351,12 +361,11 @@ init_file(Fd, Tab, Fname, Type, Kp, MinSlots, MaxSlots, Ram, CacheSz,
      },
 
     FreeListsPointer = 0,
-    Header = file_header(Head0, FreeListsPointer, ?NOT_PROPERLY_CLOSED),
-
-    W0 = {0, [Header, 
-	      <<0:?COLL_CNTRS/unit:8,        %% Buddy system counters.
-	        0:?RESERVED/unit:8,          %% Reserved area.
-	        0:(4*?SEGARRSZ)/unit:8>>]},  %% SegmentArray Pointers
+    NoColls = <<0:?COLL_CNTRS/unit:8>>, %% Buddy system counters.
+    FileHeader = file_header(Head0, FreeListsPointer, 
+                             ?NOT_PROPERLY_CLOSED, NoColls),
+    W0 = {0, [FileHeader |
+              <<0:(4*?SEGARRSZ)/unit:8>>]},  %% SegmentArray Pointers
 
     %% Remove cached pointers to segment array parts and segments:
     lists:foreach(fun({I1,I2}) when integer(I1), integer(I2) -> ok;
@@ -440,7 +449,9 @@ read_file_header(Fd, FileName) ->
     <<FreeList:32,   Cookie:32,  CP:32,         Type2:32,
       Version:32,    M:32,       Next:32,       Kp:32,
       NoObjects:32,  NoKeys:32,  MinNoSlots:32, MaxNoSlots:32,
-      HashMethod:32, N:32, NoCollsB:?COLL_CNTRS/binary>> = Bin,
+      HashMethod:32, N:32, NoCollsB:?COLL_CNTRS/binary, 
+      MD5:?MD5SZ/binary>> = Bin,
+    <<_:12/binary,MD5DigestedPart:(?HEADSZ-?MD5SZ-12)/binary,_/binary>> = Bin,
     {ok, EOF} = dets_utils:position_close(Fd, FileName, eof),
     {ok, <<FileSize:32>>} = dets_utils:pread_close(Fd, FileName, EOF-4, 4),
     {CL, <<>>} = lists:foldl(fun(LSz, {Acc,<<NN:32,R/binary>>}) -> 
@@ -471,6 +482,9 @@ read_file_header(Fd, FileName) ->
 		     max_no_slots = MaxNoSlots,
 		     no_colls = NoColls,
 		     hash_method = HashMethod,
+                     read_md5 = MD5,
+                     has_md5 = <<0:?MD5SZ/unit:8>> =/= MD5,
+                     md5 = erlang:md5(MD5DigestedPart),
 		     trailer = FileSize,
 		     eof = EOF,
 		     n = N,
@@ -489,6 +503,9 @@ check_file_header(FH, Fd) ->
 		{error, invalid_type_code};
 	    FH#fileheader.version /= ?FILE_FORMAT_VERSION -> 
                 {error, bad_version};
+            FH#fileheader.has_md5 == true, 
+            FH#fileheader.read_md5 /= FH#fileheader.md5 ->
+                {error, not_a_dets_file}; % harsh but fair
 	    FH#fileheader.trailer /= FH#fileheader.eof ->
 		{error, not_closed};
 	    FH#fileheader.closed_properly == ?CLOSED_PROPERLY ->
@@ -502,6 +519,7 @@ check_file_header(FH, Fd) ->
 	end,
     case Test of
 	{ok, ExtraInfo} ->
+            MaxObjSize = max_objsize(FH#fileheader.no_colls),
 	    H = #head{
 	      m = FH#fileheader.m,
 	      m2 = FH#fileheader.m * 2,
@@ -509,7 +527,7 @@ check_file_header(FH, Fd) ->
 	      fptr = Fd,
 	      no_objects = FH#fileheader.no_objects,
 	      no_keys = FH#fileheader.no_keys,
-	      maxobjsize = undefined,
+	      maxobjsize = MaxObjSize,
 	      n = FH#fileheader.n,
 	      type = FH#fileheader.type,
 	      update_mode = saved,
@@ -517,6 +535,7 @@ check_file_header(FH, Fd) ->
 	      fixed = false,			% not saved on file
 	      freelists_p = FH#fileheader.freelist,
 	      hash_bif = HashBif,
+              has_md5 = FH#fileheader.has_md5,
 	      keypos = FH#fileheader.keypos,
 	      min_no_slots = FH#fileheader.min_no_slots,
 	      max_no_slots = FH#fileheader.max_no_slots,
@@ -529,6 +548,19 @@ check_file_header(FH, Fd) ->
 	Error ->
 	    Error
     end.
+
+%% Inlined.
+max_objsize(NoColls = undefined) ->
+    NoColls;
+max_objsize(NoColls) ->
+    max_objsize(NoColls, 0).
+
+max_objsize([], Max) ->
+    Max;
+max_objsize([{_,0} | L], Max) ->
+    max_objsize(L, Max);
+max_objsize([{I,_} | L], _Max) ->
+    max_objsize(L, I).
 
 cache_segps(Fd, FileName, M) ->
     NoParts = no_parts(M),
@@ -737,20 +769,25 @@ compact_read(Head, WHead, SizeT, Cache, L, Min, SegBs, ASz)
     {SegBs, compact_input(Head, WHead, SizeT, NCache, L)};
 compact_read(Head, WHead, SizeT, Cache, [[From | To] | L], Min, SegBs, ASz) ->
     Max = lists:max([?CHUNK_SIZE*3, Min]),
-    case dets_utils:pread_n(Head#head.fptr, From, Max) of
-	eof ->
-	    %% Should never happen since compaction will not be tried
-	    %% unless the file trailer is valid.
-	    not_ok; % try a proper repair
-        Bin1 when size(Bin1) < Min ->
-            %% The last object may not be padded.
-            Pad = Min - size(Bin1),
-            NewBin = <<Bin1/binary, 0:Pad/unit:8>>,
-	    compact_objs(Head, WHead, SizeT, NewBin, L, From, To, SegBs, 
-			 Cache, ASz);
-	NewBin ->
-	    compact_objs(Head, WHead, SizeT, NewBin, L, From, To, SegBs, 
-			 Cache, ASz)
+    case check_pread_arg(Max, Head) of
+        true ->
+            case dets_utils:pread_n(Head#head.fptr, From, Max) of
+                eof ->
+                    %% Should never happen since compaction will not
+                    %% be tried unless the file trailer is valid.
+                    not_ok; % try a proper repair
+                Bin1 when size(Bin1) < Min ->
+                    %% The last object may not be padded.
+                    Pad = Min - size(Bin1),
+                    NewBin = <<Bin1/binary, 0:Pad/unit:8>>,
+                        compact_objs(Head, WHead, SizeT, NewBin, L, 
+                                     From, To, SegBs, Cache, ASz);
+                NewBin ->
+                    compact_objs(Head, WHead, SizeT, NewBin, L, 
+                                 From, To, SegBs, Cache, ASz)
+            end;
+        false ->
+            not_ok % try a proper repair
     end.
     
 compact_objs(Head, WHead, SizeT, Bin, L, From, To, SegBs, Cache, ASz) 
@@ -821,19 +858,25 @@ read_bchunks(_Head, L, Min, Bs, ASz) when ASz + Min >= 4*?CHUNK_SIZE,
     {lists:reverse(Bs), L};
 read_bchunks(Head, {From, To, L}, Min, Bs, ASz) ->
     Max = lists:max([?CHUNK_SIZE*2, Min]),
-    case dets_utils:pread_n(Head#head.fptr, From, Max) of
-	eof ->
-	    %% Should never happen.
-	    {error, premature_eof};
-	NewBin when size(NewBin) >= Min ->
-	    bchunks(Head, L, NewBin, Bs, ASz, From, To);
-        Bin1 when To - From =:= Min, size(L) =:= 0 -> % when size(Bin1) < Min 
-            %% The last object may not be padded.
-            Pad = Min - size(Bin1),
-            NewBin = <<Bin1/binary, 0:Pad/unit:8>>,
-	    bchunks(Head, L, NewBin, Bs, ASz, From, To);
-	_ ->
-	    {error, premature_eof}
+    case check_pread_arg(Max, Head) of
+        true ->
+            case dets_utils:pread_n(Head#head.fptr, From, Max) of
+                eof ->
+                    %% Should never happen.
+                    {error, premature_eof};
+                NewBin when size(NewBin) >= Min ->
+                    bchunks(Head, L, NewBin, Bs, ASz, From, To);
+                Bin1 when To - From =:= Min, size(L) =:= 0 -> 
+                    %% when size(Bin1) < Min. 
+                    %% The last object may not be padded.
+                    Pad = Min - size(Bin1),
+                    NewBin = <<Bin1/binary, 0:Pad/unit:8>>,
+                        bchunks(Head, L, NewBin, Bs, ASz, From, To);
+                _ ->
+                    {error, premature_eof}
+            end;
+        false ->
+            {error, bad_object}
     end.
     
 bchunks(Head, L, Bin, Bs, ASz, From, To) when From =:= To ->
@@ -931,7 +974,7 @@ bchunk_init(Head, InitFun) ->
 						     {header, 1}])),
 		    ets:delete(SizeT),
 		    Reply;
-		_ ->
+		not_ok ->
 		    {error, {init_fun, ParmsBin}}
 	    end;
 	{Ref, Value} ->
@@ -1153,7 +1196,8 @@ allocate_all_objects(Head, SizeT) ->
     %% a minimal object.
     {_Head, EndOfFile, _} = dets_utils:alloc(Head2, ?BUMP),
     Head3 = free_hole(Head2, HSz, HN, HA),
-    {Head3, NL, MaxSz, EndOfFile}.
+    NewHead = Head3#head{maxobjsize = max_objsize(Head3#head.no_collections)},
+    {NewHead, NL, MaxSz, EndOfFile}.
 
 alloc_hole(LSize, Head, SegSz) when ?POW(LSize-1) > SegSz ->
     Size = ?POW(LSize-1),
@@ -1401,11 +1445,25 @@ temp_file(Head, SizeT, N) ->
     {TmpName, Fd}.
 
 %% Does not close Fd.
-fsck_input(Head, Fd, Cntrs) ->
+fsck_input(Head, Fd, Cntrs, FileHeader) ->
+    MaxSz0 = case FileHeader#fileheader.has_md5 of
+                 true -> 
+                     ?POW(max_objsize(FileHeader#fileheader.no_colls));
+                 false ->
+                     %% The file is not compressed, so the bucket size
+                     %% cannot exceed the filesize, for all buckets.
+                     case file:position(Fd, eof) of
+                         {ok, Pos} ->
+                             Pos;
+                         _ ->
+                             1 bsl 32
+                     end
+             end,
+    MaxSz = lists:max([MaxSz0, ?CHUNK_SIZE]),
     State0 = fsck_read(?BASE, Fd, [], 0),
-    fsck_input(Head, State0, Fd, Cntrs).
+    fsck_input(Head, State0, Fd, MaxSz, Cntrs).
 
-fsck_input(Head, State, Fd, Cntrs) ->
+fsck_input(Head, State, Fd, MaxSz, Cntrs) ->
     fun(close) ->
 	    ok;
        (read) ->
@@ -1414,11 +1472,12 @@ fsck_input(Head, State, Fd, Cntrs) ->
 		    end_of_input;
 		{done, L, _Seq} ->
 		    R = count_input(Head, Cntrs, L),
-		    {R, fsck_input(Head, done, Fd, Cntrs)};
+		    {R, fsck_input(Head, done, Fd, MaxSz, Cntrs)};
 		{cont, L, Bin, Pos, Seq} ->
 		    R = count_input(Head, Cntrs, L),
-		    NewState = fsck_read(Bin, Pos, Fd, Head, [], Seq),
-		    {R, fsck_input(Head, NewState, Fd, Cntrs)}
+                    FR = fsck_objs(Bin, Head#head.keypos, Head, [], Seq),
+                    NewState = fsck_read(FR, Pos, Fd, MaxSz, Head),
+		    {R, fsck_input(Head, NewState, Fd, MaxSz, Cntrs)}
 	    end
     end.
 
@@ -1445,15 +1504,15 @@ fsck_read(Pos, F, L, Seq) ->
 	    {done, L, Seq}
     end.
 
-fsck_read(Bin, Pos, F, Head, L, Seq) ->
-    case fsck_objs(Bin, Head#head.keypos, Head, L, Seq) of
-        {more, NewBin, Sz, NL, NSeq} ->
-            read_more_bytes(NewBin, Sz, Pos, F, NL, NSeq);
-        {new, Skip, NL, NSeq} ->
-            NewPos = Pos + Skip,
-            fsck_read(NewPos, F, NL, NSeq)
-    end.
-
+fsck_read({more, Bin, Sz, L, Seq}, Pos, F, MaxSz, Head) when Sz > MaxSz ->
+    FR = skip_bytes(Bin, ?BUMP, Head#head.keypos, Head, L, Seq),
+    fsck_read(FR, Pos, F, MaxSz, Head);
+fsck_read({more, Bin, Sz, L, Seq}, Pos, F, _MaxSz, _Head) ->
+    read_more_bytes(Bin, Sz, Pos, F, L, Seq);
+fsck_read({new, Skip, L, Seq}, Pos, F, _MaxSz, _Head) ->
+    NewPos = Pos + Skip,
+    fsck_read(NewPos, F, L, Seq).
+    
 read_more_bytes(B, Min, Pos, F, L, Seq) ->
     Max = if 
 	      Min < ?CHUNK_SIZE -> ?CHUNK_SIZE; 
@@ -1527,7 +1586,6 @@ do_perform_save(H) ->
     {FLW, FLSize} = free_lists_to_file(H1),
     FileSize = FreeListsPointer + FLSize + 4,
     ok = dets_utils:write(H, [FLW | <<FileSize:32>>]),
-    Header = file_header(H1, FreeListsPointer, ?CLOSED_PROPERLY),
     NoColls = case H1#head.no_collections of
 		  undefined -> [];
 		  NC -> NC
@@ -1536,27 +1594,32 @@ do_perform_save(H) ->
 		      NoColls, 
 		      lists:map(fun(X) -> {X,0} end, lists:seq(4,?MAXBUD-1))),
     CW = lists:map(fun({_LSz,N}) -> <<N:32>> end, L),
-    dets_utils:pwrite(H1, [{0, [Header | CW]}]).
+    FileHeader = file_header(H1, FreeListsPointer, ?CLOSED_PROPERLY, CW),
+    dets_utils:pwrite(H1, [{0, FileHeader}]).
 
-file_header(Head, FreeListsPointer, ClosedProperly) ->
+file_header(Head, FreeListsPointer, ClosedProperly, NoColls) ->
     Cookie = ?MAGIC,
     TypeCode = dets_utils:type_to_code(Head#head.type),
     Version = ?FILE_FORMAT_VERSION,
     HashMethod = hash_method_to_code(Head#head.hash_bif),
-    <<FreeListsPointer:32,
-      Cookie:32,
-      ClosedProperly:32,
-      TypeCode:32,
-      Version:32,
-      (Head#head.m):32, 
-      (Head#head.next):32, 
-      (Head#head.keypos):32,
-      (Head#head.no_objects):32,
-      (Head#head.no_keys):32,
-      (Head#head.min_no_slots):32,
-      (Head#head.max_no_slots):32,
-      HashMethod:32,
-      (Head#head.n):32>>.
+    H1 = <<FreeListsPointer:32, Cookie:32, ClosedProperly:32>>,
+    H2 = <<TypeCode:32,
+           Version:32,
+           (Head#head.m):32, 
+           (Head#head.next):32, 
+           (Head#head.keypos):32,
+           (Head#head.no_objects):32,
+           (Head#head.no_keys):32,
+           (Head#head.min_no_slots):32,
+           (Head#head.max_no_slots):32,
+           HashMethod:32,
+           (Head#head.n):32>>,
+    DigH = [H2 | NoColls],
+    MD5 = case Head#head.has_md5 of 
+              true -> erlang:md5(DigH);
+              false -> <<0:?MD5SZ/unit:8>>
+          end,
+    [H1, DigH, MD5 | <<0:?RESERVED/unit:8>>].
 
 %% Going through some trouble to avoid creating one single binary for
 %% the free lists. If the free lists are huge, binary_to_term and
@@ -1741,6 +1804,7 @@ split_bins(FB, Head, Pos1, Pos2, ToRead, L, SoFar) ->
     end.
 
 re_hash_write(Head, ToRead, L, Pos1, Pos2) ->
+    check_pread2_arg(ToRead, Head),
     {ok, Bins} = dets_utils:pread(ToRead, Head),
     Z = <<0:32, 0:32>>,
     {Head1, BinFS, BinTS, WsB} = re_hash_slots(Bins, L, Head, Z, [],[],[]),
@@ -1894,7 +1958,8 @@ find_object(H, Obj, Slot) ->
 %% -> {ok, BucketP, Objects} | throw({Head, Error})
 slot_objects(Head, Slot) ->
     SlotPos = slot_position(Slot),    
-    case dets_utils:ipread(Head#head.fptr, SlotPos, infinity) of 
+    MaxSize = maxobjsize(Head),
+    case dets_utils:ipread(Head#head.fptr, SlotPos, MaxSize) of 
 	{ok, {BucketSz, Pointer, <<BucketSz:32, _St:32, KeysObjs/binary>>}} ->
 	    case catch bin2objs(KeysObjs, Head#head.type, []) of
 		{'EXIT', _Error} ->
@@ -1915,7 +1980,8 @@ slot_objects(Head, Slot) ->
 %% -> {Head, [LookedUpObject], pwrite_list()} | throw({Head, Error})
 eval_work_list(Head, [{Key,[{_Seq,{lookup,Pid}}]}]) ->
     SlotPos = slot_position(db_hash(Key, Head)),
-    Objs = case dets_utils:ipread(Head#head.fptr, SlotPos, infinity) of 
+    MaxSize = maxobjsize(Head),
+    Objs = case dets_utils:ipread(Head#head.fptr, SlotPos, MaxSize) of 
 	       {ok, {_BucketSz, _Pointer, Bin}} ->
 		   case lists:keysearch(Key, 1, per_key(Head, Bin)) of
 		       false ->
@@ -1969,6 +2035,7 @@ read_buckets(SPs, Ss, Bs, Head, PWLs0, ToRead0, LU, Ws, NoObjs, NoKeys, SoFar)
     %% often the case.
     PWLs = lists:sort(PWLs0),
     ToRead = lists:sort(ToRead0),
+    check_pread2_arg(ToRead, Head),
     {ok, Bins} = dets_utils:pread(ToRead, Head),
     case catch eval_buckets(Bins, PWLs, Head, LU, Ws, 0, 0) of
 	{ok, NewHead, NLU, [], 0, 0} -> 
@@ -2013,17 +2080,15 @@ updated(Head, Pos, OldSize, BSize, SlotPos, Bins, Ch, DeltaNoOs, DeltaNoKs) ->
 	    {Head, [], []};
 	Pos == 0, BSize > 0 ->
 	    {Head1, NewPos, FPos} = dets_utils:alloc(Head, adjsz(BinsSize)),
+            NewHead = one_bucket_added(Head1, FPos-1),
 	    W1 = {NewPos, [<<BinsSize:32, ?ACTIVE:32>> | Bins]},
 	    W2 = {SlotPos, <<BinsSize:32, NewPos:32>>},
-            NewNoColls = update_no_colls(Head#head.no_collections, 1, FPos),
-            NewHead = Head1#head{no_collections = NewNoColls},
 	    {NewHead, [W2], [W1]};
 	Pos =/= 0, BSize == 0 ->
 	    {Head1, FPos} = dets_utils:free(Head, Pos, adjsz(OldSize)),
+            NewHead = one_bucket_removed(Head1, FPos-1),
 	    W1 = {Pos+?STATUS_POS, <<?FREE:32>>},
 	    W2 = {SlotPos, <<0:32, 0:32>>},
-            NewNoColls = update_no_colls(Head#head.no_collections, -1, FPos),
-            NewHead = Head1#head{no_collections = NewNoColls},
 	    {NewHead, [W2], [W1]};
 	Pos =/= 0, BSize > 0, Ch == false ->
 	    {Head, [], []};
@@ -2064,10 +2129,8 @@ updated(Head, Pos, OldSize, BSize, SlotPos, Bins, Ch, DeltaNoOs, DeltaNoKs) ->
 		    {Head1, FPosF} = dets_utils:free(Head, Pos, adjsz(OldSize)),
 		    {Head2, NewPos, FPosA} = 
 			dets_utils:alloc(Head1, adjsz(BinsSize)),
-                    NoColls0 = Head2#head.no_collections,
-                    NoColls1 = update_no_colls(NoColls0, -1, FPosF),
-                    NewNoColls = update_no_colls(NoColls1, 1, FPosA),
-                    NewHead = Head2#head{no_collections = NewNoColls},
+                    Head3 = one_bucket_added(Head2, FPosA-1),
+                    NewHead = one_bucket_removed(Head3, FPosF-1),
 		    W0 = {NewPos, [<<BinsSize:32, ?ACTIVE:32>> | Bins]},
 		    W2 = {SlotPos, <<BinsSize:32, NewPos:32>>},
 		    W1 = if 
@@ -2081,11 +2144,24 @@ updated(Head, Pos, OldSize, BSize, SlotPos, Bins, Ch, DeltaNoOs, DeltaNoKs) ->
 	    end
     end.
 
-%% Inlined.
-update_no_colls(undefined = NoColls, _N, _FPos) ->
-    NoColls; % Version 9(a).
-update_no_colls(NoColls, N, FPos) ->
-    orddict:update_counter(FPos-1, N, NoColls).
+one_bucket_added(H, _Log2) when H#head.no_collections == undefined ->
+    H;
+one_bucket_added(H, Log2) when H#head.maxobjsize >= Log2 ->
+    NewNoColls = orddict:update_counter(Log2, 1, H#head.no_collections),
+    H#head{no_collections = NewNoColls};
+one_bucket_added(H, Log2) ->
+    NewNoColls = orddict:update_counter(Log2, 1, H#head.no_collections),
+    H#head{no_collections = NewNoColls, maxobjsize = Log2}.
+
+one_bucket_removed(H, _FPos) when H#head.no_collections == undefined ->
+    H;
+one_bucket_removed(H, Log2) when H#head.maxobjsize > Log2 ->
+    NewNoColls = orddict:update_counter(Log2, -1, H#head.no_collections),
+    H#head{no_collections = NewNoColls};
+one_bucket_removed(H, Log2) when H#head.maxobjsize =:= Log2 ->
+    NewNoColls = orddict:update_counter(Log2, -1, H#head.no_collections),
+    MaxObjSize = max_objsize(NewNoColls),
+    H#head{no_collections = NewNoColls, maxobjsize = MaxObjSize}.    
 
 eval_slot([{Key,Commands} | WLs] = WLs0, KOs, Type, LU, Ws, No, KNo,BSz, Ch) ->
     case KOs of
@@ -2299,6 +2375,21 @@ slot_position(S) ->
     Pos = ?SEGPARTADDR(Part, SegNo),
     get_segp(Pos) + (?SEGOBJSZ * ?REM2(S, ?SEGSZP)).
 
+check_pread2_arg([{_Pos,Sz}], Head) when Sz > ?MAXCOLL ->
+    case check_pread_arg(Sz, Head) of
+        true -> 
+            ok;
+        false ->
+            throw(dets_utils:corrupt_reason(Head, bad_object))
+    end;
+check_pread2_arg(_ToRead, _Head) ->
+    ok.
+
+check_pread_arg(Sz, Head) when Sz > ?MAXCOLL ->
+    maxobjsize(Head) >= Sz;
+check_pread_arg(_Sz, _Head) ->
+    true.
+
 %% Inlined.
 segp_cache(Pos, Segment) ->
     put(Pos, Segment).
@@ -2321,10 +2412,21 @@ sz2pos(N) ->
 adjsz(N) ->
     N-1.
 
-scan_objs(Bin, From, To, L, Ts, R, Type) ->
+%% Inlined.
+maxobjsize(Head) when Head#head.maxobjsize == undefined ->
+    ?POW(32);
+maxobjsize(Head) ->
+    ?POW(Head#head.maxobjsize).
+
+scan_objs(Head, Bin, From, To, L, Ts, R, Type) ->
     case catch scan_skip(Bin, From, To, L, Ts, R, Type, 0) of
 	{'EXIT', _Reason} ->
 	    bad_object;
+       Reply = {more, _From1, _To, _L, _Ts, _R, Size} when Size > ?MAXCOLL ->
+            case check_pread_arg(Size, Head) of
+                true -> Reply;
+                false -> bad_object
+            end;
 	Reply ->
 	    Reply
     end.
@@ -2470,7 +2572,7 @@ v_segment(_H, _, _SegPos, ?SEGSZP) ->
 v_segment(H, SegNo, SegPos, SegSlot) ->
     Slot = SegSlot + (SegNo * ?SEGSZP),
     BucketP = SegPos + (4 * ?SZOBJP * SegSlot),
-    case catch read_bucket(H#head.fptr, BucketP, H#head.type) of
+    case catch read_bucket(H, BucketP, H#head.type) of
 	{'EXIT', Reason} -> 
 	    dets_utils:vformat("** dets: Corrupt or truncated dets file~n", 
 			       []), 
@@ -2484,8 +2586,9 @@ v_segment(H, SegNo, SegPos, SegSlot) ->
     v_segment(H, SegNo, SegPos, SegSlot+1).
 
 %% -> [] | {Pointer, [object()]} | throw(EXIT)
-read_bucket(Fd, Position, Type) ->
-    case dets_utils:ipread(Fd, Position, infinity) of
+read_bucket(Head, Position, Type) ->
+    MaxSize = maxobjsize(Head),
+    case dets_utils:ipread(Head#head.fptr, Position, MaxSize) of
 	{ok, {Size, Pointer, <<Size:32, _Status:32, KeysObjs/binary>>}} ->
 	    Objs = bin2objs(KeysObjs, Type, []),
 	    {Size, Pointer, lists:reverse(Objs)};

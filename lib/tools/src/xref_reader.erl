@@ -17,7 +17,7 @@
 %%
 -module(xref_reader).
 
--export([module/4]).
+-export([module/5]).
 
 -import(lists, [keysearch/3, member/2, reverse/1]).
 
@@ -30,6 +30,7 @@
 	 el=[],
 	 ex=[],
 	 x=[],
+         df,
 	 builtins_too=false,
 	 funvars=[],          % records variables bound to funs
 			      % (for coping with list comprehension)
@@ -53,8 +54,9 @@
 %% -> {ok, Module, {DefAt, CallAt, LC, XC, X, Attrs}, Unresolved}} | EXIT
 %% Attrs = {ALC, AXC, Bad}
 %% ALC, AXC and Bad are extracted from the attribute 'xref'. An experiment.
-module(Module, Forms, CollectBuiltins, X) ->
-    S = #xrefr{module = Module, builtins_too = CollectBuiltins, x = X},
+module(Module, Forms, CollectBuiltins, X, DF) ->
+    S = #xrefr{module = Module, builtins_too = CollectBuiltins, 
+               x = X, df = DF},
     forms(Forms, S).
 
 forms([F | Fs], S) ->
@@ -63,10 +65,10 @@ forms([F | Fs], S) ->
 forms([], S) -> 
     #xrefr{module = M, def_at = DefAt, 
 	   l_call_at = LCallAt, x_call_at = XCallAt,
-	   el = LC, ex = XC, x = X, 
+	   el = LC, ex = XC, x = X, df = Depr,
 	   lattrs = AL, xattrs = AX, battrs = B, unresolved = U} = S,
-    Attrs = {AL, AX, B},
-    {ok, M, {DefAt, LCallAt, XCallAt, LC, XC, X, Attrs}, U}.
+    Attrs = {lists:reverse(AL), lists:reverse(AX), lists:reverse(B)},
+    {ok, M, {DefAt, LCallAt, XCallAt, LC, XC, X, Attrs, Depr}, U}.
 
 form({attribute, Line, xref, Calls}, S) -> % experimental
     #xrefr{module = M, function = Fun, 
@@ -168,6 +170,10 @@ expr({'receive', _Line, Cs, To, ToEs}, S) ->
     S1 = expr(To, S),
     S2 = expr_list(ToEs, S1),
     clauses(Cs, S2);
+expr({'try',_Line,Es,Scs,Ccs}, S) ->
+    S1 = expr_list(Es, S),
+    S2 = clauses(Scs, S1),
+    clauses(Ccs, S2);
 expr({'fun', Line, {function, Name, Arity}, _Extra}, S) ->
     %% Added in R8.
     handle_call(local, S#xrefr.module, Name, Arity, Line, S);

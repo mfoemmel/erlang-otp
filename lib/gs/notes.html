@@ -1,6 +1,6 @@
-<HTML>
-<HEAD>
-  <TITLE>GS Release Notes</TITLE>
+<html>
+<head>
+  <title>GS Release Notes</title>
   <style type="text/css">
 <!--
     body          { background: white; margin: 3em }
@@ -11,13 +11,55 @@
     p li          { font-family: Verdana, Arial, Helvetica, sans-serif }
 -->
   </style>
-</HEAD>
+</head>
 
-<BODY BGCOLOR="#FFFFFF">
+<body bgcolor=white>
 
-<CENTER><H1>GS Release Notes</H1></CENTER>
+<center><h1>GS Release Notes</h1></center>
 
-<h2>Gs 1.5.0</h2>
+
+<!--- ################################################################# --->
+
+<h2>GS 1.5.2</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    The GS font sizes have been adjusted so that they are more adequate
+    i.e. smaller, closer to earlier releases.<br>
+    (Own Id: OTP-4653)<br>
+    (Aux Id: seq7823, seq7828, seq7922)<p>
+  </li>
+
+</ul>
+
+
+<!--- ################################################################# --->
+
+<h2>GS 1.5.1</h2>
+
+<h3>Fixed errors and malfunctions</h3>
+<ul>
+  <li>
+    <p>The communication between Erlang and the external Tcl/Tk process was
+      improved.
+    <p>Compatibility problems with the Microsoft Windows version of
+      Tcl/Tk 8 and menu handling was solved.
+    <p>The grid handing code was corrected to avoid intermittent crashes.
+    <p><code>gs:info()</code> was changed not to crash when called with
+      the wrong argument.<br>
+      (Own Id: OTP-4522)
+  </li>
+</ul>
+
+<!--- ################################################################# --->
+
+<h2>GS 1.5.0</h2>
 
 
 <!--- ----------------------------------------------------------------- --->
@@ -34,19 +76,10 @@
 
 </ul>
 
-<h3>Improvements and new features</h3>
-
-<ul>
-
-  <li>
-    GS now uses Tcl/Tk 8.3 (Tcl/Tk 8.2 on Windows) for better look and feel.
-  </li>
-
-</ul>
 
 
-<P>There are also release notes for <A HREF="notes_history.html">older
-  versions</A>.</P>
+There are also release notes for
+<a href="notes_history.html">older versions</a>.
 
-</BODY>
-</HTML>
+</body>
+</html>

@@ -11,7 +11,7 @@ Register Usage
 
 %esp is the native code stack pointer, growing towards lower addresses.
 %ebp (aka P) is the current process' "Process*".
-%esi (aka HP) is the current process' heap pointer.
+%esi (aka HP) is the current process' heap pointer. (If HP_IN_ESI is true.)
 
 The caller-save registers are used as temporary scratch registers
 and for parameters in function calls.
@@ -22,7 +22,8 @@ the current "Process*" may be put in %fs instead, which will make
 
 Calling Convention
 ------------------
-The first 3 parameters are passed in %eax, %edx, and %ecx.
+The first NR_ARG_REGS (a tunable parameter between 0 and 5, inclusive)
+parameters are passed in %eax, %edx, %ecx, %ebx, and %edi.
 Remaining parameters are pushed on the stack, in left-to-right order.
 Left-to-right order is used to cater for the BEAM interpreter's
 calling convention for closures.
@@ -80,7 +81,7 @@ C BIFs are called on the C stack, not the current native stack.
 
 A C BIF returns a single tagged Erlang value. To indicate an
 exceptional condition, it puts an error code in p->freason
-and returns zero (THE_NON_VALUE).
+and returns THE_NON_VALUE (zero, except in debug mode).
 
 If p->freason == TRAP, then the BIF redirects its call to some
 other function, given by p->fvalue and p->def_arg_reg[].

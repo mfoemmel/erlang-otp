@@ -45,7 +45,7 @@ load_driver() ->
     receive
 	driver_ready ->
 	    ok;
-	Err={error,Reason} ->
+	Err={error,_Reason} ->
 	    Err;
 	Error ->
 	    {error,Error}
@@ -62,7 +62,7 @@ unload_driver() ->
 
 info(Module) ->
     case catch apply(Module,info,[]) of
-	{'EXIT',{undef,Reason}} ->
+	{'EXIT',{undef,_Reason}} ->
 	    {error,{asn1,{undef,Module,info}}};
 	Result ->
 	    {ok,Result}

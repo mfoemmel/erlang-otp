@@ -18,10 +18,10 @@
 
 
 #include "sys.h"
+#include "erl_alloc.h"
 #include "erl_driver.h"
+#define ERL_THREADS_EMU_INTERNAL__
 #include "erl_threads.h"
-
-#define MAX_SYS_MUTEX 10
 
 struct _thread_data
 {
@@ -42,6 +42,16 @@ erts_mutex_t erts_mutex_sys(int mno)
 int erts_atfork_sys(void (*prepare)(void),
 		    void (*parent)(void),
 		    void (*child)(void))
+{
+    return -1;
+}
+
+int erts_mutex_set_default_atfork(erts_mutex_t mtx)
+{
+    return -1;
+}
+
+int erts_mutex_unset_default_atfork(erts_mutex_t mtx)
 {
     return -1;
 }
@@ -116,4 +126,14 @@ int erts_thread_join(erts_thread_t tp, void** vp)
 int er_thread_kill(erts_thread_t tp)
 {
     return -1;
+}
+
+void
+erts_sys_threads_init(void)
+{
+    /* NOTE: erts_sys_threads_init() is called before allocators are
+     * initialized; therefore, it's not allowed to call erts_alloc()
+     * (and friends) from here.
+     */
+    
 }

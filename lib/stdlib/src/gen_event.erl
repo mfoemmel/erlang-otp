@@ -619,7 +619,7 @@ the_handlers(MSL) ->
 get_modules(MSL) ->
     Mods = lists:map(fun(Handler) -> Handler#handler.module end,
 		     MSL),
-    ordsets:set_to_list(ordsets:list_to_set(Mods)).
+    ordsets:to_list(ordsets:from_list(Mods)).
 
 %%-----------------------------------------------------------------
 %% Status information

@@ -41,10 +41,17 @@ open(Name, Mode) ->
 	    {error, {Name, Reason}}
     end.
 
-open1({binary, Bin}, read, _Raw, Opts) ->
-    case file:open(Bin, [ram, binary, read|Opts]) of
-	{ok, File} ->
-	    {ok, {read, File}};
+open1({binary,Bin}, read, _Raw, Opts0) ->
+    Opts = [Opt || Opt <- Opts0, Opt =/= compressed],
+    case file:open(Bin, [ram,binary,read|Opts]) of
+	{ok,File} ->
+	    case lists:member(compressed, Opts0) of
+		false ->
+		    ok;
+		true ->
+		    ram_file:uncompress(File)
+	    end,
+	    {ok,{read,File}};
 	Error ->
 	    Error
     end;
@@ -240,6 +247,8 @@ format_error(Term) ->
 -define(th_chksum, 148).
 -define(th_typeflag, 156).
 -define(th_linkname, 157).
+-define(th_magic, 257).
+-define(th_version, 263).
 -define(th_prefix, 345).
 
 %% Length of these fields.
@@ -252,6 +261,8 @@ format_error(Term) ->
 -define(th_mtime_len, 12).
 -define(th_chksum_len, 8).
 -define(th_linkname_len, 100).
+-define(th_magic_len, 6).
+-define(th_version_len, 2).
 -define(th_prefix_len, 167).
 
 -record(tar_header,
@@ -341,7 +352,9 @@ create_header(Name, #file_info {mode=Mode, uid=Uid, gid=Gid,
 	  <<"        ">>,
 	  file_type(Type),
 	  to_string(Linkname, ?th_linkname_len),
-	  zeroes(?th_prefix-?th_linkname-?th_linkname_len),
+	  "ustar",0,
+	  "00",
+	  zeroes(?th_prefix-?th_version-?th_version_len),
 	  to_string(Prefix, ?th_prefix_len)],
     H = list_to_binary(H0),
     512 = size(H),				%Assertion.
@@ -424,7 +437,7 @@ extract_opts([keep_old_files|Rest], Opts) ->
 extract_opts([{cwd, Cwd}|Rest], Opts) ->
     extract_opts(Rest, Opts#read_opts{cwd=Cwd});
 extract_opts([{files, Files}|Rest], Opts) ->
-    Set = ordsets:list_to_set(Files),
+    Set = ordsets:from_list(Files),
     extract_opts(Rest, Opts#read_opts{files=Set});
 extract_opts([compressed|Rest], Opts=#read_opts{open_mode=OpenMode}) ->
     extract_opts(Rest, Opts#read_opts{open_mode=[compressed|OpenMode]});
@@ -705,9 +718,12 @@ create_extracted_dir(Name, Opts) ->
 	{error,Reason} -> throw({error, Reason})
     end.
 
-create_symlink(Name, Header) ->
-    case file:make_symlink(Header#tar_header.linkname, Name) of
+create_symlink(Name, #tar_header{linkname=Linkname}=Header) ->
+    case file:make_symlink(Linkname, Name) of
 	ok -> ok;
+	{error,enoent} ->
+	    ok = make_dirs(Name, file),
+	    create_symlink(Name, Header);
 	{error,eexist} -> not_written;
 	{error,enotsup} -> not_written;
 	{error,Reason} -> throw({error, Reason})

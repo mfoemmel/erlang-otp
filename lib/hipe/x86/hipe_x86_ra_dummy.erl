@@ -12,8 +12,8 @@ ra(X86Defun, Coloring_fp, Options) ->
     #defun{code=Code0} = X86Defun,
     Code1 = do_insns(Code0),
     %% Record all pseudos as spilled.
-%%     ?add_spills(Options, hipe_gensym:get_var() -
-%% 		hipe_x86_registers:first_virtual()),
+    %%     ?add_spills(Options, hipe_gensym:get_var() -
+    %% 		hipe_x86_registers:first_virtual()),
     NofSpilledFloats = count_non_float_spills(Coloring_fp),
     NofFloats = length(Coloring_fp),
     ?add_spills(Options, hipe_gensym:get_var() -
@@ -54,10 +54,18 @@ do_insn(I) ->	% Insn -> Insn list
 	    do_lea(I);
 	#move{} ->
 	    do_move(I);
- 	#fmov{} ->
+ 	#movzx{} ->
+	    do_movx(I);
+	#movsx{} ->
+	    do_movx(I);
+	#fmov{} ->
  	    do_fmov(I);
- 	#fop{} ->
- 	    do_fop(I);
+% 	#fp_unop{} ->
+% 	    do_fp_unop(I);
+% 	#fp_binop{} ->
+% 	    do_fp_binop(I);
+	#shift{} ->
+	    do_shift(I);
 	_ ->
 	    %% comment, jmp*, label, pseudo_call, pseudo_jcc, pseudo_tailcall,
 	    %% pseudo_tailcall_prepare, push, ret
@@ -109,19 +117,58 @@ do_move(I) ->
     {FixSrc, Src, FixDst, Dst} = do_binary(Src0, Dst0),
     FixSrc ++ FixDst ++ [I#move{src=Src,dst=Dst}].
 
+do_movx(I) ->
+    {FixSrc, Src} =
+	case I of
+	    #movsx{src=Src0,dst=Dst0} ->
+		fix_src_operand(Src0);
+	    #movzx{src=Src0,dst=Dst0} ->
+		fix_src_operand(Src0)
+	end,
+    {FixDst, Dst} = fix_dst_operand(Dst0),
+    Reg = hipe_x86_registers:temp0(),
+    Dst2 = clone(Dst, Reg),
+    I2 =
+	case is_mem_opnd(Dst) of
+	    true ->
+		Reg = hipe_x86_registers:temp0(),
+		Dst2 = clone(Dst, Reg),
+		case I of
+		    #movsx{} ->
+			[hipe_x86:mk_movsx(Src, Dst2), hipe_x86:mk_move(Dst2, Dst)];
+		    #movzx{} ->
+			[hipe_x86:mk_movzx(Src, Dst2), hipe_x86:mk_move(Dst2, Dst)]
+		end;
+	    false ->
+		case I of
+		    #movsx{} ->
+			[hipe_x86:mk_movsx(Src, Dst)];
+		    #movzx{} ->
+			[hipe_x86:mk_movzx(Src, Dst)]
+		end
+	end,
+
+    FixSrc ++ FixDst ++ I2.
+
+
+
 %%% Fix a fmov op.
 
 do_fmov(I) ->
-  #fmov{src=Src0,dst=Dst0} = I,
-  {FixSrc, Src, FixDst, Dst} = do_binary(Src0, Dst0),
-  FixSrc ++ FixDst ++ [I#fmov{src=Src,dst=Dst}].
+    #fmov{src=Src0,dst=Dst0} = I,
+    {FixSrc, Src, FixDst, Dst} = do_binary(Src0, Dst0),
+    FixSrc ++ FixDst ++ [I#fmov{src=Src,dst=Dst}].
 
-%%% Fix a fop.
-
-do_fop(I) ->
-  #fop{src=Src0,dst=Dst0} = I,
-  {FixSrc, Src, FixDst, Dst} = do_binary(Src0, Dst0),
-  FixSrc ++ FixDst ++ [I#fop{src=Src,dst=Dst}].
+do_shift(I) ->
+    #shift{src=Src0,dst=Dst0} = I,
+    {FixDst, Dst} = fix_dst_operand(Dst0),
+    Reg = hipe_x86_registers:ecx(),
+    case Src0 of
+	#x86_imm{} ->
+	    FixDst ++ [I#shift{dst=Dst}];
+	#x86_temp{reg=Reg}  ->
+	    FixDst ++ [I#shift{dst=Dst}]
+    end.
 
 %%% Fix the operands of a binary op.
 %%% 1. remove pseudos from any explicit memory operands

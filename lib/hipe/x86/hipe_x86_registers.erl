@@ -15,7 +15,6 @@
 	 temp1/0,
 	 esp/0,
 	 proc_pointer/0,
-	 heap_pointer/0,
 	 heap_limit/0,
 	 fcalls/0,
 	 proc_offset/1,
@@ -32,6 +31,10 @@
 	 live_at_return/0]).
 
 -include("../rtl/hipe_literals.hrl").
+
+-ifdef(X86_HP_IN_ESI).
+-export([heap_pointer/0]).
+-endif.
 
 -define(EAX, 0).
 -define(ECX, 1).
@@ -52,11 +55,9 @@
 -define(ARG4, ?EDI).
 
 -define(TEMP0, ?EBX).	% XXX: was EAX
--define(TEMP1, ?EDI).	% XXX: was EDX
-
+-define(TEMP1, ?EDI).	% XXX: was EDX then EDI
 
 -define(PROC_POINTER, ?EBP).
--define(HEAP_POINTER, ?ESI).
 
 reg_name(R) ->
     case R of
@@ -96,8 +97,29 @@ temp1() -> ?TEMP1.
 esp() -> ?ESP.
 proc_pointer() -> ?PROC_POINTER.
 fcalls() -> ?FCALLS.
-heap_pointer() -> ?HEAP_POINTER.
 heap_limit() -> ?HEAP_LIMIT.
+
+-ifdef(X86_HP_IN_ESI).
+-define(ESI_IS_FIXED,1).
+-define(HEAP_POINTER, ?ESI).
+heap_pointer() -> ?HEAP_POINTER.
+is_heap_pointer(?HEAP_POINTER) -> true;
+is_heap_pointer(_) -> false.
+-define(LIST_HP_FIXED,[?HEAP_POINTER]).
+-define(LIST_HP_LIVE_AT_RETURN,[{?HEAP_POINTER,untagged}]).
+-else.
+is_heap_pointer(_) -> false.
+-define(LIST_HP_FIXED,[]).
+-define(LIST_HP_LIVE_AT_RETURN,[]).
+-endif.
+
+-ifdef(ESI_IS_FIXED).
+-define(LIST_ESI_ALLOCATABLE,[]).
+-define(LIST_ESI_CALL_CLOBBERED,[]).
+-else.
+-define(LIST_ESI_ALLOCATABLE,[?ESI]).
+-define(LIST_ESI_CALL_CLOBBERED,[{?ESI,tagged},{?ESI,untagged}]).
+-endif.
 
 proc_offset(?FCALLS) -> ?P_FCALLS;
 proc_offset(?HEAP_LIMIT) -> ?P_HP_LIMIT;
@@ -108,15 +130,15 @@ esp_limit_offset() -> ?P_NSP_LIMIT.
 is_fixed(?ESP) -> true;
 is_fixed(?PROC_POINTER) -> true;
 is_fixed(?FCALLS) -> true;
-is_fixed(?HEAP_POINTER) -> true;
 is_fixed(?HEAP_LIMIT) -> true;
-is_fixed(_) -> false.
+is_fixed(R) -> is_heap_pointer(R).
 
 fixed() ->
-    [?ESP, ?PROC_POINTER, ?FCALLS, ?HEAP_POINTER, ?HEAP_LIMIT].
+    [?ESP, ?PROC_POINTER, ?FCALLS, ?HEAP_LIMIT | ?LIST_HP_FIXED].
 
 allocatable() ->
-    [?EDX, ?ECX, ?EBX, ?EDI, ?EAX].
+    [?EDX, ?ECX, ?EBX, ?EAX, ?EDI| ?LIST_ESI_ALLOCATABLE].
+
 
 nr_args() -> ?X86_NR_ARG_REGS.
 
@@ -157,7 +179,8 @@ call_clobbered() ->
      {?EDX,tagged},{?EDX,untagged},
      {?ECX,tagged},{?ECX,untagged},
      {?EBX,tagged},{?EBX,untagged},
-     {?EDI,tagged},{?EDI,untagged}].
+     {?EDI,tagged},{?EDI,untagged}
+     | ?LIST_ESI_CALL_CLOBBERED].
 
 tailcall_clobbered() ->		% tailcall crapola needs two temps
     [{?TEMP0,tagged},{?TEMP0,untagged},
@@ -173,6 +196,6 @@ live_at_return() ->
      %% temps during regalloc, but regs FCALLS and HEAP_LIMIT
      %% don't even exist at regalloc.
      ,{?FCALLS,untagged}
-     ,{?HEAP_POINTER,untagged}
      ,{?HEAP_LIMIT,untagged}
+     | ?LIST_HP_LIVE_AT_RETURN
     ].

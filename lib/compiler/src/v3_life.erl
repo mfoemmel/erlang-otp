@@ -50,6 +50,7 @@
 -include("v3_kernel.hrl").
 -include("v3_life.hrl").
 
+%% These are not defined in v3_kernel.hrl.
 get_kanno(Kthing) -> element(2, Kthing).
 %%set_kanno(Kthing, Anno) -> setelement(2, Kthing, Anno).
 
@@ -193,28 +194,37 @@ guard_expr(G, I, Vdb) -> guard(G, I, Vdb).
 
 %% expr(Kexpr, I, Vdb) -> Expr.
 
-expr(#k_call{anno=A,op=#k_internal{}=Op,args=As,ret=Rs}, I, _Vdb) ->
-    internal_call(A, Op, As, Rs, I);
 expr(#k_call{anno=A,op=Op,args=As,ret=Rs}, I, _Vdb) ->
     #l{ke={call,call_op(Op),atomic_list(As),var_list(Rs)},i=I,a=A#k.a};
 expr(#k_enter{anno=A,op=Op,args=As}, I, _Vdb) ->
     #l{ke={enter,call_op(Op),atomic_list(As)},i=I,a=A#k.a};
-expr(#k_bif{anno=A,op=Op,args=As,ret=[]}, I, _Vdb) ->
-    case Op of
-	#k_internal{name=dsetelement,arity=3} -> ok;
-	_ ->
-	    ok = io:fwrite("v3_life:expr/3:~w - ~p~n", [?LINE,Op])
-    end,
-%     %% Must generate unique variable here.
-%     #l{ke={bif,bif_op(Op),atomic_list(As),[{var,I}]},i=I,a=A#k.a};
-    #l{ke={bif,bif_op(Op),atomic_list(As),[]},i=I,a=A#k.a};
 expr(#k_bif{anno=A,op=Op,args=As,ret=Rs}, I, _Vdb) ->
-    #l{ke={bif,bif_op(Op),atomic_list(As),var_list(Rs)},i=I,a=A#k.a};
+    Bif = k_bif(A, Op, As, Rs),
+    #l{ke=Bif,i=I,a=A#k.a};
 expr(#k_match{anno=A,body=Kb,ret=Rs}, I, Vdb) ->
     %% Work out imported variables which need to be locked.
     Mdb = vdb_sub(I, I+1, Vdb),
     M = match(Kb, A#k.us, I+1, Mdb),
     #l{ke={match,M,var_list(Rs)},i=I,vdb=use_vars(A#k.us, I+1, Mdb),a=A#k.a};
+expr(#k_try{anno=A,arg=Ka,vars=Vs,body=Kb,evars=Evs,handler=Kh,ret=Rs}, I, Vdb) ->
+    %% Lock variables that are alive before the catch and used afterwards.
+    %% Don't lock variables that are only used inside the try.
+    Tdb0 = vdb_sub(I, I+1, Vdb),
+    %% This is the tricky bit. Lock variables in Arg that are used in
+    %% the body and handler. Add try tag 'variable'.
+    Ab = get_kanno(Kb),
+    Ah = get_kanno(Kh),
+    Tdb1 = use_vars(Ab#k.us, I+3, use_vars(Ah#k.us, I+3, Tdb0)),
+    Tdb2 = vdb_sub(I, I+2, Tdb1),
+    Vnames = fun (Kvar) -> Kvar#k_var.name end,	%Get the variable names
+    {Aes,_,Adb} = body(Ka, I+2, add_var({try_tag,I+1}, I+1, 1000000, Tdb2)),
+    {Bes,_,Bdb} = body(Kb, I+4, new_vars(map(Vnames, Vs), I+3, Tdb2)),
+    {Hes,_,Hdb} = body(Kh, I+4, new_vars(map(Vnames, Evs), I+3, Tdb2)),
+    #l{ke={'try',#l{ke={block,Aes},i=I+1,vdb=Adb,a=[]},
+	   var_list(Vs),#l{ke={block,Bes},i=I+3,vdb=Bdb,a=[]},
+	   var_list(Evs),#l{ke={block,Hes},i=I+3,vdb=Hdb,a=[]},
+	   var_list(Rs)},
+       i=I,vdb=Tdb1,a=A#k.a};
 expr(#k_catch{anno=A,body=Kb,ret=[R]}, I, Vdb) ->
     %% Lock variables that are alive before the catch and used afterwards.
     %% Don't lock variables that are only used inside the catch.
@@ -252,21 +262,24 @@ call_op(#k_local{name=N}) -> N;
 call_op(#k_remote{mod=M,name=N}) -> {remote,atomic(M),atomic(N)};
 call_op(Other) -> variable(Other).
 
-bif_op(#k_internal{name=dsetelement,arity=3}) -> dsetelement;
-bif_op(#k_internal{name=make_fun}) -> make_fun;
-bif_op(#k_remote{mod=#k_atom{val=erlang},name=#k_atom{val=N}}) -> N.
+bif_op(#k_remote{mod=#k_atom{val=erlang},name=#k_atom{val=N}}) -> N;
+bif_op(#k_internal{name=N}) -> N.
 
 test_op(#k_remote{mod=#k_atom{val=erlang},name=#k_atom{val=N}}) -> N.
 
-%% internal_call(Anno, Op, [Arg], [Ret], I, Vdb) -> Expr.
-%%  Handling of internal calls, these are special.
+%% k_bif(Anno, Op, [Arg], [Ret]) -> Expr.
+%%  Build bifs, do special handling of internal some calls.
 
-internal_call(A, #k_internal{name=make_fun},
-	      [#k_atom{val=Fun},#k_int{val=Arity},
-	       #k_int{val=Index},#k_int{val=Uniq}|Free],
-	      Rs, I) ->
-    #l{ke={call,{make_fun,Fun,Arity,Index,Uniq},var_list(Free),var_list(Rs)},
-       i=I,a=A#k.a}.
+k_bif(_A, #k_internal{name=dsetelement,arity=3}, As, []) ->
+    {bif,dsetelement,atomic_list(As),[]};
+k_bif(_A, #k_internal{name=make_fun},
+      [#k_atom{val=Fun},#k_int{val=Arity},
+       #k_int{val=Index},#k_int{val=Uniq}|Free],
+      Rs) ->
+    {bif,{make_fun,Fun,Arity,Index,Uniq},var_list(Free),var_list(Rs)};
+k_bif(_A, Op, As, Rs) ->
+    %% The general case.
+    {bif,bif_op(Op),atomic_list(As),var_list(Rs)}.
 
 %% match(Kexpr, [LockVar], I, Vdb) -> Expr.
 %%  Convert match tree to old format.
@@ -333,7 +346,9 @@ match_fail(#k_tuple{es=[#k_atom{val=badmatch},Val]}, I, A) ->
 match_fail(#k_tuple{es=[#k_atom{val=case_clause},Val]}, I, A) ->
     #l{ke={match_fail,{case_clause,literal(Val)}},i=I,a=A};
 match_fail(#k_atom{val=if_clause}, I, A) ->
-    #l{ke={match_fail,if_clause},i=I,a=A}.
+    #l{ke={match_fail,if_clause},i=I,a=A};
+match_fail(#k_tuple{es=[#k_atom{val=try_clause},Val]}, I, A) ->
+    #l{ke={match_fail,{try_clause,literal(Val)}},i=I,a=A}.
 
 %% type(Ktype) -> Type.
 

@@ -182,7 +182,7 @@ handle_call(Request, _From, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
-handle_cast(Msg, State) ->
+handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %%----------------------------------------------------------------------
@@ -197,7 +197,7 @@ handle_info({Port,closed}, #state{port = Port} = State) ->
     {stop, port_closed, State#state{port=closed}};
 handle_info({'DOWN',Monitor,process,_,_}, #state{util = Utils} = State) ->
     {noreply, State#state{util = lists:keydelete(Monitor, 2, Utils)}};
-handle_info(Info, State) ->
+handle_info(_Info, State) ->
     {noreply, State}.
 
 %%----------------------------------------------------------------------
@@ -205,7 +205,7 @@ handle_info(Info, State) ->
 %% Purpose: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%%----------------------------------------------------------------------
@@ -238,7 +238,7 @@ get_int_measurement(Request, #state{os_type = {unix, linux}}) ->
     {ok,F} = file:open("/proc/loadavg",[read,raw]),
     {ok,D} = file:read(F,24),
     ok = file:close(F),
-    {ok,[Load1,Load5,Load15,PRun,PTotal],_} = io_lib:fread("~f ~f ~f ~d/~d", D),
+    {ok,[Load1,Load5,Load15,_PRun,PTotal],_} = io_lib:fread("~f ~f ~f ~d/~d", D),
     case Request of
 	?avg1  -> sunify(Load1);
 	?avg5  -> sunify(Load5);
@@ -285,7 +285,7 @@ get_int_measurement(Request, #state{os_type = {unix, darwin}}) ->
 	    {ok, [N], _} = io_lib:fread("~d", Ps),
 	    N-1
     end;
-get_int_measurement(Request, #state{os_type = OsType}) ->
+get_int_measurement(_Request, #state{os_type = OsType}) ->
     {error, {os_type_not_supported, OsType}}.
 
 sunify(Val)  ->
@@ -296,7 +296,7 @@ sunify(Val)  ->
 receive_int(Port) ->
     receive_int(Port, []).
 
-receive_int(Port, [D3,D2,D1,D0]) ->
+receive_int(_Port, [D3,D2,D1,D0]) ->
     ?INT32(D3,D2,D1,D0);
 receive_int(_, [_,_,_,_|Garbage]) ->
     {error, {garbage_from_port_program, Garbage}};
@@ -368,8 +368,8 @@ cpu_util_diff([#cpu_util{cpu = NC}|Ns],
 	      [#cpu_util{cpu = OC}|_] = Old,
 	      Acc) when NC > OC ->
     cpu_util_diff(Ns, Old, Acc);
-cpu_util_diff([], [#cpu_util{cpu = OC}|_] = Old, Acc) ->
-    cpu_util_diff([], Old, Acc).
+cpu_util_diff([], _Old, Acc) ->
+    cpu_util_diff([], [], Acc).
 
 
 cpu_util_rel(NewCpuUtils, OldCpuUtils, Detailed, PerCpu) ->
@@ -421,7 +421,7 @@ cpu_util_rel_det([#cpu_util{cpu      = Cpu,
 			    non_busy = NonBusy} | Rest],
 		 #cpu_util{cpu      = CpuAcc,
 			   busy     = BusyAcc,
-			   non_busy = NonBusyAcc} = Acc) ->
+			   non_busy = NonBusyAcc}) ->
     cpu_util_rel_det(Rest, #cpu_util{cpu      = [Cpu|CpuAcc],
 				     busy     = state_list_add(Busy,
 							       BusyAcc),

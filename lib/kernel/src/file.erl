@@ -40,7 +40,9 @@
 	 position/2, truncate/1, sync/1,
 	 copy/2, copy/3]).
 %% High level operations
--export([consult/1, path_consult/2, eval/1, path_eval/2, path_open/3]).
+-export([consult/1, path_consult/2]).
+-export([eval/1, eval/2, path_eval/2, path_eval/3, path_open/3]).
+-export([script/1, script/2, path_script/2, path_script/3]).
 -export([change_owner/2, change_owner/3, change_group/2,
 	 change_mode/2, change_time/2, change_time/3]).
 
@@ -50,6 +52,8 @@
 
 -export([file_info/1, raw_read_file_info/1, raw_write_file_info/2]).
 -export([rawopen/2]).
+
+-deprecated([{file_info,1}]).
 
 %% Internal export to prim_file and ram_file until they implement
 %% an efficient copy themselves.
@@ -235,9 +239,9 @@
 %%%-----------------------------------------------------------------
 %%% General functions
 
-format_error({Line, ?MODULE, Reason}) ->
+format_error({_Line, ?MODULE, Reason}) ->
     io_lib:format("~w", [Reason]);
-format_error({Line, Mod, Reason}) ->
+format_error({_Line, Mod, Reason}) ->
     Mod:format_error(Reason);
 format_error(ErrorId) ->
     erl_posix_msg:message(ErrorId).
@@ -479,8 +483,8 @@ close(_) ->
 
 read(File, Sz) when pid(File), integer(Sz), Sz >= 0 ->
     case io:get_chars(File, '', Sz) of
-	List when list(List) ->
-	    {ok, List};
+	Data when list(Data); binary(Data) ->
+	    {ok, Data};
 	Other ->
 	    Other
     end;
@@ -499,7 +503,7 @@ pread(#file_descriptor{module = Module} = Handle, L) when list(L) ->
 pread(_, _) ->
     {error, einval}.
 
-pread_int(File, [], R) ->
+pread_int(_File, [], R) ->
     {ok, lists:reverse(R)};
 pread_int(File, [{At, Sz} | T], R) when integer(Sz), Sz >= 0 ->
     case pread(File, At, Sz) of
@@ -541,7 +545,7 @@ pwrite(#file_descriptor{module = Module} = Handle, L) when list(L) ->
 pwrite(_, _) ->
     {error, einval}.
 
-pwrite_int(File, [], _R) ->
+pwrite_int(_File, [], _R) ->
     ok;
 pwrite_int(File, [{At, Bytes} | T], R) ->
     case pwrite(File, At, Bytes) of
@@ -813,23 +817,26 @@ consult(File) ->
     
 path_consult(Path, File) ->
     case path_open(Path, File, [read]) of
-	{ok,Fd,Full} ->
+	{ok, Fd, Full} ->
 	    case consult_stream(Fd) of
 		{ok, List} ->
 		    close(Fd),
 		    {ok, List, Full};
-		{error, E} ->
+		E1 ->
 		    close(Fd),
-		    {error, E}
+		    E1
 	    end;
-	Error ->
-	    Error
+	E2 ->
+	    E2
     end.
 
 eval(File) ->
+    eval(File, erl_eval:new_bindings()).
+
+eval(File, Bs) ->
     case open(File, [read]) of
-	{ok,Fd} ->
-	    R = eval_stream(Fd, erl_eval:new_bindings()),
+	{ok, Fd} ->
+	    R = eval_stream(Fd, ignore, Bs),
 	    close(Fd),
 	    R;
 	Error ->
@@ -837,19 +844,54 @@ eval(File) ->
     end.
 
 path_eval(Path, File) ->
+    path_eval(Path, File, erl_eval:new_bindings()).
+
+path_eval(Path, File, Bs) ->
     case path_open(Path, File, [read]) of
-	{ok,Fd,Full} ->
-	    case eval_stream(Fd, erl_eval:new_bindings()) of
+	{ok, Fd, Full} ->
+	    case eval_stream(Fd, ignore, Bs) of
 		ok ->
 		    close(Fd),
-		    {ok,Full};
-		{error,E} ->
+		    {ok, Full};
+		E1 ->
 		    close(Fd),
-		    {error,E}
+		    E1
 	    end;
+	E2 ->
+	    E2
+    end.
+
+script(File) ->
+    script(File, erl_eval:new_bindings()).
+
+script(File, Bs) ->
+    case open(File, [read]) of
+	{ok, Fd} ->
+	    R = eval_stream(Fd, return, Bs),
+	    close(Fd),
+	    R;
 	Error ->
 	    Error
     end.
+
+path_script(Path, File) ->
+    path_script(Path, File, erl_eval:new_bindings()).
+
+path_script(Path, File, Bs) ->
+    case path_open(Path, File, [read]) of
+	{ok,Fd,Full} ->
+	    case eval_stream(Fd, return, Bs) of
+		{ok,R} ->
+		    close(Fd),
+		    {ok, R, Full};
+		E1 ->
+		    close(Fd),
+		    E1
+	    end;
+	E2 ->
+	    E2
+    end.
+    
 
 %% path_open(Paths, Filename, Mode) ->
 %%	{ok,FileDescriptor,FullName}
@@ -905,7 +947,7 @@ change_time(Name, Atime, Mtime)
 
 consult_stream(Fd) ->
     case catch consult_stream(io:read(Fd, ''), Fd) of
-	{'EXIT', Reason} ->
+	{'EXIT', _Reason} ->
 	    {error, einval};
 	{error, Reason} ->
 	    {error, Reason};
@@ -915,31 +957,38 @@ consult_stream(Fd) ->
 
 consult_stream({ok,Term}, Fd) ->
     [Term|consult_stream(io:read(Fd, ''), Fd)];
-consult_stream({error,What}, Fd) ->
+consult_stream({error,What}, _Fd) ->
     throw({error, What});
-consult_stream(eof, Fd) ->
+consult_stream(eof, _Fd) ->
     [].
 
-eval_stream(Fd, Bs) ->
-    case eval_stream(Fd, [], Bs) of
-	[] -> ok;
-	[Error1 | _] -> {error,Error1}
-    end.
+eval_stream(Fd, Handling, Bs) ->
+    eval_stream(Fd, Handling, undefined, [], Bs).
 
-eval_stream(Fd, E, Bs) ->
-    eval_stream(io:parse_erl_exprs(Fd, ''), Fd, E, Bs).
+eval_stream(Fd, Handling, Last, E, Bs) ->
+    eval_stream(io:parse_erl_exprs(Fd, ''), Fd, Handling, Last, E, Bs).
 
-eval_stream({ok,Form,EndLine}, Fd, E, Bs0) ->
+
+eval_stream({ok,Form,EndLine}, Fd, Handling, Last, E, Bs0) ->
     case catch erl_eval:exprs(Form, Bs0) of
 	{value,V,Bs} ->
-	    eval_stream(Fd, E, Bs);
+	    eval_stream(Fd, Handling, {V}, E, Bs);
 	{'EXIT',Reason} ->
-	    eval_stream(Fd, [{EndLine,?MODULE,Reason}|E], Bs0)
+	    eval_stream(Fd, Handling, Last, [{EndLine,?MODULE,Reason}|E], Bs0)
     end;
-eval_stream({error,What,EndLine}, Fd, E, Bs) ->
-    eval_stream(Fd, [What | E], Bs);
-eval_stream({eof,EndLine}, Fd, E, Bs) ->
-    lists:reverse(E).
+eval_stream({error,What,_EndLine}, Fd, H, L, E, Bs) ->
+    eval_stream(Fd, H, L, [What | E], Bs);
+eval_stream({eof,_EndLine}, _Fd, H, Last, E, _Bs) ->
+    case {H, Last, E} of
+	{return, {Val}, []} ->
+	    {ok, Val};
+	{return, undefined, E} ->
+	    {error, hd(lists:reverse(E, [{error, undefined_script}]))};
+	{ignore, _, []} ->
+	    ok;
+	{_, _, [_|_] = E} ->
+	    {error, hd(lists:reverse(E))}
+    end.
 
 path_open_first([Path|Rest], Name, Mode, LastError) ->
     case file_name(Path) of

@@ -37,8 +37,8 @@
    -------------------------------------
 
    The requests from Erlang to C are byte lists composed as [CommandByte,
-   Bytes, StringTerminator] Note that the byte lists does not have to be flat
-   as the port will flatten them.
+   Bytes, StringTerminator] Note that the byte lists does not have to be
+   flat as the port will flatten them.
 
    CommandByte - constant between 0 and 255
    identifing the request defined in odbc_internal.hrl and odbcserver.h
@@ -104,7 +104,6 @@
 #endif
 
 #include "ei.h"
-#include "ei_x_encode.h"
 #include "odbcserver.h"
 
 /* ------------------- Global variabel definition ------------------------*/
@@ -127,7 +126,6 @@ pthread_cond_t EventRecived = PTHREAD_COND_INITIALIZER;
 /* ---------------- Main functions ---------------------------------------*/
 /* Main will have the role as supervisor or database_handler depending
    on os*/
-void main();  
 #ifdef MULTITHREAD_WIN32
 DWORD WINAPI supervisor(LPVOID n);
 #else
@@ -149,7 +147,8 @@ static DbResultMsg dbOpen(byte *connStrIn, DBState *state);
 static DbResultMsg dbExecExt(byte *sql, DBState *state);
 static DbResultMsg dbExecDir(byte *sql,DBState *state );
 static DbResultMsg deprecated_dbCloseConnection(DBState *state);
-static DbResultMsg deprecated_dbEndTran(byte compleationtype, DBState *state);
+static DbResultMsg deprecated_dbEndTran(byte compleationtype,
+					DBState *state);
 static DbResultMsg dbNumResultCols(DBState *state);
 static DbResultMsg dbRowCount(DBState *state);
 static DbResultMsg dbSetConnectAttr(byte *args, DBState *state);
@@ -183,7 +182,8 @@ static DbResultMsg encode_value_list_scroll(SQLSMALLINT NumColumn,
 					    DBState *state);
 static int encode_column(byte *buffer, int index, ColumnDef column,
 			 int column_nr, DBState *state);  
-static void encode_column_dyn(ColumnDef column, int column_nr, DBState *state);
+static void encode_column_dyn(ColumnDef column, int column_nr,
+			      DBState *state);
 static ColumnDef retrive_binary_data(ColumnDef column, int column_nr,
 				     DBState *state);
 static ColumnDef * alloc_column_buffer(int n);
@@ -221,7 +221,7 @@ static void printbuffer(char *buffer, int len);
 #ifdef MULTITHREAD_WIN32
 DWORD WINAPI supervisor(LPVOID n) {
 #else
-void main() {
+int main() {
 #endif  
   int msg_len;
     
@@ -254,7 +254,7 @@ void main() {
 
 
 #ifdef MULTITHREAD_WIN32
-void main() {
+int main() {
 #else
 void database_handler() { 
 #endif
@@ -276,10 +276,10 @@ void database_handler() {
     
     cmd  = request_buffer[0];
 
-    /* SQLDriverConnect has its own timout (SQL_ATTR_CONNECTION_TIMEOUT) set,
-       as some drivers can not handle that there is a another thread that
-       is blocking in a read operation in the same time as you try to connect.
-       Otherwise all timeout handling is done by erlang */
+    /* SQLDriverConnect has its own timout (SQL_ATTR_CONNECTION_TIMEOUT)
+       set, as some drivers can not handle that there is a another thread
+       that is blocking in a read operation in the same time as you try to
+       connect. Otherwise all timeout handling is done by erlang */
     if((cmd != OPEN_CONNECTION) && (cmd != OPEN_DB)) {
       signal_request_recived(); /* Wake up the supervisor */
     }
@@ -511,9 +511,13 @@ static DbResultMsg dbQuery(byte *sql, DBState *state) {
     exit_on_failure("SQLAllocHandle in dbQuery failed");
   
   result = SQLExecDirect(statement_handle(state), sql, SQL_NTS);
-  if (!sql_success(result)) {
+  
+   /* SQL_SUCCESS_WITH_INFO at this point indicates error in user input
+      OBS workaround until batched queries are properly implemented.*/
+  if (result != SQL_SUCCESS) {
     diagnos =  getDiagnos(SQL_HANDLE_STMT, statement_handle(state));
     msg = create_error_message(diagnos.error_msg);
+    clean_state(state);
     return msg;
   }
 
@@ -600,9 +604,12 @@ static DbResultMsg dbSelectCount(byte *sql, DBState *state) {
     
   result = SQLExecDirect(statement_handle(state), sql, SQL_NTS);
   
+  /* The workaround for batched queries will mess this case up! If you
+     but it is illogical to use batched queries here anyway */
   if(!sql_success(result)) {
-    diagnos =  getDiagnos(SQL_HANDLE_STMT, statement_handle(state));
+    diagnos = getDiagnos(SQL_HANDLE_STMT, statement_handle(state));
     DBG(("dbSelectCount -> Return error message %s\n", diagnos.error_msg));
+    clean_state(state);
     return create_error_message(diagnos.error_msg);
   }
   
@@ -805,39 +812,90 @@ static void exit_on_failure(char *error_msg, ...) {
 }
 
 /* read from stdin */ 
-static int read_exact(byte *buffer, int len) {
-  int i, got = 0;
+#ifdef MULTITHREAD_WIN32
 
-  do {
-    if ((i = read(0, buffer+got, len-got)) <= 0)
-      return(i);
-    got += i;
-  } while (got<len);
-  return len;
+ static int read_exact(byte *buff, int len)
+   {
+     HANDLE standard_input = GetStdHandle(STD_INPUT_HANDLE);
+     
+     unsigned read_result;
+     unsigned sofar = 0;
+     
+     if (!len) { /* Happens for "empty packages */
+       return 0;
+     }
+     for (;;) {
+       if (!ReadFile(standard_input, buff + sofar,
+		     len - sofar, &read_result, NULL)) {
+	 return -1; /* EOF */
+       }
+       if (!read_result) {
+	 return -2; /* Interrupted while reading? */
+       }
+       sofar += read_result;
+       if (sofar == len) {
+	  return len;
+       }
+     }
+   } 
+#elif MULTITHREAD_UNIX
+ 
+ static int read_exact(byte *buffer, int len) {
+   int i, got = 0;
+
+   do {
+     if ((i = read(0, buffer + got, len - got)) <= 0)
+       return(i);
+     got += i;
+   } while (got < len);
+   return len;
+   
+ }
+ 
+#endif
+
+ /* write to stdout */
+#ifdef MULTITHREAD_WIN32
+ static int write_exact(byte *buffer, int len)
+   {
+     HANDLE standard_output = GetStdHandle(STD_OUTPUT_HANDLE);   
+     unsigned written;
+    
+     if (!WriteFile(standard_output, buffer, len, &written, NULL)) {
+       return -1; /* Broken Pipe */
+     }
+     if (written < ((unsigned) len)) {
+       /* This should not happen, standard output is not blocking? */
+       return -2;
+     }
+
+    return (int) written;
 }
 
-/* write to stdout */
-static int write_exact(byte *buffer, int len) {
-  int i, wrote = 0;
-
-  do {
-    if ((i = write(1, buffer+wrote, len-wrote)) <= 0)
-      return i;
-    wrote += i;
-  } while (wrote<len);
-  return len;
-}
-
-/* Receive the length-header of a message and shift it into an integer so that
-   it gets the correct endian representation for the current architecture. */
+#elif MULTITHREAD_UNIX
+ static int write_exact(byte *buffer, int len) {
+   int i, wrote = 0;
+   
+   do {
+     if ((i = write(1, buffer + wrote, len - wrote)) <= 0)
+       return i;
+     wrote += i;
+   } while (wrote < len);
+   return len;
+ }
+#endif
+ 
+/* Receive the length-header of a message and shift it into an integer so
+   that it gets the correct endian representation for the current
+   architecture. */
 static int received_length() {
   int len, i;
   byte buffer[LENGTH_INDICATOR_SIZE];
-
+  
   DBG(("received_length -> Entered\n"));
   
   len = 0;
-  if(read_exact(buffer,LENGTH_INDICATOR_SIZE) != LENGTH_INDICATOR_SIZE)
+  if(read_exact(buffer, LENGTH_INDICATOR_SIZE) != LENGTH_INDICATOR_SIZE)
     {
       DBG(("received_length -> FOOBAR\n"));
       return(-1);

@@ -175,7 +175,7 @@ write_complex_tuple_args([], Indent) ->
 				   
 nl_indent(I) when I >= 0 ->
     ["\n"|indent(I)];
-nl_indent(I) ->
+nl_indent(_) ->
     [$\s].
 
 indent(I) when I >= 8 ->

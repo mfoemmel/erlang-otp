@@ -415,7 +415,7 @@ send_response_old(#mod{socket_type = Type,
 	{ok, Body} ->
 	    Header = 
 		httpd_util:header(StatusCode,Info#mod.connection) ++
-		"Content-Length:" ++ content_length(Body), 
+		"Content-Length:" ++ content_length(Body) ++ "\r\n", 
 	    httpd_socket:deliver(Type, Sock, [Header, Response]);
 
 	{error, Reason} ->

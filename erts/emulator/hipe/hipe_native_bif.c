@@ -11,8 +11,10 @@
 #include "error.h"
 #include "bif.h"
 #include "erl_bits.h"
+#include "erl_binary.h"
 #include "hipe_mode_switch.h"
 #include "hipe_native_bif.h"
+#include "hipe_bif0.h"
 #include "hipe_stack.h"
 
 /*
@@ -137,7 +139,7 @@ void hipe_next_msg(Process *p)
     SAVE_MESSAGE(p);
 }
 
-/* This is like the remove_message BEAM instruction 
+/* This is like the remove_message BEAM instruction
  */
 void hipe_select_msg(Process *p)
 {
@@ -163,28 +165,29 @@ void hipe_handle_exception(Process *c_p)
 {
     Eterm* hp;
     Eterm Value;
+    Uint r;
 
     ASSERT(c_p->freason != TRAP); /* Should have been handled earlier. */
     ASSERT(c_p->freason != RESCHEDULE); /* Should have been handled earlier. */
-    { Uint r = c_p->freason & EXF_INDEXBITS;
-      ASSERT(r < NUMBER_EXIT_CODES); /* range check */
-      if (r < NUMBER_EXIT_CODES) {
-          Value = error_atom[r];
-      } else {
-	  Value = am_internal_error;
-	  c_p->freason = EXC_INTERNAL_ERROR;
-      }
+    r = GET_EXC_INDEX(c_p->freason);
+    ASSERT(r < NUMBER_EXIT_CODES); /* range check */
+    if (r < NUMBER_EXIT_CODES) {
+	Value = error_atom[r];
+    } else {
+	Value = am_internal_error;
+	c_p->freason = EXC_INTERNAL_ERROR;
     }
 
-    switch (c_p->freason & EXF_INDEXBITS) {
-    case (EXC_EXIT & EXF_INDEXBITS):
+    r = c_p->freason;
+    switch (GET_EXC_INDEX(r)) {
+    case (GET_EXC_INDEX(EXC_PRIMARY)):
         /* Primary exceptions use fvalue directly */
         ASSERT(is_value(c_p->fvalue));
         Value = c_p->fvalue;
         break;
-    case (EXC_BADMATCH & EXF_INDEXBITS):
-    case (EXC_CASE_CLAUSE & EXF_INDEXBITS):
-    case (EXC_BADFUN & EXF_INDEXBITS):
+    case (GET_EXC_INDEX(EXC_BADMATCH)):
+    case (GET_EXC_INDEX(EXC_CASE_CLAUSE)):
+    case (GET_EXC_INDEX(EXC_BADFUN)):
 	ASSERT(is_value(c_p->fvalue));
 	hp = HAlloc(c_p, 3);
 	Value = TUPLE2(hp, Value, c_p->fvalue);
@@ -195,11 +198,19 @@ void hipe_handle_exception(Process *c_p)
 	break;
     }
 
-    c_p->freason &= EXF_PRIMARY;   /* index becomes zero */
+    r = PRIMARY_EXCEPTION(r);    /* make the exception stable */
+    c_p->freason = r;
     c_p->fvalue = Value;
 
     hipe_find_handler(c_p);
 }
+
+#if 0 /* commented out as it's currently unused */
+Eterm hipe_get_exit_tag(Process *c_p)
+{
+    return exception_tag[GET_EXC_CLASS(c_p->freason)];
+}
+#endif
 
 /*
  * Support for compiled binary syntax operations.
@@ -208,4 +219,49 @@ void hipe_handle_exception(Process *c_p)
 void *hipe_bs_get_matchbuffer(void)
 {
     return &erts_mb.orig;
+}
+
+char *hipe_bs_allocate(int len)
+{ 
+  Binary* bptr;
+  bptr = erts_bin_nrml_alloc(len);
+  bptr->flags = 0;
+  bptr->orig_size = len;
+  bptr->refc = 1;
+  return bptr->orig_bytes;
+}
+
+int hipe_bs_put_big_integer(Eterm arg, Uint num_bits, byte* base, unsigned offset, unsigned flags)
+{ 
+  byte* save_bin_buf;
+  unsigned save_bin_offset, save_bin_buf_len;
+  int res;
+  save_bin_buf=erts_bin_buf;
+  save_bin_offset=erts_bin_offset;
+  save_bin_buf_len=erts_bin_buf_len;
+  erts_bin_buf=base;
+  erts_bin_offset=offset;
+  erts_bin_buf_len=(offset+num_bits+7) >> 3;
+  res = erts_bs_put_integer(arg, num_bits, flags);
+  erts_bin_buf=save_bin_buf;
+  erts_bin_offset=save_bin_offset;
+  erts_bin_buf_len=save_bin_buf_len;
+  return res;
+}
+int hipe_bs_put_small_float(Eterm arg, Uint num_bits, byte* base, unsigned offset, unsigned flags)
+{ 
+  byte* save_bin_buf;
+  unsigned save_bin_offset, save_bin_buf_len;
+  int res;
+  save_bin_buf=erts_bin_buf;
+  save_bin_offset=erts_bin_offset;
+  save_bin_buf_len=erts_bin_buf_len;
+  erts_bin_buf=base;
+  erts_bin_offset=offset;
+  erts_bin_buf_len=(offset+num_bits+7) >> 3;
+  res = erts_bs_put_float(arg, num_bits, flags);
+  erts_bin_buf=save_bin_buf;
+  erts_bin_offset=save_bin_offset;
+  erts_bin_buf_len=save_bin_buf_len;
+  return res;
 }

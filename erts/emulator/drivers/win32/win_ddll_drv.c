@@ -20,8 +20,13 @@
  */
 #include <windows.h>
 
+#define GET_ERTS_ALC_TEST
 #include "sys.h"
+#include "erl_alloc.h"
 #include "erl_ddll.h"
+
+#include "erl_driver.h"
+#include "erl_win_dyn_driver.h"
 
 #define EXT_LEN          4
 #define FILE_EXT         ".dll"
@@ -36,6 +41,20 @@ static int dlopen_error;
 #define ERL_DLERR_BAD_VERSION   3
 
 #define APIINITSYM       "_ERL__DRIVER_INIT"
+
+static TWinDynDriverCallbacks wddc;
+static int wddc_initiated = 0;
+
+extern int null_func(void);
+
+void *win_get_ddll_init_param(void)
+{
+  if (!wddc_initiated) {
+    ERL_INIT_CALLBACK_STRUCTURE(wddc);
+      wddc_initiated++;
+  }
+  return (void *) &wddc;
+}
 
 /* 
  * Open a shared object

@@ -4,9 +4,9 @@
 %%  History  :	* 2000-10-30 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2002/10/01 12:47:16 $
-%%              $Revision: 1.21 $
+%%              $Author: pegu2945 $
+%%              $Date: 2002/11/05 12:22:43 $
+%%              $Revision: 1.22 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -103,6 +103,9 @@ resolve_load_address(Instr,Addr,Refs,MFA,Map,ConstMap)->
       closure ->
 	[{?PATCH_TYPE2EXT(load_address),
 		     Addr, {closure, Address}}];
+      c_const ->
+	[{?PATCH_TYPE2EXT(load_address),
+		     Addr, {c_const, Address}}];
       Type ->     
 	exit([{problem,{not_handled,{address,Type}}},{at,Instr}])
     end,

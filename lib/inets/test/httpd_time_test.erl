@@ -124,7 +124,7 @@ loop(Pollers, Timeout) ->
 	    d("loop -> collect poller statistics"),
 	    Stats = collect_poller_stat(Pollers, []),
 	    d("loop -> Stats: ~p", [Stats]),
-	    display_poller_stat(Stats),
+	    display_poller_stat(Stats, Timeout),
 	    ok
     end.
 
@@ -165,28 +165,27 @@ collect_poller_stat(Pollers, PollersStat) ->
     end.
 
 
-display_poller_stat(Stats) ->
-    display_poller_stat(Stats, 1, 0, 0).
+display_poller_stat(Stats, T) ->
+    display_poller_stat(Stats, 1, T, 0).
     
-display_poller_stat([], _, AccTime, AccCount) ->
+display_poller_stat([], _, TestTime, AccCount) ->
     io:format("Total statistics:~n"
-	      "   Accumulated time:    ~p seconds~n"
-	      "   Accumulated count:   ~p~n"
-	      "   Average access time: ~p milli sec~n", 
-	      [AccTime/(1000*1000), AccCount, (AccTime/AccCount)/1000]);
-display_poller_stat([#stat{res = ok} = Stat | Stats], N, AccTime, AccCount) ->
+	      "   Accumulated count:   ~w~n"
+	      "   Average access time: ~w milli sec~n", 
+	      [AccCount, (TestTime/AccCount)]);
+display_poller_stat([#stat{res = ok} = Stat | Stats], N, TestTime, AccCount) ->
     #stat{pid = Pid, time = Time, count = Count} = Stat,
     io:format("Statistics for poller ~p (~p):~n"
-	      "   time:                ~p seconds~n"
-	      "   count:               ~p~n"
-	      "   Average access time: ~p milli sec~n", 
-	      [Pid, N, Time/(1000*1000), Count, (Time/Count)/1000]),
-    display_poller_stat(Stats, N + 1, AccTime+Time, AccCount+Count);
-display_poller_stat([Stat | Stats], N, AccTime, AccCount) ->
+	      "   time:                ~w seconds~n"
+	      "   count:               ~w~n"
+	      "   Average access time: ~w milli sec~n", 
+	      [Pid, N, Time/(1000*1000), Count, (TestTime/Count)]),
+    display_poller_stat(Stats, N + 1, TestTime, AccCount+Count);
+display_poller_stat([Stat | Stats], N, TestTime, AccCount) ->
     #stat{pid = Pid, res = Error} = Stat,
     io:format("Statistics failed for poller ~p (~p):~n"
 	      "   ~p~n", [Pid, N, Error]),
-    display_poller_stat(Stats, N + 1, AccTime, AccCount).
+    display_poller_stat(Stats, N + 1, TestTime, AccCount).
     
     
     

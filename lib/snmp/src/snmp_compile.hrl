@@ -16,6 +16,13 @@
 %%     $Id$
 %%
 %% compilation information record
--record(cdata, {asn1_types = [], mes = [], traps = [], mibfuncs, sequences = [],
-		imported_macros = [], objectgroups = [],
-		notificationgroups = [], oid_ets}).
+-record(cdata, {asn1_types = [], 
+		mes = [], 
+		traps = [], 
+		mibfuncs, 
+		sequences = [],
+		imported_macros = [], 
+		objectgroups = [],
+		notificationgroups = [], 
+		oid_ets,
+		status_ets}).

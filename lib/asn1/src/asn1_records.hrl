@@ -70,13 +70,27 @@
 -record(state,{module,mname,type,tname,value,vname,erule,parameters=[],
 	       inputmodules,abscomppath=[],recordtopname=[],options}).
 
+%% state record used by backend at partial decode
+%% active is set to 'yes' when a partial decode function is generated.
+%% prefix is set to 'dec-inc-' or 'dec-partial-' is for
+%% incomplete partial decode or partial decode respectively
+%% inc_tag_pattern holds the tags of the significant types/components
+%% for incomplete partial decode.
+%% tag_pattern holds the tags for partial decode.
+%% inc_type_pattern and type_pattern holds the names of the 
+%% significant types/components.
+%% func_name holds the name of the function for the toptype.
+%% namelist holds the list of names of types/components that still
+%% haven't been generated.
+%% tobe_refed_funcs is a list of tuples {function names
+%% (Types),namelist of incomplete decode spec}, with function names
+%% that are referenced within other generated partial incomplete
+%% decode functions. They shall be generated as partial incomplete
+%% decode functions.
 
-
-
-
-
-
-
-
-
-
+%% gen_refed_funcs is as list of function names. Unlike
+%% tobe_refed_funcs these have been generated.
+-record(gen_state,{active=false,prefix,inc_tag_pattern,
+		  tag_pattern,inc_type_pattern,
+		  type_pattern,func_name,namelist,
+		  tobe_refed_funcs=[],gen_refed_funcs=[]}).

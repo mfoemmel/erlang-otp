@@ -16,7 +16,8 @@
 %%     $Id$
 %%
 -module(httpd_example).
--export([print/1,get/2,post/2,yahoo/2]).
+-export([print/1]).
+-export([get/2, post/2, yahoo/2, test1/2]).
 
 -export([newformat/3]).
 %% These are used by the inets test-suite
@@ -28,6 +29,20 @@ print(String) ->
    top("Print"),
    String++"\n",
    footer()].
+
+
+test1(Env, []) ->
+    io:format("Env:~p~n",[Env]),
+    ["<html>",
+     "<head>",
+     "<title>Test1</title>",
+     "</head>",
+     "<body>",
+     "<h1>Erlang Body</h1>",
+     "<h2>Stuff</h2>",
+     "</body>",
+     "</html>"].
+
 
 get(Env,[]) ->
   [header(),

@@ -272,21 +272,21 @@ load([$D,$i,$s,$k,$L,$o,$g,$F,$o,$r,$m,$a,$t,$ |Format],[]) ->
 %% store
 
 store({transfer_disk_log,TransferDiskLog},ConfigList) ->
-    case create_disk_log(TransferDiskLog,ConfigList) of
+    case create_disk_log(TransferDiskLog, transfer_disk_log_size, ConfigList) of
 	{ok,TransferDB} ->
 	    {ok,{transfer_disk_log,TransferDB}};
 	{error,Reason} ->
 	    {error,Reason}
     end;
 store({security_disk_log,SecurityDiskLog},ConfigList) ->
-    case create_disk_log(SecurityDiskLog,ConfigList) of
+    case create_disk_log(SecurityDiskLog, security_disk_log_size, ConfigList) of
 	{ok,SecurityDB} ->
 	    {ok,{security_disk_log,SecurityDB}};
 	{error,Reason} ->
 	    {error,Reason}
     end;
 store({error_disk_log,ErrorDiskLog},ConfigList) ->
-    case create_disk_log(ErrorDiskLog,ConfigList) of
+    case create_disk_log(ErrorDiskLog, error_disk_log_size, ConfigList) of
 	{ok,ErrorDB} ->
 	    {ok,{error_disk_log,ErrorDB}};
 	{error,Reason} ->
@@ -297,10 +297,12 @@ store({error_disk_log,ErrorDiskLog},ConfigList) ->
 %%----------------------------------------------------------------------
 %% Open or creates the disklogs 
 %%----------------------------------------------------------------------
-create_disk_log(LogFile,ConfigList) ->
+log_size(ConfigList, Tag) ->
+    httpd_util:key1search(ConfigList, Tag, {500*1024,8}).
+
+create_disk_log(LogFile, SizeTag, ConfigList) ->
     Filename = httpd_conf:clean(LogFile),
-    {MaxBytes, MaxFiles} =
-	httpd_util:key1search(ConfigList,transfer_disk_log_size,{500*1024,8}),
+    {MaxBytes, MaxFiles} = log_size(ConfigList, SizeTag),
     case filename:pathtype(Filename) of
 	absolute ->
 	    create_disk_log(Filename, MaxBytes, MaxFiles, ConfigList);
@@ -315,7 +317,7 @@ create_disk_log(LogFile,ConfigList) ->
 		ServerRoot ->
 		    AbsoluteFilename = filename:join(ServerRoot,Filename),
 		    create_disk_log(AbsoluteFilename, MaxBytes, MaxFiles,
-				    ConfigList)
+				     ConfigList)
 	    end
     end.
 

@@ -30,10 +30,10 @@ VSN=$(RUNTIME_TOOLS_VSN)
 # be set for that system only.
 # ----------------------------------------------------
 CC = @CC@
-CFLAGS = @DED_CFLAGS@
+CFLAGS = @DED_CFLAGS@ @THR_DEFS@
 LD = @DED_LD@
 SHELL = /bin/sh
-LIBS = @LIBS@
+LIBS = @LIBS@ @THR_LIBS@
 LDFLAGS = @DED_LDFLAGS@
 soname = @ded_soname@
 ERLANG_OSTYPE = @ERLANG_OSTYPE@
@@ -78,6 +78,7 @@ TRACE_FILE_DRV_OBJS = \
 
 ifeq ($(findstring win32,$(TARGET)), win32)
 SOLIBS = $(LIBDIR)/trace_ip_drv.dll $(LIBDIR)/trace_file_drv.dll
+LN=cp
 else
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 SOLIBS = $(LIBDIR)/trace_ip_drv.eld $(LIBDIR)/trace_file_drv.eld
@@ -89,12 +90,7 @@ endif
 # Targets
 # ----------------------------------------------------
 
-ifeq ($(findstring win32,$(TARGET)), win32)
-debug opt:
-	@echo Built native on Windows
-else
 debug opt: $(OBJDIR) $(BINDIR) $(SOLIBS)
-endif
 
 $(OBJDIR):
 	-@mkdir -p $(OBJDIR)
@@ -122,6 +118,12 @@ else
 	$(LD) $(LDFLAGS) -o $@ $^ -lc $(LIBS)
 endif
 
+$(LIBDIR)/trace_ip_drv.dll: $(TRACE_IP_DRV_OBJS)
+	$(INSTALL_DIR) $(LIBDIR)
+	$(LD) $(LDFLAGS) -o $@ $^ $(LIBS)
+$(LIBDIR)/trace_file_drv.dll: $(TRACE_FILE_DRV_OBJS)
+	$(INSTALL_DIR) $(LIBDIR)
+	$(LD) $(LDFLAGS) -o $@ $^ $(LIBS)
 #
 # VxWorks is simply to different from Unix in this sense.
 # Here are the inference rules for VxWorks

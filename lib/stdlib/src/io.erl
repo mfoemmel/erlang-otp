@@ -18,7 +18,8 @@
 -module(io).
 
 -export([put_chars/1,put_chars/2,nl/0,nl/1,
-	 get_chars/2,get_chars/3,get_line/1,get_line/2]).
+	 get_chars/2,get_chars/3,get_line/1,get_line/2,
+	 setopts/1, setopts/2]).
 -export([write/1,write/2,read/1,read/2]).
 -export([fwrite/1,fwrite/2,fwrite/3,fread/2,fread/3,
 	 format/1,format/2,format/3]).
@@ -32,6 +33,9 @@
 -export([parse_exprs/2]).
 -export([scan_erl_seq/1,scan_erl_seq/2,scan_erl_seq/3,
 	 parse_erl_seq/1,parse_erl_seq/2, parse_erl_seq/3]).
+-deprecated([{parse_exprs,2},{scan_erl_seq,1},{scan_erl_seq,2},
+             {scan_erl_seq,3},{parse_erl_seq,1},{parse_erl_seq,2},
+             {parse_erl_seq,3}]).
 	 
 %%  These calls are here for backwards compatibility (BC sucks!).
 
@@ -103,6 +107,12 @@ get_line(Prompt) ->
 get_line(Io, Prompt) ->
     request(Io, {get_line,Prompt}).
 
+setopts(Opts) ->
+    setopts(default_input(), Opts).
+
+setopts(Io, Opts) ->
+    request(Io, {setopts, Opts}).
+
 %% Writing and reading Erlang terms.
 
 write(Term) ->
@@ -132,7 +142,7 @@ read(Io, Prompt) ->
 
 conv_reason(_, arguments) -> badarg;
 conv_reason(_, terminated) -> ebadf;
-conv_reason(_, Reason) -> Reason.
+conv_reason(_, _Reason) -> badarg.
 
 fwrite(Format) ->
     format(Format).
@@ -228,7 +238,7 @@ request(standard_io, Request) ->
     request(group_leader(), Request);
 request(Pid, Request) when pid(Pid) ->
     Mref = erlang:monitor(process,Pid),
-    Pid ! {io_request,self(),Pid,io_request(Request)},
+    Pid ! {io_request,self(),Pid,io_request(Pid, Request)},
     wait_io_mon_reply(Pid,Mref);
 request(Name, Request) when atom(Name) ->
     case whereis(Name) of
@@ -241,9 +251,18 @@ request(Name, Request) when atom(Name) ->
 requests(Requests) ->				%Requests as atomic action
     requests(default_output(), Requests).
 
-requests(Io, Requests) ->                       %Requests as atomic action
-    request(Io, {requests,io_requests(Requests)}).
-    
+requests(standard_io, Requests) ->              %Requests as atomic action
+    requests(group_leader(), Requests);
+requests(Pid, Requests) when pid(Pid) ->
+    request(Pid, {requests,io_requests(Pid, Requests)});
+requests(Name, Requests) when atom(Name) ->
+    case whereis(Name) of
+	undefined ->
+	    {error, arguments};
+	Pid ->
+	    requests(Pid, Requests)
+    end.
+
 
 default_input() ->
     group_leader().
@@ -281,31 +300,45 @@ wait_io_mon_reply(From, Mref) ->
 %%  one we KNOW must be changed, others, including incorrect ones, are
 %%  passed straight through. Perform a flatten on the request list.
 
-io_requests(Rs) ->
-    io_requests(Rs, [], []).
+io_requests(Pid, Rs) ->
+    io_requests(Pid, Rs, [], []).
 
-io_requests([{requests,Rs1}|Rs], Cont, Tail) ->
-    io_requests(Rs1, [Rs|Cont], Tail);
-io_requests([R|Rs], Cont, Tail) ->
-    [io_request(R)|io_requests(Rs, Cont, Tail)];
-io_requests([], [Rs|Cont], Tail) ->
-    io_requests(Rs, Cont, Tail);
-io_requests([], [], _Tail) -> [].
+io_requests(Pid, [{requests,Rs1}|Rs], Cont, Tail) ->
+    io_requests(Pid, Rs1, [Rs|Cont], Tail);
+io_requests(Pid, [R|Rs], Cont, Tail) ->
+    [io_request(Pid, R)|io_requests(Pid, Rs, Cont, Tail)];
+io_requests(Pid, [], [Rs|Cont], Tail) ->
+    io_requests(Pid, Rs, Cont, Tail);
+io_requests(_Pid, [], [], _Tail) -> 
+    [].
 
-io_request({write,Term}) ->
+io_request(_Pid, {write,Term}) ->
     {put_chars,io_lib,write,[Term]};
-io_request({format,Format,Args}) ->
+io_request(_Pid, {format,Format,Args}) ->
     {put_chars,io_lib,format,[Format,Args]};
-io_request({fwrite,Format,Args}) ->
+io_request(_Pid, {fwrite,Format,Args}) ->
     {put_chars,io_lib,fwrite,[Format,Args]};
-io_request(nl) ->
+io_request(_Pid, nl) ->
     {put_chars,io_lib:nl()};
-io_request({get_chars,Prompt,N}) ->
+io_request(Pid, {put_chars,Chars}=Request0) 
+  when list(Chars), node(Pid) == node() ->
+    %% Convert to binary data if the I/O server is guaranteed to be new
+    Request =
+	case catch list_to_binary(Chars) of
+	    Binary when binary(Binary) ->
+		{put_chars,Binary};
+	    _ ->
+		Request0
+	end,
+    Request;
+io_request(Pid, {get_chars,Prompt,N}) when node(Pid) /= node() ->
+    %% Do not send new I/O request to possibly old I/O server
     {get_until,Prompt,io_lib,collect_chars,[N]};
-io_request({get_line,Prompt}) ->
+io_request(Pid, {get_line,Prompt}) when node(Pid) /= node() ->
+    %% Do not send new I/O request to possibly old I/O server
     {get_until,Prompt,io_lib,collect_line,[]};
-io_request({fread,Prompt,Format}) ->
+io_request(_Pid, {fread,Prompt,Format}) ->
     {get_until,Prompt,io_lib,fread,[Format]};
-io_request(R) ->				%Pass this straight through
+io_request(_Pid, R) ->				%Pass this straight through
     R.
 

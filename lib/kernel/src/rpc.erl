@@ -42,6 +42,7 @@
 	 multi_server_call/3,
 	 multicall/3,
 	 multicall/4,
+	 multicall/5,
 	 safe_multi_server_call/2,
 	 safe_multi_server_call/3,
 	 async_call/4,
@@ -66,74 +67,81 @@ stop(Rpc) ->
 
 init([]) ->
     process_flag(trap_exit,true),
-    {ok,[]}.
+    {ok,gb_trees:empty()}.
 
-handle_call(In, To, S) ->
-    case In of
-	{call, Mod, Fun, Args, Gleader} ->
-	    spawn(
-	      %% in case some sucker rex'es something that hangs,
-	      %% this will be a hanging orphan
-	      fun() ->
-		      process_flag(trap_exit, true),
-		      Ref = make_ref(),
-		      Pid1 = self(),
-		      %% in case some sucker rex'es something that 
-		      %% gets itself killed
-		      Pid2 = 
-			  spawn_link(
-			    fun() ->
-				    set_group_leader(Gleader),
-				    Reply = 
-					%% in case some sucker rex'es 
-					%% something that throws
-					case catch apply(Mod, Fun, Args) of
-					    {'EXIT', _} = Exit ->
-						{badrpc, Exit};
-					    Result ->
-						Result
-					end,
-				    Pid1 ! {reply, Ref, Reply}
-			    end),
-		      receive
-			  {reply, Ref, Reply} ->
-			      gen_server:reply(To, Reply);
-			  {'EXIT', Pid2, R} ->
-			      gen_server:reply(To, {badrpc, {'EXIT', R}})
-		      end
-	      end),
-	    {noreply,S};
-	{block_call, Mod, Fun, Args, Gleader} ->
-	    MyGL = group_leader(),
-	    set_group_leader(Gleader),
-	    Reply = 
-		case catch apply(Mod,Fun,Args) of
-		    {'EXIT', _} = Exit ->
-			{badrpc, Exit};
-		    Other ->
-			Other
-		end,
-	    group_leader(MyGL, self()), % restore
-	    {reply, Reply, S};
-	stop ->
-	    {stop, normal, stopped, S};
-	_ ->
-	    {noreply, S}  % Ignore !
-    end.
+handle_call({call, Mod, Fun, Args, Gleader}, To, S) ->
+    RpcServer = self(),
+    Caller =
+	%% Spawn not to block the rpc server
+	spawn(
+	  fun () ->
+		  set_group_leader(Gleader),
+		  Reply = 
+		      %% in case some sucker rex'es 
+		      %% something that throws
+		      case catch apply(Mod, Fun, Args) of
+			  {'EXIT', _} = Exit ->
+			      {badrpc, Exit};
+			  Result ->
+			      Result
+		      end,
+		  RpcServer ! {self(), {reply, Reply}}
+	  end),
+    erlang:monitor(process, Caller),
+    {noreply, gb_trees:insert(Caller, To, S)};
+handle_call({block_call, Mod, Fun, Args, Gleader}, _To, S) ->
+    MyGL = group_leader(),
+    set_group_leader(Gleader),
+    Reply = 
+	case catch apply(Mod,Fun,Args) of
+	    {'EXIT', _} = Exit ->
+		{badrpc, Exit};
+	    Other ->
+		Other
+	end,
+    group_leader(MyGL, self()), % restore
+    {reply, Reply, S};
+handle_call(stop, _To, S) ->
+    {stop, normal, stopped, S};
+handle_call(_, _To, S) ->
+    {noreply, S}.  % Ignore !
 
-handle_cast(In,S) ->
-    case In of
-	{cast, Mod, Fun, Args, Gleader} ->
+
+
+handle_cast({cast, Mod, Fun, Args, Gleader}, S) ->
 	    spawn(
 	      fun() ->
 		      set_group_leader(Gleader),
 		      apply(Mod, Fun, Args)
 	      end),
 	    {noreply, S};
-	_ ->
-	    {noreply, S}  % Ignore !
-    end.
+handle_cast(_, S) ->
+    {noreply, S}.  % Ignore !
 
+handle_info({'DOWN', _, process, Caller, Reason}, S) ->
+    case gb_trees:lookup(Caller, S) of
+	{value, To} ->
+	    receive
+		{Caller, {reply, Reply}} ->
+		    gen_server:reply(To, Reply)
+	    after 0 ->
+		    gen_server:reply(To, {badrpc, {'EXIT', Reason}})
+	    end,
+	    {noreply, gb_trees:delete(Caller, S)};
+	none ->
+	    {noreply, S}
+    end;
+handle_info({Caller, {reply, Reply}}, S) ->
+    case gb_trees:lookup(Caller, S) of
+	{value, To} ->
+	    receive
+		{'DOWN', _, process, Caller, _} -> 
+		    gen_server:reply(To, Reply),
+		    {noreply, gb_trees:delete(Caller, S)}
+	    end;
+	none ->
+	    {noreply, S}
+    end;
 handle_info({From, {sbcast, Name, Msg}}, S) ->
     case catch Name ! Msg of  %% use catch to get the printout
 	{'EXIT', _} ->
@@ -157,7 +165,7 @@ handle_info({From, {call,Mod,Fun,Args,Gleader}}, S) ->
 handle_info(_, S) ->
     {noreply,S}.
 
-terminate(_,_) ->
+terminate(_,_S) ->
     ok.
 
 code_change(_, S, _) ->
@@ -180,7 +188,7 @@ set_group_leader(user) ->
 
 call(N,M,F,A) when node() == N ->  %% Optimize local call
     case V = (catch apply(M,F,A)) of
-	{'EXIT', R} -> {badrpc, V};
+	{'EXIT', _} -> {badrpc, V};
 	Other -> Other
     end;
 call(N,M,F,A) ->
@@ -190,7 +198,7 @@ call(N,M,F,A) ->
 
 block_call(N,M,F,A) when node() == N -> %% Optimize local call
     case V = (catch apply(M,F,A)) of
-	{'EXIT', R} -> {badrpc, V};
+	{'EXIT', _} -> {badrpc, V};
 	Other -> Other
     end;
 block_call(N,M,F,A) ->
@@ -294,8 +302,8 @@ send_nodes([Node|Tail], Name, Msg, Monitors)
     %% Handle non-existing names in rec_nodes.
     catch {Name, Node} ! {self(), Msg},
     send_nodes(Tail, Name, Msg, [Monitor | Monitors]);
-send_nodes([Node|Tail], Name, Msg, Monitors) ->
-    %% Skip non-atom Node
+send_nodes([_Node|Tail], Name, Msg, Monitors) ->
+    %% Skip non-atom _Node
     send_nodes(Tail, Name, Msg, Monitors);
 send_nodes([], _Name,  _Req, Monitors) -> 
     Monitors.
@@ -331,12 +339,25 @@ unmonitor(Ref) when reference(Ref) ->
 
 
 %% Call apply(M,F,A) on all nodes in parallel
-multicall(M,F,A) -> 
-    multicall([node() | nodes()], M,F,A).
+multicall(M, F, A) -> 
+    multicall(M, F, A, infinity).
 
-multicall(Nodes,M,F,A) ->
-    {Rep,Bad} = gen_server:multi_call(Nodes, ?NAME,
-				      {call, M,F,A, group_leader()}),
+multicall(Nodes, M, F, A) when list(Nodes) ->
+    multicall(Nodes, M, F, A, infinity);
+multicall(M, F, A, Timeout) ->
+    multicall([node() | nodes()], M, F, A, Timeout).
+
+multicall(Nodes, M, F, A, infinity)
+  when list(Nodes), atom(M), atom(F), list(A) ->
+    do_multicall(Nodes, M, F, A, infinity);
+multicall(Nodes, M, F, A, Timeout) 
+  when list(Nodes), atom(M), atom(F), list(A), integer(Timeout), Timeout >= 0 ->
+    do_multicall(Nodes, M, F, A, Timeout).
+
+do_multicall(Nodes, M, F, A, Timeout) ->
+    {Rep,Bad} = gen_server:multi_call(Nodes, ?NAME, 
+				      {call, M,F,A, group_leader()}, 
+				      Timeout),
     {lists:map(fun({_,R}) -> R end, Rep), Bad}.
 
 
@@ -378,14 +399,14 @@ rec_nodes(Name, Nodes) ->
     rec_nodes(Name, Nodes, [],[]).
 
 
-rec_nodes(Name, [],  Badnodes, Replies) ->
+rec_nodes(_Name, [],  Badnodes, Replies) ->
     {Replies, Badnodes};
 
 rec_nodes(Name, [{N,R} | Tail], Badnodes, Replies) ->
     receive
 	{'DOWN', R, _, _, _} ->
 	    rec_nodes(Name, Tail, [N|Badnodes], Replies);
-	{?NAME, N, {nonexisting_name, Name2}} ->  
+	{?NAME, N, {nonexisting_name, _}} ->  
 	    %% used by safe_multi_server_call(),sbcast()
 	    unmonitor(R),
 	    rec_nodes(Name, Tail, [N|Badnodes], Replies);
@@ -398,7 +419,7 @@ rec_nodes(Name, [N|Tail], Badnodes, Replies) ->
 	{nodedown, N} ->
 	    monitor_node(N, false),
 	    rec_nodes(Name, Tail, [N|Badnodes], Replies);
-	{?NAME, N, {nonexisting_name, Name2}} ->  
+	{?NAME, N, {nonexisting_name, _}} ->  
 	    %% used by safe_multi_server_call(),sbcast()
 	    monitor_node(N, false),
 	    rec_nodes(Name, Tail, [N|Badnodes], Replies);
@@ -473,7 +494,7 @@ build_args(M,F, As, [Arg|Tail], Ack) ->
 build_args(_,_, _, [], Ack) -> Ack.
 
 %% If one single call fails, we fail the whole computation
-check([{badrpc, _} |Tail], _) -> exit(badrpc);
+check([{badrpc, _}|_], _) -> exit(badrpc);
 check([X|T], Ack) -> check(T, [X|Ack]);
 check([], Ack) -> Ack.
 

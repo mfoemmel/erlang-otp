@@ -15,12 +15,13 @@
 %% 
 %%     $Id$
 %%
-%% Purpose : Partions assembly instructions into basic blocks and
+%% Purpose : Partitions assembly instructions into basic blocks and
 %% optimizes them.
 
 -module(beam_block).
 
 -export([module/2]).
+-export([is_killed/2]).				%Used by beam_dead.
 -export([merge_blocks/2]).			%Used by beam_jump.
 -import(lists, [map/2,mapfoldr/3,reverse/1,reverse/2,foldl/3,member/2,sort/1]).
 -define(MAXREG, 1024).
@@ -36,16 +37,16 @@ function({function,Name,Arity,CLabel,Asm0}) ->
 block([{allocate_zero,Ns,R},{test_heap,Nh,R}|Is], Block, All) ->
     block(Is, [{allocate,R,{no_opt,Ns,Nh,[]}}|Block], All);
 block([{bif,size,Fail,[Tuple],Tmp},
-       {test,is_eq,Fail,[Tmp,{integer,Size}]},
+       {test,is_eq_exact,Fail,[Tmp,{integer,Size}]},
        {bif,element,Fail,[{integer,1},Tuple],Tmp},
-       {test,is_eq,Fail,[Tmp,RecordTag]}|Is], Block, All) ->
+       {test,is_eq_exact,Fail,[Tmp,RecordTag]}|Is], Block, All) ->
     %% XXX This kind of optimisation should be done at a higher level.
     %% The record guard test should be moved into the head before
     %% pattern matching compilation.
     block([{test,is_tuple,Fail,[Tuple]},
 	   {test,test_arity,Fail,[Tuple,Size]},
 	   {get_tuple_element,Tuple,0,Tmp},
-	   {test,is_eq,Fail,[Tmp,RecordTag]}|Is], Block, All);
+	   {test,is_eq_exact,Fail,[Tmp,RecordTag]}|Is], Block, All);
 block([{loop_rec,{f,Fail},{x,0}},{loop_rec_end,_Lbl},{label,Fail}|Is], Block, All) ->
     block(Is, Block, All);
 block([I|Is], Block, All) ->
@@ -126,8 +127,17 @@ combine_alloc({_,Ns,Nh1,Init}, {_,nostack,Nh2,[]}) ->
 merge_blocks([{allocate,R,{Attr,Ns,Nh1,Init}}|B1],
 	     [{allocate,_,{_,nostack,Nh2,[]}}|B2]) ->
     Alloc = {allocate,R,{Attr,Ns,Nh1+Nh2,Init}},
-    [Alloc|opt(B1++B2)];
-merge_blocks(B1, B2) -> opt(B1++B2).
+    [Alloc|merge_blocks_1(B1, B2)];
+merge_blocks(B1, B2) -> merge_blocks_1(B1, B2).
+
+merge_blocks_1([{set,[D],_,move}=I|Is], Tail) ->
+    case is_killed(D, Is) orelse is_killed(D, Tail) of
+	true -> merge_blocks_1(Is, Tail);
+	false -> [I|merge_blocks_1(Is, Tail)]
+    end;
+merge_blocks_1([I|Is], Tail) ->
+    [I|merge_blocks_1(Is, Tail)];
+merge_blocks_1([], Tail) -> Tail.
 
 opt([{set,[X],[X],move}|Is]) -> opt(Is);
 opt([{set,[D1],[{integer,Idx1},Reg],{bif,element,{f,0}}}=I1,
@@ -135,8 +145,8 @@ opt([{set,[D1],[{integer,Idx1},Reg],{bif,element,{f,0}}}=I1,
   when Idx1 < Idx2, D1 =/= D2, D1 =/= Reg, D2 =/= Reg ->
     opt([I2,I1|Is]);
 opt([{set,Ds0,Ss,Op}|Is0]) ->	
-    {Ds1,Is1} =  opt_moves(Ds0, Is0),
-    [{set,Ds1,Ss,Op}|opt(Is1)];
+    {Ds,Is} =  opt_moves(Ds0, Is0),
+    [{set,Ds,Ss,Op}|opt(Is)];
 opt([I|Is]) -> [I|opt(Is)];
 opt([]) -> [].
 
@@ -169,7 +179,6 @@ opt_move(R, [I|Is0]) ->
     end;
 opt_move(R, []) -> {R,[]}.
 
-
 is_transparent(R, {set,Ds,Ss,_Op}) ->
     case member(R, Ds) of
 	true -> false;
@@ -181,6 +190,7 @@ is_killed(R, [{set,Ds,Ss,_Op}|Is]) ->
     not member(R, Ss) andalso (member(R, Ds) orelse is_killed(R, Is));
 is_killed({x,R}, [{'%live',Live}|_]) when R >= Live -> true;
 is_killed({x,R}, [{'%live',_}|Is]) -> is_killed(R, Is);
+is_killed({x,R}, [{allocate,Live,_}|_]) when R >= Live -> true;
 is_killed(_, _) -> false.
 
 %% opt_alloc(Instructions) -> Instructions'

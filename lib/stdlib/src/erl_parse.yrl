@@ -145,7 +145,7 @@ expr_max -> if_expr : '$1'.
 expr_max -> case_expr : '$1'.
 expr_max -> receive_expr : '$1'.
 expr_max -> fun_expr : '$1'.
-expr_max -> try_expr : '$1'.
+%%expr_max -> try_expr : '$1'.
 expr_max -> query_expr : '$1'.
 
 
@@ -268,10 +268,10 @@ fun_clause -> argument_list clause_guard clause_body :
 	{Args,Pos} = '$1',
 	{clause,Pos,'fun',Args,'$2','$3'}.
 
+try_expr -> 'try' exprs 'of' cr_clauses 'catch' cr_clauses 'end' :
+	{'try',line('$1'),'$2','$4','$6'}.
 try_expr -> 'try' exprs 'catch' cr_clauses 'end' :
-	{'try',line('$1'),'$2','$4'}.
-try_expr -> 'try' exprs 'end' :
-	{'try',line('$1'),'$2',[]}.
+	{'try',line('$1'),'$2',[],'$4'}.
 
 query_expr -> 'query' list_comprehension 'end' :
 	{'query',line('$1'),'$2'}.
@@ -372,7 +372,10 @@ Erlang code.
 -export([abstract/2, package_segments/1]).
 -export([inop_prec/1,preop_prec/1,func_prec/0,max_prec/0]).
 
--compile(inline).
+%% The following directive is needed for (significantly) faster compilation
+%% of the generated .erl file by the HiPE compiler.  Please do not remove.
+-compile([inline,{hipe,[{regalloc,linear_scan}]}]).
+
 
 %% mkop(Op, Arg) -> {op,Line,Op,Arg}.
 %% mkop(Left, Op, Right) -> {op,Line,Op,Left,Right}.
@@ -507,15 +510,15 @@ term(Expr) ->
     end.
 
 package_segments(Name) ->
-    package_segments(Name, []).
+    package_segments(Name, [], []).
 
-package_segments({record_field,_,F1,F2}, Fs) ->
-    package_segments(F1, [F2 | Fs]);
-package_segments({atom,La,A}, [F | Fs]) ->
-    [A | package_segments(F, Fs)];
-package_segments({atom,La,A}, []) ->
-    [A];
-package_segments(_, _) ->
+package_segments({record_field, _, F1, F2}, Fs, As) ->
+    package_segments(F1, [F2 | Fs], As);
+package_segments({atom, _, A}, [F | Fs], As) ->
+    package_segments(F, Fs, [A | As]);
+package_segments({atom, _, A}, [], As) ->
+    lists:reverse([A | As]);
+package_segments(_, _, _) ->
     error.
 
 %% build_function([Clause]) -> {function,Line,Name,Arity,[Clause]}
@@ -577,13 +580,20 @@ normalise({cons,_,Head,Tail}) ->
     [normalise(Head)|normalise(Tail)];
 normalise({tuple,_,Args}) ->
     list_to_tuple(normalise_list(Args));
+%% Atom dot-notation, as in 'foo.bar.baz'
+normalise({record_field,_,_,_}=A) ->
+    case package_segments(A) of
+	error -> erlang:fault({badarg, A});
+	As -> list_to_atom(packages:concat(As))
+    end;
 %% Special case for unary +/-.
 normalise({op,_,'+',{char,_,I}}) -> I;
 normalise({op,_,'+',{integer,_,I}}) -> I;
 normalise({op,_,'+',{float,_,F}}) -> F;
 normalise({op,_,'-',{char,_,I}}) -> -I;		%Weird, but compatible!
 normalise({op,_,'-',{integer,_,I}}) -> -I;
-normalise({op,_,'-',{float,_,F}}) -> -F.
+normalise({op,_,'-',{float,_,F}}) -> -F;
+normalise(X) -> erlang:fault({badarg, X}).
 
 normalise_list([H|T]) ->
     [normalise(H)|normalise_list(T)];
@@ -724,7 +734,8 @@ inop_prec('rem') -> {500,500,600};
 inop_prec('band') -> {500,500,600};
 inop_prec('and') -> {500,500,600};
 inop_prec('#') -> {800,700,800};
-inop_prec(':') -> {900,800,900}.
+inop_prec(':') -> {900,800,900};
+inop_prec('.') -> {900,900,1000}.
 
 preop_prec('catch') -> {0,100};
 preop_prec('+') -> {600,700};

@@ -89,22 +89,15 @@ EPMD_OBJS = $(OBJDIR)/epmd.o       \
 #---------------------------------
 
 
-ifeq ($(findstring win32,$(TARGET)),win32)
-all: 
-	echo "This must be built with NMAKE on NT"
-else
-
 all: $(BINDIR)/$(EPMD)
-
-endif
 
 docs:
 
 clean:
 	rm -f $(BINDIR)/$(EPMD) 
-	rm -f $(ERL_TOP)/erts/obj.*/$(TARGET)/epmd.o
-	rm -f $(ERL_TOP)/erts/obj.*/$(TARGET)/epmd_cli.o
-	rm -f $(ERL_TOP)/erts/obj.*/$(TARGET)/epmd_srv.o 
+	rm -f $(ERL_TOP)/erts/obj/$(TARGET)/epmd.o
+	rm -f $(ERL_TOP)/erts/obj/$(TARGET)/epmd_cli.o
+	rm -f $(ERL_TOP)/erts/obj/$(TARGET)/epmd_srv.o 
 	rm -f *.o
 	rm -f *~ core
 
@@ -112,7 +105,7 @@ clean:
 # Objects & executables
 #
 
-$(BINDIR)/epmd: $(EPMD_OBJS)
+$(BINDIR)/$(EPMD): $(EPMD_OBJS)
 	$(PURIFY) $(LD) $(LDFLAGS) -o $@ $(EPMD_OBJS) $(LIBS)
 
 $(OBJDIR)/%.o: %.c

@@ -33,7 +33,12 @@ module(Mod0, Options) ->
     %% List optimisations to be done.
     Passes = [fun(M, Opts) -> sys_core_inline:module(M, Opts) end,
 	      fun(M, Opts) -> sys_core_fold:module(M, Opts) end,
-	      fun(M, Opts) -> {ok, cerl_inline:core_transform(M, Opts)} end,
+	      fun(M, Opts) ->
+		      case proplists:get_bool(inline, Opts) of
+			  true -> {ok, cerl_inline:core_transform(M, Opts)};
+			  false -> {ok, M}
+		      end
+	      end,
 	      fun(M, Opts) -> sys_core_dsetel:module(M, Opts) end],
     put(no_inline_list_funcs, not member(inline_list_funcs, Options)),
     Mod = fold_opt(Passes, Mod0, Options),

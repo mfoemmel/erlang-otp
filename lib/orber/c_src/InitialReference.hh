@@ -25,7 +25,16 @@
 #define _INITIALREFERENCE_HH
 #include <stdio.h>
 #include <string.h>
+
+#if HAVE_SSTREAM
+#include <sstream>
+typedef std::stringstream STRINGSTREAM;
+typedef std::stringbuf STRINGBUF;
+#else
 #include <strstream.h>
+typedef strstream STRINGSTREAM;
+typedef strstreambuf STRINGBUF;
+#endif
 
 class InitialReference {
 private:
@@ -35,8 +44,8 @@ private:
 
   void enc_ushort(int s, char *byteArray);
   void enc_ulong(long l, char *byteArray);
-  void createIOR(strstream& byte, long length);
-  long align(strstreambuf* sbuf, long currentLength, int alignment);
+  void createIOR(STRINGSTREAM& byte, long length);
+  long align(STRINGBUF* sbuf, long currentLength, int alignment);
 
 public:
   InitialReference();

@@ -20,6 +20,10 @@ ifndef EBIN
 EBIN = ../ebin
 endif
 
+ifndef DOCS
+DOCS = ../doc
+endif
+
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
@@ -62,6 +66,7 @@ MODULES=hipe_rtl_to_x86 \
 HRL_FILES=hipe_x86.hrl
 ERL_FILES=$(MODULES:%=%.erl)
 TARGET_FILES=$(MODULES:%=$(EBIN)/%.$(EMULATOR))
+DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
 
 # APP_FILE=
 # APP_SRC=$(APP_FILE).src
@@ -83,11 +88,14 @@ ERL_COMPILE_FLAGS +=
 
 debug opt: $(TARGET_FILES)
 
-docs:
+docs: $(DOC_FILES)
 
 clean:
 	rm -f $(TARGET_FILES)
 	rm -f core
+
+$(DOCS)/%.html:%.erl
+	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s erlang halt
 
 # ----------------------------------------------------
 # Special Build Targets

@@ -20,6 +20,7 @@
 #define __GLOBAL_H__
 
 #include "sys.h"
+#include "erl_alloc.h"
 #include "erl_vm.h"
 #include "erl_node_container_utils.h"
 #include "hash.h"
@@ -33,7 +34,6 @@
 #include "benchmark.h"
 #include "erl_process.h"
 #include "erl_sys_driver.h"
-#include "erl_sl_alloc.h"
 
 typedef enum {
     LNK_UNDEF = 0,
@@ -243,8 +243,8 @@ typedef struct {
     void* handle;           /* Handle for DLL or SO (for dynamic drivers). */
     int   ref_count;
     int   status;
-    int   (*cb)();
-    void** ca[4];           /* max 4 args now */
+    int   (*cb)(void*, void*, void*, void*);
+    void* ca[4];           /* max 4 args now */
 } DE_Handle;
 
 /*
@@ -258,11 +258,6 @@ typedef struct de_list {
 } DE_List;
 
 extern DE_List *driver_list;
-
-typedef struct {
-    Uint block;
-    Uint used;
-} ErtsDefiniteAllocInfo;
 
 /*
  * Max no. of drivers (linked in and dynamically loaded). Each table
@@ -300,6 +295,7 @@ typedef struct binary {
 #define BIN_FLAG_MATCH_PROG 1
 #define BIN_FLAG_USR1       2 /* Reserved for use by different modules too mark */
 #define BIN_FLAG_USR2       4 /*  certain binaries as special (used by ets) */
+#define BIN_FLAG_DRV        8
 
 /*
  * This structure represents one type of a binary in a process.
@@ -325,9 +321,9 @@ extern byte*      tmp_buf;
 
 extern Uint erts_max_ports;
 extern Uint erts_port_tab_index_mask;
+/* controls warning mapping in error_logger */
 
 extern Eterm node_cookie;
-extern Uint tot_bin_allocated;
 extern Uint context_switches;	/* no of context switches */
 extern Uint bytes_out;		/* no bytes written out */
 extern Uint bytes_in;		/* no bytes sent into the system */
@@ -420,27 +416,11 @@ extern Uint global_mbuf_sz;
 extern int bif_reductions;      /* reductions + fcalls (when doing call_bif) */
 extern int stackdump_on_exit;
 
-/* For the fix allocator */
-extern int process_desc;
-extern int table_desc;
-extern int atom_desc;
-extern int export_desc;
-extern int module_desc;
-extern int preg_desc;
-extern int link_desc;
-extern int link_sh_desc;
-extern int plist_desc;
-extern int erts_fun_desc;
-
 #ifdef DEBUG
 extern Uint verbose;		/* noisy mode = 1 */
 #endif
 
 extern Eterm system_seq_tracer;
-#ifdef INSTRUMENT
-#  define INSTR_SEND_SIZES_MAX 65535
-extern Uint instr_send_sizes[INSTR_SEND_SIZES_MAX];
-#endif
 
 /*
  * Here is an implementation of a lightweiht stack.
@@ -475,7 +455,7 @@ Eterm* erl_grow_stack(Eterm* ptr, size_t new_size);
 #define DESTROY_ESTACK(s)						\
 do {									\
     if (ESTK_CONCAT(s,_start) != ESTK_CONCAT(s,_default_stack)) {	\
-	sys_free(ESTK_CONCAT(s,_start));				\
+	erts_free(ERTS_ALC_T_ESTACK, ESTK_CONCAT(s,_start));		\
     }									\
 } while(0)
 
@@ -509,10 +489,15 @@ do {										\
 
 /* binary.c */
 
+Eterm erts_new_heap_binary(Process *p, byte *buf, int len, byte** datap);
 Eterm new_binary(Process*, byte*, int);
 Eterm new_binary_arith(Process*, byte*, int);
 Eterm erts_realloc_binary(Eterm bin, size_t size);
 void erts_cleanup_mso(ProcBin* pb);
+
+/* erl_bif_info.c */
+
+void erts_bif_info_init(void);
 
 /* bif.c */
 Uint bif_timer_memory_size(void);
@@ -524,6 +509,9 @@ void erts_init_bif(void);
 
 Port* id2port(Eterm id);
 
+/* erl_bif_trace.c */
+void erts_system_monitor_clear(void);
+
 /* beam_load.c */
 int erts_load_module(Eterm group_leader, Eterm* mod, byte* code, int size);
 void init_load(void);
@@ -533,6 +521,7 @@ Eterm erts_module_info_1(Process* p, Eterm module, Eterm what);
 
 /* break.c */
 void init_break_handler(void);
+void erts_set_ignore_break(void);
 void process_info(CIO);
 void print_process_info(Process*, CIO);
 void info(CIO);
@@ -587,10 +576,13 @@ void process_main(void);
 
 /* erl_init.c */
 
+extern volatile int erts_writing_erl_crash_dump;
+extern Eterm erts_error_logger_warnings;
 extern int erts_initialized;
 void erts_short_init(void);
 void erl_start(int, char**);
-
+void erts_usage(void);
+Eterm erts_preloaded(Process* p);
 /* erl_md5.c */
 
 typedef struct {
@@ -603,28 +595,21 @@ void MD5Init(MD5_CTX *);
 void MD5Update(MD5_CTX *, unsigned char *, unsigned int);
 void MD5Final(unsigned char [16], MD5_CTX *);
 
+/* erl_sl_alloc.c */
+Eterm erts_sl_alloc_stat_eterm(Process *, int);
+
 /* external.c */
 int erts_to_external_format(DistEntry*, Eterm, byte**);
 Eterm erts_from_external_format(DistEntry*, Eterm**, byte**, ErlOffHeap*);
 Eterm encode_size_struct(Eterm, unsigned);
 int decode_size(byte*, int);
 
-/* fix_alloc.c */
-void init_alloc(_VOID_);
-int fix_info(int);
-int fix_used(int);
-int new_fix_size(int);
-void fix_free(int, Eterm*);
-Eterm* fix_alloc(int);
-#ifdef INSTRUMENT
-Eterm* fix_alloc_from(int, int);
-#endif
-
 /* ggc.c */
 void erts_init_gc(void);
 int erts_garbage_collect(Process*, int, Eterm*, int);
 Uint erts_next_heap_size(Uint, Uint);
 Eterm erts_heap_sizes(Process* p);
+void erts_shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj);
 
 /* io.c */
 
@@ -644,6 +629,7 @@ void output_ready(int, int);
 void event_ready(int, int, ErlDrvEventData);
 void driver_report_exit(int, int);
 LineBuf* allocate_linebuf(int);
+int async_ready(int ix, void* data);
 
 /* time.c */
 void increment_time(int);
@@ -654,6 +640,7 @@ void erl_cancel_timer(ErlTimer*);
 Uint time_left(ErlTimer *);
 int next_time(_VOID_);
 
+Uint erts_timer_wheel_memory_size(void);
 #ifdef HAVE_GETHRVTIME
 #  ifndef HAVE_ERTS_NOW_CPU
 #    define HAVE_ERTS_NOW_CPU
@@ -663,19 +650,13 @@ int next_time(_VOID_);
 void erts_get_now_cpu(Uint* megasec, Uint* sec, Uint* microsec);
 #endif
 
+long erts_get_time(void);
+
 #ifdef DEBUG
 void p_slpq(_VOID_);
 #endif
 
 /* utils.c */
-#ifdef SMALL_MEMORY
-#define DEFAULT_DEFINITE_ALLOC_BLOCK_SIZE (0)
-#else
-#define DEFAULT_DEFINITE_ALLOC_BLOCK_SIZE (2*1024*1024)
-#endif
-void erts_init_definite_alloc(Uint);
-void *erts_definite_alloc(Uint);
-void erts_definite_alloc_info(ErtsDefiniteAllocInfo *);
 
 #define erl_printf sys_printf
 #define erl_putc   sys_putc
@@ -688,7 +669,7 @@ void erl_resume(Process*);
 
 Uint erts_fit_in_bits(Uint);
 int list_length(Eterm);
-Export* erts_find_function(Eterm, Eterm, int);
+Export* erts_find_function(Eterm, Eterm, unsigned int);
 int erts_is_builtin(Eterm, Eterm, int);
 Eterm double_to_integer(Process*, double);
 Uint32 make_broken_hash(Eterm, Uint32);
@@ -699,6 +680,7 @@ Uint32 make_hash(Eterm, Uint32);
 Eterm erts_bld_uint(Uint **hpp, Uint *szp, Uint ui);
 Eterm erts_bld_cons(Uint **hpp, Uint *szp, Eterm car, Eterm cdr);
 Eterm erts_bld_tuple(Uint **hpp, Uint *szp, Uint arity, ...);
+Eterm erts_bld_tuplev(Uint **hpp, Uint *szp, Uint arity, Eterm terms[]);
 Eterm erts_bld_string(Uint **hpp, Uint *szp, char *str);
 Eterm erts_bld_list(Uint **hpp, Uint *szp, Sint length, Eterm terms[]);
 Eterm erts_bld_2tup_list(Uint **hpp, Uint *szp,
@@ -717,18 +699,16 @@ Eterm store_external_or_ref_(Uint **, ExternalThing **, Eterm);
  (ASSERT_EXPR(is_node_container((NC))), \
   IS_CONST((NC)) ? (NC) : store_external_or_ref_in_proc_((Pp), (NC)))
 
-int send_error_to_logger(Eterm);
-#ifdef INSTRUMENT
-void* safe_alloc_from(int, Uint);
-void* safe_realloc_from(int, void*, Uint);
-#endif
-void* safe_alloc(Uint);
-void* safe_realloc(void*, Uint);
+int send_error_to_logger(Eterm); /* XXX:Obsolete */
+int erts_send_info_to_logger(Eterm gleader, char *buf, int len); 
+int erts_send_warning_to_logger(Eterm gleader, char *buf, int len);
+int erts_send_error_to_logger(Eterm gleader, char *buf, int len);
 Process* pid2proc(Eterm);
 void display(Eterm, CIO);
 void ldisplay(Eterm, CIO, int);
 void print_atom(int, CIO);
 void erts_init_utils(void);
+void erts_init_utils_mem(void);
 
 int eq(Eterm, Eterm);
 #define EQ(x,y) (((x) == (y)) || (is_not_both_immed((x),(y)) && eq((x),(y))))
@@ -752,6 +732,7 @@ int term_to_Uint(Eterm term, Uint *up);
 extern int erts_cpu_timestamp;
 #endif
 
+/* erl_trace.c */
 void erts_init_trace(void);
 void trace_send(Process*, Eterm, Eterm);
 void trace_receive(Process*, Eterm);
@@ -764,6 +745,9 @@ void trace_proc(Process*, Process*, Eterm, Eterm);
 void trace_proc_spawn(Process*, Eterm pid, Eterm mod, Eterm func, Eterm args);
 void save_calls(Process *p, Export *);
 void trace_gc(Process *p, Eterm what);
+void monitor_long_gc(Process *p, Uint time);
+void monitor_large_heap(Process *p);
+void monitor_generic(Process *p, Eterm type, Eterm spec);
 Uint erts_trace_flag2bit(Eterm flag);
 Eterm erts_bif_trace(int bif_index, Process* p, 
 		     Eterm arg1, Eterm arg2, Eterm arg3, Uint *I);
@@ -803,6 +787,8 @@ void pba(Process*, int);
 void td(Eterm);
 void ps(Process*, Eterm*);
 #endif
+
+char* erts_get_system_version(int *len);
 
 /*
  * Interface to erl_init

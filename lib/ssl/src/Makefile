@@ -40,12 +40,15 @@ MODULES= \
 	ssl_broker \
 	ssl_broker_sup \
 	ssl_server \
-	ssl_socket \
 	ssl_sup \
 	ssl_prim \
+	ssl_pkix \
+	ssl_pem \
+	ssl_base64 \
 	inet_ssl_dist
 
-HRL_FILES= ssl_int.hrl ssl_broker_int.hrl
+INTERNAL_HRL_FILES= ssl_int.hrl ssl_broker_int.hrl
+PUBLIC_HRL_FILES= ssl_pkix.hrl
 
 ERL_FILES= $(MODULES:%=%.erl)
 
@@ -59,11 +62,16 @@ APP_TARGET= $(EBIN)/$(APP_FILE)
 APPUP_SRC= $(APPUP_FILE).src
 APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 
+INCLUDE = ../include
+
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/kernel/src
+EXTRA_ERLC_FLAGS = +warn_unused_vars
+ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/kernel/src -I$(INCLUDE) \
+	$(EXTRA_ERLC_FLAGS) -DVSN=\"$(VSN)\"
+
 
 # ----------------------------------------------------
 # Targets
@@ -90,7 +98,9 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src
+	$(INSTALL_DIR) $(RELSYSDIR)/include
+	$(INSTALL_DATA) $(PUBLIC_HRL_FILES) $(RELSYSDIR)/include
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(APP_TARGET) \
 	$(APPUP_TARGET) $(RELSYSDIR)/ebin

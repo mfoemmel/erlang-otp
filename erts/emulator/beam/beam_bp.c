@@ -37,10 +37,10 @@
 /*
 ** Memory allocation macros
 */
-/* 220 == Breakpoint data (for instrumentation) */
-#define Alloc(SIZ) (safe_alloc_from(220, (SIZ)))
-#define ReAlloc(OLD,SIZ) (safe_realloc(OLD,SIZ))
-#define Free(OLD) (sys_free(OLD))
+/* Breakpoint data */
+#define Alloc(SZ)		erts_alloc(ERTS_ALC_T_BPD, (SZ))
+#define ReAlloc(P, SIZ)		erts_realloc(ERTS_ALC_T_BPD, (P), (SZ))
+#define Free(P)			erts_free(ERTS_ALC_T_BPD, (P))
 
 /*
 ** Doubly linked ring macros

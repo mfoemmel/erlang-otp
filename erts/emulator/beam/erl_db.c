@@ -39,6 +39,9 @@
 #include "bif.h"
 #include "big.h"
 
+
+Uint erts_tot_ets_memory_words;
+
 /*
 ** Utility macros
 */
@@ -95,7 +98,6 @@ static int last_slot;
 static int no_tabs;		/* Number of active tables */
 static DbTable *meta_pid_to_tab; /* Pid mapped to owned tables */
 static DbTable *meta_pid_to_fixed_tab; /* Pid mapped to fixed tables */
-static int fixed_fixation_desc; /* Fixtable descriptor for safe_fixtable */
 static Eterm ms_delete_all;
 static Eterm ms_delete_all_buff[8]; /* To compare with for deletion 
 				       of all objects */
@@ -109,8 +111,8 @@ static int next_prime(int n);
 static BIF_RETTYPE ets_select_delete_1(Process *p, Eterm a1);
 static BIF_RETTYPE ets_select_count_1(Process *p, Eterm a1);
 static BIF_RETTYPE ets_select_trap_1(Process *p, Eterm a1);
-static DbFixation *alloc_fixation(void);
-static void free_fixation(DbFixation *fix);
+static DbFixation *alloc_fixation(DbTable *tb);
+static void free_fixation(DbTable *tb, DbFixation *fix);
 
 /* 
  * Exported global
@@ -127,7 +129,6 @@ Export ets_select_continue_exp;
 ** Disables/enables rehashing for a table (if it is a hash table).
 */
 BIF_RETTYPE ets_fixtable_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
     Eterm arg;
@@ -153,7 +154,7 @@ BIF_ADECL_2
 	while (tb->common.fixations != NULL) {
 	    fix = tb->common.fixations;
 	    tb->common.fixations = fix->next;
-	    free_fixation(fix);
+	    free_fixation(tb, fix);
 	}
 	if (IS_HASH_TABLE(tb->common.status)) {
 	    cret = db_fixtable_hash(&(tb->hash), am_false);
@@ -166,7 +167,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE ets_safe_fixtable_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable *tb;
     int cret;
@@ -214,7 +214,7 @@ BIF_ADECL_2
 		}
 	    }
 	    if (fix == NULL) {
-		fix = alloc_fixation();
+		fix = alloc_fixation(tb);
 		fix->pid = BIF_P->id;
 		fix->counter = 1;
 		fix->next = tb->common.fixations;
@@ -247,7 +247,7 @@ BIF_ADECL_2
 		    db_erase_bag_exact2(&(meta_pid_to_fixed_tab->hash),
 					BIF_P->id,
 					make_small(tb->common.slot));
-		    free_fixation(fix);
+		    free_fixation(tb, fix);
 		}
 		break;
 	    }
@@ -273,7 +273,6 @@ done:
 ** Returns the first Key in a table 
 */
 BIF_RETTYPE ets_first_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     DbTable* tb;
     int cret;
@@ -303,7 +302,6 @@ BIF_ADECL_1
 ** The next BIF, given a key, return the "next" key 
 */
 BIF_RETTYPE ets_next_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
@@ -333,7 +331,6 @@ BIF_ADECL_2
 ** Returns the first Key in a table 
 */
 BIF_RETTYPE ets_last_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     DbTable* tb;
     int cret;
@@ -364,7 +361,6 @@ BIF_ADECL_1
 ** The next BIF, given a key, return the "next" key 
 */
 BIF_RETTYPE ets_prev_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
@@ -397,13 +393,14 @@ BIF_ADECL_2
 */
 
 BIF_RETTYPE ets_update_counter_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     DbTable* tb;
     Eterm ret;
     int cret;
     Eterm increment = BIF_ARG_3;
     int position = 0;
+    Eterm threshold = NIL;
+    Eterm warp_to = NIL;
 
     if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE)) == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -413,30 +410,65 @@ BIF_ADECL_3
     }
     if (is_tuple(BIF_ARG_3)) { /* key position specified */
 	Eterm *tpl = tuple_val(BIF_ARG_3);
-	if (arityval(*tpl) != 2 || !is_small(tpl[1]) ||
-	    !(is_small(tpl[2]) || is_big(tpl[2]))) {
+	switch (arityval(*tpl)) {
+	case 4: /* threshold specified */
+	    if (!(is_small(tpl[3]) || is_big(tpl[3])) ||
+		!(is_small(tpl[4]) || is_big(tpl[4]))) {
+		BIF_ERROR(BIF_P, BADARG);
+	    }
+	    threshold = tpl[3];
+	    warp_to = tpl[4];
+	    /* Fall through */
+	case 2:
+	    if (!is_small(tpl[1]) ||
+		!(is_small(tpl[2]) || is_big(tpl[2]))) {
+		BIF_ERROR(BIF_P, BADARG);
+	    }
+	    position = signed_val(tpl[1]);
+	    increment = tpl[2];
+	    if (position == tb->common.keypos) {
+		BIF_ERROR(BIF_P, BADARG);
+	    }
+	    break;
+	default:
 	    BIF_ERROR(BIF_P, BADARG);
-	}
-	position = signed_val(tpl[1]);
-	increment = tpl[2];
-	if (position == tb->common.keypos) {
-	   BIF_ERROR(BIF_P, BADARG);
 	}
     }
 	
     if (IS_HASH_TABLE(tb->common.status)) {
 	cret = db_update_counter_hash(BIF_P, &(tb->hash), 
-				      BIF_ARG_2, increment, position, &ret);
+				      BIF_ARG_2, increment, 0, position, &ret);
     } else if (IS_TREE_TABLE(tb->common.status)) {
 	cret = db_update_counter_tree(BIF_P, &(tb->tree), 
-				      BIF_ARG_2, increment, position, &ret);
+				      BIF_ARG_2, increment, 0, position, &ret);
 	/*TT*/
     } else {
 	cret = DB_ERROR_UNSPEC;
     }
 
+    if (cret == DB_ERROR_NONE &&
+	threshold != NIL) { /* Maybe warp it */
+	if ((cmp(increment,make_small(0)) < 0) ? /* negative increment? */
+	    (cmp(ret,threshold) < 0) :  /* if negative, check if below */
+	    (cmp(ret,threshold) > 0)) { /* else check if above threshold */
+	    if (IS_HASH_TABLE(tb->common.status)) {
+		cret = 
+		    db_update_counter_hash(BIF_P, &(tb->hash), 
+					   BIF_ARG_2, warp_to, 1, 
+					   position, &ret);
+	    } else if (IS_TREE_TABLE(tb->common.status)) {
+		cret = 
+		    db_update_counter_tree(BIF_P, &(tb->tree), 
+					   BIF_ARG_2, warp_to, 1, 
+					   position, &ret);
+		/*TT*/
+	    } /* table type already checked */
+	}
+    }
+
     switch (cret) {
     case DB_ERROR_NONE:
+	/* Check for threshold */
 	BIF_RET(ret);
     case DB_ERROR_SYSRES:
 	BIF_ERROR(BIF_P, SYSTEM_LIMIT);
@@ -449,7 +481,6 @@ BIF_ADECL_3
 ** The put BIF 
 */
 BIF_RETTYPE ets_insert_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
     int cret = DB_ERROR_NONE;
@@ -522,7 +553,6 @@ BIF_ADECL_2
 */
 
 BIF_RETTYPE ets_rename_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
     int oldslot, newslot;
@@ -613,7 +643,6 @@ BIF_ADECL_2
 */
 
 BIF_RETTYPE ets_new_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
     int slot;
@@ -741,7 +770,7 @@ BIF_ADECL_2
     /* ret will be the id for the table as well */
     /* Creat a new table and insert in db_tables */
 
-    tb = (DbTable*) fix_alloc_from(55,table_desc);
+    tb = (DbTable*) erts_alloc(ERTS_ALC_T_DB_TABLE, sizeof(DbTable));
     tb->common.id = ret;
     tb->common.the_name = BIF_ARG_1;
     tb->common.status = status;
@@ -766,7 +795,7 @@ BIF_ADECL_2
     }
 
     if (cret != DB_ERROR_NONE) {
-	fix_free(table_desc, (Uint *) tb);
+	erts_free(ERTS_ALC_T_DB_TABLE, (void *) tb);
 	BIF_ERROR(BIF_P, BADARG);
     }
 
@@ -790,7 +819,6 @@ BIF_ADECL_2
 ** The lookup BIF 
 */
 BIF_RETTYPE ets_lookup_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
@@ -828,7 +856,6 @@ BIF_ADECL_2
 ** The lookup BIF 
 */
 BIF_RETTYPE ets_member_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
@@ -868,7 +895,6 @@ BIF_ADECL_2
 ** return the element or a list of elements if bag
 */
 BIF_RETTYPE ets_lookup_element_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     DbTable* tb;
     int index;
@@ -910,7 +936,6 @@ BIF_ADECL_3
 ** BIF to erase a whole table and release all memory it holds 
 */
 BIF_RETTYPE ets_db_delete_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     DbTable* tb;
 
@@ -946,7 +971,6 @@ BIF_ADECL_1
 ** BIF to erase a whole table and release all memory it holds 
 */
 BIF_RETTYPE ets_delete_all_objects_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     DbTable* tb;
 
@@ -982,7 +1006,6 @@ BIF_ADECL_1
 ** object(s) we want to erase                                  
 */
 BIF_RETTYPE ets_delete_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
@@ -1018,7 +1041,6 @@ BIF_ADECL_2
 ** Erase a specific object, or maybe several objects if we have a bag  
 */
 BIF_RETTYPE ets_delete_object_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
@@ -1124,7 +1146,6 @@ static BIF_RETTYPE ets_select_delete_1(Process *p, Eterm a1)
     
 
 BIF_RETTYPE ets_select_delete_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
@@ -1178,7 +1199,6 @@ BIF_ADECL_2
 ** Return a list of tables on this node 
 */
 BIF_RETTYPE ets_all_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     DbTable* tb;
     Eterm previous;
@@ -1204,7 +1224,6 @@ BIF_ADECL_0
 ** db_slot(Db, Slot) -> [Items].
 */
 BIF_RETTYPE ets_slot_2(BIF_ALIST_2) 
-BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
@@ -1243,13 +1262,11 @@ BIF_ADECL_2
 */
 
 BIF_RETTYPE ets_match_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     return ets_select_1(BIF_P, BIF_ARG_1);
 }
 
 BIF_RETTYPE ets_match_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Eterm ms;
     Eterm buff[8];
@@ -1264,7 +1281,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE ets_match_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     Eterm ms;
     Eterm buff[8];
@@ -1280,7 +1296,6 @@ BIF_ADECL_3
 
 
 BIF_RETTYPE ets_select_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     DbTable* tb;
     int cret;
@@ -1383,7 +1398,6 @@ static BIF_RETTYPE ets_select_trap_1(Process *p, Eterm a1)
 
 
 BIF_RETTYPE ets_select_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     DbTable* tb;
     int cret;
@@ -1436,7 +1450,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE ets_select_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
@@ -1529,7 +1542,6 @@ static BIF_RETTYPE ets_select_count_1(Process *p, Eterm a1)
 }
 
 BIF_RETTYPE ets_select_count_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
@@ -1572,7 +1584,6 @@ BIF_ADECL_2
 
 
 BIF_RETTYPE ets_select_reverse_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     DbTable* tb;
     int cret;
@@ -1621,13 +1632,11 @@ BIF_ADECL_3
 }
 
 BIF_RETTYPE ets_select_reverse_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     return ets_select_1(BIF_P, BIF_ARG_1);
 }
 
 BIF_RETTYPE ets_select_reverse_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
@@ -1673,13 +1682,11 @@ BIF_ADECL_2
 ** ets:match_object(Continuation), ets:match_object(Table, Pattern), ets:match_object(Table,Pattern,ChunkSize) 
 */
 BIF_RETTYPE ets_match_object_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     return ets_select_1(BIF_P, BIF_ARG_1);
 }
 
 BIF_RETTYPE ets_match_object_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Eterm ms;
     Eterm buff[8];
@@ -1694,7 +1701,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE ets_match_object_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     Eterm ms;
     Eterm buff[8];
@@ -1714,7 +1720,6 @@ BIF_ADECL_3
 */ 
 
 BIF_RETTYPE ets_db_info_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DbTable* tb;
 
@@ -1800,7 +1805,6 @@ BIF_ADECL_2
 
 
 BIF_RETTYPE ets_match_spec_compile_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Binary *mp = db_match_set_compile(BIF_P, BIF_ARG_1, DCOMP_TABLE);
     ProcBin *pb;
@@ -1819,7 +1823,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE ets_match_spec_run_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     Binary *mp;
     Eterm *hp;
@@ -1878,7 +1881,6 @@ BIF_ADECL_3
 }
 	
 BIF_RETTYPE ets_match_spec_run_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     return ets_match_spec_run_3(BIF_P, BIF_ARG_1, BIF_ARG_2, 0U);
 }
@@ -1897,7 +1899,7 @@ void init_db(void)
     extern Eterm* em_apply_bif;
     Eterm *hp;
 
-    fixed_fixation_desc = new_fix_size(sizeof(DbFixation));
+    erts_tot_ets_memory_words = 0;
     last_slot = 0;
     db_initialize_util();
     if (( max_ets = (user_requested_db_max_tabs*5)/4 ) < DB_DEF_MAX_TABS)
@@ -1905,10 +1907,9 @@ void init_db(void)
     else
 	db_max_tabs = next_prime(max_ets);
 
-    db_tables = erts_definite_alloc(sizeof(struct tab_entry)*db_max_tabs);
-    if(!db_tables)
-	db_tables = safe_alloc_from(40, sizeof(struct tab_entry)*db_max_tabs);
-
+    db_tables = erts_alloc(ERTS_ALC_T_DB_TABLES,
+			   sizeof(struct tab_entry)*db_max_tabs);
+    ERTS_DB_MORE_MEM(sizeof(struct tab_entry)*db_max_tabs);
     no_tabs = 0;
     for (i=0; i<db_max_tabs; i++) {
 	db_tables[i].id = DB_NOTUSED;
@@ -1918,7 +1919,8 @@ void init_db(void)
     db_initialize_tree();
     /*TT*/
     /* Create meta table invertion. */
-    meta_pid_to_tab = (DbTable*) fix_alloc_from(55,table_desc);
+    meta_pid_to_tab = (DbTable*) erts_alloc(ERTS_ALC_T_DB_TABLE,
+					    sizeof(DbTable));
     meta_pid_to_tab->common.id = NIL;
     meta_pid_to_tab->common.the_name = am_true;
     meta_pid_to_tab->common.status = (DB_NORMAL | DB_BAG | DB_LHASH | 
@@ -1931,7 +1933,8 @@ void init_db(void)
     if (db_create_hash(NULL, &(meta_pid_to_tab->hash)) != DB_ERROR_NONE) {
 	erl_exit(1,"Unable to create ets metadata tables.");
     }
-    meta_pid_to_fixed_tab = (DbTable*) fix_alloc_from(55,table_desc);
+    meta_pid_to_fixed_tab = (DbTable*) erts_alloc(ERTS_ALC_T_DB_TABLE,
+						  sizeof(DbTable));
     meta_pid_to_fixed_tab->common.id = NIL;
     meta_pid_to_fixed_tab->common.the_name = am_true;
     meta_pid_to_fixed_tab->common.status = (DB_NORMAL | DB_BAG | DB_LHASH | 
@@ -2063,7 +2066,7 @@ void db_proc_dead(Eterm pid)
 			     pid,
 			     make_small(tb->common.slot));
 		    }
-		    free_fixation(fix);
+		    free_fixation(tb, fix);
 		    break;
 		}
 	    }
@@ -2157,7 +2160,7 @@ static void free_table(DbTable *tb) {
     while (tb->common.fixations != NULL) {
 	fix = tb->common.fixations;
 	tb->common.fixations = fix->next;
-	free_fixation(fix);
+	free_fixation(tb, fix);
     }
 
     if (IS_HASH_TABLE(tb->common.status))
@@ -2169,28 +2172,27 @@ static void free_table(DbTable *tb) {
 	erl_exit(1,"Panic: Unknown table type (status word = 0x%08x)!",
 		 tb->common.status);
     
-    fix_free(table_desc, (Uint *) tb);
+    erts_free(ERTS_ALC_T_DB_TABLE, (void *) tb);
 }
 
-static DbFixation *alloc_fixation(void)
+static DbFixation *alloc_fixation(DbTable *tb)
 {
-    return (DbFixation *) fix_alloc(fixed_fixation_desc);
+    DbFixation *f = (DbFixation *) erts_alloc(ERTS_ALC_T_DB_FIXATION,
+					      sizeof(DbFixation));
+    ERTS_DB_TAB_MORE_MEM(tb, sizeof(DbFixation));
+    return f;
 }
 
-static void free_fixation(DbFixation *fix)
+static void free_fixation(DbTable *tb, DbFixation *fix)
 {
-    fix_free(fixed_fixation_desc, (Uint *) fix);
+    ERTS_DB_TAB_LESS_MEM(tb, sizeof(DbFixation));
+    erts_free(ERTS_ALC_T_DB_FIXATION, (void *)fix);
 }
 
 static void print_table(CIO fd, int show,  DbTable* tb)
 {
-    erl_printf(fd, "Table "); display(tb->common.id,fd);
-    erl_printf(fd, "(with name)" );
-    display(tb->common.the_name, fd);
-    erl_printf(fd, "\n");
-
-    erl_printf(fd, "Owner "); display(tb->common.owner,fd);
-    erl_printf(fd, "\n");
+    erl_printf(fd, "Table: "); display(tb->common.id, fd); erl_printf(fd, "\n");
+    erl_printf(fd, "Name: " ); display(tb->common.the_name, fd); erl_printf(fd, "\n");
 
     if (IS_HASH_TABLE(tb->common.status)) {
 	db_print_hash(fd, show, &(tb->hash));
@@ -2200,24 +2202,25 @@ static void print_table(CIO fd, int show,  DbTable* tb)
     } else {
 	erl_printf(fd,"Table is of unknown type!\n");
     }
-    erl_printf(fd,"Table's got %d objects\n", tb->common.nitems);
-    erl_printf(fd,"Table's got %d words of active data\n", tb->common.memory);
-    erl_printf(fd,"\n");
+    erl_printf(fd, "Objects: %d\n", tb->common.nitems);
+    erl_printf(fd, "Words: %d\n", tb->common.memory);
 }
-
 
 void db_info(CIO fd, int show)    /* Called by break handler */
 {
     int i;
     for (i=0; i < db_max_tabs; i++) 
 	if (!ISFREE(i)) {
-	    erl_printf(fd, "In slot %d\n", i);
+	    erl_printf(fd, "=ets:");
+	    display(db_tables[i].t->common.owner, fd);
+	    erl_printf(fd, "\n");
+	    erl_printf(fd, "Slot: %d\n", i);
 	    print_table(fd, show, db_tables[i].t);
 	}
 #ifdef DEBUG
-    erl_printf(fd, "Process to table index\n");
+    erl_printf(fd, "=internal_ets: Process to table index\n");
     print_table(fd, show, meta_pid_to_tab);
-    erl_printf(fd, "Process to fixation index\n");
+    erl_printf(fd, "=internal_ets: Process to fixation index\n");
     print_table(fd, show, meta_pid_to_fixed_tab);
 #endif
 }

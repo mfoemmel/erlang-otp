@@ -86,7 +86,7 @@ print_format(Device, Line, [{newline, N}|T]) ->
 print_format(Device, Line, [_|T]) ->  % ignore any erroneous format.
     print_format(Device, Line, T).
 
-print_data(Device, Line, []) -> ok;
+print_data(_Device, _Line, []) -> ok;
 print_data(Device, Line, [{Key, Value}|T]) ->
     print_one_line(Device, Line, Key, Value),
     print_data(Device, Line, T);
@@ -100,13 +100,13 @@ print_items(Device, Line, {Name, Items}) ->
 print_table(Device, Line, {TableName, ColumnNames, Columns}) ->
     print_table(Device, Line, TableName, ColumnNames, Columns).
 
-print_newlines(Device, 0) -> ok;
+print_newlines(_Device, 0) -> ok;
 print_newlines(Device, N) when N > 0 ->
     io:format(Device, '~n', []),
     print_newlines(Device, N-1).
 
 print_one_line(Device, Line, Key, Value) ->
-    HalfLine = Line div 2,
+    HalfLine = Line div 2,			% FIXME: HalfLine not used!
 %    StrKey = lists:append(term_to_string(Key), ":"),
     StrKey = term_to_string(Key),
     KeyLen = lists:min([length(StrKey), Line]),
@@ -168,7 +168,7 @@ maxcol(Term, OldMax) ->
 make_column_format(With) ->
     lists:concat(["~", With + extra_space_between_columns(), s]).
 
-is_correct_column_length(Length, []) -> true;
+is_correct_column_length(_Length, []) -> true;
 is_correct_column_length(Length, [Tuple|T]) ->
     case size(Tuple) of
 	Length -> is_correct_column_length(Length, T);
@@ -176,7 +176,7 @@ is_correct_column_length(Length, [Tuple|T]) ->
     end;
 is_correct_column_length(_, _) -> false.
 
-print_table(Device, Line, TableName, TupleOfColumnNames, []) ->
+print_table(Device, Line, TableName, _TupleOfColumnNames, []) ->
     print_one_line(Device, Line, TableName, "<empty table>"),
     io:format(Device, "~n", []);
 

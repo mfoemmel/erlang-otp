@@ -32,7 +32,7 @@ reply([Addr,Port,Msg]) ->
     gen_tcp:close(S),
     reply_done;
 
-reply(X) ->
+reply(_) ->
     error_logger:error_msg("erl_reply: Can't find address and port "
 			   "to reply to~n").
 

@@ -108,7 +108,8 @@
 	 send_event/2, sync_send_event/2, sync_send_event/3,
 	 send_all_state_event/2,
 	 sync_send_all_state_event/2, sync_send_all_state_event/3,
-	 reply/2]).
+	 reply/2,
+	 start_timer/2,send_event_after/2,cancel_timer/1]).
 
 -export([behaviour_info/1]).
 
@@ -148,16 +149,16 @@ behaviour_info(_Other) ->
 %%%          {error, Reason}
 %%% ---------------------------------------------------
 start(Mod, Args, Options) ->
-    gen:start(gen_fsm, nolink, Mod, Args, Options).
+    gen:start(?MODULE, nolink, Mod, Args, Options).
 
 start(Name, Mod, Args, Options) ->
-    gen:start(gen_fsm, nolink, Name, Mod, Args, Options).
+    gen:start(?MODULE, nolink, Name, Mod, Args, Options).
 
 start_link(Mod, Args, Options) ->
-    gen:start(gen_fsm, link, Mod, Args, Options).
+    gen:start(?MODULE, link, Mod, Args, Options).
 
 start_link(Name, Mod, Args, Options) ->
-    gen:start(gen_fsm, link, Name, Mod, Args, Options).
+    gen:start(?MODULE, link, Name, Mod, Args, Options).
 
 
 send_event({global, Name}, Event) ->
@@ -172,7 +173,7 @@ sync_send_event(Name, Event) ->
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-	    exit({Reason, {gen_fsm, sync_send_event, [Name, Event]}})
+	    exit({Reason, {?MODULE, sync_send_event, [Name, Event]}})
     end.
 
 sync_send_event(Name, Event, Timeout) ->
@@ -180,7 +181,7 @@ sync_send_event(Name, Event, Timeout) ->
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-	    exit({Reason, {gen_fsm, sync_send_event, [Name, Event, Timeout]}})
+	    exit({Reason, {?MODULE, sync_send_event, [Name, Event, Timeout]}})
     end.
 
 send_all_state_event({global, Name}, Event) ->
@@ -195,7 +196,7 @@ sync_send_all_state_event(Name, Event) ->
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-	    exit({Reason, {gen_fsm, sync_send_all_state_event, [Name, Event]}})
+	    exit({Reason, {?MODULE, sync_send_all_state_event, [Name, Event]}})
     end.
 
 sync_send_all_state_event(Name, Event, Timeout) ->
@@ -203,8 +204,35 @@ sync_send_all_state_event(Name, Event, Timeout) ->
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-	    exit({Reason, {gen_fsm, sync_send_all_state_event,
+	    exit({Reason, {?MODULE, sync_send_all_state_event,
 			   [Name, Event, Timeout]}})
+    end.
+
+%% Designed to be only callable within one of the callbacks
+%% hence using the self() of this instance of the process.
+%% This is to ensure that timers don't go astray in global
+%% e.g. when straddling a failover, or turn up in a restarted
+%% instance of the process.
+
+%% Returns Ref, sends event {timeout,Ref,Msg} after Time 
+%% to the (then) current state.
+start_timer(Time, Msg) ->
+    erlang:start_timer(Time, self(), {'$gen_timer', Msg}).
+
+%% Returns Ref, sends Event after Time to the (then) current state.
+send_event_after(Time, Event) ->
+    erlang:start_timer(Time, self(), {'$gen_event', Event}).
+
+%% Returns the remaing time for the timer if Ref referred to 
+%% an active timer/send_event_after, false otherwise.
+cancel_timer(Ref) ->
+    case erlang:cancel_timer(Ref) of
+	false ->
+	    receive {timeout, Ref, _} -> 0
+	    after 0 -> false 
+	    end;
+	RemainingTime ->
+	    RemainingTime
     end.
 
 %%% ---------------------------------------------------
@@ -218,7 +246,7 @@ init_it(Starter, self, Name, Mod, Args, Options) ->
     init_it(Starter, self(), Name, Mod, Args, Options);
 init_it(Starter, Parent, Name, Mod, Args, Options) ->
     Debug = gen:debug_options(Options),
-    case catch apply(Mod, init, [Args]) of
+    case catch Mod:init(Args) of
 	{ok, StateName, StateData} ->
 	    proc_lib:init_ack(Starter, {ok, self()}), 	    
 	    loop(Parent, Name, StateName, StateData, Mod, infinity, Debug);
@@ -252,14 +280,14 @@ loop(Parent, Name, StateName, StateData, Mod, Time, Debug) ->
 	  end,
     case Msg of
         {system, From, Req} ->
-	    sys:handle_system_msg(Req, From, Parent, gen_fsm, Debug,
+	    sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
 				  [Name, StateName, StateData, Mod, Time]);
 	{'EXIT', Parent, Reason} ->
 	    terminate(Reason, Name, Msg, Mod, StateName, StateData, Debug);
 	_Msg when Debug == [] ->
 	    handle_msg(Msg, Parent, Name, StateName, StateData, Mod, Time);
 	_Msg ->
-	    Debug1 = sys:handle_debug(Debug, {gen_fsm, print_event}, 
+	    Debug1 = sys:handle_debug(Debug, {?MODULE, print_event}, 
 				      {Name, StateName}, {in, Msg}),
 	    handle_msg(Msg, Parent, Name, StateName, StateData,
 		       Mod, Time, Debug1)
@@ -295,6 +323,14 @@ print_event(Dev, {in, Msg}, {Name, StateName}) ->
 	{'$gen_all_state_event', Event} ->
 	    io:format(Dev,
 		      "*DBG* ~p got all_state_event ~p in state ~w~n",
+		      [Name, Event, StateName]);
+	{timeout, Ref, {'$gen_timer', Msg}} ->
+	    io:format(Dev,
+		      "*DBG* ~p got timer ~p in state ~w~n",
+		      [Name, {timeout, Ref, Msg}, StateName]);
+	{timeout, _Ref, {'$gen_event', Event}} ->
+	    io:format(Dev,
+		      "*DBG* ~p got timer ~p in state ~w~n",
 		      [Name, Event, StateName]);
 	_ ->
 	    io:format(Dev, "*DBG* ~p got ~p in state ~w~n",
@@ -339,11 +375,11 @@ handle_msg(Msg, Parent, Name, StateName, StateData, Mod, _Time, Debug) ->
     From = from(Msg),
     case catch dispatch(Msg, Mod, StateName, StateData) of
 	{next_state, NStateName, NStateData} ->
-	    Debug1 = sys:handle_debug(Debug, {gen_fsm, print_event}, 
+	    Debug1 = sys:handle_debug(Debug, {?MODULE, print_event}, 
 				      {Name, NStateName}, return),
 	    loop(Parent, Name, NStateName, NStateData, Mod, infinity, Debug1);
 	{next_state, NStateName, NStateData, Time1} ->
-	    Debug1 = sys:handle_debug(Debug, {gen_fsm, print_event}, 
+	    Debug1 = sys:handle_debug(Debug, {?MODULE, print_event}, 
 				      {Name, NStateName}, return),
 	    loop(Parent, Name, NStateName, NStateData, Mod, Time1, Debug1);
         {reply, Reply, NStateName, NStateData} when From /= undefined ->
@@ -367,16 +403,20 @@ handle_msg(Msg, Parent, Name, StateName, StateData, Mod, _Time, Debug) ->
     end.
 
 dispatch({'$gen_event', Event}, Mod, StateName, StateData) ->
-    apply(Mod, StateName, [Event, StateData]);
+    Mod:StateName(Event, StateData);
 dispatch({'$gen_all_state_event', Event}, Mod, StateName, StateData) ->
-    apply(Mod, handle_event, [Event, StateName, StateData]);
+    Mod:handle_event(Event, StateName, StateData);
 dispatch({'$gen_sync_event', From, Event}, Mod, StateName, StateData) ->
-    apply(Mod, StateName, [Event, From, StateData]);
+    Mod:StateName(Event, From, StateData);
 dispatch({'$gen_sync_all_state_event', From, Event},
 	 Mod, StateName, StateData) ->
-    apply(Mod, handle_sync_event, [Event, From, StateName, StateData]);
+    Mod:handle_sync_event(Event, From, StateName, StateData);
+dispatch({timeout, Ref, {'$gen_timer', Msg}}, Mod, StateName, StateData) ->
+    Mod:StateName({timeout, Ref, Msg}, StateData);
+dispatch({timeout, _Ref, {'$gen_event', Event}}, Mod, StateName, StateData) ->
+    Mod:StateName(Event, StateData);
 dispatch(Info, Mod, StateName, StateData) ->
-    apply(Mod, handle_info, [Info, StateName, StateData]).
+    Mod:handle_info(Info, StateName, StateData).
 
 from({'$gen_sync_event', From, _Event}) -> From;
 from({'$gen_sync_all_state_event', From, _Event}) -> From;
@@ -388,7 +428,7 @@ reply({To, Tag}, Reply) ->
 
 reply(Name, {To, Tag}, Reply, Debug, StateName) ->
     reply({To, Tag}, Reply),
-    sys:handle_debug(Debug, {gen_fsm, print_event}, Name,
+    sys:handle_debug(Debug, {?MODULE, print_event}, Name,
 		     {out, Reply, To, StateName}).
 
 %%% ---------------------------------------------------
@@ -396,7 +436,7 @@ reply(Name, {To, Tag}, Reply, Debug, StateName) ->
 %%% ---------------------------------------------------
 
 terminate(Reason, Name, Msg, Mod, StateName, StateData, Debug) ->
-    case catch apply(Mod, terminate, [Reason, StateName, StateData]) of
+    case catch Mod:terminate(Reason, StateName, StateData) of
 	{'EXIT', R} ->
 	    error_info(R, Name, Msg, StateName, StateData, Debug),
 	    exit(R);
@@ -431,6 +471,10 @@ get_msg_str({'$gen_all_state_event', _Event}) ->
     "** Last event in was ~p (for all states)~n";
 get_msg_str({'$gen_sync_all_state_event', _Event}) ->
     "** Last sync event in was ~p (for all states)~n";
+get_msg_str({timeout, _Ref, {'$gen_timer', _Msg}}) ->
+    "** Last timer event in was ~p~n";
+get_msg_str({timeout, _Ref, {'$gen_event', _Msg}}) ->
+    "** Last timer event in was ~p~n";
 get_msg_str(_Msg) ->
     "** Last message in was ~p~n".
 
@@ -438,6 +482,8 @@ get_msg({'$gen_event', Event}) -> Event;
 get_msg({'$gen_sync_event', Event}) -> Event;
 get_msg({'$gen_all_state_event', Event}) -> Event;
 get_msg({'$gen_sync_all_state_event', Event}) -> Event;
+get_msg({timeout, Ref, {'$gen_timer', Msg}}) -> {timeout, Ref, Msg};
+get_msg({timeout, _Ref, {'$gen_event', Event}}) -> Event;
 get_msg(Msg) -> Msg.
 
 %%-----------------------------------------------------------------
@@ -451,7 +497,7 @@ format_status(Opt, StatusData) ->
     Specfic = 
 	case erlang:function_exported(Mod, format_status, 2) of
 	    true ->
-		case catch apply(Mod, format_status, [Opt,[PDict,StateData]]) of
+		case catch Mod:format_status(Opt,[PDict,StateData]) of
 		    {'EXIT', _} -> [{data, [{"StateData", StateData}]}];
 		    Else -> Else
 		end;

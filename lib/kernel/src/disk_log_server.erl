@@ -64,7 +64,14 @@ dist_open(A) ->
     gen_server:call(disk_log_server, {dist_open, A}, infinity).
 
 close(Pid) ->
-    gen_server:call(disk_log_server, {close, Pid}, infinity).
+    case catch gen_server:call(disk_log_server, {close, Pid}) of
+        {'EXIT', {timeout, _Reason}} ->
+            %% The server is trying to open the log. 
+            %% do_internal_open will return try_again.
+            timeout;
+        Reply ->
+             Reply
+    end.
 
 get_log_pids(LogName) ->
     do_get_log_pids(LogName).
@@ -97,14 +104,12 @@ handle_call({close, Pid}, _From, State) ->
 
 handle_info({'EXIT', Pid, _Reason}, State) ->
     case get(Pid) of
-	undefined ->
-	    {noreply, State};
-	Name ->
-	    ets:delete(?DISK_LOG_NAME_TABLE, Name),
-	    ets:delete(?DISK_LOG_PID_TABLE, Pid),
-	    erase(Pid),
-	    {noreply, State}
-    end;
+        undefined ->
+            ok;
+        Name -> 
+            erase_log(Name, Pid)
+    end,
+    {noreply, State};
 handle_info(_, State) ->
     {noreply, State}.
 	    
@@ -144,7 +149,12 @@ do_open(A, From) ->
 	false ->
 	    case get_local_pid(Name) of
 		{local, Pid} ->
-		    disk_log:internal_open(Pid, A);
+                    case do_internal_open(Name, Pid, A) of
+                        try_again ->
+                            do_open(A, From);
+                        Reply ->
+                            Reply
+                    end;
 		{distributed, _Pid} ->
 		    {error, {node_already_open, Name}};
 		undefined ->
@@ -175,18 +185,40 @@ do_dist_open(A) ->
 	{local, _Pid} ->
 	    {error, {node_already_open, Name}};
 	{distributed, Pid} ->
-	    disk_log:internal_open(Pid, A)
+            case do_internal_open(Name, Pid, A) of
+                try_again ->
+                    do_dist_open(A);
+                Reply ->
+                    Reply
+            end
+    end.
+
+do_internal_open(Name, Pid, A) ->
+    case disk_log:internal_open(Pid, A) of
+        {error, no_such_log} ->
+            %% The disk_log process has terminated. 
+            receive 
+                {'EXIT', Pid, _Reason} ->
+                    ok
+            after 1000 ->
+                    %% Should never happen.
+                    ok
+            end,
+            erase_log(Name, Pid),
+            try_again;
+        Reply ->
+            Reply
     end.
 
 start_log(Name, A) ->
     case supervisor:start_child(disk_log_sup, [self()]) of 
 	{ok, Pid} ->
-	    link(Pid),
-	    put(Pid, Name),
 	    case disk_log:internal_open(Pid, A) of
 		Error = {error, _} ->
 		    Error;
 		R ->
+                    put(Pid, Name),
+                    link(Pid),
 		    {ok, Pid, R}
 	    end;
 	Error ->
@@ -198,16 +230,22 @@ do_close(Pid) ->
 	undefined ->
 	    ok;
 	Name ->
-	    case get_local_pid(Name) of
-		{local, Pid} ->
-		    ets:delete(?DISK_LOG_NAME_TABLE, Name),
-		    ets:delete(?DISK_LOG_PID_TABLE, Pid);
-		{distributed, _Pid} ->
-		    ok = pg2:leave(?group(Name), Pid)
-	    end,
-	    erase(Pid),
+            erase_log(Name, Pid),
+	    unlink(Pid),
 	    ok
     end.
+
+erase_log(Name, Pid) ->
+    case get_local_pid(Name) of
+        undefined ->
+            ok;
+        {local, Pid} ->
+            true = ets:delete(?DISK_LOG_NAME_TABLE, Name),            
+            true = ets:delete(?DISK_LOG_PID_TABLE, Pid);
+        {distributed, Pid} ->
+            ok = pg2:leave(?group(Name), Pid)
+    end,
+    erase(Pid).
 
 do_accessible_logs() ->
     Local0 = lists:map(fun hd/1, ets:match(?DISK_LOG_NAME_TABLE, {'$1','_'})),

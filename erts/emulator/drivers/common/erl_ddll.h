@@ -22,6 +22,10 @@
 
 #include "sys.h"
 
+#ifdef __WIN32__
+void *win_get_ddll_init_param(void);
+#endif
+
 void *ddll_open(char *);
 void *ddll_sym(void *, char *);
 int ddll_close(void *);

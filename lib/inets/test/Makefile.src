@@ -1,17 +1,16 @@
-#  
-# Makefile.src for ts, which makes the substitutions.
+# Dummy Makefile.src defined to provide backward compatibility for
+# applications that use both the new SSL (3.0 or later), and older
+# versions of SSL.
 #
+
 SSL_LIB_DIR = @ssl_libdir@
 TARGET = @target@
 SSLEAY_LIB = @SSLEAY_ROOT@/lib
-all: copy_files make
 
-copy_files:
-	@erl_name@ -compile copy_files
-	@erl_name@ -noshell -run copy_files start $(SSL_LIB_DIR) $(SSLEAY_LIB) $(TARGET)
-
-make:
-	cd obj
-	-nmake
-	-(cd obj; $(MAKE))
-
+all:
+	-echo "Begin dummy make"
+	-echo SSL_LIB_DIR = $(SSL_LIB_DIR)
+	-echo TARGET = $(TARGET)
+	-echo SSLEAY_LIB = $(SSLEAY_LIB)
+	-echo SSL_LIB_DIR = $(SSL_LIB_DIR)
+	-echo "End dummy make"

@@ -33,15 +33,6 @@
 #endif
 
 #ifndef HEAP_FRAG_ELIM_TEST
-
-#ifdef __BENCHMARK__
-uint oldptr, newptr;
-static ERTS_INLINE void inc_ptrs_to_old(void) { ++ptrs_to_old; }
-static ERTS_INLINE void inc_ptrs_to_young(void) { ++ptrs_to_young; }
-#else
-static ERTS_INLINE void inc_ptrs_to_old(void) { }
-static ERTS_INLINE void inc_ptrs_to_young(void) { }
-#endif
 static void remove_message_buffers(Process* p);
 
 #define MY_IS_MOVED(x)	(!is_header((x)))
@@ -143,6 +134,19 @@ int chk_sys(void);
 
 /* efficient range check */
 #define in_area(ptr,start,nbytes) ((unsigned long)((char*)(ptr) - (char*)(start)) < (nbytes))
+
+/*
+ * Return the next heap size to use. Make sure we never return
+ * a smaller heap size than the minimum heap size for the process.
+ * (Use of the erlang:hibernate/3 BIF could have shrinked the
+ * heap below the minimum heap size.)
+ */
+static Uint
+next_heap_size(Process* p, Uint size, Uint offset)
+{
+    size = erts_next_heap_size(size, offset);
+    return size < p->min_heap_size ? p->min_heap_size : size;
+}
 
 /*
  * Offset pointers to heap from stack.
@@ -294,9 +298,6 @@ offset_mqueue(Process *p, Sint offs, Eterm* low, Eterm* high)
 
 #if defined(__i386__)
 #include "hipe_x86_asm.h"	/* for X86_NR_ARG_REGS */
-
-extern void hipe_update_stack_trap(Process*, const struct sdesc*);
-extern void nbif_stack_trap_ra(void);
 
 static Eterm *fullsweep_nstack(Process *p, Eterm *n_htop)
 {
@@ -478,35 +479,27 @@ static void gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop
 		    Eterm *ptr = boxed_val(gval);
 		    Eterm val = *ptr;
 		    if( ptr_within(ptr, oh_start, oh_end) ) {
-			inc_ptrs_to_old();
 		    } else if( in_area(ptr, const_start, const_size) ) {
-			inc_ptrs_to_old();
 		    } else if( MY_IS_MOVED(val) ) {
 			nsp[i] = val;
 		    } else if( ptr_within(ptr, low_water, high_water) ) {
 			MOVE_BOXED(ptr,val,old_htop,&nsp[i]);
-			inc_ptrs_to_young();
 		    } else {
 			ASSERT(within(ptr, p));
 			MOVE_BOXED(ptr,val,n_htop,&nsp[i]);
-			inc_ptrs_to_young();
 		    }
 		} else if( is_list(gval) ) {
 		    Eterm *ptr = list_val(gval);
 		    Eterm val = *ptr;
 		    if( ptr_within(ptr, oh_start, oh_end) ) {
-			inc_ptrs_to_old();
 		    } else if( in_area(ptr, const_start, const_size) ) {
-			inc_ptrs_to_old();
 		    } else if( is_non_value(val) ) {
 			nsp[i] = ptr[1];
 		    } else if( ptr_within(ptr, low_water, high_water) ) {
 			MOVE_CONS(ptr,val,old_htop,&nsp[i]);
-			inc_ptrs_to_young();
 		    } else {
 			ASSERT(within(ptr, p));
 			MOVE_CONS(ptr,val,n_htop,&nsp[i]);
-			inc_ptrs_to_young();
 		    }
 		}
 	    }
@@ -727,35 +720,27 @@ static void gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop
 		    Eterm *ptr = boxed_val(gval);
 		    Eterm val = *ptr;
 		    if( ptr_within(ptr, oh_start, oh_end) ) {
-			inc_ptrs_to_old();
 		    } else if( in_area(ptr, const_start, const_size) ) {
-			inc_ptrs_to_old();
 		    } else if( MY_IS_MOVED(val) ) {
 			nsp[-i] = val;
 		    } else if( ptr_within(ptr, low_water, high_water) ) {
 			MOVE_BOXED(ptr,val,old_htop,&nsp[-i]);
-			inc_ptrs_to_young();
 		    } else {
 			ASSERT(within(ptr, p));
 			MOVE_BOXED(ptr,val,n_htop,&nsp[-i]);
-			inc_ptrs_to_young();
 		    }
 		} else if( is_list(gval) ) {
 		    Eterm *ptr = list_val(gval);
 		    Eterm val = *ptr;
 		    if( ptr_within(ptr, oh_start, oh_end) ) {
-			inc_ptrs_to_old();
 		    } else if( in_area(ptr, const_start, const_size) ) {
-			inc_ptrs_to_old();
 		    } else if( is_non_value(val) ) {
 			nsp[-i] = ptr[1];
 		    } else if( ptr_within(ptr, low_water, high_water) ) {
 			MOVE_CONS(ptr,val,old_htop,&nsp[-i]);
-			inc_ptrs_to_young();
 		    } else {
 			ASSERT(within(ptr, p));
 			MOVE_CONS(ptr,val,n_htop,&nsp[-i]);
-			inc_ptrs_to_young();
 		    }
 		}
 	    }
@@ -821,7 +806,7 @@ setup_rootset(Process *p, Eterm *objv, int nobj, Rootset *rootset)
      */
     if (v_msg_len > ALENGTH(rootset->def_msg)) {
         rootset->v_msg = (Eterm *)
-	    erts_safe_sl_alloc_from(210, sizeof(Eterm) * v_msg_len);
+	    erts_alloc(ERTS_ALC_T_MSG_ROOTS, sizeof(Eterm) * v_msg_len);
     } else {
         rootset->v_msg = rootset->def_msg;
     }
@@ -933,7 +918,7 @@ void restore_this_rootset(Process *p, Rootset *rootset)
     }
     
     if (rootset->v_msg != rootset->def_msg) {
-        erts_sl_free(rootset->v_msg);
+        erts_free(ERTS_ALC_T_MSG_ROOTS, rootset->v_msg);
     }
 }
 
@@ -992,7 +977,8 @@ remove_message_buffers(Process* p)
 static void fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
 {
 #ifdef SHARED_HEAP
-    Rootset *rootset = erts_safe_sl_alloc(sizeof(Rootset)*erts_max_processes);
+    Rootset *rootset = erts_alloc(ERTS_ALC_T_ROOTSET,
+				  sizeof(Rootset)*erts_max_processes);
 #else
     Rootset rootset;            /* Rootset for GC (stack, dictionary, etc). */
 #endif
@@ -1007,7 +993,7 @@ static void fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
 #endif
 
     /* Create new, empty heap */
-    n_heap = (Eterm *) erts_safe_sl_alloc_from(803, sizeof(Eterm)*new_sz);
+    n_heap = (Eterm *) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP, sizeof(Eterm)*new_sz);
 
     n_hstart = n_htop = n_heap;
     FLAGS(p) &= ~F_NEED_FULLSWEEP;
@@ -1150,7 +1136,7 @@ static void fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
 
 #ifdef SHARED_HEAP
     restore_rootset(p, rootset);
-    erts_sl_free((void *) rootset);
+    erts_free(ERTS_ALC_T_ROOTSET, (void *) rootset);
 #else
     restore_rootset(p, &rootset);
 #endif
@@ -1173,7 +1159,9 @@ static void fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
         sys_memset(OLD_HEAP(p), 0xff,
                    (OLD_HEND(p) - OLD_HEAP(p)) * sizeof(Eterm));
 #endif
-        erts_sl_free(OLD_HEAP(p));
+        ERTS_HEAP_FREE(ERTS_ALC_T_OLD_HEAP,
+		       OLD_HEAP(p),
+		       (OLD_HEND(p)-OLD_HEAP(p))*sizeof(Eterm));
         OLD_HEAP(p) = OLD_HTOP(p) = OLD_HEND(p) = NULL;
     }
 
@@ -1191,7 +1179,9 @@ static void fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
     p->stop = HEAP_END(p) - n;
 #endif
 
-    erts_sl_free((void *) HEAP_START(p));
+    ERTS_HEAP_FREE(ERTS_ALC_T_HEAP,
+		   (void *) HEAP_START(p),
+		   HEAP_SIZE(p)*sizeof(Eterm));
 
     HEAP_START(p) = n_heap;
     HEAP_TOP(p) = n_htop;
@@ -1307,9 +1297,10 @@ grow_new_heap(Process *p, Uint new_sz, Eterm* objv, int nobj)
     Sint offs;
 
     ASSERT(HEAP_SIZE(p) < new_sz);
-    new_heap = (Eterm *) erts_safe_sl_realloc((void*)HEAP_START(p),
-					      sizeof(Eterm)*(HEAP_SIZE(p)),
-					      sizeof(Eterm)*new_sz);
+    new_heap = (Eterm *) ERTS_HEAP_REALLOC(ERTS_ALC_T_HEAP,
+					   (void*)HEAP_START(p),
+					   sizeof(Eterm)*(HEAP_SIZE(p)),
+					   sizeof(Eterm)*new_sz);
 
 #ifdef GC_HEAP_TRACE
     fprintf(stderr, "grow_new_heap: GREW %s FROM %d UPTO %d (used %d)\n",
@@ -1343,8 +1334,8 @@ grow_new_heap(Process *p, Uint new_sz, Eterm* objv, int nobj)
     HEAP_SIZE(p) = new_sz;
 }
 
-static void
-shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj)
+void
+erts_shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj)
 {
     Eterm* new_heap;
     int heap_size = HEAP_TOP(p) - HEAP_START(p);
@@ -1352,9 +1343,10 @@ shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj)
 
 #ifdef SHARED_HEAP
     ASSERT(new_sz < HEAP_SIZE(p));
-    new_heap = (Eterm *) erts_safe_sl_realloc((void*)HEAP_START(p),
-					      sizeof(Eterm)*(HEAP_SIZE(p)),
-					      sizeof(Eterm)*new_sz);
+    new_heap = (Eterm *) ERTS_HEAP_REALLOC(ERTS_ALC_T_HEAP,
+					   (void*)HEAP_START(p),
+					   sizeof(Eterm)*(HEAP_SIZE(p)),
+					   sizeof(Eterm)*new_sz);
     HEAP_END(p) = new_heap + new_sz;
 #else
     int stack_size = p->hend - p->stop;
@@ -1362,9 +1354,10 @@ shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj)
     ASSERT(new_sz < p->heap_sz);
     sys_memmove(p->heap + new_sz - stack_size, p->stop, stack_size *
                                                         sizeof(Eterm));
-    new_heap = (Eterm *) erts_safe_sl_realloc((void*)p->heap,
-					      sizeof(Eterm)*(HEAP_SIZE(p)),
-					      sizeof(Eterm)*new_sz);
+    new_heap = (Eterm *) ERTS_HEAP_REALLOC(ERTS_ALC_T_HEAP,
+					   (void*)p->heap,
+					   sizeof(Eterm)*(HEAP_SIZE(p)),
+					   sizeof(Eterm)*new_sz);
     p->hend = new_heap + new_sz;
     p->stop = p->hend - stack_size;
 #endif
@@ -1411,7 +1404,7 @@ adjust_after_fullsweep(Process *p, int size_before, int need, Eterm *objv, int n
     need_after = size_after + need + stack_size;
     if (HEAP_SIZE(p) < need_after) {
         /* Too small - grow to match requested need */
-        sz = erts_next_heap_size(need_after, 0);
+        sz = next_heap_size(p, need_after, 0);
         grow_new_heap(p, sz, objv, nobj);
     } else if (3 * HEAP_SIZE(p) < 4 * need_after){
         /* Need more than 75% of current, postpone to next GC.*/
@@ -1426,10 +1419,10 @@ adjust_after_fullsweep(Process *p, int size_before, int need, Eterm *objv, int n
         if (wanted < p->min_heap_size) {
             sz = p->min_heap_size;
         } else {
-            sz = erts_next_heap_size(wanted, 0);
+            sz = next_heap_size(p, wanted, 0);
         }
         if (sz < HEAP_SIZE(p)) {
-            shrink_new_heap(p, sz, objv, nobj);
+            erts_shrink_new_heap(p, sz, objv, nobj);
         }
     }
 }
@@ -1442,7 +1435,6 @@ adjust_after_fullsweep(Process *p, int size_before, int need, Eterm *objv, int n
 ** objv: Array of terms to add to rootset, that is to preserve.
 ** nobj: Number of objects in objv.
 */
-
 int
 erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 {
@@ -1454,40 +1446,57 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
     int stack_size;             /* Size of stack ON HEAP. */
     int sz;
 #ifdef __BENCHMARK__
-    NEW_TIMER(gc);
-    hrtime_t gc_time = 0;
     uint was_this_major = 0;
 #endif
+    Uint ms1, s1, us1;
 
-    STOP_TIMER(system);
+    BM_NEW_TIMER(gc);
 
-    if (SAVED_HEAP_TOP(p) != NULL) {
-	HEAP_TOP(p) = SAVED_HEAP_TOP(p);
-	SAVED_HEAP_TOP(p) = NULL;
-    }
+    BM_STOP_TIMER(system);
 
-#ifdef CALCULATE_HEAP_SIZES
+#ifdef BM_HEAP_SIZES
     {
         double total_used_heap = 0;
 #ifdef SHARED_HEAP
         total_used_heap = (HEAP_TOP(p) - HEAP_START(p)) +
                           (OLD_HTOP(p) - OLD_HEAP(p));
+        if (total_used_heap > max_used_global_heap)
+            max_used_global_heap = total_used_heap;
 #else
         int i;
         for (i = 0; i < erts_max_processes; i++)
         {
             Process *cp = process_tab[i];
             if (cp == NULL) continue;
+
             total_used_heap += (cp->htop - cp->heap) +
                                (cp->old_htop - cp->old_heap);
         }
+        if (total_used_heap > max_used_heap)
+            max_used_heap = total_used_heap;
 #endif
-        if (total_used_heap > biggest_heap_size_ever)
-            biggest_heap_size_ever = total_used_heap;
     }
-#endif /* CALCULATE_HEAP_SIZES */
+#endif /* BM_HEAP_SIZES */
 
-    START_TIMER(gc);
+    BM_START_TIMER(gc);
+
+#ifdef SHARED_HEAP
+    /* There are collections forced by the sheduler when the size of all
+     * heap fragments and the overhead from binaries gets greater than the
+     * heap size.
+     * This is not the way to do it in the Shared heap...
+     */
+    if (need == 0 && nobj == 0 && !(FLAGS(p) & F_NEED_FULLSWEEP))
+    {
+        BM_SWAP_TIMER(gc,system);
+        return 0;
+    }
+#endif
+
+    if (SAVED_HEAP_TOP(p) != NULL) {
+	HEAP_TOP(p) = SAVED_HEAP_TOP(p);
+	SAVED_HEAP_TOP(p) = NULL;
+    }
 
 #ifdef SHARED_HEAP
 #define OverRunCheck() \
@@ -1504,6 +1513,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
     if (IS_TRACED_FL(p, F_TRACE_GC)) {
         trace_gc(p, am_gc_start);
     }
+    if (erts_system_monitor_long_gc != 0) get_now(&ms1, &s1, &us1);
     saved_status = p->status;
     p->status = P_GARBING;
     CHECK(p);
@@ -1534,7 +1544,9 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 
     /* Size of heap before first GC */
     size_before = MBUF_SIZE(p) + (HEAP_TOP(p) - HEAP_START(p));
+
 #ifdef SHARED_HEAP
+    /* To prevent shrinking of the shared heap */
     p->min_heap_size = HEAP_SIZE(p);
 #endif
 
@@ -1550,10 +1562,11 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
          * This improved Estone by more than 1200 estones on my computer
          * (Ultra Sparc 10).
          */
-        size_t new_sz = erts_next_heap_size(HIGH_WATER(p) - HEAP_START(p), 1);
+        size_t new_sz = next_heap_size(p, HIGH_WATER(p) - HEAP_START(p), 1);
 
         /* Create new, empty old_heap */
-        n_old = (Eterm *) erts_safe_sl_alloc_from(801, sizeof(Eterm)*new_sz);
+        n_old = (Eterm *) ERTS_HEAP_ALLOC(ERTS_ALC_T_OLD_HEAP,
+					  sizeof(Eterm)*new_sz);
 
         OLD_HEND(p) = n_old + new_sz;
         OLD_HEAP(p) = OLD_HTOP(p) = n_old;
@@ -1579,7 +1592,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
          * below the high water mark.  Do a generational GC.
          */
 
-        gen_gc(p, erts_next_heap_size(HEAP_SIZE(p) + MBUF_SIZE(p), 0), objv, nobj);
+        gen_gc(p, next_heap_size(p, HEAP_SIZE(p) + MBUF_SIZE(p), 0), objv, nobj);
         GEN_GCS(p)++;
         size_after = HEAP_TOP(p) - HEAP_START(p);
         need_after = size_after + need + stack_size;
@@ -1601,12 +1614,13 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
             if (wanted < p->min_heap_size) {
                 wanted = p->min_heap_size;
             } else {
-                wanted = erts_next_heap_size(wanted, 0);
+                wanted = next_heap_size(p, wanted, 0);
             }
             if (wanted < HEAP_SIZE(p)) {
-                shrink_new_heap(p, wanted, objv, nobj);
+                erts_shrink_new_heap(p, wanted, objv, nobj);
             }
-            ASSERT(HEAP_SIZE(p) == erts_next_heap_size(HEAP_SIZE(p), 0));
+            ASSERT(HEAP_SIZE(p) == p->min_heap_size
+		   || HEAP_SIZE(p) == next_heap_size(p, HEAP_SIZE(p), 0));
             goto done;
         }
 
@@ -1615,7 +1629,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
          */
 
         if (HEAP_SIZE(p) >= need_after) {
-            ASSERT(HEAP_SIZE(p) == erts_next_heap_size(HEAP_SIZE(p), 0));
+            ASSERT(HEAP_SIZE(p) == next_heap_size(p, HEAP_SIZE(p), 0));
             goto done;
         }
 #ifdef GC_HEAP_TRACE
@@ -1633,14 +1647,14 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 #ifndef SHARED_HEAP
     sz += p->hend - p->stop;
 #endif
-    sz = erts_next_heap_size(sz, 0);
+    sz = next_heap_size(p, sz, 0);
 
     /*
      * Should we grow although we don't actually need to?
      */
 
     if (sz == HEAP_SIZE(p) && FLAGS(p) & F_HEAP_GROW) {
-        sz = erts_next_heap_size(HEAP_SIZE(p), 1);
+        sz = next_heap_size(p, HEAP_SIZE(p), 1);
     }
     FLAGS(p) &= ~F_HEAP_GROW;
 
@@ -1656,60 +1670,6 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 
  done:
 
-    STOP_TIMER(gc);
-
-#ifdef __BENCHMARK__
-    if (was_this_major == 1)
-    {
-        major_garbage_cols++;
-#ifdef PLACE_STUFF_IN_OLD_GENERATION
-        live_major_sum += OLD_HTOP(p) - OLD_HEAP(p);
-#else
-        live_major_sum += HEAP_TOP(p) - HEAP_START(p);
-#endif
-        major_gc_time += gc_time;
-        if (gc_time > max_major_time)
-            max_major_time = gc_time;
-    }
-    else
-    {
-        minor_garbage_cols++;
-        live_minor_sum += (HEAP_TOP(p) - HEAP_START(p)) +
-                          (OLD_HTOP(p) - OLD_HEAP(p));
-        minor_gc_time += gc_time;
-        if (gc_time > max_minor_time)
-            max_minor_time = gc_time;
-    }
-#endif /* __BENCHMARK__ */
-
-#ifdef CALCULATE_HEAP_SIZES
-    {
-        double total_used_heap = 0;
-        double total_allocated_heap = 0;
-#ifdef SHARED_HEAP
-        total_used_heap = (HEAP_TOP(p) - HEAP_START(p)) +
-                          (OLD_HTOP(p) - OLD_HEAP(p));
-        total_allocated_heap = HEAP_SIZE(p) + (OLD_HEND(p) - OLD_HEAP(p));
-#else
-        int i;
-        for (i = 0; i < erts_max_processes; i++)
-        {
-            Process *cp = process_tab[i];
-            if (cp == NULL) continue;
-            total_used_heap += (cp->htop - cp->heap) +
-                               (cp->old_htop - cp->old_heap);
-            total_allocated_heap += cp->heap_sz +
-              (cp->old_hend - cp->old_heap);
-        }
-#endif
-        if (total_used_heap > biggest_heap_size_ever)
-            biggest_heap_size_ever = total_used_heap;
-        if (total_allocated_heap > max_allocated_heap)
-            max_allocated_heap = total_allocated_heap;
-    }
-#endif /* CALCULATE_HEAP_SIZES */
-
-    START_TIMER(system);
     CHECK(p);
     OverRunCheck();
 #ifdef SHARED_HEAP
@@ -1719,6 +1679,98 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
     if (IS_TRACED_FL(p, F_TRACE_GC)) {
         trace_gc(p, am_gc_end);
     }
+    if (erts_system_monitor_long_gc != 0) {
+	Uint ms2, s2, us2;
+	Sint t;
+	get_now(&ms2, &s2, &us2);
+	t = ms2 - ms1;
+	t = t*1000000 + s2 - s1;
+	t = t*1000 + (us2 - us1)/1000;
+	if (t > 0 && (Uint)t >= erts_system_monitor_long_gc) {
+	    monitor_long_gc(p, t);
+	}
+    }
+    if (erts_system_monitor_large_heap != 0
+	&& HEAP_SIZE(p) >= erts_system_monitor_large_heap) {
+	monitor_large_heap(p);
+    }
+
+    BM_STOP_TIMER(gc);
+
+#ifdef __BENCHMARK__
+    if (was_this_major == 1)
+    {
+#ifdef SHARED_HEAP
+        BM_COUNT(major_global_garbage_cols);
+#else
+        BM_COUNT(major_garbage_cols);
+#endif
+#ifdef BM_TIMERS
+#ifdef SHARED_HEAP
+        major_global_gc_time += gc_time;
+        if (gc_time > max_global_major_time)
+            max_global_major_time = gc_time;
+#else
+        major_gc_time += gc_time;
+        if (gc_time > max_major_time)
+            max_major_time = gc_time;
+#endif
+#endif
+    }
+    else
+    {
+#ifdef SHARED_HEAP
+        BM_COUNT(minor_global_garbage_cols);
+#else
+        BM_COUNT(minor_garbage_cols);
+#endif
+#ifdef BM_TIMERS
+#ifdef SHARED_HEAP
+        minor_global_gc_time += gc_time;
+        if (gc_time > max_global_minor_time)
+            max_global_minor_time = gc_time;
+#else
+        minor_gc_time += gc_time;
+        if (gc_time > max_minor_time)
+            max_minor_time = gc_time;
+#endif
+#endif
+    }
+#endif /* __BENCHMARK__ */
+
+#ifdef BM_HEAP_SIZES
+    {
+        double total_used_heap = 0;
+        double total_allocated_heap = 0;
+#ifdef SHARED_HEAP
+        total_used_heap = (HEAP_TOP(p) - HEAP_START(p)) +
+                          (OLD_HTOP(p) - OLD_HEAP(p));
+        total_allocated_heap = HEAP_SIZE(p) + (OLD_HEND(p) - OLD_HEAP(p));
+        if (total_used_heap > max_used_global_heap)
+            max_used_global_heap = total_used_heap;
+        if (total_allocated_heap > max_allocated_global_heap)
+            max_allocated_global_heap = total_allocated_heap;
+#else
+        int i;
+        for (i = 0; i < erts_max_processes; i++)
+        {
+            Process *cp = process_tab[i];
+            if (cp == NULL) continue;
+
+            total_used_heap += (cp->htop - cp->heap) +
+                               (cp->old_htop - cp->old_heap);
+            total_allocated_heap += cp->heap_sz +
+                                   (cp->old_hend - cp->old_heap);
+        }
+        if (total_used_heap > max_used_heap)
+            max_used_heap = total_used_heap;
+        if (total_allocated_heap > max_allocated_heap)
+            max_allocated_heap = total_allocated_heap;
+#endif
+    }
+#endif /* BM_HEAP_SIZES */
+
+    BM_START_TIMER(system);
 
     ARITH_LOWEST_HTOP(p) = (Eterm *) 0;
     ARITH_AVAIL(p) = 0;
@@ -1750,11 +1802,9 @@ gen_cheney(Process *p, Eterm* low, Eterm* high, Eterm* n_hp, Eterm* n_htop)
 		    *n_hp++ = val;
 		} else {
 		    MOVE_BOXED(ptr,val,n_htop,n_hp++);
-		    inc_ptrs_to_young();
 		}
             } else {
                 ASSERT(within(ptr, p));
-                inc_ptrs_to_old();
                 n_hp++;
             }
             continue;
@@ -1767,11 +1817,9 @@ gen_cheney(Process *p, Eterm* low, Eterm* high, Eterm* n_hp, Eterm* n_htop)
 		    *n_hp++ = ptr[1];
 		} else {
 		    MOVE_CONS(ptr,val,n_htop,n_hp++);
-		    inc_ptrs_to_young();
 		}
             } else {
                 ASSERT(within(ptr, p));
-                inc_ptrs_to_old();
                 n_hp++;
             }
             continue;
@@ -1829,13 +1877,11 @@ gen_cheney_old(Process *p, Eterm* from, Eterm** to,
             val = *ptr;
             if (ptr_within(ptr, oh_start, oh_end))
             {
-                inc_ptrs_to_old();
                 n_hp++;
             }
 #if HIPE
             else if( in_area(ptr, const_start, const_size) )
             {
-                inc_ptrs_to_old();
                 ++n_hp;
             }
 #endif
@@ -1845,11 +1891,9 @@ gen_cheney_old(Process *p, Eterm* from, Eterm** to,
             } else if (ptr_within(ptr, low_water, high_water)) {
                 /* Make object old */
                 MOVE_BOXED(ptr,val,old_htop,n_hp++);
-                inc_ptrs_to_young();
             } else {
                 ASSERT(within(ptr, p));
                 MOVE_BOXED(ptr,val,n_htop,n_hp++);
-                inc_ptrs_to_young();
             }
             continue;
           }
@@ -1858,13 +1902,11 @@ gen_cheney_old(Process *p, Eterm* from, Eterm** to,
             val = *ptr;
             if (ptr_within(ptr, oh_start, oh_end))
             {
-                inc_ptrs_to_old();
                 n_hp++;
             }
 #if HIPE
             else if( in_area(ptr, const_start, const_size) )
             {
-                inc_ptrs_to_old();
                 ++n_hp;
             }
 #endif
@@ -1873,11 +1915,9 @@ gen_cheney_old(Process *p, Eterm* from, Eterm** to,
             else if (ptr_within(ptr, low_water, high_water)) {
                 /* Make object old */
                 MOVE_CONS(ptr,val,old_htop,n_hp++);
-                inc_ptrs_to_young();
             } else {
                 ASSERT(within(ptr, p));
                 MOVE_CONS(ptr,val,n_htop,n_hp++);
-                inc_ptrs_to_young();
             }
             continue;
           }
@@ -1913,7 +1953,8 @@ static void
 gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
 {
 #ifdef SHARED_HEAP
-    Rootset *rootset = erts_safe_sl_alloc(sizeof(Rootset)*erts_max_processes);
+    Rootset *rootset = erts_alloc(ERTS_ALC_T_ROOTSET,
+				  sizeof(Rootset)*erts_max_processes);
 #else
     Rootset rootset;            /* Rootset for GC (stack, dictionary, etc). */
 #endif
@@ -1942,7 +1983,7 @@ gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
     /* new new_heap and copy all live objects to the new new_heap */
     /* that is to not tenure any objects at all */
 
-    n_hstart = (Eterm*) erts_safe_sl_alloc_from(805, sizeof(Eterm)*new_sz);
+    n_hstart = (Eterm*) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP, sizeof(Eterm)*new_sz);
 
     n_htop = n_hstart;
 #ifdef SHARED_HEAP
@@ -1972,13 +2013,11 @@ gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
                 val = *ptr;
                 if (ptr_within(ptr, oh_start, oh_end))
                 {
-                    inc_ptrs_to_old();
                     g_ptr++;
                 }
 #if HIPE
                 else if( in_area(ptr, const_start, const_size) )
                 {
-                    inc_ptrs_to_old();
                     ++g_ptr;
                 }
 #endif
@@ -1987,11 +2026,9 @@ gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
                     *g_ptr++ = val;
                 } else if (ptr_within(ptr, low_water, high_water)) {
                     MOVE_BOXED(ptr,val,old_htop,g_ptr++);
-                    inc_ptrs_to_young();
                 } else {
                     ASSERT(within(ptr, p));
                     MOVE_BOXED(ptr,val,n_htop,g_ptr++);
-                    inc_ptrs_to_young();
                 }
                 continue;
               }
@@ -2001,13 +2038,11 @@ gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
                 val = *ptr;
                 if (ptr_within(ptr, oh_start, oh_end))
                 {
-                    inc_ptrs_to_old();
                     g_ptr++;
                 }
 #if HIPE
                 else if( in_area(ptr, const_start, const_size) )
                 {
-                    inc_ptrs_to_old();
                     ++g_ptr;
                 }
 #endif
@@ -2015,11 +2050,9 @@ gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
                     *g_ptr++ = ptr[1];
                 else if (ptr_within(ptr, low_water, high_water)) {
                     MOVE_CONS(ptr,val,old_htop,g_ptr++);
-                    inc_ptrs_to_young();
                 } else {
                     ASSERT(within(ptr, p));
                     MOVE_CONS(ptr,val,n_htop,g_ptr++);
-                    inc_ptrs_to_young();
                 }
                 continue;
               }
@@ -2092,11 +2125,14 @@ gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
     sys_memset(HEAP_START(p), 0xff, HEAP_SIZE(p) * sizeof(Eterm));
 #endif
 
-    erts_sl_free((void*)HEAP_START(p));
+
+    ERTS_HEAP_FREE(ERTS_ALC_T_HEAP,
+		   (void *) HEAP_START(p),
+		   HEAP_SIZE(p)*sizeof(Eterm));
 
 #ifdef SHARED_HEAP
     restore_rootset(p, rootset);
-    erts_sl_free((void *) rootset);
+    erts_free(ERTS_ALC_T_ROOTSET, (void *) rootset);
 #else
     restore_rootset(p, &rootset);
 #endif
@@ -2234,8 +2270,7 @@ sweep_proc_bins(Process *p, int fullsweep)
                 if (bptr->flags & BIN_FLAG_MATCH_PROG) {
                     erts_match_set_free(bptr);
                 } else {
-                    tot_bin_allocated -= bptr->orig_size;
-		    OH_BIN_FREE(bptr);
+		    erts_bin_free(bptr);
                 }
             }
             ptr = *prev;

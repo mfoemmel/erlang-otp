@@ -121,7 +121,7 @@ pop(Le) -> put(stack, pop(Le, get(stack))).
 
 pop(Le, [{L,_}|Stack]) when Le=<L ->
     pop(Le, Stack);
-pop(Le, Stack) -> Stack.
+pop(_, Stack) -> Stack.
 
 push(Bs, F, Cm, Lc, Le, LineNo) when LineNo>0 ->
     push(Bs, F, Cm, Lc, Le, LineNo, get(stack_trace));
@@ -133,7 +133,7 @@ push(Bs, F, Cm, false, Le, LineNo, no_tail) ->
     put(stack, [{Le,{Cm,extract_fnk(F),LineNo,Bs}}|get(stack)]);
 push(_Bs, _F, _Cm, _Lc, _Le, _LineNo, _Flag) -> ignore.
 
-extract_fnk({Cm,Fnk,Args,No}) -> {Fnk,length(Args)};
+extract_fnk({_,Fnk,Args,_}) -> {Fnk,length(Args)};
 extract_fnk(_)                -> extern.
 
 %%--------------------------------------------------------------------
@@ -145,7 +145,7 @@ in_use_p(Mod, _Cm) ->
     case get(stack_trace) of
 	false -> true;
 	_ -> %  all | no_tail
-	    lists:any(fun({Le,{Cm,Func,LineNo,Bs}}) when Cm=:=Mod -> true;
+	    lists:any(fun({_,{Cm,_,_,_}}) when Cm =:= Mod -> true;
 			 (_) -> false
 		      end,
 		      get(stack))
@@ -265,12 +265,12 @@ lambda(Fun, As0) when is_function(Fun) ->
 	    case As0 ++ Env of
 		As when length(As) =:= Arity ->
 		    {Cs, Mod, Name, As};
-		As ->
+		_ ->
 		    badarity
 	    end;
 	Error -> Error
     end;
-lambda(Fun, As) -> badfun.
+lambda(_, _) -> badfun.
 	    
 fun_call_clauses(Mod, Fun) ->
     {new_index, Index} = erlang:fun_info(Fun, new_index),
@@ -311,7 +311,7 @@ function(Mod, Name, Args, local) ->
 		[{{Mod,Name,Arity,Exp},Clauses}] ->
 		    cache(Key, {Exp,Clauses}),
 		    Clauses;
-		Other -> undef
+		_ -> undef
 	    end;
 	{_Exp,Cs} -> Cs
     end;
@@ -334,10 +334,8 @@ function(Mod, Name, Args, extern) ->
 			    end
 		    end
 	    end;
-	{true,Cs} ->
-	    Cs;
-	{false,Cs} ->
-	    undef
+	{true,Cs} -> Cs;
+	{false,_} -> undef
     end.
 
 db_ref(Mod) ->
@@ -382,7 +380,7 @@ fnk_clauses(F,[{clause,_,Pars,G,B}|Cs],Args,Cm,Lc,Le,CallM,LineNo,Bs0) ->
 	nomatch ->
 	    fnk_clauses(F,Cs,Args,Cm,Lc,Le,CallM,LineNo,Bs0)
     end;
-fnk_clauses(F,[],Args,Cm,Lc,Le,CallM,LineNo,Bs0) ->
+fnk_clauses(F, [], Args, Cm, _Lc, _Le, CallM, LineNo, Bs0) ->
     exit({function_clause,{Cm,F,Args,make_ref()}},CallM,LineNo,Bs0).
 
 seq([E],Bs0,Cm,Lc,Le,F) ->
@@ -400,7 +398,7 @@ seq([E|Es],Bs0,Cm,Lc,Le,F) ->
 	    {value,_,Bs} = expr(E,Bs1,Cm,false,Le,F),
 	    seq(Es,Bs,Cm,Lc,Le,F)
     end;
-seq([],Bs,Cm,_,_,_) ->
+seq([], Bs, _, _, _, _) ->
     {value,true,Bs}.
 
 %% Variable
@@ -412,9 +410,9 @@ expr({var,LineNo,V},Bs,Cm,_,_,F) ->
 	    exit({{unbound,V},F},Cm,LineNo,Bs)
     end;
 
-expr({value,LineNo,Val},Bs,_,_,_,_) ->
+expr({value,_,Val}, Bs, _, _, _, _) ->
     {value,Val,Bs};
-expr({value,Val},Bs,_,_,_,_) -> % Special case straight values
+expr({value,Val}, Bs, _, _, _, _) -> % Special case straight values
     {value,Val,Bs};
 
 %% List
@@ -437,7 +435,7 @@ expr({'catch',_,Expr},Bs0,Cm,_,Le,F) ->
     add_catch_lev(),
     Debugged = get(self),
     Ref = make_ref(),
-    case catch {Ref,expr(Expr,Bs0,Cm,false,Le,F)} of
+    case catch {Ref,expr(Expr, Bs0, Cm, false, Le, F)} of
 	{Ref,Val} ->
 	    dec_catch_lev(),
 	    pop(Le),
@@ -451,17 +449,41 @@ expr({'catch',_,Expr},Bs0,Cm,_,Le,F) ->
 	    {value,Other,Bs0}
     end;
 
+% %% Try/catch statement.
+% expr({'try',LineNo,Es,CaseCs,CatchCs}, Bs0, Cm, Lc, Le, F) ->
+%     add_catch_lev(),
+%     Debugged = get(self),
+%     try seq(Es, Bs0, Cm, false, Le, F) of
+% 	{value,Val,Bs}=Res ->
+% 	    dec_catch_lev(),
+% 	    pop(Le),
+% 	    case CaseCs of
+% 		[] -> Res;
+% 		_ ->
+% 		    case_clauses(Val, CaseCs, Bs, Cm, Lc, Le, LineNo,
+% 				 F, try_clause)
+% 	    end
+%     catch {'EXIT',{Debugged,Reason}} ->
+% 	pop(Le),
+% 	exit({Debugged,Reason});
+%     Exception ->
+%         dec_catch_lev(),
+% 	pop(Le),
+% 	case_clauses(Exception, CatchCs, Bs0, Cm, Lc, Le,
+% 		     LineNo, F, glurf_clause)
+%     end;
+
 %% Case statement
-expr({'case',LineNo,E,Cs},Bs0,Cm,Lc,Le,F) ->
-    {value,Val,Bs} = expr(E,Bs0,Cm,false,Le,F),
-    case_clauses(Val,Cs,Bs,Cm,Lc,Le,LineNo,F);
+expr({'case',LineNo,E,Cs}, Bs0, Cm, Lc, Le, F) ->
+    {value,Val,Bs} = expr(E, Bs0, Cm, false, Le, F),
+    case_clauses(Val, Cs, Bs, Cm, Lc, Le, LineNo, F, case_clause);
 
 %% If statement
 expr({'if',LineNo,Cs},Bs,Cm,Lc,Le,F) ->
     if_clauses(Cs,Bs,Cm,Lc,Le,LineNo,F);
 
 %% Matching expression
-expr({match,LineNo,Lhs,Rhs0},Bs0,Cm,Lc,Le,F) ->
+expr({match,LineNo,Lhs,Rhs0}, Bs0, Cm, _Lc, Le, F) ->
     {value,Rhs,Bs1} = expr(Rhs0,Bs0,Cm,false,Le,F),
     case match(Lhs,Rhs,Bs1) of
 	{match,Bs} ->
@@ -471,7 +493,7 @@ expr({match,LineNo,Lhs,Rhs0},Bs0,Cm,Lc,Le,F) ->
     end;
 
 %% Construct a fun
-expr({make_fun,LineNo,Index,Uniq,Free0}, Bs, Cm, Lc, Le, F) ->
+expr({make_fun,_,Index,Uniq,Free0}, Bs, Cm, _Lc, _Le, _F) ->
     Free = get_free_vars(Free0, Bs),
     Fun = erts_debug:make_fun({get(self),Cm,Index,Uniq,Free}),
     {value,Fun,Bs};
@@ -489,12 +511,12 @@ expr({call_remote,LineNo,Mod,Func,As0},Bs0,Cm,Lc,Le,F) ->
     eval_function(Mod,Func,As,Bs,Cm,Lc,Le,F,LineNo,extern);
 
 %% Call to self/0 (optimization)
-expr(self,Bs,Cm,Lc,Le,F) ->
+expr(self, Bs, _, _, _, _) ->
     {value,get(self),Bs};
 
 %% Call to "safe" BIF,ie a BIF that can safely be executed in Meta
-expr({safe_bif,LineNo,Mod,Func,As0},Bs0,Cm,Lc,Le,F) ->
-    {As,Bs} = eval_list(As0,Bs0,Cm,Le,LineNo,F),
+expr({safe_bif,LineNo,_,Func,As0}, Bs0, Cm, Lc, Le, F) ->
+    {As,Bs} = eval_list(As0, Bs0, Cm, Le, LineNo, F),
     safe_bif(catch_bif(get_catch_lev()),Func,As,Bs,Cm,Lc,Le,LineNo,F);
 
 %% Call to a BIF that must be evaluated in the correct process
@@ -516,11 +538,11 @@ expr({spawn_bif,LineNo,Mod,Func,As0},Bs0,Cm,Lc,Le,F) ->
     dbg_imeta:main_meta_loop(Debugged,Bs,Le,Lc,Cm,LineNo,F);
 
 %% Call to an operation
-expr({op,LineNo,Op,As0},Bs0,Cm,Lc,Le,F) ->
+expr({op,LineNo,Op,As0}, Bs0, Cm, _Lc, Le, F) ->
     {As,Bs} = eval_list(As0,Bs0,Cm,Le,LineNo,F),
     case catch apply(erlang,Op,As) of
-	{'EXIT',{Reason,Where}} ->
-	    exit({Reason,F},Cm,LineNo,Bs);
+	{'EXIT',{Reason,_}} ->
+	    exit({Reason,F}, Cm, LineNo, Bs);
 	Value ->
 	    {value,Value,Bs}
     end;
@@ -554,17 +576,17 @@ expr({throw,LineNo,As0},Bs0,Cm,Lc,Le,F) ->
 			   {catch_bif(get_catch_lev()),erlang,throw,[Term],
 			    clean_mfa(F),false}},
 	    dbg_imeta:main_meta_loop(Debugged,Bs,Le,Lc,Cm,LineNo,F);
-	N ->
+	_ ->
 	    throw(Term)
     end;
 
 %% Mod:module_info/0,1
-expr({module_info_0,LineNo,Mod},Bs,Cm,Lc,Le,F) ->
+expr({module_info_0,_,Mod}, Bs, _Cm, _Lc, _Le, _F) ->
     {value,[{compile,module_info(Mod,compile)},
 	    {attributes,module_info(Mod,attributes)},
 	    {imports,module_info(Mod,imports)},
 	    {exports,module_info(Mod,exports)}],Bs};
-expr({module_info_1,LineNo,Mod,[As0]},Bs0,Cm,Lc,Le,F) ->
+expr({module_info_1,_,Mod,[As0]},Bs0,Cm,Lc,Le,F) ->
     {value,What,Bs} = expr(As0,Bs0,Cm,Lc,Le,F),
     {value,module_info(Mod,What),Bs};
 
@@ -582,7 +604,7 @@ expr({'receive',LineNo,Cs,To,ToExprs},Bs0,Cm,Lc,Le,F) ->
     eval_receive(get(self),Cs,ToVal,ToExprs,ToBs,Bs0,Cm,Lc,Le,LineNo,0,Stamp,F);
 
 %% Send (!)
-expr({send,LineNo,T0,M0},Bs0,Cm,Lc,Le,F) ->
+expr({send,LineNo,T0,M0}, Bs0, Cm, _Lc, Le, F) ->
     {value,T,Bs1} = expr(T0,Bs0,Cm,false,Le,F),
     {value,M,Bs2} = expr(M0,Bs0,Cm,false,Le,F),
     Bs = merge_bindings(Bs2,Bs1,Cm,LineNo,F),
@@ -596,7 +618,7 @@ expr({bin,_,Fs},Bs0,Cm,Lc,Le,F) ->
 		       false);
 
 %% List comprehension
-expr({lc,LineNo,E,Qs},Bs,Cm,Lc,Le,F) ->
+expr({lc,_,E,Qs}, Bs, Cm, Lc, Le, F) ->
     eval_lc(E,Qs,Bs,Cm,Lc,Le,F);
 
 %% Brutal exit on unknown expressions/clauses/values/etc.
@@ -624,30 +646,29 @@ eval_lc1(E,[{guard,Q}|Qs],Bs0,Cm,Lc,Le,F) ->
 	false -> []
     end;
 eval_lc1(E,[Q|Qs],Bs0,Cm,Lc,Le,F) ->
-    case expr(Q,Bs0,Cm,false,Le,F) of
-	{value,true,Bs1} -> eval_lc1(E,Qs,Bs1,Cm,Lc,Le,F);
-	{value,false,Bs1} -> [];
-	Other -> exit({bad_filter,in_fnk(F)})
+    case expr(Q, Bs0, Cm, false, Le, F) of
+	{value,true,Bs} -> eval_lc1(E, Qs, Bs, Cm, Lc, Le, F);
+	_ -> []
     end;
-eval_lc1(E,[],Bs,Cm,Lc,Le,F) ->
-    {value,V,_} = expr(E,Bs,Cm,false,Le,F),
+eval_lc1(E, [], Bs, Cm, _Lc, Le, F) ->
+    {value,V,_} = expr(E, Bs, Cm, false, Le, F),
     [V].
 
-module_info(Mod,module) -> Mod;
-module_info(Mod,compile) -> [];
-module_info(Mod,attributes) ->
+module_info(Mod, module) -> Mod;
+module_info(_Mod, compile) -> [];
+module_info(Mod, attributes) ->
     {ok, Attr} = dbg_iserver:call(get(int), {lookup, Mod, attributes}),
     Attr;
-module_info(Mod,imports) -> [];
-module_info(Mod,exports) ->
+module_info(_Mod, imports) -> [];
+module_info(Mod, exports) ->
     {ok, Exp} = dbg_iserver:call(get(int), {lookup, Mod, exports}),
     Exp;
-module_info(Mod,functions) -> [].
+module_info(_Mod, functions) -> [].
 
 get_free_vars([V|Vs],Bs) ->
     {value,Val} = binding(V,Bs),
     [Val|get_free_vars(Vs,Bs)];
-get_free_vars([],Bs) -> [].
+get_free_vars([], _) -> [].
 
 catch_apply(0) -> apply;
 catch_apply(Lev) when integer(Lev) -> catch_apply.
@@ -690,7 +711,7 @@ eval_send(LineNo,To,Msg,Bs,Cm,F) ->
 	    {value,Msg,Bs};
 	{'EXIT',{badarg,{T,M}}} ->  % If To is an non-existing name
 	    exit({badarg,{T,M}},Cm,LineNo,Bs);
-	{'EXIT',Reason} ->          % Reason is badarg... if send fails !!
+	{'EXIT',_Reason} ->          % Reason is badarg... if send fails !!
 	    exit({badarg,F},Cm,LineNo,Bs)
     end.
 
@@ -725,11 +746,11 @@ eval_receive1(Debugged,Cs,Bs0,Cm,Lc,Le,LineNo,F) ->
 
 check_timeoutvalue(ToVal,_,_,_,_) when integer(ToVal),ToVal>=0 -> true;
 check_timeoutvalue(infinity,_,_,_,_) -> true;
-check_timeoutvalue(ToVal,ToBs,To,Cm,F) ->
-    LineNo = element(2,To),
-    exit({timeout_value,F},Cm,LineNo,ToBs).
+check_timeoutvalue(_ToVal, ToBs, To, Cm, F) ->
+    LineNo = element(2, To),
+    exit({timeout_value,F}, Cm, LineNo, ToBs).
 
-eval_receive(Debugged,Cs,0,ToExprs,ToBs,Bs0,Cm,Lc,Le,LineNo,0,Stamp,F) ->
+eval_receive(Debugged, Cs, 0, ToExprs, ToBs, Bs0, Cm, Lc, Le, LineNo, 0, _Stamp, F) ->
     {_,Msgs} = erlang:process_info(Debugged,messages),% at the first call
     case receive_clauses(Cs,Bs0,Cm,Le,Msgs) of
 	{eval,B,Bs,Msg} ->
@@ -783,7 +804,7 @@ do_receive(Debugged,Cm,Le,LineNo,Bs) ->
 
 	{'EXIT',Debugged,Reason} ->
 	    exit(Debugged,Reason,Cm,LineNo,Bs);
-	{'EXIT',Pid,Reason} ->
+	{'EXIT',_,Reason} ->
 	    exit({int,Reason});
 
 	Msg ->
@@ -800,7 +821,7 @@ do_receive(Debugged,Time,Stamp,Cm,Le,LineNo,Bs) ->
 
 	{'EXIT',Debugged,Reason} ->
 	    exit(Debugged,Reason,Cm,LineNo,Bs);
-	{'EXIT',Pid,Reason} ->
+	{'EXIT',_,Reason} ->
 	    exit({int,Reason});
 
 	Msg ->
@@ -871,27 +892,27 @@ if_clauses([{clause,_,[],G,B}|Cs],Bs,Cm,Lc,Le,LineNo,F) ->
 	false ->
 	    if_clauses(Cs,Bs,Cm,Lc,Le,LineNo,F)
     end;
-if_clauses([],Bs,Cm,Lc,Le,LineNo,F) ->
+if_clauses([], Bs, Cm, _Lc, _Le, LineNo, F) ->
     exit({if_clause,F},Cm,LineNo,Bs).
 
 %% case_clauses(Value,Clauses,Bindings,CurrentMod,LastCall,LineNo,Function)
-case_clauses(Val,[{clause,_,[P],G,B}|Cs],Bs0,Cm,Lc,Le,LineNo,F) ->
-    case match(P,Val,Bs0) of
+case_clauses(Val, [{clause,_,[P],G,B}|Cs], Bs0, Cm, Lc, Le, LineNo, F, Error) ->
+    case match(P, Val, Bs0) of
 	{match,Bs} ->
 	    case guard(G,Bs) of
 		true ->
 		    seq(B,Bs,Cm,Lc,Le,F);
 		false ->
-		    case_clauses(Val,Cs,Bs0,Cm,Lc,Le,LineNo,F)
+		    case_clauses(Val, Cs, Bs0, Cm, Lc, Le, LineNo, F, Error)
 	    end;
 	nomatch ->
-	    case_clauses(Val,Cs,Bs0,Cm,Lc,Le,LineNo,F)
+	    case_clauses(Val, Cs, Bs0, Cm, Lc, Le, LineNo, F, Error)
     end;
-case_clauses(Val,[],Bs,Cm,Lc,Le,LineNo,F) ->
-    exit({{case_clause,Val},F},Cm,LineNo,Bs).
+case_clauses(Val,[], Bs, Cm, _, _, LineNo, F, Error) ->
+    exit({{Error,Val},F}, Cm, LineNo, Bs).
 
 in_fnk({M,F,A,_}) -> [{M,F,A}];
-in_fnk({M,F,A}=MFA) -> [MFA];
+in_fnk({_,_,_}=MFA) -> [MFA];
 in_fnk(Fnk) -> Fnk.
 
 clean_mfa({M,F,A,_}) -> {M,F,A};
@@ -925,22 +946,22 @@ rec_clauses([],_,_,_,_,_) ->
 
 %% guard(GuardTests,Bindings)
 %%  Evaluate a list of guards.
-guard([],Bs) -> true;
-guard(Gs,Bs) -> or_guard(Gs,Bs).
+guard([], _) -> true;
+guard(Gs, Bs) -> or_guard(Gs, Bs).
     
-or_guard([G|Gs],Bs) ->
+or_guard([G|Gs], Bs) ->
     %% Short-circuit OR.
     case and_guard(G,Bs) of
 	true -> true;
 	false -> or_guard(Gs,Bs)
     end;
-or_guard([],Bs) -> false.
+or_guard([], _) -> false.
 
 and_guard([G|Gs],Bs) ->
     %% Short-circuit AND.
     case catch guard_expr(G,Bs) of
 	{value,true} -> and_guard(Gs,Bs);
-	Other -> false
+	_ -> false
     end;
 and_guard([],_) -> true.
 
@@ -948,26 +969,26 @@ guard_exprs([A0|As0],Bs) ->
     {value,A} = guard_expr(A0,Bs),
     {values,As} = guard_exprs(As0,Bs),
     {values,[A|As]};
-guard_exprs([],Bs) ->
+guard_exprs([], _) ->
     {values,[]}.
 
-guard_expr(self,Bs) ->
+guard_expr(self, _) ->
     {value,get(self)};
-guard_expr({safe_bif,LineNo,Mod,Func,As0},Bs) ->
+guard_expr({safe_bif,_,Mod,Func,As0}, Bs) ->
     {values,As} = guard_exprs(As0,Bs),
     {value,apply(Mod,Func,As)};
-guard_expr({var,LineNo,V},Bs) ->
+guard_expr({var,_,V}, Bs) ->
     {value,_} = binding(V,Bs);
-guard_expr({value,LineNo,Val},Bs) ->
+guard_expr({value,_,Val}, _Bs) ->
     {value,Val};
-guard_expr({cons,LineNo,H0,T0},Bs) ->
+guard_expr({cons,_,H0,T0}, Bs) ->
     {value,H} = guard_expr(H0,Bs),
     {value,T} = guard_expr(T0,Bs),
     {value,[H|T]};
-guard_expr({tuple,LineNo,Es0},Bs) ->
+guard_expr({tuple,_,Es0}, Bs) ->
     {values,Es} = guard_exprs(Es0,Bs),
     {value,list_to_tuple(Es)};
-guard_expr({bin,LineNo,Flds},Bs) ->
+guard_expr({bin,_,Flds},Bs) ->
     {value,V,_Bs} = eval_bits:expr_grp(Flds,Bs,
 				       fun(E,B) ->
 					       {value,V} = guard_expr(E,B),
@@ -978,7 +999,7 @@ guard_expr({bin,LineNo,Flds},Bs) ->
 %% match(Pattern,Term,Bs) -> {match,Bs} | nomatch
 match(Pat,Term,Bs) ->
     catch match1(Pat,Term,Bs).
-match1({value,LineNo,V},V,Bs) ->
+match1({value,_,V}, V, Bs) ->
     {match,Bs};
 match1({var,_,'_'},Term,Bs) -> % Anonymous variable matches
     {match,add_anon(Term,Bs)};   % everything,save it anyway
@@ -986,12 +1007,12 @@ match1({var,_,Name},Term,Bs) ->
     case binding(Name,Bs) of
 	{value,Term} ->
 	    {match,Bs};
-	{value,V} ->
+	{value,_} ->
 	    throw(nomatch);
 	unbound ->
 	    {match,[{Name,Term}|Bs]} % Add the new binding
     end;
-match1({match,LineNo,Pat1,Pat2},Term,Bs0) ->
+match1({match,_,Pat1,Pat2}, Term, Bs0) ->
     {match,Bs1} = match1(Pat1,Term,Bs0),
     match1(Pat2,Term,Bs1);
 match1({cons,_,H,T},[H1|T1],Bs0) ->
@@ -999,10 +1020,13 @@ match1({cons,_,H,T},[H1|T1],Bs0) ->
     match1(T,T1,Bs);
 match1({tuple,_,Elts},Tuple,Bs) when tuple(Tuple),length(Elts)=:=size(Tuple) ->
     match_tuple(Elts,Tuple,1,Bs);
-match1({bin,_,Fs},B,Bs0) when binary(B) ->
-    eval_bits:match_bits(Fs,B,Bs0,
-			 fun(L,R,Bs) -> match1(L,R,Bs) end,
-			 fun(E,Bs) -> expr(E,Bs,foo,foo,foo,foo) end,
+match1({bin,_,Fs}, B, Bs0) when is_binary(B) ->
+    %% XXX Sending the same bindings for both binding variables is not
+    %% correct, but at least some bit syntax matching will work.
+    Bs1 = lists:sort(Bs0),			%Kludge.
+    eval_bits:match_bits(Fs, B, Bs1, Bs1,
+			 fun(L, R, Bs) -> match1(L, R, Bs) end,
+			 fun(E,Bs) -> expr(E, Bs, foo, foo, foo, foo) end,
 			 false);
 match1(_,_,_) ->
     throw(nomatch).
@@ -1087,10 +1111,10 @@ merge_bindings([{Name,V}|B1s],B2s,Cm,LineNo,F) ->
     case binding(Name,B2s) of
 	{value,V} -> % Already there,and the SAME
 	    merge_bindings(B1s,B2s,Cm,LineNo,F);
-	{value,V1} when Name == '_' ->		% but anonym different
+	{value,_} when Name == '_' ->		% but anonym different
 	    B2s1 = lists:keydelete('_',1,B2s),
 	    [{Name,V}|merge_bindings(B1s,B2s1,Cm,LineNo,F)];
-	{value,V1} ->				% but different
+	{value,_} ->				% but different
 	    exit({{badmatch,V},F},Cm,LineNo,B2s);
 	unbound ->				% Not there,add it
 	    [{Name,V}|merge_bindings(B1s,B2s,Cm,LineNo,F)]

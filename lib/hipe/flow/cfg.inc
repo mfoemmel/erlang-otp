@@ -1,4 +1,5 @@
 %% -*- Erlang -*-
+%% -*- erlang-indent-level: 2 -*-
 %% $Id$
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -20,7 +21,6 @@
 %%       block 'Label' (or 'none').
 %%  conditional(CFG, Label) - returns conditional successor (or 'none')
 %%  start(CFG) - returns the label of the entry basic block.
-%%  fail_entrypoints/1,
 %%  params(CFG) - returns the list of parameters to the cfg.
 %%  labels(CFG) - returns a list of labels of all basic blocks in the cfg.
 %%  postorder(CFG) - returns a list of labels in postorder.
@@ -29,13 +29,14 @@
 %%  var_range(CFG) - {Min, Max}
 %%  label_range(CFG) - {Min, Max}
 %%  remove_dead_code(CFG) - removes empty BBs.
+%%  remove_unreachable_code(CFG) - removes unreachable BBs.
 %%
 %%  other_entrypoints(CFG) - gives a list of labels that are refered to
 %%                           from the data section.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% TODO:
-%%       Remove fail-entries.
+%%       Remove fail-entries. -- still needed by last part of x86.
 %%
 
 -record(cfg, {hashtable, info, data}).
@@ -48,7 +49,8 @@
 		   params,
 		   extra,
 		   info=[],
-		   %% These should go soon...
+		   %% These are only used by the last stage of 
+                           %% the x86 backend - after frame.
 		   fail_entrypoints=[]}).
 
 -export([init/1,
@@ -56,9 +58,7 @@
 	 update_data/2,
 	 update_code/2,
 	 labels/1,
-	 fail_entrypoints/1,
 	 other_entrypoints/1,
-	 add_fail_entrypoint/2,
 	 is_entry/2,
 	 is_leaf/1,
 	 info/1,
@@ -70,6 +70,7 @@
 	 succ_map/1,
 	 pred/2,
 	 pred_map/1,
+	 pred_remove/3,
 	 fallthrough/2,
 	 conditional/2,
 	 depth_first_ordering/1,
@@ -97,7 +98,8 @@
 	 extra_update/2,
 	 params_update/2,
 	 pp/1,
-	 remove_dead_code/1]).
+	 remove_dead_code/1,
+	 remove_unreachable_code/1]).
 
 -export([none_visited/1,
 	 visit/2,
@@ -110,7 +112,6 @@
 %
 %
 % init(Code) -> CFG, constructs the cfg.
-% is_fail_entrypoint(Label) -> bool(), true if a label is an fail entrypoint.
 % is_label(Instr) -> bool(), true if instruction is a label.
 % label_name(Instr) -> term(), the name of a label.
 % branch_successors(Instr) -> [term()], the successors of a branch.
@@ -209,15 +210,10 @@ fail_entrypoints(CFG) -> (CFG#cfg.info)#cfg_info.fail_entrypoints.
 other_entrypoints(CFG) ->
   hipe_consttab:referred_labels(data(CFG)).
 
-add_fail_entrypoint(CFG, EP) ->
-   Info = CFG#cfg.info,
-   OEP = Info#cfg_info.fail_entrypoints,
-   CFG#cfg{info=Info#cfg_info{fail_entrypoints=[EP|OEP]}}.
-
-
+%% Note this function does not seem to be used...
 is_entry(Lbl, CFG) ->
-   lists:member(Lbl, [start(CFG)|fail_entrypoints(CFG)]) or
-    lists:member(Lbl, other_entrypoints(CFG)).
+    Lbl =:= start(CFG) orelse
+	lists:member(Lbl, other_entrypoints(CFG)).
 
 
 bb_add(CFG, Label, NewBB) ->
@@ -320,12 +316,13 @@ take_bbs(Xs, CFG) ->
     Lbl = hd(Xs),
      case is_label(Lbl) of
 	true ->
-	    CFG1 = case is_fail_entrypoint(Lbl) of
-		       true ->
-			   add_fail_entrypoint(CFG, label_name(Lbl));
-		       false ->
-			   CFG
-		   end,
+%	    CFG1 = case is_fail_entrypoint(Lbl) of
+%		       true ->
+%			   add_fail_entrypoint(CFG, label_name(Lbl));
+%		       false ->
+%			   CFG
+%		   end,
+	     CFG1 = CFG,
 	    case take_bb(tl(Xs), []) of
 		{Code, Rest} ->
 		    NewCFG = bb_add(CFG1, label_name(Lbl),
@@ -401,7 +398,8 @@ depth_first_ordering(CFG) ->
     Start = start(CFG),
     Succ = succ_map(CFG),
     {Ordering, _Visited} =
-	df_search([Start|other_entrypoints(CFG)]++fail_entrypoints(CFG),
+	df_search([Start|other_entrypoints(CFG)]
+		  ++fail_entrypoints(CFG),
 		  none_visited(), Succ, []),
     Ordering.
 
@@ -435,7 +433,8 @@ reverse_postorder(CFG) ->
     Start = start(CFG),
     Succ = succ_map(CFG),
     {Ordering, _Visited} =
-	depth_search([Start|other_entrypoints(CFG)]++fail_entrypoints(CFG),
+	depth_search([Start|other_entrypoints(CFG)]
+		    ++fail_entrypoints(CFG),
 		     none_visited(), Succ, []),
     Ordering.
 
@@ -450,7 +449,8 @@ reverse_inorder(CFG) ->
   Start = start(CFG),
   Succ = succ_map(CFG),
   {Ordering, _Visited} =
-    inorder_search([Start|other_entrypoints(CFG)]++fail_entrypoints(CFG), 
+    inorder_search([Start|other_entrypoints(CFG)]
+		   ++fail_entrypoints(CFG), 
 		   none_visited(), Succ, []),
   Ordering. 
 
@@ -494,7 +494,8 @@ preorder(CFG) ->
     Start = start(CFG),
     Succ = succ_map(CFG),
     {Ordering, _Visited} =
-	preorder_search([Start|other_entrypoints(CFG)]++fail_entrypoints(CFG),
+	preorder_search([Start|other_entrypoints(CFG)]
+			++fail_entrypoints(CFG),
 			none_visited(), Succ, []),
     lists:reverse(Ordering).
 
@@ -518,9 +519,8 @@ reverse_breadthorder(CFG) ->
     Start = start(CFG),
     Succ = succ_map(CFG),
     {Vis, RBO1} = breadth_list([Start], none_visited(), Succ, []),
-    {Vis1, RBO2} = breadth_list(other_entrypoints(CFG), Vis, Succ, RBO1),
-    {_, RBO3} = breadth_list(fail_entrypoints(CFG), Vis1, Succ, RBO2),
-    RBO3.
+    {_Vis1, RBO2} = breadth_list(other_entrypoints(CFG)++fail_entrypoints(CFG), Vis, Succ, RBO1),
+    RBO2.
 
 breadth_list([X|Xs], Vis, Succ, BO) ->
     case visited(X,Vis) of
@@ -603,6 +603,10 @@ pred(Map, Label) ->
 %pred_update(Map, Label, NewPred) ->
 %  hipe_hash:update(Label, NewPred, Map).
 
+pred_remove(Map, Label, Pred)->
+  NewHT = remove_pred(Map#cfg.hashtable, Label, Pred),
+  Map#cfg{hashtable=NewHT}.
+
 fallthrough(CFG, Label) ->
     HT = CFG#cfg.hashtable,
     case hipe_hash:lookup(Label, HT) of
@@ -647,7 +651,9 @@ linearize_cfg(CFG) ->
    {Vis0, NestedCode} = lin_succ(Start, CFG, Vis),
    BlocksInData = hipe_consttab:referred_labels(data(CFG)),
    CatchBlocks = fail_entrypoints(CFG),
-   AllCode = lin_other_entries(NestedCode, CFG, BlocksInData ++ CatchBlocks, Vis0),
+   AllCode = lin_other_entries(NestedCode, CFG, BlocksInData 
+			       ++ CatchBlocks
+			       , Vis0),
    lists:flatten(AllCode).
 
 
@@ -687,16 +693,16 @@ lin_other_entries(Code, CFG, [E|Es], Vis) ->
 %% Remove empty BBs.
 %% 
 %% Removes basic blocks containing only a goto to another BB.
-%% Branches to removed blocks are updated to the successor
-%% of the removed block.
-%% Loads (or other operations) on the label of the BB are
-%% also updated.
-%% As is any references from the data section.
+%% Branches to removed blocks are updated to the successor of the
+%% removed block.
+%% Loads (or other operations) on the label of the BB are also
+%% updated. So are any references from the data section.
 %%
 %% XXX: This implementation does not handle empty infinite loops
 %%      such as L1: goto L2
 %%              L2: goto L1 
-%%      The occurence of such loops should be cheked for and handled. 
+%%      The occurrence of such loops should be checked for and handled.
+%%
 remove_dead_code(CFG) ->
   %% pp(CFG),
   HT = CFG#cfg.hashtable,
@@ -814,20 +820,15 @@ forward(L, Map) ->
 %%  {newsuccs,[{X,Y}|...]} -> The successor X is redirected to Y. 
 
 rd_map_new() -> gb_trees:empty().
-new_successor(L,Map) ->
-  case gb_trees:lookup(L,Map) of
-    {value,{newsuccs,NS}} ->NS;
-    _ -> []
-  end.
+
 rd_succs(M) ->
- R= 
+  R = 
     lists:foldl(fun ({From,{dead,To}},Acc) -> 
 		  [{From,forward(To,M)}|Acc];
 		  (_,Acc) -> Acc
 	      end,
 		[],
 		gb_trees:to_list(M)),
-
   R.
 
 add_redirecedto(L,From,To,Map) ->
@@ -998,4 +999,33 @@ merge(BB, BB2, BB2_Label) ->
 %    {CFG,SuccMap,PredMap},
 %    Labels).
 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% Remove unreachable BBs.
+%% 
+%% A BB is unreachable if it can't be reached by any path from the
+%% start label of the function.
+%%
+
+remove_unreachable_code(Cfg)->
+  Start = start_label(Cfg),
+  SuccMap = succ_map(Cfg),
+  Reachable = find_reachable([Start], SuccMap, gb_sets:from_list([Start])),
+  Labels = labels(Cfg),
+  case Labels--Reachable of
+    [] ->
+      Cfg;
+    Remove ->      
+      NewCfg = lists:foldl(fun(X, Acc)->bb_remove(Acc, X)end, Cfg, Remove),
+      remove_unreachable_code(NewCfg)
+  end.
+
+find_reachable([Label|Left], SuccMap, Acc)->
+  NewAcc = gb_sets:add(Label, Acc),
+  Succ = succ(SuccMap, Label),
+  find_reachable([X||X<-Succ, not gb_sets:is_member(X, Acc)]++Left,
+		 SuccMap, NewAcc);
+find_reachable([], _SuccMap, Acc) ->
+  gb_sets:to_list(Acc).
 

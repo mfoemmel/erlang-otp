@@ -102,7 +102,7 @@ sa_split([], Oids, Vbs) ->
 sort_varbinds_rows(Varbinds) ->
     P = pack(Varbinds),
     S = lists:keysort(1, P),
-    U = unpack(S).
+    unpack(S).
 
 %% In: list of {Oid, Value}
 %% Out: list of {{Indexes_for_row, Col}, Val, Index}
@@ -135,13 +135,13 @@ delete_org_index([]) -> [].
 
 doi([{Col, Val, OrgIndex}, {Col, _Val, _OrgIndex} | T]) ->
     doi([{Col, Val, OrgIndex} | T]);
-doi([{Col, Val, OrgIndex} | T]) ->
+doi([{Col, Val, _OrgIndex} | T]) ->
     [{Col, Val} | doi(T)];
 doi([]) -> [].
 
 %% Maps the column number to OrgIndex.
 col_to_orgindex(0, _) -> 0;
-col_to_orgindex(Col, [{Col, Val, OrgIndex}|_]) ->
+col_to_orgindex(Col, [{Col, _Val, OrgIndex}|_]) ->
     OrgIndex;
 col_to_orgindex(Col, [_|Cols]) ->
     col_to_orgindex(Col, Cols);

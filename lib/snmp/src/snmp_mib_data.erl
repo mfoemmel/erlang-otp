@@ -37,11 +37,12 @@
 -include("snmp_verbosity.hrl").
 
 -define(SNMP_MIB_DATA,snmp_mib_data).
+-define(SNMP_MIB_NODE,snmp_mib_node).
 -define(SNMP_MIB_TREE,snmp_mib_tree).
 -define(DUMMY_TREE_GENERATION,1).
 -define(DEFAULT_TREE,{tree,{undefined_node},internal}).
--define(DUMMY_TREE_DB,dummy_tree_db).
--define(DUMMY_TREE_DB_INIT,{?DUMMY_TREE_DB,?DEFAULT_TREE}).
+%%-define(DUMMY_TREE_DB,dummy_tree_db).
+%%-define(DUMMY_TREE_DB_INIT,{?DUMMY_TREE_DB,?DEFAULT_TREE}).
 
 
 %%%-----------------------------------------------------------------
@@ -67,14 +68,19 @@
 %% tree is the root node (same as ref_tree but with the subagents added).
 %% subagents is a list of {SAPid, Oid}
 %%----------------------------------------------------------------------
--record(snmp_mib_data, {data_db, tree_db, ref_tree, tree, subagents = []}).
+-record(snmp_mib_data, {mib_db,  % table of #mib_info
+			node_db, % table of #node_info
+			tree_db, % table of #tree
+			tree,    % The actual tree
+			subagents = []}).
 
 -record(mib_info,{name,symbolic,file_name}).
+-record(node_info,{oid, mib_name, me}).
 
 
 %% API
--export([new/0, new/1, store/1,
-	 load_mib/4, unload_mib/4, unload_all/1, 
+-export([new/0, new/1, store/1, close/1, 
+	 load_mib/4, unload_mib/4, 
 	 info/1, info/2,
 	 dump/1, dump/2, 
 	 lookup/2, next/3,
@@ -104,7 +110,7 @@
 
 %% This record is what is stored in the database. The 'tree' part
 %% is described above...
--record(tree,{generation = ?DUMMY_TREE_GENERATION, tree = ?DEFAULT_TREE}).
+-record(tree,{generation = ?DUMMY_TREE_GENERATION, root = ?DEFAULT_TREE}).
 
 
 %%%======================================================================
@@ -122,76 +128,129 @@ new() ->
 new(Storage) ->
     %% First we must check if there is already something to read
     %% If a database already exists, then the tree structure has to be read
-    ?vtrace("open data base",[]),
-    Db = snmp_general_db:open(Storage,?SNMP_MIB_DATA,
-			      mib_info,record_info(fields,mib_info),set),
-    ?vtrace("create mib tree",[]),
-    {TreeDb,Tree} = create_tree(Storage,?SNMP_MIB_TREE),
-    #snmp_mib_data{data_db  = Db,   tree_db = TreeDb, 
-		   ref_tree = Tree, tree    = Tree}.
+    ?vtrace("open (mib) database",[]),
+    MibDb = snmp_general_db:open(Storage,?SNMP_MIB_DATA,
+				 mib_info,record_info(fields,mib_info),set),
+    ?vtrace("open (mib) node database",[]),
+    NodeDb = snmp_general_db:open(Storage,?SNMP_MIB_NODE,
+				  node_info,record_info(fields,node_info),set),
+    ?vtrace("open (mib) tree database",[]),
+    TreeDb = snmp_general_db:open(Storage,?SNMP_MIB_TREE,
+				  tree,record_info(fields,tree),set),
+    Tree = 
+	case snmp_general_db:read(TreeDb, ?DUMMY_TREE_GENERATION) of
+	    false ->
+		T = #tree{},
+		snmp_general_db:write(TreeDb, T),
+		T;
+	    {value, T} ->
+		T
+	end,
+    install_mibs(MibDb, NodeDb),
+    #snmp_mib_data{mib_db  = MibDb, 
+		   node_db = NodeDb,
+		   tree_db = TreeDb, 
+		   tree    = Tree}.
 
 
 %%----------------------------------------------------------------------
 %% Returns: new mib data | {error, Reason}
 %%----------------------------------------------------------------------
-load_mib(MibData,FileName,MeOverride,TeOverride) when record(MibData,snmp_mib_data),list(FileName) -> 
+load_mib(MibData,FileName,MeOverride,TeOverride) 
+  when record(MibData,snmp_mib_data), list(FileName) -> 
     ?vlog("load mib file: ~p",[FileName]),
-    #snmp_mib_data{data_db = Db, tree = OldRoot} = MibData,
     ActualFileName = filename:rootname(FileName, ".bin") ++ ".bin",
     MibName = list_to_atom(filename:basename(FileName, ".bin")),
-    case snmp_general_db:read(Db, MibName) of
-	{value,#mib_info{name = MibName}} -> {error, 'already loaded'};
-	false ->
-	    case snmp_misc:read_mib(ActualFileName) of
-		{error, Reason} -> 
-		    ?vlog("Failed reading mib file ~p with reason: ~p",
-			  [ActualFileName,Reason]),
-		    {error, Reason};
-		{ok, Mib} ->
-		    ?vtrace("loaded mib ~s",[Mib#mib.name]),
-		    ?debug("load_mib -> "
-			   "~n   Mib#mib.mes: ~p", [Mib#mib.mes]),
-		    NonInternalMes = 
-			lists:filter(fun drop_internal_and_imported/1,
-				     Mib#mib.mes),
-		    ?vdebug("~n   ~w mib-entries of which ~w "
-			    "are non internal or imported",
-			    [length(Mib#mib.mes),length(NonInternalMes)]),
-		    T = build_tree(NonInternalMes, MibName),
-		    ?debug("load_mib -> "
-			   "~n   T: ~p", [T]),
-		    case catch merge_nodes(T, OldRoot) of
-			{error_merge_nodes, Node1, Node2} ->
-			    ?vlog("error merging nodes ~p and ~p",
-				  [Node1,Node2]),
-			    {error, oid_conflict};
-			NewRoot when tuple(NewRoot),element(1,NewRoot)==tree->
-			    ?debug("load_mib -> "
-				   "~n   NewRoot: ~p", [NewRoot]),
-			    Symbolic = not lists:member(no_symbolic_info,
-							Mib#mib.misc),
-			    case (catch check_notif_and_mes(TeOverride,
-							    MeOverride,
-							    Symbolic, 
-							    Mib#mib.traps,
-							    NonInternalMes)) of
-				true ->
-				    install_mib(Symbolic, Mib, MibName,
-						ActualFileName,
-						Db, NonInternalMes),
-				    ?vtrace("installed mib ~s",
-					    [Mib#mib.name]),
-				    MibData#snmp_mib_data{tree = NewRoot};
-				Else -> Else
-			    end
-		    end
+    (catch do_load_mib(MibData, ActualFileName, MibName, 
+                       MeOverride, TeOverride)).
+
+do_load_mib(MibData, ActualFileName, MibName, MeOverride, TeOverride) ->
+    ?vtrace("do_load_mib -> entry with"
+        "~n  ActualFileName: ~s"
+        "~n  MibName:        ~p",[ActualFileName, MibName]),
+    #snmp_mib_data{mib_db  = MibDb, 
+		   node_db = NodeDb, 
+		   %% tree_db = TreeDb,
+		   tree    = Tree} = MibData,
+    verify_not_loaded(MibDb, MibName),
+    ?vtrace("do_load_mib -> already loaded mibs:"
+	"~n   ~p",[loaded(MibDb)]),
+    Mib = do_read_mib(ActualFileName),
+    ?vtrace("do_load_mib -> read mib ~s",[Mib#mib.name]),
+    NonInternalMes = 
+        lists:filter(fun drop_internal_and_imported/1, Mib#mib.mes),
+    OldRoot = Tree#tree.root,
+    T = build_tree(NonInternalMes, MibName),
+    ?debug("load_mib -> "
+	"~n   OldRoot: ~p"
+	"~n   T:       ~p", [OldRoot, T]),
+    case (catch merge_nodes(T, OldRoot)) of
+	{error_merge_nodes, Node1, Node2} ->
+	    ?vlog("error merging nodes:"
+		"~n~p~nand~n~p", [Node1,Node2]),
+	    {error, oid_conflict};
+	NewRoot when tuple(NewRoot), element(1,NewRoot) == tree ->
+ 	    ?debug("load_mib -> "
+ 		"~n   NewRoot: ~p", [NewRoot]),
+	    Symbolic = not lists:member(no_symbolic_info, Mib#mib.misc),
+	    case (catch check_notif_and_mes(TeOverride, MeOverride, Symbolic, 
+					    Mib#mib.traps, NonInternalMes)) of
+		true ->
+		    install_mes(NodeDb, MibName, NonInternalMes),
+		    install_mib(MibDb, Symbolic, Mib, 
+				MibName, ActualFileName, NonInternalMes),
+		    ?vtrace("installed mib ~s", [Mib#mib.name]),
+		    Tree2 = Tree#tree{root = NewRoot},
+		    %% snmp_general_db:write(TreeDb, Tree2), %% Store later?
+		    {ok, MibData#snmp_mib_data{tree = Tree2}};
+		Else -> 
+		    Else
 	    end
     end.
 
 
-store(MibData) ->
-    save_tree(MibData#snmp_mib_data.tree_db,MibData#snmp_mib_data.ref_tree).
+verify_not_loaded(Db, Name) ->
+    case snmp_general_db:read(Db, Name) of
+        {value, #mib_info{name = Name}} -> 
+            throw({error, 'already loaded'});
+        false ->
+            ok
+    end.
 
+do_read_mib(ActualFileName) ->
+    case snmp_misc:read_mib(ActualFileName) of
+        {error, Reason} -> 
+            ?vlog("Failed reading mib file ~p with reason: ~p",
+                [ActualFileName,Reason]),
+            throw({error, Reason});
+        {ok, Mib} ->
+            Mib
+    end.
+
+store(#snmp_mib_data{tree_db = Db, tree = Tree, subagents = []}) ->
+    snmp_general_db:write(Db, Tree);
+store(#snmp_mib_data{tree_db = Db, tree = Tree, subagents = SAs}) ->
+
+    %% Ouch. Since the subagent info is dynamic we do not 
+    %% want to store the tree containing subagent info. So, we 
+    %% have to create a tmp tree without those and store it.
+
+    case delete_subagents(Tree, SAs) of
+	{ok, TreeWithoutSAs} ->
+	    snmp_general_db:write(Db, TreeWithoutSAs);
+	Error ->
+	    Error
+    end.
+
+delete_subagents(Tree, []) ->
+    {ok, Tree};
+delete_subagents(Tree0, [{_, Oid}|SAs]) ->
+    case (catch delete_subagent(Tree0, Oid)) of
+	{tree, _Tree, _Info} = Tree1 ->
+	    delete_subagents(Tree1, SAs);
+	_Error ->
+	    {error, {'invalid oid', Oid}} 
+    end.
 
 %%----------------------------------------------------------------------
 %% (OTP-3601)
@@ -244,32 +303,48 @@ check_mes([ME | MEs]) ->
 %%----------------------------------------------------------------------
 %% Returns: new mib data | {error, Reason}
 %%----------------------------------------------------------------------
-unload_mib(MibData, FileName, _, _)
-  when record(MibData, snmp_mib_data), list(FileName) -> 
-    #snmp_mib_data{data_db = Db, ref_tree = OldRefRoot, tree = OldRoot} = MibData,
-    ActualFileName = filename:rootname(FileName, ".bin") ++ ".bin",
+unload_mib(MibData, FileName, _, _) when list(FileName) -> 
     MibName = list_to_atom(filename:basename(FileName, ".bin")),
-    case snmp_general_db:read(Db, MibName) of
-	false -> {error, 'not loaded'};
-	{value,#mib_info{name = MibName, symbolic = Symbolic}} ->
-	    {_MEs, NewRefRoot} = delete_mib_from_tree(MibName,OldRefRoot),
-	    {MEs, NewRoot} = delete_mib_from_tree(MibName,OldRoot),
-	    uninstall_mib(Symbolic, MibName, Db, MEs),
-	    MibData#snmp_mib_data{ref_tree = NewRefRoot, tree = NewRoot}
+    (catch do_unload_mib(MibData, MibName)).
+
+do_unload_mib(MibData, MibName) ->
+    ?vtrace("do_unload_mib -> entry with"
+	"~n   MibName: ~p", [MibName]),
+    #snmp_mib_data{mib_db  = MibDb, 
+		   node_db = NodeDb, 
+		   %% tree_db = TreeDb, 
+		   tree    = Tree} = MibData,
+    #mib_info{symbolic = Symbolic} = verify_loaded(MibDb, MibName),
+    NewRoot = delete_mib_from_tree(MibName, Tree#tree.root),
+    Pattern = #node_info{oid = '_', mib_name = MibName, me = '_'},
+    MEs = uninstall_mes(NodeDb, Pattern),
+    uninstall_mib(MibDb, Symbolic, MibName, MEs),
+    NewMibData = MibData#snmp_mib_data{tree = Tree#tree{root = NewRoot}},
+    {ok, NewMibData}.
+
+verify_loaded(Db, Name) ->
+    case snmp_general_db:read(Db, Name) of
+        {value, MibInfo} ->
+            MibInfo;
+        false ->
+            throw({error, 'not loaded'})
     end.
+    
+    
+close(#snmp_mib_data{mib_db = MibDb, node_db = NodeDb, tree_db = TreeDb}) ->
+    snmp_general_db:close(MibDb),
+    snmp_general_db:close(NodeDb),
+    snmp_general_db:close(TreeDb),
+    ok.
 
-unload_all(#snmp_mib_data{data_db = Db}) ->
-    lists:foreach(fun(#mib_info{name = MibName, symbolic = Symbolic}) ->
-			  uninstall_mib(Symbolic, MibName, Db, [])
-		  end, snmp_general_db:tab2list(Db)).
-
-register_subagent(MibData, Oid, Pid) ->
-    case insert_subagent(Oid, Pid, MibData#snmp_mib_data.tree) of
-	{error, Reason} -> {error, Reason};
-	NewTree ->
-	    MibData#snmp_mib_data{tree = NewTree,
-				  subagents=[{Pid, Oid}
-					     | MibData#snmp_mib_data.subagents]}
+register_subagent(#snmp_mib_data{tree = T} = MibData, Oid, Pid) ->
+    case insert_subagent(Oid, T#tree.root) of
+	{error, Reason} -> 
+	    {error, Reason};
+	NewRootTree ->
+	    SAs = [{Pid, Oid} | MibData#snmp_mib_data.subagents],
+	    T2 = T#tree{root = NewRootTree},
+	    MibData#snmp_mib_data{tree = T2, subagents = SAs}
     end.
 
 %%----------------------------------------------------------------------
@@ -291,16 +366,17 @@ unregister_subagent(MibData, Pid) when pid(Pid) ->
 %% Purpose: Deletes one unique subagent. 
 %% Returns: {error, Reason} | {ok, NewMibData, DeletedSubagentPid}
 %%----------------------------------------------------------------------
-unregister_subagent(MibData, Oid) when list(Oid) ->
-    case catch delete_subagent(MibData#snmp_mib_data.tree, Oid) of
+unregister_subagent(#snmp_mib_data{tree = T} = MibData, Oid) when list(Oid) ->
+    case catch delete_subagent(T#tree.root, Oid) of
 	{tree, Tree, Info} ->
 	    OldSAs = MibData#snmp_mib_data.subagents,
 	    {value, {Pid, _Oid}} = lists:keysearch(Oid, 2, OldSAs),
 	    SAs = lists:keydelete(Oid, 2, OldSAs),
+	    T2 = T#tree{root = {tree, Tree, Info}},
 	    {ok, 
-	     MibData#snmp_mib_data{tree = {tree, Tree, Info}, subagents = SAs},
+	     MibData#snmp_mib_data{tree = T2, subagents = SAs},
 	     Pid};
-	Error ->
+	_ ->
 	    {error, {'invalid oid', Oid}}
     end.
 
@@ -309,14 +385,19 @@ unregister_subagent(MibData, Oid) when list(Oid) ->
 %%----------------------------------------------------------------------
 info(MibData) ->
     ?vtrace("retrieve info",[]),
-    #snmp_mib_data{data_db = Db, ref_tree = RefTree, 
+    #snmp_mib_data{mib_db = MibDb, node_db = NodeDb, tree_db = TreeDb, 
 		   tree = Tree, subagents = SAs} = MibData,
-    LoadedMibs = old_format(snmp_general_db:tab2list(Db)),
-    TreeSize = snmp_misc:mem_size(Tree) + snmp_misc:mem_size(RefTree),
-    [{loaded_mibs, LoadedMibs}, {subagents, SAs}, {tree_size_bytes, TreeSize}].
+    LoadedMibs = old_format(snmp_general_db:tab2list(MibDb)),
+    TreeSize = snmp_misc:mem_size(Tree),
+    {memory, ProcSize} = erlang:process_info(self(),memory),
+    MibDbSize  = snmp_general_db:info(MibDb, memory),
+    NodeDbSize = snmp_general_db:info(NodeDb, memory),
+    TreeDbSize = snmp_general_db:info(TreeDb, memory),
+    [{loaded_mibs, LoadedMibs}, {subagents, SAs}, {tree_size_bytes, TreeSize},
+     {process_memory, ProcSize}, 
+     {db_memory, [{mib,MibDbSize},{node,NodeDbSize},{tree,TreeDbSize}]}].
 
-info(MibData, subagents) ->
-    #snmp_mib_data{subagents = SAs} = MibData,
+info(#snmp_mib_data{subagents = SAs}, subagents) ->
     SAs.
 
 old_format(LoadedMibs) ->
@@ -327,19 +408,23 @@ old_format(LoadedMibs) ->
 %%----------------------------------------------------------------------
 %% A total dump for debugging.
 %%----------------------------------------------------------------------
-dump(MibData) when record(MibData, snmp_mib_data) -> 
-    #snmp_mib_data{data_db = Db, tree = Tree} = MibData,
-    io:format("MIB-tables:~n~p~n~n", [snmp_general_db:tab2list(Db)]),
-    io:format("Tree:~n~p~n", [Tree]), % good luck reading it!
+dump(#snmp_mib_data{mib_db = MibDb, node_db = NodeDb, tree = Tree}) ->
+    (catch io:format("MIB-tables:~n~p~n~n", 
+		     [snmp_general_db:tab2list(MibDb)])),
+    (catch io:format("MIB-entries:~n~p~n~n", 
+		     [snmp_general_db:tab2list(NodeDb)])),
+    (catch io:format("Tree:~n~p~n", [Tree])), % good luck reading it!
     ok.
 
-dump(MibData,File) when record(MibData, snmp_mib_data) -> 
+dump(#snmp_mib_data{mib_db = MibDb, node_db = NodeDb, tree = Tree}, File) ->
     case file:open(File,[write]) of
-	{ok,Fd} ->
-	    #snmp_mib_data{data_db = Db, tree = Tree} = MibData,
+	{ok, Fd} ->
 	    io:format(Fd,"~s~n", 
 		      [snmp:date_and_time_to_string(snmp:date_and_time())]),
-	    io:format(Fd,"MIB-tables:~n~p~n~n",[snmp_general_db:tab2list(Db)]),
+	    (catch io:format(Fd,"MIB-tables:~n~p~n~n",
+			     [snmp_general_db:tab2list(MibDb)])),
+	    (catch io:format(Fd, "MIB-entries:~n~p~n~n", 
+			     [snmp_general_db:tab2list(NodeDb)])),
 	    io:format(Fd,"Tree:~n~p~n", [Tree]), % good luck reading it!
 	    file:close(Fd),
 	    ok;
@@ -365,40 +450,124 @@ dump(MibData,File) when record(MibData, snmp_mib_data) ->
 %%          {subagent, SubAgentPid, SAOid} |
 %%          false
 %%-----------------------------------------------------------------
-lookup(#snmp_mib_data{tree = Tree}, Oid) ->
-    case catch find_node(Tree, Oid, []) of
+lookup(#snmp_mib_data{tree = T} = D, Oid) ->
+     ?vtrace("lookup -> entry with"
+ 	"~n   Oid: ~p",[Oid]),	    
+    case (catch find_node(D, T#tree.root, Oid, [])) of
 	{variable, ME} when record(ME, me) -> 
+	    ?vtrace("lookup -> variable:"
+		"~n   ME: ~p",[ME]),	    
 	    {variable, ME};
-	{table, EntryME, {ColME, RevTableEntryOid}} ->
+	{table, EntryME, {ColME, TableEntryOid}} ->
+	    ?vtrace("lookup -> table:"
+		"~n   EntryME:          ~p"
+		"~n   ColME:            ~p"
+		"~n   RevTableEntryOid: ~p",
+		[EntryME, ColME, TableEntryOid]),	    
 	    MFA = EntryME#me.mfa,
 	    RetME = ColME#me{mfa = MFA},
-	    {table_column, RetME, lists:reverse(RevTableEntryOid)};
+	    {table_column, RetME, TableEntryOid};
 	{subagent, SubAgentPid, SANextOid} ->
+	    ?vtrace("lookup -> subagent:"
+		"~n   SubAgentPid: ~p"
+		"~n   SANextOid:   ~p", [SubAgentPid, SANextOid]),	    
 	    {subagent, SubAgentPid, SANextOid};
-	{false, ErrorCode} -> {false, ErrorCode};
-	{'EXIT', _} -> {false, noSuchObject}
+	{false, ErrorCode} -> 
+	    ?vtrace("lookup -> false:"
+		"~n   ErrorCode: ~p",[ErrorCode]),	    
+	    {false, ErrorCode};
+	{'EXIT', R} -> 
+	    ?vtrace("lookup -> exit:"
+		"~n   R:  ~p",[R]),	    
+	    {false, noSuchObject}
     end.
 
-find_node({tree, Tree, {table, _Id}}, RestOfOid, RevOid) ->
-    find_node({tree, Tree, internal}, RestOfOid, RevOid);
-find_node({tree, Tree, {table_entry,{_MibName, EntryME}}},RestOfOid, RevOid) ->
-    case find_node({tree, Tree, internal}, RestOfOid, RevOid) of
-	{false, ErrorCode} -> {false, ErrorCode};
-	Val -> {table, EntryME, Val}
+find_node(D, {tree, Tree, {table, _}}, RestOfOid, RevOid) ->
+     ?vtrace("find_node(tree,table) -> entry with"
+ 	"~n   RestOfOid: ~p"
+ 	"~n   RevOid:    ~p",[RestOfOid, RevOid]),
+    find_node(D, {tree, Tree, internal}, RestOfOid, RevOid);
+find_node(D, {tree, Tree, {table_entry, _}}, RestOfOid, RevOid) ->
+     ?vtrace("find_node(tree,table_entry) -> entry with"
+ 	"~n   RestOfOid: ~p"
+ 	"~n   RevOid:    ~p",[RestOfOid, RevOid]),
+    #snmp_mib_data{node_db = Db} = D,
+    Oid = lists:reverse(RevOid),
+    case snmp_general_db:read(Db, Oid) of
+	{value, #node_info{me = ME}} ->
+	    case find_node(D, {tree, Tree, internal}, RestOfOid, RevOid) of
+		{false, ErrorCode} -> {false, ErrorCode};
+		Val -> {table, ME, Val}
+	    end;
+	false ->
+	    ?vinfo("find_node -> could not find table_entry ME with"
+		"~n   RevOid:    ~p"
+		"~n   when"
+		"~n   RestOfOid: ~p", 
+		[RevOid, RestOfOid]),
+	    false
     end;
-find_node({tree, Tree, _Internal}, [Int | RestOfOid], RevOid) ->
-    find_node(element(Int+1, Tree), RestOfOid, [Int | RevOid]);
-find_node({node, {table_column,{_,ColumnME}}}, RestOfOid, [ColInt | RevOid]) ->
-    {ColumnME, RevOid};
-find_node({node, {variable, {_MibName, VariableME}}}, [0], _RevOid) ->
-    {variable, VariableME};
-find_node({node, {variable, {_MibName, VariableME}}}, [], _RevOid) ->
+find_node(D, {tree, Tree, _Internal}, [Int | RestOfOid], RevOid) ->
+    ?vtrace("find_node(tree) -> entry with"
+	"~n   Int:       ~p"
+	"~n   RestOfOid: ~p"
+	"~n   RevOid:    ~p",[Int, RestOfOid, RevOid]),
+    find_node(D, element(Int+1, Tree), RestOfOid, [Int | RevOid]);
+find_node(D, {node, {table_column, _}}, RestOfOid, [ColInt | RevOid]) ->
+     ?vtrace("find_node(tree,table_column) -> entry with"
+ 	"~n   RestOfOid: ~p"
+ 	"~n   ColInt:    ~p"
+ 	"~n   RevOid:    ~p",[RestOfOid, ColInt, RevOid]),
+    #snmp_mib_data{node_db = Db} = D,
+    Oid = lists:reverse([ColInt | RevOid]),
+    case snmp_general_db:read(Db, Oid) of
+	{value, #node_info{me = ME}} ->
+	    {ME, lists:reverse(RevOid)}; 
+	false ->
+	    X = snmp_general_db:read(Db, lists:reverse([ColInt | RevOid])),
+	    ?vinfo("find_node -> could not find table_column ME with"
+		"~n   RevOid: ~p"
+		"~n   trying  [~p|~p]"
+		"~n   X:      ~p", 
+		[RevOid, [ColInt | RevOid], X]),
+	    false
+    end;
+find_node(D, {node, {variable, _MibName}}, [0], RevOid) ->
+     ?vtrace("find_node(tree,variable,[0]) -> entry with"
+ 	"~n   RevOid:    ~p",[RevOid]),
+    #snmp_mib_data{node_db = Db} = D,
+    Oid = lists:reverse(RevOid),
+    %% {value, #node_info{me = ME}} = snmp_general_db:read(Db, Oid),
+    case snmp_general_db:read(Db, Oid) of
+	{value, #node_info{me = ME}} ->
+	    {variable, ME};
+	false ->
+	    ?vinfo("find_node -> could not find variable ME with"
+		"~n   RevOid: ~p", [RevOid]),
+	    false
+    end;
+find_node(_D, {node, {variable, _MibName}}, [], _RevOid) ->
+    ?vtrace("find_node(tree,variable,[]) -> entry",[]),
     {false, noSuchObject};
-find_node({node, {variable, {_MibName, VariableME}}}, _, _RevOid) ->
+find_node(_D, {node, {variable, _MibName}}, _, _RevOid) ->
+    ?vtrace("find_node(tree,variable) -> entry",[]),
     {false, noSuchInstance};
-find_node({node, {subagent, SubAgentPid}}, _RestOfOid, SARevOid) ->
-    {subagent, SubAgentPid, lists:reverse(SARevOid)};
-find_node(_Node, _RestOfOid, _RevOid) ->
+find_node(D, {node, subagent}, _RestOfOid, SARevOid) ->
+    ?vtrace("find_node(tree,subagent) -> entry with"
+ 	"~n   SARevOid:    ~p",[SARevOid]),
+    #snmp_mib_data{subagents = SAs} = D,
+    SAOid = lists:reverse(SARevOid),
+    case lists:keysearch(SAOid, 2, SAs) of
+	{value, {SubAgentPid, SAOid}} ->
+	    {subagent, SubAgentPid, SAOid};
+	false ->
+	    ?vinfo("find_node -> could not find subagent with"
+		"~n   SAOid: ~p"
+		"~n   SAs:   ~p", [SAOid, SAs]),
+	    false
+    end;    
+find_node(_D, Node, _RestOfOid, _RevOid) ->
+    ?vtrace("find_node -> failed:~n~p",[Node]),
     {false, noSuchObject}.
 
 
@@ -412,8 +581,8 @@ find_node(_Node, _RestOfOid, _RevOid) ->
 %% If a variable is returnes, it is in the MibView.
 %% If a table or subagent is returned, it *may* be in the MibView.
 %%-----------------------------------------------------------------
-next(#snmp_mib_data{tree = RootNode}, Oid, MibView) ->
-    case catch next_node(RootNode, Oid, [], MibView) of
+next(#snmp_mib_data{tree = T} = D, Oid, MibView) ->
+    case catch next_node(D, T#tree.root, Oid, [], MibView) of
 	false -> endOfMibView;
 	Else -> Else
     end.
@@ -427,49 +596,118 @@ next(#snmp_mib_data{tree = RootNode}, Oid, MibView) ->
 %%          {variable, MibEntry, VarOid} |
 %%          {table, TableOid, TableRestOid, MibEntry}
 %%-----------------------------------------------------------------
-next_node(undefined_node, _Oid, _RevOidSoFar, _MibView) ->
+next_node(_D, undefined_node, _Oid, _RevOidSoFar, _MibView) ->
+    ?vtrace("next_node(undefined_node) -> entry", []),
     false;
 
-next_node({tree, Tree, {table_entry, _Id}}, [Int | Oid], RevOidSoFar, _MibView)
+next_node(_D, {tree, Tree, {table_entry, _Id}}, [Int | _Oid], 
+	  _RevOidSoFar, _MibView)
   when Int+1 > size(Tree) ->
+    ?vtrace("next_node(tree,table_entry) -> entry when not found whith"
+	"~n   Int:        ~p"
+	"~n   size(Tree): ~p", [Int, size(Tree)]),
     false;
-next_node({tree, Tree, {table_entry, {_MibName, EntryME}}},
+next_node(D, {tree, Tree, {table_entry, _MibName}},
 	  Oid, RevOidSoFar, MibView) ->
+    ?vtrace("next_node(tree,table_entry) -> entry when"
+	"~n   size(Tree):  ~p"
+	"~n   Oid:         ~p"
+	"~n   RevOidSoFar: ~p"
+	"~n   MibView:     ~p", [size(Tree), Oid, RevOidSoFar, MibView]),
     OidSoFar = lists:reverse(RevOidSoFar),
     case snmp_acm:is_definitely_not_in_mib_view(OidSoFar, MibView) of
-	true -> false;
-	_ -> {table, OidSoFar, Oid, EntryME}
+	true -> 
+	    ?vdebug("next_node(tree,table_entry) -> not in mib view",[]),
+	    false;
+	_ -> 
+	    #snmp_mib_data{node_db = Db} = D,
+	    case snmp_general_db:read(Db, OidSoFar) of
+		false ->
+		    ?vinfo("next_node -> could not find table_entry with"
+			"~n   OidSoFar: ~p", [OidSoFar]),
+		    false;
+		{value, #node_info{me = ME}} ->
+		    ?vtrace("next_node(tree,table_entry) -> found: ~n   ~p",
+			[ME]),
+		    {table, OidSoFar, Oid, ME}
+	    end
     end;
 
-next_node({tree, Tree, _Info}, [Int | RestOfOid], RevOidSoFar, MibView) 
+next_node(D, {tree, Tree, _Info}, [Int | RestOfOid], RevOidSoFar, MibView) 
   when Int < size(Tree), Int >= 0 ->
-    case next_node(element(Int+1,Tree),RestOfOid, [Int|RevOidSoFar], MibView) of
-	false -> find_next({tree, Tree, _Info}, Int+1, RevOidSoFar, MibView);
-	Else -> Else
+    ?vtrace("next_node(tree) -> entry when"
+	"~n   size(Tree):  ~p"
+	"~n   Int:         ~p"
+	"~n   RestOfOid:   ~p"
+	"~n   RevOidSoFar: ~p"
+	"~n   MibView:     ~p", 
+	[size(Tree), Int, RestOfOid, RevOidSoFar, MibView]),
+    case next_node(D, element(Int+1,Tree), 
+		   RestOfOid, [Int|RevOidSoFar], MibView) of
+	false -> 
+	    find_next(D, {tree, Tree, _Info}, Int+1, RevOidSoFar, MibView);
+	Else -> 
+	    Else
     end;
 %% no solution
-next_node({tree, Tree, _Info}, [Int | RestOfOid], RevOidSoFar, MibView) ->
+next_node(D, {tree, Tree, _Info}, [], RevOidSoFar, MibView) ->
+    ?vtrace("next_node(tree,[]) -> entry when"
+	"~n   size(Tree):  ~p"
+	"~n   RevOidSoFar: ~p"
+	"~n   MibView:     ~p", 
+	[size(Tree), RevOidSoFar, MibView]),
+    find_next(D, {tree, Tree, _Info}, 0, RevOidSoFar, MibView);
+next_node(_D, {tree, Tree, _Info}, _RestOfOid, _RevOidSoFar, _MibView) ->
+    ?vtrace("next_node(tree) -> entry when"
+	"~n   size(Tree):  ~p", [size(Tree)]),
     false;
-next_node({tree, Tree, _Info}, [], RevOidSoFar, MibView) ->
-    find_next({tree, Tree, _Info}, 0, RevOidSoFar, MibView);
 
-next_node({node,{subagent,SubAgentPid}}, Oid,
-	  [SAInt | SARevOidSoFar], MibView) ->
-    OidSoFar = lists:reverse([SAInt | SARevOidSoFar]),
+next_node(D, {node, subagent}, Oid, RevOidSoFar, MibView) ->
+    ?vtrace("next_node(node,subagent) -> entry when"
+	"~n   Oid:         ~p"
+	"~n   RevOidSoFar: ~p"
+	"~n   MibView:     ~p", 
+	[Oid, RevOidSoFar, MibView]),
+    OidSoFar = lists:reverse(RevOidSoFar),
     case snmp_acm:is_definitely_not_in_mib_view(OidSoFar, MibView) of
-	true -> false;
-	_ -> {subagent, SubAgentPid, OidSoFar}
+	true -> 
+	    false;
+	_ -> 
+	    #snmp_mib_data{subagents = SAs} = D,
+	    case lists:keysearch(OidSoFar, 2, SAs) of
+		{value, {SubAgentPid, OidSoFar}} ->
+		    {subagent, SubAgentPid, OidSoFar};
+		_ ->
+		    ?vinfo("next_node -> could not find subagent with"
+			"~n   OidSoFar: ~p"
+			"~n   SAs:      ~p", [OidSoFar, SAs]),
+		    false
+	    end
     end;
     
-next_node({node, {variable, {_MibName, VariableME}}}, [],
-	  RevOidSoFar, MibView) ->
+next_node(D, {node, {variable, _MibName}}, [], RevOidSoFar, MibView) ->
+    ?vtrace("next_node(node,variable,[]) -> entry when"
+	"~n   RevOidSoFar: ~p"
+	"~n   MibView:     ~p", 
+	[RevOidSoFar, MibView]),
     OidSoFar = lists:reverse([0 | RevOidSoFar]),
     case snmp_acm:validate_mib_view(OidSoFar, MibView) of
-	true -> {variable, VariableME, OidSoFar};
-	_ -> false
+	true ->
+	    #snmp_mib_data{node_db = Db} = D,
+	    case snmp_general_db:read(Db, lists:reverse(RevOidSoFar)) of
+		false ->
+		    ?vinfo("next_node -> could not find variable with"
+			"~n   RevOidSoFar: ~p", [RevOidSoFar]),
+		    false;
+		{value, #node_info{me = ME}} ->
+		    {variable, ME, OidSoFar}
+	    end;
+	_ -> 
+	    false
     end;
 
-next_node({node, {variable, _ME}}, _Oid, RevOidSoFar, MibView) ->
+next_node(_D, {node, {variable, _MibName}}, _Oid, _RevOidSoFar, _MibView) ->
+    ?vtrace("next_node(node,variable) -> entry", []),
     false.
 
 %%-----------------------------------------------------------------
@@ -482,37 +720,69 @@ next_node({node, {variable, _ME}}, _Oid, RevOidSoFar, MibView) ->
 %% PRE: This function must always be called with a {internal, Tree}
 %%      node.
 %%-----------------------------------------------------------------
-find_next({tree, Tree, internal}, Index, RevOidSoFar, MibView) 
-  when Index < size(Tree) ->
-    case find_next(element(Index+1, Tree), 0, [Index | RevOidSoFar], MibView) of
-	false -> find_next({tree, Tree, internal},Index+1,RevOidSoFar, MibView);
-	Other -> Other
+find_next(D, {tree, Tree, internal}, Idx, RevOidSoFar, MibView) 
+  when Idx < size(Tree) ->
+    case find_next(D, element(Idx+1, Tree), 0, [Idx| RevOidSoFar], MibView) of
+	false -> 
+	    find_next(D, {tree, Tree, internal}, Idx+1, RevOidSoFar, MibView);
+	Other -> 
+	    Other
     end;
-find_next({tree, Tree, internal}, _Index, _RevOidSoFar, _MibView) ->
+find_next(_D, {tree, _Tree, internal}, _Idx, _RevOidSoFar, _MibView) ->
     false;
-find_next(undefined_node, _Index, _RevOidSoFar, _MibView) ->
+find_next(_D, undefined_node, _Idx, _RevOidSoFar, _MibView) ->
     false;
-find_next({tree, Tree, {table, _Id}}, Index, RevOidSoFar, MibView) ->
-    find_next({tree, Tree, internal}, Index, RevOidSoFar, MibView);
-find_next({tree, Tree, {table_entry,{MibName,EntryME}}}, _Index,
+find_next(D, {tree, Tree, {table, _MibName}}, Idx, RevOidSoFar, MibView) ->
+    find_next(D, {tree, Tree, internal}, Idx, RevOidSoFar, MibView);
+find_next(D, {tree, _Tree, {table_entry, _MibName}}, _Index,
 	  RevOidSoFar, MibView) ->
     OidSoFar = lists:reverse(RevOidSoFar),
     case snmp_acm:is_definitely_not_in_mib_view(OidSoFar, MibView) of
-	true -> false;
-	_ -> {table, OidSoFar, [], EntryME}
+	true -> 
+	    false;
+	_ -> 
+	    #snmp_mib_data{node_db = Db} = D,
+	    case snmp_general_db:read(Db, OidSoFar) of
+		false ->
+		    ?vinfo("find_next -> could not find table_entry ME with"
+			"~n   OidSoFar: ~p", [OidSoFar]),
+		    false;
+		{value, #node_info{me = ME}} ->
+		    {table, OidSoFar, [], ME}
+	    end
     end;
-find_next({node, {variable, {_MibName, VariableME}}}, _Index,
-	  RevOidSoFar, MibView) ->
+find_next(D, {node, {variable, _MibName}}, _Idx, RevOidSoFar, MibView) ->
     OidSoFar = lists:reverse([0 | RevOidSoFar]),
     case snmp_acm:validate_mib_view(OidSoFar, MibView) of
-	true -> {variable, VariableME, OidSoFar};
-	_ -> false
+	true -> 
+	    #snmp_mib_data{node_db = Db} = D,
+	    case snmp_general_db:read(Db, lists:reverse(RevOidSoFar)) of
+		false ->
+		    ?vinfo("find_next -> could not find variable with"
+			"~n   RevOidSoFar: ~p", [RevOidSoFar]),
+		    false;
+		{value, #node_info{me = ME}} ->
+		    {variable, ME, OidSoFar}
+	    end;
+	_ -> 
+	    false
     end;
-find_next({node, {subagent, SubAgentPid}}, _Index, RevOidSoFar, MibView) ->
+find_next(D, {node, subagent}, _Idx, RevOidSoFar, MibView) ->
     OidSoFar = lists:reverse(RevOidSoFar),
     case snmp_acm:is_definitely_not_in_mib_view(OidSoFar, MibView) of
-	true -> false;
-	_ -> {subagent, SubAgentPid, OidSoFar}
+	true -> 
+	    false;
+	_ -> 
+	    #snmp_mib_data{subagents = SAs} = D,
+	    case lists:keysearch(OidSoFar, 2, SAs) of
+		{value, {SubAgentPid, OidSoFar}} ->
+		    {subagent, SubAgentPid, OidSoFar};
+		false ->
+		    ?vinfo("find_node -> could not find subagent with"
+			"~n   OidSoFar: ~p"
+			"~n   SAs:      ~p", [OidSoFar, SAs]),
+		    false
+	    end
     end.
 
 %%%======================================================================
@@ -537,36 +807,32 @@ build_tree(Mes, MibName) ->
 %% Example: Temporary: [{1, Node1}, {3, Node3}]
 %%          Final:     {Node1, undefined_node, Node3}
 %% Pre: Mes are sorted on oid.
-%% Comment: The assocList in #me is cleared to save some small amount of memory.
 %%----------------------------------------------------------------------
 build_subtree(LevelPrefix, [Me | Mes], MibName) ->
-    ?debug("build subtree -> ~n"
+    ?vtrace("build subtree -> ~n"
 	   "   oid:         ~p~n"
 	   "   LevelPrefix: ~p~n"
 	   "   MibName:     ~p", [Me#me.oid, LevelPrefix, MibName]),
     EType = Me#me.entrytype,
-    ?debug("build subtree: EType = ~p",[EType]),
+    ?vtrace("build subtree -> EType = ~p",[EType]),
     case in_subtree(LevelPrefix, Me) of
 	above ->
-	    ?debug("build subtree: above",[]),
+	    ?vtrace("build subtree -> above",[]),
 	    {[], [Me|Mes]};
 	{node, Index} ->
-	    ?debug("build subtree: node at ~p",[Index]),
+	    ?vtrace("build subtree -> node at ~p",[Index]),
 	    {Tree, RestMes} = build_subtree(LevelPrefix, Mes, MibName),
-	    {[{Index, {node, {EType, {MibName, Me#me{assocList = undefined}}}}}
-	      | Tree],
-	     RestMes};
+	    {[{Index, {node, {EType, MibName}}} | Tree], RestMes};
 	{subtree, Index, NewLevelPrefix} ->
-	    ?debug("build subtree: subtree at ~p with ~p",
-		   [Index,NewLevelPrefix]),
-	    {BelowTree, RestMes} = build_subtree(NewLevelPrefix, Mes, MibName),
-	    {CurTree, RestMes2} = build_subtree(LevelPrefix, RestMes, MibName),
-	    {[{Index, {tree, BelowTree,
-		       {EType, {MibName, Me#me{assocList = undefined}}}}}
-	      | CurTree],
-	     RestMes2};
+	    ?vtrace("build subtree -> subtree at ~p with ~p",
+		   [Index, NewLevelPrefix]),
+	    {BelowTree, RestMes} = 
+		build_subtree(NewLevelPrefix, Mes, MibName),
+	    {CurTree, RestMes2} = 
+		build_subtree(LevelPrefix, RestMes, MibName),
+	    {[{Index, {tree, BelowTree, {EType,MibName}}}| CurTree], RestMes2};
 	{internal_subtree, Index, NewLevelPrefix} ->
-	    ?debug("build subtree: internal_subtree at ~p with ~p",
+	    ?vtrace("build subtree -> internal_subtree at ~p with ~p",
 		   [Index,NewLevelPrefix]),
 	    {BelowTree, RestMes} =
 		build_subtree(NewLevelPrefix, [Me | Mes], MibName),
@@ -576,9 +842,7 @@ build_subtree(LevelPrefix, [Me | Mes], MibName) ->
     end;
 
 build_subtree(_LevelPrefix, [], _MibName) -> 
-    ?debug("build subtree -> done when"
-	   "~n   _LevelPrefix: ~p"
-	   "~n   _MibName:     ~p", [_LevelPrefix, _MibName]),
+    ?vtrace("build subtree -> done", []),
     {[], []}.
 
 %%--------------------------------------------------
@@ -597,7 +861,7 @@ in_subtree(LevelPrefix, Me) ->
     case lists:prefix(LevelPrefix, Me#me.oid) of
 	true when length(Me#me.oid) > length(LevelPrefix) ->
 	    classify_how_in_subtree(LevelPrefix, Me);
-	Else ->
+	_ ->
 	    above
     end.
 
@@ -721,8 +985,10 @@ undefined_nodes_list(N) -> [undefined_node | undefined_nodes_list(N-1)].
 %%----------------------------------------------------------------------
 delete_mib_from_tree(MibName, {tree, Tree, internal}) ->
     case delete_tree(Tree, MibName) of
-	{MEs, []} -> {MEs, {tree, {undefined_node}, internal}}; % reduce
-	{MEs, LevelList} -> {MEs, {tree, list_to_tuple(LevelList), internal}}
+	[] -> 
+	    {tree, {undefined_node}, internal}; % reduce
+	LevelList -> 
+	    {tree, list_to_tuple(LevelList), internal}
     end.
 
 %%----------------------------------------------------------------------
@@ -733,11 +999,11 @@ delete_mib_from_tree(MibName, {tree, Tree, internal}) ->
 %% Returns: {MEs, The new level represented as a list}
 %%----------------------------------------------------------------------
 delete_tree(Tree, MibName) when tuple(Tree) ->
-    {MEs, NewLevel} = delete_nodes(tuple_to_list(Tree), MibName, [], []),
+    NewLevel = delete_nodes(tuple_to_list(Tree), MibName, []),
     case lists:filter(fun drop_undefined_nodes/1,NewLevel) of
-	[] -> {MEs, []};
-	A_perhaps_shorted_list ->
-	    {MEs, NewLevel}  % some other mib needs this level
+	[] -> [];
+	_A_perhaps_shorted_list ->
+	    NewLevel  % some other mib needs this level
     end.
     
 %%----------------------------------------------------------------------
@@ -745,44 +1011,36 @@ delete_tree(Tree, MibName) when tuple(Tree) ->
 %%          Recursively deletes sub trees to this node.
 %% Returns: {MEs, NewNodesList}
 %%----------------------------------------------------------------------
-delete_nodes([], _MibName, AccNodes, AccMEs) ->
-    {AccMEs, lists:reverse(AccNodes)};
+delete_nodes([], _MibName, AccNodes) ->
+    lists:reverse(AccNodes);
 
-delete_nodes([{node, {variable, {MibName, ME}}}|T],
-	     MibName, AccNodes, AccMEs) ->
-    delete_nodes(T, MibName, [undefined_node | AccNodes], [ME | AccMEs]);
+delete_nodes([{node, {variable, MibName}}|T], MibName, AccNodes) ->
+    delete_nodes(T, MibName, [undefined_node | AccNodes]);
 
-delete_nodes([{node, {table_column, {MibName, ME}}}|T],
-	    MibName, AccNodes, AccMEs) ->
-    delete_nodes(T, MibName, [undefined_node | AccNodes], [ME | AccMEs]);
+delete_nodes([{node, {table_column, MibName}}|T], MibName, AccNodes) ->
+    delete_nodes(T, MibName, [undefined_node | AccNodes]);
 
-delete_nodes([{tree, Tree, {table, {MibName, ME}}}|T], 
-	    MibName, AccNodes, AccMEs) ->
-    {MEs, _Level} =
-	delete_nodes(tuple_to_list(Tree),MibName,AccNodes,[ME | AccMEs]),
-    delete_nodes(T, MibName, [undefined_node | AccNodes], MEs);
+delete_nodes([{tree, _Tree, {table, MibName}}|T], MibName, AccNodes) ->
+    delete_nodes(T, MibName, [undefined_node | AccNodes]);
 
-delete_nodes([{tree, Tree, {table_entry, {MibName, ME}}}|T], 
-	    MibName, AccNodes, AccMEs) ->
-    {MEs, _Level} =
-	delete_nodes(tuple_to_list(Tree),MibName,AccNodes,[ME | AccMEs]),
-    delete_nodes(T, MibName, [undefined_node | AccNodes], MEs);
+delete_nodes([{tree, _Tree, {table_entry, MibName}}|T], MibName, AccNodes) ->
+    delete_nodes(T, MibName, [undefined_node | AccNodes]);
 
-delete_nodes([{tree, Tree, Info}|T], MibName, AccNodes, AccMEs) ->
+delete_nodes([{tree, Tree, Info}|T], MibName, AccNodes) ->
     case delete_tree(Tree, MibName) of
-	{MEs, []} -> % tree completely deleted
-	    delete_nodes(T, MibName, [undefined_node | AccNodes],
-			 lists:append(MEs,AccMEs));
-	{MEs, LevelList} ->
-	    delete_nodes(T, MibName, [{tree, list_to_tuple(LevelList), Info}
-				      | AccNodes], lists:append(MEs,AccMEs))
+	[] -> % tree completely deleted
+	    delete_nodes(T, MibName, [undefined_node | AccNodes]);
+	LevelList ->
+	    delete_nodes(T, MibName, 
+			 [{tree, list_to_tuple(LevelList), Info} | AccNodes])
     end;
 
-delete_nodes([NodeToKeep|T], MibName, AccNodes, AccMEs) ->
-    delete_nodes(T, MibName, [NodeToKeep | AccNodes], AccMEs).
+delete_nodes([NodeToKeep|T], MibName, AccNodes) ->
+    delete_nodes(T, MibName, [NodeToKeep | AccNodes]).
 
 drop_undefined_nodes(undefined_node) -> false;
-drop_undefined_nodes(X) -> true.
+drop_undefined_nodes(_) -> true.
+
 
 %%%======================================================================
 %%% 6. Functions for subagent handling
@@ -791,32 +1049,32 @@ drop_undefined_nodes(X) -> true.
 %%----------------------------------------------------------------------
 %% Returns: A new Root|{error, reason}
 %%----------------------------------------------------------------------
-insert_subagent(Oid, Pid, OldRoot) ->
-    ListTree = build_tree_for_subagent(Oid, Pid),
+insert_subagent(Oid, OldRoot) ->
+    ListTree = build_tree_for_subagent(Oid),
     case catch convert_tree(ListTree) of
-	{'EXIT', Reason} ->
+	{'EXIT', _Reason} ->
 	    {error, 'cannot construct tree from oid'};
 	Level when tuple(Level) ->
 	    T = {tree, Level, internal},
 	    case catch merge_nodes(T, OldRoot) of
-		{error_merge_nodes, Node1, Node2} ->
+		{error_merge_nodes, _Node1, _Node2} ->
 		    {error, oid_conflict};
-		NewRoot when tuple(NewRoot), element(1, NewRoot)==tree->
+		NewRoot when tuple(NewRoot), element(1, NewRoot) == tree->
 		    NewRoot
 	    end
     end.
 
-build_tree_for_subagent([Index], Pid) ->
-    [{Index, {node, {subagent, Pid}}}];
+build_tree_for_subagent([Index]) ->
+    [{Index, {node, subagent}}];
 
-build_tree_for_subagent([Index | T], Pid) ->
-    [{Index, {tree, build_tree_for_subagent(T, Pid), internal}}].
+build_tree_for_subagent([Index | T]) ->
+    [{Index, {tree, build_tree_for_subagent(T), internal}}].
 
 %%----------------------------------------------------------------------
 %% Returns: A new tree where the subagent at Oid (2nd arg) has been deleted.
 %%----------------------------------------------------------------------
 delete_subagent({tree, Tree, Info}, [Index]) ->
-    {node, {subagent, Pid}} = element(Index+1, Tree),
+    {node, subagent} = element(Index+1, Tree),
     {tree, setelement(Index+1, Tree, undefined_node), Info};
 delete_subagent({tree, Tree, Info}, [Index | TI]) ->
     {tree, setelement(Index+1, Tree,
@@ -827,16 +1085,40 @@ delete_subagent({tree, Tree, Info}, [Index | TI]) ->
 %%%======================================================================
 
 %%----------------------------------------------------------------------
+%% Installs the mibs found in the database when starting the agent.
+%% Basically calls the instrumentation functions for all non-internal
+%% mib-entries
+%%----------------------------------------------------------------------
+install_mibs(MibDb, NodeDb) ->
+    MibNames = loaded(MibDb),
+    ?vtrace("install_mibs -> found following mibs in database: ~n"
+	"~p", [MibNames]),
+    install_mibs2(NodeDb, MibNames).
+
+install_mibs2(_, []) ->
+    ok;
+install_mibs2(NodeDb, [MibName|MibNames]) ->
+    Pattern = #node_info{oid = '_', mib_name = MibName, me = '_'},
+    Nodes = snmp_general_db:match_object(NodeDb, Pattern),
+    MEs = [ME || #node_info{me = ME} <- Nodes],
+    ?vtrace("install_mibs2 -> installing ~p MEs for mib ~p", 
+	[length(MEs),MibName]),
+    snmp_misc:foreach({snmp_mib_data, call_instrumentation}, [new], MEs),
+    install_mibs2(NodeDb, MibNames).
+    
+    
+%%----------------------------------------------------------------------
 %% Does all side effect stuff during load_mib.
 %%----------------------------------------------------------------------
-install_mib(Symbolic, Mib, MibName, FileName, Db, NonInternalMes) ->
-    ?vdebug("install mib with ~n"
-	    "\tSymbolic: ~p~n"
-	    "\tMibName:  ~p~n"
-	    "\tFileName: ~p",
-	    [Symbolic,MibName,FileName]),
+install_mib(Db, Symbolic, Mib, MibName, FileName, NonInternalMes) ->
+    ?vdebug("install_mib -> entry with"
+	"~n   Symbolic: ~p"
+	"~n   MibName:  ~p"
+	"~n   FileName: ~p",
+	[Symbolic, MibName, FileName]),
     Rec = #mib_info{name = MibName, symbolic = Symbolic, file_name = FileName},
-    snmp_general_db:write(Db, Rec),
+    Res = snmp_general_db:write(Db, Rec),
+    ?vtrace("install_mib -> (mib) db write record: ~p", [Res]),
     MEs = Mib#mib.mes,
     case Symbolic of
 	true ->
@@ -853,11 +1135,24 @@ install_mib(Symbolic, Mib, MibName, FileName, Db, NonInternalMes) ->
     snmp_misc:foreach({snmp_mib_data, call_instrumentation},
 		      [new], NonInternalMes).
 
+install_mes(_Db, _MibName, []) ->
+    ok;
+install_mes(Db, MibName, [ME|MEs]) ->
+    Node = #node_info{oid = ME#me.oid, mib_name = MibName, me = ME},
+    snmp_general_db:write(Db, Node),
+    install_mes(Db, MibName, MEs).
+
+
 %%----------------------------------------------------------------------
 %% Does all side effect stuff during unload_mib.
 %%----------------------------------------------------------------------
-uninstall_mib(Symbolic, MibName, Db, MEs) ->
-    snmp_general_db:delete(Db, MibName),
+uninstall_mib(Db, Symbolic, MibName, MEs) ->
+    ?vtrace("uninstall_mib -> entry with"
+	"~n   Db:       ~p"
+	"~n   Symbolic: ~p"
+	"~n   MibName:  ~p", [Db, Symbolic, MibName]),
+    Res = snmp_general_db:delete(Db, MibName),
+    ?vtrace("uninstall_mib -> (mib) db delete result: ~p", [Res]),
     case Symbolic of
 	true ->
 	    snmp_symbolic_store:delete_table_infos(MibName),
@@ -869,6 +1164,18 @@ uninstall_mib(Symbolic, MibName, Db, MEs) ->
 	    ok
     end,
     snmp_misc:foreach({snmp_mib_data, call_instrumentation}, [delete], MEs).
+
+uninstall_mes(Db, MibName) ->
+    Pattern = #node_info{oid = '_', mib_name = MibName, me = '_'},
+    snmp_general_db:match_delete(Db, Pattern).
+
+
+%%----------------------------------------------------------------------
+%% Create a list of the names of all the loaded mibs
+%%----------------------------------------------------------------------
+loaded(Db) ->
+    [N || #mib_info{name = N} <- snmp_general_db:tab2list(Db)].
+    
 
 %%----------------------------------------------------------------------
 %% Calls MFA-instrumentation with 'new' or 'delete' operation.
@@ -887,60 +1194,248 @@ call_instrumentation(#me{entrytype = table_entry, mfa={M,F,A}}, Operation) ->
 	    "~n   Operation: ~p",
 	    [M,F,A,Operation]),
     catch apply(M, F, [Operation | A]);
-call_instrumentation(ShitME, Operation) ->
+call_instrumentation(_ShitME, _Operation) ->
     done.
 
 drop_internal_and_imported(#me{entrytype = internal}) -> false;
 drop_internal_and_imported(#me{imported = true}) -> false;
-drop_internal_and_imported(X) -> true.
+drop_internal_and_imported(_) -> true.
 
 
 %%----------------------------------------------------------------------
 %% Code change functions
 %%----------------------------------------------------------------------
 
-code_change({down,pre_3_3_0},MibData) ->
-    ?debug("downgrade to ~p",[pre_3_3_0]),
-    #snmp_mib_data{data_db = {ets,Ets}, 
-		   tree = Tree, subagents = SAs} = MibData,
-    {snmp_mib_data,Ets,Tree,SAs};
+%% Note that up/down-grade will only be supported from/to 
+%% 3.3.8 versions of SNMP.
+code_change({down,pre_3_4},MibData) ->
+    ?debug("code_change(downgrade) -> from ~p",[pre_3_4]),
+    #snmp_mib_data{mib_db    = MibDb, 
+		   node_db   = NodeDb, 
+		   tree_db   = TreeDb, 
+		   subagents = SAs} = MibData,
 
-code_change({up,pre_3_3_0},State) ->
-    ?debug("upgrade from ~p",[pre_3_3_0]),
-    {snmp_mib_data,Ets,Tree,Subagents} = State,
-    Db = {ets,Ets},
-    %% Create a tree without any subagents (I hope this works...)
-    RefTree = cleanup_tree(Tree,Subagents), 
-    #snmp_mib_data{data_db   = Db, 
-		   tree_db   = ?DUMMY_TREE_DB_INIT,
-		   ref_tree  = RefTree, 
+    %% ---
+    %% No need for this anymore...
+    snmp_general_db:delete(NodeDb),
+
+
+    %% ---
+    %% Rebuild and store...
+    ?debug("code_change(downgrade) -> rebuild tree",[]),
+    {RefTree, Tree} = rebuild_tree_down(MibDb, SAs),    
+    ?debug("code_change(downgrade) -> write tree:~n~p",[RefTree]),
+    snmp_general_db:write(TreeDb, #tree{root = RefTree}),
+
+    %% ---
+    %% Done...
+    ?debug("code_change(downgrade) -> done",[]),
+    {snmp_mib_data, MibDb, TreeDb, RefTree, Tree, SAs};
+
+code_change({up,pre_3_4},State) ->
+    ?debug("upgrade from ~p",[pre_3_4]),
+
+    %% ---
+    %% We cant really re-use enything but the mib-table (DataDb) and Subagents.
+    %% We will also reuse the TreeDb, but not it's content.
+    {snmp_mib_data, DataDb, TreeDb, _RefTree, _Tree, Subagents} = State,
+
+    
+    %% - BEGIN - for appup-testing only -
+    %% For testing only:
+    %% This igly stuff is just to handle the bugs in application
+    %% (config file must be names sys.config or else all info
+    %% in it is chucked during up-/downgrade)
+
+%     Storage = case DataDb of
+% 		  {ets,_} ->
+% 		      ets;
+% 		  {dets, _} ->
+% 		      {dets, "/ldisk/uptest/snmp/R9/3.3.8_3.4.0/db"};
+% 		  {mnesia, _} ->
+% 		      {mnesia, []}
+% 	      end,
+
+    %% - END - for appup-testing only -
+
+    %% ---
+    %% Storage type...
+    Storage = 
+	case application:get_env(snmp, snmp_mib_storage) of
+	    {ok, S}   -> ?debug("S: ~p",[S]), S;
+	    undefined -> ets
+	end,
+    ?debug("Storage: ~p",[Storage]),
+    
+    %% ---
+    %% Create the new tree and node- and tree-tables
+    %% Note that the symbolic store is already updated, so we don't need to 
+    %% update that...
+
+    ?debug("open (mib) node database",[]),
+    NodeDb = snmp_general_db:open(Storage,?SNMP_MIB_NODE,
+				  node_info,record_info(fields,node_info),set),
+    ?debug("open (mib) tree database",[]),
+    TreeDb = snmp_general_db:open(Storage,?SNMP_MIB_TREE,
+				  tree,record_info(fields,tree),set),
+
+    ?debug("rebuild tree",[]),
+    Tree = rebuild_tree_up(DataDb, NodeDb),
+
+    ?debug("write tree: ~n~p",[Tree#tree.root]),
+    snmp_general_db:write(TreeDb, Tree),
+
+    #snmp_mib_data{mib_db    = DataDb, 
+		   node_db   = NodeDb,
+		   tree_db   = TreeDb,
 		   tree      = Tree, 
-		   subagents = Subagents}.
+		   subagents = Subagents};
+
+code_change(_Vsn, State) ->
+    State.
 
 
-cleanup_tree(Tree,[]) -> Tree;
-cleanup_tree(Tree,[{_Pid,Oid}|SAs]) ->
-    NTree = delete_subagent(Tree,Oid),
-    cleanup_tree(NTree,SAs).
+%%
+%% --- down tree ---
+%%
+
+rebuild_tree_down(MibDb, SAs) ->
+    LoadedMibs = snmp_general_db:tab2list(MibDb),
+    RefTree    = rebuild_tree_down1(LoadedMibs, ?DEFAULT_TREE),
+    Tree       = rebuild_tree_down2(SAs, RefTree),
+    {RefTree, Tree}.
+
+rebuild_tree_down1([], Tree) ->
+    ?debug("rebuild_tree_down1 -> done",[]),
+    Tree;
+rebuild_tree_down1([MibInfo|MibsInfo], Tree0) ->
+    #mib_info{name      = MibName, 
+	      file_name = FileName} = MibInfo,
+    ?debug("rebuild_tree_down1 -> entry with"
+	"~n   MibName:  ~p"
+	"~n   FileName: ~p",[MibName, FileName]),
+    Mib = do_read_mib(FileName),
+    NonInternalMes = 
+	lists:filter(fun drop_internal_and_imported/1, Mib#mib.mes),
+    T = rtd_build_tree(NonInternalMes, MibName),
+    case (catch merge_nodes(T, Tree0)) of
+	{error_merge_nodes, Node1, Node2} ->
+	    ?vlog("error merging nodes ~p and ~p",
+		[Node1,Node2]),
+	    throw({error, {oid_conflict, Node1, Node2}});
+	NewRoot when tuple(NewRoot), element(1,NewRoot) == tree ->
+	    rebuild_tree_down1(MibsInfo, NewRoot)
+    end.
+
+rebuild_tree_down2([], Tree) ->
+    Tree;
+rebuild_tree_down2([{Pid, Oid}|SAs], Tree) ->
+    ?debug("rebuild tree(down) with subagent ~p handling ~p",
+	[Pid, Oid]),
+    case rtd_insert_subagent(Oid, Pid, Tree) of
+	{error, _Reason} = Error ->
+	    throw(Error);
+	NewTree ->
+	    rebuild_tree_down2(SAs, NewTree)
+    end.
+
+rtd_insert_subagent(Oid, Pid, OldRoot) ->
+    ListTree = rtd_build_tree_for_subagent(Oid, Pid),
+    case catch convert_tree(ListTree) of
+	{'EXIT', _Reason} ->
+	    {error, 'cannot construct tree from oid'};
+	Level when tuple(Level) ->
+	    T = {tree, Level, internal},
+	    case catch merge_nodes(T, OldRoot) of
+		{error_merge_nodes, _Node1, _Node2} ->
+		    {error, oid_conflict};
+		NewRoot when tuple(NewRoot), element(1, NewRoot)==tree->
+		    NewRoot
+	    end
+    end.
+
+rtd_build_tree(Mes, MibName) ->
+    {ListTree, []}  = rtd_build_subtree([], Mes, MibName),
+    {tree, convert_tree(ListTree), internal}.
+
+rtd_build_tree_for_subagent([Index], Pid) ->
+    [{Index, {node, {subagent, Pid}}}];
+
+rtd_build_tree_for_subagent([Index | T], Pid) ->
+    [{Index, {tree, rtd_build_tree_for_subagent(T, Pid), internal}}].
+
+rtd_build_subtree(LevelPrefix, [Me | Mes], MibName) ->
+    EType = Me#me.entrytype,
+    case in_subtree(LevelPrefix, Me) of
+	above ->
+	    {[], [Me|Mes]};
+	{node, Index} ->
+	    {Tree, RestMes} = 
+		rtd_build_subtree(LevelPrefix, Mes, MibName),
+	    {[{Index, {node, {EType, {MibName, Me#me{assocList = undefined}}}}}
+	      | Tree],
+	     RestMes};
+	{subtree, Index, NewLevelPrefix} ->
+	    {BelowTree, RestMes} = 
+		rtd_build_subtree(NewLevelPrefix, Mes, MibName),
+	    {CurTree, RestMes2} = 
+		rtd_build_subtree(LevelPrefix, RestMes, MibName),
+	    {[{Index, {tree, BelowTree,
+		       {EType, {MibName, Me#me{assocList = undefined}}}}}
+	      | CurTree],
+	     RestMes2};
+	{internal_subtree, Index, NewLevelPrefix} ->
+	    {BelowTree, RestMes} =
+		rtd_build_subtree(NewLevelPrefix, [Me | Mes], MibName),
+	    {CurTree, RestMes2} =
+		rtd_build_subtree(LevelPrefix, RestMes, MibName),
+	    {[{Index, {tree, BelowTree, internal}} | CurTree], RestMes2}
+    end;
+
+rtd_build_subtree(_LevelPrefix, [], _MibName) -> 
+    {[], []}.
 
 
-%% -------------------------------------
-%% Tree interface functions
 
-create_tree(ets,_Name) ->
-    %% In this case the tree does not need to be stored.
-    ?DUMMY_TREE_DB_INIT;
-create_tree(Storage,Name) when tuple(Storage) ->
-    %% This is really a big overhead, but it solves the problem with storage
-    Db = snmp_general_db:open(Storage,Name,tree,record_info(fields,tree),set),
-    ?vtrace("tree database opened: ~p",[Db]),
-    Tree = #tree{},
-    ?vtrace("write default tree to database",[]),
-    snmp_general_db:write(Db,Tree),
-    ?vtrace("tree init done",[]),
-    {Db,Tree#tree.tree}.
+%%
+%% --- up tree ---
+%%
 
-save_tree(?DUMMY_TREE_DB,_Tree) -> ok;
-save_tree(Db,Tree) -> snmp_general_db:write(Db,#tree{tree = Tree}).
+rebuild_tree_up(MibDb, NodeDb) ->
+    ?debug("rebuild_tree_up -> entry",[]),
+    LoadedMibs = snmp_general_db:tab2list(MibDb),
+    ?debug("rebuild_tree_up -> LoadedMibs: ~p",[LoadedMibs]),
+    rebuild_tree_up(LoadedMibs, NodeDb, ?DEFAULT_TREE).
 
+rebuild_tree_up([], _NodeDb, Tree) ->
+    ?debug("rebuild_tree_up -> done",[]),
+    #tree{root = Tree};
+rebuild_tree_up([MibInfo|MibsInfo], NodeDb, Tree0) ->
+    ?debug("rebuild_tree_up -> MibInfo: ~p",[MibInfo]),
+    Tree = rebuild_tree_up1(MibInfo, NodeDb, Tree0),
+    rebuild_tree_up(MibsInfo, NodeDb, Tree).
 
+rebuild_tree_up1(MibInfo, NodeDb, Tree0) ->
+    #mib_info{name      = MibName, 
+	      file_name = FileName} = MibInfo,
+    ?debug("rebuild_tree_up1 -> entry with"
+	"~n   MibName:  ~p"
+	"~n   FileName: ~p", [MibName, FileName]),
+    Mib = do_read_mib(FileName),
+    ?debug("rebuild_tree_up1 -> entry with"
+	"~n   Mib: ~p", [Mib]),
+    NonInternalMes = 
+        lists:filter(fun drop_internal_and_imported/1, Mib#mib.mes),
+    ?debug("rebuild_tree_up1 -> entry with"
+	"~n   NonInternalMes: ~p", [NonInternalMes]),
+    T = build_tree(NonInternalMes, MibName),
+    ?debug("rebuild_tree_up1 -> merge nodes", []),
+    case (catch merge_nodes(T, Tree0)) of
+	{error_merge_nodes, Node1, Node2} ->
+	    throw({error, {oid_conflict, Node1, Node2}});
+	NewRoot when tuple(NewRoot), element(1,NewRoot) == tree ->
+	    ?debug("rebuild_tree_up1 -> install_mes", []),
+	    install_mes(NodeDb, MibName, NonInternalMes),
+	    ?debug("rebuild_tree_up1 -> done", []),
+	    NewRoot
+    end.

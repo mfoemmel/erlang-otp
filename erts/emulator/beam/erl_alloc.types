@@ -1,0 +1,270 @@
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+#
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+#
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+#
+#     $Id$
+#
+
+#
+# Rules:
+# * Types, allocators, and classes can be declared.
+# * Types, allocators, classes, and descriptions can only contain
+#   alphanumeric characters.
+# * Allocators and classes have to be declared before they are used in
+#   type declarations.
+# * Descriptions have only one name space (i.e. class descriptions,
+#   allocator descriptions, and type descriptions are all in the same
+#   name space).
+# * Types, allocators, classes, and descriptions have different name
+#   spaces.
+# * The type, allocator, and class names INVALID are reserved and can
+#   not be used.
+# * The descriptions invalid_allocator, invalid_class, and invalid_type
+#   are reserved and can not be used.
+# * Declarations can be done conditionally by use of a
+#     +if <boolean_variable>
+#
+#     +else
+#
+#     +endif
+#   or a
+#     +ifnot <boolean_variable>
+#
+#     +else
+#
+#     +endif
+#   construct (else branches are optional). The boolean variable X is
+#   true after a "+enable X" statement or if it has been passed as a
+#   command line argument to make_alloc_types. The variable X is false
+#   after a "+disable X" statement or if it has never been mentioned.
+
+
+# --- Allocator declarations -------------------------------------------------
+#
+# If, and only if, the same thread performes *all* allocations,
+# reallocations and deallocations of all memory types that are handled
+# by a specific allocator (<ALLOCATOR> in type declaration), set 
+# <MULTI_THREAD> for this specific allocator to false; otherwise, set
+# it to true.
+#
+# Syntax: allocator <ALLOCATOR> <MULTI_THREAD> <DESCRIPTION>
+#
+#		<ALLOCATOR>	<MULTI_THREAD>	<DESCRIPTION>
+
+allocator	SYSTEM		true		sys_alloc
+allocator	TEMPORARY	false		temp_alloc
+allocator	SHORT_LIVED	false		sl_alloc
+allocator	STANDARD	false		std_alloc
+allocator	LONG_LIVED	false		ll_alloc
+allocator	EHEAP		false		eheap_alloc
+
+				# binary_alloc has to be thread safe since
+				# other threads in drivers may use it
+allocator	BINARY		true		binary_alloc
+allocator	ETS		false		ets_alloc
+allocator	FIXED_SIZE	false		fix_alloc
+
+# --- Class declarations -----------------------------------------------------
+#
+# Syntax: class <CLASS> <DESCRIPTION>
+#
+#	<CLASS>		<DESCRIPTION>
+
+class	PROCESSES	process_data
+class	ATOM		atom_data
+class	CODE		code_data
+class	ETS		ets_data
+class	BINARIES	binary_data
+class	SYSTEM		system_data
+
+# --- Type declarations ------------------------------------------------------
+# 
+# Syntax: type <TYPE> <ALLOCATOR> <CLASS> <DESCRIPTION>
+#
+# Use ERTS_ALC_T_<TYPE> as first parameter to erts_alloc(), erts_alloc_fnf(),
+# erts_realloc(), erts_realloc_fnf() or erts_free() in order to allocate,
+# reallocate or deallocate a memory block of type <TYPE>.
+#
+# NOTE: Only use temp_alloc for memory types that *really* are *temporarily*
+#	allocated. A good thumb rule: all memory allocated by temp_alloc
+#       should be deallocated before the emulator starts executing Erlang
+#       code again.
+#
+# NOTE: When adding or removing a type which uses the FIXED_SIZE allocator,
+#       also add or remove initialization of the type in erts_alloc_init()
+#       (erl_alloc.c).
+#
+#	<TYPE>		<ALLOCATOR>	<CLASS>		<DESCRIPTION>
+
+type	PROC		FIXED_SIZE	PROCESSES	proc
+type	ATOM		FIXED_SIZE	ATOM		atom_entry
+type	EXPORT		FIXED_SIZE	CODE		export_entry
+type	MODULE		FIXED_SIZE	CODE		module_entry
+type	REG_PROC	FIXED_SIZE	PROCESSES	reg_proc
+type	LINK		FIXED_SIZE	PROCESSES	link_nh
+type	LINK_SH		FIXED_SIZE	PROCESSES	link_sh
+type	LINK_LH		STANDARD	PROCESSES	link_lh
+type	PROC_LIST	FIXED_SIZE	PROCESSES	proc_list
+type	FUN_ENTRY	FIXED_SIZE	CODE		fun_entry
+type	ATOM_TXT	LONG_LIVED	ATOM		atom_text
+type	HEAP		EHEAP		PROCESSES	heap
+type	OLD_HEAP	EHEAP		PROCESSES	old_heap
+type	HEAP_FRAG	EHEAP		PROCESSES	heap_frag
+type	MSG_REF		SHORT_LIVED	PROCESSES	msg_ref
+type	MSG_ROOTS	TEMPORARY	PROCESSES	msg_roots
+type	ROOTSET		TEMPORARY	PROCESSES	root_set
+type	LOADER_TMP	TEMPORARY	CODE		loader_tmp
+type	SL_BIF_TIMER	SHORT_LIVED	PROCESSES	bif_timer_sl
+type	LL_BIF_TIMER	STANDARD	PROCESSES	bif_timer_ll
+type	REG_TABLE	STANDARD	SYSTEM		reg_tab
+type	FUN_TABLE	STANDARD	CODE		fun_tab
+type	DIST_TABLE	STANDARD	SYSTEM		dist_tab
+type	NODE_TABLE	STANDARD	SYSTEM		node_tab
+type	ATOM_TABLE	STANDARD	ATOM		atom_tab
+type	EXPORT_TABLE	STANDARD	CODE		export_tab
+type	MODULE_TABLE	STANDARD	CODE		module_tab
+type	MODULE_REFS	STANDARD	CODE		module_refs
+type	NC_TMP		TEMPORARY	SYSTEM		nc_tmp
+type	TMP		TEMPORARY	SYSTEM		tmp
+type	UNDEF		SYSTEM		SYSTEM		undefined
+type	DMSG_BLD_BUF	LONG_LIVED	SYSTEM		dmsg_buf
+type	DCACHE		STANDARD	SYSTEM		dcache
+type	DCTRL_BUF	TEMPORARY	SYSTEM		dctrl_buf
+type	DIST_ENTRY	STANDARD	SYSTEM		dist_entry
+type	NODE_ENTRY	STANDARD	SYSTEM		node_entry
+type	PROC_TABLE	LONG_LIVED	PROCESSES	proc_tab
+type	PORT_TABLE	LONG_LIVED	SYSTEM		port_tab
+type	TMP_BUF		LONG_LIVED	SYSTEM		tmp_buf
+type	TIMER_WHEEL	LONG_LIVED	SYSTEM		timer_wheel
+type	DRV		SYSTEM		SYSTEM		drv_internal
+type	DRV_BINARY	BINARY		BINARIES	drv_binary
+type	DRV_ENTRY_LIST	STANDARD	SYSTEM		drv_entry_list
+type	BINARY		BINARY		BINARIES	binary
+type	NBIF_TABLE	SYSTEM		SYSTEM		nbif_tab
+type	CODE		LONG_LIVED	CODE		code
+type	ARG_REG		STANDARD	PROCESSES	arg_reg
+type	PROC_DICT	STANDARD	PROCESSES	proc_dict
+type	CALLS_BUF	STANDARD	PROCESSES	calls_buf
+type	BPD		STANDARD	SYSTEM		bpd
+type	PORT_NAME	STANDARD	SYSTEM		port_name
+type	LINEBUF		STANDARD	SYSTEM		line_buf
+type	IOQ		STANDARD	SYSTEM		io_queue
+type	BITS_BUF	STANDARD	SYSTEM		bits_buf
+type	DIST_BUF	STANDARD	SYSTEM		dist_buf
+type	ASYNC		SYSTEM		SYSTEM		async
+type	ASYNC_Q		LONG_LIVED	SYSTEM		async_queue
+type	ESTACK		TEMPORARY	SYSTEM		estack
+type	PORT_CALL_BUF	STANDARD	SYSTEM		port_call_buf
+type	DB_TABLE	FIXED_SIZE	ETS		db_tab
+type	DB_FIXATION	SHORT_LIVED	ETS		db_fixation
+type	DB_FIX_DEL	SHORT_LIVED	ETS		fixed_del
+type	DB_TABLES	LONG_LIVED	ETS		db_tabs
+type	DB_TMP		TEMPORARY	ETS		db_tmp
+type	DB_MC_STK	TEMPORARY	ETS		db_mc_stack
+type	DB_MPROG_HEAP	TEMPORARY	ETS		db_match_prog_heap
+type	DB_SEG		ETS		ETS		db_segment
+type	DB_SEG_TAB	ETS		ETS		db_segment_tab
+type	DB_STK		ETS		ETS		db_stack
+type	DB_TRANS_TAB	ETS		ETS		db_trans_tab
+type	DB_SEL_LIST	ETS		ETS		db_select_list
+type	DB_DMC_ERROR	ETS		ETS		db_dmc_error
+type	DB_DMC_ERR_INFO	ETS		ETS		db_dmc_error_info
+type	DB_TERM		ETS		ETS		db_term
+type	INSTR_INFO	LONG_LIVED	SYSTEM		instr_info
+
+#
+# Types used for special emulators
+#
+
++if shared_heap
+
+type	STACK		STANDARD	PROCESSES	stack
+type	ACTIVE_PROCS	STANDARD	PROCESSES	active_procs
+
++endif
+
++if hipe
+
+# Currently most hipe code use this type.
+type	HIPE		SYSTEM		SYSTEM		hipe_data
+
++endif
+
++if heap_frag_elim_test
+
+type	SSB		SHORT_LIVED	PROCESSES	ssb
+
++endif
+
+
+#
+# Types used by system specific code
+#
+
+# sys_threads.c
++if threads
+
+type	THREAD_REF	SYSTEM		SYSTEM		thread_ref
+type	MUTEX		SYSTEM		SYSTEM		mutex
+type	COND_VAR	SYSTEM		SYSTEM		cond_var
+
++endif
+
+type	DRV_TAB		LONG_LIVED	SYSTEM		drv_tab
+
++if unix
+
+type	FD_TAB		LONG_LIVED	SYSTEM		fd_tab
+type	FD_ENTRY_BUF	STANDARD	SYSTEM		fd_entry_buf
+type	POLL_FDS	LONG_LIVED	SYSTEM		poll_fds
+type	READY_FDS	LONG_LIVED	SYSTEM		ready_fds
+type	CS_PROG_PATH	LONG_LIVED	SYSTEM		cs_prog_path
+type	ENVIRONMENT	SYSTEM		SYSTEM		environment
+type	PUTENV_STR	SYSTEM		SYSTEM		putenv_string
+
++endif
+
++if win32
+
+type	DRV_DATA_BUF	SYSTEM		SYSTEM		drv_data_buf
+type	PRELOADED	LONG_LIVED	SYSTEM		preloaded
+type	PUTENV_STR	SYSTEM		SYSTEM		putenv_string
+type	WAITER_OBJ	LONG_LIVED	SYSTEM		waiter_object
+type	ENVIRONMENT	SYSTEM		SYSTEM		environment
+
++endif
+
++if vxworks
+
+type	PEND_DATA	SYSTEM		SYSTEM		pending_data
+type	FD_TAB		LONG_LIVED	SYSTEM		fd_tab
+type	FD_ENTRY_BUF	SYSTEM		SYSTEM		fd_entry_buf
+
++endif
+
++if ose
+
+type	PUTENV_STR	SYSTEM		SYSTEM		putenv_string
+type	GETENV_STR	SYSTEM		SYSTEM		getenv_string
+type	GETENV_STATE	SYSTEM		SYSTEM		getenv_state
+type	SIG_ENTRY	SYSTEM		SYSTEM		sig_entry
+type	DRIVER_DATA	SYSTEM		SYSTEM		driver_data
+type	PGM_TAB		SYSTEM		SYSTEM		pgm_tab
+type	PGM_ENTRY	SYSTEM		SYSTEM		pgm_entry
+type	PRT_TAB		SYSTEM		SYSTEM		prt_tab
+type	PRT_ENTRY	SYSTEM		SYSTEM		prt_entry
+
++endif
+
+# ----------------------------------------------------------------------------

@@ -21,7 +21,7 @@
 
 -export([start/2]).
 
-start(Env, Argv) ->
+start(_Env, Argv) ->
     run(init, boot, Argv).
 
 run(M, F, A) ->

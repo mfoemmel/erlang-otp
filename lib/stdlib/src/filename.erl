@@ -21,8 +21,13 @@
 %%
 %% Generally, these functions accept filenames in the native format
 %% for the current operating system (Unix or Windows).
-%% Deep characters lists (as returned by io_lib:format()) is accepted;
+%% Deep characters lists (as returned by io_lib:format()) are accepted;
 %% resulting strings will always be flat.
+%%
+%% Implementation note: We used to only flatten if the list turned out
+%% to be deep. Now that atoms are allowed in deep lists, in most cases
+%% we flatten the arguments immediately on function entry as that makes
+%% it easier to ensure that the code works.
 
 -export([absname/1, absname/2, basename/1, basename/2, dirname/1,
 	 extension/1, join/1, join/2, pathtype/1,
@@ -50,13 +55,14 @@
 %% (for Unix) : absname("/") -> "/"
 %% (for WIN32): absname("/") -> "D:/"
 
-absname(Name) when list(Name) ->
+absname(Name) ->
     {ok, Cwd} = file:get_cwd(),
-    absname(Name, Cwd);
-absname(Name) when atom(Name) ->
-    absname(atom_to_list(Name)).
+    absname(Name, Cwd).
 
-absname(Name, AbsBase) ->
+absname(Name0, AbsBase) ->
+    %% We must flatten the filename before passing it into join/1,
+    %% or we will get slashes inserted into the wrong places.
+    Name = flatten(Name0),
     case pathtype(Name) of
 	relative ->
 	    case major_os_type() of
@@ -117,22 +123,21 @@ absname_pretty(Abspath, [First|Rest], AbsBase) ->
 %%           basename("/usr/foo/") -> "foo"  (trailing slashes ignored)
 %%           basename("/") -> []
 
-basename(Name) when list(Name) ->
+basename(Name0) ->
+    Name = flatten(Name0),
     {DirSep2, DrvSep} = separators(),
-    basename1(skip_prefix(Name, DrvSep), [], DirSep2);
-basename(Name) when atom(Name) ->
-    basename(atom_to_list(Name)).
+    basename1(skip_prefix(Name, DrvSep), [], DirSep2).
 
 basename1([$/|[]], Tail, DirSep2) ->
     basename1([], Tail, DirSep2);
 basename1([$/|Rest], _Tail, DirSep2) ->
     basename1(Rest, [], DirSep2);
-basename1([DirSep2|Rest], Tail, DirSep2) when integer(DirSep2) ->
-    basename1([$/|Rest], Tail, DirSep2);
-basename1([Char|Rest], Tail, DirSep2) when integer(Char) ->
-    basename1(Rest, [Char|Tail], DirSep2);
-basename1([List|Rest], Tail, DirSep2) when list(List) ->
+basename1([[_|_]=List|Rest], Tail, DirSep2) ->
     basename1(List++Rest, Tail, DirSep2);
+basename1([DirSep2|Rest], Tail, DirSep2) when is_integer(DirSep2) ->
+    basename1([$/|Rest], Tail, DirSep2);
+basename1([Char|Rest], Tail, DirSep2) when is_integer(Char) ->
+    basename1(Rest, [Char|Tail], DirSep2);
 basename1([], Tail, _DirSep2) ->
     lists:reverse(Tail).
 
@@ -150,12 +155,12 @@ skip_prefix(Name, false) ->			% No prefix for unix, but for VxWorks.
     end;
 
 
-skip_prefix(Name,DrvSep) ->
-    skip_prefix1(lists:flatten(Name),DrvSep).
+skip_prefix(Name, DrvSep) ->
+    skip_prefix1(Name, DrvSep).
 
-skip_prefix1([L, DrvSep|Name], DrvSep) when integer(L) ->
+skip_prefix1([L, DrvSep|Name], DrvSep) when is_integer(L) ->
     Name;
-skip_prefix1([L], _) when integer(L) ->
+skip_prefix1([L], _) when is_integer(L) ->
     [L];
 skip_prefix1(Name, _) ->
     Name.
@@ -174,25 +179,22 @@ skip_prefix1(Name, _) ->
 %%	    rootname(basename("xxx.erl")) -> "xxx"
 
 
-basename(Name, Ext) when atom(Ext) ->
-    basename(Name, atom_to_list(Ext));
+basename(Name0, Ext0) ->
+    Name = flatten(Name0),
+    Ext = flatten(Ext0),
+    {DirSep2,DrvSep} = separators(),
+    NoPrefix = skip_prefix(Name, DrvSep),
+    basename(NoPrefix, Ext, [], DirSep2).
 
-basename(Name, Ext) when atom(Name) ->
-    basename(atom_to_list(Name), Ext);
-basename(File, Ext) when list(File), list(Ext) ->
-    {DirSep2, DrvSep} = separators(),
-    NoPrefix = skip_prefix(lists:flatten(File), DrvSep),
-    basename(NoPrefix, lists:flatten(Ext), [], DirSep2).
-
+basename(Ext, Ext, Tail, _DrvSep2) ->
+    lists:reverse(Tail);
 basename([$/|[]], Ext, Tail, DrvSep2) ->
     basename([], Ext, Tail, DrvSep2);
 basename([$/|Rest], Ext, _Tail, DrvSep2) ->
     basename(Rest, Ext, [], DrvSep2);
-basename([$\\|Rest], Ext, Tail, DirSep2) when integer(DirSep2) ->
+basename([$\\|Rest], Ext, Tail, DirSep2) when is_integer(DirSep2) ->
     basename([$/|Rest], Ext, Tail, DirSep2);
-basename(Ext, Ext, Tail, _DrvSep2) ->
-    lists:reverse(Tail);
-basename([Char|Rest], Ext, Tail, DrvSep2) ->
+basename([Char|Rest], Ext, Tail, DrvSep2) when is_integer(Char) ->
     basename(Rest, Ext, [Char|Tail], DrvSep2);
 basename([], _Ext, Tail, _DrvSep2) ->
     lists:reverse(Tail).
@@ -202,7 +204,8 @@ basename([], _Ext, Tail, _DrvSep2) ->
 %% Example: dirname("/usr/src/kalle.erl") -> "/usr/src",
 %%	    dirname("kalle.erl") -> "."
 
-dirname(Name) when list(Name) ->
+dirname(Name0) ->
+    Name = flatten(Name0),
     case os:type() of
 	vxworks ->
 	    {Devicep, Restname, FirstComp} = vxworks_first(Name),
@@ -214,33 +217,31 @@ dirname(Name) when list(Name) ->
 	    end;
 	_ ->
 	    dirname(Name, [], [], separators())
-    end;
-dirname(Name) when atom(Name) ->
-    dirname(atom_to_list(Name)).
+    end.
 
+dirname([[_|_]=List|Rest], Dir, File, Seps) ->
+    dirname(List++Rest, Dir, File, Seps);
 dirname([$/|Rest], Dir, File, Seps) ->
     dirname(Rest, File++Dir, [$/], Seps);
-dirname([DirSep2|Rest], Dir, File, {DirSep2, DrvSep}) when integer(DirSep2) ->
-    dirname(Rest, File++Dir, [$/], {DirSep2, DrvSep});
-dirname([Dl, DrvSep|Rest], [], [], {DirSep2, DrvSep})
-when integer(DrvSep), Dl >= $a, Dl =< $z ->
-    dirname(Rest, [DrvSep, Dl], [], {DirSep2, DrvSep});
-dirname([Dl, DrvSep|Rest], [], [], {DirSep2, DrvSep})
-when integer(DrvSep), Dl >= $A, Dl =< $Z ->
-    dirname(Rest, [DrvSep, Dl], [], {DirSep2, DrvSep});
-dirname([Char|Rest], Dir, File, Seps) when integer(Char) ->
+dirname([DirSep|Rest], Dir, File, {DirSep,_}=Seps) when is_integer(DirSep) ->
+    dirname(Rest, File++Dir, [$/], Seps);
+dirname([Dl,DrvSep|Rest], [], [], {_,DrvSep}=Seps)
+  when is_integer(DrvSep), ((($a =< Dl) and (Dl =< $z)) or
+			    (($A =< Dl) and (Dl =< $Z))) ->
+    dirname(Rest, [DrvSep,Dl], [], Seps);
+dirname([Char|Rest], Dir, File, Seps) when is_integer(Char) ->
     dirname(Rest, Dir, [Char|File], Seps);
-dirname([List|Rest], Dir, File, Seps) when list(List) ->
-    dirname(List++Rest, Dir, File, Seps);
 dirname([], [], File, _Seps) ->
     case lists:reverse(File) of
 	[$/|_] -> [$/];
 	_ -> "."
     end;
-dirname([], [DrvSep, Dl], File, {_DirSep2, DrvSep}) ->
+dirname([], [$/|Rest], File, Seps) ->
+    dirname([], Rest, File, Seps);
+dirname([], [DrvSep,Dl], File, {_,DrvSep}) ->
     case lists:reverse(File) of
-	[$/|_] -> [Dl, DrvSep, $/];
-	_ -> [Dl, DrvSep]
+	[$/|_] -> [Dl,DrvSep,$/];
+	_ -> [Dl,DrvSep]
     end;
 dirname([], Dir, _, _) ->
     lists:reverse(Dir).
@@ -254,14 +255,13 @@ dirname([], Dir, _, _) ->
 %%
 %% On Windows:  fn:dirname("\\usr\\src/kalle.erl") -> "/usr/src"
 
-extension(Name) when list(Name) ->
-    extension(Name, [], major_os_type());
-extension(Name) when atom(Name) ->
-    extension(atom_to_list(Name)).
+extension(Name0) ->
+    Name = flatten(Name0),
+    extension(Name, [], major_os_type()).
 
 extension([$.|Rest], _Result, OsType) ->
     extension(Rest, [$.], OsType);
-extension([Char|Rest], [], OsType) when integer(Char) ->
+extension([Char|Rest], [], OsType) when is_integer(Char) ->
     extension(Rest, [], OsType);
 extension([$/|Rest], _Result, OsType) ->
     extension(Rest, [], OsType);
@@ -269,9 +269,9 @@ extension([$\\|Rest], _Result, win32) ->
     extension(Rest, [], win32);
 extension([$\\|Rest], _Result, vxworks) ->
     extension(Rest, [], vxworks);
-extension([Char|Rest], Result, OsType) when integer(Char) ->
+extension([Char|Rest], Result, OsType) when is_integer(Char) ->
     extension(Rest, [Char|Result], OsType);
-extension([List|Rest], Result, OsType) when list(List) ->
+extension([List|Rest], Result, OsType) when is_list(List) ->
     extension(List++Rest, Result, OsType);
 extension([], Result, _OsType) ->
     lists:reverse(Result).
@@ -287,15 +287,15 @@ join([Name]) when atom(Name) ->
 
 %% Joins two filenames with directory separators.
 
-join(Name1, Name2) when list(Name1), list(Name2) ->
+join(Name1, Name2) when is_list(Name1), is_list(Name2) ->
     OsType = major_os_type(),
     case pathtype(Name2) of
 	relative -> join1(Name1, Name2, [], OsType);
 	_Other -> join1(Name2, [], [], OsType)
     end;
-join(Name1, Name2) when atom(Name1) ->
+join(Name1, Name2) when is_atom(Name1) ->
     join(atom_to_list(Name1), Name2);
-join(Name1, Name2) when atom(Name2) ->
+join(Name1, Name2) when is_atom(Name2) ->
     join(Name1, atom_to_list(Name2)).
 
 %% Internal function to join an absolute name and a relative name.
@@ -303,7 +303,7 @@ join(Name1, Name2) when atom(Name2) ->
 %% is relative.
 
 join1([UcLetter, $:|Rest], RelativeName, [], win32)
-when UcLetter >= $A, UcLetter =< $Z ->
+when is_integer(UcLetter), UcLetter >= $A, UcLetter =< $Z ->
     join1(Rest, RelativeName, [$:, UcLetter+$a-$A], win32);
 join1([$\\|Rest], RelativeName, Result, win32) ->
     join1([$/|Rest], RelativeName, Result, win32);
@@ -313,10 +313,6 @@ join1([$/|Rest], RelativeName, [$., $/|Result], OsType) ->
     join1(Rest, RelativeName, [$/|Result], OsType);
 join1([$/|Rest], RelativeName, [$/|Result], OsType) ->
     join1(Rest, RelativeName, [$/|Result], OsType);
-join1([Char|Rest], RelativeName, Result, OsType) when integer(Char) ->
-    join1(Rest, RelativeName, [Char|Result], OsType);
-join1([List|Rest], RelativeName, Result, OsType) when list(List) ->
-    join1(List++Rest, RelativeName, Result, OsType);
 join1([], [], Result, OsType) ->
     maybe_remove_dirsep(Result, OsType);
 join1([], RelativeName, [$:|Rest], win32) ->
@@ -324,7 +320,15 @@ join1([], RelativeName, [$:|Rest], win32) ->
 join1([], RelativeName, [$/|Result], OsType) ->
     join1(RelativeName, [], [$/|Result], OsType);
 join1([], RelativeName, Result, OsType) ->
-    join1(RelativeName, [], [$/|Result], OsType).
+    join1(RelativeName, [], [$/|Result], OsType);
+join1([[_|_]=List|Rest], RelativeName, Result, OsType) ->
+    join1(List++Rest, RelativeName, Result, OsType);
+join1([[]|Rest], RelativeName, Result, OsType) ->
+    join1(Rest, RelativeName, Result, OsType);
+join1([Char|Rest], RelativeName, Result, OsType) when is_integer(Char) ->
+    join1(Rest, RelativeName, [Char|Result], OsType);
+join1([Atom|Rest], RelativeName, Result, OsType) when is_atom(Atom) ->
+    join1(atom_to_list(Atom)++Rest, RelativeName, Result, OsType).
 
 maybe_remove_dirsep([$/, $:, Letter], win32) ->
     [Letter, $:, $/];
@@ -354,9 +358,9 @@ append(Dir, Name) ->
 %%		current working volume.  (Windows only)
 %%		Example: a:bar.erl, /temp/foo.erl
 
-pathtype(Atom) when atom(Atom) ->
+pathtype(Atom) when is_atom(Atom) ->
     pathtype(atom_to_list(Atom));
-pathtype(Name) when list(Name) ->
+pathtype(Name) when is_list(Name) ->
     case os:type() of
 	{unix, _}  -> unix_pathtype(Name);
 	{win32, _} -> win32_pathtype(Name);
@@ -367,20 +371,22 @@ pathtype(Name) when list(Name) ->
 			    relative
 		    end;
 	{ose,_} -> unix_pathtype(Name)
-	    
     end.
-
 
 unix_pathtype([$/|_]) ->
     absolute;
-unix_pathtype([List|Rest]) when list(List) ->
+unix_pathtype([List|Rest]) when is_list(List) ->
     unix_pathtype(List++Rest);
+unix_pathtype([Atom|Rest]) when is_atom(Atom) ->
+    unix_pathtype(atom_to_list(Atom)++Rest);
 unix_pathtype(_) ->
     relative.
 
-win32_pathtype([List|Rest]) when list(List) ->
+win32_pathtype([List|Rest]) when is_list(List) ->
     win32_pathtype(List++Rest);
-win32_pathtype([Char, List|Rest]) when list(List) ->
+win32_pathtype([Atom|Rest]) when is_atom(Atom) ->
+    win32_pathtype(atom_to_list(Atom)++Rest);
+win32_pathtype([Char, List|Rest]) when is_list(List) ->
     win32_pathtype([Char|List++Rest]);
 win32_pathtype([$/, $/|_]) -> absolute;
 win32_pathtype([$\\, $/|_]) -> absolute;
@@ -400,10 +406,9 @@ win32_pathtype(_) 		  -> relative.
 %% Examples: rootname("/jam.src/kalle") -> "/jam.src/kalle"
 %%           rootname("/jam.src/foo.erl") -> "/jam.src/foo"
 
-rootname(Name) when list(Name) ->
-    rootname(Name, [], [], major_os_type());
-rootname(Name) when atom(Name) ->
-    rootname(atom_to_list(Name)).
+rootname(Name0) ->
+    Name = flatten(Name0),
+    rootname(Name, [], [], major_os_type()).
 
 rootname([$/|Rest], Root, Ext, OsType) ->
     rootname(Rest, [$/]++Ext++Root, [], OsType);
@@ -415,12 +420,12 @@ rootname([$.|Rest], Root, [], OsType) ->
     rootname(Rest, Root, ".", OsType);
 rootname([$.|Rest], Root, Ext, OsType) ->
     rootname(Rest, Ext++Root, ".", OsType);
-rootname([Char|Rest], Root, [], OsType) when integer(Char) ->
-    rootname(Rest, [Char|Root], [], OsType);
-rootname([Char|Rest], Root, Ext, OsType) when integer(Char) ->
-    rootname(Rest, Root, [Char|Ext], OsType);
-rootname([List|Rest], Root, Ext, OsType) when list(List) ->
+rootname([[_|_]=List|Rest], Root, Ext, OsType) ->
     rootname(List++Rest, Root, Ext, OsType);
+rootname([Char|Rest], Root, [], OsType) when is_integer(Char) ->
+    rootname(Rest, [Char|Root], [], OsType);
+rootname([Char|Rest], Root, Ext, OsType) when is_integer(Char) ->
+    rootname(Rest, Root, [Char|Ext], OsType);
 rootname([], Root, _Ext, _OsType) ->
     lists:reverse(Root).
 
@@ -431,29 +436,29 @@ rootname([], Root, _Ext, _OsType) ->
 %% Examples: rootname("/jam.src/kalle.jam", ".erl") -> "/jam.src/kalle.jam"
 %%           rootname("/jam.src/foo.erl", ".erl") -> "/jam.src/foo"
 
-rootname(Name, Ext) when list(Name) ->
-    rootname2(lists:flatten(Name), lists:flatten(Ext), []);
-rootname(Name, Ext) when atom(Name) ->
-    rootname(atom_to_list(Name), Ext).
+rootname(Name0, Ext0) ->
+    Name = flatten(Name0),
+    Ext = flatten(Ext0),
+    rootname2(Name, Ext, []).
 
 rootname2(Ext, Ext, Result) ->
     lists:reverse(Result);
-rootname2([Char|Rest], Ext, Result) ->
-    rootname2(Rest, Ext, [Char|Result]);
 rootname2([], _Ext, Result) ->
-    lists:reverse(Result).
+    lists:reverse(Result);
+rootname2([[_|_]=List|Rest], Ext, Result) ->
+    rootname2(List++Rest, Ext, Result);
+rootname2([Char|Rest], Ext, Result) when is_integer(Char) ->
+    rootname2(Rest, Ext, [Char|Result]).
 
 %% Returns a list whose elements are the path components in the filename.
-%% The first element
 %%
 %% Examples:	
 %% split("/usr/local/bin") -> ["/", "usr", "local", "bin"]
 %% split("foo/bar") -> ["foo", "bar"]
 %% split("a:\\msdev\\include") -> ["a:/", "msdev", "include"]
 
-split(Name) when atom(Name) ->
-    split(atom_to_list(Name));
-split(Name) when list(Name) ->
+split(Name0) ->
+    Name = flatten(Name0),
     case os:type() of
 	{unix, _}  -> unix_split(Name);
 	{win32, _} -> win32_split(Name);
@@ -463,7 +468,7 @@ split(Name) when list(Name) ->
 
 %% If a VxWorks filename starts with '[/\].*[^/\]' '[/\].*:' or '.*:' 
 %% that part of the filename is considered a device.  
-%% The rest of the name is interpreted exactly as win32
+%% The rest of the name is interpreted exactly as for win32.
 
 %% XXX - dirty solution to make filename:split([]) return the same thing on
 %%       VxWorks as on unix and win32.
@@ -478,17 +483,17 @@ unix_split(Name) ->
 
 win32_split([$\\|Rest]) ->
     win32_split([$/|Rest]);
-win32_split([X, $\\|Rest]) when integer(X) ->
+win32_split([X, $\\|Rest]) when is_integer(X) ->
     win32_split([X, $/|Rest]);
-win32_split([X, Y, $\\|Rest]) when integer(X), integer(Y) ->
+win32_split([X, Y, $\\|Rest]) when is_integer(X), is_integer(Y) ->
     win32_split([X, Y, $/|Rest]);
-win32_split([List|Rest]) when list(List) ->
+win32_split([List|Rest]) when is_list(List) ->
     win32_split(List++Rest);
-win32_split([Char, List|Rest]) when list(List) ->
+win32_split([Char, List|Rest]) when is_list(List) ->
     win32_split([Char|List++Rest]);
 win32_split([$/, $/|Rest]) ->
     split(Rest, [], [[$/, $/]]);
-win32_split([C1, C2, List|Rest]) when list(List) ->
+win32_split([C1, C2, List|Rest]) when is_list(List) ->
     win32_split([C1, C2|List++Rest]);
 win32_split([UcLetter, $:|Rest]) when UcLetter >= $A, UcLetter =< $Z ->
     win32_split([UcLetter+$a-$A, $:|Rest]);
@@ -514,23 +519,22 @@ split([$/|Rest], [], Components, OsType) ->
     split(Rest, [], Components, OsType);
 split([$/|Rest], Comp, Components, OsType) ->
     split(Rest, [], [lists:reverse(Comp)|Components], OsType);
-split([Char|Rest], Comp, Components, OsType) when integer(Char) ->
+split([Char|Rest], Comp, Components, OsType) when is_integer(Char) ->
     split(Rest, [Char|Comp], Components, OsType);
-split([List|Rest], Comp, Components, OsType) when list(List) ->
+split([List|Rest], Comp, Components, OsType) when is_list(List) ->
     split(List++Rest, Comp, Components, OsType);
 split([], [], Components, _OsType) ->
     lists:reverse(Components);
 split([], Comp, Components, OsType) ->
     split([], [], [lists:reverse(Comp)|Components], OsType).
 
-
-%% Converts a filename to a form accept by command shell and native
+%% Converts a filename to a form accepedt by the command shell and native
 %% applications on the current platform.  On Windows, forward slashes
-%% will be converted to backward slashes.  On all platforms, the
+%% will be converted to backslashes.  On all platforms, the
 %% name will be normalized as done by join/1.
 
 nativename(Name0) ->
-    Name = join([Name0]),
+    Name = join([Name0]),			%Normalize.
     case os:type() of
 	{win32, _} -> win32_nativename(Name);
 	_          -> Name
@@ -748,3 +752,19 @@ vxworks_first2(Devicep, [H|T], FirstComp) when list(H) ->
 vxworks_first2(Devicep, [H|T], FirstComp) ->
     vxworks_first2(Devicep, T, [H|FirstComp]).
     
+%% flatten(List)
+%%  Flatten a list, also accepting atoms.
+
+flatten(List) ->
+    do_flatten(List, []).
+
+do_flatten([H|T], Tail) when is_list(H) ->
+    do_flatten(H, do_flatten(T, Tail));
+do_flatten([H|T], Tail) when is_atom(H) ->
+    atom_to_list(H) ++ do_flatten(T, Tail);
+do_flatten([H|T], Tail) ->
+    [H|do_flatten(T, Tail)];
+do_flatten([], Tail) ->
+    Tail;
+do_flatten(Atom, Tail) when is_atom(Atom) ->
+    atom_to_list(Atom) ++ flatten(Tail).

@@ -90,12 +90,12 @@ handle_cast(_, State) ->
 handle_info({Port, {data, Data}}, State) when State#state.port == Port ->
     case catch cdr_decode:dec_message(null, Data) of
 	{'EXCEPTION', DecodeException} ->
-	    orber:debug_level_print("[~p] orber_bootstrap:handle_info(~p); Decode exception(~p)", 
-				    [?LINE, Data, DecodeException], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_bootstrap:handle_info(~p); Decode exception(~p)", 
+		      [?LINE, Data, DecodeException], ?DEBUG_LEVEL),
 	    Reply = cdr_encode:enc_message_error(orber:giop_version());
 	{'EXIT', Why} ->
-	    orber:debug_level_print("[~p] orber_bootstrap:handle_info(~p); Decode exit(~p)", 
-				    [?LINE, Data, Why], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_bootstrap:handle_info(~p); Decode exit(~p)", 
+		      [?LINE, Data, Why], ?DEBUG_LEVEL),
 	    Reply = cdr_encode:enc_message_error(orber:giop_version());
 	{Version, Hdr, Par, TypeCodes} ->
 	    Result = corba:request_from_iiop(Hdr#request_header.object_key,
@@ -110,13 +110,13 @@ handle_info({Port, {data, Data}}, State) when State#state.port == Port ->
 						 Hdr#request_header.request_id,
 						 TypeOfException,
 						 {ExceptionTypeCode, [], []}, 
-						 Exception, []);
+						 Exception, [], []);
 		[Res |OutPar] ->
 		    Reply = cdr_encode:enc_reply(Version,
 			      Hdr#request_header.request_id,
 			      'no_exception',
 			      TypeCodes,
-			      Res, OutPar);
+			      Res, OutPar, []);
 		_ ->
 		    E = #'INTERNAL'{completion_status=?COMPLETED_MAYBE},
 		    {TypeOfException, ExceptionTypeCode} =
@@ -125,7 +125,7 @@ handle_info({Port, {data, Data}}, State) when State#state.port == Port ->
 						 Hdr#request_header.request_id,
 						 TypeOfException,
 						 {ExceptionTypeCode, [], []}, 
-						 E, [])
+						 E, [], [])
 	    end
     end,
     Port ! {self(), {command, Reply}},

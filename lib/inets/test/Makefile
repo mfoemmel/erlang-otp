@@ -161,6 +161,17 @@ HTTPC_SUITE = httpc_test
 HTTPD_DATADIR = httpd_test_data
 DATADIRS = $(HTTPD_DATADIR)
 
+EMAKEFILE  = Emakefile
+MAKE_EMAKE = $(wildcard $(ERL_TOP)/make/make_emakefile)
+
+ifeq ($(MAKE_EMAKE),)
+BUILDTARGET   = $(TARGET_FILES)
+RELTEST_FILES = $(INETS_SPECS) $(SOURCE) 
+else
+BUILDTARGET   = emakebuild
+RELTEST_FILES = $(EMAKEFILE) $(INETS_SPECS) $(SOURCE) 
+endif
+
 # ----------------------------------------------------
 # Release directory specification
 # ----------------------------------------------------
@@ -190,10 +201,21 @@ ERL_COMPILE_FLAGS += $(FTP_FLAGS) $(INETS_FLAGS)
 # 2) INETS_SSL_LIB_DIR must be created with the same content as 
 #    content comparable to all_SUITE_data/bin (see test-server).
 # ----------------------------------------------------
+tests debug opt: $(BUILDTARGET)
 
-tests debug opt: $(TARGET_FILES)
+targets: $(TARGET_FILES)
+
+.PHONY: emakebuild
+
+emakebuild: $(EMAKEFILE)
+	erl $(ERL_FLAGS) -make
+
+$(EMAKEFILE): 
+	$(MAKE_EMAKE) $(ERL_COMPILE_FLAGS) -o$(EBIN) '*_SUITE_make' > $(EMAKEFILE)
+	$(MAKE_EMAKE) $(ERL_COMPILE_FLAGS) -o$(EBIN) $(MODULES) >> $(EMAKEFILE)
 
 clean:
+	rm -f $(EMAKEFILE)
 	rm -f $(TARGET_FILES)
 	rm -f core *~
 
@@ -210,7 +232,6 @@ include suite_targets.mk
 # ----------------------------------------------------
 # Release Target
 # ---------------------------------------------------- 
-
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
@@ -218,27 +239,30 @@ release_spec: opt
 	$(INSTALL_DATA) $(HRL_FILES)   $(ERL_FILES) $(RELSYSDIR)/test
 	$(INSTALL_DATA) $(INETS_FILES) $(RELSYSDIR)/test
 	$(INSTALL_DIR)  $(RELSYSDIR)/test/$(HTTPD_DATADIR)
-	tar chf - -C $(HTTPD_DATADIR) . | (cd $(RELSYSDIR)/test/$(HTTPD_DATADIR); tar xfBp -)
+	tar chf - -C $(HTTPD_DATADIR) . | (cd $(RELSYSDIR)/test/$(HTTPD_DATADIR); tar xf -)
 	(cd $(RELSYSDIR)/test; mv Makefile.inets Makefile)
 
 release_tests_spec: opt
 	$(INSTALL_DIR) $(RELTESTSYSDIR)
-	$(INSTALL_DATA) $(INETS_SPECS) $(SOURCE) $(RELTESTSYSDIR)
+	$(INSTALL_DATA) $(RELTEST_FILES) $(RELTESTSYSDIR)
 	chmod -f -R u+w $(RELTESTSYSDIR)
-	tar chf - $(DATADIRS) | (cd $(RELTESTSYSDIR); tar xfBp -)
+	tar chf - $(DATADIRS) | (cd $(RELTESTSYSDIR); tar xf -)
 	$(INSTALL_DIR) $(RELTESTSYSALLDATADIR)
 	$(INSTALL_DATA) $(MAKEFILE_SRC) $(RELTESTSYSALLDATADIR)/Makefile.src
 	$(INSTALL_DATA) copy_files.erl $(RELTESTSYSALLDATADIR)/copy_files.erl
 	$(INSTALL_DIR) $(RELTESTSYSBINDIR)
 	chmod -f -R +x $(RELTESTSYSBINDIR)
-	tar cf - -C $(INETS_SSL_LIB_DIR) . | (cd $(RELTESTSYSALLDATADIR); tar xfBp -)
+	tar cf - -C $(INETS_SSL_LIB_DIR) . | (cd $(RELTESTSYSALLDATADIR); tar xf -)
 	$(INSTALL_DIR) $(RELTESTSYSALLDATADIR)/win32/lib	
 	tar cf - -C $(INETS_SSL_LIB_DIR)/win32/out32dll . | \
-		(cd $(RELTESTSYSALLDATADIR)/win32/lib; tar xfBp -)
+		(cd $(RELTESTSYSALLDATADIR)/win32/lib; tar xf -)
 
 release_docs_spec:
 
 info:
+	@echo "MAKE_EMAKE        = $(MAKE_EMAKE)"
+	@echo "EMAKEFILE         = $(EMAKEFILE)"
+	@echo "BUILDTARGET       = $(BUILDTARGET)"
 	@echo "INETS_DATA_DIR    = $(INETS_DATA_DIR)"
 	@echo "INETS_PRIV_DIR    = $(INETS_PRIV_DIR)"
 	@echo "INETS_SSL_LIB_DIR = $(INETS_SSL_LIB_DIR)"

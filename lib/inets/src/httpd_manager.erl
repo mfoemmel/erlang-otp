@@ -778,6 +778,8 @@ handle_blocker_exit(S) ->
 %%
 %%
 %%
+handle_restart(#state{config_file = undefined} = State) ->
+    {continue, {error, undefined_config_file}, State};
 handle_restart(#state{config_db = Db, config_file = ConfigFile} = State) ->
     ?vtrace("load new configuration",[]),
     {ok, Config} = httpd_conf:load(ConfigFile),

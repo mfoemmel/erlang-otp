@@ -97,9 +97,11 @@
 -record(c_primop, {anno=[], name,	% name :: Tree,
 		   args}).		% args :: [Tree]
 
--record(c_try, {anno=[], expr,		% expr :: Tree,
+-record(c_try, {anno=[], arg,		% arg :: Tree,
 		vars,			% vars :: [Tree],
-		body}).			% body :: Tree
+		body,			% body :: Tree
+		evars,			% evars :: [Tree],
+		handler}).		% handler :: Tree
 
 -record(c_catch, {anno=[], body}).	% body :: Tree
 

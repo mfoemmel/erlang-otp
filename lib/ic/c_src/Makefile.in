@@ -41,7 +41,9 @@ LIBS = @LIBS@
 LIBDIR = ../priv/lib/$(TARGET)
 OBJDIR = ../priv/obj/$(TARGET)
 INCDIR = ../include
-ERL_INTERFACE = $(ERL_TOP)/lib/erl_interface/src
+ERL_INTERFACE_FLAGS = \
+	-I$(ERL_TOP)/lib/erl_interface/include \
+	-I$(ERL_TOP)/lib/erl_interface/src
 
 # ----------------------------------------------------
 # Application version
@@ -62,9 +64,14 @@ IDL_FILES = \
         $(INCDIR)/erlang.idl
 
 ifeq ($(findstring win32,$(TARGET)),win32)
-C_FILES = 
 LIBRARY = $(LIBDIR)/ic.lib
+AR_OUT="-out:"
+CC += " -MT"
 else
+AR_OUT=rcv
+LIBRARY = $(LIBDIR)/libic.a
+endif
+
 C_FILES = \
 	ic.c \
 	oe_ei_encode_version.c      \
@@ -90,24 +97,17 @@ C_FILES = \
 	oe_ei_decode_wstring.c      \
 	oe_ei_code_erlang_binary.c  
 
-LIBRARY = $(LIBDIR)/libic.a
-endif
-
 H_FILES = $(INCDIR)/ic.h
 
 OBJ_FILES= $(C_FILES:%.c=$(OBJDIR)/%.o) 
 
-ALL_CFLAGS = @CFLAGS@ @DEFS@ -I$(INCDIR) -I$(ERL_INTERFACE) $(CFLAGS) 
+ALL_CFLAGS = @CFLAGS@ @DEFS@ -I$(INCDIR) $(ERL_INTERFACE_FLAGS) $(CFLAGS) 
 
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
 
-ifeq ($(findstring win32,$(TARGET)),win32)
-debug opt: 
-else
 debug opt: $(LIBRARY)
-endif
 
 clean:
 	rm -f $(LIBRARY) $(OBJ_FILES) 
@@ -126,7 +126,7 @@ $(LIBDIR):
 	-mkdir -p $(LIBDIR)
 
 $(LIBRARY): $(OBJDIR) $(LIBDIR) $(OBJ_FILES) 
-	-$(AR) rcv $@ $(OBJ_FILES) 
+	-$(AR) $(AR_OUT) $@ $(OBJ_FILES) 
 	-$(RANLIB) $@
 
 $(OBJDIR)/%.o: %.c
@@ -145,3 +145,9 @@ release_spec: opt
 	$(INSTALL_DATA) $(LIBRARY) $(RELSYSDIR)/priv/lib
 
 release_docs_spec:
+
+
+
+
+
+

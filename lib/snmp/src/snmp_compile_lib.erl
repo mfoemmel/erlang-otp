@@ -18,17 +18,19 @@
 -module(snmp_compile_lib).
 
 %% API
--export([test_father/4,make_ASN1type/1,import/1, makeInternalNode2/2,
+-export([test_father/4, make_ASN1type/1, import/1, makeInternalNode2/2,
 	 is_consistent/1, resolve_defval/1, make_variable_info/1,
 	 check_trap_name/3, make_table_info/4, get_final_mib/2, set_dir/2,
-	 look_at/1, add_cdata/2,check_access_group/1,check_def/3,
-	 check_notification_trap/1,register_oid/4,
+	 look_at/1, add_cdata/2,
+	 check_object_group/4, check_notification_group/4, 
+	 check_notification/3, 
+	 register_oid/4,
 	 error/2, error/3,
 	 %% warning/2, warning/3,
-	 print_error/2,print_error/3,
+	 print_error/2, print_error/3,
 	 make_cdata/1,
-	 trap_variable_info/3, check_notification/3,
-	 key1search/2,key1search/3]).
+	 trap_variable_info/3, 
+	 key1search/2, key1search/3]).
 
 %% internal exports
 -export([check_of/1, check_trap/2,check_trap/3,get_elem/2]).
@@ -263,11 +265,13 @@ import_from_file({{MibName, ImportsFromMib},Line}) ->
 			     "./"],
     ImportedMib = case read_mib(Line,Filename, Path2) of
 		      error ->
-		       error("Could not import ~p from mib ~s. File not found. "
-			     "Check that the MIB to be IMPORTED is compiled "
-			     "and present in the import path.",
-			     [ImportsFromMib,Filename],Line);
-		      Mib -> Mib
+			  error("Could not import ~p from mib ~s. "
+				"File not found. "
+				"Check that the MIB to be IMPORTED "
+				"is compiled and present in the import path.",
+				[ImportsFromMib, Filename], Line);
+		      Mib -> 
+			  Mib
 		  end,
     lists:foreach(fun (ImpObj) -> import(ImpObj,ImportedMib) end,
 		  ImportsFromMib).
@@ -374,15 +378,18 @@ makeInternalNode3(Imported, Name, Oid) ->
     #me{imported = Imported, oid = Oid, aliasname = Name, entrytype = internal}.
 
 make_cdata(MibFuncsFile) ->
-    #cdata{mibfuncs = read_funcs(MibFuncsFile), asn1_types = init_types(),
-	  oid_ets = ets:new(oid_ets, [set, private])}.
+    #cdata{mibfuncs   = read_funcs(MibFuncsFile), 
+	   asn1_types = init_types(),
+	   oid_ets    = ets:new(oid_ets,    [set, private]),
+	   status_ets = ets:new(status_ets, [set, private])}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Section for Intermib consistency checking
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 is_consistent(Filenames) ->
     case catch check_all_consistency(Filenames) of
-	ok -> ok;
+	ok -> 
+	    ok;
 	{undef, Format, Data} ->
 	    ok = io:format(Format, Data),
 	    io:format("~n"),
@@ -573,9 +580,11 @@ get_def('Counter64',_) -> 0.
 
 check_trap_name(EnterpriseName, Line, MEs) ->
     case lists:keysearch(EnterpriseName, #me.aliasname, MEs) of
-	false -> error("Error in trap definition. Cannot find object '~w'.",
-			[EnterpriseName],Line);
-	{value, _} -> true
+	false -> 
+	    error("Error in trap definition. Cannot find object '~w'.",
+		  [EnterpriseName],Line);
+	{value, _} -> 
+	    true
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -779,10 +788,13 @@ non_implied_name(IndexColumnName) -> IndexColumnName.
 %% returns: {ok, 
 %  {snmp_mib, MEs, traps, list of {TrapOid, list of oids (objects)}}}
 get_final_mib(Name, Options) ->
-    d("get_final_mib",[]),
+    d("get_final_mib -> entry",[]),
     CDATA = get(cdata),
-    #cdata{mes=MEs,mibfuncs=MibFuncs,asn1_types=Types,
-	   traps=Traps,oid_ets=OidEts}=CDATA,
+    #cdata{mes        = MEs,
+	   mibfuncs   = MibFuncs,
+	   asn1_types = Types,
+	   traps      = Traps,
+	   oid_ets    = OidEts} = CDATA,
     d("get_final_mib -> resolve oids",[]),
     resolve_oids(OidEts),
     %% Reverse so that we get report on objects earlier in the file
@@ -808,32 +820,36 @@ get_final_mib(Name, Options) ->
     {value, DBName} = snmp_misc:assq(db, Options),
     MEsWithMFA = insert_mfa(MibFs, SortedMEs, DBName),
     Misc = [{snmp_version,get(snmp_version)}
-	    | case lists:member(no_symbolic_info,get(options)) of
+	    | case lists:member(no_symbolic_info,Options) of
 		  true -> [no_symbolic_info];
 		  false -> []
 	      end],
-    GroupBool = hd([Value || {Option,Value} <-get(options), 
-			     Option==group_check]),
-    case GroupBool==true of
-	true->
-	    case get(snmp_version)==2 of
-		true->
-		    d("get_final_mib -> check groups",[]),
-		    check_group(CDATA#cdata.mes,CDATA#cdata.objectgroups),
-		    d("get_final_mib -> check notifications",[]),
-		    check_notification(UTraps,CDATA#cdata.notificationgroups);
-		false->
+    {value, GroupBool} = snmp_misc:assq(group_check, Options),
+    case GroupBool of
+	true ->
+	    case get(snmp_version) == 2 of
+		true ->
+		    d("get_final_mib -> check groups:~n   ~p",
+		      [CDATA#cdata.objectgroups]),
+		    check_group(CDATA#cdata.mes, 
+				CDATA#cdata.objectgroups),
+		    d("get_final_mib -> check notifications groups:~n   ~p",
+		      [CDATA#cdata.notificationgroups]),
+		    check_notification(UTraps,
+				       CDATA#cdata.notificationgroups);
+		false ->
 		    ok
 	    end;
-	false->
+	false ->
 	    ok
     end,
-    Mib = #mib{name = Name, mes = lists:map(fun translate_me_type/1,
-					    MEsWithMFA), misc=Misc,
+    Mib = #mib{name           = Name, 
+	       mes            = lists:map(fun translate_me_type/1,MEsWithMFA), 
+	       misc           = Misc,
 	       variable_infos = extract_variable_infos(MEsWithMFA),
-	       table_infos = extract_table_infos(MEsWithMFA),
-	       traps = lists:map(fun translate_trap_type/1, UTraps), 
-	       asn1_types = lists:map(fun translate_type/1, Types)},
+	       table_infos    = extract_table_infos(MEsWithMFA),
+	       traps          = lists:map(fun translate_trap_type/1, UTraps), 
+	       asn1_types     = lists:map(fun translate_type/1, Types)},
     {ok, Mib}.
 	      
 	      
@@ -876,33 +892,130 @@ translate_type(ASN1type) when ASN1type#asn1_type.bertype == 'Gauge32' ->
     ASN1type#asn1_type{bertype = 'Unsigned32'};
 translate_type(ASN1type) -> ASN1type.
 
-%% Check for both NOTIFICATION-GROUP  and OBJECT-GROUP
+%% Check for both NOTIFICATION-GROUP and OBJECT-GROUP
 
-check_def(Objects,[GroupObject|GroupObjects],Line)->
-    case lists:member(GroupObject,Objects) of
-	false->
-	    print_error("OBJECT-TYPE definition missing or 'not-accessible' for '~w'",[GroupObject],Line),
-	    check_def(Objects,GroupObjects,Line);
+check_notification_group(Name, GroupObjects, Line, Status) ->
+    #cdata{traps = Traps, status_ets = Ets} = get(cdata),
+    Objects = get_notification_names(Traps),
+    check_def(notification, Name, Line, Status, GroupObjects, Objects, Ets).
+
+get_notification_names(Traps) when list(Traps) ->
+    [Name || #notification{trapname = Name} <- Traps].
+
+check_object_group(Name, GroupObjects, Line, Status) ->
+    #cdata{mes = MEs, status_ets = Ets} = get(cdata),
+    Objects = get_object_names(MEs),
+    check_def(object, Line, Name, Status, GroupObjects, Objects, Ets).
+
+get_object_names([])->[];
+get_object_names([#me{access=A, entrytype=T, aliasname=N}|MEs]) 
+  when A =/= 'not-accessible', T =/= 'internal' ->
+    [N|get_object_names(MEs)];
+get_object_names([ME|Rest]) ->
+    get_object_names(Rest).
+
+%% Strictly we should not need to check more then the status 
+%% table, but since error do happen...
+check_def(Type, Name, Line, Status, [GroupObject|GroupObjects], Objects, Ets) ->
+    case lists:member(GroupObject, Objects) of
 	true ->
-	    check_def(Objects,GroupObjects,Line)
-    end;
-check_def(_Objects,[],_Line) ->
+	    %% Lucky so far, now lets check that the status is valid
+	    case ets:lookup(Ets, GroupObject) of
+		[{GroupObject, ObjectStatus}] ->
+		    check_group_member_status(Name, Status,
+					      GroupObject, ObjectStatus);
+		_ ->
+		    print_error("group (~w) member ~w not found"
+				" in status table - status check failed", 
+				[Name, GroupObject])
+	    end;
+	false ->
+	    %% Ok, this could be because the status is obsolete or
+	    %% deprecated (with the deprecated flag = false)
+	    case ets:lookup(Ets, GroupObject) of
+		[{GroupObject, ObjectStatus}] ->
+		    check_group_member_status(Name, Status,
+					      GroupObject, ObjectStatus);
+		_ ->
+		    group_member_error(Type, GroupObject, Line)
+	    end
+    end,
+    check_def(Type, Name, Line, Status, GroupObjects, Objects, Ets);
+check_def(_, _, _, _, [], _, _) ->
     ok.
 
-%%Checking the definition of OBJECT-GROUP
+group_member_error(object, Name, Line) ->
+    print_error("OBJECT-TYPE definition missing or "
+		"'not-accessible' for '~w'", [Name],Line);
+group_member_error(notification, Name, Line) ->
+    print_error("NOTIFICATION-TYPE definition missing for '~w'", 
+		[Name], Line).
+		
 
-check_access_group([])->[];
-check_access_group([#me{access=A,entrytype=T,aliasname=Aliasname}|MEs]) when A=/='not-accessible',T=/='internal' ->
-    [Aliasname|check_access_group(MEs)];
-check_access_group([ME|Rest]) ->
-    check_access_group(Rest).
+check_group_member_status(GroupName, GroupStatus, Member, undefined) ->
+    ok;
+check_group_member_status(GroupName, current, Member, current) ->
+    ok;
+check_group_member_status(GroupName, current, Member, MemberStatus) ->
+    group_member_status_error(GroupName, Member, current, MemberStatus,
+			      "current");
+check_group_member_status(GroupName, deprecated, Member, MemberStatus) 
+  when MemberStatus == deprecated; MemberStatus == current ->
+    ok;
+check_group_member_status(GroupName, deprecated, Member, MemberStatus) ->
+    group_member_status_error(GroupName, deprecated, Member, MemberStatus,
+			      "deprecated or current");
+check_group_member_status(GroupName, obsolete, Member, MemberStatus) 
+  when MemberStatus == obsolete; 
+       MemberStatus == deprecated; 
+       MemberStatus == current ->
+    ok;
+check_group_member_status(GroupName, obsolete, Member, MemberStatus) ->
+    group_member_status_error(GroupName, obsolete, Member, MemberStatus,
+			      "obsolete, deprecated or current");
+check_group_member_status(GroupName, GroupStatus, Member, MemberStatus) ->
+    ok.
+
+group_member_status_error(Name, Member, Status, MemberStatus, Expected) ->
+    snmp_compile_lib:print_error("Invalid status of group member ~p "
+				 "in group ~p. "
+				 "Group status is ~p "
+				 "and member status is ~p "
+				 "(should be ~s)", 
+				 [Member, Name, Status, 
+				  MemberStatus, Expected]).
+
+
+
+% check_def(Objects,[GroupObject|GroupObjects],Line)->
+%     case lists:member(GroupObject,Objects) of
+% 	false ->
+% 	    print_error("OBJECT-TYPE definition missing or "
+% 			"'not-accessible' for '~w'", [GroupObject],Line),
+% 	    check_def(Objects,GroupObjects,Line);
+% 	true ->
+% 	    check_def(Objects,GroupObjects,Line)
+%     end;
+% check_def(_Objects,[],_Line) ->
+%     ok.
+
+%% Checking the definition of OBJECT-GROUP
+
 %%-----------------------------
 check_group([#me{imported = true} | T],GroupObjects)->
+    t("check_group(imported) -> skip", []),
     check_group(T,GroupObjects);
 check_group([],_GroupObjects) ->
+    t("check_group -> done", []),
     ok;
-check_group([#me{access=A,entrytype=T,aliasname=Aliasname}|MEs],GroupObjects) when A=/='not-accessible',T=/='internal' ->
-    check_member_group(Aliasname,GroupObjects),
+check_group([#me{access=A, entrytype=T, aliasname=N}|MEs], GroupObjects) 
+  when A =/= 'not-accessible', T =/= 'internal' ->
+    t("check_group -> "
+      "~n   access:    ~p"
+      "~n   entrytype: ~p"
+      "~n   aliasname: ~p", [A, T, N]),
+    #cdata{status_ets = Ets} = get(cdata),
+    check_member_group(N, GroupObjects),
     check_group(MEs,GroupObjects);
 check_group([_|MEs],GroupObjects) ->
     check_group(MEs,GroupObjects).
@@ -910,24 +1023,27 @@ check_group([_|MEs],GroupObjects) ->
 check_member_group(Aliasname,[])->
     print_error("'~w' missing in OBJECT-GROUP",[Aliasname]);
 check_member_group(Aliasname,[{Name,GroupObject,Line}|Tl])->
+    t("check_member_group -> entry with"
+      "~n   Aliasname:   ~p"
+      "~n   Name:        ~p"
+      "~n   GroupObject: ~p"
+      "~n   Line:        ~p", [Aliasname,Name,GroupObject,Line]),
     case lists:member(Aliasname,GroupObject) of
 	true->
 	    ok;
 	false ->
 	    check_member_group(Aliasname,Tl)
     end.                                     
+
+
 %% Checking definition in NOTIFICATION-GROUP
 
-check_notification_trap([])->[];
-check_notification_trap([#notification{trapname=Aliasname}|Traps]) ->
-    [Aliasname|check_notification_trap(Traps)];
-check_notification_trap([Trap|Rest]) ->
-    check_notification_trap(Rest).
 %%--------------------------
 check_notification([],_NotificationObjects) ->
     ok;
-check_notification([#notification{trapname=Aliasname}|Traps],NotificationObjects) ->
-    check_member_notification(Aliasname,NotificationObjects),
+check_notification([#notification{trapname=Aliasname}|Traps],
+		   NotificationObjects) ->
+    check_member_notification(Aliasname, NotificationObjects),
     check_notification(Traps,NotificationObjects);
 check_notification([_|Traps],NotificationObjects) ->
     check_notification(Traps,NotificationObjects).

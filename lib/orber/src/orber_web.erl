@@ -363,7 +363,7 @@ create_object_data(NodeStr, Ref, Obj) ->
 	       {'internal', Key} ->
 		  Pid = check(rpc:call(Node, corba, get_pid, [Object])),
 		  Interface = check(rpc:call(Node, corba, request_from_iiop, 
-					     [Object, oe_get_interface, false, false, false])),
+					     [Object, oe_get_interface, false, false, false, []])),
 		   InterfaceData = parse_interface(Interface, []),
 		  {[{"IFR Id", IFRId},
 		    {"Stored As", Ref},
@@ -373,7 +373,7 @@ create_object_data(NodeStr, Ref, Obj) ->
 		    {"IOR String", IORStr}|InterfaceData], false};
 	      {'internal_registered', {pseudo, Key}} ->
 		  Interface = check(rpc:call(Node, corba, request_from_iiop, 
-					     [Object, oe_get_interface, false, false, false])),
+					     [Object, oe_get_interface, false, false, false, []])),
 		  InterfaceData = parse_interface(Interface, []),
 		  {[{"IFR Id", IFRId},
 		    {"Stored As", Ref},
@@ -384,7 +384,7 @@ create_object_data(NodeStr, Ref, Obj) ->
 	      {'internal_registered', Key} ->
 		  Pid = check(rpc:call(Node, corba, get_pid, [Object])),
 		  Interface = check(rpc:call(Node, corba, request_from_iiop, 
-					     [Object, oe_get_interface, false, false, false])),
+					     [Object, oe_get_interface, false, false, false, []])),
 		  InterfaceData = parse_interface(Interface, []),
 		  {[{"IFR Id", IFRId},
 		    {"Stored As", Ref},

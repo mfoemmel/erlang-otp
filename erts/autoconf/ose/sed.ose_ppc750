@@ -8,21 +8,26 @@
 
 s|@host@|ose_ppc750|
 s|@system_type@|ose_ppc750|
-s|@CC@|DIABLIB=/ldisk/ose/diab_ppc/4.3/4.3f PATH=/ldisk/ose/diab_ppc/4.3/4.3f/SUNS/bin dcc|
+s|@CC@|DIABLIB=/usr/local/share/pgm/diab-4.3f PATH=/usr/local/share/pgm/diab-4.3f/SUNS/bin dcc|
 s|@HCC@|gcc|
-s|@LD@|DIABLIB=/ldisk/ose/diab_ppc/4.3/4.3f PATH=/ldisk/ose/diab_ppc/4.3/4.3f/SUNS/bin dld|
+s|@LD@|DIABLIB=/usr/local/share/pgm/diab-4.3f PATH=/usr/local/share/pgm/diab-4.3f/SUNS/bin dld|
+s|@DED_LD@|DIABLIB=/usr/local/share/pgm/diab-4.3f PATH=/usr/local/share/pgm/diab-4.3f/SUNS/bin dld|
 s|@LIBS@||
 s|@COMB_OBJ_FLAG@||
-# s|@RANLIB@|ranlib|
-s|@AR@|DIABLIB=/ldisk/ose/diab_ppc/4.3/4.3f PATH=/ldisk/ose/diab_ppc/4.3/4.3f/SUNS/bin dar|
+s|@RANLIB@|ranlib|
+s|@AR@|DIABLIB=/usr/local/share/pgm/diab-4.3f PATH=/usr/local/share/pgm/diab-4.3f/SUNS/bin dar|
 s|@OS@|ose|
 s|@ARCH@|ppc750|
 s|@PERFCTR_PATH@||
+s|@TAR@|tar cvf|
 
 # -tPPC750E<C>:ose, where C is N (no float), S (SW float) or H (HW float).
 
+# Local static variables optimization (0x80000000) screws up addressing of some global variables,
+# we'll disable it for all files using -Xkill-opt=0x80000000 (opt compilation only).
+
 s|@CFLAGS_NOOPT@|@GENERAL_CFLAGS@ -tPPC750ES:ose @DIAB_OPTS@ @DIAB_INCLS@ @OSE_INCLS@ -I\./ @OSE_DEFS@ -DUSE_ERL_DEBUG_PRINTF|
-s|@CFLAGS@|@GENERAL_CFLAGS@ -tPPC750ES:ose -XO @DIAB_OPTS@ @DIAB_INCLS@ @OSE_INCLS@ -I\./ @OSE_DEFS@ -DUSE_ERL_DEBUG_PRINTF|
+s|@CFLAGS@|@GENERAL_CFLAGS@ -tPPC750ES:ose -XO -Xkill-opt=0x80000000 @DIAB_OPTS@ @DIAB_INCLS@ @OSE_INCLS@ -I\./ @OSE_DEFS@ -DUSE_ERL_DEBUG_PRINTF|
 s|@DEBUG_CFLAGS@|@GENERAL_CFLAGS@ -tPPC750ES:ose @DIAB_OPTS@ @DIAB_INCLS@ @OSE_INCLS@ -I\./ @OSE_DEFS@ -DUSE_ERL_DEBUG_PRINTF|
 
 # Note! -DNO_JUMP_TABLE no good for performance, but beam_emu.c will not compile otherwise.

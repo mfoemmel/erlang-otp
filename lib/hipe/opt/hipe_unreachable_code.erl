@@ -21,7 +21,7 @@
 -define(report(MFA,Msg,Args),report(MFA,Msg,Args)).
 
 remove(CFG) ->
-    EntryPoints = [cfg:start(CFG)|cfg:fail_entrypoints(CFG)],
+    EntryPoints = [cfg:start(CFG)],
     Marked = mark_list(EntryPoints,cfg:succ_map(CFG),none_visited()),
     delete_unmarked(CFG,Marked).
 

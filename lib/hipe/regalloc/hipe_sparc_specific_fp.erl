@@ -54,10 +54,11 @@ allocatable() ->
   [4,6,8,10,12,14,16,18,20,22,24,26,28,30].
 
 all_precolored() -> %% Is this correct?
-  [0, 2].
+  lists:seq(0, 31).
 
 is_precolored(Reg) ->
   lists:member(Reg, all_precolored()).
+
 
 physical_name(Reg) ->
   Reg.

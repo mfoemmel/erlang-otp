@@ -68,6 +68,9 @@
 #    define ASSERT(X)
 #endif 
 
+#define sock2event(s) ((ErlDrvEvent)(long)(s))
+#define event2sock(p) ((SOCKET)(long)(p))
+
 #include "erl_driver.h"
 
 /*
@@ -370,7 +373,7 @@ static void trace_ip_output(ErlDrvData handle, char *buff, int bufflen)
 	return;
     }
     if (data->que[data->questart] != NULL) {
-	trace_ip_ready_output(handle, (ErlDrvEvent)data->fd);
+	trace_ip_ready_output(handle, sock2event(data->fd));
     }
     if (data->que[data->questart] == NULL) {
 	int written = trywrite(data, buff, bufflen);
@@ -392,7 +395,7 @@ static void trace_ip_ready_input(ErlDrvData handle, ErlDrvEvent fd)
     TraceIpData *data = (TraceIpData *) handle;
     int client;
 
-    if (!(data->flags & FLAG_LISTEN_PORT) && (SOCKET)fd == data->listenfd) {
+    if (!(data->flags & FLAG_LISTEN_PORT) && event2sock(fd) == data->listenfd) {
 	/*
 	** Someone tries to connect to already connected port, 
 	** just accept and close.
@@ -403,7 +406,7 @@ static void trace_ip_ready_input(ErlDrvData handle, ErlDrvEvent fd)
 	return;
     }
 
-    if ((SOCKET)fd == data->listenfd) {
+    if (event2sock(fd) == data->listenfd) {
 	/*
 	** Maybe accept, we are a listen port...
 	*/
@@ -434,7 +437,7 @@ static void trace_ip_event(ErlDrvData handle, ErlDrvEvent event)
        trace_ip_ready_input(handle, (ErlDrvEvent)data->listenfd);
    }
 }
-#endif __WIN32__
+#endif /* ifdef __WIN32__ */
        
 /*
 ** We can write to a file descriptor
@@ -839,7 +842,7 @@ error:
 
 static int my_driver_select(TraceIpData *desc, SOCKET fd, int flags, int on)
 {
-    return driver_select(desc->port, (ErlDrvEvent)fd, flags, on);
+    return driver_select(desc->port, sock2event(fd), flags, on);
 }	    
 
 #endif /* !__WIN32__ */

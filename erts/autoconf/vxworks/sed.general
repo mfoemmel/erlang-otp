@@ -27,6 +27,7 @@ s|@cc_root@|/clearcase/otp/|
 # Define VxWorks even though cross-compiling. 
 s|@HCFLAGS@|-DVXWORKS|
 s|@HCLIBS@||
+s|@ENABLE_ALLOC_TYPE_VARS@||
 
 # HiPE
 s|@HIPE_ENABLED@||
@@ -57,6 +58,9 @@ s|@EMU_LIBOBJS@||
 s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R -DENABLE_ELIB_MALLOC -DELIB_HEAP_USER -DELIB_SORTED_BLOCKS -DWORDS_BIGENDIAN -DELIB_DONT_INITIALIZE|g
 s|@WFLAGS@||
 s|@HIPE_ENABLED@||
+
+# Make java code compile although we don't test it on VxWorks (no license)
+s|@JAVAC@|javac|
 
 # What is this anyway?
 # Disable it and see what breaks.

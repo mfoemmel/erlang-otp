@@ -9,6 +9,9 @@
 /* Define if floating points exceptions are non-existing/not reliable */
 #undef NO_FPE_SIGNALS
 
+/* Defined if no found C compiler can handle jump tables */
+#undef NO_JUMP_TABLE
+
 /* Define if you wish to redefine FD_SETSIZE to be able to select on more fd */
 #undef REDEFINE_FD_SETSIZE
 
@@ -102,6 +105,9 @@
 /* Define if you need to include rpc/types.h to get INADDR_LOOPBACK defined */
 #undef DEF_INADDR_LOOPBACK_IN_RPC_TYPES_H
 
+/* Define if you need to include winsock2.h to get INADDR_LOOPBACK defined */
+#undef DEF_INADDR_LOOPBACK_IN_WINSOCK2_H
+
 /* Uncomment if you don't have a definition of INADDR_LOOPBACK */
 #undef HAVE_NO_INADDR_LOOPBACK
 
@@ -148,9 +154,21 @@
 /* Define if you have pthread_atfork() (and use pthreads) */
 #undef HAVE_PTHREAD_ATFORK
 
+/* Define if you have pthread_mutexattr_settype() (and use pthreads) */
+#undef HAVE_PTHREAD_MUTEXATTR_SETTYPE
+
+/* Define if you have pthread_mutexattr_setkind_np() (and use pthreads) */
+#undef HAVE_PTHREAD_MUTEXATTR_SETKIND_NP
+
+/* Define if malloc should use a recursive mutex */
+#undef  USE_RECURSIVE_MALLOC_MUTEX
+
 /* Define if mutexes should be reinitialized (instead of unlocked)
    in child at fork. */
 #undef INIT_MUTEX_IN_CHILD_AT_FORK
+
+/* Define if SIGUSR1 and SIGUSR2 cannot be used. */
+#undef UNUSABLE_SIGUSRX
 
 /*
  *  Math definitions.

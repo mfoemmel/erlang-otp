@@ -154,7 +154,7 @@ my $bif_size = @bif;
 print <<EOF;
 #ifndef __ERL_BIF_TABLE_H__
 #define __ERL_BIF_TABLE_H__
-typedef Eterm (*BifFunction)();
+typedef void *BifFunction;
 
 typedef struct bif_entry {
     Eterm module;

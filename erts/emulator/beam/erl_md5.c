@@ -113,7 +113,6 @@ static unsigned char PADDING[64] = {
 
 BIF_RETTYPE
 md5_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm bin;
     byte* bytes;
@@ -131,7 +130,6 @@ BIF_ADECL_1
 
 BIF_RETTYPE
 md5_init_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     Eterm bin;
     byte* bytes;
@@ -144,7 +142,6 @@ BIF_ADECL_0
 
 BIF_RETTYPE
 md5_update_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     byte* old_context;
     byte* new_context;
@@ -169,7 +166,6 @@ BIF_ADECL_2
 
 BIF_RETTYPE
 md5_final_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm bin;
     byte* context;
@@ -198,7 +194,7 @@ update(MD5_CTX* context, Eterm obj)
 
     DECLARE_ESTACK(s);
     Eterm* objp;
-    int csize  = 0;
+    unsigned int csize = 0;
     char* cptr = buf;
     byte* bytes;
 

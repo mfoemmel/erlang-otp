@@ -30,6 +30,7 @@ server(Drv, Shell) ->
     process_flag(trap_exit, true),
     edlin:init(),
     put(line_buffer, []),
+    put(read_mode,list),
     start_shell(Shell),
     server_loop(Drv, get(shell), []).
 
@@ -47,7 +48,7 @@ start_shell(Shell) when pid(Shell) ->
     group_leader(self(), Shell),		%We are the shells group leader
     link(Shell),				%We're linked to it.
     put(shell, Shell);
-start_shell(Shell) ->
+start_shell(_Shell) ->
     ok.
 
 start_shell1(M, F, Args) ->
@@ -71,7 +72,7 @@ server_loop(Drv, Shell, Buf0) ->
 	    exit(R);
 	{'EXIT',Shell,R} ->
 	    exit(R);
-	Other ->
+	_ ->
 	    server_loop(Drv, Shell, Buf0)
     end.
 
@@ -97,27 +98,46 @@ io_request(Req, From, ReplyAs, Drv, Buf0) ->
 	    exit(R)
     end.
 
+io_request({put_chars,Binary}, Drv, Buf) when binary(Binary) -> % New in R9C
+    send_drv(Drv, {put_chars,Binary}),
+    {ok,ok,Buf};
 io_request({put_chars,Chars}, Drv, Buf) ->
-    case deep_char_list(Chars) of
-	true ->
-	    send_drv(Drv, {put_chars,Chars}),
+    case catch list_to_binary(Chars) of
+	Binary when binary(Binary) ->
+	    send_drv(Drv, {put_chars,Binary}),
 	    {ok,ok,Buf};
-	false ->
-	    {error,{error,put_chars},Buf}
+	_ ->
+	    {error,{error,{put_chars,Chars}},Buf}
     end;
 io_request({put_chars,M,F,As}, Drv, Buf) ->
-    case deep_char_list(Chars = (catch apply(M, F, As))) of
-	true ->
-	    send_drv(Drv, {put_chars,Chars}),
+    case catch apply(M, F, As) of
+	Binary when binary(Binary) ->
+	    send_drv(Drv, {put_chars,Binary}),
 	    {ok,ok,Buf};
-	false ->
-	    {error,{error,F},Buf}
+	Chars ->
+	    case catch list_to_binary(Chars) of
+		B when binary(B) ->
+		    send_drv(Drv, {put_chars,B}),
+		    {ok,ok,Buf};
+		_ ->
+		    {error,{error,F},Buf}
+	    end
     end;
-io_request({get_until,Prompt,M,F,As}, Drv, Buf0) ->
-    get_until(Prompt, M, F, As, Drv, Buf0);
+%% These are new in R9C
+io_request({get_chars,Prompt,N}, Drv, Buf) ->
+    get_chars(Prompt, io_lib, collect_chars, N, Drv, Buf);
+io_request({get_chars,Prompt,Mod,Func,XtraArg}, Drv, Buf) ->
+    get_chars(Prompt, Mod, Func, XtraArg, Drv, Buf);
+io_request({get_line,Prompt}, Drv, Buf) ->
+    get_chars(Prompt, io_lib, collect_line, [], Drv, Buf);
+io_request({setopts,Opts}, Drv, Buf) when list(Opts) ->
+    setopts(Opts, Drv, Buf);
+%% End of new in R9C
+io_request({get_until,Prompt,M,F,As}, Drv, Buf) ->
+    get_chars(Prompt, io_lib, get_until, {M,F,As}, Drv, Buf);
 io_request({requests,Reqs}, Drv, Buf) ->
     io_requests(Reqs, {ok,ok,Buf}, Drv);
-io_request(Other, Drv, Buf) ->
+io_request(_, _Drv, Buf) ->
     {error,{error,request},Buf}.
 
 %% Status = io_requests(RequestList, PrevStat, Drv)
@@ -125,7 +145,7 @@ io_request(Other, Drv, Buf) ->
 
 io_requests([R|Rs], {ok,ok,Buf}, Drv) ->
     io_requests(Rs, io_request(R, Drv, Buf), Drv);
-io_requests([R|Rs], Error, Drv) ->
+io_requests([_|_], Error, _Drv) ->
     Error;
 io_requests([], Stat, _) ->
     Stat.
@@ -143,36 +163,62 @@ io_reply(From, ReplyAs, Reply) ->
 send_drv(Drv, Msg) ->
     Drv ! {self(),Msg}.
 
-send_drv_reqs(Drv, []) -> [];
+send_drv_reqs(_Drv, []) -> [];
 send_drv_reqs(Drv, Rs) ->
     send_drv(Drv, {requests,Rs}).
 
-%% get_until(Prompt, Module, Function, Arguments, Drv, Buffer)
-%%  Gets characters from the input Drv as long as the applied function
-%%  returns {more,Continuation}. Does not block output until input has been
+%% setopts
+setopts(Opts0,_Drv, Buf) ->
+    Opts = proplists:substitute_negations([{list,binary}], Opts0),
+    case proplists:get_value(binary, Opts) of
+	true ->
+	    put(read_mode,binary),
+	    {ok,ok,Buf};
+	false ->
+	    put(read_mode,list),
+	    {ok,ok,Buf};
+	_ ->
+	    {error,{error,badarg},Buf}
+    end.
+
+%% get_chars(Prompt, Module, Function, XtraArgument, Drv, Buffer)
+%%  Gets characters from the input Drv until as the applied function
+%%  returns {stop,Result,Rest}. Does not block output until input has been
 %%  received.
 %%  Returns:
 %%	{Result,NewSaveBuffer}
 %%	{error,What,NewSaveBuffer}
 
-get_until(Prompt, M, F, As, Drv, Buf) ->
+get_chars(Prompt, M, F, Xa, Drv, Buf) ->
     Pbs = prompt_bytes(Prompt),
-    get_until1(get_line(Buf, Pbs, Drv), Pbs, [], M, F, As, Drv).
+    get_chars_loop(Pbs, M, F, Xa, Drv, Buf, start).
 
-get_until1({done,Line,RestChars}, Pbs, Cont0, M, F, As, Drv) ->
-    case catch apply(M, F, [Cont0,Line|As]) of
-	{done,Result,Rest} ->
-	    {ok,Result, Rest++RestChars};
-	{more,Cont} ->
-	    LineCont = edlin:start(Pbs),
-	    get_until1(get_line(RestChars, Pbs, Drv), Pbs, Cont, M, F, As, Drv);
-	Other ->
-	    {error,{error,F},[]}
-    end;
-get_until1(interrupted, Pbs, Cont, M, F, As, Drv) ->
-    {error,{error,interrupted},[]};
-get_until1(terminated, Pbs, Cont, M, F, As, Drv) ->
-    {exit,terminated}.
+get_chars_loop(Pbs, M, F, Xa, Drv, Buf0, State) ->
+    case get_line(Buf0, Pbs, Drv) of
+	{done,Line,Buf1} ->
+	    get_chars_apply(Pbs, M, F, Xa, Drv, Buf1, State, Line);
+	interrupted ->
+	    {error,{error,interrupted},[]};
+	terminated ->
+	    {exit,terminated}
+    end.
+
+get_chars_apply(Pbs, M, F, Xa, Drv, Buf, State0, Line) ->
+    case catch M:F(State0, cast(Line,get(read_mode)), Xa) of
+	{stop,Result,Rest} ->
+	    {ok,Result,append(Rest, Buf)};
+	{'EXIT',_} ->
+	    {error,{error,err_func(M, F, Xa)},[]};
+	State1 ->
+	    edlin:start(Pbs),
+	    get_chars_loop(Pbs, M, F, Xa, Drv, Buf, State1)
+    end.
+
+%% Convert error code to make it look as before
+err_func(io_lib, get_until, {_,F,_}) ->
+    F;
+err_func(_, F, _) ->
+    F.
 
 %% get_line(Chars, PromptBytes, Drv)
 %%  Get a line with eventual line editing. Handle other io requests
@@ -186,12 +232,13 @@ get_line(Chars, Pbs, Drv) ->
     send_drv_reqs(Drv, Rs),
     get_line1(edlin:edit_line(Chars, Cont), Drv, new_stack(get(line_buffer))).
 
-get_line1({done,Line,Rest,Rs}, Drv, Ls) ->
+get_line1({done,Line,Rest,Rs}, Drv, _Ls) ->
     send_drv_reqs(Drv, Rs),
     put(line_buffer, [Line|lists:delete(Line, get(line_buffer))]),
     {done,Line,Rest};
-get_line1({undefined,{A,Mode,Char},Cs,Cont,Rs}, Drv, Ls0) when ((Mode == none) and (Char == $\^P))
-						   or ((Mode == meta_left_sq_bracket) and (Char == $A)) ->
+get_line1({undefined,{_A,Mode,Char},Cs,Cont,Rs}, Drv, Ls0) 
+  when ((Mode == none) and (Char == $\^P))
+       or ((Mode == meta_left_sq_bracket) and (Char == $A)) ->
     send_drv_reqs(Drv, Rs),
     case up_stack(Ls0) of
 	{none,Ls} ->
@@ -206,11 +253,12 @@ get_line1({undefined,{A,Mode,Char},Cs,Cont,Rs}, Drv, Ls0) when ((Mode == none) a
 		      Drv,
 		      Ls)
     end;
-get_line1({undefined,{A,Mode,Char},Cs,Cont,Rs}, Drv, Ls0) when ((Mode == none) and (Char == $\^N))
-						   or ((Mode == meta_left_sq_bracket) and (Char == $B)) ->
+get_line1({undefined,{_A,Mode,Char},_Cs,Cont,Rs}, Drv, Ls0) 
+  when ((Mode == none) and (Char == $\^N))
+       or ((Mode == meta_left_sq_bracket) and (Char == $B)) ->
     send_drv_reqs(Drv, Rs),
     case down_stack(Ls0) of
-	{none,Ls} ->
+	{none,_Ls} ->
 	    send_drv_reqs(Drv, edlin:erase_line(Cont)),
 	    get_line1(edlin:start(edlin:prompt(Cont)), Drv, Ls0);
 	{Lcs,Ls} ->
@@ -222,7 +270,7 @@ get_line1({undefined,{A,Mode,Char},Cs,Cont,Rs}, Drv, Ls0) when ((Mode == none) a
 		      Drv,
 		      Ls)
     end;
-get_line1({undefined,Char,Cs,Cont,Rs}, Drv, Ls) ->
+get_line1({undefined,_Char,Cs,Cont,Rs}, Drv, Ls) ->
     send_drv_reqs(Drv, Rs),
     send_drv(Drv, beep),
     get_line1(edlin:edit_line(Cs, Cont), Drv, Ls);
@@ -234,14 +282,14 @@ get_line1({What,Cont0,Rs}, Drv, Ls) ->
 	{Drv,eof} ->
 	    get_line1(edlin:edit_line(eof, Cont0), Drv, Ls);
 	{io_request,From,ReplyAs,Req} when pid(From) ->
-	    {more_chars,Cont,More} = edlin:edit_line([], Cont0),
+	    {more_chars,Cont,_More} = edlin:edit_line([], Cont0),
 	    send_drv_reqs(Drv, edlin:erase_line(Cont)),
 	    io_request(Req, From, ReplyAs, Drv, []), %WRONG!!!
 	    send_drv_reqs(Drv, edlin:redraw_line(Cont)),
 	    get_line1({more_chars,Cont,[]}, Drv, Ls);
 	{'EXIT',Drv,interrupt} ->
 	    interrupted;
-	{'EXIT',Drv,R} ->
+	{'EXIT',Drv,_} ->
 	    terminated
     after
 	get_line_timeout(What)->
@@ -285,3 +333,18 @@ prompt_bytes({format,Format,Args}) ->
     end;
 prompt_bytes(Prompt) ->
     lists:flatten(io_lib:format("~p", [Prompt])).
+
+cast(L, binary) when list(L) ->
+    list_to_binary(L);
+cast(B, list) when binary(B) ->
+    binary_to_list(B);
+cast(Eof, _undefined) ->
+    Eof.
+
+append(B, L) when binary(B) ->
+    binary_to_list(B)++L;
+append(L1, L2) when list(L1) ->
+    L1++L2;
+append(_Eof, L) ->
+    L.
+

@@ -45,7 +45,9 @@ host_file() ->
 ping(Node) when atom(Node) ->
     case auth:is_auth(Node) of
 	yes -> pong;
-	Other -> erlang:disconnect_node(Node), pang
+	_ ->
+	    erlang:disconnect_node(Node),
+	    pang
     end.
 
 localhost() ->
@@ -97,7 +99,7 @@ ping_list(Nodelist) ->
     Sofar = ping_first(Nodelist, nodes()),
     collect_new(Sofar, Nodelist).
 
-ping_first([], S) ->
+ping_first([], _S) ->
 	[];
 
 ping_first([Node|Nodes], S) ->
@@ -170,7 +172,7 @@ collect_host_nodes(Host,Verbose) ->
 	    nil
     end.
 
-do_ping([], Host, Verbose) ->
+do_ping([], _Host, _Verbose) ->
     [];
 do_ping([{Name, _} | Rest], Host, Verbose) ->
     Node = list_to_atom(Name ++ "@" ++ longshort(Host)),
@@ -197,6 +199,6 @@ longshort(Host) ->
 	    Host
     end.
 
-uptodot([$.|T]) -> [];
+uptodot([$.|_]) -> [];
 uptodot([])-> [];
 uptodot([H|T]) -> [H|uptodot(T)].

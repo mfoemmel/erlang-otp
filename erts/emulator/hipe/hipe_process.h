@@ -4,6 +4,7 @@
 #ifndef HIPE_PROCESS_H
 #define HIPE_PROCESS_H
 
+#include "erl_alloc.h"
 
 struct hipe_process_state {
     Eterm *nsp;			/* Native stack pointer. */
@@ -56,7 +57,7 @@ static __inline__ void hipe_init_process(struct hipe_process_state *p)
 static __inline__ void hipe_delete_process(struct hipe_process_state *p)
 {
     if( p->nstack )
-	sys_free((void*)p->nstack);
+	erts_free(ERTS_ALC_T_HIPE, (void*)p->nstack);
 }
 
 

@@ -20,6 +20,135 @@
 
 <!--- ################################################################# --->
 
+<h2>Tools 2.3</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    Totally rewritten the interface for WebCover. Can now compile both .erl
+    and .beam files and export/import cover data.<br>
+
+    (Own Id: OTP-4706)<p>
+  </li>
+
+  <li>
+    Cover does no longer report coverage on lines which are not executed.<br>
+    (Own Id: OTP-4734)<p>
+  </li>
+
+  <li>
+      Fixed so that the generation of new function clauses
+      works also for guarded functions in the erlang mode.<br>
+      (Own Id: OTP-3697)<p>
+  </li>
+      
+  <li> Fixed so that you do not get the error message
+      "unbalanced parenthesis"  when indenting correct code
+      including bit syntax in the erlang mode.<br>
+      (Own Id: OTP-4526)<p>
+  </li>
+
+  <li>The guard, function, is now colored by the emacs mode.<br>
+      (Own Id: OTP-4533)<p>
+  </li>
+
+  <li> Indentation of macros is handled correctly in all cases by the
+      erlang mode..<br>
+      (Own Id: OTP-4561, OTP-4687)<p>
+  </li>
+
+  <li>
+      is_* guards are now colored by the erlang mode.<br> 
+      (Own Id: OTP-4562)<p>
+  </li>
+
+  <li>
+      The erlang mode now handles the fact that a function argument
+      may be a guard expression. (That is useful when writing test
+      case code.)<br>
+      (Own Id: OTP-4579)<p>
+  </li>
+
+  <li>Keywords andalso and orelse are now colored by the erlang mode.<br>
+      (Own Id: OTP-4580)<p>
+  </li>
+
+  <li>
+      Fixed bug in the erlang mode function that calculates the arity
+      of an Erlang function.<br>
+       (Own Id: OTP-4581)<p>
+  </li>
+      
+</ul>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+    Added functions <code>cover:start(Nodes)</code> and
+    <code>cover:stop(Nodes)</code>. Cover compiled modules will be loaded
+    on all nodes added with <code>cover:start(Nodes)</code>.
+    <code>cover:stop(Nodes)</code> will collect coverage data from the
+    stopped nodes and merge it with data collected on the main (controller)
+    node. <br> <code>cover:analyse/1,2,3</code> and
+    <code>cover:analyse_to_file/1,2,3</code> will also collect data from
+    all nodes before analysing.<br>
+
+    (Own Id: OTP-4177)<p>
+  </li>
+
+  <li>
+    The module attribute tag <code>deprecated</code> is used by Xref to
+    find calls to deprecated functions. The <code>m/1</code>,
+    <code>d/1</code>, and <code>analyze/2,3</code> functions have been
+    updated to return calls to deprecated functions. See also xref(3) for
+    more details.<br>
+
+    (Own Id: OTP-4695)<p>
+  </li>
+
+  <li>
+    Added functions <code>cover:compile_beam/1</code> and
+    <code>cover:compile_beam_directory/0,1</code>. These functions use
+    abstract code from existing beam files when cover compiling. <br> Added
+    option 'html' to <code>cover:analyse_to_file/1,2,3</code>. Instead of
+    plain text, a HTML file is generated with all uncovered lines colored
+    red. <br> Added functions <code>cover:export/1,2</code> and
+    <code>cover:import/1</code>. These functions can be used to export
+    current coverage data to a file, and then import the data in a later
+    session. Data can be exported for one single module or for all
+    currently cover compiled modules.<br>
+
+    (Own Id: OTP-4702)<p>
+  </li>
+
+  <li>Added function erlang-align-arrows to the erlang mode.<br>
+      (Own Id: OTP-4737)<p>
+  </li>
+      
+  <li>
+    The module interface for the <code>instrument</code> module has been
+    slightely changed. Also some new functionallity has been added. See the
+    <code>instrument(3)</code> man page for more information.<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+
+    (Own Id: OTP-4761)<br>
+    (Aux Id: OTP-4534)<p>
+  </li>
+
+</ul>
+
+<!--- ----------------------------------------------------------------- --->
+
 <h2>Tools 2.2</h2>
 
 <!--- ----------------------------------------------------------------- --->
@@ -35,7 +164,8 @@
   </li>
 
 </ul>
-<!--- ----------------------------------------------------------------- --->
+
+<!--- ################################################################# --->
 
 <h2>Tools 2.1</h2>
 
@@ -84,7 +214,6 @@
   </li>
 
 </ul>
-
 
 There are also release notes for
 <a href="notes_history.html">older versions</a>.

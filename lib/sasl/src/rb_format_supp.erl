@@ -66,6 +66,13 @@ print(Date, Report, Device) ->
 					       [{header, Header},
 						{data, Report1}]),
 		    true;
+		{warning_report, _GL, {Pid, _Type, Report1}} ->
+		    Header = format_h(Line, "WARNING REPORT", Pid, Date),
+		    format_lib_supp:print_info(Device,
+					       Line,
+					       [{header, Header},
+						{data, Report1}]),
+		    true;
 		{error, _GL, {Pid, Format, Args}} ->
 		    Header = format_h(Line, "ERROR REPORT", Pid, Date),
 		    format_lib_supp:print_info(Device,
@@ -74,6 +81,12 @@ print(Date, Report, Device) ->
 		    io:format(Device, Format, Args);
 		{info_msg, _GL, {Pid, Format, Args}} ->
 		    Header = format_h(Line, "INFO REPORT", Pid, Date),
+		    format_lib_supp:print_info(Device,
+					       Line,
+					       [{header, Header}]),
+		    io:format(Device, Format, Args);
+		{warning_msg, _GL, {Pid, Format, Args}} ->
+		    Header = format_h(Line, "WARNING REPORT", Pid, Date),
 		    format_lib_supp:print_info(Device,
 					       Line,
 					       [{header, Header}]),

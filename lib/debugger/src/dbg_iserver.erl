@@ -181,7 +181,7 @@ handle_call({new_break, Point, Options}, _From, State) ->
 handle_call(all_breaks, _From, State) ->
     {reply, State#state.breaks, State};
 handle_call({all_breaks, Mod}, _From, State) ->
-    Reply = lists:filter(fun({{M,L}, _Options}) ->
+    Reply = lists:filter(fun({{M,_L}, _Options}) ->
 				 if M==Mod -> true; true -> false end
 			 end,
 			 State#state.breaks),
@@ -486,12 +486,12 @@ handle_info({'EXIT', Who, Why}, State) ->
 	    end
     end.
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     EbinDir = filename:join(code:lib_dir(debugger), "ebin"),
     code:unstick_dir(EbinDir),
     ok.
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
@@ -527,7 +527,8 @@ keyinsert(Tuple, _N, []) ->
     [Tuple].
 
 list_setelement(N, L, E) -> list_setelement(1, N, L, E).
-list_setelement(I, I, [H|T], E) ->
+
+list_setelement(I, I, [_|T], E) ->
     [E|T];
 list_setelement(I, N, [H|T], E) ->
     [H|list_setelement(I+1, N, T, E)].
@@ -537,7 +538,7 @@ mapfilter(Fun, [H|T]) ->
 	ignore -> mapfilter(Fun, T);
 	H2 -> [H2|mapfilter(Fun, T)]
     end;
-mapfilter(Fun, []) ->
+mapfilter(_Fun, []) ->
     [].
 
 send_all([Type|Types], Msg, State) ->

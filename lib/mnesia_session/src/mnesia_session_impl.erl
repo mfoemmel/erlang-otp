@@ -19,7 +19,7 @@
 
 %%% Purpose : Callback module which handles all session functions
 
--export([init/1, terminate/2]).
+-export([init/1, code_change/3, terminate/2]).
 
 %% Dirty
 -export([dirty_read/3, dirty_index_read/4,
@@ -71,6 +71,9 @@
 -include_lib("orber/include/corba.hrl").
 
 init(ConnectionType) -> {ok, #state{client_type = ConnectionType}}.
+
+code_change(_Vsn, State, _Extra) ->
+    {ok, State}.
 
 terminate(Reason, State) ->  ok.
 

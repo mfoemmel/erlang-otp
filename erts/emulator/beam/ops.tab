@@ -130,8 +130,18 @@ get_list r y r
 get_list r r x
 get_list r r y
 
+# Old-style catch.
 catch y f
 catch_end y
+
+# Try/catch.
+try Y F => catch Y F
+try_case Y => try_end Y
+try_end y
+
+try_case_end Big=w => i_put_big Big x | case_end x
+try_case_end Float=o => i_put_float Float x | case_end x
+try_case_end s
 
 # Destructive set tuple element
 
@@ -176,7 +186,6 @@ is_constant f r
 is_constant Fail=f owia =>
 is_constant Fail=f n => jump Fail
 
-
 jump f
 
 case_end Big=w => i_put_big Big x | case_end x
@@ -187,6 +196,7 @@ badmatch Float=o => i_put_float Float x | badmatch x
 case_end s
 badmatch s
 if_end
+raise s s
 
 # Internal now, but could be useful to make known to the compiler.
 badarg j
@@ -788,6 +798,13 @@ call_ext_last u==0 u$func:erlang:yield/0 D => i_yield | deallocate_return D
 call_ext_only u==0 u$func:erlang:yield/0 => i_yield | return
 
 #
+# The hibernate/3 BIF is an instruction.
+#
+call_ext u==3 u$func:erlang:hibernate/3 => i_hibernate
+call_ext_last u==3 u$func:erlang:hibernate/3 D => i_hibernate
+call_ext_only u==3 u$func:erlang:hibernate/3 => i_hibernate
+
+#
 # The general case for BIFs that have no special instructions.
 # A BIF used in the tail must be followed by a return instruction.
 #
@@ -830,6 +847,8 @@ i_apply_only
 i_apply_fun
 i_apply_fun_last P
 i_apply_fun_only
+
+i_hibernate
 
 call_bif0 e
 call_bif1 e

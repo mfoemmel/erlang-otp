@@ -34,7 +34,7 @@
 
 tickets(Case) ->
     Res = lists:flatten(tickets(Case, default_config())),
-    io:format("Res: ~p~n", [Res]),
+    %% io:format("Res: ~p~n", [Res]),
     display_result(Res),
     Res.
 
@@ -49,11 +49,17 @@ tickets(Bad, Config) ->
 tickets(Mod, Func, Config) ->
     case (catch Mod:Func(suite)) of
 	[] ->
-	    io:format("Eval:   ~p:~p~n", [Mod, Func]),
-	    eval(Mod, Func, Config);
+	    io:format("Eval:   ~p:", [{Mod, Func}]),
+	    Res = eval(Mod, Func, Config),
+	    {R, _, _} = Res,
+	    io:format(" ~p~n", [R]),
+	    Res;
+% 	    io:format("Eval:   ~p:~p~n", [Mod, Func]),
+% 	    eval(Mod, Func, Config);
 	
 	Cases when list(Cases) ->
-	    io:format("Expand: ~p:~p ... ~p~n", [Mod, Func, Cases]),
+	    io:format("Expand: ~p:~p ... ~n"
+		      "        ~p~n", [Mod, Func, Cases]),
 	    Map = fun({M,_}) when atom(M) -> tickets(M, tickets, Config);
 		     (F)     when atom(F) -> tickets(Mod, F, Config);
 		     (Case) -> Case
@@ -101,8 +107,11 @@ t(Case) ->
 t({Mod, Fun}, Config) when atom(Mod), atom(Fun) ->
     case catch apply(Mod, Fun, [suite]) of
 	[] ->
-	    io:format("Eval:   ~p~n", [{Mod, Fun}]),
-	    eval(Mod, Fun, Config);
+	    io:format("Eval:   ~p:", [{Mod, Fun}]),
+	    Res = eval(Mod, Fun, Config),
+	    {R, _, _} = Res,
+	    io:format(" ~p~n", [R]),
+	    Res;
 
 	Cases when list(Cases) ->
 	    io:format("Expand: ~p ...~n", [{Mod, Fun}]),
@@ -273,9 +282,11 @@ error(Actual, Mod, Line) ->
 log(Format, Args, Mod, Line) ->
     case global:whereis_name(megaco_global_logger) of
 	undefined ->
-	    io:format(user, "~p(~p): " ++ Format, [Mod, Line] ++ Args);
+	    io:format(user, "~p~p(~p): " ++ Format, 
+		      [self(), Mod, Line] ++ Args);
 	Pid ->
-	    io:format(Pid, "~p(~p): " ++ Format, [Mod, Line] ++ Args)
+	    io:format(Pid, "~p~p(~p): " ++ Format, 
+		      [self(), Mod, Line] ++ Args)
     end.
 
 skip(Actual, File, Line) ->
@@ -324,16 +335,22 @@ proxy_start(Node, ProxyId) ->
 
 proxy_init(ProxyId, Controller) ->
     process_flag(trap_exit, true),
+    ?LOG("[~p] proxy started by ~p~n",[ProxyId, Controller]),
     proxy_loop(ProxyId, Controller).
 
 proxy_loop(OwnId, Controller) ->
     receive
 	{'EXIT', Controller, Reason} ->
+	    p("proxy received exit from controller...~n~p~n", [Reason]),
 	    exit(Reason);
 	{apply, Fun} ->
-	    Controller ! {res, OwnId, Fun()},
+	    p("proxy received apply request~n", []),
+	    Res = Fun(),
+	    %% p("proxy apply result: ~n~p~n", [Res]),
+	    Controller ! {res, OwnId, Res},
 	    proxy_loop(OwnId, Controller);
 	OtherMsg ->
+	    p("proxy received unknown message: ~n~p~n", [OtherMsg]),
 	    Controller ! {msg, OwnId, OtherMsg},
 	    proxy_loop(OwnId, Controller)
     end.
@@ -388,8 +405,8 @@ test_case_watchdog(Pid, Time) ->
 		    ok;
 		_ ->
 		    ?LOG("<ERROR> Watchdog in test case timed out "
-			 "for ~p after ~p min~n",
-			   [Pid, Time div (1000*60)]),
+			"for ~p after ~p min~n",
+		    [Pid, Time div (1000*60)]),
 		    exit(Pid, kill)
 	    end
     end.
@@ -476,3 +493,5 @@ start_nodes([Node | Nodes], File, Line) ->
 start_nodes([], File, Line) ->
     ok.
 
+p(F,A) ->
+    io:format("~p" ++ F ++ "~n", [self()|A]).

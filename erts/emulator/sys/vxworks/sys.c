@@ -63,6 +63,7 @@
 #endif
 
 #include "sys.h"
+#include "erl_alloc.h"
 
 /* don't need global.h, but bif_table.h (included by bif.h) won't compile otherwise */
 #include "global.h" 
@@ -170,9 +171,10 @@ static void do_trace(int line, char *file, char *format, ...)
 #define TRACEF(Args...) do_trace(__LINE__,__FILE__, ## Args)
 #endif
 
-void
-erl_sys_init(void)
+void erts_sys_alloc_init(void)
 {
+    /* Some things done here should maybe be moved to erts_sys_init() */
+
     if (erlang_id != 0) {
 	/* NOTE: This particular case must *not* call erl_exit() */
 	sys_printf(CERR, "Sorry, erlang is already running (as task %d)\n",
@@ -206,6 +208,12 @@ erl_sys_init(void)
 #ifdef DEBUG
     printf("emulator task id = 0x%x\n", erlang_id);
 #endif
+}
+
+void
+erl_sys_init(void)
+{
+
 }
 
 /*
@@ -272,6 +280,9 @@ static void request_break(void)
 static void do_quit(void)
 {
     halt_0(0);
+}
+
+void erts_set_ignore_break(void) {
 }
 
 void init_break_handler(void)
@@ -627,7 +638,7 @@ static int spawn_init(void)
   char *stackenv;
   int size;
   driver_data = (struct driver_data *)
-      sys_alloc(max_files * sizeof(struct driver_data));
+      erts_alloc(ERTS_ALC_T_DRV_TAB, max_files * sizeof(struct driver_data));
   if (need_new_sems) {
       driver_data_sem = semMCreate
 	  (SEM_Q_PRIORITY | SEM_DELETE_SAFE | SEM_INVERSION_SAFE);
@@ -969,7 +980,7 @@ static void clear_fd_data(int fd)
 {
     
   if (fd_data[fd].sz > 0) 
-    sys_free(fd_data[fd].buf);
+    erts_free(ERTS_ALC_T_FD_ENTRY_BUF, (void *) fd_data[fd].buf);
   fd_data[fd].buf = NULL;
   fd_data[fd].sz = 0;
   fd_data[fd].remain = 0;
@@ -1064,8 +1075,9 @@ static int sched_write(int port_num,int fd, char *buf, int len, int pb)
 {
   Pend *p, *p2, *p3;
   int p_bytes = len;
-    
-  if ((p = (Pend*) sys_alloc(pb + len + sizeof(Pend))) == NULL) {
+
+  p = (Pend*) erts_alloc_fnf(ERTS_ALC_T_PEND_DATA, pb + len + sizeof(Pend));
+  if (!p) {
     driver_failure(port_num, -1);
     return(-1);
   }
@@ -1270,7 +1282,8 @@ static void ready_input(ErlDrvData drv_data, ErlDrvEvent drv_event)
 	port_inp_failure(port_num, ready_fd, -1);
 	return;
       }
-      if ((buf = sys_alloc(h)) == NULL) {
+      buf = erts_alloc_fnf(ERTS_ALC_T_FD_ENTRY_BUF, h);
+      if (!buf) {
 	port_inp_failure(port_num, ready_fd, -1);
 	return;
       }
@@ -1294,7 +1307,8 @@ static void ready_input(ErlDrvData drv_data, ErlDrvEvent drv_event)
 		  port_inp_failure(port_num, ready_fd, -1);
 		  return;
 	      }
-	      if ((buf = sys_alloc(h)) == NULL) 
+	      buf = erts_alloc_fnf(ERTS_ALC_T_FD_ENTRY_BUF, h);
+	      if (!buf) 
 		  port_inp_failure(port_num, ready_fd, -1);
 	      fd_data[ready_fd].buf = buf;
 	      fd_data[ready_fd].sz = h;
@@ -1316,9 +1330,10 @@ static void ready_input(ErlDrvData drv_data, ErlDrvEvent drv_event)
 	      continue;
 	  }
 	  else {			/* The last message we got was split */
-	      if ((buf = sys_alloc(h)) == NULL) {
+	      buf = erts_alloc_fnf(ERTS_ALC_T_FD_ENTRY_BUF, h);
+	      if (!buf) {
 		  port_inp_failure(port_num, ready_fd, -1);
-	  }
+	      }
 	      sys_memcpy(buf, cpos, bytes_left);
 	      fd_data[ready_fd].buf = buf;
 	      fd_data[ready_fd].sz = h;
@@ -1356,7 +1371,7 @@ static void ready_output(ErlDrvData drv_data, ErlDrvEvent drv_event)
     wval = write(p->fd, p->cpos, p->remain);
     if (wval == p->remain) {
       fd_data[ready_fd].pending = p->next;
-      sys_free(p);
+      erts_free(ERTS_ALC_T_PEND_DATA, p);
       if (fd_data[ready_fd].pending == NULL) {
 	driver_select(driver_data[fd].port_num, ready_fd, 
 		      DO_WRITE, 0);
@@ -1500,10 +1515,8 @@ sys_init_io(byte *buf, Uint size)
   tmp_buf_size = size;
   FD_ZERO(&input_fds);
   FD_ZERO(&output_fds);
-  if ((fd_data = (struct fd_data *)
-       sys_alloc(max_files * sizeof(struct fd_data))) == NULL)
-    erl_exit(1, "Can't allocate %d bytes of memory\n",
-	     max_files * sizeof(struct fd_data));
+  fd_data = (struct fd_data *)
+      erts_alloc(ERTS_ALC_T_FD_TAB, max_files * sizeof(struct fd_data));
   max_fd = -1;
 }
 
@@ -1894,34 +1907,10 @@ static void initialize_allocation(void){
     alloc_flags &= ~(NEW_USER_POOL); /* It's never new after initialization*/
 }
 
-#ifdef INSTRUMENT
-/* When instrumented sys_alloc and friends are implemented in utils.c */
-#define SYS_ALLOC_ELSEWHERE
-#endif
-
-/* A = alloc |realloc | free */
-#ifdef SYS_ALLOC_ELSEWHERE
-
-/* sys_A implemented elsewhere (calls sys_A2); use this implementation
-   as sys_A2 */
-#define SYS_ALLOC   sys_alloc2
-#define SYS_REALLOC sys_realloc2
-#define SYS_FREE    sys_free2
-
-#else /* #ifdef SYS_ALLOC_ELSEWHERE */
-
-/* sys_A not implemented elsewhere; skip sys_A2 and use this implementation
-   as sys_A */
-#define SYS_ALLOC   sys_alloc
-#define SYS_REALLOC sys_realloc
-#define SYS_FREE    sys_free
-
-#endif /* #ifdef SYS_ALLOC_ELSEWHERE */
-
 /* This does not exist on other platforms, we just use it in sys.c 
    and the BSD resolver */
 void *sys_calloc2(Uint nelem, Uint elsize){
-    void *ptr = SYS_ALLOC(nelem*elsize);
+    void *ptr = erts_alloc_fnf(ERTS_ALC_T_UNDEF, nelem*elsize);
     if(ptr != NULL)
 	memset(ptr,0,nelem*elsize);
     return ptr;
@@ -1930,7 +1919,9 @@ void *sys_calloc2(Uint nelem, Uint elsize){
 /*
  * The malloc wrapper
  */
-void *SYS_ALLOC(Uint size) {
+void *
+erts_sys_alloc(ErtsAlcType_t type, void *extra, Uint size)
+{
     register void *ret;
     ELIB_LOCK;
     if(USER_RECLAIM())
@@ -1945,7 +1936,9 @@ void *SYS_ALLOC(Uint size) {
  * The realloc wrapper, may respond to the "realloc-always-moves" flag
  * if the area is initially allocated with elib_malloc.
  */
-void *SYS_REALLOC(void *ptr, Uint size) {
+void *
+erts_sys_realloc(ErtsAlcType_t type, void *extra, void *ptr, Uint size)
+{
     register void *ret;
     if(use_save_free(ptr)){
 	if((alloc_flags & WARN_MALLOC_MIX) && 
@@ -1983,7 +1976,9 @@ void *SYS_REALLOC(void *ptr, Uint size) {
 /*
  * Wrapped free().
  */
-void SYS_FREE(void *ptr) {
+void
+erts_sys_free(ErtsAlcType_t type, void *extra, void *ptr)
+{
     if(use_save_free(ptr)){
 	/* 
 	 * This might happen when linked in drivers use save_malloc etc 

@@ -46,7 +46,6 @@ static Eterm new_ref(Process *);	/* forward */
  */
 
 BIF_RETTYPE spawn_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     ErlSpawnOpts so;
     Eterm pid;
@@ -66,8 +65,7 @@ BIF_ADECL_3
  * Process p must be the currently executing process.
  */
 
-static void insert_link(p, rp)
-Process* p; Process* rp;
+static void insert_link(Process* p, Process* rp)
 {
     p->links = new_link(p->links, LNK_LINK, rp->id, NIL);
     rp->links = new_link(rp->links, LNK_LINK, p->id, NIL);
@@ -95,7 +93,6 @@ Process* p; Process* rp;
 
 /* create a link to the process */
 BIF_RETTYPE link_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Process *rp;
     DistEntry *dep;
@@ -189,7 +186,6 @@ BIF_ADECL_1
 
 
 BIF_RETTYPE demonitor_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
    ErlLink **lnkp;  /* The monitor link list entry to delete */
    Process  *rp;    /* Local target process */
@@ -219,6 +215,13 @@ BIF_ADECL_1
 		 previously have been removed if the node
 		 had previously been disconnected. */
 	      ASSERT(0);
+	      cerr_pos = 0;
+	      erl_printf(CBUF, "Stale process monitor ");
+	      display(ref, CBUF);
+	      erl_printf(CBUF, " to ");
+	      display(to, CBUF);
+	      erl_printf(CBUF, " found\n");
+	      send_error_to_logger(BIF_P->group_leader);
 	      del_link(lnkp);
 	      BIF_RET(am_true);
 	  }
@@ -231,6 +234,22 @@ BIF_ADECL_1
 	 ErlLink** dist_lnkp;
 	 Sint      code;
 	 dist_lnkp = find_link_by_ref(&dep->links, ref);
+
+	 if (!dist_lnkp) {
+	     /* XXX How is this possible? Shouldn't this link
+		previously have been removed when the distributed
+		end was removed. */
+	     ASSERT(0);
+	     cerr_pos = 0;
+	     erl_printf(CBUF, "Stale process monitor ");
+	     display(ref, CBUF);
+	     erl_printf(CBUF, " to ");
+	     display(to, CBUF);
+	     erl_printf(CBUF, " found\n");
+	     send_error_to_logger(BIF_P->group_leader);
+	     del_link(lnkp);
+	     BIF_RET(am_true);
+	 }
 	 /* Soft (no force) send, use ->data in dist slot 
 	  * monitor list since in case of monitor name 
 	  * the atom is stored there. Reschedule if necessary.
@@ -295,7 +314,6 @@ queue_monitor_message(Process *p, Eterm ref, Eterm type,
 }
 
 BIF_RETTYPE monitor_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
    Eterm       type; /* BIF_ARG_1 */
    Eterm       item; /* Item to put in link list *lnkp */
@@ -433,7 +451,6 @@ BIF_ADECL_2
 /* this is a combination of the spawn and link BIFs */
 
 BIF_RETTYPE spawn_link_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     ErlSpawnOpts so;
     Eterm pid;
@@ -450,7 +467,6 @@ BIF_ADECL_3
 /**********************************************************************/
 
 BIF_RETTYPE spawn_opt_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     ErlSpawnOpts so;
     Eterm pid;
@@ -546,7 +562,6 @@ BIF_ADECL_1
 /**********************************************************************/
 /* remove a link from a process */
 BIF_RETTYPE unlink_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Process *rp;
     DistEntry *dep;
@@ -612,8 +627,19 @@ BIF_ADECL_1
 	trace_proc(BIF_P, rp, am_getting_unlinked, BIF_P->id);
     }
      
-     BIF_RET(am_true);
+    BIF_RET(am_true);
 }
+
+BIF_RETTYPE hibernate_3(BIF_ALIST_3)
+{
+    /*
+     * hibernate/3 is implemented as an instruction; therefore
+     * this function will never be called.
+     */
+    BIF_ERROR(BIF_P, BADARG);
+}
+
+
 
 /**********************************************************************/
 /*
@@ -639,7 +665,6 @@ BIF_RETTYPE fault_2(Process* p, Eterm value, Eterm args)
 /* this is the same as throw/1 except that we set freason to USER_EXIT */
 
 BIF_RETTYPE exit_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     BIF_P->fvalue = BIF_ARG_1;  /* exit value */
     BIF_ERROR(BIF_P, USER_EXIT);
@@ -650,7 +675,6 @@ BIF_ADECL_1
    exit the other process */
 
 BIF_RETTYPE exit_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
      Process *rp;
      DistEntry *dep;
@@ -810,14 +834,19 @@ static BIF_RETTYPE process_flag_aux(Process *BIF_P,
       if (i == 0) {
 	 ct = NULL;
       } else {
-	 ct = safe_alloc_from(290, sizeof(*ct) + (i-1) * sizeof(ct->ct[0]));
+	 Uint sz = sizeof(*ct) + (i-1) * sizeof(ct->ct[0]);
+	 ct = erts_alloc(ERTS_ALC_T_CALLS_BUF, sz);
+	 ERTS_PROC_MORE_MEM(sz);
 	 ct->len = i;
 	 ct->cur = 0;
 	 ct->n = 0;
       }
 
-      if (rp->ct != NULL)
-	 sys_free(rp->ct);
+      if (rp->ct != NULL) {
+	 ERTS_PROC_LESS_MEM(sizeof(*(rp->ct))
+			    + (rp->ct->len-1) * sizeof(rp->ct->ct[0]));
+	 erts_free(ERTS_ALC_T_CALLS_BUF, (void *) rp->ct);
+      }
       rp->ct = ct;
 
       /* Make sure the process in question is rescheduled
@@ -832,13 +861,11 @@ static BIF_RETTYPE process_flag_aux(Process *BIF_P,
 }
 
 BIF_RETTYPE process_flag_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
    return process_flag_aux(BIF_P, BIF_P, BIF_ARG_1, BIF_ARG_2);
 }
 
 BIF_RETTYPE process_flag_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
    Process *rp;
 
@@ -856,7 +883,6 @@ BIF_ADECL_3
 /* register(atom, Process) registers a global process (for this node) */
 
 BIF_RETTYPE register_2(BIF_ALIST_2)   /* (Atom,Pid)   */
-BIF_ADECL_2
 {
      Process *rp;
      Port *rport;
@@ -912,7 +938,6 @@ BIF_ADECL_2
 /* removes the registration of a process or port */
 
 BIF_RETTYPE unregister_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_not_atom(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -929,7 +954,6 @@ BIF_ADECL_1
 /* this is a rather unsafe BIF as it allows users to do nasty things. */
 
 BIF_RETTYPE whereis_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Process *rp;
     Port *pt;
@@ -951,7 +975,6 @@ BIF_ADECL_1
 /* return a list of the registered processes */
 
 BIF_RETTYPE registered_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     int i;
     Eterm res;
@@ -1003,283 +1026,289 @@ ebif_bang_2(Process* p, Eterm To, Eterm Message)
     return send_2(p, To, Message);
 }
 
+
 /*
  * Send a message to Process, Port or Registered Process.
- * Returns the message sent.
+ * Returns non-negative reduction bump or negative result code.
  */
+#define SEND_TRAP       (-1)
+#define SEND_RESCHEDULE (-2)
+#define SEND_BADARG     (-3)
+#define SEND_USER_ERROR (-4)
 
-BIF_RETTYPE send_2(BIF_ALIST_2)
-BIF_ADECL_2
-{
+Sint do_send(Process *p, Eterm to, Eterm msg, int suspend);
+
+Sint
+do_send(Process *p, Eterm to, Eterm msg, int suspend) {
     Eterm portid;
     Port *pt;
     Process* rp;
     DistEntry *dep;
     Eterm* tp;
-
-    if (is_internal_pid(BIF_ARG_1)) {
-	if (IS_TRACED(BIF_P))
-	    trace_send(BIF_P, BIF_ARG_1, BIF_ARG_2);  /* (p, to, msg )*/
-	if (BIF_P->ct != NULL)
-	   save_calls(BIF_P, &exp_send);
-
-	if (internal_pid_index(BIF_ARG_1) >= erts_max_processes)
-	    BIF_ERROR(BIF_P, BADARG);
-	rp = process_tab[internal_pid_index(BIF_ARG_1)];
-
-	if (INVALID_PID(rp, BIF_ARG_1)) {
-	    BIF_RET(BIF_ARG_2);
+    
+    if (is_internal_pid(to)) {
+	if (IS_TRACED(p))
+	    trace_send(p, to, msg);
+	if (p->ct != NULL)
+	   save_calls(p, &exp_send);
+	
+	if (internal_pid_index(to) >= erts_max_processes)
+	    return SEND_BADARG;
+	rp = process_tab[internal_pid_index(to)];
+	
+	if (INVALID_PID(rp, to)) {
+	    return 0;
 	}
-    } else if (is_external_pid(BIF_ARG_1)) {
-	dep = external_pid_dist_entry(BIF_ARG_1);
+    } else if (is_external_pid(to)) {
+	dep = external_pid_dist_entry(to);
 	if(dep == erts_this_dist_entry) {
 	    cerr_pos = 0;
 	    erl_printf(CBUF,
 		       "Discarding message (%d,%d)",
-		       external_pid_creation(BIF_ARG_1),
+		       external_pid_creation(to),
 		       erts_this_node->creation);
-	    display(BIF_ARG_2,CBUF);
+	    display(msg,CBUF);
 	    erl_printf(CBUF,
 		       "to a process in an old incarnation of this node\n");
-	    send_error_to_logger(BIF_P->group_leader);
-	    BIF_RET(BIF_ARG_2);
+	    send_error_to_logger(p->group_leader);
+	    return 0;
 	}
-
+	
 	/* Send to remote process */
 	if (is_nil(dep->cid))
-	  BIF_TRAP2(dsend_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
-	if (dist_send(BIF_P, dep, BIF_ARG_1, BIF_ARG_2) == 1) {
-	  /* Only ports can be busy */
-	  ASSERT(is_internal_port(dep->cid)); 
-	  erl_suspend(BIF_P, dep->cid);
-	  BIF_ERROR(BIF_P, RESCHEDULE);
+	    return SEND_TRAP;
+	if (dist_send(p, dep, to, msg) == 1) {
+	    /* Only ports can be busy */
+	    ASSERT(is_internal_port(dep->cid));
+	    if (suspend) {
+		erl_suspend(p, dep->cid);
+		if (erts_system_monitor_flags.busy_dist_port) {
+		    monitor_generic(p, am_busy_dist_port, dep->cid);
+		}
+	    }
+	    return SEND_RESCHEDULE;
 	}
-	if (IS_TRACED(BIF_P))
-	  trace_send(BIF_P, BIF_ARG_1, BIF_ARG_2);  /* (p, to, msg )*/
-	if (BIF_P->ct != NULL)
-	  save_calls(BIF_P, &exp_send);
-	BIF_RET2(BIF_ARG_2, 50);
-    } else if (is_atom(BIF_ARG_1)) {
-	whereis_name(BIF_ARG_1, &rp, &pt);
+	if (IS_TRACED(p))
+	    trace_send(p, to, msg);
+	if (p->ct != NULL)
+	    save_calls(p, &exp_send);
+	return 50;
+    } else if (is_atom(to)) {
+	whereis_name(to, &rp, &pt);
 	if (pt != NULL) {
 	    portid = pt->id;
 	    goto port_common;
 	}
-
-	if (IS_TRACED(BIF_P))
-	    trace_send(BIF_P, BIF_ARG_1, BIF_ARG_2);  /* (p, to, msg )*/
-	if (BIF_P->ct != NULL)
-	   save_calls(BIF_P, &exp_send);
-
+	
+	if (IS_TRACED(p))
+	    trace_send(p, to, msg);
+	if (p->ct != NULL)
+	   save_calls(p, &exp_send);
+	
 	if (rp == NULL) {
-	    BIF_ERROR(BIF_P, BADARG);
+	    return SEND_BADARG;
 	}
 	if (rp->status == P_EXITING) {
-	    BIF_RET(BIF_ARG_2);
+	    return 0;
 	}
-    } else if (is_external_port(BIF_ARG_1)
-	       && (external_port_dist_entry(BIF_ARG_1)
+    } else if (is_external_port(to)
+	       && (external_port_dist_entry(to)
 		   == erts_this_dist_entry)) {
 	cerr_pos = 0;
 	erl_printf(CBUF,
 		   "Discarding message (%d,%d)",
-		   external_port_creation(BIF_ARG_1),
+		   external_port_creation(to),
 		   erts_this_node->creation);
-	display(BIF_ARG_2,CBUF);
+	display(msg,CBUF);
 	erl_printf(CBUF,
 		   "to a port in an old incarnation of this node\n");
-	send_error_to_logger(BIF_P->group_leader);
-	BIF_RET(BIF_ARG_2);
-    } else if (is_internal_port(BIF_ARG_1)) {
-	portid = BIF_ARG_1;
-
+	send_error_to_logger(p->group_leader);
+	return 0;
+    } else if (is_internal_port(to)) {
+	portid = to;
+	
       port_common:
 	/* XXX let port_command handle the busy stuff !!! */
 	if (! INVALID_PORT(erts_port+internal_port_index(portid), portid)
 	    && (erts_port[internal_port_index(portid)].status & PORT_BUSY)) {
-	    erl_suspend(BIF_P, portid);
-	    BIF_ERROR(BIF_P, RESCHEDULE);
+	    if (suspend) {
+		erl_suspend(p, portid);
+		if (erts_system_monitor_flags.busy_port) {
+		    monitor_generic(p, am_busy_port, portid);
+		}
+	    }
+	    return SEND_RESCHEDULE;
 	}
-
-	if (IS_TRACED(BIF_P)) 	/* trace once only !! */
-	    trace_send(BIF_P, portid, BIF_ARG_2);
-	if (BIF_P->ct != NULL)
-	   save_calls(BIF_P, &exp_send);
-
-	if (SEQ_TRACE_TOKEN(BIF_P) != NIL) {
-	    seq_trace_update_send(BIF_P);
-	    seq_trace_output(SEQ_TRACE_TOKEN(BIF_P), BIF_ARG_2, 
-			     SEQ_TRACE_SEND, portid, BIF_P);
+	
+	if (IS_TRACED(p)) 	/* trace once only !! */
+	    trace_send(p, portid, msg);
+	if (p->ct != NULL)
+	   save_calls(p, &exp_send);
+	
+	if (SEQ_TRACE_TOKEN(p) != NIL) {
+	    seq_trace_update_send(p);
+	    seq_trace_output(SEQ_TRACE_TOKEN(p), msg, 
+			     SEQ_TRACE_SEND, portid, p);
 	}	    
-
+	
 	/* XXX NO GC in port command */
-	port_command(BIF_P->id, portid, BIF_ARG_2);
-
-	if (BIF_P->status == P_EXITING) {
-	    KILL_CATCHES(BIF_P); /* Must exit */
-	    BIF_ERROR(BIF_P, USER_ERROR);
+	port_command(p->id, portid, msg);
+	
+	if (p->status == P_EXITING) {
+	    KILL_CATCHES(p); /* Must exit */
+	    return SEND_USER_ERROR;
 	}
-	BIF_RET(BIF_ARG_2);
-    } else if (is_tuple(BIF_ARG_1)) { /* Remote send */
-	tp = tuple_val(BIF_ARG_1);
+	return 0;
+    } else if (is_tuple(to)) { /* Remote send */
+	tp = tuple_val(to);
 	if (*tp != make_arityval(2))
-	    BIF_ERROR(BIF_P, BADARG);
+	    return SEND_BADARG;
 	if (is_not_atom(tp[1]) || is_not_atom(tp[2]))
-	    BIF_ERROR(BIF_P, BADARG);
-
+	    return SEND_BADARG;
+	
 	/* sysname_to_connected_dist_entry will return NULL if there
 	   is no dist_entry or the dist_entry has no port*/
 	if ((dep = erts_sysname_to_connected_dist_entry(tp[2])) == NULL) {
-	    BIF_TRAP2(dsend_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
+	    return SEND_TRAP;
 	}
-
+	
 	if (dep == erts_this_dist_entry) {
-	    if (IS_TRACED(BIF_P))
-		trace_send(BIF_P, BIF_ARG_1, BIF_ARG_2);
-	    if (BIF_P->ct != NULL)
-	       save_calls(BIF_P, &exp_send);
-
+	    if (IS_TRACED(p))
+		trace_send(p, to, msg);
+	    if (p->ct != NULL)
+	       save_calls(p, &exp_send);
+	    
 	    whereis_name(tp[1], &rp, &pt);
 	    if (pt != NULL) {
 		portid = pt->id;
 		goto port_common;
 	    }
 	    if (rp == NULL) {
-		BIF_RET(BIF_ARG_2);
+		return 0;
 	    }
 	    if (rp->status == P_EXITING) {
-		BIF_RET(BIF_ARG_2);
+		return 0;
 	    }
 	    goto send_message;
 	}
-
+	
 	ASSERT(dep->cid != NIL);
-	if (dist_reg_send(BIF_P, dep, tp[1], BIF_ARG_2) == 1) {
+	if (dist_reg_send(p, dep, tp[1], msg) == 1) {
 	    ASSERT(is_port(dep->cid));
-	    erl_suspend(BIF_P, dep->cid);
-	    BIF_ERROR(BIF_P, RESCHEDULE);
-	}
-	if (IS_TRACED(BIF_P))
-	    trace_send(BIF_P, BIF_ARG_1, BIF_ARG_2);
-	if (BIF_P->ct != NULL)
-	   save_calls(BIF_P, &exp_send);
-	BIF_RET(BIF_ARG_2);
-    } else {
-	if (IS_TRACED(BIF_P)) /* XXX Is this really neccessary ??? */
-	    trace_send(BIF_P, BIF_ARG_1, BIF_ARG_2);
-	if (BIF_P->ct != NULL)
-	   save_calls(BIF_P, &exp_send);
-	BIF_ERROR(BIF_P, BADARG);
-    }
-
- send_message:
-    send_message(BIF_P, rp, BIF_ARG_2);
-    BIF_RET2(BIF_ARG_2, rp->msg.len*4);
-}
-
-
-/*
- * Send a message to Process on another node without suspending.
- * If returns true, the message was sent, otherwise the message was not
- * sent due to risk of suspending.
- */
-
-BIF_RETTYPE do_send_nosuspend(Process *p, Eterm a1, Eterm a2, int connect)
-{
-    Eterm* tp;
-    DistEntry *dep;
-
-    if (is_external_pid(a1)) {
-	dep = external_pid_dist_entry(a1);
-	if(dep == erts_this_dist_entry) {
-	    cerr_pos = 0;
-	    erl_printf(CBUF,
-		       "Discarding message (%d,%d) ",
-		       external_pid_creation(a1),
-		       erts_this_node->creation);
-	    display(a2,CBUF);
-	    erl_printf(CBUF,
-		       " to a process in an old incarnation "
-		       "of this node\n");
-	    send_error_to_logger(p->group_leader);
-	    BIF_RET(am_false);
-	} 
-	if (is_nil(dep->cid)) {
-	    if (connect) {
-		BIF_TRAP2(dsend_nosuspend_trap, p, a1, a2);
-	    } else {
-		BIF_RET(am_false);
+	    if (suspend) {
+		erl_suspend(p, dep->cid);
+		if (erts_system_monitor_flags.busy_dist_port) {
+		    monitor_generic(p, am_busy_dist_port, dep->cid);
+		}
 	    }
-	}
-	if (dist_send(p, dep, a1, a2) == 1) {
-	    /* Message not sent, we should be busy... */
-	    ASSERT(is_internal_port(dep->cid)); 
-	    BIF_RET(am_false);
+	    return SEND_RESCHEDULE;
 	}
 	if (IS_TRACED(p))
-	    trace_send(p, a1, a2);  /* (p, to, msg )*/
-	BUMP_REDS(p,50);
-	BIF_RET(am_true);
-    } else if (is_tuple(a1)) { /* Remote send */
-	tp = tuple_val(a1);
-	if (*tp != make_arityval(2))
-	    goto badarg;
-	if (is_not_atom(tp[1]) || is_not_atom(tp[2]))
-	    goto badarg;
-
-	if ((dep = erts_sysname_to_connected_dist_entry(tp[2])) == NULL) {
-	    if (connect) {
-		BIF_TRAP2(dsend_nosuspend_trap, p, a1, a2);
-	    } else {
-		BIF_RET(am_false);
-	    }
-	}
-	
-	if (dep != erts_this_dist_entry) {
-	    ASSERT(dep->cid != NIL);
-	    if (dist_reg_send(p, dep, tp[1], a2) == 1) {
-		/* Message not sent, we should be busy... */
-		ASSERT(is_internal_port(dep->cid)); 
-		BIF_RET(am_false);
-	    }
-	    if (IS_TRACED(p)) {
-		trace_send(p, a1, a2);
-	    }
-	    BUMP_REDS(p,50);
-	    BIF_RET(am_true);
-	}
-    }	    
- badarg:
-    BIF_ERROR(p, BADARG);
+	    trace_send(p, to, msg);
+	if (p->ct != NULL)
+	   save_calls(p, &exp_send);
+	return 0;
+    } else {
+	if (IS_TRACED(p)) /* XXX Is this really neccessary ??? */
+	    trace_send(p, to, msg);
+	if (p->ct != NULL)
+	   save_calls(p, &exp_send);
+	return SEND_BADARG;
+    }
+    
+ send_message:
+    send_message(p, rp, msg);
+    return rp->msg.len*4;
 }
 
-BIF_RETTYPE send_nosuspend_2(BIF_ALIST_2)
-BIF_ADECL_2
-{
-    return do_send_nosuspend(BIF_P, BIF_ARG_1, BIF_ARG_2, 1);
-}
 
-BIF_RETTYPE send_nosuspend_3(BIF_ALIST_3)
-BIF_ADECL_3
-{
-    int connect = 1;
-    Eterm l = BIF_ARG_3;
-
+Eterm
+send_3(Process *p, Eterm to, Eterm msg, Eterm opts) {
+    int connect = !0;
+    int suspend = !0;
+    Eterm l = opts;
+    Sint result;
+    
     while (is_list(l)) {
 	if (CAR(list_val(l)) == am_noconnect) {
 	    connect = 0;
+	} else if (CAR(list_val(l)) == am_nosuspend) {
+	    suspend = 0;
 	} else {
-	    BIF_ERROR(BIF_P, BADARG);
+	    BIF_ERROR(p, BADARG);
 	}
 	l = CDR(list_val(l));
     }
-
     if(!is_nil(l)) {
-	BIF_ERROR(BIF_P, BADARG);
+	BIF_ERROR(p, BADARG);
     }
-    return do_send_nosuspend(BIF_P, BIF_ARG_1, BIF_ARG_2, connect);
+    
+    result = do_send(p, to, msg, suspend);
+    if (result > 0) {
+	BUMP_REDS(p, result);
+	BIF_RET(am_ok);
+    } else switch (result) {
+    case 0:
+	BIF_RET(am_ok); 
+	break;
+    case SEND_TRAP:
+	if (connect) {
+	    BIF_TRAP3(dsend3_trap, p, to, msg, opts); 
+	} else {
+	    BIF_RET(am_noconnect);
+	}
+	break;
+    case SEND_RESCHEDULE:
+	if (suspend) {
+	    BIF_ERROR(p, RESCHEDULE);
+	} else {
+	    BIF_RET(am_nosuspend);
+	}
+	break;
+    case SEND_BADARG:
+	BIF_ERROR(p, BADARG); 
+	break;
+    case SEND_USER_ERROR:
+	BIF_ERROR(p, USER_ERROR); 
+	break;
+    default:
+	ASSERT(! "Illegal send result"); 
+	break;
+    }
+    ASSERT(! "Can not arrive here");
+    BIF_ERROR(p, BADARG);
 }
 
+Eterm
+send_2(Process *p, Eterm to, Eterm msg) {
+    Sint result = do_send(p, to, msg, !0);
+    
+    if (result > 0) {
+	BUMP_REDS(p, result);
+	BIF_RET(msg);
+    } else switch (result) {
+    case 0:
+	BIF_RET(msg); 
+	break;
+    case SEND_TRAP:
+	BIF_TRAP2(dsend2_trap, p, to, msg); 
+	break;
+    case SEND_RESCHEDULE:
+	BIF_ERROR(p, RESCHEDULE); 
+	break;
+    case SEND_BADARG:
+	BIF_ERROR(p, BADARG); 
+	break;
+    case SEND_USER_ERROR:
+	BIF_ERROR(p, USER_ERROR); 
+	break;
+    default:
+	ASSERT(! "Illegal send result"); 
+	break;
+    }
+    ASSERT(! "Can not arrive here");
+    BIF_ERROR(p, BADARG);
+}
 
 /**********************************************************************/
 /*
@@ -1297,7 +1326,6 @@ BIF_ADECL_3
  */
 
 BIF_RETTYPE apply_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     BIF_ERROR(BIF_P, BADARG);
 }
@@ -1305,7 +1333,6 @@ BIF_ADECL_3
 
 /* maths abs function */
 BIF_RETTYPE abs_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm res;
     Sint i0, i;
@@ -1360,7 +1387,6 @@ BIF_ADECL_1
 
 /* integer to float */
 BIF_RETTYPE float_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm res;
     Eterm* hp;
@@ -1391,7 +1417,6 @@ BIF_ADECL_1
 
 /* truncate a float returning an integer */
 BIF_RETTYPE trunc_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm res;
     FloatDef f;
@@ -1415,7 +1440,6 @@ BIF_ADECL_1
 /* round a 'number' to an integer */
 
 BIF_RETTYPE round_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm res;
     FloatDef f;
@@ -1440,7 +1464,6 @@ BIF_ADECL_1
 /* return the length of a list */
 
 BIF_RETTYPE length_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm list;
     Uint i;
@@ -1467,7 +1490,6 @@ BIF_ADECL_1
 /* returns the head of a list - this function is unecessary
    and is only here to keep Robert happy (Even more, since it's OP as well) */
 BIF_RETTYPE hd_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
      if (is_not_list(BIF_ARG_1)) {
 	 BIF_ERROR(BIF_P, BADARG);
@@ -1480,7 +1502,6 @@ BIF_ADECL_1
 /* returns the tails of a list - same comment as above */
 
 BIF_RETTYPE tl_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_not_list(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -1493,7 +1514,6 @@ BIF_ADECL_1
 /* returns the size of a tuple or a binary */
 
 BIF_RETTYPE size_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_tuple(BIF_ARG_1)) {
 	Eterm* tupleptr = tuple_val(BIF_ARG_1);
@@ -1512,7 +1532,6 @@ BIF_ADECL_1
 /* return the N'th element of a tuple */
 
 BIF_RETTYPE element_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     if (is_not_small(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -1532,7 +1551,6 @@ BIF_ADECL_2
 /* set the n'th element in a tuple */
 
 BIF_RETTYPE setelement_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     Eterm* ptr;
     Eterm* hp;
@@ -1565,7 +1583,6 @@ BIF_ADECL_3
 /**********************************************************************/
 
 BIF_RETTYPE make_tuple_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     int n;
     Eterm* hp;
@@ -1587,7 +1604,6 @@ BIF_ADECL_2
 /**********************************************************************/
 
 BIF_RETTYPE append_element_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Eterm* ptr;
     Eterm* hp;
@@ -1614,7 +1630,6 @@ BIF_ADECL_2
 /* convert an atom to a list of ascii integer */
 
 BIF_RETTYPE atom_to_list_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Uint need;
     Eterm* hp;
@@ -1637,7 +1652,6 @@ BIF_ADECL_1
 /* convert a list of ascii intgers to an atom */
  
 BIF_RETTYPE list_to_atom_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     int i;
 
@@ -1658,7 +1672,6 @@ BIF_ADECL_1
 /* convert an integer to a list of ascii integers */
 
 BIF_RETTYPE integer_to_list_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm* hp;
     Uint need;
@@ -1694,7 +1707,6 @@ BIF_ADECL_1
 /* convert a list of ascii ascii integer value to an integer */
 
 BIF_RETTYPE list_to_integer_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
      Eterm lst;
      Sint32 i = 0;
@@ -1822,7 +1834,6 @@ BIF_ADECL_1
 /* convert a float to a list of ascii characters */
 
 BIF_RETTYPE float_to_list_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
      int i;
      Uint need;
@@ -1846,7 +1857,6 @@ BIF_ADECL_1
 /* convert a list of ascii  integer values e's +'s and -'s to a float */
 
 BIF_RETTYPE list_to_float_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     int i;
     FloatDef f;
@@ -1875,7 +1885,6 @@ BIF_ADECL_1
 /* convert a tuple to a list */
 
 BIF_RETTYPE tuple_to_list_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Uint n;
     Eterm *tupleptr;
@@ -1903,7 +1912,6 @@ BIF_ADECL_1
 /* convert a list to a tuple */
 
 BIF_RETTYPE list_to_tuple_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm list = BIF_ARG_1;
     Eterm* cons;
@@ -1932,7 +1940,6 @@ BIF_ADECL_1
    a machine instruction */
 
 BIF_RETTYPE self_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
      BIF_RET(BIF_P->id);
 }
@@ -1988,7 +1995,6 @@ static Eterm new_ref(Process *p)
 }
 
 BIF_RETTYPE make_ref_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     return new_ref(BIF_P);
 }
@@ -1998,7 +2004,6 @@ BIF_ADECL_0
 /* return the time of day */
 
 BIF_RETTYPE time_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
      int hour, minute, second;
      Eterm* hp;
@@ -2013,7 +2018,6 @@ BIF_ADECL_0
 /* return the date */
 
 BIF_RETTYPE date_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
      int year, month, day;
      Eterm* hp;
@@ -2028,7 +2032,6 @@ BIF_ADECL_0
 /* return the universal time */
 
 BIF_RETTYPE universaltime_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
      int year, month, day;
      int hour, minute, second;
@@ -2053,7 +2056,6 @@ BIF_ADECL_0
 /* return the universal time */
 
 BIF_RETTYPE localtime_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
      int year, month, day;
      int hour, minute, second;
@@ -2109,22 +2111,26 @@ time_to_parts(Eterm date, int* year, int* month, int* day,
 
 /* return the universal time */
 
-BIF_RETTYPE localtime_to_universaltime_1(BIF_ALIST_1)
-BIF_ADECL_1
+BIF_RETTYPE 
+localtime_to_universaltime_2(Process *p, Eterm localtime, Eterm dst)
 {
     int year, month, day;
     int hour, minute, second;
+    int isdst;
     Eterm res1, res2;
     Eterm* hp;
-
-    if (!time_to_parts(BIF_ARG_1, &year, &month, &day, 
-		       &hour, &minute, &second))
-	BIF_ERROR(BIF_P, BADARG);
-    if (!local_to_univ(&year, &month, &day, 
-		       &hour, &minute, &second))
-	BIF_ERROR(BIF_P, BADARG);
     
-    hp = HAlloc(BIF_P, 4+4+3);
+    if (dst == am_true) isdst = 1;
+    else if (dst == am_false) isdst = 0;
+    else if (dst == am_undefined) isdst = -1;
+    else goto error;
+    
+    if (!time_to_parts(localtime, &year, &month, &day, 
+		       &hour, &minute, &second)) goto error;
+    if (!local_to_univ(&year, &month, &day, 
+		       &hour, &minute, &second, isdst)) goto error;
+    
+    hp = HAlloc(p, 4+4+3);
     res1 = TUPLE3(hp,make_small(year),make_small(month),
 		  make_small(day));
     hp += 4;
@@ -2132,6 +2138,8 @@ BIF_ADECL_1
 		  make_small(second));
     hp += 4;
     BIF_RET(TUPLE2(hp, res1, res2));
+ error:
+    BIF_ERROR(p, BADARG);
  }
 	 
 
@@ -2140,7 +2148,6 @@ BIF_ADECL_1
 /* return the universal time */
 
 BIF_RETTYPE universaltime_to_localtime_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     int year, month, day;
     int hour, minute, second;
@@ -2169,7 +2176,6 @@ BIF_ADECL_1
 
  /* return a timestamp */
 BIF_RETTYPE now_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     Uint megasec, sec, microsec;
     Eterm* hp;
@@ -2183,7 +2189,6 @@ BIF_ADECL_0
 /**********************************************************************/
 
 BIF_RETTYPE garbage_collect_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Process *rp;
 
@@ -2208,7 +2213,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE garbage_collect_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     int reds;
 
@@ -2223,7 +2227,6 @@ BIF_ADECL_0
 /* scans the whole of the process table */
 
 BIF_RETTYPE processes_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     int i;
     int need = 0;
@@ -2251,7 +2254,6 @@ BIF_ADECL_0
 /**********************************************************************/
 
 BIF_RETTYPE is_process_alive_1(BIF_ALIST_1) 
-BIF_ADECL_1
 {
    if(is_internal_pid(BIF_ARG_1)) {
        Process *rp;
@@ -2278,7 +2280,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE process_display_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
    Process *rp;
 
@@ -2298,7 +2299,6 @@ BIF_ADECL_2
 /* Return a list of active ports */
 
 BIF_RETTYPE ports_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     int i;
     int need = 0;
@@ -2324,7 +2324,6 @@ BIF_ADECL_0
 /**********************************************************************/
 
 BIF_RETTYPE throw_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     BIF_P->fvalue = BIF_ARG_1;
     BIF_ERROR(BIF_P, THROWN);
@@ -2338,7 +2337,6 @@ BIF_ADECL_1
  *
  */
 BIF_RETTYPE display_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     display(BIF_ARG_1, COUT);
     erl_putc('\r', COUT);
@@ -2375,7 +2373,6 @@ display_nl_0(Process* p)
 /* stop the system */
 /* ARGSUSED */
 BIF_RETTYPE halt_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     VERBOSE(erl_printf(COUT, "System halted by BIF halt/0\n"););
     erl_exit(0, "");
@@ -2389,7 +2386,6 @@ BIF_ADECL_0
 /* stop the system with exit code */
 /* ARGSUSED */
 BIF_RETTYPE halt_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     int code;
     static char msg[MSG_SIZE];
@@ -2413,7 +2409,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE function_exported_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     if (is_not_atom(BIF_ARG_1) ||
 	is_not_atom(BIF_ARG_2) || 
@@ -2440,7 +2435,6 @@ BIF_RETTYPE is_builtin_3(Process* p, Eterm Mod, Eterm Name, Eterm Arity)
 /**********************************************************************/    
 
 BIF_RETTYPE ref_to_list_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
    int n;
    char* tmpp;
@@ -2505,7 +2499,6 @@ fun_to_list_1(Process* p, Eterm fun)
  */
 
 BIF_RETTYPE pid_to_list_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     int n;
     char* cp;
@@ -2556,7 +2549,6 @@ BIF_ADECL_1
 */
 
 BIF_RETTYPE list_to_pid_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Uint a = 0, b = 0, c = 0;
     char* cp;
@@ -2633,7 +2625,6 @@ BIF_ADECL_1
  */
   
 BIF_RETTYPE old_binary_to_term_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     return binary_to_term_1(BIF_P, BIF_ARG_1);
 }
@@ -2642,7 +2633,6 @@ BIF_ADECL_1
 /**********************************************************************/
 
 BIF_RETTYPE group_leader_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     BIF_RET(BIF_P->group_leader);
 }
@@ -2651,7 +2641,6 @@ BIF_ADECL_0
 /* arg1 == leader, arg2 == new member */
 
 BIF_RETTYPE group_leader_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Process* new_member;
     int code;
@@ -2694,20 +2683,10 @@ BIF_ADECL_2
 }
     
 BIF_RETTYPE system_flag_2(BIF_ALIST_2)    
-BIF_ADECL_2
 {
     int n;
 
-    if (BIF_ARG_1 == am_keep_zombies) {
-       int oval, nval;
-
-       if (is_small(BIF_ARG_2)) {
-	   nval = signed_val(BIF_ARG_2);
-	   if (keep_zombies(-nval, &oval))
-	       BIF_RET(make_small(-oval));
-       }
-       goto error;
-    } else if (BIF_ARG_1 == am_fullsweep_after) {
+    if (BIF_ARG_1 == am_fullsweep_after) {
 	int oval = erts_max_gen_gcs;
 	if (!is_small(BIF_ARG_2) || (n = signed_val(BIF_ARG_2)) < 0) {
 	    goto error;
@@ -2771,8 +2750,7 @@ BIF_ADECL_2
 		BIF_RET(old_value);
 	    }
 	}
-    }
-    else if (BIF_ARG_1 == make_small(1)) {
+    } else if (BIF_ARG_1 == make_small(1)) {
 	Uint i;
 	ErlMessage* mp;
 	for (i = 0; i < erts_max_processes; i++) {
@@ -2790,14 +2768,6 @@ BIF_ADECL_2
 	}
 	BIF_RET(am_true);    
     }
-    else if (BIF_ARG_1 == am_sl_alloc) {
-      if (BIF_ARG_2 == am_use_mmap_table) {
-	if(erts_old_sl_alloc_opt(ERTS_SL_ALLOC_OPT_USE_MMAP_TABLE, 1))
-	  BIF_RET(am_true);
-	else
-	  BIF_RET(am_false);
-      }
-    }
     error:
     BIF_ERROR(BIF_P, BADARG);
 }
@@ -2805,7 +2775,6 @@ BIF_ADECL_2
 /**********************************************************************/
 
 BIF_RETTYPE hash_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Uint32 hash;
     Sint32 range;
@@ -2821,7 +2790,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE phash_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Uint32 hash;
     Uint32 final_hash;
@@ -2875,7 +2843,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE phash2_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Uint32 hash;
 
@@ -2884,7 +2851,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE phash2_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Uint32 hash;
     Uint32 final_hash;
@@ -2933,7 +2899,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE bump_reductions_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     int reds;
 	
@@ -2951,10 +2916,13 @@ BIF_ADECL_1
 ** BIF Timer support
 ****************************************************************************/
 
+#define BTR_FLG_SL_TIMER (1 << 0)
+
 typedef struct bif_timer_rec {
     struct bif_timer_rec* next;
     ErlTimer tm;
     ErlHeapFragment* bp;
+    Uint32 flags;
     Eterm message;
     Eterm pid;
     Eterm ref;
@@ -2964,27 +2932,16 @@ typedef struct bif_timer_rec {
 #define TIMER_HASH_VEC 3331
 
 static BifTimerRec* bif_tm_vec[TIMER_HASH_VEC];  
+static Uint no_bif_timers;
 
 Uint
 bif_timer_memory_size(void)
 {
-    Uint size;
-    BifTimerRec *btrp;
-    ErlHeapFragment* bp;
-    int i;
-
-    size = sizeof(BifTimerRec *)*TIMER_HASH_VEC;
-    for (i = 0; i < TIMER_HASH_VEC; i++)
-	for (btrp = bif_tm_vec[i]; btrp; btrp = btrp->next) {
-	    size += sizeof(BifTimerRec);
-	    for (bp = btrp->bp; bp; bp = bp->next)
-		size += sizeof(ErlHeapFragment) + ((bp->size-1)*sizeof(Eterm));
-	}
-    return size;
+    return (sizeof(BifTimerRec *)*TIMER_HASH_VEC
+	    + no_bif_timers*sizeof(BifTimerRec));
 }
 
-static BifTimerRec** find_timer(ref)
-Eterm ref;
+static BifTimerRec** find_timer(Eterm ref)
 {
     Eterm wd = ref_numbers(ref)[0];
     int ix = wd % TIMER_HASH_VEC;
@@ -3022,15 +2979,26 @@ bif_timeout_proc(BifTimerRec* btm)
     } else {
 	queue_message_tt(rp, btm->bp, btm->message, NIL);
     }
-    erts_sl_free((void *) btm);
+    ERTS_PROC_LESS_MEM(sizeof(BifTimerRec));
+    ASSERT(no_bif_timers > 0);
+    no_bif_timers--;
+    if (btm->flags & BTR_FLG_SL_TIMER)
+	erts_free(ERTS_ALC_T_SL_BIF_TIMER, (void *) btm);
+    else
+	erts_free(ERTS_ALC_T_LL_BIF_TIMER, (void *) btm);
 }
 
 /* tm arg contains the BifTimerRec */
-static void bif_cancel_proc(btm)
-BifTimerRec* btm;
+static void bif_cancel_proc(BifTimerRec* btm)
 {
     free_message_buffer(btm->bp);
-    erts_sl_free((void *) btm);
+    ERTS_PROC_LESS_MEM(sizeof(BifTimerRec));
+    ASSERT(no_bif_timers > 0);
+    no_bif_timers--;
+    if (btm->flags & BTR_FLG_SL_TIMER)
+	erts_free(ERTS_ALC_T_SL_BIF_TIMER, (void *) btm);
+    else
+	erts_free(ERTS_ALC_T_LL_BIF_TIMER, (void *) btm);
 }
 
 static BifTimerRec* 
@@ -3061,7 +3029,19 @@ do_timer(int pack, Process *process, Eterm arg1, Eterm arg2, Eterm arg3)
     }
     
     size = size_object(term);
-    btm = (BifTimerRec *) erts_sl_alloc_from(300, sizeof(BifTimerRec));
+    ERTS_PROC_MORE_MEM(sizeof(BifTimerRec));
+    no_bif_timers++;
+    if (timeout < ERTS_ALC_MIN_LONG_LIVED_TIME) {
+	btm = (BifTimerRec *) erts_alloc(ERTS_ALC_T_SL_BIF_TIMER,
+					 sizeof(BifTimerRec));
+	btm->flags = BTR_FLG_SL_TIMER;
+    }
+    else {
+	btm = (BifTimerRec *) erts_alloc(ERTS_ALC_T_LL_BIF_TIMER,
+					 sizeof(BifTimerRec));
+	btm->flags = 0;
+    }
+
     btm->bp = bp = new_message_buffer(size);
     sys_memcpy((void *) btm->ref_heap,
 	       (void *) ref_thing_ptr(ref),
@@ -3085,7 +3065,6 @@ do_timer(int pack, Process *process, Eterm arg1, Eterm arg2, Eterm arg3)
 
 /* send_after(Time, Pid, Message) -> Ref */
 BIF_RETTYPE send_after_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     BifTimerRec* btm;
 
@@ -3099,7 +3078,6 @@ BIF_ADECL_3
 
 /* start_timer(Time, Pid, Message) -> Ref */
 BIF_RETTYPE start_timer_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     BifTimerRec* btm;
 
@@ -3113,7 +3091,6 @@ BIF_ADECL_3
 
 /* cancel_timer(Ref)) -> Bool */
 BIF_RETTYPE cancel_timer_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     BifTimerRec* btm;
     BifTimerRec** tp;
@@ -3134,7 +3111,6 @@ BIF_ADECL_1
 
 /* read_timer(Ref) -> false | RemainingTime */
 BIF_RETTYPE read_timer_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     BifTimerRec** tp;
 
@@ -3154,30 +3130,34 @@ void print_timer_info(CIO to)
    int i;
    BifTimerRec *p;
 
-   for (i = 0; i < TIMER_HASH_VEC; i++)
-      if ((p = bif_tm_vec[i]) != NULL) {
-	 erl_printf(to, "message=");
-	 display(p->message,to);
-	 erl_printf(to, ", pid=");
-	 display(p->pid,to);
-	 erl_printf(to, ", time left %d ms", time_left(&p->tm));
-	 erl_printf(to, "\n");
-      }
+   for (i = 0; i < TIMER_HASH_VEC; i++) {
+       if ((p = bif_tm_vec[i]) != NULL) {
+	   erl_printf(to, "=timer:");
+	   display(p->pid, to);
+	   erl_printf(to, "\n");
+	   erl_printf(to, "Message: ");
+	   display(p->message, to);
+	   erl_printf(to, "\n");
+	   erl_printf(to, "Time left: %d ms\n", time_left(&p->tm));
+       }
+   }
 }
 
 void erts_init_bif(void)
 {
     int i;
+
     reference0 = 0;
     reference1 = 0;
     reference2 = 0;
+
+    no_bif_timers = 0;
     for (i = 0; i < TIMER_HASH_VEC; ++i) {
 	bif_tm_vec[i] = NULL;
     }
 }
 
 BIF_RETTYPE blocking_read_file_1(BIF_ALIST_1)
-    BIF_ADECL_1
 {
     Eterm bin;
     Eterm* hp;
@@ -3202,13 +3182,55 @@ BIF_RETTYPE blocking_read_file_1(BIF_ALIST_1)
  
     stat(tmp_buf, &file_info);  
     buff_size = file_info.st_size;
-    if ((buff=sys_alloc(buff_size)) == NULL){
+    buff = (byte *) erts_alloc_fnf(ERTS_ALC_T_TMP, buff_size);
+    if (!buff) {
+	fclose(file);
 	BIF_RET(TUPLE2(hp, am_error, am_allocator));
     }
     fread(buff, 1, buff_size, file);
     fclose(file);
     bin = new_binary(BIF_P, buff, buff_size);
-    sys_free(buff);
+    erts_free(ERTS_ALC_T_TMP, (void *) buff);
  
     BIF_RET(TUPLE2(hp, am_ok, bin));
 }
+#ifdef HARDDEBUG
+/*
+You'll need this line in bif.tab to be able to use this debug bif
+
+bif erlang:send_to_logger/2
+
+*/
+BIF_RETTYPE send_to_logger_2(BIF_ALIST_2)
+{
+    int len;
+    if (!is_atom(BIF_ARG_1) || !(is_list(BIF_ARG_2) ||
+				 is_nil(BIF_ARG_1))) {
+	BIF_ERROR(BIF_P,BADARG);
+    }
+    cerr_pos = 0;
+    if ((len = io_list_to_buf(BIF_ARG_2, tmp_buf, TMP_BUF_SIZE)) < 0) {
+	BIF_ERROR(BIF_P,BADARG);
+    }
+    cerr_pos = TMP_BUF_SIZE - len;
+    switch (BIF_ARG_1) {
+    case am_info:
+	erts_send_info_to_logger(BIF_P->group_leader,tmp_buf,cerr_pos);
+	break;
+    case am_warning:
+	erts_send_warning_to_logger(BIF_P->group_leader,tmp_buf,cerr_pos);
+	break;
+    case am_error:
+	erts_send_error_to_logger(BIF_P->group_leader,tmp_buf,cerr_pos);
+	break;
+    case am_false:
+	send_error_to_logger(BIF_P->group_leader);
+	break;
+    default:
+	{
+	    BIF_ERROR(BIF_P,BADARG);
+	}
+    }
+    BIF_RET(am_true);
+}
+#endif /* HARDDEBUG */

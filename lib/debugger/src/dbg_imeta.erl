@@ -116,7 +116,7 @@ eval_mfa(Debugged, M, F, As, Le) ->
     dbg_ieval:exit_catch_lev(),
     
     case Res of
-	{value, Val, Bs} ->
+	{value, Val, _Bs} ->
 	    Debugged ! {sys, self(), {ready, Val}};
 
 	{'EXIT', {Debugged, Reason}} ->
@@ -209,7 +209,9 @@ main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F) when integer(Le) ->
 	{'EXIT', Debugged, Reason} ->
 	    dbg_ieval:exit(Debugged, Reason, Cm, Line, Bs);
 
-	%% Interpreter has terminated
+	%% Interpreter has terminated.
+	%% XXX Can we be sure that the interpreter has terminated?
+	%% It could be another process.
 	{'EXIT',Pid,Reason} ->
 	    exit(Reason);
 

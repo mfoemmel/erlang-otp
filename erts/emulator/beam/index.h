@@ -37,6 +37,7 @@ typedef struct index_slot
 typedef struct index_table
 {
     Hash htable;        /* Mapping obj -> index */
+    ErtsAlcType_t type;
     int size;           /* Allocated size */
     int limit;          /* Max size */
     int rate;           /* Factor or increament */
@@ -46,18 +47,17 @@ typedef struct index_table
 } IndexTable;
 
 
-EXTERN_FUNCTION(IndexTable*, index_new, (char*,int,int,int,HashFunctions));
-EXTERN_FUNCTION(IndexTable*, index_init, (IndexTable*,char*,
-					  int,int,int,HashFunctions));
-EXTERN_FUNCTION(void, index_delete, (IndexTable*));
-EXTERN_FUNCTION(void, index_info, (CIO, IndexTable*));
-EXTERN_FUNCTION(int, index_table_sz, (IndexTable*));
+IndexTable *index_new(ErtsAlcType_t,char*,int,int,int,HashFunctions);
+IndexTable *index_init(ErtsAlcType_t,IndexTable*,char*,int,int,int,HashFunctions);
+void index_delete(IndexTable*);
+void index_info(CIO,IndexTable*);
+int index_table_sz(IndexTable *);
 
-EXTERN_FUNCTION(int, index_get, (IndexTable*, void*));
-EXTERN_FUNCTION(int, index_put, (IndexTable*, void*));
-EXTERN_FUNCTION(int, index_erase, (IndexTable*, void*));
+int index_get(IndexTable*, void*);
+int index_put(IndexTable*, void*);
+int index_erase(IndexTable*, void*);
 
-EXTERN_FUNCTION(int, index_iter, (IndexTable*, int));
+int index_iter(IndexTable*, int);
 #endif
 
     

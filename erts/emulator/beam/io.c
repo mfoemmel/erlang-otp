@@ -134,8 +134,7 @@ get_free_port(void)
 ** Once (reallocated) we never reset the pointer to the small vector
 ** This is a possible optimisation.
 */
-static void initq(prt)
-Port* prt;
+static void initq(Port* prt)
 {
     ErlIOQueue* q = &prt->ioq;
 
@@ -146,14 +145,13 @@ Port* prt;
     q->b_end = q->b_small + SMALL_IO_QUEUE;
 }
 
-static void stopq(prt)
-Port* prt;
+static void stopq(Port* prt)
 {
     ErlIOQueue* q = &prt->ioq;
     ErlDrvBinary** binp = q->b_head;
 
     if (q->v_start != q->v_small)
-	sys_free(q->v_start);
+	erts_free(ERTS_ALC_T_IOQ, (void *) q->v_start);
 
     while(binp < q->b_tail) {
 	if (*binp != NULL)
@@ -161,7 +159,7 @@ Port* prt;
 	binp++;
     }
     if (q->b_start != q->b_small)
-	sys_free(q->b_start);
+	erts_free(ERTS_ALC_T_IOQ, (void *) q->b_start);
     q->v_start = q->v_end = q->v_head = q->v_tail = NULL;
     q->b_start = q->b_end = q->b_head = q->b_tail = NULL;
     q->size = 0;
@@ -185,9 +183,9 @@ setup_port(int port_num, Eterm pid, ErlDrvEntry *driver, long ret, char *name)
     prt->reg = NULL;
     sys_memset(&prt->tm, 0, sizeof(ErlTimer));
     if (prt->name != NULL) {
-	sys_free(prt->name);
+	erts_free(ERTS_ALC_T_PORT_NAME, (void *) prt->name);
     }
-    prt->name  = (char*) safe_alloc_from(162, sys_strlen(name) + 1);
+    prt->name = (char*) erts_alloc(ERTS_ALC_T_PORT_NAME, sys_strlen(name)+1);
     prt->suspended  = NULL;
     sys_strcpy(prt->name, name);
     prt->links = NULL;
@@ -211,7 +209,8 @@ wake_process_later(Eterm this_port, Process *process)
     for (p = &(erts_port[port_pos].suspended); *p != NULL; p = &((*p)->next))
 	/* Empty loop body */;
 
-    new_p = (ProcessList *) fix_alloc_from(163,plist_desc);
+    new_p = (ProcessList *) erts_alloc(ERTS_ALC_T_PROC_LIST,
+				       sizeof(ProcessList));
     new_p->pid = process->id; /* Internal pid */
     new_p->next = NULL;
     *p = new_p;
@@ -297,7 +296,8 @@ open_driver(ErlDrvEntry* driver,	/* Pointer to driver entry. */
 	stopq(&erts_port[port_num]);
 	erts_port[port_num].status = FREE;
 	if (erts_port[port_num].linebuf != NULL) {
-	    sys_free(erts_port[port_num].linebuf);
+	    erts_free(ERTS_ALC_T_LINEBUF,
+		      (void *) erts_port[port_num].linebuf);
 	    erts_port[port_num].linebuf = NULL;
 	}
 	return ret;
@@ -603,11 +603,14 @@ int write_port(Eterm caller_id, int ix, Eterm list)
 	    ivp = iv;
 	    bvp = bv;
 	} else {
-	    ivp = (SysIOVec*) safe_alloc_from(75, vsize * sizeof(SysIOVec));
-	    bvp = (ErlDrvBinary**)
-		safe_alloc_from(73, vsize * sizeof(ErlDrvBinary*));
+	    ivp = (SysIOVec *) erts_alloc(ERTS_ALC_T_TMP,
+					  vsize * sizeof(SysIOVec));
+	    bvp = (ErlDrvBinary**) erts_alloc(ERTS_ALC_T_TMP,
+					      vsize * sizeof(ErlDrvBinary*));
 	}
 	cbin = driver_alloc_binary(csize);
+	if (!cbin)
+	    erts_alloc_enomem(ERTS_ALC_T_DRV_BINARY, sizeof(Binary) + csize);
 
 	/* Element 0 is for driver usage to add header block */
 	ivp[0].iov_base = NULL;
@@ -625,10 +628,10 @@ int write_port(Eterm caller_id, int ix, Eterm list)
 	ev.binv = bvp;
 	(*drv->outputv)((ErlDrvData)p->drv_data, &ev);
 	if (ivp != iv) {
-	    sys_free(ivp);
+	    erts_free(ERTS_ALC_T_TMP, (void *) ivp);
 	}
 	if (bvp != bv) {
-	    sys_free(bvp);
+	    erts_free(ERTS_ALC_T_TMP, (void *) bvp);
 	}
 	driver_free_binary(cbin);
     } else {
@@ -654,12 +657,12 @@ int write_port(Eterm caller_id, int ix, Eterm list)
 	     * incorrect but I don't feel like fixing them now, insted
 	     * add ONE extra byte.
 	     */
-	    buf = safe_alloc_from(76, size+1); 
+	    buf = erts_alloc(ERTS_ALC_T_TMP, size+1); 
 	    r = io_list_to_buf(list, buf, size);
 	    if (drv->output) {
 		(*drv->output)((ErlDrvData)p->drv_data, (char*)buf, size);
 	    }
-	    sys_free(buf);
+	    erts_free(ERTS_ALC_T_TMP, buf);
 	}
     }
     p->bytes_out += size;
@@ -686,7 +689,7 @@ void init_io(void)
     if (maxports != NULL) 
 	erts_max_ports = atoi(maxports);
     else
-	erts_max_ports = 0;
+	erts_max_ports = sys_max_files();
 
     last_port = 0;
     if (erts_max_ports > ERTS_MAX_PORTS)
@@ -698,17 +701,18 @@ void init_io(void)
     port_extra_limit = 1 << (ERTS_PORTS_BITS - port_extra_shift);
     port_extra_n = 0;
 
-    erts_port_tab_index_mask = ~(~0 << port_extra_shift);
+    erts_port_tab_index_mask = ~(~((Uint) 0) << port_extra_shift);
     erts_max_ports = 1 << port_extra_shift;
 
     driver_list = NULL;
 
-    if (erts_max_ports * sizeof(Port) <= erts_max_ports)
-	erl_exit(-1, "Can't allocate (>) %lu bytes of memory\n", ~0);
+    if (erts_max_ports * sizeof(Port) <= erts_max_ports) {
+	/* More memory needed than the whole address space. */
+	erts_alloc_enomem(ERTS_ALC_T_PORT_TABLE, ~((Uint) 0));
+    }
 
-    erts_port = (Port *) erts_definite_alloc(erts_max_ports * sizeof(Port));
-    if(!erts_port)
-	erts_port = (Port *) safe_alloc_from(160,erts_max_ports * sizeof(Port));
+    erts_port = (Port *) erts_alloc(ERTS_ALC_T_PORT_TABLE,
+				    erts_max_ports * sizeof(Port));
 
     bytes_out = 0;
     bytes_in = 0;
@@ -756,7 +760,8 @@ LineBuf *allocate_linebuf(bufsiz)
 int bufsiz;
 {
     int ovsiz = (bufsiz < LINEBUF_INITIAL) ? bufsiz : LINEBUF_INITIAL;
-    LineBuf *lb = (LineBuf *) safe_alloc_from(78, sizeof(LineBuf)+ovsiz);
+    LineBuf *lb = (LineBuf *) erts_alloc(ERTS_ALC_T_LINEBUF,
+					 sizeof(LineBuf)+ovsiz);
     lb->ovsiz = ovsiz;
     lb->bufsiz = bufsiz;
     lb->ovlen = 0;
@@ -774,11 +779,7 @@ int bufsiz;
  * buf - A buffer containing the data to be read and split to lines.
  * len - The number of bytes in buf.
  */
-static int init_linebuf_context(lc, lb, buf, len)
-LineBufContext *lc;
-LineBuf **lb;
-char *buf;
-int len;
+static int init_linebuf_context(LineBufContext *lc, LineBuf **lb, char *buf, int len)
 {
     if(lc == NULL || lb == NULL)
 	return -1;
@@ -788,12 +789,13 @@ int len;
     return 0;
 }
 
-static void resize_linebuf(b)
-LineBuf **b;
+static void resize_linebuf(LineBuf **b)
 {
     int newsiz = (((*b)->ovsiz * 2) > (*b)->bufsiz) ? (*b)->bufsiz : 
 	(*b)->ovsiz * 2;
-    *b = (LineBuf *) safe_realloc((char *) *b, sizeof(LineBuf)+newsiz);
+    *b = (LineBuf *) erts_realloc(ERTS_ALC_T_LINEBUF,
+				  (void *) *b,
+				  sizeof(LineBuf)+newsiz);
     (*b)->ovsiz = newsiz;
 }
 
@@ -802,8 +804,7 @@ LineBuf **b;
  * an LINEBUF_NOEOL. Has to be called until it return LINEBUF_EMPTY.
  * Return values and barameters as read_linebuf (see below).
  */
-static int flush_linebuf(bp)
-LineBufContext *bp;
+static int flush_linebuf(LineBufContext *bp)
 {
     bp->retlen = (*bp->b)->ovlen;
     switch(LINEBUF_STATE(*bp)){
@@ -850,8 +851,7 @@ LineBufContext *bp;
  *   is returned the context can be discarded and a new can be created when new
  *   data arrives (the state is saved in the Port structure).
  */
-static int read_linebuf(bp)
-LineBufContext *bp;
+static int read_linebuf(LineBufContext *bp)
 {
     for(;;){
 	if(bp->left == 0)
@@ -917,14 +917,9 @@ LineBufContext *bp;
  * len  -- length of data
  */
 
-static void deliver_read_message(prt, to, hbuf, hlen, buf, len, eol)
-Port* prt;
-Eterm to;
-char* hbuf;
-int hlen;
-char *buf;
-int len;
-int eol;
+static void deliver_read_message(Port* prt, Eterm to,
+				 char *hbuf, int hlen,
+				 char *buf, int len, int eol)
 {
     int need;
     Eterm listp;
@@ -970,7 +965,7 @@ int eol;
 	ProcBin* pb;
 	Binary* bptr;
 
-	bptr = OH_BIN_SAFE_ALLOC(61, len+sizeof(Binary));
+	bptr = erts_bin_nrml_alloc(len);
 	bptr->flags = 0;
 	bptr->orig_size = len;
 	bptr->refc = 1;
@@ -985,7 +980,6 @@ int eol;
 	pb->bytes = bptr->orig_bytes;
 	hp += PROC_BIN_SIZE;
 
-	tot_bin_allocated += len;
 	MSO(rp).overhead += pb->size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
 	listp = make_binary(pb);
     }
@@ -1032,8 +1026,7 @@ static void deliver_linebuf_message(Port* prt, Eterm to,
  * Parameters:
  * prt -  Pointer to a Port structure for this port.
  */
-static void flush_linebuf_messages(prt)
-Port *prt;
+static void flush_linebuf_messages(Port *prt)
 {
     LineBufContext lc;
     int ret;
@@ -1176,7 +1169,7 @@ static void deliver_bin_message(Port*  prt,         /* port */
  * (after calling the driver's async_ready) and recursively call 
  * terminate_port. So when we get back here, the port is already terminated.
  */
-void flush_port(int ix)
+static void flush_port(int ix)
 {
     Port *p = &erts_port[ix];
 
@@ -1210,7 +1203,7 @@ terminate_port(int ix)
     prt->status = FREE;
     prt->drv_ptr = NULL;
     if(prt->linebuf != NULL){
-	sys_free(prt->linebuf);
+	erts_free(ERTS_ALC_T_LINEBUF, (void *) prt->linebuf);
 	prt->linebuf = NULL;
     }
     if (prt->bp != NULL) {
@@ -1466,7 +1459,7 @@ port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
 		return 0;
 	    }
 	    must_free = 1;
-	    to_port = safe_alloc_from(77, to_len + 20);
+	    to_port = erts_alloc(ERTS_ALC_T_TMP, to_len + 20);
 	    r = io_list_to_buf(iolist, to_port, to_len+20);
 	    ASSERT(r == 20);
 	}
@@ -1479,7 +1472,7 @@ port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
     n = drv->control((ErlDrvData)prt->drv_data, command, to_port, to_len,
 		     &port_resp, sizeof(port_result));
     if (must_free)
-	sys_free(to_port);
+	erts_free(ERTS_ALC_T_TMP, (void *) to_port);
 
     if ((n >= 0) && (prt->control_flags & PORT_CONTROL_FLAG_BINARY)) {
 	ErlDrvBinary *b = (ErlDrvBinary*)port_resp;
@@ -1512,7 +1505,7 @@ port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
 	*resp = buf_to_intlist(&hp, port_resp, n, NIL);
     }
     if (port_resp != port_result)
-	sys_free(port_resp);
+	driver_free(port_resp);
     return ret;
 }
 
@@ -1525,7 +1518,10 @@ print_port_info(int i, CIO fp)
 
     if (p->status == FREE)
 	return;
-    erl_printf(fp,"<%d>\n", i);
+    erl_printf(fp, "=port:");
+    display(p->id, fp);
+    erl_printf(fp, "\n");
+    erl_printf(fp, "Slot: %d\n", i);
     if (p->status & CONNECTED) {
 	erl_printf(fp,"Connected: ");
 	display(p->connected, fp);
@@ -1555,18 +1551,15 @@ print_port_info(int i, CIO fp)
     }
 
     if (p->drv_ptr == &fd_driver_entry) {
-	erl_printf(fp,"Port is UNIX fd %s not opened by emulator\n",
-		   p->name);
+	erl_printf(fp,"Port is UNIX fd not opened by emulator: %s\n", p->name);
     } else if (p->drv_ptr == &vanilla_driver_entry) {
 	erl_printf(fp,"Port is a file: %s\n",p->name);
     } else if (p->drv_ptr == &spawn_driver_entry) {
 	erl_printf(fp,"Port controls external process: %s\n",p->name);
-    } else
+    } else {
 	erl_printf(fp,"Port controls linked-in driver: %s\n",p->name);
-
-    erl_printf(fp,"--------------------------------------------------\n");
+    }
 }
-
 
 void
 set_busy_port(ErlDrvPort port_num, int on)
@@ -1594,7 +1587,7 @@ set_busy_port(ErlDrvPort port_num, int on)
             ProcessList* pl = p->next;
 
             pid0 = p->pid;	/* Get first pid (should be scheduled last) */
-            fix_free(plist_desc, (Eterm *) p);
+            erts_free(ERTS_ALC_T_PROC_LIST, (void *) p);
 
 	    ASSERT(is_internal_pid(pid0));
             p = pl;
@@ -1608,7 +1601,7 @@ set_busy_port(ErlDrvPort port_num, int on)
 			erl_resume(proc);
 		    }
 		}
-                fix_free(plist_desc,(Eterm *) p);
+                erts_free(ERTS_ALC_T_PROC_LIST, (void *) p);
                 p = pl;
             }
 	    
@@ -1665,7 +1658,7 @@ int hndl;
 	erl_printf(CBUF, "#Port<0.%d>: %s: "
 		   "Input driver gone away without deselecting!\n", 
 		   ix, p->name ? p->name : "(unknown)" );
-	send_error_to_logger(NIL);
+	erts_send_warning_to_logger(NIL, tmp_buf, cerr_pos);
 	driver_select((ErlDrvPort)ix, (ErlDrvEvent)hndl, DO_READ, 0);
     }
 }
@@ -1686,7 +1679,7 @@ int hndl;
 	erl_printf(CBUF, "#Port<0.%d>: %s: "
 		   "Output driver gone away without deselecting!\n", 
 		   ix, p->name ? p->name : "(unknown)" );
-	send_error_to_logger(NIL);
+	erts_send_warning_to_logger(NIL, tmp_buf, cerr_pos);
 	driver_select((ErlDrvPort)ix, (ErlDrvEvent)hndl, DO_WRITE, 0);
     }
 }
@@ -1716,7 +1709,7 @@ void event_ready(int ix, int hndl, ErlDrvEventData event_data) {
 	erl_printf(CBUF, "#Port<0.%d>: %s: "
 		   "Event driver gone away without deselecting!\n", 
 		   ix, p->name ? p->name : "(unknown)" );
-	send_error_to_logger(NIL);
+	erts_send_warning_to_logger(NIL, tmp_buf, cerr_pos);
 	driver_event((ErlDrvPort)ix, (ErlDrvEvent)hndl, NULL);
     } else if (! p->drv_ptr->event) {
 	cerr_pos = 0;
@@ -1737,8 +1730,7 @@ void event_ready(int ix, int hndl, ErlDrvEventData event_data) {
 
 
 /* timer wrapper MUST check for closing */
-static void port_timeout_proc(p)
-Port* p;
+static void port_timeout_proc(Port* p)
 {
     ErlDrvEntry* drv = p->drv_ptr;
 
@@ -1750,6 +1742,10 @@ Port* p;
     }
 }
 
+ErlDrvTermData driver_mk_term_nil(void)
+{
+    return driver_term_nil;
+}
 
 void driver_report_exit(ix, status)
 int ix;
@@ -2189,13 +2185,12 @@ driver_alloc_binary(int size)
 	size = 0;
     }
 
-    bin = OH_BIN_ALLOC(71, sizeof(Binary)+size);
+    bin = erts_bin_drv_alloc_fnf(size);
     if (!bin)
 	return NULL; /* The driver write must take action */
-    bin->flags = 0;
+    bin->flags = BIN_FLAG_DRV;
     bin->refc = 1;
     bin->orig_size = size;
-    tot_bin_allocated += size;    
     return Binary2ErlDrvBinary(bin);
 }
 
@@ -2228,13 +2223,10 @@ ErlDrvBinary* bin; int size;
     }
 
     oldbin = ErlDrvBinary2Binary(bin);
-    newbin = OH_BIN_REALLOC(oldbin,
-			    sizeof(Binary) + oldbin->orig_size,
-			    sizeof(Binary) + size);
+    newbin = (Binary *) erts_bin_realloc_fnf(oldbin, size);
     if (!newbin)
 	return NULL;
 
-    tot_bin_allocated += (size - newbin->orig_size);
     newbin->orig_size = size;
     return Binary2ErlDrvBinary(newbin);
 }
@@ -2258,13 +2250,13 @@ ErlDrvBinary* dbin;
 	if (bin->flags & BIN_FLAG_MATCH_PROG) {
 	    erts_match_set_free(bin);
 	} else {
-	    tot_bin_allocated -= bin->orig_size;
-	    OH_BIN_FREE(bin);
+	    erts_bin_free(bin);
 	}
     } else {
 	bin->refc--;
     }
 }
+
 
 /* 
  * Allocation/deallocation of memory for drivers 
@@ -2272,25 +2264,23 @@ ErlDrvBinary* dbin;
 
 void *driver_alloc(size_t size)
 {
-    return sys_alloc_from(70, size);
+    return erts_alloc_fnf(ERTS_ALC_T_DRV, (Uint) size);
 }
 
 void *driver_realloc(void *ptr, size_t size)
 {
-    return sys_realloc(ptr, size);
+    return erts_realloc_fnf(ERTS_ALC_T_DRV, ptr, (Uint) size);
 }
 
 void driver_free(void *ptr)
 {
-    sys_free(ptr);
+    erts_free(ERTS_ALC_T_DRV, ptr);
 }
 
 
 /* expand queue to hold n elements in tail or head */
-static int expandq(q, n, tail)
-ErlIOQueue* q; 
-int n;
-int tail;      /* 0 if make room in head, make room in tail otherwise */
+static int expandq(ErlIOQueue* q, int n, int tail)
+/* tail: 0 if make room in head, make room in tail otherwise */
 {
     int h_sz;  /* room before header */
     int t_sz;  /* room after tail */
@@ -2311,16 +2301,18 @@ int tail;      /* 0 if make room in head, make room in tail otherwise */
 	/* we may get little extra but it ok */
 	nvsz = (q->v_end - q->v_start) + n; 
 
-	if ((niov = sys_alloc_from(74, nvsz * sizeof(SysIOVec))) == NULL)
+	niov = erts_alloc_fnf(ERTS_ALC_T_IOQ, nvsz * sizeof(SysIOVec));
+	if (!niov)
 	    return -1;
-	if ((nbinv = sys_alloc_from(72, nvsz * sizeof(ErlDrvBinary**))) == NULL) {
-	    sys_free(niov);
+	nbinv = erts_alloc_fnf(ERTS_ALC_T_IOQ, nvsz * sizeof(ErlDrvBinary**));
+	if (!nbinv) {
+	    erts_free(ERTS_ALC_T_IOQ, (void *) niov);
 	    return -1;
 	}
 	if (tail) {
 	    sys_memcpy(niov, q->v_head, q_sz*sizeof(SysIOVec));
 	    if (q->v_start != q->v_small)
-		sys_free(q->v_start);
+		erts_free(ERTS_ALC_T_IOQ, (void *) q->v_start);
 	    q->v_start = niov;
 	    q->v_end = niov + nvsz;
 	    q->v_head = q->v_start;
@@ -2328,7 +2320,7 @@ int tail;      /* 0 if make room in head, make room in tail otherwise */
 
 	    sys_memcpy(nbinv, q->b_head, q_sz*sizeof(ErlDrvBinary*));
 	    if (q->b_start != q->b_small)
-		sys_free(q->b_start);
+		erts_free(ERTS_ALC_T_IOQ, (void *) q->b_start);
 	    q->b_start = nbinv;
 	    q->b_end = nbinv + nvsz;
 	    q->b_head = q->b_start;
@@ -2337,7 +2329,7 @@ int tail;      /* 0 if make room in head, make room in tail otherwise */
 	else {
 	    sys_memcpy(niov+nvsz-q_sz, q->v_head, q_sz*sizeof(SysIOVec));
 	    if (q->v_start != q->v_small)
-		sys_free(q->v_start);
+		erts_free(ERTS_ALC_T_IOQ, (void *) q->v_start);
 	    q->v_start = niov;
 	    q->v_end = niov + nvsz;
 	    q->v_tail = q->v_end;
@@ -2345,7 +2337,7 @@ int tail;      /* 0 if make room in head, make room in tail otherwise */
 	    
 	    sys_memcpy(nbinv+nvsz-q_sz, q->b_head, q_sz*sizeof(ErlDrvBinary*));
 	    if (q->b_start != q->b_small)
-		sys_free(q->b_start);
+		erts_free(ERTS_ALC_T_IOQ, (void *) q->b_start);
 	    q->b_start = nbinv;
 	    q->b_end = nbinv + nvsz;
 	    q->b_tail = q->b_end;
@@ -2851,7 +2843,7 @@ int driver_detach(ErlDrvPort ix)
 void add_driver_entry(drv)
     ErlDrvEntry *drv;
 {
-    DE_List *p = sys_alloc_from(161,sizeof(DE_List));
+    DE_List *p = erts_alloc(ERTS_ALC_T_DRV_ENTRY_LIST, sizeof(DE_List));
 
     p->drv = drv;
     p->next = driver_list;
@@ -2872,7 +2864,7 @@ int remove_driver_entry(drv)
 	if ((*p)->drv == drv) {
 	    q = *p;
 	    *p = (*p)->next;
-	    sys_free(q);
+	    erts_free(ERTS_ALC_T_DRV_ENTRY_LIST, (void *) q);
 	    return 1;
 	}
 	p = &(*p)->next;
@@ -2883,7 +2875,7 @@ int remove_driver_entry(drv)
 /* very useful function that can be used in entries that are not used
  * so that not every driver writer must supply a personal version
  */
-int null_func()
+int null_func(void)
 {
     return 0;
 }

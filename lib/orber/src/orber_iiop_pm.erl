@@ -74,7 +74,8 @@ connect(Host, Port, SocketType, Timeout, Chars, Wchars) when SocketType == norma
 	[{_, P, I, _}] ->
 	    {P, [], I}
     end;
-connect(Host, #'SSLIOP_SSL'{port = Port} = Data, SocketType, Timeout, Chars, Wchars) 
+%connect(Host, #'SSLIOP_SSL'{port = Port} = Data, SocketType, Timeout, Chars, Wchars) 
+connect(Host, Port, SocketType, Timeout, Chars, Wchars) 
   when SocketType == ssl ->
     case ets:lookup(?PM_CONNECTION_DB, {Host, Port}) of
 	[{_, connecting, I, _}] ->

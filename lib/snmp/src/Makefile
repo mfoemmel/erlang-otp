@@ -23,8 +23,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # ----------------------------------------------------
 include ../vsn.mk
 
-VSN     = $(SNMPEA_VSN)
-APP_VSN = "snmp-$(VSN)"
+VSN = $(SNMPEA_VSN)
 
 # ----------------------------------------------------
 # Release directory specification
@@ -68,7 +67,6 @@ MODULES = \
 	snmp_note_store \
 	snmp_notification_mib \
 	snmp_pdus \
-	snmp_pets \
 	snmp_set \
 	snmp_set_lib \
 	snmp_shadow_table \
@@ -128,6 +126,11 @@ endif
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS += 
+
+ifeq ($(WARN_UNUSED_WARS),true)
+ERL_COMPILE_FLAGS += +warn_unused_vars
+endif
+
 ERL_COMPILE_FLAGS += -I../include \
                      +'{parse_transform,sys_pre_attributes}' \
                      +'{attribute,insert,app_vsn,$(APP_VSN)}' \

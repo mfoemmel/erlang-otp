@@ -15,9 +15,10 @@
  * 
  *     $Id$
  */
+
 /*
- * Purpose:  Dynamically loadable driver for loading cryptographic 
- *           libraries. 
+ * Purpose:  Dynamically loadable driver for cryptography libraries. 
+ * Based on OpenSSL. 
  */
 
 #ifdef __WIN32__
@@ -29,29 +30,14 @@
 #include <string.h>
 #include "erl_driver.h"
 
-#include "des.h"
-#include "md5.h"
-#include "sha.h"
-
-#if defined(HAVE_MACH_O_DYLD_H)
-#include <mach-o/dyld.h>
-#endif
+#include <openssl/des.h>
+#include <openssl/md5.h>
+#include <openssl/sha.h>
 
 #define get_int32(s) ((((unsigned char*) (s))[0] << 24) | \
                       (((unsigned char*) (s))[1] << 16) | \
                       (((unsigned char*) (s))[2] << 8)  | \
                       (((unsigned char*) (s))[3]))
-
-/* shared libs & dlls */
-EXTERN void *driver_dl_open(char *);
-EXTERN int driver_dl_close(void *);
-EXTERN char *driver_dl_error(void);
-
-#if defined(HAVE_MACH_O_DYLD_H)
-void *driver_dl_sym(void *, char *);
-#else
-EXTERN void *driver_dl_sym(void *, char *);
-#endif
 
 /* Driver interface declarations */
 static ErlDrvData start(ErlDrvPort port, char *command);
@@ -83,7 +69,9 @@ static ErlDrvPort erlang_port = NULL;
 static ErlDrvData driver_data = (ErlDrvData) &erlang_port; /* Anything goes */
 
 
-/* Library declarations */
+/* Keep the following definitions in alignment with the FUNC_LIST
+ * in crypto.erl. 
+ */
 
 #define DRV_INFO		0
 #define DRV_MD5			1
@@ -116,42 +104,6 @@ static ErlDrvData driver_data = (ErlDrvData) &erlang_port; /* Anything goes */
 #define HMAC_IPAD	0x36
 #define HMAC_OPAD	0x5c
 
-static void *lib_handle = NULL;
-static void *lib_name = NULL;
-
-
-typedef struct _crypto_funcs {
-    int (*CRYPTO_set_mem_functions)(void *, void *, void *);
-    unsigned char *(*MD5)(char *, int, char *);
-    void (*MD5_Init)(MD5_CTX *);
-    void (*MD5_Update)(MD5_CTX *, char *, int);
-    void (*MD5_Final)(char *, MD5_CTX *);
-    unsigned char *(*SHA1)(char *, int, char *);
-    void (*SHA1_Init)(SHA_CTX *);
-    void (*SHA1_Update)(SHA_CTX *, char *, int);
-    void (*SHA1_Final)(char *, SHA_CTX *);
-    int (*des_set_key)(char *, void *);
-    void (*des_ncbc_encrypt)(char *, char *, int, void *, char *, int);
-    void (*des_ede3_cbc_encrypt)(char *, char *, int, void *, void *,
-				 void *, char *, int);
-} crypto_funcs;
-
-static crypto_funcs cfs;
-
-/* We need our own OS X driver_dl_sym because the mechanism used in unix_ddll_drv.c
-   cannot find symbols except those specifically defined IN the module - not those in a
-   linked library */
-
-#if defined(HAVE_MACH_O_DYLD_H)
-void *driver_dl_sym(void *handle, char *symbol) {
-  NSSymbol nssymbol;
-  static char undersym[65]; /* enough for all the symbols we will find here anyway */
-  int sym_len = strlen(symbol);
-  snprintf(undersym,64,"_%s",symbol);
-  nssymbol = NSLookupAndBindSymbol(undersym);
-  return nssymbol != NULL ? NSAddressOfSymbol(nssymbol) : NULL;
-}
-#endif
 
 /* INITIALIZATION AFTER LOADING */
 
@@ -168,77 +120,19 @@ DRIVER_INIT(crypto_drv)
 
 /* DRIVER INTERFACE */
 
-/* command = "crypto_drv libname fullname" */
 static ErlDrvData start(ErlDrvPort port, char *command)
 { 
-    char *buf, *tok, *full_name, *name;
-    int i;
 
     if (erlang_port != NULL)
 	return ERL_DRV_ERROR_GENERAL;
-    
     set_port_control_flags(port, PORT_CONTROL_FLAG_BINARY);
-
-    buf = driver_alloc(strlen(command) + 1);
-    strcpy(buf, command);
-
-    tok = strtok(buf, " ");	/* driver name */
-    name = strtok(NULL, " ");	/* lib name */
-    full_name = strtok(NULL, " ");	
-    lib_name = driver_alloc(strlen(name) + 1);
-    strcpy(lib_name, name);
-
-    if ((lib_handle = driver_dl_open(full_name)) == NULL) {
-	fprintf(stderr, "driver_dl error: %s\r\n", driver_dl_error());
-	fprintf(stderr, "crypto_drv:start: cannot load %s\r\n", full_name);
-	driver_free(buf);
-	driver_free(lib_name);
-	lib_name = NULL;
-	return ERL_DRV_ERROR_GENERAL;
-    }
-
-    cfs.CRYPTO_set_mem_functions = 
-	driver_dl_sym(lib_handle, "CRYPTO_set_mem_functions");
-    cfs.MD5 = driver_dl_sym(lib_handle, "MD5");
-    cfs.MD5_Init = driver_dl_sym(lib_handle, "MD5_Init");
-    cfs.MD5_Update = driver_dl_sym(lib_handle, "MD5_Update");
-    cfs.MD5_Final = driver_dl_sym(lib_handle, "MD5_Final");
-    cfs.SHA1 = driver_dl_sym(lib_handle, "SHA1");
-    cfs.SHA1_Init = driver_dl_sym(lib_handle, "SHA1_Init");
-    cfs.SHA1_Update = driver_dl_sym(lib_handle, "SHA1_Update");
-    cfs.SHA1_Final = driver_dl_sym(lib_handle, "SHA1_Final");
-    cfs.des_set_key = driver_dl_sym(lib_handle, "des_set_key");
-    cfs.des_ncbc_encrypt = driver_dl_sym(lib_handle, "des_ncbc_encrypt");
-    cfs.des_ede3_cbc_encrypt = driver_dl_sym(lib_handle, "des_ede3_cbc_encrypt");
-
-    /* Check that all pointer where initialized */
-    for (i = 0; i < sizeof(crypto_funcs)/sizeof(void*); i++) {
-        if (((char **)&cfs)[i] == NULL) {
-	    fprintf(stderr, "crypto_drv:start : function %d not "
-		    "initialized\n", i);
-	    driver_dl_close(lib_handle);
-	    lib_handle = NULL;
-	    driver_free(buf);
-	    driver_free(lib_name);
-	    lib_name = NULL;
-	    return ERL_DRV_ERROR_GENERAL;
-        }
-    }
-
-    (*cfs.CRYPTO_set_mem_functions)(driver_alloc, driver_realloc, 
-				    driver_free);
-
-    driver_free(buf);
+    CRYPTO_set_mem_functions(driver_alloc, driver_realloc, driver_free);
     erlang_port = port;
     return driver_data;
 }
 
 static void stop(ErlDrvData drv_data)
 {
-    driver_dl_close(lib_handle);
-    lib_handle = NULL;
-    driver_free(lib_name);
-    lib_name = NULL;
     erlang_port = NULL;
     return;
 }
@@ -251,8 +145,11 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
 {
     int klen, dlen, i, macsize;
     char *key, *key2, *key3, *dbuf, *ivec;
-    ErlDrvBinary *b;
-    des_key_schedule schedule, schedule2, schedule3;
+    const_DES_cblock *des_key, *des_key2, *des_key3;
+    const unsigned char *des_dbuf;
+    DES_cblock *des_ivec;
+    ErlDrvBinary *bin;
+    DES_key_schedule schedule, schedule2, schedule3;
     char hmacbuf[SHA_LEN];
     MD5_CTX md5_ctx;
     SHA_CTX sha_ctx;
@@ -260,32 +157,32 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
     switch(command) {
 
     case DRV_INFO:
-	*rbuf = (char*)(b = driver_alloc_binary(NUM_CRYPTO_FUNCS));
+	*rbuf = (char*)(bin = driver_alloc_binary(NUM_CRYPTO_FUNCS));
 	for (i = 0; i < NUM_CRYPTO_FUNCS; i++) {
-	    b->orig_bytes[i] = i + 1;
+	    bin->orig_bytes[i] = i + 1;
 	}
 	return NUM_CRYPTO_FUNCS;
 	break;
 
     case DRV_MD5:
-	*rbuf = (char*)(b = driver_alloc_binary(MD5_LEN));
-	(*cfs.MD5)(buf, len, b->orig_bytes);
+	*rbuf = (char*)(bin = driver_alloc_binary(MD5_LEN));
+	MD5(buf, len, bin->orig_bytes);
 	return MD5_LEN;
 	break;
 
     case DRV_MD5_INIT:
-	*rbuf = (char*)(b = driver_alloc_binary(MD5_CTX_LEN));
-	(*cfs.MD5_Init)((MD5_CTX *)b->orig_bytes);
+	*rbuf = (char*)(bin = driver_alloc_binary(MD5_CTX_LEN));
+	MD5_Init((MD5_CTX *)bin->orig_bytes);
 	return MD5_CTX_LEN;		
 	break;
 
     case DRV_MD5_UPDATE:
 	if (len < MD5_CTX_LEN)
 	    return -1;
-	*rbuf = (char*)(b = driver_alloc_binary(MD5_CTX_LEN));
-	memcpy(b->orig_bytes, buf, MD5_CTX_LEN);
-	(*cfs.MD5_Update)((MD5_CTX *)b->orig_bytes, buf + MD5_CTX_LEN, 
-			  len - MD5_CTX_LEN);
+	*rbuf = (char*)(bin = driver_alloc_binary(MD5_CTX_LEN));
+	memcpy(bin->orig_bytes, buf, MD5_CTX_LEN);
+	MD5_Update((MD5_CTX *)bin->orig_bytes, buf + MD5_CTX_LEN, 
+		   len - MD5_CTX_LEN);
 	return MD5_CTX_LEN;		
 	break;
 
@@ -293,29 +190,29 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
 	if (len != MD5_CTX_LEN)
 	    return -1;
 	memcpy(&md5_ctx, buf, MD5_CTX_LEN); /* XXX Use buf only? */
-	*rbuf = (char *)(b  = driver_alloc_binary(MD5_LEN));
-	(*cfs.MD5_Final)(b->orig_bytes, &md5_ctx);
+	*rbuf = (char *)(bin = driver_alloc_binary(MD5_LEN));
+	MD5_Final(bin->orig_bytes, &md5_ctx);
 	return MD5_LEN;		
 	break;
 
     case DRV_SHA:
-	*rbuf = (char *)(b = driver_alloc_binary(SHA_LEN));
-	(*cfs.SHA1)(buf, len, b->orig_bytes);
+	*rbuf = (char *)(bin = driver_alloc_binary(SHA_LEN));
+	SHA1(buf, len, bin->orig_bytes);
 	return SHA_LEN;
 	break;
 
     case DRV_SHA_INIT:
-	*rbuf = (char *)(b = driver_alloc_binary(SHA_CTX_LEN));
-	(*cfs.SHA1_Init)((SHA_CTX *)b->orig_bytes);
+	*rbuf = (char *)(bin = driver_alloc_binary(SHA_CTX_LEN));
+	SHA1_Init((SHA_CTX *)bin->orig_bytes);
 	return SHA_CTX_LEN;		
 	break;
 
     case DRV_SHA_UPDATE:
 	if (len < SHA_CTX_LEN)
 	    return -1;
-	*rbuf = (char *)(b = driver_alloc_binary(SHA_CTX_LEN)); 
-	memcpy(b->orig_bytes, buf, SHA_CTX_LEN);
-	(*cfs.SHA1_Update)((SHA_CTX *)b->orig_bytes, buf + SHA_CTX_LEN, 
+	*rbuf = (char *)(bin = driver_alloc_binary(SHA_CTX_LEN)); 
+	memcpy(bin->orig_bytes, buf, SHA_CTX_LEN);
+	SHA1_Update((SHA_CTX *)bin->orig_bytes, buf + SHA_CTX_LEN, 
 			  len - SHA_CTX_LEN);
 	return SHA_CTX_LEN;		
 	break;
@@ -324,8 +221,8 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
 	if (len != SHA_CTX_LEN)
 	    return -1;
 	memcpy(&sha_ctx, buf, SHA_CTX_LEN); /* XXX Use buf only? */
-	*rbuf = (char *)(b = driver_alloc_binary(SHA_LEN));
-	(*cfs.SHA1_Final)(b->orig_bytes, &sha_ctx);
+	*rbuf = (char *)(bin = driver_alloc_binary(SHA_LEN));
+	SHA1_Final(bin->orig_bytes, &sha_ctx);
 	return SHA_LEN;		
 	break;
 
@@ -339,8 +236,8 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
 	dbuf = key + klen;
 	hmac_md5(key, klen, dbuf, dlen, hmacbuf);
 	macsize = (command == DRV_MD5_MAC) ? MD5_LEN : MD5_LEN_96;
-	*rbuf = (char *)(b = driver_alloc_binary(macsize));
-	memcpy(b->orig_bytes, hmacbuf, macsize);
+	*rbuf = (char *)(bin = driver_alloc_binary(macsize));
+	memcpy(bin->orig_bytes, hmacbuf, macsize);
 	return macsize;
 	break;
 
@@ -354,8 +251,8 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
 	dbuf = key + klen;
 	hmac_sha1(key, klen, dbuf, dlen, hmacbuf);
 	macsize = (command == DRV_SHA_MAC) ? SHA_LEN : SHA_LEN_96;
-	*rbuf = (char *)(b = driver_alloc_binary(macsize));
-	memcpy(b->orig_bytes, hmacbuf, macsize);
+	*rbuf = (char *)(bin = driver_alloc_binary(macsize));
+	memcpy(bin->orig_bytes, hmacbuf, macsize);
 	return macsize;
 	break;
 
@@ -365,11 +262,13 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
 	dlen = len - 16;
 	if (dlen < 0)
 	    return -1;
-	key = buf; ivec = buf + 8; dbuf = buf + 16;
-	*rbuf = (char *)(b = driver_alloc_binary(dlen));
-	(*cfs.des_set_key)(key, (void *)schedule);
-	(*cfs.des_ncbc_encrypt)(dbuf, b->orig_bytes, dlen, schedule, ivec, 
-				(command == DRV_CBC_DES_ENCRYPT));
+	des_key = (const_DES_cblock*) buf; 
+	des_ivec = (DES_cblock*)(buf + 8); 
+	des_dbuf = buf + 16;
+	*rbuf = (char *)(bin = driver_alloc_binary(dlen));
+	DES_set_key(des_key, &schedule);
+	DES_ncbc_encrypt(des_dbuf, bin->orig_bytes, dlen, &schedule, des_ivec, 
+			 (command == DRV_CBC_DES_ENCRYPT));
 	return dlen;
 	break;
 
@@ -378,15 +277,18 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
 	dlen = len - 32;
 	if (dlen < 0)
 	    return -1;
-	key = buf; key2 = buf + 8; key3 = buf + 16;
-	ivec = buf + 24; dbuf = buf + 32;
-	*rbuf = (char *)(b = driver_alloc_binary(dlen));
-	(*cfs.des_set_key)(key, (void *)schedule);
-	(*cfs.des_set_key)(key2, (void *)schedule2);
-	(*cfs.des_set_key)(key3, (void *)schedule3);
-	(*cfs.des_ede3_cbc_encrypt)(dbuf, b->orig_bytes, dlen, schedule,
-				schedule2, schedule3, ivec, 
-				(command == DRV_EDE3_CBC_DES_ENCRYPT));
+	des_key = (const_DES_cblock*) buf; 
+	des_key2 = (const_DES_cblock*) (buf + 8); 
+	des_key3 = (const_DES_cblock*) (buf + 16);
+	des_ivec = (DES_cblock*) (buf + 24); 
+	des_dbuf = buf + 32;
+	*rbuf = (char *)(bin = driver_alloc_binary(dlen));
+	DES_set_key(des_key, &schedule);
+	DES_set_key(des_key2, &schedule2);
+	DES_set_key(des_key3, &schedule3);
+	DES_ede3_cbc_encrypt(des_dbuf, bin->orig_bytes, dlen, &schedule,
+			     &schedule2, &schedule3, des_ivec, 
+			     (command == DRV_EDE3_CBC_DES_ENCRYPT));
 	return dlen;
 	break;
 
@@ -411,9 +313,9 @@ static void hmac_md5(char *key, int klen, char *dbuf, int dlen, char *hmacbuf)
     if (klen > HMAC_INT_LEN) {
 	MD5_CTX kctx;
 
-	(*cfs.MD5_Init)(&kctx);
-	(*cfs.MD5_Update)(&kctx, key, klen);
-	(*cfs.MD5_Final)(nkey, &kctx);
+	MD5_Init(&kctx);
+	MD5_Update(&kctx, key, klen);
+	MD5_Final(nkey, &kctx);
 	key = nkey;
 	klen = MD5_LEN;
     }
@@ -429,15 +331,15 @@ static void hmac_md5(char *key, int klen, char *dbuf, int dlen, char *hmacbuf)
     }
 
     /* inner MD5 */
-    (*cfs.MD5_Init)(&ctx);
-    (*cfs.MD5_Update)(&ctx, ipad, HMAC_INT_LEN);
-    (*cfs.MD5_Update)(&ctx, dbuf, dlen);
-    (*cfs.MD5_Final)(hmacbuf, &ctx);
+    MD5_Init(&ctx);
+    MD5_Update(&ctx, ipad, HMAC_INT_LEN);
+    MD5_Update(&ctx, dbuf, dlen);
+    MD5_Final(hmacbuf, &ctx);
     /* outer MD5 */
-    (*cfs.MD5_Init)(&ctx);
-    (*cfs.MD5_Update)(&ctx, opad, HMAC_INT_LEN);
-    (*cfs.MD5_Update)(&ctx, hmacbuf, MD5_LEN);
-    (*cfs.MD5_Final)(hmacbuf, &ctx);
+    MD5_Init(&ctx);
+    MD5_Update(&ctx, opad, HMAC_INT_LEN);
+    MD5_Update(&ctx, hmacbuf, MD5_LEN);
+    MD5_Final(hmacbuf, &ctx);
 }
 
 static void hmac_sha1(char *key, int klen, char *dbuf, int dlen, 
@@ -453,9 +355,9 @@ static void hmac_sha1(char *key, int klen, char *dbuf, int dlen,
     if (klen > HMAC_INT_LEN) {
 	SHA_CTX kctx;
 
-	(*cfs.SHA1_Init)(&kctx);
-	(*cfs.SHA1_Update)(&kctx, key, klen);
-	(*cfs.SHA1_Final)(nkey, &kctx);
+	SHA1_Init(&kctx);
+	SHA1_Update(&kctx, key, klen);
+	SHA1_Final(nkey, &kctx);
 	key = nkey;
 	klen = SHA_LEN;
     }
@@ -471,15 +373,15 @@ static void hmac_sha1(char *key, int klen, char *dbuf, int dlen,
     }
 
     /* inner SHA */
-    (*cfs.SHA1_Init)(&ctx);
-    (*cfs.SHA1_Update)(&ctx, ipad, HMAC_INT_LEN);
-    (*cfs.SHA1_Update)(&ctx, dbuf, dlen);
-    (*cfs.SHA1_Final)(hmacbuf, &ctx);
+    SHA1_Init(&ctx);
+    SHA1_Update(&ctx, ipad, HMAC_INT_LEN);
+    SHA1_Update(&ctx, dbuf, dlen);
+    SHA1_Final(hmacbuf, &ctx);
     /* outer SHA */
-    (*cfs.SHA1_Init)(&ctx);
-    (*cfs.SHA1_Update)(&ctx, opad, HMAC_INT_LEN);
-    (*cfs.SHA1_Update)(&ctx, hmacbuf, SHA_LEN);
-    (*cfs.SHA1_Final)(hmacbuf, &ctx);
+    SHA1_Init(&ctx);
+    SHA1_Update(&ctx, opad, HMAC_INT_LEN);
+    SHA1_Update(&ctx, hmacbuf, SHA_LEN);
+    SHA1_Final(hmacbuf, &ctx);
 }
 
 

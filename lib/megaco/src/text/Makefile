@@ -90,10 +90,19 @@ clean:
 docs:
 
 info:
+	@echo "MODULES            = $(MODULES)"
 	@echo "INTERNAL_YRL_FILES = $(INTERNAL_YRL_FILES)"
-	@echo ""
 	@echo "INTERNAL_HRL_FILES = $(INTERNAL_HRL_FILES)"
 	@echo ""
+	@echo "ERL_FILES          = $(ERL_FILES)"
+	@echo "ERL_TARGET_FILES   = $(ERL_TARGET_FILES)"
+	@echo "BEAM_TARGET_FILES  = $(BEAM_TARGET_FILES)"
+	@echo "TARGET_FILES       = $(TARGET_FILES)"
+	@echo ""
+	@echo "ERL_FLAGS          = $(ERL_FLAGS)"
+	@echo "ERL_COMPILE_FLAGS  = $(ERL_COMPILE_FLAGS)"
+	@echo ""
+	@echo "VSN                = $(VSN)"
 
 
 # ----------------------------------------------------

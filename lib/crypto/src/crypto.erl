@@ -25,6 +25,7 @@
 -export([sha/1, sha_init/0, sha_update/2, sha_final/1]).
 -export([md5_mac/2, md5_mac_96/2, sha_mac/2, sha_mac_96/2]).
 -export([des_cbc_encrypt/3, des_cbc_decrypt/3, des_cbc_ivec/1]).
+-export([des3_cbc_encrypt/5, des3_cbc_decrypt/5]).
 -export([des_ede3_cbc_encrypt/5, des_ede3_cbc_decrypt/5]).
 
 -define(INFO,		 0).
@@ -157,11 +158,15 @@ des_cbc_ivec(Data) when list(Data) ->
     des_cbc_ivec(list_to_binary(Data)).
 
 %%
-%% DES - in cipher block chaining mode (CBC)
+%% DES3 - in cipher block chaining mode (CBC)
 %%
+des3_cbc_encrypt(Key1, Key2, Key3, IVec, Data) ->
+    des_ede3_cbc_encrypt(Key1, Key2, Key3, IVec, Data).
 des_ede3_cbc_encrypt(Key1, Key2, Key3, IVec, Data) ->
     control(?DES_EDE3_CBC_ENCRYPT, [Key1, Key2, Key3, IVec, Data]).
 
+des3_cbc_decrypt(Key1, Key2, Key3, IVec, Data) ->
+    des_ede3_cbc_decrypt(Key1, Key2, Key3, IVec, Data).
 des_ede3_cbc_decrypt(Key1, Key2, Key3, IVec, Data) ->
     control(?DES_EDE3_CBC_DECRYPT, [Key1, Key2, Key3, IVec, Data]).
 

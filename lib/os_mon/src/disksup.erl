@@ -121,7 +121,7 @@ check_disks_solaris(Str, Threshold) ->
 	    end,
 	    [{MntOn, KB, Cap} |
 	     check_disks_solaris(RestStr, Threshold)];
-	Other ->
+	_Other ->
 	    check_disks_solaris(skip_to_eol(Str),Threshold)
     end.
 
@@ -129,7 +129,7 @@ check_disks_win32([], _Threshold) ->
     [];
 check_disks_win32([H|T], Threshold) ->
     case io_lib:fread("~s~s~d~d~d", H) of
-	{ok, [Drive,"DRIVE_FIXED",BAvail,BTot,_TotFree], RestStr} ->
+	{ok, [Drive,"DRIVE_FIXED",BAvail,BTot,_TotFree], _RestStr} ->
 	    Cap = trunc((BTot-BAvail) / BTot * 100),
 	    if
 		 Cap >= Threshold ->
@@ -139,9 +139,9 @@ check_disks_win32([H|T], Threshold) ->
 	    end,
 	    [{Drive, BTot, Cap} |
 	     check_disks_win32(T, Threshold)];
-	{ok,_,RestStr} ->
+	{ok,_,_RestStr} ->
 	    check_disks_win32(T,Threshold);
-	Other ->
+	_Other ->
 	    []
     end.
 
@@ -207,7 +207,7 @@ skip_to_eol([$\n | T]) ->
 skip_to_eol([_ | T]) ->
     skip_to_eol(T).
 
-format_status(Opt, [PDict, #state{os = OS, threshold = Threshold,
+format_status(_Opt, [_PDict, #state{os = OS, threshold = Threshold,
 				  timeout = Timeout, diskdata = DiskData}]) ->
     [{data, [{"OS", OS},
 	     {"Timeout", Timeout},

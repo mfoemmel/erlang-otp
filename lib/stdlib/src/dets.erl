@@ -211,8 +211,15 @@ fsck(Fname, Version) ->
     catch begin
       {ok, Fd, FH} = read_file_header(Fname, read, false),
       ?DEBUGF("FileHeader: ~p~n", [FH]),	    
-      fsck(Fd, make_ref(), Fname, FH, default, default, Version)
-      end.
+      case (FH#fileheader.mod):check_file_header(FH, Fd) of
+          {error, not_closed} ->
+              fsck(Fd, make_ref(), Fname, FH, default, default, Version);
+          {ok, _Head, _Extra} ->
+              fsck(Fd, make_ref(), Fname, FH, default, default, Version);
+          Error ->
+              Error
+      end
+    end.
 
 first(Tab) ->
     badarg_exit(treq(Tab, first), [Tab]).
@@ -305,6 +312,22 @@ insert(Tab, Obj) ->
 internal_open(Pid, Args) ->
     req(Pid, {internal_open, Args}).
 
+is_compatible_bchunk_format(Tab, Term) ->
+    badarg(treq(Tab, {is_compatible_bchunk_format, Term}), [Tab, Term]).
+
+is_dets_file(FileName) ->
+    case catch read_file_header(FileName, read, false) of
+	{ok, Fd, FH} ->
+	    file:close(Fd),
+	    FH#fileheader.cookie == ?MAGIC;
+	{error, {tooshort, _}} ->
+	    false;
+	{error, {not_a_dets_file, _}} ->
+	    false;
+	Other ->
+	    Other
+    end.
+
 lookup(Tab, Key) ->
     badarg(treq(Tab, {lookup_keys, [Key]}), [Tab, Key]).
 
@@ -370,22 +393,6 @@ member(Tab, Key) ->
 
 next(Tab, Key) ->
     badarg_exit(treq(Tab, {next, Key}), [Tab, Key]).
-
-is_compatible_bchunk_format(Tab, Term) ->
-    badarg(treq(Tab, {is_compatible_bchunk_format, Term}), [Tab, Term]).
-
-is_dets_file(FileName) ->
-    case catch read_file_header(FileName, read, false) of
-	{ok, Fd, FH} ->
-	    file:close(Fd),
-	    FH#fileheader.cookie == ?MAGIC;
-	{error, {tooshort, _}} ->
-	    false;
-	{error, {not_a_dets_file, _}} ->
-	    false;
-	Other ->
-	    Other
-    end.
 
 %% Assuming that a file already exists, open it with the
 %% parameters as already specified in the file itself.
@@ -802,48 +809,95 @@ init(Parent, Server) ->
 open_file_loop(Head) ->
     open_file_loop(Head, 0).
 
+open_file_loop(Head, N) when element(1, Head#head.update_mode) == error ->
+    open_file_loop2(Head, N);
 open_file_loop(Head, N) ->
+    receive 
+        %% When the table is fixed it can be assumed that at least one
+        %% traversal is in progress. To speed the traversal up three
+        %% things have been done:
+        %% - prioritize match_init, bchunk, next, and match_delete_init;
+        %% - do not peek the message queue for updates;
+        %% - wait 1 ms after each update.
+        %% next is normally followed by lookup, but since lookup is also
+        %% used when not traversing the table, it is not prioritized.
+        ?DETS_CALL(From, {match_init, _State} = Op) ->
+            do_apply_op(Op, From, Head, N);
+        ?DETS_CALL(From, {bchunk, _State} = Op) ->
+            do_apply_op(Op, From, Head, N);
+        ?DETS_CALL(From, {next, _Key} = Op) ->
+            do_apply_op(Op, From, Head, N);            
+        ?DETS_CALL(From, {match_delete_init, _MP, _Spec} = Op) ->
+            do_apply_op(Op, From, Head, N);
+        {'EXIT', Pid, Reason} when Pid == Head#head.parent ->
+            %% Parent orders shutdown.
+            _NewHead = do_stop(Head),
+            exit(Reason);
+        {'EXIT', Pid, Reason} when Pid == Head#head.server ->
+            %% The server is gone.
+            _NewHead = do_stop(Head),
+            exit(Reason);
+        {'EXIT', Pid, _Reason} ->
+            %% A process fixing the table exits.
+            H2 = remove_fix(Head, Pid, close),
+            open_file_loop(H2, N);
+        {system, From, Req} ->
+            sys:handle_system_msg(Req, From, Head#head.parent, 
+                                  ?MODULE, [], Head)
+    after 0 ->
+            open_file_loop2(Head, N)
+    end.
+
+open_file_loop2(Head, N) ->
     receive
-	?DETS_CALL(From, Op) ->
-	    case catch apply_op(Op, From, Head, N) of
-		ok -> 
-		    open_file_loop(Head, N);
-		{N2, H2} when record(H2, head), integer(N2) ->
-		    open_file_loop(H2, N2);
-		H2 when record(H2, head) ->
-		    open_file_loop(H2, N);
-		{'EXIT', normal} ->
-		    exit(normal);
-		Bad ->
-		    %% If stream_op/5 found more requests, this is not
-		    %% the last operation.
-		    Name = Head#head.name,
-		    error_logger:format
-		      ("** dets: Bug was found when accessing table ~w,~n"
-		       "** dets: operation was ~p and reply was ~w.~n",
-		       [Name, Op, Bad]),
-		    From ! {self(), {error, {dets_bug, Name, Op, Bad}}},
-		    open_file_loop(Head, N)
-	    end;
-	{'EXIT', Pid, Reason} when Pid == Head#head.parent ->
-	    %% Parent orders shutdown.
-	    _NewHead = do_stop(Head),
-	    exit(Reason);
-	{'EXIT', Pid, Reason} when Pid == Head#head.server ->
-	    %% The server is gone.
-	    _NewHead = do_stop(Head),
-	    exit(Reason);
-	{'EXIT', Pid, _Reason} ->
-	    %% A process fixing the table exits.
-	    H2 = remove_fix(Head, Pid, close),
-	    open_file_loop(H2, N);
-	{system, From, Req} ->
-	    sys:handle_system_msg(Req, From, Head#head.parent, 
-				  ?MODULE, [], Head);
-	Message ->
-	    error_logger:format("** dets: unexpected message (ignored): ~w~w",
-				[Message]),
-	    open_file_loop(Head, N)
+        ?DETS_CALL(From, Op) ->
+            do_apply_op(Op, From, Head, N);
+        {'EXIT', Pid, Reason} when Pid == Head#head.parent ->
+            %% Parent orders shutdown.
+            _NewHead = do_stop(Head),
+            exit(Reason);
+        {'EXIT', Pid, Reason} when Pid == Head#head.server ->
+            %% The server is gone.
+            _NewHead = do_stop(Head),
+            exit(Reason);
+        {'EXIT', Pid, _Reason} ->
+            %% A process fixing the table exits.
+            H2 = remove_fix(Head, Pid, close),
+            open_file_loop(H2, N);
+        {system, From, Req} ->
+            sys:handle_system_msg(Req, From, Head#head.parent, 
+                                  ?MODULE, [], Head);
+        Message ->
+            error_logger:format("** dets: unexpected message"
+                                "(ignored): ~w~n", [Message]),
+            open_file_loop(Head, N)
+    end.
+
+do_apply_op(Op, From, Head, N) ->
+    case catch apply_op(Op, From, Head, N) of
+        ok -> 
+            open_file_loop(Head, N);
+        {N2, H2} when record(H2, head), integer(N2) ->
+            open_file_loop(H2, N2);
+        H2 when record(H2, head) ->
+            open_file_loop(H2, N);
+        {'EXIT', normal} ->
+            exit(normal);
+        Bad ->
+            %% If stream_op/5 found more requests, this is not
+            %% the last operation.
+            Name = Head#head.name,
+            error_logger:format
+              ("** dets: Bug was found when accessing table ~w,~n"
+               "** dets: operation was ~p and reply was ~w.~n",
+               [Name, Op, Bad]),
+            if
+                From =/= self() ->
+                    From ! {self(), {error, {dets_bug, Name, Op, Bad}}};
+                true -> % auto_save | may_grow | {delayed_write, _}
+                    ok
+            end,
+            open_file_loop(Head, N)
     end.
 
 apply_op(Op, From, Head, N) ->
@@ -1085,38 +1139,40 @@ start_auto_save_timer(Head) ->
 %% lookup requests in parallel. Evalute delete_object, delete and
 %% insert as well.
 stream_op(Op, Pid, Pids, Head, N) ->
-    stream_op(Head, Pids, [], N, Pid, Op).
+    stream_op(Head, Pids, [], N, Pid, Op, Head#head.fixed).
 
-stream_loop(Head, Pids, C, N) ->
+stream_loop(Head, Pids, C, N, false = Fxd) ->
     receive
 	?DETS_CALL(From, Message) ->
-	    stream_op(Head, Pids, C, N, From, Message)
+	    stream_op(Head, Pids, C, N, From, Message, Fxd)
     after 0 ->
 	    stream_end(Head, Pids, C, N, no_more)
-    end.
+    end;
+stream_loop(Head, Pids, C, N, _Fxd) ->
+    stream_end(Head, Pids, C, N, no_more).
 
-stream_op(Head, Pids, C, N, Pid, {lookup_keys,Keys}) ->
+stream_op(Head, Pids, C, N, Pid, {lookup_keys,Keys}, Fxd) ->
     NC = [{{lookup,Pid},Keys} | C],
-    stream_loop(Head, Pids, NC, N);
-stream_op(Head, Pids, C, N, Pid, {insert, _Objects} = Op) ->
+    stream_loop(Head, Pids, NC, N, Fxd);
+stream_op(Head, Pids, C, N, Pid, {insert, _Objects} = Op, Fxd) ->
     NC = [Op | C],
-    stream_loop(Head, [Pid | Pids], NC, N);
-stream_op(Head, Pids, C, N, Pid, {delete_key, _Keys} = Op) ->
+    stream_loop(Head, [Pid | Pids], NC, N, Fxd);
+stream_op(Head, Pids, C, N, Pid, {delete_key, _Keys} = Op, Fxd) ->
     NC = [Op | C],
-    stream_loop(Head, [Pid | Pids], NC, N);
-stream_op(Head, Pids, C, N, Pid, {delete_object, _Objects} = Op) ->
+    stream_loop(Head, [Pid | Pids], NC, N, Fxd);
+stream_op(Head, Pids, C, N, Pid, {delete_object, _Objects} = Op, Fxd) ->
     NC = [Op | C],
-    stream_loop(Head, [Pid | Pids], NC, N);
-stream_op(Head, Pids, C, N, Pid, {member, Key}) ->
+    stream_loop(Head, [Pid | Pids], NC, N, Fxd);
+stream_op(Head, Pids, C, N, Pid, {member, Key}, Fxd) ->
     NC = [{{lookup,[Pid]},[Key]} | C],
-    stream_loop(Head, Pids, NC, N);
-stream_op(Head, Pids, C, N, Pid, Op) ->
+    stream_loop(Head, Pids, NC, N, Fxd);
+stream_op(Head, Pids, C, N, Pid, Op, _Fxd) ->
     stream_end(Head, Pids, C, N, {Pid,Op}).
 
 stream_end(Head, Pids0, C, N, Next) ->
     case catch update_cache(Head, lists:reverse(C)) of
 	{Head1, [], PwriteList} ->
-	    stream_end1(Pids0, Next, N, Head1, PwriteList);
+	    stream_end1(Pids0, Next, N, C, Head1, PwriteList);
 	{Head1, Found, PwriteList} ->
 	    %% Possibly an optimization: reply to lookup requests
 	    %% first, then write stuff. This makes it possible for
@@ -1126,9 +1182,9 @@ stream_end(Head, Pids0, C, N, Next) ->
 	    %%  latter requests were made before the lookup requests,
 	    %%  which can be confusing.)
 	    lookup_replies(Found),
-	    stream_end1(Pids0, Next, N, Head1, PwriteList);
+	    stream_end1(Pids0, Next, N, C, Head1, PwriteList);
 	Head1 when record(Head1, head) ->
-	    stream_end2(Pids0, Next, N, Head1, ok);	    
+	    stream_end2(Pids0, Next, N, C, Head1, ok);	    
 	{Head1, Error} ->
 	    %% Dig out the processes that did lookup or member.
 	    Fun = fun({{lookup,[Pid]},_Keys}, L) -> [Pid | L];
@@ -1137,22 +1193,30 @@ stream_end(Head, Pids0, C, N, Next) ->
 		  end,
 	    LPs0 = lists:foldl(Fun, [], C),
 	    LPs = lists:usort(lists:flatten(LPs0)),
-	    stream_end2(Pids0 ++ LPs, Next, N, Head1, Error)
+	    stream_end2(Pids0 ++ LPs, Next, N, C, Head1, Error)
     end.
 
-stream_end1(Pids, Next, N, Head, []) ->
-    stream_end2(Pids, Next, N, Head, ok);
-stream_end1(Pids, Next, N, Head, PwriteList) ->
+stream_end1(Pids, Next, N, C, Head, []) ->
+    stream_end2(Pids, Next, N, C, Head, ok);
+stream_end1(Pids, Next, N, C, Head, PwriteList) ->
     {Head1, PR} = (catch dets_utils:pwrite(Head, PwriteList)),
-    stream_end2(Pids, Next, N, Head1, PR).
+    stream_end2(Pids, Next, N, C, Head1, PR).
 
-stream_end2([Pid | Pids], Next, N, Head, Reply) ->
+stream_end2([Pid | Pids], Next, N, C, Head, Reply) ->
     Pid ! {self(), Reply},
-    stream_end2(Pids, Next, N+1, Head, Reply);
-stream_end2([], no_more, N, Head, _Reply) ->
+    stream_end2(Pids, Next, N+1, C, Head, Reply);
+stream_end2([], no_more, N, C, Head, _Reply) ->
+    penalty(Head, C),
     {N, Head};
-stream_end2([], {From, Op}, N, Head, _Reply) ->
+stream_end2([], {From, Op}, N, _C, Head, _Reply) ->
     apply_op(Op, From, Head, N).
+
+penalty(H, _C) when H#head.fixed == false ->
+    ok;
+penalty(_, [{{lookup,_Pids},_Keys}]) ->
+    ok;
+penalty(_, _C) ->
+    timer:sleep(1).
 
 lookup_replies([{P,O}]) ->
     lookup_reply(P, O);
@@ -1916,30 +1980,34 @@ fopen_existing_file(Tab, OpenArgs) ->
     MinF = (MinSlots == default) or (MinSlots == FH#fileheader.min_no_slots),
     MaxF = (MaxSlots == default) or (MaxSlots == FH#fileheader.max_no_slots),
     Do = case (FH#fileheader.mod):check_file_header(FH, Fd) of
-	     {ok, Head, true} when Rep == force, 
+	     {ok, Head, true} when Rep == force, Acc == read_write,
 				   FH#fileheader.version == 9,
 				   FH#fileheader.no_colls =/= undefined,
 				   MinF == true, MaxF == true, V9 == true ->
 		 {compact, Head};
-	     _ when Rep == force ->
-		 M = ", repair forced.",
-		 {repair, M};
+             {ok, _Head, _Extra} when Rep == force, Acc == read ->
+                 throw({error, {access_mode, Fname}});
+	     {ok, Head, need_compacting} when Acc == read ->
+                 {final, Head, true}; % Version 8 only.
 	     {ok, _Head, need_compacting} when Rep == true ->
 		 %% The file needs to be compacted due to a very big
 		 %% and fragmented free_list. Version 8 only.
 		 M = " is now compacted ...",
 		 {repair, M};
+	     {ok, _Head, _Extra} when Rep == force ->
+		 M = ", repair forced.",
+		 {repair, M};
 	     {ok, Head, ExtraInfo} ->
 		 {final, Head, ExtraInfo};
-	     {error, Reason} when Acc == read ->
-		 throw({error, {Reason, Fname}});
-	     {error, not_closed} when Rep == true ->
-		 %% Have to repair the file
+	     {error, not_closed} when Rep == force, Acc == read_write ->
+		 M = ", repair forced.",
+		 {repair, M};
+	     {error, not_closed} when Rep == true, Acc == read_write ->
 		 M = " not properly closed, repairing ...",
 		 {repair, M};
 	     {error, not_closed} when Rep == false ->
 		 throw({error, {needs_repair, Fname}});
-	     {error, version_bump} when Rep == true ->
+	     {error, version_bump} when Rep == true, Acc == read_write ->
                  %% Version 8 only
 		 M = " old version, upgrading ...",
 		 {repair, M};
@@ -2107,11 +2175,11 @@ compact(SourceHead) ->
     end.
 	    
 %% -> ok | Error
-%% Fd is closed.
+%% Closes Fd.
 fsck(Fd, Tab, Fname, FH, MinSlotsArg, MaxSlotsArg, Version) ->
     %% MinSlots and MaxSlots are the option values.
-    #fileheader{type = Type, keypos = Kp, mod = Mod,
-		min_no_slots = MinSlotsFile, max_no_slots = MaxSlotsFile} = FH,
+    #fileheader{min_no_slots = MinSlotsFile, 
+                max_no_slots = MaxSlotsFile} = FH,
     EstNoSlots0 = file_no_things(FH),
     MinSlots = choose_no_slots(MinSlotsArg, MinSlotsFile),
     MaxSlots = choose_no_slots(MaxSlotsArg, MaxSlotsFile),
@@ -2121,11 +2189,10 @@ fsck(Fd, Tab, Fname, FH, MinSlotsArg, MaxSlotsArg, Version) ->
     %% If the number of objects (keys) turns out to be significantly
     %% different from NoSlots, we try again with the correct number of
     %% objects (keys).
-    case fsck_try(Fd, Tab, Type, Kp, Fname, SlotNumbers, Mod, Version) of
+    case fsck_try(Fd, Tab, FH, Fname, SlotNumbers, Version) of
         {try_again, BetterNoSlots} ->
 	    BetterSlotNumbers = {MinSlots, BetterNoSlots, MaxSlots},
-            case fsck_try(Fd, Tab, Type, Kp, Fname, 
-			  BetterSlotNumbers, Mod, Version) of
+            case fsck_try(Fd, Tab, FH, Fname, BetterSlotNumbers, Version) of
                 {try_again, _} ->
                     file:close(Fd),
                     {error, {cannot_repair, Fname}};
@@ -2140,14 +2207,14 @@ choose_no_slots(default, NoSlots) -> NoSlots;
 choose_no_slots(NoSlots, _) -> NoSlots.
 
 %% -> ok | {try_again, integer()} | Error
-%% Fd is closed unless {try_again, _} is returned.
+%% Closes Fd unless {try_again, _} is returned.
 %% Initiating a table using a fun and repairing (or converting) a
 %% file are completely different things, but nevertheless the same
 %% method is used in both cases...
-%% Mod is the module to use for reading input when repairing.
-fsck_try(Fd, Tab, Type, KeyPos, Fname, SlotNumbers, Mod, Version) ->
+fsck_try(Fd, Tab, FH, Fname, SlotNumbers, Version) ->
     Tmp = lists:concat([Fname, ".TMP"]),
     file:delete(Tmp),
+    #fileheader{type = Type, keypos = KeyPos} = FH,
     {_MinSlots, EstNoSlots, MaxSlots} = SlotNumbers,
     OpenArgs = #open_args{file = Tmp, type = Type, keypos = KeyPos, 
                           repair = false, min_no_slots = EstNoSlots,
@@ -2157,7 +2224,7 @@ fsck_try(Fd, Tab, Type, KeyPos, Fname, SlotNumbers, Mod, Version) ->
                           version = Version},
     case catch fopen(Tab, OpenArgs) of
 	{ok, Head} ->
-            case fsck_try_est(Head, Fd, Fname, SlotNumbers, Mod) of
+            case fsck_try_est(Head, Fd, Fname, SlotNumbers, FH) of
                 {ok, NewHead} ->
                     R = case fclose(NewHead) of
                             ok ->
@@ -2182,9 +2249,11 @@ fsck_try(Fd, Tab, Type, KeyPos, Fname, SlotNumbers, Mod, Version) ->
     end.
 
 %% -> {ok, NewHead} | {try_again, integer()} | Error
-fsck_try_est(Head, Fd, Fname, SlotNumbers, Mod) ->
+fsck_try_est(Head, Fd, Fname, SlotNumbers, FH) ->
+    %% Mod is the module to use for reading input when repairing.
+    Mod = FH#fileheader.mod,
     Cntrs = ets:new(dets_repair, []),
-    Input = Mod:fsck_input(Head, Fd, Cntrs),
+    Input = Mod:fsck_input(Head, Fd, Cntrs, FH),
     {Reply, SizeData} = do_sort(Head, SlotNumbers, Input, Cntrs, Fname, Mod),
     Bulk = false,
     case Reply of 
@@ -2288,7 +2357,7 @@ close_tmp(Fd) ->
 fslot(H, Slot) ->
     catch begin
       {NH, []} = write_cache(H),
-      Objs = (H#head.mod):slot_objs(H, Slot),
+      Objs = (NH#head.mod):slot_objs(NH, Slot),
       {NH, Objs}
     end.
 
@@ -2523,7 +2592,7 @@ scan(Head, C) -> % when record(C, dets_cont)
     scan(Bin, Head, From, To, L, [], R, {C, Head#head.type}).
 
 scan(Bin, H, From, To, L, Ts, R, {C0, Type} = C) ->
-    case (H#head.mod):scan_objs(Bin, From, To, L, Ts, R, Type) of
+    case (H#head.mod):scan_objs(H, Bin, From, To, L, Ts, R, Type) of
         {more, NFrom, NTo, NL, NTs, NR, Sz} ->
             scan_read(H, NFrom, NTo, Sz, NL, NTs, NR, C);
         {stop, B, NFrom, NTo, NL, NTs} ->

@@ -20,6 +20,10 @@ ifndef EBIN
 EBIN = ../ebin
 endif
 
+ifndef DOCS
+DOCS = ../doc
+endif
+
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
@@ -37,24 +41,27 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-MODULES = hipe_finalize hipe_hot_cold hipe_rtl2sparc \
+DOC_MODULES = hipe_finalize hipe_hot_cold hipe_rtl2sparc \
 	  hipe_sparc hipe_sparc_assemble hipe_sparc_assert hipe_sparc_cfg \
 	  hipe_sparc_liveness hipe_sparc_op hipe_sparc_registers \
 	  hipe_sparc_size hipe_sparc_multimove \
 	  hipe_sparc_saver hipe_sparc_linker \
 	  hipe_sparc_ra_coalescing hipe_sparc_ra_post_ls \
+	  hipe_sparc_ra_cs hipe_sparc_ra_post_cs \
 	  hipe_sparc_ra_graph_color \
 	  hipe_sparc_ra_ls hipe_sparc_ra_postconditions \
 	  hipe_sparc_ra_memory hipe_sparc_frame\
 	  hipe_sparc_caller_saves hipe_sparc_stack_descriptors\
 	  hipe_sparc_ra hipe_sparc_pp hipe_sparc_prop_env\
-	  hipe_sparc_prop hipe_sparc_opt_frame hipe_sparc_ebb \
+	  hipe_sparc_prop hipe_sparc_opt_frame \
 	  hipe_sparc_ra_fp_naive hipe_sparc_ra_fp_ls \
 	  hipe_sparc_ra_post_ls_fp
+MODULES = $(DOC_MODULES) hipe_sparc_ebb
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+DOC_FILES= $(DOC_MODULES:%=$(DOCS)/%.html)
 
 # APP_FILE= 
 # APP_SRC= $(APP_FILE).src
@@ -76,11 +83,14 @@ ERL_COMPILE_FLAGS += +inline
 
 debug opt: $(TARGET_FILES) 
 
-docs:
+docs: $(DOC_FILES)
 
 clean:
 	rm -f $(TARGET_FILES)
 	rm -f core
+
+$(DOCS)/%.html:%.erl
+	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s erlang halt
 
 # ----------------------------------------------------
 # Special Build Targets

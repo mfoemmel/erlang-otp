@@ -65,7 +65,7 @@
 	 ann_c_letrec/3, ann_c_module/4, ann_c_module/5, ann_c_nil/1,
 	 ann_c_cons_skel/3, ann_c_tuple_skel/2, ann_c_primop/3,
 	 ann_c_receive/2, ann_c_receive/4, ann_c_seq/3, ann_c_string/2,
-	 ann_c_try/4, ann_c_tuple/2, ann_c_values/2, ann_c_var/2,
+	 ann_c_try/6, ann_c_tuple/2, ann_c_values/2, ann_c_var/2,
 	 ann_make_data/3, ann_make_list/2, ann_make_list/3,
 	 ann_make_data_skel/3, ann_make_tree/3, apply_args/1,
 	 apply_arity/1, apply_op/1, atom_lit/1, atom_name/1, atom_val/1,
@@ -73,7 +73,7 @@
 	 c_char/1, c_clause/2, c_clause/3, c_cons/2, c_float/1,
 	 c_fname/2, c_fun/2, c_int/1, c_let/3, c_letrec/2, c_module/3,
 	 c_module/4, c_nil/0, c_cons_skel/2, c_tuple_skel/1, c_primop/2,
-	 c_receive/1, c_receive/3, c_seq/2, c_string/1, c_try/3,
+	 c_receive/1, c_receive/3, c_seq/2, c_string/1, c_try/5,
 	 c_tuple/1, c_values/1, c_var/1, call_args/1, call_arity/1,
 	 call_module/1, call_name/1, case_arg/1, case_arity/1,
 	 case_clauses/1, catch_body/1, char_lit/1, char_val/1,
@@ -99,15 +99,16 @@
 	 primop_name/1, receive_action/1, receive_clauses/1,
 	 receive_timeout/1, seq_arg/1, seq_body/1, set_ann/2,
 	 string_lit/1, string_val/1, subtrees/1, to_records/1,
-	 try_body/1, try_expr/1, try_vars/1, tuple_arity/1, tuple_es/1,
-	 type/1, update_c_alias/3, update_c_apply/3, update_c_call/4,
-	 update_c_case/3, update_c_catch/2, update_c_clause/4,
-	 update_c_cons/3, update_c_cons_skel/3, update_c_fname/2,
-	 update_c_fname/3, update_c_fun/3, update_c_let/4,
-	 update_c_letrec/3, update_c_module/5, update_c_primop/3,
-	 update_c_receive/4, update_c_seq/3, update_c_try/4,
-	 update_c_tuple/2, update_c_tuple_skel/2, update_c_values/2,
-	 update_c_var/2, update_data/3, update_list/2, update_list/3,
+	 try_arg/1, try_body/1, try_vars/1, try_evars/1, try_handler/1,
+	 tuple_arity/1, tuple_es/1, type/1, update_c_alias/3,
+	 update_c_apply/3, update_c_call/4, update_c_case/3,
+	 update_c_catch/2, update_c_clause/4, update_c_cons/3,
+	 update_c_cons_skel/3, update_c_fname/2, update_c_fname/3,
+	 update_c_fun/3, update_c_let/4, update_c_letrec/3,
+	 update_c_module/5, update_c_primop/3, update_c_receive/4,
+	 update_c_seq/3, update_c_try/6, update_c_tuple/2,
+	 update_c_tuple_skel/2, update_c_values/2, update_c_var/2,
+	 update_data/3, update_list/2, update_list/3,
 	 update_data_skel/3, update_tree/2, update_tree/3,
 	 values_arity/1, values_es/1, var_name/1]).
 
@@ -2882,43 +2883,48 @@ primop_arity(Node) ->
 
 %% ---------------------------------------------------------------------
 
-%% @spec c_try(Expression::cerl(), Variables::[cerl()],
-%%             Body::cerl()) -> cerl()
+%% @spec c_try(Argument::cerl(), Variables::[cerl()], Body::cerl(),
+%%             ExceptionVars::[cerl()], Handler::cerl()) -> cerl()
 %%
-%% @doc Creates an abstract try-expression. If <code>Variables</code>
-%% is <code>[V1, ..., Vn]</code>, the result represents "<code>try
-%% <em>Expression</em> catch (<em>V1</em>, ..., <em>Vn</em>) ->
-%% <em>Body</em></code>". All the <code>Vi</code> must have type
-%% <code>var</code>.
+%% @doc Creates an abstract try-expression. If <code>Variables</code> is
+%% <code>[V1, ..., Vn]</code> and <code>ExceptionVars</code> is
+%% <code>[X1, ..., Xm]</code>, the result represents "<code>try
+%% <em>Argument</em> of &lt;<em>V1</em>, ..., <em>Vn</em>&gt; ->
+%% <em>Body</em> catch &lt;<em>X1</em>, ..., <em>Xm</em>&gt; ->
+%% <em>Handler</em></code>". All the <code>Vi</code> and <code>Xi</code>
+%% must have type <code>var</code>.
 %%
-%% @see ann_c_try/4
-%% @see update_c_try/4
+%% @see ann_c_try/6
+%% @see update_c_try/6
 %% @see is_c_try/1
-%% @see try_expr/1
+%% @see try_arg/1
 %% @see try_vars/1
 %% @see try_body/1
 %% @see c_catch/1
 
--record('try', {ann = [], expr, vars, body}).
+-record('try', {ann = [], arg, vars, body, evars, handler}).
 
-c_try(Expr, Vs, Body) ->
-    #'try'{expr = Expr, vars = Vs, body = Body}.
+c_try(Expr, Vs, Body, Evs, Handler) ->
+    #'try'{arg = Expr, vars = Vs, body = Body,
+	   evars = Evs, handler = Handler}.
 
 
 %% @spec ann_c_try(As::[term()], Expression::cerl(),
 %%                 Variables::[cerl()], Body::cerl()) -> cerl()
 %% @see c_try/3
 
-ann_c_try(As, Expr, Vs, Body) ->
-    #'try'{expr = Expr, vars = Vs, body = Body, ann = As}.
+ann_c_try(As, Expr, Vs, Body, Evs, Handler) ->
+    #'try'{arg = Expr, vars = Vs, body = Body,
+	   evars = Evs, handler = Handler, ann = As}.
 
 
 %% @spec update_c_try(Old::cerl(), Expression::cerl(),
 %%                    Variables::[cerl()], Body::cerl()) -> cerl()
 %% @see c_try/3
 
-update_c_try(Node, Expr, Vs, Body) ->
-    #'try'{expr = Expr, vars = Vs, body = Body, ann = get_ann(Node)}.
+update_c_try(Node, Expr, Vs, Body, Evs, Handler) ->
+    #'try'{arg = Expr, vars = Vs, body = Body,
+	   evars = Evs, handler = Handler, ann = get_ann(Node)}.
 
 
 %% @spec is_c_try(Node::cerl()) -> bool()
@@ -2934,19 +2940,19 @@ is_c_try(_) ->
     false.
 
 
-%% @spec try_expr(cerl()) -> cerl()
+%% @spec try_arg(cerl()) -> cerl()
 %%
 %% @doc Returns the expression subtree of an abstract try-expression.
 %%
 %% @see c_try/3
 
-try_expr(Node) ->
-    Node#'try'.expr.
+try_arg(Node) ->
+    Node#'try'.arg.
 
 
 %% @spec try_vars(cerl()) -> [cerl()]
 %%
-%% @doc Returns the list of variable subtrees of an abstract
+%% @doc Returns the list of success variable subtrees of an abstract
 %% try-expression.
 %%
 %% @see c_try/3
@@ -2957,12 +2963,34 @@ try_vars(Node) ->
 
 %% @spec try_body(cerl()) -> cerl()
 %%
-%% @doc Returns the body subtree of an abstract try-expression.
+%% @doc Returns the success body subtree of an abstract try-expression.
 %%
 %% @see c_try/3
 
 try_body(Node) ->
     Node#'try'.body.
+
+
+%% @spec try_evars(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of exception variable subtrees of an abstract
+%% try-expression.
+%%
+%% @see c_try/3
+
+try_evars(Node) ->
+    Node#'try'.evars.
+
+
+%% @spec try_handler(cerl()) -> cerl()
+%%
+%% @doc Returns the exception body subtree of an abstract
+%% try-expression.
+%%
+%% @see c_try/3
+
+try_handler(Node) ->
+    Node#'try'.handler.
 
 
 %% ---------------------------------------------------------------------
@@ -3129,9 +3157,11 @@ to_records(Node) ->
 		      args = list_to_records(primop_args(Node))};
 	'try' ->
 	    #c_try{anno = A,
-		   expr = to_records(try_expr(Node)),
+		   arg = to_records(try_arg(Node)),
 		   vars = list_to_records(try_vars(Node)),
-		   body = to_records(try_body(Node))};
+		   body = to_records(try_body(Node)),
+		   evars = list_to_records(try_evars(Node)),
+		   handler = to_records(try_handler(Node))};
 	'catch' ->
 	    #c_catch{anno = A,
 		     body = to_records(catch_body(Node))};
@@ -3256,9 +3286,10 @@ from_records(#c_call{module = M, name = N, args = Es, anno = As}) ->
 	       from_records_list(Es));
 from_records(#c_primop{name = N, args = Es, anno = As}) ->
     ann_c_primop(As, from_records(N), from_records_list(Es));
-from_records(#c_try{expr = E, vars = Vs, body = B, anno = As}) ->
+from_records(#c_try{arg = E, vars = Vs, body = B,
+		    evars = Evs, handler = H, anno = As}) ->
     ann_c_try(As, from_records(E), from_records_list(Vs),
-	      from_records(B));
+	      from_records(B), from_records_list(Evs), from_records(H));
 from_records(#c_catch{body = B, anno = As}) ->
     ann_c_catch(As, from_records(B));
 from_records(#c_module{name = N, exports = Es, attrs = Ds, defs = Fs,
@@ -3560,7 +3591,8 @@ subtrees(T) ->
 		    [receive_clauses(T), [receive_timeout(T)],
 		     [receive_action(T)]];
 		'try' ->
-		    [[try_expr(T)], try_vars(T), [try_body(T)]];
+		    [[try_arg(T)], try_vars(T), [try_body(T)],
+		     try_evars(T), [try_handler(T)]];
 		'catch' ->
 		    [[catch_body(T)]];
 		letrec ->
@@ -3659,7 +3691,8 @@ ann_make_tree(As, alias, [[V], [P]]) -> ann_c_alias(As, V, P);
 ann_make_tree(As, 'fun', [Vs, [B]]) -> ann_c_fun(As, Vs, B);
 ann_make_tree(As, 'receive', [Cs, [T], [A]]) ->
     ann_c_receive(As, Cs, T, A);
-ann_make_tree(As, 'try', [[E], Vs, [B]]) -> ann_c_try(As, E, Vs, B);
+ann_make_tree(As, 'try', [[E], Vs, [B], Evs, [H]]) ->
+    ann_c_try(As, E, Vs, B, Evs, H);
 ann_make_tree(As, 'catch', [[B]]) -> ann_c_catch(As, B);
 ann_make_tree(As, letrec, [Es, [B]]) ->
     ann_c_letrec(As, fold_tuples(Es), B);
@@ -3829,9 +3862,11 @@ meta_1('receive', Node) ->
 	       meta(receive_action(Node))]);
 meta_1('try', Node) ->
     meta_call(c_try,
-	      [meta(try_expr(Node)),
+	      [meta(try_arg(Node)),
 	       make_list(meta_list(try_vars(Node))),
-	       meta(try_body(Node))]);
+	       meta(try_body(Node)),
+	       make_list(meta_list(try_evars(Node))),
+	       meta(try_handler(Node))]);
 meta_1('catch', Node) ->
     meta_call(c_catch, [meta(catch_body(Node))]);
 meta_1(letrec, Node) ->

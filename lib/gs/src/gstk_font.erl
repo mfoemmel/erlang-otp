@@ -57,8 +57,8 @@ init() -> true.
 %%----------------------------------------------------------------------
 -ifndef(NEW_WIDTH_HEIGHT).
 width_height(_DB, FontSpec, Txt) ->
-    FontSpecStr = tk_font_spec(FontSpec),
-    case gstk:call([".dfw.l co -font ", FontSpecStr,
+    FontSpecStr = tk_font_spec(norm_font_spec(FontSpec)),
+    case gstk:call([".dfw.l co -font {", FontSpecStr,"}",
 		   " -text ", gstk:to_ascii(Txt)]) of
 	{result, _} ->
 	    Width = tcl2erl:ret_int("update idletasks;winfo w .dfw.l"),
@@ -73,13 +73,14 @@ width_height(_DB, FontSpec, Txt) ->
 %% This code should work but does't. Tk gives incorrect
 %% values if asking to fast or something /kent
 width_height(DB, FontSpec, Txt) when tuple(FontSpec) ->
-    FontSpecStr = tk_font_spec(FontSpec),
-    {Family,Size} = font_family_size(FontSpec),
+    NormFontSpec = norm_font_spec(FontSpec),
+    FontSpecStr = tk_font_spec(NormFontSpec),
+    {Family,_,Size} = NormFontSpec,
     LineHeight =
 	case cached_line_height(DB, {Family,Size}) of
 	    undefined ->
 		LineH = tcl2erl:ret_int(
-			  ["font metrics ",FontSpecStr," -linespace"]),
+			  ["font metrics {",FontSpecStr,"} -linespace"]),
 		cache_line_height(DB, {Family,Size}, LineH),
 		LineH;
 	    LineH ->
@@ -87,23 +88,18 @@ width_height(DB, FontSpec, Txt) when tuple(FontSpec) ->
 	end,
     EscapedText = gstk:to_ascii(Txt),
     Width = tcl2erl:ret_int(
-	      ["font measure ",FontSpecStr," ",EscapedText]),
+	      ["font measure {",FontSpecStr,"} ",EscapedText]),
     Height = LineHeight * line_count(Txt),
     {Width,Height};
 
 width_height(_DB, FontSpec, Txt) when list(FontSpec) ->
     EscapedText = gstk:to_ascii(Txt),
     Width =
-	tcl2erl:ret_int(["font measure ",FontSpec," ",EscapedText]),
+	tcl2erl:ret_int(["font measure {",FontSpec,"} ",EscapedText]),
     LineHeight =
-	tcl2erl:ret_int(["font metrics ",FontSpec," -linespace"]),
+	tcl2erl:ret_int(["font metrics {",FontSpec,"} -linespace"]),
     Height = LineHeight * line_count(Txt),
     {Width,Height}.
-
-font_family_size({Family,_Style,Size}) ->
-    {Family,Size};
-font_family_size({Family,Size}) ->
-    {Family,Size}.
 
 cached_line_height(DB,FontSpec) ->
     gstk_db:lookup(DB, {cached_line_height,FontSpec}).
@@ -146,95 +142,110 @@ choose_ascii(DB, Font) ->
 %% 
 %% ###########################################################################
 
-choose(DB, {Fam,Siz}) ->
-    choose(DB, Fam,[],Siz);
-choose(DB, {Fam,Styl,Siz}) ->
-    choose(DB, Fam, Styl, Siz).
-choose(DB, Fam, Styl, Siz) ->
-    Style = case Styl of
-		italic -> [italic];
-		bold -> [bold];
-		[italic,bold] -> [bold,italic];
-		[bold,italic] -> [bold,italic];	% FIXME: optimize with "when"
-		Any -> Any			% FIXME: Need catch all?
-	    end,
-    case gstk_db:lookup(DB,{font,Fam,Style,Siz}) of
+choose(DB, FontSpec) ->
+    choose_font(DB, norm_font_spec(FontSpec)).
+
+choose_font(DB, {Fam,Styl,Siz}) ->
+    Fam0 = map_family(Fam),
+    case gstk_db:lookup(DB,{font,Fam0,Styl,Siz}) of
 	{variable,_OwnFontName} -> true;
 	undefined -> 
 	    N = gstk_db:counter(DB,font),   % FIXME: Can use "font create"
 					    % without name to get unique name
 	    NewName=["f",gstk:to_ascii(N)],
-%	    io:format("~s\n\n",[lists:flatten(["font create ",NewName,tk_font_opt(Fam, Style, Siz)])]),
-	    gstk:exec(["font create ",NewName,tk_font_opt(Fam, Style, Siz)]),
+%	    io:format("~s\n\n",
+%		      [lists:flatten(["font create ",NewName," ",
+%				      tk_font_spec({Fam0,Styl,Siz})])]),
+	    gstk:exec(["font create ",NewName," ",
+		       tk_font_spec({Fam0,Styl,Siz})]),
 	    %% should us variable syntax gs(f1) instead
 	    %% have to recompile erlcall to define this global gs var
 	    V2 = {variable,NewName},
-	    gstk_db:insert(DB,{font,Fam,Style,Siz},V2),
+	    gstk_db:insert(DB,{font,Fam0,Styl,Siz},V2),
 	    true
     end,
-%    io:format("choose(~p,~p,~p) =>\n~p\n\n",[Fam,Styl,Siz,{Fam,Style,Siz}]),
-    {Fam,Style,Siz}.
+%   io:format("choose(~p,~p,~p) =>\n~p\n\n",[Fam,Styl,Siz,{Fam0,Styl,Siz}]),
+    {Fam0,Styl,Siz}.
+
 
 %% ----- The Font Model -----
 
-% Guaranteed system fonts to exists in Tk 8.2 are:
-%
-%   Windows   : system systemfixed ansi ansifixed device oemfixed
-%   Unix      : fixed
-%
-% Times, Courier and Helvetica always exists. Tk try to substitute
-% others with the best matchin font.
+%%  Guaranteed system fonts to exists in Tk 8.2 are:
+%%
+%%    Windows   : system systemfixed ansi ansifixed device oemfixed
+%%    Unix      : fixed
+%%
+%%  Times, Courier and Helvetica always exists. Tk try to substitute
+%%  others with the best matchin font.
 
-tk_font_spec({Family,Size}) ->
-    tk_font_spec({Family,[],Size});
-tk_font_spec({Family,Style,Size}) when atom(Style) ->
-    tk_font_spec({Family,[Style],Size});	% FIXME:  Case needed?
-tk_font_spec({Family,Style,Size}) when list(Style) ->
-    ["{",
-     font_family(Family),
-     " ",
-     gstk:to_ascii(Size),
-     " ",
-     tk_font_spec_style(Style),
-     "}"
-    ].
-     
+%%  We map GS font style and names to something we know Tk 8 have.
+%%  We know Tk have 'times', 'courier', 'helvetica' and 'fixed'.
+%% 
+%%  GS style specification is 'bold' or 'italic'.
+%%  GS family is a typeface of type 'times', 'courier', 'helvetica',
+%%  'symbol', 'new_century_schoolbook', or 'screen' (which is a suitable
+%%  screen font).
+%%
+%%  Note that 'symbol' may not be present and this is not handled.
+%%
+%%  The X/Tk8 font handling don't work very well. The fonts are
+%%  scaled "tk scaling", we can display a 9 and 10 point helvetica
+%%  but "font actual {helvetica 9}" will return 10 points....
+
+map_family(new_century_schoolbook) ->
+    times;
+map_family(Fam) ->
+    Fam.
+
+% Normalize so can make the coding easier and compare font
+% specifications stored in database with new ones. We ignore invalid
+% entries in the list.
+
+norm_font_spec({Family,Size}) ->
+    {Family,[],Size};
+norm_font_spec({Family,Style,Size}) ->
+    {Family,norm_style(Style),Size}.
+
+norm_style(bold) ->
+    [bold];
+norm_style(italic) ->
+    [italic];
+norm_style([italic]) ->
+    [italic];
+norm_style([bold]) ->
+    [bold];
+norm_style([bold,italic] = Style) ->
+    Style;
+norm_style([italic,bold]) ->
+    [bold,italic];
+norm_style(List) when list(List) -> % not well formed list, ignore garbage
+    case {lists:member(bold, List),lists:member(italic, List)} of
+	{true,true} ->
+	    [bold,italic];
+	{true,_} ->
+	    [bold];
+	{_,true} ->
+	    [italic];
+	_ ->
+	    []			   % ignore garbage
+    end;
+norm_style(_Any) ->		   % ignore garbage
+    [].
+
+
+% Create a tcl string from a normalized font specification  
+% The style list is normalized.
+
+tk_font_spec({Fam,Style,Size}) ->
+    ["-family ",gstk:to_ascii(Fam),
+     " -size ",gstk:to_ascii(-Size),
+     tk_font_spec_style(Style)].
+
 tk_font_spec_style([]) ->
     "";
 tk_font_spec_style([bold]) ->
-    "bold";
+    " -weight bold";
 tk_font_spec_style([italic]) ->
-    "italic";
-tk_font_spec_style([bold | Styles]) ->
-    ["bold ",tk_font_spec_style(Styles)];
-tk_font_spec_style([italic | Styles]) ->
-    ["italic ",tk_font_spec_style(Styles)].
-
-
-tk_font_opt(Fam, Styl, Siz) ->
-    [" -family ",
-     font_family(Fam),
-     tk_font_opt(Styl, Siz)].
-
-tk_font_opt(Styl, Siz) ->
-    [" -size ",
-     gstk:to_ascii(Siz),
-     tk_font_opt(Styl)
-    ].
-
-tk_font_opt([]) ->
-    "";
-tk_font_opt([bold | Styl]) ->
-    [" -weight bold",
-     tk_font_opt(Styl)];
-tk_font_opt([italic | Styl]) ->
-    [" -slant italic",
-     tk_font_opt(Styl)].
-
-
-% We do some font family translations
-
-font_family(new_century_schoolbook) ->
-    "\"new century schoolbook\"";
-font_family(Family) ->
-    gstk:to_ascii(Family).
+    " -slant italic";
+tk_font_spec_style([bold,italic]) ->
+    " -weight bold -slant italic".

@@ -31,7 +31,21 @@
 	  max_serial,
 	  request_timer,
 	  long_request_timer,
-	  auto_ack,           % Auto send of ack: false | true 
+
+	  %% Auto send of ack: false | true 
+	  %% (if accu_ack_timer is zero (0), then acks will
+	  %%  be sent immediatly)
+	  auto_ack,           
+	  
+	  %% Accumulate ack's, and send them later. Either 
+	  %% when the timer expires or when maxcount number 
+	  %% of ack's has been accumulated (whichever happens
+	  %% first).
+	  %% (only valid if auto_ack is true)
+	  accu_ack_timer,      % 0 (don't accumulate ack)
+	  accu_ack_maxcount,   % 10
+	  ack_sender,          % The ack sender process ref, or undefined
+
 	  pending_timer, 
 	  reply_timer, 
 	  control_pid,

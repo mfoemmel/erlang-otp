@@ -35,6 +35,7 @@
 -record(fail_to, {reason, label, info}).
 -record(fload, {dst, src, off, info}).
 -record(fstore, {dst, off, src, info}).
--record(fmov, {dst, src, negate, info=[]}).
+-record(fmov, {dst, src, info=[]}).
 -record(fp, {dst, src1, op, src2, info}).
+-record(fp_unop, {dst, src, op, info}).
 -record(fconv, {dst, src, info=[]}).

@@ -1,3 +1,4 @@
 
-SNMPEA_VSN = 3.3.8
+SNMPEA_VSN = 3.4
+APP_VSN    = "snmp-$(SNMPEA_VSN)"
 

@@ -41,9 +41,10 @@
 -export([subtract/2,is_subset/2]).
 -export([fold/3,filter/2]).
 
-%% Depreciated interface.
+%% Deprecated interface.
 
 -export([new_set/0,set_to_list/1,list_to_set/1,subset/2]).
+-deprecated([{new_set,0},{set_to_list,1},{list_to_set,1},{subset,2}]).
 
 %-define(seg_size, 2).
 %-define(max_seg, 32).

@@ -2,11 +2,11 @@
 %% ====================================================================
 %% Copyright (c) 1998 by Erik Johansson.  All Rights Reserved 
 %% ====================================================================
-%%  Filename : 	hipe.erl
-%%  Module   :	hipe
+%%  Filename : hipe.erl
+%%  Module   : hipe
 %%  Purpose  :  
 %%  Notes    : 
-%%  History  :	* 1998-01-28 Erik Johansson (happi@csd.uu.se): Created.
+%%  History  : * 1998-01-28 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      : $Id$
 %% ====================================================================
 %% @doc This is the direct interface to the HiPE compiler.
@@ -43,7 +43,7 @@
 %% early option will shadow a later one.
 %% <dl>
 %%   <dt><code>o0, 'O0', o1, 'O1', o2, 'O2', o3, 'O3'</code></dt>
-%%     <dd>Set optimization level (default 0).</dd>
+%%     <dd>Set optimization level (default 2).</dd>
 %%
 %%   <dt><code>{'O', N}</code></dt>
 %%     <dd>Set optimization level to <code>N</code>.</dd>
@@ -83,12 +83,17 @@
 %%   <dt><code>icode_prop</code></dt>
 %%     <dd>One pass of Icode optimization.</dd>
 %%
-%%   <dt><code>icode_bwd_cprop</code></dt>
-%%     <dd>Backward copy propagation on Icode.</dd>
-%%
 %%   <dt><code>icode_ssa</code></dt>
-%%     <dd>Runs the compiler with Static Single Assignment (SSA) Form on
+%%     <dd>Runs the compiler with Static Single Assignment (SSA) form on
 %%     the Icode level.</dd>
+%%
+%%   <dt><code>icode_ssa_copy_prop</code></dt>
+%%     <dd>Performs copy propagation on the SSA form on
+%%     the Icode level. Needs <code>icode_ssa</code> to be turned on </dd>
+%%
+%%   <dt><code>icode_type</code></dt>
+%%     <dd>A type propagator on the icode level. 
+%%     Needs <code>icode_ssa</code> to be turned on </dd>
 %%
 %%   <dt><code>pp_all</code></dt>
 %%     <dd>Equivalent to <code>[pp_beam, pp_icode, pp_rtl,
@@ -124,20 +129,21 @@
 %%     <p><code>Method</code> is one of the following:
 %%     <ul>
 %%       <li><code>naive</code>: spills everything (for debugging and
-%%       testing).</li>
-%%       <li><code>linear_scan</code>: fast; not so good if few
-%%       registers available.</li>
-%%       <li><code>graph_color</code>: slow, but gives better
+%%       testing only).</li>
+%%       <li><code>linear_scan</code>: fast compilation; not so good if
+%%       only few registers available.</li>
+%%       <li><code>graph_color</code>: slower, but gives better
 %%       performance.</li>
-%%       <li><code>coalescing</code>: tries hard to use registers.</li>
+%%       <li><code>coalescing</code>: tries hard to use registers; can be
+%%	 very slow, but typically results in code with best performance.</li>
 %%     </ul></p></dd>
 %%
 %%   <dt><code>remove_comments</code></dt>
 %%     <dd>Remove comments from intermediate code.</dd>
 %%
 %%   <dt><code>rtl_cse</code></dt>
-%%     <dd>Common subexpression elimination on RTL. Also <code>{rtl_cse,
-%%     CSE_type}</code>.
+%%     <dd>Performs common subexpression elimination on RTL. Also
+%%	<code>{rtl_cse,CSE_type}</code>.
 %%
 %%     <p><code>CSE_type</code> is one of the following:
 %%     <ul>
@@ -225,6 +231,7 @@
 	 compile/1,
 	 compile/2,
 	 compile/3,
+	 compile/4,
  	 file/1,
  	 file/2,
 	 load/1,
@@ -432,12 +439,30 @@ beam_file(Module) when is_atom(Module) ->
 %%
 %% @see compile/2
 
+compile(Name, {[], File}, Opts0) ->
+  compile(Name, File, Opts0);
+compile(Name, {Core, File}, Opts0) ->
+  compile(Name, Core, File, Opts0);
 compile(Name, File, Opts0) ->
+  DisasmFun = fun (_) -> hipe_beam_to_icode:disasm(File) end,
+  IcodeFun = fun (Code, Opts) ->
+		 get_beam_icode(Name, Code, File, Opts)
+	     end,
+  compile_1(Name, DisasmFun, IcodeFun, Opts0).
+
+compile(Name, Core, File, Opts0) when atom(Name) ->
+  DisasmFun = fun (_) -> {false, []} end,
+  IcodeFun = fun (_, Opts) ->
+		 get_core_icode(Name, Core, File, Opts)
+	     end,
+  compile_1(Name, DisasmFun, IcodeFun, Opts0).
+
+compile_1(Name, DisasmFun, IcodeFun, Opts0) ->
   check_module(Name),
   Opts = expand_basic_options(Opts0 ++ ?COMPILE_DEFAULTS),
   ?when_option(verbose, Opts, ?debug_msg("Compiling: ~p\n",[Name])),
   ?option_start_time("Compile", Opts),
-  Res = compile_any(Name, File, Opts),
+  Res = run_compiler(DisasmFun, IcodeFun, Opts),
   ?option_stop_time("Compile",Opts),
   Res.
 
@@ -445,7 +470,7 @@ check_module(hipe_internal) ->
   ?error_msg("Nope, can't do that\n",[]),
   ?EXIT({cant_compile_hipe_internal});
 check_module(_) ->
-      ok.
+  ok.
 
 %% @spec file(File) -> {ok, Name, Binary} | {error, Reason}
 %%       File = filename() | binary()
@@ -488,41 +513,27 @@ file(File, Options) ->
 
 %% The rest are internal functions:
 
-compile_any({M,_F,_A} = MFA, File, Options) ->
+get_beam_icode({M,_F,_A} = MFA, BeamCode, _File, Options) ->
   %% When compiling just one function, then the emulated code for the
   %% module must be loaded.
   code:ensure_loaded(M),
-  CompFun = fun (Code, File, Opts) ->
-		compile_mfa(MFA, Code, File, Opts)
-	    end,
-  run_compiler(File, CompFun, Options);
-compile_any(Mod, File, Options) ->
-  CompFun = fun (Code, File, Opts) ->
-		compile_module(Mod, Code, File, Opts)
-	    end,
-  run_compiler(File, CompFun, Options).
-
-%% Note that compile_mfa/compile_module only collect the Icode. 
-%% Most of the real work is then done in the 'finalize' function.
-
-compile_mfa({M,_F,_A} = MFA, BeamCode, _File, Options) ->
   ?option_time({ok,Icode} = 
 	       (catch {ok,hipe_beam_to_icode:mfa(BeamCode, MFA, Options)}),
 	       "BEAM-to-Icode", Options),
-  compile_finish(Icode, M, false, Options).
-
-compile_module(Mod, BeamCode, File, Options) ->
+  {Icode, M, false};
+get_beam_icode(Mod, BeamCode, File, Options) ->
   ?option_time({ok, Icode} =
 	       (catch {ok, hipe_beam_to_icode:module(BeamCode, Options)}),
 	       "BEAM-to-Icode", Options),
   BeamBin = get_beam_code(File),
-  compile_finish(Icode, Mod, BeamBin, Options).
+  {Icode, Mod, BeamBin}.
 
-compile_finish({'EXIT',Error}, _Mod, _WholeModule, _Options) ->
-  {error, Error};
-compile_finish(Icode, Mod, WholeModule, Options) ->
-  Res = finalize(Icode, Mod, WholeModule, Options),
-  post(Res, Options).
+get_core_icode(Mod, Core, File, Options) ->
+  ?option_time({ok, Icode} =
+	       (catch {ok, cerl_to_icode:module(Core, Options)}),
+	       "BEAM-to-Icode", Options),
+  BeamBin = get_beam_code(File),
+  {Icode, Mod, BeamBin}.
 
 get_beam_code(Bin) when is_binary(Bin) -> Bin;
 get_beam_code(FileName)->
@@ -533,9 +544,11 @@ get_beam_code(FileName)->
       ?EXIT(no_beam_file)
   end.
 
-%% Note that this function receives the "basic" options.
+%% Note that this function receives the "basic" options.  The DisasmFun
+%% and IcodeFun only collect the Icode. Most of the real work is done in
+%% the 'finalize' function.
 
-run_compiler(File, CompFun, Options) ->
+run_compiler(DisasmFun, IcodeFun, Options) ->
   %% Spawn and link in case the linked CompProc gets killed. Make sure
   %% the main process catches the signal if this happens.
   process_flag(trap_exit, false),
@@ -545,13 +558,14 @@ run_compiler(File, CompFun, Options) ->
 		   %% Compiler process
 		   set_architecture(Options),
 		   pre_init(Options),
-		   {Code,CompOpts} = hipe_beam_to_icode:disasm(File),
+		   {Code, CompOpts} = DisasmFun(Options),
 		   Opts = expand_options(Options ++ CompOpts),
 		   check_options(Opts),
 		   ?when_option(verbose, Options,
 				?debug_msg("Options: ~p.\n",[Opts])),
 		   init(Opts),
-		   Result = CompFun(Code, File, Opts),
+		   {Icode, Mod, BeamBin} = IcodeFun(Code, Opts),
+		   Result = compile_finish(Icode, Mod, BeamBin, Opts),
 		   compiler_return(Result, Parent)
 	       end),
   Timeout = case proplists:get_value(timeout, Options) of
@@ -575,6 +589,12 @@ run_compiler(File, CompFun, Options) ->
 
 compiler_return(Res, Client) ->
   Client ! {self(), Res}.
+
+compile_finish({'EXIT',Error}, _Mod, _WholeModule, _Options) ->
+  {error, Error};
+compile_finish(Icode, Mod, WholeModule, Options) ->
+  Res = finalize(Icode, Mod, WholeModule, Options),
+  post(Res, Options).
 
 
 %% ---------------------------------------------------------------------
@@ -771,7 +791,7 @@ pre_init(Opts) ->
   
   put(hipe_debug,proplists:get_bool(debug, Options)),  
   put(hipe_inline_fp, proplists:get_bool(inline_fp, Options)),
-  put(hipe_inline_bs, proplists:get_value(inline_bs, Options)),
+  put(hipe_inline_bs, proplists:get_bool(inline_bs, Options)),
   ok.
 
 %% Prepare the compiler process by setting up variables which are
@@ -957,6 +977,8 @@ option_text(icode_prop) ->
 option_text(icode_ssa) ->
   "Runs the compiler with Static Single Assignment (SSA) Form\n"++
   "on the Icode level.";
+option_text(icode_ssa_check) ->
+  "Checks wheter Icode is on SSA form or not\n";
 option_text(load) ->
   "Automatically load the produced code into memory.";
 option_text(pp_asm) ->
@@ -1111,9 +1133,10 @@ opt_keys() ->
      frame_x86,
      hot,
      hotness,
-     icode_bwd_cprop,
      icode_prop,
      icode_ssa,
+     icode_ssa_check,
+     icode_ssa_copy_prop,
      icode_type,
      inline_bs,
      inline_fp,
@@ -1124,6 +1147,8 @@ opt_keys() ->
      pp_asm,
      pp_beam,
      pp_icode,
+     pp_opt_icode,
+     pp_typed_icode,
      pp_native,
      pp_rtl,
      regalloc,
@@ -1132,6 +1157,7 @@ opt_keys() ->
      rtl_cse,
      rtl_prop_1,
      rtl_prop_2,
+     rtl_prop_3,
      rtl_show_translation,
      safe,
      sparc_estimate_block_time,
@@ -1168,7 +1194,11 @@ o1_opts() ->
   end.
 
 o2_opts() ->
-  Common = [icode_ssa, use_indexing, icode_prop, remove_comments | o1_opts()],
+  Common = [icode_ssa, icode_type, icode_prop, icode_ssa_copy_prop,
+	    use_indexing, remove_comments | o1_opts()],
+  %% KOSTIS: The following do not work currently -- why?
+  % Common = [rtl_cse | Common],
+  % Common = [{rtl_cse,global} | Common],
   case get(hipe_target_arch) of
     ultrasparc ->
       [sparc_prop | Common];
@@ -1179,12 +1209,12 @@ o2_opts() ->
   end.
 
 o3_opts() ->
-  Common = o2_opts(),
+  Common = [{regalloc,coalescing}, rtl_prop_3 | o2_opts()],
   case get(hipe_target_arch) of
     ultrasparc ->
-      [{regalloc,graph_color}| Common];
+      Common;
     x86 ->
-      [{regalloc,coalescing} | Common];
+      Common;
     Arch ->
       ?EXIT({executing_on_an_unsupported_architecture,Arch})
   end.
@@ -1199,12 +1229,18 @@ opt_negations() ->
    {no_fill_delayslot, fill_delayslot},
    {no_finalise_x86, finalise_x86},
    {no_frame_x86, frame_x86},
-   {no_icode_bwd_cprop, icode_bwd_cprop},
    {no_icode_prop, icode_prop},
    {no_icode_ssa, icode_ssa},
+   {no_icode_ssa_check, icode_ssa_check},
+   {no_icode_ssa_copy_prop, icode_ssa_copy_prop},
+   {no_icode_type, icode_type},
+   {no_inline_bs, inline_bs},
+   {no_inline_fp, inline_fp},
    {no_load, load},
    {no_pp_beam, pp_beam},
    {no_pp_icode, pp_icode},
+   {no_pp_opt_icode, pp_opt_icode},
+   {no_pp_typed_icode, pp_typed_icode},
    {no_pp_rtl, pp_rtl},
    {no_pp_native, pp_native},
    {no_remove_comments, remove_comments},
@@ -1212,6 +1248,7 @@ opt_negations() ->
    {no_rtl_cse, rtl_cse},
    {no_rtl_prop_1, rtl_prop_1},
    {no_rtl_prop_2, rtl_prop_2},
+   {no_rtl_prop_3, rtl_prop_3},
    {no_rtl_show_translation, rtl_show_translation},
    {no_sparc_estimate_block_time, sparc_estimate_block_time},
    {no_sparc_peephole, sparc_peephole},

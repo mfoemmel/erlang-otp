@@ -119,7 +119,11 @@ MODULES =                 \
 	inets_test_lib    \
 	httpd_test_lib    \
 	inets_SUITE       \
-	ftp_SUITE         \
+        inets_app_test    \
+        inets_appup_test  \
+        httpd_test        \
+        httpc_test        \
+        ftp_test          \
         httpd_poll        \
         httpd_time_test
 

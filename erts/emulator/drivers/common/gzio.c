@@ -3,7 +3,7 @@
  * For conditions of distribution and use, see copyright notice in zlib.h
  */
 
-/* $Id: gzio.c,v 1.14 1996/07/24 13:41:01 me Exp $ */
+/* $Id$ */
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -193,8 +193,7 @@ local gzFile gz_open (path, mode, fd)
    Rewind a gzfile back to the beginning.
 */
 
-local int gz_rewind (s)
-    gz_stream *s;
+local int gz_rewind (gz_stream *s)
 {
     TRYFREE(s->msg);
 
@@ -507,10 +506,6 @@ int gzseekk (file, offset, whence)
 	return -1;
     }
     if (s->z_err == Z_DATA_ERROR || s->z_err == Z_ERRNO) {
-	errno = EIO;
-	return -1;
-    }
-    if (s->z_err == Z_STREAM_END) {
 	errno = EIO;
 	return -1;
     }

@@ -58,7 +58,8 @@ alloc_message(void)
 	free_erl_message = free_erl_message->next;
     }
     else
-	res = (ErlMessage *) erts_safe_sl_alloc_from(34, sizeof(ErlMessage));
+	res = (ErlMessage *) erts_alloc(ERTS_ALC_T_MSG_REF,
+					sizeof(ErlMessage));
 
     return res;
 }
@@ -71,7 +72,7 @@ free_message(ErlMessage* mp)
 	free_erl_message = mp;
     }
     else
-	erts_sl_free((void *) mp);
+	erts_free(ERTS_ALC_T_MSG_REF, (void *) mp);
 }
 
 /* Allocate message buffer (size in words) */
@@ -79,10 +80,9 @@ ErlHeapFragment*
 new_message_buffer(Uint size)
 {
     ErlHeapFragment* bp;
-
-    bp = (ErlHeapFragment*) erts_safe_sl_alloc_from(33,
-						    sizeof(ErlHeapFragment) +
-						    ((size-1)*sizeof(Eterm)));
+    bp = (ErlHeapFragment*) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP_FRAG,
+					    (sizeof(ErlHeapFragment)
+					     + ((size-1)*sizeof(Eterm))));
     bp->next = NULL;
     bp->size = size;
     bp->off_heap.mso = NULL;
@@ -114,7 +114,10 @@ void
 free_message_buffer(ErlHeapFragment* bp)
 {
     erts_cleanup_offheap(&bp->off_heap);
-    erts_sl_free((void *) bp);
+    ERTS_HEAP_FREE(ERTS_ALC_T_HEAP_FRAG,
+		   (void *) bp,
+		   (sizeof(ErlHeapFragment)
+		    + ((bp->size-1)*sizeof(Eterm))));
 }
 
 /* Add a message last in message queue */
@@ -200,49 +203,35 @@ queue_message_tt(Process* receiver, ErlHeapFragment* bp,
 void
 send_message(Process* sender, Process* receiver, Eterm message)
 {
-    Eterm* hp;
     ErlHeapFragment* bp = NULL;
-    Uint msize;
     Eterm token = NIL;
-    NEW_TIMER(send);
-    NEW_TIMER(copy);
-    NEW_TIMER(size);
 
-    STOP_TIMER(system);
-#ifdef __BENCHMARK__
-    messages_sent++;
-#endif
-
-#ifdef CALCULATE_MESSAGE_SIZES
-    msize = size_object(message);
-    if (msize < 1000) message_sizes[msize]++;
-    else message_sizes[999]++;
-#endif
-
-#ifndef SHARED_HEAP
-    START_TIMER(size);
-    msize = size_object(message);
-    STOP_TIMER(size);
-#endif
-    START_TIMER(send);
+    BM_STOP_TIMER(system);
+    BM_MESSAGE(message,sender,receiver);
+    BM_START_TIMER(send);
     if (SEQ_TRACE_TOKEN(sender) != NIL) {
-#ifdef SHARED_HEAP
-        SWAP_TIMER(send,size);
+        Uint msize;
+        Eterm* hp;
+
+        BM_SWAP_TIMER(send,size);
         msize = size_object(message);
-        SWAP_TIMER(size,send);
-#endif
+        BM_SWAP_TIMER(size,send);
+
 	seq_trace_update_send(sender);
 	seq_trace_output(SEQ_TRACE_TOKEN(sender), message, SEQ_TRACE_SEND, 
 			 receiver->id, sender);
 	bp = new_message_buffer(msize + 6 /* TUPLE5 */);
 	hp = bp->mem;
-        SWAP_TIMER(send,copy);
+
+        BM_SWAP_TIMER(send,copy);
 	token = copy_struct(SEQ_TRACE_TOKEN(sender), 6 /* TUPLE5 */, 
 			    &hp, &MSO(receiver));
 	message = copy_struct(message, msize, &hp, &MSO(receiver));
-	SWAP_TIMER(copy,send);
-	queue_message_tt(receiver, bp, message, token);
-	SWAP_TIMER(send,system);
+        BM_MESSAGE_COPIED(msize);
+        BM_SWAP_TIMER(copy,send);
+
+        queue_message_tt(receiver, bp, message, token);
+        BM_SWAP_TIMER(send,system);
 #ifdef SHARED_HEAP
     } else {
         ErlMessage* mp = alloc_message();
@@ -251,7 +240,7 @@ send_message(Process* sender, Process* receiver, Eterm message)
         mp->next = NULL;
         LINK_MESSAGE(receiver, mp);
         receiver->active = 1;
-	
+
         if (receiver->status == P_WAITING) {
             add_to_schedule_q(receiver);
         } else if (receiver->status == P_SUSPENDED) {
@@ -260,7 +249,7 @@ send_message(Process* sender, Process* receiver, Eterm message)
         if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
             trace_receive(receiver, message);
         }
-        SWAP_TIMER(send,system);
+        BM_SWAP_TIMER(send,system);
         return;
 #else
     } else if (sender == receiver) {
@@ -273,21 +262,28 @@ send_message(Process* sender, Process* receiver, Eterm message)
 	if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
 	    trace_receive(receiver, message);
 	}
-        SWAP_TIMER(send,system);
+        BM_SWAP_TIMER(send,system);
 	return;
     } else {
 	ErlMessage* mp = alloc_message();
+        Uint msize;
+        Eterm *hp;
+
+        BM_SWAP_TIMER(send,size);
+        msize = size_object(message);
+        BM_SWAP_TIMER(size,send);
 
 	if (receiver->stop - receiver->htop <= msize) {
-            STOP_TIMER(send);
+            BM_SWAP_TIMER(send,system);
 	    erts_garbage_collect(receiver, msize, receiver->arg_reg, receiver->arity);
-            START_TIMER(send);
+            BM_SWAP_TIMER(system,send);
 	}
 	hp = receiver->htop;
 	receiver->htop = hp + msize;
-        SWAP_TIMER(send,copy);
+        BM_SWAP_TIMER(send,copy);
 	message = copy_struct(message, msize, &hp, &receiver->off_heap);
-        SWAP_TIMER(copy,send);
+        BM_MESSAGE_COPIED(msize);
+        BM_SWAP_TIMER(copy,send);
 	ERL_MESSAGE_TERM(mp) = message;
 	ERL_MESSAGE_TOKEN(mp) = NIL;
 	mp->next = NULL;
@@ -301,7 +297,7 @@ send_message(Process* sender, Process* receiver, Eterm message)
 	if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
 	    trace_receive(receiver, message);
 	}
-        SWAP_TIMER(send,system);
+        BM_SWAP_TIMER(send,system);
 	return;
 #endif /* SHARED_HEAP */
     }

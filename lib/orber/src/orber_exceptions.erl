@@ -387,9 +387,10 @@ data type";
 'MARSHAL'(?ORBER_VMCID bor 14) -> "The Fixed type does not match the
 defined digits/scale parameters";
 'MARSHAL'(?ORBER_VMCID bor 15) -> "The supplied array is to long or to short";
-'MARSHAL'(?ORBER_VMCID bor 16) -> "-"; %% This can be assigned.
+'MARSHAL'(?ORBER_VMCID bor 16) -> "String/Wstring exceeds maximum length";
 'MARSHAL'(?ORBER_VMCID bor 17) -> "To few or to many parameters supplied";
 'MARSHAL'(?ORBER_VMCID bor 18) -> "Unable to decode message header";
+'MARSHAL'(?ORBER_VMCID bor 19) -> "Sequnce exceeds maximum length";
 'MARSHAL'(_) -> "-".
 
 %% INITIALIZE - OMG

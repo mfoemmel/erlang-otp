@@ -202,19 +202,23 @@ format_1(#c_catch{body=B}, Ctxt) ->
      nl_indent(Ctxt1),
      format(B, Ctxt1)
     ];
-format_1(#c_try{expr=E,vars=Vs,body=B}, Ctxt) ->
+format_1(#c_try{arg=E,vars=Vs,body=B,evars=Evs,handler=H}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
     ["try",
      nl_indent(Ctxt1),
      format(E, Ctxt1),
      nl_indent(Ctxt),
-     "catch (",
-     format_hseq(Vs, ", ",
-		 ctxt_bump_indent(Ctxt, 7),
-		 fun format/2),
-     ") ->",
+     "of ",
+     format_values(Vs, ctxt_bump_indent(Ctxt, 3)),
+     " ->",
+     nl_indent(Ctxt1),
+     format(B, Ctxt1),
+     nl_indent(Ctxt),
+     "catch ",
+     format_values(Evs, ctxt_bump_indent(Ctxt, 6)),
+     " ->",
      nl_indent(Ctxt1)
-     | format(B, Ctxt1)
+     | format(H, Ctxt1)
     ];
 format_1(#c_def{name=N,val=V}, Ctxt) ->
     Ctxt1 = ctxt_set_bump(Ctxt, expr, Ctxt#ctxt.body_indent),

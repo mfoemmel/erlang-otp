@@ -9,7 +9,8 @@
 %    - move - Dst, Src, Info
 %    - multimove - [Dst1, ..., DstN], [Src1, ..., SrcN], Info
 %    - alu - Dst, Src1, Op, Src2, Info
-%    - fp - Dst, Src1, Op, Src2, Info}
+%    - fp - Dst, Src1, Op, Src2, Info
+%    - fp_unop - Dst, Src, Op, Info
 %    - {load, Dst, Src, Off, Info}
 %    - {load_atom, Dst, Atom, Info}
 %    - {load_address, Dst, Addr, Type, Info}
@@ -41,6 +42,7 @@
 -module(hipe_rtl).
 -include("hipe_rtl.hrl").
 -include("../main/hipe.hrl").
+-define(hash, hipe_hash).
 
 -export([mk_rtl/8,
 	 rtl_fun/1,
@@ -81,6 +83,7 @@
 	 alu_src2_update/2,
 	 alu_op/1,
 	 is_alu_op/1,
+	 is_shift_op/1,
 
 	 mk_load/3,
 	 mk_load/5,
@@ -113,6 +116,7 @@
 	 load_address_type_update/2,
 
 	 mk_store/3,
+	 mk_store/4,
 	 store_dst/1,
 	 store_src/1,
 	 store_offset/1,
@@ -185,7 +189,7 @@
 	 call_info_update/2,
 	 call_continuation_update/2,
 	 call_fail_update/2,
-
+ 
 	 mk_enter/3,
 	 enter_fun/1,
 	 enter_args/1,
@@ -227,12 +231,16 @@
 	 fp_src2_update/2,
 	 fp_op/1,
 
+	 mk_fp_unop/3,
+	 fp_unop_dst/1,
+	 fp_unop_src/1,
+	 fp_unop_src_update/2,
+	 fp_unop_op/1,
+
 	 mk_fmov/2,
-	 mk_fmov/3,
 	 fmov_dst/1,
 	 fmov_src/1,
 	 fmov_src_update/2,
-	 fmov_negate/1,
 	 is_fmov/1,
 
 	 mk_fconv/2,
@@ -245,6 +253,8 @@
 	 mk_new_var/0,
 	 is_var/1,
 	 var_name/1,
+
+	 change_vars_to_regs/1,
 
 	 mk_reg/1,
 	 mk_new_reg/0,
@@ -264,7 +274,9 @@
 	 info_add/2,
 	 info_update/2,
 	 uses/1,
+	 subst/2,
 	 subst_uses/2,
+	 subst_defines/2,
 	 defines/1,
 	 redirect_jmp/3,
 	 is_pure/1,
@@ -413,9 +425,10 @@ load_address_info_update(Instr, Info) -> Instr#load_address{info=Info}.
 % store
 %
 
-
-mk_store(Dst, Off, Src) -> 
-  #store{dst=Dst, off=Off, src=Src, info=[]}.
+mk_store(Dst, Off, Src) -> mk_store(Dst, Off, Src, word).
+mk_store(Dst, Off, Src, Size) ->
+  ?ASSERT((Size =:= word) orelse (Size =:= halfword) orelse (Size =:= byte)),
+  #store{dst=Dst, src=Src, off=Off, size=Size, info=[]}.
 store_dst(S) -> S#store.dst.
 store_dst_update(S, NewDst) -> S#store{dst=NewDst}.
 store_offset(S) -> S#store.off.
@@ -561,6 +574,7 @@ call_continuation_update(I, NewCont) -> I#call{continuation=NewCont}.
 call_fail_update(I, NewCont) -> I#call{failcontinuation=NewCont}.
 call_info_update(C, NewI) -> C#call{info=NewI}.
 
+
 %
 % enter
 %
@@ -664,17 +678,27 @@ fp_info(Fp)-> Fp#fp.info.
 fp_info_update(Instr, Info) -> Instr#fp{info=Info}.
 
 %
+% fp_unop
+%
+
+mk_fp_unop(Dst, Src, Op) -> 
+  #fp_unop{dst=Dst, src=Src, op=Op, info=[]}.
+fp_unop_dst(Fp) -> Fp#fp_unop.dst.
+fp_unop_src(Fp) -> Fp#fp_unop.src.
+fp_unop_src_update(Fp, NewSrc) -> Fp#fp_unop{src=NewSrc}.
+fp_unop_op(Fp) -> Fp#fp_unop.op.
+fp_unop_info(Fp)-> Fp#fp_unop.info.
+fp_unop_info_update(Instr, Info) -> Instr#fp_unop{info=Info}.
+
+
+%
 % fmove
 %
 
-% negate is either true or false. False is default
-mk_fmov(X, Y) ->
-  mk_fmov(X, Y, false).
-mk_fmov(X, Y, Neg) -> #fmov{dst=X, src=Y, negate=Neg, info=[]}.
+mk_fmov(X, Y) -> #fmov{dst=X, src=Y, info=[]}.
 fmov_dst(M) -> M#fmov.dst.
 fmov_src(M) -> M#fmov.src.
 fmov_src_update(M, NewSrc) -> M#fmov{src=NewSrc}.
-fmov_negate(M) -> M#fmov.negate.
 fmov_info(M) -> M#fmov.info.
 fmov_info_update(Instr, Info) -> Instr#fmov{info=Info}.
 is_fmov(I) when is_record(I, fmov) -> true;
@@ -697,6 +721,16 @@ is_fconv(_) -> false.
 %
 % The values
 %
+change_vars_to_regs(Vars) ->
+  change_vars_to_regs(Vars, []).
+change_vars_to_regs([Var|Rest], Acc) ->
+  change_vars_to_regs(Rest,[change_var_to_reg(Var)|Acc]);
+change_vars_to_regs([], Acc) ->
+  lists:reverse(Acc).
+
+change_var_to_reg(Var) ->
+  mk_reg(var_name(Var)).
+  
 
 mk_reg(Name) -> {rtl_reg, Name}.
 mk_new_reg() -> mk_reg(hipe_gensym:get_next_var(rtl)).
@@ -774,6 +808,7 @@ uses(I) ->
 	    fload -> [fload_src(I), fload_offset(I)];
 	    fstore -> [fstore_dst(I), fstore_offset(I), fstore_src(I)];
 	    fp -> [fp_src1(I), fp_src2(I)];
+	    fp_unop -> [fp_unop_src(I)];
 	    fmov -> [fmov_src(I)];
 	    fconv -> [fconv_src(I)]
 	  end,
@@ -810,6 +845,7 @@ defines(Ins) ->
 	   fload -> [fload_dst(Ins)];
 	   fstore -> [];
 	   fp -> [fp_dst(Ins)];
+	   fp_unop -> [fp_unop_dst(Ins)];
 	   fmov -> [fmov_dst(Ins)];
 	   fconv -> [fconv_dst(Ins)]
 	 end,
@@ -833,6 +869,8 @@ remove_immediates([I|Is]) ->
 %
 % Substitution: replace occurrences of X by Y if {X,Y} is in Subst.
 %
+subst(Subst, X) ->
+  subst_defines(Subst, subst_uses(Subst,X)).
 
 subst_uses(Subst, I) ->
   case type(I) of
@@ -906,14 +944,31 @@ subst_uses(Subst, I) ->
     fp ->
       I0 = fp_src1_update(I, subst1(Subst, fp_src1(I))),
       fp_src2_update(I0, subst1(Subst, fp_src2(I)));
+    fp_unop ->
+      fp_unop_src_update(I, subst1(Subst, fp_unop_src(I)));
     fmov -> 
       fmov_src_update(I, subst1(Subst, fmov_src(I)));
     fconv -> 
       fconv_src_update(I, subst1(Subst, fconv_src(I)))
   end.
 
-
-
+subst_defines(Subst,I)->
+  case type(I) of
+    move ->
+      I#move{dst=subst1(Subst,I#move.dst)};
+    multimove ->
+      I#multimove{dst=subst1(Subst,I#multimove.dst)};
+    alu ->
+      I#alu{dst=subst1(Subst,I#alu.dst)};
+    load ->
+      I#load{dst=subst1(Subst,I#load.dst)};
+    load_atom ->
+      I#load_atom{dst=subst1(Subst,I#load_atom.dst)};
+    alub ->
+      I#alub{dst=subst1(Subst,I#alub.dst)};
+    call ->
+      I#call{dst=subst1(Subst,I#call.dst)}
+  end.
 subst_list(S,Xs) ->
   [subst1(S,X) || X <- Xs].
 
@@ -952,6 +1007,7 @@ info(Ins) ->
     fload -> fload_info(Ins);
     fstore -> fstore_info(Ins);
     fp -> fp_info(Ins);
+    fp_unop -> fp_unop_info(Ins);
     fmov -> fmov_info(Ins);
     fconv ->fconv_info(Ins)
   end.
@@ -987,6 +1043,7 @@ info_add(I, Info) ->
     fload -> fload_info_update(I, [Info|OldInfo]);
     fstore -> fstore_info_update(I, [Info|OldInfo]);
     fp -> fp_info_update(I, [Info|OldInfo]);
+    fp_unop -> fp_unop_info_update(I, [Info|OldInfo]);
     fmov -> fmov_info_update(I, [Info|OldInfo]);
     fconv -> fconv_info_update(I, [Info|OldInfo])
   end.
@@ -1016,6 +1073,7 @@ info_update(I, Info) ->
     fload -> fload_info_update(I, Info);
     fstore -> fstore_info_update(I, Info);
     fp -> fp_info_update(I, Info);
+    fp_unop -> fp_unop_info_update(I, Info);
     fmov -> fmov_info_update(I, Info);
     fconv -> fconv_info_update(I, Info)
   end.
@@ -1030,6 +1088,7 @@ is_pure(I) ->
     store -> false;
     fstore -> false;
     fp -> false;
+    fp_unop -> false;
     branch -> false;
     switch -> false; %% Maybe this is pure...
     alub -> false;
@@ -1060,6 +1119,12 @@ is_alu_op(sll) -> true;
 is_alu_op(srl) -> true;
 is_alu_op(sra) -> true;
 is_alu_op(_) -> false.
+
+is_shift_op(sll) -> true;
+is_shift_op(srl) -> true;
+is_shift_op(sra) -> true;
+is_shift_op(_) -> false.
+
 
 
 %
@@ -1394,15 +1459,17 @@ pp_instr(Dev, I) ->
       io:format(Dev, " ~w ", [fp_op(I)]),
       pp_arg(Dev, fp_src2(I)),
       io:format(Dev, "~n", []);
+    fp_unop ->
+      io:format(Dev, "    ", []),
+      pp_arg(Dev, fp_unop_dst(I)),
+      io:format(Dev, " <- ", []),
+      io:format(Dev, " ~w ", [fp_op(I)]),
+      pp_arg(Dev, fp_unop_src(I)),
+      io:format(Dev, "~n", []);
     fmov ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, fmov_dst(I)),
-      case fmov_negate(I) of
-	true ->
-	  io:format(Dev, " <- -", []);
-	_ ->
-	  io:format(Dev, " <- ", [])
-      end,
+      io:format(Dev, " <- ", []),
       pp_arg(Dev, fmov_src(I)),
       io:format(Dev, "~n", []);
     fconv ->

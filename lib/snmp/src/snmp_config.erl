@@ -29,14 +29,14 @@ config() ->
     case catch config2() of
 	ok -> ok;
 	{error, Reason} -> {error, Reason};
-	Q -> {error,failed}
+	_Q -> {error,failed}
     end.
 
 config2() ->
     case catch config3() of
 	ok -> ok;
 	{error, Reason} -> {error, Reason};
-	Q -> {error, dialog_failed}
+	_Q -> {error, dialog_failed}
     end.
 
 config3() ->
@@ -144,7 +144,7 @@ verify_passwd(_) ->
 verify_dir(Dir) ->
     case filename:pathtype(Dir) of
 	absolute -> ok;
-	Q -> throw({error,bad_dir})
+	_Q -> throw({error,bad_dir})
     end.
 	    
 verify_notif_type("trap") -> trap;
@@ -161,13 +161,13 @@ ip(Host) ->
     case catch snmp_misc:ip(Host) of
 	{ok, IPtuple} -> tuple_to_list(IPtuple);
 	{error, Reason} -> throw({error, Reason});
-	Q -> throw({error, {"ip conversion failed", Host}})
+	_Q -> throw({error, {"ip conversion failed", Host}})
     end.
 
 make_ip(Str) ->
     case catch snmp_misc:ip(Str) of
 	{ok, IPtuple} -> tuple_to_list(IPtuple);
-	Q -> ip(Str)
+	_Q -> ip(Str)
     end.
 		 
     

@@ -122,35 +122,72 @@ do {								\
  (byte *)(&(((ErlHeapBin *) binary_val(Bin))->data)))
 
 
-#define ERTS_SL_ALLOC_BINARIES_DEFAULT 0
-extern int erts_sl_alloc_binaries;
+void erts_init_binary(void);
+extern Uint erts_allocated_binaries;
 
-#define OH_BIN_ALLOC(F, SZ)					\
-  ((Binary *) (erts_sl_alloc_binaries				\
-	       ? erts_sl_alloc_from((F), (SZ))			\
-	       : sys_alloc_from((F), (SZ))))
+static ERTS_INLINE Binary *
+erts_bin_drv_alloc_fnf(Uint size)
+{
+    Uint bsize = sizeof(Binary) + size;
+    void *res = erts_alloc_fnf(ERTS_ALC_T_DRV_BINARY, bsize);
+    if (res)
+	erts_allocated_binaries += bsize;
+    return (Binary *) res;
+}
 
-#define OH_BIN_SAFE_ALLOC(F, SZ) 				\
-  ((Binary *) (erts_sl_alloc_binaries				\
-	       ? erts_safe_sl_alloc_from((F), (SZ))		\
-	       : safe_alloc_from((F), (SZ))))
+static ERTS_INLINE Binary *
+erts_bin_nrml_alloc(Uint size)
+{
+    Uint bsize = sizeof(Binary) + size;
+    void *res = erts_alloc(ERTS_ALC_T_BINARY, bsize);
+    erts_allocated_binaries += bsize;
+    return (Binary *) res;
+}
 
-#define OH_BIN_REALLOC(P, SSZ, SZ) 				\
-  ((Binary *) (erts_sl_alloc_binaries				\
-	       ? erts_sl_realloc((void*) (P), (SSZ), (SZ))	\
-	       : sys_realloc((void*) (P), (SZ))))
+static ERTS_INLINE Binary *
+erts_bin_realloc_fnf(Binary *bp, Uint size)
+{
+    Uint bsize = sizeof(Binary) + size;
+    void *res;
+    if (bp->flags & BIN_FLAG_DRV)
+	res = erts_realloc_fnf(ERTS_ALC_T_DRV_BINARY, (void *) bp, bsize);
+    else
+	res = erts_realloc_fnf(ERTS_ALC_T_BINARY, (void *) bp, bsize);
+    if (res) {
+	Binary *nbp = (Binary *) res;
+	ASSERT(erts_allocated_binaries >= sizeof(Binary) + nbp->orig_size);
+	erts_allocated_binaries -= sizeof(Binary) + nbp->orig_size;
+	erts_allocated_binaries += bsize;
+    }
+    return (Binary *) res;
+}
 
-#define OH_BIN_SAFE_REALLOC(P, SSZ, SZ) 			\
-  ((Binary *) (erts_sl_alloc_binaries				\
-	       ? erts_safe_sl_realloc((void*) (P), (SSZ), (SZ))	\
-	       : safe_realloc((void*) (P), (SZ))))
+static ERTS_INLINE Binary *
+erts_bin_realloc(Binary *bp, Uint size)
+{
+    Binary *nbp;
+    Uint bsize = sizeof(Binary) + size;
+    void *res;
+    if (bp->flags & BIN_FLAG_DRV)
+	res = erts_realloc(ERTS_ALC_T_DRV_BINARY, (void *) bp, bsize);
+    else
+	res = erts_realloc(ERTS_ALC_T_BINARY, (void *) bp, bsize);
+    nbp = (Binary *) res;
+    ASSERT(erts_allocated_binaries >= sizeof(Binary) + nbp->orig_size);
+    erts_allocated_binaries -= sizeof(Binary) + nbp->orig_size;
+    erts_allocated_binaries += bsize;
+    return (Binary *) res;
+}
 
-#define OH_BIN_FREE(P) 						\
-  do {								\
-      if (erts_sl_alloc_binaries)				\
-	  erts_sl_free((void*) (P));				\
-      else							\
-	  sys_free((void*) (P));				\
-  } while (0)
+static ERTS_INLINE void
+erts_bin_free(Binary *bp)
+{
+    ASSERT(erts_allocated_binaries >= sizeof(Binary) + bp->orig_size);
+    erts_allocated_binaries -= sizeof(Binary) + bp->orig_size;
+    if (bp->flags & BIN_FLAG_DRV)
+	erts_free(ERTS_ALC_T_DRV_BINARY, (void *) bp);
+    else
+	erts_free(ERTS_ALC_T_BINARY, (void *) bp);
+}
 
 #endif

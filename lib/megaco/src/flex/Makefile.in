@@ -45,25 +45,13 @@ PERL    = @PERL@
 ERLANG_OSTYPE = @ERLANG_OSTYPE@
 
 # Shall we build the flex scanner or not.
-# We assume that it does not exist on windows...
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER),)
-ifeq ($(findstring win32,$(TARGET)), win32)
-ENABLE_MEGACO_FLEX_SCANNER = false
-else
 ENABLE_MEGACO_FLEX_SCANNER = @ENABLE_MEGACO_FLEX_SCANNER@
-endif
 endif
 
 # Shall the library be built with line-number checks or without
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER_LINENO),)
-# This is not really needed in this case (since we don't support
-# this for windows), but just to ensure that the variable _has_ 
-# a value...
-ifeq ($(findstring win32,$(TARGET)), win32)
-ENABLE_MEGACO_FLEX_SCANNER_LINENO = true
-else
 ENABLE_MEGACO_FLEX_SCANNER_LINENO = @ENABLE_MEGACO_FLEX_SCANNER_LINENO@
-endif
 endif
 
 
@@ -113,7 +101,7 @@ C_TARGETS  = $(FLEX_MODULES:%=%.c)
 # ----------------------------------------------------
 
 ifeq ($(findstring win32,$(TARGET)), win32)
-FLEX_SCANNER_SO = 
+FLEX_SCANNER_SO = $(LIBDIR)/megaco_flex_scanner_drv.dll
 SOLIBS = $(FLEX_SCANNER_SO)
 else
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
@@ -229,8 +217,8 @@ megaco_flex_scanner_drv.c: megaco_flex_scanner_drv.flex
 
 # No need to link with -lfl as we have also defined %option noyywrap - 
 # and having -lfl doesn't work under Darwin for some reason. - Sean
-$(LIBDIR)/megaco_flex_scanner_drv.so: megaco_flex_scanner_drv.c $(LIBDIR)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $(LIBDIR)/megaco_flex_scanner_drv.so $< 
+$(FLEX_SCANNER_SO): megaco_flex_scanner_drv.c $(LIBDIR)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(FLEX_SCANNER_SO) $< 
 
 $(LIBDIR):
 	-mkdir -p $(LIBDIR)

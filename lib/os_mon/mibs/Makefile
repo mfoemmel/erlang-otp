@@ -59,13 +59,16 @@ clean:
 
 docs:
 
-$(SNMP_BIN_TARGET_DIR)/OTP-REG.bin:     $(ERL_TOP)/lib/sasl/mibs/OTP-REG.mib
+OTP_MIBDIR = $(shell if test -d ../../otp_mibs; then echo otp_mibs; \
+		      else echo sasl; fi)
+
+$(SNMP_BIN_TARGET_DIR)/OTP-REG.bin:     $(ERL_TOP)/lib/$(OTP_MIBDIR)/mibs/OTP-REG.mib
 	$(ERLC) -pa $(SNMP_TOOLKIT)/ebin -I $(SNMP_TOOLKIT)/priv/mibs $(SNMP_FLAGS) -o $(SNMP_BIN_TARGET_DIR) $<
 
-$(SNMP_BIN_TARGET_DIR)/OTP-TC.bin:     $(ERL_TOP)/lib/sasl/mibs/OTP-TC.mib
+$(SNMP_BIN_TARGET_DIR)/OTP-TC.bin:     $(ERL_TOP)/lib/$(OTP_MIBDIR)/mibs/OTP-TC.mib
 	$(ERLC) -pa $(SNMP_TOOLKIT)/ebin -I $(SNMP_TOOLKIT)/priv/mibs $(SNMP_FLAGS) -o $(SNMP_BIN_TARGET_DIR) $<
 
-$(SNMP_BIN_TARGET_DIR)/OTP-MIB.bin:     $(ERL_TOP)/lib/sasl/mibs/OTP-MIB.mib
+$(SNMP_BIN_TARGET_DIR)/OTP-MIB.bin:     $(ERL_TOP)/lib/$(OTP_MIBDIR)/mibs/OTP-MIB.mib
 	$(ERLC) -pa $(SNMP_TOOLKIT)/ebin -I $(SNMP_TOOLKIT)/priv/mibs $(SNMP_FLAGS) -o $(SNMP_BIN_TARGET_DIR) $<
 
 $(SNMP_BIN_TARGET_DIR)/OTP-EVA-MIB.bin:     $(ERL_TOP)/lib/eva/mibs/OTP-EVA-MIB.mib

@@ -3,7 +3,6 @@
 MODULES = \
 	megaco_compact_text_encoder \
 	megaco_pretty_text_encoder \
-	megaco_text_parser \
 	megaco_text_scanner
 
 

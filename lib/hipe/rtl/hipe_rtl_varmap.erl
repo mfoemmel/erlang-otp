@@ -10,9 +10,9 @@
 %%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: happi $
-%%              $Date: 2002/09/29 20:21:20 $
-%%              $Revision: 1.7 $
+%%              $Author: kostis $
+%%              $Date: 2003/05/05 16:41:10 $
+%%              $Revision: 1.10 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -82,20 +82,18 @@ ivs2rvs([V|Vs], VarMap) ->
    {[NewV|NewVs], VarMap1}.
 
 
-%
-% Convert icode variable to a rtl variable
-%
+%%
+%% Convert icode variable to a rtl variable
+%%
 
 icode_var2rtl_var(Var, Map) ->
   Value = lookup(Var,Map),
-  
   case Value of
     none ->
       case type_of_var(Var) of
 	fvar ->
 	  NewVar = hipe_rtl:mk_new_fpreg(),
 	  {NewVar, insert(Var, NewVar, Map)};
-
 	var ->
 	  NewVar = hipe_rtl:mk_new_var(),
 	  {NewVar, insert(Var, NewVar, Map)};
@@ -107,9 +105,10 @@ icode_var2rtl_var(Var, Map) ->
       {NewVar, Map}
   end.
 
-						%
-% Simple type test
-% 
+%%
+%% Simple type test
+%%
+
 type_of_var(X) ->
   case hipe_icode:is_fvar(X) of
     true ->
@@ -128,10 +127,9 @@ type_of_var(X) ->
       end
   end.
 
-
-%
-% Convert icode label to a rtl variable
-%
+%%
+%% Convert icode label to a rtl variable
+%%
 
 icode_label2rtl_label(LabelName, Map) ->
   case lookup(LabelName, Map) of

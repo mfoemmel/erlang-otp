@@ -35,7 +35,7 @@ print(Verbosity,Severity,Module,Format,Arguments) ->
     print1(printable(Verbosity,Severity),Module,Format,Arguments).
 
 
-printc(silence,Severity,Format,Arguments) ->
+printc(silence,_Severity,_Format,_Arguments) ->
     ok;
 printc(Verbosity,Severity,Format,Arguments) ->
     print2(printable(Verbosity,Severity),Format,Arguments).

@@ -192,7 +192,6 @@ handle_info(timeout, State) ->
 handle_info(X,State) ->
     {noreply, State, State#state.timeout}.
 
-
 handle_msg(Type, Socket, Bytes, #state{stype = Type, 
 				       socket = Socket,
 				       interceptors = Interceptors,
@@ -205,7 +204,7 @@ handle_msg(Type, Socket, Bytes, #state{stype = Type,
 		      giop_version = {1,2}} ->
 	    {stop, normal, State};
 	#giop_message{message_type = ?GIOP_MSG_CANCEL_REQUEST} = GIOPHdr ->
-	    ReqId = cdr_decode:peak_request_id(GIOPHdr#giop_message.byte_order,
+	    ReqId = cdr_decode:peek_request_id(GIOPHdr#giop_message.byte_order,
 					       GIOPHdr#giop_message.message),
 	    case ets:lookup(State#state.db, ReqId) of
 		[{RId, PPid}] ->
@@ -222,7 +221,7 @@ handle_msg(Type, Socket, Bytes, #state{stype = Type,
 	%% We need to decode the header to get the request-id.
 	#giop_message{message_type = ?GIOP_MSG_FRAGMENT,
 		      giop_version = {1,2}} = GIOPHdr ->
-	    ReqId = cdr_decode:peak_request_id(GIOPHdr#giop_message.byte_order,
+	    ReqId = cdr_decode:peek_request_id(GIOPHdr#giop_message.byte_order,
 					       GIOPHdr#giop_message.message),
 	    case ets:lookup(State#state.db, ReqId) of
 		[{RId, PPid}] when GIOPHdr#giop_message.fragments == true ->
@@ -238,7 +237,7 @@ handle_msg(Type, Socket, Bytes, #state{stype = Type,
 	%% We need to decode the header to get the request-id.
 	#giop_message{fragments = true,
 		      giop_version = {1,2}} = GIOPHdr ->
-	    ReqId = cdr_decode:peak_request_id(GIOPHdr#giop_message.byte_order,
+	    ReqId = cdr_decode:peek_request_id(GIOPHdr#giop_message.byte_order,
 					       GIOPHdr#giop_message.message),
 	    Pid = orber_iiop_inrequest:start_fragment_collector(GIOPHdr, Bytes, 
 								Type, Socket, 

@@ -2,52 +2,47 @@ User configuration notes
 ========================
 
 Below is a quick guide to necessary configurations for getting
-yourself started with Emacs. Please refer to the complete
-documentation for details.
-
+started with the Erlang mode for Emacs. Please refer to the
+Users guide and reference manual in the documentation for the
+Erlang/OTP application tools for more information.
 
 
 For UNIX users
 --------------
 
-Below is a complete example of what should be added to a user's .emacs file,
-provided that OTP is installed in the directory /usr/local/otp. 
-
-The .emacs file is found/placed in the user's home directory.
-
-
-Please replace /usr/local/otp in the example below with the path to
-the OTP installation on your system.
-
-;; For UNIX
-(setq load-path (cons  "/usr/local/otp/misc/emacs"
-                       load-path))
-(setq erlang-root-dir "/usr/local/otp")
-(setq exec-path (cons "/usr/local/otp/bin" exec-path))
-(require 'erlang-start)
-
+To set up the Erlang Emacs mode on UNIX systems, edit/create the file
+.emacs in the your home directory.
+    
+Below is a complete example of what should be added to a user's .emacs
+provided that OTP is installed in the directory /usr/local/otp:
+        
+      (setq load-path (cons "/usr/local/otp/lib/tools-<ToolsVer>/emacs"
+      load-path))
+      (setq erlang-root-dir "/usr/local/otp")
+      (setq exec-path (cons "/usr/local/otp/bin" exec-path))
+      (require 'erlang-start)
 
 
 For Windows users
 -----------------
+   
+To set up the Erlang Emacs mode on Windows systems, edit/create the
+file .emacs, the location of the file depends on the configuration of
+the system. If the HOME environment variable is set, Emacs will look
+for the .emacs file in the directory indicated by the HOME
+variable. If HOME is not set, Emacs will look for the .emacs file in
+C:\.
+    
+Below is a complete example of what should be added to a user's .emacs
+provided that OTP is installed in the directory C:\Program
+Files\erl-<Ver>:
+      
+      (setq load-path (cons  "C:/Program Files/erl<Ver>/lib/tools-<ToolsVer>/emacs"
+      load-path))
+      (setq erlang-root-dir "C:/Program Files/erl<Ver>")
+      (setq exec-path (cons "C:/Program Files/erl<Ver>/bin" exec-path))
+      (require 'erlang-start)
+    
 
-Note for Windows users: In .emacs, the slash character "/" can be used
-as path separator. But if you decide to use the backslash character
-"\", please not that you must use double backslashes, since they are
-treated as escape characters by Emacs.
 
 
-Below is a complete example of what should be added to a user's .emacs file,
-provided that OTP is installed in the directory C:\Program Files\erl-4.7. 
-
-The .emacs file is found/placed in the directory indicated by the environment variable HOME, if it is defined. Otherwise it is found/placed in the root directory, C:\.
-
-Please replace C:/Program Files/erl-4.7 in the example below with the path to
-the OTP installation on your system.
-
-;; For Windows
-(setq load-path (cons  "C:/Program Files/erl-4.7/misc/emacs"
-                       load-path))
-(setq erlang-root-dir "C:/Program Files/erl-4.7")
-(setq exec-path (cons "C:/Program Files/erl-4.7/bin" exec-path))
-(require 'erlang-start)

@@ -25,7 +25,7 @@
 cfg(CFG) ->
   Start = ?cfg:start_label(CFG),
   Labels = ?cfg:reverse_postorder(CFG),
-  Roots = [Start],% | ?cfg:fail_entrypoints(CFG)],
+  Roots = [Start],
   Blocks = Labels -- Roots,
   SuccMap = ?cfg:succ_map(CFG),
   PredMap = ?cfg:pred_map(CFG),
@@ -99,8 +99,7 @@ add_succ([Lbl|Lbls], Visited,Node, MkFun,EBBs, SuccMap, PredMap) ->
 
 dag(EBBs, CFG) ->
    Start = ?cfg:start_label(CFG),
-   Entries = ?cfg:fail_entrypoints(CFG),
-   Roots = [Start | Entries],
+   Roots = [Start],
    Edges = all_adges(EBBs, Roots),
    start_dag(Roots, Edges, []).
 

@@ -41,7 +41,7 @@
 -export([dec_giop_message_header/1, dec_reply_header/4,
 	 dec_reply_body/6, dec_locate_reply_header/4, 
 	 dec_locate_reply_body/5, dec_message_header/3, dec_request_body/6,
-	 dec_octet_sequence_bin/6, dec_message/2, peak_request_id/2]).
+	 dec_octet_sequence_bin/6, dec_message/2, peek_request_id/2]).
 
 %%-----------------------------------------------------------------
 %% Functions which only are exported for the testcases.
@@ -145,9 +145,10 @@ dec_giop_message_header(Other) ->
 Orber cannot decode the GIOP-header.", [?LINE, Other], ?DEBUG_LEVEL),
     exit(message_error).
 
-peak_request_id(big, <<ReqId:32/big-unsigned-integer,_/binary>>) ->
+
+peek_request_id(big, <<ReqId:32/big-unsigned-integer,_/binary>>) ->
     ReqId;
-peak_request_id(little, <<ReqId:32/little-unsigned-integer,_/binary>>) ->
+peek_request_id(little, <<ReqId:32/little-unsigned-integer,_/binary>>) ->
     ReqId.
 
 %%-----------------------------------------------------------------
@@ -355,6 +356,24 @@ dec_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_BI_DIR_IIOP,
     {BiDirCtx, _, _} =  dec_type(?IIOP_BIDIRIIOPSERVICECONTEXT, Version, 
 				Rest, 1, ByteOrder),
     dec_used_contexts(Version, T, [BiDirCtx|Ctxs]);
+dec_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_FT_REQUEST,
+						  context_data = Bytes}|T], Ctxs) ->
+    {ByteOrder, Rest} = dec_byte_order(list_to_binary(Bytes)),
+    {Ctx, _, _} =  dec_type(?FT_FTRequestServiceContext, Version, 
+				Rest, 1, ByteOrder),
+    dec_used_contexts(Version, T, [Ctx|Ctxs]);
+dec_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_FT_GROUP_VERSION,
+						  context_data = Bytes}|T], Ctxs) ->
+    {ByteOrder, Rest} = dec_byte_order(list_to_binary(Bytes)),
+    {Ctx, _, _} =  dec_type(?FT_FTGroupVersionServiceContext, Version, 
+				Rest, 1, ByteOrder),
+    dec_used_contexts(Version, T, [Ctx|Ctxs]);
+dec_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_SecurityAttributeService,
+						  context_data = Bytes}|T], Ctxs) ->
+    {ByteOrder, Rest} = dec_byte_order(list_to_binary(Bytes)),
+    {Ctx, _, _} =  dec_type(?CSI_SASContextBody, Version, 
+				Rest, 1, ByteOrder),
+    dec_used_contexts(Version, T, [Ctx|Ctxs]);
 dec_used_contexts(Version, [H|T], Ctxs) ->
     dec_used_contexts(Version, T, [H|Ctxs]).
 
@@ -820,18 +839,25 @@ dec_sequence(Version, Message, {'tk_struct', IFRId, ShortName, ElementList},
 	     Len, ByteOrder, Buff, C) when IFRId /= "", ShortName /= "" ->
     {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
     {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
-    case  is_known_struct(ShortName) of
-	true ->
+    case IFRId of
+	?SYSTEM_TYPE ->
 	    dec_sequence_struct(Version, Rest1, Size, ElementList, Len1 + 4, 
 				ByteOrder, Buff, NewC+4, ShortName);
-	false ->
+	_ ->
 	    Name = ifrid_to_name(IFRId, ir_StructDef),
 	    dec_sequence_struct(Version, Rest1, Size, ElementList, Len1 + 4, 
 				ByteOrder, Buff, NewC+4, list_to_atom(Name))
     end;
 dec_sequence(Version, Message, 
+	     {'tk_union', ?SYSTEM_TYPE, TCName, DiscrTC, Default, ElementList}, 
+	     Len, ByteOrder, Buff, C) ->
+    {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
+    {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
+    dec_sequence_union(Version, Rest1, Size, DiscrTC, Default, ElementList, Len1 + 4,
+		       ByteOrder, Buff, NewC+4, TCName);
+dec_sequence(Version, Message, 
 	     {'tk_union', IFRId, TCName, DiscrTC, Default, ElementList}, 
-	     Len, ByteOrder, Buff, C) when TCName /= 'GIOP_TargetAddress' ->
+	     Len, ByteOrder, Buff, C) ->
     {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
     {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
     Name = ifrid_to_name(IFRId, ir_UnionDef),
@@ -884,21 +910,6 @@ dec_octet_sequence_bin(Version, Message, Len, ByteOrder, Buff, C) ->
     {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
     <<OctetSeq:Size/binary, Rest2/binary>> = Rest1,
     {OctetSeq, Rest2, Len1+4+Size, NewC+4+Size}.
-
-is_known_struct('IOP_IOR') -> true;
-is_known_struct('IOP_TaggedProfile') -> true;
-is_known_struct('IOP_TaggedComponent') -> true;
-is_known_struct('SSLIOP_SSL') -> true;
-is_known_struct('IIOP_Version') -> true;
-is_known_struct('IOP_ServiceContext') -> true;
-is_known_struct('CONV_FRAME_CodeSetContext') -> true;
-is_known_struct('CONV_FRAME_CodeSetComponent') -> true;
-is_known_struct('CONV_FRAME_CodeSetComponentInfo') -> true;
-is_known_struct('GIOP_IORAddressingInfo') -> true;
-is_known_struct('ALTERNATE_IIOP_ADDRESS') -> true;
-is_known_struct('IIOP_BiDirIIOPServiceContext') -> true;
-is_known_struct('IIOP_ListenPoint') -> true;
-is_known_struct(_) -> false.
 
 %%-----------------------------------------------------------------
 %% Func: dec_array/5
@@ -966,11 +977,11 @@ dec_wstring(Version, Message, Len, ByteOrder, Buff, C) ->
 %% Func: dec_union/9
 %%-----------------------------------------------------------------
 %% ## NEW IIOP 1.2 ##
-dec_union(Version, IFRId, 'GIOP_TargetAddress', DiscrTC, Default, ElementList, Bytes, Len, ByteOrder, Buff, C) ->
+dec_union(Version, ?SYSTEM_TYPE, Name, DiscrTC, Default, ElementList, Bytes, Len, ByteOrder, Buff, C) ->
     {Label, Rest1, Len1, NewC} = dec_type(DiscrTC, Version, Bytes, Len, ByteOrder, Buff, C),
     {Value, Rest2, Len2, NewC3} = dec_union(Version, Label, ElementList, Default, 
 					    Rest1, Len1, ByteOrder, Buff, NewC),
-    {#'GIOP_TargetAddress'{label = Label, value = Value}, Rest2, Len2, NewC3};
+    {{Name, Label, Value}, Rest2, Len2, NewC3};
 
 
 dec_union(Version, IFRId, _, DiscrTC, Default, ElementList, Bytes, Len, ByteOrder, Buff, C) ->
@@ -1007,16 +1018,13 @@ dec_struct(Version, [], Name, TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
     %% field in struct type codes (used in any)
     {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
     {list_to_tuple([list_to_atom(Name) |Struct]), Rest, Len1, NewC};
+dec_struct(Version, ?SYSTEM_TYPE, ShortName, TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
+    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
+    {list_to_tuple([ShortName |Struct]), Rest, Len1, NewC};
 dec_struct(Version, IFRId, ShortName, TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
-    case is_known_struct(ShortName) of
-	true ->
-	    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
-	    {list_to_tuple([ShortName |Struct]), Rest, Len1, NewC};
-	false ->
-	    Name = ifrid_to_name(IFRId, ir_StructDef),
-	    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
-	    {list_to_tuple([list_to_atom(Name) |Struct]), Rest, Len1, NewC}
-    end.
+    Name = ifrid_to_name(IFRId, ir_StructDef),
+    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
+    {list_to_tuple([list_to_atom(Name) |Struct]), Rest, Len1, NewC}.
 
 dec_struct1(_, [], Message, Len, ByteOrder, _, C) ->
     {[], Message, Len, C};

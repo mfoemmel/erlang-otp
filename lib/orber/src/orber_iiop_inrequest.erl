@@ -93,7 +93,7 @@ fragment_collector(GIOPHdr, Bytes, SocketType, Socket, Interceptors,
 Unable to collect all fragments: ~p", [?LINE, Bytes, Other], ?DEBUG_LEVEL),
 	    Reply = marshal_exception(GIOPHdr#giop_message.giop_version, ReqId,
 				      #'MARSHAL'{completion_status=?COMPLETED_NO}, 
-				      enc_reply),
+				      enc_reply, []),
 	    orber_socket:write(SocketType, Socket, Reply)
     end.
 
@@ -139,7 +139,7 @@ handle_message(GIOPHdr, Message, SocketType, Socket, Interceptors, SSLPort,
 	    Reply = call_interceptors_out(Version, ReqId, [Object], OldObj,
 					  Interceptors, 'location_forward', 
 					  "location_forward",
-					  {{'tk_objref', "", ""}, [],[]}),
+					  {{'tk_objref', "", ""}, [],[]}, []),
 	    orber_socket:write(SocketType, Socket, Reply);
 	{object_forward, Object, ReqId, Version, OldObj} ->
 	    Reply = handle_locate_request(Version, 
@@ -171,19 +171,23 @@ send_reply(Reply, SocketType, Socket) ->
 %%-----------------------------------------------------------------
 handle_request(false, Version, ReqHdr, Rest, Len, ByteOrder, SocketType, Socket,
 	       Message, SSLPort, PartialSec) ->
-    case decode_body(Version, ReqHdr, Rest, Len, ByteOrder, Message, enc_reply) of
+    Ctx = check_context(ReqHdr#request_header.service_context, []),
+    case decode_body(Version, ReqHdr, Rest, Len, ByteOrder, Message, 
+		     enc_reply, Ctx) of
 	{error, E} ->
 	    orber_socket:write(SocketType, Socket, E);
 	{Version, Hdr, Par, TypeCodes} ->
 	    Result = invoke_request(Hdr, Par, SocketType, TypeCodes, SSLPort, PartialSec),
 	    Reply  = evaluate(Version, Hdr, Result, TypeCodes, 
-			      enc_reply, 'no_exception'),
+			      enc_reply, 'no_exception', Ctx),
 	    send_reply(Reply, SocketType, Socket)
     end;
 handle_request(Interceptors, Version, ReqHdr, Rest, Len, ByteOrder, 
 	       SocketType, Socket, Message, SSLPort, PartialSec) ->
+    Ctx = check_context(ReqHdr#request_header.service_context, []),
     case catch call_interceptors(SocketType, Interceptors, Version, ReqHdr, 
-				 Rest, Len, ByteOrder, Message, SSLPort, PartialSec) of
+				 Rest, Len, ByteOrder, Message, SSLPort, 
+				 PartialSec, Ctx) of
 	{error, E} ->
 	    %% Failed to decode body.
 	    orber_socket:write(SocketType, Socket, E);
@@ -192,38 +196,58 @@ handle_request(Interceptors, Version, ReqHdr, Rest, Len, ByteOrder,
 Invoking the interceptors resulted in: ~p", [?LINE, Message, Exc], ?DEBUG_LEVEL),
 	    Reply = marshal_exception(Version, 
 				      ReqHdr#request_header.request_id, 
-				      Exc, enc_reply),
+				      Exc, enc_reply, Ctx),
 	    orber_socket:write(SocketType, Socket, Reply);
 	{'EXIT', R} ->
 	    orber:dbg("[~p] orber_iiop_inrequest:handle_message(~p)
 Invoking the interceptors resulted in: ~p", [?LINE, ReqHdr, R], ?DEBUG_LEVEL),
 	    Reply = marshal_exception(Version, 
 				      ReqHdr#request_header.request_id,
-				      #'MARSHAL'{completion_status=?COMPLETED_MAYBE}, enc_reply),
+				      #'MARSHAL'{completion_status=?COMPLETED_MAYBE}, 
+				      enc_reply, Ctx),
 	    orber_socket:write(SocketType, Socket, Reply);
 	Reply ->
 	    send_reply(Reply, SocketType, Socket)
     end.
 
-
+check_context([], Acc) ->
+    Acc;
+check_context([#'CSI_SASContextBody'
+	       {label = ?CSI_MsgType_MTEstablishContext, 
+		value = #'CSI_EstablishContext'
+		{client_context_id = Id, 
+		 authorization_token = AuthToken,
+		 identity_token = IdToken, 
+		 client_authentication_token = CAuthToken}}|Rest], Acc) ->
+    check_context(Rest, [#'IOP_ServiceContext'
+			 {context_id=?IOP_SecurityAttributeService,
+			  context_data = #'CSI_SASContextBody'
+			  {label = ?CSI_MsgType_MTCompleteEstablishContext, 
+			   value = #'CSI_CompleteEstablishContext'
+			   {client_context_id = 0, 
+			    context_stateful = false,
+			    final_context_token = [0,255]}}}|Acc]);
+check_context([_|Rest], Acc) ->
+    check_context(Rest, Acc).
+    
 
 %%-----------------------------------------------------------------
-%% Func: call_interceptors_out
+%% Func: call_interceptors
 %%-----------------------------------------------------------------
-call_interceptors(SocketType, {native, Ref, PIs},
-		  Version, ReqHdr, Rest, Len, ByteOrder, Msg, SSLPort, PartialSec) ->
+call_interceptors(SocketType, {native, Ref, PIs}, Version, ReqHdr, Rest, 
+		  Len, ByteOrder, Msg, SSLPort, PartialSec, Ctx) ->
     NewRest = orber_pi:in_request_enc(PIs, ReqHdr, Ref, Rest),
-    case decode_body(Version, ReqHdr, NewRest, Len, ByteOrder, Msg, enc_reply) of
+    case decode_body(Version, ReqHdr, NewRest, Len, ByteOrder, Msg, enc_reply, Ctx) of
 	{Version, Hdr, Par, TypeCodes} ->
 	    NewPar = orber_pi:in_request(PIs, ReqHdr, Ref, Par),
 	    ResultInv = invoke_request(Hdr, NewPar, SocketType, TypeCodes, SSLPort, 
 				       PartialSec),
-	    Result = orber_pi:out_reply(PIs, ReqHdr, Ref, ResultInv),
+	    Result = orber_pi:out_reply(PIs, ReqHdr, Ref, ResultInv, Ctx),
 	    
             case evaluate(Version, ReqHdr, Result, TypeCodes, enc_reply_split,
-			  'no_exception') of
+			  'no_exception', Ctx) of
 		{ReplyHdr, Reply, HdrL, BodyL, Flags} ->
-		    NewReply = orber_pi:out_reply_enc(PIs, ReqHdr, Ref, Reply),
+		    NewReply = orber_pi:out_reply_enc(PIs, ReqHdr, Ref, Reply, Ctx),
 		    MessSize = HdrL+size(NewReply),
 		    cdr_encode:enc_giop_message_header(Version, 'reply', Flags, 
 						       MessSize, [ReplyHdr|NewReply]);
@@ -234,12 +258,12 @@ call_interceptors(SocketType, {native, Ref, PIs},
 	    Other
     end;
 call_interceptors(SocketType, {portable, PIs}, Version, ReqHdr, Rest, Len, 
-		  ByteOrder, Msg, SSLPort, PartialSec) ->
-    case decode_body(Version, ReqHdr, Rest, Len, ByteOrder, Msg, enc_reply) of
+		  ByteOrder, Msg, SSLPort, PartialSec, Ctx) ->
+    case decode_body(Version, ReqHdr, Rest, Len, ByteOrder, Msg, enc_reply, Ctx) of
 	{Version, Hdr, Par, TypeCodes} ->
 	    Result = invoke_request(Hdr, Par, SocketType, TypeCodes, SSLPort, 
 				    PartialSec),
-	    evaluate(Version, ReqHdr, Result, TypeCodes, enc_reply, 'no_exception');
+	    evaluate(Version, ReqHdr, Result, TypeCodes, enc_reply, 'no_exception', Ctx);
 	Other ->
 	    Other
     end.
@@ -248,27 +272,28 @@ call_interceptors(SocketType, {portable, PIs}, Version, ReqHdr, Rest, Len,
 %% Func: call_interceptors_out
 %%-----------------------------------------------------------------
 call_interceptors_out(Version, ReqId, Result, Obj, {native, Ref, PIs}, Type,
-		      Operation, TypeCodes) ->
+		      Operation, TypeCodes, Ctx) ->
     ReqHdr = #request_header{object_key = Obj,
-			     service_context = [],
+			     service_context = Ctx,
 			     response_expected = true,
 			     request_id = ReqId,
 			     operation = Operation},
-    NewResult = (catch orber_pi:out_reply(PIs, ReqHdr, Ref, Result)),
+    NewResult = (catch orber_pi:out_reply(PIs, ReqHdr, Ref, Result, Ctx)),
     {ReplyHdr, Reply, HdrL, BodyL, Flags} = 
-	evaluate(Version, ReqHdr, NewResult, TypeCodes, enc_reply_split, Type),
+	evaluate(Version, ReqHdr, NewResult, TypeCodes, enc_reply_split, Type, Ctx),
     NewReply = 
-	case catch orber_pi:out_reply_enc(PIs, ReqHdr, Ref, Reply) of
+	case catch orber_pi:out_reply_enc(PIs, ReqHdr, Ref, Reply, Ctx) of
 	    {'EXCEPTION', Exception} ->
 		%% Since evaluate don't need TypeCodes or Status no need to supply
 		%% them.
 		evaluate(Version, ReqHdr, {'EXCEPTION', Exception}, undefined, 
-			 enc_reply_split, undefined);
+			 enc_reply_split, undefined, Ctx);
 	    {'EXIT', E} ->
 		orber:dbg("[~p] orber_iiop_inrequest:handle_location_forward(~p)
 Resulted in exit: ~p", [?LINE, PIs, E], ?DEBUG_LEVEL),
 		marshal_exception(Version, ReqId,
-				  #'MARSHAL'{completion_status=?COMPLETED_NO}, enc_reply);
+				  #'MARSHAL'{completion_status=?COMPLETED_NO}, 
+				  enc_reply, Ctx);
 	    R ->
 		R
 	end,
@@ -276,31 +301,36 @@ Resulted in exit: ~p", [?LINE, PIs, E], ?DEBUG_LEVEL),
     cdr_encode:enc_giop_message_header(Version, 'reply', Flags, 
 				       MessSize, [ReplyHdr|NewReply]);
 call_interceptors_out(Version, ReqId, Result, Obj, {portable, PIs}, 
-		      Type, _, TypeCodes) ->
+		      Type, _, TypeCodes, Ctx) ->
     Hdr = #request_header{response_expected = true,
 			  request_id = ReqId},
-    evaluate(Version, Hdr, Result, TypeCodes, enc_reply, Type);
-call_interceptors_out(Version, ReqId, Result, Obj, _, Type, _, TypeCodes) ->
+    evaluate(Version, Hdr, Result, TypeCodes, enc_reply, Type, Ctx);
+call_interceptors_out(Version, ReqId, Result, Obj, _, Type, _, TypeCodes, Ctx) ->
     Hdr = #request_header{response_expected = true,
 			  request_id = ReqId},
-    evaluate(Version, Hdr, Result, TypeCodes, enc_reply, Type).
+    evaluate(Version, Hdr, Result, TypeCodes, enc_reply, Type, Ctx).
 
 
 %%-----------------------------------------------------------------
 %% Func: decode_body/2
 %%-----------------------------------------------------------------
-decode_body(Version, ReqHdr, Rest, Len, ByteOrder, Message, Func) ->
+decode_body(Version, ReqHdr, Rest, Len, ByteOrder, Message, Func, Ctx) ->
     case catch cdr_decode:dec_request_body(Version, ReqHdr, Rest, Len, 
 					   ByteOrder, Message) of
 	{Version, ReqHdr, Par, TypeCodes} ->
 	    {Version, ReqHdr, Par, TypeCodes};
+	{'EXCEPTION', E} ->
+	    orber:dbg("[~p] orber_iiop_inrequest:decode_body(~p, ~p)
+Failed decoding request body: ~p", [?LINE, ReqHdr, Message, E], ?DEBUG_LEVEL),
+	    {error, marshal_exception(Version, ReqHdr#request_header.request_id,
+				      E, Func, Ctx)};
 	Other ->
 	    %% This cluase takes care of all erranous messages.
 	    orber:dbg("[~p] orber_iiop_inrequest:decode_body(~p, ~p)
 Failed decoding request body: ~p", [?LINE, ReqHdr, Message, Other], ?DEBUG_LEVEL),
 	    {error, marshal_exception(Version, ReqHdr#request_header.request_id,
 				      #'MARSHAL'{completion_status=?COMPLETED_NO},
-				      Func)}
+				      Func, Ctx)}
     end.
     
 
@@ -372,7 +402,8 @@ SSL do not permit", [?LINE, Hdr#request_header.object_key], ?DEBUG_LEVEL),
 		end
 	end,
     result_to_list(Result, TypeCodes);	
-invoke_request(Hdr, Par, ssl, TypeCodes, SSLPort, _) ->
+invoke_request(Hdr, Par, ssl, 
+	       TypeCodes, SSLPort, _) ->
     Result = corba:request_from_iiop(Hdr#request_header.object_key,
 				     Hdr#request_header.operation,
 				     Par, [], Hdr#request_header.response_expected,
@@ -382,52 +413,53 @@ invoke_request(Hdr, Par, ssl, TypeCodes, SSLPort, _) ->
 %%-----------------------------------------------------------------
 %% Func: evaluate/4
 %%-----------------------------------------------------------------
-evaluate(_, Hdr,_,_,_,_) when Hdr#request_header.response_expected == 'false' ->
+evaluate(_, Hdr,_,_,_,_,_) when Hdr#request_header.response_expected == 'false' ->
     oneway;
-evaluate(Version, Hdr, _, _, Func, _) 
+evaluate(Version, Hdr, _, _, Func, _, Ctx) 
   when Hdr#request_header.response_expected == 'true_oneway' ->
     %% Special case which only occurs when usin IIOP-1.2
     cdr_encode:Func(Version, Hdr#request_header.request_id,
-		    'no_exception', {tk_null,[],[]}, null, []);
-evaluate(Version, Hdr, {'EXCEPTION', Exc}, _, Func, _) ->
+		    'no_exception', {tk_null,[],[]}, null, [], Ctx);
+evaluate(Version, Hdr, {'EXCEPTION', Exc}, _, Func, _, Ctx) ->
     %% The exception can be user defined. Hence, we must check the result.
-    case catch marshal_exception(Version, Hdr#request_header.request_id, Exc, Func) of
+    case catch marshal_exception(Version, Hdr#request_header.request_id, Exc, Func, Ctx) of
 	{'EXCEPTION', Exception} ->
 	    orber:dbg("[~p] orber_iiop_inrequest:evaluate(~p)
 Encoding (reply) exception: ~p", [?LINE, Hdr, Exception], ?DEBUG_LEVEL),
-	    marshal_exception(Version, Hdr#request_header.request_id, Exception, Func);
+	    marshal_exception(Version, Hdr#request_header.request_id, Exception, Func, Ctx);
 	{'EXIT', E} ->
 	    orber:dbg("[~p] orber_iiop_inrequest:evaluate(~p)
 Encode (reply) resulted in: ~p", [?LINE, Hdr, E], ?DEBUG_LEVEL),
 	    marshal_exception(Version, Hdr#request_header.request_id,
-			      #'MARSHAL'{completion_status=?COMPLETED_YES}, Func);
+			      #'MARSHAL'{completion_status=?COMPLETED_YES}, Func, Ctx);
 	R ->
 	    R	
     end;
-evaluate(Version, Hdr, [Res |OutPar], TypeCodes, Func, Type) ->
+evaluate(Version, Hdr, [Res |OutPar], TypeCodes, Func, Type, Ctx) ->
     case catch cdr_encode:Func(Version, 
 			       Hdr#request_header.request_id,
 			       Type,
 			       TypeCodes,
-			       Res, OutPar) of
+			       Res, OutPar, Ctx) of
 	{'EXCEPTION', Exception} ->
 	    orber:dbg("[~p] orber_iiop_inrequest:evaluate(~p, ~p, ~p)
 Encode exception: ~p", [?LINE, Hdr, Res, OutPar, Exception], ?DEBUG_LEVEL),
-	    marshal_exception(Version, Hdr#request_header.request_id, Exception, Func);
+	    marshal_exception(Version, Hdr#request_header.request_id, Exception, Func, Ctx);
 	{'EXIT', E} ->
 	    orber:dbg("[~p] orber_iiop_inrequest:evaluate(~p, ~p, ~p)
 Encode exit: ~p", [?LINE, Hdr, Res, OutPar, E], ?DEBUG_LEVEL),
 	    marshal_exception(Version, Hdr#request_header.request_id,
-			      #'MARSHAL'{completion_status=?COMPLETED_YES}, Func);
+			      #'MARSHAL'{completion_status=?COMPLETED_YES}, Func, Ctx);
 	R ->
 	    R
     end;
-evaluate(Version, Hdr, What, TypeCodes, Func, _) ->
+evaluate(Version, Hdr, What, TypeCodes, Func, _, Ctx) ->
     orber:dbg("[~p] orber_iiop_inrequest:evaluate(~p)
 Bad reply: ~p
-Should be: ~p", [?LINE, Hdr, What, TypeCodes], ?DEBUG_LEVEL),
+Should be: ~p
+Context  : ~p", [?LINE, Hdr, What, TypeCodes, Ctx], ?DEBUG_LEVEL),
     marshal_exception(Version, Hdr#request_header.request_id, 
-		      #'INTERNAL'{completion_status=?COMPLETED_MAYBE}, Func).
+		      #'INTERNAL'{completion_status=?COMPLETED_MAYBE}, Func, Ctx).
 
 %%-----------------------------------------------------------------
 %% Utility Functions
@@ -439,11 +471,11 @@ result_to_list(Result, {TkRes, _, []}) ->
 result_to_list(Result, {TkRes, _, TkOut}) ->
     tuple_to_list(Result).
 
-marshal_exception(Version, Id, Exception, Func) ->
+marshal_exception(Version, Id, Exception, Func, Ctx) ->
     {TypeOfException, ExceptionTypeCode} =
 	orber_typedefs:get_exception_def(Exception),
     cdr_encode:Func(Version, Id, TypeOfException, {ExceptionTypeCode, [], []}, 
-		    Exception, []).
+		    Exception, [], Ctx).
 
 marshal_locate_exception({1,2}, Id, Exception) ->
     case orber_typedefs:get_exception_def(Exception) of

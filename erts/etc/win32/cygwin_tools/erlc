@@ -1,0 +1,39 @@
+#! /bin/sh
+# Note! This shellscript expects to be run in a cygwin environment,
+# it converts erlc command lines to native windows erlc commands, which
+# basically means running the command cygpath on whatever is a path...
+
+CMD=""
+ECHO_ONLY=false
+for x in "$@"; do 
+    case "$x" in
+	--echo_only)
+	    ECHO_ONLY=true;;
+	-I/*|-o/*)
+	    y=`echo $x | sed 's,^-[Io]\(/.*\),\1,g'`;
+	    z=`echo $x | sed 's,^-\([Io]\)\(/.*\),\1,g'`;
+	    MPATH=`cygpath -m $y`;
+	    CMD="$CMD -$z$MPATH";; 
+	/*)
+	    MPATH=`cygpath -m $x`;
+	    CMD="$CMD \"$MPATH\"";; 
+# Needed for  +'{preproc_flags,whatever}'
+	+{preproc_flags,*})
+	     y=`echo $x | sed 's,^+{preproc_flags\,"\(.*\)"},\1,g'`;
+	     z=`eval $0 --echo_only $y`;
+	     case "$z" in # Dont "doubledoublequote"
+		 \"*\") 
+		 CMD="$CMD +'{preproc_flags,$z}'";;
+		 *)
+		 CMD="$CMD +'{preproc_flags,\"$z\"}'";;
+	     esac;;
+	*)
+	    y=`echo $x | sed 's,",\\\",g'`;
+	    CMD="$CMD \"$y\"";;
+    esac
+done
+if [ $ECHO_ONLY = true ]; then
+    echo $CMD
+else
+    eval erlc.exe $CMD
+fi

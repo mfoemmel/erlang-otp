@@ -1,3 +1,4 @@
+%%% -*- Erlang -*-
 %%%----------------------------------------------------------------------
 %%% File    : ssa_rename.inc
 %%% Author  : Christoffer Vikström
@@ -99,12 +100,11 @@ rename(CFG, Node, DomTree, Count, Current) ->
     BB = ?cfg:bb(CFG, Node),
     Statements = hipe_bb:code(BB),
     {Statements2, Count2, Current2} = renameVars(Statements, Count, Current),
-    Succ = ?cfg:succ(CFG, Node),
-    CFG2 = updateSuccPhi(Succ, Node, CFG, Current2),
+    CFG1 = ?cfg:bb_update(CFG, Node, hipe_bb:code_update(BB, Statements2)),
+    Succ = ?cfg:succ(CFG1, Node),
+    CFG2 = updateSuccPhi(Succ, Node, CFG1, Current2),
     Children = hipe_domtree:getChildren(Node, DomTree),
-    CFG3 = ?cfg:bb_update(CFG2, Node, 
-				    hipe_bb:code_update(BB, Statements2)),
-    childrenRename(Children, CFG3, DomTree, Count2, Current2).
+    childrenRename(Children, CFG2, DomTree, Count2, Current2).
 
 
 %%>----------------------------------------------------------------------<
@@ -172,7 +172,7 @@ renameUses(Statement, Current) ->
 %  Return    : An icode statement.
 %  Notes     : 
 %%>----------------------------------------------------------------------< 
-updateStatementUses([Var | T] = VarList, Statement, Current) ->
+updateStatementUses([Var | T] = _VarList, Statement, Current) ->
     NewVar = {colored, lookup(Var, Current)},
     Statement2 = ?code:subst_uses([{Var, NewVar}], Statement),
     updateStatementUses(T, Statement2, Current);
@@ -223,15 +223,28 @@ renameDefs(Statement, Count, Current) ->
 %              Count - the index of the highest named variable so far
 %              Current - the current index of all variables encountered
 %  Return    : {Statement, Count, Current}
-%  Notes     : 
+%  Notes     : Per Gustafsson:
+%              I changed this function to update the statement only when
+%              all substitutions are found
 %%>----------------------------------------------------------------------< 
-updateStatementDefs([{Type, Num} = Var| T], Statement, Count, Current) ->
-    {Count2, Current2} = updateIndexes(Count, Current, Var),
-    Statement2 = ?code:subst_defines([{Var, {Type, Count2}}], Statement),
-    updateStatementDefs(T, Statement2, Count2, Current2);
+updateStatementDefs(Vars, Statement, Count, Current) ->
+updateStatementDefs(Vars, Statement, Count, Current, []).
 
-updateStatementDefs([], Statement, Count, Current) -> 
-    {Statement, Count, Current}.
+updateStatementDefs([Var| T], Statement, Count, Current, Acc) ->
+  {Count2, Current2} = updateIndexes(Count, Current, Var),
+  NewVar = 
+    case ?code:is_var(Var) of
+      true-> ?code:mk_var(Count2);
+      _ -> case ?code:is_fvar(Var) of
+	     true -> ?code:mk_fvar(Count2);
+	     _ -> ?code:mk_reg(Count2)
+	   end
+    end,
+  updateStatementDefs(T, Statement, Count2, Current2, [{Var, NewVar}|Acc]);
+
+updateStatementDefs([], Statement, Count, Current, Acc) -> 
+  Statement2 = ?code:subst_defines(Acc, Statement),
+  {Statement2, Count, Current}.
 
 
 %%>----------------------------------------------------------------------<
@@ -245,14 +258,20 @@ updateStatementDefs([], Statement, Count, Current) ->
 %  Return    : A tuple containing an updated version of Count and Current.
 %  Notes     : 
 %%>----------------------------------------------------------------------< 
-updateIndexes(Count, Current, {var, _} = Variable) ->
-    {Count + 1, update(Variable, ?code:mk_var(Count + 1), Current)};
+updateIndexes(Count, Current, Variable) ->
+  case ?code:is_var(Variable) of
+    true ->
+      {Count + 1, update(Variable, ?code:mk_var(Count + 1), Current)};
+    _ ->
+      case ?code:is_fvar(Variable) of
+	true ->
+	  {Count + 1, update(Variable, ?code:mk_fvar(Count + 1), Current)};
+	_ ->
+	  {Count + 1, update(Variable, ?code:mk_reg(Count + 1), Current)}
+      end
+  end.
 
-updateIndexes(Count, Current, {fvar, _} = Variable) ->
-    {Count + 1, update(Variable, ?code:mk_fvar(Count + 1), Current)};
 
-updateIndexes(Count, Current, {reg, _} = Variable) ->
-    {Count + 1, update(Variable, ?code:mk_reg(Count + 1), Current)}.
 %%>----------------------------------------------------------------------<
 %  Procedure : updateSuccPhi/4
 %  Purpose   : This function is used for updating phi functions in a 
@@ -268,7 +287,7 @@ updateIndexes(Count, Current, {reg, _} = Variable) ->
 %  Return    : An updated version of the CFG
 %  Notes     : 
 %%>----------------------------------------------------------------------< 
-updateSuccPhi([Succ | T] = List, Parent, CFG, Current) ->
+updateSuccPhi([Succ | T], Parent, CFG, Current) ->
     CFG2 = updatePhi(Succ, Parent, CFG, Current),
     updateSuccPhi(T, Parent, CFG2, Current);
 
@@ -294,12 +313,11 @@ updateSuccPhi([], _, CFG, _) -> CFG.
 updatePhi(Node, Parent, CFG, Current) ->
     BB = ?cfg:bb(CFG, Node),
     case hipe_bb:code(BB) of
-	[Code|T] = Statements ->
+	[Code|_] = Statements ->
 	    case ?code:is_phi(Code) of
 		true ->
 		    Code2 = updateCode(Statements, Parent, Current),
-		    ?cfg:bb_update(CFG, Node, 
-					     hipe_bb:code_update(BB, Code2));
+		    ?cfg:bb_update(CFG, Node,hipe_bb:code_update(BB, Code2)); 
 		_ -> CFG
 	    end;
 	_ -> CFG

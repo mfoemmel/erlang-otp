@@ -373,22 +373,42 @@ append(Config) when list(Config) ->
     ?line Contents = "ftp_SUITE test:appending\n",
     ?line ok = file:write_file(AbsLFile, list_to_binary(Contents)),
     %%The local file that we shall operate on i created 
-    %%Start the transfer the first time
+    %% Start the transfer the first time
     ?line {ok, Pid} = ?ftp_open(Host),
     ?line ok = ftp:user(Pid, ?FTP_USER, ?FTP_PASS),
     ?line ok = ftp:cd(Pid, "incoming"),
     ?line ok = ftp:lcd(Pid, PrivDir),
     ?line ok = ftp:append(Pid, LFile, RFile),
     ?line ok = ftp:append(Pid, LFile, RFile),
-    %%Control the contents of the file
+    %% Control the contents of the file
     ?line {ok, Bin2}  = ftp:recv_bin(Pid, RFile),
-    ?line true = control_content(binary_to_list(Bin2),Contents),
     ?line ok = ftp:delete(Pid,RFile),
     ?line ok = ftp:close(Pid),
-    ?line ok = file:delete(AbsLFile).
+    ?line ok = file:delete(AbsLFile),
+    ?line ok = check_content(binary_to_list(Bin2),Contents).
+    
 
-control_content(RContent,LContent)->
-    string:equal(RContent,LContent++LContent).
+check_content(RContent,LContent)->
+    ?DEBUG("check_content -> ~n"
+	"~n   length(RContent): ~p"
+	"~n   length(LContent): ~p", [length(RContent), length(LContent)]),
+    LContent2 = LContent++LContent,
+    case string:equal(RContent,LContent2) of
+	true ->
+	    ok;
+	false ->
+	    %% Find where the diff is
+	    find_diff(RContent, LContent2, 1)
+    end.
+
+find_diff(A, A, _) ->
+    ok;
+find_diff([H|T1], [H|T2], Pos) ->
+    find_diff(T1, T2, Pos+1);
+find_diff(RC, LC, Pos) ->
+    {error, {diff, Pos, RC, LC}}.
+
+
 %%
 %% 
 %% 
@@ -431,11 +451,12 @@ append_bin(Config) when list(Config) ->
     ?line ok = ftp:cd(Pid, "incoming"),
     ?line ok = ftp:append_bin(Pid, Bin, File),
     ?line ok = ftp:append_bin(Pid, Bin, File),
-    %%Control the contents of the file
-    ?line {ok, Bin2}  = ftp:recv_bin(Pid, File),
-    ?line true = control_content(binary_to_list(Bin2),binary_to_list(Bin)),
+    %% Control the contents of the file
+    ?line {ok, Bin2} = ftp:recv_bin(Pid, File),
     ?line ok = ftp:delete(Pid,File),
-    ?line ok = ftp:close(Pid).
+    ?line ok = ftp:close(Pid),
+    ?line ok = check_content(binary_to_list(Bin2),binary_to_list(Bin)).
+    
 %%
 %% 
 %% 
@@ -484,7 +505,7 @@ append_chunk(Config) when list(Config) ->
     ?line ok = ftp:append_chunk_end(Pid),
     %%Control the contents of the file
     ?line {ok, Bin2}  = ftp:recv_bin(Pid, File),
-    ?line true = control_content(binary_to_list(Bin2),"ERL"),
+    ?line ok = check_content(binary_to_list(Bin2),"ERL"),
     ?line ok = ftp:delete(Pid, File),
     ?line ok = ftp:close(Pid).
 
@@ -611,13 +632,13 @@ recv_chunk(Config) when list(Config) ->
     ?line ok = ftp:cd(Pid2, "incoming"),
     ?line ok  = ftp:recv_chunk_start(Pid2, File),
     ?line {ok, Bin2} = recv_chunk(Pid2, []),
+    ?DEBUG("recv_chunk -> data recived, now cleanup",[]),
+    ?line ok = ftp:delete(Pid2, File),		% cleanup
+    ?line ok = ftp:close(Pid2),
     ?DEBUG("recv_chunk -> unpack received binary",[]),
     ?line Contents2 = binary_to_list(Bin2),
-    ?DEBUG("recv_chunk -> data recived",[]),
-    ?line Contents1 = Contents2,
-    ?DEBUG("recv_chunk -> Data equal, now cleanup",[]),
-    ?line ok = ftp:delete(Pid2, File),		% cleanup
-    ?line ok = ftp:close(Pid2).
+    ?DEBUG("recv_chunk -> check data",[]),
+    ?line ok = find_diff(Contents2,Contents1, 1).
     
 recv_chunk(Pid, Acc) ->
     case ftp:recv_chunk(Pid) of

@@ -104,7 +104,7 @@ init_mpd(Opts) ->
 process_packet(Packet, TDomain, TAddress, State) ->
     process_packet(Packet, TDomain, TAddress, State, nofunc).
 process_packet(Packet, TDomain, TAddress, State, LogF) ->
-    X = inc(snmpInPkts),
+    inc(snmpInPkts),
     case catch snmp_pdus:dec_message_only(binary_to_list(Packet)) of
 	#message{version = 'version-1', vsn_hdr = Community, data = Data} 
 	  when State#state.v1 == true ->
@@ -193,12 +193,14 @@ v1_v2c_proc(Vsn, Community, snmpUDPDomain, {Ip, Udp}, Data, HS, LogF, Packet) ->
 	    ?vtrace("PDU decode exit: ~p",[Reason]),
 	    inc(snmpInASNParseErrs),
 	    {discarded, Reason};
-	TrapPdu ->
+	_TrapPdu ->
 	    {discarded, trap_pdu}
     end;
-v1_v2c_proc(Vsn, Community, snmpUDPDomain, TAddress, Data, HS, LogF, Packet) ->
+v1_v2c_proc(_Vsn, _Community, snmpUDPDomain, TAddress, _Data, _HS, _LogF, 
+	    _Packet) ->
     {discarded, {badarg, TAddress}};
-v1_v2c_proc(Vsn, Community, TDomain, TAddress, Data, HS, LogF, Packet) ->
+v1_v2c_proc(_Vsn, _Community, TDomain, _TAddress, _Data, _HS, _LogF, 
+	    _Packet) ->
     {discarded, {badarg, TDomain}}.
 
 sec_model('version-1') -> ?SEC_V1;
@@ -208,7 +210,7 @@ sec_model('version-2') -> ?SEC_V2C.
 %% Handles a SNMPv3 Message, following the procedures in rfc2272,
 %% section 4.2 and 7.2
 %%-----------------------------------------------------------------
-v3_proc(Packet, TDomain, TAddress, V3Hdr, Data, LogF) ->
+v3_proc(Packet, _TDomain, _TAddress, V3Hdr, Data, LogF) ->
     %% 7.2.3
     #v3_hdr{msgID = MsgID, msgMaxSize = MMS, msgFlags = MsgFlags,
 	    msgSecurityModel = MsgSecurityModel,
@@ -379,7 +381,7 @@ check_sec_module_result(Res, V3Hdr, Data, IsReportable, LogF) ->
 		{discarded, _SomeOtherReason} ->
 		    throw({discarded, {securityError, Reason}})
 	    end;
-	{error, Reason, ErrorInfo} ->
+	{error, Reason, _ErrorInfo} ->
 	    throw({discarded, {securityError, Reason}});
 	Else ->
 	    throw({discarded, {securityError, Else}})
@@ -400,7 +402,7 @@ generate_response_msg(Vsn, RePdu, Type, ACMData, LogF) ->
     generate_response_msg(Vsn, RePdu, Type, ACMData, LogF, 1).
 
 generate_response_msg(Vsn, RePdu, Type, 
-		      {community, _SecModel, Community, IpUdp},
+		      {community, _SecModel, Community, _IpUdp},
 		      LogF, _) ->
 	case catch snmp_pdus:enc_pdu(RePdu) of
 	    {'EXIT', Reason} ->
@@ -582,7 +584,7 @@ too_big(Vsn, Pdu, Community, LogF, _MMS, _Len) when Pdu#pdu.type == 'get-respons
 		    {ok, Bin}
 	    end
     end;
-too_big(Vsn, Pdu, _Community, _LogF, MMS, Len) ->
+too_big(_Vsn, Pdu, _Community, _LogF, MMS, Len) ->
     user_err("encoded pdu, ~p bytes, exceeded "
 	     "max message size of ~p bytes. Pdu: ~n~w", 
 	     [Len, MMS, Pdu]),
@@ -722,7 +724,7 @@ gen(Id) ->
     case ets:update_counter(snmp_agent_table, Id, 1) of
 	N when N =< 2147483647 ->
 	    N;
-	N ->
+	_N ->
 	    ets:insert(snmp_agent_table, {Id, 0}),
 	    0
     end.

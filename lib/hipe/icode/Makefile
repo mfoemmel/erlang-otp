@@ -20,6 +20,10 @@ ifndef EBIN
 EBIN = ../ebin
 endif
 
+ifndef DOCS
+DOCS = ../doc
+endif
+
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
@@ -37,16 +41,19 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-MODULES = hipe_icode hipe_icode_cfg hipe_icode_ebb hipe_icode_liveness \
+DOC_MODULES = hipe_icode hipe_icode_cfg hipe_icode_liveness \
 	hipe_icode_prop hipe_icode_heap_test hipe_icode_cleanup \
 	hipe_update_catches hipe_beam_to_icode hipe_icode_primops \
 	hipe_icode_binary_pass hipe_icode_ssa_phi hipe_icode_ssa_rename \
-	hipe_icode_ssa hipe_icode_ssa_propagate
+	hipe_icode_ssa hipe_icode_ssa_propagate hipe_icode_ssa_check \
+	hipe_icode_type hipe_icode_ssa_copy_prop hipe_icode_pp hipe_icode_fp
 
+MODULES = $(DOC_MODULES) hipe_icode_ebb 
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+DOC_FILES= $(DOC_MODULES:%=$(DOCS)/%.html)
 
 # APP_FILE= 
 # APP_SRC= $(APP_FILE).src
@@ -69,11 +76,14 @@ ERL_COMPILE_FLAGS +=
 
 debug opt: $(TARGET_FILES) 
 
-docs:
+docs: $(DOC_FILES)
 
 clean:
 	rm -f $(TARGET_FILES)
 	rm -f core
+
+$(DOCS)/%.html:%.erl
+	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s erlang halt
 
 # ----------------------------------------------------
 # Special Build Targets
@@ -92,15 +102,19 @@ release_spec: opt
 
 release_docs_spec:
 
-$(EBIN)/hipe_icode_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl
+$(EBIN)/hipe_icode.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl
+$(EBIN)/hipe_icode_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_icode_ebb.beam: ../flow/ebb.inc
 $(EBIN)/hipe_icode_liveness.beam: ../util/hipe_vector.hrl ../flow/liveness.inc
 $(EBIN)/hipe_icode_heap_test.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_icode_prop.beam: ../main/hipe.hrl
 $(EBIN)/hipe_update_catches.beam: ../main/hipe.hrl
 $(EBIN)/hipe_beam_to_icode.beam: ../main/hipe.hrl
+$(EBIN)/hipe_icode_binary_pass.beam: ../rtl/hipe_literals.hrl
 
 $(EBIN)/hipe_icode_ssa_rename.beam: ../ssa/hipe_ssa_rename.inc
 $(EBIN)/hipe_icode_ssa.beam: ../ssa/hipe_ssa.inc
+$(EBIN)/hipe_icode_ssa_copy_prop.beam: ../ssa/hipe_ssa_copy_prop.inc
 $(EBIN)/hipe_icode_ssa_propagate.beam: ../ssa/hipe_ssa_propagate.inc
 $(EBIN)/hipe_icode_ssa_phi.beam: ../ssa/hipe_ssa_phi.inc
+$(EBIN)/hipe_icode_ssa_check.beam: ../ssa/hipe_ssa_checker.inc

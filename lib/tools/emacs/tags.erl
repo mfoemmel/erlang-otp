@@ -124,7 +124,7 @@ collect_dirs([Dir | Dirs], Recursive, Acc) ->
     end,
     collect_dirs(Dirs, Recursive, NewAcc).
 
-collect_files(Dir, [], Recursive, Acc) -> Acc;
+collect_files(_Dir,[],_Recursive, Acc) -> Acc;
 collect_files(Dir, [File | Files], Recursive, Acc) ->
     FullFile = addfile(Dir, File),
     case file:file_info(FullFile) of
@@ -147,7 +147,7 @@ collect_files(Dir, [File | Files], Recursive, Acc) ->
     collect_files(Dir, Files, Recursive, NewAcc).
 
 
-files_loop([], Os) -> true;
+files_loop([],_Os) -> true;
 files_loop([F | Fs], Os) ->
     case filename(F, Os) of
 	ok ->
@@ -241,7 +241,7 @@ attribute([$- | Line], Nos) ->
 	    case Line2 of
 		[$( | Line3] ->
 		    {Space4, Line4} = white(Line3),
-		    {Name, Line5} = word(Line4),
+		    {Name,_Line5} = word(Line4),
 		    case Name of
 			[] -> false;
 			_ ->

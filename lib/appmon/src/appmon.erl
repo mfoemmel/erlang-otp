@@ -188,28 +188,39 @@ handle_info({delivery, Serv, app_ctrl, Node, Apps}, State) ->
 
 handle_info({nodeup, Node}, State) ->
 
-    %% If this is a previously unknown node, update window's 'Nodes' menu
-    case get_mnode(Node, State#state.mnodes) of
-	false ->
-	    display_addnode(State#state.wins, Node);
-	_OldMnode ->
-	    ignore
-    end,
+    %% First, make sure appmon code is available at remode node,
+    %% or the node should be ignored (OTP-3591)
+    case rpc:call(Node, code, which, [appmon]) of
+	File when is_list(File) ->
 
-    %% Update node information (=> state is automatically changed to 'alive')
-    MNode = mk_mnode(Node, State#state.lbpid),
-    MNodes = replace_mnode(Node, MNode, State#state.mnodes),
+	    %% If this is a previously unknown node, update window's
+	    %% 'Nodes' menu
+	    case get_mnode(Node, State#state.mnodes) of
+		false ->
+		    display_addnode(State#state.wins, Node);
+		_OldMnode ->
+		    ignore
+	    end,
 
-    %% If Node is currently displayed, update graphics
-    case get_win(Node, State#state.wins) of
-	{ok, GUI} ->
-	    display_nodeup(GUI, Node);
-	false ->
-	    ignore
-    end,
+	    %% Update node information (=> state is automatically
+	    %% changed to 'alive')
+	    MNode = mk_mnode(Node, State#state.lbpid),
+	    MNodes = replace_mnode(Node, MNode, State#state.mnodes),
 
-    appmon_lb:update_status(State#state.lbpid, Node, alive),
-    {noreply, State#state{mnodes=MNodes}};
+	    %% If Node is currently displayed, update graphics
+	    case get_win(Node, State#state.wins) of
+		{ok, GUI} ->
+		    display_nodeup(GUI, Node);
+		false ->
+		    ignore
+	    end,
+
+	    appmon_lb:update_status(State#state.lbpid, Node, alive),
+	    {noreply, State#state{mnodes=MNodes}};
+
+	_Other -> % non_existing (| cover_compiled)
+	    {noreply, State}
+    end;
 
 handle_info({nodedown, Node}, State) ->
     

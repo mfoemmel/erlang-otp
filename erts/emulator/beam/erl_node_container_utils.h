@@ -114,7 +114,7 @@
    ? ((Uint) 0)							\
    : (ASSERT_EXPR(is_node_name_atom((x)->sysname)),		\
       (Uint) atom_val((x)->sysname)))
-#define internal_channel_no(x) ((Uint) 0)
+#define internal_channel_no(x) ((Uint) ERST_INTERNAL_CHANNEL_NO)
 #define external_channel_no(x) \
   (dist_entry_channel_no(external_dist_entry((x))))
 

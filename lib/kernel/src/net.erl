@@ -26,6 +26,8 @@
 	 relay/1,
 	 sleep/1]).
 
+-deprecated(module).
+
 call(N,M,F,A) -> rpc:call(N,M,F,A).
 cast(N,M,F,A) -> rpc:cast(N,M,F,A).
 broadcast(M,F,A) -> rpc:eval_everywhere(M,F,A).

@@ -64,7 +64,8 @@
 -record(dec, {dst}).
 -record(finit, {}).
 -record(fmov, {src, dst}).
--record(fop, {op, src, dst}).
+-record(fp_binop, {op, src, dst}).
+-record(fp_unop, {op, arg}).
 -record(inc, {dst}).
 -record(jcc, {cc, label}).
 -record(jmp_fun, {'fun'}).		% tailcall, direct or indirect
@@ -83,6 +84,7 @@
 -record(pseudo_tailcall_prepare, {}).
 -record(push, {src}).
 -record(ret, {npop}).			% EAX is live-in
+-record(shift, {shiftop, src, dst}).
 %%% Function definitions.
 
 -record(defun, {mfa, formals, code, data, isclosure, isleaf,

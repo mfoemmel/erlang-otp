@@ -79,16 +79,22 @@ typedef struct DMC_STACK_TYPE(Type) {		\
 
 #define DMC_STACK_NUM(Name) (Name).pos
 
-#define DMC_PUSH(On, What) 						  \
-(((On).pos < (On).siz) ?						  \
- ((On).data[(On).pos++] = What) :					  \
- ((((On).data) = (((On).def == (On).data) ? 			          \
-	memcpy(safe_alloc_from(45, (((On).siz *= 2) *                     \
-				    sizeof(*((On).data)))),(On).def,      \
-	       DMC_DEFAULT_SIZE*sizeof(*((On).data))) :                   \
-	safe_realloc((char *) (On).data,                                  \
-		     ((On).siz *= 2) * sizeof(*((On).data)))))            \
-  [(On).pos++] = What))
+#define DMC_PUSH(On, What)						\
+do {									\
+    if ((On).pos >= (On).siz) {						\
+	(On).siz *= 2;							\
+	(On).data							\
+	    = (((On).def == (On).data)					\
+	       ? memcpy(erts_alloc(ERTS_ALC_T_DB_MC_STK,		\
+				   (On).siz*sizeof(*((On).data))),	\
+			(On).def,					\
+			DMC_DEFAULT_SIZE*sizeof(*((On).data)))		\
+	       : erts_realloc(ERTS_ALC_T_DB_MC_STK,			\
+			      (void *) (On).data,			\
+			      (On).siz*sizeof(*((On).data))));		\
+    }									\
+    (On).data[(On).pos++] = What;					\
+} while (0)
 
 #define DMC_POP(From) (From).data[--(From).pos]
 
@@ -102,7 +108,11 @@ typedef struct DMC_STACK_TYPE(Type) {		\
 
 #define DMC_CLEAR(Name) (Name).pos = 0
 
-#define DMC_FREE(Name) if ((Name).def != (Name).data) sys_free((Name).data)
+#define DMC_FREE(Name)							\
+do {									\
+    if ((Name).def != (Name).data)					\
+	erts_free(ERTS_ALC_T_DB_MC_STK, (Name).data);			\
+} while (0)
 
 
 /* Type checking... */
@@ -179,7 +189,8 @@ typedef enum {
 
 typedef struct dmc_guard_bif {
     Eterm name; /* atom */
-    BIF_RETTYPE (*biff)();
+    void *biff;
+    /*    BIF_RETTYPE (*biff)(); */
     int arity;
     Uint32 flags;
 } DMCGuardBif; 
@@ -593,7 +604,9 @@ Eterm db_am_eot;                /* Atom '$end_of_table' */
 */
 /* Utility code */
 static DMCGuardBif *dmc_lookup_bif(Eterm t, int arity);
+#ifdef DMC_DEBUG
 static Eterm dmc_lookup_bif_reversed(void *f);
+#endif
 static int cmp_uint(void *a, void *b);
 static int cmp_guard_bif(void *a, void *b);
 static int match_compact(ErlHeapFragment *expr, DMCErrInfo *err_info);
@@ -780,7 +793,8 @@ Binary *db_match_set_compile(Process *p, Eterm matchexpr,
 	return NULL;
 
     if (num_heads > 5) {
-	buff = safe_alloc_from(47, sizeof(Eterm) * num_heads * 3);
+	buff = erts_alloc(ERTS_ALC_T_DB_TMP,
+			  sizeof(Eterm) * num_heads * 3);
     } else {
 	buff = sbuff;
     }
@@ -832,7 +846,7 @@ Binary *db_match_set_compile(Process *p, Eterm matchexpr,
     }
     compiled = 1;
     if (buff != sbuff) {
-	sys_free(buff);
+	erts_free(ERTS_ALC_T_DB_TMP, buff);
     }
     return mps;
 
@@ -841,7 +855,7 @@ error:
 	erts_match_set_free(mps);
     }
     if (buff != sbuff) {
-	sys_free(buff);
+	erts_free(ERTS_ALC_T_DB_TMP, buff);
     }
     return NULL;
 }
@@ -885,7 +899,8 @@ Eterm db_match_set_lint(Process *p, Eterm matchexpr, Uint flags)
     }
 
     if (num_heads > 5) {
-	buff = safe_alloc_from(47, sizeof(Eterm) * num_heads * 3);
+	buff = erts_alloc(ERTS_ALC_T_DB_TMP,
+			  sizeof(Eterm) * num_heads * 3);
     } 
 
     matches = buff;
@@ -941,7 +956,7 @@ done:
     ret = db_format_dmc_err_info(p, err_info);
     db_free_dmc_err_info(err_info);
     if (buff != sbuff) {
-	sys_free(buff);
+	erts_free(ERTS_ALC_T_DB_TMP, buff);
     }
     return ret;
 }
@@ -1310,7 +1325,7 @@ error: /* Here is were we land when compilation failed. */
     if (context.copy != NULL) 
 	free_message_buffer(context.copy);
     if (heap.data != heap.def)
-	sys_free(heap.data);
+	erts_free(ERTS_ALC_T_DB_MPROG_HEAP, (void *) heap.data);
     return bp;
 }
 
@@ -1332,7 +1347,7 @@ void erts_match_set_free(Binary *bprog)
     }
     if (prog->saved_program_buf != NULL)
 	free_message_buffer(prog->saved_program_buf);
-    OH_BIN_FREE(bprog);
+    erts_bin_free(bprog);
 }
 
 void
@@ -1393,7 +1408,7 @@ Eterm db_prog_match(Process *p, Binary *bprog, Eterm term,
     unsigned do_catch;
     Process *psp = &match_pseudo_process;
     Process *tmpp;
-    Eterm (*bif)();
+    Eterm (*bif)(Process*, ...);
     int fail_label;
 
 
@@ -1612,7 +1627,7 @@ restart:
 	    *esp++ = t;
 	    break;
 	case matchCall0:
-	    bif = (Eterm (*)()) *pc++;
+	    bif = (Eterm (*)(Process*, ...)) *pc++;
 	    t = (*bif)(psp);
 	    if (is_non_value(t)) {
 		if (do_catch)
@@ -1623,7 +1638,7 @@ restart:
 	    *esp++ = t;
 	    break;
 	case matchCall1:
-	    bif = (Eterm (*)()) *pc++;
+	    bif = (Eterm (*)(Process*, ...)) *pc++;
 	    t = (*bif)(psp, esp[-1]);
 	    if (is_non_value(t)) {
 		if (do_catch)
@@ -1634,7 +1649,7 @@ restart:
 	    esp[-1] = t;
 	    break;
 	case matchCall2:
-	    bif = (Eterm (*)()) *pc++;
+	    bif = (Eterm (*)(Process*, ...)) *pc++;
 	    t = (*bif)(psp, esp[-1], esp[-2]);
 	    if (is_non_value(t)) {
 		if (do_catch)
@@ -1646,7 +1661,7 @@ restart:
 	    esp[-1] = t;
 	    break;
 	case matchCall3:
-	    bif = (Eterm (*)()) *pc++;
+	    bif = (Eterm (*)(Process*, ...)) *pc++;
 	    t = (*bif)(psp, esp[-1], esp[-2], esp[-3]);
 	    if (is_non_value(t)) {
 		if (do_catch)
@@ -1926,7 +1941,8 @@ Eterm db_make_mp_binary(Process *p, Binary *mp, Eterm **hpp) {
 
 DMCErrInfo *db_new_dmc_err_info(void) 
 {
-    DMCErrInfo *ret = safe_alloc_from(49, sizeof(DMCErrInfo));
+    DMCErrInfo *ret = erts_alloc(ERTS_ALC_T_DB_DMC_ERR_INFO,
+				 sizeof(DMCErrInfo));
     ret->var_trans = NULL;
     ret->num_trans = 0;
     ret->error_added = 0;
@@ -1975,19 +1991,21 @@ Eterm db_format_dmc_err_info(Process *p, DMCErrInfo *ei)
 void db_free_dmc_err_info(DMCErrInfo *ei){
     while (ei->first != NULL) {
 	DMCError *ll = ei->first->next;
-	sys_free(ei->first);
+	erts_free(ERTS_ALC_T_DB_DMC_ERROR, ei->first);
 	ei->first = ll;
     }
-    sys_free(ei);
+    if (ei->var_trans)
+	erts_free(ERTS_ALC_T_DB_TRANS_TAB, ei->var_trans);
+    erts_free(ERTS_ALC_T_DB_DMC_ERR_INFO, ei);
 }
 
 #define FIX_BIG_SIZE 16
 #define MAX_NEED(x,y) (((x)>(y)) ? (x) : (y))
 
 static Eterm  big_tmp[2];
-Eterm  db_big_buf[FIX_BIG_SIZE];
+static Eterm  db_big_buf[FIX_BIG_SIZE];
 
-Eterm add_counter(Eterm counter, Eterm incr)
+static Eterm add_counter(Eterm counter, Eterm incr)
 {
     Eterm res;
     Sint ires;
@@ -2030,13 +2048,15 @@ Eterm add_counter(Eterm counter, Eterm incr)
 	if (need <= FIX_BIG_SIZE)
 	    ptr = db_big_buf;
 	else {
-	    if ((ptr = sys_alloc_from(53,need*sizeof(Eterm))) == NULL)
+	    ptr = (Eterm *) erts_alloc_fnf(ERTS_ALC_T_DB_TMP,
+					   need*sizeof(Eterm));
+	    if (!ptr)
 		return NIL;  /* system limit */
 	}
 	res = big_plus(arg1, arg2, ptr);
 	if (is_small(res) || is_nil(res)) {
 	    if (ptr != db_big_buf)
-		sys_free(ptr);
+		erts_free(ERTS_ALC_T_DB_TMP, (void *) ptr);
 	}
 	return res;
     }
@@ -2060,6 +2080,7 @@ int db_do_update_counter(Process *p, void *bp /* XDbTerm **bp */,
 			 Eterm *tpl, int counterpos,
 			 int (*realloc_fun)(void *, Uint, Eterm, int),
 			 Eterm incr,
+			 int warp,
 			 Eterm *ret)
 {
     Eterm counter;
@@ -2067,8 +2088,6 @@ int db_do_update_counter(Process *p, void *bp /* XDbTerm **bp */,
     Eterm res; /* In register? */
 
 
-    /*if (make_arityval(keypos+1) != *tpl)
-	return DB_ERROR_BADITEM;*/
     if (arityval(*tpl) < counterpos || !(is_small(tpl[counterpos]) ||
 					 is_big(tpl[counterpos])))
 	return DB_ERROR_BADITEM;
@@ -2076,11 +2095,32 @@ int db_do_update_counter(Process *p, void *bp /* XDbTerm **bp */,
     counterp = tpl + counterpos;
     counter = *counterp;
 
-    if ((res = add_counter(counter, incr)) == NIL) 
-	return DB_ERROR_SYSRES;
-    else if (is_non_value(res))
-	return DB_ERROR_UNSPEC;
-
+    if (warp) {
+	if (is_small(incr)) {
+	    res = incr;
+	} else {
+	    /* copy to buffer */
+	    Eterm *tmp;
+	    Eterm *p = big_val(incr);
+	    Uint psz = BIG_ARITY(p)+1;
+	    if (psz > FIX_BIG_SIZE) {
+		tmp = db_big_buf;
+	    } else {
+		tmp = (Eterm *) erts_alloc_fnf(ERTS_ALC_T_DB_TMP,
+					       psz*sizeof(Eterm));
+		if (!tmp)
+		    return DB_ERROR_SYSRES;
+	    }
+	    sys_memcpy(tmp, p, psz*sizeof(Eterm));
+	    res = make_big(tmp);
+	}		
+    } else {
+	if ((res = add_counter(counter, incr)) == NIL) {
+	    return DB_ERROR_SYSRES;
+	} else if (is_non_value(res)) {
+	    return DB_ERROR_UNSPEC;
+	}
+    }
     if (is_small(res)) {
 	if (is_small(counter)) {
 	    *counterp = res;
@@ -2102,7 +2142,7 @@ int db_do_update_counter(Process *p, void *bp /* XDbTerm **bp */,
 	res = make_big(hp);
 	hp += sz;
 	if (ptr != db_big_buf)
-	    sys_free(ptr);
+	    erts_free(ERTS_ALC_T_DB_TMP, (void *) ptr);
 	*ret = res;
 	return DB_ERROR_NONE;
     }
@@ -2113,7 +2153,7 @@ int db_do_update_counter(Process *p, void *bp /* XDbTerm **bp */,
 ** offset is the offset of the DbTerm from the start
 ** of the sysAllocaed structure, The possibly realloced and copied
 ** structure is returned. Make sure (((char *) old) - offset) is a 
-** pointer to sys_alloced data.
+** pointer to a ERTS_ALC_T_DB_TERM allocated data area.
 */
 void* db_get_term(DbTerm* old, Uint offset, Eterm obj)
 {
@@ -2128,15 +2168,16 @@ void* db_get_term(DbTerm* old, Uint offset, Eterm obj)
 	if (size == old->size) {
 	    p = old;
 	} else {
-	    structp = safe_realloc(structp,
+	    structp = erts_realloc(ERTS_ALC_T_DB_TERM,
+				   structp,
 				   offset + sizeof(DbTerm) + 
 				   sizeof(Eterm)*(size-1));
 	    p = (DbTerm*) ((void *)(((char *) structp) + offset));
 	}
     }
     else {
-	structp = safe_alloc_from(52, offset + sizeof(DbTerm) + 
-				  sizeof(Eterm)*(size-1));
+	structp = erts_alloc(ERTS_ALC_T_DB_TERM,
+			     offset + sizeof(DbTerm) + sizeof(Eterm)*(size-1));
 	p = (DbTerm*) ((void *)(((char *) structp) + offset));
     }
     p->size = size;
@@ -2164,8 +2205,8 @@ void db_free_term_data(DbTerm* p)
 ** Copy the new counter value into the DbTerm at ((char *) *bp) + offset,
 ** Allocate new structure of (needed size + offset) if that DbTerm
 ** is to small. When changing size, the old structure is 
-** freed using sys_free, make sure this can be done (((char *) b) - offset
-** is a pointer to a sys_alloc'ed area).
+** freed using ERTS_ALC_T_DB_TERM, make sure this can be done
+** (((char *) b) - offset is a pointer to a ERTS_ALC_T_DB_TERM area).
 ** bp is a pure out parameter, i e it does not have to
 ** point to (((char *) b) - offset) when calling.
 */
@@ -2198,8 +2239,8 @@ int db_realloc_counter(void** bp, DbTerm *b, Uint offset, Uint sz,
     basic_sz = b->size - old_sz;
     new_sz = basic_sz + sz;
 
-    newbp = 
-	safe_alloc_from(57, sizeof(DbTerm)+sizeof(Eterm)*(new_sz-1)+offset);
+    newbp = erts_alloc(ERTS_ALC_T_DB_TERM,
+		       sizeof(DbTerm)+sizeof(Eterm)*(new_sz-1)+offset);
 
     if (newbp == NULL)
 	return -1;
@@ -2224,7 +2265,8 @@ int db_realloc_counter(void** bp, DbTerm *b, Uint offset, Uint sz,
     new->tpl = tuple_val(copy);
 
     db_free_term_data(b);
-    sys_free(((char *) b) - offset);  /* free old term */
+    erts_free(ERTS_ALC_T_DB_TERM,
+	      (void *) (((char *) b) - offset));  /* free old term */
     *bp = newbp;     /* patch new */
 
     /* copy new counter */
@@ -2333,7 +2375,7 @@ static void add_dmc_err(DMCErrInfo *err_info,
 			DMCErrorSeverity severity)
 {
     /* Linked in in reverse order, to ease the formatting */
-    DMCError *e = safe_alloc_from(48, sizeof(DMCError));
+    DMCError *e = erts_alloc(ERTS_ALC_T_DB_DMC_ERROR, sizeof(DMCError));
     if (term != 0UL) {
 	cerr_pos = 0;
 	display(term, CBUF);
@@ -2422,7 +2464,8 @@ static DMCRet dmc_one_term(DMCContext *context,
 		       may be atoms that changed */
 		    context->matchexpr[j] = context->copy->mem[j];
 		}
-		heap->data = safe_alloc_from(46, heap->size*sizeof(unsigned));
+		heap->data = erts_alloc(ERTS_ALC_T_DB_MPROG_HEAP,
+					heap->size*sizeof(unsigned));
 		sys_memset(heap->data, 0, 
 			   heap->size * sizeof(unsigned));
 		DMC_CLEAR(*stack);
@@ -3630,6 +3673,7 @@ static DMCGuardBif *dmc_lookup_bif(Eterm t, int arity)
 		   (int (*)(const void *, const void *)) &cmp_guard_bif); 
 }
 
+#ifdef DMC_DEBUG
 static Eterm dmc_lookup_bif_reversed(void *f)
 {
     int i;
@@ -3638,6 +3682,7 @@ static Eterm dmc_lookup_bif_reversed(void *f)
 	    return guard_tab[i].name;
     return am_undefined;
 }
+#endif
 
 /* For sorting. */
 static int cmp_uint(void *a, void *b) 
@@ -3694,8 +3739,8 @@ static int match_compact(ErlHeapFragment *expr, DMCErrInfo *err_info)
 	  (int (*)(const void *, const void *)) &cmp_uint);
 
     if (err_info != NULL) { /* lint needs a translation table */
-	err_info->var_trans = safe_alloc_from(50, (sizeof(unsigned) * 
-						   DMC_STACK_NUM(heap)));
+	err_info->var_trans = erts_alloc(ERTS_ALC_T_DB_TRANS_TAB,
+					 sizeof(unsigned)*DMC_STACK_NUM(heap));
 	sys_memcpy(err_info->var_trans, DMC_STACK_DATA(heap),
 		   DMC_STACK_NUM(heap) * sizeof(unsigned));
 	err_info->num_trans = DMC_STACK_NUM(heap);
@@ -3821,7 +3866,7 @@ static Eterm my_copy_struct(Eterm t, Eterm **hp, ErlOffHeap* off_heap)
 static Binary *allocate_magic_binary(size_t size)
 {
     Binary* bptr;
-    bptr = OH_BIN_ALLOC(61, size + sizeof(Binary) - 1);
+    bptr = erts_bin_nrml_alloc(size);
     bptr->flags = BIN_FLAG_MATCH_PROG;
     bptr->orig_size = size;
     bptr->refc = 0;
@@ -3849,7 +3894,6 @@ static Binary *allocate_magic_binary(size_t size)
 ** Flag -> return_trace (currently only flag)
 */
 BIF_RETTYPE match_spec_test_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     Eterm res;
 #ifdef DMC_DEBUG
@@ -3915,7 +3959,10 @@ static Eterm match_spec_test(Process *p, Eterm against, Eterm spec, int trace)
 	    l = CDR(list_val(l));
 	}
 	if (trace) {
-	    arr = sys_alloc_from(58, sizeof(Eterm) * n);
+	    if (n)
+		arr = erts_alloc(ERTS_ALC_T_DB_TMP, sizeof(Eterm) * n);
+	    else 
+		arr = NULL;
 	    l = against;
 	    n = 0;
 	    while (is_list(l)) {
@@ -3946,8 +3993,8 @@ static Eterm match_spec_test(Process *p, Eterm against, Eterm spec, int trace)
 	    flg = CONS(hp, am_return_trace, NIL);
 	    hp += 2;
 	}
-	if (trace) {
-	    sys_free(arr);
+	if (trace && arr != NULL) {
+	    erts_free(ERTS_ALC_T_DB_TMP, arr);
 	}
 	erts_match_set_free(mps);
 	ret = TUPLE4(hp, am_atom_put("ok",2), res, flg, lint_res);

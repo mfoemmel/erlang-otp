@@ -114,7 +114,6 @@ term_to_binary_2(Process* p, Eterm Term, Eterm Flags)
 }
 
 BIF_RETTYPE binary_to_term_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     int heap_size;
     Eterm res;
@@ -140,9 +139,9 @@ BIF_ADECL_1
 	uLongf dest_len;
 
 	dest_len = get_int32(bytes+1);
-	dest_ptr = safe_alloc_from(320, dest_len);
+	dest_ptr = erts_alloc(ERTS_ALC_T_TMP, dest_len);
 	if (uncompress(dest_ptr, &dest_len, bytes+5, size-5) != Z_OK) {
-	    sys_free(dest_ptr);
+	    erts_free(ERTS_ALC_T_TMP, dest_ptr);
 	    goto error;
 	}
 	bytes = dest_ptr;
@@ -157,7 +156,7 @@ BIF_ADECL_1
     endp = hp + heap_size;
     ep = dec_term(NULL, &hp, bytes, &MSO(BIF_P), &res);
     if (dest_ptr != NULL) {
-	sys_free(dest_ptr);
+	erts_free(ERTS_ALC_T_TMP, dest_ptr);
     }
     if (ep == NULL) {
 	goto error;
@@ -193,7 +192,7 @@ term_to_binary(Process* p, Eterm Term, int compressed)
 	uLongf dest_len;
 
 	if (sizeof(buf) < size) {
-	    bytes = safe_alloc_from(330, size);
+	    bytes = erts_alloc(ERTS_ALC_T_TMP, size);
 	}
 
 	if ((endp = enc_term(NULL, Term, bytes, TERM_TO_BINARY_DFLAGS))
@@ -232,7 +231,7 @@ term_to_binary(Process* p, Eterm Term, int compressed)
 	    bin = erts_realloc_binary(bin, dest_len+6);
 	}
 	if (bytes != buf) {
-	    sys_free(bytes);
+	    erts_free(ERTS_ALC_T_TMP, bytes);
 	}
 	return bin;
     } else {
@@ -759,13 +758,14 @@ erts_to_external_format(DistEntry *dep, Eterm obj, byte **ext)
 	    char* buf;
 	    
 	    size += (1000 + len);
-	    buf = (byte*) safe_alloc_from(281, 20+size); /* REMOVE THIS SLOPPY !!! */
+	    buf = (byte*) erts_alloc(ERTS_ALC_T_DIST_BUF,
+				     20+size); /* REMOVE THIS SLOPPY !!! */
 	    
 	    /* We need to restore the old contetnts of dist_buf
 	       before we can proceed */
 	    sys_memcpy(buf,dist_buf,len);
 	    if (dist_buf != tmp_buf)
-		sys_free(dist_buf);
+		erts_free(ERTS_ALC_T_DIST_BUF, (void *) dist_buf);
 	    dist_buf_size = size;
 	    dist_buf = buf;
 	    ptr =  dist_buf + len;
@@ -1115,13 +1115,12 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		    sys_memcpy(hb->data, ep, n);
 		    *objp = make_binary(hb);
 		} else {
-		    Binary* dbin = OH_BIN_SAFE_ALLOC(60, n+sizeof(Binary));
+		    Binary* dbin = erts_bin_nrml_alloc(n);
 		    ProcBin* pb;
 		    dbin->flags = 0;
 		    dbin->orig_size = n;
 		    dbin->refc = 1;
 		    sys_memcpy(dbin->orig_bytes, ep, n);
-		    tot_bin_allocated += n;
 		    pb = (ProcBin *) hp;
 		    hp += PROC_BIN_SIZE;
 		    pb->thing_word = HEADER_PROC_BIN;
@@ -1574,6 +1573,7 @@ decode_size2(byte *ep, byte* endp)
 		    int num_free;
 		    Uint total_size;
 
+		    CHKSIZE(4);
 		    total_size = get_int32(ep);
 		    CHKSIZE(total_size);
 		    CHKSIZE(20+1+4);

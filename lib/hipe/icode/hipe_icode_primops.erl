@@ -1,7 +1,6 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <02/05/13 15:06:57 happi>
 %% ====================================================================
 %%  Filename : 	hipe_icode_primops.erl
 %%  Module   :	hipe_icode_primops
@@ -10,9 +9,9 @@
 %%  History  :	* 2001-06-13 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: pegu2945 $
-%%              $Date: 2002/07/03 14:42:39 $
-%%              $Revision: 1.10 $
+%%              $Author: pergu $
+%%              $Date: 2003/04/23 11:58:14 $
+%%              $Revision: 1.13 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -31,11 +30,11 @@ pp(Op, Dev) ->
 	  io:format(Dev, "bs_put_binary_all<~w>", [Flags]);
 	{bs_put_binary, Size} ->
 	  io:format(Dev, "bs_put_binary<~w>", [Size]);
-	{bs_put_float, Flags, Size} ->
+	{bs_put_float, Flags, Size, _ConstInfo} ->
 	  io:format(Dev, "bs_put_float<~w, ~w>", [Flags, Size]);
 	{bs_put_string, String, SizeInBytes} ->
 	  io:format(Dev, "bs_put_string<~w, ~w>", [String, SizeInBytes]);
-	{bs_put_integer, Bits, Flags} ->
+	{bs_put_integer, Bits, Flags, _ConstInfo} ->
 	  io:format(Dev, "bs_put_integer<~w, ~w>", [Bits, Flags]);
 	{bs_skip_bits_all, Flags} ->
 	  io:format(Dev, "bs_skip_bits_all<~w>", [Flags]);
@@ -57,7 +56,9 @@ pp(Op, Dev) ->
 	  io:format(Dev, "bs_restore<~w>", [Index]);
 	{bs_save, Index} ->
 	  io:format(Dev, "bs_save<~w>", [Index]);
-	bs_init ->
+	{bs_init,_,_} ->
+	  io:format(Dev, "bs_init", []);
+	{bs_init,_} ->
 	  io:format(Dev, "bs_init", []);
 	{bs_need_buf, Need} ->
 	  io:format(Dev, "bs_need_buf<~w>", [Need]);
@@ -68,8 +69,12 @@ pp(Op, Dev) ->
       end;
     {mkfun, {Mod, Fun, Arity}, U, I} ->
       io:format(Dev, "mkfun<~w,~w,~w,~w,~w>", [Mod, Fun, Arity, U, I]);
-   {closure_element, N} ->
+    {closure_element, N} ->
       io:format(Dev, "closure_element<~w>", [N]);
+    {unsafe_element, N} ->
+      io:format(Dev, "unsafe_element<~w>", [N]);
+    {unsafe_update_element, N} ->
+      io:format(Dev, "unsafe_update_element<~w>", [N]);
     {Mod, Fun, _Arity} ->
       io:format(Dev, "~w:~w", [Mod, Fun]);
     {Fun, _Arity} ->

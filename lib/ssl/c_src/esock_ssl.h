@@ -26,9 +26,25 @@
 #include <stdio.h>
 #include "esock.h"
 
-/* Error string to be set by certain functions (see below) */
+typedef struct {
+    const char *compile_version;/* version of OpenSSL when compiling esock */
+    const char *lib_version;	/* version of OpenSSL in library */
+} esock_version;
 
-char *esock_ssl_err_str;
+/* Variables to be set by certain functions (see below) */
+char *esock_ssl_errstr;
+
+/* Ephemeral RSA and DH */
+int ephemeral_rsa, ephemeral_dh;
+
+/* version info */
+esock_version *esock_ssl_version(void);
+
+/* ciphers info */
+char *esock_ssl_ciphers(void);
+
+/* seeding */
+void esock_ssl_seed(void *buf, int len);
 
 /* Initialization and finalization of SSL */
 
@@ -61,18 +77,19 @@ void esock_ssl_print_errors_fp(FILE *fp);
  * be set to ERRNO_BLOCK. 
  *
  * If the failure is permanent, the error context must be set to something
- * else than ERRNO_BLOCK, and `esock_ssl_err_str' must be set to point to
+ * else than ERRNO_BLOCK, and `esock_ssl_errstr' must be set to point to
  * short diagnostic string describing the error.
  */
 
-int esock_ssl_accept_init(Connection *cp);
+int esock_ssl_accept_init(Connection *cp, void *listenssl);
 int esock_ssl_connect_init(Connection *cp);
 int esock_ssl_listen_init(Connection *cp);
 
 /* All functions below may involve non-blocking I/O with a temporary
  * failure.  Hence they have to have the error context set to
- * ERRNO_BLOCK, or else have esock_ssl_err_str set to point to a
- * diagnostic string, in case the return value is < 0.  
+ * ERRNO_BLOCK, or else have esock_ssl_errstr set to point to a
+ * diagnostic string, in case the return value is < 0. If the return
+ * value is 0, cp->eof and cp->bp are set, if appropritate.
  */
 
 int esock_ssl_accept(Connection *cp);
@@ -81,6 +98,11 @@ int esock_ssl_connect(Connection *cp);
 int esock_ssl_read(Connection *cp, char *buf, int len);
 int esock_ssl_write(Connection *cp, char *buf, int len);
 
-int esock_ssl_close(Connection *cp);
+int esock_ssl_shutdown(Connection *cp);
+
+/* Peer certificate */
+
+int esock_ssl_getpeercert(Connection *cp, unsigned char **buf);
+int esock_ssl_getpeercertchain(Connection *cp, unsigned char **buf);
 
 #endif

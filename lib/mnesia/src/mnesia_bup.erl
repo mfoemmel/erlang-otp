@@ -157,7 +157,7 @@ read_schema(Mod, Opaque) ->
     case catch read_schema_section(R) of
 	{error, Reason} ->
 	    {error, Reason};
-	{R2, {Header, Schema, _}} ->
+	{R2, {_Header, Schema, _}} ->
 	    catch safe_apply(R2, close_read, [R2#restore.bup_data]),
 	    Schema
     end.
@@ -195,10 +195,10 @@ do_read_schema_section(R, {ok, B, C, [Head | Tail]}, Acc)
         when element(1, Head) == schema ->
     do_read_schema_section(R, {ok, B, C, Tail}, Acc ++ [Head]);
 
-do_read_schema_section(R, {ok, B, C, Rest}, Acc) ->
+do_read_schema_section(R, {ok, B, _C, Rest}, Acc) ->
     {R, {B, Acc, Rest}};
 
-do_read_schema_section(R, {error, Reason}, Acc) ->
+do_read_schema_section(_R, {error, Reason}, _Acc) ->
     {error, Reason}.
 
 verify_header([H | RawSchema])  when record(H, log_header) ->
@@ -344,14 +344,14 @@ create_schema(Ns, ok) ->
 			    File = mnesia_lib:dir(Str),
 			    file:delete(File),
 			    case catch make_initial_backup(Ns, File, Mod) of
-				{ok, Res} ->
+				{ok, _Res} ->
 				    case do_install_fallback(File, Mod) of
 					ok ->
 					    file:delete(File),
 					    ok;
 					{error, Reason} ->
 					    {error, Reason}
-			    end;
+				    end;
 				{error, Reason} ->
 				    {error, Reason}
 			    end
@@ -360,9 +360,9 @@ create_schema(Ns, ok) ->
 	{error, Reason} ->
 	    {error, Reason}
     end;
-create_schema(Ns, {error, Reason}) ->
+create_schema(_Ns, {error, Reason}) ->
     {error, Reason};
-create_schema(Ns, Reason) ->
+create_schema(_Ns, Reason) ->
     {error, Reason}.
 
 mk_str() ->
@@ -379,7 +379,7 @@ make_initial_backup(Ns, Opaque, Mod) ->
 
 do_apply(_, write, [_, Items], Opaque) when Items == [] ->
     Opaque;
-do_apply(Mod, What, Args, Opaque) ->
+do_apply(Mod, What, Args, _Opaque) ->
     case catch apply(Mod, What, Args) of
 	{ok, Opaque2} ->  Opaque2;
 	{error, Reason} -> throw({error, Reason});
@@ -417,7 +417,7 @@ do_install_fallback(Opaque, Args) when list(Args) ->
 	{error, Reason} ->
 	    {error, Reason}
     end;
-do_install_fallback(Opaque, Args) ->
+do_install_fallback(_Opaque, Args) ->
     {error, {badarg, Args}}.
 
 check_fallback_args([Arg | Tail], FA) ->
@@ -506,7 +506,7 @@ restore_recs(Recs, Header, Schema, {start, FA}) ->
 	    Res
     end;
 
-restore_recs([], Header, Schema, Pids) ->
+restore_recs([], _Header, _Schema, Pids) ->
     send_fallback(Pids, swap),
     send_fallback(Pids, stop),
     stop;
@@ -627,7 +627,7 @@ check_fallback_dir_arg(Master, FA) ->
 	false when FA#fallback_args.scope == local ->
 	    Dir = FA#fallback_args.mnesia_dir,
 	    case catch mnesia_monitor:do_check_type(dir, Dir) of
-		{'EXIT', R} ->
+		{'EXIT', _R} ->
 		    Reason = {badarg, {dir, Dir}, node()},
 		    local_fallback_error(Master, Reason);
 		AbsDir->
@@ -677,8 +677,8 @@ fallback_receiver_loop(Master, R, FA, State) ->
     end.
 
 throw_bad_res(Expected, Expected) -> Expected;
-throw_bad_res(Expected, {error, Actual}) -> throw({error, Actual});
-throw_bad_res(Expected, Actual) -> throw({error, Actual}).
+throw_bad_res(_Expected, {error, Actual}) -> throw({error, Actual});
+throw_bad_res(_Expected, Actual) -> throw({error, Actual}).
 
 -record(local_tab, {name, storage_type, dets_args, open, close, add, record_name}).
 
@@ -703,7 +703,6 @@ do_fallback_start(true, false) ->
     Fname = fallback_bup(),
     Mod = mnesia_backup,
     Ets = ?ets_new_table(mnesia_local_tables, [set, public, {keypos, 2}]),
-    R = #restore{bup_module = Mod, bup_data = Fname},
     case catch iterate(Mod, fun restore_tables/4, Fname, {start, Ets}) of
 	{ok, Res} ->
 	    case Res of 
@@ -765,7 +764,6 @@ restore_tables([Rec | Recs], Header, Schema, State = {local, LocalTabs, L}) ->
     Tab = element(1, Rec),
     if
 	Tab == L#local_tab.name ->
-	    RecName = L#local_tab.record_name,
 	    Key = element(2, Rec),
 	    (L#local_tab.add)(Tab, Key, Rec, L),
 	    restore_tables(Recs, Header, Schema, State);
@@ -1012,7 +1010,7 @@ do_uninstall(ClientPid, [Pid | Pids], GoodPids, BadNodes, Res) ->
 do_uninstall(ClientPid, [], GoodPids, [], ok) ->
     lists:foreach(fun(Pid) -> Pid ! {self(), do_uninstall} end, GoodPids),
     rec_uninstall(ClientPid, GoodPids, ok);
-do_uninstall(ClientPid, [], GoodPids, BadNodes, BadRes) ->
+do_uninstall(_ClientPid, [], GoodPids, BadNodes, BadRes) ->
     lists:foreach(fun(Pid) -> exit(Pid, shutdown) end, GoodPids),
     {error, {node_not_running, BadNodes, BadRes}}.
 
@@ -1138,7 +1136,7 @@ do_traverse_backup(ClientPid, Source, SourceMod, Target, TargetMod, Fun, Acc) ->
     unlink(ClientPid),
     ClientPid ! {iter_done, self(), Res}.
 
-trav_apply(Recs, Header, Schema, {iter, Fun, Acc, Mod, Iter}) ->
+trav_apply(Recs, _Header, _Schema, {iter, Fun, Acc, Mod, Iter}) ->
     {NewRecs, Acc2} = filter_foldl(Fun, Acc, Recs),
     if
 	Mod /= read_only, NewRecs /= [] ->
@@ -1166,6 +1164,6 @@ filter_foldl(Fun, Acc, [Head|Tail]) ->
 	Other ->
 	    throw({error, {"Fun must return a list", Other}})
     end;
-filter_foldl(Fun, Acc, []) ->
+filter_foldl(_Fun, Acc, []) ->
     {[], Acc}.
 

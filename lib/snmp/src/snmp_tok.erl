@@ -198,7 +198,8 @@ safe_tokenise(Chars) when list(Chars) ->
 	    {{ok, [Token], get(line)}, RestChars}
     end.
 
-get_all_tokens(eof,Toks) -> lists:reverse(Toks);
+get_all_tokens(eof,Toks) -> 
+    lists:reverse(Toks);
 get_all_tokens(Str,Toks) ->
     case catch tokenise(Str) of
 	{error, ErrorInfo} -> {error, ErrorInfo};
@@ -216,6 +217,9 @@ tokenise([H|T]) when $a =< H , H =< $z ->
 
 tokenise([H|T]) when $A =< H , H =< $Z ->
     get_name(variable, [H], T);
+
+tokenise([$:,$:,$=|T]) ->
+    {{'::=', get(line)}, T};
 
 tokenise([$-,$-|T]) ->
     tokenise(skip_comment(T));

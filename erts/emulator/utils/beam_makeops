@@ -984,6 +984,7 @@ sub make_unpack {
 
 sub quote {
     local($_) = @_;
+    return "'$_'" if $_ eq 'try';
     return "'$_'" if $_ eq 'catch';
     return "'$_'" if $_ eq 'receive';
     return "'$_'" if $_ =~ /^[A-Z]/;

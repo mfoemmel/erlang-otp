@@ -60,11 +60,11 @@ do_get_disc_copy2(Tab, Reason, Storage, Type) when Storage == disc_copies ->
     %% NOW we create the actual table
     Repair = mnesia_monitor:get_env(auto_repair),
     Args = [{keypos, 2}, public, named_table, Type],
-    mnesia_monitor:mktab(Tab, Args),
     case Reason of 
-	dumper_create_table ->
-	    ok = mnesia_log:ets2dcd(Tab);
+	{dumper, _} -> %% Resources allready allocated
+	    ignore;
 	_ ->
+	    mnesia_monitor:mktab(Tab, Args),
 	    Count = mnesia_log:dcd2ets(Tab, Repair),	    
 	    case ets:info(Tab, size) of
 		X when X < Count * 4 ->
@@ -81,25 +81,30 @@ do_get_disc_copy2(Tab, Reason, Storage, Type) when Storage == disc_copies ->
 
 do_get_disc_copy2(Tab, Reason, Storage, Type) when Storage == ram_copies ->
     Args = [{keypos, 2}, public, named_table, Type],
-    mnesia_monitor:mktab(Tab, Args),
-    Fname = mnesia_lib:tab2dcd(Tab),
-    Datname = mnesia_lib:tab2dat(Tab),
-    Repair = mnesia_monitor:get_env(auto_repair),
-    case mnesia_monitor:use_dir() of
-	true ->
-	    case mnesia_lib:exists(Fname) of 
-		true -> mnesia_log:dcd2ets(Tab, Repair);
-		false ->
-		    case mnesia_lib:exists(Datname) of
-			true ->
-			    mnesia_lib:dets_to_ets(Tab, Tab, Datname, 
-						   Type, Repair, no);
+    case Reason of 
+	{dumper, _} -> %% Resources allready allocated
+	    ignore;
+	_ ->
+	    mnesia_monitor:mktab(Tab, Args),
+	    Fname = mnesia_lib:tab2dcd(Tab),
+	    Datname = mnesia_lib:tab2dat(Tab),
+	    Repair = mnesia_monitor:get_env(auto_repair),
+	    case mnesia_monitor:use_dir() of
+		true ->
+		    case mnesia_lib:exists(Fname) of 
+			true -> mnesia_log:dcd2ets(Tab, Repair);
 			false ->
-			    false
-		    end
-	    end;
-	false ->
-	    false
+			    case mnesia_lib:exists(Datname) of
+				true ->
+				    mnesia_lib:dets_to_ets(Tab, Tab, Datname, 
+							   Type, Repair, no);
+				false ->
+				    false
+			    end
+		    end;
+		false ->
+		    false
+	    end
     end,
     mnesia_index:init_index(Tab, Storage),
     snmpify(Tab, Storage),
@@ -112,15 +117,24 @@ do_get_disc_copy2(Tab, Reason, Storage, Type) when Storage == disc_only_copies -
 	    {type, mnesia_lib:disk_type(Tab, Type)},
 	    {keypos, 2},
 	    {repair, mnesia_monitor:get_env(auto_repair)}],
-    case mnesia_monitor:open_dets(Tab, Args) of
-	{ok, _} ->
+    case Reason of
+	{dumper, _} ->
 	    mnesia_index:init_index(Tab, Storage),
 	    snmpify(Tab, Storage),
 	    set({Tab, load_node}, node()),
 	    set({Tab, load_reason}, Reason),
 	    {loaded, ok};
-	{error, Error} ->
-	    {not_loaded, {"Failed to create dets table", Error}}
+	_ ->
+	    case mnesia_monitor:open_dets(Tab, Args) of
+		{ok, _} ->
+		    mnesia_index:init_index(Tab, Storage),
+		    snmpify(Tab, Storage),
+		    set({Tab, load_node}, node()),
+		    set({Tab, load_reason}, Reason),
+		    {loaded, ok};
+		{error, Error} ->
+		    {not_loaded, {"Failed to create dets table", Error}}
+	    end
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -155,7 +169,7 @@ do_get_disc_copy2(Tab, Reason, Storage, Type) when Storage == disc_only_copies -
 -define(MAX_NOPACKETS, 20).
 
 net_load_table(Tab, Reason, Ns, Cs)
-        when Reason == add_table_copy ->
+        when Reason == {dumper,add_table_copy} ->
     try_net_load_table(Tab, Reason, Ns, Cs);
 net_load_table(Tab, Reason, Ns, _Cs) ->
     try_net_load_table(Tab, Reason, Ns, val({Tab, cstruct})).
@@ -186,8 +200,10 @@ do_get_network_copy(Tab, Reason, Ns, Storage, Cs) ->
 	    mnesia_controller:i_have_tab(Tab),
 	    dbg_out("Table ~p copied from ~p to ~p~n", [Tab, Node, node()]),
 	    {loaded, ok};
+	Err = {error, _} when element(1, Reason) == dumper ->
+	    {not_loaded,Err};
 	restart ->
-	    {not_loaded, restart};
+	    try_net_load_table(Tab, Reason, Tail, Cs);
 	down ->
 	    try_net_load_table(Tab, Reason, Tail, Cs) 
     end.
@@ -222,25 +238,30 @@ init_receiver(Node, Tab, Storage, Cs, Reason) ->
 table_init_fun(SenderPid) ->
     PConv = mnesia_monitor:needs_protocol_conversion(node(SenderPid)),
     MeMyselfAndI = self(),
-    Init = fun(read) ->
-		   Receiver = 
-		       if 
-			   PConv == true -> 
-			       MeMyselfAndI ! {actual_tabrec, self()},
-			       MeMyselfAndI; %% Old mnesia
-			   PConv == false -> self()
-		       end,
-		   SenderPid ! {Receiver, more},
-		   get_data(SenderPid, Receiver)
-	   end.
+    fun(read) ->
+	    Receiver = 
+		if 
+		    PConv == true -> 
+			MeMyselfAndI ! {actual_tabrec, self()},
+			MeMyselfAndI; %% Old mnesia
+		    PConv == false -> self()
+		end,
+	    SenderPid ! {Receiver, more},
+	    get_data(SenderPid, Receiver)
+    end.
 
 
 %% Add_table_copy get's it's own locks.
-spawn_receiver(Tab,Storage,Cs,SenderPid,
-	       TabSize,DetsData,add_table_copy) ->    
+spawn_receiver(Tab,Storage,Cs,SenderPid,TabSize,DetsData,{dumper,add_table_copy}) ->    
     Init = table_init_fun(SenderPid),
-    do_init_table(Tab,Storage,Cs,SenderPid,
-		  TabSize,DetsData,self(), Init);
+    case do_init_table(Tab,Storage,Cs,SenderPid,TabSize,DetsData,self(), Init) of
+	Err = {error, _} ->
+	    SenderPid ! {copier_done, node()},
+	    Err;
+	Else ->
+	    Else
+    end;
+
 spawn_receiver(Tab,Storage,Cs,SenderPid,
 	       TabSize,DetsData,Reason) ->
     %% Grab a schema lock to avoid deadlock between table_loader and schema_commit dumping.
@@ -258,6 +279,13 @@ spawn_receiver(Tab,Storage,Cs,SenderPid,
 		   wait_on_load_complete(Pid)
 	   end,
     Res = case mnesia:transaction(Load, 20) of
+	      {atomic, {error,Result}} when element(1,Reason) == dumper -> 
+		  SenderPid ! {copier_done, node()},
+		  {error,Result};
+	      {atomic, {error,Result}} -> 
+		  SenderPid ! {copier_done, node()},
+		  fatal("Cannot create table ~p: ~p~n",
+			[[Tab, Storage], Result]);
 	      {atomic, Result} -> Result;
 	      {aborted, nomore} -> 
 		  SenderPid ! {copier_done, node()},
@@ -333,7 +361,7 @@ tab_receiver(Node, Tab, Storage, Cs, PConv, OrigTabRec) ->
 create_table(Tab, TabSize, Storage, Cs) ->
     if 
 	Storage == disc_only_copies ->
-	    mnesia_lib:lock_table(Tab) ,
+	    mnesia_lib:lock_table(Tab),
 	    Tmp = mnesia_lib:tab2tmp(Tab),
 	    Size = lists:max([TabSize, 256]),
 	    Args = [{file, Tmp},
@@ -345,33 +373,42 @@ create_table(Tab, TabSize, Storage, Cs) ->
 	    file:delete(Tmp),
 	    case mnesia_lib:dets_sync_open(Tab, Args) of
 		{ok, _} ->
+		    mnesia_lib:unlock_table(Tab),
 		    {Storage, Tab};
 		Else ->
-		    fatal("do_get_network_copy open ~w Tab ~w cstruct ~w ~s ~n",
-			  [Else, Tab, Cs, Tmp])
+		    mnesia_lib:unlock_table(Tab),
+		    Else
 	    end;
 	(Storage == ram_copies) or (Storage == disc_copies) ->
 	    Args = [{keypos, 2}, public, named_table, Cs#cstruct.type],
-	    mnesia_monitor:mktab(Tab, Args), % exits upon failure
-	    {Storage, Tab}
+	    case mnesia_monitor:unsafe_mktab(Tab, Args) of
+		Tab ->
+		    {Storage, Tab};
+		Else ->
+		    Else
+	    end
     end.
 
 do_init_table(Tab,Storage,Cs,SenderPid, 
 	      TabSize,DetsInfo,OrigTabRec,Init) ->
-    create_table(Tab, TabSize, Storage, Cs),
-    %% Debug info
-    Node = node(SenderPid),
-    put(mnesia_table_receiver, {Tab, Node, SenderPid}),
-    mnesia_tm:block_tab(Tab),
-    PConv = mnesia_monitor:needs_protocol_conversion(Node),
-
-    case init_table(Tab,Storage,Init,PConv,DetsInfo,SenderPid) of
-	ok -> 
-	    tab_receiver(Node,Tab,Storage,Cs,PConv,OrigTabRec);
-	Reason ->
-	    Msg = "[d]ets:init table failed",
-	    dbg_out("~s: ~p: ~p~n", [Msg, Tab, Reason]),
-	    down(Tab, Storage)
+    case create_table(Tab, TabSize, Storage, Cs) of
+	{Storage,Tab} ->
+	    %% Debug info
+	    Node = node(SenderPid),
+	    put(mnesia_table_receiver, {Tab, Node, SenderPid}),
+	    mnesia_tm:block_tab(Tab),
+	    PConv = mnesia_monitor:needs_protocol_conversion(Node),
+	    
+	    case init_table(Tab,Storage,Init,PConv,DetsInfo,SenderPid) of
+		ok -> 
+		    tab_receiver(Node,Tab,Storage,Cs,PConv,OrigTabRec);
+		Reason ->
+		    Msg = "[d]ets:init table failed",
+		    dbg_out("~s: ~p: ~p~n", [Msg, Tab, Reason]),
+		    down(Tab, Storage)
+	    end;
+	Error ->
+	    Error
     end.
 
 make_table_fun(Pid, TabRec) ->

@@ -84,30 +84,31 @@
 %%%
 %%% ---------------------------------------------------
 
+%% API
 -export([start/3, start/4,
 	 start_link/3, start_link/4,
 	 call/2, call/3,
 	 cast/2, reply/2,
 	 abcast/2, abcast/3,
 	 multi_call/2, multi_call/3, multi_call/4,
-	 %% safe_multi_call/2, safe_multi_call/3, safe_multi_call/4,
-	 system_continue/3,
+	 enter_loop/3, enter_loop/4, enter_loop/5]).
+
+-export([behaviour_info/1]).
+
+%% System exports
+-export([system_continue/3,
 	 system_terminate/4,
 	 system_code_change/4,
 	 format_status/2]).
 
--export([behaviour_info/1]).
-
 %% Internal exports
--export([init_it/6, print_event/3
-	 %%, safe_send/2
-	]).
+-export([init_it/6, print_event/3]).
 
--import(error_logger , [format/2]).
+-import(error_logger, [format/2]).
 
-%%% ---------------------------------------------------
-%%% Interface functions.
-%%% ---------------------------------------------------
+%%%=========================================================================
+%%%  API
+%%%=========================================================================
 
 behaviour_info(callbacks) ->
     [{init,1},{handle_call,3},{handle_cast,2},{handle_info,2},
@@ -115,7 +116,7 @@ behaviour_info(callbacks) ->
 behaviour_info(_Other) ->
     undefined.
 
-%%% ---------------------------------------------------
+%%%  -----------------------------------------------------------------
 %%% Starts a generic server.
 %%% start(Mod, Args, Options)
 %%% start(Name, Mod, Args, Options)
@@ -130,33 +131,33 @@ behaviour_info(_Other) ->
 %%% Returns: {ok, Pid} |
 %%%          {error, {already_started, Pid}} |
 %%%          {error, Reason}
-%%% ---------------------------------------------------
+%%% -----------------------------------------------------------------
 start(Mod, Args, Options) ->
-    gen:start(gen_server, nolink, Mod, Args, Options).
+    gen:start(?MODULE, nolink, Mod, Args, Options).
 
 start(Name, Mod, Args, Options) ->
-    gen:start(gen_server, nolink, Name, Mod, Args, Options).
+    gen:start(?MODULE, nolink, Name, Mod, Args, Options).
 
 start_link(Mod, Args, Options) ->
-    gen:start(gen_server, link, Mod, Args, Options).
+    gen:start(?MODULE, link, Mod, Args, Options).
 
 start_link(Name, Mod, Args, Options) ->
-    gen:start(gen_server, link, Name, Mod, Args, Options).
+    gen:start(?MODULE, link, Name, Mod, Args, Options).
 
 
-%
-% Make a call to a generic server.
-% If the server is located at another node, that node will
-% be monitored.
-% If the client is trapping exits and is linked server termination
-% is handled here (? Shall we do that here (or rely on timeouts) ?).
-%
+%% -----------------------------------------------------------------
+%% Make a call to a generic server.
+%% If the server is located at another node, that node will
+%% be monitored.
+%% If the client is trapping exits and is linked server termination
+%% is handled here (? Shall we do that here (or rely on timeouts) ?).
+%% ----------------------------------------------------------------- 
 call(Name, Request) ->
     case catch gen:call(Name, '$gen_call', Request) of
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-	    exit({Reason, {gen_server, call, [Name, Request]}})
+	    exit({Reason, {?MODULE, call, [Name, Request]}})
     end.
 
 call(Name, Request, Timeout) ->
@@ -164,67 +165,213 @@ call(Name, Request, Timeout) ->
 	{ok,Res} ->
 	    Res;
 	{'EXIT',Reason} ->
-	    exit({Reason, {gen_server, call, [Name, Request, Timeout]}})
+	    exit({Reason, {?MODULE, call, [Name, Request, Timeout]}})
     end.
 
-
-
-%
-% Make a cast to a generic server.
-%
+%% -----------------------------------------------------------------
+%% Make a cast to a generic server.
+%% -----------------------------------------------------------------
 cast(Name, Request) ->
-    catch do_cast(Name, Request),
+    do_cast(Name, Request),
     ok.
 
-do_cast(Name, Request) when atom(Name) ->
-    Name ! {'$gen_cast', Request};
-do_cast(Pid, Request) when pid(Pid) ->
-    Pid ! {'$gen_cast', Request};
-do_cast({global, Name}, Request) ->
-    catch global:send(Name, {'$gen_cast', Request});
-do_cast({Name, Node}, Request) ->
-    {Name, Node} ! {'$gen_cast', Request}.
-
-%
-% Send a reply to the client.
-%
+%% -----------------------------------------------------------------
+%% Send a reply to the client.
+%% -----------------------------------------------------------------
 reply({To, Tag}, Reply) ->
     catch To ! {Tag, Reply}.
 
-%
-% Asyncronous broadcast, returns nothing, it's just send'n prey
-%
+%% ----------------------------------------------------------------- 
+%% Asyncronous broadcast, returns nothing, it's just send'n prey
+%%-----------------------------------------------------------------  
 abcast(Name, Mess) ->
     abcast([node() | nodes()], Name, Mess).
 abcast([Node|Tail], Name, Mess) ->
-    catch do_cast({Name,Node},Mess),
+    do_cast({Name,Node},Mess),
     abcast(Tail, Name, Mess);
 abcast([], _,_) -> abcast.
 
 
-%%%
+%%% -----------------------------------------------------------------
 %%% Make a call to servers at several nodes.
 %%% Returns: {[Replies],[BadNodes]}
 %%% A Timeout can be given
 %%% 
-multi_call(Name, Req) ->
-    multi_call([node() | nodes()], Name, Req, infinity).
+%%% A middleman process is used in case late answers arrives after
+%%% the timeout. If they would be allowed to glog the callers message
+%%% queue, it would probably become confused. Late answers will 
+%%% now arrive to the terminated middleman and so be discarded.
+%%% -----------------------------------------------------------------
+multi_call(Name, Req)
+  when atom(Name) ->
+    do_multi_call([node() | nodes()], Name, Req, infinity).
 
 multi_call(Nodes, Name, Req) 
   when list(Nodes), atom(Name) ->
-    Tag = make_ref(),
-    Monitors = send_nodes(Nodes, Name, Tag, Req, []),
-    rec_nodes(Tag, Monitors, Name, undefined).
+    do_multi_call(Nodes, Name, Req, infinity).
 
 multi_call(Nodes, Name, Req, infinity) ->
-    multi_call(Nodes, Name, Req);
+    do_multi_call(Nodes, Name, Req, infinity);
 multi_call(Nodes, Name, Req, Timeout) 
   when list(Nodes), atom(Name), integer(Timeout), Timeout >= 0 ->
-    Tag = make_ref(),
-    Monitors = send_nodes(Nodes, Name, Tag, Req, []),
-    TimerId = erlang:start_timer(Timeout, self(), ok),
-    rec_nodes(Tag, Monitors, Name, TimerId).
+    do_multi_call(Nodes, Name, Req, Timeout).
 
+
+%%-----------------------------------------------------------------
+%% enter_loop(Module, Options, State, <ServerName>, <TimeOut>) ->_ 
+%%   
+%% Description: Makes an existing process into a gen_server. 
+%%              The calling process will enter the gen_server receive 
+%%              loop and become a gen_server process.
+%%              The process *must* have been started using one of the 
+%%              start functions in proc_lib, see proc_lib(3). 
+%%              The user is responsible for any initialization of the 
+%%              process, including registering a name for it.
+%%-----------------------------------------------------------------
+enter_loop(Module, Options, State) ->
+    enter_loop(Module, Options, State, self(), infinity).
+
+enter_loop(Module, Options, State, ServerName = {_, _}) ->
+    enter_loop(Module, Options, State, ServerName, infinity);
+
+enter_loop(Module, Options, State, Timeout) ->
+    enter_loop(Module, Options, State, self(), Timeout).
+
+enter_loop(Module, Options, State, ServerName, Timeout) ->
+    Name = get_proc_name(ServerName),
+    Parent = get_parent(),
+    Debug = debug_options(Name, Options),
+    loop(Parent, Name, State, Module, Timeout, Debug).
+
+%%%========================================================================
+%%% Gen-callback functions
+%%%========================================================================
+
+%%% ---------------------------------------------------
+%%% Initiate the new process.
+%%% Register the name using the Rfunc function
+%%% Calls the Mod:init/Args function.
+%%% Finally an acknowledge is sent to Parent and the main
+%%% loop is entered.
+%%% ---------------------------------------------------
+init_it(Starter, self, Name, Mod, Args, Options) ->
+    init_it(Starter, self(), Name, Mod, Args, Options);
+init_it(Starter, Parent, Name, Mod, Args, Options) ->
+    Debug = debug_options(Name, Options),
+    case catch Mod:init(Args) of
+	{ok, State} ->
+	    proc_lib:init_ack(Starter, {ok, self()}), 	    
+	    loop(Parent, Name, State, Mod, infinity, Debug);
+	{ok, State, Timeout} ->
+	    proc_lib:init_ack(Starter, {ok, self()}), 	    
+	    loop(Parent, Name, State, Mod, Timeout, Debug);
+	{stop, Reason} ->
+	    proc_lib:init_ack(Starter, {error, Reason}),
+	    exit(Reason);
+	ignore ->
+	    proc_lib:init_ack(Starter, ignore),
+	    exit(normal);
+	{'EXIT', Reason} ->
+	    proc_lib:init_ack(Starter, {error, Reason}),
+	    exit(Reason);
+	Else ->
+	    Error = {bad_return_value, Else},
+	    proc_lib:init_ack(Starter, {error, Error}),
+	    exit(Error)
+    end.
+
+%%%========================================================================
+%%% Internal functions
+%%%========================================================================
+%%% ---------------------------------------------------
+%%% The MAIN loop.
+%%% ---------------------------------------------------
+loop(Parent, Name, State, Mod, Time, Debug) ->
+    Msg = receive
+	      Input ->
+		    Input
+	  after Time ->
+		  timeout
+	  end,
+    case Msg of
+	{system, From, Req} ->
+	    sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
+				  [Name, State, Mod, Time]);
+	{'EXIT', Parent, Reason} ->
+	    terminate(Reason, Name, Msg, Mod, State, Debug);
+	_Msg when Debug == [] ->
+	    handle_msg(Msg, Parent, Name, State, Mod, Time);
+	_Msg ->
+	    Debug1 = sys:handle_debug(Debug, {?MODULE, print_event}, 
+				      Name, {in, Msg}),
+	    handle_msg(Msg, Parent, Name, State, Mod, Time, Debug1)
+    end.
+
+%%% ---------------------------------------------------
+%%% Send/recive functions
+%%% ---------------------------------------------------
+do_cast(Dest, Request) ->
+    Msg = {'$gen_cast',Request},
+    case Dest of
+	_ when atom(Dest); pid(Dest) ->
+	    do_cast_msg(Dest, Msg);
+	{global,Name} ->
+	    catch global:send(Name, Msg);
+	{_Name,_Node} ->
+	    do_cast_msg(Dest, Msg)
+    end.
+
+do_cast_msg(Dest, Msg) ->
+    case catch erlang:send(Dest, Msg, [noconnect]) of
+	ok ->
+	    ok;
+	noconnect ->
+	    spawn(erlang, send, [Dest,Msg]);
+	_ ->
+	    ok
+    end.
+
+do_multi_call(Nodes, Name, Req, infinity) ->
+    Tag = make_ref(),
+    Monitors = send_nodes(Nodes, Name, Tag, Req),
+    rec_nodes(Tag, Monitors, Name, undefined);
+do_multi_call(Nodes, Name, Req, Timeout) ->
+    Tag = make_ref(),
+    Caller = self(),
+    Receiver =
+	spawn(
+	  fun() ->
+		  %% Middleman process. Should be unsensitive to regular
+		  %% exit signals. The sychronization is needed in case
+		  %% the receiver would exit before the caller started
+		  %% the monitor.
+		  process_flag(trap_exit, true),
+		  Mref = erlang:monitor(process, Caller),
+		  receive
+		      {Caller,Tag} ->
+			  Monitors = send_nodes(Nodes, Name, Tag, Req),
+			  TimerId = erlang:start_timer(Timeout, self(), ok),
+			  Result = rec_nodes(Tag, Monitors, Name, TimerId),
+			  exit({self(),Tag,Result});
+		      {'DOWN',Mref,_,_,_} ->
+			  %% Caller died before sending us the go-ahead.
+			  %% Give up silently.
+			  exit(normal)
+		  end
+	  end),
+    Mref = erlang:monitor(process, Receiver),
+    Receiver ! {self(),Tag},
+    receive
+	{'DOWN',Mref,_,_,{Receiver,Tag,Result}} ->
+	    Result;
+	{'DOWN',Mref,_,_,Reason} ->
+	    %% The middleman code failed. Or someone did 
+	    %% exit(_, kill) on the middleman process => Reason==killed
+	    exit(Reason)
+    end.
+
+send_nodes(Nodes, Name, Tag, Req) ->
+    send_nodes(Nodes, Name, Tag, Req, []).
 
 send_nodes([Node|Tail], Name, Tag, Req, Monitors)
   when atom(Node) ->
@@ -238,40 +385,12 @@ send_nodes([_Node|Tail], Name, Tag, Req, Monitors) ->
 send_nodes([], _Name, _Tag, _Req, Monitors) -> 
     Monitors.
 
-start_monitor(Node, Name) when atom(Node), atom(Name) ->
-    if node() == nonode@nohost, Node /= nonode@nohost ->
-	    Ref = make_ref(),
-	    self() ! {'DOWN', Ref, process, {Name, Node}, noconnection},
-	    {Node, Ref};
-       true ->
-	    case catch erlang:monitor(process, {Name, Node}) of
-		{'EXIT', _} ->
-		    %% Remote node is R6
-		    monitor_node(Node, true),
-		    Node;
-		Ref when reference(Ref) ->
-		    {Node, Ref}
-	    end
-    end.
-
-%% Cancels a monitor started with Ref=erlang:monitor(_, _).
-unmonitor(Ref) when reference(Ref) ->
-    erlang:demonitor(Ref),
-    receive
-	{'DOWN', Ref, _, _, _} ->
-	    true
-    after 0 ->
-	    true
-    end.
-
-
 %% Against old nodes:
 %% If no reply has been delivered within 2 secs. (per node) check that
 %% the server really exists and wait for ever for the answer.
 %%
 %% Against contemporary nodes:
 %% Wait for reply, server 'DOWN', or timeout from TimerId.
-
 
 rec_nodes(Tag, Nodes, Name, TimerId) -> 
     rec_nodes(Tag, Nodes, Name, [], [], 2000, TimerId).
@@ -362,62 +481,132 @@ rec_nodes_rest(_Tag, [], _Name, Badnodes, Replies) ->
 
 
 %%% ---------------------------------------------------
-%%% Initiate the new process.
-%%% Register the name using the Rfunc function
-%%% Calls the Mod:init/Args function.
-%%% Finally an acknowledge is sent to Parent and the main
-%%% loop is entered.
+%%% Monitor functions
 %%% ---------------------------------------------------
-init_it(Starter, self, Name, Mod, Args, Options) ->
-    init_it(Starter, self(), Name, Mod, Args, Options);
-init_it(Starter, Parent, Name, Mod, Args, Options) ->
-    Debug = debug_options(Name, Options),
-    case catch apply(Mod, init, [Args]) of
-	{ok, State} ->
-	    proc_lib:init_ack(Starter, {ok, self()}), 	    
-	    loop(Parent, Name, State, Mod, infinity, Debug);
-	{ok, State, Timeout} ->
-	    proc_lib:init_ack(Starter, {ok, self()}), 	    
-	    loop(Parent, Name, State, Mod, Timeout, Debug);
-	{stop, Reason} ->
-	    proc_lib:init_ack(Starter, {error, Reason}),
-	    exit(Reason);
-	ignore ->
-	    proc_lib:init_ack(Starter, ignore),
-	    exit(normal);
-	{'EXIT', Reason} ->
-	    proc_lib:init_ack(Starter, {error, Reason}),
-	    exit(Reason);
-	Else ->
-	    Error = {bad_return_value, Else},
-	    proc_lib:init_ack(Starter, {error, Error}),
-	    exit(Error)
+
+start_monitor(Node, Name) when atom(Node), atom(Name) ->
+    if node() == nonode@nohost, Node /= nonode@nohost ->
+	    Ref = make_ref(),
+	    self() ! {'DOWN', Ref, process, {Name, Node}, noconnection},
+	    {Node, Ref};
+       true ->
+	    case catch erlang:monitor(process, {Name, Node}) of
+		{'EXIT', _} ->
+		    %% Remote node is R6
+		    monitor_node(Node, true),
+		    Node;
+		Ref when reference(Ref) ->
+		    {Node, Ref}
+	    end
+    end.
+
+%% Cancels a monitor started with Ref=erlang:monitor(_, _).
+unmonitor(Ref) when reference(Ref) ->
+    erlang:demonitor(Ref),
+    receive
+	{'DOWN', Ref, _, _, _} ->
+	    true
+    after 0 ->
+	    true
     end.
 
 %%% ---------------------------------------------------
-%%% The MAIN loop.
+%%% Message handling functions
 %%% ---------------------------------------------------
 
-loop(Parent, Name, State, Mod, Time, Debug) ->
-    Msg = receive
-	      Input ->
-		    Input
-	  after Time ->
-		  timeout
-	  end,
-    case Msg of
-	{system, From, Req} ->
-	    sys:handle_system_msg(Req, From, Parent, gen_server, Debug,
-				  [Name, State, Mod, Time]);
-	{'EXIT', Parent, Reason} ->
-	    terminate(Reason, Name, Msg, Mod, State, Debug);
-	_Msg when Debug == [] ->
-	    handle_msg(Msg, Parent, Name, State, Mod, Time);
-	_Msg ->
-	    Debug1 = sys:handle_debug(Debug, {gen_server, print_event}, 
-				      Name, {in, Msg}),
-	    handle_msg(Msg, Parent, Name, State, Mod, Time, Debug1)
+dispatch({'$gen_cast', Msg}, Mod, State) ->
+    Mod:handle_cast(Msg, State);
+dispatch(Info, Mod, State) ->
+    Mod:handle_info(Info, State).
+
+handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, _Time) ->
+    case catch Mod:handle_call(Msg, From, State) of
+	{reply, Reply, NState} ->
+	    reply(From, Reply),
+	    loop(Parent, Name, NState, Mod, infinity, []);
+	{reply, Reply, NState, Time1} ->
+	    reply(From, Reply),
+	    loop(Parent, Name, NState, Mod, Time1, []);
+	{noreply, NState} ->
+	    loop(Parent, Name, NState, Mod, infinity, []);
+	{noreply, NState, Time1} ->
+	    loop(Parent, Name, NState, Mod, Time1, []);
+	{stop, Reason, Reply, NState} ->
+	    {'EXIT', R} = 
+		(catch terminate(Reason, Name, Msg, Mod, NState, [])),
+	    reply(From, Reply),
+	    exit(R);
+	Other -> handle_common_reply(Other, Parent, Name, Msg, Mod, State)
+    end;
+handle_msg(Msg, Parent, Name, State, Mod, _Time) ->
+    Reply = (catch dispatch(Msg, Mod, State)),
+    handle_common_reply(Reply, Parent, Name, Msg, Mod, State).
+
+handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, _Time, Debug) ->
+    case catch Mod:handle_call(Msg, From, State) of
+	{reply, Reply, NState} ->
+	    Debug1 = reply(Name, From, Reply, NState, Debug),
+	    loop(Parent, Name, NState, Mod, infinity, Debug1);
+	{reply, Reply, NState, Time1} ->
+	    Debug1 = reply(Name, From, Reply, NState, Debug),
+	    loop(Parent, Name, NState, Mod, Time1, Debug1);
+	{noreply, NState} ->
+	    Debug1 = sys:handle_debug(Debug, {?MODULE, print_event}, Name,
+				      {noreply, NState}),
+	    loop(Parent, Name, NState, Mod, infinity, Debug1);
+	{noreply, NState, Time1} ->
+	    Debug1 = sys:handle_debug(Debug, {?MODULE, print_event}, Name,
+				      {noreply, NState}),
+	    loop(Parent, Name, NState, Mod, Time1, Debug1);
+	{stop, Reason, Reply, NState} ->
+	    {'EXIT', R} = 
+		(catch terminate(Reason, Name, Msg, Mod, NState, Debug)),
+	    reply(Name, From, Reply, NState, Debug),
+	    exit(R);
+	Other ->
+	    handle_common_reply(Other, Parent, Name, Msg, Mod, State, Debug)
+    end;
+handle_msg(Msg, Parent, Name, State, Mod, _Time, Debug) ->
+    Reply = (catch dispatch(Msg, Mod, State)),
+    handle_common_reply(Reply, Parent, Name, Msg, Mod, State, Debug).
+
+handle_common_reply(Reply, Parent, Name, Msg, Mod, State) ->
+    case Reply of
+	{noreply, NState} ->
+	    loop(Parent, Name, NState, Mod, infinity, []);
+	{noreply, NState, Time1} ->
+	    loop(Parent, Name, NState, Mod, Time1, []);
+	{stop, Reason, NState} ->
+	    terminate(Reason, Name, Msg, Mod, NState, []);
+	{'EXIT', What} ->
+	    terminate(What, Name, Msg, Mod, State, []);
+	_ ->
+	    terminate({bad_return_value, Reply}, Name, Msg, Mod, State, [])
     end.
+
+handle_common_reply(Reply, Parent, Name, Msg, Mod, State, Debug) ->
+    case Reply of
+	{noreply, NState} ->
+	    Debug1 = sys:handle_debug(Debug, {?MODULE, print_event}, Name,
+				      {noreply, NState}),
+	    loop(Parent, Name, NState, Mod, infinity, Debug1);
+	{noreply, NState, Time1} ->
+	    Debug1 = sys:handle_debug(Debug, {?MODULE, print_event}, Name,
+				      {noreply, NState}),
+	    loop(Parent, Name, NState, Mod, Time1, Debug1);
+	{stop, Reason, NState} ->
+	    terminate(Reason, Name, Msg, Mod, NState, Debug);
+	{'EXIT', What} ->
+	    terminate(What, Name, Msg, Mod, State, Debug);
+	_ ->
+	    terminate({bad_return_value, Reply}, Name, Msg, Mod, State, Debug)
+    end.
+
+reply(Name, {To, Tag}, Reply, State, Debug) ->
+    reply({To, Tag}, Reply),
+    sys:handle_debug(Debug, {?MODULE, print_event}, Name, 
+		     {out, Reply, To, State} ).
+
 
 %%-----------------------------------------------------------------
 %% Callback functions for system messages handling.
@@ -458,106 +647,12 @@ print_event(Dev, Event, Name) ->
     io:format(Dev, "*DBG* ~p dbg  ~p~n", [Name, Event]).
 
 
-dispatch({'$gen_cast', Msg}, Mod, State) ->
-    apply(Mod, handle_cast, [Msg, State]);
-dispatch(Info, Mod, State) ->
-    apply(Mod, handle_info, [Info, State]).
-
-handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, _Time) ->
-    case catch apply(Mod, handle_call, [Msg, From, State]) of
-	{reply, Reply, NState} ->
-	    reply(From, Reply),
-	    loop(Parent, Name, NState, Mod, infinity, []);
-	{reply, Reply, NState, Time1} ->
-	    reply(From, Reply),
-	    loop(Parent, Name, NState, Mod, Time1, []);
-	{noreply, NState} ->
-	    loop(Parent, Name, NState, Mod, infinity, []);
-	{noreply, NState, Time1} ->
-	    loop(Parent, Name, NState, Mod, Time1, []);
-	{stop, Reason, Reply, NState} ->
-	    {'EXIT', R} = 
-		(catch terminate(Reason, Name, Msg, Mod, NState, [])),
-	    reply(From, Reply),
-	    exit(R);
-	Other -> handle_common_reply(Other, Parent, Name, Msg, Mod, State)
-    end;
-handle_msg(Msg, Parent, Name, State, Mod, _Time) ->
-    Reply = (catch dispatch(Msg, Mod, State)),
-    handle_common_reply(Reply, Parent, Name, Msg, Mod, State).
-
-handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, _Time, Debug) ->
-    case catch apply(Mod, handle_call, [Msg, From, State]) of
-	{reply, Reply, NState} ->
-	    Debug1 = reply(Name, From, Reply, NState, Debug),
-	    loop(Parent, Name, NState, Mod, infinity, Debug1);
-	{reply, Reply, NState, Time1} ->
-	    Debug1 = reply(Name, From, Reply, NState, Debug),
-	    loop(Parent, Name, NState, Mod, Time1, Debug1);
-	{noreply, NState} ->
-	    Debug1 = sys:handle_debug(Debug, {gen_server, print_event}, Name,
-				      {noreply, NState}),
-	    loop(Parent, Name, NState, Mod, infinity, Debug1);
-	{noreply, NState, Time1} ->
-	    Debug1 = sys:handle_debug(Debug, {gen_server, print_event}, Name,
-				      {noreply, NState}),
-	    loop(Parent, Name, NState, Mod, Time1, Debug1);
-	{stop, Reason, Reply, NState} ->
-	    {'EXIT', R} = 
-		(catch terminate(Reason, Name, Msg, Mod, NState, Debug)),
-	    reply(Name, From, Reply, NState, Debug),
-	    exit(R);
-	Other ->
-	    handle_common_reply(Other, Parent, Name, Msg, Mod, State, Debug)
-    end;
-handle_msg(Msg, Parent, Name, State, Mod, _Time, Debug) ->
-    Reply = (catch dispatch(Msg, Mod, State)),
-    handle_common_reply(Reply, Parent, Name, Msg, Mod, State, Debug).
-
-handle_common_reply(Reply, Parent, Name, Msg, Mod, State) ->
-    case Reply of
-	{noreply, NState} ->
-	    loop(Parent, Name, NState, Mod, infinity, []);
-	{noreply, NState, Time1} ->
-	    loop(Parent, Name, NState, Mod, Time1, []);
-	{stop, Reason, NState} ->
-	    terminate(Reason, Name, Msg, Mod, NState, []);
-	{'EXIT', What} ->
-	    terminate(What, Name, Msg, Mod, State, []);
-	_ ->
-	    terminate({bad_return_value, Reply}, Name, Msg, Mod, State, [])
-    end.
-
-handle_common_reply(Reply, Parent, Name, Msg, Mod, State, Debug) ->
-    case Reply of
-	{noreply, NState} ->
-	    Debug1 = sys:handle_debug(Debug, {gen_server, print_event}, Name,
-				      {noreply, NState}),
-	    loop(Parent, Name, NState, Mod, infinity, Debug1);
-	{noreply, NState, Time1} ->
-	    Debug1 = sys:handle_debug(Debug, {gen_server, print_event}, Name,
-				      {noreply, NState}),
-	    loop(Parent, Name, NState, Mod, Time1, Debug1);
-	{stop, Reason, NState} ->
-	    terminate(Reason, Name, Msg, Mod, NState, Debug);
-	{'EXIT', What} ->
-	    terminate(What, Name, Msg, Mod, State, Debug);
-	_ ->
-	    terminate({bad_return_value, Reply}, Name, Msg, Mod, State, Debug)
-    end.
-
-
-reply(Name, {To, Tag}, Reply, State, Debug) ->
-    reply({To, Tag}, Reply),
-    sys:handle_debug(Debug, {gen_server, print_event}, Name, 
-		     {out, Reply, To, State} ).
-
 %%% ---------------------------------------------------
 %%% Terminate the server.
 %%% ---------------------------------------------------
 
 terminate(Reason, Name, Msg, Mod, State, Debug) ->
-    case catch apply(Mod, terminate, [Reason, State]) of
+    case catch Mod:terminate(Reason, State) of
 	{'EXIT', R} ->
 	    error_info(R, Name, Msg, State, Debug),
 	    exit(R);
@@ -622,17 +717,49 @@ dbg_opts(Name, Opts) ->
 	    Dbg
     end.
 
+get_proc_name(Pid) when pid(Pid) ->
+    Pid;
+
+get_proc_name({local, Name}) ->
+    case whereis(Name) of
+	undefined ->
+	    exit(process_not_registered);
+	_Pid ->
+	    Name
+    end;    
+
+get_proc_name({global, Name}) ->
+    case global:whereis_name(Name) of
+	undefined ->
+	    exit(process_not_registered_globally);
+	_Pid ->
+	    Name
+    end.
+
+get_parent() ->
+    case get('$ancestors') of
+	[Parent | _] ->
+	    Parent;
+	_ ->
+	    exit(process_was_not_started_by_proc_lib)
+    end.
+
 %%-----------------------------------------------------------------
 %% Status information
 %%-----------------------------------------------------------------
 format_status(Opt, StatusData) ->
     [PDict, SysState, Parent, Debug, [Name, State, Mod, _Time]] = StatusData,
-    Header = lists:concat(["Status for generic server ", Name]),
+    NameTag = if pid(Name) ->
+		      pid_to_list(Name);
+		 atom(Name) ->
+		      Name
+	      end,
+    Header = lists:concat(["Status for generic server ", NameTag]),
     Log = sys:get_debug(log, Debug, []),
     Specfic = 
 	case erlang:function_exported(Mod, format_status, 2) of
 	    true ->
-		case catch apply(Mod, format_status, [Opt, [PDict, State]]) of
+		case catch Mod:format_status(Opt, [PDict, State]) of
 		    {'EXIT', _} -> [{data, [{"State", State}]}];
 		    Else -> Else
 		end;

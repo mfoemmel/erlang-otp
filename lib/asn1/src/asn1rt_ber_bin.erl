@@ -141,8 +141,8 @@ decode_constructed(Bin) ->
     [NewTlv|decode_constructed(Rest)].
     
 decode_tlv(Bin) ->
-    {Tag,Bin1,Rb1} = decode_tag(Bin),
-    {{Len,Bin2},Rb2} = decode_length(Bin1),
+    {Tag,Bin1,_Rb1} = decode_tag(Bin),
+    {{Len,Bin2},_Rb2} = decode_length(Bin1),
     <<V:Len/binary,Bin3/binary>> = Bin2,
     {{Tag,Len,V},Bin3}.
     
@@ -168,9 +168,9 @@ restbytes2(indefinite,RemBytes,ext) ->
     skipvalue(indefinite,RemBytes);
 restbytes2(RemBytes,<<>>,_) ->
     {RemBytes,0};
-restbytes2(RemBytes,Bytes,noext) ->
+restbytes2(_RemBytes,Bytes,noext) ->
     exit({error,{asn1, {unexpected,Bytes}}});
-restbytes2(RemBytes,Bytes,ext) ->
+restbytes2(RemBytes,_Bytes,ext) ->
     {RemBytes,0}.
 
 
@@ -186,13 +186,13 @@ skipvalue(L, Bytes) ->
     skipvalue(L, Bytes, 0).
 
 skipvalue(indefinite, Bytes, Rb) ->
-    {T,Bytes2,R2} = decode_tag(Bytes),
+    {_T,Bytes2,R2} = decode_tag(Bytes),
     {{L,Bytes3},R3} = decode_length(Bytes2),
     {Bytes4,Rb4} = case L of
 		       indefinite ->
 			   skipvalue(indefinite,Bytes3,R2+R3);
 		       _ ->
-			   <<Skip:L/binary, RestBytes/binary>> = Bytes3,
+			   <<_:L/binary, RestBytes/binary>> = Bytes3,
 			   {RestBytes, R2+R3+L}
 		   end,
     case Bytes4 of
@@ -201,7 +201,8 @@ skipvalue(indefinite, Bytes, Rb) ->
 	_  -> skipvalue(indefinite,Bytes4,Rb+Rb4)
     end;
 skipvalue(L, Bytes, Rb) ->
-    <<Skip:L/binary, RestBytes/binary>> = Bytes,
+%    <<Skip:L/binary, RestBytes/binary>> = Bytes,
+    <<_:L/binary, RestBytes/binary>> = Bytes,
     {RestBytes,Rb+L}.
 
 %%skipvalue(indefinite, Bytes, Rb) ->
@@ -222,7 +223,7 @@ skipvalue(L, Bytes, Rb) ->
 %%    {lists:nthtail(L,Bytes),Rb+L}.
     
 skipvalue(Bytes) ->
-    {T,Bytes2,R2} = decode_tag(Bytes),
+    {_T,Bytes2,R2} = decode_tag(Bytes),
     {{L,Bytes3},R3} = decode_length(Bytes2),
     skipvalue(L,Bytes3,R2+R3).
 	
@@ -244,22 +245,22 @@ cindex(Ix,Val,Cname) ->
 % converts a list to a record if necessary 
 list_to_record(Name,List) when list(List) -> 
     list_to_tuple([Name|List]); 
-list_to_record(Name,Tuple) when tuple(Tuple) -> 
+list_to_record(_Name,Tuple) when tuple(Tuple) -> 
     Tuple. 
  
  
 fixoptionals(OptList,Val) when list(Val) -> 
     fixoptionals(OptList,Val,1,[],[]). 
  
-fixoptionals([{Name,Pos}|Ot],[{Name,Val}|Vt],Opt,Acc1,Acc2) -> 
+fixoptionals([{Name,Pos}|Ot],[{Name,Val}|Vt],_Opt,Acc1,Acc2) -> 
     fixoptionals(Ot,Vt,Pos+1,[1|Acc1],[{Name,Val}|Acc2]); 
-fixoptionals([{Name,Pos}|Ot],V,Pos,Acc1,Acc2) -> 
+fixoptionals([{_Name,Pos}|Ot],V,Pos,Acc1,Acc2) -> 
     fixoptionals(Ot,V,Pos+1,[0|Acc1],[asn1_NOVALUE|Acc2]); 
 fixoptionals(O,[Vh|Vt],Pos,Acc1,Acc2) -> 
     fixoptionals(O,Vt,Pos+1,Acc1,[Vh|Acc2]); 
 fixoptionals([],[Vh|Vt],Pos,Acc1,Acc2) -> 
     fixoptionals([],Vt,Pos+1,Acc1,[Vh|Acc2]); 
-fixoptionals([],[],_,Acc1,Acc2) -> 
+fixoptionals([],[],_,_Acc1,Acc2) -> 
     % return Val as a record 
     list_to_tuple([asn1_RECORDNAME|lists:reverse(Acc2)]).
  
@@ -270,7 +271,7 @@ encode_tag_val({Class, Form, TagNo}) when (TagNo =< 30) ->
     <<(Class bsr 6):2,(Form bsr 5):1,TagNo:5>>;
 
 encode_tag_val({Class, Form, TagNo}) -> 
-    {Octets,Len} = mk_object_val(TagNo),
+    {Octets,_Len} = mk_object_val(TagNo),
     BinOct = list_to_binary(Octets),
     <<(Class bsr 6):2, (Form bsr 5):1, 31:5,BinOct/binary>>; 
  
@@ -305,14 +306,14 @@ peek_tag(<<B7_6:2,_:1,31:5,Buffer/binary>>) ->
     Bin = peek_tag(Buffer, <<>>),
     <<B7_6:2,31:6,Bin/binary>>;
 %% single tag (tagno < 31)
-peek_tag(<<B7_6:2,_:1,B4_0:5,Buffer/binary>>) ->
+peek_tag(<<B7_6:2,_:1,B4_0:5,_Buffer/binary>>) ->
     <<B7_6:2,B4_0:6>>.
 
-peek_tag(<<0:1,PartialTag:7,Buffer/binary>>, TagAck) ->
+peek_tag(<<0:1,PartialTag:7,_Buffer/binary>>, TagAck) ->
     <<TagAck/binary,PartialTag>>;
 peek_tag(<<PartialTag,Buffer/binary>>, TagAck) ->
     peek_tag(Buffer,<<TagAck/binary,PartialTag>>);
-peek_tag(Buffer,TagAck) ->
+peek_tag(_,TagAck) ->
     exit({error,{asn1, {invalid_tag,TagAck}}}). 
 %%peek_tag([Tag|Buffer]) when (Tag band 31) == 31 -> 
 %%    [Tag band 2#11011111 | peek_tag(Buffer,[])];
@@ -409,7 +410,7 @@ check_tags([], Buffer, Rb, _) ->
 
 check_one_tag(Tag=#tag{class=ExpectedClass,number=ExpectedNumber}, Buffer, OptOrMand) ->
     case catch decode_tag(Buffer) of
-	{'EXIT',Reason} -> 
+	{'EXIT',_Reason} -> 
 	    tag_error(no_data,Tag,Buffer,OptOrMand);
 	{{ExpectedClass,Form,ExpectedNumber},Buffer2,Rb} ->
 	    {{L,Buffer3},RemBytes2} = decode_length(Buffer2),
@@ -530,7 +531,7 @@ encode_open_type(Val,Tag) ->
 %% Value = [byte] with decoded data (which must be decoded again as some type)
 %%
 decode_open_type(Bytes) ->
-    {Tag, Len, RemainingBuffer, RemovedBytes} = decode_tag_and_length(Bytes),
+    {_Tag, Len, _RemainingBuffer, RemovedBytes} = decode_tag_and_length(Bytes),
     N = Len + RemovedBytes,
     <<Val:N/binary, RemainingBytes/binary>> = Bytes,
     {Val, RemainingBytes, Len + RemovedBytes}.
@@ -539,7 +540,7 @@ decode_open_type(Bytes,ExplTag) ->
     {Tag, Len, RemainingBuffer, RemovedBytes} = decode_tag_and_length(Bytes),
     case {Tag,ExplTag} of
 	{{Class,Form,No},[#tag{class=Class,number=No,form=Form}]} ->
-	    {Tag2, Len2, RemainingBuffer2, RemovedBytes2} = decode_tag_and_length(RemainingBuffer),
+	    {_Tag2, Len2, _RemainingBuffer2, RemovedBytes2} = decode_tag_and_length(RemainingBuffer),
 	    N = Len2 + RemovedBytes2,
 	    <<_:RemovedBytes/unit:8,Val:N/binary,RemainingBytes/binary>> = Bytes,
 	    {Val, RemainingBytes, N + RemovedBytes};
@@ -594,25 +595,25 @@ decode_boolean(Buffer, Tags, OptOrMand) ->
 decode_boolean_notag(Buffer, Tags, OptOrMand) -> 
     {RestTags, {FormLen,Buffer0,Rb0}} = 
 	check_tags_i(Tags, Buffer, OptOrMand),
-    Result = 
-	case FormLen of
-	    {?CONSTRUCTED,Len} ->
-		{Buffer00,RestBytes} = split_list(Buffer0,Len),
-		{Val,Buffer1,Rb1} = decode_boolean_notag(Buffer00, RestTags, OptOrMand),
-		{Buffer2, Rb2} = restbytes2(RestBytes,Buffer1,noext),
-		{Val, Buffer2, Rb0+Rb1+Rb2};
-	    {_, Len} ->
-		decode_boolean2(Buffer0, Rb0)
-	end.
+    case FormLen of
+	{?CONSTRUCTED,Len} ->
+	    {Buffer00,RestBytes} = split_list(Buffer0,Len),
+	    {Val,Buffer1,Rb1} = decode_boolean_notag(Buffer00, RestTags, OptOrMand),
+	    {Buffer2, Rb2} = restbytes2(RestBytes,Buffer1,noext),
+	    {Val, Buffer2, Rb0+Rb1+Rb2};
+	{_,_} ->
+	    decode_boolean2(Buffer0, Rb0)
+    end.
  
 decode_boolean2(<<0:8, Buffer/binary>>, RemovedBytes) ->
     {false, Buffer, RemovedBytes + 1};
 decode_boolean2(<<_:8, Buffer/binary>>, RemovedBytes) ->
     {true, Buffer, RemovedBytes + 1};
-decode_boolean2(Buffer, RemovedBytes) ->  
+decode_boolean2(Buffer, _) ->  
     exit({error,{asn1, {decode_boolean, Buffer}}}). 
  
   
+
 
 %%=========================================================================== 
 %% Integer, ITU_T X.690 Chapter 8.3 
@@ -630,7 +631,7 @@ encode_integer(C, Val, Tag) when integer(Val) ->
     dotag(Tag, ?N_INTEGER, encode_integer(C, Val));
 encode_integer(C,{Name,Val},Tag) when atom(Name) ->
     encode_integer(C,Val,Tag);
-encode_integer(C, Val, Tag) -> 
+encode_integer(_, Val, _) -> 
     exit({error,{asn1, {encode_integer, Val}}}). 
  
  
@@ -642,15 +643,15 @@ encode_integer(C, Val, NamedNumberList, Tag) when atom(Val) ->
 	_ ->  
 	    exit({error,{asn1, {encode_integer_namednumber, Val}}}) 
     end; 
-encode_integer(C,{Name,Val},NamedNumberList,Tag) ->
+encode_integer(C,{_,Val},NamedNumberList,Tag) ->
     encode_integer(C,Val,NamedNumberList,Tag); 
-encode_integer(C, Val, NamedNumberList, Tag) -> 
+encode_integer(C, Val, _NamedNumberList, Tag) -> 
     dotag(Tag, ?N_INTEGER, encode_integer(C, Val)). 
  
  
  
  
-encode_integer(C, Val) -> 
+encode_integer(_C, Val) -> 
     Bytes =  
 	if  
 	    Val >= 0 -> 
@@ -660,12 +661,12 @@ encode_integer(C, Val) ->
 	end, 
     {Bytes,length(Bytes)}. 
  
-encode_integer_pos(0, L=[B|Acc]) when B < 128 ->
+encode_integer_pos(0, L=[B|_Acc]) when B < 128 ->
     L;
 encode_integer_pos(N, Acc) ->
     encode_integer_pos((N bsr 8), [N band 16#ff| Acc]).
 
-encode_integer_neg(-1, L=[B1|T]) when B1 > 127 ->
+encode_integer_neg(-1, L=[B1|_T]) when B1 > 127 ->
     L;
 encode_integer_neg(N, Acc) ->
     encode_integer_neg(N bsr 8, [N band 16#ff|Acc]).
@@ -698,7 +699,7 @@ decode_integer_notag(Buffer, Range, NamedNumberList, NewTags, OptOrMand) ->
 		{Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
 		{Val01, Buffer02, Rb0+Rb01+Rb02};
 	    {_, Len} ->
-		Result = {Val, Buffer2, RemovedBytes} =
+		Result =
 		    decode_integer2(Len,Buffer0,Rb0+Len),
 		Result2 = check_integer_constraint(Result,Range),
 		resolve_named_value(Result2,NamedNumberList)
@@ -717,7 +718,7 @@ resolve_named_value(Result={Val,Buffer,RemBytes},NamedNumberList) ->
 	    {NewVal, Buffer, RemBytes}
     end.
     
-check_integer_constraint(Result={Val, Buffer,_},Range) ->
+check_integer_constraint(Result={Val, _Buffer,_},Range) ->
     case Range of
 	[] -> % No length constraint
 	    Result;
@@ -725,7 +726,7 @@ check_integer_constraint(Result={Val, Buffer,_},Range) ->
 	    Result;
 	Val -> % fixed value constraint
 	    Result;
-	{Lb,Ub} -> 
+	{_,_} -> 
 	    exit({error,{asn1,{integer_range,Range,Val}}});
 	SingleValue when integer(SingleValue) ->
 	    exit({error,{asn1,{integer_range,Range,Val}}});
@@ -773,7 +774,7 @@ encode_enumerated(C, {asn1_enum, Val}, {_,_}, DoTag) when integer(Val) ->
 encode_enumerated(C, {Name,Val}, NamedNumberList, DoTag) when atom(Name) -> 
     encode_enumerated(C, Val, NamedNumberList, DoTag);
 
-encode_enumerated(C, Val, NamedNumberList, DoTag) -> 
+encode_enumerated(_, Val, _, _) -> 
     exit({error,{asn1, {enumerated_not_namednumber, Val}}}). 
  
  
@@ -791,46 +792,46 @@ decode_enumerated(Buffer, Range, NamedNumberList, Tags, OptOrMand) ->
 decode_enumerated_notag(Buffer, Range, NNList = {NamedNumberList,ExtList}, Tags, OptOrMand) ->
     {RestTags, {FormLen, Buffer0, Rb0}} = 
 	check_tags_i(Tags, Buffer, OptOrMand),
-    Result = {Val, Buffer2, RemovedBytes} =
-	case FormLen of
-	    {?CONSTRUCTED,Len} ->
-		{Buffer00,RestBytes} = split_list(Buffer0,Len),
-		{Val01, Buffer01, Rb01} = 
-		    decode_enumerated_notag(Buffer00, Range, NNList, RestTags, OptOrMand),
-		{Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
-		{Val01, Buffer02, Rb0+Rb01+Rb02};
-	    {_,Len} ->		    
-		{Val01, Buffer01, Rb01} = 
-		    decode_integer2(Len, Buffer0, Rb0+Len),
-		case decode_enumerated1(Val01, NamedNumberList) of
-		    {asn1_enum,Val01} ->
-			{decode_enumerated1(Val01,ExtList), Buffer01, Rb01};
-		    Result01 ->
-			{Result01, Buffer01, Rb01}
-		end
-	end;
+
+    case FormLen of
+	{?CONSTRUCTED,Len} ->
+	    {Buffer00,RestBytes} = split_list(Buffer0,Len),
+	    {Val01, Buffer01, Rb01} = 
+		decode_enumerated_notag(Buffer00, Range, NNList, RestTags, OptOrMand),
+	    {Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
+	    {Val01, Buffer02, Rb0+Rb01+Rb02};
+	{_,Len} ->		    
+	    {Val01, Buffer01, Rb01} = 
+		decode_integer2(Len, Buffer0, Rb0+Len),
+	    case decode_enumerated1(Val01, NamedNumberList) of
+		{asn1_enum,Val01} ->
+		    {decode_enumerated1(Val01,ExtList), Buffer01, Rb01};
+		Result01 ->
+		    {Result01, Buffer01, Rb01}
+	    end
+    end;
  
 decode_enumerated_notag(Buffer, Range, NNList, Tags, OptOrMand) ->
     {RestTags, {FormLen, Buffer0, Rb0}} = 
 	check_tags_i(Tags, Buffer, OptOrMand),
-    Result = {Val, Buffer2, RemovedBytes} =
-	case FormLen of
-	    {?CONSTRUCTED,Len} ->
-		{Buffer00,RestBytes} = split_list(Buffer0,Len),
-		{Val01, Buffer01, Rb01} = 
-		    decode_enumerated_notag(Buffer00, Range, NNList, RestTags, OptOrMand),
-		{Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
-		{Val01, Buffer02, Rb0+Rb01+Rb02};
-	    {_,Len} ->		    
-		{Val01, Buffer02, Rb02} = 
-		    decode_integer2(Len, Buffer0, Rb0+Len), 
-		case decode_enumerated1(Val01, NNList) of
-		    {asn1_enum,_} ->
-			exit({error,{asn1, {illegal_enumerated, Val01}}});
-		    Result01 ->
-			{Result01, Buffer02, Rb02}
-		end
-	end.
+
+    case FormLen of
+	{?CONSTRUCTED,Len} ->
+	    {Buffer00,RestBytes} = split_list(Buffer0,Len),
+	    {Val01, Buffer01, Rb01} = 
+		decode_enumerated_notag(Buffer00, Range, NNList, RestTags, OptOrMand),
+	    {Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
+	    {Val01, Buffer02, Rb0+Rb01+Rb02};
+	{_,Len} ->		    
+	    {Val01, Buffer02, Rb02} = 
+		decode_integer2(Len, Buffer0, Rb0+Len), 
+	    case decode_enumerated1(Val01, NNList) of
+		{asn1_enum,_} ->
+		    exit({error,{asn1, {illegal_enumerated, Val01}}});
+		Result01 ->
+		    {Result01, Buffer02, Rb02}
+	    end
+    end.
 
 decode_enumerated1(Val, NamedNumberList) ->     
     %% it must be a named integer 
@@ -961,17 +962,17 @@ decode_real(Buffer, Form, Tags, OptOrMand) ->
 decode_real_notag(Buffer, Form, Tags, OptOrMand) ->
     {RestTags, {FormLen, Buffer0, Rb0}} = 
 	check_tags_i(Tags, Buffer, OptOrMand),
-    Result = {Val, Buffer2, RemovedBytes} =
-	case FormLen of
-	    {?CONSTRUCTED,Len} ->
-		{Buffer00,RestBytes} = split_list(Buffer0,Len),
-		{Val01, Buffer01, Rb01} =
-		    decode_real_notag(Buffer00, Form, RestTags, OptOrMand),
-		{Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
-		{Val01, Buffer02, Rb0+Rb01+Rb02};
-	    {_,Len} ->
-		decode_real2(Buffer0, Form, Len, Rb0)
-	end.
+
+    case FormLen of
+	{?CONSTRUCTED,Len} ->
+	    {Buffer00,RestBytes} = split_list(Buffer0,Len),
+	    {Val01, Buffer01, Rb01} =
+		decode_real_notag(Buffer00, Form, RestTags, OptOrMand),
+	    {Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
+	    {Val01, Buffer02, Rb0+Rb01+Rb02};
+	{_,Len} ->
+	    decode_real2(Buffer0, Form, Len, Rb0)
+    end.
 
 decode_real2(Buffer0, Form, Len, RemBytes1) ->
     <<First, Buffer2/binary>> = Buffer0,
@@ -981,14 +982,14 @@ decode_real2(Buffer0, Form, Len, RemBytes1) ->
 	First =:= 2#00000000 -> {0, Buffer2}; 
 	true -> 
 	    %% have some check here to verify only supported bases (2) 
-	    <<B7:1,B6:1,B5_4:2,B3_2:2,B1_0:2>> = <<First>>,
+	    <<_B7:1,B6:1,B5_4:2,B3_2:2,B1_0:2>> = <<First>>,
 		Sign = B6,
 	    Base = 
 		case B5_4 of
 		    0 -> 2;  % base 2, only one so far 
 		    _ -> exit({error,{asn1, {non_supported_base, First}}}) 
 		end, 
-	    ScalingFactor = 
+%	    ScalingFactor = 
 		case B3_2 of
 		    0 -> 0;  % no scaling so far  
 		    _ -> exit({error,{asn1, {non_supported_scaling, First}}}) 
@@ -1020,7 +1021,7 @@ decode_real2(Buffer0, Form, Len, RemBytes1) ->
 						%	    io:format("Form: ~w~n",[Form]), 
 	    case Form of 
 		tuple -> 
-		    {Val,Buf,RemB} = Exp, 
+		    {Val,Buf,_RemB} = Exp, 
 		    {{Mantissa, Base, {Val,Buf}}, Buffer4, RemBytes2+RemBytes3};  
 		_value -> 
 		    comming 
@@ -1054,16 +1055,16 @@ encode_bit_string(C, [{bit,X} | RestVal], NamedBitList, DoTag) ->
 encode_bit_string(C, [FirstVal| RestVal], NamedBitList, DoTag) when integer(FirstVal) -> 
     encode_bit_string_bits(C, [FirstVal | RestVal], NamedBitList, DoTag); 
 
-encode_bit_string(C, 0, NamedBitList, []) -> 
+encode_bit_string(_, 0, _, []) -> 
     {[?N_BIT_STRING,1,0],3};
 
-encode_bit_string(C, 0, NamedBitList, DoTag) -> 
+encode_bit_string(_, 0, _, DoTag) -> 
     dotag(DoTag, ?N_BIT_STRING, {<<0>>,1}); 
 
-encode_bit_string(C, [], NamedBitList, []) -> 
+encode_bit_string(_, [], _, []) -> 
     {[?N_BIT_STRING,1,0],3};
 
-encode_bit_string(C, [], NamedBitList, DoTag) -> 
+encode_bit_string(_, [], _, DoTag) -> 
     dotag(DoTag, ?N_BIT_STRING, {<<0>>,1}); 
 
 encode_bit_string(C, IntegerVal, NamedBitList, DoTag) when integer(IntegerVal) -> 
@@ -1086,11 +1087,11 @@ int_to_bitlist(Int) when integer(Int), Int >= 0 ->
 %% Unused is the number of unused bits in the last byte in BinBits 
 %% and BinBits is a binary representing the BIT STRING.
 %%================================================================= 
-encode_bin_bit_string(C,{Unused,BinBits},NamedBitList,DoTag)->
+encode_bin_bit_string(C,{Unused,BinBits},_NamedBitList,DoTag)->
     case get_constraint(C,'SizeConstraint') of
 	no ->
 	    remove_unused_then_dotag(DoTag,?N_BIT_STRING,Unused,BinBits);
-	{Min,Max} ->
+	{_Min,Max} ->
 	    BBLen = (size(BinBits)*8)-Unused,
 	    if
 		BBLen > Max ->
@@ -1157,7 +1158,7 @@ encode_bit_string_named(C, [FirstVal | RestVal], NamedBitList, DoTag) ->
 		BitList = make_and_set_list(lists:max(ToSetPos)+1, 
 					    ToSetPos, 0), 
 		encode_bitstring(BitList);  
-	    {Min,Max} -> 
+	    {_Min,Max} -> 
 		ToSetPos = get_all_bitposes([FirstVal | RestVal],
 					    NamedBitList, []), 
 		BitList = make_and_set_list(Max, ToSetPos, 0), 
@@ -1222,17 +1223,17 @@ make_and_set_list(Len, [], XPos) ->
 %%================================================================= 
 %% Encode bit string for lists of ones and zeroes 
 %%================================================================= 
-encode_bit_string_bits(C, BitListVal, NamedBitList, DoTag) when list(BitListVal) -> 
+encode_bit_string_bits(C, BitListVal, _NamedBitList, DoTag) when list(BitListVal) -> 
     {Len,Unused,OctetList} =
 	case get_constraint(C,'SizeConstraint') of 
 	    no -> 
 		encode_bitstring(BitListVal);  
 	    Constr={Min,Max} when integer(Min),integer(Max) -> 
 		encode_constr_bit_str_bits(Constr,BitListVal,DoTag);
-	    {Constr={Min,Max},[]} ->
+	    {Constr={_,_},[]} ->
 		%% constraint with extension mark
 		encode_constr_bit_str_bits(Constr,BitListVal,DoTag);
-	    Constr={{Min1,Max1},{Min2,Max2}} ->
+	    Constr={{_,_},{_,_}} ->%{{Min1,Max1},{Min2,Max2}}
 		%% constraint with extension mark
 		encode_constr_bit_str_bits(Constr,BitListVal,DoTag);
 	    Size ->
@@ -1263,7 +1264,7 @@ encode_bit_string_bits(C, BitListVal, NamedBitList, DoTag) when list(BitListVal)
     end.
 
  
-encode_constr_bit_str_bits({Min,Max},BitListVal,DoTag) ->
+encode_constr_bit_str_bits({_Min,Max},BitListVal,_DoTag) ->
     BitLen = length(BitListVal), 
     if  
 	BitLen > Max -> 
@@ -1272,7 +1273,7 @@ encode_constr_bit_str_bits({Min,Max},BitListVal,DoTag) ->
 	true -> 
 	    encode_bitstring(BitListVal)  
     end;
-encode_constr_bit_str_bits({{Min1,Max1},{Min2,Max2}},BitListVal,DoTag) ->
+encode_constr_bit_str_bits({{_Min1,Max1},{Min2,Max2}},BitListVal,_DoTag) ->
     BitLen = length(BitListVal),
     case BitLen of
 	Len when Len > Max2 -> 
@@ -1344,7 +1345,7 @@ decode_bit_string(Buffer, Range, NamedNumberList, Tags, LenIn, OptOrMand) ->
 			     NamedNumberList, OptOrMand,old). 
  
 
-decode_bit_string2(1,<<0 ,Buffer/binary>>,NamedNumberList,RemovedBytes,BinOrOld) -> 
+decode_bit_string2(1,<<0 ,Buffer/binary>>,_NamedNumberList,RemovedBytes,BinOrOld) -> 
     case BinOrOld of
 	bin ->
 	    {{0,<<>>},Buffer,RemovedBytes};
@@ -1409,7 +1410,7 @@ decode_bitstring_NNL(BitList,NamedNumberList) ->
     decode_bitstring_NNL(BitList,NamedNumberList,0,[]). 
  
  
-decode_bitstring_NNL([],_,No,Result) -> 
+decode_bitstring_NNL([],_,_No,Result) -> 
     lists:reverse(Result); 
 
 decode_bitstring_NNL([B|BitList],[{Name,No}|NamedNumberList],No,Result) -> 
@@ -1432,11 +1433,11 @@ decode_bitstring_NNL([0|BitList],NamedNumberList,No,Result) ->
 %% The OctetList must be a flat list of integers in the range 0..255
 %% the function does not check this because it takes to much time
 %%============================================================================ 
-encode_octet_string(C, OctetList, []) when binary(OctetList) -> 
+encode_octet_string(_C, OctetList, []) when binary(OctetList) -> 
     dotag_universal(?N_OCTET_STRING,OctetList,size(OctetList));
-encode_octet_string(C, OctetList, DoTag) when binary(OctetList) -> 
+encode_octet_string(_C, OctetList, DoTag) when binary(OctetList) -> 
     dotag(DoTag, ?N_OCTET_STRING, {OctetList,size(OctetList)});
-encode_octet_string(C, OctetList, DoTag) when list(OctetList) -> 
+encode_octet_string(_C, OctetList, DoTag) when list(OctetList) -> 
     case length(OctetList) of
 	Len when DoTag == [] ->
 	    dotag_universal(?N_OCTET_STRING,OctetList,Len);
@@ -1468,7 +1469,7 @@ decode_octet_string(Buffer, Range, Tags, TotalLen, OptOrMand) ->
  
 encode_null(_, []) -> 
     {[?N_NULL,0],2};
-encode_null(V, DoTag) -> 
+encode_null(_, DoTag) -> 
     dotag(DoTag, ?N_NULL, {[],0}). 
  
 %%============================================================================ 
@@ -1482,19 +1483,19 @@ decode_null(Buffer, Tags, OptOrMand) ->
 decode_null_notag(Buffer, Tags, OptOrMand) ->
     {RestTags, {FormLen, Buffer0, Rb0}} = 
 	check_tags_i(Tags, Buffer, OptOrMand),
-    Result = 
-	case FormLen of
-	    {?CONSTRUCTED,Len} ->
-		{Buffer00,RestBytes} = split_list(Buffer0,Len),
-		{Val01, Buffer01, Rb01} = decode_null_notag(Buffer0, RestTags, 
-							  OptOrMand),
-		{Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
-		{Val01, Buffer02, Rb0+Rb01+Rb02};
-	    {_,0} ->
-		{'NULL', Buffer0, Rb0};
-	    {_,Len} ->
-		exit({error,{asn1,{invalid_length,'NULL',Len}}})
-	end. 
+
+    case FormLen of
+	{?CONSTRUCTED,Len} ->
+	    {_Buffer00,RestBytes} = split_list(Buffer0,Len),
+	    {Val01, Buffer01, Rb01} = decode_null_notag(Buffer0, RestTags, 
+							OptOrMand),
+	    {Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
+	    {Val01, Buffer02, Rb0+Rb01+Rb02};
+	{_,0} ->
+	    {'NULL', Buffer0, Rb0};
+	{_,Len} ->
+	    exit({error,{asn1,{invalid_length,'NULL',Len}}})
+    end. 
  
  
 %%============================================================================ 
@@ -1578,31 +1579,31 @@ decode_object_identifier(Buffer, Tags, OptOrMand) ->
 decode_object_identifier_notag(Buffer, Tags, OptOrMand) -> 
     {RestTags, {FormLen, Buffer0, Rb0}} = 
 	check_tags_i(Tags, Buffer, OptOrMand),
-    Result = 
-	case FormLen of
-	    {?CONSTRUCTED,Len} ->
-		{Buffer00,RestBytes} = split_list(Buffer0,Len),
-		{Val01, Buffer01, Rb01} = 
-		    decode_object_identifier_notag(Buffer00, 
-						   RestTags, OptOrMand),
-		{Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
-		{Val01, Buffer02, Rb0+Rb01+Rb02};
-	    {_,Len} ->
-		{[AddedObjVal|ObjVals],Buffer01} = 
-		    dec_subidentifiers(Buffer0,0,[],Len), 
-		{Val1, Val2} = if 
-				   AddedObjVal < 40 -> 
-				       {0, AddedObjVal}; 
-				   AddedObjVal < 80 -> 
-				       {1, AddedObjVal - 40}; 
-				   true -> 
-				       {2, AddedObjVal - 80} 
-			       end, 
-		{list_to_tuple([Val1, Val2 | ObjVals]), Buffer01, 
-		 Rb0+Len}
-	end. 
 
-dec_subidentifiers(Buffer,Av,Al,0) -> 
+    case FormLen of
+	{?CONSTRUCTED,Len} ->
+	    {Buffer00,RestBytes} = split_list(Buffer0,Len),
+	    {Val01, Buffer01, Rb01} = 
+		decode_object_identifier_notag(Buffer00, 
+					       RestTags, OptOrMand),
+	    {Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
+	    {Val01, Buffer02, Rb0+Rb01+Rb02};
+	{_,Len} ->
+	    {[AddedObjVal|ObjVals],Buffer01} = 
+		dec_subidentifiers(Buffer0,0,[],Len), 
+	    {Val1, Val2} = if 
+			       AddedObjVal < 40 -> 
+				   {0, AddedObjVal}; 
+			       AddedObjVal < 80 -> 
+				   {1, AddedObjVal - 40}; 
+			       true -> 
+				   {2, AddedObjVal - 80} 
+			   end, 
+	    {list_to_tuple([Val1, Val2 | ObjVals]), Buffer01, 
+	     Rb0+Len}
+    end. 
+
+dec_subidentifiers(Buffer,_Av,Al,0) -> 
     {lists:reverse(Al),Buffer}; 
 dec_subidentifiers(<<1:1,H:7,T/binary>>,Av,Al,Len) -> 
     dec_subidentifiers(T,(Av bsl 7) + H,Al,Len-1); 
@@ -1623,16 +1624,16 @@ dec_subidentifiers(<<H,T/binary>>,Av,Al,Len) ->
 %%
 %% encode Numeric Printable Teletex Videotex Visible IA5 Graphic General strings 
 %%============================================================================ 
-encode_restricted_string(C, OctetList, StringType, []) 
+encode_restricted_string(_C, OctetList, StringType, []) 
   when binary(OctetList) -> 
     dotag_universal(StringType,OctetList,size(OctetList));
-encode_restricted_string(C, OctetList, StringType, DoTag) 
+encode_restricted_string(_C, OctetList, StringType, DoTag) 
   when binary(OctetList) -> 
     dotag(DoTag, StringType, {OctetList, size(OctetList)});
-encode_restricted_string(C, OctetList, StringType, []) 
+encode_restricted_string(_C, OctetList, StringType, []) 
   when list(OctetList) ->
     dotag_universal(StringType,OctetList,length(OctetList));
-encode_restricted_string(C, OctetList, StringType, DoTag) 
+encode_restricted_string(_C, OctetList, StringType, DoTag) 
   when list(OctetList) ->
     dotag(DoTag, StringType, {OctetList, length(OctetList)}); 
 encode_restricted_string(C,{Name,OctetL},StringType,DoTag) when atom(Name)-> 
@@ -1667,7 +1668,7 @@ decode_restricted_string_tag(Buffer, Range, StringType, TagsIn, LenIn, NNList, O
  
 
 
-check_and_convert_restricted_string(Val,StringType,Range,NamedNumberList,BinOrOld) ->
+check_and_convert_restricted_string(Val,StringType,Range,NamedNumberList,_BinOrOld) ->
     {StrLen,NewVal} = case StringType of
 			  ?N_BIT_STRING when NamedNumberList /= [] ->
 			      {no_check,Val};
@@ -1687,14 +1688,14 @@ check_and_convert_restricted_string(Val,StringType,Range,NamedNumberList,BinOrOl
 	    NewVal;
 	{Lb,Ub} when StrLen >= Lb, Ub >= StrLen -> % variable length constraint
 	    NewVal;
-	{{Lb,Ub},[]} when StrLen >= Lb ->
+	{{Lb,_Ub},[]} when StrLen >= Lb ->
 	    NewVal;
 	{{Lb1,Ub1},{Lb2,Ub2}} when StrLen >= Lb1, StrLen =< Ub1; 
 				   StrLen =< Ub2, StrLen >= Lb2 ->
 	    NewVal;
 	StrLen -> % fixed length constraint
 	    NewVal;
-	{Lb,Ub} -> 
+	{_,_} -> 
 	    exit({error,{asn1,{length,Range,Val}}});
 	_Len when integer(_Len) ->
 	    exit({error,{asn1,{length,Range,Val}}});
@@ -1709,32 +1710,32 @@ check_and_convert_restricted_string(Val,StringType,Range,NamedNumberList,BinOrOl
 %%=============================================================================
 
 
-decode_restricted_string_notag(Buffer, Range, StringType, TagsIn, 
+decode_restricted_string_notag(Buffer, _Range, StringType, TagsIn, 
 			 _, NamedNumberList, OptOrMand,BinOrOld) -> 
     %%----------------------------------------------------------- 
     %% Get inner (the implicit tag or no tag) and  
     %%     outer (the explicit tag) lengths. 
     %%----------------------------------------------------------- 
-    {RestTags, {FormLength={_,Len01}, Buffer0, Rb0}} = 
+    {RestTags, {FormLength={_,_Len01}, Buffer0, Rb0}} = 
 	check_tags_i(TagsIn, Buffer, OptOrMand),
-    Result = {Val, Buffer2, RemovedBytes} =
-	case FormLength of
-	    {?CONSTRUCTED,Len} ->
-		{Buffer00, RestBytes} = split_list(Buffer0,Len),
-		{Val01, Buffer01, Rb01} = 
-		    decode_restricted_parts(Buffer00, RestBytes, [], StringType, 
-			      RestTags,
-			      Len, NamedNumberList, 
-			      OptOrMand, 
-			      BinOrOld, 0, []),
-		{Val01, Buffer01, Rb0+Rb01};
-	    {_, Len} ->
-		{Val01, Buffer01, Rb01} = 
-		    decode_restricted(Buffer0, Len, StringType, 
-				      NamedNumberList, BinOrOld),
-		{Val01, Buffer01, Rb0+Rb01}
-	end.
-     
+
+    case FormLength of
+	{?CONSTRUCTED,Len} ->
+	    {Buffer00, RestBytes} = split_list(Buffer0,Len),
+	    {Val01, Buffer01, Rb01} = 
+		decode_restricted_parts(Buffer00, RestBytes, [], StringType, 
+					RestTags,
+					Len, NamedNumberList, 
+					OptOrMand, 
+					BinOrOld, 0, []),
+	    {Val01, Buffer01, Rb0+Rb01};
+	{_, Len} ->
+	    {Val01, Buffer01, Rb01} = 
+		decode_restricted(Buffer0, Len, StringType, 
+				  NamedNumberList, BinOrOld),
+	    {Val01, Buffer01, Rb0+Rb01}
+    end.
+
 
 decode_restricted_parts(Buffer, RestBytes, [], StringType, RestTags, Len, NNList, 
 			OptOrMand, BinOrOld, AccRb, AccVal) ->
@@ -1778,24 +1779,24 @@ decode_restricted_parts(Buffer, RestBytes, [], StringType, RestTags, Len, NNList
  
 decode_restricted(Buffer, InnerLen, StringType, NamedNumberList,BinOrOld) -> 
     
-    {NewRes, NewBuffer, NewRb} =  
-	case StringType of 
-	    ?N_BIT_STRING -> 
-		decode_bit_string2(InnerLen,Buffer,NamedNumberList,InnerLen,BinOrOld); 
- 
-	    ?N_UniversalString ->
-		<<PreBuff:InnerLen/binary,RestBuff/binary>> = Buffer,%%added for binary
-		UniString = mk_universal_string(binary_to_list(PreBuff)), 
-		{UniString,RestBuff,InnerLen}; 
-	    ?N_BMPString ->  
-		<<PreBuff:InnerLen/binary,RestBuff/binary>> = Buffer,%%added for binary
-		BMP = mk_BMP_string(binary_to_list(PreBuff)), 
-		{BMP,RestBuff,InnerLen}; 
-	    _ ->  
-		<<PreBuff:InnerLen/binary,RestBuff/binary>> = Buffer,%%added for binary
-		{PreBuff, RestBuff, InnerLen}
-	end. 
+    case StringType of 
+	?N_BIT_STRING -> 
+	    decode_bit_string2(InnerLen,Buffer,NamedNumberList,InnerLen,BinOrOld); 
+	
+	?N_UniversalString ->
+	    <<PreBuff:InnerLen/binary,RestBuff/binary>> = Buffer,%%added for binary
+	    UniString = mk_universal_string(binary_to_list(PreBuff)), 
+	    {UniString,RestBuff,InnerLen}; 
+	?N_BMPString ->  
+	    <<PreBuff:InnerLen/binary,RestBuff/binary>> = Buffer,%%added for binary
+	    BMP = mk_BMP_string(binary_to_list(PreBuff)), 
+	    {BMP,RestBuff,InnerLen}; 
+	_ ->  
+	    <<PreBuff:InnerLen/binary,RestBuff/binary>> = Buffer,%%added for binary
+	    {PreBuff, RestBuff, InnerLen}
+    end. 
      
+
   
 %%============================================================================ 
 %% encode Universal string 
@@ -1803,10 +1804,10 @@ decode_restricted(Buffer, InnerLen, StringType, NamedNumberList,BinOrOld) ->
 
 encode_universal_string(C, {Name, Universal}, DoTag) when atom(Name) -> 
     encode_universal_string(C, Universal, DoTag);
-encode_universal_string(C, Universal, []) -> 
+encode_universal_string(_C, Universal, []) -> 
     OctetList = mk_uni_list(Universal),
     dotag_universal(?N_UniversalString,OctetList,length(OctetList));
-encode_universal_string(C, Universal, DoTag) -> 
+encode_universal_string(_C, Universal, DoTag) -> 
     OctetList = mk_uni_list(Universal), 
     dotag(DoTag, ?N_UniversalString, {OctetList,length(OctetList)}). 
  
@@ -1849,10 +1850,10 @@ mk_universal_string([A,B,C,D|T],Acc) ->
 
 encode_BMP_string(C, {Name,BMPString}, DoTag) when atom(Name)-> 
     encode_BMP_string(C, BMPString, DoTag);
-encode_BMP_string(C, BMPString, []) -> 
+encode_BMP_string(_C, BMPString, []) -> 
     OctetList = mk_BMP_list(BMPString),
     dotag_universal(?N_BMPString,OctetList,length(OctetList));
-encode_BMP_string(C, BMPString, DoTag) -> 
+encode_BMP_string(_C, BMPString, DoTag) -> 
     OctetList = mk_BMP_list(BMPString), 
     dotag(DoTag, ?N_BMPString, {OctetList,length(OctetList)}). 
  
@@ -1895,9 +1896,9 @@ mk_BMP_string([C,D|T],US) ->
 
 encode_generalized_time(C, {Name,OctetList}, DoTag) when atom(Name) -> 
     encode_generalized_time(C, OctetList, DoTag);
-encode_generalized_time(C, OctetList, []) -> 
+encode_generalized_time(_C, OctetList, []) -> 
     dotag_universal(?N_GeneralizedTime,OctetList,length(OctetList));
-encode_generalized_time(C, OctetList, DoTag) -> 
+encode_generalized_time(_C, OctetList, DoTag) -> 
     dotag(DoTag, ?N_GeneralizedTime, {OctetList,length(OctetList)}). 
  
 %%============================================================================ 
@@ -1913,20 +1914,20 @@ decode_generalized_time(Buffer, Range, Tags, TotalLen, OptOrMand) ->
 decode_generalized_time_notag(Buffer, Range, Tags, TotalLen, OptOrMand) -> 
     {RestTags, {FormLen, Buffer0, Rb0}} =  
 	check_tags_i(Tags, Buffer, OptOrMand),
-    Result = 
-	case FormLen of
-	    {?CONSTRUCTED,Len} ->
-		{Buffer00,RestBytes} = split_list(Buffer0,Len),
-		{Val01, Buffer01, Rb01} = 
-		    decode_generalized_time_notag(Buffer00, Range, 
-						  RestTags, TotalLen, 
-						  OptOrMand),
-		{Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
-		{Val01, Buffer02, Rb0+Rb01+Rb02};
-	    {_,Len} ->
-		<<PreBuff:Len/binary,RestBuff/binary>> = Buffer0,
-		{binary_to_list(PreBuff), RestBuff, Rb0+Len}
-	end.
+
+    case FormLen of
+	{?CONSTRUCTED,Len} ->
+	    {Buffer00,RestBytes} = split_list(Buffer0,Len),
+	    {Val01, Buffer01, Rb01} = 
+		decode_generalized_time_notag(Buffer00, Range, 
+					      RestTags, TotalLen, 
+					      OptOrMand),
+	    {Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
+	    {Val01, Buffer02, Rb0+Rb01+Rb02};
+	{_,Len} ->
+	    <<PreBuff:Len/binary,RestBuff/binary>> = Buffer0,
+	    {binary_to_list(PreBuff), RestBuff, Rb0+Len}
+    end.
 
 %%============================================================================ 
 %% Universal time, ITU_T X.680 Chapter 40 
@@ -1936,9 +1937,9 @@ decode_generalized_time_notag(Buffer, Range, Tags, TotalLen, OptOrMand) ->
 
 encode_utc_time(C, {Name,OctetList}, DoTag) when atom(Name) -> 
     encode_utc_time(C, OctetList, DoTag);
-encode_utc_time(C, OctetList, []) -> 
+encode_utc_time(_C, OctetList, []) -> 
     dotag_universal(?N_UTCTime, OctetList,length(OctetList));
-encode_utc_time(C, OctetList, DoTag) -> 
+encode_utc_time(_C, OctetList, DoTag) -> 
     dotag(DoTag, ?N_UTCTime, {OctetList,length(OctetList)}).
  
 %%============================================================================ 
@@ -1953,20 +1954,20 @@ decode_utc_time(Buffer, Range, Tags, TotalLen, OptOrMand) ->
 decode_utc_time_notag(Buffer, Range, Tags, TotalLen, OptOrMand) -> 
     {RestTags, {FormLen, Buffer0, Rb0}} =  
 	check_tags_i(Tags, Buffer, OptOrMand),
-    Result = 
-	case FormLen of
-	    {?CONSTRUCTED,Len} ->
-		{Buffer00,RestBytes} = split_list(Buffer0,Len),
-		{Val01, Buffer01, Rb01} = 
-		    decode_utc_time_notag(Buffer00, Range, 
-					  RestTags, TotalLen, 
-					  OptOrMand),
-		{Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
-		{Val01, Buffer02, Rb0+Rb01+Rb02};
-	    {_,Len} ->
-		<<PreBuff:Len/binary,RestBuff/binary>> = Buffer0,
-		{binary_to_list(PreBuff), RestBuff, Rb0+Len}
-	end.
+
+    case FormLen of
+	{?CONSTRUCTED,Len} ->
+	    {Buffer00,RestBytes} = split_list(Buffer0,Len),
+	    {Val01, Buffer01, Rb01} = 
+		decode_utc_time_notag(Buffer00, Range, 
+				      RestTags, TotalLen, 
+				      OptOrMand),
+	    {Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
+	    {Val01, Buffer02, Rb0+Rb01+Rb02};
+	{_,Len} ->
+	    <<PreBuff:Len/binary,RestBuff/binary>> = Buffer0,
+	    {binary_to_list(PreBuff), RestBuff, Rb0+Len}
+    end.
 
  
 %%============================================================================ 
@@ -2061,7 +2062,7 @@ check_if_valid_tag(Bytes, ListOfTags, OptOrMand) when binary(Bytes) ->
 %% This alternative should be removed in the near future
 %% Bytes as input should be the only necessary call
 check_if_valid_tag(Tag, ListOfTags, OptOrMand) -> 
-    {Class, Form, TagNo} = Tag, 
+    {Class, _Form, TagNo} = Tag, 
     C = code_class(Class), 
     T = case C of 
 	    'UNIVERSAL' -> 
@@ -2071,9 +2072,9 @@ check_if_valid_tag(Tag, ListOfTags, OptOrMand) ->
 	end, 
     check_if_valid_tag2({C,T}, ListOfTags, Tag, OptOrMand). 
 
-check_if_valid_tag2(Class_TagNo, [], Tag, mandatory) -> 
+check_if_valid_tag2(_Class_TagNo, [], Tag, mandatory) -> 
     exit({error,{asn1,{invalid_tag,Tag}}}); 
-check_if_valid_tag2(Class_TagNo, [], Tag, _) -> 
+check_if_valid_tag2(_Class_TagNo, [], Tag, _) -> 
     exit({error,{asn1,{no_optional_tag,Tag}}}); 
  
 check_if_valid_tag2(Class_TagNo, [{TagName,TagList}|T], Tag, OptOrMand) -> 
@@ -2084,7 +2085,7 @@ check_if_valid_tag2(Class_TagNo, [{TagName,TagList}|T], Tag, OptOrMand) ->
 	    check_if_valid_tag2(Class_TagNo, T, Tag, OptOrMand) 
     end. 
  
-check_if_valid_tag_loop(Class_TagNo,[]) -> 
+check_if_valid_tag_loop(_Class_TagNo,[]) -> 
     false; 
 check_if_valid_tag_loop(Class_TagNo,[H|T]) -> 
     %% It is not possible to distinguish between SEQUENCE OF and SEQUENCE, and
@@ -2149,17 +2150,17 @@ code_type(Else) -> exit({error,{asn1,{unrecognized_type,Else}}}).
 %% decoding of the components of a SET
 %%-------------------------------------------------------------------------
 
-decode_set(Rb, indefinite, <<0,0,Bytes/binary>>, OptOrMand, _Fun3, Acc) ->
+decode_set(Rb, indefinite, <<0,0,Bytes/binary>>, _OptOrMand, _Fun3, Acc) ->
    {lists:reverse(Acc),Bytes,Rb+2};
 
 decode_set(Rb, indefinite, Bytes, OptOrMand, Fun3, Acc) ->
    {Term, Remain, Rb1} = Fun3(Bytes, OptOrMand),
    decode_set(Rb+Rb1, indefinite, Remain, OptOrMand, Fun3, [Term|Acc]);
 
-decode_set(Rb, Num, Bytes, OptOrMand, _Fun3, Acc) when Num == 0 ->
+decode_set(Rb, Num, Bytes, _OptOrMand, _Fun3, Acc) when Num == 0 ->
    {lists:reverse(Acc), Bytes, Rb};
 
-decode_set(Rb, Num, Bytes, OptOrMand, _Fun3, Acc) when Num < 0 ->
+decode_set(_, Num, _, _, _, _) when Num < 0 ->
    exit({error,{asn1,{length_error,'SET'}}});
 
 decode_set(Rb, Num, Bytes, OptOrMand, Fun3, Acc) ->
@@ -2181,7 +2182,7 @@ decode_components(Rb, indefinite, Bytes, Fun3, TagIn, Acc) ->
 decode_components(Rb, Num, Bytes, _Fun3, _TagIn, Acc) when Num == 0 ->
    {lists:reverse(Acc), Bytes, Rb};
 
-decode_components(Rb, Num, Bytes, _Fun3, _TagIn, Acc) when Num < 0 ->
+decode_components(_, Num, _, _, _, _) when Num < 0 ->
    exit({error,{asn1,{length_error,'SET/SEQUENCE OF'}}});
 
 decode_components(Rb, Num, Bytes, Fun3, TagIn, Acc) ->
@@ -2201,7 +2202,7 @@ decode_components(Rb, indefinite, Bytes, _Fun4, TagIn, _Fun, Acc) ->
 decode_components(Rb, Num, Bytes, _Fun4, _TagIn, _Fun, Acc) when Num == 0 ->
    {lists:reverse(Acc), Bytes, Rb};
 
-decode_components(Rb, Num, Bytes, _Fun4, _TagIn, _Fun, Acc) when Num < 0 ->
+decode_components(_, Num, _, _, _, _, _) when Num < 0 ->
    exit({error,{asn1,{length_error,'SET/SEQUENCE OF'}}});
 
 decode_components(Rb, Num, Bytes, _Fun4, TagIn, _Fun, Acc) ->
@@ -2244,11 +2245,11 @@ dotag_universal(UniversalTag,Bytes,Len) ->
     {[UniversalTag,EncLen,Bytes],1+LenLen+Len}.
 
 %% decoding postitive integer values. 
-decode_integer2(Len,Bin = <<0:1,B2:7,Bs/binary>>,RemovedBytes) ->
+decode_integer2(Len,Bin = <<0:1,_:7,_Bs/binary>>,RemovedBytes) ->
     <<Int:Len/unit:8,Buffer2/binary>> = Bin,
     {Int,Buffer2,RemovedBytes};
 %% decoding negative integer values.
-decode_integer2(Len,Bin = <<1:1,B2:7,Bs/binary>>,RemovedBytes)  ->
+decode_integer2(Len,<<1:1,B2:7,Bs/binary>>,RemovedBytes)  ->
     <<N:Len/unit:8,Buffer2/binary>> = <<B2,Bs/binary>>,
     Int = N - (1 bsl (8 * Len - 1)),
     {Int,Buffer2,RemovedBytes}.
@@ -2267,7 +2268,7 @@ decode_integer2(Len,Bin = <<1:1,B2:7,Bs/binary>>,RemovedBytes)  ->
 %%    (-128 + (Byte band 127) bsl Shift) bor decode_integer_pos(Tail, Shift-8). 
 
 
-concat_bit_binaries([],Bin={U2,B2}) ->
+concat_bit_binaries([],Bin={_,_}) ->
     Bin;
 concat_bit_binaries({0,B1},{U2,B2}) ->
     {U2,<<B1/binary,B2/binary>>};
@@ -2296,9 +2297,9 @@ get_constraint(C,Key) ->
 
 new_tags([],LastTag) ->
     [LastTag];
-new_tags(Tags=[#tag{type='IMPLICIT'}],LastTag) ->
+new_tags(Tags=[#tag{type='IMPLICIT'}],_LastTag) ->
     Tags;
-new_tags([T1 = #tag{type='IMPLICIT'},T2 = #tag{type=T2Type}|Rest],LastTag) ->
+new_tags([T1 = #tag{type='IMPLICIT'},#tag{type=T2Type}|Rest],LastTag) ->
     new_tags([T1#tag{type=T2Type}|Rest],LastTag);
 new_tags(Tags,LastTag) ->
     case lists:last(Tags) of

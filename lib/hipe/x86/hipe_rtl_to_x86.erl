@@ -1,7 +1,6 @@
 %%% $Id$
 %%%
 %%% Translate 3-address RTL code to 2-address pseudo-x86 code.
-%%% RTL's frame module MUST NOT have munged the RTL code.
 
 -module(hipe_rtl_to_x86).
 -export([translate/1]).
@@ -44,13 +43,19 @@ conv_insn_list([], _, Data) ->
 conv_insn(I, Map, Data) ->
     case hipe_rtl:type(I) of
 	alu ->
-	    %% dst = src1 binop src2
+	%% dst = src1 binop src2
 	    BinOp = conv_binop(hipe_rtl:alu_op(I)),
 	    {Dst, Map0} = conv_dst(hipe_rtl:alu_dst(I), Map),
 	    {Src1, Map1} = conv_src(hipe_rtl:alu_src1(I), Map0),
 	    {Src2, Map2} = conv_src(hipe_rtl:alu_src2(I), Map1),
-	    I2 = conv_alu(Dst, Src1, BinOp, Src2, []),
-	    {I2, Map2, Data};
+	I2=	   
+	  case hipe_rtl:is_shift_op(hipe_rtl:alu_op(I)) of
+	    true ->
+	      conv_shift(Dst, Src1, BinOp, Src2); 
+	    false ->
+	      conv_alu(Dst, Src1, BinOp, Src2, [])
+	  end,
+	{I2, Map2, Data};
 	alub ->
 	    %% dst = src1 op src2; if COND goto label
 	    BinOp = conv_binop(hipe_rtl:alub_op(I)),
@@ -111,9 +116,7 @@ conv_insn(I, Map, Data) ->
 	    I2 = [hipe_x86:mk_jmp_label(hipe_rtl:goto_label(I))],
 	    {I2, Map, Data};
 	label ->
-	    %% Shouldn't the IsFail thing be obsolete now?
-	    IsFail = lists:member('entry', hipe_rtl:info(I)),
-	    I2 = [hipe_x86:mk_label(hipe_rtl:label_name(I), IsFail)],
+	    I2 = [hipe_x86:mk_label(hipe_rtl:label_name(I), false)],
 	    {I2, Map, Data};
 	load ->
 	    {Dst, Map0} = conv_dst(hipe_rtl:load_dst(I), Map),
@@ -173,7 +176,15 @@ conv_insn(I, Map, Data) ->
 	    {Ptr, Map0} = conv_dst(hipe_rtl:store_dst(I), Map),
 	    {Src, Map1} = conv_src(hipe_rtl:store_src(I), Map0),
 	    {Off, Map2} = conv_src(hipe_rtl:store_offset(I), Map1),
-	    Type = typeof_src(Src),
+	    Type =
+		case hipe_rtl:store_size(I) of
+		    word ->
+			typeof_src(Src);
+		    halfword ->
+			'halfword';
+		    byte ->
+			'byte'
+		end,
 	    I2 = [hipe_x86:mk_move(Src, hipe_x86:mk_mem(Ptr, Off, Type))],
 	    {I2, Map2, Data};
 	switch ->	% this one also updates Data :-(
@@ -212,22 +223,18 @@ conv_insn(I, Map, Data) ->
 	    {Src1, Map1} = conv_src(hipe_rtl:fp_src1(I), Map0),
 	    {Src2, Map2} = conv_src(hipe_rtl:fp_src2(I), Map1),
 	    Op = hipe_rtl:fp_op(I),
-	    I2 = conv_fop(Dst, Src1, Op, Src2),
+	    I2 = conv_fp_binop(Dst, Src1, Op, Src2),
 	    {I2, Map2, Data};
+	fp_unop ->
+	    {Dst, Map0} = conv_dst(hipe_rtl:fp_unop_dst(I), Map),
+	    {Src, Map1} = conv_src(hipe_rtl:fp_unop_src(I), Map0),
+	    Op = hipe_rtl:fp_unop_op(I),
+	    I2 = conv_fp_unop(Dst, Src, Op),
+	    {I2, Map1, Data};
 	fmov ->
 	    {Dst, Map0} = conv_dst(hipe_rtl:fmov_dst(I), Map),
 	    {Src, Map1} = conv_src(hipe_rtl:fmov_src(I), Map0),
-	    I2 =
-		case hipe_rtl:fmov_negate(I) of
-		    true ->
-			if Src =:= Dst ->
-				[hipe_x86:mk_fop(fchs, [], Dst)];
-			   true-> %% I don't think this can happen, but...
-				[hipe_x86:mk_fmov(Src, Dst),
-				 hipe_x86:mk_fop(fchs, [], Dst)]
-			end;
-		    _ -> [hipe_x86:mk_fmov(Src, Dst)]
-		end,
+	    I2 = [hipe_x86:mk_fmov(Src, Dst)],
 	    {I2, Map1, Data};
 	fconv ->
 	    {Dst, Map0} = conv_dst(hipe_rtl:fconv_dst(I), Map),
@@ -265,6 +272,38 @@ conv_alu(Dst, Src1, BinOp, Src2, Tail) ->
 		    end
 	    end
     end.
+
+
+
+conv_shift(Dst, Src1, BinOp, Src2) ->
+  {NewSrc2,I1} =
+    case hipe_x86:is_imm(Src2) of 
+      true ->
+	{Src2, []};
+      false ->
+	NewSrc = hipe_x86:mk_temp(hipe_x86_registers:ecx(), 'untagged'),
+	{NewSrc, [hipe_x86:mk_move(Src2, NewSrc)]}
+    end,
+  I2 = case same_opnd(Dst, Src1) of
+	 true ->			% x = x op y
+	   [hipe_x86:mk_shift(BinOp, NewSrc2, Dst)];		% x op= y
+	 false ->		% z = x op y, where z != x
+	   case same_opnd(Dst, Src2) of
+	     false ->	% z = x op y, where z != x && z != y
+	       [hipe_x86:mk_move(Src1, Dst),			% z = x
+		hipe_x86:mk_shift(BinOp, NewSrc2, Dst)];	% z op= y
+	     true ->	    % y = x op y, no shift op commutes
+	       Tmp = clone_dst(Dst),
+	       [hipe_x86:mk_move(Src1, Tmp),		% t = x
+		hipe_x86:mk_shift(BinOp, NewSrc2, Tmp),	% t op= y
+		hipe_x86:mk_move(Tmp, Dst)]	% y = t
+	   end
+       end,
+  I1 ++ I2.
+
+
+
+
 
 %%% Finalise the conversion of a conditional branch operation, taking
 %%% care to not introduce more temps and moves than necessary.
@@ -594,22 +633,31 @@ vmap_lookup(VMap, Opnd) ->
 vmap_bind(VMap, Opnd, Temp) ->
     [{Opnd, Temp} | VMap].
 
-conv_fop(Dst, Src1, Op, Src2) ->
+conv_fp_unop(Dst, Src, Op) ->
+    case same_opnd(Dst, Src) of
+	true ->
+	    [hipe_x86:mk_fp_unop(Op, Dst)];
+	_ ->
+	    [hipe_x86:mk_fmov(Src, Dst),
+	     hipe_x86:mk_fp_unop(Op, Dst)]
+    end.
+
+conv_fp_binop(Dst, Src1, Op, Src2) ->
     case same_opnd(Dst, Src1) of
 	true ->			% x = x op y
-	    [hipe_x86:mk_fop(Op, Src2, Dst)];		% x op= y
+	    [hipe_x86:mk_fp_binop(Op, Src2, Dst)];		% x op= y
 	false ->		% z = x op y, where z != x
 	    case same_opnd(Dst, Src2) of
 		false ->	% z = x op y, where z != x && z != y
 		    [hipe_x86:mk_fmov(Src1, Dst),			% z = x
-		     hipe_x86:mk_fop(Op, Src2, Dst)];	% z op= y
+		     hipe_x86:mk_fp_binop(Op, Src2, Dst)];	% z op= y
 		true ->		% y = x op y, where y != x
 		    case binop_commutes(Op) of
 			true ->	% y = y op x
-			    [hipe_x86:mk_fop(Op, Src1, Dst)]; % y op= x
+			    [hipe_x86:mk_fp_binop(Op, Src1, Dst)]; % y op= x
 			false ->% y = x op y, where op doesn't commute
 			    Op0 = reverse_op(Op),
-			    [hipe_x86:mk_fop(Op0, Src1, Dst)]
+			    [hipe_x86:mk_fp_binop(Op0, Src1, Dst)]
 		    end
 	    end
     end.

@@ -25,6 +25,19 @@ include ../vsn.mk
 VSN=$(SNMPEA_VSN)
 
 # ----------------------------------------------------
+# FLAGS
+# ----------------------------------------------------
+
+ifneq ($(MIBS_VERBOSITY),) 
+SNMP_FLAGS += +'{verbosity,$(MIBS_VERBOSITY)}'
+endif
+
+ERL_FLAGS += 
+ERL_COMPILE_FLAGS += -I../include \
+                     -I$(ERL_TOP)/lib/stdlib \
+                     $(SNMP_FLAGS)
+
+# ----------------------------------------------------
 # Release directory specification
 # ----------------------------------------------------
 RELSYSDIR = $(RELEASE_PATH)/lib/snmp-$(VSN)
@@ -32,6 +45,9 @@ RELSYSDIR = $(RELEASE_PATH)/lib/snmp-$(VSN)
 # ----------------------------------------------------
 # Common macros
 # ----------------------------------------------------
+BUILD_MIBS = EX1-MIB
+TARGET_FILES= $(BUILD_MIBS:%=%.bin)
+
 EXAMPLE_FILES = EX1-MIB.funcs snmp_mgr_tests.erl EX1-MIB.mib ex1.erl
 
 # ----------------------------------------------------
@@ -43,6 +59,8 @@ debug opt:
 clean:
 
 docs:
+
+build: $(TARGET_FILES)
 
 # ----------------------------------------------------
 # Release Target

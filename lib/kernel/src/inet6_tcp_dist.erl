@@ -224,7 +224,7 @@ setup(Node, Type, MyNode, LongOrShortNames,SetupTime) ->
 
 do_setup(Kernel, Node, Type, MyNode, LongOrShortNames,SetupTime) ->
     process_flag(priority, max),
-    ?trace("~p~n",[{inet_tcp_dist,self(),setup,Node}]),
+    ?trace("~p~n",[{?MODULE,self(),setup,Node}]),
     [Name, Address] = splitnode(Node, LongOrShortNames),
     case inet:getaddr(Address, inet6) of
         {ok, Ip} ->
@@ -298,9 +298,9 @@ do_setup(Kernel, Node, Type, MyNode, LongOrShortNames,SetupTime) ->
                            "failed.~n", [Node]),
                     ?shutdown(Node)
             end;
-        Other ->
+        __Other ->
             ?trace("inet_getaddr(~p) "
-                   "failed (~p).~n", [Node,Other]),
+                   "failed (~p).~n", [Node,__Other]),
             ?shutdown(Node)
     end.
 
@@ -407,10 +407,10 @@ mask({M1,M2,M3,M4,M5,M6,M7,M8}, {IP1,IP2,IP3,IP4,IP5,IP6,IP7,IP8}) ->
 
 is_node_name(Node) when atom(Node) ->
     case split_node(atom_to_list(Node), $@, []) of
-        [_, Host] -> true;
+        [_,_Host] -> true;
         _ -> false
     end;
-is_node_name(Node) ->
+is_node_name(_Node) ->
     false.
 tick(Sock) ->
     ?to_port(Sock,[]).

@@ -63,11 +63,11 @@
 	 closed_in_connection/2,
 	 closed_out_connection/2,
 	 in_request_enc/4,
-	 out_reply_enc/4,
+	 out_reply_enc/5,
 	 out_request_enc/6,
 	 in_reply_enc/6,
 	 in_request/4,
-	 out_reply/4,
+	 out_reply/5,
 	 out_request/6,
 	 in_reply/6,
 	 %% Portable Interceptors
@@ -370,8 +370,8 @@ in_request([Mod|T], ReqHdr, Ref, Msg, Args) ->
 %% Exception: 
 %% Effect   : Intercept an outgoing reply (server-side).
 %%------------------------------------------------------------
-out_reply_enc(PIs, ReqHdr, Ref, Msg) ->
-    case catch out_reply_enc(PIs, ReqHdr, Ref, Msg, undefined) of
+out_reply_enc(PIs, ReqHdr, Ref, Msg, Ctx) ->
+    case catch out_reply_enc(PIs, ReqHdr, Ref, Msg, undefined, Ctx) of
 	{'EXIT', R} ->
 	    orber:debug_level_print("[~p] orber_pi:out_reply_enc(~p, ~p, ~p); exit(~p)", 
 				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
@@ -383,14 +383,14 @@ out_reply_enc(PIs, ReqHdr, Ref, Msg) ->
 	NewMsg ->
 	    NewMsg
     end.
-out_reply_enc([], _, _, Msg, _) ->
+out_reply_enc([], _, _, Msg, _, _) ->
     Msg;
-out_reply_enc([Mod|T], ReqHdr, Ref, Msg, Args) ->
+out_reply_enc([Mod|T], ReqHdr, Ref, Msg, Args, Ctx) ->
     {NewMsg, NewArgs} = Mod:out_reply_encoded(Ref, ReqHdr#request_header.object_key,
-					      [], %% Context.
+					      Ctx, %% Out Context.
 					      ReqHdr#request_header.operation,
 					      Msg, Args),
-    out_reply_enc(T, ReqHdr, Ref, NewMsg, NewArgs).
+    out_reply_enc(T, ReqHdr, Ref, NewMsg, NewArgs, Ctx).
 
 
 %%------------------------------------------------------------
@@ -400,8 +400,8 @@ out_reply_enc([Mod|T], ReqHdr, Ref, Msg, Args) ->
 %% Exception: 
 %% Effect   : Intercept an outgoing reply (server-side).
 %%------------------------------------------------------------
-out_reply(PIs, ReqHdr, Ref, Msg) ->
-    case catch out_reply(PIs, ReqHdr, Ref, Msg, undefined) of
+out_reply(PIs, ReqHdr, Ref, Msg, Ctx) ->
+    case catch out_reply(PIs, ReqHdr, Ref, Msg, undefined, Ctx) of
 	{'EXIT', R} ->
 	    orber:debug_level_print("[~p] orber_pi:out_reply(~p, ~p, ~p); exit(~p)", 
 				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
@@ -409,14 +409,14 @@ out_reply(PIs, ReqHdr, Ref, Msg) ->
 	NewMsg ->
 	    NewMsg
     end.
-out_reply([], _, _, Msg, _) ->
+out_reply([], _, _, Msg, _, _) ->
     Msg;
-out_reply([Mod|T], ReqHdr, Ref, Msg, Args) ->
+out_reply([Mod|T], ReqHdr, Ref, Msg, Args, Ctx) ->
     {NewMsg, NewArgs} = Mod:out_reply(Ref, ReqHdr#request_header.object_key,
-				      [], %% Context.
+				      Ctx, %% Out Context.
 				      ReqHdr#request_header.operation,
 				      Msg, Args),
-    out_reply(T, ReqHdr, Ref, NewMsg, NewArgs).
+    out_reply(T, ReqHdr, Ref, NewMsg, NewArgs, Ctx).
 
 
 %%------------------------------------------------------------

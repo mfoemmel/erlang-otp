@@ -57,7 +57,7 @@ is_auth(Node) ->
     end.
 
 
-set_cookie(Node, Cookie) when node() =:= nonode@nohost ->
+set_cookie(_Node, _Cookie) when node() =:= nonode@nohost ->
     erlang:fault(distribution_not_started);
 
 set_cookie(Node, Cookie) ->
@@ -66,7 +66,7 @@ set_cookie(Node, Cookie) ->
 set_cookie(Cookie) ->
     set_cookie(node(),Cookie).
     
-get_cookie(Node) when node() =:= nonode@nohost ->
+get_cookie(_Node) when node() =:= nonode@nohost ->
     nocookie;
 
 get_cookie(Node) ->
@@ -113,16 +113,16 @@ init([]) ->
 %% The net kernel will let all message to the auth server 
 %% through as is
 
-handle_call({get_cookie, Node}, {From,Tag}, State) when Node =:= node() ->
+handle_call({get_cookie, Node}, {_From,_Tag}, State) when Node =:= node() ->
     {reply, State#state.our_cookie, State};
-handle_call({get_cookie, Node}, {From,Tag}, State) ->
+handle_call({get_cookie, Node}, {_From,_Tag}, State) ->
     case ets:lookup(State#state.other_cookies, Node) of
 	[{Node, Cookie}] ->
 	    {reply, Cookie, State};
 	[] ->
 	    {reply, State#state.our_cookie, State}
     end;
-handle_call({set_cookie, Node, Cookie}, {From,Tag}, State) 
+handle_call({set_cookie, Node, Cookie}, {_From,_Tag}, State) 
   when Node =:= node() ->
     {reply, true, State#state{our_cookie = Cookie}};
 
@@ -131,13 +131,13 @@ handle_call({set_cookie, Node, Cookie}, {From,Tag}, State)
 %% Someone wight have set up the cookie for our new nodename.
 %%
 
-handle_call({set_cookie, Node, Cookie}, {From,Tag}, State)  ->
+handle_call({set_cookie, Node, Cookie}, {_From,_Tag}, State)  ->
     ets:insert(State#state.other_cookies, {Node, Cookie}),
     {reply, true, State};
     
 handle_call(sync_cookie, _From, State) ->
     case ets:lookup(State#state.other_cookies,node()) of
-	[{N,C}] ->
+	[{_N,C}] ->
 	    ets:delete(State#state.other_cookies,node()),
 	    {reply, true, State#state{our_cookie = C}};
 	[] ->
@@ -154,31 +154,31 @@ handle_cast({print,What,Args}, O) ->
 
 %% A series of bad messages that may come (from older distribution versions).
 
-handle_info({From,badcookie,net_kernel,{From,spawn,M,F,A,Gleader}}, O) ->
+handle_info({From,badcookie,net_kernel,{From,spawn,_M,_F,_A,_Gleader}}, O) ->
     auth:print(node(From) ,"~n** Unauthorized spawn attempt to ~w **~n",
 	      [node()]),
     erlang:disconnect_node(node(From)), 
     {noreply, O};
-handle_info({From,badcookie,net_kernel,{From,spawn_link,M,F,A,Gleader}}, O) ->
+handle_info({From,badcookie,net_kernel,{From,spawn_link,_M,_F,_A,_Gleader}}, O) ->
     auth:print(node(From),
 	      "~n** Unauthorized spawn_link attempt to ~w **~n",
 	      [node()]),
     erlang:disconnect_node(node(From)), 
     {noreply, O};
-handle_info({From, badcookie, ddd_server, Mess}, O) ->
+handle_info({_From,badcookie,ddd_server,_Mess}, O) ->
     %% Ignore bad messages to the ddd server, they will be resent
     %% If the authentication is succesful
     {noreply, O};
-handle_info({From, badcookie, rex, Msg}, O) ->
+handle_info({From,badcookie,rex,_Msg}, O) ->
     auth:print(getnode(From), 
 	       "~n** Unauthorized rpc attempt to ~w **~n",[node()]),
     disconnect_node(node(From)), 
     {noreply, O};
 %% These two messages has to do with the old auth:is_auth() call (net_adm:ping)
-handle_info({From, badcookie,net_kernel,{'$gen_call',{From,Tag},{is_auth, Node}}}, O) -> %% ho ho
+handle_info({From,badcookie,net_kernel,{'$gen_call',{From,Tag},{is_auth,_Node}}}, O) -> %% ho ho
     From ! {Tag, no},
     {noreply, O};
-handle_info({From, badcookie, To, {{auth_reply,N},R}}, O) ->%% Let auth replys through
+handle_info({_From,badcookie,To,{{auth_reply,N},R}}, O) ->%% Let auth replys through
     catch To ! {{auth_reply,N},R}, 
     {noreply, O};
 handle_info({From,badcookie,Name,Mess}, Opened) ->
@@ -241,7 +241,7 @@ init_cookie() ->
 						     [?COOKIE_ETS_PROTECTION])}
 		    end
 	    end;
-	Other ->
+	_Other ->
 	    #state{our_cookie = nocookie,
 		   other_cookies = ets:new(cookies,[?COOKIE_ETS_PROTECTION])}
     end.
@@ -311,7 +311,7 @@ check_cookie1([$\r|Rest], Result) ->
     check_cookie1(Rest, Result);
 check_cookie1([$\s|Rest], Result) ->
     check_cookie1(Rest, Result);
-check_cookie1([_|Rest], Result) ->
+check_cookie1([_|_], _Result) ->
     {error, "Bad characters in cookie"};
 check_cookie1([], []) ->
     {error, "Too short cookie string"};
@@ -332,12 +332,12 @@ create_cookie(Name) ->
 	    case {R1, R2} of
 		{ok, ok} ->
 		    ok;
-		{{error, Reason}, _} ->
+		{{error,_Reason}, _} ->
 		    {error, "Failed to create cookie file"};
 		{ok, {error, Reason}} ->
 		    {error, "Failed to change mode: " ++ atom_to_list(Reason)}
 	    end;
-	{error, Reason} ->
+	{error,_Reason} ->
 	    {error, "Failed to create cookie file"}
     end.
 

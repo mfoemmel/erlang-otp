@@ -52,7 +52,8 @@
 	  fptr,            % the file descriptor
 	  no_objects,      % number of objects in table,
 	  no_keys,         % number of keys (version 9 only)
-	  maxobjsize,      % size of the biggest object collection (unused)
+	  maxobjsize,      % 2-log of the size of the biggest object
+                           % collection (version 9 only)
 	  n,               % split indicator
 	  type,            % set | bag | duplicate_bag
 	  keypos,          % default is 1 as for ets
@@ -66,6 +67,7 @@
 	  fixed = false,   % false | {now_time(), [{pid(),Counter}]}
                            % time of first fix, and number of fixes per process
 	  hash_bif,        % hash bif used for this file (phash2, phash, hash)
+          has_md5,         % whether the header has an MD5 sum (version 9(c))
 	  min_no_slots,    % minimum number of slots (default or integer)
 	  max_no_slots,    % maximum number of slots (default or integer)
 	  cache,           % cache(). Write cache.
@@ -102,6 +104,9 @@
 	  max_no_slots,
 	  no_colls,
 	  hash_method,
+          read_md5,
+          has_md5,
+          md5,
 	  trailer,
 	  eof,
 	  n,

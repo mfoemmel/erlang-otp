@@ -57,4 +57,35 @@ EXTERN void erts_thread_exit (void*);
 EXTERN int  erts_thread_join (erts_thread_t, void**);
 EXTERN int  erts_thread_kill (erts_thread_t);
 
+#ifdef ERL_THREADS_EMU_INTERNAL__
+
+#define ERTS_MUTEX_SYS_ELIB_MALLOC		0
+#define ERTS_MUTEX_SYS_CHILD_STATUS		1
+#define ERTS_MUTEX_SYS_INSTR			2
+#define ERTS_MUTEX_SYS_INSTR_X			3
+#define ERTS_MUTEX_SYS_MTRACE			4
+#define ERTS_MUTEX_SYS_MSEG			5
+#define ERTS_MUTEX_SYS_TEMP_ALLOC		6
+#define ERTS_MUTEX_SYS_SL_ALLOC			7
+#define ERTS_MUTEX_SYS_STD_ALLOC		8
+#define ERTS_MUTEX_SYS_LL_ALLOC			9
+#define ERTS_MUTEX_SYS_EHEAP_ALLOC		10
+#define ERTS_MUTEX_SYS_BINARY_ALLOC		11
+#define ERTS_MUTEX_SYS_ETS_ALLOC		12
+
+#define ERTS_MAX_SYS_MUTEX			13
+
+EXTERN erts_mutex_t erts_mutex_sys(int);
+EXTERN int erts_atfork_sys(void (*)(void), void (*)(void), void (*)(void));
+EXTERN int erts_mutex_set_default_atfork(erts_mutex_t mtx);
+EXTERN int erts_mutex_unset_default_atfork(erts_mutex_t mtx);
+#ifdef UNIX
+EXTERN int erts_thread_sigmask(int, const sigset_t *, sigset_t *);
+EXTERN int erts_thread_sigwait(const sigset_t *, int *);
 #endif
+EXTERN void erts_sys_threads_init(void);
+#endif /* #ifdef ERL_THREADS_EMU_INTERNAL__ */
+
+#endif /* #ifndef __ERL_THREADS_H__ */
+
+

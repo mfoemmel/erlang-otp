@@ -630,6 +630,20 @@ off_t* pSize;			/* Where to store the size of the file. */
     return 1;
 }
 
+int 
+efile_may_openfile(Efile_error* errInfo, char *name) {
+    struct stat statbuf;
+    
+    if (stat(name, &statbuf)) {
+	return check_error(-1, errInfo);
+    }
+    if (ISDIR(statbuf)) {
+	errno = EISDIR;
+	return check_error(-1, errInfo);
+    }
+    return 1;
+}
+
 void
 efile_closefile(fd)
 int fd;				/* File descriptor for file to close. */

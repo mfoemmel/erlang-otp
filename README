@@ -13,25 +13,29 @@ Portability
 -----------
 
 Erlang/OTP should be possible to build from source on any Unix
-system. There is currently no source build for Windows but you can
-download the binary release from http://www.erlang.org/.
+system. 
+
+Instructions for building from source on Windows are in the file README.win32.
+Binary releases for Windows can be found at http://www.erlang.org/
 
 At Ericsson we have a "Daily Build and Test" that runs on:
  
     Operating system        Version
     -----------------------------------------------------------
-    Solaris/Sparc           2.5.1
-    Solaris/Sparc           2.6
-    Solaris/Sparc           2.7
-    Solaris/Sparc           2.8
+    Solaris/Sparc           2.8      (1)
     Linux/RedHat x86        6.2
+    Linux/RedHat x86        7.1
     Linux/Debian x86        2.2
-    Linux/Debian PowerPC    2.2      (1)
+    Linux sparc	    	    Kernel 2.4.19, libc 2.1.3
+    Linux/Debian PowerPC    2.2      (2)
     FreeBSD x86             4.1.1
-    Darwin/Mac OS X PowerPC 10.2.1   (2)
+    Darwin/Mac OS X PowerPC 10.2.1   (3)
+    Windows 		    2000
 
-(1) Runs on an Apple iMac.
-(2) Runs on an Apple iMac. See notes below.
+(1) Older versions of Solaris should work well, but we don't test them 
+    any longer.
+(2) Runs on an Apple iMac.
+(3) Runs on an Apple iMac. See notes below.
 
 
 Required utilities
@@ -45,7 +49,7 @@ These are the tools you will need in order to unpack and build Erlang/OTP.
   GNU unzip, or a modern uncompress.
 
   A TAR program that understand the GNU TAR format for long
-  filenames (such as e.g. GNU TAR).
+  filenames (such as GNU TAR).
   
 
   Compiling
@@ -61,17 +65,21 @@ These are the tools you will need in order to unpack and build Erlang/OTP.
                         V1 MIBS. "gawk" will do but you have to create
                         a link from "nawk" to the "gawk" executable.  
 
-  openSSL/ssleay        Optional but needed for building the Erlang/OTP
+  OpenSSL	        Optional but needed for building the Erlang/OTP
                         applications 'ssl' and 'crypto'. You need the
-                        "development package" of SSL, i.e. including
-                        the header files.
+                        "development package" of OpenSSL, i.e. including
+                        the header files. For building the application 'ssl'
+			the OpenSSL binary command program 'openssl' is also
+			needed. 
+
+			At least version 0.9.7 of OpenSSL is required.
 
   Sun Java jdk-1.2.2    Optional but needed for building the Erlang/OTP
                         application 'jinterface' and parts of 'ic'
                         and 'orber'.
 
-  X Windows             Optional but development headers and libraries
-                        are needed to build Erlang/OTP application 'gs'
+  X Windows             Optional, but development headers and libraries
+                        are needed to build the Erlang/OTP application 'gs'
 			on Unix/Linux.
 
   sed			There seem to be some problems with some of the
@@ -94,41 +102,48 @@ How to build and install Erlang/OTP
 Start by unpacking the Erlang/OTP distribution file with your
 GNU compatible TAR
 
-  1)    gunzip -c otp_src_R9B-1.tar.gz | tar xf -
-  1)    zcat otp_src_R9B-1.tar.gz | tar xf -
+  1)    gunzip -c otp_src_R9C-0.tar.gz | tar xf -
+  1)    zcat otp_src_R9C-0.tar.gz | tar xf -
 
-Now cd into base directory
+Now cd into the base directory
 
-  2)    cd otp_src_R9B-1
+  2)    cd otp_src_R9C-0
+
+On some platforms Perl may behave strangely if certain locales are set,
+so optionally you may need to set the LANG variable:
+
+  3a) LANG=C; export LANG #Bourne shell
+or
+  3b) setenv LANG C #C-shell
 
 Run the following commands
 
-  3)    ./configure  [ options ]
+  4)    ./configure  [ options ]
 
 If you upgraded the source with the patch you may need to clean up
 from previous builds before the new build. Do a "make clean", see
 "Caveats" below.
 
-  4)    make
-  5)    make install
+  5)    make
+  6)    make install
 
 Let's go through them in some detail:
 
-    Step 3 runs a configuration script created by the GNU autoconf
+    Step 4 runs a configuration script created by the GNU autoconf
 utility, which checks for system specific features and the creates a
 number of makefiles. The configure script allows you to customize a
-number of parameters, type "./configure --help" for details. One of
-the things you can specify is where Erlang/OTP should be installed, by
-default Erlang/OTP will install in /usr/local/{bin,lib/erlang,man/man1},
+number of parameters; type "./configure --help" for details. One of
+the things you can specify is where Erlang/OTP should be installed; by
+default Erlang/OTP will install in /usr/local/{bin,lib/erlang,man/man1};
 to keep the same structure but install in a different place, let's
-call it <Dir>, than /usr/local use the --prefix argument. Like so:
+call it <Dir> rather than /usr/local use the --prefix argument. Like so:
 "./configure --prefix=<Dir>". This step will also configure any
 additional libraries unpacked in step 3 (if you didn't add any of the
 extra libraries configure will issue a warning saying that there is no
 configuration information in lib, this warning can safely be ignored).
 
-You can also specify where the openSSL/ssleay include and library
-files are located or disable the use of SSL.
+You can also specify where the OpenSSL include and library files are
+located, or else disable the use of SSL and Crypto. 
 
 Other options are:
 
@@ -139,11 +154,8 @@ Other options are:
 				Solaris/x86).
 	--enable-threads	Enable threaded I/O support in
 				the Erlang emulator.
-	--enable-shared-heap	Experimental version of Erlang with
-				a shared heap for all processes, which
-				speeds up message passing.
 
-    Step 4 first builds the Erlang emulator, this will take
+    Step 5 first builds the Erlang emulator, this will take
 approximately five minutes on a reasonably fast machine. It then
 proceeds to build the Erlang/OTP libraries in the "lib" subdirectory
 using the built emulator and the bootstrap libraries provided in the
@@ -153,9 +165,9 @@ completed you should have a working Erlang/OTP system which you can
 try by typing "bin/erl". This should start up Erlang/OTP and give you
 a prompt.
 
-    Step 5 is optional. It installs Erlang/OTP (if you change your
-mind about where you wish to install you can rerun step 3, without
-having to do step 4 again).
+    Step 6 is optional. It installs Erlang/OTP (if you change your
+mind about where you wish to install you can rerun step 4, without
+having to do step 5 again).
 
 If you or your system has special requirements please read the
 Makefile for additional configuration information.
@@ -168,13 +180,13 @@ For some graphical tools to find the on-line help you have to install
 the HTML documentation on top of the installed OTP applications, i.e.
 
         cd <PrefixDir>/lib/erlang
-        gunzip -c otp_html_R9B-1.tar.gz | tar xf -
+        gunzip -c otp_html_R9C-0.tar.gz | tar xf -
 
 For "erl -man <page>" to work the Unix manual pages have to be
 installed in the same way, i.e.
 
         cd <PrefixDir>/lib/erlang
-        gunzip -c otp_man_R9B-1.tar.gz | tar xf -
+        gunzip -c otp_man_R9C-0.tar.gz | tar xf -
 
 
 GS (Graphic System)
@@ -218,7 +230,7 @@ Darwin/Mac OS X
 
 Mac OS X version 10.2 (Jaguar) is needed.
 (Mac OS X 10.1.x will probably work as well, but we have
-not tested the final R9 build any 10.1.x system.)
+not tested the final build any 10.1.x system.)
 
 IMPORTANT! Use the "gnutar" command to unpack the sources.
 (Using "tar" or Stuff-It Expander might seem to work, but it will not
@@ -226,12 +238,12 @@ build successfully.)
 
 Erlang/OTP will read the network configuration files in "/etc" at
 startup.  In Darwin these are normally not used by the operating
-system. The easiest way to solve this is to make Erlang/OTP avoid this
+system. The easiest way to force Erlang/OTP avoid reading the files
 is to put the line (including the ending '.')
 
   {lookup,["native"]}.
 
-into the file "$HOME/.inetrc".
+into the "$HOME/.inetrc" file.
 
 Make sure that the command "hostname" return a valid fully qualified
 host name (this is configured in "/etc/hostconfig").
@@ -257,17 +269,17 @@ Make and the variable "ERL_TOP"
 All the makefiles in the entire directory tree use the environment
 variable ERL_TOP to find the absolute path of the installation. The
 configure script will figure this out and set it in the top level
-Makefile (which, when building, it will pass on). However when
+Makefile (which, when building, it will pass on). However, when
 developing it is sometimes convenient to be able to run make in a
-subdirectory. In order to do this you need to set the ERL_TOP variable
+subdirectory. To do this you must set the ERL_TOP variable
 before you run make.
 
 For example, assume your GNU make program is called "make" and you
-wish to rebuild the Erlang/OTP part of stdlib, then you could do:
+want to rebuild the Erlang/OTP part of stdlib, then you could do:
 
   cd lib/stdlib/src ; env ERL_TOP=<Dir> make
 
-Where <Dir> would be what you find ERL_TOP is set to in the top level
+where <Dir> would be what you find ERL_TOP is set to in the top level
 Makefile.
 
 
@@ -276,5 +288,5 @@ More Information
 
 More information can be found on http://www.erlang.org/
 
-For commercial inquires (printed documentation, support et.c.) please
+For commercial inquires (printed documentation, support etc) please
 visit http://www.erlang.se/

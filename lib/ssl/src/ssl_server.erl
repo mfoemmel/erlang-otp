@@ -27,13 +27,15 @@
 -module(ssl_server).
 -behaviour(gen_server).
 
-%% External exports
--export([start_link/0]).
--export([accept/2, accept/3, connect/3, connect/4, close/1, listen/3, 
-	 listen/4, proxy_join/2, peername/1, setnodelay/2, sockname/1]).
+%% External exports 
+-export([start_link/0]).  
+
+-export([accept/2, accept/3, ciphers/0, connect/5, connect/6, close/1,
+	 listen/3, listen/4, peercert/1, peername/1, proxy_join/2,
+	 seed/1, setnodelay/2, sockname/1, version/0]).
 
 -export([start_link_prim/0]).
--export([accept_prim/4, connect_prim/5, close_prim/2, 
+-export([accept_prim/4, connect_prim/7, close_prim/2, 
 	 listen_prim/5, proxy_join_prim/3, peername_prim/2, setnodelay_prim/3, 
 	 sockname_prim/2]).
 
@@ -43,19 +45,25 @@
 
 -include("ssl_int.hrl").
 
--record(state, {
+-record(st, {
 	  port = [],			% port() of port program
 	  progpid = [],			% OS pid of port program
 	  debug = false,		% debug printout flag
 	  cons = [], 			% All brokers except pending accepts
 	  paccepts = [], 		% Pending accept brokers
 	  proxylsport = [], 		% proxy listen socket port
-	  intref = 0			% internal reference counter
+	  intref = 0,			% internal reference counter
+	  compvsn = "",			% ssl compile library version
+	  libvsn = "",			% ssl library version
+	  ciphers = []			% available ciphers
 	 }).
 
 
 %% In all functions below IP is a four tuple, e.g. {192, 236, 52, 7}. 
-%% SPort, Fd and ListenFd are integers; Flags is a string of characters.
+%% Port, Fd and ListenFd are integers; Flags is a string of characters.
+%%
+%% The prefixes F and L mean foreign and local, respectively. 
+%% Example: FIP (IP address for foreign end).
 
 %%
 %% start_link() -> {ok, Pid} | {error, Reason}
@@ -67,50 +75,65 @@ start_link_prim() ->
     gen_server:start_link({local, ssl_server_prim}, ssl_server, [], []).
 
 %%
-%% accept(ListenFd, Flags) -> {ok, Fd, ProxyLSPort} |
+%% accept(ListenFd, Flags) -> {ok, Fd, ProxyLLPort} |
 %%			      {error, Reason}
 %%
 accept(ListenFd, Flags) ->
     accept(ListenFd, Flags, infinity).
 accept(ListenFd, Flags, Timeout) ->
     accept_prim(ssl_server,ListenFd, Flags, Timeout).
+
 accept_prim(ServerName, ListenFd, Flags, Timeout) ->
     Req = {accept, self(), ListenFd, Flags}, 
     gen_server:call(ServerName, Req, Timeout).
 
 %%
-%% connect(IP, SPort, Flags) -> {ok, Fd, ProxyLSPort} |
+%% ciphers() -> {ok, Ciphers} 
+%%
+ciphers() ->
+    gen_server:call(ssl_server, ciphers, infinity).
+
+%%
+%% close(Fd) -> ok
+%%
+close(Fd) -> 
+    close_prim(ssl_server, Fd).
+close_prim(ServerName, Fd) -> 
+    gen_server:call(ServerName, {close, self(), Fd}, infinity),
+    ok.
+
+%%
+%% connect(LIP, LPort, FIP, FPort, Flags) -> {ok, Fd, ProxyLFPort} |
 %%					 {error, Reason}
 %%
-connect(IP, SPort, Flags) ->
-    connect(IP, SPort, Flags, infinity).
-connect(IP, SPort, Flags, Timeout) ->
-    connect_prim(ssl_server, IP, SPort, Flags, Timeout).
-connect_prim(ServerName, IP, SPort, Flags, Timeout) ->
-    Req = {connect, self(), IP, SPort, Flags},
+connect(LIP, LPort, FIP, FPort, Flags) ->
+    connect(LIP, LPort, FIP, FPort, Flags, infinity).
+connect(LIP, LPort, FIP, FPort, Flags, Timeout) ->
+    connect_prim(ssl_server, LIP, LPort, FIP, FPort, Flags, Timeout).
+
+connect_prim(ServerName, LIP, LPort, FIP, FPort, Flags, Timeout) ->
+    Req = {connect, self(), LIP, LPort, FIP, FPort, Flags},
     gen_server:call(ServerName, Req, Timeout).
   
 %%
-%% listen(IP, SPort, Flags), 
-%% listen(IP, SPort, Flags, BackLog) -> {ok, ListenFd, SPort0} | 
+%% listen(IP, LPort, Flags), 
+%% listen(IP, LPort, Flags, BackLog) -> {ok, ListenFd, LPort0} | 
 %%                                    {error, Reason}
 %%
-listen(IP, SPort, Flags) ->
-    listen(IP, SPort, Flags, ?DEF_BACKLOG).
-listen(IP, SPort, Flags, BackLog) ->
-    listen_prim(ssl_server, IP, SPort, Flags, BackLog).
-listen_prim(ServerName, IP, SPort, Flags, BackLog) ->
-    Req = {listen, self(), IP, SPort, Flags, BackLog},
+listen(IP, LPort, Flags) ->
+    listen(IP, LPort, Flags, ?DEF_BACKLOG).
+listen(IP, LPort, Flags, BackLog) ->
+    listen_prim(ssl_server, IP, LPort, Flags, BackLog).
+listen_prim(ServerName, IP, LPort, Flags, BackLog) ->
+    Req = {listen, self(), IP, LPort, Flags, BackLog},
     gen_server:call(ServerName, Req, infinity).
 
 %%
-%% proxy_join(Fd, SPort) -> ok | {error, Reason}
+%% peercert(Fd) -> {ok, Cert} | {error, Reason}
 %%
-proxy_join(Fd, SPort) ->
-    proxy_join_prim(ssl_server, Fd, SPort).
-proxy_join_prim(ServerName, Fd, SPort) ->
-    Req = {proxy_join, self(), Fd, SPort},
-    gen_server:call(ServerName, Req, infinity).
+peercert(Fd) ->
+    Req = {peercert, self(), Fd},
+    gen_server:call(ssl_server, Req, infinity).
 
 %%
 %% peername(Fd) -> {ok, {Address, Port}} | {error, Reason}
@@ -121,6 +144,22 @@ peername_prim(ServerName, Fd) ->
     Req = {peername, self(), Fd},
     gen_server:call(ServerName, Req, infinity).
 
+%%
+%% proxy_join(Fd, LPort) -> ok | {error, Reason}
+%%
+proxy_join(Fd, LPort) ->
+    proxy_join_prim(ssl_server, Fd, LPort).
+proxy_join_prim(ServerName, Fd, LPort) ->
+    Req = {proxy_join, self(), Fd, LPort},
+    gen_server:call(ServerName, Req, infinity).
+
+%%
+%%  seed(Data)
+%%
+seed(Data) ->
+    Req = {seed, Data},
+    gen_server:call(ssl_server, Req, infinity).
+    
 %%
 %%  set_nodelay(Fd, Boolean)
 %%
@@ -140,13 +179,10 @@ sockname_prim(ServerName, Fd) ->
     gen_server:call(ServerName, Req, infinity).
 
 %%
-%% close(Fd) -> ok
+%% version() -> {ok, {CompVsn, LibVsn}} 
 %%
-close(Fd) -> 
-    close_prim(ssl_server, Fd).
-close_prim(ServerName, Fd) -> 
-    gen_server:call(ServerName, {close, self(), Fd}, infinity),
-    ok.
+version() ->
+    gen_server:call(ssl_server, version, infinity).
 
 %%
 %% init
@@ -160,7 +196,12 @@ init([]) ->
 			{ok, true} ->
 			    true;
 			_  ->
-			    false
+			    case os:getenv("ERL_SSL_DEBUG") of
+				false ->
+				    false;
+				_ ->
+				    true
+			    end
 		    end
 	    end,
     ProgDir = 
@@ -168,16 +209,9 @@ init([]) ->
 	    {ok, [[D]]} ->
 		D;
 	    _ ->
-		case os:getenv("ERL_SSL_PORTPROGRAM_DIR") of
-		    false ->
-			find_priv_bin();
-		    [] ->
-			find_priv_bin();
-		    Dir ->
-			Dir
-		end
+		find_priv_bin()
 	end,
-    {Program, Flags} = mk_cmd_line("ssl_esock"), % "ssl_esock" is default
+    {Program, Flags} = mk_cmd_line("ssl_esock"),
     Cmd = filename:join(ProgDir, Program) ++ " " ++ Flags,
     debug1(Debug, " start, Cmd =  ~s~n", [Cmd]), 
     case (catch open_port({spawn, Cmd}, [binary, {packet, 4}])) of
@@ -185,11 +219,18 @@ init([]) ->
 	    process_flag(trap_exit, true), 
 	    receive 
 		{Port, {data, Bin}} ->
-		    {ProxyLSPort, ProgPid} = decode_msg(Bin, [int16, int32]), 
+		    {ProxyLLPort, ProgPid, CompVsn, LibVsn, Ciphers} = 
+			decode_msg(Bin, [int16, int32, string, string, 
+					 string]), 
 		    debug1(Debug, "port program pid = ~w~n", 
 			   [ProgPid]), 
-		    {ok, #state{port = Port, proxylsport = ProxyLSPort,
-				progpid = ProgPid, debug = Debug}};
+		    {ok, #st{port = Port, 
+			     proxylsport = ProxyLLPort,
+			     progpid = ProgPid, 
+			     debug = Debug, 
+			     compvsn = CompVsn, 
+			     libvsn = LibVsn,
+			     ciphers = Ciphers}};
 		{'EXIT', Port, Reason} ->
 		    {stop, Reason}
 	    end;
@@ -200,122 +241,54 @@ init([]) ->
 %%
 %% accept
 %%
-handle_call({accept, Broker, ListenFd, Flags}, From, State) ->
-    debug(State, "accept: broker = ~w, listenfd = ~w~n", 
+handle_call({accept, Broker, ListenFd, Flags}, From, St) ->
+    debug(St, "accept: broker = ~w, listenfd = ~w~n", 
 	  [Broker, ListenFd]),
-    case get_by_fd(ListenFd, State#state.cons) of
+    case get_by_fd(ListenFd, St#st.cons) of
 	{ok, {ListenFd, _, _}} ->
-	    send_cmd(State#state.port, ?ACCEPT, [int32(ListenFd), Flags, 0]),
-	    PAccepts = add({ListenFd, Broker, From}, State#state.paccepts),
+	    send_cmd(St#st.port, ?ACCEPT, [int32(ListenFd), Flags, 0]),
+	    PAccepts = add({ListenFd, Broker, From}, St#st.paccepts),
 	    %%
 	    %% We reply when we get ACCEPT_REP or ASYNC_ACCEPT_ERR
 	    %% 
-	    {noreply, State#state{paccepts = PAccepts}};
+	    {noreply, St#st{paccepts = PAccepts}};
 	_Other ->
-	    {reply, {error, ebadf}, State}
+	    {reply, {error, ebadf}, St}
     end;
+
+%%
+%% version
+%%
+handle_call(ciphers, From, St) ->
+    debug(St, "ciphers: from = ~w~n", [From]),
+    {reply, {ok, St#st.ciphers}, St};
 
 %%
 %% connect
 %%
-handle_call({connect, Broker, IP, SPort, Flags}, From, State) ->
-    debug(State, "connect: broker = ~w, ip = ~w, "
-	  "sport = ~w~n", [Broker, IP, SPort]),
-    Port = State#state.port,
-    IPStr = io_lib:format("~w.~w.~w.~w", tuple_to_list(IP)),
-    IntRef = new_intref(State),
-    send_cmd(Port, ?CONNECT, [int32(IntRef), int16(SPort), IPStr, 0, 
+handle_call({connect, Broker, LIP, LPort, FIP, FPort, Flags}, From, St) ->
+    debug(St, "connect: broker = ~w, ip = ~w, "
+	  "sport = ~w~n", [Broker, FIP, FPort]),
+    Port = St#st.port,
+    LIPStr = io_lib:format("~w.~w.~w.~w", tuple_to_list(LIP)),
+    FIPStr = io_lib:format("~w.~w.~w.~w", tuple_to_list(FIP)),
+    IntRef = new_intref(St),
+    send_cmd(Port, ?CONNECT, [int32(IntRef), 
+			      int16(LPort), LIPStr, 0, 
+			      int16(FPort), FIPStr, 0, 
 			      Flags, 0]),
-    Cons = add({{intref, IntRef}, Broker, From}, State#state.cons),
+    Cons = add({{intref, IntRef}, Broker, From}, St#st.cons),
     %% We reply when we have got CONNECT_SYNC_ERR, or CONNECT_WAIT 
     %% and CONNECT_REP, or CONNECT_ERR.
-    {noreply, State#state{cons = Cons, intref = IntRef}};
-
-%%
-%% listen
-%%
-handle_call({listen, Broker, IP, SPort, Flags, BackLog}, From, State) ->
-    debug(State, "listen: broker = ~w, IP = ~w, "
-	  "sport = ~w~n", [Broker, IP, SPort]),
-    Port = State#state.port,
-    IPStr = io_lib:format("~w.~w.~w.~w", tuple_to_list(IP)),
-    IntRef = new_intref(State),
-    send_cmd(Port, ?LISTEN, [int32(IntRef), int16(SPort), IPStr, 0, 
-			     int16(BackLog), Flags, 0]), 
-    Cons = add({{intref, IntRef}, Broker, From}, State#state.cons),
-    %% We reply when we have got LISTEN_REP.
-    {noreply, State#state{cons = Cons, intref = IntRef}};
-
-%%
-%% proxy join
-%%
-handle_call({proxy_join, Broker, Fd, SPort}, From, State) ->
-    debug(State, "proxy_join: broker = ~w, fd = ~w, "
-	  "sport = ~w~n", [Broker, Fd, SPort]),
-    case replace_from_by_fd(Fd, State#state.cons, From) of 
-	{ok, _, Cons} ->
-	    send_cmd(State#state.port, ?PROXY_JOIN, [int32(Fd), 
-						     int16(SPort)]), 
-	    %% We reply when we get PROXY_JOIN_REP, or PROXY_JOIN_ERR.
-	    {noreply, State#state{cons = Cons}};
-	_Other ->
-	    {reply, {error, ebadf}, State}
-    end;
-
-%%
-%% peername
-%%
-handle_call({peername, Broker, Fd}, From, State) ->
-    debug(State, "peername: broker = ~w, fd = ~w~n",
-	  [Broker, Fd]),
-    case replace_from_by_fd(Fd, State#state.cons, From) of 
-	{ok, _, Cons} ->
-	    send_cmd(State#state.port, ?GETPEERNAME, [int32(Fd)]),
-	    %% We reply when we get GETPEERNAME_REP or GETPEERNAME_ERR.
-	    {noreply, State#state{cons = Cons}};
-	_Other ->
-	    {reply, {error, ebadf}, State}
-    end;
-
-%%
-%% setnodelay
-%%
-handle_call({setnodelay, Broker, Fd, Boolean}, From, State) ->
-    debug(State, "setnodelay: broker = ~w, fd = ~w, "
-	  "boolean = ~w~n", [Broker, Fd, Boolean]),
-    case replace_from_by_fd(Fd, State#state.cons, From) of 
-	{ok, _, Cons} ->
-	    Val = if Boolean == true -> 1; true -> 0 end,
-	    send_cmd(State#state.port, ?SET_SOCK_OPT, 
-		     [int32(Fd), ?SET_TCP_NODELAY, Val]),
-	    %% We reply when we get IOCTL_OK or IOCTL_ERR.
-	    {noreply, State#state{cons = Cons}};
-	_Other ->
-	    {reply, {error, ebadf}, State}
-    end;
-
-%%
-%% sockname
-%%
-handle_call({sockname, Broker, Fd}, From, State) ->
-    debug(State, "sockname: broker = ~w, fd = ~w~n",
-	  [Broker, Fd]),
-    case replace_from_by_fd(Fd, State#state.cons, From) of 
-	{ok, _, Cons} ->
-	    send_cmd(State#state.port, ?GETSOCKNAME, [int32(Fd)]),
-	    %% We reply when we get GETSOCKNAME_REP or GETSOCKNAME_ERR.
-	    {noreply, State#state{cons = Cons}};
-	_Other ->
-	    {reply, {error, ebadf}, State}
-    end;
+    {noreply, St#st{cons = Cons, intref = IntRef}};
 
 %%
 %% close
 %%
-handle_call({close, Broker, Fd}, From, State) ->
-    debug(State, "close: broker = ~w, fd = ~w~n",
+handle_call({close, Broker, Fd}, _From, St) ->
+    debug(St, "close: broker = ~w, fd = ~w~n",
 	  [Broker, Fd]),
-    #state{port = Port, cons = Cons0, paccepts = PAccepts0} = State,
+    #st{port = Port, cons = Cons0, paccepts = PAccepts0} = St,
     case delete_by_fd(Fd, Cons0) of
 	%% Must match Broker pid; fd may be reused already.
 	{ok, {Fd, Broker, _}, Cons} ->			
@@ -330,69 +303,186 @@ handle_call({close, Broker, Fd}, From, State) ->
 							   {error, closed}) 
 				  end, DelAccepts),
 		    {reply, ok, 
-		     State#state{cons = Cons, paccepts = RemAccepts}};
+		     St#st{cons = Cons, paccepts = RemAccepts}};
 		_ ->
-		    {reply, ok, State#state{cons = Cons}}
+		    {reply, ok, St#st{cons = Cons}}
 	    end;
 	_ ->
-	    {reply, ok, State}
+	    {reply, ok, St}
     end;
 
-handle_call(Request, From, State) ->
-    debug(State, "unexpected call: ~w~n", [Request]),
+%%
+%% listen
+%%
+handle_call({listen, Broker, IP, LPort, Flags, BackLog}, From, St) ->
+    debug(St, "listen: broker = ~w, IP = ~w, "
+	  "sport = ~w~n", [Broker, IP, LPort]),
+    Port = St#st.port,
+    IPStr = io_lib:format("~w.~w.~w.~w", tuple_to_list(IP)),
+    IntRef = new_intref(St),
+    send_cmd(Port, ?LISTEN, [int32(IntRef), int16(LPort), IPStr, 0, 
+			     int16(BackLog), Flags, 0]), 
+    Cons = add({{intref, IntRef}, Broker, From}, St#st.cons),
+    %% We reply when we have got LISTEN_REP.
+    {noreply, St#st{cons = Cons, intref = IntRef}};
+
+%%
+%% peercert
+%%
+handle_call({peercert, Broker, Fd}, From, St) ->
+    debug(St, "peercert: broker = ~w, fd = ~w~n",
+	  [Broker, Fd]),
+    case replace_from_by_fd(Fd, St#st.cons, From) of 
+	{ok, _, Cons} ->
+	    send_cmd(St#st.port, ?GETPEERCERT, [int32(Fd)]),
+	    %% We reply when we get GETPEERCERT_REP or GETPEERCERT_ERR.
+	    {noreply, St#st{cons = Cons}};
+	_Other ->
+	    {reply, {error, ebadf}, St}
+    end;
+
+
+%%
+%% peername
+%%
+handle_call({peername, Broker, Fd}, From, St) ->
+    debug(St, "peername: broker = ~w, fd = ~w~n",
+	  [Broker, Fd]),
+    case replace_from_by_fd(Fd, St#st.cons, From) of 
+	{ok, _, Cons} ->
+	    send_cmd(St#st.port, ?GETPEERNAME, [int32(Fd)]),
+	    %% We reply when we get GETPEERNAME_REP or GETPEERNAME_ERR.
+	    {noreply, St#st{cons = Cons}};
+	_Other ->
+	    {reply, {error, ebadf}, St}
+    end;
+
+%%
+%% proxy join
+%%
+handle_call({proxy_join, Broker, Fd, LPort}, From, St) ->
+    debug(St, "proxy_join: broker = ~w, fd = ~w, "
+	  "sport = ~w~n", [Broker, Fd, LPort]),
+    case replace_from_by_fd(Fd, St#st.cons, From) of 
+	{ok, _, Cons} ->
+	    send_cmd(St#st.port, ?PROXY_JOIN, [int32(Fd), 
+						     int16(LPort)]), 
+	    %% We reply when we get PROXY_JOIN_REP, or PROXY_JOIN_ERR.
+	    {noreply, St#st{cons = Cons}};
+	_Other ->
+	    {reply, {error, ebadf}, St}
+    end;
+
+%%
+%% seed
+%%
+handle_call({seed, Data}, _From, St) when binary(Data) ->
+    send_cmd(St#st.port, ?SET_SEED, [int32(size(Data)), Data]),
+    {reply, ok, St};
+
+handle_call({seed, Data}, From, St) ->
+    case (catch list_to_binary(Data)) of
+	{'EXIT', _} ->
+	    {reply, {error, edata}, St};
+	Bin  ->
+	    handle_call({seed, Bin}, From, St)
+    end;
+
+%%
+%% setnodelay
+%%
+handle_call({setnodelay, Broker, Fd, Boolean}, From, St) ->
+    debug(St, "setnodelay: broker = ~w, fd = ~w, "
+	  "boolean = ~w~n", [Broker, Fd, Boolean]),
+    case replace_from_by_fd(Fd, St#st.cons, From) of 
+	{ok, _, Cons} ->
+	    Val = if Boolean == true -> 1; true -> 0 end,
+	    send_cmd(St#st.port, ?SET_SOCK_OPT, 
+		     [int32(Fd), ?SET_TCP_NODELAY, Val]),
+	    %% We reply when we get IOCTL_OK or IOCTL_ERR.
+	    {noreply, St#st{cons = Cons}};
+	_Other ->
+	    {reply, {error, ebadf}, St}
+    end;
+
+%%
+%% sockname
+%%
+handle_call({sockname, Broker, Fd}, From, St) ->
+    debug(St, "sockname: broker = ~w, fd = ~w~n",
+	  [Broker, Fd]),
+    case replace_from_by_fd(Fd, St#st.cons, From) of 
+	{ok, _, Cons} ->
+	    send_cmd(St#st.port, ?GETSOCKNAME, [int32(Fd)]),
+	    %% We reply when we get GETSOCKNAME_REP or GETSOCKNAME_ERR.
+	    {noreply, St#st{cons = Cons}};
+	_Other ->
+	    {reply, {error, ebadf}, St}
+    end;
+
+%%
+%% version
+%%
+handle_call(version, From, St) ->
+    debug(St, "version: from = ~w~n", [From]),
+    {reply, {ok, {St#st.compvsn, St#st.libvsn}}, St};
+
+handle_call(Request, _From, St) ->
+    debug(St, "unexpected call: ~w~n", [Request]),
     Reply = {error, {badcall, Request}},
-    {reply, Reply, State}.
+    {reply, Reply, St}.
 
 %%
-%% handle_cast(Msg, State)
+%% handle_cast(Msg, St)
 %%
 
 
-handle_cast(Msg, State) ->
-    debug(State, "unexpected cast: ~w~n", [Msg]),
-    {noreply, State}.
+handle_cast(Msg, St) ->
+    debug(St, "unexpected cast: ~w~n", [Msg]),
+    {noreply, St}.
 
 %%
-%% handle_info(Info, State)
+%% handle_info(Info, St)
 %%
 
 %% Data from port
 %%
-handle_info({Port, {data, Bin}}, State) 
-  when State#state.port == Port, binary(Bin) ->
+handle_info({Port, {data, Bin}}, St) 
+  when St#st.port == Port, binary(Bin) ->
+    %% io:format("++++ ssl_server got from port: ~w~n", [Bin]),
 
-    %% io:format("++++ ssl_server got from port: ~w~n", [binary_to_list(Bin)]),
+    <<OpCode:8, _/binary>> = Bin,
 
-    case hd(binary_to_list(Bin, 1, 1)) of	% op code
-
+    case OpCode of
+	
 	%%
 	%% accept
 	%%
 	?ACCEPT_ERR when size(Bin) >= 5 ->
 	    {ListenFd, Reason} = decode_msg(Bin, [int32, atom]),
-	    debug(State, "accept_err: listenfd = ~w, "
+	    debug(St, "accept_err: listenfd = ~w, "
 		  "reason = ~w~n", [ListenFd, Reason]),
-	    case delete_last_by_fd(ListenFd, State#state.paccepts) of
+	    case delete_last_by_fd(ListenFd, St#st.paccepts) of
 		{ok, {_, _, From}, PAccepts} ->
 		    gen_server:reply(From, {error, Reason}),
-		    {noreply, State#state{paccepts = PAccepts}};
+		    {noreply, St#st{paccepts = PAccepts}};
 		_Other ->
 		    %% Already closed
-		    {noreply, State}
+		    {noreply, St}
 	    end;
 	?ACCEPT_REP when size(Bin) >= 9 ->
 	    {ListenFd, Fd} = decode_msg(Bin, [int32, int32]),
-	    debug(State, "accept_rep: listenfd = ~w, "
+	    debug(St, "accept_rep: listenfd = ~w, "
 		  "fd = ~w~n", [ListenFd, Fd]),
-	    case delete_last_by_fd(ListenFd, State#state.paccepts) of
+	    case delete_last_by_fd(ListenFd, St#st.paccepts) of
 		{ok, {_, Broker, From}, PAccepts} ->
-		    Reply = {ok, Fd, State#state.proxylsport},
+		    Reply = {ok, Fd, St#st.proxylsport},
 		    gen_server:reply(From, Reply),
-		    Cons = add({Fd, Broker, []}, State#state.cons),
-		    {noreply, State#state{cons = Cons, paccepts = PAccepts}};
+		    Cons = add({Fd, Broker, []}, St#st.cons),
+		    {noreply, St#st{cons = Cons, paccepts = PAccepts}};
 		_Other ->
 		    %% Already closed
-		    {noreply, State}
+		    {noreply, St}
 	    end;
 
 	%%
@@ -400,53 +490,53 @@ handle_info({Port, {data, Bin}}, State)
 	%%
 	?CONNECT_SYNC_ERR when size(Bin) >= 5 ->
 	    {IntRef, Reason} = decode_msg(Bin, [int32, atom]),
-	    debug(State, "connect_sync_err: intref = ~w, "
+	    debug(St, "connect_sync_err: intref = ~w, "
 		  "reason = ~w~n", [IntRef, Reason]),
-	    case delete_by_intref(IntRef, State#state.cons) of
+	    case delete_by_intref(IntRef, St#st.cons) of
 		{ok, {_, _, From}, Cons} ->
 		    gen_server:reply(From, {error, Reason}),
-		    {noreply, State#state{cons = Cons}};
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
-		    {noreply, State}
+		    {noreply, St}
 	    end;
 	?CONNECT_WAIT when size(Bin) >= 9 ->  
 	    {IntRef, Fd} = decode_msg(Bin, [int32, int32]),
-	    debug(State, "connect_wait: intref = ~w, "
+	    debug(St, "connect_wait: intref = ~w, "
 		  "fd = ~w~n", [IntRef, Fd]),
-	    case replace_fd_by_intref(IntRef, State#state.cons, Fd) of
+	    case replace_fd_by_intref(IntRef, St#st.cons, Fd) of
 		{ok, _, Cons} ->
 		    %% We reply when we get CONNECT_REP or CONNECT_ERR
-		    {noreply, State#state{cons = Cons}};
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
 		    %% We have a new Fd which must be closed
-		    send_cmd(State#state.port, ?CLOSE, int32(Fd)),
-		    {noreply, State}
+		    send_cmd(St#st.port, ?CLOSE, int32(Fd)),
+		    {noreply, St}
 	    end;
 	?CONNECT_REP when size(Bin) >= 5 ->  
 	    %% after CONNECT_WAIT
 	    Fd = decode_msg(Bin, [int32]),
-	    debug(State, "connect_rep: fd = ~w~n", [Fd]),
-	    case replace_from_by_fd(Fd, State#state.cons, []) of
+	    debug(St, "connect_rep: fd = ~w~n", [Fd]),
+	    case replace_from_by_fd(Fd, St#st.cons, []) of
 		{ok, {_, _, From}, Cons} ->
 		    gen_server:reply(From, 
-				     {ok, Fd, State#state.proxylsport}),
-		    {noreply, State#state{cons = Cons}};
+				     {ok, Fd, St#st.proxylsport}),
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
-		    {noreply, State}
+		    {noreply, St}
 	    end;
 	?CONNECT_ERR when size(Bin) >= 5 ->
 	    {Fd, Reason} = decode_msg(Bin, [int32, atom]),
-	    debug(State, "connect_err: fd = ~w, "
+	    debug(St, "connect_err: fd = ~w, "
 		  "reason = ~w~n", [Fd, Reason]),
-	    case delete_by_fd(Fd, State#state.cons) of
+	    case delete_by_fd(Fd, St#st.cons) of
 		{ok, {_, _, From}, Cons} ->
 		    %% Fd not yet published - hence close ourselves
-		    send_cmd(State#state.port, ?CLOSE, int32(Fd)),
+		    send_cmd(St#st.port, ?CLOSE, int32(Fd)),
 		    gen_server:reply(From, {error, Reason}),
-		    {noreply, State#state{cons = Cons}};
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
 		    %% Already closed
-		    {noreply, State}
+		    {noreply, St}
 	    end;
 
 
@@ -455,28 +545,28 @@ handle_info({Port, {data, Bin}}, State)
 	%%
 	?LISTEN_SYNC_ERR when size(Bin) >= 5 ->
 	    {IntRef, Reason} = decode_msg(Bin, [int32, atom]),
-	    debug(State, "listen_sync_err: intref = ~w, "
+	    debug(St, "listen_sync_err: intref = ~w, "
 		  "reason = ~w~n", [IntRef, Reason]),
-	    case delete_by_intref(IntRef, State#state.cons) of
+	    case delete_by_intref(IntRef, St#st.cons) of
 		{ok, {_, _, From}, Cons} ->
 		    gen_server:reply(From, {error, Reason}),
-		    {noreply, State#state{cons = Cons}};
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
-		    {noreply, State}
+		    {noreply, St}
 	    end;
 	?LISTEN_REP when size(Bin) >= 11 ->  
-	    {IntRef, ListenFd, SPort} = decode_msg(Bin, [int32, int32, int16]),
-	    debug(State, "listen_rep: intref = ~w, "
-		  "listenfd = ~w, sport = ~w~n", [IntRef, ListenFd, SPort]),
-	    case replace_fd_from_by_intref(IntRef, State#state.cons, 
+	    {IntRef, ListenFd, LPort} = decode_msg(Bin, [int32, int32, int16]),
+	    debug(St, "listen_rep: intref = ~w, "
+		  "listenfd = ~w, sport = ~w~n", [IntRef, ListenFd, LPort]),
+	    case replace_fd_from_by_intref(IntRef, St#st.cons, 
 					   ListenFd, []) of
 		{ok, {_, _, From}, Cons} ->
-		    gen_server:reply(From, {ok, ListenFd, SPort}),
-		    {noreply, State#state{cons = Cons}};
+		    gen_server:reply(From, {ok, ListenFd, LPort}),
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
 		    %% ListenFd has to be closed.
-		    send_cmd(State#state.port, ?CLOSE, int32(ListenFd)),
-		    {noreply, State}
+		    send_cmd(St#st.port, ?CLOSE, int32(ListenFd)),
+		    {noreply, St}
 	    end;
 
 	%%
@@ -484,56 +574,56 @@ handle_info({Port, {data, Bin}}, State)
 	%%
 	?PROXY_JOIN_REP when size(Bin) >= 5 -> 
 	    Fd = decode_msg(Bin, [int32]),
-	    debug(State, "proxy_join_rep: fd = ~w~n",
+	    debug(St, "proxy_join_rep: fd = ~w~n",
 		  [Fd]),
-	    case replace_from_by_fd(Fd, State#state.cons, []) of
+	    case replace_from_by_fd(Fd, St#st.cons, []) of
 		{ok, {_, _, From}, Cons} ->
 		    gen_server:reply(From, ok),
-		    {noreply, State#state{cons = Cons}};
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
 		    %% Already closed
-		    {noreply, State}
+		    {noreply, St}
 	    end;
 	?PROXY_JOIN_ERR when size(Bin) >= 5 -> 
 	    {Fd, Reason} = decode_msg(Bin, [int32, atom]),
-	    debug(State, "proxy_join_rep: fd = ~w, "
+	    debug(St, "proxy_join_rep: fd = ~w, "
 		  "reason = ~w~n", [Fd, Reason]),
-	    case delete_by_fd(Fd, State#state.cons) of
+	    case delete_by_fd(Fd, St#st.cons) of
 		{ok, {_, _, From}, Cons} ->
 		    %% Must not close Fd since it is published
 		    gen_server:reply(From, {error, Reason}),
-		    {noreply, State#state{cons = Cons}};
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
 		    %% Already closed
-		    {noreply, State}
+		    {noreply, St}
 	    end;
 
 	%%
 	%% peername
 	%%
 	?GETPEERNAME_REP when size(Bin) >= 5 ->
-	    {Fd, SPort, IPString} = decode_msg(Bin, [int32, int16, string]),
-	    debug(State, "getpeername_rep: fd = ~w, "
-		  "sport = ~w, ip = ~p~n", [Fd, SPort, IPString]),
-	    case replace_from_by_fd(Fd, State#state.cons, []) of
+	    {Fd, LPort, IPString} = decode_msg(Bin, [int32, int16, string]),
+	    debug(St, "getpeername_rep: fd = ~w, "
+		  "sport = ~w, ip = ~p~n", [Fd, LPort, IPString]),
+	    case replace_from_by_fd(Fd, St#st.cons, []) of
 		{ok, {_, _, From}, Cons} ->
-		    gen_server:reply(From, {ok, {IPString, SPort}}),
-		    {noreply, State#state{cons = Cons}};
+		    gen_server:reply(From, {ok, {IPString, LPort}}),
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
 		    %% Already closed
-		    {noreply, State}
+		    {noreply, St}
 	    end;
 	?GETPEERNAME_ERR when size(Bin) >= 5 ->
 	    {Fd, Reason} = decode_msg(Bin, [int32, atom]),
-	    debug(State, "getpeername_err: fd = ~w, "
+	    debug(St, "getpeername_err: fd = ~w, "
 		  "reason = ~w~n", [Fd, Reason]),
-	    case replace_from_by_fd(Fd, State#state.cons, []) of
+	    case replace_from_by_fd(Fd, St#st.cons, []) of
 		{ok, {_, _, From}, Cons} ->
 		    gen_server:reply(From, {error, Reason}),
-		    {noreply, State#state{cons = Cons}};
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
 		    %% Already closed
-		    {noreply, State}
+		    {noreply, St}
 	    end;
 
 	%%
@@ -541,93 +631,99 @@ handle_info({Port, {data, Bin}}, State)
 	%%
 	?IOCTL_OK when size(Bin) >= 5 ->
 	    Fd = decode_msg(Bin, [int32]),
-	    debug(State, "ioctl_ok: fd = ~w~n",
+	    debug(St, "ioctl_ok: fd = ~w~n",
 		  [Fd]),
-	    case replace_from_by_fd(Fd, State#state.cons, []) of
+	    case replace_from_by_fd(Fd, St#st.cons, []) of
 		{ok, {_, _, From}, Cons} ->
 		    gen_server:reply(From, ok),
-		    {noreply, State#state{cons = Cons}};
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
 		    %% Already closed
-		    {noreply, State}
+		    {noreply, St}
 	    end;
 	?IOCTL_ERR when size(Bin) >= 5 ->
 	    {Fd, Reason} = decode_msg(Bin, [int32, atom]),
-	    debug(State, "ioctl_err: fd = ~w, "
+	    debug(St, "ioctl_err: fd = ~w, "
 		  "reason = ~w~n", [Fd, Reason]),
-	    case replace_from_by_fd(Fd, State#state.cons, []) of
+	    case replace_from_by_fd(Fd, St#st.cons, []) of
 		{ok, {_, _, From}, Cons} ->
 		    gen_server:reply(From, {error, Reason}),
-		    {noreply, State#state{cons = Cons}};
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
 		    %% Already closed
-		    {noreply, State}
+		    {noreply, St}
 	    end;
 
 	%%
 	%% sockname
 	%%
 	?GETSOCKNAME_REP when size(Bin) >= 5 ->
-	    {Fd, SPort, IPString} = decode_msg(Bin, [int32, int16, string]),
-	    debug(State, "getsockname_rep: fd = ~w, "
-		  "sport = ~w, ip = ~p~n", [Fd, SPort, IPString]),
-	    case replace_from_by_fd(Fd, State#state.cons, []) of
+	    {Fd, LPort, IPString} = decode_msg(Bin, [int32, int16, string]),
+	    debug(St, "getsockname_rep: fd = ~w, "
+		  "sport = ~w, ip = ~p~n", [Fd, LPort, IPString]),
+	    case replace_from_by_fd(Fd, St#st.cons, []) of
 		{ok, {_, _, From}, Cons} ->
-		    gen_server:reply(From, {ok, {IPString, SPort}}),
-		    {noreply, State#state{cons = Cons}};
+		    gen_server:reply(From, {ok, {IPString, LPort}}),
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
 		    %% Already closed
-		    {noreply, State}
+		    {noreply, St}
 	    end;
 	?GETSOCKNAME_ERR when size(Bin) >= 5 ->
 	    {Fd, Reason} = decode_msg(Bin, [int32, atom]),
-	    debug(State, "getsockname_err: fd = ~w, "
+	    debug(St, "getsockname_err: fd = ~w, "
 		  "reason = ~w~n", [Fd, Reason]),
-	    case replace_from_by_fd(Fd, State#state.cons, []) of
+	    case replace_from_by_fd(Fd, St#st.cons, []) of
 		{ok, {_, _, From}, Cons} ->
 		    gen_server:reply(From, {error, Reason}),
-		    {noreply, State#state{cons = Cons}};
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
 		    %% Already closed
-		    {noreply, State}
+		    {noreply, St}
 	    end;
 
 	%%
-	%% fromnet close
+	%% peercert
 	%%
-	%% This is the only case where we send an asynchronous message
-	%% directly to the Broker.
-	%%
-	?FROMNET_CLOSE when size(Bin) >= 5 ->
-	    Fd = decode_msg(Bin, [int32]),
-	    debug(State, "fromnet_close: fd = ~w~n",
-		  [Fd]),
-	    %%
-	    case delete_by_fd(Fd, State#state.cons) of
-		{ok, {_, Broker, _}, Cons} ->
-		    send_cmd(State#state.port, ?CLOSE, int32(Fd)), 
-		    Broker ! {close, self()},
-		    {noreply, State#state{cons = Cons}};
+	?GETPEERCERT_REP when size(Bin) >= 5 ->
+	    {Fd, Cert} = decode_msg(Bin, [int32, bin]),
+	    debug(St, "getpeercert_rep: fd = ~w~n", [Fd]),
+	    case replace_from_by_fd(Fd, St#st.cons, []) of
+		{ok, {_, _, From}, Cons} ->
+		    gen_server:reply(From, {ok, Cert}),
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
 		    %% Already closed
-		    {noreply, State}
+		    {noreply, St}
+	    end;
+	?GETPEERCERT_ERR when size(Bin) >= 5 ->
+	    {Fd, Reason} = decode_msg(Bin, [int32, atom]),
+	    debug(St, "getpeercert_err: fd = ~w, reason = ~w~n", 
+		  [Fd, Reason]),
+	    case replace_from_by_fd(Fd, St#st.cons, []) of
+		{ok, {_, _, From}, Cons} ->
+		    gen_server:reply(From, {error, Reason}),
+		    {noreply, St#st{cons = Cons}};
+		_Other ->
+		    %% Already closed
+		    {noreply, St}
 	    end
     end;
 
 %%
 %% EXIT
 %%
-handle_info({'EXIT', Pid, Reason}, State) when pid(Pid) ->
-    debug(State, "exit pid = ~w, "
+handle_info({'EXIT', Pid, Reason}, St) when pid(Pid) ->
+    debug(St, "exit pid = ~w, "
 	  "reason = ~w~n", [Pid, Reason]),
-    case delete_by_pid(Pid, State#state.cons) of
+    case delete_by_pid(Pid, St#st.cons) of
 	{ok, {{intref, _}, Pid, _}, Cons} ->
-	    {noreply, State#state{cons = Cons}};
+	    {noreply, St#st{cons = Cons}};
 	{ok, {Fd, Pid, _}, Cons} ->
-	    send_cmd(State#state.port, ?CLOSE, int32(Fd)), 
+	    send_cmd(St#st.port, ?CLOSE, int32(Fd)), 
 	    %% If Fd is a listen socket fd, there might be pending
 	    %% accepts for that fd.
-	    case delete_all_by_fd(Fd, State#state.paccepts) of
+	    case delete_all_by_fd(Fd, St#st.paccepts) of
 		{ok, DelAccepts, RemAccepts} ->
 		    %% Reply {error, closed} to all pending accepts.
 		    lists:foreach(fun({_, _, From}) ->
@@ -635,46 +731,46 @@ handle_info({'EXIT', Pid, Reason}, State) when pid(Pid) ->
 							   {error, closed}) 
 				  end, DelAccepts),
 		    {noreply, 
-		     State#state{cons = Cons, paccepts = RemAccepts}};
+		     St#st{cons = Cons, paccepts = RemAccepts}};
 		_ ->
-		    {noreply, State#state{cons = Cons}}
+		    {noreply, St#st{cons = Cons}}
 	    end;
 	_ ->
-	    case delete_by_pid(Pid, State#state.paccepts) of
+	    case delete_by_pid(Pid, St#st.paccepts) of
 		{ok, {ListenFd, _, _}, PAccepts} ->
 		    %% decrement ref count in port program
-		    send_cmd(State#state.port, ?NOACCEPT, int32(ListenFd)),
-		    {noreply, State#state{paccepts = PAccepts}};
+		    send_cmd(St#st.port, ?NOACCEPT, int32(ListenFd)),
+		    {noreply, St#st{paccepts = PAccepts}};
 		_ ->
-		    {noreply, State}
+		    {noreply, St}
 	    end
     end;
 
 %%
 %% 'badsig' means bad message to port. Port program is unaffected.
 %%
-handle_info({'EXIT', Port, badsig}, State) when State#state.port == Port ->
-    debug(State, "badsig!!!~n", []),
-    {noreply, State};
+handle_info({'EXIT', Port, badsig}, St) when St#st.port == Port ->
+    debug(St, "badsig!!!~n", []),
+    {noreply, St};
 
-handle_info({'EXIT', Port, Reason}, State) when State#state.port == Port ->
-    {stop, Reason, State};
+handle_info({'EXIT', Port, Reason}, St) when St#st.port == Port ->
+    {stop, Reason, St};
 
-handle_info(Info, State) ->
-    debug(State, "unexpected info: ~w~n", [Info]),
-    {noreply, State}.
+handle_info(Info, St) ->
+    debug(St, "unexpected info: ~w~n", [Info]),
+    {noreply, St}.
 
 %%
-%% terminate(Reason, State) -> any
+%% terminate(Reason, St) -> any
 %%
-terminate(Reason, State) ->
+terminate(_Reason, _St) ->
     ok.
 
 %% 
-%% code_change(OldVsn, State, Extra) -> {ok, NewState}
+%% code_change(OldVsn, St, Extra) -> {ok, NSt}
 %%
-code_change(OldVsn, State, Extra) ->
-    {ok, State}.
+code_change(_OldVsn, St, _Extra) ->
+    {ok, St}.
 
 %%%----------------------------------------------------------------------
 %%% Internal functions
@@ -742,7 +838,7 @@ dlbf(Fd, [H|T]) ->
 	L -> 
 	    last_elem(Fd, H, L)
     end;
-dlbf(Fd, []) ->  
+dlbf(_Fd, []) ->  
     [].
 
 last_elem(Fd, H, L) when element(1, H) == Fd ->
@@ -789,7 +885,7 @@ delete_by_pos(Key, Pos, Cons) ->
 	{ODesc, NCons} ->
 	    {ok, ODesc, NCons}
     end.
-delete_by_pos1(Key, Pos, {R, [H|T]}) when element(Pos, H) == Key ->
+delete_by_pos1(Key, Pos, {_R, [H|T]}) when element(Pos, H) == Key ->
     {H, T};
 delete_by_pos1(Key, Pos, {R, [H|T]}) ->
     {R0, T0} = delete_by_pos1(Key, Pos, {R, T}),
@@ -817,7 +913,7 @@ replace_posn_by_pos(Key, Pos, Cons, Repls) ->
 	    {ok, ODesc, NCons}
     end.
 
-replace_posn_by_pos1(Key, Pos, {R, [H| T]}, Repls) 
+replace_posn_by_pos1(Key, Pos, {_R, [H| T]}, Repls) 
   when element(Pos, H) == Key ->
     NewH = lists:foldl(fun({Val, VPos}, Tuple) -> 
 			     setelement(VPos, Tuple, Val) 
@@ -831,34 +927,31 @@ replace_posn_by_pos1(_, _, {R, []}, _) ->
     {R, []}.
 
 %%
-%% List/integer conversions
+%% Binary/integer conversions
 %%
-get_int16(X1, X2) ->
-    (X1 bsl 8) bor X2.
-
-get_int32(X1,X2,X3,X4) ->
-    (X1 bsl 24) bor (X2 bsl 16) bor (X3 bsl 8) bor X4.
-
 int16(I) ->
-    [(I bsr 8) band 255, I band 255].
+    %%[(I bsr 8) band 255, I band 255].
+    <<I:16>>.
 
 int32(I) -> 
-    [(I bsr 24) band 255,
-     (I bsr 16) band 255,
-     (I bsr  8) band 255,
-     I band 255].
+    %%     [(I bsr 24) band 255,
+    %%      (I bsr 16) band 255,
+    %%      (I bsr  8) band 255,
+    %%      I band 255].
+    <<I:32>>.
 
-%% decode_msg(Bin, Format) -> Tuple | integer() | atom() | string()
+%% decode_msg(Bin, Format) -> Tuple | integer() | atom() | string() | 
+%%				list of binaries()
 %%
 %% Decode message from binary
 %% Format = [spec()]
-%% spec() = int16 | int32 | string | atom 
+%% spec() = int16 | int32 | string | atom | bin | bins
 %%
-%% Note that the first byte (op code) of the binary message is removed.
-%%
-decode_msg(Bin, Format) ->
-    [_|T] = binary_to_list(Bin),
-    Dec = dec(T, Format),
+%% Notice:  The first byte (op code) of the binary message is removed.
+%% Notice:  bins returns a *list* of binaries. 
+%%  
+decode_msg(<<_, Bin/binary>>, Format) ->
+    Dec = dec(Format, Bin),
     if 
 	length(Dec) == 1 ->
 	    hd(Dec);
@@ -866,29 +959,53 @@ decode_msg(Bin, Format) ->
 	    list_to_tuple(Dec)
     end.
 
-dec(_ , []) ->
+dec([], _) ->
     [];
-dec([I1, I2| L], [int16| F]) ->
-    [get_int16(I1, I2)| dec(L, F)];
-dec([I1, I2, I3, I4| L], [int32| F]) ->
-    [get_int32(I1, I2, I3, I4)| dec(L, F)];
-dec(L, [string|F]) ->
-    {Str, Rest} = dec_string(L),
-    [Str| dec(Rest, F)];
-dec(L, [atom|F]) ->
-    {Str, Rest} = dec_string(L),
-    [list_to_atom(Str)| dec(Rest, F)].
+dec([int16| F], <<N:16, Bin/binary>>) ->
+    [N| dec(F, Bin)];
+dec([int32| F], <<N:32, Bin/binary>>) ->
+    [N| dec(F, Bin)];
+dec([string| F], Bin0) ->
+    {Cs, Bin1} = dec_string(Bin0),
+    [Cs| dec(F, Bin1)];
+dec([atom|F], Bin0) ->
+    {Cs, Bin1} = dec_string(Bin0),
+    [list_to_atom(Cs)| dec(F, Bin1)];
 
-dec_string(L) ->
-    {Str, Rest0} = lists:splitwith(fun (0) -> false; (_) -> true end, L),
-    [_| Rest] = Rest0,
-    {Str, Rest}.
+dec([bin|F], Bin) ->
+    {Bin1, Bin2} = dec_bin(Bin),
+    [Bin1| dec(F, Bin2)];
+
+dec([bins|F], <<N:32, Bin0/binary>>) ->
+    {Bins, Bin1} = dec_bins(N, Bin0),
+    [Bins| dec(F, Bin1)].
+
+dec_string(Bin) ->
+    dec_string(Bin, []).
+
+dec_string(<<0, Bin/binary>>, RCs) ->
+    {lists:reverse(RCs), Bin};
+dec_string(<<C, Bin/binary>>, RCs) ->
+    dec_string(Bin, [C| RCs]).
+
+dec_bin(<<L:32, Bin0/binary>>) ->
+    <<Bin1:L/binary, Bin2/binary>> = Bin0,
+    {Bin1, Bin2}.
+
+dec_bins(N, Bin) ->
+    dec_bins(N, Bin, []).
+
+dec_bins(0, Bin, Acc) ->
+    {lists:reverse(Acc), Bin};
+dec_bins(N, Bin0, Acc) when N > 0 ->
+    {Bin1, Bin2} = dec_bin(Bin0),
+    dec_bins(N - 1, Bin2, [Bin1| Acc]).
 
 %%
 %% new_intref
 %%
-new_intref(State) ->
-    (State#state.intref + 1) band 16#ffffffff.
+new_intref(St) ->
+    (St#st.intref + 1) band 16#ffffffff.
 
 %%
 %% {Program, Flags} = mk_cmd_line(DefaultProgram)
@@ -896,8 +1013,9 @@ new_intref(State) ->
 mk_cmd_line(Default) ->
     {port_program(Default), 
      lists:flatten([debug_flag(), " ", debugdir_flag(), " ", 
-		   msgdebug_flag(), " ", proxylsport_flag(), " ", 
-		   proxybacklog_flag()])}.
+		    msgdebug_flag(), " ", proxylsport_flag(), " ", 
+		    proxybacklog_flag(), ephemeral_rsa_flag(), " ",
+		    ephemeral_dh_flag()])}.
 
 port_program(Default) ->
     case application:get_env(ssl, port_program) of
@@ -960,10 +1078,20 @@ extension() ->
 		     erlang:system_info(machine)).
 
 debug_flag() ->
-    get_env(debug, "-d").
+    case os:getenv("ERL_SSL_DEBUG") of
+	false ->
+	    get_env(debug, "-d");
+	_ ->
+	    "-d"
+    end.
 
 msgdebug_flag() ->
-    get_env(msgdebug, "-dm").
+    case os:getenv("ERL_SSL_MSGDEBUG") of
+	false ->
+	    get_env(msgdebug, "-dm");
+	_  ->
+	    "-dm"
+    end.
 
 proxylsport_flag() ->
     case application:get_env(ssl, proxylsport) of
@@ -982,13 +1110,34 @@ proxybacklog_flag() ->
     end.
 
 debugdir_flag() ->
-    case application:get_env(ssl, debugdir) of
-	{ok, Dir} when list(Dir) ->
-	    "-dd " ++ Dir;
+    case os:getenv("ERL_SSL_DEBUG") of
+	false ->
+	    case application:get_env(ssl, debugdir) of
+		{ok, Dir} when list(Dir) ->
+		    "-dd " ++ Dir;
+		_Other ->
+		    ""
+	    end;
+	_  ->
+	    "-dd ./"
+    end.
+    
+ephemeral_rsa_flag() ->
+    case application:get_env(ssl, ephemeral_rsa) of
+	{ok, true} ->
+	    "-ersa ";
 	_Other ->
 	    ""
     end.
-    
+
+ephemeral_dh_flag() ->
+    case application:get_env(ssl, ephemeral_dh) of
+	{ok, true} ->
+	    "-edh ";
+	_Other ->
+	    ""
+    end.
+
 get_env(Key, Val) ->
     case application:get_env(ssl, Key) of
 	{ok, true} ->
@@ -997,11 +1146,11 @@ get_env(Key, Val) ->
 	    ""
     end.
 
-debug(State, Format, Args) ->
-    debug1(State#state.debug, Format, Args).
+debug(St, Format, Args) ->
+    debug1(St#st.debug, Format, Args).
 
 debug1(true, Format0, Args) ->
-    {MS, S, MiS} = erlang:now(),
+    {_MS, S, MiS} = erlang:now(),
     Secs = S rem 100, 
     MiSecs = MiS div 1000,
     Format = "++++ ~3..0w:~3..0w ssl_server (~w): " ++ Format0, 

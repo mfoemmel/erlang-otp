@@ -161,14 +161,14 @@ hipe_push_beam_trap_frame(Process *p, Eterm reg[], unsigned arity)
       int used_stack = p->stack - p->stop;
       int new_sz = erts_next_heap_size(p->stack_sz + 2, 0);
       Eterm *new_stack =
-        (Eterm*)safe_alloc_from(917, sizeof(Eterm) * new_sz);
+        (Eterm*) erts_alloc(ERTS_ALC_T_STACK, sizeof(Eterm) * new_sz);
       DPRINTF("Enlarging stack. This is untested in unified heap!");
       sys_memmove((new_stack + new_sz) - used_stack, p->stop,
                   used_stack * sizeof(Eterm));
 #ifdef DEBUG
       sys_memset(p->send, 0xff, p->stack_sz * sizeof(Eterm));
 #endif
-      sys_free((void *)p->send);
+      erts_free(ERTS_ALC_T_STACK, (void *) p->send);
       p->stack_sz = new_sz;
       p->send = new_stack;
       p->stop = new_stack + new_sz - used_stack;
@@ -328,25 +328,29 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	   *
 	   * p->def_arg_reg[0] is the callee's Export*
 	   * p->def_arg_reg[1..] contains the parameters
+	   * p->arity is the original BIF's arity
 	   * the BIF and the new callee may have different arities
-	   *
-	   * We treat this as a normal call, after we shift the
-	   * parameters down.
-	   *
-	   * PRE: 0 <= BIF's arity <= 3
-	   *	  0 <= callee's arity <= 3
-	   *	  3 <= NR_ARG_REGS
 	   */
-	  unsigned int i;
+	  unsigned int i, is_recursive;
+
+	  /* Here p->arity still describes the original BIF's arity.
+	     Get rid of any stacked parameters in that call. */
+	  /* XXX: hipe_call_from_native_is_recursive() copies data to
+	     reg[], which is useless in the TRAP case. Maybe write a
+	     specialised hipe_trap_from_native_is_recursive() later. */
+	  is_recursive = hipe_call_from_native_is_recursive(p, reg);
 
 	  p->i = ((Export*)(p->def_arg_reg[0]))->address;
 	  p->arity = p->i[-1];
+
+	  for(i = 0; i < p->arity; ++i)
+	      reg[i] = p->def_arg_reg[i+1];
+
+	  if( is_recursive )
+	      hipe_push_beam_trap_frame(p, reg, p->arity);
+
 	  result = HIPE_MODE_SWITCH_RES_CALL;
-
-	  for(i = 0; i < p->arity; ++i)	/* arity <= 3 */
-	      p->def_arg_reg[i] = p->def_arg_reg[i+1];
-
-	  /*FALLTHROUGH*/
+	  break;
       }
       case HIPE_MODE_SWITCH_RES_CALL: {
 	  /* Native code calls or tailcalls BEAM.
@@ -498,7 +502,9 @@ Eterm *hipe_inc_nstack(Process *p)
     Eterm *old_nstack = p->hipe.nstack;
     unsigned old_size = p->hipe.nstend - old_nstack;
     unsigned new_size = hipe_next_nstack_size(old_size);
-    Eterm *new_nstack = safe_realloc((char*)old_nstack, new_size*sizeof(Eterm));
+    Eterm *new_nstack = erts_realloc(ERTS_ALC_T_HIPE,
+				     (char *) old_nstack,
+				     new_size*sizeof(Eterm));
     /*
       printf("nstack 0x%08x nsp 0x%08x nstend 0x%08x \n\r",
       p->hipe.nstack,  p->hipe.nsp, p->hipe.nstend);
@@ -527,12 +533,12 @@ Eterm *hipe_inc_nstack(Process *p)
 #endif
 
 #ifdef HIPE_NSTACK_GROWS_DOWN
-#define hipe_nstack_avail(p)	((p)->hipe.nsp - (p)->hipe.nstack)
+#define hipe_nstack_avail(p)	((unsigned)((p)->hipe.nsp - (p)->hipe.nstack))
 Eterm *hipe_inc_nstack(Process *p)
 {
     unsigned old_size = p->hipe.nstend - p->hipe.nstack;
     unsigned new_size = hipe_next_nstack_size(old_size);
-    Eterm *new_nstack = safe_alloc(new_size*sizeof(Eterm));
+    Eterm *new_nstack = erts_alloc(ERTS_ALC_T_HIPE, new_size*sizeof(Eterm));
     unsigned used_size = p->hipe.nstend - p->hipe.nsp;
 
     sys_memcpy(new_nstack+new_size-used_size, p->hipe.nsp, used_size*sizeof(Eterm));
@@ -541,7 +547,7 @@ Eterm *hipe_inc_nstack(Process *p)
     if( p->hipe.nstblacklim )
 	p->hipe.nstblacklim = new_nstack + new_size - (p->hipe.nstend - p->hipe.nstblacklim);
     if( p->hipe.nstack )
-	sys_free(p->hipe.nstack);
+	erts_free(ERTS_ALC_T_HIPE, p->hipe.nstack);
     p->hipe.nstack = new_nstack;
     p->hipe.nstend = new_nstack + new_size;
     p->hipe.nsp = new_nstack + new_size - used_size;

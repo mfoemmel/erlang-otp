@@ -289,7 +289,7 @@ release_schema_commit_lock() ->
 %% Special for preparation of add table copy
 get_network_copy(Tab, Cs) ->
     Work = #net_load{table = Tab,
-		     reason = add_table_copy,
+		     reason = {dumper, add_table_copy},
 		     cstruct = Cs
 		    },
     Res = (catch load_table(Work)),
@@ -320,11 +320,12 @@ get_network_copy(Tab, Cs) ->
 %% schema_trans ->
 %%   already synced with mnesia_controller since the dumper
 %%   is syncronously started from mnesia_controller
+
 create_table(Tab) ->
-    {loaded, ok} = mnesia_loader:disc_load_table(Tab, dumper_create_table).
-    
+    {loaded, ok} = mnesia_loader:disc_load_table(Tab, {dumper,create_table}).
+
 get_disc_copy(Tab) ->
-    disc_load_table(Tab, dumper_change_table_copy_type, undefined).
+    disc_load_table(Tab, {dumper,change_table_copy_type}, undefined).
 
 %% Returns ok instead of yes
 force_load_table(Tab) when atom(Tab), Tab /= schema ->
@@ -1933,9 +1934,6 @@ load_table(Load) when record(Load, net_load) ->
 				     reply = Res};
 		{not_loaded, storage_unknown} ->
 		    Done#loader_done{reply = Res};
-		{not_loaded, _} when Reason == add_table_coy ->
-		    Done#loader_done{is_loaded = false,
-				     reply = Res};
 		{not_loaded, _} ->
 		    Done#loader_done{is_loaded = false,
 				     needs_reply = false,
@@ -1969,7 +1967,7 @@ load_table(Load) when record(Load, disc_load) ->
 		    Done#loader_done{is_loaded = false};
 		{not_loaded, ErrReason} ->
 		    Done#loader_done{is_loaded = false,
-				     reply = ErrReason}
+				     reply = {not_loaded,ErrReason}}
 	    end;
 	true ->
 	    %% Already readable, do not worry be happy

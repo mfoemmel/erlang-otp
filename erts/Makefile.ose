@@ -73,9 +73,6 @@ makefiles:
 # ----------------------------------------------------------------------
 # Release targets
 #
-# For release, you are supposed to make an  instrumented version of
-# the emulator as well
-#	@set -e ; cd emulator && $(MAKE) TYPE=instr $@
 
 release release_docs:
 	@for d in $(ERTSDIRS); do \

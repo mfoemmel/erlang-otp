@@ -748,30 +748,39 @@ ensure_uint16(Int) ->
 ensure_uint32(Int) ->
     ensure_uint(Int, 0, 4294967295) .
 
-ensure_hex({_TokenTag, _Line, Chars}, Min, Max) ->
+%% OTP-4710
+ensure_hex({_TokenTag, _Line, [$0, $x |Chars]}, Min, Max) ->
     ensure_uint(length(Chars), Min, Max),
-    hex_to_int(Chars);
-ensure_hex(Chars, Min, Max) ->
+    hex_to_int(Chars, []);
+ensure_hex({_TokenTag, _Line, [$0, $X |Chars]}, Min, Max) ->
     ensure_uint(length(Chars), Min, Max),
-    hex_to_int(Chars).
+    hex_to_int(Chars, []);
+ensure_hex([$0, $x |Chars], Min, Max) ->
+    ensure_uint(length(Chars), Min, Max),
+    hex_to_int(Chars, []);
+ensure_hex([$0, $X |Chars], Min, Max) ->
+    ensure_uint(length(Chars), Min, Max),
+    hex_to_int(Chars, []).
 
-hex_to_int([$0, $x | Chars]) ->
-    hex_to_int2(lists:reverse(Chars), 0, 0);
-hex_to_int([$0, $X | Chars]) ->
-    hex_to_int2(lists:reverse(Chars), 0, 0).
-
-hex_to_int2([], _, Ack) ->
-    Ack;
-hex_to_int2([Char|Tail], Shift, Ack) ->
+%% OTP-4710
+hex_to_int([], Acc) ->
+    lists:reverse(Acc);
+hex_to_int([Char1,Char2|Tail], Acc) ->
+    Int1 = hchar_to_int(Char1),
+    Int2 = hchar_to_int(Char2),
+    Val  = Int2 bor (Int1 bsl 4),
+    hex_to_int(Tail, [Val| Acc]);
+hex_to_int([Char], Acc) ->
     Int = hchar_to_int(Char),
-    hex_to_int2(Tail, Shift+4, Ack bor (Int bsl Shift)).
+    lists:reverse([Int|Acc]).
 
 hchar_to_int(Char) when $0 =< Char, Char =< $9 ->
     Char - $0;
 hchar_to_int(Char) when $A =< Char, Char =< $F ->
-    Char - $A;
+    Char - $A + 10; % OTP-4710
 hchar_to_int(Char) when $a =< Char, Char =< $f ->
-    Char - $a.
+    Char - $a + 10. % OTP-4710
 
 value_of({_TokenTag, _Line, Text}) ->
     Text.
+

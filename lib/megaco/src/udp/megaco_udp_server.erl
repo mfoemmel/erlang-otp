@@ -166,8 +166,7 @@ code_change(_Vsn, State, downgrade_to_1_1_0) ->
 code_change(_Vsn, State, _Extra) ->
     {ok, State}.
 
-do_stop(UdpRec) ->
-    Socket = UdpRec#megaco_udp.socket,
+do_stop(#megaco_udp{socket = Socket}) ->
     gen_udp:close(Socket).
 
 
@@ -177,13 +176,14 @@ do_stop(UdpRec) ->
 %%              
 %%-----------------------------------------------------------------
 incNumInMessages(SH) ->
-    ets:update_counter(megaco_udp_stats, 
-		       {SH, medGwyGatewayNumInMessages}, 1).
+    incCounter({SH, medGwyGatewayNumInMessages}, 1).
 
 incNumInOctets(SH, NumOctets) ->
-    ets:update_counter(megaco_udp_stats, 
-		       {SH, medGwyGatewayNumInOctets}, NumOctets).
+    incCounter({SH, medGwyGatewayNumInOctets}, NumOctets).
+
+incCounter(Key, Inc) ->
+    ets:update_counter(megaco_udp_stats, Key, Inc).
 
 % incNumErrors(SH) ->
-%     ets:update_counter(megaco_udp_stats, 
-% 		       {SH, medGwyGatewayNumErrors}, 1).
+%     incCounter({SH, medGwyGatewayNumErrors}, 1).
+

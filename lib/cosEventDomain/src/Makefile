@@ -44,6 +44,7 @@ MODULES = \
 ERL_FILES = $(MODULES:%=%.erl) 
 HRL_FILES = cosEventDomainApp.hrl
 
+EXTERNAL_INC_PATH = ../include
 
 GEN_ERL_FILES = \
 	oe_CosEventDomainAdmin.erl \
@@ -70,6 +71,10 @@ GEN_HRL_FILES = \
 	CosEventDomainAdmin.hrl \
 	CosEventDomainAdmin_EventDomainFactory.hrl \
 	CosEventDomainAdmin_EventDomain.hrl
+
+EXTERNAL_GEN_HRL_FILES = \
+	$(GEN_HRL_FILES:%=$(EXTERNAL_INC_PATH)/%)
+
 
 TARGET_FILES = \
 	$(GEN_ERL_FILES:%.erl=$(EBIN)/%.$(EMULATOR)) \
@@ -142,8 +147,9 @@ docs:
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
-$(GEN_ERL_FILES) $(GEN_HRL_FILES): CosEventDomainAdmin.idl
+$(GEN_ERL_FILES) $(EXTERNAL_GEN_HRL_FILES): CosEventDomainAdmin.idl
 	erlc $(ERL_FLAGS) +'{cfgfile,"CosEventDomainAdmin.cfg"}' CosEventDomainAdmin.idl
+	mv $(GEN_HRL_FILES) $(EXTERNAL_INC_PATH)
 
 # ----------------------------------------------------
 # Release Target
@@ -159,7 +165,7 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(GEN_ERL_FILES) $(IDL_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/include
-	$(INSTALL_DATA) $(GEN_HRL_FILES) $(RELSYSDIR)/include
+	$(INSTALL_DATA) $(EXTERNAL_GEN_HRL_FILES) $(RELSYSDIR)/include
 
 
 release_docs_spec:

@@ -22,8 +22,8 @@
 %%%----------------------------------------------------------------------
 
 %%-compile(export_all).
--export([init/1, terminate/2, 
-	 connect/1, disconnect/2]).
+-export([init/1, code_change/3, terminate/2]).
+-export([connect/1, disconnect/2]).
 
 -record(state, {debug}).
 -define(SUPERVISOR, mnesia_session_sup).
@@ -32,6 +32,9 @@
 
 init([]) -> 
     {ok, #state{debug = mnesia_session_lib:get_env(debug)}}.
+
+code_change(_Vsn, State, _Extra) ->
+    {ok, State}.
 
 terminate(Reason, State) ->
     ok.

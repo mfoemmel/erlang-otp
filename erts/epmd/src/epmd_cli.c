@@ -24,12 +24,11 @@
 
 /* forward declarations */
 
-static int conn_to_epmd _ANSI_ARGS_((EpmdVars*));
-static int read_fill _ANSI_ARGS_((int,char*,int));
+static int conn_to_epmd(EpmdVars*);
+static int read_fill(int,char*,int);
 
 
-void kill_epmd(g)
-EpmdVars *g;
+void kill_epmd(EpmdVars *g)
 {
     char buf[5];
     int fd, rval;
@@ -53,9 +52,7 @@ EpmdVars *g;
 
 /* what == EPMD_NAMES_REQ || EPMD_DUMP_REQ */
 
-void epmd_call(g, what)
-EpmdVars *g;
-int what;
+void epmd_call(EpmdVars *g,int what)
 {
     char buf[OUTBUF_SIZE];
     int rval,fd,i,j;
@@ -85,8 +82,7 @@ int what;
 
 
 
-static int conn_to_epmd(g)
-     EpmdVars *g;
+static int conn_to_epmd(EpmdVars *g)
 {
     struct SOCKADDR_IN address;
     int connect_sock;
@@ -113,10 +109,7 @@ static int conn_to_epmd(g)
 }
 
 /* Fill buffer, return buffer length, 0 for EOF, < 0 for error. */
-static int read_fill(fd, buf, len)
-     int fd;
-     char *buf;
-     int len;
+static int read_fill(int fd,char *buf,int len)
 {
     int i;
     int got = 0;

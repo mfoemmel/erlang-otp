@@ -33,7 +33,7 @@ write_report(Fd, What, {Time, {info_report, _GL, {Pid, Type, Report}}}) ->
 	    write_report2(Fd, Head, Type, Report);
 	_ -> true
     end;
-write_report(Fd, _, _) ->
+write_report(_Fd, _, _) ->
     false.
 
 is_my_error_report(all, Type)   ->  is_my_error_report(Type);

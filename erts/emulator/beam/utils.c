@@ -27,9 +27,11 @@
 #include "big.h"
 #include "bif.h"
 #include "erl_binary.h"
+#include "erl_db.h"
 #include "erl_threads.h"
 #include "register.h"
 #include "erl_vector.h"
+#include "dist.h"
 
 #undef M_TRIM_THRESHOLD
 #undef M_TOP_PAD
@@ -93,10 +95,10 @@ do_alloc(Process* p, Eterm* last_htop, Uint need)
 #ifdef DEBUG
     n++;
 #endif
+
     bp = (ErlHeapFragment*)
-	erts_safe_sl_alloc_from(822,
-				sizeof(ErlHeapFragment)
-				+ ((n-1)*sizeof(Eterm)));
+	ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP_FRAG,
+			sizeof(ErlHeapFragment) + ((n-1)*sizeof(Eterm)));
 #ifdef DEBUG
     n--;
 #endif
@@ -241,11 +243,9 @@ erts_global_alloc(Uint need)
 	 * Either there is no enough room on the global heap, or the heap pointers
 	 * are "owned" by the running process.
 	 */
-	ErlHeapFragment* bp = 
-	    (ErlHeapFragment*)
-		erts_safe_sl_alloc_from(822,
-					sizeof(ErlHeapFragment)
-					+ ((need-1)*sizeof(Eterm)));
+	ErlHeapFragment* bp = (ErlHeapFragment*)
+	    ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP_FRAG,
+			    sizeof(ErlHeapFragment) + ((need-1)*sizeof(Eterm)));
 	bp->next = MBUF(dummy);
 	MBUF(dummy) = bp;
 	if (HALLOC_MBUF(dummy) == NULL) {
@@ -262,7 +262,7 @@ erts_global_alloc(Uint need)
 }
 #endif
 
-#ifdef INSTRUMENT
+#if 0 /* XXX Not used! */
 /* Does what arith_alloc does, but only ensures that the space is
    allocated; doesn't actually start using it. */
 void arith_ensure_alloc(Process* p, Uint need)
@@ -304,9 +304,9 @@ Eterm*
 erl_grow_stack(Eterm* ptr, size_t new_size)
 {
     if (new_size > 2 * DEF_ESTACK_SIZE) {
-	return safe_realloc((void *) ptr, new_size);
+	return erts_realloc(ERTS_ALC_T_ESTACK, (void *) ptr, new_size);
     } else {
-	Eterm* new_ptr = safe_alloc_from(4, new_size);
+	Eterm* new_ptr = erts_alloc(ERTS_ALC_T_ESTACK, new_size);
 	sys_memcpy(new_ptr, ptr, new_size/2);
 	return new_ptr;
     }
@@ -453,17 +453,22 @@ do {									\
 
     ASSERT(link_size >= ERL_LINK_SIZE);
 
+    ERTS_PROC_MORE_MEM(link_size);
+
     if (link_size == ERL_LINK_SIZE) {
-	lnk = (ErlLink*) fix_alloc(link_desc);
+	lnk = (ErlLink*) erts_alloc(ERTS_ALC_T_LINK,
+				    link_size*sizeof(Uint));
 	hp = NULL;
     }
     else if (link_size <= ERL_LINK_SH_SIZE) {
-	lnk = (ErlLink*) fix_alloc(link_sh_desc);
+	lnk = (ErlLink*) erts_alloc(ERTS_ALC_T_LINK_SH,
+				    link_size*sizeof(Uint));
 	hp = lnk->heap;
     }
     else {
+	lnk = (ErlLink*) erts_alloc(ERTS_ALC_T_LINK_LH,
+				    link_size*sizeof(Uint));
 	erts_tot_link_lh_size += link_size*sizeof(Uint);
-	lnk = (ErlLink*) safe_alloc_from(370, link_size*sizeof(Uint));
 	hp = lnk->heap;
     }
 
@@ -538,13 +543,15 @@ ErlLink** lnk;
 	sys_memset((void *) tlink, 0x0f, link_size*sizeof(Uint));
 #endif
 
+	ERTS_PROC_LESS_MEM(link_size);
+
 	if (link_size == ERL_LINK_SIZE)
-	    fix_free(link_desc, (void *) tlink);
+	    erts_free(ERTS_ALC_T_LINK, (void *) tlink);
 	else if (link_size <= ERL_LINK_SH_SIZE)
-	    fix_free(link_sh_desc, (void *) tlink);
+	    erts_free(ERTS_ALC_T_LINK_SH, (void *) tlink);
 	else {
 	    erts_tot_link_lh_size -= link_size*sizeof(Uint);
-	    sys_free((void *) tlink);
+	    erts_free(ERTS_ALC_T_LINK_LH, (void *) tlink);
 	}
     }
 }
@@ -868,6 +875,29 @@ erts_bld_tuple(Uint **hpp, Uint *szp, Uint arity, ...)
 	    for (i = 0; i < arity; i++)
 		*((*hpp)++) = va_arg(argp, Eterm);
 	    va_end(argp);
+	}
+    }
+    return res;
+}
+
+
+Eterm erts_bld_tuplev(Uint **hpp, Uint *szp, Uint arity, Eterm terms[])
+{
+    Eterm res = THE_NON_VALUE;
+
+    ASSERT(arity < (((Uint)1) << (sizeof(Uint)*8 - _HEADER_ARITY_OFFS)));
+
+    if (szp)
+	*szp += arity + 1;
+    if (hpp) {
+
+	res = make_tuple(*hpp);
+	*((*hpp)++) = make_arityval(arity);
+
+	if (arity > 0) {
+	    Uint i;
+	    for (i = 0; i < arity; i++)
+		*((*hpp)++) = terms[i];
 	}
     }
     return res;
@@ -1672,161 +1702,98 @@ make_broken_hash(Eterm term, Uint hash)
     }
 }
 
-int
-send_error_to_logger(Eterm gleader)
+static int do_send_to_logger(char *tag, Eterm gleader, char *buf, int len)
 {
-    Process* p;
+    /* error_logger ! 
+       {notify,{info_msg,gleader,{emulator,"~s~n",[<message as list>]}}} |
+       {notify,{error,gleader,{emulator,"~s~n",[<message as list>]}}} |
+       {notify,{warning_msg,gleader,{emulator,"~s~n",[<message as list>}]}} */
+    Process *p;
+    Eterm atom_tag, atom_notify;
     Eterm* hp;
-    Eterm name;
-    Eterm res;
-    Eterm gl;
-    Eterm list;
+    Uint sz;
     Uint gl_sz;
-    int i;
+    Eterm gl;
+    Eterm list,plist,format,tuple1,tuple2,tuple3;
     
-    if ((i = cerr_pos) == 0)
-	return 0;
-    name = am_error_logger;
-    if ((p = whereis_process(name)) == NULL)  {
-	erl_printf(CERR, "%s", tmp_buf);
-	return 0;
+    if (len <= 0) {
+	return -1;
     }
-    /* !!!!!!! Uhhh  */
-    if (p->status == P_EXITING || p->status == P_RUNNING) {
-	erl_printf(CERR, "%s", tmp_buf);
+    if ((p = whereis_process(am_error_logger)) == NULL ||
+	p->status == P_EXITING || p->status == P_RUNNING)  {
+	/* Now, buf might not be null-terminated and it might be tmp_buf... */
+	if (len >= TMP_BUF_SIZE) {
+	    len = TMP_BUF_SIZE - 1;
+	}
+	sys_memmove(tmp_buf,buf,len);
+	tmp_buf[len] = '\0';
+	erl_printf(CERR,"(no error logger present) %s: %s\r\n",
+		   tag,tmp_buf);
 	return 0;
     }
 
+    /* So we have an error logger, lets build the message */
+    atom_tag = am_atom_put(tag,strlen(tag));
+    atom_notify = am_atom_put("notify",6);
     gl_sz = IS_CONST(gleader) ? 0 : size_object(gleader);
-    hp = HAlloc(p, i*2 + gl_sz + 4);
+    sz = len * 2 /* message list */+ 2 /* cons surrounding message list */
+	+ gl_sz + 
+	3 /*outher 2-tuple*/ + 4 /* middle 3-tuple */ + 4 /*inner 3-tuple */ +
+	8 /* "~s~n" */;
+    hp = HAlloc(p,sz);
     gl = (is_nil(gleader)
 	  ? am_noproc
 	  : (IS_CONST(gleader)
 	     ? gleader
 	     : copy_struct(gleader,gl_sz,&hp,&MSO(p))));
-    list = buf_to_intlist(&hp, tmp_buf, i, NIL);
-    res = TUPLE3(hp, am_emulator, gl, list);
-    queue_message_tt(p, NULL, res, NIL);
-    return 1;
-}
-
-#ifdef INSTRUMENT
-
-void *safe_alloc_from(int from, Uint len)
-{
-    void *buf;
-
-    if ((buf = sys_alloc_from(from, len)) == NULL)
-	erl_exit(erts_initialized ? 1 : -1,
-		 "Can't allocate %lu bytes of memory\n",
-		 (unsigned long) len);
-    return(buf);
-}
-
-void *safe_realloc_from(int from, void* ptr, Uint len)
-{
-    void *buf;
-
-    if ((buf = sys_realloc_from(from, ptr, len)) == NULL)
-	erl_exit(erts_initialized ? 1 : -1,
-		 "Can't reallocate %lu bytes of memory\n",
-		 (unsigned long) len);
-    return(buf);
-}
-
-void *erts_safe_sl_alloc_from(int from, Uint len)
-{
-    void *buf;
-
-    if ((buf = erts_sl_alloc_from(from, len)) == NULL)
-	erl_exit(erts_initialized ? 1 : -1,
-		 "Can't allocate %lu bytes of memory\n",
-		 (unsigned long) len);
-    return(buf);
-}
-
-void *erts_safe_sl_realloc_from(int from, void* ptr, Uint save_size,
-				Uint size)
-{
-    void *buf;
-
-    if ((buf = erts_sl_realloc_from(from, ptr, save_size, size)) == NULL)
-	erl_exit(erts_initialized ? 1 : -1,
-		 "Can't reallocate %lu bytes of memory\n",
-		 (unsigned long) size);
-    return(buf);
-}
-
-void *safe_alloc(Uint len)
-{
-  return safe_alloc_from(-1, len);
-}
-
-void *safe_realloc(void *ptr, Uint len)
-{
-  return safe_realloc_from(-1, ptr, len);
-}
-
-void *erts_safe_sl_alloc(Uint len)
-{
-  return erts_safe_sl_alloc_from(-1, len);
-}
-
-void *erts_safe_sl_realloc(void* ptr, Uint save_size, Uint size)
-{
-  return erts_safe_sl_realloc_from(-1, ptr, save_size, size);
-}
-
-#else
-
-
-void *safe_alloc(Uint len)
-{
-    void *buf;
-
-    if ((buf = sys_alloc(len)) == NULL)
-	erl_exit(erts_initialized ? 1 : -1,
-		 "Can't allocate %lu bytes of memory\n",
-		 (unsigned long) len);
-    return(buf);
-}
-
-
-void *safe_realloc(void* ptr, Uint len)
-{
-    void *buf;
-
-    if ((buf = sys_realloc(ptr, len)) == NULL)
-	erl_exit(erts_initialized ? 1 : -1,
-		 "Can't reallocate %lu bytes of memory\n",
-		 (unsigned long) len);
-    return(buf);
-}
-
-void *erts_safe_sl_alloc(Uint len)
-{
-    void *buf;
-
-    if ((buf = erts_sl_alloc(len)) == NULL)
-	erl_exit(erts_initialized ? 1 : -1,
-		 "Can't allocate %lu bytes of memory\n",
-		 (unsigned long) len);
-    return(buf);
-}
-
-void *erts_safe_sl_realloc(void* ptr, Uint save_size, Uint size)
-{
-    void *buf;
-
-    if ((buf = erts_sl_realloc(ptr, save_size, size)) == NULL)
-	erl_exit(erts_initialized ? 1 : -1,
-		 "Can't reallocate %lu bytes of memory\n",
-		 (unsigned long) size);
-    return(buf);
-}
-
+    list = buf_to_intlist(&hp, buf, len, NIL);
+    plist = CONS(hp,list,NIL);
+    hp += 2;
+    format = buf_to_intlist(&hp, "~s~n", 4, NIL);
+    tuple1 = TUPLE3(hp, am_emulator, format, plist);
+    hp += 4;
+    tuple2 = TUPLE3(hp, atom_tag, gl, tuple1);
+    hp += 4;
+    tuple3 = TUPLE2(hp, atom_notify, tuple2);
+#ifdef HARDDEBUG
+    display(tuple3,CERR);
 #endif
+    queue_message_tt(p, NULL, tuple3, NIL);
+    return 0;
+}
 
+int erts_send_info_to_logger(Eterm gleader, char *buf, int len) 
+{
+    return do_send_to_logger("info_msg",gleader,buf,len);
+}
+
+int erts_send_warning_to_logger(Eterm gleader, char *buf, int len) 
+{
+    char *tag;
+    switch (erts_error_logger_warnings) {
+    case am_info:
+	tag = "info_msg";
+	break;
+    case am_warning:
+	tag = "warning_msg";
+	break;
+    default:
+	tag = "error";
+	break;
+    }
+    return do_send_to_logger(tag,gleader,buf,len);
+}
+
+int erts_send_error_to_logger(Eterm gleader, char *buf, int len) 
+{
+    return do_send_to_logger("error",gleader,buf,len);
+}
+
+/* To be removed, old obsolete interface */
+int send_error_to_logger(Eterm gleader)
+{
+    return erts_send_error_to_logger(gleader,tmp_buf,cerr_pos) == 0;
+}
 /* eq and cmp are written as separate functions a eq is a little faster */
 
 /*
@@ -2085,9 +2052,7 @@ eq(Eterm a, Eterm b)
  *	s1 = s2	return  0
  *	s1 > s2 return +1
  */
-static int cmpbytes(s1,l1,s2,l2)
-byte *s1,*s2;
-int l1,l2;
+static int cmpbytes(byte *s1, int l1, byte *s2, int l2)
 {
     int i;
     i = 0;
@@ -2380,12 +2345,12 @@ cmp(Eterm a, Eterm b)
 	anode = erts_this_node;
 	adata = internal_pid_data(a);
 
-    pid_port_common:
-
-	CMP_NODES(anode, bnode);
+    pid_common:
 
 	if (adata != bdata)
 	    return adata < bdata ? -1 : 1;
+
+	CMP_NODES(anode, bnode);
 
 	return 0;
 
@@ -2405,7 +2370,7 @@ cmp(Eterm a, Eterm b)
 	anode = external_pid_node(a);
 	adata = external_pid_data(a);
 
-	goto pid_port_common;
+	goto pid_common;
 
     case PORT_DEF:
 
@@ -2423,7 +2388,15 @@ cmp(Eterm a, Eterm b)
 	anode = erts_this_node;
 	adata = internal_port_data(a);
 
-	goto pid_port_common;
+
+    port_common:
+
+	CMP_NODES(anode, bnode);
+
+	if (adata != bdata)
+	    return adata < bdata ? -1 : 1;
+
+	return 0;
 
     case EXTERNAL_PORT_DEF:
 
@@ -2441,7 +2414,7 @@ cmp(Eterm a, Eterm b)
 	anode = external_port_node(a);
 	adata = external_port_data(a);
 
-	goto pid_port_common;
+	goto port_common;
 
     }
     case VECTOR_DEF:
@@ -2621,14 +2594,14 @@ display1(Eterm obj, CIO fd)
     case BIG_DEF:
 	nobj = big_val(obj);
 	i = BIG_SIZE(nobj);
-	if (BIG_SIGN(nobj))
-	    erl_printf(fd, "-#integer(%d) = {", i);
-	else
-	    erl_printf(fd, "#integer(%d) = {", i);
-	erl_printf(fd, "%d", BIG_DIGIT(nobj, 0));
-	for (k = 1; k < i; k++)
-	    erl_printf(fd, ",%d", BIG_DIGIT(nobj, k));
-	erl_putc('}', fd);
+	if (BIG_SIGN(nobj)) {
+	    erl_printf(fd, "-16#", i);
+	} else {
+	    erl_printf(fd, "16#", i);
+	}
+	for (k = i-1; k >= 0; k--) {
+	    erl_printf(fd, "%0X", BIG_DIGIT(nobj, k));
+	}
 	break;
     case REF_DEF:
 	erl_printf(fd, "#Ref<%lu", internal_ref_channel_no(obj));
@@ -2768,8 +2741,7 @@ void ldisplay(Eterm obj, CIO fd, int count)
 
 
 /* print a name doing what quoting is necessary */
-static void print_name(s, n, fd)
-byte *s; int n; CIO fd;
+static void print_name(byte *s, int n, CIO fd)
 {
     
     int need_quote;
@@ -3195,106 +3167,27 @@ is_printable_string(Eterm list)
     return 0;
 }
 
-typedef union { char c; short s; int i; long l; float f; double d; } align_t;
-
-static align_t *definite_block;
-static align_t *definite_block_top;
-static Uint definite_block_units;
-#ifdef DEBUG
-static Uint definite_initialized = 0;
-#endif
-
-void
-erts_init_definite_alloc(Uint size)
-{
-    if (size == 0) {
-	definite_block = NULL;
-	definite_block_units = 0;
-    }
-    else {
-	definite_block_units = (size < sizeof(align_t)
-				? 1
-				: ((size - 1)/sizeof(align_t) + 1));
-	definite_block = (align_t *)
-	    safe_alloc_from(400, definite_block_units*sizeof(align_t));
-    }
-    definite_block_top = definite_block;
-#ifdef DEBUG
-    definite_initialized = 1;
-#endif
-}
-
-void
-erts_definite_alloc_info(ErtsDefiniteAllocInfo *edaip)
-{
-    edaip->block = definite_block_units*sizeof(align_t);
-    edaip->used = ((Uint) definite_block_top) - ((Uint) definite_block);
-}
-
-void *
-erts_definite_alloc(Uint size)
-{
-    Uint inc;
-    void *res = NULL;
-    
-    ASSERT(definite_initialized);
-
-    if (size == 0)
-	return res;
-
-    inc = size < sizeof(align_t) ? 1 : ((size - 1)/sizeof(align_t) + 1);
-
-    if (definite_block_top + inc <= definite_block + definite_block_units) {
-	res = (void *) definite_block_top;
-	definite_block_top += inc;
-    }
-    
-    return res;
-}
-
-#ifdef INSTRUMENT
-typedef union most_strict {
-    double x;
-    long y;
-} Most_strict;
-
-/* Note: sizeof(mem_link) is used as a constant in
-   tools/src/instrument.erl; keep it updated if this struct changes. */
-
-typedef struct mem_link
-{
-   struct mem_link *prev, *next;
-   Uint size;
-   int type;
-   Eterm p;			/* which process allocated */
-   Most_strict align;
-} mem_link;
-
-static mem_link *mem_anchor;
-static int need_instr_init;
-static erts_mutex_t instr_lck;
-static Uint totally_allocated;
-static Uint maximum_allocated;
-
-static void instr_init(void);
-
-#endif
+Uint erts_sys_misc_mem_sz;
 
 static Sint trim_threshold;
 static Sint top_pad;
 static Sint mmap_threshold;
 static Sint mmap_max;
 
-void erts_init_utils(void) 
+Uint tot_bin_allocated;
+
+void erts_init_utils(void)
 {
+
+}
+
+void erts_init_utils_mem(void) 
+{
+    erts_sys_misc_mem_sz = 0;
     trim_threshold = -1;
     top_pad = -1;
     mmap_threshold = -1;
     mmap_max = -1;
-#ifdef INSTRUMENT
-    mem_anchor = NULL;
-    need_instr_init = 1;
-#endif
 }
 
 int
@@ -3359,396 +3252,7 @@ sys_alloc_stat(SysAllocStat *sasp)
    sasp->mmap_threshold = mmap_threshold;
    sasp->mmap_max       = mmap_max;
 
-#ifdef INSTRUMENT
-   if (need_instr_init)
-       instr_init();
-
-   erts_mutex_lock(instr_lck);
-
-   sasp->total          = totally_allocated;
-   sasp->maximum        = maximum_allocated;
-
-   erts_mutex_unlock(instr_lck);
-#endif
-
 }
-
-#ifdef INSTRUMENT
-extern Eterm current_erl_process;
-
-static void link_in(mem_link *l, Uint size, int from)
-{
-   l->next = mem_anchor;
-   if (mem_anchor != NULL)
-      mem_anchor->prev = l;
-   l->prev = NULL;
-   l->size = size;
-   if (l->type == -1)
-      l->type = from;
-   mem_anchor = l;
-
-   l->p = current_erl_process;
-}
-
-static void link_out(mem_link *l)
-{
-   mem_link *prev, *next;
-
-   prev = l->prev;
-   next = l->next;
-   if (prev != NULL)
-      prev->next = next;
-   else
-      mem_anchor = next;
-
-   if (next != NULL)
-      next->prev = prev;
-}
-
-erts_mutex_t erts_mutex_sys(int);
-
-static void
-init_instr_lock(void)
-{
-  instr_lck = erts_mutex_sys(1);
-}
-
-static void
-lock_instr_lock(void)
-{
-  erts_mutex_lock(instr_lck);
-}
-
-static void
-unlock_instr_lock(void)
-{
-  erts_mutex_unlock(instr_lck);
-}
-
-int erts_atfork_sys(void (*prepare)(void),
-		    void (*parent)(void),
-		    void (*child)(void));
-
-#ifndef INIT_MUTEX_IN_CHILD_AT_FORK
-#define INIT_MUTEX_IN_CHILD_AT_FORK 0
-#endif
-
-static void instr_init(void)
-{
-    init_instr_lock();
-    erts_atfork_sys(lock_instr_lock,
-		    unlock_instr_lock,
-#if INIT_MUTEX_IN_CHILD_AT_FORK
-		    init_instr_lock
-#else
-		    unlock_instr_lock
-#endif
-		    );
-    totally_allocated = 0;
-    maximum_allocated = 0;
-    need_instr_init = 0;
-}
-
-
-void *
-instr_alloc(int from, void *(*alloc_func)(Uint), Uint size)
-{
-   char *p;
-   mem_link *l;
-   if (need_instr_init)
-       instr_init();
-
-   p = (*alloc_func)(size + sizeof(mem_link));
-   if (p == NULL) {
-     return NULL;
-   }
-
-   erts_mutex_lock(instr_lck);
- 
-   l = (mem_link *) p;
-   l->type = -1;
-   link_in(l, size, from);
-
-   totally_allocated += size;
-   if(totally_allocated >= maximum_allocated)
-     maximum_allocated = totally_allocated;
-
-   erts_mutex_unlock(instr_lck);
-
-   return (void *) (p + sizeof(mem_link));
-}
-
-void *
-instr_realloc(int from,
-	      void *(*realloc_func)(void *, Uint, Uint),
-	      void *ptr,
-	      Uint save_size,
-	      Uint size)
-{
-   char *p, *new_p;
-   mem_link *l;
-   int old_type;
-   Uint old_size;
-
-   if (need_instr_init)
-       instr_init();
-
-   erts_mutex_lock(instr_lck);
-
-   p = ((char *) ptr) - sizeof(mem_link);
-
-   l = (mem_link *) p;
-   old_size = l->size;
-   old_type = l->type;
-   link_out(l);
-   erts_mutex_unlock(instr_lck);
-
-   new_p = (realloc_func)(p,
-			  save_size + sizeof(mem_link),
-			  size + sizeof(mem_link));
-   if (new_p == NULL) {
-     erts_mutex_lock(instr_lck);
-     link_in(l, old_size, old_type); /* Old memory block is still allocated */
-     erts_mutex_unlock(instr_lck);
-     return NULL;
-   }
-
-   erts_mutex_lock(instr_lck);
-
-   l = (mem_link *) new_p;
-   link_in(l, size, from > 0 ? from : old_type);
-
-   ASSERT(totally_allocated + size >= old_size);
-   totally_allocated += size;
-   totally_allocated -= old_size;
-   if(totally_allocated >= maximum_allocated)
-     maximum_allocated = totally_allocated;
-
-   erts_mutex_unlock(instr_lck);
-
-   return (void *) (new_p + sizeof(mem_link));
-}
-
-void
-instr_free(void (*free_func)(void *), void *ptr)
-{
-   mem_link *l;
-   char *p;
-
-   if (need_instr_init)
-       instr_init();
-
-   erts_mutex_lock(instr_lck);
-
-   p = ((char *) ptr) - sizeof(mem_link);
-
-   l = (mem_link *) p;
-
-   ASSERT(totally_allocated >= l->size);
-   totally_allocated -= l->size;
-
-   link_out(l);
-
-   erts_mutex_unlock(instr_lck);
-
-   (*free_func)(p);
-
-}
-
-void *
-sys_alloc(Uint size)
-{
-  return instr_alloc(-1, sys_alloc2, size);
-}
-
-void *
-sys_realloc3(void* ptr, Uint unused, Uint size)
-{
-  return sys_realloc2(ptr, size);
-}
-
-void *
-sys_realloc(void* ptr, Uint size)
-{
-  return instr_realloc(-1, sys_realloc3, ptr, 0, size);
-}
-
-void
-sys_free(void* ptr)
-{
-  instr_free(sys_free2, ptr);
-}
-
-void *
-erts_sl_alloc(Uint size)
-{
-  return instr_alloc(-1, erts_sl_alloc2, size);
-}
-
-void *
-erts_sl_realloc(void* ptr, Uint save_size, Uint size)
-{
-  return instr_realloc(-1, erts_sl_realloc2, ptr, save_size, size);
-}
-
-void
-erts_sl_free(void* ptr)
-{
-  instr_free(erts_sl_free2, ptr);
-}
-
-static void dump_memory_to_stream(FILE *f)
-{
-   mem_link *l;
-
-   l = mem_anchor;
-
-   while (l != NULL)
-   {
-      if (is_non_value(l->p))
-	 fprintf(f, "{%d, %lu, %lu, undefined}.\n",
-		 l->type,
-		 (unsigned long) ((size_t) l + sizeof(mem_link)),
-		 (unsigned long) l->size);
-      else
-	 fprintf(f, "{%d, %lu, %lu, {%lu,%lu,%lu}}.\n",
-		 l->type,
-		 (unsigned long) ((size_t) l + sizeof(mem_link)),
-		 (unsigned long) l->size,
-		 (unsigned long) pid_channel_no(l->p),
-		 (unsigned long) pid_number(l->p),
-		 (unsigned long) pid_serial(l->p));
-      l = l->next;
-   }
-}
-
-void dump_memory_to_fd(int fd)
-{
-   char buf[BUFSIZ];
-   FILE *f;
-
-   f = fdopen(fd, "w");
-   if (f == NULL)
-      return;
-
-   /* Avoid allocating memory; we may have run out of it at this point. */
-   setbuf(f, buf);
-
-   dump_memory_to_stream(f);
-   fflush(f);
-}
-
-int dump_memory_data(name)
-const char *name;
-{
-   FILE *f;
-
-   f = fopen(name, "w");
-   if (f == NULL)
-      return 0;
-
-   dump_memory_to_stream(f);
-
-   fclose(f);
-   return 1;
-}
-
-Eterm
-collect_memory(Process *process)
-{
-    Eterm list, tup;
-    Eterm *hp, *end_hp;
-    mem_link *l;
-    Uint need, need_big;
-    Eterm pid;
-    Uint p;
-    
-    list = NIL;
-    
-    need = 0;
-    need_big = 0;
-    l = mem_anchor;
-    while (l != NULL)
-    {
-	if ((Uint) l > MAX_SMALL)
-	    need_big += 1;
-	if (l->size > MAX_SMALL)
-	    need_big += 1;
-	need += 4+2;
-	l = l->next;
-    }
-    
-    /* The "alloc" operation itself is likely to add to the list,
-       so add a little. */
-    need += 20;
-    
-    hp = HAlloc(process, need);
-    end_hp = hp + need;
-    arith_ensure_alloc(process, 2*need_big); /* 2 = BIG_NEED_SIZE(2) */
-    
-    l = mem_anchor;
-    while (l != NULL)
-    {
-	/* If it should turn out we need more than we allocated, jump
-	   out, and continue allocating on the heap instead. */
-	if (hp >= end_hp - (4+5+2))
-	    break;
-
-	if (is_non_value(l->p))
-	    pid = am_undefined;
-	else
-	{
-
-	    pid = TUPLE3(hp,
-			 make_small_or_big(pid_channel_no(l->p), process),
-			 make_small_or_big(pid_number(l->p), process),
-			 make_small_or_big(pid_serial(l->p), process));
-	    hp += 4;
-	}
-
-	p = ((Uint) l) + sizeof(mem_link);
-	tup = TUPLE4(hp,
-		     make_small(l->type),
-		     make_small_or_big(p, process),
-		     make_small_or_big(l->size, process),
-		     pid);
-	hp += 5;
-	list = CONS(hp, tup, list);
-	hp += 2;
-
-	l = l->next;
-    }
-    
-    while (l != NULL)
-    {
-	if (is_non_value(l->p))
-	    pid = am_undefined;
-	else
-	{
-	    hp = HAlloc(process, 4);
-	    pid = TUPLE3(hp,
-			 make_small(pid_channel_no(l->p)),
-			 make_small(pid_number(l->p)),
-			 make_small(pid_serial(l->p)));
-	}
-
-	hp = HAlloc(process, 5);
-	p = ((Uint) l) + sizeof(mem_link);
-	tup = TUPLE4(hp,
-		     make_small(l->type),
-		     make_small_or_big(p, process),
-		     make_small_or_big(l->size, process),
-		     pid);
-	hp = HAlloc(process, 2);
-	list = CONS(hp, tup, list);
-
-	l = l->next;
-    }
-    
-    return list;
-}
-
-#endif
 
 #ifdef DEBUG
 /*

@@ -318,6 +318,6 @@ less_than([X|Xs],Ys) ->
 	false ->
 	    false
     end.
-
+ 
 starting_points(CFG) ->
-    [ hipe_rtl_cfg:start(CFG) | hipe_rtl_cfg:fail_entrypoints(CFG) ].
+    [ hipe_rtl_cfg:start(CFG)].

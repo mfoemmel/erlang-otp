@@ -30,7 +30,7 @@ open(Port) ->
 open(Port, Opts) ->
     Mod = mod(Opts),
     {ok,UP} = Mod:getserv(Port),
-    Mod:open(Port, Opts).
+    Mod:open(UP, Opts).
 
 close(S) ->
     inet:udp_close(S).
@@ -103,9 +103,14 @@ fdopen(Fd, Opts) ->
 %% Get the udp_module
 mod() -> inet_db:udp_module().
 
-%% Get the tcp_module, but option tcp_module overrides
-mod(Opts) when list(Opts) ->
-    case lists:keysearch(udp_module, 1, Opts) of
-	{value, {_, Mod}} -> Mod;
-	_ -> mod()
-    end.
+%% Get the udp_module, but option udp_module|inet|inet6 overrides
+mod([{udp_module,Mod}|_]) ->
+    Mod;
+mod([inet|_]) ->
+    inet_udp;
+mod([inet6|_]) ->
+    inet6_udp;
+mod([_|Opts]) ->
+    mod(Opts);
+mod([]) ->
+    mod().

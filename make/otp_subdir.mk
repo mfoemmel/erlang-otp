@@ -18,13 +18,13 @@
 #
 # Make include file for otp
 
-.PHONY: debug opt instr release docs release_docs tests release_tests \
+.PHONY: debug opt release docs release_docs tests release_tests \
 	clean depend
 
 #
 # Targets that don't affect documentation directories
 #
-debug opt instr release docs release_docs tests release_tests clean depend:
+debug opt release docs release_docs tests release_tests clean depend:
 	@set -e ;							\
 	app_pwd=`pwd` ;							\
 	if test -f vsn.mk; then						\

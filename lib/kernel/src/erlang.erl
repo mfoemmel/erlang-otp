@@ -24,19 +24,23 @@
 -export([yield/0]).
 -export([crasher/6]).
 -export([fun_info/1]).
+-export([send_nosuspend/2, send_nosuspend/3]).
+-export([localtime_to_universaltime/1]).
 
--export([dlink/1, dunlink/1, dsend/2, dsend_nosuspend/2, dgroup_leader/2,
+-export([dlink/1, dunlink/1, dsend/2, dsend/3, dgroup_leader/2,
 	 dexit/2, dmonitor_node/2, dmonitor_p/2]).
 
 -export([set_cookie/2, get_cookie/0]).
-
--export([open_port/2]).
 
 -export([nodes/0]).
 
 -export([concat_binary/1,info/1]).
 
-open_port(Name, Opt) -> erl_open_port:open_port(Name, Opt).
+-export([memory/0, memory/1]).
+
+-export([list_to_integer/2,integer_to_list/2]).
+
+-deprecated([{old_binary_to_term,1},{info,1},{hash,2}]).
 
 apply(Fun, Args) ->
     apply(Fun, Args).
@@ -227,9 +231,21 @@ nodes() -> erlang:nodes(visible).
 
 disconnect_node(Node) -> net_kernel:disconnect(Node).
 
-fun_info(Fun) when function(Fun) ->
+fun_info(Fun) when is_function(Fun) ->
     [erlang:fun_info(Fun, Key) ||
-	Key <- [pid,module,new_index,new_uniq,index,uniq,env,arity]].
+	Key <- [pid,module,new_index,new_uniq,index,uniq,env,name,arity]].
+
+send_nosuspend(Pid, Msg) ->
+    send_nosuspend(Pid, Msg, []).
+
+send_nosuspend(Pid, Msg, Opts) ->
+    case erlang:send(Pid, Msg, [nosuspend|Opts]) of
+	ok -> true;
+	_  -> false
+    end.
+
+localtime_to_universaltime(Localtime) ->
+    erlang:localtime_to_universaltime(Localtime, undefined).
 
 %%
 %% If the emulator wants to perform a distributed command and
@@ -271,35 +287,40 @@ dexit(Pid, Reason) ->
 
 dsend(Pid, Msg) when pid(Pid) ->
     case net_kernel:connect(node(Pid)) of
-	true -> Pid ! Msg;
+	true -> erlang:send(Pid, Msg);
 	false -> Msg
     end;
 dsend(Port, Msg) when port(Port) ->
     case net_kernel:connect(node(Port)) of
-	true -> Port ! Msg;
+	true -> erlang:send(Port, Msg);
 	false -> Msg
     end;
 dsend({Name, Node}, Msg) ->
     case net_kernel:connect(Node) of
-	true -> {Name,Node} ! Msg;
+	true -> erlang:send({Name,Node}, Msg);
 	false -> Msg;
 	ignored -> Msg				% Not distributed.
     end.
 
-dsend_nosuspend(Pid, Msg) when pid(Pid) ->
+dsend(Pid, Msg, Opts) when pid(Pid) ->
     case net_kernel:connect(node(Pid)) of
-	true -> erlang:send_nosuspend(Pid,Msg);
-	false -> true
+	true -> erlang:send(Pid, Msg, Opts);
+	false -> ok
     end;
-dsend_nosuspend({Name, Node}, Msg) ->
+dsend(Port, Msg, Opts) when port(Port) ->
+    case net_kernel:connect(node(Port)) of
+	true -> erlang:send(Port, Msg, Opts);
+	false -> ok
+    end;
+dsend({Name, Node}, Msg, Opts) ->
     case net_kernel:connect(Node) of
-	true -> erlang:send_nosuspend({Name,Node},Msg);
-	false -> true;
-	ignored -> true				% Not distributed.
+	true -> erlang:send({Name,Node}, Msg, Opts);
+	false -> ok;
+	ignored -> ok				% Not distributed.
     end.
 
 dmonitor_p(process, ProcSpec) ->
-    {Proc, Node} =
+    {_Proc, Node} =
 	case ProcSpec of
 	    _ when pid(ProcSpec) ->
 		{ProcSpec, node(ProcSpec)};
@@ -353,3 +374,92 @@ concat_binary(List) ->
 
 info(What) ->
     erlang:system_info(What).
+
+%%
+%% memory/[0,1]
+%%
+
+memory() ->
+    erlang:system_info(memory).
+
+memory(Type) when atom(Type) ->
+    case erlang:system_info({memory, [Type]}) of
+	[{Type, Bytes}] -> Bytes;
+	Error -> erlang:fault(Error, [Type])
+    end;
+memory(TypeSpec) ->
+    case erlang:system_info({memory, TypeSpec}) of
+	Result when list(Result) -> Result;
+	Error -> erlang:fault(Error, [TypeSpec])
+    end.
+
+
+
+integer_to_list(I, 10) ->
+    erlang:integer_to_list(I);
+integer_to_list(I, Base) 
+  when integer(I), integer(Base), Base >= 2, Base =< 1+$Z-$A+10 ->
+    if I < 0 ->
+	    [$-|integer_to_list(-I, Base, [])];
+       true ->
+	    integer_to_list(I, Base, [])
+    end;
+integer_to_list(I, Base) ->
+    erlang:fault(badarg, [I, Base]).
+
+integer_to_list(I0, Base, R0) ->
+    D = I0 rem Base,
+    I1 = I0 div Base,
+    R1 = if D >= 10 ->
+		 [D-10+$A|R0];
+	    true ->
+		 [D+$0|R0]
+	 end,
+    if I1 == 0 ->
+	    R1;
+       true ->
+	    integer_to_list(I1, Base, R1)
+    end.
+
+
+
+list_to_integer(L, 10) ->
+    erlang:list_to_integer(L);
+list_to_integer(L, Base)
+  when list(L), integer(Base), Base >= 2, Base =< 1+$Z-$A+10 ->
+    case list_to_integer_sign(L, Base) of 
+	I when integer(I) ->
+	    I;
+	Fault ->
+	    erlang:fault(Fault, [L,Base])
+    end;
+list_to_integer(L, Base) ->
+    erlang:fault(badarg, [L,Base]).
+
+list_to_integer_sign([$-|[_|_]=L], Base) ->
+    case list_to_integer(L, Base, 0) of
+	I when integer(I) ->
+	    -I;
+	I ->
+	    I
+    end;
+list_to_integer_sign([$+|[_|_]=L], Base) ->
+    list_to_integer(L, Base, 0);
+list_to_integer_sign([_|_]=L, Base) ->
+    list_to_integer(L, Base, 0);
+list_to_integer_sign(_, _) ->
+    badarg.
+
+list_to_integer([D|L], Base, I) 
+  when integer(D), D >= $0, D =< $9, D < Base+$0 ->
+    list_to_integer(L, Base, I*Base + D-$0);
+list_to_integer([D|L], Base, I) 
+  when integer(D), D >= $A, D < Base+$A-10 ->
+    list_to_integer(L, Base, I*Base + D-$A+10);
+list_to_integer([D|L], Base, I) 
+  when integer(D), D >= $a, D < Base+$a-10 ->
+    list_to_integer(L, Base, I*Base + D-$a+10);
+list_to_integer([], _, I) ->
+    I;
+list_to_integer(_, _, _) ->
+    badarg.

@@ -32,7 +32,8 @@
 	 handle_call/3,
 	 handle_cast/2,
 	 handle_info/2,
-	 terminate/2]).
+	 terminate/2,
+	 code_change/3]).
 
 -import(lists, [flatten/1,reverse/1,keysort/2]).
 
@@ -103,7 +104,7 @@ into_tab(Tab, Key, call, Time) ->
 	NewTime when integer(NewTime) ->
 	    ets:update_counter(Tab, Key, {3,1})
     end;
-into_tab(Tab, Key, Op, Time) ->
+into_tab(Tab, Key, _Op, Time) ->
     case catch ets:update_counter(Tab, Key, Time) of
 	{'EXIT',{badarg,_}} ->
 	    ets:insert(Tab, {Key,Time,0});
@@ -111,7 +112,7 @@ into_tab(Tab, Key, Op, Time) ->
 	    ok
     end.
 
-do_messages({trace_ts,From,Op,Mfa,Time}, Tab, undefined, PrevOp0, PrevTime0) ->
+do_messages({trace_ts,From,Op,Mfa,Time}, Tab, undefined,_PrevOp0,_PrevTime0) ->
     PrevFunc = {From,Mfa},
     receive
 	{trace_ts,_,_,_,_}=Ts -> do_messages(Ts, Tab, PrevFunc, Op, Time)
@@ -123,7 +124,7 @@ do_messages({trace_ts,From,Op,Mfa,Time}, Tab, PrevFunc0, PrevOp0, PrevTime0) ->
     PrevFunc = case Op of
 		   exit -> undefined;
 		   out -> undefined;
-		   Other -> {From,Mfa}
+		   _ -> {From,Mfa}
 	       end,
     receive
 	{trace_ts,_,_,_,_}=Ts -> do_messages(Ts, Tab, PrevFunc, Op, Time)
@@ -133,9 +134,9 @@ do_messages({trace_ts,From,Op,Mfa,Time}, Tab, PrevFunc0, PrevOp0, PrevTime0) ->
 
 %%%%%%%%%%%%%%%%%%
 
-handle_cast(Req, S) -> {noreply, S}.
+handle_cast(_Req, S) -> {noreply, S}.
 
-terminate(Reason, S) ->
+terminate(_Reason,_S) ->
     call_trace_for_all(false),
     normal.
 
@@ -216,7 +217,7 @@ handle_call(stop, _FromTag, S) ->
 
 %%%%%%%%%%%%%%%%%%%
 
-handle_info({trace_ts, From, Op, Func, Time}=M, S0) when S0#state.profiling == true ->
+handle_info({trace_ts,_From,_Op,_Func,_Time}=M, S0) when S0#state.profiling == true ->
     Start = erlang:now(),
     #state{table=Tab,pop=PrevOp0,ptime=PrevTime0,pfunc=PrevFunc0,
 	   overhead=Overhead0} = S0,
@@ -229,10 +230,10 @@ handle_info({trace_ts, From, _, _, _}, S) when S#state.profiling == false ->
     ptrac([From], false, all()),
     {noreply, S};
 
-handle_info({P, {answer, A}}, S) ->
+handle_info({_P, {answer, A}}, S) ->
     ptrac(S#state.rootset, false, all()),
     io:format("eprof: Stop profiling~n",[]),
-    {From, Tag} = get(replyto),
+    {From,_Tag} = get(replyto),
     catch unlink(From),
     ets:delete(S#state.table, nofunc),
     gen_server:reply(erase(replyto), {ok, A}),
@@ -252,7 +253,7 @@ handle_info({'EXIT', P, Reason}, S) when S#state.profiling == true,
 	    {noreply, #state{}}
     end;
 
-handle_info({'EXIT', P, Reason}, S) ->
+handle_info({'EXIT',_P,_Reason}, S) ->
     {noreply, S}.
 
 %%%%%%%%%%%%%%%%%%
@@ -284,7 +285,7 @@ ptrac([P|T], How, Flags) when atom(P) ->
 	    ptrac([Pid|T], How, Flags)
     end;
 
-ptrac([H|T], How, Flags) ->
+ptrac([H|_],_How,_Flags) ->
     io:format("** eprof bad process ~w~n",[H]),
     false;
 
@@ -294,9 +295,9 @@ dotrace(P, How, What) ->
     case (catch erlang:trace(P, How, What)) of
 	1 ->
 	    true;
-	Other when How == false ->
+	_Other when How == false ->
 	    true;
-	Other ->
+	_Other ->
 	    io:format("** eprof: bad process: ~p,~p,~p~n", [P,How,What]),
 	    false
     end.
@@ -318,7 +319,7 @@ analyse(#state{table=notable}) ->
     nothing_to_analyse;
 analyse(S) ->
     #state{table = T, overhead = Overhead} = S,
-    Pids = ordsets:list_to_set(flatten(ets:match(T, {{'$1','_'},'_', '_'}))),
+    Pids = ordsets:from_list(flatten(ets:match(T, {{'$1','_'},'_', '_'}))),
     Times = sum(ets:match(T, {'_','$1', '_'})),
     format("FUNCTION~44s      TIME ~n", ["CALLS"]),     
     do_pids(Pids, T, 0, Times),
@@ -359,9 +360,9 @@ pad(Str, Len) ->
 	true -> lists:append(Str, mklist(Len-Strlen))
     end.
 
-strip_tail([H|T], 0) ->[];
+strip_tail([_|_], 0) ->[];
 strip_tail([H|T], I) -> [H|strip_tail(T, I-1)];
-strip_tail([], I) -> [].
+strip_tail([],_I) -> [].
 
 fpf(F) -> strip_tail(flatten(io_lib:format("~w", [round(F)])), 5).
 fint(Int) -> pad(flatten(io_lib:format("~w",[Int])), 10).
@@ -420,13 +421,13 @@ search(Key, [{{_,Key}, Ack, Calls}|_]) ->
     {Ack, Calls};
 search(Key, [_|T]) -> 
     search(Key, T);
-search(Key, []) -> false.
+search(_Key,[]) -> false.
 
-del(Key, [{{_,Key}, Ack, Calls}|T]) ->
+del(Key, [{{_,Key},_Ack,_Calls}|T]) ->
     T;
 del(Key, [H | Tail]) ->
     [H|del(Key, Tail)];
-del(Key, []) -> [].
+del(_Key,[]) -> [].
 
 flush_receive() ->
     receive 
@@ -439,3 +440,5 @@ flush_receive() ->
 	    ok
     end.
 
+code_change(_OldVsn, State, _Extra) ->
+    {ok,State}.

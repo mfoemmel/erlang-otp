@@ -4,6 +4,8 @@
 -module(hipe_x86_cfg).
 
 -export([linearise/1, is_branch/1, params/1, arity/1, redirect_jmp/3]).
+-export([add_fail_entrypoint/2]).
+
 %% To avoid warnings...
 -export([find_new_label/2]).
 
@@ -85,9 +87,6 @@ is_label(I) ->
 label_name(Label) ->
     hipe_x86:label_label(Label).
 
-is_fail_entrypoint(Label) ->
-    hipe_x86:label_isfail(Label).
-
 label_annot(Label) ->
     hipe_x86:label_isfail(Label).
 
@@ -118,3 +117,8 @@ linearise(CFG) ->	% -> defun, not insn list
 arity(CFG) ->
     #x86_mfa{a=Arity} = function(CFG),
     Arity.
+
+add_fail_entrypoint(CFG, EP) ->
+   Info = CFG#cfg.info,
+   OEP = Info#cfg_info.fail_entrypoints,
+   CFG#cfg{info=Info#cfg_info{fail_entrypoints=[EP|OEP]}}.

@@ -47,8 +47,9 @@ static int reg_cmp(RegProc *tmpl, RegProc *obj) {
 }
 
 static RegProc* reg_alloc(RegProc *tmpl) {
-    RegProc* obj = (RegProc*) fix_alloc(preg_desc);
-    
+    RegProc* obj = (RegProc*) erts_alloc(ERTS_ALC_T_REG_PROC, sizeof(RegProc));
+    if (!obj)
+	erl_exit(1, "Can't allocate %d bytes of memory\n", sizeof(RegProc));
     obj->name = tmpl->name;
     obj->p = tmpl->p;
     obj->pt = tmpl->pt;
@@ -56,7 +57,7 @@ static RegProc* reg_alloc(RegProc *tmpl) {
 }
 
 static void reg_free(RegProc *obj) {
-    fix_free(preg_desc, (void*) obj);
+    erts_free(ERTS_ALC_T_REG_PROC, (void*) obj);
 }
 
 void init_register_table(void)
@@ -68,7 +69,8 @@ void init_register_table(void)
     f.alloc = (HALLOC_FUN) reg_alloc;
     f.free = (HFREE_FUN) reg_free;
 
-    hash_init(&process_reg, "process_reg", PREG_HASH_SIZE, f);
+    hash_init(ERTS_ALC_T_REG_TABLE, &process_reg, "process_reg",
+	      PREG_HASH_SIZE, f);
 }
 
 /*
@@ -157,8 +159,6 @@ int unregister_name(Process *c_p, Eterm name) {
 	if (pt != NULL) {
 	    pt->reg = NULL;
 	} else if (p != NULL) {
-	    if (p->status == P_EXITING)
-		p->reg_atom = name;
 	    p->reg = NULL;
 	    if (IS_TRACED_FL(p, F_TRACE_PROCS)) {
 		trace_proc(c_p, p, am_unregister, name);
@@ -169,5 +169,3 @@ int unregister_name(Process *c_p, Eterm name) {
     }
     return 0;
 }
-
-

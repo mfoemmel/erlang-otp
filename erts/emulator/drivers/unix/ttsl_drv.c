@@ -41,12 +41,12 @@
 #define FALSE 0
 
 /* Termcap functions. */
-int tgetent();
-int tgetnum();
-int tgetflag();
-char *tgetstr();
-char *tgoto();
-int tputs();
+int tgetent(char* bp, char *name);
+int tgetnum(char* cap);
+int tgetflag(char* cap);
+char *tgetstr(char* cap, char** buf);
+char *tgoto(char* cm, int col, int line);
+int tputs(char* cp, int affcnt, int (*outc)(int c));
 
 /* Terminal capabilites in which we are interested. */
 static char *capbuf;
@@ -96,7 +96,7 @@ static int del_chars(int);
 static byte *step_over_chars(int);
 static int insert_buf(byte*,int);
 static int write_buf(byte*,int);
-static int outc(byte);
+static int outc(int c);
 static int move_cursor(int,int);
 
 /* Termcap functions. */
@@ -111,8 +111,6 @@ static int move_down(int);
 static int tty_init(int,int,int,int);
 static int tty_set(int);
 static int tty_reset(int);
-/* static RETSIGTYPE (*orig_ctl_c)(); gordon temp */
-/* static RETSIGTYPE ctl_c(); gordon temp */
 static RETSIGTYPE suspend(int);
 static RETSIGTYPE cont(int);
 
@@ -189,14 +187,7 @@ static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
     ttysl_out = fdopen(ttysl_fd, "w");
 
     setlocale(LC_CTYPE, "");	/* Set international environment */
-#if 0
-    sys_sigset(SIGTSTP, suspend);
-    sys_sigset(SIGTTIN, suspend);
-    sys_sigset(SIGTTOU, suspend);
-#else
     sys_sigset(SIGCONT, cont);
-#endif
-    /* orig_ctl_c = sys_sigset(SIGINT, ctl_c); gordon temp */
 
     driver_select(port, (ErlDrvEvent)(Uint)ttysl_fd, DO_READ, 1);
     ttysl_port = port;
@@ -216,14 +207,7 @@ static void ttysl_stop(ErlDrvData ttysl_data)
 	if (ttysl_fd != 0)
 	  close(ttysl_fd);
 	driver_select(ttysl_port, (ErlDrvEvent)(Uint)ttysl_fd, DO_READ, 0);
-#if 0
-	sys_sigset(SIGTSTP, SIG_DFL);
-	sys_sigset(SIGTTIN, SIG_DFL);
-	sys_sigset(SIGTTOU, SIG_DFL);
-#else
 	sys_sigset(SIGCONT, SIG_DFL);
-#endif
-	/* sys_sigset(SIGINT,  orig_ctl_c); gordon temp */
     }
     ttysl_port = (ErlDrvPort)-1;
     ttysl_fd = -1;
@@ -234,9 +218,7 @@ static void ttysl_stop(ErlDrvData ttysl_data)
  * Check that there is enough room in all buffers to copy all pad chars
  * and stiff we need If not, realloc lbuf.
  */
-static int check_buf_size(s,n)
-byte *s;
-int n;
+static int check_buf_size(byte *s, int n)
 {
     int size;
     byte *tmp, *old_lbuf;
@@ -553,7 +535,7 @@ static int write_buf(byte *s, int n)
 }
 
 /* The basic procedure for outputting one character. */
-static int outc(byte c)
+static int outc(int c)
 {
     return (int)putc(c, ttysl_out);
 }

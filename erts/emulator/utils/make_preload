@@ -55,6 +55,7 @@ while (@ARGV && $ARGV[0] =~ /^-(\w+)/) {
 print header();
 
 my @modules;
+my $num = 1;
 
 foreach $file (@ARGV) {
     local($/);
@@ -62,18 +63,21 @@ foreach $file (@ARGV) {
     usage("not a beam file")
 	unless $file =~ /\.beam$/;
     my $module = basename($file, ".beam");
-    open(FILE, $file) or error("failed to read $file: $!");
-    $_ = <FILE>;
-    $_ = beam_strip($_);
-    close(FILE);
-
     if ($gen_rc) {
-	print "0 ERLANG_PRELOADED_SIZE_", "\U$module",
-	"\nBEnGIN\n  ", length($_), "L\nEND\n";
-	print "ERLANG_PRELOADED_", "\U$module", " \"$file\"\n";
+	my ($win_file) = split("\n", `(cygpath -d $file 2>/dev/null || cygpath -w $file)`);
+	$win_file =~ s&\\&\\\\&g;
+	print "$num ERLANG_CODE \"$win_file\"\n";
+	push(@modules, "   ", -s $file, "L, $num, ",
+	     length($module), ",\"$module\",\n");
+	$num++;
     } else {
 	my $i;
 	my $comment = '';
+
+	open(FILE, $file) or error("failed to read $file: $!");
+	$_ = <FILE>;
+	$_ = beam_strip($_);
+	close(FILE);
 	
 	push(@modules, "  {\"$module\", " . length($_) . ", preloaded_$module},\n");
 	print "unsigned preloaded_size_$module = ", length($_), ";\n";
@@ -93,7 +97,15 @@ foreach $file (@ARGV) {
     }
 }
 
-if ($gen_old) {
+if ($gen_rc) {
+    print "#include <beam.rc>\n";
+    $num--;
+    print "\n0 ERLANG_DICT\n";
+    print "BEGIN\n";
+    print "    $num,\n";
+    print @modules;
+    print "END\n";
+} elsif ($gen_old) {
     print "struct {\n";
     print "   char* name;\n";
     print "   int size;\n";

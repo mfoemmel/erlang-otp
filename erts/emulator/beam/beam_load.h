@@ -63,6 +63,8 @@ extern int num_loaded_modules;
 extern int allocated_modules;
 extern Range* mid_module;
 
+/* Total code size in bytes */
+extern Uint erts_total_code_size;
 /*
  * Index into start of code chunks which contains additional information
  * about the loaded module.
@@ -77,19 +79,21 @@ extern Range* mid_module;
  */
 
 #define MI_ATTR_PTR          1
-#define MI_ATTR_SIZE_ON_HEAP 2
+#define MI_ATTR_SIZE	     2
+#define MI_ATTR_SIZE_ON_HEAP 3
 
 /*
  * The compilation information retrieved by Mod:module_info(compile).
  */
 
-#define MI_COMPILE_PTR          3
-#define MI_COMPILE_SIZE_ON_HEAP 4
+#define MI_COMPILE_PTR          4
+#define MI_COMPILE_SIZE         5
+#define MI_COMPILE_SIZE_ON_HEAP 6
 
 /*
  * Number of breakpoints in module is stored in this word
  */
-#define MI_NUM_BREAKPOINTS      5
+#define MI_NUM_BREAKPOINTS      7
 
 /*
  * Start of function pointer table.  This table contains pointers to
@@ -100,5 +104,5 @@ extern Range* mid_module;
  * this table.
  */
 
-#define MI_FUNCTIONS         6
+#define MI_FUNCTIONS         8
 #endif /* _BEAM_LOAD_H */

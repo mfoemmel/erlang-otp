@@ -148,8 +148,4 @@ int efile_readlink(Efile_error* errInfo, char *name,
 		   char* buffer, size_t size);
 int efile_link(Efile_error* errInfo, char* old, char* new);
 int efile_symlink(Efile_error* errInfo, char* old, char* new);
-
-
-
-
-
+int efile_may_openfile(Efile_error* errInfo, char *name);

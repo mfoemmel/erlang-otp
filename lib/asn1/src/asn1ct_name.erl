@@ -116,7 +116,7 @@ last(V) ->
     last2(lists:reverse(atom_to_list(V))).
 
 last2(RevL) ->
-    Digs = list_to_integer(lists:reverse(get_digs(RevL))).
+    list_to_integer(lists:reverse(get_digs(RevL))).
     
     
 get_digs([H|T]) ->
@@ -141,18 +141,18 @@ pop_var(Vars,Variable) ->
     case lists:keysearch(Variable,1,Vars) of
 	false ->
 	    ok;
-	{value,{Variable,[Dig]}} ->
+	{value,{Variable,[_Dig]}} ->
 	    lists:keydelete(Variable,1,Vars);
-	{value,{Variable,[Dig|Digits]}} ->
+	{value,{Variable,[_Dig|Digits]}} ->
 	    NewVars = lists:keydelete(Variable,1,Vars),
 	    [{Variable,Digits}|NewVars]
     end.
     
 get_curr([],Variable) ->
     Variable;
-get_curr([{Variable,[0|Drest]}|Tail],Variable) ->
+get_curr([{Variable,[0|_Drest]}|_Tail],Variable) ->
     Variable;
-get_curr([{Variable,[Digit|Drest]}|Tail],Variable) ->
+get_curr([{Variable,[Digit|_Drest]}|_Tail],Variable) ->
     list_to_atom(lists:concat([Variable,integer_to_list(Digit)]));
 
 get_curr([_|Tail],Variable) ->
@@ -172,7 +172,7 @@ delete_var(Vars,Variable) ->
 	false ->
 	    Vars;
 	{value,{Variable,[N]}} when N =< 1  ->
-	    NewVars = lists:keydelete(Variable,1,Vars);
+	    lists:keydelete(Variable,1,Vars);
 	{value,{Variable,[Digit|Drest]}} ->
 	    case Digit of
 		0 ->
@@ -210,8 +210,8 @@ get_next(Vars,Variable) ->
 
 stop_server(Name) ->
     stop_server(Name, whereis(Name)).
-stop_server(Name, undefined) -> stopped;
-stop_server(Name, Pid) ->
+stop_server(_Name, undefined) -> stopped;
+stop_server(Name, _Pid) ->
     Name  ! {self(), stop},
     receive {Name, _} -> stopped end.
 
@@ -220,6 +220,6 @@ start_server(Name,Mod,Fun,Args) ->
     case whereis(Name) of
 	undefined ->
 	    register(Name, spawn(Mod,Fun, Args));
-	Pid ->
+	_Pid ->
 	    already_started
     end.

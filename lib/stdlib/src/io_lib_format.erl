@@ -21,8 +21,6 @@
 
 -export([fwrite/2,fwrite_g/1,indentation/2]).
 
--import(string, [chars/2,chars/3]).
-
 %% fwrite(Format, ArgList) -> [Char].
 %%  Format the arguments in ArgList after string Format. Just generate
 %%  an error if there is an error in the arguments.
@@ -105,6 +103,12 @@ collect_cc([$s|Fmt], [A|Args]) -> {$s,[A],Fmt,Args};
 collect_cc([$e|Fmt], [A|Args]) -> {$e,[A],Fmt,Args};
 collect_cc([$f|Fmt], [A|Args]) -> {$f,[A],Fmt,Args};
 collect_cc([$g|Fmt], [A|Args]) -> {$g,[A],Fmt,Args};
+collect_cc([$b|Fmt], [A|Args]) -> {$b,[A],Fmt,Args};
+collect_cc([$B|Fmt], [A|Args]) -> {$B,[A],Fmt,Args};
+collect_cc([$x|Fmt], [A,Prefix|Args]) -> {$x,[A,Prefix],Fmt,Args};
+collect_cc([$X|Fmt], [A,Prefix|Args]) -> {$X,[A,Prefix],Fmt,Args};
+collect_cc([$+|Fmt], [A|Args]) -> {$+,[A],Fmt,Args};
+collect_cc([$#|Fmt], [A|Args]) -> {$#,[A],Fmt,Args};
 collect_cc([$c|Fmt], [A|Args]) -> {$c,[A],Fmt,Args};
 collect_cc([$~|Fmt], Args) -> {$~,[],Fmt,Args};
 collect_cc([$n|Fmt], Args) -> {$n,[],Fmt,Args};
@@ -115,9 +119,9 @@ collect_cc([$i|Fmt], [A|Args]) -> {$i,[A],Fmt,Args}.
 
 pcount(Cs) -> pcount(Cs, 0).
 
-pcount([{$p,As,F,Ad,P,Pad}|Cs], Acc) -> pcount(Cs, Acc+1);
-pcount([{$P,As,F,Ad,P,Pad}|Cs], Acc) -> pcount(Cs, Acc+1);
-pcount([C|Cs], Acc) -> pcount(Cs, Acc);
+pcount([{$p,_As,_F,_Ad,_P,_Pad}|Cs], Acc) -> pcount(Cs, Acc+1);
+pcount([{$P,_As,_F,_Ad,_P,_Pad}|Cs], Acc) -> pcount(Cs, Acc+1);
+pcount([_|Cs], Acc) -> pcount(Cs, Acc);
 pcount([], Acc) -> Acc.
 
 %% build([Control], Pc, Indentation) -> [Char].
@@ -132,51 +136,20 @@ build([{C,As,F,Ad,P,Pad}|Cs], Pc0, I) ->
 	Pc1 > 0 -> [S|build(Cs, Pc1, indentation(S, I))];
 	true -> [S|build(Cs, Pc1, I)]
     end;
-build([$\n|Cs], Pc, I) -> [$\n|build(Cs, Pc, 0)];
+build([$\n|Cs], Pc, _I) -> [$\n|build(Cs, Pc, 0)];
 build([$\t|Cs], Pc, I) -> [$\t|build(Cs, Pc, ((I + 8) div 8) * 8)];
 build([C|Cs], Pc, I) -> [C|build(Cs, Pc, I+1)];
-build([], Pc, I) -> [].
+build([], _Pc, _I) -> [].
 
 decr_pc($p, Pc) -> Pc - 1;
 decr_pc($P, Pc) -> Pc - 1;
-decr_pc(C, Pc) -> Pc.
-
-%% control(FormatChar, [Argument], FieldWidth, Adjust, Precision, PadChar,
-%%	   Indentation) ->
-%%	[Char]
-%%  This is the main dispatch function for the various formatting commands.
-%%  Field widths and precisions have already been calculated.
-
-control($w, [A], F, Adj, P, Pad, I) ->
-    term(io_lib:write(A, -1), F, Adj, P, Pad);
-control($p, [A], F, Adj, P, Pad, I) ->
-    print(A, -1, F, Adj, P, Pad, I);
-control($W, [A,Depth], F, Adj, P, Pad, I) when integer(Depth) ->
-    term(io_lib:write(A, Depth), F, Adj, P, Pad);
-control($P, [A,Depth], F, Adj, P, Pad, I) when integer(Depth) ->
-    print(A, Depth, F, Adj, P, Pad, I);
-control($s, [A], F, Adj, P, Pad, I) when atom(A) ->
-    string(atom_to_list(A), F, Adj, P, Pad);
-control($s, [L], F, Adj, P, Pad, I) ->
-    true = io_lib:deep_char_list(L),		%Check if L a character list
-    string(L, F, Adj, P, Pad);
-control($e, [A], F, Adj, P, Pad, I) when float(A) ->
-    fwrite_e(A, F, Adj, P, Pad);
-control($f, [A], F, Adj, P, Pad, I) when float(A) ->
-    fwrite_f(A, F, Adj, P, Pad);
-control($g, [A], F, Adj, P, Pad, I) when float(A) ->
-    fwrite_g(A, F, Adj, P, Pad);
-control($c, [A], F, Adj, P, Pad, I) when integer(A) ->
-    char(A band 255, F, Adj, P, Pad);
-control($~, [], F, Adj, P, Pad, I) -> char($~, F, Adj, P, Pad);
-control($n, [], F, Adj, P, Pad, I) -> newline(F, Adj, P, Pad);
-control($i, [A], F, Adj, P, Pad, I) -> [].
+decr_pc(_, Pc) -> Pc.
 
 %% indentation([Char], Indentation) -> Indentation.
 %%  Calculate the indentation of the end of a string given its start
 %%  indentation. We assume tabs at 8 cols.
 
-indentation([$\n|Cs], I) -> indentation(Cs, 0);
+indentation([$\n|Cs], _I) -> indentation(Cs, 0);
 indentation([$\t|Cs], I) -> indentation(Cs, ((I + 8) div 8) * 8);
 indentation([C|Cs], I) when integer(C) ->
     indentation(Cs, I+1);
@@ -184,37 +157,104 @@ indentation([C|Cs], I) ->
     indentation(Cs, indentation(C, I));
 indentation([], I) -> I.
 
+%% control(FormatChar, [Argument], FieldWidth, Adjust, Precision, PadChar,
+%%	   Indentation) ->
+%%	[Char]
+%%  This is the main dispatch function for the various formatting commands.
+%%  Field widths and precisions have already been calculated.
+
+control($w, [A], F, Adj, P, Pad, _I) ->
+    term(io_lib:write(A, -1), F, Adj, P, Pad);
+control($p, [A], F, Adj, P, Pad, I) ->
+    print(A, -1, F, Adj, P, Pad, I);
+control($W, [A,Depth], F, Adj, P, Pad, _I) when integer(Depth) ->
+    term(io_lib:write(A, Depth), F, Adj, P, Pad);
+control($P, [A,Depth], F, Adj, P, Pad, I) when integer(Depth) ->
+    print(A, Depth, F, Adj, P, Pad, I);
+control($s, [A], F, Adj, P, Pad, _I) when atom(A) ->
+    string(atom_to_list(A), F, Adj, P, Pad);
+control($s, [L], F, Adj, P, Pad, _I) ->
+    true = io_lib:deep_char_list(L),		%Check if L a character list
+    string(L, F, Adj, P, Pad);
+control($e, [A], F, Adj, P, Pad, _I) when float(A) ->
+    fwrite_e(A, F, Adj, P, Pad);
+control($f, [A], F, Adj, P, Pad, _I) when float(A) ->
+    fwrite_f(A, F, Adj, P, Pad);
+control($g, [A], F, Adj, P, Pad, _I) when float(A) ->
+    fwrite_g(A, F, Adj, P, Pad);
+control($b, [A], F, Adj, P, Pad, _I) when integer(A) ->
+    unprefixed_integer(A, F, Adj, base(P), Pad, true);
+control($B, [A], F, Adj, P, Pad, _I) when integer(A) ->
+    unprefixed_integer(A, F, Adj, base(P), Pad, false);
+control($x, [A,Prefix], F, Adj, P, Pad, _I) when integer(A), atom(Prefix) ->
+    prefixed_integer(A, F, Adj, base(P), Pad, atom_to_list(Prefix), true);
+control($x, [A,Prefix], F, Adj, P, Pad, _I) when integer(A) ->
+    true = io_lib:deep_char_list(Prefix), %Check if Prefix a character list
+    prefixed_integer(A, F, Adj, base(P), Pad, Prefix, true);
+control($X, [A,Prefix], F, Adj, P, Pad, _I) when integer(A), atom(Prefix) ->
+    prefixed_integer(A, F, Adj, base(P), Pad, atom_to_list(Prefix), false);
+control($X, [A,Prefix], F, Adj, P, Pad, _I) when integer(A) ->
+    true = io_lib:deep_char_list(Prefix), %Check if Prefix a character list
+    prefixed_integer(A, F, Adj, base(P), Pad, Prefix, false);
+control($+, [A], F, Adj, P, Pad, _I) when integer(A) ->
+    Base = base(P),
+    Prefix = [integer_to_list(Base), $#],
+    prefixed_integer(A, F, Adj, Base, Pad, Prefix, true);
+control($#, [A], F, Adj, P, Pad, _I) when integer(A) ->
+    Base = base(P),
+    Prefix = [integer_to_list(Base), $#],
+    prefixed_integer(A, F, Adj, Base, Pad, Prefix, false);
+control($c, [A], F, Adj, P, Pad, _I) when integer(A) ->
+    char(A band 255, F, Adj, P, Pad);
+control($~, [], F, Adj, P, Pad, _I) -> char($~, F, Adj, P, Pad);
+control($n, [], F, Adj, P, Pad, _I) -> newline(F, Adj, P, Pad);
+control($i, [_A], _F, _Adj, _P, _Pad, _I) -> [].
+
+%% Default integer base
+base(none) ->
+    10;
+base(B) ->
+    B.
+
 %% term(TermList, Field, Adjust, Precision, PadChar)
 %%  Output the characters in a term.
+%%  Adjust the characters within the field if length less than Max padding
+%%  with PadChar.
 
-term(T, none, Adj, none, Pad) -> T;
+term(T, none, _Adj, none, _Pad) -> T;
 term(T, none, Adj, P, Pad) -> term(T, P, Adj, P, Pad);
-term(T, F, Adj, none, Pad) -> term(T, F, Adj, min(flat_length(T), F), Pad);
-term(T, F, Adj, P, Pad) when F >= P ->
-    adjust_error(T, F, Adj, P, Pad).
+term(T, F, Adj, P0, Pad) ->
+    L = lists:flat_length(T),
+    P = case P0 of none -> min(L, F); _ -> P0 end,
+    if
+	L > P ->
+	    adjust(chars($*, P), chars(Pad, F-P), Adj);
+	F >= P ->
+	    adjust(T, chars(Pad, F-L), Adj)
+    end.
 
 %% print(Term, Depth, Field, Adjust, Precision, PadChar, Indentation)
 %%  Print a term.
 
 print(T, D, none, Adj, P, Pad, I) -> print(T, D, 80, Adj, P, Pad, I);
 print(T, D, F, Adj, none, Pad, I) -> print(T, D, F, Adj, I+1, Pad, I);
-print(T, D, F, right, P, Pad, I) ->
+print(T, D, F, right, P, _Pad, _I) ->
     io_lib_pretty:print(T, P, F, D).
 
 %% fwrite_e(Float, Field, Adjust, Precision, PadChar)
 
 fwrite_e(Fl, none, Adj, none, Pad) ->		%Default values
     fwrite_e(Fl, none, Adj, 6, Pad);
-fwrite_e(Fl, none, Adj, P, Pad) when P >= 2 ->
+fwrite_e(Fl, none, _Adj, P, _Pad) when P >= 2 ->
     float_e(Fl, float_data(Fl), P);
 fwrite_e(Fl, F, Adj, none, Pad) ->
     fwrite_e(Fl, F, Adj, 6, Pad);
 fwrite_e(Fl, F, Adj, P, Pad) when P >= 2 ->
-    adjust_error(float_e(Fl, float_data(Fl), P), F, Adj, F, Pad).
+    term(float_e(Fl, float_data(Fl), P), F, Adj, F, Pad).
 
 float_e(Fl, Fd, P) when Fl < 0.0 ->		%Negative numbers
     [$-|float_e(-Fl, Fd, P)];
-float_e(Fl, {Ds,E}, P) ->
+float_e(_Fl, {Ds,E}, P) ->
     case float_man(Ds, 1, P-1) of
 	{[$0|Fs],true} -> [[$1|Fs]|float_exp(E)];
 	{Fs,false} -> [Fs|float_exp(E-1)]
@@ -235,20 +275,20 @@ float_man([D|Ds], I, Dc) ->
 	{Cs,false} -> {[D|Cs],false}
     end;
 float_man([], I, Dc) ->				%Pad with 0's
-    {chars($0, I, [$.|chars($0, Dc)]),false}.
+    {string:chars($0, I, [$.|string:chars($0, Dc)]),false}.
 
-float_man([D|Ds], 0) when D >= $5 -> {[],true};
-float_man([D|Ds], 0) -> {[],false};
+float_man([D|_], 0) when D >= $5 -> {[],true};
+float_man([_|_], 0) -> {[],false};
 float_man([D|Ds], Dc) ->
     case float_man(Ds, Dc-1) of
 	{Cs,true} when D == $9 -> {[$0|Cs],true};
 	{Cs,true} -> {[D+1|Cs],false}; 
 	{Cs,false} -> {[D|Cs],false}
     end;
-float_man([], Dc) -> {chars($0, Dc),false}.	%Pad with 0's
+float_man([], Dc) -> {string:chars($0, Dc),false}.	%Pad with 0's
 
 %% float_exp(Exponent) -> [Char].
-%%  Generate the exponent of a floating point number. Alwayd include sign.
+%%  Generate the exponent of a floating point number. Always include sign.
 
 float_exp(E) when E >= 0 ->
     [$e,$+|integer_to_list(E)];
@@ -259,18 +299,18 @@ float_exp(E) ->
 
 fwrite_f(Fl, none, Adj, none, Pad) ->		%Default values
     fwrite_f(Fl, none, Adj, 6, Pad);
-fwrite_f(Fl, none, Adj, P, Pad) when P >= 1 ->
+fwrite_f(Fl, none, _Adj, P, _Pad) when P >= 1 ->
     float_f(Fl, float_data(Fl), P);
 fwrite_f(Fl, F, Adj, none, Pad) ->
     fwrite_f(Fl, F, Adj, 6, Pad);
 fwrite_f(Fl, F, Adj, P, Pad) when P >= 1 ->
-    adjust_error(float_f(Fl, float_data(Fl), P), F, Adj, F, Pad).
+    term(float_f(Fl, float_data(Fl), P), F, Adj, F, Pad).
 
 float_f(Fl, Fd, P) when Fl < 0.0 ->
     [$-|float_f(-Fl, Fd, P)];
 float_f(Fl, {Ds,E}, P) when E =< 0 ->
-    float_f(Fl, {chars($0, -E+1, Ds),1}, P);	%Prepend enough 0's
-float_f(Fl, {Ds,E}, P) ->
+    float_f(Fl, {string:chars($0, -E+1, Ds),1}, P);	%Prepend enough 0's
+float_f(_Fl, {Ds,E}, P) ->
     case float_man(Ds, E, P) of
 	{Fs,true} -> "1" ++ Fs;			%Handle carry
 	{Fs,false} -> Fs
@@ -282,10 +322,10 @@ float_data(Fl) ->
     float_data(float_to_list(Fl), []).
 
 float_data([$e|E], Ds) ->
-    {reverse(Ds),list_to_integer(E)+1};
+    {lists:reverse(Ds),list_to_integer(E)+1};
 float_data([D|Cs], Ds) when D >= $0, D =< $9 ->
     float_data(Cs, [D|Ds]);
-float_data([D|Cs], Ds) ->
+float_data([_|Cs], Ds) ->
     float_data(Cs, Ds).
 
 %% fwrite_g(Float)
@@ -315,76 +355,126 @@ fwrite_g(Fl, F, Adj, P, Pad) ->
 
 %% string(String, Field, Adjust, Precision, PadChar)
 
-string(S, none, Adj, none, Pad) -> S;
+string(S, none, _Adj, none, _Pad) -> S;
 string(S, F, Adj, none, Pad) ->
-    string(S, F, Adj, min(flat_length(S), F), Pad);
-string(S, none, Adj, P, Pad) ->
-    string:left(flatten(S), P, Pad);
-string(S, F, Adj, P, Pad) when F >= P ->
-    adjust(string:left(flatten(S), P, Pad), chars(Pad, F - P), Adj).
+    N = lists:flat_length(S),
+    if N > F  -> flat_trunc(S, F);
+       N == F -> S;
+       true   -> adjust(S, chars(Pad, F-N), Adj)
+    end;
+string(S, none, _Adj, P, Pad) ->
+    N = lists:flat_length(S),
+    if N > P  -> flat_trunc(S, P);
+       N == P -> S;
+       true   -> [S|chars(Pad, P-N)]
+    end;
+string(S, F, Adj, F, Pad) ->
+    string(S, none, Adj, F, Pad);
+string(S, F, Adj, P, Pad) when F > P ->
+    N = lists:flat_length(S),
+    if N > F  -> flat_trunc(S, F);
+       N == F -> S;
+       N > P  -> adjust(flat_trunc(S, P), chars(Pad, F-P), Adj);
+       N == P -> adjust(S, chars(Pad, F-P), Adj);
+       true   -> adjust([S|chars(Pad, P-N)], chars(Pad, F-P), Adj)
+    end.
+
+%% unprefixed_integer(Int, Field, Adjust, Base, PadChar, Lowercase)
+%% -> [Char].
+
+unprefixed_integer(Int, F, Adj, Base, Pad, Lowercase)
+  when Base >= 2, Base =< 1+$Z-$A+10 ->
+    if Int < 0 ->
+	    S = cond_lowercase(erlang:integer_to_list(-Int, Base), Lowercase),
+	    term([$-|S], F, Adj, none, Pad);
+       true ->
+	    S = cond_lowercase(erlang:integer_to_list(Int, Base), Lowercase),
+	    term(S, F, Adj, none, Pad)
+    end.
+
+%% prefixed_integer(Int, Field, Adjust, Base, PadChar, Prefix, Lowercase)
+%% -> [Char].
+
+prefixed_integer(Int, F, Adj, Base, Pad, Prefix, Lowercase)
+  when Base >= 2, Base =< 1+$Z-$A+10 ->
+    if Int < 0 ->
+	    S = cond_lowercase(erlang:integer_to_list(-Int, Base), Lowercase),
+	    term([$-,Prefix|S], F, Adj, none, Pad);
+       true ->
+	    S = cond_lowercase(erlang:integer_to_list(Int, Base), Lowercase),
+	    term([Prefix|S], F, Adj, none, Pad)
+    end.
 
 %% char(Char, Field, Adjust, Precision, PadChar) -> [Char].
 
-char(C, none, Adj, none, Pad) -> [C];
-char(C, F, Adj, none, Pad) -> chars(C, F);
-char(C, none, Adj, P, Pad) -> chars(C, P);
+char(C, none, _Adj, none, _Pad) -> [C];
+char(C, F, _Adj, none, _Pad) -> chars(C, F);
+char(C, none, _Adj, P, _Pad) -> chars(C, P);
 char(C, F, Adj, P, Pad) when F >= P ->
     adjust(chars(C, P), chars(Pad, F - P), Adj).
 
 %% newline(Field, Adjust, Precision, PadChar) -> [Char].
 
-newline(none, Adj, P, Pad) -> "\n";
-newline(F, right, P, Pad) -> chars($\n, F).
-
-%% adjust_error([Char], Field, Adjust, Max, PadChar) -> [Char].
-%%  Adjust the characters within the field if length less than Max padding
-%%  with PadChar.
-
-adjust_error(Cs, F, Adj, M, Pad) ->
-    L = flat_length(Cs),
-    if
-	L > M ->
-	    adjust(chars($*, M), chars(Pad, F - M), Adj);
-	true ->
-	    adjust(Cs, chars(Pad, F - L), Adj)
-    end.
-
-adjust(Data, Pad, left) -> [Data,Pad];
-adjust(Data, Pad, right) -> [Pad,Data].
+newline(none, _Adj, _P, _Pad) -> "\n";
+newline(F, right, _P, _Pad) -> chars($\n, F).
 
 %%
 %% Utilities
 %%
 
-reverse(List) ->
-    reverse(List, []).
-
-reverse([H|T], Stack) ->
-    reverse(T, [H|Stack]);
-reverse([], Stack) -> Stack.
+adjust(Data, [], _) -> Data;
+adjust(Data, Pad, left) -> [Data,Pad];
+adjust(Data, Pad, right) -> [Pad,Data].
 
 min(L, R) when L < R -> L;
-min(L, R) -> R.
+min(_L, R) -> R.
 
-%% flatten(List)
-%%  Flatten a list.
+%% Flatten and truncate a deep list to at most N elements.
 
-flatten(List) -> flatten(List, []).
+flat_trunc(List, N) when integer(N), N >= 0 ->
+    flat_trunc(List, N, [], []).
 
-flatten([H|T], Cont) when list(H) ->
-    flatten(H, [T|Cont]);
-flatten([H|T], Cont) ->
-    [H|flatten(T, Cont)];
-flatten([], [H|Cont]) -> flatten(H, Cont);
-flatten([], []) -> [].
+flat_trunc(L, 0, _, R) when list(L) ->
+    lists:reverse(R);
+flat_trunc([H|T], N, S, R) when list(H) ->
+    flat_trunc(H, N, [T|S], R);
+flat_trunc([H|T], N, S, R) ->
+    flat_trunc(T, N-1, S, [H|R]);
+flat_trunc([], N, [H|S], R) ->
+    flat_trunc(H, N, S, R);
+flat_trunc([], _, [], R) ->
+    lists:reverse(R).
 
-%% flat_length(List)
-%%  Calculate the length of a list of lists.
+%% A deep version of string:chars/2,3
 
-flat_length(List) -> flat_length(List, 0).
+chars(_C, 0) ->
+    [];
+chars(C, 1) ->
+    [C];
+chars(C, 2) ->
+    [C,C];
+chars(C, 3) ->
+    [C,C,C];
+chars(C, N) when integer(N), (N band 1) == 0 ->
+    S = chars(C, N bsr 1),
+    [S|S];
+chars(C, N) when integer(N) ->
+    S = chars(C, N bsr 1),
+    [C,S|S].
 
-flat_length([H|T], L) when list(H) ->
-    flat_length(H, flat_length(T, L));
-flat_length([H|T], L) ->
-    flat_length(T, L + 1);
-flat_length([], L) -> L.
+%chars(C, N, Tail) ->
+%    [chars(C, N)|Tail].
+
+%% Lowercase conversion
+
+cond_lowercase(String, true) ->
+    lowercase(String);
+cond_lowercase(String,false) ->
+    String.
+
+lowercase([H|T]) when integer(H), H >= $A, H =< $Z ->
+    [(H-$A+$a)|lowercase(T)];
+lowercase([H|T]) ->
+    [H|lowercase(T)];
+lowercase([]) ->
+    [].

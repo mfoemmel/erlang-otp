@@ -99,21 +99,25 @@ start(Opts) ->
     %% Connect to the node we want to look at
     Node = getopt(node, Config2),
     case net_adm:ping(Node) of
-	pang ->
+	pang when Node /= node() ->
 	    io:format("Error Couldn't connect to node ~p ~n~n", [Node]),
 	    help(),
 	    exit("connection error");
-	pong ->
+	_pong ->
 	    check_runtime_tools_vsn(Node)
     end,
 
     %% Maybe set up the tracing
     Config3 = 
-	if Config2#opts.tracing == on ->
+	if Config2#opts.tracing == on, Node /= node() ->
+		%% Cannot trace on current node since the tracer will
+		%% trace itself
 		etop_tr:setup_tracer(Config2);
 	   true -> 
-		if Config2#opts.sort == runtime -> Config2#opts{sort=reductions};
-		   true -> Config2
+		if Config2#opts.sort == runtime -> 
+			Config2#opts{sort=reductions,tracing=off};
+		   true -> 
+			Config2#opts{tracing=off}
 		end
 	end,
     AccumTab = ets:new(accum_tab,

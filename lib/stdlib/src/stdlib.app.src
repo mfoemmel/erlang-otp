@@ -21,7 +21,6 @@
 	     erl_bits,
 	     erl_compile,
 	     erl_eval,
-	     erl_id_trans,
 	     erl_internal,
 	     erl_lint,
 	     erl_parse,

@@ -20,7 +20,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 #
 
 SUB_DIRECTORIES = rtl main icode sparc regalloc ssa flow opt misc util app \
-		  x86 tools
+		  x86 tools cerl
 
 
 #

@@ -17,61 +17,20 @@
 
 <CENTER><H1>SASL Release Notes</H1></CENTER>
 
-<H2>Sasl 1.9.2</H2>
- <H3>Fixed errors and malfunctions</H3>
+<H2>SASL 1.10 (R9C)</H2>
+ <H3>Improvements and new features</H3>
  <UL>
   <LI>
-   <P>OTP-3998: <CODE>systools:make_relup/3,4</CODE> now generates upgrade
-    instructions for the applications in start order, instead of in reversed
-    start order.</P>
-   <P>OTP-4121: <CODE>systools:make_script/1,2</CODE> now keeps the order
-    of the release resource file (<CODE>.rel</CODE>) also for included
-    applications.</P>
-   Own Id: OTP-4123<BR>
-   Aux Id: Seq 5270
+   <P>Moved the OTP MIBs that were included in the application to the new
+     application OTP_MIBs. The OTP MIBs had no real connection to SASL and
+     it is desirable that the core of Erlang/OTP is not dependent on SNMP.
+     <BR>
+     Own Id: OTP-4686</P>
   </LI>
- </UL>
-
-<H2>SASL 1.9.3</H2>
-  <H3>Fixed errors and malfunctions</H3>
-  <UL>
-    <LI>Erroneous parameter name <CODE>sasl_error_logger_type</CODE> in
-     application resource file (<CODE>sasl.app</CODE>) corrected to
-     <CODE>errlog_type</CODE>.<BR>
-     Own Id: OTP-3372
-    </LI>
-  </UL>
-
-  <H3>Improvements and new features</H3>
-  <UL>
-    <LI><CODE>systools_make</CODE> uses <CODE>xref</CODE> for cross
-      reference checks. The format of the warnings for undefined
-      functions has been changed.<BR>
-      (*** POTENTIAL INCOMPATIBILITY ***)<BR>
-      Own Id: OTP-3922
-    </LI>
-    <LI>The report browser <CODE>rb</CODE> no longer ignores faulty
-      events - it prints the raw terms instead. It also presents
-      user-generated <CODE>error_report</CODE> and <CODE>info_report</CODE>
-      events more nicely.<BR>
-      Own Id: OTP-3257<BR>
-      Aux Id: Seq3849
-    </LI>
-  </UL>
-
-<H2>SASL 1.9.2</H2>
- <H3>Fixed errors and malfunctions</H3>
- <UL>
- <LI>
-  <P>OTP-3998: <CODE>systools:make_relup/3,4</CODE> now generates upgrade
-   instructions for the applications in start order, instead of in reversed
-   start order.</P>
-  <P>OTP-4121: <CODE>systools:make_script/1,2</CODE> now keeps the order
-   of the release resource file (<CODE>.rel</CODE>) also for included
-   applications.<BR>
-   Own Id: OTP-4123 (OTP-4124)<BR>
-   Aux Id: Seq 5270
- </LI>
+  <LI>
+   <P>Renamed unused variables so that they begin with an underscore (_).
+   </P>
+  </LI>
  </UL>
 
 <P>There are also release notes for <A HREF="notes_history.html">older

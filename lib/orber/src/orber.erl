@@ -51,9 +51,10 @@
 	 get_interceptors/0, set_interceptors/1,
 	 jump_start/0, jump_start/1, jump_start/2, jump_stop/0,
 	 iiop_connections/0, iiop_connections_pending/0, typechecking/0,
-	 exclude_codeset_ctx/0, exclude_codeset_component/0, bidir_context/0,
-	 secure/0, multi_jump_start/1, multi_jump_start/2, multi_jump_start/3, 
-	 get_tables/0, iiop_in_connection_timeout/0, partial_security/0]).
+	 exclude_codeset_ctx/0, exclude_codeset_component/0, bidir_context/0, use_FT/0,
+	 use_CSIv2/0, get_flags/0, secure/0, multi_jump_start/1, multi_jump_start/2, 
+	 multi_jump_start/3, get_tables/0, iiop_in_connection_timeout/0, 
+	 partial_security/0]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -441,6 +442,13 @@ hostname_in_IOR() ->
 
 partial_security() ->
     ?ORB_FLAG_TEST(get_flags(), ?ORB_ENV_PARTIAL_SECURITY).
+
+use_CSIv2() ->
+    ?ORB_FLAG_TEST(get_flags(), ?ORB_ENV_USE_CSIV2).
+
+use_FT() ->
+    ?ORB_FLAG_TEST(get_flags(), ?ORB_ENV_USE_FT).
+
 
 bidir_context() ->
     Flags = get_flags(),

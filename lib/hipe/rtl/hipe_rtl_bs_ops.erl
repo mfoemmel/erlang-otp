@@ -10,9 +10,9 @@
 %%  History  :	* 2001-06-14 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: pegu2945 $
-%%              $Date: 2002/09/13 15:26:20 $
-%%              $Revision: 1.9 $
+%%              $Author: pergu $
+%%              $Date: 2003/04/14 08:49:20 $
+%%              $Revision: 1.11 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -58,7 +58,7 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
 	    gen_test_sideffect_bs_call(bs_put_binary_all,Args,
 				       TrueLblName,FalseLblName);
 
-	  {bs_put_binary, Size} ->
+	  {bs_put_binary, Size, _Flags} ->
 	    Tmp2 = hipe_rtl:mk_new_reg(),
 	    case Args of
 	      [Src] -> 
@@ -72,45 +72,75 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
 					     TrueLblName,FalseLblName)
 
 	    end;
-	  %% put float
-	  {bs_put_float, Size, Flags} ->
 
+	  {bs_put_float, Size, Flags, ConstInfo} ->    
 	    SizeReg = hipe_rtl:mk_new_reg(),
 	    FlagsReg = hipe_rtl:mk_new_reg(),
-	    case Args of
-	      [Src] -> 
-		[hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size)),
-		 hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
-		 gen_test_sideffect_bs_call(bs_put_float, 
-					    [Src, SizeReg, FlagsReg],
-					    TrueLblName,FalseLblName)];
-
-	      [Src, Bits] -> 
-		[gen_make_size(SizeReg, Size, Bits, FalseLblName),
-		 hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
-		 gen_test_sideffect_bs_call( bs_put_float,
+	    case ConstInfo of
+	      fail ->
+		[hipe_rtl:mk_goto(FalseLblName)];
+	      _ ->
+		case Args of
+		  [Src] -> 
+		    case ConstInfo of
+		      pass ->
+			[hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size)),
+			 hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
+			 hipe_rtl:mk_call([],bs_put_float,
+					  [Src, SizeReg, FlagsReg], c,
+					  TrueLblName,[])];
+		      var ->
+			[hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size)),
+			 hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
+			 gen_test_sideffect_bs_call(bs_put_float,
 					     [Src,SizeReg,FlagsReg],
 					     TrueLblName,FalseLblName)]
-
+		    end;
+		  [Src, Bits] -> 
+		    [gen_make_size(SizeReg, Size, Bits, FalseLblName),
+		     hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
+		     gen_test_sideffect_bs_call( bs_put_float,
+						 [Src,SizeReg,FlagsReg],
+						 TrueLblName,FalseLblName)]
+		end
 	    end;
 
-	  {bs_put_integer, Size, Flags} ->
+	 
+
+	  {bs_put_integer, Size, Flags, ConstInfo} ->
 	    SizeReg = hipe_rtl:mk_new_reg(),
 	    FlagsReg = hipe_rtl:mk_new_reg(),
-	    case Args of
-	      [Src] ->
-		[hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size)),
-		 hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
-		 gen_test_sideffect_bs_call(bs_put_integer,
-					    [Src,SizeReg,FlagsReg], 
-					    TrueLblName,FalseLblName)];
-	      [Src, Bits] -> 
-		[gen_make_size(SizeReg, Size, Bits, FalseLblName),
-		 hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
-		 gen_test_sideffect_bs_call(bs_put_integer,
+	    case ConstInfo of
+	      fail ->
+		[hipe_rtl:mk_goto(FalseLblName)];
+	      _ ->
+		case Args of
+		  [Src] ->
+		    case ConstInfo of
+		      pass ->
+			[hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size)),
+			 hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
+			 hipe_rtl:mk_call([],bs_put_integer,
+					  [Src, SizeReg, FlagsReg], c,
+					  TrueLblName,[])];
+		      var ->
+			[hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size)),
+			 hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
+			 gen_test_sideffect_bs_call(bs_put_integer,
+					     [Src,SizeReg,FlagsReg],
+					     TrueLblName,FalseLblName)]
+		    end;
+		  [Src, Bits] -> 
+		    [gen_make_size(SizeReg, Size, Bits, FalseLblName),
+		     hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(Flags)),
+		     gen_test_sideffect_bs_call(bs_put_integer,
 					    [Src,SizeReg,FlagsReg], 
 					    TrueLblName,FalseLblName)]
+		end
 	    end;
+    
+
+
 	  {bs_skip_bits_all, Flags} ->
 	    case (Flags band ?BSF_ALIGNED) of
 	      1 -> %% This can't fail.

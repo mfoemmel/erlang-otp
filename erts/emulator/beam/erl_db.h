@@ -32,6 +32,23 @@
 #include "erl_db_tree.h" /* DbTableTree */
 /*TT*/
 
+
+#define ERTS_DB_MORE_MEM(Sz) 					\
+  (erts_tot_ets_memory_words += (Sz))
+#define ERTS_DB_LESS_MEM(Sz) 					\
+  (ASSERT_EXPR(erts_tot_ets_memory_words >= (Sz)),		\
+   erts_tot_ets_memory_words -= (Sz))
+
+#define ERTS_DB_TAB_MORE_MEM(Tab, Sz)				\
+  (ERTS_DB_MORE_MEM((Sz)),					\
+   ((DbTableCommon *) (Tab))->memory += (Sz))
+#define ERTS_DB_TAB_LESS_MEM(Tab, Sz)				\
+  (ERTS_DB_LESS_MEM((Sz)),					\
+   ASSERT_EXPR(((DbTableCommon *) (Tab))->memory >= (Sz)),	\
+   ((DbTableCommon *) (Tab))->memory -= (Sz))
+
+extern Uint erts_tot_ets_memory_words;
+
 /*
  * So, the structure for a database table, NB this is only
  * interesting in db.c.

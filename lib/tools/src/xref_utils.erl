@@ -377,15 +377,17 @@ regexpr({regexpr, RExpr}, Var) ->
     Xs = match_list(to_external(Var), RExpr),
     xset(Xs, type(Var));
 regexpr({ModExpr, FunExpr, ArityExpr}, Var) ->
-    [{ModType, _}] = Type = type(Var),
-    V1 = case ModExpr of
-	     {atom, Mod} ->
+    Type = type(Var),
+    V1 = case {ModExpr,Type} of
+	     {{atom, Mod},[{ModType, _}]} ->
 		 restriction(Var, xset([Mod], [ModType]));
-	     {regexpr, MExpr} ->
+	     {{regexpr, MExpr},[{ModType, _}]} ->
 		 Mods = match_list(to_external(domain(Var)), MExpr),
 		 restriction(Var, xset(Mods, [ModType]));
-	     variable ->
-		 Var
+	     {variable,_} ->
+		 Var;
+             {_,_} -> % Var is the empty set
+                 Var
 	 end,
     V2 = case FunExpr of
 	     {atom, FunName} ->

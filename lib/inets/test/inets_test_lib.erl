@@ -86,7 +86,7 @@ sz(O) ->
 %% Port       -> integer()
 
 connect(ssl,Host,Port) ->
-    ssl_socket:start(),
+    ssl:start(),
     case ssl:connect(Host, Port, [{packet,0}]) of
 	{ok, Socket} ->
 	    {ok, Socket};
@@ -106,10 +106,8 @@ connect(ip_comm,Host,Port) ->
     end.
 
 
-csend(Type, Socket, Bin, Sz, _) when size(Bin) =< Sz ->
+csend(Type, Socket, Bin, Sz, _) when binary(Bin), size(Bin) =< Sz ->
     send(Type, Socket, Bin);
-csend(Type, Socket, L, Sz, _) when length(L) =< Sz ->
-    send(Type, Socket, L);
 csend(Type, Socket, Bin, Sz, T) when binary(Bin) ->
     <<B:Sz/binary, Rest/binary>> = Bin,
     case send(Type, Socket, B) of
@@ -121,6 +119,8 @@ csend(Type, Socket, Bin, Sz, T) when binary(Bin) ->
 	Error ->
 	    Error
     end;
+csend(Type, Socket, L, Sz, _) when list(L), length(L) =< Sz ->
+    send(Type, Socket, L);
 csend(Type, Socket, L, Sz, T) when list(L) ->
     L1 = lists:sublist(L, Sz),
     case send(Type, Socket, L1) of

@@ -10,15 +10,15 @@
 %% under the License.
 %% 
 %% The Initial Developer of the Original Code is Richard Carlsson.
-%% Copyright (C) 1999-2001 Richard Carlsson.
+%% Copyright (C) 1999-2002 Richard Carlsson.
 %% Portions created by Ericsson are Copyright 2001, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id: cerl_inline.erl,v 1.41 2002/11/07 10:00:55 richardc Exp $
 %%
+%% Core Erlang inliner.
 
 %% =====================================================================
-%% Core Erlang inliner.
 %%
 %% This is an implementation of the algorithm by Waddell and Dybvig
 %% ("Fast and Effective Procedure Inlining", International Static
@@ -45,7 +45,7 @@
 	       update_c_clause/4, c_fun/2, c_int/1, c_let/3,
 	       update_c_let/4, update_c_letrec/3, update_c_module/5,
 	       update_c_primop/3, update_c_receive/4, update_c_seq/3,
-	       c_seq/2, update_c_try/4, c_tuple/1, update_c_values/2,
+	       c_seq/2, update_c_try/6, c_tuple/1, update_c_values/2,
 	       c_values/1, c_var/1, call_args/1, call_module/1,
 	       call_name/1, case_arity/1, case_arg/1, case_clauses/1,
 	       catch_body/1, clause_body/1, clause_guard/1,
@@ -61,9 +61,9 @@
 	       module_defs/1, module_exports/1, module_name/1,
 	       primop_args/1, primop_name/1, receive_action/1,
 	       receive_clauses/1, receive_timeout/1, seq_arg/1,
-	       seq_body/1, set_ann/2, try_body/1, try_expr/1,
-	       try_vars/1, tuple_es/1, tuple_arity/1, type/1,
-	       values_es/1, var_name/1]).
+	       seq_body/1, set_ann/2, try_arg/1, try_body/1, try_vars/1,
+	       try_evars/1, try_handler/1, tuple_es/1, tuple_arity/1,
+	       type/1, values_es/1, var_name/1]).
 
 -import(lists, [foldl/3, foldr/3, mapfoldl/3, reverse/1]).
 
@@ -163,14 +163,7 @@ weight(module) -> 1.    % Like a letrec with a constant body
 %% compilation pass.
 
 core_transform(Code, Opts) ->
-    case proplists:get_bool(inline, Opts) of
-	true ->
-	    Code1 = cerl:from_records(Code),
-	    Code2 = transform(Code1, Opts),
-	    cerl:to_records(Code2);
-	false ->
-	    Code
-    end.
+    cerl:to_records(transform(cerl:from_records(Code), Opts)).
 
 transform(Tree) ->
     transform(Tree, []).
@@ -742,39 +735,38 @@ i_clauses(Es, Cs, Ctxt, Ren, Env, S) ->
     
     %% First we visit the head of each individual clause, renaming
     %% pattern variables, inserting let-bindings in the guard and body,
-    %% and visiting the guard. `Xs' below is a list of pairs
-    %% `{NewClause, Data}', where `Data' is extra information used for
-    %% visiting the clause body.
-    {Xs, S2} = mapfoldl(fun (C, S) ->
-				i_clause_head(C, Ts, Ren1, Env1, S)
-			end,
-			S1, Cs),
+    %% and visiting the guard. The information used for visiting the
+    %% clause body will be prefixed to the clause annotations.
+    {Cs1, S2} = mapfoldl(fun (C, S) ->
+				 i_clause_head(C, Ts, Ren1, Env1, S)
+			 end,
+			 S1, Cs),
     
     %% Now that the clause guards have been reduced as far as possible,
     %% we can attempt to reduce the clauses.
     As = [hd(get_ann(T)) || T <- Ts],
-    case cerl_clauses:reduce(Xs, Ts) of
-        {false, Xs1} ->
+    case cerl_clauses:reduce(Cs1, Ts) of
+        {false, Cs2} ->
             %% We still have one or more clauses (with associated
             %% extended environments). Their bodies have not yet been
             %% visited, so we do that (in the respective safe
             %% environments, adding the sizes of the visited heads to
             %% the current size counter) and return the final list of
             %% clauses.
-            {Cs1, S3} = mapfoldl(
-                          fun ({C, {Ren, Env, Size}}, S) ->
-				  S_1 = count_size(Size, S),
-                                  i_clause_body(C, Ctxt, Ren, Env, S_1)
+            {Cs3, S3} = mapfoldl(
+                          fun (C, S) ->
+                                  i_clause_body(C, Ctxt, S)
                           end,
-                          S2, Xs1),
-            {false, {As, Vs1, Env1, Cs1}, S3};
-        {true, {{C, {Ren2, Env2, _}}, _}} ->
+                          S2, Cs2),
+            {false, {As, Vs1, Env1, Cs3}, S3};
+        {true, {C, _}} ->
             %% A clause C could be selected (the bindings have already
             %% been added to the guard/body). Note that since the clause
             %% head will probably be discarded, its size is not counted.
+	    {C1, Ren2, Env2, _} = get_clause_extras(C),
 	    {B, S3} = i(clause_body(C), Ctxt, Ren2, Env2, S2),
-	    C1 = update_c_clause(C, clause_pats(C), clause_guard(C), B),
-	    {true, {As, Vs1, Env1, [C1]}, S3}
+	    C2 = update_c_clause(C1, clause_pats(C1), clause_guard(C1), B),
+	    {true, {As, Vs1, Env1, [C2]}, S3}
     end.
 
 %% This visits the head of a clause, renames pattern variables, inserts
@@ -819,10 +811,10 @@ i_clause_head(C, Ts, Ren, Env, S) ->
 
     %% Revert to the size counter we had on entry to this function. The
     %% environment and renaming, together with the size of the clause
-    %% head, are made "associated data".
+    %% head, are prefixed to the annotations for later use.
     Size = get_size_value(S5),
-    {{update_c_clause(C, Ps1, G1, B), {Ren1, Env1, Size}},
-     revert_size(S, S5)}.
+    C1 = update_c_clause(C, Ps1, G1, B),
+    {set_clause_extras(C1, Ren1, Env1, Size), revert_size(S, S5)}.
 
 add_match_bindings(Bs, E) ->
     %% Don't waste time if the variables definitely cannot be used.
@@ -836,10 +828,20 @@ add_match_bindings(Bs, E) ->
 	    c_let(Vs, c_values(Es), E)
     end.
 
-i_clause_body(C, Ctxt, Ren, Env, S) ->
-    {B, S1} = i(clause_body(C), Ctxt, Ren, Env, S),
+i_clause_body(C0, Ctxt, S) ->
+    {C, Ren, Env, Size} = get_clause_extras(C0),
+    S1 = count_size(Size, S),
+    {B, S2} = i(clause_body(C), Ctxt, Ren, Env, S1),
     C1 = update_c_clause(C, clause_pats(C), clause_guard(C), B),
-    {C1, S1}.
+    {C1, S2}.
+
+get_clause_extras(C) ->
+    [{Ren, Env, Size} | As] = get_ann(C),
+    {set_ann(C, As), Ren, Env, Size}.
+
+set_clause_extras(C, Ren, Env, Size) ->
+    As = [{Ren, Env, Size} | get_ann(C)],
+    set_ann(C, As).
 
 %% This is the `(lambda x e)' case of the original algorithm. A
 %% `fun' is like a lambda expression, but with a varying number of
@@ -1154,33 +1156,36 @@ i_primop(E, Ren, Env, S) ->
 %% their number might vary, just as for a `fun'.
 
 i_try(E, Ctxt, Ren, Env, S) ->
-    %% We cannot in general propagate an application context into a
-    %% try-expression, since the argument expressions of the application
-    %% should be evaluated outside the `try', and could be used in both
-    %% the argument expression and the `catch' part.
-    Ctxt1 = safe_context(Ctxt),
-
-    %% We do not try to recognize cases when the protected expression
-    %% will actually raise an exception.
-    {E1, S1} = i(try_expr(E), Ctxt1, Ren, Env, S),
-    case is_safe(E1) of
+    %% The argument expression is evaluated in `value' context, and the
+    %% surrounding context is propagated into both branches. We do not
+    %% try to recognize cases when the protected expression will
+    %% actually raise an exception. Note that the variables are visited
+    %% as patterns.
+    {A, S1} = i(try_arg(E), value, Ren, Env, S),
+    Vs = try_vars(E),
+    {_, Ren1, Env1, S2} = bind_locals(Vs, Ren, Env, S1),
+    Vs1 = i_params(Vs, Ren1, Env1),
+    {B, S3} = i(try_body(E), Ctxt, Ren1, Env1, S2),
+    case is_safe(A) of
 	true ->
-	    %% The `try' wrapper can be dropped in this case.
-	    {E1, S1};
+	    %% The `try' wrapper can be dropped in this case. Since the
+	    %% expressions have been visited already, the identity
+	    %% renaming is used when we revisit the new let-expression.
+	    i(c_let(Vs1, A, B), Ctxt, ren__identity(), Env, S3);
 	false ->
-            %% Note that the variables are visited as patterns.
-	    Vs = try_vars(E),
-	    {_, Ren1, Env1, S2} = bind_locals(Vs, Ren, Env, S1),
-	    Vs1 = i_params(Vs, Ren1, Env1),
-	    {B, S3} = i(try_body(E), Ctxt1, Ren1, Env1, S2),
-	    S4 = count_size(weight('try'), S3),
-	    {update_c_try(E, E1, Vs1, B), S4}
+	    Evs = try_evars(E),
+	    {_, Ren2, Env2, S4} = bind_locals(Evs, Ren, Env, S3),
+	    Evs1 = i_params(Evs, Ren2, Env2),
+	    {H, S5} = i(try_handler(E), Ctxt, Ren2, Env2, S4),
+	    S6 = count_size(weight('try'), S5),
+	    {update_c_try(E, A, Vs1, B, Evs1, H), S6}
     end.
 
-%% Special cases of try-expressions:
+%% A special case of try-expressions:
 
 i_catch(E, Ctxt, Ren, Env, S) ->
-    {E1, S1} = i(catch_body(E), Ctxt, Ren, Env, S),
+    %% We cannot propagate application contexts into the catch.
+    {E1, S1} = i(catch_body(E), safe_context(Ctxt), Ren, Env, S),
     case is_safe(E1) of
 	true ->
 	    %% The `catch' wrapper can be dropped in this case.
@@ -1820,10 +1825,16 @@ is_safe(E) ->
                 letrec ->
                     is_safe(letrec_body(E));
 		'try' ->
-		    %% If the tried expression is not safe, it could be
-		    %% modifying the state; thus, even if the body would
-		    %% be safe, the try-expression as a whole cannot be.
-                    is_safe(try_expr(E));
+		    %% If the argument expression is not safe, it could
+		    %% be modifying the state; thus, even if the body is
+		    %% safe, the try-expression as a whole would not be.
+		    %% If the argument is safe, the handler is not used.
+                    case is_safe(try_arg(E)) of
+                        true ->
+                            is_safe(try_body(E));
+                        false ->
+                            false
+                    end;
 		'catch' ->
                     is_safe(catch_body(E));
 		call ->

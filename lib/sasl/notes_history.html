@@ -1,11 +1,73 @@
 <HTML>
 <HEAD>
-  <TITLE>Sasl Release Notes</TITLE>
+  <TITLE>SASL Release Notes</TITLE>
 </HEAD>
 
 <BODY BGCOLOR="#FFFFFF">
 
-<CENTER><H1>Sasl Release Notes</H1></CENTER>
+<CENTER><H1>SASL Release Notes</H1></CENTER>
+
+<H2>SASL 1.9.4 (R9B)</H2>
+ <H3>Fixed errors and malfunctions</H3>
+ <UL>
+  <LI>
+   <P>The lists specifying preloaded and mandatory modules have been
+    corrected. Boot scripts should be re-generated.<BR>
+    (*** POTENTIAL INCOMPATIBILITY ***)
+   </P>
+  </LI>
+ </UL>
+
+ <H3>Improvements and new features</H3>
+ <UL>
+  <LI>
+   <P>Added an environment parameter <CODE>utc_log</CODE>. If set to
+    <CODE>true</CODE>, all dates in textual log outputs are displayed in
+    Universal Coordinated Time with the string UTC appended.</P>
+  </LI>
+ </UL>
+
+<H2>SASL 1.9.3 (R8B)</H2>
+  <H3>Fixed errors and malfunctions</H3>
+  <UL>
+    <LI>Erroneous parameter name <CODE>sasl_error_logger_type</CODE> in
+     application resource file (<CODE>sasl.app</CODE>) corrected to
+     <CODE>errlog_type</CODE>.<BR>
+     Own Id: OTP-3372
+    </LI>
+  </UL>
+
+  <H3>Improvements and new features</H3>
+  <UL>
+    <LI><CODE>systools_make</CODE> uses <CODE>xref</CODE> for cross
+      reference checks. The format of the warnings for undefined
+      functions has been changed.<BR>
+      (*** POTENTIAL INCOMPATIBILITY ***)<BR>
+      Own Id: OTP-3922
+    </LI>
+    <LI>The report browser <CODE>rb</CODE> no longer ignores faulty
+      events - it prints the raw terms instead. It also presents
+      user-generated <CODE>error_report</CODE> and <CODE>info_report</CODE>
+      events more nicely.<BR>
+      Own Id: OTP-3257<BR>
+      Aux Id: Seq3849
+    </LI>
+  </UL>
+
+<H2>SASL 1.9.2 (R7B01 patch)</H2>
+ <H3>Fixed errors and malfunctions</H3>
+ <UL>
+ <LI>
+  <P>OTP-3998: <CODE>systools:make_relup/3,4</CODE> now generates upgrade
+   instructions for the applications in start order, instead of in reversed
+   start order.</P>
+  <P>OTP-4121: <CODE>systools:make_script/1,2</CODE> now keeps the order
+   of the release resource file (<CODE>.rel</CODE>) also for included
+   applications.<BR>
+   Own Id: OTP-4123 (OTP-4124)<BR>
+   Aux Id: Seq 5270
+ </LI>
+ </UL>
 
 <H2>SASL 1.9.1 (R7B01)</H2>
   <H3>Fixed Errors and Malfunctions</H3>
@@ -25,7 +87,7 @@
     </LI>
   </UL>
 
-<H2>Sasl 1.9 (R7B)</H2>
+<H2>SASL 1.9 (R7B)</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>
@@ -52,7 +114,7 @@
     </LI>
   </UL>
 
-<H2>Sasl 1.8.3</H2>
+<H2>SASL 1.8.3</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>
@@ -82,7 +144,7 @@
   </UL>
  
 
-<H2>Sasl 1.8.2</H2>
+<H2>SASL 1.8.2</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>The high-level release upgrade instructions <CODE>add_application</CODE> and <CODE>remove_application</CODE> were broken.<BR>
@@ -95,12 +157,12 @@
     <LI>The high-level release upgrade instruction <CODE>restart_application</CODE> has been added.<BR>
       Own Id: OTP-3347
     </LI>
-    <LI>All modules in the Sasl application have got new vsn-numbers.<BR>
+    <LI>All modules in the SASL application have got new vsn-numbers.<BR>
        Own Id: OTP-3330
     </LI>
   </UL>
 
-<H2>Sasl 1.8.1</H2>
+<H2>SASL 1.8.1</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>The entries for Erlang machine and version in OTP-MIB were mixed up.<BR>
@@ -126,7 +188,7 @@
     </LI>
   </UL>
 
-<H2>Sasl 1.8.2</H2>
+<H2>SASL 1.8.2</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>The high-level release upgrade instructions <CODE>add_application</CODE> and <CODE>remove_application</CODE> were broken.<BR>
@@ -139,12 +201,12 @@
     <LI>The high-level release upgrade instruction <CODE>restart_application</CODE> has been added.<BR>
       Own Id: OTP-3347
     </LI>
-    <LI>All modules in the Sasl application have got new vsn-numbers.<BR>
+    <LI>All modules in the SASL application have got new vsn-numbers.<BR>
       Own Id: OTP-3330
     </LI>
   </UL>
 
-<H2>Sasl 1.8.1</H2>
+<H2>SASL 1.8.1</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>The entries for Erlang machine and version in OTP-MIB were mixed up.<BR>
@@ -170,7 +232,7 @@
     </LI>
   </UL>
 
-<H2>Sasl 1.7.1</H2>
+<H2>SASL 1.7.1</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>If a system is started and a permanent application has erroneous environment parameters, the system should crash. This is the behaviour now, before the system only printed an error report. The system will only crash if the application is started from a boot script genrated by calling systools:make_script/1/2. If application:start/1/2 is called the behaviour is as before.<BR>
@@ -197,7 +259,7 @@
     </LI>
   </UL>
 
-<H2>Sasl 1.7</H2>
+<H2>SASL 1.7</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>The transient applications were previously treated as temporary applications if an error was detected during start.<BR>
@@ -223,13 +285,13 @@ Release handler accepts now all types of Erlang terms in
   </UL>
 
 
-<H2>Sasl 1.6.2</H2>
+<H2>SASL 1.6.2</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>In previous releases of OTP it was not possible to upgrade the Erlang emulator (named e.g jam471 or beam471) because the executable file was renamed for each new version. This is now corrected by always giving the same name (jam or beam) without version number to the executable file.<BR>
       Own Id: OTP-2372
     </LI>
-    <LI>If a local application had permission set to false initially, it was previously started anyway. Sasl could also hang in some cases when permission was changed, this is now corrected.<BR>
+    <LI>If a local application had permission set to false initially, it was previously started anyway. SASL could also hang in some cases when permission was changed, this is now corrected.<BR>
       Own Id: OTP-2463<BR>
       Aux Id: Seq 858
     </LI>
@@ -243,7 +305,7 @@ Release handler accepts now all types of Erlang terms in
   </UL>
 
 
-<H2>Sasl 1.6.1</H2>
+<H2>SASL 1.6.1</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>Failover of a loaded MIB did not work. When a MIB was loaded on one node and that node crashed, the failover of the MIB to a new node did not work.<BR>
@@ -261,14 +323,14 @@ Release handler accepts now all types of Erlang terms in
     <LI>systools checks for illegal options in the function parameters.<BR>
       Own Id: OTP-1851
     </LI>
-    <LI>A crash of the release_handler process now crashes the enitre application Sasl, which normally means that the node restarts.<BR>
+    <LI>A crash of the release_handler process now crashes the enitre application SASL, which normally means that the node restarts.<BR>
       Own Id: OTP-2516<BR>
       Aux Id: seq851
     </LI>
   </UL>
 
 
-<H2>Sasl 1.5</H2>
+<H2>SASL 1.5</H2>
   <H3>Fixed Errors and Malfunctions</H3><P><UL>
     <LI>The release handler didn't handle downgrades correctly. The downgrade script wasn't found even though it did exist.<BR>
       Own Id: OTP-2298<BR>
@@ -288,7 +350,7 @@ Release handler accepts now all types of Erlang terms in
   </UL>
 
 
-<H2>Sasl 1.4.1</H2>
+<H2>SASL 1.4.1</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>Failover/takeover of the SNMP agent administering the MIB did not work, since the old implementation tried to delete a Mnesia table on a node which was not up and running (which always is the case at failover). Now the SNMP related Mnesia table is defined to have the <CODE>local_content</CODE> property. <BR>
@@ -297,7 +359,7 @@ Release handler accepts now all types of Erlang terms in
     </LI>
   </UL>
 
-<H2>Sasl 1.4</H2>
+<H2>SASL 1.4</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>A code-only application with no dependecies to other applications is now started correctly, when a start script is generated with <CODE>systools:make_script</CODE> <BR>
@@ -319,7 +381,7 @@ Release handler accepts now all types of Erlang terms in
 
   <H3>Improvements and New Features</H3>
   <UL>
-    <LI>The syntax of the different files defined by Sasl is defined in separate documents. Check the reference manual for <CODE>appup(4)</CODE>, <CODE>rel(4)</CODE>, <CODE>relup(4)</CODE> and <CODE>script(4)</CODE>.
+    <LI>The syntax of the different files defined by SASL is defined in separate documents. Check the reference manual for <CODE>appup(4)</CODE>, <CODE>rel(4)</CODE>, <CODE>relup(4)</CODE> and <CODE>script(4)</CODE>.
     </LI>
     <LI>It is now possible to customise where the release handler writes its files. The release installation procedure can now be run without write access to the installation root directory.<BR>
       Own Id: OTP-1635<BR>
@@ -334,14 +396,14 @@ Release handler accepts now all types of Erlang terms in
   </UL>
 
 
-<H2>Sasl 1.3.2</H2>
+<H2>SASL 1.3.2</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>Better tar file open/close control in <CODE>systools_make</CODE>.</LI>
   </UL>
 
 
-<H2>Sasl 1.3.1</H2>
+<H2>SASL 1.3.1</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI><CODE>systools:make_script</CODE> creates the boot script according to new requirements of kernel servers.<BR>
@@ -350,7 +412,7 @@ Release handler accepts now all types of Erlang terms in
   </UL>
 
 
-<H2>Sasl 1.3</H2>
+<H2>SASL 1.3</H2>
   <H3>Improvements and New Features</H3>
   <UL>
     <LI>Introduced new attribute, <CODE>included_applications</CODE>, in application resource files (<CODE>.app</CODE>). This attribute is used to group a number of applications together. Included applications are not started automatically by the system (they are only loaded), thus this have to be handled by the including application.
@@ -371,7 +433,7 @@ Release handler accepts now all types of Erlang terms in
     </LI>
     <LI>The <CODE>start_erl</CODE> script shall not be modified/edited. This script now reads configuration data generated by the <CODE>release_handler</CODE>.
     </LI>
-    <LI>The requirement that the <CODE>start</CODE> script (used for embedded systems) shall be located in <CODE>&#60;ERL_INSTALL_DIR&#62;/bin</CODE> is removed. It is now configurable through the Sasl configuration parameter <CODE>start_prg</CODE>.
+    <LI>The requirement that the <CODE>start</CODE> script (used for embedded systems) shall be located in <CODE>&#60;ERL_INSTALL_DIR&#62;/bin</CODE> is removed. It is now configurable through the SASL configuration parameter <CODE>start_prg</CODE>.
     </LI>
     <LI>It is possible to install a release not unpacked by the <CODE>release_handler</CODE>.
     </LI>
@@ -423,7 +485,7 @@ Release handler accepts now all types of Erlang terms in
   </UL>
 
 
-<H2>Sasl 1.1.1</H2>
+<H2>SASL 1.1.1</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>It is now possible to specify modules without version number in an application resource file (.app), i.e. <BR>
@@ -441,7 +503,7 @@ Release handler accepts now all types of Erlang terms in
   </UL>
 
 
-<H2>Sasl 1.1</H2>
+<H2>SASL 1.1</H2>
   <H3>Improvements and New Features</H3>
   <UL>
     <LI>Added <CODE>systools:make_script</CODE>, <CODE>systools:make_relup</CODE> and <CODE>systools:make_tar</CODE>.

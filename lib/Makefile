@@ -22,58 +22,71 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # Macros
 #
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
-ERTS_SUB_DIRECTORIES = stdlib snmp sasl kernel compiler
-OTHER_SUB_DIRECTORIES =	\
-  appmon erl_interface os_mon tools runtime_tools
-ifdef BUILD_ALL
-OTHER_SUB_DIRECTORIES += mnesia jinterface ic mnemosyne asn1 debugger \
-  eva inets mnesia_session orber pman tv observer cosTransactions cosEvent \
-  cosTime cosNotification cosProperty cosFileTransfer cosEventDomain
-endif
+  ERTS_SUB_DIRECTORIES = stdlib sasl kernel compiler
+  OTHER_SUB_DIRECTORIES =	\
+     snmp otp_mibs appmon erl_interface os_mon tools runtime_tools
+  ifdef BUILD_ALL
+    OTHER_SUB_DIRECTORIES += mnesia jinterface ic mnemosyne asn1 debugger \
+      eva inets mnesia_session orber pman tv observer cosTransactions cosEvent \
+      cosTime cosNotification cosProperty cosFileTransfer cosEventDomain
+  endif
 else
-
-ERTS_SUB_DIRECTORIES = stdlib snmp sasl kernel compiler
-
-ifdef BUILD_ALL
-ifeq ($(findstring win32,$(TARGET)),win32)
-OTHER_SUB_DIRECTORIES = 			\
-  appmon erl_interface asn1 jinterface eva gs inets ic \
-  mnesia mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools pman \
-  $(SSL_APP) toolbar tools tv observer debugger odbc runtime_tools \
-  cosTransactions cosEvent cosTime cosNotification cosProperty \
-  cosFileTransfer cosEventDomain et megaco webtool
-else
-OTHER_SUB_DIRECTORIES = \
-  appmon erl_interface asn1 jinterface eva debugger gs inets \
-  ic mnesia  mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools \
-  pman $(SSL_APP) toolbar tools tv observer \
-  runtime_tools cosTransactions cosEvent cosTime cosNotification \
-  cosProperty cosFileTransfer cosEventDomain et megaco webtool
-ifeq ($(findstring sparc-sun-solaris,$(TARGET)),sparc-sun-solaris)
-  OTHER_SUB_DIRECTORIES += odbc
-endif
-OTHER_SUB_DIRECTORIES += $(HIPE_APP) $(TSP_APP)
-endif
-endif
+  ifeq ($(findstring ose,$(TARGET)),ose)
+    ERTS_SUB_DIRECTORIES = stdlib sasl kernel compiler erl_interface
+    OTHER_SUB_DIRECTORIES =	\
+      snmp otp_mibs appmon tools
+#    OTHER_SUB_DIRECTORIES =	\
+#      appmon os_mon tools runtime_tools
+    ifdef BUILD_ALL
+      OTHER_SUB_DIRECTORIES += mnesia mnemosyne \
+        eva inets mnesia_session pman tv observer
+#      OTHER_SUB_DIRECTORIES += mnesia ic mnemosyne asn1 debugger \
+#        eva inets mnesia_session orber pman tv observer cosTransactions cosEvent \
+#        cosTime cosNotification cosProperty cosFileTransfer cosEventDomain
+    endif
+  else
+    ERTS_SUB_DIRECTORIES = stdlib sasl kernel compiler
+    ifdef BUILD_ALL
+      ifeq ($(findstring win32,$(TARGET)),win32)
+        OTHER_SUB_DIRECTORIES = 			\
+          snmp otp_mibs appmon erl_interface asn1 jinterface eva gs inets ic \
+          mnesia mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools pman \
+          $(SSL_APP) toolbar tools tv observer debugger odbc runtime_tools \
+          cosTransactions cosEvent cosTime cosNotification cosProperty \
+          cosFileTransfer cosEventDomain et megaco webtool
+      else
+        OTHER_SUB_DIRECTORIES = \
+          snmp otp_mibs appmon erl_interface asn1 jinterface eva debugger gs inets \
+          ic mnesia  mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools \
+          pman $(SSL_APP) toolbar tools tv observer \
+          runtime_tools cosTransactions cosEvent cosTime cosNotification \
+          cosProperty cosFileTransfer cosEventDomain et megaco webtool
+        ifeq ($(findstring sparc-sun-solaris,$(TARGET)),sparc-sun-solaris)
+          OTHER_SUB_DIRECTORIES += odbc
+        endif
+        OTHER_SUB_DIRECTORIES += $(HIPE_APP) $(TSP_APP)
+      endif
+    endif
+  endif
 endif
 
 ifdef BOOTSTRAP
-SUB_DIRECTORIES = \
-  stdlib compiler jinterface orber/include eva/include
+  SUB_DIRECTORIES = \
+    stdlib compiler orber/include
 else
-ifdef SECONDARY_BOOTSTRAP
-SUB_DIRECTORIES = kernel parsetools asn1/src $(HIPE_APP)
-else
-ifdef TERTIARY_BOOTSTRAP
-SUB_DIRECTORIES = snmp_dummy snmp
-else
-ifdef FOURTH_BOOTSTRAP
-SUB_DIRECTORIES = sasl jinterface ic
-else
-SUB_DIRECTORIES = $(ERTS_SUB_DIRECTORIES) $(OTHER_SUB_DIRECTORIES)
-endif
-endif
-endif
+  ifdef SECONDARY_BOOTSTRAP
+    SUB_DIRECTORIES = kernel parsetools asn1/src $(HIPE_APP)
+  else
+    ifdef TERTIARY_BOOTSTRAP
+      SUB_DIRECTORIES = snmp
+    else
+      ifdef FOURTH_BOOTSTRAP
+        SUB_DIRECTORIES = sasl jinterface ic
+      else
+        SUB_DIRECTORIES = $(ERTS_SUB_DIRECTORIES) $(OTHER_SUB_DIRECTORIES)
+      endif
+    endif
+  endif
 endif
 
 

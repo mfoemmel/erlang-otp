@@ -279,11 +279,13 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 {
     int done = 0;
     Uint saved_status = p->status;
+    Uint ms1, s1, us1;
 
     p->status = P_GARBING;
     if (IS_TRACED_FL(p, F_TRACE_GC)) {
         trace_gc(p, am_gc_start);
     }
+    if (erts_system_monitor_long_gc != 0) get_now(&ms1, &s1, &us1);
     if (SAVED_HEAP_TOP(p) != NULL) {
 	HEAP_TOP(p) = SAVED_HEAP_TOP(p);
 	SAVED_HEAP_TOP(p) = NULL;
@@ -307,6 +309,17 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
     p->status = saved_status;
     if (IS_TRACED_FL(p, F_TRACE_GC)) {
         trace_gc(p, am_gc_end);
+    }
+    if (erts_system_monitor_long_gc != 0) {
+	Uint ms2, s2, us2;
+	Sint t;
+	get_now(&ms2, &s2, &us2);
+	t = ms2 - ms1;
+	t = t*1000000 + s2 - s1;
+	t = t*1000 + (us2 - us1)/1000;
+	if (t > 0 && (Uint)t > erts_system_monitor_long_gc) {
+	    monitor_gc(p, t);
+	}
     }
 
     garbage_cols++;
@@ -338,7 +351,8 @@ minor_collection(Process* p, int need, Eterm* objv, int nobj)
         size_t new_sz = erts_next_heap_size(HEAP_TOP(p) - HEAP_START(p), 1);
 
         /* Create new, empty old_heap */
-        n_old = (Eterm *) erts_safe_sl_alloc_from(801, sizeof(Eterm)*new_sz);
+        n_old = (Eterm *) ERTS_HEAP_ALLOC(ERTS_ALC_T_OLD_HEAP,
+					  sizeof(Eterm)*new_sz);
 
         OLD_HEND(p) = n_old + new_sz;
         OLD_HEAP(p) = OLD_HTOP(p) = n_old;
@@ -418,7 +432,8 @@ do_minor(Process *p, int new_sz, Eterm* objv, int nobj)
     Eterm* old_htop = OLD_HTOP(p);
     Eterm* n_heap;
 
-    n_htop = n_heap = (Eterm*) erts_safe_sl_alloc_from(805, sizeof(Eterm)*new_sz);
+    n_htop = n_heap = (Eterm*) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP,
+					       sizeof(Eterm)*new_sz);
 
     if (p->ssb != NULL) {
 	ssb_filter(p);
@@ -636,14 +651,16 @@ do_minor(Process *p, int new_sz, Eterm* objv, int nobj)
 #ifdef DEBUG
     sys_memset(HEAP_START(p), 0xf7, HEAP_SIZE(p) * sizeof(Eterm));
 #endif
-    erts_sl_free((void*)HEAP_START(p));
+    ERTS_HEAP_FREE(ERTS_ALC_T_HEAP,
+		   (void*)HEAP_START(p),
+		   HEAP_SIZE(p) * sizeof(Eterm));
     HEAP_START(p) = n_heap;
     HEAP_TOP(p) = n_htop;
     HEAP_SIZE(p) = new_sz;
     HEAP_END(p) = n_heap + new_sz;
 
     if (p->ssb && p->ssb->next == p->ssb->buf) {
-	erts_sl_free(p->ssb);
+	erts_free(ERTS_ALC_T_SSB, p->ssb);
 	p->ssb = NULL;
     }
 
@@ -689,7 +706,8 @@ major_collection(Process* p, int need, Eterm* objv, int nobj)
         new_sz = erts_next_heap_size(HEAP_SIZE(p), 1);
     }
     FLAGS(p) &= ~(F_HEAP_GROW|F_NEED_FULLSWEEP);
-    n_htop = n_heap = (Eterm *) erts_safe_sl_alloc_from(803, sizeof(Eterm)*new_sz);
+    n_htop = n_heap = (Eterm *) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP,
+						sizeof(Eterm)*new_sz);
 
     /*
      * Allocate a new old_heap if there are any data on the old old_heap.
@@ -697,7 +715,8 @@ major_collection(Process* p, int need, Eterm* objv, int nobj)
 
     if (oh_size != 0) {
 	new_oh_size = erts_next_heap_size(oh_size+new_sz, 0);
-	old_heap = (Eterm*) erts_safe_sl_alloc_from(805, sizeof(Eterm)*new_oh_size);
+	old_heap = (Eterm*) ERTS_HEAP_ALLOC(ERTS_ALC_T_OLD_HEAP,
+					    sizeof(Eterm)*new_oh_size);
 	old_htop = old_heap;
     }
 
@@ -906,7 +925,7 @@ major_collection(Process* p, int need, Eterm* objv, int nobj)
 	 * If no pointers left from old to young, delete the SSB.
 	 */
 	if (p->ssb->next == p->ssb->buf) {
-	    erts_sl_free(p->ssb);
+	    erts_free(ERTS_ALC_T_SSB, p->ssb);
 	    p->ssb = NULL;
 	}
     }
@@ -929,7 +948,9 @@ major_collection(Process* p, int need, Eterm* objv, int nobj)
 	sys_memset(OLD_HEAP(p), 0xf5,
 		   (OLD_HEND(p) - OLD_HEAP(p)) * sizeof(Eterm));
 #endif
-	erts_sl_free(OLD_HEAP(p));
+	ERTS_HEAP_FREE(ERTS_ALC_T_OLD_HEAP,
+		       OLD_HEAP(p),
+		       (OLD_HEND(p) - OLD_HEAP(p)) * sizeof(Eterm));
 	OLD_HEAP(p) = old_heap;
 	OLD_HTOP(p) = old_htop;
 	OLD_HEND(p) = old_heap + new_oh_size;
@@ -946,7 +967,9 @@ major_collection(Process* p, int need, Eterm* objv, int nobj)
     sys_memset(HEAP_START(p), 0xf3,
 	       (HEAP_END(p) - HEAP_START(p)) * sizeof(Eterm));
 #endif
-    erts_sl_free((void *) HEAP_START(p));
+    ERTS_HEAP_FREE(ERTS_ALC_T_HEAP,
+		   (void *) HEAP_START(p),
+		   (HEAP_END(p) - HEAP_START(p)) * sizeof(Eterm));
 
     HEAP_START(p) = n_heap;
     HEAP_TOP(p) = n_htop;
@@ -1362,12 +1385,12 @@ add_to_rootset(Process *p, Eterm *objv, int nobj, Rootset *rootset, Uint n)
     if (rootset->size < n+7) {
 	Uint new_size = 2*rootset->size;
 	if (roots == rootset->def) {
-	    roots = erts_safe_sl_alloc_from(210, new_size*sizeof(Roots));
+	    roots = erts_alloc(ERTS_ALC_T_ROOTSET, new_size*sizeof(Roots));
 	    sys_memcpy(roots, rootset->def, sizeof(rootset->def));
 	} else {
-	    roots = erts_safe_sl_realloc((void *) roots,
-					 rootset->size*sizeof(Roots),
-					 new_size*sizeof(Roots));
+	    roots = erts_realloc(ERTS_ALC_T_ROOTSET,
+				 (void *) roots,
+				 new_size*sizeof(Roots));
 	}
 	rootset->size = new_size;
     }
@@ -1428,12 +1451,13 @@ add_to_rootset(Process *p, Eterm *objv, int nobj, Rootset *rootset, Uint n)
 	if (avail == 0) {
 	    Uint new_size = 2*rootset->size;
 	    if (roots == rootset->def) {
-		roots = erts_safe_sl_alloc_from(210, new_size*sizeof(Roots));
+		roots = erts_alloc(ERTS_ALC_T_ROOTSET,
+				   new_size*sizeof(Roots));
 		sys_memcpy(roots, rootset->def, sizeof(rootset->def));
 	    } else {
-		roots = erts_safe_sl_realloc((void *) roots,
-					     rootset->size*sizeof(Roots),
-					     new_size*sizeof(Roots));
+		roots = erts_realloc(ERTS_ALC_T_ROOTSET,
+				     (void *) roots,
+				     new_size*sizeof(Roots));
 	    }
 	    rootset->size = new_size;
 	    avail = new_size - n;
@@ -1486,7 +1510,7 @@ static
 void cleanup_rootset(Rootset* rootset)
 {
     if (rootset->roots != rootset->def) {
-        erts_sl_free(rootset->roots);
+        erts_free(ERTS_ALC_T_ROOTSET, rootset->roots);
     }
 }
 
@@ -1501,9 +1525,10 @@ grow_new_heap(Process *p, Uint new_sz, Eterm* objv, int nobj)
     Sint32 offs;
 
     ASSERT(HEAP_SIZE(p) < new_sz);
-    new_heap = (Eterm *) erts_safe_sl_realloc((void*)HEAP_START(p),
-					      sizeof(Eterm)*(HEAP_SIZE(p)),
-					      sizeof(Eterm)*new_sz);
+    new_heap = (Eterm *) ERTS_HEAP_REALLOC(ERTS_ALC_T_HEAP,
+					   (void *) HEAP_START(p),
+					   sizeof(Eterm)*(HEAP_SIZE(p)),
+					   sizeof(Eterm)*new_sz);
 
     if ((offs = new_heap - HEAP_START(p)) == 0) { /* No move. */
         HEAP_END(p) = new_heap + new_sz;
@@ -1544,9 +1569,10 @@ shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj)
 #ifdef SHARED_HEAP
     ASSERT(new_sz < HEAP_SIZE(p));
 
-    new_heap = (Eterm *) erts_safe_sl_realloc((void*)HEAP_START(p),
-					      sizeof(Eterm)*(HEAP_SIZE(p)),
-					      sizeof(Eterm)*new_sz);
+    new_heap = (Eterm *) ERTS_HEAP_REALLOC(ERTS_ALC_T_HEAP,
+					   (void*)HEAP_START(p),
+					   sizeof(Eterm)*(HEAP_SIZE(p)),
+					   sizeof(Eterm)*new_sz);
     HEAP_END(p) = new_heap + new_sz;
 #else
     int stack_size = p->hend - p->stop;
@@ -1554,9 +1580,10 @@ shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj)
     ASSERT(new_sz < p->heap_sz);
     sys_memmove(p->heap + new_sz - stack_size, p->stop, stack_size *
                                                         sizeof(Eterm));
-    new_heap = (Eterm *) erts_safe_sl_realloc((void*)p->heap,
-					      sizeof(Eterm)*(HEAP_SIZE(p)),
-					      sizeof(Eterm)*new_sz);
+    new_heap = (Eterm *) ERTS_HEAP_REALLOC(ERTS_ALC_T_HEAP,
+					   (void*)p->heap,
+					   sizeof(Eterm)*(HEAP_SIZE(p)),
+					   sizeof(Eterm)*new_sz);
     p->hend = new_heap + new_sz;
     p->stop = p->hend - stack_size;
 #endif
@@ -1715,8 +1742,7 @@ sweep_proc_bins(Process *p, int fullsweep)
                 if (bptr->flags & BIN_FLAG_MATCH_PROG) {
                     erts_match_set_free(bptr);
                 } else {
-                    tot_bin_allocated -= bptr->orig_size;
-                    OH_BIN_FREE(bptr);
+                    erts_bin_free(bptr);
                 }
             }
             ptr = *prev;
@@ -2063,8 +2089,8 @@ erts_ensure_ssb(Process* p)
     Uint avail = 64;
 
     if (p->ssb == NULL) {
-	ssb = (ErlSSB *) erts_safe_sl_alloc_from(830, sizeof(ErlSSB) +
-						 sizeof(Eterm)*avail);
+	ssb = (ErlSSB *) erts_alloc(ERTS_ALC_T_SSB,
+				    sizeof(ErlSSB) + sizeof(Eterm)*avail);
 	ssb->next = ssb->buf;
 	ssb->end = ssb->buf + avail;
 	p->ssb = ssb;
@@ -2079,9 +2105,9 @@ erts_ssb_expand_put(Process* p, Eterm* addr)
 
     old_sz = (p->ssb->end - p->ssb->buf);
     new_sz = 2*old_sz;
-    p->ssb = (ErlSSB *) erts_safe_sl_realloc((void *)p->ssb,
-					     sizeof(ErlSSB)+old_sz*sizeof(Eterm *),
-					     sizeof(ErlSSB)+new_sz*sizeof(Eterm *));
+    p->ssb = (ErlSSB *) erts_realloc(ERTS_ALC_T_SSB,
+				     (void *)p->ssb,
+				     sizeof(ErlSSB)+new_sz*sizeof(Eterm *));
     p->ssb->next = p->ssb->buf + old_sz;
     p->ssb->end = p->ssb->buf + new_sz;
     *(p)->ssb->next++ = addr;

@@ -1,0 +1,20 @@
+#ifdef USE_OSEDEF_H
+#include "osedef.h"
+#endif
+
+#define ALIGN(adr, alignand)  (((adr) + (alignand) - 1) & ~((alignand) - 1))
+#define PAGE_SIZE 4096
+
+extern const char __RAM_END[];
+extern const char __MEMORY_END[];
+#ifdef USE_PMD                  
+extern const char __PMD_AREA_START[];   
+#define MMH_MEMORY_END ALIGN( (U32)__PMD_AREA_START - PAGE_SIZE, PAGE_SIZE)
+#else                           
+#define MMH_MEMORY_END ((U32)__MEMORY_END)
+#endif                          
+
+MMH_MEMORY(    ALIGN((U32) __RAM_END , PAGE_SIZE),\
+	       MMH_MEMORY_END - ALIGN((U32)__RAM_END , PAGE_SIZE))
+
+

@@ -29,15 +29,15 @@
 
 /* forward declarations */
 
-static void usage _ANSI_ARGS_((EpmdVars *));
-static void run_daemon _ANSI_ARGS_((EpmdVars*));
+static void usage(EpmdVars *);
+static void run_daemon(EpmdVars*);
 #ifdef __WIN32__
 static int has_console(void);
 #endif
 
 #ifdef DONT_USE_MAIN
 
-static int epmd_main _ANSI_ARGS_((int, char **, int));
+static int epmd_main(int, char **, int);
 
 /* VxWorks fill 10 stack words with zero when a function is called
    from the shell. So it is safe to have argv and argc as parameters
@@ -45,8 +45,7 @@ static int epmd_main _ANSI_ARGS_((int, char **, int));
 
 #define MAX_DEBUG 10
 
-int epmd_dbg(level,port) /* Utility to debug epmd... */
-int level,port;
+int epmd_dbg(int level,int port) /* Utility to debug epmd... */
 {
   char* argv[MAX_DEBUG+2];
   char  ibuff[100];
@@ -69,8 +68,7 @@ int level,port;
 
 }
 
-static char *mystrdup(s)
-     char *s;
+static char *mystrdup(char *s)
 {
     char *r = malloc(strlen(s)+1);
     strcpy(r,s);
@@ -111,7 +109,7 @@ int start_ose_epmd(int argc, char **argv) {
       strcpy((sig->args.argv)[i], argv[i]);
     }    
     /* start epmd and send signal */
-    epmd_ = create_process(OS_PRI_PROC, /* processtype */
+    epmd_ = create_process(OS_BG_PROC, /* processtype */
 			   "epmd",      /* name        */
 			   ose_epmd,    /* entrypoint  */
 			   16383,	/* stacksize   */
@@ -201,9 +199,7 @@ char *a0, *a1, *a2, *a3, *a4, *a5, *a6, *a7, *a8, *a9;
     
 
 
-int epmd(argc, argv)
-     int argc;
-     char **argv;
+int epmd(int argc, char **argv)
 {
   return epmd_main(argc,argv,0);
 }
@@ -335,8 +331,7 @@ int main(int argc, char** argv)
 }
 
 #ifndef NO_DAEMON
-static void run_daemon(g)
-     EpmdVars *g;
+static void run_daemon(EpmdVars *g)
 {
     register int child_pid, fd;
     
@@ -363,6 +358,7 @@ static void run_daemon(g)
       }
 
     /* ???? */
+
 
     signal(SIGHUP, SIG_IGN);
 
@@ -406,8 +402,7 @@ static void run_daemon(g)
 #endif /* NO_DAEMON */    
 
 #ifdef __WIN32__
-static int
-has_console(void)
+static int has_console(void)
 {
     HANDLE handle = CreateFile("CONOUT$", GENERIC_WRITE, FILE_SHARE_WRITE,
 			       NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -420,8 +415,7 @@ has_console(void)
     }
 }
 
-static void run_daemon(g)
-    EpmdVars *g;
+static void run_daemon(EpmdVars *g)
 {
     if (has_console()) {
 	if (spawnvp(_P_DETACH, __argv[0], __argv) == -1) {
@@ -446,8 +440,7 @@ static void run_daemon(g)
 #endif
 
 #if (defined(VXWORKS) || defined(_OSE_))
-static void run_daemon(g)
-    EpmdVars *g;
+static void run_daemon(EpmdVars *g)
 {
     run(g);
 }
@@ -459,8 +452,7 @@ static void run_daemon(g)
  *
  */
 
-static void usage(g)
-     EpmdVars *g;
+static void usage(EpmdVars *g)
 {
     fprintf(stderr, "usage: epmd [-d|-debug] [DbgExtra...] [-port No] [-daemon]\n");
     fprintf(stderr, "            [-d|-debug] [-port No] [-names|-kill]\n\n");
@@ -508,13 +500,8 @@ static void usage(g)
  *      
  */
 
-static void dbg_gen_printf(onsyslog,perr,from_level,g,format,args)
-  int onsyslog;
-  int perr;
-  int from_level;
-  EpmdVars *g;
-  char *format;
-  va_list args;
+static void dbg_gen_printf(int onsyslog,int perr,int from_level,
+			   EpmdVars *g,const char *format, va_list args)
 {
   time_t now;
   char *timestr;
@@ -585,8 +572,7 @@ void dbg_printf(EpmdVars *g,int from_level,const char *format,...)
  *
  */
 
-static void free_all_nodes(g)
-     EpmdVars *g;
+static void free_all_nodes(EpmdVars *g)
 {
     Node *tmp;
     for(tmp=g->nodes.reg; tmp != NULL; tmp = g->nodes.reg){
@@ -598,9 +584,7 @@ static void free_all_nodes(g)
 	free(tmp);
     }
 }
-void epmd_cleanup_exit(g,exitval)
-     EpmdVars *g;
-     int exitval;
+void epmd_cleanup_exit(EpmdVars *g, int exitval)
 {
   int i;
 

@@ -46,43 +46,36 @@ static Eterm shift(Process* p, Eterm arg1, Eterm arg2, int right);
  */
 
 BIF_RETTYPE splus_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     BIF_RET(BIF_ARG_1);
 } 
 
 BIF_RETTYPE splus_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     BIF_RET(erts_mixed_plus(BIF_P, BIF_ARG_1, BIF_ARG_2));
 } 
 
 BIF_RETTYPE sminus_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     BIF_RET(erts_mixed_minus(BIF_P, make_small(0), BIF_ARG_1));
 } 
 
 BIF_RETTYPE sminus_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     BIF_RET(erts_mixed_minus(BIF_P, BIF_ARG_1, BIF_ARG_2));
 } 
 
 BIF_RETTYPE stimes_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     BIF_RET(erts_mixed_times(BIF_P, BIF_ARG_1, BIF_ARG_2));
 } 
 
 BIF_RETTYPE div_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     BIF_RET(erts_mixed_div(BIF_P, BIF_ARG_1, BIF_ARG_2));
 } 
 
 BIF_RETTYPE intdiv_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     if (BIF_ARG_2 == SMALL_ZERO) {
 	BIF_ERROR(BIF_P, BADARITH);
@@ -94,7 +87,6 @@ BIF_ADECL_2
 } 
 
 BIF_RETTYPE rem_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     if (BIF_ARG_2 == SMALL_ZERO) {
 	BIF_ERROR(BIF_P, BADARITH);
@@ -109,7 +101,6 @@ BIF_ADECL_2
 } 
 
 BIF_RETTYPE band_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     if (is_both_small(BIF_ARG_1,BIF_ARG_2)){
 	BIF_RET(BIF_ARG_1 & BIF_ARG_2);
@@ -118,7 +109,6 @@ BIF_ADECL_2
 } 
 
 BIF_RETTYPE bor_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     if (is_both_small(BIF_ARG_1,BIF_ARG_2)){
 	BIF_RET(BIF_ARG_1 | BIF_ARG_2);
@@ -127,7 +117,6 @@ BIF_ADECL_2
 } 
 
 BIF_RETTYPE bxor_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     if (is_both_small(BIF_ARG_1,BIF_ARG_2)){
 	BIF_RET(make_small(signed_val(BIF_ARG_1) ^ signed_val(BIF_ARG_2)));
@@ -229,7 +218,6 @@ shift(Process* p, Eterm arg1, Eterm arg2, int right)
 */
  
 BIF_RETTYPE bnot_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm ret;
     if (is_small(BIF_ARG_1)) {

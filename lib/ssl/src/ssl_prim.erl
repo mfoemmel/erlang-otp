@@ -45,10 +45,10 @@ accept(ListenSt) when record(ListenSt, st) ->
     ListenFd = ListenSocket#sslsocket.fd,
     ListenOpts = ListenSt#st.opts,
     ?filter(ssl_broker:accept_prim(ssl_server_prim, inet_tcp, self(), ListenFd,
-				   ListenOpts, [], infinity, NewSt)).
+				   ListenOpts, infinity, NewSt)).
 
 
-close(St = #st{fd = Fd}) when integer(Fd) ->
+close(_St = #st{fd = Fd}) when integer(Fd) ->
     ssl_server:close_prim(ssl_server_prim, Fd),
     ok;
 close(_) ->
@@ -62,7 +62,7 @@ send(St, Data) when record(St, st), St#st.status =:= open ->
 	    {error, closed}
     end;
 
-send(St, Data) when record(St, st) ->
+send(St, _Data) when record(St, st) ->
     {error, closed}.
 
 recv(St,Length) ->
@@ -71,7 +71,7 @@ recv(St,Length) ->
 recv(St, Length, Tmo) when record(St, st), St#st.status =:= open ->
     inet_tcp:recv(St#st.proxysock, Length, Tmo);
 
-recv(St, Length, Tmo) when record(St, st) ->
+recv(St, _Length, _Tmo) when record(St, st) ->
     {error, closed}.
 
 getll(St) when record(St, st), St#st.status =:= open  ->
@@ -83,7 +83,7 @@ getll(St) when record(St, st) ->
 getstat(St, Opts) when record(St, st), St#st.status =:= open  ->
     inet:getstat(St#st.proxysock, Opts);
 
-getstat(St, Opts) when record(St, st) ->
+getstat(St, _Opts) when record(St, st) ->
     {error, closed}.
 
 setopts(St, Opts) when record(St, st), St#st.status =:= open  ->
@@ -94,7 +94,7 @@ setopts(St, Opts) when record(St, st), St#st.status =:= open  ->
 	    {error, enotsup}
     end;
 
-setopts(St, Opts) when record(St, st) ->
+setopts(St, _Opts) when record(St, st) ->
     {error, closed}.
 
 
@@ -147,9 +147,9 @@ remove_supported([]) ->
 
 filter(Result) ->
     case Result of
-	{ok, Sock,St} ->
+	{ok, _Sock,St} ->
 	    {ok, St};
-	{error, Reason, St} ->
+	{error, Reason, _St} ->
 	    {error,Reason};
 	Else  ->
 	    {error, Else}
@@ -164,5 +164,5 @@ nonactive([]) ->
 
 newstate(Type) ->
    #st{brokertype = Type, server = whereis(ssl_server_prim),
-       client = undefined, collector = undefiend, newif = true, debug = false}. 
+       client = undefined, collector = undefiend, debug = false}. 
 

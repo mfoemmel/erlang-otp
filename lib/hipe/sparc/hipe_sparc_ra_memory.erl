@@ -1,6 +1,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2000 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <02/05/13 16:39:08 happi>
+%% Time-stamp: <02/10/07 15:41:49 happi>
 %% ====================================================================
 %%  Filename : 	sparc_memory_regalloc.erl
 %%  Module   :	sparc_memory_regalloc
@@ -9,10 +9,12 @@
 %%  Notes    : 
 %%  History  :	* 2000-08-21 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
+%%              * 2002-05-09 Niklas Andersson, Andreas Lundin
+%%                Added support for stack fram minimizarion
 %%  CVS      :
 %%              $Author: happi $
-%%              $Date: 2002/05/13 16:51:09 $
-%%              $Revision: 1.10 $
+%%              $Date: 2002/10/10 06:18:30 $
+%%              $Revision: 1.11 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -30,18 +32,31 @@ alloc(SparcCfg, Options) ->
   TempMap = hipe_temp_map:cols2tuple(Map, hipe_sparc_specific),
   %%  io:format("Map:~w\n",[TempMap]),
 
+  %% Code to minimize stack size by allocation of temps to spillpositions
+  ?opt_start_timer("Minimize"),
+  {TempMap2, NewSpillPos} = 
+    hipe_spill_minimize:stackalloc(SparcCfg, [], 
+				   0, Options, 
+				   hipe_sparc_specific, 
+				   TempMap),
+  TempMap3 = hipe_spill_minimize:mapmerge(hipe_temp_map:to_substlist(TempMap), 
+					  TempMap2),
+  TempMap4 = hipe_temp_map:cols2tuple( TempMap3, hipe_sparc_specific),
+  ?opt_stop_timer("MINIMIZE DONE"),    
+
+
   NewCfg =
-    hipe_sparc_ra_post_ls:rewrite(SparcCfg, TempMap, Options),
+    hipe_sparc_ra_post_ls:rewrite(SparcCfg, TempMap4, Options),
   %%  hipe_sparc_cfg:pp(NewCfg),
 %%  {SparcCfg2, NextPos} = hipe_sparc_caller_saves:rewrite(
 %%			   NewCfg, TempMap,  
 %%			   SpillPos+1,
 %%			   Options),
-  ?add_spills(Options, SpillPos+1),
+  ?add_spills(Options, NewSpillPos+1),
  
   %% hipe_sparc_cfg:pp(SparcCfg2),
 %%  {SparcCfg2, TempMap, NextPos}.
-  {NewCfg, TempMap, SpillPos+1}.
+  {NewCfg, TempMap4, NewSpillPos+1}.
 
 
 spill(Cfg) ->

@@ -1,7 +1,7 @@
 %% -*- erlang-indent-level: 2 -*-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
-%% Semi-local copy propagation, constant propagation, constant folding
+%% Semi-local copy propagation, constant propagation, constant folding,
 %% and dead code removal.
 %%
 %% Works on extended basic blocks. No iteration is done at this point.
@@ -239,7 +239,7 @@ eval_call(OrgI, I, Env) ->
   %% XXX: Arithmetic on f.p. numbers may fail.
   %% For example, 3.23e133*3.57e257 throws {EXIT,{badarith,_}}.
   %%
-  %% Consider breaking up this into a dispatchfunction...
+  %% Consider breaking up this into a dispatch function...
 
   Args = hipe_icode:call_args(I),
   Dst = hipe_icode:call_dst(I),
@@ -316,7 +316,6 @@ eval_call(OrgI, I, Env) ->
       [Arg1, Arg2] = Args,
       [Dst0] = Dst,
       if is_number(Arg1), is_number(Arg2) ->
-	  
 	  arith(catch (Arg1 / Arg2), Dst0, Goto, OrgI, Env);
 	 true -> {OrgI, Env}
       end;
@@ -460,7 +459,7 @@ eval_call(OrgI, I, Env) ->
 	      {OrgI, Env};
 	    Res ->
 	      Src2 = hipe_icode:mk_const(Res),
-	      {[hipe_icode:mk_unsafe_untag_float(Dst0, Src2), 
+	      {[hipe_icode:mk_primop([Dst0], unsafe_untag_float, [Src2]), 
 		Goto], Env}
 	  end;
 	 true ->
@@ -633,7 +632,6 @@ dead_code_instrs([I|Is], LiveOut) ->
 	true ->
 	  {NewIs, LiveOut0, true};
 	false ->
-
 	  Use = ordsets:from_list(hipe_icode:uses(I)),
 	  LiveIn = ordsets:union(Use, ordsets:subtract(LiveOut0, Def)),
 	  {[I|NewIs], LiveIn, Changed}
@@ -642,7 +640,7 @@ dead_code_instrs([I|Is], LiveOut) ->
 
 
 %%
-%% Identity moves and fmoves can be safely deleted.
+%% Identity moves and fmoves that can be safely deleted.
 %%
 
 dead_move(X) ->
@@ -656,18 +654,18 @@ dead_move(X) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
-%% the environment, Rewrite if we go global.
+%% The environment. Rewrite if we go global.
 %%
 
-%% An environment has two mappings If x is bound to y then
-%% map 1 contains {x,y} and map 2 contains {y,[x|_]}
+%% An environment has two mappings:
+%% If x is bound to y then map 1 contains {x,y} and map 2 contains {y,[x|_]}.
+%%
 new_env() ->
   {gb_trees:empty(),gb_trees:empty()}.
 
-
 %%
-%% Find what X is bound to (as a last restort varaibles are bound 
-%% to themselves).
+%% Find what X is bound to (as a last resort variables are bound to
+%% themselves).
 %%
 
 lookup_var(X, Map) ->
@@ -677,35 +675,23 @@ lookup_var(X, Map) ->
     false -> X
   end.
 
-
 lookup(X,{Map,_}) ->
-    case gb_trees:lookup(X,Map) of
-	{value, Y} -> Y;
-	none -> X
-    end.
-
-%lookup(X, []) ->
-%  X;
-%lookup(X, [{X, Y}|_]) ->
-%  Y;
-%lookup(X, [_|Map]) ->
-%  lookup(X, Map).
+  case gb_trees:lookup(X,Map) of
+    {value, Y} -> Y;
+    none -> X
+  end.
 
 
 %%
 %% Bind X to Y in Map
 %%
-
 bind({Map1,Map2}, X, Y) -> 
   NewMap2 =
-     case gb_trees:lookup(Y,Map2) of
-       none -> gb_trees:enter(Y,[X],Map2);
-       {value,Ys} ->
-	 gb_trees:enter(Y,[X|Ys],Map2)
+    case gb_trees:lookup(Y,Map2) of
+      none -> gb_trees:enter(Y,[X],Map2);
+      {value,Ys} -> gb_trees:enter(Y,[X|Ys],Map2)
     end, 
-    {gb_trees:enter(X,Y,Map1),
-     NewMap2}.
-
+  {gb_trees:enter(X,Y,Map1),NewMap2}.
 
 
 %%
@@ -736,82 +722,8 @@ kill(X,M = {Map1,Map2}) ->
       M1
   end.	     
 
-%    kill(X,Map,[]).
-%kill(_, [], Acc) ->
-%  lists:reverse(Acc);
-%kill(X, [{X,_}|Xs], Acc) ->
-%  kill(X, Xs,Acc);
-%kill(X, [{_,X}|Xs], Acc) ->
-%  kill(X, Xs, Acc);
-%kill(X, [D|Xs], Acc) ->
-%  kill(X, Xs, [D|Acc]).
-
 
 unbind([], Map) ->
   Map;
 unbind([V|Vs], Map) ->
   unbind(Vs, kill(V, Map)).
-
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%
-%%% The environment, Rewrite if we go global.
-%%%
-
-%new_env() ->
-%  [].
-
-%%%
-%%% Find what X is bound to (as a last restort varaibles are bound 
-%%% to themself).
-%%%
-
-%lookup(X, []) ->
-%  X;
-%lookup(X, [{X, Y}|_]) ->
-%  Y;
-%lookup(X, [_|Map]) ->
-%  lookup(X, Map).
-
-%%%
-%%% Find the variable X is bound to.
-%%%
-
-%lookup_var(X, []) ->
-%  X;
-%lookup_var(X, [{X, Y}|_]) ->
-%  case hipe_icode:is_var_or_fvar_or_reg(Y) of
-%    true -> Y;
-%    false -> X
-%  end;
-%lookup_var(X, [_|Map]) ->
-%  lookup_var(X, Map).
-
-%%%
-%%% Bind X to Y in Map
-%%%
-
-%bind(Map, X, Y) -> 
-%  [{X, Y} | Map].
-
-%%%
-%%% Kill bindings with references to X
-%%%
-%kill(X,Map) ->
-%  kill(X,Map,[]).
-%kill(_, [], Acc) ->
-%  lists:reverse(Acc);
-%kill(X, [{X,_}|Xs], Acc) ->
-%  kill(X, Xs,Acc);
-%kill(X, [{_,X}|Xs], Acc) ->
-%  kill(X, Xs, Acc);
-%kill(X, [D|Xs], Acc) ->
-%  kill(X, Xs, [D|Acc]).
-
-
-
-%unbind([], Map) ->
-%  Map;
-%unbind([V|Vs], Map) ->
-%  unbind(Vs, kill(V, Map)).

@@ -30,6 +30,7 @@
 #include "dist.h"
 #include "error.h"
 #include "beam_catches.h"
+#include "erl_instrument.h"
 
 #ifdef HIPE
 #include "hipe_mode_switch.h"	/* for hipe_init_process() */
@@ -43,8 +44,6 @@
 extern Eterm beam_apply[];
 extern Eterm beam_exit[];
 
-#define KEEP_ZOMBIE
-
 static Sint p_next;
 static Sint p_serial;
 static Uint p_serial_mask;
@@ -52,6 +51,8 @@ static Uint p_serial_shift;
 
 Uint erts_max_processes = ERTS_DEFAULT_MAX_PROCESSES;
 Uint erts_process_tab_index_mask;
+
+Uint erts_tot_proc_mem; /* in bytes */
 
 typedef struct schedule_q {
     Process* first;
@@ -61,9 +62,7 @@ typedef struct schedule_q {
 static ScheduleQ queue[NPRIORITY_LEVELS];
 static int bg_count;
 static unsigned qmask;
-#ifdef __BENCHMARK__
-int processes_busy;
-#else
+#ifndef BM_COUNTERS
 static int processes_busy;
 #endif
 
@@ -74,6 +73,10 @@ Uint reductions;		/* total number of reductions */
 Uint last_reds;			/* used in process info */
 Uint erts_default_process_flags;
 Eterm erts_default_tracer;
+Eterm erts_system_monitor;
+Eterm erts_system_monitor_long_gc;
+Eterm erts_system_monitor_large_heap;
+struct erts_system_monitor_flags_t erts_system_monitor_flags;
 
 const struct trace_pattern_flags erts_trace_pattern_flags_off = {0, 0, 0, 0};
 
@@ -101,15 +104,16 @@ init_scheduler(void)
 {
     int i;
 
-    process_tab = (Process**) erts_definite_alloc(erts_max_processes*sizeof(Process*));
-    if(!process_tab) {
-	process_tab = (Process**) 
-	    safe_alloc_from(91, erts_max_processes * sizeof(Process*));
-    }
+    erts_tot_proc_mem = 0;
+
+    process_tab = (Process**) erts_alloc(ERTS_ALC_T_PROC_TABLE,
+					 erts_max_processes*sizeof(Process*));
+    ERTS_PROC_MORE_MEM(erts_max_processes * sizeof(Process*));
     sys_memzero(process_tab, erts_max_processes * sizeof(Process*));
 #ifdef SHARED_HEAP
     erts_active_procs = (Process**)
-        safe_alloc_from(92, erts_max_processes * sizeof(Process*));
+        erts_alloc(ERTS_ALC_T_ACTIVE_PROCS, erts_max_processes*sizeof(Process*));
+    ERTS_PROC_MORE_MEM(erts_max_processes * sizeof(Process*));
     erts_num_active_procs = 0;
 #endif
 
@@ -117,20 +121,23 @@ init_scheduler(void)
     p_serial = 0;
 
     p_serial_shift = erts_fit_in_bits(erts_max_processes - 1);
-    p_serial_mask = ((~(~0 << ERTS_PROCESSES_BITS)) >> p_serial_shift);
-    erts_process_tab_index_mask = ~(~0 << p_serial_shift);
+    p_serial_mask = ((~(~((Uint) 0) << ERTS_PROCESSES_BITS)) >> p_serial_shift);
+    erts_process_tab_index_mask = ~(~((Uint) 0) << p_serial_shift);
 
     /* mark the schedule queue as empty */
     for(i = 0; i < NPRIORITY_LEVELS; i++)
 	queue[i].first = queue[i].last = (Process*) 0;
     qmask = 0;
+#ifndef BM_COUNTERS
     processes_busy = 0;
+#endif
     bg_count = 0;
     context_switches = 0;
     reductions = 0;
     last_reds = 0;
     erts_default_process_flags = 0;
     erts_default_tracer = NIL;
+    erts_system_monitor_clear();
     
     erts_default_trace_pattern_is_on = 0;
     erts_default_match_spec = NULL;
@@ -221,10 +228,6 @@ remove_proc_from_sched_q(Process *p)
 ** return 1 if more to do.
 */
 
-#ifdef INSTRUMENT
-Eterm current_erl_process = THE_NON_VALUE;
-#endif
-
 /*
  * schedule() is called from BEAM (process_main()) or HiPE
  * (hipe_mode_switch()) when the current process is to be
@@ -247,16 +250,12 @@ Process *schedule(Process *p, int calls)
      * Clean up after the process being suspended.
      */
     if (p) {	/* NULL in the very first schedule() call */
-#ifdef SHARED_HEAP
-	if (p->status != P_FREE && MBUF(p)) {
-	    (void) erts_garbage_collect(p, 0, p->arg_reg, p->arity);
-	}
-#endif
 	function_calls += calls;
 	reductions += calls;
 
 #ifdef SHARED_HEAP
         ASSERT(p->heap && p->htop && p->hend && p->heap_sz);
+        ASSERT(!(global_heap || global_htop || global_hend || global_heap_sz));
         global_htop = p->htop;
         global_heap = p->heap;
         global_hend = p->hend;
@@ -266,12 +265,13 @@ Process *schedule(Process *p, int calls)
         p->hend = NULL;
         p->heap_sz = 0;
 #endif
-#ifdef INSTRUMENT
-	current_erl_process = THE_NON_VALUE;
-#endif
+
+	ERTS_INSTR_RESET_CURR_PROC();
+
 	p->reds += calls;
 	if (p->status == P_FREE) {
-	    fix_free(process_desc, (Eterm *) p);
+	    ERTS_PROC_LESS_MEM(sizeof(Process));
+	    erts_free(ERTS_ALC_T_PROC, (void *) p);
 	} else if (IS_TRACED_FL(p, F_TRACE_SCHED)) {
 	    trace_sched(p, am_out);
 	}
@@ -279,7 +279,7 @@ Process *schedule(Process *p, int calls)
 	if (do_time) {
 	    bump_timer();
 	}
-        STOP_TIMER(system);
+        BM_STOP_TIMER(system);
     }
 
     /*
@@ -329,7 +329,7 @@ Process *schedule(Process *p, int calls)
 #endif
 	}
 
-        START_TIMER(system);
+        BM_START_TIMER(system);
 
 	/*
 	 * Take the chosen process out of the queue.
@@ -371,9 +371,7 @@ Process *schedule(Process *p, int calls)
 	    }
 	}
 
-#ifdef INSTRUMENT
-	current_erl_process = p->id; /* Always an internal pid */
-#endif
+	ERTS_INSTR_SET_CURR_PROC(p->id);
 
 	p->fcalls = calls;
 #ifdef SHARED_HEAP
@@ -406,8 +404,10 @@ alloc_process(void)
     if (p_next == -1)
 	return NULL;
 
-    if ((p = (Process*) fix_alloc_from(92,process_desc)) == NULL)
+    p = (Process*) erts_alloc_fnf(ERTS_ALC_T_PROC, sizeof(Process));
+    if (!p)
 	return NULL;
+    ERTS_PROC_MORE_MEM(sizeof(Process));
     p->id = make_internal_pid(p_serial << p_serial_shift | p_next);
     p->rstatus = P_FREE;
     p->rcount = 0;
@@ -467,12 +467,12 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     }
 
     processes_busy++;
-#ifdef __BENCHMARK__
-    processes_spawned++;
-#endif
+    BM_COUNT(processes_spawned);
 
 #ifndef SHARED_HEAP
+    BM_SWAP_TIMER(system,size);
     arg_size = size_object(args);
+    BM_SWAP_TIMER(size,system);
     heap_need = arg_size;
 #endif
 
@@ -523,8 +523,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 #endif
 
 #ifdef SHARED_HEAP
-    p->send = (Eterm *) erts_safe_sl_alloc_from(7, (sizeof(Eterm)
-						    * S_DEFAULT_SIZE));
+    p->send = (Eterm *) ERTS_STACK_ALLOC(sizeof(Eterm) * S_DEFAULT_SIZE);
     p->stop = p->stack = p->send + S_DEFAULT_SIZE;
     p->stack_sz = S_DEFAULT_SIZE;
     p->htop = NULL;
@@ -532,7 +531,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->heap = NULL;
     p->heap_sz = 0;
 #else
-    p->heap = (Eterm *) erts_safe_sl_alloc_from(8, sizeof(Eterm)*sz);
+    p->heap = (Eterm *) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP, sizeof(Eterm)*sz);
     p->old_hend = p->old_htop = p->old_heap = NULL;
     p->high_water = p->heap;
     p->gen_gcs = 0;
@@ -560,10 +559,16 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->max_arg_reg = sizeof(p->def_arg_reg)/sizeof(p->def_arg_reg[0]);
     p->arg_reg[0] = mod;
     p->arg_reg[1] = func;
+    BM_STOP_TIMER(system);
+    BM_MESSAGE(args,p,parent);
+    BM_START_TIMER(system);
 #ifdef SHARED_HEAP
     p->arg_reg[2] = args;
 #else
+    BM_SWAP_TIMER(system,copy);
     p->arg_reg[2] = copy_struct(args, arg_size, &p->htop, &p->off_heap);
+    BM_MESSAGE_COPIED(arg_size);
+    BM_SWAP_TIMER(copy,system);
 #endif
     p->arity = 3;
 
@@ -572,7 +577,6 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     sys_memset(&p->tm, 0, sizeof(ErlTimer));
 
     p->reg = NULL;
-    p->reg_atom = THE_NON_VALUE;
     p->dist_entry = NULL;
     p->error_handler = am_error_handler;    /* default */
     p->links = NULL;
@@ -607,6 +611,9 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 #ifdef HEAP_FRAG_ELIM_TEST
     p->ssb = NULL;
 #endif
+    p->parent = parent->id;
+    p->started = erts_get_time();
+
     process_tab[internal_pid_index(p->id)] = p;
 
     if (IS_TRACED(parent)) {
@@ -696,7 +703,7 @@ void erts_init_empty_process(Process *p)
     p->status = P_RUNABLE;
     p->rstatus = P_RUNABLE;
     p->rcount = 0;
-    p->id = 0;
+    p->id = NIL;
     p->prio = PRIORITY_NORMAL;
     p->reds = 0;
     p->error_handler = am_error_handler;
@@ -716,7 +723,6 @@ void erts_init_empty_process(Process *p)
     p->off_heap.overhead = 0;
 #endif
     p->reg = NULL;
-    p->reg_atom = THE_NON_VALUE;
     p->heap_sz = 0;
 #ifndef SHARED_HEAP
     p->high_water = NULL;
@@ -773,6 +779,9 @@ void erts_init_empty_process(Process *p)
     p->ssb = NULL;
 #endif
 
+    p->parent = NIL;
+    p->started = 0;
+
 #ifdef HIPE
     hipe_init_process(&p->hipe);
 #endif
@@ -816,39 +825,43 @@ delete_process0(Process* p, int do_delete)
     p->off_heap.mso = (void *) 0x8DEFFACD;
 #endif
     
-    if (p->arg_reg != p->def_arg_reg)
-	sys_free(p->arg_reg);
+    if (p->arg_reg != p->def_arg_reg) {
+	ERTS_PROC_LESS_MEM(p->max_arg_reg * sizeof(p->arg_reg[0]));
+	erts_free(ERTS_ALC_T_ARG_REG, p->arg_reg);
+    }
 
     /*
      * Release heaps. Clobber contents in DEBUG build.
      */
 
 #ifdef SHARED_HEAP
-#  ifdef DEBUG
+#ifdef DEBUG
     sys_memset(p->send, 0xfb, p->stack_sz*sizeof(Eterm));
-#  endif
-#  ifdef HIPE
+#endif
+#ifdef HIPE
     hipe_delete_process(&p->hipe);
-#  endif
-    erts_sl_free((void*) p->send);
-#else
-#  ifdef DEBUG
+#endif
+    ERTS_STACK_FREE((void*) p->send, p->stack_sz * sizeof(Eterm));
+#else /* not SHARED_HEAP */
+#ifdef DEBUG
     sys_memset(p->heap, 0xfb, p->heap_sz*sizeof(Eterm));
-#  endif
-#  ifdef HIPE
+#endif
+#ifdef HIPE
     hipe_delete_process(&p->hipe);
-#  endif
-    erts_sl_free((void*) p->heap);
+#endif
+    ERTS_HEAP_FREE(ERTS_ALC_T_HEAP, (void*) p->heap, p->heap_sz*sizeof(Eterm));
     if (p->old_heap != NULL) {
-#  ifdef DEBUG
+#ifdef DEBUG
 	sys_memset(p->old_heap, 0xfb, (p->old_hend-p->old_heap)*sizeof(Eterm));
-#  endif
-	erts_sl_free(p->old_heap);
+#endif
+	ERTS_HEAP_FREE(ERTS_ALC_T_OLD_HEAP,
+		       p->old_heap,
+		       (p->old_hend-p->old_heap)*sizeof(Eterm));
     }
 
 #ifdef HEAP_FRAG_ELIM_TEST
     if (p->ssb) {
-	erts_sl_free(p->ssb);
+	erts_free(ERTS_ALC_T_SSB, p->ssb);
     }
 #ifdef DEBUG
     p->ssb = (void *) 0x7DEFFACD;
@@ -866,15 +879,7 @@ delete_process0(Process* p, int do_delete)
     }
 #endif /* SHARED_HEAP */
 
-    if (p->dictionary != NULL) {
-	sys_free(p->dictionary);
-	p->dictionary = NULL;
-    }
-
-    if (p->debug_dictionary != NULL) {
-	sys_free(p->debug_dictionary);
-	p->debug_dictionary = NULL;
-    }
+    erts_erase_dicts(p);
 
     /* free all pending messages */
     mp = p->msg.first;
@@ -892,8 +897,11 @@ delete_process0(Process* p, int do_delete)
 	lnk = next_link;
     }
 
-    if (p->ct != NULL)
-        sys_free(p->ct);
+    if (p->ct != NULL) {
+	ERTS_PROC_LESS_MEM((sizeof(struct saved_calls)
+			    + (p->ct->len - 1) * sizeof(Export *)));
+        erts_free(ERTS_ALC_T_CALLS_BUF, (void *) p->ct);
+    }
 
     if (p->flags & F_USING_DB)
 	db_proc_dead(p->id);
@@ -925,19 +933,13 @@ delete_process0(Process* p, int do_delete)
      * Don't free it here, just mark it.
      */
     if (do_delete) {
-        fix_free(process_desc, (Eterm *) p);
+	ERTS_PROC_LESS_MEM(sizeof(Process));
+        erts_free(ERTS_ALC_T_PROC, (void *) p);
     } else {
         p->status = P_FREE;
     }
     processes_busy--;
 }
-
-#ifdef KEEP_ZOMBIE
-#define SAVE_KILLED	100
-static Process *last_killed[SAVE_KILLED];
-static int last_killed_no = 0;
-static int keep_killed = 0;
-#endif
 
 /*
  * p must be the currently executing process.
@@ -945,106 +947,11 @@ static int keep_killed = 0;
 static void
 delete_process(Process* p)
 {
-#ifdef KEEP_ZOMBIE
-   Process *kp;
-   int gap = SAVE_KILLED - keep_killed;
-   int i;
-#endif
-
    if (p->reg != NULL)
       unregister_name(p, p->reg->name);
 
    cancel_timer(p);		/* Always cancel timer just in case */
-
-#ifdef KEEP_ZOMBIE
-   if (p->freason != EXC_NORMAL
-/*       && p->freason != USER_EXIT */
-       && (keep_killed > 0 ||
-	   (keep_killed < 0 && last_killed_no < -keep_killed)))
-   {
-      i = (last_killed_no + gap) % SAVE_KILLED;
-      kp = last_killed[i];
-      if (kp != NULL)
-      {
-	 delete_process0(kp, 1);
-	 last_killed[i] = NULL;
-      }
-      last_killed[last_killed_no] = p;
-      last_killed_no = (last_killed_no + 1) % SAVE_KILLED;
-
-      if (p->flags & F_USING_DB)
-	 db_proc_dead(p->id);
-      FLAGS(p) |= F_NEED_FULLSWEEP;
-      erts_garbage_collect(p, 0, p->arg_reg, p->arity);
-   }
-   else
-      delete_process0(p, 0);
-#else
    delete_process0(p, 0);
-#endif
-}
-
-int keep_zombies(int z, int *oldz)
-{
-   Process *kp;
-   int i;
-
-   *oldz = keep_killed;
-
-   if (z < -SAVE_KILLED || z > SAVE_KILLED)
-      return 0;
-
-   for (i = 0; i < SAVE_KILLED; i++)
-   {
-      kp = last_killed[i];
-      if (kp != NULL)
-      {
-	 delete_process0(kp, 1);
-	 last_killed[i] = NULL;
-      }
-   }
-   last_killed_no = 0;
-
-   keep_killed = z;
-   return 1;
-}
-
-
-/* Copied from 'process_info' in break.c and modified */
-void process_info_zombies(to)
-CIO to;
-{
-    int i;
-    int gap = 0;
-    int k;
-    Process *p;
-
-    if (keep_killed < 0)
-    {
-       k = -keep_killed;
-    }
-    else
-    {
-       gap = SAVE_KILLED - keep_killed;
-       k = keep_killed;
-    }
-
-    erl_printf(to,"\nZombie Process Information\n");
-    erl_printf(to,"Processes kept: ");
-    if (keep_killed > 0)
-       erl_printf(to,"the %d most recent\n", k);
-    else
-       erl_printf(to,"%d\n", k);
-    erl_printf(to,"--------------------------------------------------\n");
-    for (i = 0; i < k; i++) {
-       if (keep_killed < 0)
-	  p = last_killed[i];
-       else
-	  p = last_killed[(last_killed_no + gap + i) % SAVE_KILLED];
-       if ((p != NULL) && (p->i != ENULL)) {
-	   print_process_info(p,to);
-       }
-    }
 }
 
 void
@@ -1145,6 +1052,9 @@ do_exit(Process* p, Eterm reason)
 	if (EQ(erts_default_tracer, p->id)) {
 	    erts_default_tracer = NIL;
 	    erts_default_process_flags &= ~TRACE_FLAGS;
+	}
+	if (EQ(erts_system_monitor, p->id)) {
+	    erts_system_monitor_clear();
 	}
     }
 
@@ -1355,13 +1265,23 @@ void
 erts_stack_dump(Process *p, CIO fd)
 {
     Eterm* sp;
-    int i;
     int yreg = -1;
 
-    erl_printf(fd, "program counter = 0x%x (", p->i);
+    erts_program_counter_info(p, fd);
+    for (sp = p->stop; sp < STACK_START(p); sp++) {
+        yreg = stack_element_dump(p, sp, yreg, fd);
+    }
+}
+
+void
+erts_program_counter_info(Process *p, CIO fd)
+{
+    int i;
+
+    erl_printf(fd, "Program counter: 0x%x (", p->i);
     print_function_from_pc(p->i, fd);
     erl_printf(fd, ")\n");
-    erl_printf(fd, "cp = 0x%x (", p->cp);
+    erl_printf(fd, "CP: 0x%x (", p->cp);
     print_function_from_pc(p->cp, fd);
     erl_printf(fd, ")\n");
     if (!((p->status == P_RUNNING) || (p->status == P_GARBING))) {
@@ -1371,9 +1291,6 @@ erts_stack_dump(Process *p, CIO fd)
             display(p->arg_reg[i], fd);
             erl_printf(fd, "\n");
         }
-    }
-    for (sp = p->stop; sp < STACK_START(p); sp++) {
-        yreg = stack_element_dump(p, sp, yreg, fd);
     }
 }
 

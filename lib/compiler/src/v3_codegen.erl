@@ -115,6 +115,8 @@ cg_fun(Les, Hvs, Vdb, St0) ->
 cg(Le, Vdb, Bef, St) ->
     cg(Le#l.ke, Le, Vdb, Bef, St).
 
+cg({block,Es}, Le, Vdb, Bef, St) ->
+    block_cg(Es, Le, Vdb, Bef, St);
 cg({match,M,Rs}, Le, Vdb, Bef, St) ->
     match_cg(M, Rs, Le, Vdb, Bef, St);
 cg({match_fail,F}, Le, Vdb, Bef, St) ->
@@ -131,6 +133,8 @@ cg(receive_next, Le, Vdb, Bef, St) ->
     recv_next_cg(Le, Vdb, Bef, St);
 cg(receive_accept, _Le, _Vdb, Bef, St) -> {[remove_message],Bef,St};
 cg(receive_reject, _Le, _Vdb, Bef, St) -> {[],Bef,St};
+cg({'try',Ta,Vs,Tb,Evs,Th,Rs}, Le, Vdb, Bef, St) ->
+    try_cg(Ta, Vs, Tb, Evs, Th, Rs, Le, Vdb, Bef, St);
 cg({'catch',Cb,R}, Le, Vdb, Bef, St) ->
     catch_cg(Cb, R, Le, Vdb, Bef, St);
 cg({set,Var,Con}, Le, Vdb, Bef, St) -> set_cg(Var, Con, Le, Vdb, Bef, St);
@@ -185,6 +189,8 @@ need_heap_1(#l{ke={call,_Func,_As,_Rs},i=I}, H, F) ->
     {need_heap_need(I, H, F),0,true};
 need_heap_1(#l{ke={bif,dsetelement,_As,_Rs},i=I}, H, F) ->
     {need_heap_need(I, H, F),0,true};
+need_heap_1(#l{ke={bif,{make_fun,_,_,_,_},_As,_Rs},i=I}, H, F) ->
+    {need_heap_need(I, H, F),0,true};
 need_heap_1(#l{ke={bif,_Bif,_As,_Rs}}, H, F) ->
     {[],H,F};
 need_heap_1(#l{i=I}, H, F) ->
@@ -234,18 +240,10 @@ match_cg({select,V,Scs}, _Va, Fail, Bef, St) ->
 match_cg({guard,Gcs}, _Le, Fail, Bef, St) ->
     match_fmf(fun (G, F, Sta) -> guard_clause_cg(G, F, Bef, Sta) end,
 	      Fail, St, Gcs);
-match_cg({block,Es}, Le, _Fail, Bef, St0) ->
+match_cg({block,Es}, Le, _Fail, Bef, St) ->
     %% Must clear registers and stack of dead variables.
     Int = clear_dead(Bef, Le#l.i, Le#l.vdb),
-    case St0#cg.is_top_block of
-	false ->
-	    block_cg(Es, Le#l.i, Le#l.vdb, Int, St0);
-	true ->
-	    {Keis,Aft,St1} = block_cg(Es, Le#l.i, Le#l.vdb, Int,
-				      St0#cg{is_top_block=false,
-					     need_frame=false}),
-	    top_level_block(Keis, Aft, max_reg(Int#sr.reg), St1)
-    end.
+    block_cg(Es, Le, Int, St).
 
 %% match_fail_cg(FailReason, Le, Vdb, StackReg, State) ->
 %%	{[Ainstr],StackReg,State}.
@@ -273,11 +271,35 @@ match_fail_cg(if_clause, Le, Vdb, Bef, St) ->
     Int0 = clear_dead(Bef, Le#l.i, Vdb),
     {Sis,Int1} = adjust_stack(Int0, Le#l.i, Le#l.i+1, Vdb),
     {Sis ++ [if_end],
-     Int1#sr{reg=clear_regs(Int1#sr.reg)}, St}.
+     Int1#sr{reg=clear_regs(Int1#sr.reg)}, St};
+match_fail_cg({try_clause,Reason}, Le, Vdb, Bef, St) ->
+    {R,Ms,Int0} = cg_reg_arg(Reason, Bef),
+    Int1 = clear_dead(Int0, Le#l.i, Vdb),
+    {Sis,Int2} = adjust_stack(Int1, Le#l.i, Le#l.i+1, Vdb),
+    {Ms ++ Sis ++ [{try_case_end,R}],
+     Int2#sr{reg=clear_regs(Int0#sr.reg)},St}.
 
-block_cg([], _I, _Vdb, Bef, St0) ->
+
+%% block_cg([Kexpr], Le, Vdb, StackReg, St) -> {[Ainstr],StackReg,St}.
+%% block_cg([Kexpr], Le, StackReg, St) -> {[Ainstr],StackReg,St}.
+
+block_cg(Es, Le, _Vdb, Bef, St) ->
+    block_cg(Es, Le, Bef, St).
+
+block_cg(Es, Le, Bef, St0) ->
+    case St0#cg.is_top_block of
+	false ->
+	    cg_block(Es, Le#l.i, Le#l.vdb, Bef, St0);
+	true ->
+	    {Keis,Aft,St1} = cg_block(Es, Le#l.i, Le#l.vdb, Bef,
+				      St0#cg{is_top_block=false,
+					     need_frame=false}),
+	    top_level_block(Keis, Aft, max_reg(Bef#sr.reg), St1)
+    end.
+
+cg_block([], _I, _Vdb, Bef, St0) ->
     {[],Bef,St0};
-block_cg(Kes0, I, Vdb, Bef, St0) ->
+cg_block(Kes0, I, Vdb, Bef, St0) ->
     {Kes2,Int1,St1} =
 	case basic_block(Kes0) of
 	    {Kes1,LastI,Args,Rest} ->
@@ -287,7 +309,7 @@ block_cg(Kes0, I, Vdb, Bef, St0) ->
 	    {Kes1,Rest} ->
 		cg_list(Kes1, I, Vdb, Bef, St0)
 	end,
-    {Kes3,Int2,St2} = block_cg(Rest, I, Vdb, Int1, St1),
+    {Kes3,Int2,St2} = cg_block(Rest, I, Vdb, Int1, St1),
     {Kes2 ++ Kes3,Int2,St2}.
 
 basic_block(Kes) -> basic_block(Kes, []).
@@ -385,7 +407,13 @@ save_carefully([V|Vs], Bef, Acc) ->
 
 x0_vars([], _Fb, _Lf, _Vdb) -> [];
 x0_vars([{var,V}|_], Fb, _Lf, Vdb) ->
-    {V,F,L} = vdb_find(V, Vdb),
+    %%{V,F,L} = vdb_find(V, Vdb),
+    case vdb_find(V, Vdb) of
+	{V,F,L} -> {V,F,L};
+	error -> io:fwrite("x0_vars: ~p~n", [{V,Vdb}]),
+		 1=2,
+		 F=L=1
+    end,
     x0_vars1([{V,F,L}], Fb, F, Vdb);
 x0_vars([X0|_], Fb, Lf, Vdb) ->
     x0_vars1([{X0,Lf,Lf}], Fb, Lf, Vdb).
@@ -772,18 +800,18 @@ match_fmf(_, _, St, []) -> {[],void,St}.
 %%  frame size. Finally the actual call is made.  Call then needs the
 %%  return values filled in.
 
-call_cg({make_fun,Func,Arity,Index,Uniq}, As, Rs, Le, Vdb, Bef, St0) ->
-    {Sis,Int} = cg_setup_call(As, Bef, Le#l.i, Vdb),
-    Reg = load_vars(Rs, clear_regs(Int#sr.reg)),
-    {FuncLbl,St1} = local_func_label(Func, Arity, St0),
-    MakeFun = case St0#cg.new_funs of
-		  true -> {make_fun2,{f,FuncLbl},Index,Uniq,length(As)};
-		  false -> {make_fun,{f,FuncLbl},Uniq,length(As)}
-	      end,
-    {comment({make_fun,{Func,Arity,Uniq},As}) ++ Sis ++
-     [MakeFun],
-     clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb),
-     St1};
+% call_cg({make_fun,Func,Arity,Index,Uniq}, As, Rs, Le, Vdb, Bef, St0) ->
+%     {Sis,Int} = cg_setup_call(As, Bef, Le#l.i, Vdb),
+%     Reg = load_vars(Rs, clear_regs(Int#sr.reg)),
+%     {FuncLbl,St1} = local_func_label(Func, Arity, St0),
+%     MakeFun = case St0#cg.new_funs of
+% 		  true -> {make_fun2,{f,FuncLbl},Index,Uniq,length(As)};
+% 		  false -> {make_fun,{f,FuncLbl},Uniq,length(As)}
+% 	      end,
+%     {comment({make_fun,{Func,Arity,Uniq},As}) ++ Sis ++
+%      [MakeFun],
+%      clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb),
+%      St1};
 call_cg({var,V}, As, Rs, Le, Vdb, Bef, St0) ->
     {Sis,Int} = cg_setup_call(As++[{var,V}], Bef, Le#l.i, Vdb),
     %% Put return values in registers.
@@ -793,6 +821,14 @@ call_cg({var,V}, As, Rs, Le, Vdb, Bef, St0) ->
     {Frees,Aft} = free_dead(clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb)),
     {comment({call_fun,{var,V},As}) ++ Sis ++ Frees ++ [{call_fun,Arity}],
      Aft,need_stack_frame(St0)};
+% call_cg({internal,C}, As, Rs, Le, Vdb, Bef, St0) ->
+%     {Sis,Int} = cg_setup_call(As, Bef, Le#l.i, Vdb),
+%     %% Put return values in registers.
+%     Reg = load_vars(Rs, clear_regs(Int#sr.reg)),
+%     %% Build complete code and final stack/register state.
+%     {Frees,Aft} = free_dead(clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb)),
+%     {comment({internal,C,As}) ++ Sis ++ Frees ++ [{internal,C,length(As)}],
+%      Aft,St0};
 call_cg(Func, As, Rs, Le, Vdb, Bef, St0) ->
     {Sis,Int} = cg_setup_call(As, Bef, Le#l.i, Vdb),
     %% Put return values in registers.
@@ -889,6 +925,19 @@ bif_cg(dsetelement, [Index0,Tuple0,New0], _Rs, Le, Vdb, Bef, St0) ->
     Index = Index1-1,
     {Ms ++ [{set_tuple_element,New,Tuple,Index}],
      clear_dead(Int, Le#l.i, Vdb), St0};
+bif_cg({make_fun,Func,Arity,Index,Uniq}, As, Rs, Le, Vdb, Bef, St0) ->
+    %% This behaves more like a function call.
+    {Sis,Int} = cg_setup_call(As, Bef, Le#l.i, Vdb),
+    Reg = load_vars(Rs, clear_regs(Int#sr.reg)),
+    {FuncLbl,St1} = local_func_label(Func, Arity, St0),
+    MakeFun = case St0#cg.new_funs of
+		  true -> {make_fun2,{f,FuncLbl},Index,Uniq,length(As)};
+		  false -> {make_fun,{f,FuncLbl},Uniq,length(As)}
+	      end,
+    {comment({make_fun,{Func,Arity,Uniq},As}) ++ Sis ++
+     [MakeFun],
+     clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb),
+     St1};
 bif_cg(Bif, As, Rs, Le, Vdb, Bef, St0) ->
     {Ars,Ms,Int0} = cg_reg_args(As, Bef),
 
@@ -952,35 +1001,59 @@ cg_recv_wait({atom,infinity}, Tes, I, Bef, St0) ->
     %% But to keep the stack and register information up to date,
     %% we will generate the code for the 'after' body, and then discard it.
     Int1 = clear_dead(Bef, I, Tes#l.vdb),
-    {_,Int2,St1} = block_cg(Tes#l.ke, Tes#l.i, Tes#l.vdb,
+    {_,Int2,St1} = cg_block(Tes#l.ke, Tes#l.i, Tes#l.vdb,
 			      Int1#sr{reg=clear_regs(Int1#sr.reg)}, St0),
     {[{wait,{f,St1#cg.recv}}],Int2,St1};
 cg_recv_wait({integer,0}, Tes, _I, Bef, St0) ->
-    {Tis,Int,St1} = block_cg(Tes#l.ke, Tes#l.i, Tes#l.vdb, Bef, St0),
+    {Tis,Int,St1} = cg_block(Tes#l.ke, Tes#l.i, Tes#l.vdb, Bef, St0),
     {[timeout|Tis],Int,St1};
 cg_recv_wait(Te, Tes, I, Bef, St0) ->
     {Reg,Ris,Int0} = cg_reg_arg(Te, Bef),
     %% Must have empty registers here!  Bug if anything in registers.
     Int1 = clear_dead(Int0, I, Tes#l.vdb),
-    {Tis,Int2,St1} = block_cg(Tes#l.ke, Tes#l.i, Tes#l.vdb,
+    {Tis,Int2,St1} = cg_block(Tes#l.ke, Tes#l.i, Tes#l.vdb,
 			     Int1#sr{reg=clear_regs(Int1#sr.reg)}, St0),
     {Ris ++ [{wait_timeout,{f,St1#cg.recv},Reg},timeout] ++ Tis,Int2,St1}.
 
-%% recv_next_cg(Le, Vdb, Bef, St) -> {[Ainstr],Aft,St}.
+%% recv_next_cg(Le, Vdb, StackReg, St) -> {[Ainstr],StackReg,St}.
 %%  Use adjust stack to clear stack, but only need it for Aft.
 
 recv_next_cg(Le, Vdb, Bef, St) ->
     {Sis,Aft} = adjust_stack(Bef, Le#l.i, Le#l.i+1, Vdb),
     {[{loop_rec_end,{f,St#cg.recv}}] ++ Sis,Aft,St}.	%Joke
 
-%% catch_cg(CatchBlock, Var, I, Vdb, Bef, St) -> {[Ainstr],Aft,St}.
+%% try_cg(TryBlock, [BodyVar], TryBody, [ExcpVar], TryHandler, [Ret],
+%%        Le, Vdb, StackReg, St) -> {[Ainstr],StackReg,St}.
+
+try_cg(Ta, Vs, Tb, Evs, Th, Rs, Le, Vdb, Bef, St0) ->
+    {B,St1} = new_label(St0),			%Body label
+    {H,St2} = new_label(St1),			%Handler label
+    {E,St3} = new_label(St2),			%End label
+    TryTag = Ta#l.i,
+    Int1 = Bef#sr{stk=put_try(TryTag, Bef#sr.stk)},
+    TryReg = fetch_stack({try_tag,TryTag}, Int1#sr.stk),
+    {Ais,Int2,St4} = cg(Ta, Vdb, Int1, St3#cg{break=B,in_catch=true}),
+    Int3 = Int2#sr{stk=drop_try(TryTag, Int2#sr.stk)},
+    St5 = St4#cg{break=E,in_catch=St3#cg.in_catch},
+    {Bis,Baft,St6} = cg(Tb, Vdb, Int3#sr{reg=load_vars(Vs, Int3#sr.reg)}, St5),
+    {His,Haft,St7} = cg(Th, Vdb, Int3#sr{reg=load_vars(Evs, Int3#sr.reg)}, St6),
+    Int4 = sr_merge(Baft, Haft),		%Merge stack/registers
+    Aft = Int4#sr{reg=load_vars(Rs, Int4#sr.reg)},
+    {[{'try',TryReg,{f,H}}] ++ Ais ++ 
+     [{label,B},{try_end,TryReg}] ++ Bis ++
+     [{label,H},{try_case,TryReg}] ++ His ++
+     [{label,E}],
+     clear_dead(Aft, Le#l.i, Vdb),
+     St7#cg{break=St0#cg.break}}.     
+
+%% catch_cg(CatchBlock, Ret, Le, Vdb, Bef, St) -> {[Ainstr],Aft,St}.
 
 catch_cg(C, {var,R}, Le, Vdb, Bef, St0) ->
     {B,St1} = new_label(St0),
     CatchTag = Le#l.i,
     Int1 = Bef#sr{stk=put_catch(CatchTag, Bef#sr.stk)},
     CatchReg = fetch_stack({catch_tag,CatchTag}, Int1#sr.stk),
-    {Cis,Int2,St2} = block_cg(C, Le#l.i, Le#l.vdb, Int1,
+    {Cis,Int2,St2} = cg_block(C, Le#l.i, Le#l.vdb, Int1,
 			      St1#cg{break=B,in_catch=true}),
     Aft = Int2#sr{reg=load_reg(R, 0, Int2#sr.reg),
 		  stk=drop_catch(CatchTag, Int2#sr.stk)},
@@ -1451,6 +1524,25 @@ fetch_stack(V, [_|Stk], I) -> fetch_stack(V, Stk, I+1).
 
 on_stack(V, Stk) -> keymember(V, 1, Stk).
 
+%% put_try(TryTag, Stack) -> Stack'
+%% drop_try(TryTag, Stack) -> Stack'
+%%  Special interface for putting and removing try tags, to ensure that
+%%  tryes nest properly.
+
+put_try(Tag, Stk0) -> put_try(Tag, reverse(Stk0), []).
+
+put_try(Tag, [], Stk) ->
+    put_stack({try_tag,Tag}, Stk);
+put_try(Tag, [{try_tag, _}|RevStk], Stk) ->
+    reverse(RevStk, put_stack({try_tag,Tag}, Stk));
+put_try(Tag, [Other|Stk], Acc) ->
+    put_try(Tag, Stk, [Other|Acc]).
+
+drop_try(Tag, Stk) -> reverse(drop_try1(Tag, reverse(Stk))).
+
+drop_try1(Tag, [{{try_tag,Tag}}|Stk]) -> [free|Stk];
+drop_try1(Tag, [Other|Stk]) -> [Other|drop_try1(Tag, Stk)].
+
 %% put_catch(CatchTag, Stack) -> Stack'
 %% drop_catch(CatchTag, Stack) -> Stack'
 %%  Special interface for putting and removing catch tags, to ensure that
@@ -1460,15 +1552,13 @@ put_catch(Tag, Stk0) -> put_catch(Tag, reverse(Stk0), []).
 
 put_catch(Tag, [], Stk) ->
     put_stack({catch_tag,Tag}, Stk);
-put_catch(Tag, [{catch_tag, _}|RevStk], Stk) ->
+put_catch(Tag, [{{catch_tag,_}}|_]=RevStk, Stk) ->
     reverse(RevStk, put_stack({catch_tag,Tag}, Stk));
 put_catch(Tag, [Other|Stk], Acc) ->
     put_catch(Tag, Stk, [Other|Acc]).
 
-drop_catch(Tag, Stk) -> reverse(drop_catch1(Tag, reverse(Stk))).
-
-drop_catch1(Tag, [{{catch_tag,Tag}}|Stk]) -> [free|Stk];
-drop_catch1(Tag, [Other|Stk]) -> [Other|drop_catch1(Tag, Stk)].
+drop_catch(Tag, [{{catch_tag,Tag}}|Stk]) -> [free|Stk];
+drop_catch(Tag, [Other|Stk]) -> [Other|drop_catch(Tag, Stk)].
 
 %% new_label(St) -> {L,St}.
 
@@ -1487,4 +1577,3 @@ flatmapfoldr(F, Accu0, [Hd|Tail]) ->
     {R,Accu2} = F(Hd, Accu1),
     {R++Rs,Accu2};
 flatmapfoldr(_, Accu, []) -> {[],Accu}.
-

@@ -22,7 +22,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # Macros
 #
 
-SUB_DIRECTORIES = src c_src doc/src
+SUB_DIRECTORIES = pkix src c_src doc/src examples/certs examples/src
 
 include vsn.mk
 VSN = $(SSL_VSN)

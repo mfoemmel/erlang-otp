@@ -13,6 +13,9 @@
 -include("../main/hipe.hrl").
 -include("../util/hipe_vector.hrl").
 
+%% XXX: Temporary so that unused function warnings are suppressed
+-compile(export_all).
+
 %%-----------------------------------------------------------------------
 
 %% Coloring are given as a list of {Reg, {reg, NewReg}} or 

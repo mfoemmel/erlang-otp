@@ -31,7 +31,7 @@ init(Type) ->
 % should link to user (or group_leader???)
     {ok, Type}.
     
-handle_event({Type, GL, Msg}, Type) when node(GL) /= node() ->
+handle_event({Type, GL, _Msg}, Type) when node(GL) /= node() ->
     {ok, Type};
 handle_event(Event, Type) ->
     sasl_report:write_report(standard_io, Type, tag_event(Event)),

@@ -1,7 +1,7 @@
 %% =====================================================================
 %% Support functions for property lists
 %%
-%% Copyright (C) 2000-2002 Richard Carlsson
+%% Copyright (C) 2000-2003 Richard Carlsson
 %%
 %% This library is free software; you can redistribute it and/or modify
 %% it under the terms of the GNU Lesser General Public License as
@@ -47,7 +47,7 @@
 	 lookup_all/2, is_defined/2, get_value/2, get_value/3,
 	 get_all_values/2, append_values/2, get_bool/2, get_keys/1,
 	 delete/2, substitute_aliases/2, substitute_negations/2,
-	 expand/2, normalize/2]).
+	 expand/2, normalize/2, split/2]).
 
 
 %% @spec property(P::property()) -> property()
@@ -589,3 +589,54 @@ normalize(L, [{negations, Ns} | Xs]) ->
     normalize(substitute_negations(Ns, L), Xs);
 normalize(L, []) ->
     compact(L).
+
+%% ---------------------------------------------------------------------
+
+%% @spec split(List::[term()], Keys::[term()]) -> {Lists, Rest}
+%%           Lists = [[term()]]
+%%           Rest = [term()]
+%%
+%% @doc Partitions <code>List</code> into a list of sublists and a
+%% remainder. <code>Lists</code> contains one sublist for each key in
+%% <code>Keys</code>, in the corresponding order. The relative order of
+%% the elements in each sublist is preserved from the original
+%% <code>List</code>. <code>Rest</code> contains the elements in
+%% <code>List</code> that are not associated with any of the given keys,
+%% also with their original relative order preserved.
+%%
+%% <p>Example:<pre>
+%% split([{c, 2}, {e, 1}, a, {c, 3, 4}, d, {b, 5}, b], [a, b, c])</pre>
+%% returns<pre>
+%% {[[a], [{b, 5}, b],[{c, 2}, {c, 3, 4}]], [{e, 1}, d]}</pre>
+%% </p>
+
+split(List, Keys) ->
+    {Store, Rest} = split(List, dict:from_list([{K, []} || K <- Keys]), []),
+    {[lists:reverse(dict:fetch(K, Store)) || K <- Keys],
+     lists:reverse(Rest)}.
+
+split([P | Ps], Store, Rest) ->
+    if atom(P) ->
+	    case dict:is_key(P, Store) of
+		true ->
+		    split(Ps, dict_prepend(P, P, Store), Rest);
+		false ->
+		    split(Ps, Store, [P | Rest])
+	    end;
+       tuple(P), size(P) >= 1 ->
+	    %% Note that Key does not have to be an atom in this case.
+	    Key = element(1, P),
+	    case dict:is_key(Key, Store) of
+		true ->
+		    split(Ps, dict_prepend(Key, P, Store), Rest);
+		false ->
+		    split(Ps, Store, [P | Rest])
+	    end;
+       true ->
+	    split(Ps, Store, [P | Rest])
+    end;
+split([], Store, Rest) ->
+    {Store, Rest}.
+
+dict_prepend(Key, Val, Dict) ->
+    dict:store(Key, [Val | dict:fetch(Key, Dict)], Dict).

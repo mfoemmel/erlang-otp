@@ -185,7 +185,7 @@ vars() ->
 %%-----------------------------------------------------------------
 %% API functions
 %%-----------------------------------------------------------------
-is_valid_tag("", TDomain, TAddress) ->
+is_valid_tag("", _TDomain, _TAddress) ->
     true;
 is_valid_tag(Tag, TDomain, TAddress) ->
     is_valid_tag(TDomain, TAddress, Tag, []).

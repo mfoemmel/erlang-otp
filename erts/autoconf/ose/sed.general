@@ -27,6 +27,7 @@ s|@cc_root@|/clearcase/otp/|
 # Define OSE even though cross-compiling. 
 s|@HCFLAGS@|-DOSE|
 s|@HCLIBS@||
+s|@ENABLE_ALLOC_TYPE_VARS@||
 
 # Conditional inclusion of applications
 s|@HIPE_APP@||
@@ -50,14 +51,14 @@ s|@EMU_LIBOBJS@||
 
 # General CFLAGS
 # use elib_malloc
-s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R -DENABLE_ELIB_MALLOC -DELIB_HEAP_USER -DELIB_SORTED_BLOCKS -DWORDS_BIGENDIAN|
+s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R -DENABLE_ELIB_MALLOC -DELIB_HEAP_USER -DELIB_SORTED_BLOCKS -DSMALL_MEMORY -DWORDS_BIGENDIAN|
 # don't use elib_malloc
 #s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R -DWORDS_BIGENDIAN|
 s|@WFLAGS@||
 s|@HIPE_ENABLED@||
 s|@DIAB_OPTS@|-Xdebug-struct-all -Xforce-declarations -Xforce-prototypes -Xsmall-const=0 -Xstrings-in-text -Xsmall-data=0|
-s|@DIAB_INCLS@|-I/ldisk/ose/4.4/powerpc/include/diab|
-s|@OSE_INCLS@|-I/ldisk/ose/4.4/powerpc/std-include -I/ldisk/ose/4.4/powerpc/include -I/ldisk/ose/4.4/powerpc/conf -I/ldisk/ose/4.4/powerpc/krn-750/include -I/ldisk/ose/4.4/powerpc/bsp-powercore680/include -I/ldisk/ose/4.4/examples/common/include|
+s|@DIAB_INCLS@|-I/usr/local/share/pgm/ose-4.4/powerpc/include/diab|
+s|@OSE_INCLS@|-I/usr/local/share/pgm/ose-4.4/powerpc/std-include -I/usr/local/share/pgm/ose-4.4/powerpc/include -I/usr/local/share/pgm/ose-4.4/powerpc/conf -I/usr/local/share/pgm/ose-4.4/powerpc/krn-750/include -I/usr/local/share/pgm/ose-4.4/powerpc/bsp-powercore680/include -I/usr/local/share/pgm/ose-4.4/examples/common/include|
 s|@OSE_DEFS@|-DPOWERPC -DOSE_DELTA -DBIG_ENDIAN -D_OSE_ -D_OSE_PPC750_|
 
 # What is this anyway?
@@ -67,5 +68,5 @@ s|@OSE_DEFS@|-DPOWERPC -DOSE_DELTA -DBIG_ENDIAN -D_OSE_ -D_OSE_PPC750_|
 # Only variable substituted directly
 s|$(LDFLAGS)|-r|
 # XXX What is EFFLAGS? Not used in the emulator Makefile.in anyway.
-s|$(EFLAGS)|-DENABLE_ELIB_MALLOC -DELIB_HEAP_USER -DELIB_SORTED_BLOCKS|
+s|$(EFLAGS)|-DENABLE_ELIB_MALLOC -DELIB_HEAP_USER -DELIB_SORTED_BLOCKS -DSMALL_MEMORY|
 

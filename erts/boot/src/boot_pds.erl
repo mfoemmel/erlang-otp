@@ -397,7 +397,7 @@ get_response(X, Data) ->
 
 
 mkport(Cmd, Mode) ->
-    case catch erlang:open_port_prim({spawn, efile}, Mode) of
+    case catch open_port({spawn, efile}, Mode) of
 	P ->
 	    port_command(P, Cmd),
 	    P;

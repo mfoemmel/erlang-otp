@@ -210,19 +210,19 @@ gen_prototypes(G, N, X) ->
 	    emit(HFd, "typedef CORBA_Object ~s;\n\n", [IName]), 	
 	    emit(HFd, "#endif\n\n"), 
 	    
-	    Bodies = [ic_forms:get_body(X)| 
-		[ B || {_, B} <- X#interface.inherit_body]],
+	    Bodies = [{N, ic_forms:get_body(X)}| 
+		      X#interface.inherit_body],
 
 	    emit(HFd, "\n/* Structure definitions  */\n", []), 
-	    foreach(fun(Body) ->
-			    emit_structs_inside_module(G, HFd, N, Body) end, 
+	    foreach(fun({N2, Body}) ->
+			    emit_structs_inside_module(G, HFd, N2, Body) end, 
 		    Bodies),
 
 	    emit(HFd, "\n/* Switch and exec functions  */\n", []), 
 	    emit(HFd, "int ~s__switch(~s oe_obj, CORBA_Environment "
 		 "*oe_env);\n", [IName, IName]), 
-	    foreach(fun(Body) ->
-			    emit_prototypes(G, HFd, N, Body) end, 
+	    foreach(fun({N2, Body}) ->
+			    emit_prototypes(G, HFd, N2, Body) end, 
 		    Bodies),
 
 	    emit(HFd, "\n/* Generic decoder */\n", []), 
@@ -230,23 +230,23 @@ gen_prototypes(G, N, X) ->
 		 "*oe_env);\n", [IName, IName]), 
 
 	    emit(HFd, "\n/* Restore function typedefs */\n", []), 
-	    foreach(fun(Body) ->
-			    emit_restore_typedefs(G, HFd, N, Body) end, 
+	    foreach(fun({N2, Body}) ->
+			    emit_restore_typedefs(G, HFd, N2, Body) end, 
 		    Bodies),
 
 	    emit(HFd, "\n/* Callback functions */\n", []), 
-	    foreach(fun(Body) ->
-			    emit_callback_prototypes(G, HFd, N, Body) end, 
+	    foreach(fun({N2, Body}) ->
+			    emit_callback_prototypes(G, HFd, N2, Body) end, 
 		    Bodies),
 
 	    emit(HFd, "\n/* Parameter decoders */\n", []), 
-	    foreach(fun(Body) ->
-			    emit_decoder_prototypes(G, HFd, N, Body) end, 
+	    foreach(fun({N2, Body}) ->
+			    emit_decoder_prototypes(G, HFd, N2, Body) end, 
 		    Bodies),
 
 	    emit(HFd, "\n/* Message encoders */\n", []), 
-	    foreach(fun(Body) ->
-			    emit_encoder_prototypes(G, HFd, N, Body) end, 
+	    foreach(fun({N2, Body}) ->
+			    emit_encoder_prototypes(G, HFd, N2, Body) end, 
 		    Bodies),
 
 	    %% Emit operation mapping structures
@@ -276,9 +276,10 @@ gen_serv(G, N, X) ->
 
 	    %% Generate exec, decode and encoding functions, and
 	    %% table of exec functions.
-	    Bodies = [ic_forms:get_body(X)| 
-		      [ B || {_, B} <- X#interface.inherit_body]],
-	    foreach(fun(Body) ->
+	    Bodies = [{N, ic_forms:get_body(X)}| 
+		      X#interface.inherit_body],
+
+	    foreach(fun({_N2, Body}) ->
 			    emit_dispatch(G, Fd, N, Body) end, 
 		    Bodies), 
 	    emit_operation_mapping(G, Fd, N, Bodies);
@@ -569,7 +570,7 @@ get_all_opnames(G, N, Bodies) ->
 		     false
 	     end,
     %% zf == filtermap
-    lists:flatmap(fun(Xs) -> lists:zf(Filter, Xs) end, Bodies).
+    lists:flatmap(fun({_, Xs}) -> lists:zf(Filter, Xs) end, Bodies).
 
 %%------------------------------------------------------------
 %% Emit switch 

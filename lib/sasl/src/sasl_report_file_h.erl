@@ -36,7 +36,7 @@ init({File, Type}) ->
 	    What
     end.
     
-handle_event({Type, GL, Msg}, State) when node(GL) /= node() ->
+handle_event({_Type, GL, _Msg}, State) when node(GL) /= node() ->
     {ok, State};
 handle_event(Event, {Fd, File, Type}) ->
     sasl_report:write_report(Fd, Type, tag_event(Event)),
@@ -44,14 +44,14 @@ handle_event(Event, {Fd, File, Type}) ->
 handle_event(_, State) ->
     {ok, State}.
 
-handle_info({'EXIT', Fd, _Reason}, {Fd, File, Type}) ->
+handle_info({'EXIT', Fd, _Reason}, {Fd, _File, _Type}) ->
     remove_handler;
 handle_info(_, State) ->
     {ok, State}.
 
 handle_call(_Query, _State) -> {error, bad_query}.
 
-terminate(_, {Fd, File, Type}) ->
+terminate(_, {Fd, _File, _Type}) ->
     file:close(Fd),
     [].
 

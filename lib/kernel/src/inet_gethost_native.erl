@@ -428,8 +428,6 @@ gethostbyname(_, _)  ->
 
 gethostbyaddr({A,B,C,D}) when ?VALID_V4(A), ?VALID_V4(B), ?VALID_V4(C), ?VALID_V4(D) ->
     getit(?OP_GETHOSTBYADDR, ?PROTO_IPV4, <<A,B,C,D>>);
-gethostbyaddr({0,0,0,0,0,16#ffff,G,H}) when ?VALID_V6(G), ?VALID_V6(H) ->
-    gethostbyaddr({G div 256, G rem 256, H div 256, H rem 256});
 gethostbyaddr({A,B,C,D,E,F,G,H}) when ?VALID_V6(A), ?VALID_V6(B), ?VALID_V6(C), ?VALID_V6(D),
 				      ?VALID_V6(E), ?VALID_V6(F), ?VALID_V6(G), ?VALID_V6(H) ->
     getit(?OP_GETHOSTBYADDR, ?PROTO_IPV6, <<A:16,B:16,C:16,D:16,E:16,F:16,G:16,H:16>>);

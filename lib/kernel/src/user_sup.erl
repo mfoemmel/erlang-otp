@@ -114,6 +114,6 @@ check_flags([{oldshell, []} | T], _) -> check_flags(T, {user, start, []});
 check_flags([{noinput, []} | T], _) -> check_flags(T, {user, start_out, []});
 check_flags([{master, [Node]} | T], _) ->
     check_flags(T, {master, list_to_atom(Node)});
-check_flags([H | T], User) -> check_flags(T, User);
+check_flags([_H | T], User) -> check_flags(T, User);
 check_flags([], User) -> User.
 

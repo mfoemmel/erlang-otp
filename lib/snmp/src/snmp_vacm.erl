@@ -80,7 +80,7 @@ auth(ViewType, SecModel, SecName, SecLevel, ContextName) ->
 		 [?vacmGroupName, ?vacmSecurityToGroupStatus]) of
 	    [{value, GN}, {value, ?'RowStatus_active'}] ->
 		GN;
-	    [{value, GN}, {value, RowStatus}] ->
+	    [{value, _GN}, {value, RowStatus}] ->
 		?vlog("valid SecModel and SecName but wrong row status:"
 		      "~n   RowStatus: ~p", [RowStatus]),
 		throw({discarded, noGroupName});
@@ -140,7 +140,7 @@ loop_mib_view(ViewName, Subtree, Indexes, MibView) ->
     NextMibView = 
 	case Status of
 	    ?'RowStatus_active' ->
-		[Length | Tree] = Subtree,
+		[_Length | Tree] = Subtree,
 		[{Tree, Mask, Type} | MibView];
 	    _ ->
 		MibView
@@ -166,9 +166,9 @@ init(DbDir) ->
 	{ok, _} -> % File exists - we must check this, since ets doesn't tell
 	           % us the reason in case of error...
 	    case ets:file2tab(FName) of
-		{ok, Tab} -> 
+		{ok, _Tab} -> 
 		    gc_tab([]);
-		{error, Reason} ->
+		{error, _Reason} ->
 		    user_err("Corrupt VACM database ~p", [FName]),
 		    exit({badfile, FName})
 	    end;
@@ -331,7 +331,7 @@ chop_off_group(_, _) -> throw(false).
 
 chop_off_context([H|T], [H|T2], Cnt, Len, Match) when Cnt < Len ->
     chop_off_context(T, T2, Cnt+1, Len, Match);
-chop_off_context([], Rest, Len, Len, Match) ->
+chop_off_context([], Rest, _Len, _Len, _Match) ->
     %% We have exact match; don't care about Match
     {99, Rest};
 chop_off_context(_, Rest, Len, Len, ?vacmAccessContextMatch_prefix) ->
@@ -347,7 +347,7 @@ gc_tab(Oid) ->
 	{NextOid, Row} ->
 	    case element(?vacmAStorageType, Row) of
 		?'StorageType_volatile' ->
-		    NTree = ets:delete(snmp_vacm, NextOid),
+		    ets:delete(snmp_vacm, NextOid),
 		    gc_tab(NextOid);
 		_ ->
 		    gc_tab(NextOid)

@@ -7,7 +7,7 @@ CC = cl
 
 BINDIR = %BINDIR%
 
-SSLEAY_LIBS = \
+OPENSSL_LIBS = \
 	$(BINDIR)\ssleay32.lib \
 	$(BINDIR)\libeay32.lib 
 
@@ -16,10 +16,10 @@ WINSOCK_LIB = ws2_32.lib
 SSL_BASE_OBJS = esock.obj debuglog.obj esock_osio.obj esock_utils.obj \
 	        esock_posix_str.obj
 
-SSLEAY_OBJS = esock_ssleay.obj
+OPENSSL_OBJS = esock_openssl.obj
 
-$(BINDIR)\ssl_esock.exe:	$(SSL_BASE_OBJS) $(SSLEAY_OBJS)
-	$(CC) /nologo  $(SSL_BASE_OBJS) $(SSLEAY_OBJS) $(SSLEAY_LIBS) \
+$(BINDIR)\ssl_esock.exe:	$(SSL_BASE_OBJS) $(OPENSSL_OBJS)
+	$(CC) /nologo  $(SSL_BASE_OBJS) $(OPENSSL_OBJS) $(OPENSSL_LIBS) \
 		$(WINSOCK_LIB) /Fe$(BINDIR)\ssl_esock.exe
 
 

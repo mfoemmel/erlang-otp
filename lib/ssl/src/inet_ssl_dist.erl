@@ -284,7 +284,7 @@ do_setup(Kernel, Node, Type, MyNode, LongOrShortNames,SetupTime) ->
 			   "failed.~n", [Node]),
 		    ?shutdown(Node)
 	    end;
-	Other ->
+	_Other ->
 	    ?trace("inet_getaddr(~p) "
 		   "failed (~p).~n", [Node,Other]),
 	    ?shutdown(Node)
@@ -389,10 +389,10 @@ mask({M1,M2,M3,M4}, {IP1,IP2,IP3,IP4}) ->
 
 is_node_name(Node) when atom(Node) ->
     case split_node(atom_to_list(Node), $@, []) of
-	[_, Host] -> true;
+	[_, _Host] -> true;
 	_ -> false
     end;
-is_node_name(Node) ->
+is_node_name(_Node) ->
     false.
 tick(Sock) ->
     ?to_port(Sock,[]).
@@ -428,9 +428,9 @@ ssl_options(server, [["server_certfile", Value]|T]) ->
     [{certfile, Value} | ssl_options(server,T)];
 ssl_options(client, [["client_certfile", Value]|T]) ->
     [{certfile, Value} | ssl_options(client,T)];
-ssl_options(Type, [["client_certfile", Value]|T]) ->
+ssl_options(Type, [["client_certfile", _Value]|T]) ->
     ssl_options(Type,T);
-ssl_options(Type, [["server_certfile", Value]|T]) ->
+ssl_options(Type, [["server_certfile", _Value]|T]) ->
     ssl_options(Type,T);
 ssl_options(Type, [[Item, Value]|T]) ->
     [{Item,fixup(Value)} | ssl_options(Type,T)];

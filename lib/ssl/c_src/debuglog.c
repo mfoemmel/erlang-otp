@@ -36,18 +36,18 @@ static int vfprintclistf(FILE *fp, const char *format, va_list args);
 
 int debug = 0;
 int debugmsg = 0;
-FILE *syslogfp = NULL;
+FILE *ssllogfp = NULL;
 FILE *__locallogfp = NULL;
 
-void open_syslog(char *path)
+void open_ssllog(char *path)
 {
-    syslogfp = openlog(path);
+    ssllogfp = openlog(path);
 }
 
-void close_syslog(void)
+void close_ssllog(void)
 {
-    if (syslogfp)
-	closelog(syslogfp);
+    if (ssllogfp)
+	closelog(ssllogfp);
 }
 
 FILE *openlog(char *s)
@@ -89,9 +89,9 @@ int __debugprintf(const char *format, ...)
     ret = vfprintf(stderr, format, args);
 #endif
     va_end(args);
-    if (syslogfp) { 
+    if (ssllogfp) { 
         va_start(args, format);
-	vfprintf(syslogfp, format, args);
+	vfprintf(ssllogfp, format, args);
         va_end(args);
     }
     return ret;
@@ -113,8 +113,8 @@ int __debugprintclistf(const char *format, ...)
     va_start(args, format);
     ret = vfprintclistf(stderr, format, args);
 #endif
-    if (syslogfp) 
-	vfprintclistf(syslogfp, format, args);
+    if (ssllogfp) 
+	vfprintclistf(ssllogfp, format, args);
     va_end(args);
     return ret;
 }

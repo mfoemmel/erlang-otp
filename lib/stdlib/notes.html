@@ -20,6 +20,282 @@
 
 <!--- ################################################################# --->
 
+<h2>Stdlib 1.12</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    A bug in <code>sofs:partition/2</code> has been fixed.<br>
+    (Own Id: OTP-4516)<p>
+  </li>
+
+  <li>
+    Bugs concerning list comprehension and guards have been fixed in the
+    Erlang interpreter.<br>
+    (Own Id: OTP-4518)<p>
+  </li>
+
+  <li>
+    <code>c:memory()</code> only reported half of the amount of
+    <code>ets</code> memory allocated on 64-bit architectures. This bug has
+    now been fixed.<br>
+    (Own Id: OTP-4519)<p>
+  </li>
+
+  <li>
+    If a naughty child process did unlink(Supervisor), and then the
+    supervisor decides to terminate that child, it would hang forever. The
+    supervisor now uses erlang:monitor instead of waiting for exit-signals,
+    so that naughty child processes can not make a supervisor hang.<br>
+    (Own Id: OTP-4568)<br>
+    (Aux Id: seq3601)<p>
+  </li>
+
+  <li>
+    Fixes bug introduced in patch erl_458 that might have damaging effects
+    on the supervisor causing unwanted behavior in the node.<br>
+    (Own Id: OTP-4585)<br>
+    (Aux Id: seq7713)<p>
+  </li>
+
+  <li>
+    erl_tar: Fixed a problem in extracting where a directory leading up to
+    a symbolic link was not created if it didn't exist.<br>
+    (Own Id: OTP-4595)<p>
+  </li>
+
+  <li>
+    ets:select could sometimes return an empty list although the match_spec
+    was syntactically incorrect, due to the fact that no field in the table
+    could match the head of the match_spec. As the match_spec was actually
+    wrong, a badarg exception was expected. ets:select now always throws
+    badarg when the match_spec cannot be compiled.<br>
+    (Own Id: OTP-4598)<p>
+  </li>
+
+  <li>
+    The names of temporary files created by the module
+    <code>file_sorter</code> are now more unique than they used to be.<br>
+    (Own Id: OTP-4600)<p>
+  </li>
+
+  <li>
+    The file and filename modules now accept the same filenames. (Earlier
+    version of the filename module did not accept atoms except at the
+    top-level.) The documentation for file and filename has been updated.<br>
+    (Own Id: OTP-4604)<p>
+  </li>
+
+  <li>
+    A bug in <code>Dets</code> that could cause a loop has been fixed.<br>
+    (Own Id: OTP-4609)<p>
+  </li>
+
+  <li>
+    A file descriptor leak was removed in the error logger.<br>
+    (Own Id: OTP-4641)<p>
+  </li>
+
+  <li>
+    The linter now emits errors for unsafe variables in short circuit
+    Boolean expressions (<code>andalso</code> and <code>orelse</code>).<br>
+    (Own Id: OTP-4671)<p>
+  </li>
+
+  <li>
+    ms_transform now handles record index (#a.b) in guards and bodies
+    correctly. It also detects multiply defined records fields correctly
+    (#a{a=3,a=3} gives error).<br>
+    (Own Id: OTP-4708)<p>
+  </li>
+
+  <li>
+    A bug in <code>Dets</code> that could crash the Dets server has been
+    fixed.<br>
+    (Own Id: OTP-4730)<p>
+  </li>
+
+</ul>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+    The previously undocumented modules <code>erl_tar</code> and
+    <code>filelib</code> are now documented.<br>
+    (Own Id: OTP-3135)<br>
+    (Aux Id: OTP-1633)<p>
+  </li>
+
+  <li>
+    A number of new functions has been added to the module queue, mostly
+    regarding double-ended operations. See the documentation for details.<br>
+    (Own Id: OTP-4113)<br>
+    (Aux Id: Seq7134)<p>
+  </li>
+
+  <li>
+    New functions in gen_fsm: send_event_after/2, start_timer/2 and
+    cancel_timer/1 for FSM internal timer handling. See the documentation.<br>
+    (Own Id: OTP-4146)<br>
+    (Aux Id: Seq 7075)<p>
+  </li>
+
+  <li>
+    The <code>-include</code> and <code>-include_dir</code> directives
+    substitute environment variable values for first path components
+    beginning with a <code>$</code> (dollar) sign.<br>
+    (Own Id: OTP-4385)<br>
+    (Aux Id: seq7349)<p>
+  </li>
+
+  <li>
+    The format of Dets files has been slightly changed for the purpose of
+    reducing the risk of memory problems due to corrupt files.<br>
+    (Own Id: OTP-4553)<p>
+  </li>
+
+  <li>
+    New function <code>dets:is_compatible_bchunk_format/2</code> to be used
+    in conjunction with the new info tag <code>bchunk_format</code>.<br>
+    (Own Id: OTP-4554)<p>
+  </li>
+
+  <li>
+    A variant of rpc:multicall with timeout is added, and
+    gen_server:multi_call has been fixed to discard late answers.<br>
+    (Own Id: OTP-4586)<p>
+  </li>
+
+  <li>
+    The Erlang interpreter has been optimized in such a way that tail
+    recursive calls in the interpreted code lead to tail recursive calls in
+    the interpreter.<br>
+    (Own Id: OTP-4619)<p>
+  </li>
+
+  <li>
+    erlang:memory/0 and erlang:memory/1 have been added.
+    erlang:memory/[0,1] return the same type of information as
+    c:memory/[0,1] previously did. The erlang:memory/[0,1] functions
+    operate in constant time. c:memory/[0,1] now use erlang:memory/[0,1]
+    and do therefore now also operate in constant time (which they
+    previously did not). <br> erlang:memory/[0,1] return more accurate
+    information than c:memory/[0,1] previously did. <br> For more
+    information about erlang:memory/[0,1] see the erlang(3) man page.<br>
+    (Own Id: OTP-4637)<p>
+  </li>
+
+  <li>
+    The new functions <code>exprs/4</code>, <code>expr/4</code> and
+    <code>expr_list/4</code> in the <code>erl_eval</code> module add the
+    possibility to supply a function that handles calls to nonlocal
+    functions.<br>
+    (Own Id: OTP-4643)<br>
+    (Aux Id: seq7810)<p>
+  </li>
+
+  <li>
+    Introduces a new API function gen_server:enter_loop/[4,5] that may be
+    useful when a more complex initialization procedure is needed than the
+    gen_server behaviour provides<br>
+    (Own Id: OTP-4662)<br>
+    (Aux Id: seq7713, seq1051)<p>
+  </li>
+
+  <li>
+    To give applications better control of conversion of local time to UTC
+    with respect to daylight saving time, there are two new functions:
+    erlang:localtime_to_universaltime/2 and
+    calendar:local_time_to_uinversal_time_dst/1. See the documentation for
+    details.<br>
+    (Own Id: OTP-4667)<br>
+    (Aux Id: seq7797)<p>
+  </li>
+
+  <li>
+    There are new functions in <code>proc_lib</code> for spawning processes
+    using a fun: <code>spawn/1,2</code>, <code>spawn_link/1,2</code>, and
+    <code>spawn_opt/2,3</code>. <code>spawn_opt/5</code> is new as well.
+    The reason for making all <code>spawn</code> functions in
+    <code>erlang(3)</code> accessible from <code>proc_lib</code> is that
+    when SASL is running you get crash reports for processes started using
+    <code>proc_lib</code>, something that comes in handy during debugging.<br>
+    (Own Id: OTP-4704)<br>
+    (Aux Id: OTP-4718, OTP-4719)<p>
+  </li>
+
+  <li>
+    The timer module is optimized. Previously the performance degraded
+    linearly by the number of simultaneously active timers and was very
+    poor if there where 1000 timers or more. Now this linear behaviour is
+    removed and the time to create and cancel a timer is constant and
+    independent of the number of timers.<br>
+    (Own Id: OTP-4722)<p>
+  </li>
+
+  <li>
+    Matching on the toplevel in the head of a fun sent to ets/dbg:fun2ms is
+    now possible, creating a more natural way of accessing the match_spec
+    variable '$_'. Thus then code ets:fun2ms(fun(A ={a,_}) -> A end) will
+    work as expected.<br>
+    (Own Id: OTP-4743)<p>
+  </li>
+
+  <li>
+    <p>A http state bug in inet_drv (affecting gen_tcp) has been fixed.
+    Patch from Claes Wikström. <p>A bug in defining max number of ports has
+    been fixed. Patch from Claes Wikström. <p>A bug in erlang:port_call/3
+    when calling a driver with a NULL driver struct ->call field has been
+    fixed. Patch from Luke Gorrie. <p>There is a new function
+    file:script/1,2 that does the same as file:eval/1 but gives a return
+    value. For completness, file:path_script/2,3, file:eval/2 and
+    file:path_eval/3 are also added. Suggestion from Ulf Wiger. See the
+    documentation for details. <p><code>erlang:trace/3</code> did no clear
+    trace flags on processes that were exiting. This bug has now been
+    fixed. <p>The gen_udp options <code>add_membership</code> and
+    <code>drop_membership</code> are now allowed. Patch from Vance Shipley.
+    <p><code>gen_udp:open/1,2</code> with service name instead of port
+    number now works. Patch from carlos@lfcia.org. <p>An unjustified
+    compiler warning when using an explicit space character as pad
+    character to <code>io:format/2</code> and similar has been removed.
+    <p>If an illegal node name is used to start a node, now
+    <code>net_kernel</code> fails noisily instead of just letting the node
+    start in non-distributed mode. <p>Now
+    <code>gen_server:format_status/2</code> also works with non-registered
+    processes. <p>There are two new functions
+    <code>erlang:list_to_integer/2</code> and
+    <code>erlang:integer_to_list/2</code> that takes a number base
+    argument. See the documentataion for details. <p>New format characters
+    for <code>io:format/2</code> and similar are ~b, ~B, ~x, ~X, ~+ and ~#.
+    See the documentaion for details. <p>New format characters for
+    <code>io:fread/2</code> and similar are ~u, ~- and ~#. See the
+    documentation for details. <p>The token scanner <code>erl_scan</code>
+    has been rewritten to become twice as fast as before. Now, incomplete
+    any-base numbers such as "16#" are regarded as errors instead of as
+    zero. The allowed base number range has been extended to 2..36 instead
+    of previously 2..16. <p>There is a new function
+    <code>lists:split/2</code>. See the documentation. <p>For everyone that
+    has written their own function to calculate the time difference between
+    two <code>now()</code> calls there is now
+    <code>timer:now_diff/2</code>. See the documentation.<br>
+    (Own Id: OTP-4747)<p>
+  </li>
+
+</ul>
+
+
+<!--- ################################################################# --->
+
 <h2>Stdlib 1.11.0</h2>
 
 
@@ -92,10 +368,11 @@
 <ul>
 
   <li>
-    A convenient way to create match specifiactions for ets is provided by 
+    A convenient way to create match specifications for ets is provided by 
     the pseudo function ets:fun2ms/1 and the parse_transform ms_transform.
  	<p>
   </li>
+
   <li>
     Documentation of the previously undocumented proc_lib:spawn_opt/4, and
     the spawn_opt option of gen_server:start, and gen_fsm:start has been

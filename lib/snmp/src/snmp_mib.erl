@@ -45,9 +45,11 @@
 %% Internal Data structures
 %%
 %%   State
-%%       data is the MIB data (defined in snmp_mib_data)
+%%       data - is the MIB data (defined in snmp_mib_data)
+%%       meo  - mib entry override
+%%       teo  - trap (notification) entry override
 %%-----------------------------------------------------------------
--record(state, {data}).
+-record(state, {data, meo, teo}).
 
 
 
@@ -75,24 +77,24 @@ stop(MibServer) ->
 %% The standard MIB 'stdmib' must be present in the
 %% current directory.
 %%--------------------------------------------------
-init([Father, Mibs, Prio, Opts]) ->
+init([_Parent, Mibs, Prio, Opts]) ->
     process_flag(priority, Prio),
     process_flag(trap_exit, true),
     put(sname,ms),
     put(verbosity,?vvalidate(get_verbosity(Opts))),
     MeOverride = get_me_override(Opts),
-    put(me_override,MeOverride),
     TeOverride = get_te_override(Opts),
-    put(te_override,TeOverride),
     Storage = get_mib_storage(Opts),
     ?vlog("starting",[]),
     Data = snmp_mib_data:new(Storage),
-    ?vtrace("init result: ~p",[Data]),
-    case mib_operations(load_mib, Mibs, Data, MeOverride, TeOverride) of
+    ?vtrace("init -> mib data created",[]),
+    case (catch mib_operations(load_mib, Mibs, Data, 
+			       MeOverride, TeOverride, true)) of
 	{ok, Data2} ->
 	    ?vdebug("started",[]),
 	    snmp_mib_data:store(Data2),
-	    {ok, #state{data = Data2}};
+	    ?vdebug("mib data stored",[]),
+	    {ok, #state{data = Data2, teo = TeOverride, meo = MeOverride}};
 	{'aborted at', Mib, _NewData, Reason} ->
 	    ?vinfo("aborted at ~p for reason ~p",[Mib,Reason]),
 	    {stop, {Mib, Reason}}
@@ -102,17 +104,44 @@ init([Father, Mibs, Prio, Opts]) ->
 %% Returns: {ok, NewMibData} | {'aborted at', Mib, NewData, Reason}
 %% Args: Operation is load_mib | unload_mib.
 %%----------------------------------------------------------------------
-mib_operations(Operation, [Mib | Mibs], Data, MeOverride, TeOverride) when list(Mib) ->
-    ?vtrace("mib operation ~p on mib ~p",[Operation,Mib]),
-    case apply(snmp_mib_data, Operation, [Data,Mib,MeOverride,TeOverride]) of
+mib_operations(Operation, Mibs, Data, MeOverride, TeOverride) ->
+    mib_operations(Operation, Mibs, Data, MeOverride, TeOverride, false). 
+
+
+mib_operations(_Operation, [], Data, _MeOverride, _TeOverride, _Force) ->
+    {ok, Data};
+mib_operations(Operation, [Mib|Mibs], Data0, MeOverride, TeOverride, Force) ->
+    ?vtrace("mib operations ~p on"
+	"~n   Mibs: ~p"
+	"~n   with "
+	"~n   MeOverride: ~p"
+	"~n   TeOverride: ~p"
+	"~n   Force:      ~p", [Operation,Mibs,MeOverride,TeOverride,Force]),
+    Data = mib_operation(Operation, Mib, Data0, MeOverride, TeOverride, Force),
+    mib_operations(Operation, Mibs, Data, MeOverride, TeOverride, Force).
+
+mib_operation(Operation, Mib, Data0, MeOverride, TeOverride, Force) 
+  when list(Mib) ->
+    ?vtrace("mib operation on mib ~p", [Mib]),
+    case apply(snmp_mib_data, Operation, [Data0,Mib,MeOverride,TeOverride]) of
+	{error, 'already loaded'} when Operation == load_mib, 
+				       Force == true ->
+	    ?vlog("ignore mib ~p -> already loaded", [Mib]),
+	    Data0;
+	{error, 'not loaded'} when Operation == unload_mib, 
+				   Force == true ->
+	    ?vlog("ignore mib ~p -> not loaded", [Mib]),
+	    Data0;
 	{error, Reason} ->
-	    {'aborted at', Mib, Data, Reason};
-	NewData ->
-	    mib_operations(Operation, Mibs, NewData, MeOverride, TeOverride)
+	    ?vlog("mib_operation -> failed ~p of mib ~p for ~p", 
+		[Operation, Mib, Reason]),
+	    throw({'aborted at', Mib, Data0, Reason});
+	{ok, Data} ->
+	    Data
     end;
-mib_operations(Operation, [Mib | Mibs], Data, MeOverride, TeOverride) ->
-    {'aborted at', Mib,Data,bad_mibname};
-mib_operations(Operation, [], Data, MeOverride, TeOverride) -> {ok, Data}.
+mib_operation(_Op, Mib, Data, _MeOverride, _TeOverride, _Force) ->
+    throw({'aborted at', Mib, Data, bad_mibname}).
+
 
 %%-----------------------------------------------------------------
 %% Func: lookup/2
@@ -126,6 +155,7 @@ mib_operations(Operation, [], Data, MeOverride, TeOverride) -> {ok, Data}.
 %%-----------------------------------------------------------------
 lookup(MibServer, Oid) ->
     gen_server:call(MibServer, {lookup, Oid}, infinity).
+
 
 %%-----------------------------------------------------------------
 %% Func: next/3
@@ -180,24 +210,22 @@ dump(MibServer,File) when list(File) ->
 %%-----------------------------------------------------------------
 %% Handle messages
 %%-----------------------------------------------------------------
-handle_call({lookup, Oid}, _From, State) ->
+handle_call({lookup, Oid}, _From, #state{data = Data} = State) ->
     ?vlog("lookup ~p",[Oid]),    
-    Data = State#state.data,
     Reply = snmp_mib_data:lookup(Data, Oid),
     {reply, Reply, State};
 
-handle_call({next, Oid, MibView}, _From, State) ->
+handle_call({next, Oid, MibView}, _From, #state{data = Data} = State) ->
     ?vlog("next ~p",[Oid]),    
-    Data = State#state.data,
     Reply = snmp_mib_data:next(Data, Oid, MibView),
     {reply, Reply, State};
 
-handle_call({load_mibs, Mibs}, _From, State) ->
+handle_call({load_mibs, Mibs}, _From, 
+	    #state{data = Data, teo = TeOverride, meo = MeOverride} = State) ->
     ?vlog("load mibs ~p",[Mibs]),    
-    MeOverride = get(me_override), 
-    TeOverride = get(te_override),
     {NData,Reply} = 
-	case mib_operations(load_mib,Mibs,State#state.data,MeOverride,TeOverride) of
+	case (catch mib_operations(load_mib, Mibs, Data,
+				   MeOverride, TeOverride)) of
 	    {'aborted at', Mib, NewData, Reason} ->
 		?vlog("aborted at ~p for reason ~p",[Mib,Reason]),    
 		{NewData,{error, {'load aborted at', Mib, Reason}}};
@@ -207,12 +235,12 @@ handle_call({load_mibs, Mibs}, _From, State) ->
     snmp_mib_data:store(NData),
     {reply, Reply, State#state{data = NData}};
 
-handle_call({unload_mibs, Mibs}, _From, State) ->
+handle_call({unload_mibs, Mibs}, _From, 
+	    #state{data = Data, teo = TeOverride, meo = MeOverride} = State) ->
     ?vlog("unload mibs ~p",[Mibs]),    
-    MeOverride = get(me_override), 
-    TeOverride = get(te_override),
     {NData,Reply} = 
-	case mib_operations(unload_mib,Mibs,State#state.data,MeOverride,TeOverride) of
+	case (catch mib_operations(unload_mib, Mibs, Data,
+				   MeOverride, TeOverride)) of
 	    {'aborted at', Mib, NewData, Reason} ->
 		?vlog("aborted at ~p for reason ~p",[Mib,Reason]),    
 		{NewData,{error, {'unload aborted at', Mib, Reason}}};
@@ -244,22 +272,22 @@ handle_call({unregister_subagent, OidOrPid}, _From, State) ->
 	    {reply, ok, State#state{data = NewData}}
     end;
 
-handle_call(info, _From, State) ->
+handle_call(info, _From, #state{data = Data} = State) ->
     ?vlog("info",[]),    
-    {reply, snmp_mib_data:info(State#state.data), State};
+    {reply, catch snmp_mib_data:info(Data), State};
 
-handle_call({info, Type}, _From, State) ->
+handle_call({info, Type}, _From, #state{data = Data} = State) ->
     ?vlog("info ~p",[Type]),    
-    {reply, catch snmp_mib_data:info(State#state.data, Type), State};
+    {reply, catch snmp_mib_data:info(Data, Type), State};
 
 handle_call(dump, _From, State) ->
     ?vlog("dump",[]),    
     Reply = snmp_mib_data:dump(State#state.data),
     {reply, Reply, State};
     
-handle_call({dump,File}, _From, State) ->
+handle_call({dump,File}, _From, #state{data = Data} = State) ->
     ?vlog("dump on ~s",[File]),    
-    Reply = snmp_mib_data:dump(State#state.data,File),
+    Reply = snmp_mib_data:dump(Data,File),
     {reply, Reply, State};
     
 handle_call(stop, _From, State) ->
@@ -277,8 +305,8 @@ handle_cast(_, State) ->
 handle_info(_, State) ->
     {noreply, State}.
 
-terminate(_Reason, State) ->
-    catch snmp_mib_data:unload_all(State#state.data),
+terminate(_Reason, #state{data = Data}) ->
+    catch snmp_mib_data:close(Data),
     ok.
 
 
@@ -288,23 +316,27 @@ terminate(_Reason, State) ->
 %%----------------------------------------------------------
 
 %% downgrade
-code_change({down, Vsn}, State, downgrade_to_pre_3_3_0) ->
+code_change({down, _Vsn}, State, downgrade_to_pre_3_4) ->
     ?debug("code_change(down) -> entry with~n"
 	   "  Vsn:   ~p~n"
 	   "  Extra: ~p",
-	   [Vsn,downgrade_to_pre_3_3_0]),
-    NData = snmp_mib_data:code_change({down,pre_3_3_0},State#state.data),
-    {ok, State#state{data = NData}};
+	   [Vsn,downgrade_to_pre_3_4]),
+    NData = snmp_mib_data:code_change({down,pre_3_4},State#state.data),
+    put(te_override, State#state.teo),
+    put(me_override, State#state.meo),
+    {ok, {state, NData}};
 
 %% upgrade
-code_change(Vsn, State, upgrade_from_pre_3_3_0) ->
+code_change(_Vsn, State, upgrade_from_pre_3_4) ->
     ?debug("code_change(up) -> entry with~n"
 	   "  Vsn:   ~p~n"
 	   "  Extra: ~p",
-	   [Vsn,upgrade_from_pre_3_3_0]),
-    NData = snmp_mib_data:code_change({up,pre_3_3_0},State#state.data),
+	   [Vsn,upgrade_from_pre_3_4]),
+    NData = snmp_mib_data:code_change({up,pre_3_4},State#state.data),
     ?debug("code_change(up) -> New Mib data created~n",[]),
-    {ok, State#state{data = NData}}.
+    {ok, State#state{data = NData, 
+		     teo  = erase(te_override), 
+		     meo  = erase(me_override)}}.
 
 
 

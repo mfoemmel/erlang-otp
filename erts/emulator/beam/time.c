@@ -178,6 +178,12 @@ bump_timer(void)
     }
 }
 
+Uint
+erts_timer_wheel_memory_size(void)
+{
+    return (Uint) TIW_SIZE * sizeof(ErlTimer*);
+}
+
 /* this routine links the time cells into a free list at the start
    and sets the time queue as empty */
 void
@@ -185,12 +191,8 @@ init_time(void)
 {
     int i;
 
-    tiw = (ErlTimer**) erts_definite_alloc(TIW_SIZE * sizeof(ErlTimer*));
-    if (!tiw) {
-	tiw = (ErlTimer**)sys_alloc_from(140,TIW_SIZE * sizeof(ErlTimer*));
-	if (!tiw)
-	    erl_exit(1, "can't allocate timing wheel\n");
-    }
+    tiw = (ErlTimer**) erts_alloc(ERTS_ALC_T_TIMER_WHEEL,
+				  TIW_SIZE * sizeof(ErlTimer*));
     for(i = 0; i < TIW_SIZE; i++)
 	tiw[i] = NULL;
     do_time = tiw_pos = tiw_nto = 0;

@@ -145,7 +145,7 @@ set_phase_one_subagents([{SubAgentPid, SAVbs}|SubagentVarbinds], Done) ->
 		     "~n~w. Using genErr", [Reason]),
 	    {{genErr, 0}, Done}
     end;
-set_phase_one_subagents([], Done) ->
+set_phase_one_subagents([], _Done) ->
     {noError, 0}.
 
 %%%-----------------------------------------------------------------

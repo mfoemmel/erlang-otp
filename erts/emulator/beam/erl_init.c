@@ -30,17 +30,21 @@
 #include "erl_bits.h"
 #include "erl_binary.h"
 #include "dist.h"
+#include "erl_mseg.h"
+#define ERL_THREADS_EMU_INTERNAL__
+#include "erl_threads.h"
 
 #ifdef HIPE
 #include "hipe_mode_switch.h"	/* for hipe_mode_switch_init() */
-extern void hipe_signal_init(void);
+#include "hipe_signal.h"	/* for hipe_signal_init() */
 #endif
 
-extern void erl_crash_dump();
+extern void erl_crash_dump(char *, int, char *, va_list);
 #ifdef __WIN32__
 extern void ConWaitForExit(void);
 #endif
 
+volatile int erts_writing_erl_crash_dump = 0;
 int erts_initialized = 0;
 
 /*
@@ -61,6 +65,10 @@ int erts_backtrace_depth = 8;	/* How many functions to show in a backtrace
 int erts_async_max_threads = 0;  /* number of threads for async support */
 Uint16 erts_max_gen_gcs = (Uint16) -1;
 
+Eterm erts_error_logger_warnings; /* What to map warning logs to, am_error, 
+				     am_info or am_warning, am_error is 
+				     the default for BC */
+
 #ifdef DEBUG
 Uint verbose;			/* noisy mode = 1 */
 #endif
@@ -75,7 +83,7 @@ Eterm *global_hend;
 Eterm *global_htop;
 Eterm *global_saved_htop;
 ErlOffHeap erts_global_mso;
-Uint   global_heap_sz;
+Uint   global_heap_sz = SH_DEFAULT_SIZE;
 Uint   global_heap_min_sz;
 
 Eterm *global_high_water;
@@ -86,30 +94,23 @@ Uint16 global_gen_gcs;
 Uint16 global_max_gen_gcs;
 
 Uint   global_gc_flags;
-ErlHeapFragment* global_mbuf;
-ErlHeapFragment* global_halloc_mbuf;
-Uint global_mbuf_sz;
-Eterm* erts_global_arith_heap;
-Uint erts_global_arith_avail;
-Eterm* erts_global_arith_lowest_htop;
+ErlHeapFragment *global_mbuf;
+ErlHeapFragment *global_halloc_mbuf;
+Uint   global_mbuf_sz;
+Eterm *erts_global_arith_heap;
+Uint   erts_global_arith_avail;
+Eterm *erts_global_arith_lowest_htop;
 #ifdef DEBUG
-Eterm* erts_global_arith_check_me;
+Eterm *erts_global_arith_check_me;
 #endif
 #endif
 
 byte* tmp_buf;
-Uint tot_bin_allocated = 0;
 Uint do_time;			/* set at clock interupt */
 Uint garbage_cols;		/* no of garbage collections */
 Uint reclaimed;			/* no of words reclaimed in GCs */
 
-#ifdef INSTRUMENT
-Uint instr_send_sizes[INSTR_SEND_SIZES_MAX];
-#endif
-
 Eterm system_seq_tracer;
-
-void init_emulator(void);
 
 /*
  * Common error printout function, all error messages
@@ -123,34 +124,19 @@ va_list args;
     vfprintf(stderr, fmt, args);
 }
 
-static int
-has_prefix(const char *prefix, const char *string)
-{
-    int i;
-    for (i = 0; prefix[i]; i++)
-	if (prefix[i] != string[i])
-	    return 0;
-    return 1;
-}
-
 void
 erts_short_init(void)
 {
-    ErtsSlAllocInit sla_init = ERTS_SL_ALLOC_INIT_DEFAULT_INITIALIZER;
+    erts_initialized = 0;
+    erts_writing_erl_crash_dump = 0;
 
-    erts_sl_alloc_binaries = ERTS_SL_ALLOC_BINARIES_DEFAULT;
-
-    erts_sl_alloc_init(&sla_init);
-    erts_init_definite_alloc(DEFAULT_DEFINITE_ALLOC_BLOCK_SIZE);
+    erts_sys_threads_init();
+    erts_alloc_init(NULL, NULL);
     erts_init_utils();
-
-    /* Permanently disable use of mmap for sys_alloc (malloc). */
-    sys_alloc_opt(SYS_ALLOC_OPT_MMAP_MAX, 0);
-    sys_alloc_opt(SYS_ALLOC_OPT_TRIM_THRESHOLD, ERTS_DEFAULT_TRIM_THRESHOLD);
-    sys_alloc_opt(SYS_ALLOC_OPT_TOP_PAD, ERTS_DEFAULT_TOP_PAD);
-
     erl_sys_init();
     erl_init();
+    erts_initialized = 1;
+
 }
 
 void
@@ -161,39 +147,15 @@ erl_init(void)
     init_benchmarking();
 
     ASSERT(TMP_BUF_SIZE >= 16384);
-    tmp_buf = (byte *) erts_definite_alloc(TMP_BUF_SIZE);
-    if(!tmp_buf)
-	tmp_buf = (byte *)safe_alloc_from(130, TMP_BUF_SIZE);
-    init_alloc();
+    tmp_buf = (byte *) erts_alloc(ERTS_ALC_T_TMP_BUF, TMP_BUF_SIZE);
+
     erts_init_gc();
+    init_scheduler();
 
     H_MIN_SIZE = erts_next_heap_size(H_MIN_SIZE, 0);
 
-#ifdef SHARED_HEAP
-    global_heap_sz = erts_next_heap_size(H_MIN_SIZE,0);
-    global_heap = (Eterm *)
-	erts_safe_sl_alloc_from(4711, sizeof(Eterm) * global_heap_sz);
-    global_hend = global_heap + global_heap_sz;
-    global_htop = global_heap;
-
-    global_old_hend = global_old_htop = global_old_heap = NULL;
-    global_high_water = global_heap;
-    global_gen_gcs = 0;
-    global_max_gen_gcs = erts_max_gen_gcs;
-
-    global_gc_flags = erts_default_process_flags;
-    global_mbuf = NULL;
-    global_halloc_mbuf = NULL;
-    global_mbuf_sz = 0;
-
-    erts_global_arith_heap = NULL;
-    erts_global_arith_avail = 0;
-    erts_global_arith_lowest_htop = NULL;
-#ifdef DEBUG
-    erts_global_arith_check_me = NULL;
-#endif
-#endif
-
+    erts_bif_info_init();
+    erts_init_binary();
     erts_init_bits();
     erts_init_fun_table();
     init_atom_table();
@@ -204,7 +166,6 @@ erl_init(void)
     init_emulator();
     erts_bp_init();
     init_db(); /* Must be after init_emulator */
-    init_scheduler();
     init_time();
     erts_init_node_tables();
     init_dist();
@@ -213,17 +174,53 @@ erl_init(void)
     init_load();
     erts_init_bif();
     erts_init_trace();
+#if HAVE_ERTS_MSEG
+    erts_mseg_late_init(); /* Must be after timer (init_time()) and thread
+			      initializations */
+#endif
 #ifdef HIPE
     hipe_mode_switch_init(); /* Must be after init_load/beam_catches/init */
 #endif
-
-#ifdef INSTRUMENT
-    {int j;
-     for (j=0;j<INSTR_SEND_SIZES_MAX;j++) 
-	 instr_send_sizes[j]=0;
- }
+#ifdef _OSE_
+    erl_sys_init_final();
 #endif
 }
+
+static void
+init_shared_memory(int argc, char **argv)
+{
+#if defined(SHARED_HEAP)
+    int arg_size = 0;
+
+    global_heap_sz = erts_next_heap_size(global_heap_sz,0);
+    global_mbuf = NULL;
+    global_mbuf_sz = 0;
+    global_halloc_mbuf = NULL;
+    erts_global_arith_heap = NULL;
+    erts_global_arith_avail = 0;
+    erts_global_arith_lowest_htop = NULL;
+#ifdef DEBUG
+    erts_global_arith_check_me = NULL;
+#endif
+
+    while (argc--)
+        arg_size += 2 + strlen(argv[argc]);
+    if (global_heap_sz < arg_size)
+        global_heap_sz = erts_next_heap_size(arg_size,1);
+
+    global_heap = (Eterm *) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP,
+					    sizeof(Eterm) * global_heap_sz);
+    global_hend = global_heap + global_heap_sz;
+    global_htop = global_heap;
+
+    global_old_hend = global_old_htop = global_old_heap = NULL;
+    global_high_water = global_heap;
+    global_gen_gcs = 0;
+    global_max_gen_gcs = erts_max_gen_gcs;
+    global_gc_flags = erts_default_process_flags;
+#endif
+}
+
 
 /*
  * Create the very first process.
@@ -260,6 +257,7 @@ erts_first_process(Eterm modname, void* code, unsigned size, int argc, char** ar
     parent.heap = global_heap;
     parent.hend = global_hend;
     parent.htop = global_htop;
+    parent.stop = global_hend;
 #endif
     hp = HAlloc(&parent, argc*2 + 4);
     args = NIL;
@@ -271,17 +269,18 @@ erts_first_process(Eterm modname, void* code, unsigned size, int argc, char** ar
     args = CONS(hp, new_binary(&parent, code, size), args);
     hp += 2;
     args = CONS(hp, args, NIL);
-
-    so.flags = 0;
-    pid = erl_create_process(&parent, modname, am_start, args, &so);
-    p = process_tab[internal_pid_index(pid)];
-    p->group_leader = pid;
 #ifdef SHARED_HEAP
     global_heap = parent.heap;
     global_htop = parent.htop;
     global_hend = parent.hend;
     global_heap_sz = parent.heap_sz;
 #endif
+
+    so.flags = 0;
+    pid = erl_create_process(&parent, modname, am_start, args, &so);
+    p = process_tab[internal_pid_index(pid)];
+    p->group_leader = pid;
+
     erts_cleanup_empty_process(&parent);
 }
 
@@ -317,6 +316,7 @@ erl_first_process_otp(char* modname, void* code, unsigned size, int argc, char**
     parent.heap = global_heap;
     parent.hend = global_hend;
     parent.htop = global_htop;
+    parent.stop = global_hend;
 #endif
     hp = HAlloc(&parent, argc*2 + 4);
     args = NIL;
@@ -329,18 +329,18 @@ erl_first_process_otp(char* modname, void* code, unsigned size, int argc, char**
     args = CONS(hp, args, NIL);
     hp += 2;
     args = CONS(hp, env, args);
-
-    so.flags = 0;
-    pid = erl_create_process(&parent, start_mod, am_start, args, &so);
-    ASSERT(internal_pid_index(pid) < erts_max_processes);
-    p = process_tab[internal_pid_index(pid)];
-    p->group_leader = pid; /* internal pid */
 #ifdef SHARED_HEAP
     global_heap = parent.heap;
     global_htop = parent.htop;
     global_hend = parent.hend;
     global_heap_sz = parent.heap_sz;
 #endif
+
+    so.flags = 0;
+    pid = erl_create_process(&parent, start_mod, am_start, args, &so);
+    ASSERT(internal_pid_index(pid) < erts_max_processes);
+    p = process_tab[internal_pid_index(pid)];
+    p->group_leader = pid; /* internal pid */
     erts_cleanup_empty_process(&parent);
 }
 
@@ -373,9 +373,6 @@ erts_preloaded(Process* p)
 }
 
 
-static void usage(void);
-
-
 /* static variables that must not change (use same values at restart) */
 static char* program;
 static char* init = "init";
@@ -383,13 +380,13 @@ static char* boot = "boot";
 static int    boot_argc;
 static char** boot_argv;
 
-static char* get_arg(rest, next, ip)
-char* rest; char* next; int* ip;
+static char *
+get_arg(char* rest, char* next, int* ip)
 {
     if (*rest == '\0') {
 	if (next == NULL) {
 	    erl_printf(CERR, "too few arguments\n");
-	    usage();
+	    erts_usage();
 	}
 	(*ip)++;
 	return next;
@@ -427,7 +424,7 @@ load_preloaded(void)
 }
 
 /* be helpful (or maybe downright rude:-) */
-static void usage()
+void erts_usage(void)
 {
     erl_printf(CERR, "usage: %s [flags] [ -- [init_args] ]\n", program);
     erl_printf(CERR, "The flags are:\n\n");
@@ -435,55 +432,29 @@ static void usage()
     erl_printf(CERR, "-l         turn on auto load tracing\n");
     erl_printf(CERR, "-i module  set the boot module (default init)\n");
     erl_printf(CERR, "-b fun     set the boot function (default boot)\n");
+#ifdef SHARED_HEAP
+    erl_printf(CERR, "-h number  set minimum heap size in words (default %d)\n",
+	       SH_DEFAULT_SIZE);
+#else
     erl_printf(CERR, "-h number  set minimum heap size in words (default %d)\n",
 	       H_DEFAULT_SIZE);
+#endif
     erl_printf(CERR, "-# number  set the number of items to be used in traces etc\n");
-    erl_printf(CERR, "-B         turn break handler off\n");
+    erl_printf(CERR, "-B[i]      turn break handler off or ignore break signals\n");
+    erl_printf(CERR, "-C         set break handler mode\n");
     erl_printf(CERR, "-P number  set maximum number of processes on this node\n");
     erl_printf(CERR, "           valid range is [%d-%d]\n",
 	       ERTS_MIN_PROCESSES, ERTS_MAX_PROCESSES);
     erl_printf(CERR, "-A number  set number of threads in async thread pool\n");
     erl_printf(CERR, "           valid range is [0-256]\n");
-    erl_printf(CERR, "-t number  set trim threshold (Kb)\n");
-    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
-    erl_printf(CERR, "-T number  set top pad\n");
-    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
-    erl_printf(CERR, "-Se bool   enable sl_alloc\n");
-    erl_printf(CERR, "           valid values are true | false\n");
-    erl_printf(CERR, "-Sr number enable a specific sl_alloc release\n");
-    erl_printf(CERR, "           valid releases are %s | %s\n",
-	       ERTS_OLD_SL_ALLOC_RELEASE, ERTS_SL_ALLOC_RELEASE);
-    erl_printf(CERR, "-Ssbct num set singleblock carrier threshold "
-	       "(sl_alloc)\n");
-    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
-    erl_printf(CERR, "-Smmc numb set max mmap carriers (sl_alloc)\n");
-    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX);
-    erl_printf(CERR, "-Ssbcmt nu set singleblock carrier move threshold "
-	       "(sl_alloc)\n");
-    erl_printf(CERR, "           valid range is [0-100]\n");
-    erl_printf(CERR, "-Smsbclt n set mmap singleblock carrier load threshold "
-	       "(sl_alloc)\n");
-    erl_printf(CERR, "           valid range is [0-100]\n");
-    erl_printf(CERR, "-Smcs numb set main carrier size (sl_alloc)\n");
-    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
-    erl_printf(CERR, "-Sscs numb set smallest (multiblock) carrier size "
-	       "(sl_alloc)\n");
-    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
-    erl_printf(CERR, "-Slcs numb set largest (multiblock) carrier size "
-	       "(sl_alloc)\n");
-    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
-    erl_printf(CERR, "-Smbcgs nu set (multiblock) carrier growth stages "
-	       "(sl_alloc)\n");
-    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX);
-    erl_printf(CERR, "-Smbsd num set max block search depth (sl_alloc)\n");
-    erl_printf(CERR, "           valid range is [1-%d]\n", INT_MAX);
-    erl_printf(CERR, "-Sb bool   sl_alloc:ate binaries\n");
-    erl_printf(CERR, "           valid values are true | false\n");
+    erl_printf(CERR, "-M<X> <Y>  Memory allocator switches\n");
+    erl_printf(CERR, "           see the erts_alloc(3) man page for more information.\n");
+    erl_printf(CERR, "-W {i|w|e} Set error logger warnings mapping\n");
+    erl_printf(CERR, "           see error_logger documentation for "
+	       "details\n");
     erl_printf(CERR, "\n\n");
     erl_exit(-1, "");
 }
-
-extern void elib_ensure_initialized(void);
 
 void
 erl_start(int argc, char **argv)
@@ -491,199 +462,19 @@ erl_start(int argc, char **argv)
     int i = 1;
     char* arg=NULL;
     int have_break_handler = 1;
+    int ignore_break = 0;
     char* tmpenvbuf;
-    int trim_threshold = ERTS_DEFAULT_TRIM_THRESHOLD;
-    int top_pad = ERTS_DEFAULT_TOP_PAD;
-    Uint definite_block_size = DEFAULT_DEFINITE_ALLOC_BLOCK_SIZE;
-    ErtsSlAllocInit sl_alloc_init = ERTS_SL_ALLOC_INIT_DEFAULT_INITIALIZER;
 
-    elib_ensure_initialized();
-
+    erts_writing_erl_crash_dump = 0;
     erts_initialized = 0;
     program = argv[0];
 
-    /* First find out how to initialize sl_alloc. */
-
-    erts_sl_alloc_binaries = ERTS_SL_ALLOC_BINARIES_DEFAULT;
-
-    while (i < argc) {
-	if (strcmp(argv[i], "--") == 0)
-	    break;
-	if(argv[i][0] == '-' && argv[i][1] == 'S') {
-	    char *rest;
-	    int tmp;
-
-	    if (has_prefix("r", argv[i] + 2)) {
-		/* Set release to use */
-		arg = get_arg(argv[i]+3, argv[i+1], &i);
-		if (strcmp(arg, ERTS_OLD_SL_ALLOC_VERSION) == 0
-		    || strcmp(arg, ERTS_OLD_SL_ALLOC_RELEASE) == 0)
-		    sl_alloc_init.eosla = 1;
-		else if (strcmp(arg, ERTS_SL_ALLOC_VERSION) == 0
-			 || strcmp(arg, ERTS_SL_ALLOC_RELEASE) == 0)
-		    sl_alloc_init.eosla = 0;
-		else {
-		    erl_printf(CERR, "bad sl_alloc release: %s\n", arg);
-		    usage();
-		}
-	    }
-	    else if (has_prefix("e", argv[i] + 2)) {
-		arg = get_arg(argv[i]+3, argv[i+1], &i);
-		if (strcmp(arg, "true") == 0)
-		    sl_alloc_init.esla = 1;
-		else if (strcmp(arg, "false") == 0)
-		    sl_alloc_init.esla = 0;
-		else {
-		    erl_printf(CERR, "bad sl_alloc enable: %s\n", arg);
-		    usage();
-		}
-	    }
-	    else if (has_prefix("b", argv[i] + 2)) {
-		arg = get_arg(argv[i]+3, argv[i+1], &i);
-		if (strcmp(arg, "true") == 0)
-		    erts_sl_alloc_binaries = 1;
-		else if (strcmp(arg, "false") == 0)
-		    erts_sl_alloc_binaries = 0;
-		else {
-		    erl_printf(CERR, "bad sl_alloc binaries: %s\n", arg);
-		    usage();
-		}
-	    }
-	    else if (has_prefix("mmc", argv[i] + 2)) {
-		/* Set max mmap carriers */
-		arg = get_arg(argv[i]+5, argv[i+1], &i);
-		errno = 0;
-		tmp = (int) strtol(arg, &rest, 10);
-		if (errno != 0 || rest == arg || tmp < 0 || (INT_MAX) < tmp) {
-		    erl_printf(CERR, "bad max mmap carriers: %s\n", arg);
-		    usage();
-		}
-		sl_alloc_init.mmc = tmp;
-	    }
-	    else if (has_prefix("mcs", argv[i] + 2)) {
-		/* Set main carrier size */
-		arg = get_arg(argv[i]+5, argv[i+1], &i);
-		errno = 0;
-		tmp = (int) strtol(arg, &rest, 10);
-		if (errno != 0 || rest == arg || tmp < 0 ||
-		    (INT_MAX/1024) < tmp) {
-		    erl_printf(CERR, "bad main carrier size: %s\n", arg);
-		    usage();
-		}
-		sl_alloc_init.mcs = tmp * 1024;
-	    }
-	    else if (has_prefix("scs", argv[i] + 2)) {
-		/* Set smallest carrier size */
-		arg = get_arg(argv[i]+5, argv[i+1], &i);
-		errno = 0;
-		tmp = (int) strtol(arg, &rest, 10);
-		if (errno != 0 || rest == arg || tmp < 0 ||
-		    (INT_MAX/1024) < tmp) {
-		    erl_printf(CERR, "bad smallest carrier size: %s\n", arg);
-		    usage();
-		}
-		sl_alloc_init.scs = tmp * 1024;
-	    }
-	    else if (has_prefix("lcs", argv[i] + 2)) {
-		/* Set largest carrier size */
-		arg = get_arg(argv[i]+5, argv[i+1], &i);
-		errno = 0;
-		tmp = (int) strtol(arg, &rest, 10);
-		if (errno != 0 || rest == arg || tmp < 0 ||
-		    (INT_MAX/1024) < tmp) {
-		    erl_printf(CERR, "bad largest carrier size: %s\n", arg);
-		    usage();
-		}
-		sl_alloc_init.lcs = tmp * 1024;
-	    }
-	    else if (has_prefix("mbcgs", argv[i] + 2)) {
-		/* Set carrier growth stages */
-		arg = get_arg(argv[i]+7, argv[i+1], &i);
-		errno = 0;
-		tmp = (int) strtol(arg, &rest, 10);
-		if (errno != 0 || rest == arg || tmp < 0) {
-		    erl_printf(CERR, "bad carrier growth stages: %s\n", arg);
-		    usage();
-		}
-		sl_alloc_init.mbcgs = tmp;
-	    }
-	    else if(has_prefix("sbct", argv[i] + 2)) {
-		/* Set singleblock carrier threshold */
-		arg = get_arg(argv[i]+6, argv[i+1], &i);
-		errno = 0;
-		tmp = (int) strtol(arg, &rest, 10);
-		if (errno != 0 || rest == arg || tmp < 0 ||
-		    (INT_MAX/1024) < tmp) {
-		    erl_printf(CERR, "bad singleblock carrier threshold: %s\n",
-			       arg);
-		    usage();
-		}
-		sl_alloc_init.sbct = tmp * 1024;
-	    }
-	    else if (has_prefix("mbsd", argv[i] + 2)) {
-		/* Set max block search depth */
-		arg = get_arg(argv[i]+6, argv[i+1], &i);
-		errno = 0;
-		tmp = (int) strtol(arg, &rest, 10);
-		if (errno != 0 || rest == arg || tmp < 1 ||
-		    (INT_MAX) < tmp) {
-		    erl_printf(CERR, "bad max block search depth: %s\n", arg);
-		    usage();
-		}
-		sl_alloc_init.mbsd = tmp;
-	    }
-	    else if(has_prefix("sbcmt", argv[i] + 2)) {
-		/* Set singleblock carrier move threshold */
-		arg = get_arg(argv[i]+7, argv[i+1], &i);
-		errno = 0;
-		tmp = (int) strtol(arg, &rest, 10);
-		if (errno != 0 || rest == arg || tmp < 0 || 100 < tmp) {
-		    erl_printf(CERR, "bad singleblock carrier move "
-			       "threshold: %s\n", arg);
-		    usage();
-		}
-		sl_alloc_init.sbcmt = tmp;
-	    }
-	    else if(has_prefix("msbclt", argv[i] + 2)) {
-		/* Set singleblock carrier move threshold */
-		arg = get_arg(argv[i]+8, argv[i+1], &i);
-		errno = 0;
-		tmp = (int) strtol(arg, &rest, 10);
-		if (errno != 0 || rest == arg || tmp < 0 || 100 < tmp) {
-		    erl_printf(CERR, "bad mmap singleblock carrier load "
-			       "threshold: %s\n", arg);
-		    usage();
-		}
-		sl_alloc_init.msbclt = tmp;
-	    }
-	    else if (argv[i][2] == '\0') {
-		erl_printf(CERR,
-			      "\"-S\" is deprecated and will soon be removed; "
-			   "use \"-Se false\" instead\n");
-		sl_alloc_init.esla = 0;
-	    }
-	    else {
-		erl_printf(CERR, "bad sl_alloc parameter: %s\n", argv[i]);
-		usage();
-	    }
-	}
-	i++;
-    }
-
-    /* Observe that erts_sl_alloc_init() has to be called
-       before any other erts_sl_alloc*() functions are called and
-       before any threads other than the initial thread
-       have been created. */
-    erts_sl_alloc_init(&sl_alloc_init);
-    i = 1;
+    erts_sys_threads_init();
+    erts_alloc_init(&argc, argv); /* Handles (and removes) -M flags */
 
     erts_init_utils();
-    sys_alloc_opt(SYS_ALLOC_OPT_TRIM_THRESHOLD, trim_threshold);
-    sys_alloc_opt(SYS_ALLOC_OPT_TOP_PAD, top_pad);
-    /* Permanently disable use of mmap for sys_alloc (malloc). */
-    sys_alloc_opt(SYS_ALLOC_OPT_MMAP_MAX, 0);
 
-#if defined(HIPE) && defined(__i386__)
+#if defined(HIPE)
     hipe_signal_init();	/* must be done very early */
 #endif
     erl_sys_init();
@@ -710,22 +501,32 @@ erl_start(int argc, char **argv)
     verbose = 0;
 #endif
 
+    erts_error_logger_warnings = am_error;
     system_seq_tracer = NIL;
 
     while (i < argc) {
 	if (argv[i][0] != '-') {
-	    usage();
+	    erts_usage();
 	}
 	if (strcmp(argv[i], "--") == 0) { /* end of emulator options */
 	    i++;
 	    break;
 	}
 	switch (argv[i][1]) {
+
+	    /*
+	     * NOTE: -M flags are handled (and removed from argv) by
+	     * erts_alloc_init(). 
+	     *
+	     * The -d, -m, -S, -t, and -T flags was removed in
+	     * Erlang 5.3/OTP R9C.
+	     */
+
 	case '#' :
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
 	    if ((display_items = atoi(arg)) == 0) {
 		erl_printf(CERR, "bad display items%s\n", arg);
-		usage();
+		erts_usage();
 	    }
 	    VERBOSE(erl_printf(COUT,"using display items %d\n",
 			       display_items););
@@ -749,9 +550,6 @@ erl_start(int argc, char **argv)
 		tmp[0] = tmp[1] = '\0';
 #ifdef DEBUG
 		strcat(tmp, ",DEBUG");
-#endif
-#ifdef INSTRUMENT
-		strcat(tmp, ",INSTRUMENT");
 #endif
 #ifdef USE_THREADS
 		strcat(tmp, ",THREADS");
@@ -783,7 +581,7 @@ erl_start(int argc, char **argv)
 		heap_series = HS_POWER_TWO_MINUS_ONE;
 	    } else {
 		erl_printf(CERR, "bad heap series %s (use 'f', 'T', or 't')\n", arg);
-		usage();
+		erts_usage();
 	    }
 	    break;
 
@@ -792,8 +590,11 @@ erl_start(int argc, char **argv)
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
 	    if ((H_MIN_SIZE = atoi(arg)) <= 0) {
 		erl_printf(CERR, "bad heap size %s\n", arg);
-		usage();
+		erts_usage();
 	    }
+#ifdef SHARED_HEAP
+            global_heap_sz = H_MIN_SIZE;
+#endif
 	    VERBOSE(erl_printf(COUT, "using minimum heap size %d\n",
 			       H_MIN_SIZE););
 	    break;
@@ -803,7 +604,7 @@ erl_start(int argc, char **argv)
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
 	    if (( user_requested_db_max_tabs = atoi(arg) ) < 0) {
 		erl_printf(CERR, "bad maximum number of ets tables %s\n", arg);
-		usage();
+		erts_usage();
 	    }
 	    VERBOSE(erl_printf(COUT, "using maximum number of ets tables %d\n",
 			       user_requested_db_max_tabs););
@@ -820,8 +621,15 @@ erl_start(int argc, char **argv)
 	    break;
 
 	case 'B':
+	  if (argv[i][2] == 'i')          /* +Bi */
+	    ignore_break = 1;
+	  else if (argv[i+1][0] == 'i') { /* +B i */
+	    get_arg(argv[i]+2, argv[i+1], &i);
+	    ignore_break = 1;
+	  }
+	  else			          /* +B */
 	    have_break_handler = 0;
-	    break;
+	  break;
 
 	case 'P':
 	    /* set maximum number of processes */
@@ -829,25 +637,9 @@ erl_start(int argc, char **argv)
 	    if (((erts_max_processes = atoi(arg)) < ERTS_MIN_PROCESSES)
 		|| erts_max_processes > ERTS_MAX_PROCESSES) {
 		erl_printf(CERR, "bad number of processes %s\n", arg);
-		usage();
+		erts_usage();
 	    }
 	    break;
-
-	case 'd': {
-	    char *rest;
-	    int tmp;
-	    /* set definite alloc block size */
-	    arg = get_arg(argv[i]+2, argv[i+1], &i);
-	    errno = 0;
-	    tmp = (int) strtol(arg, &rest, 10);
-	    if (errno != 0 || rest == arg || tmp < 0 || (INT_MAX/1024) < tmp) {
-		erl_printf(CERR, "bad definite block size: %s\n", arg);
-		usage();
-	    }
-	    definite_block_size = (Uint) tmp;
-	    definite_block_size *= 1024;
-	    break;
-	}
 
 	case 'A':
 	    /* set number of threads in thread pool */
@@ -855,68 +647,8 @@ erl_start(int argc, char **argv)
 	    if (((erts_async_max_threads = atoi(arg)) < -1) ||
 		(erts_async_max_threads > 256)) {
 		erl_printf(CERR, "bad number of threads %s\n", arg);
-		usage();
+		erts_usage();
 	    }
-	    break;
-
-	case 't': {
-	  char *rest;
-	  /* set trim threshold */
-	  arg = get_arg(argv[i]+2, argv[i+1], &i);
-	  errno = 0;
-	  trim_threshold = (int) strtol(arg, &rest, 10);
-	  if (errno != 0
-	      || rest == arg
-	      || trim_threshold < 0
-	      || (INT_MAX/1024) < trim_threshold) {
-	    trim_threshold = ERTS_DEFAULT_TRIM_THRESHOLD/1024;
-	    erl_printf(CERR,
-		       "bad trim threshold: %s; using default: %d\n",
-		       arg,
-		       trim_threshold);
-	  }
-	  VERBOSE(erl_printf(COUT, "using trim threshold: %d\n",
-			     trim_threshold););
-	  trim_threshold *= 1024;
-	  break;
-        }
-
-	case 'T': {
-	  char *rest;
-	  /* set top pad */
-	  arg = get_arg(argv[i]+2, argv[i+1], &i);
-	  errno = 0;
-	  top_pad = (int) strtol(arg, &rest, 10);
-	  if (errno != 0
-	      || rest == arg
-	      || top_pad < 0
-	      || (INT_MAX/1024) < top_pad) {
-	    top_pad = ERTS_DEFAULT_TOP_PAD/1024;
-	    erl_printf(CERR,
-		       "bad top pad: %s; using default: %d\n",
-		       arg,
-		       top_pad);
-	  }
-	  VERBOSE(erl_printf(COUT, "using top pad: %d\n",
-			     top_pad););
-	  top_pad *= 1024;
-	  break;
-        }
-
-	case 'm':
-	    erl_printf(CERR, "\"m\" is no longer a valid parameter\n");
-	    usage();
-	  break;
-
-	case 'M':
-	    erl_printf(CERR, "\"M\" is no longer a valid parameter\n");
-	    usage();
-	  break;
-
-	case 'S':
-	    /* Already handled (sl_alloc options). */
-	    if (argv[i+1][0] != '-')
-		i++;
 	    break;
 
 	case 'n':   /* XXX obsolete */
@@ -926,29 +658,46 @@ erl_start(int argc, char **argv)
 		count_instructions = 1;
 	    }
 	    break;
+	case 'W':
+	    arg = get_arg(argv[i]+2, argv[i+1], &i);
+	    switch (arg[0]) {
+	    case 'i':
+		erts_error_logger_warnings = am_info;
+		break;
+	    case 'w':
+		erts_error_logger_warnings = am_warning;
+		break;
+	    case 'e': /* The default */
+		erts_error_logger_warnings = am_error;
+	    default:
+		erl_printf(CERR, "unrecognized warning_map option %s\n", arg);
+		erts_usage();
+	    }
+	    break;
+
 	default:
 	    erl_printf(CERR, "%s unknown flag %s\n", argv[0], argv[i]);
-	    usage();
+	    erts_usage();
 	}
 	i++;
     }
 
    /* Restart will not reinstall the break handler */
-    if (have_break_handler) {
-	init_break_handler();
-    }
+    if (ignore_break)
+        erts_set_ignore_break();
+    else 
+        if (have_break_handler)
+	  init_break_handler();
 
     boot_argc = argc - i;  /* Number of arguments to init */
     boot_argv = &argv[i];
 
-    erts_init_definite_alloc(definite_block_size);
     erl_init();
-    sys_alloc_opt(SYS_ALLOC_OPT_TRIM_THRESHOLD, trim_threshold);
-    sys_alloc_opt(SYS_ALLOC_OPT_TOP_PAD, top_pad);
+
+    init_shared_memory(boot_argc, boot_argv);
+    erts_initialized = 1;
 
     load_preloaded();
-    
-    erts_initialized = 1;
 
     erl_first_process_otp("otp_ring0", NULL, 0, boot_argc, boot_argv);
     process_main();
@@ -964,6 +713,7 @@ erl_start(int argc, char **argv)
 
 void erl_exit0(char *file, int line, int n, char *fmt,...)
 {
+    unsigned int an;
     va_list args;
 
     va_start(args, fmt);
@@ -971,7 +721,11 @@ void erl_exit0(char *file, int line, int n, char *fmt,...)
     save_statistics();
 
 #ifdef SHARED_HEAP
-    if (global_heap) erts_sl_free((void*)global_heap);
+    if (global_heap) {
+	ERTS_HEAP_FREE(ERTS_ALC_T_HEAP,
+		       (void*) global_heap,
+		       sizeof(Eterm) * global_heap_sz);
+    }
     global_heap = NULL;
 
     {
@@ -985,7 +739,7 @@ void erl_exit0(char *file, int line, int n, char *fmt,...)
 #endif
 
     /* Produce an Erlang core dump if error */
-    if(n > 0) erl_crash_dump(file,line,fmt,args); 
+    if(n > 0 && erts_initialized) erl_crash_dump(file,line,fmt,args); 
 
     /* need to reinitialize va_args thing */
     va_end(args);
@@ -1000,6 +754,12 @@ void erl_exit0(char *file, int line, int n, char *fmt,...)
 #if !defined(__WIN32__) && !defined(VXWORKS) && !defined(_OSE_)
     sys_tty_reset();
 #endif
+
+    an = abs(n);
+
+    if (erts_mtrace_enabled)
+	erts_mtrace_exit((Uint32) an);
+
     if (n == 127)
         exit(1);
     else if (n > 0)
@@ -1010,6 +770,7 @@ void erl_exit0(char *file, int line, int n, char *fmt,...)
 
 void erl_exit(int n, char *fmt,...)
 {
+    unsigned int an;
     va_list args;
 
     va_start(args, fmt);
@@ -1017,7 +778,11 @@ void erl_exit(int n, char *fmt,...)
     save_statistics();
 
 #ifdef SHARED_HEAP
-    if (global_heap) erts_sl_free((void*)global_heap);
+    if (global_heap) {
+	ERTS_HEAP_FREE(ERTS_ALC_T_HEAP,
+		       (void *) global_heap,
+		       sizeof(Eterm) * global_heap_sz);
+    }
     global_heap = NULL;
 
     {
@@ -1031,7 +796,7 @@ void erl_exit(int n, char *fmt,...)
 #endif
 
     /* Produce an Erlang core dump if error */
-    if(n > 0) erl_crash_dump((char*) NULL,0,fmt,args); 
+    if(n > 0 && erts_initialized) erl_crash_dump((char*) NULL,0,fmt,args); 
 
     /* need to reinitialize va_args thing */
     va_end(args);
@@ -1046,10 +811,16 @@ void erl_exit(int n, char *fmt,...)
 #if !defined(__WIN32__) && !defined(VXWORKS) && !defined(_OSE_)
     sys_tty_reset();
 #endif
+
+    an = abs(n);
+
+    if (erts_mtrace_enabled)
+	erts_mtrace_exit((Uint32) an);
+
     if (n == 127)
         exit(1);
     else if (n > 0)
         abort();
     else
-        exit(abs(n));
+        exit(an);
 }

@@ -42,7 +42,10 @@ MODULES = hipe_rtl hipe_rtl_cfg hipe_rtl_cse hipe_rtl_ebb \
 	  hipe_icode2rtl hipe_tagscheme hipe_rtl_mk_switch \
 	  hipe_rtl_primops hipe_rtl_gctests hipe_rtl_arch \
 	  hipe_rtl_varmap hipe_rtl_exceptions hipe_rtl_guardops \
-	  hipe_rtl_bs_ops hipe_rtl_inline_bs_ops
+	  hipe_rtl_bs_ops hipe_rtl_inline_bs_ops \
+	  hipe_rtl_arith hipe_rtl_arith_32 \
+	  hipe_rtl_ssa_check
+
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
@@ -94,10 +97,15 @@ release_docs_spec:
 
 HIPE_MKLITERALS=$(ERL_TOP)/bin/$(TARGET)/hipe_mkliterals
 
+$(HIPE_MKLITERALS):
+	cd $(ERL_TOP)/erts/emulator \
+	  && $(MAKE) generate ERL_TOP=$(ERL_TOP) TYPE=$(TYPE)
+
 hipe_literals.hrl:	$(HIPE_MKLITERALS)
 	$(HIPE_MKLITERALS) -e > hipe_literals.hrl
 
 $(EBIN)/hipe_rtl.beam: hipe_rtl.hrl
+$(EBIN)/hipe_rtl_arch.beam: hipe_literals.hrl
 $(EBIN)/hipe_rtl_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl
 $(EBIN)/hipe_rtl_ebb.beam: ../flow/ebb.inc
 $(EBIN)/hipe_rtl_liveness.beam: ../util/hipe_vector.hrl ../flow/liveness.inc
@@ -106,3 +114,5 @@ $(EBIN)/hipe_tagscheme.beam: hipe_literals.hrl
 $(EBIN)/hipe_rtl_primops.beam: hipe_literals.hrl
 $(EBIN)/hipe_rtl_guardops.beam: hipe_literals.hrl
 $(EBIN)/hipe_rtl_prop.beam: ../main/hipe.hrl
+$(EBIN)/hipe_rtl_arith_32.beam: ../main/hipe.hrl
+$(EBIN)/hipe_rtl_ssa_check.beam: ../ssa/hipe_ssa_checker.inc

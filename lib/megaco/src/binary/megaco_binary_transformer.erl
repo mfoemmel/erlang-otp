@@ -24,30 +24,28 @@
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_v1.hrl").
 
--export([tr_message/3]).
+-export([tr_message/3, tr_transaction/3]).
 
 
 -record(state, {mode,                 % verify | encode | decode
                 resolver_module,      % 
                 resolver_options}).
 
+%io:format("~p:" ++ F ++ "~n", [?MODULE|A]).
+
 resolve(Type, Item, State, Constraint) ->
     case State#state.mode of
         verify ->
             Item;
         encode ->
-	    i("resolve(encode) -> encode: ~p",[Item]),
             Mod = State#state.resolver_module,
             Opt = State#state.resolver_options,
             EncodedItem = Mod:encode_name(Opt, Type, Item),
-	    i("resolve -> verify contraint for ~p",[EncodedItem]),
 	    verify_constraint(EncodedItem, Constraint);
         decode ->
-	    i("resolve(decode) -> verify contraint for ~p",[Item]),
 	    DecodedItem = verify_constraint(Item, Constraint),
             Mod = State#state.resolver_module,
             Opt = State#state.resolver_options,
-	    i("resolve(decode) -> decode: ~p",[DecodedItem]),
             Mod:decode_name(Opt, Type, DecodedItem)
     end.
 
@@ -57,6 +55,11 @@ verify_constraint(Item, Constraint) when function(Constraint) ->
     Constraint(Item).
 
 tr_message(MegaMsg, Mode, Config) ->
+%     d("tr_message -> entry with"
+%       "~n   MegaMsg: ~p"
+%       "~n   Mode:    ~p"
+%       "~n   Config:  ~p", 
+%       [MegaMsg, Mode, Config]),
     case Config of
         [native] ->
             MegaMsg;
@@ -67,12 +70,48 @@ tr_message(MegaMsg, Mode, Config) ->
             State = #state{mode             = Mode,
                            resolver_module  = megaco_binary_name_resolver,
                            resolver_options = [8, 8, 8]},
-            tr_MegacoMessage(MegaMsg, State);
+            M = tr_MegacoMessage(MegaMsg, State),
+% 	    d("tr_message -> transformed: "
+% 	      "~n   M: ~p", [M]),
+	    M;
         [{binary_name_resolver, {Module, Options}}] when atom(Module) ->
             State = #state{mode             = Mode, 
                            resolver_module  = Module, 
                            resolver_options = Options},
-            tr_MegacoMessage(MegaMsg, State)
+            M = tr_MegacoMessage(MegaMsg, State),
+% 	    d("tr_message -> transformed: "
+% 	      "~n   M: ~p", [M]),
+	    M
+    end.
+
+tr_transaction(Trans, Mode, Config) ->
+%     d("tr_transaction -> entry with"
+%       "~n   Trans:  ~p"
+%       "~n   Mode:   ~p"
+%       "~n   Config: ~p", 
+%       [Trans, Mode, Config]),
+    case Config of
+        [native] ->
+            Trans;
+        [verify] ->
+            State = #state{mode = verify},
+            tr_Transaction(Trans, State);
+        [] ->
+            State = #state{mode             = Mode,
+                           resolver_module  = megaco_binary_name_resolver,
+                           resolver_options = [8, 8, 8]},
+            T = tr_Transaction(Trans, State),
+% 	    d("tr_transaction -> transformed: "
+% 	      "~n   T: ~p", [T]),
+	    T;
+        [{binary_name_resolver, {Module, Options}}] when atom(Module) ->
+            State = #state{mode             = Mode, 
+                           resolver_module  = Module, 
+                           resolver_options = Options},
+            T = tr_Transaction(Trans, State),
+% 	    d("tr_transaction -> transformed: "
+% 	      "~n   T: ~p", [T]),
+	    T
     end.
 
 tr_MegacoMessage(#'MegacoMessage'{authHeader = Auth,
@@ -545,15 +584,9 @@ tr_EventParameter(#'EventParameter'{eventParameterName = ParName,
 				    extraInfo          = Extra},
 		  EventName,
                   State) ->
-    i("tr_EventParameter -> entry with"
-      "~n   ParName:   ~p"
-      "~n   Value:     ~p"
-      "~n   Extra:     ~p"
-      "~n   EventName: ~p",[ParName,Value,Extra,EventName]),    
     %% BUGBUG: event parameter name
     Constraint = fun(Item) -> tr_Name(Item, State) end,
     N = resolve({event_parameter, EventName}, ParName, State, Constraint),
-    i("tr_EventParameter -> N: ~p",[N]),
     #'EventParameter'{eventParameterName = N,
 		      value              = tr_Value(Value, State),
 		      extraInfo          = tr_opt_extraInfo(Extra, State)}.
@@ -811,11 +844,6 @@ tr_RequestedEvent(#'RequestedEvent'{pkgdName    = Name,
                                     evParList   = Parms,
                                     eventAction = Actions},
                   State)  ->
-    i("tr_RequestedEvent -> entry with"
-      "~n   Name:    ~p"
-      "~n   Id:      ~p"
-      "~n   Parms:   ~p"
-      "~n   Actions: ~p",[Name, Id, Parms, Actions]),
     Constraint = fun(Item) -> tr_PkgdName(Item, State) end,
     #'RequestedEvent'{pkgdName    = resolve(event, Name, State, Constraint),
                       streamID    = tr_opt_StreamID(Id, State),
@@ -964,14 +992,8 @@ tr_SigParameter(#'SigParameter'{sigParameterName = ParName,
                                 extraInfo        = Extra},
                 SigName,
                 State) ->
-    i("tr_SigParameter -> entry with"
-      "~n   ParName: ~p"
-      "~n   Value:   ~p"
-      "~n   Extra:   ~p"
-      "~n   SigName: ~p",[ParName,Value,Extra,SigName]),    
     Constraint = fun(Item) -> tr_Name(Item, State) end,
     N = resolve({signal_parameter, SigName}, ParName, State, Constraint),
-    i("tr_SigParameter -> N: ~p",[N]),
     #'SigParameter'{sigParameterName = N,
                     value            = tr_Value(Value, State),
                     extraInfo        = tr_opt_extraInfo(Extra, State)}.
@@ -1231,12 +1253,3 @@ verify_count(Count, Min, Max) ->
     end.
 
 
-i(F,A) ->
-    i(get(dbg),F,A).
-
-i(true,F,A) ->
-    S1 = io_lib:format("TRANSF: " ++ F ++ "~n",A),
-    S2 = lists:flatten(S1),
-    io:format("~s",[S2]);
-i(_,_F,_A) ->
-    ok.

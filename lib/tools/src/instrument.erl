@@ -18,36 +18,118 @@
 -module(instrument).
 
 -export([holes/1, mem_limits/1, memory_data/0, read_memory_data/1,
-	 sort/1, store_memory_data/1, sum_blocks/1, type_string/1]).
+	 sort/1, store_memory_data/1, sum_blocks/1,
+	 descr/1, type_descr/2, allocator_descr/2, class_descr/2,
+	 type_no_range/1, block_header_size/1, store_memory_status/1,
+	 read_memory_status/1, memory_status/1]).
 
-%% (This is sizeof(mem_link) in utils.c.)
--define(INFO_SIZE, 28).
+
+-define(OLD_INFO_SIZE, 32). %% (sizeof(mem_link) in pre R9C utils.c)
+
+-define(IHMARKER(H),  element(1, H)).
+-define(VSN(H),       element(2, H)).
+-define(INFO_SIZE(H), element(3, H)).
+-define(TYPEMAP(H),   element(4, H)).
+
+-define(IHDR(H), tuple(H), ?IHMARKER(H) == instr_hdr).
+-define(IHDRVSN(H, V), ?IHDR(H), ?VSN(H) == V).
 
 memory_data() ->
-    erlang:system_info(allocated).
+    case catch erlang:system_info(allocated) of
+	{'EXIT',{Error,_}} ->
+	    erlang:fault(Error, []);
+	{'EXIT',Error} ->
+	    erlang:fault(Error, []);
+	Res ->
+	    Res
+    end.
 
 store_memory_data(File) ->
-    %% The BIF returns 'true' when all goes well.
-    erlang:system_info({allocated, File}),
-    ok.
+    case catch erlang:system_info({allocated, File}) of
+	{'EXIT',{Error,_}} ->
+	    erlang:fault(Error, [File]);
+	{'EXIT',Error} ->
+	    erlang:fault(Error, [File]);
+	Res ->
+	    Res
+    end.
 
+memory_status(Type) when atom(Type) ->
+    case catch erlang:system_info({allocated, status, Type}) of
+	{'EXIT',{Error,_}} ->
+	    erlang:fault(Error, [Type]);
+	{'EXIT',Error} ->
+	    erlang:fault(Error, [Type]);
+	Res ->
+	    Res
+    end;
+memory_status(Type) ->
+    erlang:fault(badarg, [Type]).
+
+store_memory_status(File) when list(File) ->
+    case catch erlang:system_info({allocated, status, File}) of
+	{'EXIT',{Error,_}} ->
+	    erlang:fault(Error, [File]);
+	{'EXIT',Error} ->
+	    erlang:fault(Error, [File]);
+	Res ->
+	    Res
+    end;
+store_memory_status(File) ->
+    erlang:fault(badarg, [File]).
+
+read_memory_data(File) when list(File) ->
+    case file:consult(File) of
+	{ok, [Hdr|MD]} when ?IHDR(Hdr) ->
+	    {Hdr, MD};
+	{ok, [{T,A,S,undefined}|_] = MD} when integer(T),
+					      integer(A),
+					      integer(S) ->
+	    {{instr_hdr, 1, ?OLD_INFO_SIZE}, MD};
+	{ok, [{T,A,S,{X,Y,Z}}|_] = MD} when integer(T),
+					    integer(A),
+					    integer(S),
+					    integer(X),
+					    integer(Y),
+					    integer(Z) ->
+	    {{instr_hdr, 1, ?OLD_INFO_SIZE}, MD};
+	{ok, _} ->
+	    {error, eio};
+	Error ->
+	    Error
+    end;
 read_memory_data(File) ->
-    file:consult(File).
+    erlang:fault(badarg, [File]).
 
-holes([]) ->
+read_memory_status(File) when list(File) ->
+    case file:consult(File) of
+	{ok, [{instr_vsn, _}|Stat]} ->
+	    Stat;
+	{ok, _} ->
+	    {error, eio};
+	Error ->
+	    Error
+    end;
+read_memory_status(File) ->
+    erlang:fault(badarg, [File]).
+
+holes({Hdr, MD}) when ?IHDR(Hdr) ->
+    check_holes(?INFO_SIZE(Hdr), MD).
+
+check_holes(_ISz, []) ->
     ok;
-holes([E | L]) ->
-    holes(E, L).
+check_holes(ISz, [E | L]) ->
+    check_holes(ISz, E, L).
 
-holes(E1, []) ->
+check_holes(_ISz, _E1, []) ->
     io:format("~n");
-holes(E1, [E2 | Rest]) ->
-    check_hole(E1, E2),
-    holes(E2, Rest).
+check_holes(ISz, E1, [E2 | Rest]) ->
+    check_hole(ISz, E1, E2),
+    check_holes(ISz, E2, Rest).
 
-check_hole({_,P1,S1,_}, {_,P2,S2,_}) ->
+check_hole(ISz, {_,P1,S1,_}, {_,P2,_,_}) ->
     End = P1+S1,
-    Hole = P2 - (End + ?INFO_SIZE),
+    Hole = P2 - (End + ISz),
     if
 	Hole =< 7 ->
 	    ok;
@@ -55,18 +137,71 @@ check_hole({_,P1,S1,_}, {_,P2,S2,_}) ->
 	    io:format(" ~p", [Hole])
     end.
 
-sum_blocks(L) ->
-    lists:foldl(fun({_,P,S,_}, Sum) -> S+Sum end,
+sum_blocks({Hdr, L}) when ?IHDR(Hdr) ->
+    lists:foldl(fun({_,_,S,_}, Sum) -> S+Sum end,
 		0,
 		L).
 
-mem_limits(L) ->
+mem_limits({Hdr, L}) when ?IHDR(Hdr) ->
     {_, P1, _, _} = hd(L),
     {_, P2, S2, _} = lists:last(L),
     {P1, P2+S2}.
 
-sort(L) ->
-    lists:keysort(2, L).
+sort({Hdr, MD}) when ?IHDR(Hdr) ->
+    {Hdr, lists:keysort(2, MD)}.
+
+descr({Hdr, MD} = ID) when ?IHDR(Hdr) ->
+    {Hdr, lists:map(fun ({TN, Addr, Sz, {0, N, S}}) ->
+			    {type_descr(ID, TN),
+			     Addr,
+			     Sz,
+			     list_to_pid("<0."
+					 ++ integer_to_list(N)
+					 ++ "."
+					 ++ integer_to_list(S)
+					 ++ ">")};
+			({TN, Addr, Sz, undefined}) ->
+			    {type_descr(ID, TN),
+			     Addr,
+			     Sz,
+			     undefined}
+		    end,
+		    MD)}.
+
+block_header_size({Hdr, _}) when ?IHDR(Hdr) ->
+    ?INFO_SIZE(Hdr).
+
+type_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 2),
+				  integer(TypeNo) ->
+    case catch element(1, element(TypeNo, ?TYPEMAP(Hdr))) of
+	{'EXIT', _} -> invalid_type;
+	Type -> Type
+    end;
+type_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 1),
+				  integer(TypeNo) ->
+    type_string(TypeNo).
+
+
+allocator_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 2), integer(TypeNo) ->
+    case catch element(2, element(TypeNo, ?TYPEMAP(Hdr))) of
+	{'EXIT', _} -> invalid_type;
+	Type -> Type
+    end;
+allocator_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 1), integer(TypeNo) ->
+    "unknown".
+
+class_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 2), integer(TypeNo) ->
+    case catch element(3, element(TypeNo, ?TYPEMAP(Hdr))) of
+	{'EXIT', _} -> invalid_type;
+	Type -> Type
+    end;
+class_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 1), integer(TypeNo) ->
+    "unknown".
+
+type_no_range({Hdr, _}) when ?IHDRVSN(Hdr, 2) ->
+    {1, size(?TYPEMAP(Hdr))};
+type_no_range({Hdr, _}) when ?IHDRVSN(Hdr, 1) ->
+    {-1, 1000}.
 
 type_string(-1) ->
     "unknown";
@@ -287,4 +422,5 @@ type_string(380) ->
 type_string(400) ->
     "definite_alloc block";
 type_string(_) ->
-    "*** undefined ***".
+    invalid_type.
+

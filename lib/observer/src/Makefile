@@ -34,6 +34,9 @@ RELSYSDIR = $(RELEASE_PATH)/lib/observer-$(VSN)
 # ----------------------------------------------------
 
 MODULES= \
+	crashdump_viewer \
+	crashdump_viewer_html \
+	crashdump_translate \
 	etop \
 	etop_gui \
 	etop_tr \
@@ -43,13 +46,25 @@ MODULES= \
 HRL_FILES= \
 	../include/etop.hrl
 INTERNAL_HRL_FILES= \
+	crashdump_viewer.hrl \
 	etop_defs.hrl
 ERL_FILES= $(MODULES:%=%.erl)
+EXAMPLE_FILES= multitrace.erl
 
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 
-BINDIR= ../priv/bin
-EXECUTABLES= $(BINDIR)/etop $(BINDIR)/getop $(BINDIR)/etop.bat $(BINDIR)/getop.bat
+PRIVDIR= ../priv
+WEBTOOLFILES= $(PRIVDIR)/crashdump_viewer.tool
+BINDIR= $(PRIVDIR)/bin
+EXECUTABLES= \
+	$(BINDIR)/etop \
+	$(BINDIR)/getop \
+	$(BINDIR)/etop.bat \
+	$(BINDIR)/getop.bat
+CDVDIR= $(PRIVDIR)/crashdump_viewer
+GIF_FILES= \
+	$(CDVDIR)/collapsd.gif \
+	$(CDVDIR)/exploded.gif
 
 APP_FILE= observer.app
 
@@ -97,12 +112,16 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(ERL_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(EXAMPLE_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/include
 	$(INSTALL_DATA) $(HRL_FILES) $(RELSYSDIR)/include
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/bin
-	$(INSTALL_PROGRAM) $(EXECUTABLES) $(RELSYSDIR)/priv/bin
+	$(INSTALL_SCRIPT) $(EXECUTABLES) $(RELSYSDIR)/priv/bin
+	$(INSTALL_DIR) $(RELSYSDIR)/priv/crashdump_viewer
+	$(INSTALL_DATA) $(WEBTOOLFILES) $(RELSYSDIR)/priv
+	$(INSTALL_DATA) $(GIF_FILES) $(RELSYSDIR)/priv/crashdump_viewer
 
 release_docs_spec:
 

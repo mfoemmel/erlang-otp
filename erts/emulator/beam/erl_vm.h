@@ -34,11 +34,11 @@
 
 #define INPUT_REDUCTIONS   (2 * CONTEXT_REDS)
 
-#ifdef SHARED_HEAP
-#define S_DEFAULT_SIZE  233     /* defaulf stack size */
-#define H_DEFAULT_SIZE  100000  /* default heap min size */
-#else
 #define H_DEFAULT_SIZE  233	/* default (heap + stack) min size */
+
+#ifdef SHARED_HEAP
+#define S_DEFAULT_SIZE  233     /* default stack size */
+#define SH_DEFAULT_SIZE 121393  /* default shared heap min size */
 #endif
 
 #define CP_SIZE			1

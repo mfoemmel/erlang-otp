@@ -172,36 +172,37 @@ receive_trap(Timeout) ->
 init({Options, CallerPid}) ->
     {A1,A2,A3} = erlang:now(),
     random:seed(A1,A2,A3),
-    case is_options_ok(Options) of
+    case (catch is_options_ok(Options)) of
 	true ->
 	    put(debug,get_value(debug,Options,false)),
 	    d("init -> (~p) extract options",[self()]),
-	    PacksDbg = get_value(packet_server_debug,Options,false),
+ 	    PacksDbg = get_value(packet_server_debug,Options,false),
 	    RecBufSz = get_value(recbuf,Options,1024),
-	    Mibs = get_value(mibs, Options, []),
-	    Udp = get_value(agent_udp, Options, 4000),
-	    User = get_value(user, Options, "initial"),
+	    Mibs     = get_value(mibs, Options, []),
+	    Udp      = get_value(agent_udp, Options, 4000),
+	    User     = get_value(user, Options, "initial"),
 	    EngineId = get_value(engine_id, Options, "agentEngine"),
 	    CtxEngineId = get_value(context_engine_id, Options, EngineId),
-	    TrapUdp = get_value(trap_udp, Options, 5000),
-	    Dir = get_value(dir, Options, "."),
+	    TrapUdp  = get_value(trap_udp, Options, 5000),
+	    Dir      = get_value(dir, Options, "."),
 	    SecLevel = get_value(sec_level, Options, noAuthNoPriv),
-	    MiniMIB = snmp_misc:make_mini_mib(Mibs),
-	    Version = case lists:member(v2,Options) of
-			  true -> 'version-2';
-			  false -> 
-			      case lists:member(v3,Options) of
-				  true -> 'version-3';
-				  false -> 'version-1'
-			      end
-		      end,
+	    MiniMIB  = snmp_misc:make_mini_mib(Mibs),
+	    Version  = case lists:member(v2,Options) of
+			   true -> 'version-2';
+			   false -> 
+			       case lists:member(v3,Options) of
+				   true -> 'version-3';
+				   false -> 'version-1'
+			       end
+		       end,
 	    Com = case Version of
 		      'version-3' ->
 			  get_value(context, Options, "");
 		      _ ->
 			  get_value(community, Options, "public")
 		  end,
-	    VsnHdrD = {Com, User, EngineId, CtxEngineId, mk_seclevel(SecLevel)},
+	    VsnHdrD = 
+		{Com, User, EngineId, CtxEngineId, mk_seclevel(SecLevel)},
 	    AgIp = case snmp_misc:assq(agent, Options) of
 		       {value, Tuple4} when tuple(Tuple4),size(Tuple4)==4 ->
 			   Tuple4;
@@ -210,18 +211,10 @@ init({Options, CallerPid}) ->
 			   Ip
 		   end,
 	    Quiet = lists:member(quiet, Options),
-	    d("init -> start packet server",[]),
-	    PackServ = case Quiet of
-			   false ->
-			       snmp_mgr_misc:start_link_packet(
-				 {msg, self()}, AgIp, Udp, TrapUdp, 
-				 VsnHdrD, Version, Dir, RecBufSz);
-			   true ->
-			       Type =  get_value(receive_type, Options, pdu),
-			       snmp_mgr_misc:start_link_packet(
-				 {Type, CallerPid}, AgIp, Udp, TrapUdp,
-				 VsnHdrD, Version, Dir, RecBufSz)
-		       end,
+	    PackServ = start_packet_server(Quiet, Options, CallerPid, 
+					   AgIp, Udp, TrapUdp, 
+					   VsnHdrD, Version, Dir, RecBufSz, 
+					   PacksDbg),
 	    d("init -> packet server: ~p",[PackServ]),
 	    State = #state{parent        = CallerPid,
 			   quiet         = Quiet,
@@ -233,6 +226,25 @@ init({Options, CallerPid}) ->
 	{error, Reason} -> 
 	    {stop,Reason}
     end.
+
+start_packet_server(false, _Options, _CallerPid, AgIp, Udp, TrapUdp, 
+		    VsnHdrD, Version, Dir, RecBufSz, PacksDbg) ->
+    d("start_packet_server -> entry", []),
+    snmp_mgr_misc:start_link_packet({msg, self()}, 
+				    AgIp, Udp, TrapUdp, 
+				    VsnHdrD, Version, Dir, RecBufSz,
+				    PacksDbg);
+start_packet_server(true, Options, CallerPid, AgIp, Udp, TrapUdp, 
+		    VsnHdrD, Version, Dir, RecBufSz, PacksDbg) ->
+    Type =  get_value(receive_type, Options, pdu),
+    d("start_packet_server -> entry with"
+      "~n   CallerPid: ~p"
+      "~n   when"
+      "~n   Type:      ~p",[CallerPid, Type]),
+    snmp_mgr_misc:start_link_packet({Type, CallerPid}, 
+				    AgIp, Udp, TrapUdp,
+				    VsnHdrD, Version, Dir, RecBufSz,
+				    PacksDbg).
 
 is_options_ok([{mibs,List}|Opts]) when list(List) ->
     is_options_ok(Opts);
@@ -269,14 +281,28 @@ is_options_ok([v2|Opts]) ->
 is_options_ok([v3|Opts]) ->
     is_options_ok(Opts);
 is_options_ok([{debug,Bool}|Opts]) ->
-    is_options_ok(Opts);
+    case is_bool(Bool) of
+	ok ->
+	    is_options_ok(Opts);
+	error ->
+	    {error, {bad_option, debug, Bool}}
+    end;
 is_options_ok([{packet_server_debug,Bool}|Opts]) ->
-    is_options_ok(Opts);
+    case is_bool(Bool) of
+	ok ->
+	    is_options_ok(Opts);
+	error ->
+	    {error, {bad_option, packet_server_debug, Bool}}
+    end;
 is_options_ok([{recbuf,Sz}|Opts]) when 0 < Sz, Sz =< 65535 ->
     is_options_ok(Opts);
 is_options_ok([InvOpt|_]) ->
     {error,{invalid_option,InvOpt}};
 is_options_ok([]) -> true.
+
+is_bool(true)  -> ok;
+is_bool(false) -> ok;
+is_bool(_)     -> error.
 
 mk_seclevel(noAuthNoPriv) -> 0;
 mk_seclevel(authNoPriv) -> 1;
@@ -421,7 +447,7 @@ execute_request(Operation, Data, State) ->
 	{error, {Format, Data2}} ->
 	    report_error(State, Format, Data2),
 	    State;
-	{error, Reason} -> 
+	{error, _Reason} -> 
 	    State;
 	PDU when record(PDU, pdu) ->
 	    send_pdu(PDU, State#state.mini_mib, State#state.packet_server),
@@ -437,7 +463,7 @@ report_error(_, Format, Args) ->
 
 get_oid_from_varbind(#varbind{oid = Oid}) -> Oid.
 
-send_pdu(PDU, MiniMIB, PackServ) ->
+send_pdu(PDU, _MiniMIB, PackServ) ->
     snmp_mgr_misc:send_pdu(PDU, PackServ).
 
 %%----------------------------------------------------------------------
@@ -468,10 +494,10 @@ remove_atom(X, _DB) -> X.
 check_is_pure_oid([]) -> [];
 check_is_pure_oid([X | T]) when integer(X), X >= 0 ->
     [X | check_is_pure_oid(T)];
-check_is_pure_oid([X | T]) ->
+check_is_pure_oid([X | _T]) ->
     throw({error, {"Invalid oid, it contains a non-integer: ~w", [X]}}).
 
-get_next_iter_impl(0, PrevPDU, MiniMIB, PackServ) -> PrevPDU;
+get_next_iter_impl(0, PrevPDU, _MiniMIB, _PackServ) -> PrevPDU;
 get_next_iter_impl(N, PrevPDU, MiniMIB, PackServ) ->
     Oids = snmp_misc:map({snmp_mgr, get_oid_from_varbind}, [],
 			 PrevPDU#pdu.varbinds),
@@ -481,7 +507,7 @@ get_next_iter_impl(N, PrevPDU, MiniMIB, PackServ) ->
 	{error, timeout} ->
 	    io:format("(timeout)~n"),
 	    get_next_iter_impl(N, PrevPDU, MiniMIB, PackServ);
-	{error, Reason} ->
+	{error, _Reason} ->
 	    PrevPDU;
 	RPDU when record(RPDU, pdu) ->
 	    io:format("(~w)", [N]),
@@ -550,7 +576,7 @@ make_vb(Oid) ->
     #varbind{oid = Oid, variabletype = 'NULL', value = 'NULL'}.
 
 make_request_id() ->
-    ReqId = random:uniform(16#FFFFFFF-1).
+    random:uniform(16#FFFFFFF-1).
 
 echo_pdu(PDU,MiniMIB) ->
     io:format("~s",[snmp_misc:format_pdu(PDU,MiniMIB)]).
@@ -569,14 +595,22 @@ echo_errors({ok, Val}) -> {ok, Val}.
 
 get_response_impl(Id, Vars) ->
     case receive_response() of
-	#pdu{type='get-response', error_status=noError, error_index=0,
-	     varbinds=VBs} ->
+	#pdu{type         = 'get-response', 
+	     error_status = noError, 
+	     error_index  = 0,
+	     varbinds     = VBs} ->
 	    match_vars(Id, find_pure_oids2(Vars), VBs, []);
-	#pdu{type = Type2, request_id = ReqId, error_status=Err2, error_index=Index2} ->
+
+	#pdu{type         = Type2, 
+	     request_id   = ReqId, 
+	     error_status = Err2, 
+	     error_index  = Index2} ->
 	    {error, Id, {"Type: ~w, ErrStat: ~w, Idx: ~w, RequestId: ~w",
 			 ['get-response', noError, 0, ReqId]},
 	     {"Type: ~w ErrStat: ~w, Idx: ~w", [Type2, Err2, Index2]}};
-	{error, Reason} -> format_reason(Id, Reason)
+
+	{error, Reason} -> 
+	    format_reason(Id, Reason)
     end.
 
     
@@ -587,6 +621,12 @@ get_response_impl(Id, Vars) ->
 expect_impl(Id, any) -> 
     case receive_response() of
 	PDU when record(PDU, pdu) -> ok;
+	{error, Reason} -> format_reason(Id, Reason)
+    end;
+
+expect_impl(Id, return) -> 
+    case receive_response() of
+	PDU when record(PDU, pdu) -> {ok, PDU};
 	{error, Reason} -> format_reason(Id, Reason)
     end;
 
@@ -605,55 +645,86 @@ expect_impl(Id, timeout) ->
 
 expect_impl(Id, Err) when atom(Err) ->
     case receive_response() of
-	#pdu{error_status = Err} -> ok;
-	#pdu{request_id = ReqId, error_status = OtherErr} ->
+	#pdu{error_status = Err} -> 
+	    ok;
+
+	#pdu{request_id   = ReqId, 
+	     error_status = OtherErr} ->
 	    {error, Id, {"ErrorStatus: ~w, RequestId: ~w", [Err,ReqId]},
 	     {"ErrorStatus: ~w", [OtherErr]}};
-	{error, Reason} -> format_reason(Id, Reason)
+
+	{error, Reason} -> 
+	    format_reason(Id, Reason)
     end;
 
 expect_impl(Id, ExpectedVarbinds) when list(ExpectedVarbinds) ->
     case receive_response() of
-	#pdu{type='get-response', error_status=noError, error_index=0,
-	     varbinds=VBs} ->
+	#pdu{type         = 'get-response', 
+	     error_status = noError, 
+	     error_index  = 0,
+	     varbinds     = VBs} ->
 	    check_vars(Id, find_pure_oids(ExpectedVarbinds), VBs);
-	#pdu{type=Type2, request_id=ReqId, error_status=Err2, error_index=Index2} ->
+
+	#pdu{type         = Type2, 
+	     request_id   = ReqId, 
+	     error_status = Err2, 
+	     error_index  = Index2} ->
 	    {error, Id, {"Type: ~w, ErrStat: ~w, Idx: ~w, RequestId: ~w", 
 			 ['get-response', noError, 0, ReqId]},
 	     {"Type: ~w, ErrStat: ~w, Idx: ~w", [Type2, Err2, Index2]}};
-	{error, Reason} -> format_reason(Id, Reason)
+
+	{error, Reason} -> 
+	    format_reason(Id, Reason)
     end.
 
 expect_impl(Id, v2trap, ExpectedVarbinds) when list(ExpectedVarbinds) ->
     case receive_response() of
-	#pdu{type='snmpv2-trap', error_status=noError, error_index=0,
-	     varbinds=VBs} ->
+	#pdu{type         = 'snmpv2-trap', 
+	     error_status = noError, 
+	     error_index  = 0,
+	     varbinds     = VBs} ->
 	    check_vars(Id, find_pure_oids(ExpectedVarbinds), VBs);
-	#pdu{type=Type2, request_id=ReqId, error_status=Err2, error_index=Index2} ->
+
+	#pdu{type         = Type2, 
+	     request_id   = ReqId, 
+	     error_status = Err2, 
+	     error_index  = Index2} ->
 	    {error, Id, {"Type: ~w, ErrStat: ~w, Idx: ~w, RequestId: ~w", 
 			 ['snmpv2-trap', noError, 0, ReqId]},
 	     {"Type: ~w, ErrStat: ~w, Idx: ~w", [Type2, Err2, Index2]}};
-	{error, Reason} -> format_reason(Id, Reason)
+
+	{error, Reason} -> 
+	    format_reason(Id, Reason)
     end;
 
 expect_impl(Id, report, ExpectedVarbinds) when list(ExpectedVarbinds) ->
     case receive_response() of
-	#pdu{type='report', error_status=noError, error_index=0,
-	     varbinds=VBs} ->
+	#pdu{type         = 'report', 
+	     error_status = noError, 
+	     error_index  = 0,
+	     varbinds     = VBs} ->
 	    check_vars(Id, find_pure_oids(ExpectedVarbinds), VBs);
-	#pdu{type=Type2, request_id=ReqId, error_status=Err2, error_index=Index2} ->
+
+	#pdu{type         = Type2, 
+	     request_id   = ReqId, 
+	     error_status = Err2, 
+	     error_index  = Index2} ->
 	    {error, Id, {"Type: ~w, ErrStat: ~w, Idx: ~w, RequestId: ~w", 
 			 [report, noError, 0, ReqId]},
 	     {"Type: ~w, ErrStat: ~w, Idx: ~w", [Type2, Err2, Index2]}};
-	{error, Reason} -> format_reason(Id, Reason)
+
+	{error, Reason} -> 
+	    format_reason(Id, Reason)
     end;
 
 expect_impl(Id, {inform, Reply}, ExpectedVarbinds) when
   list(ExpectedVarbinds) ->
     Resp = receive_response(),
     case Resp of
-	#pdu{type='inform-request', error_status=noError, error_index=0,
-	     varbinds=VBs} ->
+	#pdu{type         = 'inform-request', 
+	     error_status = noError, 
+	     error_index  = 0,
+	     varbinds     = VBs} ->
 	    case check_vars(Id, find_pure_oids(ExpectedVarbinds), VBs) of
 		ok when Reply == true ->
 		    RespPDU = Resp#pdu{type = 'get-response',
@@ -673,44 +744,73 @@ expect_impl(Id, {inform, Reply}, ExpectedVarbinds) when
 		Else ->
 		    Else
 	    end;
-	#pdu{type=Type2, request_id=ReqId, error_status=Err2, error_index=Index2} ->
+
+	#pdu{type         = Type2, 
+	     request_id   = ReqId, 
+	     error_status = Err2, 
+	     error_index  = Index2} ->
 	    {error, Id, {"Type: ~w, ErrStat: ~w, Idx: ~w, RequestId: ~w", 
 			 ['inform-request', noError, 0, ReqId]},
 	     {"Type: ~w, ErrStat: ~w, Idx: ~w", [Type2, Err2, Index2]}};
-	{error, Reason} -> format_reason(Id, Reason)
+
+	{error, Reason} -> 
+	    format_reason(Id, Reason)
     end.
 
 expect_impl(Id, Err, Index, any) ->
     case receive_response() of
-	#pdu{type='get-response', error_status=Err, error_index=Index} -> ok;
-	#pdu{type='get-response', error_status=Err} when Index == any -> ok;
-	#pdu{type='get-response', request_id=ReqId, error_status=Err, error_index = Idx}
-	when list(Index) ->
+	#pdu{type         = 'get-response', 
+	     error_status = Err, 
+	     error_index  = Index} -> 
+	    ok;
+
+	#pdu{type = 'get-response', error_status = Err} when Index == any -> 
+	    ok;
+
+	#pdu{type         = 'get-response', 
+	     request_id   = ReqId, 
+	     error_status = Err, 
+	     error_index  = Idx} when list(Index) ->
 	    case lists:member(Idx, Index) of
-		true -> ok;
+		true -> 
+		    ok;
 		false ->
 		    {error, Id, {"ErrStat: ~w, Idx: ~w, RequestId: ~w", 
 				 [Err, Index, ReqId]},
 		     {"ErrStat: ~w, Idx: ~w", [Err, Idx]}}
 	    end;
-	#pdu{type=Type2, request_id=ReqId, error_status=Err2, error_index=Index2} ->
+
+	#pdu{type         = Type2, 
+	     request_id   = ReqId, 
+	     error_status = Err2, 
+	     error_index  = Index2} ->
 	    {error, Id, {"Type: ~w, ErrStat: ~w, Idx: ~w, RequestId: ~w", 
 			 ['get-response', Err, Index, ReqId]},
 	     {"Type: ~w, ErrStat: ~w, Idx: ~w", [Type2, Err2, Index2]}};
-	{error, Reason} -> format_reason(Id, Reason)
+
+	{error, Reason} -> 
+	    format_reason(Id, Reason)
     end;
 
 expect_impl(Id, Err, Index, ExpectedVarbinds) ->
     PureVBs = find_pure_oids(ExpectedVarbinds),
     case receive_response() of
-	#pdu{type='get-response', error_status=Err, error_index=Index,
-	     varbinds=VBs} ->
+	#pdu{type         = 'get-response', 
+	     error_status = Err, 
+	     error_index  = Index,
+	     varbinds     = VBs} ->
 	    check_vars(Id, PureVBs, VBs);
-	#pdu{type='get-response', error_status=Err, varbinds=VBs}
-	when Index == any ->
+
+	#pdu{type         = 'get-response', 
+	     error_status = Err, 
+	     varbinds     = VBs} when Index == any ->
 	    check_vars(Id, PureVBs, VBs);
-	#pdu{type='get-response', request_id=ReqId, error_status=Err, error_index=Idx,
-	     varbinds=VBs} when list(Index) ->
+
+	#pdu{type         = 'get-response', 
+	     request_id   = ReqId, 
+	     error_status = Err, 
+	     error_index  = Idx,
+	     varbinds     = VBs} when list(Index) ->
 	    case lists:member(Idx, Index) of
 		true ->
 		    check_vars(Id, PureVBs, VBs);
@@ -721,29 +821,43 @@ expect_impl(Id, Err, Index, ExpectedVarbinds) ->
 		     {"ErrStat: ~w, Idx: ~w, Varbinds: ~w",
 		      [Err,Idx,VBs]}}
 	    end;
-	#pdu{type=Type2, request_id=ReqId, error_status=Err2, error_index=Index2, varbinds=VBs} ->
+
+	#pdu{type         = Type2, 
+	     request_id   = ReqId, 
+	     error_status = Err2, 
+	     error_index  = Index2, 
+	     varbinds     = VBs} ->
 	    {error,Id,
 	     {"Type: ~w, ErrStat: ~w, Idx: ~w, Varbinds: ~w, RequestId: ~w",
 	      ['get-response',Err,Index,PureVBs,ReqId]},
 	     {"Type: ~w, ErrStat: ~w Idx: ~w Varbinds: ~w",
 	      [Type2,Err2,Index2,VBs]}};
-	{error, Reason} -> format_reason(Id, Reason)
+
+	{error, Reason} -> 
+	    format_reason(Id, Reason)
     end.
 
 expect_impl(Id, trap, Enterp, Generic, Specific, ExpectedVarbinds) ->
     PureE = find_pure_oid(Enterp),
     case receive_trap(3500) of
-	#trappdu{enterprise = PureE, generic_trap = Generic,
-		 specific_trap = Specific, varbinds = VBs} ->
+	#trappdu{enterprise    = PureE, 
+		 generic_trap  = Generic,
+		 specific_trap = Specific, 
+		 varbinds      = VBs} ->
 	    check_vars(Id, find_pure_oids(ExpectedVarbinds), VBs);
-	#trappdu{enterprise = Ent2, generic_trap = G2,
-		 specific_trap = Spec2, varbinds = VBs} ->
+
+	#trappdu{enterprise    = Ent2, 
+		 generic_trap  = G2,
+		 specific_trap = Spec2, 
+		 varbinds      = VBs} ->
 	    {error, Id,
 	     {"Enterprise: ~w, Generic: ~w, Specific: ~w, Varbinds: ~w",
 	      [PureE, Generic, Specific, ExpectedVarbinds]},
 	     {"Enterprise: ~w, Generic: ~w, Specific: ~w, Varbinds: ~w",
 	      [Ent2, G2, Spec2, VBs]}};
-	{error, Reason} -> format_reason(Id, Reason)
+
+	{error, Reason} -> 
+	    format_reason(Id, Reason)
     end.
 
 format_reason(Id, Reason) ->
@@ -754,23 +868,24 @@ format_reason(Id, Reason) ->
 %% Returns: ok
 %% Fails: if not ok
 %%----------------------------------------------------------------------
-check_vars(Id,[], []) -> ok;
+check_vars(_Id,[], []) -> 
+    ok;
 check_vars(Id,Vars, []) ->
     {error, Id, {"More Varbinds (~w)", [Vars]}, {"Too few", []}};
 check_vars(Id,[], Varbinds) ->
     {error,Id, {"Fewer Varbinds", []}, {"Too many (~w)", [Varbinds]}};
-check_vars(Id,[{XOid, any} | Vars], [#varbind{oid = Oid} |Vbs]) ->
+check_vars(Id,[{_XOid, any} | Vars], [#varbind{oid = _Oid} |Vbs]) ->
     check_vars(Id,Vars, Vbs);
 check_vars(Id,[{Oid, Val} | Vars], [#varbind{oid = Oid, value = Val} |Vbs]) ->
     check_vars(Id,Vars, Vbs);
 check_vars(Id,[{Oid, Val} | _], [#varbind{oid = Oid, value = Val2} |_]) ->
     {error, Id, {" Varbind: ~w = ~w", [Oid, Val]}, {"Value: ~w", [Val2]}};
-check_vars(Id,[{Oid, Val} | _], [#varbind{oid = Oid2, value = Val2} |_]) ->
+check_vars(Id,[{Oid, _Val} | _], [#varbind{oid = Oid2, value = _Val2} |_]) ->
     {error, Id, {"Oid: ~w", [Oid]}, {"Oid: ~w", [Oid2]}}.
 
 match_vars(Id, [Oid|T], [#varbind{oid = Oid, value = Value} | Vbs], Res) ->
     match_vars(Id, T, Vbs, [Value | Res]);
-match_vars(Id, [], [], Res) ->
+match_vars(_Id, [], [], Res) ->
     {ok, lists:reverse(Res)};
 match_vars(Id, [Oid | _], [#varbind{oid = Oid2}], _Res) ->
     {error, Id, {" Oid: ~w", [Oid]}, {"Oid2: ~w", [Oid2]}};

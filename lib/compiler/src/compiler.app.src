@@ -8,6 +8,7 @@
 	     beam_bs,
 	     beam_block,
 	     beam_clean,
+	     beam_dead,
 	     beam_dict,
 	     beam_disasm,
 	     beam_flatten,

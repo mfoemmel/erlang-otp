@@ -26,6 +26,12 @@
 
 #define HAS_STDARG
 
+#ifdef __GNUC__
+#ifdef pid_t
+/* Really... */
+#undef pid_t
+#endif
+#endif
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
@@ -34,7 +40,9 @@
 #include <limits.h>
 #include <process.h>
 #include <malloc.h>
+#ifndef __GNUC__
 #include <direct.h>
+#endif
 #include <errno.h>
 #include <io.h>
 #include <sys/types.h>
@@ -83,7 +91,7 @@
 #define NO_SYSCONF
 #define NO_DAEMON
 #define NO_PWD
-#define HAVE_MEMMOVE
+/*#define HAVE_MEMMOVE*/
 
 #define strncasecmp _strnicmp
 
@@ -141,6 +149,10 @@ typedef struct {
 #if defined (__GNUC__)
 typedef long long SysHrTime; /* Not actually needed... */
 #else
+#define HAVE_INT64 1
+typedef ULONGLONG Uint64;
+typedef LONGLONG  Sint64;
+
 typedef LONGLONG SysHrTime;
 #endif
 
@@ -149,6 +161,7 @@ extern void sys_gettimeofday(SysTimeval *tv);
 extern SysHrTime sys_gethrtime(void);
 extern clock_t sys_times(SysTimes *buffer);
 
+extern char *win_build_environment(char *);
 /*
  ** These are to avoid irritating warnings
  */
@@ -167,7 +180,7 @@ int _finite(double x);
 #endif
 #endif
 
-#define NO_FPE_SIGNALS
+/*#define NO_FPE_SIGNALS*/
 #define ERTS_FP_CHECK_INIT() do {} while (0)
 #define ERTS_FP_ERROR(f, Action) if (!_finite(f)) { Action; } else {}
 #define ERTS_SAVE_FP_EXCEPTION()
@@ -183,4 +196,12 @@ int _finite(double x);
 /*
  * Seems to be missing.
  */
+#ifndef __GNUC__
 typedef long ssize_t;
+#endif
+
+/* Threads */
+#ifdef USE_THREADS
+int init_async(int);
+int exit_async(void);
+#endif

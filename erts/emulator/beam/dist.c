@@ -42,8 +42,9 @@ byte *dist_buf;
 int dist_buf_size;
 
 /* distribution trap functions */
-Export* dsend_trap = NULL;
-Export* dsend_nosuspend_trap = NULL;
+Export* dsend2_trap = NULL;
+Export* dsend3_trap = NULL;
+/*Export* dsend_nosuspend_trap = NULL;*/
 Export* dlink_trap = NULL;
 Export* dunlink_trap = NULL;
 Export* dmonitor_node_trap = NULL;
@@ -61,6 +62,8 @@ static Eterm* dmem;
 
 static int clear_dist_entry(DistEntry*);
 static int pack_and_send(DistEntry*, Eterm, Eterm, int);
+
+static Uint no_caches;
 
 void clear_cache(DistEntry *dep)
 {
@@ -80,7 +83,9 @@ void delete_cache(DistEntry *dep)
     ErlCache* cp;
 
     if ((cp = dep->cache) != NULL) {
-	sys_free(cp);
+	erts_free(ERTS_ALC_T_DCACHE, (void *) cp);
+	ASSERT(no_caches > 0);
+	no_caches--;
 	dep->cache = NULL;
     }
 }
@@ -91,9 +96,15 @@ void create_cache(DistEntry *dep)
     ErlCache* cp;
 
     if ((cp = dep->cache) == NULL) {
-	dep->cache = (ErlCache*) safe_alloc_from(150,sizeof(ErlCache));
+	dep->cache = (ErlCache*) erts_alloc(ERTS_ALC_T_DCACHE,sizeof(ErlCache));
+	no_caches++;
 	clear_cache(dep);
     }
+}
+
+Uint erts_dist_cache_size(void)
+{
+    return no_caches*sizeof(ErlCache);
 }
 
 /*
@@ -272,16 +283,18 @@ void init_dist(void)
 {
     net_kernel = NULL;
 
+    no_caches = 0;
+
     dist_buf = tmp_buf;   /* This is the buffer we encode into */
     dist_buf_size = TMP_BUF_SIZE - 20;
 
-    dmem = (Eterm *) erts_definite_alloc(DMEM_SIZE * sizeof(Eterm));
-    if (!dmem)
-	dmem = (Eterm *) safe_alloc_from(151, DMEM_SIZE * sizeof(Eterm));
+    dmem = (Eterm *) erts_alloc(ERTS_ALC_T_DMSG_BLD_BUF,
+				DMEM_SIZE * sizeof(Eterm));
 
     /* Lookup/Install all references to trap functions */
-    dsend_trap = trap_function(am_dsend,2);
-    dsend_nosuspend_trap = trap_function(am_dsend_nosuspend,2);
+    dsend2_trap = trap_function(am_dsend,2);
+    dsend3_trap = trap_function(am_dsend,3);
+    /*    dsend_nosuspend_trap = trap_function(am_dsend_nosuspend,2);*/
     dlink_trap = trap_function(am_dlink,1);
     dunlink_trap = trap_function(am_dunlink,1);
     dmonitor_node_trap = trap_function(am_dmonitor_node,2);
@@ -448,7 +461,6 @@ int dist_group_leader(DistEntry *dep, Eterm leader, Eterm remote)
 **
 **   assert  hlen == 0 !!!
 */
-/* #define TRACE_CORRUPTION 1 */
 int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 {
     ErlLink **lnkp;
@@ -473,9 +485,7 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
     int type;
     Eterm token;
     Eterm token_size;
-#ifdef TRACE_CORRUPTION
-    int orig_len = len;
-#endif
+
     /* Thanks to Luke Gorrie */
     off_heap.mso = NULL;
 #ifndef SHARED_HEAP
@@ -515,7 +525,7 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
     hp = erts_global_alloc(ctl_len);
 #else
     if (ctl_len > sizeof(ctl_default)/sizeof(ctl_default[0])) {
-	ctl = safe_alloc_from(280, ctl_len * sizeof(Eterm));
+	ctl = erts_alloc(ERTS_ALC_T_DCTRL_BUF, ctl_len * sizeof(Eterm));
     }
     hp = ctl;
 #endif
@@ -858,32 +868,12 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	erts_cleanup_funs(off_heap.funs);
     }
     if (ctl != ctl_default) {
-	sys_free(ctl);
+	erts_free(ERTS_ALC_T_DCTRL_BUF, (void *) ctl);
     }
 #endif
     return 0;
 
  data_error:
-#ifdef TRACE_CORRUPTION
-#warning TRACE_CORRUPTION is enabled, this is a custom build emulator
-    if (dep != NULL) { /*Always?*/
-	int z;
-	cerr_pos = 0;
-	erl_printf(CBUF, "Illegal data on distribution port: \n<<");
-	for(z=0; z < orig_len && z < 1024; ++z) {
-	    erl_printf(CBUF, "%d,", buf[z]);
-	}
-	erl_printf(CBUF, ">>\nnodename:[");
-	display(dep->sysname,CBUF);
-	erl_printf(CBUF,"]\nrefc %d, creation %d, cid ",
-		   (int) dep->refc, (int) dep->creation);
-	display(dep->cid,CBUF);
-	erl_printf(CBUF,", status %d, flags %d,\ncache 0x%08x, version %d\n",
-		   (int) dep->status, (int) dep->flags, (int) dep->cache,
-		   (int) dep->version);
-	send_error_to_logger(NIL);
-    }
-#endif
     if (off_heap.mso) {
 	erts_cleanup_mso(off_heap.mso);
     }
@@ -895,7 +885,7 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	erts_cleanup_funs(off_heap.funs);
     }
     if (ctl != ctl_default) {
-	sys_free(ctl);
+	erts_free(ERTS_ALC_T_DCTRL_BUF, (void *) ctl);
     }
 #endif
     do_exit_port(dep->cid, dep->cid, am_killed);
@@ -961,61 +951,64 @@ static int pack_and_send(DistEntry *dep, Eterm ctl, Eterm mess, int force_busy)
 }
 
 static int
-info_dist_entry(CIO to, DistEntry *dep, int connected)
+info_dist_entry(CIO to, DistEntry *dep, int visible, int connected)
 {
   ErlLink* lnk;
+
+  if (visible && connected) {
+      erl_printf(to, "=visible_node:");
+  } else if (connected) {
+      erl_printf(to, "=hidden_node:");
+  } else {
+      erl_printf(to, "=not_connected:");
+  }
+  erl_printf(to, "%d\n", dist_entry_channel_no(dep));
 
   if(connected && is_nil(dep->cid)) {
     erl_printf(to,"Error: Not connected node still registered as connected:");
     display(dep->sysname, to);
+    erl_printf(to, "\n");
     return 0;
   }
 
   if(!connected && is_not_nil(dep->cid)) {
     erl_printf(to,"Error: Connected node not registered as connected:");
     display(dep->sysname, to);
+    erl_printf(to, "\n");
     return 0;
   }
 
-  if (!connected && is_nil(dep->cid)) {
-    erl_printf(to, "%d : ", dist_entry_channel_no(dep));
-    display(dep->sysname, to);
-    erl_printf(to, "\n");
+  erl_printf(to, "Name: ");
+  display(dep->sysname, to);
 #ifdef DEBUG
-  erl_printf(to,"\nReference count: %d\n", dep->refc);
+  erl_printf(to," (refc=%d)", dep->refc);
 #endif
+  erl_printf(to, "\n");
+  if (!connected && is_nil(dep->cid)) {
     if (dep->links) {
       erl_printf(to,"Error: Got links to not connected node:");
       display(dep->sysname, to);
+      erl_printf(to, "\n");
     }
     return 0;
   }
-  erl_printf(to, "%d : Connection to:", dist_entry_channel_no(dep));
-  display(dep->sysname, to);
-  erl_printf(to, " Controller:");
-  display(dep->cid, to);
 
-#ifdef DEBUG
-  erl_printf(to,"Reference count: %d\n", dep->refc);
-#endif
+  erl_printf(to, "Controller: ");
+  display(dep->cid, to);
   erl_printf(to, "\n");
 
   erts_print_node_info(to, dep->sysname, NULL, NULL);
 
-
   if ((lnk = dep->links)) {
-    erl_printf(to,"\n");
-    erl_printf(to,"Remote links and monitors to/from ");
-    display(dep->sysname,to);
-    erl_printf(to,":\n");
     while(lnk) {
       switch(lnk->type) {
       case LNK_LINK:
 	if (is_internal_pid(lnk->item)) {
 	  if (pid2proc(lnk->item) == NULL)
 	    break;
+	  erl_printf (to, "Remote link: ");
 	  display(lnk->item,to);
-	  erl_printf (to," is linked to ");
+	  erl_printf (to, " ");
 	  display(lnk->data,to);
 	}
 	break;
@@ -1025,47 +1018,47 @@ info_dist_entry(CIO to, DistEntry *dep, int connected)
 	  /* We are being monitored */
 	  if (pid2proc(lnk->data) == NULL)
 	    break;
+	  erl_printf(to, "Remotely monitored by: ");
 	  display(lnk->data,to);
-	  erl_printf (to," is being monitored by ");
+	  erl_printf (to, " ");
 	  display(lnk->item,to);
 	} else {
 	  /* We are monitoring */
 	  if (pid2proc(lnk->item) == NULL)
 	    break;
+	  erl_printf (to, "Remote monitoring: ");
 	  display(lnk->item,to);
-	  erl_printf (to," is monitoring ");
-	  if(is_atom(lnk->data)) {
+	  erl_printf (to, " ");
+	  if (is_not_atom(lnk->data)) {
+	    display(lnk->data, to);
+	  } else {
 	    erl_printf (to,"{");
 	    display(lnk->data,to);
 	    erl_printf (to,", ");
 	    display(dep->sysname,to);
 	    erl_printf (to,"}");
 	  }
-	  else
-	    display(lnk->data,to);
-
 	}
 	break;
       case LNK_NODE:
 	if (is_internal_pid(lnk->item)) {
 	  if (pid2proc(lnk->item) == NULL)
 	    break;
+	  erl_printf (to, "Remote monitoring: ");
 	  display(lnk->item,to);
-	  erl_printf (to," is monitoring ");
+	  erl_printf (to, " ");
 	  display(dep->sysname,to);
 	}
 	break;
       case LNK_OMON:
       case LNK_TMON:
       default:
-	erl_printf (to,"Bad remote link type (%d) found", lnk->type);
+	erl_printf (to, "Error: Bad remote link type (%d) found", lnk->type);
       }
       erl_printf(to," \n");
       lnk = lnk->next;
     }
   }
-  else
-      erl_printf(to,"\n");
 
   return 0;
     
@@ -1074,49 +1067,30 @@ int distribution_info(CIO to)		/* Called by break handler */
 {
     DistEntry *dep;
 
+    erl_printf(to, "=node:");
+    display(erts_this_dist_entry->sysname, to);
+    erl_printf(to, "\n");
+
     if (erts_this_node->sysname == am_Noname) {
-	erl_printf(to,"Not alive\n"); 
+	erl_printf(to, "=no_distribution\n");
 	return(0);
     }
+
 #if 0
     if (!erts_visible_dist_entries && !erts_hidden_dist_entries) 
       erl_printf(to,"Alive but not holding any connections \n");
 #endif
-    if (erts_visible_dist_entries) {
-      erl_printf(to,"------------------------\n");
-      erl_printf(to,"-- Visible nodes -------\n");
-      erl_printf(to,"------------------------\n");
-    }
 
     for(dep = erts_visible_dist_entries; dep; dep = dep->next) {
-      info_dist_entry(to, dep, 1);
-      if (dep->next)
-	erl_printf(to,"------------------------\n");
-    }
-
-    if (erts_hidden_dist_entries) {
-      erl_printf(to,"------------------------\n");
-      erl_printf(to,"-- Hidden nodes --------\n");
-      erl_printf(to,"------------------------\n");
+      info_dist_entry(to, dep, 1, 1);
     }
 
     for(dep = erts_hidden_dist_entries; dep; dep = dep->next) {
-      info_dist_entry(to, dep, 1);
-      if (dep->next)
-	erl_printf(to,"------------------------\n");
+      info_dist_entry(to, dep, 0, 1);
     }
 
-    if (erts_not_connected_dist_entries) {
-      erl_printf(to,"------------------------\n");
-      erl_printf(to,"-- Not connected -------\n");
-      erl_printf(to,"------------------------\n");
-    }
-    else
-      erl_printf(to,"------------------------\n");
-
-    for(dep = erts_not_connected_dist_entries; dep; dep = dep->next) {
-      info_dist_entry(to, dep, 0);
-      erl_printf(to,"------------------------\n");
+    for (dep = erts_not_connected_dist_entries; dep; dep = dep->next) {
+	info_dist_entry(to, dep, 0, 0);
     }
 
     return(0);
@@ -1220,7 +1194,6 @@ void print_pass_through(DistEntry *dep, byte *t, int len)
  ***********************************************************************/
 
 BIF_RETTYPE setnode_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Uint creation;
 
@@ -1240,8 +1213,9 @@ BIF_ADECL_2
 	goto error;
 
     /* Check that all trap functions are defined !! */
-    if (dsend_trap->address == NULL ||
-	dsend_nosuspend_trap->address == NULL ||
+    if (dsend2_trap->address == NULL ||
+	dsend3_trap->address == NULL ||
+	/*	dsend_nosuspend_trap->address == NULL ||*/
 	dlink_trap->address == NULL ||
 	dunlink_trap->address == NULL ||
 	dmonitor_node_trap->address == NULL ||
@@ -1286,7 +1260,6 @@ BIF_ADECL_2
  ***********************************************************************/
 
 BIF_RETTYPE setnode_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     Uint flags;
     unsigned long version;
@@ -1395,7 +1368,6 @@ error:
 /* dist_exit(Local, Term, Remote) -> Bool */
 
 BIF_RETTYPE dist_exit_3(BIF_ALIST_3)
-BIF_ADECL_3
 {
     Eterm local;
     Eterm remote;
@@ -1461,7 +1433,6 @@ BIF_ADECL_3
 /* link(Local, Remote) -> Bool */
 
 BIF_RETTYPE dist_link_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Eterm local;
     Eterm remote;
@@ -1504,7 +1475,6 @@ BIF_ADECL_2
 /* unlink(Local, Remote) -> Bool */
 
 BIF_RETTYPE dist_unlink_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     Eterm local = BIF_ARG_1;
     Eterm remote = BIF_ARG_2;
@@ -1542,7 +1512,6 @@ BIF_ADECL_2
 /* node(Object) -> Node */
 
 BIF_RETTYPE node_1(BIF_ALIST_1)
-BIF_ADECL_1
 { 
     if (is_not_node_container(BIF_ARG_1))
       BIF_ERROR(BIF_P, BADARG);
@@ -1553,7 +1522,6 @@ BIF_ADECL_1
 /* node() -> Node */
 
 BIF_RETTYPE node_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     BIF_RET(erts_this_dist_entry->sysname);
 }
@@ -1564,7 +1532,6 @@ BIF_ADECL_0
 
 #if 0 /* Done in erlang.erl instead. */
 BIF_RETTYPE nodes_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
   return nodes_1(BIF_P, am_visible);
 }
@@ -1572,7 +1539,6 @@ BIF_ADECL_0
 
 
 BIF_RETTYPE nodes_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     Eterm result;
     int length;
@@ -1657,7 +1623,6 @@ BIF_ADECL_1
 /* is_alive() -> Bool */
 
 BIF_RETTYPE is_alive_0(BIF_ALIST_0)
-BIF_ADECL_0
 {
     if (erts_this_node->sysname == am_Noname)
 	BIF_RET(am_false);
@@ -1668,7 +1633,6 @@ BIF_ADECL_0
 /* monitor_node(Node, Bool) -> Bool */
 
 BIF_RETTYPE monitor_node_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     DistEntry *dep;
 

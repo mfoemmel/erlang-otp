@@ -50,7 +50,7 @@ init([]) -> % Called by supervisor_bridge:start_link
 	    {error, {timeout, ?PROCNAME}}
     end.
 
-terminate(Reason,Pid) ->
+terminate(_Reason,Pid) ->
     (catch exit(Pid,kill)),
     ok.
 
@@ -77,7 +77,7 @@ server_init(Starter) ->
 		   end,
 	    process_flag(priority, low),
 	    loop(Starter, Port);
-	Other ->
+	_Other ->
 	    exit({badarg, {?MODULE, init, [Starter]}})
     end.
     
@@ -116,7 +116,7 @@ loop(Parent,Port) ->
 system_continue(Parent, _, Port) ->
     loop(Parent,Port).
 
-system_terminate(Reason, Parent, _, _Port) ->
+system_terminate(Reason, _Parent, _, _Port) ->
     exit(Reason).
 
 system_code_change(Port, _Module, _OldVsn, _Extra) ->
@@ -200,8 +200,8 @@ get_total(Port, Alloc) ->
 get_memory_usage_win32(_Port) ->
     [Result|_] = os_mon_sysinfo:get_mem_info(),
     case io_lib:fread("~d~d~d~d~d~d~d", Result) of
-	{ok, [MemLoad,TotPhys,AvailPhys,
-	      TotPage,AvailPage,TotV,AvailV], RestStr} ->
+	{ok, [_MemLoad,TotPhys,AvailPhys,
+	      _TotPage,_AvailPage,_TotV,_AvailV], _RestStr} ->
 	    {TotPhys-AvailPhys,TotPhys};
 	Reason ->
 	    exit({win32_sysinfo_failed, Reason})

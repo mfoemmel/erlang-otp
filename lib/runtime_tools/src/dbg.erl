@@ -42,38 +42,24 @@
 %%% Shell callable utility
 fun2ms(ShellFun) when is_function(ShellFun) ->
     % Check that this is really a shell fun...
-    Mod = erlang:fun_info(ShellFun,module),
-    case Mod of 
-	{module,erl_eval} ->
-	    Env = erlang:fun_info(ShellFun,env),
-	    case Env of
-		{env,[{eval,{shell,local_func},_},
-		      ImportList,
-		      Clauses]} when is_list(ImportList),
-				     element(1,hd(Clauses)) == clause ->
-		    case ms_transform:transform_from_shell(
-			   ?MODULE,Clauses,ImportList) of
-			{error,[{_,[{_,_,Code}|_]}|_],_} ->
-			    io:format("Error: ~s~n",
-				      [ms_transform:format_error(Code)]),
-			    {error,transform_error};
-			Else ->
-			    Else
-		    end;
-		_ ->
-		    exit({badarg,{?MODULE,fun2ms,
-				  [function,called,with,real,'fun',
-				   should,be,transformed,with,
-				   parse_transform,'or',called,with,
-				   a,'fun',generated,in,the,
-				   shell]}})
-	       end;
-	_ ->
-	    exit({badarg,{?MODULE,fun2ms,[function,called,with,real,'fun',
-				      should,be,transformed,with,
-				      parse_transform,'or',called,with,
-				      a,'fun',generated,in,the,
-				      shell]}}) 
+    case erl_eval:fun_data(ShellFun) of
+        {fun_data,ImportList,Clauses} ->
+            case ms_transform:transform_from_shell(
+                   ?MODULE,Clauses,ImportList) of
+                {error,[{_,[{_,_,Code}|_]}|_],_} ->
+                    io:format("Error: ~s~n",
+                              [ms_transform:format_error(Code)]),
+                    {error,transform_error};
+                Else ->
+                    Else
+            end;
+        false ->
+            exit({badarg,{?MODULE,fun2ms,
+                          [function,called,with,real,'fun',
+                           should,be,transformed,with,
+                           parse_transform,'or',called,with,
+                           a,'fun',generated,in,the,
+                           shell]}})
     end.
 
 
@@ -780,7 +766,7 @@ tracer_loop(Handler, Hdata) ->
     end.
     
 recv_all_traces(Trace, Handler, Hdata) ->
-    Suspended = suspend(Trace, ordsets:new_set()),
+    Suspended = suspend(Trace, ordsets:new()),
     recv_all_traces(Suspended, Handler, Hdata, [Trace]).
 
 recv_all_traces(Suspended0, Handler, Hdata, Traces) ->
@@ -804,10 +790,10 @@ recv_all_traces(Suspended0, Handler, Hdata, Traces) ->
     after 0 ->
 	    case catch invoke_handler(Traces, Handler, Hdata) of
 		{'EXIT',Reason} -> 
-		    resume(ordsets:set_to_list(Suspended0)),
+		    resume(ordsets:to_list(Suspended0)),
 		    exit({trace_handler_crashed,Reason});
 		NewHdata ->
-		    resume(ordsets:set_to_list(Suspended0)),
+		    resume(ordsets:to_list(Suspended0)),
 		    NewHdata
 	    end
     end.

@@ -137,7 +137,7 @@ call(Name, Label, Request, Timeout)
 	    exit(noproc)
     end;
 %% Global by name
-call({global, Name}=Process, Label, Request, Timeout)
+call({global, _Name}=Process, Label, Request, Timeout)
   when Timeout == infinity;
        integer(Timeout), Timeout >= 0 ->
     case where(Process) of
@@ -164,7 +164,7 @@ call({Name, Node}, Label, Request, Timeout)
        Node == node(), integer(Timeout), Timeout >= 0 ->
     call(Name, Label, Request, Timeout);
 %% Remote by name
-call({Name, Node}=Process, Label, Request, Timeout)
+call({_Name, Node}=Process, Label, Request, Timeout)
   when atom(Node), Timeout == infinity;
        atom(Node), integer(Timeout), Timeout >= 0 ->
     if
@@ -180,7 +180,7 @@ do_call(Process, Label, Request, Timeout) ->
     %% or a {Name, Node} tuple (of atoms) and in this 
     %% case this node (node()) _is_ distributed and Node /= node().
     Node = case Process of
-	       {S, N} ->
+	       {_S, N} ->
 		   N;
 	       _ when pid(Process) ->
 		   node(Process);
@@ -223,7 +223,7 @@ do_call(Process, Label, Request, Timeout) ->
 
 wait_resp_mon(Process, Mref, Timeout) ->
     Node = case Process of
-	       {S, N} ->
+	       {_S, N} ->
 		   N;
 	       _ when pid(Process) ->
 		   node(Process);
@@ -275,7 +275,7 @@ wait_resp_mon(Process, Mref, Timeout) ->
 	    end;
 	%% {'DOWN', Mref, _, _, noproc} ->
 	%%     exit(noproc);
-	{'DOWN', Mref, Tag, Item, Reason} ->
+	{'DOWN', Mref, _Tag, _Item, Reason} ->
 	    exit(Reason)
     after Timeout ->
 	    erlang:demonitor(Mref),
@@ -307,7 +307,7 @@ reply({To, Tag}, Reply) ->
 %%%-----------------------------------------------------------------
 %%%  Misc. functions.
 %%%-----------------------------------------------------------------
-where({global, Name})    -> global:whereis_name(Name);
+where({global, Name})    -> global:safe_whereis_name(Name);
 where({local, Name})  -> whereis(Name).
 
 name({global, Name})    -> Name;
@@ -341,7 +341,7 @@ spawn_opts(Options) ->
 	    []
     end.
 
-opt(Op, [{Op, Value}|Options]) ->
+opt(Op, [{Op, Value}|_]) ->
     {ok, Value};
 opt(Op, [_|Options]) ->
     opt(Op, Options);

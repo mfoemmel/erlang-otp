@@ -85,7 +85,7 @@ start_nodes([Host|Tail], Name, Args) ->
 
 stop() -> call({global, pool_master}, stop).
 
-get_elements(Pos,[]) -> [];
+get_elements(_Pos,[]) -> [];
 get_elements(Pos,[E|T]) -> [element(Pos,E) | get_elements(Pos,T)].
 
 stop_em([]) -> stopped;

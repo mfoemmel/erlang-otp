@@ -111,9 +111,19 @@
 %% - from_ordset(L): turns an ordered-set list L into a set. The list
 %%   must not contain duplicates.
 %%
+%% - smallest(S): returns the smallest element in set S. Assumes that
+%%   the set S is nonempty.
+%%
+%% - largest(S): returns the largest element in set S. Assumes that the
+%%   set S is nonempty.
+%%
 %% - take_smallest(S): returns {X, S1}, where X is the smallest element
 %%   in set S, and S1 is the set S with element X deleted. Assumes that
 %%   the set S is nonempty.
+%%
+%% - take_largest(S): returns {X, S1}, where X is the largest element in
+%%   set S, and S1 is the set S with element X deleted. Assumes that the
+%%   set S is nonempty.
 %%
 %% - iterator(S): returns an iterator that can be used for traversing
 %%   the entries of set S; see `next'. The implementation of this is
@@ -140,10 +150,11 @@
 -module(gb_sets).
 
 -export([empty/0, is_empty/1, size/1, singleton/1, is_member/2,
-	 insert/2, add/2, delete/2, delete_any/2, balance/1,
-	 union/2, union/1, intersection/2, intersection/1, difference/2,
-	 is_subset/2, to_list/1, from_list/1, from_ordset/1, take_smallest/1,
-	 iterator/1, next/1, filter/2, fold/3, is_set/1]).
+	 insert/2, add/2, delete/2, delete_any/2, balance/1, union/2,
+	 union/1, intersection/2, intersection/1, difference/2,
+	 is_subset/2, to_list/1, from_list/1, from_ordset/1, smallest/1,
+	 largest/1, take_smallest/1, take_largest/1, iterator/1, next/1,
+	 filter/2, fold/3, is_set/1]).
 
 %% `sets' compatibility aliases:
 
@@ -352,6 +363,32 @@ take_smallest1({Key, nil, Larger}) ->
 take_smallest1({Key, Smaller, Larger}) ->
     {Key1, Smaller1} = take_smallest1(Smaller),
     {Key1, {Key, Smaller1, Larger}}.
+
+smallest({_, T}) ->
+    smallest_1(T).
+
+smallest_1({Key, nil, _Larger}) ->
+    Key;
+smallest_1({_Key, Smaller, _Larger}) ->
+    smallest_1(Smaller).
+
+take_largest({S, T}) ->
+    {Key, Smaller} = take_largest1(T),
+    {Key, {S - 1, Smaller}}.
+
+take_largest1({Key, Smaller, nil}) ->
+    {Key, Smaller};
+take_largest1({Key, Smaller, Larger}) ->
+    {Key1, Larger1} = take_largest1(Larger),
+    {Key1, {Key, Smaller, Larger1}}.
+
+largest({_, T}) ->
+    largest_1(T).
+
+largest_1({Key, _Smaller, nil}) ->
+    Key;
+largest_1({_Key, _Smaller, Larger}) ->
+    largest_1(Larger).
 
 to_list({_, T}) ->
     to_list(T, []).

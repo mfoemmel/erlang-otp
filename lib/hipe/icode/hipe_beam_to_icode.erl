@@ -26,7 +26,7 @@
 %%-ifndef(DEBUG).
 %%-define(DEBUG,6).
 %%-endif.
-
+-export([mk_var/1]).
 -include("../main/hipe.hrl").
 -define(no_debug_msg(Str,Xs),ok).
 %%-define(no_debug_msg(Str,Xs),msg(Str,Xs)).
@@ -53,8 +53,10 @@
 
 
 %%-----------------------------------------------------------------------
+%% @doc
 %% Get BEAM code from `.beam' files or direct from binaries.
 %%   File is either a file name or a binary containing the code.
+%% @end
 %%-----------------------------------------------------------------------
 
 disasm(File) ->
@@ -75,9 +77,11 @@ disasm(File) ->
   end.
 
 %%-----------------------------------------------------------------------
+%% @doc
 %% Translates the code of a whole module into Icode.
 %%   Returns a tuple whose first argument is a list of {{M,F,A}, ICode} 
 %%   pairs, and its second argument is the list of HiPE compiler options.
+%% @end
 %%-----------------------------------------------------------------------
 
 module(BeamCode, Options) ->
@@ -91,6 +95,7 @@ trans_beam_function_chunk(FunBeamCode, ClosureInfo) ->
   {{M,F,A},Icode}.
 
 %%-----------------------------------------------------------------------
+%% @doc
 %% Translates the BEAM code of a single function into Icode.
 %%   Returns a tuple whose first argument is list of {{M,F,A}, ICode}
 %%   pairs, where the first entry is that of the given MFA, and the
@@ -98,6 +103,7 @@ trans_beam_function_chunk(FunBeamCode, ClosureInfo) ->
 %%   defined in the function, and recursively, in the funs.  The
 %%   second argument of the tuple is the HiPE compiler options
 %%   contained in the file.
+%% @end
 %%-----------------------------------------------------------------------
 
 mfa(BeamCode, MFA, Options) ->
@@ -350,8 +356,9 @@ trans_fun([{loop_rec_end,{_,Lbl}}|Instructions], Env) ->
   [hipe_icode:mk_primop([],next_msg,[]),Loop | trans_fun(Instructions,Env)];
 %%--- wait ---
 trans_fun([{wait,{_,Lbl}}|Instructions], Env) ->
-  Susp = hipe_icode:mk_if(suspend_msg,[],map_label(Lbl),map_label(Lbl)),
-  [Susp | trans_fun(Instructions,Env)];
+  Susp = hipe_icode:mk_primop([],suspend_msg,[]),
+  Loop = hipe_icode:mk_goto(map_label(Lbl)),
+  [Susp, Loop | trans_fun(Instructions,Env)];
 %%--- wait_timeout ---
 trans_fun([{wait_timeout,{_,Lbl},Reg}|Instructions], Env) ->
   {Movs,[Temp],Env1} = get_constants_in_temps([Reg],Env),
@@ -397,59 +404,59 @@ trans_fun([{is_ne_exact,{f,Lbl},Arg1,Arg2}|Instructions], Env) ->
 %%--------------------------------------------------------------------
 %%--- is_integer ---
 trans_fun([{is_integer,{f,Lbl},Arg}|Instructions], Env) ->
-  {[I,True],Env1} = trans_type_test(integer,Lbl,Arg,Env),
-  [I,True | trans_fun(Instructions,Env1)];
+  {Code,Env1} = trans_type_test(integer,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
 %%--- is_float ---
 trans_fun([{is_float,{f,Lbl},Arg}|Instructions], Env) ->
-  {[I,True],Env1} = trans_type_test(float,Lbl,Arg,Env),
-  [I,True | trans_fun(Instructions,Env1)];
+  {Code,Env1} = trans_type_test(float,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
 %%--- is_number ---
 trans_fun([{is_number,{f,Lbl},Arg}|Instructions], Env) ->
-  {[I,True],Env1} = trans_type_test(number,Lbl,Arg,Env),
-  [I,True | trans_fun(Instructions,Env1)];
+  {Code,Env1} = trans_type_test(number,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
 %%--- is_atom ---
 trans_fun([{is_atom,{f,Lbl},Arg}|Instructions], Env) ->
-  {[I,True],Env1} = trans_type_test(atom,Lbl,Arg,Env),
-  [I,True | trans_fun(Instructions,Env1)];
+  {Code,Env1} = trans_type_test(atom,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
 %%--- is_pid ---
 trans_fun([{is_pid,{f,Lbl},Arg}|Instructions], Env) ->
-  {[I,True],Env1} = trans_type_test(pid,Lbl,Arg,Env),
-  [I,True | trans_fun(Instructions,Env1)];
+  {Code,Env1} = trans_type_test(pid,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
 %%--- is_ref ---
 trans_fun([{is_ref,{f,Lbl},Arg}|Instructions], Env) ->
-  {[I,True],Env1} = trans_type_test(reference,Lbl,Arg,Env),
-  [I,True | trans_fun(Instructions,Env1)];
+  {Code,Env1} = trans_type_test(reference,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
 %%--- is_port ---
 trans_fun([{is_port,{f,Lbl},Arg}|Instructions], Env) ->
-  {[I,True],Env1} = trans_type_test(port,Lbl,Arg,Env),
-  [I,True | trans_fun(Instructions,Env1)];
+  {Code,Env1} = trans_type_test(port,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
 %%--- is_nil ---
 trans_fun([{is_nil,{f,Lbl},Arg}|Instructions], Env) ->
-  {[I,True],Env1} = trans_type_test(nil,Lbl,Arg,Env),
-  [I,True | trans_fun(Instructions,Env1)];
+  {Code,Env1} = trans_type_test(nil,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
 %%--- is_binary ---
 trans_fun([{is_binary,{f,Lbl},Arg}|Instructions], Env) ->
-  {[I,True],Env1} = trans_type_test(binary,Lbl,Arg,Env),
-  [I,True | trans_fun(Instructions,Env1)];
+  {Code,Env1} = trans_type_test(binary,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
 %%--- is_constant ---
 trans_fun([{is_constant,{f,Lbl},Arg}|Instructions], Env) ->
-  {[I,True],Env1} = trans_type_test(constant,Lbl,Arg,Env),
-  [I,True | trans_fun(Instructions,Env1)];
+  {Code,Env1} = trans_type_test(constant,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
 %%--- is_list ---
 trans_fun([{is_list,{f,Lbl},Arg}|Instructions], Env) ->
-  {[I,True],Env1} = trans_type_test(list,Lbl,Arg,Env),
-  [I,True | trans_fun(Instructions,Env1)];
+  {Code,Env1} = trans_type_test(list,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
 %%--- is_nonempty_list ---
 trans_fun([{is_nonempty_list,{f,Lbl},Arg}|Instructions], Env) ->
-  {[I,True],Env1} = trans_type_test(cons,Lbl,Arg,Env),
-  [I,True | trans_fun(Instructions,Env1)];
+  {Code,Env1} = trans_type_test(cons,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
 %%--- is_tuple ---
 trans_fun([{is_tuple,{f,Lbl},Xreg},
 	   {test_arity,{f,Lbl},Xreg,N}|Instructions], Env) ->
   trans_fun([{test_arity,{f,Lbl},Xreg,N}|Instructions],Env);
 trans_fun([{is_tuple,{_,Lbl},Arg}|Instructions], Env) ->
-  {[I,True],Env1} = trans_type_test(tuple,Lbl,Arg,Env),
-  [I,True | trans_fun(Instructions,Env1)];
+  {Code,Env1} = trans_type_test(tuple,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
 %%--------------------------------------------------------------------
 %%--- test_arity ---
 trans_fun([{test_arity,{f,Lbl},Reg,N}|Instructions], Env) ->
@@ -474,12 +481,7 @@ trans_fun([{jump,{_,L}}|Instructions], Env) ->
   Label = mk_label(L,Env),
   I = hipe_icode:mk_goto(hipe_icode:label_name(Label)),
   [I | trans_fun(Instructions,Env)];
-%%--- catch --- ITS PROCESSING IS POSTPONED
-trans_fun([{'catch',N,{_,EndLabel}}|Instructions], Env) ->
-  [{'catch',N,EndLabel} | trans_fun(Instructions,Env)];
-%%--- catch_end --- ITS PROCESSING IS POSTPONED
-trans_fun([{catch_end,N}|Instructions], Env) ->
-  [{catch_end,N} | trans_fun(Instructions,Env)];
+
 %%--- move ---
 trans_fun([{move,Src,Dst}|Instructions], Env) ->
   Dst1 = mk_var(Dst),
@@ -490,6 +492,46 @@ trans_fun([{move,Src,Dst}|Instructions], Env) ->
 	     trans_const(Src)
 	 end,
   [hipe_icode:mk_mov(Dst1,Src1) | trans_fun(Instructions,Env)];
+
+
+%%--- catch --- ITS PROCESSING IS POSTPONED
+trans_fun([{'catch',N,{_,EndLabel}}|Instructions], Env) ->
+  [{'catch',N,EndLabel} | trans_fun(Instructions,Env)];
+%%--- catch_end --- ITS PROCESSING IS POSTPONED
+trans_fun([{catch_end,N}|Instructions], Env) ->
+  [{catch_end,N} | trans_fun(Instructions,Env)];
+
+%%--- try --- ITS PROCESSING IS POSTPONED
+trans_fun([{'try',N,{_,EndLabel}}|Instructions], Env) ->
+  [{'try',N,EndLabel} | trans_fun(Instructions,Env)];
+
+%%--- try_end --- ITS PROCESSING IS POSTPONED
+trans_fun([{try_end,N}|Instructions], Env) ->
+  [{try_end,N} | trans_fun(Instructions,Env)];
+
+%%--- try_case --- This instruction is not needed in Icode
+%%                 Since this BB is indicated by the try instruction
+trans_fun([{try_case,_N}|Instructions], Env) ->
+  trans_fun(Instructions,Env);
+
+%%--- try_case_end --- XXX: THIS IS A PRELIMINARY IMPLEMENTATION
+trans_fun([{try_case_end,Arg}|Instructions], Env) ->
+  BadArg = trans_arg(Arg),
+  ErrVar = mk_var(new),
+  V = mk_var(new),
+  Atom = hipe_icode:mk_mov(ErrVar,hipe_icode:mk_const(try_clause)),
+  Tuple = hipe_icode:mk_primop([V],mktuple,[ErrVar,BadArg]),
+  Fail = hipe_icode:mk_fail([V], fault),
+  [Atom,Tuple,Fail | trans_fun(Instructions,Env)];
+
+%%--- raise ---
+trans_fun([{raise,Arg1,Arg2}|Instructions], Env) ->
+  Var1 = trans_arg(Arg1),
+  Var2 = trans_arg(Arg2),
+  I = hipe_icode:mk_fail([Var1,Var2],'raise'),
+  [I | trans_fun(Instructions,Env)];
+
+
 %%--- get_list ---
 trans_fun([{get_list,List,Head,Tail}|Instructions], Env) ->
   I1 = hipe_icode:mk_primop([mk_var(Head)],unsafe_hd,[mk_var(List)]),
@@ -585,8 +627,8 @@ trans_fun([{patched_make_fun,MFA,Magic,FreeVarNum,Index}|Instructions], Env) ->
   [Fun | trans_fun(Instructions,Env)];
 %%--- is_function ---
 trans_fun([{is_function,{f,Lbl},Arg}|Instructions], Env) ->
-  {[I,True],Env1} = trans_type_test(function,Lbl,Arg,Env),
-  [I,True | trans_fun(Instructions,Env1)];
+  {Code,Env1} = trans_type_test(function,Lbl,Arg,Env),
+  [Code | trans_fun(Instructions,Env1)];
 %%--- call_ext_only ---
 trans_fun([{call_ext_only,_N,{M,F,A}}|Instructions], Env) ->
   Args = extract_fun_args(A),
@@ -607,50 +649,57 @@ trans_fun([{call_ext_only,_N,{M,F,A}}|Instructions], Env) ->
 
 %%---  bs_get_float --- 
 %%{bs_get_float,{f,24},{y,0},1,{field_flags,0},{x,2}
-trans_fun([{bs_get_float,{f,Lbl},Size,Unit,{field_flags,Flags},X}|
-	   Instructions], Env) ->
-  
-      Dst = mk_var(X),
-
-      %% Get the type of get_float
-      {Name, Args} = 
-	case Size of
-	  {integer, NoBits} when NoBits >= 0 -> 
-	    {{bs_get_float, NoBits*Unit,Flags}, []};
-	  {integer, NoBits} when NoBits < 0 ->
-	     ?EXIT({bad_bs_size_constant,Size});
-	  BitReg -> % Use a number of bits only known at runtime.
-	    Bits = mk_var(BitReg),
-	    {{bs_get_float,Unit,Flags},[Bits]}
-	end,
-      %% Generate code for calling the bs-op.
-      trans_op_call({hipe_bs_primop,Name}, Lbl, Args, [Dst], Env, Instructions);
+trans_fun([{bs_get_float,{f,Lbl},Size,Unit,{field_flags,Flags0},X}|
+	   Instructions], Env) ->  
+  Dst = mk_var(X),
+  Flags = resolve_native_endianess(Flags0),
+  %% Get the type of get_float
+  {Name, Args} = 
+    case Size of
+      {integer, NoBits} when NoBits >= 0 -> 
+	{{bs_get_float, NoBits*Unit,Flags}, []};
+      {integer, NoBits} when NoBits < 0 ->
+	?EXIT({bad_bs_size_constant,Size});
+      BitReg -> % Use a number of bits only known at runtime.
+	Bits = mk_var(BitReg),
+	{{bs_get_float,Unit,Flags},[Bits]}
+    end,
+  %% Generate code for calling the bs-op.
+  trans_op_call({hipe_bs_primop,Name}, Lbl, Args, [Dst], Env, Instructions);
 %%---  bs_put_float --- 
-trans_fun([{bs_put_float,{f,Lbl},Size,Unit,{field_flags,Flags},Source}|
+trans_fun([{bs_put_float,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
 	   Instructions], Env) ->
-
+  Flags = resolve_native_endianess(Flags0),
   %% Get source
-  {Src, SourceInstrs} = 
+  {Src, SourceInstrs, ConstInfo} = 
     case is_var(Source) of
       true ->
-	{mk_var(Source),[]};
+	{mk_var(Source),[], var};
       false ->
-	C = trans_const(Source),
-	SrcVar = mk_var(new),
-	I = hipe_icode:mk_mov(SrcVar, C),
-	{SrcVar,[I]}
+	case Source of
+	  {float, X} when float(X) ->
+	    C = trans_const(Source),
+	    SrcVar = mk_var(new),
+	    I = hipe_icode:mk_mov(SrcVar, C),
+	    {SrcVar,[I],pass};
+	  _ -> 
+	    C = trans_const(Source),
+	    SrcVar = mk_var(new),
+	    I = hipe_icode:mk_mov(SrcVar, C),
+	    {SrcVar,[I],fail}
+	end
     end,
 
   %% Get type of put_float
   {Name, Args,Env2} = 
     case Size of
       {integer, NoBits} when NoBits >= 0 -> %% Create a N*Unit bits float
-	{{bs_put_float, NoBits*Unit, Flags}, [Src],Env};
+	{{bs_put_float, NoBits*Unit, Flags, ConstInfo}, [Src],Env};
       {integer, NoBits} when NoBits < 0 ->
 	?EXIT({bad_bs_size_constant,Size});
       BitReg -> % Use a number of bits only known at runtime.
 	Bits = mk_var(BitReg),
-	{{bs_put_float, Unit, Flags}, [Src,Bits],Env}
+	{{bs_put_float, Unit, Flags, ConstInfo}, [Src,Bits],Env}
     end,
 
   %% Generate code for calling the bs-op. 
@@ -680,12 +729,12 @@ trans_fun([{bs_put_binary,{f,Lbl},Size,Unit,{field_flags,Flags},Source}|
       {atom, all} -> %% put all bits
 	{{bs_put_binary_all, Flags},[Src],Env};
       {integer, NoBits} when NoBits >= 0 -> %% Create a N*Unit bits subbinary
-	{{bs_put_binary, NoBits*Unit}, [Src],Env};
+	{{bs_put_binary, NoBits*Unit, Flags}, [Src],Env};
       {integer, NoBits} when NoBits < 0 ->
 	?EXIT({bad_bs_size_constant,Size});
       BitReg -> % Use a number of bits only known at runtime.
 	Bits = mk_var(BitReg),
-	{{bs_put_binary,Unit},[Src, Bits],Env}
+	{{bs_put_binary, Unit, Flags},[Src, Bits],Env}
     end,
 
   %% Generate code for calling the bs-op.
@@ -693,12 +742,12 @@ trans_fun([{bs_put_binary,{f,Lbl},Size,Unit,{field_flags,Flags},Source}|
 			       Lbl, Args, [], Env2, Instructions);
 
 %%--- bs_init ---
-trans_fun([{bs_init,Size,Flag}|Instructions], Env) ->
+trans_fun([{bs_init,Size,{field_flags,Flags}} |Instructions], Env) ->
   %% What to do with Arg1 and Arg2?
   Name =
   case get(hipe_inline_bs) of
     true ->
-      {bs_init,Size,Flag};
+      {bs_init,Size,Flags};
     _ ->
       bs_init
   end,
@@ -722,117 +771,115 @@ trans_fun([{bs_final,{f,_Lbl},Dst}|Instructions], Env) ->
 %%--- bs_start_match ---
 trans_fun([{bs_start_match,{f,Lbl},X}|Instructions], Env) ->
   Bin = mk_var(X),
-  case get(hipe_inline_bs) of
-    true ->
-      MatchBuf = mk_var(reg),       % New destination for start match case inlined binaries
-      BinSize = mk_var(reg),
-      Base = mk_var(reg),
-      Offset = mk_var(reg),
-      Orig = mk_var(reg),
-      trans_op_call({hipe_bs_primop, bs_start_match}, Lbl, [Bin], [MatchBuf, BinSize, Base, Offset, Orig], Env, Instructions);
-    _ ->
-      trans_op_call({hipe_bs_primop, bs_start_match}, Lbl, [Bin], [], Env, Instructions)
-    end;
+  trans_op_call({hipe_bs_primop, bs_start_match}, Lbl, [Bin],
+		    [], Env, Instructions);
 %%--- bs_get_integer --- changed
-trans_fun([{bs_get_integer,{f,Lbl},Size,Unit,{field_flags,Flags},X}|
+trans_fun([{bs_get_integer,{f,Lbl},Size,Unit,{field_flags,Flags0},X}|
 	   Instructions], Env) ->
   Dst = mk_var(X),
-  
-       %% Get size-type 
-      {Name, Args} = 
-	case Size of
-	  {integer, NoBits} when NoBits >= 0 -> %% Create a N*Unit bits subbinary
-	    {{bs_get_integer, NoBits*Unit,Flags}, []};
-	  {integer, NoBits} when NoBits < 0 ->
-	    ?EXIT({bad_bs_size_constant,Size});
-	  BitReg -> % Use a number of bits only known at runtime.
-	    Bits = mk_var(BitReg),
-	    {{bs_get_integer,Unit,Flags},[Bits]}
-	end,
-  %% Generate code for calling the bs-op.
-      trans_op_call({hipe_bs_primop,Name}, Lbl, Args, [Dst], Env, Instructions);
-%%--- bs_put_integer ---
-trans_fun([{bs_put_integer,{f,Lbl},Size,Unit,{field_flags,Flags},Source}|
-	   Instructions], Env) ->
+  Flags = resolve_native_endianess(Flags0),
   %% Get size-type 
+  {Name, Args} = 
+    case Size of
+      {integer, NoBits} when NoBits >= 0 -> %% Create a N*Unit bits subbinary
+	{{bs_get_integer, NoBits*Unit,Flags}, []};
+      {integer, NoBits} when NoBits < 0 ->
+	?EXIT({bad_bs_size_constant,Size});
+      BitReg -> % Use a number of bits only known at runtime.
+	Bits = mk_var(BitReg),
+	{{bs_get_integer,Unit,Flags},[Bits]}
+    end,
+  %% Generate code for calling the bs-op.
+  trans_op_call({hipe_bs_primop,Name}, Lbl, Args, [Dst], Env, Instructions);
+
+%%--- bs_put_integer ---
+trans_fun([{bs_put_integer,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
+	   Instructions], Env) ->
+  Flags = resolve_native_endianess(Flags0),
+  %% Get size-type 
+  
+  %% Get the source of the binary.
+  {Src, SrcInstrs, ConstInfo} = 
+    case is_var(Source) of
+      true ->
+	{mk_var(Source),[], var};
+      false ->
+	case Source of
+	  {integer, X} when integer(X) ->
+	    C = trans_const(Source),
+	    SrcVar = mk_var(new),
+	    I = hipe_icode:mk_mov(SrcVar, C),
+	    {SrcVar,[I], pass};
+	  _ ->
+	     C = trans_const(Source),
+	    SrcVar = mk_var(new),
+	    I = hipe_icode:mk_mov(SrcVar, C),
+	    {SrcVar,[I], fail}
+	    
+	end
+    end,
   {Name, Args, Env2} = 
     case is_var(Size) of
       true ->
 	SVar = mk_var(Size),
-	{{bs_put_integer,Unit,Flags},[SVar], Env};
+	{{bs_put_integer,Unit,Flags, ConstInfo},[SVar], Env};
       false ->
 	case Size of
 	  {integer, NoBits} when NoBits >= 0 -> 
-	    {{bs_put_integer, NoBits*Unit,Flags}, [], Env};
+	    {{bs_put_integer, NoBits*Unit,Flags, ConstInfo}, [], Env};
 	  _ -> 
 	    ?EXIT({bad_bs_size_constant,Size})
-	end
-    end,
-  %% Get the source of the binary.
-  {Src, SrcInstrs} = 
-    case is_var(Source) of
-      true ->
-				{mk_var(Source),[]};
-      false ->
-				C = trans_const(Source),
-				SrcVar = mk_var(new),
-				I = hipe_icode:mk_mov(SrcVar, C),
-				{SrcVar,[I]}
+	      end
     end,
   SrcInstrs ++
     trans_op_call({hipe_bs_primop, Name}, 
 		  Lbl, [Src|Args], [], Env2, Instructions);
 %%--- bs_save ---
 trans_fun([{bs_save,Index}| Instructions], Env) ->
-   
-       [hipe_icode:mk_primop([],{hipe_bs_primop,{bs_save,Index}},[]) |
-	trans_fun(Instructions, Env)];
+  [hipe_icode:mk_primop([],{hipe_bs_primop,{bs_save,Index}},[]) |
+   trans_fun(Instructions, Env)];
 %%--- bs_restore ---
 trans_fun([{bs_restore,Index}| Instructions], Env) ->
-  
   [hipe_icode:mk_primop([],{hipe_bs_primop,{bs_restore,Index}},[]) |
 	 trans_fun(Instructions, Env)];
 %%--- bs_test_tail ---
 trans_fun([{bs_test_tail,{f,Lbl},Numbits}| Instructions], Env) ->
- 
-	trans_op_call({hipe_bs_primop,{bs_test_tail, Numbits}}, 
-								Lbl, [], [], Env, Instructions);
+  trans_op_call({hipe_bs_primop,{bs_test_tail, Numbits}}, 
+		Lbl, [], [], Env, Instructions);
 %%--- bs_skip_bits ---
 trans_fun([{bs_skip_bits,{f,Lbl},Size,NumBits,{field_flags,Flags}}|
 	   Instructions], Env) -> 
-  %%the current match buffer
-  
-     {Name, Args} = 
-	case Size of
-	  {atom, all} -> %% Skip all bits
-	    {{bs_skip_bits_all, Flags},[]};
-	  {integer, BitSize} when BitSize >= 0-> %% Skip N bits
-	    {{bs_skip_bits, BitSize*NumBits}, []};
-	  {integer, BitSize} when BitSize < 0 ->
-	    ?EXIT({bad_bs_size_constant,Size});
-	  X -> % Skip a number of bits only known at runtime.
-	    Src = mk_var(X),
-	    {{bs_skip_bits,NumBits},[Src]}
-	end,
-      trans_op_call({hipe_bs_primop,Name}, Lbl, Args, [], Env, Instructions);
+  %% the current match buffer
+  {Name, Args} = 
+    case Size of
+      {atom, all} -> %% Skip all bits
+	{{bs_skip_bits_all, Flags},[]};
+      {integer, BitSize} when BitSize >= 0-> %% Skip N bits
+	{{bs_skip_bits, BitSize*NumBits}, []};
+      {integer, BitSize} when BitSize < 0 ->
+	?EXIT({bad_bs_size_constant,Size});
+      X -> % Skip a number of bits only known at runtime.
+	Src = mk_var(X),
+	{{bs_skip_bits,NumBits},[Src]}
+    end,
+  trans_op_call({hipe_bs_primop,Name}, Lbl, Args, [], Env, Instructions);
 %%--- bs_get_binary ---
 trans_fun([{bs_get_binary,{f,Lbl},Size,Unit,{field_flags,Flags},X}| 
 	   Instructions], Env) ->
- 
-      {Name, Args} = 
-	case Size of
-	  {atom, all} -> %% put all bits
-	    {{bs_get_binary_all, Flags},[]};
-	  {integer, NoBits} when NoBits >= 0 -> %% Create a N*Unit bits subbinary
-	    {{bs_get_binary, NoBits*Unit, Flags}, []};
-	  {integer, NoBits} when NoBits < 0 ->
-	    ?EXIT({bad_bs_size_constant,Size});
-	  BitReg -> % Use a number of bits only known at runtime.
-	    Bits = mk_var(BitReg),
-	    {{bs_get_binary,Unit, Flags},[Bits]}
-	end,
-      Dsts = [mk_var(X)],
-      trans_op_call({hipe_bs_primop,Name}, Lbl, Args, Dsts, Env, Instructions);
+  {Name, Args} = 
+    case Size of
+      {atom, all} -> %% put all bits
+	{{bs_get_binary_all, Flags},[]};
+      {integer, NoBits} when NoBits >= 0 -> %% Create a N*Unit bits subbinary
+	{{bs_get_binary, NoBits*Unit, Flags}, []};
+      {integer, NoBits} when NoBits < 0 ->
+	?EXIT({bad_bs_size_constant,Size});
+      BitReg -> % Use a number of bits only known at runtime.
+	Bits = mk_var(BitReg),
+	{{bs_get_binary,Unit, Flags},[Bits]}
+    end,
+  Dsts = [mk_var(X)],
+  trans_op_call({hipe_bs_primop,Name}, Lbl, Args, Dsts, Env, Instructions);
 %%--------------------------------------------------------------------
 %%--- Translation of floating point instructions ---
 %%
@@ -841,13 +888,13 @@ trans_fun([{bs_get_binary,{f,Lbl},Size,Unit,{field_flags,Flags},X}|
 trans_fun([fclearerror|Instructions], Env) ->
   case get(hipe_inline_fp) of
     true ->  
-      [hipe_icode:mk_fclearerror() | trans_fun(Instructions,Env)];
+      [hipe_icode:mk_primop([], fclearerror, []) | 
+       trans_fun(Instructions,Env)];
     _ -> 
       trans_fun(Instructions,Env)
   end;
 
-%--- fcheckerror ---
-
+%%--- fcheckerror ---
 trans_fun([{fcheckerror,{_,Fail}}|Instructions], Env) ->
   case get(hipe_inline_fp) of
     true ->
@@ -866,8 +913,7 @@ trans_fun([{fcheckerror,{_,Fail}}|Instructions], Env) ->
     _ ->
       trans_fun(Instructions, Env)
   end;
-
-%--- fmove ---
+%%--- fmove ---
 trans_fun([{fmove,Src,Dst}|Instructions], Env) ->
   case get(hipe_inline_fp) of
     true ->
@@ -878,14 +924,14 @@ trans_fun([{fmove,Src,Dst}|Instructions], Env) ->
 	     end,
       case{hipe_icode:is_fvar(Dst1),
 	   hipe_icode:is_fvar(Src1)} of
-	{true, true} -> %% fvar := fvar Will this ever happen?
+	{true, true} -> %% fvar := fvar 
 	  [hipe_icode:mk_fmov(Dst1,Src1) | trans_fun(Instructions,Env)];
 	{false, true} -> %% var := fvar
-	  [hipe_icode:mk_unsafe_tag_float(Dst1, Src1) |
+	  [hipe_icode:mk_primop([Dst1], unsafe_tag_float, [Src1]) |
 	   trans_fun(Instructions,Env)];
 	{true, false} -> %% fvar := var or fvar := constant
-	  [hipe_icode:mk_unsafe_untag_float(Dst1, Src1) |
-	   trans_fun(Instructions,Env)]
+	  [hipe_icode:mk_primop([Dst1], unsafe_untag_float, [Src1]) |
+	   trans_fun(Instructions,Env)]      
       end;
     _ ->
       trans_fun([{move,Src,Dst}|Instructions], Env)
@@ -944,7 +990,8 @@ trans_fun([{fnegate,Lab,[SrcR],DestR}|Instructions], Env) ->
     true ->
       Src = mk_var(SrcR),
       Dst = mk_var(DestR),
-      [hipe_icode:mk_fmov(Dst,Src,true) | trans_fun(Instructions,Env)];
+      [hipe_icode:mk_primop([Dst], fnegate, [Src])| 
+       trans_fun(Instructions,Env)];
     _ ->
       trans_fun([{arith,{'-',[{float,0.0},SrcR],DestR},Lab}|Instructions], Env)
   end;
@@ -980,8 +1027,7 @@ trans_bif(Arity, BifName, Lbl, Args, DestReg, Env) ->
     _ -> % Bif occurs in a guard - fail silently to Lbl
       {GuardI,Env2} =
 	make_fallthrough_guard([BifRes],{Module,BifName,Arity},SrcVars,
-		       map_label(Lbl),Env1),
-
+			       map_label(Lbl),Env1),
       {[Movs,GuardI], Env2}
   end.
 
@@ -992,8 +1038,7 @@ trans_op_call(Name, Lbl, Args, Dests, Env, Instructions) ->
 	I = hipe_icode:mk_primop(Dests, Name, Args),
 	{[I], Env};
       _ -> % op occurs in a guard - fail silently to Lbl
-	  make_fallthrough_guard(Dests,Name,Args,
-				 map_label(Lbl),Env)
+	  make_fallthrough_guard(Dests,Name,Args,map_label(Lbl),Env)
     end,
   [Code|trans_fun(Instructions, Env1)].
 
@@ -1037,6 +1082,7 @@ trans_test_guard(TestOp,F,Arg1,Arg2,Env) ->
 
 %%-----------------------------------------------------------------------
 %%-----------------------------------------------------------------------
+
 make_fallthrough_guard(DstVar,GuardOp,Args,FailLName,Env) ->
   {ContL,Env1} = mk_label(new,Env),
   ContLName = hipe_icode:label_name(ContL),
@@ -1060,12 +1106,12 @@ make_guard([],GuardOp,Args,ContLName,FailLName,Env) ->
   {[hipe_icode:mk_guardop([],GuardOp,Args,ContLName,FailLName)],
    Env};
 %% Some bs-ops have multiple retvals...
-%% XXX: For now we asume they only return regs...
-%%      regs should not be reintroduced after a fail
+%% XXX: For now we assume they only return regs...
+%%      regs should not be re-introduced after a fail
 make_guard(Dests,GuardOp,Args,ContLName,FailLName,Env) ->
   {[hipe_icode:mk_guardop(Dests,GuardOp,Args,ContLName,FailLName)],
    Env}.
-  %% XXX: code fore initialising all returnvalues of a guardop
+  %% XXX: code for initialising all return values of a guardop
   %%      not in use since only strange binary ops have multiple 
   %%      retvals.
   % {RestorCatchL,Env1} = mk_label(new,Env),
@@ -1085,14 +1131,15 @@ make_guard(Dests,GuardOp,Args,ContLName,FailLName,Env) ->
 
 %%-----------------------------------------------------------------------
 %% trans_type_test(Test, Lbl, Arg, Env) -> { Icode, NewEnv }
-%%     Handles is_integer, 
+%%     Handles all type tests like is_integer etc. 
 %%-----------------------------------------------------------------------
 
 trans_type_test(Test, Lbl, Arg, Env) ->
   {True,Env1} = mk_label(new,Env),
-  I = hipe_icode:mk_type(mk_var(Arg),Test,
+  {Move,Var,Env2} =  mk_move_and_var(Arg,Env1),
+  I = hipe_icode:mk_type(Var,Test,
 			 hipe_icode:label_name(True),map_label(Lbl)),
-  {[I,True],Env1}.
+  {[Move,I,True],Env2}.
 
 %%-----------------------------------------------------------------------
 %% trans_puts(Code, Environment) -> 
@@ -1213,24 +1260,19 @@ get_closure_info(_, []) ->
 patch_closure_entry(Icode, ClosureInfo)->
   Arity = ClosureInfo#closure_info.arity, 
   %% ?msg("Arity ~w\n",[Arity]),
-  case Arity of 
-    0 -> %% No real args or free vars.
-      Icode; 
-    _ ->
-      {Args, Closure, FreeVars} = 
-	split_params(Arity, hipe_icode:icode_params(Icode), []),
-      [Start|_] = hipe_icode:icode_code(Icode),
-      {_LMin, LMax} = hipe_icode:icode_label_range(Icode),
-      hipe_gensym:set_label(icode,LMax+1),
-      {_VMin, VMax} = hipe_icode:icode_var_range(Icode),
-      hipe_gensym:set_var(icode,VMax+1),
-      MoveCode = gen_get_free_vars(FreeVars, Closure,
-				   hipe_icode:label_name(Start)),
-      Icode1 = hipe_icode:icode_code_update(Icode, MoveCode ++
-					    hipe_icode:icode_code(Icode)),
-      Icode2 = hipe_icode:icode_params_update(Icode1, Args),
-      Icode2
-  end.
+  {Args, Closure, FreeVars} = 
+    split_params(Arity, hipe_icode:icode_params(Icode), []),
+  [Start|_] = hipe_icode:icode_code(Icode),
+  {_LMin, LMax} = hipe_icode:icode_label_range(Icode),
+  hipe_gensym:set_label(icode,LMax+1),
+  {_VMin, VMax} = hipe_icode:icode_var_range(Icode),
+  hipe_gensym:set_var(icode,VMax+1),
+  MoveCode = gen_get_free_vars(FreeVars, Closure,
+			       hipe_icode:label_name(Start)),
+  Icode1 = hipe_icode:icode_code_update(Icode, MoveCode ++
+					hipe_icode:icode_code(Icode)),
+  Icode2 = hipe_icode:icode_params_update(Icode1, Args),
+  Icode2.
 
 %%-----------------------------------------------------------------------
 
@@ -1239,7 +1281,7 @@ gen_get_free_vars(Vars, Closure, StartName) ->
     get_free_vars(Vars, Closure, 1, []) ++ [hipe_icode:mk_goto(StartName)].
 
 get_free_vars([V|Vs], Closure, No, MoveCode) ->
-  %%  TempV = hipe_icode:mk_new_var(),
+  %% TempV = hipe_icode:mk_new_var(),
   get_free_vars(Vs, Closure, No+1,
 		[%% hipe_icode:mk_mov(TempV,hipe_icode:mk_const(No)),
 		 hipe_icode:mk_primop([V],{closure_element, No}, [Closure])
@@ -1442,14 +1484,11 @@ mk_var(new) ->
   V = 5*(T)+3,
   hipe_gensym:update_vrange(icode,V),
   hipe_icode:mk_var(V);
-
 mk_var(reg) ->
   T = hipe_gensym:new_var(icode),
   V = 5*(T)+4,
   hipe_gensym:update_vrange(icode,V),
   hipe_icode:mk_reg(V).
-
-
 
 %%-----------------------------------------------------------------------
 %% Make an icode label of proper type
@@ -1510,6 +1549,8 @@ is_var(_) ->
 %%-----------------------------------------------------------------------
 
 fix_catches([{'catch',N,Lbl}|Code]) ->
+  {NewContLbl, _} =  mk_label(new,env__mk_env()),
+  NewCont = hipe_icode:label_name(NewContLbl),
   CatchLbl = map_label(Lbl),
   {NewCatchLbl, _} =  mk_label(new,env__mk_env()),
   NewCatch =  hipe_icode:label_name(NewCatchLbl),
@@ -1519,13 +1560,39 @@ fix_catches([{'catch',N,Lbl}|Code]) ->
   Code2 = fix_catches(RestOfCode),
   GotoEndLabel = hipe_icode:mk_goto(hipe_icode:label_name(EndLabel)),
 
-  [hipe_icode:mk_pushcatch(NewCatch)] ++ CatchedCode ++
+  [hipe_icode:mk_pushcatch(NewCatch,NewCont),NewContLbl] ++ 
+    CatchedCode ++
     [hipe_icode:mk_label(CatchLbl),
      hipe_icode:mk_remove_catch(NewCatch),
      GotoEndLabel,
-     hipe_icode:info_update(NewCatchLbl,[entry]),
-     hipe_icode:mk_restore_catch(hipe_icode:mk_var(0),NewCatch),
+     NewCatchLbl,
+     hipe_icode:mk_restore_catch(
+       mk_var({r,0}), NewCatch),
      GotoEndLabel,EndLabel | Code2];
+
+fix_catches([{'try',N,Lbl}|Code]) ->
+  {NewContLbl, _} =  mk_label(new,env__mk_env()),
+  NewCont = hipe_icode:label_name(NewContLbl),
+  CatchLbl = map_label(Lbl),
+  {NewCatchLbl, _} =  mk_label(new,env__mk_env()),
+  NewCatch =  hipe_icode:label_name(NewCatchLbl),
+  {EndLabel,_} = mk_label(new,env__mk_env()),
+  {CodeToCatch,RestOfCode} = split_code(Code,{try_end,N}),
+
+  CatchedCode = fix_catches(CodeToCatch),
+  Code2 = fix_catches(RestOfCode),
+  GotoEndLabel = hipe_icode:mk_goto(hipe_icode:label_name(EndLabel)),
+  GotoCatchLabel = hipe_icode:mk_goto(CatchLbl),
+
+  [hipe_icode:mk_pushtry(NewCatch,NewCont),NewContLbl] ++ CatchedCode ++
+    [
+     hipe_icode:mk_remove_catch(NewCatch),
+     GotoEndLabel,
+     NewCatchLbl,
+     hipe_icode:mk_restore_try(mk_var({x,1}),
+				 mk_var({r,0}),
+				 NewCatch),
+     GotoCatchLabel,EndLabel | Code2];
 fix_catches([Instr|Code]) ->
   [Instr|fix_catches(Code)];
 fix_catches([]) ->
@@ -1538,6 +1605,8 @@ split_code([Inst = {enter,_,_,_,_},{label,_,_},To|Code], To) ->
   {NewLabel,_} = mk_label(new,env__mk_env()),
   {[Inst,NewLabel], Code};
 split_code([{label,_,_},To|Code], To) ->
+  {[], Code};
+split_code([To|Code], To) ->
   {[], Code};
 split_code([Instr|Code], To) ->
   {Lst1, Lst2} = split_code(Code, To),
@@ -1568,6 +1637,20 @@ skip_to_label([]) ->
   [].
 
 %%-----------------------------------------------------------------------
+%% This needs to be extended in case new architectures are added.
+%%-----------------------------------------------------------------------
+
+resolve_native_endianess(Flags) ->
+  case {Flags band 16#10, get(hipe_target_arch)} of
+    {16#10, ultrasparc} ->
+      Flags band 5;
+    {16#10, x86} ->
+      (Flags bor 2) band 7;  
+    _ ->
+      Flags band 7
+  end.
+
+%%-----------------------------------------------------------------------
 %% Potentially useful for debugging.
 %%-----------------------------------------------------------------------
 
@@ -1589,23 +1672,23 @@ pp_beam(BeamCode, Options) ->
 %% Environment 
 -record(environment, {mfa = {},entry}).
 
-%%  Constructor!
+%% Constructor!
 env__mk_env() ->
   #environment{}.
 
-%%  The MFA of the current function 
+%% The MFA of the current function 
 env__store_mfa(M, F, A, Env) ->
   Env#environment{mfa = {M,F,A}}.
 
-%%  The entrypoint to the current function
+%% The entrypoint to the current function
 env__store_entrypoint(Entry, Env) ->
   Env#environment{entry = Entry}.
 
-%%  Get current MFA
+%% Get current MFA
 env__get_mfa(Env) ->
   Env#environment.mfa.
 
-%%  Get entry point of the current function!
+%% Get entry point of the current function!
 env__get_entry(Env) ->
   Env#environment.entry.
 

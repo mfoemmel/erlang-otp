@@ -77,7 +77,7 @@ include $(LIBPATH)/stdlib/vsn.mk
 
 ##############################################################################
 
-debug opt instr script: rel $(INSTALL_SCRIPTS)
+debug opt script: rel $(INSTALL_SCRIPTS)
 
 rel:	$(REL_SCRIPTS)
 

@@ -289,7 +289,22 @@ wm withdraw .
 # we have a port number and we are to use sockets
 # for the communication.
 
-if {$argv == ""} {
+set privdir [lindex $argv 0]
+set portno  [lindex $argv 1]
+#report $argv
+#report $privdir
+#report $portno
+set resfile [file join $privdir gs-xdefaults]
+
+# FIXME we may use 'startupFile' as priority level to enable the user
+# to use .Xdefaults to override things but I think this require that
+# we change gs-xdefaults to use Tk*Option format?
+
+if [catch {option readfile $resfile} err] {
+    report "Error reading $resfile: $err"
+}
+
+if {$portno == ""} {
 
     global use_socket
     set use_socket 0
@@ -306,7 +321,6 @@ if {$argv == ""} {
 
     global use_socket
     set use_socket 1
-    set portno $argv
     set sock [socket 127.0.0.1 $portno]
     set instream  $sock
     set outstream $sock

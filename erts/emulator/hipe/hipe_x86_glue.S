@@ -30,7 +30,7 @@ x86_call_to_native:
 	/* get argument registers */
 	LOAD_ARG_REGS
 	/* call the target */
-	call	*P_NCALLEE(P)
+	NSP_CALL(*P_NCALLEE(P))
 /*
  * We export this return address so that hipe_mode_switch() can discover
  * when native code tailcalls emulated code.
@@ -49,7 +49,7 @@ nbif_return:
 	SWITCH_ERLANG_TO_C
 	/* restore callee-save registers, drop frame, return */
 	movl	(%esp), %edi
-	movl	4(%esp), %esi	# kills HP
+	movl	4(%esp), %esi	# kills HP, if HP_IN_ESI is true
 	movl	8(%esp), %ebx
 	movl	12(%esp), %ebp	# kills P
 	addl	$16, %esp
@@ -87,7 +87,7 @@ nbif_callemu:
 	.global nbif_ccallemu5
 nbif_ccallemu5:
 	movl	ARG4, P_ARG4(P)
-	movl	4(%esp), ARG4
+	movl	4(NSP), ARG4
 	/*FALLTHROUGH*/
 #endif
 
@@ -99,7 +99,7 @@ nbif_ccallemu4:
 #if X86_NR_ARG_REGS > 4
 	movl	ARG4, ARG3
 #else
-	movl	4(%esp), ARG3
+	movl	4(NSP), ARG3
 #endif
 	/*FALLTHROUGH*/
 #endif
@@ -112,7 +112,7 @@ nbif_ccallemu3:
 #if X86_NR_ARG_REGS > 3
 	movl	ARG3, ARG2
 #else
-	movl	4(%esp), ARG2
+	movl	4(NSP), ARG2
 #endif
 	/*FALLTHROUGH*/
 #endif
@@ -125,7 +125,7 @@ nbif_ccallemu2:
 #if X86_NR_ARG_REGS > 2
 	movl	ARG2, ARG1
 #else
-	movl	4(%esp), ARG1
+	movl	4(NSP), ARG1
 #endif
 	/*FALLTHROUGH*/
 #endif
@@ -138,7 +138,7 @@ nbif_ccallemu1:
 #if X86_NR_ARG_REGS > 1
 	movl	ARG1, ARG0
 #else
-	movl	4(%esp), ARG0
+	movl	4(NSP), ARG0
 #endif
 	/*FALLTHROUGH*/
 #endif
@@ -147,7 +147,7 @@ nbif_ccallemu1:
 	.global nbif_ccallemu0
 nbif_ccallemu0:
 #if X86_NR_ARG_REGS == 0
-	movl	4(%esp), %eax
+	movl	4(NSP), %eax
 #endif
 	movl	%eax, P_CLOSURE(P)
 	movl	$HIPE_MODE_SWITCH_RES_CALL_CLOSURE, %eax
@@ -187,7 +187,7 @@ nbif_suspend_msg_timeout:
 	xorb	$F_TIMO, %al			# F_TIMO was set, clear it
 	movl	%eax, P_FLAGS(P)
 	xorl	%eax, %eax			# return 0 to signal timeout
-	ret
+	NSP_RET0
 .no_timeout:
 	movl	$HIPE_MODE_SWITCH_RES_WAIT_TIMEOUT, %eax
 	jmp	.exit
@@ -216,7 +216,7 @@ x86_return_to_native:
 	 * The parameters were popped at the original native-to-emulated
 	 * call (hipe_call_from_native_is_recursive), so a plain ret suffices.
 	 */
-	ret
+	NSP_RET0
 
 /*
  * int x86_tailcall_to_native(Process *p);
@@ -321,7 +321,9 @@ nbif_3_simple_exception:
 	 * A BIF failed with freason TRAP:
 	 * - the BIF stored the callee's Export* in p->def_arg_reg[0]
 	 * - the BIF stored the actual parameters in p->def_arg_reg[1..]
+	 * - the BIF's arity is in %eax
 	 */
+	movl	%eax, P_ARITY(P)
 	movl	$HIPE_MODE_SWITCH_RES_TRAP, %eax
 	jmp	.exit
 
@@ -329,8 +331,8 @@ nbif_3_simple_exception:
  * We end up here when a BIF called from native signals an
  * exceptional condition, and RESCHEDULE can occur.
  * %edx contains the address of the nbif which failed.
- * TEMP0 is the first actual parameter, if X86_NR_ARG_REGS > 0.
- * TEMP1 is the second actual parameter (if defined), if X86_NR_ARG_REGS > 1.
+ * P_ARG0(P) is the first actual parameter, if X86_NR_ARG_REGS > 0.
+ * P_ARG1(P) is the second actual parameter (if defined), if X86_NR_ARG_REGS > 1.
  */
 	.global	nbif_1_hairy_exception
 	.global	nbif_2_hairy_exception
@@ -352,23 +354,11 @@ nbif_2_hairy_exception:
 	movl	$0, P_ARITY(P)	# arity unused -- args on nstack
 #elif X86_NR_ARG_REGS == 1
 	movl	$1, P_ARITY(P)		# 1 even if arity is 2
-	movl	TEMP0, P_ARG0(P)
 #else
 	movl	%eax, P_ARITY(P)	# 1 or 2
-	movl	TEMP0, P_ARG0(P)
-	movl	TEMP1, P_ARG1(P)
 #endif
 	movl	$HIPE_MODE_SWITCH_RES_RESCHEDULE, %eax
 	jmp	.exit
-
-/*
- * nbif_test: placeholder for hand-written test code
- */
-	.global	nbif_test
-	.align	4
-nbif_test:
-	movl	$((42<<4)+15), %eax	# make_small(42)
-	ret
 
 /*
  * nbif_stack_trap_ra: trap return address for maintaining
@@ -377,35 +367,14 @@ nbif_test:
 	.global	nbif_stack_trap_ra
 	.align	4
 nbif_stack_trap_ra:			# a return address, not a function
-	movl	%eax, TEMP1		# save retval
+	# This only handles a single return value.
+	# If we have more, we need to save them in the PCB.
+	movl	%eax, TEMP_RV		# save retval
 	SWITCH_ERLANG_TO_C_QUICK
 	pushl	P
-	call	hipe_handle_stack_trap	# must not cons; preserves TEMP1
+	call	hipe_handle_stack_trap	# must not cons; preserves TEMP_RV
 	addl	$4, %esp
 	movl	%eax, %edx		# original RA
 	SWITCH_C_TO_ERLANG_QUICK
-	movl	TEMP1, %eax		# restore retval
+	movl	TEMP_RV, %eax		# restore retval
 	jmp	*%edx			# resume at original RA
-
-
-/*
- * nbif_clear_fp_exception
- * see the ERTS_FP_CHECK_INIT() macro
- */
-	.global	nbif_clear_fp_exception
-	.align	4
-nbif_clear_fp_exception:
-	fwait
-	movl	$0, erl_fp_exception
-	ret
-
-/*
- * nbif_check_fp_exception
- * see the ERTS_FP_ERROR() macro
- */
-	.global	nbif_check_fp_exception
-	.align	4
-nbif_check_fp_exception:
-	fwait
-	movl	erl_fp_exception, %eax
-	ret

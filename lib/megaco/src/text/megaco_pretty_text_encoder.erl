@@ -25,7 +25,7 @@
 
 -export([encode_message/2,
 	 decode_message/2,
-	 encode_transaction/1,
+	 encode_transaction/1, encode_transaction/2,
 	 encode_command_request/1,
 	 encode_action_reply/1]).
 
@@ -119,17 +119,37 @@ decode_message(EncodingConfig, Bin) when binary(Bin) ->
 decode_message(_EncodingConfig, _BadBin) ->
     {error, bad_binary}.
 
+
 %%----------------------------------------------------------------------
-%% Convert a transaction record into a deep io list
-%% Return {ok, DeepIoList} | {error, Reason}
+%% Convert a transaction record into a binary
+%% Return {ok, Binary} | {error, Reason}
 %%----------------------------------------------------------------------
 encode_transaction(Trans) ->
+    encode_transaction([], Trans).
+
+encode_transaction([], Trans) ->
     case catch enc_Transaction(Trans) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
+	Bin when binary(Bin) ->
+	    {ok, Bin};
 	DeepIoList ->
-	    {ok, DeepIoList}
-    end.
+	    Bin = erlang:list_to_binary(DeepIoList),
+	    {ok, Bin}
+    end;
+encode_transaction([{flex,_}], Trans) ->
+    case catch enc_Transaction(Trans) of
+	{'EXIT', Reason} ->
+	    {error, Reason};
+	Bin when binary(Bin) ->
+	    {ok, Bin};
+	DeepIoList ->
+	    Bin = erlang:list_to_binary(DeepIoList),
+	    {ok, Bin}
+    end;
+encode_transaction(EncodingConfig, _Trans) ->
+    {error, {bad_encoding_config, EncodingConfig}}.
+
 	    
 %%----------------------------------------------------------------------
 %% Convert a CommandRequest record into a deep io list

@@ -585,7 +585,8 @@ find_children(X, link) when pid(X), node(X) /= node() ->
 find_children(X, link) when pid(X) ->
     case process_info(X, links) of
 	{links, Links} ->
-	    Links;
+%%	    Links;
+	    lists:reverse(Links); % OTP-4082
 	_ -> []
     end;
 find_children({master, X}, sup) -> 

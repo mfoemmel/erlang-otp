@@ -31,22 +31,19 @@
 
 IndexTable module_table;
 
-void module_info(to)
-CIO to;
+void module_info(CIO to)
 {
     index_info(to, &module_table);
 }
 
 
-static HashValue module_hash(x)
-Module* x;
+static HashValue module_hash(Module* x)
 {
     return (HashValue) x->module;
 }
 
 
-static int module_cmp(tmpl, obj)
-Module* tmpl; Module* obj;
+static int module_cmp(Module* tmpl, Module* obj)
 {
     if (tmpl->module == obj->module)
 	return 0;
@@ -54,10 +51,9 @@ Module* tmpl; Module* obj;
 }
 
 
-static Module* module_alloc(tmpl)
-Module* tmpl;
+static Module* module_alloc(Module* tmpl)
 {
-    Module* obj = (Module*) fix_alloc(module_desc);
+    Module* obj = (Module*) erts_alloc(ERTS_ALC_T_MODULE, sizeof(Module));
 
     obj->module = tmpl->module;
     obj->code = 0;
@@ -69,10 +65,9 @@ Module* tmpl;
 }
 
 
-static void module_free(obj)
-Module* obj;
+static void module_free(Module* obj)
 {
-    fix_free(module_desc, (void*) obj);
+    erts_free(ERTS_ALC_T_MODULE, (void*) obj);
 }
 
 
@@ -85,7 +80,7 @@ void init_module_table(void)
     f.alloc = (HALLOC_FUN) module_alloc;
     f.free = (HFREE_FUN) module_free;
 
-    index_init(&module_table, "module_code",
+    index_init(ERTS_ALC_T_MODULE_TABLE, &module_table, "module_code",
 	       MODULE_SIZE, MODULE_LIMIT, MODULE_RATE, f);
 }
 

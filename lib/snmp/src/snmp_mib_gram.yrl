@@ -110,7 +110,7 @@ defbitsnames
 %% ----------------------------------------------------------------------
 Terminals 
 %% ----------------------------------------------------------------------
-integer variable atom string quote '{' '}' ':' '=' ',' '.' '(' ')' ';' '|'
+integer variable atom string quote '{' '}' '::=' ':' '=' ',' '.' '(' ')' ';' '|'
 'ACCESS'
 'BEGIN'
 'BIT'
@@ -331,7 +331,8 @@ varpart -> 'VARIABLES' '{' variables '}' : '$3'.
 variables -> objectname : ['$1'].
 variables -> variables ',' objectname : ['$3' | '$1'].
 
-implies -> ':' ':' '=' : '$1'.
+implies -> '::=' : '$1'.
+implies -> ':' ':' '=' : w("Sloppy asignment on line ~p", [line_of('$1')]), '$1'.
 descriptionfield -> string : {'DESCRIPTION', lists:reverse(val('$1'))}.
 descriptionfield -> '$empty' : {'DESCRIPTION', undefined}.
 description -> 'DESCRIPTION' string : {'DESCRIPTION', lists:reverse(val('$2'))}.
@@ -699,3 +700,5 @@ filter_v2imports(2,'Unsigned32') -> {builtin, 'Unsigned32'};
 filter_v2imports(2,'Counter64') -> {builtin, 'Counter64'};
 filter_v2imports(_,Type) -> {type,Type}.
     
+w(F, A) ->
+    snmp_compile_lib:w(F, A).

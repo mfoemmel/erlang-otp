@@ -41,12 +41,12 @@ start_link(SupName) ->
 %% a new one is started.
 %%-----------------------------------------------------------------
 start_mib(SupName, Ref, Mibs, Prio) ->
-    start_mibserver(SupName, Ref, Mibs, Prio, [Mibs,Prio]).
+    start_mibserver(SupName, Ref, [Mibs,Prio]).
 
 start_mib(SupName, Ref, Mibs, Prio, Opts) ->
-    start_mibserver(SupName, Ref, Mibs, Prio, [Mibs,Prio,Opts]).
+    start_mibserver(SupName, Ref, [Mibs,Prio,Opts]).
 
-start_mibserver(SupName, Ref, Mibs, Prio, Args) ->
+start_mibserver(SupName, Ref, Args) ->
     Children = supervisor:which_children(SupName),
     case lists:keysearch({mib, Ref}, 1, Children) of
 	{value, {_, Pid, _, _}} -> {ok, Pid};
@@ -61,21 +61,22 @@ stop_mib(SupName, Ref) ->
     case whereis(SupName) of
 	undefined ->
 	    ok;
-	Pid ->
+	_ ->
 	    supervisor:terminate_child(SupName, {mib, Ref}),
 	    supervisor:delete_child(SupName, {mib, Ref})
     end.
 
 start_net_if(SupName, Ref, Master, NetIfModule) ->
-    start_netif(SupName, Ref, Master, NetIfModule, [Master]).
+    start_netif(SupName, Ref, NetIfModule, [Master]).
 
 start_net_if(SupName, Ref, Master, NetIfModule, Opts) ->
-    start_netif(SupName, Ref, Master, NetIfModule, [Master,Opts]).
+    start_netif(SupName, Ref, NetIfModule, [Master,Opts]).
 
-start_netif(SupName, Ref, Master, NetIfModule, Args) ->
+start_netif(SupName, Ref, NetIfModule, Args) ->
+    %% make sure we start from scratch...
     Children = supervisor:which_children(SupName),
     case lists:keysearch({net_if, Ref}, 1, Children) of
-	{value, {_, Pid, _, _}} ->
+	{value, {_, _Pid, _, _}} ->
 	    stop_net_if(SupName, Ref);
 	_ ->
 	    ok
@@ -89,7 +90,7 @@ stop_net_if(SupName, Ref) ->
     case whereis(SupName) of
 	undefined ->
 	    ok;
-	Pid ->
+	_ ->
 	    supervisor:terminate_child(SupName, {net_if, Ref}),
 	    supervisor:delete_child(SupName, {net_if, Ref})
     end.

@@ -65,6 +65,7 @@ int db_prev_tree(Process *p, DbTableTree *tb /* [in out] */,
 int db_update_counter_tree(Process *p, DbTableTree *tb /* [in out] */, 
 			   Eterm key /* [in] */,
 			   Eterm incr, /* [in] */
+			   int warp, /* [in] */
 			   int counterpos, /* [in] */
 			   Eterm *ret /* [out] */);
 int db_put_tree(Process *p, DbTableTree *tb /* [in out] */, 

@@ -44,9 +44,11 @@ start(ip_comm) ->
     end;
 start({ssl,_SSLConfig}) ->
     case ssl:start() of
-	{ok,_Pid} ->
+	ok ->
 	    ok;
-	{error,{already_started,_Ssl}} ->
+	{ok, _} ->
+	    ok;
+	{error,{already_started,_}} ->
 	    ok;
 	Error ->
 	    Error

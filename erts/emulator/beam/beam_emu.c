@@ -267,11 +267,11 @@ extern int count_instructions;
       int used_stack = c_p->stack - E;					\
       int new_sz = erts_next_heap_size(c_p->stack_sz + (StackNeed), 0);	\
       Eterm *new_stack =						\
-        (Eterm*)erts_safe_sl_alloc_from(901, sizeof(Eterm) * new_sz);	\
+        (Eterm*) ERTS_STACK_ALLOC(sizeof(Eterm) * new_sz);		\
       sys_memmove((new_stack + new_sz) - used_stack, E,			\
                   used_stack * sizeof(Eterm));				\
       DEBUG_MEMSET;							\
-      erts_sl_free((void *)c_p->send);					\
+      ERTS_STACK_FREE((void *) c_p->send, c_p->stack_sz*sizeof(Eterm));	\
       c_p->stack_sz = new_sz;						\
       c_p->send = new_stack;						\
       c_p->stop = new_stack + new_sz - used_stack;			\
@@ -300,12 +300,12 @@ extern int count_instructions;
        int used_stack = c_p->stack - E;                                  \
        int new_sz = erts_next_heap_size(c_p->stack_sz + needed, 0);      \
        Eterm *new_stack = (Eterm *)                                      \
-	   erts_safe_sl_alloc_from(901, sizeof(Eterm)*new_sz);           \
+	   ERTS_STACK_ALLOC(sizeof(Eterm)*new_sz);                       \
        sys_memcpy((new_stack + new_sz) - used_stack,                     \
                    E,                                                    \
                    used_stack * sizeof(Eterm));                          \
        DEBUG_MEMSET;                                                     \
-       erts_sl_free((void *)StackLimit);                                 \
+       ERTS_STACK_FREE((void *) StackLimit, c_p->stack_sz*sizeof(Eterm));\
        c_p->stack_sz = new_sz;                                           \
        StackLimit = c_p->send = new_stack;                               \
        c_p->stop = new_stack + new_sz - used_stack;                      \
@@ -890,6 +890,8 @@ static Eterm call_error_handler(Process* p, Eterm* ip, Eterm* reg);
 static Eterm call_breakpoint_handler(Process* p, Eterm* fi, Eterm* reg);
 static Eterm* apply(Process* p, Eterm module, Eterm function,
 		     Eterm args, Eterm* reg);
+static int hibernate(Process* c_p, Eterm module, Eterm function,
+		     Eterm args, Eterm* reg);
 static Eterm* call_fun(Process* p, int arity, Eterm* reg, Eterm args);
 static Eterm* apply_fun(Process* p, Eterm fun, Eterm args, Eterm* reg);
 static Eterm new_fun(Process* p, Eterm* reg, ErlFunEntry* fe, int num_free);
@@ -1364,7 +1366,7 @@ void process_main(void)
      c_p->catches--;
      make_blank(yb(Arg(0)));
      if (is_non_value(r(0))) {
-	 if (x(1) == am_THROW) {
+	 if (x(1) == am_throw) {
 	     r(0) = x(2);
 	 } else {
 #ifdef SHARED_HEAP
@@ -1385,6 +1387,16 @@ void process_main(void)
 	 }
      }
      CHECK_TERM(r(0));
+     Next(1);
+ }
+
+ OpCase(try_end_y): {
+     c_p->catches--;
+     make_blank(yb(Arg(0)));
+     if (is_non_value(r(0))) {
+	 r(0) = x(1);
+	 x(1) = x(2);
+     }
      Next(1);
  }
 
@@ -1537,7 +1549,7 @@ void process_main(void)
 	  * When a new message arrives, control will be transferred
 	  * the loop_rec instruction (at label L1).  In case of
 	  * of timeout, control will be transferred to the timeout
-	  * instruction followinged the wait_timeout instruction.
+	  * instruction following the wait_timeout instruction.
 	  */
 
 	 OpCase(wait_f):
@@ -1663,7 +1675,7 @@ void process_main(void)
 
  OpCase(bif1_fbsd):
     {
-	BifFunction bf;
+	Eterm (*bf)(Process*, Eterm);
 	Eterm arg;
 	Eterm result;
 
@@ -1686,7 +1698,8 @@ void process_main(void)
 
  OpCase(bif1_body_bsd):
     {
-	BifFunction bf;
+	Eterm (*bf)(Process*, Eterm);
+
 	Eterm arg;
 	Eterm result;
 
@@ -1711,7 +1724,7 @@ void process_main(void)
   */
  OpCase(i_bif2_fbd):
     {
-	BifFunction bf;
+	Eterm (*bf)(Process*, Eterm, Eterm);
 	Eterm result;
 
 	bf = (BifFunction) Arg(1);
@@ -1731,7 +1744,7 @@ void process_main(void)
   */
  OpCase(i_bif2_body_bd):
     {
-	BifFunction bf;
+	Eterm (*bf)(Process*, Eterm, Eterm);
 	Eterm result;
 
 	bf = (BifFunction) Arg(0);
@@ -1755,7 +1768,7 @@ void process_main(void)
      */
  OpCase(call_bif0_e):
     {
-	BifFunction bf = GET_BIF_ADDRESS(Arg(0));
+	Eterm (*bf)(Process*, Uint*) = GET_BIF_ADDRESS(Arg(0));
 
 	SWAPOUT;
 	c_p->fcalls = FCALLS - 1;
@@ -1775,7 +1788,7 @@ void process_main(void)
 
  OpCase(call_bif1_e):
     {
-	BifFunction bf = GET_BIF_ADDRESS(Arg(0));
+	Eterm (*bf)(Process*, Eterm, Uint*) = GET_BIF_ADDRESS(Arg(0));
 	Eterm result;
 	Eterm* next;
 
@@ -1811,7 +1824,7 @@ void process_main(void)
 
  OpCase(call_bif2_e):
     {
-	BifFunction bf = GET_BIF_ADDRESS(Arg(0));
+	Eterm (*bf)(Process*, Eterm, Eterm, Uint*) = GET_BIF_ADDRESS(Arg(0));
 	Eterm result;
 	Eterm* next;
 
@@ -1849,7 +1862,7 @@ void process_main(void)
 
  OpCase(call_bif3_e):
     {
-	BifFunction bf = GET_BIF_ADDRESS(Arg(0));
+	Eterm (*bf)(Process*, Eterm, Eterm, Eterm, Uint*) = GET_BIF_ADDRESS(Arg(0));
 	Eterm result;
 	Eterm* next;
 
@@ -2278,15 +2291,18 @@ void process_main(void)
 	  * space for most processes which never call functions with more than
 	  * 6 arguments.
 	  */
-	 c_p->max_arg_reg = c_p->arity;
+	 Uint size = c_p->arity * sizeof(c_p->arg_reg[0]);
 	 if (c_p->arg_reg != c_p->def_arg_reg) {
-	     c_p->arg_reg = (Eterm *) safe_realloc((char *) c_p->arg_reg,
-						    c_p->arity *
-						    sizeof(c_p->arg_reg[0]));
+	     ERTS_PROC_LESS_MEM(c_p->max_arg_reg * sizeof(c_p->arg_reg[0]));
+	     ERTS_PROC_MORE_MEM(size);
+	     c_p->arg_reg = (Eterm *) erts_realloc(ERTS_ALC_T_ARG_REG,
+						   (void *) c_p->arg_reg,
+						   size);
 	 } else {
-	     c_p->arg_reg = (Eterm *)
-		 safe_alloc_from(310, c_p->arity * sizeof(c_p->arg_reg[0]));
+	     ERTS_PROC_MORE_MEM(size);
+	     c_p->arg_reg = (Eterm *) erts_alloc(ERTS_ALC_T_ARG_REG, size);
 	 }
+	 c_p->max_arg_reg = c_p->arity;
      }
 
      /*
@@ -2582,6 +2598,27 @@ void process_main(void)
      goto do_schedule;
  }
 
+ OpCase(raise_ss): {
+     GetArg1(0, tmp_arg1);
+     switch (tmp_arg1) {
+     case am_throw:
+	 c_p->freason = EXC_THROWN;
+	 break;
+     case am_ERROR:
+	 c_p->freason = EXC_FAULT;
+	 break;
+     case am_EXIT:
+	 c_p->freason = EXC_EXIT;
+	 break;
+     default:
+	 c_p->freason = EXC_INTERNAL_ERROR;
+	 break;
+     }
+     GetArg1(1, tmp_arg1);
+     c_p->fvalue = tmp_arg1;
+     goto find_func_info;
+ }
+
  OpCase(badmatch_s): {
      GetArg1(0, tmp_arg1);
      c_p->fvalue = tmp_arg1;
@@ -2647,7 +2684,7 @@ void process_main(void)
      * code[4]: Function pointer to BIF function
      */
      {
-	BifFunction bf;
+	BifFunction vbf;
 
 	c_p->current = I-3;	/* In case we apply process_info/1,2. */
 	c_p->i = I;		/* In case we apply check_process_code/2. */
@@ -2657,21 +2694,33 @@ void process_main(void)
 				   
 	SWAPOUT;
 	c_p->fcalls = FCALLS - 1;
-	bf = (BifFunction) Arg(0);
+	vbf = (BifFunction) Arg(0);
 	ASSERT(I[-1] <= 3);
 	switch (I[-1]) {
 	case 3:
-	    tmp_arg1 = (*bf)(c_p, r(0), x(1), x(2), I);
+	    {
+		Eterm (*bf)(Process*, Eterm, Eterm, Eterm, Uint*) = vbf;
+		tmp_arg1 = (*bf)(c_p, r(0), x(1), x(2), I);
+	    }
 	    break;
 	case 2:
-	    tmp_arg1 = (*bf)(c_p, r(0), x(1), I);
+	    {
+		Eterm (*bf)(Process*, Eterm, Eterm, Uint*) = vbf;
+		tmp_arg1 = (*bf)(c_p, r(0), x(1), I);
+	    }
 	    break;
 	case 1:
-	    tmp_arg1 = (*bf)(c_p, r(0), I);
+	    {
+		Eterm (*bf)(Process*, Eterm, Uint*) = vbf;
+		tmp_arg1 = (*bf)(c_p, r(0), I);
+	    }
 	    break;
 	case 0:
-	    tmp_arg1 = (*bf)(c_p, I);
-	    break;
+	    {
+		Eterm (*bf)(Process*, Uint*) = vbf;
+		tmp_arg1 = (*bf)(c_p, I);
+		break;
+	    }
 	}
 	FCALLS = c_p->fcalls;
 	SWAPIN;			/* There might have been a garbage collection. */
@@ -2714,7 +2763,7 @@ void process_main(void)
 	    Dispatch();
 	}
 	reg[0] = r(0);
-	I = handle_error(c_p, c_p->cp, reg, bf);
+	I = handle_error(c_p, c_p->cp, reg, vbf);
 	goto post_error_handling;
     }
 
@@ -2739,6 +2788,12 @@ void process_main(void)
      c_p->current = I + 2;
      goto lb_error_action_code;
  }
+
+ OpCase(try_case_end_s):
+    GetArg1(0, tmp_arg1);
+    c_p->fvalue = tmp_arg1;
+    c_p->freason = EXC_TRY_CLAUSE;
+    goto find_func_info;
 
  /*
   * Construction of binaries.
@@ -3338,6 +3393,16 @@ void process_main(void)
      goto do_schedule;
  }
 
+ OpCase(i_hibernate): {
+     SWAPOUT;
+     if (hibernate(c_p, r(0), x(1), x(2), reg)) {
+	 goto do_schedule;
+     } else {
+	 I = handle_error(c_p, I, reg, hibernate_3);
+	 goto post_error_handling;
+     }
+ }
+
  OpCase(i_debug_breakpoint): {
      SWAPOUT;
      reg[0] = r(0);
@@ -3462,7 +3527,16 @@ void process_main(void)
 }
 
 /*
- * Mapping from error codes to atoms.
+ * Mapping from the error code 'class tag' to atoms.
+ */
+Eterm exception_tag[NUMBER_EXC_TAGS] = {
+  am_EXIT,	/* 0 */
+  am_ERROR,	/* 1 */
+  am_throw,	/* 2 */
+};
+
+/*
+ * Mapping from error code 'index' to atoms.
  */
 Eterm error_atom[NUMBER_EXIT_CODES] = {
   am_internal_error,	/* 0 */
@@ -3481,6 +3555,7 @@ Eterm error_atom[NUMBER_EXIT_CODES] = {
   am_noproc,		/* 13 */
   am_notalive,		/* 14 */
   am_system_limit,	/* 15 */
+  am_try_clause,	/* 16 */
 };
 
 static Eterm*
@@ -3558,7 +3633,7 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
 
     ASSERT(c_p->freason != TRAP); /* Should have been handled earlier. */
     ASSERT(c_p->freason != RESCHEDULE); /* Should have been handled earlier. */
-    { Uint r = c_p->freason & EXF_INDEXBITS;
+    { Uint r = GET_EXC_INDEX(c_p->freason);
       ASSERT(r < NUMBER_EXIT_CODES); /* range check */
       if (r < NUMBER_EXIT_CODES) {
           Value = error_atom[r];
@@ -3582,20 +3657,21 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
      * Make sure we form the correct error value
      */
 
-    switch (c_p->freason & EXF_INDEXBITS) {
-    case (EXC_EXIT & EXF_INDEXBITS):
+    switch (GET_EXC_INDEX(c_p->freason)) {
+    case (GET_EXC_INDEX(EXC_PRIMARY)):
         /* Primary exceptions use fvalue directly */
         ASSERT(is_value(c_p->fvalue));
         Value = c_p->fvalue;
         break;
-    case (EXC_BADMATCH & EXF_INDEXBITS):
-    case (EXC_CASE_CLAUSE & EXF_INDEXBITS):
-    case (EXC_BADFUN & EXF_INDEXBITS):
+    case (GET_EXC_INDEX(EXC_BADMATCH)):
+    case (GET_EXC_INDEX(EXC_CASE_CLAUSE)):
+    case (GET_EXC_INDEX(EXC_TRY_CLAUSE)):
+    case (GET_EXC_INDEX(EXC_BADFUN)):
 	ASSERT(is_value(c_p->fvalue));
 	Value = TUPLE2(hp, Value, c_p->fvalue);
 	hp += 3;
 	break;
-    case (EXC_BADARITY & EXF_INDEXBITS):
+    case (GET_EXC_INDEX(EXC_BADARITY)):
 	ASSERT(is_value(c_p->fvalue));
 	ASSERT(*next_p == NIL);
 	*next_p = CONS(hp, c_p->fvalue, NIL);
@@ -3715,8 +3791,8 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
 		mfa = c_p->stop[1];
 		max_depth = 0;
 	    } else {
-		if ( (c_p->freason & EXF_INDEXBITS) !=
-		     (EXC_FUNCTION_CLAUSE & EXF_INDEXBITS) ) {
+		if ( (GET_EXC_INDEX(c_p->freason)) !=
+		     (GET_EXC_INDEX(EXC_FUNCTION_CLAUSE)) ) {
 		    a = make_small(prev[2]);
 		} else {
 		    int i;
@@ -3746,8 +3822,8 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
 	 */
 
 	fi = find_function_from_pc(c_p->cp);
-	if ( (c_p->freason & EXF_INDEXBITS) ==
-	     (EXC_FUNCTION_CLAUSE & EXF_INDEXBITS) &&
+	if ( (GET_EXC_INDEX(c_p->freason)) ==
+	     (GET_EXC_INDEX(EXC_FUNCTION_CLAUSE)) &&
 	     fi != NULL && fi != prev && max_depth > 0) {
 	    prev = fi;
 	    mfa = TUPLE3(hp, fi[0], fi[1], make_small(fi[2]));
@@ -3828,7 +3904,7 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
 	}
 
 	/*
-	 * If zombies are kept, the process will be garbage-collected.
+	 * If we use a shared heap, the process will be garbage-collected.
 	 * Must zero c_p->arity to indicate that there are no live registers.
 	 */
 	c_p->arity = 0;
@@ -3841,7 +3917,7 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
 	 * freason/fvalue again after this point.
 	 */
 
-	c_p->freason &= EXF_PRIMARY;   /* index becomes zero */
+	c_p->freason = PRIMARY_EXCEPTION(c_p->freason);
 
 	/*
 	 * Search for the first catch.
@@ -3855,15 +3931,8 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
 		    ASSERT(c_p->stop <= ptr);
 		}
 		c_p->stop = ptr;
-		
 		reg[0] = THE_NON_VALUE;
-		if ((c_p->freason & EXF_THROWN) != 0) {
-		    reg[1] = am_THROW;
-		} else if ((c_p->freason & EXF_EXIT) != 0) {
-		    reg[1] = am_EXIT;
-		} else {
-		    reg[1] = am_ERROR;
-		}
+		reg[1] = exception_tag[GET_EXC_CLASS(c_p->freason)];
 		reg[2] = Value;
 		return pc;
 	    }
@@ -4027,6 +4096,84 @@ apply(Process* p, Eterm module, Eterm function, Eterm args, Eterm* reg)
     }
 
     return ep->address;
+}
+
+static int
+hibernate(Process* c_p, Eterm module, Eterm function, Eterm args, Eterm* reg)
+{
+    int arity;
+    Eterm tmp;
+    int new_sz;
+
+    if (is_not_atom(module) || is_not_atom(function)) {
+	/*
+	 * No need to test args here -- done below.
+	 */
+    error:
+	c_p->freason = BADARG;
+
+    error2:
+	reg[0] = module;
+	reg[1] = function;
+	reg[2] = args;
+	return 0;
+    }
+
+    arity = 0;
+    tmp = args;
+    while (is_list(tmp)) {
+	if (arity < MAX_REG) {
+	    tmp = CDR(list_val(tmp));
+	    arity++;
+	} else {
+	    c_p->freason = SYSTEM_LIMIT;
+	    goto error2;
+	}
+    }
+    if (is_not_nil(tmp)) {	/* Must be well-formed list */
+	goto error;
+    }
+
+    /*
+     * At this point, arguments are known to be good.
+     */
+
+    if (c_p->arg_reg != c_p->def_arg_reg) {
+	/* Save some memory */
+	ERTS_PROC_LESS_MEM(c_p->max_arg_reg * sizeof(c_p->arg_reg[0]));
+	erts_free(ERTS_ALC_T_ARG_REG, c_p->arg_reg);
+	c_p->arg_reg = c_p->def_arg_reg;
+	c_p->max_arg_reg = sizeof(c_p->def_arg_reg)/sizeof(c_p->def_arg_reg[0]);
+    }
+
+    /*
+     * Arrange for the process to be resumed at the given MFA with
+     * the stack cleared.
+     */
+    c_p->arity = 3;
+    c_p->arg_reg[0] = module;
+    c_p->arg_reg[1] = function;
+    c_p->arg_reg[2] = args;
+    c_p->stop = STACK_START(c_p);
+    c_p->catches = 0;
+    c_p->i = beam_apply;
+    c_p->cp = (Eterm *) beam_apply+1;
+
+    /*
+     * If there are no waiting messages, garbage collect and
+     * shrink the heap. 
+     */
+    if (c_p->msg.len > 0) {
+	add_to_schedule_q(c_p);
+    } else {
+	FLAGS(c_p) |= F_NEED_FULLSWEEP;
+	erts_garbage_collect(c_p, 0, c_p->arg_reg, c_p->arity);
+	new_sz = HEAP_TOP(c_p) - HEAP_START(c_p);
+	erts_shrink_new_heap(c_p, new_sz, c_p->arg_reg, c_p->arity);
+	c_p->status = P_WAITING;
+    }
+    c_p->current = bif_export[BIF_hibernate_3]->code;
+    return 1;
 }
 
 static Uint*
@@ -4237,7 +4384,7 @@ new_fun(Process* p, Eterm* reg, ErlFunEntry* fe, int num_free)
 
 int catchlevel(Process *p)
 {
-   return p->catches;
+    return p->catches;
 }
 
 /*

@@ -36,7 +36,6 @@
 
 
 BIF_RETTYPE and_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     if (BIF_ARG_1 == am_true && BIF_ARG_2 == am_true)
 	BIF_RET(am_true);
@@ -50,7 +49,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE or_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     if (BIF_ARG_1 == am_true && BIF_ARG_2 == am_true)
 	BIF_RET(am_true);
@@ -64,7 +62,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE xor_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     if (BIF_ARG_1 == am_true && BIF_ARG_2 == am_true)
 	BIF_RET(am_false);
@@ -78,7 +75,6 @@ BIF_ADECL_2
 }
 
 BIF_RETTYPE not_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (BIF_ARG_1 == am_true)
 	BIF_RET(am_false);
@@ -88,55 +84,46 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE sgt_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     BIF_RET(cmp_gt(BIF_ARG_1, BIF_ARG_2) ? am_true : am_false);
 }
 
 BIF_RETTYPE sge_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     BIF_RET(cmp_ge(BIF_ARG_1, BIF_ARG_2) ? am_true : am_false);
 }
 
 BIF_RETTYPE slt_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     BIF_RET(cmp_lt(BIF_ARG_1, BIF_ARG_2) ? am_true : am_false);
 }
 
 BIF_RETTYPE sle_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     BIF_RET(cmp_le(BIF_ARG_1, BIF_ARG_2) ? am_true : am_false);
 }
 
 BIF_RETTYPE seq_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     BIF_RET(eq(BIF_ARG_1, BIF_ARG_2) ? am_true : am_false);
 }
 
 BIF_RETTYPE seqeq_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     BIF_RET(cmp_eq(BIF_ARG_1, BIF_ARG_2) ? am_true : am_false);
 }
 
 BIF_RETTYPE sneq_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     BIF_RET(eq(BIF_ARG_1, BIF_ARG_2) ? am_false : am_true);
 }
 
 BIF_RETTYPE sneqeq_2(BIF_ALIST_2)
-BIF_ADECL_2
 {
     BIF_RET(cmp_ne(BIF_ARG_1, BIF_ARG_2) ? am_true : am_false);
 }
 
 BIF_RETTYPE is_atom_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_atom(BIF_ARG_1)) {
 	BIF_RET(am_true);
@@ -145,7 +132,6 @@ BIF_ADECL_1
 }
 	
 BIF_RETTYPE is_constant_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_tuple(BIF_ARG_1) || is_list(BIF_ARG_1) || is_nil(BIF_ARG_1)) {
 	BIF_RET(am_false);
@@ -154,7 +140,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE is_float_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_float(BIF_ARG_1)) {
 	BIF_RET(am_true);
@@ -163,7 +148,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE is_integer_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_integer(BIF_ARG_1)) {
 	BIF_RET(am_true);
@@ -172,7 +156,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE is_list_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_list(BIF_ARG_1) || is_nil(BIF_ARG_1)) {
 	BIF_RET(am_true);
@@ -181,7 +164,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE is_number_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_number(BIF_ARG_1)) {
 	BIF_RET(am_true);
@@ -191,7 +173,6 @@ BIF_ADECL_1
 
 
 BIF_RETTYPE is_pid_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_pid(BIF_ARG_1)) {
 	BIF_RET(am_true);
@@ -200,7 +181,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE is_port_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_port(BIF_ARG_1)) {
 	BIF_RET(am_true);
@@ -209,7 +189,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE is_reference_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_ref(BIF_ARG_1)) {
 	BIF_RET(am_true);
@@ -218,7 +197,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE is_tuple_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_tuple(BIF_ARG_1)) {
 	BIF_RET(am_true);
@@ -227,7 +205,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE is_binary_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_binary(BIF_ARG_1)) {
 	BIF_RET(am_true);
@@ -236,7 +213,6 @@ BIF_ADECL_1
 }
 
 BIF_RETTYPE is_function_1(BIF_ALIST_1)
-BIF_ADECL_1
 {
     if (is_fun(BIF_ARG_1)) {
 	BIF_RET(am_true);
@@ -251,7 +227,6 @@ BIF_ADECL_1
    This may seem awkward when applied from the shell, where the plain
    tuple test is more understandable, I think... */
 BIF_RETTYPE is_record_3(BIF_ALIST_3) 
-BIF_ADECL_3
 {
     Eterm *t;
     if (is_not_atom(BIF_ARG_2) || is_not_small(BIF_ARG_3)) {

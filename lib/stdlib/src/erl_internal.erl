@@ -46,7 +46,9 @@
 %%       That's why!
 %%
 
--export([bif/2,bif/3,guard_bif/2,type_test/2,obsolete/3]).
+-export([bif/2,bif/3,guard_bif/2,
+	 type_test/2,new_type_test/2,old_type_test/2,
+	 obsolete/3]).
 -export([arith_op/2,bool_op/2,comp_op/2,list_op/2,send_op/2,op_type/2]).
 
 %% -type guard_bif(Name, Arity) -> bool()
@@ -84,33 +86,46 @@ guard_bif(_, _) -> false.
 %%	when Name = atom(), Arity = integer().
 %%  Erlang type tests.
 
-type_test(is_atom, 1) -> true;
-type_test(is_binary, 1) -> true;
-type_test(is_constant, 1) -> true;
-type_test(is_float, 1) -> true;
-type_test(is_function, 1) -> true;
-type_test(is_integer, 1) -> true;
-type_test(is_list, 1) -> true;
-type_test(is_number, 1) -> true;
-type_test(is_pid, 1) -> true;
-type_test(is_port, 1) -> true;
-type_test(is_reference, 1) -> true;
-type_test(is_tuple, 1) -> true;
-type_test(is_record, 2) -> true;
-type_test(integer, 1) -> true;
-type_test(float, 1) -> true;
-type_test(number, 1) -> true;
-type_test(atom, 1) -> true;
-type_test(constant, 1) -> true;
-type_test(list, 1) -> true;
-type_test(tuple, 1) -> true;
-type_test(pid, 1) -> true;
-type_test(reference, 1) -> true;
-type_test(port, 1) -> true;
-type_test(binary, 1) -> true;
-type_test(record, 2) -> true;
-type_test(function, 1) -> true;
-type_test(_, _) -> false.
+type_test(Name, Arity) ->
+    new_type_test(Name, Arity) orelse old_type_test(Name, Arity).
+
+%% -type new_type_test(Name, Arity) -> bool()
+%%	when Name = atom(), Arity = integer().
+%%  Erlang new-style type tests.
+
+new_type_test(is_atom, 1) -> true;
+new_type_test(is_binary, 1) -> true;
+new_type_test(is_constant, 1) -> true;
+new_type_test(is_float, 1) -> true;
+new_type_test(is_function, 1) -> true;
+new_type_test(is_integer, 1) -> true;
+new_type_test(is_list, 1) -> true;
+new_type_test(is_number, 1) -> true;
+new_type_test(is_pid, 1) -> true;
+new_type_test(is_port, 1) -> true;
+new_type_test(is_reference, 1) -> true;
+new_type_test(is_tuple, 1) -> true;
+new_type_test(is_record, 2) -> true;
+new_type_test(_, _) -> false.
+
+%% -type old_type_test(Name, Arity) -> bool()
+%%	when Name = atom(), Arity = integer().
+%%  Erlang old-style type tests.
+
+old_type_test(integer, 1) -> true;
+old_type_test(float, 1) -> true;
+old_type_test(number, 1) -> true;
+old_type_test(atom, 1) -> true;
+old_type_test(constant, 1) -> true;
+old_type_test(list, 1) -> true;
+old_type_test(tuple, 1) -> true;
+old_type_test(pid, 1) -> true;
+old_type_test(reference, 1) -> true;
+old_type_test(port, 1) -> true;
+old_type_test(binary, 1) -> true;
+old_type_test(record, 2) -> true;
+old_type_test(function, 1) -> true;
+old_type_test(_, _) -> false.
 
 %% -type arith_op(Op, Arity) -> bool()
 %%	when Op = atom(), Arity = integer().

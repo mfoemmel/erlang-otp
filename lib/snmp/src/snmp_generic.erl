@@ -145,7 +145,7 @@ variable_func(new, NameDb) ->
 	    variable_set(NameDb, Defval)
     end;
 
-variable_func(delete, NameDb) ->
+variable_func(delete, _NameDb) ->
     ok;
 
 variable_func(get, NameDb) ->
@@ -154,14 +154,14 @@ variable_func(get, NameDb) ->
 	_ -> genErr
     end.
 
-variable_func(is_set_ok, Val, NameDb) ->
+variable_func(is_set_ok, _Val, _NameDb) ->
     noError;
 variable_func(set, Val, NameDb) ->
     case variable_set(NameDb, Val) of
 	true -> noError;
 	false -> commitFailed
     end;
-variable_func(undo, Val, NameDb) ->
+variable_func(undo, _Val, _NameDb) ->
     noError.
 
 %%------------------------------------------------------------------
@@ -199,7 +199,7 @@ handle_table_get(NameDb, RowIndex, Cols, FirstOwnIndex) ->
 	Res -> validate_get(Cols, Res)
     end.
 
-validate_get([Col | Cols], [Res | Ress]) ->
+validate_get([_Col | Cols], [Res | Ress]) ->
     NewVal = 
 	case Res of
 	    noinit -> {noValue, unSpecified};
@@ -247,7 +247,7 @@ table_foreach(Tab, Fun, Oid) ->
 %% column FirstCol.
 %% Returns: List of endOfTable | {NextOid, Value}
 %%------------------------------------------------------------------
-handle_table_next(NameDb, RowIndex, [], FirstCol, FOI, LastCol) ->
+handle_table_next(_NameDb, _RowIndex, [], _FirstCol, _FOI, _LastCol) ->
     [];
 handle_table_next(NameDb, RowIndex, OrgCols, FirstCol, FOI, LastCol) ->
     FirstVals = 
@@ -290,7 +290,7 @@ split_cols([], _FirstCol, _LastCol) ->
 make_new_cols([Col | Cols], LastCol) when Col < LastCol ->
     {NewCols, Ends} = make_new_cols(Cols, LastCol),
     {[Col+1 | NewCols], Ends};
-make_new_cols([Col | Cols], LastCol) ->
+make_new_cols([_Col | Cols], LastCol) ->
     {NewCols, Ends} = make_new_cols(Cols, LastCol),
     {NewCols, [endOfTable | Ends]};
 make_new_cols([], _LastCol) ->
@@ -326,7 +326,7 @@ check_all_initalized([], [], _Name, _RowIndex, _FirstCol, _FOI, _LastCol) ->
 %% 1) Last col is RowStatus - check status
 %% 2) No modification to RowStatus - check that row exists.
 %%------------------------------------------------------------------
-table_try_row(NameDb, TryChangeStatusFunc, RowIndex, []) -> {noError, 0};
+table_try_row(_NameDb, _TryChangeStatusFunc, _RowIndex, []) -> {noError, 0};
 table_try_row(NameDb, TryChangeStatusFunc, RowIndex, Cols) ->
     #table_info{status_col = StatusCol} = table_info(NameDb),
     case lists:keysearch(StatusCol, 1, Cols) of
@@ -418,7 +418,7 @@ table_check_status(NameDb, Col, ?'RowStatus_createAndWait', RowIndex, Cols) ->
     end;
 
 %% Try to destroy
-table_check_status(NameDb, Col, ?'RowStatus_destroy', RowIndex, Cols) ->
+table_check_status(_NameDb, _Col, ?'RowStatus_destroy', _RowIndex, _Cols) ->
     {noError, 0};
     
 %% Otherwise, notReady. It isn't possible to set a row to notReady.
@@ -429,7 +429,7 @@ is_any_noinit(Row, Cols) ->
     is_any_noinit(tuple_to_list(Row), Cols, 1).
 is_any_noinit([noinit | Vals], [{N, _Value} | Cols], N) ->
     is_any_noinit(Vals, Cols, N);
-is_any_noinit([noinit | Vals], _Cols, _N) ->
+is_any_noinit([noinit | _Vals], _Cols, _N) ->
     true;
 is_any_noinit([_ | Vals], [{N, _Value} | Cols], N) ->
     is_any_noinit(Vals, Cols, N+1);
@@ -490,9 +490,9 @@ init_defaults(Defs, InitRow, StartCol) ->
 %% of two elements, and returned from this func is a list of
 %% the last of the two.)
 %%-----------------------------------------------------------------
-get_own_indexes(0, Keys) -> [];
+get_own_indexes(0, _Keys) -> [];
 get_own_indexes(1, Keys) -> Keys;
-get_own_indexes(Index, [Key | Keys]) ->
+get_own_indexes(Index, [_Key | Keys]) ->
     get_own_indexes(Index - 1, Keys).
 
 %%-----------------------------------------------------------------
@@ -506,13 +506,13 @@ get_own_indexes(Index, [Key | Keys]) ->
 %% 3) If column is StatusCol, use Status
 %%-----------------------------------------------------------------
 table_create_rest(Col, Max, _ , _ , [], _NoAcc) when Col > Max -> [];
-table_create_rest(Col,Max,StatusCol,Status,[{Col,Val}|Defs],[Col|NoAccs]) ->
+table_create_rest(Col,Max,StatusCol,Status,[{Col,_Val}|Defs],[Col|NoAccs]) ->
     % case 0
     [noacc | table_create_rest(Col+1, Max, StatusCol, Status, Defs, NoAccs)];
 table_create_rest(Col,Max,StatusCol,Status,Defs,[Col|NoAccs]) ->
     % case 0
     [noacc | table_create_rest(Col+1, Max, StatusCol, Status, Defs, NoAccs)];
-table_create_rest(StatCol, Max, StatCol, Status, [{Col, Val} |Defs], NoAccs) ->
+table_create_rest(StatCol, Max, StatCol, Status, [{_Col, _Val} |Defs], NoAccs) ->
     % case 3
     [Status | table_create_rest(StatCol+1, Max, StatCol, Status,Defs,NoAccs)];
 table_create_rest(Col, Max, StatusCol, Status, [{Col, Val} |Defs],NoAccs) ->
@@ -536,11 +536,11 @@ table_create_rest(Col, Max, StatusCol, Status, Cols, NoAccs) when Col =< Max->
 %%------------------------------------------------------------------
 table_defaults(InitRow, Defs) -> table_defaults(InitRow, 1, Defs).
 
-table_defaults([], _, Defs) -> [];
+table_defaults([], _, _Defs) -> [];
 table_defaults([noinit | T], CurIndex, [{CurIndex, DefVal} | Defs]) ->
     [DefVal | table_defaults(T, CurIndex+1, Defs)];
 %% 'not-accessible' columns don't get a value
-table_defaults([noacc | T], CurIndex, [{CurIndex, DefVal} | Defs]) ->
+table_defaults([noacc | T], CurIndex, [{CurIndex, _DefVal} | Defs]) ->
     [noacc | table_defaults(T, CurIndex+1, Defs)];
 table_defaults([Val | T], CurIndex, [{CurIndex, _DefVal} | Defs]) ->
     [Val | table_defaults(T, CurIndex+1, Defs)];
@@ -571,11 +571,11 @@ table_set_cols(NameDb, RowIndex, Cols, ConsFunc) ->
 	Error -> Error
     end.
 
-table_set_cols(NameDb, RowIndex, []) -> {noError, 0};
+table_set_cols(_NameDb, _RowIndex, []) -> {noError, 0};
 table_set_cols(NameDb, RowIndex, [{Col, Val} | Cols]) ->
     case catch table_set_element(NameDb, RowIndex, Col, Val) of
 	true -> table_set_cols(NameDb, RowIndex, Cols);
-	X ->
+	_X ->
 	    user_err("snmp_generic:table_set_cols set ~w to"
 		     " ~w returned ~w",
 		     [{NameDb, RowIndex}, {Col, Val}]),
@@ -610,7 +610,7 @@ collect_keys([#asn1_type{lo = X, hi = X} | Indexes], Keys)
    when integer(X), length(Keys) >= X ->
     {StrKey, Rest} = collect_length(X, Keys, []),
     [StrKey | collect_keys(Indexes, Rest)];
-collect_keys([#asn1_type{lo = X, hi = X} | Indexes], Keys)
+collect_keys([#asn1_type{lo = X, hi = X} | _Indexes], Keys)
    when integer(X) ->
     exit({error, {size_mismatch, X, Keys}});
 %% Otherwise, its a dynamic-length type => its a list
@@ -618,10 +618,10 @@ collect_keys([#asn1_type{lo = X, hi = X} | Indexes], Keys)
 %% Check if it is IMPLIED (only last element can be IMPLIED)
 collect_keys([#asn1_type{implied = true}], Keys) ->
     [Keys];
-collect_keys([Type | Indexes], [Length | Keys]) when length(Keys) >= Length ->
+collect_keys([_Type | Indexes], [Length | Keys]) when length(Keys) >= Length ->
     {StrKey, Rest} = collect_length(Length, Keys, []),
     [StrKey | collect_keys(Indexes, Rest)];
-collect_keys([Type | Indexes], [Length | Keys]) ->
+collect_keys([_Type | _Indexes], [Length | Keys]) ->
     exit({error, {size_mismatch, Length, Keys}});
 collect_keys([], []) -> [];
 collect_keys([], Keys) ->
@@ -667,9 +667,9 @@ table_find(NameDb, Col, Value, Indexes) ->
 %%    undefined if a Col for column Col doesn't exist.
 %%    {value, Val} if a Col for Col with value Val exists.
 %%------------------------------------------------------------------
-find_col(Col, []) -> undefined;
-find_col(Col, [{Col, Val} | T]) -> {value, Val};
-find_col(Col, [H | T]) -> find_col(Col, T).
+find_col(_Col, []) -> undefined;
+find_col(Col, [{Col, Val} | _T]) -> {value, Val};
+find_col(Col, [_H | T]) -> find_col(Col, T).
 
 %%------------------------------------------------------------------
 %%  check_mandatory_cols(ListOfCols, Cols)
@@ -688,14 +688,14 @@ find_col(Col, [H | T]) -> find_col(Col, T).
 try_apply(nofunc, _) -> {noError, 0};
 try_apply(F, Args) -> apply(F, Args).
 
-table_info({Name, Db}) ->
+table_info({Name, _Db}) ->
     {value, TI} = snmp_symbolic_store:table_info(Name),
     TI;
 table_info(Name) ->
     {value, TI} = snmp_symbolic_store:table_info(Name),
     TI.
 
-variable_info({Name, Db}) ->
+variable_info({Name, _Db}) ->
     snmp_symbolic_store:variable_info(Name);
 variable_info(NameDb) ->
     snmp_symbolic_store:variable_info(NameDb).
@@ -711,7 +711,7 @@ variable_info(NameDb) ->
 %% If it has the information, the status is changed
 %% to notInService.
 %%------------------------------------------------------------------
-table_try_make_consistent(Name, RowIndex, Cols) ->
+table_try_make_consistent(Name, RowIndex, _Cols) ->
     TableInfo = table_info(Name),
     case TableInfo#table_info.status_col of
 	StatusCol when integer(StatusCol) ->

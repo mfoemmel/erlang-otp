@@ -69,9 +69,11 @@ do_gen(G, File, Form) ->
 		    false -> ok
 		end,
 		gen_head(G2, [], Form),
-		ic_codegen:export(ic_genobj:stubfiled(G2), [{ictk:register_name(G2), 0},
-						   {ictk:unregister_name(G2), 0},
-						   {oe_dependency,0}]),
+		ic_codegen:export(ic_genobj:stubfiled(G2), 
+				  [{ictk:register_name(G2), 0},
+				   {ictk:unregister_name(G2), 0},
+				   {oe_get_module,5}, 
+				   {oe_dependency,0}]),
 		R0= gen(G2, [], Form),
 		ictk:reg_gen(G2, [], Form),
 		ictk:unreg_gen(G2, [], Form), % "new" unreg_gen/3
@@ -488,13 +490,13 @@ gen_end_of_call(erl_corba, G, N, X) ->
     Fd = ic_genobj:stubfiled(G),
     nl(Fd), nl(Fd),
     ic_codegen:mcomment_light(Fd, ["Standard gen_server call handle"]),
-    emit(Fd, "handle_call(stop, From, State) ->\n"),
+    emit(Fd, "handle_call(stop, _, State) ->\n"),
     emit(Fd, "    {stop, normal, ok, State}"),
     case get_opt(G, serv_last_call) of
 	exception ->
 	    emit(Fd, ";\n"),
 	    nl(Fd),
-	    emit(Fd, "handle_call(Req, From, State) ->\n"),
+	    emit(Fd, "handle_call(_, _, State) ->\n"),
 	    emit(Fd, "    {reply, catch corba:raise(#'BAD_OPERATION'{minor=1163001857, completion_status='COMPLETED_NO'}), State}.\n");
 	exit ->
 	    emit(Fd, ".\n"),
@@ -506,7 +508,7 @@ gen_end_of_call(erl_genserv, G, N, X) ->
     Fd = ic_genobj:stubfiled(G),
     nl(Fd), nl(Fd),
     ic_codegen:mcomment_light(Fd, ["Standard gen_server call handle"]),
-    emit(Fd, "handle_call(stop, From, State) ->\n"),
+    emit(Fd, "handle_call(stop, _, State) ->\n"),
     emit(Fd, "    {stop, normal, ok, State}"),
     emit(Fd, ".\n"),
     nl(Fd), nl(Fd),
@@ -522,7 +524,7 @@ gen_end_of_cast(erl_corba, G, N, X) ->
 	exception ->
 	    emit(Fd, ";\n"),
 	    nl(Fd),
-	    emit(Fd, "handle_cast(Req, State) ->\n"),
+	    emit(Fd, "handle_cast(_, State) ->\n"),
 	    emit(Fd, "    {noreply, State}.\n");
 	exit ->
 	    emit(Fd, ".\n"),
@@ -543,21 +545,23 @@ emit_skel_footer(erl_corba, G, N, X) ->
     Fd = ic_genobj:stubfiled(G),
     nl(Fd), nl(Fd),
     ic_codegen:mcomment_light(Fd, ["Standard gen_server handles"]),
-    emit(Fd, "handle_info(Info, State) ->\n"),
     case use_impl_handle_info(G, N, X) of
 	true ->
+	    emit(Fd, "handle_info(Info, State) ->\n"),
 	    emit(Fd, "    corba:handle_info(~p, Info, State).\n\n", 
 		 [list_to_atom(ic_genobj:impl(G))]);
 	false ->
+	    emit(Fd, "handle_info(_, State) ->\n"),
 	    emit(Fd, "    {noreply, State}.\n\n")
     end,
     nl(Fd),
-    emit(Fd, "code_change(OldVsn, State, Extra) ->\n"),    
     case get_opt(G, no_codechange) of
 	false ->
+	    emit(Fd, "code_change(OldVsn, State, Extra) ->\n"),    
 	    emit(Fd, "    corba:handle_code_change(~p, OldVsn, State, Extra).\n\n", 
 		 [list_to_atom(ic_genobj:impl(G))]);
 	true ->
+	    emit(Fd, "code_change(_, State, _) ->\n"),    
 	    emit(Fd, "    {ok, State}.\n\n")
     end,
     ok;
@@ -574,12 +578,13 @@ emit_skel_footer(erl_genserv, G, N, X) ->
 	    emit(Fd, "    {noreply, State}.\n\n")
     end,
     nl(Fd), nl(Fd),
-    emit(Fd, "code_change(OldVsn, State, Extra) ->\n"),    
     case get_opt(G, no_codechange) of
 	false ->
+	    emit(Fd, "code_change(OldVsn, State, Extra) ->\n"),    
 	    emit(Fd, "    ~p:code_change(OldVsn, State, Extra).\n\n", 
 		 [list_to_atom(ic_genobj:impl(G))]);
 	true ->
+	    emit(Fd, "code_change(_, State, _) ->\n"),    
 	    emit(Fd, "    {ok, State}.\n\n")
     end,
     ok.
@@ -869,9 +874,9 @@ emit_skel_func_helper(G, N, X, OpName, ArgNames, TypeList, OutArgs, Oneway,
     Name	= list_to_atom(OpName),
     ImplF	= Name,
     ImplM	= list_to_atom(ic_genobj:impl(G)),
-    This	= mk_name(G, "THIS"),
+    ThisStr	= mk_name(G, "THIS"),
     TL		= mk_name(G, "Types"),
-    From	= mk_name(G, "From"),
+    FromStr	= mk_name(G, "From"),
     State	= mk_name(G, "State"),
     Context	= mk_name(G, "Context"),
     VarPrecond	= mk_name(G, "Precond"),
@@ -879,24 +884,24 @@ emit_skel_func_helper(G, N, X, OpName, ArgNames, TypeList, OutArgs, Oneway,
 
     %% Create argument list
     CallArgs1 = [State | ArgNames],
-    UseFrom =
+    {UseFrom, From} =
 	case Oneway of
 	    false ->
 		case use_from(G, N, OpName) of
 		    true ->
-			From;
+			{FromStr, FromStr};
 		    false ->
-			"false"
+			{"false", "_"}
 		end;
 	    true ->
-		"false"
+		{"false", "_"}
 	end,
-    UseThis =
+    {UseThis, This} =
 	case use_this(G, N, OpName) of
 	    true ->
-		This;
+		{ThisStr, ThisStr};
 	    false ->
-		"false"
+		{"false", "_"}
 	end,
     %% Create argument list string
     CallArgs = mk_list(ArgNames),
@@ -939,22 +944,22 @@ emit_skel_func_helper(G, N, X, OpName, ArgNames, TypeList, OutArgs, Oneway,
     ImplF	= Name,
     ImplM	= list_to_atom(ic_genobj:impl(G)),
     TL		= mk_name(G, "Types"),
-    From	= mk_name(G, "From"),
+    FromStr	= mk_name(G, "From"),
     State	= mk_name(G, "State"),
 
     %% Create argument list
     CallArgs1 = [State | ArgNames],
-    CallArgs2 =
+    {CallArgs2, From} =
 	case is_oneway(X) of
 	    false ->
 		case use_from(G, N, OpName) of
 		    true ->
-			[From | CallArgs1];
+			{[FromStr | CallArgs1], FromStr};
 		    false ->
-			CallArgs1
+			{CallArgs1, "_"}
 		end;
 	    true ->
-		CallArgs1
+		{CallArgs1, "_"}
 	end,
     %% Create argument list string
     CallArgs = mk_list(CallArgs2),

@@ -5,7 +5,6 @@
 	       alarm_handler, 
                format_lib_supp, 
                misc_supp, 
-               otp_mib, 
                overload, 
                rb, 
                rb_format_supp, 

@@ -129,6 +129,10 @@ $(APP_DIR):
         echo "megaco/TAR.exclude2" >> TAR.exclude2; \
         echo "megaco/priv/lib/$(TARGET)" >> TAR.exclude2; \
         echo "megaco/src/flex/$(TARGET)" >> TAR.exclude2
+	(cd ..; find megaco -name 'findmerge.*' >> megaco/TAR.exclude2)
+	(cd ..; find megaco -name '*.contrib*' >> megaco/TAR.exclude2)
+	(cd ..; find megaco -name '*.keep*' >> megaco/TAR.exclude2)
+	(cd ..; find megaco -name '*~' >> megaco/TAR.exclude2)
 	mkdir $(APP_DIR); \
         (cd ..; tar cfX - megaco/TAR.exclude2 megaco) | \
         (cd $(APP_DIR); tar xf -); \

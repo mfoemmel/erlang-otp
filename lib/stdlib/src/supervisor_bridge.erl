@@ -28,7 +28,7 @@
 
 behaviour_info(callbacks) ->
     [{init,1},{terminate,2}];
-behaviour_info(Other) ->
+behaviour_info(_Other) ->
     undefined.
 
 %%%-----------------------------------------------------------------
@@ -95,7 +95,7 @@ terminate(_Reason, #state{pid = undefined}) ->
 terminate(Reason, State) ->
     terminate_pid(Reason, State).
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %% This function is supposed to terminate the 'real' server.

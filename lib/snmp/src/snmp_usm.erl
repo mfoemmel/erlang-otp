@@ -463,7 +463,7 @@ md5_auth_in(AuthKey, AuthParams, Packet) when length(AuthParams) == 12 ->
     MAC = binary_to_list(crypto:md5_mac_96(AuthKey, Packet2)),
     %% 6.3.2.6
     MAC == AuthParams;
-md5_auth_in(AuthKey, AuthParams, Packet) ->
+md5_auth_in(_AuthKey, _AuthParams, _Packet) ->
     %% 6.3.2.1
     false.
 
@@ -484,7 +484,7 @@ sha_auth_in(AuthKey, AuthParams, Packet) when length(AuthParams) == 12 ->
     MAC = binary_to_list(crypto:sha_mac_96(AuthKey, Packet2)),
     %% 7.3.2.6
     MAC == AuthParams;
-sha_auth_in(AuthKey, AuthParams, Packet) ->
+sha_auth_in(_AuthKey, _AuthParams, _Packet) ->
     %% 7.3.2.1
     false.
 

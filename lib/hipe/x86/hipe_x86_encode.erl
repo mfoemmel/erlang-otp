@@ -770,9 +770,9 @@ fp_arith_rev_pop_encode(OpCode, Opnds) ->
     OpCode0 = OpCode band 2#110,
     case Opnds of
 	[] ->
-	    [16#DE, (16#C0 bor (OpCode0 bsl 3) bor st(1)) band 7];
+	    [16#DE, 16#C0 bor (OpCode0 bsl 3) bor st(1)];
 	{{fpst,St}, {fpst, 0}} ->
-	    [16#DE, (16#C0 bor (OpCode0 bsl 3) bor st(St)) band 7]
+	    [16#DE, 16#C0 bor (OpCode0 bsl 3) bor st(St)]
     end.
 
 fp_arith_sizeof(Opnds) ->
@@ -812,7 +812,7 @@ ffree_sizeof() ->
     2.
 
 fwait_encode() ->
-    [16#AD].
+    [16#9B].
 fwait_sizeof() ->
     1.
 

@@ -66,15 +66,15 @@ terminate(_Reason, _State) ->
 
 get_disk_info1(Port) ->
     Port ! {self(),{command,[?DISK_INFO]}},
-    Result = get_data(Port,[]).
+    get_data(Port,[]).
 
 get_disk_info1(Port,PathList) ->
     Port ! {self(),{command,[?DISK_INFO|[P++[0]||P <- PathList]]}},
-    Result = get_data(Port,[]).
+    get_data(Port,[]).
 
 get_mem_info1(Port) ->
     Port ! {self(),{command,[?MEM_INFO]}},
-    Result = get_data(Port,[]).
+    get_data(Port,[]).
 
 get_data(Port, Sofar) ->
     receive

@@ -24,6 +24,7 @@
 -export([bind/3, listen/1, listen/2]). 
 -export([connect/3, connect/4, async_connect/4]).
 -export([accept/1, accept/2, async_accept/2]).
+-export([shutdown/2]).
 -export([send/2, sendto/4]).
 -export([recv/2, recv/3, async_recv/3]).
 -export([unrecv/2]).
@@ -81,13 +82,51 @@ fdopen1(Drv, Family, Fd) when integer(Fd) ->
 
 open0(Type) ->
     case catch case Type of
-		   stream -> erlang:open_port_prim({spawn,tcp_inet},[binary]);
-		   dgram  -> erlang:open_port_prim({spawn, udp_inet},[binary]);
+		   stream -> erlang:open_port({spawn,tcp_inet}, [binary]);
+		   dgram  -> erlang:open_port({spawn, udp_inet}, [binary]);
 		   _  -> {error, einval}
 	       end of
 	Port when port(Port) -> {ok, Port};
 	{'EXIT', Reason} -> {error, Reason};
 	Error -> Error
+    end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% Shutdown(insock(), atom()) -> ok
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+shutdown(S, read) when is_port(S) ->
+    shutdown_2(S, 0);
+shutdown(S, write) when is_port(S) ->
+    shutdown_1(S, 1);
+shutdown(S, read_write) when is_port(S) ->
+    shutdown_1(S, 2).
+
+shutdown_1(S, How) ->
+    case subscribe(S, [subs_empty_out_q]) of
+	{ok,[{subs_empty_out_q,N}]} when N > 0 ->
+	    shutdown_pend_loop(S, N);   %% wait for pending output to be sent
+	_Other -> ok
+    end,
+    shutdown_2(S, How).
+
+shutdown_2(S, How) ->
+    case ctl_cmd(S, ?TCP_REQ_SHUTDOWN, [How]) of
+	{ok, []} -> ok;
+	Error -> Error
+    end.
+
+shutdown_pend_loop(S, N0) ->
+    receive
+	{empty_out_q,S} -> ok
+    after ?INET_CLOSE_TIMEOUT ->
+	    case getstat(S, [send_pend]) of
+                {ok,[{send_pend,N0}]} -> ok;
+                {ok,[{send_pend,N}]} -> shutdown_pend_loop(S, N);
+		_ -> ok
+	    end
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -652,7 +691,7 @@ getservbyname(S,Name,Proto) when port(S),list(Name),atom(Proto) ->
     getservbyname1(S, Name, atom_to_list(Proto));
 getservbyname(S,Name,Proto) when port(S),list(Name),list(Proto) ->
     getservbyname1(S, Name, Proto);
-getservbyname(S,_, _) ->
+getservbyname(_,_, _) ->
     {error, einval}.
 
 getservbyname1(S,Name,Proto) ->
@@ -681,7 +720,7 @@ getservbyport(S,Port,Proto) when port(S),atom(Proto) ->
     getservbyport1(S, Port, atom_to_list(Proto));
 getservbyport(S,Port,Proto) when port(S),list(Proto) ->
     getservbyport1(S, Port, Proto);
-getservbyport(S,Port,Proto) ->
+getservbyport(_, _, _) ->
     {error, einval}.
 
 getservbyport1(S,Port,Proto) ->
@@ -862,7 +901,7 @@ type_value(uint, X) when integer(X)        -> true;
 type_value(time, infinity)                 -> true;
 type_value(time, X) when integer(X), X>=0  -> true;
 type_value(ip,{A,B,C,D}) when ?ip(A,B,C,D) -> true;
-type_value(ether,[X1,X2,X3,X4,X5,X6])      -> true;
+type_value(ether,[_X1,_X2,_X3,_X4,_X5,_X6])      -> true;
 type_value({X,Y},{XV,YV}) -> type_value(X,XV) and type_value(Y,YV);
 type_value({enum,List},Enum) -> 
     case enum_val(Enum, List) of
@@ -939,7 +978,7 @@ enum_vals([Enum|Es], List) ->
 	false -> false;
 	{value,Value} -> [Value | enum_vals(Es, List)]
     end;
-enum_vals([], List) -> [].
+enum_vals([], _) -> [].
 
 enum_names(Val, [{Enum,BitVal} |List]) ->
     if Val band BitVal == BitVal ->
@@ -947,15 +986,15 @@ enum_names(Val, [{Enum,BitVal} |List]) ->
        true ->
 	    enum_names(Val, List)
     end;
-enum_names(Val, []) -> [].
+enum_names(_, []) -> [].
     
 enum_val(Enum, [{Enum,Value}|_]) -> {value,Value};
 enum_val(Enum, [_|List]) -> enum_val(Enum, List);
-enum_val(Enum, []) -> false.
+enum_val(_, []) -> false.
 
 enum_name(Val, [{Enum,Val}|_]) -> {name,Enum};
 enum_name(Val, [_|List]) -> enum_name(Val, List);
-enum_name(Val, []) -> false.
+enum_name(_, []) -> false.
 
 %% encode opt/val REVERSED since options are stored in reverse order
 %% i.e the recent options first (we must process old -> new)

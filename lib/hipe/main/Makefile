@@ -20,6 +20,10 @@ ifndef EBIN
 EBIN = ../ebin
 endif
 
+ifndef DOCS
+DOCS = ../doc
+endif
+
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
@@ -43,15 +47,16 @@ MODULES = hipe hipe_main
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
-TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
+DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
 
-# APP_FILE= 
-# APP_SRC= $(APP_FILE).src
-# APP_TARGET= $(EBIN)/$(APP_FILE)
-#
-# APPUP_FILE= 
-# APPUP_SRC= $(APPUP_FILE).src
-# APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
+APP_FILE= hipe.app
+APP_SRC= $(APP_FILE).src
+APP_TARGET= $(EBIN)/$(APP_FILE)
+
+APPUP_FILE= hipe.appup
+APPUP_SRC= $(APPUP_FILE).src
+APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 
 # ----------------------------------------------------
 # FLAGS
@@ -69,17 +74,24 @@ $(EBIN)/hipe_main.beam: hipe.hrl
 
 debug opt: $(TARGET_FILES) 
 
-docs:
+docs: $(DOC_FILES)
 
 clean:
-	rm -f $(TARGET_FILES)
+	rm -f $(TARGET_FILES) $(DOC_FILES)
 	rm -f core
+
+$(DOCS)/%.html:%.erl
+	erl -noshell -run edoc_run file '"$<"' '[{dir, "$(DOCS)"}]' -s erlang halt
 
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
 
+$(APP_TARGET): $(APP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
 
+$(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 # ----------------------------------------------------
 # Release Target
@@ -91,6 +103,3 @@ release_spec: opt
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 
 release_docs_spec:
-
-
-

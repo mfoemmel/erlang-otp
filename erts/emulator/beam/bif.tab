@@ -24,7 +24,7 @@
 # <bif-decl> ::= "bif" <bif> [<C-name>] | "ubif" <bif> [<C-name>]
 # <bif> ::= <module> ":" <name> "/" <arity>
 #
-# "ubif" is an unwrapped bif, i.e a bif without a trace wrapper,
+# "ubif" is an unwrapped bif, i.e. a bif without a trace wrapper,
 # or rather; the trace entry point in the export entry is the same
 # as the normal entry point, and no trace wrapper is generated.
 
@@ -65,7 +65,7 @@ bif 'erl.lang.proc':signal/2		ebif_signal_2 exit_2
 bif erlang:external_size/1
 bif 'erl.lang.term':external_size/1	ebif_external_size_1
 ubif erlang:float/1
-ubif 'erl.lang.number':float/1		ebif_float_1
+ubif 'erl.lang.number':to_float/1	ebif_to_float_1 float_1
 bif erlang:float_to_list/1
 bif 'erl.lang.float':to_string/1	ebif_float_to_string_1 float_to_list_1
 bif erlang:fun_info/2
@@ -121,8 +121,8 @@ bif erlang:loaded/0
 bif 'erl.system.code':loaded/0		ebif_loaded_0
 bif erlang:localtime/0
 bif 'erl.util.date':local/0		ebif_localtime_0
-bif erlang:localtime_to_universaltime/1
-bif 'erl.util.date':local_to_utc/1	ebif_localtime_to_universaltime_1
+bif erlang:localtime_to_universaltime/2
+bif 'erl.util.date':local_to_utc/2	ebif_localtime_to_universaltime_2
 bif erlang:make_ref/0
 bif 'erl.lang.ref':make/0		ebif_make_ref_0
 bif erlang:md5/1
@@ -147,7 +147,9 @@ bif erlang:nodes/1
 bif 'erl.lang.node':nodes/1		ebif_nodes_1
 bif erlang:now/0
 bif 'erl.util.time':now/0		ebif_now_0
-bif erlang:open_port_prim/2
+
+bif erlang:open_port/2
+
 bif erlang:pid_to_list/1
 bif 'erl.lang.proc':pid_to_string/1	ebif_pid_to_string_1 pid_to_list_1
 bif erlang:port_info/1
@@ -180,10 +182,6 @@ ubif erlang:round/1
 ubif 'erl.lang.number':round/1		ebif_round_1
 ubif erlang:self/0
 ubif 'erl.lang.proc':self/0		ebif_self_0
-bif erlang:send_nosuspend/2
-bif 'erl.lang.proc':send_nosuspend/2	ebif_send_nosuspend_2
-bif erlang:send_nosuspend/3
-bif 'erl.lang.proc':send_nosuspend/3	ebif_send_nosuspend_3
 bif erlang:setelement/3
 bif 'erl.lang.tuple':setelement/3	ebif_setelement_3
 ubif erlang:size/1
@@ -332,6 +330,13 @@ bif erlang:system_flag/2
 bif 'erl.system':set_flag/2	ebif_system_flag_2
 bif erlang:system_info/1
 bif 'erl.system':info/1		ebif_system_info_1
+# New in R9C
+bif erlang:system_monitor/0
+bif 'erl.system':monitor/0	ebif_system_monitor_0
+bif erlang:system_monitor/1
+bif 'erl.system':monitor/1	ebif_system_monitor_1
+bif erlang:system_monitor/2
+bif 'erl.system':monitor/2	ebif_system_monitor_2
 
 bif erlang:ref_to_list/1
 bif 'erl.lang.ref':to_string/1		ebif_ref_to_string_1 ref_to_list_1
@@ -416,8 +421,10 @@ ubif 'erl.lang.number':plus/1		ebif_plus_1 splus_1
 # internal references have been updated to the new ebif_... entries.
 
 bif erlang:'!'/2		ebif_bang_2
-bif 'erl.lang':send/2		ebif_send_2 send_2
+bif 'erl.lang.proc':send/2	ebif_send_2 send_2
 bif erlang:send/2
+bif 'erl.lang':send/3		ebif_send_3 send_3
+bif erlang:send/3
 bif erlang:'++'/2		ebif_plusplus_2
 bif 'erl.lang.list':append/2	ebif_append_2 ebif_plusplus_2
 bif erlang:append/2
@@ -502,7 +509,7 @@ bif 'erl.lang.ets':match_object/2	ebif_ets_match_object_2
 bif ets:match_object/3
 bif 'erl.lang.ets':match_object/3	ebif_ets_match_object_3
 bif ets:member/2
-bif 'erl.lang.ets':member/2		ebif_ets_member_2
+bif 'erl.lang.ets':is_key/2		ebif_ets_member_2
 bif ets:next/2
 bif 'erl.lang.ets':next/2		ebif_ets_next_2
 bif ets:prev/2
@@ -612,6 +619,13 @@ bif code:is_module_native/1
 bif 'erl.lang.code':is_native_module/1	ebif_code_is_native_module_1 code_is_module_native_1
 
 bif erlang:blocking_read_file/1
+
+#
+# New Bifs in R9C.
+#
+
+bif erlang:hibernate/3
+bif error_logger:warning_map/0
 
 #
 # Obsolete

@@ -27,8 +27,14 @@
 -export([test/1, test/2, test/3, value/2]).
 %% Application internal exports
 -export([compile_asn/3,compile_asn1/3,compile_py/3,compile/3,value/1,vsn/0,
-	 create_ets_table/2,get_name_of_def/1,get_pos_of_def/1,
-	 read_config_data/1]).
+	 create_ets_table/2,get_name_of_def/1,get_pos_of_def/1]).
+-export([read_config_data/1,get_gen_state_field/1,get_gen_state/0,
+	 partial_inc_dec_toptype/1,save_gen_state/1,update_gen_state/2,
+	 get_tobe_refed_func/1,reset_gen_state/0,is_function_generated/1,
+	 generated_refed_func/1,next_refed_func/0,pop_namelist/0,
+	 next_namelist_el/0,update_namelist/1,step_in_constructed/0,
+	 add_tobe_refed_func/1,add_generated_refed_func/1]).
+
 -include("asn1_records.hrl").
 -include_lib("stdlib/include/erl_compile.hrl").
 
@@ -48,9 +54,14 @@
 
 %% macros used for partial incomplete decode commands
 -define(MANDATORY,mandatory).
+-define(DEFAULT,default).
 -define(OPTIONAL,opt).
 -define(PARTS,parts).
--define(BINARY,bin).
+-define(UNDECODED,undec).
+-define(ALTERNATIVE,alt).
+-define(ALTERNATIVE_UNDECODED,alt_undec).
+-define(ALTERNATIVE_PARTS,alt_parts).
+%-define(BINARY,bin).
 
 %% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% This is the interface to the compiler
@@ -741,8 +752,14 @@ generate({true,{M,_Module,GenTOrV}},OutFile,EncodingRule,Options) ->
 
     %% create decoding function names and taglists for partial decode
     %% For the time being leave errors unnoticed !!!!!!!!!
-    case catch partial_decode_prepare(EncodingRule,M,GenTOrV,Options) of
-	{error, Reason} -> ok;
+%    io:format("Options: ~p~n",[Options]),
+    case catch specialized_decode_prepare(EncodingRule,M,GenTOrV,Options) of
+	{error, enoent} -> ok;
+	{error, Reason} -> io:format("WARNING: Error in configuration"
+				     "file: ~n~p~n",[Reason]);
+	{'EXIT',Reason} -> io:format("WARNING: Internal error when ",
+				     "analyzing configuration"
+				     "file: ~n~p~n",[Reason]);
 	_ -> ok
     end,
 
@@ -785,7 +802,7 @@ input_file_type(File) ->
 			    {single_file, lists:concat([File,".py"])}
 		    end
 	    end;
-	".ans1config" ->
+	".asn1config" ->
 	    case read_config_file(File,asn1_module) of
 		{ok,Asn1Module} -> 
 		    put(asn1_config_file,File),
@@ -1202,7 +1219,7 @@ create_ets_table(Name,Options) when atom(Name) ->
     end.
 
 %% Creates a new ets table only if no table exists
-create_if_none_table(Name,Options) ->
+create_if_no_table(Name,Options) ->
     case ets:info(Name) of
 	undefined ->
 	    %% create a new table
@@ -1221,27 +1238,46 @@ delete_tables([]) ->
     ok.
 
 
+specialized_decode_prepare(Erule,M,TsAndVs,Options) ->
+%     Asn1confMember = 
+% 	fun([{asn1config,File}|_],_) ->
+% 		{true,File};
+% 	   ([],_) -> false;
+% 	   ([_H|T],Fun) ->
+% 		Fun(T,Fun)
+% 	end,
+%     case Asn1confMember(Options,Asn1confMember) of
+%	{true,File} ->
+    case lists:member(asn1config,Options) of
+	true ->
+	    partial_decode_prepare(Erule,M,TsAndVs,Options);
+	_ ->
+	    ok
+    end.
 %% Reads the configuration file if it exists and stores information
 %% about partial decode and incomplete decode
 partial_decode_prepare(ber_bin_v2,M,TsAndVs,Options) when tuple(TsAndVs) ->
     %% read configure file
-    Types = element(1,TsAndVs),
+%    Types = element(1,TsAndVs),
     CfgList = read_config_file(M#module.name),
-    PartialDecode = get_config_info(CfgList,partial_decode),
-    PartialIncDecode = get_config_info(CfgList,partial_incomplete_decode),
+    SelectedDecode = get_config_info(CfgList,partial_decode),
+    ExclusiveDecode = get_config_info(CfgList,exclusive_decode),
     CommandList = 
-	create_partial_decode_gen_info(M#module.name,PartialDecode),
-    io:format("partial_decode = ~p~n",[CommandList]),
+	create_partial_decode_gen_info(M#module.name,SelectedDecode),
+%    io:format("partial_decode = ~p~n",[CommandList]),
     
     save_config(partial_decode,CommandList),
     CommandList2 = 
-	create_partial_inc_decode_gen_info(M#module.name,PartialIncDecode),
-    io:format("partial_incomplete_decode = ~p~n",[CommandList2]),
-    Part_inc_dec = tag_format(ber_bin_v2,Options,CommandList2),
-    io:format("partial_incomplete_decode: tlv_tags = ~p~n",[Part_inc_dec]),
-    save_config(partial_incomplete_decode,Part_inc_dec);
+	create_partial_inc_decode_gen_info(M#module.name,ExclusiveDecode),
+%    io:format("partial_incomplete_decode = ~p~n",[CommandList2]),
+    Part_inc_tlv_tags = tag_format(ber_bin_v2,Options,CommandList2),
+%    io:format("partial_incomplete_decode: tlv_tags = ~p~n",[Part_inc_tlv_tags]),
+    save_config(partial_incomplete_decode,Part_inc_tlv_tags),
+    save_gen_state(ExclusiveDecode,Part_inc_tlv_tags);
 partial_decode_prepare(_,_,_,_) ->
     ok.
+
+
 
 %% create_partial_inc_decode_gen_info/2
 %%
@@ -1258,13 +1294,18 @@ partial_decode_prepare(_,_,_,_) ->
 %% OPTIONAL or DEFAULT element that shall be decoded as
 %% usual. [bin,Tag] corresponds to an element, mandatory, OPTIONAL or
 %% DEFAULT, that shall be left encoded (incomplete decoded).
-create_partial_inc_decode_gen_info(ModName,{Mod,[L|Ls]}) when list(L) ->
-    [create_partial_inc_decode_gen_info(ModName,{Mod,L})|
+create_partial_inc_decode_gen_info(ModName,{Mod,[{Name,L}|Ls]}) when list(L) ->
+    TopTypeName = partial_inc_dec_toptype(L),
+    [{Name,TopTypeName,
+      create_partial_inc_decode_gen_info1(ModName,TopTypeName,{Mod,L})}|
      create_partial_inc_decode_gen_info(ModName,{Mod,Ls})];
 create_partial_inc_decode_gen_info(_,{_,[]}) ->
     [];
-create_partial_inc_decode_gen_info(ModName,{{_,ModName},
-					    [TopTypeName|Rest]}) ->
+create_partial_inc_decode_gen_info(_,[]) ->
+    [].
+
+create_partial_inc_decode_gen_info1(ModName,TopTypeName,{ModName,
+					    [_TopType|Rest]}) ->
     case asn1_db:dbget(ModName,TopTypeName) of
 	#typedef{typespec=TS} ->
 	    TagCommand = get_tag_command(TS,?MANDATORY,mandatory),
@@ -1274,8 +1315,10 @@ create_partial_inc_decode_gen_info(ModName,{{_,ModName},
 	    throw({error,{"wrong type list in asn1 config file",
 			  TopTypeName}})
     end;
-
-create_partial_inc_decode_gen_info(_,TNL) ->
+create_partial_inc_decode_gen_info1(M1,_,{M2,_}) when M1 /= M2 ->
+    throw({error,{"wrong module name in asn1 config file",
+		  M2}});
+create_partial_inc_decode_gen_info1(_,_,TNL) ->
     throw({error,{"wrong type list in asn1 config file",
 		  TNL}}).
 
@@ -1284,24 +1327,31 @@ create_partial_inc_decode_gen_info(_,TNL) ->
 %% list, where the incomplete decode is branched. So, C1 may be a
 %% list, a "binary tuple", a "parts tuple" or an atom. The second
 %% element of a binary tuple and a parts tuple is an atom.
-create_pdec_inc_command(ModName,_,[],Acc) ->
+create_pdec_inc_command(_ModName,_,[],Acc) ->
     lists:reverse(Acc);
+create_pdec_inc_command(ModName,{Comps1,Comps2},TNL,Acc) 
+  when list(Comps1),list(Comps2) ->
+    create_pdec_inc_command(ModName,Comps1 ++ Comps2,TNL,Acc);
+create_pdec_inc_command(ModN,Clist,[CL|_Rest],Acc) when list(CL) ->
+    create_pdec_inc_command(ModN,Clist,CL,Acc);
 create_pdec_inc_command(ModName,
 			CList=[#'ComponentType'{name=Name,typespec=TS,
 						prop=Prop}|Comps],
 			TNL=[C1|Cs],Acc)  ->
     case C1 of
-	Name ->
-	    %% In this case C1 is an atom
-	    TagCommand = get_tag_command(TS,?MANDATORY,Prop),
-	    create_pdec_inc_command(ModName,get_components(TS#type.def),Cs,[TagCommand|Acc]);
-	{binary,Name} ->
-	    TagCommand = get_tag_command(TS,?BINARY,Prop),
+% 	Name ->
+% 	    %% In this case C1 is an atom
+% 	    TagCommand = get_tag_command(TS,?MANDATORY,Prop),
+% 	    create_pdec_inc_command(ModName,get_components(TS#type.def),Cs,[TagCommand|Acc]);
+	{Name,undecoded} ->
+	    TagCommand = get_tag_command(TS,?UNDECODED,Prop),
 	    create_pdec_inc_command(ModName,Comps,Cs,[TagCommand|Acc]);
-	{parts,Name} ->
+	{Name,parts} ->
 	    TagCommand = get_tag_command(TS,?PARTS,Prop),
 	    create_pdec_inc_command(ModName,Comps,Cs,[TagCommand|Acc]);
 	L when list(L) ->
+	    %% This case is only possible as the first element after
+	    %% the top type element, when top type is SEGUENCE or SET.
 	    %% Follow each element in L. Must note every tag on the
 	    %% way until the last command is reached, but it ought to
 	    %% be enough to have a "complete" or "complete optional"
@@ -1309,22 +1359,62 @@ create_pdec_inc_command(ModName,
 	    %% config file. Then in the TLV decode the components with
 	    %% a "complete" command will be decoded by an ordinary TLV
 	    %% decode.
-%	    TagCommand = get_tag_command(TS,?MANDATORY,Prop),
-%	    TagCommand2 = create_pdec_inc_command(ModName,get_components(TS#type.def),L,[TagCommand|Acc]),
 	    create_pdec_inc_command(ModName,CList,L,Acc);
-%	    create_pdec_inc_command(ModName,Cs,Comps,TagCommand2);
+	{Name,RestPartsList} when list(RestPartsList) ->
+	    %% Same as previous, but this may occur at any place in
+	    %% the structure. The previous is only possible as the
+	    %% second element.
+	    case get_tag_command(TS,?MANDATORY,Prop) of
+		?MANDATORY ->
+		    InnerDirectives=
+			create_pdec_inc_command(ModName,TS#type.def,
+						RestPartsList,[]),
+		    create_pdec_inc_command(ModName,Comps,Cs,
+					    [[?MANDATORY,InnerDirectives]|Acc]);
+%		    create_pdec_inc_command(ModName,Comps,Cs,
+%					    [InnerDirectives,?MANDATORY|Acc]);
+		[Opt,EncTag] ->
+		    InnerDirectives = 
+			create_pdec_inc_command(ModName,TS#type.def,
+						RestPartsList,[]),
+		    create_pdec_inc_command(ModName,Comps,Cs,
+					    [[Opt,EncTag,InnerDirectives]|Acc])
+	    end;
+%	    create_pdec_inc_command(ModName,CList,RestPartsList,Acc);
+%%	    create_pdec_inc_command(ModName,TS#type.def,RestPartsList,Acc);
 	_ -> %% this component may not be in the config list
 	    TagCommand = get_tag_command(TS,?MANDATORY,Prop),
 	    create_pdec_inc_command(ModName,Comps,TNL,[TagCommand|Acc])
     end;
 create_pdec_inc_command(ModName,
-			{'CHOICE',[Comp=#'ComponentType'{name=C1}|_]},
-			TNL=[C1|_],Acc) ->
-    create_pdec_inc_command(ModName,[Comp],TNL,Acc);
-% create_pdec_inc_command(ModName,{'CHOICE',[Comp=#'ComponentType'{name=C1}|_]},TNL=[{_,C1}|_Cs],Acc) ->
-%     create_pdec_inc_command(ModName,[Comp],TNL,Acc);
-create_pdec_inc_command(ModName,{'CHOICE',[#'ComponentType'{}|Comps]},TNL,Acc) ->
-    create_pdec_inc_command(ModName,{'CHOICE',Comps},TNL,Acc);
+			{'CHOICE',[#'ComponentType'{name=C1,
+						    typespec=TS,
+						    prop=Prop}|Comps]},
+			[{C1,Directive}|Rest],Acc) ->
+    case Directive of
+	List when list(List) ->
+	    [Command,Tag] = get_tag_command(TS,?ALTERNATIVE,Prop),
+	    CompAcc = create_pdec_inc_command(ModName,TS#type.def,List,[]),
+	    create_pdec_inc_command(ModName,{'CHOICE',Comps},Rest,
+				    [[Command,Tag,CompAcc]|Acc]);
+	undecoded ->
+	    TagCommand = get_tag_command(TS,?ALTERNATIVE_UNDECODED,Prop),
+	    create_pdec_inc_command(ModName,{'CHOICE',Comps},Rest,
+				    [TagCommand|Acc]);
+	parts ->
+	    TagCommand = get_tag_command(TS,?ALTERNATIVE_PARTS,Prop),
+	    create_pdec_inc_command(ModName,{'CHOICE',Comps},Rest,
+				    [TagCommand|Acc])
+    end;
+create_pdec_inc_command(ModName,
+			{'CHOICE',[#'ComponentType'{typespec=TS,
+						    prop=Prop}|Comps]},
+			TNL,Acc) ->
+    TagCommand = get_tag_command(TS,?ALTERNATIVE,Prop),
+    create_pdec_inc_command(ModName,{'CHOICE',Comps},TNL,[TagCommand|Acc]);
+create_pdec_inc_command(M,{'CHOICE',{Cs1,Cs2}},TNL,Acc) 
+  when list(Cs1),list(Cs2) ->
+    create_pdec_inc_command(M,{'CHOICE',Cs1 ++ Cs2},TNL,Acc);
 create_pdec_inc_command(ModName,#'Externaltypereference'{module=M,type=Name},
 			TNL,Acc) ->
     #type{def=Def} = get_referenced_type(M,Name),
@@ -1332,6 +1422,15 @@ create_pdec_inc_command(ModName,#'Externaltypereference'{module=M,type=Name},
 create_pdec_inc_command(_,_,TNL,_) ->
     throw({error,{"unexpected error when creating partial "
 		  "decode command",TNL}}).
+
+partial_inc_dec_toptype([T|_]) when atom(T) ->
+    T;
+partial_inc_dec_toptype([{T,_}|_]) when atom(T) ->
+    T;
+partial_inc_dec_toptype([L|_]) when list(L) ->
+    partial_inc_dec_toptype(L);
+partial_inc_dec_toptype(_) ->
+    throw({error,{"no top type found for partial incomplete decode"}}).
 
 
 %% Creats a list of tags out of the information in TypeList and Types
@@ -1349,20 +1448,26 @@ create_partial_decode_gen_info(ModName,{{_,ModName},TypeList}) ->
 	    case asn1_db:dbget(ModName,TopType) of
 		#typedef{typespec=TS} ->
 		    TagCommand = get_tag_command(TS,?CHOOSEN),
-		    CommandList = create_pdec_command(ModName,get_components(TS#type.def),Rest,[TagCommand]);
+		    create_pdec_command(ModName,get_components(TS#type.def),
+					Rest,[TagCommand]);
 		_ ->
 		    throw({error,{"wrong type list in asn1 config file",
 				  TypeList}})
 	    end;
 	_ ->
-	    ok
-    end.
+	    []
+    end;
+create_partial_decode_gen_info(_,[]) ->
+    [];
+create_partial_decode_gen_info(_M1,{{_,M2},_}) ->
+    throw({error,{"wrong module name in asn1 config file",
+				  M2}}).
 
 %% create_pdec_command/4 for each name (type or component) in the
 %% third argument, TypeNameList, a command is created. The command has
 %% information whether the component/type shall be skipped, looked
 %% into or returned. The list of commands is returned.
-create_pdec_command(ModName,_,[],Acc) ->
+create_pdec_command(_ModName,_,[],Acc) ->
     lists:reverse(Acc);
 create_pdec_command(ModName,[#'ComponentType'{name=C1,typespec=TS}|_Comps],
 		    [C1|Cs],Acc) ->
@@ -1371,7 +1476,7 @@ create_pdec_command(ModName,[#'ComponentType'{name=C1,typespec=TS}|_Comps],
     TagCommand = get_tag_command(TS,?CHOOSEN),
     create_pdec_command(ModName,get_components(TS#type.def),
 			Cs,[TagCommand|Acc]);
-create_pdec_command(ModName,[#'ComponentType'{name=C1,typespec=TS,
+create_pdec_command(ModName,[#'ComponentType'{typespec=TS,
 					      prop=Prop}|Comps],
 		    [C2|Cs],Acc) ->
     TagCommand = 
@@ -1389,14 +1494,14 @@ create_pdec_command(ModName,{'CHOICE',[#'ComponentType'{}|Comps]},TNL,Acc) ->
 create_pdec_command(ModName,#'Externaltypereference'{module=M,type=C1},
 		    TypeNameList,Acc) ->
     case get_referenced_type(M,C1) of
-	TS=#type{def=Def} ->
+	#type{def=Def} ->
 	    create_pdec_command(ModName,get_components(Def),TypeNameList,
 				Acc);
 	Err ->
 	    throw({error,{"unexpected result when fetching "
 			  "referenced element",Err}})
     end;
-create_pdec_command(ModName,TS=#type{tag=Tag,def=Def},[C1|Cs],Acc) ->
+create_pdec_command(ModName,TS=#type{def=Def},[C1|Cs],Acc) ->
     %% This case when we got the "components" of a SEQUENCE/SET OF
     case C1 of
 	[1] ->
@@ -1437,7 +1542,7 @@ get_components(Def) ->
 %% decoding. 
 get_tag_command(#type{tag=[]},_) ->
     [];
-get_tag_command(#type{tag=[Tag]},?SKIP) ->
+get_tag_command(#type{tag=[_Tag]},?SKIP) ->
     ?SKIP;
 get_tag_command(#type{tag=[Tag]},Command) ->
     %% encode the tag according to BER
@@ -1447,12 +1552,16 @@ get_tag_command(T=#type{tag=[Tag|Tags]},Command) ->
     [get_tag_command(T#type{tag=Tag},Command)|
      get_tag_command(T#type{tag=Tags},Command)].
 
+%% get_tag_command/3 used by create_pdec_inc_command
 get_tag_command(#type{tag=[]},_,_) ->
     [];
 get_tag_command(#type{tag=[Tag]},?MANDATORY,Prop) ->
     case Prop of
 	mandatory ->
 	    ?MANDATORY;
+	{'DEFAULT',_} ->
+	    [?DEFAULT,encode_tag_val(decode_class(Tag#tag.class),
+				     Tag#tag.form,Tag#tag.number)];
 	_ -> [?OPTIONAL,encode_tag_val(decode_class(Tag#tag.class),
 				       Tag#tag.form,Tag#tag.number)]
     end;
@@ -1480,7 +1589,7 @@ get_referenced_type(M,Name) ->
 			  "referenced type",T}})
     end.
 
-tag_format(EncRule,Options,CommandList) ->
+tag_format(EncRule,_Options,CommandList) ->
     case EncRule of
 	ber_bin_v2 ->
 	    tlv_tags(CommandList);
@@ -1492,17 +1601,19 @@ tlv_tags([]) ->
     [];
 tlv_tags([mandatory|Rest]) ->
     [mandatory|tlv_tags(Rest)];
-tlv_tags([[opt,Tag]|Rest]) ->
-    [[opt,tlv_tag(Tag)]|tlv_tags(Rest)];
-tlv_tags([[parts,Tag]|Rest]) ->
-    [[parts,tlv_tag(Tag)]|tlv_tags(Rest)];
-tlv_tags([[bin,Tag]|Rest]) ->
-    [[bin,tlv_tag(Tag)]|tlv_tags(Rest)];
+tlv_tags([[Command,Tag]|Rest]) when atom(Command),binary(Tag) ->
+    [[Command,tlv_tag(Tag)]|tlv_tags(Rest)];
+tlv_tags([[Command,Directives]|Rest]) when atom(Command),list(Directives) ->
+    [[Command,tlv_tags(Directives)]|tlv_tags(Rest)];
 %% remove all empty lists
 tlv_tags([[]|Rest]) ->
     tlv_tags(Rest);
-tlv_tags([L1|Rest]) when list(L1) ->
-    [tlv_tags(L1)|tlv_tags(Rest)].
+tlv_tags([{Name,TopType,L1}|Rest]) when list(L1),atom(TopType) ->
+    [{Name,TopType,tlv_tags(L1)}|tlv_tags(Rest)];
+tlv_tags([[Command,Tag,L1]|Rest]) when list(L1),binary(Tag) ->
+    [[Command,tlv_tag(Tag),tlv_tags(L1)]|tlv_tags(Rest)];
+tlv_tags([L=[L1|_]|Rest]) when list(L1) ->
+    [tlv_tags(L)|tlv_tags(Rest)].
 
 tlv_tag(<<Cl:2,_:1,TagNo:5>>) when TagNo < 31 ->
     (Cl bsl 16) + TagNo;
@@ -1519,20 +1630,44 @@ tlv_tag1(<<1:1,PartialTag:7,Buffer/binary>>,Acc) ->
 %% reads the content from the configuration file and returns the
 %% selected part choosen by InfoType. Assumes that the config file
 %% content is an Erlang term.
-read_config_file(ModuleName,InfoType) ->
+read_config_file(ModuleName,InfoType) when atom(InfoType) ->
     CfgList = read_config_file(ModuleName),
     get_config_info(CfgList,InfoType).
 
 
 read_config_file(ModuleName) ->
     case file:consult(lists:concat([ModuleName,'.asn1config'])) of
+%    case file:consult(ModuleName) of
 	{ok,CfgList} ->
 	    CfgList;
+	{error,enoent} ->
+	    Options = get(encoding_options),
+	    Includes = [I || {i,I} <- Options],
+	    read_config_file1(ModuleName,Includes);
 	{error,Reason} ->
 	    file:format_error(Reason),
 	    throw({error,{"error reading asn1 config file",Reason}})
     end.
-
+read_config_file1(ModuleName,[]) ->
+    case filename:extension(ModuleName) of
+	".asn1config" ->
+	    throw({error,enoent});
+	_ ->
+	    read_config_file(lists:concat([ModuleName,".asn1config"]))
+    end;
+read_config_file1(ModuleName,[H|T]) ->
+%    File = filename:join([H,lists:concat([ModuleName,'.asn1config'])]),
+    File = filename:join([H,ModuleName]),
+    case file:consult(File) of
+	{ok,CfgList} ->
+	    CfgList;
+	{error,enoent} ->
+	    read_config_file1(ModuleName,T);
+	{error,Reason} ->
+	    file:format_error(Reason),
+	    throw({error,{"error reading asn1 config file",Reason}})
+    end.
+    
 get_config_info(CfgList,InfoType) ->
     case InfoType of
 	all ->
@@ -1547,14 +1682,223 @@ get_config_info(CfgList,InfoType) ->
     end.
 
 %% save_config/2 saves the Info with the key Key
-%% Before saving anything check if a 
+%% Before saving anything check if a table exists
 save_config(Key,Info) ->
-    create_if_none_table(asn1_general,[named_table]),
-    ets:insert(asn1_general,{asn1_config,Key,Info}).
+    create_if_no_table(asn1_general,[named_table]),
+    ets:insert(asn1_general,{{asn1_config,Key},Info}).
 
 read_config_data(Key) ->
     case ets:info(asn1_general) of
 	undefined -> undefined;
 	_ ->
-	    ets:match(asn1_general,{asn1_config,Key,'$1'})
+	    case ets:lookup(asn1_general,{asn1_config,Key}) of
+		[{_,Data}] -> Data;
+		Err -> 
+		    io:format("strange data from config file ~w~n",[Err]),
+		    Err
+	    end
     end.
+
+
+%%
+%% Functions to manipulate the gen_state record saved in the
+%% asn1_general ets table.
+%%
+
+%% saves input data in a new gen_state record
+save_gen_state({_,ConfList},PartIncTlvTagList) ->
+    %ConfList=[{FunctionName,PatternList}|Rest]
+    StateRec = #gen_state{inc_tag_pattern=PartIncTlvTagList,
+			  inc_type_pattern=ConfList},
+    save_config(gen_state,StateRec);
+save_gen_state(_,_) ->
+%%    ok.
+    save_config(gen_state,#gen_state{}).
+
+save_gen_state(GenState) when record(GenState,gen_state) ->
+    save_config(gen_state,GenState).
+
+
+%% get_gen_state_field returns undefined if no gen_state exists or if
+%% Field is undefined or the data at the field.
+get_gen_state_field(Field) ->
+    case read_config_data(gen_state) of
+	undefined ->
+	    undefined;
+	GenState -> 
+	    get_gen_state_field(GenState,Field)
+    end.
+get_gen_state_field(#gen_state{active=Active},active) ->
+    Active;
+get_gen_state_field(_,active) ->
+    false;
+get_gen_state_field(GS,prefix) ->
+    GS#gen_state.prefix;
+get_gen_state_field(GS,inc_tag_pattern) ->
+    GS#gen_state.inc_tag_pattern;
+get_gen_state_field(GS,tag_pattern) ->
+    GS#gen_state.tag_pattern;
+get_gen_state_field(GS,inc_type_pattern) ->
+    GS#gen_state.inc_type_pattern;
+get_gen_state_field(GS,type_pattern) ->
+    GS#gen_state.type_pattern;
+get_gen_state_field(GS,func_name) ->
+    GS#gen_state.func_name;
+get_gen_state_field(GS,namelist) ->
+    GS#gen_state.namelist;
+get_gen_state_field(GS,tobe_refed_funcs) ->
+    GS#gen_state.tobe_refed_funcs;
+get_gen_state_field(GS,gen_refed_funcs) ->
+    GS#gen_state.gen_refed_funcs.
+    
+
+get_gen_state() ->
+    read_config_data(gen_state).
+
+
+update_gen_state(Field,Data) ->
+    case get_gen_state() of
+	State when record(State,gen_state) ->
+	    update_gen_state(Field,State,Data);
+	_ ->
+	    exit({error,{asn1,{internal,
+			       "tried to update nonexistent gen_state",Field,Data}}})
+    end.
+update_gen_state(active,State,Data) ->
+    save_gen_state(State#gen_state{active=Data});
+update_gen_state(prefix,State,Data) ->
+    save_gen_state(State#gen_state{prefix=Data});
+update_gen_state(inc_tag_pattern,State,Data) ->
+    save_gen_state(State#gen_state{inc_tag_pattern=Data});
+update_gen_state(tag_pattern,State,Data) ->
+    save_gen_state(State#gen_state{tag_pattern=Data});
+update_gen_state(inc_type_pattern,State,Data) ->
+    save_gen_state(State#gen_state{inc_type_pattern=Data});
+update_gen_state(type_pattern,State,Data) ->
+    save_gen_state(State#gen_state{type_pattern=Data});
+update_gen_state(func_name,State,Data) ->
+    save_gen_state(State#gen_state{func_name=Data});
+update_gen_state(namelist,State,Data) ->
+%     SData =
+% 	case Data of
+% 	    [D] when list(D) -> D;
+% 	    _ -> Data
+% 	end,
+    save_gen_state(State#gen_state{namelist=Data});
+update_gen_state(tobe_refed_funcs,State,Data) ->
+    save_gen_state(State#gen_state{tobe_refed_funcs=Data});
+update_gen_state(gen_refed_funcs,State,Data) ->
+    save_gen_state(State#gen_state{gen_refed_funcs=Data}).
+
+update_namelist(Name) ->
+    case get_gen_state_field(namelist) of
+	[Name,Rest] -> update_gen_state(namelist,Rest);
+	[Name|Rest] -> update_gen_state(namelist,Rest);
+	[{Name,List}] when list(List) -> update_gen_state(namelist,List);
+	[{Name,Atom}|Rest] when atom(Atom) -> update_gen_state(namelist,Rest);
+	Other -> Other
+    end.
+
+pop_namelist() ->
+    DeepTail = %% removes next element in order
+	fun([[{_,A}]|T],_Fun) when atom(A) -> T;
+	   ([{_N,L}|T],_Fun) when list(L) -> [L|T];
+	   ([[]|T],Fun) -> Fun(T,Fun);
+	   ([L1|L2],Fun) when list(L1) ->
+		case lists:flatten(L1) of
+		    [] -> Fun([L2],Fun);
+		    _ -> [Fun(L1,Fun)|L2]
+		end;
+	   ([_H|T],_Fun) -> T
+	end,
+    {Pop,NewNL} =
+	case get_gen_state_field(namelist) of
+	    [] -> {[],[]};
+	    L ->
+		{next_namelist_el(L),
+		 DeepTail(L,DeepTail)}
+	end,
+    update_gen_state(namelist,NewNL),
+    Pop.
+
+%% next_namelist_el fetches the next type/component name in turn in
+%% the namelist, without changing the namelist.
+next_namelist_el() ->
+    case get_gen_state_field(namelist) of
+	undefined -> undefined;
+	L when list(L) -> next_namelist_el(L)
+    end.
+
+next_namelist_el([]) ->
+    [];
+next_namelist_el([L]) when list(L) ->
+    next_namelist_el(L);
+next_namelist_el([H|_]) when atom(H) ->
+    H;
+next_namelist_el([L|T]) when list(L) ->
+    case next_namelist_el(L) of
+	[] ->
+	    next_namelist_el([T]);
+	R ->
+	    R
+    end;
+next_namelist_el([H={_,A}|_]) when atom(A) ->
+    H.
+
+%% removes a bracket from the namelist
+step_in_constructed() ->
+    case get_gen_state_field(namelist) of
+	[L] when list(L) ->
+	    update_gen_state(namelist,L);
+	_ -> ok
+    end.
+			
+is_function_generated(Name) ->
+    case get_gen_state_field(gen_refed_funcs) of
+	L when list(L) ->
+	    lists:member(Name,L);
+	_ ->
+	    false
+    end.
+			       
+get_tobe_refed_func(Name) ->
+    case get_gen_state_field(tobe_refed_funcs) of
+	L when list(L) ->
+	    case lists:keysearch(Name,1,L) of
+		{_,Element} ->
+		    Element;
+		_ ->
+		    undefined
+	    end;
+	_ ->
+	    undefined
+    end.
+
+add_tobe_refed_func(Data) ->
+    L = get_gen_state_field(tobe_refed_funcs),
+    update_gen_state(tobe_refed_funcs,[Data|L]).
+
+%% moves Name from the to be list to the generated list.
+generated_refed_func(Name) ->
+    L = get_gen_state_field(tobe_refed_funcs),
+    NewL = lists:keydelete(Name,1,L),
+    update_gen_state(tobe_refed_funcs,NewL),
+    L2 = get_gen_state_field(gen_refed_funcs),
+    update_gen_state(gen_refed_funcs,[Name|L2]).
+
+add_generated_refed_func(Data) ->
+    L = get_gen_state_field(gen_refed_funcs),
+    update_gen_state(gen_refed_funcs,[Data|L]).
+
+
+next_refed_func() ->
+    case get_gen_state_field(tobe_refed_funcs) of
+	[] ->
+	    [];
+	[H|T] ->
+	    update_gen_state(tobe_refed_funcs,T),
+	    H
+    end.
+
+reset_gen_state() ->
+    save_gen_state(#gen_state{}).

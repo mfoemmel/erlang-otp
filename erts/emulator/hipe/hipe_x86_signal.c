@@ -25,6 +25,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "hipe_signal.h"
 
 #if __GLIBC__ == 2 && (__GLIBC_MINOR__ == 2 || __GLIBC_MINOR__ == 3)
 /*

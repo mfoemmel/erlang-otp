@@ -142,6 +142,10 @@
 #  define USE_WATCHDOG
 #endif
 
+#ifdef BLADE
+#  define USE_WATCHDOG
+#endif
+
 #define HEART_COMMAND_ENV    "HEART_COMMAND"
 
 #define MSG_HDR_SIZE        2
@@ -163,6 +167,8 @@ struct msg {
 #define  SHUT_DOWN    3
 #define  SET_CMD      4
 #define  CLEAR_CMD    5
+#define  GET_CMD      6
+#define  HEART_CMD    7
 
 
 /*  Maybe interesting to change */
@@ -209,6 +215,7 @@ unsigned long heart_beat_kill_pid = 0;
 static int message_loop(int,int);
 static void do_terminate(int);
 static int notify_ack(int);
+static int heart_cmd_reply(int, char *);
 static int write_message(int, struct msg *);
 static int read_message(int, struct msg *);
 static int read_skip(int, char *, int, int);
@@ -218,7 +225,7 @@ static void debugf(const char *,...);
 static void init_timestamp(void);
 static time_t timestamp(time_t *);
 
-#ifdef SOLARIS
+#if defined(SOLARIS) || defined(BLADE)
 pid_t getOldKeeper(void);
 pid_t start_hw_wd(int timeout, int niceval);
 static void wd_reset(void);
@@ -361,7 +368,7 @@ main(int argc, char **argv){
 #endif
 
 
-#ifdef SOLARIS
+#if defined(SOLARIS) || defined(BLADE)
 /*
  * Search for an already running 'wd_keeper' process, and return
  * its pid if present, otherwise 0.
@@ -369,7 +376,7 @@ main(int argc, char **argv){
 pid_t
 getOldKeeper(void)
 {
-  char *cmd = "/usr/bin/ps -e | /usr/bin/awk \'$4 == \"wd_keepe\" {print $1}\'";
+  char *cmd = "/usr/bin/ps -e | /usr/bin/grep wd_keepe | /usr/bin/awk \'{print $1}\'";
   char buf[BUFSIZ];
   FILE *ptr;
 
@@ -409,26 +416,26 @@ start_hw_wd(int timeout,
 
       /* Redirect stdout to one end of the pipe */
       close(1);
-      close(fds[1]);
-      if (dup(fds[0]) != 1) {
+      close(fds[0]);
+      if (dup(fds[1]) != 1) {
 	perror("File descriptor duplication error");
 	chbuf = 'X';
-	write(fds[0], &chbuf, 1);
+	write(fds[1], &chbuf, 1);
 	_exit(1);
       }
-      
+
       sprintf(cmdline, "exec wd_keeper %d %d", timeout, niceval);
       fflush(stderr);
       execlp("/bin/sh", "sh", "-c", cmdline, 0);
       perror("Error calling execlp()");
       chbuf = 'X';
-      write(fds[0], &chbuf, 1);
+      write(fds[1], &chbuf, 1);
       _exit(1);
     }
 
-  close(fds[0]);
+  close(fds[1]);
 
-  res = read(fds[1], &chbuf, 1);
+  res = read(fds[0], &chbuf, 1);
   if (res <= 0 || chbuf != 'A') {
     fprintf(stderr, "Error starting wd_keeper. HW watchdog timer will NOT be used.\n");
     return 0;
@@ -469,9 +476,11 @@ message_loop(erlin_fd, erlout_fd)
   max_fd = erlin_fd;
 #endif
 
-#if defined(USE_WATCHDOG) && defined(SOLARIS)
+#ifdef USE_WATCHDOG
+#if defined(SOLARIS) || defined(BLADE)
   wd_arm();			/* This is actually needed only when attaching
 				   to a previously started wd_keeper. */
+#endif
 #endif
 
   while (1) {
@@ -537,12 +546,12 @@ message_loop(erlin_fd, erlout_fd)
 				timestamp(&last_received);
 #ifdef USE_WATCHDOG
 				/* reset the hardware watchdog timer */
-				wd_reset();        
+				wd_reset();
 #endif
 				break;
 			case SHUT_DOWN:
 				return R_SHUT_DOWN;
-			case SET_CMD:          
+			case SET_CMD:
 				/* override the HEART_COMMAND_ENV command */
 			        memcpy(&cmd, &(mp->fill[0]), 
 				       tlen-MSG_HDR_PLUS_OP_SIZE);
@@ -550,12 +559,22 @@ message_loop(erlin_fd, erlout_fd)
 				    (unsigned char) NULL;
 			        notify_ack(erlout_fd);
 			        break;
-			case CLEAR_CMD:        
+			case CLEAR_CMD:
 				/* use the HEART_COMMAND_ENV command */
 				cmd[0] = (unsigned char) NULL;
 				notify_ack(erlout_fd);
 				break;
-			default:		
+			case GET_CMD:
+				/* send back command string */
+			        {
+				    char *command = cmd[0] ? (char *)cmd :
+					getenv(HEART_COMMAND_ENV);
+				    /* Not set and not in env  return "" */
+				    if (!command) command = "";
+				    heart_cmd_reply(erlout_fd, command);
+				}
+			        break;
+			default:
 				/* ignore all other messages */
 				break;
 			}
@@ -652,7 +671,7 @@ void win_system(char *command)
     start.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     start.hStdOutput = GetStdHandle(STD_ERROR_HANDLE);
     start.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-    
+
     attr.nLength = sizeof(attr);
     attr.lpSecurityDescriptor = NULL;
     attr.bInheritHandle = TRUE;
@@ -674,7 +693,7 @@ void win_system(char *command)
     WaitForSingleObject(info.hProcess,INFINITE);
     free(cmdbuff);
 }
-#endif /* defined(__WIN32__) */		       
+#endif /* defined(__WIN32__) */
 
 /*
  * do_terminate
@@ -691,7 +710,7 @@ do_terminate(reason)
   
   switch (reason) {
   case R_SHUT_DOWN:
-#ifdef SOLARIS
+#if defined(SOLARIS) || defined(BLADE)
 #ifdef USE_WATCHDOG
     wd_disarm();
 #endif
@@ -760,11 +779,30 @@ notify_ack(fd)
   int   fd;
 {
   struct msg m;
-  char* tmp = (char*) &m.len;		
   
   m.op = HEART_ACK;
-  *tmp = 0;
-  *(tmp+1) = 1;
+  m.len = htons(1);
+  return write_message(fd, &m);
+}
+
+
+/*
+ * send back current command
+ *
+ * Sends an HEART_CMD.
+ */
+static int
+heart_cmd_reply(int fd, char *s)
+{
+  struct msg m;
+  int len = strlen(s) + 1;	/* Include \0 */
+
+  /* FIXME if s >= MSG_BODY_SIZE error */
+
+  m.op = HEART_CMD;
+  m.len = htons(len + 2);	/* Include Op */
+  strcpy(m.fill, s);
+
   return write_message(fd, &m);
 }
 
@@ -925,7 +963,7 @@ debugf(const char *format,...)
   fprintf(stderr, "\r\n");
 }
 
-#ifdef SOLARIS
+#if defined(SOLARIS) || defined(BLADE)
 static void
 wd_reset(void)
   {
@@ -937,25 +975,33 @@ static void
 wd_arm(void)
   {
     if (wd_pid > 0)
+#ifdef BLADE
+      kill(wd_pid, SIGUSR2);
+#else
       kill(wd_pid, SIGTHAW);
+#endif
   }
 
 static void
 wd_disarm(void)
   {
     if (wd_pid > 0)
+#ifdef BLADE
+      kill(wd_pid, SIGHUP);
+#else
       kill(wd_pid, SIGFREEZE);
+#endif
   }
 #endif
 
 #ifdef __WIN32__
 void print_last_error() {
-	LPVOID lpMsgBuf;	
+	LPVOID lpMsgBuf;
 	FormatMessage( 
 		FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
 		NULL,
 		GetLastError(),
-		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), /* Default language */
 		(LPTSTR) &lpMsgBuf,
 		0,
 		NULL 
@@ -1065,9 +1111,9 @@ time_t timestamp(time_t *res)
     }
 
     last_ticks = this_ticks;
-    
+
     r = ((time_t) (this_ticks / 1000)) + extra;
-    
+
     if (res != NULL)
 	*res = r;
     return r;
@@ -1088,7 +1134,7 @@ static void my_delete_hook(WIND_TCB *tcb)
 	wdDelete(watchdog_id);
 	watchdog_id = NULL;
 	taskDeleteHookDelete((FUNCPTR) &my_delete_hook);
-    }	
+    }
 }
 
 static void my_wd_routine(int count)
@@ -1174,9 +1220,9 @@ time_t timestamp(time_t *res)
     }
 
     last_ticks = this_ticks;
-    
+
     r = ((time_t) (this_ticks / tps)) + extra;
-    
+
     if (res != NULL)
 	*res = r;
     return r;

@@ -106,7 +106,11 @@ for file in $CONFIG_FILES; do
     sole_name=`echo $file|sed "s%.*$target/%%"`
     in_file=`echo $dir|sed "s%/[^/][^/]*$%/$sole_name.in%"`
     echo "creating $new_name"
-    sed -f vxworks/sed.$target -f vxworks/sed.general -e "s,@HOST_TYPE@,$HOST_TYPE,g" -e "s,@WIND_BASE@,$WIND_BASE,g" $in_file > $new_name
+    sed -f vxworks/sed.$target -f vxworks/sed.general \
+	-e "s,@HOST_TYPE@,$HOST_TYPE,g" \
+	-e "s,@WIND_BASE@,$WIND_BASE,g" \
+	-e "s,@TARGET@,$target,g" \
+	$in_file > $new_name
 done
 
 

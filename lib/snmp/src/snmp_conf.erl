@@ -429,7 +429,7 @@ check_standard({snmpEnableAuthenTraps, Value}) ->
     {ok, Val} = check_atom(Value, [{enabled, ?snmpEnableAuthenTraps_enabled},
 				   {disabled, ?snmpEnableAuthenTraps_disabled}]),
     {ok, {snmpEnableAuthenTraps, Val}};
-check_standard({Attrib, Value}) -> {unknown_attribute, Attrib};
+check_standard({Attrib, _Value}) -> {unknown_attribute, Attrib};
 check_standard(X) -> {invalid_standard_specification, X}.
     
 check_sec_model(SecModel, Exclude) ->
@@ -454,17 +454,17 @@ check_integer(X) -> throw({invalid_integer, X}).
 check_string(X) when list(X) -> true;
 check_string(X) -> throw({invalid_string, X}).
 
-check_string(X, any)      when list(X) -> true;
-check_string(X,{gt,Len})  when list(X), length(X) > Len -> true;
-check_string(X,{gt,Len})  when list(X) -> throw({invalid_length, X});
-check_string(X,{gte,Len}) when list(X), length(X) >= Len -> true;
-check_string(X,{gte,Len}) when list(X) -> throw({invalid_length, X});
-check_string(X,{lt,Len})  when list(X), length(X) < Len -> true;
-check_string(X,{lt,Len})  when list(X) -> throw({invalid_length, X});
-check_string(X,{lte,Len}) when list(X), length(X) =< Len -> true;
-check_string(X,{lte,Len}) when list(X) -> throw({invalid_length, X});
-check_string(X, Len)      when list(X), length(X) == Len -> true;
-check_string(X, Len)      when list(X) -> throw({invalid_length, X});
+check_string(X, any)       when list(X) -> true;
+check_string(X,{gt,Len})   when list(X), length(X) > Len -> true;
+check_string(X,{gt,_Len})  when list(X) -> throw({invalid_length, X});
+check_string(X,{gte,Len})  when list(X), length(X) >= Len -> true;
+check_string(X,{gte,_Len}) when list(X) -> throw({invalid_length, X});
+check_string(X,{lt,Len})   when list(X), length(X) < Len -> true;
+check_string(X,{lt,_Len})  when list(X) -> throw({invalid_length, X});
+check_string(X,{lte,Len})  when list(X), length(X) =< Len -> true;
+check_string(X,{lte,_Len}) when list(X) -> throw({invalid_length, X});
+check_string(X, Len)       when list(X), length(X) == Len -> true;
+check_string(X, _Len)      when list(X) -> throw({invalid_length, X});
 check_string(X, _Len) -> throw({invalid_string, X}).
 
 check_oid([E1,E2|R]) when E1 * 40 + E2 =< 255 ->
@@ -476,7 +476,7 @@ check_oid([E1,E2|R]) when E1 * 40 + E2 =< 255 ->
 check_oid(X) -> throw({invalid_object_identifier, X}).
 
 all_integer([H|T]) when integer(H) -> all_integer(T);
-all_integer([H|T]) -> false;
+all_integer([_H|_T]) -> false;
 all_integer([]) -> true.
 
 check_ip(X) ->
@@ -491,7 +491,7 @@ check_ip_udp(X) ->
 	_ -> throw({invalid_taddress, X})
     end.
 
-check_mask([], TAddr, _F) -> ok;
+check_mask([], _TAddr, _F) -> ok;
 check_mask(TMask, TAddr, F) when length(TMask) == length(TAddr) ->
     F(TMask);
 check_mask(TMask, _TAddr, _F) -> throw({bad_tmask_length, TMask}).
@@ -543,7 +543,7 @@ sub(Str) ->
     case regexp:sub(Str, "intAgentMaxPacketSize", "snmpEngineMaxMessageSize") of
 	{ok, NewStr, 1} ->
 	    sub(NewStr);
-	{ok, NewStr, 0} ->
+	{ok, _NewStr, 0} ->
 	    Str
     end.
 
@@ -643,10 +643,11 @@ wr_addr(Dir, SortedTraps, Addresses) ->
 			  {UDP, MMS} = get_udp_mms(Ip, Addresses),
 			  AA = mk_ip(Ip, Vsn),
 			  BB = mk_tag_list(Communities, []),
-			  ok = io:format(Fid, "{\"~s\", ~w, ~w, 1500, 3, "
-					 "\"~s\", \"~s\", \"dummy\", [],~w}.\n",
-					 [mk_ip(Ip, Vsn), Ip, UDP,
-					  mk_tag_list(Communities, []),
+			  ok = io:format(Fid, 
+					 "{\"~s\", ~w, ~w, 1500, 3, "
+					 "\"~s\", \"~s\", \"dummy\", "
+					 "[],~w}.\n",
+					 [AA, Ip, UDP, BB, 
 					  mk_param(Vsn), MMS])
 		  end,
 		  SortedTraps),

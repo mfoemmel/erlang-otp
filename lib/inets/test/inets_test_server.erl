@@ -36,21 +36,22 @@
 
 t(Case) when atom(Case) ->
     d("t(~p) -> entry", [Case]),
-    Res = t(Case, default_config()),
+    Res = t(Case, eval, ignore, default_config()),
     display_result(Res),
     Res;
 t([Mod, Fun]) when atom(Mod), atom(Fun) ->
     d("t([~w,~w]:1) -> entry", [Mod, Fun]),
-    Res = t({Mod, Fun}, default_config()),
+    Res = t({Mod, Fun}, eval, ignore, default_config()),
     display_result(Res),
     d("t(~p,~p) -> Res:~n~p", [Mod, Fun, Res]),
     Res.
     
 
-t({Mod, Fun}, Config) when atom(Mod), atom(Fun), list(Config) ->
+t({Mod, Fun}, Action, Reason, Config) 
+  when atom(Mod), atom(Fun), list(Config) ->
     d("t(~p,~p) -> entry", [Mod, Fun]),
     case (catch apply(Mod, Fun, [suite])) of
-	[] ->
+	[] when Action == eval ->
 	    io:format("~n~n*** Eval: ~p ***************~n", 
 		      [{Mod, Fun}]),
 	    case eval(Mod, Fun, Config) of
@@ -60,61 +61,159 @@ t({Mod, Fun}, Config) when atom(Mod), atom(Fun), list(Config) ->
 		    [Other]
 	    end;
 
+	[] when Action == skip -> 
+	    [{skipped, {Mod, Fun}, Reason}];
+
 	Cases when list(Cases) ->
 	    io:format("~n*** Expand: ~p ...~n", [{Mod, Fun}]),
 	    Map = fun(Case) when atom(Case)-> {Mod, Case};
 		     (Case) -> Case
 		  end,
-	    t(lists:map(Map, Cases), Config);
+	    t(lists:map(Map, Cases), Action, Reason, Config);
 
-        {req, _, {conf, Init, Cases, Finish}} ->
+        {req, _, {conf, Init, Cases, Finish}} when Action == eval ->
 	    d("t -> req(conf):"
 	      "~n   Init:   ~p"
 	      "~n   Cases:  ~p"
 	      "~n   Finish: ~p", [Init, Cases, Finish]),
+	    Map = fun(Case) when atom(Case)-> {Mod, Case};
+		     (Case) -> Case
+		  end,
             case (catch apply(Mod, Init, [Config])) of
                 Conf when list(Conf) ->
                     io:format("~n*** Expand: ~p ...~n", [{Mod, Fun}]),
-                    Map = fun(Case) when atom(Case)-> {Mod, Case};
-                             (Case) -> Case
-                          end,
-                    Res = t(lists:map(Map, Cases), Conf),
+                    Res = t(lists:map(Map, Cases), Action, Reason, Conf),
                     (catch apply(Mod, Finish, [Conf])),
                     Res;
-                    
+
                 {'EXIT', {skipped, Reason}} ->
                     io:format(" => skipping: ~p~n", [Reason]),
-                    [{skipped, {Mod, Fun}, Reason}];
-                    
+		    %% Mark all subcases skipped
+                    Res = 
+			t(lists:map(Map,Cases),skip,init_case_skipped,Config),
+                    [{skipped, {Mod, Init}, Reason}] ++ 
+			Res ++
+			[{skipped, {Mod, Finish}, init_case_skipped}];
+
                 Error ->
                     io:format(" => failed: ~p~n", [Error]),
-                    [{failed, {Mod, Fun}, Error}]
+		    %% Mark all subcases skipped
+                    Res = t(lists:map(Map,Cases),skip,init_case_failed,Config),
+                    [{skipped, {Mod, Init}, Error}] ++ 
+			Res ++
+			[{skipped, {Mod, Finish}, init_case_failed}]
             end;
-                    
+
+        {req, _, {conf, Init, Cases, Finish}} when Action == skip ->
+	    io:format("~n*** Skipping:  (~p) ~p, ~p, ~p~n", 
+		      [Mod, Init, Cases, Finish]),
+	    Map = fun(Case) when atom(Case)-> {Mod, Case};
+		     (Case) -> Case
+		  end,
+	    Res = t(lists:map(Map, Cases), Action, Reason, Config),
+	    [{skipped, {Mod, Init}, Reason}] ++ 
+		Res ++ 
+		[{skipped, {Mod, Finish}, Reason}];
+	
         {'EXIT', {undef, _}} ->
             io:format("~n*** Undefined:   ~p~n", [{Mod, Fun}]),
             [{nyi, {Mod, Fun}, ok}];
-                    
+
         Error ->
             io:format("~n*** Ignoring:   ~p: ~p~n", [{Mod, Fun}, Error]),
             [{failed, {Mod, Fun}, Error}]
     end;
-t(Mod, Config) when atom(Mod), list(Config) ->
+
+t(Mod, Action, Reason, Config) when atom(Mod), list(Config) ->
     d("t(~p) -> entry whith"
       "~n   Config: ~p", [Mod, Config]),
-    t({Mod, all}, Config);
-t(Cases, Config) when list(Cases), list(Config) ->
+    t({Mod, all}, Action, Reason, Config);
+t(Cases, Action, Reason, Config) when list(Cases), list(Config) ->
     d("t -> entry whith"
       "~n   Cases:  ~p"
       "~n   Config: ~p", [Cases, Config]),
-    Errors = [t(Case, Config) || Case <- Cases],
+    Errors = [t(Case, Action, Reason, Config) || Case <- Cases],
     d("t -> Errors: ~n~p", [Errors]),
     lists:append(Errors);
-t(Bad, Config) ->
+t(Bad, Action, Reason, Config) ->
     d("t -> entry with"
       "~n   Bad:    ~p"
       "~n   Config: ~p", [Bad, Config]),
     [{badarg, Bad, ok}].
+
+% t({Mod, Fun}, Config) when atom(Mod), atom(Fun), list(Config) ->
+%     d("t(~p,~p) -> entry", [Mod, Fun]),
+%     case (catch apply(Mod, Fun, [suite])) of
+% 	[] ->
+% 	    io:format("~n~n*** Eval: ~p ***************~n", 
+% 		      [{Mod, Fun}]),
+% 	    case eval(Mod, Fun, Config) of
+% 		{ok, _, _} ->
+% 		    [];
+% 		Other ->
+% 		    [Other]
+% 	    end;
+
+% 	Cases when list(Cases) ->
+% 	    io:format("~n*** Expand: ~p ...~n", [{Mod, Fun}]),
+% 	    Map = fun(Case) when atom(Case)-> {Mod, Case};
+% 		     (Case) -> Case
+% 		  end,
+% 	    t(lists:map(Map, Cases), Config);
+
+%         {req, _, {conf, Init, Cases, Finish}} ->
+% 	    d("t -> req(conf):"
+% 	      "~n   Init:   ~p"
+% 	      "~n   Cases:  ~p"
+% 	      "~n   Finish: ~p", [Init, Cases, Finish]),
+%             case (catch apply(Mod, Init, [Config])) of
+%                 Conf when list(Conf) ->
+%                     io:format("~n*** Expand: ~p ...~n", [{Mod, Fun}]),
+%                     Map = fun(Case) when atom(Case)-> {Mod, Case};
+%                              (Case) -> Case
+%                           end,
+%                     Res = t(lists:map(Map, Cases), Conf),
+%                     (catch apply(Mod, Finish, [Conf])),
+%                     Res;
+
+%                 {'EXIT', {skipped, Reason}} ->
+%                     io:format(" => skipping: ~p~n", [Reason]),
+% 		    %% Mark all subcases skipped
+% 		    Sc = skipped_cases(init_case_skipped, Mod, Cases),
+%                     [{skipped, {Mod, Fun}, Reason}|Sc];
+
+%                 Error ->
+%                     io:format(" => failed: ~p~n", [Error]),
+% 		    %% Mark all subcases skipped
+% 		    Sc = skipped_cases(init_case_failed, Mod, Cases),
+%                     [{failed, {Mod, Fun}, Error}|Sc]
+%             end;
+
+%         {'EXIT', {undef, _}} ->
+%             io:format("~n*** Undefined:   ~p~n", [{Mod, Fun}]),
+%             [{nyi, {Mod, Fun}, ok}];
+
+%         Error ->
+%             io:format("~n*** Ignoring:   ~p: ~p~n", [{Mod, Fun}, Error]),
+%             [{failed, {Mod, Fun}, Error}]
+%     end;
+
+% t(Mod, Config) when atom(Mod), list(Config) ->
+%     d("t(~p) -> entry whith"
+%       "~n   Config: ~p", [Mod, Config]),
+%     t({Mod, all}, Config);
+% t(Cases, Config) when list(Cases), list(Config) ->
+%     d("t -> entry whith"
+%       "~n   Cases:  ~p"
+%       "~n   Config: ~p", [Cases, Config]),
+%     Errors = [t(Case, Config) || Case <- Cases],
+%     d("t -> Errors: ~n~p", [Errors]),
+%     lists:append(Errors);
+% t(Bad, Config) ->
+%     d("t -> entry with"
+%       "~n   Bad:    ~p"
+%       "~n   Config: ~p", [Bad, Config]),
+%     [{badarg, Bad, ok}].
 
 
 eval(Mod, Fun, Config) ->

@@ -27,7 +27,6 @@
 	     active = true, 	% true | false | once
 	     opts = [], 	% options
 	     thissock = nil,    % this sslsocket
-	     newif = true,	% new ssl interface
 	     proxysock = nil, 	% local proxy socket within Erlang
 	     status = nil,	% open | closing | closed 
 	     debug = false	%

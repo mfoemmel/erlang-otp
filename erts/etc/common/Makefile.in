@@ -42,28 +42,42 @@ include ../../vsn.mk
 
 CC        = @CC@
 WFLAGS    = @WFLAGS@
-CFLAGS    = @CFLAGS@ @DEFS@ $(TYPE_FLAGS) @WFLAGS@ -I$(SYSDIR) -I$(EMUDIR)
+CFLAGS    = @CFLAGS@ @DEFS@ $(TYPE_FLAGS) @WFLAGS@ -I$(SYSDIR) -I$(EMUDIR) \
+            -DOTP_SYSTEM_VERSION=\"$(SYSTEM_VSN)\"
 LD        = @LD@
 LIBS      = @LIBS@
 LDFLAGS   = @LDFLAGS@
 
+ifeq ($(TARGET),win32)
+ifeq ($(TYPE),debug)
+CFLAGS = $(subst -O2,-g,@CFLAGS@ @DEFS@ $(TYPE_FLAGS) @WFLAGS@ -I$(SYSDIR) \
+		-I$(EMUDIR) -DOTP_SYSTEM_VERSION=\"$(SYSTEM_VSN)\")
+LDFLAGS += -g
+endif
+endif
 BINDIR    = $(ERL_TOP)/bin/$(TARGET)
 OBJDIR    = $(ERL_TOP)/erts/obj$(TYPEMARKER)/$(TARGET)
 EMUDIR    = $(ERL_TOP)/erts/emulator/beam
+EMUOSDIR  = $(ERL_TOP)/erts/emulator/@ERLANG_OSTYPE@
 SYSDIR    = $(ERL_TOP)/erts/emulator/sys/@ERLANG_OSTYPE@
 DRVDIR    = $(ERL_TOP)/erts/emulator/drivers/@ERLANG_OSTYPE@
-ERLINTDIR = $(ERL_TOP)/lib/erl_interface/src
 VXETC     = ../vxworks
 UXETC     = ../unix
 OSEETC	  = ../ose
+WINETC	  = ../win32
 
 ifeq ($(findstring vxworks,$(TARGET)), vxworks)
 ERLEXEC = erl.exec
 else 
 ifeq ($(findstring ose,$(TARGET)), ose)
 ERLEXEC =
+TAR	= @TAR@
+else
+ifeq ($(TARGET), win32)
+ERLEXEC = erlexec.dll
 else
 ERLEXEC = erlexec
+endif
 endif
 endif
 
@@ -88,26 +102,82 @@ ERLEXECDIR = $(VXETC)
 INSTALL_LIBS = $(OBJDIR)/reclaim.o
 INSTALL_OBJS = $(OBJDIR)/heart.o
 TEXTFILES = $(BINDIR)/erl_script.sam
+ERLSRV_OBJECTS= 
+MC_OUTPUTS=
+ENTRY_LDFLAGS=
+ENTRY_OBJ=
+INSTALL_PROGS =              \
+	$(INET_GETHOST)      \
+	$(BINDIR)/heart      \
+	$(BINDIR)/$(ERLEXEC) \
+	$(INSTALL_EMBEDDED_PROGS)
 else
 ifeq ($(findstring ose,$(TARGET)), ose)
 INSTALL_TOP = $(OSEETC)/README.OSE
-INSTALL_MISC = $(OSEETC)/Makefile $(OSEETC)/board.con $(OSEETC)/heap.con \
-		$(OSEETC)/mmh.con $(OSEETC)/osemain.con $(OSEETC)/ospp.con \
-	        $(OSEETC)/pmd.con \
-		$(OSEETC)/erl.exec.c $(OSEETC)/erl_inet_cfg.c \
-		$(OSEETC)/erl_ose_init.c $(OSEETC)/erl_port_dummy.c \
-		$(OSEETC)/erl_user_port_map.c $(OSEETC)/startefs.c \
-		$(OSEETC)/startinet.c $(OSEETC)/startshell.c \
-		$(OSEETC)/time_server.c
+INSTALL_ERL_OSE = monolith lm erl_utils drivers port_progs host
 INSTALL_SRC =
 INSTALL_LIBS =
 INSTALL_OBJS =
 INSTALL_INCLUDES =
+INSTALL_PROGS = 
+ERLSRV_OBJECTS= 
+MC_OUTPUTS=
+ENTRY_LDFLAGS=
+ENTRY_OBJ=
 else
+ifeq ($(TARGET),win32)
+CFLAGS += -I$(EMUOSDIR) -I$(WINETC)
+RC=rc.sh
+MC=mc.sh
+ERLSRV_OBJECTS= \
+	$(OBJDIR)/erlsrv_registry.o \
+	$(OBJDIR)/erlsrv_service.o  \
+	$(OBJDIR)/erlsrv_interactive.o \
+	$(OBJDIR)/erlsrv_main.o \
+	$(OBJDIR)/erlsrv_util.o \
+	$(OBJDIR)/erlsrv_logmess.res
+ERLSRV_HEADERS= \
+		$(WINETC)/erlsrv/erlsrv_global.h \
+		$(WINETC)/erlsrv/erlsrv_registry.h \
+		$(WINETC)/erlsrv/erlsrv_util.h \
+		$(WINETC)/erlsrv/erlsrv_interactive.h \
+		$(WINETC)/erlsrv/erlsrv_service.h
+
+MC_OUTPUTS= \
+	$(OBJDIR)/erlsrv_logmess.h $(OBJDIR)/erlsrv_logmess.rc
+INET_GETHOST = $(BINDIR)/inet_gethost.exe
+INSTALL_EMBEDDED_PROGS += $(BINDIR)/erlc.exe $(BINDIR)/start_erl.exe
+INSTALL_SRC = $(WINETC)/start_erl.c $(WINETC)/Nmakefile.start_erl
+ERLEXECDIR=.
+INSTALL_LIBS =
+INSTALL_OBJS =
+INSTALL_INCLUDES =
+TEXTFILES = Install.ini
+INSTALL_TOP = Install.ini
+INSTALL_TOP_BIN = $(BINDIR)/Install.exe
+INSTALL_PROGS =              \
+	$(INET_GETHOST)      \
+	$(BINDIR)/heart.exe   $(BINDIR)/erlsrv.exe   \
+	$(BINDIR)/erl.exe $(BINDIR)/werl.exe \
+	$(BINDIR)/$(ERLEXEC) \
+	$(INSTALL_EMBEDDED_PROGS)
+
+ENTRY_SRC=$(WINETC)/port_entry.c
+ENTRY_OBJ=$(OBJDIR)/port_entry.o
+WINDSOCK = ws2_32.lib mswsock.lib
+PORT_ENTRY_POINT=erl_port_entry
+ENTRY_LDFLAGS=-entry:$(PORT_ENTRY_POINT)
+
+else
+ENTRY_LDFLAGS=
+ENTRY_OBJ=
+ERLSRV_OBJECTS= 
+MC_OUTPUTS=
 INET_GETHOST = $(BINDIR)/inet_gethost
 INSTALL_EMBEDDED_PROGS += $(BINDIR)/erlc $(BINDIR)/run_erl $(BINDIR)/to_erl
 INSTALL_EMBEDDED_DATA = ../unix/start.src ../unix/start_erl.src
 INSTALL_TOP = Install
+INSTALL_TOP_BIN = 
 INSTALL_MISC = ../unix/format_man_pages ../unix/makewhatis
 INSTALL_SRC = ../unix/setuid_socket_wrap.c #delivered as an example
 ERLEXECDIR = .
@@ -115,6 +185,12 @@ INSTALL_LIBS =
 INSTALL_OBJS =
 INSTALL_INCLUDES =
 TEXTFILES = Install erl.src
+INSTALL_PROGS =              \
+	$(INET_GETHOST)      \
+	$(BINDIR)/heart      \
+	$(BINDIR)/$(ERLEXEC) \
+	$(INSTALL_EMBEDDED_PROGS)
+endif
 endif
 endif
 
@@ -122,23 +198,19 @@ INSTALL_NOTES = \
 	$(ERL_TOP)/erts/notes.html \
 	$(ERL_TOP)/erts/notes_history.html
 
-ifneq ($(findstring ose,$(TARGET)), ose)
-INSTALL_PROGS =              \
-	$(INET_GETHOST)      \
-	$(BINDIR)/heart      \
-	$(BINDIR)/$(ERLEXEC) \
-	$(INSTALL_EMBEDDED_PROGS)
-else
-INSTALL_PROGS =
-endif
 
-
-etc:	$(INSTALL_PROGS) $(INSTALL_LIBS) $(TEXTFILES)
+etc:	$(ENTRY_OBJ) $(INSTALL_PROGS) $(INSTALL_LIBS) $(TEXTFILES) $(INSTALL_TOP_BIN)
 
 docs:
 
 clean:
 	rm -f $(INSTALL_PROGS)
+	rm -f $(ENTRY_OBJ) 
+	rm -f $(ERLSRV_OBJECTS) $(MC_OUTPUTS)
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erl.res
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/win_erlexec.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/init_file.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/start_erl.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erlexec.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erl_io.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erlc.o
@@ -150,6 +222,8 @@ clean:
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/run_erl.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/to_erl.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/vxcall.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erl.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/werl.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/wd_keeper.o
 	rm -f *~ core
 
@@ -168,8 +242,8 @@ clean:
 $(OBJDIR)/inet_gethost.o: inet_gethost.c
 	$(CC) $(CFLAGS) -o $@ -c inet_gethost.c
 
-$(BINDIR)/inet_gethost: $(OBJDIR)/inet_gethost.o
-	$(PURIFY) $(LD) $(LDFLAGS) -o $@ $(OBJDIR)/inet_gethost.o $(LIBS)
+$(BINDIR)/inet_gethost@EXEEXT@: $(OBJDIR)/inet_gethost.o $(ENTRY_OBJ)
+	$(PURIFY) $(LD) $(LDFLAGS) $(ENTRY_LDFLAGS) -o $@ $(OBJDIR)/inet_gethost.o $(ENTRY_OBJ) $(LIBS) 
 
 $(BINDIR)/run_erl: $(OBJDIR)/run_erl.o
 	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/run_erl.o
@@ -189,17 +263,108 @@ $(BINDIR)/wd_keeper: $(OBJDIR)/wd_keeper.o
 $(OBJDIR)/wd_keeper.o: ../unix/wd_keeper.c
 	$(CC) $(CFLAGS) -o $@ -c ../unix/wd_keeper.c
 
+ifneq ($(TARGET),win32)
 $(BINDIR)/$(ERLEXEC): $(OBJDIR)/$(ERLEXEC).o
 	$(PURIFY) $(LD) $(LDFLAGS) -o $@ $(OBJDIR)/$(ERLEXEC).o
 
 $(OBJDIR)/$(ERLEXEC).o: $(ERLEXECDIR)/$(ERLEXEC).c
 	$(CC) -I$(EMUDIR) $(CFLAGS) -o $@ -c $(ERLEXECDIR)/$(ERLEXEC).c
-
-$(BINDIR)/erlc: $(OBJDIR)/erlc.o
+endif
+$(BINDIR)/erlc@EXEEXT@: $(OBJDIR)/erlc.o
 	$(PURIFY) $(LD) $(LDFLAGS) -o $@ $(OBJDIR)/erlc.o -L$(OBJDIR) $(LIBS)
 
 $(OBJDIR)/erlc.o: erlc.c
-	$(CC) -I$(ERLINTDIR) $(CFLAGS) -o $@ -c erlc.c
+	$(CC) $(CFLAGS) -o $@ -c erlc.c
+
+
+#------------------------------------------------------------------------
+# Windows specific targets
+# The windows platform is quite different from the others. erl/werl are small C programs
+# loading a DLL. INI files are used instead of environment variables and the Install
+# script is actually a program, also Install has an INI file which tells of emulator
+# versions etc.
+#----------------------------------------------------------------------
+
+ifeq ($(TARGET),win32)
+
+$(BINDIR)/$(ERLEXEC): $(OBJDIR)/erlexec.o $(OBJDIR)/win_erlexec.o $(OBJDIR)/init_file.o  $(OBJDIR)/erl.res dbg
+	$(LD) -dll $(LDFLAGS) -o $@ $(OBJDIR)/erlexec.o $(OBJDIR)/win_erlexec.o $(OBJDIR)/init_file.o $(OBJDIR)/erl.res -L$(BINDIR) -lerl_dll
+
+dbg: 
+	echo DBG
+
+$(BINDIR)/erl@EXEEXT@: $(OBJDIR)/erl.o $(OBJDIR)/init_file.o $(OBJDIR)/erl.res
+	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/erl.o $(OBJDIR)/init_file.o $(OBJDIR)/erl.res 
+
+$(BINDIR)/werl@EXEEXT@: $(OBJDIR)/werl.o $(OBJDIR)/init_file.o $(OBJDIR)/erl.res
+	$(LD) $(LDFLAGS) -o $@  $(OBJDIR)/werl.o $(OBJDIR)/init_file.o $(OBJDIR)/erl.res 
+
+$(BINDIR)/start_erl@EXEEXT@: $(OBJDIR)/start_erl.o 
+	$(LD) $(LDFLAGS) -o $@  $(OBJDIR)/start_erl.o
+
+$(BINDIR)/Install@EXEEXT@: $(OBJDIR)/Install.o  $(OBJDIR)/init_file.o 
+	$(LD) $(LDFLAGS) -o $@  $(OBJDIR)/Install.o  $(OBJDIR)/init_file.o
+
+$(BINDIR)/erlsrv@EXEEXT@: $(ERLSRV_OBJECTS)
+	$(LD) $(LDFLAGS) -MT -o $@ $(ERLSRV_OBJECTS)
+
+# The service expects to be compiled with -MT flag.
+
+$(OBJDIR)/%.o: $(WINETC)/erlsrv/%.c $(ERLSRV_HEADERS)
+	$(CC) $(CFLAGS) -MT -o $@ -c $<
+
+$(OBJDIR)/erlsrv_util.o: $(WINETC)/erlsrv/erlsrv_util.c $(ERLSRV_HEADERS) \
+$(OBJDIR)/erlsrv_logmess.h
+	$(CC) $(CFLAGS) -I$(OBJDIR) -MT -o $@ -c $<
+
+$(OBJDIR)/erlsrv_logmess.res: $(OBJDIR)/erlsrv_logmess.rc
+	$(RC) -o $(OBJDIR)/erlsrv_logmess.res -I$(OBJDIR) $(OBJDIR)/erlsrv_logmess.rc
+
+$(OBJDIR)/erlsrv_logmess.rc $(OBJDIR)/erlsrv_logmess.h: \
+$(WINETC)/erlsrv/erlsrv_logmess.mc
+	$(MC) -o $(OBJDIR) $(WINETC)/erlsrv/erlsrv_logmess.mc
+
+$(OBJDIR)/werl.o: $(WINETC)/erl.c
+	$(CC) $(CFLAGS) -DBUILD_TYPE=\"-$(TYPE)\" -DERL_RUN_SHARED_LIB=1 \
+	-DWIN32_WERL -o $@ -c $(WINETC)/erl.c
+
+$(OBJDIR)/erl.o: $(WINETC)/erl.c
+	$(CC) $(CFLAGS) -DBUILD_TYPE=\"-$(TYPE)\" -DERL_RUN_SHARED_LIB=1 \
+	-o $@ -c $(WINETC)/erl.c
+
+$(OBJDIR)/erlexec.o: $(ERLEXECDIR)/erlexec.c
+	$(CC) $(CFLAGS) -DBUILD_TYPE=\"-$(TYPE)\" -DERL_RUN_SHARED_LIB=1 \
+	-o $@ -c $(ERLEXECDIR)/erlexec.c
+
+$(OBJDIR)/win_erlexec.o: $(WINETC)/win_erlexec.c
+	$(CC) $(CFLAGS) -DBUILD_TYPE=\"-$(TYPE)\" -DERL_RUN_SHARED_LIB=1 \
+	-o $@ -c $(WINETC)/win_erlexec.c
+
+$(OBJDIR)/init_file.o: $(WINETC)/init_file.c $(WINETC)/init_file.h
+	$(CC) $(CFLAGS) -o $@ -c $(WINETC)/init_file.c
+
+$(OBJDIR)/Install.o: $(WINETC)/Install.c $(WINETC)/init_file.h
+	$(CC) $(CFLAGS) -o $@ -c $(WINETC)/Install.c
+
+$(OBJDIR)/erl.res: $(WINETC)/erl.rc $(WINETC)/erlang.ico $(WINETC)/erl_icon.ico $(WINETC)/hrl_icon.ico $(WINETC)/beam_icon.ico
+	$(RC) -o $@ -I$(WINETC) $(WINETC)/erl.rc
+
+$(OBJDIR)/start_erl.o: $(WINETC)/start_erl.c
+	$(CC) $(CFLAGS) -o $@ -c $(WINETC)/start_erl.c
+
+$(ENTRY_OBJ): $(ENTRY_SRC)
+	$(CC) $(CFLAGS) -o $@ -c $(ENTRY_SRC)
+
+Install.ini:	../$(TARGET)/Install.src ../../vsn.mk $(TARGET)/Makefile
+	sed -e 's;%I_VSN%;$(VSN);' \
+	    -e 's;%I_SYSTEM_VSN%;$(SYSTEM_VSN);' \
+          ../$(TARGET)/Install.src > Install.ini
+
+
+endif
+#---------------------------------------------------------
+# End of windows specific targets.
+#---------------------------------------------------------
 
 ifeq ($(findstring vxworks,$(TARGET)), vxworks)
 $(BINDIR)/heart: $(OBJDIR)/heart.o $(OBJDIR)/heart_config.o 
@@ -219,8 +384,9 @@ $(BINDIR)/erl_script.sam: $(VXETC)/erl_script.sam.in ../../vsn.mk
 		$(VXETC)/erl_script.sam.in > $(BINDIR)/erl_script.sam
 else
 
-$(BINDIR)/heart: $(OBJDIR)/heart.o
-	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/heart.o
+$(BINDIR)/heart@EXEEXT@: $(OBJDIR)/heart.o $(ENTRY_OBJ)
+	$(LD) $(LDFLAGS) $(ENTRY_LDFLAGS) -o $@ $(OBJDIR)/heart.o \
+		$(ENTRY_OBJ) $(WINDSOCK)
 
 $(OBJDIR)/heart.o: heart.c
 	$(CC) $(CFLAGS) -o $@ -c heart.c
@@ -274,18 +440,30 @@ ifneq ($(INSTALL_OBJS),)
 	$(INSTALL_DATA) $(INSTALL_OBJS) $(RELEASE_PATH)/erts-$(VSN)/obj
 endif
 	$(INSTALL_DIR) $(RELEASE_PATH)/erts-$(VSN)/bin
+ifneq ($(TARGET), win32)
 ifneq ($(findstring vxworks,$(TARGET)), vxworks)
 ifneq ($(findstring ose,$(TARGET)), ose)
 	$(INSTALL_SCRIPT) erl.src $(RELEASE_PATH)/erts-$(VSN)/bin
 endif
 endif
+endif
 ifneq ($(INSTALL_PROGS),)
 	$(INSTALL_PROGRAM) $(INSTALL_PROGS) $(RELEASE_PATH)/erts-$(VSN)/bin
 endif
+ifneq ($(INSTALL_TOP),)
 	$(INSTALL_SCRIPT) $(INSTALL_TOP) $(RELEASE_PATH)
+endif
+ifneq ($(INSTALL_TOP_BIN),)
+	$(INSTALL_PROGRAM) $(INSTALL_TOP_BIN) $(RELEASE_PATH)
+endif
 ifneq ($(INSTALL_MISC),)
 	$(INSTALL_DIR) $(RELEASE_PATH)/misc
 	$(INSTALL_SCRIPT) $(INSTALL_MISC) $(RELEASE_PATH)/misc
+endif
+ifneq ($(INSTALL_ERL_OSE),)
+	$(INSTALL_DIR) $(RELEASE_PATH)/build_erl_ose
+	cd $(OSEETC) && $(TAR) erl_ose_$(SYSTEM_VSN).tar $(INSTALL_ERL_OSE)
+	cd $(OSEETC) && $(INSTALL_SCRIPT) erl_ose_$(SYSTEM_VSN).tar $(RELEASE_PATH)/build_erl_ose
 endif
 ifneq ($(INSTALL_SRC),)
 	$(INSTALL_DIR) $(RELEASE_PATH)/erts-$(VSN)/src

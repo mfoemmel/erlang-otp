@@ -94,7 +94,7 @@ subscribe(ClientPid, {table, Tab, simple}) ->
     change_subscr(activate, ClientPid, {table, Tab, simple});
 subscribe(ClientPid, {table, Tab, detailed}) ->
     change_subscr(activate, ClientPid, {table, Tab, detailed});
-subscribe(ClientPid, What) ->
+subscribe(_ClientPid, What) ->
     {error, {badarg, What}}.
 
 unsubscribe(ClientPid, system) ->
@@ -105,7 +105,7 @@ unsubscribe(ClientPid, {table, Tab, simple}) ->
     change_subscr(deactivate, ClientPid, {table, Tab, simple});
 unsubscribe(ClientPid, {table, Tab, detailed}) ->
     change_subscr(deactivate, ClientPid, {table, Tab, detailed});
-unsubscribe(ClientPid, What) ->
+unsubscribe(_ClientPid, What) ->
     {error, {badarg, What}}.
 
 unsubscribe_table(Tab) ->
@@ -132,7 +132,7 @@ report_table_event(Tab, Tid, Obj, Op) ->
 report_table_event(Subscr, Tab, Tid, Obj, Op) ->
     report_table_event(Subscr, Tab, Tid, Obj, Op, undefined).
 
-report_table_event({subscribers, S1, S2}, Tab, Tid, Obj, clear_table, Old) ->
+report_table_event({subscribers, S1, S2}, Tab, Tid, _Obj, clear_table, _Old) ->
     What   = {delete, {schema, Tab}, Tid},
     deliver(S1, {mnesia_table_event, What}),
     TabDef = mnesia_schema:cs2list(?catch_val({Tab, cstruct})),
@@ -143,7 +143,7 @@ report_table_event({subscribers, S1, S2}, Tab, Tid, Obj, clear_table, Old) ->
     What4  = {write, schema,  {schema, Tab, TabDef}, [], Tid},
     deliver(S2, {mnesia_table_event, What4});
 
-report_table_event({subscribers, Subscr, []}, Tab, Tid, Obj, Op, Old) ->
+report_table_event({subscribers, Subscr, []}, Tab, Tid, Obj, Op, _Old) ->
     What = {Op, patch_record(Tab, Obj), Tid},
     deliver(Subscr, {mnesia_table_event, What});
 
@@ -177,7 +177,7 @@ what(Tab, Tid, {RecName, Key}, delete, undefined) ->
     end;
 what(Tab, Tid, Obj, delete, Old) ->
     {mnesia_table_event, {delete, Tab, Obj, Old, Tid}};
-what(Tab, Tid, Obj, delete_object, Old) ->
+what(Tab, Tid, Obj, delete_object, _Old) ->
     {mnesia_table_event, {delete, Tab, Obj, [Obj], Tid}};
 what(Tab, Tid, Obj, write, undefined) ->
     case catch mnesia_lib:db_get(Tab, element(2, Obj)) of
@@ -204,7 +204,7 @@ call(Msg) ->
 	    Res = gen_server:call(Pid, Msg, infinity),
             %% We get an exit signal if server dies
             receive
-                {'EXIT', Pid, Reason} ->
+                {'EXIT', _Pid, _Reason} ->
                     {error, {node_not_running, node()}}
             after 0 ->
                     ignore
@@ -238,11 +238,11 @@ init([Parent]) ->
 %%          {noreply, State, Timeout}      |
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%----------------------------------------------------------------------
-handle_call({change, How}, From, State) ->
+handle_call({change, How}, _From, State) ->
     Reply = do_change(How, State#state.pid_tab),
     {reply, Reply, State};
 
-handle_call(Msg, From, State) ->
+handle_call(Msg, _From, State) ->
     error("~p got unexpected call: ~p~n", [?MODULE, Msg]),
     {noreply, State}.
 
@@ -263,10 +263,10 @@ handle_cast(Msg, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 
-handle_info({'EXIT', Pid, R}, State) when Pid == State#state.supervisor ->
+handle_info({'EXIT', Pid, _R}, State) when Pid == State#state.supervisor ->
     {stop, shutdown, State};
 
-handle_info({'EXIT', Pid, Reason}, State) ->
+handle_info({'EXIT', Pid, _Reason}, State) ->
     handle_exit(Pid, State#state.pid_tab),
     {noreply, State};
 
@@ -288,7 +288,7 @@ terminate(Reason, State) ->
 %% Purpose: Upgrade process when its code is to be changed
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%%----------------------------------------------------------------------
@@ -338,7 +338,7 @@ do_change({deactivate_table, Tab}, SubscrTab) ->
 	    end,
 	    {ok, node()}
     end;
-do_change(_, SubscrTab) ->
+do_change(_, _) ->
     {error, badarg}.
 
 activate(ClientPid, What, Var, OldSubscribers, SubscrTab) ->
@@ -349,7 +349,6 @@ activate(ClientPid, What, Var, OldSubscribers, SubscrTab) ->
 		case lists:keysearch(subscribers, 1, OldSubscribers) of
 		    false -> [];
 		{value, Subs} -> 
-			ClientPids = 
 			case Subs of
 			    {subscribers, L1, L2} -> 
 				L1 ++ L2;
@@ -366,7 +365,7 @@ activate(ClientPid, What, Var, OldSubscribers, SubscrTab) ->
 		    ?ets_insert(SubscrTab, {ClientPid, What}),
 		    add_subscr(Var, What, ClientPid),
 		    {ok, node()};
-		{'EXIT', Reason} ->
+		{'EXIT', _Reason} ->
 		    {error, {no_exists, ClientPid}}
 	    end;
 	true ->
@@ -424,7 +423,7 @@ deactivate(ClientPid, What, Var, SubscrTab) ->
     del_subscr(Var, What, ClientPid),
     {ok, node()}.
 
-del_subscr(subscribers, What, Pid) ->
+del_subscr(subscribers, _What, Pid) ->
     mnesia_lib:del(subscribers, Pid);
 del_subscr({Tab, commit_work}, What, Pid) ->
     Commit = mnesia_lib:val({Tab, commit_work}),
@@ -472,7 +471,7 @@ do_handle_exit([{ClientPid, What} | Tail]) ->
     case What of
 	system ->
 	    del_subscr(subscribers, What, ClientPid);
-	{_, Tab, Level} ->
+	{_, Tab, _Level} ->
 	    del_subscr({Tab, commit_work}, What, ClientPid)    
     end,
     do_handle_exit(Tail);
@@ -483,7 +482,7 @@ prepare_stop(SubscrTab) ->
     mnesia_lib:report_system_event({mnesia_down, node()}),
     do_prepare_stop(?ets_first(SubscrTab), SubscrTab).
 
-do_prepare_stop('$end_of_table', SubscrTab) ->
+do_prepare_stop('$end_of_table', _SubscrTab) ->
     ok;
 do_prepare_stop(ClientPid, SubscrTab) ->
     Next = ?ets_next(SubscrTab, ClientPid),

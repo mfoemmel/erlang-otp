@@ -11,7 +11,11 @@ else
   AC_CONFIG_AUX_DIRS($erl_top/erts/autoconf)
 fi
 
-AC_CANONICAL_HOST
+if test "X$host" != "Xfree_source" -a "X$host" != "Xwin32"; then
+    AC_CANONICAL_HOST
+else
+    host_os=win32
+fi
 
 
 dnl ----------------------------------------------------------------------
@@ -67,29 +71,36 @@ dnl
 dnl make sure we find config.h
 CFLAGS="$CFLAGS -I${ERL_TOP}/erts/$host $OTP_EXTRA_FLAGS"
 
-case $host_os in
-  darwin*)
+if test "X$host" = "Xwin32"; then
+  DED_CFLAGS="$CFLAGS"
+else
+  case $host_os in
+    darwin*)
 	CFLAGS="$CFLAGS -no-cpp-precomp"
 	;;
-esac
+  esac
 
-if test "x$GCC" = xyes; then
+  if test "x$GCC" = xyes; then
 	DED_CFLAGS="$CFLAGS -fPIC"
-else
+  else
 	DED_CFLAGS="$CFLAGS"
+  fi
 fi
 
 AC_SUBST(DED_CFLAGS)
 
 
-AC_CHECK_PROG(DED_LD, ld, ld, no_ld)
-if test "$PERL" = no_perl; then
+AC_CHECK_PROGS(DED_LD, [ld.sh ld], no_ld)
+if test "$DED_LD" = no_ld; then
   AC_MSG_ERROR([ld is required to build the flex scanner!])
 fi
 
 
 AC_MSG_CHECKING(for linker flags for loadable drivers)
 case $host_os in
+	win32)
+		DED_LDFLAGS="-dll"
+	;;
 	solaris2*|sysv4*)
 		DED_LDFLAGS="-G"
 	;;
@@ -122,7 +133,13 @@ fi
 
 
 dnl This is the os flavour, should be unix, vxworks or win32
-ERLANG_OSTYPE=unix         AC_SUBST(ERLANG_OSTYPE)
+if test "X$host" = "Xwin32"; then
+	ERLANG_OSTYPE=win32
+else
+	ERLANG_OSTYPE=unix
+fi
+
+AC_SUBST(ERLANG_OSTYPE)
 
 
 AC_OUTPUT(src/flex/$host/Makefile:src/flex/Makefile.in)

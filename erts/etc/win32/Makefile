@@ -1,4 +1,4 @@
-TARGET := target_must_be_set
+include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 include ../../vsn.mk
@@ -26,23 +26,22 @@ INSTALL_PROGS = \
 	$(BINDIR)/werl.exe \
 	$(BINDIR)/heart.exe \
 	$(BINDIR)/erlc.exe \
-	$(BINDIR)/erl_stub16.exe \
+#	$(BINDIR)/erl_stub16.exe \
 	$(BINDIR)/erlsrv.exe \
-	$(BINDIR)/start_erl.exe \
-	$(BINDIR)/$(EMULATOR)$(EMULATOR_NUMBER)$(TYPEMARKER).dll
+	$(BINDIR)/start_erl.exe 
 
 INSTALL_SRC = ./start_erl.c ./Nmakefile.start_erl
 
-INSTALL_WS2 = 	ws2setup.exe
-
-INSTALL_INCLUDE = $(ERL_TOP)/erts/emulator/obsolete/driver.h \
+INSTALL_INCLUDE = \
    $(RUNTIME)/erl_driver.h $(SYS)/driver_int.h 
 INSTALL_LIBS =  $(BINDIR)/erl_dll.lib
 
 INSTALL_README  = \
 	README
 
-opt debug all:
+INSTALL_ICONS = ./beam_icon.ico  ./erl_icon.ico  ./hrl_icon.ico
+
+opt debug all clean depend:
 	@echo Nothing to do for "'"$@"'" on $(TARGET)
 
 # ----------------------------------------------------
@@ -55,12 +54,12 @@ release_spec:
 	$(INSTALL_DIR) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(ROOTSYSDIR)/usr/include
 	$(INSTALL_DIR) $(ROOTSYSDIR)/usr/lib
+	$(INSTALL_DIR) $(ROOTSYSDIR)/usr/lib/icons
 	$(INSTALL_PROGRAM) $(INSTALL_PROGS) $(RELSYSDIR)/bin
 	$(INSTALL_DATA) $(INSTALL_NOTES) $(RELSYSDIR)
 	$(INSTALL_DATA) $(INSTALL_SRC) $(RELSYSDIR)/src
-	$(INSTALL_PROGRAM) $(INSTALL_WS2) $(ROOTSYSDIR)
 	$(INSTALL_DATA) $(INSTALL_INCLUDE) $(ROOTSYSDIR)/usr/include
-	$(INSTALL_DATA) $(INSTALL_LIBS) $(ROOTSYSDIR)/usr/lib
+	$(INSTALL_DATA) $(INSTALL_ICONS) $(ROOTSYSDIR)/usr/lib/icons
 
 release_docs release_docs_spec docs:
 

@@ -33,8 +33,8 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([code/4, decode/4, string_code/1, string_decode/1, create/5, 
-	 create/6, create/7, get_key/1, get_key/2, get_typeID/1, 
+-export([code/4, decode/4, string_code/1, string_decode/1,
+	 get_key/1, get_key/2, get_typeID/1, create/7,
 	 get_objkey/1, check_nil/1, get_privfield/1, set_privfield/2, 
 	 get_orbfield/1, set_orbfield/2, 
 	 get_flagfield/1, set_flagfield/2, get_version/1,
@@ -80,65 +80,174 @@ get_version(_) ->
 %% Extended IDL data types                  yes  yes
 %% Bi-Directional GIOP Features                  yes
 %% Value types and Abstract Interfaces           yes
+%%
+%% CSIv2:
+%% A target that supports unprotected IIOP invocations shall specify in the 
+%% corresponding TAG_INTERNET_IOP profile a nonzero port number at which the 
+%% target will accept unprotected invocations.9 A target that supports only
+%% protected IIOP invocations shall specify a port number of 0 (zero) in the
+%% corresponding TAG_INTERNET_IOP profile.
 %%-----------------------------------------------------------------
-create(Version, TypeID, Host, IIOP_port, Objkey) ->
-    create(Version, TypeID, Host, IIOP_port, Objkey, []).
-create(Version, TypeID, Host, IIOP_port, Objkey, MC) ->
-    create(Version, TypeID, Host, IIOP_port, Objkey, MC, 0).
-create({1, 0}, TypeID, Host, IIOP_port, Objkey, MC, _) ->
+create({1, 0}, TypeID, Host, IIOP_port, Objkey, _, _) ->
     V=#'IIOP_Version'{major=1,
 		      minor=0},
     PB=#'IIOP_ProfileBody_1_0'{iiop_version=V,
-			   host=Host,
-			   port=IIOP_port,
-			   object_key=Objkey},
+			       host=Host,
+			       port=IIOP_port,
+			       object_key=Objkey},
     #'IOP_IOR'{type_id=TypeID, profiles=[#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
 							      profile_data=PB}]};
-create({1, 1}, TypeID, Host, IIOP_port, Objkey, MC, Flags) ->
+create({1, 1}, TypeID, Host, IIOP_port, Objkey, MC1, Flags) ->
     V=#'IIOP_Version'{major=1,
 		      minor=1},
     SecTest = ?ORB_FLAG_TEST(Flags, ?ORB_NO_SECURITY),
-    Components = case orber:iiop_ssl_port() of
-		     -1 ->
-			 MC;
-		     SSLPort when SecTest == true ->
-			 MC;
-		     SSLPort  ->
-			 [#'IOP_TaggedComponent'
-			  {tag=?TAG_SSL_SEC_TRANS, 
-			   component_data=#'SSLIOP_SSL'{target_supports = 2, 
-							target_requires = 2, 
-							port = SSLPort}}|MC]
-		   end,
-    PB=#'IIOP_ProfileBody_1_1'{iiop_version=V,
-			       host=Host,
-			       port=IIOP_port,
-			       object_key=Objkey,
-			       components=Components},
+    EnvFlags = orber:get_flags(),
+    MC = case ?ORB_FLAG_TEST(EnvFlags, ?ORB_ENV_EXCLUDE_CODESET_COMPONENT) of
+	     true ->
+		 MC1;
+	     false ->
+		 [#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+					 component_data=?DEFAULT_CODESETS}|MC1]
+	 end,
+%    UseCSIv2 = ?ORB_FLAG_TEST(EnvFlags, ?ORB_ENV_USE_CSIV2),
+    PB = case orber:iiop_ssl_port() of
+	     -1 ->
+		 #'IIOP_ProfileBody_1_1'{iiop_version=V,
+					 host=Host,
+					 port=IIOP_port,
+					 object_key=Objkey,
+					 components= MC};
+	     SSLPort when SecTest == true ->
+		 #'IIOP_ProfileBody_1_1'{iiop_version=V,
+					 host=Host,
+					 port=IIOP_port,
+					 object_key=Objkey,
+					 components= MC};
+%	     SSLPort when UseCSIv2 == true ->
+%		 #'IIOP_ProfileBody_1_1'
+%                  {iiop_version=V,
+%		   host=Host,
+%		   port=0,
+%		   object_key=Objkey,
+%		   components= [#'IOP_TaggedComponent'
+%				{tag = ?TAG_CSI_SEC_MECH_LIST, 
+%				 component_data = 
+%				 #'CSIIOP_CompoundSecMechList'
+%				 {stateful = false,
+%				  mechanism_list = 
+%				  [#'CSIIOP_CompoundSecMech'
+%				   {target_requires = 6, 
+%				    transport_mech = 
+%				    #'IOP_TaggedComponent'
+%				    {tag=?TAG_TLS_SEC_TRANS,
+%				     component_data=#'CSIIOP_TLS_SEC_TRANS'
+%				     {target_supports = 7, 
+%				      target_requires = 8, 
+%				      addresses = 
+%				      [#'CSIIOP_TransportAddress'{host_name = Host, 
+%								  port = SSLPort}]}},
+%				    as_context_mech = 
+%				    #'CSIIOP_AS_ContextSec'
+%				    {target_supports = 9, target_requires = 10,
+%				     client_authentication_mech = [1, 255], 
+%				     target_name = [2,255]}, 
+%				    sas_context_mech = 
+%				    #'CSIIOP_SAS_ContextSec'
+%				    {target_supports = 11, target_requires = 12,
+%				     privilege_authorities = 
+%				     [#'CSIIOP_ServiceConfiguration'
+%				      {syntax = ?ULONGMAX, 
+%				       name = [3,255]}], 
+%				     supported_naming_mechanisms = [[4,255],[5,255]],
+%				     supported_identity_types = ?ULONGMAX}}]}}|MC]};
+	     SSLPort ->
+		 #'IIOP_ProfileBody_1_1'{iiop_version=V,
+					 host=Host,
+					 port=IIOP_port,
+					 object_key=Objkey,
+					 components= [#'IOP_TaggedComponent'
+						      {tag=?TAG_SSL_SEC_TRANS, 
+						       component_data=#'SSLIOP_SSL'{target_supports = 2, 
+										    target_requires = 2, 
+										    port = SSLPort}}|MC]}
+	 end,
     #'IOP_IOR'{type_id=TypeID, 
 	       profiles=[#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
 					      profile_data=PB}]};
-create({1, 2}, TypeID, Host, IIOP_port, Objkey, MC, Flags) ->
+create({1, 2}, TypeID, Host, IIOP_port, Objkey, MC1, Flags) ->
     V=#'IIOP_Version'{major=1,
 		      minor=2},
     SecTest = ?ORB_FLAG_TEST(Flags, ?ORB_NO_SECURITY),
-    Components = case orber:iiop_ssl_port() of
-		     -1 ->
-			 MC;
-		     SSLPort when SecTest == true ->
-			 MC;
-		     SSLPort ->
-			 [#'IOP_TaggedComponent'
-			  {tag=?TAG_SSL_SEC_TRANS, 
-			   component_data=#'SSLIOP_SSL'{target_supports = 2, 
-							target_requires = 2, 
-							port = SSLPort}}|MC]
-		   end,
-    PB=#'IIOP_ProfileBody_1_1'{iiop_version=V,
-			       host=Host,
-			       port=IIOP_port,
-			       object_key=Objkey,
-			       components=Components},
+    EnvFlags = orber:get_flags(),
+    MC = case ?ORB_FLAG_TEST(EnvFlags, ?ORB_ENV_EXCLUDE_CODESET_COMPONENT) of
+	     true ->
+		 MC1;
+	     false ->
+		 [#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+					 component_data=?DEFAULT_CODESETS}|MC1]
+	 end,
+%    UseCSIv2 = ?ORB_FLAG_TEST(EnvFlags, ?ORB_ENV_USE_CSIV2),
+    PB = case orber:iiop_ssl_port() of
+	     -1 ->
+		 #'IIOP_ProfileBody_1_1'{iiop_version=V,
+					 host=Host,
+					 port=IIOP_port,
+					 object_key=Objkey,
+					 components= MC};
+	     SSLPort when SecTest == true ->
+		 #'IIOP_ProfileBody_1_1'{iiop_version=V,
+					 host=Host,
+					 port=IIOP_port,
+					 object_key=Objkey,
+					 components= MC};
+%	     SSLPort when UseCSIv2 == true ->
+%		 #'IIOP_ProfileBody_1_1'
+%                  {iiop_version=V,
+%		   host=Host,
+%		   port=0,
+%		   object_key=Objkey,
+%		   components= [#'IOP_TaggedComponent'
+%				{tag = ?TAG_CSI_SEC_MECH_LIST, 
+%				 component_data = 
+%				 #'CSIIOP_CompoundSecMechList'
+%				 {stateful = false,
+%				  mechanism_list = 
+%				  [#'CSIIOP_CompoundSecMech'
+%				   {target_requires = 6, 
+%				    transport_mech = 
+%				    #'IOP_TaggedComponent'
+%				    {tag=?TAG_TLS_SEC_TRANS,
+%				     component_data=#'CSIIOP_TLS_SEC_TRANS'
+%				     {target_supports = 7, 
+%				      target_requires = 8, 
+%				      addresses = 
+%				      [#'CSIIOP_TransportAddress'{host_name = Host, 
+%								  port = SSLPort}]}},
+%				    as_context_mech = 
+%				    #'CSIIOP_AS_ContextSec'
+%				    {target_supports = 9, target_requires = 10,
+%				     client_authentication_mech = [1, 255], 
+%				     target_name = [2,255]}, 
+%				    sas_context_mech = 
+%				    #'CSIIOP_SAS_ContextSec'
+%				    {target_supports = 11, target_requires = 12,
+%				     privilege_authorities = 
+%				     [#'CSIIOP_ServiceConfiguration'
+%				      {syntax = ?ULONGMAX, 
+%				       name = [3,255]}], 
+%				     supported_naming_mechanisms = [[4,255],[5,255]],
+%				     supported_identity_types = ?ULONGMAX}}]}}|MC]};
+	     SSLPort ->
+		 #'IIOP_ProfileBody_1_1'{iiop_version=V,
+					 host=Host,
+					 port=IIOP_port,
+					 object_key=Objkey,
+					 components= [#'IOP_TaggedComponent'
+						      {tag=?TAG_SSL_SEC_TRANS, 
+						       component_data=#'SSLIOP_SSL'{target_supports = 2, 
+										    target_requires = 2, 
+										    port = SSLPort}}|MC]}
+	 end,
     #'IOP_IOR'{type_id=TypeID, 
 	       profiles=[#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
 					      profile_data=PB}]};
@@ -193,7 +302,7 @@ create_external(Version, TypeID, Host, IIOP_port, Objkey, MC) ->
 %% Func: get_key/1
 %%-----------------------------------------------------------------
 get_key(#'IOP_IOR'{profiles=P})  ->
-    get_key_1(P, false, 0, undefined);
+    get_key_1(P, false, 0, undefined, #host_data{});
 get_key({Module, Type, Key, _UserDef, OrberDef, Flags}) ->
     if
 	binary(Key) ->
@@ -205,95 +314,214 @@ get_key({Module, Type, Key, _UserDef, OrberDef, Flags}) ->
     end.
 
 get_key(#'IOP_IOR'{profiles=P}, Exclude)  ->
-    get_key_1(P, true, 0, Exclude).
+    get_key_1(P, true, 0, Exclude, #host_data{}).
 
-get_key_1([], false, _, _)  ->
+get_key_1([], false, _, _, _)  ->
     orber:dbg("[~p] iop_ior:get_key_1([]); bad object reference, profile not found.", 
 			    [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
-get_key_1([], true, _, _)  ->
+get_key_1([], true, _, _, _)  ->
     undefined;
-get_key_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB} = TP | P], 
-	  Retry, Counter, Exclude) ->
-    [_, Version, Host, IIOP_port, ObjectKey | Rest] = tuple_to_list(PB),
-    case ObjectKey of
-	{Module, Type, Key, _UserDef, OrberDef, Flags} ->
-	    if
-		binary(Key) ->
-		    {'internal', Key, OrberDef, Flags, Module};
-		Type == pseudo ->
-		    {'internal_registered', {pseudo, Key}, OrberDef, Flags, Module};
-		atom(Key) ->
-		    {'internal_registered', Key, OrberDef, Flags, Module}
-	    end;
-	OK when Version#'IIOP_Version'.minor > 0, Exclude == undefined ->
-	    {'external', {Host, IIOP_port, OK, Counter, TP, 
-			  check_component_data(Rest, Version)}};
-	OK when Version#'IIOP_Version'.minor > 0 ->
-	    case lists:member(Counter, Exclude) of
-		true ->
-		    get_key_1(P, Retry, Counter+1, Exclude);
-		false ->
-		    {'external', {Host, IIOP_port, OK, Counter, TP, 
-				  check_component_data(Rest, Version)}}
-	    end;
-	OK when Exclude == undefined ->
+%%--------- Local IIOP-1.0 Profile ---------
+get_key_1([#'IOP_TaggedProfile'
+	   {tag=?TAG_INTERNET_IOP, 
+	    profile_data=#'IIOP_ProfileBody_1_0'
+	    {object_key={Module, Type, Key, _UserDef, OrberDef, Flags}}}|_], 
+	  Retry, Counter, Exclude, HD) ->
+    if
+	binary(Key) ->
+	    {'internal', Key, OrberDef, Flags, Module};
+	Type == pseudo ->
+	    {'internal_registered', {pseudo, Key}, OrberDef, Flags, Module};
+	atom(Key) ->
+	    {'internal_registered', Key, OrberDef, Flags, Module}
+    end;
+%%--------- Local IIOP-1.1 & IIOP-1.2 Profiles ---------
+get_key_1([#'IOP_TaggedProfile'
+	   {tag=?TAG_INTERNET_IOP, 
+	    profile_data=#'IIOP_ProfileBody_1_1'
+	    {object_key={Module, Type, Key, _UserDef, OrberDef, Flags}}}|_], 
+	  Retry, Counter, Exclude, HD) ->
+    if
+	binary(Key) ->
+	    {'internal', Key, OrberDef, Flags, Module};
+	Type == pseudo ->
+	    {'internal_registered', {pseudo, Key}, OrberDef, Flags, Module};
+	atom(Key) ->
+	    {'internal_registered', Key, OrberDef, Flags, Module}
+    end;
+%%--------- External IIOP-1.0 Profile ---------
+get_key_1([#'IOP_TaggedProfile'
+	   {tag=?TAG_INTERNET_IOP, 
+	    profile_data=#'IIOP_ProfileBody_1_0'
+	    {host = Host, port = Port, object_key= ObjectKey}} = TP|P], 
+	  Retry, Counter, Exclude, HD) when Exclude == undefined ->
 	    %% This case is "necessary" if an ORB adds several IIOP-profiles since,
 	    %% for example, wchar isn't supported for 1.0.
-	    case get_key_1(P, true, Counter+1, Exclude) of
+    case get_key_1(P, true, Counter+1, Exclude, HD) of
+	undefined ->
+	    %% We now it's IIOP-1.0 and it doesn't contain any
+	    %% components. Hence, no need to check for it.
+	    {'external', {Host, Port, ObjectKey, Counter, TP, 
+			  HD#host_data{version = {1,0}}}};
+	LaterVersion ->
+	    LaterVersion
+    end;
+get_key_1([#'IOP_TaggedProfile'
+	   {tag=?TAG_INTERNET_IOP, 
+	    profile_data=#'IIOP_ProfileBody_1_0'
+	    {host = Host, port = Port, object_key= ObjectKey}} = TP|P], 
+	  Retry, Counter, Exclude, HD) ->
+    case lists:member(Counter, Exclude) of
+	true ->
+	    get_key_1(P, Retry, Counter+1, Exclude, HD);
+	false ->
+	    %% This case is "necessary" if an ORB adds several IIOP-profiles since,
+	    %% for example, wchar isn't supported for 1.0.
+	    case get_key_1(P, true, Counter+1, Exclude, HD) of
 		undefined ->
-		    %% We now it's IIOP-1.0 and it doesn't contain any
-		    %% components. Hence, no need to check for it.
-		    {'external', {Host, IIOP_port, OK, Counter, TP, 
-				  check_component_data(Rest, Version)}};
+		    {'external', {Host, Port, ObjectKey, Counter, TP, 
+				  HD#host_data{version = {1,0}}}};
 		LaterVersion ->
 		    LaterVersion
-	    end;
-	OK ->
-	    case lists:member(Counter, Exclude) of
-		true ->
-		    get_key_1(P, Retry, Counter+1, Exclude);
-		false ->
-		    %% This case is "necessary" if an ORB adds several IIOP-profiles since,
-		    %% for example, wchar isn't supported for 1.0.
-		    case get_key_1(P, true, Counter+1, Exclude) of
-			undefined ->
-			    {'external', {Host, IIOP_port, OK, Counter, TP, 
-					  check_component_data(Rest, Version)}};
-			LaterVersion ->
-			    LaterVersion
-		    end
 	    end
     end;
-get_key_1([_ | P], Retry, Counter, Exclude)  ->
-    get_key_1(P, Retry, Counter+1, Exclude).
+%%--------- External IIOP-1.1 & IIOP-1.2 Profiles ---------
+get_key_1([#'IOP_TaggedProfile'
+	   {tag=?TAG_INTERNET_IOP, 
+	    profile_data=#'IIOP_ProfileBody_1_1'
+	    {iiop_version = #'IIOP_Version'{major=Major, minor=Minor}, 
+	     host = Host, port = Port, object_key= ObjectKey, 
+	     components = Components}} = TP|P], 
+	      Retry, Counter, Exclude, HD) when Exclude == undefined ->
+    case check_components(Components, Port, HD#host_data{version = {Major,Minor}}) of
+	#host_data{csiv2_mech = undefined} when Port == 0 ->
+	    get_key_1(P, Retry, Counter+1, Exclude, HD);
+	NewHD ->
+	    {'external', {Host, Port, ObjectKey, Counter, TP, NewHD}}
+    end;
+get_key_1([#'IOP_TaggedProfile'
+	   {tag=?TAG_INTERNET_IOP, 
+	    profile_data=#'IIOP_ProfileBody_1_1'
+	    {iiop_version = #'IIOP_Version'{major=Major, minor=Minor}, 
+	     host = Host, port = Port, object_key= ObjectKey, 
+	     components = Components}} = TP|P], 
+	  Retry, Counter, Exclude, HD) ->
+    case lists:member(Counter, Exclude) of
+	true ->
+	    get_key_1(P, Retry, Counter+1, Exclude, HD);
+	false ->
+	    case check_components(Components, Port,
+				  HD#host_data{version = {Major,Minor}}) of
+		#host_data{csiv2_mech = undefined} when Port == 0 ->
+		    get_key_1(P, Retry, Counter+1, Exclude, HD);
+		NewHD ->
+		    {'external', {Host, Port, ObjectKey, Counter, TP, NewHD}}
+	    end
+    end;
+get_key_1([_ | P], Retry, Counter, Exclude, HD) ->
+    get_key_1(P, Retry, Counter+1, Exclude, HD).
 
-check_component_data([], Version) ->
-    #host_data{version = {Version#'IIOP_Version'.major,
-			  Version#'IIOP_Version'.minor}};
-check_component_data([CompData], Version) ->
-    check_component_data_2(CompData, #host_data{version = {Version#'IIOP_Version'.major,
-							   Version#'IIOP_Version'.minor}}).
-
-check_component_data_2([], HostData) ->
+check_components([], _, HostData) ->
     HostData;
-check_component_data_2([#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
-					       component_data=SSLStruct}|Rest], 
-		       HostData) when record(SSLStruct, 'SSLIOP_SSL') ->
-    check_component_data_2(Rest, HostData#host_data{protocol = ssl,
+check_components([#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
+					 component_data=SSLStruct}|Rest], 
+		       Port, HostData) when record(SSLStruct, 'SSLIOP_SSL') ->
+    check_components(Rest, Port, HostData#host_data{protocol = ssl,
 						    ssl_data = SSLStruct});
-check_component_data_2([#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
-					       component_data=#'CONV_FRAME_CodeSetComponentInfo'
-					       {'ForCharData' = Char,
-						'ForWcharData' = Wchar}}|Rest], 
-		       HostData) ->
-
+%% CSIv2 Components
+%check_components([#'IOP_TaggedComponent'{tag=?TAG_CSI_SEC_MECH_LIST, 
+%					 component_data=Data}|Rest], 
+%		 Port, HostData) when record(Data, 'CSIIOP_CompoundSecMechList') ->
+%    case check_sec_mech(Data#'CSIIOP_CompoundSecMechList'.mechanism_list, Port) of
+%	undefined ->
+%	    check_components(Rest, Port, HostData);
+%	{ok, Protocol, Mech, Addresses} ->
+%	    check_components(Rest, Port, 
+%			     HostData#host_data
+%			     {protocol = Protocol,
+%			      csiv2_mech = Mech,
+%			      csiv2_statefull = Data#'CSIIOP_CompoundSecMechList'.stateful,
+%			      csiv2_addresses = Addresses});
+%	{ok, Mech} ->
+%	    check_components(Rest, Port, 
+%			     HostData#host_data
+%			     {csiv2_mech = Mech,
+%			      csiv2_statefull = Data#'CSIIOP_CompoundSecMechList'.stateful})
+%    end;
+%% FT Components
+check_components([#'IOP_TaggedComponent'
+		  {tag=?TAG_FT_HEARTBEAT_ENABLED, 
+		   component_data= 
+		   #'FT_TagFTHeartbeatEnabledTaggedComponent'
+		   {heartbeat_enabled = Boolean}}|Rest], 
+		 Port, HostData) ->
+    check_components(Rest, Port, HostData#host_data{ft_heartbeat = Boolean});
+check_components([#'IOP_TaggedComponent'
+		  {tag=?TAG_FT_PRIMARY,
+		   component_data=
+		   #'FT_TagFTPrimaryTaggedComponent'{primary = Boolean}}|Rest], 
+		 Port, HostData) ->
+    check_components(Rest, Port, HostData#host_data{ft_primary = Boolean});
+check_components([#'IOP_TaggedComponent'{tag=?TAG_FT_GROUP, 
+					 component_data=Data}|Rest], 
+		 Port, HostData) when record(Data, 'FT_TagFTGroupTaggedComponent') ->
+    check_components(Rest, Port, HostData#host_data{ft_group = Data});
+%% CodeSets Component
+check_components([#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+					 component_data=#'CONV_FRAME_CodeSetComponentInfo'
+					 {'ForCharData' = Char,
+					  'ForWcharData' = Wchar}}|Rest], 
+		 Port, HostData) ->
     CharData = check_char_codeset(Char),
     WcharData = check_wchar_codeset(Wchar),
-    check_component_data_2(Rest, HostData#host_data{charset = CharData,
+    check_components(Rest, Port, HostData#host_data{charset = CharData,
 						    wcharset = WcharData});
-check_component_data_2([_ | Rest], HostData) ->
-    check_component_data_2(Rest, HostData).
+%% Not used
+check_components([_ | Rest], Port, HostData) ->
+    check_components(Rest, Port, HostData).
+
+check_sec_mech([], _) ->
+    undefined;
+%% Not supported yet.
+%check_sec_mech([#'CSIIOP_CompoundSecMech'
+%		{target_requires = TR,
+%		 transport_mech=
+%		 #'IOP_TaggedComponent'{tag=?TAG_SECIOP_SEC_TRANS}} = Mech|_], 
+%		Port) ->
+%    {ok, seciop, Mech};
+check_sec_mech([#'CSIIOP_CompoundSecMech'
+		{target_requires = TR,
+		 transport_mech= 
+		 #'IOP_TaggedComponent'{tag = ?TAG_TLS_SEC_TRANS,
+					component_data = CD}} = Mech|_], Port)
+  when TR =< ?CSIv2_MAX_TARGET_REQUIRES ->
+    {ok, ssl, Mech, extract_host_port(CD#'CSIIOP_TLS_SEC_TRANS'.addresses, [])};
+%% The TAG_NULL_TAG component shall be used in the 'transport_mech' field to
+%% indicate that a mechanism does not implement security functionality at the
+%% transport layer.
+%% If the port field in TAG_INTERNET_IOP equals 0 we must find a TAG_TLS_SEC_TRANS
+%% or TAG_SECIOP_SEC_TRANS mechanism.
+check_sec_mech([#'CSIIOP_CompoundSecMech'
+		{transport_mech= 
+		 #'IOP_TaggedComponent'{tag = ?TAG_NULL_TAG}}|Rest], 0) ->
+    check_sec_mech(Rest, 0);
+check_sec_mech([#'CSIIOP_CompoundSecMech'
+		{target_requires = TR,
+		 transport_mech= 
+		 #'IOP_TaggedComponent'{tag = ?TAG_NULL_TAG}} = Mech|_], Port)
+  when TR =< ?CSIv2_MAX_TARGET_REQUIRES ->
+    {ok, Mech};
+%% Unrecognized or the requires more than we support.
+check_sec_mech([_ | Rest], Port) ->
+    check_sec_mech(Rest, Port).
+
+extract_host_port([], Acc) ->
+    Acc;
+extract_host_port([#'CSIIOP_TransportAddress'{host_name = Host, 
+					      port = Port}|Rest], Acc) ->
+    extract_host_port(Rest, [{Host, Port}|Acc]).
+
 
 check_char_codeset(#'CONV_FRAME_CodeSetComponent'{native_code_set=?ISO8859_1_ID}) ->
     ?ISO8859_1_ID;
@@ -349,18 +577,9 @@ IIOP-1.1 objects may not contain ALTERNATE_IIOP_ADDRESS components.",
 	      [?LINE, Component], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status = ?COMPLETED_NO});
 add_component_local({Id, Type, Key, UserDef, OrberDef, Flags}, Component, Version) ->
-    case orber:exclude_codeset_component() of
-	true ->
-	    create(Version, Id:typeID(), orber:host(), orber:iiop_port(),
-		   {Id, Type, Key, UserDef, OrberDef, Flags}, 
-		   [Component], Flags);
-	_ ->
-	    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
-						 component_data=?DEFAULT_CODESETS},
-	    create(Version, Id:typeID(), orber:host(), orber:iiop_port(),
-		   {Id, Type, Key, UserDef, OrberDef, Flags}, 
-		   [Component, CodeSetComp], Flags)
-    end.
+    create(Version, Id:typeID(), orber:host(), orber:iiop_port(),
+	   {Id, Type, Key, UserDef, OrberDef, Flags}, 
+	   [Component], Flags).
 
 add_component_ior(#'IOP_IOR'{profiles=P} = IOR, Component) ->
     case add_component_ior_helper(P, Component, false, []) of
@@ -697,9 +916,9 @@ print_profiles([#'IOP_TaggedProfile'
 							host=Host, port=Port,
 							object_key=Objkey}}|T], Acc) ->
     Profile = io_lib:format("~n------------------ IIOP Profile -----------
-Version..........: ~p.~p
-Host.............: ~s
-Port.............: ~p~n", [Major, Minor, Host, Port]),
+Version.............: ~p.~p
+Host................: ~s
+Port................: ~p~n", [Major, Minor, Host, Port]),
     ObjKeyStr = print_objkey(Objkey),
     print_profiles(T, [Profile, ObjKeyStr | Acc]);
 print_profiles([#'IOP_TaggedProfile'
@@ -712,12 +931,12 @@ print_profiles([#'IOP_TaggedProfile'
 							object_key=Objkey,
 							components=Components}}|T], Acc) ->
     Profile = io_lib:format("~n------------------ IIOP Profile -----------
-Version..........: ~p.~p
-Host.............: ~s
-Port.............: ~p~n", [Major, Minor, Host, Port]),
+Version.............: ~p.~p
+Host................: ~s
+Port................: ~p~n", [Major, Minor, Host, Port]),
     ComponentsStr = print_components(Components, []),
     ObjKeyStr = print_objkey(Objkey),
-    print_profiles(T, [Profile, ComponentsStr, ObjKeyStr |Acc]);
+    print_profiles(T, [Profile, ObjKeyStr, ComponentsStr |Acc]);
 print_profiles([#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS,
 				     profile_data = Components}|T], Acc) ->
     MComp = io_lib:format("~n------------------ Multiple Components ----~n", []),
@@ -729,23 +948,26 @@ print_profiles([#'IOP_TaggedProfile'{tag=?TAG_SCCP_IOP,
     print_profiles(T, [SCCP | Acc]);
 print_profiles([#'IOP_TaggedProfile'{tag=Tag,
 				     profile_data = Data}|T], Acc) ->
-    TAG = io_lib:format("~n------------------ TAG ~p -----------------~n", [Tag]),
+    TAG = io_lib:format("~n------------------ TAG ~p -----------------~n
+Data................: ~p~n", [Tag, Data]),
     print_profiles(T, [TAG|Acc]).
 
 print_components([], Data) -> lists:flatten(lists:reverse(Data));
 print_components([#'IOP_TaggedComponent'{tag=?TAG_ORB_TYPE, 
 					 component_data=ORB}|T], Data) ->
-    OType = io_lib:format("ORB Type.........: ~p~n", [ORB]),
+    OType = io_lib:format("   TAG_ORB_TYPE
+ORB Type............: ~p~n", [ORB]),
     print_components(T, [OType | Data]);
 print_components([#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
 					 component_data=
 					 #'CONV_FRAME_CodeSetComponentInfo'
 					 {'ForCharData' = Char,
 					  'ForWcharData' = Wchar}}|T], Data) ->
-    CharSet = io_lib:format("Native Char......: ~p
-Char Conversion..: ~p
-Native Wchar.....: ~p
-Wchar Conversion.: ~p~n", 
+    CharSet = io_lib:format("   TAG_CODE_SETS
+Native Char.........: ~p
+Char Conversion.....: ~p
+Native Wchar........: ~p
+Wchar Conversion....: ~p~n", 
 	      [Char#'CONV_FRAME_CodeSetComponent'.native_code_set,
 	       Char#'CONV_FRAME_CodeSetComponent'.conversion_code_sets,
 	       Wchar#'CONV_FRAME_CodeSetComponent'.native_code_set,
@@ -754,28 +976,89 @@ Wchar Conversion.: ~p~n",
 print_components([#'IOP_TaggedComponent'{tag=?TAG_ALTERNATE_IIOP_ADDRESS, 
 					 component_data=#'ALTERNATE_IIOP_ADDRESS'
 					 {'HostID'=Host, 'Port'=Port}}|T], Data) ->
-    AltAddr = io_lib:format("Alternate Address: ~s:~p~n", [Host, Port]),
+    AltAddr = io_lib:format("   TAG_ALTERNATE_IIOP_ADDRESS
+Alternate Address...: ~s:~p~n", [Host, Port]),
     print_components(T, [AltAddr | Data]);
 print_components([#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
 					 component_data=#'SSLIOP_SSL'
 					 {target_supports=Supports, 
 					  target_requires=Requires,
 					  port=Port}}|T], Data) ->
-    SSL = io_lib:format("SSL Port.........: ~p
-SSL Requires.....: ~p
-SSL Supports.....: ~p~n", [Port, Requires, Supports]),
+    SSL = io_lib:format("   TAG_SSL_SEC_TRANS
+SSL Port............: ~p
+SSL Requires........: ~p
+SSL Supports........: ~p~n", [Port, Requires, Supports]),
     print_components(T, [SSL | Data]);
+%% Fault Tolerant Components
+print_components([#'IOP_TaggedComponent'{tag=?TAG_FT_GROUP, 
+					 component_data=#'FT_TagFTGroupTaggedComponent'
+					 {version = Version,
+					  ft_domain_id = DomainId,
+					  object_group_id = ObjectGroupId,
+					  object_group_ref_version = ObjGrRefVer}}|T], Data) ->
+    Comp = io_lib:format("   TAG_FT_GROUP
+Version.............: ~p
+Domain Id...........: ~p
+Obj Group Id........: ~p
+Obj Group Ref Ver...: ~p~n", [Version, DomainId, ObjectGroupId, ObjGrRefVer]),
+    print_components(T, [Comp | Data]);
+print_components([#'IOP_TaggedComponent'{tag=?TAG_FT_PRIMARY, 
+					 component_data=#'FT_TagFTPrimaryTaggedComponent'
+					 {primary = Primary}}|T], Data) ->
+    Comp = io_lib:format("   TAG_FT_PRIMARY
+Primary.............: ~p~n", [Primary]),
+    print_components(T, [Comp | Data]);
+print_components([#'IOP_TaggedComponent'{tag=?TAG_FT_HEARTBEAT_ENABLED, 
+					 component_data=#'FT_TagFTHeartbeatEnabledTaggedComponent'
+					 {heartbeat_enabled = HBE}}|T], Data) ->
+    Comp = io_lib:format("   TAG_FT_HEARTBEAT_ENABLED
+Heart Beat Enabled..: ~p~n", [HBE]),
+    print_components(T, [Comp | Data]);
+%% Security - CSIIOP
+print_components([#'IOP_TaggedComponent'{tag=?TAG_CSI_SEC_MECH_LIST, 
+					 component_data=#'CSIIOP_CompoundSecMechList'
+					 {stateful=Stateful,
+					  mechanism_list = MechList}}|T], Data) ->
+    Comp = io_lib:format("   TAG_CSI_SEC_MECH_LIST
+Stateful............: ~p
+Mechanisms..........: ~p~n", [Stateful, MechList]),
+    print_components(T, [Comp | Data]);
+print_components([#'IOP_TaggedComponent'{tag=?TAG_TLS_SEC_TRANS, 
+					 component_data=#'CSIIOP_TLS_SEC_TRANS'
+					 {target_supports = TargetS,
+					  target_requires = TargetR,
+					  addresses = Addresses}}|T], Data) ->
+    Comp = io_lib:format("   TAG_TLS_SEC_TRANS
+Target Supports.....: ~p
+Target Requires.....: ~p
+Addresses...........: ~p~n", [TargetS, TargetR, Addresses]),
+    print_components(T, [Comp | Data]);
+print_components([#'IOP_TaggedComponent'{tag=?TAG_SECIOP_SEC_TRANS, 
+					 component_data=#'CSIIOP_SECIOP_SEC_TRANS'
+					 {target_supports = TargetS,
+					  target_requires = TargetR,
+					  mech_oid = MechOID,
+					  target_name = TargetName,
+					  addresses = Addresses}}|T], Data) ->
+    Comp = io_lib:format("   TAG_SECIOP_SEC_TRANS
+Target Supports.....: ~p
+Target Requires.....: ~p
+Mechanism OID.......: ~p
+Target Name.........: ~p
+Addresses...........: ~p~n", [TargetS, TargetR, MechOID, TargetName, Addresses]),
+    print_components(T, [Comp | Data]);
+%% Unused components.
 print_components([#'IOP_TaggedComponent'{tag=TAG, 
 					 component_data=CData}|T], Data) ->
-    Unused = io_lib:format("Unused Component.: ~s~n", [match_tag(TAG)]),
+    Unused = io_lib:format("Unused Component....: ~s~n", [match_tag(TAG)]),
     Octets = print_octets(CData, [], 1, []),
     print_components(T, [lists:flatten([Unused | Octets])| Data]).
 
 
 print_objkey(Objkey) when tuple(Objkey) ->
-    io_lib:format("Local Object.....:~n~p~n", [Objkey]);
+    io_lib:format("Local Object........:~n~p~n", [Objkey]);
 print_objkey(Objkey) ->
-    Hdr = io_lib:format("External Object..: ~n", []),
+    Hdr = io_lib:format("External Object.....: ~n", []),
     Octets = print_octets(Objkey, [], 1, []),
     lists:flatten([Hdr | Octets]).
 
@@ -784,7 +1067,7 @@ print_octets([], [], _, Data) ->
 print_octets([], Acc, C, Data) ->
     Filling = lists:duplicate((4*(9-C)), 32),
     FData = io_lib:format("~s", [Filling]),
-    Rest = io_lib:format("  ~p~n", [Acc]),
+    Rest = io_lib:format("  ~p~n", [lists:reverse(Acc)]),
     [lists:reverse(Data), FData | Rest];
 print_octets([H|T], Acc, 8, Data) when H > 31 , H < 127 ->
     D1 = io_lib:format("~4w", [H]),
@@ -883,34 +1166,24 @@ code(Version, #'IOP_IOR'{type_id=TypeId, profiles=Profiles}, Bytes, Len) ->
 			Version, 
 			#'IOP_IOR'{type_id=TypeId, profiles=ProfileSeq},
 			Bytes, Len);
-code(Version, {Id, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) when atom(Id) ->
-    case orber:exclude_codeset_component() of
-	true ->
-	    IOR = create(Version, Id:typeID(), orber:host(), orber:iiop_port(),
-			 {Id, Type, Key, UserDef, OrberDef, Flags}, [], Flags),
-	    code(Version, IOR, Bytes, Len);
-	_ ->
-	    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
-						 component_data=?DEFAULT_CODESETS},
-	    IOR = create(Version, Id:typeID(), orber:host(), orber:iiop_port(),
-			 {Id, Type, Key, UserDef, OrberDef, Flags}, [CodeSetComp],
-			 Flags),
-	    code(Version, IOR, Bytes, Len)
-    end;
-code(Version, {Id, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) ->
-    case orber:exclude_codeset_component() of
-	true ->
-	    IOR = create(Version, binary_to_list(Id), orber:host(), orber:iiop_port(),
-			 {Id, Type, Key, UserDef, OrberDef, Flags}, [], Flags),
-	    code(Version, IOR, Bytes, Len);
-	_ ->
-	    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
-						 component_data=?DEFAULT_CODESETS},
-	    IOR = create(Version, binary_to_list(Id), orber:host(), orber:iiop_port(),
-			 {Id, Type, Key, UserDef, OrberDef, Flags}, [CodeSetComp],
-			 Flags),
-	    code(Version, IOR, Bytes, Len)
-    end.
+code(Version, {Mod, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) ->
+    IOR = create(Version, Mod:typeID(), orber:host(), orber:iiop_port(),
+		 {Mod, Type, Key, UserDef, OrberDef, Flags}, [], Flags),
+    code(Version, IOR, Bytes, Len).
+%code(Version, {Id, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) ->
+%    case orber:exclude_codeset_component() of
+%	true ->
+%	    IOR = create(Version, binary_to_list(Id), orber:host(), orber:iiop_port(),
+%			 {Id, Type, Key, UserDef, OrberDef, Flags}, [], Flags),
+%	    code(Version, IOR, Bytes, Len);
+%	_ ->
+%	    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+%						 component_data=?DEFAULT_CODESETS},
+%	    IOR = create(Version, binary_to_list(Id), orber:host(), orber:iiop_port(),
+%			 {Id, Type, Key, UserDef, OrberDef, Flags}, [CodeSetComp],
+%			 Flags),
+%	    code(Version, IOR, Bytes, Len)
+%    end.
 
 code_profile_datas(_, []) ->
     [];
@@ -918,11 +1191,15 @@ code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile
     NewBytes = list_to_binary(code_profile_data(Version, P)),
     [#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=NewBytes} | 
      code_profile_datas(Version, Profiles)];
-%code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, 
-%						  profile_data=P} | Profiles]) ->
-%    Profs= code_comp(Version, P, []),
-%    [#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, 
-%			  profile_data=Profs}| code_profile_datas(Version, Profiles)];
+%% Multiple Components
+code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, 
+						  profile_data=P} | Profiles]) ->
+    Comps= code_comp(Version, P, []),
+    {Bytes, Length} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Length1} =  cdr_encode:enc_type(?IOP_TAGGEDCOMPONENT_SEQ, Version, Comps, Bytes, Length),
+    Profs = binary_to_list(list_to_binary(lists:reverse(Bytes1))),
+    [#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, 
+			  profile_data=Profs}| code_profile_datas(Version, Profiles)];
 code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=N, profile_data=P} | Profiles]) ->
     [#'IOP_TaggedProfile'{tag=N, profile_data=P} | code_profile_datas(Version, Profiles)];
 code_profile_datas(_, Data) ->
@@ -980,16 +1257,91 @@ code_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_ALTERNATE_IIOP_ADDRESS,
     code_comp(Version, Comps, [#'IOP_TaggedComponent'{tag=?TAG_ALTERNATE_IIOP_ADDRESS, 
 						      component_data=Bytes}|CompData]);
 code_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
-					   component_data=SSLStruct}|Comps], CompData)
-  when record(SSLStruct, 'SSLIOP_SSL') ->
+					   component_data=SSLStruct}|Comps], CompData) ->
     {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
     {Bytes1, Len1} = cdr_encode:enc_type(?SSLIOP_SSL, Version, 
 					 SSLStruct, Bytes0, Len0),
     Bytes = binary_to_list(list_to_binary(lists:reverse(Bytes1))),
     code_comp(Version, Comps, [#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
 						      component_data=Bytes}|CompData]);
+%% Fault Tolerant Components
+code_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_FT_GROUP, 
+					   component_data=Data}|Comps], CompData) ->
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = cdr_encode:enc_type(?FT_TagFTGroupTaggedComponent, Version, 
+					 Data, Bytes0, Len0),
+    Bytes = binary_to_list(list_to_binary(lists:reverse(Bytes1))),
+    code_comp(Version, Comps, [#'IOP_TaggedComponent'{tag=?TAG_FT_GROUP, 
+						      component_data=Bytes}|CompData]);
+code_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_FT_PRIMARY, 
+					   component_data=Data}|Comps], CompData) ->
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = cdr_encode:enc_type(?FT_TagFTPrimaryTaggedComponent, Version, 
+					 Data, Bytes0, Len0),
+    Bytes = binary_to_list(list_to_binary(lists:reverse(Bytes1))),
+    code_comp(Version, Comps, [#'IOP_TaggedComponent'{tag=?TAG_FT_PRIMARY, 
+						      component_data=Bytes}|CompData]);
+code_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_FT_HEARTBEAT_ENABLED, 
+					   component_data=Data}|Comps], CompData) ->
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = cdr_encode:enc_type(?FT_TagFTHeartbeatEnabledTaggedComponent, Version, 
+					 Data, Bytes0, Len0),
+    Bytes = binary_to_list(list_to_binary(lists:reverse(Bytes1))),
+    code_comp(Version, Comps, [#'IOP_TaggedComponent'{tag=?TAG_FT_HEARTBEAT_ENABLED, 
+						      component_data=Bytes}|CompData]);
+%% Security - CSIIOP
+code_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_CSI_SEC_MECH_LIST, 
+					   component_data=Data}|Comps], CompData) ->
+    NewData = Data#'CSIIOP_CompoundSecMechList'
+		{mechanism_list = code_sec_mech(Version, 
+						Data#'CSIIOP_CompoundSecMechList'.mechanism_list, 
+						[])},
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = cdr_encode:enc_type(?CSIIOP_CompoundSecMechList, Version, 
+					 NewData, Bytes0, Len0),
+    Bytes = binary_to_list(list_to_binary(lists:reverse(Bytes1))),
+    code_comp(Version, Comps, [#'IOP_TaggedComponent'{tag=?TAG_CSI_SEC_MECH_LIST, 
+						      component_data=Bytes}|CompData]);
+code_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_TLS_SEC_TRANS, 
+					   component_data=Data}|Comps], 
+	  CompData) ->
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = cdr_encode:enc_type(?CSIIOP_TLS_SEC_TRANS, Version, 
+					 Data, Bytes0, Len0),
+    Bytes = binary_to_list(list_to_binary(lists:reverse(Bytes1))),
+    code_comp(Version, Comps, [#'IOP_TaggedComponent'{tag=?TAG_TLS_SEC_TRANS, 
+						      component_data=Bytes}|CompData]);
+code_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_SECIOP_SEC_TRANS, 
+					   component_data=Data}|Comps], CompData) ->
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = cdr_encode:enc_type(?CSIIOP_SECIOP_SEC_TRANS, Version, 
+					 Data, Bytes0, Len0),
+    Bytes = binary_to_list(list_to_binary(lists:reverse(Bytes1))),
+    code_comp(Version, Comps, [#'IOP_TaggedComponent'{tag=?TAG_SECIOP_SEC_TRANS, 
+						      component_data=Bytes}|CompData]);
+code_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_NULL_TAG}|Comps], CompData) ->
+    %% The body of the TAG_NULL_TAG component is a sequence of octets of
+    %% length 0.
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = cdr_encode:enc_type({'tk_sequence', 'tk_octet', 0}, Version, 
+					 [], Bytes0, Len0),
+    Bytes = binary_to_list(list_to_binary(lists:reverse(Bytes1))),
+    code_comp(Version, Comps, [#'IOP_TaggedComponent'{tag=?TAG_NULL_TAG, 
+						      component_data=Bytes}|CompData]);
+%% Unsupported/not used component.
 code_comp(Version, [C|Comps], CompData) -> 
     code_comp(Version, Comps, [C|CompData]).
+
+
+code_sec_mech(Version, [], Acc) ->
+    %% We must preserver the order!!
+    lists:reverse(Acc);
+code_sec_mech(Version, [#'CSIIOP_CompoundSecMech'{transport_mech = TagComp} = CSM|T],
+	      Acc) ->
+    [EncTagComp] = code_comp(Version, [TagComp], []),
+    code_sec_mech(Version, T, [CSM#'CSIIOP_CompoundSecMech'
+			       {transport_mech = EncTagComp}|Acc]).
+
 
 %%-----------------------------------------------------------------
 %% Func: string_decode/1
@@ -1039,12 +1391,13 @@ decode_profile(Version, #'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data
 						   ByteOrder),
     Struct = decode_profile_1(V, H, P, ObjKey, Version, Rest4, Length4, ByteOrder),
     #'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=Struct};
-%decode_profile(Version, #'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, 
-%					     profile_data=ProfileData}) ->
-%    {ByteOrder, Rest} = cdr_decode:dec_byte_order(list_to_binary(ProfileData)),
-%    {Components, <<>>, Length1} =cdr_decode:dec_type(?IOP_TAGGEDCOMPONENT_SEQ, Version, Rest, 1, ByteOrder),
-%    CompData = decode_comp(Version, Components, []),
-%    #'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, profile_data=CompData};
+%% Multiple Components
+decode_profile(Version, #'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, 
+					     profile_data=ProfileData}) ->
+    {ByteOrder, Rest} = cdr_decode:dec_byte_order(list_to_binary(ProfileData)),
+    {Components, <<>>, Length1} =cdr_decode:dec_type(?IOP_TAGGEDCOMPONENT_SEQ, Version, Rest, 1, ByteOrder),
+    CompData = decode_comp(Version, Components, []),
+    #'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, profile_data=CompData};
 decode_profile(_, #'IOP_TaggedProfile'{tag=N, profile_data=ProfileData}) ->
     #'IOP_TaggedProfile'{tag=N, profile_data=ProfileData};
 decode_profile(_, Data) ->
@@ -1116,9 +1469,82 @@ decode_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS,
     decode_comp(Version, Comps, 
 		[#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
 					component_data=SSLStruct}|Components]);
+%% Fault Tolerant Components
+decode_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_FT_GROUP, 
+					     component_data=Data}|Comps], Components) ->
+    {ByteOrder, R} = cdr_decode:dec_byte_order(list_to_binary(Data)),
+    {DecodedData, Rest1, Length1} = cdr_decode:dec_type(?FT_TagFTGroupTaggedComponent, Version, R, 1,
+							ByteOrder),
+    decode_comp(Version, Comps, 
+		[#'IOP_TaggedComponent'{tag=?TAG_FT_GROUP, 
+					component_data=DecodedData}|Components]);
+decode_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_FT_PRIMARY, 
+					     component_data=Data}|Comps], Components) ->
+    {ByteOrder, R} = cdr_decode:dec_byte_order(list_to_binary(Data)),
+    {DecodedData, Rest1, Length1} = cdr_decode:dec_type(?FT_TagFTPrimaryTaggedComponent, Version, R, 1,
+							ByteOrder),
+    decode_comp(Version, Comps, 
+		[#'IOP_TaggedComponent'{tag=?TAG_FT_PRIMARY, 
+					component_data=DecodedData}|Components]);
+decode_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_FT_HEARTBEAT_ENABLED, 
+					     component_data=Data}|Comps], Components) ->
+    {ByteOrder, R} = cdr_decode:dec_byte_order(list_to_binary(Data)),
+    {DecodedData, Rest1, Length1} = cdr_decode:dec_type(?FT_TagFTHeartbeatEnabledTaggedComponent, Version, R, 1,
+							ByteOrder),
+    decode_comp(Version, Comps, 
+		[#'IOP_TaggedComponent'{tag=?TAG_FT_HEARTBEAT_ENABLED, 
+					component_data=DecodedData}|Components]);
+%% Security - CSIIOP
+decode_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_CSI_SEC_MECH_LIST, 
+					     component_data=Data}|Comps], Components) ->
+    {ByteOrder, R} = cdr_decode:dec_byte_order(list_to_binary(Data)),
+    {DecodedData, Rest1, Length1} = cdr_decode:dec_type(?CSIIOP_CompoundSecMechList, Version, R, 1,
+							ByteOrder),
+    NewDecodedData = DecodedData#'CSIIOP_CompoundSecMechList'
+      {mechanism_list = decode_sec_mech(Version, 
+					DecodedData#'CSIIOP_CompoundSecMechList'.mechanism_list, 
+					[])},
+    decode_comp(Version, Comps, 
+		[#'IOP_TaggedComponent'{tag=?TAG_CSI_SEC_MECH_LIST, 
+					component_data=NewDecodedData}|Components]);
+decode_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_TLS_SEC_TRANS, 
+					     component_data=Data}|Comps], Components) ->
+    {ByteOrder, R} = cdr_decode:dec_byte_order(list_to_binary(Data)),
+    {DecodedData, Rest1, Length1} = cdr_decode:dec_type(?CSIIOP_TLS_SEC_TRANS, Version, R, 1,
+							ByteOrder),
+    decode_comp(Version, Comps, 
+		[#'IOP_TaggedComponent'{tag=?TAG_TLS_SEC_TRANS, 
+					component_data=DecodedData}|Components]);
+decode_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_SECIOP_SEC_TRANS, 
+					     component_data=Data}|Comps], Components) ->
+    {ByteOrder, R} = cdr_decode:dec_byte_order(list_to_binary(Data)),
+    {DecodedData, Rest1, Length1} = cdr_decode:dec_type(?CSIIOP_SECIOP_SEC_TRANS, Version, R, 1,
+							ByteOrder),
+    decode_comp(Version, Comps, 
+		[#'IOP_TaggedComponent'{tag=?TAG_SECIOP_SEC_TRANS, 
+					component_data=DecodedData}|Components]);
+decode_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_NULL_TAG, 
+					     component_data=Data}|Comps], Components) ->
+    %% The body of the TAG_NULL_TAG component is a sequence of octets of
+    %% length 0.
+    decode_comp(Version, Comps, 
+		[#'IOP_TaggedComponent'{tag=?TAG_NULL_TAG, 
+					component_data=[]}|Components]);
+
 decode_comp(Version, [C|Comps], Components) ->
     %% Not used but we cannot discard it.
     decode_comp(Version, Comps, [C|Components]).
+
+
+decode_sec_mech(Version, [], Acc) ->
+    %% We must preserver the order!!
+    lists:reverse(Acc);
+decode_sec_mech(Version, [#'CSIIOP_CompoundSecMech'{transport_mech = TagComp} = CSM|T],
+		Acc) ->
+    [DecTagComp] = decode_comp(Version, [TagComp], []),
+    decode_sec_mech(Version, T, [CSM#'CSIIOP_CompoundSecMech'
+			       {transport_mech = DecTagComp}|Acc]).
+
 
 %%-----------------------------------------------------------------
 %% Func: hexstring_to_bytestring/1

@@ -53,8 +53,9 @@
 #ifdef __SYS_H__
 
 /* distribution trap functions */
-extern Export* dsend_trap;
-extern Export* dsend_nosuspend_trap;
+extern Export* dsend2_trap;
+extern Export* dsend3_trap;
+/*extern Export* dsend_nosuspend_trap;*/
 extern Export* dlink_trap;
 extern Export* dunlink_trap;
 extern Export* dmonitor_node_trap;
@@ -75,5 +76,7 @@ extern int dist_exit2(DistEntry*, Eterm, Eterm, Eterm);
 extern int dist_demonitor(DistEntry*, Eterm, Eterm, Eterm, int);
 extern int dist_monitor(DistEntry*, Eterm, Eterm, Eterm);
 extern int dist_m_exit(DistEntry*, Eterm, Eterm, Eterm, Eterm);
+
+extern Uint erts_dist_cache_size(void);
 
 #endif

@@ -23,10 +23,6 @@ init(_) ->
   ?error_msg("Can not create a generic CFG",[]),
   ?EXIT(dont_call_this_function).
 
-
-is_fail_entrypoint(_Label) ->  
-   false.
-
 is_label(_Instr) ->
    exit(nyi).
 

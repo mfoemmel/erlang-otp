@@ -70,7 +70,7 @@ PROCESS start_sock_select() {
 
   erts_ = current_process();
   
-  sock_select_ = create_process(OS_PRI_PROC, /* processtype */
+  sock_select_ = create_process(OS_BG_PROC, /* processtype */
 				"erl_sock_select", /* name        */
 				erl_sock_select, /* entrypoint  */
 				2000,	/* stacksize   */
@@ -88,7 +88,7 @@ PROCESS start_sock_select() {
   /* receive port info from sock_select process (used for sync really) */
   sig = (union EventSig *)receive((SIGSELECT *)recv_port_info);
   rel_port = sig->port_info.port;
-  free_buf((union SIGNAL **)&sig);
+  ose_sig_free_buf((union SIGNAL **)&sig);
   
   /* create "release" socket */
   if((rel_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
@@ -180,7 +180,7 @@ OS_PROCESS(erl_sock_select)
   if(getsockname(s0, (struct sockaddr *)&addr, &len) < 0)
     error(errno);
 
-  sig = (union EventSig *)alloc(sizeof(struct PortInfo), PORT_INFO);
+  sig = (union EventSig *)ose_sig_alloc(sizeof(struct PortInfo), PORT_INFO);
   sig->port_info.port = ntohs(addr.sin_port);
   send((union SIGNAL **)&sig, erts_);
   
@@ -198,7 +198,7 @@ OS_PROCESS(erl_sock_select)
 	  mode = sig->sock_select.mode;
 	  on = sig->sock_select.on;	  
 	  
-	  free_buf((union SIGNAL **)&sig);
+	  ose_sig_free_buf((union SIGNAL **)&sig);
 	  if(on) {
 	    if(mode & DO_READ) {
 	      FD_SET(sock, &read_socks);
@@ -231,7 +231,7 @@ OS_PROCESS(erl_sock_select)
 	  
 	default:
 	  fprintf(stderr, "Unrecognised signal %d to sock_select\n", sig->sig_no); 
-	  free_buf((union SIGNAL **)&sig);
+	  ose_sig_free_buf((union SIGNAL **)&sig);
 	}
       }
 
@@ -312,12 +312,12 @@ static void recv_event_ack() {
   union EventSig *sig;
   static const SIGSELECT recv_ack_sig[] = {1,INET_EVENT_ACK};
   sig = (union EventSig *)receive((SIGSELECT *)recv_ack_sig);
-  free_buf((union SIGNAL **)&sig);
+  ose_sig_free_buf((union SIGNAL **)&sig);
 }
 
 void send_error(int sock, int error) {
   union EventSig *sig;
-  sig = (union EventSig *)alloc(sizeof(struct SockSelectError), SOCK_SELECT_ERROR);
+  sig = (union EventSig *)ose_sig_alloc(sizeof(struct SockSelectError), SOCK_SELECT_ERROR);
   sig->sock_select_error.sock = sock;
   sig->sock_select_error.error = error;
   send((union SIGNAL **)&sig, erts_);
@@ -327,7 +327,7 @@ void send_error(int sock, int error) {
 void send_read_event(int sock) {
   union EventSig *sig;
 
-  sig = (union EventSig *)alloc(sizeof(struct InetEventRead), INET_EVENT_READ);
+  sig = (union EventSig *)ose_sig_alloc(sizeof(struct InetEventRead), INET_EVENT_READ);
   sig->inet_ev_read.sock = sock;
   send((union SIGNAL **)&sig, erts_);
   if(erts_ != current_process()) recv_event_ack();
@@ -335,7 +335,7 @@ void send_read_event(int sock) {
 
 void send_write_event(int sock) {
   union EventSig *sig;
-  sig = (union EventSig *)alloc(sizeof(struct InetEventWrite), INET_EVENT_WRITE);
+  sig = (union EventSig *)ose_sig_alloc(sizeof(struct InetEventWrite), INET_EVENT_WRITE);
   sig->inet_ev_write.sock = sock;
   send((union SIGNAL **)&sig, erts_);
   if(erts_ != current_process()) recv_event_ack();

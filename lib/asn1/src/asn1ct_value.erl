@@ -66,7 +66,7 @@ get_type(M,Typename,Type,Tellname) when record(Type,type) ->
 	{constructed,bif} ->
 	    get_type_constructed(M,Typename,InnerType,Type)
     end;
-get_type(M,Typename,#'ComponentType'{name = Name,prop= Prop,typespec = Type},Tellname)  ->
+get_type(M,Typename,#'ComponentType'{name = Name,typespec = Type},_)  ->
     get_type(M,[Name|Typename],Type,no);
 get_type(_,_,_,_) -> % 'EXTENSIONMARK'
     undefined.
@@ -78,7 +78,7 @@ get_inner(T) when tuple(T) ->
     case asn1ct_gen:get_inner(T) of
 	{fixedtypevaluefield,_,Type} ->
 	    Type#type.def;
-	{typefield,FieldName} -> 
+	{typefield,_FieldName} -> 
 	    'ASN1_OPEN_TYPE';
 	Other ->
 	    Other
@@ -103,7 +103,7 @@ get_type_constructed(M,Typename,InnerType,D) when record(D,type) ->
 	    {_,Type} = D#type.def,
 	    NameSuffix = asn1ct_gen:constructed_suffix(InnerType,Type#type.def),
 	    get_sequence_of(M,Typename,D,NameSuffix);
-	Other ->
+	_ ->
 	    exit({nyi,InnerType})
     end.
 
@@ -128,7 +128,7 @@ get_components(M,Typename,{Root,Ext}) ->
 get_components(M,Typename,[H|T]) ->
     [get_type(M,Typename,H,no)|
     get_components(M,Typename,T)];
-get_components(M,Typename,[]) ->
+get_components(_,_,[]) ->
     [].
 
 get_choice(M,Typename,Type) ->
@@ -153,7 +153,7 @@ get_sequence_of(M,Typename,Type,TypeSuffix) ->
     NewTypeName = [TypeSuffix|Typename],
     gen_list(M,NewTypeName,Oftype,no,S).
 
-gen_list(M,Typename,Oftype,Tellname,0) ->
+gen_list(_,_,_,_,0) ->
     [];
 gen_list(M,Typename,Oftype,Tellname,N) ->
     [get_type(M,Typename,Oftype,no)|gen_list(M,Typename,Oftype,Tellname,N-1)].
@@ -164,7 +164,7 @@ get_type_prim(D) ->
 	'INTEGER' ->
 	    i_random(C);
 	{'INTEGER',NamedNumberList} ->
-	    NN = [X||{X,Y} <- NamedNumberList],
+	    NN = [X||{X,_} <- NamedNumberList],
 	    case NN of 
 		[] ->
 		    i_random(C);
@@ -184,7 +184,7 @@ get_type_prim(D) ->
 		    _->
 			NamedNumberList
 		end,
-	    NN = [X||{X,Y} <- NNew],
+	    NN = [X||{X,_} <- NNew],
 	    case NN of
 		[] ->
 		    asn1_EMPTY;
@@ -193,7 +193,7 @@ get_type_prim(D) ->
 	    end;
 	{'BIT STRING',NamedNumberList} ->
 %%	    io:format("get_type_prim 1: ~w~n",[NamedNumberList]),
-	    NN = [X||{X,Y} <- NamedNumberList],
+	    NN = [X||{X,_} <- NamedNumberList],
 	    case NN of
 		[] ->
 		    Bl1 =lists:reverse(adjust_list(size_random(C),[1,0,1,1])),
@@ -208,7 +208,7 @@ get_type_prim(D) ->
 	    'NULL';
 	'OBJECT IDENTIFIER' ->
 	    Len = random(3),
-	    Olist = [(random(1000)-1)||X <-lists:seq(1,Len)],
+	    Olist = [(random(1000)-1)||_X <-lists:seq(1,Len)],
 	    list_to_tuple([random(3)-1,random(40)-1|Olist]);
 	'ObjectDescriptor' ->
 	    object_descriptor_nyi;
@@ -267,7 +267,7 @@ size_random(C) ->
 	    c_random({0,5},no);
 	{Lb,Ub} when Ub-Lb =< 4 ->
 	    c_random({Lb,Ub},no);
-	{Lb,Ub}  ->
+	{Lb,_}  ->
 	    c_random({Lb,Lb+4},no);
 	Sv ->
 	    c_random(no,Sv)
@@ -313,7 +313,7 @@ c_random(VRange,Single) ->
 adjust_list(Len,Orig) ->
     adjust_list1(Len,Orig,Orig,[]).
 
-adjust_list1(0,Orig,[Oh|Ot],Acc) ->
+adjust_list1(0,_Orig,[_Oh|_Ot],Acc) ->
     lists:reverse(Acc);
 adjust_list1(Len,Orig,[],Acc) ->
     adjust_list1(Len,Orig,Orig,Acc);

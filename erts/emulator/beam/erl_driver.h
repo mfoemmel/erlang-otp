@@ -32,7 +32,12 @@
 #if defined(VXWORKS)
 #  include <ioLib.h>
 typedef struct iovec SysIOVec;
-#elif defined(__WIN32__)
+#elif defined(__WIN32__) || defined(_WIN32) || defined(_WIN32_)
+#ifndef STATIC_ERLANG_DRIVER
+   /* Windows dynamic drivers, everything is different... */
+#define ERL_DRIVER_TYPES_ONLY
+#define WIN32_DYNAMIC_ERL_DRIVER
+#endif
 /*
  * This structure can be cast to a WSABUF structure.
  */
@@ -104,7 +109,7 @@ typedef struct _erl_drv_port* ErlDrvPort; /* A port descriptor. */
 #endif
 typedef struct _erl_drv_port* ErlDrvThreadData; /* Thread data. */
 
-#if !defined(__WIN32__) && !defined(USE_SELECT)
+#if !defined(__WIN32__) && !defined(_WIN32) && !defined(_WIN32_) && !defined(USE_SELECT)
 struct erl_drv_event_data {
     short events;
     short revents;
@@ -214,6 +219,9 @@ typedef struct erl_drv_entry {
  * It must initialize a ErlDrvEntry structure and return a pointer to it.
  */
 
+/* For windows dynamic drivers */
+#ifndef ERL_DRIVER_TYPES_ONLY
+
 #if defined(VXWORKS)
 #  define DRIVER_INIT(DRIVER_NAME) ErlDrvEntry* DRIVER_NAME  ## _init(void)
 #elif defined(__WIN32__)
@@ -225,10 +233,6 @@ typedef struct erl_drv_entry {
 /*
  * These are the functions available for driver writers.
  */
-
-#ifdef _OSE_
-EXTERN int driver_sig_pending(ErlDrvPort port, void *sig);
-#endif /* _OSE_ */
 EXTERN int driver_select(ErlDrvPort port, ErlDrvEvent event, int mode, int on);
 EXTERN int driver_event(ErlDrvPort port, ErlDrvEvent event, 
 			ErlDrvEventData event_data);
@@ -305,6 +309,13 @@ EXTERN int driver_pushqv(ErlDrvPort port, ErlIOVec *ev, int skip);
 EXTERN void add_driver_entry(ErlDrvEntry *de);
 EXTERN int remove_driver_entry(ErlDrvEntry *de);
 
+/*
+ * Misc.
+ */
+EXTERN int null_func(void);
+
+#endif /* !ERL_DRIVER_TYPES_ONLY */
+
 /* Constants for return flags from the 'port_call' callback */
 #define DRIVER_CALL_KEEP_BUFFER 0x1
 
@@ -340,13 +351,15 @@ typedef unsigned long ErlDrvTermData;
 #define ERL_DRV_STRING_CONS ((ErlDrvTermData) 9)  /* char*, int */
 #define ERL_DRV_PID         ((ErlDrvTermData) 10) /* driver_connected,... */
 
+#ifndef ERL_DRIVER_TYPES_ONLY
+
 /* make terms for driver_output_term and driver_send_term */
 EXTERN ErlDrvTermData driver_mk_atom(char*);
 EXTERN ErlDrvTermData driver_mk_port(ErlDrvPort);
 EXTERN ErlDrvTermData driver_connected(ErlDrvPort);
 EXTERN ErlDrvTermData driver_caller(ErlDrvPort);
 extern const ErlDrvTermData driver_term_nil;
-
+EXTERN ErlDrvTermData driver_mk_term_nil(void);
 
 /* output term data to the port owner */
 EXTERN int driver_output_term(ErlDrvPort ix, ErlDrvTermData* data, int len);
@@ -366,6 +379,19 @@ EXTERN int driver_async_cancel(unsigned int key);
 
 EXTERN int driver_attach(ErlDrvPort ix);
 EXTERN int driver_detach(ErlDrvPort ix);
+
+/* These were removed from the ANSI version, now they're back. */
+
+EXTERN void *driver_dl_open(char *);
+EXTERN void *driver_dl_sym(void *, char *);
+EXTERN int driver_dl_close(void *);
+EXTERN char *driver_dl_error(void);
+
+#endif /* !ERL_DRIVER_TYPES_ONLY */
+
+#ifdef WIN32_DYNAMIC_ERL_DRIVER
+#  include "erl_win_dyn_driver.h"
+#endif
 
 #endif
 
