@@ -158,6 +158,12 @@ EXTERN_FUNCTION(void, output_ready, (int, int));
 EXTERN_FUNCTION(void, erl_exit, (int n, char*, _DOTS_));
 EXTERN_FUNCTION(void, do_break, (void));
 
+/*
+ * External variables.
+ */
+
+extern int nohup;
+
 
 typedef struct _EventData {
     HANDLE event;		/* For convenience. */
@@ -567,9 +573,12 @@ ctrl_handler(DWORD dwCtrlType)
     case CTRL_BREAK_EVENT:
 	SetEvent(break_event);
 	break;
+    case CTRL_LOGOFF_EVENT:
+	if (nohup)
+	    return TRUE;
+	/* else pour through... */
     case CTRL_CLOSE_EVENT:
     case CTRL_SHUTDOWN_EVENT:
-    case CTRL_LOGOFF_EVENT:
 	erl_exit(0, "");
 	break;
     }

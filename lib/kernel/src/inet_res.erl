@@ -63,7 +63,9 @@ nslookup(Name, Class, Type, Timeout) when integer(Timeout), Timeout >= 0 ->
     Timer = inet:start_timer(Timeout),
     Res = nslookup2(Name,Class,Type,Timer),
     inet:stop_timer(Timer),
-    Res.
+    Res;
+nslookup(Name, Class, Type, Ns) ->              % For backwards compatibility
+    nslookup1(Name,Class,Type,Ns,false).        % with OTP R6B only
 
 nnslookup(Name, Class, Type, Ns) ->
     nslookup1(Name,Class,Type,Ns,false).    

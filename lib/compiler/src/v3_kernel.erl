@@ -644,10 +644,25 @@ is_false_guard(Other) -> false.
 %%  clauses with a variable first argument, or with a "constructor".
 
 partition([C1|Cs]) ->
-    V1 = is_var_clause(C1),
-    {More,Rest} = splitwith(fun (C) -> is_var_clause(C) == V1 end, Cs),
-    [[C1|More]|partition(Rest)];
+    case clause_con(C1) of
+	k_zero_binary ->
+	    [[C1]|partition(Cs)];
+	k_binary_cons ->
+	    Val = clause_val(C1),
+	    {More,Rest} = splitwith(fun (C) -> is_same_bs_type(C, Val) end, Cs),
+	    [[C1|More]|partition(Rest)];
+	Type ->
+	    V1 = Type =:= k_var,
+	    {More,Rest} = splitwith(fun (C) -> is_var_clause(C) == V1 end, Cs),
+	    [[C1|More]|partition(Rest)]
+    end;
 partition([]) -> [].
+
+is_same_bs_type(C, Val) ->
+    case clause_con(C) of
+	k_binary_cons -> clause_val(C) =:= Val;
+	k_zero_binary -> false
+    end.
 
 %% match_varcon([Var], [Clause], Def, [Var], Vsb, State) ->
 %%        {MatchExpr,State}.
@@ -662,7 +677,7 @@ match_varcon(Us, [C|Cs], Def, St) ->
 %%  Build a call to "select" from a list of clauses all containing a
 %%  variable as the first argument.  We must rename the variable in
 %%  each clause to be the match variable as these clause will share
-%%  this variable and may have differnet names for it.  Rename aliases
+%%  this variable and may have different names for it.  Rename aliases
 %%  as well.
 
 match_var([U|Us], Cs0, Def, St) ->

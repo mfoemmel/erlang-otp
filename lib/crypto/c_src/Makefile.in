@@ -36,8 +36,6 @@ LIBS = @LIBS@
 LDFLAGS = @DED_LDFLAGS@
 OS = @OSTYPE@
 TARGET = @host@
-# We need libgcc.a on Solaris 2
-LIBGCC = @GCCLIB_PATH@
 
 ROOTDIR = $(ERL_TOP)/lib
 PRIVDIR = ../priv
@@ -46,13 +44,12 @@ LIBDIR = $(PRIVDIR)/lib/$(TARGET)
 
 # XXX We use the SSLeay installation under application SSL
 SSLEAY_ROOT = @SSLEAY_ROOT@
-
 SSLEAY_LIBDIR = $(SSLEAY_ROOT)/lib
-SSLEAY_INCDIR = $(SSLEAY_ROOT)/include
+SSLEAY_INCDIR = @SSL_INCLUDE@
 # For erl_driver.h
 SYS_INCDIR = $(ERL_TOP)/erts/emulator/beam
 
-INCLUDES = -I $(SSLEAY_INCDIR) -I $(SYS_INCDIR)
+INCLUDES = $(SSLEAY_INCDIR) -I $(SYS_INCDIR)
 
 ifeq ($(TYPE),debug)
 TYPEMARKER = .debug
@@ -130,7 +127,7 @@ $(LIBDIR)/crypto_drv.so: $(CRYPTO_DRV_OBJS)
 
 $(LIBDIR)/elibcrypto.so: $(ELIBCRYPTO_OBJS)
 	$(INSTALL_DIR) $(LIBDIR)
-	$(LD) $(LDFLAGS) -o $@ $^ $(LIBGCC) -lc $(LIBS)
+	$(LD) $(LDFLAGS) -o $@ $^ -lc $(LIBS)
 
 clean:
 	rm -f $(SOLIBS) $(OBJS)

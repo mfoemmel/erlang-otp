@@ -20,12 +20,12 @@
  */
 
 #ifdef HAVE_CONFIG_H
-# include "config.h"		/* FIXME: Autoconf Info prefers <config.h> */
-#else
-# define HAVE_STRDUP 1		/* we, uh, know that everyone's got strdup() */
-# ifdef VXWORKS
-#  undef HAVE_STRDUP		/* ...'cept for VxWorks */
-# endif
+# include "config.h"	      /* FIXME: Autoconf Info prefers <config.h> */
+#endif
+
+# define HAVE_STRDUP 1	      /* we, uh, know that everyone's got strdup() */
+#ifdef VXWORKS
+# undef HAVE_STRDUP	      /* ...'cept for VxWorks */
 #endif
 
 #include <stdlib.h>
@@ -176,20 +176,6 @@ static int recv_name(int fd,
 		     unsigned *version,
 		     unsigned *flags, ErlConnect *namebuf);
 
-/* FIXME: Move to convenience lib */
-
-#if !defined(HAVE_STRDUP)
-char *
-strdup (const char *src)
-{
-    char * dest = malloc(strlen(src)+1);
-
-    if(dest != NULL)
-       strcpy(dest, src);
-    return dest;
-}
-#endif /* !HAVE_STRDUP */
-
 int erl_distversion(int fd)
 {
   return ec.conns[fd];
@@ -248,14 +234,13 @@ int
 erl_setfdcookie (int fd, char *cookie)
 {
   if (cookie) {
-    char *tmp;
+    char *tmp = malloc(strlen(cookie)+1);
 
-    if ((tmp = strdup(cookie)) == NULL) 
-    {
+    if (tmp == NULL) {
 	erl_errno = ENOMEM;
 	return -1;
     }
-
+    strcpy(tmp, cookie);
     if (ec.cookies[fd] != ec.erl_connect_cookie) free(ec.cookies[fd]);
     ec.cookies[fd] = tmp;
   }
@@ -841,7 +826,7 @@ erl_reg_send (int fd, char *server_name, ETERM *msg)
   }
 
   if (dbuf) free(dbuf);
-  return 0;
+  return 1;
 }
 
 /* 
@@ -890,7 +875,7 @@ erl_send (int fd, ETERM *to ,ETERM *msg)
   }
 
   if (dbuf) free(dbuf);
-  return 0;
+  return 1;
 }
 
 extern int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msglen, int staticbufp);

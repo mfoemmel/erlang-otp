@@ -30,10 +30,9 @@
     <FILE>jinterface.sgml
   </HEADER>
 
-<P>The <seealso marker="com/ericsson/otp/erlang/package-summary.html">jinterface</> package provides 
+<P>The <seealso marker="com/ericsson/otp/erlang/package-summary.html">Jinterface</> package provides 
 a set of tools for communication with Erlang processes. It can also be used for communication with 
-other Java processes using the same package, as well as C processes using the erl_interface library 
-provided with Erlang/OTP.  
+other Java processes using the same package, as well as C processes using the Erl_Interface library.  
 
 <P>The set of classes in the package can be divided into two categories:
 those that provide the actual communication, and those that provide a
@@ -50,7 +49,7 @@ assumed that even Erlang processes are included, unless specified
 otherwise.
 
 The classes in
-<seealso marker="com/ericsson/otp/erlang/package-summary.html">jinterface</> support the following:
+<seealso marker="com/ericsson/otp/erlang/package-summary.html">Jinterface</> support the following:
 <LIST>
 
 <ITEM>manipulation of data represented as Erlang data types
@@ -70,12 +69,12 @@ The classes in
 <ITEM>sending and receiving Erlang messages and data
 <ITEM>remote procedure calls
 <ITEM>linking to remote processes
-<ITEM>compiling your code for use with <c>jinterface</c>
+<ITEM>compiling your code for use with Jinterface
 <ITEM>tracing message flow
 </LIST>
 
 
-<SECTION><TITLE>Mapping of basic Erlang types to Java</TITLE>
+<SECTION><TITLE>Mapping of Basic Erlang Types to Java</TITLE>
 <p>
 This section describes the mapping of Erlang basic types to Java. 
 </p>
@@ -136,7 +135,7 @@ This section describes the mapping of Erlang basic types to Java.
 </table>
 </SECTION>
 
-<SECTION><TITLE>Special mapping issues</TITLE>
+<SECTION><TITLE>Special Mapping Issues</TITLE>
 
 <p>The atoms <c>true</> and <c>false</> are special atoms, used as boolean values. 
 The class <seealso marker="com/ericsson/otp/erlang/OtpErlangBoolean.html">OtpErlangBoolean</> can be used to represent these.
@@ -157,7 +156,7 @@ hostname on which the node is running, e.g "gurka@sallad.com". Several
 such nodes can run on the same host as long as their names are unique.
 
 The class <seealso marker="com/ericsson/otp/erlang/OtpNode.html">OtpNode</> 
-represents an OTP node. It is created with a name
+represents an Erlang node. It is created with a name
 and optionally a port number on which it listens for incoming
 connections. Before creating an instance of 
 <seealso marker="com/ericsson/otp/erlang/OtpNode.html">OtpNode</>, 
@@ -247,13 +246,13 @@ remote node to see if it is alive and accepting connections:
 
 <P>If the call to ping() succeeds, a connection to the remote node has
 been established. Note that it is not necessary to ping remote nodes
-before communicating with them, but by usin ping you can determine if
+before communicating with them, but by using ping you can determine if
 the remote exists before attempting to communicate with it.
 
 <P>Connections are only permitted by nodes using the same security
 cookie. The cookie is a short string privided either as an argument
 when creating OtpNode objects, or found in the user's home directory
-in the file .erlang.cookie. When a connection attempt is made, the
+in the file <c>.erlang.cookie</c>. When a connection attempt is made, the
 string is used as part of the authentication process. If you are
 having trouble getting communication to work, use the trace facility
 (described later in this document) to show the connection
@@ -265,7 +264,7 @@ a connection may be broken however.
 </SECTION>
 
 
-<SECTION><TITLE>Sending and receiving messages</TITLE>
+<SECTION><TITLE>Sending and Receiving Messages</TITLE>
 
 <P>Messages sent with this package must be instances of 
 <seealso marker="com/ericsson/otp/erlang/OtpErlangObject.html">OtpErlangObject</>
@@ -295,7 +294,7 @@ echo process can reply:
         OtpErlangObject reply = mbox.receive();
 </CODE>
 
-<P>Messages are sent asynchronously, so the call to send() returns as
+<P>Messages are sent asynchronously, so the call to <c>send()</c> returns as
 soon as the message has been dispatched to the underlying
 communication layer. This means that you receive no indication whether
 the operation completed successfully or the remote even existed. If
@@ -335,7 +334,7 @@ number of nodes (such as one) on each JVM.
 
 </SECTION>
 
-<SECTION><TITLE>Sending arbitrary data</TITLE>
+<SECTION><TITLE>Sending Arbitrary Data</TITLE>
 
 <P>This package was originally intended to be used for communicating
 between Java and Erlang, and for that reason the send and receive
@@ -373,7 +372,7 @@ from it:
 
 
 
-<SECTION><TITLE>Linking to remote processes</TITLE>
+<SECTION><TITLE>Linking to Remote Processes</TITLE>
 
 <P>Erlang defines a concept known as linked processes. A link is an
 implicit connection between two processes that causes an exception to
@@ -413,8 +412,8 @@ exception will be raised on a subsequent call to receive():
                 
 <P>When a mailbox is explicitly closed, exit messages will be sent in
 order to break any outstanding links. If a mailbox is never closed but
-instead goes out of scope, the objects finalize() method will call
-close(). However since Java provides no guarantees about when or even
+instead goes out of scope, the objects <c>finalize()</c> method will call
+<c>close()</c>. However since Java provides no guarantees about when or even
 if finalize() will be called, it is important that your application
 explicitely closes mailboxes when they are no longer needed if you
 want links to work in a timely manner. 
@@ -491,9 +490,9 @@ from a remote host.
 </SECTION>
 
 
-<SECTION><TITLE>Compiling and Loading your code</TITLE>
+<SECTION><TITLE>Compiling and Loading Your Code</TITLE>
 
-<p>In order to use any of the <seealso marker="com/ericsson/otp/erlang/package-summary.html">jinterface</> 
+<p>In order to use any of the <seealso marker="com/ericsson/otp/erlang/package-summary.html">Jinterface</> 
 classes, include the following line in your code:
 </P>
 
@@ -517,8 +516,8 @@ to find the file <c>OtpErlang.jar</c> which contains the package.
 This is done by specifying an appropriate <c>-classpath</c>
 argument on the command line, or by adding it to the <c>CLASSPATH</c>
 definition in your <c>Makefile</c>. The correct value for this path is
-<c>$OTPROOT/lib/jinterface-1.2/priv/OtpErlang.jar</c>, where <c>$OTPROOT</c> 
-is the path reported by <c>code:root_dir/0</c> in the above example.
+<c>$OTPROOT/lib/jinterface</c><em>Vsn</em><c>/priv/OtpErlang.jar</c>, where <c>$OTPROOT</c> 
+is the path reported by <c>code:root_dir/0</c> in the above example and <em>Vsn</em> is the version of Jinterface, for example <c>jinterface-1.2</c>
 </P>
 
 <code>

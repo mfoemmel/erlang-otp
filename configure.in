@@ -109,6 +109,15 @@ AC_ARG_ENABLE(erlang-mandir,
   esac ], erl_mandir='$(ERLANG_ILIBDIR)/man')
 AC_SUBST(erl_mandir)
 
+#
+# Read options for SSL. Pass this information to "erts/autoconf/configure"
+#
+AC_ARG_WITH(ssl,
+[  --with-ssl=PATH           specify location of openSSL/ssleay include and lib
+  --with-ssl                use SSL (default)
+  --without-ssl             don't use SSL],
+[ssl_arg="--with-ssl=$with_ssl"])
+
 dnl
 dnl This could (should) of course be done with AC_CONFIG_SUBDIRS, but well
 dnl we are not there yet...
@@ -122,6 +131,7 @@ echo "Running configure in erts/autoconf..."
  /bin/sh -c "ERL_TOP=${ERL_TOP} \
             CONFIG_STATUS=${ERL_TOP}/erts/autoconf/${TARGET}/config.status \
             ./configure \
+		$ssl_arg \
                 --cache-file ${ERL_TOP}/erts/autoconf/${TARGET}/config.cache \
                 --srcdir=${ERL_TOP}/erts" \
 )

@@ -3,33 +3,53 @@
                             --------------------
 
 Please read the whole file before attempting to build and install
-Erlang.
+Erlang. Always read the latest build notes at
 
-What you need
--------------
+  http://www.erlang.org/
+
 
   otp_src_R7B-0.tar.gz
+Required utilities
+------------------
 
-(See below for which programs you need to compile)
+These are the known tools you will need in order to unpack and build
+the Erlang base kit.
+
+  Unpacking
+
+    GNU unzip, or a modern uncompress
+    A TAR program that understand the GNU TAR format for long
+    filenames (such as e.g. GNU TAR)
+
+  Compiling
+
+    GNU make (this is a must)
+    C compiler (ANSI)
+    Perl 5 (this used to be optional, but now it is required)
+    openSSL/ssleay (optional) if not configured with '--without-ssl'
+    Sun Java jdk-1.2.2 (optional) for compiling the application
+    Jinterface
+
+  Installing
+
+    An install program that can take multiple file names
 
 
 How to build and install Erlang
 -------------------------------
 
-Start by unpacking the Erlang base kit distribution file. (Please note
-that to unpack the distribution files you will need a zcat program
-that can handle gzipped files and a tar program which handles long
-file names.)
+Start by unpacking the Erlang base kit distribution file.
 
+  1)    gunzip -c otp_src_R7B-0.tar.gz | tar xf -
   1)    zcat otp_src_R7B-0.tar.gz | tar xf -
 
 Now cd into the base kit directory.
 
   2)    cd otp_src_R7B-0
 
-Then run the following commands
+Run the following commands
 
-  3)    ./configure
+  3)    ./configure  [ options ]
   4)    make
   5)    make install
 
@@ -48,7 +68,10 @@ additional libraries unpacked in step 3 (if you didn't add any of the
 extra libraries configure will issue a warning saying that there is no
 configuration information in lib, this warning can safely be ignored).
 
-    Step 4 first build the Erlang emulator, this will take
+You can also specify where the openSSL/ssleay include and library
+files are located or disable the use of SSL.
+
+    Step 4 first builds the Erlang emulator, this will take
 approximately five minutes on a reasonably fast machine. It then
 proceeds to build the Erlang libraries in the "lib" subdirectory using
 the built emulator and the bootstrap libraries provided in the
@@ -57,8 +80,7 @@ time, expect half an hour up to a couple of hours. After step 4 is
 completed you should have a working Erlang system which you can try by
 typing "bin/erl". This should start up Erlang and give you a prompt.
 
-    Step 5 is optional. It installs the Erlang system, together with
-documentation in the directory which you specified in step 3. (If you
+    Step 5 is optional. It installs the Erlang system (if you
 change your mind about where you wish to install you can rerun step 3,
 without having to do step 4 again).
 
@@ -66,27 +88,20 @@ If you or your system has special requirements please read the
 Makefile for additional configuration information.
 
 
-Required utilities
-------------------
+How to install the Erlang documentation
+---------------------------------------
 
-These are the known tools you will need in order to unpack and build
-the Erlang base kit.
+For some graphical tools to find the on-line help you have to install
+the HTML documentation on top of the installed OTP applications, i.e.
 
-  Unpacking
+        cd <PrefixDir>/lib/erlang
+        gunzip -c otp_doc_html_R7B.tar.gz | tar xf -
 
-    GNU unzip, or a modern uncompress
-    A tar program that understand the GNU tar format for long
-      filenames (such as e.g. GNU tar) 
+For "erl -man <page>" to work the Unix manual pages have to be
+installed in the same way, i.e.
 
-  Compiling
-
-    GNU make (this is a must)
-    C compiler (ANSI)
-    Perl 5 (this used to be optional, but now it is required)
-
-  Installing
-
-    An install program that can take multiple file names
+        cd <PrefixDir>/lib/erlang
+        gunzip -c otp_doc_man_R7B.tar.gz | tar xf -
 
 
 Portability
@@ -152,5 +167,4 @@ More Information
 More information can be found on http://www.erlang.org/
 
 For commercial inquires (printed documentation, support et.c.) please
-visit http://www.erlang.se/info/
-
+visit http://www.erlang.se/

@@ -1088,7 +1088,7 @@ static void* heap_exhausted()
     /* Crash-and-burn --- leave a usable corpse (hopefully) */
     abort();
 #endif    
-    /* The usual ANSI-compliant behaviour
+    /* The usual ANSI-compliant behaviour */
     return 0;
 }
 

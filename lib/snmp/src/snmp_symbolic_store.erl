@@ -41,6 +41,12 @@
 	 get_notification/1, set_notification/2, delete_notifications/1,
 	 start_link/1, start_link/2, add_types/2, delete_types/1]).
 
+%% API (for quick access to the db, note that this is only reads).
+-export([get_db/0,
+	 aliasname_to_oid/2, oid_to_aliasname/2, 
+	 enum_to_int/3, int_to_enum/3]).
+
+
 %% Internal exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
 	code_change/3]).
@@ -59,6 +65,12 @@ start_link(Prio) ->
 start_link(Prio,Opts) ->
     gen_server:start_link({local, snmp_symbolic_store}, snmp_symbolic_store,
 			  [Prio,Opts], []).
+
+%%----------------------------------------------------------------------
+%% Returns: Db
+%%----------------------------------------------------------------------
+get_db() ->
+    gen_server:call(snmp_symbolic_store, get_db, infinity).
 
 %%----------------------------------------------------------------------
 %% Returns: {value, Oid} | false
@@ -136,6 +148,101 @@ delete_notifications(MibName) ->
 verbosity(Verbosity) -> 
     gen_server:cast(snmp_symbolic_store,{verbosity,Verbosity}).
 
+
+%%----------------------------------------------------------------------
+%% DB access (read) functions: Returns: {value, Oid} | false
+%%----------------------------------------------------------------------
+aliasname_to_oid(Db,Aliasname) ->
+    ?debug("aliasname_to_oid -> entry with~n"
+	   "  Db:        ~p~n"
+	   "  Aliasname: ~p",
+	   [Db,Aliasname]),
+    case ets:lookup(Db, {alias, Aliasname}) of
+	[{_Key, _MibName, {Oid, _Enums}}|_] -> {value, Oid};
+	_ -> false
+    end.
+
+oid_to_aliasname(Db,Oid) ->
+    ?debug("oid_to_aliasname -> entry with~n"
+	   "  Db:  ~p~n"
+	   "  Oid: ~p",
+	   [Db,Oid]),
+    case ets:lookup(Db, {alias, Oid}) of
+	[{_Key, _MibName, Aliasname}|_] -> {value, Aliasname};
+	_ -> false
+    end.
+
+int_to_enum(Db,TypeOrObjName,Int) ->
+    ?debug("int_to_enum -> entry with~n"
+	   "  Db:            ~p~n"
+	   "  TypeOrObjName: ~p~n"
+	   "  Int:           ~p",
+	   [Db,TypeOrObjName,Int]),
+    case ets:lookup(Db, {alias, TypeOrObjName}) of
+	[{_Key, _MibName, {_Oid, Enums}}|_] ->
+	    case lists:keysearch(Int, 2, Enums) of
+		{value, {Enum, _Int}} -> {value, Enum};
+		false -> false
+	    end;
+	_NotAnAliasname ->
+	    ?debug("int_to_enum -> not alias, try type",[]),
+	    case ets:lookup(Db, {type, TypeOrObjName}) of
+		[{_Key, _MibName, Enums}|_] ->
+		    case lists:keysearch(Int, 2, Enums) of
+			{value, {Enum, _Int}} -> {value, Enum};
+			false -> false
+		    end;
+		_ ->
+		    false
+	    end
+    end.
+
+enum_to_int(Db, TypeOrObjName, Enum) ->
+    ?debug("int_to_enum -> entry with~n"
+	   "  Db:            ~p~n"
+	   "  TypeOrObjName: ~p~n"
+	   "  Enum:          ~p",
+	   [Db,TypeOrObjName,Enum]),
+    case ets:lookup(Db, {alias, TypeOrObjName}) of
+	[{_Key, _MibName, {_Oid, Enums}}|_] ->
+	    case lists:keysearch(Enum, 1, Enums) of
+		{value, {_Enum, Int}} -> {value, Int};
+		false -> false
+	    end;
+	_NotAnAliasname -> 
+	    ?debug("enum_to_int -> not alias, try type",[]),
+	    case ets:lookup(Db, {type, TypeOrObjName}) of
+		[{_Key, _MibName, Enums}|_] ->
+		    case lists:keysearch(Enum, 1, Enums) of
+			{value, {_Enum, Int}} -> {value, Int};
+			false -> false
+		    end;
+		_ ->
+		    false
+	    end
+    end.
+
+
+%%----------------------------------------------------------------------
+%% DB access (read) functions: Returns: false|{value, Info}
+%%----------------------------------------------------------------------
+table_info(Db,TableName) ->
+    case ets:lookup(Db, {table_info, TableName}) of
+	[{_Key, _MibName, Info}] -> {value, Info};
+	_ -> false
+    end.
+
+
+%%----------------------------------------------------------------------
+%% DB access (read) functions: Returns: false|{value, Info}
+%%----------------------------------------------------------------------
+variable_info(Db,VariableName) ->
+    case ets:lookup(Db, {variable_info, VariableName}) of
+	[{_Key, _MibName, Info}] -> {value, Info};
+	_ -> false
+    end.
+
+
 %%----------------------------------------------------------------------
 %% Implementation
 %%----------------------------------------------------------------------
@@ -147,93 +254,47 @@ init([Prio,Opts]) ->
     ?vlog("starting",[]),
     %% type = bag solves the problem with import and multiple
     %% object/type definitions.
-    S = #state{tab = ets:new(snmp_symbolic_ets, [bag, private])},
+    S = #state{tab = ets:new(snmp_symbolic_ets, [bag, protected])},
     ?vdebug("started",[]),
     {ok, S}.
 
+handle_call(get_db, _From, S) ->
+    ?vlog("get db",[]),
+    {reply, S#state.tab, S};
+
 handle_call({table_info, TableName}, _From, S) ->
     ?vlog("table info: ~p",[TableName]),
-    Res = 
-	case ets:lookup(S#state.tab, {table_info, TableName}) of
-	    [{_Key, _MibName, Info}] -> {value, Info};
-	    _ -> false
-	end,
+    Res = table_info(S#state.tab, TableName),
     ?vdebug("table info result: ~p",[Res]),
     {reply, Res, S};
 
 handle_call({variable_info, VariableName}, _From, S) ->
     ?vlog("variable info: ~p",[VariableName]),
-    Res = 
-	case ets:lookup(S#state.tab, {variable_info, VariableName}) of
-	    [{_Key, _MibName, Info}] -> {value, Info};
-	    _ -> false
-	end,
+    Res = variable_info(S#state.tab, VariableName),
     ?vdebug("variable info result: ~p",[Res]),
     {reply, Res, S};
 
 handle_call({aliasname_to_oid, Aliasname}, _From, S) ->
     ?vlog("aliasname to oid: ~p",[Aliasname]),
-    Res =
-	case ets:lookup(S#state.tab, {alias, Aliasname}) of
-	    [{_Key, _MibName, {Oid, _Enums}}|_] -> {value, Oid};
-	    _ -> false
-	end,
+    Res = aliasname_to_oid(S#state.tab,Aliasname),
     ?vdebug("aliasname to oid result: ~p",[Res]),
     {reply, Res, S};
 
 handle_call({oid_to_aliasname, Oid}, _From, S) ->
     ?vlog("oid to aliasname: ~p",[Oid]),
-    Res = 
-	case ets:lookup(S#state.tab, {alias, Oid}) of
-	    [{_Key, _MibName, Aliasname}|_] -> {value, Aliasname};
-	    _ -> false
-	end,
+    Res = oid_to_aliasname(S#state.tab, Oid),
     ?vdebug("oid to aliasname result: ~p",[Res]),
     {reply, Res, S};
 
 handle_call({enum_to_int, TypeOrObjName, Enum}, _From, S) ->
     ?vlog("enum to int: ~p, ~p",[TypeOrObjName,Enum]),
-    Res = 
-	case ets:lookup(S#state.tab, {alias, TypeOrObjName}) of
-	    [{_Key, _MibName, {_Oid, Enums}}|_] ->
-		case lists:keysearch(Enum, 1, Enums) of
-		    {value, {_Enum, Int}} -> {value, Int};
-		    false -> false
-		end;
-	    _NotAnAliasname -> 
-		case ets:lookup(S#state.tab, {type, TypeOrObjName}) of
-		    [{_Key, _MibName, Enums}|_] ->
-			case lists:keysearch(Enum, 1, Enums) of
-			    {value, {_Enum, Int}} -> {value, Int};
-			    false -> false
-			end;
-		    _ ->
-			false
-		end
-	end,
+    Res = enum_to_int(S#state.tab, TypeOrObjName, Enum),
     ?vdebug("enum to int result: ~p",[Res]),
     {reply, Res, S};
 
 handle_call({int_to_enum, TypeOrObjName, Int}, _From, S) ->
     ?vlog("int to enum: ~p, ~p",[TypeOrObjName,Int]),
-    Res = 
-	case ets:lookup(S#state.tab, {alias, TypeOrObjName}) of
-	    [{_Key, _MibName, {_Oid, Enums}}|_] ->
-		case lists:keysearch(Int, 2, Enums) of
-		    {value, {Enum, _Int}} -> {value, Enum};
-		    false -> false
-		end;
-	    _NotAnAliasname ->
-		case ets:lookup(S#state.tab, {type, TypeOrObjName}) of
-		    [{_Key, _MibName, Enums}|_] ->
-			case lists:keysearch(Int, 2, Enums) of
-			    {value, {Enum, _Int}} -> {value, Enum};
-			    false -> false
-			end;
-		    _ ->
-			false
-		end
-	end,
+    Res = int_to_enum(S#state.tab, TypeOrObjName, Int),
     ?vdebug("int to enum result: ~p",[Res]),
     {reply, Res, S};
 
@@ -352,61 +413,39 @@ terminate(Reason, S) ->
 %%----------------------------------------------------------
 
 % downgrade
-code_change({down, Vsn}, State, downgrade_to_3_1_4) ->
+code_change({down, Vsn}, State, downgrade_to_pre_3_2_0) ->
     ?debug("code_change(down) -> entry with~n"
 	   "  Vsn:   ~p~n"
 	   "  State: ~p~n"
 	   "  Extra: ~p",
-      [Vsn,State,downgrade_to_3_1_4]),
+      [Vsn,State,downgrade_to_pre_3_2_0]),
     ets_downgrade(State#state.tab),
     ?debug("downgrade done",[]),
     {ok, State};
-code_change({down, Vsn}, State, downgrade_to_3_1_3) ->
+code_change({down, Vsn}, State, Extra) ->
     ?debug("code_change(down) -> entry with~n"
 	   "  Vsn:   ~p~n"
 	   "  State: ~p~n"
 	   "  Extra: ~p",
-      [Vsn,State,downgrade_to_3_1_3]),
-    ets_downgrade(State#state.tab),
-    ?debug("downgrade done",[]),
-    {ok, State};
-code_change({down, Vsn}, State, downgrade_to_3_0_9_2) ->
-    ?debug("code_change(down) -> entry with~n"
-	   "  Vsn:   ~p~n"
-	   "  State: ~p~n"
-	   "  Extra: ~p",
-      [Vsn,State,downgrade_to_3_0_9_2]),
-    ets_downgrade(State#state.tab),
-    ?debug("downgrade done",[]),
+      [Vsn,State,Extra]),
     {ok, State};
 
 % upgrade
-code_change(Vsn, State, upgrade_from_3_1_4) ->
-    ?debug("code_change -> entry with~n"
+code_change(Vsn, State, upgrade_from_pre_3_2_0) ->
+    ?debug("code_change(up) -> entry with~n"
 	   "  Vsn:   ~p~n"
 	   "  State: ~p~n"
 	   "  Extra: ~p",
-      [Vsn,State,upgrade_from_3_1_4]),
+      [Vsn,State,upgrade_from_pre_3_2_0]),
     ets_upgrade(State#state.tab),
     ?debug("upgrade done",[]),
     {ok, State};
-code_change(Vsn, State, upgrade_from_3_1_3) ->
-    ?debug("code_change -> entry with~n"
+code_change(Vsn, State, Extra) ->
+    ?debug("code_change(up) -> entry with~n"
 	   "  Vsn:   ~p~n"
 	   "  State: ~p~n"
 	   "  Extra: ~p",
-      [Vsn,State,upgrade_from_3_1_3]),
-    ets_upgrade(State#state.tab),
-    ?debug("upgrade done",[]),
-    {ok, State};
-code_change(Vsn, State, upgrade_from_3_0_9_2) ->
-    ?debug("code_change -> entry with~n"
-	   "  Vsn:   ~p~n"
-	   "  State: ~p~n"
-	   "  Extra: ~p",
-      [Vsn,State,upgrade_from_3_0_9_2]),
-    ets_upgrade(State#state.tab),
-    ?debug("upgrade done",[]),
+      [Vsn,State,Extra]),
     {ok, State}.
 
 

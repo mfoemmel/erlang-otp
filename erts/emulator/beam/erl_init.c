@@ -282,8 +282,10 @@ erl_start(int argc, char **argv)
     int have_break_handler = 1;
     char* tmpenvbuf;
 
-    erl_sys_init();
     program = argv[0];
+
+    erl_sys_init();
+    erl_sys_args(&argc, argv);
 
     tmpenvbuf = getenv(ERL_MAX_ETS_TABLES_ENV);
     if (tmpenvbuf != NULL) 

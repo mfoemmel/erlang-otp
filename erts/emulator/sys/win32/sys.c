@@ -50,12 +50,18 @@ void erl_crash_dump(char*, char*);
 extern void _dosmaperr(DWORD);
 
 #ifdef ERL_RUN_SHARED_LIB
+#ifdef __argc
+#undef __argc
+#endif
 #define __argc e_argc
+#ifdef __argv
+#undef __argv
+#endif
 #define __argv e_argv
 #endif
 
-static void init_console(/*int argc, char* argv[]*/);
-static int get_and_remove_option(int argc, char* argv[], char* option);
+static void init_console();
+static int get_and_remove_option(int* argc, char** argv, const char* option);
 static int init_async_io(struct async_io* aio, int use_threads);
 static void release_async_io(struct async_io* aio);
 static void async_read_file(struct async_io* aio, LPVOID buf, DWORD numToRead);
@@ -67,9 +73,9 @@ static FUNCTION(BOOL, CreateChildProcess, (char *, HANDLE, HANDLE,
 					   LPVOID, LPTSTR));
 static int create_pipe(LPHANDLE, LPHANDLE, BOOL);
 static int ApplicationType(const char* originalName, char fullPath[MAX_PATH]);
-/*
+
 DWORD WINAPI nohup_thread(LPVOID param);
-*/
+
 
 /* Results from ApplicationType is one of */
 #define APPL_NONE 0
@@ -120,28 +126,44 @@ static OSVERSIONINFO int_os_version;	/* Version information for Win32. */
 
 HMODULE beam_module = NULL;
 
-void erl_sys_init(void);
+void erl_sys_init();
+
+void erl_sys_args(int* argc, char** argv);
+
 
 #ifndef ERL_RUN_SHARED_LIB
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 		   PSTR szCmdLine, int iCmdShow)
 #else
-__declspec( dllexport )  int starta_emulatorn(int e_argc, const char** e_argv)
+__declspec( dllexport )  int starta_emulatorn(int e_argc, char** e_argv)
 #endif
 {
     HANDLE handle;
-
+    int nohup = 0;
     /*DebugBreak();*/
 
     erl_sys_init();
+
+    /*
+     * Start a thread which will prevent us to be killed if a user logs out.
+     * NB: This is needed for erlsrv!
+     */
+
+    if (get_and_remove_option(&e_argc, e_argv, "-nohup")) {
+	nohup = 1;
+    }
+
+    if (nohup) {
+	DWORD tid;
+ 	_beginthreadex(NULL, 0, nohup_thread, 0, 0, &tid);
+    }
 
 #ifdef DEBUG
     /*
      * Start a debug console if -console option given.
      */
 
-    if (get_and_remove_option(__argc, __argv, "-console")) {
-	__argc--;
+    if (get_and_remove_option(&__argc, __argv, "-console")) {
 	debug_console();
     }
 #endif
@@ -154,7 +176,7 @@ __declspec( dllexport )  int starta_emulatorn(int e_argc, const char** e_argv)
             beam_module = GetModuleHandle("beam.dll");
 #endif
 #endif
-    init_console(__argc, __argv);
+    init_console();
 
     /*
      * The following makes sure that the current directory for the current drive
@@ -179,8 +201,7 @@ __declspec( dllexport )  int starta_emulatorn(int e_argc, const char** e_argv)
      * named pipes.
      */
 
-    if (get_and_remove_option(__argc, __argv, "-threads")) {
-	__argc--;
+    if (get_and_remove_option(&__argc, __argv, "-threads")) {
 	use_named_pipes = FALSE;
     }
 #endif
@@ -203,19 +224,46 @@ __declspec( dllexport )  int starta_emulatorn(int e_argc, const char** e_argv)
 #endif
 }
 
+int nohup;
+
+void erl_sys_args(int* argc, char** argv)
+{
+    nohup = get_and_remove_option(argc, argv, "-nohup");
+
+#ifndef ERL_RUN_SHARED_LIB
+    if (nohup) {
+	DWORD tid;
+ 	_beginthreadex(NULL, 0, nohup_thread, 0, 0, &tid);
+    }
+#endif
+
+#ifdef DEBUG
+    /*
+     * Start a debug console if -console option given.
+     */
+
+    if (get_and_remove_option(argc, argv, "-console")) {
+	debug_console();
+    }
+#endif
+
+#ifdef DEBUG
+    /*
+     * Given the "-threads" option, always use threads instead of
+     * named pipes.
+     */
+
+    if (get_and_remove_option(argc, argv, "-threads")) {
+	use_named_pipes = FALSE;
+    }
+#endif
+}
 
 static void
-init_console(/*int argc, char* argv[]*/)
+init_console()
 {
     char* mode = getenv("ERL_CONSOLE_MODE");
-/*
-    int nohup = 0;
 
-    if (get_and_remove_option(argc, argv, "-nohup")) {
-	argc--;
-	nohup = 1;
-    }
-*/
     if (mode == NULL) {
 	mode = "window";
     }
@@ -236,16 +284,6 @@ init_console(/*int argc, char* argv[]*/)
 	    setvbuf(stderr, NULL, _IONBF, 0);
 	}
     }
-
-/*
-    /*
-     * Start a thread which will prevent us to be killed if a user logs out.
-     *
-    if (nohup) {
-	DWORD tid;
-	_beginthreadex(NULL, 0, nohup_thread, 0, 0, &tid);
-    }
-*/
 }
 
 DWORD WINAPI
@@ -313,16 +351,16 @@ int sys_max_files()
 
 static int
 get_and_remove_option(argc, argv, option)
-    int argc;			/* Number of arguments. */
+    int* argc;			/* Number of arguments. */
     char* argv[];		/* The argument vector. */
-    char* option;		/* Option to search for and remove. */
+    const char* option;		/* Option to search for and remove. */
 {
     int i;
 
-    for (i = 1; i < argc; i++) {
+    for (i = 1; i < *argc; i++) {
 	if (strcmp(argv[i], option) == 0) {
-	    argc--;
-	    while (i < argc) {
+	    (*argc)--;
+	    while (i < *argc) {
 		argv[i] = argv[i+1];
 		i++;
 	    }
@@ -2332,9 +2370,6 @@ void sys_preload_end(Preload* pp)
 int
 sys_get_key(int fd)
 {
-    int c;
-    unsigned char rbuf[64];
-    
     ASSERT(fd == 0);
 
     if (win_console) {
@@ -2345,7 +2380,7 @@ sys_get_key(int fd)
      * Black magic follows. (Code stolen from get_overlapped_result())
      */
 
-    if (fd_driver_input != NULL && fd_driver_input->thread != -1) {
+    if (fd_driver_input != NULL && fd_driver_input->thread != (HANDLE)-1) {
 	DWORD error;
 	int key;
 
@@ -2553,7 +2588,7 @@ erl_assert_error(char* expr, char* file, int line)
  */
 
 void
-erl_sys_init(void)
+erl_sys_init()
 {
     HANDLE handle;
     /*
@@ -2591,7 +2626,7 @@ erl_sys_init(void)
             beam_module = GetModuleHandle("beam.dll");
 #endif
 #endif
-    init_console(/*__argc, __argv*/);
+    init_console();
 
     /*
      * The following makes sure that the current directory for the current drive
@@ -2603,14 +2638,12 @@ erl_sys_init(void)
     /*
      * Make sure that the standard error handle is valid.
      */
-    
     handle = GetStdHandle(STD_ERROR_HANDLE);
     if (handle == INVALID_HANDLE_VALUE || handle == 0) {
 	SetStdHandle(STD_ERROR_HANDLE, GetStdHandle(STD_OUTPUT_HANDLE));
     }
     init_sys_float();
     init_sys_select();
-
 }
 
 void 
@@ -2643,7 +2676,7 @@ void sys_async_ready(int fd)
     int r;
     /* r = write(fd, "0", 1);  /* signal main thread fd MUST be async_fd[1] */
     SetEvent(async_drv_event);
-    DEBUGF(("sys_async_ready: r = %d\r\n", r));
+    /* DEBUGF(("sys_async_ready: r = %d\r\n", r)); */
 }
 
 static int async_drv_init()

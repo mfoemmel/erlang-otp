@@ -48,7 +48,7 @@ OBJS = \
 	$(OBJDIR)\erlsrv_interactive.obj \
 	$(OBJDIR)\erlsrv_main.obj \
 	$(OBJDIR)\erlsrv_util.obj	
-	
+
 # All resources are generated from Message compiler source
 RC_TARGET	= $(OBJDIR)\erlsrv_logmess.res
 RC_SOURCE	= $(OBJDIR)\erlsrv_logmess.rc

@@ -29,7 +29,21 @@
  
   <p>This document describes the changes made to Jinterface. </p>
 
-    <section><title>Version 1.2</title>
+  
+  <section><title>Version 1.2.1</title>
+    <section><title>Fixed bugs</title>
+      <list>
+	<item> 
+	  <p>a bug on the constructor for OtpNode which caused 
+	    NullPointerException, is fixed. </p>
+	  <p> Own Id: OTP-3721 </p>
+	</item>
+      </list>
+    </section>
+  </section> 
+
+
+  <section><title>Version 1.2</title>
       <section><title>New features</title>
        <list>
        <item>

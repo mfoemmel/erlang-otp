@@ -27,9 +27,12 @@
 -export([debug/2, verbosity/2, dump_mibs/0, dump_mibs/1,
 	 c/1, c/2, is_consistent/1, mib_to_hrl/1, config/0,
 	 current_request_id/0, current_community/0, current_address/0,
-	 current_context/0,
-	 current_net_if_data/0, name_to_oid/1, oid_to_name/1,
+	 current_context/0, current_net_if_data/0, 
+	 name_to_oid/1, oid_to_name/1,
 	 int_to_enum/2, enum_to_int/2,
+	 get_symbolic_store_db/0,
+	 name_to_oid/2, oid_to_name/2,
+	 int_to_enum/3, enum_to_int/3,
 	 date_and_time/0, universal_time_to_date_and_time/1,
 	 local_time_to_date_and_time/1, date_and_time_to_universal_time/1,
 	 validate_date_and_time/1, date_and_time_to_string/1,
@@ -89,8 +92,19 @@ is_consistent(Filenames) ->
 mib_to_hrl(MibName) ->
     snmp_mib_to_hrl:convert(MibName).
 
+
 %%-----------------------------------------------------------------
-%% These 4 functions returns {value, Val} | false
+%% Get the symbolic store (internal) database id for faster access to
+%% to data.
+%% Returns: term()
+%%-----------------------------------------------------------------
+
+get_symbolic_store_db() ->
+    snmp_symbolic_store:get_db().
+
+
+%%-----------------------------------------------------------------
+%% These 8 functions returns {value, Val} | false
 %%-----------------------------------------------------------------
 name_to_oid(Name) ->
     snmp_symbolic_store:aliasname_to_oid(Name).
@@ -103,6 +117,18 @@ enum_to_int(Name, Enum) ->
 
 int_to_enum(Name, Int) ->
     snmp_symbolic_store:int_to_enum(Name, Int).
+
+name_to_oid(Db, Name) ->
+    snmp_symbolic_store:aliasname_to_oid(Db, Name).
+
+oid_to_name(Db, OID) ->
+    snmp_symbolic_store:oid_to_aliasname(Db, OID).
+
+enum_to_int(Db, Name, Enum) ->
+    snmp_symbolic_store:enum_to_int(Db, Name, Enum).
+
+int_to_enum(Db, Name, Int) ->
+    snmp_symbolic_store:int_to_enum(Db, Name, Int).
 
 %%-----------------------------------------------------------------
 %% These functions must only be called in the process context

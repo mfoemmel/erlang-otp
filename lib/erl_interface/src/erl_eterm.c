@@ -32,6 +32,7 @@
 #define ERL_IS_BYTE(x) (ERL_IS_INTEGER(x) && (ERL_INT_VALUE(x) & ~0xFF) == 0)
 
 static void iolist_to_buf(ETERM* term, char** bufp);
+static char* strsave(const char *src);
 
 extern void erl_init_marshal(void);
 
@@ -107,7 +108,7 @@ erl_mk_atom (char *s)
   ep = erl_alloc_eterm(ERL_ATOM);
   ERL_COUNT(ep) = 1;
   ERL_ATOM_SIZE(ep) = strlen(s);
-  if ((ERL_ATOM_PTR(ep) = strdup(s)) == NULL)
+  if ((ERL_ATOM_PTR(ep) = strsave(s)) == NULL)
   {
       erl_free_term(ep);
       erl_errno = ENOMEM;
@@ -172,7 +173,7 @@ ETERM *erl_mk_pid(const char *node,
 
     ep = erl_alloc_eterm(ERL_PID);
     ERL_COUNT(ep) = 1;
-    if ((ERL_PID_NODE(ep) = strdup(node)) == NULL)
+    if ((ERL_PID_NODE(ep) = strsave(node)) == NULL)
     {	     
 	erl_free_term(ep);
 	erl_errno = ENOMEM;
@@ -198,7 +199,7 @@ ETERM *erl_mk_port(const char *node,
 
     ep = erl_alloc_eterm(ERL_PORT);
     ERL_COUNT(ep) = 1;
-    if ((ERL_PORT_NODE(ep) = strdup(node)) == NULL)
+    if ((ERL_PORT_NODE(ep) = strsave(node)) == NULL)
     {	     
 	erl_free_term(ep);
 	erl_errno = ENOMEM;
@@ -225,7 +226,7 @@ __erl_mk_reference (const char *node,
     t = erl_alloc_eterm(ERL_REF);
     ERL_COUNT(t) = 1;
 
-    if ((ERL_REF_NODE(t) = strdup(node)) == NULL)
+    if ((ERL_REF_NODE(t) = strsave(node)) == NULL)
     {	     
 	erl_free_term(t);
 	erl_errno = ENOMEM;
@@ -475,7 +476,7 @@ erl_mk_var (char *s)
     ep = erl_alloc_eterm(ERL_VARIABLE);
     ERL_COUNT(ep) = 1;
     ERL_VAR_LEN(ep) = strlen(s);    
-    if ((ERL_VAR_NAME(ep) = strdup(s)) == NULL)
+    if ((ERL_VAR_NAME(ep) = strsave(s)) == NULL)
     {
 	erl_free_term(ep);
 	erl_errno = ENOMEM;
@@ -758,7 +759,7 @@ erl_copy_term (ETERM *ep)
 	break;
     case ERL_ATOM:
 	ERL_ATOM_SIZE(cp) = ERL_ATOM_SIZE(ep);
-	ERL_ATOM_PTR(cp) = strdup(ERL_ATOM_PTR(ep));
+	ERL_ATOM_PTR(cp) = strsave(ERL_ATOM_PTR(ep));
 	if (ERL_ATOM_PTR(cp) == NULL)
 	{
 	    erl_free_term(cp);
@@ -771,17 +772,17 @@ erl_copy_term (ETERM *ep)
            name and plug in. Somewhat ugly (also done with port and
            ref below). */
 	memcpy(&cp->uval.pidval, &ep->uval.pidval, sizeof(Erl_Pid));
-	ERL_PID_NODE(cp) = strdup(ERL_PID_NODE(ep));
+	ERL_PID_NODE(cp) = strsave(ERL_PID_NODE(ep));
 	ERL_COUNT(cp) = 1;
 	break;
     case ERL_PORT:
 	memcpy(&cp->uval.portval, &ep->uval.portval, sizeof(Erl_Port));
-	ERL_PORT_NODE(cp) = strdup(ERL_PORT_NODE(ep));
+	ERL_PORT_NODE(cp) = strsave(ERL_PORT_NODE(ep));
 	ERL_COUNT(cp) = 1;
 	break;
     case ERL_REF:
 	memcpy(&cp->uval.refval, &ep->uval.refval, sizeof(Erl_Ref));
-	ERL_REF_NODE(cp) = strdup(ERL_REF_NODE(ep));
+	ERL_REF_NODE(cp) = strsave(ERL_REF_NODE(ep));
 	ERL_COUNT(cp) = 1;
 	break;
     case ERL_LIST:
@@ -1063,6 +1064,16 @@ iolist_to_buf(term, bufp)
       /* ASSERT(ERL_IS_EMPTY_LIST(term));*/
     }
     *bufp = dest;
+}
+
+static char*
+strsave(const char *src)
+{
+    char * dest = malloc(strlen(src)+1);
+
+    if (dest != NULL)
+	strcpy(dest, src);
+    return dest;
 }
 
 

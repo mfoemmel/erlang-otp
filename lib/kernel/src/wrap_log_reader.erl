@@ -20,6 +20,14 @@
 
 -module(wrap_log_reader).
 
+%-define(debug, true).
+
+-ifdef(debug).
+-define(FORMAT(P, A), io:format(P, A)).
+-else.
+-define(FORMAT(P, A), ok).
+-endif.
+
 %%-compile(export_all).
 -export([open/1, open/2, chunk/1, chunk/2, close/1]).
 -export([last_mod_time/1]).
@@ -51,7 +59,7 @@ open(File) when list(File) ->
 	%% first 'round' of filling the wrap files.
 	{ok, {CurFileNo, CurFileSz, TotSz, NoOfFiles}} 
 	  when CurFileNo == NoOfFiles + 1 ->
-%	    io:format("****1 ~p~n",[{CurFileNo, CurFileSz, TotSz, NoOfFiles}]),
+	    ?FORMAT("****1 ~p~n",[{CurFileNo, CurFileSz, TotSz, NoOfFiles}]),
 	    FileNo = 1,
 	    case open_int(add_ext(File, FileNo)) of
 		{ok, Fd, ModTime} ->
@@ -60,13 +68,13 @@ open(File) when list(File) ->
 		    E_open
 	    end;
 	{ok, {CurFileNo, CurFileSz, TotSz, NoOfFiles}} ->
-%	    io:format("****2 ~p~n",[{CurFileNo, CurFileSz, TotSz, NoOfFiles}]),
+	    ?FORMAT("****2 ~p~n",[{CurFileNo, CurFileSz, TotSz, NoOfFiles}]),
 	    FileNo = case (CurFileNo + 1) rem NoOfFiles of
 			 0 -> NoOfFiles;
 
 			 No -> No
 		     end,
-%	    io:format("****2 FileNo ~p~n",[FileNo]),
+	    ?FORMAT("****2 FileNo ~p~n",[FileNo]),
 	    case open_int(add_ext(File, FileNo)) of
 		{ok, Fd, ModTime} ->
 		    {ok, {{Fd, start}, {File, {FileNo, ModTime}, FileNo}}};
@@ -80,9 +88,9 @@ open(File) when list(File) ->
 open(File, FileNo) when atom(File), integer(FileNo) ->
     open(atom_to_list(File), FileNo);
 open(File, FileNo) when list(File), integer(FileNo) ->
-%    io:format("index file  ~p~n",[read_index_file(File)]),
+    ?FORMAT("index file  ~p~n",[read_index_file(File)]),
     case read_index_file(File) of
-	{ok, {CurFileNo, CurFileSz, TotSz, NoOfFiles}} 
+	{ok, {CurFileNo, _CurFileSz, _TotSz, NoOfFiles}} 
 	  when NoOfFiles >= FileNo ->
 	    case open_int(add_ext(File, FileNo)) of
 		{ok, Fd, ModTime} ->
@@ -93,7 +101,7 @@ open(File, FileNo) when list(File), integer(FileNo) ->
 	%% Special case, if current file number is one greater than number of 
 	%% files then the max file numer is not yet reached, we are on 
 	%% the first 'round' of filling the wrap files.
-	{ok, {CurFileNo, CurFileSz, TotSz, NoOfFiles}} 
+	{ok, {CurFileNo, _CurFileSz, _TotSz, NoOfFiles}} 
 	  when CurFileNo == FileNo, CurFileNo == NoOfFiles +1 ->
 	    case open_int(add_ext(File, FileNo)) of
 		{ok, Fd, ModTime} ->
@@ -101,7 +109,7 @@ open(File, FileNo) when list(File), integer(FileNo) ->
 		E_open ->
 		    E_open
 	    end;
-	{ok, {CurFileNo, CurFileSz, TotSz, NoOfFiles}} ->
+	{ok, {CurFileNo, _CurFileSz, _TotSz, NoOfFiles}} ->
 	    {error, {file_not_found, add_ext(File, FileNo)}};
 	{error, E} ->
 	    {error, E}
@@ -111,7 +119,7 @@ open(File, FileNo) when list(File), integer(FileNo) ->
 %%============================================================================
 %% Close the file
 %%============================================================================
-close({{Fd, _}, Info}) ->
+close({{Fd, _}, _Info}) ->
     file:close(Fd);
 close(Fd) ->
     file:close(Fd).
@@ -123,9 +131,12 @@ close(Fd) ->
 %% default size is 8k.
 %%============================================================================
 chunk({{Fd, ContIn}, Info}) ->
-    chunk({{Fd, ContIn}, Info}, ?MAX_CHUNK_SIZE). 
+    chunk({{Fd, ContIn}, Info}, ?MAX_CHUNK_SIZE, 0). 
 
-%chunk({{Fd, Continue}, {File, {CurFileNo,  ModTime}, FirstFileNo}}, N) ->
+chunk({{Fd, ContIn}, Info}, N) ->
+    chunk({{Fd, ContIn}, Info}, N, 0). 
+
+%chunk({{Fd, Continue}, {File, {CurFileNo,  ModTime}, FirstFileNo}}, N, _) ->
 %%    io:format(" ModTime ~p~n",[ModTime]),
 %%    case last_mod_time(add_ext(File, CurFileNo)) of
 %%	{ok, ModTime} ->
@@ -140,9 +151,9 @@ chunk({{Fd, ContIn}, Info}) ->
 %%	    {error, {add_ext(File, CurFileNo), E}}
 %%    end.
 
-chunk({{Fd, Continue}, Info}, N) ->
-    {File, {CurFileNo,  ModTime}, FirstFileNo} = Info,
-    case read_a_chunk(Fd, N, Continue, Info) of
+chunk({{Fd, Continue}, Info}, N, Bad) ->
+    {File, {CurFileNo,  _ModTime}, FirstFileNo} = Info,
+    case read_a_chunk(Fd, N, Continue, add_ext(File, CurFileNo)) of
 	eof ->
 	    case FirstFileNo of
 		%% Read only one specified wrap file
@@ -153,11 +164,11 @@ chunk({{Fd, Continue}, Info}, N) ->
 		%% because there may be one file more than the NoOfFiles 
 		%% indicates.
 		FirstFileNo ->
-%		    io:format("index file  ~p~n",[read_index_file(File)]),
-%		    io:format(" FirstFileNo ~p~n",[FirstFileNo]),
-%		    io:format(" CurFileNo ~p~n",[CurFileNo]),
+		    ?FORMAT("index file  ~p~n",[read_index_file(File)]),
+		    ?FORMAT(" FirstFileNo ~p~n",[FirstFileNo]),
+		    ?FORMAT(" CurFileNo ~p~n",[CurFileNo]),
 		    {ok, {_, _, _, NoOfFiles}} = read_index_file(File),
-%		    io:format(" NoOfFiles ~p~n",[NoOfFiles]),
+		    ?FORMAT(" NoOfFiles ~p~n",[NoOfFiles]),
 		    NewFileNo = case (CurFileNo + 1) rem NoOfFiles of
 				    %% The special case described above
 				    _ when CurFileNo > NoOfFiles -> 1;
@@ -171,28 +182,27 @@ chunk({{Fd, Continue}, Info}, N) ->
 					end;
 				    No -> No
 				end,
-%		    io:format(" NewFileNo  ~p~n",[NewFileNo]),
+		    ?FORMAT(" NewFileNo  ~p~n",[NewFileNo]),
 		    case {FirstFileNo, NewFileNo} of
 			{_, 0} -> {Fd, eof};
 			{_, FirstFileNo} -> {Fd, eof};
-			_ -> read_next_file(Fd, N, Info, NewFileNo)
+			_ -> read_next_file(Fd, N, Info, NewFileNo, Bad)
 		    end
 	    end;
-	{ContOut, []} ->
-%	    io:format(" Read a Chunk:  ~p~n",[chunk_was_empty]),
-	    case chunk({{Fd, ContOut}, Info}, N) of
+	{ContOut, [], BadBytes} ->
+	    ?FORMAT(" Read a Chunk:  ~p~n",[chunk_was_empty]),
+	    case chunk({{Fd, ContOut}, Info}, N, Bad + BadBytes) of
 		{Fd, eof} ->
-%		    io:format(" ChunkResult  ~p~n",[eof]),
+		    ?FORMAT(" ChunkResult  ~p~n",[eof]),
 		    {error, {File, file_has_wrapped}};
 		ChunkResult ->
-%		    io:format(" ChunkResult  ~p~n",[ChunkResult]),
+		    ?FORMAT(" ChunkResult  ~p~n",[ChunkResult]),
 		    ChunkResult
 	    end;
-%	    {{{Fd, ContOut}, Info}, Chunk};
-	{ContOut, Chunk} ->
-%	    io:format(" Read a Chunk:  ~p~n",[beenhere]),
-%	    io:format(" Read a Chunk:  ~p~n",[Chunk]),
+	{ContOut, Chunk, BadBytes} when Bad + BadBytes =:= 0 ->
 	    {{{Fd, ContOut}, Info}, Chunk};
+	{ContOut, Chunk, BadBytes} ->
+	    {{{Fd, ContOut}, Info}, Chunk, Bad + BadBytes};
 	Error ->
 	    Error
     end.
@@ -267,11 +277,11 @@ open_int(FName) ->
 			    {error, 
 			     {FName, "not an internal formatted logfile"}}
 		    end;
-		Other ->
+		_Other ->
 		    close(Fd),
 		    {error, {FName, "not an internal formatted logfile"}}
 	    end;
-	Other ->
+	_Other ->
 	    {error, {FName, "not an internal formatted logfile"}}
     end.
 
@@ -279,13 +289,24 @@ open_int(FName) ->
 %%=============================================================================
 %% Read next chunk
 %%============================================================================
-read_a_chunk(Fd, N, start, {File, _, _}) ->
-    disk_log_1:chunk_read_only(Fd, File, 0, [], N);
-read_a_chunk(Fd, N, More, {File, _, _}) ->
+read_a_chunk(Fd, N, start, FileName) ->
+    read_a_chunk(Fd, FileName, 0, list_to_binary([]), N);
+read_a_chunk(Fd, N, More, FileName) ->
     Pos = More#continuation.pos,
     B = More#continuation.b,
-    disk_log_1:chunk_read_only(Fd, File, Pos, B, N).
+    read_a_chunk(Fd, FileName, Pos, B, N).
 
+read_a_chunk(Fd, FileName, Pos, B, N) ->
+    R = disk_log_1:chunk_read_only(Fd, FileName, Pos, B, N),
+    %% The binaries returned from chunk_read_only/5 are turned into terms.
+    %% 'foo' will do here since Log is not used when in read-only mode.
+    Log = foo,
+    case disk_log:ichunk_end(R, Log) of
+	{C, S} when record(C, continuation) ->
+	    {C, S, 0};
+	Else ->
+	    Else
+    end.
 
 %%============================================================================
 %% Read the index file for the File
@@ -306,25 +327,27 @@ read_index_file(File) ->
 %% When reading all the index files this function closes the previous and opens
 %% the next index file.
 %%============================================================================
-read_next_file(OldFd, N, {File, {CurFileNo, ModTime}, FirstFileNo}, NewFileNo) ->
+read_next_file(OldFd, N, Info, NewFileNo, Bad) ->
+    {File, {CurFileNo, ModTime}, FirstFileNo} = Info,
     close(OldFd),
     case last_mod_time(add_ext(File, NewFileNo)) of
 	{ok, DateNew} ->
 	    ModSeconds = calendar:datetime_to_gregorian_seconds(ModTime),
 	    NewSeconds = calendar:datetime_to_gregorian_seconds(DateNew),
 	    TimeDiff = NewSeconds - ModSeconds,
-%	    io:format("time ~p~n",[calendar:universal_time()]),
-%	    io:format("DateNew ~p~n",[DateNew]),
-%	    io:format("ModTime ~p~n",[ModTime]),
-%	    io:format("calendar:time_difference (seconds)~p~n", [TimeDiff]),
+	    ?FORMAT("time ~p~n",[calendar:universal_time()]),
+	    ?FORMAT("DateNew ~p~n",[DateNew]),
+	    ?FORMAT("ModTime ~p~n",[ModTime]),
+	    ?FORMAT("calendar:time_difference (seconds)~p~n", [TimeDiff]),
 	    if 
 		TimeDiff < 0 ->
 		    {error, {add_ext(File, CurFileNo), is_wrapped}}; 
 		true -> 
 		    case open_int(add_ext(File, NewFileNo)) of
 			{ok, Fd, NewModTime} ->
-%			    io:format("index file 2 ~p~n",[read_next_file]),
-			    chunk({{Fd, start}, {File, {NewFileNo, NewModTime}, FirstFileNo}}, N);
+			    ?FORMAT("index file 2 ~p~n",[read_next_file]),
+			    chunk({{Fd, start}, {File, {NewFileNo, NewModTime},
+						 FirstFileNo}}, N, Bad);
 			E_open ->
 			    E_open
 		    end

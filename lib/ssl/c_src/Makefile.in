@@ -21,7 +21,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # ----------------------------------------------------
 # SSL roots
 # ----------------------------------------------------
-SSLEAY_ROOT = ../usr/ssleay
+SSLEAY_ROOT = @SSLEAY_ROOT@
 
 # ----------------------------------------------------
 # Application version
@@ -41,8 +41,8 @@ LDLIBS = $(LIBS)
 # ----------------------------------------------------
 # Includes and libs
 # ----------------------------------------------------
-SSLEAY_INCLUDE = -I $(SSLEAY_ROOT)/$(TARGET)/include
-SSLEAY_LIBDIR = $(SSLEAY_ROOT)/$(TARGET)/lib
+SSLEAY_INCLUDE = @SSL_INCLUDE@
+SSLEAY_LIBDIR = $(SSLEAY_ROOT)/lib
 
 ALL_CFLAGS = @CFLAGS@ @DEFS@ $(TYPE_FLAGS)
 TARGET = @host@

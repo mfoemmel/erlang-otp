@@ -105,6 +105,8 @@ APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 ifeq ($(SNMP_DEFAULT_VERBOSITY),)
   SNMP_FLAGS = -Ddefault_verbosity=silence
+else
+  SNMP_FLAGS = -Ddefault_verbosity=$(SNMP_DEFAULT_VERBOSITY)
 endif
 
 #ifeq ($(SNMP_DEBUG),)

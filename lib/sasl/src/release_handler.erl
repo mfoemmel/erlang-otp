@@ -416,6 +416,9 @@ handle_call({install_release, Vsn, ErrorAction, Opts}, From, S) ->
 	    init:reboot(),
 	    {noreply, NS};
 	{'EXIT', Reason} ->
+	    io:format("release_handler:"
+		      "install_release(Vsn=~p Opts=~p) failed, "
+		      "Reason=~p~n", [Vsn, Opts, Reason]),
 	    gen_server:reply(From, {error, Reason}),
 	    case ErrorAction of
 		restart ->

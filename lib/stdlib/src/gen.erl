@@ -185,7 +185,7 @@ do_call(Process, Label, Request, Timeout) ->
 		{'DOWN', Mref, _, _, _} ->
 		    exit(noproc)
 	    after 0 ->
-		    catch Process ! {Label, {self(), Mref}, Request},
+		    Process ! {Label, {self(), Mref}, Request},
 		    wait_resp_mon(Process, Mref, Timeout)
 	    end;
 	{'EXIT', _} ->

@@ -46,15 +46,29 @@
 
 #endif
 
+/* GCC 2.7 doesn't advertise the binary format --- so here's some
+   embedded knowledge: The 68k uses a.out, while everything else (PPC
+   and Sparc) here in my shop uses ELF.
+
+   Yes, this should be in `.../gcc-lib/.../specs'.  */
+
+#if defined(__GNUC__) && __GNUC__ == 2 
+# if defined(__GNUC_MINOR__) && __GNUC_MINOR__ == 7
+#  if !defined(__mc68000)
+#   define __ELF__ 1
+#  endif
+# endif
+#endif
+
 /*
  * Magic for link-time warnings and suchlike.
  */
 #if defined(__GNUC__)		/* GNU assembler syntax */
 
-#if 1
+#if defined(__ELF__)		/* Named sections (COFF should be O.K.) */
 
 /*
- * Weave the spell with GCC extensions and ELF sections.
+ * Weave the spell with GCC extensions and named sections.
  *
  * __SYM_WARNING(sym, text) tries to make the linker emit a warning on
  * the form:

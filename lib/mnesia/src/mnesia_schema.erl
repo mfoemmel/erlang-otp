@@ -1366,11 +1366,31 @@ make_transform(Tab, Fun, NewAttrs, NewRecName) ->
     Cs = incr_version(val({Tab, cstruct})),
     ensure_active(Cs),
     ensure_writable(Tab),
-    verify([], mnesia_lib:val({Tab, index}), {index_exists, Tab}),
-    Cs2 = Cs#cstruct{attributes = NewAttrs,
-		     record_name = NewRecName},    
-    verify_cstruct(Cs2),
-    [{op, transform, Fun, cs2list(Cs2)}].
+    case mnesia_lib:val({Tab, index}) of
+	[] -> 
+	    Cs2 = Cs#cstruct{attributes = NewAttrs, record_name = NewRecName},
+	    verify_cstruct(Cs2),
+	    [{op, transform, Fun, cs2list(Cs2)}];
+	PosList ->
+	    DelIdx = fun(Pos, Ncs) ->
+			     Ix = Ncs#cstruct.index,
+			     Ncs1 = Ncs#cstruct{index = lists:delete(Pos, Ix)},
+			     Op = {op, del_index, Pos, cs2list(Ncs1)},
+			     {Op, Ncs1}
+		     end,
+	    AddIdx = fun(Pos, Ncs) ->
+			     Ix = Ncs#cstruct.index,
+			     Ix2 = lists:sort([Pos | Ix]),
+			     Ncs1 = Ncs#cstruct{index = Ix2},
+			     Op = {op, add_index, Pos, cs2list(Ncs1)},
+			     {Op, Ncs1}
+		     end,
+            {DelOps, Cs1} = lists:mapfoldl(DelIdx, Cs, PosList),
+            {AddOps, Cs2} = lists:mapfoldl(AddIdx, Cs1, PosList),
+	    Cs3 = Cs2#cstruct{attributes = NewAttrs, record_name = NewRecName},
+	    verify_cstruct(Cs3),
+	    lists:flatten([DelOps, {op, transform, Fun, cs2list(Cs3)}, AddOps])
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%  
@@ -1754,14 +1774,18 @@ prepare_op(_Tid, {op, transform, Fun, TabDef}, WaitFor) ->
         Storage ->
             Tab = Cs#cstruct.name,
             RecName = Cs#cstruct.record_name,
+	    Type = Cs#cstruct.type,
             NewArity = length(Cs#cstruct.attributes) + 1,
+	    mnesia_lib:db_fixtable(Storage, Tab, true),
             Key = mnesia_lib:db_first(Tab),
 	    Op = {op, transform, Fun, TabDef},
             case catch transform_objs(Fun, Tab, RecName, 
-				      Key, NewArity, Storage, [Op]) of
+				      Key, NewArity, Storage, Type, [Op]) of
                 {'EXIT', Reason} ->
+		    mnesia_lib:db_fixtable(Storage, Tab, false),
                     exit({"Bad transform function", Tab, Fun, node(), Reason});
                 Objs ->
+		    mnesia_lib:db_fixtable(Storage, Tab, false),
                     {true, Objs, mandatory}
             end
     end;
@@ -1821,30 +1845,58 @@ set_where_to_read(Tab, Node, Cs) ->
 	    ok
     end.
 
-
 %% Build up the list in reverse order.
-
-transform_objs(Fun, _Tab, _RT, '$end_of_table', _NewArity, _Storage, Acc) ->
+transform_objs(Fun, _Tab, _RT, '$end_of_table', _NewArity, _Storage, Type, Acc) ->
     Acc;
-transform_objs(Fun, Tab, RecName, Key, A, Storage, Acc) ->
+transform_objs(Fun, Tab, RecName, Key, A, Storage, Type, Acc) ->
     Objs = mnesia_lib:db_get(Tab, Key),
-    NewObjs = [transform_obj(Tab, RecName, Key, Fun, Obj, A) || Obj <- Objs],
     NextKey = mnesia_lib:db_next_key(Tab, Key),
-    Oid = {Tab, Key},
-    transform_objs(Fun, Tab, RecName, NextKey, A, Storage, 
-		   [{op, rec, Storage, {Oid, NewObjs, write}},
-		    {op, rec, Storage, {Oid, [Oid], delete}} | Acc]).
+    Oid = {Tab, Key},   
+    NewObjs = {Ws, Ds} = transform_obj(Tab, RecName, Key, Fun, Objs, A, Type, [], []),
+    if 
+	NewObjs == {[], []} -> 
+	    transform_objs(Fun, Tab, RecName, NextKey, A, Storage, Type, Acc);
+	Type == bag ->	    
+	    transform_objs(Fun, Tab, RecName, NextKey, A, Storage, Type,
+			   [{op, rec, Storage, {Oid, Ws, write}},
+			    {op, rec, Storage, {Oid, [Oid], delete}} | Acc]);
+	Ds == [] -> 
+	    %% Type is set or ordered_set, no need to delete the record first
+	    transform_objs(Fun, Tab, RecName, NextKey, A, Storage, Type,
+			   [{op, rec, Storage, {Oid, Ws, write}} | Acc]);
+	Ws == [] ->
+	    transform_objs(Fun, Tab, RecName, NextKey, A, Storage, Type,
+			   [{op, rec, Storage, {Oid, Ds, write}} | Acc]);
+	true ->
+	    transform_objs(Fun, Tab, RecName, NextKey, A, Storage, Type,
+			   [{op, rec, Storage, {Oid, Ws, write}},
+			    {op, rec, Storage, {Oid, Ds, delete}} | Acc])
+    end.
 
-transform_obj(Tab, RecName, Key, Fun, Obj, NewArity) ->
+transform_obj(Tab, RecName, Key, Fun, [Obj|Rest], NewArity, Type, Ws, Ds) ->
     NewObj = Fun(Obj),
     if
         size(NewObj) /= NewArity ->
             exit({"Bad arity", Obj, NewObj});
+	NewObj == Obj ->
+	    transform_obj(Tab, RecName, Key, Fun, Rest, NewArity, Type, Ws, Ds);
         RecName == element(1, NewObj), Key == element(2, NewObj) ->
-            NewObj;
+            transform_obj(Tab, RecName, Key, Fun, Rest, NewArity, 
+			  Type, [NewObj | Ws], Ds);
+	NewObj == delete -> 
+	    case Type of 
+		bag -> %% Just don't write that object
+		   transform_obj(Tab, RecName, Key, Fun, Rest, 
+				 NewArity, Type, Ws, Ds); 
+		_ ->
+		    transform_obj(Tab, RecName, Key, Fun, Rest, NewArity, 
+				  Type, Ws, [NewObj | Ds])
+	    end;
         true ->
             exit({"Bad key or Record Name", Obj, NewObj})
-    end.
+    end;
+transform_obj(Tab, RecName, Key, Fun, [], NewArity, Type, Ws, Ds) ->
+    {lists:reverse(Ws), lists:reverse(Ds)}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Undo prepare of commit

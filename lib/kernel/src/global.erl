@@ -1192,7 +1192,24 @@ do_ops_ext(Ops, Names_ext) ->
 %% When the lock is set, it tells global about it, and keeps
 %% the lock set.  global sends a cancel message to the locker when
 %% the partitions are connected.
+
+%% Versions: at version 2, the messages exchanged between the lockers
+%% include the known nodes (see OTP-3576). There is no way of knowing
+%% the version number of the other side's locker when sending a message
+%% to it, so we send both version 1 and 2, and flush the version 1 if
+%% we receive version 2.
+%%
+%% Due to a mistake, an intermediate version of the new locking protocol
+%% (using 3-tuples) went out in R7, which only understands itself. This patch
+%% to R7 handles all kinds, which means sending all, and flush the ones we
+%% don't want. (It will remain difficult to make a future version of the
+%% protocol communicate with this one.)
+%%
 %%-----------------------------------------------------------------
+%% (Version 2 in patched R7. No named version in R6 and older - let's call that
+%% version 1.)
+-define(locker_vsn, 2).
+
 start_locker(Node, Known, MyTag, Global) ->
     %% No link here!  The del_lock call would delete the link anyway.
     %% global_name_server has control of these processes anyway...
@@ -1234,9 +1251,52 @@ loop_locker(Node, Pid, Known0, Try, MyTag, BothsKnown, Global) ->
     IsLockSet = set_lock(LockId, Known, 1),
     ?PRINT({locking1, node(), self(), Known, IsLockSet}),
     %% Tell other node that we managed to get the lock.
+    Pid ! {lock, ?locker_vsn, IsLockSet, Known},
     Pid ! {lock, IsLockSet, Known},
+    Pid ! {lock, IsLockSet},
     %% Wait for other node's result.
     receive
+	%% R7 patched and later
+	{lock, LockerVsn, true, _} when IsLockSet == true ->
+	    receive
+		{lock, _} ->
+		    ok
+	    end,
+	    receive
+		{lock, _, _} ->
+		    ok
+	    end,
+	    ?PRINT({node(), self(), locked}),
+	    %% Now we got the lock in both partitions.  Tell
+	    %% global, and let him resolve name conflict.
+	    gen_server:cast(global_name_server, {lock_is_set, Node, MyTag}),
+	    %% Wait for global to tell us to remove lock.
+	    receive
+		cancel ->
+		    %% All conflicts are resolved, remove lock.
+		    ?PRINT({node(), self(), locked1}),
+		    del_lock(LockId, Known);
+		{'EXIT', Pid, _} ->
+		    ?PRINT({node(), self(), locked2}),
+		    %% Other node died; remove lock and ignore him.
+		    del_lock(LockId, Known),
+		    link(Global)
+	    end;
+	{lock, LockerVsn, _, HisKnown} ->
+	    receive
+		{lock, _} ->
+		    ok
+	    end,
+	    receive
+		{lock, _, _} ->
+		    ok
+	    end,
+	    %% Some of us failed to get the lock; try again
+	    ?PRINT({node(), self(), locked0}),
+	    d_lock(IsLockSet, LockId, Known),
+	    try_again_locker(Node, Pid, Known, Try, MyTag, BothsKnown,
+			     HisKnown, Global);
+	%% R7 unpatched
 	{lock, true, _} when IsLockSet == true ->
 	    ?PRINT({node(), self(), locked}),
 	    %% Now we got the lock in both partitions.  Tell
@@ -1260,6 +1320,30 @@ loop_locker(Node, Pid, Known0, Try, MyTag, BothsKnown, Global) ->
 	    d_lock(IsLockSet, LockId, Known),
 	    try_again_locker(Node, Pid, Known, Try, MyTag, BothsKnown,
 			     HisKnown, Global);
+	%% R6 and earlier
+	{lock, true} when IsLockSet == true ->
+	    ?PRINT({node(), self(), locked}),
+	    %% Now we got the lock in both partitions.  Tell
+	    %% global, and let him resolve name conflict.
+	    gen_server:cast(global_name_server, {lock_is_set, Node, MyTag}),
+	    %% Wait for global to tell us to remove lock.
+	    receive
+		cancel ->
+		    %% All conflicts are resolved, remove lock.
+		    ?PRINT({node(), self(), locked1}),
+		    del_lock(LockId, Known);
+		{'EXIT', Pid, _} ->
+		    ?PRINT({node(), self(), locked2}),
+		    %% Other node died; remove lock and ignore him.
+		    del_lock(LockId, Known),
+		    link(Global)
+	    end;
+	{lock, _} ->
+	    %% Some of us failed to get the lock; try again
+	    ?PRINT({node(), self(), locked0}),
+	    d_lock(IsLockSet, LockId, Known),
+	    try_again_locker(Node, Pid, Known, Try, MyTag, BothsKnown,
+			     BothsKnown, Global);
 	{'EXIT', Pid, _} ->
 	    %% Other node died; remove lock and ignore him.
 	    ?PRINT({node(), self(), locked7}),

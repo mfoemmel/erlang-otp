@@ -279,50 +279,38 @@ terminate(_Reason, State) ->
 %%----------------------------------------------------------
 
 %% downgrade
-code_change({down, Vsn}, State, downgrade_to_3_1_4) ->
-    ?debug("code_change(down,downgrade_to_3_1_4) -> entry with~n"
-	   "  Vsn:   ~p~n"
-	   "  Extra: ~p",
-	   [Vsn,downgrade_to_3_1_4]),
-    NData = snmp_mib_data:code_change({down,v3_1_4},State#state.data),
-    {ok, State#state{data = NData}};
-code_change({down, Vsn}, State, downgrade_to_3_1_3) ->
+code_change({down, Vsn}, State, downgrade_to_pre_3_2_0) ->
     ?debug("code_change(down) -> entry with~n"
 	   "  Vsn:   ~p~n"
+	   "  State: ~p~n"
 	   "  Extra: ~p",
-	   [Vsn,downgrade_to_3_1_3]),
-    NData = snmp_mib_data:code_change({down,v3_1_3},State#state.data),
+	   [Vsn,State,downgrade_to_pre_3_2_0]),
+    NData = snmp_mib_data:code_change({down,pre_3_2_0},State#state.data),
     {ok, State#state{data = NData}};
-code_change({down, Vsn}, State, downgrade_to_3_0_9_2) ->
+code_change({down, Vsn}, State, Extra) ->
     ?debug("code_change(down) -> entry with~n"
 	   "  Vsn:   ~p~n"
+	   "  State: ~p~n"
 	   "  Extra: ~p",
-	   [Vsn,downgrade_to_3_0_9_2]),
-    NData = snmp_mib_data:code_change({down,v3_0_9_2},State#state.data),
-    {ok, State#state{data = NData}};
+	   [Vsn,State,Extra]),
+    {ok, State};
 
 %% upgrade
-code_change(Vsn, State, upgrade_from_3_1_4) ->
-    ?debug("code_change(upgrade_from_3_1_4) -> entry with~n"
+code_change(Vsn, State, upgrade_from_pre_3_2_0) ->
+    ?debug("code_change(up) -> entry with~n"
 	   "  Vsn:   ~p~n"
+	   "  State: ~p~n"
 	   "  Extra: ~p",
-	   [Vsn,upgrade_from_3_1_4]),
-    NData = snmp_mib_data:code_change({up,v3_1_4},State#state.data),
+	   [Vsn,State,upgrade_from_pre_3_2_0]),
+    NData = snmp_mib_data:code_change({up,pre_3_2_0},State#state.data),
     {ok, State#state{data = NData}};
-code_change(Vsn, State, upgrade_from_3_1_3) ->
-    ?debug("code_change(upgrade_from_3_1_3) -> entry with~n"
+code_change(Vsn, State, Extra) ->
+    ?debug("code_change(up) -> entry with~n"
 	   "  Vsn:   ~p~n"
+	   "  State: ~p~n"
 	   "  Extra: ~p",
-	   [Vsn,upgrade_from_3_1_3]),
-    NData = snmp_mib_data:code_change({up,v3_1_3},State#state.data),
-    {ok, State#state{data = NData}};
-code_change(Vsn, State, upgrade_from_3_0_9_2) ->
-    ?debug("code_change(upgrade_from_3_0_9_2) -> entry with~n"
-	   "  Vsn:   ~p~n"
-	   "  Extra: ~p",
-	   [Vsn,upgrade_from_3_0_9_2]),
-    NData = snmp_mib_data:code_change({up,v3_0_9_2},State#state.data),
-    {ok, State#state{data = NData}}.
+	   [Vsn,State,Extra]),
+    {ok, State}.
 
 
 

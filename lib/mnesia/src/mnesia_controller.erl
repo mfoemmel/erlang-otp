@@ -44,6 +44,7 @@
 	 i_have_tab/1,
 	 info/0,
 	 get_info/1,
+	 get_workers/1,
 	 force_load_table/1,
 	 async_dump_log/1,
 	 sync_dump_log/1,
@@ -565,8 +566,9 @@ handle_call({schema_is_merged, TabsR, Reason, RemoteLoaders}, From, State) ->
     Msgs = State2#state.early_msgs,
     State3 = State2#state{early_msgs = [], schema_is_merged = true},
     Ns = val({current, db_nodes}),
-    dbg_out("Schema is merged ~w, State ~w~n", [Ns, State3]),
-    handle_early_msgs(Msgs, State3);
+    dbg_out("Schema is merged ~w, State ~w~n", [Ns, State3]),    
+    dbg_out("handle_early_msgs ~p ~n", [Msgs]), % qqqq
+    handle_early_msgs(lists:reverse(Msgs), State3);
 
 handle_call(disc_load_intents, From, State) ->
     Tabs = disc_load_intents(State#state.loader_queue) ++
@@ -575,33 +577,11 @@ handle_call(disc_load_intents, From, State) ->
     reply(From, {ok, node(), mnesia_lib:union(Tabs, ActiveTabs)}),
     noreply(State);
 
-handle_call({add_active_replica, [Tab, ToNode, RemoteS, AccessMode], From},
-	    Dummy, State) ->
-    Res = 
-	case lists:member(node(From), val({current, db_nodes})) and 
-	    State#state.schema_is_merged of
-	    true ->
-		add_active_replica(Tab, ToNode, RemoteS, AccessMode);
-	    false ->
-		ignore
-	end,
-    {reply, Res, State};
-
-handle_call({unannounce_add_table_copy, [Tab, Node], From}, Dummy, State) ->
-    Res = 
-	case lists:member(node(From), val({current, db_nodes})) and 
-	    State#state.schema_is_merged of
-	    true ->
-		unannounce_add_table_copy(Tab, Node);
-	    false ->
-		ignore
-	end,
-    {reply, Res, State};
-
 handle_call({update_where_to_write, [add, Tab, AddNode], From}, Dummy, State) ->
+    dbg_out("update_w3w ~p ~n", [[add, Tab, AddNode]]), %%% qqqq
     Res = 
 	case lists:member(node(From), val({current, db_nodes})) and 
-	    State#state.schema_is_merged of
+	    State#state.schema_is_merged == false of
 	    true ->
 		mnesia_lib:add({Tab, where_to_write}, AddNode);
 	    false ->
@@ -609,9 +589,47 @@ handle_call({update_where_to_write, [add, Tab, AddNode], From}, Dummy, State) ->
 	end,
     {reply, Res, State};
 
+handle_call({add_active_replica, [Tab, ToNode, RemoteS, AccessMode], From},
+	    ReplyTo, State) ->
+    KnownNode = lists:member(node(From), val({current, db_nodes})),
+    Merged = State#state.schema_is_merged,
+    if
+	KnownNode == false ->
+	    reply(ReplyTo, ignore),
+	    noreply(State);
+	Merged == true ->
+	    Res = add_active_replica(Tab, ToNode, RemoteS, AccessMode),
+	    reply(ReplyTo, Res),
+	    noreply(State);
+	true -> %% Schema is not merged
+	    Msg = {add_active_replica, [Tab, ToNode, RemoteS, AccessMode], From},
+	    Msgs = State#state.early_msgs,
+	    reply(ReplyTo, ignore),   %% Reply ignore and add data after schema merge
+	    noreply(State#state{early_msgs = [{call, Msg, undefined} | Msgs]})
+    end;
+
+handle_call({unannounce_add_table_copy, [Tab, Node], From}, ReplyTo, State) ->    
+    KnownNode = lists:member(node(From), val({current, db_nodes})),
+    Merged = State#state.schema_is_merged,
+    if
+	KnownNode == false ->
+	    reply(ReplyTo, ignore),
+	    noreply(State);
+	Merged == true ->
+	    Res = unannounce_add_table_copy(Tab, Node),
+	    reply(ReplyTo, Res),
+	    noreply(State);
+	true -> %% Schema is not merged
+	    Msg = {unannounce_add_table_copy, [Tab, Node], From},
+	    Msgs = State#state.early_msgs,
+	    reply(ReplyTo, ignore),   %% Reply ignore and add data after schema merge
+	    %% Set ReplyTO to undefined so we don't reply twice
+	    noreply(State#state{early_msgs = [{call, Msg, undefined} | Msgs]})
+    end;
 
 handle_call(Msg, From, State) when State#state.schema_is_merged == false ->
     %% Buffer early messages
+    dbg_out("Buffered early msg ~p ~n", [Msg]),   %% qqqq
     Msgs = State#state.early_msgs,
     noreply(State#state{early_msgs = [{call, Msg, From} | Msgs]});
 
@@ -1500,6 +1518,20 @@ get_info(Timeout) ->
 	    end
     end.
 
+get_workers(Timeout) ->
+    case whereis(?SERVER_NAME) of
+	undefined ->
+	    {timeout, Timeout};
+	Pid ->
+	    Pid ! {self(), get_state},
+	    receive
+		{?SERVER_NAME, State} when record(State, state) ->
+		    {workers, State#state.loader_pid, State#state.sender_pid, State#state.dumper_pid}
+	    after Timeout ->
+		    {timeout, Timeout}
+	    end
+    end.
+    
 info() ->
     Tabs = mnesia_lib:local_active_tables(),
     io:format( "---> Active tables <--- ~n", []),
@@ -1532,15 +1564,18 @@ info_format(Tab, Size, Mem, Media) ->
 %% Handle early arrived messages
 handle_early_msgs([Msg | Msgs], State) ->
     %% The messages are in reverse order
-    case handle_early_msgs(Msgs, State) of
+    case handle_early_msg(Msg, State) of
         {stop, Reason, Reply, State2} ->
 	    {stop, Reason, Reply, State2};
         {stop, Reason, State2} ->
 	    {stop, Reason, State2};
 	{noreply, State2} ->
-	    handle_early_msg(Msg, State2);
+	    handle_early_msgs(Msgs, State2);
 	{noreply, State2, Timeout} ->
-	    handle_early_msg(Msg, State2)
+	    handle_early_msgs(Msgs, State2);
+	Else ->  %% qqqq
+	    dbg_out("handle_early_msgs case clause ~p ~n", [Else]),
+	    erlang:fault(Else, [[Msg | Msgs], State])
     end;
 handle_early_msgs([], State) ->
     noreply(State).

@@ -21,6 +21,22 @@
 #include "sys.h"
 #include "erl_api.h"
 
+#if defined(__GNUC__)
+/*
+ * The generated assembler does the usual trick (relative
+ * branch-and-link to next instruction) to get a copy of the
+ * instruction ptr. Instead of branching to an explicit zero offset,
+ * it branches to the symbol `__eabi' --- which is expected to be
+ * undefined and thus zero (if it is defined as non-zero, things will
+ * be interesting --- as in the Chinese curse). To shut up the VxWorks
+ * linker, we define `__eabi' as zero.
+ *
+ * This is just a work around. It's really Wind River's GCC's code
+ * generator that should be fixed.
+ */
+__asm__(".equ __eabi, 0");
+#endif
+
 void 
 main(int argc, char **argv)
 {

@@ -100,6 +100,8 @@ EXTERN_FUNCTION(int, schedule, (_VOID_));
 EXTERN_FUNCTION(void, set_busy_port, (int, int));
 EXTERN_FUNCTION(void, do_break, (_VOID_));
 
+EXTERN_FUNCTION(void, erl_sys_args, (int*, char**));
+
 
 void erl_crash_dump(char* fmt, va_list args);
 
@@ -2635,3 +2637,10 @@ erl_sys_schedule_loop(void)
     }
 }
 
+void
+erl_sys_args(argc, argv)
+int* argc;
+char** argv;
+{
+    ;
+}

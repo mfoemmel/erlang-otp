@@ -23,6 +23,8 @@
 -include("mnesia.hrl").
 -include_lib("kernel/include/file.hrl").
 
+-export([core_file/0]).
+
 -export([
 	 active_tables/0,
 	 add/2,
@@ -44,6 +46,8 @@
 	 db_erase_tab/2,
 	 db_first/1,
 	 db_first/2,
+	 db_last/1,
+	 db_last/2,
 	 db_fixtable/3,
 	 db_get/2,
 	 db_get/3,
@@ -53,6 +57,8 @@
 	 db_match_object/3,
 	 db_next_key/2,
 	 db_next_key/3,
+	 db_prev_key/2,
+	 db_prev_key/3,
 	 db_put/2,
 	 db_put/3,
 	 db_slot/2,
@@ -507,8 +513,8 @@ cs_to_nodes(Cs) ->
 dist_coredump() ->
     dist_coredump(all_nodes()).
 dist_coredump(Ns) ->
-    rpc:multicall(Ns, ?MODULE, coredump, []),
-    core.
+    {Replies, _} = rpc:multicall(Ns, ?MODULE, coredump, []),
+    Replies.
 
 coredump() ->
     coredump({crashinfo, {"user initiated~n", []}}).
@@ -516,7 +522,8 @@ coredump(CrashInfo) ->
     Core = mkcore(CrashInfo),
     Out = core_file(),
     important("Writing Mnesia core to file: ~p...~p~n", [Out, CrashInfo]),
-    file:write_file(Out, Core).
+    file:write_file(Out, Core),
+    Out.
 
 core_file() ->
     Integers = tuple_to_list(date()) ++ tuple_to_list(time()),
@@ -541,7 +548,8 @@ mkcore(CrashInfo) ->
 	    {etsinfo, catch ets_info(ets:all())},
 	    {processes, catch procs()},
 	    {relatives, catch relatives()},
-
+	    {workers, catch workers(mnesia_controller:get_workers(2000))},
+	    
 	    {version, catch mnesia:system_info(version)},
 	    {gvar, catch ets:tab2list(mnesia_gvar)},
 	    {master_nodes, catch mnesia_recover:get_master_node_info()},
@@ -597,6 +605,15 @@ relatives() ->
 		   end
 	   end,
     lists:zf(Info, mnesia:ms()).
+
+workers({workers, Loader, Sender, Dumper}) ->
+    Info = fun({Name, Pid}) ->
+		   case Pid of
+		       undefined -> false;
+		       Pid -> {true, {Name, Pid, catch process_info(Pid)}}
+		   end
+	   end,
+    lists:zf(Info, [{loader, Loader}, {sender, Sender}, {dumper, Dumper}]).
 
 view() ->
     Bin = mkcore({crashinfo, {"view only~n", []}}),
@@ -1026,6 +1043,18 @@ db_next_key(Tab, Key) ->
 db_next_key(ram_copies, Tab, Key) -> ?ets_next(Tab, Key);
 db_next_key(disc_copies, Tab, Key) -> ?ets_next(Tab, Key);
 db_next_key(disc_only_copies, Tab, Key) -> dets:next(Tab, Key).
+
+db_last(Tab) ->
+    db_last(val({Tab, storage_type}), Tab).
+db_last(ram_copies, Tab) -> ?ets_last(Tab);
+db_last(disc_copies, Tab) -> ?ets_last(Tab);
+db_last(disc_only_copies, Tab) -> dets:first(Tab). %% Dets don't have order
+
+db_prev_key(Tab, Key) ->
+    db_prev_key(val({Tab, storage_type}), Tab, Key).
+db_prev_key(ram_copies, Tab, Key) -> ?ets_prev(Tab, Key);
+db_prev_key(disc_copies, Tab, Key) -> ?ets_prev(Tab, Key);
+db_prev_key(disc_only_copies, Tab, Key) -> dets:next(Tab, Key). %% Dets don't have order
 
 db_slot(Tab, Pos) ->
     db_slot(val({Tab, storage_type}), Tab, Pos).

@@ -21,7 +21,7 @@
 
 -export([int_open/4, ext_open/4, log/3, close/2, truncate/3, chunk/5, sync/1]).
 -export([mf_int_open/6, mf_int_log/3, mf_int_close/2, mf_int_inc/2, 
-	 mf_ext_inc/2, file_size/1, mf_int_chunk/4, mf_int_chunk_step/4, 
+	 mf_ext_inc/2, file_size/1, mf_int_chunk/4, mf_int_chunk_step/3, 
 	 mf_int_sync/1]).
 -export([mf_ext_open/6, mf_ext_log/3, mf_ext_close/2, mf_ext_sync/1]).
 
@@ -73,121 +73,137 @@ truncate(Fd, FileName, Head) ->
 	none -> ok
     end.
 
+%% -> {Cont, Binaries} | {error, Reason} | eof
 chunk(Fd, FileName, Pos, {B, true}, N) ->
-    case handle_chunk(B, FileName, Pos, N) of
+    case handle_chunk(B, Fd, FileName, Pos, N, []) of
 	{_Cont, []} ->
 	    chunk(Fd, FileName, Pos, B, N);
 	Else ->
 	    Else
     end;
 chunk(Fd, FileName, Pos, B, N) ->
-    case catch read_chunk(Fd, FileName, Pos) of
-	eof ->
+    case catch read_chunk(Fd, FileName, Pos, ?MAX_CHUNK_SIZE) of
+	eof when 0 == size(B) ->
 	    eof;
+	eof ->
+	    {error, {corrupt_log_file, FileName}};
 	{ok, Bin}  ->
-	    handle_chunk(list_to_binary([B, Bin]), FileName, Pos+size(Bin), N);
+	    NewPos = Pos + size(Bin),
+	    handle_chunk(list_to_binary([B,Bin]), Fd, FileName, NewPos, N, []);
 	Other -> 
 	    Other
     end.
 
-read_chunk(Fd, FileName, Pos) ->
-    position(Fd, FileName, Pos + ?HEADSZ),
-    R = file:read(Fd, ?MAX_CHUNK_SIZE),
-    position(Fd, FileName, eof),
-    R.
+%% Format of a log item is: [Size, Magic, binary_term]
 
-%% Format of log items is
-%% [Size, Magic, binary_term]
-
-handle_chunk(B, FileName, Pos, infinity) ->
-    % There cannot be more than ?MAX_CHUNK_SIZE terms in a chunk.
-    handle_chunk(B, FileName, Pos, ?MAX_CHUNK_SIZE);  
-handle_chunk(B, FileName, Pos, N) ->
-    {Cont, Ack} = handle_chunk2(B, FileName, Pos, N, []),
-    {Cont, lists:reverse(Ack)}.
-
-handle_chunk2(B, _FileName, Pos, 0, Ack) ->
-    {#continuation{pos = Pos, b = {B, true}}, Ack};
-handle_chunk2(B, FileName, Pos, N, Ack) when size(B) > 7 ->
-    {Head, Tail} =  split_binary(B, 8),
+handle_chunk(B, _Fd, _FileName, Pos, 0, Ack) ->
+    {#continuation{pos = Pos, b = {B, true}}, lists:reverse(Ack)};
+handle_chunk(B, Fd, FileName, Pos, N, Ack) when size(B) > 7 ->
+    {Head, Tail} =  split_binary(B, ?HEADERSZ),
     {Sz, Mg} = split_binary(Head, 4),
     Size = i32(Sz),
     Magic = i32(Mg),
+    TailSize = size(Tail),
     if
 	Magic /= ?MAGICINT ->
-	    {{error, {corrupt_log_file, FileName}}, Ack};
-	size(Tail) >= Size  ->
+	    {error, {corrupt_log_file, FileName}};
+	TailSize >= Size  ->
 	    {BinTerm, Tail2} = split_binary(Tail, Size),
-	    case catch binary_to_term(BinTerm) of
-		{'EXIT', _} -> %% truncated binary !!!
-		    {{error, {corrupt_log_file, FileName}}, Ack};
-		Term ->
-		    handle_chunk2(Tail2, FileName, Pos, N-1, [Term | Ack])
-	    end;
+	    %% The client calls binary_to_term/1.
+	    handle_chunk(Tail2, Fd, FileName, Pos, N-1, [BinTerm | Ack]);
 	true ->
-	    {#continuation{pos = Pos, b = B}, Ack}
+	    BytesToRead = Size - TailSize,
+            case read_chunks(BytesToRead, Fd, FileName, Pos, [B]) of
+		{ok, NewPos, Bin} when size(Bin) == Size + ?HEADERSZ ->
+		    handle_chunk(Bin, Fd, FileName, NewPos, N, Ack);
+		{ok, NewPos, _Bin} -> % when size(Bin) < Size + ?HEADERSZ
+		    {error, {corrupt_log_file, FileName}};
+                Other ->
+                    Other
+            end
     end;
-handle_chunk2(B, _FileName, Pos, _N, Ack) ->
-    {#continuation{pos = Pos, b = B}, Ack}.
+handle_chunk(B, _Fd, _FileName, Pos, _N, Ack) ->
+    {#continuation{pos = Pos, b = B}, lists:reverse(Ack)}.
 
-
+%% -> {Cont, Binaries, Bad} (Bad >= 0) | {error, Reason} | eof
 chunk_read_only(Fd, FileName, Pos, {B, true}, N) ->
-    case handle_chunk_ro(B, Pos, N) of
-	{_Cont, []} ->
+    case handle_chunk_ro(B, Fd, FileName, Pos, N, [], 0) of
+	{_Cont, [], 0} ->
 	    chunk_read_only(Fd, FileName, Pos, B, N);
 	Else ->
 	    Else
     end;
 chunk_read_only(Fd, FileName, Pos, B, N) ->
-    case catch read_chunk(Fd, FileName, Pos) of
-	eof ->
+    case catch read_chunk(Fd, FileName, Pos, ?MAX_CHUNK_SIZE) of
+	eof when 0 == size(B) ->
 	    eof;
+	eof ->
+	    NewCont = #continuation{pos = Pos, b = list_to_binary([])},
+	    {NewCont, [], size(B)};
 	{ok, Bin}  ->
-	    handle_chunk_ro(list_to_binary([B, Bin]), Pos + size(Bin), N);
+	    NewPos = Pos + size(Bin),
+	    NewBin = list_to_binary([B, Bin]),
+	    handle_chunk_ro(NewBin, Fd, FileName, NewPos, N, [], 0);
 	Other -> 
 	    Other
     end.
 
-%% Format of log items is
-%% [Size, Magic, binary_term]
+%% Format of a log item is: [Size, Magic, binary_term]
 
-handle_chunk_ro(B, Pos, infinity) ->
-    % There cannot be more than ?MAX_CHUNK_SIZE terms in a chunk.
-    handle_chunk_ro(B, Pos, ?MAX_CHUNK_SIZE);  
-handle_chunk_ro(B, Pos, N) ->
-    case handle_chunk_ro2(B, Pos, N, [], 0) of
-	{Cont, Ack, 0} -> %% No bad bytes
-	    {Cont, lists:reverse(Ack)};
-	{Cont, Ack, Bad} ->
-	    {Cont, lists:reverse(Ack), Bad}
-    end.
-
-handle_chunk_ro2(B, Pos, 0, Ack, Bad) ->
-    {#continuation{pos = Pos, b = {B, true}}, Ack, Bad};
-handle_chunk_ro2(B, Pos, N, Ack, Bad) when size(B) > 7 ->
-    {Head, Tail} =  split_binary(B, 8),
+handle_chunk_ro(B, _Fd, _FileName, Pos, 0, Ack, Bad) ->
+    Cont = #continuation{pos = Pos, b = {B, true}},
+    {Cont, lists:reverse(Ack), Bad};
+handle_chunk_ro(B, Fd, FileName, Pos, N, Ack, Bad) when size(B) > 7 ->
+    {Head, Tail} =  split_binary(B, ?HEADERSZ),
     {Sz, Mg} = split_binary(Head, 4),
     Size = i32(Sz),
     Magic = i32(Mg),
+    TailSize = size(Tail),
     if
 	Magic /= ?MAGICINT ->
 	    {_, B2} = split_binary(B,1),
-	    handle_chunk_ro2(B2, Pos, N-1, Ack, Bad+1);
-	size(Tail) >= Size  ->
+	    handle_chunk_ro(B2, Fd, FileName, Pos, N-1, Ack, Bad+1);
+	TailSize >= Size  ->
 	    {BinTerm, Tail2} = split_binary(Tail, Size),
-	    case catch binary_to_term(BinTerm) of
-		{'EXIT', _} -> %% truncated binary !!!
-		    {_, B2} = split_binary(B,1),
-		    handle_chunk_ro2(B2, Pos, N-1, Ack, Bad+1);
-		Term ->
-		    handle_chunk_ro2(Tail2, Pos, N-1, [Term | Ack], Bad)
-	    end;
+	    NewAck = [BinTerm | Ack],
+	    handle_chunk_ro(Tail2, Fd, FileName, Pos, N-1, NewAck, Bad);
 	true ->
-	    {#continuation{pos = Pos, b = B}, Ack, Bad}
+	    BytesToRead = Size - TailSize,
+            case read_chunks(BytesToRead, Fd, FileName, Pos, [B]) of
+		{ok, NewPos, Bin} when size(Bin) == Size + ?HEADERSZ ->
+		    handle_chunk_ro(Bin, Fd, FileName, NewPos, N, Ack, Bad);
+		{ok, NewPos, _Bin} -> % when size(Bin) < Size + ?HEADERSZ
+		    {_, B2} = split_binary(B,1),
+		    handle_chunk_ro(B2, Fd, FileName, Pos, N-1, Ack, Bad+1);
+                Other ->
+                    Other
+            end
     end;
-handle_chunk_ro2(B, Pos, _N, Ack, Bad) ->
-    {#continuation{pos = Pos, b = B}, Ack, Bad}.
+handle_chunk_ro(B, _Fd, _FileName, Pos, _N, Ack, Bad) ->
+    {#continuation{pos = Pos, b = B}, lists:reverse(Ack), Bad}.
 
+%% To be removed in R8.
+read_chunks(0, _Fd, _FileName, Pos, Bs) ->
+    {ok, Pos, list_to_binary(lists:reverse(Bs))};
+read_chunks(BytesToRead, Fd, FileName, Pos, Bs) when BytesToRead > 0 ->
+    ToRead = min(BytesToRead, ?MAX_CHUNK_SIZE),
+    case catch read_chunk(Fd, FileName, Pos, ToRead) of
+	eof ->
+	    read_chunks(0, Fd, FileName, Pos, Bs);
+	{ok, B} ->
+	    Read = size(B),
+	    read_chunks(BytesToRead - Read, Fd, FileName, Pos + Read, [B|Bs]);
+	Other -> 
+	    Other
+    end.
+
+read_chunk(Fd, FileName, Pos, MaxBytes) ->
+    R = pread(Fd, FileName, Pos + ?HEADSZ, MaxBytes),
+    position(Fd, FileName, eof),
+    R.
+
+min(A, B) when A < B -> A;
+min(_A, B) -> B.
 
 %% -> ok | throw(Error)
 close(Fd, FileName) ->
@@ -638,8 +654,7 @@ mf_int_chunk(Handle, {FileNo, Pos}, Bin, N) ->
 	{error, _Reason} ->
 	   error_logger:info_msg("disk_log: chunk error. File ~p missing.\n\n",
 				 [FName]),
-	    mf_int_chunk(Handle, {inc(FileNo, Handle#handle.maxF), 0},
-			 [], N);
+	    mf_int_chunk(Handle, {inc(FileNo, Handle#handle.maxF), 0},[], N);
 	{ok, {_Alloc, Fd, _HeadSize}} ->
 	    case chunk(Fd, FName, Pos, Bin, N) of
 		eof ->
@@ -657,8 +672,8 @@ mf_int_chunk_read_only(Handle, 0, Bin, N) ->
     mf_int_chunk_read_only(Handle, {FirstF, 0}, Bin, N);
 mf_int_chunk_read_only(Handle, {FileNo, Pos}, Bin, N) 
                 when FileNo == Handle#handle.curF ->
-    conv_ro(chunk_read_only(Handle#handle.cur_fd, Handle#handle.cur_name,
-			    Pos, Bin, N), FileNo);
+    conv(chunk_read_only(Handle#handle.cur_fd, Handle#handle.cur_name,
+			 Pos, Bin, N), FileNo);
 mf_int_chunk_read_only(Handle, {FileNo, Pos}, Bin, N) ->
     FName = add_ext(Handle#handle.filename, FileNo),
     case catch int_open(FName, true, read_only, any) of
@@ -676,20 +691,20 @@ mf_int_chunk_read_only(Handle, {FileNo, Pos}, Bin, N) ->
 					   [], N);
 		Other ->
 		    file:close(Fd),
-		    conv_ro(Other, FileNo)
+		    conv(Other, FileNo)
 	    end
     end.
 
 %% -> {ok, Cont} | Error
-mf_int_chunk_step(Handle, 0, Bin, Step) ->
+mf_int_chunk_step(Handle, 0, Step) ->
     FirstF = find_first_file(Handle),
-    mf_int_chunk_step(Handle, {FirstF, 0}, Bin, Step);
-mf_int_chunk_step(Handle, {FileNo, _Pos}, Bin, Step) ->
+    mf_int_chunk_step(Handle, {FirstF, 0}, Step);
+mf_int_chunk_step(Handle, {FileNo, _Pos}, Step) ->
     NFileNo = inc(FileNo, Handle#handle.maxF, Step),
     FileName = add_ext(Handle#handle.filename, NFileNo),
     case file:read_file_info(FileName) of
 	{ok, _FileInfo} ->	
-	    {ok, #continuation{pos = {NFileNo, 0}, b = Bin}};
+	    {ok, #continuation{pos = {NFileNo, 0}, b = list_to_binary([])}};
 	_Error ->
 	    {error, end_of_log}
     end.
@@ -1092,19 +1107,13 @@ read_size_file(FName) ->
 
 
 conv({More, Terms}, FileNo) when record(More, continuation) ->
-    {More#continuation{pos = {FileNo, More#continuation.pos}}, Terms};
+    Cont = More#continuation{pos = {FileNo, More#continuation.pos}},
+    {Cont, Terms};
+conv({More, Terms, Bad}, FileNo) when record(More, continuation) ->
+    Cont = More#continuation{pos = {FileNo, More#continuation.pos}},
+    {Cont, Terms, Bad};
 conv(Other, _) ->
     Other.
-
-conv_ro({More, Terms}, FileNo) when record(More, continuation) ->
-    {More#continuation{pos = {FileNo, More#continuation.pos}}, Terms};
-conv_ro({More, Terms, 0}, FileNo) when record(More, continuation) ->
-    {More#continuation{pos = {FileNo, More#continuation.pos}}, Terms};
-conv_ro({More, Terms, Bad}, FileNo) when record(More, continuation) ->
-    {More#continuation{pos = {FileNo, More#continuation.pos}}, Terms, Bad};
-conv_ro(Other, _) ->
-    Other.
-
 
 find_first_file(#handle{filename = FName, curF = CurF, maxF = MaxF}) ->
     fff(FName, inc(CurF, MaxF), CurF, MaxF).
@@ -1242,6 +1251,12 @@ position(Fd, FileName, Pos) ->
 	OK -> OK
     end.
 	    
+pread(Fd, FileName, Position, MaxBytes) ->
+    case file:pread(Fd, Position, MaxBytes) of
+	{error, Error} -> file_error(FileName, {error, Error});
+	OK -> OK
+    end.
+
 position_close(Fd, FileName, Pos) ->
     case file:position(Fd, Pos) of
 	{error, Error} -> file_error_close(Fd, FileName, {error, Error});

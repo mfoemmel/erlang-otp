@@ -49,6 +49,8 @@
   -define(ets_update_counter(Tab, Key, Incr), ets:update_counter(Tab, Key, Incr)).
   -define(ets_first(Tab), ets:first(Tab)).
   -define(ets_next(Tab, Key), ets:next(Tab, Key)).
+  -define(ets_last(Tab), ets:last(Tab)).
+  -define(ets_prev(Tab, Key), ets:prev(Tab, Key)).
   -define(ets_slot(Tab, Pos), ets:slot(Tab, Pos)).
   -define(ets_new_table(Tab, Props), ets:new(Tab, Props)).
 %%  -define(ets_new_table(Tab, Props), erlang:db_create(Tab, Props)).

@@ -45,15 +45,13 @@ s|@erlexec@|erl.exec|
 s|@EMU_LIBOBJS@||
 
 # General CFLAGS
-s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R|
+s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R -DENABLE_ELIB_MALLOC -DELIB_HEAP_USER -DELIB_SORTED_BLOCKS|
 s|@WFLAGS@||
 
 # What is this anyway?
 # Disable it and see what breaks.
 #s|@ded_soname@||
 
-
 # Only variable substituted directly
 s|$(LDFLAGS)|-r -d|
-s|$(EFLAGS)|-DELIB_HEAP_USER -DELIB_SORTED_BLOCKS|
 

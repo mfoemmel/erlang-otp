@@ -51,16 +51,9 @@
 	 parallel_eval/1, 
 	 pmap/3, pinfo/1, pinfo/2]).
 
-%% Internal exports ...
--export([reply/5, 
-	 caller/4,
-	 do_cs_call/5]).
-
-%%-export([call_in_new_process1/4, multicall4/4]).
-
 %% gen_server exports
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,
-	 terminate/2]).
+	 terminate/2, code_change/3]).
 
 %% Remote execution and broadcasting facility
 
@@ -75,30 +68,62 @@ init([]) ->
     process_flag(trap_exit,true),
     {ok,[]}.
 
-handle_call(In,{From,Tag},S) ->
+handle_call(In, To, S) ->
     case In of
-	{call,Mod,Fun,Args,Gleader} ->
-            %% in case some sucker rex'es something that hangs
-            Id = spawn(?MODULE,reply,[{From,Tag},Mod,Fun,Args, Gleader]),
+	{call, Mod, Fun, Args, Gleader} ->
+	    spawn(
+	      %% in case some sucker rex'es something that hangs,
+	      %% this will be a hanging orphan
+	      fun() ->
+		      process_flag(trap_exit, true),
+		      Ref = make_ref(),
+		      Self = self(),
+		      %% in case some sucker rex'es something that 
+		      %% gets itself killed
+		      Pid = 
+			  spawn_link(
+			    fun() ->
+				    set_group_leader(Gleader),
+				    Self ! {reply, Ref, 
+					    apply(Mod, Fun, Args)}
+			    end),
+		      receive
+			  {reply, Ref, Reply} ->
+			      gen_server:reply(To, Reply);
+			  {'EXIT', Pid, R} ->
+			      gen_server:reply(To, {badrpc, {'EXIT', R}})
+		      end
+	      end),
 	    {noreply,S};
-	{block_call, M,F,A,Gl} ->
+	{block_call, Mod, Fun, Args, Gleader} ->
 	    MyGL = group_leader(),
-	    reply({From,Tag},M,F,A,Gl),
-	    group_leader(MyGL,self()), % reset
-	    {noreply,S};
+	    set_group_leader(Gleader),
+	    Reply = 
+		case catch apply(Mod,Fun,Args) of
+		    {'EXIT', _} = Exit ->
+			{badrpc, Exit};
+		    Other ->
+			Other
+		end,
+	    group_leader(MyGL, self()), % restore
+	    {reply, Reply, S};
 	stop ->
-	    {stop,normal,stopped,S};
+	    {stop, normal, stopped, S};
 	_ ->
-	    {noreply,S}  % Ignore !
+	    {noreply, S}  % Ignore !
     end.
 
 handle_cast(In,S) ->
     case In of
-	{cast,Mod,Fun,Args,Gleader} ->
-            spawn(?MODULE,caller,[Gleader,Mod,Fun,Args]),
-	    {noreply,S};
+	{cast, Mod, Fun, Args, Gleader} ->
+	    spawn(
+	      fun() ->
+		      set_group_leader(Gleader),
+		      apply(Mod, Fun, Args)
+	      end),
+	    {noreply, S};
 	_ ->
-	    {noreply,S}  % Ignore !
+	    {noreply, S}  % Ignore !
     end.
 
 handle_info({From, {sbcast, Name, Msg}}, S) ->
@@ -127,16 +152,10 @@ handle_info(_, S) ->
 terminate(_,_) ->
     ok.
 
-%% RPC aid functions ....
+code_change(_, S, _) ->
+    {ok, S}.
 
-reply(To,Mod,Fun,Args,Gleader) ->
-    set_group_leader(Gleader),
-    case catch apply(Mod,Fun,Args) of
-	{'EXIT', R} ->
-	    gen_server:reply(To,{badrpc, {'EXIT', R}});
-	Other ->
-	    gen_server:reply(To,Other)
-    end.
+%% RPC aid functions ....
 
 set_group_leader(Gleader) when pid(Gleader) -> 
     group_leader(Gleader,self());
@@ -146,10 +165,6 @@ set_group_leader(user) ->
 	Pid when pid(Pid) -> group_leader(Pid,self());
 	_                 -> true
     end.
-
-caller(Gleader,M,F,A) -> 
-    group_leader(Gleader,self()),
-    apply(M,F,A).
 
 
 
@@ -390,8 +405,13 @@ rec_nodes(Name, [N|Tail], Badnodes, Replies) ->
 %% rpc's towards the same node. I.e it returns immediately and 
 %% it returns a Key that can be used in a subsequent yield(Key)
 
-async_call(Node,Mod,Fun,Args) ->
-    spawn(?MODULE,do_cs_call,[self(),Node,Mod,Fun,Args]).
+async_call(Node, Mod, Fun, Args) ->
+    ReplyTo = self(),
+    spawn(
+      fun() ->
+	      R = call(Node, Mod, Fun, Args),         %% proper rpc
+	      ReplyTo ! {self(), {promise_reply, R}}  %% self() is key
+      end).
 
 yield(Key) when pid(Key) ->
     {value, R} = do_yield(Key, infinite),
@@ -413,10 +433,7 @@ do_yield(Key, Timeout) ->
             timeout
     end.
 
-do_cs_call(ReplyTo,N,M,F,A) ->
-    R = call(N,M,F,A),                      %% proper rpc
-    ReplyTo ! {self(),{promise_reply,R}}.   %% self() is key
-    
+
 
 %% A parallel network evaluator
 %% ArgL === [{M,F,Args},........]

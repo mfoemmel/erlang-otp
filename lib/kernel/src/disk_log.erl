@@ -34,6 +34,9 @@
 -export([init/1, internal_open/2,
 	 system_continue/3, system_terminate/4, system_code_change/4]).
 
+%% To be used by wrap_log_reader only.
+-export([ichunk_end/2]).
+
 -record(state, {queue = [], parent, cnt = 0, args,
 		error_status = ok   %%  ok | {error, Reason}
 	       }).
@@ -149,29 +152,65 @@ chunk(Log, Cont) ->
     chunk(Log, Cont, infinity).
 
 chunk(Log, Cont, infinity) ->
-    ichunk(Log, Cont, infinity);
+    %% There cannot be more than ?MAX_CHUNK_SIZE terms in a chunk.
+    ichunk(Log, Cont, ?MAX_CHUNK_SIZE);
 chunk(Log, Cont, N) when integer(N), N > 0 ->
     ichunk(Log, Cont, N).
 
 ichunk(Log, start, N) ->
-    sreq(Log, {chunk, 0, [], N});
-ichunk(_Log, More, N) when record(More, continuation) ->
-    req2(More#continuation.pid, 
-	 {chunk, More#continuation.pos, More#continuation.b, N});
-ichunk(_Log, {error, Reason}, _) ->
-    {error, Reason}.
+    R = sreq(Log, {chunk, 0, list_to_binary([]), N}),
+    ichunk_end(R, Log);
+ichunk(Log, More, N) when record(More, continuation) ->
+    R = req2(More#continuation.pid, 
+	     {chunk, More#continuation.pos, More#continuation.b, N}),
+    ichunk_end(R, Log);
+ichunk(_Log, Error, _) ->
+    Error.
+
+ichunk_end({C, R}, Log) when record(C, continuation) ->
+    ichunk_end(R, read_write, Log, C, 0, []);
+ichunk_end({C, R, Bad}, Log) when record(C, continuation) ->
+    ichunk_end(R, read_only, Log, C, Bad, []);    
+ichunk_end(R, _Log) ->
+    R.
+
+%% Create the terms on the client's heap, not the server's.
+ichunk_end([B | Bs], Mode, Log, C, Bad, A) ->
+    case catch binary_to_term(B) of
+	{'EXIT', _} when read_write == Mode ->
+	    InfoList = info(Log),
+	    {value, {file, FileName}} = lists:keysearch(file, 1, InfoList),
+            File = case C#continuation.pos of
+		       Pos when integer(Pos) -> FileName; % halt log 
+		       {FileNo, _} -> add_ext(FileName, FileNo) % wrap log
+		   end,
+	    {error, {corrupt_log_file, File}};
+	{'EXIT', _} when read_only == Mode ->
+	    Reread = lists:foldl(fun(Bin, Sz) -> Sz+size(Bin)+?HEADERSZ end, 
+				 0, Bs),
+	    NewPos = case C#continuation.pos of
+			 Pos when integer(Pos) -> Pos-Reread;
+			 {FileNo, Pos} -> {FileNo, Pos-Reread}
+		     end,
+	    NewBad = Bad + ?HEADERSZ, % the whole header is deemed bad
+	    {C#continuation{pos = NewPos, b = B}, lists:reverse(A), NewBad};
+	T ->
+	    ichunk_end(Bs, Mode, Log, C, Bad, [T | A])
+    end;
+ichunk_end([], _Mode, _Log, C, Bad, A) when Bad > 0 ->
+    {C, lists:reverse(A), Bad};
+ichunk_end([], _Mode, _Log, C, Bad, A) when Bad == 0 ->
+    {C, lists:reverse(A)}.
 
 chunk_step(Log, Cont, N) when integer(N) ->
     ichunk_step(Log, Cont, N).
 
 ichunk_step(Log, start, N) ->
-    sreq(Log, {chunk_step, 0, [], N});
+    sreq(Log, {chunk_step, 0, N});
 ichunk_step(_Log, More, N) when record(More, continuation) ->
-    req2(More#continuation.pid, 
-	 {chunk_step, More#continuation.pos, More#continuation.b, N});
-ichunk_step(_Log, {error, Reason}, _) ->
-    {error, Reason}.
-
+    req2(More#continuation.pid, {chunk_step, More#continuation.pos, N});
+ichunk_step(_Log, Error, _) ->
+    Error.
 
 chunk_info(More) when record(More, continuation) ->
    [{node, node(More#continuation.pid)}];
@@ -484,18 +523,18 @@ handle({From, {chunk, Pos, B, N}},  S) ->
 	    loop(S#state{queue = [{From, {chunk, Pos, B, N}} | S#state.queue]})
     end;
 
-handle({From, {chunk_step, Pos, B, N}},  S) ->
+handle({From, {chunk_step, Pos, N}},  S) ->
     case get(log) of
 	L when L#log.status == ok ->	
-	    R = do_chunk_step(L, Pos, B, N),
+	    R = do_chunk_step(L, Pos, N),
 	    reply(From, R, S);
 	L when L#log.blocked_by == From ->	
-	    R = do_chunk_step(L, Pos, B, N),
+	    R = do_chunk_step(L, Pos, N),
 	    reply(From, R, S);
 	L when L#log.status == {blocked, false} ->
 	    reply(From, {error, {blocked_log, L#log.name}}, S);
 	_ ->
-	    loop(S#state{queue = [{From, {chunk_step, Pos, B, N}}
+	    loop(S#state{queue = [{From, {chunk_step, Pos, N}}
 				  | S#state.queue]})
     end;
 
@@ -1395,13 +1434,10 @@ do_chunk(#log{format_type = wrap_int, extra = Handle}, Pos, B, N) ->
 do_chunk(Log, _Pos, _B, _) ->
     {error, {format_external, Log#log.name}}.
 
-do_chunk_step(#log{format_type = wrap_int, extra = Handle}, Pos, B, N) ->
-    disk_log_1:mf_int_chunk_step(Handle, Pos, B, N);
-do_chunk_step(Log, _Pos, _B, _N) ->
-    {error, {not_internal_wrap, Log#log.name}};
-do_chunk_step(Log, _Pos, _B, _N) ->
-    {error, {format_external, Log#log.name}}.
-
+do_chunk_step(#log{format_type = wrap_int, extra = Handle}, Pos, N) ->
+    disk_log_1:mf_int_chunk_step(Handle, Pos, N);
+do_chunk_step(Log, _Pos, _N) ->
+    {error, {not_internal_wrap, Log#log.name}}.
 
 reply(To, Rep, S) ->
     To ! {disk_log, self(), Rep},

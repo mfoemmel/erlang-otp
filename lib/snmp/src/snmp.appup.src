@@ -1,6 +1,31 @@
 {"%VSN%",
- [{"3.2.0", 
+ [{"3.2.1", 
    [
+    {load_module, snmp, soft_purge, soft_purge, [snmp_symbolic_store]},
+
+    {update, snmp_local_db, {advanced,upgrade_from_pre_3_2_2}, 
+     soft_purge, soft_purge, []},
+
+    {update, snmp_mib, {advanced,upgrade_from_pre_3_2_0}, 
+     soft_purge, soft_purge, []},
+
+    {update, snmp_symbolic_store, {advanced,upgrade_from_3_2_1}, 
+     soft_purge, soft_purge, []}
+   ]
+  },
+  {"3.2.0", 
+   [
+    {load_module, snmp, soft_purge, soft_purge, [snmp_symbolic_store]},
+
+    {update, snmp_local_db, {advanced,upgrade_from_pre_3_2_2}, 
+     soft_purge, soft_purge, []},
+
+    {update, snmp_mib, {advanced,upgrade_from_pre_3_2_0}, 
+     soft_purge, soft_purge, []},
+
+    {update, snmp_symbolic_store, {advanced,upgrade_from_3_2_0}, 
+     soft_purge, soft_purge, []},
+
     {load_module, snmp_mpd, soft_purge, soft_purge, []}
    ]
   },
@@ -8,14 +33,19 @@
    [
     {update, snmp_supervisor, soft, soft_purge, soft_purge, []},
 
-    {update, snmp_symbolic_store, {advanced,upgrade_from_3_1_4}, 
+    {load_module, snmp, soft_purge, soft_purge, [snmp_symbolic_store]},
+
+    {update, snmp_symbolic_store, {advanced,upgrade_from_pre_3_2_0}, 
      soft_purge, soft_purge, []},
 
     {update, snmp_note_store, {advanced,upgrade_from_3_1_4}, 
      soft_purge, soft_purge, []},
 
-    {update, snmp_mib, {advanced,upgrade_from_3_1_4}, 
+    {update, snmp_mib, {advanced,upgrade_from_pre_3_2_0}, 
      soft_purge, soft_purge, [snmp_mib_data]},
+
+    {update, snmp_local_db, {advanced,upgrade_from_pre_3_2_2}, 
+     soft_purge, soft_purge, []},
 
     {load_module, snmp_mib_data, soft_purge, soft_purge, []},
 
@@ -35,7 +65,8 @@
     {update, snmp_agent, soft, soft_purge, soft_purge, 
      [snmp_misc_sup,snmp_acm,snmp_mib,snmp_set,snmp_trap,snmp_verbosity]},
 
-    {update, snmp_local_db, soft, soft_purge, soft_purge, [snmp_verbosity]},
+    {update, snmp_local_db, {advanced,upgrade_from_pre_3_2_2}, 
+     soft_purge, soft_purge, [snmp_verbosity]},
 
     {update, snmp_supervisor, soft, soft_purge, soft_purge, 
      [snmp_misc_sup,snmp_symbolic_store,snmp_note_store,
@@ -48,13 +79,13 @@
     {update, snmp_net_if, soft, soft_purge, soft_purge, 
      [snmp_log,snmp_mpd,snmp_verbosity]},
 
-    {update, snmp_mib, {advanced,upgrade_from_3_1_3}, soft_purge, soft_purge, 
-     [snmp_mib_data,snmp_verbosity]},
+    {update, snmp_mib, {advanced,upgrade_from_pre_3_2_0}, 
+     soft_purge, soft_purge, [snmp_mib_data,snmp_verbosity]},
 
     {update, snmp_note_store, {advanced,upgrade_from_3_1_3}, 
      soft_purge, soft_purge, [snmp_verbosity]},
 
-    {update, snmp_symbolic_store, {advanced,upgrade_from_3_1_3}, 
+    {update, snmp_symbolic_store, {advanced,upgrade_from_pre_3_2_0}, 
      soft_purge, soft_purge, [snmp_verbosity]},
 
     {load_module, snmp_mib_data, soft_purge, soft_purge, [snmp_verbosity]},
@@ -74,9 +105,10 @@
   },
 
   {"3.0.9.4",  
-   [{load_module, snmp, soft_purge, soft_purge, []}, 
+   [{load_module, snmp, soft_purge, soft_purge, 
+     [snmp_agent,snmp_note_store,snmp_symbolic_store,snmp_local_db]}, 
     {load_module, snmp_acm, soft_purge, soft_purge, []}, 
-    {update, snmp_agent, {advanced, upgrade_from_3_0_9_2}, 
+    {update, snmp_agent, {advanced, upgrade_from_3_0_9_4}, 
      soft_purge, soft_purge, []}, 
     {update, snmp_agent_sup, soft, soft_purge, soft_purge, []}, 
     {update, snmp_app, soft, soft_purge, soft_purge, []}, 
@@ -88,17 +120,19 @@
     {load_module, snmp_generic, soft_purge, soft_purge, []}, 
     {load_module, snmp_generic_mnesia, soft_purge, soft_purge, []}, 
     {load_module, snmp_index, soft_purge, soft_purge, []}, 
-    {update, snmp_local_db, soft, soft_purge, soft_purge, []}, 
+    {update, snmp_local_db, {advanced, upgrade_from_pre_3_2_2}, 
+     soft_purge, soft_purge, []}, 
     {load_module, snmp_log, soft_purge, soft_purge, []}, 
     {update, snmp_mgr, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_mgr_misc, soft_purge, soft_purge, []}, 
-    {update, snmp_mib, soft, soft_purge, soft_purge, [snmp_mib_data]}, 
+    {update, snmp_mib, {advanced,upgrade_from_pre_3_2_0}, 
+     soft_purge, soft_purge, [snmp_mib_data]}, 
     {load_module, snmp_mib_data, soft_purge, soft_purge, []}, 
     {load_module, snmp_misc, soft_purge, soft_purge, []}, 
     {update, snmp_misc_sup, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_mpd, soft_purge, soft_purge, []}, 
     {update, snmp_net_if, soft, soft_purge, soft_purge, []}, 
-    {update, snmp_note_store, {advanced, upgrade_from_3_0_9_2}, 
+    {update, snmp_note_store, {advanced, upgrade_from_3_0_9_4}, 
      soft_purge, soft_purge, []}, 
     {load_module, snmp_notification_mib, soft_purge, soft_purge, []}, 
     {load_module, snmp_pdus, soft_purge, soft_purge, []}, 
@@ -109,7 +143,7 @@
     {load_module, snmp_standard_mib, soft_purge, soft_purge, []}, 
     {update, snmp_supervisor, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_svbl, soft_purge, soft_purge, []}, 
-    {update, snmp_symbolic_store, {advanced, upgrade_from_3_0_9_2}, 
+    {update, snmp_symbolic_store, {advanced, upgrade_from_pre_3_2_0}, 
      soft_purge, soft_purge, []}, 
     {load_module, snmp_target_mib, soft_purge, soft_purge, []}, 
     {update, snmp_tok, soft, soft_purge, soft_purge, []}, 
@@ -122,9 +156,10 @@
   },
 
   {"3.0.9.3",  
-   [{load_module, snmp, soft_purge, soft_purge, []}, 
+   [{load_module, snmp, soft_purge, soft_purge, 
+     [snmp_agent,snmp_note_store,snmp_symbolic_store,snmp_local_db]}, 
     {load_module, snmp_acm, soft_purge, soft_purge, []}, 
-    {update, snmp_agent, {advanced, upgrade_from_3_0_9_2}, 
+    {update, snmp_agent, {advanced, upgrade_from_3_0_9_3}, 
      soft_purge, soft_purge, []}, 
     {update, snmp_agent_sup, soft, soft_purge, soft_purge, []}, 
     {update, snmp_app, soft, soft_purge, soft_purge, []}, 
@@ -136,17 +171,19 @@
     {load_module, snmp_generic, soft_purge, soft_purge, []}, 
     {load_module, snmp_generic_mnesia, soft_purge, soft_purge, []}, 
     {load_module, snmp_index, soft_purge, soft_purge, []}, 
-    {update, snmp_local_db, soft, soft_purge, soft_purge, []}, 
+    {update, snmp_local_db, {advanced, upgrade_from_pre_3_2_2}, 
+     soft_purge, soft_purge, []}, 
     {load_module, snmp_log, soft_purge, soft_purge, []}, 
     {update, snmp_mgr, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_mgr_misc, soft_purge, soft_purge, []}, 
-    {update, snmp_mib, soft, soft_purge, soft_purge, [snmp_mib_data]}, 
+    {update, snmp_mib, {advanced,upgrade_from_pre_3_2_0}, 
+     soft_purge, soft_purge, [snmp_mib_data]}, 
     {load_module, snmp_mib_data, soft_purge, soft_purge, []}, 
     {load_module, snmp_misc, soft_purge, soft_purge, []}, 
     {update, snmp_misc_sup, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_mpd, soft_purge, soft_purge, []}, 
     {update, snmp_net_if, soft, soft_purge, soft_purge, []}, 
-    {update, snmp_note_store, {advanced, upgrade_from_3_0_9_2}, 
+    {update, snmp_note_store, {advanced, upgrade_from_3_0_9_3}, 
      soft_purge, soft_purge, []}, 
     {load_module, snmp_notification_mib, soft_purge, soft_purge, []}, 
     {load_module, snmp_pdus, soft_purge, soft_purge, []}, 
@@ -157,7 +194,7 @@
     {load_module, snmp_standard_mib, soft_purge, soft_purge, []}, 
     {update, snmp_supervisor, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_svbl, soft_purge, soft_purge, []}, 
-    {update, snmp_symbolic_store, {advanced, upgrade_from_3_0_9_2}, 
+    {update, snmp_symbolic_store, {advanced, upgrade_from_pre_3_2_0}, 
      soft_purge, soft_purge, []}, 
     {load_module, snmp_target_mib, soft_purge, soft_purge, []}, 
     {update, snmp_tok, soft, soft_purge, soft_purge, []}, 
@@ -170,7 +207,8 @@
   },
 
   {"3.0.9.2",  
-   [{load_module, snmp, soft_purge, soft_purge, []}, 
+   [{load_module, snmp, soft_purge, soft_purge, 
+     [snmp_agent,snmp_note_store,snmp_symbolic_store,snmp_local_db]}, 
     {load_module, snmp_acm, soft_purge, soft_purge, []}, 
     {update, snmp_agent, {advanced, upgrade_from_3_0_9_2}, 
      soft_purge, soft_purge, []}, 
@@ -184,11 +222,13 @@
     {load_module, snmp_generic, soft_purge, soft_purge, []}, 
     {load_module, snmp_generic_mnesia, soft_purge, soft_purge, []}, 
     {load_module, snmp_index, soft_purge, soft_purge, []}, 
-    {update, snmp_local_db, soft, soft_purge, soft_purge, []}, 
+    {update, snmp_local_db, {advanced, upgrade_from_pre_3_2_2}, 
+     soft_purge, soft_purge, []}, 
     {load_module, snmp_log, soft_purge, soft_purge, []}, 
     {update, snmp_mgr, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_mgr_misc, soft_purge, soft_purge, []}, 
-    {update, snmp_mib, soft, soft_purge, soft_purge, [snmp_mib_data]}, 
+    {update, snmp_mib, {advanced,upgrade_from_pre_3_2_0}, 
+     soft_purge, soft_purge, [snmp_mib_data]}, 
     {load_module, snmp_mib_data, soft_purge, soft_purge, []}, 
     {load_module, snmp_misc, soft_purge, soft_purge, []}, 
     {update, snmp_misc_sup, soft, soft_purge, soft_purge, []}, 
@@ -205,7 +245,7 @@
     {load_module, snmp_standard_mib, soft_purge, soft_purge, []}, 
     {update, snmp_supervisor, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_svbl, soft_purge, soft_purge, []}, 
-    {update, snmp_symbolic_store, {advanced, upgrade_from_3_0_9_2}, 
+    {update, snmp_symbolic_store, {advanced, upgrade_from_pre_3_2_0}, 
      soft_purge, soft_purge, []}, 
     {load_module, snmp_target_mib, soft_purge, soft_purge, []}, 
     {update, snmp_tok, soft, soft_purge, soft_purge, []}, 
@@ -218,23 +258,53 @@
   }
  ], 
 
- [{"3.2.0", 
+ [{"3.2.1", 
    [
+    {load_module, snmp, soft_purge, soft_purge, [snmp_symbolic_store]},
+
+    {update, snmp_local_db, {advanced,downgrade_to_pre_3_2_2}, 
+     soft_purge, soft_purge, []},
+
+    {update, snmp_mib, {advanced,downgrade_to_pre_3_2_0}, 
+     soft_purge, soft_purge, []},
+
+    {update, snmp_symbolic_store, {advanced,downgrade_to_3_2_1}, 
+     soft_purge, soft_purge, []}
+   ]
+  },
+  {"3.2.0", 
+   [
+    {load_module, snmp, soft_purge, soft_purge, [snmp_symbolic_store]},
+
+    {update, snmp_local_db, {advanced,downgrade_to_pre_3_2_2}, 
+     soft_purge, soft_purge, []},
+
+    {update, snmp_mib, {advanced,downgrade_to_pre_3_2_0}, 
+     soft_purge, soft_purge, []},
+
+    {update, snmp_symbolic_store, {advanced,downgrade_to_3_2_0}, 
+     soft_purge, soft_purge, []},
+
     {load_module, snmp_mpd, soft_purge, soft_purge, []}
    ]
   },
   {"3.1.4",
    [
+    {load_module, snmp, soft_purge, soft_purge, [snmp_symbolic_store]},
+
     {update, snmp_supervisor, soft, soft_purge, soft_purge, []},
 
-    {update, snmp_symbolic_store, {advanced,downgrade_to_3_1_4}, 
+    {update, snmp_symbolic_store, {advanced,downgrade_to_pre_3_2_0}, 
      soft_purge, soft_purge, []},
 
     {update, snmp_note_store, {advanced,downgrade_to_3_1_4}, 
      soft_purge, soft_purge, []},
 
-    {update, snmp_mib, {advanced,downgrade_to_3_1_4}, 
+    {update, snmp_mib, {advanced,downgrade_to_pre_3_2_0}, 
      soft_purge, soft_purge, [snmp_mib_data]},
+
+    {update, snmp_local_db, {advanced,downgrade_to_pre_3_2_2}, 
+     soft_purge, soft_purge, []},
 
     {load_module, snmp_mib_data, soft_purge, soft_purge, []},
 
@@ -254,7 +324,8 @@
     {update, snmp_agent, soft, soft_purge, soft_purge, 
      [snmp_misc_sup,snmp_acm,snmp_mib,snmp_set,snmp_trap]},
 
-    {update, snmp_local_db, soft, soft_purge, soft_purge, []},
+    {update, snmp_local_db, {advanced,downgrade_to_pre_3_2_2}, 
+     soft_purge, soft_purge, []},
 
     {update, snmp_supervisor, soft, soft_purge, soft_purge, 
      [snmp_misc_sup,snmp_symbolic_store,snmp_note_store,snmp_local_db,
@@ -267,13 +338,13 @@
     {update, snmp_net_if, soft, soft_purge, soft_purge, 
      [snmp_log,snmp_mpd]},
 
-    {update, snmp_mib, {advanced,downgrade_to_3_1_3}, 
+    {update, snmp_mib, {advanced,downgrade_to_pre_3_2_0}, 
      soft_purge, soft_purge, [snmp_mib_data]},
 
     {update, snmp_note_store, {advanced,downgrade_to_3_1_3}, 
      soft_purge, soft_purge, []},
 
-    {update, snmp_symbolic_store, {advanced,downgrade_to_3_1_3}, 
+    {update, snmp_symbolic_store, {advanced,downgrade_to_pre_3_2_0}, 
      soft_purge, soft_purge, []},
 
     {load_module, snmp_mib_data, soft_purge, soft_purge, []},
@@ -292,9 +363,10 @@
   },
 
   {"3.0.9.4",  
-   [{load_module, snmp, soft_purge, soft_purge, []}, 
+   [{load_module, snmp, soft_purge, soft_purge, 
+     [snmp_agent,snmp_note_store,snmp_symbolic_store,snmp_local_db]}, 
     {load_module, snmp_acm, soft_purge, soft_purge, []}, 
-    {update, snmp_agent, {advanced, downgrade_to_3_0_9_2}, 
+    {update, snmp_agent, {advanced, downgrade_to_3_0_9_4}, 
      soft_purge, soft_purge, []}, 
     {update, snmp_agent_sup, soft, soft_purge, soft_purge, []}, 
     {update, snmp_app, soft, soft_purge, soft_purge, []}, 
@@ -306,18 +378,19 @@
     {load_module, snmp_generic, soft_purge, soft_purge, []}, 
     {load_module, snmp_generic_mnesia, soft_purge, soft_purge, []}, 
     {load_module, snmp_index, soft_purge, soft_purge, []}, 
-    {update, snmp_local_db, soft, soft_purge, soft_purge, []}, 
+    {update, snmp_local_db, {advanced, downgrade_to_pre_3_2_2}, 
+     soft_purge, soft_purge, []}, 
     {load_module, snmp_log, soft_purge, soft_purge, []}, 
     {update, snmp_mgr, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_mgr_misc, soft_purge, soft_purge, []}, 
-    {update, snmp_mib, {advanced, downgrade_to_3_0_9_2}, 
-     soft_purge, soft_purge, [snmp_mib_data]}, 
+    {update, snmp_mib, {advanced,downgrade_to_pre_3_2_0}, 
+     soft_purge, soft_purge, [snmp_mib_data]},
     {load_module, snmp_mib_data, soft_purge, soft_purge, []}, 
     {load_module, snmp_misc, soft_purge, soft_purge, []}, 
     {update, snmp_misc_sup, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_mpd, soft_purge, soft_purge, []}, 
     {update, snmp_net_if, soft, soft_purge, soft_purge, []}, 
-    {update, snmp_note_store, {advanced, downgrade_to_3_0_9_2}, 
+    {update, snmp_note_store, {advanced, downgrade_to_3_0_9_4}, 
      soft_purge, soft_purge, []}, 
     {load_module, snmp_notification_mib, soft_purge, soft_purge, []}, 
     {load_module, snmp_pdus, soft_purge, soft_purge, []}, 
@@ -328,7 +401,7 @@
     {load_module, snmp_standard_mib, soft_purge, soft_purge, []}, 
     {update, snmp_supervisor, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_svbl, soft_purge, soft_purge, []}, 
-    {update, snmp_symbolic_store, {advanced, downgrade_to_3_0_9_2}, 
+    {update, snmp_symbolic_store, {advanced, downgrade_to_pre_3_2_0}, 
      soft_purge, soft_purge, []}, 
     {load_module, snmp_target_mib, soft_purge, soft_purge, []}, 
     {update, snmp_tok, soft, soft_purge, soft_purge, []}, 
@@ -340,9 +413,10 @@
   },
 
   {"3.0.9.3",  
-   [{load_module, snmp, soft_purge, soft_purge, []}, 
+   [{load_module, snmp, soft_purge, soft_purge, 
+     [snmp_agent,snmp_note_store,snmp_symbolic_store,snmp_local_db]}, 
     {load_module, snmp_acm, soft_purge, soft_purge, []}, 
-    {update, snmp_agent, {advanced, downgrade_to_3_0_9_2}, 
+    {update, snmp_agent, {advanced, downgrade_to_3_0_9_3}, 
      soft_purge, soft_purge, []}, 
     {update, snmp_agent_sup, soft, soft_purge, soft_purge, []}, 
     {update, snmp_app, soft, soft_purge, soft_purge, []}, 
@@ -354,18 +428,19 @@
     {load_module, snmp_generic, soft_purge, soft_purge, []}, 
     {load_module, snmp_generic_mnesia, soft_purge, soft_purge, []}, 
     {load_module, snmp_index, soft_purge, soft_purge, []}, 
-    {update, snmp_local_db, soft, soft_purge, soft_purge, []}, 
+    {update, snmp_local_db, {advanced, downgrade_to_pre_3_2_2}, 
+     soft_purge, soft_purge, []}, 
     {load_module, snmp_log, soft_purge, soft_purge, []}, 
     {update, snmp_mgr, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_mgr_misc, soft_purge, soft_purge, []}, 
-    {update, snmp_mib, {advanced, downgrade_to_3_0_9_2}, 
-     soft_purge, soft_purge, [snmp_mib_data]}, 
+    {update, snmp_mib, {advanced,downgrade_to_pre_3_2_0}, 
+     soft_purge, soft_purge, [snmp_mib_data]},
     {load_module, snmp_mib_data, soft_purge, soft_purge, []}, 
     {load_module, snmp_misc, soft_purge, soft_purge, []}, 
     {update, snmp_misc_sup, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_mpd, soft_purge, soft_purge, []}, 
     {update, snmp_net_if, soft, soft_purge, soft_purge, []}, 
-    {update, snmp_note_store, {advanced, downgrade_to_3_0_9_2}, 
+    {update, snmp_note_store, {advanced, downgrade_to_3_0_9_3}, 
      soft_purge, soft_purge, []}, 
     {load_module, snmp_notification_mib, soft_purge, soft_purge, []}, 
     {load_module, snmp_pdus, soft_purge, soft_purge, []}, 
@@ -376,7 +451,7 @@
     {load_module, snmp_standard_mib, soft_purge, soft_purge, []}, 
     {update, snmp_supervisor, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_svbl, soft_purge, soft_purge, []}, 
-    {update, snmp_symbolic_store, {advanced, downgrade_to_3_0_9_2}, 
+    {update, snmp_symbolic_store, {advanced, downgrade_to_pre_3_2_0}, 
      soft_purge, soft_purge, []}, 
     {load_module, snmp_target_mib, soft_purge, soft_purge, []}, 
     {update, snmp_tok, soft, soft_purge, soft_purge, []}, 
@@ -388,7 +463,8 @@
   },
 
   {"3.0.9.2",  
-   [{load_module, snmp, soft_purge, soft_purge, []}, 
+   [{load_module, snmp, soft_purge, soft_purge, 
+     [snmp_agent,snmp_note_store,snmp_symbolic_store,snmp_local_db]}, 
     {load_module, snmp_acm, soft_purge, soft_purge, []}, 
     {update, snmp_agent, {advanced, downgrade_to_3_0_9_2}, 
      soft_purge, soft_purge, []}, 
@@ -402,12 +478,13 @@
     {load_module, snmp_generic, soft_purge, soft_purge, []}, 
     {load_module, snmp_generic_mnesia, soft_purge, soft_purge, []}, 
     {load_module, snmp_index, soft_purge, soft_purge, []}, 
-    {update, snmp_local_db, soft, soft_purge, soft_purge, []}, 
+    {update, snmp_local_db, {advanced, downgrade_to_pre_3_2_2}, 
+     soft_purge, soft_purge, []}, 
     {load_module, snmp_log, soft_purge, soft_purge, []}, 
     {update, snmp_mgr, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_mgr_misc, soft_purge, soft_purge, []}, 
-    {update, snmp_mib, {advanced, downgrade_to_3_0_9_2}, 
-     soft_purge, soft_purge, [snmp_mib_data]}, 
+    {update, snmp_mib, {advanced,downgrade_to_pre_3_2_0}, 
+     soft_purge, soft_purge, [snmp_mib_data]},
     {load_module, snmp_mib_data, soft_purge, soft_purge, []}, 
     {load_module, snmp_misc, soft_purge, soft_purge, []}, 
     {update, snmp_misc_sup, soft, soft_purge, soft_purge, []}, 
@@ -424,7 +501,7 @@
     {load_module, snmp_standard_mib, soft_purge, soft_purge, []}, 
     {update, snmp_supervisor, soft, soft_purge, soft_purge, []}, 
     {load_module, snmp_svbl, soft_purge, soft_purge, []}, 
-    {update, snmp_symbolic_store, {advanced, downgrade_to_3_0_9_2}, 
+    {update, snmp_symbolic_store, {advanced, downgrade_to_pre_3_2_0}, 
      soft_purge, soft_purge, []}, 
     {load_module, snmp_target_mib, soft_purge, soft_purge, []}, 
     {update, snmp_tok, soft, soft_purge, soft_purge, []}, 

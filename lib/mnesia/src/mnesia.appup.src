@@ -1,49 +1,47 @@
 {"%VSN%",
  [ 
-   {"3.9.1",
+   {"3.9.2",
     [
+     {update, mnesia_lib, soft, soft_purge, soft_purge, []},
      {update, mnesia, soft, soft_purge, soft_purge, []},
      {update, mnesia_controller, soft, soft_purge, soft_purge, []},
-     {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
-     {update, mnesia_late_loader, soft, soft_purge, soft_purge, []},
-     {update, mnesia_loader, soft, soft_purge, soft_purge, []},
-     {update, mnesia_locker, {advanced, "3.9.1"}, soft_purge, soft_purge, []},
-     {update, mnesia_tm, soft, soft_purge, soft_purge, []}
+     {update, mnesia_schema, soft, soft_purge, soft_purge, []}     
     ]
    },
-   {"3.9",
+   {"3.9.1",
     [
+     {update, mnesia_lib, soft, soft_purge, soft_purge, []},
      {update, mnesia, soft, soft_purge, soft_purge, []},
      {update, mnesia_controller, soft, soft_purge, soft_purge, []},
      {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
      {update, mnesia_late_loader, soft, soft_purge, soft_purge, []},
      {update, mnesia_loader, soft, soft_purge, soft_purge, []},
      {update, mnesia_locker, {advanced, "3.9.1"}, soft_purge, soft_purge, []},
-     {update, mnesia_tm, soft, soft_purge, soft_purge, []}
+     {update, mnesia_tm, soft, soft_purge, soft_purge, []},
+     {update, mnesia_schema, soft, soft_purge, soft_purge, []}
     ]
    }
   ],
  [
-  {"3.9.1",
+  {"3.9.2",
    [
+    {update, mnesia_lib, soft, soft_purge, soft_purge, []},
     {update, mnesia, soft, soft_purge, soft_purge, []},
     {update, mnesia_controller, soft, soft_purge, soft_purge, []},
-    {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
-    {update, mnesia_late_loader, soft, soft_purge, soft_purge, []},
-    {update, mnesia_loader, soft, soft_purge, soft_purge, []},
-    {update, mnesia_locker, {advanced, "3.9.1"}, soft_purge, soft_purge, []},
-    {update, mnesia_tm, soft, soft_purge, soft_purge, []}
+    {update, mnesia_schema, soft, soft_purge, soft_purge, []}     
    ]
   },
-  {"3.9",
+  {"3.9.1",
    [
+    {update, mnesia_lib, soft, soft_purge, soft_purge, []},
     {update, mnesia, soft, soft_purge, soft_purge, []},
     {update, mnesia_controller, soft, soft_purge, soft_purge, []},
     {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
     {update, mnesia_late_loader, soft, soft_purge, soft_purge, []},
     {update, mnesia_loader, soft, soft_purge, soft_purge, []},
     {update, mnesia_locker, {advanced, "3.9.1"}, soft_purge, soft_purge, []},
-    {update, mnesia_tm, soft, soft_purge, soft_purge, []}
+    {update, mnesia_tm, soft, soft_purge, soft_purge, []},
+    {update, mnesia_schema, soft, soft_purge, soft_purge, []}
    ]
   }
  ] 

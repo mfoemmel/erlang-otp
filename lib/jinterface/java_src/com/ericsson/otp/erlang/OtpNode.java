@@ -610,7 +610,7 @@ public class OtpNode extends OtpLocalNode {
       this.setDaemon(true);
       this.setName("acceptor");
       publishPort();
-      acceptor.start();
+      this.start();
     }
 
     private boolean publishPort() 

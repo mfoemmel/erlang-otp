@@ -48,6 +48,9 @@
 	 all_keys/1, all_keys/4,
 	 index_match_object/2, index_match_object/4, index_match_object/6,
 	 index_read/3, index_read/6,
+
+	 %% Iterators within an activity 
+	 foldl/3, foldl/4, foldr/3, foldr/4,
 	 
 	 %% Dirty access regardless of activities - Updates
 	 dirty_write/1, dirty_write/2,
@@ -59,7 +62,8 @@
 	 dirty_read/1, dirty_read/2,
 	 dirty_match_object/1, dirty_match_object/2, dirty_all_keys/1,
 	 dirty_index_match_object/2, dirty_index_match_object/3,
-	 dirty_index_read/3, dirty_slot/2, dirty_first/1, dirty_next/2,
+	 dirty_index_read/3, dirty_slot/2, 
+	 dirty_first/1, dirty_next/2, dirty_last/1, dirty_prev/2, 
 
 	 %% Info
 	 table_info/2, table_info/4, schema/0, schema/1,
@@ -105,6 +109,7 @@
 
 	 %% Mnesia internal functions
 	 dirty_rpc/4,                          % Not for public use
+	 foldl/6, foldr/6,
 
 	 %% Module internal callback functions
 	 remote_dirty_match_object/2,           % Not for public use
@@ -682,6 +687,103 @@ read(Tid, Ts, Tab, Key, LockKind)
 read(Tid, Ts, Tab, Key, LockKind) ->
     abort({bad_type, Tab}).
 
+%%%%%%%%%%%%%%%%%%%%%
+%% Iterators 
+
+foldl(Fun, Acc, Tab) ->
+    foldl(Fun, Acc, Tab, read).
+foldl(Fun, Acc, Tab, LockKind) when function(Fun) -> 
+    {Type, Prev} = init_iteration(Tab, LockKind),
+    Res = (catch foldl(Tab, dirty_first(Tab), Fun, Acc, Type, Prev)),
+    close_iteration(Res, Tab).
+
+foldl(Tab, '$end_of_table', Fun, RAcc, Type, Stored) ->
+    lists:foldl(fun(Key, Acc) -> 
+			lists:foldl(Fun, Acc, read(Tab, Key, read))
+		end, RAcc, Stored);
+foldl(Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H == Key ->
+    NewAcc = lists:foldl(Fun, Acc, read(Tab, Key, read)),
+    foldl(Tab, dirty_next(Tab, Key), Fun, NewAcc, ordered_set, Stored);
+foldl(Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H < Key ->
+    NewAcc = lists:foldl(Fun, Acc, read(Tab, H, read)),
+    foldl(Tab, Key, Fun, NewAcc, ordered_set, Stored);
+foldl(Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H > Key ->
+    NewAcc = lists:foldl(Fun, Acc, read(Tab, Key, read)),
+    foldl(Tab, dirty_next(Tab, Key), Fun, NewAcc, ordered_set, [H |Stored]);
+foldl(Tab, Key, Fun, Acc, Type, Stored) ->  %% Type is set or bag 
+    NewAcc = lists:foldl(Fun, Acc, read(Tab, Key, read)),
+    NewStored = ordsets:del_element(Key, Stored),
+    foldl(Tab, dirty_next(Tab, Key), Fun, NewAcc, Type, NewStored).
+
+foldr(Fun, Acc, Tab) ->
+    foldr(Fun, Acc, Tab, read).
+foldr(Fun, Acc, Tab, LockKind) when function(Fun) -> 
+    {Type, TempPrev} = init_iteration(Tab, LockKind),
+    Prev = 
+	if 
+	    Type == ordered_set ->
+		lists:reverse(TempPrev);
+	    true ->      %% Order doesn't matter for set and bag
+		TempPrev %% Keep the order so we can use ordsets:del_element
+	end,
+    Res = (catch foldr(Tab, dirty_last(Tab), Fun, Acc, Type, Prev)),
+    close_iteration(Res, Tab).
+
+foldr(Tab, '$end_of_table', Fun, RAcc, Type, Stored) ->
+    lists:foldl(fun(Key, Acc) -> 
+			lists:foldl(Fun, Acc, read(Tab, Key, read))
+		end, RAcc, Stored);
+foldr(Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H == Key ->
+    NewAcc = lists:foldl(Fun, Acc, read(Tab, Key, read)),
+    foldr(Tab, dirty_prev(Tab, Key), Fun, NewAcc, ordered_set, Stored);
+foldr(Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H > Key ->
+    NewAcc = lists:foldl(Fun, Acc, read(Tab, H, read)),
+    foldr(Tab, Key, Fun, NewAcc, ordered_set, Stored);
+foldr(Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H < Key ->
+    NewAcc = lists:foldl(Fun, Acc, read(Tab, Key, read)),
+    foldr(Tab, dirty_prev(Tab, Key), Fun, NewAcc, ordered_set, [H |Stored]);
+foldr(Tab, Key, Fun, Acc, Type, Stored) ->  %% Type is set or bag 
+    NewAcc = lists:foldl(Fun, Acc, read(Tab, Key, read)),
+    NewStored = ordsets:del_element(Key, Stored),
+    foldr(Tab, dirty_prev(Tab, Key), Fun, NewAcc, Type, NewStored).
+
+init_iteration(Tab, LockKind) ->
+    lock({table, Tab}, LockKind),
+    Type = val({Tab, setorbag}),    
+    Previous = add_previous(Type, Tab),
+    St = val({Tab, storage_type}),
+    if 
+	St == unknown -> 
+	    ignore;
+	true ->
+	    mnesia_lib:db_fixtable(St, Tab, true)
+    end, 
+    {Type, Previous}.
+close_iteration(Res, Tab) ->
+    case val({Tab, storage_type}) of
+	unknown -> 
+	    ignore;
+	St -> 
+	    mnesia_lib:db_fixtable(St, Tab, false)
+    end,
+    case Res of 
+	{'EXIT', {aborted, What}} ->
+	   abort(What);
+	{'EXIT', What} ->
+	    abort(What);
+	_ ->
+	    Res
+    end.
+
+add_previous(Type, Tab) ->
+    case get(mnesia_activity_state) of
+	{_, _, non_transaction} -> 
+	    [];
+	{_, _Tid, Ts} ->
+	    Previous = ?ets_match(Ts#tidstore.store, {{Tab, '$1'}, '_', write}),
+	    lists:sort(lists:flatten(Previous))
+    end.
+
 %% This routine fixes up the return value from read/1 so that
 %% it is correct with respect to what this particular transaction
 %% has already written, deleted .... etc
@@ -1098,10 +1200,21 @@ dirty_first(Tab) when atom(Tab), Tab /= schema ->
 dirty_first(Tab) ->
     abort({bad_type, Tab}).
 
+dirty_last(Tab) when atom(Tab), Tab /= schema ->
+    dirty_rpc(Tab, mnesia_lib, db_last, [Tab]);
+dirty_last(Tab) ->
+    abort({bad_type, Tab}).
+
 dirty_next(Tab, Key) when atom(Tab), Tab /= schema ->
     dirty_rpc(Tab, mnesia_lib, db_next_key, [Tab, Key]);
 dirty_next(Tab, Key) ->
     abort({bad_type, Tab}).
+
+dirty_prev(Tab, Key) when atom(Tab), Tab /= schema ->
+    dirty_rpc(Tab, mnesia_lib, db_prev_key, [Tab, Key]);
+dirty_prev(Tab, Key) ->
+    abort({bad_type, Tab}).
+
 
 dirty_rpc(Tab, M, F, Args) ->
     Node = val({Tab, where_to_read}),

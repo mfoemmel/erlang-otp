@@ -63,6 +63,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
+#include "erl_malloc.h"
 #endif
 
 #include "erl_connect.h"
@@ -470,14 +471,9 @@ static int exec_erlang(char *alive,
   /* compare ip addresses, unless forced by flag setting to use rsh */
   if ((flags & ERL_START_REMOTE) || (hisaddr->s_addr != myaddr.s_addr)) {
     argv[0] = RSH;
-#ifdef VXWORKS
-    /* no strdup? */
     len = strlen(inet_ntoa(*hisaddr));
     argv[1] = erl_malloc(len);
     strcpy(argv[1],inet_ntoa(*hisaddr));
-#else
-    argv[1] = strdup(inet_ntoa(*hisaddr)); 
-#endif
   }
   else {
   /* Yes - use sh to start local Erlang */
