@@ -39,6 +39,7 @@ int ei_x_append(ei_x_buff* x, const ei_x_buff* x2);
 int ei_x_append_buf(ei_x_buff* x, const char* buf, int len);
 int ei_x_encode_string(ei_x_buff* x, const char* s);
 int ei_x_encode_string_len(ei_x_buff* x, const char* s, int len);
+int ei_x_encode_binary(ei_x_buff* x, const void* s, int len);
 int ei_x_encode_long(ei_x_buff* x, long n);
 int ei_x_encode_ulong(ei_x_buff* x, unsigned long n);
 int ei_x_encode_double(ei_x_buff* x, double dbl);

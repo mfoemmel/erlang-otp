@@ -40,6 +40,7 @@
 	 format_val/4,
 	 format_vb/2,
 	 format_vbs/2,
+	 format/3,
 	 get_option/3,
 	 get_sec_level/1,
 	 get_vsns/0,
@@ -608,6 +609,20 @@ format_vb(#varbind{oid = Oid, variabletype = Type, value = Value}, MiniMib) ->
     [io_lib:format("  ~w = ", [Soid]),
      format_val(Type, Mtype, Value, MiniMib) | "\n"].
 
+format(Max, F, A) when integer(Max) ->
+    case lists:flatten(io_lib:format(F,A)) of
+	S when length(S) > Max ->
+	    case lists:suffix("\n", S) of
+		true ->
+		    lists:concat([lists:sublist(S,Max), "...\n"]);
+		false ->
+		    lists:concat([lists:sublist(S,Max), "..."])
+	    end;
+	S ->
+	    S
+    end.
+
+
 %%----------------------------------------------------------------------
 %% Returns: (a nested) symbolified oid.
 %%----------------------------------------------------------------------
@@ -711,8 +726,12 @@ read(Io, Prompt, StartLine) ->
     end.
 
 error(Format, Error) ->
-    snmp_error:config_err(Format, Error),
+    config_err(Format, Error),
     exit(configuration_error).
 error(File, Line, Error) ->
-    snmp_error:config_err("~p:~w:\n  ~p", [File, Line, Error]),
+    config_err("~p:~w:\n  ~p", [File, Line, Error]),
     exit(configuration_error).
+
+
+config_err(F, A) ->
+    snmp_error_report:config_err(F, A).

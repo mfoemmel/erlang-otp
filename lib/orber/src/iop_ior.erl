@@ -34,10 +34,12 @@
 %% External exports
 %%-----------------------------------------------------------------
 -export([code/4, decode/4, string_code/1, string_decode/1, create/5, create/6,
-	 get_key/1, get_typeID/1, get_objkey/1, check_nil/1,
+	 get_key/1, get_key/2, get_typeID/1, get_objkey/1, check_nil/1,
 	 get_privfield/1, set_privfield/2, 
 	 get_orbfield/1, set_orbfield/2, 
-	 get_flagfield/1, set_flagfield/2, get_version/1]).
+	 get_flagfield/1, set_flagfield/2, get_version/1,
+	 create_external/5, create_external/6, print/1,
+	 get_alt_addr/1, add_component/2]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -60,7 +62,24 @@ get_version(_) ->
 %% External interface functions
 %%-----------------------------------------------------------------
 %%-----------------------------------------------------------------
-%% Func: create/5
+%% Func: create/5/6
+%%-----------------------------------------------------------------
+%% There are a few restrictions if a certain IIOP-version may contain certain components
+%% and contexts The ones we currently, and the ones we perhaps will, support is:
+%% 
+%%    Feature                          1.0  1.1  1.2
+%% TransactionService Service Context  yes  yes  yes
+%% CodeSets Service Context                 yes  yes
+%% Object by Value Service Context               yes
+%% Bi-Directional IIOP Service Context           yes
+%% IOR components in IIOP profile           yes  yes
+%% TAG_ORB_TYPE                             yes  yes
+%% TAG_CODE_SETS                            yes  yes
+%% TAG_ALTERNATE_IIOP_ADDRESS                    yes
+%% TAG_SSL_SEC_TRANS                        yes  yes
+%% Extended IDL data types                  yes  yes
+%% Bi-Directional GIOP Features                  yes
+%% Value types and Abstract Interfaces           yes
 %%-----------------------------------------------------------------
 create(Version, TypeID, Host, IIOP_port, Objkey) ->
     create(Version, TypeID, Host, IIOP_port, Objkey, []).
@@ -80,10 +99,11 @@ create({1, 1}, TypeID, Host, IIOP_port, Objkey, MC) ->
 		       -1 ->
 			 MC;
 		       SSLPort ->
-			 [#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
-				  component_data=list_to_binary([0 | cdrlib:enc_unsigned_short(2, 
-				  cdrlib:enc_unsigned_short(2,
-				    cdrlib:enc_unsigned_short(SSLPort, [])))])}|MC]
+			 [#'IOP_TaggedComponent'
+			  {tag=?TAG_SSL_SEC_TRANS, 
+			   component_data=#'SSLIOP_SSL'{target_supports = 2, 
+							target_requires = 2, 
+							port = SSLPort}}|MC]
 		   end,
     PB=#'IIOP_ProfileBody_1_1'{iiop_version=V,
 			       host=Host,
@@ -100,10 +120,11 @@ create({1, 2}, TypeID, Host, IIOP_port, Objkey, MC) ->
 		       -1 ->
 			 MC;
 		       SSLPort ->
-			 [#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
-				  component_data=list_to_binary([0 | cdrlib:enc_unsigned_short(2, 
-				  cdrlib:enc_unsigned_short(2,
-				    cdrlib:enc_unsigned_short(SSLPort, [])))])} | MC]
+			 [#'IOP_TaggedComponent'
+			  {tag=?TAG_SSL_SEC_TRANS, 
+			   component_data=#'SSLIOP_SSL'{target_supports = 2, 
+							target_requires = 2, 
+							port = SSLPort}}|MC]
 		   end,
     PB=#'IIOP_ProfileBody_1_1'{iiop_version=V,
 			       host=Host,
@@ -117,23 +138,55 @@ create(Version, TypeID, Host, IIOP_port, Objkey, MC) ->
     orber:debug_level_print("[~p] iop_ior:create(~p, ~p, ~p, ~p, ~p, ~p); unsupported IIOP-version.", 
 			    [?LINE, Version, TypeID, Host, IIOP_port, Objkey, MC], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
+
+   
+%%-----------------------------------------------------------------
+%% Func: create_external/5/6
+%%-----------------------------------------------------------------
+create_external(Version, TypeID, Host, IIOP_port, Objkey) ->
+    create_external(Version, TypeID, Host, IIOP_port, Objkey, []).
+create_external({1, 0}, TypeID, Host, IIOP_port, Objkey, MC) ->
+    V=#'IIOP_Version'{major=1,
+		      minor=0},
+    PB=#'IIOP_ProfileBody_1_0'{iiop_version=V,
+			       host=Host,
+			       port=IIOP_port,
+			       object_key=Objkey},
+    #'IOP_IOR'{type_id=TypeID, profiles=[#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
+							      profile_data=PB}]};
+create_external({1, 1}, TypeID, Host, IIOP_port, Objkey, Components) ->
+    V=#'IIOP_Version'{major=1,
+		      minor=1},
+    PB=#'IIOP_ProfileBody_1_1'{iiop_version=V,
+			       host=Host,
+			       port=IIOP_port,
+			       object_key=Objkey,
+			       components=Components},
+    #'IOP_IOR'{type_id=TypeID, 
+	       profiles=[#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
+					      profile_data=PB}]};
+create_external({1, 2}, TypeID, Host, IIOP_port, Objkey, Components) ->
+    V=#'IIOP_Version'{major=1,
+		      minor=2},
+    PB=#'IIOP_ProfileBody_1_1'{iiop_version=V,
+			       host=Host,
+			       port=IIOP_port,
+			       object_key=Objkey,
+			       components=Components},
+    #'IOP_IOR'{type_id=TypeID, 
+	       profiles=[#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
+					      profile_data=PB}]};
+create_external(Version, TypeID, Host, IIOP_port, Objkey, MC) ->
+    orber:dbg("[~p] iop_ior:create(~p, ~p, ~p, ~p, ~p, ~p); unsupported IIOP-version.", 
+			    [?LINE, Version, TypeID, Host, IIOP_port, Objkey, MC], ?DEBUG_LEVEL),
+    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
    
 %%-----------------------------------------------------------------
 %% Func: get_key/1
 %%-----------------------------------------------------------------
 get_key(#'IOP_IOR'{profiles=P})  ->
-    get_key_1(P, false);
+    get_key_1(P, false, 0, undefined);
 get_key({_Id, Type, Key, _UserDef, _OrberDef, _Flags}) ->
-    if
-	binary(Key) ->
-	    {'internal', Key};
-	Type == pseudo ->
-	    {'internal_registered', {pseudo, Key}};
-	atom(Key) ->
-	    {'internal_registered', Key}
-    end;
-%% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
-get_key({_Id, Type, Key, _UserDef}) ->
     if
 	binary(Key) ->
 	    {'internal', Key};
@@ -143,13 +196,17 @@ get_key({_Id, Type, Key, _UserDef}) ->
 	    {'internal_registered', Key}
     end.
 
-get_key_1([], false)  ->
-    orber:debug_level_print("[~p] iop_ior:get_key_1([]); bad object reference, profile not found.", 
+get_key(#'IOP_IOR'{profiles=P}, Exclude)  ->
+    get_key_1(P, true, 0, Exclude).
+
+get_key_1([], false, _, _)  ->
+    orber:dbg("[~p] iop_ior:get_key_1([]); bad object reference, profile not found.", 
 			    [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
-get_key_1([], true)  ->
+get_key_1([], true, _, _)  ->
     undefined;
-get_key_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB} | P], Retry) ->
+get_key_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB} = TP | P], 
+	  Retry, Counter, Exclude) ->
     [_, Version, Host, IIOP_port, ObjectKey | Rest] = tuple_to_list(PB),
     case ObjectKey of
 	{_Id, Type, Key, _UserDef, _OrberDef, _Flags} ->
@@ -161,71 +218,190 @@ get_key_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB} | P], Re
 		atom(Key) ->
 		    {'internal_registered', Key}
 	    end;
-	%% Remove next case when we no longer wish to handle ObjRef/4 
-	%% (only ObjRef/6).
-	{_Id, Type, Key, _UserDef} ->
-	    if
-		binary(Key) ->
-		    {'internal', Key};
-		Type == pseudo ->
-		    {'internal_registered', {pseudo, Key}};
-		atom(Key) ->
-		    {'internal_registered', Key}
-	    end;
+	OK when Version#'IIOP_Version'.minor > 0, Exclude == undefined ->
+	    {'external', {Host, IIOP_port, OK, Counter, TP, 
+			  check_component_data(Rest, Version)}};
 	OK when Version#'IIOP_Version'.minor > 0 ->
-	    case check_component_data(Rest, Version) of
-		[] ->
-		    {'external', {normal, Host, IIOP_port, OK, 
-				  {Version#'IIOP_Version'.major, 
-				   Version#'IIOP_Version'.minor}}};
-		{ssl, SSLData} ->
-		    {'external', {ssl, Host, SSLData, OK,
-				  {Version#'IIOP_Version'.major, 
-				   Version#'IIOP_Version'.minor}}}
+	    case lists:member(Counter, Exclude) of
+		true ->
+		    get_key_1(P, Retry, Counter+1, Exclude);
+		false ->
+		    {'external', {Host, IIOP_port, OK, Counter, TP, 
+				  check_component_data(Rest, Version)}}
 	    end;
-	OK ->
+	OK when Exclude == undefined ->
 	    %% This case is "necessary" if an ORB adds several IIOP-profiles since,
 	    %% for example, wchar isn't supported for 1.0.
-	    case get_key_1(P, true) of
+	    case get_key_1(P, true, Counter+1, Exclude) of
 		undefined ->
-		    case check_component_data(Rest, Version) of
-			[] ->
-			    {'external', {normal, Host, IIOP_port, OK, 
-					  {Version#'IIOP_Version'.major, 
-					   Version#'IIOP_Version'.minor}}};
-			{ssl, SSLData} ->
-			    {'external', {ssl, Host, SSLData, OK,
-					  {Version#'IIOP_Version'.major, 
-					   Version#'IIOP_Version'.minor}}}
-		    end;
+		    %% We now it's IIOP-1.0 and it doesn't contain any
+		    %% components. Hence, no need to check for it.
+		    {'external', {Host, IIOP_port, OK, Counter, TP, 
+				  check_component_data(Rest, Version)}};
 		LaterVersion ->
 		    LaterVersion
+	    end;
+	OK ->
+	    case lists:member(Counter, Exclude) of
+		true ->
+		    get_key_1(P, Retry, Counter+1, Exclude);
+		false ->
+		    %% This case is "necessary" if an ORB adds several IIOP-profiles since,
+		    %% for example, wchar isn't supported for 1.0.
+		    case get_key_1(P, true, Counter+1, Exclude) of
+			undefined ->
+			    {'external', {Host, IIOP_port, OK, Counter, TP, 
+					  check_component_data(Rest, Version)}};
+			LaterVersion ->
+			    LaterVersion
+		    end
 	    end
     end;
-get_key_1([_ | P], Retry)  ->
-    get_key_1(P, Retry).
+get_key_1([_ | P], Retry, Counter, Exclude)  ->
+    get_key_1(P, Retry, Counter+1, Exclude).
 
 check_component_data([], Version) ->
-    [];
+    #host_data{version = {Version#'IIOP_Version'.major,
+			  Version#'IIOP_Version'.minor}};
 check_component_data([CompData], Version) ->
-    check_ssl(CompData, Version).
+    check_component_data_2(CompData, #host_data{version = {Version#'IIOP_Version'.major,
+							   Version#'IIOP_Version'.minor}}).
 
-check_ssl([], Version) ->
-    [];
-check_ssl([#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, component_data=Data} | Rest], Version) 
-  when binary(Data) ->
-    {ByteOrder, R} = cdr_decode:dec_byte_order(Data),
-    {SSLStruct, Rest1, Length1} = cdr_decode:dec_type(?SSLIOP_SSL, Version, R, 0,
-					      ByteOrder),
-    {ssl, SSLStruct};
-check_ssl([#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, component_data=Data} | Rest], Version) ->
-    {ByteOrder, R} = cdr_decode:dec_byte_order(list_to_binary(Data)),
-    {SSLStruct, Rest1, Length1} = cdr_decode:dec_type(?SSLIOP_SSL, Version, R, 0,
-					      ByteOrder),
-    {ssl, SSLStruct};
-check_ssl([_ | Rest], Version) ->
-    check_ssl(Rest, Version).
+check_component_data_2([], HostData) ->
+    HostData;
+check_component_data_2([#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
+					       component_data=SSLStruct}|Rest], 
+		       HostData) when record(SSLStruct, 'SSLIOP_SSL') ->
+    check_component_data_2(Rest, HostData#host_data{protocol = ssl,
+						    ssl_data = SSLStruct});
+check_component_data_2([#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+					       component_data=#'CONV_FRAME_CodeSetComponentInfo'
+					       {'ForCharData' = Char,
+						'ForWcharData' = Wchar}}|Rest], 
+		       HostData) ->
 
+    CharData = check_char_codeset(Char),
+    WcharData = check_wchar_codeset(Wchar),
+    check_component_data_2(Rest, HostData#host_data{charset = CharData,
+						    wcharset = WcharData});
+check_component_data_2([_ | Rest], HostData) ->
+    check_component_data_2(Rest, HostData).
+
+check_char_codeset(#'CONV_FRAME_CodeSetComponent'{native_code_set=?ISO8859_1_ID}) ->
+    ?ISO8859_1_ID;
+check_char_codeset(#'CONV_FRAME_CodeSetComponent'{native_code_set=?ISO646_IRV_ID}) ->
+    ?ISO646_IRV_ID;
+check_char_codeset(#'CONV_FRAME_CodeSetComponent'{conversion_code_sets=Converters}) ->
+    %% Since the list of Converters usually is very short (0 or 1 element) we
+    %% can use lists:member.
+    case lists:member(?ISO8859_1_ID, Converters) of
+	true ->
+	    ?ISO8859_1_ID;
+	false ->
+	    %% Since we are 100% sure strings will be (e.g. IFR-ids) used we
+	    %% can raise an exception at this point.
+	    orber:dbg("[~p] iop_ior:check_char_codeset(~p); 
+Orber cannot communicate with this ORB. 
+It doesn't support a Char CodeSet known to Orber.", [?LINE, Converters], ?DEBUG_LEVEL),
+	    corba:raise(#'INV_OBJREF'{completion_status = ?COMPLETED_NO})
+    end.
+
+check_wchar_codeset(#'CONV_FRAME_CodeSetComponent'{native_code_set=?UTF_16_ID}) ->
+    ?UTF_16_ID;
+check_wchar_codeset(#'CONV_FRAME_CodeSetComponent'{native_code_set=?UCS_2_ID}) ->
+    ?UCS_2_ID;
+check_wchar_codeset(#'CONV_FRAME_CodeSetComponent'{conversion_code_sets=Converters}) ->
+    case lists:member(?UTF_16_ID, Converters) of
+	true ->
+	    ?UTF_16_ID;
+	false ->
+	    %% We should not raise an exception here since we do not know if
+	    %% wchar/wstring is used.
+	    ?UTF_16_ID
+%	    ?UNSUPPORTED_WCHAR
+    end.
+
+
+%%-----------------------------------------------------------------
+%% Func: add_component/2
+%%-----------------------------------------------------------------
+add_component(Objref, Component) when record(Objref, 'IOP_IOR') ->
+    add_component_ior(Objref, Component);
+add_component(Objref, Component) ->
+    add_component_local(Objref, Component, orber:giop_version()).
+
+add_component_local(_, Component, {1,0}) ->
+    orber:dbg("[~p] iop_ior:add_component(~p); 
+IIOP-1.0 objects cannot contain any components.", [?LINE, Component], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status = ?COMPLETED_NO});
+add_component_local(_, #'IOP_TaggedComponent'{tag = ?TAG_ALTERNATE_IIOP_ADDRESS} 
+		    = Component, {1,1}) ->
+    orber:dbg("[~p] iop_ior:add_component(~p); 
+IIOP-1.1 objects may not contain ALTERNATE_IIOP_ADDRESS components.", 
+	      [?LINE, Component], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status = ?COMPLETED_NO});
+add_component_local({Id, Type, Key, UserDef, OrberDef, Flags}, Component, Version) ->
+    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+					 component_data=?DEFAULT_CODESETS},
+    create(Version, Id:typeID(), orber:host(), orber:iiop_port(),
+	   {Id, Type, Key, UserDef, OrberDef, Flags}, [Component, CodeSetComp]).
+
+add_component_ior(#'IOP_IOR'{profiles=P} = IOR, Component) ->
+    case add_component_ior_helper(P, Component, false, []) of
+	{false, _} ->
+	    orber:dbg("[~p] iop_ior:add_component_ior(~p); 
+The IOR do not contain a valid IIOP-version for the supplied component.", 
+		      [?LINE, Component], ?DEBUG_LEVEL),
+	    corba:raise(#'BAD_PARAM'{completion_status = ?COMPLETED_NO});
+	{_, NewProfiles} ->
+	    IOR#'IOP_IOR'{profiles=NewProfiles}
+    end.
+
+add_component_ior_helper([], Component, Status, Acc) ->
+    {Status, Acc};
+add_component_ior_helper([#'IOP_TaggedProfile'
+			  {tag=?TAG_INTERNET_IOP, 
+			   profile_data=#'IIOP_ProfileBody_1_1'
+			   {iiop_version= #'IIOP_Version'{minor=1}}}|T], 
+			 #'IOP_TaggedComponent'{tag = ?TAG_ALTERNATE_IIOP_ADDRESS} 
+			 = Component, Status, Acc) ->
+    %% 'ALTERNATE_IIOP_ADDRESS' may only be added to IIOP-1.2 IOR's.
+    add_component_ior_helper(T, Component, Status, Acc);
+add_component_ior_helper([#'IOP_TaggedProfile'
+			  {tag=?TAG_INTERNET_IOP, 
+			   profile_data=#'IIOP_ProfileBody_1_1'
+			   {object_key=Objkey,
+			    components=Components} = PB} = H|T], Component, Status, Acc) 
+  when tuple(Objkey) ->
+    %% The objectkey must be a tuple if it's a local object. We cannot(!!) add components
+    %% to an external IOR.
+    add_component_ior_helper(T, Component, true, 
+			     [H#'IOP_TaggedProfile'
+			      {profile_data=PB#'IIOP_ProfileBody_1_1'
+			       {components = [Component|Components]}}|Acc]);
+add_component_ior_helper([_|T], Component, Status, Acc) ->
+    add_component_ior_helper(T, Component, Status, Acc).
+
+%%-----------------------------------------------------------------
+%% Func: get_alt_addr/1
+%%-----------------------------------------------------------------
+%% TAG_ALTERNATE_IIOP_ADDRESS may only occur in IIOP-1.2 IOR's.
+get_alt_addr(#'IOP_TaggedProfile'
+	     {tag=?TAG_INTERNET_IOP, 
+	      profile_data=#'IIOP_ProfileBody_1_1'{iiop_version=
+						   #'IIOP_Version'{minor=2},
+						   components=Components}}) ->
+    get_alt_addr_helper(Components, []);
+get_alt_addr(_) ->
+    [].
+
+get_alt_addr_helper([], Acc) -> Acc;
+get_alt_addr_helper([#'IOP_TaggedComponent'{tag=?TAG_ALTERNATE_IIOP_ADDRESS, 
+					    component_data=#'ALTERNATE_IIOP_ADDRESS'
+					    {'HostID'=Host, 'Port'=Port}}|T], Acc) ->
+    get_alt_addr_helper(T, [{Host, Port}|Acc]);
+get_alt_addr_helper([_|T], Acc) ->
+    get_alt_addr_helper(T, Acc).
 
 %%-----------------------------------------------------------------
 %% Func: get_typeID/1
@@ -235,11 +411,6 @@ get_typeID(#'IOP_IOR'{type_id=TypeID}) ->
 get_typeID({Id, _Type, _Key, _UserDef, _OrberDef, _Flags}) when atom(Id) ->
     Id:typeID();
 get_typeID({Id, _Type, _Key, _UserDef, _OrberDef, _Flags}) ->
-    binary_to_list(Id);
-%% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
-get_typeID({Id, _Type, _Key, _UserDef}) when atom(Id) ->
-    Id:typeID();
-get_typeID({Id, _Type, _Key, _UserDef}) ->
     binary_to_list(Id).
 
 %%-----------------------------------------------------------------
@@ -248,14 +419,11 @@ get_typeID({Id, _Type, _Key, _UserDef}) ->
 get_objkey(#'IOP_IOR'{profiles=P}) ->
     get_objkey_1(P);
 get_objkey({Id, Type, Key, UserDef, OrberDef, Flags}) ->
-    {Id, Type, Key, UserDef, OrberDef, Flags};
-%% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
-get_objkey({Id, Type, Key, UserDef}) ->
-    {Id, Type, Key, UserDef}.
+    {Id, Type, Key, UserDef, OrberDef, Flags}.
 
 get_objkey_1([]) ->
-    orber:debug_level_print("[~p] iop_ior:get_objkey_1([]); bad object key, profile not found.", 
-			    [?LINE], ?DEBUG_LEVEL),
+    orber:dbg("[~p] iop_ior:get_objkey_1([]); bad object key, profile not found.", 
+	      [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 get_objkey_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB} | P]) ->
     [_, _, Host, IIOP_port, ObjectKey | _] = tuple_to_list(PB),
@@ -269,26 +437,19 @@ get_objkey_1([_ | P]) ->
 get_privfield(#'IOP_IOR'{profiles=P}) ->
     get_privfield_1(P);
 get_privfield({_Id, _Type, _Key, UserDef, _OrberDef, _Flags}) ->
-    UserDef;
-%% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
-get_privfield({Id, Type, Key, UserDef}) ->
     UserDef.
 
 get_privfield_1([]) ->
-    orber:debug_level_print("[~p] iop_ior:get_privfield_1([]); bad object key, profile not found.", 
-			    [?LINE], ?DEBUG_LEVEL),
+    orber:dbg("[~p] iop_ior:get_privfield_1([]); bad object key, profile not found.", 
+	      [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 get_privfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P]) ->
     [_, _, Host, IIOP_port, ObjectKey | _] = tuple_to_list(PB),
     case ObjectKey of
 	{_Id, _Type, _Key, UserDef, _OrberDef, _Flags} ->
 	    UserDef;
-	%% Remove next case when we no longer wish to handle ObjRef/4
-	%% (only ObjRef/6).
-	{_Id, _Type, _Key, UserDef} ->
-	    UserDef;
 	_ ->
-	    orber:debug_level_print("[~p] iop_ior:get_privfield_1(~p); bad object key.", 
+	    orber:dbg("[~p] iop_ior:get_privfield_1(~p); bad object key.", 
 				    [?LINE, ObjectKey], ?DEBUG_LEVEL),
 	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
     end;
@@ -301,14 +462,11 @@ get_privfield_1([_| P]) ->
 set_privfield(#'IOP_IOR'{type_id=Id, profiles=P}, UserData) ->
     #'IOP_IOR'{type_id=Id, profiles=set_privfield_1(P, UserData)};
 set_privfield({Id, Type, Key, _, OrberDef, Flags}, UserData) ->
-	    {Id, Type, Key, UserData, OrberDef, Flags};
-%% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
-set_privfield({Id, Type, Key, _}, UserData) ->
-	    {Id, Type, Key, UserData}.
+	    {Id, Type, Key, UserData, OrberDef, Flags}.
 
 set_privfield_1([], UserData) ->
-    orber:debug_level_print("[~p] iop_ior:set_privfield_1([]); bad object key, profile not found or external object.", 
-			    [?LINE], ?DEBUG_LEVEL),
+    orber:dbg("[~p] iop_ior:set_privfield_1([]); bad object key, profile not found or external object.", 
+	      [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 set_privfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P], UserData) ->
     [RecName, Version, Host, IIOP_port, ObjectKey | Rest] = tuple_to_list(PB),
@@ -319,16 +477,6 @@ set_privfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P
 							      Version, Host,
 							      IIOP_port,
 							      {Id, Type, Key, UserData, OrberDef, Flags}|
-							      Rest])} |
-	     set_privfield_1(P, UserData)];
-	%% Remove next case when we no longer wish to handle ObjRef/4
-	%% (only ObjRef/6).
-	{Id, Type, Key, _} ->
-	    [#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
-				  profile_data=list_to_tuple([RecName,
-							      Version, Host,
-							      IIOP_port,
-							      {Id, Type, Key, UserData}|
 							      Rest])} |
 	     set_privfield_1(P, UserData)];
 	_ ->
@@ -346,7 +494,7 @@ get_orbfield({_Id, _Type, _Key, _UserDef, OrberDef, _Flags}) ->
     OrberDef.
 
 get_orbfield_1([]) ->
-    orber:debug_level_print("[~p] iop_ior:get_orbfield_1([]); 
+    orber:dbg("[~p] iop_ior:get_orbfield_1([]); 
 bad object key, profile not found.", [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 get_orbfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P]) ->
@@ -355,7 +503,7 @@ get_orbfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P]
 	{_Id, _Type, _Key, _UserDef, OrberDef, _Flags} ->
 	    OrberDef;
 	_ ->
-	    orber:debug_level_print("[~p] iop_ior:get_orbfield_1(~p); 
+	    orber:dbg("[~p] iop_ior:get_orbfield_1(~p); 
 bad object key.", [?LINE, ObjectKey], ?DEBUG_LEVEL),
 	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
     end;
@@ -368,14 +516,10 @@ get_orbfield_1([_| P]) ->
 set_orbfield(#'IOP_IOR'{type_id=Id, profiles=P}, OrberDef) ->
     #'IOP_IOR'{type_id=Id, profiles=set_orbfield_1(P, OrberDef)};
 set_orbfield({Id, Type, Key, Priv, _, Flags}, OrberDef) ->
-	    {Id, Type, Key, Priv, OrberDef, Flags};
-%% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
-%% NOTE(!!): calling this function with ObjeRef/4 will return ObjRef/6!!!
-set_orbfield({Id, Type, Key, Priv}, OrberDef) ->
-	    {Id, Type, Key, Priv, OrberDef, 0}.
+	    {Id, Type, Key, Priv, OrberDef, Flags}.
 
 set_orbfield_1([], OrberDef) ->
-    orber:debug_level_print("[~p] iop_ior:set_orbfield_1([]); 
+    orber:dbg("[~p] iop_ior:set_orbfield_1([]); 
 bad object key, profile not found or external object.", [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 set_orbfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P], OrberDef) ->
@@ -387,16 +531,6 @@ set_orbfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P]
 							      Version, Host,
 							      IIOP_port,
 							      {Id, Type, Key, Priv, OrberDef, Flags}|
-							      Rest])} |
-	     set_orbfield_1(P, OrberDef)];
-	%% Remove next case when we no longer wish to handle ObjRef/4 
-	%% (only ObjRef/6).
-	{Id, Type, Key, Priv} ->
-	    [#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
-				  profile_data=list_to_tuple([RecName,
-							      Version, Host,
-							      IIOP_port,
-							      {Id, Type, Key, Priv, OrberDef, 0}|
 							      Rest])} |
 	     set_orbfield_1(P, OrberDef)];
 	_ ->
@@ -414,7 +548,7 @@ get_flagfield({_Id, _Type, _Key, _UserDef, _OrberDef, Flags}) ->
     Flags.
 
 get_flagfield_1([]) ->
-    orber:debug_level_print("[~p] iop_ior:get_flagfield_1([]); bad object key, profile not found.", 
+    orber:dbg("[~p] iop_ior:get_flagfield_1([]); bad object key, profile not found.", 
 			    [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 get_flagfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P]) ->
@@ -423,8 +557,8 @@ get_flagfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P
 	{_Id, _Type, _Key, _UserDef, _OrberDef, Flags} ->
 	    Flags;
 	_ ->
-	    orber:debug_level_print("[~p] iop_ior:get_flagfield_1(~p); bad object key.", 
-				    [?LINE, ObjectKey], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] iop_ior:get_flagfield_1(~p); bad object key.", 
+		      [?LINE, ObjectKey], ?DEBUG_LEVEL),
 	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
     end;
 get_flagfield_1([_| P]) ->
@@ -436,15 +570,11 @@ get_flagfield_1([_| P]) ->
 set_flagfield(#'IOP_IOR'{type_id=Id, profiles=P}, Flags) ->
     #'IOP_IOR'{type_id=Id, profiles=set_flagfield_1(P, Flags)};
 set_flagfield({Id, Type, Key, Priv, OrberDef, _}, Flags) ->
-	    {Id, Type, Key, Priv, OrberDef, Flags};
-%% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
-%% NOTE(!!): calling this function with ObjeRef/4 will return ObjRef/6!!!
-set_flagfield({Id, Type, Key, Priv}, Flags) ->
-	    {Id, Type, Key, Priv, 0, Flags}.
+	    {Id, Type, Key, Priv, OrberDef, Flags}.
 
 set_flagfield_1([], Flags) ->
-    orber:debug_level_print("[~p] iop_ior:set_flagfield_1([]); bad object key, profile not found or external object.", 
-			    [?LINE], ?DEBUG_LEVEL),
+    orber:dbg("[~p] iop_ior:set_flagfield_1([]); bad object key, profile not found or external object.", 
+	      [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 set_flagfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P], Flags) ->
     [RecName, Version, Host, IIOP_port, ObjectKey | Rest] = tuple_to_list(PB),
@@ -455,16 +585,6 @@ set_flagfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P
 							      Version, Host,
 							      IIOP_port,
 							      {Id, Type, Key, Priv, OrberDef, Flags}|
-							      Rest])} |
-	     set_flagfield_1(P, Flags)];
-	%% Remove next case when we no longer wish to handle ObjRef/4 
-	%% (only ObjRef/6).
-	{Id, Type, Key, Priv} ->
-	    [#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
-				  profile_data=list_to_tuple([RecName,
-							      Version, Host,
-							      IIOP_port,
-							      {Id, Type, Key, Priv, 0, Flags}|
 							      Rest])} |
 	     set_flagfield_1(P, Flags)];
 	_ ->
@@ -487,16 +607,218 @@ check_nil({Id, _, _, _, _, _}) ->
 	_ ->
 	    false
     end;
-%% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
-check_nil({Id, _, _, _}) ->  
-    case binary_to_list(Id) of
-	"" ->
-	    true; 
-	_ ->
-	    false
-    end;
 check_nil(_) ->
     false.
+
+
+
+%%----------------------------------------------------------------------
+%% Function   : print
+%% Arguments  : An object represented as one of the following:
+%%               - local (tuple)
+%%               - IOR
+%%               - stringified IOR
+%%               - corbaloc- or corbaname-schema
+%%              IoDevice - the same as the io-module defines.
+%% Returns    : 
+%% Description: Prints the object's components.
+%%----------------------------------------------------------------------
+print(Object) ->
+    print(undefined, Object).
+print(IoDevice, #'IOP_IOR'{type_id="", profiles=[]}) ->
+    print_it(IoDevice, "=================== IOR ====================
+NIL Object Reference.
+=================== END ====================~n", []);
+print(IoDevice, IORStr) when list(IORStr) ->
+    IOR = corba:string_to_object(IORStr),
+    print_helper(IoDevice, IOR);
+print(IoDevice, IOR) when record(IOR, 'IOP_IOR') ->
+    print_helper(IoDevice, IOR);
+print(IoDevice, {Id, Type, Key, UserDef, OrberDef, Flags}) when atom(Id) ->
+    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+					 component_data=?DEFAULT_CODESETS},
+    IOR = create(orber:giop_version(), Id:typeID(), orber:host(), orber:iiop_port(),
+		 {Id, Type, Key, UserDef, OrberDef, Flags}, [CodeSetComp]),    
+    print_helper(IoDevice, IOR);
+print(IoDevice, {Id, Type, Key, UserDef, OrberDef, Flags}) ->
+    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+					 component_data=?DEFAULT_CODESETS},
+    IOR = create(orber:giop_version(), binary_to_list(Id), orber:host(), orber:iiop_port(),
+		 {Id, Type, Key, UserDef, OrberDef, Flags}, [CodeSetComp]),
+    print_helper(IoDevice, IOR);
+print(_, _) ->
+    exit("Bad parameter").
+
+print_helper(IoDevice, #'IOP_IOR'{type_id=TypeID, profiles=Profs}) ->
+    print_it(IoDevice, "=================== IOR ====================
+------------------- IFR ID -----------------~n~s~n", [TypeID]),
+    print_profiles(IoDevice, Profs).
+
+print_profiles(IoDevice, []) ->
+    print_it(IoDevice, "=================== END ====================~n", []);
+print_profiles(IoDevice, 
+	       [#'IOP_TaggedProfile'
+		{tag=?TAG_INTERNET_IOP,
+		 profile_data = #'IIOP_ProfileBody_1_0'{iiop_version=
+							#'IIOP_Version'{major=Major,
+									minor=Minor},
+							host=Host, port=Port,
+							object_key=Objkey}}|T]) ->
+    print_it(IoDevice, "~n------------------- IIOP Profile -----------
+Version..........: ~p.~p
+Host.............: ~s
+Port.............: ~p~n", [Major, Minor, Host, Port]),
+    print_objkey(IoDevice, Objkey),
+    print_profiles(IoDevice, T);
+print_profiles(IoDevice, 
+	       [#'IOP_TaggedProfile'
+		{tag=?TAG_INTERNET_IOP,
+		 profile_data = #'IIOP_ProfileBody_1_1'{iiop_version=
+							#'IIOP_Version'{major=Major,
+									minor=Minor},
+							host=Host,
+							port=Port,
+							object_key=Objkey,
+							components=Components}}|T]) ->
+    print_it(IoDevice, "~n------------------- IIOP Profile -----------
+Version..........: ~p.~p
+Host.............: ~s
+Port.............: ~p~n", [Major, Minor, Host, Port]),
+    print_components(IoDevice, Components),
+    print_objkey(IoDevice, Objkey),
+    print_profiles(IoDevice, T);
+print_profiles(IoDevice, 
+	       [#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS,
+				     profile_data = Components}|T]) ->
+    print_it(IoDevice, "~n------------------- Multiple Components ----~n", []),
+    print_components(IoDevice, Components),
+    print_profiles(IoDevice, T);
+print_profiles(IoDevice, 
+	       [#'IOP_TaggedProfile'{tag=?TAG_SCCP_IOP,
+				     profile_data = Data}|T]) ->
+    print_it(IoDevice, "~n------------------- SCCP IOP ---------------~n", []),
+    print_profiles(IoDevice, T);
+print_profiles(IoDevice, 
+	       [#'IOP_TaggedProfile'{tag=Tag,
+				     profile_data = Data}|T]) ->
+    print_it(IoDevice, "~n------------------- TAG ~p -----------------~n", [Tag]),
+    print_profiles(IoDevice, T).
+
+print_components(_, []) -> ok;
+print_components(IoDevice, 
+		 [#'IOP_TaggedComponent'{tag=?TAG_ORB_TYPE, 
+					 component_data=ORB}|T]) ->
+    print_it(IoDevice, "ORB Type.........: ~p~n", [ORB]),
+    print_components(IoDevice, T);
+print_components(IoDevice, 
+		 [#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+					 component_data=
+					 #'CONV_FRAME_CodeSetComponentInfo'
+					 {'ForCharData' = Char,
+					  'ForWcharData' = Wchar}}|T]) ->
+    print_it(IoDevice, "Native Char......: ~p
+Char Conversion..: ~p
+Native Wchar.....: ~p
+Wchar Conversion.: ~p~n", 
+	      [Char#'CONV_FRAME_CodeSetComponent'.native_code_set,
+	       Char#'CONV_FRAME_CodeSetComponent'.conversion_code_sets,
+	       Wchar#'CONV_FRAME_CodeSetComponent'.native_code_set,
+	       Wchar#'CONV_FRAME_CodeSetComponent'.conversion_code_sets]),
+    print_components(IoDevice, T);
+print_components(IoDevice, 
+		 [#'IOP_TaggedComponent'{tag=?TAG_ALTERNATE_IIOP_ADDRESS, 
+					 component_data=#'ALTERNATE_IIOP_ADDRESS'
+					 {'HostID'=Host, 'Port'=Port}}|T]) ->
+    print_it(IoDevice, "Alternate Address: ~s:~p~n", [Host, Port]),
+    print_components(IoDevice, T);
+print_components(IoDevice, 
+		 [#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
+					 component_data=#'SSLIOP_SSL'
+					 {target_supports=Supports, 
+					  target_requires=Requires,
+					  port=Port}}|T]) ->
+    print_it(IoDevice, "SSL Port.........: ~p
+SSL Requires.....: ~p
+SSL Supports.....: ~p~n", [Port, Requires, Supports]),
+    print_components(IoDevice, T);
+print_components(IoDevice, 
+		 [#'IOP_TaggedComponent'{tag=TAG, 
+					 component_data=Data}|T]) ->
+    print_it(IoDevice, "Unused Component.: ~s~n", [match_tag(TAG)]),
+    print_octets(IoDevice, Data, [], 1),
+    print_components(IoDevice, T).
+
+
+print_objkey(IoDevice, Objkey) when tuple(Objkey) ->
+    print_it(IoDevice, "Local Object.....:~n~p~n", [Objkey]);
+print_objkey(IoDevice, Objkey) ->
+    print_it(IoDevice, "External Object..: ~n", []),
+    print_octets(IoDevice, Objkey, [], 1).
+
+print_octets(IoDevice, [], [], _) ->
+    ok;
+print_octets(IoDevice, [], Acc, C) ->
+    Filling = lists:duplicate((4*(9-C)), 32),
+    print_it(IoDevice, "~s", [Filling]),
+    print_it(IoDevice, "  ~p~n", [Acc]);
+print_octets(IoDevice, [H|T], Acc, 8) when H > 31 , H < 127 ->
+    print_it(IoDevice, "~4w", [H]),
+    print_it(IoDevice, "  ~p~n", [lists:reverse([H|Acc])]),
+    print_octets(IoDevice, T, [], 1);
+print_octets(IoDevice, [H|T], Acc, C) when H > 31 , H < 127 ->
+    print_it(IoDevice, "~4w", [H]),
+    print_octets(IoDevice, T, [H|Acc], C+1);
+print_octets(IoDevice, [H|T], Acc, 8) ->
+    print_it(IoDevice, "~4w", [H]),
+    print_it(IoDevice, "  ~p~n", [lists:reverse([$.|Acc])]),
+    print_octets(IoDevice, T, [], 1);
+print_octets(IoDevice, [H|T], Acc, C) ->
+    print_it(IoDevice, "~4w", [H]),
+    print_octets(IoDevice, T, [$.|Acc], C+1).
+
+print_it(undefined, Format, Data) ->
+    io:format(Format, Data);
+print_it(IoDevice, Format, Data) ->
+    io:format(IoDevice, Format, Data).
+
+match_tag(?TAG_ORB_TYPE) -> ?TAG_ORB_TYPE_STR;
+match_tag(?TAG_CODE_SETS) -> ?TAG_CODE_SETS_STR;
+match_tag(?TAG_POLICIES) -> ?TAG_POLICIES_STR;
+match_tag(?TAG_ALTERNATE_IIOP_ADDRESS) -> ?TAG_ALTERNATE_IIOP_ADDRESS_STR;
+match_tag(?TAG_COMPLETE_OBJECT_KEY) -> ?TAG_COMPLETE_OBJECT_KEY_STR;
+match_tag(?TAG_ENDPOINT_ID_POSITION) -> ?TAG_ENDPOINT_ID_POSITION_STR;
+match_tag(?TAG_LOCATION_POLICY) -> ?TAG_LOCATION_POLICY_STR;
+match_tag(?TAG_ASSOCIATION_OPTIONS) -> ?TAG_ASSOCIATION_OPTIONS_STR;
+match_tag(?TAG_SEC_NAME) -> ?TAG_SEC_NAME_STR;
+match_tag(?TAG_SPKM_1_SEC_MECH) -> ?TAG_SPKM_1_SEC_MECH_STR;
+match_tag(?TAG_SPKM_2_SEC_MECH) -> ?TAG_SPKM_2_SEC_MECH_STR;
+match_tag(?TAG_KerberosV5_SEC_MECH) -> ?TAG_KerberosV5_SEC_MECH_STR;
+match_tag(?TAG_CSI_ECMA_Secret_SEC_MECH) -> ?TAG_CSI_ECMA_Secret_SEC_MECH_STR;
+match_tag(?TAG_CSI_ECMA_Hybrid_SEC_MECH) -> ?TAG_CSI_ECMA_Hybrid_SEC_MECH_STR;
+match_tag(?TAG_SSL_SEC_TRANS) -> ?TAG_SSL_SEC_TRANS_STR;
+match_tag(?TAG_CSI_ECMA_Public_SEC_MECH) -> ?TAG_CSI_ECMA_Public_SEC_MECH_STR;
+match_tag(?TAG_GENERIC_SEC_MECH) -> ?TAG_GENERIC_SEC_MECH_STR;
+match_tag(?TAG_FIREWALL_TRANS) -> ?TAG_FIREWALL_TRANS_STR;
+match_tag(?TAG_SCCP_CONTACT_INFO) -> ?TAG_SCCP_CONTACT_INFO_STR;
+match_tag(?TAG_JAVA_CODEBASE) -> ?TAG_JAVA_CODEBASE_STR;
+match_tag(?TAG_TRANSACTION_POLICY) -> ?TAG_TRANSACTION_POLICY_STR;
+match_tag(?TAG_FT_GROUP) -> ?TAG_FT_GROUP_STR;
+match_tag(?TAG_FT_PRIMARY) -> ?TAG_FT_PRIMARY_STR;
+match_tag(?TAG_FT_HEARTBEAT_ENABLED) -> ?TAG_FT_HEARTBEAT_ENABLED_STR;
+match_tag(?TAG_MESSAGE_ROUTERS) -> ?TAG_MESSAGE_ROUTERS_STR;
+match_tag(?TAG_OTS_POLICY) -> ?TAG_OTS_POLICY_STR;
+match_tag(?TAG_INV_POLICY) -> ?TAG_INV_POLICY_STR;
+match_tag(?TAG_CSI_SEC_MECH_LIST) -> ?TAG_CSI_SEC_MECH_LIST_STR;
+match_tag(?TAG_NULL_TAG) -> ?TAG_NULL_TAG_STR;
+match_tag(?TAG_SECIOP_SEC_TRANS) -> ?TAG_SECIOP_SEC_TRANS_STR;
+match_tag(?TAG_TLS_SEC_TRANS) -> ?TAG_TLS_SEC_TRANS_STR;
+match_tag(?TAG_DCE_STRING_BINDING) -> ?TAG_DCE_STRING_BINDING_STR;
+match_tag(?TAG_DCE_BINDING_NAME) -> ?TAG_DCE_BINDING_NAME_STR;
+match_tag(?TAG_DCE_NO_PIPES) -> ?TAG_DCE_NO_PIPES_STR;
+match_tag(?TAG_DCE_SEC_MECH) -> ?TAG_DCE_SEC_MECH_STR;
+match_tag(?TAG_INET_SEC_TRANS) -> ?TAG_INET_SEC_TRANS_STR;
+match_tag(Tag) -> integer_to_list(Tag).
+
 %%-----------------------------------------------------------------
 %% Func: string_code/1
 %%-----------------------------------------------------------------
@@ -529,19 +851,6 @@ code(Version, {Id, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) ->
 					 component_data=?DEFAULT_CODESETS},
     IOR = create(Version, binary_to_list(Id), orber:host(), orber:iiop_port(),
 		 {Id, Type, Key, UserDef, OrberDef, Flags}, [CodeSetComp]),
-    code(Version, IOR, Bytes, Len);
-%% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
-code(Version, {Id, Type, Key, UserDef}, Bytes, Len) when atom(Id) ->
-    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
-					 component_data=?DEFAULT_CODESETS},
-    IOR = create(Version, Id:typeID(), orber:host(), orber:iiop_port(),
-		 {Id, Type, Key, UserDef}, [CodeSetComp]),
-    code(Version, IOR, Bytes, Len);
-code(Version, {Id, Type, Key, UserDef}, Bytes, Len) ->
-    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
-					 component_data=?DEFAULT_CODESETS},
-    IOR = create(Version, binary_to_list(Id), orber:host(), orber:iiop_port(),
-		 {Id, Type, Key, UserDef}, [CodeSetComp]),
     code(Version, IOR, Bytes, Len).
 
 code_profile_datas(_, []) ->
@@ -558,8 +867,8 @@ code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile
 code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=N, profile_data=P} | Profiles]) ->
     [#'IOP_TaggedProfile'{tag=N, profile_data=P} | code_profile_datas(Version, Profiles)];
 code_profile_datas(_, Data) ->
-    orber:debug_level_print("[~p] iop_ior:code_profile_datas(~p); unsupported TaggedProfile.", 
-			    [?LINE, Data], ?DEBUG_LEVEL),
+    orber:dbg("[~p] iop_ior:code_profile_datas(~p); unsupported TaggedProfile.", 
+	      [?LINE, Data], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
 
 code_profile_data(Version, ProfileData) ->
@@ -581,20 +890,44 @@ code_profile_data_1(Version, 'IIOP_ProfileBody_1_1', [TaggedComponentSeq], Bytes
     Comps = code_comp(Version, TaggedComponentSeq, []),
     cdr_encode:enc_type(?IOP_TAGGEDCOMPONENT_SEQ, Version, Comps, Bytes, Length);
 code_profile_data_1(_,V,S,_,_) ->
-    orber:debug_level_print("[~p] iop_ior:code_profile_datas(~p, ~p); probably unsupported IIOP-version", 
-			    [?LINE, V, S], ?DEBUG_LEVEL),
+    orber:dbg("[~p] iop_ior:code_profile_datas(~p, ~p); probably unsupported IIOP-version", 
+	      [?LINE, V, S], ?DEBUG_LEVEL),
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO}).
 
 code_comp(Version, [], CompData) ->
     CompData;
 code_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
-					   component_data=CodeSet}|Comps], CompData)
-  when Version == {1,1}; Version == {1,2} ->
+					   component_data=CodeSet}|Comps], CompData) ->
     {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
     {Bytes1, Len1} = cdr_encode:enc_type(?CONV_FRAME_CODESETCOMPONENTINFO, Version, 
 					 CodeSet, Bytes0, Len0),
     Bytes = binary_to_list(list_to_binary(lists:reverse(Bytes1))),
     code_comp(Version, Comps, [#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+						      component_data=Bytes}|CompData]);
+code_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_ORB_TYPE, 
+					   component_data=ORBType}|Comps], CompData) ->
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = cdr_encode:enc_type(?ORB_TYPE, Version, 
+					 ORBType, Bytes0, Len0),
+    Bytes = binary_to_list(list_to_binary(lists:reverse(Bytes1))),
+    code_comp(Version, Comps, [#'IOP_TaggedComponent'{tag=?TAG_ORB_TYPE, 
+						      component_data=Bytes}|CompData]);
+code_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_ALTERNATE_IIOP_ADDRESS, 
+					   component_data=AltAddr}|Comps], CompData) ->
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = cdr_encode:enc_type(?ALTERNATE_IIOP_ADDRESS, Version, 
+					 AltAddr, Bytes0, Len0),
+    Bytes = binary_to_list(list_to_binary(lists:reverse(Bytes1))),
+    code_comp(Version, Comps, [#'IOP_TaggedComponent'{tag=?TAG_ALTERNATE_IIOP_ADDRESS, 
+						      component_data=Bytes}|CompData]);
+code_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
+					   component_data=SSLStruct}|Comps], CompData)
+  when record(SSLStruct, 'SSLIOP_SSL') ->
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = cdr_encode:enc_type(?SSLIOP_SSL, Version, 
+					 SSLStruct, Bytes0, Len0),
+    Bytes = binary_to_list(list_to_binary(lists:reverse(Bytes1))),
+    code_comp(Version, Comps, [#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
 						      component_data=Bytes}|CompData]);
 code_comp(Version, [C|Comps], CompData) -> 
     code_comp(Version, Comps, [C|CompData]).
@@ -613,8 +946,8 @@ string_decode([$i,$o,$r,$: | IorHexSeq]) ->
     {ByteOrder, IorRest} = cdr_decode:dec_byte_order(IorByteSeq),
     decode(Version, IorRest, 1, ByteOrder);
 string_decode(What) ->
-    orber:debug_level_print("[~p] iop_ior:string_decode(~p); Should be IOR:.. or ior:..", 
-			    [?LINE, What], ?DEBUG_LEVEL),
+    orber:dbg("[~p] iop_ior:string_decode(~p); Should be IOR:.. or ior:..", 
+	      [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -656,8 +989,8 @@ decode_profile(Version, #'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data
 decode_profile(_, #'IOP_TaggedProfile'{tag=N, profile_data=ProfileData}) ->
     #'IOP_TaggedProfile'{tag=N, profile_data=ProfileData};
 decode_profile(_, Data) ->
-    orber:debug_level_print("[~p] iop_ior:decode_profile(~p); unsupported TaggedProfile.", 
-			    [?LINE, Data], ?DEBUG_LEVEL),
+    orber:dbg("[~p] iop_ior:decode_profile(~p); unsupported TaggedProfile.", 
+	      [?LINE, Data], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
 
 decode_profile_1(#'IIOP_Version'{major=1, minor=0}, H, P, ObjKey, Version, Rest, Length, ByteOrder) ->
@@ -682,22 +1015,48 @@ decode_profile_1(#'IIOP_Version'{major=1, minor=2}, H, P, ObjKey, Version, Rest,
 			    object_key=corba:string_to_objkey(ObjKey),
 			    components=CompData};
 decode_profile_1(V, _, _, _, _, _, _,_) ->
-    orber:debug_level_print("[~p] iop_ior:decode_profile_1(~p); probably unsupported IIOP-version.", 
-			    [?LINE, V], ?DEBUG_LEVEL),
+    orber:dbg("[~p] iop_ior:decode_profile_1(~p); probably unsupported IIOP-version.", 
+	      [?LINE, V], ?DEBUG_LEVEL),
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO}).
 
 decode_comp(Version, [], Components) ->
+%    ?PRINTDEBUG2("COMPONENTS: ~p~n", [Components]),
     Components;
 decode_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
-					     component_data=Bytes}|Comps], 
-	    Components) when Version == {1,1}; Version == {1,2} ->
+					     component_data=Bytes}|Comps],
+	    Components) ->
     {ByteOrder, Rest} = cdr_decode:dec_byte_order(list_to_binary(Bytes)),
     {CodeSet, _, _} = cdr_decode:dec_type(?CONV_FRAME_CODESETCOMPONENTINFO, 
 					  Version, Rest, 1, ByteOrder),
-    ?PRINTDEBUG2("CODESET: ~p~n", [CodeSet]),
     decode_comp(Version, Comps, 
 		[#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
 					component_data=CodeSet}|Components]);
+decode_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_ORB_TYPE, 
+					     component_data=Bytes}|Comps],
+	    Components) ->
+    {ByteOrder, Rest} = cdr_decode:dec_byte_order(list_to_binary(Bytes)),
+    {ORBType, _, _} = cdr_decode:dec_type(?ORB_TYPE, 
+					  Version, Rest, 1, ByteOrder),
+    decode_comp(Version, Comps, 
+		[#'IOP_TaggedComponent'{tag=?TAG_ORB_TYPE, 
+					component_data=ORBType}|Components]);
+decode_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_ALTERNATE_IIOP_ADDRESS, 
+					     component_data=Bytes}|Comps],
+	    Components) ->
+    {ByteOrder, Rest} = cdr_decode:dec_byte_order(list_to_binary(Bytes)),
+    {AltIIOP, _, _} = cdr_decode:dec_type(?ALTERNATE_IIOP_ADDRESS, 
+					  Version, Rest, 1, ByteOrder),
+    decode_comp(Version, Comps, 
+		[#'IOP_TaggedComponent'{tag=?TAG_ALTERNATE_IIOP_ADDRESS, 
+					component_data=AltIIOP}|Components]);
+decode_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
+					     component_data=Data}|Comps], Components) ->
+    {ByteOrder, R} = cdr_decode:dec_byte_order(list_to_binary(Data)),
+    {SSLStruct, Rest1, Length1} = cdr_decode:dec_type(?SSLIOP_SSL, Version, R, 1,
+						      ByteOrder),
+    decode_comp(Version, Comps, 
+		[#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
+					component_data=SSLStruct}|Components]);
 decode_comp(Version, [C|Comps], Components) ->
     %% Not used but we cannot discard it.
     decode_comp(Version, Comps, [C|Components]).

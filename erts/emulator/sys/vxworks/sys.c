@@ -1939,7 +1939,7 @@ static void initialize_allocation(void){
 
 /* This does not exist on other platforms, we just use it in sys.c 
    and the BSD resolver */
-void *sys_calloc2(size_t nelem, size_t elsize){
+void *sys_calloc2(Uint nelem, Uint elsize){
     void *ptr = SYS_ALLOC(nelem*elsize);
     if(ptr != NULL)
 	memset(ptr,0,nelem*elsize);

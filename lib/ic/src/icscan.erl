@@ -53,9 +53,11 @@ call_scan(G, Kw, PL) ->
 
 
 %% Guard macros used at top scan functions only
--define(is_number(X), X >= $0, X =< $9).
--define(is_upper(X), X >= $A, X =< $Z).
+-define(is_number(X), X >= $0 , X =< $9).
+-define(is_upper(X), X >= $A , X =< $Z).
 -define(is_lower(X), X >= $a, X =< $z).
+-define(is_hex_uc(X), X >= $A , X =< $F).
+-define(is_hex_lc(X), X >= $a , X =< $f).
 
 
 scan(G, Kw, [X|Str], Line, Out) when ?is_upper(X) ->
@@ -101,6 +103,20 @@ scan(G, Kw, [], Line, Out) ->
     Out.
 
 
+scan_number(G, Kw, [X|Str], [$0], Line, Out) 
+  when X == $X ; X ==$x ->
+    case Str of
+	[D|TmpStr] when ?is_number(D); ?is_hex_uc(D); ?is_hex_lc(D) ->
+	    {Num,Rest} = scan_hex_number(Str,0),
+	    scan(G, Kw, Rest, Line, [{'<integer_literal>', Line, 
+				      integer_to_list(Num)} | Out]);
+	[D|TmpStr] -> 
+	    scan(G, Kw, TmpStr, Line, [{list_to_atom([D]), Line} | Out])
+    end;
+scan_number(G, Kw, Str, [$0], Line, Out) ->
+    {Num,Rest} = scan_octal_number(Str,0),
+    scan(G, Kw, Rest, Line, [{'<integer_literal>', Line, 
+			      integer_to_list(Num)} | Out]);
 scan_number(G, Kw, [X|Str], Accum, Line, Out) when ?is_number(X) ->
     scan_number(G, Kw, Str, [X|Accum], Line, Out);
 scan_number(G, Kw, [X|Str], Accum, Line, Out) when X==$. ->
@@ -113,6 +129,22 @@ scan_number(G, Kw, Str, Accum, Line, Out) ->
     scan(G, Kw, Str, Line, [{'<integer_literal>', Line,
 			(lists:reverse(Accum))} | Out]).
 
+
+
+scan_hex_number([X|Rest],Acc) when X >=$a, X =< $f ->
+    scan_hex_number(Rest,(Acc bsl 4) + (X - $a + 10)); 
+scan_hex_number([X|Rest],Acc) when X >=$A, X =< $F ->
+    scan_hex_number(Rest,(Acc bsl 4) + (X - $A + 10)); 
+scan_hex_number([X|Rest],Acc) when X >=$0, X =< $9 ->
+    scan_hex_number(Rest,(Acc bsl 4) + (X-$0));
+scan_hex_number(Rest,Acc) -> 
+    {Acc,Rest}.
+
+scan_octal_number([X|Rest],Acc) when X >=$0, X =< $7 ->
+    scan_octal_number(Rest,(Acc bsl 3) + (X-$0)); 
+scan_octal_number(Rest,Acc) -> 
+    {Acc,Rest}.
+    
 
 %% Floating point number scan.
 %%

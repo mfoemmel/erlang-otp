@@ -78,8 +78,8 @@ int init_async(int hndl)
     async_ready_list = NULL;
     async_id = 0;
 
-    async_q = q = (AsyncQueue*) sys_alloc(erts_async_max_threads*
-					  sizeof(AsyncQueue));
+    async_q = q = (AsyncQueue*) sys_alloc_from(230, (erts_async_max_threads*
+						     sizeof(AsyncQueue)));
     for (i = 0; i < erts_async_max_threads; i++) {
 	q->lck = erts_mutex_create();
 	q->cv  = erts_cond_create();
@@ -100,7 +100,7 @@ int exit_async()
 
     /* terminate threads */
     for (i = 0; i < erts_async_max_threads; i++) {
-	ErlAsync* a = (ErlAsync*) sys_alloc(sizeof(ErlAsync));
+	ErlAsync* a = (ErlAsync*) sys_alloc_from(231,sizeof(ErlAsync));
 	a->port = -1;
 	async_add(a, &async_q[i]);
     }
@@ -269,7 +269,7 @@ long driver_async(ErlDrvPort ix, unsigned int* key,
 		  void (*async_invoke)(void*), void* async_data,
 		  void (*async_free)(void*))
 {
-    ErlAsync* a = (ErlAsync*) sys_alloc(sizeof(ErlAsync));
+    ErlAsync* a = (ErlAsync*) sys_alloc_from(232, sizeof(ErlAsync));
     Port* ptr;
     long id;
     unsigned int qix;

@@ -158,13 +158,10 @@ typedef struct trace_file_wrap_data {
     unsigned      len;  /* Current file len */
 } TraceFileWrapData;
 
-enum e_heavy {heavy_set, heavy_clear, heavy_off};
-
 typedef struct trace_file_data {
     FILETYPE fd;
     ErlDrvPort port;
     struct trace_file_data *next, *prev;
-    enum e_heavy heavy;
     TraceFileWrapData *wrap; /* == NULL => no wrap */
     int buff_siz;
     int buff_pos;
@@ -192,10 +189,10 @@ static unsigned digits(unsigned n);
 static void next_name(TraceFileName *tfn);
 static void *my_alloc(size_t size);
 static int my_write(TraceFileData *data, unsigned char *buff, int siz);
-static void my_flush(TraceFileData *data, enum e_heavy heavy);
+static int my_flush(TraceFileData *data);
 static void put_be(unsigned n, unsigned char *s);
 static void close_unlink_port(TraceFileData *data); 
-static void wrap_file(TraceFileData *data);
+static int wrap_file(TraceFileData *data);
 
 /*
 ** The driver struct
@@ -319,7 +316,6 @@ static ErlDrvData trace_file_start(ErlDrvPort port, char *buff)
 
     data->fd = fd;
     data->port = port;
-    data->heavy = heavy_off;
     data->buff_siz = BUFFER_SIZE;
     data->buff_pos = 0;
     data->wrap = wrap;
@@ -352,30 +348,42 @@ static void trace_file_stop(ErlDrvData handle)
 */
 static void trace_file_output(ErlDrvData handle, char *buff, int bufflen)
 {
+    int heavy = 0;
     TraceFileData *data = (TraceFileData *) handle;
     unsigned char b[5] = "";
     put_be((unsigned) bufflen, b + 1);
-    if (my_write(data, b, sizeof(b)) < 0 || 
-	my_write(data, buff, bufflen) < 0) {
-	driver_failure_atom(data->port, "write_error");
-    } else if (data->wrap) {
+    switch (my_write(data, b, sizeof(b))) {
+    case 1:
+	heavy = !0;
+    case 0:
+	switch (my_write(data, buff, bufflen)) {
+	case 1:
+	    heavy = !0;
+	case 0:
+	    break;
+	case -1:
+	    driver_failure_posix(data->port, errno); /* XXX */
+	    return;
+	}
+	break;
+    case -1:
+	driver_failure_posix(data->port, errno); /* XXX */
+	return;
+    }
+    if (data->wrap) {
 	TraceFileWrapData *wrap = data->wrap;
 	/* Size limited wrapping log files */
 	wrap->len += sizeof(b) + bufflen;
-	if (wrap->time == 0 && wrap->len >= wrap->size)
-	    wrap_file(data);
+	if (wrap->time == 0 && wrap->len >= wrap->size) {
+	    if (wrap_file(data) < 0) {
+		driver_failure_posix(data->port, errno); /* XXX */
+		return;
+	    }
+	    heavy = !0;
+	}
     }
-    switch (data->heavy) {
-    case heavy_set:
+    if (heavy) {
 	set_port_control_flags(data->port, PORT_CONTROL_FLAG_HEAVY);
-	data->heavy = heavy_clear;
-	break;
-    case heavy_clear:
-	set_port_control_flags(data->port, 0);
-	data->heavy = heavy_off;
-	break;
-    case heavy_off:
-	break;
     }
 }
 
@@ -388,7 +396,9 @@ static int trace_file_control(ErlDrvData handle, unsigned int command,
 {
     if (command == 'f') {
 	TraceFileData *data = (TraceFileData *) handle;
-	my_flush(data, heavy_off);
+	if (my_flush(data) < 0) {
+	    driver_failure_posix(data->port, errno); /* XXX */
+	}
 	if (res_size < 1) {
 	    *res = my_alloc(1);
 	}
@@ -404,8 +414,12 @@ static int trace_file_control(ErlDrvData handle, unsigned int command,
 static void trace_file_timeout(ErlDrvData handle) {
     TraceFileData *data = (TraceFileData *) handle;
     if (data->wrap) {
-	wrap_file(data);
-	driver_set_timer(data->port, data->wrap->time);
+	if (wrap_file(data) < 0) {
+	    driver_failure_posix(data->port, errno); /* XXX */
+	    return;
+	} else {
+	    driver_set_timer(data->port, data->wrap->time);
+	}
     }
 }
 
@@ -486,46 +500,62 @@ static void *my_alloc(size_t size)
     return ret;
 }
 
+/*
+** A write wrapper that regards it as an error if not all data was written.
+*/
+static int do_write(FILETYPE fd, unsigned char *buff, int siz) {
+    int w = write(fd, buff, siz);
+    if (w != siz) {
+	if (w >= 0) {
+	    errno = ENOSPC;
+	}
+	return -1;
+    }
+    return siz;
+}
 
+/*
+** Returns 0 if write to cache, 1 i write to file, and -1 if write failed.
+*/
 static int my_write(TraceFileData *data, unsigned char *buff, int siz) 
 {
-    int wrote;
+    int wrote, w;
 
     if (data->buff_siz - data->buff_pos >= siz) {
 	memcpy(data->buff + data->buff_pos, buff, siz);
 	data->buff_pos += siz; 
-	return siz;
+	return 0;
     }
     
     wrote = data->buff_siz - data->buff_pos;
     memcpy(data->buff + data->buff_pos, buff, wrote);
-    if (write(data->fd, data->buff, data->buff_siz) != data->buff_siz) {
-	data->heavy = heavy_set;
+    if (do_write(data->fd, data->buff, data->buff_siz) < 0) {
 	return -1;
     }
-    data->heavy = heavy_set;
     data->buff_pos = 0;
     if (siz - wrote >= data->buff_siz) {
 	/* Write directly, no need to buffer... */
-	if (write(data->fd, buff + wrote, siz - wrote) != 
-	    siz - wrote) {
-	    data->heavy = heavy_set;
+	if (do_write(data->fd, buff + wrote, siz - wrote) < 0) {
 	    return -1;
 	}
-	data->heavy = heavy_set;
-	return siz;
+	return 1;
     } 
     memcpy(data->buff, buff + wrote, siz - wrote);
     data->buff_pos = siz - wrote;
-    return siz;
+    set_port_control_flags(data->port, PORT_CONTROL_FLAG_HEAVY);
+    return 1;
 }
 
-static void my_flush(TraceFileData *data, enum e_heavy heavy)
+/* 
+** Returns negative if it failed to write.
+ */
+static int my_flush(TraceFileData *data)
 {
-    write(data->fd, data->buff, data->buff_pos);
-    if (data->heavy == heavy_off)
-	data->heavy = heavy;
+    if (do_write(data->fd, data->buff, data->buff_pos) < 0) {
+	return -1;
+    }
     data->buff_pos = 0;
+    return 0;
 }
 
 /*
@@ -540,12 +570,21 @@ static void put_be(unsigned n, unsigned char *s)
 }
 
 /*
+** Wrapper that only closes non-negative filehandles
+*/
+static void do_close(FILETYPE fd) {
+    if (fd != -1) {
+	close(fd);
+    }
+}
+
+/*
 ** Close the whole port and clean up
 */
 static void close_unlink_port(TraceFileData *data) 
 {
-    my_flush(data, heavy_off);
-    close(data->fd);
+    my_flush(data);
+    do_close(data->fd);
 
     if (data->next)
 	data->next->prev = data->prev;
@@ -562,11 +601,17 @@ static void close_unlink_port(TraceFileData *data)
 /*
 ** Wrap to new file - close the current, open a new and
 ** perhaps delete a too old one
+**
+** Returns negative if something failed.
 */
-static void wrap_file(TraceFileData *data) {
-    FILETYPE fd;
-    my_flush(data, heavy_set);
+static int wrap_file(TraceFileData *data) {
+    if (my_flush(data) < 0) {
+	close(data->fd);
+	data->fd = -1;
+	return -1;
+    }
     close(data->fd);
+    data->fd = -1;
     data->buff_pos = 0;
     data->wrap->len = 0;
     /* Count down before starting to remove old files */
@@ -578,14 +623,15 @@ static void wrap_file(TraceFileData *data) {
 	next_name(&data->wrap->del);
     }
     next_name(&data->wrap->cur);
-    fd = open(data->wrap->cur.name, O_WRONLY | O_TRUNC | O_CREAT
+    data->fd = open(data->wrap->cur.name, O_WRONLY | O_TRUNC | O_CREAT
 #ifdef O_BINARY
 	      | O_BINARY
 #endif
 	      , 0777);
-    if (fd < 0)
-	driver_failure_posix(data->port, errno); /* XXX */
-    else
-	data->fd = fd;
+    if (data->fd < 0) {
+	data->fd = -1;
+	return -1;
+    }
+    return 0;
 }
 

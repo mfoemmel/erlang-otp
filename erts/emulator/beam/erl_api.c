@@ -35,10 +35,27 @@ APIEXTERN
 void
 ErlInit(void)
 {
-    sys_sl_alloc_init(1);
+    ErtsSlAllocInit sla_init;
+    /* Value < 0 == default will be used */
+    sla_init.esla  = -1;
+    sla_init.eosla = -1;
+    sla_init.mcs   = -1;
+    sla_init.sbct  = -1;
+    sla_init.sbcmt = -1;
+    sla_init.mmc   = -1;
+    sla_init.cos   = -1;
+    sla_init.scs   = -1;
+    sla_init.lcs   = -1;
+    sla_init.cgr   = -1;
+    sla_init.mbsd  = -1;
+
+    erts_sl_alloc_init(&sla_init);
+    erts_init_definite_alloc(DEFAULT_DEFINITE_ALLOC_BLOCK_SIZE);
     erts_init_utils();
     /* Permanently disable use of mmap for sys_alloc (malloc). */
     sys_alloc_opt(SYS_ALLOC_OPT_MMAP_MAX, 0);
+    sys_alloc_opt(SYS_ALLOC_OPT_TRIM_THRESHOLD, ERTS_DEFAULT_TRIM_THRESHOLD);
+    sys_alloc_opt(SYS_ALLOC_OPT_TOP_PAD, ERTS_DEFAULT_TOP_PAD);
 
     erl_sys_init();
     erl_init();

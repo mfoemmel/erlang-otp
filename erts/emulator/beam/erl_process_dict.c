@@ -62,7 +62,7 @@
 
 
 /* Memory allocation macros */
-#define PD_ALLOC(Siz) safe_alloc(Siz)
+#define PD_ALLOC(Siz) safe_alloc_from(340, (Siz))
 #define PD_FREE(Ptr) sys_free(Ptr)
 #define PD_REALLOC(Ptr, Siz) safe_realloc(Ptr, Siz)
 

@@ -17,7 +17,8 @@
 %%
 -module(httpd).
 -export([multi_start/1, multi_start_link/1,
-	 start/0,start/1,start_link/0,start_link/1,
+	 start/0, start/1, start/2, 
+	 start_link/0, start_link/1, start_link/2,
 	 start_child/0,start_child/1,
 	 multi_stop/1,
 	 stop/0,stop/1,stop/2,
@@ -61,10 +62,13 @@ start() ->
     start("/var/tmp/server_root/conf/8888.conf").
 
 start(ConfigFile) ->
+    start(ConfigFile, []).
+
+start(ConfigFile, Verbosity) when list(Verbosity) ->
     ?LOG("start -> ConfigFile = ~s",[ConfigFile]),
     case httpd_conf:load(ConfigFile) of
 	{ok,ConfigList} ->
-	    httpd_manager:start(ConfigFile,ConfigList);
+	    httpd_manager:start(ConfigFile, ConfigList, Verbosity);
 	{error,Reason} ->
 	    error_logger:error_report(Reason),
 	    {stop,Reason}
@@ -95,10 +99,13 @@ start_link() ->
     start("/var/tmp/server_root/conf/8888.conf").
 
 start_link(ConfigFile) ->
+    start_link(ConfigFile, []).
+
+start_link(ConfigFile, Verbosity) when list(Verbosity) ->
     ?LOG("start_link -> ConfigFile = ~s",[ConfigFile]),
     case httpd_conf:load(ConfigFile) of
 	{ok,ConfigList} ->
-	    httpd_manager:start_link(ConfigFile,ConfigList);
+	    httpd_manager:start_link(ConfigFile, ConfigList, Verbosity);
 	{error,Reason} ->
 	    {stop,Reason}
     end.

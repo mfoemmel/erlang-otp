@@ -40,7 +40,6 @@
 #include <termios.h>
 #include <dirent.h>
 #include <signal.h>
-#include <stropts.h>
 
 #define noDEBUG
 
@@ -174,12 +173,15 @@ int main(int argc, char **argv)
   show_terminal_settings(&tty_rmode);
 #endif
   tty_smode.c_iflag =
-    0*IGNBRK |/*Ignore break condition.*/
     1*BRKINT |/*Signal interrupt on break.*/
     1*IGNPAR |/*Ignore characters with parity errors.*/
+    1*ISTRIP |/*Strip character.*/
+    0;
+
+#if 0
+    0*IGNBRK |/*Ignore break condition.*/
     0*PARMRK |/*Mark parity errors.*/
     0*INPCK  |/*Enable input parity check.*/
-    1*ISTRIP |/*Strip character.*/
     0*INLCR  |/*Map NL to CR on input.*/
     0*IGNCR  |/*Ignore CR.*/
     0*ICRNL  |/*Map CR to NL on input.*/
@@ -187,40 +189,56 @@ int main(int argc, char **argv)
     0*IXON   |/*Enable start/stop output control.*/
     0*IXANY  |/*Enable any character to restart output.*/
     0*IXOFF  |/*Enable start/stop input control.*/
-    0*IMAXBEL;/*Echo BEL on input line too long.*/
+    0*IMAXBEL|/*Echo BEL on input line too long.*/
+#endif
 
   tty_smode.c_oflag =
     1*OPOST  |/*Post-process output.*/
-    0*OLCUC  |/*Map lower case to upper on output.*/
     1*ONLCR  |/*Map NL to CR-NL on output.*/
+#ifdef XTABS
+    1*XTABS  |/*Expand tabs to spaces. (Linux)*/
+#endif
+#ifdef OXTABS
+    1*OXTABS  |/*Expand tabs to spaces. (FreeBSD)*/
+#endif
+#ifdef NL0
+    1*NL0    |/*Select newline delays*/
+#endif
+#ifdef CR0
+    1*CR0    |/*Select carriage-return delays*/
+#endif
+#ifdef TAB0
+    1*TAB0   |/*Select horizontal tab delays*/
+#endif
+#ifdef BS0
+    1*BS0    |/*Select backspace delays*/
+#endif
+#ifdef VT0
+    1*VT0    |/*Select vertical tab delays*/
+#endif
+#ifdef FF0
+    1*FF0    |/*Select form feed delays*/
+#endif
+    0;
+
+#if 0
+    0*OLCUC  |/*Map lower case to upper on output.*/
     0*OCRNL  |/*Map CR to NL on output.*/
     0*ONOCR  |/*No CR output at column 0.*/
     0*ONLRET |/*NL performs CR function.*/
     0*OFILL  |/*Use fill characters for delay.*/
     0*OFDEL  |/*Fill is DEL, else NULL.*/
-              /*Select newline delays:*/
-    1*NL0    |
     0*NL1    |
-              /*Select carriage-return delays:*/
-    1*CR0    |
     0*CR1    |
     0*CR2    |
     0*CR3    |
-              /*Select horizontal tab delays:*/
-    1*TAB0   |/*or tab expansion:*/
     0*TAB1   |
     0*TAB2   |
     0*TAB3   |/*Expand tabs to spaces.*/
-    1*XTABS  |/*Expand tabs to spaces.*/
-              /*Select backspace delays:*/
-    1*BS0    |
     0*BS1    |
-              /*Select vertical tab delays:*/
-    1*VT0    |
     0*VT1    |
-              /*Select form feed delays:*/
-    1*FF0    |
-    0*FF1    ;
+    0*FF1    |
+#endif
 
   /* JALI: removed setting the tty_smode.c_cflag flags, since this is not */
   /* advisable if this is a *real* terminal, such as the console. In fact */
@@ -228,6 +246,9 @@ int main(int argc, char **argv)
   /* or toggling the abort switch doesn't help) */
 
   tty_smode.c_lflag =
+    0;
+
+#if 0
     0*ISIG   |/*Enable signals.*/
     0*ICANON |/*Canonical input (erase and kill processing).*/
     0*XCASE  |/*Canonical upper/lower presentation.*/
@@ -242,7 +263,8 @@ int main(int argc, char **argv)
     0*ECHOKE |/*BS-SP-BS erase entire line on line kill.*/
     0*FLUSHO |/*Output is being flushed.*/
     0*PENDIN |/*Retype pending input at next read or input character.*/
-    0*IEXTEN ;/*Enable extended (implementation-defined) functions.*/
+    0*IEXTEN |/*Enable extended (implementation-defined) functions.*/
+#endif
 
    tty_smode.c_cc[VMIN]      =0;/* Note that VMIN is the same as VEOF! */
    tty_smode.c_cc[VTIME]     =0;/* Note that VTIME is the same as VEOL! */

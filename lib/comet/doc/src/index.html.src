@@ -1,3 +1,5 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!-- This file is obsolete -->
 <HTML>
 <!-- 
  ``The contents of this file are subject to the Erlang Public License,
@@ -19,17 +21,16 @@
 -->
 <HEAD>
 <TITLE>Comet %VSN%</TITLE>
-<LINK REV=MADE HREF="mailto:otp@erix.ericsson.se">
 </HEAD>
 
 <BODY BGCOLOR="#FFFFFF">
 
 <CENTER>
-<A HREF="http://www.erlang.se"><IMG  ALT="Erlang/OTP" BORDER=0 SRC="html/min_head.gif"></A><BR>
+<A HREF="http://www.erlang.se/"><IMG  ALT="Erlang/OTP" BORDER=0 SRC="html/min_head.gif"></A><BR>
 
 <FONT SIZE="-1">
 [<A HREF="../../../doc/index.html">Up</A> |
-<A HREF="http://www.erlang.se">Erlang/OTP</A>]
+<A HREF="http://www.erlang.se/">Erlang/OTP</A>]
 </FONT><BR>
 
 <P><FONT SIZE="+3">Comet</FONT><BR>
@@ -86,8 +87,8 @@ COM object on Windows systems.
 <P><CENTER>
 <HR>
 <FONT SIZE="-1">
-Copyright &copy; 1991-2000
-<A HREF="http://www.ericsson.se">Ericsson Utvecklings AB</A>
+Copyright &copy; 1991-2001
+<A HREF="http://www.erlang.se/">Ericsson Utvecklings AB</A>
 </FONT>
 </CENTER>
 </BODY>

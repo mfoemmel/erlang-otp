@@ -328,7 +328,11 @@ code_change(_, State, _) ->
 	{ok, {SupFlags, StartSpec}} ->
 	    case catch check_flags(SupFlags) of
 		ok ->
-		    update_childspec(State, StartSpec);
+		    {Strategy, MaxIntensity, Period} = SupFlags,
+                    update_childspec(State#state{strategy = Strategy,
+                                                 intensity = MaxIntensity,
+                                                 period = Period},
+                                     StartSpec);
 		Error ->
 		    {error, Error}
 	    end;
@@ -348,6 +352,14 @@ check_flags({Strategy, MaxIntensity, Period}) ->
     ok;
 check_flags(What) ->
     {bad_flags, What}.
+
+update_childspec(State, StartSpec)  when ?is_simple(State) -> 
+    case check_startspec(StartSpec) of                        
+        {ok, [Child]} ->                                      
+            {ok, State#state{children = [Child]}};            
+        Error ->                                              
+            {error, Error}                                    
+    end;                                                      
 
 update_childspec(State, StartSpec) ->
     case check_startspec(StartSpec) of

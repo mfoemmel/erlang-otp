@@ -398,10 +398,15 @@ pr_other(Var, Other) ->
 	    no -> {node_not_running, node()};
 	    _ -> {no_exists, Var}
 	end,
-    dbg_out("~p (~p) val(mnesia_gvar, ~w) -> ~p~n",
+    dbg_out("~p (~p) val(mnesia_gvar, ~w) -> ~p ~p ~n",
 	    [self(), process_info(self(), registered_name),
-	     Var, Why]),
-    exit(Why).
+	     Var, Other, Why]),
+    case Other of
+	{badarg, [{ets, lookup_element, _}|_]} ->
+	    exit(Why);
+	_ ->
+	    erlang:fault(Why)
+    end.
 
 %% Some functions for list valued variables
 add(Var, Val) ->
@@ -1208,7 +1213,7 @@ readable_indecies(Tab) ->
 
 scratch_debug_fun() ->
     dbg_out("scratch_debug_fun(): ~p~n", [?DEBUG_TAB]),
-    ?ets_delete_table(?DEBUG_TAB),
+    (catch ?ets_delete_table(?DEBUG_TAB)),
     ?ets_new_table(?DEBUG_TAB, [set, public, named_table, {keypos, 2}]).
 
 activate_debug_fun(FunId, Fun, InitialContext, File, Line) ->

@@ -308,6 +308,65 @@ int ___call_info___(CORBA_Object obj, CORBA_Environment *env) {
     return -1;
 }
 
+// #define DEBUG_MAP
+
+#if defined(DEBUG_MAP)
+
+#define PRINT_MAPS(P, M, S) print_maps(P, M, S)
+#define PRINT_MAP(T, M)     print_map(T, "", M)
+
+
+static void print_map(char* title, char* prefix, ___map___ * map) {
+  if (map == NULL) {
+    fprintf(stdout, "%s => NULL\n", title);
+    return;
+  }
+
+  fprintf(stdout, "%s%s\n", prefix, title);
+
+  {
+    int j, len = map->length; 
+
+    fprintf(stdout, "%s  length:     %d\n", prefix, len);
+    fprintf(stdout, "%s  operations: 0x%X%d\n", prefix, map->operations);
+    
+    for (j = 0 ; j < len ; j++) {
+      fprintf(stdout, "%s  operation[%d]:\n", prefix, j);
+      
+      if (map->operations[j].interface != NULL) {
+	fprintf(stdout, "%s    intf: %s\n", prefix, map->operations[j].interface);
+      } else {
+	fprintf(stdout, "%s    intf: NULL\n", prefix);
+      }
+      fprintf(stdout, "%s    name: %s\n", prefix, map->operations[j].name);
+      fprintf(stdout, "%s    func: 0x%X\n", prefix, map->operations[j].function);
+    }
+  }
+  fflush(stdout);
+}
+
+
+static void print_maps(char* title, ___map___ * maps, int size) {
+  int  i;
+  char p[64];
+
+  fprintf(stdout, "%s\n", title);
+
+  for (i = 0 ; i < size ; i++) {
+    sprintf(p, "map[%d]:", i);
+    print_map(p, "  ", &maps[i]);
+  }
+  fprintf(stdout, "\n");
+  fflush(stdout);
+}
+
+#else
+
+#define PRINT_MAPS(P, M, S) 
+#define PRINT_MAP(T, M)     
+
+#endif /* if defined(DEBUG_MAP) */
+
 
 /* Generic switch */
 int ___switch___(CORBA_Object obj, CORBA_Environment *env, ___map___ *map) {
@@ -317,20 +376,44 @@ int ___switch___(CORBA_Object obj, CORBA_Environment *env, ___map___ *map) {
     int index = 0;
     int length = map->length;
     
+    PRINT_MAP("switching on map", map);
+
     /* Initiating exception indicator */
     env->_major = CORBA_NO_EXCEPTION;
     
     /* Call switch */
     if ((status = ___call_info___(obj, env)) >= 0) {
+      char* op = env->_operation;
+
+#if defined(DEBUG_MAP)
+      fprintf(stdout, "looking for operation: %s\n", op); fflush(stdout);
+#endif
+
+      for (index = 0; index < length ; index++) {
 	
-	for (index=0; index<length; index++)
-	    if(strcmp(map->operations[index].name,env->_operation)==0) 
-		return (int)map->operations[index].function(obj, env);
-	
-	
-	/* Bad call */
-	CORBA_exc_set(env, CORBA_SYSTEM_EXCEPTION, BAD_OPERATION, "Invalid operation");
-	return -1;
+#if defined(DEBUG_MAP)
+  	fprintf(stdout, "map->operations[%d].name: %s\n",  
+  		index, map->operations[index].name);  
+  	fflush(stdout); 
+#endif
+
+	if(strcmp(map->operations[index].name, op) == NULL) {
+
+#if defined(DEBUG_MAP)
+  	  fprintf(stdout, "calling map->operations[%d].function: 0x%X\n", 
+  		  index, map->operations[index].function);  
+  	  fflush(stdout); 
+#endif
+
+	  return (int)map->operations[index].function(obj, env);
+	}
+      }
+      
+      
+      /* Bad call */
+      CORBA_exc_set(env, CORBA_SYSTEM_EXCEPTION, 
+		    BAD_OPERATION, "Invalid operation");
+      return -1;
     }
     
     /* Exit */
@@ -342,7 +425,7 @@ int ___switch___(CORBA_Object obj, CORBA_Environment *env, ___map___ *map) {
 
 ___map___* ___merge___(___map___ * maps, int size) { 
 
-    if ((maps==NULL) || (size<=0))
+    if ((maps == NULL) || (size <= 0))
 	return NULL;
     else {
 	int malloc_size = 0;
@@ -350,25 +433,36 @@ ___map___* ___merge___(___map___ * maps, int size) {
 	int i = 0;
 	int j = 0;
 	___map___* merged = NULL;
+
+	PRINT_MAPS("merging maps", maps, size);
 	
 	for (i=0; i<size; i++)
-	    length+=(maps[i].length);
+	  length += (maps[i].length);
 	
 	/* Calculate malloc size */
 	malloc_size = (sizeof(___map___)+(length*sizeof(___operation___)));
+
 	malloc_size = (malloc_size+sizeof(double)-1)&~(sizeof(double)-1);
-    
+
 	merged = (___map___ *)malloc(malloc_size);
 	if (merged == NULL)
 	    return NULL;
 
-	merged->length = length;
-	merged->operations=(void*)(merged+sizeof(___map___));
+	merged->length     = length;
+	merged->operations = (void*)(((int)merged)+sizeof(___map___));
 	
-	for (i=0; i<size; i++) 	
-	    for(j=0; j<maps[i].length; j++)
-		merged->operations[i+j]=maps[i].operations[j];
+	{
+	  int len;
+	  for (i = 0, len = 0; i<size; i++) {
+	    for(j = 0 ; j < maps[i].length ; j++) {
+	      merged->operations[len+j] = maps[i].operations[j];
+	    }
+	    len += maps[i].length;
+	  }
+	}
 	    	
+	PRINT_MAP("merged map", merged);
+
 	return merged;
     }
 }

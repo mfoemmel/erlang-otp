@@ -21,32 +21,33 @@
 
 -module(megaco_filter).
 
--export([start/0, start/1, start_global/1, filter/1,
+-export([start/0, start/1, filter/1,
 	 pretty_error/1, string_to_term/1]).
 
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_v1.hrl").
 -include("megaco_internal.hrl").
--include_lib("megaco/utils/event_tracer.hrl").
+-include_lib("megaco/utils/et/et.hrl").
 
 start() ->
-    start([{keypos, parsed_ts},{scale, 3}]).
+    start([]).
 
 start(Options) ->
-    {ok, Pid} = start_global(Options),
-    unlink(Pid).
-
-start_global(Options) ->
-    F = #filter{name = ?MODULE, function = fun filter/1},
-    Actors = ["OTHER"],
-    Args = [{filter, F}, {actors, Actors}, {title, "Megaco tracer - Erlang/OTP"} | Options],
-    case event_viewer:start_global(Args) of
-	{ok, Pid} ->
-	    C = event_viewer:collector_pid(Pid),
-	    event_collector:register_filter(C, F#filter.name, F#filter.function),
-	    {ok, Pid};
+    Args = [{event_order, event_ts},
+	    {scale, 3},
+	    {max_actors, infinity},
+	    {trace_global, true},
+	    {dict_insert, {filter, ?MODULE}, fun filter/1},
+	    {active_filter, ?MODULE},
+	    {title, "Megaco tracer - Erlang/OTP"} | Options],
+    case et_viewer:start_link(Args) of
+	{ok, ViewerPid} ->
+	    CollectorPid = et_viewer:get_collector_pid(ViewerPid),
+	    unlink(ViewerPid),
+	    unlink(CollectorPid),
+	    ok;
 	{error, Reason} ->
-	    {error, Reason}
+	    exit(Reason)
     end.
 
 filter(E) when record(E, event) ->
@@ -129,7 +130,7 @@ do_filter_actor(Actor) ->
 	megaco ->
 	    megaco;
 	Other ->
-	    "OTHER"
+	    "UNKNOWN"
     end.
 
 filter_contents([], E, Contents) ->

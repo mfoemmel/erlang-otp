@@ -71,14 +71,12 @@ dnl ----------------------------------------------------------------------
 dnl Optional features.
 dnl ----------------------------------------------------------------------
 
+
+dnl Defined in libraries/megaco/configure.in but we need it here
+dnl also in order to show it to the "top user"
+
 AC_ARG_ENABLE(megaco_flex_scanner_lineno,
-[  --disable-megaco-flex-scanner-lineno           disable megaco flex scanner lineno])
-if test x${enable_megaco_flex_scanner_lineno} = xno ; then
-  ENABLE_MEGACO_FLEX_SCANNER_LINENO=false
-else
-  ENABLE_MEGACO_FLEX_SCANNER_LINENO=true
-fi
-AC_SUBST(ENABLE_MEGACO_FLEX_SCANNER_LINENO)
+[  --disable-megaco-flex-scanner-lineno    disable megaco flex scanner lineno])
 
 AC_ARG_ENABLE(hipe,
 [  --enable-hipe           enable hipe support])
@@ -181,16 +179,6 @@ AC_PROG_CPP
 
 AC_PROG_RANLIB
 
-dnl
-dnl 'flex' is needed by megaco. 'lex' wont do!
-dnl
-AC_PROG_LEX
-if test "$LEX" != flex; then
-  ENABLE_MEGACO_FLEX_SCANNER=false
-else
-  ENABLE_MEGACO_FLEX_SCANNER=true
-fi
-AC_SUBST(ENABLE_MEGACO_FLEX_SCANNER)
 
 AC_PROG_YACC
 AC_PROG_AWK
@@ -428,6 +416,7 @@ AC_CHECK_SIZEOF(short, 2)dnl Assumes all cross compiling is to 32bit uP
 AC_CHECK_SIZEOF(int, 4)dnl Assumes all cross compiling is to 32bit uP
 AC_CHECK_SIZEOF(long, 4)dnl Assumes all cross compiling is to 32bit uP
 AC_CHECK_SIZEOF(void *, 4)dnl Assumes all cross compiling is to 32bit uP
+AC_CHECK_SIZEOF(unsigned long long, 0)
 
 AC_C_BIGENDIAN
 
@@ -568,6 +557,62 @@ if test $erl_ok = unreliable; then
 else
     AC_MSG_RESULT(reliable)
 fi
+
+dnl
+dnl Check if gethrvtime is working, and if to use procfs ioctl
+dnl or (yet to be written) write to the procfs ctl file.
+dnl
+
+AC_MSG_CHECKING([if gethrvtime works and how to use it])
+AC_TRY_RUN([
+/* gethrvtime procfs ioctl test */
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <stdio.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/signal.h>
+#include <sys/fault.h>
+#include <sys/syscall.h>
+#include <sys/procfs.h>
+#include <fcntl.h>
+
+int main() {
+    long msacct = PR_MSACCT;
+    int fd;
+    long long start, stop;
+    int i;
+    pid_t pid = getpid();
+    char proc_self[30] = "/proc/";
+
+    sprintf(proc_self+strlen(proc_self), "%lu", (unsigned long) pid);
+    if ( (fd = open(proc_self, O_WRONLY)) == -1)
+	exit(1);
+    if (ioctl(fd, PIOCSET, &msacct) < 0)
+	exit(2);
+    if (close(fd) < 0)
+	exit(3);
+    start = gethrvtime();
+    for (i = 0; i < 100; i++)
+	stop = gethrvtime();
+    if (start == 0)
+	exit(4);
+    if (start == stop)
+	exit(5);
+    exit(0); return 0;
+}
+], erl_gethrvtime=procfs_ioctl, erl_gethrvtime=false, erl_gethrvtime=false)
+case $erl_gethrvtime in
+  procfs_ioctl)
+	AC_DEFINE(HAVE_GETHRVTIME_PROCFS_IOCTL)
+	AC_MSG_RESULT(uses ioctl to procfs)
+	;;
+  *)
+	AC_MSG_RESULT(not working)
+	;;
+esac
 
 dnl
 dnl Some operating systems allow you to redefine FD_SETSIZE to be able
@@ -716,22 +761,6 @@ dnl ----------------------------------------------------------------------
 dnl Stuff that should be moved into their respective application
 dnl ----------------------------------------------------------------------
 
-dnl XXX this looks really broken...
-AC_SUBST(DLDFLAGS)
-AC_SUBST(DCFLAGS)
-DLDFLAGS=""
-DCFLAGS=""
-if test x$ac_cv_func_dlopen = xyes; then
-	DLDFLAGS="-shared -fPIC"
-	DCFLAGS="-fPIC"
-fi
-
-dnl XXX broken too...
-if test "$GCC" = yes; then
-	DEBUG_FLAGS="-Wall -g"
-fi
-
-
 dnl for erl_interface
 LM_CHECK_FUNC_DECL(fprintf, [extern int fprintf();],,
                    AC_DEFINE(HAVE_CONFLICTING_FPRINTF_DECLARATION))
@@ -785,7 +814,7 @@ case $host_os in
 	darwin*)
 		# Mach-O linker, a shared lib and a loadable
 		# object file is not the same thing.
-		DED_LDFLAGS="-bundle -undefined suppress"
+		DED_LDFLAGS="-bundle -flat_namespace -undefined suppress"
 		DED_CFLAGS="$DED_CFLAGS -fno-common"
 	;;
 	*)
@@ -926,7 +955,7 @@ dnl ...why not use AC_PROG_CXX? [sverkerw]
 dnl
 CXXFLAGS=
 AC_SUBST(CXXFLAGS)
-AC_CHECK_PROG(CXX, g++, g++, false)
+AC_PROG_CXX
 if test "$ac_cv_prog_CXX" = false; then
   echo "No C++ compiler found" > $ERL_TOP/lib/orber/SKIP
 fi
@@ -992,7 +1021,6 @@ dnl
   $srcdir/$lib/orber/c_src/$host/Makefile:$lib/orber/c_src/Makefile.in
   $srcdir/$lib/odbc/c_src/$host/Makefile:$lib/odbc/c_src/Makefile.in
   $srcdir/$lib/comet/c_src/$host/Makefile:$lib/comet/c_src/Makefile.in
-  $srcdir/$lib/megaco/src/flex/$host/Makefile:$lib/megaco/src/flex/Makefile.in
   $srcdir/$lib/runtime_tools/c_src/$host/Makefile:$lib/runtime_tools/c_src/Makefile.in
   )
     

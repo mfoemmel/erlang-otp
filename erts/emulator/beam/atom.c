@@ -68,9 +68,14 @@ more_atom_space(void)
 {
     AtomText* ptr;
 
-    if ((ptr = (AtomText*) sys_alloc_from(1, sizeof(AtomText))) == NULL) {
-	erl_exit(1, "out of memory -- panic");
+    ptr = (AtomText*) erts_definite_alloc(sizeof(AtomText));
+    
+    if (!ptr) {
+	ptr = (AtomText*) sys_alloc_from(1,sizeof(AtomText));
+	if (!ptr)
+	    erl_exit(1, "out of memory -- panic");
     }
+
     ptr->next = text_list;
     text_list = ptr;
 

@@ -18,6 +18,9 @@
    *  Author:   Hakan Mattsson <hakan@cslab.ericsson.com>
    *  Purpose : Scanner for text encoded Megaco/H.248 messages
    * ----------------------------------------------------------------------
+   * 
+   * Throughout this file the prefix mfs is used for megaco_flex_scanner.
+   * The reason is to get shorter function and variable names.
    */
 %option case-insensitive
 
@@ -36,135 +39,146 @@
 %{
 
 #define HAVE_UIO_H
+#if defined(OTP_R7)
+#include "opt_erl_driver.h"
+#else
 #include "erl_driver.h"
+#endif
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 
+#define TRUE  1;
+#define FALSE 0;
+
+#define FREE(bufP)        driver_free(bufP)
+#define ALLOC(sz)         driver_alloc(sz)
+#define REALLOC(bufP, sz) driver_realloc(bufP, sz)
+
 #define YY_MAIN false
 
-#define YY_FATAL_ERROR(msg) megaco_flex_scanner_fatal_error(msg)
+#define YY_FATAL_ERROR(msg) mfs_fatal_error(msg)
 
-static ErlDrvTermData megaco_flex_scanner_AddToken = 0;
-static ErlDrvTermData megaco_flex_scanner_AuditCapToken = 0;
-static ErlDrvTermData megaco_flex_scanner_AuditToken = 0;
-static ErlDrvTermData megaco_flex_scanner_AuditValueToken = 0;
-static ErlDrvTermData megaco_flex_scanner_AuthToken = 0;
-static ErlDrvTermData megaco_flex_scanner_BothwayToken = 0;
-static ErlDrvTermData megaco_flex_scanner_BriefToken = 0;
-static ErlDrvTermData megaco_flex_scanner_BufferToken = 0;
-static ErlDrvTermData megaco_flex_scanner_COLON = 0;
-static ErlDrvTermData megaco_flex_scanner_COMMA = 0;
-static ErlDrvTermData megaco_flex_scanner_ContextAuditToken = 0;
-static ErlDrvTermData megaco_flex_scanner_CtxToken = 0;
-static ErlDrvTermData megaco_flex_scanner_DelayToken = 0;
-static ErlDrvTermData megaco_flex_scanner_DeleteToken = 0;
-static ErlDrvTermData megaco_flex_scanner_DigitMapDescriptor = 0;
-static ErlDrvTermData megaco_flex_scanner_DigitMapDescriptorToken = 0;
-static ErlDrvTermData megaco_flex_scanner_DigitMapToken = 0;
-static ErlDrvTermData megaco_flex_scanner_DigitMapValue = 0;
-static ErlDrvTermData megaco_flex_scanner_DiscardToken = 0;
-static ErlDrvTermData megaco_flex_scanner_DisconnectedToken = 0;
-static ErlDrvTermData megaco_flex_scanner_DurationToken = 0;
-static ErlDrvTermData megaco_flex_scanner_EQUAL = 0;
-static ErlDrvTermData megaco_flex_scanner_EmbedToken = 0;
-static ErlDrvTermData megaco_flex_scanner_EmergencyToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ErrorToken = 0;
-static ErlDrvTermData megaco_flex_scanner_EventBufferToken = 0;
-static ErlDrvTermData megaco_flex_scanner_EventsToken = 0;
-static ErlDrvTermData megaco_flex_scanner_FailoverToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ForcedToken = 0;
-static ErlDrvTermData megaco_flex_scanner_GREATER = 0;
-static ErlDrvTermData megaco_flex_scanner_GracefulToken = 0;
-static ErlDrvTermData megaco_flex_scanner_H221Token = 0;
-static ErlDrvTermData megaco_flex_scanner_H223Token = 0;
-static ErlDrvTermData megaco_flex_scanner_H226Token = 0;
-static ErlDrvTermData megaco_flex_scanner_HandOffToken = 0;
-static ErlDrvTermData megaco_flex_scanner_IllegalChar = 0;
-static ErlDrvTermData megaco_flex_scanner_ImmAckRequiredToken = 0;
-static ErlDrvTermData megaco_flex_scanner_InSvcToken = 0;
-static ErlDrvTermData megaco_flex_scanner_InactiveToken = 0;
-static ErlDrvTermData megaco_flex_scanner_InterruptByEventToken = 0;
-static ErlDrvTermData megaco_flex_scanner_InterruptByNewSignalsDescrToken = 0;
-static ErlDrvTermData megaco_flex_scanner_IsolateToken = 0;
-static ErlDrvTermData megaco_flex_scanner_KeepActiveToken = 0;
-static ErlDrvTermData megaco_flex_scanner_LBRKT = 0;
-static ErlDrvTermData megaco_flex_scanner_LESSER = 0;
-static ErlDrvTermData megaco_flex_scanner_LSBRKT = 0;
-static ErlDrvTermData megaco_flex_scanner_LocalControlToken = 0;
-static ErlDrvTermData megaco_flex_scanner_LocalDescriptorToken = 0;
-static ErlDrvTermData megaco_flex_scanner_LocalToken = 0;
-static ErlDrvTermData megaco_flex_scanner_LockStepToken = 0;
-static ErlDrvTermData megaco_flex_scanner_LoopbackToken = 0;
-static ErlDrvTermData megaco_flex_scanner_MediaToken = 0;
-static ErlDrvTermData megaco_flex_scanner_MegacopToken = 0;
-static ErlDrvTermData megaco_flex_scanner_MethodToken = 0;
-static ErlDrvTermData megaco_flex_scanner_MgcIdToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ModeToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ModemToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ModifyToken = 0;
-static ErlDrvTermData megaco_flex_scanner_MoveToken = 0;
-static ErlDrvTermData megaco_flex_scanner_MtpAddressToken = 0;
-static ErlDrvTermData megaco_flex_scanner_MuxToken = 0;
-static ErlDrvTermData megaco_flex_scanner_NEQUAL = 0;
-static ErlDrvTermData megaco_flex_scanner_NotifyCompletionToken = 0;
-static ErlDrvTermData megaco_flex_scanner_NotifyToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ObservedEventsToken = 0;
-static ErlDrvTermData megaco_flex_scanner_OffToken = 0;
-static ErlDrvTermData megaco_flex_scanner_OnOffToken = 0;
-static ErlDrvTermData megaco_flex_scanner_OnToken = 0;
-static ErlDrvTermData megaco_flex_scanner_OnewayToken = 0;
-static ErlDrvTermData megaco_flex_scanner_OtherReasonToken = 0;
-static ErlDrvTermData megaco_flex_scanner_OutOfSvcToken = 0;
-static ErlDrvTermData megaco_flex_scanner_PackagesToken = 0;
-static ErlDrvTermData megaco_flex_scanner_PendingToken = 0;
-static ErlDrvTermData megaco_flex_scanner_PriorityToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ProfileToken = 0;
-static ErlDrvTermData megaco_flex_scanner_QuotedChars = 0;
-static ErlDrvTermData megaco_flex_scanner_RBRKT = 0;
-static ErlDrvTermData megaco_flex_scanner_RSBRKT = 0;
-static ErlDrvTermData megaco_flex_scanner_ReasonToken = 0;
-static ErlDrvTermData megaco_flex_scanner_RecvonlyToken = 0;
-static ErlDrvTermData megaco_flex_scanner_RemoteDescriptorToken = 0;
-static ErlDrvTermData megaco_flex_scanner_RemoteToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ReplyToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ReservedGroupToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ReservedValueToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ResponseAckToken = 0;
-static ErlDrvTermData megaco_flex_scanner_RestartToken = 0;
-static ErlDrvTermData megaco_flex_scanner_SEP = 0;
-static ErlDrvTermData megaco_flex_scanner_SafeChars = 0;
-static ErlDrvTermData megaco_flex_scanner_SendonlyToken = 0;
-static ErlDrvTermData megaco_flex_scanner_SendrecvToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ServiceChangeAddressToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ServiceChangeToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ServiceStatesToken = 0;
-static ErlDrvTermData megaco_flex_scanner_ServicesToken = 0;
-static ErlDrvTermData megaco_flex_scanner_SignalListToken = 0;
-static ErlDrvTermData megaco_flex_scanner_SignalTypeToken = 0;
-static ErlDrvTermData megaco_flex_scanner_SignalsToken = 0;
-static ErlDrvTermData megaco_flex_scanner_StatsToken = 0;
-static ErlDrvTermData megaco_flex_scanner_StreamToken = 0;
-static ErlDrvTermData megaco_flex_scanner_SubtractToken = 0;
-static ErlDrvTermData megaco_flex_scanner_SynchISDNToken = 0;
-static ErlDrvTermData megaco_flex_scanner_TerminationStateToken = 0;
-static ErlDrvTermData megaco_flex_scanner_TestToken = 0;
-static ErlDrvTermData megaco_flex_scanner_TimeOutToken = 0;
-static ErlDrvTermData megaco_flex_scanner_TopologyToken = 0;
-static ErlDrvTermData megaco_flex_scanner_TransToken = 0;
-static ErlDrvTermData megaco_flex_scanner_V18Token = 0;
-static ErlDrvTermData megaco_flex_scanner_V22Token = 0;
-static ErlDrvTermData megaco_flex_scanner_V22bisToken = 0;
-static ErlDrvTermData megaco_flex_scanner_V32Token = 0;
-static ErlDrvTermData megaco_flex_scanner_V32bisToken = 0;
-static ErlDrvTermData megaco_flex_scanner_V34Token = 0;
-static ErlDrvTermData megaco_flex_scanner_V76Token = 0;
-static ErlDrvTermData megaco_flex_scanner_V90Token = 0;
-static ErlDrvTermData megaco_flex_scanner_V91Token = 0;
-static ErlDrvTermData megaco_flex_scanner_VersionToken = 0;
-static ErlDrvTermData megaco_flex_scanner_asn1_NOVALUE = 0;
-static ErlDrvTermData megaco_flex_scanner_endOfMessage = 0;
+static ErlDrvTermData mfs_AddToken = 0;
+static ErlDrvTermData mfs_AuditCapToken = 0;
+static ErlDrvTermData mfs_AuditToken = 0;
+static ErlDrvTermData mfs_AuditValueToken = 0;
+static ErlDrvTermData mfs_AuthToken = 0;
+static ErlDrvTermData mfs_BothwayToken = 0;
+static ErlDrvTermData mfs_BriefToken = 0;
+static ErlDrvTermData mfs_BufferToken = 0;
+static ErlDrvTermData mfs_COLON = 0;
+static ErlDrvTermData mfs_COMMA = 0;
+static ErlDrvTermData mfs_ContextAuditToken = 0;
+static ErlDrvTermData mfs_CtxToken = 0;
+static ErlDrvTermData mfs_DelayToken = 0;
+static ErlDrvTermData mfs_DeleteToken = 0;
+static ErlDrvTermData mfs_DigitMapDescriptor = 0;
+static ErlDrvTermData mfs_DigitMapDescriptorToken = 0;
+static ErlDrvTermData mfs_DigitMapToken = 0;
+static ErlDrvTermData mfs_DigitMapValue = 0;
+static ErlDrvTermData mfs_DiscardToken = 0;
+static ErlDrvTermData mfs_DisconnectedToken = 0;
+static ErlDrvTermData mfs_DurationToken = 0;
+static ErlDrvTermData mfs_EQUAL = 0;
+static ErlDrvTermData mfs_EmbedToken = 0;
+static ErlDrvTermData mfs_EmergencyToken = 0;
+static ErlDrvTermData mfs_ErrorToken = 0;
+static ErlDrvTermData mfs_EventBufferToken = 0;
+static ErlDrvTermData mfs_EventsToken = 0;
+static ErlDrvTermData mfs_FailoverToken = 0;
+static ErlDrvTermData mfs_ForcedToken = 0;
+static ErlDrvTermData mfs_GREATER = 0;
+static ErlDrvTermData mfs_GracefulToken = 0;
+static ErlDrvTermData mfs_H221Token = 0;
+static ErlDrvTermData mfs_H223Token = 0;
+static ErlDrvTermData mfs_H226Token = 0;
+static ErlDrvTermData mfs_HandOffToken = 0;
+static ErlDrvTermData mfs_IllegalChar = 0;
+static ErlDrvTermData mfs_ImmAckRequiredToken = 0;
+static ErlDrvTermData mfs_InSvcToken = 0;
+static ErlDrvTermData mfs_InactiveToken = 0;
+static ErlDrvTermData mfs_InterruptByEventToken = 0;
+static ErlDrvTermData mfs_InterruptByNewSignalsDescrToken = 0;
+static ErlDrvTermData mfs_IsolateToken = 0;
+static ErlDrvTermData mfs_KeepActiveToken = 0;
+static ErlDrvTermData mfs_LBRKT = 0;
+static ErlDrvTermData mfs_LESSER = 0;
+static ErlDrvTermData mfs_LSBRKT = 0;
+static ErlDrvTermData mfs_LocalControlToken = 0;
+static ErlDrvTermData mfs_LocalDescriptorToken = 0;
+static ErlDrvTermData mfs_LocalToken = 0;
+static ErlDrvTermData mfs_LockStepToken = 0;
+static ErlDrvTermData mfs_LoopbackToken = 0;
+static ErlDrvTermData mfs_MediaToken = 0;
+static ErlDrvTermData mfs_MegacopToken = 0;
+static ErlDrvTermData mfs_MethodToken = 0;
+static ErlDrvTermData mfs_MgcIdToken = 0;
+static ErlDrvTermData mfs_ModeToken = 0;
+static ErlDrvTermData mfs_ModemToken = 0;
+static ErlDrvTermData mfs_ModifyToken = 0;
+static ErlDrvTermData mfs_MoveToken = 0;
+static ErlDrvTermData mfs_MtpAddressToken = 0;
+static ErlDrvTermData mfs_MuxToken = 0;
+static ErlDrvTermData mfs_NEQUAL = 0;
+static ErlDrvTermData mfs_NotifyCompletionToken = 0;
+static ErlDrvTermData mfs_NotifyToken = 0;
+static ErlDrvTermData mfs_ObservedEventsToken = 0;
+static ErlDrvTermData mfs_OffToken = 0;
+static ErlDrvTermData mfs_OnOffToken = 0;
+static ErlDrvTermData mfs_OnToken = 0;
+static ErlDrvTermData mfs_OnewayToken = 0;
+static ErlDrvTermData mfs_OtherReasonToken = 0;
+static ErlDrvTermData mfs_OutOfSvcToken = 0;
+static ErlDrvTermData mfs_PackagesToken = 0;
+static ErlDrvTermData mfs_PendingToken = 0;
+static ErlDrvTermData mfs_PriorityToken = 0;
+static ErlDrvTermData mfs_ProfileToken = 0;
+static ErlDrvTermData mfs_QuotedChars = 0;
+static ErlDrvTermData mfs_RBRKT = 0;
+static ErlDrvTermData mfs_RSBRKT = 0;
+static ErlDrvTermData mfs_ReasonToken = 0;
+static ErlDrvTermData mfs_RecvonlyToken = 0;
+static ErlDrvTermData mfs_RemoteDescriptorToken = 0;
+static ErlDrvTermData mfs_RemoteToken = 0;
+static ErlDrvTermData mfs_ReplyToken = 0;
+static ErlDrvTermData mfs_ReservedGroupToken = 0;
+static ErlDrvTermData mfs_ReservedValueToken = 0;
+static ErlDrvTermData mfs_ResponseAckToken = 0;
+static ErlDrvTermData mfs_RestartToken = 0;
+static ErlDrvTermData mfs_SEP = 0;
+static ErlDrvTermData mfs_SafeChars = 0;
+static ErlDrvTermData mfs_SendonlyToken = 0;
+static ErlDrvTermData mfs_SendrecvToken = 0;
+static ErlDrvTermData mfs_ServiceChangeAddressToken = 0;
+static ErlDrvTermData mfs_ServiceChangeToken = 0;
+static ErlDrvTermData mfs_ServiceStatesToken = 0;
+static ErlDrvTermData mfs_ServicesToken = 0;
+static ErlDrvTermData mfs_SignalListToken = 0;
+static ErlDrvTermData mfs_SignalTypeToken = 0;
+static ErlDrvTermData mfs_SignalsToken = 0;
+static ErlDrvTermData mfs_StatsToken = 0;
+static ErlDrvTermData mfs_StreamToken = 0;
+static ErlDrvTermData mfs_SubtractToken = 0;
+static ErlDrvTermData mfs_SynchISDNToken = 0;
+static ErlDrvTermData mfs_TerminationStateToken = 0;
+static ErlDrvTermData mfs_TestToken = 0;
+static ErlDrvTermData mfs_TimeOutToken = 0;
+static ErlDrvTermData mfs_TopologyToken = 0;
+static ErlDrvTermData mfs_TransToken = 0;
+static ErlDrvTermData mfs_V18Token = 0;
+static ErlDrvTermData mfs_V22Token = 0;
+static ErlDrvTermData mfs_V22bisToken = 0;
+static ErlDrvTermData mfs_V32Token = 0;
+static ErlDrvTermData mfs_V32bisToken = 0;
+static ErlDrvTermData mfs_V34Token = 0;
+static ErlDrvTermData mfs_V76Token = 0;
+static ErlDrvTermData mfs_V90Token = 0;
+static ErlDrvTermData mfs_V91Token = 0;
+static ErlDrvTermData mfs_VersionToken = 0;
+static ErlDrvTermData mfs_asn1_NOVALUE = 0;
+static ErlDrvTermData mfs_endOfMessage = 0;
 
 /* MEGACO_DUMMY_DECL_YY_LINENO
  * Note that this construction is intended to make it
@@ -175,66 +189,76 @@ static ErlDrvTermData megaco_flex_scanner_endOfMessage = 0;
  */
 %MEGACO_DUMMY_DECL_YY_LINENO%
 
-static ErlDrvPort      megaco_flex_scanner_port                = 0;
-static char* 	       megaco_flex_scanner_digit_map_name_ptr  = 0;
-static int 	       megaco_flex_scanner_digit_map_name_len  = 0;
-static char* 	       megaco_flex_scanner_digit_map_value_ptr = 0;
-static int 	       megaco_flex_scanner_digit_map_value_len = 0;
-static char* 	       megaco_flex_scanner_digit_map_start_ptr = 0;
-static char* 	       megaco_flex_scanner_digit_map_short_ptr = 0;
-static char* 	       megaco_flex_scanner_digit_map_long_ptr  = 0;
-static char* 	       megaco_flex_scanner_error_msg           = 0;
-static char* 	       megaco_flex_scanner_text_buf            = 0;
-static char* 	       megaco_flex_scanner_text_ptr            = 0;
-static ErlDrvTermData* megaco_flex_scanner_term_spec           = 0;
-static int   	       megaco_flex_scanner_term_spec_size      = 0;
-static int   	       megaco_flex_scanner_term_spec_index     = 0;
-static int   	       megaco_flex_scanner_token_counter       = 0;
+static ErlDrvPort      mfs_port                = 0;
+static char* 	       mfs_digit_map_name_ptr  = 0;
+static int 	       mfs_digit_map_name_len  = 0;
+static char* 	       mfs_digit_map_value_ptr = 0;
+static int 	       mfs_digit_map_value_len = 0;
+static char* 	       mfs_digit_map_start_ptr = 0;
+static char* 	       mfs_digit_map_short_ptr = 0;
+static char* 	       mfs_digit_map_long_ptr  = 0;
+static int 	       mfs_error               = FALSE;
+static char 	       mfs_error_msg[256];
+static char* 	       mfs_text_buf            = 0;
+static char* 	       mfs_text_ptr            = 0;
+static ErlDrvTermData* mfs_term_spec           = 0;
+static int   	       mfs_term_spec_size      = 0;
+static int   	       mfs_term_spec_index     = 0;
+static int   	       mfs_token_counter       = 0;
 
-void megaco_flex_scanner_fatal_error(char* msg); 
-void megaco_flex_scanner_short_load_token(ErlDrvTermData token_tag);
-void megaco_flex_scanner_lower_load_token(ErlDrvTermData token_tag);
-void megaco_flex_scanner_octet_load_token(ErlDrvTermData token_tag);
-void megaco_flex_scanner_load_map_name();
-void megaco_flex_scanner_load_map_value();
-void megaco_flex_scanner_load_map_timer();
-void megaco_flex_scanner_load_map_token();
-void megaco_flex_scanner_ensure_term_spec(int size);
+static void mfs_alloc_failed(char* msg, int sz);
+static void mfs_fatal_error(char* msg); 
+static void mfs_short_load_token(ErlDrvTermData token_tag);
+static void mfs_lower_load_token(ErlDrvTermData token_tag);
+static void mfs_octet_load_token(ErlDrvTermData token_tag);
+static void mfs_load_map_name();
+static void mfs_load_map_value();
+static void mfs_load_map_timer();
+static void mfs_load_map_token();
+static void mfs_ensure_term_spec(int size);
 
-static ErlDrvData megaco_flex_scanner_start(ErlDrvPort port, char *buf);
-static void 	  megaco_flex_scanner_stop(ErlDrvData handle);
-static void 	  megaco_flex_scanner_command(ErlDrvData handle, 
+static ErlDrvData mfs_start(ErlDrvPort port, char *buf);
+static void 	  mfs_stop(ErlDrvData handle);
+static void 	  mfs_command(ErlDrvData handle, 
                                               char *buf, int buf_len);
-static int 	  megaco_flex_scanner_control(ErlDrvData handle, 
+static int 	  mfs_control(ErlDrvData handle, 
                                               unsigned int command,
                         	             char *buf, int buf_len, 
       			                     char **res_buf, int res_buf_len);
-static void 	  megaco_flex_scanner_finish(void);
+static void 	  mfs_finish(void);
 
 /* 
  * The driver entry 
  */
 
-static ErlDrvEntry megaco_flex_scanner_entry = {
+static ErlDrvEntry mfs_entry = {
     NULL,                         /* init, always NULL for dynamic drivers */
-    megaco_flex_scanner_start,    /* start, called when port is opened */
-    megaco_flex_scanner_stop,     /* stop, called when port is closed */
-    megaco_flex_scanner_command,  /* output, called when erlang has sent */
+    mfs_start,    /* start, called when port is opened */
+    mfs_stop,     /* stop, called when port is closed */
+    mfs_command,  /* output, called when erlang has sent */
     NULL,                         /* ready_input, called when input descriptor ready */
     NULL,                         /* ready_output, called when output descriptor ready */
     "megaco_flex_scanner_drv",    /* char *driver_name, the argument to open_port */
-    megaco_flex_scanner_finish,   /* finish, called when unloaded */
+    mfs_finish,   /* finish, called when unloaded */
     NULL,                         /* void * that is not used (BC) */
-    megaco_flex_scanner_control,  /* control, port_control callback */
+    mfs_control,  /* control, port_control callback */
     NULL,                         /* timeout, called on timeouts */
     NULL                          /* outputv, vector output interface */
 };    
 
-#define LOAD_TOKEN(TokenTag) megaco_flex_scanner_lower_load_token(TokenTag)
+#define LOAD_TOKEN(TokenTag) mfs_lower_load_token(TokenTag)
 
-#define LOAD_SHORT_TOKEN(TokenTag) megaco_flex_scanner_short_load_token(TokenTag)
+#define LOAD_SHORT_TOKEN(TokenTag) mfs_short_load_token(TokenTag)
 
-#define LOAD_OCTET_TOKEN(TokenTag) megaco_flex_scanner_octet_load_token(TokenTag)
+#define LOAD_OCTET_TOKEN(TokenTag) mfs_octet_load_token(TokenTag)
+
+
+/* OTP-4236 */
+#define ASSIGN_TERM_SPEC(what)                     \
+{                                                  \
+   if (mfs_term_spec != NULL)                      \
+     mfs_term_spec[mfs_term_spec_index++] = what;  \
+}
 
 %}
 
@@ -245,10 +269,10 @@ static ErlDrvEntry megaco_flex_scanner_entry = {
 digit       ([0-9])
 alpha       ([a-zA-Z])
 hexdig      ({digit}|{alpha})
-sp          (\040)
-htab        (\011)
-cr          (\015)
-lf          (\012)
+sp          (\x20)
+htab        (\x09)
+cr          (\x0D)
+lf          (\x0A)
 slash       (\/)
 dquote      (\")
 colon       (\:)
@@ -259,7 +283,7 @@ safechar    ({digit}|{alpha}|[\+\-\&\!\_\/\'\?\@\^\`\~\*\$\\\(\)\%\|\.])
 restchar    ([\;\[\]\{\}\:\,\#\<\>\=])
 octet       ((\\\})|[\x01-\x7C\x7E-\xFF])
             
-comment     (\;({safechar}|{restchar}|{wsp}|\022)*{eol})
+comment     (\;({safechar}|{restchar}|{wsp}|\x22)*{eol})
 lwsp        ({wsp}|{comment}|{eol})*
             
 equal       ({lwsp}\={lwsp})
@@ -283,234 +307,234 @@ wild        ((w\-)?)
 <SKIP_RBRKT>{rbrkt}                     BEGIN(INITIAL);
                            
 (MTP){lbrkt}                            BEGIN(MTP_HEXDIG);
-<MTP_HEXDIG>{hexdig}{4,8}               {LOAD_TOKEN(megaco_flex_scanner_MtpAddressToken); BEGIN(SKIP_RBRKT);}
+<MTP_HEXDIG>{hexdig}{4,8}               {LOAD_TOKEN(mfs_MtpAddressToken); BEGIN(SKIP_RBRKT);}
                                         
 ((Local)|L){lbrkt}                      BEGIN(LOCAL_OCTETS);
-<LOCAL_OCTETS>{octet}*                  {LOAD_OCTET_TOKEN(megaco_flex_scanner_LocalDescriptorToken); BEGIN(SKIP_RBRKT);}
+<LOCAL_OCTETS>{octet}*                  {LOAD_OCTET_TOKEN(mfs_LocalDescriptorToken); BEGIN(SKIP_RBRKT);}
                                  
 ((Remote)|R){lbrkt}                     BEGIN(REMOTE_OCTETS);
-<REMOTE_OCTETS>{octet}*                 {LOAD_OCTET_TOKEN(megaco_flex_scanner_RemoteDescriptorToken); BEGIN(SKIP_RBRKT);}
+<REMOTE_OCTETS>{octet}*                 {LOAD_OCTET_TOKEN(mfs_RemoteDescriptorToken); BEGIN(SKIP_RBRKT);}
                                         
-((DigitMap)|DM)                         LOAD_TOKEN(megaco_flex_scanner_DigitMapToken);
+((DigitMap)|DM)                         LOAD_TOKEN(mfs_DigitMapToken);
 ((DigitMap)|DM){equal}                  BEGIN(MAP_NAME);
 ((DigitMap)|DM){equal}{lbrkt}           BEGIN(MAP_VALUE);
 ((DigitMap)|DM){lbrkt}                  BEGIN(MAP_VALUE);
 
-<MAP_NAME>{safechar}+                   {megaco_flex_scanner_load_map_name(); BEGIN(MAP_OPT_LBRKT);}
+<MAP_NAME>{safechar}+                   {mfs_load_map_name(); BEGIN(MAP_OPT_LBRKT);}
 
 <MAP_OPT_LBRKT>{lbrkt}                  BEGIN(MAP_VALUE);
-<MAP_OPT_LBRKT><<EOF>>                  {megaco_flex_scanner_load_map_token(); LOAD_TOKEN(megaco_flex_scanner_endOfMessage); BEGIN(INITIAL); yyterminate();}
-<MAP_OPT_LBRKT>.|\n                     {megaco_flex_scanner_load_map_token(); yyless(0); BEGIN(INITIAL);}
+<MAP_OPT_LBRKT><<EOF>>                  {mfs_load_map_token(); LOAD_TOKEN(mfs_endOfMessage); BEGIN(INITIAL); yyterminate();}
+<MAP_OPT_LBRKT>.|\n                     {mfs_load_map_token(); yyless(0); BEGIN(INITIAL);}
 
-<MAP_VALUE>t{colon}{digit}{1,2}         {megaco_flex_scanner_load_map_timer(); BEGIN(MAP_SKIP_COMMA);}
-<MAP_VALUE>s{colon}{digit}{1,2}         {megaco_flex_scanner_load_map_timer(); BEGIN(MAP_SKIP_COMMA);}
-<MAP_VALUE>l{colon}{digit}{1,2}         {megaco_flex_scanner_load_map_timer(); BEGIN(MAP_SKIP_COMMA);}
+<MAP_VALUE>t{colon}{digit}{1,2}         {mfs_load_map_timer(); BEGIN(MAP_SKIP_COMMA);}
+<MAP_VALUE>s{colon}{digit}{1,2}         {mfs_load_map_timer(); BEGIN(MAP_SKIP_COMMA);}
+<MAP_VALUE>l{colon}{digit}{1,2}         {mfs_load_map_timer(); BEGIN(MAP_SKIP_COMMA);}
 <MAP_VALUE>.|\n                         {yyless(0); BEGIN(MAP_BODY);}
 
 <MAP_SKIP_COMMA>{comma}                 BEGIN(MAP_VALUE);
 
-<MAP_BODY>{octet}*                     {megaco_flex_scanner_load_map_value(); megaco_flex_scanner_load_map_token(); BEGIN(SKIP_RBRKT);}
+<MAP_BODY>{octet}*                     {mfs_load_map_value(); mfs_load_map_token(); BEGIN(SKIP_RBRKT);}
 
-{equal}                                 LOAD_SHORT_TOKEN(megaco_flex_scanner_EQUAL);
-{colon}                                 LOAD_SHORT_TOKEN(megaco_flex_scanner_COLON);
-{lbrkt}                                 LOAD_SHORT_TOKEN(megaco_flex_scanner_LBRKT);
-{rbrkt}                                 LOAD_SHORT_TOKEN(megaco_flex_scanner_RBRKT);
-{lsbrkt}                                LOAD_SHORT_TOKEN(megaco_flex_scanner_LSBRKT);
-{rsbrkt}                                LOAD_SHORT_TOKEN(megaco_flex_scanner_RSBRKT);
-{comma}                                 LOAD_SHORT_TOKEN(megaco_flex_scanner_COMMA);
-{nequal}                                LOAD_SHORT_TOKEN(megaco_flex_scanner_NEQUAL);
-{lesser}                                LOAD_SHORT_TOKEN(megaco_flex_scanner_LESSER);
-{greater}                               LOAD_SHORT_TOKEN(megaco_flex_scanner_GREATER);
-{sep}                                   LOAD_SHORT_TOKEN(megaco_flex_scanner_SEP);
+{equal}                                 LOAD_SHORT_TOKEN(mfs_EQUAL);
+{colon}                                 LOAD_SHORT_TOKEN(mfs_COLON);
+{lbrkt}                                 LOAD_SHORT_TOKEN(mfs_LBRKT);
+{rbrkt}                                 LOAD_SHORT_TOKEN(mfs_RBRKT);
+{lsbrkt}                                LOAD_SHORT_TOKEN(mfs_LSBRKT);
+{rsbrkt}                                LOAD_SHORT_TOKEN(mfs_RSBRKT);
+{comma}                                 LOAD_SHORT_TOKEN(mfs_COMMA);
+{nequal}                                LOAD_SHORT_TOKEN(mfs_NEQUAL);
+{lesser}                                LOAD_SHORT_TOKEN(mfs_LESSER);
+{greater}                               LOAD_SHORT_TOKEN(mfs_GREATER);
+{sep}                                   LOAD_SHORT_TOKEN(mfs_SEP);
 
 {dquote}                                BEGIN(QUOTED_CHARS);
 
-<QUOTED_CHARS>({safechar}|{restchar}|{wsp})+ {LOAD_TOKEN(megaco_flex_scanner_QuotedChars); BEGIN(SKIP_DQUOTE);}
+<QUOTED_CHARS>({safechar}|{restchar}|{wsp})+ {LOAD_TOKEN(mfs_QuotedChars); BEGIN(SKIP_DQUOTE);}
 
 <SKIP_DQUOTE>{dquote}                   BEGIN(INITIAL);
                                         
-{opt}add                                LOAD_TOKEN(megaco_flex_scanner_AddToken);
-{opt}a                                  LOAD_TOKEN(megaco_flex_scanner_AddToken);
-audit                                   LOAD_TOKEN(megaco_flex_scanner_AuditToken);
-at                                      LOAD_TOKEN(megaco_flex_scanner_AuditToken);
-{opt}{wild}auditcapability              LOAD_TOKEN(megaco_flex_scanner_AuditCapToken);
-{opt}{wild}ac                           LOAD_TOKEN(megaco_flex_scanner_AuditCapToken);
-{opt}{wild}auditvalue                   LOAD_TOKEN(megaco_flex_scanner_AuditValueToken);
-{opt}{wild}av                           LOAD_TOKEN(megaco_flex_scanner_AuditValueToken);
-authentication                          LOAD_TOKEN(megaco_flex_scanner_AuthToken);
-au                                      LOAD_TOKEN(megaco_flex_scanner_AuthToken);
-bothway                                 LOAD_TOKEN(megaco_flex_scanner_BothwayToken);
-bw                                      LOAD_TOKEN(megaco_flex_scanner_BothwayToken);
-brief                                   LOAD_TOKEN(megaco_flex_scanner_BriefToken);
-br                                      LOAD_TOKEN(megaco_flex_scanner_BriefToken);
-buffer                                  LOAD_TOKEN(megaco_flex_scanner_BufferToken);
-bf                                      LOAD_TOKEN(megaco_flex_scanner_BufferToken);
-context                                 LOAD_TOKEN(megaco_flex_scanner_CtxToken);
-c                                       LOAD_TOKEN(megaco_flex_scanner_CtxToken);
-contextaudit                            LOAD_TOKEN(megaco_flex_scanner_ContextAuditToken);
-ca                                      LOAD_TOKEN(megaco_flex_scanner_ContextAuditToken);
-discard                                 LOAD_TOKEN(megaco_flex_scanner_DiscardToken);
-ds                                      LOAD_TOKEN(megaco_flex_scanner_DiscardToken);
-disconnected                            LOAD_TOKEN(megaco_flex_scanner_DisconnectedToken);
-dc                                      LOAD_TOKEN(megaco_flex_scanner_DisconnectedToken);
-delay                                   LOAD_TOKEN(megaco_flex_scanner_DelayToken);
-dl                                      LOAD_TOKEN(megaco_flex_scanner_DelayToken);
-delete                                  LOAD_TOKEN(megaco_flex_scanner_DeleteToken);
-de                                      LOAD_TOKEN(megaco_flex_scanner_DeleteToken);
-duration                                LOAD_TOKEN(megaco_flex_scanner_DurationToken);
-dr                                      LOAD_TOKEN(megaco_flex_scanner_DurationToken);
-embed                                   LOAD_TOKEN(megaco_flex_scanner_EmbedToken);
-em                                      LOAD_TOKEN(megaco_flex_scanner_EmbedToken);
-emergency                               LOAD_TOKEN(megaco_flex_scanner_EmergencyToken);
-eg                                      LOAD_TOKEN(megaco_flex_scanner_EmergencyToken);
-error                                   LOAD_TOKEN(megaco_flex_scanner_ErrorToken);
-er                                      LOAD_TOKEN(megaco_flex_scanner_ErrorToken);
-eventbuffer                             LOAD_TOKEN(megaco_flex_scanner_EventBufferToken);
-eb                                      LOAD_TOKEN(megaco_flex_scanner_EventBufferToken);
-events                                  LOAD_TOKEN(megaco_flex_scanner_EventsToken);
-e                                       LOAD_TOKEN(megaco_flex_scanner_EventsToken);
-failover                                LOAD_TOKEN(megaco_flex_scanner_FailoverToken);
-fl                                      LOAD_TOKEN(megaco_flex_scanner_FailoverToken);
-forced                                  LOAD_TOKEN(megaco_flex_scanner_ForcedToken);
-fo                                      LOAD_TOKEN(megaco_flex_scanner_ForcedToken);
-graceful                                LOAD_TOKEN(megaco_flex_scanner_GracefulToken);
-gr                                      LOAD_TOKEN(megaco_flex_scanner_GracefulToken);
-h221                                    LOAD_TOKEN(megaco_flex_scanner_H221Token);
-h223                                    LOAD_TOKEN(megaco_flex_scanner_H223Token);
-h226                                    LOAD_TOKEN(megaco_flex_scanner_H226Token);
-handoff                                 LOAD_TOKEN(megaco_flex_scanner_HandOffToken);
-ho                                      LOAD_TOKEN(megaco_flex_scanner_HandOffToken);
-inactive                                LOAD_TOKEN(megaco_flex_scanner_InactiveToken);
-in                                      LOAD_TOKEN(megaco_flex_scanner_InactiveToken);
-isolate                                 LOAD_TOKEN(megaco_flex_scanner_IsolateToken);
-immackrequired                          LOAD_TOKEN(megaco_flex_scanner_ImmAckRequiredToken);
-ia                                      LOAD_TOKEN(megaco_flex_scanner_ImmAckRequiredToken);
-is                                      LOAD_TOKEN(megaco_flex_scanner_IsolateToken);
-inservice                               LOAD_TOKEN(megaco_flex_scanner_InSvcToken);
-interruptbyevent                        LOAD_TOKEN(megaco_flex_scanner_InterruptByEventToken);
-ibe                                     LOAD_TOKEN(megaco_flex_scanner_InterruptByEventToken);
-interruptbynewsignalsdescr              LOAD_TOKEN(megaco_flex_scanner_InterruptByNewSignalsDescrToken);
-ibs                                     LOAD_TOKEN(megaco_flex_scanner_InterruptByNewSignalsDescrToken);
-iv                                      LOAD_TOKEN(megaco_flex_scanner_InSvcToken);
-keepactive                              LOAD_TOKEN(megaco_flex_scanner_KeepActiveToken);
-ka                                      LOAD_TOKEN(megaco_flex_scanner_KeepActiveToken);
-local                                   LOAD_TOKEN(megaco_flex_scanner_LocalToken);
-l                                       LOAD_TOKEN(megaco_flex_scanner_LocalToken);
-localcontrol                            LOAD_TOKEN(megaco_flex_scanner_LocalControlToken);
-lockstep                                LOAD_TOKEN(megaco_flex_scanner_LockStepToken);
-sp                                      LOAD_TOKEN(megaco_flex_scanner_LockStepToken);
-o                                       LOAD_TOKEN(megaco_flex_scanner_LocalControlToken);
-loopback                                LOAD_TOKEN(megaco_flex_scanner_LoopbackToken);
-lb                                      LOAD_TOKEN(megaco_flex_scanner_LoopbackToken);
-media                                   LOAD_TOKEN(megaco_flex_scanner_MediaToken);
-m                                       LOAD_TOKEN(megaco_flex_scanner_MediaToken);
-megaco                                  LOAD_TOKEN(megaco_flex_scanner_MegacopToken);
-!                                       LOAD_TOKEN(megaco_flex_scanner_MegacopToken);
-method                                  LOAD_TOKEN(megaco_flex_scanner_MethodToken);
-mt                                      LOAD_TOKEN(megaco_flex_scanner_MethodToken);
-mgcidtotry                              LOAD_TOKEN(megaco_flex_scanner_MgcIdToken);
-mg                                      LOAD_TOKEN(megaco_flex_scanner_MgcIdToken);
-mode                                    LOAD_TOKEN(megaco_flex_scanner_ModeToken);
-mo                                      LOAD_TOKEN(megaco_flex_scanner_ModeToken);
-{opt}modify                             LOAD_TOKEN(megaco_flex_scanner_ModifyToken);
-{opt}mf                                 LOAD_TOKEN(megaco_flex_scanner_ModifyToken);
-modem                                   LOAD_TOKEN(megaco_flex_scanner_ModemToken);
-md                                      LOAD_TOKEN(megaco_flex_scanner_ModemToken);
-{opt}move                               LOAD_TOKEN(megaco_flex_scanner_MoveToken);
-{opt}mv                                 LOAD_TOKEN(megaco_flex_scanner_MoveToken);
-mux                                     LOAD_TOKEN(megaco_flex_scanner_MuxToken);
-mx                                      LOAD_TOKEN(megaco_flex_scanner_MuxToken);
-{opt}notify                             LOAD_TOKEN(megaco_flex_scanner_NotifyToken);
-{opt}n                                  LOAD_TOKEN(megaco_flex_scanner_NotifyToken);
-notifycompletion                        LOAD_TOKEN(megaco_flex_scanner_NotifyCompletionToken);
-nc                                      LOAD_TOKEN(megaco_flex_scanner_NotifyCompletionToken);
-observedevents                          LOAD_TOKEN(megaco_flex_scanner_ObservedEventsToken);
-oe                                      LOAD_TOKEN(megaco_flex_scanner_ObservedEventsToken);
-oneway                                  LOAD_TOKEN(megaco_flex_scanner_OnewayToken);
-ow                                      LOAD_TOKEN(megaco_flex_scanner_OnewayToken);
-off                                     LOAD_TOKEN(megaco_flex_scanner_OffToken);
-on                                      LOAD_TOKEN(megaco_flex_scanner_OnToken);
-onoff                                   LOAD_TOKEN(megaco_flex_scanner_OnOffToken);
-oo                                      LOAD_TOKEN(megaco_flex_scanner_OnOffToken);
-otherreason                             LOAD_TOKEN(megaco_flex_scanner_OtherReasonToken);
-or                                      LOAD_TOKEN(megaco_flex_scanner_OtherReasonToken);
-outofservice                            LOAD_TOKEN(megaco_flex_scanner_OutOfSvcToken);
-os                                      LOAD_TOKEN(megaco_flex_scanner_OutOfSvcToken);
-packages                                LOAD_TOKEN(megaco_flex_scanner_PackagesToken);
-pg                                      LOAD_TOKEN(megaco_flex_scanner_PackagesToken);
-pending                                 LOAD_TOKEN(megaco_flex_scanner_PendingToken);
-pn                                      LOAD_TOKEN(megaco_flex_scanner_PendingToken);
-priority                                LOAD_TOKEN(megaco_flex_scanner_PriorityToken);
-pr                                      LOAD_TOKEN(megaco_flex_scanner_PriorityToken);
-profile                                 LOAD_TOKEN(megaco_flex_scanner_ProfileToken);
-pf                                      LOAD_TOKEN(megaco_flex_scanner_ProfileToken);
-reason                                  LOAD_TOKEN(megaco_flex_scanner_ReasonToken);
-re                                      LOAD_TOKEN(megaco_flex_scanner_ReasonToken);
-receiveonly                             LOAD_TOKEN(megaco_flex_scanner_RecvonlyToken);
-rc                                      LOAD_TOKEN(megaco_flex_scanner_RecvonlyToken);
-reply                                   LOAD_TOKEN(megaco_flex_scanner_ReplyToken);
-p                                       LOAD_TOKEN(megaco_flex_scanner_ReplyToken);
-transactionresponseack                  LOAD_TOKEN(megaco_flex_scanner_ResponseAckToken);
-k                                       LOAD_TOKEN(megaco_flex_scanner_ResponseAckToken);
-restart                                 LOAD_TOKEN(megaco_flex_scanner_RestartToken);
-rs                                      LOAD_TOKEN(megaco_flex_scanner_RestartToken);
-remote                                  LOAD_TOKEN(megaco_flex_scanner_RemoteToken);
-r                                       LOAD_TOKEN(megaco_flex_scanner_RemoteToken);
-reservedgroup                           LOAD_TOKEN(megaco_flex_scanner_ReservedGroupToken);
-rg                                      LOAD_TOKEN(megaco_flex_scanner_ReservedGroupToken);
-reservedvalue                           LOAD_TOKEN(megaco_flex_scanner_ReservedValueToken);
-rv                                      LOAD_TOKEN(megaco_flex_scanner_ReservedValueToken);
-sendonly                                LOAD_TOKEN(megaco_flex_scanner_SendonlyToken);
-so                                      LOAD_TOKEN(megaco_flex_scanner_SendonlyToken);
-sendreceive                             LOAD_TOKEN(megaco_flex_scanner_SendrecvToken);
-sr                                      LOAD_TOKEN(megaco_flex_scanner_SendrecvToken);
-services                                LOAD_TOKEN(megaco_flex_scanner_ServicesToken);
-sv                                      LOAD_TOKEN(megaco_flex_scanner_ServicesToken);
-servicestates                           LOAD_TOKEN(megaco_flex_scanner_ServiceStatesToken);
-si                                      LOAD_TOKEN(megaco_flex_scanner_ServiceStatesToken);
-{opt}servicechange                      LOAD_TOKEN(megaco_flex_scanner_ServiceChangeToken);
-{opt}sc                                 LOAD_TOKEN(megaco_flex_scanner_ServiceChangeToken);
-servicechangeaddress                    LOAD_TOKEN(megaco_flex_scanner_ServiceChangeAddressToken);
-ad                                      LOAD_TOKEN(megaco_flex_scanner_ServiceChangeAddressToken);
-signallist                              LOAD_TOKEN(megaco_flex_scanner_SignalListToken);
-sl                                      LOAD_TOKEN(megaco_flex_scanner_SignalListToken);
-signals                                 LOAD_TOKEN(megaco_flex_scanner_SignalsToken);
-sg                                      LOAD_TOKEN(megaco_flex_scanner_SignalsToken);
-signaltype                              LOAD_TOKEN(megaco_flex_scanner_SignalTypeToken);
-sy                                      LOAD_TOKEN(megaco_flex_scanner_SignalTypeToken);
-statistics                              LOAD_TOKEN(megaco_flex_scanner_StatsToken);
-sa                                      LOAD_TOKEN(megaco_flex_scanner_StatsToken);
-stream                                  LOAD_TOKEN(megaco_flex_scanner_StreamToken);
-st                                      LOAD_TOKEN(megaco_flex_scanner_StreamToken);
-{opt}{wild}subtract                     LOAD_TOKEN(megaco_flex_scanner_SubtractToken);
-{opt}{wild}s                            LOAD_TOKEN(megaco_flex_scanner_SubtractToken);
-synchisdn                               LOAD_TOKEN(megaco_flex_scanner_SynchISDNToken);
-sn                                      LOAD_TOKEN(megaco_flex_scanner_SynchISDNToken);
-terminationstate                        LOAD_TOKEN(megaco_flex_scanner_TerminationStateToken);
-ts                                      LOAD_TOKEN(megaco_flex_scanner_TerminationStateToken);
-test                                    LOAD_TOKEN(megaco_flex_scanner_TestToken);
-te                                      LOAD_TOKEN(megaco_flex_scanner_TestToken);
-timeout                                 LOAD_TOKEN(megaco_flex_scanner_TimeOutToken);
-to                                      LOAD_TOKEN(megaco_flex_scanner_TimeOutToken);
-topology                                LOAD_TOKEN(megaco_flex_scanner_TopologyToken);
-tp                                      LOAD_TOKEN(megaco_flex_scanner_TopologyToken);
-transaction                             LOAD_TOKEN(megaco_flex_scanner_TransToken);
-t                                       LOAD_TOKEN(megaco_flex_scanner_TransToken);
-v18                                     LOAD_TOKEN(megaco_flex_scanner_V18Token);
-v22                                     LOAD_TOKEN(megaco_flex_scanner_V22Token);
-v22b                                    LOAD_TOKEN(megaco_flex_scanner_V22bisToken);
-v32                                     LOAD_TOKEN(megaco_flex_scanner_V32Token);
-v32b                                    LOAD_TOKEN(megaco_flex_scanner_V32bisToken);
-v34                                     LOAD_TOKEN(megaco_flex_scanner_V34Token);
-v76                                     LOAD_TOKEN(megaco_flex_scanner_V76Token);
-v90                                     LOAD_TOKEN(megaco_flex_scanner_V90Token);
-v91                                     LOAD_TOKEN(megaco_flex_scanner_V91Token);
-version                                 LOAD_TOKEN(megaco_flex_scanner_VersionToken);
-v                                       LOAD_TOKEN(megaco_flex_scanner_VersionToken);
-({safechar})+                           LOAD_TOKEN(megaco_flex_scanner_SafeChars);
+{opt}add                                LOAD_TOKEN(mfs_AddToken);
+{opt}a                                  LOAD_TOKEN(mfs_AddToken);
+audit                                   LOAD_TOKEN(mfs_AuditToken);
+at                                      LOAD_TOKEN(mfs_AuditToken);
+{opt}{wild}auditcapability              LOAD_TOKEN(mfs_AuditCapToken);
+{opt}{wild}ac                           LOAD_TOKEN(mfs_AuditCapToken);
+{opt}{wild}auditvalue                   LOAD_TOKEN(mfs_AuditValueToken);
+{opt}{wild}av                           LOAD_TOKEN(mfs_AuditValueToken);
+authentication                          LOAD_TOKEN(mfs_AuthToken);
+au                                      LOAD_TOKEN(mfs_AuthToken);
+bothway                                 LOAD_TOKEN(mfs_BothwayToken);
+bw                                      LOAD_TOKEN(mfs_BothwayToken);
+brief                                   LOAD_TOKEN(mfs_BriefToken);
+br                                      LOAD_TOKEN(mfs_BriefToken);
+buffer                                  LOAD_TOKEN(mfs_BufferToken);
+bf                                      LOAD_TOKEN(mfs_BufferToken);
+context                                 LOAD_TOKEN(mfs_CtxToken);
+c                                       LOAD_TOKEN(mfs_CtxToken);
+contextaudit                            LOAD_TOKEN(mfs_ContextAuditToken);
+ca                                      LOAD_TOKEN(mfs_ContextAuditToken);
+discard                                 LOAD_TOKEN(mfs_DiscardToken);
+ds                                      LOAD_TOKEN(mfs_DiscardToken);
+disconnected                            LOAD_TOKEN(mfs_DisconnectedToken);
+dc                                      LOAD_TOKEN(mfs_DisconnectedToken);
+delay                                   LOAD_TOKEN(mfs_DelayToken);
+dl                                      LOAD_TOKEN(mfs_DelayToken);
+delete                                  LOAD_TOKEN(mfs_DeleteToken);
+de                                      LOAD_TOKEN(mfs_DeleteToken);
+duration                                LOAD_TOKEN(mfs_DurationToken);
+dr                                      LOAD_TOKEN(mfs_DurationToken);
+embed                                   LOAD_TOKEN(mfs_EmbedToken);
+em                                      LOAD_TOKEN(mfs_EmbedToken);
+emergency                               LOAD_TOKEN(mfs_EmergencyToken);
+eg                                      LOAD_TOKEN(mfs_EmergencyToken);
+error                                   LOAD_TOKEN(mfs_ErrorToken);
+er                                      LOAD_TOKEN(mfs_ErrorToken);
+eventbuffer                             LOAD_TOKEN(mfs_EventBufferToken);
+eb                                      LOAD_TOKEN(mfs_EventBufferToken);
+events                                  LOAD_TOKEN(mfs_EventsToken);
+e                                       LOAD_TOKEN(mfs_EventsToken);
+failover                                LOAD_TOKEN(mfs_FailoverToken);
+fl                                      LOAD_TOKEN(mfs_FailoverToken);
+forced                                  LOAD_TOKEN(mfs_ForcedToken);
+fo                                      LOAD_TOKEN(mfs_ForcedToken);
+graceful                                LOAD_TOKEN(mfs_GracefulToken);
+gr                                      LOAD_TOKEN(mfs_GracefulToken);
+h221                                    LOAD_TOKEN(mfs_H221Token);
+h223                                    LOAD_TOKEN(mfs_H223Token);
+h226                                    LOAD_TOKEN(mfs_H226Token);
+handoff                                 LOAD_TOKEN(mfs_HandOffToken);
+ho                                      LOAD_TOKEN(mfs_HandOffToken);
+inactive                                LOAD_TOKEN(mfs_InactiveToken);
+in                                      LOAD_TOKEN(mfs_InactiveToken);
+isolate                                 LOAD_TOKEN(mfs_IsolateToken);
+immackrequired                          LOAD_TOKEN(mfs_ImmAckRequiredToken);
+ia                                      LOAD_TOKEN(mfs_ImmAckRequiredToken);
+is                                      LOAD_TOKEN(mfs_IsolateToken);
+inservice                               LOAD_TOKEN(mfs_InSvcToken);
+interruptbyevent                        LOAD_TOKEN(mfs_InterruptByEventToken);
+ibe                                     LOAD_TOKEN(mfs_InterruptByEventToken);
+interruptbynewsignalsdescr              LOAD_TOKEN(mfs_InterruptByNewSignalsDescrToken);
+ibs                                     LOAD_TOKEN(mfs_InterruptByNewSignalsDescrToken);
+iv                                      LOAD_TOKEN(mfs_InSvcToken);
+keepactive                              LOAD_TOKEN(mfs_KeepActiveToken);
+ka                                      LOAD_TOKEN(mfs_KeepActiveToken);
+local                                   LOAD_TOKEN(mfs_LocalToken);
+l                                       LOAD_TOKEN(mfs_LocalToken);
+localcontrol                            LOAD_TOKEN(mfs_LocalControlToken);
+lockstep                                LOAD_TOKEN(mfs_LockStepToken);
+sp                                      LOAD_TOKEN(mfs_LockStepToken);
+o                                       LOAD_TOKEN(mfs_LocalControlToken);
+loopback                                LOAD_TOKEN(mfs_LoopbackToken);
+lb                                      LOAD_TOKEN(mfs_LoopbackToken);
+media                                   LOAD_TOKEN(mfs_MediaToken);
+m                                       LOAD_TOKEN(mfs_MediaToken);
+megaco                                  LOAD_TOKEN(mfs_MegacopToken);
+!                                       LOAD_TOKEN(mfs_MegacopToken);
+method                                  LOAD_TOKEN(mfs_MethodToken);
+mt                                      LOAD_TOKEN(mfs_MethodToken);
+mgcidtotry                              LOAD_TOKEN(mfs_MgcIdToken);
+mg                                      LOAD_TOKEN(mfs_MgcIdToken);
+mode                                    LOAD_TOKEN(mfs_ModeToken);
+mo                                      LOAD_TOKEN(mfs_ModeToken);
+{opt}modify                             LOAD_TOKEN(mfs_ModifyToken);
+{opt}mf                                 LOAD_TOKEN(mfs_ModifyToken);
+modem                                   LOAD_TOKEN(mfs_ModemToken);
+md                                      LOAD_TOKEN(mfs_ModemToken);
+{opt}move                               LOAD_TOKEN(mfs_MoveToken);
+{opt}mv                                 LOAD_TOKEN(mfs_MoveToken);
+mux                                     LOAD_TOKEN(mfs_MuxToken);
+mx                                      LOAD_TOKEN(mfs_MuxToken);
+{opt}notify                             LOAD_TOKEN(mfs_NotifyToken);
+{opt}n                                  LOAD_TOKEN(mfs_NotifyToken);
+notifycompletion                        LOAD_TOKEN(mfs_NotifyCompletionToken);
+nc                                      LOAD_TOKEN(mfs_NotifyCompletionToken);
+observedevents                          LOAD_TOKEN(mfs_ObservedEventsToken);
+oe                                      LOAD_TOKEN(mfs_ObservedEventsToken);
+oneway                                  LOAD_TOKEN(mfs_OnewayToken);
+ow                                      LOAD_TOKEN(mfs_OnewayToken);
+off                                     LOAD_TOKEN(mfs_OffToken);
+on                                      LOAD_TOKEN(mfs_OnToken);
+onoff                                   LOAD_TOKEN(mfs_OnOffToken);
+oo                                      LOAD_TOKEN(mfs_OnOffToken);
+otherreason                             LOAD_TOKEN(mfs_OtherReasonToken);
+or                                      LOAD_TOKEN(mfs_OtherReasonToken);
+outofservice                            LOAD_TOKEN(mfs_OutOfSvcToken);
+os                                      LOAD_TOKEN(mfs_OutOfSvcToken);
+packages                                LOAD_TOKEN(mfs_PackagesToken);
+pg                                      LOAD_TOKEN(mfs_PackagesToken);
+pending                                 LOAD_TOKEN(mfs_PendingToken);
+pn                                      LOAD_TOKEN(mfs_PendingToken);
+priority                                LOAD_TOKEN(mfs_PriorityToken);
+pr                                      LOAD_TOKEN(mfs_PriorityToken);
+profile                                 LOAD_TOKEN(mfs_ProfileToken);
+pf                                      LOAD_TOKEN(mfs_ProfileToken);
+reason                                  LOAD_TOKEN(mfs_ReasonToken);
+re                                      LOAD_TOKEN(mfs_ReasonToken);
+receiveonly                             LOAD_TOKEN(mfs_RecvonlyToken);
+rc                                      LOAD_TOKEN(mfs_RecvonlyToken);
+reply                                   LOAD_TOKEN(mfs_ReplyToken);
+p                                       LOAD_TOKEN(mfs_ReplyToken);
+transactionresponseack                  LOAD_TOKEN(mfs_ResponseAckToken);
+k                                       LOAD_TOKEN(mfs_ResponseAckToken);
+restart                                 LOAD_TOKEN(mfs_RestartToken);
+rs                                      LOAD_TOKEN(mfs_RestartToken);
+remote                                  LOAD_TOKEN(mfs_RemoteToken);
+r                                       LOAD_TOKEN(mfs_RemoteToken);
+reservedgroup                           LOAD_TOKEN(mfs_ReservedGroupToken);
+rg                                      LOAD_TOKEN(mfs_ReservedGroupToken);
+reservedvalue                           LOAD_TOKEN(mfs_ReservedValueToken);
+rv                                      LOAD_TOKEN(mfs_ReservedValueToken);
+sendonly                                LOAD_TOKEN(mfs_SendonlyToken);
+so                                      LOAD_TOKEN(mfs_SendonlyToken);
+sendreceive                             LOAD_TOKEN(mfs_SendrecvToken);
+sr                                      LOAD_TOKEN(mfs_SendrecvToken);
+services                                LOAD_TOKEN(mfs_ServicesToken);
+sv                                      LOAD_TOKEN(mfs_ServicesToken);
+servicestates                           LOAD_TOKEN(mfs_ServiceStatesToken);
+si                                      LOAD_TOKEN(mfs_ServiceStatesToken);
+{opt}servicechange                      LOAD_TOKEN(mfs_ServiceChangeToken);
+{opt}sc                                 LOAD_TOKEN(mfs_ServiceChangeToken);
+servicechangeaddress                    LOAD_TOKEN(mfs_ServiceChangeAddressToken);
+ad                                      LOAD_TOKEN(mfs_ServiceChangeAddressToken);
+signallist                              LOAD_TOKEN(mfs_SignalListToken);
+sl                                      LOAD_TOKEN(mfs_SignalListToken);
+signals                                 LOAD_TOKEN(mfs_SignalsToken);
+sg                                      LOAD_TOKEN(mfs_SignalsToken);
+signaltype                              LOAD_TOKEN(mfs_SignalTypeToken);
+sy                                      LOAD_TOKEN(mfs_SignalTypeToken);
+statistics                              LOAD_TOKEN(mfs_StatsToken);
+sa                                      LOAD_TOKEN(mfs_StatsToken);
+stream                                  LOAD_TOKEN(mfs_StreamToken);
+st                                      LOAD_TOKEN(mfs_StreamToken);
+{opt}{wild}subtract                     LOAD_TOKEN(mfs_SubtractToken);
+{opt}{wild}s                            LOAD_TOKEN(mfs_SubtractToken);
+synchisdn                               LOAD_TOKEN(mfs_SynchISDNToken);
+sn                                      LOAD_TOKEN(mfs_SynchISDNToken);
+terminationstate                        LOAD_TOKEN(mfs_TerminationStateToken);
+ts                                      LOAD_TOKEN(mfs_TerminationStateToken);
+test                                    LOAD_TOKEN(mfs_TestToken);
+te                                      LOAD_TOKEN(mfs_TestToken);
+timeout                                 LOAD_TOKEN(mfs_TimeOutToken);
+to                                      LOAD_TOKEN(mfs_TimeOutToken);
+topology                                LOAD_TOKEN(mfs_TopologyToken);
+tp                                      LOAD_TOKEN(mfs_TopologyToken);
+transaction                             LOAD_TOKEN(mfs_TransToken);
+t                                       LOAD_TOKEN(mfs_TransToken);
+v18                                     LOAD_TOKEN(mfs_V18Token);
+v22                                     LOAD_TOKEN(mfs_V22Token);
+v22b                                    LOAD_TOKEN(mfs_V22bisToken);
+v32                                     LOAD_TOKEN(mfs_V32Token);
+v32b                                    LOAD_TOKEN(mfs_V32bisToken);
+v34                                     LOAD_TOKEN(mfs_V34Token);
+v76                                     LOAD_TOKEN(mfs_V76Token);
+v90                                     LOAD_TOKEN(mfs_V90Token);
+v91                                     LOAD_TOKEN(mfs_V91Token);
+version                                 LOAD_TOKEN(mfs_VersionToken);
+v                                       LOAD_TOKEN(mfs_VersionToken);
+({safechar})+                           LOAD_TOKEN(mfs_SafeChars);
                                         
-<<EOF>>                                 {LOAD_SHORT_TOKEN(megaco_flex_scanner_endOfMessage); BEGIN(INITIAL); yyterminate();}
-<*>.|\n                                 {LOAD_TOKEN(megaco_flex_scanner_IllegalChar); BEGIN(INITIAL); yyterminate();}
+<<EOF>>                                 {LOAD_SHORT_TOKEN(mfs_endOfMessage); BEGIN(INITIAL); yyterminate();}
+<*>.|\n                                 {LOAD_TOKEN(mfs_IllegalChar); BEGIN(INITIAL); yyterminate();}
 
 %%
 
@@ -523,7 +547,7 @@ v                                       LOAD_TOKEN(megaco_flex_scanner_VersionTo
  */
 #define LINENO_OR_TOKENCNT %MEGACO_LINENO_OR_TOKENCOUNTER%
 
-/* #define MFS_DEBUG true temporary */
+/* #define MFS_DEBUG true  temporary */
 #if defined(MFS_DEBUG)
 #  define DBG( proto ) mfs_dbg proto
 #  define DBG_BUF(func, bufName, buf, bufSz) mfs_dbg_buf_print(func, bufName, buf, bufSz)
@@ -550,7 +574,7 @@ static void mfs_dbg(char *s, ...) {
   va_end(args);
 }
 
-void hexdump(FILE *out, unsigned char *buf, int bufsz)
+static void hexdump(FILE *out, unsigned char *buf, int bufsz)
 {
   int i,j;
   int count;
@@ -598,110 +622,172 @@ static void mfs_dbg_buf_print(char* func, char* bufName, char* buf, int len)
 #endif /* if defined(MFS_DEBUG) */
 
 
-void megaco_flex_scanner_ensure_term_spec(int size)
+static void mfs_alloc_failed(char* msg, int sz)
 {
-  if ((megaco_flex_scanner_term_spec_index + size) > megaco_flex_scanner_term_spec_size) {
-    megaco_flex_scanner_term_spec_size = (megaco_flex_scanner_term_spec_size * 2) + size;
-    driver_realloc(megaco_flex_scanner_term_spec, megaco_flex_scanner_term_spec_size * sizeof(ErlDrvTermData));
+  /*
+   * Make sure we are not allready in error state
+   */
+  if (!mfs_error) {
+
+    /* 
+     * Make sure that there is room in the buffer:
+     * length of msg + 10 chars for the ' of %d bytes'
+     * + 10 chars for the size value...
+     * This is really overkill since the msg string is never
+     * longer then 50 chars, but sinze this function is 
+     * called when we have run out of memory...
+     */
+
+    int msg_len = strlen(msg);
+    if ((10 + 10 + msg_len) < sizeof(mfs_error_msg)) {
+      if (0 >= sprintf(mfs_error_msg, "%s of %d bytes", msg, sz)) {
+	mfs_fatal_error(msg);
+      }
+    } else {
+      mfs_fatal_error(msg);
+    }
+    mfs_error = TRUE;
   }
 }
 
-void megaco_flex_scanner_short_load_token(ErlDrvTermData TokenTag)
+
+static void mfs_ensure_term_spec(int size)
+{
+  /*
+  DBG( ("mfs_ensure_term_spec -> entry with"
+	"\n   size: %d\n", size) );
+  */
+
+  /* OTP-4236 - BEGIN */
+  if ((mfs_term_spec_index + size) >= mfs_term_spec_size) {
+    void *tmp;
+
+    DBG( ("mfs_ensure_term_spec -> allocate more memory when"
+	  "\n   term_spec_index: %d"
+	  "\n   term_spec_size:  %d\n", 
+	  mfs_term_spec_index, mfs_term_spec_size) );
+
+    mfs_term_spec_size = (mfs_term_spec_size * 2) + size;
+
+    DBG( ("mfs_ensure_term_spec -> "
+	  "term_spec is at 0x%X, new term_spec_size is %d\n", 
+	  mfs_term_spec, mfs_term_spec_size) );
+
+    tmp = REALLOC(mfs_term_spec, mfs_term_spec_size * sizeof(ErlDrvTermData));
+
+    if (tmp == NULL) {
+      /*
+       * Ouch, we did'nt get any new memory.
+       * Just give ut. I.e. free the memory we have (note that
+       * the assign macro tests the buffer before assigning).
+       */
+      driver_free(mfs_term_spec);
+      mfs_term_spec = NULL;
+
+      mfs_alloc_failed("failed reallocating term spec buffer", 
+		       mfs_term_spec_size * sizeof(ErlDrvTermData));
+
+    } else {
+      mfs_term_spec = tmp;
+    }
+
+    DBG( ("mfs_ensure_term_spec -> new term_spec is at 0x%X\n", 
+	  mfs_term_spec) );
+  }
+  /* OTP-4236 - END */
+}
+
+static void mfs_short_load_token(ErlDrvTermData TokenTag)
 {
   /* Build a {TokenTag, LineNumber} tuple */
-  megaco_flex_scanner_ensure_term_spec(6); 
-  megaco_flex_scanner_token_counter++; 
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_ATOM;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = TokenTag;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_INT;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = LINENO_OR_TOKENCNT;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_TUPLE;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = 2;
+
+  mfs_ensure_term_spec(6); 
+  mfs_token_counter++; 
+  ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
+  ASSIGN_TERM_SPEC(TokenTag);
+  ASSIGN_TERM_SPEC(ERL_DRV_INT);
+  ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
+  ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
+  ASSIGN_TERM_SPEC(2);
 }
 
-void megaco_flex_scanner_octet_load_token(ErlDrvTermData TokenTag)
+static void mfs_octet_load_token(ErlDrvTermData TokenTag)
 {
   /* Build a {TokenTag, LineNumber, String} tuple */
-  DBG( ("mfs_octet_load_token -> entry\n") );
-  megaco_flex_scanner_ensure_term_spec(9); 
-  megaco_flex_scanner_token_counter++; 
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_ATOM;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = TokenTag;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_INT;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = LINENO_OR_TOKENCNT;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_STRING;
 
-  strncpy(megaco_flex_scanner_text_ptr, yytext, yyleng);
+  mfs_ensure_term_spec(9); 
+  mfs_token_counter++; 
+  ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
+  ASSIGN_TERM_SPEC(TokenTag);
+  ASSIGN_TERM_SPEC(ERL_DRV_INT);
+  ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
+  ASSIGN_TERM_SPEC(ERL_DRV_STRING);
 
-  DBG_BUF("mfs_octet_load_token", "megaco_flex_scanner_text_ptr", 
-           megaco_flex_scanner_text_ptr, yyleng);
+  strncpy(mfs_text_ptr, yytext, yyleng);
 
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = (ErlDrvTermData)megaco_flex_scanner_text_ptr;
-  megaco_flex_scanner_text_ptr += yyleng;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = yyleng;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_TUPLE;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = 3;
-  DBG( ("mfs_octet_load_token -> exit\n") );
+  DBG_BUF("mfs_octet_load_token", "mfs_text_ptr", 
+           mfs_text_ptr, yyleng);
+
+  ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_text_ptr);
+  mfs_text_ptr += yyleng;
+  ASSIGN_TERM_SPEC(yyleng);
+  ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
+  ASSIGN_TERM_SPEC(3);
 }
 
-void megaco_flex_scanner_lower_load_token(ErlDrvTermData TokenTag)
+static void mfs_lower_load_token(ErlDrvTermData TokenTag)
 {
   /* Build a {TokenTag, LineNumber, LowerCaseString} tuple */
   int i;
 
-  megaco_flex_scanner_ensure_term_spec(9); 
-  megaco_flex_scanner_token_counter++; 
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_ATOM;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = TokenTag;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_INT;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = LINENO_OR_TOKENCNT;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_STRING;
+  mfs_ensure_term_spec(9); 
+  mfs_token_counter++; 
+  ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
+  ASSIGN_TERM_SPEC(TokenTag);
+  ASSIGN_TERM_SPEC(ERL_DRV_INT);
+  ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
+  ASSIGN_TERM_SPEC(ERL_DRV_STRING);
 
   for ( i = 0; i < yyleng; ++i ) {
-    megaco_flex_scanner_text_ptr[i] = tolower(yytext[i]);
+    mfs_text_ptr[i] = tolower(yytext[i]);
   }
 
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = (ErlDrvTermData)megaco_flex_scanner_text_ptr;
-  megaco_flex_scanner_text_ptr += yyleng;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = yyleng;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_TUPLE;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = 3;
+  ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_text_ptr);
+  mfs_text_ptr += yyleng;
+  ASSIGN_TERM_SPEC(yyleng);
+  ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
+  ASSIGN_TERM_SPEC(3);
 }
 
-void megaco_flex_scanner_load_map_name()
+static void mfs_load_map_name()
 {
     /* Copy digit map name as lower case */
     int i;
 
     for ( i = 0; i < yyleng; ++i ) {
-      megaco_flex_scanner_text_ptr[i] = tolower(yytext[i]);
+      mfs_text_ptr[i] = tolower(yytext[i]);
     }
 
-    megaco_flex_scanner_digit_map_name_ptr = megaco_flex_scanner_text_ptr;
-    megaco_flex_scanner_digit_map_name_len = yyleng;
-    megaco_flex_scanner_text_ptr += yyleng;
+    mfs_digit_map_name_ptr = mfs_text_ptr;
+    mfs_digit_map_name_len = yyleng;
+    mfs_text_ptr += yyleng;
 }
 
-void megaco_flex_scanner_load_map_value()
+static void mfs_load_map_value()
 {
     /* Copy digit map value as lower case */
     int i;
 
     for ( i = 0; i < yyleng; ++i ) {
-      /* DBG( ("mfs_load_map_value -> yytext[%d]: %u (%c)\n", i, yytext[i], yytext[i]) ); */
-
-      megaco_flex_scanner_text_ptr[i] = tolower(yytext[i]);
-
-      /* DBG( ("mfs_load_map_value -> megaco_flex_scanner_text_ptr[%d]: %d (%c)\n", i, megaco_flex_scanner_text_ptr[i], megaco_flex_scanner_text_ptr[i]) ); */
-
+      mfs_text_ptr[i] = tolower(yytext[i]);
     }
 
-    megaco_flex_scanner_digit_map_value_ptr = megaco_flex_scanner_text_ptr;
-    megaco_flex_scanner_digit_map_value_len = yyleng;
-    megaco_flex_scanner_text_ptr += yyleng;
+    mfs_digit_map_value_ptr = mfs_text_ptr;
+    mfs_digit_map_value_len = yyleng;
+    mfs_text_ptr += yyleng;
 }
 
-void megaco_flex_scanner_load_map_timer()
+static void mfs_load_map_timer()
 {
   /* The digit map timer consists of 3 or 4 characters:
    * 0 - the kind of timer (t|T|s|S|l|L)
@@ -712,6 +798,7 @@ void megaco_flex_scanner_load_map_timer()
   
   int timer_len = yyleng - 2;
 
+  /*
   DBG( ("mfs_load_map_timer -> entry when yyleng: %d\n", yyleng) );
   DBG( ("mfs_load_map_timer -> yytext: 0x%x\n", yytext) );
 
@@ -719,297 +806,343 @@ void megaco_flex_scanner_load_map_timer()
   DBG( ("mfs_load_map_timer -> yytext[1]: %u (%c)\n", yytext[1], yytext[1]) );
   DBG( ("mfs_load_map_timer -> yytext[2]: %u (%c)\n", yytext[2], yytext[2]) );
   DBG( ("mfs_load_map_timer -> yytext[3]: %u (%c)\n", yytext[3], yytext[3]) );
+  */
 
   /* Pad with leading zero */
 
   if (timer_len == 1) {
-    megaco_flex_scanner_text_ptr[0] = '0';
-    megaco_flex_scanner_text_ptr[1] = yytext[2];
+    mfs_text_ptr[0] = '0';
+    mfs_text_ptr[1] = yytext[2];
   } else if (timer_len == 2) {
-    megaco_flex_scanner_text_ptr[0] = yytext[2];
-    megaco_flex_scanner_text_ptr[1] = yytext[3];
+    mfs_text_ptr[0] = yytext[2];
+    mfs_text_ptr[1] = yytext[3];
   }
 
-  DBG( ("mfs_load_map_timer -> megaco_flex_scanner_text_ptr[0]: %u (%c)\n", megaco_flex_scanner_text_ptr[0], megaco_flex_scanner_text_ptr[0]) );
-  DBG( ("mfs_load_map_timer -> megaco_flex_scanner_text_ptr[1]: %u (%c)\n", megaco_flex_scanner_text_ptr[1], megaco_flex_scanner_text_ptr[1]) );
+  /*
+  DBG( ("mfs_load_map_timer -> mfs_text_ptr[0]: %u (%c)\n", 
+	mfs_text_ptr[0], mfs_text_ptr[0]) );
+  DBG( ("mfs_load_map_timer -> mfs_text_ptr[1]: %u (%c)\n", 
+	mfs_text_ptr[1], mfs_text_ptr[1]) );
 
-  DBG( ("mfs_load_map_timer -> megaco_flex_scanner_text_ptr: 0x%x\n", megaco_flex_scanner_text_ptr) );
+  DBG( ("mfs_load_map_timer -> mfs_text_ptr: 0x%x\n", 
+	mfs_text_ptr) );
+  */
+
   switch (yytext[0]) {
   case 't':
   case 'T':
-    megaco_flex_scanner_digit_map_start_ptr = megaco_flex_scanner_text_ptr;
+    mfs_digit_map_start_ptr = mfs_text_ptr;
     break;;
   case 's':
   case 'S':
-    megaco_flex_scanner_digit_map_short_ptr = megaco_flex_scanner_text_ptr;
+    mfs_digit_map_short_ptr = mfs_text_ptr;
     break;;
   case 'l':
   case 'L':
-    megaco_flex_scanner_digit_map_long_ptr = megaco_flex_scanner_text_ptr;
+    mfs_digit_map_long_ptr = mfs_text_ptr;
     break;;
   }
 
   /* We pad when there is only one digit, so it will always be two */
-  megaco_flex_scanner_text_ptr += 2; 
+  mfs_text_ptr += 2; 
 
-  DBG( ("mfs_load_map_timer -> exit\n\n") );
 }
 
 static void load_timer_field(char* text)
 {
-  DBG( ("load_map_timer -> entry with text: 0x%x\n", text) );
+  mfs_ensure_term_spec(2);    /* OTP-4236 */
   if (text == NULL) {
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_ATOM;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = megaco_flex_scanner_asn1_NOVALUE;
+    ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
+    ASSIGN_TERM_SPEC(mfs_asn1_NOVALUE);
   } else {
-    DBG( ("load_timer_field -> '0': %d\n", '0') );
-    DBG( ("load_timer_field -> text[0]: %d (%c)\n", text[0], text[0]) );
-    DBG( ("load_timer_field -> text[1]: %d (%c)\n", text[1], text[1]) );
-    DBG( ("load_timer_field -> (text[0] - '0') * 10 =  %d\n", (text[0] - '0') * 10) );
-    DBG( ("load_timer_field -> text[1] - '0' = %d\n", text[1] - '0') );
-    DBG( ("load_timer_field -> ((text[0] - '0') * 10) + (text[1] - '0') = %d\n", ((text[0] - '0') * 10) + (text[1] - '0')) );
-
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_INT;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ((text[0] - '0') * 10) + (text[1] - '0');
+    ASSIGN_TERM_SPEC(ERL_DRV_INT);
+    ASSIGN_TERM_SPEC(((text[0] - '0') * 10) + (text[1] - '0'));
   }
 }
 
-void megaco_flex_scanner_load_map_token()
+static void mfs_load_map_token()
 {
-  /* Build a {'DigitMapDescriptorToken', LineNumber, {'DigitMapDescriptor', DigitMapName, DigitMapValue}} tuple */
+  /* 
+   * Build a {'DigitMapDescriptorToken', LineNumber, 
+   *          {'DigitMapDescriptor', DigitMapName, DigitMapValue}} tuple 
+   */
 
-  /* DBG( ("mfs_load_map_token -> entry\n") ); */
-
-  megaco_flex_scanner_ensure_term_spec(20); 
-  megaco_flex_scanner_token_counter++; 
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_ATOM;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = megaco_flex_scanner_DigitMapDescriptorToken;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_INT;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = LINENO_OR_TOKENCNT;
-
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_ATOM;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = megaco_flex_scanner_DigitMapDescriptor;
-    
-  if (megaco_flex_scanner_digit_map_name_ptr == 0) {
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_ATOM;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = megaco_flex_scanner_asn1_NOVALUE;
+  mfs_ensure_term_spec(20); 
+  mfs_token_counter++; 
+  ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
+  ASSIGN_TERM_SPEC(mfs_DigitMapDescriptorToken);
+  ASSIGN_TERM_SPEC(ERL_DRV_INT);
+  ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
+  
+  ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
+  ASSIGN_TERM_SPEC(mfs_DigitMapDescriptor);
+  
+  if (mfs_digit_map_name_ptr == 0) {
+    ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
+    ASSIGN_TERM_SPEC(mfs_asn1_NOVALUE);
   } else {
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_STRING;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] =
-  	(ErlDrvTermData)megaco_flex_scanner_digit_map_name_ptr;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = megaco_flex_scanner_digit_map_name_len;
-    megaco_flex_scanner_digit_map_name_ptr = NULL; 
+    ASSIGN_TERM_SPEC(ERL_DRV_STRING);
+    ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_digit_map_name_ptr);
+    ASSIGN_TERM_SPEC(mfs_digit_map_name_len);
+    mfs_digit_map_name_ptr = NULL; 
   }
   
-  if (megaco_flex_scanner_digit_map_value_ptr == NULL) {
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_ATOM;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = megaco_flex_scanner_asn1_NOVALUE;
+  if (mfs_digit_map_value_ptr == NULL) {
+    ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
+    ASSIGN_TERM_SPEC(mfs_asn1_NOVALUE);
   } else {
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_ATOM;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = megaco_flex_scanner_DigitMapValue;
-
-    /* Take care of timer values */
-    load_timer_field(megaco_flex_scanner_digit_map_start_ptr);
-    megaco_flex_scanner_digit_map_start_ptr = NULL;
-
-    load_timer_field(megaco_flex_scanner_digit_map_short_ptr);
-    megaco_flex_scanner_digit_map_short_ptr = NULL;
-
-    load_timer_field(megaco_flex_scanner_digit_map_long_ptr);
-    megaco_flex_scanner_digit_map_long_ptr = NULL;
-
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_STRING;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] =
-  	(ErlDrvTermData)megaco_flex_scanner_digit_map_value_ptr;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = megaco_flex_scanner_digit_map_value_len;
-    megaco_flex_scanner_digit_map_value_ptr = NULL; 
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_TUPLE;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = 5;
-  }
+    ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
+    ASSIGN_TERM_SPEC(mfs_DigitMapValue);
     
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_TUPLE;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = 3;
+    /* Take care of timer values */
+    load_timer_field(mfs_digit_map_start_ptr);
+    mfs_digit_map_start_ptr = NULL;
+    
+    load_timer_field(mfs_digit_map_short_ptr);
+    mfs_digit_map_short_ptr = NULL;
+    
+    load_timer_field(mfs_digit_map_long_ptr);
+    mfs_digit_map_long_ptr = NULL;
+    
+    ASSIGN_TERM_SPEC(ERL_DRV_STRING);
+    ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_digit_map_value_ptr);
+    ASSIGN_TERM_SPEC(mfs_digit_map_value_len);
+    mfs_digit_map_value_ptr = NULL; 
+    ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
+    ASSIGN_TERM_SPEC(5);
+  }
+  
+  ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
+  ASSIGN_TERM_SPEC(3);
+  
+  ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
+  ASSIGN_TERM_SPEC(3);
 
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_TUPLE;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = 3;
-
-  /* DBG( ("mfs_load_map_token -> exit\n\n") ); */
 }
 
 
-DRIVER_INIT(megaco_flex_scanner_drv)
+DRIVER_INIT(mfs_drv)
 {
-  DBG( ("DRIVER_INIT(megaco_flex_scanner_drv) -> entry\n") );
+  DBG( ("DRIVER_INIT(mfs_drv) -> entry\n") );
 
-  return &megaco_flex_scanner_entry;
+  return &mfs_entry;
 }
 
-static ErlDrvData megaco_flex_scanner_start(ErlDrvPort port, char *buf)
+static ErlDrvData mfs_start(ErlDrvPort port, char *buf)
 {
   DBG( ("mfs_start -> entry\n") );
 
-  megaco_flex_scanner_port = port;
+  mfs_port = port;
 
-  megaco_flex_scanner_AddToken = driver_mk_atom("AddToken");
-  megaco_flex_scanner_AuditCapToken = driver_mk_atom("AuditCapToken");
-  megaco_flex_scanner_AuditToken = driver_mk_atom("AuditToken");
-  megaco_flex_scanner_AuditValueToken = driver_mk_atom("AuditValueToken");
-  megaco_flex_scanner_AuthToken = driver_mk_atom("AuthToken");
-  megaco_flex_scanner_BothwayToken = driver_mk_atom("BothwayToken");
-  megaco_flex_scanner_BriefToken = driver_mk_atom("BriefToken");
-  megaco_flex_scanner_BufferToken = driver_mk_atom("BufferToken");
-  megaco_flex_scanner_COLON = driver_mk_atom("COLON");
-  megaco_flex_scanner_COMMA = driver_mk_atom("COMMA");
-  megaco_flex_scanner_ContextAuditToken = driver_mk_atom("ContextAuditToken");
-  megaco_flex_scanner_CtxToken = driver_mk_atom("CtxToken");
-  megaco_flex_scanner_DelayToken = driver_mk_atom("DelayToken");
-  megaco_flex_scanner_DeleteToken = driver_mk_atom("DeleteToken");
-  megaco_flex_scanner_DigitMapDescriptor = driver_mk_atom("DigitMapDescriptor");
-  megaco_flex_scanner_DigitMapDescriptorToken = driver_mk_atom("DigitMapDescriptorToken");
-  megaco_flex_scanner_DigitMapToken = driver_mk_atom("DigitMapToken");
-  megaco_flex_scanner_DigitMapValue = driver_mk_atom("DigitMapValue");
-  megaco_flex_scanner_DiscardToken = driver_mk_atom("DiscardToken");
-  megaco_flex_scanner_DisconnectedToken = driver_mk_atom("DisconnectedToken");
-  megaco_flex_scanner_DurationToken = driver_mk_atom("DurationToken");
-  megaco_flex_scanner_EQUAL = driver_mk_atom("EQUAL");
-  megaco_flex_scanner_EmbedToken = driver_mk_atom("EmbedToken");
-  megaco_flex_scanner_EmergencyToken = driver_mk_atom("EmergencyToken");
-  megaco_flex_scanner_ErrorToken = driver_mk_atom("ErrorToken");
-  megaco_flex_scanner_EventBufferToken = driver_mk_atom("EventBufferToken");
-  megaco_flex_scanner_EventsToken = driver_mk_atom("EventsToken");
-  megaco_flex_scanner_FailoverToken = driver_mk_atom("FailoverToken");
-  megaco_flex_scanner_ForcedToken = driver_mk_atom("ForcedToken");
-  megaco_flex_scanner_GREATER = driver_mk_atom("GREATER");
-  megaco_flex_scanner_GracefulToken = driver_mk_atom("GracefulToken");
-  megaco_flex_scanner_H221Token = driver_mk_atom("H221Token");
-  megaco_flex_scanner_H223Token = driver_mk_atom("H223Token");
-  megaco_flex_scanner_H226Token = driver_mk_atom("H226Token");
-  megaco_flex_scanner_HandOffToken = driver_mk_atom("HandOffToken");
-  megaco_flex_scanner_IllegalChar = driver_mk_atom("IllegalChar");
-  megaco_flex_scanner_ImmAckRequiredToken = driver_mk_atom("ImmAckRequiredToken");
-  megaco_flex_scanner_InSvcToken = driver_mk_atom("InSvcToken");
-  megaco_flex_scanner_InactiveToken = driver_mk_atom("InactiveToken");
-  megaco_flex_scanner_InterruptByEventToken = driver_mk_atom("InterruptByEventToken");
-  megaco_flex_scanner_InterruptByNewSignalsDescrToken = driver_mk_atom("InterruptByNewSignalsDescrToken");
-  megaco_flex_scanner_IsolateToken = driver_mk_atom("IsolateToken");
-  megaco_flex_scanner_KeepActiveToken = driver_mk_atom("KeepActiveToken");
-  megaco_flex_scanner_LBRKT = driver_mk_atom("LBRKT");
-  megaco_flex_scanner_LESSER = driver_mk_atom("LESSER");
-  megaco_flex_scanner_LSBRKT = driver_mk_atom("LSBRKT");
-  megaco_flex_scanner_LocalControlToken = driver_mk_atom("LocalControlToken");
-  megaco_flex_scanner_LocalDescriptorToken = driver_mk_atom("LocalDescriptorToken");
-  megaco_flex_scanner_LocalToken = driver_mk_atom("LocalToken");
-  megaco_flex_scanner_LockStepToken = driver_mk_atom("LockStepToken");
-  megaco_flex_scanner_LoopbackToken = driver_mk_atom("LoopbackToken");
-  megaco_flex_scanner_MediaToken = driver_mk_atom("MediaToken");
-  megaco_flex_scanner_MegacopToken = driver_mk_atom("MegacopToken");
-  megaco_flex_scanner_MethodToken = driver_mk_atom("MethodToken");
-  megaco_flex_scanner_MgcIdToken = driver_mk_atom("MgcIdToken");
-  megaco_flex_scanner_ModeToken = driver_mk_atom("ModeToken");
-  megaco_flex_scanner_ModemToken = driver_mk_atom("ModemToken");
-  megaco_flex_scanner_ModifyToken = driver_mk_atom("ModifyToken");
-  megaco_flex_scanner_MoveToken = driver_mk_atom("MoveToken");
-  megaco_flex_scanner_MtpAddressToken = driver_mk_atom("MtpAddressToken");
-  megaco_flex_scanner_MuxToken = driver_mk_atom("MuxToken");
-  megaco_flex_scanner_NEQUAL = driver_mk_atom("NEQUAL");
-  megaco_flex_scanner_NotifyCompletionToken = driver_mk_atom("NotifyCompletionToken");
-  megaco_flex_scanner_NotifyToken = driver_mk_atom("NotifyToken");
-  megaco_flex_scanner_ObservedEventsToken = driver_mk_atom("ObservedEventsToken");
-  megaco_flex_scanner_OffToken = driver_mk_atom("OffToken");
-  megaco_flex_scanner_OnOffToken = driver_mk_atom("OnOffToken");
-  megaco_flex_scanner_OnToken = driver_mk_atom("OnToken");
-  megaco_flex_scanner_OnewayToken = driver_mk_atom("OnewayToken");
-  megaco_flex_scanner_OtherReasonToken = driver_mk_atom("OtherReasonToken");
-  megaco_flex_scanner_OutOfSvcToken = driver_mk_atom("OutOfSvcToken");
-  megaco_flex_scanner_PackagesToken = driver_mk_atom("PackagesToken");
-  megaco_flex_scanner_PendingToken = driver_mk_atom("PendingToken");
-  megaco_flex_scanner_PriorityToken = driver_mk_atom("PriorityToken");
-  megaco_flex_scanner_ProfileToken = driver_mk_atom("ProfileToken");
-  megaco_flex_scanner_QuotedChars = driver_mk_atom("QuotedChars");
-  megaco_flex_scanner_RBRKT = driver_mk_atom("RBRKT");
-  megaco_flex_scanner_RSBRKT = driver_mk_atom("RSBRKT");
-  megaco_flex_scanner_ReasonToken = driver_mk_atom("ReasonToken");
-  megaco_flex_scanner_RecvonlyToken = driver_mk_atom("RecvonlyToken");
-  megaco_flex_scanner_RemoteDescriptorToken = driver_mk_atom("RemoteDescriptorToken");
-  megaco_flex_scanner_RemoteToken = driver_mk_atom("RemoteToken");
-  megaco_flex_scanner_ReplyToken = driver_mk_atom("ReplyToken");
-  megaco_flex_scanner_ReservedGroupToken = driver_mk_atom("ReservedGroupToken");
-  megaco_flex_scanner_ReservedValueToken = driver_mk_atom("ReservedValueToken");
-  megaco_flex_scanner_ResponseAckToken = driver_mk_atom("ResponseAckToken");
-  megaco_flex_scanner_RestartToken = driver_mk_atom("RestartToken");
-  megaco_flex_scanner_SEP = driver_mk_atom("SEP");
-  megaco_flex_scanner_SafeChars = driver_mk_atom("SafeChars");
-  megaco_flex_scanner_SendonlyToken = driver_mk_atom("SendonlyToken");
-  megaco_flex_scanner_SendrecvToken = driver_mk_atom("SendrecvToken");
-  megaco_flex_scanner_ServiceChangeAddressToken = driver_mk_atom("ServiceChangeAddressToken");
-  megaco_flex_scanner_ServiceChangeToken = driver_mk_atom("ServiceChangeToken");
-  megaco_flex_scanner_ServiceStatesToken = driver_mk_atom("ServiceStatesToken");
-  megaco_flex_scanner_ServicesToken = driver_mk_atom("ServicesToken");
-  megaco_flex_scanner_SignalListToken = driver_mk_atom("SignalListToken");
-  megaco_flex_scanner_SignalTypeToken = driver_mk_atom("SignalTypeToken");
-  megaco_flex_scanner_SignalsToken = driver_mk_atom("SignalsToken");
-  megaco_flex_scanner_StatsToken = driver_mk_atom("StatsToken");
-  megaco_flex_scanner_StreamToken = driver_mk_atom("StreamToken");
-  megaco_flex_scanner_SubtractToken = driver_mk_atom("SubtractToken");
-  megaco_flex_scanner_SynchISDNToken = driver_mk_atom("SynchISDNToken");
-  megaco_flex_scanner_TerminationStateToken = driver_mk_atom("TerminationStateToken");
-  megaco_flex_scanner_TestToken = driver_mk_atom("TestToken");
-  megaco_flex_scanner_TimeOutToken = driver_mk_atom("TimeOutToken");
-  megaco_flex_scanner_TopologyToken = driver_mk_atom("TopologyToken");
-  megaco_flex_scanner_TransToken = driver_mk_atom("TransToken");
-  megaco_flex_scanner_V18Token = driver_mk_atom("V18Token");
-  megaco_flex_scanner_V22Token = driver_mk_atom("V22Token");
-  megaco_flex_scanner_V22bisToken = driver_mk_atom("V22bisToken");
-  megaco_flex_scanner_V32Token = driver_mk_atom("V32Token");
-  megaco_flex_scanner_V32bisToken = driver_mk_atom("V32bisToken");
-  megaco_flex_scanner_V34Token = driver_mk_atom("V34Token");
-  megaco_flex_scanner_V76Token = driver_mk_atom("V76Token");
-  megaco_flex_scanner_V90Token = driver_mk_atom("V90Token");
-  megaco_flex_scanner_V91Token = driver_mk_atom("V91Token");
-  megaco_flex_scanner_VersionToken = driver_mk_atom("VersionToken");
-  megaco_flex_scanner_asn1_NOVALUE = driver_mk_atom("asn1_NOVALUE");
-  megaco_flex_scanner_endOfMessage = driver_mk_atom("endOfMessage");
+  mfs_AddToken = driver_mk_atom("AddToken");
+  mfs_AuditCapToken = driver_mk_atom("AuditCapToken");
+  mfs_AuditToken = driver_mk_atom("AuditToken");
+  mfs_AuditValueToken = driver_mk_atom("AuditValueToken");
+  mfs_AuthToken = driver_mk_atom("AuthToken");
+  mfs_BothwayToken = driver_mk_atom("BothwayToken");
+  mfs_BriefToken = driver_mk_atom("BriefToken");
+  mfs_BufferToken = driver_mk_atom("BufferToken");
+  mfs_COLON = driver_mk_atom("COLON");
+  mfs_COMMA = driver_mk_atom("COMMA");
+  mfs_ContextAuditToken = driver_mk_atom("ContextAuditToken");
+  mfs_CtxToken = driver_mk_atom("CtxToken");
+  mfs_DelayToken = driver_mk_atom("DelayToken");
+  mfs_DeleteToken = driver_mk_atom("DeleteToken");
+  mfs_DigitMapDescriptor = driver_mk_atom("DigitMapDescriptor");
+  mfs_DigitMapDescriptorToken = driver_mk_atom("DigitMapDescriptorToken");
+  mfs_DigitMapToken = driver_mk_atom("DigitMapToken");
+  mfs_DigitMapValue = driver_mk_atom("DigitMapValue");
+  mfs_DiscardToken = driver_mk_atom("DiscardToken");
+  mfs_DisconnectedToken = driver_mk_atom("DisconnectedToken");
+  mfs_DurationToken = driver_mk_atom("DurationToken");
+  mfs_EQUAL = driver_mk_atom("EQUAL");
+  mfs_EmbedToken = driver_mk_atom("EmbedToken");
+  mfs_EmergencyToken = driver_mk_atom("EmergencyToken");
+  mfs_ErrorToken = driver_mk_atom("ErrorToken");
+  mfs_EventBufferToken = driver_mk_atom("EventBufferToken");
+  mfs_EventsToken = driver_mk_atom("EventsToken");
+  mfs_FailoverToken = driver_mk_atom("FailoverToken");
+  mfs_ForcedToken = driver_mk_atom("ForcedToken");
+  mfs_GREATER = driver_mk_atom("GREATER");
+  mfs_GracefulToken = driver_mk_atom("GracefulToken");
+  mfs_H221Token = driver_mk_atom("H221Token");
+  mfs_H223Token = driver_mk_atom("H223Token");
+  mfs_H226Token = driver_mk_atom("H226Token");
+  mfs_HandOffToken = driver_mk_atom("HandOffToken");
+  mfs_IllegalChar = driver_mk_atom("IllegalChar");
+  mfs_ImmAckRequiredToken = driver_mk_atom("ImmAckRequiredToken");
+  mfs_InSvcToken = driver_mk_atom("InSvcToken");
+  mfs_InactiveToken = driver_mk_atom("InactiveToken");
+  mfs_InterruptByEventToken = driver_mk_atom("InterruptByEventToken");
+  mfs_InterruptByNewSignalsDescrToken = driver_mk_atom("InterruptByNewSignalsDescrToken");
+  mfs_IsolateToken = driver_mk_atom("IsolateToken");
+  mfs_KeepActiveToken = driver_mk_atom("KeepActiveToken");
+  mfs_LBRKT = driver_mk_atom("LBRKT");
+  mfs_LESSER = driver_mk_atom("LESSER");
+  mfs_LSBRKT = driver_mk_atom("LSBRKT");
+  mfs_LocalControlToken = driver_mk_atom("LocalControlToken");
+  mfs_LocalDescriptorToken = driver_mk_atom("LocalDescriptorToken");
+  mfs_LocalToken = driver_mk_atom("LocalToken");
+  mfs_LockStepToken = driver_mk_atom("LockStepToken");
+  mfs_LoopbackToken = driver_mk_atom("LoopbackToken");
+  mfs_MediaToken = driver_mk_atom("MediaToken");
+  mfs_MegacopToken = driver_mk_atom("MegacopToken");
+  mfs_MethodToken = driver_mk_atom("MethodToken");
+  mfs_MgcIdToken = driver_mk_atom("MgcIdToken");
+  mfs_ModeToken = driver_mk_atom("ModeToken");
+  mfs_ModemToken = driver_mk_atom("ModemToken");
+  mfs_ModifyToken = driver_mk_atom("ModifyToken");
+  mfs_MoveToken = driver_mk_atom("MoveToken");
+  mfs_MtpAddressToken = driver_mk_atom("MtpAddressToken");
+  mfs_MuxToken = driver_mk_atom("MuxToken");
+  mfs_NEQUAL = driver_mk_atom("NEQUAL");
+  mfs_NotifyCompletionToken = driver_mk_atom("NotifyCompletionToken");
+  mfs_NotifyToken = driver_mk_atom("NotifyToken");
+  mfs_ObservedEventsToken = driver_mk_atom("ObservedEventsToken");
+  mfs_OffToken = driver_mk_atom("OffToken");
+  mfs_OnOffToken = driver_mk_atom("OnOffToken");
+  mfs_OnToken = driver_mk_atom("OnToken");
+  mfs_OnewayToken = driver_mk_atom("OnewayToken");
+  mfs_OtherReasonToken = driver_mk_atom("OtherReasonToken");
+  mfs_OutOfSvcToken = driver_mk_atom("OutOfSvcToken");
+  mfs_PackagesToken = driver_mk_atom("PackagesToken");
+  mfs_PendingToken = driver_mk_atom("PendingToken");
+  mfs_PriorityToken = driver_mk_atom("PriorityToken");
+  mfs_ProfileToken = driver_mk_atom("ProfileToken");
+  mfs_QuotedChars = driver_mk_atom("QuotedChars");
+  mfs_RBRKT = driver_mk_atom("RBRKT");
+  mfs_RSBRKT = driver_mk_atom("RSBRKT");
+  mfs_ReasonToken = driver_mk_atom("ReasonToken");
+  mfs_RecvonlyToken = driver_mk_atom("RecvonlyToken");
+  mfs_RemoteDescriptorToken = driver_mk_atom("RemoteDescriptorToken");
+  mfs_RemoteToken = driver_mk_atom("RemoteToken");
+  mfs_ReplyToken = driver_mk_atom("ReplyToken");
+  mfs_ReservedGroupToken = driver_mk_atom("ReservedGroupToken");
+  mfs_ReservedValueToken = driver_mk_atom("ReservedValueToken");
+  mfs_ResponseAckToken = driver_mk_atom("ResponseAckToken");
+  mfs_RestartToken = driver_mk_atom("RestartToken");
+  mfs_SEP = driver_mk_atom("SEP");
+  mfs_SafeChars = driver_mk_atom("SafeChars");
+  mfs_SendonlyToken = driver_mk_atom("SendonlyToken");
+  mfs_SendrecvToken = driver_mk_atom("SendrecvToken");
+  mfs_ServiceChangeAddressToken = driver_mk_atom("ServiceChangeAddressToken");
+  mfs_ServiceChangeToken = driver_mk_atom("ServiceChangeToken");
+  mfs_ServiceStatesToken = driver_mk_atom("ServiceStatesToken");
+  mfs_ServicesToken = driver_mk_atom("ServicesToken");
+  mfs_SignalListToken = driver_mk_atom("SignalListToken");
+  mfs_SignalTypeToken = driver_mk_atom("SignalTypeToken");
+  mfs_SignalsToken = driver_mk_atom("SignalsToken");
+  mfs_StatsToken = driver_mk_atom("StatsToken");
+  mfs_StreamToken = driver_mk_atom("StreamToken");
+  mfs_SubtractToken = driver_mk_atom("SubtractToken");
+  mfs_SynchISDNToken = driver_mk_atom("SynchISDNToken");
+  mfs_TerminationStateToken = driver_mk_atom("TerminationStateToken");
+  mfs_TestToken = driver_mk_atom("TestToken");
+  mfs_TimeOutToken = driver_mk_atom("TimeOutToken");
+  mfs_TopologyToken = driver_mk_atom("TopologyToken");
+  mfs_TransToken = driver_mk_atom("TransToken");
+  mfs_V18Token = driver_mk_atom("V18Token");
+  mfs_V22Token = driver_mk_atom("V22Token");
+  mfs_V22bisToken = driver_mk_atom("V22bisToken");
+  mfs_V32Token = driver_mk_atom("V32Token");
+  mfs_V32bisToken = driver_mk_atom("V32bisToken");
+  mfs_V34Token = driver_mk_atom("V34Token");
+  mfs_V76Token = driver_mk_atom("V76Token");
+  mfs_V90Token = driver_mk_atom("V90Token");
+  mfs_V91Token = driver_mk_atom("V91Token");
+  mfs_VersionToken = driver_mk_atom("VersionToken");
+  mfs_asn1_NOVALUE = driver_mk_atom("asn1_NOVALUE");
+  mfs_endOfMessage = driver_mk_atom("endOfMessage");
 
   DBG( ("mfs_start -> exit\n") );
 
   return (ErlDrvData) 0;
 }
 
-static void megaco_flex_scanner_stop(ErlDrvData handle)
+static void mfs_stop(ErlDrvData handle)
 {
-  megaco_flex_scanner_port = 0;
+  mfs_port = 0;
 
-  DBG( ("megaco_flex_scanner_stop -> exit\n") );
+  DBG( ("mfs_stop -> exit\n") );
 
   return;
 }
 
-static void megaco_flex_scanner_command(ErlDrvData handle, char *buf, int buf_len)
+static void mfs_command(ErlDrvData handle, 
+					char *buf, int buf_len)
 {
-  driver_failure_atom(megaco_flex_scanner_port, "bad_usage");
+  driver_failure_atom(mfs_port, "bad_usage");
 
   return;
 }
 
-static int megaco_flex_scanner_control(ErlDrvData handle, 
-			               unsigned int command,
-			               char *buf, int buf_len, 
-			               char **res_buf, int res_buf_len)
+static int mfs_control(ErlDrvData          handle, 
+		       unsigned int        command,
+		       char  *buf,     int buf_len, 
+		       char **res_buf, int res_buf_len)
 {
   YY_BUFFER_STATE state;
 
-  megaco_flex_scanner_text_buf        = driver_alloc(buf_len);
-  megaco_flex_scanner_text_ptr        = megaco_flex_scanner_text_buf;
-  megaco_flex_scanner_term_spec_size  = 1000;
-  megaco_flex_scanner_term_spec       = driver_alloc(megaco_flex_scanner_term_spec_size * sizeof(ErlDrvTermData));
-  megaco_flex_scanner_term_spec_index = 0;
-  megaco_flex_scanner_token_counter   = 0;
-  megaco_flex_scanner_error_msg       = 0;
+  DBG( ("mfs_control -> entry with"
+	"\n   command:     %d"
+	"\n   buf_len:     %d"
+	"\n   res_buf_len: %d\n", command, buf_len, res_buf_len) );
+
+  if (NULL == (mfs_text_buf = ALLOC(buf_len))) {
+    int len;
+    mfs_alloc_failed("failed allocating text buffer", buf_len);
+
+    len = strlen(mfs_error_msg);
+
+    if (res_buf_len < len) {
+      /* 
+       * Since we failed the memory allocation in the first place,
+       * there is no point in trying to get more memory for the 
+       * error code...
+       */
+      len = res_buf_len;
+    }
+
+    strncpy(*res_buf, mfs_error_msg, len);
+
+    return len;
+  }
+  mfs_text_ptr = mfs_text_buf;
+
+
+  mfs_term_spec_size  = 1000 + buf_len;       /* OTP-4237 */
+  mfs_term_spec       = ALLOC(mfs_term_spec_size * sizeof(ErlDrvTermData));
+  if (NULL == mfs_term_spec) {
+    int len;
+    mfs_alloc_failed("failed allocating term spec buffer", 
+		     mfs_term_spec_size * sizeof(ErlDrvTermData));
+
+    len = strlen(mfs_error_msg);
+
+    if (res_buf_len < len) {
+      /* 
+       * Since we failed the memory allocation in the first place,
+       * there is no point in trying to get more memory for the 
+       * error code...
+       */
+      len = res_buf_len;
+    }
+
+    strncpy(*res_buf, mfs_error_msg, len);
+
+    driver_free(mfs_text_buf);
+
+    return len;    
+  }
+  mfs_term_spec_index = 0;
+
+  mfs_token_counter   = 0;
+  mfs_error           = FALSE;
 
   /* Prepare the first field in the {tokens, TokenList, LastLine} tuple */
-  megaco_flex_scanner_ensure_term_spec(2);
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_ATOM;
-  megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = driver_mk_atom("tokens");
+  mfs_ensure_term_spec(2);
+  ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
+  ASSIGN_TERM_SPEC(driver_mk_atom("tokens"));
 
   /* Perform the actual scan */
   yylineno = 1;
@@ -1017,56 +1150,82 @@ static int megaco_flex_scanner_control(ErlDrvData handle,
   yylex();
   yy_delete_buffer(state);
 
-  if (megaco_flex_scanner_error_msg == 0) {
-    /* Prepare the rest of the {tokens, TokenList, LastLine} tuple and send it as message top caller. */
-    megaco_flex_scanner_ensure_term_spec(7);
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_NIL;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_LIST;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = megaco_flex_scanner_token_counter + 1;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_INT;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = LINENO_OR_TOKENCNT;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = ERL_DRV_TUPLE;
-    megaco_flex_scanner_term_spec[megaco_flex_scanner_term_spec_index++] = 3;
-    driver_send_term(megaco_flex_scanner_port,
- 		     driver_caller(megaco_flex_scanner_port),
-		     megaco_flex_scanner_term_spec, 
-  		     megaco_flex_scanner_term_spec_index);
+  if (!mfs_error) {
 
-    driver_free(megaco_flex_scanner_text_buf);
-    driver_free(megaco_flex_scanner_term_spec);
+    /* 
+     * Prepare the rest of the {tokens, TokenList, LastLine} tuple 
+     * and send it as message top caller. 
+     */
+    mfs_ensure_term_spec(7);
+    ASSIGN_TERM_SPEC(ERL_DRV_NIL);
+    ASSIGN_TERM_SPEC(ERL_DRV_LIST);
+    ASSIGN_TERM_SPEC(mfs_token_counter + 1);
+    ASSIGN_TERM_SPEC(ERL_DRV_INT);
+    ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
+    ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
+    ASSIGN_TERM_SPEC(3);
+    
+    DBG( ("mfs_control -> send the term when"
+	  "\n   term_spec_index: %d"
+	  "\n   term_spec_size:  %d\n", 
+	  mfs_term_spec_index, mfs_term_spec_size) );
+
+    driver_send_term(mfs_port,
+ 		     driver_caller(mfs_port),
+		     mfs_term_spec, 
+  		     mfs_term_spec_index);
+    
+    if (mfs_text_buf  != NULL) driver_free(mfs_text_buf);
+    if (mfs_term_spec != NULL) driver_free(mfs_term_spec);
+
+    DBG( ("mfs_control -> done (0)\n") );
 
     return 0;
-  } else {
-    /* Return the error message */
-    int len = strlen(megaco_flex_scanner_error_msg);
 
+  } else {
+    /* 
+     * Return the error message 
+     */
+    int len = strlen(mfs_error_msg);
+
+    /*
+     * If we fail to realloc a bigger block of memory
+     * we have to make do with what we got
+     */
     if (res_buf_len < len) {
-      driver_realloc(*res_buf, len);
+      void *tmp = REALLOC(*res_buf, len);
+      if (tmp != NULL)
+	*res_buf = tmp;
+      else
+	len = res_buf_len;
     }
 
-    strncpy(*res_buf, megaco_flex_scanner_error_msg, len);
+    strncpy(*res_buf, mfs_error_msg, len);
 
-    driver_free(megaco_flex_scanner_error_msg);
-    driver_free(megaco_flex_scanner_text_buf);
-    driver_free(megaco_flex_scanner_term_spec);
+    if (mfs_text_buf  != NULL) driver_free(mfs_text_buf);
+    if (mfs_term_spec != NULL) driver_free(mfs_term_spec);
+
+    DBG( ("mfs_control -> done (%d)\n", len) );
 
     return len;
   }
 }
 
-static void megaco_flex_scanner_finish(void)
+static void mfs_finish(void)
 {
   return;
 }
 
-void megaco_flex_scanner_fatal_error(char* msg)
+static void mfs_fatal_error(char* msg)
 {
-  DBG( ("megaco_flex_scanner_fatal_error -> entry with msg:\n%s\n", msg) );
+  if (!mfs_error) {
+    int len = strlen(msg);
 
-  if (megaco_flex_scanner_error_msg == 0) {
-    int len = strlen(msg) + 1;
-    megaco_flex_scanner_error_msg = driver_alloc(len);
-    strncpy(megaco_flex_scanner_error_msg, msg, len);
-    return;
+    if (len >= sizeof(mfs_error_msg))
+      len = sizeof(mfs_error_msg) - 1;
+      
+    strncpy(mfs_error_msg, msg, len);
+    mfs_error_msg[len] = '\0';
+    mfs_error = TRUE;
   }
 }

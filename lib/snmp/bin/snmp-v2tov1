@@ -29,5 +29,4 @@ then
   Out=$File.v1
 fi
 
-AWK=${AWK:-nawk}
-$AWK -f $ERL_TOP/lib/snmp/bin/snmp-v2tov1.awk $File | sed -f $ERL_TOP/lib/snmp/bin/snmp-v2tov1.sed > $Out
+perl $ERL_TOP/lib/snmp/bin/snmp-v2tov1.pl $File | sed -f $ERL_TOP/lib/snmp/bin/snmp-v2tov1.sed > $Out

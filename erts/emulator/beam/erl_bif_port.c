@@ -207,7 +207,7 @@ BIF_ADECL_3
     byte* port_resp;		/* Pointer to result buffer. */
     int ret;
     Eterm res;
-    Uint result_size;
+    int result_size;
     Eterm *hp;
     unsigned ret_flags = 0U;
 

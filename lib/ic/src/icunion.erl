@@ -498,20 +498,48 @@ emit_c_union_discr_sizecount(G, N, X, Fd) ->
 				 
 
 
-emit_c_union_loop(G, N, X, Fd, [CU], Case) ->
-    case CU of
-	{case_dcl,CaseList,I,T} ->
-	    emit_c_union_case(G, N, X, Fd, I, T, CaseList, Case);
+emit_c_union_loop(G, N, X, Fd, CaseList, Case) ->
+    emit_c_union_loop(G, N, X, Fd, CaseList, false, Case).
+
+emit_c_union_loop(G, N, X, Fd, [], GotDefaultCase, Case) ->
+    case GotDefaultCase of
+	false ->
+	    emit_c_union_valueless_discriminator(G, N, X, Fd, Case);
 	_ ->
-	    error
+	    ok
     end;
-emit_c_union_loop(G, N, X, Fd, [CU|CUs], Case) ->
+emit_c_union_loop(G, N, X, Fd, [CU|CUs], GotDefaultCase, Case) ->
     case CU of
 	{case_dcl,CaseList,I,T} ->
-	    emit_c_union_case(G, N, X, Fd, I, T, CaseList, Case),
-	    emit_c_union_loop(G, N, X, Fd, CUs, Case);
+	    GotDefaultCase = emit_c_union_case(G, N, X, Fd, I, T, CaseList, Case),
+	    emit_c_union_loop(G, N, X, Fd, CUs, GotDefaultCase, Case);
 	_ ->
 	    error
+    end.
+
+emit_c_union_valueless_discriminator(G, N, X, Fd, Case) ->  
+    icgen:emit(Fd, "  default:\n"),
+    case Case of
+	sizecalc ->
+	    icgen:emit(Fd, "    {\n"),
+	    icgen:emit(Fd, "      char oe_undefined[15];\n\n"),
+	    icgen:emit(Fd, "      if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, "
+		       "oe_size_count_index, oe_undefined)) < 0)\n"),
+	    icgen:emit(Fd, "        return oe_error_code;\n\n"),
+	    icgen:emit(Fd, "    }\n");
+	encode ->
+	    icgen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_atom(oe_env, \"undefined\")) < 0)\n"),
+	    icgen:emit(Fd, "      return oe_error_code;\n"),
+	    icgen:emit(Fd, "    break;\n");
+	decode ->
+	    icgen:emit(Fd, "    {\n"),
+	    icgen:emit(Fd, "      char oe_undefined[15];\n\n"),
+	    icgen:emit(Fd, "      if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, "
+		       "oe_undefined)) < 0)\n"),
+	    icgen:emit(Fd, "        return oe_error_code;\n\n"),
+	    icgen:emit(Fd, "      if (strcmp(oe_undefined, \"undefined\") != 0)\n"),
+	    icgen:emit(Fd, "        return -1;\n"),
+	    icgen:emit(Fd, "    }\n")
     end.
 
 
@@ -524,7 +552,8 @@ emit_c_union_case(G, N, X, Fd, I, T, [{default,_}], Case) ->
 	    getCaseTypeEncode(G, N, X, Fd, I, T);
 	decode ->
 	    getCaseTypeDecode(G, N, X, Fd, I, T)
-    end;
+    end, 
+    true;
 emit_c_union_case(G, N, X, Fd, I, T, [{Bool,_}], Case) -> %% Boolean discriminator
     case Bool of
 	'TRUE' ->
@@ -540,7 +569,8 @@ emit_c_union_case(G, N, X, Fd, I, T, [{Bool,_}], Case) -> %% Boolean discriminat
 	decode ->
 	    getCaseTypeDecode(G, N, X, Fd, I, T)
     end,
-    icgen:emit(Fd, "    break;\n\n");
+    icgen:emit(Fd, "    break;\n\n"),
+    false;
 emit_c_union_case(G, N, X, Fd, I, T, [{Bool,_}|Rest], Case) -> %% Boolean discriminator
     case Bool of
 	'TRUE' ->
@@ -548,7 +578,8 @@ emit_c_union_case(G, N, X, Fd, I, T, [{Bool,_}|Rest], Case) -> %% Boolean discri
 	'FALSE' ->
 	    icgen:emit(Fd, "  case 0:\n")
     end,
-    emit_c_union_case(G, N, X, Fd, I, T, Rest, Case);
+    emit_c_union_case(G, N, X, Fd, I, T, Rest, Case),
+    false;
 emit_c_union_case(G, N, X, Fd, I, T, [{_,_,NrStr}], Case) -> %% Integer type discriminator
     case get_c_union_discriminator(G, N, X) of
 	"CORBA_char" ->
@@ -564,10 +595,12 @@ emit_c_union_case(G, N, X, Fd, I, T, [{_,_,NrStr}], Case) -> %% Integer type dis
 	decode ->
 	    getCaseTypeDecode(G, N, X, Fd, I, T)
     end,
-    icgen:emit(Fd, "    break;\n\n");
+    icgen:emit(Fd, "    break;\n\n"),
+    false;
 emit_c_union_case(G, N, X, Fd, I, T, [{_,_,NrStr}|Rest], Case) -> %% Integer type discriminator
     icgen:emit(Fd, "  case ~s:\n",[NrStr]),
-    emit_c_union_case(G, N, X, Fd, I, T, Rest, Case);
+    emit_c_union_case(G, N, X, Fd, I, T, Rest, Case),
+    false;
 emit_c_union_case(G, N, X, Fd, I, T, [{scoped_id,_,_,[EID]}], Case) -> %% Enumerant type discriminator
     SID = ic_util:to_undersc([EID|get_c_union_discriminator_scope(G, N, X)]),
     %%io:format("SID = ~p~n",[SID]),
@@ -580,12 +613,14 @@ emit_c_union_case(G, N, X, Fd, I, T, [{scoped_id,_,_,[EID]}], Case) -> %% Enumer
 	decode ->
 	    getCaseTypeDecode(G, N, X, Fd, I, T)
     end,
-    icgen:emit(Fd, "    break;\n\n");
+    icgen:emit(Fd, "    break;\n\n"),
+    false;
 emit_c_union_case(G, N, X, Fd, I, T, [{scoped_id,_,_,[EID]}|Rest], Case) -> %% Enumerant type discriminator
     SID = ic_util:to_undersc([EID|get_c_union_discriminator_scope(G, N, X)]),
     %%io:format("SID = ~p~n",[SID]),
     icgen:emit(Fd, "  case ~s:\n",[SID]),
-    emit_c_union_case(G, N, X, Fd, I, T, Rest, Case).
+    emit_c_union_case(G, N, X, Fd, I, T, Rest, Case),
+    false.
 
 
 %%

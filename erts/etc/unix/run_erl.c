@@ -40,7 +40,6 @@
 #include <errno.h>
 #include <signal.h>
 #include <dirent.h>
-#include <stropts.h>
 #include <termios.h>
 
 #define noDEBUG
@@ -64,12 +63,17 @@
 #define FILENAME_MAX 250
 #endif
 
+#ifndef O_SYNC
+#define O_SYNC 0
+#define USE_FSYNC 1
+#endif
+
 #define MAX(x,y)  ((x) > (y) ? (x) : (y))
 
 /* prototypes */
 static void usage(char *);
 static int create_fifo(char *name, int perm);
-static int open_pty_master(char *name);
+static int open_pty_master(char **name);
 static int open_pty_slave(char *name);
 static void pass_on(pid_t, int);
 static void exec_shell(char **);
@@ -90,7 +94,6 @@ static char FIFO1[FILENAME_MAX], FIFO2[FILENAME_MAX];
 static char STATUSFILE[FILENAME_MAX];
 static char log_dir[FILENAME_MAX];
 static char pipename[FILENAME_MAX];
-static char ptyname[] = "/dev/ptyXY";
 static FILE *stdstatus = NULL;
 static struct sigaction sig_act;
 static int fifowrite = 0;
@@ -110,7 +113,7 @@ int main(int argc, char **argv)
   int childpid;
   int mfd, sfd;
   int fd;
-  char *p;
+  char *p, *ptyslave;
 
   if(argc<4) {
     usage(argv[0]);
@@ -200,8 +203,8 @@ int main(int argc, char **argv)
    * Open master pseudo-terminal
    */
 
-  if ((mfd = open_pty_master(ptyname)) < 0) {
-    error("Could not open pty master %s\n", ptyname);
+  if ((mfd = open_pty_master(&ptyslave)) < 0) {
+    error("Could not open pty master\n");
     exit(1);
   }
 
@@ -227,8 +230,8 @@ int main(int argc, char **argv)
 #endif
 #endif
     /* Open the slave pty */
-    if ((sfd = open_pty_slave(ptyname)) < 0) {
-      error("Could not open pty slave %s\n", ptyname);
+    if ((sfd = open_pty_slave(ptyslave)) < 0) {
+      error("Could not open pty slave %s\n", ptyslave);
       exit(1);
     }
     /* Close stdio */
@@ -558,6 +561,10 @@ static int open_log(int log_num, int flags) {
   if(write(lfd, buf, strlen(buf)) != strlen(buf))
     status("Error in writing to log.\n");
 
+#if USE_FSYNC
+  fsync(lfd);
+#endif
+
   return lfd;
 }
 
@@ -582,6 +589,10 @@ static void write_to_log(int* lfd, int* log_num, char* buf, int len) {
   if(write(*lfd, buf, len) != len) {
     status("Error in writing to log.\n");
   }
+
+#if USE_FSYNC
+  fsync(lfd);
+#endif
 }
 
 /* create_fifo()
@@ -594,27 +605,81 @@ static int create_fifo(char *name, int perm)
   return 0;
 }
 
-static char ptychar[] = "pqrs";
-static char hexdigit[] = "01234567890abcdef";
 
-static int open_pty_master(char *name)
+/* open_pty_master()
+ * Find a master device, open and return fd and slave device name
+ */
+
+static int open_pty_master(char **ptyslave)
 {
-  int i, mfd;
-  char *p;
-  struct stat statbuf;
+  int mfd;
+  char *major, *minor;
 
-  for (p = ptychar; *p != 0; p++) {
-    name[8] = *p;
-    name[9] = '0';
-    if (stat(name, &statbuf) < 0)
-      return -1;
-    for (i = 0; i < 16; i++) {
-      name[9] = hexdigit[i];
-      if ((mfd = open(name, O_RDWR, 0)) >= 0) {
+  static char majorchars[] = "pqrstuvwxyzabcdePQRSTUVWXYZABCDE";
+  static char minorchars[] = "0123456789abcdefghijklmnopqrstuv"
+			     "wxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_+";
+
+  /* In the old time the names where /dex/ptyXY where */
+  /* X is in "pqrs" and Y in "0123456789abcdef" but FreeBSD */
+  /* and some Linux version has extended this. */
+
+  /* This code could probebly be improved alot. For example look at */
+  /* http://www.xcf.berkeley.edu/~ali/K0D/UNIX/PTY/code/pty.c.html */
+  /* http://www.xcf.berkeley.edu/~ali/K0D/UNIX/PTY/code/upty.h.html */
+
+  {
+    /* New style devpts or devfs /dev/pty/{m,s}{0,1....} */
+
+    static char ptyname[] = "/dev/pty/mX";
+
+    for (minor = minorchars; *minor; minor++) {
+      ptyname[10] = *minor;
+      if ((mfd = open(ptyname, O_RDWR, 0)) >= 0) {
+	ptyname[9] = 's';
+	*ptyslave = ptyname;
 	return mfd;
       }
     }
   }
+
+  {
+    /* Unix98 style /dev/ptym/ptyXY and /dev/pty/ttyXY */
+
+    static char ptyname[] = "/dev/ptym/ptyXY";
+    static char ttyname[] = "/dev/pty/ttyXY";
+
+    for (major = majorchars; *major; major++) {
+      ptyname[13] = *major;
+      for (minor = minorchars; *minor; minor++) {
+	ptyname[14] = *minor;
+	if ((mfd = open(ptyname, O_RDWR, 0)) >= 0) {
+	  ttyname[12] = *major;
+	  ttyname[13] = *minor;
+	  *ptyslave = ttyname;
+	  return mfd;
+	}
+      }
+    }
+  }
+
+  {
+    /* Old style /dev/ptyXY */
+
+    static char ptyname[] = "/dev/ptyXY";
+
+    for (major = majorchars; *major; major++) {
+      ptyname[8] = *major;
+      for (minor = minorchars; *minor; minor++) {
+	ptyname[9] = *minor;
+	if ((mfd = open(ptyname, O_RDWR, 0)) >= 0) {
+	  ptyname[5] = 't';
+	  *ptyslave = ptyname;
+	  return mfd;
+	}
+      }
+    }
+  }
+
   return -1;
 }
 
@@ -625,7 +690,6 @@ static int open_pty_slave(char *name)
   struct termios tty_rmode;
 #endif
 
-  name[5] = 't';
   if ((sfd = open(name, O_RDWR, 0)) < 0) {
     return -1;
   }

@@ -46,9 +46,9 @@ new_message_buffer(Uint size)
 {
     ErlHeapFragment* bp;
 
-    bp = (ErlHeapFragment*) safe_alloc_from(33,
-					    sizeof(ErlHeapFragment) +
-					    ((size-1)*sizeof(Eterm)));
+    bp = (ErlHeapFragment*) erts_safe_sl_alloc_from(33,
+						    sizeof(ErlHeapFragment) +
+						    ((size-1)*sizeof(Eterm)));
     bp->next = NULL;
     bp->size = size;
     bp->off_heap.mso = NULL;
@@ -73,7 +73,7 @@ void
 free_message_buffer(ErlHeapFragment* bp)
 {
     erts_cleanup_offheap(&bp->off_heap);
-    sys_free(bp);
+    erts_sl_free((void *) bp);
 }
 
 /* Add a message last in message queue */

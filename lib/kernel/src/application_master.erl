@@ -356,7 +356,7 @@ start_supervisor(Type, M, A) ->
 	    {ok, Pid, []};
 	{ok, Pid, AppState} ->
 	    {ok, Pid, AppState};
-	{errors, Reason} ->
+	{error, Reason} ->
 	    {error, {Reason, {M, start, [Type, A]}}};
 	{'EXIT', normal} ->
 	    {error, "application exited with reason: normal"};

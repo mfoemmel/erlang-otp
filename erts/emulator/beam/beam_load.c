@@ -392,7 +392,7 @@ typedef struct {
   do { \
    ASSERT((Genop)->a == (Genop)->def_args); \
    (Genop)->arity = (Arity); \
-   (Genop)->a = safe_alloc((Genop)->arity * sizeof(GenOpArg)); \
+   (Genop)->a = safe_alloc_from(257, (Genop)->arity * sizeof(GenOpArg)); \
   } while (0)
 
 
@@ -465,7 +465,7 @@ void init_load(void)
     must_swap_floats = (f.fw[0] == 0);
 
     allocated_modules = 128;
-    modules = (Range *) sys_alloc(allocated_modules * sizeof(Range));
+    modules = (Range *) sys_alloc_from(250, allocated_modules*sizeof(Range));
     mid_module = modules;
     num_loaded_modules = 0;
 }
@@ -826,7 +826,7 @@ load_atom_table(LoaderState* stp)
 
     GetInt(stp, 4, stp->num_atoms);
     stp->num_atoms++;
-    stp->atom = safe_alloc(next_heap_size(stp->num_atoms * sizeof(Eterm), 0));
+    stp->atom = safe_alloc_from(252, next_heap_size(stp->num_atoms * sizeof(Eterm), 0));
 
     /*
      * Read all atoms.
@@ -868,8 +868,9 @@ load_import_table(LoaderState* stp)
     int i;
 
     GetInt(stp, 4, stp->num_imports);
-    stp->import = safe_alloc(next_heap_size(stp->num_imports *
-					    sizeof(ImportEntry), 0));
+    stp->import = safe_alloc_from(253,
+				  next_heap_size(stp->num_imports
+						 * sizeof(ImportEntry), 0));
     for (i = 0; i < stp->num_imports; i++) {
 	int n;
 	Eterm mod;
@@ -922,7 +923,9 @@ read_export_table(LoaderState* stp)
 	LoadError2(stp, "%d functions exported; only %d functions defined",
 		   stp->num_exps, stp->num_functions);
     }
-    stp->export = (ExportEntry *) safe_alloc(stp->num_exps * sizeof(ExportEntry));
+    stp->export = (ExportEntry *) safe_alloc_from(254,
+						  (stp->num_exps
+						   * sizeof(ExportEntry)));
 
     for (i = 0; i < stp->num_exps; i++) {
 	Uint n;
@@ -1040,7 +1043,8 @@ read_code_header(LoaderState* stp)
      * Initialize label table.
      */
 
-    stp->labels = (Label *) safe_alloc(stp->num_labels * sizeof(Label));
+    stp->labels = (Label *) safe_alloc_from(255,
+					    stp->num_labels * sizeof(Label));
     for (i = 0; i < stp->num_labels; i++) {
 	stp->labels[i].value = 0;
 	stp->labels[i].patches = 0;
@@ -1050,7 +1054,9 @@ read_code_header(LoaderState* stp)
      * Initialize code area.
      */
     stp->code_buffer_size = next_heap_size(2048 + stp->num_functions, 0);
-    stp->code = (Eterm*) safe_alloc(sizeof(Eterm) * stp->code_buffer_size);
+    stp->code = (Eterm*) safe_alloc_from(251,
+					  (sizeof(Eterm)
+					   * stp->code_buffer_size));
 
     stp->code[MI_NUM_FUNCTIONS] = stp->num_functions;
     stp->ci = MI_FUNCTIONS + stp->num_functions + 1;
@@ -1176,11 +1182,11 @@ load_code(LoaderState* stp)
 		    ASSERT(first < 0x800);
 		    last_op->a[arg].val = make_small(((first >> 5) << 8) | w);
 		} else {
-		    last_op->a[arg].type = get_erlang_integer(stp, first,
-							    &(last_op->a[arg].val));
-		    if (last_op->a[arg].type < 0) {
+		    int i = get_erlang_integer(stp, first, &(last_op->a[arg].val));
+		    if (i < 0) {
 			goto load_error;
 		    }
+		    last_op->a[arg].type = i;
 		}
 		break;
 	    case TAG_u:
@@ -1216,8 +1222,8 @@ load_code(LoaderState* stp)
 		break;
 	    case TAG_h:
 		GetValue(stp, first, last_op->a[arg].val);
-		if (last_op->a[arg].val < 0 || last_op->a[arg].val > 65535) {
-		    LoadError1(stp, "invalid range for character data type: %d",
+		if (last_op->a[arg].val > 65535) {
+		    LoadError1(stp, "invalid range for character data type: %u",
 			       last_op->a[arg].val);
 		}
 		break;
@@ -1251,8 +1257,9 @@ load_code(LoaderState* stp)
 			GetTagAndValue(stp, tag, last_op->a[arg].val);
 			VerifyTag(stp, tag, TAG_u);
 			last_op->a[arg].type = TAG_u;
-			last_op->a = safe_alloc((arity+last_op->a[arg].val)*
-						sizeof(GenOpArg));
+			last_op->a = safe_alloc_from(258,
+						     (arity+last_op->a[arg].val)
+						     *sizeof(GenOpArg));
 			memcpy(last_op->a, last_op->def_args,
 			       arity*sizeof(GenOpArg));
 			arity += last_op->a[arg].val;
@@ -2060,7 +2067,12 @@ gen_put_integer(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
     GenOp* op;
     NEW_GENOP(stp, op);
 
-    if (Size.type == TAG_i) {
+    if (Size.type == TAG_i && signed_val(Size.val) < 0) {
+	/* Negative size must fail */
+	op->op = genop_badarg_1;
+	op->arity = 1;
+	op->a[0] = Fail;
+    } else if (Size.type == TAG_i) {
 	op->op = genop_i_bs_put_integer_imm_4;
 	op->arity = 4;
 	op->a[0] = Fail;
@@ -2176,7 +2188,7 @@ static GenOp*
 gen_literal_timeout(LoaderState* stp, GenOpArg Fail, GenOpArg Time)
 {
     GenOp* op;
-    unsigned timeout;
+    int timeout;
 
     NEW_GENOP(stp, op);
     op->op = genop_wait_timeout_2;
@@ -2639,7 +2651,7 @@ gen_make_fun(LoaderState* stp, GenOpArg lbl, GenOpArg uniq, GenOpArg num_free)
 	stp->lambdas_allocated *= 2;
 	need = stp->lambdas_allocated * sizeof(Lambda);
 	if (stp->lambdas == stp->def_lambdas) {
-	    stp->lambdas = safe_alloc(need);
+	    stp->lambdas = safe_alloc_from(260, need);
 	    memcpy(stp->lambdas, stp->def_lambdas, sizeof(stp->def_lambdas));
 	} else {
 	    stp->lambdas = safe_realloc((char *) stp->lambdas, need);
@@ -2695,6 +2707,7 @@ freeze_code(LoaderState* stp)
     unsigned compile_size = stp->chunks[COMPILE_CHUNK].size;
     Uint size;
     unsigned catches;
+    int decoded_size;
 
     /*
      * Verify that there was a correct 'FunT' chunk if there were
@@ -2724,19 +2737,22 @@ freeze_code(LoaderState* stp)
 	byte* attr = str_table + strtab_size;
 	memcpy(attr, stp->chunks[ATTR_CHUNK].start, stp->chunks[ATTR_CHUNK].size);
 	code[MI_ATTR_PTR] = (Eterm) attr;
-	if ((code[MI_ATTR_SIZE_ON_HEAP] = decode_size(attr, attr_size)) < 0) {
-	    LoadError0(stp, "bad external term representation of module attributes");
-	}
+	decoded_size = decode_size(attr, attr_size);
+	if (decoded_size < 0) {
+ 	    LoadError0(stp, "bad external term representation of module attributes");
+ 	}
+	code[MI_ATTR_SIZE_ON_HEAP] = decoded_size;
     }
     if (compile_size) {
 	byte* compile_info = str_table + strtab_size + attr_size;
 	memcpy(compile_info, stp->chunks[COMPILE_CHUNK].start,
 	       stp->chunks[COMPILE_CHUNK].size);
 	code[MI_COMPILE_PTR] = (Eterm) compile_info;
-	if ((code[MI_COMPILE_SIZE_ON_HEAP] = decode_size(compile_info,
-							 compile_size)) < 0) {
-	    LoadError0(stp, "bad external term representation of compilation information");
-	}
+	decoded_size = decode_size(compile_info, compile_size);
+	if (decoded_size < 0) {
+ 	    LoadError0(stp, "bad external term representation of compilation information");
+ 	}
+	code[MI_COMPILE_SIZE_ON_HEAP] = decoded_size;
     }
 
 
@@ -3045,7 +3061,7 @@ transform_engine(LoaderState* st)
 #if defined(TOP_rest_args)
 	case TOP_rest_args:
 	    i = *pc++;
-	    var = safe_alloc(instr->arity * sizeof(GenOpArg));
+	    var = safe_alloc_from(259, instr->arity * sizeof(GenOpArg));
 	    memcpy(var, def_vars, sizeof(def_vars));
 	    while (i < instr->arity) {
 		var[i] = instr->a[i];
@@ -3322,7 +3338,7 @@ get_erlang_integer(LoaderState* stp, Uint len_code, Uint* result)
      */
 
     if (count+8 > sizeof(default_buf)) {
-	bigbuf = safe_alloc(count+8);
+	bigbuf = safe_alloc_from(261, count+8);
     }
 
     /*
@@ -3412,7 +3428,7 @@ id_to_string(Uint id, char* s)
 static void
 new_genop(LoaderState* stp)
 {
-    GenOpBlock* p = (GenOpBlock *) sys_alloc(sizeof(GenOpBlock));
+    GenOpBlock* p = (GenOpBlock *) sys_alloc_from(256, sizeof(GenOpBlock));
     int i;
 
     p->next = stp->genop_blocks;
@@ -3435,7 +3451,8 @@ temp_alloc(LoaderState* stp, unsigned needed)
 	stp->temp_heap_size = next_heap_size(needed, 0);
     }
     if (stp->temp_heap == NULL) {
-	stp->temp_heap = safe_alloc(stp->temp_heap_size * sizeof(Eterm));
+	stp->temp_heap = safe_alloc_from(262,
+					 stp->temp_heap_size * sizeof(Eterm));
     } else {
 	stp->temp_heap = safe_realloc((char *) stp->temp_heap,
 				      stp->temp_heap_size * sizeof(Eterm));
@@ -3886,13 +3903,16 @@ stub_copy_info(LoaderState* stp,
 	       Eterm* ptr_word,	/* Where to store pointer into info. */
 	       Eterm* size_word) /* Where to store size of info. */
 {
+    int decoded_size;
     Uint size = stp->chunks[chunk].size;
     if (size != 0) {
 	memcpy(info, stp->chunks[chunk].start, size);
 	*ptr_word = (Eterm) info;
-	if ((*size_word = decode_size(info, size)) < 0) {
-	    return 0;
-	}
+	decoded_size = decode_size(info, size);
+	if (decoded_size < 0) {
+ 	    return 0;
+ 	}
+	*size_word = decoded_size;
     }
     return info + size;
 }

@@ -599,7 +599,7 @@ use_postcond(G, N, X) ->
 
 get_if_name(G) -> mk_oe_name(G, "get_interface").
 
-%% Generates the get_interface function (for Lars)
+%% Generates the get_interface function 
 get_if_gen(G, N, X) ->
 %%    ?DBG("Get I/F gen~n", []),
 %%    S = icgen:tktab(G),
@@ -984,19 +984,19 @@ emit_skel_func(G, N, X, OpName, ArgNames, TypeList, OutArgs) ->
 		erl_genserv ->
 		    FunName = case icgen:get_opt(G, scoped_op_calls) of 
 				  true -> 
-				      icgen:to_undersc([OpName | N]);
+				      list_to_atom(icgen:to_undersc([OpName | N]));
 				  false ->
-				      OpName
+				      list_to_atom(OpName)
 			      end,
 		    case is_oneway(X) of
 			true ->
 			    if
 				length(ArgNames) == 0 ->
 				    emit(Fd, "handle_cast(~p, ~s) ->\n",
-					 [list_to_atom(FunName), State]);
+					 [FunName, State]);
 				true ->
-				    emit(Fd, "handle_cast({~s}, ~s) ->\n",
-					 [ mk_list([FunName | ArgNames]), State])
+				    emit(Fd, "handle_cast({~p, ~s}, ~s) ->\n",
+					 [FunName, mk_list(ArgNames), State])
 			    end,
 			    emit(Fd, "    ~p:~p(~s);\n\n", 
 				 [ImplM, ImplF, CallArgs]);
@@ -1004,10 +1004,10 @@ emit_skel_func(G, N, X, OpName, ArgNames, TypeList, OutArgs) ->
 			    if
 				length(ArgNames) == 0 ->
 				    emit(Fd, "handle_call(~p, ~s, ~s) ->\n",
-					 [list_to_atom(FunName), From, State]);
+					 [FunName, From, State]);
 				true ->
 				    emit(Fd, "handle_call({~p, ~s}, ~s, ~s) ->\n",  
-					 [list_to_atom(FunName), 
+					 [FunName, 
 					  mk_list(ArgNames), 
 					  From, State])
 			    end,

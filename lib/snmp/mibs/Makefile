@@ -97,7 +97,7 @@ clean:
 docs:
 
 v1/%.mib.v1: %.mib
-	AWK=$(AWK) $(ERL_TOP)/lib/snmp/bin/snmp-v2tov1 -o $@ $<
+	$(ERL_TOP)/lib/snmp/bin/snmp-v2tov1 -o $@ $<
 
 
 # ----------------------------------------------------

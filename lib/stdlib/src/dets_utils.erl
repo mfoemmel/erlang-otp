@@ -21,25 +21,24 @@
 %% To be used from dets, dets_v8 and dets_v9 only.
 
 -export([rename/2, pread/2, pread/4, ipread/3, pwrite/2, write/2,
-         position/2, truncate/1, open/2, fwrite/3, position/3,
-         position_close/3, truncate/2, pwrite/4, pwrite/3,
-         pread_close/4, read_n/2, pread_n/3, read_4/2]).
+         truncate/2, position/2, sync/1, open/2, truncate/3, fwrite/3,
+         write_file/2, position/3, position_close/3, pwrite/4,
+         pwrite/3, pread_close/4, read_n/2, pread_n/3, read_4/2]).
 
 -export([code_to_type/1, type_to_code/1]).
 
--export([make_zero_table/1, get_zeros/2]).
-
 -export([corrupt_reason/2, corrupt/2, vformat/2, file_error/2]).
 
--export([cache_lookup/3, wl/2, cache_size/1, new_cache/1, reset_cache/1]).
+-export([cache_lookup/4, cache_size/1, new_cache/1,
+	 reset_cache/1, is_empty_cache/1]).
 
 -export([empty_free_lists/0, init_alloc/1, alloc_many/4, alloc/2,
          free/3, get_freelists/1, all_free/1, all_allocated/1,
-         log/3]).
+         all_allocated_as_list/1, log2/1, make_zeros/1]).
 
 -export([init_slots_from_old_file/2]).
 
--export([list_to_tree/1, tree_to_bin/3]).
+-export([list_to_tree/1, tree_to_bin/5]).
 
 -compile({inline, [{sz2pos,1}]}).
 -compile({inline, [{bplus_mk_leaf,1}, {bplus_get_size,1},
@@ -115,9 +114,8 @@ pwrite(Head, Bins) ->
     case file:pwrite(Head#head.fptr, Bins) of
 	ok ->
 	    {Head, ok};
-	{error, Reason} ->
-	    Error = {error, {file_error, Head#head.filename, Reason}},
-	    throw(corrupt(Head, Error))
+	Error ->
+	    corrupt_file(Head, Error)
     end.
 
 %% -> ok | throw({Head, Error})
@@ -127,29 +125,55 @@ write(Head, Bins) ->
     case file:write(Head#head.fptr, Bins) of
 	ok ->
 	    ok;
-	{error, Reason} ->
-	    Error = {error, {file_error, Head#head.filename, Reason}},
+	Error ->
+	    corrupt_file(Head, Error)
+    end.
+
+%% -> ok | throw({Head, Error})
+%% Same as file:write_file/2, but calls file:sync/1.
+write_file(Head, Bin) ->
+    R = case file:open(Head#head.filename, [binary, write]) of
+	    {ok, Fd} ->
+		R1 = file:write(Fd, Bin),
+		R2 = file:sync(Fd),
+		file:close(Fd),
+		if R1 == ok -> R2; true -> R1 end;
+	    Else ->
+		Else
+	end,
+    case R of
+	ok ->
+	    ok;
+	Error ->
+	    corrupt_file(Head, Error)
+    end.
+
+%% -> ok | throw({Head, Error})
+truncate(Head, Pos) ->
+    case catch truncate(Head#head.fptr, Head#head.filename, Pos) of
+	ok ->
+	    ok;
+	Error ->
 	    throw(corrupt(Head, Error))
     end.
 
 %% -> {ok, Pos} | throw({Head, Error})
 position(Head, Pos) ->
     case file:position(Head#head.fptr, Pos) of
-	{error, Reason} -> 
-	    FError = {error, {file_error, Head#head.filename, Reason}},
-	    throw(corrupt(Head, FError));
+	{error, _Reason} = Error -> 
+	    corrupt_file(Head, Error);
 	OK -> OK
     end.
 	    
 %% -> ok | throw({Head, Error})
-truncate(Head) ->
-    case file:truncate(Head#head.fptr) of
-	ok    -> ok;
-	{error, Reason} -> 
-	    FError = {error, {file_error, Head#head.filename, Reason}},
-	    throw(corrupt(Head, FError))
+sync(Head) ->
+    case file:sync(Head#head.fptr) of
+	ok ->
+	    ok;
+	Error ->
+	    corrupt_file(Head, Error)
     end.
-	    
+
 open(FileSpec, Args) ->
     case file:open(FileSpec, Args) of
 	{ok, Fd} ->
@@ -158,6 +182,20 @@ open(FileSpec, Args) ->
 	    file_error(FileSpec, Error)
     end.
 
+truncate(Fd, FileName, Pos) ->
+    if
+	Pos == cur ->
+	    ok;
+	true ->
+	    position(Fd, FileName, Pos)
+    end,
+    case file:truncate(Fd) of
+	ok    -> 
+	    ok;
+	Error ->
+	    file_error(FileName, {error, Error})
+    end.
+	    
 fwrite(Fd, FileName, B) ->
     case file:write(Fd, B) of
 	ok    -> ok;
@@ -176,12 +214,6 @@ position_close(Fd, FileName, Pos) ->
 	OK -> OK
     end.
 	    
-truncate(Fd, FileName) ->
-    case file:truncate(Fd) of
-	ok    -> ok;
-	Error -> file_error(FileName, Error)
-    end.
-
 pwrite(Fd, FileName, Position, B) ->
     case file:pwrite(Fd, Position, B) of
 	ok -> ok;
@@ -237,6 +269,10 @@ read_4(Fd, Position) ->
     <<Four:32>> = dets_utils:read_n(Fd, 4),
     Four.
 
+corrupt_file(Head, {error, Reason}) ->
+    Error = {error, {file_error, Head#head.filename, Reason}},
+    throw(corrupt(Head, Error)).
+
 %% -> {NewHead, Error}
 corrupt_reason(Head, Reason) ->
     Error = {error, {Reason, Head#head.filename}},    
@@ -271,158 +307,27 @@ type_to_code(set) -> ?SET;
 type_to_code(bag) -> ?BAG;
 type_to_code(duplicate_bag) -> ?DUPLICATE_BAG.
 
-%% M is assumed to be a power of 2.
-make_zero_table(M) ->
-    Z = lists:duplicate(M, 0),
-    T = make_zero_tuple(Z, []),
-    L = make_zero_powers(1 bsl 31, M, Z, []),
-    {M, T, L}.
-
-make_zero_tuple([], L) ->
-    list_to_tuple(L);
-make_zero_tuple(Z, L) ->
-    make_zero_tuple(tl(Z), [Z | L]).
-
-make_zero_powers(M, M, Z, L) ->
-    lists:reverse([Z | L]);
-make_zero_powers(I, M, Z, L) ->
-    make_zero_powers(I div 2, M, [Z | Z], [Z | L]).
-
-get_zeros(0, _) ->
-    [];
-get_zeros(N, {M, S, _}) when N < M ->
-    element(N, S);
-get_zeros(N, {M, _S, L}) when N rem M =:= 0 ->
-    get_zeros2(N div M, L);
-get_zeros(N, {M, S, L}) ->
-    [element(N rem M, S) | get_zeros2(N div M, L)].
-
-get_zeros2(0, _) ->
-    [];
-get_zeros2(N, [_ | L]) when N band 1 =:= 0 ->
-    get_zeros2(N div 2, L);
-get_zeros2(N, [Z | L]) ->
-    [Z | get_zeros2(N div 2, L)].
-
-%%% The write cache is list of {Key, [Item]} where Item is one of
-%%% {Seq, delete_key}, {Seq, lookup}, {Seq, {delete_object,object()}},
-%%% or {Seq, {insert,object()}}. Seq is a number that increases
-%%% monotonically for each item put in the cache. The purpose is to
-%%% make sure that items are sorted correctly. Sequences of delete and
-%%% insert operations are inserted in the cache without doing any file
-%%% operations. When the cache is considered full, a lookup operation
-%%% is requested, or after some delay (see below), the contents of the
-%%% cache are written on the file, and the cache emptied.
 %%%
-%%% Data is not allowed to linger more than 'delay' milliseconds in
-%%% the write cache. A delayed_write message is received when some
-%%% datum has become too old. If 'wrtime' is equal to 'undefined',
-%%% then the cache is empty and no such delayed_write message has been
-%%% scheduled. Otherwise there is a delayed_write message scheduled,
-%%% and the value of 'wrtime' is the time when the cache was last
-%%% written, or when it was first updated after the cache was last
-%%% written.
+%%% Write Cache
+%%% 
 
 cache_size(C) ->
     {C#cache.delay, C#cache.tsize}.
 
-%% -> {NewHead, {[Found], [KeyToLookUp]}} | {NewHead, false}
-cache_lookup(Type, Ks0, Head) ->
-    C = Head#head.cache,
-    NoNew = C#cache.cache == [],
-    PK0 = if
-	      NoNew == true ->
-		  C#cache.per_key;
-	      true ->
-		  per_key(C)
-	  end,
-    NewHead = if
-		  NoNew == true ->
-		      Head;
-		  true ->
-		      Head#head{cache = C#cache{cache = [], per_key = PK0}}
-	      end,
-    PK = sofs:to_external(PK0),
-    Ks = lists:usort(Ks0),
-    %% If many keys are lookup up one by one, the cache is traversed
-    %% many times, which could take (too) long.
-    {NewHead, cache_lookup(Ks, PK, Type, [], [])}.
-
-cache_lookup([K | Ks], [{K, L} | PK], Type, Acc, Lu) ->
-    [WL | _I] = wl(L, Type),
-    case WL of
-	{delete, skip, Objs} ->
-	    NAcc = cache_found(Objs, Acc),
-	    cache_lookup(Ks, PK, Type, NAcc, Lu);
+%% -> [object()] | false
+cache_lookup(Type, [Key | Keys], CL, LU) ->
+    %% keysearch returns the _first_ matching tuple.
+    case lists:keysearch(Key, 1, CL) of
+	{value, {Key,{_Seq,{insert,Object}}}} when Type == set ->
+	    cache_lookup(Type, Keys, CL, [Object | LU]);
+	{value, {Key,{_Seq,delete_key}}} ->
+	    cache_lookup(Type, Keys, CL, LU);
 	_ ->
 	    false
     end;
-cache_lookup([K0 | Ks], [{K, _L} | _] = PK, Type, Acc, Lu) when K0 < K ->
-    cache_lookup(Ks, PK, Type, Acc, [K0 | Lu]);
-cache_lookup(Ks, [_ | PK], Type, Acc, Lu) ->
-    cache_lookup(Ks, PK, Type, Acc, Lu);
-cache_lookup(Ks, _PK, _Type, Acc, []) ->
-    {Acc, Ks};
-cache_lookup(Ks, _PK, _Type, Acc, Lu) ->
-    {Acc, Ks ++ Lu}.
+cache_lookup(_Type, [], _CL, LU) ->
+    LU.
 
-cache_found([{Obj,-1}], Acc) ->
-    [Obj | Acc];
-cache_found([{_Obj,0} | Objs], Acc) ->
-    cache_found(Objs, Acc);
-cache_found([{Obj,N} | Objs], Acc) when N < 0 ->
-    cache_found(Objs, lists:duplicate(-N, Obj) ++ Acc);
-cache_found([], Acc) ->
-    Acc.
-
-wl(L, Type) ->
-    wl(L, Type, keep, skip, 0, []).
-
-wl([{_Seq, delete_key} | Cs], Type, _Del, Lookup, _I, _Objs) ->
-    wl(Cs, Type, delete, Lookup, 0, []);
-wl([{_Seq, {delete_object, Object}} | Cs], Type, Del, Lookup, I, Objs) ->
-    NObjs = lists:keydelete(Object, 1, Objs),
-    wl(Cs, Type, Del, Lookup, I, [{Object,0} | NObjs]);
-wl([{_Seq, {insert, Object}} | Cs], Type, _Del, Lookup, _I, _Objs) 
-                    when Type == set ->
-    wl(Cs, Type, delete, Lookup, 1, [{Object,-1}]);
-wl([{_Seq, {insert, Object}} | Cs], Type, Del, Lookup, _I, Objs) ->
-    NObjs = 
-	case lists:keysearch(Object, 1, Objs) of
-	    {value, {_, 0}} ->
-		lists:keyreplace(Object, 1, Objs, {Object,-1});
-	    {value, {_, _C}} when Type == bag -> % C == 1; C == -1
-		Objs;
-	    {value, {_, C}} when C < 0 -> % when Type == duplicate_bag
-		lists:keyreplace(Object, 1, Objs, {Object,C-1});
-	    {value, {_, C}} -> % when C > 0, Type == duplicate_bag
-		lists:keyreplace(Object, 1, Objs, {Object,C+1});
-	    false when Del == delete ->
-		[{Object, -1} | Objs];
-	    false ->
-		[{Object, 1} | Objs]
-	end,
-    wl(Cs, Type, Del, Lookup, 1, NObjs);
-wl([{_Seq, lookup} | Cs], Type, Del, _Lookup, I, Objs) ->
-    wl(Cs, Type, Del, lookup, I, Objs);
-wl([], _Type, Del, Lookup, I, Objs) ->
-    [{Del, Lookup, Objs} | I].
-
-%% When writing the cache, a 'work list' is first created:
-%%   WorkList = [{Key, {Delete,Lookup,[Inserted]}}]
-%%   Delete = keep | delete
-%%   Lookup = skip | lookup
-%%   Inserted = {object(), No}
-%%   No = integer()
-%% If No =< 0 then there will be -No instances of object() on the file
-%% when the cache has been written. If No > 0 then No instances of
-%% object() will be added to the file.
-%% If Delete has the value 'delete', then all objects with the key Key
-%% have been deleted. (This could be viewed as a shorthand for {Object,0}
-%% for each object Object on the file not mentioned in some Inserted.)
-%% If Lookup has the value 'lookup', all objects with the key Key will
-%% be returned.
-%%
 reset_cache(C) ->
     WrTime = C#cache.wrtime,
     NewWrTime = if 
@@ -431,28 +336,16 @@ reset_cache(C) ->
 		    true ->
 			now()
 		end,
-    PK = sofs:to_external(per_key(C)),
-    E = sofs:empty_set(),
-    NewC = C#cache{cache = [], csize = 0, inserts = 0, 
-		   per_key = E, wrtime = NewWrTime},
-    {NewC, C#cache.inserts, PK}.
+    PK = sofs:relation_to_family(sofs:relation(C#cache.cache)),
+    NewC = C#cache{cache = [], csize = 0, inserts = 0, wrtime = NewWrTime},
+    {NewC, C#cache.inserts, sofs:to_external(PK)}.
+
+is_empty_cache(Cache) ->
+    Cache#cache.cache == [].
 
 new_cache({Delay, Size}) ->
-    PerKey = sofs:empty_set(),
-    WrTime = undefined,
-    #cache{cache = [], csize = 0, inserts = 0, per_key = PerKey, 
-	   tsize = Size, wrtime = WrTime, delay = Delay}.
-
-%% -> sofs_family()
-per_key(Cache) ->
-    #cache{cache = C, per_key = PK1} = Cache,
-    if
-	C == [] ->
-	    PK1;
-	true ->
-	    PK2 = sofs:relation_to_family(sofs:relation(C)),
-	    sofs:family_union(PK2, PK1)
-    end.
+    #cache{cache = [], csize = 0, inserts = 0, 
+	   tsize = Size, wrtime = undefined, delay = Delay}.
 
 %%%
 %%% Buddy System
@@ -472,7 +365,7 @@ per_key(Cache) ->
 %%%             time ago.
 
 init_slots_from_old_file([{Slot,Addr} | T], Ftab) ->
-    init_slot(Slot,[{Slot,Addr} | T], Ftab);
+    init_slot(Slot+1,[{Slot,Addr} | T], Ftab);
 init_slots_from_old_file([], Ftab) ->
     Ftab.
 
@@ -507,7 +400,7 @@ init_slot(Slot,[{_Slot1,Addr}|T], Ftab) ->
 
 %% -> free_table()
 %% A free table is a tuple of ?MAXBUD elements, element i handling
-%% buddies of size 2**(i-1).
+%% buddies of size 2^(i-1).
 init_alloc(Base) ->
     Ftab = empty_free_lists(),
     Empty = bplus_empty_tree(),
@@ -518,7 +411,7 @@ empty_free_lists() ->
     %% initiate a tuple with ?MAXBUD "Empty" elements
     erlang:make_tuple(?MAXBUD, Empty).
 
-%% Only used when repairing.
+%% Only used when repairing or initiating.
 alloc_many(Head, _Sz, 0, _A0) ->
     Head;
 alloc_many(Head, Sz, N, A0) ->
@@ -549,7 +442,7 @@ alloc_many2(Ftab, Pos, Size, A0, H) when Size band ?POW(Pos-1) > 0 ->
 alloc_many2(Ftab, Pos, Size, A0, H) ->
     alloc_many2(Ftab, Pos-1, Size, A0, H).
 
-%% -> {NewHead, Addr} | throw(Error)
+%% -> {NewHead, Addr, Log2} | throw(Error)
 alloc(Head, Sz) when Head#head.fixed =/= false -> % when Sz > 0
     ?DEBUG("alloc of size ~p (fixed)", [Sz]),
     Pos = sz2pos(Sz),
@@ -559,14 +452,14 @@ alloc(Head, Sz) when Head#head.fixed =/= false -> % when Sz > 0
     Ftab1 = undo_free(Ftab, FPos, Addr, Head#head.base),
     NewFtab = move_down(Ftab1, FPos, Pos, Addr),
     NewFreelists = {NewFrozen, NewFtab},
-    {Head#head{freelists = NewFreelists}, Addr};
+    {Head#head{freelists = NewFreelists}, Addr, Pos};
 alloc(Head, Sz) when Head#head.fixed == false -> % when Sz > 0
     ?DEBUG("alloc of size ~p", [Sz]),
     Pos = sz2pos(Sz),
     Ftab = Head#head.freelists,
     {FPos, Addr} = find_first_free(Ftab, Pos, Pos, Head),
     NewFtab = reserve_buddy(Ftab, FPos, Pos, Addr),
-    {Head#head{freelists = NewFtab}, Addr}.
+    {Head#head{freelists = NewFtab}, Addr, Pos}.
 
 find_first_free(_Ftab, Pos, _Pos0, Head) when Pos > ?MAXBUD ->
     throw({error, {no_more_space_on_file, Head#head.filename}});
@@ -615,11 +508,12 @@ move_down(Ftab, Pos, Pos0, Addr) ->
     NewFtab = setelement(Pos_1, Ftab, NewPosTab_1), 
     move_down(NewFtab, Pos_1, Pos0, Addr).
 
+%% -> {Head, Log2}
 free(Head, Addr, Sz) ->
     ?DEBUG("free of size ~p at address ~p~n", [Sz, Addr]),
     Ftab = get_freelists(Head),
     Pos = sz2pos(Sz),
-    set_freelists(Head, free_in_pos(Ftab, Addr, Pos, Head#head.base)).
+    {set_freelists(Head, free_in_pos(Ftab, Addr, Pos, Head#head.base)), Pos}.
 
 free_in_pos(Ftab, _Addr, Pos, _Base) when Pos > ?MAXBUD ->
     Ftab;
@@ -650,17 +544,53 @@ set_freelists(Head, Ftab) when Head#head.fixed =/= false ->
     {Frozen, _} = Head#head.freelists,
     Head#head{freelists = {Frozen,Ftab}}.
 
-%% Bug: If Sz0 is equal to 2**k for some k, then 2**(k+1) bytes are
-%% allocated (wasting 2**k bytes). Inlined.
+%% Bug: If Sz0 is equal to 2^k for some k, then 2^(k+1) bytes are
+%% allocated (wasting 2^k bytes). Inlined.
 sz2pos(N) when N > 0 ->
-    log(N, 16, 2).
+    1 + log2(N+1).
 
-log(N, _I, L) when N < 2 ->
-    L;
-log(N, I, L) when N >= 1 bsl I ->
-    log(N bsr I, I bsr 1, L+I);
-log(N, I, L) ->
-    log(N, I bsr 1, L).
+%% Returns the i such that 2^(i-1) < N =< 2^i.
+log2(N) -> % when integer(N), N >= 0
+    if N > ?POW(8) ->
+	    if N > ?POW(10) ->
+		    if N > ?POW(11) ->
+			    if N > ?POW(12) ->
+				    12 + if N band (?POW(12)-1) =:= 0 -> 
+						 log2(N bsr 12);
+					    true -> log2(1 + (N bsr 12))
+					 end;
+			       true -> 12
+			    end;
+		       true -> 11
+		    end;
+	       N > ?POW(9) -> 10;
+	       true -> 9
+	    end;
+       N > ?POW(4) ->
+	    if N > ?POW(6) ->
+		    if N > ?POW(7) -> 8;
+		       true -> 7
+		    end;
+	       N > ?POW(5) -> 6;
+	       true -> 5
+	    end;
+       N > ?POW(2) ->
+	    if
+		N > ?POW(3) -> 4;
+		true -> 3
+	    end;
+       N > ?POW(1) -> 2;
+       N >= ?POW(0) -> 1;
+       true -> 0
+    end.
+
+make_zeros(0) -> [];
+make_zeros(N) when N rem 2 == 0 ->
+    P = make_zeros(N div 2),
+    [P|P];
+make_zeros(N) ->
+    P = make_zeros(N div 2),
+    [0,P|P].
 
 %% Calculate the buddy of Addr
 my_buddy(Addr, Sz, Base) ->
@@ -694,18 +624,30 @@ all_allocated([], _X0, _Y0, []) ->
     <<>>;
 all_allocated([], _X0, _Y0, A0) ->
     [<<From:32, To:32>> | A] = lists:reverse(A0),
-    {From, To, list_to_binary(lists:reverse(A))};
+    {From, To, list_to_binary(A)};
 all_allocated([{X,Y} | L], X0, Y0, A) when Y0 == X ->
     all_allocated(L, X0, Y, A);
 all_allocated([{X,Y} | L], _X0, Y0, A) when Y0 < X ->
     all_allocated(L, X, Y, [<<Y0:32,X:32>> | A]).
+
+all_allocated_as_list(Head) ->
+    all_allocated_as_list(all(get_freelists(Head)), 0, Head#head.base, []).
+
+all_allocated_as_list([], _X0, _Y0, []) ->
+    [];
+all_allocated_as_list([], _X0, _Y0, A) ->
+    lists:reverse(A);
+all_allocated_as_list([{X,Y} | L], X0, Y0, A) when Y0 == X ->
+    all_allocated_as_list(L, X0, Y, A);
+all_allocated_as_list([{X,Y} | L], _X0, Y0, A) when Y0 < X ->
+    all_allocated_as_list(L, X, Y, [[Y0 | X] | A]).
 
 all(Tab) ->
     all(Tab, size(Tab), []).
 
 all(_Tab, 0, L) ->
     %% This is not as bad as it looks. L contains less than 32 runs,
-    %% so there will be a quite small number of merges.
+    %% so there will be only a small number of merges.
     lists:sort(L);
 all(Tab, I, L) ->
     LL = collect_tree(element(I, Tab), I, L),
@@ -762,28 +704,30 @@ collect_node(Node, I, Pow, Acc) ->
     collect_node(Node, I-1, Pow, Acc1).
 
 %% Special for dets.
-tree_to_bin(v, _F, _Max) -> [];
-tree_to_bin(T, F, Max) ->
-    {N, L} = tree_to_bin2(T, F, Max, 0, []),
-    F(N, lists:reverse(L)).
+tree_to_bin(v, _F, _Max, Ws, WsSz) -> {Ws, WsSz};
+tree_to_bin(T, F, Max, Ws, WsSz) ->
+    {N, L, Ws1, WsSz1} = tree_to_bin2(T, F, Max, 0, [], Ws, WsSz),
+    {0, [], NWs, NWsSz} = F(N, lists:reverse(L), Ws1, WsSz1),
+    {NWs, NWsSz}.
 
-tree_to_bin2(Tree, F, Max, N, Acc) when N >= Max ->
-    {NN, NAcc} = F(N, lists:reverse(Acc)),
-    tree_to_bin2(Tree, F, Max, NN, NAcc);
-tree_to_bin2(Tree, F, Max, N, Acc) ->
+tree_to_bin2(Tree, F, Max, N, Acc, Ws, WsSz) when N >= Max ->
+    {NN, NAcc, NWs, NWsSz} = F(N, lists:reverse(Acc), Ws, WsSz),
+    tree_to_bin2(Tree, F, Max, NN, lists:reverse(NAcc), NWs, NWsSz);
+tree_to_bin2(Tree, F, Max, N, Acc, Ws, WsSz) ->
     S = bplus_get_size(Tree),
     case ?NODE_TYPE(Tree) of
 	l ->
-	    {N+S, leaf_to_bin(bplus_leaf_to_list(Tree), Acc)};
+	    {N+S, leaf_to_bin(bplus_leaf_to_list(Tree), Acc), Ws, WsSz};
 	n ->
-	    node_to_bin(Tree, F, Max, N, Acc, 1, S)
+	    node_to_bin(Tree, F, Max, N, Acc, 1, S, Ws, WsSz)
     end.
     
-node_to_bin(_Node, _F, _Max, N, Acc, I, S) when I > S ->
-    {N, Acc};
-node_to_bin(Node, F, Max, N, Acc, I, S) ->
-    {N1, Acc1} = tree_to_bin2(bplus_get_tree(Node, I), F, Max, N, Acc),
-    node_to_bin(Node, F, Max, N1, Acc1, I+1, S).
+node_to_bin(_Node, _F, _Max, N, Acc, I, S, Ws, WsSz) when I > S ->
+    {N, Acc, Ws, WsSz};
+node_to_bin(Node, F, Max, N, Acc, I, S, Ws, WsSz) ->
+    {N1,Acc1,Ws1,WsSz1} = 
+	tree_to_bin2(bplus_get_tree(Node, I), F, Max, N, Acc, Ws, WsSz),
+    node_to_bin(Node, F, Max, N1, Acc1, I+1, S, Ws1, WsSz1).
 
 leaf_to_bin([N | L], Acc) ->
     leaf_to_bin(L, [<<N:32>> | Acc]);

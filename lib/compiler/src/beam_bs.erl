@@ -27,23 +27,26 @@ module({Mod,Exp,Attr,Forms0,Lbl}, Opts) ->
     Forms = [function(F) || F <- Forms0],
     {ok,{Mod,Exp,Attr,Forms,Lbl}}.
 
-function({function,Name,Arity,CLabel,Asm0}) ->
-    Dict = needed(Asm0, 0, []),
-    Asm = replace(Asm0, Dict, []),
-    {function,Name,Arity,CLabel,Asm}.
+function({function,Name,Arity,CLabel,Asm0}=Func) ->
+    case needed(Asm0, 0, false, []) of
+	{false,[]} -> Func;
+	{true,Dict} ->
+	    Asm = replace(Asm0, Dict, []),
+	    {function,Name,Arity,CLabel,Asm}
+    end.
 
-needed([{label,Lbl},{bs_restore,Name}|T], N, Dict0) ->
-    case keysearch(Name, 1, Dict0) of
-	{value,{Name,_}} -> needed(T, N, Dict0);
-	false -> needed(T, N+1, [{Name,N}|Dict0])
+needed([{bs_save,Name}|T], N, BsUsed, Dict) ->
+    needed(T, N, true, Dict);
+needed([{label,Lbl},{bs_restore,Name}|T], N, BsUsed, Dict) ->
+    case keysearch(Name, 1, Dict) of
+	{value,{Name,_}} -> needed(T, N, true, Dict);
+	false -> needed(T, N+1, true, [{Name,N}|Dict])
     end;
-needed([H|T], N, Dict) -> needed(T, N, Dict);
-needed([], N, Dict) -> Dict.
+needed([H|T], N, BsUsed, Dict) -> needed(T, N, BsUsed, Dict);
+needed([], N, BsUsed, Dict) -> {BsUsed,Dict}.
 
 replace([{bs_save,Name}=Save,{bs_restore,Name}|T], Dict, Acc) ->
     replace([Save|T], Dict, Acc);
-replace([{bs_save,Name}|[{test,bs_test_tail,_,_}|_]=T], Dict, Acc) ->
-    replace(T, keydelete(Name, 1, Dict), Acc);
 replace([{bs_save,Name}|T], Dict, Acc) ->
     case keysearch(Name, 1, Dict) of
 	{value,{Name,N}} ->

@@ -83,7 +83,27 @@ type_string(32) ->
 type_string(33) ->
     "message buffer";
 type_string(4) ->
-    "stack";
+    "estack";
+type_string(40) ->
+    "db table vec";
+type_string(41) ->
+    "db tree select buffer";
+type_string(43) ->
+    "db hash select buffer";
+type_string(44) ->
+    "db hash select list";
+type_string(45) ->
+    "db match prog stack";
+type_string(46) ->
+    "db match prog heap data";
+type_string(47) ->
+    "db temp buffer";
+type_string(48) ->
+    "db error";
+type_string(49) ->
+    "db error info";
+type_string(50) ->
+    "db trans tab";
 type_string(51) ->
     "db segment";
 type_string(52) ->
@@ -98,12 +118,32 @@ type_string(56) ->
     "db bindings";
 type_string(57) ->
     "db counter";
+type_string(58) ->
+    "db trace vec";
+type_string(60) ->
+    "binary (external.c)";
 type_string(61) ->
     "binary";
 type_string(62) ->
     "procbin (fix)";
+type_string(70) ->
+    "driver alloc (io.c)";
 type_string(71) ->
     "binary (io.c)";
+type_string(72) ->
+    "binary vec (io.c)";
+type_string(73) ->
+    "binary vec 2 (io.c)";
+type_string(74) ->
+    "io vec (io.c)";
+type_string(75) ->
+    "io vec 2 (io.c)";
+type_string(76) ->
+    "temp io buffer (io.c)";
+type_string(77) ->
+    "temp io buffer 2 (io.c)";
+type_string(78) ->
+    "line buffer (io.c)";
 type_string(8) ->
     "heap";
 type_string(801) ->
@@ -116,6 +156,10 @@ type_string(804) ->
     "heap (4)";
 type_string(805) ->
     "heap (5)";
+type_string(821) ->
+    "heap fragment (1)";
+type_string(822) ->
+    "heap fragment (2)";
 type_string(91) ->
     "process table";
 type_string(92) ->
@@ -163,4 +207,64 @@ type_string(200) ->
 type_string(210) ->
     "gc root set";
 type_string(220) ->
-    "breakpoint data".
+    "breakpoint data";
+type_string(230) ->
+    "async queue";
+type_string(231) ->
+    "async (exit)";
+type_string(232) ->
+    "async (driver)";
+type_string(240) ->
+    "bits buffer";
+type_string(241) ->
+    "bits temp buffer";
+type_string(250) ->
+    "modules (loader)";
+type_string(251) ->
+    "code (loader)";
+type_string(252) ->
+    "atom tab (loader)";
+type_string(253) ->
+    "import tab (loader)";
+type_string(254) ->
+    "export tab (loader)";
+type_string(255) ->
+    "lable tab (loader)";
+type_string(256) ->
+    "gen op (loader)";
+type_string(257) ->
+    "gen op args (loader)";
+type_string(258) ->
+    "gen op args 2 (loader)";
+type_string(259) ->
+    "gen op args 3 (loader)";
+type_string(260) ->
+    "lambdas (loader)";
+type_string(261) ->
+    "temp int buffer (loader)";
+type_string(262) ->
+    "temp heap (loader)";
+type_string(280) ->
+    "dist ctrl msg buffer";
+type_string(281) ->
+    "dist_buf";
+type_string(290) ->
+    "call trace buffer";
+type_string(300) ->
+    "bif timer rec";
+type_string(310) ->
+    "argument registers";
+type_string(320) ->
+    "compressed binary temp buffer";
+type_string(330) ->
+    "term_to_binary temp buffer";
+type_string(340) ->
+    "proc dict";
+type_string(350) ->
+    "trace to port temp buffer";
+type_string(360) ->
+    "lists subtract temp buffer";
+type_string(400) ->
+    "definite_alloc block";
+type_string(_) ->
+    "*** undefined ***".

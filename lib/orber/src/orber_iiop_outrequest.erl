@@ -62,8 +62,8 @@ request(Pid, Socket, SocketType, Timeout, Msg) ->
 reply(Pid, ReplyHeader, Rest, Len, ByteOrder, Bytes) ->
     gen_server:cast(Pid, {reply, ReplyHeader, Rest, Len, ByteOrder, Bytes}).
 
-locate(Pid, Request, Socket, SocketType, Version) ->
-    gen_server:cast(Pid, {locate_request, Request, Socket, SocketType, Version}).
+locate(Pid, Msg, Socket, SocketType, Timeout) ->
+    gen_server:cast(Pid, {locate_request, Msg, Socket, SocketType, Timeout}).
 
 locate_reply(Pid, ReplyHeader, Rest, Len, ByteOrder) ->
     gen_server:cast(Pid, {locate_reply, ReplyHeader, Rest, Len, ByteOrder}).
@@ -123,10 +123,15 @@ handle_cast({request, Socket, SocketType, Timeout, Msg}, ReplyTo) ->
 handle_cast({reply, ReplyHeader, Rest, Len, ByteOrder, Bytes}, ReplyTo) ->
     gen_server:reply(ReplyTo, {reply, ReplyHeader, Rest, Len, ByteOrder, Bytes}),
     {stop, normal, []};
-handle_cast({locate_request, Request, Socket, SocketType, Version}, ReplyTo) ->
+handle_cast({locate_request, Request, Socket, SocketType, Timeout}, ReplyTo) ->
     %% Here we must handle Interceptors
     orber_socket:write(SocketType, Socket, Request),
-    {noreply, ReplyTo};
+    if
+	integer(Timeout) ->
+	    {noreply, ReplyTo, Timeout};
+	true ->
+	    {noreply, ReplyTo, orber:iiop_timeout()}
+    end;
 handle_cast({locate_reply, ReplyHdr, Rest, Len, ByteOrder}, ReplyTo) ->
     %% Here we must handle Interceptors
     gen_server:reply(ReplyTo, {locate_reply, ReplyHdr, Rest, Len, ByteOrder}),

@@ -93,8 +93,11 @@ MODULES= \
 	orber_ifr_uniondef \
 	orber_ifr_utils \
 	OrberApp_IFR_impl \
-	orber_pi
-#	orber_imr
+	orber_pi \
+	orber_web \
+	orber_web_server \
+	orber_iiop_tracer
+
 
 EXTERNAL_HRL_FILES= ../include/corba.hrl \
 	../include/ifr_types.hrl \

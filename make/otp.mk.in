@@ -38,10 +38,11 @@ CRYPTO_APP = @CRYPTO_APP@
 # ----------------------------------------------------
 #	Command macros
 # ----------------------------------------------------
-INSTALL = @INSTALL@
-INSTALL_DIR = @INSTALL_DIR@
+INSTALL         = @INSTALL@
+INSTALL_DIR     = @INSTALL_DIR@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
-INSTALL_DATA = @INSTALL_DATA@
+INSTALL_SCRIPT  = @INSTALL_SCRIPT@
+INSTALL_DATA    = @INSTALL_DATA@
 
 CC = @CC@
 HCC = @HCC@

@@ -343,10 +343,6 @@ EXTERN_FUNCTION(int, sys_putenv, (char *));
 EXTERN_FUNCTION(void*, sys_alloc, (Uint));
 EXTERN_FUNCTION(void*, sys_realloc, (void*,Uint));
 EXTERN_FUNCTION(void,  sys_free, (void*));
-/* Defined in erts_sl_malloc.c (util.c when instrumented) */
-EXTERN_FUNCTION(void*, sys_sl_alloc, (Uint));
-EXTERN_FUNCTION(void*, sys_sl_realloc, (void*, Uint, Uint));
-EXTERN_FUNCTION(void,  sys_sl_free, (void*));
 
 #ifdef INSTRUMENT
 /* Defined in sys.c */
@@ -357,26 +353,10 @@ EXTERN_FUNCTION(void,  sys_free2, (void*));
 #endif /* !sys_alloc2 */
 
 
-EXTERN_FUNCTION(void *,
-		instr_alloc,
-		(int, void *(*)(Uint), Uint));
-EXTERN_FUNCTION(void *,
-		instr_realloc,
-		(int,
-		 void *(*)(void *, Uint, Uint),
-		 void *,
-		 Uint,
-		 Uint));
-EXTERN_FUNCTION(void,
-		instr_free,
-		(void (*free_func)(void *), void *));
-
-/* Defined in erts_sl_malloc.c */
-#ifndef sys_sl_alloc2 /* Declare if not macros */
-EXTERN_FUNCTION(void*, sys_sl_alloc2, (Uint));
-EXTERN_FUNCTION(void*, sys_sl_realloc2, (void*, Uint, Uint));
-EXTERN_FUNCTION(void,  sys_sl_free2, (void*));
-#endif /* !sys_sl_alloc2 */
+EXTERN_FUNCTION(void *, instr_alloc, (int, void *(*)(Uint), Uint));
+EXTERN_FUNCTION(void *, instr_realloc,
+		(int, void *(*)(void *, Uint, Uint), void *, Uint, Uint));
+EXTERN_FUNCTION(void, instr_free, (void (*free_func)(void *), void *));
 
 EXTERN_FUNCTION(void*, sys_realloc3, (void*, Uint, Uint));
 
@@ -384,25 +364,15 @@ EXTERN_FUNCTION(void*, sys_realloc3, (void*, Uint, Uint));
   instr_alloc((Where), sys_alloc2, (Size))
 #define sys_realloc_from(Where, Ptr, Size) \
   instr_realloc((Where), sys_realloc3, (Ptr), 0, (Size))
-#define sys_sl_alloc_from(Where, Size) \
-  instr_alloc((Where), sys_sl_alloc2, (Size))
-#define sys_sl_realloc_from(Where, Ptr, SaveSize, Size) \
-  instr_realloc((Where), sys_sl_realloc2, (Ptr), (SaveSize), (Size))
 
 #else /* #ifdef INSTRUMENT */
 
 #define sys_alloc_from(Where, Size) sys_alloc(Size)
 #define sys_realloc_from(Where,Ptr, Size) sys_realloc((Ptr),(Size))
-#define sys_sl_alloc_from(Where, Size) sys_sl_alloc((Size))
-#define sys_sl_realloc_from(Where, Ptr, SaveSize, Size) \
- sys_sl_realloc((Ptr), (SaveSize), (Size))
 
 #define fix_alloc_from(Where, Desc) fix_alloc((Desc))
 #define safe_alloc_from(Where, Size) safe_alloc((Size))
 #define safe_realloc_from(Where, Ptr, Size) safe_realloc((Ptr), (Size))
-#define safe_sl_alloc_from(Where, Size) safe_sl_alloc((Size))
-#define safe_sl_realloc_from(Where, Ptr, SaveSize, Size) \
-  safe_sl_realloc((Ptr), (SaveSize), (Size))
 
 #endif /* #ifdef INSTRUMENT */
 
@@ -412,11 +382,6 @@ EXTERN_FUNCTION(void*, sys_realloc3, (void*, Uint, Uint));
 #define SYS_ALLOC_OPT_MMAP_THRESHOLD 2
 #define SYS_ALLOC_OPT_MMAP_MAX       3
 
-/* Options to sys_sl_alloc_opt */
-#define SYS_SL_ALLOC_OPT_MMAP_THRESHOLD       SYS_ALLOC_OPT_MMAP_THRESHOLD
-#define SYS_SL_ALLOC_OPT_MMAP_MAX             SYS_ALLOC_OPT_MMAP_MAX
-#define SYS_SL_ALLOC_OPT_USE_MMAP_TABLE       4
-
 /* Default values to sys_alloc_opt options */
 #define ERTS_DEFAULT_TRIM_THRESHOLD  (128 * 1024)
 #define ERTS_DEFAULT_TOP_PAD         0
@@ -424,8 +389,6 @@ EXTERN_FUNCTION(void*, sys_realloc3, (void*, Uint, Uint));
 #define ERTS_DEFAULT_MMAP_MAX        64
 
 EXTERN_FUNCTION(int, sys_alloc_opt, (int, int));
-EXTERN_FUNCTION(int, sys_sl_alloc_opt, (int, int));
-EXTERN_FUNCTION(void, sys_sl_alloc_init, (int));
 
 typedef struct {
   Sint trim_threshold;
@@ -438,31 +401,12 @@ typedef struct {
 #endif
 } SysAllocStat;
 
-typedef struct {
-  Sint sl_alloc_enabled;
-  Sint mmap_threshold;
-  Sint mmap_max;
-  Sint mmapped_chunks;
-  Uint mmapped_chunks_size;
-  Uint mmapped_blocks_size;
-  struct {
-    Sint in_use;
-    Sint size;
-    Sint used;
-    Sint objs;
-    Sint depth;
-  } mmap_table;
-} SysSlAllocStat;
-
 EXTERN_FUNCTION(void, sys_alloc_stat, (SysAllocStat *));
-EXTERN_FUNCTION(void, sys_sl_alloc_stat, (SysSlAllocStat *));
-
-EXTERN_FUNCTION(void, sys_sl_alloc_info, (CIO));
 
 #ifdef VXWORKS
 /* NOTE! sys_calloc2 does not exist on other 
    platforms than VxWorks */
-EXTERN_FUNCTION(void*, sys_calloc2, (size_t, size_t));
+EXTERN_FUNCTION(void*, sys_calloc2, (Uint, Uint));
 #endif /* VXWORKS */
 
 

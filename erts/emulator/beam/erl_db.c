@@ -1832,7 +1832,10 @@ void init_db(void)
     else
 	db_max_tabs = next_prime(max_ets);
 
-    db_tables = safe_alloc(sizeof(struct tab_entry)*db_max_tabs);
+    db_tables = erts_definite_alloc(sizeof(struct tab_entry)*db_max_tabs);
+    if(!db_tables)
+	db_tables = safe_alloc_from(40, sizeof(struct tab_entry)*db_max_tabs);
+
     no_tabs = 0;
     for (i=0; i<db_max_tabs; i++) {
 	db_tables[i].id = DB_NOTUSED;

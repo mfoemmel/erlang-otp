@@ -43,7 +43,8 @@
          handle_trans_request/3,
          handle_trans_long_request/3,
          handle_trans_reply/4,
-         handle_trans_ack/4
+         handle_trans_ack/4,
+	 handle_unexpected_trans/3
         ]).
 
 -include_lib("megaco/include/megaco.hrl").
@@ -283,6 +284,13 @@ handle_trans_reply(ConnHandle, ProtocolVersion, ActualReply, ReplyData) ->
 %%----------------------------------------------------------------------
 
 handle_trans_ack(ConnHandle, ProtocolVersion, AckStatus, AckData) ->
+    ok.
+
+%%----------------------------------------------------------------------
+%% Invoked when  an unexpected message has been received
+%%----------------------------------------------------------------------
+
+handle_unexpected_trans(ConnHandle, ProtocolVersion, Trans) ->
     ok.
 
 %%----------------------------------------------------------------------

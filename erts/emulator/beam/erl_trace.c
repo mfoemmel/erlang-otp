@@ -35,6 +35,32 @@
    yield unique pointers of the correct type. */
 Export exp_send, exp_receive, exp_timeout;
 
+#ifdef HAVE_ERTS_NOW_CPU
+int erts_cpu_timestamp;
+#endif
+
+void erts_init_trace(void) {
+#ifdef HAVE_ERTS_NOW_CPU
+    erts_cpu_timestamp = 0;
+#endif
+}
+
+
+
+#ifdef HAVE_ERTS_NOW_CPU
+#  define GET_NOW(m, s, u) \
+do { \
+    if (erts_cpu_timestamp) \
+	erts_get_now_cpu(m, s, u); \
+    else \
+	get_now(m, s, u); \
+} while (0)
+#else
+#  define GET_NOW(m, s, u) do {get_now(m, s, u);} while (0)
+#endif
+
+
+
 static Eterm* patch_ts(Eterm tuple4, Eterm* hp);
 
 static void
@@ -46,7 +72,7 @@ do_send_to_port(Port* trace_port, Eterm message) {
     buffer = tmp_buf;
     size = encode_size_struct(message, TERM_TO_BINARY_DFLAGS);
     if (size >= TMP_BUF_SIZE) {
-	buffer = safe_alloc(size);
+	buffer = safe_alloc_from(350, size);
     }
 
     ptr = buffer;
@@ -65,7 +91,7 @@ do_send_to_port(Port* trace_port, Eterm message) {
 /* Send        {trace_ts, Pid, out, 0, Timestamp}
  * followed by {trace_ts, Pid, in, 0, NewTimestamp}
  *
- * 'NewTimestamp' is fetched from get_now() through patch_ts().
+ * 'NewTimestamp' is fetched from GET_NOW() through patch_ts().
  */
 static void 
 do_send_schedfix_to_port(Port *trace_port, Eterm pid, Eterm timestamp) {
@@ -135,7 +161,7 @@ send_to_port(Process *c_p, Process* t_p, Eterm message)
 	 * passed to do_send_schedfix_to_port().
 	 */
 	Uint ms,s,us;
-	get_now(&ms, &s, &us);
+	GET_NOW(&ms, &s, &us);
 	hp = local_heap;
 	ts = TUPLE3(hp, make_small(ms), make_small(s), make_small(us));
 	hp += 4;
@@ -153,13 +179,14 @@ send_to_port(Process *c_p, Process* t_p, Eterm message)
 	 * just after writning the real trace message, and now gets scheduled
 	 * in again.
 	 */
+	trace_port->control_flags &= ~PORT_CONTROL_FLAG_HEAVY;
 	do_send_schedfix_to_port(trace_port, c_p->id, ts);
     }
 }
 
 /* A fake schedule out/in message pair will be sent,
  * if the driver so requests.
- * If (timestamp == NIL), one is fetched from get_now().
+ * If (timestamp == NIL), one is fetched from GET_NOW().
  *
  * 'c_p' is the currently executing process, may be NULL.
  */
@@ -182,7 +209,6 @@ seq_trace_send_to_port(Process *c_p, Eterm message, Eterm timestamp)
 	do_send_to_port(trace_port, message);
 	return;
     }
-    do_send_to_port(trace_port, message);
     /* Make a fake schedule only if the current process is traced
      * with 'running' and 'timestamp'.
      */
@@ -196,7 +222,7 @@ seq_trace_send_to_port(Process *c_p, Eterm message, Eterm timestamp)
 	 * passed to do_send_schedfix_to_port().
 	 */
 	Uint ms,s,us;
-	get_now(&ms, &s, &us);
+	GET_NOW(&ms, &s, &us);
 	hp = local_heap;
 	ts = TUPLE3(hp, make_small(ms), make_small(s), make_small(us));
 	hp += 4;
@@ -214,6 +240,7 @@ seq_trace_send_to_port(Process *c_p, Eterm message, Eterm timestamp)
 	 * just after writning the real trace message, and now gets scheduled
 	 * in again.
 	 */
+	trace_port->control_flags &= ~PORT_CONTROL_FLAG_HEAVY;
 	do_send_schedfix_to_port(trace_port, c_p->id, ts);
     }
 }
@@ -295,7 +322,7 @@ patch_ts(Eterm tuple, Eterm* hp)
     ASSERT((ptr+arity+1) == hp);
     ptr[0] = make_arityval(arity+1);
     ptr[1] = am_trace_ts;
-    get_now(&ms, &s, &us);
+    GET_NOW(&ms, &s, &us);
     *hp = TUPLE3(hp+1, make_small(ms), make_small(s), make_small(us));
     return hp+5;
 }
@@ -559,7 +586,7 @@ seq_trace_output_generic(Eterm token, Eterm msg, Uint type,
 	    seq_trace_send_to_port(NULL, mess, NIL);
 	} else {
 	    Uint ms,s,us,ts;
-	    get_now(&ms, &s, &us);
+	    GET_NOW(&ms, &s, &us);
 	    ts = TUPLE3(hp, make_small(ms),make_small(s), make_small(us));
 	    hp += 4;
 	    mess = TUPLE4(hp, am_seq_trace, label, mess, ts);
@@ -598,7 +625,7 @@ seq_trace_output_generic(Eterm token, Eterm msg, Uint type,
 	hp += 6;
 	if (sz_ts) {/* timestamp should be included */
 	    Uint ms,s,us,ts;
-	    get_now(&ms, &s, &us);
+	    GET_NOW(&ms, &s, &us);
 	    ts = TUPLE3(hp, make_small(ms),make_small(s), make_small(us));
 	    hp += 4;
 	    mess = TUPLE4(hp, am_seq_trace, label, mess, ts);
@@ -1109,7 +1136,7 @@ trace_gc(Process *p, Eterm what)
     msg = CONS(hp, tuple, msg); hp += 2
 
     if (is_port(p->tracer_proc)) {
-	Eterm local_heap[64];
+	Eterm local_heap[74];
 	hp = local_heap;
     } else {
 	tracer = process_tab[pid_number(p->tracer_proc)];
@@ -1122,16 +1149,25 @@ trace_gc(Process *p, Eterm what)
 	/*
 	 * XXX Multi-thread note: Allocating on another process's heap.
 	 */
-	hp = HAlloc(tracer, 64);
+	hp = HAlloc(tracer, 74);
     }
 
 #ifdef UNIFIED_HEAP
+    CONS_PAIR(am_heap_block_size, make_small(global_heap_sz));
+    CONS_PAIR(am_old_heap_block_size,
+	      make_small(global_old_heap
+			 ? global_old_hend - global_old_heap
+			 : 0));
     CONS_PAIR(am_heap_size, make_small(global_htop - global_heap));
     CONS_PAIR(am_old_heap_size, make_small(global_old_htop - global_old_heap));
     CONS_PAIR(am_stack_size, make_small(p->stack - p->stop));
     CONS_PAIR(am_recent_size, make_small(global_high_water - global_heap));
     CONS_PAIR(am_mbuf_size, make_small(global_mbuf_sz));
 #else
+    CONS_PAIR(am_heap_block_size, make_small(p->heap_sz));
+    CONS_PAIR(am_old_heap_block_size, make_small(p->old_heap
+						 ? p->old_hend - p->old_heap
+						 : 0));
     CONS_PAIR(am_heap_size, make_small(p->htop - p->heap));
     CONS_PAIR(am_old_heap_size, make_small(p->old_htop - p->old_heap));
     CONS_PAIR(am_stack_size, make_small(p->hend - p->stop));

@@ -87,6 +87,7 @@ static void *emalloc(size_t size);
 static void *erealloc(void *p, size_t size);
 static void efree(void *p);
 static char* strsave(char* string);
+static int is_one_of_strs(char *str, char *strs[]);
 static void get_home(void);
 #ifdef __WIN32__
 static void get_start_erl_data(char *);
@@ -490,25 +491,43 @@ main(int argc, char **argv)
 		switch (argv[i][1]) {
 		  case 'i':
 		  case 'b':
+		  case 'd':
 		  case 's':
 		  case 'h':
 		  case '#':
 		  case 'P':
-		{
-		    char xx[3];
-		    xx[0] = '-';
-		    xx[1] = argv[i][1];
-		    xx[2] = '\0';
-		    if (i+1 >= argc) {
-			xx[0] = '+';
-			usage(xx);
-		    }
-		    add_Eargs(xx);
-		    add_Eargs(argv[i+1]);
-		    i++;
-		    break;
-		}
+		  case 'A':
+		  case 't':
+		  case 'T':
+		      if (argv[i][2] != '\0')
+			  goto the_default;
+		      if (i+1 >= argc)
+			  usage(argv[i]);
+		      argv[i][0] = '-';
+		      add_Eargs(argv[i]);
+		      add_Eargs(argv[i+1]);
+		      i++;
+		      break;
+		  case 'S': {
+		      char *sub_flags[] = {"e", "r", "mmc", "mcs", "cos",
+					   "scs", "lcs", "cgr", "sbct",
+					   "mbsd", "sbcmt", NULL};
+		      if (is_one_of_strs(argv[i]+2, sub_flags)) {
+			  if (i+1 >= argc
+			      || argv[i+1][0] == '-'
+			      || argv[i+1][0] == '+')
+			      usage(argv[i]);
+			  argv[i][0] = '-';
+			  add_Eargs(argv[i]);
+			  add_Eargs(argv[i+1]);
+			  i++;
+		      }
+		      else
+			  goto the_default;
+		      break;
+		  }
 		  default:
+		  the_default:
 		    argv[i][0] = '-'; /* Change +option to -option. */
 		    add_Eargs(argv[i]);
 		}
@@ -625,10 +644,16 @@ usage(const char *switchname)
 	  "[-start_erl [datafile]] "
 #endif
 	  "[-make] [-man [manopts] MANPAGE] [-x] [-emu_args] "
-	  "[+m SIZE_IN_KB] [+M MAX_NO_OF_MMAPS] [+t SIZE_IN_KB] "
-	  "[+T SIZE_IN_KB] [+i BOOT_MODULE] "
+	  "[+d SIZE_IN_KB] [+t SIZE_IN_KB] [+T SIZE_IN_KB] [+i BOOT_MODULE] "
 	  "[+b BOOT_FUN] [+s STACK_SIZE] [+h HEAP_SIZE] [+# ITEMS] "
-	  "[+P MAX_PROCS] [args ...]\n");
+	  "[+P MAX_PROCS] [+A THREADS] "
+
+	  "[+Se BOOL] [+Sr RELEASE] [+Ssbct SIZE_IN_KB] [+Smmc AMOUNT] "
+	  "[+Ssbcmt RATIO] [+Smcs SIZE_IN_KB] [+Sscs SIZE_IN_KB] "
+	  "[+Slcs SIZE_IN_KB] [+Scgr RATE_IN_PERC]  [+Smbsd BLOCKS] "
+	  "[+Scos BOOL] "
+
+	  "[args ...]\n");
   exit(1);
 }
 
@@ -758,6 +783,17 @@ efree(void *p)
     free(p);
 }
 
+static int
+is_one_of_strs(char *str, char *strs[])
+{
+    int i, j;
+    for (i = 0; strs[i]; i++) {
+	for (j = 0; str[j] && strs[i][j] && str[j] == strs[i][j]; j++);
+	if (!str[j] && !strs[i][j])
+	    return 1;
+    }
+    return 0;
+}
 
 char*
 strsave(char* string)

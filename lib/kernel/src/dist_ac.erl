@@ -16,7 +16,7 @@
 %%     $Id$
 %%
 -module(dist_ac).
--vsn('$Revision: /main/release/10').
+-vsn('$Revision: /main/release/r8b_patch/1').
 
 -behaviour(gen_server).
 
@@ -268,17 +268,27 @@ handle_cast(init_sync, _S) ->
     %% before the distribution.  But it can't sync until after the distribution
     %% is started.  Therefore, this 'go'-thing.
     receive
-	go -> ok
-    end,
-    Appls = 
-	case application:get_env(kernel, distributed) of
-	    {ok, D} -> dist_check(D);
-	    undefined -> []
-	end,
-    dist_take_control(Appls),
-    net_kernel:monitor_nodes(true), % we're really just interested in nodedowns.
-    {Known, NAppls, RStarted} = sync_dacs(Appls),
-    {noreply, #state{appls = NAppls, known = Known, remote_started = RStarted}}.
+	{go, KernelConfig} ->
+	    Appls = case application:get_env(kernel, distributed) of
+			{ok, D} -> dist_check(D);
+			undefined -> []
+		    end,
+
+	    dist_take_control(Appls),
+	    %% kernel_config waits for dist_ac to take control over its
+	    %% applications. By this we can be sure that the kernel
+	    %% application hasn't completed its start before dist_ac has
+	    %% taken control over its applications. (OTP-3509)
+	    KernelConfig ! dist_ac_took_control,
+
+	    %% we're really just interested in nodedowns.
+	    net_kernel:monitor_nodes(true),
+	    
+	    {Known, NAppls, RStarted} = sync_dacs(Appls),
+
+	    {noreply,
+	     #state{appls = NAppls, known = Known, remote_started = RStarted}}
+    end.
 
 
 handle_call(info, _From, S) ->

@@ -60,7 +60,7 @@ int oe_decode_erlang_binary(CORBA_Environment *ev, char *_first, int* _index, er
 
     binary->_length = (CORBA_unsigned_long)_length;
     
-    *_index = ((*_index)+sizeof(double)-1)&~(sizeof(double)-1);
+    *_index = ((*_index)+_length+sizeof(double)-1)&~(sizeof(double)-1);
     
     return 0;
 }

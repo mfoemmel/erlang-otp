@@ -81,12 +81,12 @@ typedef struct DMC_STACK_TYPE(Type) {		\
 #define DMC_PUSH(On, What) 						  \
 (((On).pos < (On).siz) ?						  \
  ((On).data[(On).pos++] = What) :					  \
- ((((On).data) = (((On).def == (On).data) ? 			  \
-	memcpy(safe_alloc(((On).siz *= 2) *                              \
-			  sizeof(*((On).data))),(On).def,                 \
+ ((((On).data) = (((On).def == (On).data) ? 			          \
+	memcpy(safe_alloc_from(45, (((On).siz *= 2) *                     \
+				    sizeof(*((On).data)))),(On).def,      \
 	       DMC_DEFAULT_SIZE*sizeof(*((On).data))) :                   \
 	safe_realloc((char *) (On).data,                                  \
-		     ((On).siz *= 2) * sizeof(*((On).data)))))           \
+		     ((On).siz *= 2) * sizeof(*((On).data)))))            \
   [(On).pos++] = What))
 
 #define DMC_POP(From) (From).data[--(From).pos]
@@ -742,7 +742,7 @@ Binary *db_match_set_compile(Process *p, Eterm matchexpr,
 	return NULL;
 
     if (num_heads > 5) {
-	buff = safe_alloc(sizeof(Eterm) * num_heads * 3);
+	buff = safe_alloc_from(47, sizeof(Eterm) * num_heads * 3);
     } else {
 	buff = sbuff;
     }
@@ -847,7 +847,7 @@ Eterm db_match_set_lint(Process *p, Eterm matchexpr, int flags)
     }
 
     if (num_heads > 5) {
-	buff = safe_alloc(sizeof(Eterm) * num_heads * 3);
+	buff = safe_alloc_from(47, sizeof(Eterm) * num_heads * 3);
     } 
 
     matches = buff;
@@ -1490,12 +1490,16 @@ restart:
 	    ++ep;
 	    break;
 	case matchEqFloat:
+	    if (!is_float(*ep))
+		FAIL();
 	    if (memcmp(float_val(*ep) + 1, pc, sizeof(double)))
 		FAIL();
 	    pc += 2;
 	    ++ep;
 	    break;
 	case matchEqRef:
+	    if (!is_ref(*ep))
+		FAIL();
 	    tp = ref_val(*ep);
 	    if (!eqref(tp, pc))
 		FAIL();
@@ -1504,6 +1508,8 @@ restart:
 	    ++ep;
 	    break;
 	case matchEqBig:
+	    if (!is_big(*ep))
+		FAIL();
 	    tp = big_val(*ep);
 	    if (*tp != *pc)
 		FAIL();
@@ -1851,7 +1857,7 @@ Eterm db_make_mp_binary(Process *p, Binary *mp) {
 
 DMCErrInfo *db_new_dmc_err_info(void) 
 {
-    DMCErrInfo *ret = safe_alloc(sizeof(DMCErrInfo));
+    DMCErrInfo *ret = safe_alloc_from(49, sizeof(DMCErrInfo));
     ret->var_trans = NULL;
     ret->num_trans = 0;
     ret->error_added = 0;
@@ -2252,7 +2258,7 @@ static void add_dmc_err(DMCErrInfo *err_info,
 			DMCErrorSeverity severity)
 {
     /* Linked in in reverse order, to ease the formatting */
-    DMCError *e = safe_alloc(sizeof(DMCError));
+    DMCError *e = safe_alloc_from(48, sizeof(DMCError));
     if (term != 0UL) {
 	cerr_pos = 0;
 	display(term, CBUF);
@@ -2341,8 +2347,7 @@ static DMCRet dmc_one_term(DMCContext *context,
 		       may be atoms that changed */
 		    context->matchexpr[j] = context->copy->mem[j];
 		}
-		heap->data = safe_alloc(heap->size * 
-					sizeof(unsigned));
+		heap->data = safe_alloc_from(46, heap->size*sizeof(unsigned));
 		sys_memset(heap->data, 0, 
 			   heap->size * sizeof(unsigned));
 		DMC_CLEAR(*stack);
@@ -3598,8 +3603,8 @@ static int match_compact(ErlHeapFragment *expr, DMCErrInfo *err_info)
 	  (int (*)(const void *, const void *)) &cmp_uint);
 
     if (err_info != NULL) { /* lint needs a translation table */
-	err_info->var_trans = safe_alloc(sizeof(unsigned) * 
-					 DMC_STACK_NUM(heap));
+	err_info->var_trans = safe_alloc_from(50, (sizeof(unsigned) * 
+						   DMC_STACK_NUM(heap)));
 	sys_memcpy(err_info->var_trans, DMC_STACK_DATA(heap),
 		   DMC_STACK_NUM(heap) * sizeof(unsigned));
 	err_info->num_trans = DMC_STACK_NUM(heap);
@@ -3821,7 +3826,7 @@ static Eterm match_spec_test(Process *p, Eterm against, Eterm spec, int trace)
 	    l = CDR(list_val(l));
 	}
 	if (trace) {
-	    arr = sys_alloc(sizeof(Eterm) * n);
+	    arr = sys_alloc_from(58, sizeof(Eterm) * n);
 	    l = against;
 	    n = 0;
 	    while (is_list(l)) {

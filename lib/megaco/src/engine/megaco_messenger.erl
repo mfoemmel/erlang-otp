@@ -536,7 +536,7 @@ prepare_ack(ConnData, [TA | T], Rest, AckList, ReqList) when record(TA, 'Transac
     Last      = TA#'TransactionAck'.lastAck,
     TA2       = TA#'TransactionAck'{lastAck = asn1_NOVALUE},
     ConnData2 = ConnData#conn_data{serial = First},
-    AckList2 = do_prepare_ack(ConnData2, TA2, AckList),
+    AckList2  = do_prepare_ack(ConnData2, TA2, AckList),
     if
         Last == asn1_NOVALUE ->
             prepare_ack(ConnData, T, Rest, AckList2, ReqList);
@@ -559,7 +559,7 @@ do_prepare_ack(ConnData, T, AckList) ->
     case megaco_monitor:lookup_reply(TransId) of
         [] ->
             %% The reply has already been garbage collected. Ignore.
-            ?report_trace(ConnData, "discard trans (no receiver)", [T]),
+            ?report_trace(ConnData, "discard ack (no receiver)", [T]),
             AckList;
         [Rep] when Rep#reply.state == waiting_for_ack ->
             %% Don't care about Msg and Rep version diff
@@ -570,6 +570,7 @@ do_prepare_ack(ConnData, T, AckList) ->
 			      [T, {error, "got ack before reply was sent"}]),
             AckList
     end.
+
 
 handle_requests([{ConnData, Rep, T} | Rest], Pending)
   when Rep#reply.state == eval_request ->
@@ -718,8 +719,10 @@ handle_pending(ConnData, T) ->
             ?report_trace(ConnData, "trans pending (timer restarted)", [T]),
             megaco_monitor:insert_request(Req2); % Timing problem?
         [] ->
-            ?report_trace(ConnData, "trans pending (no receiver)", [T])
+	    ?report_trace(ConnData, "remote pending (no receiver)", [T]),
+	    return_unexpected_trans(ConnData, T)
     end.
+
 
 handle_reply(ConnData, T) ->
     TransId = to_local_trans_id(ConnData),
@@ -762,8 +765,10 @@ handle_reply(ConnData, T) ->
 					   reply_data   = UserData},
             return_reply(ConnData2, TransId, UserReply);
         [] ->
-            ?report_trace(ConnData, "trans reply (no receiver)", [T])
+            ?report_trace(ConnData, "trans reply (no receiver)", [T]),
+	    return_unexpected_trans(ConnData, T)
     end.
+
 
 handle_acks([{ConnData, Rep, T} | Rest])
   when Rep#reply.state == waiting_for_ack ->
@@ -772,11 +777,17 @@ handle_acks([{ConnData, Rep, T} | Rest])
 handle_acks([]) ->
     ok.
 
+%% OTP-4213: Temporary until we figure out why this work...
 handle_ack(ConnData, AckStatus, Rep, T) ->
     megaco_monitor:cancel_apply_after(Rep#reply.timer_ref),
-    TransId = to_remote_trans_id(ConnData),
-    megaco_monitor:delete_reply(TransId),
+    megaco_monitor:delete_reply(Rep#reply.trans_id),
     handle_ack_callback(ConnData, AckStatus, Rep#reply.ack_action, T).
+
+% handle_ack(ConnData, AckStatus, Rep, T) ->
+%     megaco_monitor:cancel_apply_after(Rep#reply.timer_ref),
+%     TransId = to_remote_trans_id(ConnData),
+%     megaco_monitor:delete_reply(TransId),
+%     handle_ack_callback(ConnData, AckStatus, Rep#reply.ack_action, T).
 
 handle_ack_callback(ConnData, AckStatus, discard_ack = AckAction, T) ->
     case AckStatus of
@@ -1197,8 +1208,10 @@ receive_reply_remote(ConnData, UserReply) ->
 					   reply_data   = UserData},
 	    return_reply(ConnData2, TransId, UserReply);
         [] ->
-            ?report_trace(ConnData, "remote reply (no receiver)", [UserReply])
+	    ?report_trace(ConnData, "remote reply (no receiver)", [UserReply]),
+	    return_unexpected_trans_reply(ConnData, TransId, UserReply)
     end.
+
 
 cancel_reply(ConnData, Rep, Reason) when record(Rep, reply) ->
     megaco_monitor:cancel_apply_after(Rep#reply.pending_timer_ref),
@@ -1288,6 +1301,21 @@ pending_timeout(ConnData, TransId) ->
 		    send_pending(ConnData)
 	    end
     end.
+
+
+return_unexpected_trans_reply(ConnData, TransId, UserReply) ->
+    Trans = #'TransactionReply'{transactionId     = TransId,
+				transactionResult = UserReply},
+    return_unexpected_trans(ConnData, Trans).
+
+return_unexpected_trans(ConnData, Trans) ->
+    UserMod    = ConnData#conn_data.user_mod,
+    UserArgs   = ConnData#conn_data.user_args,
+    ConnHandle = ConnData#conn_data.conn_handle,
+    Version    = ConnData#conn_data.protocol_version,
+    (catch apply(UserMod, handle_unexpected_trans, 
+		 [ConnHandle, Version, Trans | UserArgs])).
+
 
 to_remote_trans_id(ConnData) when record(ConnData, conn_data) ->
     Mid = (ConnData#conn_data.conn_handle)#megaco_conn_handle.remote_mid,

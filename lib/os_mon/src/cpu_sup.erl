@@ -78,6 +78,8 @@ init([]) ->
 	{unix,linux} ->
 	    {ok,#state{port=not_used}};
 	{unix,freebsd} ->
+	    {ok,#state{port=not_used}};
+	{unix,openbsd} ->
 	    {ok,#state{port=not_used}}
     end.
 
@@ -146,6 +148,7 @@ get_measurement(Request,Port) ->
 	{unix,linux} ->
 	    {ok,F} = file:open("/proc/loadavg",[read,raw]),
 	    {ok,D} = file:read(F,24),
+	    ok = file:close(F),
 	    {ok,[Load1,Load5,Load15,PRun,PTotal],_} =
 		io_lib:fread("~f ~f ~f ~d/~d", D),
 	    case Request of
@@ -168,6 +171,19 @@ get_measurement(Request,Port) ->
 		?nprocs ->
 		    {ok, DirList} = file:list_dir("/proc"),
 		    length(DirList)
+	    end;
+	{unix,openbsd} ->
+	    D = os:cmd("/sbin/sysctl -n vm.loadavg") -- "\n",
+	    {ok, [L1, L5, L15], _} = io_lib:fread("~f ~f ~f", D),
+	    case Request of
+		?avg1  -> sunify(L1);
+		?avg5  -> sunify(L5);
+		?avg15 -> sunify(L15);
+		?ping -> 4711;
+		?nprocs ->
+		    Ps = os:cmd("/bin/ps -ax | /usr/bin/wc -l"),
+		    {ok, [N], _} = io_lib:fread("~d", Ps),
+		    N-1
 	    end
     end.
 

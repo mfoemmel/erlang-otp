@@ -1528,7 +1528,7 @@ static int analyze_pattern(DbTableTree *tb, Eterm pattern,
 	return DB_ERROR_BADPARAM;
     }
     if (num_heads > 10) {
-	buff = safe_alloc(sizeof(Eterm) * num_heads * 3);
+	buff = safe_alloc_from(41, sizeof(Eterm) * num_heads * 3);
     }
 
     matches = buff;

@@ -212,6 +212,16 @@ $(OBJDIR)/%.o: drivers/unix/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -c $< -o $@
 endif
 
+
+# ----------------------------------------------------------------------
+# Specials
+#
+
+ifeq ($(CC), gcc)
+$(OBJDIR)/erl_sl_alloc.o: beam/erl_sl_alloc.c
+	$(CC) $(subst O2,O3, $(CFLAGS)) $(INCLUDES) -funroll-loops -c $< -o $@
+endif
+
 # ----------------------------------------------------------------------
 # Build necessary beam files if they are not already in place. To force
 # rebuilding (is this a good idea?) add a dummy dependency to this target.
@@ -267,7 +277,8 @@ OS_OBJS = \
 	$(OBJDIR)/driver_tab.o \
 	$(OBJDIR)/unix_efile.o \
 	$(OBJDIR)/gzio.o \
-	$(OBJDIR)/erts_sl_alloc.o \
+	$(OBJDIR)/erl_old_sl_alloc.o \
+	$(OBJDIR)/erl_sl_alloc.o \
 	$(OBJDIR)/elib_malloc.o \
 	$(OBJDIR)/elib_memmove.o
 

@@ -116,7 +116,7 @@ BIF_ADECL_2
     if (n <= sizeof(small_vec)/sizeof(small_vec[0]))
 	vec_p = small_vec;
     else
-	vec_p = (Eterm*) safe_alloc(n * sizeof(Eterm));
+	vec_p = (Eterm*) safe_alloc_from(360, n * sizeof(Eterm));
     
     /* PUT ALL ELEMENTS IN VP */
     vp = vec_p;

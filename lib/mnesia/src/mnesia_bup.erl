@@ -830,6 +830,18 @@ create_dat_files([{schema, Tab, TabDef} | Tail], LocalTabs) ->
 		{error, Reason} ->
 		    throw({error, {"Cannot open file", Tab, Args, Reason}})
 	    end;
+	ram_copies ->
+	    %% Create .DCD if needed in open_media in case any ram_copies
+	    %% are backed up.
+	    LocalTab = #local_tab{name = Tab,
+				  storage_type = ram_copies,
+				  dets_args = ignore,
+				  open   = fun open_media/2,
+				  close  = fun close_media/1,
+				  add    = fun add_to_media/4,
+				  record_name = RecName},
+	    ?ets_insert(LocalTabs, LocalTab),
+	    create_dat_files(Tail, LocalTabs);
 	Storage ->
 	    %% Create DCD
 	    Fname = mnesia_lib:tab2dcd(Tab),
@@ -866,6 +878,22 @@ open_media(Tab, LT) ->
 		{error, Reason} ->
 		    throw({error, {"Cannot open file", Tab, Args, Reason}})
 	    end;
+	ram_copies ->
+	    %% Create .DCD as ram_copies backed up.
+	    FnameDCD = mnesia_lib:tab2dcd(Tab),
+	    file:delete(FnameDCD),
+	    Log = mnesia_log:open_log(fallback_tab,
+				      mnesia_log:dcd_log_header(),
+				      FnameDCD, false),
+	    mnesia_log:close_log(Log),
+	    
+	    %% Create .DCL
+	    Fname = mnesia_lib:tab2dcl(Tab),
+	    file:delete(Fname),
+	    Tab = mnesia_log:open_log(Tab, 
+				      mnesia_log:dcl_log_header(), 
+				      Fname, false, false,
+				      read_write);
 	_ ->
 	    Fname = mnesia_lib:tab2dcl(Tab),
 	    file:delete(Fname),

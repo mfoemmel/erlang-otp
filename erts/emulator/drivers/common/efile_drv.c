@@ -324,6 +324,29 @@ struct t_data
 };
 
 
+#define EF_ALLOC(S)		sys_alloc_from(200, (S))
+#define EF_REALLOC(P, S)	sys_realloc_from(200, (P), (S))
+#define EF_SAFE_ALLOC(S)	ef_safe_alloc((S))
+#define EF_SAFE_REALLOC(P, S)	ef_safe_realloc((P), (S))
+#define EF_FREE(P)		do { if((P)) sys_free((P)); } while(0)
+
+static void *ef_safe_alloc(Uint s)
+{
+    void *p = EF_ALLOC(s);
+    if (!p) erl_exit(1, "efile drv: Can't allocate %d bytes of memory\n", s);
+    return p;
+}
+
+#if 0 /* Currently not used */
+
+static void *ef_safe_realloc(void *op, Uint s)
+{
+    void *p = EF_REALLOC(op, s);
+    if (!p) erl_exit(1, "efile drv: Can't reallocate %d bytes of memory\n", s);
+    return p;
+}
+
+#endif
 
 /*********************************************************************
  * ErlIOVec manipulation functions.
@@ -387,8 +410,8 @@ static void ev_free(ErlIOVec *ev) {
 		driver_free_binary(ev->binv[i]);
 	    }
 	}
-	sys_free(ev->iov);
-	sys_free(ev->binv);
+	EF_FREE(ev->iov);
+	EF_FREE(ev->binv);
     }
 }
 
@@ -406,15 +429,13 @@ static ErlIOVec *ev_copy(ErlIOVec *dest, ErlIOVec *source) {
 	return dest;
     }
     /* Allocate ->iov and ->binv */
-    dest->iov = 
-	sys_alloc_from(200, sizeof(*dest->iov) * source->vsize);
+    dest->iov = EF_ALLOC(sizeof(*dest->iov) * source->vsize);
     if (! dest->iov) {
 	return NULL;
     }
-    dest->binv = 
-	sys_alloc_from(200, sizeof(*dest->binv) * source->vsize);
+    dest->binv = EF_ALLOC(sizeof(*dest->binv) * source->vsize);
     if (! dest->binv) {
-	sys_free(dest->iov);
+	EF_FREE(dest->iov);
 	return NULL;
     }
     dest->size = source->size;
@@ -510,8 +531,7 @@ file_start(ErlDrvPort port, char* command)
 {
     file_descriptor* desc;
 
-    if ((desc = (file_descriptor*)
-	 sys_alloc_from(200, sizeof(file_descriptor))) == NULL)
+    if ((desc = (file_descriptor*) EF_ALLOC(sizeof(file_descriptor))) == NULL)
 	return ERL_DRV_ERROR_GENERAL;
     desc->fd = -1;
     desc->port = port;
@@ -539,7 +559,7 @@ file_start(ErlDrvPort port, char* command)
 
 static void free_data(void *data)
 {
-    sys_free(data);
+    EF_FREE(data);
 }
 
 static void do_close(int flags, int fd) {
@@ -576,7 +596,7 @@ file_stop(ErlDrvData e)
 	driver_free_binary(desc->read_binp);
     }
     MUTEX_DESTROY(desc->q_lock);
-    sys_free(desc);
+    EF_FREE(desc);
 }
 
 
@@ -845,7 +865,7 @@ static void free_read(void *data)
     struct t_data *d = (struct t_data *) data;
 
     driver_free_binary(d->c.read.binp);
-    sys_free(d);
+    EF_FREE(d);
 }
 
 static void invoke_read_file(void *data)
@@ -888,7 +908,7 @@ static void free_read_file(void *data)
     struct t_data *d = (struct t_data *) data;
 
     driver_free_binary(d->c.read_file.binp);
-    sys_free(d);
+    EF_FREE(d);
 }
 
 
@@ -964,7 +984,7 @@ static void free_preadv(void *data) {
     for(i = 0; i < ev->vsize; i++) {
 	driver_free_binary(ev->binv[i]);
     }
-    sys_free(d);
+    EF_FREE(d);
 }
 
 #if 0
@@ -1068,7 +1088,7 @@ static void free_writev(void *data) {
     MUTEX_LOCK(*d->c.writev.q_lockp);
     driver_deq(d->c.writev.port, d->c.writev.size + d->c.writev.free_size);
     MUTEX_UNLOCK(*d->c.writev.q_lockp);
-    sys_free(d);
+    EF_FREE(d);
 }
 
 static void invoke_pwd(void *data)
@@ -1189,7 +1209,7 @@ static void free_pwritev(void *data) {
     MUTEX_LOCK(*d->c.writev.q_lockp);
     driver_deq(d->c.pwritev.port, d->c.pwritev.free_size + d->c.pwritev.size);
     MUTEX_UNLOCK(*d->c.writev.q_lockp);
-    sys_free(d);
+    EF_FREE(d);
 }
 
 static void invoke_flstat(void *data)
@@ -1284,9 +1304,8 @@ static void invoke_readdir(void *data)
 	d->n = 1;
 	d->result_ok = (d->errInfo.posix_errno == 0);
     }
-    if (d->buf != NULL)
-	sys_free(d->buf);
-    d->buf = sys_alloc_from(200, d->n);
+    EF_FREE(d->buf);
+    d->buf = EF_SAFE_ALLOC(d->n);
     memcpy(d->buf, resbuf, d->n);
 }
 
@@ -1328,16 +1347,15 @@ static void free_pread(void *data)
     struct t_data *d = (struct t_data *) data;
 
     driver_free_binary(d->bin);
-    sys_free(d);
+    EF_FREE(d);
 }
 
 static void free_readdir(void *data)
 {
     struct t_data *d = (struct t_data *) data;
 
-    if (d->buf != NULL)
-	sys_free(d->buf);
-    sys_free(d);
+    EF_FREE(d->buf);
+    EF_FREE(d);
 }
 
 
@@ -1399,7 +1417,7 @@ static void cq_execute(file_descriptor *desc) {
 static int async_write(file_descriptor *desc, int *errp,
 		       int reply, Uint32 reply_size) {
     struct t_data *d;
-    if (! (d = sys_alloc_from(200, sizeof(struct t_data) - 1))) {
+    if (! (d = EF_ALLOC(sizeof(struct t_data) - 1))) {
 	if (errp) *errp = ENOMEM;
 	return -1;
     }
@@ -1455,7 +1473,7 @@ static int flush_write_check_error(file_descriptor *desc, int *errp) {
 static int async_lseek(file_descriptor *desc, int *errp, int reply, 
 		       int offset, int origin) {
     struct t_data *d;
-    if (! (d = sys_alloc_from(200, sizeof(struct t_data)))) {
+    if (! (d = EF_ALLOC(sizeof(struct t_data)))) {
 	*errp = ENOMEM;
 	return -1;
     }
@@ -1743,8 +1761,7 @@ file_output(ErlDrvData e, char* buf, int count)
 
     case FILE_MKDIR:
     {
-	d = sys_alloc_from(200, sizeof(struct t_data) - 1
-			   + strlen(name) + 1);
+	d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1 + strlen(name) + 1);
 	
 	strcpy(d->b, name);
 	d->command = command;
@@ -1755,8 +1772,7 @@ file_output(ErlDrvData e, char* buf, int count)
     }
     case FILE_RMDIR:
     {
-	d = sys_alloc_from(200, sizeof(struct t_data) - 1
-			   + strlen(name) + 1);
+	d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1 + strlen(name) + 1);
 	
 	strcpy(d->b, name);
 	d->command = command;
@@ -1767,8 +1783,7 @@ file_output(ErlDrvData e, char* buf, int count)
     }
     case FILE_DELETE:
     {
-	d = sys_alloc_from(200, sizeof(struct t_data) - 1
-			   + strlen(name) + 1);
+	d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1 + strlen(name) + 1);
 	
 	strcpy(d->b, name);
 	d->command = command;
@@ -1782,9 +1797,9 @@ file_output(ErlDrvData e, char* buf, int count)
 	    char* new_name;
 
 	    new_name = name+strlen(name)+1;
-	    d = sys_alloc_from(200, sizeof(struct t_data) - 1
-			       + strlen(name) + 1
-			       + strlen(new_name) + 1);
+	    d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1
+			      + strlen(name) + 1
+			      + strlen(new_name) + 1);
 	
 	    strcpy(d->b, name);
 	    strcpy(d->b + strlen(name) + 1, new_name);
@@ -1798,8 +1813,7 @@ file_output(ErlDrvData e, char* buf, int count)
 	}
     case FILE_CHDIR:
     {
-	d = sys_alloc_from(200, sizeof(struct t_data) - 1
-			   + strlen(name) + 1);
+	d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1 + strlen(name) + 1);
 	
 	strcpy(d->b, name);
 	d->command = command;
@@ -1810,8 +1824,7 @@ file_output(ErlDrvData e, char* buf, int count)
     }
     case FILE_PWD:
         {
-	    d = sys_alloc_from(200, sizeof(struct t_data) - 1
-			       + RESBUFSIZE + 1);
+	    d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1 + RESBUFSIZE + 1);
 	
 	    d->drive = *(uchar*)buf;
 	    d->command = command;
@@ -1825,8 +1838,7 @@ file_output(ErlDrvData e, char* buf, int count)
 #ifdef USE_THREADS
 	if (erts_async_max_threads > 0)
 	{
-	    d = sys_alloc_from(200, sizeof(struct t_data) - 1
-			       + strlen(name) + 1);
+	    d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1 + strlen(name) + 1);
 	
 	    strcpy(d->b, name);
 	    d->dir_handle = NULL;
@@ -1862,8 +1874,7 @@ file_output(ErlDrvData e, char* buf, int count)
 	}
     case FILE_OPEN:
 	{
-	    d = sys_alloc_from(200, sizeof(struct t_data) - 1
-			       + strlen(buf+4) + 1);
+	    d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1 + strlen(buf+4) + 1);
 	
 	    d->flags = get_int32((uchar*)buf);
 	    name = buf+4;
@@ -1877,7 +1888,7 @@ file_output(ErlDrvData e, char* buf, int count)
 
     case FILE_FSYNC:
     {
-	d = sys_alloc_from(200, sizeof(struct t_data));
+	d = EF_SAFE_ALLOC(sizeof(struct t_data));
 	
 	d->fd = fd;
 	d->command = command;
@@ -1890,8 +1901,7 @@ file_output(ErlDrvData e, char* buf, int count)
     case FILE_FSTAT: 
     case FILE_LSTAT:
     {
-	d = sys_alloc_from(200, sizeof(struct t_data) - 1
-			   + strlen(name) + 1);
+	d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1 + strlen(name) + 1);
 	
 	strcpy(d->b, name);
 	d->fd = fd;
@@ -1905,8 +1915,7 @@ file_output(ErlDrvData e, char* buf, int count)
 	{
 	    int offset;		/* Offset for pwrite. */
 
-	    d = sys_alloc_from(200, sizeof(struct t_data) - 1
-			       + count-5);
+	    d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1 + count-5);
 	
 	    offset = get_int32((uchar*)buf);
 	    d->offset = offset;
@@ -1934,7 +1943,7 @@ file_output(ErlDrvData e, char* buf, int count)
 		goto done;
 	    }
 	{
-	    d = sys_alloc_from(200, sizeof(struct t_data) - 1);
+	    d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1);
 	    
 	    d->flags = desc->flags;
 	    d->bin = bin;
@@ -1951,7 +1960,7 @@ file_output(ErlDrvData e, char* buf, int count)
 
     case FILE_TRUNCATE:
         {
-	    d = sys_alloc_from(200, sizeof(struct t_data));
+	    d = EF_SAFE_ALLOC(sizeof(struct t_data));
 	    
 	    d->flags = desc->flags;
 	    d->fd = fd;
@@ -1964,8 +1973,8 @@ file_output(ErlDrvData e, char* buf, int count)
 
     case FILE_WRITE_INFO:
 	{
-	    d = sys_alloc_from(200, sizeof(struct t_data) - 1
-			       + strlen(buf+21*4) + 1);
+	    d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1
+			      + strlen(buf+21*4) + 1);
 	    
 	    d->info.mode = get_int32(buf + 0 * 4);
 	    d->info.uid = get_int32(buf + 1 * 4);
@@ -1983,8 +1992,7 @@ file_output(ErlDrvData e, char* buf, int count)
 
     case FILE_READLINK:
 	{
-	    d = sys_alloc_from(200, sizeof(struct t_data) - 1
-			       + RESBUFSIZE + 1);
+	    d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1 + RESBUFSIZE + 1);
 	
 	    strcpy(d->b, name);
 	    d->command = command;
@@ -1999,9 +2007,9 @@ file_output(ErlDrvData e, char* buf, int count)
 	    char* new_name;
 
 	    new_name = name+strlen(name)+1;
-	    d = sys_alloc_from(200, sizeof(struct t_data) - 1
-			       + strlen(name) + 1
-			       + strlen(new_name) + 1);
+	    d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1
+			      + strlen(name) + 1
+			      + strlen(new_name) + 1);
 	
 	    strcpy(d->b, name);
 	    strcpy(d->b + strlen(name) + 1, new_name);
@@ -2019,9 +2027,9 @@ file_output(ErlDrvData e, char* buf, int count)
 	    char* new_name;
 
 	    new_name = name+strlen(name)+1;
-	    d = sys_alloc_from(200, sizeof(struct t_data) - 1
-			       + strlen(name) + 1
-			       + strlen(new_name) + 1);
+	    d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1
+			      + strlen(name) + 1
+			      + strlen(new_name) + 1);
 	
 	    strcpy(d->b, name);
 	    strcpy(d->b + strlen(name) + 1, new_name);
@@ -2158,7 +2166,7 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	}
 	if (desc->fd >= 0) {
 	    struct t_data *d;
-	    if (! (d = sys_alloc_from(200, sizeof(struct t_data)))) {
+	    if (! (d = EF_ALLOC(sizeof(struct t_data)))) {
 		error_reply_posix(desc, ENOMEM);
 	    } else {
 		d->command = command;
@@ -2242,7 +2250,7 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 		desc->read_binp = binp;
 	    }
 	} 
-	if (! (d = sys_alloc_from(200, sizeof(struct t_data)))) {
+	if (! (d = EF_ALLOC(sizeof(struct t_data)))) {
 	    error_reply_posix(desc, ENOMEM);
 	    goto done;
 	}
@@ -2332,9 +2340,8 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	    numerr_reply_posix(desc, 0, EINVAL);
 	    goto done;
 	}
-	d = sys_alloc_from(200, 
-			   sizeof(struct t_data) 
-			   + (n-1) * sizeof(struct t_pwritev));
+	d = EF_ALLOC(sizeof(struct t_data) 
+		     + (n-1) * sizeof(struct t_pwritev));
 	if (! d) {
 	    numerr_reply_posix(desc, 0, ENOMEM);
 	    goto done;
@@ -2358,7 +2365,7 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 		|| !EV_GET_UINT32(ev, &size, &p, &q)) {
 		/* Misalignment in buffer */
 		numerr_reply_posix(desc, 0, EINVAL);
-		sys_free(d);
+		EF_FREE(d);
 		goto done;
 	    }
 	    if (size > 0) {
@@ -2371,7 +2378,7 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	d->c.pwritev.free_size = 0;
 	if (j == 0) {
 	    /* Trivial case - nothing to write */
-	    sys_free(d);
+	    EF_FREE(d);
 	    numeric_reply(desc, 0);
 	} else {
 	    int skip = 1 + sizeof(Uint32)*(1 + 2*n);
@@ -2379,7 +2386,7 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 		/* Actual amount of data does not match 
 		 * total of all pos/size specs
 		 */
-		sys_free(d);
+		EF_FREE(d);
 		numerr_reply_posix(desc, 0, EINVAL);
 	    } else {
 		/* Enqueue the data */
@@ -2422,11 +2429,10 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	/* Create the thread data structure with the contained ErlIOVec 
 	 * and corresponding binaries for the response 
 	 */
-	d = sys_alloc_from(200, 
-			   sizeof(struct t_data) 
-			   + ((n-1) * sizeof(Uint32))
-			   + ((1+n) 
-			      * (sizeof(SysIOVec) + sizeof(ErlDrvBinary*))));
+	d = EF_ALLOC(sizeof(struct t_data) 
+		     + ((n-1) * sizeof(Uint32))
+		     + ((1+n) 
+			* (sizeof(SysIOVec) + sizeof(ErlDrvBinary*))));
 	if (! d) {
 	    numerr_reply_posix(desc, 0, ENOMEM);
 	    goto done;
@@ -2463,7 +2469,7 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	    for (i--; i > 0; i--) {
 		driver_free_binary(res_ev->binv[i]);
 	    }
-	    sys_free(d);
+	    EF_FREE(d);
 	    goto done;
 	}
 	/* Allocate the header binary (index 0) */
@@ -2473,7 +2479,7 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	    for (i = 1; i < 1+n; i++) {
 		driver_free_binary(res_ev->binv[i]);
 	    }
-	    sys_free(d);
+	    EF_FREE(d);
 	    goto done;
 	}
 	res_ev->iov[0].iov_len = sizeof(Uint32)*(1+n);
@@ -2532,7 +2538,7 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	    error_reply_posix(desc, EINVAL);
 	    goto done;
 	}
-	d = sys_alloc_from(200, sizeof(struct t_data) + ev->size-1);
+	d = EF_ALLOC(sizeof(struct t_data) + ev->size-1);
 	if (! d) {
 	    error_reply_posix(desc, ENOMEM);
 	    goto done;
@@ -2545,13 +2551,13 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	if (! efile_openfile(&d->errInfo, d->c.read_file.name, EFILE_MODE_READ, 
 			     &d->fd, &size)) {
 	    error_reply(desc, &d->errInfo);
-	    sys_free(d);
+	    EF_FREE(d);
 	    goto done;
 	}
 	if (! (d->c.read_file.binp = driver_alloc_binary(size))) {
 	    error_reply_posix(desc, ENOMEM);
 	    efile_closefile(d->fd);
-	    sys_free(d);
+	    EF_FREE(d);
 	    goto done;
 	}
 	d->c.read_file.size = size;
@@ -2621,9 +2627,8 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	/* Create the thread data structure with the contained ErlIOVec 
 	 * and corresponding binaries for the response 
 	 */
-	d = sys_alloc_from(200, 
-			   sizeof(struct t_data)
-			   + 2*(sizeof(SysIOVec) + sizeof(ErlDrvBinary*)));
+	d = EF_ALLOC(sizeof(struct t_data)
+		     + 2*(sizeof(SysIOVec) + sizeof(ErlDrvBinary*)));
 	if (! d) {
 	    numerr_reply_posix(desc, 0, ENOMEM);
 	    goto done;
@@ -2644,7 +2649,7 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	/* Allocate the header binary */
 	if (! (res_ev->binv[0] = driver_alloc_binary(3*sizeof(Uint32)))) {
 	    numerr_reply_posix(desc, 0, ENOMEM);
-	    sys_free(d);
+	    EF_FREE(d);
 	    goto done;
 	}
 	res_ev->iov[0].iov_len = 3*sizeof(Uint32);
@@ -2658,14 +2663,14 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	    res_ev->vsize = 1;
 	    ev_reply(desc, FILE_RESP_N2DATA, res_ev);
 	    driver_free_binary(res_ev->binv[0]);
-	    sys_free(d);
+	    EF_FREE(d);
 	    goto done;
 	}
 	/* Allocate the result data binary */
 	if (! (res_ev->binv[1] = driver_alloc_binary(size))) {
 	    numerr_reply_posix(desc, 0, ENOMEM);
 	    driver_free_binary(res_ev->binv[0]);
-	    sys_free(d);
+	    EF_FREE(d);
 	    goto done;
 	}
 	res_ev->iov[1].iov_len = size;
@@ -2725,14 +2730,14 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
     } else {
 	/* Flatten buffer and send it to file_output(desc, buf, len) */
 	int len = ev->size;
-	char *buf = sys_alloc_from(200, len);
+	char *buf = EF_ALLOC(len);
 	if (! buf) {
 	    error_reply_posix(desc, ENOMEM);
 	    goto done;
 	}
 	driver_vec_to_buf(ev, buf, len);
 	file_output((ErlDrvData) desc, buf, len);
-	sys_free(buf);
+	EF_FREE(buf);
 	goto done;
     }
 

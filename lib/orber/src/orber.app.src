@@ -87,7 +87,10 @@
         'orber_request_number',
         'orber_socket',
         'orber_tc',
-        'orber_typedefs'
+        'orber_typedefs',
+	'orber_web',
+	'orber_web_server',
+	'orber_iiop_tracer'
      ]	
   },
   {registered, [orber_sup, orber_iiop_sup, orber_iiop_net, orber_iiop_outsup, 

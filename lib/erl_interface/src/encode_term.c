@@ -24,19 +24,13 @@
 /* the actual encoder */
 extern int erl_encode_it(ETERM *ep, unsigned char **ext, int dist);
      
-int ei_x_encode_term(ei_x_buff* x, void* t)
+extern int ei_x_encode_term(ei_x_buff* x, void* t)
 {
-    int i = x->index;
-    char* s, * s0;
-
-    if (!x_fix_buff(x, i))
-	return -1;
-    s0 = s = x->buff + i;
-    i += erl_term_len(t) - 1;
-    if (erl_encode_it(t,(unsigned char **)&s, 5))
-	return -1;
-    x->index += s - s0;
-    return 0;
+  int i = x->index;
+  ei_encode_term(NULL, &i, t);
+  if (!x_fix_buff(x, i))
+    return -1;
+  return ei_encode_term(x->buff, &x->index, t);
 }
 
 extern int ei_encode_term(char *buf, int *index, void *t)

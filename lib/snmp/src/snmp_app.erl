@@ -84,6 +84,11 @@ start(Type, []) ->
 	    {ok, V4} -> V4;
 	    _ -> silence
 	end,
+    ErrorReportMod =
+	case application:get_env(snmp, snmp_error_report_mod) of
+	    {ok, Mod} -> Mod;
+	    _ -> snmp_error
+	end,
     case application:get_env(snmp, snmp_agent_type) of
 	{ok, sub} ->
 	    SubVerbosity =
@@ -102,7 +107,8 @@ start(Type, []) ->
 		    {local_db_auto_repair,LdbAutoRepair},
 		    {local_db_verbosity,LdbVerbosity},
 		    {symbolic_store_verbosity,SymbolicStoreVerbosity},
-		    {subagent_verbosity,SubVerbosity}],
+		    {subagent_verbosity,SubVerbosity},
+		    {error_report_mod, ErrorReportMod}],
 	    case snmp_supervisor:start_sub(DbDir, Opts) of
 		{ok, Pid} ->
 		    {ok, Pid, []};
@@ -168,7 +174,8 @@ start(Type, []) ->
 		    {symbolic_store_verbosity,SymbolicStoreVerbosity},
 		    {note_store_verbosity,NoteStoreVerbosity},
 		    {net_if_recbuf,NetIfRecBuf},
-		    {net_if_verbosity,NetIfVerbosity}],
+		    {net_if_verbosity,NetIfVerbosity},
+		    {error_report_mod, ErrorReportMod}],
 	    case snmp_supervisor:start_master(DbDir, ConfDir, Opts) of
 		{ok, Pid} when Type == normal ->
 		    {ok, Pid};

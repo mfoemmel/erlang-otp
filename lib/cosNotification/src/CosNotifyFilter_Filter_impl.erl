@@ -438,8 +438,9 @@ delete_constraints([H|T], State)
 	{ok, NewState} ->
 	    delete_constraints(T, NewState);
 	Reason ->
-	    ?not_errorMsg("'CosNotifyFilter_Filter':modify_constraints() failed removing: ~p~n",
-			  [H]),
+	    orber:debug_level_print("[~p] 'CosNotifyFilter_Filter':modify_constraints().
+Unable to remove: ~p
+Reason: ~p~n", [?LINE, H, Reason], ?DEBUG_LEVEL),
 	    delete_constraints(T, State)
     end;
 delete_constraints([H|T], State) ->
@@ -447,8 +448,9 @@ delete_constraints([H|T], State) ->
 	{ok, NewState} ->
 	    delete_constraints(T, NewState);
 	Reason ->
-	    ?not_errorMsg("'CosNotifyFilter_Filter':modify_constraints(..) failed removing: ~p~n",
-			  [H]),
+	    orber:debug_level_print("[~p] 'CosNotifyFilter_Filter':modify_constraints().
+Unable to remove: ~p
+Reason: ~p~n", [?LINE, H, Reason], ?DEBUG_LEVEL),
 	    delete_constraints(T, State)
     end.
     
@@ -461,12 +463,13 @@ inform_callbacks([H|T], Added, Removed) ->
 	ok ->
 	    ?debug_print("INFORMED CALLBACK: ~p   ADDED: ~p   REMOVED: ~p",
 			 [H, Added, Removed]),
-	    ok;
+	    inform_callbacks(T, Added, Removed);
 	Other ->
-	    ?not_errorMsg("'CosNotifyComm_NotifySubscribe':subscription_change(~p) failed with reason: ~p~n",
-			  [H, Other])
-    end,
-    inform_callbacks(T, Added, Removed).
+	    orber:debug_level_print("[~p] 'CosNotifyComm_NotifySubscribe':subscription_change().
+Unable to inform callback: ~p
+Reason: ~p~n", [?LINE, H, Other], ?DEBUG_LEVEL),
+	    inform_callbacks(T, Added, Removed)
+    end.
 
 %%-----------------------------------------------------------
 %% Function : try_create_filters/2

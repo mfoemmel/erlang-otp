@@ -58,7 +58,7 @@
 select(Node) ->
     case split_node(atom_to_list(Node), $@, []) of
 	[_, Host] ->
-	    case inet:getaddr(Host,inet) of
+	    case (catch inet:getaddr(Host,inet)) of
 		{ok,_} -> true;
 		_ -> false
 	    end;

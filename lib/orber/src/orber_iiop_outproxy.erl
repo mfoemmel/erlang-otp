@@ -66,8 +66,8 @@ request(Pid, ResponseExpected, Timeout, Msg, RequestId) ->
     %% No response expected
     gen_server:call(Pid, {oneway_request, Timeout, Msg}, infinity).
 
-locate(Pid, ObjKey, RequestId, Version) ->
-    gen_server:call(Pid, {locate, ObjKey, RequestId, Version}).
+locate(Pid, Msg, RequestId, Timeout) ->
+    gen_server:call(Pid, {locate, Msg, RequestId, Timeout}, infinity).
 
 %%-----------------------------------------------------------------
 %% Internal interface functions
@@ -138,11 +138,12 @@ handle_call({request, Timeout, Msg, RequestId}, From, State) ->
 handle_call({oneway_request, Timeout, Msg}, From, State) ->
     orber_socket:write(State#state.stype, State#state.socket, Msg),
     {reply, ok, State, State#state.timeout};
-handle_call({locate, Request, RequestId, Version}, From, State) ->
+handle_call({locate, Request, RequestId, Timeout}, From, State) ->
     {ok,  Pid} = orber_iiop_outrequest:start(From),
     ets:insert(State#state.db, {RequestId, Pid}),
-    orber_iiop_outrequest:locate(Pid, Request, State#state.socket, State#state.stype, 
-				 Version),
+    orber_iiop_outrequest:locate(Pid, Request, State#state.socket, 
+				 State#state.stype, 
+				 Timeout),
     {noreply, State, State#state.timeout};
 handle_call(stop, From, State) ->
     {stop, normal, ok, State};

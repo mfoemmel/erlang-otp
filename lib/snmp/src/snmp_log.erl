@@ -30,6 +30,14 @@
 -define(log_name, "snmp log").
 -define(log_file, "snmp.log").
 
+-define(VMODULE,"LOG").
+-include("snmp_verbosity.hrl").
+
+-ifndef(default_verbosity).
+-define(default_verbosity,silence).
+-endif.
+
+
 %%%-----------------------------------------------------------------
 %%% This module contains Audit Trail Logging functions.
 %%%-----------------------------------------------------------------
@@ -78,9 +86,11 @@ change_log_size(NewSize) ->
 open_disk_log(LogDir, Size, Try) ->
     case dlopen(LogDir, Size) of
 	{error, Reason} when Try < 2 ->
+	    ?vlog("failed opening log file: ~w", [Reason]),
 	    clean_dir(LogDir),
 	    open_disk_log(LogDir, Size, Try + 1);
 	{error, Reason} ->
+	    ?vlog("final log file open attempt failed: ~w", [Reason]),
 	    {error, Reason};
 	_  ->
 	    ok
@@ -106,9 +116,8 @@ dlopen(LogDir, Size) ->
     %% if the log has already been created.  In that case, we'll use whatever
     %% size the log had at the time it was closed.
     case disk_log:open(DLArgs) of
-	{error, _} ->
-	    %% Probably {badarg,size} - the log didn't exist, try with
-	    %% the size-spec
+	{error, {badarg, size}} ->
+	    %% The log didn't exist, try with the size-spec
 	    disk_log:open([{size, Size} | DLArgs]);
 	Else ->
 	    Else

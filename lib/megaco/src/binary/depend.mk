@@ -18,6 +18,12 @@ $(PER_ASN1_SPEC).erl $(PER_ASN1_SPEC).hrl: $(PER_ASN1_SPEC).set.asn $(ASN1_SPEC)
 $(EBIN)/$(PER_ASN1_SPEC).$(EMULATOR): $(PER_ASN1_SPEC).erl \
 	$(PER_ASN1_SPEC).hrl
 
+$(PER_BIN_ASN1_SPEC).erl $(PER_BIN_ASN1_SPEC).hrl: $(PER_BIN_ASN1_SPEC).set.asn $(ASN1_SPEC).asn
+	$(ERLC) -bper_bin +noobj $(PER_BIN_ASN1_SPEC).set.asn
+
+$(EBIN)/$(PER_BIN_ASN1_SPEC).$(EMULATOR): $(PER_BIN_ASN1_SPEC).erl \
+	$(PER_BIN_ASN1_SPEC).hrl
+
 $(EBIN)/megaco_ber_bin_encoder.$(EMULATOR): megaco_ber_bin_encoder.erl \
 	$(MEGACO_INCLUDEDIR)/megaco.hrl \
         $(MEGACO_INCLUDEDIR)/megaco_message_v1.hrl
@@ -27,6 +33,10 @@ $(EBIN)/megaco_ber_encoder.$(EMULATOR): megaco_ber_encoder.erl \
         $(MEGACO_INCLUDEDIR)/megaco_message_v1.hrl
 
 $(EBIN)/megaco_per_encoder.$(EMULATOR): megaco_per_encoder.erl \
+	$(MEGACO_INCLUDEDIR)/megaco.hrl \
+        $(MEGACO_INCLUDEDIR)/megaco_message_v1.hrl
+
+$(EBIN)/megaco_per_bin_encoder.$(EMULATOR): megaco_per_bin_encoder.erl \
 	$(MEGACO_INCLUDEDIR)/megaco.hrl \
         $(MEGACO_INCLUDEDIR)/megaco_message_v1.hrl
 

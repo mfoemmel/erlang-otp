@@ -15,215 +15,213 @@
 %% 
 %%     $Id$
 %%
-%%%----------------------------------------------------------------------
-%%% Purpose : dbg_ui_view is the user interface to the view window in the
-%%%           new debugger. It starts the view window and then stays in
-%%%           a receive loop.
-%%% History : The int_show_new module has been divided into two seperate 
-%%%           files for the view and trace (attach) windows in the new 
-%%%           debugger.
-%%%----------------------------------------------------------------------
+-module(dbg_ui_view).
 
--module (dbg_ui_view).
+%% External exports
+-export([start/2]).
 
+%% Internal exports
+-export([init/3]).
 
--include ("dbg_ui_data_struct.hrl").
--export ([start/1, init/1]).
+-record(state, {gs,                % term() Graphics system id
+		win,               % term() Attach process window data
+		coords,            % {X,Y} Mouse point position
+		mod                % atom() Module
+	       }).
 
+%%====================================================================
+%% External exports
+%%====================================================================
 
-
-%%% start (Module)
-%%%
-%%%
-
-start (Module) ->
-    spawn_link (?MODULE, init, [Module]).
-
-
-
-%%% init (Module)
-%%%
-%%%
-
-init (Module) ->
-    Title = lists:flatten (io_lib:format ("View Module ~p", [Module])),
-
-    case dbg_ui_winman:win_started (self (), Title) of
-	true ->
-	    exit (self (), kill),
-            exit (already_exists);
-
-	_false ->
-	    ok
-    end,
-
-    dbg_ui_cache:start (self ()),   % initiate this window at dbg_ui_cache
-    Win = dbg_ui_trace_win:create_attach_window (Title, view, dummy),
-    dbg_ui_winman:insert_win (view, Win, self ()),
-
-    start_view_loop (Module, Win).
+%%--------------------------------------------------------------------
+%% start(GS, Mod)
+%%   Mod = atom()
+%%--------------------------------------------------------------------
+start(GS, Mod) ->
+    Title = "View Module " ++ atom_to_list(Mod),
+    case dbg_ui_winman:is_started(Title) of
+	true -> ignore;
+	false -> spawn(?MODULE, init, [GS, Mod, Title])
+    end.
 
 
+%%====================================================================
+%% Main loop and message handling
+%%====================================================================
 
-%%% start_view_loop(Module,Win).
-%%%
-%%% Module: The module we want to see
-%%% Initialize the environment for the view window, including the
-%%% Trace records. Only some of the fields will be used.
+init(GS, Mod, Title) ->
 
-start_view_loop (Module, Win) ->
-    process_flag(trap_exit,true),
-    int:start (),
-    int:refresh (),
-    X = gs:read (Win, width),
-    Y = gs:read (Win, height),
-    {Name, Breaks} = dbg_ui_aux:load_file (Module, [], [], undefined, Win),
-    Mods = lists:sort(int:interpreted()),
-    {ok, Dir} = file:get_cwd (),
+    %% Subscribe to messages from the interpreter
+    int:subscribe(),
 
-    Trace = #trace {cm = Name,
-		    size = {X, Y}, 
-		    win = Win,
-		    coords = {0, 0},
-		    breaks = Breaks,
-		    mods = [],
-		    line = 0,
-		    dir = Dir},
+    %% Create attach process window
+    Win1 = dbg_ui_trace_win:create_win(GS, Title, ['Code Area'], menus()),
+    Window = dbg_ui_trace_win:get_window(Win1),
+    dbg_ui_winman:insert(Title, Window),
+
+    Win2 = gui_load_module(Win1, Mod),
+    Win3 =
+	lists:foldl(fun(Break, Win) ->
+			    dbg_ui_trace_win:add_break(Win, 'Break', Break)
+		    end,
+		    Win2,
+		    int:all_breaks(Mod)),
     
-    view_loop (Trace).
-    
+    loop(#state{gs=GS, win=Win3, coords={0,0}, mod=Mod}).
 
-
-%%% view_loop (Trace)
-%%%
-%%% The main loop of the view window.
-
-view_loop (Trace) ->
+loop(State) ->
     receive
 
-	%% Windows menu
+	%% From the GUI main window
+	GuiEvent when tuple(GuiEvent), element(1, GuiEvent)==gs ->
+	    Cmd = dbg_ui_trace_win:handle_event(GuiEvent, State#state.win),
+	    State2 = gui_cmd(Cmd, State),
+	    loop(State2);
 
-	{update_windows, Data} ->
-	    dbg_ui_aux:update_windows (Data),
-	    view_loop (Trace);
+	%% From the GUI help windows
+	{gui, Cmd} ->
+	    State2 = gui_cmd(Cmd, State),
+	    loop(State2);
 
-	
-	%% Change of states in the system
+	%% From the interpreter
+	{int, Cmd} ->
+	    State2 = int_cmd(Cmd, State),
+	    loop(State2);
 
-	{new_dir, Dir} ->
-	    view_loop (Trace#trace{dir = Dir});
+	%% From the dbg_ui_winman process (Debugger window manager)
+	{dbg_ui_winman, update_windows_menu, Data} ->
+	    dbg_ui_winman:update_windows_menu(Data),
+	    loop(State);
+	{dbg_ui_winman, destroy} ->
+	    exit(stop);
 
-	{P, new_break, {{Mod, Line}, Status}} ->
-	    view_loop (dbg_ui_aux:break (Trace, {new_break, {Mod, Line, Status}}));
-
-	{P, no_break, Br} ->
-	    view_loop (dbg_ui_aux:break (Trace, {no_break, Br}));
-
-	{P, delete_break, Br} ->
-	    view_loop (dbg_ui_aux:break (Trace, {delete_break, Br}));
-
-	{P, new_break_options, I} ->
-	    view_loop (dbg_ui_aux:break (Trace, {new_break_options, I}));
-
-	{P, interpret, Mod} -> 
-  	    view_loop (Trace);
-
-	{P, no_interpret, Mod} -> 
-	    view_loop (Trace);
-
-	
-	%% Search calls
-
-	{editor_search, CallingPid, String, Pos, CaseS} ->
-	    Editor = dbg_ui_cache:current_editor (self()),
-	    dbg_ui_search:editor_search (CallingPid, Editor,
-					 String, Pos, CaseS),
-	    view_loop (Trace);
-
-	{unmark_string, Editor, Row} ->
-	    dbg_ui_search:unmark_string (Editor, Row),
-	    view_loop (Trace);
-
-	{gotoline, Editor, Line, OldLine} ->
-	    dbg_ui_trace_win:select_line (Editor, undefined_mode, 
-					  Line, OldLine),
-	    view_loop (Trace);
-
-	{clear_oldline, Editor, OldLine} ->
-	    dbg_ui_trace_win:select_line (Editor, clear, 0, OldLine),
-	    view_loop (Trace);
-
-
-	%% User interaction
-	
-	{gs, _W, configure , _, [X, Y|_]} ->
-	    dbg_ui_trace_win:configure_view (Trace#trace.win, {X, Y}),
-	    view_loop (Trace);		
-
-	{gs, _, motion, _, [X, Y]} ->
-	    view_loop (dbg_ui_aux:flush_motion (X, Y, Trace));
-
-	{gs, _W, destroy, _, _} -> 
-	    dbg_ui_winman:delete_win (Trace#trace.win),
-	    exit (destroy);
-
-	
-	%%Some commands which must be handled separately from the trace menu	     
-	
-	{gs, _, keypress, _, [Key, _, _, 1]} ->
-	    execute_view_cmd (Key, Trace);				     
-
-        {gs, 'Delete All Modules', _, _, _} ->
-	    view_loop (execute_view_cmd (a,  Trace));	
-
-	{gs, Id, click, {'Delete', Mod}, _} ->
-  	    execute_view_cmd ({'Delete', Mod},  Trace);			   
-
-	{gs, Id, click, {'View', Mod}, _}  ->
-	    execute_view_cmd ({'View', Mod},  Trace);	
-
-	Gs_Cmd when tuple (Gs_Cmd),  element (1, Gs_Cmd) == gs ->
-	    view_loop (dbg_ui_aux:gs_cmd (Gs_Cmd, Trace));
-
-
-	%% Exit events
-
-	{'EXIT', _, _} ->
-	    view_loop (Trace);
-	
-
-	_ ->
-	    view_loop (Trace)
+	%% Help window termination -- ignore
+	{'EXIT', Pid, Reason} ->
+	    loop(State)
     end.
 
+%%--Commands from the GUI---------------------------------------------
+
+gui_cmd(ignore, State) ->
+    State;
+gui_cmd({win, Win}, State) ->
+    State#state{win=Win};
+gui_cmd(stopped, State) ->
+    exit(stop);
+gui_cmd({coords, Coords}, State) ->
+    State#state{coords=Coords};
+
+gui_cmd({shortcut, Key}, State) ->
+    case shortcut(Key) of
+	false -> State;
+	Cmd -> gui_cmd(Cmd, State)
+    end;
+
+%% File menu
+gui_cmd('Close', State) ->
+    gui_cmd(stopped, State);
+
+%% Edit menu
+gui_cmd('Go To Line...', State) ->
+    %% Will result in message handled below: {gui, {gotoline, Line}}
+    dbg_ui_trace_win:helpwin(gotoline, State#state.win,
+			      State#state.gs, State#state.coords),
+    State;
+gui_cmd({gotoline, Line}, State) ->
+    Win = dbg_ui_trace_win:select_line(State#state.win, Line),
+    State#state{win=Win};
+gui_cmd('Search...', State) ->
+    dbg_ui_trace_win:helpwin(search, State#state.win,
+			     State#state.gs, State#state.coords),
+    State;
+
+%% Break menu
+gui_cmd('Line Break...', State) ->
+    add_break(State#state.gs, State#state.coords, line,
+	      State#state.mod,
+	      dbg_ui_trace_win:selected_line(State#state.win)),
+    State;
+gui_cmd('Conditional Break...', State) ->
+    add_break(State#state.gs, State#state.coords, conditional,
+	      State#state.mod,
+	      dbg_ui_trace_win:selected_line(State#state.win)),
+    State;
+gui_cmd('Function Break...', State) ->
+    add_break(State#state.gs, State#state.coords, function,
+	      State#state.mod, undefined),
+    State;
+gui_cmd('Delete All', State) ->
+    int:no_break(State#state.mod),
+    State;
+gui_cmd({break, {Mod, Line}, What}, State) ->
+    case What of
+	add -> int:break(Mod, Line);
+	delete -> int:delete_break(Mod, Line);
+	{status, inactive} -> int:disable_break(Mod, Line);
+	{status, active} -> int:enable_break(Mod, Line);
+	{trigger, Action} -> int:action_at_break(Mod, Line, Action)
+    end,
+    State;
+
+%% Help menu
+gui_cmd('Debugger', State) ->
+    HelpFile = filename:join([code:lib_dir(debugger),"doc","index.html"]),
+    tool_utils:open_help(State#state.gs, HelpFile),
+    State.
+
+add_break(GS, Coords, Type, undefined, _Line) ->
+    dbg_ui_break:start(GS, Coords, Type);
+add_break(GS, Coords, Type, Mod, undefined) ->
+    dbg_ui_break:start(GS, Coords, Type, Mod);
+add_break(GS, Coords, Type, Mod, Line) ->
+    dbg_ui_break:start(GS, Coords, Type, Mod, Line).
+
+%%--Commands from the interpreter-------------------------------------
+
+int_cmd({new_break, {{Mod, Line}, Options}=Break}, #state{mod=Mod}=State) ->
+    Win = dbg_ui_trace_win:add_break(State#state.win, 'Break', Break),
+    State#state{win=Win};
+int_cmd({delete_break, {Mod, Line}=Point}, #state{mod=Mod}=State) ->
+    Win = dbg_ui_trace_win:delete_break(State#state.win, Point),
+    State#state{win=Win};
+int_cmd({break_options, {{Mod, Line}, Options}=Break}, #state{mod=Mod}=State) ->
+    Win = dbg_ui_trace_win:update_break(State#state.win, Break),
+    State#state{win=Win};
+int_cmd(no_break, State) ->
+    Win = dbg_ui_trace_win:clear_breaks(State#state.win),
+    State#state{win=Win};
+int_cmd({no_break, Mod}, State) ->
+    Win = dbg_ui_trace_win:clear_breaks(State#state.win),
+    State#state{win=Win};
+int_cmd(_, State) ->
+    State.
 
 
-%%% execute_view_cmd
-%%%
-%%% Execute user commands specific to the view Window
+%%====================================================================
+%% GUI auxiliary functions
+%%====================================================================
 
-execute_view_cmd (a, Trace) ->
-    lists:map ({int, nn}, Trace#trace.mods),
-    Trace;
+menus() ->
+    [{'File', [{'Close', 0}]},
+     {'Edit', [{'Go To Line...', 0},
+	       {'Search...', 0}]},
+     {'Break', [{'Line Break...', 6},
+		{'Conditional Break...', 14},
+		{'Function Break...', 0},
+		separator,
+		{'Delete All', 1},
+		separator]},
+     {'Help', [{'Debugger', 0}]}].
 
-execute_view_cmd ({'Delete', Mod}, Trace) ->
-    int:nn (Mod),
-    view_loop (Trace);
+shortcut(b) -> 'Line Break...';
+shortcut(r) -> 'Conditional Break...';
+shortcut(d) -> 'Delete All';
 
-execute_view_cmd ({'View', Mod}, Trace) ->
-    {NMod, Breaks} = dbg_ui_aux:load_file (Mod, Trace#trace.cm, [],
-					   Trace#trace.pid, Trace#trace.win),
-    view_loop (Trace#trace{cm = NMod, breaks = Breaks, line = 0});
+shortcut(_) -> false.
 
-execute_view_cmd (Key, Trace) ->
-    case lists:member (Key, [i, a, b, r, c]) of  %% Ugly, but quick. Only key
-	false  -> 
-	    view_loop (Trace);              %% accellerators allowed.
-	true -> 
-	    view_loop (dbg_ui_aux:execute_cmd (dbg_ui_aux:key (Key), Trace))
-    end.
-
-
-
-
-
+gui_load_module(Win, Mod) ->
+    dbg_ui_trace_win:display({text, "Loading module..."}),
+    Contents = int:contents(Mod, any),
+    Win2 = dbg_ui_trace_win:show_code(Win, Mod, Contents),
+    dbg_ui_trace_win:display({text, ""}),
+    Win2.

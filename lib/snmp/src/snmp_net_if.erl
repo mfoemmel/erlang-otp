@@ -139,7 +139,8 @@ loop(S) ->
 	    case snmp_mpd:process_packet(Packet, snmpUDPDomain, {Ip, Port}, 
 					 S#state.mpd_state, LogF) of
 		{ok, Vsn, Pdu, PduMS, ACMData} ->
-		    ?vlog("~n   got pdu from ~w:~w ~p", [Ip, Port, Pdu]),
+		    ?vlog("~n   got pdu ~s", 
+			  [?vapply(snmp_misc, format, [256, "~w", [Pdu]])]),
 		    Type = Pdu#pdu.type,
 		    case Type of
 			'get-response' ->
@@ -150,18 +151,19 @@ loop(S) ->
 				 ACMData, {Ip, Port}, []}
 		    end;
 		{discarded, Reason} ->
-		    ?vlog("~n   packet from ~p, "
-			  "discarded for reason: ~p",
-			  [{Ip, Port}, Reason]);
+		    ?vlog("~n   packet discarded for reason: "
+			  "~n   ~s",
+			  [?vapply(snmp_misc, format, [256, "~w", [Reason]])]);
 		{discarded, Reason, ReportPacket} ->
-		   ?vlog("~n   packet from ~p => "
-			 "sending report for reason: ~p", 
-			 [{Ip, Port}, Reason]),
+		    ?vlog("~n   sending report for reason: "
+			  "~n   ~s", 
+			  [?vapply(snmp_misc, format, [256, "~w", [Reason]])]),
 		    udp_send(S#state.usock, Ip, Port, ReportPacket)
 		end,
 	    loop(S);
 	{snmp_response, Vsn, RePdu, Type, ACMData, {Ip, Port}, []} ->
-	    ?vlog("~n   reply pdu: ~p", [RePdu]),
+	    ?vlog("~n   reply pdu: ~s", 
+		  [?vapply(snmp_misc, format, [256, "~w", [RePdu]])]),
 	    LogF = case S#state.log of
 		       false -> nofunc;
 		       Log ->
@@ -176,7 +178,8 @@ loop(S) ->
 			   [subtr(erlang:now(),get(n1))]),
 		    udp_send(S#state.usock, Ip, Port, Packet);
 		{discarded, Reason} ->
-		    ?vlog("~n   reply discarded for reason: ~p", [Reason]),
+		    ?vlog("~n   reply discarded for reason: ~s", 
+			  [?vapply(snmp_misc, format, [256, "~w", [Reason]])]),
 		    ok
 	    end,
 	    loop(S);

@@ -100,12 +100,12 @@ error_reply(char* atom, char* string)
     alen = strlen(atom);
     slen = strlen(string);
     rlen = 1+alen+1+slen;
-    reply_str = sys_alloc(rlen+1);
+    reply_str = driver_alloc(rlen+1);
     reply_str[0] = 'E';
     strcpy(reply_str+1, atom);
     strcpy(reply_str+alen+2, string);
     driver_output(erlang_port, reply_str, rlen);
-    sys_free(reply_str);
+    driver_free(reply_str);
     return 0;
 }
 
@@ -157,7 +157,7 @@ static int unload(void* arg1, void* arg2)
     DEBUGF(("ddll_drv: unload: lib=%08x\r\n", dh->handle));
 
     ddll_close(dh->handle);
-    sys_free((void*)dh);
+    driver_free((void*)dh);
     remove_driver_entry(de->drv);
 
     return reply(ix, 'o', "");
@@ -190,7 +190,7 @@ static int load(char* full_name, char* driver_name)
     /* 
      * Here we go, lets hope the driver write knew what he was doing...
      */
-    dh = sys_alloc(sizeof(DE_Handle));
+    dh = driver_alloc(sizeof(DE_Handle));
     dh->handle = lib;
     dh->ref_count = 1;
     dh->status = ERL_DE_OK;
@@ -199,13 +199,13 @@ static int load(char* full_name, char* driver_name)
 
     if ((dp = initfn(dh)) == NULL) {
 	ddll_close(lib);
-	sys_free(dh);
+	driver_free(dh);
 	return reply(erlang_port, 'e', "driver_init_failed");
     }
     
     if (strcmp(driver_name, dp->driver_name) != 0) {
 	ddll_close(lib);
-	sys_free(dh);
+	driver_free(dh);
 	return reply(erlang_port, 'e', "bad_driver_name");
     }
 

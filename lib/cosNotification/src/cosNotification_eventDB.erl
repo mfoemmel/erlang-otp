@@ -103,6 +103,7 @@
 	 gc_events/2,
 	 gc_start/2,
 	 filter_events/2,
+	 filter_events/3,
 	 status/2]).
 
 %%--------------- DATA STRUCTURES ----------------------------
@@ -1131,19 +1132,19 @@ get_life_mapping_value(_, MFilter, Event) ->
 %%            and list2 the events that didn't pass.
 %%------------------------------------------------------------
 validate_event(true, Events, Filters, _, 'MATCH') ->
-    filter_events(Events, Filters);
+    filter_events(Events, Filters, false);
 validate_event(true, Events, Filters, _, _) ->
     {Events, []};
-validate_event({Which, WC}, Events, Filters, _, 'MATCH') when record(Events, any) ->
-    filter_events([Events], Filters);
-validate_event({Which, WC}, Events, Filters, _, _) when record(Events, any) ->
-    {[Events], []};
+validate_event({Which, WC}, Event, Filters, _, 'MATCH') when record(Event, any) ->
+    filter_events(Event, Filters, false);
+validate_event({Which, WC}, Event, Filters, _, _) when record(Event, any) ->
+    {Event, []};
 validate_event({Which, WC}, Events, Filters, DBRef, 'MATCH')  ->
     Passed=validate_event2(DBRef, Events, Which, WC, []),
-    filter_events(Passed, Filters);
+    filter_events(Passed, Filters, true);
 validate_event({Which, WC}, Events, Filters, DBRef, _)  ->
     Passed=validate_event2(DBRef, Events, Which, WC, []),
-    {Passed, []}.
+    {lists:reverse(Passed), []}.
 
 validate_event2(_, [], _, _, []) ->
     [];
@@ -1200,7 +1201,7 @@ check_subscription(DBRef, [H|T]) ->
 
 %%------------------------------------------------------------
 %% function : filter_events
-%% Arguments: A sequence of Events, 'structured' or 'any'
+%% Arguments: A sequence of structured Events or #any
 %% Returns  : A tuple of two lists; list1 the events that passed 
 %%            and list2 the events that didn't pass.
 %%------------------------------------------------------------
@@ -1208,16 +1209,32 @@ check_subscription(DBRef, [H|T]) ->
 filter_events(Events, []) ->
     {Events, []};
 filter_events(Events, Filters) ->
-    filter_events(Events, Filters, [], []).
+    filter_events(Events, Filters, [], [], false).
 
-filter_events([], _, AccPassed, AccFailed) ->
+filter_events(Events, [], false) ->
+    {Events, []};
+filter_events(Events, [], _) ->
+    {lists:reverse(Events), []};
+filter_events(Events, Filters, Reversed) ->
+    filter_events(Events, Filters, [], [], Reversed).
+
+filter_events([], _, AccPassed, AccFailed, false) ->
+    {lists:reverse(AccPassed), lists:reverse(AccFailed)};
+filter_events([], _, AccPassed, AccFailed, _) ->
     {AccPassed, AccFailed};
-filter_events([H|T], Filters, AccPassed, AccFailed) ->
+filter_events([H|T], Filters, AccPassed, AccFailed, Reversed) ->
     case call_filters(Filters, H) of
 	true ->
-	    filter_events(T, Filters, [H|AccPassed], AccFailed);
+	    filter_events(T, Filters, [H|AccPassed], AccFailed, Reversed);
 	_ ->
-	    filter_events(T, Filters, AccPassed, [H|AccFailed])
+	    filter_events(T, Filters, AccPassed, [H|AccFailed], Reversed)
+    end;
+filter_events(Any, Filters, AccPassed, AccFailed, Reversed) ->
+    case call_filters(Filters, Any) of
+	true ->
+	    {Any, []};
+	_ ->
+	    {[], Any}
     end.
 
 call_filters([], _) ->

@@ -125,9 +125,9 @@ table_func(set, RowIndex, Cols, Name) ->
 	{atomic, Value} ->
 	    Value;
 	{aborted, Reason} ->
-	    snmp_error:user_err("set transaction aborted. Tab ~p, RowIndex"
-				" ~p, Cols ~p. Reason ~p",
-				[Name, RowIndex, Cols, Reason]),
+	    user_err("set transaction aborted. Tab ~w, RowIndex"
+		     " ~w, Cols ~w. Reason ~w",
+		     [Name, RowIndex, Cols, Reason]),
 	    {Col, _Val} = hd(Cols),
 	    {commitFailed, Col}
     end;
@@ -376,3 +376,7 @@ table_next(Name, RestOid) ->
 	{ok, NextIndex} -> NextIndex;
 	endOfTable -> endOfTable
     end.
+
+
+user_err(F, A) ->
+    snmp_error_report:user_err(F, A).

@@ -176,7 +176,7 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/examples/server_root/auth
 	$(INSTALL_DATA) $(AUTH_FILES) $(RELSYSDIR)/examples/server_root/auth
 	$(INSTALL_DIR) $(RELSYSDIR)/examples/server_root/cgi-bin
-	$(INSTALL_PROGRAM) $(CGI_FILES) $(RELSYSDIR)/examples/server_root/cgi-bin
+	$(INSTALL_SCRIPT) $(CGI_FILES) $(RELSYSDIR)/examples/server_root/cgi-bin
 	$(INSTALL_DIR) $(RELSYSDIR)/examples/server_root/conf
 	$(INSTALL_DATA) $(CONF_FILES) $(RELSYSDIR)/examples/server_root/conf
 	$(INSTALL_DIR) $(RELSYSDIR)/examples/server_root/htdocs/open

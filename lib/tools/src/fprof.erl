@@ -28,8 +28,6 @@
 
 %% External exports
 -export([
-% 	 spawn/1, spawn/2, spawn/3, spawn/4,
-% 	 spawn_link/1, spawn_link/2, spawn_link/3, spawn_link/4,
 	 apply/2, apply/3, apply/4,
 	 start/0, stop/0, stop/1,
 	 trace/1, trace/2,
@@ -48,6 +46,9 @@
 -export([call/1, just_call/1, reply/2]).
 -export([trace_off/0, trace_on/3]).
 -export([getopts/2, setopts/1]).
+-export([println/5, print_callers/2, print_func/2, print_called/2]).
+-export([trace_call_collapse/1]).
+-export([parsify/1]).
 
 %% Internal exports
 -export(['$code_change'/1]).
@@ -84,77 +85,6 @@
 %%% Higher order API functions
 %%%----------------------------------------------------------------------
 
-% spawn(Fun) when function(Fun) ->
-%     spawn(Fun, []);
-% spawn(A) ->
-%     erlang:fault(badarg, [A]).
-
-% spawn(Fun, Options) when function(Fun), list(Options) ->
-%     spawn_1(spawn, Fun, []);
-% spawn(A, B) ->
-%     erlang:fault(badarg, [A, B]).
-
-% spawn(M, F, Args) when atom(M), atom(F), list(Args) ->
-%     spawn(M, F, Args, []);
-% spawn(A, B, C) ->
-%     erlang:fault(badarg, [A, B, C]).
-
-% spawn(M, F, Args, Options) when atom(M), atom(F), list(Args), list(Options) ->
-%     spawn_1(spawn, {M, F, Args}, Options);
-% spawn(A, B, C, D) ->
-%     erlang:fault(badarg, [A, B, C, D]).
-
-
-% spawn_link(Fun) when function(Fun) ->
-%     spawn_link(Fun, []);
-% spawn_link(A) ->
-%     erlang:fault(badarg, [A]).
-
-% spawn_link(Fun, Options) when function(Fun), list(Options) ->
-%     spawn_1(spawn_link, Fun, []);
-% spawn_link(A, B) ->
-%     erlang:fault(badarg, [A, B]).
-
-% spawn_link(M, F, Args) when atom(M), atom(F), list(Args) ->
-%     spawn_link(M, F, Args, []);
-% spawn_link(A, B, C) ->
-%     erlang:fault(badarg, [A, B, C]).
-
-% spawn_link(M, F, Args, Options) when atom(M), atom(F), list(Args), list(Options) ->
-%     spawn_1(spawn_link, {M, F, Args}, Options);
-% spawn_link(A, B, C, D) ->
-%     erlang:fault(badarg, [A, B, C, D]).
-
-
-% spawn_1(Spawn, Function, Options) ->
-%     {[{start, _}, {procs, Procs}], Options_1} = 
-% 	getopts(Options, [start, procs]),
-%     Procs_1 = case Procs of
-% 		  [[P]] when list(P) ->
-% 		      P;
-% 		  _ ->
-% 		      []
-% 	      end,
-%     {ok, Child, ready, go} = 
-% 	spawn_3step(
-% 	  Spawn,
-% 	  fun(_Parent) ->
-% 		  ready
-% 	  end,
-% 	  fun(Child, ready) ->
-% 		  trace([start, {procs, [Child | Procs_1]} | Options_1]),
-% 		  go
-% 	  end,
-% 	  fun(_Parent, go) ->
-% 		  case Function of
-% 		      {M, F, Args} ->
-% 			  erlang:apply(M, F, Args);
-% 		      Fun ->
-% 			  erlang:apply(Fun, [])
-% 		  end
-% 	  end),
-%     Child.
-
 
 
 apply({M, F} = Function, Args) 
@@ -185,10 +115,10 @@ apply(A, B, C, D) ->
 
 
 apply_1(Function, Args, Options) ->        
-    {[{start, _}, {procs, Procs}, {continue, Continue}], Options_1} = 
+    {[Start, Procs, Continue], Options_1} =
 	getopts(Options, [start, procs, continue]),
     Procs_1 = case Procs of
-		  [[P]] when list(P) ->
+		  [{procs, P}] when list(P) ->
 		      P;
 		  _ ->
 		      []
@@ -196,7 +126,7 @@ apply_1(Function, Args, Options) ->
     case Continue of
 	[] ->
 	    apply_start_stop(Function, Args, Procs_1, Options_1);
-	[[]] ->
+	[continue] ->
 	    apply_continue(Function, Args, Procs_1, Options_1);
 	_ ->
 	    erlang:fault(badarg, [Function, Args, Options])
@@ -300,7 +230,6 @@ apply_continue(Function, Args, Procs, Options) ->
 
 
 
-
 %%%----------------------------------------------------------------------
 %%% Requests to ?FPROF_SERVER
 %%%----------------------------------------------------------------------
@@ -330,7 +259,11 @@ apply_continue(Function, Args, Procs, Options) ->
 -record(analyse, {group_leader, % IoPid
 		  dest,         % Filename | IoPid
 		  flags,        % List
-		  cols}).       % Integer
+		  cols,         % Integer
+		  callers,      % Boolean
+		  sort,         % acc_r | own_r
+		  totals,       % Boolean
+		  details}).    % Boolean
 
 -record(stop, {
 	 reason}).
@@ -365,62 +298,65 @@ trace(Option, Value) ->
     erlang:fault(badarg, [Option, Value]).
 
 trace(stop) ->
+    %% This shortcut is present to minimize the number of undesired
+    %% function calls at the end of the trace.
     call(#trace_stop{});
 trace(verbose) ->
     trace([start, verbose]);
+trace([stop]) ->
+    %% This shortcut is present to minimize the number of undesired
+    %% function calls at the end of the trace.
+    call(#trace_stop{});
+trace({Opt, _Val} = Option) when atom(Opt) ->
+    trace([Option]);
 trace(Option) when atom(Option) ->
     trace([Option]);
-trace([stop]) ->
-    call(#trace_stop{});
 trace(Options) when list(Options) ->
-    case getopts(Options, [start, stop, 
-			   procs, verbose, 
-			   file, tracer]) of
-	{[{start, []}, {stop, [[]]},
-	  {procs, []}, {verbose, []},
-	  {file, []}, {tracer, []}],
-	 []} ->
+    case getopts(Options, 
+		 [start, stop, procs, verbose, file, tracer, cpu_time]) of
+	{[[], [stop], [], [], [], [], []], []} ->
 	    call(#trace_stop{});
-	{[{start, Start}, {stop, []},
-	  {procs, Procs}, {verbose, Verbose},
-	  {file, File}, {tracer, Tracer}],
-	 []} ->
-	    case Start of
-		[[]] ->
-		    ok;
-		_ ->
-		    erlang:fault(badarg, [Options])
-	    end,
+	{[[start], [], Procs, Verbose, File, Tracer, CpuTime], []} ->
 	    {Type, Dest} = case {File, Tracer} of
-			       {[], [[Pid]]} when pid(Pid); port(Pid) ->
-				   {tracer, Pid};
-			       {[[]], []} ->
+			       {[], [{tracer, Pid} = T]} 
+			       when pid(Pid); port(Pid) ->
+				   T;
+			       {[file], []} ->
 				   {file, ?TRACE_FILE};
-			       {[[F]], []} ->
-				   {file, F};
+			       {[{file, []}], []} ->
+				   {file, ?TRACE_FILE};
+			       {[{file, _} = F], []} ->
+				   F;
 			       {[], []} ->
 				   {file, ?TRACE_FILE};
 			       _ ->
-				   erlang:fault([badarg, [Options]])
+				   erlang:fault(badarg, [Options])
 			   end,
+	    V = case Verbose of
+		       [] -> normal;
+		       [verbose] -> verbose;
+		       [{verbose, true}] -> verbose;
+		       [{verbose, false}] -> normal;
+		       _ -> erlang:fault(badarg, [Options])
+		   end,
+	    CT = case CpuTime of
+		     [] -> wallclock;
+		     [cpu_time] -> cpu_time;
+		     [{cpu_time, true}] -> cpu_time;
+		     [{cpu_time, false}] -> wallclock;
+		     _ -> erlang:fault(badarg, [Options])
+		 end,
 	    call(#trace_start{procs = case Procs of
 					  [] ->
 					      [self()];
-					  [[P]] when list(P) ->
+					  [{procs, P}] when list(P) ->
 					      P;
-					  [[P]] ->
+					  [{procs, P}] ->
 					      [P];
 					  _ ->
 					      erlang:fault(badarg, [Options])
 				      end,
-			      mode = case Verbose of
-					 [] ->
-					     normal;
-					 [[]] -> 
-					     verbose;
-					 _ ->
-					     erlang:fault(badarg, [Options])
-				     end,
+			      mode = {V, CT},
 			      type = Type,
 			      dest = Dest});
 	_ ->
@@ -441,75 +377,58 @@ profile(Option, Value) ->
 
 profile(Option) when atom(Option) ->
     profile([Option]);
+profile({Opt, _Val} = Option) when atom(Opt) ->
+    profile([Option]);
 profile(Options) when list(Options) ->
-    case getopts(Options, [start, stop, file, 
-			   dump, append]) of
-	{[{start, [[]]}, {stop, []}, {file, []}, 
-	  {dump, Dump}, {append, Append}],
-	 []} ->
-	    call(#profile_start{group_leader = group_leader(),
-				dump = case Dump of
-					   [] ->
-					       [];
-					   [[]] ->
-					       group_leader();
-					   [[[]]] ->
-					       ?DUMP_FILE;
-					   [[F]] ->
-					       F;
-					   _ ->
-					       erlang:fault(badarg, [Options])
-				       end,
-				flags = case {Append, Dump} of
-					    {[], _} ->
-						[];
-					    {[[]], [[F]]} when pid(F) ->
-						erlang:fault(badarg, [Options]);
-       					    {[[]], [[_]]} ->
-						[append];
-					    _ ->
-						erlang:fault(badarg, [Options])
-					end});
-	{[{start, []}, {stop, [[]]}, {file, []}, 
-	  {dump, []}, {append, []}],
-	 []} ->
+    case getopts(Options, [start, stop, file, dump, append]) of
+	{[Start, [], File, Dump, Append], []} ->
+	    {Target, Flags} = 
+		case {Dump, Append} of
+		    {[], []} ->
+			{[], []};
+		    {[dump], []} ->
+			{group_leader(), []};
+		    {[{dump, []}], []} ->
+			{?DUMP_FILE, []};
+		    {[{dump, []}], [append]} ->
+			{?DUMP_FILE, [append]};
+		    {[{dump, D}], [append]} when pid(D) ->
+			erlang:fault(badarg, [Options]);
+		    {[{dump, D}], [append]} ->
+			{D, [append]};
+		    {[{dump, D}], []} ->
+			{D, []};
+		    _ ->
+			erlang:fault(badarg, [Options])
+		end,
+	    case {Start, File} of
+		{[start], []} ->
+		    call(#profile_start{group_leader = group_leader(),
+					dump = Target,
+					flags = Flags});
+		{[], _} ->
+		    Src = 
+			case File of
+			    [] ->
+				?TRACE_FILE;
+			    [file] ->
+				?TRACE_FILE;
+			    [{file, []}] ->
+				?TRACE_FILE;
+			    [{file, F}] ->
+				F;
+			    _ ->
+				erlang:fault(badarg, [Options])
+			end,
+		    call(#profile{src = Src,
+				  group_leader = group_leader(),
+				  dump = Target,
+				  flags = Flags});
+		_ ->
+		    erlang:fault(badarg, [Options])
+	    end;
+	{[[], [stop], [], [], []], []} ->
 	    call(#profile_stop{});
-	{[{start, []}, {stop, []}, {file, File}, 
-	  {dump, Dump}, {append, Append}],
-	 []}->
-	    call(#profile{src = case File of
-				    [] ->
-					?TRACE_FILE;
-				    [[]] ->
-					?TRACE_FILE;
-				    [[F]] ->
-					F;
-				    _ ->
-					erlang:fault(badarg, [Options])
-				end,
-			  group_leader = group_leader(),
-			  dump = case Dump of
-				     [] ->
-					 [];
-				     [[]] ->
-					 group_leader();
-				     [[[]]] ->
-					 ?DUMP_FILE;
-				     [[F]] ->
-					 F;
-				     _ ->
-					 erlang:fault(badarg, [Options])
-				 end,
-			  flags = case {Append, Dump} of
-				      {[], _} ->
-					  [];
-				      {[[]], [[F]]} when pid(F) ->
-					  erlang:fault(badarg, [Options]);
-				      {[[]], [[_]]}  ->
-					  [append];
-				      _ ->
-					  erlang:fault(badarg, [Options])
-				  end});
 	_ ->
 	    erlang:fault(badarg, [Options])
     end;
@@ -528,43 +447,94 @@ analyse(Option, Value) ->
 
 analyse(Option) when atom(Option) ->
     analyse([Option]);
+analyse({Opt, _Val} = Option) when atom(Opt) ->
+    analyse([Option]);
 analyse(Options) when list(Options) ->
-    case getopts(Options, [dest, append, cols]) of
-	{[{dest, Dest}, {append, Append}, {cols, Cols}],
-	 []} ->
+    case getopts(Options, 
+		 [dest, append, cols, callers, no_callers, 
+		  sort, totals, details, no_details]) of
+	{[Dest, Append, Cols, Callers, NoCallers,
+	  Sort, Totals, Details, NoDetails], []} ->
+	    {Target, Flags} = 
+		case {Dest, Append} of
+		    {[], []} ->
+			{group_leader(), []};
+		    {[dest], []} ->
+			{group_leader(), []};
+		    {[{dest, []}], []} ->
+			{?ANALYSIS_FILE, []};
+		    {[{dest, []}], [append]} ->
+			{?ANALYSIS_FILE, [append]};
+		    {[{dest, F}], [append]} when pid(F) ->
+			erlang:fault(badarg, [Options]);
+		    {[{dest, F}], [append]} ->
+			{F, [append]};
+		    {[{dest, F}], []} ->
+			{F, []};
+		    _ ->
+			erlang:fault(badarg, [Options])
+		end,
 	    call(#analyse{group_leader = group_leader(),
-			  dest = case Dest of
-				     [] ->
-					 group_leader();
-				     [[]] ->
-					 group_leader();
-				     [[[]]] ->
-					 ?ANALYSIS_FILE;
-				     [[F]] ->
-					 F;
-				     _ ->
-					erlang:fault(badarg, [Options])
-				end,
-			  flags = case {Append, Dest} of
-				      {[], _} ->
-					  [];
-				      {[[]], [[]]}  ->
-					  [append];
-				      {[[]], [[F]]} when pid(F) ->
-					  erlang:fault(badarg, [Options]);
-				      {[[]], [[_]]}  ->
-					  [append];
-				      _ ->
-					  erlang:fault(badarg, [Options])
-				  end,
+			  dest = Target,
+			  flags = Flags,
 			  cols = case Cols of
 				     [] ->
 					 80;
-				     [[C]] when integer(C), C >= 80 ->
+				     [{cols, C}] when integer(C), C > 0 ->
 					 C;
 				     _ ->
 					 erlang:fault(badarg, [Options])
-				 end});
+				 end,
+			  callers = case {Callers, NoCallers} of
+					{[], []} -> 
+					    true;
+					{[callers], []} ->
+					    true;
+					{[{callers, true}], []} ->
+					    true;
+					{[{callers, false}], []} ->
+					    false;
+					{[], [no_callers]} ->
+					    false;
+					_ ->
+					    erlang:fault(badarg, [Options])
+				    end,
+			  sort = case Sort of
+				     [] -> 
+					 acc;
+				     [{sort, acc}] ->
+					 acc;
+				     [{sort, own}] ->
+					 own;
+				     _ ->
+					 erlang:fault(badarg, [Options])
+				 end,
+			  totals = case Totals of
+				       [] -> 
+					   false;
+				       [totals] ->
+					   true;
+				       [{totals, true}] ->
+					   true;
+				       [{totals, false}] ->
+					   false;
+				       _ ->
+					   erlang:fault(badarg, [Options])
+				   end,
+			  details = case {Details, NoDetails} of
+					{[], []} ->
+					    true;
+					{[details], []} ->
+					    true;
+					{[{details, true}], []} ->
+					    true;
+					{[{details, false}], []} ->
+					    false;
+					{[], [no_details]} ->
+					    false;
+				       _ ->
+					   erlang:fault(badarg, [Options])
+				    end});
   	_ ->
 	    erlang:fault(badarg, [Options])
     end;
@@ -576,6 +546,8 @@ analyse(Options) ->
 %%----------------
 %% Debug functions
 %%----------------
+
+
 
 get_state() ->
     just_call(#get_state{}).
@@ -594,11 +566,11 @@ save_profile(Option) when atom(Option) ->
     save_profile([Option]);
 save_profile(Options) when list(Options) ->
     case getopts(Options, [file]) of
-	{[{file, File}], []} ->
+	{[File], []} ->
 	    call(#save_profile{file = case File of
 					  [] -> 
 					      ?PROFILE_FILE;
-					  [[F]] ->
+					  [{file, F}] ->
 					      F;
 					  _ ->
 					      erlang:fault(badarg, [Options])
@@ -623,11 +595,11 @@ load_profile(Option) when atom(Option) ->
     load_profile([Option]);
 load_profile(Options) when list(Options) ->
     case getopts(Options, [file]) of
-	{[{file, File}], []} ->
+	{[File], []} ->
 	    call(#load_profile{file = case File of
 					  [] -> 
 					      ?PROFILE_FILE;
-					  [[F]] ->
+					  [{file, F}] ->
 					      F;
 					  _ ->
 					      erlang:fault(badarg, [Options])
@@ -719,14 +691,14 @@ stop() ->
 stop(kill) ->
     case whereis(?FPROF_SERVER) of
 	undefined ->
-	    stopped;
+	    ok;
 	Pid ->
 	    exit(Pid, kill),
-	    stopped
+	    ok
     end;
 stop(Reason) ->
     just_call(#stop{reason = Reason}),
-    stopped.
+    ok.
 
 
 
@@ -735,7 +707,7 @@ stop(Reason) ->
 %%%------------------------
 
 %% Send request to server process and return the server's reply.
-%% First start server if it aint started.
+%% First start server if it ain't started.
 call(Request) ->
     case whereis(?FPROF_SERVER) of
 	undefined ->
@@ -750,24 +722,30 @@ call(Request) ->
 %% call, or if it wasn't started.
 just_call(Request) ->		      
     Mref = erlang:monitor(process, ?FPROF_SERVER),
-    Tag = {Mref, self()},
-    T = case Request of
-	    #stop{} ->
-		?FPROF_SERVER_TIMEOUT;
-	    _ ->
-		0
-	end,
-    catch ?FPROF_SERVER ! {?FPROF_SERVER, Tag, Request},
     receive
-	{?FPROF_SERVER, Mref, Reply} ->
-	    erlang:demonitor(Mref),
-	    receive {'DOWN', Mref, _, _, _} -> ok after T -> ok end,
-	    Reply;
 	{'DOWN', Mref, _, Pid, Reason} ->
-	    receive {?FPROF_SERVER, Mref, _} -> ok after T -> ok end,
 	    {'EXIT', Pid, Reason}
-    after ?FPROF_SERVER_TIMEOUT ->
-	    timeout
+    after 0 ->
+	    Tag = {Mref, self()},
+	    T = case Request of
+		    #stop{} ->
+			?FPROF_SERVER_TIMEOUT;
+		    _ ->
+			0
+		end,
+	    %% io:format("~p request: ~p~n", [?MODULE, Request]),
+	    catch ?FPROF_SERVER ! {?FPROF_SERVER, Tag, Request},
+	    receive
+		{?FPROF_SERVER, Mref, Reply} ->
+		    erlang:demonitor(Mref),
+		    receive {'DOWN', Mref, _, _, _} -> ok after T -> ok end,
+		    Reply;
+		{'DOWN', Mref, _, Pid, Reason} ->
+		    receive {?FPROF_SERVER, Mref, _} -> ok after T -> ok end,
+		    {'EXIT', Pid, Reason}
+	    after ?FPROF_SERVER_TIMEOUT ->
+		    timeout
+	    end
     end.
 
 
@@ -840,12 +818,17 @@ handle_req(#trace_start{procs = Procs,
 	{idle, []} ->
 	    trace_off(),
 	    Port = open_dbg_trace_port(file, Filename),
-	    trace_on(Procs, Port, Mode),
-	    put(trace_state, running),
-	    put(trace_type, file),
-	    put(trace_pid, Port),
-	    reply(Tag, ok),
-	    State;
+	    case trace_on(Procs, Port, Mode) of
+		ok ->
+		    put(trace_state, running),
+		    put(trace_type, file),
+		    put(trace_pid, Port),
+		    reply(Tag, ok),
+		    State;
+		Error ->
+		    reply(Tag, Error),
+		    State
+	    end;
 	_ ->
 	    reply(Tag, {error, already_tracing}),
 	    State
@@ -857,12 +840,17 @@ handle_req(#trace_start{procs = Procs,
     case {get(trace_state), get(pending_stop)} of
 	{idle, []} ->
 	    trace_off(),
-	    trace_on(Procs, Tracer, Mode),
-	    put(trace_state, running),
-	    put(trace_type, tracer),
-	    put(trace_pid, Tracer),
-	    reply(Tag, ok),
-	    State;
+	    case trace_on(Procs, Tracer, Mode) of
+		ok ->
+		    put(trace_state, running),
+		    put(trace_type, tracer),
+		    put(trace_pid, Tracer),
+		    reply(Tag, ok),
+		    State;
+		Error ->
+		    reply(Tag, Error),
+		    State
+	    end;
 	_ ->
 	    reply(Tag, {error, already_tracing}),
 	    State
@@ -926,7 +914,7 @@ handle_req(#profile{src = Filename,
 	    put(profile_table, Table),
 	    State;
 	_ ->
-	    reply(Tag, {error, already_analysing}),
+	    reply(Tag, {error, already_profiling}),
 	    State
     end;
 	    
@@ -956,7 +944,7 @@ handle_req(#profile_start{group_leader = GroupLeader,
 	    reply(Tag, {ok, Pid}),
 	    State;
 	_ ->
-	    reply(Tag, {error, already_analysing}),
+	    reply(Tag, {error, already_profiling}),
 	    State
     end;
 
@@ -976,17 +964,18 @@ handle_req(#profile_stop{} = Request, Tag, State) ->
 	    put(profile_tag, Tag),
 	    State;
 	{running, file} ->
-	    reply(Tag, {error, analysing_file}),
+	    reply(Tag, {error, profiling_file}),
 	    State;
 	{_, _} ->
-	    reply(Tag, {error, not_analysing}),
+	    reply(Tag, {error, not_profiling}),
 	    State
     end;
 	    
 handle_req(#analyse{group_leader = GroupLeader,
 		    dest = Dest,
 		    flags = Flags,
-		    cols = Cols} = Request, Tag, State) ->
+		    cols = Cols,
+		    callers = Callers} = Request, Tag, State) ->
     case get(profile_state) of
 	{idle, ok} ->
 	    case ensure_open(Dest, [write | Flags]) of
@@ -997,10 +986,10 @@ handle_req(#analyse{group_leader = GroupLeader,
 		    ProfileTable = get(profile_table),
 		    case catch spawn_3step(
 			   fun(Server) ->
-				   Result = do_analyse(ProfileTable, 
-						       GroupLeader, 
-						       DestPid, 
-						       Cols),
+				   Result = 
+				       do_analyse(ProfileTable, 
+						  Request#analyse{
+						    dest = DestPid}),
 				   Result
 			   end,
 			   fun(Worker, Result) ->
@@ -1027,7 +1016,7 @@ handle_req(#analyse{group_leader = GroupLeader,
 	    reply(Tag, Error),
 	    State;
 	_ ->
-	    reply(Tag, {error, analysing}),
+	    reply(Tag, {error, profiling}),
 	    State
     end;
 
@@ -1041,8 +1030,6 @@ handle_req(#stop{reason = Reason} = Request, Tag, State) ->
     end,
     put(pending_stop, [Tag | PendingStop]),
     try_pending_stop(State);
-
-
 
 %%----------------------
 %% Server debug requests
@@ -1169,26 +1156,27 @@ ensure_open(Filename, Options) when atom(Filename); list(Filename) ->
 %% getopts(List, Options)) -> {DecodedOptions, RestOptions}
 %%
 %% List           = [Option]
-%% Options        = [OptionName]
-%% Option         = OptionName | {OptionName, OptionValue}
-%% OptionName     = atom()
+%% Options        = [OptionTag]
+%% Option         = OptionTag | OptionTuple
+%% OptionTuple    = tuple(), element(1, OptionTuple) == OptionTag
+%% OptionTag      = term()
 %% OptionValue    = term()
-%% DecodedOptions = [{OptionName, [TaggedValue]}]
+%% DecodedOptions = [OptionList]
+%% OptionList     = [Option]
 %% RestOptions    = [Option]
-%% TaggedValue    = NIL | cons(Value, NIL)
 %%
-%% Searches List for options with names defined in Options.
-%% Returns DecodedOptions containing all options from List
-%% that had names from Options, and RestOptions which contains
-%% all other terms from List.
+%% Searches List for options with tags defined in Options.
+%% Returns DecodedOptions containing one OptionList per
+%% OptionTag in Options, and RestOptions which contains
+%% all terms from List not matching any OptionTag.
 %%
-%% All returned lists preservs the order from Options and List.
+%% All returned lists preserve the order from Options and List.
 %%
 %% An example:
 %%     getopts([{f, 1}, e, {d, 2}, {c, 3, 4}, {b, 5}, a, b],
 %%             [a, b, c, d]) ->
-%%         {[{a, [[]]}, {b, [[5], []}, {c, []}, {d, [[2]]}],
-%%          [{f, 1}, e, {c, 3, 4}}
+%%         {[[a], [{b, 5}, b],[{c, 3, 4}], [{d, 2}]], 
+%%          [{f, 1}, e]}
 %%
 getopts(List, Options) when list(List), list(Options) ->
     getopts_1(Options, List, []).
@@ -1197,25 +1185,28 @@ getopts_1([], List, Result) ->
     {lists:reverse(Result), List};
 getopts_1([Option | Options], List, Result) ->
     {Optvals, Remaining} = getopts_2(List, Option, [], []),
-    getopts_1(Options, Remaining, [{Option, Optvals} | Result]).
+    getopts_1(Options, Remaining, [Optvals | Result]).
 
 getopts_2([], _Option, Result, Remaining) ->
     {lists:reverse(Result), lists:reverse(Remaining)};
-getopts_2([{Option, Value} | Tail], Option, Result, Remaining) ->
-    getopts_2(Tail, Option, [[Value] | Result], Remaining);
 getopts_2([Option | Tail], Option, Result, Remaining) ->
-    getopts_2(Tail, Option, [[] | Result], Remaining);
+    getopts_2(Tail, Option, [Option | Result], Remaining);
+getopts_2([Optval | Tail], Option, Result, Remaining) 
+  when element(1, Optval) == Option ->
+    getopts_2(Tail, Option, [Optval | Result], Remaining);
 getopts_2([Other | Tail], Option, Result, Remaining) ->
     getopts_2(Tail, Option, Result, [Other | Remaining]).
 
-%% The reverse of setopts, almost.
+%% setopts(Options) -> List
+%%
+%% The reverse of getopts, almost.
 %% Re-creates (approximately) List from DecodedOptions in 
 %% getopts/2 above. The original order is not preserved, 
 %% but rather the order from Options.
 %% 
 %% An example:
-%%     setopts([{a, [[]]}, {b, [[5], []}, {c, []}, {d, [[2]]}]) ->
-%%         [a, {b, 5}, b, {d, 2}]
+%%     setopts([[a], [{b,5}, b], [{c, 3, 4}], [{d,2}]]) ->
+%%         [a, {b, 5}, b, {c, 3, 4}, {d, 2}]
 %%
 %% And a more generic example:
 %%     {D, R} = getopts(L, O),
@@ -1223,20 +1214,7 @@ getopts_2([Other | Tail], Option, Result, Remaining) ->
 %% L2 will contain exactly the same terms as L, but not in the same order.
 %%
 setopts(Options) when list(Options) ->
-    lists:reverse(
-      lists:foldl(
-	fun ({Option, Values}, Accumulator) ->
-		lists:foldl(
-		  fun ([], Acc) ->
-			  [Option | Acc];
-		      ([Val], Acc) ->
-			  [{Option, Val} | Acc]
-		  end,
-		  Accumulator,
-		  Values)
-	end,
-	[],
-	Options)).
+    lists:append(Options).
 
 
 
@@ -1307,48 +1285,43 @@ spawn_3step(Spawn, FunPrelude, FunAck, FunBody)
 %%%---------------------------------
 
 trace_off() ->
-    trace_off(new),
-    lists:foreach(
-      fun(Pid) ->
-	      case is_process_alive(Pid) of
-		  true ->
-		      catch trace_off(Pid);
-		  false ->
-		      ok
-	      end
-      end,
-      processes()),
+    case catch erlang:trace(all, false, [all, cpu_timestamp]) of
+	{'EXIT', {badarg, _}} ->
+	    erlang:trace(all, false, [all]);
+	_ ->
+	    ok
+    end,
     erlang:trace_pattern(on_load, false, []),
     erlang:trace_pattern({'_', '_', '_'}, false, []),
     ok.
-    
 
 
-trace_off(P) ->    
-    case erlang:trace_info(P, flags) of
-	{flags, undefined} ->
-	    0;
-	{flags, []} ->
-	    1;
-	{flags, Flags} ->
-	    case erlang:trace_info(P, tracer) of
-		{tracer, undefined} ->
-		    0;
-		{tracer, _} = TracerFlag ->
-		    erlang:trace(P, false, [TracerFlag | Flags])
-	    end
+
+trace_on(Procs, Tracer, {V, CT}) ->
+    case case CT of
+	     cpu_time ->
+		 case catch erlang:trace(all, true, [cpu_timestamp]) of
+		     {'EXIT', {badarg, _}} ->
+			 {error, not_supported};
+		     _ ->
+			 ok
+		 end;
+	     wallclock ->
+		 ok
+	 end
+	of ok ->
+	    MatchSpec = [{'_', [], [{message, {{cp, {caller}}}}]}],
+	    erlang:trace_pattern(on_load, MatchSpec, [local]),
+	    erlang:trace_pattern({'_', '_', '_'}, MatchSpec, [local]),
+	    lists:foreach(
+	      fun (P) ->
+		      erlang:trace(P, true, [{tracer, Tracer} | trace_flags(V)])
+	      end,
+	      Procs),
+	    ok;
+	Error ->
+	    Error
     end.
-
-
-
-trace_on(Procs, Tracer, Mode) ->
-    erlang:trace_pattern(on_load, true, [local]),
-    erlang:trace_pattern({'_', '_', '_'}, true, [local]),
-    lists:foreach(
-      fun (P) ->
-	      erlang:trace(P, true, [{tracer, Tracer} | trace_flags(Mode)])
-      end,
-      Procs).
 
 
 
@@ -1357,7 +1330,8 @@ trace_flags(normal) ->
      running, procs, garbage_collection, 
      arity, timestamp, set_on_spawn];
 trace_flags(verbose) ->
-    [call, return_to, send, 'receive',
+    [call, return_to, 
+     send, 'receive',
      running, procs, garbage_collection, 
      timestamp, set_on_spawn].
 
@@ -1375,15 +1349,8 @@ open_dbg_trace_port(Type, Spec) ->
 
 
 spawn_link_dbg_trace_client(File, Table, GroupLeader, Dump) ->
-    Handler = 
-	case Dump of
-	    undefined ->
-		fun handler/2;
-	    _ ->
-		fun dump_handler/2
-	end,
     case dbg:trace_client(file, File, 
-			  {Handler, 
+			  {fun handler/2, 
 			   {init, GroupLeader, Table, Dump}}) of
 	Pid when pid(Pid) ->
 	    link(Pid),
@@ -1407,12 +1374,7 @@ spawn_link_trace_client(Table, GroupLeader, Dump) ->
 	  end,
 	  fun(Parent, go) ->
 		  Init = {init, GroupLeader, Table, Dump},
-		  case Dump of
-		      undefined ->
-			  tracer_loop(Parent, fun handler/2, Init);
-		      _ ->
-			  tracer_loop(Parent, fun dump_handler/2, Init)
-		  end
+		  tracer_loop(Parent, fun handler/2, Init)
 	  end),
     Child.
 
@@ -1435,118 +1397,34 @@ tracer_loop(Parent, Handler, State) ->
 %%% Trace message handling functions
 %%%---------------------------------
 
-handler(end_of_trace, {init, GroupLeader, Table, _Dump}) ->
-    io:format(GroupLeader, "Empty trace!~n", []),
-    end_of_trace(Table, undefined, 0, undefined),
+handler(end_of_trace, {init, GroupLeader, Table, Dump}) ->
+    dump(Dump, start_of_trace),
+    dump(Dump, end_of_trace),
+    info(GroupLeader, Dump, "Empty trace!~n", []),
+    end_of_trace(Table, undefined),
     done;
-handler(end_of_trace, {N, FirstTS, LastTS, _S}) ->
-    GroupLeader = erase(group_leader),
-    Table = erase(table),
-    Dump = erase(dump),
-    io:format(GroupLeader, "End of trace!~n", []),
-    end_of_trace(Table, FirstTS, N, LastTS),
+handler(end_of_trace, {_, TS, GroupLeader, Table, Dump}) ->
+    dump(Dump, end_of_trace),
+    info(GroupLeader, Dump, "End of trace!~n", []),
+    end_of_trace(Table, TS),
     done;
 handler(Trace, {init, GroupLeader, Table, Dump}) ->
-    put(group_leader, GroupLeader),
-    put(table, Table),
-    put(dump, Dump),
-    io:format(GroupLeader, "Reading trace data...~n", []),
-    {TS, S} = trace_handler(Trace, undefined, init),
-    {1, TS, TS, S};
-handler(Trace, {M, FirstTS, LastTS, S}) ->
+    dump(Dump, start_of_trace),
+    info(GroupLeader, Dump, "Reading trace data...~n", []),
+    TS = trace_handler(Trace, Table, Dump),
+    ets:insert(Table, #misc{id = first_ts, data = TS}),
+    ets:insert(Table, #misc{id = last_ts_n, data = {TS, 1}}),
+    {1, TS, GroupLeader, Table, Dump};
+handler(Trace, {M, _, GroupLeader, Table, Dump}) ->
     N = M+1,
-    handler_format_dots(get(group_leader), N),
-    case trace_handler(Trace, LastTS, S) of
-	{undefined, S} ->
-	    {N, FirstTS, LastTS, S};
-	{TS, NewS} ->
-	    {N, 
-	     case FirstTS of
-		 undefined ->
-		     TS;
-		 _ ->
-		     FirstTS
-	     end,
-	     TS,
-	     NewS}
-    end.
+    info_dots(GroupLeader, Dump, N),
+    TS = trace_handler(Trace, Table, Dump),
+    ets:insert(Table, #misc{id = last_ts_n, data = {TS, N}}),
+    {N, TS, GroupLeader, Table, Dump}.
 
 
 
-dump_handler(end_of_trace, {init, GroupLeader, Table, Dump}) ->
-    io:format(Dump, "Trace data dump: empty!~n", []),
-    if GroupLeader /= Dump ->
-	    io:put_chars(GroupLeader, "Empty trace!~n");
-       true ->
-	    ok
-    end,
-    end_of_trace(Table, undefined, 0, undefined),
-    done;
-dump_handler(end_of_trace, {N, FirstTS, LastTS, _S}) ->
-    GroupLeader = erase(group_leader),
-    Table = erase(table),
-    Dump = erase(dump),
-    io:format(Dump, "Trace data dump: end!~n", []),
-    if GroupLeader /= Dump ->
-	    io:format(GroupLeader, "End of trace!~n", []);
-       true ->
-	    ok
-    end,
-    end_of_trace(Table, FirstTS, N, LastTS),
-    done;
-dump_handler(Trace, {init, GroupLeader, Table, Dump}) ->
-    put(group_leader, GroupLeader),
-    put(table, Table),
-    put(dump, Dump),
-    io:format(Dump, "Trace data dump:~n~p~n", [Trace]),
-    if GroupLeader /= Dump ->
-	    io:format(GroupLeader, "Reading trace data...~n", []);
-       true ->
-	    ok
-    end,
-    {TS, S} = trace_handler(Trace, undefined, init),
-    {1, TS, TS, S};
-dump_handler(Trace, {M, FirstTS, LastTS, S}) ->
-    N = M+1,
-    io:format(get(dump), "~p~n", [Trace]),
-    GroupLeader = get(group_leader),
-    case get(dump) of
-	GroupLeader ->
-	    ok;
-	_ ->
-	    handler_format_dots(GroupLeader, N)
-    end,
-    case trace_handler(Trace, LastTS, S) of
-	{undefined, S} ->
-	    {N, FirstTS, LastTS, S};
-	{TS, NewS} ->
-	    {N, 
-	     case FirstTS of
-		 undefined ->
-		     TS;
-		 _ ->
-		     FirstTS
-	     end,
-	     TS,
-	     NewS}
-    end.
-
-
-
-handler_format_dots(Io, N) ->
-    if (N rem 100000) == 0 ->
-	    io:format(Io, ",~n", []);
-       (N rem 50000) == 0 ->
-	    io:format(Io, ".~n", []);
-       (N rem 1000) == 0 ->
-	    io:put_chars(Io, ".");
-       true ->
-	    ok
-    end.
-
-
-
-end_of_trace(Table, FirstTS, N, LastTS) ->
+end_of_trace(Table, TS) ->
     %%
     %% Close all process stacks, as if the processes exited.
     %%
@@ -1555,15 +1433,56 @@ end_of_trace(Table, FirstTS, N, LastTS) ->
     ?dbg(2, "get() -> ~p~n", [Procs]),
     lists:map(
       fun ({Pid, _}) when pid(Pid) ->
-	      trace_exit(Pid, LastTS)
+	      trace_exit(Table, Pid, TS)
       end,
       Procs),
     erase(),
-    ets:insert(Table, #misc{id = first_ts, data = FirstTS}),
-    ets:insert(Table, #misc{id = trace_cnt, data = N}),
-    ets:insert(Table, #misc{id = last_ts, data = LastTS}),
-    ets:insert(Table, #misc{id = end_of_trace, data = []}),
     end_of_trace.
+
+
+
+info_dots(GroupLeader, GroupLeader, N) ->
+    ok;
+info_dots(GroupLeader, _, N) ->
+    if (N rem 100000) == 0 ->
+	    io:format(GroupLeader, ",~n", []);
+       (N rem 50000) == 0 ->
+	    io:format(GroupLeader, ".~n", []);
+       (N rem 1000) == 0 ->
+	    io:put_chars(GroupLeader, ".");
+       true ->
+	    ok
+    end.
+
+info(GroupLeader, GroupLeader, _, _) ->
+    ok;
+info(GroupLeader, Dump, Format, List) ->
+    io:format(GroupLeader, Format, List).
+
+dump_stack(undefined, _, Term) ->
+    Term;
+dump_stack(Dump, Stack, Term) ->
+    {Depth, D} = 
+	case Stack of
+	    undefined ->
+		{0, 0};
+	    _ ->
+		case length(Stack) of
+		    0 ->
+			{0, 0};
+		    N ->
+			{N, length(hd(Stack))}
+		end
+	end,
+%    io:format(Dump, "{~w,~w, ~p}.~n", [Depth, D, Term]),
+     io:format(Dump, "~s~p.~n", [lists:duplicate(Depth, "  "), parsify(Term)]),
+    Term.
+
+dump(undefined, Term) ->
+    Term;
+dump(Dump, Term) ->
+    io:format(Dump, "~p.~n", [parsify(Term)]),
+    Term.
 
 
 
@@ -1573,452 +1492,561 @@ end_of_trace(Table, FirstTS, N, LastTS) ->
 
 
 
-%% State machine init
-trace_handler(Trace, PrevTS, init) ->
-    trace_handler(Trace, PrevTS, {false, undefined});
-%%
-%% call
-trace_handler({trace_ts, Pid, call, {M, F, Arity} = Func, TS} = Trace,
-	      _PrevTS, {false, _PrevPid})
+trace_handler({trace_ts, Pid, call, MFA, TS} = Trace, Table, Dump) ->
+    Stack = get(Pid),
+    dump_stack(Dump, Stack, Trace),
+    exit({incorrect_trace_data, ?MODULE, ?LINE,
+	  [Trace, Stack]});
+trace_handler({trace_ts, Pid, call, {M, F, Arity} = Func, 
+	       {cp, CP}, TS} = Trace,
+	      Table, Dump)
   when integer(Arity) ->
-    trace_call(Pid, {Func, TS}),
-    {TS, {false, Pid}};
-trace_handler({trace_ts, Pid, call, {M, F, Args} = MFArgs, TS} = Trace,
-	      _PrevTS, {false, _PrevPid})
+    dump_stack(Dump, get(Pid), Trace),
+    trace_call(Table, Pid, Func, TS, CP),
+    TS;
+trace_handler({trace_ts, Pid, call, {M, F, Args} = MFArgs, 
+	       {cp, CP}, TS} = Trace,
+	      Table, Dump)
   when list(Args) ->
+    dump_stack(Dump, get(Pid), Trace),
     Func = mfarity(MFArgs),
-    trace_call(Pid, {Func, TS}),
-    {TS, {false, Pid}};
+    trace_call(Table, Pid, Func, TS, CP),
+    TS;
 %%
 %% return_to
 trace_handler({trace_ts, Pid, return_to, undefined, TS} = Trace,
-	      _PrevTS, {false, _PrevPid}) ->
-    trace_return_to(Pid, {undefined, TS}),
-    {TS, {false, Pid}};
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    trace_return_to(Table, Pid, undefined, TS),
+    TS;
 trace_handler({trace_ts, Pid, return_to, {M, F, Arity} = Func, TS} = Trace,
-	      _PrevTS, {false, _PrevPid})
+	      Table, Dump)
   when integer(Arity) ->
-    trace_return_to(Pid, {Func, TS}),
-    {TS, {false, Pid}};
+    dump_stack(Dump, get(Pid), Trace),
+    trace_return_to(Table, Pid, Func, TS),
+    TS;
 trace_handler({trace_ts, Pid, return_to, {M, F, Args} = MFArgs, TS} = Trace,
-	      _PrevTS, {false, _PrevPid})
+	      Table, Dump)
   when list(Args) ->
+    dump_stack(Dump, get(Pid), Trace),
     Func = mfarity(MFArgs),
-    trace_return_to(Pid, {Func, TS}),
-    {TS, {false, Pid}};
+    trace_return_to(Table, Pid, Func, TS),
+    TS;
 %%
 %% spawn
 trace_handler({trace_ts, Pid, spawn, Child, MFArgs, TS} = Trace,
-	      _PrevTS, {false, _PrevPid}) ->
-    trace_spawn(Child, {MFArgs, TS}, Pid),
-    {TS, {false, Pid}};
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    trace_spawn(Table, Child, MFArgs, TS, Pid),
+    TS;
 trace_handler({trace_ts, Pid, spawn, Child, TS} = Trace,
-	      _PrevTS, {false, _PrevPid}) ->
-    trace_spawn(Child, {undefined, TS}, Pid),
-    {TS, {false, Pid}};
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    trace_spawn(Table, Child, undefined, TS, Pid),
+    TS;
 %%
 %% exit
 trace_handler({trace_ts, Pid, exit, _Reason, TS} = Trace,
-	      _PrevTS, {false, _PrevPid}) ->
-    trace_exit(Pid, TS),
-    {TS, {false, Pid}};
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    trace_exit(Table, Pid, TS),
+    TS;
 %%
 %% out
-trace_handler({trace_ts, Pid, out, {M, F, Arity} = Func, PrevTS} = Trace,
-	      PrevTS, {false, PrevPid})
-  when integer(Arity) ->
-    trace_out(PrevPid, {Func, PrevTS}),
-    {PrevTS, {true, PrevPid}};
-trace_handler({trace_ts, Pid, out, {M, F, Args} = MFArgs, PrevTS} = Trace,
-	      PrevTS, {false, PrevPid})
-  when list(Args) ->
-    Func = mfarity(MFArgs),
-    trace_out(PrevPid, {Func, PrevTS}),
-    {PrevTS, {true, PrevPid}};
+trace_handler({trace_ts, Pid, out, 0, TS} = Trace,
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    trace_out(Table, Pid, undefined, TS),
+    TS;
 trace_handler({trace_ts, Pid, out, {M, F, Arity} = Func, TS} = Trace,
-	      _PrevTS, {false, _PrevPid})
+	      Table, Dump)
   when integer(Arity) ->
-    trace_out(Pid, {Func, TS}),
-    {TS, {false, Pid}};
+    dump_stack(Dump, get(Pid), Trace),
+    trace_out(Table, Pid, Func, TS),
+    TS;
 trace_handler({trace_ts, Pid, out, {M, F, Args} = MFArgs, TS} = Trace,
-	      _PrevTS, {false, _PrevPid})
+	      Table, Dump)
   when list(Args) ->
+    dump_stack(Dump, get(Pid), Trace),
     Func = mfarity(MFArgs),
-    trace_out(Pid, {Func, TS}),
-    {TS, {false, Pid}};
+    trace_out(Table, Pid, Func, TS),
+    TS;
 %%
 %% in
+trace_handler({trace_ts, Pid, in, 0, TS} = Trace,
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    trace_in(Table, Pid, undefined, TS),
+    TS;
 trace_handler({trace_ts, Pid, in, {M, F, Arity} = Func, TS} = Trace,
-	      _PrevTS, {true, PrevPid})
+	      Table, Dump)
   when integer(Arity) ->
-    trace_in(PrevPid, {Func, TS}),
-    {TS, {false, PrevPid}};
+    dump_stack(Dump, get(Pid), Trace),
+    trace_in(Table, Pid, Func, TS),
+    TS;
 trace_handler({trace_ts, Pid, in, {M, F, Args} = MFArgs, TS} = Trace,
-	      _PrevTS, {true, PrevPid})
+	      Table, Dump)
   when list(Args) ->
+    dump_stack(Dump, get(Pid), Trace),
     Func = mfarity(MFArgs),
-    trace_in(PrevPid, {Func, TS}),
-    {TS, {false, PrevPid}};
-trace_handler({trace_ts, Pid, in, {M, F, Arity} = Func, TS} = Trace,
-	      _PrevTS, {false, _PrevPid})
-  when integer(Arity) ->
-    trace_in(Pid, {Func, TS}),
-    {TS, {false, Pid}};
-trace_handler({trace_ts, Pid, in, {M, F, Args} = MFArgs, TS} = Trace,
-	      _PrevTS, {false, _PrevPid})
-  when list(Args) ->
-    Func = mfarity(MFArgs),
-    trace_in(Pid, {Func, TS}),
-    {TS, {false, Pid}};
+    trace_in(Table, Pid, Func, TS),
+    TS;
 %%
 %% gc_start
 trace_handler({trace_ts, Pid, gc_start, _Info = Func, TS} = Trace,
-	      _PrevTS, {false, _PrevPid}) ->
-    trace_gc_start(Pid, TS),
-    {TS, {false, Pid}};
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    trace_gc_start(Table, Pid, TS),
+    TS;
 %%
 %% gc_end
 trace_handler({trace_ts, Pid, gc_end, _Info = Func, TS} = Trace,
-	      _PrevTS, {false, _PrevPid}) ->
-    trace_gc_end(Pid, TS),
-    {TS, {false, Pid}};
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    trace_gc_end(Table, Pid, TS),
+    TS;
+%%
+%% link
+trace_handler({trace_ts, Pid, link, OtherPid, TS} = Trace,
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    TS;
+%%
+%% unlink
+trace_handler({trace_ts, Pid, unlink, OtherPid, TS} = Trace,
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    TS;
 %%
 %% getting_linked
 trace_handler({trace_ts, Pid, getting_linked, OtherPid, TS} = Trace,
-	      _PrevTS, {false, _PrevPid}) ->
-    {TS, {false, OtherPid}};
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    TS;
 %%
 %% getting_unlinked
 trace_handler({trace_ts, Pid, getting_unlinked, OtherPid, TS} = Trace,
-	      _PrevTS, {false, _PrevPid}) ->
-    {TS, {false, OtherPid}};
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    TS;
 %%
 %% register
 trace_handler({trace_ts, Pid, register, _Name, TS} = Trace,
-	      _PrevTS, {false, PrevPid}) ->
-    {TS, {false, PrevPid}};
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    TS;
 %%
 %% unregister
 trace_handler({trace_ts, Pid, unregister, _Name, TS} = Trace,
-	      _PrevTS, {false, PrevPid}) ->
-    {TS, {false, PrevPid}};
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    TS;
 %%
-%% Any trace message with timestamp
-trace_handler(Trace, _PrevTS, {false, _PrevPid}) 
-  when tuple(Trace), element(1, Trace) == trace_ts ->
-    {element(size(Trace), Trace), {false, element(2, Trace)}};
-trace_handler(Trace, PrevTS, {true, PrevPid}) 
-  when tuple(Trace), element(1, Trace) == trace_ts ->
-    Stack = get(PrevPid),
-    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-	  [Stack, PrevPid, Trace, PrevTS]});
+%% send
+trace_handler({trace_ts, Pid, send, _OtherPid, _Msg, TS} = Trace,
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    TS;
+%%
+%% 'receive'
+trace_handler({trace_ts, Pid, 'receive', _Msg, TS} = Trace,
+	      Table, Dump) ->
+    dump_stack(Dump, get(Pid), Trace),
+    TS;
 %%
 %% Others
-trace_handler(_Trace, _PrevTS, S) ->
-    S.
+trace_handler(Trace, Table, Dump) ->
+    dump(Dump, Trace),
+    exit({incorrect_trace_data, ?MODULE, ?LINE, [Trace]}).
 
 
 
-trace_call(Pid, {Func, TS} = Call) ->
-    Stack = get(Pid),
-    ?dbg(0, "trace_call(~p, ~p) ~p~n", [Pid, Call, Stack]),
+%% The call stack
+%% --------------
+%%
+%% The call stack can be modeled as a tree, with each level in the tree
+%% corresponding to a real (non-tail recursive) stack entry, 
+%% and the nodes within a level corresponding to tail recursive
+%% calls on that real stack depth.
+%%
+%% Example:
+%% a() ->
+%%     b().
+%% b() ->
+%%     c(),
+%%     d().
+%% c() -> ok.
+%% d() ->
+%%     e(),
+%%     c().
+%% e() ->
+%%     f().
+%% f() -> ok.
+%%
+%% During the execution the call tree would be, for each call and return_to:
+%%
+%% a()    b()    c()    ->b    d()    e()    f()    ->d    c()    ->a
+%%
+%%     a      a      a      a      a      a      a      a      a      a
+%%            |      |      |      |\     |\     |\     |\    /|\
+%%            b      b      b      b d    b d    b d    b d  b d c
+%%                   |                      |     /|
+%%                   c                      e    e f
+%%
+%% The call tree is in this code represented as a two level list, 
+%% which for the biggest tree (5 nodes) in the example above would be:
+%%     [[{f, _}, {e, _}], [{d, _}, {b, _}], [{a, _}]]
+%% where the undefined fields are timestamps of the calls to the
+%% functions, and the function name fields are really 
+%% {Module, Function, Arity} tuples.
+%%
+%% Since tail recursive calls can form an infinite loop, cycles 
+%% within a tail recursive level must be collapsed or else the
+%% stack (tree) size may grow towards infinity.
+
+
+
+trace_call(Table, Pid, Func, TS, CP) ->
+    Stack = get_stack(Pid),
+    ?dbg(0, "trace_call(~p, ~p, ~p, ~p)~n~p~n", 
+	 [Pid, Func, TS, CP, Stack]),
     case Stack of
-	undefined ->
-	    Table = get(table),
-	    init_log(Table, Pid, Func),
-	    trace_clock(Table, Pid, 1, [Call], #clocks.cnt),
-	    put(Pid, [Call]);
 	[] ->
-	    Table = get(table),
 	    init_log(Table, Pid, Func),
-	    trace_clock(Table, Pid, 1, [Call], #clocks.cnt),
-	    put(Pid, [Call]);
-	[{suspend, _TS0} | _] ->
+	    OldStack = 
+		if CP == undefined ->
+			Stack;
+		   true ->
+			[[{CP, TS}]]
+		end,
+	    put(Pid, trace_call_push(Table, Pid, Func, TS, OldStack));
+	[[{suspend, _} | _] | _] ->
 	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Stack, Pid, Call]});
-	[{garbage_collect, _TS0} | _] ->
+		  [Pid, Func, TS, CP, Stack]});
+	[[{garbage_collect, _} | _] | _] ->
 	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Stack, Pid, Call]});
-	[{Func, _TS0} | _] ->
-	    ok;
-	[_Call0 | _] ->
-	    Table = get(table),
+		  [Pid, Func, TS, CP, Stack]});
+	[[{CP, _} | _], [{CP, _} | _] | _] ->
+	    %% This is a difficult case - current function becomes
+	    %% new stack top but is already pushed. It might be that
+	    %% this call is actually tail recursive, or maybe not.
+	    %% Assume tail recursive to not build the stack infinitely
+	    %% and fix the problem at the next call after a return to
+	    %% this level.
+	    %%
+	    %% This can be viewed as collapsing a very short stack
+	    %% recursive stack cykle.
 	    init_log(Table, Pid, Func),
-	    trace_clock(Table, Pid, TS, Stack, #clocks.own),
-	    NewStack = trace_call_1(Stack, Call, Stack, []),
-	    trace_clock(Table, Pid, 1, [Call | NewStack], #clocks.cnt),
-	    put(Pid, [Call | NewStack]);
+	    put(Pid, trace_call_shove(Table, Pid, Func, TS, Stack));
+	[[{CP, _} | _] | _] ->
+	    %% Current function becomes new stack top -> stack push
+	    init_log(Table, Pid, Func),
+	    put(Pid, trace_call_push(Table, Pid, Func, TS, Stack));
+	[_, [{CP, _} | _] | _] ->
+	    %% Stack top unchanged -> no push == tail recursive call
+	    init_log(Table, Pid, Func),
+	    put(Pid, trace_call_shove(Table, Pid, Func, TS, Stack));
+	[[{Func0, _} | _], [{Func0, _} | _], [{CP, _} | _] | _] ->
+	    %% Artificial case that only should happen when 
+	    %% stack recursive short cykle collapsing has been done,
+	    %% otherwise CP should not occur so far from the stack top.
+	    %%
+	    %% It is a tail recursive call but fix the stack first.
+	    init_log(Table, Pid, Func),
+	    put(Pid, 
+		trace_call_shove(Table, Pid, Func, TS,
+				 trace_return_to_int(Table, Pid, Func0, TS,
+						     Stack)));
+	[[{_, TS0} | _] = Level0] ->
+	    %% Current function known, but not stack top
+	    %% -> assume tail recursive call
+	    init_log(Table, Pid, Func),
+	    OldStack =
+		if CP == undefined ->
+			Stack;
+		   true ->
+			[Level0, [{CP, TS0}]]
+		end,
+	    put(Pid, trace_call_shove(Table, Pid, Func, TS, OldStack));
+	_ when CP == undefined ->
+	    %% Assume tail recursive call.
+	    init_log(Table, Pid, Func),
+	    put(Pid, trace_call_shove(Table, Pid, Func, TS, Stack));
 	_ ->
 	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Stack, Pid, Call]})
+		  [Pid, Func, TS, CP, Stack]})
     end,
     ok.
 
-%% Search down the call stack to find a call to Func, 
-%% save the calls passed.
-trace_call_1([], _Call, Stack, _R) ->
-    Stack;
-trace_call_1([{Func, _TS0} = Call0 | Stack1], {Func, TS}, Stack, R) ->
-    trace_call_2(Stack1, reverse(R), Call0, Stack, Stack1);
-trace_call_1([Call0 | Stack1], Call, Stack, R) ->
-    trace_call_1(Stack1, Call, Stack, [Call0 | R]).
-
-%% Found a call to Func. Go further down the call stack as long as 
-%% the saved calls from the stack top matches the calls below
-%% Func. If Func is found again at the end of the saved call stack,
-%% we have a call cycle and collaps it.
-trace_call_2([{Func, _TS0A} | _RestA], [], 
-	     {Func, _TS0}, _Stack, Stack1) ->
-    Stack1;
-trace_call_2([{Func, _TS0A} | RestA], [{Func, _TS0B} | RestB], 
-	     Call0, Stack, Stack1) ->
-    trace_call_2(RestA, RestB, Call0, Stack, Stack1);
-trace_call_2(_StackA, _StackB,
-	     _Call0, Stack, _Stack1) ->
-    Stack.
-
-
-
-trace_return_to(Pid, {Func, TS} = Call) ->
-    Stack = get(Pid),
-    ?dbg(0, "trace_return_to(~p, ~p) ~p~n", [Pid, Call, Stack]),
+%% Normal stack push
+trace_call_push(Table, Pid, Func, TS, Stack) ->
     case Stack of
-	undefined ->
-	    NewStack = [Call],
-	    trace_clock(get(table), Pid, 1, NewStack, #clocks.cnt),
-	    put(Pid, NewStack);
 	[] ->
-	    case Func of
-		undefined ->
-		    put(Pid, []);
-		_ ->
-		    NewStack = [Call],
-		    trace_clock(get(table), Pid, 1, NewStack, #clocks.cnt),
-		    put(Pid, NewStack)
-	    end;
-	[{suspend, _TS0} | _] ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Stack, Pid, Call]});
-	[{garbage_collect, _TS0} | _] ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Stack, Pid, Call]});
-	[{Func, TS0} | _] ->
 	    ok;
-	[{Func0, TS0} | _] = Stack ->
-	    Table = get(table),
-	    trace_clock(Table, Pid, TS, Stack, #clocks.own),
-	    case Func of
-		undefined ->
-		    put(Pid, trace_return_to_1(Table, Pid, Call, Stack));
-		_ ->
-		    put(Pid, 
-			[Call | trace_return_to_1(Table, Pid, Call, Stack)])
-	    end;
 	_ ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Pid, Call]})
+	    trace_clock(Table, Pid, TS, Stack, #clocks.own)
     end,
-    ok.
+    NewStack = [[{Func, TS}] | Stack],
+    trace_clock(Table, Pid, 1, NewStack, #clocks.cnt),
+    NewStack.
 
-trace_return_to_1(_Table, _Pid, _Call, []) ->
+%% Tail recursive stack push
+trace_call_shove(Table, Pid, Func, TS, Stack) ->
+    trace_clock(Table, Pid, TS, Stack, #clocks.own),
+    [[_ | NewLevel0] | NewStack1] = 
+	case Stack of
+	    [] ->
+		[[{Func, TS}]];
+	    [Level0 | Stack1] ->
+		[trace_call_collapse([{Func, TS} | Level0]) | Stack1]
+	end,
+    NewStack = [[{Func, TS} | NewLevel0] | NewStack1],
+    trace_clock(Table, Pid, 1, NewStack, #clocks.cnt),
+    NewStack.
+
+%% Collapse tail recursive call stack cycles to prevent it from
+%% growing to infinite length.
+trace_call_collapse([]) ->
     [];
-trace_return_to_1(Table, Pid, {Func, TS}, [{Func, _TS0} | Rest] = Stack) ->
-    trace_clock(Table, Pid, TS, Stack, #clocks.acc),
-    Rest;
-trace_return_to_1(Table, Pid, {_Func, TS} = Call, [Call0 | Rest] = Stack) ->
-    trace_clock(Table, Pid, TS, Stack, #clocks.acc),
-    trace_return_to_1(Table, Pid, Call, Rest).
+trace_call_collapse([_] = Stack) ->
+    Stack;
+trace_call_collapse([_, _] = Stack) ->
+    Stack;
+trace_call_collapse([{Func0, _} | Stack1] = Stack) ->
+    trace_call_collapse_1(Stack, Stack1, 1).
 
-
-
-trace_spawn(Pid, {undefined, TS} = Call, Parent) ->
-    case get(Pid) of
-	undefined ->
-	    Table = get(table),
-	    NewStack = [{suspend, TS}],
-	    trace_clock(Table, Pid, 1, NewStack, #clocks.cnt),
-	    put(Pid, NewStack),
-	    ets:insert(Table, #proc{id = Pid, parent = Parent});
-	Stack ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Stack, Pid, Call]})
+%% Find some other instance of the current function in the call stack
+%% and try if that instance may be used as stack top instead.
+trace_call_collapse_1(Stack, [], _) ->
+    Stack;
+trace_call_collapse_1([{Func0, _} | _] = Stack, [{Func0, _} | S1] = S, N) ->
+    case trace_call_collapse_2(Stack, S, N) of
+	true ->
+	    S;
+	false ->
+	    trace_call_collapse_1(Stack, S1, N+1)
     end;
-trace_spawn(Pid, {MFArgs, TS} = Call, Parent) ->
-    Func = mfarity(MFArgs),
-    case get(Pid) of
+trace_call_collapse_1(Stack, [_ | S1], N) ->
+    trace_call_collapse_1(Stack, S1, N+1).
+
+%% Check if all caller/called pairs in the perhaps to be collapsed
+%% stack segment (at the front) are present in the rest of the stack, 
+%% and also in the same order.
+trace_call_collapse_2(_, _, 0) ->
+    true;
+trace_call_collapse_2([{Func1, _} | [{Func2, _} | _] = Stack2],
+	   [{Func1, _} | [{Func2, _} | _] = S2],
+	   N) ->
+    trace_call_collapse_2(Stack2, S2, N-1);
+trace_call_collapse_2([{Func1, _} | _], [{Func1, _} | _], N) ->
+    false;
+trace_call_collapse_2(Stack, [_], N) ->
+    false;
+trace_call_collapse_2(Stack, [_ | S], N) ->
+    trace_call_collapse_2(Stack, S, N);
+trace_call_collapse_2(Stack, [], N) ->
+    false.
+
+
+
+trace_return_to(Table, Pid, Func, TS) ->
+    Stack = get_stack(Pid),
+    ?dbg(0, "trace_return_to(~p, ~p, ~p)~n~p~n", 
+	 [Pid, Func, TS, Stack]),
+    case Stack of
+	[] ->
+	    NewStack = [[{Func, TS}]],
+	    put(Pid, NewStack);
+	[[{suspend, _} | _] | _] ->
+	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
+		  [Pid, Func, TS, Stack]});
+	[[{garbage_collect, _} | _] | _] ->
+	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
+		  [Pid, Func, TS, Stack]});
+	[_ | _] = Stack ->
+	    put(Pid, trace_return_to_int(Table, Pid, Func, TS, Stack));
+	_ ->
+	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
+		  [Pid, Func, TS, Stack]})
+    end,
+    ok.
+
+trace_return_to_int(Table, Pid, Func, TS, Stack) ->
+    trace_clock(Table, Pid, TS, Stack, #clocks.own),
+    {NewStack, _} = trace_return_to_2(Table, Pid, Func, TS, Stack),
+    NewStack.
+
+%% A list of charged functions is passed around to assure that 
+%% any function is charged with ACC time only once - the first time
+%% it is encountered.
+
+%% Search the call stack until the returned-to function is found at
+%% a tail recursive level's front, and charge all functions within
+%% the passed level with ACC time. The charging is done from rear to
+%% front.
+trace_return_to_1(_, _, undefined, _, []) ->
+    {[], []};
+trace_return_to_1(_, _, Func, TS, []) ->
+    {[[{Func, TS}]], []};
+trace_return_to_1(Table, Pid, Func, TS, 
+		  [[{Func, _} | Level0] | Stack1] = Stack) ->
+    NewStack = [[{Func, TS} | Level0] | Stack1],
+    Charged = 
+	case Level0 of
+	    [] ->
+		trace_return_to_3(Stack1, []);
+	    _ ->
+		trace_return_to_3([Level0 | Stack1], [])
+	end,
+    case lists:member(Func, Charged) of
+	false ->
+	    trace_clock(Table, Pid, TS, Stack, #clocks.acc),
+	    {NewStack, [Func | Charged]};
+	true ->
+	    {NewStack, Charged}
+    end;
+trace_return_to_1(Table, Pid, Func, TS, Stack) ->
+    trace_return_to_2(Table, Pid, Func, TS, Stack).
+
+%% Charge all functions within one tail recursive level, 
+%% from rear to front, with ACC time.
+trace_return_to_2(Table, Pid, Func, TS,
+		  [[{Func0, _} | Level1] | Stack1] = Stack) ->
+    {NewStack, Charged} = 
+	case Level1 of
+	    [] ->
+		trace_return_to_1(Table, Pid, Func, TS, Stack1);
+	    _ ->
+		trace_return_to_2(Table, Pid, Func, TS, [Level1 | Stack1])
+	end,
+    case lists:member(Func0, Charged) of
+	false ->
+	    trace_clock(Table, Pid, TS, Stack, #clocks.acc),
+	    {NewStack, [Func0 | Charged]};
+	true ->
+	    {NewStack, Charged}
+    end.
+
+%% Return a flat list of all function names in the given stack
+trace_return_to_3([], R) ->
+    R;
+trace_return_to_3([[{Func, _}] | S], R) ->
+    trace_return_to_3(S, [Func | R]);
+trace_return_to_3([[{Func, _} | L] | S], R) ->
+    trace_return_to_3([L | S], [Func | R]).
+
+
+
+trace_spawn(Table, Pid, MFArgs, TS, Parent) ->
+    Stack = get(Pid),
+    ?dbg(0, "trace_spawn(~p, ~p, ~p, ~p)~n~p~n", 
+	 [Pid, MFArgs, TS, Parent, Stack]),
+    case Stack of
 	undefined ->
-	    Table = get(table),
-	    NewStack = [{Func, TS}],
-	    trace_clock(Table, Pid, 1, NewStack, #clocks.cnt),
-	    NewerStack = [{suspend, TS} | NewStack],
-	    trace_clock(Table, Pid, 1, NewerStack, #clocks.cnt),
-	    put(Pid, NewerStack),
+	    put(Pid, trace_call_push(Table, Pid, suspend, TS, [])),
 	    ets:insert(Table, #proc{id = Pid, parent = Parent,
 				    spawned_as = MFArgs});
-	Stack ->
+	_ ->
 	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Stack, Pid, Call]})
+		  [Pid, MFArgs, TS, Parent, Stack]})
     end.
 
 
 
-trace_exit(Pid, TS) ->
-    Stack = get(Pid),
+trace_exit(Table, Pid, TS) ->
+    Stack = erase(Pid),
+    ?dbg(0, "trace_exit(~p, ~p)~n~p~n", [Pid, TS, Stack]),
     case Stack of
 	undefined ->
 	    ok;
 	[] ->
 	    ok;
-	[{garbage_collect, TS0} = Call0 
-	 | [{suspend, TS1} | [_Call2 | _] = Stack2] = Stack1] ->
-	    Table = get(table),
-	    trace_clock(Table, Pid, TS, Stack1, #clocks.acc),
-	    FixStack = [Call0 | Stack2],
-	    trace_clock(Table, Pid, TS, FixStack, #clocks.own),
-	    trace_exit_1(Table, Pid, TS, FixStack);
-	[{suspend, TS0} | _] ->
-	    trace_exit_1(get(table), Pid, TS, Stack);
-	[_Call0 | _] ->
-	    Table = get(table),
-	    trace_clock(Table, Pid, TS, Stack, #clocks.own),
-	    trace_exit_1(Table, Pid, TS, Stack)
+	[_ | _] = Stack ->
+	    trace_return_to_int(Table, Pid, undefined, TS, Stack),
+	    ok;
+	_ ->
+	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
+		  [Pid, TS, Stack]})
     end,
-    put(Pid, []).
-
-trace_exit_1(Table, Pid, TS, []) ->
-    ok;
-trace_exit_1(Table, Pid, TS, [_Call0 | Rest] = Stack) ->
-    trace_clock(Table, Pid, TS, Stack, #clocks.acc),
-    trace_exit_1(Table, Pid, TS, Rest).
+    ok.
 
 
 
-trace_out(Pid, {_Func, TS} = Call) ->    
-    Stack = get(Pid),
-    ?dbg(0, "trace_out(~p, ~p) ~p~n", [Pid, Call, Stack]),
+trace_out(Table, Pid, Func, TS) ->    
+    Stack = get_stack(Pid),
+    ?dbg(0, "trace_out(~p, ~p, ~p)~n~p~n", [Pid, Func, TS, Stack]),
     case Stack of
-	undefined ->
-	    NewStack = [{suspend, TS}],
-	    trace_clock(get(table), Pid, 1, NewStack, #clocks.cnt),
-	    put(Pid, NewStack);
 	[] ->
-	    NewStack = [{suspend, TS}],
-	    trace_clock(get(table), Pid, 1, NewStack, #clocks.cnt),
-	    put(Pid, NewStack);
-	[{suspend, _TS0} | _] ->
+	    put(Pid, trace_call_push(Table, Pid, suspend, TS, Stack));
+	[[{suspend, _} | _] | _] ->
 	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Stack, Pid, Call]});
-% 	[{Func, TS0} | _] ->
-% 	    Table = get(table),
+		  [Pid, Func, TS, Stack]});
+% 	[[{Func, _} | _] | _] ->
 % 	    trace_clock(Table, Pid, TS, Stack, #clocks.own),
-% 	    NewStack = [{suspend, TS} | Stack],
+% 	    NewStack = push(suspend, TS, Stack),
 % 	    trace_clock(Table, Pid, 1, NewStack, #clocks.cnt),
 % 	    put(Pid, NewStack);
-% 	[{garbage_collect, TS0} | _] ->
-% 	    Table = get(table),
+% 	[[{garbage_collect, _} | _] | _] ->
 % 	    trace_clock(Table, Pid, TS, Stack, #clocks.own),
-% 	    NewStack = [{suspend, TS} | Stack],
+% 	    NewStack = push(suspend, TS, Stack),
 % 	    trace_clock(Table, Pid, 1, NewStack, #clocks.cnt),
 % 	    put(Pid, NewStack);
-	[{Func0, TS0} = Call0 | _] ->
-	    Table = get(table),
-	    trace_clock(Table, Pid, TS, Stack, #clocks.own),
-	    NewStack = [{suspend, TS} | Stack],
-	    trace_clock(Table, Pid, 1, NewStack, #clocks.cnt),
-	    put(Pid, NewStack);
+	[_ | _] ->
+	    put(Pid, trace_call_push(Table, Pid, suspend, TS, Stack));
 	_ ->
 	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Stack, Pid, Call]})
-    end.
-    
-
-
-trace_in(Pid, {_Func, TS} = Call) ->	    
-    Stack = get(Pid),
-    ?dbg(0, "trace_in(~p, ~p) ~p~n", [Pid, Call, Stack]),
-    case Stack of
-	undefined ->
-	    put(Pid, []);
-	[] ->
-	    put(Pid, []);
-% 	[{suspend, TS0} | [{garbage_collect, TS1} | Stack2] = Stack1] ->
-% 	    Table = get(table),
-% 	    trace_clock(Table, Pid, TS, Stack, #clocks.acc),
-% 	    trace_clock(Table, Pid, TS, Stack1, #clocks.acc),
-% 	    put(Pid, [{garbage_collect, TS} | Stack2]);
-	[{suspend, TS0}] ->
-	    trace_clock(get(table), Pid, TS, Stack, #clocks.acc),
-	    put(Pid, []);
-	[{suspend, TS0} | [{Func1, _TS1} | Stack2] = Stack1] ->
-	    Table = get(table),
-	    trace_clock(Table, Pid, TS, Stack, #clocks.acc),
-	    trace_clock(Table, Pid, TS, Stack1, #clocks.acc),
-	    put(Pid, [{Func1, TS} | Stack2]);
-	_ ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Stack, Pid, Call]})
+		  [Pid, Func, TS, Stack]})
     end.
 
 
 
-trace_gc_start(Pid, TS) ->    
+trace_in(Table, Pid, Func, TS) ->	    
     Stack = get(Pid),
-    ?dbg(0, "trace_gc_start(~p, ~p) ~p~n", [Pid, TS, Stack]),
+    ?dbg(0, "trace_in(~p, ~p, ~p)~n~p~n", [Pid, Func, TS, Stack]),
     case Stack of
 	undefined ->
-	    NewStack = [{garbage_collect, TS}],
-	    trace_clock(get(table), Pid, 1, NewStack, #clocks.cnt),
-	    put(Pid, NewStack);
+	    put(Pid, []);
 	[] ->
-	    NewStack = [{garbage_collect, TS}],
-	    trace_clock(get(table), Pid, 1, NewStack, #clocks.cnt),
-	    put(Pid, NewStack);
-	[{suspend, TS0} | [_Call1 | _] = Stack1] ->
-	    Call = {garbage_collect, TS},
-	    trace_clock(get(table), Pid, 1, [Call | Stack1], #clocks.cnt),
-	    put(Pid, [Call | Stack]);
-	[{Func0, TS0} | _] ->
-	    Table = get(table),
-	    trace_clock(Table, Pid, TS, Stack, #clocks.own),
-	    NewStack = [{garbage_collect, TS} | Stack],
-	    trace_clock(Table, Pid, 1, NewStack, #clocks.cnt),
-	    put(Pid, NewStack);
+	    ok;
+	[[{suspend, _}]] ->
+	    put(Pid, trace_return_to_int(Table, Pid, undefined, TS, Stack));
+	[[{suspend, _}] | [[{Func1, _} | _] | _]] ->
+	    put(Pid, trace_return_to_int(Table, Pid, Func1, TS, Stack));
 	_ ->
 	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Stack, Pid, TS]})
+		  [Pid, Func, TS, Stack]})
     end.
 
 
 
-trace_gc_end(Pid, TS) ->	    
+trace_gc_start(Table, Pid, TS) ->    
+    Stack = get_stack(Pid),
+    ?dbg(0, "trace_gc_start(~p, ~p)~n~p~n", [Pid, TS, Stack]),
+    case Stack of
+	_ when list(Stack) ->
+	    put(Pid, trace_call_push(Table, Pid, garbage_collect, TS, Stack));
+	_ ->
+	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
+		  [Pid, TS, Stack]})
+    end.
+
+
+
+trace_gc_end(Table, Pid, TS) ->	    
     Stack = get(Pid),
-    ?dbg(0, "trace_gc_end(~p, ~p) ~p~n", [Pid, TS, Stack]),
+    ?dbg(0, "trace_gc_end(~p, ~p)~n~p~n", [Pid, TS, Stack]),
     case Stack of
 	undefined ->
 	    put(Pid, []);
 	[] ->
-	    put(Pid, []);
-	[{garbage_collect, TS0}] ->
-	    Table = get(table),
-	    trace_clock(Table, Pid, TS, Stack, #clocks.own),
-	    trace_clock(Table, Pid, TS, Stack, #clocks.acc),
-	    put(Pid, []);
-	[{garbage_collect, TS0} = Call0 | [{suspend, TS1} 
-					   | Stack2] = Stack1] ->
-	    Table = get(table),
-	    trace_clock(Table, Pid, TS, [Call0 | Stack2], #clocks.own),
-	    trace_clock(Table, Pid, TS, [Call0 | Stack2], #clocks.acc),
-	    trace_clock(Table, Pid, TS, Stack1, #clocks.acc),
-	    put(Pid, [{suspend, TS} | Stack2]);
-	[{garbage_collect, TS0} | [{Func1, TS1} | Stack2] = Stack1] ->
-	    Table = get(table),
-	    trace_clock(Table, Pid, TS, Stack, #clocks.own),
-	    trace_clock(Table, Pid, TS, Stack, #clocks.acc),
-	    trace_clock(Table, Pid, TS, Stack1, #clocks.acc),
-	    put(Pid, [{Func1, TS} | Stack2]);
+	    ok;
+	[[{garbage_collect, _}]] ->
+	    put(Pid, trace_return_to_int(Table, Pid, undefined, TS, Stack));
+	[[{garbage_collect, _}], [{Func1, _} | _] | _] ->
+	    put(Pid, trace_return_to_int(Table, Pid, Func1, TS, Stack));
 	_ ->
 	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
-		  [Stack, Pid, TS]})
+		  [Pid, TS, Stack]})
     end.
 
 
@@ -2026,6 +2054,16 @@ trace_gc_end(Pid, TS) ->
 %%%-----------------------------------------
 %%% Statistics calculating support functions
 %%%-----------------------------------------
+
+
+
+get_stack(Id) ->
+    case get(Id) of
+	undefined ->
+	    [];
+	Stack ->
+	    Stack
+    end.
 
 
 
@@ -2052,17 +2090,34 @@ init_log(Table, Id, Entry) ->
     end.
 
 
+trace_clock(Table, Pid, T, 
+	    [[{garbage_collect, TS0}], [{suspend, _}]], Clock) ->
+    trace_clock_1(Table, Pid, T, TS0, undefined, garbage_collect, Clock);
+trace_clock(Table, Pid, T, 
+	    [[{garbage_collect, TS0}], [{suspend, _}], [{Func2, _} | _] | _],
+	    Clock) ->
+    trace_clock_1(Table, Pid, T, TS0, Func2, garbage_collect, Clock);
+trace_clock(Table, Pid, T, [[{Func0, TS0}, {Func1, _} | _] | _], Clock) ->
+    trace_clock_1(Table, Pid, T, TS0, Func1, Func0, Clock);
+trace_clock(Table, Pid, T, [[{Func0, TS0}], [{Func1, _} | _] | _], Clock) ->
+    trace_clock_1(Table, Pid, T, TS0, Func1, Func0, Clock);
+trace_clock(Table, Pid, T, [[{Func0, TS0}]], Clock) ->
+    trace_clock_1(Table, Pid, T, TS0, undefined, Func0, Clock);
+trace_clock(_, _, _, [], _) ->
+    void.
 
-trace_clock(Table, Pid, TS, [{_Func0, TS0} = Call0], Clock) ->
-    trace_clock(Table, Pid, TS, [Call0, {undefined, TS0}], Clock);
-trace_clock(Table, Pid, T, [{Func0, TS0}, {Func1, TS1} | _], Clock)
-  when integer(T) ->
-    clock_add(Table, {Pid, Func1, Func0}, Clock, T);
-trace_clock(Table, Pid, TS, [{Func0, TS0}, {Func1, TS1} | _], Clock) ->
-    clock_add(Table, {Pid, Func1, Func0}, Clock, ts_sub(TS, TS0)).
+trace_clock_1(Table, Pid, _, _, Caller, suspend, #clocks.own) ->
+    clock_add(Table, {Pid, Caller, suspend}, #clocks.own, 0);
+trace_clock_1(Table, Pid, T, TS, Caller, Func, Clock) ->
+    clock_add(Table, {Pid, Caller, Func}, Clock,
+	      if integer(T) ->
+		      T;
+		 true ->
+		      ts_sub(T, TS)
+	      end).
 
 clock_add(Table, Id, Clock, T) ->
-    ?dbg(0, "        clock_add(Table, ~w, ~w, ~w)~n", [Id, Clock, T]),
+    ?dbg(1, "clock_add(Table, ~w, ~w, ~w)~n", [Id, Clock, T]),
     case (catch ets:update_counter(Table, Id, {Clock, T})) of
 	{'EXIT', _} ->
 	    ets:insert(Table, #clocks{id = Id}),
@@ -2076,6 +2131,7 @@ clock_add(Table, Id, Clock, T) ->
     end.
 
 clocks_add(Table, #clocks{id = Id} = Clocks) ->
+    ?dbg(1, "clocks_add(Table, ~w)~n", [Clocks]),
     case ets:lookup(Table, Id) of
 	[Clocks0] ->
 	    ets:insert(Table, clocks_sum(Clocks, Clocks0, Id));
@@ -2119,10 +2175,27 @@ ts_sub(_, _) ->
 
 
 
-do_analyse(Table, GroupLeader, Io, Cols) ->
-    NrWidth = (Cols-3) div 7,
-    FnameWidth = Cols - 3*NrWidth - 3,
-    Dest = {Io, FnameWidth, NrWidth},
+do_analyse(Table, 
+	   #analyse{group_leader = GroupLeader,
+		    dest = Io,
+		    cols = Cols0,
+		    callers = PrintCallers,
+		    sort = Sort,
+		    totals = PrintTotals,
+		    details = PrintDetails} = Analyse) ->
+    ?dbg(5, "do_analyse(~p, ~p)~n", [Table, Analyse]),
+    Waste = 11,
+    MinCols = Waste + 12, %% We need Width >= 1
+    Cols = if Cols0 < MinCols -> MinCols; true -> Cols0 end,
+    Width = (Cols-Waste) div 12,
+    FnameWidth = Cols - Waste - 5*Width,
+    Dest = {Io, [FnameWidth, Width, 2*Width, 2*Width]},
+    SortElement = case Sort of
+		      own ->
+			  #clocks.own;
+		      acc ->
+			  #clocks.acc
+		  end,
     %%
     %% Clean out the process dictionary before the next step
     %%
@@ -2135,39 +2208,53 @@ do_analyse(Table, GroupLeader, Io, Cols) ->
     %% * Extra info per process. Stored in another ets table.
     %%
     io:format(GroupLeader, "Processing data...~n", []),
-    Data = ets:tab2list(Table),
-    ?dbg(2, "Data = ~p~n", [Data]),
     PidTable = ets:new(?MODULE, [set, private, {keypos, #clocks.id}]),
     ProcTable = ets:new(?MODULE, [set, private, {keypos, #proc.id}]),
-    lists:foreach(
+    ets_select_foreach(
+      Table, [{'_', [], ['$_']}], 100,
       fun (#clocks{id = {Pid, Caller, Func}} = Clocks) ->
-	      funcstat_pd_pid_func(Pid, Caller, Func, Clocks),
-	      funcstat_pd_pid_caller(Pid, Caller, Func, Clocks),
-	      clocks_add(PidTable, Clocks#clocks{id = Pid});
+	      case PrintDetails of
+		  true ->
+		      funcstat_pd(Pid, Caller, Func, Clocks),
+		      clocks_add(PidTable, Clocks#clocks{id = Pid});
+		  false ->
+		      ok
+	      end,
+	      clocks_add(PidTable, Clocks#clocks{id = totals}),
+	      case PrintTotals of
+		  true ->
+		      funcstat_pd(totals, Caller, Func, Clocks);
+		  false ->
+		      ok
+	      end;
 	  (#proc{} = Proc) ->
 	      ets:insert(ProcTable, Proc);
 	  (#misc{} = Misc) ->
 	      ets:insert(ProcTable, Misc)
-      end,
-      Data),
-    [#misc{id = end_of_trace, data = Nil}] = 
-	ets:lookup(ProcTable, end_of_trace),
-    [#misc{id = first_ts, data = FirstTS}] = 
-	ets:lookup(ProcTable, first_ts),
-    [#misc{id = trace_cnt, data = TraceCnt}] = 
-	ets:lookup(ProcTable, trace_cnt),
-    [#misc{id = last_ts, data = LastTS}] = 
-	ets:lookup(ProcTable, last_ts),
-    if Nil == [], FirstTS /= undefined, LastTS /= undefined ->
-	    ok;
-       true ->
-	    exit(incomplete_trace)
-    end,
+      end),
     ?dbg(3, "get() -> ~p~n", [get()]),
-    PidList = ets:tab2list(PidTable),
-    ProcList = ets:tab2list(ProcTable),
-    ?dbg(3, "PidList =  ~p~n", [PidList]),
-    ?dbg(3, "ProcList =  ~p~n", [ProcList]),
+    {FirstTS, LastTS, TraceCnt} = 
+	case {ets:lookup(ProcTable, first_ts), 
+	      ets:lookup(ProcTable, last_ts_n)} of
+	    {[#misc{data = FTS}], [#misc{data = {LTS, TC}}]} 
+	    when FTS /= undefined, LTS /= undefined ->
+		{FTS, LTS, TC};
+	    _ ->
+		exit(empty_trace)
+	end,
+    Totals0 = 
+	case ets:lookup(PidTable, totals) of
+	    [T0] ->
+		ets:delete(PidTable, totals),
+		T0;
+	    _ ->
+		exit(empty_trace)
+	end,
+    Totals = Totals0#clocks{acc = ts_sub(LastTS, FirstTS)},
+    ?dbg(3, "Totals0 =  ~p~n", [Totals0]),
+    ?dbg(3, "PidTable =  ~p~n", [ets:tab2list(PidTable)]),
+    ?dbg(3, "ProcTable =  ~p~n", [ets:tab2list(ProcTable)]),
+    ?dbg(4, "Totals = ~p~n", [Totals]),
     %%
     %% Reorganize the process dictionary by Pid.
     %%
@@ -2181,59 +2268,60 @@ do_analyse(Table, GroupLeader, Io, Cols) ->
       erase()),
     ?dbg(4, "get() -> ~p~n", [get()]),
     %%
-    %% Sort the processes.
+    %% Sort the processes
     %%
-    io:format(GroupLeader, "Calculating totals...~n", []),
-    PidSorted = clocks_sort_ownR(PidList),
+    PidSorted = 
+	postsort_r(
+	  lists:sort(
+	    ets:select(PidTable, 
+		       [{'_', [], [[{element, #clocks.own, '$_'} | '$_']]}]))),
     ?dbg(4, "PidSorted = ~p~n", [PidSorted]),
-    %%
-    %% Calculate totals
-    %%
-    Totals0 = lists:foldl(fun(A, B) -> clocks_sum(A, B, totals) end,
-			 #clocks{id = totals},
-			 PidList),
-    Totals = Totals0#clocks{acc = ts_sub(LastTS, FirstTS)},
-    ?dbg(4, "Totals = ~p~n", [Totals]),
     %%
     %% Print the functions per process
     %%
     io:format(GroupLeader, "Creating output...~n", []),
-    case Io of
-	undefined ->
-	    ok;
-	_ ->
-	    io:format(Io, "~nDetailed statistics:~n", [])
-    end,
-    print_head(Dest),
-    print_totals(Dest, Totals),
+    println(Dest, "%% ", [], "Analysis results:", ""),
+    println(Dest, "{  ", analysis_options, ",", ""),
+    println(Dest, " [{", {callers, PrintCallers}, "},", ""),
+    println(Dest, "  {", {sort, Sort}, "},", ""),
+    println(Dest, "  {", {totals, PrintTotals}, "},", ""),
+    println(Dest, "  {", {details, PrintDetails}, "}]}.", ""),
+    println(Dest),
     lists:foreach(
       fun ({#clocks{} = Clocks, ProcOrPid, FuncstatList}) ->
-	      print_head(Dest),
-	      print_pid(Dest, Clocks),
-	      print_proc(Dest, ProcOrPid),
+	      println(Dest, "%  ", head, "", ""),
+	      case ProcOrPid of
+		  #proc{} ->
+		      println(Dest, "[{ ", Clocks, "},", "%%"),
+		      print_proc(Dest, ProcOrPid);
+		  totals ->
+		      println(Dest, "[{ ", Clocks, "}].", "%%%");
+		  _ when pid(ProcOrPid) ->
+		      println(Dest, "[{ ", Clocks, "}].", "%%")
+	      end,
+	      println(Dest),
 	      lists:foreach(
 		fun (#funcstat{callers_sum = CallersSum, 
 %			       called_sum = CalledSum, 
 			       callers = Callers, 
 			       called = Called}) ->
-			lists:foreach(
-			  fun(C) ->
-				  print_caller(Dest, C)
-			  end,
-			  Callers),
-			print_func(Dest, CallersSum),
-%			print_func(Dest, CalledSum),
-			lists:foreach(
-			  fun(C) ->
-				  print_called(Dest, C)
-			  end,
-			  Called),
-			print_nl(Dest),
+			case {PrintCallers, Callers} of
+%			    {true, []} ->
+%				ok;
+			    {true, _} ->
+				print_callers(Dest, Callers),
+				println(Dest, " { ", CallersSum, "},", "%"),
+				print_called(Dest, Called),
+				println(Dest);
+			    {false, _} ->
+				println(Dest, "{  ", CallersSum, "}.", "")
+			end,
 			ok
 		end,
 		%% Sort the functions within the process, 
 		%% and the callers and called within the function.
-		funcstat_sort_accR(FuncstatList, fun clocks_sort_accR/1))
+		funcstat_sort_r(FuncstatList, SortElement)),
+	      println(Dest)
       end,
       %% Look up the processes in sorted order
       lists:map(
@@ -2242,62 +2330,24 @@ do_analyse(Table, GroupLeader, Io, Cols) ->
 			   [] -> Pid;
 			   [ProcX] -> ProcX
 		       end,
-		FuncstatList = get(Pid),
+		FuncstatList = 
+		    case get(Pid) of
+			undefined ->
+			    [];
+			FL ->
+			    FL
+		    end,
 		{Clocks, Proc, FuncstatList}
-	end, 
-	PidSorted)),
-%     %%
-%     %% Sort and print the functions per process
-%     %%
-%     io:format(GroupLeader, "Creating output...~n", []),
-%     Dest = group_leader(),
-%     io:format(Io, "~nDetailed statistics:~n", []),
-%     lists:foreach(
-%       fun (Times) ->
-% 	      print_head(Dest),
-% 	      Pid = times_id(Times),
-% 	      print_entry(Dest, Times, Totals),
-% 	      case ets:lookup(ProcTable, Pid) of
-% 		  [#proc{} = Proc] ->
-% 		      print_entry(Dest, Proc);
-% 		  [] ->
-% 		      ok
-% 	      end,
-% 	      lists:foreach(
-% 		fun(Times1) ->
-% 			print_entry(Dest, Times1, Totals)
-% 		end,
-% 		lists:reverse(
-% 		  lists:sort(
-% 		    lists:map(fun clocks_pid_mfarity_presort/1,
-% 			      getl(Pid)))))
-%       end,
-%       PidSorted),
-%     %%
-%     %% Sort and print the per process data
-%     %%
-%     FuncList = ets:tab2list(FuncTable),
-%     ets:delete(FuncTable),
-%     ?dbg(2, "FuncList = ~p~n", [FuncList]),
-%     io:format(Io, "~n** Processes summarized~n", []),
-%     print_head(Dest),
-%     lists:foreach(
-%       fun (Times) ->
-% 	      Func = times_id(Times),
-% 	      print_entry(Dest, Times, Totals)
-%       end,
-%       lists:reverse(
-% 	lists:sort(
-% 	  lists:map(fun clocks_mfarity_presort/1,
-% 		    FuncList)))),
-%     %%
-%     %% Print the total totals
-%     %%
-%     print_head(Dest),
-%     print_entry(Dest, Totals, Totals),
-%     %%
-%     %% Finish
-%     %%
+	end,
+	case PrintDetails of
+	    true ->
+		[Totals | PidSorted];
+	    false ->
+		[Totals]
+	end)),
+    %%
+    %% Cleanup
+    %%
     ets:delete(PidTable),
     ets:delete(ProcTable),
     io:format(GroupLeader, "Done!~n", []),
@@ -2311,152 +2361,259 @@ do_analyse(Table, GroupLeader, Io, Cols) ->
 
 
 
-print_head({Io, FnameWidth, NrWidth}) ->
-    case Io of
-	undefined ->
-	    ok;
-	_ ->
-	    io:format(Io, "~s~s~s~s  ~n~n",
-		      [pad(" ", $ , FnameWidth),
-		       pad($ , " CALLS", NrWidth),
-		       pad($ , " ACC", NrWidth), 
-		       pad($ , " OWN",  NrWidth)])
-    end.
-
-print_totals({Io, FnameWidth, NrWidth}, 
-	     #clocks{cnt = Cnt, own = Own, acc = Acc}) ->
-    case Io of
-	undefined ->
-	    ok;
-	_ ->
-	    io:format(Io, "~s~s~s~s  ~n~n",
-		      [pad(flat_format("** Totals ", []), 
-			   $ , FnameWidth),
-		       pad($ , flat_format(" ~w",   [Cnt]),       NrWidth),
-		       pad($ , flat_format(" ~.3f", [Acc*0.001]), NrWidth),
-		       pad($ , flat_format(" ~.3f", [Own*0.001]), NrWidth)])
-    end.
-
-print_pid({Io, FnameWidth, NrWidth}, 
-	  #clocks{id = Pid, cnt = Cnt, own = Own}) ->
-    case Io of
-	undefined ->
-	    ok;
-	_ ->
-	    io:format(Io, "~s~s~s~s  ~n",
-		      [pad(flat_format("** Process ~w ", [Pid]), 
-			   $ , FnameWidth),
-		       pad($ , flat_format(" ~w",   [Cnt]),       NrWidth),
-		       pad($ , " ",                               NrWidth),
-		       pad($ , flat_format(" ~.3f", [Own*0.001]), NrWidth)])
-    end.
-
-print_caller(Dest, Clocks) ->
-    print_func(Dest, Clocks, "   ~s ", "  ").
-
-print_called(Dest, Clocks) ->
-    print_func(Dest, Clocks, "   ~s ", "  ").
-
-print_func(Dest, Clocks) ->
-    print_func(Dest, Clocks, "*  ~s ", " *").
-
-print_func({Io, FnameWidth, NrWidth}, 
-	   #clocks{id = Func, cnt = Cnt, own = Own, acc = Acc}, 
-	   Format, Tail) ->
-    case Io of
-	undefined ->
-	    ok;
-	_ ->
-	    io:format(Io, "~s~s~s~s~s~n",
-		      [pad(flat_format(Format,
-				       [format_func(Func)]), 
-			   $ , FnameWidth),
-		       pad($ , flat_format(" ~w",   [Cnt]),       NrWidth),
-		       pad($ , flat_format(" ~.3f", [Acc*0.001]), NrWidth),
-		       pad($ , flat_format(" ~.3f", [Own*0.001]), NrWidth),
-		       Tail])
-    end.
-
-print_proc(Dest,
-	   #proc{id = Pid, parent = undefined, init_log = []}) ->
-    print_nl(Dest);
-print_proc({Io, FnameWidth, NrWidth} = Dest, 
-	   #proc{id = Pid, 
+print_proc({undefined, _}, _) ->
+    ok;
+print_proc(Dest, 
+	   #proc{id = _Pid, 
 		 parent = Parent, 
 		 spawned_as = SpawnedAs,
 		 init_log = InitLog}) ->
-    case Io of
-	undefined ->
-	    ok;
+    case {Parent, SpawnedAs, InitLog} of
+	{undefined, undefined, []} ->
+	    println(Dest, "   ", [], "].", "");
+	{_, undefined, []} ->
+	    println(Dest, " { ", {spawned_by, parsify(Parent)}, "}].", "");
 	_ ->
-	    io:put_chars(Io, 
-			 ["** ",
-			  case Parent of 
-			      undefined ->
-				  [];
-			      _ ->
-				  io_lib:format("Spawned by ~w~s.~n", 
-						[Parent,
-						 case SpawnedAs of
-						     undefined ->
-							 "";
-						     _ ->
-							 [" as ",
-							  format_func(SpawnedAs)]
-						 end])
-			  end,
-			  case InitLog of
-			      [] ->
-				  io_lib:nl();
-			      _ ->
-				  ["** Initial calls: " | io_lib:nl()]
-			  end])
-    end,
-    print_init_log(Dest, InitLog),
-    print_nl(Dest);
-print_proc(Dest, Pid) ->
-    print_nl(Dest).
+	    println(Dest, " { ", {spawned_by, parsify(Parent)}, "},", ""),
+	    case {SpawnedAs, InitLog} of
+		{_, []} ->
+		    println(Dest, " { ",
+			    {spawned_as, SpawnedAs},
+			    "}].", "");
+		{undefined, _} ->
+		    println(Dest, " { ", 
+			    {initial_calls, lists:reverse(InitLog)},
+			    "}].", "");
+		_ ->
+		    println(Dest, " { ",
+			    {spawned_as, SpawnedAs},
+			    "},", ""),
+		    println(Dest, " { ",
+			    {initial_calls, lists:reverse(InitLog)},
+			    "}].", "")
+	    end
+    end.
 
-print_init_log({undefined, FnameWidth, NrWidth}, 
-	       _) ->
-    ok;
-print_init_log(_Dest, 
-	       []) ->
-    ok;
-print_init_log({Io, FnameWidth, NrWidth} = Dest, 
-	       [Func | Tail]) ->
-    print_init_log(Dest, Tail),
-    io:format(Io, "**    ~s~n", [format_func(Func)]).
 
-print_nl({undefined, FnameWidth, NrWidth}) ->
+
+print_callers(Dest, []) ->
+    println(Dest, "{[", [], "],", "");
+print_callers(Dest, [Clocks]) ->
+    println(Dest, "{[{", Clocks, "}],", "");
+print_callers(Dest, [Clocks | Tail]) ->
+    println(Dest, "{[{", Clocks, "},", ""),
+    print_callers_1(Dest, Tail).
+
+print_callers_1(Dest, [Clocks]) ->
+    println(Dest, "  {", Clocks, "}],", "");
+print_callers_1(Dest, [Clocks | Tail]) ->
+    println(Dest, "  {", Clocks, "},", ""),
+    print_callers_1(Dest, Tail).
+
+
+
+print_func(Dest, Clocks) ->
+    println(Dest, " { ", Clocks, "},", "%").
+
+
+
+print_called(Dest, []) ->
+    println(Dest, " [", [], "]}.", "");
+print_called(Dest, [Clocks]) ->
+    println(Dest, " [{", Clocks, "}]}.", "");
+print_called(Dest, [Clocks | Tail]) ->
+    println(Dest, " [{", Clocks, "},", ""),
+    print_called_1(Dest, Tail).
+
+print_called_1(Dest, [Clocks]) ->
+    println(Dest, "  {", Clocks, "}]}.", "");
+print_called_1(Dest, [Clocks | Tail]) ->
+    println(Dest, "  {", Clocks, "},", ""),
+    print_called_1(Dest, Tail).
+
+
+
+println({undefined, _}) ->
     ok;
-print_nl({Io, FnameWidth, NrWidth}) ->
+println({Io, _}) ->
     io:nl(Io).
 
+println({undefined, _}, _Head,
+	_, 
+	_Tail, _Comment) ->
+    ok;
+println({Io, [W1, W2, W3, W4]}, Head,
+	#clocks{id = Pid, cnt = Cnt, acc = _, own = Own},
+	Tail, Comment) when pid(Pid) ->
+    io:put_chars(Io,
+		 [pad(Head, $ , 3),
+		  flat_format(parsify(Pid), $,, W1),
+		  flat_format(Cnt, $,, W2, right),
+		  flat_format(undefined, $,, W3, right),
+		  flat_format(Own*0.001, [], W4-1, right),
+		  pad(Tail, $ , 4),
+		  pad($ , Comment, 4),
+		  io_lib:nl()]);
+println({Io, [W1, W2, W3, W4]}, Head,
+	#clocks{id = {_M, _F, _A} = Func, cnt = Cnt, acc = Acc, own = Own},
+	Tail, Comment) ->
+    io:put_chars(Io,
+		 [pad(Head, $ , 3),
+		  flat_format(Func, $,, W1),
+		  flat_format(Cnt, $,, W2, right),
+		  flat_format(Acc*0.001, $,, W3, right),
+		  flat_format(Own*0.001, [], W4-1, right),
+		  pad(Tail, $ , 4),
+		  pad($ , Comment, 4),
+		  io_lib:nl()]);
+println({Io, [W1, W2, W3, W4]}, Head,
+	#clocks{id = Id, cnt = Cnt, acc = Acc, own = Own},
+	Tail, Comment) ->
+    io:put_chars(Io,
+		 [pad(Head, $ , 3),
+		  flat_format(parsify(Id), $,, W1),
+		  flat_format(Cnt, $,, W2, right),
+		  flat_format(Acc*0.001, $,, W3, right),
+		  flat_format(Own*0.001, [], W4-1, right),
+		  pad(Tail, $ , 4),
+		  pad($ , Comment, 4),
+		  io_lib:nl()]);
+println({Io, [W1, W2, W3, W4]}, Head,
+	head,
+	Tail, Comment) ->
+    io:put_chars(Io,
+		 [pad(Head, $ , 3),
+		  pad(" ", $ , W1),
+		  pad($ , " CNT ", W2),
+		  pad($ , " ACC ", W3),
+		  pad($ , " OWN", W4-1),
+		  pad(Tail, $ , 4),
+		  pad($ , Comment, 4),
+		  io_lib:nl()]);
+println({Io, _}, Head,
+	[],
+	Tail, Comment) ->
+    io:format(Io, "~s~s~s~n",
+	      [pad(Head, $ , 3), Tail, Comment]);
+println({Io, _}, Head,
+	{Tag, Term},
+	Tail, Comment) ->
+    io:format(Io, "~s~p, ~p~s~s~n",
+	      [pad(Head, $ , 3), parsify(Tag), parsify(Term), Tail, Comment]);
+println({Io, _}, Head,
+	Term,
+	Tail, Comment) ->
+    io:format(Io, "~s~p~s~s~n",
+	      [pad(Head, $ , 3), parsify(Term), Tail, Comment]).
 
 
-format_func({M, F, Arity}) when integer(Arity) ->
-    io_lib:format("~w:~w/~w", [M, F, Arity]);
-format_func({M, F, Args}) when list(Args) ->
-    io_lib:format("~w:~w(~s)", 
-		  [M, F, format_func_args(Args)]);
-format_func(Func) ->
-    io_lib:format("~w", [Func]).
 
-format_func_args([A | [_|_] = T]) ->
-    [io_lib:format("~p,", [A]) | format_func_args(T)];
-format_func_args([A]) ->
-    io_lib:format("~p", [A]);
-format_func_args([]) ->
-    [].
+%%%--------------------------
+%%% Sorting support functions
+%%%--------------------------
 
 
+%% Add a Clocks record to the callers and called funcstat records
+%% in the process dictionary.
+%% 
+funcstat_pd(Pid, Func1, Func0, Clocks) ->
+    put({Pid, Func0},
+	case get({Pid, Func0}) of
+	    undefined ->
+		#funcstat{callers_sum = Clocks#clocks{id = Func0}, 
+			  called_sum = #clocks{id = Func0},
+			  callers = [Clocks#clocks{id = Func1}]};
+	    #funcstat{callers_sum = CallersSum,
+		      callers = Callers} = FuncstatCallers ->
+		FuncstatCallers#funcstat{
+		  callers_sum = clocks_sum(CallersSum, Clocks, Func0),
+		  callers = [Clocks#clocks{id = Func1} | Callers]}
+	end),
+    put({Pid, Func1},
+        case get({Pid, Func1}) of
+            undefined ->
+                #funcstat{callers_sum = #clocks{id = Func1}, 
+                          called_sum = Clocks#clocks{id = Func1},
+                          called = [Clocks#clocks{id = Func0}]};
+            #funcstat{called_sum = CalledSum,
+                      called = Called} = FuncstatCalled ->
+                FuncstatCalled#funcstat{
+                  called_sum = clocks_sum(CalledSum, Clocks, Func1),
+                  called = [Clocks#clocks{id = Func0} | Called]}
+        end).
 
-flat_format(Format, Args) ->
-    flatten(io_lib:format(Format, Args)).
+
+
+%% Sort a list of funcstat records,
+%% and sort the callers and called lists within the funcstat record.
+funcstat_sort_r(FuncstatList, Element) ->
+    funcstat_sort_r_1(FuncstatList, Element, []).
+
+funcstat_sort_r_1([], _, R) ->
+    postsort_r(sort(R));
+funcstat_sort_r_1([#funcstat{callers_sum = #clocks{} = Clocks,
+			     callers = Callers,
+			     called = Called} = Funcstat
+		   | L], 
+		  Element,
+		  R) ->
+    funcstat_sort_r_1(L, 
+		      Element, 
+		      [[element(Element, Clocks)
+			|Funcstat#funcstat{
+			   callers = clocks_sort_r(Callers, Element),
+			   called = clocks_sort_r(Called, Element)}]
+		       | R]).
 
 
 
+%% Sort a list of clocks records.
+clocks_sort_r(L, E) ->
+    clocks_sort_r_1(L, E, []).
+
+clocks_sort_r_1([], _, R) ->
+    postsort_r(sort(R));
+clocks_sort_r_1([#clocks{} = C | L], E, R) ->
+    clocks_sort_r_1(L, E, [[element(E, C)|C] | R]).
+
+
+%% Take a list of terms with sort headers and strip the headers.
+postsort_r(L) ->
+    postsort_r(L, []).
+
+postsort_r([], R) ->
+    R;
+postsort_r([[_|C] | L], R) ->
+    postsort_r(L, [C | R]).
+
+
+
+%%%----------------------------------------------------------------------
+%%% Fairly generic support functions
+%%%
+
+%% Standard format and flatten.
+flat_format(F, Trailer) when float(F) ->
+    flatten([io_lib:format("~.3f", [F]), Trailer]);
+flat_format(W, Trailer) ->
+    flatten([io_lib:format("~p", [W]), Trailer]).
+
+%% Format, flatten, and pad.
+flat_format(Term, Trailer, Width) ->
+    flat_format(Term, Trailer, Width, left).
+
+flat_format(Term, Trailer, Width, left) ->
+    flat_format(Term, Trailer, Width, {left, $ });
+flat_format(Term, Trailer, Width, {left, Filler}) ->
+    pad(flat_format(Term, Trailer), Filler, Width);
+flat_format(Term, Trailer, Width, right) ->
+    flat_format(Term, Trailer, Width, {right, $ });
+flat_format(Term, Trailer, Width, {right, Filler}) ->
+    pad(Filler, flat_format(Term, Trailer), Width).
+
+
+
+%% Left pad a string using a given char.
 pad(Char, L, Size) when integer(Char), list(L), integer(Size) ->
     List = lists:flatten(L),
     Length = length(List),
@@ -2465,6 +2622,7 @@ pad(Char, L, Size) when integer(Char), list(L), integer(Size) ->
        true ->
 	    lists:append(lists:duplicate(Size - Length, Char), List)
     end;
+%% Right pad a string using a given char.
 pad(L, Char, Size) when list(L), integer(Char), integer(Size) ->
     List = lists:flatten(L),
     Length = length(List),
@@ -2476,82 +2634,54 @@ pad(L, Char, Size) when list(L), integer(Char), integer(Size) ->
 
 
 
-%%%--------------------------
-%%% Sorting support functions
-%%%--------------------------
+ets_select_foreach(Table, MatchSpec, Limit, Fun) ->
+    ets:safe_fixtable(Table, true),
+    ets_select_foreach_1(ets:select(Table, MatchSpec, Limit), Fun).
+
+ets_select_foreach_1('$end_of_table', _) ->
+    ok;
+ets_select_foreach_1({Matches, Continuation}, Fun) ->
+    ?dbg(2, "Matches = ~p~n", [Matches]),
+    lists:foreach(Fun, Matches),
+    ets_select_foreach_1(ets:select(Continuation), Fun).
 
 
 
-funcstat_pd_pid_func(Pid, Caller, Func, Clocks) ->
-    put({Pid, Func},
-	case get({Pid, Func}) of
-	    undefined ->
-		#funcstat{callers_sum = Clocks#clocks{id = Func}, 
-			  called_sum = #clocks{id = Func},
-			  callers = [Clocks#clocks{id = Caller}]};
-	    #funcstat{callers_sum = CallersSum,
-		      callers = Callers} = Funcstat ->
-		Funcstat#funcstat{
-		  callers_sum = clocks_sum(CallersSum, Clocks, Func),
-		  callers = [Clocks#clocks{id = Caller} | Callers]}
-	end).
-
-funcstat_pd_pid_caller(Pid, Caller, Func, Clocks) ->
-    put({Pid, Caller},
-	case get({Pid, Caller}) of
-	    undefined ->
-		#funcstat{callers_sum = #clocks{id = Caller}, 
-			  called_sum = Clocks#clocks{id = Caller},
-			  called = [Clocks#clocks{id = Func}]};
-	    #funcstat{called_sum = CalledSum,
-		      called = Called} = Funcstat ->
-		Funcstat#funcstat{
-		  called_sum = clocks_sum(CalledSum, Clocks, Caller),
-		  called = [Clocks#clocks{id = Func} | Called]}
-	end).
+%% Converts the parts of a deep term that are not parasable when printed
+%% with io:format() into their string representation.
+parsify([]) ->
+    [];
+parsify([Hd | Tl]) ->
+    [parsify(Hd) | parsify(Tl)];
+parsify({A, B}) ->
+    {parsify(A), parsify(B)};
+parsify({A, B, C}) ->
+    {parsify(A), parsify(B), parsify(C)};
+parsify(Tuple) when tuple(Tuple) ->
+    list_to_tuple(parsify(tuple_to_list(Tuple)));
+parsify(Pid) when pid(Pid) ->
+    erlang:pid_to_list(Pid);
+parsify(Port) when port(Port) ->
+    erlang:port_to_list(Port);
+parsify(Ref) when reference(Ref) -> 
+    erlang:ref_to_list(Ref);
+parsify(Fun) when function(Fun) ->
+    erlang:fun_to_list(Fun);
+parsify(Term) ->
+    Term.
 
 
 
-funcstat_sort_accR(FuncstatList, ClocksSort) ->
-    funcstat_sort_accR_1(FuncstatList, ClocksSort, []).
+%% A simple loop construct.
+%%
+%% Calls 'Fun' with argument 'Start' first and then repeatedly with
+%% its returned value (state) until 'Fun' returns 'Stop'. Then
+%% the last state value that was not 'Stop' is returned.
 
-funcstat_sort_accR_1([], _ClocksSort, R) ->
-    postsortR(sort(R), []);
-funcstat_sort_accR_1([#funcstat{callers_sum = #clocks{acc = K},
-				callers = Callers,
-				called = Called} = Funcstat
-		      | L], 
-		     ClocksSort,
-		     R) ->
-    funcstat_sort_accR_1(L, 
-			 ClocksSort,
-			 [[K | Funcstat#funcstat{callers = ClocksSort(Callers),
-						 called = ClocksSort(Called)}]
-			  | R]).
+% iterate(Start, Done, Fun) when function(Fun) ->
+%     iterate(Start, Done, Fun, Start).
 
-
-
-clocks_sort_accR(ClocksList) ->
-    clocks_sort_accR_1(ClocksList, []).
-
-clocks_sort_accR_1([], R) ->
-    postsortR(sort(R), []);
-clocks_sort_accR_1([#clocks{acc = K} = C | L], R) ->
-    clocks_sort_accR_1(L, [[K | C] | R]).
-
-
-
-clocks_sort_ownR(ClocksList) ->
-    clocks_sort_ownR_1(ClocksList, []).
-
-clocks_sort_ownR_1([], R) ->
-    postsortR(sort(R), []);
-clocks_sort_ownR_1([#clocks{own = K} = C | L], R) ->
-    clocks_sort_ownR_1(L, [[K | C] | R]).
-
-
-
-postsortR([], R) ->
-    R;
-postsortR([[_ | C] | L], R) ->
-    postsortR(L, [C | R]).
+% iterate(Done, Done, Fun, I) ->
+%     I;
+% iterate(I, Done, Fun, _) ->
+%     iterate(Fun(I), Done, Fun, I).

@@ -129,15 +129,13 @@ gc_tab1(F,Tab) ->
 	    case snmp_local_db:table_delete_row(db(Tab), Oid) of
 		true -> 
 		    ?vlog("deleted cyclic ref row for: ~w",[Oid]),
-		    snmp_error:config_err("cyclic reference in table ~w: "
-					  "~w -> ~w. Row deleted",
-					  [Tab,Oid,Oid]),
+		    config_err("cyclic reference in table ~w: "
+			       "~w -> ~w. Row deleted", [Tab, Oid, Oid]),
 		    gc_tab1(F,Tab);
 		false ->
 		    ?vlog("unable to remove faulty row from table ~w",[Tab]),
-		    snmp_error:config_err("failed removing faulty row. "
-					  "Giving up on table ~w cleanup",
-					  [Tab])
+		    config_err("failed removing faulty row. "
+			       "Giving up on table ~w cleanup", [Tab])
 	    end;
 	_ ->
 	    ok
@@ -351,3 +349,7 @@ set_sname(undefined) ->
     put(sname,conf);
 set_sname(_) -> %% Keep it, if already set.
     ok.
+
+
+config_err(F, A) ->
+    snmp_error_report:config_err(F, A).

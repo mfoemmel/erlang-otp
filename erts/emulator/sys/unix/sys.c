@@ -67,6 +67,17 @@
 #define TICKS_PER_SEC()	sysconf(_SC_CLK_TCK)
 #endif
 
+#ifdef HAVE_GETHRVTIME
+#  include <unistd.h>
+#  include <sys/types.h>
+#  include <sys/stat.h>
+#  include <sys/signal.h>
+#  include <sys/fault.h>
+#  include <sys/syscall.h>
+#  include <sys/procfs.h>
+#  include <fcntl.h>
+#endif
+
 extern char **environ;
 
 #define MAX_VSIZE 16		/* Max number of entries allowed in an I/O
@@ -1707,9 +1718,10 @@ int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
 #else
 
 /* Interface function available to driver writers */
-int driver_select(this_port, fd, mode, on)
-int this_port, fd, mode, on;
-{
+int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
+ {
+   int this_port = (int)ix;
+   int fd = (int)e;
 #if defined(FD_SETSIZE)
     if (fd >= FD_SETSIZE) {
 	erl_exit(1,"driver_select called with too large file descriptor %d"
@@ -2238,9 +2250,9 @@ extern char* const pre_loaded[];
 #else /* ifndef sys_alloc2 */
 
 /* ... and sys_A2 makros used; need sys_A (symbols) */
-void* sys_alloc(Uint size)              { return sys_alloc2(size);        }
-void* sys_realloc(void* ptr, Uint size) { return sys_realloc2(ptr, size); }
-void* sys_free(void* ptr)               { return sys_free2(ptr);          }
+void* sys_alloc(Uint size)		{ return sys_alloc2(size);        }
+void* sys_realloc(void* ptr, Uint size)	{ return sys_realloc2(ptr, size); }
+void* sys_free(void* ptr)		{ return sys_free2(ptr);          }
 #endif /* ifndef sys_alloc2 */
 
 #endif /* #ifdef SYS_ALLOC_ELSEWHERE */
@@ -2716,3 +2728,39 @@ char** argv;
 {
     ;
 }
+
+#ifdef HAVE_GETHRVTIME_PROCFS_IOCTL
+
+int sys_start_hrvtime() {
+    long msacct = PR_MSACCT;
+    int fd;
+    char proc_self[30] = "/proc/"; /* 30 > strlen("/proc/" ++ sys_get_pid()) */
+
+    sys_get_pid(proc_self + strlen(proc_self));
+    if ( (fd = open(proc_self, O_WRONLY)) == -1) {
+	return -1;
+    }
+    if (ioctl(fd, PIOCSET, &msacct) < 0) {
+	close(fd);
+	return -2;
+    }
+    close(fd);
+    return 0;
+}
+
+int sys_stop_hrvtime() {
+    long msacct = PR_MSACCT;
+    int fd;
+
+    if ( (fd = open("/proc/self", O_WRONLY)) == -1) {
+	return -1;
+    }
+    if (ioctl(fd, PIOCRESET, &msacct) < 0) {
+	close(fd);
+	return -2;
+    }
+    close(fd);
+    return 0;
+}
+
+#endif /* HAVE_GETHRVTIME_PROCFS_IOCTL */

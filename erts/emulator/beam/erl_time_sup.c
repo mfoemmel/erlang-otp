@@ -89,11 +89,26 @@ static SysTimeval last_delivered;
 
 #ifdef HAVE_GETHRTIME
 
+int erts_disable_tolerant_timeofday;
+
 static SysHrTime hr_init_time, hr_last_correction_check, 
     hr_correction, hr_last_time;
 
 static void init_tolerant_timeofday(void)
 {
+    erts_disable_tolerant_timeofday = 0;
+    /* Should be in sys.c */
+#if defined(HAVE_SYSCONF) && defined(_SC_NPROCESSORS_CONF)
+    if (sysconf(_SC_NPROCESSORS_CONF) > 1) {
+	char b[1024];
+	int maj,min,build;
+	os_flavor(b,1024);
+	os_version(&maj,&min,&build);
+	if (!strcmp(b,"sunos") && maj <= 5 && min <= 7) {
+	    erts_disable_tolerant_timeofday = 1;
+	}
+    }
+#endif
     hr_init_time = sys_gethrtime();
     hr_last_correction_check = hr_last_time = hr_init_time;
     hr_correction = 0;
@@ -103,6 +118,10 @@ static void get_tolerant_timeofday(SysTimeval *tv)
 {
     SysHrTime diff_time, curr;
 
+    if (erts_disable_tolerant_timeofday) {
+	sys_gettimeofday(tv);
+	return;
+    }
     *tv = inittv;
     diff_time = ((curr = sys_gethrtime()) + hr_correction - hr_init_time) / 1000; 
 
@@ -197,7 +216,7 @@ static void get_tolerant_timeofday(SysTimeval *tvp)
     Milli ct_diff;
     Milli tv_diff;
     Milli current_correction;
-    long act_correction; /* Never more than a long (?) */
+    Milli act_correction; /* long showed to be too small */
     Milli max_adjust;
 
 #define TICK_MS (1000 / SYS_CLK_TCK)
@@ -705,3 +724,13 @@ void erts_time_remaining(SysTimeval *rem_time)
 
 
 
+#ifdef HAVE_ERTS_NOW_CPU
+void erts_get_now_cpu(Uint32* megasec, Uint32* sec, Uint32* microsec) {
+    SysHrTime t = sys_gethrvtime() / 1000;
+    *microsec = t % 1000000;
+    t /= 1000000;
+    *sec = t % 1000000;
+    t /= 1000000;
+    *megasec = t % 1000000;
+}
+#endif

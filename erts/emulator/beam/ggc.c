@@ -348,7 +348,9 @@ offset_mqueue(Process *p, Sint offs, Eterm* low, Eterm* high)
             break;
         }
 
-	ASSERT((is_nil(mp->seq_trace_token) || is_tuple(mp->seq_trace_token)));
+	ASSERT((is_nil(mp->seq_trace_token)
+		|| is_tuple(mp->seq_trace_token)
+		|| is_atom(mp->seq_trace_token)));
 	mesg = mp->seq_trace_token;
 	if (is_tuple(mesg) && ptr_within(tuple_val(mesg), low, high)) {
 	    mp->seq_trace_token = offset_ptr(mesg, offs);
@@ -387,7 +389,7 @@ setup_rootset(Process* p, Eterm* objv, int nobj, Rootset *rootset)
      */
     if (v_msg_len > ALENGTH(CURRENT_ROOTSET(def_msg))) {
         CURRENT_ROOTSET(v_msg) = (Eterm *)
-           safe_alloc_from(210, sizeof(Eterm) * v_msg_len);
+	    erts_safe_sl_alloc_from(210, sizeof(Eterm) * v_msg_len);
     } else {
         CURRENT_ROOTSET(v_msg) = CURRENT_ROOTSET(def_msg);
     }
@@ -395,7 +397,9 @@ setup_rootset(Process* p, Eterm* objv, int nobj, Rootset *rootset)
     v_ptr = CURRENT_ROOTSET(v_msg);
     while (mp != NULL) {
         *v_ptr++ = mp->mesg;
-        ASSERT((is_nil(mp->seq_trace_token) || is_tuple(mp->seq_trace_token)));
+	ASSERT((is_nil(mp->seq_trace_token)
+		|| is_tuple(mp->seq_trace_token)
+		|| is_atom(mp->seq_trace_token)));
         *v_ptr++ = mp->seq_trace_token;
         mp = mp->next;
     }
@@ -440,7 +444,9 @@ setup_rootset(Process* p, Eterm* objv, int nobj, Rootset *rootset)
     }
 #endif
 
-    ASSERT((is_nil(p->seq_trace_token) || is_tuple(p->seq_trace_token)));
+    ASSERT((is_nil(p->seq_trace_token)
+	    || is_tuple(p->seq_trace_token)
+	    || is_atom(p->seq_trace_token)));
     CURRENT_ROOTSET(v[n]) = &p->seq_trace_token;
     CURRENT_ROOTSET(sz[n]) = 1;
     n++;
@@ -491,13 +497,15 @@ restore_rootset(Process *p, Rootset *rootset)
     v_ptr = CURRENT_ROOTSET(v_msg);
     while (mp != NULL) {
 	mp->mesg = *v_ptr++;
-	ASSERT((is_nil(*v_ptr) || is_tuple(*v_ptr)));
+	ASSERT((is_nil(*v_ptr)
+		|| is_tuple(*v_ptr)
+		|| is_atom(*v_ptr)));
 	mp->seq_trace_token = *v_ptr++;
 	mp = mp->next;
     }
     
     if (CURRENT_ROOTSET(v_msg) != CURRENT_ROOTSET(def_msg)) {
-        sys_free(CURRENT_ROOTSET(v_msg));
+        erts_sl_free(CURRENT_ROOTSET(v_msg));
     }
 #ifdef UNIFIED_HEAP
         r_index++;
@@ -554,7 +562,7 @@ fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
 #ifdef UNIFIED_HEAP
     n_heap = (Eterm *) safe_alloc_from(803, sizeof(Eterm)*new_sz);
 #else
-    n_heap = (Eterm *) safe_sl_alloc_from(803, sizeof(Eterm)*new_sz);
+    n_heap = (Eterm *) erts_safe_sl_alloc_from(803, sizeof(Eterm)*new_sz);
 #endif
     n_hstart = n_htop = n_heap;
     FLAGS &= ~F_NEED_FULLSWEEP;
@@ -723,7 +731,7 @@ fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
 #ifdef UNIFIED_HEAP
         sys_free(OLD_HEAP);
 #else
-        sys_sl_free(OLD_HEAP);
+        erts_sl_free(OLD_HEAP);
 #endif
         OLD_HEAP = OLD_HTOP = OLD_HEND = NULL;
     }
@@ -743,7 +751,7 @@ fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
 #ifdef UNIFIED_HEAP
     sys_free(HEAP_START);
 #else
-    sys_sl_free(HEAP_START);
+    erts_sl_free(HEAP_START);
 #endif
 
     HEAP_START = n_heap;
@@ -884,7 +892,7 @@ grow_new_heap(Process *p, Uint new_sz, Eterm* objv, int nobj)
 #ifdef UNIFIED_HEAP
     new_heap = (Eterm *) safe_realloc((void*)HEAP_START, sizeof(Eterm)*new_sz);
 #else
-    new_heap = (Eterm *) safe_sl_realloc((void*)HEAP_START,
+    new_heap = (Eterm *) erts_safe_sl_realloc((void*)HEAP_START,
 					 sizeof(Eterm)*(HEAP_SIZE),
 					 sizeof(Eterm)*new_sz);
 #endif
@@ -941,9 +949,9 @@ shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj)
     ASSERT(new_sz < p->heap_sz);
     sys_memmove(p->heap + new_sz - stack_size, p->stop, stack_size *
                                                         sizeof(Eterm));
-    new_heap = (Eterm *) safe_sl_realloc((void*)p->heap,
-					 sizeof(Eterm)*(HEAP_SIZE),
-					 sizeof(Eterm)*new_sz);
+    new_heap = (Eterm *) erts_safe_sl_realloc((void*)p->heap,
+					      sizeof(Eterm)*(HEAP_SIZE),
+					      sizeof(Eterm)*new_sz);
     p->hend = new_heap + new_sz;
     p->stop = p->hend - stack_size;
 #endif
@@ -1176,7 +1184,7 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 #ifdef UNIFIED_HEAP
         n_old = (Eterm *) safe_alloc_from(801, sizeof(Eterm)*new_sz);
 #else
-        n_old = (Eterm *) safe_sl_alloc_from(801, sizeof(Eterm)*new_sz);
+        n_old = (Eterm *) erts_safe_sl_alloc_from(801, sizeof(Eterm)*new_sz);
 #endif
 
         OLD_HEND = n_old + new_sz;
@@ -1533,7 +1541,7 @@ gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
 #ifdef UNIFIED_HEAP
     n_hstart = (Eterm*) safe_alloc_from(805, sizeof(Eterm)*new_sz);
 #else
-    n_hstart = (Eterm*) safe_sl_alloc_from(805, sizeof(Eterm)*new_sz);
+    n_hstart = (Eterm*) erts_safe_sl_alloc_from(805, sizeof(Eterm)*new_sz);
 #endif
     n_htop = n_hstart;
 #ifdef UNIFIED_HEAP
@@ -1708,7 +1716,7 @@ gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
 #ifdef UNIFIED_HEAP
     sys_free((void*)HEAP_START);
 #else
-    sys_sl_free((void*)HEAP_START);
+    erts_sl_free((void*)HEAP_START);
 #endif
 
 #ifdef UNIFIED_HEAP

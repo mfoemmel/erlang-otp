@@ -56,19 +56,14 @@ tokens(Chars, Line, Acc) ->
 any_chars([Char | Rest], Line) ->
     case ?classify_char(Char) of
 	safe_char ->
+	    safe_chars(Rest, [Char], [?LOWER(Char)], Line);
+	rest_char ->
 	    case Char of
 		?SemiColonToken ->
 		    comment_chars(Rest, Line);
 		_ ->
-		    safe_chars(Rest, [Char], [?LOWER(Char)], Line)
+		    rest_chars(Rest, [Char], Line)
 	    end;
-	rest_char ->
-	    %% case Char of
-	    %% 	   ?LesserToken -> domain_name_chars(Rest, [], Line);
-	    %% 	   ?LsbrktToken -> domain_address_chars(Rest, [], Line);
-	    %% 	   _  -> rest_chars(Rest, [Char], Line)
-	    %% end;
-	    rest_chars(Rest, [Char], Line);
 	double_quote ->
 	    quoted_chars(Rest, [], Line);
 	white_space ->
@@ -138,7 +133,7 @@ rest_chars(Rest, [AccChar], Line) ->
 
 skip_sep_chars([Char | Rest] = All, Line) ->
     case ?classify_char(Char) of
-	safe_char when Char == ?SemiColonToken ->
+	rest_char when Char == ?SemiColonToken ->
 	    skip_comment_chars(Rest, Line);
 	white_space -> 
 	    skip_sep_chars(Rest, Line);
@@ -156,8 +151,8 @@ skip_comment_chars([Char | Rest] = All, Line) ->
 	    skip_comment_chars(Rest, Line);
 	rest_char ->
 	    skip_comment_chars(Rest, Line);
-	_ when Char == ?DoubleQuoteToken ->
-	    comment_chars(Rest, Line);
+	double_quote ->
+	    skip_comment_chars(Rest, Line);
 	white_space -> 
 	    skip_comment_chars(Rest, Line);
 	end_of_line ->

@@ -36,6 +36,7 @@
 
 -define(DEFAULT_AUTO_REPAIR,true).
 
+
 %%-----------------------------------------------------------------
 %% Func: new/3
 %% Args: FileName is a string containing the path and the filename
@@ -164,12 +165,12 @@ exec_log(LogFile,LogFd,Tab,AutoRepair) ->
     end.
 
 auto_repair(true_verbose,{error,Reason},FileName) ->
-    snmp_error:db_err("Error reading from logfile ~p for reason ~p, repairing", 
-		      [FileName,Reason]),
+    user_err("Error reading from logfile ~p for reason ~w, repairing", 
+	     [FileName, Reason]),
     ok;
 auto_repair(true_verbose,{'EXIT',Reason},FileName) ->
-    snmp_error:db_err("Exception reading from logfile ~p for reason ~p", 
-		      [FileName,Reason]),
+    user_err("Exception reading from logfile ~p for reason ~w", 
+	     [FileName, Reason]),
     ok;
 auto_repair(true,_Error,_FileName) ->
     ok;
@@ -228,3 +229,6 @@ write(Fd, Term) ->
 put_int16(I) ->
     [((I band 16#ff00) bsr 8),I band 16#ff].
 
+
+user_err(F, A) ->
+    snmp_error_report:user_err(F, A).

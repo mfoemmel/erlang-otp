@@ -105,8 +105,9 @@ body(Ke, I, Vdb0) ->
 %% guard(Kguard, I, Vdb) -> Guard.
 
 guard(#k_guard_not{anno=A,arg=Not}, I, Vdb0) ->
+    Vdb = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
     Gnot = guard(Not, I+1, Vdb0),
-    #l{ke={guard_not,Gnot},i=I,a=A#k.a,vdb=Gnot#l.vdb};
+    #l{ke={guard_not,Gnot},i=I,a=A#k.a,vdb=Vdb};
 guard(#k_guard_and{anno=A,args=As}, I, Vdb0) ->
     {Es,MaxI,Vdb1} = guard_and_list(As, I+1, Vdb0),
     #l{ke={guard_and,Es},i=I,a=A#k.a,vdb=Vdb1};

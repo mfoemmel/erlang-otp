@@ -492,18 +492,19 @@ call(Msg) ->
 	    Res
     end.
 
-%% Rewrite when we don't want to be backward compatible anymore,
-%% after OTP-R6B we don't need to wrap the calls in rpc's.
 remote_call(Node, Func, Args) ->
-    case mnesia_monitor:needs_protocol_conversion(Node) of
-	true ->
-	    rpc:call(Node, ?MODULE, Func, Args);
-	false ->
-	    rpc:call(Node, ?MODULE, call, [{Func, Args, self()}])
+    case catch gen_server:call({?MODULE, Node}, {Func, Args, self()}, infinity) of
+	{'EXIT', Error} ->
+	    {error, Error};
+	Else ->
+	    Else
     end.
-
+    
 multicall(Nodes, Msg) ->
-    rpc:multicall(Nodes, ?MODULE, call, [Msg]).
+    {Good, Bad} = gen_server:multi_call(Nodes, ?MODULE, Msg, infinity),
+    PatchedGood = [Reply || {Node, Reply} <- Good],
+    {PatchedGood, Bad}.  %% Make the replies look like rpc:multicalls..
+%%    rpc:multicall(Nodes, ?MODULE, call, [Msg]).
 
 %%%----------------------------------------------------------------------
 %%% Callback functions from gen_server
@@ -576,7 +577,7 @@ handle_call({schema_is_merged, TabsR, Reason, RemoteLoaders}, From, State) ->
     State3 = State2#state{early_msgs = [], schema_is_merged = true},
     Ns = val({current, db_nodes}),
     dbg_out("Schema is merged ~w, State ~w~n", [Ns, State3]),    
-    dbg_out("handle_early_msgs ~p ~n", [Msgs]), % qqqq
+%%    dbg_out("handle_early_msgs ~p ~n", [Msgs]), % qqqq
     handle_early_msgs(lists:reverse(Msgs), State3);
 
 handle_call(disc_load_intents, From, State) ->
@@ -587,10 +588,11 @@ handle_call(disc_load_intents, From, State) ->
     noreply(State);
 
 handle_call({update_where_to_write, [add, Tab, AddNode], From}, Dummy, State) ->
-    dbg_out("update_w3w ~p ~n", [[add, Tab, AddNode]]), %%% qqqq
+%%%    dbg_out("update_w2w ~p", [[add, Tab, AddNode]]), %%% qqqq
+    Current = val({current, db_nodes}),
     Res = 
-	case lists:member(AddNode, val({current, db_nodes})) and 
-	    State#state.schema_is_merged == false of
+	case lists:member(AddNode, Current) and 
+	    State#state.schema_is_merged == true of
 	    true ->
 		mnesia_lib:add({Tab, where_to_write}, AddNode);
 	    false ->
@@ -600,7 +602,7 @@ handle_call({update_where_to_write, [add, Tab, AddNode], From}, Dummy, State) ->
 
 handle_call({add_active_replica, [Tab, ToNode, RemoteS, AccessMode], From},
 	    ReplyTo, State) ->
-    KnownNode = lists:member(node(From), val({current, db_nodes})),
+    KnownNode = lists:member(ToNode, val({current, db_nodes})),
     Merged = State#state.schema_is_merged,
     if
 	KnownNode == false ->
@@ -638,7 +640,7 @@ handle_call({unannounce_add_table_copy, [Tab, Node], From}, ReplyTo, State) ->
 
 handle_call(Msg, From, State) when State#state.schema_is_merged == false ->
     %% Buffer early messages
-    dbg_out("Buffered early msg ~p ~n", [Msg]),   %% qqqq
+%%    dbg_out("Buffered early msg ~p ~n", [Msg]),   %% qqqq
     Msgs = State#state.early_msgs,
     noreply(State#state{early_msgs = [{call, Msg, From} | Msgs]});
 
@@ -782,12 +784,17 @@ handle_cast({release_schema_commit_lock, Owner}, State) ->
     if
 	State#state.is_stopping == true ->
 	    {stop, shutdown, State};
-	Owner == State#state.dumper_pid ->
-	    [Worker | Rest] = State#state.dumper_queue,
-	    State2 = State#state{dumper_pid = undefined,
-				 dumper_queue = Rest},
-	    State3 = opt_start_worker(State2),
-	    noreply(State3)
+	true -> 
+	    case State#state.dumper_queue of
+		[#schema_commit_lock{}|Rest] ->
+		    [Worker | Rest] = State#state.dumper_queue,
+		    State2 = State#state{dumper_pid = undefined,
+					 dumper_queue = Rest},
+		    State3 = opt_start_worker(State2),
+		    noreply(State3);
+		_ ->
+		    noreply(State)
+	    end
     end;
 
 handle_cast(unblock_controller, State) ->
@@ -1071,8 +1078,15 @@ handle_info({'EXIT', Pid, R}, State) when Pid == State#state.supervisor ->
     end;
 
 handle_info({'EXIT', Pid, R}, State) when Pid == State#state.dumper_pid ->
-    fatal("Dumper or schema commit crashed: ~p~n state: ~p~n", [R, State]),
-    {stop, fatal, State};
+    case State#state.dumper_queue of
+	[#schema_commit_lock{}|Workers] ->  %% Schema trans crashed or was killed
+	    State2 = State#state{dumper_queue = Workers, dumper_pid = undefined},
+	    State3 = opt_start_worker(State2),
+	    noreply(State3);
+	_Other ->
+	    fatal("Dumper or schema commit crashed: ~p~n state: ~p~n", [R, State]),
+	    {stop, fatal, State}
+    end;
 
 handle_info({'EXIT', Pid, R}, State) when Pid == State#state.loader_pid ->
     fatal("Loader crashed: ~p~n state: ~p~n", [R, State]),
@@ -1632,7 +1646,7 @@ handle_early_msgs([Msg | Msgs], State) ->
 	    handle_early_msgs(Msgs, State2);
 	{noreply, State2, Timeout} ->
 	    handle_early_msgs(Msgs, State2);
-	Else ->  %% qqqq
+	Else ->  
 	    dbg_out("handle_early_msgs case clause ~p ~n", [Else]),
 	    erlang:fault(Else, [[Msg | Msgs], State])
     end;

@@ -138,7 +138,7 @@ BIF_ADECL_1
 	uLongf dest_len;
 
 	dest_len = get_int32(bytes+1);
-	dest_ptr = safe_alloc(dest_len);
+	dest_ptr = safe_alloc_from(320, dest_len);
 	if (uncompress(dest_ptr, &dest_len, bytes+5, size-5) != Z_OK) {
 	    sys_free(dest_ptr);
 	    goto error;
@@ -191,7 +191,7 @@ term_to_binary(Process* p, Eterm Term, int compressed)
 	uLongf dest_len;
 
 	if (sizeof(buf) < size) {
-	    bytes = safe_alloc(size);
+	    bytes = safe_alloc_from(330, size);
 	}
 
 	if ((endp = enc_term(-1, Term, bytes, TERM_TO_BINARY_DFLAGS)) == NULL) {
@@ -738,7 +738,7 @@ to_external(int slot, Eterm obj, byte **ext)
 	    char* buf;
 	    
 	    size += (1000 + len);
-	    buf = (byte*) safe_alloc(20+size);  /* REMOVE THIS SLOPPY !!! */
+	    buf = (byte*) safe_alloc_from(281, 20+size); /* REMOVE THIS SLOPPY !!! */
 	    
 	    /* We need to restore the old contetnts of dist_buf
 	       before we can proceed */
@@ -969,7 +969,7 @@ dec_term(int slot, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* objp)
 	case PORT_EXT:
 	    {
 		Eterm temp;
-		Uint si;
+		int si;
 		Uint j;
 
 		if ((ep = dec_atom(slot, ep, &temp)) == NULL)
@@ -990,7 +990,7 @@ dec_term(int slot, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* objp)
 	    {
 		int i;
 		Uint k;
-		Uint si;
+		int si;
 		Eterm temp;
 
 		k = get_int16(ep);
@@ -1017,7 +1017,7 @@ dec_term(int slot, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* objp)
 	case REFERENCE_EXT:
 	    {
 		Eterm temp;
-		Uint si;
+		int si;
 		Uint j;
 		if ((ep = dec_atom(slot,ep, &temp)) == NULL)
 		    return NULL;
@@ -1051,7 +1051,8 @@ dec_term(int slot, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* objp)
 		    sys_memcpy(hb->data, ep, n);
 		    *objp = make_binary(hb);
 		} else {
-		    Binary* dbin = (Binary *) safe_alloc(n+sizeof(Binary));
+		    Binary* dbin = (Binary *)
+			safe_alloc_from(60,n+sizeof(Binary));
 		    ProcBin* pb;
 		    dbin->flags = 0;
 		    dbin->orig_size = n;

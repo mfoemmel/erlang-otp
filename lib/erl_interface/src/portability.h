@@ -63,9 +63,9 @@
 /*
  * Magic for link-time warnings and suchlike.
  */
-#if defined(__GNUC__)		/* GNU assembler syntax */
+#if defined(__GNUC__) && !defined(__APPLE__)	/* GNU assembler syntax */
 
-#if defined(__ELF__) || defined(__APPLE__)
+#if defined(__ELF__)
 /* Named sections (COFF should be O.K.) */
 
 /*

@@ -32,8 +32,8 @@ struct internal_state {int dummy;}; /* for buggy compilers */
 
 #define Z_BUFSIZE 4096
 
-#define ALLOC(size) malloc(size)
-#define TRYFREE(p) {if (p) free(p);}
+#define ALLOC(size) driver_alloc(size)
+#define TRYFREE(p) {if (p) driver_free(p);}
 
 static int gz_magic[2] = {0x1f, 0x8b}; /* gzip magic header */
 

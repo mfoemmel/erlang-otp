@@ -104,6 +104,15 @@ int ei_x_encode_string_len(ei_x_buff* x, const char* s, int len)
     return ei_encode_string_len(x->buff, &x->index, s, len);
 }
 
+int ei_x_encode_binary(ei_x_buff* x, const void* p, int len)
+{
+    int i = x->index;
+    ei_encode_binary(NULL, &i, p, len);
+    if (!x_fix_buff(x, i))
+	return -1;
+    return ei_encode_binary(x->buff, &x->index, p, len);
+}
+
 int ei_x_encode_long(ei_x_buff* x, long n)
 {
     int i = x->index;

@@ -15,396 +15,384 @@
 %% 
 %%     $Id$
 %%
-% ------------------------------------------------------------
-%% Purpose:  window management and the gs interface
-%%           for the monitor window in the debugger
-
 -module(dbg_ui_mon_win).
--export([
-	 change_colour/3,
-	 config_grid/2,
-	 config_win/3,
-	 delete_items/2,
-	 mon_title/0,
-	 mon_window/1,
-	 update_backtrace_menu/1,
-	 update_field/4,
-	 update_pids/4
+
+%% External exports
+-export([init/0]).
+-export([create_win/3, get_window/1,
+	 enable/2, is_enabled/1, select/2,
+	 add_module/3, delete_module/2,
+	 add_process/6, update_process/4, clear_processes/1,
+	 add_break/3, update_break/2, delete_break/2,
+	 clear_breaks/1, clear_breaks/2,
+	 handle_event/2
 	]).
 
-%%% -----------------------------------------------------------------
-%%% INTERFACE: mon_window(Processes) -> {WinId,GridId}
-%%%
-%%%   Processes: The attached processes & their status information
-%%%              Start the monitor Window, iserting the info in
-%%%              Processes in the grid.
-%%%
-%%% Create a monitor window with menus and grid and call 'update_pids'
-%%% to fill it with data. Returns GS references {Window,Grid}
-%%% -----------------------------------------------------------------
+-record(moduleInfo, {module, menubtn}).
+-record(procInfo, {pid, row}).
+-record(breakInfo, {point, status, break}).
+-record(winInfo, {window,       % gsobj()
+		  grid,         % gsobj()
+		  row,          % int() Last row in grid
 
-mon_window(Processes) ->
-    GS = gs:start([{kernel,true}]),
-   
-    Win_Options =
-	[{title,mon_title()},
-	 {width, 745},
-	 {height,390},
-	 {configure,true},
-	 {motion,true},
-	 {destroy,true},
-	 {keypress,true}],
+		  focus,        % int() Selected row in grid
 
-    Win = gs:window(GS,Win_Options),
+		  modules=[],   % [#moduleInfo{}] Known modules
+		  processes=[], % [#procInfo{}] Known processes
+		  breaks=[]     % [#breakInfo{}] Known breakpoints
+		 }).
+
+%%====================================================================
+%% External exports
+%%====================================================================
+
+init() ->
+    dbg_ui_win:init().
+
+%%--------------------------------------------------------------------
+%% create_win(GS, Title, Menus) -> #winInfo{}
+%%   GS = gsobj()
+%%   Title = string()
+%%   Menus = [menu()]  See dbg_ui_win.erl
+%%--------------------------------------------------------------------
+create_win(GS, Title, Menus) ->
+    Win = gs:window(GS, [{title, Title},
+			 {width, 746}, {height, 390},
+			 {configure,true}, {destroy,true},
+			 {keypress,true}, {motion,true}]),
 
     MenuBar = gs:menubar(Win, []),
+    dbg_ui_win:create_menus(MenuBar, Menus),
+    dbg_ui_winman:windows_menu(MenuBar),
 
-    help_menu(MenuBar),
-    file_menu(MenuBar),
-    edit_menu(MenuBar),
-    dbg_ui_aux:module_menu(MenuBar),
-    process_menu(MenuBar),
-    breaks_menu(MenuBar),
-    options_menu(MenuBar),
-        
-    dbg_ui_winman:windows_menu (MenuBar),
-
-    Grid_Options = 
-	[{x,3},
-	 {y,40},
-	 {height,348},
-	 {width,739},
-	 {fg,black},
-	 {bg,grey},
-	 {vscroll,right},
-	 %%{font,{screen,[bold],14}},
-	 {hscroll,bottom},
-	 calc_columnwidths(739), 
-	 {rows, {1,length(Processes)+50}}], 
-
-    Grid = gs:grid(Win,Grid_Options),
-
-    update_pids(Grid,Processes,length(Processes),1),
+    Grid = gs:grid(Win, [{x, 5}, {y, 30}, {width, 736}, {height, 348},
+			 {bg, grey}, {fg, black},
+			 {vscroll, right}, {hscroll, bottom},
+			 calc_columnwidths(736),
+			 {rows, {1,50}}]),
+    gs:gridline(Grid, [{row, 1}, {bw, 5}, {fg, blue},
+		       {text, {1,"Pid"}}, {text, {2,"Initial Call"}},
+		       {text, {3,"Name"}}, {text, {4,"Status"}},
+		       {text, {5,"Information"}}]),
 
     gs:config(Win, {map, true}),
-    {Win, Grid}.
+    #winInfo{window=Win, grid=Grid, row=1, focus=0}.
 
+%%--------------------------------------------------------------------
+%% get_window(WinInfo) -> Window
+%%   WinInfo = #winInfo{}
+%%   Window = gsobj()
+%%--------------------------------------------------------------------
+get_window(WinInfo) ->
+    WinInfo#winInfo.window.
 
-%% ---------------------------------------------------------------
-%% Create the menus
-%% ---------------------------------------------------------------
+%%--------------------------------------------------------------------
+%% enable([MenuItem], Bool)
+%% is_enabled(MenuItem) -> Bool
+%%   MenuItem = atom()
+%%   Bool = boolean()
+%%--------------------------------------------------------------------
+enable(MenuItems, Bool) ->
+    lists:foreach(fun(MenuItem) ->
+			  gs:config(MenuItem, {enable, Bool})
+		  end,
+		  MenuItems).
 
-help_menu(MenuBar) ->
-    MenuButtHelp = gs:menubutton(MenuBar, [{label, {text, " Help "}},
-					   {underline, 1},
-					   {side, right}]),
-    MenuHelp = gs:menu(MenuButtHelp, []),
-    gs:menuitem('Help', MenuHelp,
-		[{label, {text, "Help"}},
-		 {underline, 0}]).
+is_enabled(MenuItem) ->
+    gs:read(MenuItem, enable).
 
+%%--------------------------------------------------------------------
+%% select(MenuItem, Bool)
+%%   MenuItem = atom()
+%%   Bool = boolean()
+%%--------------------------------------------------------------------
+select(MenuItem, Bool) ->
+    dbg_ui_win:select(MenuItem, Bool).
 
-file_menu(MenuBar) ->
-    MenuButtFile = gs:menubutton(MenuBar, [{label, {text, " File "}},
-					   {underline, 1}]),
-    MenuFile = gs:menu(MenuButtFile, []),
-    gs:menuitem('Load',MenuFile,
-		[{label, {text, "Load Settings"}},{underline,0}]),
-    gs:menuitem('Save',MenuFile,
-		[{label, {text, "Save Settings"}},{underline,0}]),
-    gs:menuitem(MenuFile, [{itemtype,separator}]),
-    gs:menuitem('Exit', MenuFile,[{label, {text, "Exit"}},{underline,1}]).
-
-
-edit_menu(MenuBar) ->
-    MenuButtEdit= gs:menubutton(MenuBar, [{label, {text, " Edit "}},
-					  {underline, 1}]),
-    MenuEdit = gs:menu(MenuButtEdit, []),
-    gs:menuitem('Clear',MenuEdit, [{label, {text, "Clear"}},{underline,0}]),
-    gs:menuitem('Kill All',MenuEdit,[{label, {text, "Kill All"}},
-				     {underline, 0},
-				     {enable,true}]).
-
-
-process_menu(MenuBar) ->
-    MenuButtProcess = gs:menubutton(MenuBar,[{label, {text, " Process "}},
-					     {underline, 1}]),
-    MenuProcess = gs:menu(MenuButtProcess, []),
-    gs:menuitem('Step',MenuProcess,
-		[{label, {text, "Step ctrl-z"}},{underline,0},{enable,true}]),
-    gs:menuitem('Next',MenuProcess,
-		[{label, {text, "Next"}},{underline,0},{enable,true}]),
-    gs:menuitem('Continue',MenuProcess,
-		[{label, {text, "Continue"}},{underline,0},{enable,true}]),
-    gs:menuitem('Finish',MenuProcess,
-		[{label, {text, "Finish"}},{underline,0},{enable,true}]),
-
-    gs:menuitem(MenuProcess,[{itemtype,separator}]),
-    gs:menuitem('Trace',MenuProcess,
-		[{label,{text, "Attach"}},{underline,0}]),
-    gs:menuitem('Kill',MenuProcess,
-		[{label, {text, "Kill"}},{underline,0},{enable,true}]).
-
-breaks_menu(MenuBar) ->
-    MenuButtBreaks = gs:menubutton(MenuBar, [{label, {text, " Breaks "}},
-					     {underline, 1}]),
-    gs:menu('MenuBreaks',MenuButtBreaks, []),
-    gs:menuitem('Normal Break','MenuBreaks',
-		[{label,{text, "Line Break..."}},
-		 {underline,0}]),
-    gs:menuitem('Conditional Break','MenuBreaks',
-		[{label,{text, "Conditional Break..."}},
-		 {underline,0}]),    
-    gs:menuitem('Functional Break','MenuBreaks',
-		[{label,{text, "Function Break..."}},
-		{underline,0}]),
-    gs:menuitem('MenuBreaks',[{itemtype,separator}]),
-    gs:menuitem('Delete All Breaks','MenuBreaks',
-		[{label,{text, "Delete All"}},{underline,0},
-		 {enable,false}]).
-
-options_menu(MenuBar) ->
-    MenuButtOptions = gs:menubutton(MenuBar, [{label, {text, " Options "}},
-					      {underline, 1}]),
-    MenuOptions = gs:menu(MenuButtOptions, []),
-    gs:menuitem('Reset Options',MenuOptions, 
-		[{label, {text, "Reset Options"}}, {underline, 0}]),
-    gs:menuitem(MenuOptions, [{itemtype,separator}]),
-    gs:menuitem('Button Frame',MenuOptions,
-		[{label,{text,"Button Frame"}},
-		 {underline, 1},
-		 {select,false},
-		 {itemtype,check}]),
-    gs:menuitem('Evaluator Frame',MenuOptions,
-		[{label,{text, "Evaluator Frame"}},
-		 {underline,0},
-		 {select,true},
-		 {itemtype, check}]),
-    gs:menuitem('Bindings Frame',MenuOptions,
-		[{label,{text, "Bindings Frame"}},
-		 {underline, 0},
-		 {select,true},
-		 {itemtype, check}]),
-    gs:menuitem('Trace Flag',MenuOptions,
-	      [{label,{text, "Trace Frame"}},
-	       {underline,0},
-	       {select,false},
-	       {itemtype, check}]),
+%%--------------------------------------------------------------------
+%% add_module(WinInfo, Name, Mod) -> WinInfo
+%%   WinInfo = #winInfo{}
+%%   Name = atom()
+%%   Mod = atom()
+%%--------------------------------------------------------------------
+add_module(WinInfo, Menu, Mod) ->
+    Modules = WinInfo#winInfo.modules,
+    case lists:keysearch(Mod, #moduleInfo.module, Modules) of
+	{value, _ModInfo} -> WinInfo;
+	false ->
+	    %% Create a menu for the module
+	    MenuBtn = gs:menuitem(Menu, [{label, {text,Mod}},
+				 {itemtype, cascade}]),
+	    SubMenu = gs:menu(MenuBtn, []),
+	    gs:menuitem(SubMenu, [{label, {text,"View"}},
+				  {data, {module,Mod,view}}]),
+	    gs:menuitem(SubMenu, [{label, {text,"Delete"}},
+				  {data, {module,Mod,delete}}]),
+	    ModInfo = #moduleInfo{module=Mod, menubtn=MenuBtn},
+	    WinInfo#winInfo{modules=[ModInfo | Modules]}
+    end.
     
-    gs:menuitem(MenuOptions,[{itemtype,separator}]),
-    gs:menuitem('Back Trace',MenuOptions,
-		[{label,{text, "Back Trace Size:"}},
-		 {underline, 13}]),
-    AttachButt = gs:menuitem(MenuOptions,
-			     [{label,{text, "Attach"}},
-			      {underline,0},
-			      {itemtype, cascade}]),
-    AttachMenu = gs:menu(AttachButt,[]),
-    gs:menuitem('First Call',AttachMenu,
-		[{label,{text,"First Call"}},
-		 {underline, 0},
-		 {select,false},
-		 {itemtype, check}]),
-    gs:menuitem('On Exit',AttachMenu,
-		[{label,{text,"On Exit"}},
-		 {underline, 4},
-		 {select,false},{itemtype, check}]),
-    gs:menuitem('On Break',AttachMenu,
-		[{label,{text,"On Break"}},
-		 {underline, 3},
-		 {select,false},{itemtype, check}]),
-    gs:menuitem('Attach',AttachMenu,[{label,{text,"All"}},
-				    {underline, 0}]),
-    gs:menuitem('Never Attach',AttachMenu,[{label,{text,"Never"}},
-					  {underline, 0}]),
+%%--------------------------------------------------------------------
+%% delete_module(WinInfo, Mod) -> WinInfo
+%%   WinInfo = #winInfo{}
+%%   Mod = atom()
+%%--------------------------------------------------------------------
+delete_module(WinInfo, Mod) ->
+    {value, ModInfo} = lists:keysearch(Mod, #moduleInfo.module,
+				       WinInfo#winInfo.modules),
+    gs:destroy(ModInfo#moduleInfo.menubtn),
+    WinInfo#winInfo{modules=lists:keydelete(Mod, #moduleInfo.module,
+					    WinInfo#winInfo.modules)}.
 
-    StackButt = gs:menuitem('StackMenu',MenuOptions,
-			    [{label,{text,"Stack Options"}},
-			     {underline,0},
-			     {itemtype, cascade}]),
-    StackMenu = gs:menu(StackButt,[]),
-    gs:menuitem('Stack Tail',StackMenu,
-		[{label,{text,"Stack On, Tail"}},
-		 {underline, 10},
-		 {select,false},
-		 {itemtype, radio},{group,stack}]),
-    gs:menuitem('Stack',StackMenu,
-		[{label,{text, "Stack On, no Tail"}},
-		 {underline, 10},
-		 {select,false},
-		 {itemtype, radio},{group,stack}]),
-    gs:menuitem('Stack Off',StackMenu,
-		[{label,{text, "Stack Off"}},
-		 {underline, 6},
-		 {select,false},
-		 {itemtype, radio},{group,stack}]).
+%%--------------------------------------------------------------------
+%% add_process(WinInfo, Pid, Name, Function, Status, Info) -> WinInfo
+%%   WinInfo = #winInfo{}
+%%   Pid = pid()
+%%   Name = undefined | atom()
+%%   Function = {Mod, Func, Args}
+%%   Status = idle | running | break | exit
+%%   Info = {} | term()
+%%--------------------------------------------------------------------
+add_process(WinInfo, Pid, Name, {Mod,Func,Args}, Status, Info) ->
+    Grid = WinInfo#winInfo.grid,
+    Row = (WinInfo#winInfo.row)+1,
+    GridLine = case gs:read(Grid, {obj_at_row, Row}) of
+		   undefined ->
+		       gs:gridline(Grid, [{row, Row}, {bw, 5}, {fg, black},
+					  {click, true},
+					  {doubleclick, true}]);
+		   GSObj ->
+		       GSObj
+	       end,
+    Name2 = case Name of undefined -> ""; _ -> Name end,
+    FuncS = io_lib:format("~w:~w/~w", [Mod, Func, length(Args)]),
+    Info2 = case Info of {} -> ""; _ -> Info end,
+    Options = [{text, {1,Pid}}, {text, {2,FuncS}}, {text, {3,Name2}},
+	       {text, {4,Status}}, {text, {5,Info2}},
+	       {data, {gridline, Pid}}],
+    gs:config(GridLine, Options),
 
+    ProcInfo = #procInfo{pid=Pid, row=Row},
+    WinInfo#winInfo{processes=[ProcInfo|WinInfo#winInfo.processes],
+		    row=Row}.
 
+%%--------------------------------------------------------------------
+%% update_process(WinInfo, Pid, Status, Info)
+%%   WinInfo = #winInfo{}
+%%   Pid = pid()
+%%   Status = idle | running | break | exit
+%%   Info = {} | term()
+%%--------------------------------------------------------------------
+update_process(WinInfo, Pid, Status, Info) ->
+    {value, ProcInfo} = lists:keysearch(Pid, #procInfo.pid,
+					WinInfo#winInfo.processes),
 
-%%% windows_menu
-%%%
-% FIXME: Remove this.
-%windows_menu (MenuBar, Win) ->
-%    MenuButtWindows = gs:menubutton(MenuBar, [{label, {text, " Windows "}},
-%					      {underline, 1}]),
-%    gs:menu('WindowsMenu', MenuButtWindows, []).
+    Grid = WinInfo#winInfo.grid,
+    GridLine = gs:read(Grid, {obj_at_row, ProcInfo#procInfo.row}),
     
+    Info2 = case Info of {} -> ""; _ -> Info end,
+    gs:config(GridLine, [{text, {4,Status}}, {text, {5,Info2}}]).
 
+%%--------------------------------------------------------------------
+%% clear_processes(WinInfo) -> WinInfo
+%%   WinInfo = #winInfo{}
+%%--------------------------------------------------------------------
+clear_processes(WinInfo) ->
+    Grid = WinInfo#winInfo.grid,
+    Max = WinInfo#winInfo.row,
+    clear_processes(Grid, 2, Max),
+    WinInfo#winInfo{row=1, focus=0, processes=[]}.
 
-%%% -----------------------------------------------------------------
-%%% INTERFACE: ?????
-%%% -----------------------------------------------------------------
+clear_processes(Grid, Row, Max) when Row=<Max ->
+    GridLine = gs:read(Grid, {obj_at_row, Row}),
+    Options = [{fg, black},
+	       {{text,1}, ""}, {{text,2},""}, {{text,3},""},
+	       {{text,4}, ""}, {{text,5},""},
+	       {data, []}],
+    gs:config(GridLine, Options),
+    clear_processes(Grid, Row+1, Max);
+clear_processes(Grid, Row, Max) when Row>Max ->
+    done.
 
-update_backtrace_menu(Size) ->
-    Text = io_lib:format("Back Trace Size: ~p...",[Size]),
-    gs:config('Back Trace',{label,{text,Text}}).
+%%--------------------------------------------------------------------
+%% add_break(WinInfo, Name, {Point, Options}) -> WinInfo
+%%   WinInfo = #winInfo{}
+%%   Name = atom()
+%%   Point = {Mod, Line}
+%%   Options = [Status, Action, Mods, Cond]
+%%     Status = active | inactive
+%%     Action = enable | disable | delete
+%%     Mods = null (not used)
+%%     Cond = null | {Mod, Func}
+%%--------------------------------------------------------------------
+add_break(WinInfo, Menu, {Point, Options}) ->
+    Break = dbg_ui_win:add_break(Menu, Point),
+    dbg_ui_win:update_break(Break, Options),
+    BreakInfo = #breakInfo{point=Point, break=Break},
+    WinInfo#winInfo{breaks=[BreakInfo|WinInfo#winInfo.breaks]}.
 
-%%% Create the title of the window, depended on if we are 
-%%% distributed or not.
+%%--------------------------------------------------------------------
+%% update_break(WinInfo, {Point, Options})
+%%   WinInfo = #winInfo{}
+%%   Point = {Mod, Line}
+%%   Options = [Status, Action, Mods, Cond]
+%%     Status = active | inactive
+%%     Action = enable | disable | delete
+%%     Mods = null (not used)
+%%     Cond = null | {Mod, Func}
+%%--------------------------------------------------------------------
+update_break(WinInfo, {Point, Options}) ->
+    {value, BreakInfo} = lists:keysearch(Point, #breakInfo.point,
+					 WinInfo#winInfo.breaks),
+    dbg_ui_win:update_break(BreakInfo#breakInfo.break, Options).
 
-mon_title() ->
-    case node() of
-	nonode@nohost -> "Monitor";
-	Name          -> io_lib:format("Monitor on ~p",[Name])
+%%--------------------------------------------------------------------
+%% delete_break(WinInfo, Point) -> WinInfo
+%%   WinInfo = #winInfo{}
+%%   Point = {Mod, Line}
+%%--------------------------------------------------------------------
+delete_break(WinInfo, Point) ->
+    {value, BreakInfo} = lists:keysearch(Point, #breakInfo.point,
+					 WinInfo#winInfo.breaks),
+    dbg_ui_win:delete_break(BreakInfo#breakInfo.break),
+    WinInfo#winInfo{breaks=lists:keydelete(Point, #breakInfo.point,
+					   WinInfo#winInfo.breaks)}.
+
+%%--------------------------------------------------------------------
+%% clear_breaks(WinInfo) -> WinInfo
+%% clear_breaks(WinInfo, Mod) -> WinInfo
+%%   WinInfo = #winInfo{}
+%%--------------------------------------------------------------------
+clear_breaks(WinInfo) ->
+    lists:foreach(fun(BreakInfo) ->
+			  dbg_ui_win:delete_break(BreakInfo#breakInfo.break)
+		  end,
+		  WinInfo#winInfo.breaks),
+    WinInfo#winInfo{breaks=[]}.
+clear_breaks(WinInfo, Mod) ->
+    Fun =
+	fun(BreakInfo) ->
+		case BreakInfo#breakInfo.point of
+		    {Mod, _Line} ->
+			dbg_ui_win:delete_break(BreakInfo#breakInfo.break),
+			false;
+		    _ -> true
+		end
+	end,
+    Breaks = lists:filter(Fun, WinInfo#winInfo.breaks),
+    WinInfo#winInfo{breaks=Breaks}.
+    
+%%--------------------------------------------------------------------
+%% handle_event(GSEvent, WinInfo) -> Command
+%%   GSEvent = {gs, Id, Event, Data, Arg}
+%%   WinInfo = #winInfo{}
+%%   Command = ignore
+%%           | stopped
+%%           | {coords, {X,Y}}
+%%
+%%           | {shortcut, Key}
+%%           | MenuItem | {Menu, [MenuItem]}
+%%               MenuItem = Menu = atom()
+%%           | {break, Point, What}
+%%               What = delete | {status, Status} | {trigger, Trigger}
+%%           | {module, Mod, What}
+%%               What = view | delete
+%%
+%%           | {focus, Pid, WinInfo}
+%%           | default
+%%--------------------------------------------------------------------
+%% Window events
+handle_event({gs, _Id, configure, _Data, [W, H |_]}, WinInfo) ->
+    configure(WinInfo, {W, H}),
+    ignore;
+handle_event({gs, _Id, destroy, _Data, _Arg}, WinInfo) ->
+    stopped;
+handle_event({gs, _Id, motion, _Data, [X,Y]}, WinInfo) ->
+    {LastX, LastY} = dbg_ui_win:motion(X, Y),
+    Win = WinInfo#winInfo.window,
+    {coords, {gs:read(Win, x)+LastX-5, gs:read(Win, y)+LastY-5}};
+
+%% Menus and keyboard shortcuts
+handle_event({gs, _Id, keypress, _Data, [Key,_,_,1]}, WinInfo) when
+  Key/='Up', Key/='Down', Key/=p, Key/=n ->
+    {shortcut, Key};
+handle_event({gs, _Id, click, {dbg_ui_winman, Win}, _Arg}, WinInfo) ->
+    dbg_ui_winman:raise(Win),
+    ignore;
+handle_event({gs, _Id, click, {menuitem, Name}, _Arg}, WinInfo) ->
+    Name;
+handle_event({gs, _Id, click, {menu, Menu}, _Arg}, WinInfo) ->
+    Names = dbg_ui_win:selected(Menu),
+    {Menu, Names};
+handle_event({gs, _Id, click, {break, Point, What}, _Arg}, WinInfo) ->
+    {break, Point, What};
+handle_event({gs, _Id, click, {module, Mod, What}, _Arg}, WinInfo) ->
+    {module, Mod, What};
+
+%% Process grid
+handle_event({gs, _Id, keypress, _Data, [Key|_]}, WinInfo) when
+  Key=='Up'; Key=='Down' ->
+    Dir = if Key=='Up' -> up; Key=='Down' -> down end,
+    Row = move(WinInfo, Dir),
+    WinInfo2 = highlight(WinInfo, Row),
+    {value, #procInfo{pid=Pid}} =
+	lists:keysearch(Row, #procInfo.row, WinInfo#winInfo.processes),
+    {focus, Pid, WinInfo2};
+handle_event({gs, _Id, click, {gridline, Pid}, [_Col,Row|_]}, WinInfo) ->
+    WinInfo2 = highlight(WinInfo, Row),
+    {focus, Pid, WinInfo2};
+handle_event({gs, _Id, doubleclick, _Data, _Arg}, WinInfo) ->
+    default;
+
+handle_event(GSEvent, WinInfo) ->
+    ignore.
+
+move(WinInfo, Dir) ->
+    Row = WinInfo#winInfo.focus,
+    Last = WinInfo#winInfo.row,
+
+    if
+	Dir==up, Row>1 -> Row-1;
+	Dir==down, Row<Last -> Row+1;
+	true -> Row
     end.
 
-%%% -----------------------------------------------------------------
-%%% INTERFACE: update_pids(Grid,Items,Amount,Curr)
-%%%
-%%% Update the monitor grid with fresh information on all the pids.
-%%% Creates new rows if there are not enough available, and calls
-%%% update which handles the actual writing in the grid.
-%%% Data representing the state is formatted accordingly.
-%%% -----------------------------------------------------------------
-	
-update_pids(Grid,Items,Amount,Curr) -> 
-    gs:config(Grid,{rows,{1,Amount+1}}),
-    update(Grid,Items,1,Curr).
-
-
-
-update(Grid,[Item|Items],Last,Curr) ->
-    {Row,Pid,_,Func,Status,Info,_,Name} = Item,
-    Colour = colour(Row,Curr),
-    Ninfo = case Info of
-		{} ->
-		    "";
-		_  ->
-		    Info
-	    end,
-    Conf = [{text,{1,Pid}},
-	    {text,{2,Func}},
-	    {text,{3,Name}},
-	    {text,{4,Status}},
-	    {text,{5,Ninfo}},
-	    {fg,Colour},
-	    {bw,5}],
-
-    GLRet = gs:read(Grid,{obj_at_row,Row}),
-    
-    %% Set GridLine to old gridline, or a newly created one.
-    GridLine =
-	case GLRet of
-
-	    %% No gridline at Row of the Grid. Create one.
-	    undefined ->
-		gs:gridline(Grid,[{row,Row},
-				  {doubleclick,true},
-				  {click,true}]);
-
-	    %% There is a gridline at Row, simply reconfigure it.
-	    GL ->
-		GL
+highlight(WinInfo, Row) ->
+    Grid = WinInfo#winInfo.grid,
+    case WinInfo#winInfo.focus of
+	0 -> ignore;
+	Focus ->
+	    GridLine1 = gs:read(Grid, {obj_at_row, Focus}),
+	    gs:config(GridLine1, {fg, black})
     end,
-    DataConf = {data,{pidfunc,Pid,Status}},
-    ok = gs:config(GridLine,DataConf),
-    ok = gs:config(GridLine,Conf),
+    GridLine2 = gs:read(Grid, {obj_at_row, Row}),
+    gs:config(GridLine2, {fg, white}),
+    WinInfo#winInfo{focus=Row}.
+    
 
+%%====================================================================
+%% Internal functions
+%%====================================================================
 
-    update(Grid,Items,Row+1,Curr);
-
-update(Grid,[],Row,_Curr) ->
-
-    delete_items(Grid,Row).
-
-%% -----------------------------------------------------------------
-%% INTERFACE: ?????
-%% -----------------------------------------------------------------
-
-update_field(Grid,{Col,Row},Txt,Data) ->
-    GridLine = gs:read(Grid,{obj_at_row,Row}),
-    gs:config(GridLine,[{text,{Col,Txt}},{data,Data}]).
-
-%% -----------------------------------------------------------------
-%% Colour for the item in focus in the grid.
-%% -----------------------------------------------------------------
-
-colour(1,   _) -> blue;
-colour(Row, Row) -> white;
-colour(From, To) -> black.
-
-%% ---------------------------------------------------------------
-%% INTERFACE: Interchange colours between two rows
-%% ---------------------------------------------------------------
-
-change_colour(Grid,From,To) ->
-    Gitem_to = gs:read(Grid,{obj_at_row,To}),
-    Gitem_fr = gs:read(Grid,{obj_at_row,From}),
-    gs:config(Gitem_to,{fg,colour(To,To)}),
-    gs:config(Gitem_fr,{fg,colour(From,To)}).
-
-
-%% ---------------------------------------------------------------
-%% INTERFACE: Delete items in the grid
-%% ---------------------------------------------------------------
-
-delete_items(Grid,Row) ->
-    case gs:read(Grid, {obj_at_row, Row}) of
-	undefined ->
-	    ok;
-	GridLine ->
-	    gs:destroy(GridLine),
-	    delete_items(Grid,Row+1)
-    end.
-
-
-
-
-
-
-%% ---------------------------------------------------------------
-%% INTERFACE: Resize the window if the size has changed.
-%% ---------------------------------------------------------------
-
-config_win(Window, Object, {X, Y}) ->
-    Dx = abs(X - gs:read(Object,width) - 4),
-    Dy = abs(Y - gs:read(Object,height) - 42),
-    if Dx + Dy =/= 0 ->
-	    gs:config(Object,[{width,X-4},{height,Y-42}]);
-       true ->
+configure(WinInfo, {W, H}) ->
+    Grid = WinInfo#winInfo.grid,
+    Dx = abs(W - gs:read(Grid, width)-4),
+    Dy = abs(H - gs:read(Grid, height)-42),
+    if
+	(Dx+Dy)=/=0 ->
+	    gs:config(Grid, [{width, W-4}, {height, H-42}]),
+	    Cols = calc_columnwidths(W-6),
+	    gs:config(Grid, Cols);
+	true ->
 	    ok
     end.
 
-%% ---------------------------------------------------------------
-%% INTERFACE:
-%% Resize the grid if the window size has changed. Columns must be
-%% resized proportionaly too.
-%% ---------------------------------------------------------------
-
-config_grid(Grid,{X,Y}) ->
-    case abs(X - gs:read(Grid,width) - 6) of
-	0 -> 
-	    ok;   %%Avoid refreshig width. Takes lots of processos power
-	_ -> Cols = calc_columnwidths(X-6),
-	     gs:config(Grid,Cols)
-    end.
-
 calc_columnwidths(Width) ->
-    if Width =< 739 -> 
-	    {columnwidths,[75,215,146,150,150]};
-       true -> 
-	    S = (Width - 75)/(215+146+150+150),
-	    {columnwidths,[75,round(215*S),round(146*S), round(150*S),
-			   round(150*S)]}
+    if
+	Width=<736 -> 
+	    {columnwidths, [75, 215, 146, 150, 400]};
+	true -> 
+	    S = (Width-75)/(215+146+150+150),
+	    {columnwidths, [75, round(215*S), round(146*S), round(150*S),
+			    round(400*S)]}
     end.
-

@@ -436,12 +436,6 @@ write_usm_conf(Dir, EngineID, SecType, Passwd) ->
 			   "\"\", \"\"}.\n",
 			   [header(), Comment, EngineID]);
 	_ ->
-% TMP!!
-%	    case application:start(crypto) of
-%		ok -> ok;
-%		{error, {already_started, crypto}} -> ok;
-%		Error -> exit(no_crypto_support)
-%	    end,
 	    Secret16 = mk_secret(md5, Passwd, EngineID),
 	    Secret20 = mk_secret(sha, Passwd, EngineID),
 	    {PrivProt, PrivSecret} = 
@@ -455,7 +449,7 @@ write_usm_conf(Dir, EngineID, SecType, Passwd) ->
 			   "{\"~s\", \"initial\", \"initial\", zeroDotZero, "
 			   "usmHMACMD5AuthProtocol, \"\", \"\", "
 			   "~w, \"\", \"\", \"\", "
-			   "\"~s\", \"~s\"}.\n",
+			   "~w, ~w}.\n",
 			   [header(), Comment, EngineID, PrivProt,
 			    Secret16, PrivSecret]),
 	    ok = io:format(Fid,
@@ -463,17 +457,18 @@ write_usm_conf(Dir, EngineID, SecType, Passwd) ->
 			   "zeroDotZero, "
 			   "usmHMACMD5AuthProtocol, \"\", \"\", "
 			   "~w, \"\", \"\", \"\", "
-			   "\"~s\", \"~s\"}.\n",
+			   "~w, ~w}.\n",
 			   [EngineID, PrivProt, Secret16, PrivSecret]),
 	    ok = io:format(Fid,
 			   "{\"~s\", \"templateSHA\", \"templateSHA\", "
 			   "zeroDotZero, "
 			   "usmHMACSHAAuthProtocol, \"\", \"\", "
 			   "~w, \"\", \"\", \"\", "
-			   "\"~s\", \"~s\"}.\n",
+			   "~w, ~w}.\n",
 			   [EngineID, PrivProt, Secret20, PrivSecret])
     end,
     file:close(Fid).
+
 
 write_vacm_conf(Dir, Ver, SecType) -> 
         Comment = 

@@ -1772,7 +1772,7 @@ Other commands:
       (modify-syntax-entry ?\n ">" table)
       (modify-syntax-entry ?\" "\"" table)
       (modify-syntax-entry ?# "." table)
-      (modify-syntax-entry ?$ "'" table)
+      (modify-syntax-entry ?$ "/" table)
       (modify-syntax-entry ?% "<" table)
       (modify-syntax-entry ?& "." table)
       (modify-syntax-entry ?\' "\"" table)
@@ -5242,7 +5242,7 @@ frame will become deselected before the next command."
       (let ((msg nil))
 	(while (save-excursion
 		 (goto-char (process-mark inferior-erlang-process))
-		 (beginning-of-line)
+		 (forward-line 0)
 		 (not (looking-at comint-prompt-regexp)))
 	  (if msg
 	      ()

@@ -114,7 +114,7 @@ int count;
 	else
 	    size = BUFSIZ;
 	    
-	if ((rbuf = (char*) malloc(1 + size)) == NULL) {
+	if ((rbuf = (char*) driver_alloc(1 + size)) == NULL) {
 	    fprintf(stderr,"Out of memory\n");
 	    close(fd);
 	    driver_output(this_port,"n",1);
@@ -122,7 +122,7 @@ int count;
 	}
 	if (S_ISREG(statbuf.st_mode)) {
 	    if (read_fill(fd,1+rbuf,size) != size) {
-		free(rbuf);
+		driver_free(rbuf);
 		close(fd);
 		driver_output(this_port,"n",1);
 		return 0;;
@@ -139,7 +139,7 @@ int count;
 		if (rval < 0 && errno == EINTR)
 		    continue;
 		if (rval < 0) {
-		    free(rbuf);
+		    driver_free(rbuf);
 		    close(fd);
 		    driver_output(this_port,"n",1);
 		    return 0;
@@ -150,7 +150,7 @@ int count;
 	}
 	rbuf[0] = 'y';
 	driver_output(this_port,rbuf,1+size);
-	free(rbuf);
+	driver_free(rbuf);
 	close(fd);
 	return 0;
     case 'w':

@@ -34,7 +34,8 @@
 	 d/0, g/1, s/1, gn/1, gn/0, r/0, gb/3, rpl/1,
 	 send_bytes/1,
 	 expect/2,expect/3,expect/4,expect/6,get_response/2, 
-	 receive_response/0]).
+	 receive_response/0,
+	 oid_to_name/1, name_to_oid/1]).
 
 %% Internal exports
 -export([get_oid_from_varbind/1, 
@@ -45,8 +46,15 @@
 -include("snmp_debug.hrl").
 -include("STANDARD-MIB.hrl").
 
--record(state,{dbg=true,timeout=3500,print_traps=true,
-	       mini_mib,packet_server, last_sent_pdu, last_received_pdu}).
+-record(state,{dbg         = true,
+	       quiet,
+	       parent,
+	       timeout     = 3500,
+	       print_traps = true,
+	       mini_mib,
+	       packet_server, 
+	       last_sent_pdu, 
+	       last_received_pdu}).
 
 start_link(Options) ->
     gen_server:start_link({local, snmp_mgr}, snmp_mgr, {Options, self()}, []).
@@ -85,6 +93,13 @@ rpl(RespPdu) ->
 
 send_bytes(Bytes) ->
     snmp_mgr ! {send_bytes, Bytes}, ok.
+
+oid_to_name(Oid) ->
+    gen_server:call(snmp_mgr, {oid_to_name, Oid}, infinity).
+
+name_to_oid(Name) ->
+    gen_server:call(snmp_mgr, {name_to_oid, Name}, infinity).
+
 
 %%----------------------------------------------------------------------
 %% Purpose: For writing test sequences
@@ -194,8 +209,9 @@ init({Options, CallerPid}) ->
 			   {ok, Ip} = snmp_misc:ip(Host),
 			   Ip
 		   end,
+	    Quiet = lists:member(quiet, Options),
 	    d("init -> start packet server",[]),
-	    PackServ = case lists:member(quiet, Options) of
+	    PackServ = case Quiet of
 			   false ->
 			       snmp_mgr_misc:start_link_packet(
 				 {msg, self()}, AgIp, Udp, TrapUdp, 
@@ -207,10 +223,15 @@ init({Options, CallerPid}) ->
 				 VsnHdrD, Version, Dir, RecBufSz)
 		       end,
 	    d("init -> packet server: ~p",[PackServ]),
-	    InitState = #state{mini_mib = MiniMIB, packet_server = PackServ},
+	    State = #state{parent        = CallerPid,
+			   quiet         = Quiet,
+			   mini_mib      = MiniMIB, 
+			   packet_server = PackServ},
 	    d("init -> done",[]),
-	    {ok, InitState};
-	{error,Reason} -> {stop,Reason}
+	    {ok, State};
+	
+	{error, Reason} -> 
+	    {stop,Reason}
     end.
 
 is_options_ok([{mibs,List}|Opts]) when list(List) ->
@@ -346,13 +367,35 @@ handle_call({find_pure_oid, XOid}, _From, State) ->
     d("handle_call -> find_pure_oid for ~p",[XOid]),
     {reply, catch flatten_oid(XOid, State#state.mini_mib), State};
 
+handle_call({oid_to_name, Oid}, _From, State) ->
+    d("handle_call -> oid_to_name for Oid: ~p",[Oid]),
+    Reply = 
+	case lists:keysearch(Oid, 1, State#state.mini_mib) of
+	    {value, {_Oid, Name, _Type}} ->
+		{ok, Name};
+	    false ->
+		{error, {no_such_oid, Oid}}
+	end,
+    {reply, Reply, State};
+
+handle_call({name_to_oid, Name}, _From, State) ->
+    d("handle_call -> name_to_oid for Name: ~p",[Name]),
+    Reply = 
+	case lists:keysearch(Name, 2, State#state.mini_mib) of
+	    {value, {Oid, _Name, _Type}} ->
+		{ok, Oid};
+	    false ->
+		{error, {no_such_name, Name}}
+	end,
+    {reply, Reply, State};
+
 handle_call(stop, _From, State) ->
     d("handle_call -> stop request",[]),
     {stop, normal, ok, State};
 
 handle_call(discovery, _From, State) ->
     d("handle_call -> discovery",[]),
-    {Reply,NewState} = execute_discovery(State),
+    {Reply, NewState} = execute_discovery(State),
     {reply, Reply, NewState}.
     
 handle_cast(Msg, State) ->
@@ -368,22 +411,30 @@ terminate(Reason, State) ->
 %% Returns: A new State
 %%----------------------------------------------------------------------
 execute_discovery(State) ->
-    Pdu = make_discovery_pdu(),
+    Pdu   = make_discovery_pdu(),
     Reply = snmp_mgr_misc:send_discovery_pdu(Pdu,State#state.packet_server),
     {Reply,State#state{last_sent_pdu = Pdu}}.
 
 
 execute_request(Operation, Data, State) ->
-    case catch make_pdu(Operation, Data, State#state.mini_mib) of
+    case (catch make_pdu(Operation, Data, State#state.mini_mib)) of
 	{error, {Format, Data2}} ->
-	    snmp_mgr_misc:error(Format, Data2),
+	    report_error(State, Format, Data2),
 	    State;
-	{error, Reason} -> State;
+	{error, Reason} -> 
+	    State;
 	PDU when record(PDU, pdu) ->
 	    send_pdu(PDU, State#state.mini_mib, State#state.packet_server),
 	    State#state{last_sent_pdu = PDU}
     end.
     
+report_error(#state{quiet = true, parent = Pid}, Format, Args) ->
+    Reason = lists:flatten(io_lib:format(Format, Args)),
+    Pid ! {oid_error, Reason};
+report_error(_, Format, Args) ->
+    snmp_mgr_misc:error(Format, Args).
+
+
 get_oid_from_varbind(#varbind{oid = Oid}) -> Oid.
 
 send_pdu(PDU, MiniMIB, PackServ) ->

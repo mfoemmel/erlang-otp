@@ -246,9 +246,10 @@ validate_date_and_time([Y1,Y2, Mo, D, H, M, S, Ds | Diff])
     end;
 validate_date_and_time(_) -> false.
 
+%% OTP-4206 (now according to RFC-2579)
 check_diff([]) -> true;
-check_diff([$+, H, M]) when 0 =< H, H < 12, 0 =< M, M < 60 -> true;
-check_diff([$-, H, M]) when 0 =< H, H < 12, 0 =< M, M < 60 -> true;
+check_diff([$+, H, M]) when 0 =< H, H < 14, 0 =< M, M < 60 -> true;
+check_diff([$-, H, M]) when 0 =< H, H < 14, 0 =< M, M < 60 -> true;
 check_diff(_) -> false.
 
 get(Agent, Vars) -> snmp_agent:get(Agent, Vars).

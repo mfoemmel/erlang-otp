@@ -17,16 +17,6 @@
 //
 //////////////////////////////////////////////////////////////////
 // Mnesia Session - IDL interface to Mnesia
-// 
-// Two similar but slightly different interfaces
-// to Mnesia is provided:
-//
-//    corba_session - compile this IDL specification
-//                    with the _CORBA_ macro DEFINED
-//
-//    session       - compile this IDL specification
-//                    with the _CORBA_ macro UNDEFINED
-//
 //////////////////////////////////////////////////////////////////
 
 #include <erlang.idl>
@@ -226,12 +216,7 @@ module mnesia
 // If the function was successful, 'reason' contains an empty string
 // and the other out parameters contains valid data.
 
-#ifdef _CORBA_
-  interface corba_session
-#endif
-#ifndef _CORBA_
   interface session
-#endif
     {
       ///////////////////////////////////////////////////////////////
       // Dirty access functions
@@ -404,7 +389,6 @@ module mnesia
       Status system_info(     out SystemInfo info,
                               out string reason);
 
-#ifndef _CORBA_
       ///////////////////////////////////////////////////////////////
       // match_object functions is not supported due to the fact that
       // erlang::term is represented as an 'any' object and can not
@@ -436,32 +420,10 @@ module mnesia
       Status    start_mnesia(out string reason);
 
       Status    stop_mnesia( out string reason);
-#endif
     };
   
-#ifdef _CORBA_
-
-//////////////////////////////////////////////////////////////////
-// The corba_connector object registers itself in the local name
-// service at startup of the Mnesia Session application
-
-  interface corba_connector
-    {
-      // Connects to Mnesia on the same Erlang node as the 
-      // Corba Connector object, creates a Corba Session object
-      // and returns its object key.
-
-      corba_session connect();
-
-      // Disconnects from Mnesia and disposes
-      // the Corba Session object
-
-      void disconnect(in corba_session object_key);
-    };
-#endif
 
 
-#ifndef _CORBA_
 //////////////////////////////////////////////////////////////////
 // The connector process registers itself in the local Erlang node
 // at startup of the Mnesia Session application
@@ -479,8 +441,5 @@ module mnesia
 
       void disconnect(in erlang::pid object_key);
     };
-#endif
 
 };
-
-

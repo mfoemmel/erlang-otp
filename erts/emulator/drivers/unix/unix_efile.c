@@ -73,6 +73,40 @@ extern STATUS copy(char *, char *);
 #define MAXIOV 16
 #endif
 
+
+#ifdef VXWORKS /* Currently only used on vxworks */
+
+#define EF_ALLOC(S)		sys_alloc_from(200, (S))
+#define EF_REALLOC(P, S)	sys_realloc_from(200, (P), (S))
+#define EF_SAFE_ALLOC(S)	ef_safe_alloc((S))
+#define EF_SAFE_REALLOC(P, S)	ef_safe_realloc((P), (S))
+#define EF_FREE(P)		do { if((P)) sys_free((P)); } while(0)
+
+extern void erl_exit(int n, char *fmt, _DOTS_);
+
+static void *ef_safe_alloc(Uint s)
+{
+    void *p = EF_ALLOC(s);
+    if (!p) erl_exit(1,
+		     "unix efile drv: Can't allocate %d bytes of memory\n",
+		     s);
+    return p;
+}
+
+#if 0 /* Currently not used */
+
+static void *ef_safe_realloc(void *op, Uint s)
+{
+    void *p = EF_REALLOC(op, s);
+    if (!p) erl_exit(1,
+		     "unix efile drv: Can't reallocate %d bytes of memory\n",
+		     s);
+    return p;
+}
+
+#endif /* #if 0 */
+#endif /* #ifdef VXWORKS */
+
 /*
  * Macros for testing file types.
  */
@@ -233,11 +267,11 @@ count_path_length(char *pathname, char *pathname2)
     int sum;
     for(i = 0;i < 2;++i) {
 	if (!i) {
-	    cpy = malloc(strlen(pathname)+1);
+	    cpy = EF_SAFE_ALLOC(strlen(pathname)+1);
 	    strcpy(cpy, pathname);
 	} else if (pathname2 != NULL) {
-	    free(cpy);
-	    cpy = malloc(strlen(pathname2)+1);
+	    EF_FREE(cpy);
+	    cpy = EF_SAFE_ALLOC(strlen(pathname2)+1);
 	    strcpy(cpy, pathname2);
 	} else 
 	    break;
@@ -250,7 +284,7 @@ count_path_length(char *pathname, char *pathname2)
 	}
     }
     if (cpy != NULL)
-	free(cpy);
+	EF_FREE(cpy);
     sum = 0;
     for(i = 0;i < sp; ++i)
 	sum += stack[i]+1;
@@ -631,12 +665,12 @@ efile_openfile(Efile_error* errInfo,	/* Where to return error codes. */
 	strcat(pathbuff,"/");
 	nameneed = strlen(pathbuff) + strlen(name) + 1;
 	if (nameneed > PATH_MAX*2)
-	    totbuff = malloc(nameneed);
+	    totbuff = EF_SAFE_ALLOC(nameneed);
 	strcpy(totbuff,pathbuff);
 	strcat(totbuff,name);
 	fd = open(totbuff, mode, FILE_MODE);
 	if (totbuff != sbuff)
-	    free(totbuff);
+	    EF_FREE(totbuff);
     } else {
 	fd = open(name, mode, FILE_MODE);
     }

@@ -315,12 +315,6 @@
 			       {logfile, false}]).
 -define(not_CreateDBKey, term_to_binary({now(), node()})).
 
--define(not_errorMsg(Txt, Arg),
-error_logger:error_msg("============ CosNotification ==============~n"
-                       Txt
-                       "===========================================~n",
-                       Arg)).
-
 -define(DEBUG_LEVEL, 3).
 
 -ifdef(debug).

@@ -109,6 +109,7 @@ start_link() ->
 %%          {stop, Reason}
 %%----------------------------------------------------------------------
 init([]) ->
+    process_flag(trap_exit,true),
     Port = open_port({spawn, "inet_gethost"}, [{packet,2},eof]),
     {ok, #state{port=Port}, infinity}.
 
@@ -126,18 +127,19 @@ handle_call({Cmd,Data}, From, State) ->
     Port = State#state.port,
     case catch erlang:port_command(Port, [Cmd,Data]) of
 	{'EXIT', {badarg,_}} ->
-	    
 	    {stop, einval,{error,einval}, State};
-	{'EXIT', Reason} -> {stop, Reason, {error, Reason}, State};
+	{'EXIT', Reason} -> 
+	    {stop, Reason, {error, Reason}, State};
 	true ->
 	    receive
 		{Port, {data, Reply}} ->
 		    {reply, {ok, Reply}, State};
 		{'EXIT', Port, Reason} ->
-		    {stop, Reason, {error, Reason}, State}
-		after Timeout ->
-			catch erlang:port_close(Port),
-			{stop, shutdown, {error, timeout}, State}
+		    Port1 = maybe_restart_port(Port,State),
+		    {reply, {error, Reason}, State#state{port = Port1}}
+	    after Timeout ->
+		    Port1 = maybe_restart_port(Port,State),
+		    {reply, {error, timeout}, State#state{port = Port1}}
 	    end
     end.
 
@@ -156,9 +158,12 @@ handle_cast(Msg, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
+handle_info({'EXIT', Port, Reason},State) -> 
+    NewPort=maybe_restart_port(Port,State),
+    {noreply,State#state{port=NewPort}};
 handle_info({Port,eof}, State) ->
-    catch erlang:port_close(Port),
-    {stop, {Port,eof}, State}.
+    NewPort=maybe_restart_port(Port,State),
+    {noreply,State#state{port=NewPort}}.
 
 %%----------------------------------------------------------------------
 %% Func: terminate/2
@@ -168,6 +173,15 @@ handle_info({Port,eof}, State) ->
 terminate(Reason, State) ->
     ok.
 
+
+maybe_restart_port(ClosedPort,#state{port=ClosedPort})  ->
+    catch erlang:port_close(ClosedPort),
+    NewPort = open_port({spawn, "inet_gethost"}, 
+			[{packet,2},eof]),
+    NewPort;
+maybe_restart_port(ClosedPort,#state{port=LivingPort}) ->
+    catch erlang:port_close(ClosedPort),
+    LivingPort.
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
@@ -202,13 +216,9 @@ test() ->
 getit(Cmd, Data) ->
     ensure_started(),
     Timeout = inet_db:res_option(timeout)*5,
-    case catch gen_server:call(inet_gethost_native, {Cmd, Data}, Timeout) of
+    case gen_server:call(inet_gethost_native, {Cmd, Data}, Timeout) of
 	{ok, Reply} ->
 	     reply(Reply);
-	{'EXIT', {timeout, _}} ->
-	    {error, timeout};
-	{'EXIT', Reason} ->
-             exit(Reason);
 	Error -> Error
     end.
     

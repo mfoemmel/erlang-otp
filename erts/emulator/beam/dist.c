@@ -42,6 +42,7 @@ int dist_buf_size;
 
 /* distribution trap functions */
 Export* dsend_trap = NULL;
+Export* dsend_nosuspend_trap = NULL;
 Export* dlink_trap = NULL;
 Export* dunlink_trap = NULL;
 Export* dmonitor_node_trap = NULL;
@@ -56,7 +57,7 @@ DistEntry* dist_addrs;
 int        this_creation;      /* set by setnode/2 */
 Eterm      this_node;          /* mysyst@myhost    */
 int        MAXDIST;
-
+int        erts_reuse_all_dist_slots = 0;
 
 /* local variables */
 static Process *net_kernel;    /* we don't want to look it up */
@@ -175,9 +176,16 @@ int do_net_exits(int slot)
 	       pid still works as expected. */
 	    dist_addrs[i].cid = NIL;
 	    dist_addrs[i].links = NULL;
-	    /* Keep the reserved flag so that slots aren't reused
-	       (OTP-4071) */
-	    dist_addrs[i].status &= D_RESERVED;
+
+	    if(!erts_reuse_all_dist_slots
+	       && (dist_addrs[i].flags & DFLAG_PUBLISHED)) {
+	      /* Prevent reuse of slots used by published nodes (OTP-4244) */
+	      dist_addrs[i].status &= D_RESERVED;
+	    }
+	    else {
+	      dist_addrs[i].status = 0;
+	    }
+
 	    dist_addrs[i].in_cookie = NIL;
 	    dist_addrs[i].out_cookie = NIL;
 	}
@@ -295,11 +303,7 @@ void init_dist(void)
     dist_buf = tmp_buf;   /* This is the buffer we encode into */
     dist_buf_size = TMP_BUF_SIZE - 20;
 
-    i = sys_max_files() * 2;  
-    if (i > MAX_NODE)
-	MAXDIST = MAX_NODE;
-    else 
-	MAXDIST = i;
+    MAXDIST = MAX_NODE;
 #ifdef DEBUG
     if ((dbg_maxdist = getenv("ERL_DEBUG_MAXDIST"))) {
 	int md = atoi(dbg_maxdist);
@@ -310,14 +314,21 @@ void init_dist(void)
     }
 #endif
 
-    dmem = (Eterm *) safe_alloc_from(151, DMEM_SIZE * sizeof(Eterm));
-    dist_addrs = (DistEntry *) safe_alloc_from(152,
-					       MAXDIST * sizeof(DistEntry));
+    dmem = (Eterm *) erts_definite_alloc(DMEM_SIZE * sizeof(Eterm));
+    if (!dmem)
+	dmem = (Eterm *) safe_alloc_from(151, DMEM_SIZE * sizeof(Eterm));
+
+    dist_addrs = (DistEntry *) erts_definite_alloc(MAXDIST
+						   * sizeof(DistEntry));
+    if(!dist_addrs)
+	dist_addrs = (DistEntry *) safe_alloc_from(152,
+						   MAXDIST*sizeof(DistEntry));
 
     for (i = 0; i < MAXDIST; i++) {
 	dist_addrs[i].sysname = NIL;
 	dist_addrs[i].cid = NIL;
 	dist_addrs[i].links = NULL;
+	dist_addrs[i].flags = 0;
 	dist_addrs[i].status = 0;
 	dist_addrs[i].in_cookie = NIL;
 	dist_addrs[i].out_cookie = NIL;
@@ -329,6 +340,7 @@ void init_dist(void)
 
     /* Lookup/Install all references to trap functions */
     dsend_trap = trap_function(am_dsend,2);
+    dsend_nosuspend_trap = trap_function(am_dsend_nosuspend,2);
     dlink_trap = trap_function(am_dlink,1);
     dunlink_trap = trap_function(am_dunlink,1);
     dmonitor_node_trap = trap_function(am_dmonitor_node,2);
@@ -346,8 +358,14 @@ static int clear_dist_entry(int slot)
     clear_cache(slot);
     dist_addrs[slot].cid = NIL;
     dist_addrs[slot].links = NULL;
-    /* Keep the reserved flag so that slots aren't reused (OTP-4071) */
-    dist_addrs[slot].status &= D_RESERVED;
+    if(!erts_reuse_all_dist_slots
+       && (dist_addrs[slot].flags & DFLAG_PUBLISHED)) {
+      /* Prevent reuse of slots used by published nodes (OTP-4244) */
+      dist_addrs[slot].status &= D_RESERVED;
+    }
+    else {
+      dist_addrs[slot].status = 0;
+    }
     /* In 4.5 distribution we do not clear cookies.
      * In next version the cookies should be cleared.
      */
@@ -573,6 +591,11 @@ int net_mess2(int slot, byte *hbuf, int hlen, byte *buf, int len)
     int type;
     Eterm token;
 
+    /* Thanks to Luke Gorrie */
+    off_heap.mso = NULL;
+    off_heap.funs = NULL;
+    off_heap.overhead = 0;
+
     if (net_kernel == NULL)  /* XXX check if this may trig */
 	return 0;
     if (hlen > 0)
@@ -600,7 +623,7 @@ int net_mess2(int slot, byte *hbuf, int hlen, byte *buf, int len)
 	goto data_error;
     }
     if (ctl_len > sizeof(ctl)/sizeof(ctl[0])) {
-	ctl = safe_alloc(ctl_len * sizeof(Eterm));
+	ctl = safe_alloc_from(280, ctl_len * sizeof(Eterm));
     }
     hp = ctl;
 
@@ -974,8 +997,10 @@ int find_or_insert_dist_slot(Eterm sysname)
 
     while (1) {
 	/* Keep sysnames on clear */
-	if (dist_addrs[pos].sysname == sysname)
+	if (dist_addrs[pos].sysname == sysname) {
+	    dist_addrs[pos].status |= D_RESERVED;
 	    return pos;
+	}
 	if (dist_addrs[pos].sysname == am_invalid) {
 	    if (found_pos == -1)
 		found_pos = pos;
@@ -995,6 +1020,7 @@ int find_or_insert_dist_slot(Eterm sysname)
 		    if ((dist_addrs[i].cid == NIL) &&
 			!(dist_addrs[i].status & D_RESERVED)) {
 			dist_addrs[i].sysname = am_invalid;
+			dist_addrs[i].flags = 0;
 			dist_addrs[i].status = 0;
 			done++;
 		    }
@@ -1251,6 +1277,7 @@ BIF_ADECL_2
 
     /* Check that all trap functions are defined !! */
     if (dsend_trap->address == NULL ||
+	dsend_nosuspend_trap->address == NULL ||
 	dlink_trap->address == NULL ||
 	dunlink_trap->address == NULL ||
 	dmonitor_node_trap->address == NULL ||

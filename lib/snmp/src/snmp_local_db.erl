@@ -105,17 +105,16 @@ init([Dir, Prio, Opts]) ->
 		    {ok, Pets} -> 
 			?vdebug("pets new done",[]),
 			Pets;
-		    {'EXIT', _} ->
-			snmp_error:db_err("Error opening database ~p", 
-					  [FileName]),
+		    {'EXIT', Reason} ->
+			error_msg("Error opening database ~w: ~w", 
+				  [FileName, Reason]),
 			exit(normal)
 		end;
 	    {ok, Pets} -> 
 		?vdebug("pets open done",[]),
 		Pets;
 	    {error, Reason} ->
-		snmp_error:db_err("Error opening database ~p ~p", 
-				  [FileName, Reason]),
+		error_msg("Error opening database ~w: ~w", [FileName, Reason]),
 		exit(normal)
 	end,
     Ets = ets:new(snmp_local_db2, [set, private]),
@@ -270,7 +269,8 @@ handle_call({table_delete, Name, Db}, _From, State) ->
     {reply, true, State};
 
 handle_call({table_create_row, Name, Db, Indexes, Row}, _From, State) ->
-    ?vlog("table ~p create row: "
+    ?vlog("table create row: "
+	  "~n   Name:    ~p"
 	  "~n   Indexes: ~p"
 	  "~n   Row:     ~p",[Name, Indexes, Row]),
     Res = 
@@ -283,7 +283,8 @@ handle_call({table_create_row, Name, Db, Indexes, Row}, _From, State) ->
     {reply, Res, State};
 
 handle_call({table_delete_row, Name, Db, Indexes}, _From, State) ->
-    ?vlog("table ~p delete row: "
+    ?vlog("table delete row: "
+	  "~n   Name:    ~p"
 	  "~n   Indexes: ~p", [Name, Indexes]),
     Res = 
 	case catch handle_delete_row(Db, Name, Indexes, State) of
@@ -295,7 +296,8 @@ handle_call({table_delete_row, Name, Db, Indexes}, _From, State) ->
     {reply, Res, State};
 
 handle_call({table_get_row, Name, Db, Indexes}, _From, State) -> 
-    ?vlog("table ~p get row: "
+    ?vlog("table get row: "
+	  "~n   Name:    ~p"
 	  "~n   Indexes: ~p",[Name, Indexes]),
     Res = case lookup(Db, {Name, Indexes}, State) of
 	      undefined -> undefined;
@@ -646,8 +648,8 @@ insert(permanent, Key, Val, State) ->
     notify_clients(insert,State#state.notify_clients),
     true;
 insert(UnknownDb, Key, Val, _) ->
-    snmp_error:db_err("Tried to insert ~w = ~w into unknown db ~w", 
-		      [Key, Val, UnknownDb]),
+    error_msg("Tried to insert ~w = ~w into unknown db ~w", 
+	      [Key, Val, UnknownDb]),
     false.
 
 delete(volatile, Key, State) -> 
@@ -662,7 +664,7 @@ delete(permanent, Key, State) ->
     notify_clients(delete,State#state.notify_clients),
     true;
 delete(UnknownDb, Key, _) ->
-    snmp_error:db_err("Tried to delete ~w from unknown db ~w", 
+    error_msg("Tried to delete ~w from unknown db ~w", 
 		      [Key, UnknownDb]),
     false.
 
@@ -675,8 +677,7 @@ lookup(permanent, Key, State) ->
     {_,_,Pets} = State#state.pets,
     lookup(Pets, Key);
 lookup(UnknownDb, Key, _) ->
-    snmp_error:db_err("Tried to lookup ~w in unknown db ~w", 
-		      [Key, UnknownDb]),
+    error_msg("Tried to lookup ~w in unknown db ~w", [Key, UnknownDb]),
     false.
 
 lookup(Ets, Key) ->
@@ -874,3 +875,6 @@ validate(auto_repair,_)            -> false;
 
 validate(verbosity,Verbosity) -> snmp_verbosity:validate(Verbosity).
 
+error_msg(Format, X) ->
+    Form = lists:concat(["** Batabase error: ", Format, "\n"]),
+    catch error_logger:error_msg(Form, X).

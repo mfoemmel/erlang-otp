@@ -28,7 +28,7 @@ VSN=$(ORBER_VSN)
 # Common Macros
 # ----------------------------------------------------
 
-SUB_DIRECTORIES = src java_src c_src COSS/CosNaming examples doc/src
+SUB_DIRECTORIES = COSS/CosNaming src java_src c_src examples doc/src priv
 
 SPECIAL_TARGETS = 
 

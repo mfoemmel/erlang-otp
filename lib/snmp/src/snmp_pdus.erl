@@ -256,19 +256,35 @@ dec_value([64 | Bytes]) ->
     {{'IpAddress', Value}, Rest};
 dec_value([65 | Bytes]) ->
     {Value, Rest} = dec_integer_notag(Bytes),
-    {{'Counter32', Value}, Rest};
+    if Value >= 0, Value =< 4294967295 ->
+	    {{'Counter32', Value}, Rest};
+       true ->
+	    exit({error, {bad_counter32, Value}})
+    end;
 dec_value([66 | Bytes]) ->
     {Value, Rest} = dec_integer_notag(Bytes),
-    {{'Unsigned32', Value}, Rest};
+    if Value >= 0, Value =< 4294967295 ->
+	    {{'Unsigned32', Value}, Rest};
+       true ->
+	    exit({error, {bad_unsigned32, Value}})
+    end;
 dec_value([67 | Bytes]) ->
     {Value, Rest} = dec_integer_notag(Bytes),
-    {{'TimeTicks', Value}, Rest};
+    if Value >= 0, Value =< 4294967295 ->
+	    {{'TimeTicks', Value}, Rest};
+       true ->
+	    exit({error, {bad_timeticks, Value}})
+    end;
 dec_value([68 | Bytes]) ->
     {Value, Rest} = dec_oct_str_notag(Bytes),
     {{'Opaque', Value}, Rest};
 dec_value([70 | Bytes]) ->
     {Value, Rest} = dec_integer_notag(Bytes),
-    {{'Counter64', Value}, Rest};
+    if Value >= 0, Value =< 18446744073709551615 ->
+	    {{'Counter64', Value}, Rest};
+       true ->
+	    exit({error, {bad_counter64, Value}})
+    end;
 dec_value([128,0|T]) ->
     {{'NULL', noSuchObject}, T};
 dec_value([129,0|T]) ->
@@ -288,10 +304,11 @@ get_data_bytes(Bytes) ->
 	length(Tail) == Size ->
 	    Tail;
 	true ->
-	    exit({error, {'wrong length', Bytes}})
+	    exit({error, {wrong_length, Bytes}})
     end.
 
-split_at(L, 0, Acc) -> {lists:reverse(Acc), L};
+split_at(L, 0, Acc) -> 
+    {lists:reverse(Acc), L};
 split_at([H|T], N, Acc) ->
     split_at(T, N-1, [H|Acc]).
 
@@ -676,11 +693,11 @@ e_object_element2(0) -> [].
 
 enc_integer_tag(Val) when Val >= 0 ->  %% stdcase positive ints
     Bytes = eint(Val,[]),
-    [2, length(Bytes) | Bytes];
+    [2, elength(length(Bytes))] ++ Bytes;
 
 enc_integer_tag(Val) ->  %% It's a negative number
     Bytes = enint(Val,[]),
-    [2, length(Bytes) | Bytes].
+    [2, elength(length(Bytes)) | Bytes].
 
 enc_integer_notag(Val) when Val >= 0 ->  %% stdcase positive ints
     eint(Val,[]);

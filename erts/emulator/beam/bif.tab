@@ -21,11 +21,14 @@
 #
 # Lines starting with '#' are ignored.
 #
-# <bif-decl> ::= "bif" <bif> [<C-name>]
+# <bif-decl> ::= "bif" <bif> [<C-name>] | "ubif" <bif> [<C-name>]
 # <bif> ::= <module> ":" <name> "/" <arity>
 #
+# "ubif" is an unwrapped bif, i.e a bif without a trace wrapper,
+# or rather; the trace entry point in the export entry is the same
+# as the normal entry point, and no trace wrapper is generated.
 
-bif erlang:abs/1
+ubif erlang:abs/1
 bif erlang:append/2
 bif erlang:apply/3
 bif erlang:atom_to_list/1
@@ -39,13 +42,13 @@ bif erlang:delete_module/1
 bif erlang:display/1
 bif erlang:display_string/1
 bif erlang:display_nl/0
-bif erlang:element/2
+ubif erlang:element/2
 bif erlang:erase/0
 bif erlang:erase/1
 bif erlang:exit/1
 bif erlang:exit/2
 bif erlang:external_size/1
-bif erlang:float/1
+ubif erlang:float/1
 bif erlang:float_to_list/1
 bif erlang:fun_info/2
 bif erlang:function_exported/3
@@ -59,11 +62,11 @@ bif erlang:group_leader/2
 bif erlang:halt/0
 bif erlang:hash/2
 bif erlang:phash/2
-bif erlang:hd/1
+ubif erlang:hd/1
 bif erlang:info/1
 bif erlang:integer_to_list/1
 bif erlang:is_alive/0
-bif erlang:length/1
+ubif erlang:length/1
 bif erlang:link/1
 bif erlang:list_to_atom/1
 bif erlang:list_to_binary/1
@@ -82,8 +85,8 @@ bif erlang:md5_update/2
 bif erlang:md5_final/1
 bif erlang:module_loaded/1
 bif erlang:monitor_node/2
-bif erlang:node/1
-bif erlang:node/0
+ubif erlang:node/1
+ubif erlang:node/0
 bif erlang:nodes/1
 bif erlang:now/0
 bif erlang:open_port_prim/2
@@ -101,11 +104,13 @@ bif erlang:purge_module/1
 bif erlang:put/2
 bif erlang:register/2
 bif erlang:registered/0
-bif erlang:round/1
-bif erlang:self/0
+ubif erlang:round/1
+ubif erlang:self/0
 bif erlang:send/2
+bif erlang:send_nosuspend/2
+bif erlang:send_nosuspend/3
 bif erlang:setelement/3
-bif erlang:size/1
+ubif erlang:size/1
 bif erlang:spawn/3
 bif erlang:spawn_link/3
 bif erlang:split_binary/2
@@ -115,8 +120,8 @@ bif erlang:term_to_binary/1
 bif erlang:term_to_binary/2
 bif erlang:throw/1
 bif erlang:time/0
-bif erlang:tl/1
-bif erlang:trunc/1
+ubif erlang:tl/1
+ubif erlang:trunc/1
 bif erlang:tuple_to_list/1
 bif erlang:universaltime/0
 bif erlang:universaltime_to_localtime/1
@@ -149,7 +154,6 @@ bif erlang:suspend_process/1
 bif erlang:resume_process/1
 
 # Used to implemented in the erlang:info/1 BIF.
-bif erlang:yield/0
 bif erlang:bump_reductions/1
 
 bif math:cos/1
@@ -205,33 +209,33 @@ bif erlang:fault/2
 
 bif erlang:is_builtin/3
 
-bif erlang:'and'/2
-bif erlang:'or'/2
-bif erlang:'xor'/2
-bif erlang:'not'/1
+ubif erlang:'and'/2
+ubif erlang:'or'/2
+ubif erlang:'xor'/2
+ubif erlang:'not'/1
 
-bif erlang:'>'/2	sgt_2
-bif erlang:'>='/2	sge_2
-bif erlang:'<'/2	slt_2
-bif erlang:'=<'/2	sle_2
-bif erlang:'=:='/2	seq_2
-bif erlang:'=='/2	seqeq_2
-bif erlang:'=/='/2	sneq_2
-bif erlang:'/='/2	sneqeq_2
-bif erlang:'+'/2	splus_2
-bif erlang:'-'/2	sminus_2
-bif erlang:'*'/2	stimes_2
-bif erlang:'/'/2	sdiv_2
-bif erlang:'div'/2	
-bif erlang:'rem'/2	
-bif erlang:'bor'/2	
-bif erlang:'band'/2
-bif erlang:'bxor'/2
-bif erlang:'bsl'/2
-bif erlang:'bsr'/2
-bif erlang:'bnot'/1
-bif erlang:'-'/1	sminus_1
-bif erlang:'+'/1	splus_1
+ubif erlang:'>'/2	sgt_2
+ubif erlang:'>='/2	sge_2
+ubif erlang:'<'/2	slt_2
+ubif erlang:'=<'/2	sle_2
+ubif erlang:'=:='/2	seq_2
+ubif erlang:'=='/2	seqeq_2
+ubif erlang:'=/='/2	sneq_2
+ubif erlang:'/='/2	sneqeq_2
+ubif erlang:'+'/2	splus_2
+ubif erlang:'-'/2	sminus_2
+ubif erlang:'*'/2	stimes_2
+ubif erlang:'/'/2	sdiv_2
+ubif erlang:'div'/2	
+ubif erlang:'rem'/2	
+ubif erlang:'bor'/2	
+ubif erlang:'band'/2
+ubif erlang:'bxor'/2
+ubif erlang:'bsl'/2
+ubif erlang:'bsr'/2
+ubif erlang:'bnot'/1
+ubif erlang:'-'/1	sminus_1
+ubif erlang:'+'/1	splus_1
 
 # New operators in R8. These were the only operators missing.
 
@@ -239,19 +243,19 @@ bif erlang:'!'/2	erlang_send_2
 bif erlang:'++'/2	erlang_append_2
 bif erlang:'--'/2	erlang_subtract_2
 
-bif erlang:is_atom/1
-bif erlang:is_list/1
-bif erlang:is_tuple/1
-bif erlang:is_constant/1
-bif erlang:is_float/1
-bif erlang:is_integer/1
-bif erlang:is_number/1
-bif erlang:is_pid/1
-bif erlang:is_port/1
-bif erlang:is_reference/1
-bif erlang:is_binary/1
-bif erlang:is_function/1
-bif erlang:is_record/3
+ubif erlang:is_atom/1
+ubif erlang:is_list/1
+ubif erlang:is_tuple/1
+ubif erlang:is_constant/1
+ubif erlang:is_float/1
+ubif erlang:is_integer/1
+ubif erlang:is_number/1
+ubif erlang:is_pid/1
+ubif erlang:is_port/1
+ubif erlang:is_reference/1
+ubif erlang:is_binary/1
+ubif erlang:is_function/1
+ubif erlang:is_record/3
 
 bif erlang:match_spec_test/3
 

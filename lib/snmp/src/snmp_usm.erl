@@ -154,6 +154,13 @@ process_incoming_msg(Packet, Data, SecParams, SecLevel) ->
 	case snmp_user_based_sm_mib:get_user(MsgAuthEngineID, MsgUserName) of
 	    User when element(?usmUserStatus, User) == ?'RowStatus_active' ->
 		User;
+	    {_, Name,_,_,_,_,_,_,_,_,_,_,_, RowStatus,_,_} ->
+		?vdebug("found user ~p with wrong row status: ~p", 
+			[Name, RowStatus]),
+		SecData2 = [MsgUserName],
+		error(usmStatsUnknownUserNames, 
+		      ?usmStatsUnknownUserNames_instance, %% OTP-3542
+		      undefined, [{sec_data, SecData2}]);
 	    _ -> % undefined or not active user
 		SecData2 = [MsgUserName],
 		error(usmStatsUnknownUserNames, 
@@ -161,6 +168,7 @@ process_incoming_msg(Packet, Data, SecParams, SecLevel) ->
 		      undefined, [{sec_data, SecData2}])
 	end,
     SecName = element(?usmUserSecurityName, UsmUser),
+    ?vtrace("securityName: ~p",[SecName]),
     %% 3.2.5 - implicit in following checks
     %% 3.2.6 - 3.2.7
     ?vtrace("authenticate incoming: 3.2.5 - 3.2.7",[]),
@@ -178,7 +186,7 @@ process_incoming_msg(Packet, Data, SecParams, SecLevel) ->
 		     element(?usmUserPrivKey, UsmUser)},
     {ok, {MsgAuthEngineID, SecName, ScopedPDUBytes, CachedSecData}}.
     
-    
+
 authenticate_incoming(Packet, UsmSecParams, UsmUser, SecLevel) ->
     SecName = element(?usmUserSecurityName, UsmUser),
     %% 3.2.6
@@ -348,6 +356,10 @@ generate_outgoing_msg(Message, SecEngineID, SecName, SecData, SecLevel) ->
 			 element(?usmUserPrivProtocol, User),
 			 element(?usmUserAuthKey, User),
 			 element(?usmUserPrivKey, User)};
+		    {_, Name,_,_,_,_,_,_,_,_,_,_,_, RowStatus,_,_} ->
+			?vdebug("found user ~p with wrong row status: ~p", 
+				[Name, RowStatus]),
+			throw({error, unknownSecurityName});
 		    _ ->
 			throw({error, unknownSecurityName})
 		end;
@@ -387,7 +399,7 @@ generate_outgoing_msg(Message, SecEngineID, SecName, SecData, SecLevel) ->
     authenticate_outgoing(Message2, UsmSecParams,
 			  AuthKey, AuthProtocol, SecLevel).
 
-		
+
 %% Ret: {ScopedPDU, MsgPrivParams} - both are already encoded as OCTET STRINGs
 encrypt(Data, PrivProtocol, PrivKey, SecLevel) ->
     case snmp_misc:is_priv(SecLevel) of

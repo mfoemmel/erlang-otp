@@ -441,29 +441,7 @@ handle_call({check, {_, 'key', Objkey, _, _, _}}, From, State) ->
 	_ ->
 	    {reply, 'unknown_object', State}
     end;
-%% Remove next case when we no longer wish to support the ObjRef:s
-handle_call({check, {_, 'key', Objkey, _}}, From, State) ->
-    ?query_check(Qres) = mnesia:dirty_read({orber_objkeys, Objkey}),
-    case Qres of
-	[X] ->
-	    {reply, 'object_here', State};
-	_ ->
-	    {reply, 'unknown_object', State}
-    end;
 handle_call({check, {_, 'registered', Objkey, _, _, _}}, From, State) ->
-    case whereis(Objkey) of
-	undefined ->
-	    case catch ets:lookup_element(orber_objkeys, Objkey, 4) of
-		true ->
-		    {reply, 'object_here', State};
-		_->
-		    {reply, 'unknown_object', State}
-	    end;
-	_ ->
-	    {reply, 'object_here', State}
-    end;
-%% Remove next case when we no longer wish to support the ObjRef:s
-handle_call({check, {_, 'registered', Objkey, _}}, From, State) ->
     case whereis(Objkey) of
 	undefined ->
 	    case catch ets:lookup_element(orber_objkeys, Objkey, 4) of

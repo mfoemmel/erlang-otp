@@ -647,6 +647,7 @@ init(Cp) ->
 	    add(pending_checkpoints, PendingTab),
 	    set({checkpoint, Name}, self()),
 	    add(checkpoints, Name),
+	    dbg_out("Checkpoint ~p (~p) started~n", [Name, self()]),
 	    proc_lib:init_ack(Cp2#checkpoint_args.supervisor, {ok, self()}),
 	    retainer_loop(Cp2)
     end.
@@ -666,7 +667,7 @@ prepare_tab(Cp, R, Storage) ->
 	    add_chkp_info(Tab, Name),
 	    R2;
 	false ->
-	    set({Tab, {retainer, Name}}, R),
+	    set({Tab, {retainer, Name}}, R#retainer{store = undefined}),
 	    R
     end.
 
@@ -695,6 +696,7 @@ retainer_create(Cp, R, Tab, Name, disc_only_copies) ->
     file:delete(Fname),
     Args = [{file, Fname}, {type, set}, {keypos, 2}, {repair, false}],
     {ok, _} = mnesia_lib:dets_sync_open({Tab, Name}, Args),
+    dbg_out("Checkpoint retainer created ~p ~p~n", [Name, Tab]),
     R#retainer{store = {dets, {Tab, Name}}, really_retain = true};
 retainer_create(Cp, R, Tab, Name, Storage) ->
     T = ?ets_new_table(mnesia_retainer, [set, public, {keypos, 2}]),
@@ -702,6 +704,7 @@ retainer_create(Cp, R, Tab, Name, Storage) ->
     ReallyR = R#retainer.really_retain,
     ReallyCp = lists:member(Tab, Overriders),
     ReallyR2 = prepare_ram_tab(Cp, Tab, T, Storage, ReallyR, ReallyCp),
+    dbg_out("Checkpoint retainer created ~p ~p~n", [Name, Tab]),
     R#retainer{store = {ets, T}, really_retain = ReallyR2}.
 
 %% Copy the dumped table into retainer if needed
@@ -925,11 +928,14 @@ deactivate_tab(R) ->
     del({Tab, checkpoints}, Name),   %% Keep checkpoint info for table_info & mnesia_session 
     del_chkp_info(Tab, Name),
     unset({Tab, {retainer, Name}}),
+    Active = lists:member(node(), R#retainer.writers),
     case R#retainer.store of
 	undefined ->
 	    ignore;
-	Store ->
-	    retainer_delete(Store)
+	Store when Active == true ->
+	    retainer_delete(Store);
+	_ ->
+	    ignore
     end.
 
 del_chkp_info(Tab, Name) ->   
@@ -953,6 +959,7 @@ do_del_retainers(Cp, Node) ->
 do_del_retainer2(Cp, R, Node) ->
     Writers = R#retainer.writers -- [Node],
     R2 = R#retainer{writers = Writers},
+    set({R2#retainer.tab_name, {retainer, R2#retainer.cp_name}}, R2),
     if
 	Writers == [] ->
 	    Event = {mnesia_checkpoint_deactivated, Cp#checkpoint_args.name},
@@ -961,16 +968,18 @@ do_del_retainer2(Cp, R, Node) ->
 	    exit(shutdown);
 	Node == node() ->
 	    deactivate_tab(R), % Avoids unnecessary tm_retain accesses
-	    prepare_tab(Cp, R2);
+	    set({R2#retainer.tab_name, {retainer, R2#retainer.cp_name}}, R2),
+	    R2; 
 	true ->
-	    prepare_tab(Cp, R2)
+	    R2
     end.
 
-do_del_retainer(Cp, R, Node) ->
+do_del_retainer(Cp, R0, Node) ->
+    {R, Rest} = find_retainer(R0, Cp#checkpoint_args.retainers, []),
     R2 = do_del_retainer2(Cp, R, Node),
     Tab = R#retainer.tab_name,
     Pos = #retainer.tab_name,
-    Rs = lists:keyreplace(Tab, Pos, Cp#checkpoint_args.retainers, R2),
+    Rs = [R2|Rest],
     Cp#checkpoint_args{retainers = Rs, nodes = writers(Rs)}.
 
 do_del_copy(Cp, Tab, ThisNode) when ThisNode == node() ->
@@ -996,11 +1005,25 @@ do_add_copy(Cp, Tab, Node) when Node /= node()->
 		false ->
 		    case tm_remote_prepare(Node, Cp) of
 			{ok, Name, _IgnoreNew, Node} ->
-			    send_retainer(Cp, R, Node);
+			    case lists:member(schema, Cp#checkpoint_args.max) of
+				true ->
+				    %% We need to send schema retainer somewhere
+				    RS0 = val({schema, {retainer, Name}}),
+				    W = RS0#retainer.writers,
+				    RS1 = RS0#retainer{writers = W ++ [Node]},
+				    case send_retainer(Cp, RS1, Node) of
+					{ok, Cp1} ->
+					    send_retainer(Cp1, R, Node);
+					Error ->
+					    Error
+				    end;
+				false ->
+				    send_retainer(Cp, R, Node)
+			    end;
 			{badrpc, Reason} ->
-			    {error, {badrpc, Reason, Cp}};
+			    {{error, {badrpc, Reason}}, Cp};
 			{error, Reason} ->
-			    {error, {Reason, Cp}}
+			    {{error, Reason}, Cp}
 		    end
 	    end
     end.
@@ -1008,10 +1031,25 @@ do_add_copy(Cp, Tab, Node) when Node /= node()->
 tm_remote_prepare(Node, Cp) ->
     rpc:call(Node, ?MODULE, tm_prepare, [Cp]).
   
-do_add_retainer(Cp, R, Node) ->
-    R2 = prepare_tab(Cp, R),
-    Rs = [R2 | Cp#checkpoint_args.retainers],
+do_add_retainer(Cp, R0, Node) ->
+    Writers = R0#retainer.writers,
+    {R, Rest} = find_retainer(R0, Cp#checkpoint_args.retainers, []),    
+    NewRet = 
+	if 
+	    Node == node() ->
+		prepare_tab(Cp, R#retainer{writers = Writers});
+	    true -> 
+		R#retainer{writers = Writers}
+	end,
+    Rs = [NewRet | Rest],
+    set({NewRet#retainer.tab_name, {retainer, NewRet#retainer.cp_name}}, NewRet),
     Cp#checkpoint_args{retainers = Rs, nodes = writers(Rs)}.
+
+find_retainer(#retainer{cp_name = CP, tab_name = Tab}, 
+	      [Ret = #retainer{cp_name = CP, tab_name = Tab} | R], Acc) ->
+    {Ret, R ++ Acc};
+find_retainer(Ret, [H|R], Acc) ->
+    find_retainer(Ret, R, [H|Acc]).
 
 send_retainer(Cp, R, Node) ->
     Name = Cp#checkpoint_args.name,
@@ -1030,8 +1068,7 @@ send_retainer2(_, _, _, '$end_of_table') ->
 %%send_retainer2(Node, Name, Store, {Slot, Records}) ->
 send_retainer2(Node, Name, Store, Key) ->
     [{Tab, _, Records}] = retainer_get(Store, Key),
-    abcast([Node], Name, {retain, {dirty, send_retainer}, {Tab, Key}, Records}),
-%%    send_retainer2(Node, Name, Store, retainer_next_slot(Store, Slot)).
+    abcast([Node], Name, {retain, {dirty, send_retainer}, Tab, Key, Records}),
     send_retainer2(Node, Name, Store, retainer_next(Store, Key)).
 
 do_change_copy(Cp, Tab, FromType, ToType) ->
@@ -1138,17 +1175,16 @@ stop_iteration(Reason) ->
     throw({error, {stopped, Reason}}).
 
 get_records(Iter, Key) ->
-    get_records(Iter, Key, 500). % 500 keys
+    get_records(Iter, Key, 500, []). % 500 keys
 
-get_records(Iter, Key, 0) ->
-    {Key, []};
-get_records(Iter, '$end_of_table', I) ->
-    {'$end_of_table', []};
-get_records(Iter, Key, I) ->
+get_records(Iter, Key, 0, Acc) ->
+    {Key, lists:append(lists:reverse(Acc))};
+get_records(Iter, '$end_of_table', I, Acc) ->
+    {'$end_of_table', lists:append(lists:reverse(Acc))};
+get_records(Iter, Key, I, Acc) ->
     Recs = get_val(Iter, Key),
     Next = retainer_next(Iter#iter.oid_tab, Key),
-    {Next2, Recs2} = get_records(Iter, Next, I-1),
-    {Next2, Recs ++ Recs2}.
+    get_records(Iter, Next, I-1, [Recs | Acc]).
 
 get_val(Iter, Key) when Iter#iter.val == latest ->
     get_latest_val(Iter, Key);
@@ -1159,7 +1195,7 @@ get_latest_val(Iter, Key) when Iter#iter.source == table ->
     retainer_get(Iter#iter.main_tab, Key);
 get_latest_val(Iter, Key) when Iter#iter.source == retainer ->
     DeleteOid = {Iter#iter.tab_name, Key},
-    [DeleteOid] ++ retainer_get(Iter#iter.main_tab, Key).
+    [DeleteOid | retainer_get(Iter#iter.main_tab, Key)].
 
 get_checkpoint_val(Iter, Key) when Iter#iter.source == table ->
     retainer_get(Iter#iter.main_tab, Key);
@@ -1167,7 +1203,7 @@ get_checkpoint_val(Iter, Key) when Iter#iter.source == retainer ->
     DeleteOid = {Iter#iter.tab_name, Key},
     case retainer_get(Iter#iter.retainer_tab, Key) of
 	[{_, _, []}] -> [DeleteOid];
-	[{_, _, Records}] -> [DeleteOid] ++ Records
+	[{_, _, Records}] -> [DeleteOid | Records]
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -13,7 +13,7 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id $
 %%
 -module(disk_log_1).
 
@@ -36,6 +36,8 @@
 -export([is_head/1]).
 -export([position/3, truncate_at/3, fwrite/4, fclose/2]).
 
+-import(lists, [concat/1, reverse/1, sum/1]).
+
 -include("disk_log.hrl").
 -include_lib("kernel/include/file.hrl").
 
@@ -50,13 +52,17 @@
 %%% API
 %%%----------------------------------------------------------------------
 
-%% -> {NoBytes, NewFdC} | throw(FileError)
+%% -> {ok, NoBytes, NewFdC} | {Error, NewFdC}
 log(FdC, FileName, X) ->
     {Bs, Size} = logl(X, [], 0),
-    {ok, NewFdC} = fwrite(FdC, FileName, Bs, Size),
-    {Size, NewFdC}.
+    case fwrite(FdC, FileName, Bs, Size) of
+	{ok, NewFdC} ->
+	    {ok, Size, NewFdC};
+	Error ->
+	    Error
+    end.
 
-%% -> {iolist(), Size} | throw(FileError)
+%% -> {iolist(), Size}
 logl(X) ->
     logl(X, [], 0).
 
@@ -67,23 +73,31 @@ logl([X | T], Bs, Size) ->
 logl([], Bs, Size) ->
     {Bs, Size}.
 
-%% -> {ok, NewFdC} | throw(FileError)
+%% -> {ok, NewFdC} | {Error, NewFdC}
 write_cache(#cache{fd = Fd, c = C}, FName) ->
     erase(write_cache_timer_is_running),
-    {ok, write_cache(Fd, FName, C)}.
+    write_cache(Fd, FName, C).
   
-%% -> {ok, NewFdC} | throw(FileError)
-sync(FdC, FName) -> fsync(FdC, FName).
+%% -> {Reply, NewFdC}; Reply = ok | Error
+sync(FdC, FName) -> 
+    fsync(FdC, FName).
   
-%% -> {ok, NewFdC} | throw(FileError)
+%% -> {Reply, NewFdC}; Reply = ok | Error
 truncate(FdC, FileName, Head) ->
-    {ok, FdC1} = truncate_at(FdC, FileName, ?HEADSZ),
-    case Head of
-	{ok, B} -> 
-            {_, NewFdC} = log(FdC1, FileName, [B]), 
-            {ok, NewFdC};
-	none -> 
-            {ok, FdC1}
+    Reply = truncate_at(FdC, FileName, ?HEADSZ),
+    case Reply of
+	{ok, _} when Head == none ->
+            Reply;
+	{ok, FdC1} ->
+	    {ok, B} = Head,
+	    case log(FdC1, FileName, [B]) of
+		{ok, _NoBytes, NewFdC} ->
+		    {ok, NewFdC};
+		Reply2 ->
+		    Reply2
+	    end;
+	_ ->
+	    Reply
     end.
 
 %% -> {NewFdC, Reply}, Reply = {Cont, Binaries} | {error, Reason} | eof
@@ -95,7 +109,7 @@ chunk(FdC, FileName, Pos, {B, true}, N) ->
 	    Else
     end;
 chunk(FdC, FileName, Pos, B, N) ->
-    case catch read_chunk(FdC, FileName, Pos, ?MAX_CHUNK_SIZE) of
+    case read_chunk(FdC, FileName, Pos, ?MAX_CHUNK_SIZE) of
 	{NewFdC, {ok, Bin}} ->
 	    NewPos = Pos + size(Bin),
             NewBin = list_to_binary([B,Bin]),
@@ -111,7 +125,7 @@ chunk(FdC, FileName, Pos, B, N) ->
 %% Format of a log item is: [Size, Magic, binary_term]
 
 handle_chunk(B, FdC, _FileName, Pos, 0, Ack) ->
-    {FdC, {#continuation{pos = Pos, b = {B, true}}, lists:reverse(Ack)}};
+    {FdC, {#continuation{pos = Pos, b = {B, true}}, Ack}};
 handle_chunk(<<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8, Tail/binary>>, 
 	     FdC, FileName, Pos, N, Ack) ->
     case Tail of
@@ -122,7 +136,7 @@ handle_chunk(<<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8, Tail/binary>>,
 	    %% We read the whole thing into one binary.
 	    Pos1 = Pos - size(Tail) - ?HEADERSZ,
 	    BytesToRead = Size + ?HEADERSZ,
-            case catch read_chunk(FdC, FileName, Pos1, BytesToRead) of
+            case read_chunk(FdC, FileName, Pos1, BytesToRead) of
 		{NewFdC, {ok, Bin}} when size(Bin) == BytesToRead ->
 		    NewPos = Pos1 + BytesToRead,
 		    handle_chunk(Bin, NewFdC, FileName, NewPos, N, Ack);
@@ -138,12 +152,16 @@ handle_chunk(<<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8, Tail/binary>>,
 handle_chunk(<<_:?HEADERSZ/unit:8,_/binary>>, FdC, FileName, _Pos, _N, _Ack) ->
     {FdC, {error, {corrupt_log_file, FileName}}};
 handle_chunk(B, FdC, _FileName, Pos, _N, Ack) ->
-    {FdC, {#continuation{pos = Pos, b = B}, lists:reverse(Ack)}}.
+    {FdC, {#continuation{pos = Pos, b = B}, Ack}}.
 
 read_chunk(FdC, FileName, Pos, MaxBytes) ->
     {FdC1, R} = pread(FdC, FileName, Pos + ?HEADSZ, MaxBytes),
-    {NewFdC, _} = position(FdC1, FileName, eof),
-    {NewFdC, R}.
+    case position(FdC1, FileName, eof) of
+	{ok, NewFdC, _Pos} ->
+	    {NewFdC, R};
+	{Error, NewFdC} ->
+	    {NewFdC, Error}
+    end.
 
 %% Used by wrap_log_reader.
 %% -> {NewFdC, Reply}, 
@@ -164,7 +182,7 @@ do_chunk_read_only(FdC, FileName, Pos, {B, true}, N) ->
 	    Else
     end;
 do_chunk_read_only(FdC, FileName, Pos, B, N) ->
-    case catch read_chunk_ro(FdC, FileName, Pos, ?MAX_CHUNK_SIZE) of
+    case read_chunk_ro(FdC, FileName, Pos, ?MAX_CHUNK_SIZE) of
 	{NewFdC, {ok, Bin}}  ->
 	    NewPos = Pos + size(Bin),
 	    NewBin = list_to_binary([B, Bin]),
@@ -182,7 +200,7 @@ do_chunk_read_only(FdC, FileName, Pos, B, N) ->
 
 handle_chunk_ro(B, FdC, _FileName, Pos, 0, Ack, Bad) ->
     Cont = #continuation{pos = Pos, b = {B, true}},
-    {FdC, {Cont, lists:reverse(Ack), Bad}};
+    {FdC, {Cont, Ack, Bad}};
 handle_chunk_ro(B= <<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8,
 		     Tail/binary>>, FdC, FileName, Pos, N, Ack, Bad) ->
     case Tail of
@@ -194,7 +212,7 @@ handle_chunk_ro(B= <<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8,
 	    TailSize = size(Tail),
 	    Pos1 = Pos - TailSize - ?HEADERSZ,
 	    BytesToRead = Size + ?HEADERSZ,
-            case catch read_chunk_ro(FdC, FileName, Pos1, BytesToRead) of
+            case read_chunk_ro(FdC, FileName, Pos1, BytesToRead) of
 		{NewFdC, {ok, Bin}} when size(Bin) == BytesToRead ->
 		    NewPos = Pos1 + BytesToRead,
 		    handle_chunk_ro(Bin, NewFdC, FileName, NewPos, N, Ack,Bad);
@@ -204,8 +222,7 @@ handle_chunk_ro(B= <<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8,
 		{NewFdC, eof} ->
 		    %% "Cannot happen"
 		    NewCont = #continuation{pos = Pos1, b = <<>>},
-		    {NewFdC, 
-                     {NewCont, lists:reverse(Ack), Bad + TailSize+?HEADERSZ}};
+		    {NewFdC, {NewCont, Ack, Bad + TailSize+?HEADERSZ}};
 		Other -> 
 		    Other
 	    end
@@ -215,7 +232,7 @@ handle_chunk_ro(B= <<_:?HEADERSZ/unit:8, _/binary>>,
     <<_:1/unit:8, B2/binary>> = B,
     handle_chunk_ro(B2, FdC, FileName, Pos, N-1, Ack, Bad+1);
 handle_chunk_ro(B, FdC, _FileName, Pos, _N, Ack, Bad) ->
-    {FdC, {#continuation{pos = Pos, b = B}, lists:reverse(Ack), Bad}}.
+    {FdC, {#continuation{pos = Pos, b = B}, Ack, Bad}}.
 
 read_chunk_ro(FdC, FileName, Pos, MaxBytes) ->
     pread(FdC, FileName, Pos + ?HEADSZ, MaxBytes).
@@ -224,9 +241,10 @@ read_chunk_ro(FdC, FileName, Pos, MaxBytes) ->
 close(#cache{fd = Fd, c = []}, _FileName, read_only) ->
     file:close(Fd);
 close(#cache{fd = Fd, c = C}, FileName, read_write) ->
-    write_cache(Fd, FileName, C),
+    {Reply, _NewFdC} = write_cache(Fd, FileName, C),
     mark(Fd, FileName, ?CLOSED),
-    file:close(Fd).
+    file:close(Fd),
+    if Reply == ok -> ok; true -> throw(Reply) end.
 
 %% Open an internal file. Head is ignored if Mode is read_only.
 %% int_open(FileName, Repair, Mode, Head) -> 
@@ -440,11 +458,11 @@ scan_f(B = <<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8, Tail/binary>>,
 		    <<_:8, B2/binary>> = B,
 		    scan_f(B2, In, Out, File, Tmp, No, Bad+1);
 		_Term ->
-		    case catch log(Out, Tmp, [BinTerm]) of
-			{_Size, NewOut} ->
+		    case log(Out, Tmp, [BinTerm]) of
+			{ok, _Size, NewOut} ->
 			    scan_f(Tail2, In, NewOut, File, Tmp, No+1, Bad);
-			Error ->
-			    repair_err(In, Out, Tmp, File, Error)
+			{{error, {file_error, _Filename, Error}}, NewOut} ->
+			    repair_err(In, NewOut, Tmp, File, {error, Error})
 		    end
 	    end;
 	_ ->
@@ -571,18 +589,19 @@ mf_int_inc(Handle, Head) ->
 	    {error, Error, Handle}
     end.
 
-%% -> {ok, handle(), Logged, Lost} | {ok, handle(), Logged} 
+%% -> {ok, handle(), Logged, Lost, NoWraps} | {ok, handle(), Logged} 
 %%    | {error, Error, handle(), Logged, Lost}
 %% The returned handle is not always valid - something may
 %% have been written before things went wrong. 
 mf_int_log(Handle, Bins, Head) ->
-    mf_int_log(Handle, Bins, Head, 0, 0, 0).
+    mf_int_log(Handle, Bins, Head, 0, []).
 
-mf_int_log(Handle, [], _Head, No, _Lost, 0) ->
+mf_int_log(Handle, [], _Head, No, []) ->
     {ok, Handle, No};
-mf_int_log(Handle, [], _Head, No, Lost, _Wraps) ->
-    {ok, Handle, No, Lost};
-mf_int_log(Handle, Bins, Head, No0, Lost, Wraps) ->
+mf_int_log(Handle, [], _Head, No, Wraps0) ->
+    Wraps = reverse(Wraps0),
+    {ok, Handle, No, sum(Wraps), Wraps};
+mf_int_log(Handle, Bins, Head, No0, Wraps) ->
     #handle{curB = CurB, maxB = MaxB, cur_name = FileName, cur_fdc = CurFdC, 
             firstPos = FirstPos0, cur_cnt = CurCnt} = Handle,
     {FirstBins, LastBins, NoBytes, N} = 
@@ -592,7 +611,7 @@ mf_int_log(Handle, Bins, Head, No0, Lost, Wraps) ->
             #handle{filename = FName, curF = CurF, maxF = MaxF, 
                     acc_cnt = AccCnt, noFull = NoFull} = Handle,
 	    case catch wrap_int_log(FName, CurF, MaxF, CurCnt, Head) of
-		{NewF, NewMaxF, NewFdC, NewFileName, Nh, FirstPos, Lost1} ->
+		{NewF, NewMaxF, NewFdC, NewFileName, Nh, FirstPos, Lost} ->
 		    Handle1 = Handle#handle{cur_fdc = NewFdC, curF = NewF,
 					    cur_cnt = Nh, 
 					    cur_name = NewFileName,
@@ -604,22 +623,24 @@ mf_int_log(Handle, Bins, Head, No0, Lost, Wraps) ->
 		    case catch close(CurFdC, FileName, read_write) of
 			ok ->
 			    mf_int_log(Handle1, Bins, Head, No0 + Nh, 
-				       Lost + Lost1, Wraps + 1);
+				       [Lost | Wraps]);
 			Error ->
-			    {error, Error, Handle1, No0 + Nh, Lost + Lost1}
+			    Lost1 = Lost + sum(Wraps),
+			    {error, Error, Handle1, No0 + Nh, Lost1}
 		    end;
 		Error ->
-		    {error, Error, Handle, No0, Lost}
+		    {error, Error, Handle, No0, sum(Wraps)}
 	    end;
 	_ ->
-	    case catch fwrite(CurFdC, FileName, FirstBins, NoBytes) of
+	    case fwrite(CurFdC, FileName, FirstBins, NoBytes) of
                 {ok, NewCurFdC} ->
 		    Handle1 = Handle#handle{cur_fdc = NewCurFdC, 
                                             curB = CurB + NoBytes, 
 					    cur_cnt = CurCnt + N},
-		    mf_int_log(Handle1, LastBins, Head, No0 + N, Lost, Wraps);
-		Error ->
-		    {error, Error, Handle, No0, Lost}
+		    mf_int_log(Handle1, LastBins, Head, No0 + N, Wraps);
+		{Error, NewCurFdC} ->
+		    Handle1 = Handle#handle{cur_fdc = NewCurFdC},
+		    {error, Error, Handle1, No0, sum(Wraps)}
 	    end
     end.
 
@@ -698,16 +719,17 @@ mf_int_chunk_step(Handle, {FileNo, _Pos}, Step) ->
 	    {error, end_of_log}
     end.
 
-%% -> {ok, NewFdC} | throw(FileError)
+%% -> {Reply, handle()}; Reply = ok | Error
 mf_write_cache(#handle{filename = FName, cur_fdc = FdC} = Handle) ->
     erase(write_cache_timer_is_running),
     #cache{fd = Fd, c = C} = FdC,
-    NewFdC = write_cache(Fd, FName, C),
-    {ok, Handle#handle{cur_fdc = NewFdC}}.
+    {Reply, NewFdC} = write_cache(Fd, FName, C),
+    {Reply, Handle#handle{cur_fdc = NewFdC}}.
 
+%% -> {Reply, handle()}; Reply = ok | Error
 mf_sync(#handle{filename = FName, cur_fdc = FdC} = Handle) ->
-    {ok, NewFdC} = fsync(FdC, FName),
-    {ok, Handle#handle{cur_fdc = NewFdC}}.
+    {Reply, NewFdC} = fsync(FdC, FName),
+    {Reply, Handle#handle{cur_fdc = NewFdC}}.
 
 %% -> ok | throw(FileError)
 mf_int_close(#handle{filename = FName, curF = CurF, cur_name = FileName, 
@@ -761,19 +783,20 @@ mf_ext_inc(Handle, Head) ->
 	    {error, Error, Handle}
     end.
 
-%% -> {ok, handle(), Logged, Lost} | {ok, handle(), Logged} 
+%% -> {ok, handle(), Logged, Lost, NoWraps} | {ok, handle(), Logged} 
 %%    | {error, Error, handle(), Logged, Lost}
 
 %% The returned handle is not always valid -
 %% something may have been written before things went wrong.
 mf_ext_log(Handle, Bins, Head) ->
-    mf_ext_log(Handle, Bins, Head, 0, 0, 0).
+    mf_ext_log(Handle, Bins, Head, 0, []).
 
-mf_ext_log(Handle, [], _Head, No, _Lost, 0) ->
+mf_ext_log(Handle, [], _Head, No, []) ->
     {ok, Handle, No};
-mf_ext_log(Handle, [], _Head, No, Lost, _Wraps) ->
-    {ok, Handle, No, Lost};
-mf_ext_log(Handle, Bins, Head, No0, Lost, Wraps) ->
+mf_ext_log(Handle, [], _Head, No, Wraps0) ->
+    Wraps = reverse(Wraps0),
+    {ok, Handle, No, sum(Wraps), Wraps};
+mf_ext_log(Handle, Bins, Head, No0, Wraps) ->
     #handle{curB = CurB, maxB = MaxB, cur_name = FileName, cur_fdc = CurFdC, 
             firstPos = FirstPos0, cur_cnt = CurCnt} = Handle,
     {FirstBins, LastBins, NoBytes, N} = 
@@ -783,7 +806,7 @@ mf_ext_log(Handle, Bins, Head, No0, Lost, Wraps) ->
             #handle{filename = FName, curF = CurF, maxF = MaxF, 
                     acc_cnt = AccCnt, noFull = NoFull} = Handle,
 	    case catch wrap_ext_log(FName, CurF, MaxF, CurCnt, Head) of
-		{NewF, NewMaxF, NewFdC, NewFileName, Nh, FirstPos, Lost1} ->
+		{NewF, NewMaxF, NewFdC, NewFileName, Nh, FirstPos, Lost} ->
 		    Handle1 = Handle#handle{cur_fdc = NewFdC, curF = NewF,
 					    cur_cnt = Nh, 
 					    cur_name = NewFileName,
@@ -795,22 +818,24 @@ mf_ext_log(Handle, Bins, Head, No0, Lost, Wraps) ->
 		    case catch fclose(CurFdC, FileName) of
 			ok ->
 			    mf_ext_log(Handle1, Bins, Head, No0 + Nh, 
-				       Lost + Lost1, Wraps + 1);
+				       [Lost | Wraps]);
 			Error ->
-			    {error, Error, Handle1, No0 + Nh, Lost + Lost1}
+			    Lost1 = Lost + sum(Wraps),
+			    {error, Error, Handle1, No0 + Nh, Lost1}
 		    end;
 		Error ->
-		    {error, Error, Handle, No0, Lost}
+		    {error, Error, Handle, No0, sum(Wraps)}
 	    end;
 	_ ->
-	    case catch fwrite(CurFdC, FileName, FirstBins, NoBytes) of
+	    case fwrite(CurFdC, FileName, FirstBins, NoBytes) of
                 {ok, NewCurFdC} ->
 		    Handle1 = Handle#handle{cur_fdc = NewCurFdC, 
                                             curB = CurB + NoBytes, 
 					    cur_cnt = CurCnt + N},
-		    mf_ext_log(Handle1, LastBins, Head, No0 + N, Lost, Wraps);
-		Error ->
-		    {error, Error, Handle, No0, Lost}
+		    mf_ext_log(Handle1, LastBins, Head, No0 + N, Wraps);
+		{Error, NewCurFdC} ->
+		    Handle1 = Handle#handle{cur_fdc = NewCurFdC},
+		    {error, Error, Handle1, No0, sum(Wraps)}
 	    end
     end.
 
@@ -1202,7 +1227,7 @@ get_wrap_size(#handle{maxB = MaxB, maxF = MaxF}) ->
     end.
 
 add_ext(Name, Ext) ->
-    lists:concat([Name, ".", Ext]).
+    concat([Name, ".", Ext]).
 
 open_read(FileName) ->
     file:open(FileName, [raw, binary, read]).
@@ -1218,6 +1243,7 @@ open_truncate(FileName) ->
 -define(MAX, ?MAX_CHUNK_SIZE). % bytes
 -define(TIMEOUT, 2000). % ms
 
+%% -> {Reply, cache()}; Reply = ok | Error
 fwrite(#cache{c = []} = FdC, _FN, B, Size) ->
     case get(write_cache_timer_is_running) of
         true -> 
@@ -1230,25 +1256,40 @@ fwrite(#cache{c = []} = FdC, _FN, B, Size) ->
 fwrite(#cache{sz = Sz, c = C} = FdC, _FN, B, Size) when Sz < ?MAX ->
     {ok, FdC#cache{sz = Sz+Size, c = [C | B]}};
 fwrite(#cache{fd = Fd, c = C}, FileName, B, _Size) ->
-    {ok, write_cache(Fd, FileName, [C | B])}.
+    write_cache(Fd, FileName, [C | B]).
 
 fwrite_header(Fd, B, Size) ->
     {ok, #cache{fd = Fd, sz = Size, c = B}}.
 
+%% -> {NewFdC, Reply}; Reply = ok | Error
 pread(#cache{fd = Fd, c = C}, FileName, Position, MaxBytes) ->
-    NewFdC = write_cache(Fd, FileName, C),
-    case file:pread(Fd, Position, MaxBytes) of
-	{error, Error} -> file_error(FileName, {error, Error});
-	Reply -> {NewFdC, Reply}
+    Reply = write_cache(Fd, FileName, C),
+    case Reply of
+	{ok, NewFdC} ->
+	    case file:pread(Fd, Position, MaxBytes) of
+		{error, Error} -> 
+		    {NewFdC, catch file_error(FileName, {error, Error})};
+		R -> 
+		    {NewFdC, R}
+	    end;
+	{Error, NewFdC} ->
+	    {NewFdC, Error}
     end.
 
-position(#cache{fd = Fd, c = []} = FdC, FileName, Pos) ->
-    {ok, Loc} = position2(Fd, FileName, Pos),
-    {FdC, Loc};
+%% -> {ok, cache(), Pos} | {Error, cache()}
 position(#cache{fd = Fd, c = C}, FileName, Pos) ->
-    NewFdC = write_cache(Fd, FileName, C),
-    {ok, Loc} = position2(Fd, FileName, Pos),
-    {NewFdC, Loc}.
+    Reply = write_cache(Fd, FileName, C),
+    case Reply of
+	{ok, NewFdC} ->
+	    case position2(Fd, FileName, Pos) of
+		{ok, Loc} -> 
+		    {ok, NewFdC, Loc};
+		Error -> 
+		    {Error, NewFdC}
+	    end;
+	_Error ->
+	    Reply
+    end.
 	    
 position_close(#cache{fd = Fd, c = C}, FileName, Pos) ->
     NewFdC = write_cache_close(Fd, FileName, C),
@@ -1256,17 +1297,31 @@ position_close(#cache{fd = Fd, c = C}, FileName, Pos) ->
     {NewFdC, Loc}.
 
 fsync(#cache{fd = Fd, c = C}, FileName) ->
-    NewFdC = write_cache(Fd, FileName, C),    
-    case file:sync(Fd) of
-	ok -> {ok, NewFdC};
-	Error -> file_error(FileName, Error)
+    Reply = write_cache(Fd, FileName, C),    
+    case Reply of
+	{ok, NewFdC} ->
+	    case file:sync(Fd) of
+		ok -> 
+		    Reply;
+		Error -> 
+		    {catch file_error(FileName, Error), NewFdC}
+	    end;
+	_Error ->
+	    Reply
     end.
 
+%% -> {Reply, NewFdC}; Reply = ok | Error
 truncate_at(FdC, FileName, Pos) ->
-    {NewFdC, _} = position(FdC, FileName, Pos),
-    case file:truncate(NewFdC#cache.fd) of
-	ok    -> {ok, NewFdC};
-	Error -> file_error(FileName, Error)
+    case position(FdC, FileName, Pos) of
+	{ok, NewFdC, _Pos} ->
+	    case file:truncate(NewFdC#cache.fd) of
+		ok    -> 
+		    {ok, NewFdC};
+		Error -> 
+		    {catch file_error(FileName, Error), NewFdC}
+	    end;
+	Reply ->
+	    Reply
     end.
 
 fwrite_close2(Fd, FileName, B) ->
@@ -1283,7 +1338,7 @@ pwrite_close2(Fd, FileName, Position, B) ->
 
 position2(Fd, FileName, Pos) ->
     case file:position(Fd, Pos) of
-	{error, Error} -> file_error(FileName, {error, Error});
+	{error, Error} -> catch file_error(FileName, {error, Error});
 	OK -> OK
     end.
 
@@ -1302,17 +1357,19 @@ truncate_at_close2(Fd, FileName, Pos) ->
 
 fclose(#cache{fd = Fd, c = C}, FileName) ->
     %% The cache is empty if the file was opened in read_only mode.
-    write_cache(Fd, FileName, C),
+    write_cache_close(Fd, FileName, C),
     file:close(Fd).
 
+%% -> {Reply, cache()}; Reply = ok | Error
 write_cache(Fd, _FileName, []) ->
-    #cache{fd = Fd};
+    {ok, #cache{fd = Fd}};
 write_cache(Fd, FileName, C) ->
     case file:write(Fd, C) of
-        ok    -> #cache{fd = Fd};
-        Error -> file_error(FileName, Error)
+        ok    -> {ok, #cache{fd = Fd}};
+        Error -> {catch file_error(FileName, Error), #cache{fd = Fd}}
     end.
 
+%% -> cache() | throw(Error)
 write_cache_close(Fd, _FileName, []) ->
     #cache{fd = Fd};
 write_cache_close(Fd, FileName, C) ->

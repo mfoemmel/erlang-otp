@@ -32,6 +32,17 @@
 -define(debug(Term), ok).
 -endif.
 
+%% Default ticktime change transition period in seconds
+-define(DEFAULT_TRANSITION_PERIOD, 60).
+
+%-define(TCKR_DBG, 1).
+
+-ifdef(TCKR_DBG).
+-define(tckr_dbg(X), erlang:display({?LINE, X})).
+-else.
+-define(tckr_dbg(X), ok).
+-endif.
+
 %% User Interface Exports
 -export([start/1, start_link/1, stop/0,
 	 kernel_apply/3,
@@ -43,6 +54,7 @@
 
 -export([connect/1, disconnect/1, hidden_connect/1]).
 -export([connect_node/1, hidden_connect_node/1]). %% explicit connect
+-export([set_net_ticktime/1, set_net_ticktime/2, get_net_ticktime/0]).
 
 -export([node_info/1, node_info/2, nodes_info/0,
 	 connecttime/0,
@@ -53,7 +65,9 @@
 %% Internal Exports 
 -export([do_spawn_link/5, 
 	 ticker/2,
-	 do_nodeup/2]).
+	 ticker_loop/2,
+	 do_nodeup/2,
+	 aux_ticker/4]).
 
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,
 	 terminate/2]).
@@ -64,7 +78,7 @@
 	  name,         %% The node name
 	  node,         %% The node name including hostname
 	  type,         %% long or short names
-	  ticktime,     %% tick other nodes regularly
+	  tick,         %% tick information
 	  connecttime,  %% the connection setuptime.
 	  connections,  %% table of connections
 	  conn_owners = [], %% List of connection owner pids,
@@ -108,6 +122,15 @@
 	 }).
 
 
+-record(tick, {ticker,        %% ticker                     : pid()
+	       time           %% Ticktime in milli seconds  : integer()
+	      }).
+
+-record(tick_change, {ticker, %% Ticker                     : pid()
+		      time,   %% Ticktime in milli seconds  : integer()
+		      how     %% What type of change        : atom()
+		     }).
+
 %% Default connection setup timeout in milliseconds.
 %% This timeout is set for every distributed action during
 %% the connection setup.
@@ -131,6 +154,18 @@ i(Node) ->                     print_info(Node).
 
 verbose(Level) when integer(Level) ->
     request({verbose, Level}).
+
+set_net_ticktime(T, TP) when integer(T), T > 0, integer(TP), TP >= 0 ->
+    ticktime_res(request({new_ticktime, T*250, TP*1000})).
+set_net_ticktime(T) when integer(T) ->
+    set_net_ticktime(T, ?DEFAULT_TRANSITION_PERIOD).
+get_net_ticktime() ->
+    ticktime_res(request(ticktime)).
+
+%% ...
+ticktime_res({A, I}) when atom(A), integer(I) -> {A, I div 250};
+ticktime_res(I)      when integer(I)          -> I div 250;
+ticktime_res(A)      when atom(A)             -> A.
 
 %% Called though BIF's
 
@@ -204,12 +239,13 @@ start_link([Name, LongOrShortNames, Ticktime]) ->
 	    exit(nodistribution)
     end.
 
-init({Name, LongOrShortNames, Ticktime}) ->
+init({Name, LongOrShortNames, TickT}) ->
     process_flag(trap_exit,true),
     case init_node(Name, LongOrShortNames) of
 	{ok, Node, Listeners} ->
 	    process_flag(priority, max),
-	    spawn_link(net_kernel, ticker, [self(), Ticktime]),
+	    Ticktime = to_integer(TickT),
+	    Ticker = spawn_link(net_kernel, ticker, [self(), Ticktime]),
 	    case auth:get_cookie(Node) of
 		Cookie when atom(Cookie) ->
 		    Monitor = std_monitors(),
@@ -217,7 +253,7 @@ init({Name, LongOrShortNames, Ticktime}) ->
 		    {ok, #state{name = Name,
 				node = Node,
 				type = LongOrShortNames,
-				ticktime = Ticktime,
+				tick = #tick{ticker = Ticker, time = Ticktime},
 				connecttime = connecttime(),
 				connections =
 				    ets:new(sys_dist,[named_table,
@@ -288,7 +324,7 @@ handle_call({disconnect, Node}, From, State) ->
 %% 
 handle_call({spawn,M,F,A,Gleader}, {From,Tag}, State) when pid(From) ->
     Pid = (catch spawn(M,F,A)),
-    group_leader(Gleader,Pid),
+    catch group_leader(Gleader,Pid),
     {reply,Pid,State};
 
 %% 
@@ -359,8 +395,46 @@ handle_call({publish_on_node, Node}, _From, State) ->
 
 
 handle_call({verbose, Level}, _From, State) ->
-    {reply, State#state.verbose, State#state{verbose = Level}}.
-    
+    {reply, State#state.verbose, State#state{verbose = Level}};
+
+%%
+%% Set new ticktime
+%%
+
+%% The tick field of the state contains either a #tick{} or a
+%% #tick_change{} record if the ticker process has been upgraded;
+%% otherwise, an integer or an atom.
+
+handle_call(ticktime, _, #state{tick = #tick{time = T}} = State) ->
+    {reply, T, State};
+handle_call(ticktime, _, #state{tick = #tick_change{time = T}} = State) ->
+    {reply, {ongoing_change_to, T}, State};
+
+handle_call({new_ticktime,T,TP}, _, #state{tick = #tick{time = T}} = State) ->
+    ?tckr_dbg(no_tick_change),
+    {reply, unchanged, State};
+
+handle_call({new_ticktime,T,TP}, _, #state{tick = #tick{ticker = Tckr,
+							time = OT}} = State) ->
+    ?tckr_dbg(initiating_tick_change),
+    start_aux_ticker(T, OT, TP),
+    How = case T > OT of
+	      true ->
+		  ?tckr_dbg(longer_ticktime),
+		  Tckr ! {new_ticktime,T},
+		  longer;
+	      false ->
+		  ?tckr_dbg(shorter_ticktime),
+		  shorter
+	  end,
+    {reply, change_initiated, State#state{tick = #tick_change{ticker = Tckr,
+							      time = T,
+							      how = How}}};
+
+handle_call({new_ticktime,_,_},
+	    _,
+	    #state{tick = #tick_change{time = T}} = State) ->
+    {reply, {ongoing_change_to, T}, State}.
 
 %% ------------------------------------------------------------
 %% handle_cast.
@@ -554,9 +628,27 @@ handle_info({From, badcookie, To ,Mess}, State) ->
 %% Tick all connections.
 %%
 handle_info(tick, State) ->
+    ?tckr_dbg(tick),
     lists:foreach(fun({Pid,_Node}) -> Pid ! {self(), tick} end,
 		  State#state.conn_owners),
     {noreply,State};
+
+handle_info(aux_tick, State) ->
+    ?tckr_dbg(aux_tick),
+    lists:foreach(fun({Pid,_Node}) -> Pid ! {self(), aux_tick} end,
+		  State#state.conn_owners),
+    {noreply,State};
+
+handle_info(transition_period_end,
+	    #state{tick = #tick_change{ticker = Tckr,
+				       time = T,
+				       how = How}} = State) ->
+    ?tckr_dbg(transition_period_ended),
+    case How of
+	shorter -> Tckr ! {new_ticktime, T};
+	_       -> done
+    end,
+    {noreply,State#state{tick = #tick{ticker = Tckr, time = T}}};
 
 handle_info({From, {set_monitors, L}}, State) ->
     From ! {net_kernel, done},
@@ -568,14 +660,15 @@ handle_info(X, State) ->
 
 %% -----------------------------------------------------------
 %% Handle exit signals.
-%% We have 5 types of processes to handle.
+%% We have 6 types of processes to handle.
 %%
 %%    1. The Listen process.
 %%    2. The Accept process.
 %%    3. Connection owning processes.
 %%    4. Pending check nodeup processes.
 %%    5. Processes monitoring nodeup/nodedown.
-%%    (6. Garbage pid.)
+%%    6. The ticker process.
+%%   (7. Garbage pid.)
 %%
 %% The process type function that handled the process throws 
 %% the handle_info return value !
@@ -592,6 +685,7 @@ do_handle_exit(Pid, State) ->
     nodeup_exit(Pid, State1),
     monitor_exit(Pid, State1),
     pending_own_exit(Pid, State1),
+    ticker_exit(Pid, State1),
     {noreply, State1}.
 
 remove_conn_pid(Pid, State) ->
@@ -667,6 +761,17 @@ pending_own_exit(Pid, State) ->
 	_ ->
 	    false
     end.
+
+ticker_exit(Pid, #state{tick = #tick{ticker = Pid, time = T} = Tck} = State) ->
+    Tckr = restart_ticker(T),
+    throw({noreply, State#state{tick = Tck#tick{ticker = Tckr}}});
+ticker_exit(Pid, #state{tick = #tick_change{ticker = Pid,
+					    time = T} = TckCng} = State) ->
+    Tckr = restart_ticker(T),
+    throw({noreply, State#state{tick = TckCng#tick_change{ticker = Tckr}}});
+ticker_exit(_, _) ->
+    false.
+
 %% -----------------------------------------------------------
 %% A node has gone down !!
 %% nodedown(Owner, Node, State) -> State'
@@ -837,19 +942,57 @@ stop_dist([Node|Nodes], Monitor) ->
     stop_dist(Nodes, Monitor).
 -endif.
 
-ticker(Kernel, Tick) ->
+ticker(Kernel, Tick) when integer(Tick) ->
     process_flag(priority, max),
-    ticker1(Kernel, to_integer(Tick)).
+    ?tckr_dbg(ticker_started),
+    ticker_loop(Kernel, Tick).
 
 to_integer(T) when integer(T) -> T;
 to_integer(T) when atom(T) -> 
-    list_to_integer(atom_to_list(T)).
+    list_to_integer(atom_to_list(T));
+to_integer(T) when list(T) -> 
+    list_to_integer(T).
 
-ticker1(Kernel, Tick) ->
+ticker_loop(Kernel, Tick) ->
     receive
-	after Tick -> 
-		Kernel ! tick,
-		ticker1(Kernel, Tick)
+	{new_ticktime, NewTick} ->
+	    ?tckr_dbg({ticker_changed_time, Tick, NewTick}),
+	    ?MODULE:ticker_loop(Kernel, NewTick)
+    after Tick -> 
+	    Kernel ! tick,
+	    ?MODULE:ticker_loop(Kernel, Tick)
+    end.
+
+start_aux_ticker(NewTick, OldTick, TransitionPeriod) ->
+    spawn_link(?MODULE, aux_ticker,
+	       [self(), NewTick, OldTick, TransitionPeriod]).
+
+aux_ticker(NetKernel, NewTick, OldTick, TransitionPeriod) ->
+    process_flag(priority, max),
+    ?tckr_dbg(aux_ticker_started),
+    TickInterval = case NewTick > OldTick of
+		       true  -> OldTick;
+		       false -> NewTick
+		   end,
+    NoOfTicks = case TransitionPeriod > 0 of
+		    true ->
+			%% 1 tick to start
+			%% + ticks to cover the transition period
+			1 + (((TransitionPeriod - 1) div TickInterval) + 1);
+		    false ->
+			1
+		end,
+    aux_ticker1(NetKernel, TickInterval, NoOfTicks).
+
+aux_ticker1(NetKernel, _, 1) ->
+    NetKernel ! transition_period_end,
+    NetKernel ! aux_tick,
+    bye;
+aux_ticker1(NetKernel, TickInterval, NoOfTicks) ->
+    NetKernel ! aux_tick,
+    receive
+    after TickInterval ->
+	    aux_ticker1(NetKernel, TickInterval, NoOfTicks-1)
     end.
 
 send(From,To,Mess) ->
@@ -1244,6 +1387,12 @@ all_atoms([]) -> true;
 all_atoms([N|Tail]) when atom(N) ->
     all_atoms(Tail);
 all_atoms(_) -> false.
+
+%% It is assumed that only net_kernel uses restart_ticker()
+restart_ticker(Time) ->
+    ?tckr_dbg(restarting_ticker),
+    self() ! aux_tick,
+    spawn_link(?MODULE, ticker, [self(), Time]).
 
 %% ------------------------------------------------------------
 %% Print status information.

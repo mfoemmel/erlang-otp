@@ -68,8 +68,7 @@ INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_DATA    = @INSTALL_DATA@
 
 ifeq ($(findstring solaris,$(TARGET)),solaris)
-INSTALL_EMBEDDED_PROGS = $(BINDIR)/run_erl $(BINDIR)/to_erl $(BINDIR)/wd_keeper
-INSTALL_EMBEDDED_DATA = ../unix/start.src ../unix/start_erl.src
+INSTALL_EMBEDDED_PROGS = $(BINDIR)/wd_keeper
 endif
 
 ifeq ($(findstring vxworks,$(TARGET)), vxworks)
@@ -87,7 +86,8 @@ INSTALL_OBJS = $(OBJDIR)/heart.o
 TEXTFILES = $(BINDIR)/erl_script.sam
 else
 INET_GETHOST = $(BINDIR)/inet_gethost
-INSTALL_EMBEDDED_PROGS += $(BINDIR)/erlc
+INSTALL_EMBEDDED_PROGS += $(BINDIR)/erlc $(BINDIR)/run_erl $(BINDIR)/to_erl
+INSTALL_EMBEDDED_DATA = ../unix/start.src ../unix/start_erl.src
 INSTALL_TOP = Install
 INSTALL_MISC = ../unix/format_man_pages ../unix/makewhatis
 INSTALL_SRC = ../unix/setuid_socket_wrap.c #delivered as an example

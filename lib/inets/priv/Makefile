@@ -57,7 +57,7 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/bin
-	$(INSTALL_PROGRAM) $(EXECUTABLES) $(RELSYSDIR)/priv/bin
+	$(INSTALL_SCRIPT) $(EXECUTABLES) $(RELSYSDIR)/priv/bin
 
 release_docs_spec:
 

@@ -13,6 +13,8 @@
              snmp_conf,
              snmp_config,
              snmp_error,
+             snmp_error_io,
+             snmp_error_report,
 	     snmp_framework_mib,
              snmp_general_db,
              snmp_generic,

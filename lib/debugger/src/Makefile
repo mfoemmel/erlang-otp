@@ -37,34 +37,29 @@ MODULES= \
 	debugger \
 	i \
 	int \
-	dbg_ets \
+	dbg_debugged \
 	dbg_icmd \
+	dbg_idb \
 	dbg_ieval \
 	dbg_iload \
 	dbg_imeta \
-	dbg_debugged \
 	dbg_iserver \
-	dbg_iserver_api \
-	dbg_pretty \
-	dbg_ui_aux \
 	dbg_ui_break \
+	dbg_ui_break_win \
+	dbg_ui_edit \
+	dbg_ui_edit_win \
+	dbg_ui_filedialog_win \
 	dbg_ui_interpret \
 	dbg_ui_mon \
 	dbg_ui_mon_win \
+	dbg_ui_settings \
 	dbg_ui_trace \
 	dbg_ui_trace_win \
 	dbg_ui_view \
-	dbg_ui_winman \
-	dbg_ui_search \
-	dbg_ui_recedit \
-	dbg_idb \
-	dbg_idb_server \
-	dbg_ui_gotoline \
-	dbg_ui_cache
+	dbg_ui_win \
+	dbg_ui_winman
 
-
-HRL_FILES= \
-	dbg_ui_data_struct.hrl
+HRL_FILES=
 
 ERL_FILES= $(MODULES:%=%.erl)
 

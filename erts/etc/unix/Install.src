@@ -64,13 +64,10 @@ chmod 755 erl
 
 #
 # Create start file for embedded system use,
-# currently only on Solaris/SunOS 5
 #
-if [ "X$TARGET" = "Xsunos5" ]; then
-  (cd $ERL_ROOT/erts-%I_VSN%/bin;
-   sed -e "s;%FINAL_ROOTDIR%;$ERL_ROOT;" start.src > start;
-   chmod 755 start)
-fi
+(cd $ERL_ROOT/erts-%I_VSN%/bin;
+  sed -e "s;%FINAL_ROOTDIR%;$ERL_ROOT;" start.src > start;
+  chmod 755 start)
 
 cd $ERL_ROOT/bin
 
@@ -89,13 +86,11 @@ fi
 
 ln -s $ERL_ROOT/erts-%I_VSN%/bin/epmd epmd
 
-if [ "X$TARGET" = "Xsunos5" ]; then
-  cp -p $ERL_ROOT/erts-%I_VSN%/bin/run_erl .
-  cp -p $ERL_ROOT/erts-%I_VSN%/bin/to_erl .
-  cp -p $ERL_ROOT/erts-%I_VSN%/bin/start .
-  sed -e "s;%EMU%;%EMULATOR%%EMULATOR_NUMBER%;" $ERL_ROOT/erts-%I_VSN%/bin/start_erl.src > start_erl
-  chmod 755 start_erl
-fi
+cp -p $ERL_ROOT/erts-%I_VSN%/bin/run_erl .
+cp -p $ERL_ROOT/erts-%I_VSN%/bin/to_erl .
+cp -p $ERL_ROOT/erts-%I_VSN%/bin/start .
+sed -e "s;%EMU%;%EMULATOR%%EMULATOR_NUMBER%;" $ERL_ROOT/erts-%I_VSN%/bin/start_erl.src > start_erl
+chmod 755 start_erl
 
 if [ -d $ERL_ROOT/lib/sasl* ]
 then

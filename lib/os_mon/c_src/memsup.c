@@ -76,18 +76,33 @@
 #include <unistd.h>
 #endif
 
+#if (defined(__unix__) || defined(unix)) && !defined(USG)
+#include <sys/param.h>
+#endif
+
 #if defined __STDC__
 #include <stdarg.h>
 #else
 #include <varargs.h>
 #endif
+
 #include <string.h>
 #include <time.h>
 #include <errno.h>
+
 #ifdef VXWORKS
 #include <vxWorks.h>
 #include <ioLib.h>
 #include <memLib.h>
+#endif
+
+#ifdef BSD4_4
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#include <vm/vm_param.h>
+#ifdef __FreeBSD__
+#include <sys/vmmeter.h>
+#endif
 #endif
 
 /* commands */
@@ -166,6 +181,18 @@ static void load_statistics(void){
 }
 #endif
 
+#ifdef BSD4_4
+static int
+get_vmtotal(struct vmtotal *vt)
+{
+	static int vmtotal_mib[] = {CTL_VM, VM_METER};
+	size_t size = sizeof *vt;
+
+	return sysctl(vmtotal_mib, 2, vt, &size, NULL, 0) != -1;
+}
+#endif
+
+
 static void 
 get_basic_mem(unsigned long *tot, unsigned long *used, int shiftleft){
 #if defined(VXWORKS)
@@ -180,6 +207,19 @@ get_basic_mem(unsigned long *tot, unsigned long *used, int shiftleft){
     pgSz = sysconf(_SC_PAGESIZE) >> shiftleft;
     *used = (phys - avPhys) * pgSz;
     *tot = phys * pgSz;
+#elif defined(BSD4_4)
+    struct vmtotal vt;
+    long pgsz;
+
+    if (!get_vmtotal(&vt)) goto fail;
+    if ((pgsz = sysconf(_SC_PAGESIZE)) == -1) goto fail;
+    pgsz >>= shiftleft;
+    *tot = (vt.t_free + vt.t_rm) * pgsz;
+    *used = vt.t_rm * pgsz;
+    return;
+fail:
+    print_error("%s", strerror(errno));
+    exit(1);
 #else  /* SunOS4 */
     *used = (1<<27) >> shiftleft;	       	/* Fake! 128 MB used */
     *tot = (1<<28) >> shiftleft;		/* Fake! 256 MB total */

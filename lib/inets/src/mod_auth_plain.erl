@@ -20,6 +20,9 @@
 -include("httpd.hrl").
 -include("mod_auth.hrl").
 
+-define(VMODULE,"AUTH_PLAIN").
+-include("httpd_verbosity.hrl").
+
 
 %% Internal API
 -export([store_directory_data/2]).
@@ -45,14 +48,15 @@
 %% {UserName, Password, UserData}
 %%
 
-add_user(DirData, UStruct) ->
+add_user(DirData, #httpd_user{username = User} = UStruct) ->
+    ?vtrace("add_user -> entry with:"
+	"~n   User: ~p",[User]),
     PWDB = httpd_util:key1search(DirData, auth_user_file),
-    UserName = UStruct#httpd_user.username,
-    Record = {UserName,
+    Record = {User,
 	      UStruct#httpd_user.password, 
 	      UStruct#httpd_user.user_data}, 
-    case ets:lookup(PWDB, UserName) of
-	[{UserName, SomePassword, SomeData}] ->
+    case ets:lookup(PWDB, User) of
+	[{User, _SomePassword, _SomeData}] ->
 	    {error, user_already_in_db};
 	_ ->
 	    ets:insert(PWDB, Record),
@@ -60,42 +64,32 @@ add_user(DirData, UStruct) ->
     end.
 
 get_user(DirData, User) ->
-    ?DEBUG("get_user -> User: ~p",[User]),
-    PwDB = httpd_util:key1search(DirData, auth_user_file),
-    case ets:lookup(PwDB, User) of
+    ?vtrace("get_user -> entry with:"
+	"~n   User: ~p",[User]),
+    PWDB = httpd_util:key1search(DirData, auth_user_file),
+    case ets:lookup(PWDB, User) of
 	[{User, PassWd, Data}] ->
-	    ?DEBUG("get_user -> ~n"
-		   "    PassWd: ~p~n"
-		   "    Data:   ~p",[PassWd,Data]),
 	    {ok, #httpd_user{username=User, password=PassWd, user_data=Data}};
 	_ ->
 	    {error, no_such_user}
     end.
 
 list_users(DirData) ->
-    ?DEBUG("list_users -> ~n"
-	   "     DirData: ~p", [DirData]),
     PWDB = httpd_util:key1search(DirData, auth_user_file),
     case ets:match(PWDB, '$1') of
 	Records when list(Records) ->
-	    ?DEBUG("list_users -> ~n"
-		   "     Records: ~p", [Records]),
 	    {ok, lists:foldr(fun({User,PassWd,Data}, A) -> [User|A] end, 
 			     [], lists:flatten(Records))};
 	O ->
-	    ?DEBUG("list_users -> ~n"
-		   "     O: ~p", [O]),
 	    {ok, []}
     end.
 
 delete_user(DirData, UserName) ->
-    ?DEBUG("delete_user -> UserName: ~p",[UserName]),
+    ?vtrace("delete_user -> entry with:"
+	"~n   UserName: ~p",[UserName]),
     PWDB = httpd_util:key1search(DirData, auth_user_file),
     case ets:lookup(PWDB, UserName) of
 	[{UserName, SomePassword, SomeData}] ->
-	    ?DEBUG("delete_user -> ~n"
-		   "    SomePassword: ~p~n"
-		   "    SomeData:     ~p",[SomePassword,SomeData]),
 	    ets:delete(PWDB, UserName),
 	    case list_groups(DirData) of
 		{ok,Groups}->
@@ -204,16 +198,8 @@ delete_group(DirData, Group) ->
 
 
 store_directory_data(Directory, DirData) ->
-    ?CDEBUG("store_directory_data -> ~n"
-	    "      Directory: ~p~n"
-	    "      DirData:   ~p",
-	    [Directory, DirData]),
     PWFile = httpd_util:key1search(DirData, auth_user_file),
-    ?CDEBUG("store_directory_data -> ~n"
-	    "      PWFile: ~p",[PWFile]),
     GroupFile = httpd_util:key1search(DirData, auth_group_file),
-    ?CDEBUG("store_directory_data -> ~n"
-	    "      GroupFile: ~p",[GroupFile]),
     case load_passwd(PWFile) of
 	{ok, PWDB} ->
 	    case load_group(GroupFile) of
@@ -222,19 +208,11 @@ store_directory_data(Directory, DirData) ->
 		    Addr = httpd_util:key1search(DirData, bind_address),
 		    Port = httpd_util:key1search(DirData, port),
 		    {ok, PasswdDB} = store_passwd(Addr,Port,PWDB),
-		    ?CDEBUG("store_directory_data -> ~n"
-			    "      PasswdDB: ~p",[PasswdDB]),
-		    {ok, GroupDB} = store_group(Addr,Port,GRDB),
-		    ?CDEBUG("store_directory_data -> ~n"
-			    "      GroupDB: ~p",[GroupDB]),
+		    {ok, GroupDB}  = store_group(Addr,Port,GRDB),
 		    NDD1 = lists:keyreplace(auth_user_file, 1, DirData, 
 					    {auth_user_file, PasswdDB}),
-		    ?CDEBUG("store_directory_data -> ~n"
-			    "      NDD1: ~p",[NDD1]),
 		    NDD2 = lists:keyreplace(auth_group_file, 1, NDD1, 
 					    {auth_group_file, GroupDB}),
-		    ?CDEBUG("store_directory_data -> ~n"
-			    "      NDD2: ~p",[NDD2]),
 		    {ok, NDD2};
 		Err ->
 		    ?ERROR("failed storing directory data: "
@@ -260,7 +238,7 @@ load_passwd(AuthUserFile) ->
     end.
 
 parse_passwd(Stream,PasswdList) ->
-    Line=
+    Line =
 	case io:get_line(Stream, '') of
 	    eof ->
 		eof;

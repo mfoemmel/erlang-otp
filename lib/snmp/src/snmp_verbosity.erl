@@ -21,6 +21,8 @@
 
 -export([print/4,print/5,printc/4,validate/1]).
 
+-export([process_args/2]).
+
 print(silence,_Severity,_Format,_Arguments) ->
     ok;
 print(Verbosity,Severity,Format,Arguments) ->
@@ -43,18 +45,29 @@ print1(false,_Format,_Arguments) -> ok;
 print1(Verbosity,Format,Arguments) ->
     V = image_of_verbosity(Verbosity),
     S = image_of_sname(get(sname)),
-    io:format("** SNMP ~s ~s: " ++ Format ++ "~n",[S,V]++Arguments).
+    A = process_args(Arguments, []),
+    io:format("** SNMP ~s ~s: " ++ Format ++ "~n",[S,V]++A).
 
 print1(false,_Module,_Format,_Arguments) -> ok;
 print1(Verbosity,Module,Format,Arguments) ->
     V = image_of_verbosity(Verbosity),
     S = image_of_sname(get(sname)),
-    io:format("** SNMP ~s ~s ~s: " ++ Format ++ "~n",[S,Module,V]++Arguments).
+    A = process_args(Arguments, []),
+    io:format("** SNMP ~s ~s ~s: " ++ Format ++ "~n",[S,Module,V]++A).
 
 
 print2(false,_Format,_Arguments) -> ok;
 print2(_Verbosity,Format,Arguments) ->
-    io:format(Format ++ "~n",Arguments).
+    A = process_args(Arguments, []),
+    io:format(Format ++ "~n",A).
+
+
+process_args([], Acc) ->
+    lists:reverse(Acc);
+process_args([{vapply, {M,F,A}}|T], Acc) when atom(M), atom(F), list(A) ->
+    process_args(T, [(catch apply(M,F,A))|Acc]);
+process_args([H|T], Acc) ->
+    process_args(T, [H|Acc]).
 
 
 %% printable(Verbosity,Severity)

@@ -16,17 +16,7 @@
 //     $Id$
 //
 //////////////////////////////////////////////////////////////////
-// Mnesia Session - IDL interface to Mnesia
-// 
-// Two similar but slightly different interfaces
-// to Mnesia is provided:
-//
-//    corba_session - compile this IDL specification
-//                    with the _CORBA_ macro DEFINED
-//
-//    session       - compile this IDL specification
-//                    with the _CORBA_ macro UNDEFINED
-//
+// Mnesia Session - CORBA/IDL interface to Mnesia
 //////////////////////////////////////////////////////////////////
 
 #include <erlang.idl>
@@ -226,12 +216,7 @@ module mnesia
 // If the function was successful, 'reason' contains an empty string
 // and the other out parameters contains valid data.
 
-#ifdef _CORBA_
   interface corba_session
-#endif
-#ifndef _CORBA_
-  interface session
-#endif
     {
       ///////////////////////////////////////////////////////////////
       // Dirty access functions
@@ -404,42 +389,8 @@ module mnesia
       Status system_info(     out SystemInfo info,
                               out string reason);
 
-#ifndef _CORBA_
-      ///////////////////////////////////////////////////////////////
-      // match_object functions is not supported due to the fact that
-      // erlang::term is represented as an 'any' object and can not
-      // be handled in an ordinary way in corba
-
-      Status dirty_match_object(      in  TableName Tab,
-				      in  Record pattern, 
-                                      out Recordlist result,
-                                      out string reason);
-
-      Status dirty_index_match_object(in TableName Tab, 
-				      in  Record pattern, 
-                                      in  long pos,
-				      out Recordlist result, 
-                                      out string reason);
-
-      ///////////////////////////////////////////////////////////////
-      // Functions that deals with starting and stopping the Mnesia
-      // application or operates when Mnesia is not running is not
-      // supported in the corba interface due to fact that Orber
-      // needs a running Mnesia in order to operate.
- 
-      Status create_schema(  in  NodeList nodes,
-                             out string reason);
-
-      Status delete_schema(  in  NodeList nodes,
-                             out string reason);
-
-      Status    start_mnesia(out string reason);
-
-      Status    stop_mnesia( out string reason);
-#endif
     };
   
-#ifdef _CORBA_
 
 //////////////////////////////////////////////////////////////////
 // The corba_connector object registers itself in the local name
@@ -458,29 +409,7 @@ module mnesia
 
       void disconnect(in corba_session object_key);
     };
-#endif
 
 
-#ifndef _CORBA_
-//////////////////////////////////////////////////////////////////
-// The connector process registers itself in the local Erlang node
-// at startup of the Mnesia Session application
-
-  interface connector
-    {
-      // Connects to Mnesia on the same Erlang node as the
-      // Connector process, creates a Session process and returns
-      // its process identifier.
-
-      erlang::pid connect();
-
-      // Disconnects from Mnesia and terminates
-      // the Session process.
-
-      void disconnect(in erlang::pid object_key);
-    };
-#endif
 
 };
-
-

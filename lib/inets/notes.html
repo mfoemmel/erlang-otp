@@ -20,10 +20,160 @@
 
 <!--- ################################################################# --->
 
-<h2>Inets 2.6.0, R8B</h2>
+<h2>Inets 2.6.5</h2>
+
+<h3>Fixed errors and malfunctions</h3>
+
+<p>-</p>
+
+<h3>Improvements and new features</h3>
+
+<ul>
+  <li>
+    When opening the disk log (mod_disk_log), an open attempt is made 
+    without a size option. If the file exist, then it is opened. If 
+    the file does not exist, then another attempt is made, this time 
+    with the size option.
+    <br>Own Id: OTP-4281<p>
+    <br>Aux Id: Seq 7312<p>
+  </li>
+
+</ul>
+
+
+
+<!--- ################################################################# --->
+
+
+<h2>Inets 2.6.4</h2>
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+  <li>
+    Function reading http body returns a deep list. This error was introduce
+    as of inets-2.6.0.
+    <br>Own Id: OTP-4241<p>
+    <br>Aux Id: Seq 7263<p>
+  </li>
+
+  <li>
+    Request timeout calculation incorrect.
+    <br>Own Id: OTP-4243<p>
+  </li>
+
+</ul>
+
+<h3>Improvements and new features</h3>
+
+<p>-</p>
+
+
+<!--- ################################################################# --->
+
+<h2>Inets 2.6.3</h2>
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+  <li>
+    Listener process dies with reason normal when listen socket closes 
+    unexpectedly.
+    <br>If the listener process dies with reason normal, the manager will 
+    now open a new listen socket if needed and create a new listener. 
+    <br>Own Id: OTP-4233<p>
+    <br>Aux Id: Seq 7225<p>
+  </li>
+
+  <li>
+    Changing of disk log format failes. Restart of webserver after
+    change of disk log format (DiskLogFormat) fails with 
+    <b>arg_mismatch</b>. 
+    <br>See OTP-4210.<p>
+    <br>Own Id: OTP-4231<p>
+    <br>Aux Id: Seq 7244<p>
+  </li>
+
+  <li>
+    Incorrectly formated disk log entries.
+    <br><c>term_to_binary</c> was (incorrectly) used for the external format. 
+    <br>See OTP-4210.<p>
+    <br>Own Id: OTP-4228<p>
+    <br>Aux Id: Seq 7239<p>
+  </li>
+</ul>
+
+<h3>Improvements and new features</h3>
+
+<p>-</p>
+
+
+<!--- ################################################################# --->
+
+<h2>Inets 2.6.2</h2>
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+  <li>
+    Request with a body does not work.
+    <br>Own Id: OTP-4211<p>
+    <br>Aux Id: Seq 7216<p>
+  </li>
+  <li>
+    Added a new configuration directive <em>LogFileFormat</em>, that
+    alter the file-format of the log files.
+    <br>Own Id: OTP-4210<p>
+    <br>Aux Id: Seq 7161<p>
+  </li>
+  <li>
+    Calculation of content length incorrect.
+    <br>Own Id: OTP-4207<p>
+    <br>Aux Id: Seq 7209<p>
+  </li>
+
+</ul>
+
+<h3>Improvements and new features</h3>
+
+<p>-</p>
 
 
 <!--- ----------------------------------------------------------------- --->
+
+<h2>Inets 2.6.1</h2>
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+  <li>
+    mod_disk_log returns an error reason that reflects the error.
+    When disk_log not can open a log file.
+    <br>Own Id: OTP-4195<p>
+  </li>
+
+  <li>
+    Request headers now read a chunk at a time (see the 
+    <i>{active,once}</i> inet option) for socket type <i>ip_comm</i>.
+    <br>Own Id: OTP-4159<p>
+  </li>
+
+</ul>
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+    Improved supervision of <i>free-flying</i> auth- and security server(s).
+  </li>
+
+</ul>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h2>Inets 2.6.0</h2>
 
 <h3>Fixed errors and malfunctions</h3>
 
@@ -87,8 +237,6 @@
 </ul>
 
 
-<!--- ----------------------------------------------------------------- --->
-
 <h3>Improvements and new features</h3>
 
 <ul>
@@ -133,6 +281,9 @@
 
 </ul>
 
+
+<!--- ----------------------------------------------------------------- --->
+
 <h2>Inets 2.5.6</h2>
 <h3>Improvements and new features</h3>
 <ul>
@@ -160,6 +311,9 @@
   </li>
 </ul>
 
+
+<!--- ----------------------------------------------------------------- --->
+
 <h2>Inets 2.5.5</h2>
 <h3>Fixed errors and malfunctions</h3>
 <ul>
@@ -178,6 +332,9 @@
     erroneous server config).
   </li>
 </ul>
+
+
+<!--- ----------------------------------------------------------------- --->
 
 <p>
 There are also release notes for

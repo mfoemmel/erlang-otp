@@ -576,9 +576,9 @@ table_set_cols(NameDb, RowIndex, [{Col, Val} | Cols]) ->
     case catch table_set_element(NameDb, RowIndex, Col, Val) of
 	true -> table_set_cols(NameDb, RowIndex, Cols);
 	X ->
-	    snmp_error:user_err("snmp_generic:table_set_cols set ~w to"
-				" ~w returned ~w",
-					[{NameDb, RowIndex}, {Col, Val}]),
+	    user_err("snmp_generic:table_set_cols set ~w to"
+		     " ~w returned ~w",
+		     [{NameDb, RowIndex}, {Col, Val}]),
 	    {undoFailed, Col}
     end.
     
@@ -733,9 +733,9 @@ table_try_make_consistent(Name, RowIndex, ?'RowStatus_notReady', TableInfo) ->
 					 ?'RowStatus_notInService') of
 		true -> {noError, 0};
 		X -> 
-		    snmp_error:user_err("snmp_generic:table_try_make_consiste"
-					"nt set ~w to notInService returned ~w",
-					[{Name, RowIndex}, X]),
+		    user_err("snmp_generic:table_try_make_consistent "
+			     "set ~w to notInService returned ~w",
+			     [{Name, RowIndex}, X]),
 		    {commitFailed, TableInfo#table_info.status_col}
 	    end
     end;
@@ -830,3 +830,6 @@ get_first_own_index(Name) ->
     #table_info{first_own_index = FirstOwnIdx} = table_info(Name),
     FirstOwnIdx.
 
+
+user_err(F, A) ->
+    snmp_error_report:user_err(F, A).

@@ -15,10 +15,9 @@
 
 %% Internal
 -export([
+	 monitor_init/2,
 	 generator_init/2,
-	 worker_loop/1,
-	 remote_spawn_link_opt/5,
-	 link_migrator/5
+	 worker_init/1
 	]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -30,7 +29,17 @@
 %% -------------------------------------------------------------------
 
 start(C) when record(C, config) ->
+    MonPid = spawn_link(?MODULE, monitor_init, [C, self()]),
+    receive
+	{'EXIT', MonPid, Reason} ->
+	    exit(Reason);
+	{monitor_done, MonPid, Res} ->
+	    Res
+    end.
+
+monitor_init(C, Parent) when record(C, config) ->
     process_flag(trap_exit, true),
+    %% net_kernel:monitor_nodes(true), %% BUGBUG: Needed in order to re-start generators
     Nodes     = C#config.generator_nodes,
     PerNode   = C#config.n_generators_per_node,
     Timer     = C#config.generator_warmup,
@@ -40,20 +49,20 @@ start(C) when record(C, config) ->
     ?d("~n", []),
     warmup_sticky(C),
     ?d("    ~p seconds warmup...~n", [Timer div 1000]),
-    Monitor = self(),
-    Options = [{fullsweep_after, 0}],
-    GeneratorPids =
-	[spawn_link_opt(Node, ?MODULE, generator_init, [Monitor, C], Options) ||
-	    Node <- Nodes,
-	    _    <- lists:seq(1, PerNode)],
+    Alive = spawn_generators(C, Nodes, PerNode),
     erlang:send_after(Timer, self(), warmup_done),
-    monitor_generators(C, GeneratorPids).
+    monitor_loop(C, Parent, Alive, []).
 
+spawn_generators(C, Nodes, PerNode) ->
+    [spawn_link(Node, ?MODULE, generator_init, [self(), C]) ||
+	Node <- Nodes,
+	_    <- lists:seq(1, PerNode)].
+    
 warmup_sticky(C) ->
     %% Select one node per fragment as master node
     Tabs = [subscriber, session, server, suffix],
     Fun = fun(S) ->
-		  {Node, _, Wlock} = nearest_node(S, transaction, C),
+		  {[Node | _], _, Wlock} = nearest_node(S, transaction, C),
 		  Stick = fun() -> [mnesia:read({T, S}, S, Wlock) || T <- Tabs] end,
 		  Args = [transaction, Stick, [], mnesia_frag],
 		  rpc:call(Node, mnesia, activity, Args)
@@ -62,33 +71,41 @@ warmup_sticky(C) ->
     lists:foreach(Fun, Suffixes).
 
 %% Main loop for benchmark monitor
-monitor_generators(C, GeneratorPids) ->
+monitor_loop(C, Parent, Alive, Deceased) ->
     receive
         warmup_done ->
-            multicall(GeneratorPids, reset_statistics),	    
+            multicall(Alive, reset_statistics),	    
 	    Timer = C#config.generator_duration,
 	    ?d("    ~p seconds actual benchmarking...~n", [Timer div 1000]),
 	    erlang:send_after(Timer, self(), measurement_done),
-	    monitor_generators(C, GeneratorPids);
+	    monitor_loop(C, Parent, Alive, Deceased);
         measurement_done ->
-            Stats = multicall(GeneratorPids, get_statistics),	    
+            Stats = multicall(Alive, get_statistics),	    
 	    Timer = C#config.generator_cooldown,
 	    ?d("    ~p seconds cooldown...~n", [Timer div 1000]),
 	    erlang:send_after(Timer, self(), {cooldown_done, Stats}),
-	    monitor_generators(C, GeneratorPids);
+	    monitor_loop(C, Parent, Alive, Deceased);
         {cooldown_done, Stats} ->
-            multicall(GeneratorPids, stop),
-            display_statistics(Stats, C, GeneratorPids),
-            ok;
-        {'EXIT', Pid, Reason} = Bad ->
-            case lists:member(Pid, GeneratorPids) of
+            multicall(Alive, stop),
+            display_statistics(Stats, C),
+            Parent ! {monitor_done, self(), ok},
+	    unlink(Parent),
+	    exit(monitor_done);
+	{nodedown, Node} ->
+	    monitor_loop(C, Parent, Alive, Deceased);
+	{nodeup, Node} ->
+	    NeedsBirth = [N || N <- Deceased, N == Node],
+	    Born = spawn_generators(C, NeedsBirth, 1),
+	    monitor_loop(C, Parent, Born ++ Alive, Deceased -- NeedsBirth);
+        {'EXIT', Pid, Reason} when Pid == Parent ->
+	    exit(Reason);
+        {'EXIT', Pid, Reason} ->
+            case lists:member(Pid, Alive) of
                 true ->
-                    error_logger:format("Generator on node ~p died: ~p~n",
-					[node(Pid), Bad]),
-                    multicall(GeneratorPids, stop),
-                    {error, [{Pid, {'EXIT', Reason}}]};
+		    ?d("Generator on node ~p died: ~p~n", [node(Pid), Reason]),
+                    monitor_loop(C, Parent, Alive -- [Pid], [node(Pid) | Deceased]);
                 false ->
-                    monitor_generators(C, GeneratorPids)
+                    monitor_loop(C, Parent, Alive, Deceased)
             end
     end.
 
@@ -116,11 +133,11 @@ multicall(Pids, Message) ->
 %% Initialize a traffic generator
 generator_init(Monitor, C) ->
     process_flag(trap_exit, true),
+    Tables = mnesia:system_info(tables),
+    ok = mnesia:wait_for_tables(Tables, infinity),
     {_Mega, Sec, Micro} = erlang:now(),
     Uniq = lists:sum(binary_to_list(term_to_binary(make_ref()))),
     random:seed(Uniq, Sec, Micro),
-    %% net_kernel:monitor_nodes(true), BUGBUG: needed to reinit workers
-    init_workers(C#config.table_nodes),
     Counters = reset_counters(C, C#config.statistics_detail),
     SessionTab = ets:new(bench_sessions, [public, {keypos, 1}]),
     generator_loop(Monitor, C, SessionTab, Counters).
@@ -139,86 +156,74 @@ generator_loop(Monitor, C, SessionTab, Counters) ->
 	    generator_loop(Monitor, C, SessionTab, Counters2);
         {ReplyTo, Ref, stop} ->
 	    exit(shutdown);
-        {'EXIT', Monitor, Reason} ->
+        {'EXIT', Pid, Reason} when Pid == Monitor ->
 	    exit(Reason);
 	{'EXIT', Pid, Reason} ->
 	    Node = node(Pid),
-	    ?d("Worker on node ~p died: ~p~n", [Node, Reason]),
+	    ?d("Worker on node ~p(~p) died: ~p~n", [Node, node(), Reason]),
 	    Key = {worker,Node},
 	    case get(Key) of
 		undefined -> ignore;
 		Pid       -> erase(Key);
 		_         -> ignore
 	    end,
-	    generator_loop(Monitor, C, SessionTab, Counters);
-	{nodedown, Node} ->
-	    %% Only bother about node up's
-	    generator_loop(Monitor, C, SessionTab, Counters);
-	{nodeup, Node} ->
-	    ?d("Worker on node ~p restarted: ~p~n", [Node, nodeup]),
-	    Key = {worker,Node},
-	    case get(Key) of
-		undefined -> init_workers([Node]);
-		_         -> ignore
-	    end,
 	    generator_loop(Monitor, C, SessionTab, Counters)
     after 0 ->
-	    {Name, {Node, Activity, Wlock}, Fun, CommitSessions} =
+	    {Name, {Nodes, Activity, Wlock}, Fun, CommitSessions} =
 		gen_trans(C, SessionTab),
 	    Before = erlang:now(),
-	    Args = [Activity, Fun, [Wlock], mnesia_frag],
-	    %% Res  = (catch rpc:call(Node, mnesia, activity, Args)),
-	    Res  = call_worker(Node, Args),
+	    Res  = call_worker(Nodes, Activity, Fun, Wlock, mnesia_frag),
 	    After = erlang:now(),
 	    Elapsed = elapsed(Before, After),
-	    post_eval(Monitor, C, Elapsed, Res, Name, Node, CommitSessions, SessionTab, Counters)
+	    post_eval(Monitor, C, Elapsed, Res, Name, CommitSessions, SessionTab, Counters)
     end.
 
 %% Perform a transaction on a node near the data
-call_worker(Node, [Activity, Fun, Extra, Mod]) when Node == node() ->
-    catch mnesia:activity(Activity, Fun, Extra, Mod);
-call_worker(Node, Args) ->
-    case get({worker, Node}) of
+call_worker([Node | _], Activity, Fun, Wlock, Mod) when Node == node() ->
+    {Node, catch mnesia:activity(Activity, Fun, [Wlock], Mod)};
+call_worker([Node | _] = Nodes, Activity, Fun, Wlock, Mod) ->
+    Key = {worker,Node},
+    case get(Key) of
 	Pid when pid(Pid) ->
+	    Args = [Activity, Fun, [Wlock], Mod],
 	    Pid ! {activity, self(), Args},
 	    receive
 		{'EXIT', Pid, Reason} ->
-		    {'EXIT', Pid, Reason};
+		    ?d("Worker on node ~p(~p) died: ~p~n", [Node, node(), Reason]),
+		    erase(Key),
+		    retry_worker(Nodes, Activity, Fun, Wlock, Mod, {'EXIT', Reason});
 		{activity_result, Pid, Result} ->
-		    Result
+		    case Result of
+			{'EXIT', {aborted, {not_local, _}}} ->
+			    retry_worker(Nodes, Activity, Fun, Wlock, Mod, Result);
+			_ ->
+			    {Node, Result}
+		    end
 	    end;
 	undefined ->
-	    {aborted, please_retry_on_other_node}
+	    GenPid = self(),
+	    Pid = spawn_link(Node, ?MODULE, worker_init, [GenPid]),
+	    put(Key, Pid),
+	    call_worker(Nodes, Activity, Fun, Wlock, Mod)
     end.
 
-%% Spawn one worker process per (table) node
-init_workers(Nodes) ->
-    GenPid = self(),
-    Options = [{fullsweep_after, 0}],
-    [put({worker, N}, spawn_link_opt(N, ?MODULE, worker_loop, [GenPid], Options))
-     || N <- Nodes, N /= node()].
-
-spawn_link_opt(Node, M, F, A, Options) ->
-    case rpc:call(Node, ?MODULE, remote_spawn_link_opt, [self(), M, F, A, Options]) of
-	{ok, Pid} -> 
-	    Pid;
-	Bad ->
-	    exit({?MODULE, spawn_link_opt, [Node, M, F, A, Options], Bad})
+retry_worker([], Activity, Fun, Wlock, Mod, Reason) ->
+    {node(), Reason};
+retry_worker([BadNode | SpareNodes], Activity, Fun, Wlock, Mod, Reason) ->
+    Nodes = SpareNodes -- [BadNode],
+    case Nodes of
+	[] ->
+	    {BadNode, Reason};
+	[_] ->
+	    call_worker(Nodes, Activity, Fun, write, Mod);
+	_ ->
+	    call_worker(Nodes, Activity, Fun, Wlock, Mod)
     end.
 
-remote_spawn_link_opt(RemoteParent, M, F, A, Options) ->
-    Pid = spawn_opt(?MODULE, link_migrator, [self(), RemoteParent, M, F, A], [link | Options]),
-    receive
-	{link_migrated, Pid} ->
-	    unlink(Pid),
-	    {ok, Pid}
-    end.
-
-link_migrator(LocalParent, RemoteParent, M, F, A) ->
-    %% Do not trap exit
-    link(RemoteParent),
-    LocalParent ! {link_migrated, self()},
-    erlang:apply(M, F, A).
+worker_init(Parent) ->
+    Tables = mnesia:system_info(tables),
+    ok = mnesia:wait_for_tables(Tables, infinity),
+    worker_loop(Parent).
 
 %% Main loop for remote workers
 worker_loop(Parent) ->
@@ -267,9 +272,7 @@ reset_counters(C, {table, Tab} = Counters) ->
     Counters.
 
 %% Determine the outcome of a transaction and increment the counters
-post_eval(Monitor, C, Elapsed, {badrpc, Res}, Name, Node, CommitSessions, SessionTab, Counters) ->
-    post_eval(Monitor, C, Elapsed, Res, Name, Node, CommitSessions, SessionTab, Counters);
-post_eval(Monitor, C, Elapsed, Res, Name, Node, CommitSessions, SessionTab, {table, Tab} = Counters) ->
+post_eval(Monitor, C, Elapsed, {Node, Res}, Name, CommitSessions, SessionTab, {table, Tab} = Counters) ->
     case Res of
 	{do_commit, BranchExecuted, _} ->
 	    incr(Tab, {Name, n_micros, Node}, Elapsed),
@@ -293,12 +296,12 @@ post_eval(Monitor, C, Elapsed, Res, Name, Node, CommitSessions, SessionTab, {tab
 		    generator_loop(Monitor, C, SessionTab, Counters)
 	    end;
 	_ ->
-	    %% BUGBUG: Retry trans on some alternate node
+	    ?d("Failed(~p): ~p~n", [Node, Res]),
 	    incr(Tab, {Name, n_micros, Node}, Elapsed),
 	    incr(Tab, {Name, n_aborts, Node}, 1),
 	    generator_loop(Monitor, C, SessionTab, Counters)
     end;
-post_eval(Monitor, C, Elapsed, Res, Name, Node, CommitSessions, SessionTab, {NM, NC, NA, NB}) ->
+post_eval(Monitor, C, Elapsed, {Node, Res}, Name, CommitSessions, SessionTab, {NM, NC, NA, NB}) ->
     case Res of
 	{do_commit, BranchExecuted, _} ->
 	    case BranchExecuted of
@@ -316,7 +319,7 @@ post_eval(Monitor, C, Elapsed, Res, Name, Node, CommitSessions, SessionTab, {NM,
 		    generator_loop(Monitor, C, SessionTab, {NM + Elapsed, NC, NA + 1, NB})
 	    end;
 	_ ->
-	    %% BUGBUG: Retry trans on some alternate node
+	    ?d("Failed: ~p~n", [Res]),
 	    generator_loop(Monitor, C, SessionTab, {NM + Elapsed, NC, NA + 1, NB})
     end.
 
@@ -452,22 +455,22 @@ nearest_node(SubscrId, Activity, C) ->
     Suffix = bench_trans:number_to_suffix(SubscrId),
     case mnesia_frag:table_info(t, s, {suffix, Suffix}, where_to_write) of
 	[] ->
-	    {node(), Activity, write};
+	    {[node()], Activity, write};
 	[Node] ->
-	    {Node, Activity, write};
+	    {[Node], Activity, write};
 	Nodes ->
 	    Wlock = C#config.write_lock_type,
 	    case Wlock of
 		sticky_write ->
 		    Node = pick_node(Suffix, C, Nodes),
-		    {Node, Activity, Wlock};
+		    {[Node | Nodes], Activity, Wlock};
 		write ->
 		    case lists:member(node(), Nodes) of
 			true ->
-			    {node(), Activity, Wlock};
+			    {[node() | Nodes], Activity, Wlock};
 			false ->
 			    Node = pick_node(Suffix, C, Nodes),
-			    {Node, Activity, Wlock}
+			    {[Node | Nodes], Activity, Wlock}
 		    end
 	    end
     end.
@@ -484,9 +487,11 @@ pick_node(Suffix, C, Nodes) ->
     N = (Suffix2 rem NumberOfActive) + 1,
     lists:nth(N, Ordered).
 
-display_statistics(Stats, C, GeneratorPids) ->
-    FlatStats = [{Type, Name, EvalNode, node(GenPid), Count} ||
-                    {GenPid, GenStats} <- Stats,
+display_statistics(Stats, C) ->
+    GoodStats = [{node(GenPid), GenStats} || {GenPid, GenStats} <- Stats,
+					     list(GenStats)],
+    FlatStats = [{Type, Name, EvalNode, GenNode, Count} ||
+                    {GenNode, GenStats} <- GoodStats,
                     {{Type, Name, EvalNode}, Count} <- GenStats],
     TotalStats = calc_stats_per_tag(lists:keysort(2, FlatStats), 2, []),
     {value, {n_aborts, 0, NA, 0, 0}} =
@@ -498,7 +503,7 @@ display_statistics(Stats, C, GeneratorPids) ->
     {value, {n_micros, 0, 0, 0, AccMicros}} =
 	lists:keysearch(n_micros, 1, TotalStats ++ [{n_micros, 0, 0, 0, 0}]),
     NT = NA + NC,
-    NG = length(GeneratorPids),
+    NG = length(GoodStats),
     NTN = length(C#config.table_nodes),
     WallMicros = C#config.generator_duration * 1000 * NG,
     Overhead = (catch (WallMicros - AccMicros) / WallMicros),
@@ -509,7 +514,7 @@ display_statistics(Stats, C, GeneratorPids) ->
     ?d("    ~p TPS per table node.~n", [catch ((NT * 1000000 * NG) div (AccMicros * NTN))]),
     ?d("    ~p micro seconds in average per transaction, including latency.~n",
        [catch (AccMicros div NT)]),
-    ?d("    ~p transactions. ~f% generator overhead.~n", [NT, Overhead]),
+    ?d("    ~p transactions. ~f% generator overhead.~n", [NT, Overhead * 100]),
 
     TypeStats = calc_stats_per_tag(lists:keysort(1, FlatStats), 1, []),
     EvalNodeStats = calc_stats_per_tag(lists:keysort(3, FlatStats), 3, []),

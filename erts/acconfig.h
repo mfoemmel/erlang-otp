@@ -17,14 +17,6 @@
 
 
 /*
- * MEGACO flex scanner enable or not.
- */
-
-/* Define to enable MEGACO flex scanner. */
-#undef ENABLE_MEGACO_FLEX_SCANNER
-#undef ENABLE_MEGACO_FLEX_SCANNER_LINENO
-
-/*
  * HiPE enable or not.
  */
 
@@ -73,6 +65,10 @@
 
 /* define if you have the Solaris/ultrasparc /dev/perfmon interface */
 #undef HAVE_SOLARIS_SPARC_PERFMON
+
+/* define if gethrvtime() works and uses ioctl() to /proc/self */
+#undef HAVE_GETHRVTIME_PROCFS_IOCTL
+
 
 /*
  *  Networking.
@@ -196,3 +192,6 @@
 #define USE_SELECT
 #endif
 
+#ifdef HAVE_GETHRVTIME_PROCFS_IOCTL
+#define HAVE_GETHRVTIME
+#endif

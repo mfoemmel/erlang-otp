@@ -177,7 +177,7 @@ $(EBIN)/mnesia_session_impl.$(EMULATOR): $(INCLUDE_DIR)/mnesia.hrl
 
 $(GEN_CORBA_FILES): mnesia_corba_session.idl 
 	$(ERLC) $(ERL_FLAGS) $(IDL_COMPILE_FLAGS) \
-	+'{preproc_flags,"-D_CORBA_ -I ${IC_DIR}/include"}' \
+	+'{preproc_flags,"-I${IC_DIR}/include"}' \
 	+'{{impl,"mnesia_corba_session"},"mnesia_session_impl"}' \
 	mnesia_corba_session.idl
 	mv mnesia.hrl $(INCLUDE_DIR)

@@ -13,7 +13,7 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id $
 %%
 -module(lists).
 
@@ -24,12 +24,13 @@
 	 usort/1, umerge/1, umerge3/3, umerge/2, rumerge3/3, rumerge/2,
 	 concat/1, flatten/1, flatten/2, flat_length/1, flatlength/1,
 	 keydelete/3, keyreplace/4,
-	 keysort/2, keymerge/3, ukeysort/2, ukeymerge/3, keymap/3, keymap/4]).
+	 keysort/2, keymerge/3, rkeymerge/3, rukeymerge/3, 
+	 ukeysort/2, ukeymerge/3, keymap/3, keymap/4]).
 
 %% Bifs: member/2, reverse/2
 %% Bifs: keymember/3, keysearch/3
 
--export([merge/3, sort/2, umerge/3, usort/2]).
+-export([merge/3, rmerge/3, sort/2, umerge/3, rumerge/3, usort/2]).
 
 -export([all/2,any/2,map/2,flatmap/2,foldl/3,foldr/3,filter/2,zf/2,
 	 mapfoldl/3,mapfoldr/3,foreach/2,takewhile/2,dropwhile/2,splitwith/2]).
@@ -181,7 +182,8 @@ delete(Item, [H|Rest]) ->
     [H|delete(Item, Rest)];
 delete(Item, []) -> [].
 
-%% sort(L) -> sorts the list L
+%% sort(List) -> L
+%%  sorts the list L
 
 sort([X, Y | L] = L0) when X =< Y ->
     case L of
@@ -193,6 +195,8 @@ sort([X, Y | L] = L0) when X =< Y ->
 	    [X, Z, Y];
 	[Z] ->
 	    [Z, X, Y];
+	_ when X == Y ->
+	    sort_1(Y, L, [X]);
 	_ ->
 	    lists_sort:split_1(X, Y, L, [], [])
     end;
@@ -213,6 +217,15 @@ sort([_] = L) ->
     L;
 sort([] = L) ->
     L.
+
+sort_1(X, [Y | L], R) when X == Y ->
+    sort_1(Y, L, [X | R]);
+sort_1(X, [Y | L], R) when X < Y ->
+    lists_sort:split_1(X, Y, L, R, []);
+sort_1(X, [Y | L], R) ->
+    lists_sort:split_2(X, Y, L, R, []);
+sort_1(X, [], R) ->
+    [X | R].
 
 %% merge(List) -> L
 %%  merges a list of sorted lists
@@ -243,26 +256,19 @@ rmerge3(L1, [H2 | T2], [H3 | T3]) ->
 %% merge(X, Y) -> L
 %%  merges two sorted lists X and Y
 
-merge([H1 | T1], [H2 | T2]) when H1 =< H2 ->
-    lists:reverse(lists_sort:merge2_1(T1, H2, T2, [H1]), []);
-merge([H1 | T1], [H2 | T2]) ->
-    lists:reverse(lists_sort:merge2_1(T2, H1, T1, [H2]), []);
 merge([], T2) ->
     T2;
-merge(T1, _nil) ->
-    T1.
+merge([H1 | T1], T2) ->
+    lists:reverse(lists_sort:merge2_2(T1, H1, T2, []), []).
 
 %% rmerge(X, Y) -> L
 %%  merges two reversed sorted lists X and Y
 
-rmerge([H1 | T1], [H2 | T2]) when H1 > H2 ->
-    lists:reverse(lists_sort:rmerge2_1(T1, H2, T2, [H1]), []);
-rmerge([H1 | T1], [H2 | T2]) ->
-    lists:reverse(lists_sort:rmerge2_1(T2, H1, T1, [H2]), []);
-rmerge([], T2) ->
-    T2;
-rmerge(T1, _nil) ->
-    T1.
+%% reverse(rmerge(reverse(A),reverse(B))) is equal to merge(I,A,B).
+rmerge(T1, []) ->
+    T1;
+rmerge(T1, [H2 | T2]) ->
+    lists:reverse(lists_sort:rmerge2_1(T1, H2, T2, []), []).
 
 %% concat(L) concatinate the list representation of the elements
 %%  in L - the elements in L can be atoms, integers of strings.
@@ -358,16 +364,85 @@ keyreplace3(Key, Pos, [H|T], New) ->
 keyreplace3(Key, Pos, [], New) -> [].
 
 keysort(Index, L) when integer(Index), Index > 0 ->
-    lists_sort:keysort2(Index, L).
+    case L of
+	[] -> L;
+	[_] -> L;
+	[X, Y | T] ->
+	    EX = element(Index, X),
+	    EY = element(Index, Y),
+	    if
+		EX =< EY ->
+		    lists_sort:keysplit_1(Index, X, EX, Y, EY, T, [], []);
+		true ->
+		    lists_sort:keysplit_2(Index, Y, EY, T, [X])
+	    end
+    end.
 
-keymerge(Index, Os, Ns) when integer(Index), Index > 0 -> 
-    lists_sort:keymerge(Os, Ns, [], Index).
+keymerge(Index, T1, L2) when integer(Index), Index > 0 -> 
+    case L2 of
+	[] ->
+	    T1;
+	[H2 | T2] ->
+	    E2 = element(Index, H2),
+	    M = lists_sort:keymerge2_1(Index, T1, E2, H2, T2, []),
+	    lists:reverse(M, [])
+    end.
+
+%% reverse(rkeymerge(I,reverse(A),reverse(B))) is equal to keymerge(I,A,B).
+rkeymerge(Index, T1, L2) when integer(Index), Index > 0 -> 
+    case L2 of
+	[] ->
+	    T1;
+	[H2 | T2] ->
+	    E2 = element(Index, H2),
+	    M = lists_sort:rkeymerge2_1(Index, T1, E2, H2, T2, []),
+	    lists:reverse(M, [])
+    end.
 
 ukeysort(Index, L) when integer(Index), Index > 0 ->
-    lists_sort:ukeysort2(Index, L).
+    case L of
+	[] -> L;
+	[_] -> L;
+	[X, Y | T] ->
+	    ukeysort_1(Index, X, element(Index, X), Y, T)
+    end.
 
-ukeymerge(Index, Os, Ns) when integer(Index), Index > 0 -> 
-    lists_sort:ukeymerge(Os, Ns, [], Index, last).
+ukeysort_1(I, X, EX, Y, L) when X == Y ->
+    case L of
+	[] ->
+	    [X];
+	[Z | T] ->
+	    ukeysort_1(I, X, EX, Z, T)
+    end;
+ukeysort_1(I, X, EX, Y, L) ->
+    EY = element(I, Y),
+    if
+	EX =< EY ->
+	    lists_sort:ukeysplit_1(I, X, EX, Y, EY, L, [], []);
+	true ->
+	    lists_sort:ukeysplit_2(I, Y, EY, L, [X])
+    end.
+
+ukeymerge(Index, L1, T2) when integer(Index), Index > 0 ->
+    case L1 of
+	[] ->
+	    T2;
+	[H1 | T1] ->
+	    E1 = element(Index, H1),
+	    M = lists_sort:ukeymerge2_2(Index, T1, E1, H1, T2, []),
+	    lists:reverse(M, [])
+    end.
+
+%% reverse(rukeymerge(I,reverse(A),reverse(B))) is equal to ukeymerge(I,A,B).
+rukeymerge(Index, T1, L2) when integer(Index), Index > 0 ->
+    case L2 of
+	[] ->
+	    T1;
+	[H2 | T2] ->
+	    E2 = element(Index, H2),
+	    M = lists_sort:rukeymerge2_1(Index, T1, E2, T2, [], H2),
+	    lists:reverse(M, [])
+    end.
 
 keymap(Fun, Index, [Tup|Tail]) ->
    [setelement(Index, Tup, Fun(element(Index, Tup)))|keymap(Fun, Index, Tail)];
@@ -380,17 +455,61 @@ keymap( _, _ , _, []) -> [].
 
 
 %%% Suggestion from OTP-2948: sort and merge with Fun.
-sort(Fun, L) ->
-    lists_sort:sort(Fun, L).
+sort(_Fun, []) ->
+    [];
+sort(_Fun, [_] = L) ->
+    L;
+sort(Fun, [X, Y | T]) ->
+    case Fun(X, Y) of
+	true ->
+	    lists_sort:fsplit_1(Y, X, Fun, T, [], []);
+	false ->
+	    lists_sort:fsplit_2(Y, T, Fun, [X])
+    end.
 
-merge(Fun, X, Y) -> 
-    lists_sort:merge2(Fun, X, Y).
+merge(Fun, T1, [H2 | T2]) ->
+    lists:reverse(lists_sort:fmerge2_1(T1, H2, Fun, T2, []), []);
+merge(_Fun, T1, []) ->
+    T1.
 
-usort(Fun, L) ->
-    lists_sort:usort(Fun, L).
+%% reverse(rmerge(F,reverse(A),reverse(B))) is equal to merge(F,A,B).
+rmerge(Fun, T1, [H2 | T2]) ->
+    lists:reverse(lists_sort:rfmerge2_1(T1, H2, Fun, T2, []), []);
+rmerge(_Fun, T1, []) ->
+    T1.
 
-umerge(Fun, X, Y) -> 
-    lists_sort:umerge2(Fun, X, Y).
+usort(_Fun, [_] = L) ->
+    L;
+usort(_Fun, [] = L) ->
+    L;
+usort(Fun, [X | L]) ->
+    usort_1(Fun, X, L).
+
+usort_1(Fun, X, [Y | L]) when X == Y ->
+    if 
+	L == [] ->
+	    [X];
+	true ->
+	    usort_1(Fun, X, L)
+    end;
+usort_1(Fun, X, [Y | L]) ->
+    case Fun(X, Y) of
+	true ->
+	    lists_sort:ufsplit_1(Y, X, Fun, L, [], []);
+	false ->
+	    lists_sort:ufsplit_2(Y, L, Fun, [X])
+    end.
+
+umerge(_Fun, [], T2) ->
+    T2;
+umerge(Fun, [H1 | T1], T2) ->
+    lists:reverse(lists_sort:ufmerge2_2(H1, T1, Fun, T2, []), []).
+
+%% reverse(rumerge(F,reverse(A),reverse(B))) is equal to umerge(F,A,B).
+rumerge(_Fun, T1, []) ->
+    T1;
+rumerge(Fun, T1, [H2 | T2]) ->
+    lists:reverse(lists_sort:rufmerge2_1(T1, H2, Fun, T2, []), []).
 
 %% usort(List) -> L
 %%  sorts the list L, removes duplicates
@@ -417,18 +536,27 @@ usort([X, Y | L]) when X > Y ->
         _ ->
             lists_sort:usplit_2(X, Y, L, [], [])
     end;
+usort([X, _Y | L]) ->
+    usort_1(X, L);
 usort([_] = L) ->
     L;
-usort([_ | L]) ->
-    usort(L);
 usort([]) ->
     [].
+
+usort_1(X, [Y | L]) when X == Y ->
+    usort_1(X, L);
+usort_1(X, [Y | L]) when X < Y ->
+    lists_sort:usplit_1(X, Y, L, [], []);
+usort_1(X, [Y | L]) ->
+    lists_sort:usplit_2(X, Y, L, [], []);
+usort_1(X, []) ->
+    [X].
 
 %% umerge(List) -> L
 %%  merges a list of sorted lists without duplicates, removes duplicates
 
 umerge(L) ->
-    lists_sort:umergel(L, []).
+    lists_sort:umergel(L).
 
 %% umerge3(X, Y, Z) -> L
 %%  merges three sorted lists X, Y and Z without duplicates, 
@@ -439,7 +567,7 @@ umerge3(L1, [], L3) ->
 umerge3(L1, L2, []) ->
    umerge(L1, L2);
 umerge3(L1, [H2 | T2], [H3 | T3]) ->
-   lists:reverse(lists_sort:umerge3_1(L1, [], H2, T2, H3, T3)).
+   lists:reverse(lists_sort:umerge3_1(L1, [], H2, T2, H3, T3), []).
 
 %% rumerge3(X, Y, Z) -> L
 %%  merges three reversed sorted lists X, Y and Z without duplicates,
@@ -450,24 +578,25 @@ rumerge3(L1, [], L3) ->
 rumerge3(L1, L2, []) ->
    rumerge(L1, L2);
 rumerge3(L1, [H2 | T2], [H3 | T3]) ->
-   lists:reverse(lists_sort:rumerge3_1(L1, [], H2, T2, H3, T3)).
+   lists:reverse(lists_sort:rumerge3_1(L1, [], H2, T2, H3, T3), []).
 
 %% umerge(X, Y) -> L
 %%  merges two sorted lists X and Y without duplicates, removes duplicates
 
+umerge([], T2) ->
+    T2;
 umerge([H1 | T1], T2) ->
-    lists:reverse(lists_sort:umerge2_1(T1, T2, [], H1));
-umerge(_, T2) ->
-    T2.
+    lists:reverse(lists_sort:umerge2_2(T1, T2, [], H1), []).
 
 %% rumerge(X, Y) -> L
 %%  merges two reversed sorted lists X and Y without duplicates,
 %%  removes duplicates
 
-rumerge([H1 | T1], T2) ->
-    lists:reverse(lists_sort:rumerge2_1(T1, T2, [], H1));
-rumerge(_, T2) ->
-    T2.
+%% reverse(rumerge(reverse(A),reverse(B))) is equal to umerge(I,A,B).
+rumerge(T1, []) ->
+    T1;
+rumerge(T1, [H2 | T2]) ->
+    lists:reverse(lists_sort:rumerge2_1(T1, T2, [], H2), []).
 
 %% all(Predicate, List)
 %% any(Predicate, List)

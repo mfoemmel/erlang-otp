@@ -1478,9 +1478,8 @@ static int analyze_pattern(DbTableHash *tb, Eterm pattern,
     }
 
     if (num_heads > 10) {
-	buff = safe_alloc(sizeof(Eterm) * num_heads * 3);
-	mpi->lists = safe_alloc(sizeof(*(mpi->lists)) *
-				num_heads);
+	buff = safe_alloc_from(43, sizeof(Eterm) * num_heads * 3);
+	mpi->lists = safe_alloc_from(44, sizeof(*(mpi->lists)) * num_heads);
 	
     }
 

@@ -95,7 +95,7 @@ release_spec: opt
           bench.config6 \
           bench.config7 \
           $(RELSYSDIR)/examples/bench)
-	(cd bench; $(INSTALL_PROGRAM) bench.sh $(RELSYSDIR)/examples/bench)
+	(cd bench; $(INSTALL_SCRIPT) bench.sh $(RELSYSDIR)/examples/bench)
 
 release_docs_spec:
 

@@ -122,7 +122,7 @@ secretp(Path, ConfigDB) ->
 				end, SDirs0),
 	    {Directory, lists:flatten(SDir)};
 	no ->
-	    error_logger:error_report({internal_error_secretp, ?MODULE}),
+	    error_report({internal_error_secretp, ?MODULE}),
 	    {[], []}
     end.
 
@@ -284,12 +284,17 @@ start(Addr,Port) ->
     Verbosity = get(security_verbosity),
     case whereis(SName) of
 	undefined ->
-	    ?LOG("start -> ~n"
-		 "      Addr: ~p~n"
-		 "      Port: ~p",
-		 [Addr,Port]),
-	    gen_server:start({local,SName},?MODULE,[Verbosity],
-			     [{timeout,infinity}]);
+	    case gen_server:start_link({local,SName},?MODULE,[Verbosity],
+				       [{timeout,infinity}]) of
+		{ok, Pid} ->
+		    put(security_server, Pid),
+		    ok;
+		{error, Reason} ->
+		    exit({failed_start_sec_server, Reason});
+		_ ->
+		    ok
+	    end;
+		    
 	_ ->
 	    ok
     end.
@@ -701,8 +706,7 @@ handle_cast(Req, Tables) ->
     ?LOG("handle_cast -> ~n"
 	 "       Req: ~p",[Req]),
     ?vinfo("~n   unknown cast '~p'",[Req]),
-    Str=lists:flatten(io_lib:format("mod_security server got unknown cast: ~p",[Req])),
-    error_logger:error_report(Str),
+    error_msg("security server got unknown cast: ~p",[Req]),
     {noreply, Tables}.
 
 terminate(Reason, _Tables) ->
@@ -711,109 +715,19 @@ terminate(Reason, _Tables) ->
     ok.
 
 
-%% code_change({down,ToVsn}, State, Extra)
-%%
-%% NOTE 1:
-%% Actually upgrade from 2.5.1 to 2.5.3 and downgrade from 
-%% 2.5.3 to 2.5.1 is done with an application restart, so 
-%% these function is actually never used. The reason for keeping
-%% this stuff is only for future use.
+%% code_change({down, ToVsn}, State, Extra)
 %% 
-%% NOTE 2:
-%% The upgrade/downgrade has never been tested!!
-%% 
-code_change({down,169822921757293987708137157261718970447},State,Extra) ->
-    ?vlog("~n   Downgrade to 2.5.1"
-	  "~n   when state '~p'",[State]),
-    downgrade_to_2_5_1(State),
-    {ok,State};
+code_change({down, _}, State, _Extra) ->
+    ?vlog("downgrade", []),
+    {ok, State};
 
 
 %% code_change(FromVsn, State, Extra)
 %%
-code_change(169822921757293987708137157261718970447,State,Extra) ->
-    ?vlog("~n   Upgrade from 2.5.1"
-	  "~n   when state '~p'",[State]),
-    upgrade_from_2_5_1(State),
-    {ok,State}.
+code_change(_, State, Extra) ->
+    ?vlog("upgrade", []),
+    {ok, State}.
 
-
-upgrade_from_2_5_1([]) ->
-    ok;
-upgrade_from_2_5_1([Table|Tables]) ->
-    upgrade_from_2_5_1(Table),
-    upgrade_from_2_5_1(Tables);
-upgrade_from_2_5_1({ETS,DETS}) ->
-    upgrade_from_2_5_1(failed,ETS,DETS),
-    upgrade_from_2_5_1(blocked,ETS,DETS),
-    upgrade_from_2_5_1(success,ETS,DETS),
-    ok.
-
-upgrade_from_2_5_1(Key,ETS,DETS) ->
-    L = ets:match_object(ETS,{Key,'_'}),
-    ets:match_delete(ETS,{Key,'_'}),
-    dets:match_delete(DETS,{Key,'_'}),
-    upgrade1_from_2_5_1(L,ETS,DETS).
-
-
-upgrade1_from_2_5_1([],_ETS,_DETS) ->
-    ok;
-upgrade1_from_2_5_1([Rec|Recs],ETS,DETS) ->
-    upgrade2_from_2_5_1(Rec,ETS,DETS),
-    upgrade1_from_2_5_1(Recs,ETS,DETS);
-upgrade1_from_2_5_1(_WhateverThisIs,_ETS,_DETS) ->
-    ok.
-
-upgrade2_from_2_5_1(Rec,ETS,DETS) ->
-    UpdRec = upgrade3_from_2_5_1(Rec),
-    ets:insert(ETS,UpdRec),
-    dets:insert(DETS,UpdRec).
-
-upgrade3_from_2_5_1({failed,{{User,Dir,Port},Sec,Gen}}) -> 
-    {failed,{{User,Dir,undefined,Port},Sec,Gen}};
-upgrade3_from_2_5_1({blocked,{User,Port,Dir,Future}}) -> 
-    {blocked,{User,undefined,Port,Dir,Future}};
-upgrade3_from_2_5_1({success,{User,Dir,Port}}) -> 
-    {success,{User,Dir,undefined,Port}}.
-
-
-downgrade_to_2_5_1([]) ->
-    ok;
-downgrade_to_2_5_1([Table|Tables]) ->
-    downgrade_to_2_5_1(Table),
-    downgrade_to_2_5_1(Tables);
-downgrade_to_2_5_1({ETS,DETS}) ->
-    downgrade_to_2_5_1(failed,ETS,DETS),
-    downgrade_to_2_5_1(blocked,ETS,DETS),
-    downgrade_to_2_5_1(success,ETS,DETS),
-    ok.
-
-downgrade_to_2_5_1(Key,ETS,DETS) ->
-    L = ets:match_object(ETS,{Key,'_'}),
-    ets:match_delete(ETS,{Key,'_'}),
-    dets:match_delete(DETS,{Key,'_'}),
-    downgrade1_to_2_5_1(L,ETS,DETS).
-
-
-downgrade1_to_2_5_1([],_ETS,_DETS) ->
-    ok;
-downgrade1_to_2_5_1([Rec|Recs],ETS,DETS) ->
-    downgrade2_to_2_5_1(Rec,ETS,DETS),
-    downgrade1_to_2_5_1(Recs,ETS,DETS);
-downgrade1_to_2_5_1(_WhateverThisIs,_ETS,_DETS) ->
-    ok.
-
-downgrade2_to_2_5_1(Rec,ETS,DETS) ->
-    UpdRec = downgrade3_to_2_5_1(Rec),
-    ets:insert(ETS,UpdRec),
-    dets:insert(DETS,UpdRec).
-
-downgrade3_to_2_5_1({failed,{{User,Dir,_Addr,Port},Sec,Gen}}) -> 
-    {failed,{{User,Dir,Port},Sec,Gen}};
-downgrade3_to_2_5_1({blocked,{User,_Addr,Port,Dir,Future}}) -> 
-    {blocked,{User,Port,Dir,Future}};
-downgrade3_to_2_5_1({success,{User,Dir,_Addr,Port}}) -> 
-    {success,{User,Dir,Port}}.
 
 
 
@@ -1078,10 +992,10 @@ unblock_user(Info, User, Dir, Addr, Port, ETS, DETS, CBModule) ->
   
 
 make_name(Addr,Port) ->
-    httpd_util:make_name("mod_security_server",Addr,Port).
+    httpd_util:make_name("httpd_security",Addr,Port).
 
 make_name(Addr,Port,Num) ->
-    httpd_util:make_name("mod_security_server",Addr,Port,
+    httpd_util:make_name("httpd_security",Addr,Port,
 			 "__" ++ integer_to_list(Num)).
 
 
@@ -1105,3 +1019,11 @@ universal_time() ->
 local_time(T) ->
     calendar:universal_time_to_local_time(
       calendar:gregorian_seconds_to_datetime(T)).
+
+
+error_msg(F, A) ->
+    error_logger:error_msg(F, A).
+
+
+error_report(M) ->
+    error_logger:error_report(M).

@@ -351,7 +351,7 @@ CIO to;
     export_info(to);
     register_info(to);
     erts_fun_info(to);
-    sys_sl_alloc_info(to);
+    erts_sl_alloc_info(to);
     erl_printf(to, "Allocated binary data %d\n", tot_bin_allocated);
     erl_printf(to, "Allocated by process_desc %d\n", fix_info(process_desc));
     erl_printf(to, "Allocated by table_desc %d\n", fix_info(table_desc));

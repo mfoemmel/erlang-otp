@@ -46,7 +46,7 @@ release_spec: opt
 release_tests_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)
 	$(INSTALL_DATA) comet.spec $(ERL_FILES) $(RELSYSDIR)
-	$(INSTALL_PROGRAM) $(INSTALL_PROGS) $(RELSYSDIR)
+	$(INSTALL_DATA) $(INSTALL_PROGS) $(RELSYSDIR)
 	chmod -f -R u+w $(RELSYSDIR)
 	@tar cf - *_SUITE_data | (cd $(RELSYSDIR); tar xfBp -)
 

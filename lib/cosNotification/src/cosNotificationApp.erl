@@ -43,7 +43,8 @@
 	 start_filter_factory/1, start_filter_factory/0, stop_filter_factory/1,
 	 install/0, install/1, uninstall/0, uninstall/1,
 	 install_event/0, install_event/1, uninstall_event/0, uninstall_event/1,
-	 install_typed/0, install_typed/1, uninstall_typed/0, uninstall_typed/1]).
+	 install_typed/0, install_typed/1, uninstall_typed/0, uninstall_typed/1,
+	 create_structured_event/6]).
  
 %% Application callbacks
 -export([start/2, init/1, stop/1]).
@@ -197,12 +198,13 @@ start_factory(Args) when list(Args) ->
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
 	Other->
-	    ?not_errorMsg("cosNotificationApp:start_factory( ~p ) failed. Bad parameters~n", 
-			  [Args]),
+	    orber:debug_level_print("[~p] cosNotificationApp:start_factory( ~p ).
+Reason: ~p~n", [?LINE, Args, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'BAD_PARAM'{minor=504, completion_status=?COMPLETED_NO})
     end;
 start_factory(Args) ->
-    ?not_errorMsg("cosNotificationApp:start_factory( ~p ) failed. Bad parameters~n", [Args]),
+    orber:debug_level_print("[~p] cosNotificationApp:start_factory( ~p ).
+Bad parameters~n", [?LINE, Args], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{minor=505, completion_status=?COMPLETED_NO}).
  
 %%------------------------------------------------------------
@@ -223,12 +225,13 @@ start_global_factory(Args) when list(Args) ->
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
 	Other->
-	    ?not_errorMsg("cosNotificationApp:start_global_factory( ~p ) failed. Bad parameters~n", 
-			  [Args]),
+	    orber:debug_level_print("[~p] cosNotificationApp:start_global_factory( ~p ).
+Reason: ~p~n", [?LINE, Args, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'BAD_PARAM'{minor=504, completion_status=?COMPLETED_NO})
     end;
 start_global_factory(Args) ->
-    ?not_errorMsg("cosNotificationApp:start_global_factory( ~p ) failed. Bad parameters~n", [Args]),
+    orber:debug_level_print("[~p] cosNotificationApp:start_global_factory( ~p ).
+Bad parameters~n", [?LINE, Args], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{minor=505, completion_status=?COMPLETED_NO}).
  
  
@@ -260,11 +263,13 @@ start_filter_factory(Args) when list(Args) ->
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
 	Other->
-	    ?not_errorMsg("cosNotificationApp:start_filter_factory( ~p ) failed. Bad parameters~n", [Args]),
+	    orber:debug_level_print("[~p] cosNotificationApp:start_filter_factory( ~p ).
+Reason: ~p~n", [?LINE, Args, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'BAD_PARAM'{minor=506, completion_status=?COMPLETED_NO})
     end;
 start_filter_factory(Args) ->
-    ?not_errorMsg("cosNotificationApp:start_filter_factory( ~p ) failed. Bad parameters~n", [Args]),
+	    orber:debug_level_print("[~p] cosNotificationApp:start_filter_factory( ~p ).
+Bad parameters~n", [?LINE, Args], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{minor=507, completion_status=?COMPLETED_NO}).
  
  
@@ -277,7 +282,31 @@ start_filter_factory(Args) ->
  
 stop_filter_factory(Fac)->
     corba:dispose(Fac).
- 
+
+
+%%------------------------------------------------------------
+%% function : create_structured_event
+%% Arguments: 
+%% Returns  : 
+%% Effect   : 
+%%------------------------------------------------------------
+create_structured_event(StrD,StrT,StrE,PSeqV,PSeqF,AnyR) 
+  when list(StrD), list(StrT), list(StrE), list(PSeqV), list(PSeqF),
+       record(AnyR, any) ->
+#'CosNotification_StructuredEvent'{header = 
+   #'CosNotification_EventHeader'{fixed_header = 
+		  #'CosNotification_FixedEventHeader'{event_type =
+				      #'CosNotification_EventType'{domain_name=StrD,
+						   type_name=StrT},
+				      event_name = StrE},
+		  variable_header = PSeqV},
+   filterable_data = PSeqF,
+   remainder_of_body = AnyR};
+create_structured_event(StrD,StrT,StrE,PSeqV,PSeqF,AnyR) ->
+    corba:raise(#'BAD_PARAM'{minor=507, completion_status=?COMPLETED_NO}).
+    
+
+
 %%------------------------------------------------------------
 %% function : start
 %% Arguments: Type - see module application

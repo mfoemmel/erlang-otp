@@ -76,8 +76,11 @@ void init_scheduler()
 {
     int i;
 
-    process_tab = (Process**) 
-	safe_alloc_from(91, max_process * sizeof(Process*));
+    process_tab = (Process**) erts_definite_alloc(max_process*sizeof(Process*));
+    if(!process_tab) {
+	process_tab = (Process**) 
+	    safe_alloc_from(91, max_process * sizeof(Process*));
+    }
     sys_memzero(process_tab, max_process * sizeof(Process*));
 #ifdef UNIFIED_HEAP
     active_procs = (Process**)
@@ -341,7 +344,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     Process *p;
     Uint arg_size;		/* Size of arguments. */
     Uint sz;			/* Needed words on heap. */
-    Uint arity;			/* Number of arguments. */
+    Sint arity;			/* Number of arguments. */
     Uint heap_need;		/* Size needed on heap. */
     ScheduleQ* sq;
 
@@ -384,7 +387,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     
     p->initial[INITIAL_MOD] = mod;
     p->initial[INITIAL_FUN] = func;
-    p->initial[INITIAL_ARI] = arity;
+    p->initial[INITIAL_ARI] = (Uint) arity;
 
     /*
      * Must initialize binary lists here before copying binaries to process.
@@ -410,7 +413,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->htop = NULL;
     p->hend = NULL;
 #else
-    p->heap = (Eterm *) safe_sl_alloc_from(8, sizeof(Eterm)*sz);
+    p->heap = (Eterm *) erts_safe_sl_alloc_from(8, sizeof(Eterm)*sz);
     p->old_hend = p->old_htop = p->old_heap = NULL;
     p->high_water = p->heap;
     p->gen_gcs = 0;
@@ -690,12 +693,12 @@ delete_process0(Process* p, int do_delete)
 #ifdef HIPE
     hipe_delete_process(&p->hipe);
 #endif
-    sys_sl_free((void*) p->heap);
+    erts_sl_free((void*) p->heap);
     if (p->old_heap != NULL) {
 #ifdef DEBUG
 	sys_memset(p->old_heap, 0xfb, (p->old_hend-p->old_heap)*sizeof(Eterm));
 #endif
-	sys_sl_free(p->old_heap);
+	erts_sl_free(p->old_heap);
     }
 
     /*

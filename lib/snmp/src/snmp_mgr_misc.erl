@@ -87,8 +87,7 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 	    case mk_discovery_msg(Version, Pdu, VsnHdr, "") of
 		error ->
 		    ok;
-		B when list(B) -> 
-		    M = snmp_pdus:dec_message(B),
+		{M, B} when list(B) -> 
 		    put(discovery,{M,From}),
 		    display_outgoing_message(M),
 		    udp_send(UdpId, AgentIp, UdpPort, B)
@@ -228,7 +227,12 @@ getMsgID(M) when record(M,message) ->
 getRequestId('version-3',M) when record(M,message) ->
     ((M#message.data)#scopedPdu.data)#pdu.request_id;
 getRequestId(Version,M) when record(M,message) ->
-    (M#message.data)#pdu.request_id.
+    (M#message.data)#pdu.request_id;
+getRequestId(Version,M) ->
+    io:format("************* ERROR ****************"
+	      "~n   Version: ~w"
+	      "~n   M:       ~w~n", [Version,M]),
+    throw({error, {unknown_request_id, Version, M}}).
     
 getMsgAuthEngineID(M) when record(M,message) ->
     SecParams1 = (M#message.vsn_hdr)#v3_hdr.msgSecurityParameters,
@@ -345,15 +349,21 @@ mk_discovery_msg('version-3', Pdu, _VsnHdr, UserName) ->
 		  msgSecurityModel = ?SEC_USM,
 		  msgSecurityParameters = SecBytes},
     Msg = #message{version = 'version-3', vsn_hdr = Hdr, data = Bytes},
-    snmp_pdus:enc_message_only(Msg);
+    case (catch snmp_pdus:enc_message_only(Msg)) of
+	{'EXIT', Reason} ->
+	    error("Encoding error. Pdu: ~w. Reason: ~w",[Pdu, Reason]),
+	    error;
+	L when list(L) ->
+	    {Msg, L}
+    end;
 mk_discovery_msg(Version, Pdu, {Com, _, _, _, _}, UserName) ->
     Msg = #message{version = Version, vsn_hdr = Com, data = Pdu},
     case catch snmp_pdus:enc_message(Msg) of
 	{'EXIT', Reason} ->
 	    error("Encoding error. Pdu: ~w. Reason: ~w",[Pdu, Reason]),
 	    error;
-	B when list(B) -> 
-	    B
+	L when list(L) -> 
+	    {Msg, L}
     end.
 
 
@@ -511,7 +521,8 @@ display_msgSecurityParameters(_Model,Params) ->
     display_prop("msgSecurityParameters",Params).
 
 display_usmSecurityParameters(P) when list(P) ->
-    display_usmSecurityParameters(snmp_pdus:dec_usm_security_parameters(P));
+    P1 = lists:flatten(P),
+    display_usmSecurityParameters(snmp_pdus:dec_usm_security_parameters(P1));
 display_usmSecurityParameters(P) when record(P,usmSecurityParameters) ->
     ID = P#usmSecurityParameters.msgAuthoritativeEngineID,
     display_msgAuthoritativeEngineID(ID),

@@ -741,7 +741,7 @@ extern int send_error_to_logger(int);
 #ifdef FATAL_MALLOC
 
 static void *alloc_wrapper(size_t size){
-    void *ret = sys_alloc(size);
+    void *ret = sys_alloc_from(190, size);
     if(ret == NULL) 
 	erl_exit(1,"Out of virtual memory in malloc (%s)", __FILE__);
     return ret;
@@ -750,7 +750,7 @@ static void *alloc_wrapper(size_t size){
 
 #if 0 /* Currently not used, perhaps not tested */
 static void *realloc_wrapper(void *current, size_t size){
-    void *ret = sys_realloc(current,size);
+    void *ret = sys_realloc_from(190, current,size);
     if(ret == NULL) 
 	erl_exit(1,"Out of virtual memory in realloc (%s)", __FILE__);
     return ret;
@@ -760,8 +760,8 @@ static void *realloc_wrapper(void *current, size_t size){
 
 #else /* FATAL_MALLOC */
 
-#define ALLOC(X) sys_alloc(X)
-#define REALLOC(X,Y) sys_realloc(X,Y)
+#define ALLOC(X) sys_alloc_from(190, (X))
+#define REALLOC(X,Y) sys_realloc_from(190, (X), (Y))
 
 #endif /* FATAL_MALLOC */
 

@@ -562,7 +562,7 @@ remove_all(ConfigDB) ->
 remove_traverse(ConfigDB,[]) ->
     ok;
 remove_traverse(ConfigDB,[Module|Rest]) ->
-    case catch apply(Module,remove,[ConfigDB]) of
+    case (catch apply(Module,remove,[ConfigDB])) of
 	{'EXIT',{undef,_}} ->
 	    remove_traverse(ConfigDB,Rest);
 	{'EXIT',{function_clause,_}} ->

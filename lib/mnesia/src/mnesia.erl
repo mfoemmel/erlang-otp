@@ -46,7 +46,7 @@
 	 %% Access within an activity - Reads
 	 read/1, wread/1, read/3, read/5,
 	 match_object/1, match_object/3, match_object/5,
-	 select/2, select/3,
+	 select/2, select/3, select/5,
 	 all_keys/1, all_keys/4,
 	 index_match_object/2, index_match_object/4, index_match_object/6,
 	 index_read/3, index_read/6,
@@ -653,8 +653,20 @@ delete_object(Tid, Ts, Tab, Val, LockKind)
 		  _ ->
 		      abort({bad_type, Tab, LockKind})
 	      end,
-	      ?ets_match_delete(Store, {Oid, Val, '_'}),
-	      ?ets_insert(Store, {Oid, Val, delete_object}),
+	      case val({Tab, setorbag}) of
+		  bag -> 
+		      ?ets_match_delete(Store, {Oid, Val, '_'}),
+		      ?ets_insert(Store, {Oid, Val, delete_object});
+		  _ ->
+		      case ?ets_match_object(Store, {Oid, '_', write}) of
+			  [] ->
+			      ?ets_match_delete(Store, {Oid, Val, '_'}),
+			      ?ets_insert(Store, {Oid, Val, delete_object});
+			  _  ->
+			      ?ets_delete(Store, Oid),
+			      ?ets_insert(Store, {Oid, Oid, delete})
+		      end
+	      end,
 	      ok;
 	Protocol ->
 	      do_dirty_delete_object(Protocol, Tab, Val)
@@ -1493,7 +1505,6 @@ info() ->
     ok.
 
 mini_info() ->
-    S = fun(Items) -> [system_info(I) || I <- Items] end,
     io:format("===> System info in version ~p, debug level = ~p <===~n",
 	      [system_info(version), system_info(debug)]),
     Not =

@@ -48,9 +48,10 @@ preproc(G, File) ->
 	
 	_ ->
 	    Line	= Cmd++" "++Flags++" "++File,
+	    % FIXME: Check status code of command instead of this test
 	    case os:cmd(Line) of
-		[$#, $ , $1 | Rest] ->			% Ok output
-		    [$#, $ , $1 | Rest];
+		[$#, $ , C | Rest] when integer(C), C > $0, C =< $9 ->
+		    [$#, $ , C | Rest];
 		X ->
 		    icgen:fatal_error(G, {preproc, filter(X)})
 	    end

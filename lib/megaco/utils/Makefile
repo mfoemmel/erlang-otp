@@ -16,90 +16,18 @@
 #     $Id$
 #
 include $(ERL_TOP)/make/target.mk
-
-ifeq ($(TYPE),debug)
-ERL_COMPILE_FLAGS += -Ddebug -W
-endif
-
-EBIN = ../ebin
-MEGACO_INCLUDEDIR = ../../include
-
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 # ----------------------------------------------------
-# Application version
-# ----------------------------------------------------
-include ../vsn.mk
-VSN=$(MEGACO_VSN)
-
-
-# ----------------------------------------------------
-# Release directory specification
-# ----------------------------------------------------
-RELSYSDIR = $(RELEASE_PATH)/lib/megaco-$(VSN)
-
-
-# ----------------------------------------------------
-# Target Specs
+# Common Macros
 # ----------------------------------------------------
 
-include modules.mk
+include subdirs.mk
 
-ERL_FILES= $(MODULES:%=%.erl)	
-
-TARGET_FILES =  \
-	$(ERL_FILES:%.erl=$(EBIN)/%.$(EMULATOR))
+SPECIAL_TARGETS = 
 
 # ----------------------------------------------------
-# FLAGS
+# Default Subdir Targets
 # ----------------------------------------------------
-
-# ----------------------------------------------------
-# Special Build Targets
-# ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
-ERL_COMPILE_FLAGS += -I../include
-
-# ----------------------------------------------------
-# Targets
-# ----------------------------------------------------
-debug:
-	@${MAKE} TYPE=debug opt
-
-opt: $(TARGET_FILES) 
-
-clean:
-	rm -f $(TARGET_FILES) 
-	rm -f errs core *~
-
-docs:
-
-
-# ----------------------------------------------------
-# Release Target
-# ---------------------------------------------------- 
-include $(ERL_TOP)/make/otp_release_targets.mk
-
-
-release_spec: opt
-	$(INSTALL_DIR)  $(RELSYSDIR)/ebin
-	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
-	$(INSTALL_DIR)  $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src
-
-
-release_docs_spec:
-
-
-# ----------------------------------------------------
-# Include dependencies
-# ----------------------------------------------------
-
-$(EBIN)/event_tracer.$(EMULATOR): event_tracer.erl event_tracer.hrl
-
-$(EBIN)/event_collector.$(EMULATOR): event_collector.erl event_tracer.hrl
-
-$(EBIN)/event_viewer.$(EMULATOR): event_viewer.erl event_tracer.hrl
-
-$(EBIN)/event_contents_viewer.$(EMULATOR): event_contents_viewer.erl event_tracer.hrl
+include $(ERL_TOP)/make/otp_subdir.mk
 

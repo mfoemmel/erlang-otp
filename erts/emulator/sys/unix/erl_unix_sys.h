@@ -153,7 +153,14 @@ typedef hrtime_t SysHrTime;
 
 #define sys_gethrtime() gethrtime()
 #define sys_init_hrtime() /* Nothing */
+
 #endif /* HAVE_GETHRTIME */
+
+#ifdef HAVE_GETHRVTIME
+#  define sys_gethrvtime() gethrvtime()
+extern int sys_start_hrvtime();
+extern int sys_stop_hrvtime();
+#endif /* HAVE_GETHRVTIME */
 
 /* No use in having other resolutions than 1 Ms. */
 #define SYS_CLOCK_RESOLUTION 1

@@ -159,7 +159,9 @@ erl_init(void)
 #endif
 
     ASSERT(TMP_BUF_SIZE >= 16384);
-    tmp_buf = (byte *)safe_alloc_from(130, TMP_BUF_SIZE);
+    tmp_buf = (byte *) erts_definite_alloc(TMP_BUF_SIZE);
+    if(!tmp_buf)
+	tmp_buf = (byte *)safe_alloc_from(130, TMP_BUF_SIZE);
     init_alloc();
     init_gc();
 
@@ -199,6 +201,7 @@ erl_init(void)
     init_copy();
     init_load();
     erts_init_bif();
+    erts_init_trace();
 #ifdef HIPE
     hipe_mode_switch_init(); /* Must be after init_load/beam_catches/init */
 #endif
@@ -360,19 +363,47 @@ static void usage()
 	       MIN_PROCESS, MAX_PROCESS);
     erl_printf(CERR, "-A number  set number of threads in async thread pool\n");
     erl_printf(CERR, "           valid range is [0-256]\n");
-    erl_printf(CERR, "-m number  set mmap threshold (Kb)\n");
-    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
-    erl_printf(CERR, "-M number  set max number of mmappings\n");
-    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX);
     erl_printf(CERR, "-t number  set trim threshold (Kb)\n");
     erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
     erl_printf(CERR, "-T number  set top pad\n");
     erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
-    erl_printf(CERR, "-S         disable sl_alloc\n");
+    erl_printf(CERR, "-Se bool   enable sl_alloc\n");
+    erl_printf(CERR, "           valid values are true | false\n");
+    erl_printf(CERR, "-Sr number enable a specific sl_alloc release\n");
+    erl_printf(CERR, "           valid releases are %s | %s\n",
+	       ERTS_OLD_SL_ALLOC_RELEASE, ERTS_SL_ALLOC_RELEASE);
+    erl_printf(CERR, "-Ssbct num set single block carrier threshold "
+	       "(sl_alloc)\n");
+    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
+    erl_printf(CERR, "-Smmc numb set max mmap carriers (sl_alloc)\n");
+    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX);
+    erl_printf(CERR, "-Ssbcmt nu set single block carrier move threshold "
+	       "(sl_alloc)\n");
+    erl_printf(CERR, "           valid range is [0-100]\n");
+    erl_printf(CERR, "-Smcs numb set main carrier size (sl_alloc)\n");
+    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
+    erl_printf(CERR, "-Sscs numb set smallest (multi block) carrier size "
+	       "(sl_alloc)\n");
+    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
+    erl_printf(CERR, "-Slcs numb set largest (multi block) carrier size "
+	       "(sl_alloc)\n");
+    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
+    erl_printf(CERR, "-Scgr numb set (multi block) carrier growth rate "
+	       "(sl_alloc)\n");
+    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX);
+    erl_printf(CERR, "-Smbsd num set max block search depth (sl_alloc)\n");
+    erl_printf(CERR, "           valid range is [1-%d]\n", INT_MAX);
+    erl_printf(CERR, "-Scos bool enable carrier order search (sl_alloc)\n");
+    erl_printf(CERR, "           valid values are true | false\n");
     erl_printf(CERR, "\n\n");
     erl_exit(-1, "");
 }
 
+extern /* in dist.c */ int erts_reuse_all_dist_slots;
+
+/* Arguments used for initialization of sl_alloc. Intentionally a
+   global variable for easy inspection from a core dump. */
+static ErtsSlAllocInit erts_sl_alloc_init_args;
 
 void
 erl_start(int argc, char **argv)
@@ -383,27 +414,199 @@ erl_start(int argc, char **argv)
     char* tmpenvbuf;
     int trim_threshold = ERTS_DEFAULT_TRIM_THRESHOLD;
     int top_pad = ERTS_DEFAULT_TOP_PAD;
-    int mmap_max = ERTS_DEFAULT_MMAP_MAX;
-    int mmap_threshold = ERTS_DEFAULT_MMAP_THRESHOLD;
-    int use_sl_alloc = 1;
+    Uint definite_block_size = DEFAULT_DEFINITE_ALLOC_BLOCK_SIZE;
+
+
+    erts_reuse_all_dist_slots = 0;
+
 
     program = argv[0];
 
     /* First find out how to initialize sl_alloc. */
+
+    /* Value < 0 == default will be used */
+    erts_sl_alloc_init_args.esla  = -1;
+    erts_sl_alloc_init_args.eosla = -1;
+    erts_sl_alloc_init_args.mcs   = -1;
+    erts_sl_alloc_init_args.sbct  = -1;
+    erts_sl_alloc_init_args.sbcmt = -1;
+    erts_sl_alloc_init_args.mmc   = -1;
+    erts_sl_alloc_init_args.cos   = -1;
+    erts_sl_alloc_init_args.scs   = -1;
+    erts_sl_alloc_init_args.lcs   = -1;
+    erts_sl_alloc_init_args.cgr   = -1;
+    erts_sl_alloc_init_args.mbsd  = -1;
+
     while (i < argc) {
-      if (strcmp(argv[i], "--") == 0)
-	break;
-      if(strcmp(argv[i], "-S") == 0)
-	use_sl_alloc = 0;
-      i++;
+	if (strcmp(argv[i], "--") == 0)
+	    break;
+	if(argv[i][0] == '-' && argv[i][1] == 'S') {
+	    char *rest;
+	    int tmp;
+	    int n = strlen(argv[i] + 2);
+
+	    if (n >= 1 && argv[i][2] == 'r') {
+		/* Set release to use */
+		arg = get_arg(argv[i]+3, argv[i+1], &i);
+		if (strcmp(arg, ERTS_OLD_SL_ALLOC_VERSION) == 0
+		    || strcmp(arg, ERTS_OLD_SL_ALLOC_RELEASE) == 0)
+		    erts_sl_alloc_init_args.eosla = 1;
+		else if (strcmp(arg, ERTS_SL_ALLOC_VERSION) == 0
+			 || strcmp(arg, ERTS_SL_ALLOC_RELEASE) == 0)
+		    erts_sl_alloc_init_args.eosla = 0;
+		else {
+		    erl_printf(CERR, "bad sl_alloc release: %s\n", arg);
+		    usage();
+		}
+	    }
+	    else if (n >= 1 && argv[i][2] == 'e') {
+		arg = get_arg(argv[i]+3, argv[i+1], &i);
+		if (strcmp(arg, "true") == 0)
+		    erts_sl_alloc_init_args.esla = 1;
+		else if (strcmp(arg, "false") == 0)
+		    erts_sl_alloc_init_args.esla = 0;
+		else {
+		    erl_printf(CERR, "bad sl_alloc enable: %s\n", arg);
+		    usage();
+		}
+	    }
+	    else if (n >= 3 && argv[i][2] == 'm' && argv[i][3] == 'm'
+		     && argv[i][4] == 'c') {
+		/* Set max mmap carriers */
+		arg = get_arg(argv[i]+5, argv[i+1], &i);
+		errno = 0;
+		tmp = (int) strtol(arg, &rest, 10);
+		if (errno != 0 || rest == arg || tmp < 0 || (INT_MAX) < tmp) {
+		    erl_printf(CERR, "bad max mmap carriers: %s\n", arg);
+		    usage();
+		}
+		erts_sl_alloc_init_args.mmc = tmp;
+	    }
+	    else if (n >= 3 && argv[i][2] == 'c' && argv[i][3] == 'o'
+		     && argv[i][4] == 's') {
+		/* Set carrier order search */
+		arg = get_arg(argv[i]+5, argv[i+1], &i);
+		if (strcmp(arg, "true") == 0)
+		    erts_sl_alloc_init_args.cos = 1;
+		else if (strcmp(arg, "false") == 0)
+		    erts_sl_alloc_init_args.cos = 0;
+		else {
+		    erl_printf(CERR, "bad carrier order search: %s\n", arg);
+		    usage();
+		}
+	    }
+	    else if (n >= 3 && argv[i][2] == 'm' && argv[i][3] == 'c'
+		     && argv[i][4] == 's') {
+		/* Set main carrier size */
+		arg = get_arg(argv[i]+5, argv[i+1], &i);
+		errno = 0;
+		tmp = (int) strtol(arg, &rest, 10);
+		if (errno != 0 || rest == arg || tmp < 0 ||
+		    (INT_MAX/1024) < tmp) {
+		    erl_printf(CERR, "bad main carrier size: %s\n", arg);
+		    usage();
+		}
+		erts_sl_alloc_init_args.mcs = tmp * 1024;
+	    }
+	    else if (n >= 3 && argv[i][2] == 's' && argv[i][3] == 'c'
+		     && argv[i][4] == 's') {
+		/* Set smallest carrier size */
+		arg = get_arg(argv[i]+5, argv[i+1], &i);
+		errno = 0;
+		tmp = (int) strtol(arg, &rest, 10);
+		if (errno != 0 || rest == arg || tmp < 0 ||
+		    (INT_MAX/1024) < tmp) {
+		    erl_printf(CERR, "bad smallest carrier size: %s\n", arg);
+		    usage();
+		}
+		erts_sl_alloc_init_args.scs = tmp * 1024;
+	    }
+	    else if (n >= 3 && argv[i][2] == 'l' && argv[i][3] == 'c'
+		     && argv[i][4] == 's') {
+		/* Set largest carrier size */
+		arg = get_arg(argv[i]+5, argv[i+1], &i);
+		errno = 0;
+		tmp = (int) strtol(arg, &rest, 10);
+		if (errno != 0 || rest == arg || tmp < 0 ||
+		    (INT_MAX/1024) < tmp) {
+		    erl_printf(CERR, "bad largest carrier size: %s\n", arg);
+		    usage();
+		}
+		erts_sl_alloc_init_args.lcs = tmp * 1024;
+	    }
+	    else if (n >= 3 && argv[i][2] == 'c' && argv[i][3] == 'g'
+		     && argv[i][4] == 'r') {
+		/* Set carrier growth rate */
+		arg = get_arg(argv[i]+5, argv[i+1], &i);
+		errno = 0;
+		tmp = (int) strtol(arg, &rest, 10);
+		if (errno != 0 || rest == arg || tmp < 0) {
+		    erl_printf(CERR, "bad carrier growth rate: %s\n", arg);
+		    usage();
+		}
+		erts_sl_alloc_init_args.cgr = tmp;
+	    }
+	    else if(n >= 4 && argv[i][2] == 's' && argv[i][3] == 'b'
+	       && argv[i][4] == 'c' && argv[i][5] == 't') {
+		/* Set single block carrier threshold */
+		arg = get_arg(argv[i]+6, argv[i+1], &i);
+		errno = 0;
+		tmp = (int) strtol(arg, &rest, 10);
+		if (errno != 0 || rest == arg || tmp < 0 ||
+		    (INT_MAX/1024) < tmp) {
+		    erl_printf(CERR, "bad single block carrier threshold: %s\n",
+			       arg);
+		    usage();
+		}
+		erts_sl_alloc_init_args.sbct = tmp * 1024;
+	    }
+	    else if (n >= 4 && argv[i][2] == 'm' && argv[i][3] == 'b'
+		     && argv[i][4] == 's' && argv[i][5] == 'd') {
+		/* Set max block search depth */
+		arg = get_arg(argv[i]+6, argv[i+1], &i);
+		errno = 0;
+		tmp = (int) strtol(arg, &rest, 10);
+		if (errno != 0 || rest == arg || tmp < 1 ||
+		    (INT_MAX) < tmp) {
+		    erl_printf(CERR, "bad max block search depth: %s\n", arg);
+		    usage();
+		}
+		erts_sl_alloc_init_args.mbsd = tmp;
+	    }
+	    else if(n >= 5 && argv[i][2] == 's' && argv[i][3] == 'b'
+	       && argv[i][4] == 'c' && argv[i][5] == 'm'
+	       && argv[i][6] == 't') {
+		/* Set single block carrier move threshold */
+		arg = get_arg(argv[i]+7, argv[i+1], &i);
+		errno = 0;
+		tmp = (int) strtol(arg, &rest, 10);
+		if (errno != 0 || rest == arg || tmp < 0 || 100 < tmp) {
+		    erl_printf(CERR, "bad single block carrier move "
+			       "threshold: %s\n", arg);
+		    usage();
+		}
+		erts_sl_alloc_init_args.sbcmt = tmp;
+	    }
+	    else if (argv[i][2] == '\0') {
+		erl_printf(CERR,
+			   "\"-S\" is deprecated and will soon be removed; "
+			   "use \"-Se false\" instead\n");
+		erts_sl_alloc_init_args.esla = 0;
+	    }
+	    else {
+		erl_printf(CERR, "bad sl_alloc parameter: %s\n", argv[i]);
+		usage();
+	    }
+	}
+	i++;
     }
 
+    /* Observe that erts_sl_alloc_init() has to be called
+       before any other erts_sl_alloc*() functions are called and
+       before any threads other than the initial thread
+       have been created. */
+    erts_sl_alloc_init(&erts_sl_alloc_init_args);
     i = 1;
-
-    /* Observe that sys_sl_alloc_init() has to be called before any other
-       sl_alloc functions are called and before any threads other than the
-       initial thread have been started. */
-    sys_sl_alloc_init(use_sl_alloc);
 
     erts_init_utils();
     sys_alloc_opt(SYS_ALLOC_OPT_TRIM_THRESHOLD, trim_threshold);
@@ -562,6 +765,22 @@ erl_start(int argc, char **argv)
 	    }
 	    break;
 
+	case 'd': {
+	    char *rest;
+	    int tmp;
+	    /* set definite alloc block size */
+	    arg = get_arg(argv[i]+2, argv[i+1], &i);
+	    errno = 0;
+	    tmp = (int) strtol(arg, &rest, 10);
+	    if (errno != 0 || rest == arg || tmp < 0 || (INT_MAX/1024) < tmp) {
+		erl_printf(CERR, "bad definite block size: %s\n", arg);
+		usage();
+	    }
+	    definite_block_size = (Uint) tmp;
+	    definite_block_size *= 1024;
+	    break;
+	}
+
 	case 'A':
 	    /* set number of threads in thread pool */
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
@@ -571,47 +790,6 @@ erl_start(int argc, char **argv)
 		usage();
 	    }
 	    break;
-
-	case 'm': {
-	  char *rest;
-	  /* set mmap threshold */
-	  arg = get_arg(argv[i]+2, argv[i+1], &i);
-	  errno = 0;
-	  mmap_threshold = (int) strtol(arg, &rest, 10);
-	  if (errno != 0
-	      || rest == arg
-	      || mmap_threshold < 0
-	      || (INT_MAX/1024) < mmap_threshold) {
-	    mmap_threshold = ERTS_DEFAULT_MMAP_THRESHOLD/1024;
-	    erl_printf(CERR,
-		       "bad mmap threshold: %s Kb; using default: %d Kb\n",
-		       arg,
-		       mmap_threshold);
-
-	  }
-	  VERBOSE(erl_printf(COUT, "using mmap threshold: %d Kb\n",
-			     mmap_threshold););
-	  mmap_threshold *= 1024;
-	  break;
-        }
-
-	case 'M': {
-	  char *rest;
-	  /* set mmap max */
-	  arg = get_arg(argv[i]+2, argv[i+1], &i);
-	  errno = 0;
-	  mmap_max = (int) strtol(arg, &rest, 10);
-	  if (errno != 0 || rest == arg || mmap_max < 0) {
-	    mmap_max = ERTS_DEFAULT_MMAP_MAX;
-	    erl_printf(CERR,
-		       "bad mmap max: %s; using default: %d\n",
-		       arg,
-		       mmap_max);
-	  }
-	  VERBOSE(erl_printf(COUT, "using mmap max: %d\n",
-			     mmap_max););
-	  break;
-        }
 
 	case 't': {
 	  char *rest;
@@ -657,9 +835,25 @@ erl_start(int argc, char **argv)
 	  break;
         }
 
-	case 'S':
-	  /* Already handled (disable sl_alloc). */
+	case 'm':
+	    erl_printf(CERR, "\"m\" is no longer a valid parameter\n");
+	    usage();
 	  break;
+
+	case 'M':
+	    erl_printf(CERR, "\"M\" is no longer a valid parameter\n");
+	    usage();
+	  break;
+
+	case 'R':
+	  erts_reuse_all_dist_slots = 1;
+	  break;
+
+	case 'S':
+	    /* Already handled (sl_alloc options). */
+	    if (argv[i+1][0] != '-')
+		i++;
+	    break;
 
 	case 'n':   /* XXX obsolete */
 	    break;
@@ -682,11 +876,12 @@ erl_start(int argc, char **argv)
 
     boot_argc = argc - i;  /* Number of arguments to init */
     boot_argv = &argv[i];
+
+    erts_init_definite_alloc(definite_block_size);
     erl_init();
     sys_alloc_opt(SYS_ALLOC_OPT_TRIM_THRESHOLD, trim_threshold);
     sys_alloc_opt(SYS_ALLOC_OPT_TOP_PAD, top_pad);
-    sys_sl_alloc_opt(SYS_SL_ALLOC_OPT_MMAP_THRESHOLD, mmap_threshold);
-    sys_sl_alloc_opt(SYS_SL_ALLOC_OPT_MMAP_MAX, mmap_max);
+
     load_preloaded();
     erl_first_process("otp_ring0", NULL, 0, boot_argc, boot_argv);
     erl_sys_schedule_loop();

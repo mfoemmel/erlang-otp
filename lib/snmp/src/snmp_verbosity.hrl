@@ -18,6 +18,8 @@
 
 -ifndef(dont_use_verbosity).
 
+-define(vapply(M,F,A),{vapply, {M,F,A}}).
+
 -ifdef(VMODULE).
 
 -define(vinfo(F,A), snmp_verbosity:print(get(verbosity),info, ?VMODULE,F,A)).

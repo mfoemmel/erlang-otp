@@ -35,6 +35,8 @@
 #include "register.h"
 
 static Eterm new_ref(Process *);	/* forward */
+int bif_timer_rec_desc;
+
 
 /*
  * The BIF's now follow, see the Erlang Manual for a description of what
@@ -555,7 +557,7 @@ BIF_ADECL_2
     so.flags = SPO_USE_ARGS;
     so.min_heap_size = H_MIN_SIZE;
     so.priority = PRIORITY_NORMAL;
-    so.max_gen_gcs = 0;
+    so.max_gen_gcs = erts_max_gen_gcs;
 
     /*
      * Walk through the option list.
@@ -882,7 +884,7 @@ static BIF_RETTYPE process_flag_aux(Process *BIF_P,
       if (i == 0) {
 	 ct = NULL;
       } else {
-	 ct = safe_alloc(sizeof(*ct) + (i-1) * sizeof(ct->ct[0]));
+	 ct = safe_alloc_from(290, sizeof(*ct) + (i-1) * sizeof(ct->ct[0]));
 	 ct->len = i;
 	 ct->cur = 0;
 	 ct->n = 0;
@@ -1229,6 +1231,102 @@ BIF_ADECL_2
  send_message:
     send_message(BIF_P, rp, BIF_ARG_2);
     BIF_RET2(BIF_ARG_2, rp->msg.len*4);
+}
+
+
+/*
+ * Send a message to Process on another node without suspending.
+ * If returns true, the message was sent, otherwise the message was not
+ * sent due to risk of suspending.
+ */
+
+BIF_RETTYPE do_send_nosuspend(Process *p, Eterm a1, Eterm a2, int connect)
+{
+    int slot;
+    Eterm* tp;
+
+    if (is_pid(a1)) {
+	if ((slot = pid_node(a1)) != THIS_NODE) { /* Remote Pid */
+	    if (dist_addrs[slot].cid == NIL) {
+		if (connect) {
+		    BIF_TRAP2(dsend_nosuspend_trap, p, a1, a2);
+		} else {
+		    BIF_RET(am_false);
+		}
+	    }
+	    if (dist_send(p, slot, a1, a2) == 1) {
+		/* Message not sent, we should be busy... */
+		ASSERT(is_port(dist_addrs[slot].cid)); 
+		BIF_RET(am_false);
+	    }
+	    if (IS_TRACED(p))
+		trace_send(p, a1, a2);  /* (p, to, msg )*/
+	    BUMP_REDS(p,50);
+	    BIF_RET(am_true);
+	}
+    } else if (is_tuple(a1)) { /* Remote send */
+	tp = tuple_val(a1);
+	if (*tp != make_arityval(2))
+	    goto badarg;
+	if (is_not_atom(tp[1]) || is_not_atom(tp[2]))
+	    goto badarg;
+
+	/* find_or_insert_dist_slot will complain */
+	if ((slot = find_or_insert_dist_slot(tp[2])) < 0) {
+	    if (IS_TRACED(p))
+		trace_send(p, a1, a2);
+	    BIF_RET(am_true);
+	}
+
+	if (slot != THIS_NODE) {
+	    if (dist_addrs[slot].cid == NIL) {
+		if (connect) {
+		    BIF_TRAP2(dsend_nosuspend_trap, p, a1, a2);
+		} else {
+		    BIF_RET(am_false);
+		}
+	    }
+	    if (dist_reg_send(p, slot, tp[1], a2) == 1) {
+		/* Message not sent, we should be busy... */
+		ASSERT(is_port(dist_addrs[slot].cid)); 
+		BIF_RET(am_false);
+	    }
+	    if (IS_TRACED(p)) {
+		trace_send(p, a1, a2);
+	    }
+	    BUMP_REDS(p,50);
+	    BIF_RET(am_true);
+	}
+    }
+ badarg:
+    BIF_ERROR(p, BADARG);
+}
+
+BIF_RETTYPE send_nosuspend_2(BIF_ALIST_2)
+BIF_ADECL_2
+{
+    return do_send_nosuspend(BIF_P, BIF_ARG_1, BIF_ARG_2, 1);
+}
+
+BIF_RETTYPE send_nosuspend_3(BIF_ALIST_3)
+BIF_ADECL_3
+{
+    int connect = 1;
+    Eterm l = BIF_ARG_3;
+
+    while (is_list(l)) {
+	if (CAR(list_val(l)) == am_noconnect) {
+	    connect = 0;
+	} else {
+	    BIF_ERROR(BIF_P, BADARG);
+	}
+	l = CDR(list_val(l));
+    }
+
+    if(!is_nil(l)) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    return do_send_nosuspend(BIF_P, BIF_ARG_1, BIF_ARG_2, connect);
 }
 
 
@@ -2740,7 +2838,7 @@ BIF_ADECL_2
     }
     else if (BIF_ARG_1 == am_sl_alloc) {
       if (BIF_ARG_2 == am_use_mmap_table) {
-	if(sys_sl_alloc_opt(SYS_SL_ALLOC_OPT_USE_MMAP_TABLE, 1))
+	if(erts_old_sl_alloc_opt(ERTS_SL_ALLOC_OPT_USE_MMAP_TABLE, 1))
 	  BIF_RET(am_true);
 	else
 	  BIF_RET(am_false);
@@ -2820,13 +2918,6 @@ BIF_ADECL_1
     BIF_RET2(am_true, reds);
 }
 
-Eterm
-yield_0(Process* p)
-{
-    BUMP_ALL_REDS(p);
-    return am_true;
-}
-
 
 /****************************************************************************
 ** BIF Timer support
@@ -2886,7 +2977,7 @@ BifTimerRec* btm;
     else
        queue_message(rp, btm->bp, btm->message);
 
-    sys_free(btm);
+    fix_free(bif_timer_rec_desc, (Eterm *) btm);
 }
 
 /* tm arg contains the BifTimerRec */
@@ -2894,7 +2985,7 @@ static void bif_cancel_proc(btm)
 BifTimerRec* btm;
 {
     free_message_buffer(btm->bp);
-    sys_free(btm);
+    fix_free(bif_timer_rec_desc, (Eterm *) btm);
 }
 
 static BifTimerRec* 
@@ -2927,7 +3018,7 @@ do_timer(int pack, Process *process, Eterm arg1, Eterm arg2, Eterm arg3)
     }
     
     size = size_object(term);
-    btm = (BifTimerRec*) safe_alloc(sizeof(BifTimerRec));
+    btm = (BifTimerRec*) fix_alloc_from(300, bif_timer_rec_desc);
     btm->bp = bp = new_message_buffer(size);
     sys_memcpy(&btm->ref, ref_ptr(ref), sizeof(btm->ref));
     btm->pid = arg2;
@@ -3054,4 +3145,5 @@ void erts_init_bif(void)
     for (i = 0; i < TIMER_HASH_VEC; ++i) {
 	bif_tm_vec[i] = NULL;
     }
+    bif_timer_rec_desc = new_fix_size(sizeof(BifTimerRec));
 }

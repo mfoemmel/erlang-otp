@@ -58,6 +58,7 @@
 %%-----------------------------------------------------------------
 -define(DEBUG_LEVEL, 9).
 
+-define(ODD(N), (N rem 2) == 1).
 
 %%-----------------------------------------------------------------
 %% Func: dec_message/3
@@ -228,8 +229,8 @@ dec_flags(X) ->
     %% Not only the Endian flag is set, test which.
     if
 	((X band 16#02) == 16#02) ->
-	    orber:debug_level_print("[~p] cdr_decode:dec_flags(~p); Fragmented Messages not supported.", 
-				    [?LINE, X], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] cdr_decode:dec_flags(~p)
+Fragmented Messages not supported.", [?LINE, X], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{minor=103, completion_status=?COMPLETED_MAYBE});
 	%% Since the 6 most significant bits are unused we'll accept this for now.
 	((X band 16#01) == 16#01) ->
@@ -291,24 +292,41 @@ dec_response_flags(Version, <<X:8, Rest/binary>>, Len) ->
 %% Args    : Octet
 %% Returns : boolean
 %%-----------------------------------------------------------------
-dec_target_addr(Version, Message, Len, ByteOrder) ->
+dec_target_addr(Version, Message, Len, ByteOrder, RequestId, Type) ->
     case dec_type(?TARGETADDRESS, Version, Message, Len, ByteOrder, [], 0) of
-	{#'GIOP_TargetAddress'{label = 0, value = KeyAddr}, Rest3, Len3, C} ->
-	    {corba:string_to_objkey(KeyAddr), Rest3, Len3, C};
-	{#'GIOP_TargetAddress'{label = 1, 
+	{#'GIOP_TargetAddress'{label = ?GIOP_KeyAddr, value = KeyAddr}, Rest3, Len3, C} ->
+	    {dec_target_key(KeyAddr, RequestId, Version, Type), Rest3, Len3, C};
+	{#'GIOP_TargetAddress'{label = ?GIOP_ProfileAddr, 
 			       value = #'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
 							    profile_data=PA}}, 
 	 Rest3, Len3, C} ->
-	    {corba:string_to_objkey(PA), Rest3, Len3, C};
-	{#'GIOP_TargetAddress'{label = 2,
+	    {dec_target_key(PA, RequestId, Version, Type), Rest3, Len3, C};
+	{#'GIOP_TargetAddress'{label = ?GIOP_ReferenceAddr,
 			       value = #'GIOP_IORAddressingInfo'{
 				 selected_profile_index = PI,
 				 ior = IOR}}, Rest3, Len3, C} ->
-	    {corba:string_to_objkey(iop_ior:get_objkey(IOR)), Rest3, Len3, C};
+	    {dec_target_key(iop_ior:get_objkey(IOR), RequestId, Version, Type), 
+	     Rest3, Len3, C};
 	Other ->
-	    orber:debug_level_print("[~p] cdr_decode:dec_target_addr(~p); Unsupported TargetAddress.", 
-				    [?LINE, Other], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] cdr_decode:dec_target_addr(~p); 
+Unsupported TargetAddress.", [?LINE, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{minor=103, completion_status=?COMPLETED_MAYBE})
+    end.
+
+%%-----------------------------------------------------------------
+%% Func    : dec_target_key
+%% Args    : Octet
+%% Returns : boolean
+%%-----------------------------------------------------------------
+dec_target_key(Key, RequestId, Version, Type) ->
+    %% The Type argument is used as an identifier of which operation it is.
+    %% We need it to be able to tell the difference if it's, for example,
+    %% a request or locate-request.
+    case corba:string_to_objkey_local(Key) of
+	{location_forward, Object} ->
+	    throw({Type, Object, RequestId, Version, Key});
+	ObjRef ->
+	    ObjRef
     end.
 
 %%-----------------------------------------------------------------
@@ -324,7 +342,8 @@ dec_request_header(Version, Message, Len0, ByteOrder, Buffer) when Version == {1
 					    ByteOrder, [], 0),
     {ResponseFlags, Rest2, Len2} = dec_response_flags(Version, Rest1, Len1),
     {_, Rest2b, Len2b, _} = dec_type({'tk_array', 'tk_octet', 3}, Version, Rest2, Len2, ByteOrder, [], 0),
-    {Object_key, Rest3, Len3, _} = dec_target_addr(Version, Rest2b, Len2b, ByteOrder),
+    {Object_key, Rest3, Len3, _} = dec_target_addr(Version, Rest2b, Len2b, ByteOrder, Request_id,
+						   'location_forward'),
     {Operation, Rest4, Len4, _} = dec_type({'tk_string', 0},  Version, Rest3, Len3, ByteOrder, [], 0),
     {Context, Rest5, Len5} = dec_service_context(Version, Rest4, Len4, ByteOrder),
     {Version, #request_header{service_context=Context, 
@@ -340,7 +359,7 @@ dec_request_header(Version, Message, Len0, ByteOrder, Buffer) ->
 						   ByteOrder, [], 0),
     {ObjKey, Rest4, Len4, _} = dec_type({'tk_sequence', 'tk_octet', 0},  Version, Rest3,
 				   Len3, ByteOrder, [], 0),
-    Object_key = corba:string_to_objkey(ObjKey),
+    Object_key = dec_target_key(ObjKey, Request_id, Version, 'location_forward'),
     {Operation, Rest5, Len5, _} = dec_type({'tk_string', 0},  Version, Rest4, Len4, ByteOrder, [], 0),
     {Principal, Rest, Len, _} = dec_type({'tk_string', 0},  Version, Rest5,Len5,  ByteOrder, [], 0),
     {Version, #request_header{service_context=Context, 
@@ -384,7 +403,6 @@ dec_used_contexts(Version, [H|T], Ctxs) ->
 %% Returns: 
 %%-----------------------------------------------------------------
 dec_request_body(Version, ReqHdr, Rest, Len, ByteOrder, Buffer) ->
-    set_codeset_data(ReqHdr#request_header.service_context),
     {Parameters, TypeCodes, _} = 
 	dec_request_body(Version, ReqHdr#request_header.object_key, 
 			 ReqHdr#request_header.operation, 
@@ -415,22 +433,6 @@ dec_parameters(Version, [P1 |InParList], Body, Len, ByteOrder, Buffer, Counter) 
     {List, Len2} = dec_parameters(Version, InParList, Rest, Len1, ByteOrder, Buffer, NewCounter),
     {[Object | List], Len2}.
 
-set_codeset_data([]) ->
-    put(char, ?ISO8859_1_ID),
-    put(wchar, ?ISO_10646_UCS_2_ID);
-set_codeset_data([#'CONV_FRAME_CodeSetContext'{char_data=?ISO8859_1_ID,
-					       wchar_data=?ISO_10646_UCS_2_ID}|T]) ->
-    put(char, ?ISO8859_1_ID),
-    put(wchar, ?ISO_10646_UCS_2_ID);
-set_codeset_data([#'CONV_FRAME_CodeSetContext'{char_data=Char,
-					       wchar_data=Wchar}|T]) ->
-    %% Should not raise an exception here since we don't know if operations using
-    %% wchar/wstring will be used.
-    put(char, Char),
-    put(wchar, Wchar);
-set_codeset_data([H|T]) ->
-    set_codeset_data(T).
-
 %%-----------------------------------------------------------------
 %% Func: dec_reply/5
 %% Args: 
@@ -458,6 +460,8 @@ dec_reply(Version, TypeCodes, Message, Len0, ByteOrder) ->
 		{R, _, _} = dec_reply_body(Version, {{'tk_objref', "", ""}, [],[]}, 
 					   Rest, Len, ByteOrder, Message),
 	    {R, []};
+	    %% This is deprecated in later version than CORBA-2.3.1. We'll leave it for
+	    %% now.
 	    'location_forward_perm' ->
 		{R, _, _} = dec_reply_body(Version, {{'tk_objref', "", ""}, [],[]}, 
 					   Rest, Len, ByteOrder, Message),
@@ -531,13 +535,14 @@ dec_cancel_request(Version, Message, Len, ByteOrder) ->
 %% ## NEW IIOP 1.2 ##
 dec_locate_request(Version, Message, Len, ByteOrder) when Version == {1,2} ->
     {Request_id, Rest, Len1} = dec_type('tk_ulong', Version, Message, Len, ByteOrder),
-    {Object_key, _, _, _} = dec_target_addr(Version, Rest, Len1, ByteOrder),
+    {Object_key, _, _, _} = dec_target_addr(Version, Rest, Len1, ByteOrder, Request_id, 
+					    'object_forward'),
     {Version, #locate_request_header{request_id=Request_id, object_key=Object_key}};
 dec_locate_request(Version, Message, Len, ByteOrder) ->
     {Request_id, Rest, Len1} = dec_type('tk_ulong', Version, Message, Len, ByteOrder),
     {ObjKey, _, _} = dec_type({'tk_sequence', 'tk_octet', 0}, Version, Rest,
 				   Len1, ByteOrder),
-    Object_key = corba:string_to_objkey(ObjKey),    
+    Object_key = dec_target_key(ObjKey, Request_id, Version, 'object_forward'),    
     {Version, #locate_request_header{request_id=Request_id, object_key=Object_key}}.
 
 
@@ -557,24 +562,32 @@ dec_locate_reply(Version, Message, Len, ByteOrder) ->
 
 dec_locate_reply_header(Version, Message, Len, ByteOrder) ->
     {Request_id, Rest1, Len1} = dec_type('tk_ulong', Version, Message, Len, ByteOrder),
-    {Locate_status, Rest2, Len2} = dec_locate_status(Version, Rest1, Len, ByteOrder),
+    {Locate_status, Rest2, Len2} = dec_locate_status(Version, Rest1, Len1, ByteOrder),
     {#locate_reply_header{request_id=Request_id, locate_status=Locate_status}, Rest2, Len2}.
    
-dec_locate_reply_body(Version, LocateStatus, Rest, Len, ByteOrder) 
-  when Version == {1,2} ->
+dec_locate_reply_body(Version, LocateStatus, Rest, Len, ByteOrder) when Version == {1,2} ->
+    %% In CORBA-2.3.1 the LocateReply body didn't align the body (8-octet
+    %% boundry) for IIOP-1.2. This have been changed in later specs.
+    %% Un-comment the lines below when we want to be CORBA-2.4 compliant.
+    %% DO NOT forget to change Rest to Rest1 and Len to Len1!!!!!!!!!!
     case LocateStatus of
 	'object_forward' ->
+%	    {Rest1, Len1, Counter} = dec_align(Rest, Len, 8, Len),
 	    {ObjRef, _, _, _} = dec_objref(Version, Rest, Len, ByteOrder),
 	    ObjRef;
 	'object_forward_perm' ->
+	    %% This is deprecated in later version than CORBA-2.3.1. We'll leave it for
+	    %% now.
+%	    {Rest1, Len1, Counter} = dec_align(Rest, Len, 8, Len),
 	    {ObjRef, _, _, _} = dec_objref(Version, Rest, Len, ByteOrder),
 	    ObjRef;
 	'loc_system_exception' ->
 	    %% This should be updated but since 'dec_system_exception' removes
-	    %% alignment, which the LocateReplyBody don't hyave, for 1.2 we
-	    %% pretend it's 1.1 for now
+	    %% alignment, which the LocateReplyBody don't have, for 1.2 we
+	    %% pretend it's 1.1 for now. Change {1,1} to Version when we want
+	    %% to be CORBA-2.4 compliant.
 	    {SysExc, _} = dec_system_exception({1,1}, Rest, Len, ByteOrder),
-	    {'EXCEPTION', SysExc};
+	    corba:raise(SysExc);
 	'loc_needs_addressing_mode' ->
 	    %% Not supported.
 	    [];
@@ -688,32 +701,23 @@ dec_type('tk_char', Version, Bytes, Len, _, _, C) ->
     {Char, Rest} = cdrlib:dec_char(Bytes),
     {Char, Rest, Len + 1, C+1};
 dec_type('tk_wchar', {1,2}, Bytes, Len, ByteOrder, _, C) ->
-    %% This is not correct but for now me must decode in same way as for 1.1.
-    case get(wchar) of
-	?ISO_10646_UCS_2_ID ->
-	    {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
-	    {WChar, Rest2} = cdrlib:dec_unsigned_short(ByteOrder, Rest),
-	    {WChar, Rest2, Len1 + 2, NewC+2};
-	_->
-	    {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
-	    {WChar, Rest2} = cdrlib:dec_unsigned_short(ByteOrder, Rest),
-	    {WChar, Rest2, Len1 + 2, NewC+2}
+    %% For IIOP-1.2 a wchar is almost encoded the same way as an octet-sequence.
+    %% The only difference is that the length-value is an octet as well.
+    case cdrlib:dec_octet(Bytes) of
+	{2, Rest1} ->
+	    %% Currently we only allow 2-bytes wchar.
+	    {WChar, Rest2} = cdrlib:dec_unsigned_short(big, Rest1),
+	    {WChar, Rest2, Len+3, C+3};
+	{What, _} ->
+	    orber:dbg("[~p] cdr_decode:dec_type(~p); unsupported wchar", 
+		      [?LINE, What], ?DEBUG_LEVEL),
+	    corba:raise(#'DATA_CONVERSION'{completion_status=?COMPLETED_NO})
     end;
 %% For 1.1 the wchar is limited to the use of two-octet fixed-length encoding.
 dec_type('tk_wchar', Version, Bytes, Len, ByteOrder, _, C) ->
-    case get(wchar) of
-	?ISO_10646_UCS_2_ID ->
-	    {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
-	    {WChar, Rest2} = cdrlib:dec_unsigned_short(ByteOrder, Rest),
-	    {WChar, Rest2, Len1 + 2, NewC+2};
-	_->
-	    %% We should raise the DATA_CONVERSION system exception but
-	    %% it's not possible since all ORB:s do not include
-	    %% IOP::ServiceContext.
-	    {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
-	    {WChar, Rest2} = cdrlib:dec_unsigned_short(ByteOrder, Rest),
-	    {WChar, Rest2, Len1 + 2, NewC+2}
-    end;
+    {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
+    {WChar, Rest2} = cdrlib:dec_unsigned_short(ByteOrder, Rest),
+    {WChar, Rest2, Len1 + 2, NewC+2};
 dec_type('tk_octet', Version, Bytes, Len, _, _, C) ->
     {Octet, Rest} = cdrlib:dec_octet(Bytes),
     {Octet, Rest, Len + 1, C+1};
@@ -747,14 +751,66 @@ dec_type({'tk_array', ElemTC, Size}, Version, Bytes, Len, ByteOrder, Buff, C) ->
 dec_type({'tk_alias', IFRId, Name, TC}, Version, Bytes, Len, ByteOrder, Buff, C) ->
     dec_type(TC, Version, Bytes, Len, ByteOrder, Buff, C); 
 %dec_type({'tk_except', IFRId, Name, ElementList}, Version, Bytes, Len, ByteOrder) ->
+dec_type({'tk_fixed', Digits, Scale}, Version, Bytes, Len, ByteOrder, Buff, C) ->
+    dec_fixed(Digits, Scale, Bytes, Len, C);
 dec_type(Type, _, _, _, _, _, _) ->
-    orber:debug_level_print("[~p] cdr_decode:dec_type(~p)", [?LINE, Type], ?DEBUG_LEVEL),
+    orber:dbg("[~p] cdr_decode:dec_type(~p)", [?LINE, Type], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=104, completion_status=?COMPLETED_MAYBE}).
 
 stringify_enum({tk_enum,_,_,_}, Label) ->
     atom_to_list(Label);
 stringify_enum(_, Label) ->
     Label.
+
+%%-----------------------------------------------------------------
+%% Func: dec_fixed
+%%-----------------------------------------------------------------
+%% Digits eq. total number of digits.
+%% Scale  eq. position of the decimal point.
+%% E.g. fixed<5,2> - "123.45"
+%% E.g. fixed<4,2> - "12.34"
+%% These are encoded as:
+%% ## <5,2> ##  ## <4,2> ##
+%%     1,2          0,1     eq. 1 octet
+%%     3,4          2,3
+%%     5,0xC        4,0xC
+%%
+%% Each number is encoded as a half-octet. Note, for <4,2> a zero is
+%% added first to to be able to create "even" octets.
+dec_fixed(0, 0, Bytes, Len, C) ->
+    {#fixed{digits = 0, scale = 0, value = ""}, Bytes, Len, C};
+dec_fixed(Digits, Scale, Bytes, Len, C) ->
+    case ?ODD(Digits) of
+	true ->
+	    {Fixed, Bytes2, Len2, C2} = dec_fixed_2(Digits, Scale, Bytes, Len, C),
+	    {#fixed{digits = Digits, scale = Scale, value = list_to_integer(Fixed)},
+	     Bytes2, Len2, C2};
+	false ->
+	    %% If the length (of fixed) is even a zero is added first.
+	    %% Subtract that we've read 1 digit.
+	    <<0:4,D2:4,T/binary>> = Bytes,
+	    {Fixed, Bytes2, Len2, C2} = dec_fixed_2(Digits-1, Scale, T, Len+1, C+1),
+	    {#fixed{digits = Digits, scale = Scale, value = list_to_integer([D2+48|Fixed])}, 
+	     Bytes2, Len2, C2}
+    end.
+
+dec_fixed_2(1, Scale, <<D1:4,?FIXED_POSITIVE:4,T/binary>>, Len, C) ->
+    %% Even though the CORBA specifications give the impression of allowing
+    %% a negative scale, but the scale must be a positive integer.
+    %% The FIXED_POSITIVE vale (0xC) is a "left-over" from some specifications.
+    {[D1+48], T, Len+1, C+1};
+dec_fixed_2(Digits, Scale, Bytes, Len, C) when Digits =< 0 ->
+    orber:dbg("[~p] cdr_decode:dec_fixed_2(~p, ~p)
+Malformed fixed type.", [?LINE, Digits, Scale], ?DEBUG_LEVEL),
+    corba:raise(#'MARSHAL'{minor=105, completion_status=?COMPLETED_MAYBE});
+dec_fixed_2(Digits, Scale, <<>>, Len, C) ->
+    orber:dbg("[~p] cdr_decode:dec_fixed_2(~p, ~p)
+The fixed type received was to short.", [?LINE, Digits, Scale], ?DEBUG_LEVEL),
+    corba:raise(#'MARSHAL'{minor=105, completion_status=?COMPLETED_MAYBE});
+dec_fixed_2(Digits, Scale, <<D1:4,D2:4,T/binary>>, Len, C) ->
+    {Seq, Rest2, Len2, NewC2} = dec_fixed_2(Digits-2, Scale, T, Len+1, C+1),
+    {[D1+48, D2+48 | Seq], Rest2, Len2, NewC2}.
+
 %%-----------------------------------------------------------------
 %% Func: dec_sequence/7 and dec_sequence/8
 %%-----------------------------------------------------------------
@@ -848,6 +904,8 @@ is_known_struct('IOP_ServiceContext') -> true;
 is_known_struct('CONV_FRAME_CodeSetContext') -> true;
 is_known_struct('CONV_FRAME_CodeSetComponent') -> true;
 is_known_struct('CONV_FRAME_CodeSetComponentInfo') -> true;
+is_known_struct('GIOP_IORAddressingInfo') -> true;
+is_known_struct('ALTERNATE_IIOP_ADDRESS') -> true;
 is_known_struct(_) -> false.
 
 %%-----------------------------------------------------------------
@@ -877,49 +935,38 @@ dec_string(Version, Message, Len, ByteOrder, Buff, C) ->
 %%-----------------------------------------------------------------
 %% Func: dec_string/4
 %%-----------------------------------------------------------------
-%dec_wstring({1,2}, Message, Len, ByteOrder, Buff, C) ->
-%    {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
-%    {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
-%    CodeSet = get(wchar),
-%    if
-%	Size > 0, CodeSet == ?ISO_10646_UCS_2_ID ->
-%	    {String, Rest2, Len2, NewC2} = dec_sequence(Version, Rest1, Size - 1, 'tk_wchar',
-%						 Len1 + 4, ByteOrder, Buff, NewC+4),
-%	    %% Remove the NULL character.
-%	    {_, Rest3} = cdrlib:dec_unsigned_short(ByteOrder, Rest2),
-%	    {String, Rest3, Len2 + 2, NewC2+2};
-%	Size > 0 ->
-%	    {String, Rest2, Len2, NewC2} = dec_sequence(Version, Rest1, Size - 1, 'tk_wchar',
-%						 Len1 + 4, ByteOrder, Buff, NewC+4),
-%	    {_, Rest3} = cdrlib:dec_unsigned_short(ByteOrder, Rest2),
-%	    {String, Rest3, Len2 + 2, NewC2+2};
-%	true ->
-%	    {"", Rest1, Len1 + 4, NewC+4}
-%    end;
+dec_wstring({1,2}, Message, Len, ByteOrder, Buff, C) ->
+    {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
+    {Octets, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
+    if
+	Octets == 0 ->
+	    {"", Rest1, Len1 + 4, NewC+4};
+	Octets > 0 ->
+	    Size = round(Octets/2),
+	    {String, Rest2, Len2, NewC2} = dec_sequence({1,2}, Rest1, Size, 'tk_ushort',
+						 Len1 + 4, big, Buff, NewC+4),
+	    {String, Rest2, Len2, NewC2};
+	true ->
+	    orber:dbg("[~p] cdr_decode:dec_wstring(~p);",
+		      [?LINE, Rest1], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_NO})
+    end;
 dec_wstring(Version, Message, Len, ByteOrder, Buff, C) ->
     {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
     {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
-    CodeSet = get(wchar),
     if
-%	Size > 0, CodeSet == ?ISO_10646_UCS_2_ID ->
 	Size > 0 ->
 	    {String, Rest2, Len2, NewC2} = dec_sequence(Version, Rest1, Size - 1, 'tk_wchar',
 						 Len1 + 4, ByteOrder, Buff, NewC+4),
 	    %% Remove the NULL character.
 	    {_, Rest3} = cdrlib:dec_unsigned_short(ByteOrder, Rest2),
 	    {String, Rest3, Len2 + 2, NewC2+2};
-%	Size == 0, CodeSet == ?ISO_10646_UCS_2_ID ->
 	Size == 0 ->
 	    {"", Rest1, Len1 + 4, NewC+4};
-%	CodeSet == ?ISO_10646_UCS_2_ID ->
 	true ->
-	    orber:debug_level_print("[~p] cdr_decode:dec_wstring(~p);",
+	    orber:dbg("[~p] cdr_decode:dec_wstring(~p);",
 				    [?LINE, Rest1], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_NO})
-%	true ->
-%	    orber:debug_level_print("[~p] cdr_decode:dec_wstring(~p); Unsupported CodeSet.",
-%				    [?LINE, CodeSet], ?DEBUG_LEVEL),
-%	    corba:raise(#'CODESET_INCOMPATIBLE'{completion_status=?COMPLETED_NO})
     end.
 
 
@@ -987,7 +1034,7 @@ dec_struct1(Version, [{ElemName, ElemType} | TypeCodeList], Message, Len, ByteOr
     {[Element |Struct], Rest1, Len2, NewC2}.
 
 ifrid_to_name([], _) ->
-    orber:debug_level_print("[~p] cdr_decode:ifrid_to_name([]). No Id supplied.", 
+    orber:dbg("[~p] cdr_decode:ifrid_to_name([]). No Id supplied.", 
 			    [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE});
 ifrid_to_name(Id, Type) -> 
@@ -997,7 +1044,7 @@ ifrid_to_name(Id, Type) ->
 		[#ir_UnionDef{absolute_name = [$:,$:|N]}] ->
 		    change_colons_to_underscore(N, []);
 		Other ->
-		    orber:debug_level_print("[~p] cdr_decode:ifrid_to_name(~p). IFR Id not found: ~p", 
+		    orber:dbg("[~p] cdr_decode:ifrid_to_name(~p). IFR Id not found: ~p", 
 					    [?LINE, Id, Other], ?DEBUG_LEVEL),
 		    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE})
 	    end;
@@ -1006,7 +1053,7 @@ ifrid_to_name(Id, Type) ->
 		[#ir_StructDef{absolute_name = [$:,$:|N]}] ->
 		    change_colons_to_underscore(N, []);
 		Other ->
-		    orber:debug_level_print("[~p] cdr_decode:ifrid_to_name(~p). IFR Id not found: ~p", 
+		    orber:dbg("[~p] cdr_decode:ifrid_to_name(~p). IFR Id not found: ~p", 
 					    [?LINE, Id, Other], ?DEBUG_LEVEL),
 		    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE})
 	    end;
@@ -1015,7 +1062,7 @@ ifrid_to_name(Id, Type) ->
 		[#ir_ExceptionDef{absolute_name = [$:,$:|N]}] ->
 		    change_colons_to_underscore(N, []);
 		Other ->
-		    orber:debug_level_print("[~p] cdr_decode:ifrid_to_name(~p). IFR Id not found: ~p", 
+		    orber:dbg("[~p] cdr_decode:ifrid_to_name(~p). IFR Id not found: ~p", 
 					    [?LINE, Id, Other], ?DEBUG_LEVEL),
 		    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE})
 	    end;
@@ -1036,7 +1083,7 @@ change_colons_to_underscore([], Acc) ->
 
 get_ifr_node([], _, _) ->
     %% Were not able to contact any of the given nodes.
-    orber:debug_level_print("[~p] cdr_decode:get_ifr_node([]). No Node available.", 
+    orber:dbg("[~p] cdr_decode:get_ifr_node([]). No Node available.", 
 			    [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE});
 get_ifr_node(Nodes, N, L) ->
@@ -1118,7 +1165,7 @@ get_user_exception_type(TypeId) ->
 		[ExcDef] when record(ExcDef, ir_ExceptionDef) ->  
 		    ExcDef#ir_ExceptionDef.type;
 		Other ->
-		    orber:debug_level_print("[~p] cdr_decode:get_user_exception_type(~p). IFR Id not found: ~p", 
+		    orber:dbg("[~p] cdr_decode:get_user_exception_type(~p). IFR Id not found: ~p", 
 					    [?LINE, TypeId, Other], ?DEBUG_LEVEL),
 		    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE})
 	    end;
@@ -1162,6 +1209,8 @@ dec_type_code(3, Version, Message, Len, ByteOrder, _, C) ->
     {'tk_long', Message, Len, C};
 dec_type_code(23, Version, Message, Len, ByteOrder, _, C) ->
     {'tk_longlong', Message, Len, C};
+dec_type_code(25, Version, Message, Len, ByteOrder, _, C) ->
+    {'tk_longdouble', Message, Len, C};
 dec_type_code(4, Version, Message, Len, ByteOrder, _, C) ->
     {'tk_ushort', Message, Len, C};
 dec_type_code(5, Version, Message, Len, ByteOrder, _, C) ->
@@ -1298,6 +1347,54 @@ dec_type_code(27, Version, Message, Len, ByteOrder, Buff, C) ->
     {MaxLength, Message1, Len1, NewC} =
 	dec_type('tk_ulong', Version, Message, Len, ByteOrder, Buff, C),
     {{'tk_wstring', MaxLength}, Message1, Len1, NewC};
+dec_type_code(28, Version, Message, Len, ByteOrder, Buff, C) ->
+    {Digits, Message1, Len1, C1} =
+	dec_type('tk_ushort', Version, Message, Len, ByteOrder, Buff, C),
+    {Scale, Message2, Len2, C2} =
+	dec_type('tk_short', Version, Message1, Len1, ByteOrder, Buff, C1),
+    {{'tk_fixed', Digits, Scale}, Message2, Len2, C2};
+dec_type_code(29, Version, Message, Len, ByteOrder, Buff, C) ->
+    {ComplexParams, Message1, Len1, Ex} = decode_complex_tc_parameters(Version, Message, Len, ByteOrder),
+    {ByteOrder1, Rest1} = dec_byte_order(ComplexParams),
+    {{RepId, Name, ValueModifier, TC, ElementList}, <<>>, Len2, NewC} =
+	dec_type({'tk_struct', "", "", [{"repository ID", {'tk_string', 0}},
+					{"name", {'tk_string', 0}},
+					{"ValueModifier", 'tk_short'},
+					{"TypeCode", 'tk_TypeCode'},
+					{"element list",
+					 {'tk_sequence', 
+					  {'tk_struct', "","",
+					   [{"member name", {'tk_string', 0}},
+					    {"member type", 'tk_TypeCode'},
+					    {"Visibility", 'tk_short'}]},
+					  0}}]},
+		 Version, Rest1, 1, ByteOrder1, Buff, C+1+Ex),
+    {{'tk_value', RepId, Name, ValueModifier, TC, ElementList}, Message1, Len1, NewC};
+dec_type_code(30, Version, Message, Len, ByteOrder, Buff, C) ->
+    {ComplexParams, Message1, Len1, Ex} = decode_complex_tc_parameters(Version, Message, Len, ByteOrder),
+    {ByteOrder1, Rest1} = dec_byte_order(ComplexParams),
+    {{RepId, Name, TC}, <<>>, Len2, NewC} =
+	dec_type({'tk_struct', "", "", [{"repository ID", {'tk_string', 0}},
+					{"name", {'tk_string', 0}},
+					{"TypeCode", 'tk_TypeCode'}]},
+		 Version, Rest1, 1, ByteOrder1, Buff, C+1+Ex),
+    {{'tk_value_box', RepId, Name, TC}, Message1, Len1, NewC};
+dec_type_code(31, Version, Message, Len, ByteOrder, Buff, C) ->
+    {ComplexParams, Message1, Len1, Ex} = decode_complex_tc_parameters(Version, Message, Len, ByteOrder),
+    {ByteOrder1, Rest1} = dec_byte_order(ComplexParams),
+    {{RepId, Name}, <<>>, Len2, NewC} =
+	dec_type({'tk_struct', "", "", [{"repository ID", {'tk_string', 0}},
+					{"name", {'tk_string', 0}}]},
+		 Version, Rest1, 1, ByteOrder1, Buff, C+1+Ex),
+    {{'tk_native', RepId, Name}, Message1, Len1, NewC};
+dec_type_code(32, Version, Message, Len, ByteOrder, Buff, C) ->
+    {ComplexParams, Message1, Len1, Ex} = decode_complex_tc_parameters(Version, Message, Len, ByteOrder),
+    {ByteOrder1, Rest1} = dec_byte_order(ComplexParams),
+    {{RepId, Name}, <<>>, Len2, NewC} =
+	dec_type({'tk_struct', "", "", [{"repository ID", {'tk_string', 0}},
+					{"name", {'tk_string', 0}}]},
+		 Version, Rest1, 1, ByteOrder1, Buff, C+1+Ex),
+    {{'tk_abstract_interface', RepId, Name}, Message1, Len1, NewC};
 dec_type_code(16#ffffffff, Version, Message, Len, ByteOrder, Buff, C) ->  %% placeholder
     {Indirection, Message1, Len1, NewC} =
 	dec_type('tk_long', Version, Message, Len, ByteOrder, Buff, C),
@@ -1306,7 +1403,7 @@ dec_type_code(16#ffffffff, Version, Message, Len, ByteOrder, Buff, C) ->  %% pla
     {TC, _, _, _} = dec_type_code(Version, SubBuff, Position, ByteOrder, Buff, Position),
     {TC, Message1, Len1, NewC};
 dec_type_code(Type, _, _, _, _, _, _) -> 
-    orber:debug_level_print("[~p] cdr_decode:dec_type_code(~p); No match.", 
+    orber:dbg("[~p] cdr_decode:dec_type_code(~p); No match.", 
 			    [?LINE, Type], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE}).
 

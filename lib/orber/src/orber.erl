@@ -34,7 +34,7 @@
 %% External exports
 %%-----------------------------------------------------------------
 -export([start/0, stop/0, install/1, install/2, orber_nodes/0, iiop_port/0,
-	 domain/0, bootstrap_port/0, iiop_ssl_port/0, 
+	 domain/0, bootstrap_port/0, iiop_ssl_port/0, iiop_out_ports/0,
 	 ssl_server_certfile/0, ssl_client_certfile/0, set_ssl_client_certfile/1,
 	 ssl_server_verify/0, ssl_client_verify/0, set_ssl_client_verify/1,
 	 ssl_server_depth/0, ssl_client_depth/0, set_ssl_client_depth/1,
@@ -45,13 +45,16 @@
 	 is_lightweight/0, get_lightweight_nodes/0,
 	 start_lightweight/0, start_lightweight/1,
 	 get_ORBDefaultInitRef/0, get_ORBInitRef/0,
-	 get_interceptors/0, set_interceptors/1]).
+	 get_interceptors/0, set_interceptors/1,
+	 jump_start/0, jump_start/1, jump_start/2, jump_stop/0, js/0, js/1,
+	 iiop_connections/0, iiop_connections_pending/0]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
--export([host/0, ip_address_variable_defined/0, start/2, init/1, start_naming_service/1,
-	 get_debug_level/0, debug_level_print/3, configure/2, throw_helper/2]).
+-export([host/0, ip_address_variable_defined/0, start/2, init/1,
+	 get_debug_level/0, debug_level_print/3, dbg/3, configure/2,
+	 multi_configure/1, throw_helper/2]).
 
 %%-----------------------------------------------------------------
 %% Internal definitions
@@ -60,10 +63,12 @@
 %% installing Orber.
 -define(INSTALL_DEF_OPT, [{ifr_storage_type, disc_copies},
 			  {install_timeout, infinity},
-			  {local_content, false}]).
+			  {local_content, false},
+			  {nameservice_storage_type, ram_copies},
+			  {initialreferences_storage_type, ram_copies}]).
 
 -define(ORBER_TABS, [orber_CosNaming, orber_objkeys, corba_policy,
-		     corba_policy_associations]).
+		     corba_policy_associations, orber_references]).
 
 -define(DEBUG_LEVEL, 5).
 
@@ -71,6 +76,41 @@
 %%-----------------------------------------------------------------
 %% External interface functions
 %%-----------------------------------------------------------------
+
+jump_stop() ->
+    orber:stop(),
+    orber:uninstall(),
+    mnesia:stop().
+
+js() ->
+    corba:orb_init([{interceptors, {native, [orber_iiop_tracer]}},
+		    {orber_debug_level, 10}]),
+    jump_start(4001, ip_address()).
+
+js(Port) ->
+    corba:orb_init([{interceptors, {native, [orber_iiop_tracer]}},
+		    {orber_debug_level, 10}]),
+    jump_start(Port, ip_address()).
+
+jump_start() ->
+    jump_start(4001, ip_address()).
+
+jump_start(Port) ->
+    jump_start(Port, ip_address()).
+
+jump_start(Port, Domain) when integer(Port), atom(Domain) ->
+    jump_start(Port, atom_to_list(Domain));
+jump_start(Port, Domain) when integer(Port), list(Domain) ->
+    DomainName = Domain ++ [$:|integer_to_list(Port)],
+    mnesia:start(),
+    corba:orb_init([{iiop_port, Port}, {domain, DomainName}]),
+    orber:install([node()], [{ifr_storage_type, ram_copies}]),
+    orber:start(),    
+    orber:info();
+jump_start(Port, Domain) ->
+    exit({error, Port, Domain}). 
+
+
 start() ->
     application:start(mnesia),
     TableTest = test_tables(),
@@ -111,6 +151,16 @@ iiop_port() ->
 	    Port;
 	_ ->
 	    4001
+    end.
+
+iiop_out_ports() ->
+    case application:get_env(orber, iiop_out_ports) of
+	{ok, {Min, Max}} when integer(Min), integer(Max), Min =< Max ->
+	    {Min, Max};
+	{ok, {Max, Min}} when integer(Min), integer(Max), Min < Max ->
+	    {Min, Max};
+	_ ->
+	    0
     end.
 
 bootstrap_port() ->
@@ -159,10 +209,7 @@ host() ->
     end.
 
 ip_address() ->
-    %% We used to call inet:gethostname() instead of net_adm:localhost() but if the 
-    %% /etc/hosts don't contain the short name the result would be 127.0.0.1. In an
-    %% IOR this would cause problems.
-    Hostname = net_adm:localhost(),
+    {ok, Hostname} = inet:gethostname(),
     {ok, {A1, A2, A3, A4}} = inet:getaddr(Hostname, inet),
     integer_to_list(A1) ++ "." ++ integer_to_list(A2) ++ "." ++ integer_to_list(A3)
 	++ "." ++ integer_to_list(A4).
@@ -216,6 +263,13 @@ iiop_setup_connection_timeout() ->
 	_ ->
 	    infinity
     end.
+
+
+iiop_connections() ->
+    orber_iiop_pm:list_existing_connections().
+
+iiop_connections_pending() ->
+    orber_iiop_pm:list_setup_connections().
 
 objectkeys_gc_time() ->
     case application:get_env(orber, objectkeys_gc_time) of
@@ -440,7 +494,7 @@ set_ssl_client_cacertfile(Value) when list(Value) ->
 info() ->
     case is_running() of
 	true ->
-	    io:format("==== Orber System Information ====\n",[]),
+	    io:format("======== Orber System Information ========\n",[]),
 	    io:format("Orber domain: ~p\n",[domain()]),
 	    io:format("IIOP port number: ~p\n",[iiop_port()]),
 	    io:format("Bootstrap port number: ~p\n",[bootstrap_port()]),
@@ -449,6 +503,9 @@ info() ->
 	    io:format("IIOP timeout: ~p\n",[iiop_timeout()]),
 	    io:format("IIOP connection timeout: ~p\n",[iiop_connection_timeout()]),
 	    io:format("IIOP setup connection timeout: ~p\n",[iiop_setup_connection_timeout()]),
+	    io:format("IIOP out ports: ~p\n",[iiop_out_ports()]),
+	    io:format("IIOP connections: ~p\n",[iiop_connections()]),
+	    io:format("IIOP connections (pending): ~p\n",[iiop_connections_pending()]),
 	    io:format("Object Keys GC interval: ~p\n",[objectkeys_gc_time()]),
 	    io:format("Using Interceptors: ~p\n",[get_interceptors()]),
 	    io:format("Debug Level: ~p\n",[get_debug_level()]),
@@ -466,12 +523,16 @@ info() ->
 		    io:format("SSL client certfile ~p\n",[ssl_client_certfile()]),
 		    io:format("SSL client verification type ~p\n",[ssl_client_verify()]),
 		    io:format("SSL client verification depth ~p\n",[ssl_client_depth()]),
-		    io:format("SSL client cacertfile ~p\n",[ssl_client_cacertfile()]);
+		    io:format("SSL client cacertfile ~p\n",[ssl_client_cacertfile()]),
+		    io:format("==========================================\n",[]);
 		no ->
+		    io:format("==========================================\n",[]),
 		    ok
 	    end; 
 	_ ->
-	    io:format("Orber is not running\n",[])
+	    io:format("======== Orber System Information ========\n",[]),
+	    io:format("Orber is not running\n",[]),
+	    io:format("==========================================\n",[])
     end.
 
 %%-----------------------------------------------------------------
@@ -505,6 +566,8 @@ install_orber(Nodes, Options) ->
     MnesiaOptions = [Local_content_tables],
     {_, IFR_storage_type} = get_option(ifr_storage_type, Options),
     {_, Timeout} = get_option(install_timeout, Options),
+    {_, NSType} = get_option(nameservice_storage_type, Options),
+    {_, InitType} = get_option(initialreferences_storage_type, Options),
     TableTest = test_tables(),
     case lists:member(is_member, TableTest) of
 	true ->
@@ -520,15 +583,27 @@ install_orber(Nodes, Options) ->
     add_table_index(),
     orber_objectkeys:install(Timeout, [{ram_copies, Nodes} |MnesiaOptions]),
     orber_policy_server:install(Timeout, [{ram_copies, Nodes} |MnesiaOptions]),
-    'CosNaming_NamingContext_impl':install(Timeout, [{ram_copies, Nodes} |MnesiaOptions]),
+    'CosNaming_NamingContextExt_impl':install(Timeout, [{NSType, Nodes} |MnesiaOptions]),
+    orber_initial_references:install(Timeout, [{InitType, Nodes} |MnesiaOptions]),
     application:start(orber),
     oe_cos_naming:oe_register(),
     oe_cos_naming_ext:oe_register(),
     oe_erlang:oe_register(),
     oe_OrberIFR:oe_register(),
     oe_CORBA:oe_register(),
-    check_mnesia_result(mnesia:dump_tables(['orber_CosNaming']),
-			"Unable to dump mnesia tables."),
+    case NSType of
+	ram_copies ->
+	    case mnesia:dump_tables(['orber_CosNaming']) of
+		{atomic, ok} ->
+		    ok;
+		{aborted, {has_no_disc,_}} ->
+		    ok;
+		{aborted, Reason} ->
+		    exit({error, {"Unable to dump mnesia tables.", Reason}})
+	    end;
+	_ ->
+	    ok
+    end,
     application:stop(orber).
 
 
@@ -737,6 +812,9 @@ get_debug_level() ->
 %% A higher value will result in a finer granularity.
 
 debug_level_print(Format, Data, RequestedLevel) ->
+    dbg(Format, Data, RequestedLevel).
+
+dbg(Format, Data, RequestedLevel) ->
     case application:get_env(orber, orber_debug_level) of
 	{ok, Level} when integer(Level), Level >= RequestedLevel ->
 	    %% Use the catch if incorrect format used somewhere.
@@ -749,72 +827,115 @@ debug_level_print(Format, Data, RequestedLevel) ->
 	    ok
     end.
 
+
+configure(Key, Value) when atom(Key) ->
+    configure(Key, Value, check);
+configure(Key, Value) ->
+    exit("Given key not an atom.").
+
+multi_configure(KeyValueList) when list(KeyValueList) ->
+    case is_loaded() of
+	false ->
+	    application:load(orber),
+	    multi_configure_helper(KeyValueList, loaded);
+	true ->
+	    case is_running() of
+		false ->
+		    multi_configure_helper(KeyValueList, loaded);
+		true ->
+		    multi_configure_helper(KeyValueList, running)
+	    end
+    end;
+multi_configure(KeyValueList) ->
+    exit({"Given configuration parameters not a Key-Value-pair list.", KeyValueList}).
+
+multi_configure_helper([], _) ->
+    ok;
+multi_configure_helper([{Key, Value}|T], Status) ->
+    configure(Key, Value, Status),
+    multi_configure_helper(T, Status);
+multi_configure_helper([What|T], _) ->
+    exit({"Incorrect configuration parameters supplied:", What}).
+
 %%------ Keys we can update at any time -----
 %% Initial Services References
-configure(orbDefaultInitRef, String) when list(String) ->
-    do_configure(orbDefaultInitRef, String);
-configure(orbDefaultInitRef, undefined) ->
-    do_configure(orbDefaultInitRef, undefined);
-configure(orbInitRef, String) when list(String) ->
-    do_configure(orbInitRef, String);
-configure(orbInitRef, undefined) ->
-    do_configure(orbInitRef, undefined);
+configure(orbDefaultInitRef, String, Status) when list(String) ->
+    do_configure(orbDefaultInitRef, String, Status);
+configure(orbDefaultInitRef, undefined, Status) ->
+    do_configure(orbDefaultInitRef, undefined, Status);
+configure(orbInitRef, String, Status) when list(String) ->
+    do_configure(orbInitRef, String, Status);
+configure(orbInitRef, undefined, Status) ->
+    do_configure(orbInitRef, undefined, Status);
 %% IIOP-version
-configure(giop_version, {1, 0}) ->
-    do_configure(giop_version, {1, 0});
-configure(giop_version, {1, 1}) ->
-    do_configure(giop_version, {1, 1});
-configure(giop_version, {1, 2}) ->
-    do_configure(giop_version, {1, 2});
+configure(giop_version, {1, 0}, Status) ->
+    do_configure(giop_version, {1, 0}, Status);
+configure(giop_version, {1, 1}, Status) ->
+    do_configure(giop_version, {1, 1}, Status);
+configure(giop_version, {1, 2}, Status) ->
+    do_configure(giop_version, {1, 2}, Status);
 %% configure 'iiop_timout' will only have effect on new requests.
-configure(iiop_timeout, infinity) ->
-    do_configure(iiop_timeout, infinity);
-configure(iiop_timeout, Value) when integer(Value), Value =< 1000000 ->
-    do_configure(iiop_timeout, Value);
+configure(iiop_timeout, infinity, Status) ->
+    do_configure(iiop_timeout, infinity, Status);
+configure(iiop_timeout, Value, Status) when integer(Value), Value =< 1000000 ->
+    do_configure(iiop_timeout, Value, Status);
 %% configure 'iiop_connection_timout' will only have effect on new connections.
-configure(iiop_connection_timeout, infinity) ->
-    do_configure(iiop_connection_timeout, infinity);
-configure(iiop_connection_timeout, Value) when integer(Value), Value =< 1000000 ->
-    do_configure(iiop_connection_timeout, Value);
+configure(iiop_connection_timeout, infinity, Status) ->
+    do_configure(iiop_connection_timeout, infinity, Status);
+configure(iiop_connection_timeout, Value, Status) when integer(Value), Value =< 1000000 ->
+    do_configure(iiop_connection_timeout, Value, Status);
 %% configure 'iiop_setup_connection_timeout' will only have effect on new connections.
-configure(iiop_setup_connection_timeout, infinity) ->
-    do_configure(iiop_setup_connection_timeout, infinity);
-configure(iiop_setup_connection_timeout, Value) when integer(Value) ->
-    do_configure(iiop_setup_connection_timeout, Value);
+configure(iiop_setup_connection_timeout, infinity, Status) ->
+    do_configure(iiop_setup_connection_timeout, infinity, Status);
+configure(iiop_setup_connection_timeout, Value, Status) when integer(Value) ->
+    do_configure(iiop_setup_connection_timeout, Value, Status);
 %% Garbage Collect the object keys DB.
-configure(objectkeys_gc_time, infinity) ->
-    do_configure(objectkeys_gc_time, infinity);
-configure(objectkeys_gc_time, Value) when integer(Value), Value =< 1000000 ->
-    do_configure(objectkeys_gc_time, Value);
+configure(objectkeys_gc_time, infinity, Status) ->
+    do_configure(objectkeys_gc_time, infinity, Status);
+configure(objectkeys_gc_time, Value, Status) when integer(Value), Value =< 1000000 ->
+    do_configure(objectkeys_gc_time, Value, Status);
 %% Orber debug printouts
-configure(orber_debug_level, Value) when integer(Value) ->
-    do_configure(orber_debug_level, Value);
+configure(orber_debug_level, Value, Status) when integer(Value) ->
+    do_configure(orber_debug_level, Value, Status);
 
 %%------ Keys we cannot change if Orber is running -----
 %% Set the listen port
-configure(iiop_port, Value) when integer(Value) ->
-    do_safe_configure(iiop_port, Value);
+configure(iiop_port, Value, Status) when integer(Value) ->
+    do_safe_configure(iiop_port, Value, Status);
 %% IIOP interceptors
-configure(interceptors, Value) when tuple(Value) ->
-    do_safe_configure(interceptors, Value);
+configure(interceptors, Value, Status) when tuple(Value) ->
+    do_safe_configure(interceptors, Value, Status);
+%% Orber Domain
+configure(domain, Value, Status) when list(Value) ->
+    do_safe_configure(domain, Value, Status);
+%% Set the IP-address we should use
+configure(ip_address, Value, Status) when list(Value) ->
+    do_safe_configure(ip_address, Value, Status);
+%% Set the range of ports we may use on this machine when connecting to a server.
+configure(iiop_out_ports, {Min, Max}, Status) when integer(Min), integer(Max) ->
+    do_safe_configure(iiop_out_ports, {Min, Max}, Status);
 
-configure(Key, Value) ->
+configure(Key, Value, _) ->
     orber:debug_level_print("[~p] orber:configure(~p, ~p); Bad key or value.", 
 			    [?LINE, Key, Value], ?DEBUG_LEVEL),
-    exit("Bad configure parameter(s)").
+    exit("Bad configuration parameter(s)").
 
 %% This function may be used as long as it is safe to change a value at any time.
-do_configure(Key, Value) ->
+do_configure(Key, Value, check) ->
     case is_loaded() of
 	false ->
 	    application:load(orber),
 	    application_controller:set_env(orber, Key, Value);
 	true ->
 	    application_controller:set_env(orber, Key, Value)
-    end.
+    end;
+do_configure(Key, Value, _) ->
+    application_controller:set_env(orber, Key, Value).
 
 %% This function MUST(!!) be used when we cannot change a value if Orber is running.
-do_safe_configure(Key, Value) ->
+do_safe_configure(Key, Value, running) ->
+    exit("Orber already running, the given key may not be updated!");
+do_safe_configure(Key, Value, check) ->
     case is_loaded() of
 	false ->
 	    application:load(orber),
@@ -826,7 +947,9 @@ do_safe_configure(Key, Value) ->
 		true ->
 		    exit("Orber already running, the given key may not be updated!")
 	    end
-    end.
+    end;
+do_safe_configure(Key, Value, loaded) ->
+    application_controller:set_env(orber, Key, Value).
 
 
 add_table_index() ->
@@ -928,11 +1051,7 @@ init(orb_init) ->
 					 {orber_policyserver, {orber_policy_server, start,
 							       [[]]},
 					  permanent, 
-					  10000, worker, [orber_policy_server]},
-					 {orber_nameservice, {orber, start_naming_service, 
-							      [[]]},
-					  permanent, 
-					  10000, worker, ['CosNaming_NamingContext']}
+					  10000, worker, [orber_policy_server]}
 					],
 			    {ok, {SupFlags, ChildSpec}};
 			StopReason ->
@@ -942,19 +1061,4 @@ init(orb_init) ->
 	X ->
 	    {stop, io_lib:format("GIOP ~p not an implemeted version", [X])}
     end.
-
-start_naming_service(_) ->
-    case catch 'CosNaming_NamingContext':oe_create_link([],
-							[{regname, {local, orber_nameservice}},
-							 {sup_child, true}]
-						       ) of 
-	{'EXCEPTION', E} ->
-	    {error, {'EXCEPTION', E}};
-	{'EXIT', R} ->
-	    {error, {'EXIT', R}};
-	{ok, Pid, Key} ->
-	    {ok, Pid}
-    end.
-
-
 

@@ -13,7 +13,7 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id $
 %%
 -module(dets_server).
 
@@ -156,7 +156,7 @@ handle_call({open, Tab, OpenArgs}, {From, _Tag}, State) ->
                     {reply, Error, State}
             end;
         [{Tab, _Counter, Pid}] ->
-            Pid ! {self(), {add_user, Tab, OpenArgs}},
+            Pid ! ?DETS_CALL(self(), {add_user, Tab, OpenArgs}),
             receive
                 {Pid, {ok, Result}} ->
                     do_link(Store, From),
@@ -280,7 +280,7 @@ handle_close(S, From, Tab, How) ->
 		    true = ets:delete(?REGISTRY, Tab),
 		    true = ets:delete(?OWNERS, Pid),
 		    true = ets:match_delete(Store, {From, Tab}),
-		    Pid ! {self(), close},
+		    Pid ! ?DETS_CALL(self(), close),
 		    receive {Pid, {closed, Res}} -> Res end;
 		[{Tab, _Counter, Pid}] ->
 		    do_unlink(Store, From),
@@ -291,7 +291,7 @@ handle_close(S, From, Tab, How) ->
 			How == shutdown ->
 			    ok;
 			true ->
-			    Pid ! {self(), {close, From}},
+			    Pid ! ?DETS_CALL(self(), {close, From}),
 			    receive {Pid, {closed, Res}} -> Res end
 		    end
 	    end

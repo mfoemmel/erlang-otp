@@ -54,9 +54,6 @@ atom all
 atom allocated
 atom allocated_areas
 atom allocator
-atom atom_desc
-atom atom_space
-atom atom_table
 atom and
 atom andalso
 atom andthen
@@ -88,6 +85,7 @@ atom connect
 atom connected
 atom const
 atom context_switches
+atom cpu_timestamp
 atom current_function
 atom data
 atom debug_flags
@@ -107,9 +105,9 @@ atom DollarDollar='$$'
 atom DollarUnderscore='$_'
 atom DollarDictionary='$dictionary'
 atom dsend
+atom dsend_nosuspend
 atom dunlink
 atom duplicate_bag
-atom elib_malloc
 atom emulator
 atom enable_trace
 atom env
@@ -125,13 +123,10 @@ atom error_logger
 atom exit_status
 atom existing
 atom exiting
-atom export_desc
-atom export_table
 atom exports
 atom false
 atom fd
 atom fix_alloc
-atom fixed_deletion_desc
 atom flags
 atom fullsweep_after
 atom fullsweep_if_old_binaries
@@ -149,9 +144,9 @@ atom get_tcw
 atom getenv
 atom getting_linked
 atom getting_unlinked
-atom glibc
 atom global
 atom Gt='>'
+atom heap_block_size
 atom heap_size
 atom heap_sizes
 atom hidden
@@ -180,9 +175,7 @@ atom label
 atom last_calls
 atom Le='=<'
 atom line
-atom link_desc
 atom links
-atom loaded_code
 atom local
 atom low
 atom Lt='<'
@@ -193,23 +186,13 @@ atom maximum
 atom max_tables max_processes
 atom mbuf_size
 atom memory
-atom mesg_desc
 atom message
 atom message_queue_len
 atom messages
 atom min_heap_size
 atom Minus='-'
-atom mmap
-atom mmap_blocks_size
-atom mmap_chunks
-atom mmap_chunks_size
-atom mmap_max
-atom mmap_table
-atom mmap_threshold
 atom module
-atom module_desc
 atom module_info
-atom module_table
 atom monitored_by
 atom monitors
 atom more
@@ -223,6 +206,7 @@ atom new
 atom new_index
 atom new_uniq
 atom nocatch
+atom noconnect
 atom noconnection
 atom nocookie
 atom node
@@ -236,6 +220,7 @@ atom not_purged
 atom notalive
 atom nouse_stdio
 atom objects
+atom old_heap_block_size
 atom old_heap_size
 atom on_load
 atom or
@@ -247,16 +232,13 @@ atom out
 atom output
 atom owner
 atom packet
-atom plist_desc
 atom Plus='+'
 atom pid
 atom port
-atom preg_desc
 atom print
 atom priority
 atom private
 atom process
-atom process_desc
 atom process_count
 atom process_limit
 atom process_dump
@@ -270,7 +252,6 @@ atom receive
 atom recent_size
 atom reductions
 atom register
-atom register_table
 atom registered_name
 atom refc
 atom rem
@@ -298,7 +279,6 @@ atom size
 atom sl_alloc
 atom stack_size
 atom start
-atom static
 atom status
 atom stderr_to_stdout
 atom stop
@@ -309,7 +289,6 @@ atom system_limit
 atom system_version
 atom SYSTEM='SYSTEM'
 atom table
-atom table_desc
 atom this
 atom thread_pool_size
 atom THROW='THROW'
@@ -317,13 +296,10 @@ atom timeout
 atom timeout_value
 atom Times='*'
 atom timestamp
-atom top_pad
-atom total
 atom trace trace_ts traced 
 atom trace_control_word
 atom tracer
 atom trap_exit
-atom trim_threshold
 atom true
 atom type
 atom undef
@@ -346,3 +322,4 @@ atom visible
 atom waiting
 atom wall_clock
 atom xor
+atom yield

@@ -79,8 +79,10 @@ arith_alloc(Process* p, Uint need)
 	 * Allocate in a new block; don't update the arith heap.
 	 */
 	n = need;
-	bp = (ErlHeapFragment*) safe_alloc(sizeof(ErlHeapFragment) +
-					   ((n-1)*sizeof(Eterm)));
+	bp = (ErlHeapFragment*)
+	    erts_safe_sl_alloc_from(821,
+				    sizeof(ErlHeapFragment)
+				    + ((n-1)*sizeof(Eterm)));
     } else {
 #ifdef DEBUG
 	int i;
@@ -92,8 +94,10 @@ arith_alloc(Process* p, Uint need)
 #ifdef DEBUG
 	n++;
 #endif
-	bp = (ErlHeapFragment*) safe_alloc(sizeof(ErlHeapFragment) +
-					   ((n-1)*sizeof(Eterm)));
+	bp = (ErlHeapFragment*)
+	    erts_safe_sl_alloc_from(822,
+				    sizeof(ErlHeapFragment)
+				    + ((n-1)*sizeof(Eterm)));
 #ifdef DEBUG
 	n--;
 #endif
@@ -811,20 +815,21 @@ void *safe_realloc_from(int from, void* ptr, Uint len)
     return(buf);
 }
 
-void *safe_sl_alloc_from(int from, Uint len)
+void *erts_safe_sl_alloc_from(int from, Uint len)
 {
     void *buf;
 
-    if ((buf = sys_sl_alloc_from(from, len)) == NULL)
+    if ((buf = erts_sl_alloc_from(from, len)) == NULL)
 	erl_exit(1, "Can't allocate %d bytes of memory\n", len);
     return(buf);
 }
 
-void *safe_sl_realloc_from(int from, void* ptr, Uint save_size, Uint size)
+void *erts_safe_sl_realloc_from(int from, void* ptr, Uint save_size,
+				Uint size)
 {
     void *buf;
 
-    if ((buf = sys_sl_realloc_from(from, ptr, save_size, size)) == NULL)
+    if ((buf = erts_sl_realloc_from(from, ptr, save_size, size)) == NULL)
 	erl_exit(1, "Can't reallocate %d bytes of memory\n", size);
     return(buf);
 }
@@ -839,14 +844,14 @@ void *safe_realloc(void *ptr, Uint len)
   return safe_realloc_from(-1, ptr, len);
 }
 
-void *safe_sl_alloc(Uint len)
+void *erts_safe_sl_alloc(Uint len)
 {
-  return safe_sl_alloc_from(-1, len);
+  return erts_safe_sl_alloc_from(-1, len);
 }
 
-void *safe_sl_realloc(void* ptr, Uint save_size, Uint size)
+void *erts_safe_sl_realloc(void* ptr, Uint save_size, Uint size)
 {
-  return safe_sl_realloc_from(-1, ptr, save_size, size);
+  return erts_safe_sl_realloc_from(-1, ptr, save_size, size);
 }
 
 #else
@@ -871,20 +876,20 @@ void *safe_realloc(void* ptr, Uint len)
     return(buf);
 }
 
-void *safe_sl_alloc(Uint len)
+void *erts_safe_sl_alloc(Uint len)
 {
     void *buf;
 
-    if ((buf = sys_sl_alloc(len)) == NULL)
+    if ((buf = erts_sl_alloc(len)) == NULL)
 	erl_exit(1, "Can't allocate %d bytes of memory\n", len);
     return(buf);
 }
 
-void *safe_sl_realloc(void* ptr, Uint save_size, Uint size)
+void *erts_safe_sl_realloc(void* ptr, Uint save_size, Uint size)
 {
     void *buf;
 
-    if ((buf = sys_sl_realloc(ptr, save_size, size)) == NULL)
+    if ((buf = erts_sl_realloc(ptr, save_size, size)) == NULL)
 	erl_exit(1, "Can't reallocate %d bytes of memory\n", size);
     return(buf);
 }
@@ -1988,6 +1993,63 @@ do_load(Eterm group_leader,	/* Group leader or NIL if none. */
     return result;
 }
 
+typedef union { char c; short s; int i; long l; float f; double d; } align_t;
+
+static align_t *definite_block;
+static align_t *definite_block_top;
+static Uint definite_block_units;
+#ifdef DEBUG
+static Uint definite_initialized = 0;
+#endif
+
+void
+erts_init_definite_alloc(Uint size)
+{
+    if (size == 0) {
+	definite_block = NULL;
+	definite_block_units = 0;
+    }
+    else {
+	definite_block_units = (size < sizeof(align_t)
+				? 1
+				: ((size - 1)/sizeof(align_t) + 1));
+	definite_block = (align_t *)
+	    safe_alloc_from(400, definite_block_units*sizeof(align_t));
+    }
+    definite_block_top = definite_block;
+#ifdef DEBUG
+    definite_initialized = 1;
+#endif
+}
+
+void
+erts_definite_alloc_info(ErtsDefiniteAllocInfo *edaip)
+{
+    edaip->block = definite_block_units*sizeof(align_t);
+    edaip->used = ((Uint) definite_block_top) - ((Uint) definite_block);
+}
+
+void *
+erts_definite_alloc(Uint size)
+{
+    Uint inc;
+    void *res = NULL;
+    
+    ASSERT(definite_initialized);
+
+    if (size == 0)
+	return res;
+
+    inc = size < sizeof(align_t) ? 1 : ((size - 1)/sizeof(align_t) + 1);
+
+    if (definite_block_top + inc <= definite_block + definite_block_units) {
+	res = (void *) definite_block_top;
+	definite_block_top += inc;
+    }
+    
+    return res;
+}
+
 #ifdef INSTRUMENT
 typedef union most_strict {
     double x;
@@ -2250,7 +2312,7 @@ instr_realloc(int from,
    erts_mutex_lock(instr_lck);
 
    l = (mem_link *) new_p;
-   link_in(l, size, from);
+   link_in(l, size, from > 0 ? from : old_type);
 
    ASSERT(totally_allocated + size >= old_size);
    totally_allocated += size;
@@ -2314,21 +2376,21 @@ sys_free(void* ptr)
 }
 
 void *
-sys_sl_alloc(Uint size)
+erts_sl_alloc(Uint size)
 {
-  return instr_alloc(-1, sys_sl_alloc2, size);
+  return instr_alloc(-1, erts_sl_alloc2, size);
 }
 
 void *
-sys_sl_realloc(void* ptr, Uint save_size, Uint size)
+erts_sl_realloc(void* ptr, Uint save_size, Uint size)
 {
-  return instr_realloc(-1, sys_sl_realloc2, ptr, save_size, size);
+  return instr_realloc(-1, erts_sl_realloc2, ptr, save_size, size);
 }
 
 void
-sys_sl_free(void* ptr)
+erts_sl_free(void* ptr)
 {
-  return instr_free(sys_sl_free2, ptr);
+  return instr_free(erts_sl_free2, ptr);
 }
 
 static void dump_memory_to_stream(FILE *f)

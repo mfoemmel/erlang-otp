@@ -55,13 +55,25 @@ start(Args) ->
     ?d("Starting Mnesia on node ~p...", [node()]),
     case mnesia:start(Extra) of
 	ok ->
-	    io:format(" ok~n", []),
-	    ok;
+	    Tables = mnesia:system_info(tables),
+	    io:format(" ok.~n" , []),
+	    ?d("Waiting for ~p tables...", [length(Tables)]),
+	    wait(Tables);
 	{error, Reason} ->
 	    io:format(" FAILED: ~p~n", [Reason]),
 	    {error, Reason}
     end.
 
+wait(Tables) ->
+    case mnesia:wait_for_tables(Tables, timer:seconds(10)) of
+	ok ->
+	    io:format(" loaded.~n", []),
+	    ok;
+	{timeout, More} ->
+	    io:format(" ~p...", [length(More)]),
+	    wait(More)
+    end.
+    
 %% Populate the database
 populate() ->
     FileName = 'bench.config',

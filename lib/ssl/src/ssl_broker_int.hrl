@@ -24,7 +24,7 @@
 	     collector = nil, 	% client pid, or collector during change of 
 	     			% controlling process
 	     fd = nil, 		% fd of "external" socket in port program
-	     active = true, 	% true | false
+	     active = true, 	% true | false | once
 	     opts = [], 	% options
 	     thissock = nil,    % this sslsocket
 	     newif = true,	% new ssl interface

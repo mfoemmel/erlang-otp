@@ -254,7 +254,7 @@ int n;
 
 	lbuf_size = size + lpos + BUFSIZ;
 	old_lbuf = lbuf;
-	if ((lbuf = realloc(lbuf, lbuf_size)) == NULL) {
+	if ((lbuf = driver_realloc(lbuf, lbuf_size)) == NULL) {
 	    driver_failure(ttysl_port, -1);
 	    return(0);
 	}
@@ -316,7 +316,7 @@ char *s;
 
 static int start_lbuf()
 {
-    if (!lbuf && !(lbuf = (byte*) malloc(lbuf_size)))
+    if (!lbuf && !(lbuf = (byte*) driver_alloc(lbuf_size)))
       return FALSE;
     llen = 0;
     lc = lbuf;
@@ -326,7 +326,7 @@ static int start_lbuf()
 
 static int stop_lbuf()
 {
-    if (lbuf) free(lbuf);
+    if (lbuf) driver_free(lbuf);
     lbuf = NULL;
     return TRUE;
 }
@@ -377,14 +377,14 @@ int l;
 
     /* Move tail of buffer to make space. */
     if ((tl = llen - lpos) > 0) {
-	if ((tbuf = malloc(tl)) == NULL)
+	if ((tbuf = driver_alloc(tl)) == NULL)
 	    return FALSE;
 	memcpy(tbuf, lc, tl);
     }
     n = insert_buf(s, l);
     if (tl > 0) {
 	memcpy(lc, tbuf, tl);
-	free(tbuf);
+	driver_free(tbuf);
     }
     llen += n;
     write_buf(lc - n, llen - lpos + n);
@@ -595,7 +595,7 @@ static int start_termcap()
 
     if (!(c = getenv("TERM")) || tgetent(lbuf, c) <= 0)
       return FALSE;
-    if (!(capbuf = malloc(1024)))
+    if (!(capbuf = driver_alloc(1024)))
       return FALSE;
     c = capbuf;
     cols = tgetnum("co");
@@ -608,13 +608,13 @@ static int start_termcap()
     right = tgetstr("nd", &c);
     if (up && down && left && right)
       return TRUE;
-    free(capbuf);
+    driver_free(capbuf);
     return FALSE;
 }
 
 static int stop_termcap()
 {
-    if (capbuf) free(capbuf);
+    if (capbuf) driver_free(capbuf);
     capbuf = NULL;
     return TRUE;
 }

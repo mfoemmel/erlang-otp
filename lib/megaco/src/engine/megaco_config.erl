@@ -200,14 +200,12 @@ system_info(Item) ->
             [Mid || {_, Mid} <- ets:match_object(megaco_config, Pat)];
         connections ->
             [C#conn_data.conn_handle || C <- ets:tab2list(megaco_local_conn)];
-	scanner ->
-	    case ets:lookup(megaco_config, scanner) of
+	text_config ->
+	    case ets:lookup(megaco_config, text_config) of
 		[] ->
-		    undefined;
-		[{scanner, Scanner}] ->
-		    Scanner;
-		Else ->
-		    exit({unknown_scanner_config, Else})
+		    [];
+		[{text_config, Conf}] ->
+		    [Conf]
 	    end;
 		    
 	BadItem ->
@@ -351,7 +349,9 @@ do_init() ->
 init_scanner() ->
     case get_env(scanner, undefined) of
 	undefined ->
-	    ok;
+	    Key  = text_config,
+	    Data = [],
+	    ets:insert(megaco_config, {Key, Data});
 	flex ->
 	    start_scanner(megaco_flex_scanner_handler, 
 			  start_link, [], [gen_server]);
@@ -363,8 +363,8 @@ init_scanner() ->
 start_scanner(M, F, A, Mods) ->
     case megaco_misc_sup:start_permanent_worker(M, F, A, Mods) of
 	{ok, Pid, Conf} when  pid(Pid) ->
-	    Key  = scanner,
-	    Data = {[Conf], {M, F, A}},
+	    Key  = text_config,
+	    Data = [Conf],
 	    ets:insert(megaco_config, {Key, Data});
 	Else ->
 	    throw({scanner_start_failed, Else})
@@ -491,7 +491,34 @@ terminate(Reason, State) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change(OldVsn, S, Extra) ->
+code_change(_Vsn, S, downgrade_to_pre_1_0_3) ->
+%     io:format("megaco_config:code_change(down) -> entry~n", []),
+    case ets:lookup(megaco_config, text_config) of
+	[{text_config, [Conf]}] ->
+% 	    io:format("megaco_config:code_change(down) -> Conf: ~w~n", [Conf]),
+	    ets:delete(megaco_config, text_config),
+	    ets:insert(megaco_config, {scanner, {[Conf], {undefined, undefined, []}}});
+	O ->
+% 	    io:format("megaco_config:code_change(down) -> O: ~w~n", [O]),
+	    ets:delete(megaco_config, text_config) %% Just in case
+    end,
+%     io:format("megaco_config:code_change(down) -> exit~n", []),
+    {ok, S};
+
+code_change(_Vsn, S, upgrade_from_pre_1_0_3) ->
+%     io:format("megaco_config:code_change(up) -> entry~n", []),
+    case ets:lookup(megaco_config, scanner) of
+	[{scanner, {[Conf], MFA}}] ->
+% 	    io:format("megaco_config:code_change(up) -> Conf: ~w, MFA: ~w~n", 
+% 		      [Conf, MFA]),
+	    ets:delete(megaco_config, scanner),
+	    ets:insert(megaco_config, {text_config, [Conf]});
+	O ->
+% 	    io:format("megaco_config:code_change(up) -> O: ~w~n", [O]),
+	    ets:delete(megaco_config, scanner),  %% Just in case
+	    ets:insert(megaco_config, {text_config, []})
+    end,
+%     io:format("megaco_config:code_change(up) -> exit~n", []),
     {ok, S}.
 
 %%%----------------------------------------------------------------------

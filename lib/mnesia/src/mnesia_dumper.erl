@@ -116,7 +116,7 @@ perform_dump(InitBy, Regulator) ->
     ?eval_debug_fun({?MODULE, perform_dump}, [InitBy]),
     LogState = mnesia_log:prepare_log_dump(InitBy),
     dbg_out("Transaction log dump initiated by ~w: ~w~n",
-	    [InitBy, LogState]),
+	    [InitBy, LogState]), 
     adjust_log_writes(false),    
     mnesia_recover:allow_garb(),
     case LogState of
@@ -265,7 +265,6 @@ do_insert_rec(Tid, Rec, InPlace, InitBy, LogV) ->
 update(Tid, [], DumperMode) ->
     dumped;
 update(Tid, SchemaOps, DumperMode) ->
-    mnesia_controller:wait_for_schema_commit_lock(),
     UseDir = mnesia_monitor:use_dir(),
     Res = perform_update(Tid, SchemaOps, DumperMode, UseDir),    
     mnesia_controller:release_schema_commit_lock(),
@@ -276,7 +275,7 @@ perform_update(Tid, SchemaOps, mandatory, true) ->
     %% dumper perform needed updates
 
     InitBy = schema_update,
-    ?eval_debug_fun({?MODULE, dump_schema_op}, [InitBy]),
+    ?eval_debug_fun({?MODULE, dump_schema_op}, [InitBy]),    
     opt_dump_log(InitBy);
 perform_update(Tid, SchemaOps, DumperMode, UseDir) ->
     %% No need for a full transaction log dump.
@@ -501,6 +500,12 @@ insert_op(Tid, _, {op, change_table_copy_type, N, FromS, ToS, TabDef}, InPlace, 
 
 insert_op(Tid, S, {op, transform, Fun, TabDef}, InPlace, InitBy) ->
     Cs = mnesia_schema:list2cs(TabDef),
+    case mnesia_lib:cs_to_storage_type(node(), Cs) of
+	disc_copies -> 
+	    open_dcl(Cs#cstruct.name);
+	_ ->
+	    ignore
+    end,
     insert_cstruct(Tid, Cs, true, InPlace, InitBy);
 
 %%%  Operations below this are handled without using the logg.
@@ -517,6 +522,19 @@ insert_op(Tid, _, {op, create_table, TabDef}, InPlace, InitBy) ->
 		    ignore;
 		ram_copies ->
 		    ignore;
+		disc_copies ->
+		    Dcd = mnesia_lib:tab2dcd(Tab),
+		    case mnesia_lib:exists(Dcd) of  
+			true -> ignore;
+			false ->
+			    mnesia_log:open_log(temp, 
+						mnesia_log:dcl_log_header(),
+						Dcd, 
+						false, 
+						false,
+						read_write),
+			    mnesia_log:unsafe_close_log(temp)
+		    end;
 		_ ->
 		    Args = [{file, mnesia_lib:tab2dat(Tab)},
 			    {type, mnesia_lib:disk_type(Tab, Cs#cstruct.type)},
@@ -608,6 +626,11 @@ insert_op(Tid, _, {op, clear_table, TabDef}, InPlace, InitBy) ->
 	    ignore;
 	Storage ->
 	    Oid = '_', %%val({Tab, wild_pattern}),
+	    if Storage == disc_copies ->
+		    open_dcl(Cs#cstruct.name);
+	       true ->
+		    ignore
+	    end,
 	    insert(Tid, Storage, Tab, '_', Oid, clear_table, InPlace, InitBy)
     end;
 
@@ -740,8 +763,7 @@ open_files(Tab, Storage, UpdateInPlace, InitBy)
 		Type ->
 		    case Storage of 
 			disc_copies when Tab /= schema ->
-			    {Bool, What} = open_disc_copies(Tab, InitBy),
-			    put({?MODULE, Tab}, What),		    
+			    Bool = open_disc_copies(Tab, InitBy),
 			    Bool;
 			_ ->
 			    Fname = prepare_open(Tab, UpdateInPlace, InitBy),
@@ -750,13 +772,13 @@ open_files(Tab, Storage, UpdateInPlace, InitBy)
 				    {repair, mnesia_monitor:get_env(auto_repair)},
 				    {type, mnesia_lib:disk_type(Tab, Type)}],
 			    {ok, _} = mnesia_monitor:open_dets(Tab, Args),
-			    put({?MODULE, Tab}, opened_dumper),
+			    put({?MODULE, Tab}, {opened_dumper, dat}),
 			    true
 		    end
 	    end;
 	already_dumped ->
 	    false;
-	opened_dumper ->
+	{opened_dumper, _} ->
 	    true
     end;
 open_files(Tab, Storage, UpdateInPlace, InitBy) ->
@@ -789,11 +811,31 @@ open_disc_copies(Tab, InitBy) ->
 				      mnesia_lib:exists(DclF), 
 				      mnesia_monitor:get_env(auto_repair),
 				      read_write),
-	    {true, opened_dumper};
+	    put({?MODULE, Tab}, {opened_dumper, dcl}),
+	    true;
 	true ->
 	    mnesia_log:ets2dcd(Tab),
-	    {false, already_dumped}
+	    put({?MODULE, Tab}, already_dumped),
+	    false
     end. 
+
+%% Always opens the dcl file for writing overriding already_dumped 
+%% mechanismen, used for schema transactions.
+open_dcl(Tab) ->
+    case get({?MODULE, Tab}) of
+    	{opened_dumper, _} ->
+	    true;
+	_ -> %% undefined or already_dumped
+	    DclF = mnesia_lib:tab2dcl(Tab),
+	    Tab = mnesia_log:open_log(Tab, 
+				      mnesia_log:dcl_log_header(), 
+				      DclF, 
+				      mnesia_lib:exists(DclF), 
+				      mnesia_monitor:get_env(auto_repair),
+				      read_write),
+	    put({?MODULE, Tab}, {opened_dumper, dcl}),
+	    true
+    end.
 
 prepare_open(Tab, UpdateInPlace, InitBy) ->
     Dat =  mnesia_lib:tab2dat(Tab),
@@ -820,15 +862,15 @@ close_files(UpdateInPlace, Outcome, InitBy) -> % Update in place
 close_files(InPlace, Outcome, InitBy, [{{?MODULE, Tab}, already_dumped} | Tail]) ->
     erase({?MODULE, Tab}),
     close_files(InPlace, Outcome, InitBy, Tail);
-close_files(InPlace, Outcome, InitBy, [{{?MODULE, Tab}, _} | Tail]) ->
+close_files(InPlace, Outcome, InitBy, [{{?MODULE, Tab}, {opened_dumper, Type}} | Tail]) ->
     erase({?MODULE, Tab}),
     case val({Tab, storage_type}) of
 	disc_only_copies when InitBy /= startup ->
 	    ignore;
 	disc_copies when Tab /= schema -> 
 	    mnesia_log:close_log(Tab);
-	_ ->
-	    do_close(InPlace, Outcome, Tab)
+	Storage ->
+	    do_close(InPlace, Outcome, Tab, Type, Storage)
     end,
     close_files(InPlace, Outcome, InitBy, Tail);
 
@@ -837,19 +879,30 @@ close_files(InPlace, Outcome, InitBy, [_ | Tail]) ->
 close_files(_, _, InitBy, []) ->
     ok.
 
-do_close(InPlace, Outcome, Tab) ->
+%% If storage is unknown during close clean up files, this can happen if timing
+%% is right and dirty_write conflicts with schema operations.
+do_close(_, _, Tab, dcl, unknown) ->
+    mnesia_log:close_log(Tab),
+    file:delete(mnesia_lib:tab2dcl(Tab));
+do_close(_, _, Tab, dcl, _) ->  %% To be safe, can it happen?
+    mnesia_log:close_log(Tab);
+
+do_close(InPlace, Outcome, Tab, dat, Storage) ->
     mnesia_monitor:close_dets(Tab),
     if
+	Storage == unknown, InPlace == true  ->
+	    file:delete(mnesia_lib:tab2dat(Tab));
 	InPlace == true ->
 	    %% Update in place
 	    ok;
-	Outcome == ok ->
+	Outcome == ok, Storage /= unknown ->
 	    %% Success: swap tmp files with dat files
 	    TabDat = mnesia_lib:tab2dat(Tab),
 	    ok = file:rename(mnesia_lib:tab2tmp(Tab), TabDat);
 	true ->
 	    file:delete(mnesia_lib:tab2tmp(Tab))
     end.
+    
 
 ensure_rename(From, To) ->
     case mnesia_lib:exists(From) of
@@ -882,9 +935,9 @@ delete_cstruct(Tid, Cs, InPlace, InitBy) ->
 %% Raw dump of table. Dumper must have unique access to the ets table.
 
 raw_named_dump_table(Tab, Ftype) ->
-    mnesia_lib:lock_table(Tab),
     case mnesia_monitor:use_dir() of
 	true ->
+	    mnesia_lib:lock_table(Tab),
 	    TmpFname = mnesia_lib:tab2tmp(Tab),
 	    Fname =
 		case Ftype of
@@ -912,10 +965,12 @@ raw_named_dump_table(Tab, Ftype) ->
 			    mnesia_lib:db_fixtable(Storage, Tab, false),
 			    mnesia_lib:dets_sync_close(Tab),
 			    file:delete(TmpFname),
+			    mnesia_lib:unlock_table(Tab),
 			    exit({"Dump of table to disc failed", Reason});
 			ok ->
 			    mnesia_lib:db_fixtable(Storage, Tab, false),
 			    mnesia_lib:dets_sync_close(Tab),
+			    mnesia_lib:unlock_table(Tab),
 			    ok = file:rename(TmpFname, Fname)
 		    end;
 		{error, Reason} ->

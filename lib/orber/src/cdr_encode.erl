@@ -37,8 +37,8 @@
 %%-----------------------------------------------------------------
 -export([enc_giop_msg_type/1, enc_request/8, enc_request_split/8, enc_reply/6,
 	 enc_type/3, enc_type/5, enc_cancel_request/2,
-	 enc_locate_request/3, enc_locate_reply/3, enc_close_connection/1,
-	 enc_message_error/1, enc_fragment/1]).
+	 enc_locate_request/3, enc_locate_reply/3, enc_locate_reply/5, 
+	 enc_close_connection/1, enc_message_error/1, enc_fragment/1]).
 
 -export([enc_reply_split/6, enc_giop_message_header/5]).
 
@@ -51,6 +51,8 @@
 %% Macros
 %%-----------------------------------------------------------------
 -define(DEBUG_LEVEL, 9).
+
+-define(ODD(N), (N rem 2) == 1).
 
 %%-----------------------------------------------------------------
 %% External functions
@@ -213,14 +215,17 @@ enc_used_contexts(Version, [H|T], Ctxs) ->
 enc_target_address(Version, TargetAddr, Mess, Len) when record(TargetAddr,
 							       'GIOP_TargetAddress') ->
     enc_type(?TARGETADDRESS, Version, TargetAddr, Mess, Len);
-enc_target_address(Version, IOR, Mess, Len) when record(IOR, 'IOP_IOR') ->
-    enc_type(?TARGETADDRESS, Version, #'GIOP_TargetAddress'{label = 2, value = IOR}, 
+enc_target_address(Version, IORInfo, Mess, Len) when record(IORInfo, 'GIOP_IORAddressingInfo') ->
+    enc_type(?TARGETADDRESS, Version, #'GIOP_TargetAddress'{label = ?GIOP_ReferenceAddr, 
+							    value = IORInfo}, 
 	     Mess, Len);
 enc_target_address(Version, TP, Mess, Len) when record(TP, 'IOP_TaggedProfile') ->
-    enc_type(?TARGETADDRESS, Version, #'GIOP_TargetAddress'{label = 1, value = TP}, 
+    enc_type(?TARGETADDRESS, Version, #'GIOP_TargetAddress'{label = ?GIOP_ProfileAddr, 
+							    value = TP}, 
 	     Mess, Len);
 enc_target_address(Version, ObjKey, Mess, Len) ->
-    enc_type(?TARGETADDRESS, Version, #'GIOP_TargetAddress'{label = 0, value = ObjKey}, 
+    enc_type(?TARGETADDRESS, Version, #'GIOP_TargetAddress'{label = ?GIOP_KeyAddr, 
+							    value = ObjKey}, 
 	     Mess, Len).
 
 %% FIX ME!! This is temporary, not proper flag handling.
@@ -344,11 +349,29 @@ enc_locate_request(Version, ObjectKey, RequestId) ->
 %%-----------------------------------------------------------------
 enc_locate_reply(Version, RequestId, LocStatus) ->
     Flags = 1, %% LTH Not correct, just placeholder
-    {Message, Len} = enc_request_id(Version, RequestId, [],
-				   ?GIOP_HEADER_SIZE), 
+    {Message, Len} = enc_request_id(Version, RequestId, [], ?GIOP_HEADER_SIZE), 
     {Message1, Len1} = enc_locate_status(Version, LocStatus, Message, Len),
     enc_giop_message_header(Version, 'locate_reply', Flags, Len1 - ?GIOP_HEADER_SIZE, 
 			    lists:reverse(Message1)).
+
+enc_locate_reply(Version, RequestId, LocStatus, TypeCode, Data) ->
+    Flags = 1, %% LTH Not correct, just placeholder
+    {Message, Len} = enc_request_id(Version, RequestId, [], ?GIOP_HEADER_SIZE), 
+    {Message1, Len1} = enc_locate_status(Version, LocStatus, Message, Len),
+    {Message2, Len2} = enc_locate_reply_body(Version, TypeCode, Data, Message1, Len1),
+    enc_giop_message_header(Version, 'locate_reply', Flags, Len2 - ?GIOP_HEADER_SIZE, 
+			    lists:reverse(Message2)).
+
+enc_locate_reply_body(Version, TypeCode, Data, Message, Len) when Version == {1,2} ->
+    %% In CORBA-2.3.1 the LocateReply body didn't align the body (8-octet
+    %% boundry) for IIOP-1.2. This have been changed in later specs.
+    %% Un-comment the line below when we want to be CORBA-2.4 compliant.
+    %% DO NOT forget to change Rest to Rest1 and Len to Len1!!!!!!!!!!
+%    {Message1, Len1} = enc_align(Message, Len, 8),
+    enc_type(TypeCode, Version, Data, Message, Len);
+enc_locate_reply_body(Version, TypeCode, Data, Message, Len) ->
+    enc_type(TypeCode, Version, Data, Message, Len).
+    
 
 enc_locate_status(Version, Status, Mess, Len) ->
     L = enc_giop_locate_status_type(Status),
@@ -477,10 +500,10 @@ enc_type('tk_boolean', Version, Value, Bytes, Len) ->
     {cdrlib:enc_bool(Value, Bytes), Len + 1};
 enc_type('tk_char', Version, Value, Bytes, Len) ->
     {cdrlib:enc_char(Value, Bytes), Len + 1};
-%% The wchar decoding can be 1, 2 or 4 bytes but temporarily we'll only accept 2.
+%% The wchar decoding can be 1, 2 or 4 bytes but for now we only accept 2.
 enc_type('tk_wchar', {1,2}, Value, Bytes, Len) ->
-    {Rest, Len1} = enc_align(Bytes, Len, 2),
-    {cdrlib:enc_unsigned_short(Value, Rest), Len1 + 2};
+    Bytes1 = cdrlib:enc_octet(2, Bytes),
+    {cdrlib:enc_unsigned_short(Value, Bytes1), Len + 3};
 enc_type('tk_wchar', Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 2),
     {cdrlib:enc_unsigned_short(Value, Rest), Len1 + 2};
@@ -499,7 +522,7 @@ enc_type({'tk_struct', IFRId, Name, ElementList}, Version, Value, Bytes, Len) ->
     enc_struct(Version, Value, ElementList, Bytes, Len);
 enc_type({'tk_union', IFRId, Name, DiscrTC, Default, ElementList},
 	Version, Value, Bytes, Len) ->
-    enc_union(Version, Value, DiscrTC, ElementList, Bytes, Len);
+    enc_union(Version, Value, DiscrTC, Default, ElementList, Bytes, Len);
 enc_type({'tk_enum', IFRId, Name, ElementList}, Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 4),
     {cdrlib:enc_enum(atom_to_list(Value), ElementList, Rest), Len1 + 4};
@@ -515,9 +538,60 @@ enc_type({'tk_alias', IFRId, Name, TC}, Version, Value, Bytes, Len) ->
     enc_type(TC, Version, Value, Bytes, Len);
 enc_type({'tk_except', IFRId, Name, ElementList}, Version, Value, Bytes, Len) ->
     enc_exception(Version, Name, IFRId, Value, ElementList, Bytes, Len);
+enc_type({'tk_fixed', Digits, Scale}, Version, Value, Bytes, Len) ->
+    enc_fixed(Version, Digits, Scale, Value, Bytes, Len);
 enc_type(Type, _, _, _, _) ->
     orber:debug_level_print("[~p] cdr_encode:type(~p).", [?LINE, Type], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=104, completion_status=?COMPLETED_MAYBE}).
+
+
+
+
+%%-----------------------------------------------------------------
+%% Func: enc_fixed
+%%-----------------------------------------------------------------
+%% Digits eq. total number of digits.
+%% Scale  eq. position of the decimal point.
+%% E.g. fixed<5,2> - "123.45" eq. #fixed{digits = 5, scale = 2, value = 12345}
+%% E.g. fixed<4,2> - "12.34"  eq. #fixed{digits = 4, scale = 2, value = 1234}
+%% These are encoded as:
+%% ## <5,2> ##  ## <4,2> ##
+%%     1,2          0,1     eq. 1 octet
+%%     3,4          2,3
+%%     5,0xC        4,0xC
+%%
+%% Each number is encoded as a half-octet. Note, for <4,2> a zero is
+%% added first to to be able to create "even" octets.
+enc_fixed(Version, Digits, Scale, 
+	  #fixed{digits = Digits, scale = Scale, value = Value}, Bytes, Len) 
+  when integer(Value), integer(Digits), integer(Scale), Digits < 32, Digits >= Scale ->
+    case ?ODD(Digits) of
+	true ->
+	    enc_fixed_2(Version, Digits, Scale, integer_to_list(Value)++[?FIXED_POSITIVE], 
+			Bytes, Len);
+	false ->
+	    enc_fixed_2(Version, Digits, Scale, [0|integer_to_list(Value)]++[?FIXED_POSITIVE], 
+			Bytes, Len)
+    end;
+enc_fixed(Version, Digits, Scale, Fixed, Bytes, Len) ->
+    orber:debug_level_print("[~p] cdr_encode:enc_fixed(~p, ~p, ~p)
+The supplied fixed type incorrect. Check that the 'digits' and 'scale' field
+match the definition in the IDL-specification. The value field must be
+a list of Digits lenght.", [?LINE, Digits, Scale, Fixed], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_MAYBE}).
+
+enc_fixed_2(Version, Digits, Scale, [], Bytes, Len) ->
+    {Bytes, Len};
+enc_fixed_2(Version, Digits, Scale, [D1, D2|Ds], Bytes, Len) ->
+    %% We could convert the ASCII-value to digit values but the bit-syntax will
+    %% truncate it correctly.
+    enc_fixed_2(Version, Digits, Scale, Ds, [<<D1:4,D2:4>> | Bytes], Len+1);
+enc_fixed_2(Version, Digits, Scale, Value, Bytes, Len) ->
+       orber:debug_level_print("[~p] cdr_encode:enc_fixed_2(~p, ~p, ~p)
+The supplied fixed type incorrect. Most likely the 'digits' field don't match the 
+supplied value. Hence, check that the value is correct.", 
+    [?LINE, Digits, Scale, Value], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_MAYBE}). 
 
 %%-----------------------------------------------------------------
 %% Func: enc_sequence/5
@@ -570,6 +644,15 @@ enc_string(Version, String, Bytes, Len) ->
 %%-----------------------------------------------------------------
 %% Func: enc_wstring/4
 %%-----------------------------------------------------------------
+enc_wstring({1,2}, String, Bytes, Len) ->
+    %% Encode the length of the string (ulong).
+    {Bytes1, Len1} = enc_align(Bytes, Len, 4),
+    %% For IIOP-1.2 the length is the total number of octets. Hence, since the wchar's
+    %% we accepts is encoded as <<255, 255>> the total size is 2*length of the list.
+    StrLen = length(String) * 2,
+    Bytes2 = cdrlib:enc_unsigned_long(StrLen, Bytes1),
+    %% For IIOP-1.2 no terminating null character is used.
+    enc_sequence1({1,2}, String, 'tk_ushort', Bytes2, Len1+4);
 enc_wstring(Version, String, Bytes, Len) ->
     %% Encode the length of the string (ulong).
     {Bytes1, Len1} = enc_align(Bytes, Len, 4),
@@ -584,18 +667,20 @@ enc_wstring(Version, String, Bytes, Len) ->
 %%-----------------------------------------------------------------
 %% Func: enc_union/5
 %%-----------------------------------------------------------------
-enc_union(Version, {_, Label, Value}, DiscrTC, TypeCodeList, Bytes, Len) ->
+enc_union(Version, {_, Label, Value}, DiscrTC, Default, TypeCodeList, Bytes, Len) ->
     {ByteSequence, Len1} = enc_type(DiscrTC, Version, Label, Bytes, Len),
     Label2 = stringify_enum(DiscrTC,Label),
-    enc_union(Version, {Label2, Value},TypeCodeList, ByteSequence, Len1).
+    enc_union(Version, {Label2, Value},TypeCodeList, Default, ByteSequence, Len1).
 
-enc_union(_,What, [], _, _) -> 
+enc_union(_,What, [], Default, Bytes, Len) when Default < 0 ->
+    {Bytes, Len};
+enc_union(_,What, [], Default, _, _) -> 
     orber:debug_level_print("[~p] cdr_encode:enc_union(~p). Not found.", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=106, completion_status=?COMPLETED_MAYBE});
-enc_union(Version, {Label,Value} ,[{Label, Name, Type} |List], Bytes, Len) ->
+enc_union(Version, {Label,Value} ,[{Label, Name, Type} |List], Default, Bytes, Len) ->
     enc_type(Type, Version, Value, Bytes, Len);
-enc_union(Version, Union,[_ | List], Bytes, Len) ->
-    enc_union(Version, Union, List, Bytes, Len).
+enc_union(Version, Union,[_ | List], Default, Bytes, Len) ->
+    enc_union(Version, Union, List, Default, Bytes, Len).
 
 stringify_enum({tk_enum, _,_,_}, Label) ->
     atom_to_list(Label);
@@ -650,6 +735,8 @@ enc_type_code('tk_long', Version, Message, Len) ->
     enc_type('tk_ulong', Version, 3, Message, Len);
 enc_type_code('tk_longlong', Version, Message, Len) ->
     enc_type('tk_ulong', Version, 23, Message, Len);
+enc_type_code('tk_longdouble', Version, Message, Len) ->
+    enc_type('tk_ulong', Version, 25, Message, Len);
 enc_type_code('tk_ushort', Version, Message, Len) ->
     enc_type('tk_ulong', Version, 4, Message, Len);
 enc_type_code('tk_ulong', Version, Message, Len) ->
@@ -791,7 +878,64 @@ enc_type_code({'tk_except', RepId, Name, ElementList}, Version, Message, Len) ->
 				      lists:map(fun({N,T}) -> {"",N,T} end, ElementList)},
 				     Message2, 1),
     encode_complex_tc_paramters(lists:reverse(ComplexParams), Len2, Message1, Len1);
-
+enc_type_code({'tk_fixed', Digits, Scale}, Version, Message, Len) ->
+     enc_type({'tk_struct', "", "", [{"TCKind", 'tk_ulong'},
+				     {"digits", 'tk_ushort'},
+				     {"scale", 'tk_short'}]},
+	      Version,
+	      {"", 28, Digits, Scale},
+	      Message, Len);
+enc_type_code({'tk_value', RepId, Name, ValueModifier, TC, ElementList}, Version, Message, Len) ->
+    {Message1, Len1} = enc_type('tk_ulong', Version, 29, Message, Len),
+    {Message2, _} = enc_byte_order(Version, []),
+    {ComplexParams, Len2} = enc_type({'tk_struct', "", "", 
+				      [{"repository ID", {'tk_string', 0}},
+				       {"name", {'tk_string', 0}},
+				       {"ValueModifier", 'tk_short'},
+				       {"TypeCode", 'tk_TypeCode'},
+				       {"element list",
+					{'tk_sequence', 
+					 {'tk_struct', "","",
+					  [{"member name", {'tk_string', 0}},
+					   {"member type", 'tk_TypeCode'},
+					   {"Visibility", 'tk_short'}]},
+					 0}}]},
+				     Version,
+				     {"", RepId, Name, ValueModifier, TC,
+				      lists:map(fun({N,T,V}) -> {"",N,T,V} end, ElementList)},
+				     Message2, 1),
+    encode_complex_tc_paramters(lists:reverse(ComplexParams), Len2, Message1, Len1);
+enc_type_code({'tk_value_box', RepId, Name, TC}, Version, Message, Len) ->
+    {Message1, Len1} = enc_type('tk_ulong', Version, 30, Message, Len),
+    {Message2, _} = enc_byte_order(Version, []),
+    {ComplexParams, Len2} = enc_type({'tk_struct', "", "", 
+				      [{"repository ID", {'tk_string', 0}},
+				       {"name", {'tk_string', 0}},
+				       {"TypeCode", 'tk_TypeCode'}]},
+				     Version,
+				     {"", RepId, Name, TC},
+				     Message2, 1),
+    encode_complex_tc_paramters(lists:reverse(ComplexParams), Len2, Message1, Len1);
+enc_type_code({'tk_native', RepId, Name}, Version, Message, Len) ->
+    {Message1, Len1} = enc_type('tk_ulong', Version, 31, Message, Len),
+    {Message2, _} = enc_byte_order(Version, []),
+    {ComplexParams, Len2} = enc_type({'tk_struct', "", "", 
+				      [{"repository ID", {'tk_string', 0}},
+				       {"name", {'tk_string', 0}}]},
+				     Version,
+				     {"", RepId, Name},
+				     Message2, 1),
+    encode_complex_tc_paramters(lists:reverse(ComplexParams), Len2, Message1, Len1);
+enc_type_code({'tk_abstract_interface', RepId, Name}, Version, Message, Len) ->
+    {Message1, Len1} = enc_type('tk_ulong', Version, 32, Message, Len),
+    {Message2, _} = enc_byte_order(Version, []),
+    {ComplexParams, Len2} = enc_type({'tk_struct', "", "", 
+				      [{"repository ID", {'tk_string', 0}},
+				       {"name", {'tk_string', 0}}]},
+				     Version,
+				     {"", RepId, Name},
+				     Message2, 1),
+    encode_complex_tc_paramters(lists:reverse(ComplexParams), Len2, Message1, Len1);
 enc_type_code({'none', Indirection}, Version, Message, Len) ->  %% placeholder
      enc_type({'tk_struct', "", "", [{"TCKind", 'tk_ulong'},
 				    {"indirection", 'tk_long'}]},

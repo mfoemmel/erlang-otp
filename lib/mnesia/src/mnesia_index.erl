@@ -253,23 +253,40 @@ init_disc_index(Tab, [Pos | Tail]) when integer(Pos) ->
     file:delete(Fn),
     Args = [{file, Fn}, {keypos, 1}, {type, bag}],
     mnesia_monitor:open_dets(IxTag, Args),
-    insert_disc_index(Tab, Pos, IxTag, dets:first(Tab)),
+    Storage = disc_only_copies,
+    Key = mnesia_lib:db_first(Storage, Tab),
+    Recs = mnesia_lib:db_get(Storage, Tab, Key),
+    BinSize = size(term_to_binary(Recs)),
+    KeysPerChunk = (4000 div BinSize) + 1,
+    Init = {start, KeysPerChunk},
+    mnesia_lib:db_fixtable(Storage, Tab, true),
+    ok = dets:init_table(IxTag, create_fun(Init, Tab, Pos)),
+    mnesia_lib:db_fixtable(Storage, Tab, false),
     mnesia_lib:set({Tab, {index, Pos}}, IxTag),
-    add_index_info(Tab, val({Tab, setorbag}), {Pos, {dets, IxTag}}).
+    add_index_info(Tab, val({Tab, setorbag}), {Pos, {dets, IxTag}}),
+    init_disc_index(Tab, Tail).
 
-insert_disc_index(Tab, Pos, Ix, '$end_of_table') ->
-    done;
-insert_disc_index(Tab, Pos, Ix, K) ->
-    Vals = dets:lookup(Tab, K),
-    insert_disc_index_objects(Ix, Vals, Pos),
-    insert_disc_index(Tab, Pos, Ix, mnesia_lib:db_next_key(Tab, K)).
-
-insert_disc_index_objects(Ix, [], Pos) -> 
-    done;
-insert_disc_index_objects(Ix, [Obj|Tail], Pos) -> 
-    O2 = {element(Pos, Obj), element(2, Obj)},
-    ok = dets:insert(Ix, O2),
-    insert_disc_index_objects(Ix, Tail, Pos).
+create_fun(Cont, Tab, Pos) ->
+    fun(read) ->
+	    Data = 
+		case Cont of
+		    {start, KeysPerChunk} ->
+			mnesia_lib:db_init_chunk(disc_only_copies, Tab, KeysPerChunk);
+		    '$end_of_table' -> 
+			'$end_of_table';
+		    Else ->
+			mnesia_lib:db_chunk(disc_only_copies, Cont)
+		end,
+	    case Data of
+		'$end_of_table' ->
+		    end_of_input;
+		{Recs, Next} ->
+		    IdxElems = [{element(Pos, Obj), element(2, Obj)} || Obj <- Recs],
+		    {IdxElems, create_fun(Next, Tab, Pos)}
+	    end;
+       (close) ->
+	    ok
+    end.
 
 make_ram_index(_, []) -> 
     done;
@@ -279,22 +296,17 @@ make_ram_index(Tab, [Pos | Tail]) ->
 
 add_ram_index(Tab, Pos) when integer(Pos) ->
     verbose("Creating index for ~w ~n", [Tab]),
-    Pat0 = val({Tab, wild_pattern}),
-    Pat1 = setelement(2, Pat0, '$1'),
-    Pat2 = setelement(Pos, Pat1, '$2'),
-    Keys = ?ets_match(Tab, Pat2),
     Index = mnesia_monitor:mktab(mnesia_index, [bag, public]),
+    Insert = fun(Rec, Acc) ->
+		     true = ?ets_insert(Index, {element(Pos, Rec), element(2, Rec)})
+	     end,
+    mnesia_lib:db_fixtable(ram_copies, Tab, true),
+    true = ets:foldl(Insert, true, Tab),
+    mnesia_lib:db_fixtable(ram_copies, Tab, false),
     mnesia_lib:set({Tab, {index, Pos}}, Index),
-    %%mnesia_lib:add({Tab, index_tables}, {Pos, {ram, Index}}),
-    add_index_info(Tab, val({Tab, setorbag}), {Pos, {ram, Index}}),
-    insert_ram_index(Index, Keys);
+    add_index_info(Tab, val({Tab, setorbag}), {Pos, {ram, Index}});
 add_ram_index(Tab, snmp) ->
     ok.
-
-insert_ram_index(Index, [[RealKey, IxKey] | Tail]) ->
-    ?ets_insert(Index, {IxKey, RealKey}),
-    insert_ram_index(Index, Tail);
-insert_ram_index(Index, []) -> done.
 
 add_index_info(Tab, Type, IxElem) ->
     Commit = val({Tab, commit_work}),
@@ -334,9 +346,9 @@ del_index_info(Tab, Pos) ->
     end.
 
 db_put({ram, Ixt}, V) ->
-    ?ets_insert(Ixt, V);
+    true = ?ets_insert(Ixt, V);
 db_put({dets, Ixt}, V) ->
-    dets:insert(Ixt, V).
+    ok = dets:insert(Ixt, V).
 
 db_get({ram, Ixt}, K) ->
     ?ets_lookup(Ixt, K);
@@ -344,9 +356,9 @@ db_get({dets, Ixt}, K) ->
     dets:lookup(Ixt, K).
 
 db_match_erase({ram, Ixt}, Pat) ->
-    ?ets_match_delete(Ixt, Pat);
+    true = ?ets_match_delete(Ixt, Pat);
 db_match_erase({dets, Ixt}, Pat) ->
-    dets:match_delete(Ixt, Pat).
+    ok = dets:match_delete(Ixt, Pat).
     
 db_match({ram, Ixt}, Pat) ->
     ?ets_match(Ixt, Pat);

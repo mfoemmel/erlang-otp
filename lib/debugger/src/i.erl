@@ -28,7 +28,9 @@
 -import(lists, [sort/1,foreach/2]).
 
 iv() ->
-    int:version().
+    Vsn = string:substr(filename:basename(code:lib_dir(debugger)), 10),
+    list_to_atom(Vsn).
+    
 
 %% -------------------------------------------
 %% Start a new graphical monitor.
@@ -36,7 +38,13 @@ iv() ->
 %% running interpreted modules.
 %% -------------------------------------------
 
-im() -> int:m().
+im() ->
+    case debugger:start() of
+	{ok, Pid} ->
+	    Pid;
+	{error, {already_started, Pid}} ->
+	    Pid
+    end.
 
 %% -------------------------------------------
 %% Add Module(s) as being interpreted.
@@ -48,8 +56,8 @@ im() -> int:m().
 ii(Module) ->
     int:i(Module).
 
-ii(Module,Options) ->
-    int:i(Module,Options).
+ii(Module,_Options) ->
+    int:i(Module).
 
 %% -------------------------------------------
 %% Don't interpret module(s). The module will be
@@ -68,8 +76,8 @@ iq(Module) ->
 ini(Module) ->
     int:ni(Module).
 
-ini(Module,Options) ->
-    int:ni(Module,Options).
+ini(Module,_Options) ->
+    int:ni(Module).
 
 inq(Module) ->
     int:nn(Module).
@@ -98,7 +106,11 @@ ib(Module,Function,Arity) ->
 %% -------------------------------------------
 
 ib(Module,Function,Arity,Cond) ->
-    int:break_in(Module,Function,Arity,Cond).
+    Breaks1 = int:all_breaks(Module),
+    int:break_in(Module,Function,Arity),
+    Breaks2 = int:all_breaks(Module),
+    lists:foreach(fun({Mod,Line}) -> int:test_at_break(Mod,Line,Cond) end,
+		  Breaks2--Breaks1).
 
 %% -------------------------------------------
 %% Make an existing break point inactive.
@@ -228,7 +240,8 @@ bformat(A1, A2, A3, A4, A5) ->
 %% -------------------------------------------
 
 ist(Flag) ->
-    int:stack_trace(Flag).
+    int:stack_trace(Flag),
+    true.
 
 %% -------------------------------------------
 %% Set the automatic attachment flag.
@@ -237,7 +250,7 @@ ist(Flag) ->
 %% -------------------------------------------
 
 iaa(Flag) ->
-    int:auto_attach(Flag).
+    iaa(Flag,{dbg_ui_trace,start,[]}).
 
 %% -------------------------------------------
 %% Set the automatic attachment flag.
@@ -250,14 +263,15 @@ iaa(Flag) ->
 %% -------------------------------------------
 
 iaa(Flag,Fnk) ->
-    int:auto_attach(Flag,Fnk).
+    int:auto_attach(Flag,Fnk),
+    true.
 
 %% -------------------------------------------
 %% Attach to process.
 %% -------------------------------------------
 
 ia(Pid) ->
-    int:xattach(Pid).
+    ia(Pid,{dbg_ui_trace,start}).
 
 %% -------------------------------------------
 %% Attach to process.
@@ -265,7 +279,7 @@ ia(Pid) ->
 %% -------------------------------------------
 
 ia(X,Y,Z) ->
-    int:xattach(X,Y,Z).
+    ia(c:pid(X,Y,Z)).
 
 %% -------------------------------------------
 %% Attach to process.
@@ -273,10 +287,14 @@ ia(X,Y,Z) ->
 %% -------------------------------------------
 
 ia(Pid,Fnk) ->
-    int:xattach(Pid,Fnk).
+    case lists:keysearch(Pid, 1, int:snapshot()) of
+	{value, _PidTuple} ->
+	    int:attach(Pid,Fnk);
+	false -> no_proc
+    end.
 
 ia(X,Y,Z,Fnk) ->
-    int:xattach(X,Y,Z,Fnk).
+    ia(c:pid(X,Y,Z),Fnk).
 
 %% -------------------------------------------
 %% Print status for all interpreted processes.
@@ -287,15 +305,15 @@ ip() ->
     hformat("Pid","Initial Call","Status","Info"),
     ip(Stats).
 
-ip([{Pid,Func,Status,{}}|Stats]) ->
+ip([{Pid,{M,F,A},Status,{}}|Stats]) ->
     hformat(io_lib:format("~w",[Pid]),
-	    atom_to_list(Func),
+	    io_lib:format("~p:~p/~p",[M,F,length(A)]),
 	    io_lib:format("~w",[Status]),
 	    ""),
     ip(Stats);
-ip([{Pid,Func,Status,Info}|Stats]) ->
+ip([{Pid,{M,F,A},Status,Info}|Stats]) ->
     hformat(io_lib:format("~w",[Pid]),
-	    atom_to_list(Func),
+	    io_lib:format("~p:~p/~p",[M,F,length(A)]),
 	    io_lib:format("~w",[Status]),
 	    io_lib:format("~w",[Info])),
     ip(Stats);

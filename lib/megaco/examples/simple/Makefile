@@ -81,11 +81,12 @@ docs:
 # ----------------------------------------------------
 
 mg: opt
-	erl -noshell -pa $(MEGACO_ROOT_DIR)/ebin -s megaco_filter -s megaco -s megaco_simple_mg
+	erl -noshell -pa $(MEGACO_ROOT_DIR)/ebin \
+          -s megaco_filter \-s megaco -s megaco_simple_mg start_batch
 
 mgc: opt
-	erl -noshell -pa $(MEGACO_ROOT_DIR)/ebin -s megaco_filter -s megaco -s megaco_simple_mgc start_batch
-
+	erl -noshell -pa $(MEGACO_ROOT_DIR)/ebin \
+          -s megaco_filter -s megaco -s megaco_simple_mgc start_batch
 
 # ----------------------------------------------------
 # Release Target

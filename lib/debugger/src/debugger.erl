@@ -15,63 +15,77 @@
 %% 
 %%     $Id$
 %%
-%%% Purpose : Exported API to the DEBUGGER GUI.
-
 -module(debugger).
 
--export([
-	 start/0,
-	 start_timeout/1,
-	 q/3,
-	 quick/3,
-	 a_start/3,
-	 a_start/4,
-	 attach_menus/1
-	]).
+%% External exports
+-export([start/0, start/1, start/2, stop/0, quick/3]).
 
-
-
-%% start/0 - starts the DEBUGGER by opening the monitor window.
-%% This function is intended to be called by the end user from the Erlang 
-%% shell. It will take the time it takes to start the DEBUGGER.
-
+%%==Erlang Debugger===================================================
+%%
+%% Graphical user interface to the Erlang Interpreter.
+%% The code for each process is divided into two modules, Name.erl
+%% and Name_win.erl, where Name.erl contains the logic and
+%% Name_win.erl the GS specific functionality.
+%%
+%% debugger
+%% --------
+%% Interface module.
+%%
+%% dbg_ui_winman
+%% -------------
+%% Window manager, keeping track of open windows and Debugger
+%% processes.
+%%
+%% dbg_ui_mon, dbg_ui_mon_win
+%% --------------------------
+%% Monitor window, main window of Debugger, displaying information
+%% about interpreted modules and debugged processes.
+%%
+%% dbg_ui_trace, dbg_ui_trace_win
+%% ------------------------------
+%% Attach process window, showing the code executed by a debugged
+%% process and providing a GUI for stepping, inspecting variables etc.
+%%
+%% dbg_ui_break, dbg_ui_break_win
+%% ------------------------------
+%% Help window for creating new breakpoints.
+%%
+%% dbg_ui_edit, dbg_ui_edit_win
+%% --------------------------------------
+%% Help window for editing terms, used for setting backtrace size
+%% (i.e. how many stack frames to display in the attach process window)
+%% and changing variable values.
+%%
+%% dbg_ui_interpret, dbg_ui_filedialog_win
+%% --------------------------------------
+%% Help window for selecting modules to interpret.
+%%
+%% dbg_ui_settings, dbg_ui_filedialog_win
+%% --------------------------------------
+%% Help window for saving and loading Debugger settings.
+%%
+%% dbg_ui_view
+%% -----------
+%% Help window for viewing interpreted modules (uses dbg_ui_trace_win).
+%%
+%% dbg_ui_win
+%% ----------
+%% GUI specific functionality used by more than one window type.
+%%
+%%====================================================================
 start() ->
-    dbg_ui_mon:start_timeout(infinity).
+    dbg_ui_mon:start(global, default).
+start(Mode) when Mode==local; Mode==global ->
+    dbg_ui_mon:start(Mode, default);
+start(SFile) when list(SFile) ->
+    dbg_ui_mon:start(global, SFile).
+start(Mode, SFile) ->
+    dbg_ui_mon:start(Mode, SFile).
 
+stop() ->
+    dbg_ui_mon:stop().
 
-%% start_timeont/1 - starts the DEBUGGER by opening the monitor window.
-%% This function is intended as the API for programs that wants to start
-%% the DEBUGGER. The Timeout parameter specifies how many milliseconds to 
-%% wait before Exiting with a {startup_timeout, ?MODULE} EXIT reason.
-
-start_timeout(Timeout) ->
-    dbg_ui_mon:start_timeout(Timeout).
-
-
-
-attach_menus(A) ->
-    dbg_ui_mon:attach_menus(A).
-
-
-
-
-a_start(A,B,C) ->
-    dbg_ui_trace:a_start(A,B,C).
-    
-a_start(A,B,C,D) ->
-    dbg_ui_trace:a_start(A,B,C,D).
-
-
-
-
-%%
-%% quick start a module
-%%
-
-quick (Module, Fun, Args) ->
-    dbg_ui_mon:quick (Module, Fun, Args).
-
-
-q (Module, Fun, Args) ->
-    dbg_ui_mon:quick (Module, Fun, Args).
-
+quick(M, F, A) ->
+    int:i(M),
+    int:auto_attach([init], {dbg_ui_trace, start, []}),
+    apply(M, F, A).

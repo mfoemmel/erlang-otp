@@ -58,7 +58,7 @@ int erts_fun_desc;
 void
 init_alloc(void)
 {
-    init_fix_alloc(12);
+    init_fix_alloc(13);
     process_desc = new_fix_size(sizeof(Process));
     table_desc = new_fix_size(sizeof(DbTable));
     atom_desc = new_fix_size(sizeof(Atom));
@@ -77,10 +77,14 @@ static int
 init_fix_alloc(int max)
 {
     max_sizes = max;
-    if ((fa = (FixAlloc*) sys_alloc_from(31,max * sizeof(FixAlloc))) == NULL)
-	return(0);
+    fa = (FixAlloc*) erts_definite_alloc(max * sizeof(FixAlloc));
+    if (!fa) {
+	fa = (FixAlloc*) sys_alloc_from(31,max * sizeof(FixAlloc));
+	if (!fa)
+	    return 0;
+    }
     sys_memzero(fa, max * sizeof(FixAlloc));
-    return(1);
+    return 1;
 }
 
 /* Calculate number of bytes allocated by 'desc' */
@@ -185,18 +189,20 @@ Eterm *fix_alloc(int desc)
     FixAlloc *f = &fa[desc];
 
 #if defined(NO_FIX_ALLOC)
-    ret = sys_alloc(f->item_size);
+    ret = sys_alloc_from(from == -1 ? 32 : from, f->item_size);
 #elif defined(PURIFY)
     ret = (Eterm* ) malloc(f->item_size);
 #else
     if (f->freelist == NULL) {  /* Gotta alloc some more mem */
 	char *ptr;
 	FixAllocBlock *bl;
-	int n = f->item_size*(NOPERBLOCK) + sizeof(FixAllocBlock) - sizeof(Eterm);
+	Uint n = f->item_size*(NOPERBLOCK)+sizeof(FixAllocBlock)-sizeof(Eterm);
 
-	if ((bl = (FixAllocBlock*) sys_alloc_from(from == -1 ? 32 : from,
-						  n)) == NULL)
-	    return(NULL);
+	if((bl = (FixAllocBlock*) erts_definite_alloc(n)) == NULL) {
+	    if ((bl = (FixAllocBlock*) sys_alloc_from(from == -1 ? 32 : from,
+						      n)) == NULL)
+		return(NULL);
+	}
 
 	bl->next = f->blocks;  /* link in first */
 	f->blocks = bl;

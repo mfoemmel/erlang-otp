@@ -27,9 +27,13 @@
 -export([start_link/0]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([init/1, 
+	 handle_call/3, handle_cast/2, handle_info/2, 
+	 terminate/2,
+	 code_change/3]).
 
 -record(state, {conf}).
+
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -61,8 +65,6 @@ get_config(Pid) ->
 init([]) ->
     process_flag(trap_exit, true),
     case megaco_flex_scanner:start() of
-	ok ->
-	    {ok, #state{conf = flex}};
 	{ok, Port} ->
 	    {ok, #state{conf = {flex, Port}}};
 	Else ->
@@ -105,6 +107,21 @@ handle_cast(Msg, S) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
+handle_info({'EXIT', Port, Error}, #state{conf = {flex, Port}} = S) ->
+    error_msg("Port (~p) exited:"
+	      "~n   ~p", [Port, Error]),
+    {stop, {port_exit, Port, Error}, S};
+
+handle_info({'EXIT', Port, Error}, S) when port(Port) ->
+    %% This is propably the old flex scanner, 
+    %% terminating after a code change...
+    {noreply, S};
+
+handle_info({'EXIT', Id, Error}, S) ->
+    error_msg("exit signal from ~p:"
+	      "~n   ~p", [Id, Error]),
+    {noreply, S};
+
 handle_info(Info, S) ->
     error_msg("received unknown info: "
 	      "~n   ~p", [Info]),
@@ -118,9 +135,39 @@ handle_info(Info, S) ->
 terminate(Reason, S) ->
     ok.
 
+
+%%----------------------------------------------------------------------
+%% Func: code_change/3
+%% Purpose: Called to change the internal state
+%% Returns: {ok, NewState}
+%%----------------------------------------------------------------------
+code_change({down, Vsn}, #state{conf = Conf} = State, flex_scanner) ->
+    Port = update_flex_scanner(Conf),
+    {ok, State#state{conf = {flex, Port}}};
+
+code_change(Vsn, #state{conf = Conf} = State, flex_scanner) ->
+    Port = update_flex_scanner(Conf),
+    {ok, State#state{conf = {flex, Port}}};
+
+code_change(Vsn, State, Extra) ->
+    {ok, State}.
+
+update_flex_scanner({flex, Port}) ->
+    megaco_flex_scanner:stop(Port),
+    case megaco_flex_scanner:start() of
+	{ok, Port1} ->
+	    Port1;
+	Error ->
+	    exit(Error)
+    end;
+update_flex_scanner(Error) ->
+    exit({invalid_config, Error}).
+
+
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
 
 error_msg(F, A) ->
     error_logger:error_msg("~p(~p): " ++ F ++ "~n", [?MODULE, self() | A]).
+

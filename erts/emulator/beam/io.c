@@ -598,8 +598,9 @@ int write_port(Eterm caller_id, int ix, Eterm list)
 	    ivp = iv;
 	    bvp = bv;
 	} else {
-	    ivp = (SysIOVec*) safe_alloc(vsize * sizeof(SysIOVec));
-	    bvp = (ErlDrvBinary**) safe_alloc(vsize * sizeof(ErlDrvBinary*));
+	    ivp = (SysIOVec*) safe_alloc_from(75, vsize * sizeof(SysIOVec));
+	    bvp = (ErlDrvBinary**)
+		safe_alloc_from(73, vsize * sizeof(ErlDrvBinary*));
 	}
 	cbin = driver_alloc_binary(csize);
 
@@ -648,7 +649,7 @@ int write_port(Eterm caller_id, int ix, Eterm list)
 	     * incorrect but I don't feel like fixing them now, insted
 	     * add ONE extra byte.
 	     */
-	    buf = safe_alloc(size+1); 
+	    buf = safe_alloc_from(76, size+1); 
 	    r = io_list_to_buf(list, buf, size);
 	    if (drv->output) {
 		(*drv->output)((ErlDrvData)p->drv_data, (char*)buf, size);
@@ -706,7 +707,10 @@ void init_io(void)
        erl_max_ports = 1 << port_extra_shift;
 
     driver_list = NULL;
-    erts_port = (Port *) safe_alloc_from(160,erl_max_ports * sizeof(Port));
+
+    erts_port = (Port *) erts_definite_alloc(erl_max_ports * sizeof(Port));
+    if(!erts_port)
+	erts_port = (Port *) safe_alloc_from(160,erl_max_ports * sizeof(Port));
 
     bytes_out = 0;
     bytes_in = 0;
@@ -754,7 +758,7 @@ LineBuf *allocate_linebuf(bufsiz)
 int bufsiz;
 {
     int ovsiz = (bufsiz < LINEBUF_INITIAL) ? bufsiz : LINEBUF_INITIAL;
-    LineBuf *lb = (LineBuf *) safe_alloc(sizeof(LineBuf)+ovsiz);
+    LineBuf *lb = (LineBuf *) safe_alloc_from(78, sizeof(LineBuf)+ovsiz);
     lb->ovsiz = ovsiz;
     lb->bufsiz = bufsiz;
     lb->ovlen = 0;
@@ -992,7 +996,7 @@ int eol;
     tuple = TUPLE2(hp, prt->id, tuple);
     hp += 3;
 
-    queue_message_tt(rp, NULL, tuple, NIL);
+    queue_message_tt(rp, NULL, tuple, am_undefined);
 }
 
 /* 
@@ -1124,7 +1128,7 @@ deliver_vec_message(
     tuple = TUPLE2(hp, prt->id, tuple);
     hp += 3;
 
-    queue_message_tt(rp, NULL, tuple, NIL);
+    queue_message_tt(rp, NULL, tuple, am_undefined);
 }
 
 
@@ -1425,7 +1429,7 @@ port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
 		return 0;
 	    }
 	    must_free = 1;
-	    to_port = safe_alloc(to_len + 20);
+	    to_port = safe_alloc_from(77, to_len + 20);
 	    r = io_list_to_buf(iolist, to_port, to_len+20);
 	    ASSERT(r == 20);
 	}
@@ -1686,7 +1690,7 @@ int status;
    tuple = TUPLE2(hp, prt->id, tuple);
    hp += 3;
 
-   queue_message_tt(rp, bp, tuple, NIL);
+   queue_message_tt(rp, bp, tuple, am_undefined);
 }
 
 
@@ -1912,7 +1916,7 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 
     DESTROY_ESTACK(stack);
 
-    queue_message_tt(rp, bp, mess, NIL);  /* send message */
+    queue_message_tt(rp, bp, mess, am_undefined);  /* send message */
     return 1;
 }
 
@@ -2140,7 +2144,7 @@ ErlDrvBinary* dbin;
 
 void *driver_alloc(size_t size)
 {
-    return sys_alloc_from(220, size);
+    return sys_alloc_from(70, size);
 }
 
 void *driver_realloc(void *ptr, size_t size)
@@ -2179,9 +2183,9 @@ int tail;      /* 0 if make room in head, make room in tail otherwise */
 	/* we may get little extra but it ok */
 	nvsz = (q->v_end - q->v_start) + n; 
 
-	if ((niov = sys_alloc(nvsz * sizeof(SysIOVec))) == NULL)
+	if ((niov = sys_alloc_from(74, nvsz * sizeof(SysIOVec))) == NULL)
 	    return -1;
-	if ((nbinv = sys_alloc(nvsz * sizeof(ErlDrvBinary**))) == NULL) {
+	if ((nbinv = sys_alloc_from(72, nvsz * sizeof(ErlDrvBinary**))) == NULL) {
 	    sys_free(niov);
 	    return -1;
 	}

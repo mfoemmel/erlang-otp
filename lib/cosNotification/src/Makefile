@@ -167,11 +167,16 @@ GEN_OE_EVENTCOMM_ERL_FILES =  \
 	oe_cosNotificationAppComm.erl \
 	oe_CosNotificationComm_Event.erl
 
+EXTERNAL_INC_PATH = ../include
+
 GEN_NOTIFICATION_HRL_FILES = \
 	oe_CosNotification.hrl \
 	CosNotification.hrl \
 	CosNotification_AdminPropertiesAdmin.hrl \
 	CosNotification_QoSAdmin.hrl \
+
+EXTERNAL_GEN_NOTIFICATION_HRL_FILES = \
+	 $(GEN_NOTIFICATION_HRL_FILES:%=$(EXTERNAL_INC_PATH)/%)
 
 GEN_CHANNELADMIN_HRL_FILES =  \
 	oe_CosNotifyChannelAdmin.hrl \
@@ -195,6 +200,9 @@ GEN_CHANNELADMIN_HRL_FILES =  \
 	CosNotifyChannelAdmin_StructuredProxyPushSupplier.hrl \
 	CosNotifyChannelAdmin_SupplierAdmin.hrl \
 
+EXTERNAL_GEN_CHANNELADMIN_HRL_FILES = \
+	$(GEN_CHANNELADMIN_HRL_FILES:%=$(EXTERNAL_INC_PATH)/%)
+
 GEN_NOTIFYFILTER_HRL_FILES =  \
 	oe_CosNotifyFilter.hrl \
 	CosNotifyFilter.hrl \
@@ -202,6 +210,9 @@ GEN_NOTIFYFILTER_HRL_FILES =  \
 	CosNotifyFilter_FilterAdmin.hrl \
 	CosNotifyFilter_FilterFactory.hrl \
 	CosNotifyFilter_MappingFilter.hrl
+
+EXTERNAL_GEN_NOTIFYFILTER_HRL_FILES = \
+	$(GEN_NOTIFYFILTER_HRL_FILES:%=$(EXTERNAL_INC_PATH)/%)
 
 GEN_NOTIFYCOMM_HRL_FILES =  \
 	oe_CosNotifyComm.hrl \
@@ -221,6 +232,9 @@ GEN_NOTIFYCOMM_HRL_FILES =  \
 	CosNotifyComm_StructuredPushConsumer.hrl \
 	CosNotifyComm_StructuredPushSupplier.hrl \
 
+EXTERNAL_GEN_NOTIFYCOMM_HRL_FILES = \
+	$(GEN_NOTIFYCOMM_HRL_FILES:%=$(EXTERNAL_INC_PATH)/%)
+
 GEN_OE_EVENTCOMM_HRL_FILES =  \
 	oe_cosNotificationAppComm.hrl \
 	oe_CosNotificationComm.hrl \
@@ -235,11 +249,11 @@ GEN_ERL_FILES = \
 	$(GEN_YECC_ERL_FILES)
 
 GEN_HRL_FILES = \
-	$(GEN_NOTIFICATION_HRL_FILES) \
+	$(EXTERNAL_GEN_NOTIFICATION_HRL_FILES) \
 	$(GEN_OE_EVENTCOMM_HRL_FILES) \
-	$(GEN_NOTIFYCOMM_HRL_FILES) \
-	$(GEN_NOTIFYFILTER_HRL_FILES) \
-	$(GEN_CHANNELADMIN_HRL_FILES) \
+	$(EXTERNAL_GEN_NOTIFYCOMM_HRL_FILES) \
+	$(EXTERNAL_GEN_NOTIFYFILTER_HRL_FILES) \
+	$(EXTERNAL_GEN_CHANNELADMIN_HRL_FILES) \
 	$(GEN_YECC_HRL_FILES)
 
 
@@ -324,16 +338,20 @@ docs:
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
-$(GEN_NOTIFICATION_ERL_FILES) $(GEN_NOTIFICATION_HRL_FILES): CosNotification.idl
+$(GEN_NOTIFICATION_ERL_FILES) $(EXTERNAL_GEN_NOTIFICATION_HRL_FILES): CosNotification.idl
 	erlc $(ERL_FLAGS) +'{cfgfile,"CosNotification.cfg"}' CosNotification.idl
-$(GEN_CHANNELADMIN_ERL_FILES) $(GEN_CHANNELADMIN_HRL_FILES): CosNotifyChannelAdmin.idl
+	mv $(GEN_NOTIFICATION_HRL_FILES) $(EXTERNAL_INC_PATH)
+$(GEN_CHANNELADMIN_ERL_FILES) $(EXTERNAL_GEN_CHANNELADMIN_HRL_FILES): CosNotifyChannelAdmin.idl
 	erlc $(ERL_FLAGS) +'{cfgfile,"CosNotifyChannelAdmin.cfg"}' CosNotifyChannelAdmin.idl
-$(GEN_NOTIFYFILTER_ERL_FILES) $(GEN_NOTIFYFILTER_HRL_FILES): CosNotifyFilter.idl
+	mv $(GEN_CHANNELADMIN_HRL_FILES) $(EXTERNAL_INC_PATH)
+$(GEN_NOTIFYFILTER_ERL_FILES) $(EXTERNAL_GEN_NOTIFYFILTER_HRL_FILES): CosNotifyFilter.idl
 	erlc $(ERL_FLAGS) +'{cfgfile,"CosNotifyFilter.cfg"}' CosNotifyFilter.idl
+	mv $(GEN_NOTIFYFILTER_HRL_FILES) $(EXTERNAL_INC_PATH)
 $(GEN_OE_EVENTCOMM_ERL_FILES) $(GEN_OE_EVENTCOMM_HRL_FILES): cosNotificationAppComm.idl
 	erlc $(ERL_FLAGS) +'{cfgfile,"cosNotificationComm.cfg"}' cosNotificationAppComm.idl
-$(GEN_NOTIFYCOMM_ERL_FILES) $(GEN_NOTIFYCOMM_HRL_FILES): CosNotifyComm.idl
+$(GEN_NOTIFYCOMM_ERL_FILES) $(EXTERNAL_GEN_NOTIFYCOMM_HRL_FILES): CosNotifyComm.idl
 	erlc $(ERL_FLAGS) +'{cfgfile,"CosNotifyComm.cfg"}' CosNotifyComm.idl
+	mv $(GEN_NOTIFYCOMM_HRL_FILES) $(EXTERNAL_INC_PATH)
 $(GEN_YECC_ERL_FILES) $(GEN_YECC_HRL_FILES): cosNotification_Grammar.yrl
 
 # ----------------------------------------------------

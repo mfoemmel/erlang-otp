@@ -493,7 +493,7 @@ proxy(Port, ErrorLog, Result) ->
 
 
 %% ------
-%% Temorary until I figure out a way to fix send_in_chunks
+%% Temporary until I figure out a way to fix send_in_chunks
 %% (comments and directives that start in one chunk but end
 %% in another is not handled).
 %%
@@ -518,33 +518,33 @@ send_in1(Info, Data) ->
 %% avoid putting to much data on the heap. To be rewritten...
 %%
 
--define(CHUNK_SIZE, 4096).
+% -define(CHUNK_SIZE, 4096).
 
-send_in_chunks(Info, Path) ->
-    ?DEBUG("send_in_chunks -> Path: ~p",[Path]),
-    case file:open(Path, [read, raw]) of
-	{ok, Stream} ->
-	    send_in_chunks(Info, Stream, ?DEFAULT_CONTEXT,[]);
-	{error, Reason} ->
-	    ?ERROR("Failed open file: ~p",[Reason]),
-	    {error, {open,Reason}}
-    end.
+% send_in_chunks(Info, Path) ->
+%     ?DEBUG("send_in_chunks -> Path: ~p",[Path]),
+%     case file:open(Path, [read, raw]) of
+% 	{ok, Stream} ->
+% 	    send_in_chunks(Info, Stream, ?DEFAULT_CONTEXT,[]);
+% 	{error, Reason} ->
+% 	    ?ERROR("Failed open file: ~p",[Reason]),
+% 	    {error, {open,Reason}}
+%     end.
 
-send_in_chunks(Info, Stream, Context, ErrorLog) ->
-    case file:read(Stream, ?CHUNK_SIZE) of
-	{ok, Data} ->
-	    ?DEBUG("send_in_chunks -> read ~p bytes",[length(Data)]),
-	    {ok, NewContext, NewErrorLog, ParsedBody}=
-		parse(Info, Data, Context, ErrorLog, []),
-	    httpd_socket:deliver(Info#mod.socket_type,
-				 Info#mod.socket, ParsedBody),
-	    send_in_chunks(Info,Stream,NewContext,NewErrorLog);
-	eof ->
-	    {ok, ErrorLog};
-	{error, Reason} ->
-	    ?ERROR("Failed read from file: ~p",[Reason]),
-	    {error, {read,Reason}}
-    end.
+% send_in_chunks(Info, Stream, Context, ErrorLog) ->
+%     case file:read(Stream, ?CHUNK_SIZE) of
+% 	{ok, Data} ->
+% 	    ?DEBUG("send_in_chunks -> read ~p bytes",[length(Data)]),
+% 	    {ok, NewContext, NewErrorLog, ParsedBody}=
+% 		parse(Info, Data, Context, ErrorLog, []),
+% 	    httpd_socket:deliver(Info#mod.socket_type,
+% 				 Info#mod.socket, ParsedBody),
+% 	    send_in_chunks(Info,Stream,NewContext,NewErrorLog);
+% 	eof ->
+% 	    {ok, ErrorLog};
+% 	{error, Reason} ->
+% 	    ?ERROR("Failed read from file: ~p",[Reason]),
+% 	    {error, {read,Reason}}
+%     end.
 
 
 %%

@@ -33,6 +33,7 @@
 
 #include "erl_process.h"
 #include "erl_sys_driver.h"
+#include "erl_sl_alloc.h"
 
 typedef enum {
     LNK_UNDEF = 0,
@@ -174,6 +175,11 @@ typedef struct de_list {
 } DE_List;
 
 extern DE_List *driver_list;
+
+typedef struct {
+    Uint block;
+    Uint used;
+} ErtsDefiniteAllocInfo;
 
 /*
  * Max no. of drivers (linked in and dynamically loaded). Each table
@@ -541,11 +547,29 @@ void erl_cancel_timer(ErlTimer*);
 Uint time_left(ErlTimer *);
 int next_time(_VOID_);
 
+#ifdef HAVE_GETHRVTIME
+#  ifndef HAVE_ERTS_NOW_CPU
+#    define HAVE_ERTS_NOW_CPU
+#    define erts_start_now_cpu() sys_start_hrvtime()
+#    define erts_stop_now_cpu()  sys_stop_hrvtime()
+#  endif
+void erts_get_now_cpu(Uint32* megasec, Uint32* sec, Uint32* microsec);
+#endif
+
 #ifdef DEBUG
 void p_slpq(_VOID_);
 #endif
 
 /* utils.c */
+#ifdef SMALL_MEMORY
+#define DEFAULT_DEFINITE_ALLOC_BLOCK_SIZE (0)
+#else
+#define DEFAULT_DEFINITE_ALLOC_BLOCK_SIZE (2*1024*1024)
+#endif
+void erts_init_definite_alloc(Uint);
+void *erts_definite_alloc(Uint);
+void erts_definite_alloc_info(ErtsDefiniteAllocInfo *);
+
 #define erl_printf sys_printf
 #define erl_putc   sys_putc
 
@@ -566,13 +590,9 @@ int send_error_to_logger(Eterm);
 #ifdef INSTRUMENT
 void* safe_alloc_from(int, Uint);
 void* safe_realloc_from(int, void*, Uint);
-void* safe_sl_alloc_from(int, Uint);
-void* safe_sl_realloc_from(int, void*, Uint, Uint);
 #endif
 void* safe_alloc(Uint);
 void* safe_realloc(void*, Uint);
-void* safe_sl_alloc(Uint);
-void* safe_sl_realloc(void*, Uint, Uint);
 Process* pid2proc(Eterm);
 void display(Eterm, CIO);
 void ldisplay(Eterm, CIO, int);
@@ -597,6 +617,11 @@ int cmp(Eterm, Eterm);
 
 int term_to_Uint(Eterm term, Uint *up);
 
+#ifdef HAVE_ERTS_NOW_CPU
+extern int erts_cpu_timestamp;
+#endif
+
+void erts_init_trace(void);
 void trace_send(Process*, Eterm, Eterm);
 void trace_receive(Process*, Eterm);
 Uint32 erts_call_trace(Process *p, Eterm mfa[], Binary *match_spec, Eterm* args, int local);

@@ -15,50 +15,59 @@
 %% 
 %%     $Id$
 %%
-%% Purpose : Load a new version of a module to be interpreted.
-
 -module(dbg_iload).
 
-%% ------------------------------------------------
-%% -- Exported functions.
-%% ------------------------------------------------
+%% External exports
+-export([load_mod/4]).
 
--export([load_mod/3,load_mod1/3]).
+%% Internal exports
+-export([load_mod1/4]).
 
--import(lists, [map/2,all/2]).
+%%====================================================================
+%% External exports
+%%====================================================================
 
-%%% =================================================
-%%% Load a new module into the database.
-%%%
-%%% We want the loading of a module to be syncronous
-%%% so no other process tries to interpret code in
-%%% a module not being completely loaded. This is
-%%% achieved as this function is called from the
-%%% 'interpret' server.
-%%% We are suspended until the module has been loaded.
-%%% =================================================
-
-load_mod(Mod, File, Binary) ->
-    Flag = process_flag(trap_exit,true),
-    Pid = spawn_link(?MODULE,load_mod1,[Mod,File,Binary]),
+%%--------------------------------------------------------------------
+%% load_mod(Mod, File, Binary, Db) -> {ok, Mod}
+%%   Mod = atom()
+%%   File = string() Source file (including path)
+%%   Binary = binary()
+%%   Db = ETS identifier
+%% Load a new module into the database.
+%%
+%% We want the loading of a module to be syncronous  so no other
+%% process tries to interpret code in a module not being completely
+%% loaded. This is achieved as this function is called from
+%% dbg_iserver. We are suspended until the module has been loaded.
+%%--------------------------------------------------------------------
+load_mod(Mod, File, Binary, Db) ->
+    Flag = process_flag(trap_exit, true),
+    Pid = spawn_link(?MODULE, load_mod1, [Mod, File, Binary, Db]),
     receive
-	{'EXIT',Pid,What} ->
-	    process_flag(trap_exit,Flag),
+	{'EXIT', Pid, What} ->
+	    process_flag(trap_exit, Flag),
 	    What
     end.
 
-load_mod1(Mod,File,Binary) ->
-    store_module(Mod, File, Binary),
-    int:int_module(Mod),
-    exit({ok,Mod}).
+%%====================================================================
+%% Internal exports
+%%====================================================================
 
-store_module(Mod, File, Binary) ->
-    {interpreter_module,Exp,Abst,Src,MD5} = binary_to_term(Binary),
+load_mod1(Mod, File, Binary, Db) ->
+    store_module(Mod, File, Binary, Db),
+    exit({ok, Mod}).
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+store_module(Mod, File, Binary, Db) ->
+    {interpreter_module, Exp, Abst, Src, MD5} = binary_to_term(Binary),
     Forms = case abstr(Abst) of
-		{abstract_v1,Forms0} -> Forms0;
-		{abstract_v2,Forms0} -> Forms0
+		{abstract_v1, Forms0} -> Forms0;
+		{abstract_v2, Forms0} -> Forms0
 	    end,
-    Db = dbg_idb:cr_new_module(Mod),
     dbg_idb:insert(Db, mod_file, File),
     dbg_idb:insert(Db, exports, Exp),
     dbg_idb:insert(Db, defs, []),
@@ -135,7 +144,6 @@ store_forms([{function,Line,Name,Arity,Cs0}|Fs], Mod, Db, Exp, Attr) ->
 store_forms([{attribute,Line,Name,Val}|Fs], Mod, Db, Exp, Attr) ->
     store_forms(Fs, Mod, Db, Exp, [{Name,Val}|Attr]);
 store_forms([F|Fs], Mod, Db, Exp, Attr) ->
-    io:format("~p: Unrecognized form ~P when loading\n", [Mod,F,12]),
     exit({unknown_form,F});
 store_forms([], _, _, Exp, Attr) ->
     lists:reverse(Attr).
@@ -167,7 +175,6 @@ get_nl([H|T],Pos,Head) ->
     get_nl(T,Pos+1,[H|Head]);
 get_nl([],Pos,Head) -> {lists:reverse(Head),[],Pos}.
 
-
 %%% Rewrite the abstract syntax tree to that it will be easier (== faster)
 %%% to interpret.
 
@@ -451,13 +458,14 @@ expr({'query', Line, E0}) ->
     E = expr(E0),
     {'query', Line, E};
 expr({lc,Line,E0,Gs0}) ->			%R8.
-    Gs = map(fun ({generate,L,P0,Qs}) -> {generate,L,expr(P0),expr(Qs)};
-		 (Expr) ->
-		     case is_guard_test(Expr) of
-			 true -> {guard,[[guard_test(Expr)]]};
-			 false -> expr(Expr)
-		     end
-	     end, Gs0),
+    Gs = lists:map(fun ({generate,L,P0,Qs}) ->
+			   {generate,L,expr(P0),expr(Qs)};
+		       (Expr) ->
+			   case is_guard_test(Expr) of
+			       true -> {guard,[[guard_test(Expr)]]};
+			       false -> expr(Expr)
+			   end
+		   end, Gs0),
     {lc,Line,expr(E0),Gs};
 expr({match,Line,P0,E0}) ->
     E1 = expr(E0),
@@ -540,7 +548,7 @@ is_gexpr({op,L,Op,A1,A2}) ->
     end;
 is_gexpr(Other) -> false.
 
-is_gexpr_list(Es) -> all(fun (E) -> is_gexpr(E) end, Es).
+is_gexpr_list(Es) -> lists:all(fun (E) -> is_gexpr(E) end, Es).
 
 consify([A|As]) -> 
     {cons,0,A,consify(As)};

@@ -18,7 +18,8 @@
 -module(httpd_socket).
 -export([start/1,listen/2,listen/3,accept/2,accept/3,
 	 deliver/3,send/3,recv/4,close/2,
-	 peername/2,resolve/1,config/1]).
+	 peername/2,resolve/1,config/1,
+	 active_once/2]).
 
 -include("httpd.hrl").
 
@@ -75,6 +76,17 @@ listen({ssl,SSLConfig},Addr,Port) ->
 
 sock_opt(undefined,Opt) -> [{packet,0},{active,false}|Opt];
 sock_opt(Addr,Opt)      -> [{ip, Addr},{packet,0},{active,false}|Opt].
+
+
+%% active_once
+
+active_once(Type, Sock) ->
+    active(Type, Sock, once).
+
+active(ip_comm, Sock, Active) ->
+    inet:setopts(Sock, [{active, Active}]);
+active({ssl, _SSLConfig}, _Sock, _Active) ->
+    ok.
 
 %% accept
 

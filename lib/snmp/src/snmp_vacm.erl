@@ -169,7 +169,7 @@ init(DbDir) ->
 		{ok, Tab} -> 
 		    gc_tab([]);
 		{error, Reason} ->
-		    snmp_error:user_err("Corrupt VACM database ~p", [FName]),
+		    user_err("Corrupt VACM database ~p", [FName]),
 		    exit({badfile, FName})
 	    end;
 	{error, _} ->
@@ -236,12 +236,12 @@ dump_table() ->
 		ok ->
 		    ok;
 		Else -> % What is this? Undocumented return code...
-		    snmp_error:user_err("Warning: could not move VACM db ~p"
-					" (~p)", [FName, Else])
+		    user_err("Warning: could not move VACM db ~p"
+			     " (~p)", [FName, Else])
 	    end;
 	{error, Reason} ->
-	    snmp_error:user_err("Warning: could not save vacm db ~p (~p)",
-				[FName, Reason])
+	    user_err("Warning: could not save vacm db ~p (~p)",
+		     [FName, Reason])
     end.
 
 %%-----------------------------------------------------------------
@@ -355,3 +355,7 @@ gc_tab(Oid) ->
 	false ->
 	    ok
     end.
+
+
+user_err(F, A) ->
+    snmp_error_report:user_err(F, A).

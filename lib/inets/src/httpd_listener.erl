@@ -40,6 +40,16 @@
 -endif.
 
 
+-ifdef(httpd_tdiff).
+-define(TDIFF_NOW(),erlang:now()).
+-define(TDIFF_REPORT(T),
+        ?vlog("time handling request(s): ~p ms", [tdiff_ms(erlang:now(),T)])).
+-else.
+-define(TDIFF_NOW(),ok).
+-define(TDIFF_REPORT(T),ok).
+-endif.
+
+
 -define(USE_ASSERT,true).      %% false | true
 -define(ASSERT_ACTION,report). %% no_action | print | report | exit
 -define(ASSERT(When,Expected,Actual,Cdb),
@@ -267,10 +277,26 @@ handle_connection1(Manager, SocketType, Socket, ConfigDB) ->
     InitData = #init_data{peername=Peername, resolve=Resolve},
     httpd_manager:new_connection(Manager,accept),
     MaxRequests = httpd_util:lookup(ConfigDB, keep_alive, 1),
+    T = ?TDIFF_NOW(),
     do_next_connection(InitData, SocketType, Socket, ConfigDB, 
 		       MaxRequests, 60000), % XXX Was infinity
+    ?TDIFF_REPORT(T),
     httpd_manager:done_connection(Manager,accept),
     close(SocketType,Socket,ConfigDB).
+
+
+-ifdef(httpd_tdiff).
+tdiff_ms(X,Y) ->
+    tdiff_us(X,Y)/1000.
+
+tdiff_us({X1,Y1,Z1}, {X1,Y1,Z2}) ->
+    Z1 - Z2;
+tdiff_us({X1,Y1,Z1}, {X1,Y2,Z2}) ->
+    ((Y1-Y2) * 1000000) + (Z1 - Z2);
+tdiff_us({X1,Y1,Z1}, {X2,Y2,Z2}) ->
+    ((X1 - X2) * 1000000000000) + ((Y1 - Y2) * 1000000) + (Z1 - Z2).
+-endif.
+    
 
 
 handle_busy(Manager,SocketType,Socket,ConfigDB) ->
@@ -413,7 +439,6 @@ report_error(ConfigDB,FStr,Args,Line) ->
 %% Socket utility functions:
 
 close(SocketType,Socket,ConfigDB) ->
-    sleep(1000),
     case httpd_socket:close(SocketType,Socket) of
 	ok ->
 	    ok;

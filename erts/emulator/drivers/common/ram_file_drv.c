@@ -178,7 +178,7 @@ static ErlDrvData rfile_start(ErlDrvPort port, char* buf)
 {
     RamFile* f;
 
-    if ((f = (RamFile*) sys_alloc(sizeof(RamFile))) == NULL)
+    if ((f = (RamFile*) driver_alloc(sizeof(RamFile))) == NULL)
 	return ERL_DRV_ERROR_GENERAL;
     f->port = port;
     f->flags = 0;
@@ -196,7 +196,7 @@ static void rfile_stop(ErlDrvData e)
     RamFile* f = (RamFile*)e;
     if (f->bin != NULL) 
 	driver_free_binary(f->bin);
-    sys_free(f);
+    driver_free(f);
 }
 
 /*

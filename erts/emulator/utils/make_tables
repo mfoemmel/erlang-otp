@@ -74,7 +74,7 @@ while (<>) {
     my($type, @args) = split;
     if ($type eq 'atom') {
 	save_atoms(@args);
-    } elsif ($type eq 'bif') {
+    } elsif ($type eq 'bif' or $type eq 'ubif') {
 	my($bif,$alias) = (@args);
 	$bif =~ m@^(\w+):(.*)/(\d)$@ or error("invalid BIF");
 	my($mod,$name,$arity) = ($1,$2,$3);
@@ -84,7 +84,11 @@ while (<>) {
 	    $alias = "${mod}_" unless $mod eq 'erlang';
 	    $alias .= "${name}_$arity";
 	}
-	push(@bif, ["am_$atom_alias{$mod}","am_$atom_alias{$name}",$arity,$alias]);
+	my $wrapper;
+	$wrapper = "wrap_$alias" if $type eq 'bif';
+	$wrapper = $alias if $type eq 'ubif';
+	push(@bif, ["am_$atom_alias{$mod}","am_$atom_alias{$name}",$arity,
+		    $alias,$wrapper]);
     } else {
 	error("invalid line");
     }
@@ -193,7 +197,7 @@ print "unsigned char erts_bif_trace_flags[BIF_SIZE];\n\n";
 print "BifEntry bif_table[] = {\n";
 for ($i = 0; $i < @bif; $i++) {
     my $func = $bif[$i]->[3];
-    print "  {", join(', ', @{$bif[$i]}, "wrap_$func"), "},\n";
+    print "  {", join(', ', @{$bif[$i]}), "},\n";
 }
 print "};\n\n";
 
@@ -206,6 +210,7 @@ my $i;
 includes("export.h", "sys.h", "erl_vm.h", "global.h", "erl_process.h", "bif.h",
 	 "erl_bif_table.h", "erl_atom_table.h");
 for ($i = 0; $i < @bif; $i++) {
+    next if $bif[$i]->[3] eq $bif[$i]->[4]; # Skip unwrapped bifs
     my $arity = $bif[$i]->[2];
     my $func = $bif[$i]->[3];
     my $arg;

@@ -20,20 +20,24 @@
 %% These functions are to be used from lists.erl only.
 
 -export([split_1/5, split_2/5, mergel/2, merge3_1/6, rmerge3_1/6,
-         merge2_1/4, rmerge2_1/4]).
+         merge2_2/4, rmerge2_1/4]).
          
--export([usplit_1/5, usplit_2/5, umergel/2, umerge3_1/6, rumerge3_1/6,
-         umerge2_1/4, rumerge2_1/4]).
+-export([usplit_1/5, usplit_2/5, umergel/1, umerge3_1/6, rumerge3_1/6,
+         umerge2_2/4, rumerge2_1/4]).
          
--export([keysort2/2, keymerge/4, ukeysort2/2, ukeymerge/5]).
+-export([keysplit_1/8, keysplit_2/5, keymerge2_1/6, rkeymerge2_1/6]).
 
--export([sort/2, merge2/3, usort/2, umerge2/3]).
+-export([ukeysplit_1/8, ukeysplit_2/5, ukeymerge2_2/6, rukeymerge2_1/6]).
+
+-export([fsplit_1/6, fsplit_2/4, fmerge2_1/5, rfmerge2_1/5]).
+
+-export([ufsplit_1/6, ufsplit_2/4, ufmerge2_2/5, rufmerge2_1/5]).
 
 -compile({inline, 
 	  [{merge3_12,7}, {merge3_21,7}, {rmerge3_12,7}, {rmerge3_21,7}]}).
 
 -compile({inline, 
-	  [{umerge3_12,7}, {umerge3_21,7}, {rumerge3_12,7}, {rumerge3_21,7}]}).
+	  [{umerge3_12,7}, {umerge3_21,7}, {rumerge3_12,7},{rumerge3_21,7}]}).
 
 %% sort/1
 
@@ -88,10 +92,10 @@ split_2_1(X, Y, [], R, Rs, S) ->
 
 mergel([[] | L], Acc) ->
     mergel(L, Acc);
-mergel([A, [H2 | T2], [H3 | T3] | L], Acc) ->
-    mergel(L, [merge3_1(A, [], H2, T2, H3,  T3) | Acc]);
-mergel([A, [H | T]], Acc) ->
-    rmergel([merge2_1(A, H, T, []) | Acc], []);
+mergel([T1, [H2 | T2], [H3 | T3] | L], Acc) ->
+    mergel(L, [merge3_1(T1, [], H2, T2, H3,  T3) | Acc]);
+mergel([T1, [H2 | T2]], Acc) ->
+    rmergel([merge2_1(T1, H2, T2, []) | Acc], []);
 mergel([L], []) ->
     L;
 mergel([L], Acc) ->
@@ -105,10 +109,10 @@ mergel([A, [] | L], Acc) ->
 mergel([A, B, [] | L], Acc) ->
     mergel([A, B | L], Acc).
 
-rmergel([A, [H2 | T2], [H3 | T3] | L], Acc) ->
-    rmergel(L, [rmerge3_1(A, [], H2, T2, H3, T3) | Acc]);
-rmergel([A, [H | T]], Acc) ->
-    mergel([rmerge2_1(A, H, T, []) | Acc], []);
+rmergel([[H3 | T3], [H2 | T2], T1 | L], Acc) ->
+    rmergel(L, [rmerge3_1(T1, [], H2, T2, H3, T3) | Acc]);
+rmergel([[H2 | T2], T1], Acc) ->
+    mergel([rmerge2_1(T1, H2, T2, []) | Acc], []);
 rmergel([L], Acc) ->
     mergel([lists:reverse(L, []) | Acc], []);
 rmergel([], Acc) ->
@@ -121,33 +125,33 @@ merge3_1([H1 | T1], M, H2, T2, H3, T3) when H1 =< H2 ->
     merge3_12(T1, H1, H2, T2, H3, T3, M);
 merge3_1([H1 | T1], M, H2, T2, H3, T3) ->
     merge3_21(T1, H1, H2, T2, H3, T3, M);
-merge3_1(_nil, M, H2, T2, H3, T3) when H2 =< H3 ->
+merge3_1([], M, H2, T2, H3, T3) when H2 =< H3 ->
     merge2_1(T2, H3, T3, [H2 | M]);
-merge3_1(_nil, M, H2, T2, H3, T3) ->
-    merge2_1(T3, H2, T2, [H3 | M]).
+merge3_1([], M, H2, T2, H3, T3) ->
+    merge2_2(T2, H2, T3, [H3 | M]).
 
 %% Take L2 apart.
 merge3_2(T1, H1, M, [H2 | T2], H3, T3) when H1 =< H2 ->
     merge3_12(T1, H1, H2, T2, H3, T3, M);
 merge3_2(T1, H1, M, [H2 | T2], H3, T3) ->
     merge3_21(T1, H1, H2, T2, H3, T3, M);
-merge3_2(T1, H1, M, _nil, H3, T3) when H1 =< H3 ->
+merge3_2(T1, H1, M, [], H3, T3) when H1 =< H3 ->
     merge2_1(T1, H3, T3, [H1 | M]);
-merge3_2(T1, H1, M, _nil, H3, T3) ->
-    merge2_1(T3, H1, T1, [H3 | M]).
+merge3_2(T1, H1, M, [], H3, T3) ->
+    merge2_2(T1, H1, T3, [H3 | M]).
 
-% H1 <= H2. Inlined.
+% H1 =< H2. Inlined.
 merge3_12(T1, H1, H2, T2, H3, T3, M) when H3 < H1 ->
     merge3_12_3(T1, H1, H2, T2, [H3 | M], T3);
 merge3_12(T1, H1, H2, T2, H3, T3, M) ->
     merge3_1(T1, [H1 | M], H2, T2, H3, T3).
 
-% H1 <= H2, take L3 apart.
+% H1 =< H2, take L3 apart.
 merge3_12_3(T1, H1, H2, T2, M, [H3 | T3]) when H3 < H1 ->
     merge3_12_3(T1, H1, H2, T2, [H3 | M], T3);
 merge3_12_3(T1, H1, H2, T2, M, [H3 | T3]) ->
     merge3_1(T1, [H1 | M], H2, T2, H3, T3);
-merge3_12_3(T1, H1, H2, T2, M, _nil) ->
+merge3_12_3(T1, H1, H2, T2, M, []) ->
     merge2_1(T1, H2, T2, [H1 | M]).
 
 % H1 > H2. Inlined.
@@ -161,8 +165,8 @@ merge3_21_3(T1, H1, H2, T2, M, [H3 | T3]) when H3 < H2 ->
     merge3_21_3(T1, H1, H2, T2, [H3 | M], T3);
 merge3_21_3(T1, H1, H2, T2, M, [H3 | T3]) ->
     merge3_2(T1, H1, [H2 | M], T2, H3, T3);
-merge3_21_3(T1, H1, H2, T2, M, _nil) ->
-    merge2_1(T2, H1, T1, [H2 | M]).
+merge3_21_3(T1, H1, H2, T2, M, []) ->
+    merge2_2(T1, H1, T2, [H2 | M]).
 
 %% rmerge/3
 
@@ -171,20 +175,20 @@ rmerge3_1([H1 | T1], M, H2, T2, H3, T3) when H1 > H2 ->
     rmerge3_12(T1, H1, H2, T2, H3, T3, M);
 rmerge3_1([H1 | T1], M, H2, T2, H3, T3) ->
     rmerge3_21(T1, H1, H2, T2, H3, T3, M);
-rmerge3_1(_nil, M, H2, T2, H3, T3) when H2 > H3 ->
+rmerge3_1([], M, H2, T2, H3, T3) when H2 > H3 ->
     rmerge2_1(T2, H3, T3, [H2 | M]);
-rmerge3_1(_nil, M, H2, T2, H3, T3) ->
-    rmerge2_1(T3, H2, T2, [H3 | M]).
+rmerge3_1([], M, H2, T2, H3, T3) ->
+    rmerge2_2(T2, H2, T3, [H3 | M]).
 
 %% Take L2 apart.
 rmerge3_2(T1, H1, M, [H2 | T2], H3, T3) when H1 > H2 ->
     rmerge3_12(T1, H1, H2, T2, H3, T3, M);
 rmerge3_2(T1, H1, M, [H2 | T2], H3, T3) ->
     rmerge3_21(T1, H1, H2, T2, H3, T3, M);
-rmerge3_2(T1, H1, M, _nil, H3, T3) when H1 > H3 ->
+rmerge3_2(T1, H1, M, [], H3, T3) when H1 > H3 ->
     rmerge2_1(T1, H3, T3, [H1 | M]);
-rmerge3_2(T1, H1, M, _nil, H3, T3) ->
-    rmerge2_1(T3, H1, T1, [H3 | M]).
+rmerge3_2(T1, H1, M, [], H3, T3) ->
+    rmerge2_2(T1, H1, T3, [H3 | M]).
 
 % H1 > H2. Inlined.
 rmerge3_12(T1, H1, H2, T2, H3, T3, M) when H3 >= H1 ->
@@ -197,7 +201,7 @@ rmerge3_12_3(T1, H1, H2, T2, M, [H3 | T3]) when H3 >= H1 ->
     rmerge3_12_3(T1, H1, H2, T2, [H3 | M], T3);
 rmerge3_12_3(T1, H1, H2, T2, M, [H3 | T3]) ->
     rmerge3_1(T1, [H1 | M], H2, T2, H3, T3);
-rmerge3_12_3(T1, H1, H2, T2, M, _nil) ->
+rmerge3_12_3(T1, H1, H2, T2, M, []) ->
     rmerge2_1(T1, H2, T2, [H1 | M]).
 
 % H1 =< H2. Inlined.
@@ -211,39 +215,39 @@ rmerge3_21_3(T1, H1, H2, T2, M, [H3 | T3]) when H3 >= H2 ->
     rmerge3_21_3(T1, H1, H2, T2, [H3 | M], T3);
 rmerge3_21_3(T1, H1, H2, T2, M, [H3 | T3]) ->
     rmerge3_2(T1, H1, [H2 | M], T2, H3, T3);
-rmerge3_21_3(T1, H1, H2, T2, M, _nil) ->
-    rmerge2_1(T2, H1, T1, [H2 | M]).
+rmerge3_21_3(T1, H1, H2, T2, M, []) ->
+    rmerge2_2(T1, H1, T2, [H2 | M]).
 
 %% merge/2
 
-merge2_1([H1 | T1], H2, T2, M) when H2 < H1 ->
-    merge2_2(T1, H1, T2, [H2 | M]);
-merge2_1([H1 | T1], H2, T2, M) ->
+merge2_1([H1 | T1], H2, T2, M) when H1 =< H2 ->
     merge2_1(T1, H2, T2, [H1 | M]);
-merge2_1(_nil, H2, T2, M) ->
+merge2_1([H1 | T1], H2, T2, M) ->
+    merge2_2(T1, H1, T2, [H2 | M]);
+merge2_1([], H2, T2, M) ->
     lists:reverse(T2, [H2 | M]).
 
-merge2_2(T1, H1, [H2 | T2], M) when H1 < H2 ->
+merge2_2(T1, H1, [H2 | T2], M) when H1 =< H2 ->
     merge2_1(T1, H2, T2, [H1 | M]);
-merge2_2(T1, H1, [H2 | T2], M) ->    
+merge2_2(T1, H1, [H2 | T2], M) ->
     merge2_2(T1, H1, T2, [H2 | M]);
-merge2_2(T1, H1, _nil, M) ->
+merge2_2(T1, H1, [], M) ->
     lists:reverse(T1, [H1 | M]).
 
 %% rmerge/2
 
-rmerge2_1([H1 | T1], H2, T2, M) when H2 >= H1 ->
+rmerge2_1([H1 | T1], H2, T2, M) when H1 =< H2 ->
     rmerge2_2(T1, H1, T2, [H2 | M]);
 rmerge2_1([H1 | T1], H2, T2, M) ->
     rmerge2_1(T1, H2, T2, [H1 | M]);
-rmerge2_1(_nil, H2, T2, M) ->
+rmerge2_1([], H2, T2, M) ->
     lists:reverse(T2, [H2 | M]).
 
-rmerge2_2(T1, H1, [H2 | T2], M) when H1 >= H2 ->
-    rmerge2_1(T1, H2, T2, [H1 | M]);
-rmerge2_2(T1, H1, [H2 | T2], M) ->    
+rmerge2_2(T1, H1, [H2 | T2], M) when H1 =< H2 ->
     rmerge2_2(T1, H1, T2, [H2 | M]);
-rmerge2_2(T1, H1, _nil, M) ->
+rmerge2_2(T1, H1, [H2 | T2], M) ->
+    rmerge2_1(T1, H2, T2, [H1 | M]);
+rmerge2_2(T1, H1, [], M) ->
     lists:reverse(T1, [H1 | M]).
 
 %% usort/1
@@ -262,7 +266,7 @@ usplit_1(X, Y, [Z | L], [], Rs) ->
 usplit_1(X, Y, [Z | L], R, Rs) ->
     usplit_1_1(X, Y, L, R, Rs, Z);
 usplit_1(X, Y, [], R, Rs) ->
-    rumergel([[Y, X | R] | Rs], []).
+    rumergel([[Y, X | R] | Rs], [], asc).
 
 %% One out-of-order element, S.
 usplit_1_1(X, Y, [Z | L], R, Rs, S) when Z > Y ->
@@ -278,7 +282,7 @@ usplit_1_1(X, Y, [Z | L], R, Rs, S) when S < Z ->
 usplit_1_1(X, Y, [Z | L], R, Rs, S) ->
     usplit_1(Z, S, L, [], [[Y, X | R] | Rs]);
 usplit_1_1(X, Y, [], R, Rs, S) ->
-    rumergel([[S], [Y, X | R] | Rs], []).
+    rumergel([[S], [Y, X | R] | Rs], [], asc).
 
 %% Descending.
 usplit_2(X, Y, [Z | L], R, Rs) when Z < Y ->
@@ -294,7 +298,7 @@ usplit_2(X, Y, [Z | L], [], Rs) ->
 usplit_2(X, Y, [Z | L], R, Rs) ->
     usplit_2_1(X, Y, L, R, Rs, Z);
 usplit_2(X, Y, [], R, Rs) ->
-    umergel([[Y, X | R] | Rs], []).
+    umergel([[Y, X | R] | Rs], [], desc).
 
 usplit_2_1(X, Y, [Z | L], R, Rs, S) when Z < Y ->
     usplit_2_1(Y, Z, L, [X | R], Rs, S);
@@ -309,37 +313,48 @@ usplit_2_1(X, Y, [Z | L], R, Rs, S) when S > Z ->
 usplit_2_1(X, Y, [Z | L], R, Rs, S) ->
     usplit_2(Z, S, L, [], [[Y, X | R] | Rs]);
 usplit_2_1(X, Y, [], R, Rs, S) ->
-    umergel([[S], [Y, X | R] | Rs], []).
+    umergel([[S], [Y, X | R] | Rs], [], desc).
 
 %% umerge/1
 
-umergel([[] | L], Acc) ->
-    umergel(L, Acc);
-umergel([A, [H2 | T2], [H3 | T3] | L], Acc) ->
-    umergel(L, [umerge3_1(A, [], H2, T2, H3,  T3) | Acc]);
-umergel([A, [] | L], Acc) ->
-    umergel([A | L], Acc);
-umergel([A, B, [] | L], Acc) ->
-    umergel([A, B | L], Acc);
-umergel([A, B | L], Acc) ->
-    umergel(L, [umerge(A, B, []) | Acc]);
-umergel([L], []) ->
-    L;
-umergel([L], Acc) ->
-    rumergel([lists:reverse(L) | Acc], []);
-umergel([], []) ->
-    [];
-umergel([], Acc) ->
-    rumergel(Acc, []).
+umergel(L) ->
+    umergel(L, [], asc).
 
-rumergel([A, [H2 | T2], [H3 | T3] | L], Acc) ->
-    rumergel(L, [rumerge3_1(A, [], H2, T2, H3, T3) | Acc]);
-rumergel([A, B | L], Acc) ->
-    rumergel(L, [rumerge(A, B, []) | Acc]);
-rumergel([L], Acc) ->
-    umergel([lists:reverse(L) | Acc], []);
-rumergel([], Acc) ->
-    umergel(Acc, []).
+umergel([[] | L], Acc, O) ->
+    umergel(L, Acc, O);
+umergel([T1, [H2 | T2], [H3 | T3] | L], Acc, asc) ->
+    umergel(L, [umerge3_1(T1, [], H2, T2, H3,  T3) | Acc], asc);
+umergel([[H3 | T3], [H2 | T2], T1 | L], Acc, desc) ->
+    umergel(L, [umerge3_1(T1, [], H2, T2, H3,  T3) | Acc], desc);
+umergel([A, [] | L], Acc, O) ->
+    umergel([A | L], Acc, O);
+umergel([A, B, [] | L], Acc, O) ->
+    umergel([A, B | L], Acc, O);
+umergel([[H1 | T1], T2 | L], Acc, asc) ->
+    umergel(L, [umerge2_2(T1, T2, [], H1) | Acc], asc);
+umergel([T2, [H1 | T1] | L], Acc, desc) ->
+    umergel(L, [umerge2_2(T1, T2, [], H1) | Acc], desc);
+umergel([L], [], _O) ->
+    L;
+umergel([L], Acc, O) ->
+    rumergel([lists:reverse(L, []) | Acc], [], O);
+umergel([], [], _O) ->
+    [];
+umergel([], Acc, O) ->
+    rumergel(Acc, [], O).
+
+rumergel([[H3 | T3], [H2 | T2], T1 | L], Acc, asc) ->
+    rumergel(L, [rumerge3_1(T1, [], H2, T2, H3, T3) | Acc], asc);
+rumergel([T1, [H2 | T2], [H3 | T3] | L], Acc, desc) ->
+    rumergel(L, [rumerge3_1(T1, [], H2, T2, H3, T3) | Acc], desc);
+rumergel([[H2 | T2], T1 | L], Acc, asc) ->
+    rumergel(L, [rumerge2_1(T1, T2, [], H2) | Acc], asc);
+rumergel([T1, [H2 | T2] | L], Acc, desc) ->
+    rumergel(L, [rumerge2_1(T1, T2, [], H2) | Acc], desc);
+rumergel([L], Acc, O) ->
+    umergel([lists:reverse(L, []) | Acc], [], O);
+rumergel([], Acc, O) ->
+    umergel(Acc, [], O).
 
 %% umerge3/3
 
@@ -348,32 +363,28 @@ umerge3_1([H1 | T1], M, H2, T2, H3, T3) when H1 =< H2 ->
     umerge3_12(T1, H1, H2, T2, H3, T3, M);
 umerge3_1([H1 | T1], M, H2, T2, H3, T3) ->
     umerge3_21(T1, H1, H2, T2, H3, T3, M);
-umerge3_1(_, M, H2, T2, H3, T3) when H2 == H3 ->
-    umerge1(T2, T3, M, H3);
-umerge3_1(_, M, H2, T2, H3, T3) when H2 < H3 ->
-    umerge1(T2, T3, [H2 | M], H3);
-umerge3_1(_, M, H2, T2, H3, T3) ->
-    umerge1(T3, T2, [H3 | M], H2).
+umerge3_1([], M, H2, T2, H3, T3) when H2 =< H3 ->
+    umerge2_1(T2, T3, [H2 | M], H2, H3);
+umerge3_1([], M, H2, T2, H3, T3) ->
+    umerge2_2(T2, T3, [H3 | M], H2).
 
 %% Take L2 apart.
 umerge3_2(T1, H1, M, [H2 | T2], H3, T3) when H1 =< H2 ->
     umerge3_12(T1, H1, H2, T2, H3, T3, M);
 umerge3_2(T1, H1, M, [H2 | T2], H3, T3) ->
     umerge3_21(T1, H1, H2, T2, H3, T3, M);
-umerge3_2(T1, H1, M, _, H3, T3) when H1 == H3 ->
-    umerge1(T1, T3, M, H3);
-umerge3_2(T1, H1, M, _, H3, T3) when H1 < H3 ->
-    umerge1(T1, T3, [H1 | M], H3);
-umerge3_2(T1, H1, M, _, H3, T3) ->
-    umerge1(T3, T1, [H3 | M], H1).
+umerge3_2(T1, H1, M, [], H3, T3) when H1 =< H3 ->
+    umerge2_1(T1, T3, [H1 | M], H1, H3);
+umerge3_2(T1, H1, M, [], H3, T3) ->
+    umerge2_2(T1, T3, [H3 | M], H1).
 
-% H1 <= H2. Inlined.
+% H1 =< H2. Inlined.
 umerge3_12(T1, H1, H2, T2, H3, T3, M) when H1 == H2 ->
-    umerge3_1(T1, M, H2, T2, H3, T3);
+    umerge3_1(T1, M, H1, T2, H3, T3);
 umerge3_12(T1, H1, H2, T2, H3, T3, M) when H3 < H1 ->
     umerge3_12_3(T1, H1, H2, T2, [H3 | M], T3);
 umerge3_12(T1, H1, H2, T2, H3, T3, M) when H1 == H3 ->
-    umerge3_1(T1, M, H2, T2, H3, T3);
+    umerge3_1(T1, M, H2, T2, H1, T3);
 umerge3_12(T1, H1, H2, T2, H3, T3, M) ->
     umerge3_1(T1, [H1 | M], H2, T2, H3, T3).
 
@@ -384,14 +395,14 @@ umerge3_12_3(T1, H1, H2, T2, M, [H3 | T3]) when H3 == H1 ->
     umerge3_12_3(T1, H1, H2, T2, M, T3);
 umerge3_12_3(T1, H1, H2, T2, M, [H3 | T3]) ->
     umerge3_1(T1, [H1 | M], H2, T2, H3, T3);
-umerge3_12_3(T1, H1, H2, T2, M, _) ->
-    umerge1(T1, T2, [H1 | M], H2).
+umerge3_12_3(T1, H1, H2, T2, M, []) ->
+    umerge2_1(T1, T2, [H1 | M], H1, H2).
 
 % H1 > H2. Inlined.
 umerge3_21(T1, H1, H2, T2, H3, T3, M) when H3 < H2 ->
     umerge3_21_3(T1, H1, H2, T2, [H3 | M], T3);
 umerge3_21(T1, H1, H2, T2, H3, T3, M) when H3 == H2 ->
-    umerge3_2(T1, H1, M, T2, H3, T3);
+    umerge3_2(T1, H1, M, T2, H2, T3);
 umerge3_21(T1, H1, H2, T2, H3, T3, M) ->
     umerge3_2(T1, H1, [H2 | M], T2, H3, T3).
 
@@ -402,38 +413,34 @@ umerge3_21_3(T1, H1, H2, T2, M, [H3 | T3]) when H3 == H2 ->
     umerge3_21_3(T1, H1, H2, T2, M, T3);
 umerge3_21_3(T1, H1, H2, T2, M, [H3 | T3]) ->
     umerge3_2(T1, H1, [H2 | M], T2, H3, T3);
-umerge3_21_3(T1, H1, H2, T2, M, _) ->
-    umerge1(T2, T1, [H2 | M], H1).
+umerge3_21_3(T1, H1, H2, T2, M, []) ->
+    umerge2_2(T1, T2, [H2 | M], H1).
 
 %% Take L1 apart.
 rumerge3_1([H1 | T1], M, H2, T2, H3, T3) when H1 > H2 ->
     rumerge3_12(T1, H1, H2, T2, H3, T3, M);
 rumerge3_1([H1 | T1], M, H2, T2, H3, T3) ->
     rumerge3_21(T1, H1, H2, T2, H3, T3, M);
-rumerge3_1(_, M, H2, T2, H3, T3) when H2 > H3 ->
-    rumerge1(T2, T3, [H2 | M], H3);
-rumerge3_1(_, M, H2, T2, H3, T3) when H2 == H3 ->
-    rumerge1(T2, T3, M, H3);
-rumerge3_1(_, M, H2, T2, H3, T3) ->
-    rumerge1(T3, T2, [H3 | M], H2).
+rumerge3_1([], M, H2, T2, H3, T3) when H2 > H3 ->
+    rumerge2_1(T2, T3, [H2 | M], H3);
+rumerge3_1([], M, H2, T2, H3, T3) ->
+    rumerge2_2(T2, T3, M, H3, H2).
 
 %% Take L2 apart.
 rumerge3_2(T1, H1, M, [H2 | T2], H3, T3) when H1 > H2 ->
     rumerge3_12(T1, H1, H2, T2, H3, T3, M);
 rumerge3_2(T1, H1, M, [H2 | T2], H3, T3) ->
     rumerge3_21(T1, H1, H2, T2, H3, T3, M);
-rumerge3_2(T1, H1, M, _, H3, T3) when H1 > H3 ->
-    rumerge1(T1, T3, [H1 | M], H3);
-rumerge3_2(T1, H1, M, _, H3, T3) when H1 == H3 ->
-    rumerge1(T1, T3, M, H3);
-rumerge3_2(T1, H1, M, _, H3, T3) ->
-    rumerge1(T3, T1, [H3 | M], H1).
+rumerge3_2(T1, H1, M, [], H3, T3) when H1 > H3 ->
+    rumerge2_1(T1, T3, [H1 | M], H3);
+rumerge3_2(T1, H1, M, [], H3, T3) ->
+    rumerge2_2(T1, T3, M, H3, H1).
 
 % H1 > H2. Inlined.
 rumerge3_12(T1, H1, H2, T2, H3, T3, M) when H3 > H1 ->
     rumerge3_12_3(T1, H1, H2, T2, [H3 | M], T3);
 rumerge3_12(T1, H1, H2, T2, H3, T3, M) when H3 == H1 ->
-    rumerge3_1(T1, M, H2, T2, H3, T3);
+    rumerge3_1(T1, M, H2, T2, H1, T3);
 rumerge3_12(T1, H1, H2, T2, H3, T3, M) ->
     rumerge3_1(T1, [H1 | M], H2, T2, H3, T3).
 
@@ -444,8 +451,8 @@ rumerge3_12_3(T1, H1, H2, T2, M, [H3 | T3]) when H3 == H1 ->
     rumerge3_12_3(T1, H1, H2, T2, M, T3);
 rumerge3_12_3(T1, H1, H2, T2, M, [H3 | T3]) ->
     rumerge3_1(T1, [H1 | M], H2, T2, H3, T3);
-rumerge3_12_3(T1, H1, H2, T2, M, _) ->
-    rumerge1(T1, T2, [H1 | M], H2).
+rumerge3_12_3(T1, H1, H2, T2, M, []) ->
+    rumerge2_1(T1, T2, [H1 | M], H2).
 
 % H1 =< H2. Inlined.
 rumerge3_21(T1, H1, H2, T2, H3, T3, M) when H1 == H2 ->
@@ -453,7 +460,7 @@ rumerge3_21(T1, H1, H2, T2, H3, T3, M) when H1 == H2 ->
 rumerge3_21(T1, H1, H2, T2, H3, T3, M) when H3 > H2 ->
     rumerge3_21_3(T1, H1, H2, T2, [H3 | M], T3);
 rumerge3_21(T1, H1, H2, T2, H3, T3, M) when H3 == H2->
-    rumerge3_2(T1, H1, M, T2, H3, T3);
+    rumerge3_2(T1, H1, M, T2, H2, T3);
 rumerge3_21(T1, H1, H2, T2, H3, T3, M) ->
     rumerge3_2(T1, H1, [H2 | M], T2, H3, T3).
 
@@ -464,295 +471,535 @@ rumerge3_21_3(T1, H1, H2, T2, M, [H3 | T3]) when H3 == H2 ->
     rumerge3_21_3(T1, H1, H2, T2, M, T3);
 rumerge3_21_3(T1, H1, H2, T2, M, [H3 | T3]) ->
     rumerge3_2(T1, H1, [H2 | M], T2, H3, T3);
-rumerge3_21_3(T1, H1, H2, T2, M, _) ->
-    rumerge1(T2, T1, [H2 | M], H1).
-
-%% Elements from the first list are kept.
-umerge([H1 | T1], [H2 | T2], L) when H1 < H2 ->
-    umerge1(T1, T2, [H1 | L], H2);
-umerge([H1 | T1], [H2 | T2], L) when H1 == H2 ->
-    umerge(T1, T2, [H1 | L]);
-umerge([H1 | T1], [H2 | T2], L) ->
-    umerge2_1(T1, T2, [H2 | L], H1);
-umerge(S1, [], L) ->
-    lists:reverse(S1, L);
-umerge(_, S2, L) ->
-    lists:reverse(S2, L).
-
-umerge1([H1 | T1], T2, L, H2) when H1 < H2 ->
-    umerge1(T1, T2, [H1 | L], H2);
-umerge1([H1 | T1], T2, L, H2) when H1 == H2 ->
-    umerge(T1, T2, [H1 | L]);
-umerge1([H1 | T1], T2, L, H2) ->
-    umerge2_1(T1, T2, [H2 | L], H1);
-umerge1(_, T2, L, H2) ->
-    lists:reverse(T2, [H2 | L]).
+rumerge3_21_3(T1, H1, H2, T2, M, []) ->
+    rumerge2_2(T1, T2, M, H2, H1).
 
 %% umerge/2
 
-umerge2_1(T1, [H2 | T2], L, H1) when H1 < H2 ->
-    umerge1(T1, T2, [H1 | L], H2);
-umerge2_1(T1, [H2 | T2], L, H1) when H1 == H2 ->
-    umerge(T1, T2, [H1 | L]);
-umerge2_1(T1, [H2 | T2], L, H1) ->
-    umerge2_1(T1, T2, [H2 | L], H1);
-umerge2_1(T1, _, L, H1) ->
-    lists:reverse(T1, [H1 | L]).
+%% Elements from the first list are kept and prioritized.
+umerge2_1([H1 | T1], T2, M, _HdM, H2) when H1 =< H2 ->
+    umerge2_1(T1, T2, [H1 | M], H1, H2);
+umerge2_1([H1 | T1], T2, M, HdM, H2) when H2 == HdM ->
+    umerge2_2(T1, T2, M, H1);
+umerge2_1([H1 | T1], T2, M, _HdM, H2) ->
+    umerge2_2(T1, T2, [H2 | M], H1);
+umerge2_1([], T2, M, HdM, H2) when H2 == HdM ->
+    lists:reverse(T2, M);
+umerge2_1([], T2, M, _HdM, H2) ->
+    lists:reverse(T2, [H2 | M]).
 
-rumerge([H1 | T1], [H2 | T2], L) when H1 > H2 ->
-    rumerge1(T1, T2, [H1 | L], H2);
-rumerge([H1 | T1], [H2 | T2], L) when H1 == H2 ->
-    rumerge(T1, T2, [H1 | L]);
-rumerge([H1 | T1], [H2 | T2], L) ->
-    rumerge2_1(T1, T2, [H2 | L], H1);
-rumerge(T1, [], L) ->
-    lists:reverse(T1, L);
-rumerge(_, T2, L) ->
-    lists:reverse(T2, L).
-
-rumerge1([H1 | T1], T2, L, H2) when H1 > H2 ->
-    rumerge1(T1, T2, [H1 | L], H2);
-rumerge1([H1 | T1], T2, L, H2) when H1 == H2 ->
-    rumerge(T1, T2, [H1 | L]);
-rumerge1([H1 | T1], T2, L, H2) ->
-    rumerge2_1(T1, T2, [H2 | L], H1);
-rumerge1(_, T2, L, H2) ->
-    lists:reverse(T2, [H2 | L]).
+umerge2_2(T1, [H2 | T2], M, H1) when H1 =< H2 ->
+    umerge2_1(T1, T2, [H1 | M], H1, H2);
+umerge2_2(T1, [H2 | T2], M, H1) ->
+    umerge2_2(T1, T2, [H2 | M], H1);
+umerge2_2(T1, [], M, H1) ->
+    lists:reverse(T1, [H1 | M]).
 
 %% rumerge/2
 
-rumerge2_1(T1, [H2 | T2], L, H1) when H1 > H2 ->
-    rumerge1(T1, T2, [H1 | L], H2);
-rumerge2_1(T1, [H2 | T2], L, H1) when H1 == H2 ->
-    rumerge(T1, T2, [H1 | L]);
-rumerge2_1(T1, [H2 | T2], L, H1) ->
-    rumerge2_1(T1, T2, [H2 | L], H1);
-rumerge2_1(T1, _, L, H1) ->
-    lists:reverse(T1, [H1 | L]).
+%% Elements from the first list are kept and prioritized.
+rumerge2_1([H1 | T1], T2, M, H2) when H1 =< H2 ->
+    rumerge2_2(T1, T2, M, H2, H1);
+rumerge2_1([H1 | T1], T2, M, H2) ->
+    rumerge2_1(T1, T2, [H1 | M], H2);
+rumerge2_1([], T2, M, H2) ->
+    lists:reverse(T2, [H2 | M]).
+
+rumerge2_2(T1, [H2 | T2], M, H2M, H1) when H1 =< H2 ->
+    rumerge2_2(T1, T2, [H2M | M], H2, H1);
+rumerge2_2(T1, [H2 | T2], M, H2M, H1) when H2M == H1 ->
+    rumerge2_1(T1, T2, [H1 | M], H2);
+rumerge2_2(T1, [H2 | T2], M, H2M, H1) ->
+    rumerge2_1(T1, T2, [H1, H2M | M], H2);
+rumerge2_2(T1, [], M, H2M, H1) when H2M == H1 ->
+    lists:reverse(T1, [H1 | M]);
+rumerge2_2(T1, [], M, H2M, H1) ->
+    lists:reverse(T1, [H1, H2M | M]).
 
 %% keysort/2
 
-keysort2(_I, [])  -> 
-    [];
-keysort2(I, [H|T]) ->
-    K = element(I, H),
-    {Sorted,[]} = samkeyrun(T, H, K, H, K, [H], [], I, -1),
-    Sorted.
-
-keysort2([H|T], J, Lim, Run0, I) when J =/= Lim ->
-    K = element(I, H),
-    {Run2,Rest1} = samkeyrun(T, H, K, H, K, [H], [], I, J),
-    Run = keymerge(Run0, Run2, [], I),
-    keysort2(Rest1, J+1, Lim, Run, I);
-keysort2(Rest, _, _, Run, _) ->
-    {Run,Rest}.
-
-samkeyrun([], _EL, _LK, _EH, _HK, L, H, _I, _J) ->
-    {L ++ lists:reverse(H, []),[]};
-samkeyrun(All=[E|Es], EL, LK, EH, HK, L, H, I, J) ->
-    K = element(I, E),
+%% Ascending.
+keysplit_1(I, X, EX, Y, EY, [Z | L], R, Rs) ->
+    EZ = element(I, Z),
     if 
-	K < LK ->
-	    samkeyrun(Es, E, K, EH, HK, [E|L], H, I, J);
-	K >= HK ->
-	    samkeyrun(Es, EL, LK, E, K, L, [E|H], I, J);
+	EY =< EZ ->
+	    keysplit_1(I, Y, EY, Z, EZ, L, [X | R], Rs);
+	EX =< EZ ->
+	    keysplit_1(I, Z, EZ, Y, EY, L, [X | R], Rs);
+	true, R == [] ->
+	    keysplit_1(I, X, EX, Y, EY, L, [Z], Rs);
 	true ->
-	    keysort2(All, 1, J, L ++ lists:reverse(H, []), I)
-    end.
+	    keysplit_1_1(I, X, EX, Y, EY, L, R, Rs, Z, EZ)
+    end;
+keysplit_1(I, X, _EX, Y, _EY, [], R, Rs) ->
+    rkeymergel(I, [[Y, X | R] | Rs], []).
+
+%% One out-of-order element, S.
+keysplit_1_1(I, X, EX, Y, EY, [Z | L], R, Rs, S, ES) ->
+    EZ = element(I, Z),
+    if
+	EY =< EZ ->
+	    keysplit_1_1(I, Y, EY, Z, EZ, L, [X | R], Rs, S, ES);
+	EX =< EZ ->
+	    keysplit_1_1(I, Z, EZ, Y, EY, L, [X | R], Rs, S, ES);
+	ES =< EZ ->
+	    keysplit_1(I, S, ES, Z, EZ, L, [], [[Y, X | R] | Rs]);
+	true ->
+	    keysplit_1(I, Z, EZ, S, ES, L, [], [[Y, X | R] | Rs])
+    end;
+keysplit_1_1(I, X, _EX, Y, _EY, [], R, Rs, S, _ES) ->
+    rkeymergel(I, [[S], [Y, X | R] | Rs], []).
+
+%% Descending.
+keysplit_2(I, Y, EY, [Z | L], R) ->
+    EZ = element(I, Z),
+    if
+	EY =< EZ ->
+            keysplit_1(I, Y, EY, Z, EZ, L, [], [lists:reverse(R, [])]);
+        true ->
+            keysplit_2(I, Z, EZ, L, [Y | R])
+    end;
+keysplit_2(_I, Y, _EY, [], R) ->
+    [Y | R].
+
+keymergel(I, [T1, [H2 | T2] | L], Acc) ->
+    keymergel(I, L, [keymerge2_1(I, T1, element(I, H2), H2, T2, []) | Acc]);
+keymergel(_I, [L], []) ->
+    L;
+keymergel(I, [L], Acc) ->
+    rkeymergel(I, [lists:reverse(L, []) | Acc], []);
+keymergel(I, [], Acc) ->
+    rkeymergel(I, Acc, []).
+
+rkeymergel(I, [[H2 | T2], T1 | L], Acc) ->
+    rkeymergel(I, L, [rkeymerge2_1(I, T1, element(I, H2), H2, T2, []) | Acc]);
+rkeymergel(I, [L], Acc) ->
+    keymergel(I, [lists:reverse(L, []) | Acc], []);
+rkeymergel(I, [], Acc) ->
+    keymergel(I, Acc, []).
 
 %% keymerge/3
 
-keymerge([], Ns, L, _I) ->
-    lists:reverse(L, Ns);
-keymerge([O|Os], Ns, L, I) ->
-    K = element(I, O),
-    keymerge(Ns, O, K, Os, L, I).
-
-keymerge([], O, _K, Os, L, _I) ->
-    lists:reverse(L, [O|Os]);
-keymerge(All = [N|Ns], O, K, Os, L, I) ->
-    NK = element(I, N),
+%% Elements from the first list are prioritized.
+keymerge2_1(I, [H1 | T1], E2, H2, T2, M) ->
+    E1 = element(I, H1),
     if 
-	K =< NK ->
-	    keymerge(Os, All, [O|L], I);
+	E1 =< E2 ->
+	    keymerge2_1(I, T1, E2, H2, T2, [H1 | M]);
 	true ->
-	    keymerge(Ns, O, K, Os, [N|L], I)
-    end.
+	    keymerge2_2(I, T1, E1, H1, T2, [H2 | M])
+    end;
+keymerge2_1(_I, [], _E2, H2, T2, M) ->
+    lists:reverse(T2, [H2 | M]).
+
+keymerge2_2(I, T1, E1, H1, [H2 | T2], M) ->
+    E2 = element(I, H2),
+    if
+	E1 =< E2 ->
+	    keymerge2_1(I, T1, E2, H2, T2, [H1 | M]);
+	true ->
+	    keymerge2_2(I, T1, E1, H1, T2, [H2 | M])
+    end;
+keymerge2_2(_I, T1, _E1, H1, [], M) ->
+    lists:reverse(T1, [H1 | M]).
+
+%% rkeymerge/3
+
+rkeymerge2_1(I, [H1 | T1], E2, H2, T2, M) ->
+    E1 = element(I, H1),
+    if
+	E1 =< E2 ->
+	    rkeymerge2_2(I, T1, E1, T2, [H2 | M], H1);
+	true ->
+	    rkeymerge2_1(I, T1, E2, H2, T2, [H1 | M])
+    end;
+rkeymerge2_1(_I, [], _E2, H2, T2, M) ->
+    lists:reverse(T2, [H2 | M]).
+
+rkeymerge2_2(I, T1, E1, [H2 | T2], M, H1) ->
+    E2 = element(I, H2),
+    if
+	E1 =< E2 ->
+	    rkeymerge2_2(I, T1, E1, T2, [H2 | M], H1);
+	true ->
+	    rkeymerge2_1(I, T1, E2, H2, T2, [H1 | M])
+    end;
+rkeymerge2_2(_I, T1, _E1, [], M, H1) ->
+    lists:reverse(T1, [H1 | M]).
 
 %% ukeysort/2
 
-ukeysort2(_I, [])  -> 
-    [];
-ukeysort2(I, [H|T]) ->
-    K = element(I, H),
-    {Sorted,[]} = usamkeyrun(T, H, K, H, K, [H], [], I, -1, H),
-    Sorted.
+%% Ascending.
+ukeysplit_1(I, X, EX, Y, EY, [Z | L], R, Rs) when Y == Z ->
+    ukeysplit_1(I, X, EX, Y, EY, L, R, Rs);
+ukeysplit_1(I, X, EX, Y, EY, [Z | L], R, Rs) ->
+    EZ = element(I, Z),
+    if
+	EY =< EZ ->
+	    ukeysplit_1(I, Y, EY, Z, EZ, L, [X | R], Rs);
+        X == Z ->
+	    ukeysplit_1(I, X, EX, Y, EY, L, R, Rs);
+        EX =< EZ ->
+	    ukeysplit_1(I, Z, EZ, Y, EY, L, [X | R], Rs);
+        R == [] ->
+	    ukeysplit_1(I, X, EX, Y, EY, L, [Z], Rs);
+        true ->
+	    ukeysplit_1_1(I, X, EX, Y, EY, L, R, Rs, Z, EZ)
+    end;
+ukeysplit_1(I, X, _EX, Y, _EY, [], R, Rs) ->
+    rukeymergel(I, [[Y, X | R] | Rs], []).
 
-ukeysort2([H|T], J, Lim, Run0, I) when J =/= Lim ->
-    K = element(I, H),
-    {Run2,Rest1} = usamkeyrun(T, H, K, H, K, [H], [], I, J, H),
-    Run = ukeymerge(Run0, Run2, [], I, last),
-    ukeysort2(Rest1, J+1, Lim, Run, I);
-ukeysort2(Rest, _, _, Run, _) ->
-    {Run,Rest}.
-
-usamkeyrun([], _EL, _LK, _EH, _HK, L, H, _I, _J, _Last) ->
-    {L ++ lists:reverse(H, []),[]};
-usamkeyrun([E|Es], EL, LK, EH, HK, L, H, I, J, Last) when E == Last ->
-    usamkeyrun(Es, EL, LK, EH, HK, L, H, I, J, Last);
-usamkeyrun(All=[E|Es], EL, LK, EH, HK, L, H, I, J, _Last) ->
-    K = element(I, E),
-    if 
-	K < LK ->
-	    usamkeyrun(Es, E, K, EH, HK, [E|L], H, I, J, E);
-	K >= HK ->
-	    usamkeyrun(Es, EL, LK, E, K, L, [E|H], I, J, E);
+%% One out-of-order element, S.
+ukeysplit_1_1(I, X, EX, Y, EY, [Z | L], R, Rs, S, ES) when Y == Z ->
+    ukeysplit_1_1(I, X, EX, Y, EY, L, R, Rs, S, ES);
+ukeysplit_1_1(I, X, EX, Y, EY, [Z | L], R, Rs, S, ES) ->
+    EZ = element(I, Z),
+    if
+	EY =< EZ ->
+	    ukeysplit_1_1(I, Y, EY, Z, EZ, L, [X | R], Rs, S, ES);
+	X == Z ->
+	    ukeysplit_1_1(I, X, EX, Y, EY, L, R, Rs, S, ES);
+	EX =< EZ ->
+	    ukeysplit_1_1(I, Z, EZ, Y, EY, L, [X | R], Rs, S, ES);
+	S == Z ->
+	    ukeysplit_1_1(I, X, EX, Y, EY, L, R, Rs, S, ES);
+	ES =< EZ ->
+	    ukeysplit_1(I, S, ES, Z, EZ, L, [], [[Y, X | R] | Rs]);
 	true ->
-	    ukeysort2(All, 1, J, L ++ lists:reverse(H, []), I)
-    end.
+	    ukeysplit_1(I, Z, EZ, S, ES, L, [], [[Y, X | R] | Rs])
+    end;
+ukeysplit_1_1(I, X, _EX, Y, _EY, [], R, Rs, S, _ES) ->
+    rukeymergel(I, [[S], [Y, X | R] | Rs], []).
+
+%% Descending.
+ukeysplit_2(I, Y, EY, [Z | L], R) ->
+    EZ = element(I, Z),
+    if
+	Y == Z ->
+	    ukeysplit_2(I, Y, EY, L, R);
+	EY =< EZ ->
+            ukeysplit_1(I, Y, EY, Z, EZ, L, [], [lists:reverse(R, [])]);
+	true ->
+            ukeysplit_2(I, Z, EZ, L, [Y | R])
+    end;
+ukeysplit_2(_I, Y, _EY, [], R) ->
+    [Y | R].
+
+ukeymergel(I, [[H1 | T1], T2 | L], Acc) ->
+    ukeymergel(I, L, [ukeymerge2_2(I, T1, element(I, H1), H1, T2, []) | Acc]);
+ukeymergel(_I, [L], []) ->
+    L;
+ukeymergel(I, [L], Acc) ->
+    rukeymergel(I, [lists:reverse(L, []) | Acc], []);
+ukeymergel(I, [], Acc) ->
+    rukeymergel(I, Acc, []).
+
+rukeymergel(I, [[H2 | T2], T1 | L], Acc) ->
+    rukeymergel(I, L, [rukeymerge2_1(I, T1, element(I,H2), T2, [], H2)|Acc]);
+rukeymergel(I, [L], Acc) ->
+    ukeymergel(I, [lists:reverse(L, []) | Acc], []);
+rukeymergel(I, [], Acc) ->
+    ukeymergel(I, Acc, []).
 
 %% ukeymerge/3
 
-ukeymerge([], [N | Ns], L, I, Last) when N == Last ->
-    ukeymerge([], Ns, L, I, Last);
-ukeymerge([], [N | Ns], L, I, _Last) ->
-    ukeymerge([], Ns, [N | L], I, N);
-ukeymerge([], [], L, _I, _Last) ->
-    lists:reverse(L);
-ukeymerge([O | Os], [], L, I, Last) when O == Last ->
-    ukeymerge(Os, [], L, I, Last);
-ukeymerge([O | Os], Ns, L, I, Last) ->
-    OK = element(I, O),
-    ukeymerge(Ns, O, OK, Os, L, I, Last).
+%% Elements from the first list are kept and prioritized.
+ukeymerge2_1(I, [H1 | T1], E2, HdM, T2, M, H2) ->
+    E1 = element(I, H1),
+    if
+	E1 =< E2 ->
+	    ukeymerge2_1(I, T1, E2, H1, T2, [H1 | M], H2);
+	H2 == HdM ->
+	    ukeymerge2_2(I, T1, E1, H1, T2, M);
+	true ->
+	    ukeymerge2_2(I, T1, E1, H1, T2, [H2 | M])
+    end;
+ukeymerge2_1(_I, [], _E2, HdM, T2, M, H2) when H2 == HdM ->
+    lists:reverse(T2, M);
+ukeymerge2_1(_I, [], _E2, _HdM, T2, M, H2) ->
+    lists:reverse(T2, [H2 | M]).
 
-ukeymerge([], O, _OK, Os, L, I, _Last) ->
-    ukeymerge(Os, [], [O | L], I, O);
-ukeymerge([N | Ns] = All, O, OK, Os, L, I, Last) ->
-    NK = element(I, N),
-    case OK =< NK of
-        true when O == Last ->
-            ukeymerge(Os, All, L, I, Last);
-        true -> 
-	    ukeymerge(Os, All, [O | L], I, O);
-	false when N == Last ->
-	    ukeymerge(Ns, O, OK, Os, L, I, Last);
-	false ->
-	    ukeymerge(Ns, O, OK, Os, [N | L], I, N)
-    end.
+ukeymerge2_2(I, T1, E1, H1, [H2 | T2], M) ->
+    E2 = element(I, H2),
+    if
+	E1 =< E2 ->
+	    ukeymerge2_1(I, T1, E2, H1, T2, [H1 | M], H2);
+	true ->
+	    ukeymerge2_2(I, T1, E1, H1, T2, [H2 | M])
+    end;
+ukeymerge2_2(_I, T1, _E1, H1, [], M) ->
+    lists:reverse(T1, [H1 | M]).
+
+%% rukeymerge/3
+
+rukeymerge2_1(I, [H1 | T1], E2, T2, M, H2) ->
+    E1 = element(I, H1),
+    if
+	E1 =< E2 ->
+	    rukeymerge2_2(I, T1, E1, T2, M, H2, H1);
+	true ->
+	    rukeymerge2_1(I, T1, E2, T2, [H1 | M], H2)
+    end;
+rukeymerge2_1(_I, [], _E2, T2, M, H2) ->
+    lists:reverse(T2, [H2 | M]).
+
+rukeymerge2_2(I, T1, E1, [H2 | T2], M, H2M, H1) ->
+    E2 = element(I, H2),
+    if
+	E1 =< E2 ->
+	    rukeymerge2_2(I, T1, E1, T2, [H2M | M], H2, H1);
+	H2M == H1 ->
+	    rukeymerge2_1(I, T1, E2, T2, [H1 | M], H2);
+	true ->
+	    rukeymerge2_1(I, T1, E2, T2, [H1, H2M | M], H2)
+    end;
+rukeymerge2_2(_I, T1, _E1, [], M, H2M, H1) when H2M == H1 ->
+    lists:reverse(T1, [H1 | M]);
+rukeymerge2_2(_I, T1, _E1, [], M, H2M, H1) ->
+    lists:reverse(T1, [H1, H2M | M]).
 
 %% sort/2
 
-sort(_Fun, []) ->
-    [];
-sort(Fun, [H|T]) ->
-    {Sorted, []} = samrun(T, H, H, [H], [], -1, Fun),
-    Sorted.
-
-sort([H|T], J, Lim, Run0, F) when J =/= Lim ->
-    {Run2, Rest1} = samrun(T, H, H, [H], [], J, F),
-    Run = merge2(F, Run0, Run2),
-    sort(Rest1, J+1, Lim, Run, F);
-sort(Rest, _, _, Run, _) ->
-    {Run, Rest}.
-
-samrun([], _EL, _EH, L, H, _J, _F) ->
-    {L ++ lists:reverse(H, []), []};
-samrun(R=[E|Es], EL, EH, L, H, J, F)  ->
-    case F(EL, E) of
-	false -> % E < EL
-	    samrun(Es, E, EH, [E|L], H, J, F);
+%% Ascending.
+fsplit_1(Y, X, Fun, [Z | L], R, Rs) ->
+    case Fun(Y, Z) of
 	true -> 
-	    case F(EH, E) of
-		true -> % E >= EH
-		    samrun(Es, EL, E, L, [E|H], J, F);
+	    fsplit_1(Z, Y, Fun, L, [X | R], Rs);
+	false ->
+	    case Fun(X, Z) of
+		true ->
+		    fsplit_1(Y, Z, Fun, L, [X | R], Rs);
+		false when R == [] ->
+		    fsplit_1(Y, X, Fun, L, [Z], Rs);
 		false ->
-		    sort(R, 1, J, L++lists:reverse(H, []), F)
+		    fsplit_1_1(Y, X, Fun, L, R, Rs, Z)
 	    end
-    end.
+    end;
+fsplit_1(Y, X, Fun, [], R, Rs) ->
+    rfmergel([[Y, X | R] | Rs], [], Fun).
+
+%% One out-of-order element, S.
+fsplit_1_1(Y, X, Fun, [Z | L], R, Rs, S) ->
+    case Fun(Y, Z) of
+	true ->
+	    fsplit_1_1(Z, Y, Fun, L, [X | R], Rs, S);
+	false ->
+	    case Fun(X, Z) of
+		true ->
+		    fsplit_1_1(Y, Z, Fun, L, [X | R], Rs, S);
+		false ->
+		    case Fun(S, Z) of
+			true ->
+			    fsplit_1(Z, S, Fun, L, [], [[Y, X | R] | Rs]);
+			false ->
+			    fsplit_1(S, Z, Fun, L, [], [[Y, X | R] | Rs])
+		    end
+	    end
+    end;
+fsplit_1_1(Y, X, Fun, [], R, Rs, S) ->
+    rfmergel([[S], [Y, X | R] | Rs], [], Fun).
+
+%% Descending.
+fsplit_2(Y, [Z | L], Fun, R) ->
+    case Fun(Y, Z) of
+        true ->
+            fsplit_1(Z, Y, Fun, L, [], [lists:reverse(R, [])]);
+        false ->
+            fsplit_2(Z, L, Fun, [Y | R])
+    end;
+fsplit_2(Y, [], _Fun, R) ->
+    [Y | R].
+
+fmergel([T1, [H2 | T2] | L], Acc, Fun) ->
+    fmergel(L, [fmerge2_1(T1, H2, Fun, T2, []) | Acc], Fun);
+fmergel([L], [], _Fun) ->
+    L;
+fmergel([L], Acc, Fun) ->
+    rfmergel([lists:reverse(L, []) | Acc], [], Fun);
+fmergel([], Acc, Fun) ->
+    rfmergel(Acc, [], Fun).
+
+rfmergel([[H2 | T2], T1 | L], Acc, Fun) ->
+    rfmergel(L, [rfmerge2_1(T1, H2, Fun, T2, []) | Acc], Fun);
+rfmergel([L], Acc, Fun) ->
+    fmergel([lists:reverse(L, []) | Acc], [], Fun);
+rfmergel([], Acc, Fun) ->
+    fmergel(Acc, [], Fun).
 
 %% merge/3 
 
-merge2(Fun, X, Y) -> 
-    lists:reverse(merge(Fun, X, Y, []), []).
-
-merge(Fun, [H1|T1], [H2|T2], L) ->
+%% Elements from the first list are prioritized.
+fmerge2_1([H1 | T1], H2, Fun, T2, M) ->
     case Fun(H1, H2) of
 	true ->
-	    merge(Fun, T1, H2, T2, [H1|L]);
+	    fmerge2_1(T1, H2, Fun, T2, [H1 | M]);
 	false ->
-	    merge(Fun, T2, H1, T1, [H2|L])
+	    fmerge2_2(H1, T1, Fun, T2, [H2 | M])
     end;
-merge(_Fun, [], [H2|T2], L) ->
-    lists:reverse(T2, [H2|L]);
-merge(_Fun, [H1|T1], [], L) ->
-    lists:reverse(T1, [H1|L]);
-merge(_Fun, [], [], L) -> L.
+fmerge2_1([], H2, _Fun, T2, M) ->
+    lists:reverse(T2, [H2 | M]).
 
-merge(Fun, [H1|T1], H2, T2, L) ->
+fmerge2_2(H1, T1, Fun, [H2 | T2], M) ->
     case Fun(H1, H2) of
 	true ->
-	    merge(Fun, T1, H2, T2, [H1|L]);
+	    fmerge2_1(T1, H2, Fun, T2, [H1 | M]);
 	false ->
-	    merge(Fun, T2, H1, T1, [H2|L])
+	    fmerge2_2(H1, T1, Fun, T2, [H2 | M])
     end;
-merge(_Fun, [], H2, T2, L) ->
-    lists:reverse(T2, [H2|L]).
+fmerge2_2(H1, T1, _Fun, [], M) ->
+    lists:reverse(T1, [H1 | M]).
+
+%% rmerge/3
+
+rfmerge2_1([H1 | T1], H2, Fun, T2, M) ->
+    case Fun(H1, H2) of
+	true ->
+	    rfmerge2_2(H1, T1, Fun, T2, [H2 | M]);
+	false ->
+	    rfmerge2_1(T1, H2, Fun, T2, [H1 | M])
+    end;
+rfmerge2_1([], H2, _Fun, T2, M) ->
+    lists:reverse(T2, [H2 | M]).
+
+rfmerge2_2(H1, T1, Fun, [H2 | T2], M) ->
+    case Fun(H1, H2) of
+	true ->
+	    rfmerge2_2(H1, T1, Fun, T2, [H2 | M]);
+	false ->
+	    rfmerge2_1(T1, H2, Fun, T2, [H1 | M])
+    end;
+rfmerge2_2(H1, T1, _Fun, [], M) ->
+    lists:reverse(T1, [H1 | M]).
 
 %% usort/2
 
-usort(_Fun, []) ->
-    [];
-usort(Fun, [H|T]) ->
-    {Sorted, []} = usamrun(T, H, H, [H], [], -1, Fun, H),
-    Sorted.
-
-usort([H|T], J, Lim, Run0, F) when J =/= Lim ->
-    {Run2, Rest1} = samrun(T, H, H, [H], [], J, F),
-    Run = umerge2(F, Run0, Run2),
-    sort(Rest1, J+1, Lim, Run, F);
-usort(Rest, _, _, Run, _) ->
-    {Run, Rest}.
-
-usamrun([], _EL, _EH, L, H, _J, _F, _Last) ->
-    {L ++ lists:reverse(H, []), []};
-usamrun([E|Es], EL, EH, L, H, J, F, Last) when E == Last ->
-    usamrun(Es, EL, EH, L, H, J, F, Last);
-usamrun(R=[E|Es], EL, EH, L, H, J, F, _Last)  ->
-    case F(EL, E) of
-	false -> % E < EL
-	    usamrun(Es, E, EH, [E|L], H, J, F, E);
-	true -> 
-	    case F(EH, E) of
-		true -> % E >= EH
-		    usamrun(Es, EL, E, L, [E|H], J, F, E);
-		false ->
-		    usort(R, 1, J, L++lists:reverse(H, []), F)
-	    end
-    end.
-
-%% umerge/3 
-
-umerge2(Fun, X, Y) -> 
-    umerge(Fun, X, Y, [], last).
-
-umerge(Fun, [], [H2 | T2], L, Last) when H2 == Last ->
-    umerge(Fun, [], T2, L, Last);
-umerge(Fun, [], [H2 | T2], L, _Last) ->
-    umerge(Fun, [], T2, [H2 | L], H2);
-umerge(_Fun, [], [], L, _Last) -> 
-    lists:reverse(L);
-umerge(Fun, [H1 | T1], [], L, Last) when H1 == Last ->
-    umerge(Fun, T1, [], L, Last);
-umerge(Fun, [H1 | T1], [], L, _Last) ->
-    umerge(Fun, T1, [], [H1 | L], H1);
-umerge(Fun, [H1 | T1] = X, [H2 | T2] = Y, L, Last) ->
-    case Fun(H1, H2) of
-        true when H1 == Last ->
-            umerge(Fun, T1, Y, L, Last);
+%% Ascending.
+ufsplit_1(Y, X, Fun, [Z | L], R, Rs) ->
+    case Fun(Y, Z) of
+	true when Y == Z ->
+	    ufsplit_1(Y, X, Fun, L, R, Rs);
 	true ->
-	    umerge(Fun, T1, Y, [H1 | L], H1);
-        false when H2 == Last ->
-            umerge(Fun, X, T2, L, Last);
+	    ufsplit_1(Z, Y, Fun, L, [X | R], Rs);
 	false ->
-	    umerge(Fun, X, T2, [H2 | L], H2)
-    end.
+	    case Fun(X, Z) of
+		true when X == Z ->
+		    ufsplit_1(Y, X, Fun, L, R, Rs);
+		true ->
+		    ufsplit_1(Y, Z, Fun, L, [X | R], Rs);
+		false when R == [] ->
+		    ufsplit_1(Y, X, Fun, L, [Z], Rs);
+		false ->
+		    ufsplit_1_1(Y, X, Fun, L, R, Rs, Z)
+	    end
+    end;
+ufsplit_1(Y, X, Fun, [], R, Rs) ->
+    rufmergel([[Y, X | R] | Rs], [], Fun).
+
+%% One out-of-order element, S.
+ufsplit_1_1(Y, X, Fun, [Z | L], R, Rs, S) ->
+    case Fun(Y, Z) of
+	true when Y == Z ->
+            ufsplit_1_1(Y, X, Fun, L, R, Rs, S);
+	true -> 
+	    ufsplit_1_1(Z, Y, Fun, L, [X | R], Rs, S);
+	false ->
+	    case Fun(X, Z) of
+		true when X == Z ->
+		    ufsplit_1_1(Y, X, Fun, L, R, Rs, S);
+		true ->
+		    ufsplit_1_1(Y, Z, Fun, L, [X | R], Rs, S);
+		false ->
+		    case Fun(S, Z) of
+			true when S == Z ->
+			    ufsplit_1_1(Y, X, Fun, L, R, Rs, S);
+			true ->
+			    ufsplit_1(Z, S, Fun, L, [], [[Y, X | R] | Rs]);
+			false ->
+			    ufsplit_1(S, Z, Fun, L, [], [[Y, X | R] | Rs])
+		    end
+	    end
+    end;
+ufsplit_1_1(Y, X, Fun, [], R, Rs, S) ->
+    rufmergel([[S], [Y, X | R] | Rs], [], Fun).
+
+%% Descending.
+ufsplit_2(Y, [Z | L], Fun, R) ->
+    case Fun(Y, Z) of
+	true when Y == Z ->
+	    ufsplit_2(Y, L, Fun, R);
+        true ->
+            ufsplit_1(Z, Y, Fun, L, [], [lists:reverse(R, [])]);
+        false ->
+            ufsplit_2(Z, L, Fun, [Y | R])
+    end;
+ufsplit_2(Y, [], _Fun, R) ->
+    [Y | R].
+
+ufmergel([[H1 | T1], T2 | L], Acc, Fun) ->
+    ufmergel(L, [ufmerge2_2(H1, T1, Fun, T2, []) | Acc], Fun);
+ufmergel([L], [], _Fun) ->
+    L;
+ufmergel([L], Acc, Fun) ->
+    rufmergel([lists:reverse(L, []) | Acc], [], Fun);
+ufmergel([], Acc, Fun) ->
+    rufmergel(Acc, [], Fun).
+
+rufmergel([[H2 | T2], T1 | L], Acc, Fun) ->
+    rufmergel(L, [rufmerge2_1(T1, H2, Fun, T2, []) | Acc], Fun);
+rufmergel([L], Acc, Fun) ->
+    ufmergel([lists:reverse(L, []) | Acc], [], Fun);
+rufmergel([], Acc, Fun) ->
+    ufmergel(Acc, [], Fun).
+
+%% umerge/3
+
+%% Elements from the first list are kept and prioritized.
+ufmerge2_1([H1 | T1], H2, Fun, T2, M, HdM) ->
+    case Fun(H1, H2) of
+	true ->
+	    ufmerge2_1(T1, H2, Fun, T2, [H1 | M], H1);
+	false when H2 == HdM ->
+	    ufmerge2_2(H1, T1, Fun, T2, M);
+	false ->
+	    ufmerge2_2(H1, T1, Fun, T2, [H2 | M])
+    end;
+ufmerge2_1([], H2, _Fun, T2, M, HdM) when H2 == HdM ->
+    lists:reverse(T2, M);
+ufmerge2_1([], H2, _Fun, T2, M, _HdM) ->
+    lists:reverse(T2, [H2 | M]).
+
+ufmerge2_2(H1, T1, Fun, [H2 | T2], M) ->
+    case Fun(H1, H2) of
+	true ->
+	    ufmerge2_1(T1, H2, Fun, T2, [H1 | M], H1);
+	false ->
+	    ufmerge2_2(H1, T1, Fun, T2, [H2 | M])
+    end;
+ufmerge2_2(H1, T1, _Fun, [], M) ->
+    lists:reverse(T1, [H1 | M]).
+
+%% rumerge/3
+
+rufmerge2_1([H1 | T1], H2, Fun, T2, M) ->
+    case Fun(H1, H2) of
+	true ->
+	    rufmerge2_2(H1, T1, Fun, T2, M, H2);
+	false ->
+	    rufmerge2_1(T1, H2, Fun, T2, [H1 | M])
+    end;
+rufmerge2_1([], H2, _Fun, T2, M) ->
+    lists:reverse(T2, [H2 | M]).
+
+rufmerge2_2(H1, T1, Fun, [H2 | T2], M, H2M) ->
+    case Fun(H1, H2) of
+	true ->
+	    rufmerge2_2(H1, T1, Fun, T2, [H2M | M], H2);
+	false when H2M == H1 ->
+	    rufmerge2_1(T1, H2, Fun, T2, [H1 | M]);
+	false ->
+	    rufmerge2_1(T1, H2, Fun, T2, [H1, H2M | M])
+    end;
+rufmerge2_2(H1, T1, _Fun, [], M, H2M) when H2M == H1 ->
+    lists:reverse(T1, [H1 | M]);
+rufmerge2_2(H1, T1, _Fun, [], M, H2M) ->
+    lists:reverse(T1, [H1, H2M | M]).

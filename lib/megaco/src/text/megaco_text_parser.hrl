@@ -575,7 +575,8 @@ do_merge_mediaDescriptor([], TS, multiStream, SD) when SD /= [] ->
     #'MediaDescriptor'{streams        = {multiStream, lists:reverse(SD)},
                        termStateDescr = TS};
 do_merge_mediaDescriptor([], TS, multiStream, []) ->
-    return_error(0, "MediaDescriptor.streams missing").
+    #'MediaDescriptor'{streams        = asn1_NOVALUE,
+                       termStateDescr = TS}.
   
 merge_streamParms(TaggedStreamParms) ->
     SP = #'StreamParms'{},

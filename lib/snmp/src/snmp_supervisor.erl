@@ -128,6 +128,7 @@ init([Type, DbD, ConfD, Opts]) ->
     LocalDb = {snmp_local_db,
 	       {snmp_local_db, start_link, [DbDir, Prio, LdbOpts]},
 	       permanent, 5000, worker, [snmp_local_db]},    
+    ErrorReportMod = snmp_misc:get_option(error_report_mod, Opts, snmp_error),
     ?vdebug("create agent table",[]),
     ets:new(snmp_agent_table, [set, public, named_table]),
     ?vdebug("create community cache",[]),
@@ -136,6 +137,8 @@ init([Type, DbD, ConfD, Opts]) ->
     ets:insert(snmp_agent_table, {priority, Prio}),
     ?vdebug("store system start time",[]),
     ets:insert(snmp_agent_table, {system_start_time, snmp_misc:now(cs)}),
+    ?vdebug("store error report module: ~w",[ErrorReportMod]),
+    ets:insert(snmp_agent_table, {error_report_mod, ErrorReportMod}),
     ?vdebug("init VACM",[]),
     snmp_vacm:init(DbDir),
     Rest =

@@ -506,10 +506,10 @@ check_atom(X, Atoms) ->
     end.
 
 error(Format, Error) ->
-    snmp_error:config_err(Format, Error),
+    config_err(Format, Error),
     exit(configuration_error).
 %% error(File, Line, Error) ->
-%%     snmp_error:config_err("~p:~w: ~p", [File, Line, Error]),
+%%     config_err("~p:~w: ~p", [File, Line, Error]),
 %%     exit(configuration_error).
 
 %%%-----------------------------------------------------------------
@@ -1025,3 +1025,6 @@ context_header() ->
 		  "~2.2.0w:~2.2.0w:~2.2.0w\n",
 		  [?version,Y,Mo,D,H,Mi,S]).
 
+
+config_err(F, A) ->
+    snmp_error_report:config_err(F, A).

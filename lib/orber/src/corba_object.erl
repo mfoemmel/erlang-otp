@@ -79,9 +79,6 @@ is_nil(Object) when record(Object, 'IOP_IOR') ->
     iop_ior:check_nil(Object);
 is_nil({I,T,K,P,O,F}) ->
     iop_ior:check_nil({I,T,K,P,O,F});
-%% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
-is_nil({I,T,K,P}) ->
-    iop_ior:check_nil({I,T,K,P});
 is_nil(Obj) ->
     orber:debug_level_print("[~p] corba_object:is_nil(~p); Invalid object reference.", 
 			    [?LINE, Obj], ?DEBUG_LEVEL),
@@ -99,7 +96,7 @@ get_policy(Obj, PolicyType) when integer(PolicyType) ->
 	    orber_iiop:request(Key, get_policy, [PolicyType], 
 			       {orber_policy_server:get_tc(),
 				[orber_tc:unsigned_long()],[]},
-			       true);
+			       true, infinity, Obj);
 	{'internal', _} ->
 	    orber_policy_server:get_policy(Obj, PolicyType);
 	{'internal_registered', _} ->
@@ -116,12 +113,14 @@ get_policy(_, PT) ->
     
 
 
+is_a(?ORBER_NIL_OBJREF, _) ->
+    false;
 is_a(Obj, Logical_type_id) ->
     case catch iop_ior:get_key(Obj) of
 	{'external', Key} ->
 	    orber_iiop:request(Key, '_is_a', [Logical_type_id], 
 			       {orber_tc:boolean(),[orber_tc:string(0)],[]},
-			       true);
+			       true, infinity, Obj);
 	{_Local, _Key} ->
 	    case iop_ior:get_typeID(Obj) of
 		Logical_type_id ->
@@ -146,8 +145,13 @@ is_a(Obj, Logical_type_id) ->
 	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
     end.
 
+non_existent(?ORBER_NIL_OBJREF) ->
+    true;
 non_existent(Obj) ->
     existent_helper(Obj, '_non_existent').
+
+not_existent(?ORBER_NIL_OBJREF) ->
+    true;
 not_existent(Obj) ->
     existent_helper(Obj, '_not_existent').
 
@@ -181,7 +185,7 @@ existent_helper(Obj, Op) ->
 	    end;
 	Location == 'external' ->
 	    orber_iiop:request(Key, Op, [], 
-			       {orber_tc:boolean(), [],[]}, 'true');
+			       {orber_tc:boolean(), [],[]}, 'true', infinity, Obj);
 	true -> 	
 	    false
     end.
@@ -203,7 +207,7 @@ is_equivalent(_, _) ->
     false.
 
 hash(Obj, Maximum) ->
-    erlang:hash(iop_ior:get_key(Obj), Maximum).
+    erlang:phash(iop_ior:get_key(Obj), Maximum).
 
 
 create_request(Obj, Ctx, Op, ArgList, NamedValueResult, ReqFlags) ->

@@ -34,7 +34,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start_sup/1, request/5, request/6, locate/1]).
+-export([start_sup/1, request/7, locate/3]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -66,43 +66,11 @@ start_sup(Opts) ->
 %%%-----------------------------------------------------------------
 %%% Func: request/5
 %%%-----------------------------------------------------------------
-request(ObjData, Op, Parameters, TypeCodes, ResponseExpected) ->
-    request(ObjData, Op, Parameters, TypeCodes, ResponseExpected, infinity).
-
-request({SocketType, Host, IIOP_port, ObjKey}, Op, Parameters, TypeCodes, 
-	ResponseExpected, Timeout) ->
-    request({SocketType, Host, IIOP_port, ObjKey, orber:giop_version()}, Op, 
-	    Parameters, TypeCodes, ResponseExpected, Timeout);
-
-request({SocketType, Host, IIOP_port, ObjKey, Version}, Op, Parameters, TypeCodes, 
-	ResponseExpected, Timeout) ->
-    SocketOptions = 
-	case SocketType of
-	    normal ->
-		[];
-	    ssl ->
-		[{certfile, orber:ssl_client_certfile()},
-		 {verify, orber:ssl_client_verify()},
-		 {depth, orber:ssl_client_depth()}] ++ ssl_client_cacertfile_option()
-	end,
-    {Proxy, Ctx, Interceptors} =
-	case catch orber_iiop_pm:connect(Host, IIOP_port, SocketType, 
-					 SocketOptions, Timeout) of
-	    {'EXCEPTION', PMExc} ->
-		corba:raise(PMExc);
-	    {'EXIT',{timeout,_}} ->
-		orber:debug_level_print("[~p] orber_iiop:request(connect, ~p, ~p, ~p); Timeout", 
-					[?LINE, Host, IIOP_port, Timeout], ?DEBUG_LEVEL),
-		corba:raise(#'COMM_FAILURE'{minor=125, 
-					    completion_status=?COMPLETED_NO});
-	    {'EXIT', What} ->
-		orber:debug_level_print("[~p] orber_iiop:request(connect, ~p, ~p, ~p); exit(~p)", 
-					[?LINE, Host, IIOP_port, Timeout, What], ?DEBUG_LEVEL),
-		corba:raise(#'COMM_FAILURE'{minor=126, 
-					    completion_status=?COMPLETED_NO});
-	    X ->
-		X
-	end,
+request({Host, Port, InitObjkey, Index, TaggedProfile, HostData}, 
+	Op, Parameters, TypeCodes, ResponseExpected, Timeout, IOR) ->
+    {{Proxy, Ctx, Interceptors}, ObjKey, Version} =
+	connect(Host, Port, InitObjkey, Timeout, [Index], HostData,
+		TaggedProfile, IOR, []),
     RequestId = orber_request_number:get(),
     Message = encode_request(Interceptors, Version, ObjKey, RequestId, 
 			     ResponseExpected, Op, Parameters, Ctx, TypeCodes),
@@ -120,16 +88,16 @@ request({SocketType, Host, IIOP_port, ObjKey, Version}, Op, Parameters, TypeCode
 		    %% We cannot log this exception since it may be a correct exception.
 		    corba:raise(DecodeException);
 		{'EXIT', message_error} ->
-		    orber:debug_level_print("[~p] orber_iiop:request(reply, ~p, ~p, ~p); exit(message_error)", 
-					    [?LINE, Rest, Version, TypeCodes], ?DEBUG_LEVEL),
+		    orber:dbg("[~p] orber_iiop:request(reply, ~p, ~p, ~p)
+Got exit(message_error)", [?LINE, Rest, Version, TypeCodes], ?DEBUG_LEVEL),
 		    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
 		{'EXIT', Why} ->
-		    orber:debug_level_print("[~p] orber_iiop:request(reply, ~p, ~p, ~p); exit(~p)", 
-					    [?LINE, Rest, Version, TypeCodes, Why], ?DEBUG_LEVEL),
+		    orber:dbg("[~p] orber_iiop:request(reply, ~p, ~p, ~p)
+Got exit(~p)", [?LINE, Rest, Version, TypeCodes, Why], ?DEBUG_LEVEL),
 		    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
 		'message_error' ->
-		    orber:debug_level_print("[~p] orber_iiop:request(reply, ~p, ~p, ~p); message_error", 
-					    [?LINE, Rest, Version, TypeCodes], ?DEBUG_LEVEL),
+		    orber:dbg("[~p] orber_iiop:request(reply, ~p, ~p, ~p);
+Got message_error", [?LINE, Rest, Version, TypeCodes], ?DEBUG_LEVEL),
                     %% Perhaps a resend should be done when a message error occurs
 		    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
 		{Result, Par} ->
@@ -147,31 +115,41 @@ request({SocketType, Host, IIOP_port, ObjKey, Version}, Op, Parameters, TypeCode
 			'user_exception' ->
 			    corba:raise(Result);
 			'location_forward' ->
-			    case catch corba:call(Result, Op, Parameters, TypeCodes) of
-				{'EXCEPTION', E} ->
-				    corba:raise(E);
-				{'EXIT', Reason} ->
-				    orber:debug_level_print("[~p] orber_iiop:request(reply, ~p, ~p, ~p); location_forward resulted in exit(~p)", 
-                                                    [?LINE, Rest, Version, TypeCodes, Reason], ?DEBUG_LEVEL),
-				    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
-				NewResult ->
-				    NewResult 
+			    case get(orber_forward_notify) of
+				true ->
+				   {location_forward, Result};
+				_ ->
+				    case catch corba:call(Result, Op, Parameters, TypeCodes, Timeout) of
+					{'EXCEPTION', E} ->
+					    corba:raise(E);
+					{'EXIT', Reason} ->
+					    orber:dbg("[~p] orber_iiop:request(reply, ~p, ~p, ~p)
+location_forward resulted in exit(~p)", [?LINE, Rest, Version, TypeCodes, Reason], ?DEBUG_LEVEL),
+					    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
+					NewResult ->
+					    NewResult 
+				    end
 			    end;
 			'location_forward_perm' ->
                             %% We should notify the client in this case.
-			    case catch corba:call(Result, Op, Parameters, TypeCodes) of
-				{'EXCEPTION', E} ->
-				    corba:raise(E);
-				{'EXIT', Reason} ->
-				    orber:debug_level_print("[~p] orber_iiop:request(reply, ~p, ~p, ~p); location_forward resulted in exit(~p)", 
-							    [?LINE, Rest, Version, TypeCodes, Reason], ?DEBUG_LEVEL),
-				    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
-				NewResult ->
-				    NewResult
+			    case get(orber_forward_notify) of
+				true ->
+				   {location_forward, Result};
+				_ ->
+				    case catch corba:call(Result, Op, Parameters, TypeCodes, Timeout) of
+					{'EXCEPTION', E} ->
+					    corba:raise(E);
+					{'EXIT', Reason} ->
+					    orber:dbg("[~p] orber_iiop:request(reply, ~p, ~p, ~p)
+location_forward resulted in exit(~p)", [?LINE, Rest, Version, TypeCodes, Reason], ?DEBUG_LEVEL),
+					    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
+					NewResult ->
+					    NewResult
+				    end
 			    end;
 			'needs_addressing_mode' ->
-			    orber:debug_level_print("[~p] orber_iiop:request(reply, ~p, ~p, ~p); needs_addressing_mode not supported.", 
-						    [?LINE, Rest, Version, TypeCodes], ?DEBUG_LEVEL),
+			    orber:dbg("[~p] orber_iiop:request(reply, ~p, ~p, ~p)
+needs_addressing_mode not supported.", [?LINE, Rest, Version, TypeCodes], ?DEBUG_LEVEL),
 			    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
 		    end
 	    end
@@ -183,12 +161,12 @@ encode_request(false, Version, ObjKey, RequestId, ResponseExpected, Op, Paramete
     case catch cdr_encode:enc_request(Version, ObjKey, RequestId, ResponseExpected, 
 				      Op, Parameters, Ctx, TypeCodes) of
 	{'EXCEPTION', Exc} ->
-	    orber:debug_level_print("[~p] orber_iiop:request( ~p, ~p, ~p); exception(~p)", 
-				    [?LINE, Op, Parameters, TypeCodes, Exc], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_iiop:request( ~p, ~p, ~p)
+Got exception(~p)", [?LINE, Op, Parameters, TypeCodes, Exc], ?DEBUG_LEVEL),
 	    corba:raise(Exc);
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_iiop:request:( ~p, ~p, ~p); got exit(~p)", 
-				    [?LINE, Op, Parameters, TypeCodes, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_iiop:request:( ~p, ~p, ~p)
+Got exit(~p)", [?LINE, Op, Parameters, TypeCodes, R], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
 	Msg ->
 	    Msg
@@ -200,11 +178,11 @@ encode_request({native, Ref, PIs}, Version, ObjKey, RequestId, ResponseExpected,
 					    ResponseExpected, Op, Parameters,
 					    Ctx, TypeCodes) of
 	{'EXCEPTION', Exc} ->
-	    orber:debug_level_print("[~p] orber_iiop:request( ~p, ~p, ~p); exception(~p)", 
+	    orber:dbg("[~p] orber_iiop:request( ~p, ~p, ~p); exception(~p)", 
 				    [?LINE, Op, Parameters, TypeCodes, Exc], ?DEBUG_LEVEL),
 	    corba:raise(Exc);
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_iiop:request:( ~p, ~p, ~p); got exit(~p)", 
+	    orber:dbg("[~p] orber_iiop:request:( ~p, ~p, ~p); got exit(~p)", 
 				    [?LINE, Op, Parameters, TypeCodes, R], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
 	{Hdr, Body, HdrLen, _, Flags} ->
@@ -218,11 +196,11 @@ encode_request({Type, PIs}, Version, ObjKey, RequestId, ResponseExpected, Op,
     case catch cdr_encode:enc_request(Version, ObjKey, RequestId, ResponseExpected, 
 				      Op, Parameters, Ctx, TypeCodes) of
 	{'EXCEPTION', Exc} ->
-	    orber:debug_level_print("[~p] orber_iiop:request( ~p, ~p, ~p); exception(~p)", 
+	    orber:dbg("[~p] orber_iiop:request( ~p, ~p, ~p); exception(~p)", 
 				    [?LINE, Op, Parameters, TypeCodes, Exc], ?DEBUG_LEVEL),
 	    corba:raise(Exc);
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_iiop:request:( ~p, ~p, ~p); got exit(~p)", 
+	    orber:dbg("[~p] orber_iiop:request:( ~p, ~p, ~p); got exit(~p)", 
 				    [?LINE, Op, Parameters, TypeCodes, R], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
 	Msg ->
@@ -235,65 +213,42 @@ encode_request({Type, PIs}, Version, ObjKey, RequestId, ResponseExpected, Op,
 %%-----------------------------------------------------------------
 %% Func: locate/1
 %%-----------------------------------------------------------------
-locate({SocketType, Host, IIOP_port, ObjKey}) ->
-    locate({SocketType, Host, IIOP_port, ObjKey, orber:giop_version()});
-locate({SocketType, Host, IIOP_port, ObjKey, Version}) ->
-    SocketOptions = case SocketType of
-			normal ->
-			    [];
-			ssl ->
-			    [{certfile, orber:ssl_client_certfile()},
-			     {verify, orber:ssl_client_verify()},
-			     {depth, orber:ssl_client_depth()}] ++ ssl_client_cacertfile_option()
-		    end,
-    {Proxy, Ctx, Interceptors}
-	= case orber_iiop_pm:connect(Host, IIOP_port, SocketType, SocketOptions,
-				     infinity) of
-	      {'EXCEPTION', E} ->
-		  corba:raise(E);
-	      {'EXIT',{timeout,_}} ->
-		  orber:debug_level_print("[~p] orber_iiop:request(locate, ~p, ~p); Timeout", 
-					  [?LINE, Host, IIOP_port], ?DEBUG_LEVEL),
-		  corba:raise(#'COMM_FAILURE'{minor=127, 
-					      completion_status=?COMPLETED_NO});
-	      {'EXIT', What} ->
-		  orber:debug_level_print("[~p] orber_iiop:request(locate, ~p, ~p); exit(~p)", 
-					  [?LINE, Host, IIOP_port, What], ?DEBUG_LEVEL),
-		  corba:raise(#'COMM_FAILURE'{minor=128, 
-					      completion_status=?COMPLETED_NO});
-	      X ->
-		    X
-	    end,
+locate({Host, Port, InitObjkey, Index, TaggedProfile, HostData},
+       Timeout, IOR) ->
+    {{Proxy, Ctx, Interceptors}, ObjKey, Version} =
+	connect(Host, Port, InitObjkey, Timeout, [Index], HostData,
+		TaggedProfile, IOR, []),
     RequestId = orber_request_number:get(),
     Result = 
 	case catch cdr_encode:enc_locate_request(Version, ObjKey,  RequestId) of
 	    {'EXCEPTION', EncE} ->
-		orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(locate_request, ~p); exception(~p)", 
+		orber:dbg("[~p] orber_iiop_outrequest:handle_cast(locate_request, ~p); exception(~p)", 
 					[?LINE, ObjKey, EncE], ?DEBUG_LEVEL),
 		corba:raise(EncE);
 	    {'EXIT', EncR} ->
-		orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(locate_request, ~p); exit(~p)", 
+		orber:dbg("[~p] orber_iiop_outrequest:handle_cast(locate_request, ~p); exit(~p)", 
 					[?LINE, ObjKey, EncR], ?DEBUG_LEVEL),
 		corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
 	    Request ->
-		orber_iiop_outproxy:locate(Proxy, Request, RequestId, Version)
+		orber_iiop_outproxy:locate(Proxy, Request, RequestId, Timeout)
 	end,
     case Result of
 	{'EXCEPTION', MsgExc} ->
 	    corba:raise(MsgExc);
 	{locate_reply, ReplyHeader, Rest, Len, ByteOrder} ->
-	    case catch cdr_decode:dec_locate_reply_body(Version, ReplyHeader, 
+	    case catch cdr_decode:dec_locate_reply_body(Version, 
+							ReplyHeader#locate_reply_header.locate_status,
 							Rest, Len, ByteOrder) of
 		{'EXCEPTION', DecodeException} ->
-		    orber:debug_level_print("[~p] orber_iiop:locate(locate_reply, ~p, ~p); exception(~p)", 
+		    orber:dbg("[~p] orber_iiop:locate(locate_reply, ~p, ~p); exception(~p)", 
 					    [?LINE, Rest, Version, DecodeException], ?DEBUG_LEVEL),
 		    corba:raise(DecodeException);
 		{'EXIT', message_error} ->
-		    orber:debug_level_print("[~p] orber_iiop:locate(locate_reply, ~p, ~p); exit(message_error)", 
+		    orber:dbg("[~p] orber_iiop:locate(locate_reply, ~p, ~p); exit(message_error)", 
 					    [?LINE, Rest, Version], ?DEBUG_LEVEL),
 		    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
 		{'EXIT', R} ->
-		    orber:debug_level_print("[~p] orber_iiop:locate(locate_reply, ~p, ~p); exit(~p)", 
+		    orber:dbg("[~p] orber_iiop:locate(locate_reply, ~p, ~p); exit(~p)", 
 					    [?LINE, Rest, Version, R], ?DEBUG_LEVEL),
 		    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
 		[] ->
@@ -311,7 +266,7 @@ ssl_client_cacertfile_option() ->
 	[] ->
 	    [];
 	X when list(X) ->
-	    {cacertfile, X};
+	    [{cacertfile, X}];
 	_ ->
 	    []
     end.
@@ -488,4 +443,88 @@ decode_reply_body(Interceptors, ObjKey, Op, ReplyHeader, Version, TypeCodes,
 				  ReplyHeader#reply_header.service_context, 
 				  Op, Refs, Reply)
         end.
+    
+
+
+connect(Host, Port, Objkey, Timeout, Index, #host_data{protocol = ssl,
+						       ssl_data = SSLData} = HostData,
+	TaggedProfile, IOR, []) ->
+    %% This way we'll only lookup the SSL-data once. 
+    SocketOptions = [{certfile, orber:ssl_client_certfile()},
+		     {verify, orber:ssl_client_verify()},
+		     {depth, orber:ssl_client_depth()} |
+		     ssl_client_cacertfile_option()],
+    connect2([{Host, SSLData}], Objkey, Timeout, Index, HostData, 
+	     TaggedProfile, IOR, SocketOptions);
+connect(Host, Port, Objkey, Timeout, Index, HostData, TaggedProfile, IOR, SocketOptions) ->
+    connect2([{Host, Port}], Objkey, Timeout, Index, HostData, TaggedProfile, IOR, SocketOptions).
+
+connect2(HostPort, Objkey, Timeout, Index, HostData, TaggedProfile, IOR, 
+	 SocketOptions) ->
+    case try_connect(HostPort, HostData#host_data.protocol, SocketOptions, Timeout,
+		     HostData) of
+	error ->
+	    Alts = iop_ior:get_alt_addr(TaggedProfile),
+	    case try_connect(Alts, HostData#host_data.protocol, SocketOptions, Timeout,
+			     HostData) of
+		error ->
+		    case iop_ior:get_key(IOR, Index) of
+			undefined ->
+			    corba:raise(#'COMM_FAILURE'
+					{minor=126, completion_status = ?COMPLETED_NO});
+			{'external', {NewHost, NewPort, NewObjkey, NewIndex,
+				      NewTaggedProfile, NewHostData}} ->
+			    connect(NewHost, NewPort, NewObjkey, Timeout, 
+				    [NewIndex|Index], NewHostData, NewTaggedProfile, 
+				    IOR, SocketOptions);
+			What ->
+			    orber:dbg("[~p] orber_iiop:connect2(~p)
+Illegal IOR; contains a mixture of local and external profiles.", [?LINE, IOR], ?DEBUG_LEVEL),
+			    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
+		    end;
+		X ->
+		    {X, Objkey, HostData#host_data.version}
+	    end;
+	X ->
+	    {X, Objkey, HostData#host_data.version}
+    end.
+
+try_connect([], _, _, _, _) ->
+    error;
+try_connect([{Host, Port}|T], normal, SocketOptions, Timeout, HostData) ->
+    case catch orber_iiop_pm:connect(Host, Port, normal, [], Timeout,
+				     HostData#host_data.charset,
+				     HostData#host_data.wcharset) of
+	{'EXCEPTION', PMExc} ->
+	    try_connect(T, normal, SocketOptions, Timeout, HostData);
+	{'EXIT',{timeout,_}} ->
+	    orber:dbg("[~p] orber_iiop:try_connect(~p, ~p, ~p)
+Connect attempt timed out", [?LINE, Host, Port, Timeout], ?DEBUG_LEVEL),
+	    try_connect(T, normal, SocketOptions, Timeout, HostData);
+	{'EXIT', What} ->
+	    orber:dbg("[~p] orber_iiop:try_connect(~p, ~p, ~p)
+Connect attempt resulted in: ~p", [?LINE, Host, Port, Timeout, What], ?DEBUG_LEVEL),
+	    try_connect(T, normal, SocketOptions, Timeout, HostData);
+	X ->
+	    X
+    end;
+try_connect([{Host, Port}|T], SocketType, SocketOptions, Timeout, HostData) ->
+    case catch orber_iiop_pm:connect(Host, Port, SocketType, 
+				     SocketOptions, Timeout,
+				     HostData#host_data.charset,
+				     HostData#host_data.wcharset) of
+	{'EXCEPTION', PMExc} ->
+	    try_connect(T, SocketType, SocketOptions, Timeout, HostData);
+	{'EXIT',{timeout,_}} ->
+	    orber:dbg("[~p] orber_iiop:try_connect(~p, ~p, ~p)
+Connect attempt timed out", [?LINE, Host, Port, Timeout], ?DEBUG_LEVEL),
+	    try_connect(T, SocketType, SocketOptions, Timeout, HostData);
+	{'EXIT', What} ->
+	    orber:dbg("[~p] orber_iiop:try_connect(~p, ~p, ~p)
+Connect attempt resulted in: ~p", [?LINE, Host, Port, Timeout, What], ?DEBUG_LEVEL),
+	    try_connect(T, SocketType, SocketOptions, Timeout, HostData);
+	X ->
+	    X
+    end.
+    
     

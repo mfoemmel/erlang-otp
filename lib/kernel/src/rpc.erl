@@ -77,20 +77,28 @@ handle_call(In, To, S) ->
 	      fun() ->
 		      process_flag(trap_exit, true),
 		      Ref = make_ref(),
-		      Self = self(),
+		      Pid1 = self(),
 		      %% in case some sucker rex'es something that 
 		      %% gets itself killed
-		      Pid = 
+		      Pid2 = 
 			  spawn_link(
 			    fun() ->
 				    set_group_leader(Gleader),
-				    Self ! {reply, Ref, 
-					    apply(Mod, Fun, Args)}
+				    Reply = 
+					%% in case some sucker rex'es 
+					%% something that throws
+					case catch apply(Mod, Fun, Args) of
+					    {'EXIT', _} = Exit ->
+						{badrpc, Exit};
+					    Result ->
+						Result
+					end,
+				    Pid1 ! {reply, Ref, Reply}
 			    end),
 		      receive
 			  {reply, Ref, Reply} ->
 			      gen_server:reply(To, Reply);
-			  {'EXIT', Pid, R} ->
+			  {'EXIT', Pid2, R} ->
 			      gen_server:reply(To, {badrpc, {'EXIT', R}})
 		      end
 	      end),

@@ -20,9 +20,10 @@
 
 -module(ssl).
 
--export([start/0, stop/0, accept/1, accept/2, close/1, connect/3, connect/4,
-	 controlling_process/2, listen/2,  pid/1, port/1, peername/1, 
-	 recv/2, recv/3, send/2, setopts/2, sockname/1, format_error/1]).
+-export([start/0, stop/0, accept/1, accept/2, close/1, connect/3,
+	 connect/4, controlling_process/2, listen/2, pid/1, port/1,
+	 peername/1, recv/2, recv/3, send/2, getopts/2, setopts/2,
+	 sockname/1, format_error/1]).
 
 -include("ssl_int.hrl").
 
@@ -105,6 +106,12 @@ recv(Socket, Length, Timeout) when record(Socket, sslsocket) ->
 %%
 send(Socket, Data) when record(Socket, sslsocket) -> 
     ssl_broker:send(Socket, Data).
+
+%% getopts(Socket, OptTags) -> {ok, Options} | {error, Reason}
+%%
+%% 
+getopts(Socket, Options) when record(Socket, sslsocket) ->
+    ssl_broker:getopts(Socket, Options).
 
 %% setopts(Socket, Options) -> ok | {error, Reason}
 %%

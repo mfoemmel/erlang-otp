@@ -189,7 +189,8 @@ send_stubborn(M, F, A, MaxR, Wait) when list(A) ->
 send_stubborn(M, F, A, MaxR, Wait) ->
     send_stubborn(M, F, [A], MaxR, Wait, 0).
 send_stubborn(M, F, A, MaxR, Wait, MaxR) ->
-    ?not_errorMsg("~p:~p( ~p ) failed!! Tried ~p times.~n", [M,F,A,MaxR]),
+    orber:debug_level_print("[~p] CosNotification_Common:send_stubborn( ~p ~p ~p ~p).
+Failed to deliver the event.~n", [?LINE, M,F,A,MaxR], ?DEBUG_LEVEL),
     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO});
 send_stubborn(M, F, A, MaxR, Wait, Times) ->
     ?debug_print("~p:~p(~p)  # of retries: ~p~n", [M,F,A, Times]),    
@@ -282,7 +283,10 @@ admin_ok(Req) ->
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_TYPE', 
 	       name = Req#'CosNotification_Property'.name,
-	       available_range = any:create(orber_tc:null(), null)
+	       available_range = #'CosNotification_PropertyRange'{
+		 low_val=any:create(orber_tc:null(), null), 
+		 high_val=any:create(orber_tc:null(), null)
+		}
 	      }
 	    }
     end.
@@ -347,7 +351,10 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_TYPE', 
 	       name = Req#'CosNotification_Property'.name,
-	       available_range = any:create(orber_tc:null(), null)
+	       available_range = #'CosNotification_PropertyRange'{
+		 low_val=any:create(orber_tc:null(), null), 
+		 high_val=any:create(orber_tc:null(), null)
+		}
 	      }
 	    }
     end;
@@ -357,7 +364,10 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
      #'CosNotification_PropertyError'{
        code = 'UNAVAILABLE_PROPERTY', 
        name = Req#'CosNotification_Property'.name,
-       available_range = any:create(orber_tc:null(), null)
+       available_range = #'CosNotification_PropertyRange'{
+	 low_val=any:create(orber_tc:null(), null), 
+	 high_val=any:create(orber_tc:null(), null)
+	}
       }
     }.
 
@@ -414,7 +424,10 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_TYPE', 
 	       name = Req#'CosNotification_Property'.name,
-	       available_range = any:create(orber_tc:null(), null)
+	       available_range = #'CosNotification_PropertyRange'{
+		 low_val=any:create(orber_tc:null(), null), 
+		 high_val=any:create(orber_tc:null(), null)
+		}
 	      }
 	    }
     end;
@@ -435,7 +448,10 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_TYPE', 
 	       name = Req#'CosNotification_Property'.name,
-	       available_range = any:create(orber_tc:null(), null)
+	       available_range = #'CosNotification_PropertyRange'{
+		 low_val=any:create(orber_tc:null(), null), 
+		 high_val=any:create(orber_tc:null(), null)
+		}
 	      }
 	    }
     end;
@@ -456,7 +472,10 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_TYPE', 
 	       name = Req#'CosNotification_Property'.name,
-	       available_range = any:create(orber_tc:null(), null)
+	       available_range = #'CosNotification_PropertyRange'{
+		 low_val=any:create(orber_tc:null(), null), 
+		 high_val=any:create(orber_tc:null(), null)
+		}
 	      }
 	    }
     end.
@@ -592,7 +611,10 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_TYPE', 
 	       name = Req#'CosNotification_Property'.name,
-	       available_range = any:create(orber_tc:null(), null)
+	       available_range = #'CosNotification_PropertyRange'{
+		 low_val=any:create(orber_tc:null(), null), 
+		 high_val=any:create(orber_tc:null(), null)
+		}
 	      }
 	    }
     end.
@@ -633,7 +655,10 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_TYPE', 
 	       name = Req#'CosNotification_Property'.name,
-	       available_range = any:create(orber_tc:null(), null)
+	       available_range = #'CosNotification_PropertyRange'{
+		 low_val=any:create(orber_tc:null(), null), 
+		 high_val=any:create(orber_tc:null(), null)
+		}
 	      }
 	    }
     end.
@@ -674,7 +699,10 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_TYPE', 
 	       name = Req#'CosNotification_Property'.name,
-	       available_range = any:create(orber_tc:null(), null)
+	       available_range = #'CosNotification_PropertyRange'{
+		 low_val=any:create(orber_tc:null(), null), 
+		 high_val=any:create(orber_tc:null(), null)
+		}
 	      }
 	    }
     end.
@@ -764,7 +792,10 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_TYPE', 
 	       name = Req#'CosNotification_Property'.name,
-	       available_range = any:create(orber_tc:null(), null)
+	       available_range = #'CosNotification_PropertyRange'{
+		 low_val=any:create(orber_tc:null(), null), 
+		 high_val=any:create(orber_tc:null(), null)
+		}
 	      }
 	    }
     end.
@@ -904,7 +935,9 @@ v_e_q_helper([#'CosNotification_Property'{name=?not_EventReliability}|T],
     v_e_q_helper(T, Curr, [#'CosNotification_PropertyError'
 			   {code = 'UNAVAILABLE_VALUE', name = ?not_EventReliability,
 			    available_range = 
-			    any:create(orber_tc:null(), null)}|Unsupp]);
+			    #'CosNotification_PropertyRange'{
+			      low_val=any:create(orber_tc:null(), null), 
+			      high_val=any:create(orber_tc:null(), null)}}|Unsupp]);
 
 %%--- Priority ---%%
 v_e_q_helper([#'CosNotification_Property'{name=?not_Priority, value=#any{value=V}}|T], Curr, 
@@ -916,8 +949,10 @@ v_e_q_helper([#'CosNotification_Property'{name=?not_Priority, value=#any{value=V
 	    %% No use setting Priority since it's not currently used.
 	    v_e_q_helper(T, Curr, [#'CosNotification_PropertyError'
 				   {code = 'UNAVAILABLE_VALUE', name = ?not_Priority,
-				    available_range = 
-				    any:create(orber_tc:null(), null)}|Unsupp]);
+				    available_range = #'CosNotification_PropertyRange'{
+				      low_val=any:create(orber_tc:null(), null), 
+				      high_val=any:create(orber_tc:null(), null)
+				     }}|Unsupp]);
 	V =< ?not_HighestPriority, V >= ?not_LowestPriority ->
 	    v_e_q_helper(T, Curr, Unsupp);
 	true ->
@@ -939,8 +974,10 @@ v_e_q_helper([#'CosNotification_Property'{name=?not_StartTime}|T], Curr, Unsupp)
 v_e_q_helper([#'CosNotification_Property'{name=?not_StartTime}|T], Curr, Unsupp) ->
     v_e_q_helper(T, Curr, [#'CosNotification_PropertyError'
 			   {code = 'UNAVAILABLE_VALUE', name = ?not_StartTime,
-			    available_range = 
-			    any:create(orber_tc:null(), null)}|Unsupp]);
+			    available_range = #'CosNotification_PropertyRange'{
+			      low_val=any:create(orber_tc:null(), null), 
+			      high_val=any:create(orber_tc:null(), null)
+			     }}|Unsupp]);
 
 %%--- StopTime ---%%
 v_e_q_helper([#'CosNotification_Property'{name=?not_StopTime}|T], Curr, Unsupp)
@@ -950,8 +987,10 @@ v_e_q_helper([#'CosNotification_Property'{name=?not_StopTime}|T], Curr, Unsupp)
 v_e_q_helper([#'CosNotification_Property'{name=?not_StopTime}|T], Curr, Unsupp) ->
     v_e_q_helper(T, Curr, [#'CosNotification_PropertyError'
 			   {code = 'UNAVAILABLE_VALUE', name = ?not_StopTime,
-			    available_range = 
-			    any:create(orber_tc:null(), null)}|Unsupp]);
+			    available_range = #'CosNotification_PropertyRange'{
+			      low_val=any:create(orber_tc:null(), null), 
+			      high_val=any:create(orber_tc:null(), null)
+			     }}|Unsupp]);
 
 %%--- Timeout ---%%
 v_e_q_helper([#'CosNotification_Property'{name=?not_Timeout}|T], Curr, Unsupp)
@@ -961,16 +1000,20 @@ v_e_q_helper([#'CosNotification_Property'{name=?not_Timeout}|T], Curr, Unsupp)
 v_e_q_helper([#'CosNotification_Property'{name=?not_Timeout}|T], Curr, Unsupp) ->
     v_e_q_helper(T, Curr, [#'CosNotification_PropertyError'
 			   {code = 'UNAVAILABLE_VALUE', name = ?not_Timeout,
-			    available_range = 
-			    any:create(orber_tc:null(), null)}|Unsupp]);
+			    available_range = #'CosNotification_PropertyRange'{
+			      low_val=any:create(orber_tc:null(), null), 
+			      high_val=any:create(orber_tc:null(), null)
+			     }}|Unsupp]);
 
 %%--- Unknown Event QoS ---%%
 v_e_q_helper([#'CosNotification_Property'{name=Name}|T], Curr, Unsupp) ->
     %% Unsupported property.
     v_e_q_helper(T, Curr, [#'CosNotification_PropertyError'
 			   {code = 'BAD_PROPERTY', name = Name,
-			    available_range = 
-			    any:create(orber_tc:null(), null)}|Unsupp]);
+			    available_range = #'CosNotification_PropertyRange'{
+			      low_val=any:create(orber_tc:null(), null), 
+			      high_val=any:create(orber_tc:null(), null)
+			     }}|Unsupp]);
 v_e_q_helper(What, _, _) ->
     %% Not a Property struct.
     orber:debug_level_print("[~p] CosNotification_Common:v_e_q_helper(~p);
@@ -1023,7 +1066,10 @@ set_values(unsupported,Req,_,_,_,_,_) ->
      #'CosNotification_PropertyError'{
        code = 'BAD_PROPERTY', 
        name = Req#'CosNotification_Property'.name,
-       available_range = any:create(orber_tc:null(), null)
+       available_range = #'CosNotification_PropertyRange'{
+	 low_val=any:create(orber_tc:null(), null), 
+	 high_val=any:create(orber_tc:null(), null)
+	}
       }
     };
 set_values({ok, Func}, Req, Type, Curr, Parent, Childs, LQS) ->
@@ -1083,7 +1129,10 @@ check_with_relatives([H|T], S, LQS) ->
 	     #'CosNotification_PropertyError'{
 	       code = 'UNAVAILABLE_PROPERTY', 
 	       name = S#'CosNotification_Property'.name,
-	       available_range = any:create(orber_tc:null(), null)
+	       available_range = #'CosNotification_PropertyRange'{
+		 low_val=any:create(orber_tc:null(), null), 
+		 high_val=any:create(orber_tc:null(), null)
+		}
 	      }
 	    }
     end.

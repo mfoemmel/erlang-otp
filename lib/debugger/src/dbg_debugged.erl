@@ -15,37 +15,39 @@
 %% 
 %%     $Id$
 %%
-%% Purpose : Erlang meta evaluator
-%%
-
-%%
-%% This module contains the message loops for the process being debugged
-%% and the main entry point from the break pointer handler in
-%% the error_handler module (via the int module).
-%%
-%% When a process is debugged, most code is executed in another process,
-%% called the meta process. When the meta process is interpreting code,
-%% the process being debugged just waits in a receive loop (in this
-%% module).
-%%
-%% This module also calls any BIFs that must execute in the correct
-%% process (such as link/1 and spawn_link/1), and external code which
-%% is not being interpreted.
-%% 
-
 -module(dbg_debugged).
 
+%% External exports
 -export([eval/3]).
 
+%% Internal exports
 -export([follow/4]).
 
-%% eval(Mod, Func, Args) -> Value
-%%  Main entry point from external (non-interpreted) code.
-%%  We are called via the error handler when a breakpoint is hit.
+%%====================================================================
+%% External exports
+%%====================================================================
 
+%%--------------------------------------------------------------------
+%% eval(Mod, Func, Args) -> Value
+%% Main entry point from external (non-interpreted) code.
+%% Called via the error handler when a breakpoint is hit.
+%%--------------------------------------------------------------------
 eval(Mod, Func, Args) ->
     Meta = dbg_imeta:eval(Mod, Func, Args),
     msg(Meta).
+
+
+%%====================================================================
+%% Internal exports
+%%====================================================================
+
+follow(Fol,M,F,As) ->
+    apply(M, F, As).
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
 
 msg(Meta) ->
     case catch msg_loop(Meta) of
@@ -54,6 +56,8 @@ msg(Meta) ->
 	{'EXIT',Reason} ->
 	    Meta ! {sys,self(),{exited_nocatch,Reason}},
 	    wait_exit(Meta);
+	{'EXIT',Meta,Reason} ->
+	    exit(Reason);
 	Thrown ->
 	    Meta ! {sys,self(),{thrown_nocatch,Thrown}},
 	    throw(Thrown)
@@ -64,7 +68,7 @@ msg_loop(Meta) ->
 	{sys,Meta,Command} ->
 	    handle_command(Meta, Command);
 	{'EXIT',Meta,Reason} ->
-	    exit(Reason)
+	    {'EXIT',Meta,Reason}
     end.
 
 handle_command(Meta, {ready,Val}) ->
@@ -77,12 +81,13 @@ handle_command(Meta, {'receive',Msg}) ->
     msg_loop(Meta);
 handle_command(Meta, {exit,Reason}) ->
     exit(Reason);
-handle_command(Meta, {bif,Module,Name,As,Where,Followed}) ->
-    Res = bif(Module, Name, As, Followed, Where),
+handle_command(Meta, {bif,Mod,Name,As,Where,Followed}) ->
+    Res = bif(Mod, Name, As, Followed, Where),
     Meta ! {sys,self(),{apply_result,Res}},
     msg_loop(Meta);
-handle_command(Meta, {catch_bif,Module,Name,As,Where,Followed}) ->
-    send_result(Meta, catch catch_bif(Meta, Module, Name, As, Followed, Where)),
+handle_command(Meta, {catch_bif,Mod,Name,As,Where,Followed}) ->
+    send_result(Meta,
+		catch catch_bif(Meta, Mod, Name, As, Followed, Where)),
     msg_loop(Meta);
 handle_command(Meta, {apply,Mod,Fnk,As}) ->
     Res = apply(Mod, Fnk, As),
@@ -99,9 +104,6 @@ handle_command(Meta, {eval,Expr,Bs0}) ->
 	Other ->
 	    Meta ! {sys,self(),{thrown,Other}}
     end,
-    msg_loop(Meta);
-handle_command(Meta, Command) ->
-    io:format("~p:handle_command/1: ignoring ~p\n", [?MODULE,Command]),
     msg_loop(Meta).
 
 send_result(Meta, {catch_normal,Meta,Res}) ->
@@ -116,15 +118,15 @@ catch_apply(Meta, Mod, Fnk, As) ->
     Res = apply(Mod, Fnk, As),
     {catch_normal,Meta,Res}.
 
-catch_bif(Meta, Module, Name, As, Followed, Where) ->
-    Res = bif(Module, Name, As, Followed, Where),
+catch_bif(Meta, Mod, Name, As, Followed, Where) ->
+    Res = bif(Mod, Name, As, Followed, Where),
     {catch_normal,Meta,Res}.
 
-%% bif(Module, Name, Arguments)
+%% bif(Mod, Name, Arguments)
 %%  Evaluate a BIF.
 
-bif(Module, Name, As, false, Where) ->
-    erts_debug:apply(Module, Name, As, Where);
+bif(Mod, Name, As, false, Where) ->
+    erts_debug:apply(Mod, Name, As, Where);
 bif(erlang, spawn, [M,F,As], Attached, Where) ->
     spawn(?MODULE,follow,[Attached,M,F,As]);
 bif(erlang, spawn_link, [M,F,As], Attached, Where) ->
@@ -133,10 +135,6 @@ bif(erlang, spawn, [N,M,F,As], Attached, Where) ->
     spawn(N,?MODULE,follow,[Attached,M,F,As]);
 bif(erlang, spawn_link, [N,M,F,As], Attached, Where) ->
     spawn_link(N,?MODULE,follow,[Attached,M,F,As]).
-
-follow(Fol,M,F,As) ->
-    dbg_iserver_api:am_followed(Fol),
-    apply(M, F, As).
 
 %%---------------------------------------------------
 %%-- Sync on exit.

@@ -19,7 +19,7 @@
 -define(DEFAULT_MIN_NO_SLOTS, 256).
 -define(DEFAULT_MAX_NO_SLOTS, 2*1024*1024).
 -define(DEFAULT_AUTOSAVE, 3). % minutes
--define(DEFAULT_CACHE, {3000, 12000}). % {delay, size} in {milliseconds, bytes}
+-define(DEFAULT_CACHE, {3000, 14000}). % {delay,size} in {milliseconds,bytes}
 
 %% Type.
 -define(SET, 1).
@@ -39,9 +39,15 @@
 
 -define(POW(X), (1 bsl (X))).
 
+%% REM2(A,B) = A rem B, if B is a power of 2.
+-define(REM2(A, B), ((A) band ((B)-1))).
+
+-define(DETS_CALL(Pid, Req), {'$dets_call', Pid, Req}).
+
 %% Record holding the file header and more.
 -record(head,  {
 	  m,               % size
+	  m2,              % m * 2
 	  next,            % next position for growth (segm mgmt only)
 	  fptr,            % the file descriptor
 	  no_objects,      % number of objects in table,
@@ -53,8 +59,10 @@
 	  freelists,       % tuple of free lists of buddies
 	                   % if fixed =/= false, then a pair of freelists
 	  freelists_p,     % cached FreelistsPointer
+	  no_collections,  % [{LogSize,NoCollections}] | undefined; number of
+	                   % object collections per size (version 9(b))
 	  auto_save,       % Integer | infinity 
-	  update_mode,     % saved | dirty | {error, Reason}
+	  update_mode,     % saved | dirty | new_dirty | {error, Reason}
 	  fixed = false,   % false | {now_time(), [{pid(),Counter}]}
                            % time of first fix, and number of fixes per process
 	  hash_bif,        % hash bif used for this file (phash or hash)
@@ -89,7 +97,8 @@
 	  no_keys,
 	  min_no_slots,
 	  max_no_slots,
-	  maxobjsize,
+	  no_colls,
+	  hash_method,
 	  trailer,
 	  eof,
 	  n,
@@ -98,11 +107,9 @@
 
 %% Write Cache.
 -record(cache, {
-	 cache,   % write cache, last item first
+	 cache,   % [{Key,{Seq,Item}}], write cache, last item first
          csize,   % current size of the cached items
-         inserts, % upper limit on inserted keys
-	 per_key, % cached items split on key (a Sofs Family)
-                  % (just to save work done by cache_lookup/3)
+         inserts, % upper limit on number of inserted keys
 	 wrtime,  % last write or update time
 	 tsize,   % threshold size of cache, in bytes
 	 delay    % max time items are kept in RAM only, in milliseconds

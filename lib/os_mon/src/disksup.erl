@@ -92,6 +92,9 @@ check_disk_space(State) when State#state.os == {unix, linux} ->
 check_disk_space(State) when State#state.os == {unix, freebsd} ->
     Result = my_cmd("/bin/df -k -t ufs",State#state.port),
     check_disks_solaris(skip_to_eol(Result), State#state.threshold);
+check_disk_space(State) when State#state.os == {unix, openbsd} ->
+    Result = my_cmd("/bin/df -k -t ffs",State#state.port),
+    check_disks_solaris(skip_to_eol(Result), State#state.threshold);
 check_disk_space(State) when State#state.os == {unix, sunos4} ->
     Result = my_cmd("df",State#state.port),
     check_disks_solaris(skip_to_eol(Result), State#state.threshold).
@@ -178,6 +181,8 @@ get_os() ->
 	    {unix, linux};
 	{unix, freebsd} ->
 	    {unix, freebsd};
+	{unix, openbsd} ->
+	    {unix, openbsd};
 	{win32,W} ->
 	    {win32,W};
 	Type ->

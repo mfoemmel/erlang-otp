@@ -20,12 +20,13 @@
 -export([apply/2,apply/3,spawn/4,spawn_link/4,spawn_opt/4,
 	 disconnect_node/1]).
 -export([spawn/1, spawn_link/1, spawn/2, spawn_link/2]).
+-export([yield/0]).
 -export([crasher/5]).
 -export([sand/2,sor/2,sxor/2,snot/1,sgt/2,sge/2,slt/2,sle/2,seq/2,sneq/2, 
 	 seqeq/2, sneqeq/2]).
 -export([fun_info/1]).
 
--export([dlink/1, dunlink/1, dsend/2, dgroup_leader/2,
+-export([dlink/1, dunlink/1, dsend/2, dsend_nosuspend/2, dgroup_leader/2,
 	 dexit/2, dmonitor_node/2, dmonitor_p/2]).
 
 -export([set_cookie/2, get_cookie/0]).
@@ -42,42 +43,120 @@ apply(Fun, Args) ->
 apply(Mod, Name, Args) ->
     apply(Mod, Name, Args).
 
-spawn(Fun) ->
-    spawn(erlang, apply, [Fun, []]).
+% Spawns with a fun
 
-spawn_link(Fun) ->
-    spawn_link(erlang, apply, [Fun, []]).
+spawn(F) when function(F) ->
+    spawn(erlang, apply, [F, []]);
+spawn({M,F}=MF) when atom(M), atom(F) ->
+    spawn(erlang, apply, [MF, []]);
+spawn(F) ->
+    erlang:fault(badarg, [F]).
 
-spawn(N, Fun) ->
-    spawn(N, erlang, apply, [Fun, []]).
+spawn(N, F) when N == node() ->
+    spawn(F);
+spawn(N, F) when function(F) ->
+    spawn(N, erlang, apply, [F, []]);
+spawn(N, {M,F}=MF) when atom(M), atom(F) ->
+    spawn(N, erlang, apply, [MF, []]);
+spawn(N, F) ->
+    erlang:fault(badarg, [N, F]).
 
-spawn_link(N, Fun) ->
-    spawn_link(N, erlang, apply, [Fun, []]).
+spawn_link(F) when function(F) ->
+    spawn_link(erlang, apply, [F, []]);
+spawn_link({M,F}=MF) when atom(M), atom(F) ->
+    spawn_link(erlang, apply, [MF, []]);
+spawn_link(F) ->
+    erlang:fault(badarg, [F]).
 
-spawn(N,M,F,A) when N /= node(),atom(M),atom(F),list(A) ->
+spawn_link(N, F) when N == node() ->
+    spawn_link(F);
+spawn_link(N, F) when function(F) ->
+    spawn_link(N, erlang, apply, [F, []]);
+spawn_link(N, {M,F}=MF) when atom(M), atom(F) ->
+    spawn_link(N, erlang, apply, [MF, []]);
+spawn_link(N, F) ->
+    erlang:fault(badarg, [N, F]).
+
+% Spawns with MFA
+
+spawn(N,M,F,A) when N == node(), atom(M), atom(F), list(A) ->
+    spawn(M,F,A);
+spawn(N,M,F,A) when atom(N), atom(M), atom(F) ->
+    case is_well_formed_list(A) of
+	false ->
+	    erlang:fault(badarg, [N, M, F, A]);
+	true ->
+	    ok
+    end,
     case catch gen_server:call({net_kernel,N},
 			       {spawn,M,F,A,group_leader()},
 			       infinity) of
-	{'EXIT',_} ->
-	    spawn(erlang,crasher,[N,M,F,A,noconnection]);
-	Pid ->
-	    Pid
+	Pid when pid(Pid) ->
+	    Pid;
+	Error ->
+	    case remote_spawn_error(Error, {no_link, N, M, F, A}) of
+		{fault, Fault} ->
+		    erlang:fault(Fault, [N, M, F, A]);
+		Pid ->
+		    Pid
+	    end
     end;
-spawn(N,M,F,A) -> spawn(M,F,A).
+spawn(N,M,F,A) ->
+    erlang:fault(badarg, [N, M, F, A]).
 
-spawn_link(N,M,F,A) when N /= node(),atom(M),atom(F),list(A) ->
+spawn_link(N,M,F,A) when N == node(), atom(M), atom(F), list(A) ->
+    spawn_link(M,F,A);
+spawn_link(N,M,F,A) when atom(N), atom(M), atom(F) ->
+    case is_well_formed_list(A) of
+	false ->
+	    erlang:fault(badarg, [N, M, F, A]);
+	true ->
+	    ok
+    end,
     case catch gen_server:call({net_kernel,N},
 			       {spawn_link,M,F,A,group_leader()},
 			       infinity) of
-	{'EXIT',_} ->
-	    spawn_link(erlang,crasher,[N,M,F,A,noconnection]);
-	Pid ->
-	    Pid
+	Pid when pid(Pid) ->
+	    Pid;
+	Error ->
+	    case remote_spawn_error(Error, {link, N, M, F, A}) of
+		{fault, Fault} ->
+		    erlang:fault(Fault, [N, M, F, A]);
+		Pid ->
+		    Pid
+	    end
     end;
-spawn_link(N,M,F,A) -> spawn_link(M,F,A).
+spawn_link(N,M,F,A) ->
+    erlang:fault(badarg, [N, M, F, A]).
 
 spawn_opt(M, F, A, Opts) ->
-    erlang:spawn_opt({M, F, A}, Opts).
+    case catch erlang:spawn_opt({M, F, A}, Opts) of
+	Pid when pid(Pid) ->
+	    Pid;
+	{'EXIT', {Reason, _}} ->
+	    erlang:fault(Reason, [M,F,A,Opts])
+    end.
+
+remote_spawn_error({'EXIT', {{nodedown,N}, _}}, {link, N, M, F, A}) ->
+    spawn_link(erlang,crasher,[N,M,F,A,noconnection]);
+remote_spawn_error({'EXIT', {{nodedown,N}, _}}, {_, N, M, F, A}) ->
+    spawn(erlang,crasher,[N,M,F,A,noconnection]);
+remote_spawn_error({'EXIT', {Reason, _}}, _) ->
+    {fault, Reason};
+remote_spawn_error({'EXIT', Reason}, _) ->
+    {fault, Reason};
+remote_spawn_error(Other, _) ->
+    {fault, Other}.
+
+is_well_formed_list([]) ->
+    true;
+is_well_formed_list([_|Rest]) ->
+    is_well_formed_list(Rest);
+is_well_formed_list(_) ->
+    false.
+
+yield() ->
+    erlang:yield().
 
 nodes() -> erlang:nodes(visible).
 
@@ -187,6 +266,18 @@ dsend({Name, Node}, Msg) ->
 	true -> {Name,Node} ! Msg;
 	false -> Msg;
 	ignored -> Msg				% Not distributed.
+    end.
+
+dsend_nosuspend(Pid, Msg) when pid(Pid) ->
+    case net_kernel:connect(node(Pid)) of
+	true -> erlang:send_nosuspend(Pid,Msg);
+	false -> true
+    end;
+dsend_nosuspend({Name, Node}, Msg) ->
+    case net_kernel:connect(Node) of
+	true -> erlang:send_nosuspend({Name,Node},Msg);
+	false -> true;
+	ignored -> true				% Not distributed.
     end.
 
 dmonitor_p(process, ProcSpec) ->

@@ -21,7 +21,7 @@
 %% Configuration macros
 -define(CORBAMOD, corba).
 -define(ORBNAME, orber).
--define(COMPILERVSN, "4.1.1").
+-define(COMPILERVSN, "4.1.2").
 -define(CORBAHRL, "corba.hrl").
 -define(CALL, "call").
 -define(CAST, "cast").

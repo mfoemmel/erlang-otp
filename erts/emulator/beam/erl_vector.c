@@ -59,7 +59,7 @@ static Eterm reroot(Process* p, Eterm Vec);
 Eterm
 vector_new_2(Process* p, Eterm Sz, Eterm Value)
 {
-    size_t n;
+    int n;
     size_t need;
     Eterm* hp;
     Eterm res;

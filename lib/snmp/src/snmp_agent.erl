@@ -1052,9 +1052,8 @@ do_get_subagents([{SubAgentPid, SAVbs} | Tail], Res, IsNotification) ->
 	{ErrorStatus, ErrorIndex, _} ->
 	    {ErrorStatus, ErrorIndex, []};
 	{'EXIT', Reason} ->
-	    snmp_error:user_err("Lost contact with subagent (get) ~w. "
-				"Using genErr",
-				[Reason]),
+	    user_err("Lost contact with subagent (get) ~w. Using genErr", 
+		     [Reason]),
 	    {genErr, 0, []} 
     end;
 do_get_subagents([], Res, _IsNotification) ->
@@ -1289,15 +1288,15 @@ validate_tab_res({genErr, Col}, OrgCols, Mfa) ->
 	{value, {_Col, _ASN1Type, Index}} ->
 	    {error, genErr, Index};
 	_ ->
-	    snmp_error:user_err("Invalid column in {genErr, ~w} from ~w (get)",
-				[Col, Mfa]),
+	    user_err("Invalid column in {genErr, ~w} from ~w (get)",
+		     [Col, Mfa]),
 	    [{_Col, _ASN1Type, Index} | _] = OrgCols,
 	    {error, genErr, Index}
     end;
 validate_tab_res(genErr, [{_Col, _ASN1Type, Index} | _OrgCols], Mfa) ->
     {error, genErr, Index};
 validate_tab_res(Error, [{_Col, _ASN1Type, Index} | _OrgCols], Mfa) ->
-    snmp_error:user_err("Invalid return value ~w from ~w (get)",[Error, Mfa]),
+    user_err("Invalid return value ~w from ~w (get)",[Error, Mfa]),
     {error, genErr, Index}.
 
 validate_tab_res([Value | Values], [{Col, ASN1Type, Index} | OrgCols],
@@ -1315,10 +1314,10 @@ validate_tab_res([Value | Values], [{Col, ASN1Type, Index} | OrgCols],
     end;
 validate_tab_res([], [], Mfa, Res, _I) -> Res;
 validate_tab_res([], [{_Col, _ASN1Type, Index}|_], Mfa, Res, I) ->
-    snmp_error:user_err("Too few values returned from ~w (get)", [Mfa]),
+    user_err("Too few values returned from ~w (get)", [Mfa]),
     {error, genErr, Index};
 validate_tab_res(TooMany, [], Mfa, Res, I) ->
-    snmp_error:user_err("Too many values returned from ~w (get)", [Mfa]),
+    user_err("Too many values returned from ~w (get)", [Mfa]),
     {error, genErr, I}.
 
 
@@ -1586,9 +1585,8 @@ validate_tab_next_res([{NextOid, Value} | Values],
 					  [NewVb | Res], TabOid, TabNextOid, I)
 	    end;
 	_ ->
-	    snmp_error:user_err("Invalid oid ~w from ~w (get_next). "
-				"Using genErr",
-				[NextOid, Mfa]),
+	    user_err("Invalid oid ~w from ~w (get_next). Using genErr",
+		     [NextOid, Mfa]),
 	    {genErr, OrgIndex}
     end;
 validate_tab_next_res([endOfTable | Values],
@@ -1600,7 +1598,7 @@ validate_tab_next_res([endOfTable | Values],
 validate_tab_next_res([], [], _Mfa, Res, _TabOid, _TabNextOid, I) ->
     Res;
 validate_tab_next_res([], [{_Col, _OrgVb, Index}|_], Mfa, Res, _, _, _I) ->
-    snmp_error:user_err("Too few values returned from ~w (get_next)", [Mfa]),
+    user_err("Too few values returned from ~w (get_next)", [Mfa]),
     {genErr, Index};
 validate_tab_next_res({genErr, ColNumber}, OrgCols,
 		      Mfa, _Res, _TabOid, _TabNextOid, I) ->
@@ -1609,12 +1607,12 @@ validate_tab_next_res({genErr, ColNumber}, OrgCols,
 validate_tab_next_res(Error, [{_ColNo, OrgVb, _Index} | _TableOids],
 		      Mfa, _Res, _TabOid, _TabNextOid, I) ->
     #varbind{org_index = OrgIndex} = OrgVb,
-    snmp_error:user_err("Invalid return value ~w from ~w (get_next)",
-			[Error, Mfa]),
+    user_err("Invalid return value ~w from ~w (get_next)",
+	     [Error, Mfa]),
     {genErr, OrgIndex};
 validate_tab_next_res(TooMany, [], Mfa, Res, _, _, I) ->
-    snmp_error:user_err("Too many values ~w returned from ~w (get_next)",
-			[TooMany, Mfa]),
+    user_err("Too many values ~w returned from ~w (get_next)",
+	     [TooMany, Mfa]),
     {genErr, I}.
 
 %%-----------------------------------------------------------------
@@ -1633,9 +1631,8 @@ get_next_sa(SAPid, SAOid, SAVbs, MibView) ->
 	{ErrorStatus, ErrorIndex, _} ->
 	    {ErrorStatus, ErrorIndex};
 	{'EXIT', Reason} ->
-	    snmp_error:user_err("Lost contact with subagent (next) ~w. "
-				"Using genErr",
-				[Reason]),
+	    user_err("Lost contact with subagent (next) ~w. Using genErr",
+		     [Reason]),
 	    {genErr, 0}
     end.
 
@@ -1829,8 +1826,8 @@ validate_err(is_set_ok, noAccess, _) -> noAccess;
 validate_err(is_set_ok, notWritable, _) -> notWritable;
 validate_err(is_set_ok, genErr, _) -> genErr;
 validate_err(is_set_ok, X, Mfa) -> 
-    snmp_error:user_err("~w with is_set_ok, returned: ~w. Using genErr.",
-			[Mfa, X]),
+    user_err("~w with is_set_ok, returned: ~w. Using genErr.",
+	     [Mfa, X]),
     genErr;
 
 validate_err(set, commitFailed, _) -> commitFailed;
@@ -1838,69 +1835,65 @@ validate_err(set, undoFailed, _) -> undoFailed;
 validate_err(set, noError, _) -> noError;
 validate_err(set, genErr, _) -> genErr;
 validate_err(set, X, Mfa) -> 
-    snmp_error:user_err("~w with set, returned: ~w. Using genErr.",
-			[Mfa, X]),
+    user_err("~w with set, returned: ~w. Using genErr.",
+	     [Mfa, X]),
     genErr;
 
 validate_err(undo, undoFailed, _) -> undoFailed;
 validate_err(undo, noError, _) -> noError;
 validate_err(undo, genErr, _) -> genErr;
 validate_err(undo, X, Mfa) -> 
-    snmp_error:user_err("~w with undo, returned: ~w. Using genErr.",
-			[Mfa, X]),
+    user_err("~w with undo, returned: ~w. Using genErr.",
+	     [Mfa, X]),
     genErr;
 
 validate_err(table_is_set_ok, {Err, Idx}, Mfa) when integer(Idx) ->
     {validate_err(is_set_ok, Err, Mfa), Idx};
 validate_err(table_is_set_ok, X, Mfa) ->
-    snmp_error:user_err("~w with is_set_ok (table), returned: ~w.Using genErr.",
-			[Mfa, X]),
+    user_err("~w with is_set_ok (table), returned: ~w. Using genErr.",
+	     [Mfa, X]),
     {genErr, 0};
 
 validate_err(row_is_set_ok, {Err, Idx}, _) when integer(Idx) ->
     {Err, Idx};
 validate_err(row_is_set_ok, {Err, {false, BadCol}}, Mfa) ->
-    snmp_error:user_err("~w with is_set_ok (table), returned bad column:"
-			" ~w.Using genErr.",
-			[Mfa, BadCol]),
+    user_err("~w with is_set_ok (table), returned bad column: "
+	     "~w. Using genErr.", [Mfa, BadCol]),
     {genErr, 0};
 
 validate_err(table_undo, {Err, Idx}, Mfa) when integer(Idx) ->
     {validate_err(undo, Err, Mfa), Idx};
 validate_err(table_undo, X, Mfa) ->
-    snmp_error:user_err("~w with undo (table), returned: ~w.Using genErr.",
-			[Mfa, X]),
+    user_err("~w with undo (table), returned: ~w. Using genErr.",
+	     [Mfa, X]),
     {genErr, 0};
 
 validate_err(row_undo, {Err, Idx}, _) when integer(Idx) ->
     {Err, Idx};
 validate_err(row_undo, {Err, {false, BadCol}}, Mfa) ->
-    snmp_error:user_err("~w with undo (table), returned bad column:"
-			" ~w.Using genErr.",
-			[Mfa, BadCol]),
+    user_err("~w with undo (table), returned bad column: "
+	     "~w. Using genErr.", [Mfa, BadCol]),
     {genErr, 0};
 
 validate_err(table_set, {Err, Idx}, Mfa) when integer(Idx) ->
     {validate_err(set, Err, Mfa), Idx};
 validate_err(table_set, X, Mfa) ->
-    snmp_error:user_err("~w with set (table), returned: ~w.Using genErr.",
-			[Mfa, X]),
+    user_err("~w with set (table), returned: ~w. Using genErr.",
+	     [Mfa, X]),
     {genErr, 0};
 
 validate_err(row_set, {Err, Idx}, _) when integer(Idx) ->
     {Err, Idx};
 validate_err(row_set, {Err, {false, BadCol}}, Mfa) ->
-    snmp_error:user_err("~w with set (table), returned bad column:"
-			" ~w.Using genErr.",
-			[Mfa, BadCol]),
+    user_err("~w with set (table), returned bad column: "
+	     "~w. Using genErr.", [Mfa, BadCol]),
     {genErr, 0};
 
 validate_err(table_next, {Err, Idx}, Mfa) when integer(Idx) ->
     {Err, Idx};
 validate_err(table_next, {Err, {false, BadCol}}, Mfa) ->
-    snmp_error:user_err("~w with get_next, returned bad column:"
-			" ~w.Using genErr.",
-			[Mfa, BadCol]),
+    user_err("~w with get_next, returned bad column: "
+	     "~w. Using genErr.", [Mfa, BadCol]),
     {genErr, 0}.
 
 validate_err(v2_to_v1, {V2Err, Index}) ->
@@ -2025,8 +2018,8 @@ make_value_a_correct_value(WrongVal, ASN1Type, undef) ->
     {error, genErr};
 
 make_value_a_correct_value(WrongVal, ASN1Type, Mfa) ->
-    snmp_error:user_err("Got ~w from ~w. (~w) Using genErr",
-			[WrongVal, Mfa, ASN1Type]),
+    user_err("Got ~w from ~w. (~w) Using genErr",
+	     [WrongVal, Mfa, ASN1Type]),
     {error, genErr}.
 
 check_integer(Val, Asn1, Mfa) ->
@@ -2089,7 +2082,7 @@ check_enums(Val, Asn1, Enums, Mfa) ->
 report_err(Val, undef, Err) ->
     {error, Err};
 report_err(Val, Mfa, Err) ->
-    snmp_error:user_err("Got ~p from ~w. Using ~w", [Val, Mfa, Err]),
+    user_err("Got ~p from ~w. Using ~w", [Val, Mfa, Err]),
     {error, Err}.
 
 get_option(Key, Options, Default) ->
@@ -2192,3 +2185,7 @@ subagents_verbosity([{Pid,_Oid}|T],V) ->
     subagents_verbosity(T,V);
 subagents_verbosity(_,_V) ->
     ok.
+
+
+user_err(F, A) ->
+    snmp_error_report:user_err(F, A).

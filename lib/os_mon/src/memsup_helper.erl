@@ -212,6 +212,7 @@ get_memory_usage_win32(_Port) ->
 get_memory_usage_linux(_) ->
     {ok,F} = file:open("/proc/meminfo",[read,raw]),
     {ok,D} = file:read(F,1024),
+    ok = file:close(F),
     {ok,[_Headers,MemInfo | _]} = regexp:split(D,"\n"),
     {ok,[_,NMemTotal,NMemUsed],_} = io_lib:fread("~s ~d ~d",MemInfo),
     {NMemUsed,NMemTotal}.

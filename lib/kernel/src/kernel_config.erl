@@ -42,7 +42,16 @@ init([]) ->
     process_flag(trap_exit, true),
     case sync_nodes() of
 	ok ->
-	    catch dist_ac ! go, % Works on old erlang as well...
+	    case whereis(dist_ac) of
+		DAC when pid(DAC) ->
+		    DAC ! {go, self()},
+		    receive
+			dist_ac_took_control ->
+			    ok
+		    end;
+		_ ->
+		    ok
+	    end,
 	    {ok, []};
 	{error, Error} ->
 	    {stop, Error}

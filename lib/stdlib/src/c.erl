@@ -658,6 +658,10 @@ get_non_proc_mem([{plist_desc, Alloc, _Used}|Rest], Acc) ->
     get_non_proc_mem(Rest, Acc+Alloc);
 get_non_proc_mem([{fixed_deletion_desc, Alloc, _Used}|Rest], Acc) ->
     get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{bif_timer_rec_desc, Alloc, _Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{fun_desc, Alloc, _Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
 get_non_proc_mem([{_Mem, _Alloc, _Used}|Rest], Acc) ->
     get_non_proc_mem(Rest, Acc);
 get_non_proc_mem([{_Mem, _Alloc}|Rest], Acc) ->
@@ -704,7 +708,17 @@ mem(system, Proc, MemList, Ets) ->
 	Tot when integer(Tot) ->
 	    Tot - mem(processes, Proc, MemList, Ets);
 	_ ->
-	    get_non_proc_mem(MemList, 0) + mem(ets, Proc, MemList, Ets)
+	    get_non_proc_mem(MemList, 0)
+		+ mem(ets, Proc, MemList, Ets)
+		+ lists:foldl(fun (P, M) ->
+				      case catch
+					  erlang:port_info(P, memory) of
+					  {memory, Mem} -> M+Mem;
+					  _ -> M
+				      end
+			       end,
+			       0, 
+			       erlang:ports())
     end;
 mem(atom, Proc, MemList, Ets) ->
     get_mem(atom_space, allocated, MemList)

@@ -46,6 +46,8 @@ MODULES=  \
 	snmp_conf \
 	snmp_config \
 	snmp_error \
+	snmp_error_io \
+	snmp_error_report \
 	snmp_framework_mib \
 	snmp_general_db \
 	snmp_generic \
@@ -57,6 +59,7 @@ MODULES=  \
 	snmp_mgr_misc \
 	snmp_mib \
 	snmp_mib_data \
+	snmp_misc \
 	snmp_misc_sup \
 	snmp_mpd \
 	snmp_net_if \

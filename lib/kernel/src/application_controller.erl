@@ -936,9 +936,19 @@ handle_application_started(AppName, Res, S) ->
 	    info_exited(AppName, R, RestartType),
 	    {noreply, S#state{starting = keydelete(AppName, 1, Starting),
 			      start_req = Start_reqN}};
-	{error, R} when RestartType == transient ->
+	{info, R} when RestartType == temporary ->
 	    notify_cntrl_started(AppName, undefined, S, {error, R}),
-	    info_exited(AppName, R, RestartType),
+	    {noreply, S#state{starting = keydelete(AppName, 1, Starting),
+			      start_req = Start_reqN}};
+	{ErrInf, R} when RestartType == transient, ErrInf == error;
+			 RestartType == transient, ErrInf == info ->
+	    notify_cntrl_started(AppName, undefined, S, {error, R}),
+	    case ErrInf of
+		error ->
+		    info_exited(AppName, R, RestartType);
+		info ->
+		    ok
+	    end,
 	    case R of
 		"application exited with reason: normal" ->
 		    {noreply, S#state{starting = keydelete(AppName, 1, Starting),
@@ -949,6 +959,9 @@ handle_application_started(AppName, Res, S) ->
 	{error, R} -> %% permanent
 	    notify_cntrl_started(AppName, undefined, S, {error, R}),
 	    info_exited(AppName, R, RestartType),
+	    {stop, shutdown, S};
+	{info, R} -> %% permanent
+	    notify_cntrl_started(AppName, undefined, S, {error, R}),
 	    {stop, shutdown, S}
     end.
 
@@ -1275,18 +1288,8 @@ spawn_starter(From, Appl, S, Type) ->
 init_starter(From, Appl, S, Type) ->
     process_flag(trap_exit, true),
     AppName = Appl#appl.name,
-    case catch start_appl(Appl, S, Type) of
-	{ok, Id} ->
-%	    reply(From, ok),
-	    gen_server:cast(?AC, {application_started, AppName, {ok, Id}});
-	{info, R}  ->
-%	    reply(From, {error, R}),
-	    gen_server:cast(?AC, {application_started, AppName,
-				  {error, no_report}});
-	{error, R}  ->
-%	    reply(From, {error, R}),
-	    gen_server:cast(?AC, {application_started, AppName, {error, R}})
-    end.
+    gen_server:cast(?AC, {application_started, AppName, 
+			  catch start_appl(Appl, S, Type)}).
 
 reply(undefined, _Reply) -> 
     ok;
@@ -1718,8 +1721,6 @@ info_started(Name, Node) ->
 	   {started_at, Node}],
     error_logger:info_report(progress, Rep).
 
-info_exited(Name, no_report, Type) ->
-    ok;
 info_exited(Name, Reason, Type) ->
     Rep = [{application, Name},
 	   {exited, Reason},
@@ -1734,6 +1735,8 @@ reply_to_requester(AppName, Start_req, Res) ->
     R = case Res of
 	    {ok, Id} ->
 		ok;
+	    {info, Reason} ->
+		{error, Reason};
 	    Error ->
 		Error
 	end,

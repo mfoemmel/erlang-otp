@@ -42,11 +42,10 @@ VSN=$(MEGACO_VSN)
 CC      = @CC@
 CFLAGS  = @DED_CFLAGS@
 LD      = @DED_LD@
-LEX     = @LEX@
-PERL    = @PERL@
-LEXLIB  = @LEXLIB@
-LIBS    = @LIBS@
 LDFLAGS = @DED_LDFLAGS@
+LEX     = @LEX@
+LEXLIB  = @LEXLIB@
+PERL    = @PERL@
 ERLANG_OSTYPE = @ERLANG_OSTYPE@
 
 # Shall we build the flex scanner or not.
@@ -61,8 +60,9 @@ endif
 
 # Shall the library be built with line-number checks or without
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER_LINENO),)
-# This is not really needed in this case, but just to ensure
-# that the variable _has_ a value...
+# This is not really needed in this case (since we don't support
+# this for windows), but just to ensure that the variable _has_ 
+# a value...
 ifeq ($(findstring win32,$(TARGET)), win32)
 ENABLE_MEGACO_FLEX_SCANNER_LINENO = true
 else
@@ -82,6 +82,12 @@ DRIVER_INCLUDES = $(SYSINCLUDE)
 PRIVDIR = ../../priv
 LIBDIR  = $(PRIVDIR)/lib/$(TARGET)
 
+R7_DRIVER_H = $(ERL_TOP)/erts/emulator/beam/driver.h
+DRIVER_H    = $(wildcard $(R7_DRIVER_H))
+
+ifeq ($(DRIVER_H),$(R7_DRIVER_H))
+DRV_FLAGS = -DOTP_R7
+endif
 
 # ----------------------------------------------------
 # Release directory specification
@@ -134,7 +140,7 @@ ifeq ($(MFS_DEBUG),true)
 CFLAGS += -DMFS_DEBUG=true
 endif
 
-CFLAGS += $(DRIVER_INCLUDES) -funroll-loops -Wall $(LEXLIBS)
+CFLAGS += $(DRIVER_INCLUDES) $(DRV_FLAGS) -funroll-loops -Wall $(LEXLIBS)
 
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER_LINENO),true)
 LEX_FLAGS = -Ca
@@ -150,18 +156,18 @@ endif
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER),true)
 debug opt: $(LIBDIR) $(TARGET_FILES) $(C_TARGETS) $(SOLIBS)
 else
-debug opt: $(FLEX_FILES)
-	@echo "Flex library not built:"
-	@echo "\tmake [ ENABLE_MEGACO_FLEX_SCANNER=true ] [debug | opt]"
+debug opt: $(TARGET_FILES) 
 endif
 
 clean:
-	rm -f $(TARGET_FILES) $(C_TARGETS) $(SOLIBS) 
+	rm -f $(TARGET_FILES) $(FLEX_FILES) $(C_TARGETS) $(SOLIBS) 
 	rm -f errs core *~
 
 docs:
 
 info:
+	@echo "DRIVER_H     = $(DRIVER_H)"
+	@echo "DRV_FLAGS    = $(DRV_FLAGS)"
 	@echo "MODULES      = $(MODULES)"
 	@echo "ERL_FILES    = $(ERL_FILES)"
 	@echo "TARGET_FILES = $(TARGET_FILES)"
@@ -182,12 +188,13 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 release_spec: opt
 	$(INSTALL_DIR)  $(RELSYSDIR)/ebin
 	$(INSTALL_DIR)  $(RELSYSDIR)/src
+	$(INSTALL_DIR)  $(RELSYSDIR)/src/flex
 	$(INSTALL_DIR)  $(RELSYSDIR)/priv/lib
 	$(INSTALL_DIR)  $(RELSYSDIR)/include
-	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(FLEX_FILES) $(RELSYSDIR)/src
-ifeq ($(ENABLE_MEGACO_FLEX_SCANNER),true)
+	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src/flex
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
+ifeq ($(ENABLE_MEGACO_FLEX_SCANNER),true)
+	$(INSTALL_DATA) $(FLEX_FILES) $(RELSYSDIR)/src/flex
 	$(INSTALL_DATA) $(SOLIBS) $(RELSYSDIR)/priv/lib
 endif
 
@@ -212,8 +219,10 @@ endif
 megaco_flex_scanner_drv.c: megaco_flex_scanner_drv.flex
 	$(LEX) $(LEX_FLAGS) -P$* -o$@ $< 
 
+# No need to link with -lfl as we have also defined %option noyywrap - 
+# and having -lfl doesn't work under Darwin for some reason. - Sean
 $(LIBDIR)/megaco_flex_scanner_drv.so: megaco_flex_scanner_drv.c $(LIBDIR)
-	$(CC) $(CFLAGS) -fpic -shared -o $(LIBDIR)/megaco_flex_scanner_drv.so $< -lfl
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(LIBDIR)/megaco_flex_scanner_drv.so $< 
 
 $(LIBDIR):
 	-mkdir -p $(LIBDIR)

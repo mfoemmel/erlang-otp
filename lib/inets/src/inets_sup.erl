@@ -21,68 +21,75 @@
 %% crock (Used for debugging!)
 
 crock() ->
-  application:start(sasl),
-  application:start(inets).
+    application:start(sasl),
+    application:start(inets).
 
 %% start
 
 start(Type,State) ->
-  supervisor:start_link({local,inets_sup},inets_sup,[]).
+    supervisor:start_link({local,inets_sup},inets_sup,[]).
 
 %% stop
 
 stop(State) ->
-  ok.
+    ok.
 
 %% init
 
 init([]) ->
-  case get_services() of
-    {error,Reason} ->
-      {error,Reason};
-    Services ->
-      SupFlags={one_for_one,10,3600},
-      {ok,{SupFlags,child_spec(Services,0)}}
-  end.
+    case get_services() of
+	{error, Reason} ->
+	    {error,Reason};
+	Services ->
+	    SupFlags = {one_for_one, 10, 3600},
+	    {ok, {SupFlags, child_spec(Services, 0)}}
+    end.
 
 get_services() ->
-  case catch application:get_env(inets,services) of
-    {ok,Services} ->
-      Services;
-    _ ->
-      []
-  end.
+    case catch application:get_env(inets,services) of
+	{ok, Services} ->
+	    Services;
+	_ ->
+	    []
+    end.
 
 child_spec([],_) ->
     [];
+child_spec([{httpd, ConfigFile, Verbosity}|Rest],N) ->
+    [httpd_child_spec(ConfigFile, Verbosity, N) | child_spec(Rest,N+1)];
 child_spec([{httpd,ConfigFile}|Rest],N) ->
-    [{{httpd,N},{httpd,start_link,[ConfigFile]},transient,brutal_kill,worker,
-      [ftp,
-       httpd,
-       httpd_conf,
-       httpd_example,
-       httpd_manager,
-       httpd_listener,
-       httpd_parse,
-       httpd_request,
-       httpd_response,
-       httpd_socket,
-       httpd_util,
-       httpd_verbosity,
-       inets_sup,
-       mod_actions,
-       mod_alias,
-       mod_auth,
-       mod_cgi,
-       mod_dir,
-       mod_disk_log,
-       mod_esi,
-       mod_get,
-       mod_head,
-       mod_include,
-       mod_log,
-       mod_auth_mnesia,
-       mod_auth_plain,
-       mod_auth_dets,
-       mod_security]}|child_spec(Rest,N+1)].
+    [httpd_child_spec(ConfigFile, [], N) | child_spec(Rest,N+1)].
+
+
+httpd_child_spec(ConfigFile, Verbosity, N) ->
+    {{httpd,N},{httpd,start_link,[ConfigFile, Verbosity]},
+     transient, brutal_kill, worker,
+     [ftp,
+      httpd,
+      httpd_conf,
+      httpd_example,
+      httpd_manager,
+      httpd_listener,
+      httpd_parse,
+      httpd_request,
+      httpd_response,
+      httpd_socket,
+      httpd_util,
+      httpd_verbosity,
+      inets_sup,
+      mod_actions,
+      mod_alias,
+      mod_auth,
+      mod_cgi,
+      mod_dir,
+      mod_disk_log,
+      mod_esi,
+      mod_get,
+      mod_head,
+      mod_include,
+      mod_log,
+      mod_auth_mnesia,
+      mod_auth_plain,
+      mod_auth_dets,
+      mod_security]}.
 

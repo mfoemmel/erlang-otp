@@ -243,10 +243,11 @@ init_table(Tab, TabSize, Storage, Cs) ->
 	disc_only_copies ->
 	    mnesia_lib:lock_table(Tab) ,
 	    Tmp = mnesia_lib:tab2tmp(Tab),
+	    Size = lists:max([TabSize, 256]),
 	    Args = [{file, Tmp},
 		    {keypos, 2},
 		    {ram_file, true},
-		    {estimated_no_objects, TabSize + 256},
+		    {estimated_no_objects, Size},
 		    {repair, mnesia_monitor:get_env(auto_repair)},
 		    {type, mnesia_lib:disk_type(Tab, Cs#cstruct.type)}],
 	    file:delete(Tmp),
@@ -415,13 +416,16 @@ send_table(Pid, Tab, RemoteS) ->
 	    %% Send first
 	    TabSize = mnesia:table_info(Tab, size),
 	    Pid ! {self(), {first, TabSize}},
-
+	    
 	    %% Calculate #keys per transfer
 	    Key = mnesia_lib:db_first(Storage, Tab),
 	    Recs = mnesia_lib:db_get(Storage, Tab, Key),
 	    BinSize = size(term_to_binary(Recs)),
 	    KeysPerTransfer = (?MAX_TRANSFER_SIZE div BinSize) + 1,
 	    
+	    %% Debug info
+	    put(mnesia_table_sender, {Tab, node(Pid), Pid}),
+
 	    SendIt = fun() ->
 			     prepare_copy(Pid, Tab, Storage),
 			     send_more(Pid, Tab, Storage, 
@@ -432,6 +436,7 @@ send_table(Pid, Tab, RemoteS) ->
 
 	    case catch SendIt() of
 		receiver_died ->
+		    cleanup_tab_copier(Pid, Storage, Tab),
 		    unlink(whereis(mnesia_tm)),
 		    ok;
 		{_, receiver_died} ->
@@ -441,8 +446,8 @@ send_table(Pid, Tab, RemoteS) ->
 		    unlink(whereis(mnesia_tm)),
 		    ok;
 		Reason ->
-		    unlink(whereis(mnesia_tm)),
 		    cleanup_tab_copier(Pid, Storage, Tab),
+		    unlink(whereis(mnesia_tm)),
 		    {error, Reason}
 	    end
     end.
@@ -513,10 +518,12 @@ finish_copy(Pid, Tab, Storage, RemoteS) ->
 		A = val({Tab, access_mode}),
 		mnesia_controller:sync_and_block_table_whereabouts(Tab, RecNode, RemoteS, A),
 		cleanup_tab_copier(Pid, Storage, Tab),
-		ok = mnesia_checkpoint:tm_add_copy(Tab, RecNode),
+		mnesia_checkpoint:tm_add_copy(Tab, RecNode),
 		Pid ! {self(), {no_more, DatBin}},
+%%		dbg_out("Sent last ~p to ~p ~n", [Tab, {node(Pid), Pid}]),
 		receive
 		    {Pid, no_more} -> % Dont bother about the spurious 'more' message
+%%			dbg_out("Sender done ~p ~n", [Tab]),
 			no_more;
 		    {copier_done, Node} when Node == node(Pid)->
 			verbose("Tab receiver ~p crashed (more): ~p~n", [Tab, Node]),

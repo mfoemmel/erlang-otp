@@ -54,6 +54,7 @@
 
 /* distribution trap functions */
 extern Export* dsend_trap;
+extern Export* dsend_nosuspend_trap;
 extern Export* dlink_trap;
 extern Export* dunlink_trap;
 extern Export* dmonitor_node_trap;

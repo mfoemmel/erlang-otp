@@ -114,7 +114,7 @@
 construct_trap(Trap, Varbinds) ->
     case snmp_symbolic_store:get_notification(Trap) of
 	undefined -> 
-	    snmp_error:user_err("send_trap got undef Trap: ~p" , [Trap]),
+	    user_err("send_trap got undef Trap: ~w" , [Trap]),
 	    error;
 	{value, TRec} when record(TRec, trap) ->
 	    ListOfVars = TRec#trap.oidobjects,
@@ -318,9 +318,9 @@ get_all(VariablesWithType) ->
 	{noError, _, NewVarbinds} ->
 	    contract_order(Order, NewVarbinds);
 	{ErrorStatus, ErrorIndex, _} ->
-	    snmp_error:user_err("snmp_trap: get operation failed "
-				"{~p, ~p}~n  in ~p",
-				[ErrorStatus, ErrorIndex, Varbinds]),
+	    user_err("snmp_trap: get operation failed {~w, ~w}"
+		     "~n    in ~w",
+		     [ErrorStatus, ErrorIndex, Varbinds]),
 	    throw(error)
     end.
     
@@ -331,8 +331,9 @@ make_varbind({VarOid, ASN1Type, Value}) ->
 	{value, Type, Val} ->
 	    #varbind{oid = VarOid, variabletype = Type, value = Val};
 	{error, Reason} -> 
-	    snmp_error:user_err("snmp_trap: Invalid value: Oid ~p, Val:~p, ~p",
-				[VarOid, Value, Reason]),
+	    user_err("snmp_trap: Invalid value: Oid ~w, Val:~w:"
+		     "~n   ~w",
+		     [VarOid, Value, Reason]),
 	    throw(error)
     end.
 
@@ -360,12 +361,11 @@ split_variables([{No, {VarOid, Type}} | T])
     {A, B} = split_variables(T),
     {A, [{No, {VarOid, Type}} | B]};
 split_variables([{No, {VarName, Value}} | T]) ->
-    snmp_error:user_err("snmp_trap: Undefined variable ~p (~p)",
-			[VarName, Value]),
+    user_err("snmp_trap: Undefined variable ~w (~w)", [VarName, Value]),
     throw(error);
 split_variables([{No, {VarName, RowIndex, Value}} | T]) ->
-    snmp_error:user_err("snmp_trap: Undefined variable ~p ~w (~p)",
-			[VarName, RowIndex, Value]),
+    user_err("snmp_trap: Undefined variable ~w ~w (~w)",
+	     [VarName, RowIndex, Value]),
     throw(error);
 split_variables([]) -> {[], []}.
 
@@ -721,12 +721,12 @@ deliver_recv({Tag, Receiver}, MsgId, Result) ->
 	Else ->
 	    ?vinfo("~n   Cannot deliver acknowledgment: bad receiver = '~p'",
 		   [Else]),
-	    snmp_error:user_err("snmp: bad receiver, ~w\n", [Else])
+	    user_err("snmp: bad receiver, ~w\n", [Else])
     end;
 deliver_recv(Else, _MsgId, _Result) ->
     ?vinfo("~n   Cannot deliver acknowledgment: bad receiver = '~p'",
 	   [Else]),
-    snmp_error:user_err("snmp: bad receiver, ~w\n", [Else]).
+    user_err("snmp: bad receiver, ~w\n", [Else]).
 
 check_all_varbinds(#notification{oid = Oid}, Vbs, MibView) ->
     case snmp_acm:validate_mib_view(Oid, MibView) of
@@ -762,7 +762,7 @@ sys_object_id() ->
 	{noError, _, [#varbind{value = Value}]} ->
 	    Value;
 	X ->
-	    snmp_error:user_err("sysObjectID bad return value ~p", [X])
+	    user_err("sysObjectID bad return value ~w", [X])
     end.
 
 %% Collect all ADDRs for each community together.
@@ -788,3 +788,5 @@ mk_flag(?'SnmpSecurityLevel_authPriv') -> 3.
      
 
 
+user_err(F, A) ->
+    snmp_error_report:user_err(F, A).

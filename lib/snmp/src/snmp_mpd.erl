@@ -404,9 +404,9 @@ generate_response_msg(Vsn, RePdu, Type,
 		      LogF, _) ->
 	case catch snmp_pdus:enc_pdu(RePdu) of
 	    {'EXIT', Reason} ->
-		snmp_error:user_err("failed encoding pdu "
-				    "(pdu: ~p, community: ~p): ~p",
-				    [RePdu, Community, Reason]),
+		user_err("failed encoding pdu: "
+			 "(pdu: ~w, community: ~w): ~n~w",
+			 [RePdu, Community, Reason]),
 		{discarded, Reason};
 	    PduBytes ->
 		Message = #message{version = Vsn, vsn_hdr = Community, 
@@ -414,9 +414,9 @@ generate_response_msg(Vsn, RePdu, Type,
 		case catch list_to_binary(
 			     snmp_pdus:enc_message_only(Message)) of
 		    {'EXIT', Reason} ->
-			snmp_error:user_err("failed encoding message only"
-					    "(pdu: ~p, community: ~p): ~p",
-					    [RePdu, Community, Reason]),
+			user_err("failed encoding message only "
+				 "(pdu: ~w, community: ~w): ~n~w",
+				 [RePdu, Community, Reason]),
 			{discarded, Reason};
 		    Packet ->
 			MMS = snmp_framework_mib:get_engine_max_message_size(),
@@ -445,9 +445,9 @@ generate_response_msg(Vsn, RePdu, Type,
 			   data = RePdu},
     case catch snmp_pdus:enc_scoped_pdu(ScopedPDU) of
 	{'EXIT', Reason} ->
-	    snmp_error:user_err("failed encoded scoped pdu "
-				"(pdu: ~p, contextName: ~p): ~p",
-				[RePdu, ContextName, Reason]),
+	    user_err("failed encoded scoped pdu "
+		     "(pdu: ~w, contextName: ~w): ~n~w",
+		     [RePdu, ContextName, Reason]),
 	    {discarded, Reason};
 	ScopedPDUBytes -> 
 	    AgentMS = snmp_framework_mib:get_engine_max_message_size(),
@@ -471,8 +471,7 @@ generate_response_msg(Vsn, RePdu, Type,
 						       SecName, SecData, 
 						       SecLevel) of
 		{'EXIT', Reason} ->
-		    snmp_error:config_err("~p (message: ~p)", 
-					  [Reason, Message]),
+		    config_err("~p (message: ~p)", [Reason, Message]),
 		    {discarded, Reason};
 		OutMsg ->
 		    %% Check the packet size.  Send the msg even
@@ -564,18 +563,17 @@ too_big(Vsn, Pdu, Community, LogF, _MMS, _Len) when Pdu#pdu.type == 'get-respons
 
     case catch snmp_pdus:enc_pdu(ErrPdu) of
 	{'EXIT', Reason} ->
-	    snmp_error:user_err("failed encoding pdu "
-				"(pdu: ~p, community: ~p): ~p", 
-				[ErrPdu, Community, Reason]),
+	    user_err("failed encoding pdu (pdu: ~w, community: ~w): ~n~w", 
+		     [ErrPdu, Community, Reason]),
 	    {discarded, Reason};
 	PduBytes -> 
 	    Message = #message{version = Vsn, vsn_hdr = Community, 
 			       data = PduBytes},
 	    case catch snmp_pdus:enc_message_only(Message) of
 		{'EXIT', Reason} ->
-		    snmp_error:user_err("failed encoding message only"
-					"(pdu: ~p, community: ~p): ~p", 
-					[ErrPdu, Community, Reason]),
+		    user_err("failed encoding message only"
+			     "(pdu: ~w, community: ~w): ~n~w", 
+			     [ErrPdu, Community, Reason]),
 		    {discarded, Reason};
 		Packet -> 
 		    Bin = list_to_binary(Packet),
@@ -585,9 +583,9 @@ too_big(Vsn, Pdu, Community, LogF, _MMS, _Len) when Pdu#pdu.type == 'get-respons
 	    end
     end;
 too_big(Vsn, Pdu, _Community, _LogF, MMS, Len) ->
-    snmp_error:user_err("encoded pdu, ~p bytes, exceeded "
-			"max message size of ~p bytes. Pdu: ~p", 
-			[Len, MMS, Pdu]),
+    user_err("encoded pdu, ~p bytes, exceeded "
+	     "max message size of ~p bytes. Pdu: ~n~w", 
+	     [Len, MMS, Pdu]),
     {discarded, tooBig}.
 
 set_vb_null([Vb | Vbs]) ->
@@ -603,9 +601,9 @@ generate_msg(Vsn, Pdu, {community, Community}, To) ->
     Message = #message{version = Vsn, vsn_hdr = Community, data = Pdu},
     case catch list_to_binary(snmp_pdus:enc_message(Message)) of
 	{'EXIT', Reason} ->
-	    snmp_error:user_err("failed encoding message "
-				"(pdu: ~p, community: ~p): ~p",
-				[Pdu, Community, Reason]),
+	    user_err("failed encoding message "
+		     "(pdu: ~w, community: ~w): ~n~w",
+		     [Pdu, Community, Reason]),
 	    {discarded, Reason};
 	Packet ->
 	    AgentMax = snmp_framework_mib:get_engine_max_message_size(),
@@ -627,9 +625,9 @@ generate_msg('version-3', Pdu, {v3, ContextEngineID, ContextName}, To) ->
 			   data = Pdu},
     case snmp_pdus:enc_scoped_pdu(ScopedPDU) of
 	{'EXIT', Reason} ->
-	    snmp_error:user_err("failed encoding scoped pdu "
-				"(pdu: ~p, contextName: ~p): ~p",
-				[Pdu, ContextName, Reason]),
+	    user_err("failed encoding scoped pdu "
+		     "(pdu: ~w, contextName: ~w): ~n~w",
+		     [Pdu, ContextName, Reason]),
 	    {discarded, Reason};
 	ScopedPDUBytes -> 
 	    {ok, mk_v3_packet_list(To, ScopedPDUBytes, Pdu, 
@@ -643,7 +641,7 @@ mk_v1_v2_packet_list([{?snmpUDPDomain, [A,B,C,D,U1,U2]} | T],
     [{snmpUDPDomain, {{A,B,C,D}, U1 bsl 8 + U2}, Packet} |
      mk_v1_v2_packet_list(T, Packet, Len, Pdu)];
 mk_v1_v2_packet_list([{TDomain, TAddr} | T], Packet, Len, Pdu) ->
-    snmp_error:user_err("Bad TDomain/TAddr: ~w/~w", [TDomain, TAddr]),
+    user_err("Bad TDomain/TAddr: ~w/~w", [TDomain, TAddr]),
     mk_v1_v2_packet_list(T, Packet, Len, Pdu);
 mk_v1_v2_packet_list([], _Packet, _Len, _Pdu) ->
     [].
@@ -678,9 +676,9 @@ mk_v3_packet_list([{{?snmpUDPDomain, [A,B,C,D,U1,U2]},
 		    {ok, TargetEngineId} ->
 			TargetEngineId;
 		    undefined ->
-			snmp_error:config_err("Can't find engineID for "
-					      "snmpTargetAddrName ~p \n",
-					      [TargetAddrName]),
+			config_err("Can't find engineID for "
+				   "snmpTargetAddrName ~p \n",
+				   [TargetAddrName]),
 			"" % this will trigger error in secmodule
 		end
 	end,
@@ -689,7 +687,7 @@ mk_v3_packet_list([{{?snmpUDPDomain, [A,B,C,D,U1,U2]},
     case catch SecModule:generate_outgoing_msg(Message, SecEngineID,
 					       SecName, [], SecLevel) of
 	{'EXIT', Reason} ->
-	    snmp_error:config_err("~p (message: ~p)", [Reason, Message]),
+	    config_err("~p (message: ~p)", [Reason, Message]),
 	    mk_v3_packet_list(T, ScopedPDUBytes, Pdu, 
 			      ContextEngineID, ContextName);
 	{error, Reason} ->
@@ -709,7 +707,7 @@ mk_v3_packet_list([{{?snmpUDPDomain, [A,B,C,D,U1,U2]},
     end;
 mk_v3_packet_list([{{TDomain, TAddr}, _} | T], 
 		  ScopedPDUBytes, Pdu, ContextEngineID, ContextName) ->
-    snmp_error:user_err("Bad TDomain/TAddr: ~w/~w", [TDomain, TAddr]),
+    user_err("Bad TDomain/TAddr: ~w/~w", [TDomain, TAddr]),
     mk_v3_packet_list(T, ScopedPDUBytes, Pdu, ContextEngineID, ContextName);
 mk_v3_packet_list([], _ScopedPDUBytes, _Pdu, _ContextEngineID, _ContextName) ->
     [].
@@ -834,3 +832,10 @@ inc_in_type('get-request') -> inc(snmpInGetRequests);
 inc_in_type('get-next-request') -> inc(snmpInGetNexts);
 inc_in_type('set-request') -> inc(snmpInSetRequests);
 inc_in_type(_) -> ok.
+
+
+user_err(F, A) ->
+    snmp_error_report:user_err(F, A).
+
+config_err(F, A) ->
+    snmp_error_report:config_err(F, A).

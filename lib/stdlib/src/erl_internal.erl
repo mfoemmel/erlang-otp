@@ -18,6 +18,33 @@
 -module(erl_internal).
 
 %% Define Erlang bifs, guard tests and other internal stuff.
+%%
+%% NOTE: All guard_bif(), arith_op(), bool_op() and comp_op() must be
+%%       defined in bif.tab as 'ubif', i.e bif without trace wrapper.
+%%       
+%%       Why?
+%%       
+%%       Because the compiler uses an optimized instruction for
+%%       the call to these bifs, which when loaded gets a direct 
+%%       entry pointer inserted into itself by the loader, 
+%%       instead of a bif table index as for regular bifs.
+%%       
+%%       If tracing is enabled on these bifs, when a module is loaded, 
+%%       the direct entry pointer inserted into the call instruction 
+%%       will be pointing to the trace wrapper, so even if tracing is 
+%%       disabled for bifs, the loaded module will call these bifs through 
+%%       the trace wrappers.
+%%       
+%%       The call instruction in question does not give enough information
+%%       to call trace match function {caller} for it to succeed 
+%%       other then by chance, and the 'return_to' trace flag works just
+%%       as bad, so both will mostly say that the caller is 'undefined'. 
+%%       Furthermore the calls to these bifs will still generate
+%%       trace messages from the loaded module even if tracing is disabled 
+%%       for them, and no one knows what else might be messed up.
+%%
+%%       That's why!
+%%
 
 -export([bif/2,bif/3,guard_bif/2,type_test/2,obsolete/3]).
 -export([arith_op/2,bool_op/2,comp_op/2,list_op/2,send_op/2,op_type/2]).

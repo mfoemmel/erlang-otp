@@ -26,6 +26,11 @@
 -ifndef(orber_iiop_hrl).
 -define(orber_iiop_hrl, true).
 
+%% The identifiers which indicates if a fixed value has a negative or
+%% positive scale.
+-define(FIXED_NEGATIVE, 13).
+-define(FIXED_POSITIVE, 12).
+
 %% Defines if the ip_comm application is used instead of sockets.
 -define(IIOP_SOCKET_MOD, 'orber_socket').
 
@@ -52,7 +57,7 @@
 %% PROFILE_ID's
 -define(TAG_INTERNET_IOP,        0).
 -define(TAG_MULTIPLE_COMPONENTS, 1).
--define(TAG_TAG_SCCP_IOP,        2).
+-define(TAG_SCCP_IOP,            2).
 
 
 %% COMPONENT_ID's
@@ -77,24 +82,88 @@
 -define(TAG_SCCP_CONTACT_INFO,        24).
 -define(TAG_JAVA_CODEBASE,            25).
 -define(TAG_TRANSACTION_POLICY,       26).
+-define(TAG_FT_GROUP,                 27).
+-define(TAG_FT_PRIMARY,               28).
+-define(TAG_FT_HEARTBEAT_ENABLED,     29).
 -define(TAG_MESSAGE_ROUTERS,          30).
 -define(TAG_OTS_POLICY,               31).
 -define(TAG_INV_POLICY,               32).
+-define(TAG_CSI_SEC_MECH_LIST,        33).
+-define(TAG_NULL_TAG,                 34).
+-define(TAG_SECIOP_SEC_TRANS,         35).
+-define(TAG_TLS_SEC_TRANS,            36).
 -define(TAG_DCE_STRING_BINDING,      100).
 -define(TAG_DCE_BINDING_NAME,        101).
 -define(TAG_DCE_NO_PIPES,            102).
 -define(TAG_DCE_SEC_MECH,            103).
 -define(TAG_INET_SEC_TRANS,          123).
 
+%% COMPONENT_ID strings
+-define(TAG_ORB_TYPE_STR,                  "TAG_ORB_TYPE").
+-define(TAG_CODE_SETS_STR,                 "TAG_CODE_SETS").
+-define(TAG_POLICIES_STR,                  "TAG_POLICIES").
+-define(TAG_ALTERNATE_IIOP_ADDRESS_STR,    "TAG_ALTERNATE_IIOP_ADDRESS").
+-define(TAG_COMPLETE_OBJECT_KEY_STR,       "TAG_COMPLETE_OBJECT_KEY").
+-define(TAG_ENDPOINT_ID_POSITION_STR,      "TAG_ENDPOINT_ID_POSITION").
+-define(TAG_LOCATION_POLICY_STR,           "TAG_LOCATION_POLICY").
+-define(TAG_ASSOCIATION_OPTIONS_STR,       "TAG_ASSOCIATION_OPTIONS").
+-define(TAG_SEC_NAME_STR,                  "TAG_SEC_NAME").
+-define(TAG_SPKM_1_SEC_MECH_STR,           "TAG_SPKM_1_SEC_MECH").
+-define(TAG_SPKM_2_SEC_MECH_STR,           "TAG_SPKM_2_SEC_MECH").
+-define(TAG_KerberosV5_SEC_MECH_STR,       "TAG_KerberosV5_SEC_MECH").
+-define(TAG_CSI_ECMA_Secret_SEC_MECH_STR,  "TAG_CSI_ECMA_Secret_SEC_MECH").
+-define(TAG_CSI_ECMA_Hybrid_SEC_MECH_STR,  "TAG_CSI_ECMA_Hybrid_SEC_MECH").
+-define(TAG_SSL_SEC_TRANS_STR,             "TAG_SSL_SEC_TRANS").
+-define(TAG_CSI_ECMA_Public_SEC_MECH_STR,  "(TAG_CSI_ECMA_Public_SEC_MECH").
+-define(TAG_GENERIC_SEC_MECH_STR,          "TAG_GENERIC_SEC_MECH").
+-define(TAG_FIREWALL_TRANS_STR,            "TAG_FIREWALL_TRANS").
+-define(TAG_SCCP_CONTACT_INFO_STR,         "TAG_SCCP_CONTACT_INFO").
+-define(TAG_JAVA_CODEBASE_STR,             "TAG_JAVA_CODEBASE").
+-define(TAG_TRANSACTION_POLICY_STR,        "TAG_TRANSACTION_POLICY").
+-define(TAG_FT_GROUP_STR,                  "TAG_FT_GROUP").
+-define(TAG_FT_PRIMARY_STR,                "TAG_FT_PRIMARY").
+-define(TAG_FT_HEARTBEAT_ENABLED_STR,      "TAG_FT_HEARTBEAT_ENABLED").
+-define(TAG_MESSAGE_ROUTERS_STR,           "TAG_MESSAGE_ROUTERS").
+-define(TAG_OTS_POLICY_STR,                "TAG_OTS_POLICY").
+-define(TAG_INV_POLICY_STR,                "TAG_INV_POLICY").
+-define(TAG_CSI_SEC_MECH_LIST_STR,         "TAG_CSI_SEC_MECH_LIST").
+-define(TAG_NULL_TAG_STR,                  "TAG_NULL_TAG").
+-define(TAG_SECIOP_SEC_TRANS_STR,          "TAG_SECIOP_SEC_TRANS").
+-define(TAG_TLS_SEC_TRANS_STR,             "TAG_TLS_SEC_TRANS").
+-define(TAG_DCE_STRING_BINDING_STR,        "TAG_DCE_STRING_BINDING").
+-define(TAG_DCE_BINDING_NAME_STR,          "TAG_DCE_BINDING_NAME").
+-define(TAG_DCE_NO_PIPES_STR,              "TAG_DCE_NO_PIPES").
+-define(TAG_DCE_SEC_MECH_STR,              "TAG_DCE_SEC_MECH").
+-define(TAG_INET_SEC_TRANS_STR,            "TAG_INET_SEC_TRANS").
+
 %% GIOP header size
 -define(GIOP_HEADER_SIZE, 12).
 
 %% CODESET's we support.
--define(ISO8859_1_ID,  16#00010001).
--define(ISO_10646_UCS_2_ID, 16#00010109).
--define(ISO_10646_UCS_2_UTF_16_ID, 16#00010100).
--define(DEFAULT_CHAR,  16#05010001).
--define(DEFAULT_WCHAR, 16#00010109).
+%% Latin-1. This CodeSet is default if no information exists in the IOR.
+-define(ISO8859_1_ID, 16#00010001).
+
+%% UTF-16, UCS Transformation Format 16-bit form
+-define(UTF_16_ID, 16#00010109).
+
+%% X/Open UTF-8; UCS Transformation Format 8 (UTF-8)
+-define(UTF_8_ID, 16#05010001).
+
+%% The limited UTF-16 without the surrogate mechanism is called UCS-2.
+%% The two-byte subset which is identical with the original Unicode. 
+%% UCS-2, Level 1. Used by JDK-1.3 as native wchar.
+-define(UCS_2_ID, 16#00010100).
+
+%% ISO 646:1991 IRV (International Reference Version).
+%% Used by JavaIDL as Native Char (JDK-1.3). A.k.a PCS.
+-define(ISO646_IRV_ID, 16#00010020).
+
+%% Fallback is *not* the same thing as default!!
+-define(FALLBACK_CHAR,  16#05010001).
+-define(FALLBACK_WCHAR, 16#00010109).
+
+%% This is used when the wchar codeset is unknown.
+-define(UNSUPPORTED_WCHAR, 0).
 
 
 %%----------------------------------------------------------------------
@@ -323,17 +392,32 @@
 				  {"target_requires", 'tk_ushort'},
 				  {"port", 'tk_ushort'}]}).
 
+-define(GIOP_KeyAddr, 0).
+-define(GIOP_ProfileAddr, 1).
+-define(GIOP_ReferenceAddr, 2).
+
 -define(TARGETADDRESS, {'tk_union', 0, 'GIOP_TargetAddress', 'tk_short', -1,
-			[{0, "object_key", {'tk_sequence', 'tk_octet', 0}},
-			 {1, "profile", {'tk_struct', 0,
+			[{?GIOP_KeyAddr, "object_key", {'tk_sequence', 'tk_octet', 0}},
+			 {?GIOP_ProfileAddr, "profile", {'tk_struct', 0,
 					 'IOP_TaggedProfile',
 					 [{"tag", 'tk_ulong'},
 					  {"profile_data",
 					   {'tk_sequence', 'tk_octet', 0}}]}},
-			 {2, "ior", {'tk_struct', 0, 
+			 {?GIOP_ReferenceAddr, "ior", {'tk_struct', 0, 
 				     'GIOP_IORAddressingInfo',
 				     [{"selected_profile_index", 'tk_ulong'},
 				      {"ior", ?IOR_TYPEDEF}]}}]}).
+
+% Zero or more instances of the TAG_ALTERNATE_IIOP_ADDRESS component type
+% may be included in a version 1.2 TAG_INTERNET_IOP Profile.
+-record('ALTERNATE_IIOP_ADDRESS', {'HostID', 'Port'}).
+-define(ALTERNATE_IIOP_ADDRESS, {'tk_struct', 0,
+				 'ALTERNATE_IIOP_ADDRESS',
+				 [{"HostID", {'tk_string', 0}},
+				  {"Port", 'tk_ushort'}]}).
+% The TAG_ORB_TYPE component can appear at most once in any IOR profile. For
+% profiles supporting IIOP 1.1 or greater, it is optionally present.
+-define(ORB_TYPE, 'tk_ulong').
 
 -record('CONV_FRAME_CodeSetComponent', {native_code_set, conversion_code_sets}).
 -record('CONV_FRAME_CodeSetComponentInfo', {'ForCharData', 'ForWcharData'}).
@@ -354,7 +438,7 @@
 
 -define(DEFAULT_FOR_CHAR,  #'CONV_FRAME_CodeSetComponent'{native_code_set=?ISO8859_1_ID, 
 							  conversion_code_sets=[]}).
--define(DEFAULT_FOR_WCHAR, #'CONV_FRAME_CodeSetComponent'{native_code_set=?ISO_10646_UCS_2_ID, 
+-define(DEFAULT_FOR_WCHAR, #'CONV_FRAME_CodeSetComponent'{native_code_set=?UTF_16_ID, 
 							  conversion_code_sets=[]}).
 -define(DEFAULT_CODESETS, 
 	#'CONV_FRAME_CodeSetComponentInfo'{'ForCharData' = ?DEFAULT_FOR_CHAR, 
@@ -382,19 +466,29 @@
 				     {"wchar_data", 'tk_ulong'}]}).
 
 	
--define(IOP_TransactionService,      0).
--define(IOP_CodeSets,                1).
--define(IOP_ChainBypassCheck,        2).
--define(IOP_ChainBypassInfo,         3).
--define(IOP_LogicalThreadId,         4).
--define(IOP_BI_DIR_IIOP,             5).
--define(IOP_SendingContextRunTime,   6).
--define(IOP_INVOCATION_POLICIES,     7).
--define(IOP_FORWARDED_IDENTITY,      8).
--define(IOP_UnknownExceptionInfo,    9).
--define(IOP_RTCorbaPriority,        10).
--define(IOP_RTCorbaPriorityRange,   11).
--define(IOP_ExceptionDetailMessage, 14).
+-define(IOP_TransactionService,        0).
+-define(IOP_CodeSets,                  1).
+-define(IOP_ChainBypassCheck,          2).
+-define(IOP_ChainBypassInfo,           3).
+-define(IOP_LogicalThreadId,           4).
+-define(IOP_BI_DIR_IIOP,               5).
+-define(IOP_SendingContextRunTime,     6).
+-define(IOP_INVOCATION_POLICIES,       7).
+-define(IOP_FORWARDED_IDENTITY,        8).
+-define(IOP_UnknownExceptionInfo,      9).
+-define(IOP_RTCorbaPriority,          10).
+-define(IOP_RTCorbaPriorityRange,     11).
+-define(IOP_FT_GROUP_VERSION,         12).
+-define(IOP_FT_REQUEST,               13).
+-define(IOP_ExceptionDetailMessage,   14).
+-define(IOP_SecurityAttributeService, 15).
+
+%%----------------------------------------------------------------------
+%% host_data
+%% 
+%%----------------------------------------------------------------------
+-record(host_data, {protocol = normal, ssl_data, version, 
+		    charset = ?ISO8859_1_ID, wcharset = ?UTF_16_ID}).
 
 
 -endif.

@@ -61,10 +61,10 @@
 %%	listen		nil		any	any	-	open
 %%	peername	open		any	any	-	ditto
 %%	setopts		open		new	any	-	ditto
+%%	getopts		open		new	any	-	ditto
 %%	sockname	open		any	any	-	ditto
 %%	inhibit		any		any	any	-	ditto
 %%	release		any		any	any	-	ditto
-%%	get_broker_opts	any		any	any	-	ditto
 %%
 %%	casts
 %%	-----
@@ -91,18 +91,27 @@
 %%
 %% XXX The collector thing is not gen_server compliant.
 %%
+%% XXX Remove everything that has to do with the old i/f.
+%%
+%% NOTE: There are two different "modes": (a) passive or active mode,
+%% specified as {active, bool()}, and (b) list or binary mode, specified 
+%% as {mode, list | binary}.
+%%
 
 -include("ssl_int.hrl").
 
 %% External exports 
+
 -export([start_broker/1, start_broker/2, start_broker/3, start_link/4,
-	 accept/4, close/1, connect/5, controlling_process/2, 
-	 get_broker_opts/2, listen/3, recv/3, send/2, setopts/2, 
+	 accept/4, close/1, connect/5, controlling_process/2,
+	 listen/3, recv/3, send/2, getopts/2, getopts/3, setopts/2,
 	 sockname/1, peername/1]).
+
 -export([listen_prim/5, connect_prim/8, accept_prim/8]).
 
-%% Internal exports
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
+%% Internal exports 
+
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 code_change/3, terminate/2, collector_init/1]).
 
 -include("ssl_broker_int.hrl").
@@ -164,7 +173,7 @@ start_link(Client, Type, NewIf, GenOpts) ->
 %%
 accept(Pid, ListenSocket, Opts, Timeout) 
   when pid(Pid), record(ListenSocket, sslsocket), list(Opts) ->
-    case valid_accept_opts(Opts) of
+    case are_accept_opts(Opts) of
 	true ->
 	    Req = {accept, self(), ListenSocket, Opts, Timeout},
 	    gen_server:call(Pid, Req, infinity);
@@ -192,7 +201,7 @@ close(Pid) when pid(Pid) ->
 %%          Socket = sslsocket()
 %%
 connect(Pid, Address, Port, Opts, Timeout) when pid(Pid), list(Opts) ->
-    case valid_connect_opts(Opts) of
+    case are_connect_opts(Opts) of
 	true ->
 	    Req = {connect, self(), Address, Port, Opts, Timeout},
 	    gen_server:call(Pid, Req, infinity);
@@ -213,26 +222,6 @@ controlling_process(Pid, NewOwner) when pid(Pid), pid(NewOwner) ->
 	    Error
     end.
     
-%% get_broker_opts(Pid, Timeout) -> {ok, Opts} | {error, timeout}
-%%  
-%% Types:	Pid = pid() of a listen broker
-%%  		Timeout = integer() >= 0 | infinity
-%%		Opts = options()
-%%
-%% To be used by an acceptor in order to find the listen sockets socket
-%% options. Timeout is gen_server timeout (timeout leads to failure, so 
-%% we catch it).
-%%
-get_broker_opts(Pid, Timeout) when pid(Pid), integer(Timeout) ->
-    Req = {get_broker_opts, self()}, 
-    case (catch gen_server:call(Pid, Req, Timeout)) of
-	{'EXIT', Reason} ->
-	    {error, Reason};
-	Reply -> 
-	    Reply
-    end.
-
-
 %% listen(Pid, Port, Opts) -> {ok, ListenSocket} | {error, Reason}
 %%  
 %% Types:   Pid = pid() of listener
@@ -241,7 +230,7 @@ get_broker_opts(Pid, Timeout) when pid(Pid), integer(Timeout) ->
 %%          ListenSocket = sslsocket()
 %%
 listen(Pid, Port, Opts) when pid(Pid) ->
-    case valid_listen_opts(Opts) of
+    case are_listen_opts(Opts) of
 	true ->
 	    Req = {listen, self(), Port, Opts}, 
 	    gen_server:call(Pid, Req, infinity);
@@ -279,17 +268,28 @@ send(Socket, Data) when record(Socket, sslsocket) ->
     gen_server:call(Socket#sslsocket.pid, {send, self(), Data}, infinity).
 
 
+%% getopts(Socket, OptTags) -> {ok, Opts} | {error, einval}
+%%  
+%% Types:	Pid = pid() of broker
+%%  		Timeout = integer() >= 0 | infinity
+%%		OptTags = option_tags()
+%%		Opts = options()
+%%
+getopts(Socket, OptTags) ->
+    getopts(Socket, OptTags, infinity).
+
+getopts(Socket, OptTags, Timeout) when record(Socket, sslsocket), 
+				       list(OptTags) ->
+    Req = {getopts, self(), OptTags}, 
+    gen_server:call(Socket#sslsocket.pid, Req, Timeout).
+
+
 %%
 %% setopts(Socket, Opts) -> ok | {error, Reason}
 %%
 setopts(Socket, Opts) when record(Socket, sslsocket) ->
-    case Opts of
-	[{nodelay, Bool}] ->
-	    Req = {setopts, self(), Opts},
-	    gen_server:call(Socket#sslsocket.pid, Req, infinity);
-	_Other ->
-	    {error, eoptions}
-    end.
+    Req = {setopts, self(), Opts},
+    gen_server:call(Socket#sslsocket.pid, Req, infinity).
 
 %%
 %% sockname(Socket) -> {ok, {Address, Port}} | {error, Reason}
@@ -376,10 +376,11 @@ handle_call({send, Client, Data}, From, St) ->
 handle_call({accept, Client, ListenSocket, Opts, Timeout}, From, St) ->
     debug(St, "accept: client = ~w, listensocket = ~w~n", 
 	  [Client, ListenSocket]),
-    case get_broker_opts(ListenSocket#sslsocket.pid, ?DEF_TIMEOUT) of
+    case getopts(ListenSocket, tcp_listen_opt_tags(), ?DEF_TIMEOUT) of 
 	{ok, LOpts} ->
-	    case accept_prim(ssl_server, gen_tcp, Client, ListenSocket#sslsocket.fd,
-			      LOpts, Opts, Timeout, St) of
+	    case accept_prim(ssl_server, gen_tcp, Client, 
+			     ListenSocket#sslsocket.fd, LOpts, Opts, 
+			     Timeout, St) of
 		{ok, ThisSocket, NSt} ->
 		    {reply, {ok, ThisSocket}, NSt};
 		{error, Reason, St} ->
@@ -401,7 +402,8 @@ handle_call({accept, Client, ListenSocket, Opts, Timeout}, From, St) ->
 handle_call({connect, Client, Address, Port, Opts, Timeout}, From, St) ->
     debug(St, "connect: client = ~w, address = ~p, port = ~w~n",
 	  [Client, Address, Port]),
-    case connect_prim(ssl_server, gen_tcp, Client, Address, Port, Opts, Timeout, St) of
+    case connect_prim(ssl_server, gen_tcp, Client, Address, Port, Opts, 
+		      Timeout, St) of
 	{ok, Res, NSt} ->
 	    {reply, {ok, Res}, NSt};
 	{error, Reason, NSt} ->
@@ -464,9 +466,33 @@ handle_call({setopts, Client, Opts}, From, St) ->
 	St#st.status =/= open ->
 	    {reply, {error, closed}, St};
 	true ->
-	    Bool = get_nodelay(Opts),
-	    Reply = setnodelay(ssl_server, St, Bool),
-	    {reply, Reply, St}
+	    OptsOK = case St#st.brokertype of
+			 listener ->
+			     are_opts(fun is_tcp_listen_opt/1, Opts);
+			 acceptor ->
+			     are_opts(fun is_tcp_accept_opt/1, Opts);
+			 connector ->
+			     are_opts(fun is_tcp_connect_opt/1, Opts)
+		     end,
+	    if 
+		OptsOK == false ->
+		    {reply, {error, eoptions}, St};
+		true ->
+		    case inet:setopts(St#st.proxysock, Opts) of
+			ok ->
+			    Bool = get_nodelay(Opts),
+			    case setnodelay(ssl_server, St, Bool) of
+				ok ->
+				    NOpts = replace_opts(Opts, St#st.opts),
+				    NSt = St#st{opts = NOpts},
+				    {reply, ok, NSt};
+				{error, Reason} ->
+				    {reply, {error, Reason}, St}
+			    end;
+			{error, Reason} ->
+			    {reply, {error, Reason}, St}
+		    end
+	    end
     end;
 
 
@@ -511,17 +537,16 @@ handle_call({release_msgs, Client, NewClient}, From, St)
     {reply, ok, NSt};
 
 
-%% get_broker_opts
+%% getopts
 %%
-%% To be called only by acceptor of listen socket.
 %%
-handle_call({get_broker_opts, Acceptor}, From, St) ->
-    debug(St, "get_broker_opts: acceptor = ~w~n", [Acceptor]),
-    Reply = if 
-		St#st.brokertype == listener ->
-		    {ok, St#st.opts};
-		true  ->
-		    {error, enotlistener}
+handle_call({getopts, Client, OptTags}, From, St) ->
+    debug(St, "getopts: client = ~w~n", [Client]),
+    Reply = case are_opt_tags(St#st.brokertype, St#st.newif, OptTags) of
+		true ->
+		    {ok, extract_opts(OptTags, St#st.opts)};
+		_ ->
+		    {error, einval}
 	    end,
     {reply, Reply, St};
 
@@ -547,48 +572,60 @@ handle_cast(Request, St) ->
 
 %% tcp - active mode
 %%
-%% The collector is different from client during change of controlling
-%% process.
+%% The collector is different from client only during change of
+%% controlling process.
 %%
 handle_info({tcp, Socket, Data}, St) 
   when St#st.proxysock == Socket, St#st.status =/= closed, 
-       St#st.active == true ->
+       St#st.active =/= false ->
     debug(St, "tcp: socket = ~w~n", [Socket]),
     Msg = if 
 	    St#st.newif == true -> {ssl, St#st.thissock, Data};
 	    true  -> {self(), {fromsocket, Data}}
 	end,
     St#st.collector ! Msg,
-    {noreply, St};
+    if
+	St#st.active == once -> {noreply, St#st{active = false}};
+	true -> {noreply, St}
+    end;
 
 %% tcp_closed - from proxy socket, active mode
 %%
 %%
 handle_info({tcp_closed, Socket}, St) 
   when St#st.proxysock == Socket, St#st.status =/= closed, 
-       St#st.active == true ->
+       St#st.active =/= false ->
     debug(St, "tcp_closed: socket = ~w~n", [Socket]),
     Msg = if 
 	    St#st.newif == true -> {ssl_closed, St#st.thissock};
 	    true -> {self(), {socket_closed, normal}}
 	end,
     St#st.collector ! Msg,
-    {noreply, St#st{status = closed}};
-
+    if
+	St#st.active == once -> 
+	    {noreply, St#st{status = closed, active = false}};
+	true ->
+	    {noreply, St#st{status = closed}}
+    end;
 
 %% tcp_error - from proxy socket, active mode
 %%
 %%
 handle_info({tcp_error, Socket, Reason}, St) 
   when St#st.proxysock == Socket, St#st.status =/= closed, 
-       St#st.active == true ->
+       St#st.active =/= false ->
     debug(St, "tcp_error: socket = ~w, reason = ~w~n", [Socket, Reason]),
     Msg = if 
 	      St#st.newif == true -> {ssl_error, St#st.thissock, Reason};
 	      true -> {self(), {socket_closed, Reason}}
 	  end,
     St#st.collector ! Msg,
-    {noreply, St#st{status = closed}};
+    if
+	St#st.active == once -> 
+	    {noreply, St#st{status = closed, active = false}};
+	true ->
+	    {noreply, St#st{status = closed}}
+    end;
 
 
 %% deliver - old interface (active)
@@ -662,23 +699,26 @@ code_change(OldVsn, State, Extra) ->
 %% Primitive interface
 %%
 listen_prim(ServerName, Client, Port, Opts, St) ->
-    LOpts = get_listen_opts(Opts),
-    SSLOpts = get_ssl_opts(Opts),
+    LOpts = get_tcp_listen_opts(Opts),
+    SSLOpts = get_ssl_opts(St#st.newif, Opts),
     FlagStr = if 
 		  St#st.newif == true ->
 		      mk_ssl_optstr(SSLOpts);
 		  true -> 
-		      ""			% No flags for old i/f
+		      ""			% No SSL Opts for old i/f
 	      end,
     BackLog = get_backlog(LOpts),
     IP = get_ip(LOpts),
     case ssl_server:listen_prim(ServerName, IP, Port, FlagStr, BackLog) of
 	{ok, ListenFd, Port0} ->
 	    ThisSocket = #sslsocket{fd = ListenFd, pid = self()},
+	    StOpts = add_default_tcp_listen_opts(LOpts) ++
+		add_default_ssl_opts(St#st.newif, SSLOpts),
 	    NSt = St#st{fd = ListenFd, 
-			active = get_active(LOpts), % irrelevant
-			opts = LOpts, 
-			thissock = ThisSocket, status = open},
+			active = get_active(LOpts), % irrelevant for listen
+			opts = StOpts,
+			thissock = ThisSocket, 
+			status = open},
 	    debug(St, "listen: ok: client = ~w, listenfd = ~w~n", 
 		  [Client, ListenFd]),
 	    {ok, ThisSocket, NSt};
@@ -686,10 +726,10 @@ listen_prim(ServerName, Client, Port, Opts, St) ->
 	    {error, Reason, St}
     end.
     
-
-connect_prim(ServerName, TcpModule, Client, Address, Port, Opts, Timeout, St) ->
-    COpts = get_connect_opts(Opts),
-    SSLOpts = get_ssl_opts(Opts),
+connect_prim(ServerName, TcpModule, Client, Address, Port, Opts, 
+	     Timeout, St) ->
+    COpts = get_tcp_connect_opts(Opts),
+    SSLOpts = get_ssl_opts(St#st.newif, Opts),
     FlagStr = if
 		  St#st.newif == true -> mk_ssl_optstr(SSLOpts);
 		  true -> get_flags(SSLOpts)
@@ -704,9 +744,14 @@ connect_prim(ServerName, TcpModule, Client, Address, Port, Opts, Timeout, St) ->
 				       ProxyPort, COpts, Timeout) of
 			{ok, Socket} ->
 			    ThisSocket = #sslsocket{fd = Fd, pid = self()}, 
-			    NSt = St#st{fd = Fd, active = get_active(COpts),
-					opts = COpts, thissock = ThisSocket, 
-					proxysock = Socket, status = open},
+			    StOpts = add_default_tcp_connect_opts(COpts) ++
+				add_default_ssl_opts(St#st.newif, SSLOpts),
+			    NSt = St#st{fd = Fd, 
+					active = get_active(COpts),
+					opts = StOpts,
+					thissock = ThisSocket, 
+					proxysock = Socket, 
+					status = open},
 			    case get_nodelay(COpts) of
 				true -> setnodelay(ServerName, NSt, true);
 				_ -> ok
@@ -727,24 +772,34 @@ connect_prim(ServerName, TcpModule, Client, Address, Port, Opts, Timeout, St) ->
 	    {error, Reason, St}
     end.
     
-accept_prim(ServerName, TcpModule, Client, ListenFd, 
-	    LOpts, Opts, Timeout, St) -> 
-    AOpts = get_accept_opts(LOpts),
-    FlagStr = if
-		  St#st.newif == true -> []; % No flags in new i/f
-		  true -> get_flags(Opts) % yes, original Opts 
-	      end,
+accept_prim(ServerName, TcpModule, Client, ListenFd, LOpts, Opts, 
+	    Timeout, St) -> 
+    AOpts = get_tcp_accept_opts(LOpts),
+    {FlagStr, SSLOpts} = 
+	if
+	    St#st.newif == true -> 
+		{[], []}; % No SSL options in new i/f
+		  true -> 
+		%% yes, original Opts: 
+		{get_flags(Opts), get_ssl_opts(St#st.newif, Opts)}
+	end,
     %% Timeout is gen_server timeout - hence catch.
-    case (catch ssl_server:accept_prim(ServerName, ListenFd, FlagStr, Timeout)) of 
+    case (catch ssl_server:accept_prim(ServerName, ListenFd, FlagStr, 
+				       Timeout)) of 
 	{ok, Fd, ProxyPort} ->
 	    case connect_proxy(ServerName, TcpModule, Fd, 
 			       ProxyPort, AOpts, Timeout) of
 		{ok, Socket} ->
 		    ThisSocket = #sslsocket{fd = Fd, pid = self()}, 
+		    StOpts = add_default_tcp_accept_opts(AOpts) ++
+			add_default_ssl_opts(St#st.newif, SSLOpts),
 		    Reply = {ok, ThisSocket}, 
-		    NSt = St#st{fd = Fd, active = get_active(AOpts),
-				opts = AOpts, thissock = ThisSocket,
-				proxysock = Socket, status = open},
+		    NSt = St#st{fd = Fd, 
+				active = get_active(AOpts),
+				opts = StOpts,
+				thissock = ThisSocket,
+				proxysock = Socket, 
+				status = open},
 		    case get_nodelay(AOpts) of
 			true -> setnodelay(ServerName, NSt, true);
 			_ -> ok
@@ -891,106 +946,86 @@ what({What, Where}) when atom(What) ->
 what(Reason) ->
     Reason.
 
-%%
-%% transform_opts(Opts) -> NewOpts  - from old to new i/f
-%%
-transform_opts(Opts) ->
-    lists:flatten(lists:map(fun transform_opt/1, Opts)).
-
-transform_opt({binary_packet, N}) -> [binary, {packet, N}];
-transform_opt(fourbytes) -> {packet, 4};
-transform_opt(twobytes) -> {packet, 2};
-transform_opt(onebyte) -> {packet, 1};
-transform_opt(zerobyte) -> {packet, 0};
-transform_opt(raw) -> [];
-transform_opt(Opt) -> Opt.
 
 %%
-%% valid_*_opts(Opts) -> true | false
+%% OPTIONS
 %%
-valid_accept_opts(Opts) ->
-    lists:all(fun is_accept_opt/1, transform_opts(Opts)).
+%% XXX Should keep lists of tags and valid option values together. 
 
-valid_connect_opts(Opts) ->
-    lists:all(fun is_connect_opt/1, transform_opts(Opts)).
+%% Option tags
 
-valid_listen_opts(Opts) ->
-    lists:all(fun is_listen_opt/1, transform_opts(Opts)).
+%% XXX Must distinguish between old and new i/f (since we are using
+%% getopts/3 from acceptor to get listener opts).
+ 
+are_opt_tags(listener, NewIf, OptTags) ->
+    is_subset(OptTags, listen_opt_tags(NewIf));
+are_opt_tags(acceptor, NewIf, OptTags) ->
+    is_subset(OptTags, accept_opt_tags(NewIf));
+are_opt_tags(connector, NewIf, OptTags) ->
+    is_subset(OptTags, connect_opt_tags(NewIf)).
 
-is_accept_opt(Opt) ->
-    is_tcp_accept_opt(Opt) or is_ssl_opt(Opt).
+tcp_gen_opt_tags() ->
+    % All except `reuseaddr' and `deliver'.	
+    [nodelay, active, packet, mode, header].	
 
-is_connect_opt(Opt) ->
-    is_tcp_connect_opt(Opt) or is_ssl_opt(Opt).
+tcp_listen_only_opt_tags() ->
+    [ip, backlog].
 
-is_listen_opt(Opt) ->
-    is_tcp_listen_opt(Opt) or is_ssl_opt(Opt).
+ssl_opt_tags(true) ->				% New i/f
+    [verify, depth, certfile, password, cacertfile, ciphers, cachetimeout];
+ssl_opt_tags(false) ->				% Old i/f
+    [].
 
-is_tcp_gen_opt(binary) -> true;
-is_tcp_gen_opt({packet, 0}) -> true;
-is_tcp_gen_opt({packet, 1}) -> true;
-is_tcp_gen_opt({packet, 2}) -> true;
-is_tcp_gen_opt({packet, 4}) -> true;
-is_tcp_gen_opt({packet, cdr}) -> true;
-is_tcp_gen_opt({nodelay, true}) -> true;
-is_tcp_gen_opt({nodelay, false}) -> true;
-is_tcp_gen_opt({active, true}) -> true;
-is_tcp_gen_opt({active, false}) -> true;
-is_tcp_gen_opt(Opt) -> false.
+ssl_old_opt_tags(true) ->
+    [];
+ssl_old_opt_tags(false) ->
+    [flags].
 
-is_tcp_accept_opt(Opt) ->
-    is_tcp_gen_opt(Opt).
+accept_opt_tags(NewIf) ->
+    tcp_gen_opt_tags() ++ ssl_old_opt_tags(NewIf).
 
-is_tcp_connect_opt(Opt) ->
-    is_tcp_gen_opt(Opt).
+connect_opt_tags(NewIf) ->
+    tcp_gen_opt_tags() ++ ssl_opt_tags(NewIf) ++ ssl_old_opt_tags(NewIf).
 
-is_tcp_listen_opt(Opt) ->
-    is_tcp_gen_opt(Opt) or is_tcp_listen_only_opt(Opt).
+tcp_listen_opt_tags() ->				
+    tcp_gen_opt_tags() ++ tcp_listen_only_opt_tags().
 
-is_tcp_listen_only_opt({backlog, Size}) when integer(Size), 0 =< Size -> true;
-is_tcp_listen_only_opt({ip, Addr}) -> is_ip_address(Addr);
-is_tcp_listen_only_opt(Opt) -> false.
+listen_opt_tags(NewIf) ->				
+    tcp_listen_opt_tags() ++ ssl_opt_tags(NewIf).
 
-%% SSL options
-is_ssl_opt({flags, String}) -> is_string(String); % Old i/f only
-is_ssl_opt({verify, Code}) when 0 =< Code, Code =< 2 -> true;
-is_ssl_opt({depth, Depth}) when 0 =< Depth -> true;
-is_ssl_opt({certfile, String}) -> is_string(String);
-is_ssl_opt({keyfile, String}) -> is_string(String);
-is_ssl_opt({password, String}) -> is_string(String);
-is_ssl_opt({cacertfile, String}) -> is_string(String);
-is_ssl_opt({ciphers, String}) -> is_string(String);
-is_ssl_opt({cachetimout, Timeout}) when Timeout >= 0 -> true;
-is_ssl_opt(Opt) -> false.
-
-is_string(String) when list(String) ->
-    lists:all(fun (C) when integer(C), 0 =< C, C =< 255 -> true; 
-		  (C) -> false end, 
-	      String);
-is_string(_) ->
-    false.
-
-is_ip_address(Addr) when tuple(Addr), size(Addr) == 4 ->
-    is_string(tuple_to_list(Addr));
-is_ip_address(Addr) when list(Addr) ->
-    is_string(Addr);
-is_ip_address(_) ->
-    false.
+%% Options
 
 %%
-%% get_various_opts(Opts) -> Value
+%% are_*_opts(Opts) -> true | false
 %%
-get_accept_opts(Opts) ->
+are_accept_opts(Opts) ->
+    are_opts(fun is_accept_opt/1, Opts).
+
+are_connect_opts(Opts) ->
+    are_opts(fun is_connect_opt/1, Opts).
+
+are_listen_opts(Opts) ->
+    are_opts(fun is_listen_opt/1, Opts).
+
+are_opts(F, Opts) ->
+    lists:all(F, transform_opts(Opts)).
+    
+%%
+%% get_*_opts(Opts) -> Value
+%%
+get_tcp_accept_opts(Opts) ->
     lists:filter(fun is_tcp_accept_opt/1, transform_opts(Opts)).
 
-get_connect_opts(Opts) ->
+get_tcp_connect_opts(Opts) ->
     lists:filter(fun is_tcp_connect_opt/1, transform_opts(Opts)).
 
-get_listen_opts(Opts) ->
+get_tcp_listen_opts(Opts) ->
     lists:filter(fun is_tcp_listen_opt/1, transform_opts(Opts)).
 
-get_ssl_opts(Opts) ->
-    lists:filter(fun is_ssl_opt/1, transform_opts(Opts)).
+get_ssl_opts(true, Opts) ->			% New i/f
+    lists:filter(fun is_ssl_opt/1, transform_opts(Opts));
+get_ssl_opts(false, Opts) ->			% Old i/f
+    lists:filter(fun is_ssl_old_opt/1, transform_opts(Opts)).
 
 get_flags(Opts) ->
     get_tagged_opt(flags, Opts, "").
@@ -1007,6 +1042,139 @@ get_ip(Opts) ->
 get_nodelay(Opts) ->
     get_tagged_opt(nodelay, Opts, empty).
 
+%%
+%% add_default_*_opts(Opts) -> NOpts
+%%
+
+add_default_tcp_accept_opts(Opts) ->
+    add_default_opts(Opts, default_tcp_accept_opts()).
+
+add_default_tcp_connect_opts(Opts) ->
+    add_default_opts(Opts, default_tcp_connect_opts()).
+
+add_default_tcp_listen_opts(Opts) ->
+    add_default_opts(Opts, default_tcp_listen_opts()).
+
+add_default_ssl_opts(NewIf, Opts) ->
+    add_default_opts(Opts, default_ssl_opts(NewIf)).
+
+add_default_opts(Opts, DefOpts) ->
+    TOpts = transform_opts(Opts),
+    TOpts ++ [{DTag, DVal} || 
+		 {DTag, DVal} <- DefOpts, not lists:keymember(DTag, 1, TOpts)].
+
+default_tcp_accept_opts() ->
+    lists:filter(fun is_tcp_accept_opt/1, default_opts()).
+
+default_tcp_connect_opts() ->
+    lists:filter(fun is_tcp_connect_opt/1, default_opts()).
+
+default_tcp_listen_opts() ->
+    lists:filter(fun is_tcp_listen_opt/1, default_opts()).
+
+default_ssl_opts(true) ->			% New i/f
+    lists:filter(fun is_ssl_opt/1, default_opts());
+default_ssl_opts(false) ->			% Old i/f
+    [].						
+
+default_opts() ->
+    [{mode, list}, {packet, 0}, {nodelay, false}, {active, true},
+     {backlog, ?DEF_BACKLOG}, {ip, {0, 0, 0, 0}},
+     {verify, 0}, {depth, 1}].
+
+
+%% Transform from old to new i/f, and also from old gen_tcp options to
+%% new ones. All returned options are tagged options.
+%%
+transform_opts(Opts) ->
+    lists:flatmap(fun transform_opt/1, Opts).
+
+transform_opt(binary) -> 		[{mode, binary}];
+transform_opt(list) -> 			[{mode, list}];
+transform_opt({binary_packet, N}) -> 	[{mode, binary}, {packet, N}];
+transform_opt(fourbytes) -> 		[{packet, 4}];
+transform_opt(twobytes) -> 		[{packet, 2}];
+transform_opt(onebyte) -> 		[{packet, 1}];
+transform_opt(zerobyte) -> 		[{packet, 0}];
+transform_opt({packet, raw}) -> 	[{packet, 0}];
+transform_opt(raw) -> 			[];
+transform_opt(Opt) -> 			[Opt].
+
+%% NOTE: The is_*_opt/1 functions must be applied on transformed options
+%% only.
+
+is_accept_opt(Opt) ->
+    is_tcp_accept_opt(Opt) or is_ssl_old_opt(Opt). % Old i/f.
+
+is_connect_opt(Opt) ->
+    is_tcp_connect_opt(Opt) or is_ssl_opt(Opt) or is_ssl_old_opt(Opt).
+
+is_listen_opt(Opt) ->
+    is_tcp_listen_opt(Opt) or is_ssl_opt(Opt).
+
+is_tcp_accept_opt(Opt) ->
+    is_tcp_gen_opt(Opt).
+
+is_tcp_connect_opt(Opt) ->
+    is_tcp_gen_opt(Opt).
+
+is_tcp_listen_opt(Opt) ->
+    is_tcp_gen_opt(Opt) or is_tcp_listen_only_opt(Opt).
+
+%% General options supported by gen_tcp: All except `reuseaddr' and
+%% `deliver'.
+is_tcp_gen_opt({mode, list}) -> true;
+is_tcp_gen_opt({mode, binary}) -> true;
+is_tcp_gen_opt({header, Sz}) when integer(Sz), 0 =< Sz -> true; 
+is_tcp_gen_opt({packet, Sz}) when integer(Sz), 0 =< Sz, Sz =< 4-> true;
+is_tcp_gen_opt({packet, sunrm}) -> true;
+is_tcp_gen_opt({packet, asn1}) -> true;
+is_tcp_gen_opt({packet, cdr}) -> true;
+is_tcp_gen_opt({packet, fcgi}) -> true;
+is_tcp_gen_opt({packet, line}) -> true;
+is_tcp_gen_opt({packet, tpkt}) -> true;
+is_tcp_gen_opt({packet, http}) -> true;
+is_tcp_gen_opt({packet, httph}) -> true;
+is_tcp_gen_opt({nodelay, true}) -> true;
+is_tcp_gen_opt({nodelay, false}) -> true;
+is_tcp_gen_opt({active, true}) -> true;
+is_tcp_gen_opt({active, false}) -> true;
+is_tcp_gen_opt({active, once}) -> true;
+is_tcp_gen_opt(Opt) -> false.
+
+is_tcp_listen_only_opt({backlog, Size}) when integer(Size), 0 =< Size -> true;
+is_tcp_listen_only_opt({ip, Addr}) -> is_ip_address(Addr);
+is_tcp_listen_only_opt(Opt) -> false.
+
+%% SSL options
+is_ssl_old_opt({flags, String}) -> is_string(String); 
+is_ssl_old_opt(Opt) -> false.
+
+is_ssl_opt({verify, Code}) when 0 =< Code, Code =< 2 -> true;
+is_ssl_opt({depth, Depth}) when 0 =< Depth -> true;
+is_ssl_opt({certfile, String}) -> is_string(String);
+is_ssl_opt({keyfile, String}) -> is_string(String);
+is_ssl_opt({password, String}) -> is_string(String);
+is_ssl_opt({cacertfile, String}) -> is_string(String);
+is_ssl_opt({ciphers, String}) -> is_string(String);
+is_ssl_opt({cachetimeout, Timeout}) when Timeout >= 0 -> true;
+is_ssl_opt(Opt) -> false.
+
+%% Various types
+is_string(String) when list(String) ->
+    lists:all(fun (C) when integer(C), 0 =< C, C =< 255 -> true; 
+		  (C) -> false end, 
+	      String);
+is_string(_) ->
+    false.
+
+is_ip_address(Addr) when tuple(Addr), size(Addr) == 4 ->
+    is_string(tuple_to_list(Addr));
+is_ip_address(Addr) when list(Addr) ->
+    is_string(Addr);
+is_ip_address(_) ->
+    false.
+
 get_tagged_opt(Tag, Opts, Default) ->
     case lists:keysearch(Tag, 1, Opts) of
 	{value, {_, Value}} ->
@@ -1014,7 +1182,6 @@ get_tagged_opt(Tag, Opts, Default) ->
 	_Other ->
 	    Default
     end.
-    
 
 %%
 %%  mk_ssl_optstr(Opts) -> string()
@@ -1022,28 +1189,38 @@ get_tagged_opt(Tag, Opts, Default) ->
 %%  Makes a "command line" string of SSL options
 %%
 mk_ssl_optstr(Opts) ->
-    lists:flatten(lists:map(fun mk_ssl_opt/1, Opts)).
+    lists:flatten(lists:map(fun mk_one_ssl_optstr/1, Opts)).
     
-mk_ssl_opt({verify, Code}) ->
+mk_one_ssl_optstr({verify, Code}) ->
     [" -verify ", integer_to_list(Code)];
-mk_ssl_opt({depth, Depth}) ->
+mk_one_ssl_optstr({depth, Depth}) ->
     [" -depth ", integer_to_list(Depth)];
-mk_ssl_opt({certfile, String}) -> 
+mk_one_ssl_optstr({certfile, String}) -> 
     [" -cert ", String];
-mk_ssl_opt({keyfile, String}) -> 
+mk_one_ssl_optstr({keyfile, String}) -> 
     [" -key ", String];
-mk_ssl_opt({password, String}) -> 
+mk_one_ssl_optstr({password, String}) -> 
     [" -passw ", String];
-mk_ssl_opt({cacertfile, String}) ->
+mk_one_ssl_optstr({cacertfile, String}) ->
     [" -cacert ", String];
-mk_ssl_opt({ciphers, String}) -> 
+mk_one_ssl_optstr({ciphers, String}) -> 
     [" -cipher ", String];
-mk_ssl_opt({cachetimout, Timeout}) ->
+mk_one_ssl_optstr({cachetimeout, Timeout}) ->
     [" -cache ", integer_to_list(Timeout)];
-mk_ssl_opt(_) ->
+mk_one_ssl_optstr(_) ->
     "".
 
-		     
-     
-    
-    
+extract_opts(OptTags, Opts) ->
+    lists:filter(fun ({Tag, _}) -> lists:member(Tag, OptTags) end, Opts).
+
+replace_opts(NOpts, Opts) ->
+    lists:foldl(fun({Key, Val}, Acc) -> 
+			lists:keyreplace(Key, 1, Acc, {Key, Val}) 
+		end,
+		Opts, NOpts).
+
+%% Misc
+
+is_subset(A, B) ->
+    [] == A -- B.
+

@@ -141,9 +141,8 @@ set_phase_one_subagents([{SubAgentPid, SAVbs}|SubagentVarbinds], Done) ->
 	{ErrorStatus, ErrorIndex} ->
 	    {{ErrorStatus, ErrorIndex}, Done};
 	{'EXIT', Reason} ->
-	    snmp_error:user_err("Lost contact with subagent (set phase_one)"
-				"~n~w. Using genErr",
-				[Reason]),
+	    user_err("Lost contact with subagent (set phase_one)"
+		     "~n~w. Using genErr", [Reason]),
 	    {{genErr, 0}, Done}
     end;
 set_phase_one_subagents([], Done) ->
@@ -190,9 +189,8 @@ set_phase_two_subagents([{SubAgentPid, SAVbs} | SubagentVarbinds]) ->
 	    set_phase_two_undo_subagents(SubagentVarbinds),
 	    {ErrorStatus, ErrorIndex};
 	{'EXIT', Reason} ->
-	    snmp_error:user_err("Lost contact with subagent (set)~n~w."
-				" Using genErr",
-				[Reason]),
+	    user_err("Lost contact with subagent (set)~n~w. Using genErr", 
+		     [Reason]),
 	    set_phase_two_undo_subagents(SubagentVarbinds),
 	    {genErr, 0}
     end;
@@ -222,9 +220,8 @@ set_phase_two_undo_subagents([{SubAgentPid, SAVbs} | SubagentVarbinds]) ->
 	{ErrorStatus, ErrorIndex} ->
 	    {ErrorStatus, ErrorIndex};
 	{'EXIT', Reason} ->
-	    snmp_error:user_err("Lost contact with subagent (undo)~n~w. "
-				"Using genErr",
-				[Reason]),
+	    user_err("Lost contact with subagent (undo)~n~w. Using genErr", 
+		     [Reason]),
 	    {genErr, 0}
     end;
 set_phase_two_undo_subagents([]) ->
@@ -238,3 +235,7 @@ sort_varbindlist(Varbinds) ->
 
 sa_split(SubagentVarbinds) ->
     snmp_svbl:sa_split(SubagentVarbinds).
+
+
+user_err(F, A) ->
+    snmp_error_report:user_err(F, A).

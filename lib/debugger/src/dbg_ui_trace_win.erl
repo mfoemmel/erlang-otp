@@ -15,504 +15,892 @@
 %% 
 %%     $Id$
 %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% File    : dbg_ui_trace_win.erl
-%% Purpose : GS interface for attach windows in the debugger
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 -module(dbg_ui_trace_win).
 
--export([create_attach_window/3,
-	 select_line/4,
-	 put_text/2,
-	 update_label/3,
-	 get_end/1, 
-	 get_position/1,
-	 put_trace/2,
-	 update_bindings/1,
-	 print_shell/2,
-	 configure_view/2,
-	 remove_breaks/3,
-	 remove_break/2,
-	 add_break/3,
-	 add_breaks/3,
-	 resize/3,
-	 configure/3,
-	 break_colour/3,
-	 update_backtrace_menu/1,
-	 configure/5,
-	 progress_window/2,
-	 trace_editor/1]).
+%% External exports
+-export([init/0]).
+-export([create_win/4, get_window/1,
+	 configure/2,
+	 enable/2, is_enabled/1, select/2,
+	 add_break/3, update_break/2, delete_break/2,
+	 clear_breaks/1, clear_breaks/2,
+	 display/1,                                   % Help messages
+	 is_shown/2,                                  % Code area
+	 show_code/3, show_no_code/1, remove_code/2,      
+	 mark_line/3, unmark_line/1,
+	 select_line/2, selected_line/1,
+	 eval_output/2,                               % Evaluator area
+	 update_bindings/1,                           % Bindings area
+	 trace_output/1,                              % Trace area
+	 handle_event/2
+	]).
+-export([helpwin/4,                                   % Help windows
+	 helpwin/5]).
 
--define(STRLEN,1500).  %%Max num of characters sent to the Editor at 1 time
+-record(breakInfo, {point, status, break}).
+-record(winInfo, {window,          % gsobj()
+		  size,            % {W, H}
+		  flags,           % {F,F,F,F} F = open|close
 
+		  marked_line=0,   % integer() Current line
+		  selected_line=0, % integer() Selected line
 
-% Start of additions made by Fredrik Gustafson
+		  breaks=[],       % [#breakInfo{}] Known breakpoints
 
-%%% Create the file Menu in the Window
-
-help_menu(MenuBar) ->
-    MenuButtHelp = gs:menubutton(MenuBar, [{label, {text, " Help "}},
-					   {underline, 1},{side, right}]),
-    MenuHelp = gs:menu(MenuButtHelp, []),
-    gs:menuitem('Help', MenuHelp,
-		[{label, {text, "Help"}}, {underline, 0}]).
-
-% End of additions made by Fredrik Gustafson
+		  editor,          % {Mod, Editor}  Visible code editor
+		  editors=[]       % [{Mod,Editor}] Code editors
+		 }).
 
 
+%%====================================================================
+%% External exports
+%%====================================================================
 
-%%% Create the file Menu in the Window
+%%--------------------------------------------------------------------
+%% init() -> GS
+%%   GS = term()
+%%--------------------------------------------------------------------
+init() ->
+    dbg_ui_win:init().
 
-file_menu(MenuBar) ->    
-    MenuButtFile = gs:menubutton(MenuBar,
-				 [{label,{text," File "}}, {underline, 1}]),
-    MenuFile = gs:menu(MenuButtFile, []),
-    gs:menuitem('Close', MenuFile,
-		[{label, {text, "Close"}},{underline,0}]).
-
-
-%%% Create the edit Menu in the Window
-
-edit_menu(MenuBar) ->
-    MenuButtEdit = gs:menubutton (MenuBar, [{label, {text, " Edit "}},
-					    {underline, 1}]),
-    MenuEdit = gs:menu (MenuButtEdit, []),
-    gs:menuitem ('GoToLine', MenuEdit, [{label, {text, "Go to line"}}, 
-					{underline, 0}]),
-    gs:menuitem ('Search', MenuEdit, [{label, {text, "Search"}}, 
-				      {underline, 0}]).
-
-
-%%% Create the Module Menu in the Window
-
-module_menu(MenuBar) ->
-    MenuButtModule= gs:menubutton(MenuBar,
-				  [{label, {text, " Module "}}, {underline, 1}]),
-    gs:menu('MenuModule',MenuButtModule, []).
-
-
-%%% Process Menu in the trace Window
-
-process_menu(MenuBar) ->
-    MenuButtProcess = gs:menubutton(MenuBar,
-				    [{label,{text," Process "}}, {underline, 1}]),
-    MenuProcess = gs:menu(MenuButtProcess, []),
-    gs:menuitem('StepMenu',MenuProcess,
-		[{label, {text, "Step"}},{underline,0},
-		 {enable,false},{data,{menu,'Step'}}]),
-    gs:menuitem('NextMenu',MenuProcess,
-		[{label, {text, "Next"}}, {underline,0},
-		 {enable,false},{data,{menu,'Next'}}]),
-    gs:menuitem('ContinueMenu',MenuProcess,
-		[{label, {text, "Continue"}},{underline,0},
-		 {enable,false},{data,{menu,'Continue'}}]),
-    gs:menuitem('FinishMenu',MenuProcess,
-		[{label, {text, "Finish"}},{underline,0},
-	       {enable,false},{data,{menu,'Finish'}}]),
-
-    gs:menuitem(MenuProcess,[{itemtype,separator}]),
-    gs:menuitem('Time OutMenu',MenuProcess,
-		[{label, {text, "Time Out"}},{underline,0},
-		 {enable,false},{data,{menu,'Time Out'}},
-		 {data,{menu,'Time Out'}}]),
-    gs:menuitem('SkipMenu',MenuProcess,
-		[{label, {text, "Skip (Ctl-L)"}},{underline,2},
-		 {enable,false},{data,{menu,'Skip'}}]),
-    gs:menuitem('StopMenu',MenuProcess,
-		[{label, {text, "Stop (Ctl-z)"}},{underline,2},
-		 {enable,false},{data,{menu,'Stop'}}]),
-    gs:menuitem('UpMenu',MenuProcess,
-		[{label, {text, "Up"}},{underline,0},
-		 {enable,false},{data,{menu,'Up'}}]),
-    gs:menuitem('DownMenu',MenuProcess,
-		[{label, {text, "Down"}},{underline,0},
-		 {enable,false},{data,{menu,'Down'}}]),
-    gs:menuitem('WhereMenu',MenuProcess,
-		[{label, {text, "Where"}},{underline,0},
-		 {enable,false},{data,{menu,'Where'}}]),
-    gs:menuitem('MessagesMenu',MenuProcess,
-		[{label, {text, "Messages"}},{underline,0},
-		 {enable,false},{data,{menu,'Messages'}}]),
-     gs:menuitem('BackTraceMenu',MenuProcess,
-		[{label, {text, "Back Trace"}},{underline,0},
-		 {enable,false}]),
-    gs:menuitem('Kill',MenuProcess,
-		[{label, {text, "Kill"}},{underline,0},
-		 {enable,false},{data,{menu,'Kill'}}]).
+%%--------------------------------------------------------------------
+%% create_win(GS, Title, TraceWin, Menus) -> #winInfo{}
+%%  GS = gsobj()
+%%  Title = string()
+%%  TraceWin = [WinArea]
+%%    WinArea = 'Button|Evaluator|Bindings|Trace Area'
+%%  Menus = [menu()]  See dbg_ui_win.erl
+%%--------------------------------------------------------------------
+create_win(GS, Title, TraceWin, Menus) ->
+    Bu = flip(lists:member('Button Area', TraceWin)),
+    Ev = flip(lists:member('Evaluator Area', TraceWin)),
+    Bi = flip(lists:member('Bindings Area', TraceWin)),
+    Tr = flip(lists:member('Trace Area', TraceWin)),
     
-%%% Breaks Menu in the Window. Individual breaks are attached
-%%% To the end of the menu later on, by the application.
+    Win = gs:window(trace_window, GS, [{title, Title},
+				       {width, 550},
+				       {configure, true}, {destroy, true},
+				       {keypress, true}, {motion, true}]),
 
-breaks_menu(MenuBar) ->
-    MenuButtBreaks = gs:menubutton(MenuBar,
-				   [{label, {text, " Breaks "}}, {underline, 1}]),
-    gs:menu('MenuBreaks', MenuButtBreaks, []),
-    gs:menuitem('Normal Break','MenuBreaks',
-		[{label,{text, "Line Break..."}},{underline,0}]),
-    gs:menuitem('Conditional Break','MenuBreaks',
-		[{label,{text, "Conditional Break..."}},
-		 {underline,0}]),    
-    gs:menuitem('Functional Break','MenuBreaks',
-		[{label,{text,"Function Break..."}}, {underline,0}]),
-    gs:menuitem('MenuBreaks',[{itemtype,separator}]),
-    gs:menuitem('Delete All Breaks','MenuBreaks',
-		[{label,{text, "Delete All"}},{underline,0},
-		 {enable,false}]).
-
-%%% Options Menu, telling which frames are to be shown or not.
-
-options_menus(MenuBar) ->
-    MenuButtFrame = gs:menubutton('ShowMenu',MenuBar,
-				  [{label,{text," Options "}}, {underline, 1},
-				   {side,left}]), 
-    MenuTrace = gs:menu(MenuButtFrame, []),
-    gs:menuitem('Buttons Frame',MenuTrace,
-		[{label, {text, "Button Frame"}},{underline,1},
-		 {itemtype, check},
-		 {select,true}]),
-    gs:menuitem('Evaluator Frame',MenuTrace,
-		[{label, {text, "Evaluator Frame"}},{underline, 0},
-		 {itemtype, check},
-		 {select,true}]),
-    gs:menuitem('Bindings Frame',MenuTrace,
-		[{label, {text, "Bindings Frame"}},{underline, 0},
-		 {itemtype, check},
-		 {select,true}]),
-    gs:menuitem('Trace Flag',MenuTrace,
-		[{label, {text, "Trace Frame"}},{underline,0},
-		 {itemtype, check},
-		 {select,true}]),
-    gs:menuitem('Back Trace',MenuTrace,
-		[{label,{text, "Back Trace Size:"}}, {underline, 13}]),
-    StackButt = gs:menuitem('StackMenu',MenuTrace,
-			    [{label,{text,"Stack Options"}},{underline,0},
-			     {itemtype, cascade}]),
-    StackMenu = gs:menu(StackButt,[]),
-    Group = list_to_atom(pid_to_list(self()) ++ "Stack"),
-    gs:menuitem('Stack Tail',StackMenu,
-		[{label,{text,"Stack On, Tail"}}, {underline, 10},
-		 {select,false},
-		 {itemtype, radio},{group,Group},{data,{menu,'Stack Tail'}}]),
-    gs:menuitem('Stack',StackMenu,
-		[{label,{text, "Stack On, no Tail"}},{underline, 10},
-		 {select,false},
-		 {itemtype, radio},{group,Group},{data,{menu,'Stack'}}]),
-    gs:menuitem('Stack Off',StackMenu,
-		[{label,{text, "Stack Off"}},{underline,6},
-		 {select,false},
-		 {itemtype, radio},{group,Group},{data,{menu,'Stack Off'}}]).
-
-
-
-update_backtrace_menu(Size) ->
-    Text = io_lib:format("Back Trace Size: ~p...",[Size]),
-    gs:config('Back Trace',{label,{text,Text}}).
-
-%%% Creation of the Function Frame, where all function traces are
-%%% Printed out.
-
-function_frame(Flag,X,Y,FrameOpts,Win) ->
-    {W,H} = case Flag of
-		open -> {546,200};
-		close -> {0,0}
-	    end,
-    gs:frame('FunctionFrame',Win,
-	     [{x,X},{y,Y},{height,H},{width,W}|FrameOpts]),
-    Editor = gs:editor('FunctionEditor','FunctionFrame',
-		       [{x,5},{y,5},{width, 536},{height, 190},
-			{keypress,false}]),
-    config_editor(Editor,
-		  [{vscroll, right}, {hscroll, bottom},
-		   {wrap,none},{fg,{{{1,0},'end'},black}},
-		   {font_style,{{{1,0},'end'},{screen,[],12}}}]).
-
-%%% Trace Frame, where the code is displayed, along with an information
-%%% Label. This is the only frame which can not be hidden.
-
-trace_frame(X, Y, FrameOpts, Win) ->
-    gs:frame('TraceFrame',Win,
-	     [{x,X},{y,Y},{height,200},{width,546}|FrameOpts]),
-    gs:label(info_window,'TraceFrame',
-	     [{x,5},{y,10},{label,{text,""}},{anchor,nw},
-	      {height,15},{align,w},{width,406}]).
-
-
-
-%%% trace_editor
-%%%
-%%% creates a Gs editor object with the given name in the given Frame.
-%%%
-
-trace_editor (Editor, Mode) ->
-    gs:editor (Editor, 'TraceFrame',
-	       [{x, 5}, {y, 30}, {width, 536}, {height, 165},
-		{keypress, false}, {buttonpress, true}, 
-		{data, {trace_editor, Mode}}]),
-    config_editor (Editor, [{vscroll, right}, {hscroll, bottom}]),
-    config_editor (Editor, [{wrap, none}, {fg, {{{1, 0}, 'end'}, black}},
-			    {font_style, {{{1, 0}, 'end'},{screen, [], 12}}}]).
-
-trace_editor (Mode) ->
-    W = gs:read ('CodeEditor', width),
-    H = gs:read ('CodeEditor', height),
-
-    Editor = gs:editor ('TraceFrame',
-			[{x, 5}, {y, 30}, {width, W}, {height, H},
-			 {keypress, false}, {buttonpress, true}, 
-			 {data, {trace_editor, Mode}}]),
-    config_editor (Editor, [{vscroll, right}, {hscroll, bottom}]),
-    config_editor (Editor, [{wrap, none}, {fg, {{{1, 0}, 'end'}, black}},
-			    {font_style, {{{1, 0}, 'end'},{screen, [], 12}}}]),
-    Editor.
-
-
-
-%%% The Shell Frame allows the user to enter expressions evaluated in
-%%% the context of the process being Traced. It is also used for system
-%%% information.
-
-shell_frame({S,Bi},X,Y,FrameOpts,Win) ->
-     {W,H} = if
-		S==open -> {289,200};
-		true -> {0,0}
-	    end,
-    gs:frame('ShellFrame',Win,
-	     [{x,X},{y,Y},{height,H},{width,W}|FrameOpts]),
-    gs:label('ShellFrame',
-	     [{x,5},{y,35},{label,{text,"Evaluator:"}},{anchor,sw},
-	      {height,25},{align,center},{width,80}]),
-    gs:entry('Shell','ShellFrame',
-	     [{x,80},{y,35},{width,185},{keypress,true},
-	      {anchor,sw},{height,25}]),
-    gs:editor('ShellEditor','ShellFrame',
-		       [{x,5},{y,35},{width, 280},{height, 160},
-			{vscroll, right},{hscroll, bottom},{wrap,none},
-			{fg,{{{1,0},'end'},black}},{keypress,false},
-			{font_style,{{{1,0},'end'},{screen,[],12}}}]),
-    gs:config('ShellEditor',{enable, false}),
-     if
-	S==open,Bi==close ->
-	    resize_shell(S,width,257);
-	true ->
-	    true
-    end.
-
-%%% Frame where bindings are shown.
-
-bind_frame({S,Bi},X,Y,FrameOpts,Win) ->
-     {W,H} = if
-		Bi==open -> {249,200};
-		true -> {0,0}
-	    end,
-    gs:frame('BindFrame',Win,
-	     [{x,X},{y,Y},{height,H},{width,W}|FrameOpts]),
-    BindGridOpts = [{x,2}, {y,2}, {height,193}, {width,241},
-		    {fg,black}, {vscroll,right},
-		    {font,{screen,[bold],12}}, 
-		    {hscroll,bottom},
-		    calc_columnwidths(241), {rows, {1,50}}], 
-
-    gs:grid('BindGrid','BindFrame',BindGridOpts),
-    gs:gridline('BindGrid',
-		[{row,1},{fg,blue},{text,{1,"Name"}},
-		 {text,{2,"Value"}},{height,14}]),
-    gs:config('BindGrid',{rows,{1,1}}),
-    if
-	Bi==open,S==close ->
-	    resize_bind(Bi,width,297);
-	true ->
-	    true
-    end.
-
-%%% Frame for the ones who prefer the mouse to the key accellerators.
-
-button_frame(Bu,X,Y,FrameOpts,Win) ->
-     {W,H} = case Bu of
-		open -> {710,30};
-		close -> {0,0}
-	    end,
-    gs:frame('ButtFrame',Win,
-	     [{x,X},{y,Y},{height,H},{width,W}|FrameOpts]),
-    Buttons = ['Next', 'Step', 'Finish', 'Continue', 'Up', 'Down', 'Where', 'Break'],
-    create_buttons('ButtFrame',Buttons).
-
-
-
-%%% progress_window (Win, String)
-%%% A progress window when loading large files
-
-progress_window (Parent, String) ->
-    W = 300,
-    H = 50,
-
-    %% Open a new window
-    Win = gs:create (window, gs:start (), 
-		     [{x, gs:read (Parent, x) + 50}, 
-		      {y, gs:read (Parent, y) + 50},
-		      {width, W}, {height, H},
-		      {title, "Progress Window"}]),
-
-    %% Top frame containing a label
-    Top = gs:create (frame, Win, [{width, W}, {height, H}, {x, 0}, {y, 0}]),
-    Lbl = gs:create (label, Top, [{width, W}, {height, H}, 
-				  {x, 0}, {y, 0},
-				  {align, c}, {justify, center}]),
-  
-    gs:config (Lbl, {label, {text, String}}),
-    gs:config (Win, {map, true}),
-    Win.
-
-
-
-%%% create_attach_window(Title,view,_) -> {WinId,EditorId}
-%%% Creates a display Window, with the modules menu from the monitor
-%%% window, the File Menu and the Breaks Menu.
-
-create_attach_window(Title, view, _) ->
-    GS = gs:start([{kernel,true}]),
-    Win_Options = [{title,Title},{width,550},{destroy,true},
-		   {height, 400},{motion,true},
-		   {keypress,true}],
-    Win = gs:window(view_window, GS,Win_Options),
     MenuBar = gs:menubar(Win, []),
+    dbg_ui_win:create_menus(MenuBar, Menus),
+    dbg_ui_winman:windows_menu(MenuBar),
 
-% Start of additions made by Fredrik Gustafson
+    FrameOpts = [{anchor,nw}, {relief,raised}, {bw,2}, {keypress,true}],
+    Editor = code_area(2, 25, FrameOpts, Win),
+    button_area(Bu, 2, 235, FrameOpts, Win),
+    eval_area({Ev,Bi}, 2, 265, FrameOpts, Win),
+    bind_area({Ev,Bi}, 300, 265, FrameOpts, Win),
+    trace_area(Tr, 2, 475, FrameOpts, Win),
 
-    help_menu(MenuBar),
-
-% End of additions made by Fredrik Gustafson
-    
-    file_menu(MenuBar),
-    edit_menu(MenuBar),
-    breaks_menu(MenuBar),
-    dbg_ui_winman:windows_menu (MenuBar),
-
-    gs:config(Win, {configure,true}),
-    FrameOpts = [{anchor,nw},{relief,raised}, {bw,2}, {buttonpress, true}],
-    trace_frame(2, 25, FrameOpts, Win),
-    trace_editor ('CodeEditor', view),   % remove ???
-    
-    configure_view(Win,{550,400}),
-    gs:config(Win, [{map, true}]),
-    Win;
-
-%%% create_attach_window(Title, What, Flags) -> {WinId,EditorId}
-%%% Title: String
-%%% What: {trace,Pid}
-%%% Flags: {ButtonFlag,EvalFlag,BindFlag,TraceFlag} Flag=open|close
-%%%        The flags describing the different frame statuses.
-%%% Creates an attach Window with a set of frames showing the environment
-%%% of the traced process.
-
-create_attach_window (Title, What, Flags) ->
-    {Bu,S,Bi,F} = Flags,
-    GS = gs:start([{kernel,true}]),
-    
-    Win_Options=[{title,Title},{width,550},{keypress,true},
-		 {motion,true},{destroy,true}],
-    Win =gs:window(trace_window, GS,Win_Options),
-
-    %%Menus
-    MenuBar = gs:menubar(Win, []),
-
-% Start of additions made by Fredrik Gustafson
-
-    help_menu(MenuBar),
-
-% End of additions made by Fredrik Gustafson
-
-    file_menu(MenuBar),
-    edit_menu(MenuBar),
-    module_menu(MenuBar),
-    process_menu(MenuBar),
-    breaks_menu(MenuBar),
-    options_menus(MenuBar),
-    dbg_ui_winman:windows_menu (MenuBar),
-
-
-    %%Frames
-    if Bu==close -> gs:config('Buttons Frame',{select,false}); true -> t end,
-    if S==close -> gs:config('Evaluator Frame',{select,false}); true -> t end,
-    if Bi==close -> gs:config('Bindings Frame',{select,false}); true -> t end,
-    if F==close -> gs:config('Trace Flag',{select,false}); true -> t end,
-    
-    FrameOpts = [{keypress,true}, {anchor,nw},{relief,raised},{bw,2}],
-    trace_frame(2, 25, FrameOpts, Win),
-    trace_editor ('CodeEditor', trace),   % remove ???
-
-    configure_view(Win,{550,400}),
-
-    button_frame(Bu,2,235,FrameOpts,Win),
-    resize_button(Bu,width,-164),
-    shell_frame({S,Bi},2,265,FrameOpts,Win),
-    bind_frame({S,Bi},300,265,FrameOpts,Win),
-    function_frame(F,2,475,FrameOpts,Win),
-
-    %%Resize Bars
-    resizebar(rb1(Flags),'RB1',2,225,710,10,Win),
-    resizebar(rb2(Flags),'RB2',2,465,710,10,Win),
-    resizebar(rb3(Flags),'RB3',290,265,10,200,Win),
+    Flags = {Bu, Ev, Bi, Tr},
+    resizebar(rb1(Flags), 'RB1',   2, 225, 710,  10, Win),
+    resizebar(rb2(Flags), 'RB2',   2, 465, 710,  10, Win),
+    resizebar(rb3(Flags), 'RB3', 290, 265,  10, 200, Win),
     config_v(),
     config_h(),
     
     gs:config(Win,{height,
 		   25 +
-		   gs:read('TraceFrame',height) +
-		   gs:read('RB1',height) +
-		   gs:read('ButtFrame',height) +
-		   max(gs:read('ShellFrame',height),
-		       gs:read('BindFrame',height)) +
-		   gs:read('RB2',height) +
-		   gs:read('FunctionFrame',height)}),
+		   gs:read('CodeArea', height) +
+		   gs:read('RB1', height) +
+		   gs:read('ButtonArea', height) +
+		   max(gs:read('EvalArea', height),
+		       gs:read('BindArea', height)) +
+		   gs:read('RB2', height) +
+		   gs:read('TraceArea', height)}),
     
-    gs:config(Win, [{map, true}]),
-    gs:config(Win, [{configure,true}]),
-    Win.
+    gs:config(Win, {map, true}),
+    #winInfo{window=Win, size={gs:read(Win, width), gs:read(Win, height)},
+	     flags=Flags,
+	     editor={'$top', Editor}, editors=[{'$top', Editor}]}.
 
-%%% update_bindings(Bindings).
-%%% Bindings: [{'Name',Value}|..]
-%%% Updates all the bindings shown in the Grid in the Bind Frame.
-%%% If there aren't enough rows, new ones are created, and if there
-%%% are too many, the scroll bars are adapted so that they are not
-%%% visible.
+flip(true) -> open;
+flip(false) -> close.
+    
+%%--------------------------------------------------------------------
+%% get_window(WinInfo) -> Window
+%%   WinInfo = #winInfo{}
+%%   Window = gsobj()
+%%--------------------------------------------------------------------
+get_window(WinInfo) ->
+    WinInfo#winInfo.window.
 
-update_bindings(Bindings) when list(Bindings)->
-    Rows = length(Bindings) + 1,
-    gs:config('BindGrid',{rows,{1,length(Bindings)+1}}),
-    update('BindGrid',Bindings,2).
+%%--------------------------------------------------------------------
+%% configure(WinInfo, TraceWin) -> WinInfo
+%%   WinInfo = #winInfo{}
+%%  TraceWin = [WinArea]
+%%    WinArea = 'Button|Evaluator|Bindings|Trace Area'
+%% Window areas should be opened or closed.
+%%--------------------------------------------------------------------
+configure(WinInfo, TraceWin) ->
+    {Bu1, Ev1, Bi1, Tr1} = OldFlags = WinInfo#winInfo.flags,
+    Bu2 = flip(lists:member('Button Area', TraceWin)),
+    Ev2 = flip(lists:member('Evaluator Area', TraceWin)),
+    Bi2 = flip(lists:member('Bindings Area', TraceWin)),
+    Tr2 = flip(lists:member('Trace Area', TraceWin)),
+    NewFlags = {Bu2, Ev2, Bi2, Tr2},
 
-update(Grid,[{Name,Val}|Rest],Row) ->
-    Opts = [{text,{1,atom_to_list(Name)}},
-	    {text,{2,io_lib:format("~P",[Val,4])}},
-	    {doubleclick, true},
-	    {data,{print,{Name,Val}}}],
-    case gs:read(Grid, {obj_at_row, Row}) of
-	undefined ->
-	    gs:gridline(Grid,[{row, Row},{height,14}|Opts]);
-	GridLine ->
-	    gs:config(GridLine,Opts)
+    Win = WinInfo#winInfo.window,
+    W = gs:read(Win, width),
+    H = gs:read(Win, height),
+
+    H2 = if
+	     Bu1==close, Bu2==open ->
+		 resize_button_area(open, width, W-4),
+		 gs:config('ButtonArea', {height, 30}),
+		 H+30;
+	     Bu1==open, Bu2==close ->
+		 gs:config('ButtonArea', [{width, 0}, {height, 0}]),
+		 H-30;
+	     true -> H
+	 end,
+    H3 = if
+	     Ev1==close, Ev2==open, Bi1==open ->
+		 Wnew1 = round((W-10-4)/2), % W = window/2 - rb - pads
+		 Hbi1 = gs:read('BindArea', height), % H = bind area height
+		 resize_eval_area(open, width, Wnew1),
+		 resize_eval_area(open, height, Hbi1),
+		 gs:config('RB3', {width, 10}),
+		 gs:config('RB3', {height, Hbi1}),
+		 resize_bind_area(open, width,
+				  Wnew1-gs:read('BindArea', width)),
+		 H2;
+	     Ev1==close, Ev2==open, Bi1==close ->
+		 resize_eval_area(open, width, W-4),
+		 resize_eval_area(open, height, 200),
+		 H2+200;
+	     Ev1==open, Ev2==close, Bi1==open ->
+		 gs:config('EvalArea', [{width,0}, {height,0}]),
+		 gs:config('RB3', [{width, 0}, {height, 0}]),
+		 Wnew2 = W-4,
+		 resize_bind_area(open, width,
+				  Wnew2-gs:read('BindArea', width)),
+		 H2;
+	     Ev1==open, Ev2==close, Bi1==close ->
+		 Hs1 = gs:read('EvalArea', height),
+		 gs:config('EvalArea', [{width, 0}, {height, 0}]),
+		 H2-Hs1;
+	     true -> H2
+	 end,
+    H4 = if
+	     Bi1==close, Bi2==open, Ev2==open ->
+		 Wnew3 = round((W-10-4)/2), % W = window/2 - rb - pads
+		 Hs2 = gs:read('EvalArea', height), % H = eval area height
+		 resize_bind_area(open, width, Wnew3),
+		 resize_bind_area(open, height, Hs2),
+		 gs:config('RB3', [{width,10},{height,Hs2}]),
+		 resize_eval_area(open, width,
+				  Wnew3-gs:read('EvalArea', width)),
+		 H3;
+	     Bi1==close, Bi2==open, Ev2==close ->
+		 resize_bind_area(open, width, W-4),
+		 resize_bind_area(open, height, 200),
+		 H3+200;
+	     Bi1==open, Bi2==close, Ev2==open ->
+		 gs:config('BindArea', [{width, 0}, {height, 0}]),
+		 gs:config('RB3', [{width, 0}, {height, 0}]),
+		 Wnew4 = W-4,
+		 resize_eval_area(open, width,
+				  Wnew4-gs:read('EvalArea', width)),
+		 H3;
+	     Bi1==open, Bi2==close, Ev2==close ->
+		 Hbi2 = gs:read('BindArea', height),
+		 gs:config('BindArea', [{width, 0}, {height, 0}]),
+		 H3-Hbi2;
+	     true -> H3
+	 end,
+    H5 = if
+	     Tr1==close, Tr2==open ->
+		 resize_trace_area(open, width, W-4),
+		 resize_trace_area(open, height, 200),
+		 H4+200;
+	     Tr1==open, Tr2==close ->
+		 Hf = gs:read('TraceArea', height),
+		 gs:config('TraceArea', [{width, 0}, {height, 0}]),
+		 H4-Hf;
+	     true -> H4
+	 end,
+    gs:config(Win, {height, H5}),
+
+    RB1old = rb1(OldFlags), RB1new = rb1(NewFlags),
+    if
+	RB1old==close, RB1new==open ->
+	    gs:config('RB1', [{width, W-4}, {height, 10}]),
+	    gs:config(Win, {height, gs:read(Win, height)+10});
+	RB1old==open, RB1new==close ->
+	    gs:config('RB1', [{width, 0}, {height, 0}, lower]),
+	    gs:config(Win, {height, gs:read(Win, height)-10});
+	true -> ignore
     end,
-    update(Grid, Rest, Row+1);
-update(Grid, [], Row) ->
-    delete_items(Grid, Row).
 
-%%% Remove any text from the old lines which have not been reused.
+    RB2old = rb2(OldFlags), RB2new = rb2(NewFlags),
+    if
+	RB2old==close, RB2new==open ->
+	    gs:config('RB2', [{width, W-4}, {height, 10}]),
+	    gs:config(Win, {height,gs:read(Win, height)+10});
+	RB2old==open, RB2new==close ->		
+	    gs:config('RB2', [{width, 0}, {height, 0}, lower]),
+	    gs:config(Win, {height, gs:read(Win, height)-10});
+	true -> ignore
+    end,
+    config_v(),
+    config_h(),
 
-delete_items(Grid, Row) -> 
-    case gs:read(Grid, {obj_at_row, Row}) of
-	undefined ->
-	    ok;
-	GridLine ->
-	    gs:destroy(GridLine),
-	    delete_items(Grid, Row+1)
+    flush_configure(),
+    
+    WinInfo#winInfo{size={gs:read(Win, width), gs:read(Win, height)},
+		    flags=NewFlags}.
+
+flush_configure() ->
+    receive
+	{gs, _Id, configure, _Data, Arg} ->
+	    flush_configure()
+    after 100 ->
+	    true
     end.
 
-%%% calc_columnwidths(Width) -> {columnwdths,[NameWidth,ValueWidth]}
-%%% Width: The Size of the Grid.
-%%% Given the new width of a grid, calculates two proportional
-%%% column widths. There is a catch however. If the grid is too
-%%% small, a default minimum size is returned.
+%%--------------------------------------------------------------------
+%% enable([MenuItem], Bool)
+%% is_enabled(MenuItem) -> Bool
+%%   MenuItem = atom()
+%%   Bool = boolean()
+%%--------------------------------------------------------------------
+enable(MenuItems, Bool) ->
+    lists:foreach(fun(MenuItem) ->
+			  gs:config(MenuItem, {enable, Bool}),
+			  case is_button(MenuItem) of
+			      {true, Button} ->
+				  gs:config(Button, {enable, Bool});
+			      false -> ignore
+			  end
+		  end,
+		  MenuItems).
+
+is_enabled(MenuItem) ->
+    gs:read(MenuItem, enable).
+
+%%--------------------------------------------------------------------
+%% select(MenuItem, Bool)
+%%   MenuItem = atom()
+%%   Bool = boolean()
+%%--------------------------------------------------------------------
+select(MenuItem, Bool) ->
+    dbg_ui_win:select(MenuItem, Bool).
+
+%%--------------------------------------------------------------------
+%% add_break(WinInfo, Name, {Point, Options}) -> WinInfo
+%%   WinInfo = #winInfo{}
+%%   Name = atom() Menu name
+%%   Point = {Mod, Line}
+%%   Options = [Status, Action, Mods, Cond]
+%%     Status = active | inactive
+%%     Action = enable | disable | delete
+%%     Mods = null (not used)
+%%     Cond = null | {Mod, Func}
+%%--------------------------------------------------------------------
+add_break(WinInfo, Menu, {{Mod,Line},[Status|_Options]}=Break) ->
+    case lists:keysearch(Mod, 1, WinInfo#winInfo.editors) of
+	{value, {Mod, Editor}} -> add_break_to_code(Editor, Line, Status);
+	false -> ignore
+    end,
+    add_break_to_menu(WinInfo, Menu, Break).
+
+add_break_to_code(Editor, Line, Status) ->
+    Color = if Status==active -> red; Status==inactive -> blue end,
+    config_editor(Editor, [{overwrite,{{Line,0},"-@-  "}},
+			   {fg,{{{Line,0},{Line,lineend}}, Color}}]).
+
+add_break_to_menu(WinInfo, Menu, {Point, [Status|_Options]=Options}) ->
+    Break = dbg_ui_win:add_break(Menu, Point),
+    dbg_ui_win:update_break(Break, Options),
+    BreakInfo = #breakInfo{point=Point, status=Status, break=Break},
+    WinInfo#winInfo{breaks=[BreakInfo|WinInfo#winInfo.breaks]}.
+
+%%--------------------------------------------------------------------
+%% update_break(WinInfo, {Point, Options}) -> WinInfo
+%%   WinInfo = #winInfo{}
+%%   Point = {Mod, Line}
+%%   Options = [Status, Action, Mods, Cond]
+%%     Status = active | inactive
+%%     Action = enable | disable | delete
+%%     Mods = null (not used)
+%%     Cond = null | {Mod, Func}
+%%--------------------------------------------------------------------
+update_break(WinInfo, {{Mod,Line},[Status|_Options]}=Break) ->
+    case lists:keysearch(Mod, 1, WinInfo#winInfo.editors) of
+	{value, {Mod, Editor}} -> add_break_to_code(Editor, Line, Status);
+	false -> ignore
+    end,
+    update_break_in_menu(WinInfo, Break).
+
+update_break_in_menu(WinInfo, {Point, [Status|_Options]=Options}) ->
+    {value, BreakInfo} = lists:keysearch(Point, #breakInfo.point,
+					 WinInfo#winInfo.breaks),
+    dbg_ui_win:update_break(BreakInfo#breakInfo.break, Options),
+    BreakInfo2 = BreakInfo#breakInfo{status=Status},
+    WinInfo#winInfo{breaks=lists:keyreplace(Point, #breakInfo.point,
+					    WinInfo#winInfo.breaks,
+					    BreakInfo2)}.
+
+%%--------------------------------------------------------------------
+%% delete_break(WinInfo, Point) -> WinInfo
+%%   WinInfo = #winInfo{}
+%%   Point = {Mod, Line}
+%%--------------------------------------------------------------------
+delete_break(WinInfo, {Mod,Line}=Point) ->
+    case lists:keysearch(Mod, 1, WinInfo#winInfo.editors) of
+	{value, {Mod, Editor}} -> delete_break_from_code(Editor, Line);
+	false -> ignore
+    end,
+    delete_break_from_menu(WinInfo, Point).
+
+delete_break_from_code(Editor, Line) ->
+    Prefix = string:substr(integer_to_list(Line)++":   ", 1, 5),
+    config_editor(Editor, [{overwrite,{{Line,0},Prefix}},
+			   {fg,{{{Line,0},{Line,lineend}}, black}}]).
+
+delete_break_from_menu(WinInfo, Point) ->
+    {value, BreakInfo} = lists:keysearch(Point, #breakInfo.point,
+					 WinInfo#winInfo.breaks),
+    dbg_ui_win:delete_break(BreakInfo#breakInfo.break),
+    WinInfo#winInfo{breaks=lists:keydelete(Point, #breakInfo.point,
+					   WinInfo#winInfo.breaks)}.
+
+%%--------------------------------------------------------------------
+%% clear_breaks(WinInfo) -> WinInfo
+%% clear_breaks(WinInfo, Mod) -> WinInfo
+%%   WinInfo = #winInfo{}
+%%--------------------------------------------------------------------
+clear_breaks(WinInfo) ->
+    clear_breaks(WinInfo, all).
+clear_breaks(WinInfo, Mod) ->
+    Remove = if
+		 Mod==all -> WinInfo#winInfo.breaks;
+		 true ->
+		     lists:filter(fun(#breakInfo{point={Mod2,_L}}) ->
+					  if
+					      Mod2==Mod -> true;
+					      true -> false
+					  end
+				  end,
+				  WinInfo#winInfo.breaks)
+	     end,
+    lists:foreach(fun(#breakInfo{point=Point}) ->
+			  delete_break(WinInfo, Point)
+		  end,
+		  Remove),
+    Remain = WinInfo#winInfo.breaks -- Remove,
+    WinInfo#winInfo{breaks=Remain}.
+
+%%--------------------------------------------------------------------
+%% display(Arg)
+%%   Arg = {exit,Mod,Line,Reason} | {exit,Reason} | {text,Text} | idle
+%%       | {Status,Mod,Line} | {Status,Mod}
+%%     Mod = atom()
+%%     Line = integer()
+%%     Reason = term()
+%%     Text = string()
+%%     Status = break | running | wait_at
+%%--------------------------------------------------------------------
+display(Arg) ->
+    Str = case Arg of
+	      {exit, Mod, Line, Reason} ->
+		  gs:config(trace_window, raise),
+		  io_lib:format("State: EXITED [~w.erl/~w], Reason:~w",
+				[Mod, Line, Reason]);
+	      {exit, Reason} ->
+		  gs:config(trace_window, raise),
+		  io_lib:format("State: EXITED [uninterpreted], Reason:~w",
+				[Reason]);
+	      {text, Text}  -> Text;
+	      idle -> "State: uninterpreted";
+	      {Level, Mod, Line} when integer(Level) ->
+		  io_lib:format("*** Call level #~w [~w.erl/~w]",
+				[Level, Mod, Line]);
+	      {Status, Mod, Line} ->
+		  What = case Status of
+			     wait -> 'receive';
+			     _ -> Status
+			 end,
+		  io_lib:format("State: ~w [~w.erl/~w]", [What, Mod, Line]);
+	      {Status, Mod} ->
+		  io_lib:format("State: ~w [~w.erl]", [Status, Mod])
+	  end,
+    gs:config(info_window, {label,{text,lists:flatten(Str)}}).
+
+%%--------------------------------------------------------------------
+%% is_shown(WinInfo, Mod) -> {true, WinInfo} | false
+%% show_code(WinInfo, Mod, Contents) -> WinInfo
+%% show_no_code(WinInfo) -> WinInfo
+%% remove_code(WinInfo, Mod) -> WinInfo
+%%   WinInfo = #winInfo{}
+%%   Mod = atom()
+%%   Contents = string()
+%% Note: remove_code/2 should not be used for currently shown module.
+%%--------------------------------------------------------------------
+is_shown(WinInfo, Mod) ->
+    case lists:keysearch(Mod, 1, WinInfo#winInfo.editors) of
+	{value, {Mod, Editor}} ->
+	    gs:config(Editor, raise),
+	    {true, WinInfo#winInfo{editor={Mod, Editor}}};
+	false -> false
+    end.
+
+show_code(WinInfo, Mod, Contents) ->
+    Editors = WinInfo#winInfo.editors,
+    {Flag, Editor} = case lists:keysearch(Mod, 1, Editors) of
+			 {value, {Mod, Ed}} -> {existing, Ed};
+			 false -> {new, code_editor()}
+		     end,
+
+    %% Insert code and update breakpoints, if any
+    config_editor(Editor, [raise, clear]),
+    show_code(Editor, Contents),
+    lists:foreach(fun(BreakInfo) ->
+			  case BreakInfo#breakInfo.point of
+			      {Mod2, Line} when Mod2==Mod ->
+				  Status = BreakInfo#breakInfo.status,
+				  add_break_to_code(Editor, Line, Status);
+			      _Point -> ignore
+			  end
+		  end,
+		  WinInfo#winInfo.breaks),
+
+    case Flag of
+	existing ->
+	    WinInfo#winInfo{editor={Mod, Editor}};
+	new ->
+	    WinInfo#winInfo{editor={Mod, Editor},
+			    editors=[{Mod, Editor} | Editors]}
+    end.
+	
+show_code(Editor, Text) when length(Text)>1500 ->
+    %% Add some text at a time so that other processes may get scheduled in
+    Str = string:sub_string(Text, 1, 1500),
+    config_editor(Editor, {insert,{'end', Str}}),
+    show_code(Editor, string:sub_string(Text, 1501));
+show_code(Editor, Text) ->
+    config_editor(Editor, {insert,{'end',Text}}).
+
+show_no_code(WinInfo) ->
+    {value, {'$top', Editor}} =
+	lists:keysearch('$top', 1, WinInfo#winInfo.editors),
+    gs:config(Editor, raise),
+    WinInfo#winInfo{editor={'$top', Editor}}.
+
+remove_code(WinInfo, Mod) ->
+    Editors = WinInfo#winInfo.editors,
+    case lists:keysearch(Mod, 1, Editors) of
+	{value, {Mod, Editor}} ->
+	    gs:destroy(Editor),
+	    WinInfo#winInfo{editors=lists:keydelete(Mod, 1, Editors)};
+	false ->
+	    WinInfo
+    end.
+    
+
+%%--------------------------------------------------------------------
+%% mark_line(WinInfo, Line, How) -> WinInfo
+%%   WinInfo = #winInfo{}
+%%   Line = integer()
+%%   How = break | where
+%% Mark the code line where the process is executing.
+%%--------------------------------------------------------------------
+mark_line(WinInfo, Line, How) ->
+    {_Mod, Editor} = WinInfo#winInfo.editor,
+    mark_line2(Editor, WinInfo#winInfo.marked_line, false),
+    mark_line2(Editor, Line, How),
+    if
+	Line/=0 -> config_editor(Editor, {vscrollpos, Line-5});
+	true -> ignore
+    end,
+    WinInfo#winInfo{marked_line=Line}.
+
+unmark_line(WinInfo) ->
+    mark_line(WinInfo, 0, false).
+
+mark_line2(Editor, Line, How) ->
+    Prefix = case How of
+		 break -> "-->";
+		 where -> ">>>";
+		 false -> "   "
+	     end,
+    Style = if
+		How==false -> {screen, [], 12};
+		true -> {screen, [bold], 12}
+	    end,
+    config_editor(Editor, [{overwrite, {{Line,5}, Prefix}},
+			   {font_style, {{{Line,0},{Line,lineend}},Style}}]).
+
+%%--------------------------------------------------------------------
+%% select_line(WinInfo, Line) -> WinInfo
+%% selected_line(WinInfo) -> undefined | Line
+%%   WinInfo = #winInfo{}
+%%   Line = integer()
+%% Select/unselect a line (unselect if Line=0).
+%%--------------------------------------------------------------------
+select_line(WinInfo, Line) ->
+    {_Mod, Editor} = WinInfo#winInfo.editor,
+
+    %% Since 'Line' may be specified by the user in the 'Go To Line'
+    %% help window, it must be checked that it is correct
+    Size = gs:read(Editor, size),
+    if
+	Line==0 ->
+	    select_line(Editor, WinInfo#winInfo.selected_line, false),
+	    WinInfo#winInfo{selected_line=0};
+	Line<Size ->
+	    select_line(Editor, Line, true),
+	    config_editor(Editor, {vscrollpos, Line-5}),
+	    WinInfo#winInfo{selected_line=Line};
+	true ->
+	    WinInfo
+    end.
+
+select_line(Editor, Line, true) ->
+    config_editor(Editor, {selection, {{Line,0}, {Line,lineend}}});
+select_line(Editor, Line, false) ->
+    config_editor(Editor, {selection, {{1,0}, {1,0}}}).
+
+selected_line(WinInfo) ->
+    case WinInfo#winInfo.selected_line of
+	0 -> undefined;
+	Line -> Line
+    end.
+
+%%--------------------------------------------------------------------
+%% eval_output(Str, Face)
+%%   Str = string()
+%%   Face = normal | bold
+%%--------------------------------------------------------------------
+eval_output(Text, Face) ->
+    Y1 = gs:read('EvalEditor', size),
+    config_editor('EvalEditor', {insert,{'end',Text}}),
+    Y2 = gs:read('EvalEditor', size),
+    Type = if Face==normal -> []; Face==bold -> [bold] end,
+    config_editor('EvalEditor',
+		  [{font_style,{{{Y1,0},{Y2,lineend}},{screen,Type,12}}},
+		   {vscrollpos,Y2}]).
+
+%%--------------------------------------------------------------------
+%% update_bindings(Bs)
+%%   Bs = [{Var,Val}]
+%%--------------------------------------------------------------------
+update_bindings(Bs) ->
+    gs:config('BindGrid', {rows, {1,length(Bs)+1}}),
+    Last = lists:foldl(fun({Var, Val}, Row) ->
+			       Opts = [{text, {1,atom_to_list(Var)}},
+				       {text, {2,io_lib:format("~P",
+							       [Val, 4])}},
+				       {doubleclick, true},
+				       {data, {binding,{Var,Val}}}],
+			       case gs:read('BindGrid',{obj_at_row,Row}) of
+				   undefined ->
+				       gs:gridline('BindGrid',
+						   [{row, Row},
+						    {height,14} | Opts]);
+				   GridLine ->
+				       gs:config(GridLine, Opts)
+			       end,
+			       Row+1
+		       end,
+		       2,
+		       Bs),
+    delete_gridlines(Last).
+
+delete_gridlines(Row) -> 
+    case gs:read('BindGrid', {obj_at_row, Row}) of
+	undefined -> true;
+	GridLine ->
+	    gs:destroy(GridLine),
+	    delete_gridlines(Row+1)
+    end.
+
+%%--------------------------------------------------------------------
+%% trace_output(Str)
+%%   Str = string()
+%%--------------------------------------------------------------------
+trace_output(Str) ->
+    config_editor('TraceEditor',
+		  [{insert, {'end',Str}},
+		   {fg, {{{1,0},'end'},black}},
+		   {font_style, {{{1,0},'end'},{screen,[],12}}}]),
+    Max = gs:read('TraceEditor', size),
+    config_editor('TraceEditor', {vscrollpos, Max}).
+    
+%%--------------------------------------------------------------------
+%% handle_event(GSEvent, WinInfo) -> Command
+%%   GSEvent = {gs, Id, Event, Data, Arg}
+%%   WinInfo = #winInfo{}
+%%   Command = ignore
+%%           | {win, WinInfo}
+%%           | stopped
+%%           | {coords, {X,Y}}
+%%
+%%           | {shortcut, Key}
+%%           | MenuItem | {Menu, [MenuItem]}
+%%               MenuItem = Menu = atom()
+%%           | {break, Point, What}
+%%               What = add | delete | {status,Status} | {trigger,Trigger}
+%%           | {module, Mod, view}
+%%
+%%           | {user_command, Cmd}
+%%
+%%           | {edit, {Var, Val}}
+%%--------------------------------------------------------------------
+%% Window events
+handle_event({gs, _Id, configure, _Data, [W, H|_]}, WinInfo) ->
+    case WinInfo#winInfo.size of
+	{W, H} -> ignore;
+	_Size ->
+	    configure(WinInfo, W, H),
+	    {win, WinInfo#winInfo{size={W, H}}}
+    end;
+handle_event({gs, _Id, destroy, _Data, _Arg}, WinInfo) ->
+    stopped;
+handle_event({gs, _Id, motion, _Data, [X,Y]}, WinInfo) ->
+    {LastX, LastY} = dbg_ui_win:motion(X, Y),
+    Win = WinInfo#winInfo.window,
+    {coords, {gs:read(Win, x)+LastX-5, gs:read(Win, y)+LastY-5}};
+handle_event({gs, RB, buttonpress, resizebar, _Arg}, WinInfo) ->
+    resize(WinInfo, RB), % Resize window contents
+    ignore;
+
+%% Menus, buttons and keyboard shortcuts
+handle_event({gs, _Id, keypress, _Data, [Key,_,_,1]}, WinInfo) ->
+    {shortcut, Key};
+handle_event({gs, _Id, click, {dbg_ui_winman, Win}, _Arg}, WinInfo) ->
+    dbg_ui_winman:raise(Win),
+    ignore;
+handle_event({gs, _Id, click, {menuitem, Name}, _Arg}, WinInfo) ->
+    Name;
+handle_event({gs, _Id, click, {menu, Menu}, _Arg}, WinInfo) ->
+    Names = dbg_ui_win:selected(Menu),
+    {Menu, Names};
+handle_event({gs, _Id, click, {break, Point, What}, _Arg}, WinInfo) ->
+    {break, Point, What};
+handle_event({gs, _Id, click, {module, Mod, view}, _Arg}, WinInfo) ->
+    {module, Mod, view};
+
+%% Code area
+handle_event({gs, Editor, buttonpress, code_editor, _Arg}, WinInfo) ->
+    {Row, Col} = gs:read(Editor, insertpos),
+    Again = receive
+		{gs, Editor, buttonpress, code_editor, _} ->
+		    gs:read(Editor, insertpos)
+	    after 500 ->
+		    false
+	    end,
+    case Again of
+	{Row, _} ->
+	    {Mod, _Editor} = WinInfo#winInfo.editor,
+	    Point = {Mod, Row},
+	    case lists:keysearch(Point, #breakInfo.point,
+				 WinInfo#winInfo.breaks) of
+		{value, _BreakInfo} -> {break, Point, delete};
+		false -> {break, Point, add}
+	    end;
+	{Row2, _} ->
+	    select_line(Editor, Row2, true),
+	    {win, WinInfo#winInfo{selected_line=Row2}};
+	false ->
+	    select_line(Editor, Row, true),
+	    {win, WinInfo#winInfo{selected_line=Row}}
+    end;
+
+%% Button area
+handle_event({gs, _Id, click, {button, Name}, _Arg}, WinInfo) ->
+    Name;
+
+%% Evaluator area
+handle_event({gs, 'EvalEntry', keypress, _Data, ['Return'|_]}, WinInfo) ->
+    Command = case gs:read('EvalEntry', text) of
+		  [10] ->
+		      eval_output("\n", normal),
+		      ignore;
+		  Cmd ->
+		      eval_output([$>, Cmd, 10], normal),
+		      {user_command, Cmd}
+	      end,
+    gs:config('EvalEntry', [{text,""}, {focus,false}]),
+    Command;
+
+%% Bindings area
+handle_event({gs, _Id, click, {binding, {Var, Val}}, _Arg}, WinInfo) ->
+    Str = io_lib:format("< ~p = ~p~n", [Var, Val]),
+    eval_output(Str, bold),
+    ignore;
+handle_event({gs, _Id, doubleclick, {binding, B}, _Arg}, WinInfo) ->
+    {edit, B};
+
+handle_event(GSEvent, WinInfo) ->
+    ignore.
+
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+%%--Code Area---------------------------------------------------------
+
+code_area(X, Y, FrameOpts, Win) ->
+    gs:frame('CodeArea', Win,
+	     [{x,X}, {y,Y}, {width,546}, {height,400} | FrameOpts]),
+    gs:label(info_window, 'CodeArea',
+	     [{label,{text,""}}, {x,5}, {y,10}, {width,406}, {height,15},
+	      {anchor,nw}, {align,w}]),
+    code_editor('CodeEditor', 536, 365).
+
+code_editor() ->
+    W = gs:read('CodeEditor', width),
+    H = gs:read('CodeEditor', height),
+    code_editor(null, W, H).
+
+code_editor(Name, W, H) ->
+    Editor = if
+		 Name==null -> gs:editor('CodeArea', []);
+		 true -> gs:editor(Name, 'CodeArea', [])
+	     end,
+    gs:config(Editor, [{x,5}, {y,30}, {width,W}, {height,H},
+		       {keypress,false}, {buttonpress,true}, 
+		       {data,code_editor}]),
+    config_editor(Editor, [{vscroll,right}, {hscroll,bottom}]),
+    config_editor(Editor, [{wrap,none}, {fg,{{{1,0},'end'},black}},
+			   {font_style,{{{1,0},'end'},{screen,[],12}}}]),
+    Editor.
+
+resize_code_area(WinInfo, Key, Diff) ->
+    gs:config('CodeArea', {Key,gs:read('CodeArea', Key)+Diff}),
+    case Key of
+	width ->
+	    gs:config(info_window, {Key,gs:read(info_window,Key)+Diff});
+	height -> ignore
+    end,
+
+    %% Resize all code editors
+    Value = gs:read('CodeEditor', Key)+Diff,
+    gs:config('CodeEditor', {Key,Value}),
+    Editors = WinInfo#winInfo.editors,
+    lists:foreach(fun({_Mod, Editor}) ->
+			  gs:config(Editor, {Key,Value})
+		  end,
+		  Editors).
+
+%%--Button Area-------------------------------------------------------
+
+buttons() ->
+    [{'Step','StepButton'}, {'Next','NextButton'},
+     {'Continue','ContinueButton'}, {'Finish','FinishButton'},
+     {'Where','WhereButton'}, {'Up','UpButton'}, {'Down','DownButton'}].
+
+is_button(Name) ->
+    case lists:keysearch(Name, 1, buttons()) of
+	{value, {Name, Button}} -> {true, Button};
+	false -> false
+    end.
+
+button_area(Bu, X, Y, FrameOpts, Win) ->
+    {W,H} = case Bu of
+		open -> {546,30};
+		close -> {0,0}
+	    end,
+    gs:frame('ButtonArea', Win,
+	     [{x,X}, {y,Y}, {width,W}, {height,H} | FrameOpts]),
+    lists:foldl(fun({Name, Button}, Xb) ->
+			gs:button(Button, 'ButtonArea',
+				  [{label, {text,Name}},
+				   {x, Xb}, {y, 1},
+				   {width, 77}, {height, 24},
+				   {data, {button,Name}}]),
+			Xb+78
+		end,
+		1,
+		buttons()).
+
+resize_button_area(close, width, Diff) ->
+    ignore;
+resize_button_area(open, width, Diff) ->
+    gs:config('ButtonArea', {width, gs:read('ButtonArea', width)+Diff}).
+
+%%--Evaluator Area----------------------------------------------------    
+
+eval_area({Ev,Bi}, X, Y, FrameOpts, Win) ->
+    {W,H} = if
+		Ev==open -> {289,200};
+		true -> {0,0}
+	    end,
+    gs:frame('EvalArea', Win,
+	     [{x,X}, {y,Y}, {width,W}, {height,H} | FrameOpts]),
+    gs:label('EvalArea',
+	     [{label,{text,"Evaluator:"}},
+	      {x,5}, {y,35}, {width,80}, {height,25},
+	      {anchor,sw}, {align,center}]),
+    gs:entry('EvalEntry', 'EvalArea',
+	     [{x,80}, {y,35}, {width,185}, {height,25},
+	      {anchor,sw}, {keypress,true}]),
+    gs:editor('EvalEditor', 'EvalArea',
+	      [{x,5}, {y,35}, {width, 280}, {height, 160},
+	       {keypress,false},
+	       {vscroll,right}, {hscroll,bottom},
+	       {wrap,none}, {fg,{{{1,0},'end'},black}},
+	       {font_style,{{{1,0},'end'},{screen,[],12}}}]),
+    gs:config('EvalEditor', {enable, false}),
+    if
+	Ev==open, Bi==close -> resize_eval_area(Ev, width, 257);
+	true -> ignore
+    end.
+
+resize_eval_area(close, Key, Diff) ->
+    ignore;
+resize_eval_area(open, Key, Diff) ->
+    New = gs:read('EvalArea', Key)+Diff,
+    gs:config('EvalArea', {Key,New}),
+    case Key of
+	width ->
+	    gs:config('EvalEntry', {width,New-104}),
+	    gs:config('EvalEditor', {width,New-9});
+	height ->
+	    gs:config('EvalEditor', {height,New-40})
+    end.
+
+%%--Bindings Area-----------------------------------------------------
+
+bind_area({Ev,Bi}, X, Y, FrameOpts, Win) ->
+    {W,H} = if
+		Bi==open -> {249,200};
+		true -> {0,0}
+	    end,
+    gs:frame('BindArea', Win,
+	     [{x,X}, {y,Y}, {width,W}, {height,H} | FrameOpts]),
+
+    gs:grid('BindGrid', 'BindArea',
+	    [{x,2}, {y,2}, {height,193}, {width,241},
+	     {fg,black}, {vscroll,right}, {hscroll,bottom},
+	     {font,{screen,[bold],12}}, 
+	     calc_columnwidths(241), {rows, {1,50}}]), 
+    gs:gridline('BindGrid',
+		[{row,1}, {height,14}, {fg,blue},
+		 {text,{1,"Name"}}, {text,{2,"Value"}}]),
+    gs:config('BindGrid', {rows,{1,1}}),
+    if
+	Bi==open, Ev==close -> resize_bind_area(Bi, width, 297);
+	true -> ignore
+    end.
+
+resize_bind_area(close, Key, Diff) ->
+    ignore;
+resize_bind_area(open, Key, Diff) ->
+    New = gs:read('BindArea', Key)+Diff,
+    gs:config('BindArea', {Key,New}),
+    case Key of
+	width ->
+	    gs:config('BindGrid', {width,New-8}),
+	    Cols = calc_columnwidths(New-8),
+	    gs:config('BindGrid', Cols);
+	height ->
+	    gs:config('BindGrid', {height,New-7})
+    end.
 
 calc_columnwidths(Width) ->    
     if Width =< 291 -> 
@@ -522,659 +910,179 @@ calc_columnwidths(Width) ->
 	    {columnwidths,[round(90*S),round(198*S)]}
     end.
 
-%%% create_buttons(Daddy,Names).
-%%% Daddy: The Id For the Frame or Window the buttons are to be placed in.
-%%% Names: A list of names and Ids (Name==Id) for the buttons.
-%%% Create the Buttons for the Button Frame.
+%%--Trace Area--------------------------------------------------------
 
-create_buttons(Daddy,Names) ->
-    create_buttons(Daddy,Names,0).
+trace_area(Tr, X, Y, FrameOpts, Win) ->
+    {W,H} = case Tr of
+		open -> {546,200};
+		close -> {0,0}
+	    end,
+    gs:frame('TraceArea', Win,
+	     [{x,X}, {y,Y}, {width,W}, {height,H} | FrameOpts]),
+    Editor = gs:editor('TraceEditor', 'TraceArea',
+		       [{x,5}, {y,5}, {width,536}, {height,190},
+			{keypress,false}]),
+    config_editor(Editor,
+		  [{vscroll,right}, {hscroll,bottom},
+		   {wrap,none},{fg,{{{1,0},'end'},black}},
+		   {font_style,{{{1,0},'end'},{screen,[],12}}}]).
 
-create_buttons(Daddy,[Name|Names],X) ->
-    gs:button(Name,Daddy,[{label,{text,Name}},
-			  {width,67},
-			  {height,24},{x,X},{y,1},{enable,false}]),
-    create_buttons(Daddy,Names,X+70);
-create_buttons(_,[],_) -> ok.
-    
-%%% Tests for the possibility of a text document not being
-%%% found, patching the atom.
+resize_trace_area(close, Key, Diff) ->
+    ignore;
+resize_trace_area(open, Key, Diff) ->
+    New = gs:read('TraceArea', Key)+Diff,
+    gs:config('TraceArea', {Key,New}),
+    gs:config('TraceEditor', {Key,New-10}).
 
-format_text(no_file) -> "File not available or unreadable";
-format_text(Text) -> Text.
+%%--Editors-----------------------------------------------------------
 
-%%% select_line(Editor,Mode,NewLine,LineNo).
-%%% Mode: exit|wait_at|break_at|stack_at
-%%% LineNo: Int, the last line an event occured in
-%%% NewLine: The Line the new event has occured in.
-%%% An event has occured with a certain line. Undo what
-%%% had been done in the old line, and update the new one.
+config_editor(Editor, Opts) ->
+    gs:config(Editor, {enable,true}),
+    gs:config(Editor, Opts),
+    gs:config(Editor, {enable,false}).
 
-select_line(Editor, clear,_Line,OldLine) ->
-    refresh_line(Editor, OldLine);
-select_line(Editor, Mode,Line,OldLine) ->
-    refresh_line(Editor, OldLine),
-    Scroll = {vscrollpos,Line-5},
-    Text = {overwrite,{{Line,5},mode(Mode)}},
-    {Fo,_,Siz} = gs:read(Editor,{font_style,{Line,0}}),
-    NewCfg = {font_style,{{{Line,0},{Line,lineend}},{Fo,[bold],Siz}}},
-    config_editor(Editor,[Text,NewCfg,Scroll]).
+%%--Resize Bars-------------------------------------------------------
+%% The resize bars are used to resize the areas within the window.
 
-
-%%% The editor is disabled, so inorder to make changes, the
-%%% following function must be used.
-
-config_editor(Editor,Opts) ->
-    gs:config(Editor,{enable,true}),
-    gs:config(Editor,Opts),
-    gs:config(Editor,{enable,false}).
-
-
-%%% Remove the colour from a line where a break has been
-%%% removed.
-
-break_colour(Line,Status, Editor) ->
-    config_editor(Editor,{fg,{{{Line,0},{Line,lineend}},
-			      br_col(Status)}}).
-
-
-
-%%% Remove the text symbols for the breaks in the editor
-
-remove_breaks([{{Mod,Line},_}|Breaks],Mod, Editor) -> 
-    remove_break(Line, Editor),
-    remove_breaks(Breaks,Mod, Editor);
-
-remove_breaks([_|Breaks],Mod, Editor) -> %%Other module 
-    remove_breaks(Breaks,Mod, Editor);
-remove_breaks([],_Mod, _) ->
-     ok.
-
-remove_break(Line, Editor) ->
-    break_colour(Line,no_break, Editor),
-    Text = lists:flatten(io_lib:format("~w:   ",[Line])),
-    NText = {overwrite,{{Line,0},string:substr(Text,1,5)}},
-    config_editor(Editor,[NText]).
-
-
-add_breaks([{{Mod,Line},[Status|_]}|Breaks],Mod, Editor) -> 
-    add_break(Line,Status, Editor),
-    add_breaks(Breaks,Mod, Editor);
-add_breaks([_|Breaks],Mod, Editor) -> %%Other module 
-    add_breaks(Breaks,Mod, Editor);
-add_breaks([],_Mod, _Editor) ->
-     ok.
-
-add_break(Line,Status, Editor) ->
-    config_editor(Editor,[{overwrite,{{Line,0},"-@-  "}}]),
-    break_colour(Line,Status, Editor).
-
-%%% Break colours used for colouring lines in the editor
-
-br_col(no_break) -> black;  %%No Break
-br_col(active)   -> red;    %%Active Break
-br_col(inactive) -> blue.   %%Inactive Break
-
-%%% Refresh the line
-%%% FIXME: The second case in the case clause fixes a problem originating in
-%%%        gstk_editor/read_option/5. It should of course be handled there
-%%%        but I don't know how to do it. /olin
-
-refresh_line(_Editor, 0) -> ok;
-refresh_line(Editor, Line) ->
-
-    case gs:read(Editor,{font_style,{Line,0}}) of
-	{Fo,_,Siz} ->
-	    config_editor(Editor,[{overwrite,{{Line,5},"   "}},
-					{font_style,{{{Line,0},{Line,lineend}},
-						     {Fo,[],Siz}}}]);
-	Otherwise ->
-	    config_editor(Editor,[{overwrite,{{Line,5},"   "}},
-					{font_style,{{{Line,0},{Line,lineend}},
-						     {screen,[],12}}}])
-    end.
-    
-
-
-
-%%% The text symbols for the various modes for the lines in focus
-%%% in the editor.
-
-mode(   break) -> "-@-";
-mode(    exit) -> "<->";
-mode({exit,_}) -> "<->"; 
-mode( wait_at) -> "-->";
-mode(break_at) -> "-->";
-mode(func_at)  -> "-->";
-mode(stack_at) -> ">>>";
-mode(_Other)   -> "---".
- 
-%%% Insert some new text in the Code Editor.  (Code Frame)
-%%% Split up the string if it is larger than ?STRLEN characters, to avoid
-%% blocking the gs port for incoming events.
-
-put_text(Text, Editor) ->
-    config_editor(Editor,clear),
-    output_text(Text, Editor),
-    config_editor(Editor,[{fg,{{{1,0},'end'},black}},
-				{font_style,{{{1,0},'end'},{screen,[],12}}}]).
-    
-    
-output_text(Text, Editor) ->
-    if
-	length(Text) > ?STRLEN ->
-	    Str = string:sub_string(Text,1,?STRLEN),
-	    config_editor(Editor,{insert,{'end', format_text(Str)}}),
-	    output_text(string:sub_string(Text,?STRLEN+1), Editor);
-	true ->
-	    config_editor(Editor,{insert,{'end', format_text(Text)}})
-    end.
-
-%%% Add text in the Trace Editor (Trace Frame)
-
-put_trace(Text,Editor) ->
-    Op = [{insert,{'end', format_text(Text)}},
-	  {fg,{{{1,0},'end'},black}},
-	  {font_style,{{{1,0},'end'},{screen,[],12}}}],
-    config_editor(Editor,Op).
-
-%%% Print Text in different formats in the Evaluator
-%%% Editor.
-
-print_shell(Text,normal) -> print_shell(Text,[]);
-print_shell(Text,bold) -> print_shell(Text,[bold]);
-print_shell(Text,Type) ->
-    {Fo,_,Siz} = gs:read('ShellEditor',{font_style,{1,0}}),
-    Y1 = gs:read('ShellEditor',size),
-    config_editor('ShellEditor',{insert, {'end', Text}}),
-    Y2 = gs:read('ShellEditor',size),
-    config_editor('ShellEditor',
-		  [{font_style,{{{Y1,0},{Y2,lineend}},{Fo,Type,Siz}}},
-		   {vscrollpos,Y2}] ).
-
-%%% Update the label in the Code Frame.
-update_label(Action,Line,Mod) ->
-    Str = case Action of
-	      idle ->
-		  io_lib:format("State: not attached",[]);
-	      running ->
-		  io_lib:format("State: running [~w.erl]",[Mod]);
-%		  io_lib:format("Module:~w   Action:running",[Mod]);
-	      wait_at ->
-		  io_lib:format("State: receive [~w.erl/~w]",[Mod, Line]);
-%		  io_lib:format("Module:~w   Action:receive line:~w",
-%				[Mod,Line]);
-	      {no,R}   ->
-		  gs:config (trace_window, raise),
-		  io_lib:format("State: EXITED [uninterpreted], Reason:~w",
-				[R]);
-%		  io_lib:format("Exited in an uninterpreted module, Reason:~w",
-%				[R]);
-	      {exit,R}     ->
-		  gs:config (trace_window, raise),
-		  io_lib:format("State: EXITED [~w.erl/~w], Reason:~w",
-				[Mod,Line,R]);
-%		  io_lib:format("Module:~w  Exited at line ~w  Reason:~w",
-%				[Mod,Line,R]);
-	      {text,T}  ->
-		  T;
-	      _ ->
-		  io_lib:format("State: ~w [~w.erl/~w]",
-				[Action,Mod,Line])
-	  
-	  end,
-    gs:config(info_window,{label,{text,lists:flatten(Str)}}).
-
-%%% get_position(Object) -> {Row,Column}
-%%% Get the cursor position, or if disabled, the last position which
-%%% was clicked
-
-get_position(Object) ->
-    gs:read(Object,insertpos).
-
-%%% Get the last line number in the Editor.
-
-get_end(Editor) ->
-    gs:config(Editor,{enable,true}),
-    Pos =  gs:read(Editor,insertpos),
-    gs:config(Editor,{insertpos,'end'}),
-    {Y,_X} = gs:read(Editor,insertpos),
-    gs:config(Editor,{insertpos,Pos}),
-    gs:config(Editor,{enable,false}),
-    Y.
-
-
-
-
-%%% Special configure function for the View Module Window
-
-configure_view(Window,{X,Y}) ->
-    case {gs:read('TraceFrame',width) + 4,
-	  gs:read('TraceFrame',height)+ 4} of
-	{X,Y} ->
-	     ok;
-	_ ->
-	    gs:config('TraceFrame',[{width,X-4},{height,Y-27}]),
-	    configure_editors (X, Y),
-	    gs:config(info_window,[{width,X-65}])
-    end.
-
-
-%%% configures the additional editors
-
-configure_editors (X, Y) ->
-    gs:config('CodeEditor',[{width,X-14},{height,Y-64}]),
-    case catch dbg_ui_cache:get_editors (self ()) of
-	[] ->
-	    ok;
-
-	Editors when list (Editors) ->
-	    configure_editors (Editors, X, Y);
-	
-	_error ->
-	    ok
-    end.
-
-configure_editors ([Editor | T], X, Y) ->
-    gs:config(Editor, [{width, X - 14}, {height, Y - 64}]),
-    configure_editors (T, X, Y);
-
-configure_editors ([], _,_) ->
-    ok.
-
-
-%%%----------------------------------------
-%%% resizebar(Flag,Name,X,Y,W,H,Obj) => ResizeBar
-%%%   Flag      - open | close
-%%%   Name      - atom()
-%%%   X, Y      - integer()  Coordinates relative to Obj
-%%%   W, H      - integer()  Width and height
-%%%   Obj       - GS object
-%%%   ResizeBar - GS frame object
-%%% Creates a 'resize bar', a frame object over which the cursor will
-%%% be of the 'resize' type.
-%%%----------------------------------------
-resizebar(Flag,Name,X,Y,W,H,Obj) ->
+%%--------------------------------------------------------------------
+%% resizebar(Flag, Name, X, Y, W, H, Obj) -> resizebar()
+%%   Flag = open | close
+%%   Name = atom()
+%%   X = Y = integer()  Coordinates relative to Obj
+%%   W = H = integer()  Width and height
+%%   Obj = gsobj()
+%% Creates a 'resize bar', a frame object over which the cursor will
+%% be of the 'resize' type.
+%%--------------------------------------------------------------------
+resizebar(Flag, Name, X, Y, W, H, Obj) ->
     {W2,H2} = case Flag of
 		  open  -> {W,H};
 		  close -> {0,0}
 	      end,
-    gs:create(frame,Name,Obj,[{x,X},{y,Y},{width,W2},{height,H2},
-			      {bw,2},
-			      {cursor,resize},
-			      {data,resizebar},
-			      {buttonpress,true},{buttonrelease,true}]).
+    gs:create(frame, Name, Obj, [{x,X}, {y,Y}, {width,W2}, {height,H2},
+				 {bw,2},
+				 {cursor,resize},
+				 {buttonpress,true}, {buttonrelease,true},
+				 {data,resizebar}]).
 
-%%%----------------------------------------
-%%% resize(W,ResizeBar,Flags)
-%%%   W         - GS window object
-%%%   ResizeBar - GS frame object
-%%%   Flags     - window flags
-%%% Motions event will move the ResizeBar accordingly in W
-%%% for a number of HARDWIRED resize bars.
-%%% Releasing the mouse button will cause a reconfiguration of the
-%%% window, resizing its contents according to the new position of the
-%%% resize bar. HARDWIRED as well...
-%%%----------------------------------------
-resize(W,ResizeBar,Flags) ->		
-
-    %% Listen to motion events
-%%    gs:config(W,{motion,true}),
+rb1({Bu,Ev,Bi,Tr}) ->
+    if
+	Ev==close, Bi==close, Tr==close -> close;
+	true -> open
+    end.
     
-    %% Get window dimensions
-    Width = gs:read(W,width),
-    Height = gs:read(W,height),
+rb2({Bu,Ev,Bi,Tr}) ->
+    if
+	Tr==open ->
+	    if
+		Ev==close, Bi==close -> close;
+		true -> open
+	    end;
+	true -> close
+    end.
     
-    %% Call resize loop with min and max for the resize bars derived
-    %% from the window dimensions
-    resizeloop(W,ResizeBar,Flags,null,rblimits('RB1',Width,Height),
-	                              rblimits('RB2',Width,Height),
-	                              rblimits('RB3',Width,Height)).
-
-%%%----------------------------------------
-%%% resizeloop(W,ResizeBar,Flags,Prev,Limits1,Limits2,Limits3)
-%%%   W          - GS window object
-%%%   ResizeBar  - GS frame object
-%%%   Flags     - window flags
-%%%   Prev       - integer()  Previous X/Y coordinate
-%%%   LimitsN    - {Min,Max}  Max limits for moving for some HARDWIRED bars
-%%%     Min, Max - integer()
-%%% Receive motion events and move ResizeBar accordingly.
-%%% Call resize_win/2 at mouse button release.
-%%%----------------------------------------
-resizeloop(W,ResizeBar,Flags,Prev,{Min1,Max1},{Min2,Max2},{Min3,Max3}) ->
-    receive
-	{gs,_,motion,_,[X,_]} when ResizeBar=='RB3',
-				   X>Min3,X<Max3 ->
-	    gs:config('RB3',{x,X}),
-	    resizeloop(W,'RB3',Flags,X,{Min1,Max1},{Min2,Max2},{Min3,Max3});
-	{gs,_,motion,_,_} when ResizeBar=='RB3' ->
-	    resizeloop(W,ResizeBar,Flags,
-		       Prev,{Min1,Max1},{Min2,Max2},{Min3,Max3});
-	
-	{gs,_,motion,_,[_,Y]} when ResizeBar=='RB1',
-				   Y>Min1,Y<Max1 ->
-	    gs:config('RB1',{y,Y}),
-	    resizeloop(W,'RB1',Flags,Y,{Min1,Max1},{Min2,Max2},{Min3,Max3});
-	{gs,_,motion,_,_} when ResizeBar=='RB1' ->
-	    resizeloop(W,'RB1',Flags,
-		       Prev,{Min1,Max1},{Min2,Max2},{Min3,Max3});
-
-	
-	{gs,_,motion,_,[_,Y]} when ResizeBar=='RB2',
-				   Y>Min2,Y<Max2 ->
-	    gs:config('RB2',{y,Y}),
-	    resizeloop(W,'RB2',Flags,Y,{Min1,Max1},{Min2,Max2},{Min3,Max3});
-	{gs,_,motion,_,_} when ResizeBar=='RB2' ->
-	    resizeloop(W,'RB2',Flags,
-		       Prev,{Min1,Max1},{Min2,Max2},{Min3,Max3});
-	 
-	{gs,_,buttonrelease,_,_} ->
-%%	    gs:config(W,{motion,false}),
-	    resize_win(ResizeBar,Prev,Flags)
+rb3({Bu,Ev,Bi,Tr}) ->
+    if
+	Ev==open, Bi==open -> open;
+	true -> close
     end.
 
-%%%----------------------------------------
-%%% resize_win(ResizeBar,NewVal,Flags)
-%%%   ResizeBar - GS frame object
-%%%   NewVal    - integer()
-%%%   Flags     - window flags
-%%% Resize the window according to the new position NewVal of one of
-%%% the HARDWIRED resize bars.
-%%%----------------------------------------
-resize_win(_RB,null,_Flags) ->
-    true;
-resize_win('RB1',Y,Flags) ->
-    {Bu,S,Bi,F} = Flags,
-    H = gs:read('TraceFrame',height),
-    Diff = H-(Y-25),
+%%--Configuration-----------------------------------------------------
+%% Resize the window as well as its contents
 
-    %% Resize Trace, Shell and Bind frames
-    resize_trace(height,-Diff),
-    if
-	S==close,Bi==close,F==open ->
-	    resize_function(open,height,Diff);
-	true ->
-	    resize_shell(S,height,Diff),
-	    resize_bind(Bi,height,Diff)
-    end,
-
-    %% Resize vertical resize bar
-    case rb3(Flags) of
-	open ->
-	    gs:config('RB3',{height,gs:read('RB3',height)+Diff});
-	close ->
-	    true
-    end,
-    
-    %% Adjust the frames' y coordinates
-    config_v();
-
-resize_win('RB2',Y,Flags) ->
-    {Bu,S,Bi,F} = Flags,
-    Prev = gs:read('FunctionFrame',y),
-    Diff = Prev-(Y+10),
-    
-    %% Resize Function, Shell and Bind frames
-    resize_function(F,height,Diff),
-    resize_shell(S,height,-Diff),
-    resize_bind(Bi,height,-Diff),
-
-    %% Resize vertical resize bar
-    case rb3(Flags) of
-	open ->
-	    gs:config('RB3',{height,gs:read('RB3',height)-Diff});
-	close ->
-	    true
-    end,
-
-    %% Adjust the frames' y coordinates
-    config_v();
-
-resize_win('RB3',X,Flags) ->
-    {Bu,S,Bi,F} = Flags,
-    Prev = gs:read('BindFrame',x),
-    Diff = Prev-(X+10),
-    
-    %% Resize Bind and Shell frames
-    resize_bind(Bi,width,Diff),
-    gs:config('BindGrid',calc_columnwidths(gs:read('BindGrid',width))),
-    resize_shell(S,width,-Diff),
-
-    %% Adjust the frames' x coordinates
-    config_h().
-
-%%%----------------------------------------
-%%% rblimits(ResizeBar,W,H) => {Min,Max}
-%%%   ResizeBar - GS frame object
-%%%   W, H      - integer()  Window dimensions
-%%% Given the window dimensions, return the limits for a HARDWIRED
-%%% resize bar.
-%%%----------------------------------------
-rblimits('RB1',W,H) ->
-    
-    %% Trace frame should not have height <100
-    Min = 126,
-    
-    %% Max is decided by a minimum distance to 'RB2'
-    %% unless 'RB2' is invisible and 'FunctionFrame' is visible
-    %% (=> ShellFrame and BindFrame invisible) in which case
-    %% the Function frame should not have height <100
-    RB2 = gs:read('RB2',height),
-    FF = gs:read('FunctionFrame',height),
-    Max = case RB2 of
-	      0 when FF/=0 ->
-		  H-112;
-	      _ ->
-		  Y = gs:read('RB2',y),
-		  max(Min,Y-140)
-	  end,
-    
-    {Min,Max};
-
-rblimits('RB2',W,H) ->
-
-    %% Function frame should not have height <100
-    Max = H-112,
-    
-    %% Min is decided by a minimum distance to 'RB1'
-    Y = gs:read('RB1',y),
-    Min = min(Max,Y+140),
-    
-    {Min,Max};
-
-rblimits('RB3',W,H) ->
-    
-    %% Neither the Shell frame nor the Bind frame should occupy 
-    %% less than 1/3 of the total window width and the Shell Frame should
-    %% be at least 289 pixels wide
-    {max(round(W/3),289),round(2*W/3)}.
-
-%%%----------------------------------------
-%%% config_v()
-%%% Reconfigure the window vertically.
-%%%----------------------------------------
+%%--------------------------------------------------------------------
+%% config_v()
+%% Reconfigure the window vertically.
+%%--------------------------------------------------------------------
 config_v() ->
-    Y1 = 25+gs:read('TraceFrame',height),
-    gs:config('RB1',{y,Y1}),
+    Y1 = 25+gs:read('CodeArea', height),
+    gs:config('RB1', {y,Y1}),
     
-    Y2 = Y1+gs:read('RB1',height),
-    gs:config('ButtFrame',{y,Y2}),
+    Y2 = Y1+gs:read('RB1', height),
+    gs:config('ButtonArea', {y,Y2}),
     
-    Y3 = Y2+gs:read('ButtFrame',height),
-    gs:config('ShellFrame',{y,Y3}),
-    gs:config('RB3',{y,Y3}),
-    gs:config('BindFrame',{y,Y3}),
+    Y3 = Y2+gs:read('ButtonArea', height),
+    gs:config('EvalArea', {y,Y3}),
+    gs:config('RB3', {y,Y3}),
+    gs:config('BindArea', {y,Y3}),
     
-    Y4 = Y3 + max(gs:read('ShellFrame',height),gs:read('BindFrame',height)),
-    gs:config('RB2',{y,Y4}),
+    Y4 = Y3 + max(gs:read('EvalArea', height),
+		  gs:read('BindArea', height)),
+    gs:config('RB2', {y,Y4}),
     
-    Y5 = Y4 + gs:read('RB2',height),
-    gs:config('FunctionFrame',{y,Y5}).
+    Y5 = Y4 + gs:read('RB2', height),
+    gs:config('TraceArea', {y,Y5}).
 
-%%%----------------------------------------
-%%% config_h()
-%%% Reconfigure the window horizontally.
-%%%----------------------------------------
+%%--------------------------------------------------------------------
+%% config_h()
+%% Reconfigure the window horizontally.
+%%--------------------------------------------------------------------
 config_h() ->
-    X1 = 2+gs:read('ShellFrame',width),
-    gs:config('RB3',{x,X1}),
+    X1 = 2+gs:read('EvalArea', width),
+    gs:config('RB3', {x,X1}),
     
-    X2 = X1+gs:read('RB3',width),
-    gs:config('BindFrame',{x,X2}).
+    X2 = X1+gs:read('RB3', width),
+    gs:config('BindArea', {x,X2}).
 
-%%%----------------------------------------
-%%% configure(OldSize,NewSize,Flags)
-%%%   OldSize, NewSize - {W,H}      Window dimensions
-%%%   W, H             - integer()  Width & height
-%%%   Flags            - window flags
-%%% The window has been resized, now its contents must be resized too.
-%%%----------------------------------------
-configure({W,H},{W,H},Flags) ->
-    true;
-configure({_,_},{NewW,NewH},Flags) ->
-    {Bu,S,Bi,F} = Flags,
+%%--------------------------------------------------------------------
+%% configure(WinInfo, W, H)
+%% The window has been resized, now its contents must be resized too.
+%%--------------------------------------------------------------------
+configure(WinInfo, NewW, NewH) ->
+    {Bu,Ev,Bi,Tr} = Flags = WinInfo#winInfo.flags,
     
-    OldW = gs:read('TraceFrame',width) + 4,
-    OldH = 25 +
-	gs:read('TraceFrame',height) +
-	gs:read('RB1',height) +
-	gs:read('ButtFrame',height) +
-	max(gs:read('ShellFrame',height),
-	    gs:read('BindFrame',height)) +
-	gs:read('RB2',height) +
-	gs:read('FunctionFrame',height),
+    OldW = gs:read('CodeArea', width)+4,
+    OldH = 25+gs:read('CodeArea', height)+
+	gs:read('RB1', height)+
+	gs:read('ButtonArea', height)+
+	max(gs:read('EvalArea', height), gs:read('BindArea', height))+
+	gs:read('RB2', height)+
+	gs:read('TraceArea', height),
 
     %% Adjust width unless it is unchanged or less than minimum width
     if
 	OldW/=NewW ->
-	    {Dtrace,Dshell,Dbind} = configure_widths(OldW,NewW,Flags),
-	    resize_trace(width,Dtrace),
+	    {Dcode,Deval,Dbind} = configure_widths(OldW,NewW,Flags),
+	    resize_code_area(WinInfo, width, Dcode),
 	    case rb1(Flags) of
 		open ->
-		    gs:config('RB1',{width,gs:read('RB1',width)+Dtrace});
-		close ->
-		    true
+		    gs:config('RB1', {width,gs:read('RB1',width)+Dcode});
+		close -> ignore
 	    end,
-	    resize_button(Bu,width,Dtrace),
-	    resize_shell(S,width,Dshell),
-	    resize_bind(Bi,width,Dbind),
-	    if
-		Bi==open ->
-		    Cols = calc_columnwidths(gs:read('BindGrid',width)),
-		    gs:config('BindGrid',Cols);
-		true ->
-		    true
-	    end,
+	    resize_button_area(Bu, width, Dcode),
+	    resize_eval_area(Ev, width, Deval),
+	    resize_bind_area(Bi, width, Dbind),
 	    case rb2(Flags) of
 		open ->
-		    gs:config('RB2',{width,gs:read('RB2',width)+Dtrace});
-		close ->
-		    true
+		    gs:config('RB2', {width,gs:read('RB2',width)+Dcode});
+		close -> ignore
 	    end,
-	    resize_function(F,width,Dtrace),
+	    resize_trace_area(Tr, width, Dcode),
 	    config_h();
-	true ->
-	    true
+	true -> ignore
     end,
     
     %% Adjust height unless it is unchanged or less than minimum height
     if
 	OldH/=NewH ->
-	    {Dtrace2,Dshell2,Dfunction} = configure_heights(OldH,NewH,Flags),
-	    resize_trace(height,Dtrace2),
-	    resize_shell(S,height,Dshell2),
+	    {Dcode2,Deval2,Dtrace} = configure_heights(OldH,NewH,Flags),
+	    resize_code_area(WinInfo, height, Dcode2),
+	    resize_eval_area(Ev, height, Deval2),
 	    case rb3(Flags) of
 		open ->
-		    gs:config('RB3',{height,gs:read('RB3',height)+Dshell2});
-		close ->
-		    true
+		    gs:config('RB3', {height,gs:read('RB3',height)+Deval2});
+		close -> ignore
 	    end,
-	    resize_bind(Bi,height,Dshell2),
-	    resize_function(F,height,Dfunction),
+	    resize_bind_area(Bi, height, Deval2),
+	    resize_trace_area(Tr, height, Dtrace),
 	    config_v();
-	true ->
-	    true
+	true -> ignore
     end.
 
-%%%----------------------------------------
-%%% configure_heights(OldH,NewH,Flags) => {Dtrace,Dshell,Dfunction}
-%%%   OldH, NewH                - integer()  Old & new window height
-%%%   Dtrace, Dshell, Dfunction - integer()
-%%%   Flags                     - window flags
-%%% Compute how much the height of each frame must be increased or
-%%% decreased in order to adjust to the new window height.
-%%%----------------------------------------
-configure_heights(OldH,NewH,Flags) ->
-    {Bu,S,Bi,F} = Flags,
-
-    %% Difference between old and new height, considering min window height
-    MinH = min_height(Flags),
-    Diff = abs(max(OldH,MinH)-max(NewH,MinH)),
-    
-    %% Check how much the frames can be resized in reality
-    {T,Sf,Ff} = if
-		  %% Window larger
-		  NewH>OldH ->
-		      {Diff,
-		       if
-			   S==close,Bi==close ->
-			       0;
-			   true ->
-			       Diff
-		       end,
-		       if
-			   F==open ->
-			       Diff;
-			   true ->
-			       0
-		       end};
-
-		  %% Window smaller; get difference between min size
-		  %% and current size
-		  OldH>NewH ->
-		      {gs:read('TraceFrame',height)-100,
-		       if
-			   S==close,Bi==close ->
-			       0;
-			   true ->
-			       if
-				   S==open ->
-				       gs:read('ShellFrame',height)-100;
-				   Bi==open ->
-				       gs:read('BindFrame',height)-100
-			       end
-		       end,
-		       if
-			   F==open ->
-			       gs:read('FunctionFrame',height)-100;
-			   true ->
-			       0
-		       end}
-	      end,
-    
-    if
-	%% Window larger; divide Diff among the frames and return result
-	NewH>OldH ->
-	    divide([{0,T},{0,Sf},{0,Ff}],Diff);
-
-	%% Window smaller; divide Diff among the frames and return
-	%% the inverted result (the frames should shrink)
-	OldH>NewH ->
-	    {T2,Sf2,Ff2} = divide([{0,T},{0,Sf},{0,Ff}],Diff),
-	    {-T2,-Sf2,-Ff2}
-    end.
-
-%%%----------------------------------------
-%%% configure_widths(OldH,NewH,Flags) => {Dtrace,Dshell,Dbind}
-%%%   OldH, NewH                - integer()  Old & new window width
-%%%   Dtrace, Dshell, Dbind     - integer()
-%%%   Flags                     - window flags
-%%% Compute how much the height of each frame must be increased or
-%%% decreased in order to adjust to the new window width.
-%%%----------------------------------------
-configure_widths(OldW,NewW,Flags) ->
-    {Bu,S,Bi,F} = Flags,
+%% Compute how much the width of each frame must be increased or
+%% decreased in order to adjust to the new window width.
+configure_widths(OldW, NewW, Flags) ->
+    {Bu,Ev,Bi,Tr} = Flags,
 
     %% Difference between old and new width, considering min window width
     Diff = abs(max(OldW,330)-max(NewW,330)),
@@ -1184,42 +1092,33 @@ configure_widths(OldW,NewW,Flags) ->
 		 %% Window larger
 		 NewW>OldW ->
 		     if
-			 S==open,Bi==open ->
-			     {0,Diff,Diff};
-			 S==open ->
-			     {0,Diff,0};
-			 Bi==open ->
-			     {0,0,Diff};
-			 true ->
-			     {Diff,0,0}
+			 Ev==open,Bi==open -> {0,Diff,Diff};
+			 Ev==open -> {0,Diff,0};
+			 Bi==open -> {0,0,Diff};
+			 true -> {Diff,0,0}
 		     end;
 		 
 		 %% Window smaller; get difference between min size
 		 %% and current size
 		 OldW>NewW ->
 		     if
-			 S==open,Bi==open ->
+			 Ev==open,Bi==open ->
 			     {0,
-			      gs:read('ShellFrame',width)-204,
-			      gs:read('BindFrame',width)-112};
-			 S==open ->
-			     {0,Diff,0};
-			 Bi==open ->
-			     {0,0,Diff};
-			 true ->
-			     {Diff,0,0}
+			      gs:read('EvalArea',width)-204,
+			      gs:read('BindArea',width)-112};
+			 Ev==open -> {0,Diff,0};
+			 Bi==open -> {0,0,Diff};
+			 true -> {Diff,0,0}
 		     end
 	     end,
     
     case Limits of
 
 	%% No Shell or Bind frame, larger window
-	{T,0,0} when NewW>OldW ->
-	    {T,0,0};
+	{T,0,0} when NewW>OldW -> {T,0,0};
 	
 	%% No Shell or Bind frame, smaller window
-	{T,0,0} when OldW>NewW ->
-	    {-T,0,0};
+	{T,0,0} when OldW>NewW -> {-T,0,0};
 
 	%% Window larger; divide Diff among the frames and return result
 	{_,Sf,B} when NewW>OldW ->
@@ -1233,305 +1132,72 @@ configure_widths(OldW,NewW,Flags) ->
 	    {-(Sf2+B2),-Sf2,-B2}
     end.
 
-%%%----------------------------------------
-%%% divide([E1,E2,E3],Diff) => {D1,D2,D3}
-%%%   E1, E2, E3  - {Curr,Max}
-%%%     Curr, Max - integer()
-%%%   Diff        - integer()
-%%%   D1, D2, D3  - integer()
-%%% Try to distribute Diff as evenly as possible between E1, E2 and E3.
-%%%----------------------------------------
-%%% All elements are 'full'
-divide([{T,T},{S,S},{F,F}],_Diff) ->
-    {T,S,F};
-divide(L,Diff) ->
-    [{T,Tmax},{S,Smax},{F,Fmax}] = L,
+%% Compute how much the height of each frame must be increased or
+%% decreased in order to adjust to the new window height.
+configure_heights(OldH, NewH, Flags) ->
+    {Bu,Ev,Bi,Tr} = Flags,
 
-    %% Count how many elements in L can still be filled
-    Rem = remaining(L),
+    %% Difference between old and new height, considering min window height
+    MinH = min_height(Flags),
+    Diff = abs(max(OldH,MinH)-max(NewH,MinH)),
     
-    %% Divide Diff by Rem
-    D = Diff div Rem,
+    %% Check how much the frames can be resized in reality
+    {T,Sf,Ff} = if
+		  %% Window larger
+		  NewH>OldH ->
+		      {Diff,
+		       if
+			   Ev==close, Bi==close -> 0;
+			   true -> Diff
+		       end,
+		       if
+			   Tr==open -> Diff;
+			   true -> 0
+		       end};
 
-    if
-	%% All of Diff has been distributed
-	D==0 ->
-	    {T,S,F};
-	
-	true ->
+		  %% Window smaller; get difference between min size
+		  %% and current size
+		  OldH>NewH ->
+		      {gs:read('CodeArea',height)-100,
+		       if
+			   Ev==close, Bi==close -> 0;
+			   true ->
+			       if
+				   Ev==open ->
+				       gs:read('EvalArea',height)-100;
+				   Bi==open ->
+				       gs:read('BindArea',height)-100
+			       end
+		       end,
+		       if
+			   Tr==open -> gs:read('TraceArea',height)-100;
+			   true -> 0
+		       end}
+	      end,
     
-	    %% For each element, try to add as much as possible of D
-	    {NewT,Dt} = divide2(D,T,Tmax),
-	    {NewS,Ds} = divide2(D,S,Smax),
-	    {NewF,Df} = divide2(D,F,Fmax),
-    
-	    %% Recur with a list of elements with new current values
-	    %% and decreased Diff
-	    divide([{NewT,Tmax},{NewS,Smax},{NewF,Fmax}],(Diff rem Rem)+Dt+Ds+Df)
-    end.
-
-%%%----------------------------------------
-%%% remaining(L) => N
-%%%   L, NewL     - [{Curr,Max}]
-%%%     Curr, Max - integer()
-%%%   N           - integer()
-%%% Count the number of 'non-filled' elements in L, ie elements where
-%%% Curr<Max.
-%%%----------------------------------------
-remaining([]) ->
-    0;
-remaining([{Max,Max}|T]) ->
-    remaining(T);
-remaining([_H|T]) ->
-    1 + remaining(T).
-
-%%%----------------------------------------
-%%% divide2(Diff,Curr,Max) => {New,Rem}
-%%%   Diff,Curr,Max,New,Rem - integer()
-%%% New = min(Curr+Diff,Max),
-%%% Rem = Max-(Curr+Diff) if Max>(Curr+Diff)
-%%%----------------------------------------
-divide2(Diff,Max,Max) ->
-    {Max,0};
-divide2(Diff,Curr,Max) ->
-    New = Curr+Diff,
     if
-	New>Max ->
-	    {Max,New-Max};
-	true ->
-	    {New,0}
+	%% Window larger; divide Diff among the frames and return result
+	NewH>OldH -> divide([{0,T},{0,Sf},{0,Ff}],Diff);
+
+	%% Window smaller; divide Diff among the frames and return
+	%% the inverted result (the frames should shrink)
+	OldH>NewH ->
+	    {T2,Sf2,Ff2} = divide([{0,T},{0,Sf},{0,Ff}],Diff),
+	    {-T2,-Sf2,-Ff2}
     end.
 
-%%%----------------------------------------
-%%% resize_trace(Key,Diff)
-%%%   Key  - width | height
-%%%   Diff - integer()
-%%% Resize the Trace frame and its contents, adding Diff to their width
-%%% or height.
-%%%----------------------------------------
-resize_trace(Key,Diff) ->
-    gs:config('TraceFrame',{Key,gs:read('TraceFrame',Key)+Diff}),
-    case Key of
-	width ->
-	    gs:config(info_window,{Key,gs:read(info_window,Key)+Diff});
-	_ ->
-	    true
-    end,
-    resize_editors (Key, Diff).
-
-
-resize_editors (Key, Diff) ->
-    gs:config('CodeEditor', {Key, gs:read ('CodeEditor', Key) + Diff}),
-    Value = gs:read('CodeEditor', Key),
-    case catch dbg_ui_cache:get_editors (self ()) of
-	[] ->
-	    ok;
-	
-	Editors when list (Editors) ->
-	    resize_editors (Key, Value, Editors);
-	
-	_error ->
-	    ok
-    end.
-
-resize_editors (Key, Value, [Editor | T]) ->
-    gs:config(Editor, {Key, Value}),
-    resize_editors (Key, Value, T);
-
-resize_editors (_Key, _Value, []) ->
-    ok.
-
-
-%%%----------------------------------------
-%%% resize_shell(Flag,Key,Diff)
-%%%   Flag - open | close
-%%%   Key  - width | height
-%%%   Diff - integer()
-%%% Resize the Shell frame and its contents, adding Diff to their width
-%%% or height.
-%%%----------------------------------------
-resize_shell(close,Key,Diff) ->
-    true;
-resize_shell(open,Key,Diff) ->
-    New = gs:read('ShellFrame',Key)+Diff,
-    gs:config('ShellFrame',{Key,New}),
-    case Key of
-	width ->
-	    gs:config('Shell',{width,New-104});
-	_ ->
-	    true
-    end,
-    case Key of
-	width ->
-	    gs:config('ShellEditor',{width,New-9});
-	height ->
-	    gs:config('ShellEditor',{height,New-40})
-    end.
-
-%%%----------------------------------------
-%%% resize_bind(Flag,Key,Diff)
-%%%   Flag - open | close
-%%%   Key  - width | height
-%%%   Diff - integer()
-%%% Resize the Bind frame and its contents, adding Diff to their width
-%%% or height.
-%%%----------------------------------------
-resize_bind(close,Key,Diff) ->
-    true;
-resize_bind(open,Key,Diff) ->
-    New = gs:read('BindFrame',Key)+Diff,
-    gs:config('BindFrame',{Key,New}),
-    case Key of
-	width ->
-	    gs:config('BindGrid',{width,New-8}),
-	    Cols = calc_columnwidths(New-8),
-	    gs:config('BindGrid',Cols);
-	height ->
-	    gs:config('BindGrid',{height,New-7})
-    end.
-    
-%%%----------------------------------------
-%%% resize_function(Flag,Key,Diff)
-%%%   Flag - open | close
-%%%   Key  - width | height
-%%%   Diff - integer()
-%%% Resize the Function frame and its contents, adding Diff to their width
-%%% or height.
-%%%----------------------------------------
-resize_function(close,Key,Diff) ->
-    true;
-resize_function(open,Key,Diff) ->
-    New = gs:read('FunctionFrame',Key)+Diff,
-    gs:config('FunctionFrame',{Key,New}),
-    case Key of
-	width ->
-	    gs:config('FunctionEditor',{width,New-10});
-	height ->
-	    gs:config('FunctionEditor',{height,New-10})
-    end.
-
-%%%----------------------------------------
-%%% resize_button(Flag,width,Diff)
-%%%   Flag - open | close
-%%%   Diff - integer()
-%%% Resize the Button frame and its contents adding Diff to the width.
-%%%----------------------------------------
-resize_button(close,width,Diff) ->
-    true;
-resize_button(open,width,Diff) ->
-    Buttons = ['Next', 'Step', 'Finish', 'Continue', 'Up', 'Down', 'Where', 'Break'],
-    W = gs:read('ButtFrame', width) + Diff,
-    BW = W div length(Buttons),
-    resize_buttons(Buttons, BW, 0),
-    gs:config('ButtFrame', {width, W}).
-
-%%%----------------------------------------
-%%% resize_buttons(Buttons,W,X)
-%%%   Buttons  - [Button]
-%%%     Button - GS button object
-%%%  W, X      - integer()
-%%% Configure all buttons in Buttons to a new width W and an x coordinate X
-%%% updated accordingly.
-%%%----------------------------------------
-resize_buttons([Name | T], W, X) ->
-    gs:config(Name, [{label, {text, Name}}, {font, {helvetica, 12}}]),
-    gs:config(Name, {width, W - 3}),
-    gs:config(Name, {x, X}),
-    resize_buttons(T, W, X + W);
-resize_buttons([], _, _) ->
-    true.
-    
-%%%----------------------------------------
-%%% max(A,B) => integer()
-%%%   A, B - integer()
-%%% Return the max of A and B.
-%%%----------------------------------------
-max(A,B) ->
-    if
-	A>B ->
-	    A;
-	true ->
-	    B
-    end.
-
-%%%----------------------------------------
-%%% min(A,B) => integer()
-%%%   A, B - integer()
-%%% Return the min of A and B.
-%%%----------------------------------------
-min(A,B) ->
-    if
-	A<B ->
-	    A;
-	true ->
-	    B
-    end.
-
-%%%----------------------------------------
-%%% rb1(Flags) => open | close
-%%% Check if 'RB1' should be visible or not.
-%%%----------------------------------------
-rb1({Bu,S,Bi,F}) ->
-    if
-	S==close,
-	Bi==close,
-	F==close ->
-	    close;
-	true ->
-	    open
-    end.
-    
-%%%----------------------------------------
-%%% rb2(Flags) => open | close
-%%% Check if 'RB3' should be visible or not.
-%%%----------------------------------------
-rb2({Bu,S,Bi,F}) ->
-    if
-	F==open ->
-	    if
-		S==close,
-		Bi==close ->
-		    close;
-		true ->
-		    open
-	    end;
-	true ->
-	    close
-    end.
-    
-%%%----------------------------------------
-%%% rb3(Flags) => open | close
-%%% Check if 'RB3' should be visible or not.
-%%%----------------------------------------
-rb3({Bu,S,Bi,F}) ->
-    if
-	S==open,
-	Bi==open ->
-	    open;
-	true ->
-	    close
-    end.
-
-%%%----------------------------------------
-%%% min_height(Flags) => integer()
-%%%   Flags - window flags
-%%% Compute minimum window height
-%%%----------------------------------------
+%% Compute minimum window height
 min_height(Flags) ->
     {Bu,S,Bi,F} = Flags,
     H1 = 25 + 100 + 2, % Upper pad + Trace frame + lower pad
     H2 = H1 + bu(Bu) + s_bi(S,Bi) + f(F),
     H3 = case rb1(Flags) of
-	     open ->
-		 H2+10;
-	     close ->
-		 H2
+	     open -> H2+10;
+	     close -> H2
 	 end,
     H4 = case rb2(Flags) of
-	     open ->
-		 H3+10;
-	     close ->
-		 H3
+	     open -> H3+10;
+	     close -> H3
 	 end.
 
 bu(close) -> 0;
@@ -1543,211 +1209,355 @@ s_bi(_,_) -> 100.
 f(close) -> 0;
 f(open)  -> 100.
 
+%% Try to distribute Diff as evenly as possible between E1, E2 and E3.
+divide([{T,T},{S,S},{F,F}], _Diff) ->
+    {T,S,F};
+divide(L, Diff) ->
+    [{T,Tmax},{S,Smax},{F,Fmax}] = L,
 
-%%%----------------------------------------
-%%% configure(Win,,Frame,State,OldFlags,NewFlags) => {W,H}
-%%%   Win      - GS window object
-%%%   Frame    - button | shell | bind | function
-%%%   State    - open | close
-%%%   OldFlags - window flags
-%%%   NewFlags - window flags
-%%%   W, H     - integer()
-%%% A frame should be opened or closed.
-%%%----------------------------------------
-configure(Win,Frame,open,OldFlags,NewFlags) ->
-    {Bu,S,Bi,F} = OldFlags,
-    W = gs:read(Win,width),
-    H = gs:read(Win,height),
-    case Frame of
-	button ->
-	    
-	    %% Adjust Button frame width and height
-	    resize_button(open,width,W-4),
-	    gs:config('ButtFrame',{height,30}),
+    %% Count how many elements in L can still be filled
+    Rem = remaining(L),
+    
+    %% Divide Diff by Rem
+    D = Diff div Rem,
 
-	    %% Increase window height
-	    gs:config(Win,{height,H+30});
+    if
+	%% All of Diff has been distributed
+	D==0 -> {T,S,F};
 	
-	shell when Bi==open ->
-	    
-	    %% Compute Shell frame width (half window - resize bar - pads)
-	    Wnew = round((W-10-4)/2),
-
-	    %% Shell frame height = Bind frame height
-	    Hbi = gs:read('BindFrame',height),
-
-	    %% Adjust Shell frame width and height
-	    resize_shell(open,width,Wnew),
-	    resize_shell(open,height,Hbi),
-	    
-	    %% Adjust RB3 width and height
-	    gs:config('RB3',{width,10}),
-	    gs:config('RB3',{height,Hbi}),
-	    
-	    %% Decrease Bind frame width
-	    resize_bind(open,width,Wnew-gs:read('BindFrame',width));
-						
-	shell ->
-
-	    %% Adjust Shell frame width and height
-	    resize_shell(open,width,W-4),
-	    resize_shell(open,height,200),
-
-	    %% Adjust window height
-	    gs:config(Win,{height,H+200});
-
-	bind when S==open ->
-
-	    %% Compute Bind frame width (half window - resize bar - pads)
-	    Wnew = round((W-10-4)/2),
-
-	    %% Bind frame height = Shell frame height
-	    Hs = gs:read('ShellFrame',height),
-
-	    %% Adjust Bind frame width and height
-	    resize_bind(open,width,Wnew),
-	    resize_bind(open,height,Hs),
-	    
-	    %% Adjust RB3 width and height
-	    gs:config('RB3',[{width,10},{height,Hs}]),
-	    
-	    %% Decrease Shell frame width
-	    resize_shell(open,width,Wnew-gs:read('ShellFrame',width));
-	    
-	bind ->
-
-	    %% Adjust Bind frame width and height
-	    resize_bind(open,width,W-4),
-	    resize_bind(open,height,200),
-
-	    %% Adjust window height
-	    gs:config(Win,{height,H+200});
-
-	function ->
-	    
-	    %% Adjust Function frame width and height
-	    resize_function(open,width,W-4),
-	    resize_function(open,height,200),
-
-	    %% Increase window height
-	    gs:config(Win,{height,H+200})
-    end,
-
-    %% Add RB1 unless its already there
-    RB1old = rb1(OldFlags), RB1new = rb1(NewFlags),
-    if
-	RB1old==close,RB1new==open ->
-	    gs:config('RB1',[{width,W-4},{height,10}]),
-	    gs:config(Win,{height,gs:read(Win,height)+10});
 	true ->
-	    true
-    end,
+    
+	    %% For each element, try to add as much as possible of D
+	    {NewT,Dt} = divide2(D,T,Tmax),
+	    {NewS,Ds} = divide2(D,S,Smax),
+	    {NewF,Df} = divide2(D,F,Fmax),
+    
+	    %% Recur with a list of elements with new current values
+	    %% and decreased Diff
+	    divide([{NewT,Tmax},{NewS,Smax},{NewF,Fmax}],
+		   (Diff rem Rem)+Dt+Ds+Df)
+    end.
 
-    %% Add RB2 unless its already there
-    RB2old = rb2(OldFlags), RB2new = rb2(NewFlags),
+%% Count the number of 'non-filled' elements in L, ie where Curr<Max.
+remaining([]) -> 0;
+remaining([{Max,Max}|T]) -> remaining(T);
+remaining([_H|T]) -> 1 + remaining(T).
+
+divide2(Diff, Max, Max) -> {Max,0};
+divide2(Diff, Curr, Max) ->
+    New = Curr+Diff,
     if
-	RB2old==close,RB2new==open ->
-	    gs:config('RB2',[{width,W-4},{height,10}]),
-	    gs:config(Win,{height,gs:read(Win,height)+10});
-	true ->
-	    true
-    end,
-    
-    config_v(),
-    config_h(),
-    
-    {gs:read(Win,width),gs:read(Win,height)};
+	New>Max -> {Max,New-Max};
+	true -> {New,0}
+    end.
 
-configure(Win,Frame,close,OldFlags,NewFlags) ->
-    {Bu,S,Bi,F} = OldFlags,
-    W = gs:read(Win,width),
-    H = gs:read(Win,height),
-    case Frame of
-	button ->
-	    
-	    %% Adjust Button frame width and height
-	    gs:config('ButtFrame',[{width,0},{height,0}]),
+%%--Resizing using resize bars----------------------------------------
+%% Motions event will move the ResizeBar accordingly in Win, when
+%% the mouse button is released, the window is reconfigured.
 
-	    %% Decrease window height
-	    gs:config(Win,{height,H-30});
+resize(WinInfo, ResizeBar) ->		
+    
+    %% Get window dimensions
+    W = gs:read(WinInfo#winInfo.window, width),
+    H = gs:read(WinInfo#winInfo.window, height),
+    
+    %% Call resize loop with min and max for the resize bars derived
+    %% from the window dimensions
+    resizeloop(WinInfo, ResizeBar, null,
+	       rblimits('RB1',W,H),
+	       rblimits('RB2',W,H),
+	       rblimits('RB3',W,H)).
+
+resizeloop(WI, RB, Prev, {Min1,Max1},{Min2,Max2},{Min3,Max3}) ->
+    receive
+	{gs,_,motion,_,[_,Y]} when RB=='RB1', Y>Min1,Y<Max1 ->
+	    gs:config('RB1', {y,Y}),
+	    resizeloop(WI, RB, Y, {Min1,Max1},{Min2,Max2},{Min3,Max3});
+	{gs,_,motion,_,_} when RB=='RB1' ->
+	    resizeloop(WI, RB, Prev, {Min1,Max1},{Min2,Max2},{Min3,Max3});
 	
-	shell when Bi==open ->
+	{gs,_,motion,_,[_,Y]} when RB=='RB2', Y>Min2,Y<Max2 ->
+	    gs:config('RB2', {y,Y}),
+	    resizeloop(WI, RB, Y, {Min1,Max1},{Min2,Max2},{Min3,Max3});
+	{gs,_,motion,_,_} when RB=='RB2' ->
+	    resizeloop(WI, RB, Prev, {Min1,Max1},{Min2,Max2},{Min3,Max3});
+	 
+	{gs,_,motion,_,[X,_]} when RB=='RB3', X>Min3,X<Max3 ->
+	    gs:config('RB3', {x,X}),
+	    resizeloop(WI, RB, X, {Min1,Max1},{Min2,Max2},{Min3,Max3});
+	{gs,_,motion,_,_} when RB=='RB3' ->
+	    resizeloop(WI, RB, Prev, {Min1,Max1},{Min2,Max2},{Min3,Max3});
+	
+	{gs,_,buttonrelease,_,_} ->
+	    resize_win(WI, RB, Prev)
+    end.
 
-	    %% Adjust Shell frame width and height
-	    gs:config('ShellFrame',[{width,0},{height,0}]),
-	    
-	    %% Adjust RB3 width and height
-	    gs:config('RB3',[{width,0},{height,0}]),
-	    
-	    %% Compute Bind frame width (window - pads)
-	    Wnew = W-4,
+resize_win(_WinInfo, _RB, null) -> ignore;
+resize_win(WinInfo, 'RB1', Y) ->
+    {Bu,S,Bi,F} = Flags = WinInfo#winInfo.flags,
+    H = gs:read('CodeArea', height),
+    Diff = H-(Y-25),
 
-	    %% Increase Bind frame width
-	    resize_bind(open,width,Wnew-gs:read('BindFrame',width));
-	    
-	shell ->
-	    Hs = gs:read('ShellFrame',height),
+    %% Resize Code, Evaluator and Binding areas
+    resize_code_area(WinInfo, height, -Diff),
+    if
+	S==close, Bi==close, F==open ->
+	    resize_trace_area(open, height, Diff);
+	true ->
+	    resize_eval_area(S, height, Diff),
+	    resize_bind_area(Bi, height, Diff)
+    end,
 
-	    %% Adjust Shell frame width and height
-	    gs:config('ShellFrame',[{width,0},{height,0}]),
-
-	    %% Adjust window height
-	    gs:config(Win,{height,H-Hs});
-
-	bind when S==open ->
-
-	    %% Adjust Bind frame width and height
-	    gs:config('BindFrame',[{width,0},{height,0}]),
-	    
-	    %% Adjust RB3 width and height
-	    gs:config('RB3',[{width,0},{height,0}]),
-	    
-	    %% Compute Bind frame width (window - pads)
-	    Wnew = W-4,
-
-	    %% Increase Shell frame width
-	    resize_shell(open,width,Wnew-gs:read('ShellFrame',width));
-	    
-	bind ->
-	    Hbi = gs:read('BindFrame',height),
-
-	    %% Adjust Bind frame width and height
-	    gs:config('BindFrame',[{width,0},{height,0}]),
-
-	    %% Adjust window height
-	    gs:config(Win,{height,H-Hbi});
-
-	function ->
-	    Hf = gs:read('FunctionFrame',height),
-	    
-	    %% Adjust Function frame width and height
-	    gs:config('FunctionFrame',[{width,0},{height,0}]),
-
-	    %% Adjust window height
-	    gs:config(Win,{height,H-Hf})
+    %% Resize vertical resize bar
+    case rb3(Flags) of
+	open -> gs:config('RB3', {height,gs:read('RB3',height)+Diff});
+	close -> ignore
     end,
     
-    %% Remove RB1 if it is visible
-    RB1old = rb1(OldFlags), RB1new = rb1(NewFlags),
-    if
-	RB1old==open,RB1new==close ->
-	    gs:config('RB1',[{width,0},{height,0}]),
-	    gs:config(Win,{height,gs:read(Win,height)-10});
-	true ->
-	    true
-    end,
-
-    %% Remove RB2 if it is visible
-    RB2old = rb2(OldFlags), RB2new = rb2(NewFlags),
-    if
-	RB2old==open,RB2new==close ->		
-	    gs:config('RB2',[{width,0},{height,0}]),
-	    gs:config(Win,{height,gs:read(Win,height)-10});
-	true ->
-	    true
-    end,
-
-    config_v(),
-    config_h(),
+    %% Adjust the frames y coordinates
+    config_v();
+resize_win(WinInfo, 'RB2', Y) ->
+    {Bu,S,Bi,F} = Flags = WinInfo#winInfo.flags,
+    Prev = gs:read('TraceArea',y),
+    Diff = Prev-(Y+10),
     
-    {gs:read(Win,width),gs:read(Win,height)}.
+    %% Resize Trace, Evaluator and Binding areas
+    resize_trace_area(F, height, Diff),
+    resize_eval_area(S, height, -Diff),
+    resize_bind_area(Bi, height, -Diff),
+
+    %% Resize vertical resize bar
+    case rb3(Flags) of
+	open -> gs:config('RB3', {height,gs:read('RB3',height)-Diff});
+	close -> ignore
+    end,
+
+    %% Adjust the frames y coordinates
+    config_v();
+
+resize_win(WinInfo, 'RB3', X) ->
+    {Bu,S,Bi,F} = WinInfo#winInfo.flags,
+    Prev = gs:read('BindArea', x),
+    Diff = Prev-(X+10),
+    
+    %% Resize Binding and Trace areas
+    resize_bind_area(Bi, width, Diff),
+    resize_eval_area(S, width, -Diff),
+
+    %% Adjust the frames x coordinates
+    config_h().
+
+%% Given the window dimensions, return the limits for a  resize bar.
+rblimits('RB1',W,H) ->
+    
+    %% Code frame should not have height <100
+    Min = 126,
+    
+    %% Max is decided by a minimum distance to 'RB2'
+    %% unless 'RB2' is invisible and 'CodeArea' is visible
+    %% (=> EvalFrame and BindFrame invisible) in which case
+    %% TraceFrame should not have height <100
+    RB2 = gs:read('RB2',height),
+    FF = gs:read('TraceArea',height),
+    Max = case RB2 of
+	      0 when FF/=0 ->
+		  H-112;
+	      _ ->
+		  Y = gs:read('RB2',y),
+		  max(Min,Y-140)
+	  end,
+    
+    {Min,Max};
+rblimits('RB2',W,H) ->
+
+    %% TraceFrame should not have height <100
+    Max = H-112,
+    
+    %% Min is decided by a minimum distance to 'RB1'
+    Y = gs:read('RB1',y),
+    Min = min(Max,Y+140),
+    
+    {Min,Max};
+
+rblimits('RB3',W,H) ->
+    
+    %% Neither CodeArea nor BindArea should occupy 
+    %% less than 1/3 of the total window width and EvalFrame should
+    %% be at least 289 pixels wide
+    {max(round(W/3),289),round(2*W/3)}.
+
+max(A, B) when A>B -> A;
+max(A, B) -> B.
+
+min(A, B) when A<B -> A;
+min(A, B) -> B.
+
+
+%%====================================================================
+%% 'Go To Line' and 'Search' help windows
+%%====================================================================
+
+helpwin(gotoline, WinInfo, GS, Coords) ->
+    spawn_link(?MODULE, helpwin, [gotoline, WinInfo, GS, Coords, self()]);
+helpwin(search, WinInfo, GS, Coords) ->
+    spawn_link(?MODULE, helpwin, [search, WinInfo, GS, Coords, self()]).
+
+helpwin(Type, WinInfo, GS, Coords, AttPid) ->
+    {_Mod, Editor} =  WinInfo#winInfo.editor,
+    Data = case Type of
+	       gotoline -> null;
+	       search ->
+		   {{1, 0}, false}
+	   end,
+    Win = helpwin(Type, GS, Coords),
+    helpwin_loop(Type, AttPid, Editor, Data, Win).
+
+helpwin_loop(Type, AttPid, Editor, Data, Win) ->
+    receive
+	{gs, _Id, destroy, _Data, _Arg} ->
+	    helpwin_stop(Type, AttPid, Editor, Data),
+	    true;
+
+	{gs, _Id, keypress, _Data, ['Return'|_]} ->
+	    gs:config(btn(Win), flash),
+	    Data2 = helpwin_action(Type, default,
+				   AttPid, Editor, Data, Win),
+	    helpwin_loop(Type, AttPid, Editor, Data2, Win);
+	{gs, _Id, keypress, _Data, _Arg} ->
+	    helpwin_loop(Type, AttPid, Editor, Data, Win);
+	
+	{gs, _Id, click, _Data, ["Clear"]} ->
+	    gs:config(ent(Win), {delete, {0,last}}),
+	    Data2 = helpwin_clear(Type, AttPid, Editor, Data, Win),
+	    helpwin_loop(Type, AttPid, Editor, Data2, Win);
+	{gs, _Id, click, _Data, ["Close"]} ->
+	    helpwin_stop(Type, AttPid, Editor, Data),
+	    true;
+	{gs, _Id, click, Action, _Arg} ->
+	    Data2 =
+		helpwin_action(Type, Action, AttPid, Editor, Data, Win),
+	    helpwin_loop(Type, AttPid, Editor, Data2, Win)
+    end.
+
+helpwin_stop(gotoline, _AttPid, _Editor, _Data) ->
+    ignore;
+helpwin_stop(search, _AttPid, Editor, {Pos, _CS}) ->
+    unmark_string(Editor, Pos).
+
+helpwin_clear(gotoline, _AttPid, _Editor, Data, _Win) ->
+    Data;
+helpwin_clear(search, _AttPid, Editor, {Pos, CS}, Win) ->
+    unmark_string(Editor, Pos),
+    gs:config(lbl(Win), {label, {text,""}}),
+    {{1, 0}, CS}.
+
+helpwin_action(gotoline, default, AttPid, _Editor, Data, Win) ->
+    case string:strip(gs:read(ent(Win), text)) of
+	"" -> ignore;
+	Str ->
+	    case catch list_to_integer(Str) of
+		{'EXIT', _Reason} -> ignore;
+		Line -> AttPid ! {gui, {gotoline, Line}}
+	    end
+    end,
+    Data;
+helpwin_action(search, case_sensitive, _AttPid, _Editor, {Pos, CS}, _Win) ->
+    Bool = if CS==true -> false; CS==false -> true end,
+    {Pos, Bool};
+helpwin_action(search, default, _AttPid, Editor, {Pos, CS}, Win) ->
+    gs:config(lbl(Win), {label, {text, ""}}),
+    unmark_string(Editor, Pos),
+    case gs:read(ent(Win), text) of
+	"" -> {Pos, CS};
+	Str ->
+	    gs:config(lbl(Win), {label, {text,"Searching..."}}),
+	    Str2 = lowercase(CS, Str),
+	    case search(Str2, Editor, gs:read(Editor, size), Pos, CS) of
+		{Row, Col} ->
+		    gs:config(lbl(Win), {label, {text,""}}),
+		    mark_string(Editor, {Row, Col}, Str),
+		    {{Row, Col}, CS};
+		not_found ->
+		    gs:config(lbl(Win), {label, {text,"Not found"}}),
+		    {Pos, CS}
+	    end
+    end.
+
+search(Str, Editor, Max, {Row, Col}, CS) when Row>Max ->
+    not_found;
+search(Str, Editor, Max, {Row, Col}, CS) ->
+    SearchIn = lowercase(CS, gs:read(Editor,
+				     {get, {{Row,Col+1},{Row,lineend}}})),
+    case string:str(SearchIn, Str) of
+	0 -> search(Str, Editor, Max, {Row+1, 0}, CS);
+	N -> {Row, Col+N}
+    end.
+
+lowercase(true, Str) -> Str;
+lowercase(false, Str) ->
+    lists:map(fun(Char) ->
+		      if
+			  Char>=$A, Char=<$Z -> Char+32;
+			  true -> Char
+		      end
+	      end,
+	      Str).
+
+mark_string(Editor, {Row, Col}, Str) ->
+    Between = {{Row,Col}, {Row,Col+length(Str)}},
+    gs:config(Editor, [{vscrollpos, Row-5},
+		       {font_style, {Between, {screen,[bold],12}}},
+		       {fg, {Between, red}}]).
+
+unmark_string(Editor, {Row, Col}) ->
+    Between = {{Row,Col}, {Row,lineend}},
+    gs:config(Editor, [{vscrollpos, Row-5},
+		       {font_style, {Between, {screen,[],12}}},
+		       {fg, {Between, black}}]).
+
+helpwin(Type, GS, {X, Y}) ->
+    W = 200, Pad=10, Wbtn = 50,
+
+    Title = case Type of search -> "Search"; gotoline -> "Go To Line" end,
+    Win = gs:window(GS, [{title, Title}, {x, X}, {y, Y}, {width, W},
+			 {destroy, true}]),
+    
+    Ent = gs:entry(Win, [{x, Pad}, {y, Pad}, {width, W-2*Pad},
+			 {keypress, true}]),
+    Hent = gs:read(Ent, height),
+
+    {Ybtn, Lbl} =
+	case Type of
+	    search ->
+		Ycb = Pad+Hent,
+		gs:checkbutton(Win, [{label, {text, "Case Sensitive"}},
+				     {align, w},
+				     {x, Pad}, {y, Ycb},
+				     {width, W-2*Pad}, {height, 15},
+				     {data, case_sensitive}]),
+		Ylbl = Ycb+15,
+		{Ylbl+Hent+Pad,
+		 gs:label(Win, [{x, Pad}, {y, Ylbl},
+				{width, W-2*Pad}, {height, Hent}])};
+	    gotoline -> {Pad+Hent+Pad, null}
+	end,
+
+    BtnLbl = case Type of search -> "Search"; gotoline -> "Go" end,
+    Btn = gs:button(Win, [{label, {text, BtnLbl}},
+			  {x, W/2-3/2*Wbtn-Pad}, {y, Ybtn},
+			  {width, Wbtn}, {height, Hent},
+			  {data, default}]),
+    gs:button(Win, [{label, {text, "Clear"}},
+		    {x, W/2-1/2*Wbtn}, {y, Ybtn},
+		    {width, Wbtn}, {height, Hent}]),
+    gs:button(Win, [{label, {text, "Close"}},
+		    {x, W/2+1/2*Wbtn+Pad}, {y, Ybtn},
+		    {width, Wbtn}, {height, Hent}]),
+
+    H = Ybtn+Hent+Pad,
+    gs:config(Win, [{height, H}, {map, true}]),
+    {Ent, Lbl, Btn}.
+
+ent(Win) -> element(1, Win).
+lbl(Win) -> element(2, Win).
+btn(Win) -> element(3, Win).

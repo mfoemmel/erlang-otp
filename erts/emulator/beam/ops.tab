@@ -32,6 +32,7 @@ i_module_info_1
 i_trace_breakpoint
 i_debug_breakpoint
 i_return_to_trace
+i_yield
 
 return
 
@@ -765,6 +766,14 @@ call_ext_last u==2 Bif=u$bif:erlang:fault/2 D => call_bif2 Bif
 
 call_ext_only Ar=u==1 Bif=u$bif:erlang:fault/1 => allocate u Ar | call_bif1 Bif
 call_ext_only Ar=u==2 Bif=u$bif:erlang:fault/2 => allocate u Ar | call_bif2 Bif
+
+#
+# The yield/0 BIF is an instruction
+#
+
+call_ext u==0 u$func:erlang:yield/0 => i_yield
+call_ext_last u==0 u$func:erlang:yield/0 D => i_yield | deallocate_return D
+call_ext_only u==0 u$func:erlang:yield/0 => i_yield | return
 
 #
 # The general case for BIFs that have no special instructions.

@@ -364,8 +364,9 @@ delete_constraints([H|T], State)
 	{ok, NewState} ->
 	    delete_constraints(T, NewState);
 	Reason ->
-	    ?not_errorMsg("'CosNotifyFilter_MappingFilter':modify_mapping_constraints() failed removing: ~p~n",
-			  [H]),
+	    orber:debug_level_print("[~p] 'CosNotifyFilter_MappingFilter':modify_mapping_constraints().
+Unable to remove: ~p
+Reason: ~p~n", [?LINE, H, Reason], ?DEBUG_LEVEL),
 	    delete_constraints(T, State)
     end;
 delete_constraints([H|T], State) ->
@@ -373,8 +374,9 @@ delete_constraints([H|T], State) ->
 	{ok, NewState} ->
 	    delete_constraints(T, NewState);
 	Reason ->
-	    ?not_errorMsg("'CosNotifyFilter_MappingFilter':modify_mapping_constraints(..) failed removing: ~p~n",
-			  [H]),
+	    orber:debug_level_print("[~p] 'CosNotifyFilter_MappingFilter':modify_mapping_constraints().
+Unable to remove: ~p
+Reason: ~p~n", [?LINE, H, Reason], ?DEBUG_LEVEL),
 	    delete_constraints(T, State)
     end.
     

@@ -433,7 +433,7 @@ extern int count_instructions;
      Eterm* dis_next;				\
      dis_next = (Eterm *) *I;			\
      CHECK_ARGS(I);				\
-     if (FCALLS > 0) {				\
+     if (FCALLS > 0 || (c_p->ct != NULL && FCALLS > -o_reds)) { \
         FCALLS--;				\
         Goto(dis_next);				\
      } else {					\
@@ -446,7 +446,7 @@ extern int count_instructions;
      Eterm* dis_next;				\
      dis_next = (Eterm *) *I;			\
      CHECK_ARGS(I);				\
-     if (FCALLS > 0) {				\
+     if (FCALLS > 0 || (c_p->ct != NULL && FCALLS > -o_reds)) { \
         FCALLS--;				\
         Goto(dis_next);				\
      } else {					\
@@ -739,7 +739,7 @@ extern int count_instructions;
 
 #define BsGetInteger(Sz, Flags, Dst, Store, Fail)			\
  do {									\
-    Eterm _result; Eterm _size;						\
+    Eterm _result; int _size;						\
     if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { Fail; }	\
     _size *= ((Flags) >> 3);						\
     SWAPOUT;								\
@@ -751,7 +751,7 @@ extern int count_instructions;
 
 #define BsGetFloat(Sz, Flags, Dst, Store, Fail)				\
  do {									\
-    Eterm _result; Eterm _size;						\
+    Eterm _result; int _size;						\
     if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { Fail; }	\
     _size *= ((Flags) >> 3);						\
     SWAPOUT;								\
@@ -773,7 +773,7 @@ extern int count_instructions;
 
 #define BsGetBinary(Sz, Flags, Dst, Store, Fail)			\
  do {									\
-    Eterm _result; Eterm _size;						\
+    Eterm _result; int _size;						\
     if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { Fail; }	\
     _size *= ((Flags) >> 3);						\
     SWAPOUT;								\
@@ -795,7 +795,7 @@ extern int count_instructions;
 
 #define BsSkipBits(Bits, Unit, Fail)					\
  do {									\
-    size_t new_offset; size_t _size;					\
+    size_t new_offset; int _size;					\
     if (!is_small(Bits) || (_size = signed_val(Bits)) < 0) { Fail; }	\
     new_offset = erts_mb.offset + _size * (Unit);			\
     if (new_offset <= erts_mb.size) { erts_mb.offset = new_offset; }	\
@@ -828,7 +828,7 @@ extern int count_instructions;
 
 #define BsPutInteger(Sz, Flags, Src)					\
  do {									\
-    Eterm _size;							\
+    int _size;							\
     if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { goto badarg; }	\
     _size *= ((Flags) >> 3);						\
     if (!erts_bs_put_integer((Src), _size, (Flags))) { goto badarg; }	\
@@ -841,7 +841,7 @@ extern int count_instructions;
 
 #define BsPutFloat(Sz, Flags, Src)					\
  do {									\
-    Eterm _size;							\
+    int _size;							\
     if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { goto badarg; }	\
     _size *= ((Flags) >> 3);						\
     if (!erts_bs_put_float((Src), _size, (Flags))) { goto badarg; }	\
@@ -849,7 +849,7 @@ extern int count_instructions;
 
 #define BsPutBinary(Sz, Flags, Src)					\
  do {									\
-    Eterm _size;							\
+    int _size;							\
     if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { goto badarg; }	\
     _size *= ((Flags) >> 3);						\
     if (!erts_bs_put_binary((Src), _size)) { goto badarg; }		\
@@ -1366,9 +1366,11 @@ int process_main(c_p, reds)
      if (c_p->ct != NULL) {
 	 save_calls(c_p, &exp_receive);
      }
-     SEQ_TRACE_TOKEN(c_p) = msgp->seq_trace_token;
-     if (SEQ_TRACE_TOKEN(c_p) != NIL) {
+     if (msgp->seq_trace_token == NIL) {
+	 SEQ_TRACE_TOKEN(c_p) = msgp->seq_trace_token;
+     } else if (msgp->seq_trace_token != am_undefined) {
 	 Eterm msg;
+	 SEQ_TRACE_TOKEN(c_p) = msgp->seq_trace_token;
 	 ASSERT(is_tuple(SEQ_TRACE_TOKEN(c_p)));
 	 ASSERT(SEQ_TRACE_TOKEN_ARITY(c_p) == 5);
 	 ASSERT(is_small(SEQ_TRACE_TOKEN_SERIAL(c_p)));
@@ -2182,7 +2184,8 @@ int process_main(c_p, reds)
 						    c_p->arity *
 						    sizeof(c_p->arg_reg[0]));
 	 } else {
-	     c_p->arg_reg = (Eterm *) safe_alloc(c_p->arity * sizeof(c_p->arg_reg[0]));
+	     c_p->arg_reg = (Eterm *)
+		 safe_alloc_from(310, c_p->arity * sizeof(c_p->arg_reg[0]));
 	 }
      }
 
@@ -2762,17 +2765,46 @@ int process_main(c_p, reds)
      Uint real_I;
      Uint32 flags;
      if (IS_TRACED_FL(c_p, F_TRACE_CALLS)) {
+	 Uint *cpp;
 	 flags = 0;
 	 SWAPOUT;
 	 reg[0] = r(0);
-	 real_I = erts_process_break(c_p, I, I - 3, reg, &flags);
+
+	 if (*cp_val((Eterm)c_p->cp) 
+	     == (Uint) OpCode(return_trace)) {
+	     cpp = &((Uint) E[1]);
+	 } else if (*cp_val((Eterm)c_p->cp) 
+		    == (Uint) OpCode(i_return_to_trace)) {
+	     cpp = &((Uint) E[0]);
+	 } else {
+	     cpp = NULL;
+	 }
+	 if (cpp) {
+	     Eterm *cp_save = c_p->cp;
+	     for (;;) {
+		 ASSERT(is_CP(*cpp));
+		 if (*cp_val(*cpp) == (Uint) OpCode(return_trace)) {
+		     cpp += 2;
+		 } else if (*cp_val(*cpp) == (Uint) OpCode(i_return_to_trace)) {
+		     cpp += 1;
+		 } else
+		     break;
+	     }
+	     c_p->cp = (Eterm *) *cpp;
+	     ASSERT(is_CP((Eterm)c_p->cp));
+	     real_I = erts_process_break(c_p, I, I - 3, reg, &flags);
+	     c_p->cp = cp_save;
+	 } else {
+	     real_I = erts_process_break(c_p, I, I - 3, reg, &flags);
+	 }
+
 	 if ((flags & MATCH_SET_RETURN_TO_TRACE)) {
 	     static void* return_to_trace[1] = {OpCode(i_return_to_trace)};
 	     if ((Uint) c_p->cp != make_cp((Uint*)return_to_trace)) {
 		 /* Look down the stack for other return_to frames */
 		 int do_insert = 1;
 		 if (*cp_val((Eterm)c_p->cp) == (Uint) OpCode(return_trace)) {
-		     Uint *cpp = &((Uint) E[1]);
+		     cpp = &((Uint) E[1]);
 		     for(;;) {
 			 ASSERT(is_CP(*cpp));
 			 if (*cp_val(*cpp) == 
@@ -3114,6 +3146,20 @@ int process_main(c_p, reds)
      Goto(hcc->opcode);
  }
 #endif /* HIPE */
+
+ OpCase(i_yield):
+ {
+     /* This is safe as long as REDS_IN(c_p) is never stored 
+      * in c_p->arg_reg[0]. It is currently stored in c_p->def_arg_reg[5],
+      * which may be c_p->arg_reg[5], which is close, but no banana.
+      */
+     c_p->arg_reg[0] = am_true;
+     c_p->arity = 1; /* One living register (the 'true' return value) */
+     SWAPOUT;
+     c_p->i = I + 1; /* Next instruction */
+     add_to_schedule_q(c_p);
+     return REDS_IN(c_p) - FCALLS;
+ }
 
  OpCase(i_debug_breakpoint): {
      SWAPOUT;

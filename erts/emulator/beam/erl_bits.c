@@ -191,7 +191,7 @@ erts_bs_get_integer(Process *p, Uint num_bits, unsigned flags)
 
     if (bytes <= sizeof bigbuf) {
 	LSB = bigbuf;
-    } else if ((LSB = sys_alloc(bytes)) == NULL) {
+    } else if ((LSB = sys_alloc_from(241, bytes)) == NULL) {
 	erl_exit(1, "Insufficient memory");
     }
     MSB = LSB + bytes - 1;
@@ -570,7 +570,7 @@ need_buf(byte **p, int *len, int need)
 {
     if (*len < need) {
 	if (*len == 0)
-	    *p = sys_alloc(need);
+	    *p = sys_alloc_from(240, need);
 	else
 	    *p = sys_realloc(*p, *len + need);
 

@@ -440,6 +440,15 @@ con_loop(Kernel, Node, Socket, TcpAddress,
 	    ?shutdown(Node);
 	{Kernel, disconnect} ->
 	    ?shutdown(Node);
+	{Kernel, aux_tick} ->
+	    case MFGetstat(Socket) of
+		{ok, _, _, PendWrite} ->
+		    send_tick(Socket, PendWrite, MFTick);
+		_ ->
+		    ignore_it
+	    end,
+	    con_loop(Kernel, Node, Socket, TcpAddress, MyNode, Type,
+		     Tick, MFTick, MFGetstat);
 	{Kernel, tick} ->
 	    case send_tick(Socket, Tick, Type, 
 			   MFTick, MFGetstat) of

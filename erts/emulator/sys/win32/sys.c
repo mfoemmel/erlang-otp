@@ -2117,8 +2117,8 @@ void* SYS_ALLOC(Uint size)
     alloc_calls++;
   
     if (p != NULL) {
-	*p = size;
-	tot_allocated += size;
+	*p = (size_t) size;
+	tot_allocated += (size_t) size;
 	return (void*)(((char*)p) + 2*sizeof(uint32));
     }
     /* memset(p, 0, size); */
@@ -2140,8 +2140,8 @@ void* SYS_REALLOC(void* ptr, Uint size)
 	tot_allocated -= *p;
 	p = (uint32*) realloc((char*)p, 2*sizeof(uint32)+((size_t)size));
 	if (p != NULL) {
-	    *p = size;
-	    tot_allocated += size;
+	    *p = (size_t) size;
+	    tot_allocated += (size_t) size;
 	    return (void*)(((char*)p) + 2*sizeof(uint32));
 	}
 	return p;

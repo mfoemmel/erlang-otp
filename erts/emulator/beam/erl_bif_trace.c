@@ -212,6 +212,9 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
     int matches = 0;
     Uint mask = 0;
     Uint res;
+#ifdef HAVE_ERTS_NOW_CPU
+    int cpu_ts = 0;
+#endif
 
     switch (how) {
     case am_false: 
@@ -230,6 +233,10 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 	item = CAR(list_val(list));
 	if (is_atom(item) && (res = erts_trace_flag2bit(item)) != 0) {
 	    mask |= res;
+#ifdef HAVE_ERTS_NOW_CPU
+	} else if (item == am_cpu_timestamp) {
+	    cpu_ts = !0;
+#endif
 	} else if (is_tuple(item)) {
 	    Eterm* tp = tuple_val(item);
 	    
@@ -266,6 +273,11 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
     if (is_pid(pid_spec)) {
 	Process *tracee_p;
 
+#ifdef HAVE_ERTS_NOW_CPU
+	if (cpu_ts) {
+	    goto error;
+	}
+#endif
 	/* Check that the tracee is not dead, not tracing 
 	 * and not about to be tracing.
 	 */
@@ -296,10 +308,27 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 	matches = 1;
     } else {
 	int ok = 0;
+
+#ifdef HAVE_ERTS_NOW_CPU
+	if (cpu_ts) {
+	    if (pid_spec == am_all) {
+		if (on) {
+		    if (!erts_cpu_timestamp) {
+			if (erts_start_now_cpu() < 0) {
+			    goto error;
+			}
+			erts_cpu_timestamp = !0;
+		    }
+		}
+	    } else {
+		goto error;
+	    }
+	}
+#endif
 	
 	if (pid_spec == am_all || pid_spec == am_existing) {
 	    int i;
-	    
+
 	    ok = 1;
 	    for (i = 0; i < max_process; i++) {
 		Process* tracee_p = process_tab[i];
@@ -340,7 +369,17 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 		}
 		erts_default_tracer = tracer;
 	    }
+#ifdef HAVE_ERTS_NOW_CPU
+	    if (cpu_ts && !on) {
+		/* cpu_ts => pid_spec == am_all */
+		if (erts_cpu_timestamp) {
+		    erts_stop_now_cpu();
+		    erts_cpu_timestamp = 0;
+		}
+	    }
+#endif
 	}
+	
 	if (!ok)
 	    goto error;
     }
@@ -721,6 +760,11 @@ erts_set_trace_pattern(Eterm* mfa, int specified, Binary* match_prog_set,
 	    continue;
 	}
 
+	if (bif_table[i].f == bif_table[i].traced) {
+	    /* Trace wrapper same as regular function - untraceable */
+	    continue;
+	}
+
 	for (j = 0; j < specified && mfa[j] == ep->code[j]; j++) {
 	    /* Empty loop body */
 	}
@@ -1013,7 +1057,7 @@ Eterm erts_seq_trace(Process *p, Eterm arg1, Eterm arg2,
         }
         new_seq_trace_token(p);
 	if (build_result) {
-	    hp = HAlloc(p,3);
+	    hp = ArithAlloc(p,3);
 	    old_value = TUPLE2(hp, SEQ_TRACE_TOKEN_LASTCNT(p),
 			       SEQ_TRACE_TOKEN_SERIAL(p));
 	}
@@ -1044,7 +1088,7 @@ new_seq_trace_token(Process* p)
     Eterm* hp;
 
     if (SEQ_TRACE_TOKEN(p) == NIL) {
-	hp = HAlloc(p, 6);
+	hp = ArithAlloc(p, 6);
 	SEQ_TRACE_TOKEN(p) = TUPLE5(hp, make_small(0), /*Flags*/ 
 				    make_small(0), /*Label*/
 				    make_small(0), /*Serial*/

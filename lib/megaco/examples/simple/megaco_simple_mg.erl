@@ -30,6 +30,7 @@
 -behaviour(megaco_user).
 
 -export([
+	 start_batch/0, init_batch/1,
 	 start/0, start/4,
 	 start_tcp_text/2, start_tcp_binary/2, start_udp_text/2, start_udp_binary/2,
 	 stop/0, stop/1
@@ -43,7 +44,8 @@
          handle_trans_request/3,
          handle_trans_long_request/3,
          handle_trans_reply/4,
-         handle_trans_ack/4
+         handle_trans_ack/4,
+	 handle_unexpected_trans/3
         ]).
 
 -include_lib("megaco/include/megaco.hrl").
@@ -237,3 +239,29 @@ handle_trans_reply(ConnHandle, ProtocolVersion, ActualReply, ReplyData) ->
 
 handle_trans_ack(ConnHandle, ProtocolVersion, AckStatus, AckData) ->
     ok.
+
+%%----------------------------------------------------------------------
+%% Invoked when  an unexpected message has been received
+%%----------------------------------------------------------------------
+
+handle_unexpected_trans(ConnHandle, ProtocolVersion, Trans) ->
+    ok.
+%%----------------------------------------------------------------------
+%% To be used at command line: erl -s ?MODULE start_batch
+%%----------------------------------------------------------------------
+
+start_batch() ->
+    Pid = spawn(?MODULE, init_batch, [self()]),
+    receive
+	{init_batch, Pid, Res} ->
+	    io:format("~p(~p): ~p~n", [?MODULE, ?LINE, Res]),
+	    Res
+    end.
+	    
+init_batch(ReplyTo) ->
+    register(?MODULE, self()),
+    Res = start(),
+    ReplyTo ! {init_batch, self(), Res},
+    receive
+    after infinity -> Res
+    end.

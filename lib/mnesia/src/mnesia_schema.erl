@@ -95,6 +95,14 @@
 	 make_delete_table/2
 	]).
 
+%% Needed outside to be able to use/set table_properties
+%% from user (not supported) 
+-export([schema_transaction/1,
+	 insert_schema_ops/2,
+	 do_create_table/1,
+	 do_delete_table_property/2,
+ 	 do_write_table_property/2]).
+
 -include("mnesia.hrl").
 -include_lib("kernel/include/file.hrl").
 
@@ -590,9 +598,8 @@ schema_coordinator(Client, Fun, Controller) when pid(Controller) ->
     link(Controller),
     unlink(Client),
     
-    %% Fulfull the transaction even if the client dies
+    %% Fulfull the transaction even if the client dies     
     Res = mnesia:transaction(Fun),
-    
     Client ! {transaction_done, Res, self()},
     unlink(Controller),         % Avoids spurious exit message
     unlink(whereis(mnesia_tm)), % Avoids spurious exit message
@@ -1390,10 +1397,10 @@ make_transform(Tab, Fun, NewAttrs, NewRecName) ->
 			     {Op, Ncs1}
 		     end,
             {DelOps, Cs1} = lists:mapfoldl(DelIdx, Cs, PosList),
-            {AddOps, Cs2} = lists:mapfoldl(AddIdx, Cs1, PosList),
-	    Cs3 = Cs2#cstruct{attributes = NewAttrs, record_name = NewRecName},
+	    Cs2 = Cs1#cstruct{attributes = NewAttrs, record_name = NewRecName},
+            {AddOps, Cs3} = lists:mapfoldl(AddIdx, Cs2, PosList),
 	    verify_cstruct(Cs3),
-	    lists:flatten([DelOps, {op, transform, Fun, cs2list(Cs3)}, AddOps])
+	    lists:flatten([DelOps, {op, transform, Fun, cs2list(Cs2)}, AddOps])
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1446,11 +1453,25 @@ write_table_property(Tab, Prop) when tuple(Prop), size(Prop) >= 1 ->
     schema_transaction(fun() -> do_write_table_property(Tab, Prop) end);
 write_table_property(Tab, Prop) ->
     {aborted, {bad_type, Tab, Prop}}.
-
 do_write_table_property(Tab, Prop) ->
     TidTs = get_tid_ts_and_lock(schema, write),
-    get_tid_ts_and_lock(Tab, none),
-    insert_schema_ops(TidTs, make_write_table_properties(Tab, [Prop])).
+    {_, _, Ts} = TidTs,
+    Store = Ts#tidstore.store,
+    case change_prop_in_existing_op(Tab, Prop, write_property, Store) of
+	true ->
+	    dbg_out("change_prop_in_existing_op"
+		    "(~p,~p,write_property,Store) -> true~n",
+		    [Tab,Prop]),
+	    %% we have merged the table prop into the create_table op
+	    ok;
+	false ->
+	    dbg_out("change_prop_in_existing_op"
+		    "(~p,~p,write_property,Store) -> false~n",
+		    [Tab,Prop]),
+	    %% this must be an existing table
+	    get_tid_ts_and_lock(Tab, none),
+	    insert_schema_ops(TidTs, make_write_table_properties(Tab, [Prop]))
+    end.
 
 make_write_table_properties(Tab, Props) ->
     ensure_writable(schema),
@@ -1470,13 +1491,87 @@ make_write_table_properties(Tab, [Prop | Props], Cs) ->
 make_write_table_properties(Tab, [], Cs) ->
     [].
 
+change_prop_in_existing_op(Tab, Prop, How, Store) ->
+    Ops = ets:match_object(Store, '_'),
+    case update_existing_op(Ops, Tab, Prop, How, Acc = []) of
+	{true, Ops1} ->
+	    ets:match_delete(Store, '_'),
+	    [ets:insert(Store, Op) || Op <- Ops1],
+	    true;
+	false ->
+	    false
+    end.
+ 
+update_existing_op([{op, Op, L = [{name,Tab}|_], OldProp}|Ops], 
+		   Tab, Prop, How, Acc) when Op == write_property; 
+					     Op == delete_property ->
+    %% Apparently, mnesia_dumper doesn't care about OldProp here -- just L,
+    %% so we will throw away OldProp (not that it matters...) and insert Prop.
+    %% as element 3.
+    L1 = insert_prop(Prop, L, How),
+    NewOp = {op, How, L1, Prop},
+    {true, lists:reverse(Acc) ++ [NewOp|Ops]};
+update_existing_op([Op = {op, create_table, L}|Ops], Tab, Prop, How, Acc) ->
+    case lists:keysearch(name, 1, L) of
+	{value, {_, Tab}} ->
+	    %% Tab is being created here -- insert Prop into L
+	    L1 = insert_prop(Prop, L, How),
+	    {true, lists:reverse(Acc) ++ [{op, create_table, L1}|Ops]};
+	_ ->
+	    update_existing_op(Ops, Tab, Prop, How, [Op|Acc])
+    end;
+update_existing_op([Op|Ops], Tab, Prop, How, Acc) ->
+    update_existing_op(Ops, Tab, Prop, How, [Op|Acc]);
+update_existing_op([], _, _, _, _) ->
+    false.
+ 
+%% perhaps a misnomer. How could also be delete_property... never mind.
+%% Returns the modified L.
+insert_prop(Prop, L, How) ->
+    Prev = find_props(L),
+    MergedProps = merge_with_previous(How, Prop, Prev),
+    replace_props(L, MergedProps).
+
+
+
+find_props([{user_properties, P}|_]) -> P;
+find_props([H|T]) -> find_props(T).
+%% we shouldn't reach []
+
+replace_props([{user_properties, _}|T], P) -> [{user_properties, P}|T];
+replace_props([H|T], P) -> [H|replace_props(T, P)].
+%% again, we shouldn't reach []
+
+merge_with_previous(write_property, Prop, Prev) ->
+    Key = element(1, Prop),
+    Prev1 = lists:keydelete(Key, 1, Prev),
+    lists:sort([Prop|Prev1]);
+merge_with_previous(delete_property, PropKey, Prev) ->
+    lists:keydelete(PropKey, 1, Prev).
+
 delete_table_property(Tab, PropKey) ->
     schema_transaction(fun() -> do_delete_table_property(Tab, PropKey) end).
 
 do_delete_table_property(Tab, PropKey) ->
     TidTs = get_tid_ts_and_lock(schema, write),
-    get_tid_ts_and_lock(Tab, none),
-    insert_schema_ops(TidTs, make_delete_table_properties(Tab, [PropKey])).
+    {_, _, Ts} = TidTs,
+    Store = Ts#tidstore.store,
+    case change_prop_in_existing_op(Tab, PropKey, delete_property, Store) of
+	true ->
+	    dbg_out("change_prop_in_existing_op"
+		    "(~p,~p,delete_property,Store) -> true~n",
+		    [Tab,PropKey]),
+	    %% we have merged the table prop into the create_table op
+	    ok;
+	false ->
+	    dbg_out("change_prop_in_existing_op"
+		    "(~p,~p,delete_property,Store) -> false~n",
+		    [Tab,PropKey]),
+	    %% this must be an existing table
+	    get_tid_ts_and_lock(Tab, none),
+	    insert_schema_ops(TidTs, 
+			      make_delete_table_properties(Tab, [PropKey]))
+    end.
 
 make_delete_table_properties(Tab, PropKeys) ->
     ensure_writable(schema),
@@ -1512,8 +1607,7 @@ prepare_commit(Tid, Commit, WaitFor) ->
 	    case DumperMode of
 		optional ->
 		    dbg_out("Transaction log dump skipped (~p): ~w~n",
-			    [DumperMode, InitBy]),
-		    GoodRes;
+			    [DumperMode, InitBy]);
 		mandatory ->
 		    case mnesia_controller:sync_dump_log(InitBy) of
 			dumped ->
@@ -1521,7 +1615,16 @@ prepare_commit(Tid, Commit, WaitFor) ->
 			{error, Reason} ->
 			    mnesia:abort(Reason)
 		    end
-	    end
+	    end,
+	    case Ops of
+		[] -> 
+		    ignore;
+		_ ->
+		    %% We need to grab a dumper lock here, the log may not
+		    %% be dumped by others, during the schema commit phase.
+		    mnesia_controller:wait_for_schema_commit_lock()
+	    end,
+	    GoodRes
     end.
 
 prepare_ops(Tid, [Op | Ops], WaitFor, Changed, Acc, DumperMode) ->
@@ -1721,27 +1824,24 @@ prepare_op(_Tid, {op, change_table_copy_type,  N, FromS, ToS, TabDef}, WaitFor)
 	    case mnesia_monitor:use_dir() of
 		true -> 
 		    Dat = mnesia_lib:tab2dcd(Tab),
-		    Dmp = mnesia_lib:tab2dmp(Tab),
 		    case mnesia_lib:exists(Dat) of
 			true ->
 			    mnesia:abort({combine_error, Tab, node(),
 					  "Table dump exists"});
 			false ->
-			    ignore
+			    case ToS of 
+				disc_copies -> 
+				    mnesia_log:ets2dcd(Tab, dmp);
+				disc_only_copies ->
+				    mnesia_dumper:raw_named_dump_table(Tab, dmp)
+			    end,
+			    mnesia_checkpoint:tm_change_table_copy_type(Tab, FromS, ToS)
 		    end;
 		false ->
-		    ignore
-	    end,
-	    case ToS of 
-		disc_copies -> 
-		    mnesia_log:ets2dcd(Tab, dmp);
-		disc_only_copies ->
-		    mnesia_dumper:raw_named_dump_table(Tab, dmp)
-	    end,
-	    mnesia_checkpoint:tm_change_table_copy_type(Tab, FromS, ToS);
+		    mnesia:abort({has_no_disc, node()})
+	    end;
 	
 	FromS == disc_copies, ToS == disc_only_copies ->
-	    Dat = mnesia_lib:tab2dmp(Tab),
 	    mnesia_dumper:raw_named_dump_table(Tab, dmp);
 	true ->
 	    ignore
@@ -1760,9 +1860,14 @@ prepare_op(_Tid, {op, dump_table, unknown, TabDef}, WaitFor) ->
     Tab = Cs#cstruct.name,
     case lists:member(node(), Cs#cstruct.ram_copies) of
         true ->
-            mnesia_log:ets2dcd(Tab, dmp),
-	    Size = mnesia:table_info(Tab, size),
-	    {true, [{op, dump_table, Size, TabDef}], optional};
+	    case mnesia_monitor:use_dir() of
+		true -> 
+		    mnesia_log:ets2dcd(Tab, dmp),
+		    Size = mnesia:table_info(Tab, size),
+		    {true, [{op, dump_table, Size, TabDef}], optional};
+		false ->
+		    mnesia:abort({has_no_disc, node()})
+	    end;
         false ->
             {false, optional}
     end;
@@ -1920,6 +2025,7 @@ undo_prepare_commit(Tid, Commit) ->
 	[] ->
 	    ignore;
 	Ops ->
+	    mnesia_controller:release_schema_commit_lock(),
 	    undo_prepare_ops(Tid, Ops)
     end,
     Commit.
@@ -2686,6 +2792,7 @@ announce_im_running([N | Ns], SchemaCs) ->
     {L1, L2} = mnesia_recover:connect_nodes([N]),
     case lists:member(N, L1) or lists:member(N, L2) of
 	true ->
+%%	    dbg_out("Adding ~p to {current db_nodes} ~n", [N]),  %% qqqq
 	    mnesia_lib:add({current, db_nodes}, N),
 	    mnesia_controller:add_active_replica(schema, N, SchemaCs);
 	false ->

@@ -104,7 +104,8 @@ release_spec: opt
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(APP_TARGET) $(APPUP_TARGET) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR)  $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src
+	$(INSTALL_DIR)  $(RELSYSDIR)/src/engine
+	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src/engine
 	$(INSTALL_DIR)  $(RELSYSDIR)/include
 	$(INSTALL_DATA) $(EXTERNAL_HRL_FILES) $(RELSYSDIR)/include
 
@@ -130,7 +131,7 @@ $(EBIN)/megaco_erl_dist_encoder.$(EMULATOR): megaco_erl_dist_encoder.erl \
 
 $(EBIN)/megaco_filter.$(EMULATOR): megaco_filter.erl \
 	../../include/megaco.hrl ../../include/megaco_message_v1.hrl \
-	megaco_internal.hrl ../../utils/event_tracer.hrl
+	megaco_internal.hrl ../../utils/et/et.hrl
 
 $(EBIN)/megaco_monitor.$(EMULATOR): megaco_monitor.erl 
 
