@@ -50,14 +50,14 @@ gs_contribs_dir() ->
 % Returns the address to the toolbar help file
 %----------------------------------------
 help_file() ->
-    filename:join(code:lib_dir(toolbar),"doc/index.html").
+    filename:join([code:lib_dir(toolbar),"doc", "html", "index.html"]).
 
 %----------------------------------------
 % otp_file() => string()
 % Returns the address to the OTP documentation
 %----------------------------------------
 otp_file() ->
-    filename:join(code:root_dir(),"doc/index.html").
+    filename:join([code:root_dir(),"doc", "index.html"]).
 
 %----------------------------------------
 % error_string(Reason) => string()

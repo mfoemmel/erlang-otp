@@ -360,8 +360,8 @@ bif 'erl.lang':error/1		ebif_error_1 error_1
 bif erlang:error/2		error_2
 bif erlang:fault/2		fault_2
 bif 'erl.lang':error/2		ebif_error_2 error_2
-#bif erlang:raise/3		raise_3
-#bif 'erl.lang':raise/3		ebif_raise_3 raise_3
+bif erlang:raise/3		raise_3
+bif 'erl.lang':raise/3		ebif_raise_3 raise_3
 bif erlang:get_stacktrace/0
 bif 'erl.lang.proc':get_stacktrace/0	ebif_get_stacktrace_0
 

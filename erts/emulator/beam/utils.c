@@ -282,6 +282,12 @@ void erts_arith_shrink(Process* p, Eterm* hp)
 		Uint diff = ARITH_HEAP(p) - hp;
 		ARITH_HEAP(p) = hp;
 		ARITH_AVAIL(p) += diff;
+#ifdef DEBUG
+		while (diff != 0) {
+		    hp[--diff] = ARITH_MARKER;
+		}
+		ARITH_CHECK_ME(p) = hp;
+#endif
 #if defined(HYBRID) || defined(DEBUG)
 	    } else {
 		/*

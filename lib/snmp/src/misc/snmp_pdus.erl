@@ -569,7 +569,7 @@ enc_VarBindList(EncodedVBs) when integer(hd(EncodedVBs)) ->
     Len1 = elength(length(EncodedVBs)),
     lists:append([48 | Len1],EncodedVBs);
 enc_VarBindList(VBs) ->
-    Bytes1 = lists:append(lists:map({snmp_pdus, enc_varbind}, VBs)),
+    Bytes1 = lists:append(lists:map(fun enc_varbind/1, VBs)),
     Len1 = elength(length(Bytes1)),
     lists:append([48 | Len1],Bytes1).
 

@@ -3,7 +3,7 @@
 
 -module(hipe_amd64_ra_sse2_postconditions).
 -export([check_and_rewrite/4]).
--include("hipe_amd64.hrl").
+-include("../x86/hipe_x86.hrl").
 -define(HIPE_INSTRUMENT_COMPILER, true).
 -include("../main/hipe.hrl").
 -define(count_temp(T), ?cons_counter(counter_mfa_mem_temps, T)).
@@ -16,7 +16,7 @@ check_and_rewrite(AMD64Defun, Coloring, DontSpill, _Options) ->
   #defun{code=Code0} = AMD64Defun,
   {Code1, NewDontSpill} = do_insns(Code0, TempMap, [], DontSpill),
   {AMD64Defun#defun{code=Code1,
-		  var_range={0, hipe_gensym:get_var(amd64)}}, 
+		  var_range={0, hipe_gensym:get_var(x86)}}, 
    Coloring, NewDontSpill}.
 
 do_insns([I|Insns], TempMap, Is, DontSpill) ->
@@ -88,10 +88,10 @@ do_fmove(I, TempMap, DontSpill) ->
 is_mem_opnd(Opnd, TempMap) ->
   R =
     case Opnd of
-      #amd64_mem{} -> true;
-      #amd64_temp{} -> 
-	Reg = hipe_amd64:temp_reg(Opnd),
-	case hipe_amd64:temp_is_allocatable(Opnd) of
+      #x86_mem{} -> true;
+      #x86_temp{} -> 
+	Reg = hipe_x86:temp_reg(Opnd),
+	case hipe_x86:temp_is_allocatable(Opnd) of
 	  true -> 
 	    case size(TempMap) > Reg of 
 	      true ->
@@ -115,10 +115,10 @@ is_mem_opnd(Opnd, TempMap) ->
 %%% Check if an operand is a spilled Temp.
 
 %%src_is_spilled(Src, TempMap) ->
-%%  case hipe_amd64:is_temp(Src) of
+%%  case hipe_x86:is_temp(Src) of
 %%    true ->
-%%      Reg = hipe_amd64:temp_reg(Src),
-%%      case hipe_amd64:temp_is_allocatable(Src) of
+%%      Reg = hipe_x86:temp_reg(Src),
+%%      case hipe_x86:temp_is_allocatable(Src) of
 %%	true -> 
 %%	  case size(TempMap) > Reg of 
 %%	    true ->
@@ -138,9 +138,9 @@ is_mem_opnd(Opnd, TempMap) ->
 %%  end.
 
 %% is_spilled(Temp, TempMap) ->
-%%   case hipe_amd64:temp_is_allocatable(Temp) of
+%%   case hipe_x86:temp_is_allocatable(Temp) of
 %%     true ->
-%%       Reg = hipe_amd64:temp_reg(Temp),
+%%       Reg = hipe_x86:temp_reg(Temp),
 %%       case size(TempMap) > Reg of 
 %%  	true ->
 %%  	  case hipe_temp_map:is_spilled(Reg, TempMap) of
@@ -161,17 +161,17 @@ is_mem_opnd(Opnd, TempMap) ->
 clone(Dst) ->
   Type =
     case Dst of
-      #amd64_mem{} -> hipe_amd64:mem_type(Dst);
-      #amd64_temp{} -> hipe_amd64:temp_type(Dst)
+      #x86_mem{} -> hipe_x86:mem_type(Dst);
+      #x86_temp{} -> hipe_x86:temp_type(Dst)
     end,
-  hipe_amd64:mk_new_temp(Type).
+  hipe_x86:mk_new_temp(Type).
 
 %%% Make a certain reg into a clone of Dst
 
 % clone2(Dst, Reg) ->
 %   Type =
 %     case Dst of
-%       #amd64_mem{} -> hipe_amd64:mem_type(Dst);
-%       #amd64_temp{} -> hipe_amd64:temp_type(Dst)
+%       #x86_mem{} -> hipe_x86:mem_type(Dst);
+%       #x86_temp{} -> hipe_x86:temp_type(Dst)
 %     end,
-%   hipe_amd64:mk_temp(Reg,Type).
+%   hipe_x86:mk_temp(Reg,Type).

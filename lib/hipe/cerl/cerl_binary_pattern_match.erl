@@ -18,8 +18,23 @@
 	 bin_guard_matches/1, bin_guard_label/1,
 	 size_const/1, size_all/1, size_vars/1,size_def_vars/1,
 	 instr_type/1, label_name/1, goto_label/1]).
+
+%% Exactly one of these four macros should be defined
+%% they decide which heuristic is used to select the next
+%% segment
+
+-define(USES_MATCH, true).
+%-define(USES_READ, true).
+%-define(INDEXNESS, true).
+%-define(LEFT, true).
+
+
+
+%-define(BIN_PMATCH_DEBUG,true).
+%-define(DOT_FILE, '/tmp/out.dot').
 -ifdef(BIN_PMATCH_DEBUG).
--export([pp/1, full_size/1, a_height/1, max_height/1, read_seg/4]).
+-export([pp/1, full_size/1, a_height/1, max_height/1, read_seg/4,
+	dot/1]).
 -endif.
 -include("cerl_hipe_primops.hrl").
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -93,6 +108,7 @@ binary_match_max_tag(#binary_match{max_tag=X}) -> X.
 %% each node contains an instruction and a pointer to the success tree
 %% and one to the fail tree
 -record(clause_tree, {instr, success=[], fail=[]}).
+-record(ann_clause_tree, {instr, success=[], fail=[], ann}).
 %% @spec clause_tree_instr(binary_match()) -> instr()
 %% @doc Returns the instr field from a clause tree 
 clause_tree_instr(#clause_tree{instr=X}) -> X.
@@ -171,6 +187,12 @@ new_node(Key,Hash=#hash_cons{tree=Tree, number=Number}) ->
       {already_exists, LabelName}
   end.
 
+%% NO DAG OPTIMIZATION
+
+% new_node(Key,Hash=#hash_cons{tree=Tree, number=Number}) ->
+%   LabelName=cerl:c_int(Number),
+%   {new, LabelName, Hash#hash_cons{tree=gb_trees:enter(Key, LabelName, Tree), number=Number+1}}.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %%End of record definitions
@@ -192,7 +214,9 @@ add_offset_to_bin(BinClauses) ->
   ITree=create_interference_tree(BClause0),
   %%io:format("~nInterference:~n~p~n", [gb_trees:to_list(ITree)]),
   {ClauseTree, _Hash}=adapt(BClause0, #hash_cons{}, ITree),
-  #binary_match{clause_tree=ClauseTree, max_tag=MaxTag}.
+  BM = #binary_match{clause_tree=ClauseTree, max_tag=MaxTag},
+  %dot(BM),
+  BM.
 
  
 %%==========================================================================
@@ -223,7 +247,6 @@ iterate_binclauses([], Tag, _TagMap) ->
 iterate_binsegs(BinSegs, Tag, TagMap) ->
   iterate_binsegs(BinSegs,  Tag, [], [], #size{}, [], [], TagMap).
   
-
 iterate_binsegs([Seg|Rest], Tag, ReadySegs, AccSegs, AccSize, AccMatches, AccDefs, TagMap) ->
   case annotate_seg(Seg, Tag, AccSize, AccDefs, TagMap) of
     {var, {{NewTag, NewTagMap}, ReadNode, Match}, NewAccSize} ->
@@ -235,13 +258,12 @@ iterate_binsegs([Seg|Rest], Tag, ReadySegs, AccSegs, AccSize, AccMatches, AccDef
     {size, {SizeTest,{var, {{NewTag, NewTagMap}, ReadNode, Match}, NewAccSize}}} ->
       NewReadySegs = ReadySegs ++ [SizeTest|lists:reverse([ReadNode|AccSegs])],
       iterate_binsegs(Rest, NewTag, NewReadySegs, [], NewAccSize, [Match|AccMatches], 
-		      [Match], NewTagMap);
+		      [Match|AccDefs], NewTagMap);
     {size, {SizeTest, {const, {{NewTag, NewTagMap}, ReadNode, MatchNode}, NewAccSize}}}->
       NewReadySegs = ReadySegs ++ [SizeTest|lists:reverse([MatchNode,ReadNode|AccSegs])],
       iterate_binsegs(Rest, NewTag, NewReadySegs, [], NewAccSize, AccMatches, 
-		      [], NewTagMap)
+		      AccDefs, NewTagMap)
   end;
-
 iterate_binsegs([], Tag, ReadySegs, AccSegs, AccSize, AccMatches, _AccDefs, TagMap) ->
   {AccMatches, ReadySegs ++ [AccSize|lists:reverse(AccSegs)], Tag, TagMap}.
 
@@ -320,7 +342,6 @@ size_var_def(Size, [Def|Rest]) ->
     _ ->
       size_var_def(Size, Rest)
   end;
-
 size_var_def(_Size, []) ->
   false.
 
@@ -361,7 +382,6 @@ it_clause_for_read([_|Rest], Acc, Tags) ->
   it_clause_for_read(Rest, Acc, Tags);
 it_clause_for_read([], Acc, Tags) ->
   {Acc, Tags}.
-
 
 find_interfering([ReadSeg|Rest], IntTree) ->
   NewIntTree=find_interfering(Rest, ReadSeg, IntTree),
@@ -457,7 +477,6 @@ sameType({Sort, Flags}, {Sort0, Flags0}) ->
 
 adapt([], Hash, _ITree)->
   {[], Hash};
-
 adapt(BClause, Hash, ITree) ->
   BClause0=BClause,
   case new_node(BClause0, Hash) of
@@ -470,7 +489,6 @@ adapt(BClause, Hash, ITree) ->
       {#clause_tree{instr=Goto}, Hash}
   end.
       
-
 adapt0(#b_clause{segments=[], matches=Matches, guard=Guard, body=Body, next_clause=NextClause}, 
        Hash,  ITree) ->
   Ref = cerl:concrete(get_ref(Guard)),
@@ -479,7 +497,6 @@ adapt0(#b_clause{segments=[], matches=Matches, guard=Guard, body=Body, next_clau
   NewBody = update_body(Body, Ref, NewRef),
   {Fail, Hash1} = adapt(NextClause, Hash, ITree),
   {#clause_tree{instr=#bin_guard{matches=Matches,label=NewGuard}, success=NewBody, fail=Fail}, Hash1};
-
 adapt0(BClause, Hash, ITree) ->
   BinSeg = choose_binseg(BClause),
   case BinSeg of
@@ -540,11 +557,9 @@ have_same_match(Match1, [Match2|Rest]) ->
     false ->
       have_same_match(Match1, Rest)
   end;
-
-have_same_match(_Match1, []) ->
+have_same_match(_Match1, []) ->  
   false.
     
-
 create_success_list(MatchSet, Hash, BClause, ITree) ->
   MatchList=gb_sets:to_list(MatchSet),
   Tag=match_tag(hd(MatchList)),
@@ -579,7 +594,6 @@ remove_all_fail_match(MatchSet, BClause, ITree) ->
 %%
 %%------------------------------------------------------------------------- 
 
-
 prune_compatible_size(BClause=#b_clause{segments=BinSegs,next_clause=Next}, Size) ->
   case remove_tests(BinSegs, Size, []) of
     fail ->
@@ -587,7 +601,6 @@ prune_compatible_size(BClause=#b_clause{segments=BinSegs,next_clause=Next}, Size
     NewSegs ->
       BClause#b_clause{segments=NewSegs, next_clause=prune_compatible_size(Next, Size)}
   end;
-
 prune_compatible_size([], _Size) ->
   [].
 
@@ -613,7 +626,7 @@ remove_tests([SizeExpr=#size{all=AlliTerm}|Rest], Size=#size{all=AllTerm}, Acc) 
 	  remove_tests(Rest, Size, [SizeExpr|Acc])
       end;
     {Eq, Geq} ->
-      case statically_bigger(Size, SizeExpr) of
+      case statically_bigger(SizeExpr, Size) of
 	true ->
 	  fail;
 	false ->
@@ -711,6 +724,7 @@ remove_succ_match(Match, BClause=#b_clause{segments=BinSegs, next_clause=Next}, 
   end;
 remove_succ_match(_Match, [], _ITree) ->
   [].
+
 mismatch(Match, BinSegs, ITree) ->
   mismatch(Match,BinSegs, [], ITree).
 
@@ -798,9 +812,9 @@ remove_fail_match(Match, BClause=#b_clause{segments=BinSegs, next_clause=Next}, 
     false ->
       BClause#b_clause{next_clause=remove_fail_match(Match, Next, ITree)} 
   end;
-
 remove_fail_match(_Match, [], _ITree) ->
   [].
+
 match(Match=#match{tag=Tag, val=Val1}, [#match{tag=Tag, val=Val2}|Rest], ITree) ->
   case cerl:concrete(Val1)==cerl:concrete(Val2) of
     true -> true;
@@ -847,13 +861,10 @@ interference_conclusion_neg(_Inter, _Tag1, _Tag2, _V1, _V2) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
-
 choose_binseg(BClause) ->
   CountTree=simpl_count(BClause),
   BinSegs=b_clause_segments(BClause),
-  Type = "left",
-  get_largest(BinSegs, BClause, CountTree, Type).
+  get_largest(BinSegs, BClause, CountTree).
 
 always_read(BinSegs, CountTree, BClause) ->
   No=no_of_clauses(BClause),
@@ -867,7 +878,6 @@ find_binseg([BinSeg=#read_seg{}|Rest], CountTree, No) ->
     _ ->
       find_binseg(Rest, CountTree, No)
   end;
-
 find_binseg([_|Rest], CountTree, No) ->
   find_binseg(Rest, CountTree, No);
 find_binseg([], _CountTree, _No) ->
@@ -878,115 +888,114 @@ no_of_clauses(#b_clause{next_clause=Next}) ->
 no_of_clauses([]) ->
   0.
 
-
-get_largest(BinSegs=[FirstSeg|_], BClause, CountTree, "left") ->
-  Seg=FirstSeg,
+-ifdef(LEFT).
+get_largest(BinSegs=[FirstSeg|_], BClause, CountTree) ->
+  Seg=
     case always_read(BinSegs, CountTree, BClause) of
       {true, BinSeg} -> BinSeg;
       false -> FirstSeg
     end,
-  legalize(Seg, BinSegs);
-
-get_largest(BinSegs, BClause, CountTree, Type) ->
+  legalize(Seg, BinSegs).
+-else.
+get_largest(BinSegs, BClause, CountTree) ->
   Seg=
     case always_read(BinSegs, CountTree, BClause) of
       {true, BinSeg} -> BinSeg;
       false ->
-	get_largest_count(BinSegs, CountTree, Type, {none, 0})
+	get_largest_count(BinSegs, CountTree, {none, 0})
     end,  
   legalize(Seg, BinSegs).
+-endif.
 
-get_largest_count([BinSeg|Rest], CountTree, "indexness", Top={_,Count}) -> 
-  case BinSeg of
-    #match{} ->
-      Tag=tag(BinSeg),
-      {value, {_, _, IC, _}} = gb_trees:lookup(Tag, CountTree),
-      case IC >= Count of
-	true ->
-	  get_largest_count(Rest, CountTree, "indexness", {BinSeg, IC});
-	false ->
-	  get_largest_count(Rest, CountTree, "indexness", Top)
-      end;
-    #read_seg{} ->
-      case Count of
-	0 ->
-	  get_largest_count(Rest, CountTree, "indexness", {BinSeg, 1});
-	_ ->
-	  get_largest_count(Rest, CountTree, "indexness", Top)
-      end; 
-    #size{} ->
-      {value, {_, _, IC, _}} = gb_trees:lookup(BinSeg, CountTree),
-      case IC >= Count of
-	true ->
-	  get_largest_count(Rest, CountTree, "indexness", {BinSeg, IC});
-	false ->
-	  get_largest_count(Rest, CountTree, "indexness", Top)
-      end
-  end;
-
-get_largest_count([BinSeg|Rest], CountTree, "uses_match", Top={_,Count}) -> 
-  case BinSeg of
-    #match{} ->
-      Tag=tag(BinSeg),
-      {value, {_, MC, _, _}} = gb_trees:lookup(Tag, CountTree),
-      case MC >= Count of
-	true ->
-	  get_largest_count(Rest, CountTree, "uses_match", {BinSeg, MC});
-	false ->
-	  get_largest_count(Rest, CountTree, "uses_match", Top)
-      end;
-    #read_seg{} ->
-      case Count of
-	0 ->
-	  get_largest_count(Rest, CountTree, "uses_match", {BinSeg, 1});
-	_ ->
-	  get_largest_count(Rest, CountTree, "uses_match", Top)
-      end;
-    #size{} ->
-      {value, {_, MC, _, _}} = gb_trees:lookup(BinSeg, CountTree),
-      case MC >= Count of
-	true ->
-	  get_largest_count(Rest, CountTree, "uses_match", {BinSeg, MC});
-	false ->
-	  get_largest_count(Rest, CountTree, "uses_match", Top)
-      end
-  end;
-
-get_largest_count([BinSeg|Rest], CountTree, "uses_read", Top={_,Count}) -> 
- 
-  case BinSeg of
-    #match{} ->
-      Tag=tag(BinSeg),
-      {value, {_, MC, _, _}} = gb_trees:lookup(Tag, CountTree),
-      NewMC = 1+MC/1000,
-      case NewMC>Count of
-	true ->
-	  get_largest_count(Rest, CountTree, "uses_read", {BinSeg, NewMC});
-	false ->
-	  get_largest_count(Rest, CountTree, "uses_read", Top)
-      end;
-    #read_seg{} ->
-      Tag=tag(BinSeg),
-      {value, {RC, _, _, _}} = gb_trees:lookup(Tag, CountTree),
-      case RC > Count of
-	true ->
-	  get_largest_count(Rest, CountTree, "uses_read", {BinSeg, RC});
-	false ->
-	  get_largest_count(Rest, CountTree, "uses_read", Top)
-      end;
-    #size{} ->
-      {value, {_, MC, _, _}} = gb_trees:lookup(BinSeg, CountTree),
-      NewMC = 1+MC/1000,
-      case NewMC>Count of
-	true ->
-	  get_largest_count(Rest, CountTree, "uses_read", {BinSeg, NewMC});
-	false ->
-	  get_largest_count(Rest, CountTree, "uses_read", Top)
-      end
-  end;
-
-get_largest_count([], _CountTree, _, {BinSeg, _Count}) ->
+-ifdef(INDEXNESS).
+get_largest_count([BinSeg|Rest], CountTree, Top={_,Count}) -> 
+  NewTop = 
+    case BinSeg of
+      #match{} ->
+	Tag=tag(BinSeg),
+	{value, {_, _, IC, _}} = gb_trees:lookup(Tag, CountTree),
+	case IC >= Count of
+	  true -> {BinSeg, IC};
+	false -> Top
+	end;
+      #read_seg{} ->
+	case Count of
+	  0 -> {BinSeg, 1};
+	  _ -> Top
+	end; 
+      #size{} ->
+	{value, {_, _, IC, _}} = gb_trees:lookup(BinSeg, CountTree),
+	case IC >= Count of
+	  true -> {BinSeg, IC};
+	  false -> Top
+	end
+    end,
+  get_largest_count(Rest, CountTree, NewTop);
+get_largest_count([], _CountTree, {BinSeg, _Count}) ->
   BinSeg.
+-endif.
+
+-ifdef(USES_MATCH).
+get_largest_count([BinSeg|Rest], CountTree, Top={_,Count}) -> 
+  NewTop =
+    case BinSeg of
+      #match{} ->
+	Tag=tag(BinSeg),
+	{value, {_, MC, _, _}} = gb_trees:lookup(Tag, CountTree),
+	case MC >= Count of
+	  true -> {BinSeg, MC};
+	  false -> Top
+	end;
+      #read_seg{} ->
+	case Count of
+	  0 -> {BinSeg, 1};
+	  _ -> Top
+	end;
+      #size{} ->
+	{value, {_, MC, _, _}} = gb_trees:lookup(BinSeg, CountTree),
+	case MC >= Count of
+	  true -> {BinSeg, MC};
+	  false -> Top
+	end
+    end,
+  get_largest_count(Rest, CountTree, NewTop);
+get_largest_count([], _CountTree, {BinSeg, _Count}) ->
+  BinSeg.
+-endif.
+
+-ifdef(USES_READ).
+get_largest_count([BinSeg|Rest], CountTree, "uses_read", Top={_,Count}) -> 
+  NewTop =
+    case BinSeg of
+      #match{} ->
+	Tag=tag(BinSeg),
+	{value, {_, MC, _, _}} = gb_trees:lookup(Tag, CountTree),
+	NewMC = 1+MC/1000,
+	case NewMC>Count of
+	  true -> {BinSeg, NewMC};
+	  false -> Top
+	end;
+      #read_seg{} ->
+	Tag=tag(BinSeg),
+	{value, {RC, _, _, _}} = gb_trees:lookup(Tag, CountTree),
+	case RC > Count of
+	  true -> {BinSeg, RC};
+	  false -> Toptrue 
+	end;
+    #size{} ->
+      {value, {_, MC, _, _}} = gb_trees:lookup(BinSeg, CountTree),
+      NewMC = 1+MC/1000,
+      case NewMC>Count of
+	true -> {BinSeg, NewMC};
+	false -> Top
+      end;
+  end,
+  get_largest_count(Rest, CountTree, NewTop);
+get_largest_count([], _CountTree, {BinSeg, _Count}) ->
+  BinSeg.
+-endif.
+
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -1145,27 +1154,27 @@ seg_type(Segment) ->
   Flags=cerl:bitstr_flags(Segment),
   {Type, Flags}.
 
-statically_equal(Size1=#size{const=Const},
-		 Size2=#size{const=Const}) ->
+statically_equal(Size1=#size{const=Const1},
+		 Size2=#size{const=Const2}) ->
+  C1 = cerl:concrete(Const1),
+  C2 = cerl:concrete(Const2),
   Var1=size_all_vars(Size1),
   Var2=size_all_vars(Size2),
-  same_set(Var1, Var2);
-statically_equal(_,_) ->
-  false.
+  same_set(Var1, Var2) and (C1 == C2).
 
-statically_bigger(Size1=#size{const=Const1}, Size2=#size{const=Const2}) when Const1 > Const2 ->
+statically_bigger(Size1=#size{const=Const1}, Size2=#size{const=Const2}) ->
+  C1 = cerl:concrete(Const1),
+  C2 = cerl:concrete(Const2),
   Var1=size_all_vars(Size1),
   Var2=size_all_vars(Size2),
-  subset(Var2, Var1);
-statically_bigger(_,_) ->
-  false.
+  (C1 > C2) and subset(Var2, Var1). 
 
-statically_bigger_or_equal(Size1=#size{const=Const1},Size2=#size{const=Const2}) when Const1 >= Const2 ->
+statically_bigger_or_equal(Size1=#size{const=Const1},Size2=#size{const=Const2}) ->
+  C1 = cerl:concrete(Const1),
+  C2 = cerl:concrete(Const2),
   Var1=size_all_vars(Size1),
   Var2=size_all_vars(Size2),
-  subset(Var2, Var1);
-statically_bigger_or_equal(_,_) ->
-  false.
+  (C1 >= C2) and subset(Var2, Var1).
 
 statically_different(Size1, Size2) ->
   statically_bigger(Size1, Size2) or statically_bigger(Size2, Size1).
@@ -1264,14 +1273,163 @@ update_body(Expr, Ref, NewRef) ->
     end,
   cerl_trees:map(Fun, Expr).
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+-ifdef(BIN_PMATCH_DEBUG).
+
+annotate_clause_tree(#clause_tree{instr=I, success=Succ, fail=Fail}, N) ->
+  {ACT1, N1} = annotate_clause_tree(Succ,N+1),
+  {ACT2, N2} = annotate_clause_tree(Fail,N1),
+  {#ann_clause_tree{instr=I, success=ACT1, fail=ACT2, ann=N}, N2};
+annotate_clause_tree(Val,N) ->
+  {Val,N}.
+
+remove_fail([{_,"Fail"}|Rest], LabelTree) ->
+  remove_fail(Rest,LabelTree);
+remove_fail([{X,[{label,Key}]}|Rest], LabelTree) ->
+  {value,Name}=gb_trees:lookup(Key, LabelTree),
+  [{X,lists:flatten(Name)}|remove_fail(Rest,LabelTree)];
+remove_fail([X|Rest], LabelTree) ->
+  [X|remove_fail(Rest,LabelTree)];
+remove_fail([], _L) ->
+  [].
+
+remove_options([{_,"Fail",_}|Rest], LabelTree) -> 
+  remove_options(Rest,LabelTree);
+remove_options([{X,[{label,Key}],Opt}|Rest], LabelTree) ->
+  {value,Name}=gb_trees:lookup(Key, LabelTree),
+  [{X,lists:flatten(Name),Opt}|remove_options(Rest,LabelTree)];
+remove_options([X|Rest], LabelTree) ->
+  [X|remove_options(Rest, LabelTree)];
+remove_options([], _LabelTree) ->
+  [].
+
+dot(#binary_match{clause_tree=CT}) ->
+  {ACT,_} = annotate_clause_tree(CT, 0),
+  {LTree, Acc,Opts}=dot(ACT, gb_trees:empty(), [], []),
+  Dot=remove_fail(Acc,LTree),
+  DotOpts=remove_options(Opts,LTree),
+  hipe_dot:translate_list(Dot, ?DOT_FILE, "Stupid_Name", 
+			  fun(X)->X end,DotOpts).
+
+dot(#ann_clause_tree{instr=I, success=Succ, fail=Fail}=Self, 
+    LabelTree, Acc, Opts) -> 
+  case I of
+    #label{name=X} ->
+      Int=cerl:concrete(X),
+      NewLabelTree=gb_trees:insert(Int, get_node_name1(Succ, LabelTree), 
+				   LabelTree),
+      dot(Succ, NewLabelTree, Acc, Opts);
+    #size{} ->
+      SelfName=get_node_name(Self, LabelTree),
+      SuccName=get_node_name(Succ, LabelTree),
+      SuccOpt = make_succ_opt({SelfName,SuccName}),
+      {NewLabelTree, NewAcc, NewOpts} = dot(Succ, LabelTree, 
+				   [{SelfName,SuccName}|Acc],
+				  [SuccOpt|Opts]),
+      FailName= get_node_name(Fail, LabelTree),
+      FailOpt = make_fail_opt({SelfName,FailName}),
+      dot(Fail, NewLabelTree,[{SelfName,FailName}|NewAcc],
+	 [FailOpt|NewOpts]);
+    #match{} ->
+      SelfName=get_node_name(Self, LabelTree),
+      SuccName=get_node_name(Succ, LabelTree),
+      SuccOpt = make_succ_opt({SelfName,SuccName}),
+      {NewLabelTree, NewAcc, NewOpts} = dot(Succ, LabelTree, 
+				   [{SelfName,SuccName}|Acc],
+				  [SuccOpt|Opts]),
+      FailName= get_node_name(Fail, LabelTree),
+      FailOpt = make_fail_opt({SelfName,FailName}),
+      dot(Fail, NewLabelTree,[{SelfName,FailName}|NewAcc],
+	  [FailOpt|NewOpts]);
+    #read_seg{} ->
+      SelfName=get_node_name(Self, LabelTree),
+      SuccName=get_node_name(Succ, LabelTree),
+      dot(Succ, LabelTree, [{SelfName,SuccName}|Acc],Opts);
+    #bin_guard{} ->
+      SelfName=get_node_name(Self, LabelTree),
+      BgOpt = make_bin_guard_opt(SelfName),
+      {LabelTree, Acc, [BgOpt|Opts]};
+      %% dot(Fail, LabelTree,Acc,[BgOpt|Opts]);
+    #goto{} ->
+      {LabelTree, Acc, Opts}
+  end;
+dot([], LabelTree, Acc, Opts) ->
+  {LabelTree, Acc, Opts}.
+
+make_succ_opt({N1,N2}) ->
+  {N1,N2,{color,green}}.
+
+make_fail_opt({N1,N2}) ->
+  {N1,N2,{color,red}}.
+
+make_bin_guard_opt(Node) ->
+  {Node, {shape,rectangle}}.
+
+get_node_name(CT, LT) ->
+  lists:flatten(get_node_name1(CT,LT)).
+  
+get_node_name1(#ann_clause_tree{instr=I, success=Succ, ann=N}, LabelTree) ->
+  case I of
+    #label{} ->
+      get_node_name1(Succ, LabelTree);
+    #size{vars=[], const=X, all=C_atom} ->
+      Sign =
+	case cerl:concrete(C_atom) of
+	  all ->
+	    ">=";
+	  false ->
+	    "="
+	end,
+      Int=cerl:concrete(X),
+      io_lib:format("size ~s ~w, (~w)", [Sign, Int, N]);
+    #size{vars=Vars, const=X, all=C_atom} ->
+      Sign =
+	case cerl:concrete(C_atom) of
+	  all ->
+	    ">=";
+	  false ->
+	    "="
+	end,
+      Int=cerl:concrete(X),
+      io_lib:format("size ~s ~w + ~w (~w)", [Sign, Int, Vars,N]);
+    #match{val=Val, tag=Tag} ->
+      CVal=cerl:concrete(Val),
+      io_lib:format("r~w == ~w (~w)", [Tag,CVal,N]);
+    #read_seg{tag=Tag, offset=Off, size=Size} ->
+      Sz = 
+	case cerl:is_c_int(Size) of
+	  true -> cerl:concrete(Size);
+	  false -> {Size1, Unit} = Size,
+		   case cerl:is_c_atom(Size1) of
+		     true ->
+		       all;
+		     _ ->
+		       io_lib:format("~w*~w", [Size1,cerl:concrete(Unit)])
+		   end	 
+	end,
+      case Off of
+	#size{vars=[], const=X} ->
+	  Int=cerl:concrete(X),
+	  io_lib:format("r~w = r(~w, ~w) (~w)", [Tag, Int, Sz, N]);
+	#size{vars=Vars, const=X} ->
+	  Int=cerl:concrete(X),
+	  io_lib:format("r~w = read(~w + ~w, ~w) (~w)", [Tag, Vars, Int, Sz, N])
+      end;
+    #bin_guard{label=Lbl} ->
+      [Arg]=cerl:primop_args(Lbl),
+      io_lib:format("Match ~w Succeded (~w)", [cerl:concrete(Arg), N]);
+    #goto{label=X} ->
+      [{label,cerl:concrete(X)}]     
+  end;
+get_node_name1([], _LabelTree) ->
+  io_lib:format("Fail",[]).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% @spec pp(binary_match()|clause_tree())-> atom()
 %% @doc pretty prints a clause_tree or the clause_tree of a binary_match
 %% @end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%     
 
--ifdef(BIN_PMATCH_DEBUG).
 pp(#binary_match{clause_tree=CT}) ->
   pp(CT);
 
@@ -1314,8 +1472,9 @@ pp(#clause_tree{instr=I, success=Succ, fail=Fail}) ->
       pp(Succ);
     #bin_guard{label=Lbl} ->
       io:format("Matched pattern: ~w~n~n", [Lbl]);
-    #goto{} ->
-      ok
+    #goto{label=X} ->
+      Lbl=cerl:concrete(X),
+      io:format("goto ~w~n~n", [Lbl])
   end.
 
 do_split_match_group([Val|Vals], SuccMap, Fail) ->

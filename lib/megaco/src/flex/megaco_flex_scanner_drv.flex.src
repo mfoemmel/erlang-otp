@@ -65,11 +65,13 @@ static ErlDrvTermData mfs_AuditCapToken = 0;
 static ErlDrvTermData mfs_AuditToken = 0;
 static ErlDrvTermData mfs_AuditValueToken = 0;
 static ErlDrvTermData mfs_AuthToken = 0;
+static ErlDrvTermData mfs_BothToken = 0;                    /* v3 */
 static ErlDrvTermData mfs_BothwayToken = 0;
 static ErlDrvTermData mfs_BriefToken = 0;
 static ErlDrvTermData mfs_BufferToken = 0;
 static ErlDrvTermData mfs_COLON = 0;
 static ErlDrvTermData mfs_COMMA = 0;
+static ErlDrvTermData mfs_ContextAttrToken = 0;             /* v3 */
 static ErlDrvTermData mfs_ContextAuditToken = 0;
 static ErlDrvTermData mfs_CtxToken = 0;
 static ErlDrvTermData mfs_DelayToken = 0;
@@ -78,15 +80,18 @@ static ErlDrvTermData mfs_DigitMapDescriptor = 0;
 static ErlDrvTermData mfs_DigitMapDescriptorToken = 0;
 static ErlDrvTermData mfs_DigitMapToken = 0;
 static ErlDrvTermData mfs_DigitMapValue = 0;
+static ErlDrvTermData mfs_DirectionToken = 0;               /* v3 */
 static ErlDrvTermData mfs_DiscardToken = 0;
 static ErlDrvTermData mfs_DisconnectedToken = 0;
 static ErlDrvTermData mfs_DurationToken = 0;
 static ErlDrvTermData mfs_EQUAL = 0;
 static ErlDrvTermData mfs_EmbedToken = 0;
 static ErlDrvTermData mfs_EmergencyToken = 0;
+static ErlDrvTermData mfs_EmergencyOffToken = 0;            /* v3 */
 static ErlDrvTermData mfs_ErrorToken = 0;
 static ErlDrvTermData mfs_EventBufferToken = 0;
 static ErlDrvTermData mfs_EventsToken = 0;
+static ErlDrvTermData mfs_ExternalToken = 0;                /* v3 */
 static ErlDrvTermData mfs_FailoverToken = 0;
 static ErlDrvTermData mfs_ForcedToken = 0;
 static ErlDrvTermData mfs_GREATER = 0;
@@ -95,10 +100,12 @@ static ErlDrvTermData mfs_H221Token = 0;
 static ErlDrvTermData mfs_H223Token = 0;
 static ErlDrvTermData mfs_H226Token = 0;
 static ErlDrvTermData mfs_HandOffToken = 0;
+static ErlDrvTermData mfs_IEPSToken = 0;                    /* v3 */
 static ErlDrvTermData mfs_IllegalChar = 0;
 static ErlDrvTermData mfs_ImmAckRequiredToken = 0;
 static ErlDrvTermData mfs_InSvcToken = 0;
 static ErlDrvTermData mfs_InactiveToken = 0;
+static ErlDrvTermData mfs_InternalToken = 0;                /* v3 */
 static ErlDrvTermData mfs_InterruptByEventToken = 0;
 static ErlDrvTermData mfs_InterruptByNewSignalsDescrToken = 0;
 static ErlDrvTermData mfs_IsolateToken = 0;
@@ -143,6 +150,7 @@ static ErlDrvTermData mfs_ReasonToken = 0;
 static ErlDrvTermData mfs_RecvonlyToken = 0;
 static ErlDrvTermData mfs_RemoteDescriptorToken = 0;
 static ErlDrvTermData mfs_RemoteToken = 0;
+static ErlDrvTermData mfs_RequestIDToken = 0;               /* v3 */
 static ErlDrvTermData mfs_ReplyToken = 0;
 static ErlDrvTermData mfs_ReservedGroupToken = 0;
 static ErlDrvTermData mfs_ReservedValueToken = 0;
@@ -153,6 +161,7 @@ static ErlDrvTermData mfs_SafeChars = 0;
 static ErlDrvTermData mfs_SendonlyToken = 0;
 static ErlDrvTermData mfs_SendrecvToken = 0;
 static ErlDrvTermData mfs_ServiceChangeAddressToken = 0;
+static ErlDrvTermData mfs_ServiceChangeIncompleteToken = 0; /* v3 */
 static ErlDrvTermData mfs_ServiceChangeToken = 0;
 static ErlDrvTermData mfs_ServiceStatesToken = 0;
 static ErlDrvTermData mfs_ServicesToken = 0;
@@ -271,7 +280,7 @@ static ErlDrvEntry mfs_entry = {
 
 digit       ([0-9])
 alpha       ([a-zA-Z])
-hexdig      ({digit}|{alpha})
+hexdig      ([0-9a-fA-F])
 sp          (\x20)
 htab        (\x09)
 cr          (\x0D)
@@ -369,6 +378,8 @@ at                                      LOAD_TOKEN(mfs_AuditToken);
 {opt}{wild}av                           LOAD_TOKEN(mfs_AuditValueToken);
 authentication                          LOAD_TOKEN(mfs_AuthToken);
 au                                      LOAD_TOKEN(mfs_AuthToken);
+both                                    LOAD_TOKEN(mfs_BothToken);
+b                                       LOAD_TOKEN(mfs_BothToken);
 bothway                                 LOAD_TOKEN(mfs_BothwayToken);
 bw                                      LOAD_TOKEN(mfs_BothwayToken);
 brief                                   LOAD_TOKEN(mfs_BriefToken);
@@ -379,6 +390,10 @@ context                                 LOAD_TOKEN(mfs_CtxToken);
 c                                       LOAD_TOKEN(mfs_CtxToken);
 contextaudit                            LOAD_TOKEN(mfs_ContextAuditToken);
 ca                                      LOAD_TOKEN(mfs_ContextAuditToken);
+contextattr                             LOAD_TOKEN(mfs_ContextAttrToken);
+ct                                      LOAD_TOKEN(mfs_ContextAttrToken);
+direction                               LOAD_TOKEN(mfs_DirectionToken);
+di                                      LOAD_TOKEN(mfs_DirectionToken);
 discard                                 LOAD_TOKEN(mfs_DiscardToken);
 ds                                      LOAD_TOKEN(mfs_DiscardToken);
 disconnected                            LOAD_TOKEN(mfs_DisconnectedToken);
@@ -393,12 +408,16 @@ embed                                   LOAD_TOKEN(mfs_EmbedToken);
 em                                      LOAD_TOKEN(mfs_EmbedToken);
 emergency                               LOAD_TOKEN(mfs_EmergencyToken);
 eg                                      LOAD_TOKEN(mfs_EmergencyToken);
+emergencyofftoken                       LOAD_TOKEN(mfs_EmergencyOffToken);
+ego                                     LOAD_TOKEN(mfs_EmergencyOffToken);
 error                                   LOAD_TOKEN(mfs_ErrorToken);
 er                                      LOAD_TOKEN(mfs_ErrorToken);
 eventbuffer                             LOAD_TOKEN(mfs_EventBufferToken);
 eb                                      LOAD_TOKEN(mfs_EventBufferToken);
 events                                  LOAD_TOKEN(mfs_EventsToken);
 e                                       LOAD_TOKEN(mfs_EventsToken);
+external                                LOAD_TOKEN(mfs_ExternalToken);
+ex                                      LOAD_TOKEN(mfs_ExternalToken);
 failover                                LOAD_TOKEN(mfs_FailoverToken);
 fl                                      LOAD_TOKEN(mfs_FailoverToken);
 forced                                  LOAD_TOKEN(mfs_ForcedToken);
@@ -410,18 +429,22 @@ h223                                    LOAD_TOKEN(mfs_H223Token);
 h226                                    LOAD_TOKEN(mfs_H226Token);
 handoff                                 LOAD_TOKEN(mfs_HandOffToken);
 ho                                      LOAD_TOKEN(mfs_HandOffToken);
+iepscall                                LOAD_TOKEN(mfs_IEPSToken);
+ieps                                    LOAD_TOKEN(mfs_IEPSToken);
 inactive                                LOAD_TOKEN(mfs_InactiveToken);
 in                                      LOAD_TOKEN(mfs_InactiveToken);
-isolate                                 LOAD_TOKEN(mfs_IsolateToken);
 immackrequired                          LOAD_TOKEN(mfs_ImmAckRequiredToken);
 ia                                      LOAD_TOKEN(mfs_ImmAckRequiredToken);
-is                                      LOAD_TOKEN(mfs_IsolateToken);
 inservice                               LOAD_TOKEN(mfs_InSvcToken);
+iv                                      LOAD_TOKEN(mfs_InSvcToken);
+internal                                LOAD_TOKEN(mfs_InternalToken);
+it                                      LOAD_TOKEN(mfs_InternalToken);
+isolate                                 LOAD_TOKEN(mfs_IsolateToken);
+is                                      LOAD_TOKEN(mfs_IsolateToken);
 interruptbyevent                        LOAD_TOKEN(mfs_InterruptByEventToken);
 ibe                                     LOAD_TOKEN(mfs_InterruptByEventToken);
 interruptbynewsignalsdescr              LOAD_TOKEN(mfs_InterruptByNewSignalsDescrToken);
 ibs                                     LOAD_TOKEN(mfs_InterruptByNewSignalsDescrToken);
-iv                                      LOAD_TOKEN(mfs_InSvcToken);
 keepactive                              LOAD_TOKEN(mfs_KeepActiveToken);
 ka                                      LOAD_TOKEN(mfs_KeepActiveToken);
 local                                   LOAD_TOKEN(mfs_LocalToken);
@@ -488,6 +511,8 @@ restart                                 LOAD_TOKEN(mfs_RestartToken);
 rs                                      LOAD_TOKEN(mfs_RestartToken);
 remote                                  LOAD_TOKEN(mfs_RemoteToken);
 r                                       LOAD_TOKEN(mfs_RemoteToken);
+requestid                               LOAD_TOKEN(mfs_RequestIDToken);
+rq                                      LOAD_TOKEN(mfs_RequestIDToken);
 reservedgroup                           LOAD_TOKEN(mfs_ReservedGroupToken);
 rg                                      LOAD_TOKEN(mfs_ReservedGroupToken);
 reservedvalue                           LOAD_TOKEN(mfs_ReservedValueToken);
@@ -504,6 +529,8 @@ si                                      LOAD_TOKEN(mfs_ServiceStatesToken);
 {opt}sc                                 LOAD_TOKEN(mfs_ServiceChangeToken);
 servicechangeaddress                    LOAD_TOKEN(mfs_ServiceChangeAddressToken);
 ad                                      LOAD_TOKEN(mfs_ServiceChangeAddressToken);
+servicechangeinc                        LOAD_TOKEN(mfs_ServiceChangeIncompleteToken);
+sic                                     LOAD_TOKEN(mfs_ServiceChangeIncompleteToken);
 signallist                              LOAD_TOKEN(mfs_SignalListToken);
 sl                                      LOAD_TOKEN(mfs_SignalListToken);
 signals                                 LOAD_TOKEN(mfs_SignalsToken);
@@ -555,7 +582,7 @@ v                                       LOAD_TOKEN(mfs_VersionToken);
  */
 #define LINENO_OR_TOKENCNT %MEGACO_LINENO_OR_TOKENCOUNTER%
 
-/* #define MFS_DEBUG true    temporary */
+/* #define MFS_DEBUG true */    /* temporary */
 #if defined(MFS_DEBUG)
 #  define DBG( proto ) mfs_dbg proto
 #  define DBG_BUF(func, bufName, buf, bufSz) mfs_dbg_buf_print(func, bufName, buf, bufSz)
@@ -663,7 +690,11 @@ static void mfs_ensure_term_spec(int size)
 {
   /*
   DBG( ("mfs_ensure_term_spec -> entry with"
-	"\n   size: %d\n", size) );
+	"\n   size:       %d"
+	"\nwhen"
+	"\n   spec_index: %d"
+	"\n   spec_size:  %d"
+	"\n", size, mfs_term_spec_index, mfs_term_spec_size) );
   */
 
   /* OTP-4236 - BEGIN */
@@ -709,6 +740,11 @@ static void mfs_short_load_token(ErlDrvTermData TokenTag)
 {
   /* Build a {TokenTag, LineNumber} tuple */
 
+  /*
+  DBG( ("mfs_short_load_token -> entry with"
+	"\n   TokenTag: %ld\n", TokenTag) );
+  */
+
   mfs_ensure_term_spec(6); 
   mfs_token_counter++; 
   ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
@@ -722,6 +758,11 @@ static void mfs_short_load_token(ErlDrvTermData TokenTag)
 static void mfs_octet_load_token(ErlDrvTermData TokenTag)
 {
   /* Build a {TokenTag, LineNumber, String} tuple */
+
+  /*
+  DBG( ("mfs_octet_load_token -> entry with"
+	"\n   TokenTag: %ld\n", TokenTag) );
+  */
 
   mfs_ensure_term_spec(9); 
   mfs_token_counter++; 
@@ -748,6 +789,11 @@ static void mfs_lower_load_token(ErlDrvTermData TokenTag)
   /* Build a {TokenTag, LineNumber, LowerCaseString} tuple */
   int i;
 
+  /*
+  DBG( ("mfs_lower_load_token -> entry with"
+	"\n   TokenTag: %ld\n", TokenTag) );
+  */
+
   mfs_ensure_term_spec(9); 
   mfs_token_counter++; 
   ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
@@ -759,6 +805,11 @@ static void mfs_lower_load_token(ErlDrvTermData TokenTag)
   for ( i = 0; i < yyleng; ++i ) {
     mfs_text_ptr[i] = tolower(yytext[i]);
   }
+
+  /*
+  DBG_BUF("mfs_lower_load_token", "mfs_text_ptr", 
+           mfs_text_ptr, yyleng);
+  */
 
   ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_text_ptr);
   mfs_text_ptr += yyleng;
@@ -955,11 +1006,13 @@ static ErlDrvData mfs_start(ErlDrvPort port, char *buf)
   mfs_AuditToken = driver_mk_atom("AuditToken");
   mfs_AuditValueToken = driver_mk_atom("AuditValueToken");
   mfs_AuthToken = driver_mk_atom("AuthToken");
+  mfs_BothToken = driver_mk_atom("BothToken");
   mfs_BothwayToken = driver_mk_atom("BothwayToken");
   mfs_BriefToken = driver_mk_atom("BriefToken");
   mfs_BufferToken = driver_mk_atom("BufferToken");
   mfs_COLON = driver_mk_atom("COLON");
   mfs_COMMA = driver_mk_atom("COMMA");
+  mfs_ContextAttrToken = driver_mk_atom("ContextAttrToken");
   mfs_ContextAuditToken = driver_mk_atom("ContextAuditToken");
   mfs_CtxToken = driver_mk_atom("CtxToken");
   mfs_DelayToken = driver_mk_atom("DelayToken");
@@ -968,15 +1021,18 @@ static ErlDrvData mfs_start(ErlDrvPort port, char *buf)
   mfs_DigitMapDescriptorToken = driver_mk_atom("DigitMapDescriptorToken");
   mfs_DigitMapToken = driver_mk_atom("DigitMapToken");
   mfs_DigitMapValue = driver_mk_atom("DigitMapValue");
+  mfs_DirectionToken = driver_mk_atom("DirectionToken");
   mfs_DiscardToken = driver_mk_atom("DiscardToken");
   mfs_DisconnectedToken = driver_mk_atom("DisconnectedToken");
   mfs_DurationToken = driver_mk_atom("DurationToken");
   mfs_EQUAL = driver_mk_atom("EQUAL");
   mfs_EmbedToken = driver_mk_atom("EmbedToken");
   mfs_EmergencyToken = driver_mk_atom("EmergencyToken");
+  mfs_EmergencyOffToken = driver_mk_atom("EmergencyOffToken");
   mfs_ErrorToken = driver_mk_atom("ErrorToken");
   mfs_EventBufferToken = driver_mk_atom("EventBufferToken");
   mfs_EventsToken = driver_mk_atom("EventsToken");
+  mfs_ExternalToken = driver_mk_atom("ExternalToken");
   mfs_FailoverToken = driver_mk_atom("FailoverToken");
   mfs_ForcedToken = driver_mk_atom("ForcedToken");
   mfs_GREATER = driver_mk_atom("GREATER");
@@ -985,10 +1041,12 @@ static ErlDrvData mfs_start(ErlDrvPort port, char *buf)
   mfs_H223Token = driver_mk_atom("H223Token");
   mfs_H226Token = driver_mk_atom("H226Token");
   mfs_HandOffToken = driver_mk_atom("HandOffToken");
+  mfs_IEPSToken = driver_mk_atom("IEPSToken");
   mfs_IllegalChar = driver_mk_atom("IllegalChar");
   mfs_ImmAckRequiredToken = driver_mk_atom("ImmAckRequiredToken");
   mfs_InSvcToken = driver_mk_atom("InSvcToken");
   mfs_InactiveToken = driver_mk_atom("InactiveToken");
+  mfs_InternalToken = driver_mk_atom("InternalToken");
   mfs_InterruptByEventToken = driver_mk_atom("InterruptByEventToken");
   mfs_InterruptByNewSignalsDescrToken = driver_mk_atom("InterruptByNewSignalsDescrToken");
   mfs_IsolateToken = driver_mk_atom("IsolateToken");
@@ -1034,6 +1092,7 @@ static ErlDrvData mfs_start(ErlDrvPort port, char *buf)
   mfs_RemoteDescriptorToken = driver_mk_atom("RemoteDescriptorToken");
   mfs_RemoteToken = driver_mk_atom("RemoteToken");
   mfs_ReplyToken = driver_mk_atom("ReplyToken");
+  mfs_RequestIDToken = driver_mk_atom("RequestIDToken");
   mfs_ReservedGroupToken = driver_mk_atom("ReservedGroupToken");
   mfs_ReservedValueToken = driver_mk_atom("ReservedValueToken");
   mfs_ResponseAckToken = driver_mk_atom("ResponseAckToken");
@@ -1043,6 +1102,7 @@ static ErlDrvData mfs_start(ErlDrvPort port, char *buf)
   mfs_SendonlyToken = driver_mk_atom("SendonlyToken");
   mfs_SendrecvToken = driver_mk_atom("SendrecvToken");
   mfs_ServiceChangeAddressToken = driver_mk_atom("ServiceChangeAddressToken");
+  mfs_ServiceChangeIncompleteToken = driver_mk_atom("ServiceChangeIncompleteToken");
   mfs_ServiceChangeToken = driver_mk_atom("ServiceChangeToken");
   mfs_ServiceStatesToken = driver_mk_atom("ServiceStatesToken");
   mfs_ServicesToken = driver_mk_atom("ServicesToken");
@@ -1171,7 +1231,7 @@ static int mfs_control(ErlDrvData          handle,
   if (!mfs_error) {
 
     /* 
-     * Prepare the rest of the {tokens, TokenList, Vsn LastLine} tuple 
+     * Prepare the rest of the {tokens, TokenList, LastLine} tuple 
      * and send it as message top caller. 
      */
     mfs_ensure_term_spec(7);
@@ -1188,10 +1248,10 @@ static int mfs_control(ErlDrvData          handle,
 	  "\n   term_spec_size:  %d\n", 
 	  mfs_term_spec_index, mfs_term_spec_size) );
 
-    driver_send_term(mfs_port,
- 		     driver_caller(mfs_port),
-		     mfs_term_spec, 
-  		     mfs_term_spec_index);
+    driver_send_term(mfs_port, 
+                     driver_caller(mfs_port),
+                     mfs_term_spec, 
+                     mfs_term_spec_index);
     
     if (mfs_text_buf  != NULL) driver_free(mfs_text_buf);
     if (mfs_term_spec != NULL) driver_free(mfs_term_spec);

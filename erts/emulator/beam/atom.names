@@ -135,6 +135,7 @@ atom error
 atom error_handler
 atom error_logger
 atom ets
+atom exit
 atom exit_status
 atom existing
 atom exiting

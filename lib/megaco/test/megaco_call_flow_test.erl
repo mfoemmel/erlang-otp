@@ -798,10 +798,6 @@ msg17a(Mid) ->
                            descriptors   = [{signalsDescriptor, [{signal, Signal}]}]},
     CmdReq = #'CommandRequest'{command = {modReq, AmmReq}},
 
-    Gain = ?PP("tdmc/gain", "2"),
-    Ec   = ?PP("tdmc/ec", "G165"),
-    LCD = #'LocalControlDescriptor'{streamMode = sendRecv,
-                                    propertyParms = [Gain, Ec]},
     V = ?PP("v", "0"),
     C = ?PP("c", "IN IP4 125.125.125.111"),
     M = ?PP("m", "audio 1111 RTP/AVP 4"),
@@ -1183,7 +1179,7 @@ msg23b(Mid) ->
     Stat25 = ?SP("rtp/pl", "10"),
     Stat26 = ?SP("rtp/jit", "27"),
     Stat27 = ?SP("rtp/delay","48"),
-    Stats2 = [Stat21, Stat22],
+    Stats2 = [Stat21, Stat22, Stat23, Stat24, Stat25, Stat26, Stat27],
     Reply2 = #'AmmsReply'{terminationID = [#megaco_term_id{id = ?A5556}],
                           terminationAudit = [{statisticsDescriptor, Stats2}]},
     reply(Mid, 50009, 5000, [{subtractReply, Reply1}, {subtractReply, Reply2}]).
@@ -1219,7 +1215,7 @@ encoders() ->
     ].
 
 
-pretty_mod({Mod, Opt, Opt2}) ->
+pretty_mod({Mod, Opt, _Opt2}) ->
     case Mod of
 	megaco_pretty_text_encoder   when Opt == [flex] -> pretty_flex;
 	megaco_compact_text_encoder  when Opt == [flex] -> compact_flex;
@@ -1302,7 +1298,7 @@ compressed_erl() ->
     All = [encode(Slogan, Msg, Encoder) || {Slogan, Msg} <- messages()],
     compute_res(All).
 
-encode(Slogan, DecodedMsg, {Mod, Opt, Opt2} = Encoder) ->
+encode(Slogan, DecodedMsg, {Mod, Opt, _Opt2} = _Encoder) ->
     Main = "==================================================",
     Sub  = "--------------------------------------------------",
     case catch Mod:encode_message(Opt, DecodedMsg) of
@@ -1330,7 +1326,7 @@ encode(Slogan, DecodedMsg, {Mod, Opt, Opt2} = Encoder) ->
             {Slogan, {encode_message, Other}}
     end.
 
-fmt(Slogan, Msg, Msg) ->
+fmt(_Slogan, Msg, Msg) ->
     ok;
 fmt(Slogan, {'MegacoMessage', A, {'Message', V, MID, {transactions, [{T, Old}]}}},
     {'MegacoMessage', A, {'Message', V, MID, {transactions, [{T, New}]}}}) ->
@@ -1379,7 +1375,7 @@ msg_sizes(Encoders) ->
 msg_sizes(DecodedMsg, Encoders) ->
     [abs_msg_size(DecodedMsg, E) || E <- Encoders].
 
-abs_msg_size(DecodedMsg, {Mod, Opt, Opt2} = Encoder) ->
+abs_msg_size(DecodedMsg, {Mod, Opt, _Opt2} = Encoder) ->
     case catch Mod:encode_message(Opt, DecodedMsg) of
         {ok, EncodedMsg} when binary(EncodedMsg) ->
 	    {Encoder, size(EncodedMsg)};
@@ -1411,7 +1407,7 @@ encoding_msg(DecodedMsg, {Mod, Opt, Opt2} = Encoder) ->
     {ok, DecodedMsg2} = Mod:decode_message(Opt2, EncodedMsg),
     {Encoder, DecodedMsg2}.
 
-encoding_time({{Mod, Opt, Opt2} = Encoder, DecodedMsg}) ->
+encoding_time({{Mod, _Opt, Opt2} = Encoder, DecodedMsg}) ->
     meter(fun() -> {ok, _} = Mod:encode_message(Opt2, DecodedMsg) end, Encoder).
 
 %%----------------------------------------------------------------------
@@ -1433,11 +1429,11 @@ decoding_times(Decoders) ->
 decoding_times(DecodedMsg, Encoders) ->
     [{E, decoding_time(decoding_msg(DecodedMsg, E))} || E <- Encoders].
 
-decoding_msg(DecodedMsg, {Mod, Opt, Opt2} = Encoder) ->
+decoding_msg(DecodedMsg, {Mod, Opt, _Opt2} = Encoder) ->
     {ok, EncodedMsg} = Mod:encode_message(Opt, DecodedMsg),
     {Encoder, EncodedMsg}.
 
-decoding_time({{Mod, Opt, Opt2} = Encoder, EncodedMsg}) ->
+decoding_time({{Mod, _Opt, Opt2} = Encoder, EncodedMsg}) ->
     meter(fun() -> {ok, _} = Mod:decode_message(Opt2, EncodedMsg) end, Encoder).
 
 %%----------------------------------------------------------------------
@@ -1462,7 +1458,7 @@ coding_msg(DecodedMsg, {Mod, Opt, _Opt2} = Encoder) ->
     {ok, EncodedMsg} = Mod:encode_message(Opt, DecodedMsg),
     {Encoder, EncodedMsg}.
 
-coding_time({{Mod, Opt, Opt2} = Encoder, EncodedMsg}) ->
+coding_time({{Mod, _Opt, Opt2} = Encoder, EncodedMsg}) ->
     Fun = fun() ->
 		  {ok, DecodedMsg} = Mod:decode_message(Opt2, EncodedMsg),
 		  {ok, _}          = Mod:encode_message(Opt2, DecodedMsg)
@@ -1494,7 +1490,7 @@ gnuplot_gif() ->
 %%----------------------------------------------------------------------
 
 gnuplot_size_gif() ->
-    {ok, Cwd} = file:get_cwd(),
+    {ok, _Cwd} = file:get_cwd(),
     TmpDir = "megaco_encoded_size.tmp",
     GifFile = "megaco_encoded_size.gif",
     Header =
@@ -1546,7 +1542,7 @@ coding_times_stat() ->
 %%----------------------------------------------------------------------
 
 gnuplot_enc_time_gif() ->
-    {ok, Cwd} = file:get_cwd(),
+    {ok, _Cwd} = file:get_cwd(),
     TmpDir = "megaco_encoding_time.tmp",
     GifFile = "megaco_encoding_time.gif",
     Header =
@@ -1571,7 +1567,7 @@ gnuplot_enc_time_gif() ->
 %%----------------------------------------------------------------------
 
 gnuplot_dec_time_gif() ->
-    {ok, Cwd} = file:get_cwd(),
+    {ok, _Cwd} = file:get_cwd(),
     TmpDir = "megaco_decoding_time.tmp",
     GifFile = "megaco_decoding_time.gif",
     Header =
@@ -1596,7 +1592,7 @@ gnuplot_dec_time_gif() ->
 %%----------------------------------------------------------------------
 
 gnuplot_code_time_gif() ->
-    {ok, Cwd} = file:get_cwd(),
+    {ok, _Cwd} = file:get_cwd(),
     TmpDir = "megaco_coding_time.tmp",
     GifFile = "megaco_coding_time.gif",
     Header =
@@ -1620,7 +1616,7 @@ gnuplot_code_time_gif() ->
 %% Encode asn.1 messages
 %%----------------------------------------------------------------------
 
-gen_byte_msg(Msg, {Mod, Opt, Opt2} = Encoder) ->
+gen_byte_msg(Msg, {Mod, Opt, _Opt2} = _Encoder) ->
     {ok, EncodedMsg} = Mod:encode_message(Opt, Msg),
     EncodedMsg.
 
@@ -1685,7 +1681,7 @@ single_meter(Fun, MaxTime, Tag) ->
 	    {bad_result, Reason}
     end.
 
-single_meter(Parent, Fun, Expected, Tag) ->
+single_meter(Parent, Fun, Expected, _Tag) ->
     erlang:statistics(runtime),
     erlang:send_after(Expected, self(), return_count),
     Count = count(Fun, 1),
@@ -1707,9 +1703,9 @@ count(Fun, N) ->
 
 stat(Encoders, Stat) ->
     Fun =
-	fun({Mod, Opt, Opt2} = E) ->
+	fun({_Mod, _Opt, _Opt2} = E) ->
 		List = lists:flatten([[Val || {E2, Val} <- Info, E2 == E] ||
-					 {Slogan, Info} <- Stat]),
+					 {_Slogan, Info} <- Stat]),
 		Max = lists:max(List),
 		Min = lists:min(List),
 		case catch lists:sum(List) of
@@ -1733,9 +1729,9 @@ gnuplot_dir(Dir, Header, Encoders, Stat) ->
     file:write_file(filename:join(Dir, BatchFile), Bin),
     BatchFile.
 
-gnuplot_data([], Dir, Stat, Pos, Names, Arrows) ->
+gnuplot_data([], _Dir, _Stat, _Pos, Names, Arrows) ->
     {lists:reverse(Names), lists:reverse(Arrows)};
-gnuplot_data([{Mod, Opt, Opt2} = E | Encoders], Dir, Stat, Pos, Names, Arrows) ->
+gnuplot_data([{Mod, _Opt, _Opt2} = E | Encoders], Dir, Stat, Pos, Names, Arrows) ->
     Plot = fun({Msg, List}, {N, AccSz}) ->
                    {value, {_, Sz}} = lists:keysearch(E, 1, List),
                    ActualSz =

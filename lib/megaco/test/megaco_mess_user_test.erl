@@ -100,7 +100,7 @@ call(UserCallback) ->
 
 call_await_reply(Pid) ->
     receive
-	{?MODULE, Pid, UserReply} = Reply ->
+	{?MODULE, Pid, UserReply} = _Reply ->
 %  	    io:format("~p~p[~p]: call_await_reply -> received: ~n~p~n", 
 %  		      [self(),?MODULE,?LINE,Reply]),
 	    case UserReply of
@@ -110,7 +110,7 @@ call_await_reply(Pid) ->
 	{'EXIT', Pid, Reason} = Bad ->
 	    ?LOG("receive test case exit: ~p~n", [Bad]),
 	    exit(Reason);
-	{'EXIT', _, Reason} = Bad ->
+	{'EXIT', _, _Reason} = Bad ->
 	    ?LOG("receive unknown exit: ~p~n", [Bad]),
 	    call_await_reply(Pid);
 	Bad ->
@@ -170,7 +170,7 @@ start_transport(MgReceiveHandle, MgcReceiveHandle) ->
 
 loop_transport(Parent) ->
     receive
-	{'EXIT', Pid, Reason} = Error->
+	{'EXIT', _Pid, Reason} = Error ->
 	    ok = io:format("transport stopped: ~p~n", [{Parent, Error}]),
 	    exit(Reason)
     end.

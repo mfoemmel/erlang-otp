@@ -1,3 +1,4 @@
+%%% -*- erlang-indent-level: 2 -*-
 %%%----------------------------------------------------------------------
 %%% File    : hipe_sparc_finalize.erl
 %%% Author  : Christoffer Vikström <chvi3471@student.uu.se>
@@ -11,16 +12,15 @@
 -export([finalize/2]).
 
 
-
 finalize(CFG,Options) ->
-    OptCFG = case proplists:get_bool(sparc_peephole,Options) of
-		 true  -> hipe_sparc_cfg:remove_trivial_bbs(CFG);
-		 false -> CFG
-	     end,
-    LinearCode = hipe_sparc:sparc_code(hipe_sparc_cfg:linearize(OptCFG)),
-    OptLinearCode = hipe_sparc_peephole:peep(LinearCode),
-    OptLinearCode2 = fill_delay(OptLinearCode, Options),
-    {OptCFG, lists:flatten(OptLinearCode2)}.
+  OptCFG = case proplists:get_bool(sparc_peephole,Options) of
+	     true  -> hipe_sparc_cfg:remove_trivial_bbs(CFG);
+	     false -> CFG
+	   end,
+  LinearCode = hipe_sparc:sparc_code(hipe_sparc_cfg:linearize(OptCFG)),
+  OptLinearCode = hipe_sparc_peephole:peep(LinearCode),
+  OptLinearCode2 = fill_delay(OptLinearCode, Options),
+  {OptCFG, lists:flatten(OptLinearCode2)}.
 
 
 %% opt(Code) ->

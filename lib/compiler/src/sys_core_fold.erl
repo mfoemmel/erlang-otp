@@ -915,12 +915,17 @@ pattern(#c_alias{var=V0,pat=P0}=Pat, Isub, Osub0) ->
     {Pat#c_alias{var=V1,pat=P1},Osub2}.
 
 bin_pattern_list(Ps0, Isub, Osub0) ->
-    mapfoldl(fun (P, Osub) -> bin_pattern(P, Isub, Osub) end, Osub0, Ps0).
+    {Ps,{_,Osub}} = mapfoldl(fun bin_pattern/2, {Isub,Osub0}, Ps0),
+    {Ps,Osub}.
 
-bin_pattern(#c_bitstr{val=E0,size=Size0}=Pat, Isub, Osub0) ->
-    Size1 = expr(Size0, Isub),
-    {E1,Osub1} = pattern(E0, Isub, Osub0),
-    {Pat#c_bitstr{val=E1,size=Size1},Osub1}.
+bin_pattern(#c_bitstr{val=E0,size=Size0}=Pat, {Isub0,Osub0}) ->
+    Size1 = expr(Size0, Isub0),
+    {E1,Osub} = pattern(E0, Isub0, Osub0),
+    Isub = case E0 of
+	       #c_var{} -> sub_del_var(E0, Isub0);
+	       _ -> Isub0
+	   end,
+    {Pat#c_bitstr{val=E1,size=Size1},{Isub,Osub}}.
 
 pattern_list(Ps, Sub) -> pattern_list(Ps, Sub, Sub).
 
@@ -1212,15 +1217,25 @@ will_match_list_type([E|Es], [P|Ps]) ->
 will_match_list_type([], []) -> yes;
 will_match_list_type(_, _) -> no.		%Different length
 
+remove_non_vars(Ps0, Es0) ->
+    {Ps,Es} = remove_non_vars(Ps0, Es0, [], []),
+    {reverse(Ps),reverse(Es)}.
+
 remove_non_vars(#c_tuple{es=Ps}, #c_tuple{es=Es}, Pacc, Eacc) ->
-    remove_non_vars(Ps, Es, Pacc, Eacc);
-remove_non_vars([#c_var{}=Var|Ps], [#c_alias{var=Evar}|Es], Pacc, Eacc) ->
-    remove_non_vars(Ps, Es, [Var|Pacc], [Evar|Eacc]);
-remove_non_vars([#c_var{}=Var|Ps], [E|Es], Pacc, Eacc) ->
-    remove_non_vars(Ps, Es, [Var|Pacc], [E|Eacc]);
-remove_non_vars([_|Ps], [_|Es], Pacc, Eacc) ->
-    remove_non_vars(Ps, Es, Pacc, Eacc);
-remove_non_vars([], [], Pacc, Eacc) -> {reverse(Pacc),reverse(Eacc)}.
+    remove_non_vars_list(Ps, Es, Pacc, Eacc);
+remove_non_vars(#c_var{}=Var, #c_alias{var=Evar}, Pacc, Eacc) ->
+    {[Var|Pacc],[Evar|Eacc]};
+remove_non_vars(#c_var{}=Var, E, Pacc, Eacc) ->
+    {[Var|Pacc],[E|Eacc]};
+remove_non_vars(P, E, Pacc, Eacc) ->
+    true = core_lib:is_literal(P) andalso core_lib:is_literal(E), %Assertion.
+    {Pacc,Eacc}.
+
+remove_non_vars_list([P|Ps], [E|Es], Pacc0, Eacc0) ->
+    {Pacc,Eacc} = remove_non_vars(P, E, Pacc0, Eacc0),
+    remove_non_vars_list(Ps, Es, Pacc, Eacc);
+remove_non_vars_list([], [], Pacc, Eacc) ->
+    {Pacc,Eacc}.
 
 %% case_opt(CaseArg, [Clause]) -> {CaseArg,[Clause]}.
 %%  Try and optimise case by removing building argument terms.

@@ -21,7 +21,7 @@ rtl_to_sparc(MFA, Rtl, Options) ->
   %% hipe_rtl_cfg:pp(Rtl),
   debug("rtl -> sparc: ~w~n", [MFA], Options),
   ?when_option(time, Options, ?start_timer("RTL-to-Sparc")),
-  Sparc0 = hipe_rtl2sparc:translate(Rtl, Options),
+  Sparc0 = hipe_rtl_to_sparc:translate(Rtl, Options),
   ?when_option(time, Options, ?stop_timer("RTL-to-Sparc")),
   SparcCfg1 = hipe_sparc_cfg:init(Sparc0),
   %% hipe_sparc_cfg:pp(SparcCfg1),
@@ -96,7 +96,7 @@ rtl_to_sparc3(MFA, SparcCfg, Options) ->
       naive ->
 	%% Excessive spilling can cause large constants
 	%% in stack offsets.
-	hipe_sparc_ra_memory:split_constants(SparcCfg2);
+	hipe_sparc_ra_naive:split_constants(SparcCfg2);
       _ ->
 	SparcCfg2
     end,

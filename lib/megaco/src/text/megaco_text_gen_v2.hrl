@@ -539,7 +539,7 @@ decompose_ContextRequest(Val)
     OptEmergency = 
 	case Val#'ContextRequest'.emergency of
 	    asn1_NOVALUE -> {[], dummy};
-	    false -> {[], dummy};
+	    false -> {[?EmergencyOffToken], fun(Elem, _) -> Elem end};
 	    true -> {[?EmergencyToken], fun(Elem, _) -> Elem end}
 	end,
     OptTopologyReq = 
@@ -2002,28 +2002,36 @@ enc_RequestID(Val, _State) when Val == ?megaco_all_request_id ->
 enc_RequestID(Val, State) ->
     enc_UINT32(Val, State).
 
-enc_ModemDescriptor(#'ModemDescriptor'{mtl = [Val],
-				       mpl = [],
-				       nonStandardData = asn1_NOVALUE},
-		    State) ->
-    [
-     ?ModemToken,
-     ?EQUAL,
-     enc_ModemType(Val, State)
-    ];
-enc_ModemDescriptor(Val, State)
-  when record(Val, 'ModemDescriptor') ->
-    [
-     ?ModemToken,
-     ?LSBRKT,
-     enc_list([{Val#'ModemDescriptor'.mtl, fun enc_ModemType/2}], State),
-     ?RSBRKT,
-     enc_opt_brackets(
-       enc_list([{Val#'ModemDescriptor'.mpl, fun enc_PropertyParm/2}],
-		?INC_INDENT(State)),
-       State)
-     %% BUGBUG: Is PropertyParm == NAME parmValue?
-    ].
+enc_ModemDescriptor(MD, _State) ->
+    error({deprecated, MD}).
+
+%% Corr1:
+%% As of corr 1 ModemDescriptor has been deprecated.
+%% 7.1.2: ...shall not be included as part of a transmitted content and,
+%%        if received, shall either be ignored or processed at the option
+%%        of the implementation. ...
+%% enc_ModemDescriptor(#'ModemDescriptor'{mtl = [Val],
+%% 				       mpl = [],
+%% 				       nonStandardData = asn1_NOVALUE},
+%% 		    State) ->
+%%     [
+%%      ?ModemToken,
+%%      ?EQUAL,
+%%      enc_ModemType(Val, State)
+%%     ];
+%% enc_ModemDescriptor(Val, State)
+%%   when record(Val, 'ModemDescriptor') ->
+%%     [
+%%      ?ModemToken,
+%%      ?LSBRKT,
+%%      enc_list([{Val#'ModemDescriptor'.mtl, fun enc_ModemType/2}], State),
+%%      ?RSBRKT,
+%%      enc_opt_brackets(
+%%        enc_list([{Val#'ModemDescriptor'.mpl, fun enc_PropertyParm/2}],
+%% 		?INC_INDENT(State)),
+%%        State)
+%%      %% BUGBUG: Is PropertyParm == NAME parmValue?
+%%     ].
 
 %% enc_ModemDescriptor(Val, State)
 %%   when record(Val, 'ModemDescriptor') ->
@@ -2040,21 +2048,22 @@ enc_ModemDescriptor(Val, State)
 %%      %% BUGBUG: Is PropertyParm == NAME parmValue?
 %%     ].
 
-enc_ModemType({'ModemType',Val}, State)->
-    enc_ModemType(Val, State);
-enc_ModemType(Val, _State) ->
-    %% BUGBUG: Does not handle extensionParameter
-    case Val of
-        v18    	  -> ?V18Token;
-        v22    	  -> ?V22Token;
-        v22bis 	  -> ?V22bisToken;
-        v32    	  -> ?V32Token;
-        v32bis 	  -> ?V32bisToken;
-        v34    	  -> ?V34Token;
-        v90    	  -> ?V90Token;
-        v91    	  -> ?V91Token;
-        synchISDN -> ?SynchISDNToken
-    end.
+%% Corr1: See ModemDescriptor above
+%% enc_ModemType({'ModemType',Val}, State)->
+%%     enc_ModemType(Val, State);
+%% enc_ModemType(Val, _State) ->
+%%     %% BUGBUG: Does not handle extensionParameter
+%%     case Val of
+%%         v18    	  -> ?V18Token;
+%%         v22    	  -> ?V22Token;
+%%         v22bis 	  -> ?V22bisToken;
+%%         v32    	  -> ?V32Token;
+%%         v32bis 	  -> ?V32bisToken;
+%%         v34    	  -> ?V34Token;
+%%         v90    	  -> ?V90Token;
+%%         v91    	  -> ?V91Token;
+%%         synchISDN -> ?SynchISDNToken
+%%     end.
 
 enc_DigitMapDescriptor(Val, State)
   when record(Val, 'DigitMapDescriptor') ->
@@ -2094,6 +2103,7 @@ enc_timer(Timer, Prefix, State) ->
      ?COMMA_INDENT(State)
     ].
 
+
 enc_ServiceChangeParm(Val, State)
   when record(Val, 'ServiceChangeParm') ->
     [
@@ -2114,7 +2124,9 @@ enc_ServiceChangeParm(Val, State)
 	       {[Val#'ServiceChangeParm'.serviceChangeMgcId],
 		fun enc_serviceChangeMgcId/2},
 	       {[Val#'ServiceChangeParm'.timeStamp],
-		fun enc_TimeNotation/2}],
+		fun enc_TimeNotation/2},
+	       {Val#'ServiceChangeParm'.serviceChangeInfo,
+		fun enc_AuditDescriptor/2}],
 	      ?INC_INDENT(State)),
      ?RBRKT_INDENT(State)
     ].
@@ -2381,7 +2393,9 @@ enc_list([{Elems, ElemEncoder} | Tail], State, SepEncoder, NeedsSep) ->
 enc_list([], _State, _SepEncoder, _NeedsSep) ->
     [];
 enc_list(asn1_NOVALUE, _State, _SepEncoder, _NeedsSep) ->
-    [].
+    [];
+enc_list(A, B, C, D) ->
+    error({invlid_list, A, B, C, D}).
 
 do_enc_list(asn1_NOVALUE, _State, _ElemEncoder, _SepEncoder, _NeedsSep) ->
     [];
@@ -2456,7 +2470,7 @@ verify_count(Count, Min, Max) ->
 %% -------------------------------------------------------------------
 
 error(Reason) ->
-    exit(Reason).
+    erlang:fault(Reason).
 
 
 %% -------------------------------------------------------------------

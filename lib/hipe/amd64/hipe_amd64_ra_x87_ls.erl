@@ -6,7 +6,6 @@
 
 %%-define(DEBUG,1).
 
--include("hipe_amd64.hrl").
 -define(HIPE_INSTRUMENT_COMPILER, false). %% Turn off instrumentation.
 -include("../main/hipe.hrl").
 

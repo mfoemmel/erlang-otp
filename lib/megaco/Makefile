@@ -45,7 +45,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 include vsn.mk
 VSN=$(MEGACO_VSN)
 
-DIR_NAME = megaco-$(VSN)
+DIR_NAME = megaco_src-$(VSN)$(PRE_VSN)
 
 ifndef APP_RELEASE_DIR
   APP_RELEASE_DIR = /tmp
@@ -132,6 +132,7 @@ $(APP_DIR):
 	(cd ..; find megaco -name 'findmerge.*' >> megaco/TAR.exclude2)
 	(cd ..; find megaco -name '*.contrib*' >> megaco/TAR.exclude2)
 	(cd ..; find megaco -name '*.keep*' >> megaco/TAR.exclude2)
+	(cd ..; find megaco -name '*.mkelem*' >> megaco/TAR.exclude2)
 	(cd ..; find megaco -name '*~' >> megaco/TAR.exclude2)
 	(cd ..; find megaco -name 'erl_crash.dump' >> megaco/TAR.exclude2)
 	(cd ..; find megaco/test -name '*.beam' >> megaco/TAR.exclude2)

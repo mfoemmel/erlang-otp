@@ -735,7 +735,7 @@ count_caller_saves(CFG,Liveness, T) ->
 			DefsSet = ordsets:from_list(defines(I,T)),
 	                LiveOverI = ordsets:subtract(LiveOut, DefsSet),      
 			NewCS = 
-			  case hipe_amd64:is_pseudo_call(I) of
+			  case hipe_x86:is_pseudo_call(I) of
 			    true ->
 			      ordsets:union(CS,LiveOverI);
 			    _ -> CS

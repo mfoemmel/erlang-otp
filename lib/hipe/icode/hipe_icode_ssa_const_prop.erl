@@ -222,11 +222,6 @@ visit_call(Dst, Args, Fun, Cont, Fail, Environment) ->
       ConstArgs = [hipe_icode:const_value(Argument) || Argument <- Args],
       case catch evaluate_call_or_enter(ConstArgs, Fun) of
 	{'EXIT', _} ->
-          {Module, Function, Arity} = 
-            hipe_icode_cfg:function(env__cfg(Environment)),
-       % XXX: If the put (in hipe.erl) is changed, replace with below:
-       % Options = get(hipe_options),
-       % ?when_option(hipe_const_prop_warnings, Options, 
 	  FlowWork = Fail,
 	  {Environment1, SSAWork} =
 	    update_lattice_value({Dst, bottom}, Environment);

@@ -6,8 +6,7 @@
 %%  Module   :	hipe_icode_pp
 %%  Purpose  :  Pretty-printer for Icode.
 %%  Notes    : 
-%%  History  :	* 2003-04-16  (stenman@epfl.ch): 
-%%               Created.
+%%  History  :	* 2003-04-16 (stenman@epfl.ch): Created.
 %%  CVS      :
 %%              $Author$
 %%              $Date$

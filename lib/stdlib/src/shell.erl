@@ -526,8 +526,6 @@ restrict_handlers(RShMod, Shell, RT) ->
 
 local_func_handler(F, As, RShMod, Bs, Shell, RT) ->
     case local_allowed(F, As, RShMod, Bs, Shell, RT) of
-	disallowed ->
-	    {value,{disallowed,{F,As}},Bs};
 	{not_restricted,Res} ->
 	    Res;
 	{AsEv,Bs1} ->
@@ -558,7 +556,10 @@ local_allowed(F, As, RShMod, Bs, Shell, RT) when is_atom(F) ->
 			    exit({disallowed,{F,AsEv}});
 		       true -> 
 			    {AsEv,Bs1}
-		    end
+		    end;
+		Unexpected ->			% the user didn't read the manual
+		    exit({bad_return_value,
+			  {RShMod,local_allowed},Unexpected})
 	    end
     end.
 
@@ -573,7 +574,10 @@ non_local_allowed(MForFun, As, RShMod, Shell) ->
 		    exit({disallowed,{MForFun,As}});
 	       true -> 
 		    apply(MForFun, As)
-	    end
+	    end;
+	Unexpected ->				% the user didn't read the manual
+	    exit({bad_return_value,
+		  {RShMod,non_local_allowed},Unexpected})
     end.
 
 %% The commands implemented in shell should not be checked if allowed

@@ -123,7 +123,7 @@ else
 EMU_CC  = @EMU_CC@
 endif
 WFLAGS  = @WFLAGS@
-CFLAGS  = $(TYPE_FLAGS) @DEFS@ $(WFLAGS) @THR_DEFS@ $(ARCHCFLAGS)
+CFLAGS  = $(TYPE_FLAGS) @DEFS@ $(WFLAGS) @EMU_THR_DEFS@ $(ARCHCFLAGS)
 HCC     = @HCC@
 LD      = @LD@
 DEXPORT = @DEXPORT@
@@ -162,7 +162,7 @@ else
 CS_CFLAGS = $(CS_CFLAGS_)
 endif
 
-LIBS	= @LIBS@
+LIBS	= @LIBS@ -L../lib/internal/$(TARGET)
 ifeq ($(TARGET),win32)
 LIBS    += -L$(ERL_TOP)/erts/obj$(TYPEMARKER)/$(TARGET) -lz
 else
@@ -182,8 +182,8 @@ LIBS += -lperfctr
 endif
 endif
 
-ORG_THR_LIBS=@THR_LIBS@
-THR_LIB_NAME=@THR_LIB_NAME@
+ORG_THR_LIBS=@EMU_THR_LIBS@
+THR_LIB_NAME=@EMU_THR_LIB_NAME@
 
 THR_LIBS=$(subst -l$(THR_LIB_NAME),-l$(THR_LIB_NAME)$(THR_LIB_SFX),$(ORG_THR_LIBS))
 
@@ -287,12 +287,23 @@ generate: $(TARGET)/beam_opcodes.h $(TARGET)/erl_bif_table.c \
 		$(TARGET_TYPE_DIR)/erl_alloc_types.h \
 		$(HIPE_GENERATE)
 endif
+
+ifeq ($(findstring vxworks,$(TARGET)),vxworks)
+HIPE_GENERATE =
+else
+ifeq ($(findstring ose,$(TARGET)),ose)
+HIPE_GENERATE =
+else
+
 HIPE_GENERATE = $(BINDIR)/hipe_mkliterals$(TYPEMARKER)
 
 generate: $(TARGET)/hipe_x86_asm.h
 generate: $(TARGET)/hipe_amd64_asm.h
 generate: $(TARGET)/hipe_ppc_asm.h
 generate: $(TARGET_TYPE_DIR)/hipe_literals.h
+
+endif
+endif
 
 # opcode table
 
@@ -363,7 +374,7 @@ endif
 # ----------------------------------------------------------------------
 # Pattern rules
 #
-INCLUDES  = -Ibeam -Isys/$(ERLANG_OSTYPE) -Isys/common -I$(TARGET) -I$(TARGET_TYPE_DIR) -Izlib -Ihipe
+INCLUDES  = -Ibeam -Isys/$(ERLANG_OSTYPE) -Isys/common -I$(TARGET) -I$(TARGET_TYPE_DIR) -Izlib -Ihipe -I../include/internal -I../include/internal/$(TARGET)
 
 ifdef PERFCTR_PATH
 INCLUDES += -I$(PERFCTR_PATH)/usr.lib -I$(PERFCTR_PATH)/linux/include
@@ -403,7 +414,7 @@ else
 
 VXCC=@VXCC@
 VXCFLAGS=@VXCFLAGS@
-CFLAGS_NOOPT=@CFLAGS_NOOPT@ @DEFS@ $(WFLAGS) @THR_DEFS@ $(ARCHCFLAGS)
+CFLAGS_NOOPT=@CFLAGS_NOOPT@ @DEFS@ $(WFLAGS) @EMU_THR_DEFS@ $(ARCHCFLAGS)
 
 # we want to use jump table
 $(OBJDIR)/beam_emu.o: beam/beam_emu.c

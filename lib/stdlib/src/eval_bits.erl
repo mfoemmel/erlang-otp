@@ -11,13 +11,15 @@
 %%% In matching we convert to bit lists only as much as we
 %%% need, and keep the tail as a binary.
 
-%%% expr_grp/5 returns {value, Binary, New_bindings}.
+%%% expr_grp/5 returns {value, Binary, New_bindings} or exits with
+%%% {Reason,[{erl_eval,expr,3}]} (any other reply is a bug).
 %%% match_bits/6 returns either {match, New_bindings} or throws one of
 %%% 'nomatch' or 'invalid' (the latter if a pattern is illegal - this 
 %%% can only happen if lint hasn't been run).
 %%% Their last argument should be 'true' if type defaulting should be
 %%% done, 'false' otherwise (e.g., if sys_pre_expand has already done it).
-
+%%% However, it works to always use 'true' for the last argument, so 
+%%% this argument is could actually be removed.
 
 %% error(Reason) -> exception thrown
 %%  Throw a nice-looking exception, similar to exceptions from erl_eval.
@@ -75,21 +77,27 @@ expr_bit({bin_element, _Line, E, Size0, Options0}, Bs0, Fun, Call_maketype) ->
     {Bitl, Bs}.
 
 size_or_all(all, All) -> All;
-size_or_all(N, _All)  -> N.
+size_or_all(N, _All) when N >= 0 -> N;
+size_or_all(_N, _All) -> error(badarg).
 
 to_binary(B0, Size0, [binary,{unit,Unit}|_]) when is_binary(B0) ->
     Size1 = size_or_all(Size0, size(B0)),
     binary_to_bits(B0, Size1*Unit);
-to_binary(I, Size0, [integer,{unit,Unit}|Opts]) when is_integer(I) ->
+to_binary(I, Size0, [integer,{unit,Unit}|Opts]) when is_integer(Size0),
+                                                     Size0 >= 0,
+                                                     is_integer(I) ->
     Size = Size0*Unit,
     L = i_to_bytes(I, Size),
     Bits = binary_to_bits(list_to_binary(L), Size),
     to_little_endian(Bits, Opts);
-to_binary(F, Size0, [float,{unit,Unit}|Opts]) when is_float(F) ->
+to_binary(F, Size0, [float,{unit,Unit}|Opts]) when is_integer(Size0),
+                                                   Size0 >= 0,
+                                                   is_float(F) or 
+                                                       is_integer(F) ->
     Size = Size0*Unit,
     Bits = float_to_ieee(F, Size),
     to_little_endian(Bits, Opts);
-to_binary(_, _, _) ->
+to_binary(_, _Size0, _Options) ->
     error(badarg).
 
 type_and_unit([Type,{unit,Unit}|_]) -> {Type,Unit}.
@@ -170,11 +178,14 @@ float_to_ieee(F, Size) ->
 make_bit_type(Line, default, Type0) ->
     case erl_bits:set_bit_type(default, Type0) of
 	{ok,all,Bt} -> {{atom,Line,all},erl_bits:as_list(Bt)};
-	{ok,Size,Bt} -> {{integer,Line,Size},erl_bits:as_list(Bt)}
+	{ok,Size,Bt} -> {{integer,Line,Size},erl_bits:as_list(Bt)};
+        {error,Reason} -> error(Reason)
     end;
-make_bit_type(_Line, Size, Type0) ->		%Integer or 'all'
-    {ok,Size,Bt} = erl_bits:set_bit_type(Size, Type0),
-    {Size,erl_bits:as_list(Bt)}.
+make_bit_type(_Line, Size, Type0) -> %Size evaluates to an integer or 'all'
+    case erl_bits:set_bit_type(Size, Type0) of
+        {ok,Size,Bt} -> {Size,erl_bits:as_list(Bt)};
+        {error,Reason} -> error(Reason)
+    end.
 
 %%% Part 2: matching
 
@@ -204,14 +215,14 @@ match_field({bin_element,_,{string,_,S},default,default},
     Tail = foldl(fun(C, <<C:8,Tail/binary>>) -> Tail;
 		    (C, Bits0) ->
 			 {Bits,Tail} = get_bits(Bits0, 8),
-			 C = bits_to_bytes(Bits),
+			 [C] = bits_to_bytes(Bits),
 			 Tail
 		 end, Bin, S),
     {Bs,BBs,Tail};
-match_field({bin_element,_,E,default,[binary|_]}, Bin, Bs0, BBs, 
-            Mfun, _Efun, _) ->
-    {match,Bs} = Mfun(E, Bin, Bs0),
-    {Bs,BBs,<<>>};
+match_field({bin_element,L,E,default,[binary|_]=Opts}, Bin, Bs0, BBs, 
+            Mfun, Efun, Call_maketype) ->
+     match_field({bin_element,L,E,{atom,L,all},Opts}, Bin, Bs0, BBs, Mfun,
+                 Efun, Call_maketype);
 match_field({bin_element, _,E,Size0,Options0}, Bin, Bs0, BBs, Mfun, Efun,
 	    Call_maketype) ->
     {Size1,Options} = maketype(Size0, Options0, Call_maketype),
@@ -221,7 +232,7 @@ match_field({bin_element, _,E,Size0,Options0}, Bin, Bs0, BBs, Mfun, Efun,
 	    {match,Bs} = Mfun(E, Bin, Bs0),
 	    Val = <<>>,
 	    {Bs,add_bin_binding(E, Val, BBs),Val};
-	{value,Size,_} ->
+	{value,Size,_} when Size >= 0 ->
 	    {Type,Unit} = type_and_unit(Options),
 	    {Val,Tail} = match_thing(Type, Options, Size*Unit, Bin),
 	    {match,Bs} = Mfun(E, Val, Bs0),
@@ -247,7 +258,7 @@ match_thing(float, Opts, Size, Bin) ->
     <<Float:Size/float>> = list_to_binary(bits_to_bytes(Bits1)),
     {Float,Tail};
 match_thing(_Type, _Opts, _Size, _Bin) ->
-    %%erlang:display({_Type,_Opts,_Size,_Bin}),
+    %%erlang:display({_Type,_Opts,_Size,_Bin}), "cannot happen"
     error(badarg).
 
 match_check_size({var,_,V}, Bs) -> 
@@ -288,7 +299,9 @@ sublist([E|Rest], N) when integer(N), N > 0 ->
 sublist([], 0) ->
     [];
 sublist([_|_], 0) ->
-    [].
+    [];
+sublist(_, _) ->
+    error(badarg).
 
 -ifdef(debug).
 %%% Trace output.

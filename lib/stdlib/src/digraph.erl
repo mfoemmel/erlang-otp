@@ -360,7 +360,7 @@ del_path(G,V1,V2) ->
 %%
 
 get_cycle(G, V) ->
-    case one_path(out_neighbours(G,V), V, [], [V], [V], {2,infinity}, G, 1) of
+    case one_path(out_neighbours(G,V), V, [], [V], [V], 2, G, 1) of
 	false ->
 	    case lists:member(V, out_neighbours(G, V)) of
 		true -> [V];
@@ -376,39 +376,29 @@ get_cycle(G, V) ->
 %%
 
 get_path(G, V1, V2) ->
-    one_path(out_neighbours(G, V1), V2, [], [V1], [V1], {1,infinity}, G, 1).
+    one_path(out_neighbours(G, V1), V2, [], [V1], [V1], 1, G, 1).
 
 %%
-%% prune_path (evaluate conditions on path)
-%% long  : if path is too long
+%% prune_short_path (evaluate conditions on path)
 %% short : if path is to short
 %% ok    : if path is ok
 %%
-prune_path(Counter, {Min,_Max}) when Counter < Min ->
+prune_short_path(Counter, Min) when Counter < Min ->
     short;
-prune_path(_Counter, {_Min,Max}) when Max =:= infinity ->
-    ok;
-prune_path(Counter, {_Min,Max}) when Counter > Max ->
-    long;
-prune_path(_Counter, {_Min, _Max}) ->
+prune_short_path(_Counter, _Min) ->
     ok.
 
 one_path([W|Ws], W, Cont, Xs, Ps, Prune, G, Counter) ->
-    case prune_path(Counter, Prune) of
-	long  -> one_path([], W, Cont, Xs, Ps, Prune, G, Counter);
+    case prune_short_path(Counter, Prune) of
 	short -> one_path(Ws, W, Cont, Xs, Ps, Prune, G, Counter);
 	ok -> lists:reverse([W|Ps])
     end;
 one_path([V|Vs], W, Cont, Xs, Ps, Prune, G, Counter) ->
-    case prune_path(Counter, Prune) of
-	long -> one_path([], W, Cont, Xs, Ps, Prune, G, Counter);
-	_ ->
-	    case lists:member(V, Xs) of
-		true ->  one_path(Vs, W, Cont, Xs, Ps, Prune, G, Counter);
-		false -> one_path(out_neighbours(G, V), W, 
-				  [{Vs,Ps} | Cont], [V|Xs], [V|Ps], 
-				  Prune, G, Counter+1)
-	    end
+    case lists:member(V, Xs) of
+	true ->  one_path(Vs, W, Cont, Xs, Ps, Prune, G, Counter);
+	false -> one_path(out_neighbours(G, V), W, 
+			  [{Vs,Ps} | Cont], [V|Xs], [V|Ps], 
+			  Prune, G, Counter+1)
     end;
 one_path([], W, [{Vs,Ps}|Cont], Xs, _, Prune, G, Counter) ->
     one_path(Vs, W, Cont, Xs, Ps, Prune, G, Counter-1);

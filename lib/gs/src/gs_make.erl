@@ -77,7 +77,7 @@ gen_out_opts(DB) ->
 
 gen_out_type_case_clauses([],_DB) -> done;
 gen_out_type_case_clauses([Objtype|Objtypes],DB) ->
-    OptsFuns = lists:map({erlang,list_to_tuple},
+    OptsFuns = lists:map(fun(L) -> list_to_tuple(L) end,
 			 ets:match(DB,{Objtype,'$1','$2',write})),
     p("   ~p -> \ncase Opt of\n",[Objtype]),
     gen_opt_case_clauses(merge_opts(opt_prio(),OptsFuns)),
@@ -110,7 +110,7 @@ gen_read(DB) ->
 
 gen_read_type_clauses([],_) -> done;
 gen_read_type_clauses([Objtype|Objtypes],DB) ->
-    OptsFuns = lists:map({erlang,list_to_tuple},
+    OptsFuns = lists:map(fun(L) -> list_to_tuple(L) end,
 			 ets:match(DB,{Objtype,'$1','$2',read})),
     p("  ~p -> \ncase Key of\n",[Objtype]),
     gen_readopt_case_clauses(merge_opts(opt_prio(),OptsFuns)),

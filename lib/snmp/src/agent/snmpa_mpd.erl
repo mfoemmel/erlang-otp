@@ -229,7 +229,7 @@ v3_proc(NoteStore, Packet, _TDomain, _TAddress, V3Hdr, Data, Log) ->
 	    "~n   msgMaxSize            = ~p"
 	    "~n   msgFlags              = ~p"
 	    "~n   msgSecurityModel      = ~p"
-	    "~n   msgSecurityParameters = ~p",
+	    "~n   msgSecurityParameters = ~w",
 	    [MsgID,MMS,MsgFlags,MsgSecurityModel,SecParams]),
     %% 7.2.4
     SecModule = get_security_module(MsgSecurityModel),

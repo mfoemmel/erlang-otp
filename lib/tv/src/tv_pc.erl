@@ -211,7 +211,7 @@ loop(ProcVars) ->
 
                 #pc_menu_msg{} ->
                     Fcn = Msg#pc_menu_msg.data,
-                    NewProcVars = {?MENU_FUNC_FILE, Fcn}(ProcVars),
+                    NewProcVars = ?MENU_FUNC_FILE:Fcn(ProcVars),
                     loop(NewProcVars);
  
 

@@ -25,6 +25,7 @@
 
 behaviour_info(callbacks) ->
     [{encode_message,3}, 
-     {decode_message,3}];
+     {decode_message,3},
+     {decode_mini_message, 3}];
 behaviour_info(_) ->
     undefined.

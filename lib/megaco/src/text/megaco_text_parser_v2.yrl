@@ -86,7 +86,6 @@ Nonterminals
     contextTerminationAudit
     daddr
     deviceName
-    digitMapName                   %% v2 
     digitMapDescriptor
     domainAddress
     domainName
@@ -156,9 +155,9 @@ Nonterminals
     megacoMessage
     message
     messageBody
-    modemDescriptor
-    modemType
-    modemTypeList
+    modemDescriptor   % Deprecated as of Corr 1 
+    modemType         % Deprecated as of Corr 1 
+    modemTypeList     % Deprecated as of Corr 1 
     mtpAddress
     muxDescriptor
     muxType
@@ -296,6 +295,7 @@ Terminals
     'EQUAL'
     'EmbedToken'
     'EmergencyToken'
+    'EmergencyOffToken'
     'ErrorToken'
     'EventBufferToken'
     'EventsToken'
@@ -448,6 +448,8 @@ transactionAck       -> safeToken : ensure_transactionAck('$1') .
 transactionPending   -> 'PendingToken' 'EQUAL' transactionID 'LBRKT' 'RBRKT'
                             : #'TransactionPending'{transactionId = ensure_transactionID('$3') } .
 
+%% OTP-4359: We have the first two rule's in order to be able
+%%           to handle chapter 8.1.1 in RFC3525
 transactionRequest   -> 'TransToken' 
                         'LBRKT'  actionRequest actionRequestList 'RBRKT'
                             : #'TransactionRequest'{transactionId = asn1_NOVALUE,
@@ -479,6 +481,7 @@ actionRequestItem    -> commandRequest  : '$1' .
 contextProperty      -> topologyDescriptor  : {topology, '$1'}.
 contextProperty      -> priority            : {priority, '$1'}. 
 contextProperty      -> 'EmergencyToken'    : {emergency, true}.
+contextProperty      -> 'EmergencyOffToken' : {emergency, false}.
 
 contextAudit         -> 'ContextAuditToken'
                         'LBRKT' contextAuditProperty contextAuditProperties 'RBRKT'
@@ -543,9 +546,10 @@ commandReplyList     -> '$empty' : [] .
 
 %Add Move and Modify have the same request parameter
 ammRequest           -> ammToken 'EQUAL' terminationID ammRequestBody : 
+                        Descs = merge_AmmRequest_descriptors('$4', []),
                         make_commandRequest('$1',
 				            #'AmmRequest'{terminationID = ['$3'],
-						          descriptors   = '$4'}) .
+						          descriptors   = Descs}) .
 
 ammToken             -> 'AddToken'     : {addReq,  '$1'} .
 ammToken             -> 'MoveToken'    : {moveReq, '$1'} .
@@ -559,7 +563,7 @@ ammParameters        -> '$empty' : [] .
 
 %at-most-once
 ammParameter         -> mediaDescriptor        : {mediaDescriptor,       '$1'}.
-ammParameter         -> modemDescriptor        : {modemDescriptor,       '$1'}.
+ammParameter         -> modemDescriptor        : {modemDescriptor, deprecated}.
 ammParameter         -> muxDescriptor          : {muxDescriptor,         '$1'}.
 ammParameter         -> eventsDescriptor       : {eventsDescriptor,      '$1'}.
 ammParameter         -> eventBufferDescriptor  : {eventBufferDescriptor, '$1'}.
@@ -628,7 +632,7 @@ auditReturnParameterList -> 'COMMA' auditReturnParameter auditReturnParameterLis
 auditReturnParameterList -> '$empty' : [] .
 
 auditReturnParameter -> mediaDescriptor           : {mediaDescriptor, '$1'} .
-auditReturnParameter -> modemDescriptor           : {modemDescriptor, '$1'} .
+auditReturnParameter -> modemDescriptor.
 auditReturnParameter -> muxDescriptor             : {muxDescriptor, '$1'} .
 auditReturnParameter -> eventsDescriptor          : {eventsDescriptor, '$1'} .
 auditReturnParameter -> signalsDescriptor         : {signalsDescriptor, '$1'} .
@@ -801,9 +805,6 @@ indAudstatisticsDescriptor -> 'StatsToken' 'LBRKT' pkgdName 'RBRKT' :
 indAudpackagesDescriptor   -> 'PackagesToken' 'LBRKT' packagesItem 'RBRKT' 
                               : merge_indAudPackagesDescriptor('$3') .
  
-digitMapName               -> safeToken : 
-                              ensure_NAME('$1') .
- 
 eventStream                -> 'StreamToken' 'EQUAL' streamID : '$3' .
  
 
@@ -868,6 +869,7 @@ domainName           -> 'LESSER' safeToken 'GREATER'
 
 deviceName           -> pathName  : {deviceName, '$1'} .
 
+%% '-' is used for NULL context
 contextID            -> safeToken : ensure_contextID('$1') .
 
 domainAddress        -> 'LSBRKT' daddr 'RSBRKT' 'COLON' portNumber optSep
@@ -1211,20 +1213,16 @@ observedEventParameter -> eventStreamOrOther : '$1' .
 
 requestID            -> safeToken : ensure_requestID('$1') .
 
-modemDescriptor      -> 'ModemToken' 'EQUAL' modemType optPropertyParms :
-			#'ModemDescriptor'{mtl = ['$3'],
-                                           mpl = '$4'} .
-
-%% at-most-once of each modem type exept for extensionParameter
+%% Deprecated as of Corr 1
+modemDescriptor      -> 'ModemToken' 'EQUAL' modemType optPropertyParms .
 modemDescriptor      -> 'ModemToken' 'LSBRKT' modemType modemTypeList 'RSBRKT' 
-                        optPropertyParms :
-			#'ModemDescriptor'{mtl = ['$3'  | '$4'],
-                                           mpl = '$6'} .
-
-modemTypeList 	     -> 'COMMA' modemType modemTypeList : ['$2' | '$3'] .
-modemTypeList 	     -> '$empty' : [] .
+                        optPropertyParms.
+modemTypeList 	     -> 'COMMA' modemType modemTypeList.
+modemTypeList 	     -> '$empty'.
+modemType            -> safeToken.
        
-optPropertyParms     -> 'LBRKT' propertyParm propertyParms 'RBRKT' : ['$2' | '$3'] .
+optPropertyParms     -> 'LBRKT' propertyParm propertyParms 'RBRKT' : 
+                        ['$2' | '$3'] .
 optPropertyParms     -> '$empty' : [] .
        
 propertyParms  	     -> 'COMMA' propertyParm propertyParms :  ['$2' | '$3'] .
@@ -1232,13 +1230,13 @@ propertyParms 	     -> '$empty' : [] .
 
 % parmName             -> safeToken : ensure_NAME('$1') .
 
-modemType            -> safeToken : ensure_modemType('$1').
-
 %% The DigitMapDescriptorToken is specially treated by the scanner
 digitMapDescriptor   -> 'DigitMapDescriptorToken' : 
                         ensure_DMD('$1') .
 
-%% ; at most of either serviceChangeAddress or serviceChangeMgcId but not both 
+%% each parameter at-most-once, except auditItem
+%% at most one of either serviceChangeAddress or serviceChangeMgcId but 
+%% not both. serviceChangeMethod and serviceChangeReason are REQUIRED
 serviceChangeDescriptor -> 'ServicesToken' 
                            'LBRKT' serviceChangeParm 
                                    serviceChangeParms 'RBRKT' :
@@ -1367,6 +1365,7 @@ safeToken            -> 'DelayToken'            : make_safe_token('$1') .
 safeToken            -> 'DurationToken'         : make_safe_token('$1') .
 safeToken            -> 'EmbedToken'            : make_safe_token('$1') .
 safeToken            -> 'EmergencyToken'        : make_safe_token('$1') .
+safeToken            -> 'EmergencyOffToken'     : make_safe_token('$1') .
 safeToken            -> 'ErrorToken'            : make_safe_token('$1') .
 %% v2-safeToken            -> 'EventBufferToken'      : make_safe_token('$1') .
 %% v2-safeToken            -> 'EventsToken'           : make_safe_token('$1') .
@@ -1439,6 +1438,7 @@ safeToken            -> 'SynchISDNToken'        : make_safe_token('$1') .
 safeToken            -> 'TerminationStateToken' : make_safe_token('$1') .
 safeToken            -> 'TestToken'             : make_safe_token('$1') .
 safeToken            -> 'TimeOutToken'          : make_safe_token('$1') .
+safeToken            -> 'TimeStampToken'        : make_safe_token('$1') .
 safeToken            -> 'TopologyToken'         : make_safe_token('$1') .
 safeToken            -> 'TransToken'            : make_safe_token('$1') .
 safeToken            -> 'V18Token'              : make_safe_token('$1') .

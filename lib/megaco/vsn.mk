@@ -1,7 +1,9 @@
 #-*-makefile-*-   ; force emacs to enter makefile-mode
 
-MEGACO_VSN = 2.1.7
-APP_VSN    = "megaco-$(MEGACO_VSN)"
+MEGACO_VSN = 3.0
+PRE_VSN    =
+APP_VSN    = "megaco-$(MEGACO_VSN)$(PRE_VSN)"
 
-TICKETS = OTP-5290
+TICKETS = OTP-5204 OTP-5220 OTP-5236 OTP-5351 OTP-5352 OTP-5353 
+
 

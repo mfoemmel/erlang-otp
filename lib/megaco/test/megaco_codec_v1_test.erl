@@ -29,8 +29,8 @@
 
 %% ----
 
-%% -export([x/0, y/0]).
-
+%% -export([msg/0]).
+-export([msgs/0]).
 -export([rfc3525_msgs_display/0, rfc3525_msgs_test/0]).
 
 -export([t/0, t/1]).
@@ -247,7 +247,7 @@ t()     -> megaco_test_lib:t(?MODULE).
 t(Case) -> megaco_test_lib:t({?MODULE, Case}).
 
 init_per_testcase(Case, Config) ->
-    CaseString = io_lib:format("~p", [Case]),
+    %% CaseString = io_lib:format("~p", [Case]),
     C = 
 	case lists:suffix("time_test", atom_to_list(Case)) of
 	    true ->
@@ -263,6 +263,26 @@ fin_per_testcase(Case, Config) ->
     megaco_test_lib:fin_per_testcase(Case, Config).
 
 
+% msg() ->
+%     MT      = megaco_test_msg_v2_lib:cre_ModemType(v18),
+%     PP      = cre_propertyParm("tdmc/gain", "2"),
+%     MD      = megaco_test_msg_v2_lib:cre_ModemDescriptor([MT], [PP]),
+%     AmmDesc = megaco_test_msg_v2_lib:cre_AmmDescriptor(MD),
+%     TermIDs = [#megaco_term_id{id = ?A4444}],
+%     AmmReq  = megaco_test_msg_v2_lib:cre_AmmRequest(TermIDs, [AmmDesc]),
+%     Cmd     = megaco_test_msg_v2_lib:cre_Command(addReq, AmmReq),
+%     CmdReq  = cre_commandReq(Cmd),
+%     ActReq  = megaco_test_msg_v2_lib:cre_ActionRequest(2, [CmdReq]),
+%     Acts    = [ActReq],
+%     TR      = megaco_test_msg_v2_lib:cre_TransactionRequest(9898, Acts),
+%     Trans   = megaco_test_msg_v2_lib:cre_Transaction(TR), 
+%     Mess    = megaco_test_msg_v2_lib:cre_Message(?VERSION, ?MG1_MID, [Trans]),
+%     Msg = megaco_test_msg_v2_lib:cre_MegacoMessage(Mess),
+%     {ok, Bin} = megaco_compact_text_encoder:encode_message([], Msg),
+%     EncodedMsg = binary_to_list(Bin),
+%     io:format("~n~s~n", [EncodedMsg]),
+%     {Msg, EncodedMsg}.
+    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Top test case
 
@@ -956,7 +976,7 @@ compact_otp4011(M) ->
 			 {do_merge_control_streamParms, [A,B]}} 
 			when list(A), record(B, 'LocalControlDescriptor') ->
 			    case lists:keysearch(mode,1,A) of
-				{value, {mode,Mode}} 
+				{value, {mode, _Mode}} 
 				when B#'LocalControlDescriptor'.streamMode /= asn1_NOVALUE ->
 				    d("compact_otp4011 -> expected error",[]),
 				    ok;
@@ -1082,7 +1102,7 @@ compact_otp4280_msg1(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Bin = list_to_binary(compact_otp4280_msg()),
     case decode_message(megaco_compact_text_encoder, false, [], Bin) of
-	{ok, Msg} ->
+	{ok, _Msg} ->
 	    ok;
 	{error, Error} when list(Error) -> 
 	    t("compact_otp4280_msg1 -> decode failed", []),
@@ -1119,7 +1139,7 @@ compact_otp4299_msg1(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Bin = list_to_binary(compact_otp4299_msg()),
     case decode_message(megaco_compact_text_encoder, false, [], Bin) of
-	{ok, Msg} ->
+	{ok, _Msg} ->
 	    ok;
 
 	{error, Reason} ->
@@ -1144,7 +1164,7 @@ compact_otp4299_msg2(Config) when list(Config) ->
     compact_otp4299_msg2_finish(Pid),
 
     case Res of
-	{ok, Msg} ->
+	{ok, _Msg} ->
 	    ok;
 
 	{error, Reason} ->
@@ -1200,7 +1220,7 @@ compact_otp4359_msg1(Config) when list(Config) ->
 	    case Trans of
 		[{transactionRequest,#'TransactionRequest'{transactionId = asn1_NOVALUE}}] ->
 		    ok;
-		Else ->
+		_ ->
 		    exit({unexpected_transactions, Trans})
 	    end;
 	Else ->
@@ -1373,8 +1393,7 @@ compact_otp4920_msg_1(M1, CheckEqual) ->
 		    M2 = binary_to_list(Bin2),
 		    io:format(", encoded - not equal:", []),
 		    exit({messages_not_equal, M1, M2});
-		{ok, Bin2} ->
-		    M2 = binary_to_list(Bin2),
+		{ok, _Bin2} ->
 		    io:format(", encoded:", []),
 		    ok;
 		Else ->
@@ -1555,8 +1574,8 @@ compact_otp5186_msg_1(M1, DecodeExpect, EncodeExpect) ->
 		{ok, Bin3} when EncodeExpect == error ->
 		    M3 = binary_to_list(Bin3),
 		    io:format(", unexpected encode:", []),
-		    exit({unexpected_encode_success, Msg});
-		Else when EncodeExpect == error ->
+		    exit({unexpected_encode_success, Msg, M1, M3});
+		_Else when EncodeExpect == error ->
 		    io:format(", encode failed ", []),
 		    ok
 	    end;
@@ -1597,7 +1616,7 @@ compact_otp5186_msg_2(Msg1, EncodeExpect, DecodeExpect) ->
 		    M = binary_to_list(Bin),
 		    io:format(", decode failed ", []),
 		    exit({unexpected_decode_success, Msg1, M, Else});
-		Else when DecodeExpect == error ->
+		_Else when DecodeExpect == error ->
 		    io:format(", decode failed ", []),
 		    ok
 	    end;
@@ -2002,9 +2021,7 @@ pretty_otp4632_msg1(Config) when list(Config) ->
 	{ok, BinMsg} when binary(BinMsg) ->
 	    {ok, Msg1} = decode_message(megaco_pretty_text_encoder, false, 
 					[], BinMsg),
-	    {equal, _} = chk_MegacoMessage(Msg0,Msg1),
-	    Msg0 = Msg1,
-	    ok;
+	    ok = chk_MegacoMessage(Msg0,Msg1);
 	Else ->
 	    t("pretty_otp4632_msg1 -> "
 	      "~n   Else: ~w", [Else]),
@@ -2024,9 +2041,7 @@ pretty_otp4632_msg2(Config) when list(Config) ->
 	{ok, BinMsg} when binary(BinMsg) ->
 	    {ok, Msg1} = decode_message(megaco_pretty_text_encoder, false, 
 					[], BinMsg),
-	    {equal, _} = chk_MegacoMessage(Msg0,Msg1),
-	    Msg0 = Msg1,
-	    ok;
+	    ok = chk_MegacoMessage(Msg0,Msg1);
 	Else ->
 	    t("pretty_otp4632_msg2 -> "
 	      "~n   Else: ~w", [Else]),
@@ -2094,8 +2109,8 @@ pretty_otp4632_msg4_chk([], Rest1) ->
     exit({messages_not_eq1, Rest1}); 
 pretty_otp4632_msg4_chk(Rest0, []) ->
     exit({messages_not_eq0, Rest0}); 
-pretty_otp4632_msg4_chk([$R,$e,$a,$s,$o,$n,$ ,$=,$ ,$9,$0,$1|Rest0],
-			[$R,$e,$a,$s,$o,$n,$ ,$=,$ ,$",$9,$0,$1,$"|Rest1]) ->
+pretty_otp4632_msg4_chk([$R,$e,$a,$s,$o,$n,$ ,$=,$ ,$9,$0,$1|_Rest0],
+			[$R,$e,$a,$s,$o,$n,$ ,$=,$ ,$",$9,$0,$1,$"|_Rest1]) ->
     ok;
 pretty_otp4632_msg4_chk([_|Rest0], [_|Rest1]) ->
     pretty_otp4632_msg4_chk(Rest0,Rest1).
@@ -2111,9 +2126,7 @@ pretty_otp4710_msg1(Config) when list(Config) ->
 	{ok, Bin} when binary(Bin) ->
 	    {ok, Msg1} = decode_message(megaco_pretty_text_encoder, false, 
 					[], Bin),
-	    {equal, _} = chk_MegacoMessage(Msg0,Msg1),
-	    Msg0 = Msg1,
-	    ok;
+	    ok = chk_MegacoMessage(Msg0,Msg1);
 	Else ->
 	    t("pretty_otp4710_msg1 -> "
 	      "~n   Else: ~w", [Else]),
@@ -2322,7 +2335,7 @@ pretty_otp4945_msg5(Config) when list(Config) ->
     case decode_message(megaco_pretty_text_encoder, false, [], Bin0) of
 	{error, [{reason, Reason}|_]} ->
 	    case Reason of
-		{at_most_once_serviceChangeParm, {profile, _Val1, Val2}} ->
+		{at_most_once_serviceChangeParm, {profile, _Val1, _Val2}} ->
 		    ok;
 		Else ->
 		    io:format("pretty_otp4945_msg6 -> "
@@ -2431,7 +2444,7 @@ pretty_otp4949_msg2(Config) when list(Config) ->
     case decode_message(megaco_pretty_text_encoder, false, [], Bin0) of
 	{error, [{reason, Reason}|_]} ->
 	    case Reason of
-		{at_most_once_servChgReplyParm, {profile, _Val1, Val2}} ->
+		{at_most_once_servChgReplyParm, {profile, _Val1, _Val2}} ->
 		    ok;
 		Else ->
 		    io:format("pretty_otp4949_msg2 -> "
@@ -2865,6 +2878,10 @@ pretty_otp5085_msg7() ->
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+msgs() ->
+    Msgs = msgs1() ++ msgs2() ++ msgs3(),
+    [M || {_, M, _, _} <- Msgs].
 
 msgs1() ->
     Plain = 
@@ -3329,24 +3346,32 @@ msg13(Mid) ->
 msg14() ->
     msg14(?MGC_MID).
 msg14(Mid) ->
-    Signal = cre_signal("cg/rt"), 
-    AmmReq = cre_ammReq([#megaco_term_id{id = ?A4444}],
-			[{signalsDescriptor, [{signal, Signal}]}]),
-    CmdReq = cre_commandReq({modReq, AmmReq}),
-    Gain   = cre_propertyParm("tdmc/gain", "2"),
-    Ec     = cre_propertyParm("tdmc/ec", "G165"),
-    LCD    = cre_localControlDesc(sendRecv, [Gain, Ec]),
-    V      = cre_propertyParm("v", "0"),
-    C      = cre_propertyParm("c", "IN IP4 125.125.125.111"),
-    M      = cre_propertyParm("m", "audio 1111 RTP/AVP 4"),
-    RD2    = cre_localRemoteDesc([[V, C, M]]),
-    Parms2 = cre_streamParmsR(RD2),
+    Signal  = cre_signal("cg/rt"), 
+    AmmReq1 = cre_ammReq([#megaco_term_id{id = ?A4444}],
+			 [{signalsDescriptor, [{signal, Signal}]}]),
+    CmdReq1 = cre_commandReq({modReq, AmmReq1}),
+
+    Gain    = cre_propertyParm("tdmc/gain", "2"),
+    Ec      = cre_propertyParm("tdmc/ec", "g165"),
+    LCD     = cre_localControlDesc(sendRecv, [Gain, Ec]),
+    Parms2  = cre_streamParms(LCD),
     StreamDesc2 = cre_streamDesc(1,Parms2),
     MediaDesc2  = cre_mediaDesc(StreamDesc2),
     AmmReq2     = cre_ammReq([#megaco_term_id{id = ?A4445}],
 			     [{mediaDescriptor, MediaDesc2}]),
     CmdReq2     = cre_commandReq({modReq, AmmReq2}),
-    msg_request(Mid, 10005, 2000, [CmdReq, CmdReq2]).
+
+    V      = cre_propertyParm("v", "0"),
+    C      = cre_propertyParm("c", "IN IP4 125.125.125.111"),
+    M      = cre_propertyParm("m", "audio 1111 RTP/AVP 4"),
+    RD     = cre_localRemoteDesc([[V, C, M]]),
+    Parms3 = cre_streamParmsR(RD),
+    StreamDesc3 = cre_streamDesc(1,Parms3),
+    MediaDesc3  = cre_mediaDesc(StreamDesc3),
+    AmmReq3     = cre_ammReq([#megaco_term_id{id = ?A4445}],
+			     [{mediaDescriptor, MediaDesc3}]),
+    CmdReq3     = cre_commandReq({modReq, AmmReq3}),
+    msg_request(Mid, 10005, 2000, [CmdReq1, CmdReq2, CmdReq3]).
 
 
 %% --------------------------
@@ -3549,9 +3574,9 @@ msg23d(Mid) ->
     NotifyReq2 = cre_notifyReq([#megaco_term_id{id = ?A5556}],Desc),
     CmdReq2    = cre_commandReq({notifyReq, NotifyReq2}),
     NotifyReq3 = cre_notifyReq([#megaco_term_id{id = ?A4444}],Desc),
-    CmdReq3    = cre_commandReq({notifyReq, NotifyReq1}),
+    CmdReq3    = cre_commandReq({notifyReq, NotifyReq3}),
     NotifyReq4 = cre_notifyReq([#megaco_term_id{id = ?A4445}],Desc),
-    CmdReq4    = cre_commandReq({notifyReq, NotifyReq2}),
+    CmdReq4    = cre_commandReq({notifyReq, NotifyReq4}),
     ActionInfo1 = [{5000, [CmdReq1]}, {5001, [CmdReq2]}],
     ActionInfo2 = [{5003, [CmdReq3]}, {5004, [CmdReq4]}],
     TransInfo   = [{50008, ActionInfo1}, {50009, ActionInfo2}],
@@ -3588,7 +3613,7 @@ msg25(Mid) ->
     Stat25 = cre_statisticsParm("rtp/pl", "10"),
     Stat26 = cre_statisticsParm("rtp/jit", "27"),
     Stat27 = cre_statisticsParm("rtp/delay","48"),
-    Stats2 = [Stat21, Stat22],
+    Stats2 = [Stat21, Stat22, Stat23, Stat24, Stat25, Stat26, Stat27],
     Reply2 = cre_ammsReply([#megaco_term_id{id = ?A5556}],
                           [{statisticsDescriptor, Stats2}]),
     msg_reply(Mid, 50009, 5000, 
@@ -4280,24 +4305,24 @@ test_msgs(Codec, DynamicDecode, Conf, Msgs) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 chk_MegacoMessage(M,M) when record(M,'MegacoMessage') ->
-    {equal,'MegacoMessage'};
+    ok;
 chk_MegacoMessage(#'MegacoMessage'{authHeader = Auth1,
 				   mess       = Mess1},
 		  #'MegacoMessage'{authHeader = Auth2,
 				   mess       = Mess2}) ->
     chk_opt_AuthenticationHeader(Auth1,Auth2),
     chk_Message(Mess1,Mess2),
-    {equal,'MegacoMessage'};
-chk_MegacoMessage(M1,M2) ->
-    throw({wrong_type,{'MegacoMessage',M1,M2}}).
+    ok;
+chk_MegacoMessage(M1, M2) ->
+    wrong_type({'MegacoMessage', M1, M2}).
     
 chk_opt_AuthenticationHeader(A,A) ->
-    {equal,auth};
+    ok;
 chk_opt_AuthenticationHeader(A1,A2) ->
-    throw({not_equal,{auth,A1,A2}}).
+    not_equal({auth,A1,A2}).
 
 chk_Message(M,M) when record(M,'Message') ->
-    {equal,'Message'};
+    ok;
 chk_Message(#'Message'{version     = Version1,
 		       mId         = MID1,
 		       messageBody = Body1},
@@ -4307,26 +4332,26 @@ chk_Message(#'Message'{version     = Version1,
     chk_version(Version1,Version2),
     chk_MId(MID1,MID2),
     chk_messageBody(Body1,Body2),
-    {equal,'Message'};
+    ok;
 chk_Message(M1,M2) ->
-    throw({wrong_type,{'Message',M1,M2}}).
+    wrong_type({'Message',M1,M2}).
 
 
 chk_version(V,V) when integer(V) ->
-    {equal,version};
+    ok;
 chk_version(V1,V2) when integer(V1), integer(V2) ->
-    throw({not_equal,{version,V1,V2}});
+    not_equal({version,V1,V2});
 chk_version(V1,V2) ->
-    throw({wrong_type,{integer,V1,V2}}).
+    wrong_type({integer,V1,V2}).
 
 
 chk_MId(M,M) ->
     {equal,mid};
 chk_MId({Tag,M1},{Tag,M2}) ->
     Res = chk_MId(Tag,M1,M2),
-    throw({error,{equal,Res}});
+    equal(Res);
 chk_MId(M1,M2) ->
-    throw({not_equal,{mid,M1,M2}}).
+    not_equal({mid,M1,M2}).
 
 chk_MId(ip4Address,M1,M2) -> chk_IP4Address(M1, M2);
 chk_MId(ip6Address,M1,M2) -> chk_IP6Address(M1, M2);
@@ -4334,195 +4359,196 @@ chk_MId(domainName,M1,M2) -> chk_DomainName(M1, M2);
 chk_MId(deviceName,M1,M2) -> chk_PathName(M1, M2);
 chk_MId(mtpAddress,M1,M2) -> chk_mtpAddress(M1, M2);
 chk_MId(Tag,M1,M2) ->
-    throw({wrong_type,{invalid_tag,Tag,M1,M2}}).
+    wrong_type({invalid_tag,Tag,M1,M2}).
 			       
     
 chk_IP4Address(M, M) ->
-    {equal,ip4Address};
+    ok;
 chk_IP4Address(M1, M2) ->
-    throw({not_equal,{ip4Address,M1,M2}}).
+    not_equal({ip4Address,M1,M2}).
 
 chk_IP6Address(M, M) ->
-    {equal,ip6Address};
+    ok;
 chk_IP6Address(M1, M2) ->
-    throw({not_equal,{ip6Address,M1,M2}}).
+    not_equal({ip6Address,M1,M2}).
 
 chk_DomainName(D, D) when record(D,'DomainName') ->
-    {equal,'DomainName'};
+    ok;
 chk_DomainName(#'DomainName'{name       = Name1,
 			     portNumber = Port1},
 	       #'DomainName'{name       = Name2,
 			     portNumber = Port2}) ->
     chk_DomainName_name(Name1,Name2),
     chk_DomainName_opt_portNumber(Port1,Port2),
-    throw({error,{equal,'DomainName'}});
+    equal('DomainName');
 chk_DomainName(D1,D2) ->
-    throw({wrong_type,{'DomainName',D1,D2}}).
+    wrong_type({'DomainName',D1,D2}).
 
 chk_DomainName_name(N,N) when list(N) ->
-    {equal,name};
+    ok;
 chk_DomainName_name(N1,N2) when list(N1), list(N2) ->
-    throw({not_equal,{'DomainName',name,N1,N2}});
+    not_equal({'DomainName',name,N1,N2});
 chk_DomainName_name(N1,N2) ->
-    throw({wrong_type,{'DomainName',name,N1,N2}}).
+    wrong_type({'DomainName',name,N1,N2}).
 
 chk_DomainName_opt_portNumber(asn1_NOVALUE, asn1_NOVALUE) ->
-    {equal, portNumber};
+    ok;
 chk_DomainName_opt_portNumber(P,P) when integer(P), P >= 0 ->
-    {equal, portNumber};
+    ok;
 chk_DomainName_opt_portNumber(P1,P2) when integer(P1), P1 >= 0,
 					  integer(P2), P2 >= 0 ->
-    throw({not_equal,{'DomainName',portNumber,P1,P2}});
+    not_equal({'DomainName',portNumber,P1,P2});
 chk_DomainName_opt_portNumber(P1,P2) ->
-    throw({wrong_type,{'DomainName',portNumber,P1,P2}}).
+    wrong_type({'DomainName',portNumber,P1,P2}).
 
 
 chk_PathName(P, P) ->
-    {equal,pathname};
+    ok;
 chk_PathName(P1, P2) ->
-    throw({not_equal,{pathname,P1,P2}}).
+    not_equal({pathname,P1,P2}).
 
 chk_mtpAddress(M, M) ->
-    {equal, mtpAddress};
+    ok;
 chk_mtpAddress(M1, M2) ->
-    throw({not_equal,{mtpAddress, M1, M2}}).
+    not_equal({mtpAddress, M1, M2}).
     
 
-chk_messageBody({messageError,B},{messageError,B}) when record(B,'ErrorDescriptor') ->
-    
-    {equal, messageBody};
+chk_messageBody({messageError, B},
+		{messageError, B}) when record(B,'ErrorDescriptor') ->
+    ok;
 chk_messageBody({messageError,B1},{messageError,B2}) ->
     chk_ErrorDescriptor(B1,B2),
-    throw({error,{equal, messageBody, messageError}});
+    equal({messageBody, messageError});
 chk_messageBody({transactions,T},{transactions,T}) when list(T) ->
-    {equal, messageBody};
+    ok;
 chk_messageBody({transactions,T1},{transactions,T2}) ->
     chk_transactions(T1,T2),
-    {equal, messageBody};
+    ok;
 chk_messageBody(B1,B2) ->
-    throw({wrong_type,{messageBody,B1,B2}}).
+    wrong_type({messageBody,B1,B2}).
      
 
 chk_transactions(T,T) when list(T) ->
-    {equal,transactions};
+    ok;
 chk_transactions(T1,T2) when list(T1), list(T2), length(T1) == length(T2) ->
     chk_transactions1(T1,T2);
 chk_transactions(T1,T2) ->
-    throw({wrong_type,{transactions,T1,T2}}).
+    wrong_type({transactions,T1,T2}).
 
 chk_transactions1([],[]) ->
-    throw({error,{equal,transactions}});
+    equal(transactions);
 chk_transactions1([T|Ts1],[T|Ts2]) ->
     chk_transactions1(Ts1,Ts2);
 chk_transactions1([T1|_Ts1],[T2|_Ts2]) ->
     chk_transaction(T1,T2),
-    {equal,transaction}.
+    ok.
 
 chk_transaction(T,T) ->
-    {equal,transaction};
+    ok;
 chk_transaction({transactionRequest,T1},{transactionRequest,T2}) ->
     chk_transactionRequest(T1,T2),
-    {equal,transactionRequest};
+    ok;
 chk_transaction({transactionPending,T1},{transactionPending,T2}) ->
     chk_transactionPending(T1,T2),
-    throw({error,{equal,{transactionPending,T1,T2}}});
+    equal({transactionPending,T1,T2});
 chk_transaction({transactionReply,T1},{transactionReply,T2}) ->
     chk_transactionReply(T1,T2),
-    throw({error,{equal,{transactionReply,T1,T2}}});
+    equal({transactionReply,T1,T2});
 chk_transaction({transactionResponseAck,T1},{transactionResponseAck,T2}) ->
     chk_transactionAck(T1,T2),
-    throw({error,{equal,{transactionResponseAck,T1,T2}}});
-chk_transaction({Tag1,T1},{Tag2,T2}) ->
-    throw({wrong_type,{transaction_tag,Tag1,Tag2}}).
+    equal({transactionResponseAck,T1,T2});
+chk_transaction({Tag1,_T1},{Tag2,_T2}) ->
+    wrong_type({transaction_tag,Tag1,Tag2}).
 
 
 chk_transactionRequest(T,T) when record(T,'TransactionRequest') ->
-    {equal,transactionAck};
+    ok;
 chk_transactionRequest(T1,T2) when record(T1,'TransactionRequest'),
 				   record(T2,'TransactionRequest') ->
     chk_transactionId(T1#'TransactionRequest'.transactionId,
 		      T2#'TransactionRequest'.transactionId),
     chk_actionRequests(T1#'TransactionRequest'.actions,
 		       T2#'TransactionRequest'.actions),
-    {equal,transactionRequest};
+    ok;
 chk_transactionRequest(T1,T2) ->
-    throw({wrong_type,{transactionRequest,T1,T2}}).
+    wrong_type({transactionRequest,T1,T2}).
     
 
 chk_transactionPending(T,T) when record(T,'TransactionPending') ->
-    {equal,transactionPending};
-chk_transactionPending(#'TransactionPending'{transactionId = Id1} = T1,
-		       #'TransactionPending'{transactionId = Id2} = T2) ->
+    ok;
+chk_transactionPending(#'TransactionPending'{transactionId = Id1},
+		       #'TransactionPending'{transactionId = Id2}) ->
     chk_transactionId(Id1,Id2),
-    throw({error,{equal,transactionPending}});
+    equal(transactionPending);
 chk_transactionPending(T1,T2) ->
-    throw({wrong_type,{transactionPending,T1,T2}}).
+    wrong_type({transactionPending,T1,T2}).
 
 chk_transactionReply(T,T) when record(T,'TransactionReply') ->
-    {equal,transactionReply};
+    ok;
 chk_transactionReply(#'TransactionReply'{transactionId     = Id1,
 					 immAckRequired    = ImmAck1,
-					 transactionResult = TransRes1} = T1,
+					 transactionResult = TransRes1},
 		     #'TransactionReply'{transactionId     = Id2,
 					 immAckRequired    = ImmAck2,
-					 transactionResult = TransRes2} = T2) ->
+					 transactionResult = TransRes2}) ->
     chk_transactionId(Id1,Id2),
     ImmAck1 = ImmAck2,
     chk_transactionReply_transactionResult(TransRes1,TransRes2),
-    throw({error,{equal,transactionReply}});
+    equal(transactionReply);
 chk_transactionReply(T1,T2) ->
-    throw({wrong_type,{transactionReply,T1,T2}}).
+    wrong_type({transactionReply,T1,T2}).
 
 chk_transactionReply_transactionResult(R,R) ->
-    {equal,transactionReply_transactionResult};
+    ok;
 chk_transactionReply_transactionResult(R1,R2) ->
-    throw({not_equal,{transactionReply_transactionResult,R1,R2}}).
+    not_equal({transactionReply_transactionResult,R1,R2}).
 
 chk_transactionAck(T,T) when record(T,'TransactionAck') ->
-    {equal,transactionAck};
+    ok;
 chk_transactionAck(#'TransactionAck'{firstAck = F1,
-				     lastAck  = L1} = T1,
+				     lastAck  = L1},
 		   #'TransactionAck'{firstAck = F2,
-				     lastAck  = L2} = T2) ->
+				     lastAck  = L2}) ->
     chk_transactionId(F1,F2),
     chk_opt_transactionId(L1,L2),
-    throw({error,{equal,'TransactionAck'}});
+    equal('TransactionAck');
 chk_transactionAck(T1,T2) ->
-    throw({wrong_type,{transactionAck,T1,T2}}).
+    wrong_type({transactionAck,T1,T2}).
+
 
 chk_actionRequests(A,A) when list(A), length(A) == 0 ->
-    {equal,actionRequests};
+    ok;
 chk_actionRequests(A,A) when list(A) ->
     case hd(A) of
 	A when record(A,'ActionRequest') ->
-	    {equal,actionRequests};
+	    ok;
 	Else ->
-	    throw({wrong_type,{'ActionRequest',Else}})
+	    wrong_type({'ActionRequest',Else})
     end;
 chk_actionRequests(A1,A2) when list(A1), list(A2), 
 			       length(A1) == length(A2) ->
     chk_actionRequests1(A1,A2);
 chk_actionRequests(A1,A2) ->
-    throw({wrong_type,{actionRequests,A1,A2}}).
+    wrong_type({actionRequests,A1,A2}).
 
 chk_actionRequests1([],[]) ->
-    throw({error,{equal,actionRequests}});
+    equal(actionRequests);
 chk_actionRequests1([A|As1],[A|As2]) when record(A,'ActionRequest') ->
     chk_actionRequests1(As1,As2);
 chk_actionRequests1([A1|_As1],[A2|_As2]) ->
     chk_actionRequest(A1,A2),
-    {equal,actionRequest}.
+    ok.
 
 chk_actionRequest(A,A) when record(A,'ActionRequest') ->
-    {equal,actionRequest};
+    ok;
 chk_actionRequest(#'ActionRequest'{contextId           = Id1,
 				   contextRequest      = Req1,
 				   contextAttrAuditReq = AuditReq1,
-				   commandRequests     = CmdReqs1} = A1,
+				   commandRequests     = CmdReqs1},
 		  #'ActionRequest'{contextId           = Id2,
 				   contextRequest      = Req2,
 				   contextAttrAuditReq = AuditReq2,
-				   commandRequests     = CmdReqs2} = A2) ->
+				   commandRequests     = CmdReqs2}) ->
     t("chk_actionRequest -> entry with"
       "~n   CmdReqs1: ~p"
       "~n   CmdReqs2: ~p",[CmdReqs1,CmdReqs2]),
@@ -4530,19 +4556,19 @@ chk_actionRequest(#'ActionRequest'{contextId           = Id1,
     chk_opt_contextRequest(Req1,Req2),
     chk_opt_contextAttrAuditReq(AuditReq1,AuditReq2),
     chk_commandRequests(CmdReqs1,CmdReqs2),
-    {equal,'ActionRequest'}.
+    ok.
     
 chk_contextId(Id,Id) when integer(Id) ->
-    {equal,contextId};
+    ok;
 chk_contextId(Id1,Id2) when integer(Id1), integer(Id2) ->
-    throw({not_equal,{contextId,Id1,Id2}});
+    not_equal({contextId,Id1,Id2});
 chk_contextId(Id1,Id2) ->
-    throw({wrong_type,{contextId,Id1,Id2}}).
+    wrong_type({contextId,Id1,Id2}).
 
 chk_opt_contextRequest(asn1_NOVALUE, asn1_NOVALUE) ->
-    {equal,contextRequest};
+    ok;
 chk_opt_contextRequest(R,R) when record(R,'ContextRequest') ->
-    {equal,contextRequest};
+    ok;
 chk_opt_contextRequest(#'ContextRequest'{priority    = Prio1,
 					 emergency   = Em1,
 					 topologyReq = TopReq1} = C1,
@@ -4552,30 +4578,30 @@ chk_opt_contextRequest(#'ContextRequest'{priority    = Prio1,
     chk_contextRequest_priority(Prio1,Prio2),
     chk_contextRequest_emergency(Em1,Em2),
     chk_topologyRequest(TopReq1,TopReq2),
-    throw({error,{equal,'ContextRequest',C1,C2}}).
+    equal({'ContextRequest',C1,C2}).
 
 chk_contextRequest_priority(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,contextRequest_priority};
+    ok;
 chk_contextRequest_priority(P,P) when integer(P) ->
-    {equal,contextRequest_priority};
+    ok;
 chk_contextRequest_priority(P1,P2) when integer(P1), integer(P2) ->
-    throw({not_equal,{contextRequest_priority,P1,P2}});    
+    not_equal({contextRequest_priority,P1,P2});
 chk_contextRequest_priority(P1,P2) ->
-    throw({wrong_type,{contextRequest_priority,P1,P2}}).
+    wrong_type({contextRequest_priority,P1,P2}).
 
 chk_contextRequest_emergency(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,contextRequest_emergency};
+    ok;
 chk_contextRequest_emergency(true,true) ->
-    {equal,contextRequest_emergency};
+    ok;
 chk_contextRequest_emergency(false,false) ->
-    {equal,contextRequest_emergency};
+    ok;
 chk_contextRequest_emergency(E1,E2) ->
-    throw({not_equal,{contextRequest_emergency,E1,E2}}).
+    not_equal({contextRequest_emergency,E1,E2}).
 
 chk_topologyRequest(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,topologyRequest};
+    ok;
 chk_topologyRequest(T,T) when record(T,'TopologyRequest') ->
-    {equal,topologyRequest};
+    ok;
 chk_topologyRequest(#'TopologyRequest'{terminationFrom   = F1,
 				       terminationTo     = T1,
 				       topologyDirection = D1} = T1,
@@ -4585,21 +4611,21 @@ chk_topologyRequest(#'TopologyRequest'{terminationFrom   = F1,
     chk_terminationId(F1,F2),
     chk_terminationId(T1,T2),
     chk_topologyRequest_topologyDirection(D1,D2),
-    throw({error,{equal,'TopologyRequest',D1,D2}}).
+    equal({'TopologyRequest',D1,D2}).
 
 chk_topologyRequest_topologyDirection(bothway,bothway) ->
-    {equal,topologyRequest_topologyDirection};
+    ok;
 chk_topologyRequest_topologyDirection(isolate,isolate) ->
-    {equal,topologyRequest_topologyDirection};
+    ok;
 chk_topologyRequest_topologyDirection(oneway,oneway) ->
-    {equal,topologyRequest_topologyDirection};
+    ok;
 chk_topologyRequest_topologyDirection(D1,D2) ->
-    throw({not_equal,{topologyRequest_topologyDirection, D1, D2}}).
+    not_equal({topologyRequest_topologyDirection, D1, D2}).
 
 chk_opt_contextAttrAuditReq(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,contextAttrAuditReq};
+    ok;
 chk_opt_contextAttrAuditReq(R,R) when record(R,'ContextAttrAuditRequest') ->
-    {equal,contextAttrAuditReq};
+    ok;
 chk_opt_contextAttrAuditReq(#'ContextAttrAuditRequest'{topology  = T1,
 						       emergency = E1,
 						       priority  = P1} = R1,
@@ -4609,7 +4635,7 @@ chk_opt_contextAttrAuditReq(#'ContextAttrAuditRequest'{topology  = T1,
     T1 = T2,
     E1 = E2,
     P1 = P2,
-    throw({error,{equal,'ContextAttrAuditRequest',R1,R2}}).
+    equal({'ContextAttrAuditRequest',R1,R2}).
 
 chk_commandRequests(C1,C2) when list(C1), list(C2), length(C1) == length(C2) ->
     t("chk_commandRequests -> entry with"
@@ -4618,31 +4644,31 @@ chk_commandRequests(C1,C2) when list(C1), list(C2), length(C1) == length(C2) ->
     chk_commandRequests1(C1,C2);
 chk_commandRequests(C1,C2) ->
     t("chk_commandRequests -> entry",[]),
-    throw({wrong_type,{commandRequests,C1,C2}}).
+    wrong_type({commandRequests,C1,C2}).
 
 chk_commandRequests1([],[]) ->
-    {equal,commandRequests};
+    ok;
 chk_commandRequests1([C1|Cs1],[C2|Cs2]) ->
     chk_commandRequest(C1,C2),
     chk_commandRequests1(Cs1,Cs2).
 
 chk_commandRequest(C,C) when record(C,'CommandRequest') ->
-    {equal,commandRequest};
+    ok;
 chk_commandRequest(#'CommandRequest'{command        = Cmd1,
 				     optional       = O1,
-				     wildcardReturn = W1} = C1,
+				     wildcardReturn = W1},
 		   #'CommandRequest'{command        = Cmd2,
 				     optional       = O2,
-				     wildcardReturn = W2} = C2) ->
+				     wildcardReturn = W2}) ->
     t("chk_commandRequest -> entry with"
       "~n   C1: ~p"
       "~n   C2: ~p", [Cmd1, Cmd2]),
     chk_commandRequest_command(Cmd1,Cmd2),
     O1 = O2,
     W1 = W2,
-    {equal,'CommandRequest'};
+    ok;
 chk_commandRequest(C1,C2) ->
-    throw({wrong_type,{commandRequest,C1,C2}}).
+    wrong_type({commandRequest,C1,C2}).
 
 chk_commandRequest_command({addReq,C1},{addReq,C2}) ->
     chk_AmmRequest(C1,C2);
@@ -4661,31 +4687,31 @@ chk_commandRequest_command({notifyReq,C1},{notifyReq,C2}) ->
 chk_commandRequest_command({serviceChangeReq,C1},{serviceChangeReq,C2}) ->
     chk_ServiceChangeRequest(C1,C2);
 chk_commandRequest_command(C1,C2) ->
-    throw({wrong_type,{commandRequest_command,C1,C2}}).
+    wrong_type({commandRequest_command,C1,C2}).
     
 
 chk_AmmRequest(R,R) when record(R,'AmmRequest') ->
-    {equal,'AmmRequest'};
+    ok;
 chk_AmmRequest(#'AmmRequest'{terminationID = Tids1,
-			     descriptors   = D1} = R1,
+			     descriptors   = D1},
 	       #'AmmRequest'{terminationID = Tids2,
-			     descriptors   = D2} = R2) ->
+			     descriptors   = D2}) ->
     chk_terminationIds(Tids1,Tids2),
     chk_AmmRequest_descriptors(D1,D2),
-    {equal,'AmmRequest',R1,R2}; % DigitMap body can have trailing '\n', ...
+    ok;
 chk_AmmRequest(R1,R2) ->
-    throw({wrong_type,{'AmmRequest',R1,R2}}).
+    wrong_type({'AmmRequest',R1,R2}).
 
 chk_AmmRequest_descriptors([],[]) ->
-    {equal,ammRequest_descriptors};
+    ok;
 chk_AmmRequest_descriptors(D1,D2) when list(D1), list(D2), 
 				       length(D1) == length(D2) ->
     chk_AmmRequest_descriptors1(D1,D2);
 chk_AmmRequest_descriptors(D1,D2) ->
-    throw({wrong_type,{ammRequest_descriptors,D1,D2}}).
+    wrong_type({ammRequest_descriptors,D1,D2}).
 
 chk_AmmRequest_descriptors1([],[]) ->
-    {equal,ammRequest_descriptors};
+    ok;
 chk_AmmRequest_descriptors1([D1|Ds1],[D2|Ds2]) ->
     chk_AmmRequest_descriptor(D1,D2),
     chk_AmmRequest_descriptors1(Ds1,Ds2).
@@ -4706,38 +4732,38 @@ chk_AmmRequest_descriptor({digitMapDescriptor,D1},{digitMapDescriptor,D2}) ->
     chk_DigitMapDescriptor(D1,D2);
 chk_AmmRequest_descriptor({auditDescriptor,D1},{auditDescriptor,D2}) -> 
     chk_AuditDescriptor(D1,D2);
-chk_AmmRequest_descriptor({Tag1,D1},{Tag2,D2}) -> 
-    throw({wrong_type,{ammRequest_descriptor_tag,Tag1,Tag2}}).
+chk_AmmRequest_descriptor({Tag1,_D1},{Tag2,_D2}) -> 
+    wrong_type({ammRequest_descriptor_tag,Tag1,Tag2}).
     
     
 chk_SubtractRequest(R,R) when record(R,'SubtractRequest') ->
-    {equal,'SubtractRequest'};
+    ok;
 chk_SubtractRequest(#'SubtractRequest'{terminationID   = Tids1,
 				       auditDescriptor = D1} = R1,
 		    #'SubtractRequest'{terminationID   = Tids2,
 				       auditDescriptor = D2} = R2) ->
     chk_terminationIds(Tids1,Tids2),
     chk_opt_AuditDescriptor(D1,D2),
-    throw({error,{equal,{'SubtractRequest',R1,R2}}});
+    equal({'SubtractRequest',R1,R2});
 chk_SubtractRequest(R1,R2) ->
-    throw({wrong_type,{'SubtractRequest',R1,R2}}).
+    wrong_type({'SubtractRequest',R1,R2}).
 
 
 chk_AuditRequest(R,R) when record(R,'AuditRequest') ->
-    {equal,'AuditRequest'};
+    ok;
 chk_AuditRequest(#'AuditRequest'{terminationID   = Tid1,
 				 auditDescriptor = D1} = R1,
 		 #'AuditRequest'{terminationID   = Tid2,
 				 auditDescriptor = D2} = R2) ->
     chk_terminationId(Tid1,Tid2),
     chk_AuditDescriptor(D1,D2),
-    throw({error,{equal,{'AuditRequest',R1,R2}}});
+    equal({'AuditRequest',R1,R2});
 chk_AuditRequest(R1,R2) ->
-    throw({wrong_type,{'AuditRequest',R1,R2}}).
+    wrong_type({'AuditRequest',R1,R2}).
 
 
 chk_NotifyRequest(R,R) when record(R,'NotifyRequest') ->
-    {equal,'NotifyRequest'};
+    ok;
 chk_NotifyRequest(#'NotifyRequest'{terminationID            = Tids1,
 				   observedEventsDescriptor = ObsDesc1,
 				   errorDescriptor          = ErrDesc1} = R1,
@@ -4747,86 +4773,86 @@ chk_NotifyRequest(#'NotifyRequest'{terminationID            = Tids1,
     chk_terminationIds(Tids1,Tids2),
     chk_ObservedEventsDescriptor(ObsDesc1,ObsDesc2),
     chk_opt_ErrorDescriptor(ErrDesc1,ErrDesc2),
-    throw({error,{equal,{'NotifyRequest',R1,R2}}});
+    equal({'NotifyRequest',R1,R2});
 chk_NotifyRequest(R1,R2) ->
-    throw({wrong_type,{'NotifyRequest',R1,R2}}).
+    wrong_type({'NotifyRequest',R1,R2}).
 
 
 chk_ServiceChangeRequest(R,R) when record(R,'ServiceChangeRequest') ->
-    {equal,'ServiceChangeRequest'};
+    ok;
 chk_ServiceChangeRequest(#'ServiceChangeRequest'{terminationID      = Tids1,
 						 serviceChangeParms = P1} = R1,
 			 #'ServiceChangeRequest'{terminationID      = Tids2,
 						 serviceChangeParms = P2} = R2) ->
     chk_terminationIds(Tids1,Tids2),
     chk_ServiceChangeParm(P1,P2),
-    throw({error,{equal,{'ServiceChangeRequest',R1,R2}}});
+    equal({'ServiceChangeRequest',R1,R2});
 chk_ServiceChangeRequest(R1,R2) ->
-    throw({wrong_type,{'ServiceChangeRequest',R1,R2}}).
+    wrong_type({'ServiceChangeRequest',R1,R2}).
 
 
 chk_MediaDescriptor(D,D) when record(D,'MediaDescriptor') ->
-    {equal,'MediaDescriptor'};
+    ok;
 chk_MediaDescriptor(#'MediaDescriptor'{termStateDescr = Tsd1,
 				       streams        = S1} = D1,
 		    #'MediaDescriptor'{termStateDescr = Tsd2,
 				       streams        = S2} = D2) ->
     Tsd1 = Tsd2,
     S1   = S2,
-    throw({error,{equal,{'MediaDescriptor',D1,D2}}});
+    equal({'MediaDescriptor',D1,D2});
 chk_MediaDescriptor(D1,D2) ->
-    throw({wrong_type,{'MediaDescriptor',D1,D2}}).
+    wrong_type({'MediaDescriptor',D1,D2}).
 
 chk_ModemDescriptor(D,D) when record(D,'ModemDescriptor') ->
-    {equal,'ModemDescriptor'};
+    ok;
 chk_ModemDescriptor(#'ModemDescriptor'{mtl = T1,
 				       mpl = P1} = D1,
 		    #'ModemDescriptor'{mtl = T2,
 				       mpl = P2} = D2) ->
     T1 = T2,
     P1 = P2,
-    throw({error,{equal,{'ModemDescriptor',D1,D2}}});
+    equal({'ModemDescriptor',D1,D2});
 chk_ModemDescriptor(D1,D2) ->
-    throw({wrong_type,{'ModemDescriptor',D1,D2}}).
+    wrong_type({'ModemDescriptor',D1,D2}).
 
 chk_MuxDescriptor(D,D) when record(D,'MuxDescriptor') ->
-    {equal,'MuxDescriptor'};
+    ok;
 chk_MuxDescriptor(#'MuxDescriptor'{muxType  = T1,
 				   termList = I1} = D1,
 		  #'MuxDescriptor'{muxType  = T2,
 				   termList = I2} = D2) ->
     T1 = T2,
     I1 = I2,
-    throw({error,{equal,{'MuxDescriptor',D1,D2}}});
+    equal({'MuxDescriptor',D1,D2});
 chk_MuxDescriptor(D1,D2) ->
-    throw({wrong_type,{'MuxDescriptor',D1,D2}}).
+    wrong_type({'MuxDescriptor',D1,D2}).
 
 chk_EventsDescriptor(D,D) when record(D,'EventsDescriptor') ->
-    {equal,'EventsDescriptor'};
+    ok;
 chk_EventsDescriptor(#'EventsDescriptor'{requestID = I1,
 					 eventList = E1} = D1,
 		     #'EventsDescriptor'{requestID = I2,
 					 eventList = E2} = D2) ->
     I1 = I2,
     E1 = E2,
-    throw({error,{equal,{'EventsDescriptor',D1,D2}}});
+    equal({'EventsDescriptor',D1,D2});
 chk_EventsDescriptor(D1,D2) ->
-    throw({wrong_type,{'EventsDescriptor',D1,D2}}).
+    wrong_type({'EventsDescriptor',D1,D2}).
 
 chk_EventBufferDescriptor(D1,D2) when list(D1), list(D2), 
 				      length(D1) == length(D2) ->
     chk_EventBufferDescriptor1(D1,D2);
 chk_EventBufferDescriptor(D1,D2) ->
-    throw({wrong_type,{eventBufferDescriptor,D1,D2}}).
+    wrong_type({eventBufferDescriptor,D1,D2}).
 
 chk_EventBufferDescriptor1([],[]) ->
-    {equal,eventBufferDescriptor};
+    ok;
 chk_EventBufferDescriptor1([ES1|D1],[ES2|D2]) ->
     chk_EventSpec(ES1,ES2),
     chk_EventBufferDescriptor1(D1,D2).
 
 chk_EventSpec(ES,ES) when record(ES,'EventSpec') ->
-    {equal,'EventSpec'};
+    ok;
 chk_EventSpec(#'EventSpec'{eventName    = N1,
 			   streamID     = I1,
 			   eventParList = P1} = ES1,
@@ -4836,53 +4862,53 @@ chk_EventSpec(#'EventSpec'{eventName    = N1,
     N1 = N2,
     chk_opt_StreamId(I1,I2),
     chk_EventParameters(P1,P2),
-    throw({error,{equal,{'EventSpec',ES1,ES2}}});
+    equal({'EventSpec',ES1,ES2});
 chk_EventSpec(ES1,ES2) ->
-    throw({wrong_type,{'EventSpec',ES1,ES2}}).
+    wrong_type({'EventSpec',ES1,ES2}).
 
 
 chk_opt_ErrorDescriptor(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,'ErrorDescriptor'};
+    ok;
 chk_opt_ErrorDescriptor(E1,E2) ->
     chk_ErrorDescriptor(E1,E2).
 
 chk_ErrorDescriptor(E,E) when record(E,'ErrorDescriptor') ->
-    {equal,'ErrorDescriptor'};
+    ok;
 chk_ErrorDescriptor(#'ErrorDescriptor'{errorCode = Code1,
 				       errorText = Text1} = E1,
 		    #'ErrorDescriptor'{errorCode = Code2,
 				       errorText = Text2} = E2) ->
     chk_ErrorCode(Code1,Code2),
     chk_opt_ErrorText(Text1,Text2),
-    throw({error,{equal,{'ErrorDescriptor',E1,E2}}});
+    equal({'ErrorDescriptor',E1,E2});
 chk_ErrorDescriptor(E1,E2) ->
-    throw({wrong_type,{'ErrorDescriptor',E1,E2}}).
+    wrong_type({'ErrorDescriptor',E1,E2}).
 
 chk_ErrorCode(C,C) when integer(C) ->
-    {equal,errorCode};
+    ok;
 chk_ErrorCode(C1,C2) when integer(C1), integer(C2) ->
-    throw({not_equal,{errorCode,C1,C2}});
+    not_equal({errorCode,C1,C2});
 chk_ErrorCode(C1,C2) ->
     throw({wrong_type,{errorCode,C1,C2}}).
 
 chk_opt_ErrorText(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,errorText};
+    ok;
 chk_opt_ErrorText(T,T) when list(T) ->
-    {equal,errorText};
+    ok;
 chk_opt_ErrorText(T1,T2) when list(T1), list(T2) ->
-    throw({not_equal,{errorText,T1,T2}});
+    not_equal({errorText,T1,T2});
 chk_opt_ErrorText(T1,T2) ->
-    throw({wrong_type,{errorText,T1,T2}}).
+    wrong_type({errorText,T1,T2}).
 
 
 chk_SignalsDescriptor(D1,D2) when list(D1), list(D2), 
 				  length(D1) == length(D2) ->
     chk_SignalsDescriptor1(D1,D2);
 chk_SignalsDescriptor(D1,D2) ->
-    throw({wrong_type,{signalsDescriptor,D1,D2}}).
+    wrong_type({signalsDescriptor,D1,D2}).
 
 chk_SignalsDescriptor1([],[]) ->
-    {equal,signalsDescriptor};
+    ok;
 chk_SignalsDescriptor1([S1|D1],[S2|D2]) ->
     chk_SignalRequest(S1,S2),
     chk_SignalsDescriptor1(D1,D2).
@@ -4892,30 +4918,30 @@ chk_SignalRequest({signal,S1},{signal,S2}) ->
 chk_SignalRequest({seqSigList,S1},{seqSigList,S2}) ->
     chk_SeqSignalList(S1,S2);
 chk_SignalRequest(R1,R2) ->
-    throw({wrong_type,{signalRequest,R1,R2}}).
+    wrong_type({signalRequest,R1,R2}).
 
 chk_SeqSignalList(S,S) when record(S,'SeqSigList') ->
-    {equal,'SeqSigList'};
+    ok;
 chk_SeqSignalList(#'SeqSigList'{id         = Id1,
 				signalList = SigList1} = S1,
 		  #'SeqSigList'{id         = Id2,
 				signalList = SigList2} = S2) ->
     Id1 = Id2,
     chk_Signals(SigList1,SigList2),
-    throw({error,{equal,{'SeqSigList',S1,S2}}});
+    equal({'SeqSigList',S1,S2});
 chk_SeqSignalList(S1,S2) ->
-    throw({wrong_type,{'SeqSigList',S1,S2}}).
+    wrong_type({'SeqSigList',S1,S2}).
 
 
 chk_Signals([],[]) ->
-    {equal,signals};
+    ok;
 chk_Signals([Sig1|Sigs1],[Sig2|Sigs2]) ->
     chk_Signal(Sig1,Sig2),
     chk_Signals(Sigs1,Sigs2).
 
 
 chk_Signal(S,S) when record(S,'Signal') ->
-    {equal,'Signal'};
+    ok;
 chk_Signal(#'Signal'{signalName       = N1,
 		     streamID         = I1,
 		     sigType          = T1,
@@ -4937,153 +4963,157 @@ chk_Signal(#'Signal'{signalName       = N1,
     chk_opt_NotifyCompletion(C1,C2),
     chk_opt_keepAlive(K1,K2),
     chk_sigParameters(P1,P2),
-    throw({error,{equal,{'Signal',S1,S2}}});
+    equal({'Signal',S1,S2});
 chk_Signal(S1,S2) ->
-    throw({wrong_type,{'Signal',S1,S2}}).
+    wrong_type({'Signal',S1,S2}).
 
 chk_DigitMapDescriptor(D,D) when record(D,'DigitMapDescriptor') ->
-    {equal,'DigitMapDescriptor'};
+    ok;
 chk_DigitMapDescriptor(#'DigitMapDescriptor'{digitMapName  = N1,
-					     digitMapValue = V1} = D1,
+					     digitMapValue = V1},
 		       #'DigitMapDescriptor'{digitMapName  = N2,
-					     digitMapValue = V2} = D2) ->
+					     digitMapValue = V2}) ->
     chk_opt_digitMapName(N1,N2),
     chk_opt_digitMapValue(V1,V2),
-    {equal,'DigitMapDescriptor'};
+    ok;
 chk_DigitMapDescriptor(D1,D2) ->
-    throw({wrong_type,{'DigitMapDescriptor',D1,D2}}).
+    wrong_type({'DigitMapDescriptor',D1,D2}).
 
 chk_opt_digitMapName(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,digitMapName};
+    ok;
 chk_opt_digitMapName(N1,N2) ->
     chk_digitMapName(N1,N2).
 
 chk_digitMapName(N,N) ->
-    {equal,digitMapName};
+    ok;
 chk_digitMapName(N1,N2) ->
-    throw({not_equal,{digitMapName,N1,N2}}).
+    not_equal({digitMapName,N1,N2}).
 
 chk_opt_digitMapValue(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,digitMapValue};
+    ok;
 chk_opt_digitMapValue(V1,V2) ->
     chk_digitMapValue(V1,V2).
 
 chk_digitMapValue(V,V) when record(V,'DigitMapValue') ->
-    {equal,digitMapValue};
+    ok;
 chk_digitMapValue(#'DigitMapValue'{digitMapBody = Body1,
 				   startTimer   = Start1,
 				   shortTimer   = Short1,
-				   longTimer    = Long1} = V1,
+				   longTimer    = Long1},
 		  #'DigitMapValue'{digitMapBody = Body2,
 				   startTimer   = Start2,
 				   shortTimer   = Short2,
-				   longTimer    = Long2} = V2) ->
+				   longTimer    = Long2}) ->
     chk_digitMapValue_digitMapBody(Body1,Body2), % Could contain trailing '\n', ...
     chk_opt_timer(Start1,Start2),
     chk_opt_timer(Short1,Short2),
     chk_opt_timer(Long1,Long2),
-    {equal,'DigitMapValue'};
+    ok;
 chk_digitMapValue(V1,V2) ->
-    throw({wrong_type,{digitMapValue,V1,V2}}).
+    wrong_type({digitMapValue,V1,V2}).
 
 chk_digitMapValue_digitMapBody(B,B) when list(B) ->
-    {equal,digitMapValue_digitMapBody};
-chk_digitMapValue_digitMapBody(B1,B2) when list(B1), list(B2), length(B1) > length(B2)  ->
+    ok;
+chk_digitMapValue_digitMapBody(B1, B2) 
+  when list(B1), list(B2), length(B1) > length(B2)  ->
     case string:str(B2, B1) of
 	0 ->
-	    {equal,digitMapValue_digitMapBody};
+	    ok;
 	_ ->
-	    throw({not_equal,{digitMapValue_digitMapBody,B1,B2}})
+	    not_equal({digitMapValue_digitMapBody,B1,B2})
     end;
-chk_digitMapValue_digitMapBody(B1,B2) when list(B1), list(B2), length(B1) < length(B2)  ->
+chk_digitMapValue_digitMapBody(B1, B2) 
+  when list(B1), list(B2), length(B1) < length(B2)  ->
     case string:str(B1, B2) of
 	0 ->
-	    {equal,digitMapValue_digitMapBody};
+	    ok;
 	_ ->
-	    throw({not_equal,{digitMapValue_digitMapBody,B1,B2}})
+	    not_equal({digitMapValue_digitMapBody,B1,B2})
     end;
 chk_digitMapValue_digitMapBody(B1,B2) when list(B1), list(B2) ->
-    throw({not_equal,{digitMapValue_digitMapBody,B1,B2}});
+    not_equal({digitMapValue_digitMapBody,B1,B2});
 chk_digitMapValue_digitMapBody(B1,B2) ->
-    throw({wrong_type,{digitMapValue_digitMapBody,B1,B2}}).
+    wrong_type({digitMapValue_digitMapBody,B1,B2}).
 
 
 chk_opt_AuditDescriptor(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,'AuditDescriptor'};
+    ok;
 chk_opt_AuditDescriptor(D1,D2) ->
     chk_AuditDescriptor(D1,D2).
 
 chk_AuditDescriptor(D,D) when record(D,'AuditDescriptor') ->
-    {equal,'AuditDescriptor'};
+    ok;
 chk_AuditDescriptor(#'AuditDescriptor'{auditToken = T1} = D1,
 		    #'AuditDescriptor'{auditToken = T2} = D2) ->
     chk_opt_auditToken(T1,T2),
-    throw({error,{equal,{'AuditDescriptor',D1,D2}}});
+    equal({'AuditDescriptor',D1,D2});
 chk_AuditDescriptor(D1,D2) ->
-    throw({wrong_type,{'AuditDescriptor',D1,D2}}).
+    wrong_type({'AuditDescriptor',D1,D2}).
 
 chk_opt_auditToken(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,auditToken};
+    ok;
 chk_opt_auditToken(T1,T2) ->
     chk_auditToken(T1,T2).
 
 chk_auditToken(T1,T2) when list(T1), list(T2), length(T1) == length(T2) ->
     chk_auditToken1(T1,T2);
 chk_auditToken(T1,T2) ->
-    throw({wrong_type,{auditToken,T1,T2}}).
+    wrong_type({auditToken,T1,T2}).
 
 chk_auditToken1([],[]) ->
-    {equal,auditToken};
+    ok;
 chk_auditToken1([H1|T1],[H2|T2]) ->
     chk_auditToken2(H1,H2),
     chk_auditToken1(T1,T2).
 
 chk_auditToken2(muxToken,muxToken) ->
-    {equal,auditToken};
+    ok;
 chk_auditToken2(modemToken,modemToken) ->
-    {equal,auditToken};
+    ok;
 chk_auditToken2(mediaToken,mediaToken) ->
-    {equal,auditToken};
+    ok;
 chk_auditToken2(eventsToken,eventsToken) ->
-    {equal,auditToken};
+    ok;
 chk_auditToken2(signalsToken,signalsToken) ->
-    {equal,auditToken};
+    ok;
 chk_auditToken2(digitMapToken,digitMapToken) ->
-    {equal,auditToken};
+    ok;
 chk_auditToken2(statsToken,statsToken) ->
-    {equal,auditToken};
+    ok;
 chk_auditToken2(observedEventsToken,observedEventsToken) ->
-    {equal,auditToken};
+    ok;
 chk_auditToken2(packagesToken,packagesToken) ->
-    {equal,auditToken};
+    ok;
 chk_auditToken2(eventBufferToken,eventBufferToken) ->
-    {equal,auditToken};
+    ok;
 chk_auditToken2(T1,T2) when atom(T1), atom(T2) ->
-    throw({not_equal,{auditToken,T1,T2}});
+    not_equal({auditToken,T1,T2});
 chk_auditToken2(T1,T2) ->
-    throw({wrong_type,{auditToken,T1,T2}}).
+    wrong_type({auditToken,T1,T2}).
 
-chk_ObservedEventsDescriptor(D,D) when record(D,'ObservedEventsDescriptor') ->
-    {equal,'ObservedEventsDescriptor'};
-chk_ObservedEventsDescriptor(#'ObservedEventsDescriptor'{requestId        = Id1,
-							 observedEventLst = E1} = D1,
-			     #'ObservedEventsDescriptor'{requestId        = Id2,
-							 observedEventLst = E2} = D2) ->
+chk_ObservedEventsDescriptor(D,D) 
+  when record(D,'ObservedEventsDescriptor') ->
+    ok;
+chk_ObservedEventsDescriptor(
+  #'ObservedEventsDescriptor'{requestId        = Id1,
+			      observedEventLst = E1} = D1,
+  #'ObservedEventsDescriptor'{requestId        = Id2,
+			      observedEventLst = E2} = D2) ->
     Id1 = Id2,
     chk_ObservedEvents(E1,E2),
-    throw({error,{equal,{'ObservedEventsDescriptor',D1,D2}}});
+    equal({'ObservedEventsDescriptor',D1,D2});
 chk_ObservedEventsDescriptor(D1,D2) ->
-    throw({wrong_type,{'ObservedEventsDescriptor',D1,D2}}).
+    wrong_type({'ObservedEventsDescriptor',D1,D2}).
     
 
 chk_ObservedEvents(E1,E2) when list(E1), list(E2), length(E1) == length(E2) ->
     chk_ObservedEvents1(E1,E2);
 chk_ObservedEvents(E1,E2) ->
-    throw({wrong_type,{observedEvents,E1,E2}}).
+    wrong_type({observedEvents,E1,E2}).
 
 
 chk_ObservedEvents1([],[]) ->
-    {equal,observedEvents};
+    ok;
 chk_ObservedEvents1([Ev1|Evs1],[Ev2|Evs2]) ->
     chk_ObservedEvent(Ev1,Ev2),
     chk_ObservedEvents1(Evs1,Evs2).
@@ -5100,31 +5130,31 @@ chk_ObservedEvent(#'ObservedEvent'{eventName    = N1,
     chk_opt_StreamId(I1,I2),
     chk_EventParameters(P1,P2),
     chk_opt_TimeNotation(T1,T2),
-    throw({error,{equal,{'ObservedEvent',E1,E2}}});
+    equal({'ObservedEvent',E1,E2});
 chk_ObservedEvent(E1,E2) ->
-    throw({wrong_type,{'ObservedEvent',E1,E2}}).
+    wrong_type({'ObservedEvent',E1,E2}).
     
 
 chk_opt_TimeNotation(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,'TimeNotation'};
+    ok;
 chk_opt_TimeNotation(T1,T2) ->
     chk_TimeNotation(T1,T2).
 
 chk_TimeNotation(T,T) when record(T,'TimeNotation') ->
-    {equal,'TimeNotation'};
+    ok;
 chk_TimeNotation(#'TimeNotation'{date = Date1,
 				 time = Time1} = T1,
 		 #'TimeNotation'{date = Date2,
 				 time = Time2} = T2) ->
     Date1 = Date2,
     Time1 = Time2,
-    throw({error,{equal,{'TimeNotation',T1,T2}}});
+    equal({'TimeNotation',T1,T2});
 chk_TimeNotation(T1,T2) ->
-    throw({wrong_type,{'TimeNotation',T1,T2}}).
+    wrong_type({'TimeNotation',T1,T2}).
     
     
 chk_opt_timer(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,timer};
+    ok;
 chk_opt_timer(T1,T2) ->
     chk_timer(T1,T2).
 
@@ -5195,15 +5225,15 @@ chk_opt_keepAlive(K1,K2) ->
     chk_keepAlive(K1,K2).
 
 chk_keepAlive(true,true) ->
-    {equal,keepAlive};
+    ok;
 chk_keepAlive(false,false) ->
-    {equal,keepAlive};
+    ok;
 chk_keepAlive(K1,K2) ->
-    throw({wrong_type,{keepAlive,K1,K2}}).
+    wrong_type({keepAlive,K1,K2}).
 
 
 chk_ServiceChangeParm(P,P) when  record(P,'ServiceChangeParm') ->
-    {equal,'ServiceChangeParm'};
+    ok;
 chk_ServiceChangeParm(#'ServiceChangeParm'{serviceChangeMethod  = M1, 
 					   serviceChangeAddress = A1, 
 					   serviceChangeVersion = V1, 
@@ -5227,66 +5257,66 @@ chk_ServiceChangeParm(#'ServiceChangeParm'{serviceChangeMethod  = M1,
     R1 = R2,
     D1 = D2,
     Mid1 = Mid2,
-    T2 = T2,
-    throw({error,{equal,{'ServiceChangeParm',P1,P2}}});
+    T1 = T2,
+    equal({'ServiceChangeParm',P1,P2});
 chk_ServiceChangeParm(P1,P2) ->
-    throw({wrong_type,{'ServiceChangeParm',P1,P2}}).
+    wrong_type({'ServiceChangeParm',P1,P2}).
 
-     
+
 chk_sigParameters(S1,S2) when list(S1), list(S2), length(S1) == length(S2) ->
     chk_sigParameters1(S1,S2);
 chk_sigParameters(S1,S2) ->
-    throw({wrong_type,{sigParameters,S1,S2}}).
+    wrong_type({sigParameters,S1,S2}).
 
 chk_sigParameters1([],[]) ->
-    {equal,sigParameters};
+    ok;
 chk_sigParameters1([H1|T1],[H2|T2]) ->
     chk_sigParameter(H1,H2),
     chk_sigParameters1(T1,T2);
 chk_sigParameters1(P1,P2) ->
-    throw({wrong_type,{sigParameters,P1,P2}}).
+    wrong_type({sigParameters,P1,P2}).
     
 chk_sigParameter(#'SigParameter'{sigParameterName = N1,
 				 value            = V1,
-				 extraInfo        = E1} = P1,
+				 extraInfo        = E1},
 		 #'SigParameter'{sigParameterName = N2,
 				 value            = V2,
-				 extraInfo        = E2} = P2) ->
+				 extraInfo        = E2}) ->
     N1 = N2,
     chk_Value(V1,V2),
     chk_opt_extraInfo(E1,E2),
-    throw({error,{equal,{extraInfo,E1,E2}}});
+    ok;
 chk_sigParameter(P1,P2) ->
-    throw({wrong_type,{'SigParameter',P1,P2}}).
+    wrong_type({'SigParameter',P1,P2}).
 
     
 chk_opt_StreamId(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,streamId};
+    ok;
 chk_opt_StreamId(I1,I2) ->
     chk_StreamId(I1,I2).
 
 chk_StreamId(I,I) when integer(I) ->
-    {equal,streamId};
+    ok;
 chk_StreamId(I1,I2) when integer(I1), integer(I2) ->
-    throw({not_equal,{streamId,I1,I2}});
+    not_equal({streamId,I1,I2});
 chk_StreamId(I1,I2) ->
-    throw({wrong_type,{streamId,I1,I2}}).
+    wrong_type({streamId,I1,I2}).
     
 
 chk_EventParameters(EP1,EP2) when list(EP1), list(EP2), 
 				  length(EP1) == length(EP2) ->
     chk_EventParameters1(EP1,EP2);
 chk_EventParameters(EP1,EP2) ->
-    throw({wrong_type,{eventParameters,EP1,EP2}}).
+    wrong_type({eventParameters,EP1,EP2}).
 
 chk_EventParameters1([],[]) ->
-    {equal,eventParameters};
+    ok;
 chk_EventParameters1([EP1|EPS1],[EP2|EPS2]) ->
     chk_EventParameter(EP1,EP2),
     chk_EventParameters1(EPS1,EPS2).
     
 chk_EventParameter(EP,EP) when record(EP,'EventParameter') ->
-    {equal,'EventParameter'};
+    ok;
 chk_EventParameter(#'EventParameter'{eventParameterName = N1,
 				     value              = V1,
 				     extraInfo          = E1} = EP1,
@@ -5296,9 +5326,9 @@ chk_EventParameter(#'EventParameter'{eventParameterName = N1,
     N1 = N2,
     chk_Value(V1,V2),
     chk_opt_extraInfo(E1,E2),
-    throw({error,{equal,{'EventParameter',EP1,EP2}}});
+    equal({'EventParameter',EP1,EP2});
 chk_EventParameter(EP1,EP2) ->
-    throw({wrong_type,{'EventParameter',EP1,EP2}}).
+    wrong_type({'EventParameter',EP1,EP2}).
 
 
 chk_Value(V,V) when list(V) ->
@@ -5306,105 +5336,118 @@ chk_Value(V,V) when list(V) ->
 chk_Value(V1,V2) when list(V1), list(V2), length(V1) == length(V2) ->
     chk_Value1(V1,V2);
 chk_Value(V1,V2) ->
-    throw({wrong_type,{value,V1,V2}}).
+    wrong_type({value,V1,V2}).
 
 chk_Value([]) ->
     ok;
 chk_Value([H|T]) when list(H) ->
     chk_Value(T);
-chk_Value([H|T]) ->
-    throw({wrong_type,{value_part,H}}).
+chk_Value([H|_T]) ->
+    wrong_type({value_part,H}).
 
 chk_Value1([],[]) ->
-    {equal,value};
+    ok;
 chk_Value1([H|T1],[H|T2]) when list(H) ->
     chk_Value1(T1,T2);
-chk_Value1([H|T1],[H|T2]) ->
-    throw({wrong_type,{value_part,H}});
-chk_Value1([H1|T1],[H2|T2]) when list(H1), list(H2) ->
-    throw({not_equal,{value_part,H1,H2}});
+chk_Value1([H|_T1],[H|_T2]) ->
+    wrong_type({value_part,H});
+chk_Value1([H1|_T1],[H2|_T2]) when list(H1), list(H2) ->
+    not_equal({value_part,H1,H2});
 chk_Value1(V1,V2) ->
-    throw({wrong_type,{value,V1,V2}}).
+    wrong_type({value,V1,V2}).
 
 
 chk_opt_extraInfo(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,extraInfo};
+    ok;
 chk_opt_extraInfo(E1,E2) ->
     chk_extraInfo(E1,E2).
 
 chk_extraInfo({relation,greaterThan},{relation,greaterThan}) ->
-    {equal,extraInfo};
+    ok;
 chk_extraInfo({relation,smallerThan},{relation,smallerThan}) ->
-    {equal,extraInfo};
+    ok;
 chk_extraInfo({relation,unequalTo},{relation,unequalTo}) ->
-    {equal,extraInfo};
+    ok;
 chk_extraInfo({range,true},{range,true}) ->
-    {equal,extraInfo};
+    ok;
 chk_extraInfo({range,false},{range,false}) ->
-    {equal,extraInfo};
+    ok;
 chk_extraInfo({sublist,true},{sublist,true}) ->
-    {equal,extraInfo};
+    ok;
 chk_extraInfo({sublist,false},{sublist,false}) ->
-    {equal,extraInfo};
+    ok;
 chk_extraInfo(E1,E2) ->
-    throw({wrong_type,{extraInfo,E1,E2}}).
+    wrong_type({extraInfo,E1,E2}).
 
 
 chk_opt_transactionId(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,transactionId};
+    ok;
 chk_opt_transactionId(Id1,Id2) ->
     chk_transactionId(Id1,Id2).
 
 chk_transactionId(Id,Id) when integer(Id) ->
-    {equal,transactionId};
+    ok;
 chk_transactionId(Id1,Id2) when integer(Id1), integer(Id2) ->
-    throw({not_equal,{transactionId,Id1,Id2}});
+    not_equal({transactionId,Id1,Id2});
 chk_transactionId(Id1,Id2) ->
-    throw({wrong_type,{transactionId,Id1,Id2}}).
+    wrong_type({transactionId,Id1,Id2}).
     
 
 chk_terminationIds(Tids1,Tids2) when list(Tids1), list(Tids2), 
 				     length(Tids1) == length(Tids2) ->
     chk_terminationIds1(Tids1,Tids2);
 chk_terminationIds(Tids1,Tids2) ->
-    throw({wrong_type,{terminationIds,Tids1,Tids2}}).
+    wrong_type({terminationIds,Tids1,Tids2}).
 
 chk_terminationIds1([],[]) ->
-    {equal,terminationIds};
+    ok;
 chk_terminationIds1([Tid1|Tids1],[Tid2|Tids2]) ->
     chk_terminationId(Tid1,Tid2),
     chk_terminationIds1(Tids1,Tids2).
 
 chk_terminationId(Id,Id) when record(Id,'TerminationID') ->
-    {equal,terminationId};
+    ok;
 chk_terminationId(Id,Id) when record(Id,megaco_term_id) ->
-    {equal,terminationId};
+    ok;
 chk_terminationId(#'TerminationID'{wildcard = W1,
 				   id       = I1} = Tid1,
 		  #'TerminationID'{wildcard = W2,
 				   id       = I2} = Tid2) ->
     chk_terminationId_wildcard(W1,W2),
     chk_terminationId_id(I1,I2),
-    throw({error,{equal,{'TerminationID',Tid1,Tid2}}});
+    equal({'TerminationID',Tid1,Tid2});
 chk_terminationId(#megaco_term_id{contains_wildcards = W1,
 				  id                 = I1} = Tid1,
 		  #megaco_term_id{contains_wildcards = W2,
 				  id                 = I2} = Tid2) ->
     chk_terminationId_wildcard(W1,W2),
     chk_terminationId_id(I1,I2),
-    throw({error,{equal,{megaco_term_id,Tid1,Tid2}}});
+    equal({megaco_term_id,Tid1,Tid2});
 chk_terminationId(Tid1,Tid2) ->
-    throw({wrong_type,{terminationId,Tid1,Tid2}}).
+    wrong_type({terminationId,Tid1,Tid2}).
 
 chk_terminationId_wildcard(W,W) ->
-    {equal,terminationId_wildcard};
+    ok;
 chk_terminationId_wildcard(W1,W2) ->
-    throw({not_equal,{terminationId_wildcard,W1,W2}}).
+    not_equal({terminationId_wildcard,W1,W2}).
 
 chk_terminationId_id(I,I) ->
-    {equal,terminationId_id};
+    ok;
 chk_terminationId_id(I1,I2) ->
-    throw({not_equal,{terminationId_id,I1,I2}}).
+    not_equal({terminationId_id,I1,I2}).
+
+
+equal(What) ->
+    error({equal, What}).
+
+not_equal(What) ->
+    error({not_equal, What}).
+
+wrong_type(What) ->
+    error({wrong_type, What}).
+
+error(Reason) ->
+    throw({error, Reason}).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -5590,7 +5633,7 @@ cre_signal(Name) ->
 cre_timeNotation(D,T) ->
     #'TimeNotation'{date = D, time = T}.
 
-cre_packagesItem(Name, Ver) ->
+cre_packagesItem(_Name, _Ver) ->
     #'PackagesItem'{packageName = "nt", packageVersion = 1}.
 
 

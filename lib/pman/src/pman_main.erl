@@ -419,7 +419,7 @@ execute_cmd('Show Selected',Pman_data,_Data,_Args) ->
 %% Start Help window
 
 execute_cmd('Help',Pman_data,_Data,_Args)  ->
-    HelpFile = filename:join(code:priv_dir(pman), "../doc/index.html"),
+    HelpFile = filename:join([code:lib_dir(pman), "doc", "html", "index.html"]),
     tool_utils:open_help(gse:start([{kernel, true}]), HelpFile),
     Pman_data;
 
@@ -821,11 +821,11 @@ key(O) -> O.
 %%
 
 disable_pid_actions() ->
-    lists:foreach({gse, disable}, ?REQUIRES_FOCUS).
+    lists:foreach(fun(X) -> gse:disable(X) end, ?REQUIRES_FOCUS).
 
 
 enable_pid_actions()  ->
-    lists:foreach({gse, enable}, ?REQUIRES_FOCUS).
+    lists:foreach(fun(X) -> gse:enable(X) end, ?REQUIRES_FOCUS).
 
 
 %% Check if node is running in noshell mode and if so disable the
@@ -1051,7 +1051,7 @@ get_display_info(Pman_data) ->
 	case Pman_data#gs_pman.hide_system of
 	    true ->
 		OSPidSystem =
-		    lists:filter({pman_process, is_system_process},
+		    lists:filter(fun(P) -> pman_process:is_system_process(P) end,
 				 OSPidAll),
 		ordsets:union(OSPidDontShow1, OSPidSystem);
 	    false ->

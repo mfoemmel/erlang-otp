@@ -22,6 +22,7 @@
 -module(megaco_binary_name_resolver_v1).
 
 -include_lib("megaco/src/engine/megaco_message_internal.hrl").
+-include_lib("megaco/src/engine/megaco_internal.hrl").
 
 -define(LOWER(Char),
 	if
@@ -46,7 +47,8 @@ encode_name(Config, term_id, TermId) ->
 	    exit({bad_term_id, TermId})
     end;	
 encode_name(_Config, Scope, Item) ->
-%     i("encode_name(~p) -> entry with Item: ~p",[Scope, Item]),
+    ?d("encode_name(~p) -> entry with"
+       "~n   Item: ~p", [Scope, Item]),
     encode(Scope, Item).
 
 decode_name(Config, term_id, TermId) ->
@@ -57,162 +59,262 @@ decode_name(Config, term_id, TermId) ->
 	    exit({bad_term_id, TermId})
     end;
 decode_name(_Config, Scope, Item) ->
-%     i("decode_name(~p) -> entry with Item: ~p",[Scope, Item]),
+    ?d("decode_name(~p) -> entry with"
+       "~n   Item: ~p", [Scope, Item]),
     decode(Scope, Item).
 
+
+
+
 %%----------------------------------------------------------------------
-%% 12.1.1 Package
+%% 12.1.1   Package
 %% 
-%% Overall description of the package, specifying:
+%%    Overall description of the package, specifying:
 %% 
-%%         Package Name: only descriptive,
-%%         PackageID:  Is an identifier
-%%         Description:
-%%         Version:
-%%                 A new version of a package can only add additional
-%%                 Properties, Events, Signals, Statistics and new possible
-%%                 values for an existing parameter described in the
-%%                 package. No deletions or modifications shall be allowed.
-%%                 A version is an integer in the range from 1 to 99.
+%%       Package Name: only descriptive
 %% 
-%%         Designed to be extended only (Optional):
+%%       PackageID: is an identifier
 %% 
-%%                This indicates that the package has been expressly 
-%%                designed to be extended by others, not to be directly 
-%%                referenced.  For example, the package may not have any 
-%%                function on its own or be nonsensical on its own.  
-%%                The MG SHOULD NOT publish this PackageID when reporting 
-%%                packages.
-%%
-%%         Extends (Optional):
-%%                 A package may extend an existing package. The version of
-%%                 the original package must be specified. When a package
-%%                 extends another package it shall only add additional
-%%                 Properties, Events, Signals, Statistics and new possible
-%%                 values for an existing parameter described in the original
-%%                 package. An extended package shall not redefine or
-%%                 overload a name defined in the original package.
-%%                 Hence, if package B version 1 extends package A version 1,
-%%                 version 2 of B will not be able to extend the A version 2
-%%                 if A version 2 defines a name already in B version 1.
+%%       Description:
 %% 
-%% 12.1.2.  Properties
+%%       Version:
 %% 
-%% Properties defined by the package, specifying:
+%%          A new version of a package can only add additional Properties,
+%%          Events, Signals, Statistics and new possible values for an
+%%          existing parameter described in the original package.  No
+%%          deletions or modifications shall be allowed.  A version is an
+%%          integer in the range from 1 to 99.
 %% 
-%%         Property Name: only descriptive.
-%%         PropertyID:  Is an identifier
-%%         Description:
-%%         Type: One of:
-%%                 String: UTF-8 string
-%%                 Integer: 4 byte signed integer
-%%                 Double: 8 byte signed integer
-%%                 Character: Unicode UTF-8 encoding of a single letter.
-%%                         Could be more than one octet.
-%%                 Enumeration: One of a list of possible unique values (See 12.3)
-%%                 Sub-list: A list of several values from a list
-%%                 Boolean
-%%         Possible Values:
-%%         Defined in:
-%%                 Which descriptor the property is defined in.  LocalControl
-%%                 is for stream dependent properties. TerminationState is for
-%%                 stream independent properties.
-%%         Characteristics: Read / Write or both, and (optionally), global:
-%%                 Indicates whether a property is read-only, or read-write,
-%%                 and if it is global.  If Global is omitted, the property
-%%                 is not global.  If a property is declared as global,
-%%                 the value of the property is shared by all terminations
-%%                 realizing the package.
+%%       Designed to be extended only (Optional):
 %% 
-%% 12.1.3.  Events
+%%          This indicates that the package has been expressly designed to
+%%          be extended by others, not to be directly referenced.  For
+%%          example, the package may not have any function on its own or be
+%%          nonsensical on its own.  The MG SHOULD NOT publish this
+%%          PackageID when reporting packages.
 %% 
-%% Events defined by the package, specifying:
+%%       Extends (Optional): existing package Descriptor
 %% 
-%%         Event name: only descriptive.
-%%         EventID:  Is an identifier
-%%         Description:
-%%         EventsDescriptor Parameters:
-%%                 Parameters used by the MGC to configure the event,
-%%                 and found in the EventsDescriptor.  See section 12.2.
-%%         ObservedEventsDescriptor Parameters:
-%%                 Parameters returned to the MGC in  Notify requests and in
-%%                 replies to command requests from the MGC that audit
-%%                 ObservedEventsDescriptor, and found in the
-%%                 ObservedEventsDescriptor.  See section 12.2.
-%% 
-%% 12.1.4.  Signals
-%% 
-%% Signals defined by the package, specifying:
-%% 
-%%         Signal Name: only descriptive.
-%%         SignalID:  Is an identifier. SignalID is used in a
-%%                         SignalsDescriptor
-%%         Description
-%%         SignalType: One of:
-%%                         OO (On/Off)
-%%                         TO (TimeOut)
-%%                         BR (Brief)
+%%          A package may extend an existing package.  The version of the
+%%          original package must be specified.  When a package extends
+%%          another package it shall only add additional Properties,
+%%          Events, Signals, Statistics and new possible values for an
+%%          existing parameter described in the original package.  An
+%%          extended package shall not redefine or overload an identifier
+%%          defined in the original package and packages it may have
+%%          extended (multiple levels of extension).  Hence, if package B
+%%          version 1 extends package A version 1, version 2 of B will not
+%%          be able to extend the A version 2 if A version 2 defines a name
+%%          already in B version 1.
 %% 
 %% 
-%% Note:SignalType may be defined such that it is dependent on the
-%%           value of one or more parameters. Signals that would be played
-%%      with SignalType BR should have a default duration. The package has
-%%      to define the default duration and signalType.
+%% 12.1.2   Properties
 %% 
-%%           Duration: in hundredths of seconds
-%%           Additional Parameters: See section 12.2
+%%    Properties defined by the package, specifying:
+%% 
+%%       Property Name: only descriptive
+%% 
+%%       PropertyID: is an identifier
+%% 
+%%       Description:
+%% 
+%%       Type: One of:
+%% 
+%%          Boolean
+%% 
+%%          String: UTF-8 string
+%% 
+%%          Octet String: A number of octets.  See Annex A and Annex B.3
+%%          for encoding
+%% 
+%%          Integer: 4 byte signed integer
+%% 
+%%          Double: 8 byte signed integer
+%% 
+%%          Character: unicode UTF-8 encoding of a single letter.  Could be
+%%          more than one octet.
+%% 
+%%          Enumeration: one of a list of possible unique values (see 12.3)
+%% 
+%%          Sub-list: a list of several values from a list.  The type of
+%%          sub-list SHALL also be specified.  The type shall be chosen
+%%          from the types specified in this section (with the exception of
+%%          sub-list).  For example, Type: sub-list of enumeration.  The
+%%          encoding of sub-lists is specified in Annexes A and B.3.
+%% 
+%%       Possible values:
+%% 
+%%          A package MUST specify either a specific set of values or a
+%%          description of how values are determined.  A package MUST also
+%%          specify a default value or the default behaviour when the value
+%%          is omitted from its descriptor.  For example, a package may
+%%          specify that procedures related to the property are suspended
+%%          when its value is omitted.  A default value (but not
+%%          procedures) may be specified as provisionable.
+%% 
+%%       Defined in:
+%% 
+%%          Which H.248.1 descriptor the property is defined in.
+%%          LocalControl is for stream dependent properties.
+%%          TerminationState is for stream independent properties.  These
+%%          are expected to be the most common cases, but it is possible
+%%          for properties to be defined in other descriptors.
+%% 
+%%       Characteristics: Read/Write or both, and (optionally), global:
+%% 
+%%          Indicates whether a property is read-only, or read-write, and
+%%          if it is global.  If Global is omitted, the property is not
+%%          global.  If a property is declared as global, the value of the
+%%          property is shared by all Terminations realizing the package.
 %% 
 %% 
-%% 12.1.5.  Statistics
+%% 12.1.3   Events
 %% 
-%% Statistics defined by the package, specifying:
+%%    Events defined by the package, specifying:
 %% 
-%%         Statistic name: only descriptive.
-%%         StatisticID:  Is an identifier
-%%         StatisticID is used in a StatisticsDescriptor
-%%         Description
-%%         Units: unit of measure, e.g. milliseconds, packets
+%%       Event name: only descriptive
 %% 
+%%       EventID: is an identifier
 %% 
-%% 12.1.6.  Procedures
+%%       Description:
 %% 
-%% Additional guidance on the use of the package.
+%%       EventsDescriptor Parameters:
 %% 
-%% 12.2.  Guidelines to defining  Properties, Statistics and Parameters to
-%% Events and Signals.
+%%          Parameters used by the MGC to configure the event, and found in
+%%          the EventsDescriptor.  See 12.2.
 %% 
-%%         Parameter Name: only descriptive
-%%         ParameterID: Is an identifier
-%%         Type: One of:
-%%                 String: UTF-8 octet string
-%%                 Integer: 4 octet signed integer
-%%                 Double: 8 octet signed integer
-%%                 Character: Unicode UTF-8 encoding of a single letter.
-%%                         Could be more than one octet.
-%%                 Enumeration: One of a list of possible unique values
-%%                         (See 12.3)
-%%                 Sub-list: A list of several values from a list
-%%                 Boolean
-%%         Possible values:
-%%         Description:
+%%       ObservedEventsDescriptor Parameters:
+%% 
+%%          Parameters returned to the MGC in Notify requests and in
+%%          replies to command requests from the MGC that audit
+%%          ObservedEventsDescriptor, and found in the
+%%          ObservedEventsDescriptor.  See 12.2.
 %% 
 %% 
-%% 12.3.  Lists
+%% 12.1.4   Signals
 %% 
-%% Possible values for parameters include enumerations.  Enumerations may
-%% be defined in a list.  It is recommended that the list be IANA
-%% registered so that packages that extend the list can be defined without
-%% concern for conflicting names.
+%%    Signals defined by the package, specifying:
 %% 
-%% 12.4.  Identifiers
+%%       Signal Name: only descriptive
 %% 
-%% Identifiers in text encoding shall be strings of up to 64 characters,
-%% containing no spaces, starting with an alphanumeric character and con-
-%% sisting of alphanumeric characters and / or digits, and possibly includ-
-%% ing the special character underscore ("_").  Identifiers in binary
-%% encoding are 2 octets long.  Both text and binary values shall be speci-
-%% fied for each identifier, including identifiers used as values in
-%% enumerated types.
+%%       SignalID: is an identifier.  SignalID is used in a
+%%       SignalsDescriptor
+%% 
+%%       Description
+%% 
+%%       SignalType: one of:
+%% 
+%%          OO (On/Off)
+%% 
+%%          TO (TimeOut)
+%% 
+%%          BR (Brief)
+%% 
+%%       NOTE - SignalType may be defined such that it is dependent on the
+%%       value of one or more parameters.  The package MUST specify a
+%%       default signal type.  If the default type is TO, the package MUST
+%%       specify a default duration which may be provisioned.  A default
+%%       duration is meaningless for BR.
+%% 
+%%       Duration: in hundredths of seconds
+%% 
+%%       Additional Parameters: see 12.2
+%% 
+%% 
+%% 12.1.5   Statistics
+%% 
+%%    Statistics defined by the package, specifying:
+%% 
+%%       Statistic name: only descriptive
+%% 
+%%       StatisticID: is an identifier
+%% 
+%%       StatisticID is used in a StatisticsDescriptor
+%% 
+%%       Description:
+%% 
+%%       Units: unit of measure, e.g., milliseconds, packets
+%% 
+%% 
+%% 12.1.6   Procedures
+%% 
+%%    Additional guidance on the use of the package.
+%% 
+%% 
+%% 12.2  Guidelines to defining Parameters to Events and Signals
+%% 
+%%    Parameter Name: only descriptive
+%% 
+%%    ParameterID: is an identifier.  The textual ParameterID of parameters
+%%    to Events and Signals shall not start with "EPA" and "SPA",
+%%    respectively.  The textual ParameterID shall also not be "ST",
+%%    "Stream", "SY", "SignalType", "DR", "Duration", "NC",
+%%    "NotifyCompletion", "KA", "Keepactive", "EB", "Embed", "DM" or
+%%    "DigitMap".
+%% 
+%%    Type: One of:
+%% 
+%%       Boolean
+%% 
+%%       String: UTF-8 octet string
+%%       Octet String: A number of octets.  See Annex A and Annex B.3 for
+%%       encoding
+%% 
+%%       Integer: 4-octet signed integer
+%% 
+%%       Double: 8-octet signed integer
+%% 
+%%       Character: unicode UTF-8 encoding of a single letter.  Could be
+%%       more than one octet.
+%% 
+%%       Enumeration: one of a list of possible unique values (see 12.3)
+%% 
+%%       Sub-list: a list of several values from a list (not supported for
+%%       statistics).  The type of sub-list SHALL also be specified.  The
+%%       type shall be chosen from the types specified in this section
+%%       (with the exception of sub-list).  For example, Type: sub-list of
+%%       enumeration.  The encoding of sub-lists is specified in Annexes A
+%%       and B.3.
+%% 
+%%    Possible values:
+%% 
+%%       A package MUST specify either a specific set of values or a
+%%       description of how values are determined.  A package MUST also
+%%       specify a default value or the default behavior when the value is
+%%       omitted from its descriptor.  For example, a package may specify
+%%       that procedures related to the parameter are suspended when it
+%%       value is omitted.  A default value (but not procedures) may be
+%%       specified as provisionable.
+%% 
+%%    Description:
+%% 
+%% 
+%% 12.3  Lists
+%% 
+%%    Possible values for parameters include enumerations.  Enumerations
+%%    may be defined in a list.  It is recommended that the list be IANA
+%%    registered so that packages that extend the list can be defined
+%%    without concern for conflicting names.
+%% 
+%% 
+%% 12.4  Identifiers
+%% 
+%%    Identifiers in text encoding shall be strings of up to 64 characters,
+%%    containing no spaces, starting with an alphabetic character and
+%%    consisting of alphanumeric characters and/or digits, and possibly
+%%    including the special character underscore ("_").
+%% 
+%%    Identifiers in binary encoding are 2 octets long.
+%% 
+%%    Both text and binary values shall be specified for each identifier,
+%%    including identifiers used as values in enumerated types.
+%% 
+%% 
+%% 12.5  Package registration
+%% 
+%%    A package can be registered with IANA for interoperability reasons.
+%%    See clause 13 for IANA Considerations.
+%% 
 %%----------------------------------------------------------------------
 
 capabilities() ->
@@ -281,39 +383,39 @@ decode(profile, Package) ->
 decode(dialplan, Dialplan) ->
     decode_dialplan(Dialplan);
 decode(Scope, [A, B | Item]) when atom(Scope) ->
-%     i("decode(~p) -> entry with"
-%       "~n   A:    ~p"
-%       "~n   B:    ~p"
-%       "~n   Item: ~p",[Scope,A,B,Item]),
+    ?d("decode(~p) -> entry with"
+       "~n   A:    ~p"
+       "~n   B:    ~p"
+       "~n   Item: ~p", [Scope, A, B, Item]),
     case decode_package([A, B]) of
 	"" ->
-% 	    i("decode_package -> \"no\" package",[]),
+ 	    ?d("decode -> \"no\" package",[]),
 	    decode_item(Scope, [A, B], Item);
 	Package ->
-% 	    i("decode -> Package: ~p",[Package]),
+ 	    ?d("decode -> Package: ~p", [Package]),
 	    Package ++ "/" ++ decode_item(Scope, [A, B], Item)
     end;
 decode({Scope, [A, B | Item]}, SubItem) when atom(Scope) ->
-%     i("decode(~p) -> entry with"
-%       "~n   A:       ~p"
-%       "~n   B:       ~p"
-%       "~n   Item:    ~p"
-%       "~n   SubItem: ~p",[Scope, A, B, Item, SubItem]),
+    ?d("decode(~p) -> entry with"
+       "~n   A:       ~p"
+       "~n   B:       ~p"
+       "~n   Item:    ~p"
+       "~n   SubItem: ~p", [Scope, A, B, Item, SubItem]),
     decode_item({Scope, Item}, [A, B], SubItem).
 
 decode_item(Scope, [A, B], Item) ->
-%     i("decode_item -> entry",[]),
+    ?d("decode_item -> entry",[]),
     case A of
         16#00 -> 
             case B of
-                16#0e -> decode_g(Scope, Item);
-                16#0f -> decode_root(Scope, Item);
-                16#01 -> decode_tonegen(Scope, Item);
-                16#02 -> decode_tonedet(Scope, Item);
-                16#03 -> decode_dg(Scope, Item);
-                16#04 -> decode_dd(Scope, Item);
-                16#05 -> decode_cg(Scope, Item);
-                16#06 -> decode_cd(Scope, Item);
+                16#01 -> decode_g(Scope, Item);
+                16#02 -> decode_root(Scope, Item);
+                16#03 -> decode_tonegen(Scope, Item);
+                16#04 -> decode_tonedet(Scope, Item);
+                16#05 -> decode_dg(Scope, Item);
+                16#06 -> decode_dd(Scope, Item);
+                16#07 -> decode_cg(Scope, Item);
+                16#08 -> decode_cd(Scope, Item);
                 16#09 -> decode_al(Scope, Item);
                 16#0a -> decode_ct(Scope, Item);
                 16#0b -> decode_nt(Scope, Item);
@@ -333,19 +435,20 @@ decode_item(Scope, [A, B], Item) ->
     end.
 
 decode_package(Package) ->
-%     i("decode_package -> entry with Package: ~p",[Package]),
+    ?d("decode_package -> entry with"
+       "~n   Package: ~p", [Package]),
     [A, B] = Package,
     case A of
         16#00 -> 
             case B of
-                16#0e -> "g";
-                16#0f -> "root";
-                16#01 -> "tonegen";
-                16#02 -> "tonedet";
-                16#03 -> "dg";
-                16#04 -> "dd";
-                16#05 -> "cg";
-                16#06 -> "cd";
+                16#01 -> "g";
+                16#02 -> "root";
+                16#03 -> "tonegen";
+                16#04 -> "tonedet";
+                16#05 -> "dg";
+                16#06 -> "dd";
+                16#07 -> "cg";
+                16#08 -> "cd";
                 16#09 -> "al";
                 16#0a -> "ct";
                 16#0b -> "nt";
@@ -406,36 +509,37 @@ encode(profile, Profile) ->
 encode(dialplan, Dialplan) ->
     encode_dialplan(Dialplan);
 encode(Scope, PackageItem) when atom(Scope) ->
-%     i("encode(~p) -> entry with PackageItem: ~p",[Scope, PackageItem]),
+    ?d("encode(~p) -> entry with"
+       "~n   PackageItem: ~p", [Scope, PackageItem]),
     case string:tokens(PackageItem, [$/]) of
 	[Package, Item] ->
-%             i("encode -> "
-%               "~n   Package: ~p"
-%               "~n   Item:    ~p",[Package, Item]),
+	    ?d("encode -> "
+	       "~n   Package: ~p"
+	       "~n   Item:    ~p", [Package, Item]),
 	    encode_package(Package) ++ encode_item(Scope, Package, Item);
 	[Item] ->
-%             i("encode -> Item: ~p",[Item]),
+	    ?d("encode -> Item: ~p", [Item]),
 	    [16#00, 16#00 | encode_native(Scope, Item)]
     end;
 encode({Scope, PackageItem}, SubItem) when atom(Scope) ->
-%     i("encode(~p) -> entry with"
-%       "~n   PackageItem: ~p"
-%       "~n   SubItem:     ~p",[Scope, PackageItem, SubItem]),
+    ?d("encode(~p) -> entry with"
+       "~n   PackageItem: ~p"
+       "~n   SubItem:     ~p", [Scope, PackageItem, SubItem]),
     case string:tokens(PackageItem, [$/]) of
 	[Package, Item] ->
-%             i("encode -> "
-%               "~n   Package: ~p"
-%               "~n   Item:    ~p",[Package, Item]),
+	    ?d("encode -> "
+	       "~n   Package: ~p"
+	       "~n   Item:    ~p", [Package, Item]),
 	    encode_item({Scope, Item}, Package, SubItem);
 	[_Item] ->
-%             i("encode -> _Item: ~p",[_Item]),
+	    ?d("encode -> _Item: ~p", [_Item]),
 	    encode_native(Scope, SubItem)
     end.
 
 encode_item(_Scope, _Package, "*") ->
     [16#ff, 16#ff];
 encode_item(Scope, Package, Item) ->
-%     i("encode_item(~s) -> entry",[Package]),
+    ?d("encode_item(~s) -> entry", [Package]),
     case Package of
         "g"       -> encode_g(Scope, Item);
         "root"    -> encode_root(Scope, Item);
@@ -449,29 +553,29 @@ encode_item(Scope, Package, Item) ->
         "ct"      -> encode_ct(Scope, Item);
         "nt"      -> encode_nt(Scope, Item);
         "rtp"     -> encode_rtp(Scope, Item);
-        "swb"     -> encode_swb(Scope, Item);
         "tdmc"    -> encode_tdmc(Scope, Item);
-        ""        -> encode_native(Scope, Item)
+        ""        -> encode_native(Scope, Item);
+        "swb"     -> encode_swb(Scope, Item)
     end.
 
 encode_package(Package) ->
     case Package of
-        "g"       -> [16#00, 16#0e];
-        "root"    -> [16#00, 16#0f];
-        "tonegen" -> [16#00, 16#01];
-        "tonedet" -> [16#00, 16#02];
-        "dg"      -> [16#00, 16#03];
-        "dd"      -> [16#00, 16#04];
-        "cg"      -> [16#00, 16#05];
-        "cd"      -> [16#00, 16#06];
+        "g"       -> [16#00, 16#01];
+        "root"    -> [16#00, 16#02];
+        "tonegen" -> [16#00, 16#03];
+        "tonedet" -> [16#00, 16#04];
+        "dg"      -> [16#00, 16#05];
+        "dd"      -> [16#00, 16#06];
+        "cg"      -> [16#00, 16#07];
+        "cd"      -> [16#00, 16#08];
         "al"      -> [16#00, 16#09];
         "ct"      -> [16#00, 16#0a];
         "nt"      -> [16#00, 16#0b];
         "rtp"     -> [16#00, 16#0c];
-        "swb"     -> [16#00, 16#0c];
         "tdmc"    -> [16#00, 16#0d];
         ""        -> [16#00, 16#00];
-	"*"       -> [16#ff, 16#ff]
+	"*"       -> [16#ff, 16#ff];
+        "swb"     -> [16#fe, 16#fe]
     end.
 
 encode_profile(Profile) ->
@@ -570,8 +674,8 @@ capabilities_root() ->
      {property, "maxTerminationsPerContext"},
      {property, "normalMGExecutionTime"},
      {property, "normalMGCExecutionTime"},
-     {property, "MGProvisionalResponseTimerValue"}, %% BUGBUG: leading capital?
-     {property, "MGCProvisionalResponseTimerValue"} %% BUGBUG: leading capital?
+     {property, "MGProvisionalResponseTimerValue"},
+     {property, "MGCProvisionalResponseTimerValue"}
     ].
 
 encode_root(Scope, Item) ->
@@ -640,10 +744,10 @@ decode_tonegen(signal, Item) ->
 	[16#00, 16#01] -> "pt"
     end;
 
-decode_tonegen({signal_parameter, Item}, _SubItem) ->
+decode_tonegen({signal_parameter, Item}, SubItem) ->
     case Item of
         [16#00, 16#01] -> % Event: pt
-            case Item of
+            case SubItem of
                 [16#00, 16#01] -> "tl";
                 [16#00, 16#02] -> "ind"
             end
@@ -747,8 +851,8 @@ capabilities_dg() ->
      {signal, "d7"},
      {signal, "d8"},
      {signal, "d9"},
-     {signal, "d*"},
-     {signal, "d#"},
+     {signal, "ds"},
+     {signal, "do"},
      {signal, "da"},
      {signal, "db"},
      {signal, "dc"},
@@ -769,8 +873,8 @@ encode_dg(Scope, Item) ->
                 "d7" -> [16#00, 16#17];
                 "d8" -> [16#00, 16#18];
                 "d9" -> [16#00, 16#19];
-                "d*" -> [16#00, 16#20];
-                "d#" -> [16#00, 16#21];
+                "ds" -> [16#00, 16#20];
+                "do" -> [16#00, 16#21];
                 "da" -> [16#00, 16#1a];
                 "db" -> [16#00, 16#1b];
                 "dc" -> [16#00, 16#1c];
@@ -792,8 +896,8 @@ decode_dg(Scope, Item) ->
                 [16#00, 16#17] -> "d7";
                 [16#00, 16#18] -> "d8";
                 [16#00, 16#19] -> "d9";
-                [16#00, 16#20] -> "d*";
-                [16#00, 16#21] -> "d#";
+                [16#00, 16#20] -> "ds";
+                [16#00, 16#21] -> "do";
                 [16#00, 16#1a] -> "da";
                 [16#00, 16#1b] -> "db";
                 [16#00, 16#1c] -> "dc";
@@ -1010,7 +1114,8 @@ capabilities_al() ->
     ].
 
 encode_al(event, Item) ->
-%     i("encode_al(event) -> entry with Item: ~p",[Item]),
+    ?d("encode_al(event) -> entry with"
+       "~n   Item: ~p", [Item]),
     case Item of
 	"on" -> [16#00, 16#04];
 	"of" -> [16#00, 16#05];
@@ -1018,8 +1123,8 @@ encode_al(event, Item) ->
     end;
 
 encode_al({event_parameter, Item}, SubItem) ->
-%     i("encode_al({event_parameter,~p}) -> entry with SubItem: ~p",
-%       [Item,SubItem]),
+    ?d("encode_al({event_parameter,~p}) -> entry with"
+       "~n   SubItem: ~p", [Item, SubItem]),
     case Item of
 	"on" ->
             case SubItem of
@@ -1039,14 +1144,15 @@ encode_al({event_parameter, Item}, SubItem) ->
     end;
 
 encode_al(signal, Item) ->
-%     i("encode_al(signal) -> entry with Item: ~p",[Item]),
+    ?d("encode_al(signal) -> entry with"
+       "~n   Item: ~p", [Item]),
     case Item of
 	"ri"    -> [16#00, 16#02]
     end;
 
 encode_al({signal_parameter, Item}, SubItem) ->
-%     i("encode_al({signal_parameter,~p}) -> entry with SubItem: ~p",
-%       [Item,SubItem]),
+    ?d("encode_al({signal_parameter,~p}) -> entry with"
+       "~n   SubItem: ~p", [Item, SubItem]),
     case Item of
         "ri" ->
             case SubItem of
@@ -1056,17 +1162,17 @@ encode_al({signal_parameter, Item}, SubItem) ->
     end.
 
 decode_al(event, SubItem) ->
-%     i("decode_al(event) -> entry with"
-%       "~n   SubItem: ~p",[SubItem]),
+    ?d("decode_al(event) -> entry with"
+       "~n   SubItem: ~p", [SubItem]),
     case SubItem of
 	[16#00, 16#04] -> "on";
 	[16#00, 16#05] -> "of";
 	[16#00, 16#06] -> "fl"
     end;
 
-decode_al({event_parameter,Item}, SubItem) ->
-%     i("decode_al({event_parameter,~p}) -> entry with"
-%       "~n   SubItem: ~p",[Item,SubItem]),
+decode_al({event_parameter, Item}, SubItem) ->
+    ?d("decode_al({event_parameter,~p}) -> entry with"
+       "~n   SubItem: ~p", [Item, SubItem]),
     case Item of
         [16#00,16#04] -> %% Event: on
             case SubItem of
@@ -1086,15 +1192,15 @@ decode_al({event_parameter,Item}, SubItem) ->
     end;
 
 decode_al(signal, SubItem) ->
-%     i("decode_al(signal) -> entry with"
-%       "~n   SubItem: ~p",[SubItem]),
+    ?d("decode_al(signal) -> entry with"
+       "~n   SubItem: ~p", [SubItem]),
     case SubItem of
 	[16#00, 16#02] -> "ri"
     end;
 
-decode_al({signal_parameter,Item}, SubItem) ->
-%     i("decode_al({signal_parameter,~p}) -> entry with"
-%       "~n   SubItem: ~p",[Item,SubItem]),
+decode_al({signal_parameter, Item}, SubItem) ->
+    ?d("decode_al({signal_parameter,~p}) -> entry with"
+       "~n   SubItem: ~p", [Item, SubItem]),
     case Item of
         [16#00,16#02] -> %% Event: ri
             case SubItem of
@@ -1154,6 +1260,7 @@ decode_ct(signal, Item) ->
 	[16#00, 16#04] -> "rsp"
     end.
 
+
 %%----------------------------------------------------------------------
 %% Name:    nt - Network Package
 %% Version: 1
@@ -1185,7 +1292,7 @@ encode_nt({event_parameter, Item}, SubItem) ->
     case Item of
         "netfail" ->
             case SubItem of
-                "cs" -> [16#00, 16#06]
+                "cs" -> [16#00, 16#01]
             end;
         "qualert" ->
             case SubItem of
@@ -1212,7 +1319,7 @@ decode_nt({event_parameter, Item}, SubItem) ->
     case Item of
         [16#00, 16#05] -> % Event netfail
             case SubItem of
-                [16#00, 16#06] -> "cs"
+                [16#00, 16#01] -> "cs"
             end;
         [16#00, 16#06] -> % Event qualert
             case Item of
@@ -1269,7 +1376,7 @@ decode_rtp(event, Item) ->
     case Item of
 	[16#00, 16#01] -> "pltrans"
     end;
-decode_rtp({event_parameterm, Item}, SubItem) ->
+decode_rtp({event_parameter, Item}, SubItem) ->
     case Item of
         [16#00, 16#01] -> % Event pltrans
             case SubItem of
@@ -1374,101 +1481,6 @@ decode_swb(Scope, Item) ->
 %% ets, e.g., Send(0), Receive(1).
 %%----------------------------------------------------------------------
 %% 
-%% C.1.  General Media Attributes
-%% 
-%% ________________________________________________________________________
-%% |PropertyID   | Tag |  Type     |  Value                               |
-%% |Media        |1001 |Enumeration|Audio(0), Video(1) ,Data(2),          |
-%% |TransMode    |1002 |Enumeration|Send(0), Receive(1), Send&Receive(2)  |
-%% |NumChan      |1003 |UINT       | 0-255                                |
-%% |SamplingRate |1004 |UINT       | 0-2^32                               |
-%% |Bitrate      |1005 |Integer    |(0..4294967295) Note-units of 100 bit |
-%% |Acodec       |1006 |Octet str  |Audio Codec Type                      |
-%% |Samplepp     |1007 |UINT       |Maximum samples/fr per packet:0-65535 |
-%% |Silencesupp  |1008 |BOOLEAN    |Silence Suppression                   |
-%% |Encrypttype  |1009 |Octet str  |Ref.: rec. H.245                      |
-%% |Encryptkey   |100A |Octet str  |SIZE(0..65535) Encryption key         |
-%% |Echocanc     |100B |Enumeration|Echo Canceller:Off(0),G.165(1),G168(2)|
-%% |Gain         |100C |UINT       |Gain in db: 0-65535                   |
-%% |Jitterbuff   |100D |UINT       |Jitter buffer size in ms: 0-65535     |
-%% |PropDelay    |100E |UINT       |  Propagation Delay: 0..65535         |
-%% |RTPpayload   |100F |integer    |Payload type in RTP Profile           |
-%% |_____________|_____|___________|______________________________________|
-%% 
-%% 
-%% C.2.  Mux Properties
-%% 
-%% _________________________________________________________________________
-%% |PropertyID|  Tag       |  Type        |  Value                         |
-%% |H.221     |  2001      |  Octet string|   H222LogicalChannelParameters |
-%% |H223      |  2002      |  Octet string|   H223LogicalChannelParameters |
-%% |V76       |  2003      |  Octet String|   V76LogicalChannelParameters  |
-%% |H2250     |  2004      |  Octet String|   H2250LogicalChannelParameters|
-%% |__________|____________|______________|________________________________|
-%% 
-%% 
-%% C.3.  General Bearer Properties
-%% 
-%%  _____________________________________________________________________
-%% | PropertyID|  Tag       |  Type       |  Value                      |
-%% | Mediatx   |  3001      |  Enumeration|  Media Transport Type       |
-%% | BIR       |  3002      |  4 OCTET    |  Value depends on transport |
-%% | NSAP      |  3003      |  1-20 OCTETS|  Ref: ITU X.213 Annex A     |
-%% |___________|____________|_____________|_____________________________|
-%% 
-%% C.4.  General ATM Properties
-%% 
-%%    _________________________________________________________________
-%%   | PropertyID|  Tag |  Type       |  Value                        |
-%%   | AESA      |  4001|  20 OCTETS  |  ATM End System Address       |
-%%   | VPVC      |  4002|  2x16b int  |  VPC-VCI                      |
-%%   | SC        |  4003|  4 bits     |  Service Category             |
-%%   | BCOB      |  4004|  5b integer |  Broadband Bearer Class       |
-%%   | BBTC      |  4005|  octet      |  Broadband Transfer Capability|
-%%   | ATC       |  4006|  Enumeration|  I.371 ATM Traffic Cap.       |
-%%   | STC       |  4007|  2 bits     |  Susceptibility to clipping   |
-%%   | UPCC      |  4008|  2 bits     |  User Plane Connection config |
-%%   | PCR0      |  4009|  24b integer|  Peak Cell Rate CLP=0         |
-%%   | SCR0      |  400A|  24b integer|  Sustainable Cell Rate CLP=0  |
-%%   | MBS0      |  400B|  24b integer|  Maximum Burst Size CLP=0     |
-%%   | PCR1      |  400C|  24b integer|  Peak Cell Rate CLP=0+1       |
-%%   | SCR2      |  400D|  24b integer|  Sustain. Cell Rate CLP=0+1   |
-%%   | MBS3      |  400E|  24b integer|  Maximum Burst Size CLP=0+1   |
-%%   | BEI       |  400F|  Boolean    |  Best Effort Indicator        |
-%%   | TI        |  4010|  Boolean    |  Tagging                      |
-%%   | FD        |  4011|  Boolean    |  Frame Discard                |
-%%   | FCDV      |  4012|  24b integer|  Forward P-P CDV              |
-%%   | BCDV      |  4013|  24b integer|  Backward P-P CDV             |
-%%   | FCLR0     |  4014|  8b integer |  Fwd Cell Loss Ratio CLP=0    |
-%%   | BCLR0     |  4015|  8b integer |  Bkwd P-P CLR CLP=0           |
-%%   | FCLR1     |  4016|  8b integer |  Fwd Cell Loss Ratio CLP=0+1  |
-%%   | BCLR1     |  4017|  8b integer |  Bkwd P-P CLR CLP=0+1         |
-%%   | FCDV      |  4018|  24b integer|  Fwd Cell Delay Variation     |
-%%   | BCDV      |  4019|  24b integer|  Bkwd Cell Delay Variation    |
-%%   | FACDV     |  401A|  24b integer|  Fwd Acceptable P-P-P CDV     |
-%%   | BACDV     |  401B|  24b integer|  Bkwd Acceptable P-P CDV      |
-%%   | FCCDV     |  401C|  24b integer|  Fwd Cumulative P-P CDV       |
-%%   | BCCDV     |  401D|  24b integer|  Bkwd Cumulative P-P CDV      |
-%%   | FCLR      |  401E|  8b integer |  Acceptable Fwd CLR           |
-%%   | BCLR      |  401F|  8b integer |  Acceptable Bkwd CLR          |
-%%   | EETD      |  4020|  16b integer|  End-to-end transit delay     |
-%%   | Mediatx   |  4021|             |  AAL Type                     |
-%%   | QosClass  |  4022|  Integer    |  0-4 Qos Class                |
-%%   | AALtype   |  4023|  1 OCTET    |  AAL Type Reference           |
-%%   |___________|______|_____________|_______________________________|
-%% 
-%% 
-%% C.5.  Frame Relay
-%% 
-%%  ______________________________________________________________________
-%% | PropertyID|  Tag |  Type            |  Value                        |
-%% | DLCI      |  5001|  Unsigned Integer|  Data link connection id      |
-%% | CID       |  5002|  Unsigned Integer|  sub-channel id.              |
-%% | SID       |  5003|  Unsigned Integer|  silence insertion descriptor |
-%% | Payload   |  5004|  Unsigned Integer|  Primary Payload Type         |
-%% |___________|______|__________________|_______________________________|
-%% 
-%% 
 %% C.6.  IP
 %% 
 %%     ________________________________________________________________
@@ -1477,107 +1489,8 @@ decode_swb(Scope, Item) ->
 %%    | IPv6      |  6002      |  128 BITS    |  IPv6 Address         |
 %%    | Port      |  6003      |  Unsigned Int|  Port                 |
 %%    | Porttype  |  6004      |  Enumerated  |  TCP(0),UDP(1),SCTP(2)|
-%%    | UDP       |  6004      |  Boolean     |                       |
 %%    |___________|____________|______________|_______________________|
 %%    
-%% BUGBUG: UDP 6004 should be 6005??
-%% 
-%% C.7.  ATM AAL2
-%% 
-%% _______________________________________________________________________________
-%% |PropertyID|  Tag    |  Type         |  Value                                 |
-%% |AESA      |  7001   |  20 OCTETS    |  AAL2 service endpoint address         |
-%% |BIR       |  See C.3|  4 OCTETS     |  Served user generated reference       |
-%% |ALC       |  7002   |  12 OCTETS    |  AAL2 link                             |
-%% |SSCS      |  7003   |  8..14 OCTETS |  Service specific convergence sublayer |
-%% |SUT       |  7004   |  1..254 octets|  Served user transport param           |
-%% |TCI       |  7005   |  BOOLEAN      |  Test connection                       |
-%% |Timer_CU  |  7006   |  32b integer  |  Timer-CU                              |
-%% |MaxCPSSDU |  7007   |  8b integer   |  Max. Common Part Sublayer SDU         |
-%% |SCLP      |  7008   |  Boolean      |  Set Cell Local PriorityLP bit         |
-%% |EETR      |  7009   |  Boolean      |  End to End Timing Required            |
-%% |CID       |  700A   |  8 bits       |  subchannel id                         |
-%% |__________|_________|_______________|________________________________________|
-%% 
-%% 
-%% C.8.  ATM AAL1
-%% 
-%% ________________________________________________________________________________
-%% |PropertyID|  Tag          |  Type         |  Value                            |
-%% |BIR       |  See Table C.3|  4 OCTETS     |  GIT(Generic Identifier Transport)|
-%% |AAL1ST    |  8001         |  1 OCTET      |  AAL1 Subtype:                    |
-%% |8002      |  1 OCTET      |  CBR Rate     |                                   |
-%% |SCRI      |  8003         |  1 OCTET      |  Source Clock Frequency Recovery  |
-%% |ECM       |  8004         |  1 OCTET      |  Error Correction Method          |
-%% |SDTB      |  8005         |  16b integer  |  Structured Data Transfer Blcksize|
-%% |PFCI      |  8006         |  8b integer   |  Partially filled cells identifier|
-%% |EETR      |  See Table C.7|  See Table C.7|                                   |
-%% |__________|_______________|_______________|___________________________________|
-%% 
-%% C.9.  Bearer Capabilities
-%% ________________________________________________________________________
-%% |PropertyID   |  Tag |  Type       |  Value                            |
-%% |TMR          |  9001|  1 OCTET    |  Transmission Medium Requirement  |
-%% |TMRSR        |  9002|  1 OCTET    |  Trans. Medium Requirement Subrate|
-%% |Contcheck    |  9003|  BOOLEAN    |  Continuity Check                 |
-%% |ITC          |  9004|  5 BITS     |  Information Transfer Capability  |
-%% |TransMode    |  9005|  2 BITS     |  Transfer Mode                    |
-%% |TransRate    |  9006|  5 BITS     |  Transfer Rate                    |
-%% |MULT         |  9007|  7 BITS     |  Rate Multiplier                  |
-%% |layer1prot   |  9008|  5 BITS     |  User Information Layer 1 Protocol|
-%%					 Reference: ITU Recommendation Q.931 
-%%					 Bits 5 4 3 2 1 
-%%					 00001   CCITT standardized rate adaption V.110 and X.30. 
-%%					 00010 - Recommendation G.711 u-law 
-%%					 00011 - Recommendation G.711 A-law 
-%%					 00100   Recommendation G.721 32 kbit/s 
-%%					 ADPCM and Recommendation I.460. 
-%%					 00101 - Recommendations H.221 and H.242 
-%%					 00110   Recommendations H.223 and H.245 
-%%					 00111   Non-ITU-T standardized rate adaption. 
-%%					 01000   ITU-T standardized rate adaption V.120. 
-%%					 01001   CCITT standardized rate adaption X.31 
-%%					 HDLC flag stuffing. 
-%%					 All other values are reserved.           
-%% |Syncasync    |  9009|  BOOLEAN    |  Synchronous-Asynchronous         |
-%% |Userrate     |  900B|  5 BITS     |  User Rate Reference              |
-%% |INTRATE      |  900C|  2 BITS     |  Intermediate Rate                |
-%% |Nictx        |  900D|  BOOLEAN    |  Tx Network Independent Clock     |
-%% |Nicrx        |  900E|  BOOLEAN    |  Rx Network independent clock     |
-%% |Flowconttx   |  900F|  BOOLEAN    |  Tx Flow Control                  |
-%% |Flowcontrx   |  9010|  BOOLEAN    |  Rx Flow control                  |
-%% |Rateadapthdr |  9011|  BOOLEAN    |  Rate adapt header-no header      |
-%% |Multiframe   |  9012|  BOOLEAN    |  Multiple frame estab.            |
-%% |OPMODE       |  9013|  BOOLEAN    |  Mode of operation                |
-%% |Llidnegot    |  9014|  BOOLEAN    |  Logical link identifier neg.     |
-%% |Assign       |  9015|  BOOLEAN    |  Assignor-assignee                |
-%% |Inbandneg    |  9016|  BOOLEAN    |  In-band or out-band negotiation  |
-%% |Stopbits     |  9017|  2 BITS     |  Number of stop bits              |
-%% |Databits     |  9018|  2 BIT      |  Number of data bits              |
-%% |Parity       |  9019|  3 BIT      |  Parity information               |
-%% |Duplexmode   |  901A|  BOOLEAN    |  Mode duplex                      |
-%% |Modem        |  901B|  6 BIT      |  Modem Type                       |
-%% |layer2prot   |  901C|  5 BIT      |  User info layer 2 protocol       |
-%% |layer3prot   |  901D|  5 BIT      |  User info layer 3 protocol       |
-%% |addlayer3prot|  901E|  OCTET      |  Addl User Info L3 protocol       |
-%% |DialledN     |  901F|  30 OCTETS  |  Dialled Number                   |
-%% |DiallingN    |  9020|  30 OCTETS  |  Dialling Number                  |
-%% |ECHOCI       |  9021|  Enumeration|  Echo Control Information         |
-%% |NCI          |  9022|  1 OCTET    |  Nature of Connection Indicators  |
-%% |USI          |  9023|  OCTET      |  User Service Information         |
-%% |             |      |  STRING     |  Reference: ITU Recommendation Q.763 Section 3.57 |
-%% |_____________|______|_____________|___________________________________|
-%% 
-%% 
-%% C.10.  AAL5 Properties
-%% 
-%%  ______________________________________________________________________
-%% | PropertyID|  Tag    |  Type       |  Value                          |
-%% | FMSDU     |  A001   |  32b integer|  Forward Maximum CPCS-SDU Size: |
-%% | BMSDU     |  A002   |  2b integer |  Backwards Maximum CPCS-SDU Size|
-%% | SSCS      |  See C.7|  See C.7    |  See table C.                   |
-%% | SC        |  See C.4|  See C.4    |  See table C.4                  |
-%% |___________|_________|_____________|_________________________________|
 %% 
 %% C.11.  SDP Equivalents
 %% 
@@ -1601,32 +1514,17 @@ decode_swb(Scope, Item) ->
 %%     |           |      |        |  Reference: IETF RFC 2327       |
 %%     |___________|______|________|_________________________________|
 %% 
-%% 
-%% C.12.  H.245
-%% 
-%% ________________________________________________________________________
-%% |OLC   |  C001|  octet string|  H.245 OpenLogicalChannel structure.    |
-%% |OLCack|  C002|  octet string|   H.245 OpenLogicalChannelAck structure.|
-%% |OLCcnf|  C003|  octet string|   OpenLogicalChannelConfirm structure.  |
-%% |OLCrej|  C004|  octet string|   OpenLogicalChannelReject structure.   |
-%% |CLC   |  C005|  octet string|   CloseLogicalChannel structure.        |
-%% |CLCack|  C006|  octet string|   CloseLogicalChannelAck structure.     |
-%% |______|______|______________|_________________________________________|
-%% 
 %%----------------------------------------------------------------------
 
 capabilities_native() ->
     [
-     {property, "Media"},
-     {property, "TransMode"},
-     {property, "NumChan"},
-     {property, "SamplingRate"},
-     {property, "RTPpayload"},
+     %% C.6.  IP 
      {property, "IPv4"},
      {property, "IPv6"},
      {property, "Port"},
      {property, "Porttype"},
-     {property, "UDP"},
+
+     %% C.11. SDP Equivalents
      {property, "v"},
      {property, "o"},
      {property, "s"},
@@ -1642,67 +1540,17 @@ capabilities_native() ->
      {property, "t"},
      {property, "r"},
      {property, "m"}
-     %% {property, "SDP_V"},
-     %% {property, "SDP_O"},
-     %% {property, "SDP_S"},
-     %% {property, "SDP_I"},
-     %% {property, "SDP_U"},
-     %% {property, "SDP_E"},
-     %% {property, "SDP_P"},
-     %% {property, "SDP_C"},
-     %% {property, "SDP_B"},
-     %% {property, "SDP_Z"},
-     %% {property, "SDP_K"},
-     %% {property, "SDP_A"},
-     %% {property, "SDP_T"},
-     %% {property, "SDP_R"},
-     %% {property, "SDP_M"} 
     ].
 
 encode_native(Scope, Item) ->
     case Scope of
         property ->
 	    case Item of
-		%% General
-		"Media"        -> [16#10, 16#01];
-		"TransMode"    -> [16#10, 16#02];
-		"NumChan"      -> [16#10, 16#03];
-		"SamplingRate" -> [16#10, 16#04];
-		"Bitrate"      -> [16#10, 16#05];
-		"Acodec"       -> [16#10, 16#06];
-		"Samplepp"     -> [16#10, 16#07];
-		"Silencesupp"  -> [16#10, 16#08];
-		"Encrypttype"  -> [16#10, 16#09];
-		"Encryptkey"   -> [16#10, 16#0a];
-		"Echocanc"     -> [16#10, 16#0b];
-		"Gain"         -> [16#10, 16#0c];
-		"Jitterbuff"   -> [16#10, 16#0d];
-		"PropDelay"    -> [16#10, 16#0e];
-		"RTPpayload"   -> [16#10, 16#0f];
-
 		%% IP
-		"IPv4"         -> [16#60, 16#01];
-		"IPv6"         -> [16#60, 16#02];
-		"Port"         -> [16#60, 16#03];
-		"Porttype"     -> [16#60, 16#04];
-		"UDP"          -> [16#60, 16#05];
-
-		%% %% SDP
-		%% "SDP_V" -> [16#b0, 16#01];
-		%% "SDP_O" -> [16#b0, 16#02];
-		%% "SDP_S" -> [16#b0, 16#03];
-		%% "SDP_I" -> [16#b0, 16#04];
-		%% "SDP_U" -> [16#b0, 16#05];
-		%% "SDP_E" -> [16#b0, 16#06];
-		%% "SDP_P" -> [16#b0, 16#07];
-		%% "SDP_C" -> [16#b0, 16#08];
-		%% "SDP_B" -> [16#b0, 16#09];
-		%% "SDP_Z" -> [16#b0, 16#0a];
-		%% "SDP_K" -> [16#b0, 16#0b];
-		%% "SDP_A" -> [16#b0, 16#0c];
-		%% "SDP_T" -> [16#b0, 16#0d];
-		%% "SDP_R" -> [16#b0, 16#0e];
-		%% "SDP_M" -> [16#b0, 16#0f]
+		"IPv4"     -> [16#60, 16#01];
+		"IPv6"     -> [16#60, 16#02];
+		"Port"     -> [16#60, 16#03];
+		"Porttype" -> [16#60, 16#04];
 
 		%% SDP
 		"v" -> [16#b0, 16#01];
@@ -1727,32 +1575,14 @@ decode_native(Scope, [Type, Item]) ->
     case Scope of
         property ->
             case Type of
-                16#10 ->
-		    case Item of
-			16#01 -> "Media";
-			16#02 -> "TransMode";
-			16#03 -> "NumChan";
-			16#04 -> "SamplingRate";
-			16#05 -> "Bitrate";
-			16#06 -> "Acodec";
-			16#07 -> "Samplepp";
-			16#08 -> "Silencesupp";
-			16#09 -> "Encrypttype";
-			16#0a -> "Encryptkey";
-			16#0b -> "Echocanc";
-			16#0c -> "Gain";
-			16#0d -> "Jitterbuff";
-			16#0e -> "PropDelay";
-			16#0f -> "RTPpayload"
-		    end;
-                16#60->
+		16#60 ->
 		    case Item of
 			16#01 -> "IPv4";
 			16#02 -> "IPv6";
 			16#03 -> "Port";
-			16#04 -> "Porttype";
-			16#05 -> "UDP"
+			16#04 -> "Porttype"
 		    end;
+
                 16#b0 ->
 		    case Item of
 			16#01 -> "v";
@@ -1770,32 +1600,12 @@ decode_native(Scope, [Type, Item]) ->
 			16#0d -> "t";
 			16#0e -> "r";
 			16#0f -> "m"
-
-			%% 16#01 -> "SDP_V";
-			%% 16#02 -> "SDP_O";
-			%% 16#03 -> "SDP_S";
-			%% 16#04 -> "SDP_I";
-			%% 16#05 -> "SDP_U";
-			%% 16#06 -> "SDP_E";
-			%% 16#07 -> "SDP_P";
-			%% 16#08 -> "SDP_C";
-			%% 16#09 -> "SDP_B";
-			%% 16#0a -> "SDP_Z";
-			%% 16#0b -> "SDP_K";
-			%% 16#0c -> "SDP_A";
-			%% 16#0d -> "SDP_T";
-			%% 16#0e -> "SDP_R";
-			%% 16#0f -> "SDP_M"
 		    end
             end
     end.
 
-% i(F,A) ->
-%     i(get(dbg),F,A).
+%% -------------------------------------------------------------------
 
-% i(true,F,A) ->
-%     S1 = io_lib:format("NRES1: " ++ F ++ "~n",A),
-%     S2 = lists:flatten(S1),
-%     io:format("~s",[S2]);
-% i(_,_F,_A) ->
-%     ok.
+% error(Reason) ->
+%     erlang:fault(Reason).
+ 

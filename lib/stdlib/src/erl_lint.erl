@@ -121,6 +121,11 @@ format_error({redefine_import,{{F,A},M}}) ->
     io_lib:format("function ~w/~w already imported from ~w", [F,A,M]);
 format_error({bad_inline,{F,A}}) ->
     io_lib:format("inlined function ~w/~w undefined", [F,A]);
+format_error({invalid_deprecated,D}) ->
+    io_lib:format("badly formed deprecated attribute ~w", [D]);
+format_error({bad_deprecated,{F,A}}) ->
+    io_lib:format("deprecated function ~w/~w undefined or not exported", 
+                  [F, A]);
 
 format_error(export_all) ->
     "non-recommended option 'export_all' used";
@@ -151,6 +156,8 @@ format_error({reserved_for_future,K}) ->
     io_lib:format("atom ~w: future reserved keyword - rename or quote", [K]);
 
 format_error(illegal_pattern) -> "illegal pattern";
+format_error(illegal_bin_pattern) ->
+    "binary patterns cannot be matched in parallel using '='";
 format_error(illegal_expr) -> "illegal expression";
 format_error(illegal_guard_expr) -> "illegal guard expression";
 
@@ -369,8 +376,9 @@ add_warning(false, _L, _W, St) -> St.
 
 forms(Forms, St0) ->
     St1 = bif_clashes(Forms, St0),
-    St = check_inlines(Forms, St1),
-    foldl(fun form/2, St, Forms).
+    St2 = foldl(fun form/2, St1, Forms),
+    St3 = check_inlines(Forms, St2),
+    check_deprecated(Forms, St3).
 
 %% form(Form, State) -> State'
 %%  Check a form returning the updated State. Handle generic cases here.
@@ -664,6 +672,7 @@ is_bif_clash(Name, Arity, #lint{clashes=Clashes}) ->
     ordsets:is_element({Name,Arity}, Clashes).
 
 check_inlines(Forms, St0) ->
+    %% St0#lint.defined could be used, but pseudolocals should not be inlined.
     Functions = [{Name,Arity} || {function,_L,Name,Arity,_Cs} <- Forms],
     Bad = [{FA,L} || {attribute, L, compile, {inline, FAs0}} <- Forms,
                      FA <- lists:flatten([FAs0]),
@@ -671,6 +680,52 @@ check_inlines(Forms, St0) ->
     foldl(fun ({FA,L}, St1) -> 
                   add_error(L, {bad_inline, FA}, St1)
           end, St0, Bad).
+
+check_deprecated(Forms, St0) ->
+    #lint{module = Mod, exports = X} = St0,
+    Bad = [{E,L} || {attribute, L, deprecated, Depr} <- Forms,
+                    D <- lists:flatten([Depr]),
+                    E <- depr_cat(D, X, Mod)],
+    foldl(fun ({E,L}, St1) -> 
+                  add_error(L, E, St1)
+          end, St0, Bad).
+
+depr_cat({F, A, Flg}=D, X, Mod) ->
+    case deprecated_flag(Flg) of
+        false -> [{invalid_deprecated,D}];
+        true -> depr_fa(F, A, X, Mod)
+    end;
+depr_cat({F, A}, X, Mod) ->
+    depr_fa(F, A, X, Mod);
+depr_cat(module, _X, _Mod) ->
+    [];
+depr_cat(D, _X, _Mod) ->
+    [{invalid_deprecated,D}].
+
+depr_fa('_', '_', _X, _Mod) ->
+    [];
+depr_fa(F, '_', X, _Mod) when atom(F) ->
+    %% Don't use this syntax for built-in functions.
+    case lists:filter(fun({F1,_}) -> F1 =:= F end, X) of
+        [] -> [{bad_deprecated,{F,'_'}}];
+        _ -> []
+    end;
+depr_fa(F, A, X, Mod) when atom(F), integer(A), A >= 0 ->
+    case lists:member({F,A}, X) of
+        true -> [];
+        false ->
+            case erlang:is_builtin(Mod, F, A) of
+                true -> [];
+                false -> [{bad_deprecated,{F,A}}]
+            end
+    end;
+depr_fa(F, A, _X, _Mod) ->
+    [{invalid_deprecated,{F,A}}].
+
+deprecated_flag(next_version) -> true;
+deprecated_flag(next_major_release) -> true;
+deprecated_flag(eventually) -> true;
+deprecated_flag(_) -> false.
 
 %% is_function_exported(Name, Arity, State) -> false|true.
 
@@ -805,7 +860,8 @@ pattern({op,_Line,'++',{string,_Li,_S},R}, Vt, Old, Bvt, St) ->
 pattern({match,_Line,Pat1,Pat2}, Vt, Old, Bvt, St0) ->
     {Lvt,Bvt1,St1} = pattern(Pat1, Vt, Old, Bvt, St0),
     {Rvt,Bvt2,St2} = pattern(Pat2, Vt, Old, Bvt, St1),
-    {vtmerge_pat(Lvt, Rvt),vtmerge_pat(Bvt1,Bvt2),St2};
+    St3 = reject_bin_alias(Pat1, Pat2, St2),
+    {vtmerge_pat(Lvt, Rvt),vtmerge_pat(Bvt1,Bvt2),St3};
 %% Catch legal constant expressions, including unary +,-.
 pattern(Pat, _Vt, _Old, _Bvt, St) ->
     case is_pattern_expr(Pat) of
@@ -818,6 +874,64 @@ pattern_list(Ps, Vt, Old, Bvt0, St) ->
                   {Pvt,Bvt1,St1} = pattern(P, Vt, Old, Bvt0, St0),
                   {vtmerge_pat(Pvt, Psvt),vtmerge_pat(Bvt,Bvt1),St1}
           end, {[],[],St}, Ps).
+
+%% reject_bin_alias(Pat1, Pat2, St) -> St'
+%%  Aliases of binary patterns, such as <<A:8>> = <<B:4,C:4>> or even
+%%  <<A:8>> == <<A:8>>, are not allowed. Traverse the patterns in parallel
+%%  and generate an error if any error binary aliases are found.
+%%    We generate an error even if is obvious that the overall pattern can't
+%%  possibly match, for instance, {a,<<A:8>>,c}={x,<<A:8>>} WILL generate an
+%%  error.
+
+reject_bin_alias({bin,Line,_}, {bin,_,_}, St) ->
+    add_error(Line, illegal_bin_pattern, St);
+reject_bin_alias({cons,_,H1,T1}, {cons,_,H2,T2}, St0) ->
+    St = reject_bin_alias(H1, H2, St0),
+    reject_bin_alias(T1, T2, St);
+reject_bin_alias({tuple,_,Es1}, {tuple,_,Es2}, St) ->
+    reject_bin_alias_list(Es1, Es2, St);
+reject_bin_alias({record,_,Name1,Pfs1}, {record,_,Name2,Pfs2}, #lint{records=Recs}=St) ->
+    case {orddict:find(Name1, Recs),orddict:find(Name2, Recs)} of
+        {{ok,Fields1},{ok,Fields2}} ->
+	    reject_bin_alias_rec(Pfs1, Pfs2, Fields1, Fields2, St);
+        {_,_} ->
+	    %% One or more non-existing records. (An error messages has
+	    %% already been generated, so we are done here.)
+	    St
+    end;
+reject_bin_alias(_, _, St) -> St.
+
+reject_bin_alias_list([E1|Es1], [E2|Es2], St0) ->
+    St = reject_bin_alias(E1, E2, St0),
+    reject_bin_alias_list(Es1, Es2, St);
+reject_bin_alias_list(_, _, St) -> St.
+
+reject_bin_alias_rec(PfsA0, PfsB0, FieldsA0, FieldsB0, St) ->
+    %% We treat records as if they have been converted to tuples.
+    PfsA1 = rbia_field_vars(PfsA0),
+    PfsB1 = rbia_field_vars(PfsB0),
+    FieldsA1 = rbia_fields(lists:reverse(FieldsA0), 0, []),
+    FieldsB1 = rbia_fields(lists:reverse(FieldsB0), 0, []),
+    FieldsA = sofs:relation(FieldsA1),
+    PfsA = sofs:relation(PfsA1),
+    A = sofs:join(FieldsA, 1, PfsA, 1),
+    FieldsB = sofs:relation(FieldsB1),
+    PfsB = sofs:relation(PfsB1),
+    B = sofs:join(FieldsB, 1, PfsB, 1),
+    C = sofs:join(A, 2, B, 2),
+    D = sofs:projection({external,fun({_,_,P1,_,P2}) -> {P1,P2} end}, C),
+    E = sofs:to_external(D),
+    {Ps1,Ps2} = lists:unzip(E),
+    reject_bin_alias_list(Ps1, Ps2, St).
+
+rbia_field_vars(Fs) ->
+    [{Name,Pat} || {record_field,_,{atom,_,Name},Pat} <- Fs].
+
+rbia_fields([{record_field,_,{atom,_,Name},_}|Fs], I, Acc) ->
+    rbia_fields(Fs, I+1, [{Name,I}|Acc]);
+rbia_fields([_|Fs], I, Acc) ->
+    rbia_fields(Fs, I+1, Acc);
+rbia_fields([], _, Acc) -> Acc.
 
 %% is_pattern_expr(Expression) ->
 %%      true | false.
@@ -2075,6 +2189,8 @@ copy_expr({Tag,_L,E1}, Line) ->
     {Tag,Line,copy_expr(E1, Line)};
 copy_expr({Tag,_L,E1,E2}, Line) ->
     {Tag,Line,copy_expr(E1, Line),copy_expr(E2, Line)};
+copy_expr({bin_element,_L,E1,E2,TSL}, Line) ->
+    {bin_element,Line,copy_expr(E1, Line),copy_expr(E2, Line), TSL};
 copy_expr({Tag,_L,E1,E2,E3}, Line) ->
     {Tag,Line,
      copy_expr(E1, Line),

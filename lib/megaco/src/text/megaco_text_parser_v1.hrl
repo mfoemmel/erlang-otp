@@ -212,7 +212,6 @@ ensure_modemType({_TokenTag, _Line, Text} = Token) ->
         "v18"       -> v18;
         "v22"       -> v22;
         "v32"       -> v32;
-        "v32"       -> v32;
         "v34"       -> v34;
         "v90"       -> v90;
         "v91"       -> v91;

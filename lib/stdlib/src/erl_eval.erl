@@ -66,7 +66,7 @@ exprs(Exprs, Bs) ->
             RBs = none,
             exprs(Exprs, Bs, none, none, RBs);
         {error,{_Line,_Mod,Error}} ->
-	    exit({Error,[{?MODULE,exprs,2}]})
+	    erlang:raise(error, Error, [{?MODULE,exprs,2}])
     end.
 
 exprs(Exprs, Bs, Lf) ->
@@ -99,12 +99,16 @@ expr(E, Bs) ->
             RBs = none,
             expr(E, Bs, none, none, RBs);
         {error,{_Line,_Mod,Error}} ->
-	    exit({Error,[{?MODULE,expr,2}]})
+	    erlang:raise(error, Error, [{?MODULE,expr,2}])
     end.
 
 expr(E, Bs, Lf) ->
     RBs = none,
     expr(E, Bs, Lf, none, RBs).
+
+%% {?MODULE,expr,3} is still the stacktrace, despite the
+%% fact that expr() now takes five arguments...
+stacktrace() -> [{?MODULE,expr,3}].
 
 expr(E, Bs, Lf, Ef) ->
     RBs = none,
@@ -137,15 +141,12 @@ fun_data(F) when is_function(F) ->
 fun_data(_T) ->
     false.
 
-%% {?MODULE,expr,3} is still returned when calling exit/1, dispite the
-%% fact that expr now takes five arguments...
-
 expr({var,_,V}, Bs, _Lf, _Ef, RBs) ->
     case binding(V, Bs) of
 	{value,Val} ->
             ret_expr(Val, Bs, RBs);
 	unbound -> % Should not happen.
-	    exit({{unbound,V},[{?MODULE,expr,3}]})
+	    erlang:raise(error, {unbound,V}, stacktrace())
     end;
 expr({char,_,C}, Bs, _Lf, _Ef, RBs) ->
     ret_expr(C, Bs, RBs);
@@ -173,16 +174,16 @@ expr({record_field,_,_,_}=Mod, Bs, _Lf, _Ef, RBs) ->
 	{atom,_,A} ->
 	    ret_expr(A, Bs, RBs);    %% This is the "x.y" syntax
 	_ ->
-	    exit({{badexpr, '.'},[{erl_eval,expr,3}]})
+	    erlang:raise(error, {badexpr, '.'}, stacktrace())
     end;
 expr({record_field,_,_,Name,_}, _Bs, _Lf, _Ef, _RBs) ->
-    exit({{undef_record,Name},[{erl_eval,expr,3}]});
+    erlang:raise(error, {undef_record,Name}, stacktrace());
 expr({record_index,_,Name,_}, _Bs, _Lf, _Ef, _RBs) ->
-    exit({{undef_record,Name},[{erl_eval,expr,3}]});
+    erlang:raise(error, {undef_record,Name}, stacktrace());
 expr({record,_,Name,_}, _Bs, _Lf, _Ef, _RBs) ->
-    exit({{undef_record,Name},[{erl_eval,expr,3}]});
+    erlang:raise(error, {undef_record,Name}, stacktrace());
 expr({record,_,_,Name,_}, _Bs, _Lf, _Ef, _RBs) ->
-    exit({{undef_record,Name},[{erl_eval,expr,3}]});
+    erlang:raise(error, {undef_record,Name}, stacktrace());
 expr({block,_,Es}, Bs, Lf, Ef, RBs) ->
     exprs(Es, Bs, Lf, Ef, RBs);
 expr({'if',_,Cs}, Bs, Lf, Ef, RBs) ->
@@ -191,19 +192,57 @@ expr({'case',_,E,Cs}, Bs0, Lf, Ef, RBs) ->
     {value,Val,Bs} = expr(E, Bs0, Lf, Ef, none),
     case_clauses(Val, Cs, Bs, Lf, Ef, RBs);
 expr({'try',_,Es,Ocs,Ccs,As}, Bs0, Lf, Ef, RBs) ->
-    case try_fix(Es, Bs0, Lf, Ef, RBs) of
-	{value,V,Bs} -> 
-	    try_of(V, Ocs, As, Bs, Lf, Ef, RBs);
-	Ex ->
-	    try_catch(Ex, Ccs, As, Bs0, Lf, Ef, RBs)
+    %% When variable bindings between the different parts of a try-catch
+    %% expression this will have to be rewritten. Some thoughts about
+    %% that is already here, hence all the strange _Variables.
+    BsA = Bs0,
+    try exprs(Es, Bs0, Lf, Ef, RBs) of
+	{value,_V,_BsA}=VBs when Ocs == [] ->
+	    VBs;
+	{value,V1,Bs1} ->
+	    case match_clause(Ocs, [V1], Bs1, Lf, Ef) of
+		{B2,Bs2} ->
+		    {value,_V,_BsA} = exprs(B2, Bs2, Lf, Ef, RBs);
+		nomatch ->
+		    _V = V1,
+		    _BsA = Bs1,
+		    erlang:raise(error, {try_clause,V1}, stacktrace())
+	    end
+    catch
+	Class:Reason when Ccs == [] ->
+	    %% Rethrow
+	    _V = undefined,
+	    _BsA = Bs0,
+	    erlang:raise(Class, Reason, stacktrace());
+	Class:Reason ->
+%%% 	    %% Set stacktrace
+%%% 	    try erlang:raise(Class, Reason, stacktrace())
+%%% 	    catch _:_ -> ok 
+%%% 	    end,
+	    case match_clause(Ccs, [{Class,Reason,erlang:get_stacktrace()}],
+			      Bs0, Lf, Ef) of
+		{B2,Bs2} ->
+		    {value,_V,_BsA} = exprs(B2, Bs2, Lf, Ef, RBs);
+		nomatch ->
+		    _V = undefined,
+		    _BsA = Bs0,
+		    erlang:raise(Class, Reason, stacktrace())
+	    end
+    after
+	if As == [] -> 
+		_Bs = BsA;
+	   true ->
+		{value,_,_Bs} = exprs(As, BsA, Lf, Ef, RBs)
+	end
     end;
+    %% {value,_V,_Bs};
 expr({'receive',_,Cs}, Bs, Lf, Ef, RBs) ->
     receive_clauses(Cs, Bs, Lf, Ef, [], RBs);
 expr({'receive',_, Cs, E, TB}, Bs0, Lf, Ef, RBs) ->
     {value,T,Bs} = expr(E, Bs0, Lf, Ef, none),
     receive_clauses(T, Cs, {TB,Bs}, Bs0, Lf, Ef, [], RBs);
 expr({'fun',_Line,{function,Name,Arity}}, _Bs0, _Lf, _Ef, _RBs) -> % R8
-    exit({undef,[{erl_eval,Name,Arity}]});
+    erlang:raise(error, undef, [{erl_eval,Name,Arity}|stacktrace()]);
 expr({'fun',Line,{clauses,Cs}} = Ex, Bs, Lf, Ef, RBs) ->
     %% Save only used variables in the function environment.
     {ok,Used} = erl_lint:used_vars([Ex], Bs),
@@ -249,7 +288,8 @@ expr({'fun',Line,{clauses,Cs}} = Ex, Bs, Lf, Ef, RBs) ->
            eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T], 
                     En, Lf, Ef) end;
 	_Other ->
-	    exit({{'argument_limit',{'fun',Line,Cs}},[{erl_eval,expr,3}]})
+	    erlang:raise(error, {'argument_limit',{'fun',Line,Cs}},
+			 stacktrace())
     end,
     ret_expr(F, Bs, RBs);
 expr({call,_,{remote,_,{atom,_,qlc},{atom,_,q}},[{lc,_,_E,_Qs}=LC | As0]}, 
@@ -293,7 +333,7 @@ expr({match,_,Lhs,Rhs0}, Bs0, Lf, Ef, RBs) ->
 	{match,Bs} ->
             ret_expr(Rhs, Bs, RBs);
 	nomatch ->
-	    exit({{badmatch,Rhs},[{erl_eval,expr,3}]})
+	    erlang:raise(error, {badmatch,Rhs}, stacktrace())
     end;
 expr({op,_,Op,A0}, Bs0, Lf, Ef, RBs) ->
     {value,A,Bs} = expr(A0, Bs0, Lf, Ef, none),
@@ -306,10 +346,10 @@ expr({op,_,'andalso',L0,R0}, Bs0, Lf, Ef, RBs) ->
 		case R of
 		    true -> true;
 		    false -> false;
-		    _ -> exit({{badarg,R},[{erl_eval,expr,3}]})
+		    _ -> erlang:raise(error, {badarg,R}, stacktrace())
 		end;
 	    false -> false;
-	    _ -> exit({{badarg,L},[{erl_eval,expr,3}]})
+	    _ -> erlang:raise(error, {badarg,L}, stacktrace())
 	end,
     ret_expr(V, Bs1, RBs);
 expr({op,_,'orelse',L0,R0}, Bs0, Lf, Ef, RBs) ->
@@ -321,9 +361,9 @@ expr({op,_,'orelse',L0,R0}, Bs0, Lf, Ef, RBs) ->
 		case R of
 		    true -> true;
 		    false -> false;
-		    _ -> exit({{badarg,R},[{erl_eval,expr,3}]})
+		    _ -> erlang:raise(error, {badarg,R}, stacktrace())
 		end;
-	    _ -> exit({{badarg,L},[{erl_eval,expr,3}]})
+	    _ -> erlang:raise(error, {badarg,L}, stacktrace())
 	end,
     ret_expr(V, Bs1, RBs);
 expr({op,_,Op,L0,R0}, Bs0, Lf, Ef, RBs) ->
@@ -338,7 +378,7 @@ expr({bin,_,Fs}, Bs0, Lf, Ef, RBs) ->
                            true),
     ret_expr(V, Bs, RBs);
 expr({remote,_,_,_}, _Bs, _Lf, _Ef, _RBs) ->
-    exit({{badexpr,':'},[{erl_eval,expr,3}]});
+    erlang:raise(error, {badexpr,':'}, stacktrace());
 expr({value,_,Val}, Bs, _Lf, _Ef, RBs) ->    % Special case straight values.
     ret_expr(Val, Bs, RBs).
 
@@ -372,7 +412,7 @@ local_func(Func, As, _Bs, {M,F,Eas}, RBs) ->
     local_func2(apply(M, F, [Func,As|Eas]), RBs);
 %% Default unknown function handler to undefined function.
 local_func(Func, As0, _Bs0, none, _RBs) ->
-    exit({undef,[{erl_eval,Func,length(As0)}]}).
+    erlang:raise(error, undef, [{erl_eval,Func,length(As0)}|stacktrace()]).
 
 local_func2({value,V,Bs}, RBs) ->
     ret_expr(V, Bs, RBs);
@@ -428,7 +468,12 @@ do_apply(Func, As, Bs0, Ef, RBs) ->
                        RBs == none -> Bs0;
                        true -> RBs
                    end,
-            eval_fun(FCs, As, FBs, FLf, FEf, NRBs);
+            case {erlang:fun_info(Func, arity), length(As)} of
+                {{arity, Arity}, Arity} ->
+                    eval_fun(FCs, As, FBs, FLf, FEf, NRBs);
+                _ ->
+                    exit({{badarity,{Func,As}},[{erl_eval,expr,3}]})
+            end;
         {_,none} when RBs == value ->
             %% Make tail recursive calls when possible.
             apply(Func, As);
@@ -470,7 +515,7 @@ eval_lc1(E, [F|Qs], Bs0, Lf,  Ef) ->
 	    case expr(F, Bs0, Lf, Ef, RBs) of
 		{value,true,Bs1} -> eval_lc1(E, Qs, Bs1, Lf, Ef);
 		{value,false,_} -> [];
-		_Other -> exit({bad_filter,[{erl_eval,expr,3}]})
+		_Other -> erlang:raise(error, bad_filter, stacktrace())
 	    end
     end;
 eval_lc1(E, [], Bs, Lf, Ef) ->
@@ -510,8 +555,13 @@ eval_fun([{clause,_,H,G,B}|Cs], As, Bs0, Lf, Ef, RBs) ->
 	    eval_fun(Cs, As, Bs0, Lf, Ef, RBs)
     end;
 eval_fun([], As, _Bs, _Lf, _Ef, _RBs) ->
-    exit({function_clause,[{?MODULE,'-inside-a-shell-fun-',As},
-			   {erl_eval,expr,3}]}).
+    '-inside-a-shell-fun-'(), % Dummy call to avoid warning.
+    %% list_to_tuple/1 below to avoid arity check.
+    erlang:raise(error, function_clause, 
+		 [{?MODULE,'-inside-a-shell-fun-',list_to_tuple(As)}
+		  |stacktrace()]).
+
+'-inside-a-shell-fun-'() -> ok.
 
 %% expr_list(ExpressionList, Bindings)
 %% expr_list(ExpressionList, Bindings, LocalFuncHandler)
@@ -572,7 +622,7 @@ if_clauses([{clause,_,[],G,B}|Cs], Bs, Lf, Ef, RBs) ->
 	false -> if_clauses(Cs, Bs, Lf, Ef, RBs)
     end;
 if_clauses([], _Bs, _Lf, _Ef, _RBs) ->
-    exit({if_clause,[{erl_eval,expr,3}]}).
+    erlang:raise(error, if_clause, stacktrace()).
 
 %% case_clauses(Value, Clauses, Bindings, LocalFuncHandler, ExtFuncHandler)
 
@@ -581,111 +631,8 @@ case_clauses(Val, Cs, Bs, Lf, Ef, RBs) ->
 	{B, Bs1} ->
 	    exprs(B, Bs1, Lf, Ef, RBs);
 	nomatch ->
-	    exit({{case_clause,Val},[{erl_eval,expr,3}]})
+	    erlang:raise(error, {case_clause,Val}, stacktrace())
     end.
-
-%% try_fix(Expressions, Bindings, LocalFuncHandler, ExtFuncHandler)
-%% Return {value,Value,NewBindings} 
-%%        | {CatchClass,Reason,Stacktrace}=Exception
-%%    CatchClass = error|exit|throw
-%%
-%% Tries to emulate the real try..of..catch..end semantics since we cannot 
-%% use it because stdlib has to be compiled with a old release compiler
-
-try_fix(Es, Bs, Lf, Ef, RBs) ->
-    Ref = make_ref(),
-    case catch {Ref,exprs(Es, Bs, Lf, Ef, RBs)} of
-	{Ref,{value,_,_}=Value} -> Value;
-	{'EXIT',Reason} ->
-	    {catch_class(Reason),Reason,[{erl_eval,expr,3}]};
-	Throw ->
-	    {throw,Throw,[{erl_eval,expr,3}]}
-    end.
-
-%% Make an educated guess of the exception class 
-
-catch_class({internal_error,_}) ->  error;
-catch_class({badarg,_}) ->          error;
-catch_class({badarith,_}) ->        error;
-catch_class({{badmatch,_},_}) ->    error;
-catch_class({function_clause,_}) -> error;
-catch_class({{case_clause,_},_}) -> error;
-catch_class({if_clause,_}) ->       error;
-catch_class({undef,_}) ->           error;
-catch_class({{badfun,_},_}) ->      error;
-catch_class({{badarity,_},_}) ->    error;
-catch_class({timeout_value,_}) ->   error;
-catch_class({noproc,_}) ->          error;
-catch_class({notalive,_}) ->        error;
-catch_class({system_limit,_}) ->    error;
-catch_class({{try_clause,_},_}) ->  error;
-catch_class(_) ->                   exit.
-
-%% try_of(Value, OfClauses, AfterExpressions, 
-%%        Bindings, LocalFuncHandler, ExtFuncHandler)
-
-try_of(V, [], As, Bs, Lf, Ef, RBs) ->
-    try_end(V, As, Bs, Lf, Ef, RBs);
-try_of(V, Ocs, As, Bs0, Lf, Ef, RBs) ->
-    case match_clause(Ocs, [V], Bs0, Lf, Ef) of
-	{B, Bs} ->
-	    try_after(B, As, Bs, Lf, Ef, RBs);
-	nomatch ->
-	    exit({{try_clause,V},[{erl_eval,expr,3}]})
-    end.
-
-%% try_catch(Exception, CatchClauses, 
-%%           AfterExpressions, Bindings, LocalFuncHandler, ExtFuncHandler)
-
-try_catch(Ex, [], As, Bs, Lf, Ef, RBs) ->
-    try_end_rethrow(Ex, As, Bs, Lf, Ef, RBs);
-try_catch(Ex, Ccs, As, Bs0, Lf, Ef, RBs) ->
-    case match_clause(Ccs, [Ex], Bs0, Lf, Ef) of
-	{B, Bs} ->
-	    try_after(B, As, Bs, Lf, Ef, RBs);
-	nomatch ->
-	    try_rethrow(Ex)
-    end.
-
-%% try_after(Body, AfterExpressions, 
-%%           Bindings, LocalFuncHandler, ExtFuncHandler)
-
-try_after(B, [], Bs, Lf, Ef, RBs) ->
-    exprs(B, Bs, Lf, Ef, RBs);
-try_after(B, As, Bs0, Lf, Ef,RBs) ->
-    case try_fix(B, Bs0, Lf, Ef, RBs) of
-	{value,V,Bs1} -> 
-	    try_end(V, As, Bs1, Lf, Ef, RBs);
-	Ex ->
-	    try_end_rethrow(Ex, As, Bs0, Lf, Ef, RBs)
-    end.
-
-%% try_end(Value, AfterExpressions, 
-%%         Bindings, LocalFuncHandler, ExtFuncHandler)
-
-try_end(V, [], Bs, _Lf, _Ef, _RBs) ->
-    {value,V,Bs};
-try_end(V, As, Bs0, Lf, Ef, RBs) ->
-    {value,_,Bs} = exprs(As, Bs0, Lf, Ef, RBs),
-    {value,V,Bs}.
-
-%% try_end_rethrow(Exception, AfterExpressions, 
-%%                 Bindings, LocalFuncHandler, ExtFuncHandler)
-try_end_rethrow(Ex, [], _Bs, _Lf, _Ef, _RBs) ->
-    try_rethrow(Ex);
-try_end_rethrow(Ex, As, Bs, Lf, Ef, RBs) ->
-    exprs(As, Bs, Lf, Ef, RBs),
-    try_rethrow(Ex).
-
-%% Try to simulate the orginal exception
-%% Kind of antifunction to catch_class/1 above.
-
-try_rethrow({error,V,_}) ->
-    exit(V); % erlang:fault(V) does not keep stacktrace
-try_rethrow({exit,V,_}) ->
-    exit(V);
-try_rethrow({throw,V,_}) ->
-    erlang:throw(V).
 
 %%
 %% receive_clauses(Clauses, Bindings, LocalFuncHnd,ExtFuncHnd, Messages, RBs) 
@@ -791,7 +738,7 @@ guard0([G|Gs], Bs0, Lf, Ef) ->
                 {value,false,_} -> false
 	    end;
 	false ->
-	    exit({guard_expr,[{erl_eval,expr,3}]})
+	    erlang:raise(error, guard_expr, stacktrace())
     end;
 guard0([], _Bs, _Lf, _Ef) -> true.
 
@@ -870,7 +817,7 @@ type_test(Test, As) -> erlang:apply(erlang, Test, As).
 
 %% match(Pattern, Term, Bindings) ->
 %%	{match,NewBindings} | nomatch
-%%      or exit({illegal_pattern, Pattern}).
+%%      or erlang:error({illegal_pattern, Pattern}).
 %%  Try to match Pattern against Term with the current bindings.
 
 match(Pat, Term, Bs) ->
@@ -883,7 +830,7 @@ match(Pat, Term, Bs) ->
 match(Pat, Term, Bs, BBs) ->
     case catch match1(Pat, Term, Bs, BBs) of
 	invalid ->
-	    exit({{illegal_pattern,Pat},[{erl_eval,expr,3}]});
+	    erlang:raise(error, {illegal_pattern,Pat}, stacktrace());
 	Other ->
 	    Other
     end.
@@ -996,7 +943,9 @@ match_list([P|Ps], [T|Ts], Bs0, BBs) ->
 	nomatch -> nomatch
     end;
 match_list([], [], Bs, _BBs) ->
-    {match,Bs}.
+    {match,Bs};
+match_list(_, _, _Bs, _BBs) ->
+    nomatch.
 
 %% new_bindings()
 %% bindings(Bindings)
@@ -1026,7 +975,8 @@ merge_bindings(Bs1, Bs2) ->
     foldl(fun ({Name,Val}, Bs) ->
 		  case orddict:find(Name, Bs) of
 		      {ok,Val} -> Bs;		%Already with SAME value
-		      {ok,V1} -> exit({{badmatch,V1},[{erl_eval,expr,3}]});
+		      {ok,V1} -> 
+			  erlang:raise(error, {badmatch,V1}, stacktrace());
 		      error -> orddict:store(Name, Val, Bs)
 		  end end,
 	  Bs2, orddict:to_list(Bs1)).
@@ -1036,7 +986,7 @@ merge_bindings(Bs1, Bs2) ->
 %%       fun (Name, Val, Bs) ->
 %% 	      case orddict:find(Name, Bs) of
 %% 		  {ok,Val} -> orddict:erase(Name, Bs);
-%% 		  {ok,V1} -> exit({{badmatch,V1},[{erl_eval,expr,3}]});
+%% 		  {ok,V1} -> exit({{badmatch,V1},stacktrace()});
 %% 		  error -> Bs
 %% 	      end
 %%       end, Bs2, Bs1).
@@ -1169,7 +1119,7 @@ expand_module_name(M, _) ->
 		true ->
 		    {atom,L,list_to_atom(Mod)};
 		false ->
-		    exit({{bad_module_name, Mod}, [{erl_eval,expr,3}]})
+		    erlang:raise(error, {bad_module_name, Mod}, stacktrace())
 	    end
     end.
 

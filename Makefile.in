@@ -428,6 +428,7 @@ TESTS +=					\
 	debugger_test				\
 	hipe_test				\
 	odbc_test				\
+	parsetools_test				\
 	ssl_test				\
 	tools_test				\
 	toolbar_test				\

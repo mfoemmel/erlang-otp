@@ -41,11 +41,6 @@ Extensions
  Unified heap + process optimization (+ PE).
  Incremental GC.
 
-Other
-=====
-
- BMs from Telia promotor, AXD301.
-
 
 Old list compiled by Thomas Lindgren (needs cleaning up)
 ========================================================

@@ -49,7 +49,7 @@ endif
 
 MODULES = hipe_rtl_arch hipe_tagscheme $(HIPE_MODULES)
 
-HRL_FILES= hipe_icode2rtl.hrl hipe_literals.hrl hipe_rtl_lcm.hrl
+HRL_FILES= hipe_icode2rtl.hrl hipe_literals.hrl
 ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
@@ -126,7 +126,6 @@ $(EBIN)/hipe_rtl_inline_bs_ops.beam: hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_mk_switch.beam: ../main/hipe.hrl
 $(EBIN)/hipe_rtl_prop.beam: ../main/hipe.hrl
 $(EBIN)/hipe_rtl_varmap.beam: ../main/hipe.hrl
-$(EBIN)/hipe_rtl_lcm.beam: hipe_rtl_lcm.hrl
 
 $(EBIN)/hipe_rtl_ssa.beam: ../ssa/hipe_ssa.inc ../main/hipe.hrl ../ssa/hipe_ssa_liveness.inc
 $(EBIN)/hipe_rtl_ssa_const_prop.beam: ../main/hipe.hrl ../ssa/hipe_ssa_const_prop.inc

@@ -24,10 +24,13 @@
 -behaviour(megaco_encoder).
 
 -export([encode_message/3, decode_message/3,
+         decode_mini_message/3,
 
 	 encode_transaction/3,
 	 encode_action_requests/3,
-	 encode_action_request/3
+	 encode_action_request/3,
+	 encode_command_request/3,
+	 encode_action_reply/3
 	]).
 -export([version_of/2]).
 
@@ -47,6 +50,8 @@ encode_message(Config,
 	       #'MegacoMessage'{mess = #'Message'{version = V}} = MegaMsg) ->
     encode_message(Config, V, MegaMsg).
 
+encode_message([{version3, _}|EC], Vsn, MegaMsg) ->
+    encode_message(EC, Vsn, MegaMsg);
 encode_message([megaco_compressed|Config], _Vsn, MegaMsg) 
   when record(MegaMsg, 'MegacoMessage') ->
     {ok, erlang:term_to_binary(encode(MegaMsg), Config)};
@@ -63,6 +68,9 @@ encode_message(_Config, _Vsn, _MegaMsg) ->
 %% Convert a transaction record into a binary
 %% Return {ok, Bin} | {error, Reason}
 %%----------------------------------------------------------------------
+
+encode_transaction([{version3, _}|EC], Vsn, Trans) ->
+    encode_transaction(EC, Vsn, Trans);
 encode_transaction([megaco_compressed|Config], _Vsn, Trans) ->
     {ok, erlang:term_to_binary(encode(Trans), Config)};
 encode_transaction([{megaco_compressed, Mod}|Config], _Vsn, Trans) ->
@@ -75,6 +83,8 @@ encode_transaction(Config, _Vsn, Trans) ->
 %% Convert a list of ActionRequest record's into a binary
 %% Return {ok, Binary} | {error, Reason}
 %%----------------------------------------------------------------------
+encode_action_requests([{version3, _}|EC], Vsn, ActReqs) ->
+    encode_action_requests(EC, Vsn, ActReqs);
 encode_action_requests([megaco_compressed|Config], _Vsn, ActReqs0) 
   when list(ActReqs0) ->
     ActReqs = [encode(AR) || AR <- ActReqs0],
@@ -93,6 +103,8 @@ encode_action_requests(Config, _Vsn, ActReqs)
 %% Convert a ActionRequest record into a binary
 %% Return {ok, Binary} | {error, Reason}
 %%----------------------------------------------------------------------
+encode_action_request([{version3, _}|EC], Vsn, ActReq) ->
+    encode_action_request(EC, Vsn, ActReq);
 encode_action_request([megaco_compressed|Config], _Vsn, ActReq) 
   when tuple(ActReq) ->
     {ok, erlang:term_to_binary(encode(ActReq), Config)};
@@ -106,8 +118,42 @@ encode_action_request(Config, _Vsn, ActReq)
 
 
 %%----------------------------------------------------------------------
-%% Convert a binary into a 'MegacoMessage' record
-%% Return {ok, MegacoMessageRecord} | {error, Reason}
+%% Convert a CommandRequest record into a binary
+%% Return {ok, DeepIoList} | {error, Reason}
+%%----------------------------------------------------------------------
+encode_command_request([{version3, _}|EC], Vsn, CmdReq) ->
+    encode_command_request(EC, Vsn, CmdReq);
+encode_command_request([megaco_compressed|Config], _Vsn, CmdReq)
+  when tuple(CmdReq) ->
+    {ok, erlang:term_to_binary(encode(CmdReq), Config)};
+encode_command_request([{megaco_compressed, Mod}|Config], _Vsn, CmdReq)
+  when tuple(CmdReq) ->
+    {ok, erlang:term_to_binary(Mod:encode(CmdReq), Config)};
+encode_command_request([megaco_compressed|Config], _Vsn, CmdReq)
+  when tuple(CmdReq) ->
+    {ok, erlang:term_to_binary(CmdReq, Config)}.
+ 
+
+%%----------------------------------------------------------------------
+%% Convert a action reply into a binary
+%% Return {ok, DeepIoList} | {error, Reason}
+%%----------------------------------------------------------------------
+encode_action_reply([{version3, _}|EC], Vsn, ActRep) ->
+    encode_action_reply(EC, Vsn, ActRep);
+encode_action_reply([megaco_compressed|Config], _Vsn, ActRep) 
+  when tuple(ActRep) ->
+    {ok, erlang:term_to_binary(encode(ActRep), Config)};
+encode_action_reply([{megaco_compressed, Mod}|Config], _Vsn, ActRep) 
+  when tuple(ActRep) ->
+    {ok, erlang:term_to_binary(Mod:encode(ActRep), Config)};
+encode_action_reply(Config, _Vsn, ActRep) 
+  when tuple(ActRep) ->
+    {ok, erlang:term_to_binary(ActRep, Config)}.
+ 
+ 
+%%----------------------------------------------------------------------
+%% Get the megaco version of the message
+%% Return {ok, Version} | {error, Reason}
 %%----------------------------------------------------------------------
 
 version_of(Config, Bin) when binary(Bin) ->
@@ -122,6 +168,8 @@ version_of(Config, Bin) when binary(Bin) ->
 decode_message(Config, Bin) ->
     decode_message(Config, 1, Bin).
 				   
+decode_message([{version3, _}|EC], V, Bin) ->
+    decode_message(EC, V, Bin);
 decode_message([megaco_compressed = MC|_Config], _Vsn, Bin) ->
     case catch erlang:binary_to_term(Bin) of
 	Msg when tuple(Msg) ->
@@ -134,7 +182,8 @@ decode_message([megaco_compressed = MC|_Config], _Vsn, Bin) ->
 	{'EXIT', _Reason} ->
 	    {error, bad_binary}
     end;
-decode_message([{megaco_compressed, Mod} = MC|_Config], _Vsn, Bin) when atom(Mod) ->
+decode_message([{megaco_compressed, Mod} = MC|_Config], _Vsn, Bin) 
+  when atom(Mod) ->
     case catch erlang:binary_to_term(Bin) of
 	Msg when tuple(Msg) ->
 	    case (Mod:decode(Msg)) of
@@ -153,6 +202,10 @@ decode_message(_Config, _Vsn, Bin) ->
 	{'EXIT', _Reason} ->
 	    {error, bad_binary}
     end.
+
+
+decode_mini_message(EC, Vsn, Bin) when binary(Bin) ->
+    decode_message(EC, Vsn, Bin).
 
 
 %% This crap is because the transactions or the action-requests
@@ -214,6 +267,7 @@ dmt2(AR, _MC) ->
     AR.
 
 %% -------
+%% Note that the version (1) is of no importance.
 
 encode(M) -> e(M, 1).
 % encode(M) -> 

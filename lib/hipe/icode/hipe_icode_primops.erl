@@ -14,7 +14,7 @@
 
 -module(hipe_icode_primops).
 
--export([is_safe/1, fails/1, pp/2, type/2]).
+-export([is_safe/1, fails/1, pp/2, type/1, type/2]).
 
 %% Note that 'unsafe_...' operations are generally "safe", i.e., it is
 %% typically unsafe to use them unless you have extra information about
@@ -356,6 +356,41 @@ type(Primop, Args) ->
 %%% Other
     {M, F, A} ->
       erl_bif_types:type(M, F, A, Args);
+    _Op ->
+      %%exit({"No type information", Op})
+      erl_types:t_any()
+  end.
+
+type(Primop) ->
+  case Primop of
+%%% -----------------------------------------------------
+%%% Arithops
+    '+' ->
+      erl_bif_types:type(erlang, '+', 2);
+    '-' ->
+      erl_bif_types:type(erlang, '-', 2);
+    '*' ->
+      erl_bif_types:type(erlang, '*', 2);
+    '/' ->
+      erl_bif_types:type(erlang, '/', 2);
+    'bor' ->
+      erl_bif_types:type(erlang, 'bor', 2);
+    'band' ->
+      erl_bif_types:type(erlang, 'band', 2);
+    'bxor' ->
+      erl_bif_types:type(erlang, 'bxor', 2);
+    'bnot' ->
+      erl_bif_types:type(erlang, 'bnot', 2);
+    'bsr' ->
+      erl_bif_types:type(erlang, 'bsr', 2);
+    'bsl' ->
+      erl_bif_types:type(erlang, 'bsl', 2);
+    {element, _} ->
+      erl_bif_types:type(erlang, element, 2);
+%%% -----------------------------------------------------
+%%% Other
+    {M, F, A} ->
+      erl_bif_types:type(M, F, A);
     _Op ->
       %%exit({"No type information", Op})
       erl_types:t_any()

@@ -312,7 +312,7 @@ add_menu(_, _, _) -> ok.  %%Not a list, ie allmods == do nothing
 %%
 
 remove_menu(List) when list(List)->
-    lists:foreach({gs,destroy}, List);
+    lists:foreach(fun(X) -> gs:destroy(X) end, List);
 
 remove_menu(Object) ->
     gse:destroy(Object).
@@ -363,7 +363,7 @@ make_menus({true,Pid},MenuBar,MenuFile) ->
 	{links,Links} ->
 	    links_menus(Links);
 	dead ->
-	    lists:foreach({gse, disable},['LinksMenu'])
+	    lists:foreach(fun(X) -> gse:disable(X) end,['LinksMenu'])
     end,
     gse:named_menuitem('Kill', MenuTrace,
 		       [{label, {text, "Kill"}},{underline,0}]),

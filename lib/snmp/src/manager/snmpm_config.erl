@@ -227,12 +227,9 @@ agent_info(Addr0, Port, all) ->
 	    {error, not_found};
 	All ->
 	    {ok, [{Item, Val} || {{_, _, Item}, Val} <- All,
-				Item /= address, 
-				     Item /= port, 
-				     Item /= user_id]}
+				Item /= address, Item /= port]}
     end;
-agent_info(Addr0, Port, Item) 
-  when Item /= address; Item /= port; Item /= user_id ->
+agent_info(Addr0, Port, Item) ->
     Addr = normalize_address(Addr0),
     case ets:lookup(snmpm_agent_table, {Addr, Port, Item}) of
 	[{_, Val}] ->
@@ -252,7 +249,7 @@ which_agents(UserId) ->
 
     
 update_agent_info(UserId, Addr0, Port, Item, Val0)  
-  when Item /= address; Item /= port; Item /= user_id ->
+  when Item /= address, Item /= port, Item /= user_id ->
     case (catch verify_val(Item, Val0)) of
 	{ok, Val} ->
 	    Addr = normalize_address(Addr0),
@@ -1599,7 +1596,7 @@ read_file(Dir, FileName, Check, Default) ->
 		    Error
 	    end;
         {error, Reason} ->
-	    ?vinfo("failed reading config from ~s: ~p", [FileName, Reason]),
+	    ?vlog("failed reading config from ~s: ~p", [FileName, Reason]),
 	    {ok, Default}
     end.
 
@@ -1636,33 +1633,61 @@ do_read(File, Check) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 handle_call({register_user, UserId, UserMod, UserData}, _From, State) ->
+    ?vlog("received register_user request: "
+	  "~n   UserId:   ~p"
+	  "~n   UserMod:  ~p"
+	  "~n   UserData: ~p", [UserId, UserMod, UserData]),
     User  = #user{id = UserId, mod = UserMod, data = UserData},
     Reply = handle_register_user(User),
     {reply, Reply, State};
 
 handle_call({unregister_user, UserId}, _From, State) ->
+    ?vlog("received unregister_user request: "
+	  "~n   UserId: ~p", [UserId]),
     Reply = handle_unregister_user(UserId),
     {reply, Reply, State};
 
 handle_call({register_agent, UserId, Addr, Port, Config}, _From, State) ->
+    ?vlog("received register_agent request: "
+	  "~n   UserId: ~p"
+	  "~n   Addr:   ~p"
+	  "~n   Port:   ~p"
+	  "~n   Config: ~p", [UserId, Addr, Port, Config]),
     Reply = handle_register_agent(UserId, Addr, Port, Config),
     {reply, Reply, State};
 
 handle_call({unregister_agent, UserId, Addr, Port}, _From, State) ->
+    ?vlog("received unregister_agent request: "
+	  "~n   UserId: ~p"
+	  "~n   Addr:   ~p"
+	  "~n   Port:   ~p", [UserId, Addr, Port]),
     Reply = handle_unregister_agent(UserId, Addr, Port),
     {reply, Reply, State};
 
 handle_call({update_agent_info, UserId, Addr, Port, Item, Val}, 
 	    _From, State) ->
+    ?vlog("received update_agent_info request: "
+	  "~n   UserId: ~p"
+	  "~n   Addr:   ~p"
+	  "~n   Port:   ~p"
+	  "~n   Item:   ~p"
+	  "~n   Val:    ~p", [UserId, Addr, Port, Item, Val]),
     Reply = handle_update_agent_info(UserId, Addr, Port, Item, Val),
     {reply, Reply, State};
 
 handle_call({register_usm_user, User}, _From, State) ->
+    ?vlog("received register_usm_user request: "
+	  "~n   User: ~p", [User]),
     Reply = handle_register_usm_user(User),
     {reply, Reply, State};
 
 handle_call({update_usm_user_info, EngineID, UserName, Item, Val}, 
 	    _From, State) ->
+    ?vlog("received update_usm_user_info request: "
+	  "~n   EngineID: ~p"
+	  "~n   UserName: ~p"
+	  "~n   Item:     ~p"
+	  "~n   Val:      ~p", [EngineID, UserName, Item, Val]),
     Reply = handle_update_usm_user_info(EngineID, UserName, Item, Val),
     {reply, Reply, State};
 
@@ -1771,6 +1796,7 @@ terminate(Reason, _State) ->
 %%----------------------------------------------------------------------
 
 code_change(_Vsn, S, _Extra) ->
+    ?d("code_change -> entry [do nothing]", []),
     {ok, S}.
 
 
@@ -1802,7 +1828,12 @@ handle_register_agent(UserId, Addr, Port, Config) ->
 	    {ok, DefConfig} = agent_info(default, default, all),
 	    do_handle_register_agent(Addr, Port, DefConfig),
 	    do_handle_register_agent(Addr, Port, [{user_id, UserId}|Config]);
-	_ ->
+	Error ->
+	    ?vinfo("[~w] Agent (~w:~w) already registered:"
+		   "~n   Error: ~p"
+		   "~nwhen"
+		   "~n   Agents: ~p", 
+		   [UserId, Addr, Port, Error, which_agents()]),
 	    {error, {already_registered, Addr, Port}}
     end.
 

@@ -1,3 +1,4 @@
+%% -*- erlang-indent-level: 2 -*-
 %%%----------------------------------------------------------------------
 %%% File    : hipe_x86_postpass.erl
 %%% Author  : Christoffer Vikström <chvi3471@student.uu.se>
@@ -5,35 +6,27 @@
 %%% Created : 5 Aug 2003 by Christoffer Vikström <chvi3471@student.uu.se>
 %%%----------------------------------------------------------------------
 
--module(hipe_x86_postpass).
--author('chvi3471@student.uu.se').
+-ifndef(HIPE_X86_POSTPASS).
+-define(HIPE_X86_POSTPASS, hipe_x86_postpass).
+-endif.
 
--include("hipe_x86.hrl").
-
--export([postpass/1]).
-
--define(DO_PEEP, true).    % Turn on/off peephole optimizations
-%% -define(DO_LOGGING, true). % Uncomment this to get peephole opts logged to..
--define(LOG_FILE, "peepcount.txt"). % ..this file..
--define(LOG_DIR, "/tmp/"). % ..in this dir
-
+-module(?HIPE_X86_POSTPASS).
+-export([postpass/2]).
+-include("../x86/hipe_x86.hrl").
 
 %%>----------------------------------------------------------------------<
-%  Procedure : postpass/1
-%  Purpose   : Function that performs a nr of postpast optimizations on
+%  Procedure : postpass/2
+%  Purpose   : Function that performs a nr of postpass optimizations on
 %              the hipe x86-assembler code before it is encoded and loaded.
-%  Arguments : Defun - Function definition. Contain all assembler code of 
-%              a function in a list.
-%  Return    : An optimized defun-record.
-%  Notes     : 
 %%>----------------------------------------------------------------------<
-postpass(Defun) ->
-    #defun{mfa=MFA, code=Code0} = Defun,
-    printLogHeader(MFA),           
-    Code1 = expand(Code0),      % Expand pseudo instructions
-    Code2 = peep(Code1),        % Do peephole optimizations
-    Code3 = peepN(Code2),       % Do necessary peephole optimizations
-    Defun#defun{code=Code3}.
+postpass(#defun{code=Code0}=Defun, Options) ->
+  Code1 = pseudo_insn_expansion(Code0),
+  Code2 = case proplists:get_bool(peephole, Options) of
+	    true  -> peephole_optimization(Code1);
+	    false -> Code1
+	  end,
+  Code3 = trivial_goto_elimination(Code2),
+  Defun#defun{code=Code3}.
 
 
 %%>----------------------------------------------------------------------<
@@ -45,20 +38,11 @@ postpass(Defun) ->
 %  Arguments : Insns   - List of pseudo x86-assembler records.
 %              Res     - Returned list of pseudo x86-assembler records. 
 %                        Kept reversed, until it is returned.
-%              Lst     - List of optimizations done. For debuging.
 %  Return    : An optimized list of pseudo x86-assembler records with 
 %              (hopefully) fewer or faster instructions.
-%  Notes     : Creates a file in the users tmp directory that contain 
-%              analysis information, if macro ?DO_LOGGING is defined.
 %%>----------------------------------------------------------------------< 
-peep(Insns) -> 
-    case ?DO_PEEP of
-	true ->
-	    peep(Insns, [], []);
-	_ ->
-	    Insns
-    end.
-
+peephole_optimization(Insns) -> 
+  peep(Insns, [], []).
 
 %% MoveSelf related peep-opts 
 %% ------------------------------
@@ -92,24 +76,15 @@ peep([I=#move{src=#x86_temp{reg=Src}, dst=#x86_temp{reg=Dst}},
 
 %% ElimBinALMDouble
 %% ----------------
-peep([#move{src=Src, dst=Dst}, #alu{aluop=OP, src=Src, dst=Dst}|Insns], Res, Lst) ->
-  BinALNew = #alu{aluop=OP, src=Dst, dst=Dst},
-  peep(Insns, [BinALNew|Res], [elimBinALMDouble|Lst]);
-peep([#movsx{src=Src, dst=Dst}, #alu{aluop=OP, src=Src, dst=Dst}|Insns], Res, Lst) ->
-  BinALNew = #alu{aluop=OP, src=Dst, dst=Dst},
-  peep(Insns, [BinALNew|Res], [elimBinALMDouble|Lst]);
-peep([#movzx{src=Src, dst=Dst}, #alu{aluop=OP, src=Src, dst=Dst}|Insns], Res, Lst) ->
-  BinALNew = #alu{aluop=OP, src=Dst, dst=Dst},
-  peep(Insns, [BinALNew|Res], [elimBinALMDouble|Lst]);
+peep([Move=#move{src=Src, dst=Dst}, Alu=#alu{src=Src, dst=Dst}|Insns], Res, Lst) ->
+  peep([Alu#alu{src=Dst}|Insns], [Move|Res], [elimBinALMDouble|Lst]);
 
 
 %% ElimFBinDouble
 %% --------------
-peep([#fmove{src=Src, dst=Dst}, 
-      #fp_binop{op=Op, src=Src, dst=Dst}|Insns], Res, Lst) ->
-  peep(Insns, 
-       [#fp_binop{op=Op,src=Dst,dst=Dst}|Res], 
-       [elimFBinDouble|Lst]);
+peep([Move=#fmove{src=Src, dst=Dst}, 
+      BinOp=#fp_binop{src=Src, dst=Dst}|Insns], Res, Lst) ->
+  peep([BinOp#fp_binop{src=Dst}|Insns], [Move|Res], [elimFBinDouble|Lst]);
 
 
 %% CommuteBinALMD
@@ -176,32 +151,7 @@ peep([#jcc{label=Lab}, I=#label{label=Lab}|Insns], Res, Lst) ->
 %% --------
 peep([#move{src=#x86_imm{value=0},dst=Dst}|Insns],Res,Lst) 
 when (Dst==#x86_temp{}) ->
-    peep(Insns, [#alu{aluop='xor', src=Dst, dst=Dst}|Res], [elimSet0|Lst]);
-    
-
-%% ElimAddSub1
-%% -----------
-%% This seemed as a good idea to have but since inc and dec creates 
-%% condition codes overhead they are slightly worse than 
-%% peep([I=#alu{aluop=Op,src=#x86_imm{value=1},dst=Dst},I2|Insns], Res, Lst) ->
-%%     case I2 of
-%% 	#jcc{} ->
-%% 	    peep([I2|Insns], [I|Res], Lst);
-%% 	#cmovcc{} ->
-%% 	    peep([I2|Insns], [I|Res], Lst);
-%% 	#jmp_switch{} ->
-%% 	    peep([I2|Insns], [I|Res], Lst);
-%% 	_ ->
-%% 	    case Op of
-%% 		'add' ->
-%% 		    peep([I2|Insns], [#inc{dst=Dst}|Res], [elimAddSub1|Lst]);
-%% 		'sub' ->
-%% 		    peep([I2|Insns], [#dec{dst=Dst}|Res], [elimAddSub1|Lst]);
-%% 		_ ->
-%% 		    peep([I2|Insns], [I|Res], Lst)
-%% 	    end
-%%     end;
-
+  peep(Insns, [#alu{aluop='xor', src=Dst, dst=Dst}|Res], [elimSet0|Lst]);    
 
 %% ElimMDPow2
 %% ----------
@@ -216,40 +166,33 @@ peep([B = #alu{aluop=Op,src=#x86_imm{value=Val},dst=Dst}|Insns], Res, Lst) ->
 	false ->
 	    peep(Insns, [B|Res], Lst)
     end;
-
-
 %% Standard list recursion clause
 %% ------------------------------
 peep([I | Insns], Res, Lst) ->
      peep(Insns, [I|Res], Lst);
-
-%% Base case. Optionally prints an optimization log
-%% ------------------------------------------------
-peep([], Res, Lst) ->
-    printLst(Lst),
+peep([], Res, _Lst) ->
     lists:reverse(Res). 
 
-%% Simple goto elimination (vital, dont know why..?)
-%% -------------------------------------------------
-peepN(Insns) -> peepN(Insns, [], []).
-peepN([#jmp_label{label=Label}, I = #label{label=Label}|Insns], Res,Lst) ->
-     peepN([I|Insns], Res, [nearGotoElim|Lst]);
-peepN([I | Insns], Res, Lst) ->
-     peepN(Insns, [I|Res], Lst);
-peepN([], Res, Lst) ->
-    printLst(Lst),
-    lists:reverse(Res). 
+%% Simple goto elimination
+%% -----------------------
+trivial_goto_elimination(Insns) -> goto_elim(Insns, []).
 
+goto_elim([#jmp_label{label=Label}, I = #label{label=Label}|Insns], Res) ->
+  goto_elim([I|Insns], Res);
+goto_elim([I | Insns], Res) ->
+  goto_elim(Insns, [I|Res]);
+goto_elim([], Res) ->
+  lists:reverse(Res). 
 
 
 %%>----------------------------------------------------------------------<
 %%  Procedure : expand/1
 %%  Purpose   : Expands pseudo instructions.
 %%  Arguments : Insns - An x86-instruction list.
-%%  Return    : An optimized instruction list.
+%%  Return    : An expanded instruction list.
 %%  Notes     : 
 %%>----------------------------------------------------------------------<
-expand(Insns) -> expand(Insns, []).
+pseudo_insn_expansion(Insns) -> expand(Insns, []).
 expand([I|Tail], Res) ->
     case I of
 	#pseudo_jcc{cc=Cc,true_label=TrueLab,false_label=FalseLab} ->
@@ -264,68 +207,6 @@ expand([I|Tail], Res) ->
 	    expand(Tail, [I|Res])
     end;
 expand([], Res) -> lists:reverse(Res).
-
-
-%%>----------------------------------------------------------------------<
-%%  Procedure : printLogHeader/1
-%%  Purpose   : Prints the headers for each function compiled.
-%%  Arguments : MFA -  #x86_mfa{} record
-%%  Return    : unit
-%%  Notes     : 
-%%>----------------------------------------------------------------------<
--ifdef(DO_LOGGING).
-printLogHeader(MFA) ->
-    {x86_mfa, M, F, _} = MFA,
-    {ok, Dir} = file:get_cwd(),
-    file:set_cwd(?LOG_DIR),
-    {ok, File} = file:open(?LOG_FILE, [read, append]),
-    io:format(File, 
-	      "\nModule: ~w  Function: ~w" ++ 
-	      "\n>==============================================<\n", 
-	      [M, F]),
-    file:set_cwd(Dir),
-    file:close(File).
--else.
-printLogHeader(_) ->
-    ok.
--endif.
-
-
-%%>----------------------------------------------------------------------<
-%%  Procedure : printLst/1
-%%  Purpose   : Prints ths name of the peephole optimizations done in the
-%%              current function being compiled.
-%%  Arguments : Lst - A list of numbers.
-%%  Return    : unit
-%%  Notes     : Prints (append) the atoms in the list with a space in 
-%%              between to a file called 'peepcount.txt'. 
-%%>----------------------------------------------------------------------<
--ifdef(DO_LOGGING).
-printLst(Lst) ->
-    {ok, Dir} = file:get_cwd(),
-    file:set_cwd(?LOG_DIR),
-    {ok, File} = file:open(?LOG_FILE, [read, append]),
-    printLst(File, Lst),
-    file:set_cwd(Dir),
-    file:close(File).
-
-printLst(File, [Opt|Lst]) ->
-    %% io:format(File, "Peephole applied ~w times!\n", [length(Lst)]),
-    io:format(File, "Peephole optimization applied: ", []),
-    io:write(File, Opt),
-    io:format(File, "\n", []),
-    printLst(File, Lst);
-printLst(_, []) -> done.
-
--else. %% DO_LOGGING undefined
-
-printLst(_) ->
-    ok.
--endif.
-
-
-%%  Miscellaneous helper functions
-%% >-------------------------------------------------------------------------< 
 
 %% Log2 function
 %% -------------
@@ -365,25 +246,3 @@ check([I|Ins]) ->
 	OtherI ->
 	    OtherI
     end.
-
-
-%%% Replacing add/sub 1 with inc/dec is incorrect if the carry flag
-%%% defined by the add/sub is used later -- disabled for now.
-%peep([#alu{aluop='sub',src=#x86_imm{value=1},dst=Dst} | Insns]) ->
-%    [hipe_x86:mk_dec(Dst) | peep(Insns)];
-%peep([#alu{aluop='add',src=#x86_imm{value=1},dst=Dst} | Insns]) ->
-%    [hipe_x86:mk_inc(Dst) | peep(Insns)];
-%peep([#push{src=Src} | (Insns = [#pop{src=Src} | _])]) -> peep(Insns);
-
-
-%% Old Working Code - Left for safety
-%% --------------------------
-% peepN(Insns) -> peepN(Insns, []).    
-% peepN([#jmp_label{label=Label} | (Insns = [#label{label=Label}|_])], Lst) ->
-%     peepN(Insns, [nearGotoElim | Lst]);
-% peepN([I | Insns], Lst) ->
-%     [I | peepN(Insns, Lst)];
-% peepN([], Lst) ->
-%     printLst(Lst),
-%     [].
-

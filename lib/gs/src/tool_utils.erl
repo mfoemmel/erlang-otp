@@ -64,8 +64,11 @@ open_help_default(S, File) ->
 	      %% Local file
 	      local ->
 		  case os:type() of
-		      {unix,_AnyType} ->
-			  "netscape -remote \"openURL(file:" ++ File ++ ")\"";
+		      {unix,Type} ->
+                          case Type of
+                               darwin -> "open " ++ File;
+                               _Else -> "netscape -remote \"openURL(file:" ++ File ++ ")\""
+			  end;
 		      {win32,_AnyType} ->
 			  "start " ++ filename:nativename(File);
 
@@ -76,9 +79,11 @@ open_help_default(S, File) ->
 	      %% URL
 	      remote ->
 		  case os:type() of
-		      {unix,_AnyType} ->
-			  "netscape -remote \"openURL(" ++ File ++ ")\"";
-
+		      {unix,Type} ->
+                          case Type of
+                               darwin -> "open " ++ File;
+                               _Else -> "netscape -remote \"openURL(file:" ++ File ++ ")\""
+			  end;
 		      {win32,_AnyType} ->
 			  "netscape.exe -h " ++ regexp:gsub(File,"\\\\","/");
 		      _Other ->

@@ -565,8 +565,8 @@ trans_fun([{get_list,List,Head,Tail}|Instructions], Env) ->
     Tail /= List ->
       [I2, I1 | trans_fun(Instructions,Env)];
     true ->
-      %% WARNING!!  We should take care of this case!!!!!
-      io:format("WARNING!!!: hd and tl regs identical in get_list~n"),
+      %% XXX: We should take care of this case!!!!!
+      ?error_msg("hd and tl regs identical in get_list~n",[]),
       erlang:error(not_handled)
   end;
 %%--- get_tuple_element ---
@@ -1606,9 +1606,7 @@ find_mfa([{func_info,{atom,M},{atom,F},A}|_]) ->
 get_fun([[L, {func_info,{atom,M},{atom,F},A} | Is] | _], M,F,A) ->
   [L, {func_info,{atom,M},{atom,F},A} | Is];
 get_fun([[_L1,_L2, {func_info,{atom,M},{atom,F},A} | _Is] | _], M,F,A) ->
-  io:format("WARNING!!!: Consecutive labels found; please re-create "
-	    "the .beam file~n", []),
-  %%?EXIT({'get_fun/4','Consecutive labels found; please re-create the .beam file'});
+  ?WARNING_MSG("Consecutive labels found; please re-create the .beam file~n", []),
   [_L1,_L2, {func_info,{atom,M},{atom,F},A} | _Is];
 get_fun([_|Rest], M,F,A) ->
   get_fun(Rest, M,F,A).    

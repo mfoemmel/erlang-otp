@@ -761,9 +761,9 @@ char *getenv_string(GETENV_STATE *state0)
 
 /* I. Common stuff */
 
-#define TMP_BUF_MAX (tmp_buf_size - 1024)
-static byte *tmp_buf;
-static Uint tmp_buf_size;
+#define SYS_TMP_BUF_MAX (sys_tmp_buf_size - 1024)
+static byte *sys_tmp_buf; /* different from the one in global.h/init.c */
+static Uint sys_tmp_buf_size;
 int cerr_pos;
 
 /* II. The spawn/fd/vanilla drivers */
@@ -1101,18 +1101,18 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 
     /* make the string suitable for giving to "sh" (5 = strlen("exec")) */
     len = strlen(name);
-    if (len + 5 >= tmp_buf_size) {
+    if (len + 5 >= sys_tmp_buf_size) {
 	close_pipes(ifd, ofd, opts->read_write);
 	errno = ENAMETOOLONG;
 	return ERL_DRV_ERROR_ERRNO;
     }
-    /* name == tmp_buf needs overlapping-safe move - just do it always */
+    /* name == sys_tmp_buf needs overlapping-safe move - just do it always */
     /* should use memmove() but it isn't always available */
-    p1 = (char *)&tmp_buf[len + 5];
+    p1 = (char *)&sys_tmp_buf[len + 5];
     p2 = name+len;
     while (p2 >= name)
 	*p1-- = *p2--;
-    memcpy(tmp_buf, "exec ", 5);
+    memcpy(sys_tmp_buf, "exec ", 5);
 
     if (opts->envir == NULL) {
 	new_environ = environ;
@@ -1185,7 +1185,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 	    
 	    unblock_signals();
 
-	    execle("/bin/sh", "sh", "-c", tmp_buf, (char *) NULL, new_environ);
+	    execle("/bin/sh", "sh", "-c", sys_tmp_buf, (char *) NULL, new_environ);
 
 	child_error:
 	    _exit(1);
@@ -1224,7 +1224,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 
 	cs_argv[CS_ARGV_PROGNAME_IX] = child_setup_prog;
 	cs_argv[CS_ARGV_WD_IX] = opts->wd ? opts->wd : ".";
-	cs_argv[CS_ARGV_CMD_IX] = tmp_buf; /* Command */
+	cs_argv[CS_ARGV_CMD_IX] = sys_tmp_buf; /* Command */
 	cs_argv[CS_ARGV_FD_CR_IX] = fd_close_range;
 	for (i = 0; i < CS_ARGV_NO_OF_DUP2_OPS; i++)
 	    cs_argv[CS_ARGV_DUP2_OP_IX(i)] = &dup2_op[i][0];
@@ -1274,7 +1274,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 	fcntl(i, F_SETFD, 1);
 
     qnx_spawn_options.flags = _SPAWN_SETSID;
-    if ((pid = spawnl(P_NOWAIT, "/bin/sh", "/bin/sh", "-c", tmp_buf, 
+    if ((pid = spawnl(P_NOWAIT, "/bin/sh", "/bin/sh", "-c", sys_tmp_buf, 
                       (char *) 0)) < 0) {
         reset_qnx_spawn();
 	close_pipes(ifd, ofd, opts->read_write);
@@ -1723,7 +1723,7 @@ static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
     packet_bytes = driver_data[fd].packet_bytes;
 
     if (packet_bytes == 0) {
-	res = read(ready_fd, tmp_buf, tmp_buf_size);
+	res = read(ready_fd, sys_tmp_buf, sys_tmp_buf_size);
 	if (res < 0) {
 	    if ((errno != EINTR) && (errno != ERRNO_BLOCK))
 		port_inp_failure(port_num, ready_fd, res);
@@ -1731,7 +1731,7 @@ static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
 	else if (res == 0)
 	    port_inp_failure(port_num, ready_fd, res);
 	else 
-	    driver_output(port_num, (char*)tmp_buf, res);
+	    driver_output(port_num, (char*)sys_tmp_buf, res);
     }
     else if (fd_data[ready_fd].remain > 0) { /* We try to read the remainder */
 	/* space is allocated in buf */
@@ -1756,7 +1756,7 @@ static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
     }
     else if (fd_data[ready_fd].remain == 0) { /* clean fd */
 	/* We make one read attempt and see what happens */
-	res = read(ready_fd, tmp_buf, tmp_buf_size);
+	res = read(ready_fd, sys_tmp_buf, sys_tmp_buf_size);
 	if (res < 0) {  
 	    if ((errno != EINTR) && (errno != ERRNO_BLOCK))
 		port_inp_failure(port_num, ready_fd, res);
@@ -1766,11 +1766,11 @@ static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
 	} 
 	else if (res < packet_bytes - fd_data[ready_fd].psz) { 
 	    memcpy(fd_data[ready_fd].pbuf+fd_data[ready_fd].psz,
-		   tmp_buf, res);
+		   sys_tmp_buf, res);
 	    fd_data[ready_fd].psz += res;
 	}
 	else  { /* if (res >= packet_bytes) */
-	    unsigned char* cpos = tmp_buf;
+	    unsigned char* cpos = sys_tmp_buf;
 	    int bytes_left = res;
 
 	    while (1) {
@@ -2915,8 +2915,8 @@ int sys_putenv(char *buffer){
 void
 sys_init_io(byte *buf, Uint size)
 {
-    tmp_buf = buf;
-    tmp_buf_size = size;
+    sys_tmp_buf = buf;
+    sys_tmp_buf_size = size;
     cerr_pos = 0;
 
     fd_data = (struct fd_data *)
@@ -3098,14 +3098,14 @@ void sys_printf(CIO where, char* format, ...)
     format = fix_nl(format, where);
 
     if (where == CBUF) {
-	if (cerr_pos < TMP_BUF_MAX) {
-	    vsprintf((char*)&tmp_buf[cerr_pos],format,va);
-	    cerr_pos += sys_strlen((char*)&tmp_buf[cerr_pos]);
-	    if (cerr_pos >= tmp_buf_size)
+	if (cerr_pos < SYS_TMP_BUF_MAX) {
+	    vsprintf((char*)&sys_tmp_buf[cerr_pos],format,va);
+	    cerr_pos += sys_strlen((char*)&sys_tmp_buf[cerr_pos]);
+	    if (cerr_pos >= sys_tmp_buf_size)
 		erl_exit(1, "Internal buffer overflow in erl_printf\n");
-	    if (cerr_pos >= TMP_BUF_MAX) {
-		strcpy((char*)&tmp_buf[TMP_BUF_MAX - 3], "...");
-		cerr_pos = TMP_BUF_MAX;
+	    if (cerr_pos >= SYS_TMP_BUF_MAX) {
+		strcpy((char*)&sys_tmp_buf[SYS_TMP_BUF_MAX - 3], "...");
+		cerr_pos = SYS_TMP_BUF_MAX;
 	    }
 	}
     }
@@ -3115,8 +3115,8 @@ void sys_printf(CIO where, char* format, ...)
         vfprintf(stdout, format, va);
     } else {
         /* where indicates which fd to write to */
-        vsprintf((char*)tmp_buf,format,va);
-	write(where,tmp_buf,sys_strlen((char*)tmp_buf));
+        vsprintf((char*)sys_tmp_buf,format,va);
+	write(where,sys_tmp_buf,sys_strlen((char*)sys_tmp_buf));
     }
       
     va_end(va);
@@ -3129,14 +3129,14 @@ int ch; CIO where;
        sys_putc('\r', where);
 
     if (where == CBUF) {
-	if (cerr_pos < TMP_BUF_MAX) {
-	    tmp_buf[cerr_pos++] = ch;
-	    if (cerr_pos == TMP_BUF_MAX) {
-		strcpy((char*)&tmp_buf[TMP_BUF_MAX - 3], "...");
-		cerr_pos = TMP_BUF_MAX;
+	if (cerr_pos < SYS_TMP_BUF_MAX) {
+	    sys_tmp_buf[cerr_pos++] = ch;
+	    if (cerr_pos == SYS_TMP_BUF_MAX) {
+		strcpy((char*)&sys_tmp_buf[SYS_TMP_BUF_MAX - 3], "...");
+		cerr_pos = SYS_TMP_BUF_MAX;
 	    }
 	}
-	else if (cerr_pos >= tmp_buf_size)
+	else if (cerr_pos >= sys_tmp_buf_size)
 	    erl_exit(1, "Internal buffer overflow in erl_printf\n");
     }
     else if (where == COUT) {

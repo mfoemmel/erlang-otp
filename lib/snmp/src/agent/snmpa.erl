@@ -28,10 +28,12 @@
 	 current_context/0, current_net_if_data/0, 
 	 
 	 get_symbolic_store_db/0,
+	 which_aliasnames/0, 
 	 name_to_oid/1, name_to_oid/2, 
 	 oid_to_name/1, oid_to_name/2,
 	 int_to_enum/2, int_to_enum/3, 
 	 enum_to_int/2, enum_to_int/3,
+
 	 info/0, info/1, 
 	 load_mibs/1, load_mibs/2, 
 	 unload_mibs/1, unload_mibs/2, 
@@ -103,13 +105,17 @@ verbosity(Agent,Verbosity) ->
 
 
 %%-----------------------------------------------------------------
-%% Get the symbolic store (internal) database id for faster access to
-%% to data.
-%% Returns: term()
+%% 
+%% Some symbolic store (internal database) utility functions
+%% 
 %%-----------------------------------------------------------------
 
 get_symbolic_store_db() ->
     snmpa_symbolic_store:get_db().
+
+
+which_aliasnames() ->
+    snmpa_symbolic_store:which_aliasnames().
 
 
 %%-----------------------------------------------------------------

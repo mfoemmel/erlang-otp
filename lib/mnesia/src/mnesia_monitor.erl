@@ -684,7 +684,8 @@ env() ->
      fallback_error_function,
      max_wait_for_decision,
      schema_location,
-     core_dir
+     core_dir,
+     pid_sort_order
     ].
 
 default_env(access_module) -> 
@@ -721,6 +722,8 @@ default_env(max_wait_for_decision) ->
 default_env(schema_location) -> 
     opt_disc;
 default_env(core_dir) ->
+    false;
+default_env(pid_sort_order) ->
     false.
 
 check_type(Env, Val) ->
@@ -760,7 +763,12 @@ do_check_type(max_wait_for_decision, I) when integer(I), I > 0 -> I;
 do_check_type(schema_location, M) -> media(M);
 do_check_type(core_dir, "false") -> false;
 do_check_type(core_dir, false) -> false;
-do_check_type(core_dir, Dir) when list(Dir) -> Dir.
+do_check_type(core_dir, Dir) when list(Dir) -> Dir;
+do_check_type(pid_sort_order, r9b_plain) -> r9b_plain;
+do_check_type(pid_sort_order, "r9b_plain") -> r9b_plain;
+do_check_type(pid_sort_order, standard) -> standard;
+do_check_type(pid_sort_order, "standard") -> standard;
+do_check_type(pid_sort_order, _) -> false.
 
 
 bool(true) -> true;

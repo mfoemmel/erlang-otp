@@ -1305,6 +1305,12 @@ transform_2([],MungedForms,Vars,_,_) ->
 %% This way we will be able to exclude functions defined in include files.
 munge({function,0,module_info,_Arity,_Clauses},_Vars,_MainFile,_Switch) ->
     ignore; % module_info will be added again when the forms are recompiled
+munge(Form={function,_,'MNEMOSYNE QUERY',_,_},Vars,_MainFile,Switch) ->
+    {Form,Vars,Switch};                 % No bumps in Mnemosyne code.
+munge(Form={function,_,'MNEMOSYNE RULE',_,_},Vars,_MainFile,Switch) ->
+    {Form,Vars,Switch};
+munge(Form={function,_,'MNEMOSYNE RECFUNDEF',_,_},Vars,_MainFile,Switch) ->
+    {Form,Vars,Switch};
 munge({function,Line,Function,Arity,Clauses},Vars,_MainFile,on) ->
     Vars2 = Vars#vars{function=Function,
 		      arity=Arity,
@@ -1317,6 +1323,9 @@ munge(Form={attribute,_,file,{MainFile,_}},Vars,MainFile,_Switch) ->
     {Form,Vars,on};                     % Switch on tranformation!
 munge(Form={attribute,_,file,{_InclFile,_}},Vars,_MainFile,_Switch) ->
     {Form,Vars,off};                    % Switch off transformation!
+munge({attribute,_,compile,{parse_transform,_}},_Vars,_MainFile,_Switch) ->
+    %% Don't want to run parse transforms more than once.
+    ignore;
 munge(Form,Vars,_MainFile,Switch) ->    % Other attributes and skipped includes.
     {Form,Vars,Switch}.
 

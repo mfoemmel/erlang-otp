@@ -624,7 +624,7 @@ insert_op(Tid, _, {op, create_table, TabDef}, InPlace, InitBy) ->
 			    %% Indecies are still created by loader
 			    disc_delete_indecies(Tab, Cs, Storage)
 			    %% disc_delete_table(Tab, Storage)
-		    end,
+		    end, 
 		    
 		    %% Update whereabouts and create table
 		    mnesia_controller:create_table(Tab),

@@ -444,8 +444,9 @@ generate_v3_msg(NoteStore, Pdu,
     case (catch snmp_pdus:enc_scoped_pdu(ScopedPDU)) of
 	{'EXIT', Reason} ->
 	    user_err("failed encoding scoped pdu "
-		     "(pdu: ~w, contextName: ~w): ~n~w",
-		     [Pdu, CtxName, Reason]),
+		     "~n   pdu: ~w"
+		     "~n   contextName: ~w"
+		     "~n   reason: ~w", [Pdu, CtxName, Reason]),
 	    {discarded, Reason};
 	ScopedPDUBytes -> 
 	    {ok, generate_v3_msg(NoteStore, Pdu, ScopedPDUBytes, 

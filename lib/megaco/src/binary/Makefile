@@ -19,6 +19,7 @@ include $(ERL_TOP)/make/target.mk
 
 EBIN = ../../ebin
 MEGACO_INCLUDEDIR = ../../include
+MEGACO_ENGINEDIR = ../engine
 
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
@@ -42,7 +43,9 @@ RELSYSDIR = $(RELEASE_PATH)/lib/megaco-$(VSN)
 
 include modules.mk
 
-ASN1_SPECS = $(ASN1_V1_SPEC) $(ASN1_V2_SPEC) 
+ASN1_SPECS = $(ASN1_V1_SPEC) \
+             $(ASN1_V2_SPEC) \
+             $(ASN1_PREV3A_SPEC) 
 ASN1_FILES = $(ASN1_SPECS:%=%.asn)
 
 V1_SPECS = $(BER_ASN1_V1_SPEC)         \
@@ -59,16 +62,27 @@ V2_SPECS = $(BER_ASN1_V2_SPEC)         \
            $(PER_BIN_ASN1_V2_SPEC)     \
            $(PER_BIN_DRV_ASN1_V2_SPEC) 
 
-SPECS = $(V1_SPECS) $(V2_SPECS) 
+PREV3A_SPECS = $(BER_ASN1_PREV3A_SPEC)         \
+               $(BER_BIN_ASN1_PREV3A_SPEC)     \
+               $(BER_BIN_DRV_ASN1_PREV3A_SPEC) \
+               $(PER_ASN1_PREV3A_SPEC)         \
+               $(PER_BIN_ASN1_PREV3A_SPEC)     \
+               $(PER_BIN_DRV_ASN1_PREV3A_SPEC) 
+
+SPECS = $(V1_SPECS) $(V2_SPECS) $(PREV3A_SPECS)
 
 V1_SPEC_BINS = $(V1_SPECS:%=%.erl) $(V1_SPECS:%=%.hrl) $(V1_SPECS:%=%.asn1db)
 V2_SPEC_BINS = $(V2_SPECS:%=%.erl) $(V2_SPECS:%=%.hrl) $(V2_SPECS:%=%.asn1db)
-SPEC_BINS    = $(V1_SPEC_BINS) $(V2_SPEC_BINS) 
+PREV3A_SPEC_BINS = $(PREV3A_SPECS:%=%.erl) $(PREV3A_SPECS:%=%.hrl) $(PREV3A_SPECS:%=%.asn1db)
+SPEC_BINS    = $(V1_SPEC_BINS) $(V2_SPEC_BINS) $(PREV3A_SPEC_BINS) 
 
 ERL_FILES = $(MODULES:%=%.erl)	
-HRL_FILES = $(INTERNAL_HRL_FILES) $(V1_SPECS:%=%.hrl) $(V2_SPECS:%=%.hrl)
+HRL_FILES = $(INTERNAL_HRL_FILES) \
+	$(V1_SPECS:%=%.hrl) \
+	$(V2_SPECS:%=%.hrl) \
+	$(PREV3A_SPECS:%=%.hrl)
 
-TARGET_FILES =  \
+TARGET_FILES = \
 	$(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
 
@@ -77,6 +91,10 @@ TARGET_FILES =  \
 # ----------------------------------------------------
 ifeq ($(TYPE),debug)
 ERL_COMPILE_FLAGS += -Ddebug
+endif
+
+ifeq ($(MEGACO_DEBUG),true)
+ERL_COMPILE_FLAGS += -Dmegaco_debug
 endif
 
 ifeq ($(WARN_UNUSED_WARS),true)
@@ -106,7 +124,9 @@ v1: $(V2_SPEC_BINS)
 
 v2: $(V2_SPEC_BINS)
 
-specs: v1 v2
+v3: $(V3_SPEC_BINS)
+
+specs: v1 v2 v3
 
 clean:
 	rm -f $(TARGET_FILES) 

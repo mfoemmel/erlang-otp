@@ -55,21 +55,32 @@ tokens(Chars, Line, Version, Acc) ->
 	%% (Version 1 is the default so we don't 
 	%%  need to handle it)
         {token, {'SafeChars',1,"!/2"} = Token, Rest, LatestLine} ->
-%             d("tokens -> v2 megaco"
-%               "~n   length(Rest): ~p"
-%               "~n   LatestLine:   ~p", [length(Rest), LatestLine]),
+% 	    d("tokens -> v2 megaco"
+% 	      "~n   length(Rest): ~p"
+% 	      "~n   LatestLine:   ~p", [length(Rest), LatestLine]),
             tokens(Rest, LatestLine, 2, [Token | Acc]);
         {token, {'SafeChars',1,"megaco/2"} = Token, Rest, LatestLine} ->
-%             d("tokens -> v2 megaco"
-%               "~n   length(Rest): ~p"
-%               "~n   LatestLine:   ~p", [length(Rest), LatestLine]),
+% 	    d("tokens -> v2 megaco"
+% 	      "~n   length(Rest): ~p"
+% 	      "~n   LatestLine:   ~p", [length(Rest), LatestLine]),
             tokens(Rest, LatestLine, 2, [Token | Acc]);
 
-	{token, Token, Rest, LatestLine} ->
-% 	    d("tokens -> token: "
-% 	      "~n   Token:        ~p"
+        {token, {'SafeChars',1,"!/3"} = Token, Rest, LatestLine} ->
+% 	    d("tokens -> v3 megaco"
 % 	      "~n   length(Rest): ~p"
-% 	      "~n   LastLine:     ~p", [Token, length(Rest), LatestLine]),
+% 	      "~n   LatestLine:   ~p", [length(Rest), LatestLine]),
+            tokens(Rest, LatestLine, 3, [Token | Acc]);
+        {token, {'SafeChars',1,"megaco/3"} = Token, Rest, LatestLine} ->
+% 	    d("tokens -> v3 megaco"
+% 	      "~n   length(Rest): ~p"
+% 	      "~n   LatestLine:   ~p", [length(Rest), LatestLine]),
+            tokens(Rest, LatestLine, 3, [Token | Acc]);
+
+	{token, Token, Rest, LatestLine} ->
+%   	    d("tokens -> token: "
+%   	      "~n   Token:        ~p"
+%   	      "~n   length(Rest): ~p"
+%   	      "~n   LastLine:     ~p", [Token, length(Rest), LatestLine]),
 	    tokens(Rest, LatestLine, Version, [Token | Acc]);
 
 	{bad_token, Token, _Rest, _LatestLine} ->
@@ -421,6 +432,8 @@ select_token(LowerText) ->
         "av"                    -> 'AuditValueToken';
 	"authentication"        -> 'AuthToken';
         "au"                    -> 'AuthToken';
+        "both"                  -> 'BothToken';         % v3
+        "b"                     -> 'BothToken';         % v3
         "bothway"               -> 'BothwayToken';
         "bw"                    -> 'BothwayToken';
         "brief"                 -> 'BriefToken';
@@ -429,10 +442,14 @@ select_token(LowerText) ->
         "bf"                    -> 'BufferToken';
         "context"               -> 'CtxToken';
         "c"                     -> 'CtxToken';
+        "contextattr"           -> 'ContextAttrToken';  % v3
+        "ct"                    -> 'ContextAttrToken';  % v3
         "contextaudit"          -> 'ContextAuditToken';
         "ca"                    -> 'ContextAuditToken';
 	"digitmap"              -> 'DigitMapToken';
 	"dm"                    -> 'DigitMapToken';
+        "direction"             -> 'DirectionToken';    % v3
+        "di"                    -> 'DirectionToken';    % v3
         "discard"               -> 'DiscardToken';
         "ds"                    -> 'DiscardToken';
         "disconnected"          -> 'DisconnectedToken';
@@ -447,12 +464,16 @@ select_token(LowerText) ->
         "em"                    -> 'EmbedToken';
         "emergency"             -> 'EmergencyToken';
         "eg"                    -> 'EmergencyToken';
+        "emergencyofftoken"     -> 'EmergencyOffToken';
+        "ego"                   -> 'EmergencyOffToken';
         "error"                 -> 'ErrorToken';
         "er"                    -> 'ErrorToken';
         "eventbuffer"           -> 'EventBufferToken';
         "eb"                    -> 'EventBufferToken';
         "events"                -> 'EventsToken';
         "e"                     -> 'EventsToken';
+        "external"              -> 'ExternalToken';     % v3
+        "ex"                    -> 'ExternalToken';     % v3
         "failover"              -> 'FailoverToken';
         "fl"                    -> 'FailoverToken';
         "forced"                -> 'ForcedToken';
@@ -464,8 +485,12 @@ select_token(LowerText) ->
         "h226"                  -> 'H226Token';
         "handoff"               -> 'HandOffToken';
         "ho"                    -> 'HandOffToken';
+        "iepscall"              -> 'IEPSToken';         % v3
+        "ieps"                  -> 'IEPSToken';         % v3
         "inactive"              -> 'InactiveToken';
         "in"                    -> 'InactiveToken';
+        "internal"              -> 'InternalToken';     % v3
+        "it"                    -> 'InternalToken';     % v3
         "isolate"               -> 'IsolateToken';
         "immackrequired"        -> 'ImmAckRequiredToken';
         "ia"                    -> 'ImmAckRequiredToken';
@@ -534,6 +559,8 @@ select_token(LowerText) ->
         "reason"                -> 'ReasonToken';
         "re"                    -> 'ReasonToken';
         "receiveonly"           -> 'RecvonlyToken';
+        "requestid"             -> 'RequestIDToken';    % v3
+        "rq"                    -> 'RequestIDToken';    % v3
         "rc"                    -> 'RecvonlyToken';
         "reply"                 -> 'ReplyToken';
         "p"                     -> 'ReplyToken';
@@ -559,6 +586,8 @@ select_token(LowerText) ->
         "sc"                    -> 'ServiceChangeToken';
         "servicechangeaddress"  -> 'ServiceChangeAddressToken';
         "ad"                    -> 'ServiceChangeAddressToken';
+        "servicechangeinc"      -> 'ServiceChangeIncompleteToken'; % v3
+        "sic"                   -> 'ServiceChangeIncompleteToken'; % v3
         "signallist"            -> 'SignalListToken';
         "sl"                    -> 'SignalListToken';
         "signals"               -> 'SignalsToken';
@@ -623,6 +652,6 @@ select_token(LowerText) ->
 %     d(get(dbg), F, A).
 
 % d(true, F, A) ->
-%     io:format("~p:" ++ F ++ "~n", [?MODULE|A]);
+%     io:format("DBG:~p:" ++ F ++ "~n", [?MODULE|A]);
 % d(_, _, _) ->
 %     ok.

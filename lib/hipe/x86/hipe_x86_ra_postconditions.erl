@@ -9,9 +9,9 @@
 %%  History  :	* 2001-07-24 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: pergu $
-%%              $Date: 2004/02/09 15:06:02 $
-%%              $Revision: 1.23 $
+%%              $Author: kostis $
+%%              $Date: 2005/01/19 10:34:38 $
+%%              $Revision: 1.24 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -250,7 +250,7 @@ fix_mem_operand(Opnd, TempMap) ->	% -> {[fixupcode], newop, DontSpill}
 	false ->
 	  %% XXX: (Mikael) this test looks wrong to me, since it will
 	  %% falsely trigger for temps that are actual registers.
-	  %% ra_dummy uses src_is_pseudo() here.
+	  %% The naive register allocator uses src_is_pseudo() here.
           %%
 	  %% The assembler can't handle reg offsets, so at the moment
           %% it is handled here. (Happi)

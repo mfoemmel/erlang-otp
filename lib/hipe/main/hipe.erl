@@ -1259,7 +1259,6 @@ hipe_timers() ->
 %%     sparc_schedule
 %%     timeregalloc:
 %%     timers
-%%     safe
 %%     use_indexing
 
 %% Valid option keys. (Don't list aliases or negations - the check is
@@ -1311,7 +1310,6 @@ opt_keys() ->
      rtl_prop,
      rtl_lcm,
      rtl_show_translation,
-     safe,
      sparc_estimate_block_time,
      sparc_peephole,
      sparc_post_schedule,
@@ -1325,7 +1323,6 @@ opt_keys() ->
      timeregalloc,
      timers,
      to_rtl,
-     type_signature,
      type_warnings,
      type_only,
      use_indexing,
@@ -1346,7 +1343,7 @@ o1_opts() ->
     powerpc ->
       Common;
     x86 ->
-      Common;
+      [x87 | Common]; %% XXX: Temporary until x86 has sse2
     amd64 ->
       Common;
     Arch ->
@@ -1427,7 +1424,6 @@ opt_negations() ->
    {no_sparc_schedule, sparc_schedule},
    {no_time, time},
    {no_type_only, type_only},
-   {no_type_signature, type_signature},
    {no_type_warnings, type_warnings},
    {no_use_callgraph, use_callgraph},
    {no_use_clusters, use_clusters},
@@ -1461,8 +1457,10 @@ opt_expansions() ->
   [{{'O', 1}, [{'O', 1} | o1_opts()]},
    {{'O', 2}, [{'O', 2} | o2_opts()]},
    {{'O', 3}, [{'O', 3} | o3_opts()]},
-   {safe, [{regalloc,graph_color}, no_use_indexing]},
-   {x87, [x87, inline_fp]}].
+   {x87, [x87, inline_fp]},
+   {inline_fp, case get(hipe_target_arch) of %% XXX: Temporary until x86
+		 x86 -> [x87, inline_fp];    %%       has sse2
+		 _ -> [inline_fp] end}].
 
 %% This expands "basic" options, which may be tested early and cannot be
 %% in conflict with options found in the source code.

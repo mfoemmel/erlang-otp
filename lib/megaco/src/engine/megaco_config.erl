@@ -42,10 +42,15 @@
          verify_val/2,
 
 	 %% Pending limit counter
-	 cre_pending_counter/1,
-	 get_pending_counter/1,
-	 incr_pending_counter/1,
-	 del_pending_counter/1,
+	 cre_pending_counter/3,
+	 get_pending_counter/2,
+	 incr_pending_counter/2,
+	 del_pending_counter/2,
+	 %% Backward compatibillity functions (to be removed in later versions)
+	 cre_pending_counter/1,  
+	 get_pending_counter/1,  
+	 incr_pending_counter/1, 
+	 del_pending_counter/1,  
 
          lookup_local_conn/1,
          connect/4,
@@ -78,9 +83,6 @@
 	ok).
 -endif.
 
-
-%% -define(d(F,A), io:format("~p~p:" ++ F ++ "~n", [self(),?MODULE|A])).
--define(d(F,A), ok).
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -127,7 +129,8 @@ user_info(UserMid, conn_data) ->
                      trans_sender       = '_',
 
                      pending_timer     	= '_',
-                     orig_pending_limit = '_',
+                     sent_pending_limit = '_',
+                     recv_pending_limit = '_',
                      reply_timer      	= '_',
                      control_pid      	= '_',
                      monitor_ref      	= '_',
@@ -148,9 +151,13 @@ user_info(UserMid, connections) ->
     [C#conn_data.conn_handle || C <- user_info(UserMid, conn_data)];
 user_info(UserMid, mid) ->
     ets:lookup_element(megaco_config, {UserMid, mid}, 2);
+user_info(UserMid, orig_pending_limit) ->
+    user_info(UserMid, sent_pending_limit);
 user_info(UserMid, Item) ->
     ets:lookup_element(megaco_config, {UserMid, Item}, 2).
 
+update_user_info(UserMid, orig_pending_limit, Val) ->
+    update_user_info(UserMid, sent_pending_limit, Val);
 update_user_info(UserMid, Item, Val) ->
     call({update_user_info, UserMid, Item, Val}).
 
@@ -211,7 +218,9 @@ conn_info(CD, Item) when record(CD, conn_data) ->
         trans_timer        -> CD#conn_data.trans_timer;
 
         pending_timer      -> CD#conn_data.pending_timer;
-        orig_pending_limit -> CD#conn_data.orig_pending_limit;
+        orig_pending_limit -> CD#conn_data.sent_pending_limit;
+        sent_pending_limit -> CD#conn_data.sent_pending_limit;
+        recv_pending_limit -> CD#conn_data.recv_pending_limit;
         reply_timer        -> CD#conn_data.reply_timer;
         control_pid        -> CD#conn_data.control_pid;
         monitor_ref        -> CD#conn_data.monitor_ref;
@@ -246,13 +255,18 @@ replace(Item, WithItem, [OtherItem|List]) ->
     [OtherItem | replace(Item, WithItem, List)].
 
 
+update_conn_info(#conn_data{conn_handle = CH}, Item, Val) ->
+    do_update_conn_info(CH, Item, Val);
 update_conn_info(CH, Item, Val) when record(CH, megaco_conn_handle) ->
-    call({update_conn_data, CH, Item, Val});
-update_conn_info(CD, Item, Val) when record(CD, conn_data) ->
-    CH = CD#conn_data.conn_handle,
-    call({update_conn_data, CH, Item, Val});
+    do_update_conn_info(CH, Item, Val);
 update_conn_info(BadHandle, _Item, _Val) ->
     {error, {no_such_connection, BadHandle}}.
+
+do_update_conn_info(CH, orig_pending_limit, Val) ->
+    do_update_conn_info(CH, sent_pending_limit, Val);
+do_update_conn_info(CH, Item, Val) ->
+    call({update_conn_data, CH, Item, Val}).
+
 
 system_info(Item) ->
     case Item of
@@ -335,20 +349,37 @@ cre_counter(Item, Initial) ->
     
 
 cre_pending_counter(TransId) ->
-    Counter = {pending_counter, TransId},
-    cre_counter(Counter, 0).
+    cre_pending_counter(sent, TransId, 0).
+
+cre_pending_counter(Direction, TransId, Initial) ->
+%     ?report_trace(ignore, "create pending counter", 
+% 		  [Direction, TransId, Initial]),
+    Counter = {pending_counter, Direction, TransId},
+    cre_counter(Counter, Initial).
 
 incr_pending_counter(TransId) ->
-    Counter = {pending_counter, TransId},
+    incr_pending_counter(sent, TransId).
+
+incr_pending_counter(Direction, TransId) ->
+%     ?report_trace(ignore, "increment pending counter", [Direction, TransId]),
+    Counter = {pending_counter, Direction, TransId},
     incr_counter(Counter, 1).
 
 get_pending_counter(TransId) ->
-    Counter = {pending_counter, TransId},
+    get_pending_counter(sent, TransId).
+
+get_pending_counter(Direction, TransId) ->
+%     ?report_trace(ignore, "get pending counter", [Direction, TransId]),
+    Counter = {pending_counter, Direction, TransId},
     [{Counter, Val}] = ets:lookup(megaco_config, Counter),
     Val.
 
 del_pending_counter(TransId) ->
-    Counter = {pending_counter, TransId},
+    del_pending_counter(sent, TransId).
+
+del_pending_counter(Direction, TransId) ->
+%     ?report_trace(ignore, "delete pending counter", [Direction, TransId]),
+    Counter = {pending_counter, Direction, TransId},
     ets:delete(megaco_config, Counter).
 
 
@@ -513,7 +544,8 @@ init_user_defaults() ->
     init_user_default(trans_sender,       undefined),
 
     init_user_default(pending_timer,      timer:seconds(30)),
-    init_user_default(orig_pending_limit, infinity),
+    init_user_default(sent_pending_limit, infinity),
+    init_user_default(recv_pending_limit, infinity),
     init_user_default(reply_timer,        timer:seconds(30)),
     init_user_default(send_mod,           megaco_tcp),
     init_user_default(encoding_mod,       megaco_pretty_text_encoder),
@@ -673,8 +705,209 @@ terminate(_Reason, _State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 
+code_change(_Vsn, S, upgrade_from_pre_2_2_0) ->
+    ?d("code_change(upgrade_from_pre_2_2_0) -> entry", []),
+    NewVals = [{recv_pending_limit, infinity}],
+    upgrade_user_info(NewVals),
+    upgrade_conn_info(),
+    {ok, S};
+
+code_change(_Vsn, S, downgrade_from_2_2_0) ->
+    ?d("code_change(downgrade_from_2_2_0) -> entry", []),
+    NewItems = [recv_pending_limit],
+    downgrade_user_info(NewItems),
+    downgrade_conn_info(),
+    {ok, S};
+
 code_change(_Vsn, S, _Extra) ->
     {ok, S}.
+
+
+
+%% ------
+%% These function is used to upgrade user and connection info when
+%% the conn_data record has been changed.
+%% 
+
+upgrade_user_info(NewVals) ->
+    Users = [default|system_info(users)],
+    F = fun({Item, Val}) ->
+		do_upgrade_user_info(Users, Item, Val)
+	end,
+    lists:foreach(F, NewVals),
+    ok.
+
+do_upgrade_user_info([], _Item, _Val) ->
+    ok;
+do_upgrade_user_info([Mid|Mids], Item, Val) ->
+    do_update_user(Mid, Item, Val),
+    do_upgrade_user_info(Mids, Item, Val).
+
+downgrade_user_info(NewItems) ->
+    ?d("downgrade_user_info -> entry", []),
+    Users = [default|system_info(users)],
+    F = fun(Item) ->
+		do_downgrade_user_info(Users, Item)
+	end,
+    lists:foreach(F, NewItems),
+    ok.
+
+do_downgrade_user_info([], _Item) ->
+    ok;
+do_downgrade_user_info([Mid|Mids], Item) ->
+    ?d("do_downgrade_user_info -> entry with: "
+	"~n   Mid:  ~p"
+	"~n   Item: ~p", [Mid, Item]),
+    ets:delete(megaco_config, {Mid, Item}),
+    do_downgrade_user_info(Mids, Item).
+
+upgrade_conn_info() ->
+    Conns = system_info(connections),
+    do_upgrade_conn_info(Conns, infinity),
+    ok.
+
+do_upgrade_conn_info([], _RecvPendingLimit) ->
+    ok;
+do_upgrade_conn_info([CH|Conns], RecvPendingLimit) ->
+    case lookup_local_conn(CH) of
+        [] ->
+            ok;
+	[CD] ->
+            do_upgrade_conn_data(CD, RecvPendingLimit)
+    end,
+    do_upgrade_conn_info(Conns, RecvPendingLimit).
+
+do_upgrade_conn_data(OldStyleCD, RecvPendingLimit) ->
+    NewStyleCD = new_conn_data(OldStyleCD, RecvPendingLimit),
+    ets:insert(megaco_local_conn, NewStyleCD).
+
+new_conn_data({conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
+	       AutoAck, 
+	       TransAck, TransAckMaxCnt, 
+	       TransReq, TransReqMaxCnt, TransReqMaxSz, 
+	       TransTmr, TransSndr, 
+	       
+	       PendingTmr, 
+	       SentPendingLimit, 
+	       %% RecvPendingLimit - This is where to insert the new values
+	       ReplyTmr, CtrPid, MonRef, 
+	       Sendmod, SendHandle, 
+	       EncodeMod, EncodeConf, 
+	       ProtV, AuthData, 
+	       UserMod, UserArgs, ReplyAction, ReplyData,
+	       Threaded}, 
+	      RecvPendingLimit) ->
+    #conn_data{conn_handle        = CH, 
+	       serial             = Serial,
+	       max_serial         = MaxSerial,
+	       request_timer      = ReqTmr,
+	       long_request_timer = LongReqTmr,
+	       
+	       auto_ack           = AutoAck,
+	       
+	       trans_ack          = TransAck,
+	       trans_ack_maxcount = TransAckMaxCnt,
+	       
+	       trans_req          = TransReq,
+	       trans_req_maxcount = TransReqMaxCnt,
+	       trans_req_maxsize  = TransReqMaxSz,
+	       
+	       trans_timer        = TransTmr,
+	       trans_sender       = TransSndr,
+	       
+	       pending_timer      = PendingTmr,
+	       sent_pending_limit = SentPendingLimit,
+	       recv_pending_limit = RecvPendingLimit, %% The new value
+
+	       reply_timer        = ReplyTmr,
+	       control_pid        = CtrPid,
+	       monitor_ref        = MonRef,
+	       send_mod           = Sendmod,
+	       send_handle        = SendHandle,
+	       encoding_mod       = EncodeMod,
+	       encoding_config    = EncodeConf,
+	       protocol_version   = ProtV,
+	       auth_data          = AuthData,
+	       user_mod           = UserMod,
+	       user_args          = UserArgs,
+	       reply_action       = ReplyAction,
+	       reply_data         = ReplyData,
+	       threaded           = Threaded}.
+
+
+downgrade_conn_info() ->
+    ?d("downgrade_conn_info -> entry", []),
+    Conns = system_info(connections),
+    do_downgrade_conn_info(Conns),
+    ok.
+
+do_downgrade_conn_info([]) ->
+    ok;
+do_downgrade_conn_info([CH|Conns]) ->
+    ?d("do_downgrade_conn_info -> entry with: "
+	"~n   CH: ~p", [CH]),
+    case lookup_local_conn(CH) of
+        [] ->
+            ok;
+	[CD] ->
+            do_downgrade_conn_data(CD)
+    end,
+    do_downgrade_conn_info(Conns).
+
+do_downgrade_conn_data(NewStyleCD) ->
+    OldStyleCD = old_conn_data(NewStyleCD),
+    ets:insert(megaco_local_conn, OldStyleCD).
+
+old_conn_data(#conn_data{conn_handle        = CH, 
+			 serial             = Serial,
+			 max_serial         = MaxSerial,
+			 request_timer      = ReqTmr,
+			 long_request_timer = LongReqTmr,
+			 
+			 auto_ack           = AutoAck,
+			 
+			 trans_ack          = TransAck,
+			 trans_ack_maxcount = TransAckMaxCnt,
+			 
+			 trans_req          = TransReq,
+			 trans_req_maxcount = TransReqMaxCnt,
+			 trans_req_maxsize  = TransReqMaxSz,
+			 
+			 trans_timer        = TransTmr,
+			 trans_sender       = TransSndr,
+			 
+			 pending_timer      = PendingTmr,
+			 sent_pending_limit = SentPendingLimit,
+			 %% recv_pending_limit = RecvPendingLimit, 
+			 
+			 reply_timer        = ReplyTmr,
+			 control_pid        = CtrPid,
+			 monitor_ref        = MonRef,
+			 send_mod           = Sendmod,
+			 send_handle        = SendHandle,
+			 encoding_mod       = EncodeMod,
+			 encoding_config    = EncodeConf,
+			 protocol_version   = ProtV,
+			 auth_data          = AuthData,
+			 user_mod           = UserMod,
+			 user_args          = UserArgs,
+			 reply_action       = ReplyAction,
+			 reply_data         = ReplyData,
+			 threaded           = Threaded}) ->
+    {conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
+     AutoAck, 
+     TransAck, TransAckMaxCnt, 
+     TransReq, TransReqMaxCnt, TransReqMaxSz, 
+     TransTmr, TransSndr, 
+     PendingTmr, 
+     SentPendingLimit, 
+     %% RecvPendingLimit 
+     ReplyTmr, CtrPid, MonRef, 
+     Sendmod, SendHandle, 
+     EncodeMod, EncodeConf, 
+     ProtV, AuthData, 
+     UserMod, UserArgs, ReplyAction, ReplyData,
+     Threaded}.
 
 
 %%%----------------------------------------------------------------------
@@ -740,7 +973,8 @@ verify_val(Item, Val) ->
 	trans_sender when Val == undefined -> true;
 
         pending_timer                   -> verify_timer(Val);
-        orig_pending_limit              -> verify_int(Val) and (Val > 0);
+        sent_pending_limit              -> verify_int(Val) and (Val > 0);
+        recv_pending_limit              -> verify_int(Val) and (Val > 0);
         reply_timer                     -> verify_timer(Val);
         control_pid      when pid(Val)  -> true;
         monitor_ref                     -> true; % Internal usage only
@@ -854,7 +1088,8 @@ replace_conn_data(CD, Item, Val) ->
 	%%                     update_trans_ack & update_trans_req
 
         pending_timer      -> CD#conn_data{pending_timer      = Val};
-        orig_pending_limit -> CD#conn_data{orig_pending_limit = Val};
+        sent_pending_limit -> CD#conn_data{sent_pending_limit = Val};
+        recv_pending_limit -> CD#conn_data{recv_pending_limit = Val};
         reply_timer        -> CD#conn_data{reply_timer        = Val};
         control_pid        -> CD#conn_data{control_pid        = Val};
         monitor_ref        -> CD#conn_data{monitor_ref        = Val};
@@ -1214,7 +1449,8 @@ init_conn_data(RH, RemoteMid, SendHandle, ControlPid) ->
 	       trans_ack_maxcount = user_info(Mid, trans_ack_maxcount),
 
                pending_timer      = user_info(Mid, pending_timer),
-               orig_pending_limit = user_info(Mid, orig_pending_limit),
+               sent_pending_limit = user_info(Mid, sent_pending_limit),
+               recv_pending_limit = user_info(Mid, recv_pending_limit),
                reply_timer        = user_info(Mid, reply_timer),
                control_pid        = ControlPid,
                monitor_ref        = undefined_monitor_ref,

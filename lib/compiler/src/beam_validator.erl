@@ -188,14 +188,14 @@ validate_1(Is, Name, Arity, Entry) ->
 
 validate_2({Ls1,[{func_info,{atom,Mod},{atom,Name},Arity}=_F|Is]},
 	   Name, Arity, Entry) ->
-    lists:foreach(fun (_L) -> ?DBG_FORMAT("  ~p.~n", [_L]) end, Ls1),
+    lists:foreach(fun (_L) -> ?DBG_FORMAT("  ~p.~n", [{label,_L}]) end, Ls1),
     ?DBG_FORMAT("  ~p.~n", [_F]),
     validate_3(labels(Is), Name, Arity, Entry, Mod, Ls1);
 validate_2({Ls1,Is}, Name, Arity, _Entry) ->
     error({{'_',Name,Arity},{first(Is),length(Ls1),illegal_instruction}}).
 
 validate_3({Ls2,Is}, Name, Arity, Entry, Mod, Ls1) ->
-    lists:foreach(fun (_L) -> ?DBG_FORMAT("  ~p.~n", [_L]) end, Ls2),
+    lists:foreach(fun (_L) -> ?DBG_FORMAT("  ~p.~n", [{label,_L}]) end, Ls2),
     Offset = 1 + length(Ls1) + 1 + length(Ls2),
     EntryOK = (Entry == undefined) orelse lists:member(Entry, Ls2),
     if  EntryOK ->
@@ -293,6 +293,10 @@ valfun_1({put,Src}, Vst) ->
 valfun_1({put_string,Sz,_,Dst}, Vst0) when is_integer(Sz) ->
     Vst = eat_heap(2*Sz, Vst0),
     set_type_reg(cons, Dst, Vst);
+%% Misc.
+valfun_1({'%live',Live}, Vst) ->
+    verify_live(Live, Vst),
+    Vst;
 %% Exception generating calls
 valfun_1({call_ext,Live,Func}=I, Vst) ->
     %% This is ugly since call_ext is taken care of further down, so
@@ -561,10 +565,6 @@ valfun_4({bs_need_buf,_}, Vst) -> Vst;
 valfun_4({bs_final,{f,Fail},Dst}, Vst0) ->
     Vst = branch_state(Fail, Vst0),
     set_type_reg(binary, Dst, Vst);
-%% Misc.
-valfun_4({'%live',Live}, Vst) ->
-    verify_live(Live, Vst),
-    Vst;
 valfun_4(_, _) ->
     error(unknown_instruction).
 

@@ -3,7 +3,7 @@
 
 -module(hipe_amd64_ra_postconditions).
 -export([check_and_rewrite/4]).
--include("hipe_amd64.hrl").
+-include("../x86/hipe_x86.hrl").
 -define(HIPE_INSTRUMENT_COMPILER, true).
 -include("../main/hipe.hrl").
 -define(count_temp(T), ?cons_counter(counter_mfa_mem_temps, T)).
@@ -16,7 +16,7 @@ check_and_rewrite(AMD64Defun, Coloring, DontSpill, _Options) ->
   #defun{code=Code0} = AMD64Defun,
   {Code1, NewDontSpill} = do_insns(Code0, TempMap, [], DontSpill),
   {AMD64Defun#defun{code=Code1,
-		  var_range={0, hipe_gensym:get_var(amd64)}}, 
+		  var_range={0, hipe_gensym:get_var(x86)}}, 
    Coloring, NewDontSpill}.
 
 do_insns([I|Insns], TempMap, Is, DontSpill) ->
@@ -82,21 +82,21 @@ do_jmp_switch(I, TempMap, DontSpill) ->
         false ->
           {[I], DontSpill};
         true ->
-          NewTab = hipe_amd64:mk_new_temp('untagged'),
-          {[hipe_amd64:mk_move(Tab, NewTab), I#jmp_switch{jtab=Tab}],
+          NewTab = hipe_x86:mk_new_temp('untagged'),
+          {[hipe_x86:mk_move(Tab, NewTab), I#jmp_switch{jtab=Tab}],
           [NewTab|DontSpill]}
       end;
     true ->      
       case is_spilled(Tab, TempMap) of
         false ->
-          NewTmp = hipe_amd64:mk_new_temp('untagged'),
-          {[hipe_amd64:mk_move(Temp, NewTmp), I#jmp_switch{temp=NewTmp}],
+          NewTmp = hipe_x86:mk_new_temp('untagged'),
+          {[hipe_x86:mk_move(Temp, NewTmp), I#jmp_switch{temp=NewTmp}],
            [NewTmp|DontSpill]};
         true ->
-          NewTmp = hipe_amd64:mk_new_temp('untagged'),
-          NewTab = hipe_amd64:mk_new_temp('untagged'),
-          {[hipe_amd64:mk_move(Temp, NewTmp),
-            hipe_amd64:mk_move(Tab, NewTab), 
+          NewTmp = hipe_x86:mk_new_temp('untagged'),
+          NewTab = hipe_x86:mk_new_temp('untagged'),
+          {[hipe_x86:mk_move(Temp, NewTmp),
+            hipe_x86:mk_move(Tab, NewTab), 
             I#jmp_switch{temp=NewTmp, jtab=NewTab}],
            [NewTmp,NewTab|DontSpill]}
       end
@@ -110,8 +110,8 @@ do_lea(I, TempMap, DontSpill) ->
     false ->
       {[I], DontSpill};
     true ->
-      NewTmp = hipe_amd64:mk_new_temp('untagged'),
-      {[I#lea{temp=NewTmp}, hipe_amd64:mk_move(NewTmp, Temp)],
+      NewTmp = hipe_x86:mk_new_temp('untagged'),
+      {[I#lea{temp=NewTmp}, hipe_x86:mk_move(NewTmp, Temp)],
        [NewTmp| DontSpill]}
   end.
 
@@ -133,7 +133,7 @@ do_move64(I, TempMap, DontSpill) ->
       {[I],DontSpill};
     true ->
       Reg = clone(Dst),
-      {[I#move64{dst=Reg}, hipe_amd64:mk_move(Reg, Dst)], [Reg| DontSpill]}
+      {[I#move64{dst=Reg}, hipe_x86:mk_move(Reg, Dst)], [Reg| DontSpill]}
   end.
 
 %%% fix a movx op
@@ -152,9 +152,9 @@ do_movx(I, TempMap, DontSpill) ->
       false ->
 	I2 = case I of
 	       #movsx{} ->
-		 [hipe_amd64:mk_movsx(Src, Dst)];
+		 [hipe_x86:mk_movsx(Src, Dst)];
 	       #movzx{} ->
-		 [hipe_amd64:mk_movzx(Src, Dst)]
+		 [hipe_x86:mk_movzx(Src, Dst)]
 	     end,
 	{I2, []};
       true ->
@@ -162,9 +162,9 @@ do_movx(I, TempMap, DontSpill) ->
 	I2 = 
 	  case I of
 	    #movsx{} ->
-	      [hipe_amd64:mk_movsx(Src, Dst2), hipe_amd64:mk_move(Dst2, Dst)];
+	      [hipe_x86:mk_movsx(Src, Dst2), hipe_x86:mk_move(Dst2, Dst)];
 	    #movzx{} ->
-	      [hipe_amd64:mk_movzx(Src, Dst2), hipe_amd64:mk_move(Dst2, Dst)]
+	      [hipe_x86:mk_movzx(Src, Dst2), hipe_x86:mk_move(Dst2, Dst)]
 	  end,
 	{I2, [Dst2]}
     end,
@@ -193,9 +193,9 @@ do_shift(I, TempMap, DontSpill) ->
   DontSpill3 = DontSpill ++ DontSpill2,
   Reg = hipe_amd64_registers:rcx(),
   case Src0 of
-    #amd64_imm{} ->
+    #x86_imm{} ->
       {FixDst ++ [I#shift{dst=Dst}], DontSpill3};
-    #amd64_temp{reg=Reg}  ->
+    #x86_temp{reg=Reg}  ->
       {FixDst ++ [I#shift{dst=Dst}], DontSpill3}
   end.
 
@@ -216,7 +216,7 @@ do_binary(Src0, Dst0, TempMap, DontSpill) ->
 	    {FixSrc, Src, []};
 	  true ->
 	    Src2 = clone(Src),
-	    FixSrc2 = FixSrc ++ [hipe_amd64:mk_move(Src, Src2)],
+	    FixSrc2 = FixSrc ++ [hipe_x86:mk_move(Src, Src2)],
 	    {FixSrc2, Src2, [Src2]}
 	end
     end,
@@ -234,23 +234,23 @@ fix_dst_operand(Opnd, TempMap) ->
 
 fix_mem_operand(Opnd, TempMap) ->	% -> {[fixupcode], newop, DontSpill}
   case Opnd of
-    #amd64_mem{base=Base,off=Off} ->
+    #x86_mem{base=Base,off=Off} ->
       case is_mem_opnd(Base, TempMap) of
 	false ->
 	  %% XXX: (Mikael) this test looks wrong to me, since it will
 	  %% falsely trigger for temps that are actual registers.
-	  %% ra_dummy uses src_is_pseudo() here.
+	  %% The naive register allocator uses src_is_pseudo() here.
           %%
 	  %% The assembler can't handle reg offsets, so at the moment
           %% it is handled here. (Happi)
-	  case  hipe_amd64:is_temp(Off) of
+	  case  hipe_x86:is_temp(Off) of
 	    false ->
 	      {[], Opnd, []};
 	    true ->		% pseudo(pseudo)
 	      Temp = clone(Off),
-	      {[hipe_amd64:mk_move(Base, Temp),
-		hipe_amd64:mk_alu('add', Off, Temp)],
-	       Opnd#amd64_mem{base=Temp, off=hipe_amd64:mk_imm(0)},
+	      {[hipe_x86:mk_move(Base, Temp),
+		hipe_x86:mk_alu('add', Off, Temp)],
+	       Opnd#x86_mem{base=Temp, off=hipe_x86:mk_imm(0)},
 	       [Temp]}
 
 	  end;
@@ -258,13 +258,13 @@ fix_mem_operand(Opnd, TempMap) ->	% -> {[fixupcode], newop, DontSpill}
 	  Temp = clone(Base),
 	  case is_mem_opnd(Off, TempMap) of
 	    false ->		% imm/reg(pseudo)
-	      {[hipe_amd64:mk_move(Base, Temp)],
-	       Opnd#amd64_mem{base=Temp},
+	      {[hipe_x86:mk_move(Base, Temp)],
+	       Opnd#x86_mem{base=Temp},
 	       [Temp]};
 	    true ->		% pseudo(pseudo)
-	      {[hipe_amd64:mk_move(Base, Temp),
-		hipe_amd64:mk_alu('add', Off, Temp)],
-	       Opnd#amd64_mem{base=Temp, off=hipe_amd64:mk_imm(0)},
+	      {[hipe_x86:mk_move(Base, Temp),
+		hipe_x86:mk_alu('add', Off, Temp)],
+	       Opnd#x86_mem{base=Temp, off=hipe_x86:mk_imm(0)},
 	       [Temp]}
 	  end
       end;
@@ -277,10 +277,10 @@ fix_mem_operand(Opnd, TempMap) ->	% -> {[fixupcode], newop, DontSpill}
 is_mem_opnd(Opnd, TempMap) ->
   R =
     case Opnd of
-      #amd64_mem{} -> true;
-      #amd64_temp{} -> 
-	Reg = hipe_amd64:temp_reg(Opnd),
-	case hipe_amd64:temp_is_allocatable(Opnd) of
+      #x86_mem{} -> true;
+      #x86_temp{} -> 
+	Reg = hipe_x86:temp_reg(Opnd),
+	case hipe_x86:temp_is_allocatable(Opnd) of
 	  true -> 
 	    case size(TempMap) > Reg of 
 	      true ->
@@ -304,10 +304,10 @@ is_mem_opnd(Opnd, TempMap) ->
 %%% Check if an operand is a spilled Temp.
 
 %%src_is_spilled(Src, TempMap) ->
-%%  case hipe_amd64:is_temp(Src) of
+%%  case hipe_x86:is_temp(Src) of
 %%    true ->
-%%      Reg = hipe_amd64:temp_reg(Src),
-%%      case hipe_amd64:temp_is_allocatable(Src) of
+%%      Reg = hipe_x86:temp_reg(Src),
+%%      case hipe_x86:temp_is_allocatable(Src) of
 %%	true -> 
 %%	  case size(TempMap) > Reg of 
 %%	    true ->
@@ -327,9 +327,9 @@ is_mem_opnd(Opnd, TempMap) ->
 %%  end.
 
 is_spilled(Temp, TempMap) ->
-  case hipe_amd64:temp_is_allocatable(Temp) of
+  case hipe_x86:temp_is_allocatable(Temp) of
     true ->
-      Reg = hipe_amd64:temp_reg(Temp),
+      Reg = hipe_x86:temp_reg(Temp),
       case size(TempMap) > Reg of 
 	true ->
 	  case hipe_temp_map:is_spilled(Reg, TempMap) of
@@ -351,17 +351,17 @@ is_spilled(Temp, TempMap) ->
 clone(Dst) ->
   Type =
     case Dst of
-      #amd64_mem{} -> hipe_amd64:mem_type(Dst);
-      #amd64_temp{} -> hipe_amd64:temp_type(Dst)
+      #x86_mem{} -> hipe_x86:mem_type(Dst);
+      #x86_temp{} -> hipe_x86:temp_type(Dst)
     end,
-  hipe_amd64:mk_new_temp(Type).
+  hipe_x86:mk_new_temp(Type).
 
 %%% Make a certain reg into a clone of Dst
 
 % clone2(Dst, Reg) ->
 %   Type =
 %     case Dst of
-%       #amd64_mem{} -> hipe_amd64:mem_type(Dst);
-%       #amd64_temp{} -> hipe_amd64:temp_type(Dst)
+%       #x86_mem{} -> hipe_x86:mem_type(Dst);
+%       #x86_temp{} -> hipe_x86:temp_type(Dst)
 %     end,
-%   hipe_amd64:mk_temp(Reg,Type).
+%   hipe_x86:mk_temp(Reg,Type).

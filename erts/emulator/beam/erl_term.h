@@ -173,12 +173,10 @@ _ET_DECLARE_CHECKED(Eterm*,list_val,Eterm);
 #define list_val(x)		_ET_APPLY(list_val,(x))
 
 #define CONS(hp, car, cdr) \
-        (*(hp) = (car), \
-         *((hp)+1) = (cdr), \
-          make_list(hp))
+        (CAR(hp)=(car), CDR(hp)=(cdr), make_list(hp))
 
-#define CAR(x)  *(x)
-#define CDR(x)  *((x)+1)
+#define CAR(x)  ((x)[0])
+#define CDR(x)  ((x)[1])
 
 /* generic tagged pointer (boxed or list) access methods */
 #define _unchecked_ptr_val(x)	((Eterm*)((x) & ~((Uint) 0x3)))

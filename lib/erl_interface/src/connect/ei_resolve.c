@@ -19,8 +19,6 @@
  * Interface functions to different versions of gethostbyname
  */
 
-#include "eidef.h"
-
 #ifdef VXWORKS
 #include <vxWorks.h>
 #include <stdio.h>
@@ -29,7 +27,6 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <errno.h>
-/* #include "netdb.h" */
 #include <symLib.h>
 #include <sysSymTbl.h>
 
@@ -583,6 +580,10 @@ struct hostent *ei_gethostbyaddr_r(const char *addr,
 				int buflen, 
 				int *h_errnop)
 {
+#if (EI_THREADS == false)
+  /* threads disabled, no need to call reentrant function */
+  return gethostbyaddr(addr, length, type); 
+#else
 #ifndef HAVE_GETHOSTBYNAME_R
   return my_gethostbyaddr_r(addr,length,type,hostp,buffer,buflen,h_errnop);
 #else
@@ -597,6 +598,7 @@ struct hostent *ei_gethostbyaddr_r(const char *addr,
   return gethostbyaddr_r(addr,length,type,hostp,buffer,buflen,h_errnop);
 #endif
 #endif
+#endif
 }
 
 struct hostent *ei_gethostbyname_r(const char *name, 
@@ -605,6 +607,10 @@ struct hostent *ei_gethostbyname_r(const char *name,
 				    int buflen, 
 				    int *h_errnop)
 {
+#if (EI_THREADS == false)
+  /* threads disabled, no need to call reentrant function */
+  return gethostbyname(name);
+#else
 #ifndef HAVE_GETHOSTBYNAME_R
   return my_gethostbyname_r(name,hostp,buffer,buflen,h_errnop);
 #else
@@ -616,6 +622,7 @@ struct hostent *ei_gethostbyname_r(const char *name,
   return result;
 #else
   return gethostbyname_r(name,hostp,buffer,buflen,h_errnop);
+#endif
 #endif
 #endif
 }

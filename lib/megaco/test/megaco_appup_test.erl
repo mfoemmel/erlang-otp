@@ -301,7 +301,7 @@ check_module_depend(_M, D, _Modules) ->
     error({bad_depend, D}).
 
 
-check_no_remove_depends(Module, []) ->
+check_no_remove_depends(_Module, []) ->
     ok;
 check_no_remove_depends(Module, [Instr|Instrs]) ->
     check_no_remove_depend(Module, Instr),
@@ -327,7 +327,7 @@ check_no_remove_depend(_, _) ->
 
 check_change(soft) ->
     ok;
-check_change({advanced, Something}) ->
+check_change({advanced, _Something}) ->
     ok;
 check_change(Change) ->
     error({bad_change, Change}).

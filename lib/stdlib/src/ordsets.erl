@@ -34,11 +34,12 @@
 
 new() -> [].
 
-%% is_set(Set) -> bool().
+%% is_set(Term) -> bool().
 %%  Return 'true' if Set is an ordered set of elements, else 'false'.
 
 is_set([E|Es]) -> is_set(Es, E);
-is_set([]) -> true.
+is_set([]) -> true;
+is_set(_) -> false.
 
 is_set([E2|Es], E1) when E1 < E2 ->
     is_set(Es, E2);

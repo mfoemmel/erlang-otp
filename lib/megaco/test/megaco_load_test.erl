@@ -89,7 +89,8 @@ all(suite) ->
  	 multi_user_medium_load,
  	 multi_user_heavy_load,
  	 multi_user_extreme_load
-	].
+	],
+    Cases.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -362,7 +363,7 @@ multi_load(MGs, NumLoaders, NumReqs) ->
 	    {error, Error}
     end.
 
-do_multi_load(Pids, NumLoaders, NumReqs) ->
+do_multi_load(Pids, _NumLoaders, _NumReqs) ->
     Fun = fun(P) -> P ! {apply_multi_load, self()} end,
     lists:foreach(Fun, Pids),
     await_multi_load_collectors(Pids, [], []).
@@ -399,7 +400,7 @@ multi_load_collector(Parent, Node, Mid, NumLoaders, NumReqs, Env) ->
 	    Parent ! {load_start_failed, self(), Mid, Else}
     end.
 
-multi_load_collector_loop(Perent, Pid, Mid, NumLoaders, NumReqs) ->
+multi_load_collector_loop(Parent, Pid, Mid, NumLoaders, NumReqs) ->
     receive
 	{apply_multi_load, Parent} ->
 	    Res = ?MG_LOAD(Pid, NumLoaders, NumReqs),
@@ -477,7 +478,7 @@ make_mids([MgNode|MgNodes], Mids) ->
 	[Name, _] ->
 	    Mid = {deviceName, Name},
 	    make_mids(MgNodes, [{Mid, MgNode}|Mids]);
-	Else ->
+	_Else ->
 	    exit("Test node must be started with '-sname'")
     end.
 
@@ -530,8 +531,7 @@ random() ->
 apply_load_timer() ->
     erlang:send_after(random(), self(), apply_load_timeout).
 
-format_timestamp(Now) ->
-    {N1, N2, N3} = Now,
+format_timestamp({_N1, _N2, N3} = Now) ->
     {Date, Time}   = calendar:now_to_datetime(Now),
     {YYYY,MM,DD}   = Date,
     {Hour,Min,Sec} = Time,

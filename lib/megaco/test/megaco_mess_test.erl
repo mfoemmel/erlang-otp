@@ -133,10 +133,10 @@ connect(Config) when list(Config) ->
 	                                  {request_timer, infinity},
 	                                  {reply_timer, infinity}])),
 
-    MgRH = ?VERIFY(_, megaco:user_info(MgMid, receive_handle)),
+    MgRH = user_info(MgMid, receive_handle),
     {ok, PrelCH} = ?VERIFY({ok, _}, megaco:connect(MgRH, PrelMid, sh, self())),
 
-    ?VERIFY([PrelCH], megaco:system_info(connections)),
+    connections([PrelCH]),
     ?VERIFY([PrelCH], megaco:user_info(MgMid, connections)),
     
     ?VERIFY(bad_send_mod, megaco:user_info(MgMid, send_mod)),
@@ -178,9 +178,9 @@ request_and_reply(Config) when list(Config) ->
     ?VERIFY(ok,	megaco:start_user(MgcMid, UserConfig)),
 
     d("request_and_reply -> get receive info for ~p",[MgMid]),
-    MgRH = ?VERIFY(_, megaco:user_info(MgMid, receive_handle)),
+    MgRH = user_info(MgMid, receive_handle),
     d("request_and_reply -> get receive info for ~p",[MgcMid]),
-    MgcRH = ?VERIFY(_, megaco:user_info(MgcMid, receive_handle)), 
+    MgcRH = user_info(MgcMid, receive_handle), 
     d("request_and_reply -> start transport",[]),
     {ok, MgPid, MgSH} =
 	?VERIFY({ok, _, _}, UserMod:start_transport(MgRH, MgcRH)),
@@ -193,7 +193,7 @@ request_and_reply(Config) when list(Config) ->
     d("request_and_reply -> (MG) try connect to MGC",[]),
     ?SEND(megaco:connect(MgRH, PrelMid, MgSH, MgPid)), % Mg prel
     d("request_and_reply -> (MGC) await connect from MG",[]),
-    ?USER({connect, PrelMgCH, V, []}, ok),
+    ?USER({connect, PrelMgCH, _V, []}, ok),
     ?RECEIVE([{res, _, {ok, PrelMgCH}}]),
 
     d("request_and_reply -> (MG) send service change request",[]),
@@ -201,14 +201,14 @@ request_and_reply(Config) when list(Config) ->
     ?SEND(megaco:call(PrelMgCH, [Req], [])),
 
     d("request_and_reply -> (MGC) send service change reply",[]),
-    ?USER({connect, MgcCH, V, []}, ok), % Mgc auto
+    ?USER({connect, MgcCH, _V, []}, ok), % Mgc auto
     Rep = service_change_reply(MgcMid),
-    ?USER({request, MgcCH, V, [[Req]]}, {discard_ack, [Rep]}),
-    ?USER({connect, MgCH, V, []}, ok), % Mg confirm
+    ?USER({request, MgcCH, _V, [[Req]]}, {discard_ack, [Rep]}),
+    ?USER({connect, MgCH, _V, []}, ok), % Mg confirm
     ?RECEIVE([{res, _, {1, {ok, [Rep]}}}]),
 
     d("request_and_reply -> get (system info) connections",[]),
-    ?VERIFYL([MgCH, MgcCH], megaco:system_info(connections)),
+    connections([MgCH, MgcCH]),
     d("request_and_reply -> get (~p) connections",[MgMid]),
     ?VERIFY([MgCH], megaco:user_info(MgMid, connections)),
     d("request_and_reply -> get (~p) connections",[MgcMid]),
@@ -217,13 +217,13 @@ request_and_reply(Config) when list(Config) ->
     Reason = shutdown,
     d("request_and_reply -> (MG) disconnect",[]),
     ?SEND(megaco:disconnect(MgCH, Reason)),
-    ?USER({disconnect, MgCH, V, [{user_disconnect, Reason}]}, ok),
+    ?USER({disconnect, MgCH, _V, [{user_disconnect, Reason}]}, ok),
     ?RECEIVE([{res, _, ok}]),
     ?VERIFY(ok,	megaco:stop_user(MgMid)),
 
     d("request_and_reply -> (MGC) disconnect",[]),
     ?SEND(megaco:disconnect(MgcCH, Reason)),
-    ?USER({disconnect, MgcCH, V, [{user_disconnect, Reason}]}, ok),
+    ?USER({disconnect, MgcCH, _V, [{user_disconnect, Reason}]}, ok),
     ?RECEIVE([{res, _, ok}]),
     ?VERIFY(ok,	megaco:stop_user(MgcMid)),
 
@@ -357,10 +357,10 @@ pending_ack(Config) when list(Config) ->
     ?VERIFY(ok,	megaco:start_user(MgcMid, UserConfig)),
     
     d("pending_ack -> retrieve (user info) receive_handle for MG",[]),
-    MgRH = ?VERIFY(_, megaco:user_info(MgMid, receive_handle)),
+    MgRH = user_info(MgMid, receive_handle),
     
     d("pending_ack -> retrieve (user info) receive_handle for MGC",[]),
-    MgcRH = ?VERIFY(_, megaco:user_info(MgcMid, receive_handle)), 
+    MgcRH = user_info(MgcMid, receive_handle), 
     
     d("pending_ack -> start transport",[]),
     {ok, MgPid, MgSH} =
@@ -376,7 +376,7 @@ pending_ack(Config) when list(Config) ->
     ?SEND(megaco:connect(MgRH, PrelMid, MgSH, MgPid)), % Mg prel
     
     d("pending_ack -> (MG) await connect",[]),
-    ?USER({connect, PrelMgCH, V, []}, ok),
+    ?USER({connect, PrelMgCH, _V, []}, ok),
     
     ?RECEIVE([{res, _, {ok, PrelMgCH}}]),
     
@@ -385,19 +385,20 @@ pending_ack(Config) when list(Config) ->
     ?VERIFY(ok, megaco:cast(PrelMgCH, [Req], [{reply_data, UserData}])),
     
     d("pending_ack -> (MGC) await connect",[]),
-    ?USER({connect, MgcCH, V, []}, ok), % Mgc auto
+    ?USER({connect, MgcCH, _V, []}, ok), % Mgc auto
     
     d("pending_ack -> (MGC) "
        "await service change request (reply with pending)",[]),
     RequestData = Req,
-    ?USER({request, MgcCH, V, [[Req]]}, {pending, RequestData}),
+    ?USER({request, MgcCH, _V, [[Req]]}, {pending, RequestData}),
     Rep = service_change_reply(MgcMid),
     AckData = ack_data,
     %% BUGBUG: How do we verify that the MG rally gets a pending trans?
     d("pending_ack -> (MGC) await long request (result of pending)",[]),
-    ?USER({long_request, MgcCH, V, [RequestData]}, {{handle_ack, AckData}, [Rep]}),
+    ?USER({long_request, MgcCH, _V, [RequestData]}, 
+	  {{handle_ack, AckData}, [Rep]}),
     d("pending_ack -> (MG) await connect",[]),
-    ?USER({connect, MgCH, V, []}, ok), % Mg confirm
+    ?USER({connect, MgCH, _V, []}, ok), % Mg confirm
 
     %% **************************************************
     %% The following 2 USER calls should really happen
@@ -407,10 +408,10 @@ pending_ack(Config) when list(Config) ->
     %% START
     %% 
     d("pending_ack -> (MG) await service change reply",[]),
-    ?USER({reply, MgCH, V, [{ok, [Rep]}, UserData]}, ok),
+    ?USER({reply, MgCH, _V, [{ok, [Rep]}, UserData]}, ok),
 
     d("pending_ack -> (MGC) await service change ack",[]),
-    ?USER({ack, MgcCH, V, [ok, AckData]}, ok),
+    ?USER({ack, MgcCH, _V, [ok, AckData]}, ok),
 
     %% 
     %% END
@@ -418,11 +419,11 @@ pending_ack(Config) when list(Config) ->
     %% **************************************************
 
 
-    ?VERIFYL([MgCH, MgcCH], megaco:system_info(connections)),
+    connections([MgCH, MgcCH]),
     ?VERIFY([MgCH], megaco:user_info(MgMid, connections)),
     ?VERIFY([MgcCH], megaco:user_info(MgcMid, connections)),
     
-    Reason = shutdown,
+    %% Reason = shutdown,
     ?SEND(application:stop(megaco)),
     ?RECEIVE([{res, _, ok}]),
     d("pending_ack -> done",[]),
@@ -434,7 +435,7 @@ pending_ack(Config) when list(Config) ->
 dist(suite) ->
     [];
 dist(Config) when list(Config) ->
-    [Local, Dist] = ?ACQUIRE_NODES(2, Config),
+    [_Local, Dist] = ?ACQUIRE_NODES(2, Config),
     d("dist -> start proxy",[]),
     megaco_mess_user_test:start_proxy(),
 
@@ -454,10 +455,10 @@ dist(Config) when list(Config) ->
     ?VERIFY(ok,	megaco:start_user(MgcMid, UserConfig)),
 
     d("dist -> retrieve (user info) receive_handle for MG",[]),
-    MgRH = ?VERIFY(_, megaco:user_info(MgMid, receive_handle)),
+    MgRH = user_info(MgMid, receive_handle),
 
     d("dist -> retrieve (user info) receive_handle for MGC",[]),
-    MgcRH = ?VERIFY(_, megaco:user_info(MgcMid, receive_handle)), 
+    MgcRH = user_info(MgcMid, receive_handle), 
 
     d("dist -> start transport",[]),
     {ok, MgPid, MgSH} =
@@ -473,7 +474,7 @@ dist(Config) when list(Config) ->
     ?SEND(megaco:connect(MgRH, PrelMid, MgSH, MgPid)), % Mg prel
 
     d("dist -> (MG) await connect",[]),
-    ?USER({connect, PrelMgCH, V, []}, ok),
+    ?USER({connect, PrelMgCH, _V, []}, ok),
     ?RECEIVE([{res, _, {ok, PrelMgCH}}]),
 
     d("dist -> (MG) send service change request",[]),
@@ -481,16 +482,16 @@ dist(Config) when list(Config) ->
     ?SEND(megaco:call(PrelMgCH, [Req], [])),
 
     d("dist -> (MGC) await auto-connect",[]),
-    ?USER({connect, MgcCH, V, []}, ok), % Mgc auto
+    ?USER({connect, MgcCH, _V, []}, ok), % Mgc auto
 
 
     Rep = service_change_reply(MgcMid),
     d("dist -> (MGC) "
       "await service change request and send reply when received",[]),
-    ?USER({request, MgcCH, V, [[Req]]}, {discard_ack, [Rep]}),
+    ?USER({request, MgcCH, _V, [[Req]]}, {discard_ack, [Rep]}),
 
     d("dist -> (MG) await connect",[]),
-    ?USER({connect, MgCH, V, []}, ok), % Mg confirm
+    ?USER({connect, MgCH, _V, []}, ok), % Mg confirm
 
     d("dist -> (MG) await service change reply",[]),
     ?RECEIVE([{res, _, {1, {ok, [Rep]}}}]),
@@ -508,7 +509,7 @@ dist(Config) when list(Config) ->
     ?SEND(rpc:call(Dist, megaco, connect, [MgcRH, MgMid, MgcSH, MgcPid])), % Mgc dist
 
     d("dist -> (MGC) await auto-connect (from MG on ~p)", [Dist]),
-    ?USER({connect, MgcCH, V, []}, ok), % Mgc dist auto
+    ?USER({connect, MgcCH, _V, []}, ok), % Mgc dist auto
     ?RECEIVE([{res, _, {ok, MgcCH}}]),
 
     d("dist -> (~p:MG) send service change request",[Dist]),
@@ -516,11 +517,11 @@ dist(Config) when list(Config) ->
 
     d("dist -> (MG????????) "
       "await service change request and send reply when received",[]),
-    ?USER({request, MgCH, V, [[Req]]}, {discard_ack, [Rep]}),
+    ?USER({request, MgCH, _V, [[Req]]}, {discard_ack, [Rep]}),
     ?RECEIVE([{res, _, {1, {ok, [Rep]}}}]),
 
     d("dist -> retreive some info",[]),
-    ?VERIFYL([MgCH, MgcCH], megaco:system_info(connections)),
+    connections([MgCH, MgcCH]),
     ?VERIFY([MgCH], megaco:user_info(MgMid, connections)),
     ?VERIFY([MgcCH], megaco:user_info(MgcMid, connections)),
 
@@ -533,13 +534,13 @@ dist(Config) when list(Config) ->
     d("dist -> close down the shop...",[]),
     Reason = shutdown,
     ?SEND(megaco:disconnect(MgCH, Reason)),
-    ?USER({disconnect, MgCH, V, [{user_disconnect, Reason}]}, ok),
+    ?USER({disconnect, MgCH, _V, [{user_disconnect, Reason}]}, ok),
     ?RECEIVE([{res, _, ok}]),
     ?VERIFY(ok,	megaco:stop_user(MgMid)),
 
     ?SEND(megaco:disconnect(MgcCH, Reason)),
-    ?USER({disconnect, MgcCH, V, [{user_disconnect, Reason}]}, ok),
-    ?USER({disconnect, MgcCH, V, [{user_disconnect, Reason}]}, ok),
+    ?USER({disconnect, MgcCH, _V, [{user_disconnect, Reason}]}, ok),
+    ?USER({disconnect, MgcCH, _V, [{user_disconnect, Reason}]}, ok),
     ?RECEIVE([{res, _, ok}]),
     ?VERIFY(ok,	megaco:stop_user(MgcMid)),
 
@@ -567,7 +568,7 @@ otp_4359(Config) when list(Config) ->
 
     ?VERIFY(ok, megaco:update_user_info(Mid, user_mod,  ?MODULE)),
     ?VERIFY(ok, megaco:update_user_info(Mid, user_args, [self()])),
-    RH0 = ?VERIFY(_,  megaco:user_info(Mid, receive_handle)),
+    RH0 = user_info(Mid, receive_handle),
     RH1 = RH0#megaco_receive_handle{send_mod        = ?MODULE,
 				    encoding_mod    = megaco_compact_text_encoder,
 				    encoding_config = []},
@@ -593,7 +594,7 @@ otp_4359(Config) when list(Config) ->
     Conns = megaco:system_info(connections),
     OKs   = lists:duplicate(length(Conns),ok),
     ?VERIFY(OKs, [megaco:disconnect(CH, test_complete) || CH <- Conns]),
-    ?VERIFY(_,	megaco:stop_user(Mid)),
+    stop_user(Mid),
     ?VERIFY(ok, application:stop(megaco)),
     ?RECEIVE([]),
     ok.
@@ -604,7 +605,7 @@ otp_4359_await_actions(Exp) ->
 
 otp_4359_await_actions([], Rep) ->
     lists:reverse(Rep);
-otp_4359_await_actions([{M,I}|R] = All, Rep) ->
+otp_4359_await_actions([{M,I}|R] = _All, Rep) ->
     receive
 	{M, Info} ->
 	    otp_4359_await_actions(R, [{M, I, Info}|Rep]);
@@ -616,9 +617,10 @@ otp_4359_await_actions([{M,I}|R] = All, Rep) ->
 	    exit(timeout)
     end.
 
-otp_4359_analyze_result(RH, []) ->
+otp_4359_analyze_result(_RH, []) ->
     ok;
-otp_4359_analyze_result(RH, [{send_message, ExpErrorCode, EncodedMessage}|L]) ->
+otp_4359_analyze_result(RH, 
+			[{send_message, ExpErrorCode, EncodedMessage}|L]) ->
     io:format("otp_4359_analyze_result -> send_message: ", []),
     otp_4359_analyze_encoded_message(RH, ExpErrorCode, EncodedMessage),
     otp_4359_analyze_result(RH,L);
@@ -993,6 +995,45 @@ make_node_name(Name) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+user_info(Mid, Key) ->
+    case (catch megaco:user_info(Mid, Key)) of
+	{'EXIT', _} = Error ->
+	    ?ERROR(Error);
+	Val ->
+	    ?LOG("Ok, ~p~n", [Val]),
+	    Val
+    end.
+
+
+stop_user(Mid) ->
+    case (catch megaco:stop_user(Mid)) of
+	{'EXIT', _} = Error ->
+	    ?ERROR(Error);
+	Val ->
+	    ?LOG("Ok, ~p~n", [Val]),
+	    Val
+    end.
+
+connections() ->
+    system_info(connections).
+
+connections(Conns0) ->
+    Conns1 = lists:sort(Conns0),
+    case lists:sort(connections()) of
+	Conns1 ->
+	    ?LOG("Ok, ~p~n", [Conns1]),
+	    Conns1;
+	Conns2 ->
+	    ?ERROR({Conns1, Conns2}),
+	    Conns2
+    end.
+
+system_info(Key) ->
+    megaco:system_info(Key).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 sleep(X) -> receive after X -> ok end.
 
 % error_msg(F,A) -> error_logger:error_msg(F ++ "~n",A).
@@ -1028,8 +1069,7 @@ print(true, Ts, Tc, P, F, A) ->
 print(_, _, _, _, _, _) ->
     ok.
 
-format_timestamp(Now) ->
-    {N1, N2, N3}   = Now,
+format_timestamp({_N1, _N2, N3} = Now) ->
     {Date, Time}   = calendar:now_to_datetime(Now),
     {YYYY,MM,DD}   = Date,
     {Hour,Min,Sec} = Time,

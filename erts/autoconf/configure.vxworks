@@ -6,7 +6,8 @@
 #
 
 
-# vxworks_ppc860 vxworks_ppc603 vxworks_ppc603_longcall vxworks_cpu32 vxworks_sparc
+# vxworks_ppc860 vxworks_ppc603 vxworks_ppc603_longcall vxworks_cpu32 vxworks_sparc 
+# vxworks_ppc750 vxworks_simso
 
 case $# in
 1) host=$1 ;;
@@ -15,12 +16,14 @@ esac
 
 case $1 in
 vxworks_cpu32) ;;
+vxworks_ppc750) ;;
 vxworks_ppc860) ;;
 vxworks_ppc603) ;;
 vxworks_ppc603_nolongcall) ;;
 vxworks_sparc) ;;
+vxworks_simso) ;;
 *) echo "usage: configure.vxworks TARGET";
-   echo "where TARGET is one of vxworks_cpu32, vxworks_ppc860, vxworks_ppc603, vxworks_ppc603_nolongcall, vxworks_sparc"; exit 1;;
+   echo "where TARGET is one of vxworks_cpu32, vxworks_ppc750, vxworks_ppc860, vxworks_ppc603, vxworks_ppc603_nolongcall, vxworks_sparc, vxworks_simso"; exit 1;;
 esac
 
 if [ "x$ERL_TOP" = x ]; then
@@ -33,7 +36,12 @@ target=$host
 
 # Find out the HOST and WIND_BASE environment
 HOST_TYPE=${HOST_TYPE:=sun4-solaris2}
-WIND_BASE=${WIND_BASE:=`ypmatch tornado passwd | awk -F: '{print $6}'`/wind}
+
+case $1 in
+vxworks_ppc750) WIND_BASE=/net/finwe/ldisk/Tornado2.2 ;;
+vxworks_simso) WIND_BASE=/net/finwe/ldisk/Tornado2.2 ;;
+*) WIND_BASE=${WIND_BASE:=`ypmatch tornado passwd | awk -F: '{print $6}'`/wind} ;;
+esac
 
 # These are created by autoconf.
 MKDIRS="${ERL_TOP}/lib/os_mon/priv/bin/$target
@@ -92,6 +100,7 @@ CONFIG_FILES="${ERL_TOP}/erts/emulator/$host/Makefile
 	    $erts_incl_intrnl/$host/ethread_header_config.h
 	    $etcdir/$host/Makefile
 	    $erlint_dir/$host/Makefile
+	    $erlint_dir/$host/eidefs.mk
 	    $epmd_dir/$host/Makefile
 	    $internal_tools_dir/make/$host/otp.mk
 	    $os_mon_dir/$host/Makefile

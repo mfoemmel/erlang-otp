@@ -173,9 +173,19 @@ extra_flags="-I${ERL_TOP}/erts/$host $OTP_EXTRA_FLAGS"
 CFLAGS="$CFLAGS $extra_flags"
 DEBUG_CFLAGS="-g $extra_flags"
 
+CFLAG_RUNTIME_LIBRARY_PATH="-Wl,-R"
 case $host_os in
   darwin*)
+	CFLAG_RUNTIME_LIBRARY_PATH=
 	CFLAGS="$CFLAGS -no-cpp-precomp"
+	;;
+  win32)
+	CFLAG_RUNTIME_LIBRARY_PATH=
+	;;
+  osf*)
+	CFLAG_RUNTIME_LIBRARY_PATH="-Wl,-rpath,"
+	;;
+  *)
 	;;
 esac
 
@@ -192,6 +202,7 @@ dnl DEBUG_FLAGS is obsolete (I hope)
 AC_SUBST(DEBUG_FLAGS)
 AC_SUBST(DEBUG_CFLAGS)
 AC_SUBST(WFLAGS)
+AC_SUBST(CFLAG_RUNTIME_LIBRARY_PATH)
 
 dnl
 dnl Figure out operating system and cpu architecture
@@ -391,17 +402,19 @@ LM_FIND_ETHR_LIB
 #   yes     multi-threaded emulator requested
 #   force   multi-threaded emulator required
 #
-# THR_LIB_NAME, THR_LIBS, THR_X_LIBS, and THR_DEFS is used by the emulator,
-# and can be used by applications that only require thread support when
-# the emulator has thread support. Other applications should use
-# ETHR_LIB_NAME, ETHR_LIBS, ETHR_X_LIBS, and ETHR_DEFS.
+# EMU_THR_LIB_NAME, EMU_THR_LIBS, EMU_THR_X_LIBS, and EMU_THR_DEFS is
+# used by the emulator, and can (but should not) be used by applications
+# that only require thread support when the emulator has thread support.
+# Other applications should use ETHR_LIB_NAME, ETHR_LIBS, ETHR_X_LIBS,
+# and ETHR_DEFS.
 #
 AC_MSG_CHECKING(if the emulator should use threads)
 
-THR_LIB_NAME=
-THR_X_LIBS=
-THR_LIBS=
-THR_DEFS=
+EMU_THR_LIB_NAME=
+EMU_THR_X_LIBS=
+EMU_THR_LIBS=
+EMU_THR_DEFS=
+emu_threads=no
 
 if test "X$ETHR_LIB_NAME" = "X"; then
     found_threads=no
@@ -423,8 +436,10 @@ esac
 
 case "$enable_threads"-"$found_threads" in
     force-yes)
+	emu_threads=yes
 	AC_MSG_RESULT(yes; thread support required and therefore forced) ;;
     yes-yes)
+	emu_threads=yes
 	AC_MSG_RESULT(yes; thread support requested) ;;
     no-yes)
 	AC_MSG_RESULT(no; thread support found but not requested) ;;
@@ -438,26 +453,30 @@ case "$enable_threads"-"$found_threads" in
 	AC_MSG_ERROR(internal error) ;;
 esac
 
-case $found_threads-$enable_threads in
-    yes-yes|yes-force)
+if test $emu_threads = yes; then
 	# Threads enabled for emulator
-	THR_LIB_NAME=$ETHR_LIB_NAME
-	THR_X_LIBS=$ETHR_X_LIBS
-	THR_LIBS="-L$ERL_TOP/erts/lib/internal/$host $ETHR_LIBS"
-	THR_DEFS="-I$ERL_TOP/erts/include/internal -I$ERL_TOP/erts/include/internal/$host $ETHR_DEFS -DUSE_THREADS"
+	EMU_THR_LIB_NAME=$ETHR_LIB_NAME
+	EMU_THR_X_LIBS=$ETHR_X_LIBS
+	EMU_THR_LIBS=$ETHR_LIBS
+	EMU_THR_DEFS="$ETHR_DEFS -DUSE_THREADS"
 	ENABLE_ALLOC_TYPE_VARS="$ENABLE_ALLOC_TYPE_VARS threads"
 	case $host_os in
 	    solaris*) AC_DEFINE(ENABLE_CHILD_WAITER_THREAD) ;;
 	    linux*) AC_DEFINE(USE_RECURSIVE_MALLOC_MUTEX) ;;
 	    *) ;;
-	esac ;;
-    *)
-	# No threads enabled for emulator
-	;;
-esac
+	esac
+fi
 
-AC_SUBST(THR_LIB_NAME)
-AC_SUBST(THR_X_LIBS)
+AC_SUBST(EMU_THR_LIB_NAME)
+AC_SUBST(EMU_THR_X_LIBS)
+AC_SUBST(EMU_THR_LIBS)
+AC_SUBST(EMU_THR_DEFS)
+
+
+dnl THR_LIBS and THR_DEFS are only used by odbc
+THR_LIBS=$ETHR_X_LIBS
+THR_DEFS=$ETHR_DEFS
+
 AC_SUBST(THR_LIBS)
 AC_SUBST(THR_DEFS)
 
@@ -716,7 +735,7 @@ dnl ----------------------------------------------------------------------
 
 dnl We may need the thread library in order to find some functions
 saved_libs=$LIBS
-LIBS="$LIBS $THR_X_LIBS"
+LIBS="$LIBS $EMU_THR_X_LIBS"
 
 dnl Check if we have these, in which case we'll try to build
 dnl inet_gethost with ipv6 support.
@@ -728,7 +747,7 @@ AC_CHECK_FUNCS([ieee_handler fpsetmask finite isnan isinf res_gethostbyname dlop
 AC_FUNC_SETVBUF_REVERSED
 
 disable_vfork=false
-if test "x$THR_LIB_NAME" != "x"; then
+if test "x$EMU_THR_LIB_NAME" != "x"; then
 	AC_MSG_CHECKING([if vfork is known to hang multithreaded applications])
 	case $host_os in
 		osf*)
@@ -1209,56 +1228,73 @@ dnl ssh
 # my_drv.so:   my_drv.o my_utils.o
 #              $(LD) $(LDFLAGS) $(soname) $@ -o $@ $^ -lc $(LIBS)
 #
-# XXX By now only the Solaris 2 linker and the GNU linker are supported.
-# -- Peter
-# XXX (And AIX)
 #--------------------------------------------------------------------
+
 if test "x$GCC" = xyes; then
 	DED_CFLAGS="$CFLAGS -fPIC"
 else
 	DED_CFLAGS="$CFLAGS"
 fi
-# For windows we certainly need another way of making shared libraries
-if test "X$host" = "Xwin32"; then
-	AC_MSG_CHECKING(for linker flags for loadable drivers)
-	DED_LD=ld.sh	
-	DED_LDFLAGS="-dll"
-	ded_soname=""
-else
-	DED_LD=ld
-	# I don't think anything really needs the soname stuff
-	# - nullify it here and we'll find out  /Per
-	ded_soname=""
-	AC_MSG_CHECKING(for linker flags for loadable drivers)
-	case $host_os in
-		solaris2*|sysv4*)
-			DED_LDFLAGS="-G"
-		;;
-		aix4*)
-			DED_LDFLAGS="-G -bnoentry -bexpall"
-		;;
-		freebsd2*)
-			# Non-ELF GNU linker
-			DED_LDFLAGS="-Bshareable"
-		;;
-		darwin*)
-			# Mach-O linker: a shared lib and a loadable
-			# object file is not the same thing.
-			DED_LDFLAGS="-bundle -flat_namespace -undefined suppress -lbundle1.o"
-			DED_CFLAGS="$DED_CFLAGS -fno-common"
-		;;
-		*)
-			# assume GNU linker and ELF
-			DED_LDFLAGS="-shared"
-		;;
-	esac
+if test $emu_threads = yes; then
+	DED_CFLAGS="$ETHR_DEFS $DED_CFLAGS"
 fi
+
+DED_LD=ld
+DED_LD_FLAG_RUNTIME_LIBRARY_PATH="-R"
+
+case $host_os in
+	win32)
+		DED_LD=ld.sh	
+		DED_LDFLAGS="-dll"
+		DED_LD_FLAG_RUNTIME_LIBRARY_PATH=
+	;;
+	solaris2*|sysv4*)
+		DED_LDFLAGS="-G"
+	;;
+	aix4*)
+		DED_LDFLAGS="-G -bnoentry -bexpall"
+	;;
+	freebsd2*)
+		# Non-ELF GNU linker
+		DED_LDFLAGS="-Bshareable"
+	;;
+	darwin*)
+		# Mach-O linker: a shared lib and a loadable
+		# object file is not the same thing.
+		DED_LDFLAGS="-bundle -flat_namespace -undefined suppress"
+		DED_CFLAGS="$DED_CFLAGS -fno-common"
+		DED_LD="$CC"
+		DED_LD_FLAG_RUNTIME_LIBRARY_PATH=
+	;;
+	osf*)
+		# NOTE! Whitespace after -rpath is important.
+		DED_LD_FLAG_RUNTIME_LIBRARY_PATH="-rpath "
+		DED_LDFLAGS="-shared -expect_unresolved '*'"
+	;;
+	*)
+		# assume GNU linker and ELF
+		DED_LDFLAGS="-shared"
+	;;
+esac
+
+
+AC_MSG_CHECKING(for compiler flags for loadable drivers)
+AC_MSG_RESULT([$DED_CFLAGS])
+AC_MSG_CHECKING(for linker for loadable drivers)
+AC_MSG_RESULT([$DED_LD])
+AC_MSG_CHECKING(for linker flags for loadable drivers)
 AC_MSG_RESULT([$DED_LDFLAGS])
+AC_MSG_CHECKING(for 'runtime library path' linker flag)
+if test "x$DED_LD_FLAG_RUNTIME_LIBRARY_PATH" != "x"; then
+	AC_MSG_RESULT([$DED_LD_FLAG_RUNTIME_LIBRARY_PATH])
+else
+	AC_MSG_RESULT([not found])
+fi
 
 AC_SUBST(DED_CFLAGS)
 AC_SUBST(DED_LD)
 AC_SUBST(DED_LDFLAGS)
-AC_SUBST(ded_soname)
+AC_SUBST(DED_LD_FLAG_RUNTIME_LIBRARY_PATH)
 
 dnl
 dnl We should look for a compiler that handles jump tables, for beam_emu 

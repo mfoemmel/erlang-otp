@@ -126,7 +126,7 @@ do_init(Prio, Dir, Opts) ->
     put(verbosity,get_opt(verbosity, Opts, ?default_verbosity)),
     ?vlog("starting",[]),
     Dets = do_dets_open(Dir, Opts),
-    Ets  = ets:new(snmpa_local_db2, [set, private]),
+    Ets  = ets:new(snmpa_local_db2, [set, protected]),
     ?vdebug("started",[]),
     {ok, #state{dets = Dets, ets = Ets}}.
 

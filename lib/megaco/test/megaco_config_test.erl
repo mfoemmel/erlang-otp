@@ -133,13 +133,23 @@ nice_update_user(Mid) ->
     ?NICE_UPDATE(Mid, protocol_version, Int),
     ?NICE_UPDATE(Mid, reply_data, IT).
 
--define(EVIL_UPDATE(Mid, Key, Val),
+-define(EVIL_UPDATE(Mid, Key, Val), 
 	fun() ->
-		OldVal = ?VERIFY(_, megaco:user_info(Mid, Key)),
-		?VERIFY({error, {bad_user_val, _, _, _}},
-			megaco:update_user_info(Mid, Key, Val)),
-		?VERIFY(OldVal, megaco:user_info(Mid, Key))
+		evil_update(Mid, Key, Val)
 	end()).
+
+evil_update(Mid, Key, NewVal) ->
+    OldVal = 
+	case (catch megaco:user_info(Mid, Key)) of
+	    {'EXIT', _} = Error ->
+		?ERROR(Error);
+	    Val ->
+		?LOG("Ok, ~p~n", [Val]),
+		Val
+	end,
+    ?VERIFY({error, {bad_user_val, _, _, _}},
+	    megaco:update_user_info(Mid, Key, NewVal)),
+    ?VERIFY(OldVal, megaco:user_info(Mid, Key)).
 
 evil_update_user(Mid) ->
     NonInt = non_int,

@@ -27,12 +27,17 @@
 
 -module(erl_bif_types).
 
--export([type/3, type/4, arg_types/1]).
+-export([type/3, type/4, arg_types/1, arg_types/3]).
 
--import(erl_types, [t_any/0, t_atom/0, t_atom/1, t_binary/0, t_bool/0,
+-import(erl_types, [t_any/0, t_atom/0, t_atom/1, t_atom_vals/1, 
+		    t_binary/0, t_bool/0,
 		    t_byte/0, t_cons/0, t_char/0, t_cons/2, t_cons_hd/1,
-		    t_cons_tl/1, t_float/0, t_fun/0, t_fun/2,
+		    t_cons_tl/1, t_float/0, t_from_term/1, t_fun/0, t_fun/2,
 		    t_fun_range/1, t_integer/0, t_is_float/1,
+		    t_improper_list/0, t_is_atom/1, t_is_binary/1, t_is_float/1,
+		    t_is_fun/1, t_is_improper_list/1, t_is_integer/1, 
+		    t_is_number/1, t_is_pid/1, t_is_port/1, t_is_ref/1,
+		    t_is_tuple/1,
 		    t_is_any/1, t_is_byte/1, t_is_integer/1, t_is_nil/1,
 		    t_is_none/1, t_list/0, t_list/1,
 		    t_list_elements/1, t_number/0, t_number_vals/1,
@@ -40,7 +45,8 @@
 		    t_tuple/1, t_tuple_args/1, t_tuple_arity/1, t_sup/1,
 		    t_tuple_subtypes/1,
 		    t_sup/2, t_inf/2, t_subtract/2, t_none/0,
-		    t_identifier/0]).
+		    t_identifier/0,
+		    t_is_atom/1]).
 
 type(M, F, A) ->
     type(M, F, A, any_list(A)).
@@ -55,9 +61,58 @@ type(erlang, fault, 2, _) -> t_none();
 type(erlang, error, 1, _) -> t_none();
 type(erlang, error, 2, _) -> t_none();
 type(erlang, throw, 1, _) -> t_none();
-type(erlang, '==', 2, Xs) -> strict(Xs, t_bool());
+type(erlang, '==', 2, Xs = [X1, X2]) ->
+    True = t_from_term(true),
+    case t_is_atom(X1) andalso t_is_atom(X2) of
+	true ->
+	    AVals = t_atom_vals(X1),
+	    case t_atom_vals(X2) of
+		AVals when length(AVals) == 1 -> True;
+		_ -> t_bool()
+	    end;
+	false ->
+	    case t_is_integer(X1) andalso t_is_integer(X2) of
+		true ->
+		    NumVals = t_number_vals(X1),
+		    case t_number_vals(X2) of
+			NumVals when length(NumVals) == 1 -> 
+			    True;
+			_ -> 
+			    t_bool()
+		    end;
+		false ->
+		    strict(Xs, t_bool())
+	    end
+    end;
 type(erlang, '/=', 2, Xs) -> strict(Xs, t_bool());
-type(erlang, '=:=', 2, Xs) -> strict(Xs, t_bool());
+type(erlang, '=:=', 2, Xs = [X1, X2]) -> 
+    True = t_from_term(true),
+    case t_is_atom(X1) andalso t_is_atom(X2) of
+	true ->
+	    AVals = t_atom_vals(X1),
+	    case t_atom_vals(X2) of
+		AVals when length(AVals) == 1 -> True;
+		_ -> t_bool()
+	    end;
+	false ->
+	    case t_is_integer(X1) andalso t_is_integer(X2) of
+		true ->
+		    NumVals = t_number_vals(X1),
+		    case t_number_vals(X2) of
+			NumVals when length(NumVals) == 1 -> 
+			    True;
+			_ -> 
+			    t_bool()
+		    end;
+		false ->
+		    case t_is_none(t_inf(X1, X2)) of
+			true ->  
+			    strict(Xs, t_from_term(false));
+			false ->
+			    t_bool()
+		    end
+	    end
+    end;
 type(erlang, '=/=', 2, Xs) -> strict(Xs, t_bool());
 type(erlang, '>', 2, Xs) -> strict(Xs, t_bool());
 type(erlang, '>=', 2, Xs) -> strict(Xs, t_bool());
@@ -180,28 +235,41 @@ type(erlang, 'bsl', 2, Xs) ->
 type(erlang, 'bnot', 1, Xs) ->
     %% This returns (-X)-1, so it often gives a negative result.
     strict([t_integer()], Xs, fun (_) -> t_integer() end);
-type(erlang, is_atom, 1, Xs) ->
-    strict([t_any()], Xs, fun (_) -> t_bool() end);
+type(erlang, is_atom, 1, Xs) ->   
+    Fun = fun(X)->check_guard(X, fun(Y)-> t_is_atom(Y)end, t_atom())end,
+    strict([t_any()], Xs, Fun);
 type(erlang, is_binary, 1, Xs) ->
-    strict([t_any()], Xs, fun (_) -> t_bool() end);
+    Fun = fun(X)->check_guard(X, fun(Y)-> t_is_binary(Y)end, t_binary())end,
+    strict([t_any()], Xs, Fun);
 type(erlang, is_float, 1, Xs) ->
-    strict([t_any()], Xs, fun (_) -> t_bool() end);
+    Fun = fun(X)->check_guard(X, fun(Y)-> t_is_float(Y)end, t_float())end,
+    strict([t_any()], Xs, Fun);
 type(erlang, is_function, 1, Xs) ->
-    strict([t_any()], Xs, fun (_) -> t_bool() end);
+    Fun = fun(X)->check_guard(X, fun(Y)-> t_is_fun(Y)end, t_fun())end,
+    strict([t_any()], Xs, Fun);
 type(erlang, is_integer, 1, Xs) ->
-    strict([t_any()], Xs, fun (_) -> t_bool() end);
+    Fun = fun(X)->check_guard(X, fun(Y)-> t_is_integer(Y)end, t_integer())end,
+    strict([t_any()], Xs, Fun);
 type(erlang, is_list, 1, Xs) ->
-    strict([t_any()], Xs, fun (_) -> t_bool() end);
+    Fun = fun(X)->check_guard(X, fun(Y)-> t_is_improper_list(Y)end,
+			      t_improper_list())
+	  end,
+    strict([t_any()], Xs, Fun);
 type(erlang, is_number, 1, Xs) ->
-    strict([t_any()], Xs, fun (_) -> t_bool() end);
+    Fun = fun(X)->check_guard(X, fun(Y)-> t_is_number(Y)end, t_number())end,
+    strict([t_any()], Xs, Fun);
 type(erlang, is_pid, 1, Xs) ->
-    strict([t_any()], Xs, fun (_) -> t_bool() end);
+    Fun = fun(X)->check_guard(X, fun(Y)-> t_is_pid(Y)end, t_pid())end,
+    strict([t_any()], Xs, Fun);
 type(erlang, is_port, 1, Xs) ->
-    strict([t_any()], Xs, fun (_) -> t_bool() end);
+    Fun = fun(X)->check_guard(X, fun(Y)-> t_is_port(Y)end, t_port())end,
+    strict([t_any()], Xs, Fun);
 type(erlang, is_reference, 1, Xs) ->
-    strict([t_any()], Xs, fun (_) -> t_bool() end);
+    Fun = fun(X)->check_guard(X, fun(Y)-> t_is_ref(Y)end, t_ref())end,
+    strict([t_any()], Xs, Fun);
 type(erlang, is_tuple, 1, Xs) ->
-    strict([t_any()], Xs, fun (_) -> t_bool() end);
+    Fun = fun(X)->check_guard(X, fun(Y)-> t_is_tuple(Y)end, t_tuple())end,
+    strict([t_any()], Xs, Fun);
 type(erlang, abs, 1, Xs) ->
     strict([t_number()], Xs, fun ([X]) -> X end);
 type(erlang, append_element, 2, Xs) ->
@@ -390,7 +458,17 @@ type(lists, any, 2, Xs) ->
 type(lists, append, 2, Xs) -> type(erlang, '++', 2, Xs);  % alias
 type(lists, filter, 2, Xs) ->
     strict([t_fun([t_any()], t_bool()), t_list()], Xs,
-	   fun ([_, X]) -> X end);
+	   fun ([_, X]) -> 
+		   case t_is_nil(X) of
+		       true -> X;
+		       false ->
+			   X1 = t_list_elements(X),
+			   case t_is_any(X1) of
+			       true -> t_list();
+			       false -> t_list(X1)
+			   end
+		   end
+	   end);
 type(lists, flatten, 1, Xs) ->
     strict([t_list()], Xs,
 	   fun ([X]) ->
@@ -527,13 +605,27 @@ any_is_none([X | Xs]) ->
 any_is_none([]) -> false.
 
 
+check_guard([X], Test, Type) ->
+    case Test(X) of
+	true -> 
+	    t_from_term(true);
+	false ->
+	    case t_is_none(t_inf(Type, X)) of
+		true -> t_from_term(false);
+		false -> t_bool()
+	    end
+    end.
+    
+    
+
+
+
 %% =====================================================================
 %% arg_types returns a list of the demanded argument types for a bif
 %% to succeed.
 
-
-arg_types({erlang, '-', 1}) ->
-  [t_number()];
+arg_types({M, F, A}) ->
+  arg_types(M, F, A);
 arg_types('+') ->
   [t_number(), t_number()];
 arg_types('-') ->
@@ -556,211 +648,225 @@ arg_types('bnot') ->
   [t_integer()];
 arg_types('rem') ->
   [t_integer(), t_integer()];
-arg_types({erlang, 'rem', 2}) ->
-  [t_integer(), t_integer()];
-arg_types({erlang, '++', 2}) ->
-  [t_list(), t_any()];
-arg_types({erlang, '--', 2}) ->
-  [t_list(), t_list()];
-arg_types({erlang, 'and', 2}) ->
-  [t_bool(), t_bool()];
-arg_types({erlang, 'or', 2}) ->
-  [t_bool(), t_bool()];
-arg_types({erlang, 'xor', 2}) ->
-  [t_bool(), t_bool()];
-arg_types({erlang, 'not', 1}) ->
-  [t_bool()];
-arg_types({erlang, 'band', 2}) ->
-  [t_integer(), t_integer()];
-arg_types({erlang, 'bor', 2}) ->
-  [t_integer(), t_integer()];
-arg_types({erlang, 'bxor', 2}) ->
-  [t_integer(), t_integer()];
-arg_types({erlang, 'bsr', 2}) ->
-  [t_integer(), t_integer()];
-arg_types({erlang, 'bsl', 2}) ->
-  [t_integer(), t_integer()];
-arg_types({erlang, 'bnot', 1}) ->
-  [t_integer()];
-arg_types({erlang, abs, 1}) ->
-  [t_number()];
-arg_types({erlang, append_element, 2}) ->
-  [t_tuple(), t_any()];
-arg_types({erlang, atom_to_list, 1}) ->
-  [t_atom()];
-arg_types({erlang, binary_to_list, 1}) ->
-  [t_binary()];
-arg_types({erlang, binary_to_list, 3}) ->
-  [t_binary(), t_integer(), t_integer()];
-arg_types({erlang, concat_binary, 1}) ->
-  [t_list(t_binary())];
-arg_types({erlang, element, 2}) ->
-  [t_integer(), t_tuple()];
 arg_types({element, _}) ->
   [t_integer(), t_tuple()];
-arg_types({erlang, float, 1}) ->
+arg_types(_) ->
+  any.                     % safe approximation for all functions.
+
+
+arg_types(erlang, '-', 1) ->
   [t_number()];
-arg_types({erlang, float_to_list, 1}) ->
-  [t_float()];
-arg_types({erlang, hash, 2}) ->
-  [t_any(), t_integer()];
-arg_types({erlang, hd, 1}) ->
-  [t_cons()];
-arg_types({erlang, tl, 1}) ->
-  [t_cons()];
-arg_types({erlang, integer_to_list, 1}) ->
+arg_types(erlang, '+', 2) ->
+  arg_types('+');
+arg_types(erlang, '-', 2) ->
+  arg_types('-');
+arg_types(erlang, '*', 2) ->
+  arg_types('*');
+arg_types(erlang, 'div', 2) ->
+  arg_types('div');
+arg_types(erlang, 'rem', 2) ->
+  [t_integer(), t_integer()];
+arg_types(erlang, '++', 2) ->
+  [t_list(), t_any()];
+arg_types(erlang, '--', 2) ->
+  [t_list(), t_list()];
+arg_types(erlang, 'and', 2) ->
+  [t_bool(), t_bool()];
+arg_types(erlang, 'or', 2) ->
+  [t_bool(), t_bool()];
+arg_types(erlang, 'xor', 2) ->
+  [t_bool(), t_bool()];
+arg_types(erlang, 'not', 1) ->
+  [t_bool()];
+arg_types(erlang, 'band', 2) ->
+  [t_integer(), t_integer()];
+arg_types(erlang, 'bor', 2) ->
+  [t_integer(), t_integer()];
+arg_types(erlang, 'bxor', 2) ->
+  [t_integer(), t_integer()];
+arg_types(erlang, 'bsr', 2) ->
+  [t_integer(), t_integer()];
+arg_types(erlang, 'bsl', 2) ->
+  [t_integer(), t_integer()];
+arg_types(erlang, 'bnot', 1) ->
   [t_integer()];
-arg_types({erlang, length, 1}) ->
-  [t_list()];
-arg_types({erlang, list_to_atom, 1}) ->
-  [t_list()];
-arg_types({erlang, list_to_binary, 1}) ->
-  [t_list()];
-arg_types({erlang, list_to_float, 1}) ->
-  [t_string()];
-arg_types({erlang, list_to_integer, 1}) ->
-  [t_string()];
-arg_types({erlang, list_to_tuple, 1}) ->
-  [t_list()];
-arg_types({erlang, make_tuple, 2}) ->
-  [t_integer(), t_any()];
-arg_types({erlang, node, 1}) ->
-  [t_identifier()];
-arg_types({erlang, nodes, 1}) ->
-  [t_sup(t_atom(), t_list(t_atom()))];
-arg_types({erlang, open_port, 2}) ->
-  [t_sup(t_atom(), t_tuple()), t_list()];
-arg_types({erlang, phash, 2}) ->
-  [t_any(), t_integer()];
-arg_types({erlang, round, 1}) ->
+arg_types(erlang, abs, 1) ->
   [t_number()];
-arg_types({erlang, send, 2}) -> 
-  arg_types({erlang, '!', 2});  % alias
-arg_types({erlang, '!', 2}) ->
+arg_types(erlang, append_element, 2) ->
+  [t_tuple(), t_any()];
+arg_types(erlang, atom_to_list, 1) ->
+  [t_atom()];
+arg_types(erlang, binary_to_list, 1) ->
+  [t_binary()];
+arg_types(erlang, binary_to_list, 3) ->
+  [t_binary(), t_integer(), t_integer()];
+arg_types(erlang, concat_binary, 1) ->
+  [t_list(t_binary())];
+arg_types(erlang, element, 2) ->
+  [t_integer(), t_tuple()];
+arg_types(erlang, float, 1) ->
+  [t_number()];
+arg_types(erlang, float_to_list, 1) ->
+  [t_float()];
+arg_types(erlang, hash, 2) ->
+  [t_any(), t_integer()];
+arg_types(erlang, hd, 1) ->
+  [t_cons()];
+arg_types(erlang, tl, 1) ->
+  [t_cons()];
+arg_types(erlang, integer_to_list, 1) ->
+  [t_integer()];
+arg_types(erlang, length, 1) ->
+  [t_list()];
+arg_types(erlang, list_to_atom, 1) ->
+  [t_list()];
+arg_types(erlang, list_to_binary, 1) ->
+  [t_list()];
+arg_types(erlang, list_to_float, 1) ->
+  [t_string()];
+arg_types(erlang, list_to_integer, 1) ->
+  [t_string()];
+arg_types(erlang, list_to_tuple, 1) ->
+  [t_list()];
+arg_types(erlang, make_tuple, 2) ->
+  [t_integer(), t_any()];
+arg_types(erlang, node, 1) ->
+  [t_identifier()];
+arg_types(erlang, nodes, 1) ->
+  [t_sup(t_atom(), t_list(t_atom()))];
+arg_types(erlang, open_port, 2) ->
+  [t_sup(t_atom(), t_tuple()), t_list()];
+arg_types(erlang, phash, 2) ->
+  [t_any(), t_integer()];
+arg_types(erlang, round, 1) ->
+  [t_number()];
+arg_types(erlang, send, 2) -> 
+  arg_types(erlang, '!', 2);  % alias
+arg_types(erlang, '!', 2) ->
   Pid = t_sup([t_pid(), t_port(), t_atom(),
 	       t_tuple([t_atom(), t_atom()])]),
   [Pid, t_any()];
-arg_types({erlang, send_after, 3}) ->
+arg_types(erlang, send_after, 3) ->
   [t_integer(), t_sup(t_pid(), t_atom()), t_any()];
-arg_types({erlang, setelement, 3}) ->
+arg_types(erlang, setelement, 3) ->
   [t_integer(), t_tuple(), t_any()];
-arg_types({erlang, size, 1}) ->
+arg_types(erlang, size, 1) ->
   [t_sup(t_tuple(), t_binary())];
-arg_types({erlang, spawn, 1}) -> %% TODO: Tuple?
+arg_types(erlang, spawn, 1) -> %% TODO: Tuple?
   [t_fun()];
-arg_types({erlang, spawn, 2}) -> %% TODO: Tuple?
+arg_types(erlang, spawn, 2) -> %% TODO: Tuple?
   [t_atom(), t_fun()];
-arg_types({erlang, spawn, 3}) -> %% TODO: Tuple?
+arg_types(erlang, spawn, 3) -> %% TODO: Tuple?
   [t_atom(), t_atom(), t_list()];
-arg_types({erlang, spawn, 4}) -> %% TODO: Tuple?
+arg_types(erlang, spawn, 4) -> %% TODO: Tuple?
   [t_atom(), t_atom(), t_atom(), t_list()];
-arg_types({erlang, spawn_link, 1}) -> 
-  arg_types({erlang, spawn, 1});  % same
-arg_types({erlang, spawn_link, 2}) -> 
-  arg_types({erlang, spawn, 2});  % same
-arg_types({erlang, spawn_link, 3}) -> 
-  arg_types({erlang, spawn, 3});  % same
-arg_types({erlang, spawn_link, 4}) -> 
-  arg_types({erlang, spawn, 4});  % same
-arg_types({erlang, spawn_opt, 2}) -> 
+arg_types(erlang, spawn_link, 1) -> 
+  arg_types(erlang, spawn, 1);  % same
+arg_types(erlang, spawn_link, 2) -> 
+  arg_types(erlang, spawn, 2);  % same
+arg_types(erlang, spawn_link, 3) -> 
+  arg_types(erlang, spawn, 3);  % same
+arg_types(erlang, spawn_link, 4) -> 
+  arg_types(erlang, spawn, 4);  % same
+arg_types(erlang, spawn_opt, 2) -> 
   [t_fun(), t_list()];
-arg_types({erlang, spawn_opt, 3}) -> 
+arg_types(erlang, spawn_opt, 3) -> 
   [t_atom(), t_fun(), t_list()];
-arg_types({erlang, spawn_opt, 4}) -> 
+arg_types(erlang, spawn_opt, 4) -> 
   [t_atom(), t_atom(), t_list(), t_list()];
-arg_types({erlang, split_binary, 2}) ->
+arg_types(erlang, split_binary, 2) ->
   [t_binary(), t_integer()];
-arg_types({erlang, start_timer, 3}) ->
+arg_types(erlang, start_timer, 3) ->
   [t_integer(), t_sup(t_pid(), t_atom()), t_any()];
-arg_types({erlang, term_to_binary, 1}) ->
+arg_types(erlang, term_to_binary, 1) ->
   [t_any()];
-arg_types({erlang, term_to_binary, 2}) ->
+arg_types(erlang, term_to_binary, 2) ->
   [t_any(), t_list()];
-arg_types({erlang, trunc, 1}) ->
+arg_types(erlang, trunc, 1) ->
   [t_number()];
-arg_types({erlang, tuple_to_list, 1}) ->
+arg_types(erlang, tuple_to_list, 1) ->
   [t_tuple()];
-arg_types({erlang, universaltime_to_localtime, 1}) ->
+arg_types(erlang, universaltime_to_localtime, 1) ->
   T = t_tuple([t_tuple([t_integer(), t_integer(), t_integer()]),
 	       t_tuple([t_integer(), t_integer(), t_integer()])]),
   [T];
-arg_types({lists, all, 2}) ->
+arg_types(lists, all, 2) ->
   [t_fun([t_any()], t_bool()), t_list()];
-arg_types({lists, any, 2}) ->
+arg_types(lists, any, 2) ->
   [t_fun([t_any()], t_bool()), t_list()];
-arg_types({lists, append, 2}) -> 
-  arg_types({erlang, '++', 2});  % alias
-arg_types({lists, filter, 2}) ->
+arg_types(lists, append, 2) -> 
+  arg_types(erlang, '++', 2);  % alias
+arg_types(lists, filter, 2) ->
   [t_fun([t_any()], t_bool()), t_list()];
-arg_types({lists, flatten, 1}) ->
+arg_types(lists, flatten, 1) ->
   [t_list()];
-arg_types({lists, foreach, 2}) ->
+arg_types(lists, foreach, 2) ->
   [t_fun([t_any()], t_any()), t_list()];
-arg_types({lists, foldl, 3}) ->
+arg_types(lists, foldl, 3) ->
   [t_fun([t_any(), t_any()], t_any()), t_any(), t_list()];
-arg_types({lists, foldr, 3}) -> 
-  arg_types({lists, foldl, 3});    % same
-arg_types({lists, last, 1}) ->
+arg_types(lists, foldr, 3) -> 
+  arg_types(lists, foldl, 3);    % same
+arg_types(lists, last, 1) ->
   [t_list()];
-arg_types({lists, map, 2}) ->
+arg_types(lists, map, 2) ->
   [t_fun([t_any()], t_any()), t_list()];
-arg_types({lists, mapfoldl, 3}) ->
+arg_types(lists, mapfoldl, 3) ->
   [t_fun([t_any(), t_any()], t_tuple([t_any(), t_any()])),t_any(), t_list()];
-arg_types({lists, mapfoldr, 3}) -> 
-  arg_types({lists, mapfoldl, 3}); % same
-arg_types({lists, nth, 2}) ->
+arg_types(lists, mapfoldr, 3) -> 
+  arg_types(lists, mapfoldl, 3); % same
+arg_types(lists, nth, 2) ->
   [t_integer(), t_list()];
-arg_types({lists, nthtail, 2}) ->
+arg_types(lists, nthtail, 2) ->
   [t_integer(), t_list()];
-arg_types({lists, reverse, 1}) ->
+arg_types(lists, reverse, 1) ->
   [t_list()];
-arg_types({lists, reverse, 2}) ->
+arg_types(lists, reverse, 2) ->
   [t_list(), t_any()];
-arg_types({lists, seq, 2}) ->
+arg_types(lists, seq, 2) ->
   [t_integer(), t_integer()];
-arg_types({lists, seq, 3}) ->
+arg_types(lists, seq, 3) ->
   [t_integer(), t_integer(), t_integer()];
-arg_types({lists, subtract, 2}) ->
-  arg_types({erlang, '--', 2});  % alias
-arg_types({math, acos, 1}) ->
+arg_types(lists, subtract, 2) ->
+  arg_types(erlang, '--', 2);  % alias
+arg_types(math, acos, 1) ->
   [t_number()];
-arg_types({math, acosh, 1}) ->
+arg_types(math, acosh, 1) ->
   [t_number()];
-arg_types({math, asin, 1}) ->
+arg_types(math, asin, 1) ->
   [t_number()];
-arg_types({math, asinh, 1}) ->
+arg_types(math, asinh, 1) ->
   [t_number()];
-arg_types({math, atan, 1}) ->
+arg_types(math, atan, 1) ->
   [t_number()];
-arg_types({math, atan2, 2}) ->
+arg_types(math, atan2, 2) ->
   [t_number(), t_number()];
-arg_types({math, atanh, 1}) ->
+arg_types(math, atanh, 1) ->
   [t_number()];
-arg_types({math, cos, 1}) ->
+arg_types(math, cos, 1) ->
   [t_number()];
-arg_types({math, cosh, 1}) ->
+arg_types(math, cosh, 1) ->
   [t_number()];
-arg_types({math, erf, 1}) ->
+arg_types(math, erf, 1) ->
   [t_number()];
-arg_types({math, erfc, 1}) ->
+arg_types(math, erfc, 1) ->
   [t_number()];
-arg_types({math, exp, 1}) ->
+arg_types(math, exp, 1) ->
   [t_number()];
-arg_types({math, log, 1}) ->
+arg_types(math, log, 1) ->
   [t_number()];
-arg_types({math, log10, 1}) ->
+arg_types(math, log10, 1) ->
   [t_number()];
-arg_types({math, pow, 2}) ->
+arg_types(math, pow, 2) ->
   [t_number(), t_number()];
-arg_types({math, sin, 1}) ->
+arg_types(math, sin, 1) ->
   [t_number()];
-arg_types({math, sinh, 1}) ->
+arg_types(math, sinh, 1) ->
   [t_number()];
-arg_types({math, sqrt, 1}) ->
+arg_types(math, sqrt, 1) ->
   [t_number()];
-arg_types({math, tan, 1}) ->
+arg_types(math, tan, 1) ->
   [t_number()];
-arg_types({math, tanh, 1}) ->
+arg_types(math, tanh, 1) ->
   [t_number()];
-arg_types(_) ->  
+arg_types(_, _, _) ->  
   any.                     % safe approximation for all functions.

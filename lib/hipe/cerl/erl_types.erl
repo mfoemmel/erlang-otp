@@ -143,10 +143,10 @@
 	 t_components/1,
 	 t_cons/0, t_cons/2, t_cons_hd/1, t_cons_tl/1,
 	 t_float/0, t_from_term/1, t_from_range/2,
-	 t_fun/0, t_fun/2,
+	 t_fun/0, t_fun/1, t_fun/2,
 	 t_fun_args/1,
 	 t_fun_range/1, t_identifier/0,
-	 t_inf/1, t_inf/2, t_inf_lists/2,
+	 t_inf/2, t_inf_lists/2,
 	 t_integer/0, t_integer/1,
 	 t_improper_list/0,
 	 t_is_any/1, t_is_atom/1,
@@ -171,19 +171,18 @@
 	 t_to_string/1,
 	 t_tuple/0, t_tuple/1, t_tuple_args/1,
 	 t_tuple_arity/1, t_tuple_arities/1, t_tuple_subtypes/1,
-	 t_var/1, 
+	 t_var/1, t_var_name/1,
 	 t_none/0
 	]).
 -ifndef(NO_UNUSED).
 -export([t_bool/1, t_byte/1, t_char/1, t_cons/1, t_data_arity/1,
-	 t_degree/1, t_data_args/1, t_from_term/2, t_fun/1,
-	 t_fun_arity/1, t_improper_list/1, t_is_atom/2, t_is_data/1,
+	 t_degree/1, t_data_args/1, t_from_term/2,
+	 t_fun_arity/1, t_improper_list/1, t_inf/1, t_is_atom/2, t_is_data/1,
 	 t_is_identifier/1, t_is_number/2, t_is_string/1,
 	 t_is_n_tuple/2, t_is_nonempty_list/1,
 	 t_nonempty_improper_list/0, t_nonempty_improper_list/1,
 	 t_nonempty_list/0, t_nonempty_list/1, t_nonempty_string/0,
-	 t_subst/2, t_tuple_max_arity/1, t_tuple_min_arity/1, t_unify/2,
-	 t_var_name/1]).
+	 t_subst/2, t_tuple_max_arity/1, t_tuple_min_arity/1, t_unify/2]).
 -endif.
 
 
@@ -426,10 +425,7 @@ t_is_var(_) -> false.
 %%
 %% @see t_var/1
 
--ifndef(NO_UNUSED).
 t_var_name(#var{n = N}) -> N.
--endif.
-%% @clear
 
 
 %% ---------------------------------------------------------------------
@@ -1553,10 +1549,7 @@ t_fun() -> ?'fun'(?any, ?any).
 %% @see t_fun/0
 %% @see t_fun/2
 
--ifndef(NO_UNUSED).
 t_fun(T) -> ?'fun'(?any, T).
--endif.
-%% @clear
 
 
 %% @spec t_fun(Args, Range) -> type()
@@ -2004,13 +1997,15 @@ unique([]) ->
     [].
 
 
+-ifndef(NO_UNUSED).
 %% @spec t_inf([type()]) -> type()
 %% @doc Returns the infimum of a list of types.
 %% @see t_inf/2
 
 t_inf([T | Ts]) -> t_inf(T, t_inf(Ts));
 t_inf([]) -> ?any.
-
+-endif.
+%% @clear
 
 %% @spec t_inf(type(), type()) -> type()
 %%

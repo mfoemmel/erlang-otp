@@ -66,6 +66,8 @@ s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R -DENABLE_ELIB_MALLOC -DELI
 #s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R -DWORDS_BIGENDIAN|
 s|@WFLAGS@||
 s|@HIPE_ENABLED@||
+s|@OPSYS@|noopsys|
+
 s|@DIAB_OPTS@|-Xdebug-struct-all -Xforce-declarations -Xforce-prototypes -Xsmall-const=0 -Xstrings-in-text -Xsmall-data=0|
 s|@DIAB_INCLS@|-I/usr/local/share/pgm/ose-4.4/powerpc/include/diab|
 s|@OSE_INCLS@|-I/usr/local/share/pgm/ose-4.4/powerpc/std-include -I/usr/local/share/pgm/ose-4.4/powerpc/include -I/usr/local/share/pgm/ose-4.4/powerpc/conf -I/usr/local/share/pgm/ose-4.4/powerpc/krn-750/include -I/usr/local/share/pgm/ose-4.4/powerpc/bsp-powercore680/include -I/usr/local/share/pgm/ose-4.4/examples/common/include|

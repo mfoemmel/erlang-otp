@@ -28,6 +28,7 @@
 -export([tr_message/3, tr_transaction/3]).
 
 -define(DEFAULT_NAME_RESOLVER,megaco_binary_name_resolver_v2).
+-define(error(R), erlang:error({error, R})).
 
 -record(state, {mode,                 % verify | encode | decode
                 resolver_module,      % 
@@ -179,7 +180,7 @@ tr_V4hex(Val, State) ->
     tr_DIGIT(Val, State, 0, 255).
 
 tr_IP6Address(_Val, _State) ->
-    exit(ipv6_not_supported). %% BUGBUG: nyi
+    ?error(ipv6_not_supported). %% BUGBUG: nyi
 
 tr_PathName(Path, State) ->
     %% BUGBUG: ["*"] NAME *("/" / "*"/ ALPHA / DIGIT /"_" / "$" ) 
@@ -383,8 +384,23 @@ tr_AmmRequest(#'AmmRequest'{terminationID = IdList,
               State) ->
     #'AmmRequest'{terminationID = [tr_TerminationID(Id, State) ||
                                       Id <- IdList],
-                  descriptors   = [tr_ammDescriptor(Desc, State) ||
-                                      Desc <- DescList]}.
+                  descriptors   = tr_ammDescriptors(DescList, [], State)}.
+
+tr_ammDescriptors([], Acc, _State) ->
+    lists:reverse(Acc);
+tr_ammDescriptors([Desc|Descs], Acc, State) ->
+    case tr_ammDescriptor(Desc, State) of
+	deprecated when State#state.mode == encode ->
+	    ?error({deprecated, Desc});
+	deprecated when State#state.mode == decode ->
+	    %% SKIP
+	    tr_ammDescriptors(Descs, Acc, State);
+	deprecated ->
+	    %% SKIP
+	    tr_ammDescriptors(Descs, Acc, State);
+	NewDesc ->
+	    tr_ammDescriptors(Descs, [NewDesc|Acc], State)
+    end.
 
 tr_ammDescriptor({Tag, Desc}, State) ->
     Desc2 = 
@@ -496,9 +512,6 @@ tr_auditItem(Token, _State) ->
 %% --- v2 begin ---
 
 tr_indAuditParameter({Tag, Val}, State) ->
-%     i("tr_indAuditParameter -> entry with"
-%       "~n   Tag: ~p"
-%       "~n   Val: ~p", [Tag, Val]),
     Val2 = 
 	case Tag of
 	    indAudMediaDescriptor       -> 
@@ -637,7 +650,6 @@ tr_indAudEventsDescriptor(#'IndAudEventsDescriptor'{requestID = RID,
 						    pkgdName  = Name0,
 						    streamID  = SID},
 			  State) ->
-
     Constraint = fun(Item) -> tr_PkgdName(Item, State) end,
     Name = resolve(event, Name0, State, Constraint),
     #'IndAudEventsDescriptor'{requestID = tr_opt_RequestID(RID, State),
@@ -726,7 +738,23 @@ tr_indAudPackagesDescriptor(#'IndAudPackagesDescriptor'{packageName    = N,
 
 
 tr_TerminationAudit(ParmList, State) when list(ParmList) ->
-    [tr_AuditReturnParameter(Parm, State) || Parm <- ParmList].
+    do_tr_TerminationAudit(ParmList, [], State).
+
+do_tr_TerminationAudit([], Acc, _State) ->
+    lists:reverse(Acc);
+do_tr_TerminationAudit([Parm|ParmList], Acc, State) ->
+    case tr_AuditReturnParameter(Parm, State) of
+	deprecated when State#state.mode == encode ->
+	    ?error({deprecated, Parm});
+	deprecated when State#state.mode == decode ->
+	    %% SKIP
+	    do_tr_TerminationAudit(ParmList, Acc, State);
+	deprecated ->
+	    %% SKIP
+	    do_tr_TerminationAudit(ParmList, Acc, State);
+	NewParm ->
+	    do_tr_TerminationAudit(ParmList, [NewParm|Acc], State)
+    end.
 
 tr_AuditReturnParameter({Tag, Val}, State) ->
     Val2 = 
@@ -1239,26 +1267,28 @@ tr_RequestID(Id, _State) when Id == ?megaco_all_request_id ->
 tr_RequestID(Id, State) ->
     tr_UINT32(Id, State).
 
-tr_ModemDescriptor(#'ModemDescriptor'{mtl = Types,
-                                      mpl = Props},
-                   State) when list(Types), list(Props) -> 
-    %% BUGBUG: Does not handle extensionParameter
-    #'ModemDescriptor'{mtl = [tr_ModemType(T, State) || T <- Types],
-                       mpl = [tr_PropertyParm(P, State) || P <- Props]}.
+tr_ModemDescriptor(_MD, _State) ->
+    deprecated.
+% tr_ModemDescriptor(#'ModemDescriptor'{mtl = Types,
+%                                       mpl = Props},
+%                    State) when list(Types), list(Props) -> 
+%     %% BUGBUG: Does not handle extensionParameter
+%     #'ModemDescriptor'{mtl = [tr_ModemType(T, State) || T <- Types],
+%                        mpl = [tr_PropertyParm(P, State) || P <- Props]}.
 
-tr_ModemType(Type, _State) ->
-    %% BUGBUG: Does not handle extensionParameter
-    case Type of
-        v18       -> v18;
-        v22       -> v22;
-        v22bis    -> v22bis;
-        v32       -> v32;
-        v32bis    -> v32bis;
-        v34       -> v34;
-        v90       -> v90;
-        v91       -> v91;
-        synchISDN -> synchISDN
-    end.
+% tr_ModemType(Type, _State) ->
+%     %% BUGBUG: Does not handle extensionParameter
+%     case Type of
+%         v18       -> v18;
+%         v22       -> v22;
+%         v22bis    -> v22bis;
+%         v32       -> v32;
+%         v32bis    -> v32bis;
+%         v34       -> v34;
+%         v90       -> v90;
+%         v91       -> v91;
+%         synchISDN -> synchISDN
+%     end.
 
 tr_DigitMapDescriptor(#'DigitMapDescriptor'{digitMapName  = Name,
                                             digitMapValue = Value},
@@ -1495,13 +1525,13 @@ verify_count(Count, Min, Max) ->
                         Max == infinity ->
                             Count;
                         true ->
-                            deliberate_badmatch = {count_too_large, Count, Max}
+                            ?error({count_too_large, Count, Max})
                     end;
                 true ->
-                    deliberate_badmatch = {count_too_small, Count, Min}
+                    ?error({count_too_small, Count, Min})
             end;
         true ->
-            deliberate_badmatch = {count_not_an_integer, Count}
+            ?error({count_not_an_integer, Count})
     end.
 
 

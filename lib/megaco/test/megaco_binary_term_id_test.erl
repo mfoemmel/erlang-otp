@@ -156,7 +156,7 @@ check(D,ok,{error,Reason}) ->
 	      [D,Reason]),
     error.
 
-check_result(C,D,ok,{ok,T1,T2,T3}) ->
+check_result(_C,D,ok,{ok,T1,T2,T3}) ->
     Result = case check_ok_result(T1,T3) of
 		 ok -> 
 		     io:format("  => succeeded"
@@ -177,7 +177,7 @@ check_result(C,D,ok,{ok,T1,T2,T3}) ->
 	     end,
     io:format("~n~n--------------------~n",[]),
     Result;
-check_result(C,D,error,{ok,T1,T2,T3}) ->
+check_result(_C,D,error,{ok,T1,T2,T3}) ->
     io:format("  => failed"
 	      "~n  ~s"
 	      "~n  ~p"
@@ -186,7 +186,7 @@ check_result(C,D,error,{ok,T1,T2,T3}) ->
 	      "~n~n--------------------~n",
 	      [D,T1,T2,T3]),
     error;
-check_result(C,D,error,{error,Reason}) ->
+check_result(_C,D,error,{error,Reason}) ->
     io:format("  => succeeded"
 	      "~n  ~s"
 	      "~n  Operation failed (expectedly) for reason"
@@ -194,7 +194,7 @@ check_result(C,D,error,{error,Reason}) ->
 	      "~n~n--------------------~n",
 	      [D,Reason]),
     ok;
-check_result(C,D,ok,{error,Reason}) ->
+check_result(_C,D,ok,{error,Reason}) ->
     io:format("  => failed"
 	      "~n  ~s"
 	      "~n  Failed for reason"
@@ -215,7 +215,7 @@ check_ok_result(S,E) when record(S,'TerminationID'),
                           record(E,'TerminationID') ->
     Reason = check_TerminationID_record(S,E),
     {error,Reason}; % Same record type but different record content
-check_ok_result(S,E) ->
+check_ok_result(_S,_E) ->
     {error,"NOT THE SAME RECORD TYPES"}. % OOPS, Not even the same record type
     
 check_megaco_term_id_record(#megaco_term_id{contains_wildcards = Cw1, 
@@ -977,9 +977,7 @@ encode(L,C,T) ->
     put(dsev,L),
     Res = encode1(C,T),
     erase(dsev),
-    Res;
-encode(_,C,T) ->
-    encode1(C,T).
+    Res.
 
 encode1(C,T) ->
     case (catch megaco_binary_term_id:encode(C,T)) of
@@ -996,9 +994,7 @@ decode(L,C,T) ->
     put(dsev,L),
     Res = decode1(C,T),
     erase(dsev),
-    Res;
-decode(_,C,T) ->
-    decode1(C,T).
+    Res.
 
 decode1(C,T) -> 
     case (catch megaco_binary_term_id:decode(C,T)) of

@@ -1,22 +1,15 @@
-%%%----------------------------------------------------------------------
-%% File    : hipe_moves.erl
-%% Author  : Thorild Selén <d95ths@it.uu.se>
-%%           Andreas Wallin <d96awa@it.uu.se>
-%%           Ingemar Åberg <d95ina@it.uu.se>
-%% Purpose : Keep track of 'copy' (move) instructions and place them
-%%           in one of the move sets depending of their state. 
-%% Created:  11 Mar 2000 by Thorild Selén <d95ths@it.uu.se>
-%%%----------------------------------------------------------------------
+%% -*- erlang-indent-level: 2 -*-
+%% $Id$
 
 -module(hipe_moves).
--author({"Thorild Selén", "Andreas Wallin", "Ingemar Åberg"}).
 -export([new/1,
-	 set_movelist/2,
-	 movelist/1,
-	 worklist/1,
+	 update_movelist/3,
 	 node_moves/2,
 	 move_related/2,
+	 node_movelist/2,
+	 get_move/2,
 	 is_empty_worklist/1,
+	 worklist_get_and_remove/1,
 	 remove_worklist/2,
 	 remove_active/2,
 	 add_worklist/2,
@@ -24,205 +17,105 @@
 	 member_active/2
 	]).
 
--record(moves, {worklist,    % Moves enabled for possible coalescing
-		active,      % Moves not yet ready for coalescing
-		movelist     % Mapping from node to list of moves it's associated with
-	       }).
+-record(movesets,
+	{worklist,    % Moves enabled for possible coalescing
+	 membership,  % Maps move numbers to 'worklist' or 'active' or 'none'
+	 moveinsns,   % Maps move numbers to move insns ({Dst,Src}-tuples)
+	 movelist     % Mapping from node to list of moves it's associated with
+	}).
 
-%%%----------------------------------------------------------------------
-%% Function:    worklist,active,movelist
-%%
-%% Description: Selectors for moves structure
-%%
-%% Parameters:
-%%   Moves          -- Moves structure
-%%   
-%% Returns:
-%%   Selected set from the moves structure.
-%%
-%%%----------------------------------------------------------------------
+worklist(MoveSets) -> MoveSets#movesets.worklist.
+movelist(MoveSets) -> MoveSets#movesets.movelist.
 
-worklist(Moves)    -> Moves#moves.worklist.
-active(Moves)      -> Moves#moves.active.
-movelist(Moves)    -> Moves#moves.movelist.
+set_worklist(New_worklist, MoveSets) ->
+  MoveSets#movesets{worklist = New_worklist}.
+set_movelist(New_movelist, MoveSets) ->
+  MoveSets#movesets{movelist = New_movelist}.
 
-
-%%%----------------------------------------------------------------------
-%% Function:    set_worklist, set_active, set_movelist
-%%
-%% Description: Modifiers for moves structure
-%%
-%% Parameters:
-%%   Moves          -- Moves structure
-%%   
-%% Returns:
-%%   Updated moves data-structure
-%%
-%%%----------------------------------------------------------------------
-set_worklist(New_worklist, Moves) ->
-    Moves#moves{worklist = New_worklist}.
-set_active(New_active, Moves) ->
-    Moves#moves{active = New_active}.
-set_movelist(New_movelist, Moves) ->
-    Moves#moves{movelist = New_movelist}.
-
-
-
-%%%----------------------------------------------------------------------
-% Function:    new
-%
-% Description: Creates a new moves datastructure initiated with 
-%               som work from the building of the interference graph.
-%
-% Parameters:
-%   IG             --  The interference graph
-%   
-% Returns:
-%   A new moves data structure.
-%
-%%%----------------------------------------------------------------------
+update_movelist(Node, MoveList, MoveSets) ->
+  set_movelist(hipe_vectors_wrapper:set(movelist(MoveSets), Node, MoveList),
+	       MoveSets).
 
 new(IG) ->
-    #moves{worklist    = hipe_ig_moves:worklist_moves(hipe_ig:ig_moves(IG)),
-	   active      = gb_sets:new(),
-	   movelist    = hipe_ig_moves:movelist(hipe_ig:ig_moves(IG))}.
+  {MoveList,NrMoves,MoveInsns} = hipe_ig:get_moves(IG),
+  Worklist = case NrMoves of 0 -> []; _ -> lists:seq(0, NrMoves-1) end,
+  #movesets{worklist	= Worklist,
+	    membership	= hipe_bifs:array(NrMoves, 'worklist'),
+	    moveinsns	= MoveInsns,
+	    movelist	= MoveList}.
 
+remove_worklist(Element, MoveSets) ->
+  Membership = MoveSets#movesets.membership,
+  %% check for 'worklist' membership here, if debugging
+  hipe_bifs:array_update(Membership, Element, 'none'),
+  %% Implementing this faithfully would require a SET structure, such
+  %% as an ordset or a gb_set. However, removal of elements not at the
+  %% head of the structure is a fairly infrequent event (only done by
+  %% FreezeMoves()), so instead we let the elements remain but mark
+  %% them as being removed. It is the task of worklist_get_and_remove()
+  %% to filter out any stale elements.
+  MoveSets.
 
-%%%----------------------------------------------------------------------
-% Function:    remove
-%
-% Description: Removes Element from one of the sets.
-%
-% Parameters:
-%    Element       --  The element you want to remove from selected set
-%    Moves         --  A moves data structure
-%   
-% Returns:
-%   An updated moves data structure where Element is removed from
-%    selected set.
-%
-%%%----------------------------------------------------------------------
-remove_worklist(Element, Moves) ->
-    set_worklist(ordsets:del_element(Element, worklist(Moves)), Moves).
+remove_active(Element, MoveSets) ->
+  Membership = MoveSets#movesets.membership,
+  %% check for 'active' membership here, if debugging
+  hipe_bifs:array_update(Membership, Element, 'none'),
+  MoveSets.
 
-remove_active(Element, Moves) ->
-    set_active(gb_sets:del_element(Element, active(Moves)), Moves).
+add_worklist(Element, MoveSets) ->
+  Membership = MoveSets#movesets.membership,
+  %% check for 'none' membership here, if debugging
+  hipe_bifs:array_update(Membership, Element, 'worklist'),
+  set_worklist([Element | worklist(MoveSets)], MoveSets).
 
-%%%----------------------------------------------------------------------
-% Function:    add
-%
-% Description: Adds Element to one of the sets.
-%
-% Parameters:
-%    Element       --  The element you want to add to selected set
-%    Moves         --  A moves data structure
-%   
-% Returns:
-%   An updated moves data structure where Element is a member of
-%    selected set.
-%
-%%%----------------------------------------------------------------------
-add_worklist(Element, Moves) ->
-    set_worklist(ordsets:add_element(Element, worklist(Moves)), Moves).
+add_active(Element, MoveSets) ->
+  Membership = MoveSets#movesets.membership,
+  %% check for 'none' membership here, if debugging
+  hipe_bifs:array_update(Membership, Element, 'active'),
+  MoveSets.
 
-add_active(Element, Moves) ->
-    set_active(gb_sets:add_element(Element, active(Moves)), Moves).
+member_active(Element, MoveSets) ->
+  hipe_bifs:array_sub(MoveSets#movesets.membership, Element) == 'active'.
 
-%%%----------------------------------------------------------------------
-% Function:    member
-%
-% Description: Finds out if Element is a member of a selected set
-%
-% Parameters:
-%    Element       --  The element you want to add to selected set
-%    Moves         --  A moves data structure
-%   
-% Returns:
-%   true  --  If Element is a member of asked set
-%   false --  Otherwise
-%
-%%%----------------------------------------------------------------------
-member_active(Element, Moves) ->
-    gb_sets:is_element(Element, active(Moves)).
+is_empty_worklist(MoveSets) ->
+  %% This is an approximation. See worklist_get_and_remove().
+  worklist(MoveSets) == [].
 
-%%%----------------------------------------------------------------------
-% Function:    is_empty
-%
-% Description: Checks if a set is empty or not.
-%
-% Parameters:
-%    Moves         --  A moves data structure
-%   
-% Returns:
-%   true  --  If selected set is empty
-%   false --  Otherwise
-%
-%%%----------------------------------------------------------------------
-is_empty_worklist(Moves) ->
-    worklist(Moves) == [].
+worklist_get_and_remove(MoveSets) ->
+  worklist_get_and_remove(worklist(MoveSets), MoveSets#movesets.membership, MoveSets).
 
-%%%----------------------------------------------------------------------
-%% Function:    node_moves
-%%
-%% Description: Move instructions associated with Node that's not frozen,
-%%              constrained (target and source interfere) or already
-%%              coalesced.
-%%
-%% Parameters:
-%%    Node          --  A node/temporary 
-%%    Moves         --  A moves data structure
-%%   
-%% Returns:
-%%   A set of temporaries that's not frozen, constrained or coalesced.
-%%----------------------------------------------------------------------
+worklist_get_and_remove([], _Membership, MoveSets) ->
+  {[], set_worklist([], MoveSets)};
+worklist_get_and_remove([Move|Worklist], Membership, MoveSets) ->
+  case hipe_bifs:array_sub(Membership, Move) of
+    'worklist' ->
+      hipe_bifs:array_update(Membership, Move, 'none'),
+      {Move, set_worklist(Worklist, MoveSets)};
+    _ ->
+      worklist_get_and_remove(Worklist, Membership, MoveSets)
+  end.
 
-node_moves(Node, Moves) when is_integer(Node) ->
-%% Associated = movelist_associated_with(Node, Moves),
-%%  Associated /\ (Active U Worklist)
+node_moves(Node, MoveSets) ->
+  Associated = node_movelist(Node, MoveSets),
+  Membership = MoveSets#movesets.membership,
+  %% The ordsets:union() in hipe_coalescing_regalloc:combine()
+  %% constrains us to return an ordset here.
+  [X || X <- Associated, hipe_bifs:array_sub(Membership, X) =/= 'none'].
 
-%% Since the union Active Worklist might be much larger than 
-%% the Associated set we do not want to generate the set the
-%% straightforward way. (We would like to do the union lazily).
+move_related(Node, MoveSets) ->
+  %% Same as node_moves(Node, MoveSets) =/= [], but less expensive to compute.
+  %% XXX: George&Appel'96 hints that this should be maintained as a per-node counter.
+  move_related2(node_movelist(Node, MoveSets), MoveSets#movesets.membership).
 
-%% Straightforward code:
-%  Q = ordsets:intersection(
-%	movelist_associated_with(Node, Moves),
-%	ordsets:union(ordsets:from_list(gb_sets:to_list(active(Moves))), 
-%		      worklist(Moves))),
-%    %% io:format("node_moves: node ~p moves: ~p~n",[Node,Q]),
-%    Q.
+move_related2([], _Membership) -> false;
+move_related2([Move|MoveSets], Membership) ->
+  case hipe_bifs:array_sub(Membership, Move) of
+    'none' -> move_related2(MoveSets, Membership);
+    _ -> true % 'active' or 'worklist'
+  end.
 
-  %% Two lookups for each element.
-  %% Could go one step further and use the fact that the lists are ordered.
-  Associated = movelist_associated_with(Node, Moves),
-  Active = active(Moves),
-  Worklist = worklist(Moves),
-  [X || X <- Associated,
-	  gb_sets:is_member(X,Active) orelse
-	  ordsets:is_element(X,Worklist)].
-      
+node_movelist(Node, MoveSets) ->
+  hipe_vectors_wrapper:get(movelist(MoveSets), Node).
 
-
-%%----------------------------------------------------------------------
-%% Function:    move_related
-%%
-%% Description: Checks if a specified node/temporary have any move
-%%               instructions that's not frozen, constrained or 
-%%               coalesced.
-%%
-%% Parameters:
-%%    Node          --  A node/temporary 
-%%    Moves         --  A moves data structure
-%%   
-%% Returns:
-%%   true  --  If it has at least one instruction that's not frozen, constrained
-%%             or coalesced.
-%%   false --  Otherwise.
-%%----------------------------------------------------------------------
-
-move_related(Node, Moves) when is_integer(Node) ->
-    %% We know that node_moves/2 returns an ordset (a list).
-    not (node_moves(Node, Moves) == []).
-
-movelist_associated_with(Node, Moves) when is_integer(Node) ->
-    hipe_vectors_wrapper:get(movelist(Moves), Node).
+get_move(Move, MoveSets) ->
+  element(Move+1, MoveSets#movesets.moveinsns).

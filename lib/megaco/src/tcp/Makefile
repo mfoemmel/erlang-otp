@@ -55,6 +55,10 @@ ifeq ($(TYPE),debug)
 ERL_COMPILE_FLAGS += -Ddebug
 endif
 
+ifeq ($(MEGACO_DEBUG),true)
+ERL_COMPILE_FLAGS += -Dmegaco_debug
+endif
+
 ifeq ($(WARN_UNUSED_WARS),true)
 ERL_COMPILE_FLAGS += +warn_unused_vars
 endif

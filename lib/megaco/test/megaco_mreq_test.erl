@@ -78,7 +78,8 @@ all(suite) ->
 	 req_and_rep,
 	 req_and_pending,
 	 req_and_cancel
-	].
+	],
+    Cases.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -399,7 +400,7 @@ req_and_cancel_analyze_result2([]) ->
     ok;
 req_and_cancel_analyze_result2([{error,{user_cancel,req_and_cancel}}|Res]) ->
     req_and_cancel_analyze_result2(Res);
-req_and_cancel_analyze_result2([Unknown|Res]) ->
+req_and_cancel_analyze_result2([Unknown|_Res]) ->
     exit({unknown_result,Unknown}).
     
     

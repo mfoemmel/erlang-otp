@@ -7,13 +7,27 @@
 %%% - Simplify combine_label_maps and mk_data_relocs.
 %%% - Move find_const to hipe_pack_constants?
 
--module(hipe_x86_assemble).
+-ifndef(HIPE_X86_ASSEMBLE).
+-define(HIPE_X86_ASSEMBLE,  hipe_x86_assemble).
+-define(HIPE_X86_ENCODE,    hipe_x86_encode).
+-define(HIPE_X86_REGISTERS, hipe_x86_registers).
+-define(HIPE_X86_PP,        hipe_x86_pp).
+-define(EAX, eax).
+-define(REGArch, reg32).
+-define(RMArch, rm32).
+-define(EA_DISP32_ABSOLUTE, ea_disp32).
+-define(IMM_MOVE_ARGS, {temp_to_reg32(Dst),{imm32,Imm}}).
+-define(REG64, {reg64, _Reg64} -> exit({?MODULE, reg64_on_x86})).
+-define(MOVE64, #move64{} -> exit({?MODULE, no_move64_on_x86})).
+-endif.
+
+-module(?HIPE_X86_ASSEMBLE).
 -export([assemble/4]).
 
 -define(DEBUG,true).
 
 -include("../main/hipe.hrl").
--include("hipe_x86.hrl").
+-include("../x86/hipe_x86.hrl").
 -include("../../kernel/src/hipe_ext_format.hrl").
 -include("../rtl/hipe_literals.hrl").
 -include("../misc/hipe_sdi.hrl").
@@ -29,7 +43,7 @@ assemble(CompiledCode, Closures, Exports, Flags) ->
 	  || {MFA, Defun} <- CompiledCode],
   %%
   {ConstAlign,ConstSize,ConstMap,RefsFromConsts} =
-    hipe_pack_constants:pack_constants(Code, hipe_x86_registers:alignment()),
+    hipe_pack_constants:pack_constants(Code, ?HIPE_X86_REGISTERS:alignment()),
   %%
   {CodeSize,AccCode,AccRefs,LabelMap,ExportMap} =
     encode(translate(Code, ConstMap)),
@@ -128,7 +142,7 @@ insn_size(I) ->
     {'.sdesc',_,_} -> 0;
     {jcc_sdi,_,_} -> 2;
     {jmp_sdi,_,_} -> 2;
-    {Op,Arg,_Orig} -> hipe_x86_encode:insn_sizeof(Op, Arg)
+    {Op,Arg,_Orig} -> ?HIPE_X86_ENCODE:insn_sizeof(Op, Arg)
   end.
 
 translate_insn(I, MFA, ConstMap) ->
@@ -139,9 +153,10 @@ translate_insn(I, MFA, ConstMap) ->
     #call{} ->
       translate_call(I);
     #cmovcc{} ->
-      {Dst,Src} = resolve_move_args(hipe_x86:cmovcc_src(I), hipe_x86:cmovcc_dst(I),
+      {Dst,Src} = resolve_move_args(
+		    hipe_x86:cmovcc_src(I), hipe_x86:cmovcc_dst(I),
 				    {MFA,ConstMap}),
-      CC = {cc,hipe_x86_encode:cc(hipe_x86:cmovcc_cc(I))},
+      CC = {cc,?HIPE_X86_ENCODE:cc(hipe_x86:cmovcc_cc(I))},
       Arg = {CC,Dst,Src},
       [{cmovcc, Arg, I}];
     #cmp{} ->
@@ -152,18 +167,41 @@ translate_insn(I, MFA, ConstMap) ->
     #dec{} ->
       Arg = translate_dst(hipe_x86:dec_dst(I)),
       [{dec, {Arg}, I}];
+    #fmove{} ->
+      Arg = resolve_sse2_binop_args(hipe_x86:fmove_src(I),
+				    hipe_x86:fmove_dst(I)),
+      [{movsd, Arg, I}];
     #fp_binop{} ->
-      Arg = resolve_fp_binop_args(hipe_x86:fp_binop_src(I),
-				  hipe_x86:fp_binop_dst(I)),
-      [{hipe_x86:fp_binop_op(I), Arg, I}];
+      case proplists:get_bool(x87, get(hipe_x86_flags)) of
+	true -> %% x87	
+	  Arg = resolve_x87_binop_args(hipe_x86:fp_binop_src(I),
+				       hipe_x86:fp_binop_dst(I)),
+	  [{hipe_x86:fp_binop_op(I), Arg, I}];
+	false -> %% sse2
+	  Arg = resolve_sse2_binop_args(hipe_x86:fp_binop_src(I),
+					hipe_x86:fp_binop_dst(I)),
+	  [{resolve_sse2_op(hipe_x86:fp_binop_op(I)), Arg, I}]
+      end;
     #fp_unop{} ->
-      Arg = resolve_fp_unop_arg(hipe_x86:fp_unop_arg(I)),
-      [{hipe_x86:fp_unop_op(I), Arg, I}];
+      case proplists:get_bool(x87, get(hipe_x86_flags)) of
+	true -> %% x87	
+	  Arg = resolve_x87_unop_arg(hipe_x86:fp_unop_arg(I)),
+	  [{hipe_x86:fp_unop_op(I), Arg, I}];
+	false -> %% sse2
+	  case hipe_x86:fp_unop_op(I) of
+	    'fchs' ->
+	      Arg = resolve_sse2_binop_args(sse2_fnegate_mask,
+					    hipe_x86:fp_unop_arg(I)),
+	      [{'xorpd', Arg, I}];
+	    'fwait' -> % no op on sse2, magic on x87
+	      []
+	  end
+      end;
     #inc{} ->
       Arg = translate_dst(hipe_x86:inc_dst(I)),
       [{inc, {Arg}, I}];
     #jcc{} ->
-      Cc = {cc,hipe_x86_encode:cc(hipe_x86:jcc_cc(I))},
+      Cc = {cc,?HIPE_X86_ENCODE:cc(hipe_x86:jcc_cc(I))},
       Label = translate_label(hipe_x86:jcc_label(I)),
       [{jcc_sdi, {Cc,Label}, I}];
     #jmp_fun{} ->
@@ -191,6 +229,7 @@ translate_insn(I, MFA, ConstMap) ->
       Arg = resolve_move_args(hipe_x86:move_src(I), hipe_x86:move_dst(I),
 			      {MFA,ConstMap}),
       [{mov, Arg, I}];
+    ?MOVE64;
     #movsx{} ->
       Arg = resolve_movx_args(hipe_x86:movsx_src(I), hipe_x86:movsx_dst(I)),
       [{movsx, Arg, I}];
@@ -221,10 +260,10 @@ translate_insn(I, MFA, ConstMap) ->
   end.
 
 -ifdef(X86_SIMULATE_NSP).
-
+-ifndef(TRANSLATE_CALL).%% FIXME: merge this better...
 translate_call(I) ->
-  WordSize = 4, % XXX: s/4/8/ if AMD64
-  RegSP = 2#100, % esp
+  WordSize = ?HIPE_X86_REGISTERS:wordsize(),
+  RegSP = 2#100, % esp/rsp
   TempSP = hipe_x86:mk_temp(RegSP, untagged),
   FunOrig = hipe_x86:call_fun(I),
   Fun =
@@ -241,36 +280,39 @@ translate_call(I) ->
   JmpArg = translate_fun(Fun, PatchTypeExt),
   I3 = {'.sdesc', hipe_x86:call_sdesc(I), #comment{term=sdesc}},
   I2 = {jmp, {JmpArg}, #comment{term=call}},
-  Size2 = hipe_x86_encode:insn_sizeof(jmp, {JmpArg}),
-  I1 = {mov, {mem_to_rm32(hipe_x86:mk_mem(TempSP,
+  Size2 = ?HIPE_X86_ENCODE:insn_sizeof(jmp, {JmpArg}),
+  I1 = {mov, {mem_to_rmArch(hipe_x86:mk_mem(TempSP,
 					  hipe_x86:mk_imm(0),
 					  untagged)),
 	      {imm32,{?PATCH_TYPE2EXT(x86_abs_pcrel),4+Size2}}},
 	#comment{term=call}},
-  I0 = {sub, {temp_to_rm32(TempSP), {imm8,WordSize}}, I},
+  I0 = {sub, {temp_to_rmArch(TempSP), {imm8,WordSize}}, I},
   [I0,I1,I2,I3].
+-else.
+?TRANSLATE_CALL.
+-endif.
 
 translate_ret(I) ->
-  NPOP = hipe_x86:ret_npop(I) + 4, % XXX: s/4/8/ if AMD64
-  RegSP = 2#100, % esp
+  NPOP = hipe_x86:ret_npop(I) + ?HIPE_X86_REGISTERS:wordsize(),
+  RegSP = 2#100, % esp/rsp
   TempSP = hipe_x86:mk_temp(RegSP, untagged),
-  RegRA = 2#011, % ebx
+  RegRA = 2#011, % ebx/rbx
   TempRA = hipe_x86:mk_temp(RegRA, untagged),
   [{mov,
-    {temp_to_reg32(TempRA),
-     mem_to_rm32(hipe_x86:mk_mem(TempSP,
-				 hipe_x86:mk_imm(0),
-				 untagged))},
+    {temp_to_regArch(TempRA),
+     mem_to_rmArch(hipe_x86:mk_mem(TempSP,
+				   hipe_x86:mk_imm(0),
+				   untagged))},
     I},
    {add,
-    {temp_to_rm32(TempSP),
+    {temp_to_rmArch(TempSP),
      case NPOP < 128 of
        true -> {imm8,NPOP};
        false -> {imm32,NPOP}
      end},
     #comment{term=ret}},
    {jmp,
-    {temp_to_rm32(TempRA)},
+    {temp_to_rmArch(TempRA)},
     #comment{term=ret}}].
 
 -else. % not X86_SIMULATE_NSP
@@ -303,9 +345,9 @@ translate_label(Label) when integer(Label) ->
 translate_fun(Arg, PatchTypeExt) ->
   case Arg of
     #x86_temp{} ->
-      temp_to_rm32(Arg);
+      temp_to_rmArch(Arg);
     #x86_mem{} ->
-      mem_to_rm32(Arg);
+      mem_to_rmArch(Arg);
     #x86_mfa{m=M,f=F,a=A} ->
       {rel32,{PatchTypeExt,{M,F,A}}};
     #x86_prim{prim=Prim} ->
@@ -344,11 +386,11 @@ translate_src(Src, MFA, ConstMap) ->
 translate_dst(Dst) ->
   case Dst of
     #x86_temp{} ->
-      temp_to_reg32(Dst);
+      temp_to_regArch(Dst);
     #x86_mem{type='double'} ->
       mem_to_rm64fp(Dst);
     #x86_mem{} ->
-      mem_to_rm32(Dst);
+      mem_to_rmArch(Dst);
     #x86_fpreg{} ->
       fpreg_to_stack(Dst)
   end.
@@ -425,7 +467,7 @@ encode_insns([I|Insns], Address, FunAddress, LabelMap, Relocs, CodeArray) ->
       encode_insns(Insns, Address, FunAddress, LabelMap, [Reloc|Relocs], CodeArray);
     _ ->
       {Op,Arg,_} = fix_jumps(I, Address, FunAddress, LabelMap),
-      {Bytes, NewRelocs} = hipe_x86_encode:insn_encode(Op, Arg, Address),
+      {Bytes, NewRelocs} = ?HIPE_X86_ENCODE:insn_encode(Op, Arg, Address),
       Size = length(Bytes),
       print_insn(Address, Bytes, I),
       list_to_array(Bytes, CodeArray, Address),
@@ -471,14 +513,28 @@ list_to_array(List, Array, Addr) ->
 fpreg_to_stack(#x86_fpreg{reg=Reg}) ->
   {fpst, Reg}.
 
+temp_to_regArch(#x86_temp{reg=Reg}) ->
+  {?REGArch, Reg}.
+-ifdef(TEMP_TO_REG64).
+?TEMP_TO_REG64.
+-endif.
 temp_to_reg32(#x86_temp{reg=Reg}) ->
   {reg32, Reg}.
 temp_to_reg16(#x86_temp{reg=Reg}) ->
   {reg16, Reg}.
 temp_to_reg8(#x86_temp{reg=Reg}) ->
   {reg8, Reg}.
-temp_to_rm32(#x86_temp{reg=Reg}) ->
-  {rm32, hipe_x86_encode:rm_reg(Reg)}.
+
+temp_to_xmm(#x86_temp{reg=Reg}) ->
+  {xmm, Reg}. 
+
+-ifdef(TEMP_TO_RM64).
+?TEMP_TO_RM64.
+-endif.
+temp_to_rmArch(#x86_temp{reg=Reg}) ->
+  {?RMArch, ?HIPE_X86_ENCODE:rm_reg(Reg)}.
+temp_to_rm64fp(#x86_temp{reg=Reg}) ->
+  {rm64fp, ?HIPE_X86_ENCODE:rm_reg(Reg)}.
 
 mem_to_ea(Mem) ->
   EA = mem_to_ea_common(Mem),
@@ -486,55 +542,71 @@ mem_to_ea(Mem) ->
 
 mem_to_rm32(Mem) ->
   EA = mem_to_ea_common(Mem),
-  {rm32, hipe_x86_encode:rm_mem(EA)}.
+  {rm32, ?HIPE_X86_ENCODE:rm_mem(EA)}.
+
+mem_to_rmArch(Mem) ->
+  EA = mem_to_ea_common(Mem),
+  {?RMArch, ?HIPE_X86_ENCODE:rm_mem(EA)}.
 
 mem_to_rm64fp(Mem) ->
   EA = mem_to_ea_common(Mem),
-  {rm64fp, hipe_x86_encode:rm_mem(EA)}.
+  {rm64fp, ?HIPE_X86_ENCODE:rm_mem(EA)}.
 
 %%%%%%%%%%%%%%%%%
 mem_to_rm8(Mem) ->
   EA = mem_to_ea_common(Mem),
-  {rm8, hipe_x86_encode:rm_mem(EA)}.
+  {rm8, ?HIPE_X86_ENCODE:rm_mem(EA)}.
 
 mem_to_rm16(Mem) ->
   EA = mem_to_ea_common(Mem),
-  {rm16, hipe_x86_encode:rm_mem(EA)}.
+  {rm16, ?HIPE_X86_ENCODE:rm_mem(EA)}.
 %%%%%%%%%%%%%%%%%
 
 mem_to_ea_common(#x86_mem{base=[], off=#x86_imm{value=Off}}) ->
-  hipe_x86_encode:ea_disp32(Off);
+  ?HIPE_X86_ENCODE:?EA_DISP32_ABSOLUTE(Off);
 mem_to_ea_common(#x86_mem{base=#x86_temp{reg=Base}, off=#x86_imm{value=Off}}) ->
   if
     Off =:= 0 ->
       case Base of
 	4 -> %esp, use SIB w/o disp8
-	  SIB = hipe_x86_encode:sib(Base),
-	  hipe_x86_encode:ea_sib(SIB);
+	  SIB = ?HIPE_X86_ENCODE:sib(Base),
+	  ?HIPE_X86_ENCODE:ea_sib(SIB);
 	5 -> %ebp, use disp8 w/o SIB
-	  hipe_x86_encode:ea_disp8_base(Off, Base);
+	  ?HIPE_X86_ENCODE:ea_disp8_base(Off, Base);
+        12 -> %r12, use SIB w/o disp8
+	  SIB = ?HIPE_X86_ENCODE:sib(Base),
+	  ?HIPE_X86_ENCODE:ea_sib(SIB);
+        13 -> %r13, use disp8 w/o SIB
+ 	  ?HIPE_X86_ENCODE:ea_disp8_base(Off, Base);         
 	_ -> %neither SIB nor disp8 needed
-	  hipe_x86_encode:ea_base(Base)
+	  ?HIPE_X86_ENCODE:ea_base(Base)
       end;
     Off >= -128, Off =< 127 ->
       case Base of
 	4 -> %esp, must use SIB
-	  SIB = hipe_x86_encode:sib(Base),
-	  hipe_x86_encode:ea_disp8_sib(Off, SIB);
+	  SIB = ?HIPE_X86_ENCODE:sib(Base),
+	  ?HIPE_X86_ENCODE:ea_disp8_sib(Off, SIB);
+        12 -> %r12, must use SIB
+	  SIB = ?HIPE_X86_ENCODE:sib(Base),
+	  ?HIPE_X86_ENCODE:ea_disp8_sib(Off, SIB);
 	_ -> %use disp8 w/o SIB
-	  hipe_x86_encode:ea_disp8_base(Off, Base)
+	  ?HIPE_X86_ENCODE:ea_disp8_base(Off, Base)
       end;
     true ->
       case Base of
 	4 -> %esp, must use SIB
-	  SIB = hipe_x86_encode:sib(Base),
-	  hipe_x86_encode:ea_disp32_sib(Off, SIB);
+	  SIB = ?HIPE_X86_ENCODE:sib(Base),
+	  ?HIPE_X86_ENCODE:ea_disp32_sib(Off, SIB);
+	12 -> %r12, must use SIB
+	  SIB = ?HIPE_X86_ENCODE:sib(Base),
+	  ?HIPE_X86_ENCODE:ea_disp32_sib(Off, SIB);
 	_ ->
-	  hipe_x86_encode:ea_disp32_base(Off, Base)
+	  ?HIPE_X86_ENCODE:ea_disp32_base(Off, Base)
       end
   end.
 
 %% jmp_switch
+-ifndef(RESOLVE_JMP_SWITCH_ARG).
 %% Context = [] when no relocs are expected, {MFA,ConstMap} otherwise
 resolve_jmp_switch_arg(I, Context) ->
   Disp32 =
@@ -545,81 +617,127 @@ resolve_jmp_switch_arg(I, Context) ->
 	ConstNo = find_const({MFA,hipe_x86:jmp_switch_jtab(I)}, ConstMap),
 	{?PATCH_TYPE2EXT(load_address),{constant,ConstNo}}
     end,
-  SINDEX = hipe_x86_encode:sindex(2, hipe_x86:temp_reg(hipe_x86:jmp_switch_temp(I))),
-  EA = hipe_x86_encode:ea_disp32_sindex(Disp32, SINDEX), % this creates a SIB implicitly
-  {rm32,hipe_x86_encode:rm_mem(EA)}.
+  SINDEX = ?HIPE_X86_ENCODE:sindex(2, hipe_x86:temp_reg(hipe_x86:jmp_switch_temp(I))),
+  EA = ?HIPE_X86_ENCODE:ea_disp32_sindex(Disp32, SINDEX), % this creates a SIB implicitly
+  {rm32,?HIPE_X86_ENCODE:rm_mem(EA)}.
+-else.
+?RESOLVE_JMP_SWITCH_ARG.
+-endif.
 
 %% lea reg, mem
 resolve_lea_args(Src=#x86_mem{}, Dst=#x86_temp{}) ->
-  {temp_to_reg32(Dst),mem_to_ea(Src)}.
+  {temp_to_regArch(Dst),mem_to_ea(Src)}.
+
+resolve_sse2_op(Op) ->
+  case Op of
+    fadd -> addsd;
+    fdiv -> divsd;
+    fmul -> mulsd;
+    fsub -> subsd;
+    _ -> exit({?MODULE, unknown_sse2_operator, Op})
+  end.
+
+%% OP xmm, mem
+resolve_sse2_binop_args(Src=#x86_mem{type=double},
+			Dst=#x86_temp{type=double}) ->
+  {temp_to_xmm(Dst),mem_to_rm64fp(Src)};
+%% movsd mem, xmm
+resolve_sse2_binop_args(Src=#x86_temp{type=double},
+			Dst=#x86_mem{type=double}) ->
+  {mem_to_rm64fp(Dst),temp_to_xmm(Src)};
+%% OP xmm, xmm
+resolve_sse2_binop_args(Src=#x86_temp{type=double},
+			Dst=#x86_temp{type=double}) ->
+  {temp_to_xmm(Dst),temp_to_rm64fp(Src)};
+%% cvtsi2sd xmm, reg
+resolve_sse2_binop_args(Src=#x86_temp{type=untagged},
+			Dst=#x86_temp{type=double}) ->
+  {temp_to_xmm(Dst),temp_to_rmArch(Src)};
+%% xorpd xmm, mem
+resolve_sse2_binop_args(sse2_fnegate_mask,
+			Dst=#x86_temp{type=double}) ->
+  {temp_to_xmm(Dst),
+   {rm64fp, {rm_mem, ?HIPE_X86_ENCODE:?EA_DISP32_ABSOLUTE(
+		       {?PATCH_TYPE2EXT(load_address),
+			{c_const, sse2_fnegate_mask}})}}}.
 
 %% mov mem, imm
 resolve_move_args(#x86_imm{value=ImmSrc}, Dst=#x86_mem{type=Type}, Context) ->
-  case Type of   % to support byte and int16 stores
+  case Type of   % to support byte, int16 and int32 stores
     byte ->
       ByteImm = ImmSrc band 255, %to ensure that it is a bytesized imm
       {mem_to_rm8(Dst),{imm8,ByteImm}};
     _ ->
-      RM32 = mem_to_rm32(Dst),
+      RMArch = mem_to_rmArch(Dst),
       {_,Imm} = resolve_arg(#x86_imm{value=ImmSrc}, Context),
-      {RM32,{imm32,Imm}}
+      {RMArch,{imm32,Imm}}
   end;
 
 %% mov reg,mem
 resolve_move_args(Src=#x86_mem{}, Dst=#x86_temp{}, _Context) ->
-  {temp_to_reg32(Dst),mem_to_rm32(Src)};
+  {temp_to_regArch(Dst),mem_to_rmArch(Src)};
 
 %% mov mem,reg
 resolve_move_args(Src=#x86_temp{}, Dst=#x86_mem{type=Type}, _Context) ->
-  case Type of   % to support byte and int16 stores
+  case Type of   % to support byte, int16 and int32 stores
     byte ->
       {mem_to_rm8(Dst),temp_to_reg8(Src)};
     int16 ->
       {mem_to_rm16(Dst),temp_to_reg16(Src)};
-    _ ->
-      {mem_to_rm32(Dst),temp_to_reg32(Src)}
+    int32 ->
+      {mem_to_rmArch(Dst),temp_to_regArch(Src)};
+    tagged -> % tagged, untagged
+      {mem_to_rmArch(Dst),temp_to_regArch(Src)};
+    untagged -> % tagged, untagged
+      {mem_to_rmArch(Dst),temp_to_regArch(Src)}
   end;
 
 %% mov reg,reg
 resolve_move_args(Src=#x86_temp{}, Dst=#x86_temp{}, _Context) ->
-  {temp_to_reg32(Dst),temp_to_rm32(Src)};
+  {temp_to_regArch(Dst),temp_to_rmArch(Src)};
 
 %% mov reg,imm
 resolve_move_args(Src=#x86_imm{value=_ImmSrc}, Dst=#x86_temp{}, Context) ->
   {_,Imm} = resolve_arg(Src, Context),
-  {temp_to_reg32(Dst),{imm32,Imm}}.
+  ?IMM_MOVE_ARGS.
+
+-ifdef(RESOLVE_MOVE64_ARGS).
+?RESOLVE_MOVE64_ARGS.
+-endif.
 
 %%% mov{s,z}x
 resolve_movx_args(Src=#x86_mem{type=Type}, Dst=#x86_temp{}) ->
-  {temp_to_reg32(Dst),
+  {temp_to_regArch(Dst),
    case Type of
      byte ->
        mem_to_rm8(Src);
      int16 ->
-       mem_to_rm16(Src)
+       mem_to_rm16(Src);
+     int32 ->
+       mem_to_rm32(Src)
    end}.
 
 %%% alu/cmp (_not_ test)
 resolve_alu_args(Src, Dst) ->
   case {Src,Dst} of
     {#x86_imm{}, #x86_mem{}} ->
-      {mem_to_rm32(Dst), resolve_arg(Src, [])};
+      {mem_to_rmArch(Dst), resolve_arg(Src, [])};
     {#x86_mem{}, #x86_temp{}} ->
-      {temp_to_reg32(Dst), mem_to_rm32(Src)};
+      {temp_to_regArch(Dst), mem_to_rmArch(Src)};
     {#x86_temp{}, #x86_mem{}} ->
-      {mem_to_rm32(Dst), temp_to_reg32(Src)};
+      {mem_to_rmArch(Dst), temp_to_regArch(Src)};
     {#x86_temp{}, #x86_temp{}} ->
-      {temp_to_reg32(Dst), temp_to_rm32(Src)};
+      {temp_to_regArch(Dst), temp_to_rmArch(Src)};
     {#x86_imm{}, #x86_temp{reg=0}} -> % eax,imm
       NewSrc = resolve_arg(Src, []),
       NewDst =
 	case NewSrc of
-	  {imm8,_} -> temp_to_rm32(Dst);
-	  {imm32,_} -> eax
+	  {imm8,_} -> temp_to_rmArch(Dst);
+	  {imm32,_} -> ?EAX
 	end,
       {NewDst, NewSrc};
     {#x86_imm{}, #x86_temp{}} ->
-      {temp_to_rm32(Dst), resolve_arg(Src, [])}
+      {temp_to_rmArch(Dst), resolve_arg(Src, [])}
   end.
 
 %%% test
@@ -629,26 +747,26 @@ resolve_test_args(Src, Dst) ->
       {_ImmSize,ImmValue} = resolve_arg(Src, []),
       NewDst =
 	case Dst of
-	  #x86_temp{reg=0} -> eax;
-	  #x86_temp{} -> temp_to_rm32(Dst);
-	  #x86_mem{} -> mem_to_rm32(Dst)
+	  #x86_temp{reg=0} -> ?EAX;
+	  #x86_temp{} -> temp_to_rmArch(Dst);
+	  #x86_mem{} -> mem_to_rmArch(Dst)
 	end,
       {NewDst, {imm32,ImmValue}};
     #x86_temp{} ->
       NewDst =
 	case Dst of
-	  #x86_temp{} -> temp_to_rm32(Dst);
-	  #x86_mem{} -> mem_to_rm32(Dst)
+	  #x86_temp{} -> temp_to_rmArch(Dst);
+	  #x86_mem{} -> mem_to_rmArch(Dst)
 	end,
-      {NewDst, temp_to_reg32(Src)}
+      {NewDst, temp_to_regArch(Src)}
   end.
 
 %%% shifts
 resolve_shift_args(Src, Dst) ->
   RM32 =
     case Dst of
-      #x86_temp{} -> temp_to_rm32(Dst);
-      #x86_mem{} -> mem_to_rm32(Dst)
+      #x86_temp{} -> temp_to_rmArch(Dst);
+      #x86_mem{} -> mem_to_rmArch(Dst)
     end,
   Count =
     case Src of
@@ -658,23 +776,23 @@ resolve_shift_args(Src, Dst) ->
     end,
   {RM32, Count}.
 
-%% fp_binop mem
-resolve_fp_unop_arg(Arg=#x86_mem{type=Type})->
+%% x87_binop mem
+resolve_x87_unop_arg(Arg=#x86_mem{type=Type})->
   case Type of
     'double' -> {mem_to_rm64fp(Arg)};
-    'untagged' -> {mem_to_rm32(Arg)};
+    'untagged' -> {mem_to_rmArch(Arg)};
     _ -> ?EXIT({fmovArgNotSupported,{Arg}})
   end;
-resolve_fp_unop_arg(Arg=#x86_fpreg{}) ->
+resolve_x87_unop_arg(Arg=#x86_fpreg{}) ->
   {fpreg_to_stack(Arg)};
-resolve_fp_unop_arg([]) ->
+resolve_x87_unop_arg([]) ->
   [].
 
-%% fp_binop mem, st(i)
-resolve_fp_binop_args(Src=#x86_fpreg{}, Dst=#x86_mem{})->
+%% x87_binop mem, st(i)
+resolve_x87_binop_args(Src=#x86_fpreg{}, Dst=#x86_mem{})->
   {mem_to_rm64fp(Dst),fpreg_to_stack(Src)};
-%% fp_binop st(0), st(i)
-resolve_fp_binop_args(Src=#x86_fpreg{}, Dst=#x86_fpreg{})->
+%% x87_binop st(0), st(i)
+resolve_x87_binop_args(Src=#x86_fpreg{}, Dst=#x86_fpreg{})->
   {fpreg_to_stack(Dst),fpreg_to_stack(Src)}.
 
 
@@ -684,6 +802,7 @@ resolve_arg(Arg, Context) ->
   case Arg of
     {reg32,_Reg32} ->
       Arg;
+    ?REG64;
     #x86_imm{value=Imm} ->
       if is_atom(Imm) ->
 	  %%print("Atom:~w added to patchlist at addr:~w - ",[Imm,Addr+BytesToImm32]),
@@ -702,24 +821,24 @@ resolve_arg(Arg, Context) ->
 	    {MFA,ConstMap} ->
 	      Val =
 		case Imm of
-		  {Label,constant} ->
-		    ConstNo = find_const({MFA,Label}, ConstMap),
+		  {ConstLabel, constant} ->
+		    ConstNo = find_const({MFA,ConstLabel}, ConstMap),
 		    {constant,ConstNo};
-		  {Label,closure} ->
-		    {closure,Label};
-		  {Label,c_const} ->
-		    {c_const,Label}
+		  {ClosureLabel, closure} ->
+		    {closure,ClosureLabel};
+		  {C_constLabel,c_const} ->
+		    {c_const, C_constLabel}
 		end,
 	      {imm32,{?PATCH_TYPE2EXT(load_address),Val}}
 	  end
       end;
     #x86_temp{} ->
-      temp_to_reg32(Arg);
+      temp_to_regArch(Arg);
     %% Push uses this, and goes via ESP so the SIB byte stays...
     #x86_mem{type=Type} ->
       case Type of
 	'double'-> mem_to_rm64fp(Arg);
-	_ -> mem_to_rm32(Arg)
+	_ -> mem_to_rmArch(Arg)
       end;
     #x86_fpreg{} ->
       fpreg_to_stack(Arg)
@@ -772,12 +891,20 @@ print(String, Arglist) ->
 
 print_insn(Address, Bytes, I) ->
   Flags = get(hipe_x86_flags),
-  ?when_option(pp_asm, Flags, print_insn_2(Address, Bytes, I)).
+  ?when_option(pp_asm, Flags, print_insn_2(Address, Bytes, I)),
+  ?when_option(pp_cxmon, Flags, print_code_list_2(Bytes)).
+
+print_code_list_2([H | Tail]) ->
+  print_byte(H),
+  io:format(","),
+  print_code_list_2(Tail);
+print_code_list_2([]) ->
+  io:format("").
 
 print_insn_2(Address, Bytes, {_,_,OrigI}) ->
   print("~8.16b | ",[Address]),
   print_code_list(Bytes, 0),
-  hipe_x86_pp:pp_insn(OrigI).
+  ?HIPE_X86_PP:pp_insn(OrigI).
 
 print_code_list([Byte|Rest], Len) ->
   print_byte(Byte),

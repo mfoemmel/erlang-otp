@@ -820,6 +820,7 @@ real_guard_function(size,1) -> true;
 real_guard_function(tl,1) -> true;
 real_guard_function(trunc,1) -> true;
 real_guard_function(self,0) -> true;
+real_guard_function(float,1) -> true;
 real_guard_function(_,_) -> false.
 
 pseudo_guard_function(get_tcw,0) -> true;

@@ -44,20 +44,20 @@ MODULES=hipe_rtl_to_x86 \
 	hipe_x86_cfg \
 	hipe_x86_defuse \
 	hipe_x86_encode \
-	hipe_x86_float \
 	hipe_x86_frame \
 	hipe_x86_liveness \
 	hipe_x86_main \
 	hipe_x86_postpass \
 	hipe_x86_pp \
 	hipe_x86_ra \
-	hipe_x86_ra_dummy \
 	hipe_x86_ra_finalise \
 	hipe_x86_ra_fp_ls \
 	hipe_x86_ra_ls \
 	hipe_x86_ra_ls_postconditions \
+	hipe_x86_ra_naive \
 	hipe_x86_ra_postconditions \
-	hipe_x86_registers
+	hipe_x86_registers \
+	hipe_x86_x87
 
 HRL_FILES=hipe_x86.hrl
 ERL_FILES=$(MODULES:%=%.erl)
@@ -111,7 +111,6 @@ release_docs_spec:
 # Please keep this list sorted.
 $(EBIN)/hipe_x86_assemble.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl ../misc/hipe_sdi.hrl
 $(EBIN)/hipe_x86_cfg.beam: ../flow/cfg.inc
-$(EBIN)/hipe_x86_float.beam: ../main/hipe.hrl
 $(EBIN)/hipe_x86_liveness.beam: ../flow/liveness.inc
 $(EBIN)/hipe_x86_main.beam: ../main/hipe.hrl
 $(EBIN)/hipe_x86_ra: ../main/hipe.hrl
@@ -121,5 +120,6 @@ $(EBIN)/hipe_x86_ra_ls.beam: ../main/hipe.hrl
 $(EBIN)/hipe_x86_ra_ls_postconditions.beam: ../main/hipe.hrl
 $(EBIN)/hipe_x86_ra_postconditions.beam: ../main/hipe.hrl
 $(EBIN)/hipe_x86_registers.beam: ../rtl/hipe_literals.hrl
+$(EBIN)/hipe_x86_x87.beam: ../main/hipe.hrl
 
 $(TARGET_FILES): hipe_x86.hrl

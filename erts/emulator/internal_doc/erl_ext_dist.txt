@@ -304,6 +304,10 @@ The protocol that EPMD (Erlang Port Mapper Daemon) talks is summarized here.
 
 	                <---------------- ALIVE_NOTOK_RESP
 
+	ALIVE2_REQ      ---------------->
+
+	                <---------------- ALIVE2_RESP
+
 	ALIVE_CLOSE_REQ ---------------->
 
 	PORT_PLEASE_REQ ---------------->
@@ -311,6 +315,10 @@ The protocol that EPMD (Erlang Port Mapper Daemon) talks is summarized here.
 	                <---------------- PORT_OK_RESP
 
 	                <---------------- PORT_NOTOK_RESP
+
+	PORT_PLEASE2_REQ --------------->
+
+	                <---------------- PORT2_RESP
 
 	NAMES_REQ       ---------------->                   
 

@@ -11,22 +11,29 @@
 %%% - Merge all_temps and defun_minframe to a single
 %%%   pass, for compile-time efficiency reasons.
 
--module(hipe_x86_frame).
+-ifndef(HIPE_X86_FRAME).
+-define(HIPE_X86_FRAME,     hipe_x86_frame).
+-define(HIPE_X86_REGISTERS, hipe_x86_registers).
+-define(HIPE_X86_CFG,       hipe_x86_cfg).
+-define(HIPE_X86_LIVENESS,  hipe_x86_liveness).
+-endif.
+
+-module(?HIPE_X86_FRAME).
 -export([frame/2]).
--include("hipe_x86.hrl").
+-include("../x86/hipe_x86.hrl").
 
 frame(Defun, _Options) ->
   Formals = fix_formals(hipe_x86:defun_formals(Defun)),
   Temps0 = all_temps(hipe_x86:defun_code(Defun), Formals),
   MinFrame = defun_minframe(Defun),
   Temps = ensure_minframe(MinFrame, Temps0),
-  CFG0 = hipe_x86_cfg:init(Defun),
-  Liveness = hipe_x86_liveness:analyse(CFG0),
+  CFG0 = ?HIPE_X86_CFG:init(Defun),
+  Liveness = ?HIPE_X86_LIVENESS:analyse(CFG0),
   CFG1 = do_body(CFG0, Liveness, Formals, Temps),
-  hipe_x86_cfg:linearise(CFG1).
+  ?HIPE_X86_CFG:linearise(CFG1).
 
 fix_formals(Formals) ->
-  fix_formals(hipe_x86_registers:nr_args(), Formals).
+  fix_formals(?HIPE_X86_REGISTERS:nr_args(), Formals).
 fix_formals(N, [_|Rest]) when N > 0 -> fix_formals(N-1, Rest);
 fix_formals(_, Formals) -> Formals.
 
@@ -36,17 +43,17 @@ do_body(CFG0, Liveness, Formals, Temps) ->
   do_prologue(CFG1, Context).
 
 do_blocks(CFG, Context) ->
-  Labels = hipe_x86_cfg:labels(CFG),
+  Labels = ?HIPE_X86_CFG:labels(CFG),
   do_blocks(Labels, CFG, Context).
 
 do_blocks([Label|Labels], CFG, Context) ->
   Liveness = context_liveness(Context),
-  LiveOut = hipe_x86_liveness:liveout(Liveness, Label),
-  Block = hipe_x86_cfg:bb(CFG, Label),
+  LiveOut = ?HIPE_X86_LIVENESS:liveout(Liveness, Label),
+  Block = ?HIPE_X86_CFG:bb(CFG, Label),
   Code = hipe_bb:code(Block),
   NewCode = do_block(Code, LiveOut, Context),
   NewBlock = hipe_bb:code_update(Block, NewCode),
-  NewCFG = hipe_x86_cfg:bb_add(CFG, Label, NewBlock),
+  NewCFG = ?HIPE_X86_CFG:bb_add(CFG, Label, NewBlock),
   do_blocks(Labels, NewCFG, Context);
 do_blocks([], CFG, _) ->
   CFG.
@@ -74,6 +81,8 @@ do_insn(I, LiveOut, Context, FPoff) ->
       {do_fp_unop(I, Context, FPoff), FPoff};
     #fp_binop{} ->
       {do_fp_binop(I, Context, FPoff), FPoff};
+    #fmove{} ->
+      {[do_fmove(I, Context, FPoff)], FPoff};
     #move{} ->
       {[do_move(I, Context, FPoff)], FPoff};
     #movsx{} ->
@@ -121,6 +130,12 @@ do_fp_binop(I, Context, FPoff) ->
   Src = conv_opnd(Src0, FPoff, Context),
   Dst = conv_opnd(Dst0, FPoff, Context),
   [I#fp_binop{src=Src,dst=Dst}].
+
+do_fmove(I, Context, FPoff) ->
+  #fmove{src=Src0,dst=Dst0} = I,
+  Src = conv_opnd(Src0, FPoff, Context),
+  Dst = conv_opnd(Dst0, FPoff, Context),
+  I#fmove{src=Src,dst=Dst}.
 
 do_move(I, Context, FPoff) ->
   #move{src=Src0,dst=Dst0} = I,
@@ -197,7 +212,7 @@ do_pseudo_call(I, LiveOut, Context, FPoff0) ->
   %% +word_size() for our RA and +word_size() for callee's RA should
   %% it need to call inc_stack
   context_need_stack(Context, FPoff0 + 2*word_size()),
-  StkArity = max(0, OrigArity - hipe_x86_registers:nr_args()),
+  StkArity = max(0, OrigArity - ?HIPE_X86_REGISTERS:nr_args()),
   ArgsBytes = word_size() * StkArity,
   {CallCode, FPoff0 - ArgsBytes}.
 
@@ -281,13 +296,13 @@ do_tailcall_args(Args, Context, Fun0) ->
 	end
     end,
   %%
-  RegTemp0 = hipe_x86_registers:temp0(),
+  RegTemp0 = ?HIPE_X86_REGISTERS:temp0(),
   TempReg =
     case hipe_x86:is_temp(Fun1) of
       true ->
 	RegFun1 = hipe_x86:temp_reg(Fun1),
 	if RegFun1 =/= RegTemp0 -> RegTemp0;
-	   true -> hipe_x86_registers:temp1()
+	   true -> ?HIPE_X86_REGISTERS:temp1()
 	end;
       false ->
 	RegTemp0
@@ -405,7 +420,7 @@ mk_temp_map(Formals, RA, Temps) ->
 enter_vars([V|Vs], PrevOff, Map) ->
   Off =
     case hipe_x86:temp_type(V) of
-      'double' -> PrevOff - 2*word_size();
+      'double' -> PrevOff - float_size();
       _ -> PrevOff - word_size()
     end,
   enter_vars(Vs, Off, tmap_bind(Map, V, Off));
@@ -440,16 +455,16 @@ do_prologue(CFG, Context) ->
   MaxStack = context_maxstack(Context),
   if MaxStack > 0 ->
       FrameSize = context_framesize(Context),
-      OldStartLab = hipe_x86_cfg:start_label(CFG),
+      OldStartLab = ?HIPE_X86_CFG:start_label(CFG),
       NewStartLab = hipe_gensym:get_next_label(x86),
       AllocFrameLab = hipe_gensym:get_next_label(x86),
       IncStackLab = hipe_gensym:get_next_label(x86),
       %%
       Type = 'untagged',
-      Preg = hipe_x86_registers:proc_pointer(),
+      Preg = ?HIPE_X86_REGISTERS:proc_pointer(),
       Pbase = hipe_x86:mk_temp(Preg, Type),
       SP_LIMIT_OFF = hipe_x86:mk_imm(
-                        hipe_x86_registers:sp_limit_offset()),
+                        ?HIPE_X86_REGISTERS:sp_limit_offset()),
       Temp0 = mk_temp0(Type),
       SP = mk_sp(),
       NewStartCode =
@@ -477,13 +492,13 @@ do_prologue(CFG, Context) ->
 			  mk_minimal_sdesc(Context), not_remote),
 	 hipe_x86:mk_jmp_label(NewStartLab)],
       %%
-      CFG1 = hipe_x86_cfg:bb_add(CFG, NewStartLab,
+      CFG1 = ?HIPE_X86_CFG:bb_add(CFG, NewStartLab,
                                  hipe_bb:mk_bb(NewStartCode)),
-      CFG2 = hipe_x86_cfg:bb_add(CFG1, AllocFrameLab,
+      CFG2 = ?HIPE_X86_CFG:bb_add(CFG1, AllocFrameLab,
                                  hipe_bb:mk_bb(AllocFrameCode)),
-      CFG3 = hipe_x86_cfg:bb_add(CFG2, IncStackLab,
+      CFG3 = ?HIPE_X86_CFG:bb_add(CFG2, IncStackLab,
                                  hipe_bb:mk_bb(IncStackCode)),
-      CFG4 = hipe_x86_cfg:start_label_update(CFG3, NewStartLab),
+      CFG4 = ?HIPE_X86_CFG:start_label_update(CFG3, NewStartLab),
       %%
       CFG4;
      true ->
@@ -505,17 +520,17 @@ typeof_src(Src) ->
 %%% Cons up an '%sp' Temp.
 
 mk_sp() ->
-  hipe_x86:mk_temp(hipe_x86_registers:sp(), 'untagged').
+  hipe_x86:mk_temp(?HIPE_X86_REGISTERS:sp(), 'untagged').
 
 %%% Cons up a '%temp0' Temp.
 
 mk_temp0(Type) ->
-  hipe_x86:mk_temp(hipe_x86_registers:temp0(), Type).
+  hipe_x86:mk_temp(?HIPE_X86_REGISTERS:temp0(), Type).
 
 %%% Cons up a '%temp1' Temp.
 
 mk_temp1(Type) ->
-  hipe_x86:mk_temp(hipe_x86_registers:temp1(), Type).
+  hipe_x86:mk_temp(?HIPE_X86_REGISTERS:temp1(), Type).
 
 %%% Check if an operand is a pseudo-Temp.
 
@@ -531,7 +546,7 @@ opnd_is_pseudo(Opnd) ->
 temp_is_pseudo(Temp) ->
   case hipe_x86:is_temp(Temp) of
     true -> 
-      not(hipe_x86_registers:is_precoloured(hipe_x86:temp_reg(Temp)));
+      not(?HIPE_X86_REGISTERS:is_precoloured(hipe_x86:temp_reg(Temp)));
     false -> 
       false
   end.
@@ -594,7 +609,7 @@ body_mta([], MTA) ->
 insn_mta(I, MTA) ->
   case I of
     #pseudo_tailcall{arity=Arity} ->
-      max(MTA, Arity - hipe_x86_registers:nr_args());
+      max(MTA, Arity - ?HIPE_X86_REGISTERS:nr_args());
     _ -> MTA
   end.
 
@@ -617,4 +632,7 @@ ensure_minframe(MinFrame, Frame, Temps) ->
   end.
 
 word_size() ->
-  hipe_rtl_arch:word_size().
+  ?HIPE_X86_REGISTERS:wordsize().
+
+float_size() ->
+  ?HIPE_X86_REGISTERS:float_size().

@@ -29,7 +29,8 @@
 	 request_pending/1, request_pending/2, request_pending_ignore/1, 
 	 request_handle/1, request_handle/2, 
 	 request_handle_sloppy/1, 
-	 ack_info/2, req_info/2, 
+	 ack_info/2, abort_info/2, req_info/2, 
+	 disconnect/2, 
 	 verbosity/2]).
 -export([mgc/3]).
 
@@ -42,7 +43,9 @@
 	 handle_trans_request/4,
 	 handle_trans_long_request/4,
 	 handle_trans_reply/5,
-	 handle_trans_ack/5
+	 handle_trans_ack/5,
+         handle_unexpected_trans/4,
+         handle_trans_request_abort/5
 	]).
 
 -include("megaco_test_lib.hrl").
@@ -64,6 +67,7 @@
 	      req_timeout = 0,
 	      mid         = undefined,
 	      ack_info    = undefined,
+	      abort_info  = undefined,
 	      req_info    = undefined,
 	      mg          = []}).
 
@@ -167,8 +171,14 @@ update_user_info(Pid, Tag, Val) ->
 update_conn_info(Pid, Tag, Val) ->
     server_request(Pid, {update_conn_info, Tag, Val}, update_conn_info_ack).
 
+disconnect(Pid, Reason) ->
+    server_request(Pid, {disconnect, Reason}, disconnected).
+
 ack_info(Pid, InfoPid) ->
     Pid ! {ack_info, InfoPid, self()}.
+
+abort_info(Pid, InfoPid) ->
+    Pid ! {abort_info, InfoPid, self()}.
 
 req_info(Pid, InfoPid) ->
     Pid ! {req_info, InfoPid, self()}.
@@ -300,6 +310,13 @@ loop(S) ->
 	    server_reply(Parent, stopped, ok),
 	    exit(normal);
 
+	{{disconnect, Reason}, Parent} when S#mgc.parent == Parent ->
+	    i("loop -> disconnecting", []),
+  	    Mid = S#mgc.mid,
+	    [Conn|_] = megaco:user_info(Mid, connections),
+	    Res = megaco:disconnect(Conn, {self(), Reason}),
+	    server_reply(Parent, disconnected, Res),
+	    loop(S);
 
 	{{update_user_info, Tag, Val}, Parent} when S#mgc.parent == Parent ->
 	    i("loop -> got update_user_info: ~w -> ~p", [Tag, Val]),
@@ -330,7 +347,7 @@ loop(S) ->
 	    i("loop -> got conn_info request for ~w", [Tag]),
 	    Conns = megaco:user_info(S#mgc.mid, connections), 
 	    Fun = fun(CH) ->
-			  (catch megaco:conn_info(CH, Tag))
+			  {CH, (catch megaco:conn_info(CH, Tag))}
 		  end,
 	    Res = lists:map(Fun, Conns),
 	    d("loop -> Res: ~p", [Res]),
@@ -343,7 +360,7 @@ loop(S) ->
 	    i("loop -> got new request_action: ~p:~w", [Action,To]),
 	    {Reply, S1} = 
 		case lists:member(Action, ?valid_actions) of
-		    true when To >= 0 ->
+		    true when To >= 0; To == infinity ->
 			{{ok, S#mgc.req_action}, 
 			 S#mgc{req_action = Action, req_timeout = To}};
 		    true ->
@@ -415,8 +432,13 @@ loop(S) ->
 	    loop(S#mgc{ack_info = To});
 
 
+	{abort_info, To, Parent} when S#mgc.parent == Parent ->
+	    i("loop -> received request to inform about received aborts ", []),
+	    loop(S#mgc{abort_info = To});
+
+
 	{req_info, To, Parent} when S#mgc.parent == Parent ->
-	    i("loop -> received request to inform about received ack's ", []),
+	    i("loop -> received request to inform about received req's ", []),
 	    loop(S#mgc{req_info = To});
 
 
@@ -442,7 +464,7 @@ do_reset_stats(Mid) ->
     megaco:reset_stats(),
     do_reset_trans_stats(megaco:user_info(Mid, connections), []).
 
-do_reset_trans_stats([], Reset) ->
+do_reset_trans_stats([], _Reset) ->
     ok;
 do_reset_trans_stats([CH|CHs], Reset) ->
     SendMod = megaco:conn_info(CH, send_mod),
@@ -481,15 +503,15 @@ get_trans_stats(P, SendMod) when pid(P) ->
 	Else ->
 	    {SendMod, Else}
     end;
-get_trans_stats(P, SendMod) ->
+get_trans_stats(_P, SendMod) ->
     {SendMod, undefined}.
 
-parse_receive_info([], RH) ->
+parse_receive_info([], _RH) ->
     throw({error, no_receive_info});
 parse_receive_info(RI, RH) ->
     parse_receive_info(RI, RH, []).
 
-parse_receive_info([], RH, ListenTo) ->
+parse_receive_info([], _RH, ListenTo) ->
     ListenTo;
 parse_receive_info([RI|RIs], RH, ListenTo) ->
     d("parse_receive_info -> parse receive info"),
@@ -532,7 +554,7 @@ start_transports([{Port, RH}|ListenTo], TcpSup, UdpSup)
   when RH#megaco_receive_handle.send_mod == megaco_udp ->
     UdpSup1 = start_udp(RH, Port, UdpSup),
     start_transports(ListenTo, TcpSup, UdpSup1);
-start_transports([{Port, RH}|ListenTo], _TcpSup, _UdpSup) ->
+start_transports([{_Port, RH}|_ListenTo], _TcpSup, _UdpSup) ->
     throw({error, {bad_send_mod, RH#megaco_receive_handle.send_mod}}).
 
 
@@ -646,7 +668,30 @@ handle_megaco_request({handle_trans_ack, CH, PV, AS, AD}, S) ->
       "~n   PV: ~p"
       "~n   AS: ~p"
       "~n   AD: ~p", [CH, PV, AS, AD]),
-    {ok, S}.
+    {ok, S};
+
+handle_megaco_request({handle_unexpected_trans, CH, PV, TR}, S) ->
+    d("handle_megaco_request(handle_unexpected_trans) -> entry with"
+      "~n   CH: ~p"
+      "~n   PV: ~p"
+      "~n   TR: ~p", [CH, PV, TR]),
+    {ok, S};
+
+handle_megaco_request({handle_trans_request_abort, CH, PV, TI, Handler}, S) ->
+    d("handle_megaco_request(handle_trans_request_abort) -> entry with"
+      "~n   CH:      ~p"
+      "~n   PV:      ~p"
+      "~n   TI:      ~p"
+      "~n   Handler: ~p", [CH, PV, TI, Handler]),
+    Reply = 
+	case S#mgc.abort_info of
+	    P when pid(P) ->
+		P ! {abort_received, self(), TI},
+		ok;
+	    _ ->
+		ok
+	end,
+    {Reply, S}.
 
 
 do_handle_trans_request(CH, PV, ARs, 
@@ -664,9 +709,9 @@ do_handle_trans_request(CH, PV, ARs,
 
 handle_act_requests(_CH, _PV, _ActReqs, ignore) ->
     ignore;
-handle_act_requests(CH, PV, ActReqs, pending) ->
+handle_act_requests(_CH, _PV, ActReqs, pending) ->
     {pending, ActReqs};
-handle_act_requests(CH, PV, ActReqs, pending_ignore) ->
+handle_act_requests(_CH, _PV, ActReqs, pending_ignore) ->
     {pending_ignore, ActReqs};
 handle_act_requests(CH, PV, ActReqs, handle_ack) ->
     Reply = (catch do_handle_act_requests(CH, PV, ActReqs, [])),
@@ -678,7 +723,7 @@ handle_act_requests(CH, PV, ActReqs, _) ->
     Reply = (catch do_handle_act_requests(CH, PV, ActReqs, [])),
     {discard_ack, Reply}.
 
-do_handle_act_requests(CH, PV, [], ActReplies) ->
+do_handle_act_requests(_CH, _PV, [], ActReplies) ->
     lists:reverse(ActReplies);
 do_handle_act_requests(CH, PV, [ActReq|ActReqs], ActReplies) ->
     ActReply = handle_act_request(CH, PV, ActReq),
@@ -697,7 +742,7 @@ handle_cmd_requests(CH, PV, ?megaco_null_context_id,
 handle_cmd_requests(CH, PV, CtxId, Cmds) ->
     do_handle_cmd_requests(CH, PV, CtxId, Cmds, []).
 
-do_handle_cmd_requests(CH, PV, CtxId, [], CmdReplies) ->
+do_handle_cmd_requests(_CH, _PV, _CtxId, [], CmdReplies) ->
     lists:reverse(CmdReplies);
 do_handle_cmd_requests(CH, PV, CtxId, [Cmd|Cmds], CmdReplies) ->
     CmdReply = handle_cmd_request(CH, PV, CtxId, Cmd),
@@ -727,21 +772,18 @@ handle_notify_req(CH, PV, CtxId,
 				       observedEventsDescriptor = EvDesc}) ->
     handle_event(CH, PV, CtxId, Tid, EvDesc).
 
-handle_event(CH, PV, Cid, Tid, EvDesc) ->
+handle_event(_CH, _PV, _Cid, Tid, EvDesc) ->
     d("handle_event -> received"
       "~n   EvDesc: ~p"
       "~n   Tid:    ~p", [EvDesc, Tid]),
     {notifyReply, cre_notifyRep(Tid)}.
     
 
-service_change(CH, PV, SCR) ->
+service_change(CH, _PV, SCR) ->
     SCP = SCR#'ServiceChangeRequest'.serviceChangeParms,
-    #'ServiceChangeParm'{serviceChangeMethod  = Method,
-                         serviceChangeAddress = Address,
+    #'ServiceChangeParm'{serviceChangeAddress = Address,
                          serviceChangeProfile = Profile,
-                         serviceChangeReason  = [Reason],
-                         serviceChangeDelay   = Delay,
-                         serviceChangeMgcId   = MgcId} = SCP,
+                         serviceChangeReason  = [_Reason]} = SCP,
     TermId = SCR#'ServiceChangeRequest'.terminationID,
     if
         TermId == [?megaco_root_termination_id] ->
@@ -804,9 +846,14 @@ handle_connect(CH, PV, Pid) ->
 	    Reply
     end.
 
-handle_disconnect(CH, PV, 
+handle_disconnect(_CH, _PV, 
 		  {user_disconnect, {Pid, ignore}}, 
 		  Pid) ->
+    ok;
+handle_disconnect(CH, _PV, 
+		  {user_disconnect, {Pid, cancel}}, 
+		  Pid) ->
+    megaco:cancel(CH, disconnected),
     ok;
 handle_disconnect(CH, PV, R, Pid) ->
     request(Pid, {handle_disconnect, CH, PV, R}).
@@ -835,6 +882,16 @@ handle_trans_reply(ConnHandle, ProtocolVersion, ActualReply, ReplyData, Pid) ->
 
 handle_trans_ack(ConnHandle, ProtocolVersion, AckStatus, AckData, Pid) ->
     Req = {handle_trans_ack, ConnHandle, ProtocolVersion, AckStatus, AckData},
+    request(Pid, Req).
+
+handle_unexpected_trans(ConnHandle, ProtocolVersion, Trans, Pid) ->
+    Req = {handle_unexpected_trans, ConnHandle, ProtocolVersion, Trans},
+    request(Pid, Req).
+
+handle_trans_request_abort(ConnHandle, ProtocolVersion, TransId, 
+			   Handler, Pid) ->
+    Req = {handle_trans_request_abort, 
+	   ConnHandle, ProtocolVersion, TransId, Handler},
     request(Pid, Req).
 
 
@@ -936,15 +993,16 @@ print(Severity, Verbosity, P, F, A) ->
     print(printable(Severity,Verbosity), P, F, A).
 
 print(true, P, F, A) ->
-    io:format("*** [~s] ~s ~p ~s ***"
-	      "~n   " ++ F ++ "~n~n", 
-	      [format_timestamp(now()), P, self(), get(sname) | A]);
+    print(P, F, A);
 print(_, _, _, _) ->
     ok.
 
+print(P, F, A) ->
+    io:format("*** [~s] ~s ~p ~s ***"
+	      "~n   " ++ F ++ "~n~n", 
+	      [format_timestamp(now()), P, self(), get(sname) | A]).
 
-format_timestamp(Now) ->
-    {N1, N2, N3} = Now,
+format_timestamp({_N1, _N2, N3} = Now) ->
     {Date, Time}   = calendar:now_to_datetime(Now),
     {YYYY,MM,DD}   = Date,
     {Hour,Min,Sec} = Time,

@@ -333,8 +333,19 @@ expr({tuple,L,Es0}, St0) ->
     {Es1,Eps,St1} = safe_list(Es0, St0),
     {#c_tuple{anno=[L],es=Es1},Eps,St1};
 expr({bin,L,Es0}, St0) ->
-    {Es1,Eps,St1} = expr_bin(Es0, St0),
-    {#ibinary{anno=#a{anno=[L]},segments=Es1},Eps,St1};
+    try expr_bin(Es0, St0) of
+	{Es1,Eps,St1} ->
+	    {#ibinary{anno=#a{anno=[L]},segments=Es1},Eps,St1}
+    catch
+	throw:bad_binary ->
+	    St1 = add_warning(L, bad_binary, St0),
+	    LineAnno = [L],
+	    As = [#c_atom{anno=LineAnno,val=badarg}],
+	    {#icall{anno=#a{anno=LineAnno},	%Must have an #a{}
+		    module=#c_atom{anno=LineAnno,val=erlang},
+		    name=#c_atom{anno=LineAnno,val=error},
+		    args=As},[],St1}
+    end;
 expr({block,_,Es0}, St0) ->
     %% Inline the block directly.
     {Es1,St1} = exprs(first(Es0), St0),
@@ -488,6 +499,15 @@ expr_bin(Es, St) ->
 bitstr({bin_element,_,E0,Size0,[Type,{unit,Unit}|Flags]}, St0) ->
     {E1,Eps,St1} = safe(E0, St0),
     {Size1,Eps2,St2} = safe(Size0, St1),
+    case {Type,E1} of
+	{_,#c_var{}} -> ok;
+	{integer,#c_int{}} -> ok;
+	{integer,#c_char{}} -> ok;
+	{float,#c_float{}} -> ok;
+	{float,#c_int{}} -> ok;
+	{float,#c_char{}} -> ok;
+	{_,_} -> throw(bad_binary)
+    end,
     {#c_bitstr{val=E1,size=Size1,
 	       unit=core_lib:make_literal(Unit),
 	       type=core_lib:make_literal(Type),
@@ -773,6 +793,11 @@ pat_alias(#c_char{val=C}=Char, #c_int{val=C}) ->
     Char;
 pat_alias(#c_int{val=C}, #c_char{val=C}=Char) ->
     Char;
+pat_alias(#c_binary{segments=Segs1}=Bin, #c_binary{segments=Segs2}) ->
+    Bin#c_binary{segments=pat_alias_list(Segs1, Segs2)};
+pat_alias(#c_bitstr{val=P1,size=Sz,unit=U,type=T,flags=F}=Bitstr,
+	  #c_bitstr{val=P2,size=Sz,unit=U,type=T,flags=F}) ->
+    Bitstr#c_bitstr{val=pat_alias(P1, P2)};
 pat_alias(#c_alias{var=V1,pat=P1},
 	   #c_alias{var=V2,pat=P2}) ->
     if V1 == V2 -> pat_alias(P1, P2);
@@ -1311,9 +1336,12 @@ get_lineno_anno(Ce) ->
 %%% Handling of warnings.
 %%%
 
-format_error(nomatch) -> "pattern cannot possibly match".
+format_error(nomatch) ->
+    "pattern cannot possibly match";
+format_error(bad_binary) ->
+    "binary construction will fail because of a type mismatch".
 
 add_warning(Line, Term, #core{ws=Ws}=St) when Line >= 0 ->
     St#core{ws=[{Line,?MODULE,Term}|Ws]};
 add_warning(_, _, St) -> St.
- 
+

@@ -24,6 +24,7 @@
 -behaviour(megaco_encoder).
 
 -export([encode_message/3, decode_message/3,
+	 decode_mini_message/3, 
 
 	 encode_transaction/3,
 	 encode_action_requests/3,
@@ -36,13 +37,49 @@
 
 -include_lib("megaco/src/engine/megaco_message_internal.hrl").
 
--define(V1_ASN1_MOD,     megaco_per_bin_media_gateway_control_v1).
--define(V2_ASN1_MOD,     megaco_per_bin_media_gateway_control_v2).
--define(V1_ASN1_MOD_DRV, megaco_per_bin_drv_media_gateway_control_v1).
--define(V2_ASN1_MOD_DRV, megaco_per_bin_drv_media_gateway_control_v2).
+-define(V1_ASN1_MOD,         megaco_per_bin_media_gateway_control_v1).
+-define(V2_ASN1_MOD,         megaco_per_bin_media_gateway_control_v2).
+-define(V3_ASN1_MOD,         megaco_per_bin_media_gateway_control_v3).
+-define(PREV3A_ASN1_MOD,     megaco_per_bin_media_gateway_control_prev3a).
+-define(V1_ASN1_MOD_DRV,     megaco_per_bin_drv_media_gateway_control_v1).
+-define(V2_ASN1_MOD_DRV,     megaco_per_bin_drv_media_gateway_control_v2).
+-define(V3_ASN1_MOD_DRV,     megaco_per_bin_drv_media_gateway_control_v3).
+-define(PREV3A_ASN1_MOD_DRV, megaco_per_bin_drv_media_gateway_control_prev3a).
 
--define(V1_TRANS_MOD, megaco_binary_transformer_v1).
--define(V2_TRANS_MOD, megaco_binary_transformer_v2).
+-define(V1_TRANS_MOD,     megaco_binary_transformer_v1).
+-define(V2_TRANS_MOD,     megaco_binary_transformer_v2).
+-define(V3_TRANS_MOD,     megaco_binary_transformer_v3).
+-define(PREV3A_TRANS_MOD, megaco_binary_transformer_prev3a).
+
+-define(BIN_LIB, megaco_binary_encoder_lib).
+
+
+%%----------------------------------------------------------------------
+%% Detect (check/get) message version
+%% Return {ok, Version} | {error, Reason}
+%%----------------------------------------------------------------------
+
+version_of([{version3,prev3a},driver|EC], Binary) ->
+    Decoders = [?V1_ASN1_MOD_DRV, ?V2_ASN1_MOD_DRV, ?PREV3A_ASN1_MOD_DRV],
+    ?BIN_LIB:version_of(EC, Binary, 1, Decoders);
+version_of([{version3,v3},driver|EC], Binary) ->
+    Decoders = [?V1_ASN1_MOD_DRV, ?V2_ASN1_MOD_DRV, ?V3_ASN1_MOD_DRV],
+    ?BIN_LIB:version_of(EC, Binary, 1, Decoders);
+version_of([driver|EC], Binary) ->
+    Decoders = [?V1_ASN1_MOD_DRV, ?V2_ASN1_MOD_DRV, ?V3_ASN1_MOD_DRV],
+    ?BIN_LIB:version_of(EC, Binary, 1, Decoders);
+version_of([{version3,prev3a}|EC], Binary) ->
+    Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?PREV3A_ASN1_MOD],
+    ?BIN_LIB:version_of(EC, Binary, 1, Decoders);
+version_of([{version3,v3}|EC], Binary) ->
+    Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?V3_ASN1_MOD],
+    ?BIN_LIB:version_of(EC, Binary, 1, Decoders);
+
+%% All values we need to take (special) care of has been delt with, 
+%% so just pass the rest on
+version_of(EC, Binary) ->
+    Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?V3_ASN1_MOD],
+    ?BIN_LIB:version_of(EC, Binary, 1, Decoders).
 
 
 %%----------------------------------------------------------------------
@@ -50,57 +87,86 @@
 %% Return {ok, Binary} | {error, Reason}
 %%----------------------------------------------------------------------
 
-encode_message(EncodingConfig, 
+encode_message(EC, 
 	       #'MegacoMessage'{mess = #'Message'{version = V}} = MegaMsg) ->
-    encode_message(EncodingConfig, V, MegaMsg).
+    encode_message(EC, V, MegaMsg).
 
-encode_message([] = EC, 1, MegaMsg) ->
-    AsnMod   = ?V1_ASN1_MOD, 
+
+%% -- Version 1 --
+
+encode_message([{version3, _},driver|EC], 1, MegaMsg) ->
+    AsnMod   = ?V1_ASN1_MOD_DRV, 
     TransMod = ?V1_TRANS_MOD,
-    megaco_binary_encoder:encode_message(EC, MegaMsg, AsnMod, TransMod, 
-					 io_list);
-encode_message([native] = EC, 1, MegaMsg) ->
-    AsnMod   = ?V1_ASN1_MOD, 
-    TransMod = ?V1_TRANS_MOD,
-    megaco_binary_encoder:encode_message(EC, MegaMsg, AsnMod, TransMod, 
-					 io_list);
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
 encode_message([driver|EC], 1, MegaMsg) ->
     AsnMod   = ?V1_ASN1_MOD_DRV, 
     TransMod = ?V1_TRANS_MOD,
-    megaco_binary_encoder:encode_message(EC, MegaMsg, AsnMod, TransMod, 
-					 io_list);
-
-%% All the possible (valid) encoding configs have already been
-%% taken care of, but pass it on just in case...
-encode_message(EncodingConfig, 1, MegaMsg) ->
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message([{version3,_}|EC], 1, MegaMsg) ->
     AsnMod   = ?V1_ASN1_MOD, 
     TransMod = ?V1_TRANS_MOD,
-    megaco_binary_encoder:encode_message(EncodingConfig, MegaMsg, 
-					 AsnMod, TransMod, io_list);
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
 
-encode_message([] = EC, 2, MegaMsg) ->
-    AsnMod   = ?V2_ASN1_MOD, 
+%% All values we need to take (special) care of has been delt with, 
+%% so just pass the rest on
+encode_message(EC, 1, MegaMsg) ->
+    AsnMod   = ?V1_ASN1_MOD, 
+    TransMod = ?V1_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+
+
+%% -- Version 2 --
+
+encode_message([{version3,_},driver|EC], 2, MegaMsg) ->
+    AsnMod   = ?V2_ASN1_MOD_DRV, 
     TransMod = ?V2_TRANS_MOD,
-    megaco_binary_encoder:encode_message(EC, MegaMsg, AsnMod, TransMod, 
-					 io_list);
-encode_message([native] = EC, 2, MegaMsg) ->
-    AsnMod   = ?V2_ASN1_MOD, 
-    TransMod = ?V2_TRANS_MOD,
-    megaco_binary_encoder:encode_message(EC, MegaMsg, AsnMod, TransMod, 
-					 io_list);
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
 encode_message([driver|EC], 2, MegaMsg) ->
     AsnMod   = ?V2_ASN1_MOD_DRV, 
     TransMod = ?V2_TRANS_MOD,
-    megaco_binary_encoder:encode_message(EC, MegaMsg, AsnMod, TransMod, 
-					 io_list);
-
-%% All the possible (valid) encoding configs have already been
-%% taken care of, but pass it on just in case...
-encode_message(EncodingConfig, 2, MegaMsg) ->
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message([{version3,_}|EC], 2, MegaMsg) ->
     AsnMod   = ?V2_ASN1_MOD, 
     TransMod = ?V2_TRANS_MOD,
-    megaco_binary_encoder:encode_message(EncodingConfig, MegaMsg, 
-					 AsnMod, TransMod, io_list).
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+
+%% All values we need to take (special) care of has been delt with, 
+%% so just pass the rest on
+encode_message(EC, 2, MegaMsg) ->
+    AsnMod   = ?V2_ASN1_MOD, 
+    TransMod = ?V2_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+
+
+%% -- Version 3 --
+
+encode_message([{version3,prev3a},driver|EC], 3, MegaMsg) ->
+    AsnMod   = ?PREV3A_ASN1_MOD_DRV, 
+    TransMod = ?PREV3A_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message([{version3,v3},driver|EC], 3, MegaMsg) ->
+    AsnMod   = ?V3_ASN1_MOD_DRV, 
+    TransMod = ?V3_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message([driver|EC], 3, MegaMsg) ->
+    AsnMod   = ?V3_ASN1_MOD_DRV, 
+    TransMod = ?V3_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message([{version3,prev3a}|EC], 3, MegaMsg) ->
+    AsnMod   = ?PREV3A_ASN1_MOD, 
+    TransMod = ?PREV3A_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message([{version3,v3}|EC], 3, MegaMsg) ->
+    AsnMod   = ?V3_ASN1_MOD, 
+    TransMod = ?V3_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+
+%% All values we need to take (special) care of has been delt with, 
+%% so just pass the rest on
+encode_message(EC, 3, MegaMsg) ->
+    AsnMod   = ?V3_ASN1_MOD, 
+    TransMod = ?V3_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list).
 
 
 %%----------------------------------------------------------------------
@@ -112,45 +178,66 @@ encode_message(EncodingConfig, 2, MegaMsg) ->
 %% encode_transaction([] = EC, 1, Trans) ->
 %%     AsnMod   = ?V1_ASN1_MOD, 
 %%     TransMod = ?V1_TRANS_MOD,
-%%     megaco_binary_encoder:encode_transaction(EC, Trans, AsnMod, TransMod, 
+%%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, 
 %% 					     io_list);
 %% encode_transaction([native] = EC, 1, Trans) ->
 %%     AsnMod   = ?V1_ASN1_MOD, 
 %%     TransMod = ?V1_TRANS_MOD,
-%%     megaco_binary_encoder:encode_transaction(EC, Trans, AsnMod, TransMod, 
+%%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, 
 %% 					     io_list);
 %% encode_transaction([driver|EC], 1, Trans) ->
 %%     AsnMod   = ?V1_ASN1_MOD_DRV, 
 %%     TransMod = ?V1_TRANS_MOD,
-%%     megaco_binary_encoder:encode_transaction(EC, Trans, AsnMod, TransMod, 
+%%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, 
 %% 					     io_list);
 encode_transaction(_EC, 1, _Trans) ->
     %%     AsnMod   = ?V1_ASN1_MOD, 
     %%     TransMod = ?V1_TRANS_MOD,
-    %%     megaco_binary_encoder:encode_transaction(EC, Trans, AsnMod, TransMod, 
+    %%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, 
     %% 					     io_list);
     {error, not_implemented};
 
 %% encode_transaction([] = EC, 2, Trans) ->
 %%     AsnMod   = ?V2_ASN1_MOD, 
 %%     TransMod = ?V2_TRANS_MOD,
-%%     megaco_binary_encoder:encode_transaction(EC, Trans, AsnMod, TransMod,
+%%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod,
 %% 					     io_list);
 %% encode_transaction([native] = EC, 2, Trans) ->
 %%     AsnMod   = ?V2_ASN1_MOD, 
 %%     TransMod = ?V2_TRANS_MOD,
-%%     megaco_binary_encoder:encode_transaction(EC, Trans, AsnMod, TransMod,
+%%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod,
 %% 					     io_list);
 %% encode_transaction([driver|EC], 2, Trans) ->
 %%     AsnMod   = ?V2_ASN1_MOD_DRV, 
 %%     TransMod = ?V2_TRANS_MOD,
-%%     megaco_binary_encoder:encode_transaction(EC, Trans, AsnMod, TransMod,
+%%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod,
 %% 					     io_list);
 encode_transaction(_EC, 2, _Trans) ->
     %%     AsnMod   = ?V2_ASN1_MOD, 
     %%     TransMod = ?V2_TRANS_MOD,
-    %%     megaco_binary_encoder:encode_transaction(EC, Trans, AsnMod, TransMod,
+    %%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod,
     %% 					     io_list).
+    {error, not_implemented};
+                                                                                
+%% encode_transaction([] = EC, 3, Trans) ->
+%%     AsnMod   = ?V3_ASN1_MOD,
+%%     TransMod = ?V3_TRANS_MOD,
+%%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod,
+%%                                           io_list);
+%% encode_transaction([native] = EC, 3, Trans) ->
+%%     AsnMod   = ?V3_ASN1_MOD,
+%%     TransMod = ?V3_TRANS_MOD,
+%%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod,
+%%                                           io_list);
+%% encode_transaction([driver|EC], 3, Trans) ->
+%%     AsnMod   = ?V3_ASN1_MOD_DRV,
+%%     TransMod = ?V3_TRANS_MOD,
+%%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod,
+%%                                           io_list);
+encode_transaction(_EC, 3, _Trans) ->
+    %%     AsnMod   = ?V3_ASN1_MOD,
+    %%     TransMod = ?V3_TRANS_MOD,
+    %%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod,    %%                                       io_list).
     {error, not_implemented}.
 
 
@@ -159,13 +246,19 @@ encode_transaction(_EC, 2, _Trans) ->
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 encode_action_requests(_EC, 1, ActReqs) when list(ActReqs) ->
-    %%     megaco_binary_encoder:encode_action_requests(EC, ActReqs,
+    %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
     %% 						 ?V1_ASN1_MOD, 
     %% 						 ?V1_TRANS_MOD,
     %% 						 io_list);
     {error, not_implemented};
 encode_action_requests(_EC, 2, ActReqs) when list(ActReqs) ->
-    %%     megaco_binary_encoder:encode_action_requests(EC, ActReqs,
+    %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
+    %% 						 ?V1_ASN1_MOD, 
+    %% 						 ?V1_TRANS_MOD,
+    %% 						 io_list).
+    {error, not_implemented};
+encode_action_requests(_EC, 3, ActReqs) when list(ActReqs) ->
+    %%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
     %% 						 ?V1_ASN1_MOD, 
     %% 						 ?V1_TRANS_MOD,
     %% 						 io_list).
@@ -177,13 +270,19 @@ encode_action_requests(_EC, 2, ActReqs) when list(ActReqs) ->
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 encode_action_request(_EC, 1, _ActReq) ->
-    %%     megaco_binary_encoder:encode_action_request(EC, ActReq,
+    %%     ?BIN_LIB:encode_action_request(EC, ActReq,
     %% 						?V1_ASN1_MOD, 
     %% 						?V1_TRANS_MOD,
     %% 						io_list);
     {error, not_implemented};
 encode_action_request(_EC, 2, _ActReq) ->
-    %%     megaco_binary_encoder:encode_action_request(EC, ActReq,
+    %%     ?BIN_LIB:encode_action_request(EC, ActReq,
+    %% 						?V1_ASN1_MOD, 
+    %% 						?V1_TRANS_MOD,
+    %% 						io_list).
+    {error, not_implemented};
+encode_action_request(_EC, 3, _ActReq) ->
+    %%     ?BIN_LIB:encode_action_request(EC, ActReq,
     %% 						?V1_ASN1_MOD, 
     %% 						?V1_TRANS_MOD,
     %% 						io_list).
@@ -191,89 +290,94 @@ encode_action_request(_EC, 2, _ActReq) ->
 
 
 %%----------------------------------------------------------------------
-%% Detect (check/get) message version
-%% Return {ok, Version} | {error, Reason}
-%%----------------------------------------------------------------------
-
-version_of([] = EC, Binary) ->
-    AsnModV1 = ?V1_ASN1_MOD, 
-    AsnModV2 = ?V2_ASN1_MOD, 
-    megaco_binary_encoder:version_of(EC, Binary, 1, 
-				     AsnModV1, AsnModV2);
-version_of([native] = EC, Binary) ->
-    AsnModV1 = ?V1_ASN1_MOD, 
-    AsnModV2 = ?V2_ASN1_MOD, 
-    megaco_binary_encoder:version_of(EC, Binary, 1, 
-				     AsnModV1, AsnModV2);
-version_of([driver|EC], Binary) ->
-    AsnModV1 = ?V1_ASN1_MOD_DRV, 
-    AsnModV2 = ?V2_ASN1_MOD_DRV, 
-    megaco_binary_encoder:version_of(EC, Binary, 1, 
-				     AsnModV1, AsnModV2);
-
-%% All the possible (valid) encoding configs have already been
-%% taken care of, but pass it on just in case...
-version_of(EncodingConfig, Binary) ->
-    AsnModV1 = ?V1_ASN1_MOD, 
-    AsnModV2 = ?V2_ASN1_MOD, 
-    megaco_binary_encoder:version_of(EncodingConfig, Binary, 1, 
-				     AsnModV1, AsnModV2).
-
-
-
-%%----------------------------------------------------------------------
 %% Convert a binary into a 'MegacoMessage' record
 %% Return {ok, MegacoMessageRecord} | {error, Reason}
 %%----------------------------------------------------------------------
 
-decode_message(EncodingConfig, Binary) ->
-    decode_message(EncodingConfig, 1, Binary).
+decode_message(EC, Binary) ->
+    decode_message(EC, 1, Binary).
 
 %% PER does not support partial decode, so this means V1
-decode_message([] = EC, 1, Binary) ->
-    AsnMod   = ?V1_ASN1_MOD, 
+decode_message(EC, dynamic, Binary) ->
+    decode_message(EC, 1, Binary);
+
+
+%% -- Version 1 --
+
+decode_message([{version3,_},driver|EC], 1, Binary) ->
+    AsnMod   = ?V1_ASN1_MOD_DRV, 
     TransMod = ?V1_TRANS_MOD, 
-    megaco_binary_encoder:decode_message(EC, Binary, 
-					 AsnMod, TransMod, binary);
-decode_message([native] = EC, 1, Binary) ->
-    AsnMod   = ?V1_ASN1_MOD, 
-    TransMod = ?V1_TRANS_MOD, 
-    megaco_binary_encoder:decode_message(EC, Binary, 
-					 AsnMod, TransMod, binary);
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 decode_message([driver|EC], 1, Binary) ->
     AsnMod   = ?V1_ASN1_MOD_DRV, 
     TransMod = ?V1_TRANS_MOD, 
-    megaco_binary_encoder:decode_message(EC, Binary, 
-					 AsnMod, TransMod, binary);
-
-%% All the possible (valid) encoding configs have already been
-%% taken care of, but pass it on just in case...
-decode_message(EncodingConfig, 1, Binary) ->
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+decode_message([{version3,_}|EC], 1, Binary) ->
     AsnMod   = ?V1_ASN1_MOD, 
     TransMod = ?V1_TRANS_MOD, 
-    megaco_binary_encoder:decode_message(EncodingConfig, Binary, 
-					 AsnMod, TransMod, binary);
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 
-decode_message([] = EC, 2, Binary) ->
-    AsnMod   = ?V2_ASN1_MOD, 
+%% All values we need to take (special) care of has been delt with, 
+%% so just pass the rest on
+decode_message(EC, 1, Binary) ->
+    AsnMod   = ?V1_ASN1_MOD, 
+    TransMod = ?V1_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+
+
+%% -- Version 2 --
+
+decode_message([{version3,_},driver|EC], 2, Binary) ->
+    AsnMod   = ?V2_ASN1_MOD_DRV, 
     TransMod = ?V2_TRANS_MOD, 
-    megaco_binary_encoder:decode_message(EC, Binary, 
-					 AsnMod, TransMod, binary);
-decode_message([native] = EC, 2, Binary) ->
-    AsnMod   = ?V2_ASN1_MOD, 
-    TransMod = ?V2_TRANS_MOD, 
-    megaco_binary_encoder:decode_message(EC, Binary, 
-					 AsnMod, TransMod, binary);
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 decode_message([driver|EC], 2, Binary) ->
     AsnMod   = ?V2_ASN1_MOD_DRV, 
     TransMod = ?V2_TRANS_MOD, 
-    megaco_binary_encoder:decode_message(EC, Binary, 
-					 AsnMod, TransMod, binary);
-
-%% All the possible (valid) encoding configs have already been
-%% taken care of, but pass it on just in case...
-decode_message(EncodingConfig, 2, Binary) ->
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+decode_message([{version3,_}|EC], 2, Binary) ->
     AsnMod   = ?V2_ASN1_MOD, 
     TransMod = ?V2_TRANS_MOD, 
-    megaco_binary_encoder:decode_message(EncodingConfig, Binary, 
-					 AsnMod, TransMod, binary).
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+
+%% All values we need to take (special) care of has been delt with, 
+%% so just pass the rest on
+decode_message(EC, 2, Binary) ->
+    AsnMod   = ?V2_ASN1_MOD, 
+    TransMod = ?V2_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+
+
+%% -- Version 3 --
+
+decode_message([{version3,prev3a},driver|EC], 3, Binary) ->
+    AsnMod   = ?PREV3A_ASN1_MOD_DRV, 
+    TransMod = ?PREV3A_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+decode_message([{version3,v3},driver|EC], 3, Binary) ->
+    AsnMod   = ?V3_ASN1_MOD_DRV, 
+    TransMod = ?V3_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+decode_message([driver|EC], 3, Binary) ->
+    AsnMod   = ?V3_ASN1_MOD_DRV, 
+    TransMod = ?V3_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+decode_message([{version3,prev3a}|EC], 3, Binary) ->
+    AsnMod   = ?PREV3A_ASN1_MOD, 
+    TransMod = ?PREV3A_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+decode_message([{version3,v3}|EC], 3, Binary) ->
+    AsnMod   = ?V3_ASN1_MOD, 
+    TransMod = ?V3_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+
+%% All values we need to take (special) care of has been delt with, 
+%% so just pass the rest on
+decode_message(EC, 3, Binary) ->
+    AsnMod   = ?V3_ASN1_MOD, 
+    TransMod = ?V3_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary).
+
+
+decode_mini_message(_EC, _Vsn, _Bin) ->
+    {error, not_implemented}.

@@ -13,6 +13,7 @@ MODULES = \
 	megaco_codec_test_lib \
 	megaco_codec_v1_test \
 	megaco_codec_v2_test \
+	megaco_codec_prev3a_test \
 	megaco_config_test \
 	megaco_examples_test \
 	megaco_load_test \
@@ -28,6 +29,8 @@ MODULES = \
 	megaco_test_generator \
 	megaco_test_mgc \
 	megaco_test_mg \
+	megaco_test_msg_v2_lib \
+	megaco_test_msg_prev3a_lib \
 	megaco_test_lib
 
 

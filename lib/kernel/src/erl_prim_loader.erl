@@ -150,7 +150,7 @@ get_path() ->
 get_file(File) when atom(File) ->
     get_file(atom_to_list(File));
 get_file(File) ->
-    check_file_result(get_file, request({get_file,File})).
+    check_file_result(get_file, File, request({get_file,File})).
 
 %% -> ok | {error,Module} | {error,Reason,Module}
 get_files(ModFiles, Fun) ->
@@ -158,7 +158,7 @@ get_files(ModFiles, Fun) ->
 	E = {error,_M} ->
 	    E;
         {error,Reason,M} ->
-	    check_file_result(get_files, {error,Reason}),
+	    check_file_result(get_files, M, {error,Reason}),
 	    {error,M};
 	ok ->
 	    ok
@@ -166,19 +166,19 @@ get_files(ModFiles, Fun) ->
 
 %% -> {ok,List} | error
 list_dir(Dir) ->
-    check_file_result(list_dir, request({list_dir,Dir})).
+    check_file_result(list_dir, Dir, request({list_dir,Dir})).
 
 %% -> {ok,Info} | error
 read_file_info(Elem) ->
-    check_file_result(read_file_info, request({read_file_info,Elem})).
+    check_file_result(read_file_info, Elem, request({read_file_info,Elem})).
 
 %% -> {ok,Cwd} | error
 get_cwd() ->
-    check_file_result(get_cwd, request({get_cwd,[]})).
+    check_file_result(get_cwd, [], request({get_cwd,[]})).
 
 %% -> {ok,Cwd} | error
 get_cwd(Drive) ->
-    check_file_result(get_cwd, request({get_cwd,[Drive]})).
+    check_file_result(get_cwd, Drive, request({get_cwd,[Drive]})).
 
 request(Req) ->
     Loader = whereis(erl_prim_loader),
@@ -190,11 +190,11 @@ request(Req) ->
 	    error
     end.
 
-check_file_result(_, {error,enoent}) ->
+check_file_result(_, _, {error,enoent}) ->
     error;
-check_file_result(_, {error,enotdir}) ->
+check_file_result(_, _, {error,enotdir}) ->
     error;
-check_file_result(Func, {error,Reason}) ->   
+check_file_result(Func, Target, {error,Reason}) ->   
     case (catch atom_to_list(Reason)) of
 	{'EXIT',_} ->				% exit trapped
 	    error;
@@ -205,15 +205,28 @@ check_file_result(Func, {error,Reason}) ->
 			  _ -> 
 			      ""
 		      end,
-	    Report = "File operation error: " ++ Errno ++ ". " ++
-	       	     "Function: " ++ atom_to_list(Func) ++ ". " ++ Process, 
+	    TargetStr =
+		if atom(Target) -> atom_to_list(Target);
+		   list(Target) -> Target;
+		   true -> []
+		end,
+	    Report = 
+		case TargetStr of
+		    [] ->
+			"File operation error: " ++ Errno ++ ". " ++
+			"Function: " ++ atom_to_list(Func) ++ ". " ++ Process;
+		    _ ->
+			"File operation error: " ++ Errno ++ ". " ++
+			"Target: " ++ TargetStr ++ ". " ++
+			"Function: " ++ atom_to_list(Func) ++ ". " ++ Process
+		end,
 	    %% this is equal to calling error_logger:error_report/1 which
 	    %% we don't want to do from code_server during system boot
 	    error_logger ! {notify,{error_report,group_leader(),
 				    {self(),std_error,Report}}},
 	    error
     end;
-check_file_result(_, Other) ->
+check_file_result(_, _, Other) ->
     Other.
 
 %%% --------------------------------------------------------

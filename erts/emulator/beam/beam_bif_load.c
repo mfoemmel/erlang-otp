@@ -249,6 +249,33 @@ check_process_code(Process* rp, Module* modp)
 	}
     }
 
+    /* 
+     * Check all continuation pointers stored in stackdump
+     * and clear exception stackdump if there is a pointer
+     * to the module.
+     */
+    if (rp->ftrace != NIL) {
+	struct StackTrace *s;
+	ASSERT(is_list(rp->ftrace));
+	s = (struct StackTrace *) big_val(CDR(list_val(rp->ftrace)));
+	if ((s->pc && INSIDE(s->pc)) ||
+	    (s->current && INSIDE(s->current))) {
+	    rp->freason = EXC_NULL;
+	    rp->fvalue = NIL;
+	    rp->ftrace = NIL;
+	} else {
+	    int i;
+	    for (i = 0;  i < s->depth;  i++) {
+		if (INSIDE(s->trace[i])) {
+		    rp->freason = EXC_NULL;
+		    rp->fvalue = NIL;
+		    rp->ftrace = NIL;
+		    break;
+		}
+	    }
+	}
+    }
+
     /*
      * See if there are funs that refer to the old version of the module.
      */
@@ -270,6 +297,7 @@ check_process_code(Process* rp, Module* modp)
 		 * Clear both fvalue and ftrace to make sure they
 		 * don't hold any funs.
 		 */
+		rp->freason = EXC_NULL;
 		rp->fvalue = NIL;
 		rp->ftrace = NIL;
 		done_gc = 1;

@@ -29,7 +29,7 @@
 %% User interface
 -export([start_link/0, stop/0, 
 
-	 register_user/3, unregister_user/1, 
+	 register_user/3, register_user_monitor/3, unregister_user/1, 
 
 	 sync_get/5, sync_get/6, async_get/5, async_get/6, 
 	 sync_get_next/5, sync_get_next/6, async_get_next/5, async_get_next/6, 
@@ -114,6 +114,13 @@
 	}
        ). 
 
+-record(monitor,
+	{id, 
+	 mon,
+	 proc
+	}
+       ).
+
 
 %%%-------------------------------------------------------------------
 %%% API
@@ -130,6 +137,20 @@ stop() ->
 
 register_user(UserId, UserMod, UserData) ->
     snmpm_config:register_user(UserId, UserMod, UserData).
+
+register_user_monitor(Id, Module, Data) ->
+    case register_user(Id, Module, Data) of
+	ok ->
+	    case call({monitor_user, Id, self()}) of
+		ok ->
+		    ok;
+		Error ->
+		    unregister_user(Id),
+		    Error
+	    end;
+	Error ->
+	    Error
+    end.
 
 unregister_user(UserId) ->
     call({unregister_user, UserId}).
@@ -292,6 +313,7 @@ init(_) ->
 %% read. Writing has to go through the interface...
 
 do_init() ->
+    process_flag(trap_exit, true),
     {ok, Prio} = snmpm_config:system_info(prio),
     process_flag(priority, Prio),
 
@@ -307,6 +329,10 @@ do_init() ->
     %% -- Create request table --
     ets:new(snmpm_request_table, 
 	    [set, protected, named_table, {keypos, #request.id}]),
+
+    %% -- Create monitor table --
+    ets:new(snmpm_monitor_table, 
+	    [set, protected, named_table, {keypos, #monitor.id}]),
 
     %% -- Start the note-store and net-if processes --
     {NoteStore, NoteStoreRef} = do_init_note_store(Prio),
@@ -357,9 +383,40 @@ do_init_net_if(NoteStore) ->
 %% ---------------------------------------------------------------------
 %% ---------------------------------------------------------------------
 
+handle_call({monitor_user, Id, Pid}, _From, State) when pid(Pid) ->
+    ?vlog("received monitor_user request for ~w [~w]", [Id, Pid]),
+    Reply = 
+	case ets:lookup(snmpm_monitor_table, Id) of
+	    [#monitor{proc = Pid}] ->
+		?vdebug("already monitored", []),
+		ok;
+
+	    [#monitor{proc = OtherPid}] ->
+		?vinfo("already registered to ~w", [OtherPid]),
+		{error, {already_monitored, OtherPid}};
+
+	    [] ->
+		Ref = erlang:monitor(process, Pid),
+		?vtrace("monitor ref: ~w", [Ref]),
+		Mon = #monitor{id = Id, mon = Ref, proc = Pid},
+		ets:insert(snmpm_monitor_table, Mon),
+		ok
+	end,
+    {reply, Reply, State};
+
 handle_call({unregister_user, UserId}, _From, State) ->
     ?vlog("received request to unregister user ~p", [UserId]),
-    %% 1) Delete all outstanding requests from this user
+
+    %% 1) If this user is monitored, then demonitor
+    case ets:lookup(snmpm_monitor_table, UserId) of
+	[] ->
+	    ok;
+	[#monitor{mon = M}] ->
+	    erlang:demonitor(M),
+	    ok
+    end,
+
+    %% 2) Delete all outstanding requests from this user
     Pat = #request{user_id = UserId, 
 		   id = '$1', ref = '$2', mon = '$3', _ = '_'},
     Match = ets:match(snmpm_request_table, Pat),
@@ -371,14 +428,14 @@ handle_call({unregister_user, UserId}, _From, State) ->
 	end,
     lists:foreach(F1, Match),
     
-    %% 2) Unregister all agents registered by this user
+    %% 3) Unregister all agents registered by this user
     Agents = snmpm_config:which_agents(UserId),
     F2 = fun({Addr, Port}) ->
 		 snmpm_config:unregister_agent(UserId, Addr, Port)
 	 end,
     lists:foreach(F2, Agents),
 
-    %% 3) Unregister the user
+    %% 4) Unregister the user
     Reply = snmpm_config:unregister_user(UserId),
     {reply, Reply, State};
 
@@ -592,15 +649,16 @@ handle_info({'DOWN', _MonRef, process, Pid, _Reason},
     {noreply, State#state{note_store = NoteStore, note_store_ref = Ref}};
 
 
-handle_info({'DOWN', MonRef, process, _Pid, _Reason}, State) ->
-    ?vlog("received 'DOWN' message", []),
+handle_info({'DOWN', MonRef, process, Pid, Reason}, State) ->
+    ?vlog("received 'DOWN' message (~w) from ~w "
+	  "~n   Reason: ~p", [MonRef, Pid, Reason]),
     handle_down(MonRef),
     {noreply, State};
 
 
 handle_info({'EXIT', Pid, Reason}, #state{gct = Pid} = State) ->
-    ?vlog("received 'EXIT' message from the GCT (~p) process: "
-	  "~n   ~p", [Reason]),
+    ?vlog("received 'EXIT' message from the GCT (~w) process: "
+	  "~n   ~p", [Pid, Reason]),
     {ok, Timeout} = snmpm_config:system_info(server_timeout),
     {ok, GCT} = gct_start(Timeout),
     {noreply, State#state{gct = GCT}};
@@ -616,16 +674,52 @@ handle_info(Info, State) ->
 %%----------------------------------------------------------
                                                                               
 % downgrade
-code_change({down, _Vsn}, #state{gct = GCT} = State, _Extra) ->
+code_change({down, _Vsn}, #state{gct = GCT} = State, downgrade_to_404) ->
+    ?d("code_change(down) -> entry (~w)", [GCT]),
     gct_code_change(GCT),
+    handle_downgrade(),
+    ?d("code_change(down) -> done", []),
     {ok, State};
  
 % upgrade
+code_change(_Vsn, #state{gct = GCT} = State, upgrade_from_404) ->
+    ?d("code_change(up) -> entry (~w)", [GCT]),
+    gct_code_change(GCT),
+    handle_upgrade(),
+    ?d("code_change(up) -> done", []),
+    {ok, State};
+
 code_change(_Vsn, #state{gct = GCT} = State, _Extra) ->
+    ?d("code_change -> entry [just give GCT a kick]", []),
     gct_code_change(GCT),
     {ok, State}.
  
  
+handle_downgrade() ->
+    First = ets:first(snmpm_monitor_table),
+    handle_downgrade(First).
+
+handle_downgrade('$end_of_table') ->
+    %% All monitored users demonitored, now delete the table:
+    ets:delete(snmpm_monitor_table);
+handle_downgrade(Id) ->
+    Next = 
+	case ets:lookup(snmpm_monitor_table, Id) of
+	    [#monitor{mon = Ref}] ->
+		erlang:demonitor(Ref),
+		ets:next(snmpm_monitor_table, Id);
+	    _ ->
+		%% Ouch, somebody else messing with the table...
+		%% fake a complete, and let the bug bang...
+		'$end_of_table'
+	end,
+    handle_downgrade(Next).
+
+handle_upgrade() ->
+    ets:new(snmpm_monitor_table, 
+	    [set, protected, named_table, {keypos, #monitor.id}]).
+
+	    
 %%----------------------------------------------------------
 %% Terminate
 %%----------------------------------------------------------
@@ -1514,17 +1608,49 @@ handle_report(UserId, Mod, Addr, Port, SnmpReport, Data) ->
     
 handle_down(MonRef) ->
     %% Clear out all requests from this client
-    Pat = #request{id = '$1', ref = '$2', mon = MonRef, _ = '_'},
-    Match = ets:match(snmpm_request_table, Pat),
-    F = fun([ReqId, Ref]) -> 
-		ets:delete(snmpm_request_table, ReqId),
-		erlang:cancel_timer(Ref),
-		ok
-	end,
-    lists:foreach(F, Match),
+    handle_down_requests_cleanup(MonRef),
+
+    %% 
+    %% Check also if this was a monitored user, and if so
+    %% unregister all agents registered by this user, and
+    %% finally unregister the user itself
+    %% 
+    handle_down_user_cleanup(MonRef),
+    
     ok.
 
 
+handle_down_requests_cleanup(MonRef) ->
+    Pat = #request{id = '$1', ref = '$2', mon = MonRef, _ = '_'},
+    Match = ets:match(snmpm_request_table, Pat),
+    Fun = fun([Id, Ref]) -> 
+		  ?vtrace("delete request: ~p", [Id]),
+		  ets:delete(snmpm_request_table, Id),
+		  erlang:cancel_timer(Ref),
+		  ok
+	  end,
+    lists:foreach(Fun, Match).
+
+handle_down_user_cleanup(MonRef) ->
+    Pat = #monitor{id = '$1', mon = MonRef, _ = '_'},
+    Match = ets:match(snmpm_monitor_table, Pat),
+    Fun = fun([Id]) -> 
+		  Agents = snmpm_config:which_agents(Id),
+		  lists:foreach(
+		    fun({A,P}) -> 
+			    ?vtrace("unregister agent of monitored user "
+				    "~w: <~w,~w>", [Id,A,P]),
+			    snmpm_config:unregister_agent(Id, A, P)
+		    end,
+		    Agents),
+		  ?vtrace("unregister monitored user: ~w", [Id]),
+		  ets:delete(snmpm_monitor_table, Id),
+		  snmpm_config:unregister_user(Id),
+		  ok
+	     end,
+    lists:foreach(Fun, Match).
+    
+    
 handle_gc(GCT) ->
     ets:safe_fixtable(snmpm_request_table, true),
     case do_gc(ets:first(snmpm_request_table), t()) of
@@ -1820,17 +1946,23 @@ gct(#gct{parent = Parent, state = active} = State, Timeout) ->
 	%% This happens when a new request is received.
 	{activate, Parent}  ->
 	    ?MODULE:gct(State, new_timeout(Timeout, T)); 
+
 	{deactivate, Parent} ->
 	    %% Timeout is of no consequence in the idle state, 
 	    %% but just to be sure
 	    NewTimeout = State#gct.timeout,
 	    ?MODULE:gct(State#gct{state = idle}, NewTimeout);
+
 	{code_change, Parent} ->
-	    ?MODULE:gct(State, new_timeout(Timeout, T));
+	    %% Let the server take care of this
+	    exit(normal);
+
 	{'EXIT', Parent, _Reason} ->
 	    ok;
+
 	_ -> % Crap
 	    ?MODULE:gct(State, Timeout)
+
     after Timeout ->
 	    Parent ! gc_timeout,
 	    NewTimeout = State#gct.timeout,
@@ -1841,16 +1973,25 @@ gct(#gct{parent = Parent, state = idle} = State, Timeout) ->
     receive
 	{stop, Parent} ->
 	    ok;
+
 	{deactivate, Parent} ->
 	    ?MODULE:gct(State, Timeout);
+
 	{activate, Parent} ->
 	    NewTimeout = State#gct.timeout,
 	    ?MODULE:gct(State#gct{state = active}, NewTimeout);
+
 	{code_change, Parent} ->
-	    ?MODULE:gct(State, Timeout);
+	    %% Let the server take care of this
+	    exit(normal);
+
 	{'EXIT', Parent, _Reason} ->
 	    ok;
+
 	_ -> % Crap
+	    ?MODULE:gct(State, Timeout)
+
+    after Timeout ->
 	    ?MODULE:gct(State, Timeout)
     end.
 
@@ -1861,6 +2002,7 @@ new_timeout(T1, T2) ->
 	_ ->
 	    0
     end.
+
 
 %%----------------------------------------------------------------------
 

@@ -29,7 +29,7 @@ ra(Defun0, Options) ->
 	linear_scan ->
 	  hipe_x86_ra_ls:ra(Defun1, SpillIndex, Options);
 	naive ->
-	  hipe_x86_ra_dummy:ra(Defun1, Coloring_fp, Options);
+	  hipe_x86_ra_naive:ra(Defun1, Coloring_fp, Options);
         _ ->
 	  exit({unknown_regalloc_compiler_option,
 		proplists:get_value(regalloc,Options)})
@@ -38,7 +38,7 @@ ra(Defun0, Options) ->
 			   length(hipe_x86:defun_code(Defun2)),
 			   element(2,hipe_x86:defun_var_range(Defun2))),
   %% hipe_x86_pp:pp(Defun2),
-  hipe_x86_ra_finalise:finalise(Defun2, Coloring, Coloring_fp).
+  hipe_x86_ra_finalise:finalise(Defun2, Coloring, Coloring_fp, Options).
 
 ra(Defun, SpillIndex, Options, RegAllocMod) ->
   hipe_regalloc_loop:ra(Defun, SpillIndex, Options, RegAllocMod, hipe_x86_specific).

@@ -18,7 +18,7 @@
 %-define(TIMING,true).
 -include("../main/hipe.hrl").
 
-%% hipe:compile({beam_inv_opcodes,opcode,1},[o2,time]).
+%% hipe:c({beam_inv_opcodes,opcode,1},[o2,time]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%

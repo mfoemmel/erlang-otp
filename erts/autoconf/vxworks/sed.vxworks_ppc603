@@ -9,7 +9,7 @@
 #
 s|@host@|vxworks_ppc603|
 s|@system_type@|vxworks_ppc603|
-s|@ARCH@|ppc860|
+s|@ARCH@|ppc603|
 s|@CC@|@TTPREFIX@ccppc -mlongcall|
 s|@HCC@|gcc|
 s|@LD@|@TTPREFIX@ldppc|

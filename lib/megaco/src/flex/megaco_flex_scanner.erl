@@ -96,5 +96,9 @@ version([{'SafeChars',1,"!/2"}|_]) ->
     2;
 version([{'SafeChars',1,"megaco/2"}|_]) ->
     2;
+version([{'SafeChars',1,"!/3"}|_]) ->
+    3;
+version([{'SafeChars',1,"megaco/3"}|_]) ->
+    3;
 version([_|T]) ->
     version(T).

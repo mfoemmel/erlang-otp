@@ -1,106 +1,47 @@
-%% -*- erlang-indent-level: 4 -*-
-%%----------------------------------------------------------------------
-%% File    : ig_moves.erl
-%% Author  : Andreas Wallin <d96awa@csd.uu.se>
-%% Purpose : The interference graph stores information about move
-%%            instructions that are used later in the register 
-%%            allocation algorithm. It contains information about
-%%            move instructions that temporaries are associated
-%%            with. And also all copy moves that exists. 
-%%            NOTE that only 'copy moves' are stored here. imm moves
-%%            are treated as regular instructions.
-%% Created : 04 Feb 2000 by Andreas Wallin <d96awa@csd.uu.se>
-%%----------------------------------------------------------------------
+%% -*- erlang-indent-level: 2 -*-
+%% $Id$
 
 -module(hipe_ig_moves).
--author("Andreas Wallin").
--export([new/1, 
-	 movelist/1,
-	 worklist_moves/1,
-	 add_movelist/3,
-	 add_worklist_moves/2]).
+-export([new/1,
+	 new_move/3,
+	 get_moves/1]).
 
--record(igraph_moves, {movelist, worklist_moves}).
+-record(ig_moves,
+	{movelist,	% mapping from temp to set of associated move numbers
+	 nrmoves,	% number of distinct move insns seen so far
+	 moveinsns,	% list of move insns, in descending move number order
+	 moveset}).	% set of move insns
 
-%%----------------------------------------------------------------------
-%% Function:    new
-%%
-%% Description: Create a new ig_moves data structure.
-%%
-%% Parameters:
-%%   No_temporaries  --  Number of temporaries.
-%%   
-%% Returns:
-%%   A new ig_moves data structure
-%%
-%%----------------------------------------------------------------------
+new(NrTemps) ->
+  #ig_moves{
+     movelist = hipe_vectors_wrapper:empty(NrTemps, ordsets:new()),
+     nrmoves = 0,
+     moveinsns = [],
+     moveset = gb_sets:empty()}.
 
-new(No_temporaries) -> 
-  #igraph_moves{
-    movelist = hipe_vectors_wrapper:empty(No_temporaries, ordsets:new()), 
-    worklist_moves = ordsets:new()
-  }.
+new_move(Dst, Src, IG_moves) ->
+  MoveSet = IG_moves#ig_moves.moveset,
+  MoveInsn = {Dst,Src},
+  case gb_sets:is_member(MoveInsn, MoveSet) of
+    true ->
+      IG_moves;
+    false ->
+      MoveNr = IG_moves#ig_moves.nrmoves,
+      Movelist0 = IG_moves#ig_moves.movelist,
+      Movelist1 = add_movelist(MoveNr, Dst, add_movelist(MoveNr, Src, Movelist0)),
+      IG_moves#ig_moves{nrmoves = MoveNr+1,
+			movelist = Movelist1,
+			moveinsns = [MoveInsn|IG_moves#ig_moves.moveinsns],
+			moveset = gb_sets:insert(MoveInsn, MoveSet)}
+  end.
 
-%%----------------------------------------------------------------------
-%% Function:    movelist, worklist_moves
-%%
-%% Description: Selector functions. Used to get one of the encapsulated 
-%%               data-structure contained in the ig_moves structure.
-%% Parameters:
-%%   IG_moves       --  An ig_moves data-structure
-%%
-%% Returns: 
-%%   One of the encapsulated data-structures.
-%%----------------------------------------------------------------------
+add_movelist(MoveNr, Temp, Movelist) ->
+  Assoc_moves = hipe_vectors_wrapper:get(Movelist, Temp),
+  %% XXX: MoveNr does not occur in moveList[Temp], but the new list must be an
+  %% ordset due to the ordsets:union in hipe_coalescing_regalloc:combine().
+  hipe_vectors_wrapper:set(Movelist, Temp, ordsets:add_element(MoveNr, Assoc_moves)).
 
-movelist(IG_moves) -> IG_moves#igraph_moves.movelist.
-worklist_moves(IG_moves) -> IG_moves#igraph_moves.worklist_moves.
-
-%%----------------------------------------------------------------------
-%% Function:    set_movelist, set_worklist_moves
-%%
-%% Description: Modifier functions. Used to set one of the encapsulated 
-%%               data-structure contained in the IG structure.
-%% Parameters:
-%%   Data-structure --  Data-structure you want to set. The movelist 
-%%                       data-structure for example.
-%%   IG_moves       --  An ig_moves data-structure.
-%%
-%% Returns: 
-%%   An updated ig_moves data-structure.
-%%----------------------------------------------------------------------
-
-set_movelist(Movelist, IG_moves) ->
-  IG_moves#igraph_moves{movelist=Movelist}.
-set_worklist_moves(Worklist_moves, IG_moves) ->
-  IG_moves#igraph_moves{worklist_moves=Worklist_moves}.
-
-%%----------------------------------------------------------------------
-%% Function:    add
-%%
-%% Description: Associates a copy instruction with a temporary if
-%%               you add to the movelist or just remembers that we've
-%%               seen the copy instruction if you add it to 
-%%               worklist_moves.
-%%                
-%% Parameters:
-%%   Instruction               --  Add this (copy) instruction to above
-%%   Temporary                 --  Associate instruction with this 
-%%                                  temporary
-%%   IG_moves                  --  An IG_moves data structure
-%%   
-%% Returns:
-%%   An updated ig_moves data structure
-%%
-%%----------------------------------------------------------------------
-
-add_movelist(Instruction, Temporary, IG_moves) when is_integer(Temporary) ->
-  Movelist = movelist(IG_moves),
-  Assoc_moves = hipe_vectors_wrapper:get(Movelist, Temporary),
-  New_movelist = hipe_vectors_wrapper:set(Movelist, Temporary, ordsets:add_element(Instruction, Assoc_moves)),
-  set_movelist(New_movelist, IG_moves).
-
-add_worklist_moves(Instruction, IG_moves) ->
-  Worklist = worklist_moves(IG_moves),
-  New_worklist = ordsets:add_element(Instruction, Worklist),
-  set_worklist_moves(New_worklist, IG_moves).
+get_moves(IG_moves) -> % -> {MoveList, NrMoves, MoveInsns}
+  {IG_moves#ig_moves.movelist,
+   IG_moves#ig_moves.nrmoves,
+   list_to_tuple(lists:reverse(IG_moves#ig_moves.moveinsns))}.

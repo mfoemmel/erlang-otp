@@ -173,6 +173,7 @@ Export*
 erts_export_put(Eterm mod, Eterm func, unsigned int arity)
 {
     Export e;
+    int ix;
     
     ASSERT(is_atom(mod));
     ASSERT(is_atom(func));
@@ -185,5 +186,14 @@ erts_export_put(Eterm mod, Eterm func, unsigned int arity)
     e.address = e.code+3;
     e.code[4] = 0;
     e.match_prog_set = NULL;
-    return export_list(index_put(&export_table, (void*) &e));
+    ix = index_put(&export_table, (void*) &e);
+    /*
+     * Note: there MUST be a sequence point between index_put()
+     * and export_list(). export_list() is a macro which contains
+     * export_list.table as a subexpression. Without the sequence
+     * point, the compiler may hoist that subexpression to before
+     * the index_put(), which breaks whenever index_put() modifies
+     * export_list.table.
+     */
+    return export_list(ix);
 }

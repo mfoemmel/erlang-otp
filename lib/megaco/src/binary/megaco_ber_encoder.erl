@@ -24,6 +24,7 @@
 -behaviour(megaco_encoder).
 
 -export([encode_message/3, decode_message/3,
+	 decode_mini_message/3, 
 
 	 encode_transaction/3,
 	 encode_action_requests/3,
@@ -34,11 +35,35 @@
 %% Backward compatible functions:
 -export([encode_message/2, decode_message/2]).
 
--define(V1_ASN1_MOD, megaco_ber_media_gateway_control_v1).
--define(V2_ASN1_MOD, megaco_ber_media_gateway_control_v2).
+-include_lib("megaco/src/engine/megaco_message_internal.hrl").
 
--define(V1_TRANS_MOD, megaco_binary_transformer_v1).
--define(V2_TRANS_MOD, megaco_binary_transformer_v2).
+-define(V1_ASN1_MOD,     megaco_ber_media_gateway_control_v1).
+-define(V2_ASN1_MOD,     megaco_ber_media_gateway_control_v2).
+-define(V3_ASN1_MOD,     megaco_ber_media_gateway_control_v3).
+-define(PREV3A_ASN1_MOD, megaco_ber_media_gateway_control_prev3a).
+
+-define(V1_TRANS_MOD,     megaco_binary_transformer_v1).
+-define(V2_TRANS_MOD,     megaco_binary_transformer_v2).
+-define(V3_TRANS_MOD,     megaco_binary_transformer_v3).
+-define(PREV3A_TRANS_MOD, megaco_binary_transformer_prev3a).
+
+-define(BIN_LIB, megaco_binary_encoder_lib).
+
+
+%%----------------------------------------------------------------------
+%% Detect (check/get) message version
+%% Return {ok, Version} | {error, Reason}
+%%----------------------------------------------------------------------
+
+version_of([{version3,prev3a}|EC], Binary) ->
+    Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?PREV3A_ASN1_MOD],
+    ?BIN_LIB:version_of(EC, Binary, 1, Decoders);
+version_of([{version3,v3}|EC], Binary) ->
+    Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?V3_ASN1_MOD],
+    ?BIN_LIB:version_of(EC, Binary, 1, Decoders);
+version_of(EC, Binary) ->
+    Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?V3_ASN1_MOD],
+    ?BIN_LIB:version_of(EC, Binary, 1, Decoders).
 
 
 %%----------------------------------------------------------------------
@@ -46,17 +71,49 @@
 %% Return {ok, Binary} | {error, Reason}
 %%----------------------------------------------------------------------
 
-encode_message(EncodingConfig, MegaMsg) ->
-    encode_message(EncodingConfig, 1, MegaMsg).
+encode_message(EC, 
+	       #'MegacoMessage'{mess = #'Message'{version = V}} = MegaMsg) ->
+    encode_message(EC, V, MegaMsg).
 
-encode_message(EncodingConfig, 1, MegaMsg) ->
-    megaco_binary_encoder:encode_message(EncodingConfig, MegaMsg, 
-					 ?V1_ASN1_MOD, ?V1_TRANS_MOD, 
-					 io_list);
-encode_message(EncodingConfig, 2, MegaMsg) ->
-    megaco_binary_encoder:encode_message(EncodingConfig, MegaMsg, 
-					 ?V2_ASN1_MOD, ?V2_TRANS_MOD, 
-					 io_list).
+
+%% -- Version 1 --
+
+encode_message([{version3,_}|EC], 1, MegaMsg) ->
+    AsnMod   = ?V1_ASN1_MOD, 
+    TransMod = ?V1_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message(EC, 1, MegaMsg) ->
+    AsnMod   = ?V1_ASN1_MOD, 
+    TransMod = ?V1_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+
+
+%% -- Version 2 --
+
+encode_message([{version3,_}|EC], 2, MegaMsg) ->
+    AsnMod   = ?V2_ASN1_MOD, 
+    TransMod = ?V2_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message(EC, 2, MegaMsg) ->
+    AsnMod   = ?V2_ASN1_MOD, 
+    TransMod = ?V2_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+
+
+%% -- Version 3 --
+
+encode_message([{version3,prev3a}|EC], 3, MegaMsg) ->
+    AsnMod   = ?PREV3A_ASN1_MOD, 
+    TransMod = ?PREV3A_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message([{version3,v3}|EC], 3, MegaMsg) ->
+    AsnMod   = ?V3_ASN1_MOD, 
+    TransMod = ?V3_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message(EC, 3, MegaMsg) ->
+    AsnMod   = ?V3_ASN1_MOD, 
+    TransMod = ?V3_TRANS_MOD,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list).
 
 
 %%----------------------------------------------------------------------
@@ -65,19 +122,23 @@ encode_message(EncodingConfig, 2, MegaMsg) ->
 %% Return {ok, Binary} | {error, Reason}
 %%----------------------------------------------------------------------
 
-encode_transaction(_EncodingConfig, 1, _Trans) ->
-%%     megaco_binary_encoder:encode_transaction(EncodingConfig, 
-%% 					     Trans,
-%% 					     ?V1_ASN1_MOD, 
-%% 					     ?V1_TRANS_MOD,
+encode_transaction(_EC, 1, _Trans) ->
+%%     AsnMod   = ?V1_ASN1_MOD, 
+%%     TransMod = ?V1_TRANS_MOD,
+%%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, 
 %% 					     io_list);
     {error, not_implemented};
-encode_transaction(_EncodingConfig, 2, _Trans) ->
-%%     megaco_binary_encoder:encode_transaction(EncodingConfig, 
-%% 					     Trans, 
-%% 					     ?V2_ASN1_MOD, 
-%% 					     ?V2_TRANS_MOD,
-%% 					     io_list).
+encode_transaction(_EC, 2, _Trans) ->
+%%     AsnMod   = ?V2_ASN1_MOD, 
+%%     TransMod = ?V2_TRANS_MOD,
+%%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, 
+%% 					     io_list);
+    {error, not_implemented};
+encode_transaction(_EC, 3, _Trans) ->
+%%     AsnMod   = ?V3_ASN1_MOD, 
+%%     TransMod = ?V3_TRANS_MOD,
+%%     ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, 
+%% 					     io_list);
     {error, not_implemented}.
 
 
@@ -86,16 +147,25 @@ encode_transaction(_EncodingConfig, 2, _Trans) ->
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 encode_action_requests(_EC, 1, ActReqs) when list(ActReqs) ->
-%%     megaco_binary_encoder:encode_action_requests(EC, ActReqs,
-%% 						 ?V1_ASN1_MOD, 
-%% 						 ?V1_TRANS_MOD,
-%% 						 io_list);
+%%     AsnMod   = ?V1_ASN1_MOD, 
+%%     TransMod = ?V1_TRANS_MOD,
+%%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
+%% 						    AsnMod, TransMod, 
+%% 						    io_list);
     {error, not_implemented};
 encode_action_requests(_EC, 2, ActReqs) when list(ActReqs) ->
-%%     megaco_binary_encoder:encode_action_requests(EC, ActReqs,
-%% 						 ?V1_ASN1_MOD, 
-%% 						 ?V1_TRANS_MOD,
-%% 						 io_list).
+%%     AsnMod   = ?V2_ASN1_MOD, 
+%%     TransMod = ?V2_TRANS_MOD,
+%%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
+%% 						    AsnMod, TransMod, 
+%% 						    io_list);
+    {error, not_implemented};
+encode_action_requests(_EC, 3, ActReqs) when list(ActReqs) ->
+%%     AsnMod   = ?V3_ASN1_MOD, 
+%%     TransMod = ?V3_TRANS_MOD,
+%%     ?BIN_LIB:encode_action_requests(EC, ActReqs,
+%% 						    AsnMod, TransMod, 
+%% 						    io_list);
     {error, not_implemented}.
 
 
@@ -104,16 +174,25 @@ encode_action_requests(_EC, 2, ActReqs) when list(ActReqs) ->
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 encode_action_request(_EC, 1, _ActReq) ->
-%%     megaco_binary_encoder:encode_action_request(EC, ActReq,
-%% 						?V1_ASN1_MOD, 
-%% 						?V1_TRANS_MOD,
-%% 						io_list);
+%%     AsnMod   = ?V1_ASN1_MOD, 
+%%     TransMod = ?V1_TRANS_MOD,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
+%% 						   AsnMod, TransMod, 
+%% 						   io_list);
     {error, not_implemented};
 encode_action_request(_EC, 2, _ActReq) ->
-%%     megaco_binary_encoder:encode_action_request(EC, ActReq,
-%% 						?V1_ASN1_MOD, 
-%% 						?V1_TRANS_MOD,
-%% 						io_list).
+%%     AsnMod   = ?V2_ASN1_MOD, 
+%%     TransMod = ?V2_TRANS_MOD,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
+%% 						   AsnMod, TransMod, 
+%% 						   io_list);
+    {error, not_implemented};
+encode_action_request(_EC, 3, _ActReq) ->
+%%     AsnMod   = ?V3_ASN1_MOD, 
+%%     TransMod = ?V3_TRANS_MOD,
+%%     ?BIN_LIB:encode_action_request(EC, ActReq,
+%% 						   AsnMod, TransMod, 
+%% 						   io_list);
     {error, not_implemented}.
 
 
@@ -122,29 +201,90 @@ encode_action_request(_EC, 2, _ActReq) ->
 %% Return {ok, MegacoMessageRecord} | {error, Reason}
 %%----------------------------------------------------------------------
 
-version_of(EncodingConfig, Binary) ->
-    AsnModV1 = ?V1_ASN1_MOD, 
-    AsnModV2 = ?V2_ASN1_MOD, 
-    megaco_binary_encoder:version_of(EncodingConfig, Binary, 1, 
-				     AsnModV1, AsnModV2).
-
-
-decode_message(EncodingConfig, Binary) ->
-    decode_message(EncodingConfig, 1, Binary).
+decode_message(EC, Binary) ->
+    decode_message(EC, 1, Binary).
 
 %% Not supported for this codec, revert to version 1
-decode_message(EncodingConfig, dynamic, Binary) ->
-    decode_message(EncodingConfig, 1, Binary);
+decode_message(EC, dynamic, Binary) ->
+    decode_message(EC, 1, Binary);
 
-decode_message(EncodingConfig, 1, Binary) ->
+
+%% -- Version 1 --
+ 
+decode_message([{version3,_}|EC], 1, Binary) ->
     AsnMod   = ?V1_ASN1_MOD, 
     TransMod = ?V1_TRANS_MOD, 
-    megaco_binary_encoder:decode_message(EncodingConfig, Binary, 
-                                         AsnMod, TransMod, binary);
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+decode_message(EC, 1, Binary) ->
+    AsnMod   = ?V1_ASN1_MOD, 
+    TransMod = ?V1_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 
-decode_message(EncodingConfig, 2, Binary) ->
+
+%% -- Version 2 --
+
+decode_message([{version3,_}|EC], 2, Binary) ->
     AsnMod   = ?V2_ASN1_MOD, 
     TransMod = ?V2_TRANS_MOD, 
-    megaco_binary_encoder:decode_message(EncodingConfig, Binary, 
-                                         AsnMod, TransMod, binary).
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+decode_message(EC, 2, Binary) ->
+    AsnMod   = ?V2_ASN1_MOD, 
+    TransMod = ?V2_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+
+
+%% -- Version 3 --
+
+decode_message([{version3,prev3a}|EC], 3, Binary) ->
+    AsnMod   = ?PREV3A_ASN1_MOD, 
+    TransMod = ?PREV3A_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+decode_message([{version3,v3}|EC], 3, Binary) ->
+    AsnMod   = ?V3_ASN1_MOD, 
+    TransMod = ?V3_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+decode_message(EC, 3, Binary) ->
+    AsnMod   = ?V3_ASN1_MOD, 
+    TransMod = ?V3_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary).
+
+
+decode_mini_message([{version3,prev3a}|EC], dynamic, Bin) ->
+    Mods = [?V1_ASN1_MOD, 
+	    ?V2_ASN1_MOD, 
+	    ?PREV3A_ASN1_MOD], 
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
+decode_mini_message([{version3,v3}|EC], dynamic, Bin) ->
+    Mods = [?V1_ASN1_MOD, 
+	    ?V2_ASN1_MOD, 
+	    ?V3_ASN1_MOD], 
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
+decode_mini_message(EC, dynamic, Bin) ->
+    Mods = [?V1_ASN1_MOD, 
+	    ?V2_ASN1_MOD, 
+	    ?V3_ASN1_MOD], 
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
+
+decode_mini_message([{version3,_}|EC], 1, Bin) ->
+    AsnMod = ?V1_ASN1_MOD, 
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message(EC, 1, Bin) ->
+    AsnMod = ?V1_ASN1_MOD, 
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([{version3,_}|EC], 2, Bin) ->
+    AsnMod = ?V2_ASN1_MOD, 
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message(EC, 2, Bin) ->
+    AsnMod = ?V2_ASN1_MOD, 
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([{version3,prev3a}|EC], 3, Bin) ->
+    AsnMod = ?PREV3A_ASN1_MOD, 
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([{version3,v3}|EC], 3, Bin) ->
+    AsnMod = ?V3_ASN1_MOD, 
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message(EC, 3, Bin) ->
+    AsnMod = ?V3_ASN1_MOD, 
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary).
+
 

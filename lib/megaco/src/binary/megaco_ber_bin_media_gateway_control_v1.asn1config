@@ -1,6 +1,27 @@
 {exclusive_decode,
  {'megaco_ber_bin_media_gateway_control_v1',
   [
+   {decode_message_trans_partial,
+    [
+     'MegacoMessage',[{mess,[{messageBody,[{transactions,parts}]}]}]
+    ]
+   },
+   {decode_message_acts_partial,
+    ['Transaction',
+     [
+      {transactionRequest,
+       [
+        {actions,parts}
+       ]
+      },
+      {transactionReply,  
+       [
+        {transactionResult, [{actionReplies,parts}]}
+       ]
+      }
+     ]
+    ]
+   },
    {decode_message_version,
     ['MegacoMessage',
      [
@@ -8,8 +29,16 @@
       {mess,[{mId,undecoded},{messageBody,undecoded}]}
      ]
     ]
+   },
+   {decode_message_mId,
+    ['MegacoMessage',
+     [
+      {authHeader,undecoded},
+      {mess,[{messageBody,undecoded}]}
+     ]
+    ]
    }
+   
   ]
  }
 }.
-

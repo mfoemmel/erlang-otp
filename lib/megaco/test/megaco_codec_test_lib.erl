@@ -30,7 +30,7 @@
 %% ----
 
 -export([
-	 display_text_messages/2,
+	 display_text_messages/2, display_text_messages/3,
 	 test_msgs/6,
 
 	 plain_decode_encode/5,
@@ -46,27 +46,40 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-display_text_messages(_, []) ->
+display_text_messages(V, Msgs) ->
+    display_text_messages(V, [], Msgs).
+
+display_text_messages(_, _, []) ->
     ok;
-display_text_messages(V, [{Name, Msg, _ED, Conf}|Msgs]) ->
-    display_text_message(Name, Msg, V),
-    display_text_messages(V, Msgs).
+display_text_messages(V, EC, [{Name, Msg, _ED, _Conf}|Msgs]) ->
+    (catch display_text_message(Name, EC, Msg, V)),
+    display_text_messages(V, EC, Msgs).
 
 
-display_text_message(Name, Msg, V) ->
+display_text_message(Name, EC, Msg, V) when tuple(Msg) ->
     io:format("~n(Erlang) message ~p:~n~p~n", [Name, Msg]),
-    case (catch megaco_pretty_text_encoder:encode_message([],V,Msg)) of
-	{'EXIT', Reason} ->
-	    io:format("~nPretty encoded: failed~n", []);
+    case (catch megaco_pretty_text_encoder:encode_message(EC,V,Msg)) of
+	{'EXIT', _R} ->
+	    io:format("~nPretty encoded: failed (exit)~n", []);
+	{error, {{deprecated, PWhat}, _}} ->
+ 	    io:format("~nPretty encoded: deprecated~n~p~n", [PWhat]),
+	    throw(continue);
+	{error, PReason} ->
+ 	    io:format("~nPretty encoded: failed (error)~n~p~n", [PReason]),
+	    throw(continue);
 	{ok, Pretty} ->
 	    io:format("~nPretty encoded:~n~s~n", [binary_to_list(Pretty)])
     end,
-    case (catch megaco_compact_text_encoder:encode_message([],V,Msg)) of
-	{'EXIT', _Reason} ->
-	    io:format("~nCompact encoded: failed~n", []);
-	{ok, Compact} ->
-	    io:format("~nCompact encoded:~n~s~n", [binary_to_list(Compact)])
-    end.
+    case (catch megaco_compact_text_encoder:encode_message(EC,V,Msg)) of
+ 	{'EXIT', _} ->
+ 	    io:format("~nCompact encoded: failed~n", []);
+ 	{error, {{deprecated, CWhat}, _}} ->
+  	    io:format("~nPretty encoded: deprecated~n~p~n", [CWhat]);
+ 	{ok, Compact} ->
+ 	    io:format("~nCompact encoded:~n~s~n", [binary_to_list(Compact)])
+    end;
+display_text_message(_, _, _, _) ->
+    skipping.
 
 
 test_msgs(Codec, DynamicDecode, Ver, EC, Check, Msgs) 
@@ -79,7 +92,7 @@ test_msgs(_Codec, _DD, _Ver, _EC, _Check, [], []) ->
 test_msgs(_Codec, _DD, _Ver, _EC, _Check, [], Errs) ->
     ?ERROR(lists:reverse(Errs));
 test_msgs(Codec, DD, Ver, EC, Check, 
-	  [{Name, {error, Error}, ED, Conf}|Msgs], Acc) ->
+	  [{Name, {error, Error}, _ED, _Conf}|Msgs], Acc) ->
     io:format("error~n", []),
     test_msgs(Codec, DD, Ver, EC, Check, Msgs, [{Name, Error}|Acc]);
 test_msgs(Codec, DD, Ver, EC, Check, 
@@ -108,23 +121,36 @@ test_msgs_debug(Conf) ->
     
 encode_decode(Func, Check, Codec, DynamicDecode, Ver, EC, Msg1) 
   when function(Func) ->
+    d("encode_decode -> entry with"
+      "~n   Func:          ~p"
+      "~n   Check:         ~p"
+      "~n   Codec:         ~p"
+      "~n   DynamicDecode: ~p"
+      "~n   Ver:           ~p"
+      "~n   EC:            ~p", 
+      [Func, Check, Codec, DynamicDecode, Ver, EC]),
     case (catch Func(Codec, DynamicDecode, Ver, EC, Msg1)) of
 	{ok, Msg1} ->
+	    d("encode_decode -> expected result"),
 	    ok;
 	{ok, Msg2} ->
+	    d("encode_decode -> unexpected result - check"),
 	    case (catch Check(Msg1, Msg2)) of
-		{equal, _} ->
+		ok ->
+		    d("encode_decode -> check - ok"),
 		    ok;
 		{error, Reason} ->
+		    d("encode_decode -> check - error: "
+		      "~n   Reason: ~p", [Reason]),
 		    {error, {Reason, Msg1, Msg2}};
-		{wrong_type, What} ->
-		    {error, {wrong_type, What, Msg1, Msg2}};
-		{not_equal, What} ->
-		    {error, {not_equal, What, Msg1, Msg2}};
 		Else ->
+		    d("encode_decode -> check - failed: "
+		      "~n   Else: ~p", [Else]),
 		    {error, {invalid_check_result, Else}}
 	    end;
 	Else ->
+	    d("encode_decode -> failed: "
+	      "~n   Else: ~p", [Else]),
 	    Else
     end.
 
@@ -132,10 +158,18 @@ encode_decode(Func, Check, Codec, DynamicDecode, Ver, EC, Msg1)
 %% *** plain_encode_decode ***
 
 plain_encode_decode(Codec, DynamicDecode, Ver, EC, M1) ->
+    d("plain_encode_decode -> entry with"
+      "~n   Codec:         ~p"
+      "~n   DynamicDecode: ~p"
+      "~n   Ver:           ~p"
+      "~n   EC:            ~p", [Codec, DynamicDecode, Ver, EC]),
     case (catch encode_message(Codec, Ver, EC, M1)) of
 	{ok, Bin} ->
+	    d("plain_encode_decode -> encode - ok"),
 	    decode_message(Codec, DynamicDecode, Ver, EC, Bin);
 	Error ->
+	    d("plain_encode_decode -> encode - failed: "
+	      "~n   Error: ~p", [Error]),
 	    Error 
     end.
 
@@ -157,6 +191,7 @@ plain_decode_encode(Codec, DynamicDecode, Ver, EC, B) when binary(B) ->
 %% *** trans_first_encode_decode ***
 
 trans_first_encode_decode(Codec, DynamicDecode, Ver, EC, M1) ->
+    d("trans_first_encode_decode -> entry"),
     case (catch trans_first_encode_message(Codec, Ver, EC, M1)) of
 	{ok, Bin} ->
 	    decode_message(Codec, DynamicDecode, Ver, EC, Bin);
@@ -165,6 +200,7 @@ trans_first_encode_decode(Codec, DynamicDecode, Ver, EC, M1) ->
     end.
 
 trans_first_encode_message(Codec, Ver, EC, M1) ->
+    d("trans_first_encode_message -> entry"),
     Mess1 = M1#'MegacoMessage'.mess,
     {transactions, Trans1} = Mess1#'Message'.messageBody,
     Trans2 = encode_transactions(Codec, Ver, EC, Trans1),
@@ -173,9 +209,11 @@ trans_first_encode_message(Codec, Ver, EC, M1) ->
     encode_message(Codec, Ver, EC, M2).
 
 encode_transactions(Codec, Ver, EC, Trans) when list(Trans) ->
+    d("encode_transactions -> entry"),
     [encode_transaction(Codec, Ver, EC, T) || T <- Trans].
 
 encode_transaction(Codec, Ver, EC, T) ->
+    d("encode_transaction -> entry"),
     case (catch Codec:encode_transaction(EC, Ver, T)) of
 	{ok, EncodecTransactions} ->
 	    EncodecTransactions;
@@ -187,6 +225,7 @@ encode_transaction(Codec, Ver, EC, T) ->
 %% *** actions_first_encode_decode ***
 
 actions_first_encode_decode(Codec, DynamicDecode, Ver, EC, M1) ->
+    d("actions_first_encode_decode -> entry"),
     case (catch actions_first_encode_message(Codec, Ver, EC, M1)) of
 	{ok, Bin} ->
 	    decode_message(Codec, DynamicDecode, Ver, EC, Bin);
@@ -195,6 +234,7 @@ actions_first_encode_decode(Codec, DynamicDecode, Ver, EC, M1) ->
     end.
 
 actions_first_encode_message(Codec, Ver, EC, M1) ->
+    d("actions_first_encode_message -> entry"),
     Mess1 = M1#'MegacoMessage'.mess,
     {transactions, Trans1} = Mess1#'Message'.messageBody,
     Trans2 = encode_actions(Codec, Ver, EC, Trans1),
@@ -203,9 +243,11 @@ actions_first_encode_message(Codec, Ver, EC, M1) ->
     encode_message(Codec, Ver, EC, M2).
 
 encode_actions(Codec, Ver, EC, Trans) when list(Trans) ->
+    d("encode_actions -> entry"),
     [encode_actions1(Codec, Ver, EC, T) || T <- Trans].
 
 encode_actions1(Codec, Ver, EC, {transactionRequest, TR1}) ->
+    d("encode_actions1 -> entry"),
     #'TransactionRequest'{actions = ARs} = TR1,
     case (catch encode_action_requests(Codec, Ver, EC, ARs)) of
 	{ok, EncodedARs} ->
@@ -216,12 +258,14 @@ encode_actions1(Codec, Ver, EC, {transactionRequest, TR1}) ->
     end.
 
 encode_action_requests(Codec, Ver, EC, ARs) ->
+    d("encode_action_requests -> entry"),
     Codec:encode_action_requests(EC, Ver, ARs).
 
 
 %% *** action_first_encode_decode ***
 
 action_first_encode_decode(Codec, DynamicDecode, Ver, EC, M1) ->
+    d("action_first_encode_decode -> entry"),
     case (catch action_first_encode_message(Codec, Ver, EC, M1)) of
 	{ok, Bin} ->
 	    decode_message(Codec, DynamicDecode, Ver, EC, Bin);
@@ -230,6 +274,7 @@ action_first_encode_decode(Codec, DynamicDecode, Ver, EC, M1) ->
     end.
 
 action_first_encode_message(Codec, Ver, EC, M1) ->
+    d("action_first_encode_message -> entry"),
     Mess1 = M1#'MegacoMessage'.mess,
     {transactions, Trans1} = Mess1#'Message'.messageBody,
     Trans2 = encode_action(Codec, Ver, EC, Trans1),
@@ -238,15 +283,18 @@ action_first_encode_message(Codec, Ver, EC, M1) ->
     encode_message(Codec, Ver, EC, M2).
 
 encode_action(Codec, Ver, EC, Trans) when list(Trans) ->
+    d("encode_action -> entry"),
     [encode_action1(Codec, Ver, EC, T) || T <- Trans].
 
 encode_action1(Codec, Ver, EC, {transactionRequest, TR1}) ->
+    d("encode_action1 -> entry"),
     #'TransactionRequest'{actions = ARs1} = TR1,
     ARs2 = [encode_action_request(Codec, Ver, EC, AR) || AR <- ARs1],
     TR2  = TR1#'TransactionRequest'{actions = ARs2},
     {transactionRequest, TR2}.
 
 encode_action_request(Codec, Ver, EC, AR) ->
+    d("encode_action_request -> entry"),
     case (catch Codec:encode_action_request(EC, Ver, AR)) of
 	{ok, Bin} ->
 	    Bin;
@@ -256,16 +304,40 @@ encode_action_request(Codec, Ver, EC, AR) ->
 
 
 encode_message(Codec, Ver, EC, M) ->
+    d("encode_message -> entry with"
+      "~n   Codec: ~p"
+      "~n   Ver:   ~p"
+      "~n   EC:    ~p"
+      "~n   M:     ~p", [Codec, Ver, EC, M]),
     case (catch Codec:encode_message(EC, Ver, M)) of
 	{ok, Bin} ->
+	    d("encode_message -> encode - ok: "
+	      "~n~s", [binary_to_list(Bin)]),
 	    {ok, Bin};
 	Error ->
+	    d("encode_message -> encode - failed"),
 	    throw({error, {message_encode_failed, Error, M}})
     end.
 
 decode_message(Codec, true, _Ver, EC, M) ->
+    d("decode_message -> entry - when using dynamic"),
     Codec:decode_message(EC, dynamic, M);
 decode_message(Codec, _, Ver, EC, M) ->
+    d("decode_message -> entry with"
+      "~n   Ver: ~p", [Ver]),
     Codec:decode_message(EC, Ver, M).
 
+
+%% ----------------------------------------------------------------------
+
+d(F) ->
+    d(F, []).
+
+d(F, A) ->
+    d(get(dbg), F, A).
+
+d(true, F, A) ->
+    io:format("DBG:~w:" ++ F ++ "~n", [?MODULE|A]);
+d(_, _, _) ->
+    ok.
 

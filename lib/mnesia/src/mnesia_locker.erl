@@ -78,6 +78,11 @@ init(Parent) ->
     register(?MODULE, self()),
     process_flag(trap_exit, true),
     proc_lib:init_ack(Parent, {ok, self()}),
+    case ?catch_val(pid_sort_order) of
+	r9b_plain -> put(pid_sort_order, r9b_plain);
+	standard ->  put(pid_sort_order, standard);
+	_ -> ignore
+    end,
     loop(#state{supervisor = Parent}).
 
 val(Var) ->
@@ -332,16 +337,19 @@ check_lock(Tid, Oid, [Lock | Locks], TabLocks, X, AlreadyQ, Type) ->
     case element(3, Lock) of
 	Tid ->
 	    check_lock(Tid, Oid, Locks, TabLocks, X, AlreadyQ, Type);
-	WaitForTid when WaitForTid > Tid -> % Important order
-	    check_lock(Tid, Oid, Locks, TabLocks, {queue, WaitForTid}, AlreadyQ, Type);
-	WaitForTid when Tid#tid.pid == WaitForTid#tid.pid ->
-	    dbg_out("Spurious lock conflict ~w ~w: ~w -> ~w~n",
-		    [Oid, Lock, Tid, WaitForTid]),  
-%%	    check_lock(Tid, Oid, Locks, TabLocks, {queue, WaitForTid}, AlreadyQ);
-	    %% BUGBUG Fix this if possible
-	    {no, WaitForTid};
 	WaitForTid ->
-	    {no, WaitForTid}
+	    Queue = allowed_to_be_queued(WaitForTid,Tid),
+	    if Queue == true -> 
+		    check_lock(Tid, Oid, Locks, TabLocks, {queue, WaitForTid}, AlreadyQ, Type);
+	       Tid#tid.pid == WaitForTid#tid.pid ->
+		    dbg_out("Spurious lock conflict ~w ~w: ~w -> ~w~n",
+			    [Oid, Lock, Tid, WaitForTid]),  
+		    %%	    check_lock(Tid, Oid, Locks, TabLocks, {queue, WaitForTid}, AlreadyQ);
+		    %% BUGBUG Fix this if possible
+		    {no, WaitForTid};
+	       true ->
+		    {no, WaitForTid}
+	    end
     end;
 
 check_lock(_, _, [], [], X, {queue, bad_luck}, _) ->
@@ -375,6 +383,17 @@ check_lock(Tid, Oid, [], [], X, AlreadyQ, Type) ->
 check_lock(Tid, Oid, [], TabLocks, X, AlreadyQ, Type) ->
     check_lock(Tid, Oid, TabLocks, [], X, AlreadyQ, Type).
 
+%% True if  WaitForTid > Tid -> % Important order
+allowed_to_be_queued(WaitForTid, Tid) ->
+    case get(pid_sort_order) of
+	r9b_plain -> 
+	    cmp_tid(true, WaitForTid, Tid) == 1;
+	standard  -> 
+	    cmp_tid(false, WaitForTid, Tid) == 1;
+	_ -> 
+	    WaitForTid > Tid
+    end.	    
+	    
 %% Check queue for conflicting locks
 %% Assume that all queued locks belongs to other tid's
 
@@ -386,11 +405,12 @@ check_queue(Tid, Tab, X, AlreadyQ) ->
 	    X;
 	Tid ->
 	    X; 
-	WaitForTid when WaitForTid#queue.tid > Tid -> % Important order
-	    {queue, WaitForTid};
 	WaitForTid -> 
-	    case AlreadyQ of
-		{no, bad_luck} -> {no, WaitForTid};
+	    case allowed_to_be_queued(WaitForTid,Tid) of
+		true ->
+		    {queue, WaitForTid};
+		false when AlreadyQ == {no, bad_luck} -> 
+		    {no, WaitForTid};
 		_ ->  
 		    erlang:fault({mnesia_locker, assert, AlreadyQ})
 	    end
@@ -1021,4 +1041,90 @@ system_terminate(_Reason, _Parent, _Debug, _State) ->
 
 system_code_change(State, _Module, _OldVsn, _Extra) ->
     {ok, State}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% AXD301 patch sort pids according to R9B sort order
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% Om R9B == true, görs jämförelsen som i R9B plain.
+%% Om R9B == false, görs jämförelsen som i alla andra releaser.
+%% cmp_tid(T1, T2) returnerar -1 om T1 < T2, 0 om T1 = T2 och 1 om T1 > T2.
+
+-define(VERSION_MAGIC,       131).
+-define(ATOM_EXT,            100).
+-define(PID_EXT,             103).
+
+-record(pid_info, {serial, number, nodename, creation}).
+
+cmp_tid(R9B,
+	#tid{} = T,
+	#tid{} = T) when R9B == true; R9B == false ->
+    0;
+cmp_tid(R9B,
+	#tid{counter = C, pid = Pid1},
+	#tid{counter = C, pid = Pid2}) when R9B == true; R9B == false ->
+    cmp_pid_info(R9B, pid_to_pid_info(Pid1), pid_to_pid_info(Pid2));
+cmp_tid(R9B,
+	#tid{counter = C1},
+	#tid{counter = C2}) when R9B == true; R9B == false ->
+    cmp(C1, C2).
+
+cmp_pid_info(_, #pid_info{} = PI, #pid_info{} = PI) ->
+    0;
+cmp_pid_info(false,
+	     #pid_info{serial = S, number = N, nodename = NN, creation = C1},
+	     #pid_info{serial = S, number = N, nodename = NN, creation = C2}) ->
+    cmp(C1, C2);
+cmp_pid_info(false,
+	     #pid_info{serial = S, number = N, nodename = NN1},
+	     #pid_info{serial = S, number = N, nodename = NN2}) ->
+    cmp(NN1, NN2);
+cmp_pid_info(false,
+	     #pid_info{serial = S, number = N1},
+	     #pid_info{serial = S, number = N2}) ->
+    cmp(N1, N2);
+cmp_pid_info(false, #pid_info{serial = S1}, #pid_info{serial = S2}) ->
+    cmp(S1, S2);
+cmp_pid_info(true,
+	     #pid_info{nodename = NN, creation = C, serial = S, number = N1},
+	     #pid_info{nodename = NN, creation = C, serial = S, number = N2}) ->
+    cmp(N1, N2);
+cmp_pid_info(true,
+	     #pid_info{nodename = NN, creation = C, serial = S1},
+	     #pid_info{nodename = NN, creation = C, serial = S2}) ->
+    cmp(S1, S2);
+cmp_pid_info(true,
+	     #pid_info{nodename = NN, creation = C1},
+	     #pid_info{nodename = NN, creation = C2}) ->
+    cmp(C1, C2);
+cmp_pid_info(true, #pid_info{nodename = NN1}, #pid_info{nodename = NN2}) ->
+    cmp(NN1, NN2).
+
+cmp(X, X) -> 0;
+cmp(X1, X2) when X1 < X2 -> -1;
+cmp(_X1, _X2) -> 1.
+
+pid_to_pid_info(Pid) when pid(Pid) ->
+    [?VERSION_MAGIC, ?PID_EXT, ?ATOM_EXT, NNL1, NNL0 | Rest]
+	= binary_to_list(term_to_binary(Pid)),
+    [N3, N2, N1, N0, S3, S2, S1, S0, Creation] = drop(bytes2int(NNL1, NNL0),
+						      Rest),
+    #pid_info{serial = bytes2int(S3, S2, S1, S0),
+	      number = bytes2int(N3, N2, N1, N0),
+	      nodename = node(Pid),
+	      creation = Creation}.
+
+drop(0, L) -> L;
+drop(N, [_|L]) when integer(N), N > 0 -> drop(N-1, L);
+drop(N, []) when integer(N), N > 0 -> [].
+
+bytes2int(N1, N0) when 0 =< N1, N1 =< 255,
+		       0 =< N0, N0 =< 255 ->
+    (N1 bsl 8) bor N0.
+bytes2int(N3, N2, N1, N0) when 0 =< N3, N3 =< 255,
+			       0 =< N2, N2 =< 255,
+			       0 =< N1, N1 =< 255,
+			       0 =< N0, N0 =< 255 ->
+    (N3 bsl 24) bor (N2 bsl 16) bor (N1 bsl 8) bor N0.
 

@@ -485,12 +485,12 @@ sz(_) ->
 
 %% -------------------------------------------------------------------
 
-make_response_pdu(#pdu{request_id = ReqId}) ->
+make_response_pdu(#pdu{request_id = ReqId, varbinds = Vbs}) ->
     #pdu{type         = 'get-response', 
 	 request_id   = ReqId, 
 	 error_status = noError,
 	 error_index  = 0, 
-	 varbinds     = []}.
+	 varbinds     = Vbs}.
 
 
 %% -------------------------------------------------------------------

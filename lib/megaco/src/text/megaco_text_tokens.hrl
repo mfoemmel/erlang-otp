@@ -70,21 +70,26 @@
 -define(PrettyAuditCapToken              , "AuditCapability"       ).
 -define(PrettyAuditValueToken            , "AuditValue"            ).
 -define(PrettyAuthToken                  , "Authentication"        ).
+-define(PrettyBothToken                  , "Both"                  ). % v3
 -define(PrettyBothwayToken               , "Bothway"               ).
 -define(PrettyBriefToken                 , "Brief"                 ).
 -define(PrettyBufferToken                , "Buffer"                ).
 -define(PrettyCtxToken                   , "Context"               ).
 -define(PrettyContextAuditToken          , "ContextAudit"          ).
+-define(PrettyContextAttrToken           , "ContextAttr"           ). % v3
 -define(PrettyDigitMapToken              , "DigitMap"              ).
+-define(PrettyDirectionToken             , "Direction"             ). % v3
 -define(PrettyDiscardToken               , "Discard"               ).
 -define(PrettyDisconnectedToken          , "Disconnected"          ).
 -define(PrettyDelayToken                 , "Delay"                 ).
 -define(PrettyDurationToken              , "Duration"              ).
 -define(PrettyEmbedToken                 , "Embed"                 ).
 -define(PrettyEmergencyToken             , "Emergency"             ).
+-define(PrettyEmergencyOffToken          , "EmergencyOffToken"     ).
 -define(PrettyErrorToken                 , "Error"                 ).
 -define(PrettyEventBufferToken           , "EventBuffer"           ).
 -define(PrettyEventsToken                , "Events"                ).
+-define(PrettyExternalToken              , "External"              ). % v3
 -define(PrettyFailoverToken              , "Failover"              ).
 -define(PrettyForcedToken                , "Forced"                ).
 -define(PrettyGracefulToken              , "Graceful"              ).
@@ -92,8 +97,10 @@
 -define(PrettyH223Token                  , "H223"                  ).
 -define(PrettyH226Token                  , "H226"                  ).
 -define(PrettyHandOffToken               , "HandOff"               ).
+-define(PrettyIEPSToken                  , "IEPSCall"              ). % v3
 -define(PrettyImmAckRequiredToken        , "ImmAckRequired"        ).
 -define(PrettyInactiveToken              , "Inactive"              ).
+-define(PrettyInternalToken              , "Internal"              ). % v3
 -define(PrettyInterruptByEventToken      , "IntByEvent"            ). 
 -define(PrettyInterruptByNewSignalsDescrToken, "IntBySigDescr"     ). 
 -define(PrettyIsolateToken               , "Isolate"               ).
@@ -130,6 +137,7 @@
 -define(PrettyReasonToken                , "Reason"                ).
 -define(PrettyRecvonlyToken              , "ReceiveOnly"           ).
 -define(PrettyReplyToken                 , "Reply"                 ).
+-define(PrettyRequestIDToken             , "RequestID"             ). % v3
 -define(PrettyResponseAckToken           , "TransactionResponseAck").
 -define(PrettyRestartToken               , "Restart"               ).
 -define(PrettyRemoteToken                , "Remote"                ).
@@ -141,6 +149,7 @@
 -define(PrettyServiceStatesToken         , "ServiceStates"         ).
 -define(PrettyServiceChangeToken         , "ServiceChange"         ).
 -define(PrettyServiceChangeAddressToken  , "ServiceChangeAddress"  ).
+-define(PrettyServiceChangeIncompleteToken , "ServiceChangeInc"    ). % v3
 -define(PrettySignalListToken            , "SignalList"            ).
 -define(PrettySignalsToken               , "Signals"               ).
 -define(PrettySignalTypeToken            , "SignalType"            ).
@@ -173,21 +182,26 @@
 -define(CompactAuditCapToken              , "AC"                   ).
 -define(CompactAuditValueToken            , "AV"                   ).
 -define(CompactAuthToken                  , "AU"                   ).
+-define(CompactBothToken                  , "B"                    ). % v3
 -define(CompactBothwayToken               , "BW"                   ).
 -define(CompactBriefToken                 , "BR"                   ).
 -define(CompactBufferToken                , "BF"                   ).
 -define(CompactCtxToken                   , "C"                    ).
 -define(CompactContextAuditToken          , "CA"                   ).
+-define(CompactContextAttrToken           , "CT"                   ). % v3
 -define(CompactDigitMapToken              , "DM"                   ).
+-define(CompactDirectionToken             , "DI"                   ). % v3
 -define(CompactDiscardToken               , "DS"                   ).
 -define(CompactDisconnectedToken          , "DC"                   ).
 -define(CompactDelayToken                 , "DL"                   ).
 -define(CompactDurationToken              , "DR"                   ).
 -define(CompactEmbedToken                 , "EM"                   ).
 -define(CompactEmergencyToken             , "EG"                   ).
+-define(CompactEmergencyOffToken          , "EGO"                  ).
 -define(CompactErrorToken                 , "ER"                   ).
 -define(CompactEventBufferToken           , "EB"                   ).
 -define(CompactEventsToken                , "E"                    ).
+-define(CompactExternalToken              , "EX"                   ). % v3
 -define(CompactFailoverToken              , "FL"                   ).
 -define(CompactForcedToken                , "FO"                   ).
 -define(CompactGracefulToken              , "GR"                   ).
@@ -195,8 +209,10 @@
 -define(CompactH223Token                  , ?PrettyH223Token       ).
 -define(CompactH226Token                  , ?PrettyH226Token       ).
 -define(CompactHandOffToken               , "HO"                   ).
+-define(CompactIEPSToken                  , "IEPS"                 ). % v3
 -define(CompactImmAckRequiredToken        , "IA"                   ).
 -define(CompactInactiveToken              , "IN"                   ).
+-define(CompactInternalToken              , "IT"                   ). % v3
 -define(CompactInterruptByEventToken      , "IBE"                  ).
 -define(CompactInterruptByNewSignalsDescrToken, "IBS"              ). 
 -define(CompactIsolateToken               , "IS"                   ).
@@ -233,6 +249,7 @@
 -define(CompactReasonToken                , "RE"                   ).
 -define(CompactRecvonlyToken              , "RC"                   ).
 -define(CompactReplyToken                 , "P"                    ).
+-define(CompactRequestIDToken             , "RQ"                   ). % v3
 -define(CompactResponseAckToken           , "K"                    ).
 -define(CompactRestartToken               , "RS"                   ).
 -define(CompactRemoteToken                , "R"                    ).
@@ -244,6 +261,7 @@
 -define(CompactServiceStatesToken         , "SI"                   ).
 -define(CompactServiceChangeToken         , "SC"                   ).
 -define(CompactServiceChangeAddressToken  , "AD"                   ).
+-define(CompactServiceChangeIncompleteToken , "SIC"                ). % v3
 -define(CompactSignalListToken            , "SL"                   ).
 -define(CompactSignalsToken               , "SG"                   ).
 -define(CompactSignalTypeToken            , "SY"                   ).

@@ -166,7 +166,8 @@ t1([{Dir, Codec, Conf, _} = EDir|Dirs], Results) ->
 measure({Dir, Codec, Conf, Count}) when list(Dir) ->
     io:format("measure using codec ~p ~p~n ", [Codec, Conf]),
     {Init, Conf1} = measure_init(Conf),
-    Res = measure(Dir, Codec, Conf1, read_files(Dir), [], Count),
+    Conf2 = [{version3,prev3a}|Conf1],
+    Res = measure(Dir, Codec, Conf2, read_files(Dir), [], Count),
     measure_fin(Init),
     Res.
 

@@ -3,4 +3,4 @@
  {start,{debugger,start,[]}},
  {icon,"debugger.gif"},
  {message,"The Debugger"},
- {html,"../doc/index.html"}}.
+ {html,"../doc/html/index.html"}}.

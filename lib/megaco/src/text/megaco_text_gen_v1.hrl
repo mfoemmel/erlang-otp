@@ -940,7 +940,7 @@ enc_NotifyReply(Val, State)
      ?EQUAL,
      case Val#'NotifyReply'.terminationID of
 	 asn1_NOVALUE ->
-	     exit(asn1_not_compliant_with_abnf);
+	     error(asn1_not_compliant_with_abnf);
 	 TermId ->
 	     enc_TerminationIDList1(TermId, State)
      end,
@@ -1104,8 +1104,10 @@ enc_TerminationID(Tid, State)
     List = [{Tid#megaco_term_id.id, fun enc_tid_component/2 }],
     enc_list(List, State, fun(_S) -> ?SLASH end, false).    
 
-enc_tid_component(Component, State) ->
-    [enc_tid_sub_component(Sub, State) || Sub <- Component].
+enc_tid_component(Component, State) when list(Component) ->
+    [enc_tid_sub_component(Sub, State) || Sub <- Component];
+enc_tid_component(Invalid, _State) ->
+    error({invalid_id_list_component, Invalid}).
 
 enc_tid_sub_component(Sub, _State) ->
     case Sub of
@@ -1357,7 +1359,7 @@ enc_propertyParmValues(Values, {sublist, false}, State) ->
      ?RBRKT
     ];
 enc_propertyParmValues(V, EI, _State) ->
-    exit({invalid_property_parm_values, V, EI}).
+    error({invalid_property_parm_values, V, EI}).
 
 enc_TerminationStateDescriptor(Val, State)
   when record(Val, 'TerminationStateDescriptor') ->
@@ -1996,7 +1998,7 @@ quoted_string_count([H | T], Count, IsSafe) ->
 	safe_char   -> quoted_string_count(T, Count + 1, IsSafe);
 	rest_char   -> quoted_string_count(T, Count + 1, false);
 	white_space -> quoted_string_count(T, Count + 1, false);
-	_           -> exit({illegal_char, H})
+	_           -> error({illegal_char, H})
     end;
 quoted_string_count([], Count, IsSafe) ->
     {IsSafe, Count}.
@@ -2084,7 +2086,7 @@ enc_list([], _State, _SepEncoder, _NeedsSep) ->
 enc_list(asn1_NOVALUE, _State, _SepEncoder, _NeedsSep) ->
     [];
 enc_list(A, B, C, D) ->
-    exit({invlid_list, A, B, C, D}).
+    error({invlid_list, A, B, C, D}).
 
 do_enc_list(asn1_NOVALUE, _State, _ElemEncoder, _SepEncoder, _NeedsSep) ->
     [];
@@ -2147,19 +2149,19 @@ verify_count(Count, Min, Max) ->
 			Max == infinity ->
 			    Count;
 			true ->
-			    exit({count_too_large, Count, Max})
+			    error({count_too_large, Count, Max})
 		    end;
 		true ->
-		    exit({count_too_small, Count, Min})
+		    error({count_too_small, Count, Min})
 	    end;
 	true ->
-	    exit({count_not_an_integer, Count})
+	    error({count_not_an_integer, Count})
     end.
 
 %% -------------------------------------------------------------------
 
 error(Reason) ->
-    exit(Reason).
+    erlang:fault(Reason).
 
 % d(F) ->
 %     d(F, []).

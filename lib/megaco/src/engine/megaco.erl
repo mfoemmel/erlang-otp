@@ -111,8 +111,13 @@ stop_user(UserMid) ->
 %% Lookup user information
 %%-----------------------------------------------------------------
 
+user_info(UserMid, requests) ->
+    megaco_messenger:which_requests(UserMid);
+user_info(UserMid, replies) ->
+    megaco_messenger:which_replies(UserMid);
 user_info(UserMid, Item) ->
     megaco_config:user_info(UserMid, Item).
+
 
 %%-----------------------------------------------------------------
 %% Update information about a user
@@ -121,12 +126,18 @@ user_info(UserMid, Item) ->
 update_user_info(UserMid, Item, Value) ->
     megaco_config:update_user_info(UserMid, Item, Value).
 
+
 %%-----------------------------------------------------------------
 %% Lookup information about an active connection
 %%-----------------------------------------------------------------
 
+conn_info(ConnHandle, requests) ->
+    megaco_messenger:which_requests(ConnHandle);
+conn_info(ConnHandle, replies) ->
+    megaco_messenger:which_replies(ConnHandle);
 conn_info(ConnHandle, Item) ->
     megaco_config:conn_info(ConnHandle, Item).
+
 
 %%-----------------------------------------------------------------
 %% Update information about an active connection

@@ -180,12 +180,10 @@ extern Eterm exception_tag[NUMBER_EXC_TAGS];
  * The quick-saved stack trace structure
  */
 struct StackTrace {
-  Uint header;	/* bignum header - must be first in struct */
-  Uint freason; /* original exception reason is saved in the struct */
-  Eterm* pc;
-  Eterm* cp;
-  Eterm* current;
-  int bif;	/* BIF table index, or -1 */
-  int depth;	/* number of saved pointers in trace[] */
-  Uint trace[1];  /* varying size - must be last in struct */
+    Eterm header;	/* bignum header - must be first in struct */
+    Eterm freason; /* original exception reason is saved in the struct */
+    Eterm* pc;
+    Eterm* current;
+    int depth;	/* number of saved pointers in trace[] */
+    Eterm *trace[1];  /* varying size - must be last in struct */
 };

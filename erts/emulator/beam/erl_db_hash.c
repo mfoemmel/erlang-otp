@@ -1953,8 +1953,9 @@ static void grow(DbTableHash* tb)
 	    bp = &b->next;
 	else {
 	    *bp = b->next;  	    /* unlink */
-	    b->next = *bps;         /* link */
-	    *bps = b;
+	    *bps = b;               /* link  *in order due to bags!* */
+	    bps = &b->next;
+	    b->next = NULL;
 	}
 	b = *bp;
     }

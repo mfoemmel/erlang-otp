@@ -27,6 +27,7 @@
 -export([tr_message/3, tr_transaction/3]).
 
 -define(DEFAULT_NAME_RESOLVER,megaco_binary_name_resolver_v1).
+-define(error(R), erlang:error({error, R})).
 
 -record(state, {mode,                 % verify | encode | decode
                 resolver_module,      % 
@@ -174,7 +175,7 @@ tr_V4hex(Val, State) ->
     tr_DIGIT(Val, State, 0, 255).
 
 tr_IP6Address(_Val, _State) ->
-    exit(ipv6_not_supported). %% BUGBUG: nyi
+    ?error(ipv6_not_supported). %% BUGBUG: nyi
 
 tr_PathName(Path, State) ->
     %% BUGBUG: ["*"] NAME *("/" / "*"/ ALPHA / DIGIT /"_" / "$" ) 
@@ -1235,13 +1236,13 @@ verify_count(Count, Min, Max) ->
                         Max == infinity ->
                             Count;
                         true ->
-                            deliberate_badmatch = {count_too_large, Count, Max}
+                            ?error({count_too_large, Count, Max})
                     end;
                 true ->
-                    deliberate_badmatch = {count_too_small, Count, Min}
+                    ?error({count_too_small, Count, Min})
             end;
         true ->
-            deliberate_badmatch = {count_not_an_integer, Count}
+            ?error({count_not_an_integer, Count})
     end.
 
 

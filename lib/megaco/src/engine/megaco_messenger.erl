@@ -44,6 +44,10 @@
 	 reset_stats/0, reset_stats/1
 	]).
 
+-export([
+	 which_requests/1, which_replies/1
+	]).
+
 %% Module internal export
 -export([
 	 process_received_message/5,
@@ -118,6 +122,18 @@
 -define(report_pending_limit_exceeded(ConnData),
 	?report_important(ConnData, "<ERROR> pending limit exceeded", [])).
 
+%% -define(extended_trace,true).
+-ifdef(extended_trace).
+-define(rt1(T,F,A),?report_trace(T,F,A)).
+-define(rt2(F,A),  ?rt1(ignore,F,A)).
+-define(rt3(F),    ?rt2(F,[])).
+-else.
+-define(rt1(T,F,A),ok).
+-define(rt2(F,A),  ok).
+-define(rt3(F),    ok).
+-endif.
+
+
 %%----------------------------------------------------------------------
 %% SNMP statistics handling functions
 %%----------------------------------------------------------------------
@@ -146,6 +162,80 @@ reset_stats() ->
 reset_stats(ConnHandleOrCounter) ->
     megaco_stats:reset_stats(megaco_stats, ConnHandleOrCounter).
 
+
+
+%%----------------------------------------------------------------------
+%% which_requests and which_replies utility functions
+%%----------------------------------------------------------------------
+
+which_requests(#megaco_conn_handle{local_mid  = LocalMid, 
+				   remote_mid = RemoteMid}) ->
+    Pat1 = #trans_id{mid    = LocalMid, 
+		     serial = '$1', _ = '_'},
+    Pat2 = #request{trans_id   = Pat1, 
+		    remote_mid = RemoteMid, 
+		    _ = '_'},
+    Match = megaco_monitor:which_requests(Pat2),
+    [S || [S] <- Match];
+which_requests(LocalMid) ->
+    Pat1 = #trans_id{mid    = LocalMid, 
+		     serial = '$1', _ = '_'},
+    Pat2 = #request{trans_id   = Pat1, 
+		    remote_mid = '$2', _ = '_'},
+    Match0 = megaco_monitor:which_requests(Pat2),
+    Match1 = [{mk_ch(LocalMid, V2), V1} || [V1, V2] <- Match0],
+    which_requests1(lists:sort(Match1)).
+
+which_requests1([]) ->
+    [];
+which_requests1([{CH, S}|T]) ->
+    which_requests2(T, CH, [S], []).
+
+which_requests2([], CH, Serials, Reqs) ->
+    lists:reverse([{CH, Serials}|Reqs]);
+which_requests2([{CH, S}|T], CH, Serials, Reqs) ->
+    which_requests2(T, CH, [S|Serials], Reqs);
+which_requests2([{CH1, S}|T], CH2, Serials, Reqs) ->
+    which_requests2(T, CH1, [S], [{CH2, lists:reverse(Serials)}| Reqs]).
+    
+
+which_replies(#megaco_conn_handle{local_mid  = LocalMid, 
+				  remote_mid = RemoteMid}) ->
+    Pat1 = #trans_id{mid    = RemoteMid, % '$1', 
+		     serial = '$1', _ = '_'},
+    Pat2 = #reply{trans_id  = Pat1, 
+  		  local_mid = LocalMid, % '$3', 
+  		  state     = '$2', 
+  		  handler   = '$3', _ = '_'},
+    Match = megaco_monitor:which_replies(Pat2),
+    [{V1, V2, V3} || [V1, V2, V3] <- Match];
+which_replies(LocalMid) ->
+    Pat1 = #trans_id{mid    = '$1', 
+		     serial = '$2', _ = '_'},
+    Pat2 = #reply{trans_id  = Pat1, 
+		  local_mid = LocalMid, % '$3', 
+		  state     = '$3', 
+		  handler   = '$4', _ = '_'},
+    Match0 = megaco_monitor:which_replies(Pat2),
+    Match1 = [{mk_ch(LocalMid,V1),{V2,V3,V4}} || [V1, V2, V3, V4] <- Match0],
+    which_replies1(lists:sort(Match1)).
+
+which_replies1([]) ->
+    [];
+which_replies1([{CH, Data}|T]) ->
+    which_replies2(T, CH, [Data], []).
+
+which_replies2([], CH, Data, Reps) ->
+    lists:reverse([{CH, Data}|Reps]);
+which_replies2([{CH, Data}|T], CH, Datas, Reps) ->
+    which_replies2(T, CH, [Data|Datas], Reps);
+which_replies2([{CH1, Data}|T], CH2, Datas, Reps) ->
+    which_replies2(T, CH1, [Data], [{CH2, lists:reverse(Datas)}| Reps]).
+    
+    
+mk_ch(LM, RM) ->
+    #megaco_conn_handle{local_mid = LM, remote_mid = RM}.
+    
 
 %%----------------------------------------------------------------------
 %% Register/unreister connections
@@ -332,6 +422,7 @@ process_received_message(ReceiveHandle, ControlPid, SendHandle, Bin) ->
     Flag = process_flag(trap_exit, true),
     case prepare_message(ReceiveHandle, SendHandle, Bin, ControlPid) of
         {ok, ConnData, MegaMsg} when record(MegaMsg, 'MegacoMessage') ->
+	    ?rt1(ConnData, "message prepared", [MegaMsg]),
             Mess = MegaMsg#'MegacoMessage'.mess,
             case Mess#'Message'.messageBody of
                 {transactions, Transactions} ->
@@ -340,11 +431,13 @@ process_received_message(ReceiveHandle, ControlPid, SendHandle, Bin) ->
                     handle_acks(AckList),
 		    case ReqList of
 			[] ->
+			    ?rt3("no requests"),
 			    ignore;
 			[Req|Reqs] when ConnData#conn_data.threaded ->
 			    [spawn(?MODULE,handle_request,[R]) || R <- Reqs],
 			    handle_request(Req);
 			_ ->
+			    ?rt3("handle requests"),
 			    case handle_requests(ReqList, []) of
 				[] ->
 				    ignore;
@@ -385,11 +478,13 @@ prepare_message(RH, SH, Bin, Pid)
             case megaco_config:lookup_local_conn(CH) of
                 [ConnData] ->
                     %% Use already established connection
+		    ?rt1(ConnData, "use already established connection", []),
                     ConnData2 = ConnData#conn_data{send_handle = SH,
 						   protocol_version = Version},
                     check_message_auth(CH, ConnData2, MegaMsg, Bin);
                 [] ->
                     %% Setup a temporary connection
+		    ?rt3("setup a temporary connection"),
                     case connect(RH, RemoteMid, SH, Pid) of
                         {ok, _} ->
 			    do_prepare_message(RH, CH, SH, MegaMsg, Pid, Bin);
@@ -406,14 +501,45 @@ prepare_message(RH, SH, Bin, Pid)
                     end
             end;
         Error ->
-	    incNumErrors(),
-            ConnData = fake_conn_data(RH, SH, Pid),
+	    ConnData = handle_decode_error(RH, SH, Bin, Pid, 
+					   EncodingMod, 
+					   EncodingConfig, 
+					   ProtVersion),
             handle_syntax_error_callback(RH, ConnData, prepare_error(Error))
     end;
 prepare_message(RH, SendHandle, _Bin, ControlPid) ->
     ConnData = fake_conn_data(RH, SendHandle, ControlPid),
     Error    = prepare_error({'EXIT', {bad_receive_handle, RH}}),
     {verbose_fail, ConnData, Error}.
+
+
+handle_decode_error(#megaco_receive_handle{local_mid = LocalMid} = RH, SH, 
+		    Bin, Pid,
+		    EM, EC, V) ->
+    case (catch EM:decode_mini_message(EC, V, Bin)) of
+	{ok, #'MegacoMessage'{mess = Msg}} ->
+	    #'Message'{version = Ver, mId = RemoteMid} = Msg,
+	    ?rt2("erroneous message received", [SH, Ver, RemoteMid]),
+            CH = #megaco_conn_handle{local_mid  = LocalMid,
+				     remote_mid = RemoteMid},
+	    incNumErrors(CH),
+	    case megaco_config:lookup_local_conn(CH) of
+                [ConnData] ->
+		    ?rt3("known to us"),
+		    ConnData#conn_data{send_handle = SH,
+				       protocol_version = Ver};
+		[] ->
+		    ?rt3("unknown to us"),
+		    ConnData = fake_conn_data(RH, SH, Pid),
+		    ConnData#conn_data{conn_handle = CH}
+	    end;
+
+	_ ->
+	    ?rt2("erroneous message received", [SH]),
+	    incNumErrors(),
+	    fake_conn_data(RH, SH, Pid)
+    end.
+
 
 do_prepare_message(RH, CH, SendHandle, MegaMsg, ControlPid, Bin) ->
     case megaco_config:lookup_local_conn(CH) of
@@ -494,7 +620,8 @@ fake_conn_data(CH) when record(CH, megaco_conn_handle) ->
 			       encoding_mod       = no_encoding_mod,
 			       encoding_config    = no_encoding_config,
 			       reply_action       = undefined,
-			       orig_pending_limit = infinity};
+			       sent_pending_limit = infinity,
+			       recv_pending_limit = infinity};
 		RH ->
 		    ConnData = 
 			fake_conn_data(RH, no_send_handle, no_control_pid),
@@ -532,7 +659,8 @@ fake_user_data(RH, RemoteMid, SendHandle, ControlPid) ->
 		       encoding_mod       = EncodingMod,
 		       encoding_config    = EncodingConfig,
 		       reply_action       = undefined,
-		       orig_pending_limit = infinity};
+		       sent_pending_limit = infinity,
+		       recv_pending_limit = infinity};
 	ConnData ->
 	    ConnData
     end.
@@ -594,9 +722,9 @@ prepare_trans(ConnData, [Trans | Rest], AckList, ReqList)
 	    %% 
 	    %% ------------------------------------------
 
-	    Limit = ConnData#conn_data.orig_pending_limit,
+	    Limit = ConnData#conn_data.sent_pending_limit,
 	    TransId = to_remote_trans_id(ConnData2),
-	    case check_and_maybe_incr_pending_limit(Limit, TransId) of
+	    case check_and_maybe_incr_pending_limit(Limit, sent, TransId) of
 		ok ->
 		    send_pending(ConnData2);
 		error ->
@@ -615,6 +743,7 @@ prepare_trans(ConnData, [Trans | Rest], AckList, ReqList)
 	    prepare_trans(ConnData, Rest, AckList, ReqList)
     end;
 prepare_trans(ConnData, [Trans | Rest], AckList, ReqList) ->
+    ?rt1(ConnData, "prepare trans", [Trans]),
     case Trans of
         {transactionRequest, #'TransactionRequest'{transactionId = asn1_NOVALUE}} ->
             ConnData2 = ConnData#conn_data{serial = 0},
@@ -644,12 +773,14 @@ prepare_trans(_ConnData, [], AckList, ReqList) ->
     ?SIM({AckList, ReqList}, prepare_trans_done).
 
 prepare_request(ConnData, T, Rest, AckList, ReqList) ->
-%     d("prepare_request -> entry with"
-%       "~n   T: ~p", [T]),
+    ?rt2("prepare request", [T]),
     LocalMid = (ConnData#conn_data.conn_handle)#megaco_conn_handle.local_mid,
     TransId = to_remote_trans_id(ConnData),
+    ?rt2("prepare request", [LocalMid, TransId]),
     case megaco_monitor:lookup_reply(TransId) of
         [] ->
+	    ?rt3("brand new request"),
+
             %% Brand new request
 
 	    %% Check pending limit:
@@ -685,6 +816,8 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
 		pending_timer_ref = Ref} = Rep] 
 	when State == prepare; State == eval_request ->
 
+	    ?rt2("request resend", [State, Pid, Ref]),
+
             %% Pending limit:
 	    %% We are still preparing/evaluating the request
             %% Check if the pending limit has been exceeded...
@@ -693,9 +826,11 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
 	    %% the pending timer, but that we cannot do).
 	    %% Don't care about Msg and Rep version diff
 
-	    #conn_data{orig_pending_limit = Limit} = ConnData,
+	    %% ?report_trace(ignore, "still preparing/evaluating request", []),
+
+	    #conn_data{sent_pending_limit = Limit} = ConnData,
 	    
-	    case check_and_maybe_incr_pending_limit(Limit, TransId) of
+	    case check_and_maybe_incr_pending_limit(Limit, sent, TransId) of
 		ok ->
 
 		    %% ------------------------------------------
@@ -773,6 +908,8 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
 
         [#reply{state = waiting_for_ack, bytes = Bin, version = Version}] ->
 
+	    ?rt3("request resend when waiting for ack"),
+
             %% We have already sent a reply, but the receiver
             %% has obviously not got it. Resend the reply but
             %% don't restart the reply_timer.
@@ -792,12 +929,14 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
             end;
 
 	[#reply{state = aborted}] ->
+	    ?rt3("request resend when aborted"),
+
 	    %% OTP-4956:
 	    %% Already aborted so ignore.
-	    %% This furtermore means that the abnoxious user at the
+	    %% This furthermore means that the abnoxious user at the
 	    %% other end has already been informed (pending-limit
 	    %% passed), but keeps sending...
-	    %% d("prepare_request -> aborted"),
+            %% ?report_trace(ignore, "already aborted", []),
 	    prepare_trans(ConnData, Rest, AckList, ReqList)
         end.
 
@@ -843,42 +982,53 @@ do_prepare_ack(ConnData, T, AckList) ->
     end.
 
 
-check_pending_limit(infinity, _) ->
+check_pending_limit(infinity, _, _) ->
     ok;
-check_pending_limit(Limit, TransId) ->
-    case (catch megaco_config:get_pending_counter(TransId)) of
+check_pending_limit(Limit, Direction, TransId) ->
+    %% ?report_trace(ignore, "check pending limit", [Direction, Limit]),
+    case (catch megaco_config:get_pending_counter(Direction, TransId)) of
 	{'EXIT', _} ->
 	    %% Has not been created yet (connect).
-	    megaco_config:cre_pending_counter(TransId),
+	    megaco_config:cre_pending_counter(Direction, TransId, 0),
 	    ok;
 	Val when Val =< Limit ->
 	    %% Since we have no intention to increment here, it
 	    %% is ok to be _at_ the limit
+	    %% ?report_trace(ignore, "check - ok", [Direction, Val]),
 	    ok;
 	_ ->
+	    %% ?report_trace(ignore, "check - aborted", [Direction]),
 	    aborted
     end.
 
 
-check_and_maybe_incr_pending_limit(infinity, _) ->
+check_and_maybe_incr_pending_limit(infinity, _, _) ->
     ok;
-check_and_maybe_incr_pending_limit(Limit, TransId) ->
+check_and_maybe_incr_pending_limit(Limit, Direction, TransId) ->
     %% 
     %% We need this kind of test to detect when we _pass_ the limit
     %% 
-    case (catch megaco_config:get_pending_counter(TransId)) of
+    %% ?report_trace(ignore, "check and maybe incr pending limit", 
+    %%               [Direction, Limit]),
+    case (catch megaco_config:get_pending_counter(Direction, TransId)) of
 	{'EXIT', _} ->
 	    %% Has not been created yet (connect).
-	    megaco_config:cre_pending_counter(TransId),
+	    megaco_config:cre_pending_counter(Direction, TransId, 1),
 	    ok;
 	Val when Val > Limit ->
+	    %% ?report_trace(ignore, "check and maybe incr - aborted", 
+	    %%               [Direction, Val, Limit]),
 	    aborted;      % Already passed the limit
 	Val ->
-	    megaco_config:incr_pending_counter(TransId),
+	    %% ?report_trace(ignore, "check and maybe incr - incr", 
+	    %%               [Direction, Val, Limit]),
+	    megaco_config:incr_pending_counter(Direction, TransId),
 	    if 
 		Val < Limit ->
 		    ok;   % Still within the limit
 		true ->
+		    %% ?report_trace(ignore, "check and maybe incr - error", 
+		    %%               [Direction, Val, Limit]),
 		    error % Passed the limit
 	    end
     end.
@@ -905,9 +1055,9 @@ handle_request(ConnData, TransId, T) ->
     %% has not been aborted. I.e. exceeded the pending 
     %% limit, so go check it...
 
-    #conn_data{orig_pending_limit = Limit} = ConnData,
+    #conn_data{sent_pending_limit = Limit} = ConnData,
 
-    case check_pending_limit(Limit, TransId) of
+    case check_pending_limit(Limit, sent, TransId) of
 	ok ->
 	    %% Ok so far, now update state
 	    case megaco_monitor:lookup_reply(TransId) of
@@ -957,7 +1107,7 @@ do_handle_request(AckAction, {ok, Bin}, ConnData, TransId) ->
 	    %% 
 	    
 	    megaco_monitor:cancel_apply_after(PendingRef),
-	    megaco_config:del_pending_counter(TransId),
+	    megaco_config:del_pending_counter(sent, TransId),
 
 	    Method = timer_method(AckAction),
 	    {WaitFor, CurrTimer} = init_timer(InitTimer),
@@ -980,11 +1130,12 @@ do_handle_request(AckAction, {ok, Bin}, ConnData, TransId) ->
 	    ignore
     end;
 do_handle_request(_, {error, Reason}, ConnData, TransId) ->
-    ?report_trace(ConnData, "send trans reply", [TransId, {error, Reason}]),
+    ?report_trace(ConnData, "send trans reply error", [TransId, Reason]),
     ignore.
     
 
 handle_requests([{ConnData, TransId, T} | Rest], Pending) ->
+    ?rt2("handle requests", [TransId]),
     case handle_request(ConnData, TransId, T) of
 	{pending, RequestData} ->
 	    handle_requests(Rest, [{ConnData,TransId,RequestData} | Pending]);
@@ -992,6 +1143,7 @@ handle_requests([{ConnData, TransId, T} | Rest], Pending) ->
 	    handle_requests(Rest, Pending)
     end;
 handle_requests([], Pending) ->
+    ?rt2("handle requests - done", [Pending]),
     Pending.
 
 %%opt_garb_binary(timeout, Bin) -> garb_binary; % Need msg at restart of timer
@@ -1005,13 +1157,15 @@ timer_method(_) ->
 
 handle_long_request({ConnData, TransId, RequestData}) ->
 
+    ?rt2("handle long request", [TransId, RequestData]),
+
     %% Pending limit:
     %% We need to check the pending limit, in case it was
     %% exceeded before we got this far...
 
-    #conn_data{orig_pending_limit = Limit} = ConnData,
+    #conn_data{sent_pending_limit = Limit} = ConnData,
 
-    case check_pending_limit(Limit, TransId) of
+    case check_pending_limit(Limit, sent, TransId) of
 	ok ->
 	    handle_long_request(ConnData, TransId, RequestData);
 	aborted ->
@@ -1182,88 +1336,182 @@ handle_long_request_callback(ConnData, TransId, RequestData) ->
 
 handle_pending(ConnData, T) ->
     TransId = to_local_trans_id(ConnData),
+    ?rt2("handle pending", [T, TransId]),
     case megaco_monitor:lookup_request(TransId) of
-	[#request{timer_ref       = {short, Ref},
-		  init_long_timer = InitTimer} = Req] ->
+	[Req] ->
 
-	    %% The request seems to take a while,
-	    %% let's reset our transmission timer.
-	    %% We now know the other side has got
-	    %% the request and is working on it,
-	    %% so there is no need to keep the binary
-	    %% message for re-transmission.
+	    %% ------------------------------------------
+	    %% 
+	    %%   Check received pending limit
+	    %% 
+	    %% ------------------------------------------
 
-	    %% Start using the long timer. 
-	    %% We can now drop the "bytes", since we will
-	    %% not resend from now on.
+	    Limit = ConnData#conn_data.recv_pending_limit,
+	    case check_and_maybe_incr_pending_limit(Limit, 
+						    recv, TransId) of
+		
+		ok ->
+		    %% ----------------------------------------------------
+		    %% 
+		    %%      Received pending limit not exceeded     
+		    %% 
+		    %% ----------------------------------------------------
 
-	    megaco_monitor:cancel_apply_after(Ref),
-	    {WaitFor, CurrTimer} = init_timer(InitTimer),
-	    ConnHandle = ConnData#conn_data.conn_handle,
-	    M = ?MODULE,
-	    F = request_timeout,
-	    A = [ConnHandle, TransId],
-	    Ref2 = megaco_monitor:apply_after(M, F, A, WaitFor),
-	    Req2 = Req#request{bytes      = {no_send, garb_binary},
-			       timer_ref  = {long, Ref2},
-			       curr_timer = CurrTimer},
-	    ?report_trace(ConnData, 
-			  "trans pending (timer restarted)", [T]),
-	    megaco_monitor:insert_request(Req2); % Timing problem?
+		    handle_recv_pending(ConnData, TransId, Req, T);
+		
+		error ->
+		    %% ----------------------------------------------------
+		    %% 
+		    %%      Received pending limit exceeded     
+		    %% 
+		    %%      Time to give up on this transaction
+		    %%      1) Delete request record
+		    %%      2) Cancel timers
+		    %%      3) Delete the (receive) pending counter
+		    %%      4) Inform the user (handle_trans_reply)
+		    %% 
+		    %% ----------------------------------------------------
 
-	[#request{timer_ref  = {long, _Ref},
-		  curr_timer = timeout}] ->
+		    handle_recv_pending_error(ConnData, TransId, Req, T);
 
-	    %% The request seems to take a while,
-	    %% let's reset our transmission timer.
-	    %% We now know the other side has got
-	    %% the request and is working on it,
-	    %% so there is no need to keep the binary
-	    %% message for re-transmission.
+		
+		aborted ->
+		    %% ----------------------------------------------------
+		    %% 
+		    %%      Received pending limit already exceeded     
+		    %% 
+		    %% BMK BMK BMK -- can this really happen?
+		    %% 
+		    %%      The user has already been notified about this
+		    %%      (see error above)
+		    %% 
+		    %% ----------------------------------------------------
 
-	    %% This can happen if the timer is running for the last 
-	    %% time. I.e. next time it expires, will be the last.
-	    %% Therefor we really do not need to do anything here.
-	    %% The cleanup will be done in request_timeout.
+		    ok
 
-	    ok;
-
-	[#request{timer_ref  = {long, Ref},
-		  curr_timer = CurrTimer} = Req] ->
-
-	    %% The request seems to take a while,
-	    %% let's reset our transmission timer.
-	    %% We now know the other side has got
-	    %% the request and is working on it,
-	    %% so there is no need to keep the binary
-	    %% message for re-transmission.
-
-	    %% We just need to recalculate the timer, i.e. 
-	    %% increment the timer (one "slot" has been consumed).
-
-	    megaco_monitor:cancel_apply_after(Ref),
-	    {WaitFor, Timer2} = recalc_timer(CurrTimer),
-	    ConnHandle = ConnData#conn_data.conn_handle,
-	    M = ?MODULE,
-	    F = request_timeout,
-	    A = [ConnHandle, TransId],
-	    Ref2 = megaco_monitor:apply_after(M, F, A, WaitFor),
-	    Req2 = Req#request{timer_ref  = {long, Ref2},
-			       curr_timer = Timer2},
-	    ?report_trace(ConnData, 
-			  "long trans pending"
-			  " (timer restarted)", [T]),
-	    %% Timing problem?
-	    megaco_monitor:insert_request(Req2);
+	    end;
 
 	[] ->
-	    ?report_trace(ConnData, 
-			  "remote pending (no receiver)", [T]),
+	    ?report_trace(ConnData, "remote pending (no receiver)", [T]),
 	    return_unexpected_trans(ConnData, T)
     end.
 
+handle_recv_pending(#conn_data{conn_handle = ConnHandle} = ConnData, TransId,
+		    #request{timer_ref       = {short, Ref},
+			     init_long_timer = InitTimer} = Req, T) ->
+
+    ?rt2("handle pending - long request", [InitTimer]),
+
+    %% The request seems to take a while,
+    %% let's reset our transmission timer.
+    %% We now know the other side has got
+    %% the request and is working on it,
+    %% so there is no need to keep the binary
+    %% message for re-transmission.
+    
+    %% Start using the long timer. 
+    %% We can now drop the "bytes", since we will
+    %% not resend from now on.
+    
+    megaco_monitor:cancel_apply_after(Ref),
+    {WaitFor, CurrTimer} = init_timer(InitTimer),
+    ConnHandle = ConnData#conn_data.conn_handle,
+    M = ?MODULE,
+    F = request_timeout,
+    A = [ConnHandle, TransId],
+    Ref2 = megaco_monitor:apply_after(M, F, A, WaitFor),
+    Req2 = Req#request{bytes      = {no_send, garb_binary},
+		       timer_ref  = {long, Ref2},
+		       curr_timer = CurrTimer},
+    ?report_trace(ConnData, "trans pending (timer restarted)", [T]),
+    megaco_monitor:insert_request(Req2); % Timing problem?
+    
+handle_recv_pending(_ConnData, _TransId,
+		    #request{timer_ref  = {long, _Ref},
+			     curr_timer = timeout}, _T) ->
+
+    ?rt3("handle pending - timeout"),
+
+    %% The request seems to take a while,
+    %% let's reset our transmission timer.
+    %% We now know the other side has got
+    %% the request and is working on it,
+    %% so there is no need to keep the binary
+    %% message for re-transmission.
+    
+    %% This can happen if the timer is running for the last 
+    %% time. I.e. next time it expires, will be the last.
+    %% Therefor we really do not need to do anything here.
+    %% The cleanup will be done in request_timeout.
+    
+    ok;
+
+handle_recv_pending(#conn_data{conn_handle = ConnHandle} = ConnData, TransId,
+		    #request{timer_ref  = {long, Ref},
+			     curr_timer = CurrTimer} = Req, T) ->
+    
+    ?rt2("handle pending - still waiting", [CurrTimer]),
+
+    %% The request seems to take a while,
+    %% let's reset our transmission timer.
+    %% We now know the other side has got
+    %% the request and is working on it,
+    %% so there is no need to keep the binary
+    %% message for re-transmission.
+    
+    %% We just need to recalculate the timer, i.e. 
+    %% increment the timer (one "slot" has been consumed).
+    
+    megaco_monitor:cancel_apply_after(Ref),
+    {WaitFor, Timer2} = recalc_timer(CurrTimer),
+    ConnHandle = ConnData#conn_data.conn_handle,
+    M = ?MODULE,
+    F = request_timeout,
+    A = [ConnHandle, TransId],
+    Ref2 = megaco_monitor:apply_after(M, F, A, WaitFor),
+    Req2 = Req#request{timer_ref  = {long, Ref2},
+		       curr_timer = Timer2},
+    ?report_trace(ConnData, 
+		  "long trans pending"
+		  " (timer restarted)", [T]),
+    %% Timing problem?
+    megaco_monitor:insert_request(Req2).
+    
+
+handle_recv_pending_error(ConnData, TransId, Req, T) ->
+    %% 1) Delete the request record
+    megaco_monitor:delete_request(TransId),
+
+    %% 2) Possibly cancel the timer
+    case Req#request.timer_ref of
+	{_, Ref} ->
+	    megaco_monitor:cancel_apply_after(Ref);
+	_ ->
+	    ok
+    end,
+    
+    %% 3) Delete the (receive) pending counter
+    megaco_config:del_pending_counter(recv, TransId),
+    
+    %% 4) Inform the user that his/her request reached 
+    %%    the receive pending limit
+    UserMod   = Req#request.user_mod,
+    UserArgs  = Req#request.user_args,
+    Action    = Req#request.reply_action,
+    UserData  = Req#request.reply_data,
+    UserReply = {error, exceeded_recv_pending_limit},
+    ConnData2 = ConnData#conn_data{user_mod     = UserMod,
+				   user_args    = UserArgs,
+				   reply_action = Action,
+				   reply_data   = UserData},
+
+    ?report_trace(ConnData, "receive pending limit reached", [T]),
+    return_reply(ConnData2, TransId, UserReply).
+
+
 handle_reply(ConnData, T) ->
     TransId = to_local_trans_id(ConnData),
+    ?rt2("handle reply", [T, TransId]),
     case megaco_monitor:lookup_request(TransId) of
 	[#request{timer_ref = {_Type, Ref}} = Req] -> %% OTP-4843
             %% Don't care about Req and Rep version diff
@@ -1307,12 +1555,12 @@ handle_acks([]) ->
 handle_ack(ConnData, AckStatus, Rep, T) ->
     #reply{trans_id          = TransId,
 	   timer_ref         = ReplyRef,
-	   pending_timer_ref = PendingRef,  %% BMK BMK BMK Still running?
+	   pending_timer_ref = PendingRef,  %% BMK Still running?
 	   ack_action        = AckAction} = Rep,
     megaco_monitor:cancel_apply_after(ReplyRef),
     megaco_monitor:cancel_apply_after(PendingRef),
     megaco_monitor:delete_reply(TransId),
-    megaco_config:del_pending_counter(TransId), %% BMK BMK BMK Still existing?
+    megaco_config:del_pending_counter(sent, TransId), %% BMK Still existing?
     handle_ack_callback(ConnData, AckStatus, AckAction, T).
 
 % handle_ack(ConnData, AckStatus, Rep, T) ->
@@ -1874,12 +2122,12 @@ do_encode_request(CD, Serial, Actions) ->
     
 
 
-maybe_send_reply(#conn_data{orig_pending_limit = Limit} = ConnData, 
+maybe_send_reply(#conn_data{sent_pending_limit = Limit} = ConnData, 
 		 TransId, Result, ImmAck) ->
     %% Pending limit
     %% Before we can send the reply we must check that we have 
     %% not passed the pending limit (and sent an error message).
-    case check_pending_limit(Limit, TransId) of
+    case check_pending_limit(Limit, sent, TransId) of
 	ok ->
 	    send_reply(ConnData, Result, ImmAck);
 	aborted ->
@@ -1932,9 +2180,9 @@ send_reply(#conn_data{serial = Serial} = CD, Result, ImmAck) ->
     end.
 
 
-maybe_send_pending(#conn_data{orig_pending_limit = Limit} = ConnData, 
+maybe_send_pending(#conn_data{sent_pending_limit = Limit} = ConnData, 
 		   TransId) ->	    
-    case check_and_maybe_incr_pending_limit(Limit, TransId) of
+    case check_and_maybe_incr_pending_limit(Limit, sent, TransId) of
 	ok ->
 	    send_pending(ConnData);
 	error ->
@@ -2014,22 +2262,13 @@ cancel(ConnHandle, Reason) when record(ConnHandle, megaco_conn_handle) ->
     end.
 
 do_cancel(ConnHandle, Reason, ConnData) ->
+    ?report_trace(ConnData, "cancel", [ConnHandle, Reason]),
     LocalMid      = ConnHandle#megaco_conn_handle.local_mid,
     RemoteMid     = ConnHandle#megaco_conn_handle.remote_mid,
-    ReqTransIdPat = #trans_id{mid = LocalMid, serial = '_'}, 
+    ReqTransIdPat = #trans_id{mid = LocalMid, _ = '_'}, 
     ReqPat = #request{trans_id          = ReqTransIdPat,
 		      remote_mid        = RemoteMid,
-		      timer_ref         = '_',
-		      init_timer        = '_',
-		      init_long_timer   = '_',
-		      curr_timer        = '_',
-		      version           = '_',
-		      bytes             = '_',
-		      send_handle       = '_',
-		      user_mod          = '_',
-		      user_args         = '_',
-		      reply_action      = '_',
-		      reply_data        = '_'},
+		      _                 = '_'},
     CancelReq = fun(Req) ->
 			cancel_request(ConnData, Req, Reason),
 			{_Type, Ref} = Req#request.timer_ref,  %% OTP-4843
@@ -2038,16 +2277,13 @@ do_cancel(ConnHandle, Reason, ConnData) ->
     Requests  = megaco_monitor:match_requests(ReqPat),
     lists:foreach(CancelReq, Requests),
     RemoteMid = ConnHandle#megaco_conn_handle.remote_mid,
-    RepTransIdPat = #trans_id{mid = RemoteMid, serial = '_'}, % BUGBUG List here?
-    RepPat = #reply{trans_id   	      = RepTransIdPat,
-		    local_mid  	      = LocalMid,
-		    state      	      = waiting_for_ack,
-		    pending_timer_ref = '_',
-		    timer_ref  	      = '_',
-		    version    	      = '_',
-		    bytes      	      = '_',
-		    ack_action 	      = '_'},
-    CancelRep = fun(Rep) -> cancel_reply(ConnData, Rep, Reason) end,
+    RepTransIdPat = #trans_id{mid = RemoteMid, _ = '_'}, % BUGBUG List here?
+    RepPat = #reply{trans_id  = RepTransIdPat,
+		    local_mid = LocalMid,
+		    _         = '_'},
+    CancelRep = fun(Rep) -> 
+			cancel_reply(ConnData, Rep, Reason) 
+		end,
     Replies   = megaco_monitor:match_replies(RepPat),
     lists:foreach(CancelRep, Replies),
     ok.
@@ -2066,6 +2302,7 @@ cancel_requests(ConnData, [{transactionRequest,TR}|TRs], Reason) ->
     cancel_requests(ConnData, TRs, Reason).
 
 cancel_request(ConnData, Req, Reason)  ->
+    ?report_trace(ignore, "cancel request", [Req]),
     TransId   = Req#request.trans_id,
     Version   = Req#request.version,
     UserMod   = Req#request.user_mod,
@@ -2140,16 +2377,31 @@ receive_reply_remote(ConnData, UserReply) ->
     end.
 
 
-cancel_reply(ConnData, Rep, Reason) when record(Rep, reply) ->
-    ?report_trace(ConnData, "cancel reply", [Reason]),
+cancel_reply(ConnData, #reply{state = wait_for_ack} = Rep, Reason) ->
+    ?report_trace(ignore, "cancel reply [wait_for_ack]", [Rep]),
     megaco_monitor:cancel_apply_after(Rep#reply.pending_timer_ref),
     Serial = (Rep#reply.trans_id)#trans_id.serial,
     ConnData2 = ConnData#conn_data{serial = Serial},
     T = #'TransactionAck'{firstAck = Serial},
-    handle_ack(ConnData2, {error, Reason}, Rep, T).
+    handle_ack(ConnData2, {error, Reason}, Rep, T);
+
+cancel_reply(_ConnData, #reply{state = aborted} = Rep, _Reason) ->
+    ?report_trace(ignore, "cancel reply [aborted]", [Rep]),
+    #reply{trans_id          = TransId,
+	   timer_ref         = ReplyRef,
+	   pending_timer_ref = PendingRef} = Rep,
+    megaco_monitor:delete_reply(TransId),
+    megaco_monitor:cancel_apply_after(ReplyRef),
+    megaco_monitor:cancel_apply_after(PendingRef), % BMK BMK Still running?
+    megaco_config:del_pending_counter(TransId),    % BMK BMK Still existing?
+    ok;
+
+cancel_reply(_, _, _) ->
+    ok.
 
 
 request_timeout(ConnHandle, TransId) ->
+    ?rt1(ConnHandle, "request timeout", [TransId]),
     case megaco_monitor:lookup_request(TransId) of
 	[] ->
 	    ignore;
@@ -2163,6 +2415,10 @@ request_timeout(ConnHandle, TransId) ->
  		    %% preliminary to a real connection. So this timeout
  		    %% is just a glitch. E.g. between the removel of this
  		    %% ConnHandle and the timer.
+		    %% Or this could be because the first message sent
+		    %% (the service-change) got e messageError reply,
+		    %% and so there is no transaction-id, and therefor no
+		    %% way to get hold of the request record.
  		    request_timeout_upgraded(TransId);
 		[] ->
  		    incNumTimerRecovery(ConnHandle),
@@ -2308,7 +2564,7 @@ pending_timeout(ConnData, TransId, Timer) ->
 		handler = Pid} = Rep] 
 	when State == prepare; State == eval_request ->
 
-	    #conn_data{orig_pending_limit = Limit,
+	    #conn_data{sent_pending_limit = Limit,
 		       conn_handle        = ConnHandle} = ConnData,
 
 	    %% ------------------------------------------
@@ -2317,7 +2573,7 @@ pending_timeout(ConnData, TransId, Timer) ->
 	    %% 
 	    %% ------------------------------------------
 
-	    case check_and_maybe_incr_pending_limit(Limit, TransId) of
+	    case check_and_maybe_incr_pending_limit(Limit, sent, TransId) of
 		ok ->
 
 		    %% ---------------------------------------------
@@ -2505,8 +2761,8 @@ error_msg(F, A) ->
 incNumErrors() ->
     incNum(medGwyGatewayNumErrors).
 
-% incNumErrors(CH) ->
-%     incNum({CH, medGwyGatewayNumErrors}).
+incNumErrors(CH) ->
+    incNum({CH, medGwyGatewayNumErrors}).
 
 incNumTimerRecovery(CH) ->
     incNum({CH, medGwyGatewayNumTimerRecovery}).

@@ -28,7 +28,7 @@
 	 start_link/1, 
 	 stop/0, 
 
-	 register_user/3, unregister_user/1, 
+	 register_user/3, register_user_monitor/3, unregister_user/1, 
 	 which_users/0, 
 
 	 register_agent/2, register_agent/3, register_agent/4, 
@@ -127,10 +127,13 @@ verbosity(all, V) ->
 %% Note that this could have already been done as a 
 %% consequence of the node config.
 register_user(Id, Module, Data) ->
-    snmpm_config:register_user(Id, Module, Data).
+    snmpm_server:register_user(Id, Module, Data).
+
+register_user_monitor(Id, Module, Data) ->
+    snmpm_server:register_user_monitor(Id, Module, Data).
 
 unregister_user(Id) ->
-    snmpm_config:unregister_user(Id).
+    snmpm_server:unregister_user(Id).
 
 which_users() ->
     snmpm_config:which_users().
@@ -245,7 +248,7 @@ g(UserId, Addr, CtxName, Oids, Timeout)
     g(UserId, Addr, ?DEFAULT_AGENT_PORT, CtxName, Oids, Timeout).
 
 g(UserId, Addr, Port, CtxName, Oids, Timeout) ->
-    snmpm_server:sync_get(UserId, Addr, CtxName, Port, Oids, Timeout).
+    snmpm_server:sync_get(UserId, Addr, Port, CtxName, Oids, Timeout).
 
 
 %% asynchroneous get-request

@@ -29,6 +29,7 @@
 
 %% ----
 
+-export([msgs/0]).
 -export([rfc3525_msgs_display/0, rfc3525_msgs_test/0]).
 
 -export([t/0, t/1]).
@@ -174,6 +175,7 @@
 
 -define(VERSION,      2).
 -define(VERSION_STR, "2").
+-define(MSG_LIB, megaco_test_msg_v2_lib).
 -define(DEFAULT_PORT, 55555).
 -define(MG1_MID_NO_PORT, {ip4Address,
                           #'IP4Address'{address = [124, 124, 124, 222]}}).
@@ -193,7 +195,7 @@
 %% ----
 
 display_text_messages() ->
-    Msgs = msgs1() ++ msgs4(),
+    Msgs = msgs1() ++ msgs4() ++ msgs5(),
     megaco_codec_test_lib:display_text_messages(?VERSION, Msgs).
 
 
@@ -247,7 +249,7 @@ t()     -> megaco_test_lib:t(?MODULE).
 t(Case) -> megaco_test_lib:t({?MODULE, Case}).
 
 init_per_testcase(Case, Config) ->
-    CaseString = io_lib:format("~p", [Case]),
+    %% CaseString = io_lib:format("~p", [Case]),
     C = 
 	case lists:suffix("time_test", atom_to_list(Case)) of
 	    true ->
@@ -376,7 +378,7 @@ erl_dist_m(suite) ->
 
 tickets(suite) ->
     [
-     compact_tickets ,
+     compact_tickets,
      pretty_tickets,
      flex_pretty_tickets
     ].
@@ -470,7 +472,8 @@ pretty_test_msgs(suite) ->
     [];
 pretty_test_msgs(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
-    Msgs = msgs1() ++ msgs2() ++ msgs3() ++ msgs4(),
+    Msgs = msgs1() ++ msgs2() ++ msgs3() ++ msgs4() ++ msgs5(),
+    %% Msgs = msgs5(), 
     DynamicDecode = false,
     test_msgs(megaco_pretty_text_encoder, DynamicDecode, [], Msgs).
 
@@ -794,12 +797,12 @@ build_dm_timers_message(TMRs) ->
 verify_dm_timers(TMRs, #'MegacoMessage'{mess = Mess}) ->
     #'Message'{messageBody = Body} = Mess,
     case get_dm_timers(Body) of
+	{error, Reason} ->
+	    exit({invalid_timer, {TMRs, Reason}});
 	TMRs ->
 	    ok;
 	TMRs1 ->
-	    exit({invalid_timer_values, {TMRs, TMRs1}});
-	{error, Reason} ->
-	    exit({invalid_timer, {TMRs, Reason}})
+	    exit({invalid_timer_values, {TMRs, TMRs1}})
     end.
 
 get_dm_timers({transactions, T}) when list(T) ->
@@ -807,7 +810,8 @@ get_dm_timers({transactions, T}) when list(T) ->
 get_dm_timers(Other) ->
     {error, {invalid_transactions, Other}}.
 
-get_dm_timers1([{transactionRequest,T}|Ts]) when record(T,'TransactionRequest') ->
+get_dm_timers1([{transactionRequest,T}|Ts]) 
+  when record(T,'TransactionRequest') ->
     case get_dm_timers2(T) of
 	{ok, Timers} ->
 	    Timers;
@@ -1009,9 +1013,10 @@ compact_otp4011(M) ->
 			 {do_merge_control_streamParms, [A,B]}} 
 			when list(A), record(B, 'LocalControlDescriptor') ->
 			    case lists:keysearch(mode,1,A) of
-				{value, {mode,Mode}} 
+				{value, {mode, Mode}} 
 				when B#'LocalControlDescriptor'.streamMode /= asn1_NOVALUE ->
-				    d("compact_otp4011 -> expected error",[]),
+				    d("compact_otp4011 -> "
+				      "expected error [~w]",[Mode]),
 				    ok;
 				Other ->
 				    exit({unexpected_mode_reason, {A,B,Other}})
@@ -1136,7 +1141,7 @@ compact_otp4280_msg1(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Bin = list_to_binary(compact_otp4280_msg()),
     case decode_message(megaco_compact_text_encoder, false, [], Bin) of
-	{ok, Msg} ->
+	{ok, _Msg} ->
 	    ok;
 	{error, Error} when list(Error) -> 
 	    t("compact_otp4280_msg1 -> decode failed", []),
@@ -1173,7 +1178,7 @@ compact_otp4299_msg1(Config) when list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Bin = list_to_binary(compact_otp4299_msg()),
     case decode_message(megaco_compact_text_encoder, false, [], Bin) of
-	{ok, Msg} ->
+	{ok, _Msg} ->
 	    ok;
 
 	{error, Reason} ->
@@ -1198,7 +1203,7 @@ compact_otp4299_msg2(Config) when list(Config) ->
     compact_otp4299_msg2_finish(Pid),
 
     case Res of
-	{ok, Msg} ->
+	{ok, _Msg} ->
 	    ok;
 
 	{error, Reason} ->
@@ -1256,7 +1261,7 @@ compact_otp4359_msg1(Config) when list(Config) ->
 	    case Trans of
 		[{transactionRequest,#'TransactionRequest'{transactionId = asn1_NOVALUE}}] ->
 		    ok;
-		Else ->
+		_ ->
 		    exit({unexpected_transactions, Trans})
 	    end;
 	Else ->
@@ -1425,12 +1430,11 @@ compact_otp4920_msg_1(M1, CheckEqual) ->
 		{ok, Bin1} ->
 		    io:format(", encoded - equal:", []),
 		    ok;
-		{ok, Bin2} when CheckEqual == true ->
+		{ok, Bin2} when binary(Bin2), CheckEqual == true ->
 		    M2 = binary_to_list(Bin2),
 		    io:format(", encoded - not equal:", []),
 		    exit({messages_not_equal, M1, M2});
-		{ok, Bin2} ->
-		    M2 = binary_to_list(Bin2),
+		{ok, _} ->
 		    io:format(", encoded:", []),
 		    ok;
 		Else ->
@@ -1611,8 +1615,8 @@ compact_otp5186_msg_1(M1, DecodeExpect, EncodeExpect) ->
 		{ok, Bin3} when EncodeExpect == error ->
 		    M3 = binary_to_list(Bin3),
 		    io:format(", unexpected encode:", []),
-		    exit({unexpected_encode_success, Msg});
-		Else when EncodeExpect == error ->
+		    exit({unexpected_encode_success, Msg, M1, M3});
+		_Else when EncodeExpect == error ->
 		    io:format(", encode failed ", []),
 		    ok
 	    end;
@@ -1653,7 +1657,7 @@ compact_otp5186_msg_2(Msg1, EncodeExpect, DecodeExpect) ->
 		    M = binary_to_list(Bin),
 		    io:format(", decode failed ", []),
 		    exit({unexpected_decode_success, Msg1, M, Else});
-		Else when DecodeExpect == error ->
+		_Else when DecodeExpect == error ->
 		    io:format(", decode failed ", []),
 		    ok
 	    end;
@@ -2094,8 +2098,8 @@ compact_otp5290_msg_1(M1, DecodeExpect, EncodeExpect) ->
 		{ok, Bin3} when EncodeExpect == error ->
 		    M3 = binary_to_list(Bin3),
 		    io:format(", unexpected encode:", []),
-		    exit({unexpected_encode_success, Msg});
-		Else when EncodeExpect == error ->
+		    exit({unexpected_encode_success, Msg, M3});
+		_ when EncodeExpect == error ->
 		    io:format(", encode failed ", []),
 		    ok
 	    end;
@@ -2129,9 +2133,7 @@ pretty_otp4632_msg1(Config) when list(Config) ->
 	{ok, BinMsg} when binary(BinMsg) ->
 	    {ok, Msg1} = decode_message(megaco_pretty_text_encoder, false, 
 					[], BinMsg),
-	    {equal, _} = chk_MegacoMessage(Msg0,Msg1),
-	    Msg0 = Msg1,
-	    ok;
+	    ok = chk_MegacoMessage(Msg0, Msg1);
 	Else ->
 	    t("pretty_otp4632_msg1 -> "
 	      "~n   Else: ~w", [Else]),
@@ -2151,9 +2153,7 @@ pretty_otp4632_msg2(Config) when list(Config) ->
 	{ok, BinMsg} when binary(BinMsg) ->
 	    {ok, Msg1} = decode_message(megaco_pretty_text_encoder, false, 
 					[], BinMsg),
-	    {equal, _} = chk_MegacoMessage(Msg0,Msg1),
-	    Msg0 = Msg1,
-	    ok;
+	    ok = chk_MegacoMessage(Msg0,Msg1);
 	Else ->
 	    t("pretty_otp4632_msg2 -> "
 	      "~n   Else: ~w", [Else]),
@@ -2221,8 +2221,8 @@ pretty_otp4632_msg4_chk([], Rest1) ->
     exit({messages_not_eq1, Rest1}); 
 pretty_otp4632_msg4_chk(Rest0, []) ->
     exit({messages_not_eq0, Rest0}); 
-pretty_otp4632_msg4_chk([$R,$e,$a,$s,$o,$n,$ ,$=,$ ,$9,$0,$1|Rest0],
-			[$R,$e,$a,$s,$o,$n,$ ,$=,$ ,$",$9,$0,$1,$"|Rest1]) ->
+pretty_otp4632_msg4_chk([$R,$e,$a,$s,$o,$n,$ ,$=,$ ,$9,$0,$1|_Rest0],
+			[$R,$e,$a,$s,$o,$n,$ ,$=,$ ,$",$9,$0,$1,$"|_Rest1]) ->
     ok;
 pretty_otp4632_msg4_chk([_|Rest0], [_|Rest1]) ->
     pretty_otp4632_msg4_chk(Rest0,Rest1).
@@ -2238,9 +2238,7 @@ pretty_otp4710_msg1(Config) when list(Config) ->
 	{ok, Bin} when binary(Bin) ->
 	    {ok, Msg1} = decode_message(megaco_pretty_text_encoder, false, 
 					[], Bin),
-	    {equal, _} = chk_MegacoMessage(Msg0,Msg1),
-	    Msg0 = Msg1,
-	    ok;
+	    ok = chk_MegacoMessage(Msg0,Msg1);
 	Else ->
 	    t("pretty_otp4710_msg1 -> "
 	      "~n   Else: ~w", [Else]),
@@ -2449,7 +2447,7 @@ pretty_otp4945_msg5(Config) when list(Config) ->
     case decode_message(megaco_pretty_text_encoder, false, [], Bin0) of
 	{error, [{reason, Reason}|_]} ->
 	    case Reason of
-		{at_most_once_serviceChangeParm, {profile, _Val1, Val2}} ->
+		{at_most_once_serviceChangeParm, {profile, _Val1, _Val2}} ->
 		    ok;
 		Else ->
 		    io:format("pretty_otp4945_msg6 -> "
@@ -2558,7 +2556,7 @@ pretty_otp4949_msg2(Config) when list(Config) ->
     case decode_message(megaco_pretty_text_encoder, false, [], Bin0) of
 	{error, [{reason, Reason}|_]} ->
 	    case Reason of
-		{at_most_once_servChgReplyParm, {profile, _Val1, Val2}} ->
+		{at_most_once_servChgReplyParm, {profile, _Val1, _Val2}} ->
 		    ok;
 		Else ->
 		    io:format("pretty_otp4949_msg2 -> "
@@ -2895,8 +2893,8 @@ pretty_otp5085_msg4() ->
 	     400,
 	     asn1_NOVALUE,
 	     asn1_NOVALUE,
-	     [{addReply,    cre_ammsReply([#megaco_term_id{id = ?A4444}])}, 
-	      {notifyReply, cre_notifyReply([#megaco_term_id{id = ?A5555}])}]
+	     [{addReply,    cre_AmmsReply([#megaco_term_id{id = ?A4444}])}, 
+	      {notifyReply, cre_NotifyRep([#megaco_term_id{id = ?A5555}])}]
 	    }
 	   ]
 	  }
@@ -2923,8 +2921,8 @@ pretty_otp5085_msg5() ->
 	     400,
 	     asn1_NOVALUE,
 	     #'ContextRequest'{priority = 5},
-	     [{addReply,    cre_ammsReply([#megaco_term_id{id = ?A4444}])}, 
-	      {notifyReply, cre_notifyReply([#megaco_term_id{id = ?A5555}])}]
+	     [{addReply,    cre_AmmsReply([#megaco_term_id{id = ?A4444}])}, 
+	      {notifyReply, cre_NotifyRep([#megaco_term_id{id = ?A5555}])}]
 	    }
 	   ]
 	  }
@@ -2951,8 +2949,8 @@ pretty_otp5085_msg6() ->
 	     400,
 	     {'ErrorDescriptor',504,asn1_NOVALUE},
 	     #'ContextRequest'{priority = 6},
-	     [{addReply,    cre_ammsReply([#megaco_term_id{id = ?A4444}])}, 
-	      {notifyReply, cre_notifyReply([#megaco_term_id{id = ?A5555}])}]
+	     [{addReply,    cre_AmmsReply([#megaco_term_id{id = ?A4444}])}, 
+	      {notifyReply, cre_NotifyRep([#megaco_term_id{id = ?A5555}])}]
 	    }
 	   ]
 	  }
@@ -2979,7 +2977,7 @@ pretty_otp5085_msg7() ->
 	     400,
 	     {'ErrorDescriptor',504,asn1_NOVALUE},
 	     #'ContextRequest'{priority = 7},
-	     [{notifyReply, cre_notifyReply([#megaco_term_id{id = ?A5555}])}]
+	     [{notifyReply, cre_NotifyRep([#megaco_term_id{id = ?A5555}])}]
 	    }
 	   ]
 	  }
@@ -2992,6 +2990,10 @@ pretty_otp5085_msg7() ->
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+msgs() ->
+    Msgs = msgs1() ++ msgs2() ++ msgs3() ++ msgs4(),
+    [M || {_, M, _, _} <- Msgs].
 
 msgs1() ->
     Plain = 
@@ -3130,62 +3132,110 @@ msgs4() ->
     ].
     
    
+msgs5() ->
+    Plain = 
+	fun(Codec, DD, Ver, EC, M) ->
+		megaco_codec_test_lib:plain_encode_decode(Codec, DD, Ver, 
+							  EC, M)
+	end,    
+
+    PlainEDFail = 
+	fun(Codec, DD, Ver, EC, M) ->
+		Res = 
+		    megaco_codec_test_lib:plain_encode_decode(Codec, DD, Ver, 
+							      EC, M),
+		case Res of
+		    {error, {message_encode_failed, Reason, _M}} ->
+			case Reason of
+			    {error, {{deprecated, _}, _}} ->
+				ok;
+			    _ ->
+				Res
+			end;
+		    _ ->
+			Res
+		end
+	end,
+    
+    PlainDE = 
+	fun(Codec, _DD, Ver, EC, B) ->
+		Res = 
+		    megaco_codec_test_lib:decode_message(Codec, false, Ver, 
+							 EC, B),
+		case Res of
+		    {ok, M} ->
+			#'MegacoMessage'{mess = Mess} = M,
+			#'Message'{messageBody = {transactions, TRs}} = Mess,
+			[{transactionRequest, TR}] = TRs,
+			#'TransactionRequest'{actions = Actions} = TR,
+			[Action] = Actions,
+			#'ActionRequest'{commandRequests = CmdReqs} = Action,
+			[CmdReq] = CmdReqs,
+			#'CommandRequest'{command = Cmd} = CmdReq,
+			{addReq,AmmReq} = Cmd,
+			#'AmmRequest'{descriptors = []} = AmmReq,
+			ok;
+		    _ ->
+			Res
+		end
+	end,
+    
+    [
+     {msg61a, msg61a(), Plain,       [{dbg, true}]},
+     {msg61b, msg61b(), Plain,       [{dbg, true}]},
+     {msg61c, msg61c(), Plain,       [{dbg, true}]},
+     {msg62a, msg62a(), PlainEDFail, [{dbg, true}]},
+     {msg62b, msg62b(), PlainDE,     [{dbg, true}]}
+    ].
+    
+   
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 msg_actions([], Actions) ->
     lists:reverse(Actions);
 msg_actions([{CtxId, CmdReqs}|ActionInfo], Actions) ->
-    Action = #'ActionRequest'{contextId       = CtxId,
-			      commandRequests = CmdReqs},
+    Action = ?MSG_LIB:cre_ActionRequest(CtxId,CmdReqs),
     msg_actions(ActionInfo, [Action|Actions]).
 
 megaco_trans_req([], Transactions) ->
     {transactions, lists:reverse(Transactions)};
 megaco_trans_req([{TransId, ActionInfo}|TransInfo], Transactions) ->
-    Actions  = msg_actions(ActionInfo, []),
-    TransReq = {transactionRequest,
-		#'TransactionRequest'{transactionId = TransId,
-				      actions       = Actions}},
-    megaco_trans_req(TransInfo, [TransReq|Transactions]).
+    Actions = msg_actions(ActionInfo, []),
+    TR      = ?MSG_LIB:cre_TransactionRequest(TransId, Actions),
+    Trans   = ?MSG_LIB:cre_Transaction(TR), 
+    megaco_trans_req(TransInfo, [Trans|Transactions]).
 
 megaco_message(Version, Mid, Body) ->
-    #'MegacoMessage'{mess = #'Message'{version     = Version,
-                                       mId         = Mid,
-                                       messageBody = Body}}.
-
-megaco_message(Auth, Version, Mid, Body) ->
-    #'MegacoMessage'{authHeader = Auth,
-		     mess = #'Message'{version     = Version,
-                                       mId         = Mid,
-                                       messageBody = Body}}.
+    Mess = ?MSG_LIB:cre_Message(Version, Mid, Body),
+    ?MSG_LIB:cre_MegacoMessage(Mess).
 
 msg_request(Mid, TransInfo) ->
     TransReq = megaco_trans_req(TransInfo, []),
     megaco_message(?VERSION, Mid, TransReq).
 
-msg_request(Mid, TransId, ContextId, CmdReq) when list(CmdReq) ->
-    Actions = [#'ActionRequest'{contextId = ContextId,
-                                commandRequests = CmdReq}],
-    Req = {transactions,
-           [{transactionRequest,
-             #'TransactionRequest'{transactionId = TransId,
-                                   actions = Actions}}]},
-    megaco_message(?VERSION, Mid, Req).
+msg_request(Mid, TransId, ContextId, CmdReq) ->
+    Action  = ?MSG_LIB:cre_ActionRequest(ContextId, CmdReq),
+    Actions = [Action],
+    TR      = ?MSG_LIB:cre_TransactionRequest(TransId, Actions),
+    Trans   = ?MSG_LIB:cre_Transaction(TR), 
+    Mess    = ?MSG_LIB:cre_Message(?VERSION, Mid, [Trans]),
+    ?MSG_LIB:cre_MegacoMessage(Mess).
 
-msg_request(Auth, Mid, TransId, ContextId, CmdReq) when list(CmdReq) ->
-    Actions = [#'ActionRequest'{contextId = ContextId,
-                                commandRequests = CmdReq}],
-    Req = {transactions,
-           [{transactionRequest,
-             #'TransactionRequest'{transactionId = TransId,
-                                   actions = Actions}}]},
-    megaco_message(Auth, ?VERSION, Mid, Req).
+msg_request(Auth, Mid, TransId, ContextId, CmdReq) ->
+    Action  = ?MSG_LIB:cre_ActionRequest(ContextId, CmdReq),
+    Actions = [Action],
+    TR      = ?MSG_LIB:cre_TransactionRequest(TransId, Actions),
+    Trans   = ?MSG_LIB:cre_Transaction(TR), 
+    Mess    = ?MSG_LIB:cre_Message(?VERSION, Mid, [Trans]),
+    ?MSG_LIB:cre_MegacoMessage(Auth, Mess).
 
-msg_reply(Mid, TransId, ContextId, CmdReply) when list(CmdReply) ->
-    Actions = [cre_actionReply(ContextId, CmdReply)],
-    Req = {transactions,
-           [{transactionReply, cre_transactionReply(TransId, Actions)}]},
-    cre_megacoMessage(?VERSION, Mid, Req).
+msg_reply(Mid, TransId, ContextId, CmdReply) ->
+    Action  = cre_ActRep(ContextId, CmdReply),
+    Actions = [Action], 
+    TR      = cre_TransRep(TransId, Actions),
+    Trans   = ?MSG_LIB:cre_Transaction(TR), 
+    Mess    = ?MSG_LIB:cre_Message(?VERSION, Mid, [Trans]),
+    ?MSG_LIB:cre_MegacoMessage(Mess).
 
 msg_ack(Mid, [Range|_] = Ranges) when tuple(Range) ->
     msg_ack(Mid, [Ranges]);
@@ -3194,14 +3244,14 @@ msg_ack(Mid, Ranges) ->
     %% TRAs = make_tras(Ranges, []),
     TRAs = make_tras(Ranges),
     Req  = {transactions, TRAs},
-    cre_megacoMessage(?VERSION, Mid, Req).
+    cre_MegacoMessage(?VERSION, Mid, Req).
 
 make_tras(TRARanges) ->
     F = fun(R) -> {transactionResponseAck, make_tra(R)} end,
     lists:map(F, TRARanges).
 
 make_tra(Ranges) ->
-    F = fun({F,L}) -> cre_transactionAck(F,L) end,
+    F = fun({F,L}) -> cre_TransAck(F,L) end,
     lists:map(F, Ranges).
 
 
@@ -3209,24 +3259,24 @@ make_tra(Ranges) ->
 
 
 msg1(Mid, Tid) ->
-    Gain  = cre_propertyParm("tdmc/gain", "2"),
-    Ec    = cre_propertyParm("tdmc/ec", "g165"), 
-    LCD   = cre_localControlDesc(sendRecv,[Gain, Ec]),
-    V     = cre_propertyParm("v", "0"),
-    %% C    = cre_propertyParm("c", "IN IP4 $ "),
-    C     = cre_propertyParm("c", [$I,$N,$ ,$I,$P,$4,$ ,$$,$ ]),
-    M     = cre_propertyParm("m", "audio $ RTP/AVP 0"),
-    A     = cre_propertyParm("a", "fmtp:PCMU VAD=X-NNVAD"),
-    LD    = cre_localRemoteDesc([[V, C, M, A]]),
-    Parms = cre_streamParms(LCD,LD),
-    StreamDesc = cre_streamDesc(1,Parms),
-    MediaDesc  = cre_mediaDesc(StreamDesc),
-    ReqEvent   = cre_requestedEvent("al/of"),
-    EventsDesc = cre_eventsDesc(2222,[ReqEvent]),
-    AmmReq     = cre_ammReq([#megaco_term_id{id = Tid}],
+    Gain  = cre_PropParm("tdmc/gain", "2"),
+    Ec    = cre_PropParm("tdmc/ec", "g165"), 
+    LCD   = cre_LocalControlDesc(sendRecv,[Gain, Ec]),
+    V     = cre_PropParm("v", "0"),
+    %% C    = cre_PropParm("c", "IN IP4 $ "),
+    C     = cre_PropParm("c", [$I,$N,$ ,$I,$P,$4,$ ,$$,$ ]),
+    M     = cre_PropParm("m", "audio $ RTP/AVP 0"),
+    A     = cre_PropParm("a", "fmtp:PCMU VAD=X-NNVAD"),
+    LD    = cre_LocalRemoteDesc([[V, C, M, A]]),
+    Parms = cre_StreamParms(LCD,LD),
+    StreamDesc = cre_StreamDesc(1,Parms),
+    MediaDesc  = cre_MediaDesc(StreamDesc),
+    ReqEvent   = cre_ReqedEv("al/of"),
+    EventsDesc = cre_EvsDesc(2222,[ReqEvent]),
+    AmmReq     = cre_AmmReq([#megaco_term_id{id = Tid}],
 			    [{mediaDescriptor, MediaDesc},
 			     {eventsDescriptor, EventsDesc}]),
-    CmdReq     = cre_commandReq({modReq, AmmReq}),
+    CmdReq     = cre_CmdReq({modReq, AmmReq}),
     msg_request(Mid, 9999, ?megaco_null_context_id, [CmdReq]).
 
 msg1a() ->
@@ -3248,25 +3298,25 @@ msg2() ->
 msg2(Mid) ->
     msg2(Mid, ?A4444).
 msg2(Mid, Tid) ->
-    Gain  = cre_propertyParm("tdmc/gain", "2"),
-    Ec    = cre_propertyParm("tdmc/ec", "g165"), 
-    LCD   = cre_localControlDesc(sendRecv,[Gain, Ec]),
-    V     = cre_propertyParm("v", "0"),
-    %% C    = cre_propertyParm("c", "IN IP4 $ "),
-    C     = cre_propertyParm("c", [$I,$N,$ ,$I,$P,$4,$ ,$$,$ ]),
-    M     = cre_propertyParm("m", "audio $ RTP/AVP 0"),
-    A     = cre_propertyParm("a", "fmtp:PCMU VAD=X-NNVAD"),
-    LD    = cre_localRemoteDesc([[V, C, M, A]]),
-    Parms = cre_streamParms(LCD,LD),
-    StreamDesc = cre_streamDesc(1,Parms),
-    MediaDesc  = cre_mediaDesc(StreamDesc),
-    EventParm  = cre_eventParm("strict",["exact"]),
-    ReqEvent   = cre_requestedEvent("al/of", [EventParm]),
-    EventsDesc = cre_eventsDesc(2222,[ReqEvent]),
-    AmmReq     = cre_ammReq([#megaco_term_id{id = Tid}],
+    Gain  = cre_PropParm("tdmc/gain", "2"),
+    Ec    = cre_PropParm("tdmc/ec", "g165"), 
+    LCD   = cre_LocalControlDesc(sendRecv,[Gain, Ec]),
+    V     = cre_PropParm("v", "0"),
+    %% C    = cre_PropParm("c", "IN IP4 $ "),
+    C     = cre_PropParm("c", [$I,$N,$ ,$I,$P,$4,$ ,$$,$ ]),
+    M     = cre_PropParm("m", "audio $ RTP/AVP 0"),
+    A     = cre_PropParm("a", "fmtp:PCMU VAD=X-NNVAD"),
+    LD    = cre_LocalRemoteDesc([[V, C, M, A]]),
+    Parms = cre_StreamParms(LCD,LD),
+    StreamDesc = cre_StreamDesc(1,Parms),
+    MediaDesc  = cre_MediaDesc(StreamDesc),
+    EventParm  = cre_EvParm("strict",["exact"]),
+    ReqEvent   = cre_ReqedEv("al/of", [EventParm]),
+    EventsDesc = cre_EvsDesc(2222,[ReqEvent]),
+    AmmReq     = cre_AmmReq([#megaco_term_id{id = Tid}],
 			    [{mediaDescriptor, MediaDesc},
 			     {eventsDescriptor, EventsDesc}]),
-    CmdReq     = cre_commandReq({modReq, AmmReq}),
+    CmdReq     = cre_CmdReq({modReq, AmmReq}),
     msg_request(Mid, 9999, ?megaco_null_context_id, [CmdReq]).
 
 
@@ -3275,11 +3325,11 @@ msg2(Mid, Tid) ->
 msg3() ->
     msg3(?MG1_MID).
 msg3(Mid) ->
-    TimeStamp = cre_timeNotation("19990729", "22000000"),
-    Event     = cre_observedEvent("al/of",TimeStamp),
-    Desc      = cre_observedEventsDesc(2222,[Event]),
-    NotifyReq = cre_notifyReq([#megaco_term_id{id = ?A4444}],Desc),
-    CmdReq    = cre_commandReq({notifyReq, NotifyReq}),
+    TimeStamp = cre_TimeNot("19990729", "22000000"),
+    Event     = cre_ObsEv("al/of",TimeStamp),
+    Desc      = cre_ObsEvsDesc(2222,[Event]),
+    NotifyReq = cre_NotifyReq([#megaco_term_id{id = ?A4444}],Desc),
+    CmdReq    = cre_CmdReq({notifyReq, NotifyReq}),
     msg_request(Mid, 10000, ?megaco_null_context_id, [CmdReq]).
 
 
@@ -3289,10 +3339,10 @@ msg4() ->
     msg4(?MG1_MID_NO_PORT, "901 mg col boot").
 msg4(Mid, Reason) when list(Reason) ->
     Address = {portNumber, ?DEFAULT_PORT},
-    Profile = cre_serviceChangeProf("resgw",1),
-    Parm    = cre_serviceChangeParm(restart,Address,[Reason],Profile),
-    Req     = cre_serviceChangeReq([?megaco_root_termination_id],Parm),
-    CmdReq  = cre_commandReq({serviceChangeReq, Req}),
+    Profile = cre_SvcChProf("resgw",1),
+    Parm    = cre_SvcChParm(restart,Address,[Reason],Profile),
+    Req     = cre_SvcChReq([?megaco_root_termination_id],Parm),
+    CmdReq  = cre_CmdReq({serviceChangeReq, Req}),
     msg_request(Mid, 9998, ?megaco_null_context_id, [CmdReq]).
 
 
@@ -3302,10 +3352,10 @@ msg5() ->
     msg5(?MGC_MID).
 msg5(Mid) ->
     Address = {portNumber, ?DEFAULT_PORT},
-    Profile = cre_serviceChangeProf("resgw",1),
-    Parm    = cre_serviceChangeResParm(Address,Profile),
-    Reply   = cre_serviceChangeReply([?megaco_root_termination_id],
-				     {serviceChangeResParms,Parm}),
+    Profile = cre_SvcChProf("resgw",1),
+    Parm    = cre_SvcChResParm(Address,Profile),
+    Reply   = cre_SvcChRep([?megaco_root_termination_id],
+			   {serviceChangeResParms,Parm}),
     msg_reply(Mid, 9998, ?megaco_null_context_id,
 	      [{serviceChangeReply, Reply}]).
 
@@ -3313,7 +3363,7 @@ msg5(Mid) ->
 %% --------------------------
 
 msg6(Mid, Tid) ->
-    Reply = cre_ammsReply([#megaco_term_id{id = Tid}]),
+    Reply = cre_AmmsReply([#megaco_term_id{id = Tid}]),
     msg_reply(Mid, 9999, ?megaco_null_context_id, [{modReply, Reply}]).
 
 msg6a() ->
@@ -3332,40 +3382,40 @@ msg6b(Mid) ->
 msg7() ->
     msg7(?MGC_MID).
 msg7(Mid) ->
-    Reply = cre_notifyReply([#megaco_term_id{id = ?A4444}]),
+    Reply = cre_NotifyRep([#megaco_term_id{id = ?A4444}]),
     msg_reply(Mid, 10000, ?megaco_null_context_id, [{notifyReply, Reply}]).
 
 
 %% --------------------------
 
 msg8(Mid, DigitMapValue) ->
-    Strict = cre_eventParm("strict",["state"]),
-    On     = cre_requestedEvent("al/on", [Strict]),
+    Strict = cre_EvParm("strict",["state"]),
+    On     = cre_ReqedEv("al/on", [Strict]),
     Name   = "dialplan00",
-    Action = cre_requestedActions(Name),
-    Ce     = cre_requestedEvent("dd/ce", Action),
-    EventsDesc = cre_eventsDesc(2223,[On, Ce]),
-    Signal     = cre_signal("cg/rt"),
-    DigMapDesc = cre_digitMapDesc(Name, DigitMapValue),
-    AmmReq     = cre_ammReq([#megaco_term_id{id = ?A4444}],
+    Action = cre_ReqedActs(Name),
+    Ce     = cre_ReqedEv("dd/ce", Action),
+    EventsDesc = cre_EvsDesc(2223,[On, Ce]),
+    Signal     = cre_Sig("cg/rt"),
+    DigMapDesc = cre_DigitMapDesc(Name, DigitMapValue),
+    AmmReq     = cre_AmmReq([#megaco_term_id{id = ?A4444}],
                            [{eventsDescriptor, EventsDesc},
 			    {signalsDescriptor, [{signal, Signal}]},
 			    {digitMapDescriptor, DigMapDesc}]),
-    CmdReq     = cre_commandReq({modReq, AmmReq}),
+    CmdReq     = cre_CmdReq({modReq, AmmReq}),
     msg_request(Mid, 10001, ?megaco_null_context_id, [CmdReq]).
 
 msg8a() ->
     msg8a(?MGC_MID).
 msg8a(Mid) ->
     Body = "(0s| 00s|[1-7]xlxx|8lxxxxxxx|#xxxxxxx|*xx|9l1xxxxxxxxxx|9l011x.s)",
-    Value = cre_digitMapValue(Body),
+    Value = cre_DigitMapValue(Body),
     msg8(Mid, Value).
 
 msg8b() ->
     msg8b(?MGC_MID).
 msg8b(Mid) ->
     Body = "(0s| 00s|[1-7]xlxx|8lxxxxxxx|#xxxxxxx|*xx|9l1xxxxxxxxxx|9l011x.s)",
-    Value = cre_digitMapValue(Body, 1, 23, 99),
+    Value = cre_DigitMapValue(Body, 1, 23, 99),
     msg8(Mid, Value).
 
 
@@ -3374,12 +3424,12 @@ msg8b(Mid) ->
 msg9() ->
     msg9(?MG1_MID).
 msg9(Mid) ->
-    TimeStamp = cre_timeNotation("19990729","22010001"),
-    Parm      = cre_eventParm("ds",["916135551212"]),
-    Event     = cre_observedEvent("dd/ce",TimeStamp,[Parm]),
-    Desc      = cre_observedEventsDesc(2223,[Event]),
-    NotifyReq = cre_notifyReq([#megaco_term_id{id = ?A4444}], Desc),
-    CmdReq    = cre_commandReq({notifyReq, NotifyReq}),
+    TimeStamp = cre_TimeNot("19990729","22010001"),
+    Parm      = cre_EvParm("ds",["916135551212"]),
+    Event     = cre_ObsEv("dd/ce",TimeStamp,[Parm]),
+    Desc      = cre_ObsEvsDesc(2223,[Event]),
+    NotifyReq = cre_NotifyReq([#megaco_term_id{id = ?A4444}], Desc),
+    CmdReq    = cre_CmdReq({notifyReq, NotifyReq}),
     msg_request(Mid, 10002, ?megaco_null_context_id, [CmdReq]).
 
 
@@ -3388,42 +3438,42 @@ msg9(Mid) ->
 msg10() ->
     msg10(?MGC_MID).
 msg10(Mid) ->
-    AmmReq = cre_ammReq([#megaco_term_id{id = ?A4444}],[]),
-    CmdReq = cre_commandReq({addReq, AmmReq}),
-    Jit = cre_propertyParm("nt/jit", "40"),
-    LCD = cre_localControlDesc(recvOnly,[Jit]),
-    V   = cre_propertyParm("v", "0"),
-    C   = cre_propertyParm("c", "IN IP4 $ "),
-    M   = cre_propertyParm("m", "audio $ RTP/AVP 4"),
-    A   = cre_propertyParm("a", "ptime:30"),
-    V2  = cre_propertyParm("v", "0"),
-    C2  = cre_propertyParm("c", "IN IP4 $ "),
-    M2  = cre_propertyParm("m", "audio $ RTP/AVP 0"),
-    LD  = cre_localRemoteDesc([[V, C, M, A], [V2, C2, M2]]),
-    Parms      = cre_streamParms(LCD, LD),
-    StreamDesc = cre_streamDesc(1,Parms),
-    MediaDesc  = cre_mediaDesc(StreamDesc),
+    AmmReq = cre_AmmReq([#megaco_term_id{id = ?A4444}],[]),
+    CmdReq = cre_CmdReq({addReq, AmmReq}),
+    Jit = cre_PropParm("nt/jit", "40"),
+    LCD = cre_LocalControlDesc(recvOnly,[Jit]),
+    V   = cre_PropParm("v", "0"),
+    C   = cre_PropParm("c", "IN IP4 $ "),
+    M   = cre_PropParm("m", "audio $ RTP/AVP 4"),
+    A   = cre_PropParm("a", "ptime:30"),
+    V2  = cre_PropParm("v", "0"),
+    C2  = cre_PropParm("c", "IN IP4 $ "),
+    M2  = cre_PropParm("m", "audio $ RTP/AVP 0"),
+    LD  = cre_LocalRemoteDesc([[V, C, M, A], [V2, C2, M2]]),
+    Parms      = cre_StreamParms(LCD, LD),
+    StreamDesc = cre_StreamDesc(1,Parms),
+    MediaDesc  = cre_MediaDesc(StreamDesc),
     ChooseTid  = #megaco_term_id{contains_wildcards = true,
 				 id = [[?megaco_choose]]},
-    AmmReq2    = cre_ammReq([ChooseTid],[{mediaDescriptor, MediaDesc}]),
-    CmdReq2    = cre_commandReq({addReq, AmmReq2}),
+    AmmReq2    = cre_AmmReq([ChooseTid],[{mediaDescriptor, MediaDesc}]),
+    CmdReq2    = cre_CmdReq({addReq, AmmReq2}),
     msg_request(Mid, 10003, ?megaco_choose_context_id, [CmdReq, CmdReq2]).
 
 
 msg11() ->
     msg11(?MG1_MID).
 msg11(Mid) ->
-    V  = cre_propertyParm("v", "0"),
-    C  = cre_propertyParm("c", "IN IP4 124.124.124.222"),
-    M  = cre_propertyParm("m", "audio 2222 RTP/AVP 4"),
-    A  = cre_propertyParm("a", "a=ptime:30"),
-    A2 = cre_propertyParm("a", "recvonly"),
-    LD = cre_localRemoteDesc([[V, C, M, A, A2]]),
-    Parms      = cre_streamParmsL(LD),
-    StreamDesc = cre_streamDesc(1, Parms),
-    MediaDesc  = cre_mediaDesc(StreamDesc),
-    Reply  = cre_ammsReply([#megaco_term_id{id = ?A4444}]),
-    Reply2 = cre_ammsReply([#megaco_term_id{id = ?A4445}],
+    V  = cre_PropParm("v", "0"),
+    C  = cre_PropParm("c", "IN IP4 124.124.124.222"),
+    M  = cre_PropParm("m", "audio 2222 RTP/AVP 4"),
+    A  = cre_PropParm("a", "a=ptime:30"),
+    A2 = cre_PropParm("a", "recvonly"),
+    LD = cre_LocalRemoteDesc([[V, C, M, A, A2]]),
+    Parms      = cre_StreamParmsL(LD),
+    StreamDesc = cre_StreamDesc(1, Parms),
+    MediaDesc  = cre_MediaDesc(StreamDesc),
+    Reply  = cre_AmmsReply([#megaco_term_id{id = ?A4444}]),
+    Reply2 = cre_AmmsReply([#megaco_term_id{id = ?A4445}],
 			   [{mediaDescriptor, MediaDesc}]),
     msg_reply(Mid, 10003, 2000, [{addReply, Reply}, {addReply, Reply2}]).
 
@@ -3433,33 +3483,33 @@ msg11(Mid) ->
 msg12() ->
     msg12(?MGC_MID).
 msg12(Mid) ->
-    LCD        = cre_localControlDesc(sendRecv),
-    Parms      = cre_streamParms(LCD),
-    StreamDesc = cre_streamDesc(1,Parms),
-    MediaDesc  = cre_mediaDesc(StreamDesc),
-    Signal     = cre_signal("al/ri"),
+    LCD        = cre_LocalControlDesc(sendRecv),
+    Parms      = cre_StreamParms(LCD),
+    StreamDesc = cre_StreamDesc(1,Parms),
+    MediaDesc  = cre_MediaDesc(StreamDesc),
+    Signal     = cre_Sig("al/ri"),
     Descs      = [{mediaDescriptor, MediaDesc},
 		  {signalsDescriptor, [{signal, Signal}]}],
-    AmmReq     = cre_ammReq([#megaco_term_id{id = ?A5555}], Descs),
-    CmdReq     = cre_commandReq({addReq, AmmReq}),
-    Jit        = cre_propertyParm("nt/jit", "40"),
-    LCD2       = cre_localControlDesc(sendRecv, [Jit]),
-    V      = cre_propertyParm("v", "0"),
-    C      = cre_propertyParm("c", "IN IP4 $ "),
-    M      = cre_propertyParm("m", "audio $ RTP/AVP 4"),
-    A      = cre_propertyParm("a", "ptime:30"),
-    LD2    = cre_localRemoteDesc([[V, C, M, A]]),
-    V2     = cre_propertyParm("v", "0"),
-    C2     = cre_propertyParm("c", "IN IP4 124.124.124.222"),
-    M2     = cre_propertyParm("m", "audio 2222 RTP/AVP 4"),
-    RD2    = cre_localRemoteDesc([[V2, C2, M2]]),
-    Parms2 = cre_streamParms(LCD2,LD2,RD2),
-    StreamDesc2 = cre_streamDesc(1,Parms2),
-    MediaDesc2  = cre_mediaDesc(StreamDesc2),
+    AmmReq     = cre_AmmReq([#megaco_term_id{id = ?A5555}], Descs),
+    CmdReq     = cre_CmdReq({addReq, AmmReq}),
+    Jit        = cre_PropParm("nt/jit", "40"),
+    LCD2       = cre_LocalControlDesc(sendRecv, [Jit]),
+    V      = cre_PropParm("v", "0"),
+    C      = cre_PropParm("c", "IN IP4 $ "),
+    M      = cre_PropParm("m", "audio $ RTP/AVP 4"),
+    A      = cre_PropParm("a", "ptime:30"),
+    LD2    = cre_LocalRemoteDesc([[V, C, M, A]]),
+    V2     = cre_PropParm("v", "0"),
+    C2     = cre_PropParm("c", "IN IP4 124.124.124.222"),
+    M2     = cre_PropParm("m", "audio 2222 RTP/AVP 4"),
+    RD2    = cre_LocalRemoteDesc([[V2, C2, M2]]),
+    Parms2 = cre_StreamParms(LCD2,LD2,RD2),
+    StreamDesc2 = cre_StreamDesc(1,Parms2),
+    MediaDesc2  = cre_MediaDesc(StreamDesc2),
     ChooseTid   = #megaco_term_id{contains_wildcards = true,
 				  id = [[?megaco_choose]]},
-    AmmReq2     = cre_ammReq([ChooseTid],[{mediaDescriptor, MediaDesc2}]),
-    CmdReq2     = cre_commandReq({addReq, AmmReq2}),
+    AmmReq2     = cre_AmmReq([ChooseTid],[{mediaDescriptor, MediaDesc2}]),
+    CmdReq2     = cre_CmdReq({addReq, AmmReq2}),
     msg_request(Mid, 50003, ?megaco_choose_context_id, [CmdReq, CmdReq2]).
 
 
@@ -3468,14 +3518,14 @@ msg12(Mid) ->
 msg13() ->
     msg13(?MG2_MID).
 msg13(Mid) ->
-    V     = cre_propertyParm("v", "0"),
-    C     = cre_propertyParm("c", "IN IP4 125.125.125.111"),
-    M     = cre_propertyParm("m", "audio 1111 RTP/AVP 4"),
-    LD    = cre_localRemoteDesc([[V, C, M]]),
-    Parms = cre_streamParmsL(LD),
-    StreamDesc = cre_streamDesc(1,Parms),
-    MediaDesc  = cre_mediaDesc(StreamDesc),
-    Reply      = cre_ammsReply([#megaco_term_id{id = ?A5556}],
+    V     = cre_PropParm("v", "0"),
+    C     = cre_PropParm("c", "IN IP4 125.125.125.111"),
+    M     = cre_PropParm("m", "audio 1111 RTP/AVP 4"),
+    LD    = cre_LocalRemoteDesc([[V, C, M]]),
+    Parms = cre_StreamParmsL(LD),
+    StreamDesc = cre_StreamDesc(1,Parms),
+    MediaDesc  = cre_MediaDesc(StreamDesc),
+    Reply      = cre_AmmsReply([#megaco_term_id{id = ?A5556}],
 			       [{mediaDescriptor, MediaDesc}]),
     msg_reply(Mid, 50003, 5000, [{addReply, Reply}]).
 
@@ -3485,24 +3535,35 @@ msg13(Mid) ->
 msg14() ->
     msg14(?MGC_MID).
 msg14(Mid) ->
-    Signal = cre_signal("cg/rt"), 
-    AmmReq = cre_ammReq([#megaco_term_id{id = ?A4444}],
-			[{signalsDescriptor, [{signal, Signal}]}]),
-    CmdReq = cre_commandReq({modReq, AmmReq}),
-    Gain   = cre_propertyParm("tdmc/gain", "2"),
-    Ec     = cre_propertyParm("tdmc/ec", "G165"),
-    LCD    = cre_localControlDesc(sendRecv, [Gain, Ec]),
-    V      = cre_propertyParm("v", "0"),
-    C      = cre_propertyParm("c", "IN IP4 125.125.125.111"),
-    M      = cre_propertyParm("m", "audio 1111 RTP/AVP 4"),
-    RD2    = cre_localRemoteDesc([[V, C, M]]),
-    Parms2 = cre_streamParmsR(RD2),
-    StreamDesc2 = cre_streamDesc(1,Parms2),
-    MediaDesc2  = cre_mediaDesc(StreamDesc2),
-    AmmReq2     = cre_ammReq([#megaco_term_id{id = ?A4445}],
+    %% Cmd 1)
+    Signal      = cre_Sig("cg/rt"), 
+    AmmReq1     = cre_AmmReq([#megaco_term_id{id = ?A4444}],
+			     [{signalsDescriptor, [{signal, Signal}]}]),
+    CmdReq1     = cre_CmdReq({modReq, AmmReq1}),
+
+    %% Cmd 2)
+    Gain        = cre_PropParm("tdmc/gain", "2"),
+    Ec          = cre_PropParm("tdmc/ec", "g165"),
+    LCD         = cre_LocalControlDesc(sendRecv, [Gain, Ec]),
+    Parms2      = cre_StreamParms(LCD),
+    StreamDesc2 = cre_StreamDesc(1,Parms2),
+    MediaDesc2  = cre_MediaDesc(StreamDesc2),
+    AmmReq2     = cre_AmmReq([#megaco_term_id{id = ?A4445}],
 			     [{mediaDescriptor, MediaDesc2}]),
-    CmdReq2     = cre_commandReq({modReq, AmmReq2}),
-    msg_request(Mid, 10005, 2000, [CmdReq, CmdReq2]).
+    CmdReq2     = cre_CmdReq({modReq, AmmReq2}),
+
+    %% Cmd 3)
+    V           = cre_PropParm("v", "0"),
+    C           = cre_PropParm("c", "IN IP4 125.125.125.111"),
+    M           = cre_PropParm("m", "audio 1111 RTP/AVP 4"),
+    RD          = cre_LocalRemoteDesc([[V, C, M]]),
+    Parms3      = cre_StreamParmsR(RD),
+    StreamDesc3 = cre_StreamDesc(2,Parms3),
+    MediaDesc3  = cre_MediaDesc(StreamDesc3),
+    AmmReq3     = cre_AmmReq([#megaco_term_id{id = ?A4445}],
+			     [{mediaDescriptor, MediaDesc3}]),
+    CmdReq3     = cre_CmdReq({modReq, AmmReq3}),
+    msg_request(Mid, 10005, 2000, [CmdReq1, CmdReq2, CmdReq3]).
 
 
 %% --------------------------
@@ -3510,8 +3571,8 @@ msg14(Mid) ->
 msg15() ->
     msg15(?MG1_MID).
 msg15(Mid) ->
-    Reply  = cre_ammsReply([#megaco_term_id{id = ?A4444}]),
-    Reply2 = cre_ammsReply([#megaco_term_id{id = ?A4445}]),
+    Reply  = cre_AmmsReply([#megaco_term_id{id = ?A4444}]),
+    Reply2 = cre_AmmsReply([#megaco_term_id{id = ?A4445}]),
     msg_reply(Mid, 10005, 2000, [{modReply, Reply}, {modReply, Reply2}]).
 
 
@@ -3520,11 +3581,11 @@ msg15(Mid) ->
 msg16() ->
     msg16(?MG2_MID).
 msg16(Mid) ->
-    TimeStamp = cre_timeNotation("19990729","22020002"),
-    Event     = cre_observedEvent("al/of",TimeStamp),
-    Desc      = cre_observedEventsDesc(1234,[Event]),
-    NotifyReq = cre_notifyReq([#megaco_term_id{id = ?A5555}],Desc),
-    CmdReq    = cre_commandReq({notifyReq, NotifyReq}),
+    TimeStamp = cre_TimeNot("19990729","22020002"),
+    Event     = cre_ObsEv("al/of",TimeStamp),
+    Desc      = cre_ObsEvsDesc(1234,[Event]),
+    NotifyReq = cre_NotifyReq([#megaco_term_id{id = ?A5555}],Desc),
+    CmdReq    = cre_CmdReq({notifyReq, NotifyReq}),
     msg_request(Mid, 50005, 5000, [CmdReq]).
 
 
@@ -3533,7 +3594,7 @@ msg16(Mid) ->
 msg17() ->
     msg17(?MGC_MID).
 msg17(Mid) ->
-    Reply = cre_notifyReply([#megaco_term_id{id = ?A5555}]),
+    Reply = cre_NotifyRep([#megaco_term_id{id = ?A5555}]),
     msg_reply(Mid, 50005, ?megaco_null_context_id, [{notifyReply, Reply}]).
 
 
@@ -3542,12 +3603,12 @@ msg17(Mid) ->
 msg18() ->
     msg18(?MGC_MID).
 msg18(Mid) ->
-    On         = cre_requestedEvent("al/on"),
-    EventsDesc = cre_eventsDesc(1235,[On]),
-    AmmReq     = cre_ammReq([#megaco_term_id{id = ?A5555}],
+    On         = cre_ReqedEv("al/on"),
+    EventsDesc = cre_EvsDesc(1235,[On]),
+    AmmReq     = cre_AmmReq([#megaco_term_id{id = ?A5555}],
 			    [{eventsDescriptor, EventsDesc},
 			     {signalsDescriptor, []}]),
-    CmdReq     = cre_commandReq({modReq, AmmReq}),
+    CmdReq     = cre_CmdReq({modReq, AmmReq}),
     msg_request(Mid, 50006, 5000, [CmdReq]).
 
 
@@ -3556,7 +3617,7 @@ msg18(Mid) ->
 msg19() ->
     msg19(?MG2_MID).
 msg19(Mid) ->
-    Reply = cre_ammsReply([#megaco_term_id{id = ?A4445}]),
+    Reply = cre_AmmsReply([#megaco_term_id{id = ?A4445}]),
     msg_reply(Mid, 50006, 5000, [{modReply, Reply}]).
 
 
@@ -3565,16 +3626,16 @@ msg19(Mid) ->
 msg20() ->
     msg20(?MGC_MID).
 msg20(Mid) ->
-    LCD        = cre_localControlDesc(sendRecv),
-    Parms      = cre_streamParms(LCD),
-    StreamDesc = cre_streamDesc(1,Parms),
-    MediaDesc  = cre_mediaDesc(StreamDesc),
-    AmmReq     = cre_ammReq([#megaco_term_id{id = ?A4445}],
+    LCD        = cre_LocalControlDesc(sendRecv),
+    Parms      = cre_StreamParms(LCD),
+    StreamDesc = cre_StreamDesc(1,Parms),
+    MediaDesc  = cre_MediaDesc(StreamDesc),
+    AmmReq     = cre_AmmReq([#megaco_term_id{id = ?A4445}],
 			    [{mediaDescriptor, MediaDesc}]),
-    CmdReq     = cre_commandReq({modReq, AmmReq}),
-    AmmReq2    = cre_ammReq([#megaco_term_id{id = ?A4444}],
+    CmdReq     = cre_CmdReq({modReq, AmmReq}),
+    AmmReq2    = cre_AmmReq([#megaco_term_id{id = ?A4444}],
                             [{signalsDescriptor, []}]),
-    CmdReq2    = cre_commandReq({modReq, AmmReq2}),
+    CmdReq2    = cre_CmdReq({modReq, AmmReq2}),
     msg_request(Mid, 10006, 2000, [CmdReq, CmdReq2]).
 
 
@@ -3585,9 +3646,9 @@ msg21() ->
 msg21(Mid) ->
     Tokens    = [mediaToken, eventsToken, signalsToken,
 		 digitMapToken, statsToken, packagesToken],
-    AuditDesc = cre_auditDesc(Tokens),
-    Req       = cre_auditReq(#megaco_term_id{id = ?A5556},AuditDesc),
-    CmdReq    = cre_commandReq({auditValueRequest, Req}),
+    AuditDesc = cre_AuditDesc(Tokens),
+    Req       = cre_AuditReq(#megaco_term_id{id = ?A5556},AuditDesc),
+    CmdReq    = cre_CmdReq({auditValueRequest, Req}),
     msg_request(Mid, 50007, ?megaco_null_context_id, [CmdReq]).
 
 
@@ -3614,36 +3675,36 @@ msg22f() ->
 msg22(N) ->
     msg22(?MG2_MID, N).
 msg22(Mid, N) ->
-    Jit = cre_propertyParm("nt/jit", "40"),
-    LCD = cre_localControlDesc(sendRecv,[Jit]),
-    LDV = cre_propertyParm("v", "0"),
-    LDC = cre_propertyParm("c", "IN IP4 125.125.125.111"),
-    LDM = cre_propertyParm("m", "audio 1111 RTP/AVP  4"),
-    LDA = cre_propertyParm("a", "ptime:30"),
-    LD  = cre_localRemoteDesc([[LDV, LDC, LDM, LDA]]),
-    RDV = cre_propertyParm("v", "0"),
-    RDC = cre_propertyParm("c", "IN IP4 124.124.124.222"),
-    RDM = cre_propertyParm("m", "audio 2222 RTP/AVP  4"),
-    RDA = cre_propertyParm("a", "ptime:30"),
-    RD  = cre_localRemoteDesc([[RDV, RDC, RDM, RDA]]),
-    StreamParms   = cre_streamParms(LCD,LD,RD),
-    StreamDesc    = cre_streamDesc(1,StreamParms),
-    Media         = cre_mediaDesc(StreamDesc),
-    PackagesItem  = cre_packagesItem("nt",1),
-    PackagesItem2 = cre_packagesItem("rtp",1),
-    Stat       = cre_statisticsParm("rtp/ps","1200"),
-    Stat2      = cre_statisticsParm("nt/os","62300"),
-    Stat3      = cre_statisticsParm("rtp/pr","700"),
-    Stat4      = cre_statisticsParm("nt/or","45100"),
-    Stat5      = cre_statisticsParm("rtp/pl","0.2"),
-    Stat6      = cre_statisticsParm("rtp/jit","20"),
-    Stat7      = cre_statisticsParm("rtp/delay","40"),
+    Jit = cre_PropParm("nt/jit", "40"),
+    LCD = cre_LocalControlDesc(sendRecv,[Jit]),
+    LDV = cre_PropParm("v", "0"),
+    LDC = cre_PropParm("c", "IN IP4 125.125.125.111"),
+    LDM = cre_PropParm("m", "audio 1111 RTP/AVP  4"),
+    LDA = cre_PropParm("a", "ptime:30"),
+    LD  = cre_LocalRemoteDesc([[LDV, LDC, LDM, LDA]]),
+    RDV = cre_PropParm("v", "0"),
+    RDC = cre_PropParm("c", "IN IP4 124.124.124.222"),
+    RDM = cre_PropParm("m", "audio 2222 RTP/AVP  4"),
+    RDA = cre_PropParm("a", "ptime:30"),
+    RD  = cre_LocalRemoteDesc([[RDV, RDC, RDM, RDA]]),
+    StreamParms   = cre_StreamParms(LCD,LD,RD),
+    StreamDesc    = cre_StreamDesc(1,StreamParms),
+    Media         = cre_MediaDesc(StreamDesc),
+    PackagesItem  = cre_PkgsItem("nt",1),
+    PackagesItem2 = cre_PkgsItem("rtp",1),
+    Stat       = cre_StatsParm("rtp/ps","1200"),
+    Stat2      = cre_StatsParm("nt/os","62300"),
+    Stat3      = cre_StatsParm("rtp/pr","700"),
+    Stat4      = cre_StatsParm("nt/or","45100"),
+    Stat5      = cre_StatsParm("rtp/pl","0.2"),
+    Stat6      = cre_StatsParm("rtp/jit","20"),
+    Stat7      = cre_StatsParm("rtp/delay","40"),
     Statistics = [Stat, Stat2, Stat3, Stat4, Stat5, Stat6, Stat7],
     Audits     = [{mediaDescriptor, Media},
 		  {packagesDescriptor, [PackagesItem, PackagesItem2]},
 		  {statisticsDescriptor, Statistics}],
     Reply      = {auditResult, 
-		  cre_auditRes(#megaco_term_id{id = ?A5556},Audits)},
+		  cre_AuditRes(#megaco_term_id{id = ?A5556},Audits)},
     msg_reply(Mid, 50007, ?megaco_null_context_id, 
 	      lists:duplicate(N,{auditValueReply, Reply})).
 %%     msg_reply(Mid, 50007, ?megaco_null_context_id, 
@@ -3655,24 +3716,24 @@ msg22(Mid, N) ->
 msg23a() ->
     msg23a(?MG2_MID).
 msg23a(Mid) ->
-    TimeStamp = cre_timeNotation("19990729","24020002"),
-    Event     = cre_observedEvent("al/on",TimeStamp),
-    Desc      = cre_observedEventsDesc(1235,[Event]),
-    NotifyReq = cre_notifyReq([#megaco_term_id{id = ?A5555}],Desc),
-    CmdReq    = cre_commandReq({notifyReq, NotifyReq}),
+    TimeStamp = cre_TimeNot("19990729","24020002"),
+    Event     = cre_ObsEv("al/on",TimeStamp),
+    Desc      = cre_ObsEvsDesc(1235,[Event]),
+    NotifyReq = cre_NotifyReq([#megaco_term_id{id = ?A5555}],Desc),
+    CmdReq    = cre_CmdReq({notifyReq, NotifyReq}),
     msg_request(Mid, 50008, 5000, [CmdReq]).
 
 
 msg23b() ->
     msg23b(?MG2_MID).
 msg23b(Mid) ->
-    TimeStamp  = cre_timeNotation("19990729","24020002"),
-    Event      = cre_observedEvent("al/on",TimeStamp),
-    Desc       = cre_observedEventsDesc(1235,[Event]),
-    NotifyReq1 = cre_notifyReq([#megaco_term_id{id = ?A5555}],Desc),
-    CmdReq1    = cre_commandReq({notifyReq, NotifyReq1}),
-    NotifyReq2 = cre_notifyReq([#megaco_term_id{id = ?A5556}],Desc),
-    CmdReq2    = cre_commandReq({notifyReq, NotifyReq2}),
+    TimeStamp  = cre_TimeNot("19990729","24020002"),
+    Event      = cre_ObsEv("al/on",TimeStamp),
+    Desc       = cre_ObsEvsDesc(1235,[Event]),
+    NotifyReq1 = cre_NotifyReq([#megaco_term_id{id = ?A5555}],Desc),
+    CmdReq1    = cre_CmdReq({notifyReq, NotifyReq1}),
+    NotifyReq2 = cre_NotifyReq([#megaco_term_id{id = ?A5556}],Desc),
+    CmdReq2    = cre_CmdReq({notifyReq, NotifyReq2}),
     ActionInfo = [{5000, [CmdReq1]}, {5001, [CmdReq2]}],
     TransInfo  = [{50008, ActionInfo}],
     msg_request(Mid, TransInfo).
@@ -3681,13 +3742,13 @@ msg23b(Mid) ->
 msg23c() ->
     msg23c(?MG2_MID).
 msg23c(Mid) ->
-    TimeStamp  = cre_timeNotation("19990729","24020002"),
-    Event      = cre_observedEvent("al/on",TimeStamp),
-    Desc       = cre_observedEventsDesc(1235,[Event]),
-    NotifyReq1 = cre_notifyReq([#megaco_term_id{id = ?A5555}],Desc),
-    CmdReq1    = cre_commandReq({notifyReq, NotifyReq1}),
-    NotifyReq2 = cre_notifyReq([#megaco_term_id{id = ?A5556}],Desc),
-    CmdReq2    = cre_commandReq({notifyReq, NotifyReq2}),
+    TimeStamp  = cre_TimeNot("19990729","24020002"),
+    Event      = cre_ObsEv("al/on",TimeStamp),
+    Desc       = cre_ObsEvsDesc(1235,[Event]),
+    NotifyReq1 = cre_NotifyReq([#megaco_term_id{id = ?A5555}],Desc),
+    CmdReq1    = cre_CmdReq({notifyReq, NotifyReq1}),
+    NotifyReq2 = cre_NotifyReq([#megaco_term_id{id = ?A5556}],Desc),
+    CmdReq2    = cre_CmdReq({notifyReq, NotifyReq2}),
     ActionInfo1 = [{5000, [CmdReq1]}],
     ActionInfo2 = [{5001, [CmdReq2]}],
     TransInfo   = [{50008, ActionInfo1}, {50009, ActionInfo2}],
@@ -3697,17 +3758,17 @@ msg23c(Mid) ->
 msg23d() ->
     msg23d(?MG2_MID).
 msg23d(Mid) ->
-    TimeStamp  = cre_timeNotation("19990729","24020002"),
-    Event      = cre_observedEvent("al/on",TimeStamp),
-    Desc       = cre_observedEventsDesc(1235,[Event]),
-    NotifyReq1 = cre_notifyReq([#megaco_term_id{id = ?A5555}],Desc),
-    CmdReq1    = cre_commandReq({notifyReq, NotifyReq1}),
-    NotifyReq2 = cre_notifyReq([#megaco_term_id{id = ?A5556}],Desc),
-    CmdReq2    = cre_commandReq({notifyReq, NotifyReq2}),
-    NotifyReq3 = cre_notifyReq([#megaco_term_id{id = ?A4444}],Desc),
-    CmdReq3    = cre_commandReq({notifyReq, NotifyReq1}),
-    NotifyReq4 = cre_notifyReq([#megaco_term_id{id = ?A4445}],Desc),
-    CmdReq4    = cre_commandReq({notifyReq, NotifyReq2}),
+    TimeStamp  = cre_TimeNot("19990729","24020002"),
+    Event      = cre_ObsEv("al/on",TimeStamp),
+    Desc       = cre_ObsEvsDesc(1235,[Event]),
+    NotifyReq1 = cre_NotifyReq([#megaco_term_id{id = ?A5555}],Desc),
+    CmdReq1    = cre_CmdReq({notifyReq, NotifyReq1}),
+    NotifyReq2 = cre_NotifyReq([#megaco_term_id{id = ?A5556}],Desc),
+    CmdReq2    = cre_CmdReq({notifyReq, NotifyReq2}),
+    NotifyReq3 = cre_NotifyReq([#megaco_term_id{id = ?A4444}],Desc),
+    CmdReq3    = cre_CmdReq({notifyReq, NotifyReq3}),
+    NotifyReq4 = cre_NotifyReq([#megaco_term_id{id = ?A4445}],Desc),
+    CmdReq4    = cre_CmdReq({notifyReq, NotifyReq4}),
     ActionInfo1 = [{5000, [CmdReq1]}, {5001, [CmdReq2]}],
     ActionInfo2 = [{5003, [CmdReq3]}, {5004, [CmdReq4]}],
     TransInfo   = [{50008, ActionInfo1}, {50009, ActionInfo2}],
@@ -3719,11 +3780,11 @@ msg23d(Mid) ->
 msg24() ->
     msg24(?MGC_MID).
 msg24(Mid) ->
-    AuditDesc = cre_auditDesc([statsToken]),
-    SubReq    = cre_subtractReq([#megaco_term_id{id = ?A5555}], AuditDesc),
-    SubReq2   = cre_subtractReq([#megaco_term_id{id = ?A5556}], AuditDesc),
-    CmdReq    = cre_commandReq({subtractReq, SubReq}),
-    CmdReq2   = cre_commandReq({subtractReq, SubReq2}),
+    AuditDesc = cre_AuditDesc([statsToken]),
+    SubReq    = cre_SubReq([#megaco_term_id{id = ?A5555}], AuditDesc),
+    SubReq2   = cre_SubReq([#megaco_term_id{id = ?A5556}], AuditDesc),
+    CmdReq    = cre_CmdReq({subtractReq, SubReq}),
+    CmdReq2   = cre_CmdReq({subtractReq, SubReq2}),
     msg_request(Mid, 50009, 5000, [CmdReq, CmdReq2]).
 
 
@@ -3732,20 +3793,20 @@ msg24(Mid) ->
 msg25() ->
     msg25(?MG2_MID).
 msg25(Mid) ->
-    Stat11 = cre_statisticsParm("nt/os","45123"),
-    Stat12 = cre_statisticsParm("nt/dur", "40"),
+    Stat11 = cre_StatsParm("nt/os","45123"),
+    Stat12 = cre_StatsParm("nt/dur", "40"),
     Stats1 = [Stat11, Stat12],
-    Reply1 = cre_ammsReply([#megaco_term_id{id = ?A5555}],
+    Reply1 = cre_AmmsReply([#megaco_term_id{id = ?A5555}],
 			   [{statisticsDescriptor, Stats1}]),
-    Stat21 = cre_statisticsParm("rtp/ps","1245"),
-    Stat22 = cre_statisticsParm("nt/os", "62345"),
-    Stat23 = cre_statisticsParm("rtp/pr", "780"),
-    Stat24 = cre_statisticsParm("nt/or", "45123"),
-    Stat25 = cre_statisticsParm("rtp/pl", "10"),
-    Stat26 = cre_statisticsParm("rtp/jit", "27"),
-    Stat27 = cre_statisticsParm("rtp/delay","48"),
-    Stats2 = [Stat21, Stat22],
-    Reply2 = cre_ammsReply([#megaco_term_id{id = ?A5556}],
+    Stat21 = cre_StatsParm("rtp/ps","1245"),
+    Stat22 = cre_StatsParm("nt/os", "62345"),
+    Stat23 = cre_StatsParm("rtp/pr", "780"),
+    Stat24 = cre_StatsParm("nt/or", "45123"),
+    Stat25 = cre_StatsParm("rtp/pl", "10"),
+    Stat26 = cre_StatsParm("rtp/jit", "27"),
+    Stat27 = cre_StatsParm("rtp/delay","48"),
+    Stats2 = [Stat21, Stat22, Stat23, Stat24, Stat25, Stat26, Stat27],
+    Reply2 = cre_AmmsReply([#megaco_term_id{id = ?A5556}],
                           [{statisticsDescriptor, Stats2}]),
     msg_reply(Mid, 50009, 5000, 
 	      [{subtractReply, Reply1}, {subtractReply, Reply2}]).
@@ -3785,24 +3846,24 @@ msg40() ->
     msg40(?MG1_MID_NO_PORT, "901 mg col boot").
 msg40(Mid, Reason) when list(Reason) ->
     Address = {portNumber, ?DEFAULT_PORT},
-    Profile = cre_serviceChangeProf("resgw",1),
-    Parm    = cre_serviceChangeParm(restart,Address,[Reason],Profile),
-    Req     = cre_serviceChangeReq([?megaco_root_termination_id],Parm),
-    CmdReq  = cre_commandReq({serviceChangeReq, Req}),
-    Auth    = cre_authHeader(),
+    Profile = cre_SvcChProf("resgw",1),
+    Parm    = cre_SvcChParm(restart,Address,[Reason],Profile),
+    Req     = cre_SvcChReq([?megaco_root_termination_id],Parm),
+    CmdReq  = cre_CmdReq({serviceChangeReq, Req}),
+    Auth    = cre_AuthHeader(),
     msg_request(Auth, Mid, 9998, ?megaco_null_context_id, [CmdReq]).
 
 
 msg50(Mid, APT) ->
-    AD     = cre_auditDesc(asn1_NOVALUE, APT),
-    Req    = cre_auditReq(#megaco_term_id{id = ?A5556},AD),
-    CmdReq = cre_commandReq({auditValueRequest, Req}),
+    AD     = cre_AuditDesc(asn1_NOVALUE, APT),
+    Req    = cre_AuditReq(#megaco_term_id{id = ?A5556},AD),
+    CmdReq = cre_CmdReq({auditValueRequest, Req}),
     msg_request(Mid, 50007, ?megaco_null_context_id, [CmdReq]).
     
 %% IndAudMediaDescriptor:
 msg51(Mid, IATSDorStream) ->
-    IAMD   = cre_IndAudMediaDescriptor(IATSDorStream),
-    IAP    = cre_IndAudParameter(IAMD),
+    IAMD   = cre_IndAudMediaDesc(IATSDorStream),
+    IAP    = cre_IndAudParam(IAMD),
     APT    = [IAP],
     msg50(Mid, APT).
     
@@ -3811,7 +3872,7 @@ msg51a() ->
 msg51a(Mid) ->
     PP    = cre_IndAudPropertyParm("tdmc/gain"),
     PPs   = [PP],
-    IATSD = cre_IndAudTerminationStateDescriptor(PPs),
+    IATSD = cre_IndAudTermStateDesc(PPs),
     msg51(Mid, IATSD).
 
 msg51b() ->
@@ -3819,48 +3880,42 @@ msg51b() ->
 msg51b(Mid) ->
     PP    = cre_IndAudPropertyParm("nt/jit"),
     PPs   = [PP],
-    IATSD = cre_IndAudTerminationStateDescriptor(PPs),
+    IATSD = cre_IndAudTermStateDesc(PPs),
     msg51(Mid, IATSD).
 
 msg51c() ->
     msg51c(?MG2_MID).
 msg51c(Mid) ->
-    IATSD = cre_IndAudTerminationStateDescriptor([], asn1_NOVALUE, 'NULL'),
+    IATSD = cre_IndAudTermStateDesc([], asn1_NOVALUE, 'NULL'),
     msg51(Mid, IATSD).
 
 msg51d() ->
     msg51d(?MG2_MID).
 msg51d(Mid) ->
-    IATSD = cre_IndAudTerminationStateDescriptor([], 'NULL', asn1_NOVALUE),
+    IATSD = cre_IndAudTermStateDesc([], 'NULL', asn1_NOVALUE),
     msg51(Mid, IATSD).
 
 msg51e() ->
     msg51e(?MG2_MID).
 msg51e(Mid) ->
-    IALCD = cre_IndAudLocalControlDescriptor('NULL', 
-					     asn1_NOVALUE, 
-					     asn1_NOVALUE, 
-					     asn1_NOVALUE),
+    IALCD = cre_IndAudLocalControlDesc('NULL', asn1_NOVALUE, 
+				       asn1_NOVALUE, asn1_NOVALUE),
     IASP = cre_IndAudStreamParms(IALCD),
     msg51(Mid, IASP).
 
 msg51f() ->
     msg51f(?MG2_MID).
 msg51f(Mid) ->
-    IALCD = cre_IndAudLocalControlDescriptor(asn1_NOVALUE, 
-					     'NULL', 
-					     asn1_NOVALUE, 
-					     asn1_NOVALUE),
+    IALCD = cre_IndAudLocalControlDesc(asn1_NOVALUE, 'NULL', 
+				       asn1_NOVALUE, asn1_NOVALUE),
     IASP = cre_IndAudStreamParms(IALCD),
     msg51(Mid, IASP).
 
 msg51g() ->
     msg51g(?MG2_MID).
 msg51g(Mid) ->
-    IALCD = cre_IndAudLocalControlDescriptor(asn1_NOVALUE, 
-					     asn1_NOVALUE, 
-					     'NULL', 
-					     asn1_NOVALUE),
+    IALCD = cre_IndAudLocalControlDesc(asn1_NOVALUE, asn1_NOVALUE, 
+				       'NULL', asn1_NOVALUE),
     IASP = cre_IndAudStreamParms(IALCD),
     msg51(Mid, IASP).
 
@@ -3869,13 +3924,11 @@ msg51h() ->
 msg51h(Mid) ->
     Name  = "nt/jit",
     IAPP  = cre_IndAudPropertyParm(Name),
-    IALCD = cre_IndAudLocalControlDescriptor(asn1_NOVALUE, 
-					     asn1_NOVALUE, 
-					     asn1_NOVALUE, 
-					     [IAPP]),
+    IALCD = cre_IndAudLocalControlDesc(asn1_NOVALUE, asn1_NOVALUE, 
+				       asn1_NOVALUE, [IAPP]),
     IASP  = cre_IndAudStreamParms(IALCD),
     SID   = 123,
-    IASD  = cre_IndAudStreamDescriptor(SID, IASP),
+    IASD  = cre_IndAudStreamDesc(SID, IASP),
     msg51(Mid, [IASD]).
 
 
@@ -3886,13 +3939,11 @@ msg51i(Mid) ->
     Name2 = "tdmc/ec",
     IAPP  = cre_IndAudPropertyParm(Name),
     IAPP2 = cre_IndAudPropertyParm(Name2),
-    IALCD = cre_IndAudLocalControlDescriptor('NULL', 
-					     'NULL', 
-					     'NULL', 
-					     [IAPP, IAPP2]),
+    IALCD = cre_IndAudLocalControlDesc('NULL', 'NULL', 'NULL', 
+				       [IAPP, IAPP2]),
     IASP  = cre_IndAudStreamParms(IALCD),
     SID   = 123,
-    IASD  = cre_IndAudStreamDescriptor(SID, IASP),
+    IASD  = cre_IndAudStreamDesc(SID, IASP),
     msg51(Mid, [IASD]).
 
 
@@ -3902,8 +3953,8 @@ msg52() ->
 msg52(Mid) ->
     RequestID = 1235,
     PkgdName  = "tonedet/std",
-    IAED = cre_IndAudEventsDescriptor(RequestID, PkgdName),
-    IAP  = cre_IndAudParameter(IAED),
+    IAED = cre_IndAudEvsDesc(RequestID, PkgdName),
+    IAP  = cre_IndAudParam(IAED),
     APT  = [IAP],
     msg50(Mid, APT).
 
@@ -3913,15 +3964,15 @@ msg53() ->
 msg53(Mid) ->
     EN    = "tonedet/std",
     SID   = 1,
-    IAEBD = cre_IndAudEventBufferDescriptor(EN, SID),
-    IAP   = cre_IndAudParameter(IAEBD),
+    IAEBD = cre_IndAudEvBufDesc(EN, SID),
+    IAP   = cre_IndAudParam(IAEBD),
     APT   = [IAP],
     msg50(Mid, APT).
 
 %% IndAudSignalsDescriptor:
 msg54(Mid, Sig) ->
-    IASD = cre_IndAudSignalsDescriptor(Sig),
-    IAP  = cre_IndAudParameter(IASD),
+    IASD = cre_IndAudSigsDesc(Sig),
+    IAP  = cre_IndAudParam(IASD),
     APT  = [IAP],
     msg50(Mid, APT).
     
@@ -3929,21 +3980,21 @@ msg54a() ->
     msg54a(?MG2_MID).
 msg54a(Mid) ->
     SN  = "tonegen/pt",
-    Sig = cre_IndAudSignal(SN),
+    Sig = cre_IndAudSig(SN),
     msg54(Mid, Sig).
 
 msg54b() ->
     msg54b(?MG2_MID).
 msg54b(Mid) ->
     SN  = "dg/d0",
-    Sig = cre_IndAudSignal(SN),
+    Sig = cre_IndAudSig(SN),
     msg54(Mid, Sig).
 
 msg54c() ->
     msg54c(?MG2_MID).
 msg54c(Mid) ->
     SN  = "ct/ct",
-    Sig = cre_IndAudSignal(SN),
+    Sig = cre_IndAudSig(SN),
     ID  = 4321,
     SSL = cre_IndAudSeqSigList(ID, Sig),
     msg54(Mid, SSL).
@@ -3953,8 +4004,8 @@ msg55() ->
     msg55(?MG2_MID).
 msg55(Mid) ->
     DMN   = "dialplan00",
-    IADMD = cre_IndAudDigitMapDescriptor(DMN),
-    IAP   = cre_IndAudParameter(IADMD),
+    IADMD = cre_IndAudDigitMapDesc(DMN),
+    IAP   = cre_IndAudParam(IADMD),
     APT   = [IAP],
     msg50(Mid, APT).
 
@@ -3963,8 +4014,8 @@ msg56() ->
     msg56(?MG2_MID).
 msg56(Mid) ->
     SN   = "nt/dur",
-    IASD = cre_IndAudStatisticsDescriptor(SN),
-    IAP  = cre_IndAudParameter(IASD),
+    IASD = cre_IndAudStatsDesc(SN),
+    IAP  = cre_IndAudParam(IASD),
     APT  = [IAP],
     msg50(Mid, APT).    
 
@@ -3974,69 +4025,69 @@ msg57() ->
 msg57(Mid) ->
     PN   = "al",
     PV   = 1,
-    IAPD = cre_IndAudPackagesDescriptor(PN, PV),
-    IAP  = cre_IndAudParameter(IAPD),
+    IAPD = cre_IndAudPkgsDesc(PN, PV),
+    IAP  = cre_IndAudParam(IAPD),
     APT  = [IAP],
     msg50(Mid, APT).    
     
 %% Sum it up:
 msg58_iaMediaDesc_iap(IATSD) ->
-    IAMD  = cre_IndAudMediaDescriptor(IATSD),
-    cre_IndAudParameter(IAMD).
+    IAMD  = cre_IndAudMediaDesc(IATSD),
+    cre_IndAudParam(IAMD).
     
 msg58_iaMediaDesc_iap_a() ->
     PP    = cre_IndAudPropertyParm("tdmc/gain"),
     PPs   = [PP],
-    IATSD = cre_IndAudTerminationStateDescriptor(PPs),
+    IATSD = cre_IndAudTermStateDesc(PPs),
     msg58_iaMediaDesc_iap(IATSD).
     
 msg58_iaMediaDesc_iap_b() ->
-    IATSD = cre_IndAudTerminationStateDescriptor([], 'NULL', asn1_NOVALUE),
+    IATSD = cre_IndAudTermStateDesc([], 'NULL', asn1_NOVALUE),
     msg58_iaMediaDesc_iap(IATSD).
     
 msg58_iaEvsDesc_iap() ->
     RequestID = 1235,
     PkgdName  = "tonedet/std",
-    IAED = cre_IndAudEventsDescriptor(RequestID, PkgdName),
-    cre_IndAudParameter(IAED).
+    IAED = cre_IndAudEvsDesc(RequestID, PkgdName),
+    cre_IndAudParam(IAED).
 
 msg58_iaEvBufDesc_iap() ->    
     EN    = "tonedet/std",
     SID   = 1,
-    IAEBD = cre_IndAudEventBufferDescriptor(EN, SID),
-    cre_IndAudParameter(IAEBD).
+    IAEBD = cre_IndAudEvBufDesc(EN, SID),
+    cre_IndAudParam(IAEBD).
 
 msg58_iaSigsDesc_iap(S) ->
-    IASD = cre_IndAudSignalsDescriptor(S),
-    cre_IndAudParameter(IASD).
+    IASD = cre_IndAudSigsDesc(S),
+    cre_IndAudParam(IASD).
 
 msg58_iaSigsDesc_iap_a() ->
     SN  = "tonegen/pt",
-    Sig = cre_IndAudSignal(SN),
+    Sig = cre_IndAudSig(SN),
     msg58_iaSigsDesc_iap(Sig).
    
 msg58_iaSigsDesc_iap_b() ->
     SN  = "ct/ct",
-    Sig = cre_IndAudSignal(SN),
+    Sig = cre_IndAudSig(SN),
     ID  = 4321,
     SSL = cre_IndAudSeqSigList(ID, Sig),
     msg58_iaSigsDesc_iap(SSL).
 
 msg58_iaDigMapDesc_iap() ->
     DMN   = "dialplan00",
-    IADMD = cre_IndAudDigitMapDescriptor(DMN),
-    cre_IndAudParameter(IADMD).
+    IADMD = cre_IndAudDigitMapDesc(DMN),
+    cre_IndAudParam(IADMD).
     
 msg58_iaStatsDesc_iap() ->
     SN   = "nt/dur",
-    IASD = cre_IndAudStatisticsDescriptor(SN),
-    cre_IndAudParameter(IASD).
+    IASD = cre_IndAudStatsDesc(SN),
+    cre_IndAudParam(IASD).
 
 msg58_iaPacksDesc_iap() ->
     PN   = "al",
     PV   = 1,
-    IAPD = cre_IndAudPackagesDescriptor(PN, PV),
-    cre_IndAudParameter(IAPD).
+    IAPD = cre_IndAudPkgsDesc(PN, PV),
+    cre_IndAudParam(IAPD).
 
 msg58a() ->
     msg58a(?MG2_MID).
@@ -4064,6 +4115,67 @@ msg58b(Mid) ->
     APT   = [IAMD, IAED, IAEBD, IASiD, IADMD, IAStD, IAPD],
     msg50(Mid, APT).
 
+
+%% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+%% Tests some of the changes in the v2 corr 1 (EmergencyOff and ModemDesc)
+
+%% Emergency On/Off (optional) tests
+msg61(EM) ->
+    TS     = cre_TimeNot("19990729", "22000000"),
+    Event  = cre_ObsEv("al/of",TS),
+    Desc   = cre_ObsEvsDesc(2222,[Event]),
+    NotReq = cre_NotifyReq([#megaco_term_id{id = ?A4444}],Desc),
+    Cmd    = ?MSG_LIB:cre_Command(notifyReq, NotReq),
+    CmdReq = cre_CmdReq(Cmd),
+    CtxReq = ?MSG_LIB:cre_ContextRequest(15, EM),
+    ActReq = ?MSG_LIB:cre_ActionRequest(1, CtxReq, [CmdReq]),
+    Acts   = [ActReq],
+    TR     = ?MSG_LIB:cre_TransactionRequest(9898, Acts),
+    Trans  = ?MSG_LIB:cre_Transaction(TR), 
+    Mess   = ?MSG_LIB:cre_Message(?VERSION, ?MG1_MID, [Trans]),
+    ?MSG_LIB:cre_MegacoMessage(Mess).
+
+msg61a() ->
+    msg61(false).
+
+msg61b() ->
+    msg61(true).
+
+msg61c() ->
+    msg61(asn1_NOVALUE).
+
+
+msg62a() ->
+    MT      = ?MSG_LIB:cre_ModemType(v18),
+    PP      = cre_PropParm("c", "IN IP4 $ "),
+    MD      = ?MSG_LIB:cre_ModemDescriptor([MT], [PP]),
+    AmmDesc = ?MSG_LIB:cre_AmmDescriptor(MD),
+    TermIDs = [#megaco_term_id{id = ?A4444}],
+    AmmReq  = ?MSG_LIB:cre_AmmRequest(TermIDs, [AmmDesc]),
+    Cmd     = ?MSG_LIB:cre_Command(addReq, AmmReq),
+    CmdReq  = ?MSG_LIB:cre_CommandRequest(Cmd),
+    ActReq  = ?MSG_LIB:cre_ActionRequest(2, [CmdReq]),
+    Acts    = [ActReq],
+    TR      = ?MSG_LIB:cre_TransactionRequest(9898, Acts),
+    Trans   = ?MSG_LIB:cre_Transaction(TR), 
+    Mess    = ?MSG_LIB:cre_Message(?VERSION, ?MG1_MID, [Trans]),
+    ?MSG_LIB:cre_MegacoMessage(Mess).
+
+msg62b() ->
+    MP = 
+"MEGACO/" ?VERSION_STR " [124.124.124.222]:55555
+Transaction = 9898 {
+        Context = 2 {
+                Add = 11111111/00000000/00000000 {
+                        Modem[V18] {
+                                tdmc/gain=2
+                        }
+                }
+        }
+}",
+%     MC = 
+% "!/" ?VERSION_STR " [124.124.124.222]:55555\nT=9898{C=2{A=11111111/00000000/00000000{MD[V18]{tdmc/gain=2}}}}",
+    list_to_binary(MP).
 
 %% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 %% Pretty RFC 3525 messages:
@@ -4570,8 +4682,6 @@ rfc3525_msgs_test(Codec, Config, Ver) ->
 	  end,
     [Test(M) || M <- Msgs].
 
-%% --------------------------
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -4686,1622 +4796,239 @@ test_msgs(Codec, DynamicDecode, Conf, Msgs) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-chk_MegacoMessage(M,M) when record(M,'MegacoMessage') ->
-    {equal,'MegacoMessage'};
-chk_MegacoMessage(#'MegacoMessage'{authHeader = Auth1,
-				   mess       = Mess1},
-		  #'MegacoMessage'{authHeader = Auth2,
-				   mess       = Mess2}) ->
-    chk_opt_AuthenticationHeader(Auth1,Auth2),
-    chk_Message(Mess1,Mess2),
-    {equal,'MegacoMessage'};
-chk_MegacoMessage(M1,M2) ->
-    throw({wrong_type,{'MegacoMessage',M1,M2}}).
-    
-chk_opt_AuthenticationHeader(A,A) ->
-    {equal,auth};
-chk_opt_AuthenticationHeader(A1,A2) ->
-    throw({not_equal,{auth,A1,A2}}).
-
-chk_Message(M,M) when record(M,'Message') ->
-    {equal,'Message'};
-chk_Message(#'Message'{version     = Version1,
-		       mId         = MID1,
-		       messageBody = Body1},
-	    #'Message'{version     = Version2,
-		       mId         = MID2,
-		       messageBody = Body2}) ->
-    chk_version(Version1,Version2),
-    chk_MId(MID1,MID2),
-    chk_messageBody(Body1,Body2),
-    {equal,'Message'};
-chk_Message(M1,M2) ->
-    throw({wrong_type,{'Message',M1,M2}}).
-
-
-chk_version(V,V) when integer(V) ->
-    {equal,version};
-chk_version(V1,V2) when integer(V1), integer(V2) ->
-    throw({not_equal,{version,V1,V2}});
-chk_version(V1,V2) ->
-    throw({wrong_type,{integer,V1,V2}}).
-
-
-chk_MId(M,M) ->
-    {equal,mid};
-chk_MId({Tag,M1},{Tag,M2}) ->
-    Res = chk_MId(Tag,M1,M2),
-    throw({error,{equal,Res}});
-chk_MId(M1,M2) ->
-    throw({not_equal,{mid,M1,M2}}).
-
-chk_MId(ip4Address,M1,M2) -> chk_IP4Address(M1, M2);
-chk_MId(ip6Address,M1,M2) -> chk_IP6Address(M1, M2);
-chk_MId(domainName,M1,M2) -> chk_DomainName(M1, M2);
-chk_MId(deviceName,M1,M2) -> chk_PathName(M1, M2);
-chk_MId(mtpAddress,M1,M2) -> chk_mtpAddress(M1, M2);
-chk_MId(Tag,M1,M2) ->
-    throw({wrong_type,{invalid_tag,Tag,M1,M2}}).
-			       
-    
-chk_IP4Address(M, M) ->
-    {equal,ip4Address};
-chk_IP4Address(M1, M2) ->
-    throw({not_equal,{ip4Address,M1,M2}}).
-
-chk_IP6Address(M, M) ->
-    {equal,ip6Address};
-chk_IP6Address(M1, M2) ->
-    throw({not_equal,{ip6Address,M1,M2}}).
-
-chk_DomainName(D, D) when record(D,'DomainName') ->
-    {equal,'DomainName'};
-chk_DomainName(#'DomainName'{name       = Name1,
-			     portNumber = Port1},
-	       #'DomainName'{name       = Name2,
-			     portNumber = Port2}) ->
-    chk_DomainName_name(Name1,Name2),
-    chk_DomainName_opt_portNumber(Port1,Port2),
-    throw({error,{equal,'DomainName'}});
-chk_DomainName(D1,D2) ->
-    throw({wrong_type,{'DomainName',D1,D2}}).
-
-chk_DomainName_name(N,N) when list(N) ->
-    {equal,name};
-chk_DomainName_name(N1,N2) when list(N1), list(N2) ->
-    throw({not_equal,{'DomainName',name,N1,N2}});
-chk_DomainName_name(N1,N2) ->
-    throw({wrong_type,{'DomainName',name,N1,N2}}).
-
-chk_DomainName_opt_portNumber(asn1_NOVALUE, asn1_NOVALUE) ->
-    {equal, portNumber};
-chk_DomainName_opt_portNumber(P,P) when integer(P), P >= 0 ->
-    {equal, portNumber};
-chk_DomainName_opt_portNumber(P1,P2) when integer(P1), P1 >= 0,
-					  integer(P2), P2 >= 0 ->
-    throw({not_equal,{'DomainName',portNumber,P1,P2}});
-chk_DomainName_opt_portNumber(P1,P2) ->
-    throw({wrong_type,{'DomainName',portNumber,P1,P2}}).
-
-
-chk_PathName(P, P) ->
-    {equal,pathname};
-chk_PathName(P1, P2) ->
-    throw({not_equal,{pathname,P1,P2}}).
-
-chk_mtpAddress(M, M) ->
-    {equal, mtpAddress};
-chk_mtpAddress(M1, M2) ->
-    throw({not_equal,{mtpAddress, M1, M2}}).
-    
-
-chk_messageBody({messageError,B},{messageError,B}) when record(B,'ErrorDescriptor') ->
-    
-    {equal, messageBody};
-chk_messageBody({messageError,B1},{messageError,B2}) ->
-    chk_ErrorDescriptor(B1,B2),
-    throw({error,{equal, messageBody, messageError}});
-chk_messageBody({transactions,T},{transactions,T}) when list(T) ->
-    {equal, messageBody};
-chk_messageBody({transactions,T1},{transactions,T2}) ->
-    chk_transactions(T1,T2),
-    {equal, messageBody};
-chk_messageBody(B1,B2) ->
-    throw({wrong_type,{messageBody,B1,B2}}).
-     
-
-chk_transactions(T,T) when list(T) ->
-    {equal,transactions};
-chk_transactions(T1,T2) when list(T1), list(T2), length(T1) == length(T2) ->
-    chk_transactions1(T1,T2);
-chk_transactions(T1,T2) ->
-    throw({wrong_type,{transactions,T1,T2}}).
-
-chk_transactions1([],[]) ->
-    throw({error,{equal,transactions}});
-chk_transactions1([T|Ts1],[T|Ts2]) ->
-    chk_transactions1(Ts1,Ts2);
-chk_transactions1([T1|_Ts1],[T2|_Ts2]) ->
-    chk_transaction(T1,T2),
-    {equal,transaction}.
-
-chk_transaction(T,T) ->
-    {equal,transaction};
-chk_transaction({transactionRequest,T1},{transactionRequest,T2}) ->
-    chk_transactionRequest(T1,T2),
-    {equal,transactionRequest};
-chk_transaction({transactionPending,T1},{transactionPending,T2}) ->
-    chk_transactionPending(T1,T2),
-    throw({error,{equal,{transactionPending,T1,T2}}});
-chk_transaction({transactionReply,T1},{transactionReply,T2}) ->
-    chk_transactionReply(T1,T2),
-    throw({error,{equal,{transactionReply,T1,T2}}});
-chk_transaction({transactionResponseAck,T1},{transactionResponseAck,T2}) ->
-    chk_transactionAck(T1,T2),
-    throw({error,{equal,{transactionResponseAck,T1,T2}}});
-chk_transaction({Tag1,T1},{Tag2,T2}) ->
-    throw({wrong_type,{transaction_tag,Tag1,Tag2}}).
-
-
-chk_transactionRequest(T,T) when record(T,'TransactionRequest') ->
-    {equal,transactionAck};
-chk_transactionRequest(T1,T2) when record(T1,'TransactionRequest'),
-				   record(T2,'TransactionRequest') ->
-    chk_transactionId(T1#'TransactionRequest'.transactionId,
-		      T2#'TransactionRequest'.transactionId),
-    chk_actionRequests(T1#'TransactionRequest'.actions,
-		       T2#'TransactionRequest'.actions),
-    {equal,transactionRequest};
-chk_transactionRequest(T1,T2) ->
-    throw({wrong_type,{transactionRequest,T1,T2}}).
-    
-
-chk_transactionPending(T,T) when record(T,'TransactionPending') ->
-    {equal,transactionPending};
-chk_transactionPending(#'TransactionPending'{transactionId = Id1} = T1,
-		       #'TransactionPending'{transactionId = Id2} = T2) ->
-    chk_transactionId(Id1,Id2),
-    throw({error,{equal,transactionPending}});
-chk_transactionPending(T1,T2) ->
-    throw({wrong_type,{transactionPending,T1,T2}}).
-
-chk_transactionReply(T,T) when record(T,'TransactionReply') ->
-    {equal,transactionReply};
-chk_transactionReply(#'TransactionReply'{transactionId     = Id1,
-					 immAckRequired    = ImmAck1,
-					 transactionResult = TransRes1} = T1,
-		     #'TransactionReply'{transactionId     = Id2,
-					 immAckRequired    = ImmAck2,
-					 transactionResult = TransRes2} = T2) ->
-    chk_transactionId(Id1,Id2),
-    ImmAck1 = ImmAck2,
-    chk_transactionReply_transactionResult(TransRes1,TransRes2),
-    throw({error,{equal,transactionReply}});
-chk_transactionReply(T1,T2) ->
-    throw({wrong_type,{transactionReply,T1,T2}}).
-
-chk_transactionReply_transactionResult(R,R) ->
-    {equal,transactionReply_transactionResult};
-chk_transactionReply_transactionResult(R1,R2) ->
-    throw({not_equal,{transactionReply_transactionResult,R1,R2}}).
-
-chk_transactionAck(T,T) when record(T,'TransactionAck') ->
-    {equal,transactionAck};
-chk_transactionAck(#'TransactionAck'{firstAck = F1,
-				     lastAck  = L1} = T1,
-		   #'TransactionAck'{firstAck = F2,
-				     lastAck  = L2} = T2) ->
-    chk_transactionId(F1,F2),
-    chk_opt_transactionId(L1,L2),
-    throw({error,{equal,'TransactionAck'}});
-chk_transactionAck(T1,T2) ->
-    throw({wrong_type,{transactionAck,T1,T2}}).
-
-chk_actionRequests(A,A) when list(A), length(A) == 0 ->
-    {equal,actionRequests};
-chk_actionRequests(A,A) when list(A) ->
-    case hd(A) of
-	A when record(A,'ActionRequest') ->
-	    {equal,actionRequests};
-	Else ->
-	    throw({wrong_type,{'ActionRequest',Else}})
-    end;
-chk_actionRequests(A1,A2) when list(A1), list(A2), 
-			       length(A1) == length(A2) ->
-    chk_actionRequests1(A1,A2);
-chk_actionRequests(A1,A2) ->
-    throw({wrong_type,{actionRequests,A1,A2}}).
-
-chk_actionRequests1([],[]) ->
-    throw({error,{equal,actionRequests}});
-chk_actionRequests1([A|As1],[A|As2]) when record(A,'ActionRequest') ->
-    chk_actionRequests1(As1,As2);
-chk_actionRequests1([A1|_As1],[A2|_As2]) ->
-    chk_actionRequest(A1,A2),
-    {equal,actionRequest}.
-
-chk_actionRequest(A,A) when record(A,'ActionRequest') ->
-    {equal,actionRequest};
-chk_actionRequest(#'ActionRequest'{contextId           = Id1,
-				   contextRequest      = Req1,
-				   contextAttrAuditReq = AuditReq1,
-				   commandRequests     = CmdReqs1} = A1,
-		  #'ActionRequest'{contextId           = Id2,
-				   contextRequest      = Req2,
-				   contextAttrAuditReq = AuditReq2,
-				   commandRequests     = CmdReqs2} = A2) ->
-    t("chk_actionRequest -> entry with"
-      "~n   CmdReqs1: ~p"
-      "~n   CmdReqs2: ~p",[CmdReqs1,CmdReqs2]),
-    chk_contextId(Id1,Id2),
-    chk_opt_contextRequest(Req1,Req2),
-    chk_opt_contextAttrAuditReq(AuditReq1,AuditReq2),
-    chk_commandRequests(CmdReqs1,CmdReqs2),
-    {equal,'ActionRequest'}.
-    
-chk_contextId(Id,Id) when integer(Id) ->
-    {equal,contextId};
-chk_contextId(Id1,Id2) when integer(Id1), integer(Id2) ->
-    throw({not_equal,{contextId,Id1,Id2}});
-chk_contextId(Id1,Id2) ->
-    throw({wrong_type,{contextId,Id1,Id2}}).
-
-chk_opt_contextRequest(asn1_NOVALUE, asn1_NOVALUE) ->
-    {equal,contextRequest};
-chk_opt_contextRequest(R,R) when record(R,'ContextRequest') ->
-    {equal,contextRequest};
-chk_opt_contextRequest(#'ContextRequest'{priority    = Prio1,
-					 emergency   = Em1,
-					 topologyReq = TopReq1} = C1,
-		       #'ContextRequest'{priority    = Prio2,
-					 emergency   = Em2,
-					 topologyReq = TopReq2} = C2) ->
-    chk_contextRequest_priority(Prio1,Prio2),
-    chk_contextRequest_emergency(Em1,Em2),
-    chk_topologyRequest(TopReq1,TopReq2),
-    throw({error,{equal,'ContextRequest',C1,C2}}).
-
-chk_contextRequest_priority(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,contextRequest_priority};
-chk_contextRequest_priority(P,P) when integer(P) ->
-    {equal,contextRequest_priority};
-chk_contextRequest_priority(P1,P2) when integer(P1), integer(P2) ->
-    throw({not_equal,{contextRequest_priority,P1,P2}});    
-chk_contextRequest_priority(P1,P2) ->
-    throw({wrong_type,{contextRequest_priority,P1,P2}}).
-
-chk_contextRequest_emergency(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,contextRequest_emergency};
-chk_contextRequest_emergency(true,true) ->
-    {equal,contextRequest_emergency};
-chk_contextRequest_emergency(false,false) ->
-    {equal,contextRequest_emergency};
-chk_contextRequest_emergency(E1,E2) ->
-    throw({not_equal,{contextRequest_emergency,E1,E2}}).
-
-chk_topologyRequest(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,topologyRequest};
-chk_topologyRequest(T,T) when record(T,'TopologyRequest') ->
-    {equal,topologyRequest};
-chk_topologyRequest(#'TopologyRequest'{terminationFrom   = F1,
-				       terminationTo     = T1,
-				       topologyDirection = D1} = T1,
-		    #'TopologyRequest'{terminationFrom   = F2,
-				       terminationTo     = T2,
-				       topologyDirection = D2} = T2) ->
-    chk_terminationId(F1,F2),
-    chk_terminationId(T1,T2),
-    chk_topologyRequest_topologyDirection(D1,D2),
-    throw({error,{equal,'TopologyRequest',D1,D2}}).
-
-chk_topologyRequest_topologyDirection(bothway,bothway) ->
-    {equal,topologyRequest_topologyDirection};
-chk_topologyRequest_topologyDirection(isolate,isolate) ->
-    {equal,topologyRequest_topologyDirection};
-chk_topologyRequest_topologyDirection(oneway,oneway) ->
-    {equal,topologyRequest_topologyDirection};
-chk_topologyRequest_topologyDirection(D1,D2) ->
-    throw({not_equal,{topologyRequest_topologyDirection, D1, D2}}).
-
-chk_opt_contextAttrAuditReq(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,contextAttrAuditReq};
-chk_opt_contextAttrAuditReq(R,R) when record(R,'ContextAttrAuditRequest') ->
-    {equal,contextAttrAuditReq};
-chk_opt_contextAttrAuditReq(#'ContextAttrAuditRequest'{topology  = T1,
-						       emergency = E1,
-						       priority  = P1} = R1,
-			    #'ContextAttrAuditRequest'{topology  = T2,
-						       emergency = E2,
-						       priority  = P2} = R2)  ->
-    T1 = T2,
-    E1 = E2,
-    P1 = P2,
-    throw({error,{equal,'ContextAttrAuditRequest',R1,R2}}).
-
-chk_commandRequests(C1,C2) when list(C1), list(C2), length(C1) == length(C2) ->
-    t("chk_commandRequests -> entry with"
-      "~n   C1: ~p"
-      "~n   C2: ~p", [C1, C2]),
-    chk_commandRequests1(C1,C2);
-chk_commandRequests(C1,C2) ->
-    t("chk_commandRequests -> entry",[]),
-    throw({wrong_type,{commandRequests,C1,C2}}).
-
-chk_commandRequests1([],[]) ->
-    {equal,commandRequests};
-chk_commandRequests1([C1|Cs1],[C2|Cs2]) ->
-    chk_commandRequest(C1,C2),
-    chk_commandRequests1(Cs1,Cs2).
-
-chk_commandRequest(C,C) when record(C,'CommandRequest') ->
-    {equal,commandRequest};
-chk_commandRequest(#'CommandRequest'{command        = Cmd1,
-				     optional       = O1,
-				     wildcardReturn = W1} = C1,
-		   #'CommandRequest'{command        = Cmd2,
-				     optional       = O2,
-				     wildcardReturn = W2} = C2) ->
-    t("chk_commandRequest -> entry with"
-      "~n   C1: ~p"
-      "~n   C2: ~p", [Cmd1, Cmd2]),
-    chk_commandRequest_command(Cmd1,Cmd2),
-    O1 = O2,
-    W1 = W2,
-    {equal,'CommandRequest'};
-chk_commandRequest(C1,C2) ->
-    throw({wrong_type,{commandRequest,C1,C2}}).
-
-chk_commandRequest_command({addReq,C1},{addReq,C2}) ->
-    chk_AmmRequest(C1,C2);
-chk_commandRequest_command({moveReq,C1},{moveReq,C2}) ->
-    chk_AmmRequest(C1,C2);
-chk_commandRequest_command({modReq,C1},{modReq,C2}) ->
-    chk_AmmRequest(C1,C2);
-chk_commandRequest_command({subtractReq,C1},{subtractReq,C2}) ->
-    chk_SubtractRequest(C1,C2);
-chk_commandRequest_command({auditCapRequest,C1},{auditCapRequest,C2}) ->
-    chk_AuditRequest(C1,C2);
-chk_commandRequest_command({auditValueRequest,C1},{auditValueRequest,C2}) ->
-    chk_AuditRequest(C1,C2);
-chk_commandRequest_command({notifyReq,C1},{notifyReq,C2}) ->
-    chk_NotifyRequest(C1,C2);
-chk_commandRequest_command({serviceChangeReq,C1},{serviceChangeReq,C2}) ->
-    chk_ServiceChangeRequest(C1,C2);
-chk_commandRequest_command(C1,C2) ->
-    throw({wrong_type,{commandRequest_command,C1,C2}}).
-    
-
-chk_AmmRequest(R,R) when record(R,'AmmRequest') ->
-    {equal,'AmmRequest'};
-chk_AmmRequest(#'AmmRequest'{terminationID = Tids1,
-			     descriptors   = D1} = R1,
-	       #'AmmRequest'{terminationID = Tids2,
-			     descriptors   = D2} = R2) ->
-    chk_terminationIds(Tids1,Tids2),
-    chk_AmmRequest_descriptors(D1,D2),
-    {equal,'AmmRequest',R1,R2}; % DigitMap body can have trailing '\n', ...
-chk_AmmRequest(R1,R2) ->
-    throw({wrong_type,{'AmmRequest',R1,R2}}).
-
-chk_AmmRequest_descriptors([],[]) ->
-    {equal,ammRequest_descriptors};
-chk_AmmRequest_descriptors(D1,D2) when list(D1), list(D2), 
-				       length(D1) == length(D2) ->
-    chk_AmmRequest_descriptors1(D1,D2);
-chk_AmmRequest_descriptors(D1,D2) ->
-    throw({wrong_type,{ammRequest_descriptors,D1,D2}}).
-
-chk_AmmRequest_descriptors1([],[]) ->
-    {equal,ammRequest_descriptors};
-chk_AmmRequest_descriptors1([D1|Ds1],[D2|Ds2]) ->
-    chk_AmmRequest_descriptor(D1,D2),
-    chk_AmmRequest_descriptors1(Ds1,Ds2).
-    
-chk_AmmRequest_descriptor({mediaDescriptor,D1},{mediaDescriptor,D2}) -> 
-    chk_MediaDescriptor(D1,D2);
-chk_AmmRequest_descriptor({modemDescriptor,D1},{modemDescriptor,D2}) -> 
-    chk_ModemDescriptor(D1,D2);
-chk_AmmRequest_descriptor({muxDescriptor,D1},{muxDescriptor,D2}) -> 
-    chk_MuxDescriptor(D1,D2);
-chk_AmmRequest_descriptor({eventsDescriptor,D1},{eventsDescriptor,D2}) -> 
-    chk_EventsDescriptor(D1,D2);
-chk_AmmRequest_descriptor({eventBufferDescriptor,D1},{eventBufferDescriptor,D2}) -> 
-    chk_EventBufferDescriptor(D1,D2);
-chk_AmmRequest_descriptor({signalsDescriptor,D1},{signalsDescriptor,D2}) -> 
-    chk_SignalsDescriptor(D1,D2);
-chk_AmmRequest_descriptor({digitMapDescriptor,D1},{digitMapDescriptor,D2}) -> 
-    chk_DigitMapDescriptor(D1,D2);
-chk_AmmRequest_descriptor({auditDescriptor,D1},{auditDescriptor,D2}) -> 
-    chk_AuditDescriptor(D1,D2);
-chk_AmmRequest_descriptor({Tag1,D1},{Tag2,D2}) -> 
-    throw({wrong_type,{ammRequest_descriptor_tag,Tag1,Tag2}}).
-    
-    
-chk_SubtractRequest(R,R) when record(R,'SubtractRequest') ->
-    {equal,'SubtractRequest'};
-chk_SubtractRequest(#'SubtractRequest'{terminationID   = Tids1,
-				       auditDescriptor = D1} = R1,
-		    #'SubtractRequest'{terminationID   = Tids2,
-				       auditDescriptor = D2} = R2) ->
-    chk_terminationIds(Tids1,Tids2),
-    chk_opt_AuditDescriptor(D1,D2),
-    throw({error,{equal,{'SubtractRequest',R1,R2}}});
-chk_SubtractRequest(R1,R2) ->
-    throw({wrong_type,{'SubtractRequest',R1,R2}}).
-
-
-chk_AuditRequest(R,R) when record(R,'AuditRequest') ->
-    {equal,'AuditRequest'};
-chk_AuditRequest(#'AuditRequest'{terminationID   = Tid1,
-				 auditDescriptor = D1} = R1,
-		 #'AuditRequest'{terminationID   = Tid2,
-				 auditDescriptor = D2} = R2) ->
-    chk_terminationId(Tid1,Tid2),
-    chk_AuditDescriptor(D1,D2),
-    throw({error,{equal,{'AuditRequest',R1,R2}}});
-chk_AuditRequest(R1,R2) ->
-    throw({wrong_type,{'AuditRequest',R1,R2}}).
-
-
-chk_NotifyRequest(R,R) when record(R,'NotifyRequest') ->
-    {equal,'NotifyRequest'};
-chk_NotifyRequest(#'NotifyRequest'{terminationID            = Tids1,
-				   observedEventsDescriptor = ObsDesc1,
-				   errorDescriptor          = ErrDesc1} = R1,
-		  #'NotifyRequest'{terminationID            = Tids2,
-				   observedEventsDescriptor = ObsDesc2,
-				   errorDescriptor          = ErrDesc2} = R2) ->
-    chk_terminationIds(Tids1,Tids2),
-    chk_ObservedEventsDescriptor(ObsDesc1,ObsDesc2),
-    chk_opt_ErrorDescriptor(ErrDesc1,ErrDesc2),
-    throw({error,{equal,{'NotifyRequest',R1,R2}}});
-chk_NotifyRequest(R1,R2) ->
-    throw({wrong_type,{'NotifyRequest',R1,R2}}).
-
-
-chk_ServiceChangeRequest(R,R) when record(R,'ServiceChangeRequest') ->
-    {equal,'ServiceChangeRequest'};
-chk_ServiceChangeRequest(#'ServiceChangeRequest'{terminationID      = Tids1,
-						 serviceChangeParms = P1} = R1,
-			 #'ServiceChangeRequest'{terminationID      = Tids2,
-						 serviceChangeParms = P2} = R2) ->
-    chk_terminationIds(Tids1,Tids2),
-    chk_ServiceChangeParm(P1,P2),
-    throw({error,{equal,{'ServiceChangeRequest',R1,R2}}});
-chk_ServiceChangeRequest(R1,R2) ->
-    throw({wrong_type,{'ServiceChangeRequest',R1,R2}}).
-
-
-chk_MediaDescriptor(D,D) when record(D,'MediaDescriptor') ->
-    {equal,'MediaDescriptor'};
-chk_MediaDescriptor(#'MediaDescriptor'{termStateDescr = Tsd1,
-				       streams        = S1} = D1,
-		    #'MediaDescriptor'{termStateDescr = Tsd2,
-				       streams        = S2} = D2) ->
-    Tsd1 = Tsd2,
-    S1   = S2,
-    throw({error,{equal,{'MediaDescriptor',D1,D2}}});
-chk_MediaDescriptor(D1,D2) ->
-    throw({wrong_type,{'MediaDescriptor',D1,D2}}).
-
-chk_ModemDescriptor(D,D) when record(D,'ModemDescriptor') ->
-    {equal,'ModemDescriptor'};
-chk_ModemDescriptor(#'ModemDescriptor'{mtl = T1,
-				       mpl = P1} = D1,
-		    #'ModemDescriptor'{mtl = T2,
-				       mpl = P2} = D2) ->
-    T1 = T2,
-    P1 = P2,
-    throw({error,{equal,{'ModemDescriptor',D1,D2}}});
-chk_ModemDescriptor(D1,D2) ->
-    throw({wrong_type,{'ModemDescriptor',D1,D2}}).
-
-chk_MuxDescriptor(D,D) when record(D,'MuxDescriptor') ->
-    {equal,'MuxDescriptor'};
-chk_MuxDescriptor(#'MuxDescriptor'{muxType  = T1,
-				   termList = I1} = D1,
-		  #'MuxDescriptor'{muxType  = T2,
-				   termList = I2} = D2) ->
-    T1 = T2,
-    I1 = I2,
-    throw({error,{equal,{'MuxDescriptor',D1,D2}}});
-chk_MuxDescriptor(D1,D2) ->
-    throw({wrong_type,{'MuxDescriptor',D1,D2}}).
-
-chk_EventsDescriptor(D,D) when record(D,'EventsDescriptor') ->
-    {equal,'EventsDescriptor'};
-chk_EventsDescriptor(#'EventsDescriptor'{requestID = I1,
-					 eventList = E1} = D1,
-		     #'EventsDescriptor'{requestID = I2,
-					 eventList = E2} = D2) ->
-    I1 = I2,
-    E1 = E2,
-    throw({error,{equal,{'EventsDescriptor',D1,D2}}});
-chk_EventsDescriptor(D1,D2) ->
-    throw({wrong_type,{'EventsDescriptor',D1,D2}}).
-
-chk_EventBufferDescriptor(D1,D2) when list(D1), list(D2), 
-				      length(D1) == length(D2) ->
-    chk_EventBufferDescriptor1(D1,D2);
-chk_EventBufferDescriptor(D1,D2) ->
-    throw({wrong_type,{eventBufferDescriptor,D1,D2}}).
-
-chk_EventBufferDescriptor1([],[]) ->
-    {equal,eventBufferDescriptor};
-chk_EventBufferDescriptor1([ES1|D1],[ES2|D2]) ->
-    chk_EventSpec(ES1,ES2),
-    chk_EventBufferDescriptor1(D1,D2).
-
-chk_EventSpec(ES,ES) when record(ES,'EventSpec') ->
-    {equal,'EventSpec'};
-chk_EventSpec(#'EventSpec'{eventName    = N1,
-			   streamID     = I1,
-			   eventParList = P1} = ES1,
-	      #'EventSpec'{eventName    = N2,
-			   streamID     = I2,
-			   eventParList = P2} = ES2) ->
-    N1 = N2,
-    chk_opt_StreamId(I1,I2),
-    chk_EventParameters(P1,P2),
-    throw({error,{equal,{'EventSpec',ES1,ES2}}});
-chk_EventSpec(ES1,ES2) ->
-    throw({wrong_type,{'EventSpec',ES1,ES2}}).
-
-
-chk_opt_ErrorDescriptor(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,'ErrorDescriptor'};
-chk_opt_ErrorDescriptor(E1,E2) ->
-    chk_ErrorDescriptor(E1,E2).
-
-chk_ErrorDescriptor(E,E) when record(E,'ErrorDescriptor') ->
-    {equal,'ErrorDescriptor'};
-chk_ErrorDescriptor(#'ErrorDescriptor'{errorCode = Code1,
-				       errorText = Text1} = E1,
-		    #'ErrorDescriptor'{errorCode = Code2,
-				       errorText = Text2} = E2) ->
-    chk_ErrorCode(Code1,Code2),
-    chk_opt_ErrorText(Text1,Text2),
-    throw({error,{equal,{'ErrorDescriptor',E1,E2}}});
-chk_ErrorDescriptor(E1,E2) ->
-    throw({wrong_type,{'ErrorDescriptor',E1,E2}}).
-
-chk_ErrorCode(C,C) when integer(C) ->
-    {equal,errorCode};
-chk_ErrorCode(C1,C2) when integer(C1), integer(C2) ->
-    throw({not_equal,{errorCode,C1,C2}});
-chk_ErrorCode(C1,C2) ->
-    throw({wrong_type,{errorCode,C1,C2}}).
-
-chk_opt_ErrorText(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,errorText};
-chk_opt_ErrorText(T,T) when list(T) ->
-    {equal,errorText};
-chk_opt_ErrorText(T1,T2) when list(T1), list(T2) ->
-    throw({not_equal,{errorText,T1,T2}});
-chk_opt_ErrorText(T1,T2) ->
-    throw({wrong_type,{errorText,T1,T2}}).
-
-
-chk_SignalsDescriptor(D1,D2) when list(D1), list(D2), 
-				  length(D1) == length(D2) ->
-    chk_SignalsDescriptor1(D1,D2);
-chk_SignalsDescriptor(D1,D2) ->
-    throw({wrong_type,{signalsDescriptor,D1,D2}}).
-
-chk_SignalsDescriptor1([],[]) ->
-    {equal,signalsDescriptor};
-chk_SignalsDescriptor1([S1|D1],[S2|D2]) ->
-    chk_SignalRequest(S1,S2),
-    chk_SignalsDescriptor1(D1,D2).
-
-chk_SignalRequest({signal,S1},{signal,S2}) ->
-    chk_Signal(S1,S2);
-chk_SignalRequest({seqSigList,S1},{seqSigList,S2}) ->
-    chk_SeqSignalList(S1,S2);
-chk_SignalRequest(R1,R2) ->
-    throw({wrong_type,{signalRequest,R1,R2}}).
-
-chk_SeqSignalList(S,S) when record(S,'SeqSigList') ->
-    {equal,'SeqSigList'};
-chk_SeqSignalList(#'SeqSigList'{id         = Id1,
-				signalList = SigList1} = S1,
-		  #'SeqSigList'{id         = Id2,
-				signalList = SigList2} = S2) ->
-    Id1 = Id2,
-    chk_Signals(SigList1,SigList2),
-    throw({error,{equal,{'SeqSigList',S1,S2}}});
-chk_SeqSignalList(S1,S2) ->
-    throw({wrong_type,{'SeqSigList',S1,S2}}).
-
-
-chk_Signals([],[]) ->
-    {equal,signals};
-chk_Signals([Sig1|Sigs1],[Sig2|Sigs2]) ->
-    chk_Signal(Sig1,Sig2),
-    chk_Signals(Sigs1,Sigs2).
-
-
-chk_Signal(S,S) when record(S,'Signal') ->
-    {equal,'Signal'};
-chk_Signal(#'Signal'{signalName       = N1,
-		     streamID         = I1,
-		     sigType          = T1,
-		     duration         = D1,
-		     notifyCompletion = C1,
-		     keepActive       = K1,
-		     sigParList       = P1} = S1,
-	   #'Signal'{signalName       = N2,
-		     streamID         = I2,
-		     sigType          = T2,
-		     duration         = D2,
-		     notifyCompletion = C2,
-		     keepActive       = K2,
-		     sigParList       = P2} = S2) ->
-    N1 = N2,
-    chk_opt_StreamId(I1,I2),
-    chk_opt_SignalType(T1,T2),
-    chk_opt_duration(D1,D2),
-    chk_opt_NotifyCompletion(C1,C2),
-    chk_opt_keepAlive(K1,K2),
-    chk_sigParameters(P1,P2),
-    throw({error,{equal,{'Signal',S1,S2}}});
-chk_Signal(S1,S2) ->
-    throw({wrong_type,{'Signal',S1,S2}}).
-
-chk_DigitMapDescriptor(D,D) when record(D,'DigitMapDescriptor') ->
-    {equal,'DigitMapDescriptor'};
-chk_DigitMapDescriptor(#'DigitMapDescriptor'{digitMapName  = N1,
-					     digitMapValue = V1} = D1,
-		       #'DigitMapDescriptor'{digitMapName  = N2,
-					     digitMapValue = V2} = D2) ->
-    chk_opt_digitMapName(N1,N2),
-    chk_opt_digitMapValue(V1,V2),
-    {equal,'DigitMapDescriptor'};
-chk_DigitMapDescriptor(D1,D2) ->
-    throw({wrong_type,{'DigitMapDescriptor',D1,D2}}).
-
-chk_opt_digitMapName(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,digitMapName};
-chk_opt_digitMapName(N1,N2) ->
-    chk_digitMapName(N1,N2).
-
-chk_digitMapName(N,N) ->
-    {equal,digitMapName};
-chk_digitMapName(N1,N2) ->
-    throw({not_equal,{digitMapName,N1,N2}}).
-
-chk_opt_digitMapValue(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,digitMapValue};
-chk_opt_digitMapValue(V1,V2) ->
-    chk_digitMapValue(V1,V2).
-
-chk_digitMapValue(V,V) when record(V,'DigitMapValue') ->
-    {equal,digitMapValue};
-chk_digitMapValue(#'DigitMapValue'{digitMapBody = Body1,
-				   startTimer   = Start1,
-				   shortTimer   = Short1,
-				   longTimer    = Long1} = V1,
-		  #'DigitMapValue'{digitMapBody = Body2,
-				   startTimer   = Start2,
-				   shortTimer   = Short2,
-				   longTimer    = Long2} = V2) ->
-    chk_digitMapValue_digitMapBody(Body1,Body2), % Could contain trailing '\n', ...
-    chk_opt_timer(Start1,Start2),
-    chk_opt_timer(Short1,Short2),
-    chk_opt_timer(Long1,Long2),
-    {equal,'DigitMapValue'};
-chk_digitMapValue(V1,V2) ->
-    throw({wrong_type,{digitMapValue,V1,V2}}).
-
-chk_digitMapValue_digitMapBody(B,B) when list(B) ->
-    {equal,digitMapValue_digitMapBody};
-chk_digitMapValue_digitMapBody(B1,B2) when list(B1), list(B2), length(B1) > length(B2)  ->
-    case string:str(B2, B1) of
-	0 ->
-	    {equal,digitMapValue_digitMapBody};
-	_ ->
-	    throw({not_equal,{digitMapValue_digitMapBody,B1,B2}})
-    end;
-chk_digitMapValue_digitMapBody(B1,B2) when list(B1), list(B2), length(B1) < length(B2)  ->
-    case string:str(B1, B2) of
-	0 ->
-	    {equal,digitMapValue_digitMapBody};
-	_ ->
-	    throw({not_equal,{digitMapValue_digitMapBody,B1,B2}})
-    end;
-chk_digitMapValue_digitMapBody(B1,B2) when list(B1), list(B2) ->
-    throw({not_equal,{digitMapValue_digitMapBody,B1,B2}});
-chk_digitMapValue_digitMapBody(B1,B2) ->
-    throw({wrong_type,{digitMapValue_digitMapBody,B1,B2}}).
-
-
-chk_opt_AuditDescriptor(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,'AuditDescriptor'};
-chk_opt_AuditDescriptor(D1,D2) ->
-    chk_AuditDescriptor(D1,D2).
-
-chk_AuditDescriptor(D,D) when record(D,'AuditDescriptor') ->
-    {equal,'AuditDescriptor'};
-chk_AuditDescriptor(#'AuditDescriptor'{auditToken = T1,
-				       auditPropertyToken = APT1} = D1,
-		    #'AuditDescriptor'{auditToken = T2,
-				       auditPropertyToken = APT2} = D2) ->
-    chk_opt_auditToken(T1,T2),
-    chk_opt_auditPropertyToken(APT1, APT2),
-    throw({error,{equal,{'AuditDescriptor',D1,D2}}});
-chk_AuditDescriptor(D1,D2) ->
-    throw({wrong_type,{'AuditDescriptor',D1,D2}}).
-
-chk_opt_auditToken(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,auditToken};
-chk_opt_auditToken(T1,T2) ->
-    chk_auditToken(T1,T2).
-
-chk_auditToken(T1,T2) when list(T1), list(T2), length(T1) == length(T2) ->
-    chk_auditToken1(T1,T2);
-chk_auditToken(T1,T2) ->
-    throw({wrong_type,{auditToken,T1,T2}}).
-
-chk_auditToken1([],[]) ->
-    {equal,auditToken};
-chk_auditToken1([H1|T1],[H2|T2]) ->
-    chk_auditToken2(H1,H2),
-    chk_auditToken1(T1,T2).
-
-chk_auditToken2(muxToken,muxToken) ->
-    {equal,auditToken};
-chk_auditToken2(modemToken,modemToken) ->
-    {equal,auditToken};
-chk_auditToken2(mediaToken,mediaToken) ->
-    {equal,auditToken};
-chk_auditToken2(eventsToken,eventsToken) ->
-    {equal,auditToken};
-chk_auditToken2(signalsToken,signalsToken) ->
-    {equal,auditToken};
-chk_auditToken2(digitMapToken,digitMapToken) ->
-    {equal,auditToken};
-chk_auditToken2(statsToken,statsToken) ->
-    {equal,auditToken};
-chk_auditToken2(observedEventsToken,observedEventsToken) ->
-    {equal,auditToken};
-chk_auditToken2(packagesToken,packagesToken) ->
-    {equal,auditToken};
-chk_auditToken2(eventBufferToken,eventBufferToken) ->
-    {equal,auditToken};
-chk_auditToken2(T1,T2) when atom(T1), atom(T2) ->
-    throw({not_equal,{auditToken,T1,T2}});
-chk_auditToken2(T1,T2) ->
-    throw({wrong_type,{auditToken,T1,T2}}).
-
-chk_opt_auditPropertyToken(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,'AuditDescriptor'};
-chk_opt_auditPropertyToken(T1, T2) ->
-    chk_auditPropertyToken(T1, T2).
-
-chk_auditPropertyToken([], []) ->
-    {equal,auditPropertyToken};
-chk_auditPropertyToken([{Tag, Val}|T1], [{Tag, Val}|T2]) ->
-    chk_auditPropertyToken(T1, T2);
-chk_auditPropertyToken([{Tag1, Val1}|T1], [{Tag2, Val2}|T2]) ->
-    chk_IndAuditParameter(Tag1, Val1, Tag2, Val2),
-    chk_auditPropertyToken(T1, T2).
-
-chk_IndAuditParameter(indAudMediaDescriptor, D1,
-		      indAudMediaDescriptor, D2) ->
-    chk_IndAudMediaDescriptor(D1, D2);
-chk_IndAuditParameter(indAudEventsDescriptor, D1,
-		      indAudEventsDescriptor, D2) ->
-    chk_IndAudEventsDescriptor(D1, D2);
-chk_IndAuditParameter(indAudEventBufferDescriptor, D1,
-		      indAudEventBufferDescriptor, D2) ->
-    chk_IndAudEventBufferDescriptor(D1, D2);
-chk_IndAuditParameter(indAudSignalsDescriptor, D1,
-		      indAudSignalsDescriptor, D2) ->
-    chk_IndAudSignalsDescriptor(D1, D2);
-chk_IndAuditParameter(indAudDigitMapDescriptor, D1,
-		      indAudDigitMapDescriptor, D2) ->
-    chk_IndAudDigitMapDescriptor(D1, D2);
-chk_IndAuditParameter(indAudStatisticsDescriptor, D1,
-		      indAudStatisticsDescriptor, D2) ->
-    chk_IndAudStatisticsDescriptor(D1, D2);
-chk_IndAuditParameter(indAudPackagesDescriptor, D1,
-		      indAudPackagesDescriptor, D2) ->
-    chk_IndAudPackagesDescriptor(D1, D2);
-chk_IndAuditParameter(Tag1, Val1, Tag2, Val2) ->
-    throw({wrong_type, {'IndAuditParameter', Tag1, Val1, Tag2, Val2}}).
-
-
-chk_IndAudMediaDescriptor(D, D) when record(D, 'IndAudMediaDescriptor') ->
-    {equal, 'IndAudMediaDescriptor'};
-chk_IndAudMediaDescriptor(#'IndAudMediaDescriptor'{termStateDescr = TSD1,
-						   streams        = S1},
-			  #'IndAudMediaDescriptor'{termStateDescr = TSD2,
-						   streams        = S2}) ->
-    chk_IndAudMediaDescriptor_termStateDescr(TSD1, TSD2),
-    chk_IndAudMediaDescriptor_streams(S1, S2),
-    {equal, 'IndAudMediaDescriptor'};
-chk_IndAudMediaDescriptor(D1, D2) ->
-    throw({wrong_type, {'IndAudMediaDescriptor', D1, D2}}).
-
-chk_IndAudMediaDescriptor_termStateDescr(asn1_NOVALUE, asn1_NOVALUE) ->
-    {equal, 'IndAudTerminationStateDescriptor'};
-chk_IndAudMediaDescriptor_termStateDescr(TSD, TSD) 
-  when record(TSD, 'IndAudTerminationStateDescriptor') ->
-    {equal, 'IndAudTerminationStateDescriptor'};
-chk_IndAudMediaDescriptor_termStateDescr(TSD1, TSD2) 
-  when record(TSD1, 'IndAudTerminationStateDescriptor'), 
-       record(TSD2, 'IndAudTerminationStateDescriptor') ->
-    throw({not_equal, {'IndAudTerminationStateDescriptor', TSD1, TSD2}});
-chk_IndAudMediaDescriptor_termStateDescr(D1, D2) ->
-    throw({wrong_type, {'IndAudTerminationStateDescriptor', D1, D2}}).
-
-chk_IndAudMediaDescriptor_streams(asn1_NOVALUE, asn1_NOVALUE) ->
-    {equal, streams};
-chk_IndAudMediaDescriptor_streams({oneStream, S1}, {oneStream, S2}) ->
-    chk_IndAudStreamParms(S1, S2);
-chk_IndAudMediaDescriptor_streams({multiStream, MS1}, {multiStream, MS2}) ->
-    chk_IndAudMediaDescriptor_multiStream(MS1, MS2);
-chk_IndAudMediaDescriptor_streams(S1, S2) ->
-    throw({wrong_type, {streams, S1, S2}}).
-
-chk_IndAudStreamParms(
-  #'IndAudStreamParms'{localControlDescriptor = LCD,
-		       localDescriptor        = LD,
-		       remoteDescriptor       = RD},
-  #'IndAudStreamParms'{localControlDescriptor = LCD,
-		       localDescriptor        = LD,
-		       remoteDescriptor       = RD}) ->
-    {equal, 'IndAudStreamParms'};
-chk_IndAudStreamParms(IASP1, IASP2) 
-  when record(IASP1, 'IndAudStreamParms'), 
-       record(IASP2, 'IndAudStreamParms') ->
-    throw({not_equal, {'IndAudStreamParms', IASP1, IASP2}});
-chk_IndAudStreamParms(S1, S2) ->
-    throw({wrong_type, {'IndAudStreamParms', S1, S2}}).
-
-chk_IndAudMediaDescriptor_multiStream([], []) ->
-    {equal, multiStream};
-chk_IndAudMediaDescriptor_multiStream([H|T1], [H|T2]) 
-  when record(H, 'IndAudStreamDescriptor') ->
-    chk_IndAudMediaDescriptor_multiStream(T1, T2);
-chk_IndAudMediaDescriptor_multiStream([H1|T1], [H2|T2]) ->
-    chk_IndAudStreamDescriptor(H1, H2),
-    chk_IndAudMediaDescriptor_multiStream(T1, T2);
-chk_IndAudMediaDescriptor_multiStream(MS1, MS2) ->
-    throw({not_equal, {multiStream, MS1, MS2}}).
-
-chk_IndAudStreamDescriptor(D, D) when record(D, 'IndAudStreamDescriptor') ->
-    {equal, 'IndAudStreamDescriptor'};
-chk_IndAudStreamDescriptor(
-  #'IndAudStreamDescriptor'{streamID    = SID1,
-			    streamParms = SP1} = D1,
-  #'IndAudStreamDescriptor'{streamID    = SID2,
-			    streamParms = SP2} = D2) ->
-    chk_StreamId(SID1, SID2),
-    chk_IndAudStreamParms(SP1, SP2),
-    throw({error, {equal, D1, D2}});
-chk_IndAudStreamDescriptor(D1, D2) ->
-    throw({wrong_type, {'IndAudStreamDescriptor', D1, D2}}).
-
-chk_IndAudEventsDescriptor(D, D) when record(D, 'IndAudEventsDescriptor') ->
-    {equal, 'IndAudEventsDescriptor'};
-chk_IndAudEventsDescriptor(D1, D2) 
-  when record(D1, 'IndAudEventsDescriptor'),
-       record(D2, 'IndAudEventsDescriptor') ->
-    throw({not_equal, {'IndAudEventsDescriptor', D1, D2}});
-chk_IndAudEventsDescriptor(D1, D2) ->
-    throw({wrong_type, {'IndAudEventsDescriptor', D1, D2}}).
-
-chk_IndAudEventBufferDescriptor(D, D) 
-  when record(D, 'IndAudEventBufferDescriptor') ->
-    {equal, 'IndAudEventBufferDescriptor'};
-chk_IndAudEventBufferDescriptor(D1, D2) 
-  when record(D1, 'IndAudEventBufferDescriptor'),
-       record(D2, 'IndAudEventBufferDescriptor') ->
-    throw({not_equal, {'IndAudEventBufferDescriptor', D1, D2}});
-chk_IndAudEventBufferDescriptor(D1, D2) ->
-    throw({wrong_type, {'IndAudEventBufferDescriptor', D1, D2}}).
-
-chk_IndAudSignalsDescriptor(D, D) ->
-    {equal, 'IndAudSignalsDescriptor'};
-chk_IndAudSignalsDescriptor({signal, S1}, {signal, S2}) ->
-    throw({not_equal, {signal, S1, S2}});
-chk_IndAudSignalsDescriptor({seqSigList, S1}, {seqSigList, S2}) ->
-    throw({not_equal, {seqSigList, S1, S2}});
-chk_IndAudSignalsDescriptor(D1, D2) ->
-    throw({wrong_type, {'IndAudSignalsDescriptor', D1, D2}}).
-
-chk_IndAudDigitMapDescriptor(D, D) 
-  when record(D, 'IndAudDigitMapDescriptor') ->
-    {equal, 'IndAudDigitMapDescriptor'};
-chk_IndAudDigitMapDescriptor(D1, D2) 
-  when record(D1, 'IndAudDigitMapDescriptor'),
-       record(D2, 'IndAudDigitMapDescriptor') ->
-    throw({not_equal, {'IndAudDigitMapDescriptor', D1, D2}});
-chk_IndAudDigitMapDescriptor(D1, D2) ->
-    throw({wrong_type, {'IndAudDigitMapDescriptor', D1, D2}}).
-
-chk_IndAudStatisticsDescriptor(D, D) 
-  when record(D, 'IndAudStatisticsDescriptor') ->
-    {equal, 'IndAudStatisticsDescriptor'};
-chk_IndAudStatisticsDescriptor(D1, D2) 
-  when record(D1, 'IndAudStatisticsDescriptor'),
-       record(D2, 'IndAudStatisticsDescriptor') ->
-    throw({not_equal, {'IndAudStatisticsDescriptor', D1, D2}});
-chk_IndAudStatisticsDescriptor(D1, D2) ->
-    throw({wrong_type, {'IndAudStatisticsDescriptor', D1, D2}}).
-
-chk_IndAudPackagesDescriptor(D, D) 
-  when record(D, 'IndAudPackagesDescriptor') ->
-    {equal, 'IndAudPackagesDescriptor'};
-chk_IndAudPackagesDescriptor(D1, D2) 
-  when record(D1, 'IndAudPackagesDescriptor'),
-       record(D2, 'IndAudPackagesDescriptor') ->
-    throw({not_equal, {'IndAudPackagesDescriptor', D1, D2}});
-chk_IndAudPackagesDescriptor(D1, D2) ->
-    throw({wrong_type, {'IndAudPackagesDescriptor', D1, D2}}).
-
-
-chk_ObservedEventsDescriptor(D,D) when record(D,'ObservedEventsDescriptor') ->
-    {equal,'ObservedEventsDescriptor'};
-chk_ObservedEventsDescriptor(#'ObservedEventsDescriptor'{requestId        = Id1,
-							 observedEventLst = E1} = D1,
-			     #'ObservedEventsDescriptor'{requestId        = Id2,
-							 observedEventLst = E2} = D2) ->
-    Id1 = Id2,
-    chk_ObservedEvents(E1,E2),
-    throw({error,{equal,{'ObservedEventsDescriptor',D1,D2}}});
-chk_ObservedEventsDescriptor(D1,D2) ->
-    throw({wrong_type,{'ObservedEventsDescriptor',D1,D2}}).
-    
-
-chk_ObservedEvents(E1,E2) when list(E1), list(E2), length(E1) == length(E2) ->
-    chk_ObservedEvents1(E1,E2);
-chk_ObservedEvents(E1,E2) ->
-    throw({wrong_type,{observedEvents,E1,E2}}).
-
-
-chk_ObservedEvents1([],[]) ->
-    {equal,observedEvents};
-chk_ObservedEvents1([Ev1|Evs1],[Ev2|Evs2]) ->
-    chk_ObservedEvent(Ev1,Ev2),
-    chk_ObservedEvents1(Evs1,Evs2).
-
-chk_ObservedEvent(#'ObservedEvent'{eventName    = N1,
-				   streamID     = I1,
-				   eventParList = P1,
-				   timeNotation = T1} = E1,
-		  #'ObservedEvent'{eventName    = N2,
-				   streamID     = I2,
-				   eventParList = P2,
-				   timeNotation = T2} = E2) ->
-    N1 = N2,
-    chk_opt_StreamId(I1,I2),
-    chk_EventParameters(P1,P2),
-    chk_opt_TimeNotation(T1,T2),
-    throw({error,{equal,{'ObservedEvent',E1,E2}}});
-chk_ObservedEvent(E1,E2) ->
-    throw({wrong_type,{'ObservedEvent',E1,E2}}).
-    
-
-chk_opt_TimeNotation(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,'TimeNotation'};
-chk_opt_TimeNotation(T1,T2) ->
-    chk_TimeNotation(T1,T2).
-
-chk_TimeNotation(T,T) when record(T,'TimeNotation') ->
-    {equal,'TimeNotation'};
-chk_TimeNotation(#'TimeNotation'{date = Date1,
-				 time = Time1} = T1,
-		 #'TimeNotation'{date = Date2,
-				 time = Time2} = T2) ->
-    Date1 = Date2,
-    Time1 = Time2,
-    throw({error,{equal,{'TimeNotation',T1,T2}}});
-chk_TimeNotation(T1,T2) ->
-    throw({wrong_type,{'TimeNotation',T1,T2}}).
-    
-    
-chk_opt_timer(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,timer};
-chk_opt_timer(T1,T2) ->
-    chk_timer(T1,T2).
-
-chk_timer(T,T) when integer(T) ->
-    {equal,timer};
-chk_timer(T1,T2) when integer(T1), integer(T2) ->
-    throw({not_equal,{timer,T1,T2}});
-chk_timer(T1,T2) ->
-    throw({wrong_type,{timer,T1,T2}}).
-    
-
-chk_opt_SignalType(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,signalType};
-chk_opt_SignalType(T1,T2) ->
-    chk_SignalType(T1,T2).
-
-chk_SignalType(brief,brief) ->
-    {equal,signalType};
-chk_SignalType(onOffonOff,onOffonOff) ->
-    {equal,signalType};
-chk_SignalType(timeOut,timeOut) ->
-    {equal,signalType};
-chk_SignalType(T1,T2) ->
-    throw({wrong_type,{signalType,T1,T2}}).
-
-
-chk_opt_duration(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,duration};
-chk_opt_duration(D1,D2) ->
-    chk_duration(D1,D2).
-
-chk_duration(D,D) when integer(D) ->
-    {equal,duration};
-chk_duration(D1,D2) when integer(D1), integer(D2) ->
-    throw({not_equal,{duration,D1,D2}});
-chk_duration(D1,D2) ->
-    throw({wrong_type,{duration,D1,D2}}).
-
-
-chk_opt_NotifyCompletion(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,notifyCompletion};
-chk_opt_NotifyCompletion(N1,N2) ->
-    chk_NotifyCompletion(N1,N2).
-
-chk_NotifyCompletion([],[]) ->
-    {equal,notifyCompletion};
-chk_NotifyCompletion([Item1|Items1],[Item2|Items2]) ->
-    chk_NotifyCompletion1(Item1,Item2),
-    chk_NotifyCompletion(Items1,Items2);
-chk_NotifyCompletion(C1,C2) ->
-    throw({wrong_type,{notifyCompletion,C1,C2}}).
-
-chk_NotifyCompletion1(onTimeOut,onTimeOut) ->
-    {equal,notifyCompletion_part};
-chk_NotifyCompletion1(onInterruptByEvent,onInterruptByEvent) ->
-    {equal,notifyCompletion_part};
-chk_NotifyCompletion1(onInterruptByNewSignalDescr,onInterruptByNewSignalDescr) ->
-    {equal,notifyCompletion_part};
-chk_NotifyCompletion1(otherReason,otherReason) ->
-    {equal,notifyCompletion_part};
-chk_NotifyCompletion1(C1,C2) ->
-    throw({wrong_type,{notifyCompletion_part,C1,C2}}).
-
-
-chk_opt_keepAlive(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,keepAlive};
-chk_opt_keepAlive(K1,K2) ->
-    chk_keepAlive(K1,K2).
-
-chk_keepAlive(true,true) ->
-    {equal,keepAlive};
-chk_keepAlive(false,false) ->
-    {equal,keepAlive};
-chk_keepAlive(K1,K2) ->
-    throw({wrong_type,{keepAlive,K1,K2}}).
-
-
-chk_ServiceChangeParm(P,P) when  record(P,'ServiceChangeParm') ->
-    {equal,'ServiceChangeParm'};
-chk_ServiceChangeParm(#'ServiceChangeParm'{serviceChangeMethod  = M1, 
-					   serviceChangeAddress = A1, 
-					   serviceChangeVersion = V1, 
-					   serviceChangeProfile = P1, 
-					   serviceChangeReason  = R1, 
-					   serviceChangeDelay   = D1, 
-					   serviceChangeMgcId   = Mid1, 
-					   timeStamp            = T1} = P1,
-		      #'ServiceChangeParm'{serviceChangeMethod  = M2, 
-					   serviceChangeAddress = A2, 
-					   serviceChangeVersion = V2, 
-					   serviceChangeProfile = P2, 
-					   serviceChangeReason  = R2, 
-					   serviceChangeDelay   = D2, 
-					   serviceChangeMgcId   = Mid2, 
-					   timeStamp            = T2} = P2) ->
-    M1 = M2,
-    A1 = A2,
-    V1 = V2,
-    P1 = P2,
-    R1 = R2,
-    D1 = D2,
-    Mid1 = Mid2,
-    T2 = T2,
-    throw({error,{equal,{'ServiceChangeParm',P1,P2}}});
-chk_ServiceChangeParm(P1,P2) ->
-    throw({wrong_type,{'ServiceChangeParm',P1,P2}}).
-
-     
-chk_sigParameters(S1,S2) when list(S1), list(S2), length(S1) == length(S2) ->
-    chk_sigParameters1(S1,S2);
-chk_sigParameters(S1,S2) ->
-    throw({wrong_type,{sigParameters,S1,S2}}).
-
-chk_sigParameters1([],[]) ->
-    {equal,sigParameters};
-chk_sigParameters1([H1|T1],[H2|T2]) ->
-    chk_sigParameter(H1,H2),
-    chk_sigParameters1(T1,T2);
-chk_sigParameters1(P1,P2) ->
-    throw({wrong_type,{sigParameters,P1,P2}}).
-    
-chk_sigParameter(#'SigParameter'{sigParameterName = N1,
-				 value            = V1,
-				 extraInfo        = E1} = P1,
-		 #'SigParameter'{sigParameterName = N2,
-				 value            = V2,
-				 extraInfo        = E2} = P2) ->
-    N1 = N2,
-    chk_Value(V1,V2),
-    chk_opt_extraInfo(E1,E2),
-    throw({error,{equal,{extraInfo,E1,E2}}});
-chk_sigParameter(P1,P2) ->
-    throw({wrong_type,{'SigParameter',P1,P2}}).
-
-    
-chk_opt_StreamId(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,streamId};
-chk_opt_StreamId(I1,I2) ->
-    chk_StreamId(I1,I2).
-
-chk_StreamId(I,I) when integer(I) ->
-    {equal,streamId};
-chk_StreamId(I1,I2) when integer(I1), integer(I2) ->
-    throw({not_equal,{streamId,I1,I2}});
-chk_StreamId(I1,I2) ->
-    throw({wrong_type,{streamId,I1,I2}}).
-    
-
-chk_EventParameters(EP1,EP2) when list(EP1), list(EP2), 
-				  length(EP1) == length(EP2) ->
-    chk_EventParameters1(EP1,EP2);
-chk_EventParameters(EP1,EP2) ->
-    throw({wrong_type,{eventParameters,EP1,EP2}}).
-
-chk_EventParameters1([],[]) ->
-    {equal,eventParameters};
-chk_EventParameters1([EP1|EPS1],[EP2|EPS2]) ->
-    chk_EventParameter(EP1,EP2),
-    chk_EventParameters1(EPS1,EPS2).
-    
-chk_EventParameter(EP,EP) when record(EP,'EventParameter') ->
-    {equal,'EventParameter'};
-chk_EventParameter(#'EventParameter'{eventParameterName = N1,
-				     value              = V1,
-				     extraInfo          = E1} = EP1,
-		   #'EventParameter'{eventParameterName = N2,
-				     value              = V2,
-				     extraInfo          = E2} = EP2) ->
-    N1 = N2,
-    chk_Value(V1,V2),
-    chk_opt_extraInfo(E1,E2),
-    throw({error,{equal,{'EventParameter',EP1,EP2}}});
-chk_EventParameter(EP1,EP2) ->
-    throw({wrong_type,{'EventParameter',EP1,EP2}}).
-
-
-chk_Value(V,V) when list(V) ->
-    chk_Value(V);
-chk_Value(V1,V2) when list(V1), list(V2), length(V1) == length(V2) ->
-    chk_Value1(V1,V2);
-chk_Value(V1,V2) ->
-    throw({wrong_type,{value,V1,V2}}).
-
-chk_Value([]) ->
-    ok;
-chk_Value([H|T]) when list(H) ->
-    chk_Value(T);
-chk_Value([H|T]) ->
-    throw({wrong_type,{value_part,H}}).
-
-chk_Value1([],[]) ->
-    {equal,value};
-chk_Value1([H|T1],[H|T2]) when list(H) ->
-    chk_Value1(T1,T2);
-chk_Value1([H|T1],[H|T2]) ->
-    throw({wrong_type,{value_part,H}});
-chk_Value1([H1|T1],[H2|T2]) when list(H1), list(H2) ->
-    throw({not_equal,{value_part,H1,H2}});
-chk_Value1(V1,V2) ->
-    throw({wrong_type,{value,V1,V2}}).
-
-
-chk_opt_extraInfo(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,extraInfo};
-chk_opt_extraInfo(E1,E2) ->
-    chk_extraInfo(E1,E2).
-
-chk_extraInfo({relation,greaterThan},{relation,greaterThan}) ->
-    {equal,extraInfo};
-chk_extraInfo({relation,smallerThan},{relation,smallerThan}) ->
-    {equal,extraInfo};
-chk_extraInfo({relation,unequalTo},{relation,unequalTo}) ->
-    {equal,extraInfo};
-chk_extraInfo({range,true},{range,true}) ->
-    {equal,extraInfo};
-chk_extraInfo({range,false},{range,false}) ->
-    {equal,extraInfo};
-chk_extraInfo({sublist,true},{sublist,true}) ->
-    {equal,extraInfo};
-chk_extraInfo({sublist,false},{sublist,false}) ->
-    {equal,extraInfo};
-chk_extraInfo(E1,E2) ->
-    throw({wrong_type,{extraInfo,E1,E2}}).
-
-
-chk_opt_transactionId(asn1_NOVALUE,asn1_NOVALUE) ->
-    {equal,transactionId};
-chk_opt_transactionId(Id1,Id2) ->
-    chk_transactionId(Id1,Id2).
-
-chk_transactionId(Id,Id) when integer(Id) ->
-    {equal,transactionId};
-chk_transactionId(Id1,Id2) when integer(Id1), integer(Id2) ->
-    throw({not_equal,{transactionId,Id1,Id2}});
-chk_transactionId(Id1,Id2) ->
-    throw({wrong_type,{transactionId,Id1,Id2}}).
-    
-
-chk_terminationIds(Tids1,Tids2) when list(Tids1), list(Tids2), 
-				     length(Tids1) == length(Tids2) ->
-    chk_terminationIds1(Tids1,Tids2);
-chk_terminationIds(Tids1,Tids2) ->
-    throw({wrong_type,{terminationIds,Tids1,Tids2}}).
-
-chk_terminationIds1([],[]) ->
-    {equal,terminationIds};
-chk_terminationIds1([Tid1|Tids1],[Tid2|Tids2]) ->
-    chk_terminationId(Tid1,Tid2),
-    chk_terminationIds1(Tids1,Tids2).
-
-chk_terminationId(Id,Id) when record(Id,'TerminationID') ->
-    {equal,terminationId};
-chk_terminationId(Id,Id) when record(Id,megaco_term_id) ->
-    {equal,terminationId};
-chk_terminationId(#'TerminationID'{wildcard = W1,
-				   id       = I1} = Tid1,
-		  #'TerminationID'{wildcard = W2,
-				   id       = I2} = Tid2) ->
-    chk_terminationId_wildcard(W1,W2),
-    chk_terminationId_id(I1,I2),
-    throw({error,{equal,{'TerminationID',Tid1,Tid2}}});
-chk_terminationId(#megaco_term_id{contains_wildcards = W1,
-				  id                 = I1} = Tid1,
-		  #megaco_term_id{contains_wildcards = W2,
-				  id                 = I2} = Tid2) ->
-    chk_terminationId_wildcard(W1,W2),
-    chk_terminationId_id(I1,I2),
-    throw({error,{equal,{megaco_term_id,Tid1,Tid2}}});
-chk_terminationId(Tid1,Tid2) ->
-    throw({wrong_type,{terminationId,Tid1,Tid2}}).
-
-chk_terminationId_wildcard(W,W) ->
-    {equal,terminationId_wildcard};
-chk_terminationId_wildcard(W1,W2) ->
-    throw({not_equal,{terminationId_wildcard,W1,W2}}).
-
-chk_terminationId_id(I,I) ->
-    {equal,terminationId_id};
-chk_terminationId_id(I1,I2) ->
-    throw({not_equal,{terminationId_id,I1,I2}}).
+chk_MegacoMessage(M1, M2) ->
+    ?MSG_LIB:chk_MegacoMessage(M1, M2).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-cre_megacoMessage(V, Mid, Body) ->
-    #'MegacoMessage'{mess = #'Message'{version     = V,
-                                       mId         = Mid,
-                                       messageBody = Body}}.
+cre_MegacoMessage(V, Mid, Body) ->
+    Mess = ?MSG_LIB:cre_Message(V, Mid, Body),
+    ?MSG_LIB:cre_MegacoMessage(Mess).
 
-cre_authHeader() ->
+cre_AuthHeader() ->
     SecParmIdx = [239, 205, 171, 137], 
     SeqNum     = [18, 52, 86, 120], 
     AD         = [18, 52, 86, 120, 137, 171, 205, 239, 118, 84, 50, 16],
-    cre_authHeader(SecParmIdx, SeqNum, AD).
+    cre_AuthHeader(SecParmIdx, SeqNum, AD).
 
-cre_authHeader(Idx, Num, D) ->
-    #'AuthenticationHeader'{secParmIndex = Idx, 
-			    seqNum       = Num, 
-			    ad           = D}.
+cre_AuthHeader(Idx, Num, D) ->
+    ?MSG_LIB:cre_AuthenticationHeader(Idx, Num, D).
 
-cre_transactionReply(TransId, Actions) ->
-    #'TransactionReply'{transactionId     = TransId,
-			transactionResult = {actionReplies, Actions}}.
+cre_TransRep(TransId, Actions) ->
+    ?MSG_LIB:cre_TransactionReply(TransId, Actions).
 
-cre_transactionAck(Serial, Serial) ->
-    #'TransactionAck'{firstAck = Serial};
-cre_transactionAck(First, Last) ->
-    #'TransactionAck'{firstAck = First, lastAck = Last}.
+cre_TransAck(First, Last) ->
+    ?MSG_LIB:cre_TransactionAck(First, Last).
     
-cre_actionReply(CtxId, CmdReply) ->
-    #'ActionReply'{contextId    = CtxId,
-		   commandReply = CmdReply}.
+cre_ActRep(CtxId, CmdReply) ->
+    ?MSG_LIB:cre_ActionReply(CtxId, CmdReply).
 
 %% Ind Aud related:
 
-cre_IndAudParameter(IAMD) 
-  when record(IAMD, 'IndAudMediaDescriptor') ->
-    {indAudMediaDescriptor, IAMD};
-cre_IndAudParameter(IAED) 
-  when record(IAED, 'IndAudEventsDescriptor') ->
-    {indAudEventsDescriptor, IAED};
-cre_IndAudParameter(IAEBD) 
-  when record(IAEBD, 'IndAudEventBufferDescriptor') ->
-    {indAudEventBufferDescriptor, IAEBD};
-cre_IndAudParameter({signal, _} = IASIGD) ->
-    {indAudSignalsDescriptor, IASIGD};
-cre_IndAudParameter({seqSigList, _} = IASIGD) ->
-    {indAudSignalsDescriptor, IASIGD};
-cre_IndAudParameter(IADMD) 
-  when record(IADMD, 'IndAudDigitMapDescriptor') ->
-    {indAudDigitMapDescriptor, IADMD};
-cre_IndAudParameter(IASTATD) 
-  when record(IASTATD, 'IndAudStatisticsDescriptor') ->
-    {indAudStatisticsDescriptor, IASTATD};
-cre_IndAudParameter(IAPD) 
-  when record(IAPD, 'IndAudPackagesDescriptor') ->
-    {indAudPackagesDescriptor, IAPD}.
+cre_IndAudParam(IAP) ->
+    ?MSG_LIB:cre_IndAuditParameter(IAP).
 
-cre_IndAudMediaDescriptor(TSD) 
-  when record(TSD, 'IndAudTerminationStateDescriptor') ->
-    #'IndAudMediaDescriptor'{termStateDescr = TSD};
-cre_IndAudMediaDescriptor(IASP) 
-  when record(IASP, 'IndAudStreamParms') ->
-    #'IndAudMediaDescriptor'{streams = {oneStream, IASP}};
-cre_IndAudMediaDescriptor(IASDs) when list(IASDs) ->
-    #'IndAudMediaDescriptor'{streams = {multiStream, IASDs}}.
+cre_IndAudMediaDesc(D) ->
+    ?MSG_LIB:cre_IndAudMediaDescriptor(D).
 
-cre_IndAudStreamDescriptor(SID, SP) 
-  when record(SP, 'IndAudStreamParms') ->
-    #'IndAudStreamDescriptor'{streamID = SID, streamParms = SP}.
+cre_IndAudStreamDesc(SID, SP) ->
+    ?MSG_LIB:cre_IndAudStreamDescriptor(SID, SP).
 
-cre_IndAudStreamParms(LCD) 
-  when record(LCD, 'IndAudLocalControlDescriptor') ->
-    #'IndAudStreamParms'{localControlDescriptor = LCD}.
+cre_IndAudStreamParms(LCD) ->
+    ?MSG_LIB:cre_IndAudStreamParms(LCD).
 
-cre_IndAudLocalControlDescriptor('NULL'       = SM, 
-				 asn1_NOVALUE = RV, 
-				 asn1_NOVALUE = RG, 
-				 asn1_NOVALUE = PP) ->
-  #'IndAudLocalControlDescriptor'{streamMode    = SM,
-				  reserveValue  = RV,
-				  reserveGroup  = RG,
-				  propertyParms = PP};
-cre_IndAudLocalControlDescriptor(asn1_NOVALUE = SM, 
-				 'NULL'       = RV, 
-				 asn1_NOVALUE = RG, 
-				 asn1_NOVALUE = PP) ->
-  #'IndAudLocalControlDescriptor'{streamMode    = SM,
-				  reserveValue  = RV,
-				  reserveGroup  = RG,
-				  propertyParms = PP};
-cre_IndAudLocalControlDescriptor(asn1_NOVALUE = SM, 
-				 asn1_NOVALUE = RV, 
-				 'NULL'       = RG, 
-				 asn1_NOVALUE = PP) ->
-  #'IndAudLocalControlDescriptor'{streamMode    = SM,
-				  reserveValue  = RV,
-				  reserveGroup  = RG,
-				  propertyParms = PP};
-cre_IndAudLocalControlDescriptor(asn1_NOVALUE = SM, 
-				 asn1_NOVALUE = RV, 
-				 asn1_NOVALUE = RG, 
-				 [IAPP]       = PP) 
-  when record(IAPP,'IndAudPropertyParm') ->
-  #'IndAudLocalControlDescriptor'{streamMode    = SM,
-				  reserveValue  = RV,
-				  reserveGroup  = RG,
-				  propertyParms = PP};
-cre_IndAudLocalControlDescriptor(SM, RV, RG, PP) ->
-  #'IndAudLocalControlDescriptor'{streamMode    = SM,
-				  reserveValue  = RV,
-				  reserveGroup  = RG,
-				  propertyParms = PP}.
+cre_IndAudLocalControlDesc(SM, RV, RG, PP) ->
+    ?MSG_LIB:cre_IndAudLocalControlDescriptor(SM, RV, RG, PP).
 
 cre_IndAudPropertyParm(Name) ->
-    #'IndAudPropertyParm'{name = Name}.
+    ?MSG_LIB:cre_IndAudPropertyParm(Name).
 
-% cre_IndAudLocalRemoteDescriptor(PGID, PG) when list(PG) ->
-%     #'IndAudLocalRemoteDescriptor'{propGroupID = PGID,
-% 				   propGrps    = PG}.
+cre_IndAudTermStateDesc(PP) ->
+    ?MSG_LIB:cre_IndAudTerminationStateDescriptor(PP).
 
-cre_IndAudTerminationStateDescriptor(PP) when list(PP) ->
-    #'IndAudTerminationStateDescriptor'{propertyParms = PP}.
+cre_IndAudTermStateDesc(PP, EBC, SS) ->
+    ?MSG_LIB:cre_IndAudTerminationStateDescriptor(PP, EBC, SS).
 
-cre_IndAudTerminationStateDescriptor(PP, EBC, SS) when list(PP) ->
-    #'IndAudTerminationStateDescriptor'{propertyParms      = PP,
-					eventBufferControl = EBC,
-					serviceState       = SS}.
-
-cre_IndAudEventsDescriptor(RID, PN) 
+cre_IndAudEvsDesc(RID, PN) 
   when integer(RID) ->
-    #'IndAudEventsDescriptor'{requestID = RID,
-			      pkgdName  = PN}.
+    ?MSG_LIB:cre_IndAudEventsDescriptor(RID, PN).
 
-cre_IndAudEventBufferDescriptor(EN, SID) ->
-    #'IndAudEventBufferDescriptor'{eventName = EN,
-				   streamID  = SID}.
+cre_IndAudEvBufDesc(EN, SID) ->
+    ?MSG_LIB:cre_IndAudEventBufferDescriptor(EN, SID).
 
-cre_IndAudSignalsDescriptor(IAS) when record(IAS, 'IndAudSignal') ->
-    {signal, IAS};
-cre_IndAudSignalsDescriptor(IASSL) when record(IASSL, 'IndAudSeqSigList') ->
-    {seqSigList, IASSL}.
+cre_IndAudSigsDesc(D) ->
+    ?MSG_LIB:cre_IndAudSignalsDescriptor(D).
 
-cre_IndAudSignal(SN) ->
-    #'IndAudSignal'{signalName = SN}.
+cre_IndAudSig(SN) ->
+    ?MSG_LIB:cre_IndAudSignal(SN).
 
 cre_IndAudSeqSigList(ID, SL) ->
-    #'IndAudSeqSigList'{id         = ID,
-			signalList = SL}.
+    ?MSG_LIB:cre_IndAudSeqSigList(ID, SL).
 
-cre_IndAudDigitMapDescriptor(DMN) ->
-    #'IndAudDigitMapDescriptor'{digitMapName = DMN}.
+cre_IndAudDigitMapDesc(DMN) ->
+    ?MSG_LIB:cre_IndAudDigitMapDescriptor(DMN).
 
-cre_IndAudStatisticsDescriptor(SN) ->
-    #'IndAudStatisticsDescriptor'{statName = SN}.
+cre_IndAudStatsDesc(SN) ->
+    ?MSG_LIB:cre_IndAudStatisticsDescriptor(SN).
 
-cre_IndAudPackagesDescriptor(PN, PV) when integer(PV) ->
-    #'IndAudPackagesDescriptor'{packageName    = PN,
-				packageVersion = PV}.
+cre_IndAudPkgsDesc(PN, PV) ->
+    ?MSG_LIB:cre_IndAudPackagesDescriptor(PN, PV).
 
 %% Parameter related
-cre_propertyParm(Name, Val) ->
-    #'PropertyParm'{name  = Name, value = [Val]}.
+cre_PropParm(Name, Val) ->
+    ?MSG_LIB:cre_PropertyParm(Name, [Val]).
 
 
 %% Statistics related
-cre_statisticsParm(Name, Val) ->
-    #'StatisticsParameter'{statName  = Name, statValue = [Val]}.
+cre_StatsParm(Name, Val) ->
+    ?MSG_LIB:cre_StatisticsParameter(Name, [Val]).
 
 
 % Event related 
-cre_eventParm(Name, Val) ->
-    #'EventParameter'{eventParameterName = Name, value = Val}.
+cre_EvParm(Name, Val) ->
+    ?MSG_LIB:cre_EventParameter(Name, Val).
 
-cre_observedEvent(Name, Not) ->
-    #'ObservedEvent'{eventName = Name, timeNotation = Not}.
-cre_observedEvent(Name, Not, Par) ->
-    #'ObservedEvent'{eventName = Name, timeNotation = Not, eventParList = Par}.
+cre_ObsEv(Name, Not) ->
+    ?MSG_LIB:cre_ObservedEvent(Name, Not).
+cre_ObsEv(Name, Not, Par) ->
+    ?MSG_LIB:cre_ObservedEvent(Name, Par, Not).
 
-cre_requestedEvent(Name) ->
-    #'RequestedEvent'{pkgdName = Name}.
-cre_requestedEvent(Name, ParList) when list(ParList) ->
-    #'RequestedEvent'{pkgdName = Name, evParList = ParList};
-cre_requestedEvent(Name, Action) when tuple(Action) ->
-    #'RequestedEvent'{pkgdName = Name, eventAction = Action}.
+cre_ReqedEv(Name) ->
+    ?MSG_LIB:cre_RequestedEvent(Name).
+cre_ReqedEv(Name, Action) ->
+    ?MSG_LIB:cre_RequestedEvent(Name, Action).
 
 
-cre_observedEventsDesc(Id, EvList) ->
-    #'ObservedEventsDescriptor'{requestId = Id, observedEventLst = EvList}.
+cre_ObsEvsDesc(Id, EvList) ->
+    ?MSG_LIB:cre_ObservedEventsDescriptor(Id, EvList).
 
-cre_eventsDesc(Id, EvList) ->
-    #'EventsDescriptor'{requestID = Id, eventList = EvList}.
+cre_EvsDesc(Id, EvList) ->
+    ?MSG_LIB:cre_EventsDescriptor(Id, EvList).
 
 
 %% Service change related
-cre_serviceChangeParm(M,A,R,P) ->
-    #'ServiceChangeParm'{serviceChangeMethod  = M, serviceChangeAddress = A,
-			 serviceChangeReason  = R, serviceChangeProfile = P}.
+cre_SvcChParm(M, A, R, P) ->
+    ?MSG_LIB:cre_ServiceChangeParm(M, A, P, R).
 
-cre_serviceChangeResParm(A,P) ->
-    #'ServiceChangeResParm'{serviceChangeAddress = A, 
-			    serviceChangeProfile = P}.
+cre_SvcChResParm(A, P) ->
+    ?MSG_LIB:cre_ServiceChangeResParm(A, P).
 
-cre_serviceChangeReq(Tid, P) ->
-    #'ServiceChangeRequest'{terminationID = Tid, serviceChangeParms = P}.
+cre_SvcChReq(Tids, P) ->
+    ?MSG_LIB:cre_ServiceChangeRequest(Tids, P).
 
-cre_serviceChangeProf(Name, Ver) when list(Name), integer(Ver) ->
-    #'ServiceChangeProfile'{profileName = Name, version = Ver}.
+cre_SvcChProf(Name, Ver) ->
+    ?MSG_LIB:cre_ServiceChangeProfile(Name, Ver).
 
-cre_serviceChangeReply(Tid, Res) ->
-    #'ServiceChangeReply'{terminationID = Tid, serviceChangeResult = Res}.
+cre_SvcChRep(Tids, Res) ->
+    ?MSG_LIB:cre_ServiceChangeReply(Tids, Res).
 
 
 %% Stream related
-cre_streamParms(Lcd) ->
-    #'StreamParms'{localControlDescriptor = Lcd}.
-cre_streamParms(Lcd, Ld) ->
-    #'StreamParms'{localControlDescriptor = Lcd, localDescriptor = Ld}.
-cre_streamParms(Lcd, Ld, Rd) ->
-    #'StreamParms'{localControlDescriptor = Lcd, 
-		   localDescriptor        = Ld,
-		   remoteDescriptor       = Rd}.
-cre_streamParmsL(Ld) ->
-    #'StreamParms'{localDescriptor = Ld}.
-cre_streamParmsR(Rd) ->
-    #'StreamParms'{remoteDescriptor = Rd}.
+cre_StreamParms(Lcd) ->
+    ?MSG_LIB:cre_StreamParms(Lcd).
+cre_StreamParms(Lcd, Ld) ->
+    ?MSG_LIB:cre_StreamParms(Lcd, Ld).
+cre_StreamParms(Lcd, Ld, Rd) ->
+    ?MSG_LIB:cre_StreamParms(Lcd, Ld, Rd).
+cre_StreamParmsL(Ld) ->
+    ?MSG_LIB:cre_StreamParms(asn1_NOVALUE, Ld, asn1_NOVALUE).
+cre_StreamParmsR(Rd) ->
+    ?MSG_LIB:cre_StreamParms(asn1_NOVALUE, asn1_NOVALUE, Rd).
 
-cre_streamDesc(Id, P) ->
-    #'StreamDescriptor'{streamID = Id, streamParms = P}.
+cre_StreamDesc(Id, P) ->
+    ?MSG_LIB:cre_StreamDescriptor(Id, P).
 
 
 %% "Local" related
-cre_localControlDesc(Mode) ->
-    #'LocalControlDescriptor'{streamMode = Mode}.
-cre_localControlDesc(Mode, Parms) ->
-    #'LocalControlDescriptor'{streamMode = Mode, propertyParms = Parms }.
+cre_LocalControlDesc(Mode) ->
+    ?MSG_LIB:cre_LocalControlDescriptor(Mode).
+cre_LocalControlDesc(Mode, Parms) ->
+    ?MSG_LIB:cre_LocalControlDescriptor(Mode, Parms).
 
-cre_localRemoteDesc(Grps) ->
-    #'LocalRemoteDescriptor'{propGrps = Grps}.
+cre_LocalRemoteDesc(Grps) ->
+    ?MSG_LIB:cre_LocalRemoteDescriptor(Grps).
 
 
 %% DigitMap related
-cre_digitMapDesc(Name, Val) ->
-    #'DigitMapDescriptor'{digitMapName = Name, digitMapValue = Val}.
+cre_DigitMapDesc(Name, Val) ->
+    ?MSG_LIB:cre_DigitMapDescriptor(Name, Val).
 
-cre_digitMapValue(Body) ->
-    #'DigitMapValue'{digitMapBody = Body}.
+cre_DigitMapValue(Body) ->
+    ?MSG_LIB:cre_DigitMapValue(Body).
 
-cre_digitMapValue(Body, Start, Short, Long) ->
-    #'DigitMapValue'{startTimer   = Start,
-		     shortTimer   = Short,
-		     longTimer    = Long,
-		     digitMapBody = Body}.
+cre_DigitMapValue(Body, Start, Short, Long) ->
+    ?MSG_LIB:cre_DigitMapValue(Start, Short, Long, Body).
 
 %% Media related
-cre_mediaDesc(StreamDesc) ->
-    #'MediaDescriptor'{streams = {multiStream, [StreamDesc]}}.
+cre_MediaDesc(SD) when record(SD, 'StreamDescriptor') ->
+    cre_MediaDesc([SD]);
+cre_MediaDesc(SDs) ->
+    ?MSG_LIB:cre_MediaDescriptor(SDs).
 
 
 %% Notify related
-cre_notifyReq(Tid, EvsDesc) ->
-    #'NotifyRequest'{terminationID = Tid, observedEventsDescriptor = EvsDesc}.
+cre_NotifyReq(Tids, EvsDesc) ->
+    ?MSG_LIB:cre_NotifyRequest(Tids, EvsDesc).
 
-cre_notifyReply(Tid) ->
-    #'NotifyReply'{terminationID = Tid}.
+cre_NotifyRep(Tids) ->
+    ?MSG_LIB:cre_NotifyReply(Tids).
 
 
 %% Subtract related
-cre_subtractReq(Tid, Desc) ->
-    #'SubtractRequest'{terminationID = Tid, auditDescriptor = Desc}.
+cre_SubReq(Tids, Desc) ->
+    ?MSG_LIB:cre_SubtractRequest(Tids, Desc).
 
 
 %% Audit related
-cre_auditDesc(Tokens) ->
-    #'AuditDescriptor'{auditToken = Tokens}.
+cre_AuditDesc(Tokens) ->
+    ?MSG_LIB:cre_AuditDescriptor(Tokens).
 
-cre_auditDesc(Tokens, PropertTokens) when list(PropertTokens) ->
-    #'AuditDescriptor'{auditToken         = Tokens,
-		       auditPropertyToken = PropertTokens}.
+cre_AuditDesc(Tokens, PropertTokens) ->
+    ?MSG_LIB:cre_AuditDescriptor(Tokens, PropertTokens).
 
-cre_auditReq(Tid, Desc) ->
-    #'AuditRequest'{terminationID   = Tid, auditDescriptor = Desc}.
+cre_AuditReq(Tid, Desc) ->
+    ?MSG_LIB:cre_AuditRequest(Tid, Desc).
 
-cre_auditRes(Tid, Res) ->
-    #'AuditResult'{terminationID = Tid, terminationAuditResult = Res}.
+cre_AuditRes(Tid, Res) ->
+    ?MSG_LIB:cre_AuditResult(Tid, Res).
 
 
 %% AMM/AMMS related
-cre_ammReq(Tid, Descs) ->
-    #'AmmRequest'{terminationID = Tid, descriptors = Descs}.
+cre_AmmReq(Tids, Descs) ->
+    ?MSG_LIB:cre_AmmRequest(Tids, Descs).
 
-cre_ammsReply(Tid) ->
-    #'AmmsReply'{terminationID = Tid}.
-cre_ammsReply(Tid, Descs) ->
-    #'AmmsReply'{terminationID = Tid, terminationAudit = Descs}.
+cre_AmmsReply(Tids) ->
+    ?MSG_LIB:cre_AmmsReply(Tids).
+cre_AmmsReply(Tids, Descs) ->
+    ?MSG_LIB:cre_AmmsReply(Tids, Descs).
 
 
 %% Command related
-cre_commandReq(Cmd) ->
-    #'CommandRequest'{command = Cmd}.
+%% cre_command(Tag, Req) ->
+%%     ?MSG_LIB:cre_Command(Tag, Req).
+
+cre_CmdReq(Cmd) ->
+    ?MSG_LIB:cre_CommandRequest(Cmd).
 
 
 %% Actions related
-cre_requestedActions(DmName) ->
-    #'RequestedActions'{eventDM = {digitMapName, DmName}}.
+cre_ReqedActs(DmName) ->
+    EDM = ?MSG_LIB:cre_EventDM(DmName),
+    ?MSG_LIB:cre_RequestedActions(EDM).
 
 
 %% Signal related
-cre_signal(Name) ->
-    #'Signal'{signalName = Name}.
+cre_Sig(Name) ->
+    ?MSG_LIB:cre_Signal(Name).
 
 
 %% Others
-cre_timeNotation(D,T) ->
-    #'TimeNotation'{date = D, time = T}.
+cre_TimeNot(D,T) ->
+    ?MSG_LIB:cre_TimeNotation(D, T).
 
-cre_packagesItem(Name, Ver) ->
-    #'PackagesItem'{packageName = "nt", packageVersion = 1}.
+cre_PkgsItem(Name, Ver) ->
+    ?MSG_LIB:cre_PackagesItem(Name, Ver).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

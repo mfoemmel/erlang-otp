@@ -15,7 +15,7 @@ define([AC_CACHE_SAVE], )dnl
 dnl m4_define(EI_VERSION,`grep EI_VSN ../vsn.mk | sed 's/^.*=[ ]*//'`)
 dnl m4_define(EI_VERSION,regexp(m4_include(VERSION),[version \([-.0-9A-Za-z]+\)],[\1]))
 
-AC_INIT([src/misc/eidef.h])
+AC_INIT()
 
 dnl How to set srcdir absolute is taken from the GNU Emacs distribution
 #### Make srcdir absolute, if it isn't already.  It's important to
@@ -55,12 +55,12 @@ dnl ----------------------------------------------------------------------
 dnl Optional features
 dnl ----------------------------------------------------------------------
 
+# Use --disable-threads to force building single threaded libs even 
+# if pthreads exists (for test purposes).
 AC_ARG_ENABLE(threads,
-[  --enable-threads        use threads],
-[ case "$enableval" in
-    no) enable_threads=nothreads ;;
-    *)  enable_threads=threads-error ;;
-  esac ], enable_threads=nothreads)
+[  --disable-threads       use to only build single threaded libs],
+[ threads_disabled=yes ],
+[ threads_disabled=no ])
 
 dnl ----------------------------------------------------------------------
 dnl Checks for programs
@@ -120,9 +120,7 @@ AC_CHECK_LIB([socket], [getpeername])
 # Checks for header files.
 AC_HEADER_STDC
 AC_HEADER_SYS_WAIT
-AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h malloc.h netdb.h netinet/in.h stddef.h stdlib.h string.h sys/param.h sys/socket.h sys/select.h sys/time.h unistd.h pthread.h])
-dnl Some Linuxes have <pthread/mit/pthread.h> instead of <pthread.h>
-AC_CHECK_HEADER(pthread/mit/pthread.h, AC_DEFINE(HAVE_MIT_PTHREAD_H))
+AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h malloc.h netdb.h netinet/in.h stddef.h stdlib.h string.h sys/param.h sys/socket.h sys/select.h sys/time.h unistd.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 # fixme AC_C_CONST & AC_C_VOLATILE needed for Windows?
@@ -147,6 +145,7 @@ dnl AC_TYPE_SIGNAL
 dnl AC_FUNC_STRERROR_R
 dnl AC_FUNC_VPRINTF
 AC_CHECK_FUNCS([clock_gettime dup2 gethostbyaddr gethostbyname \
+	gethostbyaddr_r \
 	gethostbyname_r gethostname writev \
 	gethrtime gettimeofday inet_ntoa memchr memmove memset select \
 	socket strchr strerror strrchr strstr uname])
@@ -193,93 +192,68 @@ elif test "x$with_gmp" != "xno" -a -n "$with_gmp" ;then
     # FIXME return ERROR if no lib
 fi
 
-
-#
-# Figure out if we should use threads. The default is set above in the
-# enable_threads variable. It can have the following values:
-#
-#   nothreads      don't look for threads
-#   threads-ok     look for threads but it is ok if you can't find them
-#   threads-error  look for threads and if you can't find them it is an error
-#
+dnl
+dnl Threads
+dnl
+found_threads=no
 THR_LIBS=
 THR_DEFS=
+EI_THREADS="false"
 AC_SUBST(THR_LIBS)
 AC_SUBST(THR_DEFS)
-# As a matter of fact, the windows erlang emulator can never run without 
-# threads. It has to be enable or the emulator will crash. Until that is fixed
-# we force threads on win32.
-AC_MSG_CHECKING([if native win32 threads should be used])
-if test "X$host_os" = "Xwin32"; then
-    THR_LIBS=
-    THR_DEFS="-DUSE_THREADS"
-    # If someoune wants to check this later, it might as well be consistent 
-    # with variable values on other platforms with threads enabled...
-    enable_threads="threads-error"
-    found_threads=1
-    ENABLE_ALLOC_TYPE_VARS="$ENABLE_ALLOC_TYPE_VARS threads"
-    AC_MSG_RESULT([yes, required and therefore forced])
-else
-    AC_MSG_RESULT(no)
-    case "$enable_threads" in
-	threads-*)
-	    THR_LIBS=
-	    THR_DEFS="-DUSE_THREADS -D_REENTRANT"
-	    found_threads=0
+AC_SUBST(EI_THREADS)
 
-	    # Check for POSIX threads
-	    pthread_lib=""
-	    if test "$found_threads" = "0"; then
-		AC_CHECK_LIB(pthread, pthread_create, [found_threads=1
-		    THR_LIBS="-lpthread"
-		    THR_DEFS="$THR_DEFS -DPOSIX_THREADS -D_THREAD_SAFE"
-		    pthread_lib=pthread],
-		    found_threads=0)
-	    fi
+case "$threads_disabled" in
+	no)
+		AC_MSG_CHECKING([for native win32 threads])
+		if test "X$host_os" = "Xwin32"; then
+		    THR_DEFS="-DWIN32_THREADS"
+		    found_threads=yes
+		    EI_THREADS="true"	
+		    AC_MSG_RESULT([yes])
+		else
+		    AC_MSG_RESULT(no)
 
-	    # FreeBSD has pthreads in special c library, c_r
-	    if test "$found_threads" = "0"; then
-		AC_CHECK_LIB(c_r, pthread_create, [found_threads=1
-		    THR_LIBS="-lc_r"
-		    THR_DEFS="$THR_DEFS -DPOSIX_THREADS -D_THREAD_SAFE"
-		    pthread_lib=c_r],
-		    found_threads=0)
-	    fi
+		    dnl Check for POSIX threads
 
-	    case "$found_threads"-"$enable_threads" in
-		0-threads-ok)
-		    # We couldn't find any threads, but that is ok
-		    THR_LIBS=
-		    THR_DEFS=
-		    ;;
-		0-threads-error)
-		    # If user specifically asked for threads give an error msg.
-		    AC_MSG_ERROR([don't know how to enable threads])
-		    ;;
-		*)
-		    # Threads found
-		    if test "x$pthread_lib" != "x"; then
-			AC_CHECK_LIB($pthread_lib, pthread_atfork,
-				AC_DEFINE(HAVE_PTHREAD_ATFORK))
+		    pthread_lib=""
+		    AC_CHECK_LIB(pthread,
+				 pthread_create,
+				 [found_threads=yes
+		                  EI_THREADS="true"
+				  THR_LIBS="-lpthread"
+				  THR_DEFS="-D_REENTRANT -D_THREAD_SAFE -DPOSIX_THREADS"
+				  pthread_lib=pthread])
+
+		    # FreeBSD has pthreads in special c library, c_r
+		    if test $found_threads = no; then
+			AC_CHECK_LIB(c_r,
+				     pthread_create,
+				     [found_threads=yes
+		                      EI_THREADS="true"
+				      THR_LIBS="-lc_r"
+				      THR_DEFS="-D_REENTRANT -D_THREAD_SAFE -DPOSIX_THREADS"
+				      pthread_lib=c_r])
 		    fi
-		    case $host_os in
-			solaris*)
-			    if test "x$pthread_lib" != "x"; then
-				THR_DEFS="$THR_DEFS -D_POSIX_PTHREAD_SEMANTICS"
-			    fi
-			    AC_DEFINE(ENABLE_CHILD_WAITER_THREAD) ;;
-			linux*)
-			    AC_DEFINE(INIT_MUTEX_IN_CHILD_AT_FORK) ;;
-		    esac
-		    ENABLE_ALLOC_TYPE_VARS="$ENABLE_ALLOC_TYPE_VARS threads"
-		    ;;
-	    esac
-	    ;;
-	*)
+
+		    if test "x$pthread_lib" != "x"; then
+			AC_CHECK_LIB($pthread_lib,pthread_atfork,AC_DEFINE(HAVE_PTHREAD_ATFORK))
+			AC_CHECK_HEADER(pthread.h, AC_DEFINE(HAVE_PTHREAD_H))
+			dnl Some Linuxes have <pthread/mit/pthread.h> instead of <pthread.h>
+			AC_CHECK_HEADER(pthread/mit/pthread.h, AC_DEFINE(HAVE_MIT_PTHREAD_H))
+			case $host_os in
+			    solaris*)
+				THR_DEFS="$THR_DEFS -D_POSIX_PTHREAD_SEMANTICS";;
+			    *)
+				;;
+			esac
+		    fi
+		fi
+		;;
+	yes)
 	    # Threads disabled
 	    ;;
-    esac
-fi
+esac
 
 # ---------------------------------------------------------------------------
 # Warning flags to the C compiler
@@ -333,4 +307,7 @@ fi
 # XXX
 # ---------------------------------------------------------------------------
 
-AC_OUTPUT([src/$host/Makefile:src/Makefile.in])
+AC_OUTPUT(
+	src/$host/Makefile:src/Makefile.in
+	src/$host/eidefs.mk:src/eidefs.mk.in
+	)

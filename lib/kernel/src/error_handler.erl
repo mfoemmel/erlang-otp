@@ -60,8 +60,11 @@ crash(Fun, Args) ->
 crash(M, F, A) ->
     crash({M,F,A}).
 crash(MFA) ->
-    {'EXIT',{undef,[_Current|Mfas]}} = (catch erlang:fault(undef)),
-    exit({undef,[MFA|Mfas]}).
+    try erlang:error(undef)
+    catch
+	error:undef ->
+	    erlang:raise(error, undef, [MFA|tl(erlang:get_stacktrace())])
+    end.
 
 %% If the code_server has not been started yet dynamic code loading
 %% is handled by init.

@@ -887,10 +887,9 @@ resolve_goto(I,Addr,Refs,Map) ->
   Dest = hipe_sparc:goto_label(I),
   {hot,Address} = find(Dest,Map),
   RelDest = (Address - Addr) div 4,
-  case catch hipe_sparc_assert:check_branch_length(RelDest) of
+  case valid_branch_length(RelDest) of
     true -> true;
-    {'EXIT',{too_long_branch,Length}} ->
-      exit([{problem,too_long_branch},{address,Addr},{length,Length}])
+    false -> exit({too_long_branch,{address,Addr}})
   end,
   NewI = hipe_sparc:goto_label_update(I,RelDest),
   Code = assemble_instr(goto,NewI),
@@ -900,10 +899,9 @@ resolve_b(I,Addr,Refs,Map) ->
   Dest = hipe_sparc:b_label(I),
   {hot,Address} = find(Dest,Map),
   RelDest = (Address - Addr) div 4,
-  case catch hipe_sparc_assert:check_branch_length(RelDest) of
+  case valid_branch_length(RelDest) of
     true -> true;
-    {'EXIT',{too_long_branch,Length}} ->
-      exit([{problem,too_long_branch},{address,Addr},{length,Length}])
+    false -> exit({too_long_branch,{address,Addr}})
   end,
   NewI = hipe_sparc:b_label_update(I,RelDest),
   Code = assemble_instr(b,NewI),
@@ -1023,7 +1021,6 @@ init_const_map([{pcm_entry,MFA,Label,ConstNo,_,_,_} | List], Tree) ->
 init_const_map([], Tree) ->
   Tree.
 
-
 %% ------------------------------------------------------------------
 %%
 %% Label map: represented with double gbtrees.
@@ -1056,10 +1053,56 @@ init_m(M, L, Data, Tree) ->
       gb_trees:insert(M, gb_trees:insert(L, Data, gb_trees:empty()), Tree)
   end.
 
+%% %%--------------------------------------------------------------------
+%% %%
+%% %% check_immediates asserts that all immediates are less than 13 bits
+%% %% Returns true if the code is ok.
+%% %% Exception: {'EXIT',{immediate_too_large, [{Instr1,[Imm1,Imm2]},{Instr2,[Imm3|...]}|...]}}
+%% %%  if Imm1 and Imm2 are too large.
+%% %%
+%% check_immediates(Instrs) -> check_immediates(Instrs,[]).
+%% 
+%% check_immediates([],[]) -> true;
+%% check_immediates([],Problems) -> exit({immediate_too_large,Problems});
+%% check_immediates([Instr|Rest],Problems) ->
+%%   case hipe_sparc:is_sethi(Instr) of
+%%     true -> check_immediates(Rest,Problems);
+%%     _ -> 
+%%       case check_imm(hipe_sparc:imm_uses(Instr),[]) of
+%%      true ->
+%%        check_immediates(Rest,Problems);
+%%      MoreProblems -> 
+%%        check_immediates(Rest,[{Instr,MoreProblems}|Problems])
+%%       end
+%%   end.
+%% 
+%% check_imm([],[]) -> true;
+%% check_imm([],Problems) -> Problems;
+%% check_imm([Use|Rest],Problems) ->
+%%   case hipe_sparc:is_imm(Use) of 
+%%     true -> 
+%%       Val = hipe_sparc:imm_value(Use),
+%%       if 
+%%      Val > 4095 -> %% Largest possible immediate.
+%%        check_imm(Rest,[Val|Problems]);
+%%      true -> 
+%%        check_imm(Rest,Problems)
+%%       end;
+%%     _ ->     
+%%       check_imm(Rest,Problems)
+%%   end.
 
+%% ------------------------------------------------------------------
+%% valid_branch_length(relativeDestination) 
+%%  Validates that the destination is within reach.
+%%
+%% XXX: this only works for disp19-type branches.
+%% XXX: update for disp16 (BPr) and disp22 (Bicc) type branches
+%%
 
-		      
-
-
-
+valid_branch_length(Dest) ->
+  if (abs(Dest) band (16#FFF80000)) > 0 ->
+      false;
+    true -> true
+  end.
 

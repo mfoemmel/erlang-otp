@@ -46,9 +46,9 @@ start_type() ->
     receive
 	{start_type, Type} ->
 	    Type
-		after 5000 ->
-			{error, timeout}
-		end.
+    after 5000 ->
+	    {error, timeout}
+    end.
 
 %%-----------------------------------------------------------------
 %% Func: stop/1
@@ -432,24 +432,21 @@ kill_children(Children) ->
     lists:foreach(fun(Pid) -> exit(Pid, kill) end, Children),
     kill_all_procs().
 
-%% All except zombies.
-alive_processes() ->
-    lists:filter({erlang, is_process_alive}, processes()).
-
 kill_all_procs() ->
-    Self = self(),
-    case lists:filter(fun(Pid) when Pid /= Self ->
-			      case erlang:process_info(Pid, group_leader) of
-				  {group_leader, Self} -> true;
-				  _ -> false
-			      end;
-			 (_) -> false
-		      end, alive_processes()) of
-	[] -> ok;
-	Children ->
-	    lists:foreach(fun(Pid) -> exit(Pid, kill) end, Children),
-	    kill_all_procs()
-    end.
+    kill_all_procs_1(processes(), self(), 0).
+
+kill_all_procs_1([Self|Ps], Self, N) ->
+    kill_all_procs_1(Ps, Self, N);
+kill_all_procs_1([P|Ps], Self, N) ->
+    case process_info(P, group_leader) of
+	{group_leader,Self} ->
+	    exit(P, kill),
+	    kill_all_procs_1(Ps, Self, N+1);
+	_ ->
+	    kill_all_procs_1(Ps, Self, N)
+    end;
+kill_all_procs_1([], _, 0) -> ok;
+kill_all_procs_1([], _, _) -> kill_all_procs().
 
 set_timer(infinity) -> ok;
 set_timer(Time) -> timer:exit_after(Time, timeout).

@@ -37,9 +37,9 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-MODULES = hipe_degree hipe_ig hipe_ig_moves hipe_moves \
+MODULES = hipe_ig hipe_ig_moves hipe_moves \
 	  hipe_node_sets hipe_spillcost hipe_reg_worklists \
-	  hipe_adj_list hipe_adj_set hipe_vectors_wrapper \
+	  hipe_adj_list hipe_vectors_wrapper \
 	  hipe_temp_map \
 	  hipe_coalescing_regalloc \
 	  hipe_graph_coloring_regalloc \

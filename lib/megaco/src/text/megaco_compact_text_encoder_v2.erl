@@ -200,6 +200,7 @@ encode_action_reply(_EC, ActRep)
 -define(DurationToken              , ?CompactDurationToken).
 -define(EmbedToken                 , ?CompactEmbedToken).
 -define(EmergencyToken             , ?CompactEmergencyToken).
+-define(EmergencyOffToken          , ?CompactEmergencyOffToken).
 -define(ErrorToken                 , ?CompactErrorToken).
 -define(EventBufferToken           , ?CompactEventBufferToken).
 -define(EventsToken                , ?CompactEventsToken).

@@ -31,6 +31,8 @@
 	 call_clobbered/0,
 	 tailcall_clobbered/0,
 	 live_at_return/0,
+	 float_size/0,
+	 wordsize/0,
 	 alignment/0]).
 
 -include("../rtl/hipe_literals.hrl").
@@ -227,3 +229,7 @@ live_at_return() ->
     ].
 
 alignment() -> 4.
+
+float_size() -> 8.
+
+wordsize() -> 4.

@@ -113,8 +113,6 @@ typedef struct db_table_common {
 				  DB_ORDERED_SET))
      /*TT*/
 
-extern Eterm db_big_buf[];
-
 Eterm erts_ets_copy_object(Eterm, Process*);
 
 /* optimised version of copy_object (normal case? atomic object) */

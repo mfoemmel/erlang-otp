@@ -8,7 +8,7 @@
 
 -module(hipe_amd64_defuse).
 -export([insn_def/1, insn_use/1]). %% src_use/1]).
--include("hipe_amd64.hrl").
+-include("../x86/hipe_x86.hrl").
 
 %%%
 %%% insn_def(Insn) -- Return set of temps defined by an instruction.
@@ -38,17 +38,17 @@ insn_def(I) ->
 
 dst_def(Dst) ->
   case Dst of
-    #amd64_temp{} -> [Dst];
-    #amd64_fpreg{} -> [Dst];
+    #x86_temp{} -> [Dst];
+    #x86_fpreg{} -> [Dst];
     _ -> []
   end.
 
 call_clobbered() ->
-  [hipe_amd64:mk_temp(R, T)
+  [hipe_x86:mk_temp(R, T)
    || {R,T} <- hipe_amd64_registers:call_clobbered()].
 
 tailcall_clobbered() ->
-  [hipe_amd64:mk_temp(R, T)
+  [hipe_x86:mk_temp(R, T)
    || {R,T} <- hipe_amd64_registers:tailcall_clobbered()].
 
 %%%
@@ -73,26 +73,26 @@ insn_use(I) ->
     #move64{} -> [];
     #movsx{src=Src,dst=Dst} -> addtemp(Src, dst_use(Dst));
     #movzx{src=Src,dst=Dst} -> addtemp(Src, dst_use(Dst));
-    #pseudo_call{'fun'=Fun,sdesc=#amd64_sdesc{arity=Arity}} ->
+    #pseudo_call{'fun'=Fun,sdesc=#x86_sdesc{arity=Arity}} ->
       addtemp(Fun, arity_use(Arity));
     #pseudo_tailcall{'fun'=Fun,arity=Arity,stkargs=StkArgs} ->
       addtemp(Fun, addtemps(StkArgs, 
                             addtemps(tailcall_clobbered(),
                                      arity_use(Arity))));
     #push{src=Src} -> addtemp(Src, []);
-    #ret{} -> [hipe_amd64:mk_temp(hipe_amd64_registers:rax(), 'tagged')];
+    #ret{} -> [hipe_x86:mk_temp(hipe_amd64_registers:rax(), 'tagged')];
     #shift{src=Src,dst=Dst} -> addtemp(Src, addtemp(Dst, []));
     %% comment, jcc, jmp_label, label, nop, pseudo_jcc, pseudo_tailcall_prepare
     _ -> []
   end.
 
 arity_use(Arity) ->
-  [hipe_amd64:mk_temp(R, 'tagged')
+  [hipe_x86:mk_temp(R, 'tagged')
    || R <- hipe_amd64_registers:args(Arity)].
 
 dst_use(Dst) ->
   case Dst of
-    #amd64_mem{base=Base,off=Off} -> addbase(Base, addtemp(Off, []));
+    #x86_mem{base=Base,off=Off} -> addbase(Base, addtemp(Off, []));
     _ -> []
   end.
 
@@ -114,9 +114,9 @@ addtemps([], Set) ->
 
 addtemp(Arg, Set) ->
   case Arg of
-    #amd64_temp{} -> add(Arg, Set);
-    #amd64_mem{base=Base,off=Off} -> addtemp(Off, addbase(Base, Set));
-    #amd64_fpreg{} -> add(Arg, Set);
+    #x86_temp{} -> add(Arg, Set);
+    #x86_mem{base=Base,off=Off} -> addtemp(Off, addbase(Base, Set));
+    #x86_fpreg{} -> add(Arg, Set);
     _ -> Set
   end.
 

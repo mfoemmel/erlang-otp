@@ -60,8 +60,8 @@ yeccpars1([Token | Tokens], Tokenizer, State, States, Vstack) ->
 	      Tokenizer);
 yeccpars1([], {M, F, A}, State, States, Vstack) ->
     case catch apply(M, F, A) of
-        {eof, Endline} ->
-            {error, {Endline, ?THIS_MODULE, "end_of_file"}};
+        {eof, _Endline} ->
+            yeccpars1([], false, State, States, Vstack);
         {error, Descriptor, _Endline} ->
             {error, Descriptor};
         {'EXIT', Reason} ->

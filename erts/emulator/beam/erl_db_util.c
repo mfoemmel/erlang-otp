@@ -439,6 +439,12 @@ static DMCGuardBif guard_tab[] =
 	DBIF_ALL
     },
     {
+	am_float,
+	&float_1,
+	1,
+	DBIF_ALL
+    },
+    {
 	am_Plus,
 	&splus_1,
 	1,

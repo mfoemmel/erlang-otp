@@ -17,7 +17,7 @@ ifeq ($(findstring ose,$(TARGET)),ose)
 else
   TYPE_FLAGS = -O3
 endif
-CFLAGS = @CFLAGS@ @DEFS@ @THR_DEFS@ $(TYPE_FLAGS)
+CFLAGS = @CFLAGS@ @DEFS@ @EMU_THR_DEFS@ $(TYPE_FLAGS)
 #CFLAGS=-O -DMAX_WBITS=14 -DMAX_MEM_LEVEL=7
 #CFLAGS=-g -DDEBUG
 #CFLAGS=-O3 -Wall -Wwrite-strings -Wpointer-arith -Wconversion \

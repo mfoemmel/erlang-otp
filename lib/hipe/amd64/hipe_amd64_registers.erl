@@ -18,6 +18,7 @@
          args/1,
          call_clobbered/0,
 	 fcalls/0,
+	 float_size/0,
 	 first_virtual/0,
  	 heap_limit/0,
  	 is_arg/1,
@@ -37,9 +38,9 @@
          alignment/0,
  	 tailcall_clobbered/0,
  	 temp0/0,
-	 temp1/0
-
+	 temp1/0,
 % 	 %% fixed/0,
+	 wordsize/0
 	]).
 
 -include("../rtl/hipe_literals.hrl").
@@ -111,6 +112,8 @@ reg_name(R) ->
   end.
 
 alignment() -> 8.  
+
+float_size() -> 8.  
 
 first_virtual() -> ?LAST_PRECOLOURED + 1.
 
@@ -266,3 +269,5 @@ live_at_return() ->
      ,{?HEAP_LIMIT,untagged}
      | ?LIST_HP_LIVE_AT_RETURN
     ].
+
+wordsize() -> 8.

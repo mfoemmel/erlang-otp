@@ -86,8 +86,20 @@ norm_allocate({nozero,Ns,Nh,Floats,Inits}, Regs) ->
 norm_allocate({zero,Ns,Nh,Floats,Inits}, Regs) ->
     [{allocate_heap_zero,Ns,alloc_list(Nh, Floats),Regs}|Inits].
 
+%% insert_alloc_in_bs_init(ReverseInstructionStream, AllocationInfo) ->
+%%                                  not_possible | ReverseInstructionStream'
+%%   A bs_init2/6 instruction must not be followed by a test heap instruction.
+%%   Given the AllocationInfo from a test heap instruction, merge the
+%%   allocation amounts into the previous bs_init2/6 instruction (if any).
+insert_alloc_in_bs_init(Is, {Z,T,Nh,L}) ->
+    %% This situation is rare. It can happen if a test heap
+    %% instruction have been moved upwards past a 'catch'
+    %% by the block optimizer.
+    insert_alloc_in_bs_init(Is, {Z,T,Nh,0,L});
 insert_alloc_in_bs_init([I|_]=Is, Alloc) ->
-    case is_bs_put(I) of
+    %% Common case. The test heap instruction was introduced by
+    %% a floating point optimization.
+    case is_bs_constructor(I) of
 	false ->
 	    not_possible;
 	true ->
@@ -101,12 +113,14 @@ insert_alloc_1([{bs_init2,Fail,Bs,Ws,Regs,F,Dst}|Is], {_,nostack,Nh,Nf,[]}, Acc)
 insert_alloc_1([I|Is], Alloc, Acc) ->
     insert_alloc_1(Is, Alloc, [I|Acc]).
 
-is_bs_put({bs_put_integer,_,_,_,_,_}) -> true;
-is_bs_put({bs_put_float,_,_,_,_,_}) -> true;
-is_bs_put({bs_put_binary,_,_,_,_,_}) -> true;
-is_bs_put({bs_put_string,_,_}) -> true;
-is_bs_put(_) -> false.
+is_bs_constructor({bs_put_integer,_,_,_,_,_}) -> true;
+is_bs_constructor({bs_put_float,_,_,_,_,_}) -> true;
+is_bs_constructor({bs_put_binary,_,_,_,_,_}) -> true;
+is_bs_constructor({bs_put_string,_,_}) -> true;
+is_bs_constructor({bs_init2,_,_,_,_,_,_}) -> true;
+is_bs_constructor(_) -> false.
 
+alloc_list(Words, 0) -> Words;
 alloc_list(Words, Floats) ->
     {alloc,[{words,Words},{floats,Floats}]}.
 

@@ -38,10 +38,9 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 MODULES=hipe_finalize \
-	hipe_rtl2sparc \
+	hipe_rtl_to_sparc \
 	hipe_sparc \
 	hipe_sparc_assemble \
-	hipe_sparc_assert \
 	hipe_sparc_caller_saves \
 	hipe_sparc_cfg \
 	hipe_sparc_finalize \
@@ -60,12 +59,11 @@ MODULES=hipe_finalize \
 	hipe_sparc_ra_fp_ls \
 	hipe_sparc_ra_graph_color \
 	hipe_sparc_ra_ls \
-	hipe_sparc_ra_memory \
+	hipe_sparc_ra_naive \
 	hipe_sparc_ra_post_ls \
 	hipe_sparc_ra_post_ls_fp \
 	hipe_sparc_ra_postconditions \
-	hipe_sparc_registers \
-	hipe_sparc_size
+	hipe_sparc_registers
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)

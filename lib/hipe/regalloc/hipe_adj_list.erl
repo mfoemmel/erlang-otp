@@ -29,7 +29,7 @@
 %%----------------------------------------------------------------------
 
 new(Max_nodes) ->
-    hipe_vectors_wrapper:empty(Max_nodes, ordsets:new()).
+  hipe_vectors_wrapper:empty(Max_nodes, []).
 
 %%----------------------------------------------------------------------
 %% Function:    add_edges
@@ -65,10 +65,9 @@ new(Max_nodes) ->
 %%
 %%----------------------------------------------------------------------
 
-add_edge(U, U, Adj_list) -> Adj_list;
-add_edge(U, V, Adj_list) when is_integer(U), is_integer(V) ->
-    hipe_vectors_wrapper:set(Adj_list, U,
-			     ordsets:add_element(V, hipe_vectors_wrapper:get(Adj_list, U))).
+add_edge(U, V, Adj_list) -> % PRE: U =/= V, not V \in adjList[U]
+  hipe_vectors_wrapper:set(Adj_list, U,
+			   [V | hipe_vectors_wrapper:get(Adj_list, U)]).
 
 %%----------------------------------------------------------------------
 %% Function:    remove_edges
@@ -122,5 +121,5 @@ add_edge(U, V, Adj_list) when is_integer(U), is_integer(V) ->
 %%
 %%----------------------------------------------------------------------
 
-edges(U, Adj_list) when is_integer(U) ->
+edges(U, Adj_list) ->
     hipe_vectors_wrapper:get(Adj_list, U).

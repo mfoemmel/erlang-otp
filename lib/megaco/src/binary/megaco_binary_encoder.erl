@@ -25,24 +25,20 @@
 
 %% API
 -export([encode_message/3, decode_message/3,
-	
+	 decode_mini_message/3, 
+
 	 encode_transaction/3,
 	 encode_action_requests/3,
 	 encode_action_request/3,
 	 
-	 version_of/2, version_of/5]).
-
-%% Internal API
--export([encode_message/5, decode_message/5, decode_message_dynamic/5,
-	 encode_transaction/5,
-	 encode_action_requests/5,
-	 encode_action_request/5]).
+	 version_of/2]).
 
 %% Backward compatible functions:
 -export([encode_message/2, decode_message/2]).
 
-% -include_lib("megaco/include/megaco_message.hrl").
 -include_lib("megaco/src/engine/megaco_message_internal.hrl").
+
+-define(BIN_LIB, megaco_binary_encoder_lib).
 
 
 %%----------------------------------------------------------------------
@@ -50,18 +46,38 @@
 %% Return {ok, Binary} | {error, Reason}
 %%----------------------------------------------------------------------
 
-encode_message(EncodingConfig, 
+encode_message(EC, 
 	       #'MegacoMessage'{mess = #'Message'{version = V}} = MegaMsg) ->
-    encode_message(EncodingConfig, V, MegaMsg).
+    encode_message(EC, V, MegaMsg).
 
-encode_message(EncodingConfig, 1, MegaMsg) ->
+encode_message([{version3,_}|EC], 1, MegaMsg) ->
     AsnMod   = megaco_ber_media_gateway_control_v1,
     TransMod = megaco_binary_transformer_v1,
-    encode_message(EncodingConfig, MegaMsg, AsnMod, TransMod, io_list);
-encode_message(EncodingConfig, 2, MegaMsg) ->
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message(EC, 1, MegaMsg) ->
+    AsnMod   = megaco_ber_media_gateway_control_v1,
+    TransMod = megaco_binary_transformer_v1,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message([{version3,_}|EC], 2, MegaMsg) ->
     AsnMod   = megaco_ber_media_gateway_control_v2,
     TransMod = megaco_binary_transformer_v2,
-    encode_message(EncodingConfig, MegaMsg, AsnMod, TransMod, io_list).
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message(EC, 2, MegaMsg) ->
+    AsnMod   = megaco_ber_media_gateway_control_v2,
+    TransMod = megaco_binary_transformer_v2,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message([{version3,prev3a}|EC], 3, MegaMsg) ->
+    AsnMod   = megaco_ber_media_gateway_control_prev3a,
+    TransMod = megaco_binary_transformer_prev3a,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message([{version3,v3}|EC], 3, MegaMsg) ->
+    AsnMod   = megaco_ber_media_gateway_control_v3,
+    TransMod = megaco_binary_transformer_v3,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list);
+encode_message(EC, 3, MegaMsg) ->
+    AsnMod   = megaco_ber_media_gateway_control_v3,
+    TransMod = megaco_binary_transformer_v3,
+    ?BIN_LIB:encode_message(EC, MegaMsg, AsnMod, TransMod, io_list).
 
 
 %%----------------------------------------------------------------------
@@ -70,42 +86,106 @@ encode_message(EncodingConfig, 2, MegaMsg) ->
 %% Return {ok, Binary} | {error, Reason}
 %%----------------------------------------------------------------------
 
-encode_transaction(EncodingConfig, 1, Trans) ->
+encode_transaction([{version3,_}|EC], 1, Trans) ->
     AsnMod   = megaco_ber_media_gateway_control_v1,
     TransMod = megaco_binary_transformer_v1,
-    encode_transaction(EncodingConfig, Trans, AsnMod, TransMod, io_list);
-encode_transaction(EncodingConfig, 2, Trans) ->
+    ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, io_list);
+encode_transaction(EC, 1, Trans) ->
+    AsnMod   = megaco_ber_media_gateway_control_v1,
+    TransMod = megaco_binary_transformer_v1,
+    ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, io_list);
+encode_transaction([{version3,_}|EC], 2, Trans) ->
     AsnMod   = megaco_ber_media_gateway_control_v2,
     TransMod = megaco_binary_transformer_v2,
-    encode_transaction(EncodingConfig, Trans, AsnMod, TransMod, io_list).
+    ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, io_list);
+encode_transaction(EC, 2, Trans) ->
+    AsnMod   = megaco_ber_media_gateway_control_v2,
+    TransMod = megaco_binary_transformer_v2,
+    ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, io_list);
+encode_transaction([{version3,prev3a}|EC], 3, Trans) ->
+    AsnMod   = megaco_ber_media_gateway_control_prev3a,
+    TransMod = megaco_binary_transformer_prev3a,
+    ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, io_list);
+encode_transaction([{version3,v3}|EC], 3, Trans) ->
+    AsnMod   = megaco_ber_media_gateway_control_v3,
+    TransMod = megaco_binary_transformer_v3,
+    ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, io_list);
+encode_transaction(EC, 3, Trans) ->
+    AsnMod   = megaco_ber_media_gateway_control_v3,
+    TransMod = megaco_binary_transformer_v3,
+    ?BIN_LIB:encode_transaction(EC, Trans, AsnMod, TransMod, io_list).
 
 
 %%----------------------------------------------------------------------
 %% Convert a list of ActionRequest record's into a binary
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
+encode_action_requests([{version3,_}|EC], 1, ActReqs) 
+  when list(ActReqs) ->
+    AsnMod   = megaco_ber_media_gateway_control_v1,
+    TransMod = megaco_binary_transformer_v1,
+    ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
 encode_action_requests(EC, 1, ActReqs) when list(ActReqs) ->
     AsnMod   = megaco_ber_media_gateway_control_v1,
     TransMod = megaco_binary_transformer_v1,
-    encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
+    ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
+encode_action_requests([{version3,_}|EC], 2, ActReqs) 
+  when list(ActReqs) ->
+    AsnMod   = megaco_ber_media_gateway_control_v2,
+    TransMod = megaco_binary_transformer_v2,
+    ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
 encode_action_requests(EC, 2, ActReqs) when list(ActReqs) ->
-    AsnMod   = megaco_ber_media_gateway_control_v1,
-    TransMod = megaco_binary_transformer_v1,
-    encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list).
+    AsnMod   = megaco_ber_media_gateway_control_v2,
+    TransMod = megaco_binary_transformer_v2,
+    ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
+encode_action_requests([{version3,prev3a}|EC], 3, ActReqs) 
+  when list(ActReqs) ->
+    AsnMod   = megaco_ber_media_gateway_control_prev3a,
+    TransMod = megaco_binary_transformer_prev3a,
+    ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
+encode_action_requests([{version3,v3}|EC], 3, ActReqs) 
+  when list(ActReqs) ->
+    AsnMod   = megaco_ber_media_gateway_control_v3,
+    TransMod = megaco_binary_transformer_v3,
+    ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
+encode_action_requests(EC, 3, ActReqs) when list(ActReqs) ->
+    AsnMod   = megaco_ber_media_gateway_control_v3,
+    TransMod = megaco_binary_transformer_v3,
+    ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list).
 
 
 %%----------------------------------------------------------------------
 %% Convert a ActionRequest record into a binary
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
+encode_action_request([{version3,_}|EC], 1, ActReq) ->
+    AsnMod   = megaco_ber_media_gateway_control_v1,
+    TransMod = megaco_binary_transformer_v1,
+    ?BIN_LIB:encode_action_request(EC, ActReq, AsnMod, TransMod, io_list);
 encode_action_request(EC, 1, ActReq) ->
     AsnMod   = megaco_ber_media_gateway_control_v1,
     TransMod = megaco_binary_transformer_v1,
-    encode_action_request(EC, ActReq, AsnMod, TransMod, io_list);
+    ?BIN_LIB:encode_action_request(EC, ActReq, AsnMod, TransMod, io_list);
+encode_action_request([{version3,_}|EC], 2, ActReq) ->
+    AsnMod   = megaco_ber_media_gateway_control_v2,
+    TransMod = megaco_binary_transformer_v2,
+    ?BIN_LIB:encode_action_request(EC, ActReq, AsnMod, TransMod, io_list);
 encode_action_request(EC, 2, ActReq) ->
-    AsnMod   = megaco_ber_media_gateway_control_v1,
-    TransMod = megaco_binary_transformer_v1,
-    encode_action_request(EC, ActReq, AsnMod, TransMod, io_list).
+    AsnMod   = megaco_ber_media_gateway_control_v2,
+    TransMod = megaco_binary_transformer_v2,
+    ?BIN_LIB:encode_action_request(EC, ActReq, AsnMod, TransMod, io_list);
+encode_action_request([{version3,prev3a}|EC], 3, ActReq) ->
+    AsnMod   = megaco_ber_media_gateway_control_prev3a,
+    TransMod = megaco_binary_transformer_prev3a,
+    ?BIN_LIB:encode_action_request(EC, ActReq, AsnMod, TransMod, io_list);
+encode_action_request([{version3,v3}|EC], 3, ActReq) ->
+    AsnMod   = megaco_ber_media_gateway_control_v3,
+    TransMod = megaco_binary_transformer_v3,
+    ?BIN_LIB:encode_action_request(EC, ActReq, AsnMod, TransMod, io_list);
+encode_action_request(EC, 3, ActReq) ->
+    AsnMod   = megaco_ber_media_gateway_control_v3,
+    TransMod = megaco_binary_transformer_v3,
+    ?BIN_LIB:encode_action_request(EC, ActReq, AsnMod, TransMod, io_list).
 
 
 %%----------------------------------------------------------------------
@@ -113,54 +193,36 @@ encode_action_request(EC, 2, ActReq) ->
 %% Return {ok, Version} | {error, Reason}
 %%----------------------------------------------------------------------
 
-version_of([] = EC, Binary) ->
-    AsnModV1 = megaco_ber_bin_media_gateway_control_v1,
-    AsnModV2 = megaco_ber_bin_media_gateway_control_v2,
-    version_of(EC, Binary, dynamic, AsnModV1, AsnModV2);
-
-version_of([native] = EC, Binary) ->
-    AsnModV1 = megaco_ber_bin_media_gateway_control_v1,
-    AsnModV2 = megaco_ber_bin_media_gateway_control_v2,
-    version_of(EC, Binary, dynamic, AsnModV1, AsnModV2);
-
+version_of([{version3,prev3a},driver|EC], Binary) ->
+    Decoders = [megaco_ber_bin_drv_media_gateway_control_v1,
+		megaco_ber_bin_drv_media_gateway_control_v2,
+		megaco_ber_bin_drv_media_gateway_control_prev3a],
+    ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
+version_of([{version3,v3},driver|EC], Binary) ->
+    Decoders = [megaco_ber_bin_drv_media_gateway_control_v1,
+		megaco_ber_bin_drv_media_gateway_control_v2,
+		megaco_ber_bin_drv_media_gateway_control_v3],
+    ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
 version_of([driver|EC], Binary) ->
-    AsnModV1 = megaco_ber_bin_drv_media_gateway_control_v1,
-    AsnModV2 = megaco_ber_bin_drv_media_gateway_control_v2,
-    version_of(EC, Binary, dynamic, AsnModV1, AsnModV2);
-
-%% All the possible (valid) encoding configs have already been
-%% taken care of, but pass it on just in case...
-version_of(EncodingConfig, Binary) ->
-    AsnModV1 = megaco_ber_bin_media_gateway_control_v1,
-    AsnModV2 = megaco_ber_bin_media_gateway_control_v2,
-    version_of(EncodingConfig, Binary, dynamic, AsnModV1, AsnModV2).
-
-version_of(_EncodingConfig, Binary, dynamic, AsnModV1, _AsnModV2) 
-  when binary(Binary), atom(AsnModV1) ->
-    case (catch AsnModV1:decode_message_version(Binary)) of
-	{ok, PartialMsg} ->
-	    V = (PartialMsg#'MegacoMessage'.mess)#'Message'.version,
-	    {ok, V};
-	Error ->
-	    Error
-    end;
-version_of(_EncodingConfig, Binary, 1, AsnModV1, AsnModV2) 
-  when binary(Binary), atom(AsnModV1), atom(AsnModV2) ->
-    version_of([AsnModV1, AsnModV2], Binary, []);
-version_of(_EncodingConfig, Binary, 2, AsnModV1, AsnModV2) 
-  when binary(Binary), atom(AsnModV1), atom(AsnModV2) ->
-    version_of([AsnModV2, AsnModV1], Binary, []).
-
-version_of([], _Binary, Err) ->
-    {error, {decode_failed, lists:reverse(Err)}};
-version_of([AsnMod|AsnMods], Binary, Errs) ->
-    case (catch asn1rt:decode(AsnMod, 'MegacoMessage', Binary)) of
-	{ok, M} ->
-	    V = (M#'MegacoMessage'.mess)#'Message'.version,
-	    {ok, V};
-	Err ->
-	    version_of(AsnMods, Binary, [Err|Errs])
-    end.
+    Decoders = [megaco_ber_bin_drv_media_gateway_control_v1,
+		megaco_ber_bin_drv_media_gateway_control_v2,
+		megaco_ber_bin_drv_media_gateway_control_v3],
+    ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
+version_of([{version3,prev3a}|EC], Binary) ->
+    Decoders = [megaco_ber_bin_media_gateway_control_v1,
+		megaco_ber_bin_media_gateway_control_v2,
+		megaco_ber_bin_media_gateway_control_prev3a],
+    ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
+version_of([{version3,v3}|EC], Binary) ->
+    Decoders = [megaco_ber_bin_media_gateway_control_v1,
+		megaco_ber_bin_media_gateway_control_v2,
+		megaco_ber_bin_media_gateway_control_v3],
+    ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
+version_of(EC, Binary) ->
+    Decoders = [megaco_ber_bin_media_gateway_control_v1,
+		megaco_ber_bin_media_gateway_control_v2,
+		megaco_ber_bin_media_gateway_control_v3],
+    ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders).
 
 	    
 %%----------------------------------------------------------------------
@@ -168,260 +230,211 @@ version_of([AsnMod|AsnMods], Binary, Errs) ->
 %% Return {ok, MegacoMessageRecord} | {error, Reason}
 %%----------------------------------------------------------------------
 
-decode_message(EncodingConfig, Binary) ->
-    decode_message(EncodingConfig, 1, Binary).
+decode_message(EC, Binary) ->
+    decode_message(EC, 1, Binary).
 
-decode_message([] = EC, dynamic, Binary) ->
-    AsnModV1 = megaco_ber_bin_media_gateway_control_v1,
-    AsnModV2 = megaco_ber_bin_media_gateway_control_v2,
-    decode_message_dynamic(EC, Binary, AsnModV1, AsnModV2, binary);
-
-decode_message([native] = EC, dynamic, Binary) ->
-    AsnModV1 = megaco_ber_bin_media_gateway_control_v1,
-    AsnModV2 = megaco_ber_bin_media_gateway_control_v2,
-    decode_message_dynamic(EC, Binary, AsnModV1, AsnModV2, binary);
-
+decode_message([{version3,prev3a},driver|EC], dynamic, Binary) ->
+    Decoders = [{megaco_ber_bin_drv_media_gateway_control_v1,
+		 megaco_binary_transformer_v1},
+		{megaco_ber_bin_drv_media_gateway_control_v2,
+		 megaco_binary_transformer_v2},
+		{megaco_ber_bin_drv_media_gateway_control_prev3a,
+		 megaco_binary_transformer_prev3a}],
+    ?BIN_LIB:decode_message_dynamic(EC, Binary, Decoders, binary);
+decode_message([{version3,v3},driver|EC], dynamic, Binary) ->
+    Decoders = [{megaco_ber_bin_drv_media_gateway_control_v1,
+		 megaco_binary_transformer_v1},
+		{megaco_ber_bin_drv_media_gateway_control_v2,
+		 megaco_binary_transformer_v2},
+		{megaco_ber_bin_drv_media_gateway_control_v3,
+		 megaco_binary_transformer_v3}],
+    ?BIN_LIB:decode_message_dynamic(EC, Binary, Decoders, binary);
 decode_message([driver|EC], dynamic, Binary) ->
-    AsnModV1 = megaco_ber_bin_drv_media_gateway_control_v1,
-    AsnModV2 = megaco_ber_bin_drv_media_gateway_control_v2,
-    decode_message_dynamic(EC, Binary, AsnModV1, AsnModV2, binary);
+    Decoders = [{megaco_ber_bin_drv_media_gateway_control_v1,
+		 megaco_binary_transformer_v1},
+		{megaco_ber_bin_drv_media_gateway_control_v2,
+		 megaco_binary_transformer_v2},
+		{megaco_ber_bin_drv_media_gateway_control_v3,
+		 megaco_binary_transformer_v3}],
+    ?BIN_LIB:decode_message_dynamic(EC, Binary, Decoders, binary);
+decode_message([{version3,prev3a}|EC], dynamic, Binary) ->
+    Decoders = [{megaco_ber_bin_media_gateway_control_v1,
+		 megaco_binary_transformer_v1},
+		{megaco_ber_bin_media_gateway_control_v2,
+		 megaco_binary_transformer_v2},
+		{megaco_ber_bin_media_gateway_control_prev3a,
+		 megaco_binary_transformer_prev3a}],
+    ?BIN_LIB:decode_message_dynamic(EC, Binary, Decoders, binary);
+decode_message([{version3,v3}|EC], dynamic, Binary) ->
+    Decoders = [{megaco_ber_bin_media_gateway_control_v1,
+		 megaco_binary_transformer_v1},
+		{megaco_ber_bin_media_gateway_control_v2,
+		 megaco_binary_transformer_v2},
+		{megaco_ber_bin_media_gateway_control_v3,
+		 megaco_binary_transformer_v3}],
+    ?BIN_LIB:decode_message_dynamic(EC, Binary, Decoders, binary);
+decode_message(EC, dynamic, Binary) ->
+    Decoders = [{megaco_ber_bin_media_gateway_control_v1,
+		 megaco_binary_transformer_v1},
+		{megaco_ber_bin_media_gateway_control_v2,
+		 megaco_binary_transformer_v2},
+		{megaco_ber_bin_media_gateway_control_v3,
+		 megaco_binary_transformer_v3}],
+    ?BIN_LIB:decode_message_dynamic(EC, Binary, Decoders, binary);
 
-%% All the possible (valid) encoding configs have already been
-%% taken care of, but pass it on just in case...
-decode_message(EncodingConfig, dynamic, Binary) ->
-    AsnModV1 = megaco_ber_bin_media_gateway_control_v1,
-    AsnModV2 = megaco_ber_bin_media_gateway_control_v2,
-    decode_message_dynamic(EncodingConfig, Binary, 
-     			   AsnModV1, AsnModV2, binary);
 
-
-decode_message([] = EC, 1, Binary) ->
-    AsnMod   = megaco_ber_bin_media_gateway_control_v1,
+%% -- Version 1 --
+ 
+decode_message([{version3,_},driver|EC], 1, Binary) ->
+    AsnMod   = megaco_ber_bin_drv_media_gateway_control_v1,
     TransMod = megaco_binary_transformer_v1,
-    decode_message(EC, Binary, AsnMod, TransMod, binary);
-
-decode_message([native] = EC, 1, Binary) ->
-    AsnMod   = megaco_ber_bin_media_gateway_control_v1,
-    TransMod = megaco_binary_transformer_v1,
-    decode_message(EC, Binary, AsnMod, TransMod, binary);
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 
 decode_message([driver|EC], 1, Binary) ->
     AsnMod   = megaco_ber_bin_drv_media_gateway_control_v1,
     TransMod = megaco_binary_transformer_v1,
-    decode_message(EC, Binary, AsnMod, TransMod, binary);
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 
-%% All the possible (valid) encoding configs have already been
-%% taken care of, but pass it on just in case...
-decode_message(EncodingConfig, 1, Binary) ->
+decode_message([{version3,_}|EC], 1, Binary) ->
     AsnMod   = megaco_ber_bin_media_gateway_control_v1,
     TransMod = megaco_binary_transformer_v1,
-    decode_message(EncodingConfig, Binary, AsnMod, TransMod, binary);
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+
+decode_message(EC, 1, Binary) ->
+    AsnMod   = megaco_ber_bin_media_gateway_control_v1,
+    TransMod = megaco_binary_transformer_v1,
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 
 
-decode_message([] = EC, 2, Binary) ->
-    AsnMod   = megaco_ber_bin_media_gateway_control_v2,
+%% -- Version 2 --
+ 
+decode_message([{version3,_},driver|EC], 2, Binary) ->
+    AsnMod   = megaco_ber_bin_drv_media_gateway_control_v2,
     TransMod = megaco_binary_transformer_v2,
-    decode_message(EC, Binary, AsnMod, TransMod, binary);
-
-decode_message([native] = EC, 2, Binary) ->
-    AsnMod   = megaco_ber_bin_media_gateway_control_v2,
-    TransMod = megaco_binary_transformer_v2,
-    decode_message(EC, Binary, AsnMod, TransMod, binary);
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 
 decode_message([driver|EC], 2, Binary) ->
     AsnMod   = megaco_ber_bin_drv_media_gateway_control_v2,
     TransMod = megaco_binary_transformer_v2,
-    decode_message(EC, Binary, AsnMod, TransMod, binary);
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 
-%% All the possible (valid) encoding configs have already been
-%% taken care of, but pass it on just in case...
-decode_message(EncodingConfig, 2, Binary) ->
+decode_message([{version3,_}|EC], 2, Binary) ->
     AsnMod   = megaco_ber_bin_media_gateway_control_v2,
     TransMod = megaco_binary_transformer_v2,
-    decode_message(EncodingConfig, Binary, AsnMod, TransMod, binary).
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+
+decode_message(EC, 2, Binary) ->
+    AsnMod   = megaco_ber_bin_media_gateway_control_v2,
+    TransMod = megaco_binary_transformer_v2,
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 
 
+%% -- Version 3 --
+ 
+decode_message([{version3,prev3a},driver|EC], 3, Binary) ->
+    AsnMod   = megaco_ber_bin_drv_media_gateway_control_prev3a,
+    TransMod = megaco_binary_transformer_prev3a,
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+decode_message([{version3,v3},driver|EC], 3, Binary) ->
+    AsnMod   = megaco_ber_bin_drv_media_gateway_control_v3,
+    TransMod = megaco_binary_transformer_v3,
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 
-%%----------------------------------------------------------------------
-%% Convert a 'MegacoMessage' record into a binary
-%% Return {ok, Binary} | {error, Reason}
-%%----------------------------------------------------------------------
+decode_message([driver|EC], 3, Binary) ->
+    AsnMod   = megaco_ber_bin_drv_media_gateway_control_v3,
+    TransMod = megaco_binary_transformer_v3,
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 
-encode_message([native], MegaMsg, AsnMod, _TransMod, binary) 
-  when record(MegaMsg, 'MegacoMessage') ->
-    asn1rt:encode(AsnMod, 'MegacoMessage', MegaMsg);
-encode_message(Config, MegaMsg, AsnMod, TransMod, binary) 
-  when list(Config), record(MegaMsg, 'MegacoMessage') ->
-    MegaMsg2 = TransMod:tr_message(MegaMsg, encode, Config),
-    asn1rt:encode(AsnMod, 'MegacoMessage', MegaMsg2);
-encode_message(Config, MegaMsg, AsnMod, TransMod, io_list) ->
-    case encode_message(Config, MegaMsg, AsnMod, TransMod, binary) of
-	{ok, Bin} when binary(Bin) ->
-	    {ok, Bin};
-	{ok, DeepIoList} ->
-	    Bin = erlang:list_to_binary(DeepIoList),
-	    {ok, Bin};
-	{error, Reason} ->
-	    {error, Reason} 
-    end;
-encode_message(Config, MegaMsg, _AsnMod, _TransMod, _Type)
-  when record(MegaMsg, 'MegacoMessage')  ->
-    {error, {bad_encoding_config, Config}};
-encode_message(_Config, MegaMsg, _AsnMod, _TransMod, _Type) ->
-    {error, {no_megaco_message, MegaMsg}}.
+decode_message([{version3,prev3a}|EC], 3, Binary) ->
+    AsnMod   = megaco_ber_bin_media_gateway_control_prev3a,
+    TransMod = megaco_binary_transformer_prev3a,
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+decode_message([{version3,v3}|EC], 3, Binary) ->
+    AsnMod   = megaco_ber_bin_media_gateway_control_v3,
+    TransMod = megaco_binary_transformer_v3,
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 
-
-%%----------------------------------------------------------------------
-%% Convert a transaction (or transactions in the case of ack) record(s) 
-%% into a binary
-%% Return {ok, Binary} | {error, Reason}
-%%----------------------------------------------------------------------
-
-%% Should handle encoding of all types of transactions:
-%% TransactionAck, TransactionPending, TransactionRequest
-%% and TransactionReply
-encode_transaction(Config, [T|_] = Ts, AsnMod, TransMod, Type) 
-  when record(T, 'TransactionAck') ->
-    Tag = transactionResponseAck,
-    do_encode_transaction(Config, Tag, Ts, AsnMod, TransMod, Type);
-encode_transaction(Config, T, AsnMod, TransMod, Type) 
-  when record(T, 'TransactionAck') ->
-    Tag = transactionResponseAck,
-    do_encode_transaction(Config, Tag, [T], AsnMod, TransMod, Type);
-encode_transaction(Config, T, AsnMod, TransMod, Type) 
-  when record(T, 'TransactionPending') ->
-    Tag = transactionPending,
-    do_encode_transaction(Config, Tag, T, AsnMod, TransMod, Type);
-encode_transaction(Config, T, AsnMod, TransMod, Type) 
-  when record(T, 'TransactionRequest') ->
-    Tag = transactionRequest,
-    do_encode_transaction(Config, Tag, T, AsnMod, TransMod, Type);
-encode_transaction(Config, T, AsnMod, TransMod, Type) 
-  when record(T, 'TransactionReply') ->
-    Tag = transactionReply,
-    do_encode_transaction(Config, Tag, T, AsnMod, TransMod, Type);
-encode_transaction(_Config, T, _AsnMod, _TransMod, _Type) ->
-    {error, {no_megaco_transaction, T}}.
-
-do_encode_transaction([native], _Tag, _T, _AsnMod, _TransMod, binary) ->
-    %% asn1rt:encode(AsnMod, element(1, T), T);
-    {error, not_implemented};
-do_encode_transaction(Config, _Tag, _T, _AsnMod, _TransMod, binary) 
-  when list(Config) ->
-    %% T2 = TransMod:tr_transaction({Tag,T}, encode, Config),
-    %% asn1rt:encode(AsnMod, element(1, T), T2);
-    {error, not_implemented};
-do_encode_transaction(Config, Tag, T, AsnMod, TransMod, io_list) ->
-    case do_encode_transaction(Config, Tag, T, AsnMod, TransMod, binary) of
-	{ok, Bin} when binary(Bin) ->
-	    {ok, Bin};
-	{ok, DeepIoList} ->
-	    Bin = erlang:list_to_binary(DeepIoList),
-	    {ok, Bin};
-	{error, Reason} ->
-	    {error, Reason} 
-    end;
-do_encode_transaction(Config, _Tag, _T, _AsnMod, _TransMod, _Type) ->
-    {error, {bad_encoding_config, Config}}.
+decode_message(EC, 3, Binary) ->
+    AsnMod   = megaco_ber_bin_media_gateway_control_v3,
+    TransMod = megaco_binary_transformer_v3,
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary).
 
 
-%%----------------------------------------------------------------------
-%% Convert a list of ActionRequest record's into a binary
-%% Return {ok, DeepIoList} | {error, Reason}
-%%----------------------------------------------------------------------
-encode_action_requests([native], _ARs, _AsnMod, _TransMod, binary) ->
-    %% asn1rt:encode(AsnMod, element(1, T), T);
-    {error, not_implemented};
-encode_action_requests(_Config, _ARs0, _AsnMod, _TransMod, binary) ->
-    {error, not_implemented};
-encode_action_requests(Config, ARs, AsnMod, TransMod, io_list) ->
-    case encode_action_requests(Config, ARs, AsnMod, TransMod, binary) of
-	{ok, Bin} when binary(Bin) ->
-	    {ok, Bin};
-	{ok, DeepIoList} ->
-	    Bin = erlang:list_to_binary(DeepIoList),
-	    {ok, Bin};
-	{error, Reason} ->
-	    {error, Reason} 
-    end;
-encode_action_requests(Config, _ARs, _AsnMod, _TransMod, _Type) ->
-    {error, {bad_encoding_config, Config}}.
+decode_mini_message([{version3,prev3a},driver|EC], dynamic, Bin) ->
+    Mods = [megaco_ber_bin_drv_media_gateway_control_v1,
+	    megaco_ber_bin_drv_media_gateway_control_v2,
+	    megaco_ber_bin_drv_media_gateway_control_prev3a],
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
+decode_mini_message([{version3,v3},driver|EC], dynamic, Bin) ->
+    Mods = [megaco_ber_bin_drv_media_gateway_control_v1,
+	    megaco_ber_bin_drv_media_gateway_control_v2,
+	    megaco_ber_bin_drv_media_gateway_control_v3],
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
+decode_mini_message([driver|EC], dynamic, Bin) ->
+    Mods = [megaco_ber_bin_drv_media_gateway_control_v1,
+	    megaco_ber_bin_drv_media_gateway_control_v2,
+	    megaco_ber_bin_drv_media_gateway_control_v3],
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
+decode_mini_message([{version3,prev3a}|EC], dynamic, Bin) ->
+    Mods = [megaco_ber_bin_media_gateway_control_v1,
+	    megaco_ber_bin_media_gateway_control_v2,
+	    megaco_ber_bin_media_gateway_control_prev3a],
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
+decode_mini_message([{version3,v3}|EC], dynamic, Bin) ->
+    Mods = [megaco_ber_bin_media_gateway_control_v1,
+	    megaco_ber_bin_media_gateway_control_v2,
+	    megaco_ber_bin_media_gateway_control_v3],
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
+decode_mini_message(EC, dynamic, Bin) ->
+    Mods = [megaco_ber_bin_media_gateway_control_v1,
+	    megaco_ber_bin_media_gateway_control_v2,
+	    megaco_ber_bin_media_gateway_control_v3],
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
+
+decode_mini_message([{version3,_},driver|EC], 1, Bin) ->
+    AsnMod = megaco_ber_bin_drv_media_gateway_control_v1,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([driver|EC], 1, Bin) ->
+    AsnMod = megaco_ber_bin_drv_media_gateway_control_v1,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([{version3,_}|EC], 1, Bin) ->
+    AsnMod = megaco_ber_bin_media_gateway_control_v1,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message(EC, 1, Bin) ->
+    AsnMod = megaco_ber_bin_media_gateway_control_v1,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+
+decode_mini_message([{version3,_},driver|EC], 2, Bin) ->
+    AsnMod = megaco_ber_bin_drv_media_gateway_control_v2,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([driver|EC], 2, Bin) ->
+    AsnMod = megaco_ber_bin_drv_media_gateway_control_v2,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([{version3,_}|EC], 2, Bin) ->
+    AsnMod = megaco_ber_bin_media_gateway_control_v2,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message(EC, 2, Bin) ->
+    AsnMod = megaco_ber_bin_media_gateway_control_v2,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+
+decode_mini_message([{version3,prev3a},driver|EC], 3, Bin) ->
+    AsnMod = megaco_ber_bin_drv_media_gateway_control_prev3a,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([{version3,v3},driver|EC], 3, Bin) ->
+    AsnMod = megaco_ber_bin_drv_media_gateway_control_v3,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([driver|EC], 3, Bin) ->
+    AsnMod = megaco_ber_bin_drv_media_gateway_control_v3,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([{version3,prev3a}|EC], 3, Bin) ->
+    AsnMod = megaco_ber_bin_media_gateway_control_prev3a,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([{version3,v3}|EC], 3, Bin) ->
+    AsnMod = megaco_ber_bin_media_gateway_control_v3,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message(EC, 3, Bin) ->
+    AsnMod = megaco_ber_bin_media_gateway_control_v3,
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary).
 
 
-%%----------------------------------------------------------------------
-%% Convert a ActionRequest record into a binary
-%% Return {ok, DeepIoList} | {error, Reason}
-%%----------------------------------------------------------------------
-encode_action_request([native], _ARs, _AsnMod, _TransMod, binary) ->
-    %% asn1rt:encode(AsnMod, element(1, T), T);
-    {error, not_implemented};
-encode_action_request(_Config, _ARs0, _AsnMod, _TransMod, binary) ->
-    {error, not_implemented};
-encode_action_request(Config, ARs, AsnMod, TransMod, io_list) ->
-    case encode_action_request(Config, ARs, AsnMod, TransMod, binary) of
-	{ok, Bin} when binary(Bin) ->
-	    {ok, Bin};
-	{ok, DeepIoList} ->
-	    Bin = erlang:list_to_binary(DeepIoList),
-	    {ok, Bin};
-	{error, Reason} ->
-	    {error, Reason} 
-    end;
-encode_action_request(Config, _ARs, _AsnMod, _TransMod, _Type) ->
-    {error, {bad_encoding_config, Config}}.
-
-
-%%----------------------------------------------------------------------
-%% Convert a binary into a 'MegacoMessage' record
-%% Return {ok, MegacoMessageRecord} | {error, Reason}
-%%----------------------------------------------------------------------
-
-decode_message_dynamic(Config, Bin, AsnModV1, AsnModV2, Form)
-  when list(Config), binary(Bin) ->
-    case AsnModV1:decode_message_version(Bin) of
-	{ok, PartialMsg} ->
-	    V = (PartialMsg#'MegacoMessage'.mess)#'Message'.version,
-	    case V of
-		1 -> 
-		    TransMod = megaco_binary_transformer_v1,
-		    decode_message(Config, Bin, AsnModV1, TransMod, Form);
-		2 ->
-		    TransMod = megaco_binary_transformer_v2,
-		    decode_message(Config, Bin, AsnModV2, TransMod, Form)
-	    end;
-	{error, Reason} ->
-	    {error, Reason}
-    end;
-decode_message_dynamic(Config, Bin, _AsnModV1, _AsnModV2, _Type) 
-  when binary(Bin) ->
-    {error, {bad_encoding_config, Config}};
-decode_message_dynamic(_Config, _BadBin, _AsnMod, _AsnModV1, _Type) ->
-    {error, no_binary}.
-
-
-decode_message(Config, Bin, AsnMod, TransMod, binary) ->
-    case asn1rt:decode(AsnMod, 'MegacoMessage', Bin) of
-	{ok, MegaMsg} ->
-	    case Config of
-		[native] ->
-		    {ok, MegaMsg};
-		_ ->		
-		    {ok, TransMod:tr_message(MegaMsg, decode, Config)}
-	    end;
-	{error, Reason} ->
-	    {error, Reason}
-    end;
-decode_message(Config, Bin, AsnMod, TransMod, io_list) ->
-    ShallowIoList = erlang:binary_to_list(Bin),
-    case asn1rt:decode(AsnMod, 'MegacoMessage', ShallowIoList) of
-	{ok, MegaMsg} ->
-	    case Config of
-		[native] ->
-		    {ok, MegaMsg};
-		_ ->
-		    {ok, TransMod:tr_message(MegaMsg, decode, Config)}
-	    end;
-	{error, Reason} ->
-	    {error, Reason}
-    end.
 

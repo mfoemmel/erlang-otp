@@ -3372,10 +3372,10 @@ void process_main(void)
 
      if (*cp_val((Eterm)c_p->cp) 
 	 == (Uint) OpCode(return_trace)) {
-	 cpp = &((Uint) E[2]);
+	 cpp = (Uint*)&E[2];
      } else if (*cp_val((Eterm)c_p->cp) 
 		== (Uint) OpCode(i_return_to_trace)) {
-	 cpp = &((Uint) E[0]);
+	 cpp = (Uint*)&E[0];
      } else {
 	 cpp = NULL;
      }
@@ -3406,7 +3406,7 @@ void process_main(void)
 	     /* Look down the stack for other return_to frames */
 	     int do_insert = 1;
 	     if (*cp_val((Eterm)c_p->cp) == (Uint) OpCode(return_trace)) {
-		 cpp = &((Uint) E[2]);
+		 cpp = (Uint*)&E[2];
 		 for(;;) {
 		     ASSERT(is_CP(*cpp));
 		     if (*cp_val(*cpp) == 
@@ -3472,7 +3472,7 @@ void process_main(void)
  }
  
  OpCase(i_return_to_trace): {
-     Uint *cpp = &((Uint) E[0]);
+     Uint *cpp = (Uint*)&E[0];
      for(;;) {
 	 ASSERT(is_CP(*cpp));
 	 if (*cp_val(*cpp) == (Uint) OpCode(return_trace)) {
@@ -4217,7 +4217,7 @@ void terminate_proc(Process* c_p, Eterm Value) {
  */
 static Eterm
 add_stacktrace(Process* c_p, Eterm Value, Eterm exc) {
-    Eterm Where = build_stacktrace(c_p, c_p->ftrace);
+    Eterm Where = build_stacktrace(c_p, exc);
     Eterm* hp = HAlloc(c_p, 3);
     return TUPLE2(hp, Value, Where);
 }
@@ -4281,21 +4281,21 @@ save_stacktrace(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf,
     struct StackTrace* s;
     int sz;
     int depth = erts_backtrace_depth;    /* max depth (never negative) */
+    if (depth > 0) {
+	/* There will always be a current function */
+	depth --;
+    }
 
     /* Create a container for the exception data */
-    sz = (offsetof(struct StackTrace, trace) + sizeof(Uint) * depth
+    sz = (offsetof(struct StackTrace, trace) + sizeof(Eterm)*depth
           + sizeof(Eterm) - 1) / sizeof(Eterm);
-    hp = HAlloc(c_p, (sz + 3));
+    hp = HAlloc(c_p, 2 + 1 + sz);
     s = (struct StackTrace *) (hp + 2);
-    c_p->ftrace = CONS(hp, args, make_big((Uint *) s));
-    s->header = make_pos_bignum_header(sz);
-
+    c_p->ftrace = CONS(hp, args, make_big((Eterm *) s));
     /* The following fields are inside the bignum */
-    
+    s->header = make_pos_bignum_header(sz);
     s->freason = c_p->freason;
-    s->pc = pc;
-    s->cp = c_p->cp;
-    s->current = c_p->current;
+    s->depth = 0;
 
     /*
      * If the failure was in a BIF other than 'error', 'exit' or
@@ -4309,6 +4309,8 @@ save_stacktrace(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf,
 	int a = 0;
 	for (i = 0; i < BIF_SIZE; i++) {
 	    if (bf == bif_table[i].f || bf == bif_table[i].traced) {
+		Export *ep = bif_export[i];
+		s->current = ep->code;
 	        a = bif_table[i].arity;
 		break;
 	    }
@@ -4319,67 +4321,94 @@ save_stacktrace(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf,
 	     * TRAP and traps are called through apply_bif, which also
 	     * sets c_p->current (luckily).
 	     */
+	    ASSERT(c_p->current);
+	    s->current = c_p->current;
 	    a = s->current[2];
 	    ASSERT(s->current[2] <= 3);
 	}
-	s->bif = i;
-	*hp = make_arglist(c_p, reg, a);
+	/* Save first stack entry */
+	ASSERT(pc);
+	if (depth > 0) {
+	    s->trace[s->depth++] = pc;
+	    depth--;
+	}
+	s->pc = NULL;
+	*hp = make_arglist(c_p, reg, a); /* Overwrite CAR(c_p->ftrace) */
     } else {
-        s->bif = -1;
-
-        /* For a function_clause error, the arguments are in the beam
+	s->current = c_p->current;
+        /* 
+	 * For a function_clause error, the arguments are in the beam
 	 * registers, c_p->cp is valid, and c_p->current is set.
 	 */
 	if ( (GET_EXC_INDEX(s->freason)) ==
 	     (GET_EXC_INDEX(EXC_FUNCTION_CLAUSE)) ) {
-	    int a = s->current[2];
-	    *hp = make_arglist(c_p, reg, a);
+	    int a;
+	    ASSERT(s->current);
+	    a = s->current[2];
+	    *hp = make_arglist(c_p, reg, a); /* Overwrite CAR(c_p->ftrace) */
+	    /* Save first stack entry */
+	    ASSERT(c_p->cp);
+	    if (depth > 0) {
+		s->trace[s->depth++] = c_p->cp;
+		depth--;
+	    }
+	    s->pc = NULL; /* Ignore pc */
+	} else {
+	    s->pc = pc;
 	}
     }
 
     /* Save the actual stack trace */
     if (depth > 0) {
-        int i;
-	Uint* ptr;
-	Uint cp, prev;
+	Eterm *ptr, *prev = s->depth ? s->trace[s->depth-1] : NULL;
 	/*
 	 * Traverse the stack backwards and add all unique continuation
 	 * pointers to the buffer, up to the maximum stack trace size.
 	 */
-	for (i = 0, prev = 0, ptr = c_p->stop;
-	     ptr < STACK_START(c_p); ptr++) {
-	    cp = *ptr;
-	    if (is_CP(cp) && cp != prev) {
-	        if (i >= depth) break;
-		s->trace[i++] = cp;
-		prev = cp;
+	for (ptr = c_p->stop;
+	     (ptr < STACK_START(c_p)) && (depth > 0); 
+	     ptr++) {
+	    if (is_CP(*ptr)) {
+		Eterm *cp = (Eterm *)(*ptr);
+		if (cp != prev) {
+		    prev = cp;
+		    s->trace[s->depth++] = cp;
+		    depth--;
+		}
 	    }
 	}
-	s->depth = i;  /* actual depth of saved trace */
-    } else {
-      s->depth = 0;
     }
+    ASSERT((Eterm *) (s->trace+s->depth) <= hp+2+1+sz);
 }
 
 /*
  * Getting the relevant fields from the term pointed to by ftrace
  */
 
-static struct StackTrace *
-get_trace_from_exc(Eterm exc) {
+static struct StackTrace *get_trace_from_exc(Eterm exc) {
     if (exc == NIL) {
-      return NULL;
+	return NULL;
     } else {
-      return (struct StackTrace *) big_val(CDR(list_val(exc)));
+	ASSERT(is_list(exc));
+	return (struct StackTrace *) big_val(CDR(list_val(exc)));
     }
 }
 
-static Eterm
-get_args_from_exc(Eterm exc) {
+static Eterm get_args_from_exc(Eterm exc) {
     if (exc == NIL) {
-      return NIL;
+	return NIL;
     } else {
-      return CAR(list_val(exc));
+	ASSERT(is_list(exc));
+	return CAR(list_val(exc));
+    }
+}
+
+static int is_raised_exc(Eterm exc) {
+    if (exc == NIL) {
+        return 0;
+    } else {
+        ASSERT(is_list(exc));
+        return bignum_header_is_neg(*big_val(CDR(list_val(exc))));
     }
 }
 
@@ -4402,182 +4431,90 @@ make_arglist(Process* c_p, Eterm* reg, int a) {
  * Building a symbolic representation of a saved stack trace. Note that
  * the exception object 'exc', unless NIL, points to a cons cell which
  * holds the given args and the quick-saved data (encoded as a bignum).
+ *
+ * If the bignum is negative, the given args is a complete stacktrace.
  */
 Eterm
 build_stacktrace(Process* c_p, Eterm exc) {
-    Eterm temp_current[3];
-    Eterm args;
-    struct StackTrace *s;
-    int depth;
-    int bif;
-    Eterm* pc;
-    Uint* current;
-    Eterm Where = NIL;
+    struct StackTrace* s;
+    Eterm  args;
+    int    depth;
+    Eterm* current;
+    Eterm  Where = NIL;
     Eterm* next_p = &Where;
 
-    s = get_trace_from_exc(exc);
-    if (s == NULL) {
+    if (! (s = get_trace_from_exc(exc))) {
         return NIL;
     }
-
     if (s->freason & EXF_NATIVE) {
       /* Just return a null trace if the exception was in native code.
        */
       return NIL;
     }
+    if (is_raised_exc(exc)) {
+	return get_args_from_exc(exc);
+    }
 
-    args = get_args_from_exc(exc);
-    pc = s->pc;
-    bif = s->bif;
-    depth = s->depth;
-    
     /*
      * Find the current function. If the saved s->pc is null, then the
      * saved s->current should already contain the proper value.
      */
-    if (pc != NULL) {
-        current = find_function_from_pc(pc);
+    if (s->pc != NULL) {
+	current = find_function_from_pc(s->pc);
     } else {
-        current = s->current;
+	current = s->current;
     }
-
     /*
      * If current is still NULL, default to the initial function
      * (e.g. spawn_link(erlang, abs, [1])).
      */
     if (current == NULL) {
-        current = c_p->initial;
-
-	/* Special case */
-	if (beam_debug_apply <= pc
-	    && pc < beam_debug_apply+beam_debug_apply_size) {
-	    Eterm* y0 = c_p->stop+1;
-	    if (is_tuple(*y0)) {
-		Eterm* tp = tuple_val(*y0);
-		if (arityval(tp[0]) == 3) {
-		    Sint arity;
-		    temp_current[0] = tp[1];
-		    temp_current[1] = tp[2];
-		    if ((arity = list_length(tp[3])) >= 0) {
-			temp_current[2] = (Eterm) arity;
-			current = temp_current;
-		    }
-		}
-	    }
-	    /* if there is an arglist, ignore it */
-	    if (args != am_true) {
-	        args = am_true;
-		bif = -1;
-	    }
-	}
+	current = c_p->initial;
+	args = am_true; /* Just in case */
+    } else {
+	args = get_args_from_exc(exc);
     }
-
+    
     /*
-     * If the failure was in a BIF (other than error/exit/throw), it is
-     * added to the top of the stack trace, with its saved arglist.
+     * Add the {M,F,A} for the current function 
+     * (where A is arity or [Argument]).
      */
-    if (bif >= 0) {
-        Eterm mfa;
-        Eterm* hp = HAlloc(c_p, 6);
-        if (bif < BIF_SIZE) {
-	    mfa = TUPLE3(hp, bif_table[bif].module,
-			 bif_table[bif].name, args);
+    {
+	Eterm mfa;
+	Eterm* hp = HAlloc(c_p, 6);
+	if (args != am_true) {
+	    /* We have an arglist - use it */
+	    mfa = TUPLE3(hp, current[0], current[1], args);
 	} else {
-	    /* 
-	     * This is really a TRAP, and we have saved the
-	     * correct descriptor pointer in s->current.
-	     */
-	    ASSERT(is_atom(s->current[0]) && is_atom(s->current[1])
-		   && s->current[2] <= 3);
-	    mfa = TUPLE3(hp, s->current[0], s->current[1], args);
+	    Eterm arity = make_small(current[2]);
+	    mfa = TUPLE3(hp, current[0], current[1], arity);
 	}
 	hp += 4;
 	ASSERT(*next_p == NIL);
 	*next_p = CONS(hp, mfa, NIL);
-	next_p = hp + 1;
-    } else {
-        /*
-	 * Check if we have an arglist term to use instead of the arity
-	 * for the top level call.
-	 */
-        if (args != am_true) {
-            Eterm mfa;
-	    Eterm* hp = HAlloc(c_p, 6);
-	    mfa = TUPLE3(hp, current[0], current[1], args);
-	    hp += 4;
-	    ASSERT(*next_p == NIL);
-	    *next_p = CONS(hp, mfa, NIL);
-	    next_p = hp + 1;
-	    current = NULL;   /* don't report current again below */
-	}
+	next_p = &CDR(list_val(*next_p));
     }
-
-    /*
-     * Add the {M,F,A} for the current function (where A is arity or
-     * arguments) unless we have already done so above.
+    depth = s->depth;
+    /* Finally, we go through the saved continuation pointers 
      */
-    if (current != NULL) {
-	if (current == c_p->stop) {
- 	    /* When does this happen? Tracing, maybe? */
-	    Eterm* hp = HAlloc(c_p, 2);
-	    Eterm mfa = c_p->stop[1];
-	    ASSERT(*next_p == NIL);
-	    *next_p = CONS(hp, mfa, NIL);
-	    next_p = hp + 1;
-	    depth = 0;  /* why? */
-	} else {
-	    Eterm arity = make_small(current[2]);
-	    Eterm* hp = HAlloc(c_p, 6);
-	    Eterm mfa = TUPLE3(hp, current[0], current[1], arity);
-	    hp += 4;
-	    ASSERT(*next_p == NIL);
-	    *next_p = CONS(hp, mfa, NIL);
-	    next_p = hp + 1;
-	}
-    }
-
-    /*
-     * The continuation pointer (the saved c_p->cp) in most cases points
-     * to a function which we have called and already returned from,
-     * because the deallocate_return instruction doesn't update c_p->cp.
-     * Therefore, we will ignore it, except for function_clause, where
-     * it always is accurate.
-     */
-    if ( (GET_EXC_INDEX(s->freason)) ==
-	 (GET_EXC_INDEX(EXC_FUNCTION_CLAUSE)) ) {
-        Uint* fi = NULL;
-        fi = find_function_from_pc(s->cp);
-	if (fi != NULL) {
-	    Eterm mfa;
-	    Eterm* hp = HAlloc(c_p, 6);
-	    mfa = TUPLE3(hp, fi[0], fi[1], make_small(fi[2]));
-	    hp += 4;
-	    ASSERT(*next_p == NIL);
-	    *next_p = CONS(hp, mfa, NIL);
-	    next_p = hp + 1;
-	}
-    }
-
-    /* Finally, we go through the saved continuation pointers */
-
     if (depth > 0) {
         int i;
-	Uint* fi;
-        Eterm mfa;
-        Eterm *hp, *hp_start;
+        Eterm *hp, *hp_end;
 
-        hp_start = hp = HAlloc(c_p, 6 * depth);
+        hp = HAlloc(c_p, 6 * depth);
+	hp_end = hp + 6*depth;
 	for (i = 0; i < depth; i++) {
-	    fi = find_function_from_pc((Uint *) s->trace[i]);
+	    Eterm mfa;
+	    Eterm *fi = find_function_from_pc((Eterm *) s->trace[i]);
 	    if (fi == NULL) continue;
 	    mfa = TUPLE3(hp, fi[0], fi[1], make_small(fi[2]));
 	    hp += 4;
 	    ASSERT(*next_p == NIL);
 	    *next_p = CONS(hp, mfa, NIL);
-	    next_p = hp + 1;
+	    next_p = &CDR(list_val(*next_p));
 	    hp += 2;
 	}
-        HRelease(c_p,hp_start + (6 * depth),hp);
+        HRelease(c_p, hp_end, hp);
     }
     return Where;
 }

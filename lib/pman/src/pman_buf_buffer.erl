@@ -66,7 +66,7 @@ buffer_loop(Buffer,Size,Acc,Printer,Converter) ->
 		    Converter!{buffer,accept};
 	       true -> ok
 	    end,
-	    Print = lists:map({pman_buf_utils,textformat},Raw),
+	    Print = lists:map(fun(X) -> pman_buf_utils:textformat(X) end, Raw),
 	    New_Buff = lists:append(Buffer,Print),
 	    buffer_loop(New_Buff,New_Size,Acc,Printer,Converter);
 	{clear,Text,N_Converter} ->

@@ -57,12 +57,16 @@ APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
+ifeq ($(TYPE),debug)
+ERL_COMPILE_FLAGS += -Ddebug
+endif
+
 ifeq ($(USE_MEGACO_TEST_CODE),true)
 ERL_COMPILE_FLAGS += -DMEGACO_TEST_CODE
 endif
 
-ifeq ($(TYPE),debug)
-ERL_COMPILE_FLAGS += -Ddebug
+ifeq ($(MEGACO_DEBUG),true)
+ERL_COMPILE_FLAGS += -Dmegaco_debug
 endif
 
 ifeq ($(USE_MEGACO_HIPE),true)

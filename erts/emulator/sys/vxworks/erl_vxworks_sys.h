@@ -105,7 +105,8 @@
 /* There are no known ways to customize the handling of invalid floating
    point operations, such as matherr() or ieee_handler(), in VxWorks 5.1. */
 
-#if (CPU == MC68040 || CPU == CPU32 || CPU == PPC860 || CPU == PPC603)
+#if (CPU == MC68040 || CPU == CPU32 || CPU == PPC860 ||                \
+     CPU == PPC603 || CPU == PPC604 || CPU == SIMSPARCSOLARIS)
 
 /* VxWorks 5.1 on Motorola 68040 never generates SIGFPE, but sets the
    result of invalid floating point ops to Inf and NaN - unfortunately
@@ -127,10 +128,6 @@
 #include <fppLib.h>
 
 #endif /* PPC603 */
-
-#elif (CPU == PPC604)
-
-I have to find out this
 
 #else
 

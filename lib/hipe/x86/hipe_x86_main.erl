@@ -30,7 +30,7 @@ rtl_to_x86(MFA, RTL, Options) ->
 x86_finalise(X86, Options) ->
   case proplists:get_value(finalise_x86, Options, true) of
     true ->
-      hipe_x86_postpass:postpass(X86);
+      hipe_x86_postpass:postpass(X86, Options);
     false ->
       X86	% illegal code, but allows exercising the compiler
   end.

@@ -64,7 +64,8 @@ all(suite) ->
 	[
 	 connect,
 	 traffic
-	].
+	],
+    Cases.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -375,7 +376,7 @@ traffic_verify_mg_stats_gen(Mg, [{medGwyGatewayNumErrors, 0}|Stats]) ->
     traffic_verify_mg_stats_gen(Mg, Stats);
 traffic_verify_mg_stats_gen(Mg, [{medGwyGatewayNumErrors, Val}|_]) ->
     exit({global_error_counter, Val, Mg});
-traffic_verify_mg_stats_gen(Mg, [{Handle, Counters}|Stats]) ->
+traffic_verify_mg_stats_gen(Mg, [{_Handle, Counters}|Stats]) ->
     traffic_verify_counter(Mg, medGwyGatewayNumErrors, Counters, 0),
     traffic_verify_mg_stats_gen(Mg, Stats).
 
@@ -659,7 +660,7 @@ mgc_reset_stats(Mid) ->
     megaco:reset_stats(),
     mgc_reset_trans_stats(megaco:user_info(Mid, connections), []).
 
-mgc_reset_trans_stats([], Reset) ->
+mgc_reset_trans_stats([], _Reset) ->
     ok;
 mgc_reset_trans_stats([CH|CHs], Reset) ->
     SendMod = megaco:conn_info(CH, send_mod),
@@ -698,15 +699,15 @@ get_trans_stats(P, SendMod) when pid(P) ->
 	Else ->
 	    {SendMod, Else}
     end;
-get_trans_stats(P, SendMod) ->
+get_trans_stats(_P, SendMod) ->
     {SendMod, undefined}.
 
-mgc_parse_receive_info([], RH) ->
+mgc_parse_receive_info([], _RH) ->
     throw({error, no_receive_info});
 mgc_parse_receive_info(RI, RH) ->
     mgc_parse_receive_info(RI, RH, []).
 
-mgc_parse_receive_info([], RH, ListenTo) ->
+mgc_parse_receive_info([], _RH, ListenTo) ->
     ListenTo;
 mgc_parse_receive_info([RI|RIs], RH, ListenTo) ->
     d("mgc_parse_receive_info -> parse receive info"),
@@ -750,7 +751,7 @@ mgc_start_transports([{Port, RH}|ListenTo], TcpSup, UdpSup)
   when RH#megaco_receive_handle.send_mod == megaco_udp ->
     UdpSup1 = mgc_start_udp(RH, Port, UdpSup),
     mgc_start_transports(ListenTo, TcpSup, UdpSup1);
-mgc_start_transports([{Port, RH}|ListenTo], _TcpSup, _UdpSup) ->
+mgc_start_transports([{_Port, RH}|_ListenTo], _TcpSup, _UdpSup) ->
     throw({error, {bad_send_mod, RH#megaco_receive_handle.send_mod}}).
 
 
@@ -839,14 +840,11 @@ mgc_handle_request({handle_trans_reply, _CH, _PV, _AR, _RD}) ->
 mgc_handle_request({handle_trans_ack, _CH, _PV, _AS, _AD}) ->
     ok.
 
-mgc_service_change(CH, PV, SCR) ->
+mgc_service_change(CH, _PV, SCR) ->
     SCP = SCR#'ServiceChangeRequest'.serviceChangeParms,
-    #'ServiceChangeParm'{serviceChangeMethod  = Method,
-                         serviceChangeAddress = Address,
+    #'ServiceChangeParm'{serviceChangeAddress = Address,
                          serviceChangeProfile = Profile,
-                         serviceChangeReason  = [Reason],
-                         serviceChangeDelay   = Delay,
-                         serviceChangeMgcId   = MgcId} = SCP,
+                         serviceChangeReason  = [_Reason]} = SCP,
     TermId = SCR#'ServiceChangeRequest'.terminationID,
     if
         TermId == [?megaco_root_termination_id] ->
@@ -1207,13 +1205,13 @@ mg_handle_request({handle_trans_reply, CH, _PV, _AR, _RD},
     %% Should really check this...
     Pid ! {service_change_reply, ok, self()},
     {ok, S#mg{conn_handle = CH, state = connected}};
-mg_handle_request({handle_trans_reply, CH, _PV, {error, ED}, RD}, 
+mg_handle_request({handle_trans_reply, _CH, _PV, {error, ED}, RD}, 
 		  #mg{parent = Pid, load_counter = 0} = S) 
   when record(ED, 'ErrorDescriptor'), 
        record(RD, 'ObservedEventsDescriptor') ->
     Pid ! {load_complete, self()},
     {ok, S};
-mg_handle_request({handle_trans_reply, CH, _PV, {error, ED}, RD}, 
+mg_handle_request({handle_trans_reply, _CH, _PV, {error, ED}, RD}, 
 		  #mg{load_counter = N} = S) 
   when record(ED, 'ErrorDescriptor'), 
        record(RD, 'ObservedEventsDescriptor') ->
@@ -1305,7 +1303,7 @@ handle_connect(CH, PV, Pid) ->
 	    Reply
     end.
 
-handle_disconnect(CH, PV, 
+handle_disconnect(_CH, _PV, 
 		  {user_disconnect, {Pid, ignore}}, 
 		  Pid) ->
 %     i("handle_disconnect(ignore) -> entry with"

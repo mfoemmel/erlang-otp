@@ -2,12 +2,12 @@
 %% ====================================================================
 %%  Filename : 	hipe_sparc_opt_frame.erl
 %%  Module   :	hipe_sparc_opt_frame
-%%  Purpose  :  To minimize loads and stores to stackframes by 
+%%  Purpose  :  To minimize loads and stores to stack frames by 
 %%              propagating information about what is stored on the 
 %%              stack and in registers.
 %%              This is done in two steps:
 %%               1. Forward copy propagation:
-%%                  Information about copies of registers in oter regs
+%%                  Information about copies of registers in other regs
 %%                  and on the stack is propagated through the CFG.
 %%                  If a store to a stack slot is redundant 
 %%                  (i.e the value to store is already in that slot)
@@ -27,8 +27,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2004/06/22 10:14:02 $
-%%              $Revision: 1.14 $
+%%              $Date: 2005/01/26 10:05:40 $
+%%              $Revision: 1.15 $
 %% ====================================================================
 %%  Exports  : cfg/1 - Takes a SPARC CFG and rewrites it.
 %%
@@ -43,7 +43,7 @@
 -export([cfg/1]).
 -include("../main/hipe.hrl").
 -import(hipe_sparc_prop_env,
-	[bind/3,bind_hpos/3, inc_hp/2, inc_sp/2,
+	[bind_hpos/3, inc_hp/2, inc_sp/2,
 	 end_of_bb/1, find_hpos/2, find_spos/2,
 	 kill/2, kill_all/2, kill_hp/1, kill_phys_regs/1, kill_sp/1,
 	 kill_uses/2, lookup/2, new_genv/1, set_active_block/2, succ/1,
@@ -545,14 +545,16 @@ bind_all(Srcs, Dsts, I, Env) ->
 bind_all([Src|Srcs], [Dst|Dsts], I, Env, NewEnv) ->
   case hipe_sparc:is_imm(Src) of
     true ->
-      bind_all(Srcs, Dsts, I, Env, bind(NewEnv, Dst, Src));
+      bind_all(Srcs, Dsts, I, Env,
+	       hipe_sparc_prop_env:bind(NewEnv, Dst, Src));
     false ->  %% its a variable
       SrcVal = lookup(Src, Env),
       %% Uncomment this and only constants will be propagated
       %% case hipe_rtl:is_imm(SrcVal) of
       %%   true ->
       NewI = hipe_sparc:subst_uses(I,[{Src, SrcVal}]),
-      bind_all(Srcs, Dsts, NewI, Env, bind(NewEnv, Dst, SrcVal))
+      bind_all(Srcs, Dsts, NewI, Env,
+	       hipe_sparc_prop_env:bind(NewEnv, Dst, SrcVal))
       %%  false ->
       %%     bind_all(Srcs, Dsts, I, Env, NewEnv)
       %% end

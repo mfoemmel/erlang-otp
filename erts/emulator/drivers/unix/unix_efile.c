@@ -206,12 +206,28 @@ vxworks_to_posix(int vx_errno)
     DEBUGF(("[vxworks_to_posix] vx_errno: %08x\n", vx_errno));
     switch (vx_errno) {
 	/* dosFsLib mapping */
+#ifdef S_dosFsLib_FILE_ALREADY_EXISTS    
+    case S_dosFsLib_FILE_ALREADY_EXISTS: return EEXIST;
+#else
+    case S_dosFsLib_FILE_EXISTS: return EEXIST;
+#endif
+#ifdef S_dosFsLib_BAD_DISK
+    case S_dosFsLib_BAD_DISK: return EIO;
+#endif
+#ifdef S_dosFsLib_CANT_CHANGE_ROOT
+    case S_dosFsLib_CANT_CHANGE_ROOT: return EINVAL;
+#endif
+#ifdef S_dosFsLib_NO_BLOCK_DEVICE
+    case S_dosFsLib_NO_BLOCK_DEVICE: return ENOTBLK;
+#endif
+#ifdef S_dosFsLib_BAD_SEEK
+    case S_dosFsLib_BAD_SEEK: return ESPIPE;
+#endif
     case S_dosFsLib_VOLUME_NOT_AVAILABLE: return ENXIO;
     case S_dosFsLib_DISK_FULL: return ENOSPC;
     case S_dosFsLib_FILE_NOT_FOUND: return ENOENT;
     case S_dosFsLib_NO_FREE_FILE_DESCRIPTORS: return ENFILE;
     case S_dosFsLib_INVALID_NUMBER_OF_BYTES: return EINVAL;
-    case S_dosFsLib_FILE_ALREADY_EXISTS: return EEXIST;
     case S_dosFsLib_ILLEGAL_NAME: return EINVAL;
     case S_dosFsLib_CANT_DEL_ROOT: return EACCES;
     case S_dosFsLib_NOT_FILE: return EISDIR;
@@ -220,15 +236,11 @@ vxworks_to_posix(int vx_errno)
     case S_dosFsLib_READ_ONLY: return EACCES;
     case S_dosFsLib_ROOT_DIR_FULL: return ENOSPC;
     case S_dosFsLib_DIR_NOT_EMPTY: return EEXIST;
-    case S_dosFsLib_BAD_DISK: return EIO;
     case S_dosFsLib_NO_LABEL: return ENXIO;
     case S_dosFsLib_INVALID_PARAMETER: return EINVAL;
     case S_dosFsLib_NO_CONTIG_SPACE: return ENOSPC;
-    case S_dosFsLib_CANT_CHANGE_ROOT: return EINVAL;
     case S_dosFsLib_FD_OBSOLETE: return EBADF;
     case S_dosFsLib_DELETED: return EINVAL;
-    case S_dosFsLib_NO_BLOCK_DEVICE: return ENOTBLK;
-    case S_dosFsLib_BAD_SEEK: return ESPIPE;
     case S_dosFsLib_INTERNAL_ERROR: return EIO;
     case S_dosFsLib_WRITE_ONLY: return EACCES;
 	/* nfsLib mapping - is needed since Windriver has used */
@@ -267,6 +279,17 @@ vxworks_to_posix(int vx_errno)
 	/* Added (VxWorks 5.2 -> 5.3.1) */
     case S_ioLib_UNFORMATED: return EIO;
 #endif
+#ifdef S_objLib_OBJ_UNAVAILABLE
+    case S_objLib_OBJ_UNAVAILABLE: return ENOENT;
+#endif
+
+      /* Temporary workaround for a weird error in passFs 
+	 (VxWorks Simsparc only). File operation fails because of
+	 ENOENT, but errno is not set. */
+#ifdef SIMSPARCSOLARIS
+    case 0: return ENOENT;
+#endif
+
     }
     /* If the error code matches none of the above, assume */
     /* it is a POSIX one already. The upper bits (>=16) are */
@@ -569,6 +592,19 @@ efile_getdcwd(Efile_error* errInfo,	/* Where to return error codes. */
     if (drive == 0) {
 	if (getcwd(buffer, size) == NULL)
 	    return check_error(-1, errInfo);
+	
+#ifdef SIMSPARCSOLARIS
+	/* We get "host:" prepended to the dirname - remove!. */
+	{
+	  int i = 0;
+	  int j = 0;
+	  while ((buffer[i] != ':') && (buffer[i] != '\0')) i++;
+	  if (buffer[i] == ':') {
+	    i++;
+	    while ((buffer[j++] = buffer[i++]) != '\0');
+	  }
+	}
+#endif	      
 	return 1;
     }
 

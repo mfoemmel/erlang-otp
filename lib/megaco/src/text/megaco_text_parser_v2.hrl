@@ -204,23 +204,27 @@ ensure_message(MegacopToken,  MID, Body) ->
     end.
 
 
+%% Corr1:
+%% As of corr 1 ModemDescriptor has been deprecated.
+%% and since this functon is only used when creating
+%% a ModemDescriptor, iit is removed.
 %% modemType         = (V32bisToken / V22bisToken / V18Token / 
 %%                      V22Token / V32Token / V34Token / V90Token / 
 %%                      V91Token / SynchISDNToken / extensionParameter)
-ensure_modemType({_TokenTag, _Line, Text} = Token) ->
-    case Text of
-        "v32b"      -> v32bis;
-        "v22b"      -> v22bis;
-        "v18"       -> v18;
-        "v22"       -> v22;
-        "v32"       -> v32;
-        "v34"       -> v34;
-        "v90"       -> v90;
-        "v91"       -> v91;
-        "synchisdn" -> synchISDN;
-        "sn"        -> synchISDN;
-        [$x | _]               -> ensure_extensionParameter(Token)
-    end.
+%% ensure_modemType({_TokenTag, _Line, Text} = Token) ->
+%%     case Text of
+%%         "v32b"      -> v32bis;
+%%         "v22b"      -> v22bis;
+%%         "v18"       -> v18;
+%%         "v22"       -> v22;
+%%         "v32"       -> v32;
+%%         "v34"       -> v34;
+%%         "v90"       -> v90;
+%%         "v91"       -> v91;
+%%         "synchisdn" -> synchISDN;
+%%         "sn"        -> synchISDN;
+%%         [$x | _]               -> ensure_extensionParameter(Token)
+%%     end.
 
 %% An mtp address is five octets long
 ensure_mtpAddress({_TokenTag, _Line, Addr}) ->
@@ -477,10 +481,32 @@ merge_ServiceChangeParm([{time_stamp, Val}|Parms], SCP0, Req)
 merge_ServiceChangeParm([{extension, _Val}|Parms], SCP0, Req) ->
     merge_ServiceChangeParm(Parms, SCP0, Req);
 
+%% OTP-5353.
 merge_ServiceChangeParm([{audit_item, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeInfo == asn1_NOVALUE ->
+  when SCP0#'ServiceChangeParm'.serviceChangeInfo == asn1_NOVALUE, atom(Val) ->
     SCI = #'AuditDescriptor'{auditToken = [Val]},
     SCP = SCP0#'ServiceChangeParm'{serviceChangeInfo = SCI},
+    merge_ServiceChangeParm(Parms, SCP, Req);
+merge_ServiceChangeParm([{audit_item, Val}|Parms], SCP0, Req) 
+  when SCP0#'ServiceChangeParm'.serviceChangeInfo == asn1_NOVALUE,tuple(Val) ->
+    SCI = #'AuditDescriptor'{auditPropertyToken = [Val]},
+    SCP = SCP0#'ServiceChangeParm'{serviceChangeInfo = SCI},
+    merge_ServiceChangeParm(Parms, SCP, Req);
+merge_ServiceChangeParm([{audit_item, Val}|Parms], SCP0, Req) 
+  when record(SCP0#'ServiceChangeParm'.serviceChangeInfo, 'AuditDescriptor'),
+       atom(Val) ->
+    SCI0 = SCP0#'ServiceChangeParm'.serviceChangeInfo,
+    L    = SCI0#'AuditDescriptor'.auditToken,
+    SCI  = SCI0#'AuditDescriptor'{auditToken = [Val|L]},
+    SCP  = SCP0#'ServiceChangeParm'{serviceChangeInfo = SCI},
+    merge_ServiceChangeParm(Parms, SCP, Req);
+merge_ServiceChangeParm([{audit_item, Val}|Parms], SCP0, Req) 
+  when record(SCP0#'ServiceChangeParm'.serviceChangeInfo, 'AuditDescriptor'),
+       tuple(Val) ->
+    SCI0 = SCP0#'ServiceChangeParm'.serviceChangeInfo,
+    L    = SCI0#'AuditDescriptor'.auditPropertyToken,
+    SCI  = SCI0#'AuditDescriptor'{auditPropertyToken = [Val|L]},
+    SCP  = SCP0#'ServiceChangeParm'{serviceChangeInfo = SCI},
     merge_ServiceChangeParm(Parms, SCP, Req);
 
 merge_ServiceChangeParm([{Tag, Val}|_Parms], SCP, _Req) ->
@@ -957,6 +983,13 @@ strip_contextAttrAuditRequest(R)
     asn1_NOVALUE;
 strip_contextAttrAuditRequest(R) ->
     R.
+
+merge_AmmRequest_descriptors([], Acc) ->
+    lists:reverse(Acc);
+merge_AmmRequest_descriptors([{_, deprecated}|Descs], Acc) ->
+    merge_AmmRequest_descriptors(Descs, Acc);
+merge_AmmRequest_descriptors([Desc|Descs], Acc) ->
+    merge_AmmRequest_descriptors(Descs, [Desc|Acc]).
 
 make_commandRequest({CmdTag, {_TokenTag, _Line, Text}}, Cmd) ->
     Req = #'CommandRequest'{command  = {CmdTag, Cmd}},

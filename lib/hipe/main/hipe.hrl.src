@@ -7,8 +7,8 @@
 %%  History  :	* 2000-11-03 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2004/11/30 22:43:23 $
-%%              $Revision: 1.2 $
+%%              $Date: 2004/12/09 21:07:45 $
+%%              $Revision: 1.3 $
 %% ====================================================================
 %%
 %% Defines:
@@ -68,10 +68,10 @@
 %%
 -define(error_msg(Msg, Args),
 	code_server:error_msg(?MSGTAG ++
-			      "ERROR:~s:~w: " ++ Msg,
+			      "Error: [~s:~w]: " ++ Msg,
 			      [?MODULE,?LINE|Args])).
 -define(WARNING_MSG(Msg, Args),
-	?msg("WARNING:~s:~w: " ++ Msg, [?MODULE,?LINE|Args])).
+	?msg("Warning: [~s:~w]: " ++ Msg, [?MODULE,?LINE|Args])).
 
 %%
 %% Define the macros that are dependent on the debug flag.

@@ -8,7 +8,7 @@
 -module(hipe_dot).
 
 -export([translate_digraph/3, translate_digraph/5, 
-	 translate_list/3, translate_list/5]).
+	 translate_list/3, translate_list/4,translate_list/5]).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -28,6 +28,9 @@
 %%
 %% translate_list(Graph::[{Node,Node}], FileName::string(),
 %%                GraphName::string()) -> ok
+%%
+%%translate_list(Graph::[{Node,Node}], FileName::string(),
+%%                GraphName::string(), Options::[option] ) -> ok
 %%
 %% translate_list(Graph::[{Node::term(),Node::term()}], FileName::string(),
 %%                GraphName::string(), Fun::fun(term()->string()),
@@ -56,8 +59,12 @@ translate_digraph(G, FileName, GName, Fun, Opts) ->
 translate_list(List, FileName, GName) ->
   translate_list(List, FileName, GName, fun(X) -> lists:flatten(io_lib:format("~p", [X])) end, []).
 
+translate_list(List, FileName, GName, Opts) ->
+  translate_list(List, FileName, GName, fun(X) -> lists:flatten(io_lib:format("~p", [X])) end, Opts).
+
 translate_list(List, FileName, GName, Fun, Opts) ->
-  NodeList = lists:flatten([[X,Y]||{X,Y} <- List]),
+  {NodeList1, NodeList2} = lists:unzip(List),
+  NodeList = NodeList1 ++ NodeList2,
   NodeSet = ordsets:from_list(NodeList),
   Start = ["digraph ",GName ," {"],
   VertexList = 
@@ -72,9 +79,9 @@ node_format(Opt, Fun, V) ->
   OptText = nodeoptions(Opt, Fun ,V),
   Tmp = io_lib:format("~p",[Fun(V)]),
   String = lists:flatten(Tmp),
-  io:format("~p", [String]),
+  %% io:format("~p", [String]),
   {Width, Heigth} = calc_dim(String),
-  W = ((Width div 7) + 1) * 0.4,
+  W = ((Width div 7) + 1) * 0.55,
   H = Heigth * 0.4,
   SL = io_lib:format("~f",[W]), 
   SH = io_lib:format("~f",[H]),
@@ -95,7 +102,7 @@ edge_format(Opt, Fun, V1, V2) ->
 calc_dim(String) ->
   calc_dim(String, 1, 0 ,0).
 		     
-calc_dim([$\n|T], H, TmpW, MaxW) ->
+calc_dim([$\\,$n|T], H, TmpW, MaxW) ->
   if TmpW > MaxW -> calc_dim(T, H+1, 0, TmpW);
      true -> calc_dim(T, H+1, 0, MaxW)
   end;

@@ -1,5 +1,5 @@
 %%% $Id$
-%%% Copyright (C) 2000-2004 Mikael Pettersson
+%%% Copyright (C) 2000-2005 Mikael Pettersson
 %%%
 %%% This is the syntax of x86 r/m operands:
 %%%
@@ -12,7 +12,8 @@
 %%%	    | disp8 sib12		mod == 01, r/m == 100
 %%%	    | (reg)			mod == 00, r/m != ESP and EBP
 %%%	    | sib0			mod == 00, r/m == 100
-%%%	    | disp32			mod == 00, r/m == 101
+%%%	    | disp32			mod == 00, r/m == 101 [on x86-32]
+%%%	    | disp32(%rip)		mod == 00, r/m == 101 [on x86-64]
 %%%
 %%% // sib0: mod == 00
 %%% sib0  ::= disp32(,index,scale)	base == EBP, index != ESP
@@ -35,6 +36,10 @@
 %%% 4. disp32 can be represented without [mod == 00, r/m == 101]
 %%%    or with [mod == 00, r/m == 100, base == 101, index == 100]
 %%%    a SIB byte.
+%%% 5. x86-32 and x86-64 interpret mod==00b r/m==101b EAs differently:
+%%%    on x86-32 the disp32 is an absolute address, but on x86-64 the
+%%%    disp32 is relative to the %rip of the next instruction.
+%%%    Absolute disp32s need a SIB on x86-64.
 
 -module(hipe_x86_encode).
 
@@ -49,8 +54,9 @@
 	 ea_disp32_base/2, ea_disp32_sib/2,
 	 ea_disp8_base/2, ea_disp8_sib/2,
 	 ea_base/1,
-	 %% ea_disp32_sindex/1,
-	 ea_disp32_sindex/2, ea_sib/1, ea_disp32/1,
+	 %% ea_disp32_sindex/1, % XXX: do not use on x86-32, only on x86-64
+	 ea_disp32_sindex/2,
+	 ea_sib/1, ea_disp32/1,
 	 rm_reg/1, rm_mem/1,
 	 % instructions
 	 insn_encode/3, insn_sizeof/2]).

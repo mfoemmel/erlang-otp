@@ -286,7 +286,7 @@ function_1(Name, Fun, Degree, S) ->
     %% target variables for the result of the function.
     Args = cerl:fun_vars(Fun),
     RealArity = length(Args),
-    ArgType = get_type(Args),
+    ArgType = get_arg_types(Fun),
     Vs = make_vars(RealArity),
     Vs1 = make_vars(RealArity),    % input variable temporaries
     Ts = make_vars(Degree),
@@ -2586,6 +2586,9 @@ make_vars(0) ->
 
 make_reg() ->
     icode_reg(new_var()).
+
+get_arg_types(Fun) ->
+    get_type(cerl:fun_vars(Fun)).
 
 get_type(List) when is_list(List)->
     get_type_list(List, []);

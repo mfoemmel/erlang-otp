@@ -84,17 +84,17 @@ analyze(CFG) ->
 
 livein(Liveness,L) ->
   [X || X <- hipe_amd64_liveness:livein(Liveness,L),
- 	     hipe_amd64:temp_is_allocatable(X),
- 	     hipe_amd64:temp_reg(X) /= hipe_amd64_registers:fcalls(),
- 	     hipe_amd64:temp_reg(X) /= hipe_amd64_registers:heap_limit(),
-	     hipe_amd64:temp_type(X) /= 'double'].
+ 	     hipe_x86:temp_is_allocatable(X),
+ 	     hipe_x86:temp_reg(X) /= hipe_amd64_registers:fcalls(),
+ 	     hipe_x86:temp_reg(X) /= hipe_amd64_registers:heap_limit(),
+	     hipe_x86:temp_type(X) /= 'double'].
 
 liveout(BB_in_out_liveness,Label) ->
   [X || X <- hipe_amd64_liveness:liveout(BB_in_out_liveness,Label),
- 	     hipe_amd64:temp_is_allocatable(X),
-	     hipe_amd64:temp_reg(X) /= hipe_amd64_registers:fcalls(),
-	     hipe_amd64:temp_reg(X) /= hipe_amd64_registers:heap_limit(),
-	     hipe_amd64:temp_type(X) /= 'double'].
+ 	     hipe_x86:temp_is_allocatable(X),
+	     hipe_x86:temp_reg(X) /= hipe_amd64_registers:fcalls(),
+	     hipe_x86:temp_reg(X) /= hipe_amd64_registers:heap_limit(),
+	     hipe_x86:temp_type(X) /= 'double'].
 
 %% Registers stuff
 
@@ -119,10 +119,10 @@ labels(CFG) ->
   hipe_amd64_cfg:labels(CFG).
 
 var_range(_CFG) ->
-  hipe_gensym:var_range(amd64).
+  hipe_gensym:var_range(x86).
 
 number_of_temporaries(_CFG) ->
-  Highest_temporary = hipe_gensym:get_var(amd64),
+  Highest_temporary = hipe_gensym:get_var(x86),
   %% Since we can have temps from 0 to Max adjust by +1.
   Highest_temporary + 1.
 
@@ -133,35 +133,35 @@ bb(CFG,L) ->
 
 def_use(Instruction) ->
   {[X || X <- hipe_amd64_defuse:insn_def(Instruction), 
- 	   hipe_amd64:temp_is_allocatable(X),
- 	   hipe_amd64:temp_type(X) /= 'double'],
+ 	   hipe_x86:temp_is_allocatable(X),
+ 	   hipe_x86:temp_type(X) /= 'double'],
    [X || X <- hipe_amd64_defuse:insn_use(Instruction), 
- 	   hipe_amd64:temp_is_allocatable(X),
-	   hipe_amd64:temp_type(X) /= 'double']
+ 	   hipe_x86:temp_is_allocatable(X),
+	   hipe_x86:temp_type(X) /= 'double']
   }.
 
 uses(I) ->
   [X || X <- hipe_amd64_defuse:insn_use(I),
- 	     hipe_amd64:temp_is_allocatable(X),
- 	     hipe_amd64:temp_type(X) /= 'double'].
+ 	     hipe_x86:temp_is_allocatable(X),
+ 	     hipe_x86:temp_type(X) /= 'double'].
 
 defines(I) ->
   [X || X <- hipe_amd64_defuse:insn_def(I),
-	     hipe_amd64:temp_is_allocatable(X),
-	     hipe_amd64:temp_type(X) /= 'double'].
+	     hipe_x86:temp_is_allocatable(X),
+	     hipe_x86:temp_type(X) /= 'double'].
 
 is_move(Instruction) ->
-  case hipe_amd64:is_move(Instruction) of
+  case hipe_x86:is_move(Instruction) of
     true ->
-      Src = hipe_amd64:move_src(Instruction),
-      Dst = hipe_amd64:move_dst(Instruction),
-      case hipe_amd64:is_temp(Src) of
+      Src = hipe_x86:move_src(Instruction),
+      Dst = hipe_x86:move_dst(Instruction),
+      case hipe_x86:is_temp(Src) of
 	true ->
-	  case hipe_amd64:temp_is_allocatable(Src) of
+	  case hipe_x86:temp_is_allocatable(Src) of
 	    true ->
-	      case hipe_amd64:is_temp(Dst) of
+	      case hipe_x86:is_temp(Dst) of
 		true ->
-		  hipe_amd64:temp_is_allocatable(Dst);
+		  hipe_x86:temp_is_allocatable(Dst);
 		false -> false
 	      end;
 	    false -> false
@@ -172,7 +172,7 @@ is_move(Instruction) ->
   end.
  
 reg_nr(Reg) ->
-  hipe_amd64:temp_reg(Reg).
+  hipe_x86:temp_reg(Reg).
 
 new_spill_index(SpillIndex)->
   SpillIndex+1.

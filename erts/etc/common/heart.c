@@ -137,7 +137,7 @@
 #define USE_WATCHDOG
 #endif
 
-#ifdef __SVR4  /* Solaris? */
+#if defined(__SVR4) && !defined(VXWORKS)  /* Solaris? */
 #  define SOLARIS
 #  define USE_WATCHDOG
 #endif

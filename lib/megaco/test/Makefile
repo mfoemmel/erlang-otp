@@ -182,6 +182,16 @@ codec2_tickets: make
             -s megaco_codec_v2_test tickets \
             -s erlang halt
 
+codec3: make
+	erl -noshell -sname megaco_codec3 $(ERL_PATH) \
+            -s megaco_test_lib t megaco_codec_prev3a_test \
+            $(EHALT)
+
+codec3_tickets: make
+	erl -noshell -sname megaco_codec3_tickets $(ERL_PATH) \
+            -s megaco_codec_prev3a_test tickets \
+            -s erlang halt
+
 conf: make
 	erl -noshell -sname megaco_conf $(ERL_PATH) \
             -s megaco_test_lib t megaco_config_test \

@@ -83,7 +83,7 @@ add(File, Name, Options) ->
     add(File, Name, Name, Options).
 
 add({write, File}, Name, NameInArchive, Options) ->
-    Opts = #add_opts{read_info={file,read_link_info}},
+    Opts = #add_opts{read_info=fun(F) -> file:read_link_info(F) end},
     add1(File, Name, NameInArchive, add_opts(Options, Opts));
 add({read, _File}, _, _, _) ->
     {error, eacces};
@@ -91,7 +91,7 @@ add(_, _, _, _) ->
     {error, einval}.
 
 add_opts([dereference|T], Opts) ->
-    add_opts(T, Opts#add_opts{read_info={file,read_file_info}});
+    add_opts(T, Opts#add_opts{read_info=fun(F) -> file:read_file_info(F) end});
 add_opts([verbose|T], Opts) ->
     add_opts(T, Opts#add_opts{verbose=true});
 add_opts([_|T], Opts) ->

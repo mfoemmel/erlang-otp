@@ -3,4 +3,4 @@
  {start,{tv,start,[]}},
  {icon,"tv.gif"},
  {message,"The Table Visualizer"},
- {html,"../doc/index.html"}}.
+ {html,"../doc/html/index.html"}}.

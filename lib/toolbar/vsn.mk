@@ -1,4 +1,4 @@
-TOOLBAR_VSN = 1.2
+TOOLBAR_VSN = 1.2.1
 
 
 

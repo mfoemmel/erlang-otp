@@ -981,7 +981,6 @@ fix_rex([Byte | Rest], REXAcc, Bytes) ->
 fix_rex([], 2#01000000, Bytes) ->              % no rex prefix
     lists:reverse(Bytes);
 fix_rex([], REX0, Bytes) ->                    % rex prefix...
-    put(rex, get(rex) + 1), %% count the number of rex prefixes
     REX = REX0 band 16#FF, % for 8 bit registers
     [Head|Tail] = lists:reverse(Bytes),
     case Head of

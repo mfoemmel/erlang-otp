@@ -610,7 +610,7 @@ str_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    cre_actionReply(Cid, [CR]).
 
 str_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     AR    = str_mgc_service_change_reply_ar(Mid, Cid),
@@ -700,7 +700,7 @@ str_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION,
 			    case Res of
 				{serviceChangeResParms,
 				 #'ServiceChangeResParm'{
-				   serviceChangeMgcId = RemoteMid}} ->
+				   serviceChangeMgcId = _RemoteMid}} ->
 				    {ok, AR, ok};
 				{Tag, Val} ->
 				    Err = {invalid_service_change_result, 
@@ -734,14 +734,14 @@ str_mg_verify_notify_reply(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
-str_mg_service_change_request_ar(Mid, Cid) ->
+str_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 str_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = str_mg_service_change_request_ar(Mid, Cid),
@@ -1012,7 +1012,7 @@ mtrt_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    cre_actionReply(Cid, [CR]).
 
 mtrt_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     AR    = mtrt_mgc_service_change_reply_ar(Mid, Cid),
@@ -1116,7 +1116,7 @@ mtrt_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION,
 			    case Res of
 				{serviceChangeResParms,
 				 #'ServiceChangeResParm'{
-				   serviceChangeMgcId = RemoteMid}} ->
+				   serviceChangeMgcId = _RemoteMid}} ->
 				    {ok, AR, ok};
 				{Tag, Val} ->
 				    Err = {invalid_service_change_result, 
@@ -1150,14 +1150,14 @@ mtrt_mg_verify_notify_reply(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
-mtrt_mg_service_change_request_ar(Mid, Cid) ->
+mtrt_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 mtrt_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = mtrt_mg_service_change_request_ar(Mid, Cid),
@@ -1428,7 +1428,7 @@ mtrmc1_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    cre_actionReply(Cid, [CR]).
 
 mtrmc1_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     AR    = mtrmc1_mgc_service_change_reply_ar(Mid, Cid),
@@ -1534,7 +1534,7 @@ mtrmc1_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION,
 			    case Res of
 				{serviceChangeResParms,
 				 #'ServiceChangeResParm'{
-				   serviceChangeMgcId = RemoteMid}} ->
+				   serviceChangeMgcId = _RemoteMid}} ->
 				    {ok, AR, ok};
 				{Tag, Val} ->
 				    Err = {invalid_service_change_result, 
@@ -1568,14 +1568,14 @@ mtrmc1_mg_verify_notify_reply(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
-mtrmc1_mg_service_change_request_ar(Mid, Cid) ->
+mtrmc1_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 mtrmc1_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = mtrmc1_mg_service_change_request_ar(Mid, Cid),
@@ -1864,7 +1864,7 @@ mtrmc2_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    cre_actionReply(Cid, [CR]).
 
 mtrmc2_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     AR    = mtrmc2_mgc_service_change_reply_ar(Mid, Cid),
@@ -1978,7 +1978,7 @@ mtrmc2_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION,
 			    case Res of
 				{serviceChangeResParms,
 				 #'ServiceChangeResParm'{
-				   serviceChangeMgcId = RemoteMid}} ->
+				   serviceChangeMgcId = _RemoteMid}} ->
 				    {ok, AR, ok};
 				{Tag, Val} ->
 				    Err = {invalid_service_change_result, 
@@ -2023,14 +2023,14 @@ mtrmc2_mg_verify_notify_reply(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
-mtrmc2_mg_service_change_request_ar(Mid, Cid) ->
+mtrmc2_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 mtrmc2_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = mtrmc2_mg_service_change_request_ar(Mid, Cid),
@@ -2319,7 +2319,7 @@ mtrms1_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    cre_actionReply(Cid, [CR]).
 
 mtrms1_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     AR    = mtrms1_mgc_service_change_reply_ar(Mid, Cid),
@@ -2426,7 +2426,7 @@ mtrms1_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION,
 			    case Res of
 				{serviceChangeResParms,
 				 #'ServiceChangeResParm'{
-				   serviceChangeMgcId = RemoteMid}} ->
+				   serviceChangeMgcId = _RemoteMid}} ->
 				    {ok, AR, ok};
 				{Tag, Val} ->
 				    Err = {invalid_service_change_result, 
@@ -2460,14 +2460,14 @@ mtrms1_mg_verify_notify_reply1(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
-mtrms1_mg_service_change_request_ar(Mid, Cid) ->
+mtrms1_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 mtrms1_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = mtrms1_mg_service_change_request_ar(Mid, Cid),
@@ -2754,7 +2754,7 @@ mtrms2_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    cre_actionReply(Cid, [CR]).
 
 mtrms2_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     AR    = mtrms2_mgc_service_change_reply_ar(Mid, Cid),
@@ -2864,7 +2864,7 @@ mtrms2_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION,
 			    case Res of
 				{serviceChangeResParms,
 				 #'ServiceChangeResParm'{
-				   serviceChangeMgcId = RemoteMid}} ->
+				   serviceChangeMgcId = _RemoteMid}} ->
 				    {ok, AR, ok};
 				{Tag, Val} ->
 				    Err = {invalid_service_change_result, 
@@ -2909,14 +2909,14 @@ mtrms2_mg_verify_notify_reply(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
-mtrms2_mg_service_change_request_ar(Mid, Cid) ->
+mtrms2_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 mtrms2_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = mtrms2_mg_service_change_request_ar(Mid, Cid),
@@ -3221,7 +3221,7 @@ straa_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    cre_actionReply(Cid, [CR]).
 
 straa_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     AR    = straa_mgc_service_change_reply_ar(Mid, Cid),
@@ -3322,7 +3322,7 @@ straa_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION,
 			    case Res of
 				{serviceChangeResParms,
 				 #'ServiceChangeResParm'{
-				   serviceChangeMgcId = RemoteMid}} ->
+				   serviceChangeMgcId = _RemoteMid}} ->
 				    {ok, AR, ok};
 				{Tag, Val} ->
 				    Err = {invalid_service_change_result, 
@@ -3361,14 +3361,14 @@ straa_mg_verify_notify_reply(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
-straa_mg_service_change_request_ar(Mid, Cid) ->
+straa_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 straa_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = straa_mg_service_change_request_ar(Mid, Cid),
@@ -3669,7 +3669,7 @@ mtrtaat_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    cre_actionReply(Cid, [CR]).
 
 mtrtaat_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     AR    = mtrtaat_mgc_service_change_reply_ar(Mid, Cid),
@@ -3781,7 +3781,7 @@ mtrtaat_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION,
 			    case Res of
 				{serviceChangeResParms,
 				 #'ServiceChangeResParm'{
-				   serviceChangeMgcId = RemoteMid}} ->
+				   serviceChangeMgcId = _RemoteMid}} ->
 				    {ok, AR, ok};
 				{Tag, Val} ->
 				    Err = {invalid_service_change_result, 
@@ -3815,14 +3815,14 @@ mtrtaat_mg_verify_notify_reply(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
-mtrtaat_mg_service_change_request_ar(Mid, Cid) ->
+mtrtaat_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 mtrtaat_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = mtrtaat_mg_service_change_request_ar(Mid, Cid),
@@ -4126,7 +4126,7 @@ mtrtaaamc_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    cre_actionReply(Cid, [CR]).
 
 mtrtaaamc_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     AR    = mtrtaaamc_mgc_service_change_reply_ar(Mid, Cid),
@@ -4240,7 +4240,7 @@ mtrtaaamc_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION,
 			    case Res of
 				{serviceChangeResParms,
 				 #'ServiceChangeResParm'{
-				   serviceChangeMgcId = RemoteMid}} ->
+				   serviceChangeMgcId = _RemoteMid}} ->
 				    {ok, AR, ok};
 				{Tag, Val} ->
 				    Err = {invalid_service_change_result, 
@@ -4274,14 +4274,14 @@ mtrtaaamc_mg_verify_notify_reply(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
-mtrtaaamc_mg_service_change_request_ar(Mid, Cid) ->
+mtrtaaamc_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 mtrtaaamc_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = mtrtaaamc_mg_service_change_request_ar(Mid, Cid),
@@ -4584,7 +4584,7 @@ mtrtaarac_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    cre_actionReply(Cid, [CR]).
 
 mtrtaarac_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     AR    = mtrtaarac_mgc_service_change_reply_ar(Mid, Cid),
@@ -4698,7 +4698,7 @@ mtrtaarac_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION,
 			    case Res of
 				{serviceChangeResParms,
 				 #'ServiceChangeResParm'{
-				   serviceChangeMgcId = RemoteMid}} ->
+				   serviceChangeMgcId = _RemoteMid}} ->
 				    {ok, AR, ok};
 				{Tag, Val} ->
 				    Err = {invalid_service_change_result, 
@@ -4732,14 +4732,14 @@ mtrtaarac_mg_verify_notify_reply(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
-mtrtaarac_mg_service_change_request_ar(Mid, Cid) ->
+mtrtaarac_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 mtrtaarac_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = mtrtaarac_mg_service_change_request_ar(Mid, Cid),
@@ -5042,7 +5042,7 @@ mtrtaams1_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    cre_actionReply(Cid, [CR]).
 
 mtrtaams1_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     AR    = mtrtaams1_mgc_service_change_reply_ar(Mid, Cid),
@@ -5155,7 +5155,7 @@ mtrtaams1_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION,
 			    case Res of
 				{serviceChangeResParms,
 				 #'ServiceChangeResParm'{
-				   serviceChangeMgcId = RemoteMid}} ->
+				   serviceChangeMgcId = _RemoteMid}} ->
 				    {ok, AR, ok};
 				{Tag, Val} ->
 				    Err = {invalid_service_change_result, 
@@ -5189,14 +5189,14 @@ mtrtaams1_mg_verify_notify_reply(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
-mtrtaams1_mg_service_change_request_ar(Mid, Cid) ->
+mtrtaams1_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 mtrtaams1_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = mtrtaams1_mg_service_change_request_ar(Mid, Cid),
@@ -5502,7 +5502,7 @@ mtrtaams2_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    cre_actionReply(Cid, [CR]).
 
 mtrtaams2_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     AR    = mtrtaams2_mgc_service_change_reply_ar(Mid, Cid),
@@ -5620,7 +5620,7 @@ mtrtaams2_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION,
 			    case Res of
 				{serviceChangeResParms,
 				 #'ServiceChangeResParm'{
-				   serviceChangeMgcId = RemoteMid}} ->
+				   serviceChangeMgcId = _RemoteMid}} ->
 				    {ok, AR, ok};
 				{Tag, Val} ->
 				    Err = {invalid_service_change_result, 
@@ -5654,14 +5654,14 @@ mtrtaams2_mg_verify_notify_reply(Else) ->
 	      "~n   Else: ~p", [Else]),
     {error, Else, ok}.
 
-mtrtaams2_mg_service_change_request_ar(Mid, Cid) ->
+mtrtaams2_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 mtrtaams2_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = mtrtaams2_mg_service_change_request_ar(Mid, Cid),
@@ -6012,7 +6012,7 @@ mtraaap_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    cre_actionReply(Cid, [CR]).
 
 mtraaap_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     AR    = mtraaap_mgc_service_change_reply_ar(Mid, Cid),
@@ -6136,7 +6136,7 @@ mtraaap_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION,
 			    case Res of
 				{serviceChangeResParms,
 				 #'ServiceChangeResParm'{
-				   serviceChangeMgcId = RemoteMid}} ->
+				   serviceChangeMgcId = _RemoteMid}} ->
 				    {ok, AR, ok};
 				{Tag, Val} ->
 				    Err = {invalid_service_change_result, 
@@ -6199,14 +6199,14 @@ mtraaap_mg_verify_notify_reply(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
-mtraaap_mg_service_change_request_ar(Mid, Cid) ->
+mtraaap_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 mtraaap_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = mtraaap_mg_service_change_request_ar(Mid, Cid),
@@ -6555,7 +6555,7 @@ mtraaar_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    cre_actionReply(Cid, [CR]).
 
 mtraaar_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     AR    = mtraaar_mgc_service_change_reply_ar(Mid, Cid),
@@ -6679,7 +6679,7 @@ mtraaar_mg_verify_service_change_reply({handle_trans_reply, _CH, ?VERSION,
 			    case Res of
 				{serviceChangeResParms,
 				 #'ServiceChangeResParm'{
-				   serviceChangeMgcId = RemoteMid}} ->
+				   serviceChangeMgcId = _RemoteMid}} ->
 				    {ok, AR, ok};
 				{Tag, Val} ->
 				    Err = {invalid_service_change_result, 
@@ -6742,14 +6742,14 @@ mtraaar_mg_verify_notify_reply(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
-mtraaar_mg_service_change_request_ar(Mid, Cid) ->
+mtraaar_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 mtraaar_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = mtraaar_mg_service_change_request_ar(Mid, Cid),
@@ -6847,8 +6847,8 @@ cre_actionReq(CtxId, CmdReqs) when list(CmdReqs) ->
 		     commandRequests = CmdReqs}.
 
 cre_transReq(TransId, ARs) when list(ARs) ->
-    TR = #'TransactionRequest'{transactionId = TransId,
-			       actions       = ARs}.
+    #'TransactionRequest'{transactionId = TransId,
+			  actions       = ARs}.
 
 %% --
 
@@ -7095,8 +7095,7 @@ apply_load_timer() ->
     erlang:send_after(random(), self(), apply_load_timeout).
 
 
-format_timestamp(Now) ->
-    {N1, N2, N3}   = Now,
+format_timestamp({_N1, _N2, N3}   = Now) ->
     {Date, Time}   = calendar:now_to_datetime(Now),
     {YYYY,MM,DD}   = Date,
     {Hour,Min,Sec} = Time,

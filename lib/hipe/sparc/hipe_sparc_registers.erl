@@ -328,18 +328,6 @@ is_fixed(?FCALLS) -> true;
 is_fixed(?RETURN_ADDRESS) -> true;
 is_fixed(_) -> false.
 
-%% This appears to be needed for hipe_sparc_ra_ols but this module is
-%% currently unused.
-%%
-%% fixed() ->
-%%   [?STACK_POINTER, 
-%%    ?STACK_LIMIT,
-%%    ?HEAP_POINTER,
-%%    ?HEAP_LIMIT,
-%%    ?PROC_POINTER,
-%%    ?FCALLS,
-%%    ?RETURN_ADDRESS].
-
 %%
 %% Global registers. Always live, never saved in call frames.
 %%

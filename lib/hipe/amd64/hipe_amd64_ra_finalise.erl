@@ -5,7 +5,7 @@
 
 -module(hipe_amd64_ra_finalise).
 -export([finalise/4]).
--include("hipe_amd64.hrl").
+-include("../x86/hipe_x86.hrl").
 
 finalise(Defun, TempMap, FpMap, Options) ->
   Defun1 = finalise_ra(Defun, TempMap, FpMap, Options),
@@ -25,8 +25,8 @@ finalise(Defun, TempMap, FpMap, Options) ->
 finalise_ra(Defun, [], [], _Options) ->
   Defun;
 finalise_ra(Defun, TempMap, FpMap, Options) ->
-  Code = hipe_amd64:defun_code(Defun),
-  {_, SpillLimit} = hipe_amd64:defun_var_range(Defun),
+  Code = hipe_x86:defun_code(Defun),
+  {_, SpillLimit} = hipe_x86:defun_var_range(Defun),
   Map = mk_ra_map(TempMap, SpillLimit),
   FpMap0 = case proplists:get_bool(x87, Options) of
 	     true  -> mk_ra_map_x87(FpMap, SpillLimit);
@@ -138,30 +138,30 @@ ra_opnd(Opnd, Map) ->
   ra_opnd(Opnd, Map, gb_trees:empty()).
 ra_opnd(Opnd, Map, FpMap) ->
   case Opnd of
-    #amd64_temp{} -> ra_temp(Opnd, Map, FpMap);
-    #amd64_mem{} -> ra_mem(Opnd, Map);
+    #x86_temp{} -> ra_temp(Opnd, Map, FpMap);
+    #x86_mem{} -> ra_mem(Opnd, Map);
     _ -> Opnd
   end.
 
 ra_mem(Mem, Map) ->
-  #amd64_mem{base=Base0,off=Off0} = Mem,
+  #x86_mem{base=Base0,off=Off0} = Mem,
   Base = ra_opnd(Base0, Map),
   Off = ra_opnd(Off0, Map),
-  Mem#amd64_mem{base=Base,off=Off}.
+  Mem#x86_mem{base=Base,off=Off}.
 
 ra_temp(Temp, Map) ->
   ra_temp(Temp, Map, gb_trees:empty()).
 
 ra_temp(Temp, Map, FpMap) ->
-  Reg = hipe_amd64:temp_reg(Temp),
-  case hipe_amd64:temp_type(Temp) of
+  Reg = hipe_x86:temp_reg(Temp),
+  case hipe_x86:temp_type(Temp) of
     double ->
       case hipe_amd64_registers:is_precoloured_sse2(Reg) of
 	true ->
 	  Temp;
 	_ ->
 	  case gb_trees:lookup(Reg, FpMap) of
-	    {value,NewReg} -> Temp#amd64_temp{reg=NewReg};
+	    {value,NewReg} -> Temp#x86_temp{reg=NewReg};
 	    _ -> Temp
 	  end
       end;
@@ -171,7 +171,7 @@ ra_temp(Temp, Map, FpMap) ->
 	  Temp;
 	_ ->
 	  case gb_trees:lookup(Reg, Map) of
-	    {value,NewReg} -> Temp#amd64_temp{reg=NewReg};
+	    {value,NewReg} -> Temp#x86_temp{reg=NewReg};
 	    _ -> Temp
 	  end
       end
@@ -229,9 +229,9 @@ conv_ra_maplet(MapLet = {From,To}, SpillLimit, IsPrecoloured) ->
       end,
       %% end of SpillIndex check
       ToTempNum = SpillLimit+SpillIndex+1,
-      MaxTempNum = hipe_gensym:get_var(amd64),
+      MaxTempNum = hipe_gensym:get_var(x86),
       if MaxTempNum >= ToTempNum -> [];
-	 true -> hipe_gensym:set_var(amd64, ToTempNum)
+	 true -> hipe_gensym:set_var(x86, ToTempNum)
       end,
       {From, ToTempNum};
     _ -> exit({?MODULE,conv_ra_maplet,MapLet})

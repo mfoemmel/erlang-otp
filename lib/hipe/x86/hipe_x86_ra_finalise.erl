@@ -4,14 +4,14 @@
 %%% - apply temp -> reg/spill map from RA
 
 -module(hipe_x86_ra_finalise).
--export([finalise/3]).
+-export([finalise/4]).
 -include("hipe_x86.hrl").
 
-finalise(Defun, TempMap, FpMap) ->
+finalise(Defun, TempMap, FpMap, Options) ->
   Defun1 = finalise_ra(Defun, TempMap, FpMap),
-  case get(hipe_inline_fp) of
+  case proplists:get_bool(x87, Options) of
     true ->
-      hipe_x86_float:map(Defun1);
+      hipe_x86_x87:map(Defun1);
     _ ->
       Defun1
   end.

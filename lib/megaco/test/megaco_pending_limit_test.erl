@@ -22,7 +22,27 @@
 %%----------------------------------------------------------------------
 -module(megaco_pending_limit_test).
 
--compile(export_all).
+-export([t/0, t/1]).
+-export([init_per_testcase/2, fin_per_testcase/2]).
+-export([all/1,
+
+	 sent/1,
+	 sent_timer_late_reply/1,
+	 sent_timer_exceeded/1,
+	 sent_timer_exceeded_long/1,
+	 sent_resend_late_reply/1,
+	 sent_resend_exceeded/1,
+	 sent_resend_exceeded_long/1,
+
+	 recv/1,
+	 recv_limit_exceeded1/1,
+	 recv_limit_exceeded2/1,
+
+	 tickets/1,
+	 otp_4956/1,
+	 otp_5310/1
+	
+	]).
 
 -include("megaco_test_lib.hrl").
 -include_lib("megaco/include/megaco.hrl").
@@ -57,6 +77,8 @@
 -define(MGC_USER_INFO(Pid,Tag), megaco_test_mgc:user_info(Pid,Tag)).
 -define(MGC_CONN_INFO(Pid,Tag), megaco_test_mgc:conn_info(Pid,Tag)).
 -define(MGC_ACK_INFO(Pid,To),   megaco_test_mgc:ack_info(Pid,To)).
+-define(MGC_ABORT_INFO(Pid,To), megaco_test_mgc:abort_info(Pid,To)).
+-define(MGC_DISCO(Pid,Reason),  megaco_test_mgc:disconnect(Pid,Reason)).
 
 -define(MG_START(Pid, Mid, Enc, Transp, Conf, Verb), 
 	megaco_test_mg:start(Pid, Mid, Enc, Transp, Conf, Verb)).
@@ -76,7 +98,6 @@
 -define(MG_USER_INFO(Pid,Tag), megaco_test_mg:user_info(Pid,Tag)).
 -define(MG_CONN_INFO(Pid,Tag), megaco_test_mg:conn_info(Pid,Tag)).
 -define(MG_GRP_REQ(Pid,N),     megaco_test_mg:group_requests(Pid,N)).
--define(MG_ACK_INFO(Pid,To),   megaco_test_mg:ack_info(Pid,To)).
 -define(MG_ECC(Pid, M, T, F),  megaco_test_mg:enable_test_code(Pid,M,T,F)).
 
 t()     -> megaco_test_lib:t(?MODULE).
@@ -96,33 +117,51 @@ fin_per_testcase(Case, Config) ->
 
 all(suite) ->
     [
-     timer_late_reply,
-     timer_exceeded,
-     timer_exceeded_long,
-     resend_late_reply,
-     resend_exceeded,
-     resend_exceeded_long,
+     sent,
+     recv,
      
      %% Tickets last 
      tickets
     ].
 
+sent(suite) ->
+    [
+     sent_timer_late_reply,
+     sent_timer_exceeded,
+     sent_timer_exceeded_long,
+     sent_resend_late_reply,
+     sent_resend_exceeded,
+     sent_resend_exceeded_long
+     
+    ].
+
+recv(suite) ->
+    [
+     recv_limit_exceeded1,
+     recv_limit_exceeded2
+    ].
+
 tickets(suite) ->
     [
-     otp_4956
+     otp_4956,
+     otp_5310
     ].
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%                                                                   %%%
+%%%                    Sent pending test cases                        %%%
+%%%                                                                   %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-timer_late_reply(suite) ->
+sent_timer_late_reply(suite) ->
     [];
-timer_late_reply(doc) ->
+sent_timer_late_reply(doc) ->
     "...";
-timer_late_reply(Config) when list(Config) ->
+sent_timer_late_reply(Config) when list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
-    put(tc,        timer_late_reply),
+    put(tc,        sent_timer_late_reply),
     i("starting"),
 
     MgcNode = make_node_name(mgc),
@@ -157,9 +196,9 @@ timer_late_reply(Config) when list(Config) ->
 				      factor   = 1},
     ?MGC_UPDATE_CI(Mgc, pending_timer, PendingTimer),
 
-    d("[MGC] update connection info originating pending limit"),
+    d("[MGC] update connection info sent pending limit"),
     PendingLimit = 5,
-    ?MGC_UPDATE_CI(Mgc, orig_pending_limit, PendingLimit),
+    ?MGC_UPDATE_CI(Mgc, sent_pending_limit, PendingLimit),
 
     d("[MGC] late reply to requests "
       "(simulate that the request takes a long time)"),
@@ -184,14 +223,14 @@ timer_late_reply(Config) when list(Config) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-timer_exceeded(suite) ->
+sent_timer_exceeded(suite) ->
     [];
-timer_exceeded(doc) ->
+sent_timer_exceeded(doc) ->
     "...";
-timer_exceeded(Config) when list(Config) ->
+sent_timer_exceeded(Config) when list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
-    put(tc,        timer_exceeded),
+    put(tc,        sent_timer_exceeded),
     i("starting"),
 
     MgcNode = make_node_name(mgc),
@@ -223,12 +262,12 @@ timer_exceeded(Config) when list(Config) ->
 
     d("[MGC] update connection info pending timer"),
     PendingTimer = #megaco_incr_timer{wait_for = timer:seconds(5),
-				      factor    = 1},
+				      factor   = 1},
     ?MGC_UPDATE_CI(Mgc, pending_timer, PendingTimer),
 
-    d("[MGC] update connection info originating pending limit"),
+    d("[MGC] update connection info sent pending limit"),
     PendingLimit = 5,
-    ?MGC_UPDATE_CI(Mgc, orig_pending_limit, PendingLimit),
+    ?MGC_UPDATE_CI(Mgc, sent_pending_limit, PendingLimit),
 
     d("[MGC] no reply to requests "
       "(simulate that the request takes a __long__ time)"),
@@ -254,14 +293,14 @@ timer_exceeded(Config) when list(Config) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-timer_exceeded_long(suite) ->
+sent_timer_exceeded_long(suite) ->
     [];
-timer_exceeded_long(doc) ->
+sent_timer_exceeded_long(doc) ->
     "...";
-timer_exceeded_long(Config) when list(Config) ->
+sent_timer_exceeded_long(Config) when list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
-    put(tc,        timer_exceeded_long),
+    put(tc,        sent_timer_exceeded_long),
     i("starting"),
 
     MgcNode = make_node_name(mgc),
@@ -293,12 +332,12 @@ timer_exceeded_long(Config) when list(Config) ->
 
     d("[MGC] update connection info pending timer"),
     PendingTimer = #megaco_incr_timer{wait_for = timer:seconds(5),
-				      factor    = 1},
+				      factor   = 1},
     ?MGC_UPDATE_CI(Mgc, pending_timer, PendingTimer),
 
-    d("[MGC] update connection info originating pending limit"),
+    d("[MGC] update connection info sent pending limit"),
     PendingLimit = 5,
-    ?MGC_UPDATE_CI(Mgc, orig_pending_limit, PendingLimit),
+    ?MGC_UPDATE_CI(Mgc, sent_pending_limit, PendingLimit),
 
     d("[MGC] long request with no reply ~n"
       "   (simulate that we know that this will "
@@ -330,14 +369,14 @@ timer_exceeded_long(Config) when list(Config) ->
 %% the MEGACO_TEST_CODE flag. Therefor there is no point in 
 %% including this test case in the usual test suite
 -ifdef(MEGACO_TEST_CODE).
-resend_late_reply(suite) ->
+sent_resend_late_reply(suite) ->
     [];
-resend_late_reply(doc) ->
+sent_resend_late_reply(doc) ->
     "...";
-resend_late_reply(Config) when list(Config) ->
+sent_resend_late_reply(Config) when list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
-    put(tc,        resend_late_reply),
+    put(tc,        sent_resend_late_reply),
     i("starting"),
 
     MgcNode = make_node_name(mgc),
@@ -373,9 +412,9 @@ resend_late_reply(Config) when list(Config) ->
     %% 				      factor    = 1},
     ?MGC_UPDATE_CI(Mgc, pending_timer, PendingTimer),
 
-    d("[MGC] update connection info originating pending limit"),
+    d("[MGC] update connection info sent pending limit"),
     PendingLimit = 5,
-    ?MGC_UPDATE_CI(Mgc, orig_pending_limit, PendingLimit),
+    ?MGC_UPDATE_CI(Mgc, sent_pending_limit, PendingLimit),
 
     d("[MG] update connection info request timer"),
     RequestTimer = #megaco_incr_timer{wait_for = timer:seconds(5),
@@ -413,11 +452,11 @@ resend_late_reply(Config) when list(Config) ->
 
 -else.
 
-resend_late_reply(suite) ->
+sent_resend_late_reply(suite) ->
     [];
-resend_late_reply(doc) ->
+sent_resend_late_reply(doc) ->
     "...";
-resend_late_reply(Config) when list(Config) ->
+sent_resend_late_reply(Config) when list(Config) ->
     ?SKIP("included only if compiled with USE_MEGACO_TEST_CODE=true").
 
 -endif.
@@ -430,14 +469,14 @@ resend_late_reply(Config) when list(Config) ->
 %% the MEGACO_TEST_CODE flag. Therefor there is no point in 
 %% including this test case in the usual test suite
 -ifdef(MEGACO_TEST_CODE).
-resend_exceeded(suite) ->
+sent_resend_exceeded(suite) ->
     [];
-resend_exceeded(doc) ->
+sent_resend_exceeded(doc) ->
     "...";
-resend_exceeded(Config) when list(Config) ->
+sent_resend_exceeded(Config) when list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
-    put(tc,        resend_exceeded),
+    put(tc,        sent_resend_exceeded),
     i("starting"),
 
     MgcNode = make_node_name(mgc),
@@ -471,9 +510,9 @@ resend_exceeded(Config) when list(Config) ->
     PendingTimer = infinity,
     ?MGC_UPDATE_CI(Mgc, pending_timer, PendingTimer),
 
-    d("[MGC] update connection info originating pending limit"),
+    d("[MGC] update connection info sent pending limit"),
     PendingLimit = 5,
-    ?MGC_UPDATE_CI(Mgc, orig_pending_limit, PendingLimit),
+    ?MGC_UPDATE_CI(Mgc, sent_pending_limit, PendingLimit),
 
     d("[MG] update connection info request timer"),
     RequestTimer = #megaco_incr_timer{wait_for = timer:seconds(5),
@@ -509,11 +548,11 @@ resend_exceeded(Config) when list(Config) ->
 
 -else.
 
-resend_exceeded(suite) ->
+sent_resend_exceeded(suite) ->
     [];
-resend_exceeded(doc) ->
+sent_resend_exceeded(doc) ->
     "...";
-resend_exceeded(Config) when list(Config) ->
+sent_resend_exceeded(Config) when list(Config) ->
     ?SKIP("included only if compiled with USE_MEGACO_TEST_CODE=true").
 
 -endif.
@@ -525,14 +564,14 @@ resend_exceeded(Config) when list(Config) ->
 %% the MEGACO_TEST_CODE flag. Therefor there is no point in 
 %% including this test case in the usual test suite
 -ifdef(MEGACO_TEST_CODE).
-resend_exceeded_long(suite) ->
+sent_resend_exceeded_long(suite) ->
     [];
-resend_exceeded_long(doc) ->
+sent_resend_exceeded_long(doc) ->
     "...";
-resend_exceeded_long(Config) when list(Config) ->
+sent_resend_exceeded_long(Config) when list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
-    put(tc,        resend_exceeded_long),
+    put(tc,        sent_resend_exceeded_long),
     i("starting"),
 
     MgcNode = make_node_name(mgc),
@@ -566,9 +605,9 @@ resend_exceeded_long(Config) when list(Config) ->
     PendingTimer = infinity,
     ?MGC_UPDATE_CI(Mgc, pending_timer, PendingTimer),
 
-    d("[MGC] update connection info originating pending limit"),
+    d("[MGC] update connection info sent pending limit"),
     PendingLimit = 5,
-    ?MGC_UPDATE_CI(Mgc, orig_pending_limit, PendingLimit),
+    ?MGC_UPDATE_CI(Mgc, sent_pending_limit, PendingLimit),
 
     d("[MG] update connection info request timer"),
     RequestTimer = #megaco_incr_timer{wait_for = timer:seconds(5),
@@ -605,16 +644,381 @@ resend_exceeded_long(Config) when list(Config) ->
 
 -else.
 
-resend_exceeded_long(suite) ->
+sent_resend_exceeded_long(suite) ->
     [];
-resend_exceeded_long(doc) ->
+sent_resend_exceeded_long(doc) ->
     "...";
-resend_exceeded_long(Config) when list(Config) ->
+sent_resend_exceeded_long(Config) when list(Config) ->
     ?SKIP("included only if compiled with USE_MEGACO_TEST_CODE=true").
 
 -endif.
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%                                                                   %%%
+%%%                 Received peinding test cases                      %%%
+%%%                                                                   %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+recv_limit_exceeded1(suite) ->
+    [];
+recv_limit_exceeded1(doc) ->
+    "Received pending limit exceeded (exactly)";
+recv_limit_exceeded1(Config) when list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        rle1),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p", 
+      [MgcNode, MgNode]),
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+    d("[MGC] start the simulator "),
+    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+
+    d("[MGC] create the event sequence"),
+    MgcEvSeq = rle1_mgc_event_sequence(text, tcp),
+
+    i("wait some time before starting the MGC simulation"),
+    sleep(1000),
+
+    d("[MGC] start the simulation"),
+    megaco_test_generator:tcp(Mgc, MgcEvSeq),
+
+    i("wait some time before starting the MG simulator"),
+    sleep(1000),
+
+    d("[MG] start the simulator (generator)"),
+    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+
+    d("[MG] create the event sequence"),
+    MgEvSeq = rle1_mg_event_sequence(text, tcp),
+
+    i("wait some time before starting the MG simulation"),
+    sleep(1000),
+
+    d("[MG] start the simulation"),
+    megaco_test_generator:megaco(Mg, MgEvSeq),
+
+    d("[MGC] await the generator reply"),
+    case megaco_test_generator:tcp_await_reply(Mgc) of
+        {ok, MgcReply} ->
+            d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
+            ok;
+        {error, MgcReply} ->
+            d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
+            ?ERROR(mgc_failed)
+    end,
+
+    d("[MG] await the generator reply"),
+    case megaco_test_generator:megaco_await_reply(Mg) of
+        {ok, MgReply} ->
+            d("[MG] OK => MgReply: ~n~p", [MgReply]),
+            ok;
+        {error, MgReply} ->
+            d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
+            ?ERROR(mg_failed)
+    end,
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_generator:stop(Mgc),
+
+    %% Tell Mg to stop
+    i("[MG] stop generator"),
+    megaco_test_generator:stop(Mg),
+
+    i("done", []),
+    ok.
+
+
+%%
+%% MGC generator stuff
+%% 
+rle1_mgc_event_sequence(text, tcp) ->
+    Mid = {deviceName,"ctrl"},
+    EM  = megaco_pretty_text_encoder,
+    EC  = [],
+    rle1_mgc_event_sequence2(Mid, EM, EC).
+
+rle1_mgc_event_sequence2(Mid, EM, EC) ->
+    DecodeFun = rle1_mgc_decode_msg_fun(EM, EC),
+    EncodeFun = rle1_mgc_encode_msg_fun(EM, EC),
+    ServiceChangeReqVerify = 
+	rle1_mgc_verify_service_change_req_fun(Mid),
+    ServiceChangeReply = 
+	rle1_mgc_service_change_reply_msg(Mid, 1, 0),
+    NotifyReqVerify = rle1_mgc_verify_notify_request_fun(),
+    Pending = rle1_mgc_pending_msg(Mid,2),
+    EvSeq = 
+	[{debug,  true},
+	 {decode, DecodeFun},
+	 {encode, EncodeFun},
+	 {listen, 2944},
+	 {expect_accept, any},
+	 {expect_receive, "service-change-req", 
+	  {ServiceChangeReqVerify, 10000}}, 
+	 {send, "service-change-reply", ServiceChangeReply}, 
+	 {expect_receive, "notify-request", {NotifyReqVerify, 5000}},
+	 {sleep, 100},
+	 {send, "pending 1", Pending}, 
+	 {sleep, 100},
+	 {send, "pending 2", Pending}, 
+	 {sleep, 100},
+	 {send, "pending 3", Pending}, 
+	 {sleep, 100},
+	 {send, "pending 4", Pending}, 
+	 {sleep, 100},
+	 {send, "pending 5", Pending}, 
+	 {sleep, 1000},
+	 disconnect
+	 ],
+    EvSeq.
+
+rle1_mgc_encode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:encode_message(Conf, M)
+    end.
+
+rle1_mgc_decode_msg_fun(Mod, Conf) ->
+    fun(M) ->
+            Mod:decode_message(Conf, M)
+    end.
+
+rle1_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
+    SCRP  = #'ServiceChangeResParm'{serviceChangeMgcId = Mid},
+    SCRPs = {serviceChangeResParms,SCRP},
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = #'ServiceChangeReply'{terminationID       = [Root],
+                                  serviceChangeResult = SCRPs},
+    CR    = {serviceChangeReply, SCR},
+    rle1_mgc_msg(Mid, TransId, CR, Cid).
+     
+rle1_mgc_msg(Mid, TransId, CR, Cid) ->
+    AR  = #'ActionReply'{contextId    = Cid,
+                         commandReply = [CR]},
+    ARs  = {actionReplies, [AR]},
+    TR   = #'TransactionReply'{transactionId     = TransId,
+                               transactionResult = ARs},
+    Body = {transactions, [{transactionReply, TR}]},
+    Mess = #'Message'{version     = 1,
+                      mId         = Mid,
+                      messageBody = Body},
+    #'MegacoMessage'{mess = Mess}.
+     
+rle1_mgc_pending_msg(Mid, TransId) ->
+    TP   = #'TransactionPending'{transactionId = TransId},
+    Body = {transactions, [{transactionPending, TP}]},
+    Mess = #'Message'{version     = 1,
+                      mId         = Mid,
+                      messageBody = Body},
+    #'MegacoMessage'{mess = Mess}.
+
+rle1_mgc_verify_service_change_req_fun(_) ->
+    fun(#'MegacoMessage'{mess = Mess} = M) ->
+            #'Message'{version     = _V,
+                       mId         = _Mid,
+                       messageBody = Body} = Mess,
+            {transactions, [Trans]} = Body,
+            {transactionRequest, TR} = Trans,
+            #'TransactionRequest'{transactionId = _Tid,
+                                  actions = [AR]} = TR,
+            #'ActionRequest'{contextId = _Cid,
+                             contextRequest = _CtxReq,
+                             contextAttrAuditReq = _CtxAar,
+                             commandRequests = [CR]} = AR,
+            #'CommandRequest'{command = Cmd,
+                              optional = _Opt,
+                              wildcardReturn = _WR} = CR,
+            {serviceChangeReq, SCR} = Cmd,
+            #'ServiceChangeRequest'{terminationID = _TermID,
+                                    serviceChangeParms = SCP} = SCR,
+            #'ServiceChangeParm'{serviceChangeMethod = restart,
+                                 serviceChangeReason = [[$9,$0,$1|_]]} = SCP,
+            {ok, M};
+       (M) ->
+            {error, {invalid_message, M}}
+    end.
+
+rle1_mgc_verify_notify_request_fun() ->
+    fun(#'MegacoMessage'{mess = Mess} = M) ->
+	    io:format("rle1_mgc_verify_notify_request_fun -> entry~n", []),
+            #'Message'{messageBody = Body} = Mess,
+            {transactions, [Trans]} = Body,
+            {transactionRequest, TR} = Trans,
+            #'TransactionRequest'{actions = [AR]} = TR,
+	    io:format("rle1_mgc_verify_notify_request_fun -> AR: "
+		      "~n~p~n", [AR]),
+            #'ActionRequest'{commandRequests = [CR]} = AR,
+            #'CommandRequest'{command = Cmd} = CR,
+            {notifyReq, NR} = Cmd,
+            #'NotifyRequest'{observedEventsDescriptor = OED} = NR,
+            #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+            #'ObservedEvent'{eventName = "al/of"} = OE,
+            {ok, M};
+       (M) ->
+            {error, {invalid_message, M}}
+    end.
+    
+% rle1_err_desc(T) ->
+%     EC = ?megaco_internal_gateway_error,
+%     ET = lists:flatten(io_lib:format("~w",[T])),
+%     #'ErrorDescriptor'{errorCode = EC, errorText = ET}.
+
+
+%%
+%% MG generator stuff
+%% 
+rle1_mg_event_sequence(text, tcp) ->
+    Mid = {deviceName,"mg"},
+    RI = [
+          {port,             2944},
+          {encoding_module,  megaco_pretty_text_encoder},
+          {encoding_config,  []},
+          {transport_module, megaco_tcp}
+         ],
+    rle1_mg_event_sequence2(Mid, RI).
+
+rle1_mg_event_sequence2(Mid, RI) ->
+    ServiceChangeReq = [rle1_mg_service_change_request_ar(Mid, 1)],
+    ConnectVerify = fun rle1_mg_verify_handle_connect/1,
+    ServiceChangeReplyVerify = 
+	fun rle1_mg_verify_service_change_reply/1,
+    Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NotifyReq = [rle1_mg_notify_request_ar(1, Tid, 1)],
+    TransReplyVerify = fun rle1_mg_verify_trans_reply/1,
+    EvSeq = [
+             {debug, true},
+             megaco_start,
+             {megaco_start_user, Mid, RI, []},
+	     {megaco_update_user_info, recv_pending_limit, 4},
+             start_transport,
+             {megaco_trace, disable}, %%100},
+             {megaco_system_info, users},
+             {megaco_system_info, connections},
+             connect,
+             {megaco_callback, handle_connect, ConnectVerify},
+             megaco_connect,
+             {megaco_cast, ServiceChangeReq, []},
+             {megaco_callback, handle_connect, ConnectVerify},
+             {megaco_callback, handle_trans_reply, ServiceChangeReplyVerify},
+             {sleep, 1000},
+             {megaco_cast, NotifyReq, []},
+             {megaco_callback, handle_trans_reply, TransReplyVerify},
+             {sleep, 1000},
+             megaco_stop_user,
+             megaco_stop,
+             {sleep, 1000}
+            ],
+    EvSeq.
+
+
+rle1_mg_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
+    io:format("rle1_mg_verify_handle_connect -> ok"
+	      "~n   CH: ~p~n", [CH]),
+    {ok, CH, ok};
+rle1_mg_verify_handle_connect(Else) ->
+    io:format("rle1_mg_verify_handle_connect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+rle1_mg_verify_service_change_reply({handle_trans_reply, _CH, 
+					       ?VERSION, 
+					       {ok, [AR]}, _}) ->
+    io:format("rle1_mg_verify_service_change_reply -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionReply'{commandReply = [SCR]} ->
+	    case SCR of
+		{serviceChangeReply,
+		 #'ServiceChangeReply'{terminationID = [Tid],
+				       serviceChangeResult = Res}} ->
+		    case Tid of
+			#megaco_term_id{contains_wildcards = false, 
+					id = ["root"]} ->
+			    case Res of
+				{serviceChangeResParms,
+				 #'ServiceChangeResParm'{
+				   serviceChangeMgcId = _RemoteMid}} ->
+				    {ok, AR, ok};
+				{Tag, Val} ->
+				    Err = {invalid_service_change_result, 
+					   Tag, Val},
+				    {error, Err, ok}
+			    end;
+			_ ->
+			    Err = {invalid_termination_id, Tid},
+			    {error, Err, ok}
+		    end;
+		{Tag, Val} ->
+		    Err = {invalid_command_reply, Tag, Val},
+		    {error, Err, ok}
+	    end;
+	_ ->
+	    Err = {invalid_action_reply, AR},
+	    {error, Err, ok}
+    end;
+rle1_mg_verify_service_change_reply(Else) ->
+    io:format("rle1_mg_verify_service_change_reply -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, ok}.
+
+rle1_mg_verify_trans_reply({handle_trans_reply, _CH, ?VERSION, 
+			    {error, exceeded_recv_pending_limit} = E, _}) ->
+    io:format("rle1_mg_verify_trans_reply -> expected error~n", []),
+    {ok, E    , error};
+rle1_mg_verify_trans_reply(Else) ->
+    io:format("rle1_mg_verify_trans_reply -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    {error, Else, error}.
+
+rle1_mg_service_change_request_ar(_Mid, Cid) ->
+    Prof  = cre_serviceChangeProf("resgw", 1),
+    SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = cre_serviceChangeReq([Root], SCP),
+    CMD   = cre_command(SCR),
+    CR    = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+rle1_mg_notify_request_ar(Rid, Tid, Cid) ->
+    TT      = cre_timeNotation("19990729", "22000000"),
+    Ev      = cre_obsEvent("al/of", TT),
+    EvsDesc = cre_obsEvsDesc(Rid, [Ev]),
+    NR      = cre_notifyReq([Tid], EvsDesc),
+    CMD     = cre_command(NR),
+    CR      = cre_cmdReq(CMD),
+    cre_actionReq(Cid, [CR]).
+
+
+%% ---
+
+recv_limit_exceeded2(suite) ->
+    [];
+recv_limit_exceeded2(doc) ->
+    "Received pending limit exceeded";
+recv_limit_exceeded2(Config) when list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        rle2),
+    i("starting"),
+
+    _MgcNode = make_node_name(mgc),
+    _MgNode  = make_node_name(mg),
+
+    ?SKIP(not_yet_implemented).
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%                                                                   %%%
+%%%                       Ticket test cases                           %%%
+%%%                                                                   %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 otp_4956(suite) ->
@@ -710,10 +1114,11 @@ otp_4956_mgc_event_sequence(text, tcp) ->
     DiscoVerify = fun otp_4956_mgc_verify_handle_disconnect/1,
     EvSeq = [
              {debug, true},
-             {megaco_trace, disable},
+	     {megaco_trace, disable},
+             %% {megaco_trace, 100},
              megaco_start,
              {megaco_start_user, Mid, RI, []},
-	     {megaco_update_user_info, orig_pending_limit, 4},
+	     {megaco_update_user_info, sent_pending_limit, 4},
              start_transport,
              listen,
              {megaco_callback, handle_connect, ConnectVerify},
@@ -810,7 +1215,7 @@ otp_4956_mgc_verify_notify_request_fun() ->
                     #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
                     #'ObservedEvent'{eventName = "al/of"} = OE,
                     Reply = {discard_ack, [otp_4956_mgc_notify_reply_ar(Cid, Tid)]},
-                    {ok, 3000, AR, Reply};
+                    {ok, 6000, AR, Reply};
                 _ ->
                     ED = otp_4956_err_desc(AR),
                     ErrReply = {discard_ack, ED},
@@ -830,7 +1235,7 @@ otp_4956_mgc_verify_handle_trans_request_abort({handle_trans_request_abort,
 otp_4956_mgc_verify_handle_trans_request_abort(Else) ->
     {error, Else, ok}.
 
-otp_4956_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, R}) -> 
+otp_4956_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, _}) -> 
 %     io:format("otp_4956_mgc_verify_handle_disconnect -> ok"
 %               "~n   CH: ~p"
 %               "~n   R:  ~p"
@@ -847,28 +1252,29 @@ otp_4956_mgc_service_change_reply_ar(Mid, Cid) ->
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReply([Root], SCRes),
     CR    = cre_cmdReply(SCR),
-    AR    = cre_actionReply(Cid, [CR]).
+    AR    = cre_actionReply(Cid, [CR]),
+    AR.
 
-otp_4956_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
-    AR    = otp_4956_mgc_service_change_reply_ar(Mid, Cid),
-    TRes  = cre_transResult([AR]),
-    TR    = cre_transReply(TransId, TRes),
-    Trans = cre_transaction(TR),
-    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
-    cre_megacoMessage(Mess).
+%% otp_4956_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
+%%     AR    = otp_4956_mgc_service_change_reply_ar(Mid, Cid),
+%%     TRes  = cre_transResult([AR]),
+%%     TR    = cre_transReply(TransId, TRes),
+%%     Trans = cre_transaction(TR),
+%%     Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+%%     cre_megacoMessage(Mess).
 
 otp_4956_mgc_notify_reply_ar(Cid, TermId) ->
     NR    = cre_notifyReply([TermId]),
     CR    = cre_cmdReply(NR),
     cre_actionReply(Cid, [CR]).
 
-otp_4956_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
-    AR    = otp_4956_mgc_notify_reply_ar(Cid, TermId),
-    TRes  = cre_transResult([AR]),
-    TR    = cre_transReply(TransId, TRes),
-    Trans = cre_transaction(TR),
-    Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
-    cre_megacoMessage(Mess).
+%% otp_4956_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
+%%     AR    = otp_4956_mgc_notify_reply_ar(Cid, TermId),
+%%     TRes  = cre_transResult([AR]),
+%%     TR    = cre_transReply(TransId, TRes),
+%%     Trans = cre_transaction(TR),
+%%     Mess  = cre_message(?VERSION, Mid, cre_transactions([Trans])),
+%%     cre_megacoMessage(Mess).
 
 
 %%
@@ -885,48 +1291,53 @@ otp_4956_mg_event_sequence(text, tcp) ->
     NotifyReq = otp_4956_mg_notify_request_msg(Mid, 2, 1, TermId, 1),
     PendingVerify = otp_4956_mg_verify_pending_msg_fun(),
     PendingLimitVerify = otp_4956_mg_verify_pending_limit_msg_fun(),
-    MgcEvSeq = [{debug,  true},
-                {decode, DecodeFun},
-                {encode, EncodeFun},
-                {connect, 2944},
-                {send, "service-change-request", ServiceChangeReq}, 
-                {expect_receive, "service-change-reply", {ServiceChangeReplyVerifyFun, 10000}}, 
-                {send, "notify request (first send)", NotifyReq}, 
-                {sleep, 100},
-                {send, "notify request (resend 1)", NotifyReq}, 
-                {expect_receive, "pending 1", {PendingVerify, 1000}},
-                {send, "notify request (resend 2)", NotifyReq}, 
-                {expect_receive, "pending 2", {PendingVerify, 1000}},
-                {send, "notify request (resend 3)", NotifyReq}, 
-                {expect_receive, "pending 3", {PendingVerify, 1000}},
-                {send, "notify request (resend 4)", NotifyReq}, 
-                {expect_receive, "pending 4", {PendingVerify, 1000}},
-                {send, "notify request (resend 5)", NotifyReq}, 
-                {expect_receive, "pending limit exceeded", 
-		 {PendingLimitVerify, 1000}},
-                {send, "notify request (resend 6)", NotifyReq}, 
-                {expect_nothing, 1000},
-		disconnect
-               ],
-    MgcEvSeq.
+    EvSeq = [{debug,  true},
+	     {decode, DecodeFun},
+	     {encode, EncodeFun},
+	     {connect, 2944},
+	     {send, "service-change-request", ServiceChangeReq}, 
+	     {expect_receive, "service-change-reply", {ServiceChangeReplyVerifyFun, 10000}}, 
+	     {send, "notify request (first send)", NotifyReq}, 
+	     {sleep, 100},
+	     {send, "notify request (resend 1)", NotifyReq}, 
+	     {expect_receive, "pending 1", {PendingVerify, 1000}},
+	     {sleep, 1000},
+	     {send, "notify request (resend 2)", NotifyReq}, 
+	     {expect_receive, "pending 2", {PendingVerify, 1000}},
+	     {sleep, 1000},
+	     {send, "notify request (resend 3)", NotifyReq}, 
+	     {expect_receive, "pending 3", {PendingVerify, 1000}},
+	     {sleep, 1000},
+	     {send, "notify request (resend 4)", NotifyReq}, 
+	     {expect_receive, "pending 4", {PendingVerify, 1000}},
+	     {sleep, 1000},
+	     {send, "notify request (resend 5)", NotifyReq}, 
+	     {expect_receive, "pending limit exceeded", 
+	      {PendingLimitVerify, 1000}},
+	     {sleep, 2000},
+	     {send, "notify request (resend 6)", NotifyReq}, 
+	     {expect_nothing, 2000},
+	     disconnect
+	    ],
+    EvSeq.
 
 otp_4956_mg_encode_msg_fun(Mod, Conf) ->
     fun(M) -> 
             Mod:encode_message(Conf, M) 
     end.
-otp_4956_mg_encode_msg_fun(Mod, Conf, Ver) ->
-    fun(M) -> 
-            Mod:encode_message(Conf, Ver, M) 
-    end.
+% otp_4956_mg_encode_msg_fun(Mod, Conf, Ver) ->
+%     fun(M) -> 
+%             Mod:encode_message(Conf, Ver, M) 
+%     end.
 
 otp_4956_mg_decode_msg_fun(Mod, Conf) ->
     fun(M) -> 
             Mod:decode_message(Conf, M) 
     end.
-otp_4956_mg_decode_msg_fun(Mod, Conf, Ver) ->
-    fun(M) -> 
-            Mod:decode_message(Conf, Ver, M) 
-    end.
+% otp_4956_mg_decode_msg_fun(Mod, Conf, Ver) ->
+%     fun(M) -> 
+%             Mod:decode_message(Conf, Ver, M) 
+%     end.
 
 otp_4956_mg_verify_service_change_rep_msg_fun() ->
     fun(#'MegacoMessage'{mess = Mess} = M) -> 
@@ -957,10 +1368,13 @@ otp_4956_mg_verify_service_change_rep_msg_fun() ->
 
 otp_4956_mg_verify_pending_msg_fun() ->
     fun(#'MegacoMessage'{mess = Mess} = M) -> 
+	    io:format("otp_4956_mg_verify_pending_msg_fun -> entry with"
+		      "~n~p~n", [M]),
             #'Message'{messageBody = Body} = Mess,
             {transactions, [Trans]} = Body,
             {transactionPending, TP} = Trans,
             #'TransactionPending'{transactionId = _Id} = TP,
+	    io:format("otp_4956_mg_verify_pending_msg_fun -> done~n", []),
             {ok, M};
        (M) ->
             {error, {invalid_message, M}}
@@ -968,22 +1382,31 @@ otp_4956_mg_verify_pending_msg_fun() ->
 
 otp_4956_mg_verify_pending_limit_msg_fun() ->
     fun(#'MegacoMessage'{mess = Mess} = M) -> 
+	    io:format("otp_4956_mg_verify_pending_limit_msg_fun -> entry with"
+		      "~n~p~n", [M]),
             #'Message'{messageBody = Body} = Mess,
-            {messageError, ED} = Body,
-            #'ErrorDescriptor'{errorCode = ?megaco_number_of_transactionpending_exceeded} = ED,
-            {ok, M};
+	    io:format("otp_4956_mg_verify_pending_limit_msg_fun -> Body"
+		      "~n~p~n", [Body]),
+	    case Body of
+		{messageError, ED} ->
+		    EC = ?megaco_number_of_transactionpending_exceeded,
+		    #'ErrorDescriptor'{errorCode = EC} = ED,
+		    {ok, M};
+		_ ->
+		    {error, {invalid_messageBody, Body}}
+	    end;
        (M) ->
             {error, {invalid_message, M}}
     end.
 
-otp_4956_mg_service_change_request_ar(Mid, Cid) ->
+otp_4956_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
     SCP   = cre_serviceChangeParm(restart, ["901 mg col boot"], Prof),
     Root  = #megaco_term_id{id = ["root"]},
     SCR   = cre_serviceChangeReq([Root], SCP),
     CMD   = cre_command(SCR),
     CR    = cre_cmdReq(CMD),
-    AR    = cre_actionReq(Cid, [CR]).
+    cre_actionReq(Cid, [CR]).
 
 otp_4956_mg_service_change_request_msg(Mid, TransId, Cid) ->
     AR    = otp_4956_mg_service_change_request_ar(Mid, Cid),
@@ -1017,6 +1440,162 @@ otp_4956_err_desc(T) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+otp_5310(suite) ->
+    [];
+otp_5310(doc) ->
+    "...";
+otp_5310(Config) when list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        otp_5310),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p", 
+      [MgcNode, MgNode]),
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+    %% Start the MGC and MGs
+    i("[MGC] start"),    
+    ET = [{text,tcp}, {text,udp}, {binary,tcp}, {binary,udp}],
+    {ok, Mgc} = 
+	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, ?MGC_VERBOSITY),
+
+    i("[MG] start"),    
+    MgMid = {deviceName, "mg"},
+    MgConfig = [],
+    {ok, Mg} = ?MG_START(MgNode, MgMid, text, tcp, MgConfig, ?MG_VERBOSITY),
+
+    d("MG user info: ~p", [?MG_USER_INFO(Mg, all)]),
+
+    i("[MG] connect to the MGC (service change)"),    
+    ServChRes = ?MG_SERV_CHANGE(Mg),
+    d("service change result: ~p", [ServChRes]),
+
+    d("MG conn info: ~p", [?MG_CONN_INFO(Mg, all)]),
+
+    d("[MGC] update connection info pending timer"),
+    PendingTimer = #megaco_incr_timer{wait_for = timer:seconds(1),
+				      factor   = 1},
+    ?MGC_UPDATE_CI(Mgc, pending_timer, PendingTimer),
+
+    d("[MGC] update connection info originating pending limit"),
+    PendingLimit = 3,
+    ?MGC_UPDATE_CI(Mgc, orig_pending_limit, PendingLimit),
+
+    ConnReps1 = ?MGC_CONN_INFO(Mgc, replies),
+    d("[MGC] ConnReps1: ~p", [ConnReps1]),
+    case filter_aborted1(ConnReps1, []) of
+	[{_, []}] ->
+	    ok;
+	ConnFlt1 ->
+	    ?ERROR({unexpected_reply_state, conn_info, ConnReps1, ConnFlt1})
+    end,
+    UserReps1 = ?MGC_USER_INFO(Mgc, replies),
+    d("[MGC] UserReps1: ~p", [UserReps1]),
+    case filter_aborted1(UserReps1, []) of
+	[{_, []}] ->
+	    ok;
+	UserFlt1 ->
+	    ?ERROR({unexpected_reply_state, user_info, UserReps1, UserFlt1})
+    end,
+
+    %% Instruct the MGC to never reply to requests
+    d("[MGC] don't reply to requests"),
+    ?MGC_REQ_IGNORE(Mgc),
+
+    %% We want to know when the abort comes...
+    d("[MGC] request abort inform"),
+    ?MGC_ABORT_INFO(Mgc, self()),
+
+    %% Make MG send a request
+    d("[MG] send the notify"),
+    Reply = ?MG_NOTIF_RAR(Mg),
+    d("[MG] Reply: ~p", [Reply]),
+    case Reply of
+	#'ErrorDescriptor'{errorCode = 
+			   ?megaco_number_of_transactionpending_exceeded} ->
+	    ok;
+	_ ->
+	    ?ERROR({invalid_mg_reply, Reply})
+    end,
+
+    %% Wait for the MGC to get aborted
+    d("[MGC] await the abort callback"),
+    {ok, TransId} = await_aborted(Mgc),
+    d("[MGC] aborted transaction: ~p", [TransId]),
+
+    %% Make sure we have one in aborted state
+    d("[MGC] how many is aborted (should be == 1)?"),
+    ConnReps2 = ?MGC_CONN_INFO(Mgc, replies),
+    case filter_aborted1(ConnReps2, []) of
+	[{_, [TransId]}] ->
+	    ok;
+	_ ->
+	    ?ERROR({unexpected_reply_state, conn_info, ConnReps2})
+    end,
+    d("[MGC] ConnReps2: ~p", [ConnReps2]),
+    UserReps2 = ?MGC_USER_INFO(Mgc, replies),
+    d("[MGC] UserReps2: ~p", [UserReps2]),
+    case filter_aborted1(UserReps2, []) of
+	[{_, [TransId]}] ->
+	    ok;
+	_ ->
+	    ?ERROR({unexpected_reply_state, user_info, UserReps2})
+    end,
+
+    %% do disconnect and the do cancel in the handle function
+    d("[MGC] disconnect"),
+    DiscoRes = ?MGC_DISCO(Mgc, cancel),
+    d("[MGC] DiscoRes: ~p", [DiscoRes]),
+
+    %% check number of reply records (should be no in aborted).
+    d("[MGC] check number of replies in aborted state (should be == 1)"),
+    ConnReps3 = ?MGC_CONN_INFO(Mgc, replies),
+    d("[MGC] ConnReps3: ~p", [ConnReps3]),
+    UserReps3 = ?MGC_USER_INFO(Mgc, replies),
+    d("[MGC] UserReps3: ~p", [UserReps3]),
+
+    %% Tell MG to stop
+    i("[MG] stop"),
+    ?MG_STOP(Mg),
+
+    %% Tell Mgc to stop
+    i("[MGC] stop"),
+    ?MGC_STOP(Mgc),
+
+    i("done", []),
+    ok.
+
+await_aborted(Mgc) ->
+    d("await_aborted"),
+    receive
+	{abort_received, Mgc, TransId} ->
+	    {ok, TransId}
+    after 10000 ->
+	    d("await_aborted - timeout"),
+	    {error, timeout}
+    end.
+
+filter_aborted1([], Acc) ->
+    lists:reverse(Acc);
+filter_aborted1([{CH, Ab}|T], Acc) ->
+    filter_aborted1(T, [{CH, filter_aborted2(Ab, [])}|Acc]).
+
+filter_aborted2([], Aborted) ->
+    lists:reverse(Aborted);
+filter_aborted2([{TransId, aborted, _}|T], Aborted) ->
+    filter_aborted2(T, [TransId|Aborted]);
+filter_aborted2([_|T], Aborted) ->
+    filter_aborted2(T, Aborted).
+    
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
 %%
 %% Common message creation functions
 %%
@@ -1036,10 +1615,10 @@ cre_timeNotation(D,T) ->
 cre_obsEvent(Name, Not) ->
     #'ObservedEvent'{eventName    = Name, 
                      timeNotation = Not}.
-cre_obsEvent(Name, Not, Par) ->
-    #'ObservedEvent'{eventName    = Name, 
-                     timeNotation = Not, 
-                     eventParList = Par}.
+%% cre_obsEvent(Name, Not, Par) ->
+%%     #'ObservedEvent'{eventName    = Name, 
+%%                      timeNotation = Not, 
+%%                      eventParList = Par}.
 
 cre_obsEvsDesc(Id, EvList) ->
     #'ObservedEventsDescriptor'{requestId        = Id, 
@@ -1062,8 +1641,8 @@ cre_actionReq(CtxId, CmdReqs) when list(CmdReqs) ->
                      commandRequests = CmdReqs}.
 
 cre_transReq(TransId, ARs) when list(ARs) ->
-    TR = #'TransactionRequest'{transactionId = TransId,
-                               actions       = ARs}.
+    #'TransactionRequest'{transactionId = TransId,
+			  actions       = ARs}.
 
 %% --
 
@@ -1095,14 +1674,14 @@ cre_actionReply(CtxId, CmdRep) ->
     #'ActionReply'{contextId    = CtxId,
                    commandReply = CmdRep}.
 
-cre_transResult(ED) when record(ED, 'ErrorDescriptor') ->
-    {transactionError, ED};
-cre_transResult([AR|_] = ARs) when record(AR, 'ActionReply') ->
-    {actionReplies, ARs}.
+%% cre_transResult(ED) when record(ED, 'ErrorDescriptor') ->
+%%     {transactionError, ED};
+%% cre_transResult([AR|_] = ARs) when record(AR, 'ActionReply') ->
+%%     {actionReplies, ARs}.
 
-cre_transReply(TransId, Res) ->
-    #'TransactionReply'{transactionId     = TransId,
-                        transactionResult = Res}.
+%% cre_transReply(TransId, Res) ->
+%%     #'TransactionReply'{transactionId     = TransId,
+%%                         transactionResult = Res}.
 
 %% --
 
@@ -1151,9 +1730,9 @@ init_request_timer(O) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-tim() ->
-    {A,B,C} = erlang:now(),
-    A*1000000000+B*1000+(C div 1000).
+%% tim() ->
+%%     {A,B,C} = erlang:now(),
+%%     A*1000000000+B*1000+(C div 1000).
 
 
 make_node_name(Name) ->
@@ -1169,7 +1748,7 @@ make_node_name(Name) ->
 
 sleep(X) -> receive after X -> ok end.
 
-error_msg(F,A) -> error_logger:error_msg(F ++ "~n",A).
+%% error_msg(F,A) -> error_logger:error_msg(F ++ "~n",A).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1205,19 +1784,18 @@ print(_, _, _, _, _, _) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-random_init() ->
-    {A,B,C} = now(),
-    random:seed(A,B,C).
+%% random_init() ->
+%%     {A,B,C} = now(),
+%%     random:seed(A,B,C).
 
-random() ->
-    10 * random:uniform(50).
+%% random() ->
+%%     10 * random:uniform(50).
 
-apply_load_timer() ->
-    erlang:send_after(random(), self(), apply_load_timeout).
+%% apply_load_timer() ->
+%%     erlang:send_after(random(), self(), apply_load_timeout).
 
 
-format_timestamp(Now) ->
-    {N1, N2, N3} = Now,
+format_timestamp({_N1, _N2, N3} = Now) ->
     {Date, Time}   = calendar:now_to_datetime(Now),
     {YYYY,MM,DD}   = Date,
     {Hour,Min,Sec} = Time,

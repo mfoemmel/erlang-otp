@@ -20,6 +20,7 @@
 #  include "config.h"
 #endif
 
+#include <stddef.h> /* offsetof() */
 #include "sys.h"
 #include "erl_vm.h"
 #include "erl_sys_driver.h"
@@ -31,6 +32,7 @@
 #include "dist.h"
 #include "erl_version.h"
 #include "erl_binary.h"
+#include "beam_bp.h"
 #include "erl_db_util.h"
 #include "register.h"
 
@@ -782,6 +784,96 @@ BIF_RETTYPE exit_1(BIF_ALIST_1)
 
 
 /**********************************************************************/
+/* raise an exception of given class, value and stacktrace.
+ *
+ * If there is an error in the argument format, 
+ * return the atom 'badarg' instead.
+ */
+Eterm 
+raise_3(Process *c_p, Eterm class, Eterm value, Eterm stacktrace) {
+    Eterm reason;
+    
+    if (class == am_error) {
+	c_p->fvalue = value;
+	reason = EXC_ERROR;
+    } else if (class == am_exit) {
+	c_p->fvalue = value;
+	reason = EXC_EXIT;
+    } else if (class == am_throw) {
+	c_p->fvalue = value;
+	reason = EXC_THROWN;
+    } else goto error;
+    reason &= ~EXF_SAVETRACE;
+    
+    if (is_nil(stacktrace)) {
+	c_p->ftrace = NIL;
+    } else {
+	Eterm l, *hp, *hp_end, *tp;
+	int depth, cnt;
+	size_t sz;
+	struct StackTrace *s;
+	/* Check syntax of stacktrace, and count depth.
+	 * Accept anything that can be returned from erlang:get_stacktrace/0,
+	 * as well as a 2-tuple with a fun as first element that the
+	 * error_handler may need to give us.
+	 */
+	for (l = stacktrace, depth = 0;  
+	     is_list(l);  
+	     l = CDR(list_val(l)), depth++) {
+	    Eterm t = CAR(list_val(l));
+	    int arity;
+	    if (is_not_tuple(t)) goto error;
+	    tp = tuple_val(t);
+	    arity = arityval(tp[0]);
+	    if ((arity == 3) && is_atom(tp[1]) && is_atom(tp[2])) continue;
+	    if ((arity == 2) && is_fun(tp[1])) continue;
+	    goto error;
+	}
+	if (is_not_nil(l)) goto error;
+	
+	/* Create stacktrace and store */
+	if (depth <= erts_backtrace_depth) {
+	    cnt = 0;
+	    c_p->ftrace = stacktrace;
+	} else {
+	    cnt = depth = erts_backtrace_depth;
+	    c_p->ftrace = NIL;
+	}
+	tp = &c_p->ftrace;
+	sz = (offsetof(struct StackTrace, trace) + sizeof(Eterm) - 1) 
+	    / sizeof(Eterm);
+	hp = HAlloc(c_p, sz + 2*(cnt + 1));
+	hp_end = hp + sz + 2*(cnt + 1);
+	s = (struct StackTrace *) hp;
+	s->header = make_neg_bignum_header(sz - 1);
+	s->freason = reason;
+	s->pc = NULL;
+	s->current = NULL;
+	s->depth = 0;
+	hp += sz;
+	if (cnt > 0) {
+	    /* Copy list up to depth */
+	    for (cnt = 0, l = stacktrace;
+		 cnt < depth;
+		 cnt++, l = CDR(list_val(l))) {
+		ASSERT(*tp == NIL);
+		*tp = CONS(hp, CAR(list_val(l)), *tp);
+		tp = &CDR(list_val(*tp));
+		hp += 2;
+	    }
+	}
+	c_p->ftrace = CONS(hp, c_p->ftrace, make_big((Eterm *) s));
+	hp += 2;
+	ASSERT(hp <= hp_end);
+    } /* if (is_nil(stacktrace)) ; else { */
+    
+    BIF_ERROR(c_p, reason);
+    
+ error:
+    return am_badarg;
+}
+
+/**********************************************************************/
 /* send an exit message to another process (if trapping exits) or
    exit the other process */
 
@@ -1015,28 +1107,34 @@ BIF_RETTYPE register_2(BIF_ALIST_2)   /* (Atom,Pid)   */
      Process *rp;
      Port *rport;
      
-     if (is_not_atom(BIF_ARG_1))
-	 BIF_ERROR(BIF_P, BADARG);
+     if (is_not_atom(BIF_ARG_1)) {
+	 goto error;
+     }
+
      /* Check that we don't register undefined */
-     if (BIF_ARG_1 == am_undefined)
-	 BIF_ERROR(BIF_P, BADARG);
+     if (BIF_ARG_1 == am_undefined) {
+	 goto error;
+     }
 
      if ((rp = pid2proc(BIF_ARG_2)) != NULL) {
 	 if (rp->reg != NULL) {
-	     BIF_ERROR(BIF_P, BADARG);
+	     goto error;
 	 }
 	 if (register_process(BIF_P, BIF_ARG_1, rp) != rp) {
-	     BIF_ERROR(BIF_P, BADARG);
+	     goto error;
 	 }
      } else if ((rport = id2port(BIF_ARG_2)) != NULL) {
 	 if (rport->reg != NULL) {
-	     BIF_ERROR(BIF_P, BADARG);
+	     goto error;
 	 }
 	 if (register_port(BIF_ARG_1, rport) != rport) {
-	     BIF_ERROR(BIF_P, BADARG);
+	     goto error;
 	 }
+     } else {
+     error:
+	 BIF_ERROR(BIF_P, BADARG);
      }
-
+	 
      BIF_RET(am_true);
 }
 

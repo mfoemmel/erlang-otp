@@ -177,6 +177,11 @@ check_target_addr({Name, Ip, Udp, Timeout, RetryCount, TagList, Params,
 check_target_addr({Name, Ip, Udp, Timeout, RetryCount, TagList, Params}) ->
     check_target_addr({Name, Ip, Udp, Timeout, RetryCount, TagList,
                        Params, "dummy", [], 2048});
+%% Use dummy engine id if the old style is found
+check_target_addr({Name, Ip, Udp, Timeout, RetryCount, TagList, Params, 
+		   TMask, MMS}) ->
+    check_target_addr({Name, Ip, Udp, Timeout, RetryCount, TagList,
+                       Params, "dummy", TMask, MMS});
 check_target_addr(X) ->
     error({invalid_target_addr, X}).
 

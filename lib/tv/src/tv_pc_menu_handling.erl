@@ -138,7 +138,7 @@ exit_button(_ProcVars) ->
 
 
 help_button(ProcVars) ->
-    HelpFile = filename:join(code:priv_dir(tv), "../doc/index.html"),
+    HelpFile = filename:join([code:lib_dir(tv), "doc", "html", "index.html"]),
     tool_utils:open_help(gs:start([{kernel, true}]), HelpFile),
     ProcVars.
 
@@ -146,7 +146,7 @@ help_button(ProcVars) ->
 
 
 otp_help_button(ProcVars) ->
-    IndexFile = filename:join(code:root_dir(), "doc/index.html"),
+    IndexFile = filename:join([code:root_dir(), "doc", "index.html"]),
     tool_utils:open_help(gs:start([{kernel, true}]), IndexFile),
     ProcVars.
 
@@ -252,7 +252,7 @@ insert_object(ProcVars) ->
 			nodedown ->
 			    handle_error(nodedown);
 			no_table ->
-			    handle_error(node_down);
+			    handle_error(nodedown);
 			mnesia_not_started ->
 			    handle_error(mnesia_not_started);
 			{unexpected_error,Reason} ->
@@ -468,19 +468,6 @@ handle_error(mnesia_not_started) ->
 	    tv_utils:notify(errorwin, "TV Notification", ["Mnesia is stopped.",
 							  "We wish to reach all data",
 							  "But we never will."])
-    end,
-    gs:destroy(errorwin);
-handle_error(no_table) ->
-    gs:window(errorwin, gs:start(), []),
-    gs:config(errorwin, [beep]),
-    case get(error_msg_mode) of
-	normal ->
-	    tv_utils:notify(errorwin, "TV Notification", ["The table no longer exists!"]);
-	haiku ->
-	    Msg = ["A table that big?",
-		   "It might be very useful.",
-		   "But now it is gone."],
-	    tv_utils:notify(errorwin, "TV Notification", Msg)
     end,
     gs:destroy(errorwin);
 handle_error(nodedown) ->

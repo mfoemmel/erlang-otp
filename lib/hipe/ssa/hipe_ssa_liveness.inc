@@ -18,8 +18,8 @@
 %%
 -ifdef(LIVENESS_NEEDED).
 -export([ssa_liveness__analyze/1,
-	 ssa_liveness__livein/3,
-	 ssa_liveness__liveout/2]).
+	 ssa_liveness__livein/3]).
+%%	 ssa_liveness__liveout/2]).
 -endif.
 %% -ifdef(DEBUG_LIVENESS).
 %% -export([pp_liveness/1]).

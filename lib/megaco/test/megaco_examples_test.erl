@@ -59,7 +59,7 @@ purge_examples() ->
     case code:lib_dir(megaco) of
 	{error, Reason} ->
 	    {error, Reason};
-	Dir ->
+	_Dir ->
 	    [code:purge(M) || M <- example_modules()]
     end.
 
@@ -86,39 +86,40 @@ simple(Config) when list(Config) ->
     ?VERIFY(ok, megaco:start()),
     
     d("simple -> start mgc",[]),
-    ?APPLY(ProxyPid, fun()  -> megaco_simple_mgc:start() end),
+    ?APPLY(ProxyPid, fun() -> megaco_simple_mgc:start() end),
     receive
 	{res, _, {ok, MgcAll}} when list(MgcAll) ->
 	    MgcBad = [MgcRes || MgcRes <- MgcAll, element(1, MgcRes) /= ok],
 	    ?VERIFY([], MgcBad),
-	    MgcGood = MgcAll -- MgcBad,
-	    MgcRecHandles = [MgcRH || {ok, MgcPort, MgcRH} <- MgcGood],
-	    
+	    %% MgcGood = MgcAll -- MgcBad,
+	    %% MgcRecHandles = [MgcRH || {ok, _MgcPort, MgcRH} <- MgcGood],
+
 	    d("simple -> start mg",[]),
 	    ?APPLY(ProxyPid, fun() -> megaco_simple_mg:start() end),
 	    receive
 		{res, _, MgList} when list(MgList), length(MgList) == 4 ->
 		    d("simple -> received res: ~p",[MgList]),		    
-		    Verify = fun({MgMid, {TransId, Res}}) when TransId == 1 ->
-				     case Res of
-					 {ok, [AR]} when record(AR, 'ActionReply') ->
-					     case AR#'ActionReply'.commandReply of
-						 [{serviceChangeReply, SCR}] ->
-						     case SCR#'ServiceChangeReply'.serviceChangeResult of
-							 {serviceChangeResParms, MgcMid} when MgMid /= asn1_NOVALUE ->
-							     ok;
-							 Error ->
-							     ?ERROR(Error)
-						     end;
-						 Error ->
-						     ?ERROR(Error)
-					     end;
-					 Error ->
-					     ?ERROR(Error)
-				     end;
-				(Error) ->
-				     ?ERROR(Error)
-			     end,
+		    Verify = 
+			fun({_MgMid, {TransId, Res}}) when TransId == 1 ->
+				case Res of
+				    {ok, [AR]} when record(AR, 'ActionReply') ->
+					case AR#'ActionReply'.commandReply of
+					    [{serviceChangeReply, SCR}] ->
+						case SCR#'ServiceChangeReply'.serviceChangeResult of
+						    {serviceChangeResParms, MgcMid} when MgcMid /= asn1_NOVALUE ->
+							ok;
+						    Error ->
+							?ERROR(Error)
+						end;
+					    Error ->
+						?ERROR(Error)
+					end;
+				    Error ->
+					?ERROR(Error)
+				end;
+			   (Error) ->
+				?ERROR(Error)
+			end,
 		    lists:map(Verify, MgList);
 		Error ->
 		    ?ERROR(Error)
@@ -127,11 +128,11 @@ simple(Config) when list(Config) ->
 	    ?ERROR(Error)
     end,
     d("simple -> verify system_info(users)",[]),
-    ?VERIFY(_, megaco:system_info(users)),
+    users(),
     d("simple -> stop mgc",[]),
     ?VERIFY(5, length(megaco_simple_mgc:stop())),
     d("simple -> verify system_info(users)",[]),
-    ?VERIFY(_, megaco:system_info(users)),
+    users(),
     d("simple -> stop megaco",[]),
     ?VERIFY(ok, megaco:stop()),
     d("simple -> kill (exit) ProxyPid: ~p",[ProxyPid]),
@@ -139,7 +140,15 @@ simple(Config) when list(Config) ->
 
     ok.
 
-	 
+
+users() ->
+    case (catch megaco:system_info(users)) of
+	{'EXIT', _} = Error ->
+	    ?ERROR(Error);
+	Users ->
+	    ?LOG("Ok, ~p~n", [Users])
+    end.
+
 d(F,A) ->
     d(get(dbg),F,A).
 

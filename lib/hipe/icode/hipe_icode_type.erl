@@ -18,14 +18,16 @@
 
 -import(erl_types, [t_any/0, t_atom/1, t_atom/0, t_atom_vals/1,
 		    t_binary/0, t_bool/0, t_cons/0, t_improper_list/0,
-		    t_float/0, t_from_term/1, t_fun/0, t_fun/2,
-		    t_fun_args/1, t_inf/2, t_inf_lists/2, t_integer/0,
+		    t_float/0, t_from_term/1, t_fun/0, t_fun/1, t_fun/2,
+		    t_fun_args/1, t_fun_range/1,t_inf/2, t_inf_lists/2, 
+		    t_integer/0,
 		    t_integer/1, t_is_atom/1, t_is_any/1, t_is_binary/1,
 		    t_is_bool/1, t_is_char/1, t_is_cons/1,
 		    t_is_improper_list/1, t_is_equal/2, t_is_float/1,
 		    t_is_fun/1, t_is_integer/1, t_is_number/1,
 		    t_is_list/1, t_is_nil/1, t_is_port/1, t_is_pid/1,
-		    t_is_ref/1, t_is_subtype/2, t_is_tuple/1,
+		    t_is_ref/1, t_is_subtype/2, 
+		    t_is_tuple/1,
 		    t_is_none/1, t_limit/2, t_list/0, t_nil/0,
 		    t_number/0, t_number/1, t_number_vals/1, t_pid/0,
 		    t_port/0, t_ref/0, t_subtract/2, t_sup/2,
@@ -34,14 +36,15 @@
 
 
 cfg(Cfg, IcodeFun, Options) ->
-  OldReturnType = init_mfa_info(IcodeFun, Options),
+  OldSig = init_mfa_info(IcodeFun, Options),
   State = analyse(Cfg),
   pp(State, IcodeFun, Options, "Pre-specialization"),
   NewState = cfg_loop(State),
   pp(NewState, IcodeFun, Options, "Post-specialization"),
-  warn_on_type_errors(Cfg, State, NewState, IcodeFun, Options),
-  Fixpoint = update_mfa_info(NewState, IcodeFun, OldReturnType, Options),
 
+  warn_on_type_errors(Cfg, State, NewState, IcodeFun, Options),
+
+  Fixpoint = update_mfa_info(NewState, IcodeFun, OldSig, Options),
 
   case proplists:get_bool(inline_fp, Options) of
     true ->
@@ -201,8 +204,8 @@ do_call(I, Info)->
       enter_defines(I, DstType, Info);
     remote ->
       MFA = {M, F, A} = hipe_icode:call_fun(I),
-      DetsType = dets_lookup(MFA),
       ArgTypes = lookup_list(args(I), Info),
+      DetsType = find_dets_return(MFA, ArgTypes),
       BifType = erl_bif_types:type(M, F, A, ArgTypes),
       Type = t_inf(BifType, DetsType),
       %%io:format("The result of the call to ~p is ~w\n", 
@@ -222,7 +225,8 @@ do_call(I, Info)->
 	    end
 	end,
       MFA = hipe_icode:call_fun(I),
-      DetsType = dets_lookup(MFA),
+      ArgTypes = lookup_list(args(I), Info),
+      DetsType = find_dets_return(MFA, ArgTypes),
       Type = t_inf(AnnotatedType, DetsType),
       %%      io:format("The result of the call to ~w is ~s\n", 
       %%		[hipe_icode:call_fun(I), format_type(Type)]),
@@ -230,7 +234,6 @@ do_call(I, Info)->
       %%		[format_type(AnnotatedType)]),
       %%      io:format("Dets type: ~s\n", 
       %%		[format_type(DetsType)]),
-      
       enter_defines(I, Type, Info)
   end.
 
@@ -1084,11 +1087,11 @@ all_fixnum_values([Type|Left])->
 all_fixnum_values([]) ->
   true.
 
+
 primop_type(Op, Args)->
   case Op of
     {mkfun, MFA = {_M, _F, A}, _MagicNum, _Index} ->
-      ReturnType = dets_lookup(MFA),
-      t_fun(A - length(Args), ReturnType);
+      t_inf(t_fun(A-length(Args), t_any()), dets_lookup(MFA));
     _ ->
       case get_unsafe_arithop(Op) of
 	false ->
@@ -1339,6 +1342,15 @@ butlast([_]) ->
 butlast([H|T]) ->
   [H|butlast(T)].
 
+
+any_is_none([H|T]) ->
+  case t_is_none(H) of
+    true -> true;
+    false -> any_is_none(T)
+  end;
+any_is_none([]) ->
+  false.
+      
 %% _________________________________________________________________
 %%
 %% Handling the state
@@ -1353,10 +1365,10 @@ new_state(Cfg)->
   Info = case lists:keysearch(arg_type, 1, hipe_icode_cfg:info(Cfg)) of
 	   false ->
 	     Any = t_any(),
-	     lists:foldl(fun(X, Tree)->gb_trees:insert(X, Any, Tree)end,
+	     lists:foldl(fun(X, Tree) -> gb_trees:insert(X, Any, Tree) end,
 			 empty(), hipe_icode_cfg:params(Cfg));
 	   {value,{_, ArgType}}->
-	     case lists:any(fun(X) -> t_is_none(X)end, ArgType) of
+	     case lists:any(fun(X) -> t_is_none(X) end, ArgType) of
 	       true ->
 		 %% The call to this function is masked by an error.
 		 %% We cannot trust the arguments.
@@ -1596,7 +1608,7 @@ warn_on_args(IcodeFun, Cfg) ->
     false ->
       ok;
     {value,{_, ArgType}} when length(ArgType) > 0 ->
-      IsNone = fun(X) -> t_is_none(X)end,
+      IsNone = fun(X) -> t_is_none(X) end,
       case lists:all(IsNone, ArgType) of
 	true -> 
 	  warn(?WARN_NOT_CALLED,
@@ -1628,33 +1640,39 @@ warn_on_bb([], _State, _IcodeFun) ->
 
 warn_on_instr([I|Left], Info, IcodeFun) ->
   NewInfo = analyse_insn(I, Info),
-  case hipe_icode:type(I) of
-    call ->
-      case hipe_icode:call_fun(I) of
-	cons -> 
-	  warn_on_cons(hipe_icode:call_args(I), Info, IcodeFun);
-	{erlang, '++', 2} -> 
-	  'warn_on_++'(I, Info, IcodeFun);
+  case any_is_none(lookup_list(args(I), Info)) of
+    true -> 
+      %% Try to avoid follow-up warnings.
+      warn_on_instr(Left, NewInfo, IcodeFun); 
+    false ->
+      case hipe_icode:type(I) of
+	call ->
+	  case hipe_icode:call_fun(I) of
+	    cons -> 
+	      warn_on_cons(hipe_icode:call_args(I), Info, IcodeFun);
+	    {erlang, '++', 2} -> 
+	      'warn_on_++'(I, Info, IcodeFun);
 	    call_fun -> 
-	  warn_on_call_fun(hipe_icode:call_args(I), Info, IcodeFun);
-	_ -> 
-	  warn_on_call(I, Info, IcodeFun)
-      end;
-    enter ->
-      case hipe_icode:enter_fun(I) of
-	cons -> 
-	  warn_on_cons(hipe_icode:enter_args(I), Info, IcodeFun);
-	{erlang, '++', 2} -> 
-	  'warn_on_++'(I, Info, IcodeFun);
-	enter_fun -> 
-	  warn_on_call_fun(hipe_icode:enter_args(I), Info, IcodeFun);
-	_ -> 
-	  warn_on_enter(I, Info, IcodeFun)
-      end;
-    _ ->
+	      warn_on_call_fun(hipe_icode:call_args(I), Info, IcodeFun);
+	    _ -> 
+	      warn_on_call(I, Info, IcodeFun)
+	  end;
+	enter ->
+	  case hipe_icode:enter_fun(I) of
+	    cons -> 
+	      warn_on_cons(hipe_icode:enter_args(I), Info, IcodeFun);
+	    {erlang, '++', 2} -> 
+	      'warn_on_++'(I, Info, IcodeFun);
+	    enter_fun -> 
+	      warn_on_call_fun(hipe_icode:enter_args(I), Info, IcodeFun);
+	    _ -> 
+	      warn_on_enter(I, Info, IcodeFun)
+	  end;
+	_ ->
 	  ok
-  end,
-  warn_on_instr(Left, NewInfo, IcodeFun);
+      end,
+      warn_on_instr(Left, NewInfo, IcodeFun)
+  end;
 warn_on_instr([], _Info, _IcodeFun) ->
   ok.
 
@@ -1785,31 +1803,29 @@ warn_on_call_fun(Args0, Info, IcodeFun) ->
     false ->
       ok;
     true ->
-      W =
+      {Tag, W} =
 	case t_is_fun(Fun) of
 	  true ->
-	    case t_fun_args(Fun) of
-	      any ->
-		ok;
-	      _FunArgs->
-		io_lib:format("~w: Trying to use fun with type ~s "
-			      "with arguments ",
-			      [IcodeFun, format_type(Fun)]) ++
-		  pp_args(TailArgs) ++
-		  io_lib:format("!\n", [])
-	    end;
+	    {?WARN_FUN_APP, 
+	     io_lib:format("~w: Trying to use fun with type ~s "
+			   "with arguments ",
+			   [IcodeFun, format_type(Fun)]) ++
+	     pp_args(TailArgs) ++
+	     io_lib:format("!\n", [])};
 	  false ->
 	    case t_is_tuple(Fun) of
 	      true ->
-		io_lib:format("~w: Tuple used as fun will fail in "
-			      "native compiled code.\n", [IcodeFun]);
+		{?WARN_TUPLE_AS_FUN,  
+		 io_lib:format("~w: Tuple used as fun will fail in "
+			       "native compiled code.\n", [IcodeFun])};
 	      false ->
-		io_lib:format("~w: Fun application using type ~s "
-			      "instead of a fun!\n",
-			      [IcodeFun, format_type(Fun)])
+		{?WARN_FUN_APP,
+		 io_lib:format("~w: Fun application using type ~s "
+			       "instead of a fun!\n",
+			       [IcodeFun, format_type(Fun)])}
 	    end
 	end,
-      warn(?WARN_FUN_APP, W)
+      warn(Tag, W)
   end.
 
 pp_args(Args)->
@@ -1977,9 +1993,11 @@ warn_on_guard(I, IcodeFun, Args) ->
 print_call_warning(Fun, IcodeFun, Args) ->
   case hipe_icode_primops:fails(Fun) of
     true ->
-      W = io_lib:format("~w: Call to function ~w will fail "
+      Signature = find_signature(Fun, length(Args)),
+      W = io_lib:format("~w: Call to function ~w with signature ~s will fail "
 			"since the arguments are of type ~s!\n",
-			[IcodeFun, format_fun(Fun), pp_args(Args)]),
+			[IcodeFun, format_fun(Fun), t_to_string(Signature),
+			 pp_args(Args)]),
       warn(?WARN_FAILING_CALL, W);
     false ->
       W = io_lib:format("~w: Unsafe BEAM code! "
@@ -2170,11 +2188,9 @@ find_return_type_in_block([I], Info) ->
       case hipe_icode:enter_type(I) of
 	primop ->
 	  primop_type(Fun, ArgTypes);
-	local ->
-	  dets_lookup(Fun);
-	remote ->
+	_ ->
 	  {M, F, A} = Fun,
-	  DetsType = dets_lookup(Fun),
+	  DetsType = find_dets_return(Fun, ArgTypes),
 	  BifType = erl_bif_types:type(M, F, A, ArgTypes),
 	  t_inf(BifType, DetsType)
       end;
@@ -2188,17 +2204,19 @@ find_return_type_in_block([I|Left], Info) ->
 
 %% _________________________________________________________________
 %%
-%% Find the types of the arguments to a bif-call
+%% Find the types of the arguments to a call
 %%
 
 update_call_arguments(I, Info) ->
   Args = hipe_icode:call_args(I),
   ArgTypes = lookup_list(Args, Info),
-  case erl_bif_types:arg_types(hipe_icode:call_fun(I)) of
-    any ->
+  Signature = find_signature(hipe_icode:call_fun(I), length(Args)),
+  DetsArgTypes = t_fun_args(Signature),
+  case t_is_any(DetsArgTypes) of
+    true ->
       Info;
-    BifArgsTypes ->
-      NewArgTypes = t_inf_lists(ArgTypes, BifArgsTypes),
+    false ->
+      NewArgTypes = t_inf_lists(ArgTypes, DetsArgTypes),
       enter_list(Args, NewArgTypes, Info)
   end.
 
@@ -2219,16 +2237,28 @@ init_mfa_info(MFA, Options) ->
       none
   end.
 
-update_mfa_info(State, IcodeFun, OldReturnType, Options) ->
+update_mfa_info(State, IcodeFun, OldSig, Options) ->
   case proplists:get_value(icode_type, Options) of
     {dets, Dets} ->      
       Labels = hipe_icode_cfg:labels(state__cfg(State)),
       {ReturnType, _, _} = find_return_type(Labels, State),
-      case t_is_none(ReturnType) of
+      OldReturnType = t_fun_range(OldSig),
+      ArgTypes = t_fun_args(OldSig),
+      case t_is_any(ArgTypes) of
 	true ->
-	  dets:insert(Dets, {IcodeFun, t_any()});
+	  case t_is_none(ReturnType) of
+	    true ->
+	      dets:insert(Dets, {IcodeFun, t_any()});
+	    false ->
+	      dets:insert(Dets, {IcodeFun, ReturnType})
+	  end;
 	false ->
-	  dets:insert(Dets, {IcodeFun, ReturnType})
+	  case t_is_none(ReturnType) of
+	    true ->
+	      dets:insert(Dets, {IcodeFun, t_any(), ArgTypes});
+	    false ->
+	      dets:insert(Dets, {IcodeFun, ReturnType, ArgTypes})
+	  end
       end,
       dets:close(Dets),
       case proplists:get_value(use_callgraph, Options) of
@@ -2259,15 +2289,52 @@ update_mfa_info(State, IcodeFun, OldReturnType, Options) ->
       ok
   end.
 
+find_signature(MFA = {_, _, _}, _) -> find_signature_mfa(MFA);
+find_signature(Primop, Arity) -> find_signature_primop(Primop, Arity).
+
+find_signature_mfa(MFA = {M, F, A}) ->
+  DetsSig = dets_lookup(MFA),
+  BifRet = erl_bif_types:type(M, F, A),
+  case erl_bif_types:arg_types(M, F, A) of
+    any ->
+      t_inf(DetsSig, t_fun(BifRet));
+    BifArgs ->
+      t_inf(DetsSig, t_fun(BifArgs, BifRet))
+  end.
+
+find_signature_primop(Primop, Arity) ->
+  case erl_bif_types:arg_types(Primop) of
+    any ->
+      t_fun(Arity, hipe_icode_primops:type(Primop));
+    ArgTypes ->
+      t_fun(ArgTypes, hipe_icode_primops:type(Primop))
+  end.
+
+find_dets_return(MFA, ArgTypes) ->
+  DetsSig = dets_lookup(MFA),
+  DetsArgTypes = t_fun_args(DetsSig),
+  case t_is_any(DetsArgTypes) of
+    true ->
+      t_fun_range(DetsSig);
+    false ->
+      case any_is_none(t_inf_lists(ArgTypes, t_fun_args(DetsSig))) of
+	true -> t_none();
+	false -> t_fun_range(DetsSig)
+      end
+  end.
+
+
 dets_lookup(MFA) ->
   case get(hipe_mfa_dets) of
     none ->
-      t_any();
+      t_fun();
     {ok, Dets} ->
       case dets:lookup(Dets, MFA) of
 	[] ->
-	  t_any();
-	[{_, Type0}] ->
-	  Type0
+	  t_fun();
+	[{_, RetType}] ->
+	  t_fun(RetType);
+	[{_, RetType, ArgTypes}] ->
+	  t_fun(ArgTypes, RetType)
       end
   end.

@@ -26,8 +26,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 # Please keep this list sorted.
-MODULES=hipe_amd64 \
-	hipe_amd64_assemble \
+MODULES=hipe_amd64_assemble \
 	hipe_amd64_cfg \
 	hipe_amd64_defuse \
 	hipe_amd64_encode \
@@ -37,10 +36,10 @@ MODULES=hipe_amd64 \
 	hipe_amd64_postpass \
 	hipe_amd64_pp \
 	hipe_amd64_ra \
-	hipe_amd64_ra_dummy \
 	hipe_amd64_ra_finalise \
 	hipe_amd64_ra_ls_postconditions \
 	hipe_amd64_ra_ls \
+	hipe_amd64_ra_naive \
 	hipe_amd64_ra_postconditions \
 	hipe_amd64_ra_sse2_postconditions \
 	hipe_amd64_ra_x87_ls \
@@ -48,7 +47,6 @@ MODULES=hipe_amd64 \
 	hipe_amd64_x87 \
 	hipe_rtl_to_amd64
 
-HRL_FILES=hipe_amd64.hrl
 ERL_FILES=$(MODULES:%=%.erl)
 TARGET_FILES=$(MODULES:%=$(EBIN)/%.$(EMULATOR))
 DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
@@ -90,21 +88,22 @@ release_spec: opt
 release_docs_spec:
 
 # Please keep this list sorted.
-$(EBIN)/hipe_amd64.beam: hipe_amd64.hrl
-$(EBIN)/hipe_amd64_assemble.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl hipe_amd64.hrl ../../kernel/src/hipe_ext_format.hrl ../misc/hipe_sdi.hrl
-$(EBIN)/hipe_amd64_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl hipe_amd64.hrl
-$(EBIN)/hipe_amd64_defuse.beam: hipe_amd64.hrl
-$(EBIN)/hipe_amd64_frame.beam: ../main/hipe.hrl hipe_amd64.hrl
+$(EBIN)/hipe_amd64_assemble.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl ../x86/hipe_x86.hrl ../../kernel/src/hipe_ext_format.hrl ../misc/hipe_sdi.hrl ../x86/hipe_x86_assemble.erl
+$(EBIN)/hipe_amd64_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl ../x86/hipe_x86.hrl
+$(EBIN)/hipe_amd64_defuse.beam: ../x86/hipe_x86.hrl
+$(EBIN)/hipe_amd64_frame.beam: ../main/hipe.hrl ../x86/hipe_x86.hrl ../x86/hipe_x86_frame.erl
 $(EBIN)/hipe_amd64_liveness.beam: ../flow/liveness.inc
 $(EBIN)/hipe_amd64_main.beam: ../main/hipe.hrl
-$(EBIN)/hipe_amd64_postpass.beam: hipe_amd64.hrl
-$(EBIN)/hipe_amd64_pp.beam: hipe_amd64.hrl
+$(EBIN)/hipe_amd64_postpass.beam: ../x86/hipe_x86.hrl ../x86/hipe_x86_postpass.erl
+$(EBIN)/hipe_amd64_pp.beam: ../x86/hipe_x86.hrl ../x86/hipe_x86_pp.erl
 $(EBIN)/hipe_amd64_ra.beam: ../main/hipe.hrl
-$(EBIN)/hipe_amd64_ra_dummy.beam: ../main/hipe.hrl hipe_amd64.hrl
-$(EBIN)/hipe_amd64_ra_finalise.beam: hipe_amd64.hrl
+$(EBIN)/hipe_amd64_ra_dummy.beam: ../main/hipe.hrl ../x86/hipe_x86.hrl
+$(EBIN)/hipe_amd64_ra_finalise.beam: ../x86/hipe_x86.hrl
 $(EBIN)/hipe_amd64_ra_ls.beam: ../main/hipe.hrl
-$(EBIN)/hipe_amd64_ra_ls_postconditions.beam: ../main/hipe.hrl hipe_amd64.hrl
+$(EBIN)/hipe_amd64_ra_ls_postconditions.beam: ../main/hipe.hrl ../x86/hipe_x86.hrl
+$(EBIN)/hipe_amd64_ra_naive.beam: ../main/hipe.hrl ../x86/hipe_x86.hrl ../x86/hipe_x86_ra_naive.erl
 $(EBIN)/hipe_amd64_ra_postconditions.beam: ../main/hipe.hrl
 $(EBIN)/hipe_amd64_ra_sse2_postconditions.beam: ../main/hipe.hrl
 $(EBIN)/hipe_amd64_registers.beam: ../rtl/hipe_literals.hrl
-$(EBIN)/hipe_rtl_to_amd64.beam: hipe_amd64.hrl
+$(EBIN)/hipe_amd64_x87.beam: ../x86/hipe_x86_x87.erl
+$(EBIN)/hipe_rtl_to_amd64.beam: ../x86/hipe_x86.hrl

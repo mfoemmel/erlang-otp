@@ -337,9 +337,10 @@ exit_cmd(Pid,_Reason, State) ->
 	    B = State#pman_shell.buffer,
 	    B#buffer.converter!{raw,[{died, Pid}]},
 
-	    lists:foreach({gse,disable}, ['Options',
-					 'Kill',
-					 'LinksMenu']),
+	    lists:foreach(fun(X) -> gse:disable(X) end,
+			  ['Options',
+			   'Kill',
+			   'LinksMenu']),
 	    State#pman_shell{pid=undefined}
     end.
 
@@ -475,14 +476,15 @@ execute_cmd(Cmd,Shell_data) ->
 	    end,
 	    Shell_data;
 	'Help' ->
-	    HelpFile = filename:join(code:priv_dir(pman), "../doc/index.html"),
+	    HelpFile = filename:join([code:lib_dir(pman), "doc", "html", "index.html"]),
 	    tool_utils:open_help(gs:start([{kernel, true}]), HelpFile),
 	    Shell_data;
-	'Kill'when pid(Shell)  ->		
+	'Kill' when pid(Shell)  ->		
 	    exit(Buffer#buffer.converter,killed),
             exit(Buffer#buffer.buffer,killed),
-	    lists:foreach({gse,disable},['TraceMenu',
-					 'Clear']),
+	    lists:foreach(fun(X) -> gse:disable(X) end,
+			  ['TraceMenu',
+			   'Clear']),
 	    catch exit(Shell, kill),
 	    Shell_data#pman_shell{pid = undefined};
 	'All Links' when pid(Shell)  ->

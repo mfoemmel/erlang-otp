@@ -10,8 +10,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2004/06/22 10:14:02 $
-%%              $Revision: 1.7 $
+%%              $Date: 2005/01/26 10:05:40 $
+%%              $Revision: 1.8 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -282,7 +282,6 @@ inc_sp(Env, Val) ->
 	false -> Env1;
 	true -> %% SP is decreased, forget pos above.
 	  %% XXX: Fix if stack direction is changed.
-
 	  Env1#env{stack=
 		   lists:foldl(fun delete/2,env__stack(Env1), 
 			       [Pos   || Pos <- lists:seq(env__sp(Env1),env__sp(Env),4),

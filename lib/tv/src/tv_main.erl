@@ -334,17 +334,6 @@ handle_error(mnesia_not_started, _Node, _Table) ->
 						     "We wish to reach all data",
 						     "But we never will."])
     end;
-handle_error(no_table, _Node, _Table) ->
-    gs:config(win, [beep]),
-    case get(error_msg_mode) of
-	normal ->
-	    tv_utils:notify(win, "TV Notification", ["The table no longer exists!"]);
-	haiku ->
-	    Msg = ["A table that big?",
-		   "It might be very useful.",
-		   "But now it is gone."],
-	    tv_utils:notify(win, "TV Notification", Msg)
-    end;
 handle_error(nodedown, _Node, _Table) ->
     gs:config(win, [beep]),
     case get(error_msg_mode) of
@@ -646,14 +635,14 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 	    
 
 	{gs, _Id, click, help_button, _Args} ->
-	    HelpFile = filename:join(code:priv_dir(tv), "../doc/index.html"),
+	    HelpFile = filename:join([code:lib_dir(tv), "doc", "html", "index.html"]),
 	    tool_utils:open_help(gs:start([{kernel, true}]), HelpFile),
 	    loop(KindOfTable,CurrNode,MarkedCell,GridLines,WinSize,Tables,Shortcuts,
 		 UnreadHidden,SysTabHidden,SortKey,Children);
 
 
 	{gs, _Id, click, otp_help_button, _Args} ->
-	    IndexFile = filename:join(code:root_dir(), "doc/index.html"),
+	    IndexFile = filename:join([code:root_dir(), "doc", "index.html"]),
 	    tool_utils:open_help(gs:start([{kernel, true}]), IndexFile),
 	    loop(KindOfTable,CurrNode,MarkedCell,GridLines,WinSize,Tables,Shortcuts,
 		 UnreadHidden,SysTabHidden,SortKey,Children);
@@ -1021,7 +1010,7 @@ handle_keypress(show_info,KindOfTable,CurrNode,MarkedCell,GridLines,
 
 handle_keypress(help_button,KindOfTable,CurrNode,MarkedCell,GridLines,
 		WinSize,Tables,Shortcuts,UnreadHidden,SysTabHidden,SortKey,Children) ->
-    HelpFile = filename:join(code:priv_dir(tv), "../doc/index.html"),
+    HelpFile = filename:join([code:lib_dir(tv), "doc", "html", "index.html"]),
     tool_utils:open_help(gs:start([{kernel, true}]), HelpFile),
     loop(KindOfTable,CurrNode,MarkedCell,GridLines,WinSize,Tables,Shortcuts,
 	 UnreadHidden,SysTabHidden,SortKey,Children);
@@ -1506,8 +1495,6 @@ get_col_widths(_N, [], _AvailWidth, _OrigWidth) ->
 
 
 
-create_header_labels([], []) ->
-    done;
 create_header_labels(ColWidths, Text) ->
     create_header_labels(ColWidths, Text, 1, ?GRID_XPOS).
 
@@ -1667,8 +1654,6 @@ create_menus() ->
 
 
 
-create_menulist([], _Menu) ->
-    [];
 create_menulist(List, Menu) ->
     MaxLength = get_length_of_longest_menu_text(List, 0),
     create_menulist(List, Menu, MaxLength).

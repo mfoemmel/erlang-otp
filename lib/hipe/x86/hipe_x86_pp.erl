@@ -2,9 +2,15 @@
 %%% $Id$
 %%% x86 pretty-printer
 
--module(hipe_x86_pp).
+-ifndef(HIPE_X86_PP).
+-define(HIPE_X86_PP,        hipe_x86_pp).
+-define(HIPE_X86_REGISTERS, hipe_x86_registers).
+-define(MOVE64, #move64{} -> exit({?MODULE, no_move64_on_x86})).	   
+-endif.
+
+-module(?HIPE_X86_PP).
 -export([pp/1, pp/2, pp_insn/1]).
--include("hipe_x86.hrl").
+-include("../x86/hipe_x86.hrl").
 
 pp(Defun) ->
   pp(standard_io, Defun).
@@ -95,6 +101,7 @@ pp_insn(Dev, I, Pre) ->
       io:format(Dev, ", ", []),
       pp_dst(Dev, Dst),
       io:format(Dev, "\n", []);
+    ?MOVE64;
     #movsx{src=Src, dst=Dst} ->
       io:format(Dev, "\tmovsx ", []),
       pp_src(Dev, Src),
@@ -211,7 +218,7 @@ alu_op_name(Op) -> Op.
 cc_name(Cc) -> Cc.
 
 pp_hard_reg(Dev, Reg) ->
-  io:format(Dev, "~s", [hipe_x86_registers:reg_name(Reg)]).
+  io:format(Dev, "~s", [?HIPE_X86_REGISTERS:reg_name(Reg)]).
 
 type_tag('tagged') -> "t";
 type_tag('untagged') -> "u";
@@ -223,7 +230,7 @@ pp_temp(Dev, #x86_temp{reg=Reg, type=Type}) ->
       Tag = type_tag(Type),
       io:format(Dev, "~s~w", [Tag, Reg]);
     _ ->
-      case hipe_x86_registers:is_precoloured(Reg) of
+      case ?HIPE_X86_REGISTERS:is_precoloured(Reg) of
 	true ->
 	  pp_hard_reg(Dev, Reg);
 	false ->

@@ -1,5 +1,5 @@
 %%% $Id$
-%%% representation of 2-address pseudo-x86 code
+%%% representation of 2-address pseudo-amd64 code
 
 -module(hipe_x86).
 
@@ -28,7 +28,7 @@
 	 mem_type/1,
 
 	 mk_fpreg/1,
-	 mk_fpreg/2,
+ 	 mk_fpreg/2,
 	 %% is_fpreg/1,
 	 %% fpreg_is_pseudo/1,
 	 %% fpreg_reg/1,
@@ -77,12 +77,12 @@
 	 dec_dst/1,
 
 	 mk_fmove/2,
-	 %% is_fmove/1,
-	 %% fmove_src/1,
-	 %% fmove_dst/1,
+	 is_fmove/1,
+	 fmove_src/1,
+	 fmove_dst/1,
 
 	 mk_fp_unop/2,
-	 %% is_fp_unop/1,
+ 	 %% is_fp_unop/1,
 	 fp_unop_arg/1,
 	 fp_unop_op/1,
 
@@ -129,6 +129,10 @@
 	 is_move/1,
 	 move_src/1,
 	 move_dst/1,
+	 mk_move64/2,
+	 %% is_move64/1,
+	 move64_src/1,
+	 move64_dst/1,
 
 	 mk_movsx/2,
 	 %% is_movsx/1,
@@ -144,7 +148,7 @@
 	 %% is_nop/1,
 
 	 mk_pseudo_call/4,
-	 is_pseudo_call/1,
+ 	 is_pseudo_call/1,
 	 pseudo_call_fun/1,
 	 pseudo_call_sdesc/1,
 	 pseudo_call_contlab/1,
@@ -300,9 +304,9 @@ mk_comment(Term) -> #comment{term=Term}.
 dec_dst(#dec{dst=Dst}) -> Dst.
 
 mk_fmove(Src, Dst) -> #fmove{src=Src, dst=Dst}.
-%% is_fmove(F) -> is_insn_type(F, fmove).
-%% fmove_src(#fmove{src=Src}) -> Src.
-%% fmove_dst(#fmove{dst=Dst}) -> Dst.
+is_fmove(F) -> is_insn_type(F, fmove).
+fmove_src(#fmove{src=Src}) -> Src.
+fmove_dst(#fmove{dst=Dst}) -> Dst.
 
 mk_fp_unop(Op, Arg) -> #fp_unop{op=Op, arg=Arg}.
 %% is_fp_unop(F) -> is_insn_type(F, fp_unop).
@@ -355,6 +359,11 @@ mk_move(Src, Dst) -> #move{src=Src, dst=Dst}.
 is_move(Insn) -> is_insn_type(Insn, move).
 move_src(#move{src=Src}) -> Src.
 move_dst(#move{dst=Dst}) -> Dst.
+
+mk_move64(Imm, Dst) -> #move64{imm=Imm, dst=Dst}.
+%% is_move64(Insn) -> is_insn_type(Insn, move64).
+move64_src(#move64{imm=Imm}) -> Imm.
+move64_dst(#move64{dst=Dst}) -> Dst.
 
 mk_movsx(Src, Dst) -> #movsx{src=Src, dst=Dst}.
 %% is_movsx(Insn) -> is_insn_type(Insn, movsx).

@@ -18,12 +18,12 @@ uses(Insn) -> hipe_amd64_defuse:insn_use(Insn).
 defines(Insn) -> hipe_amd64_defuse:insn_def(Insn).
 liveout_no_succ() ->
     ordsets:from_list(lists:map(fun({Reg,Type}) ->
-				    hipe_amd64:mk_temp(Reg,Type)
+				    hipe_x86:mk_temp(Reg,Type)
 				end,
 				hipe_amd64_registers:live_at_return())).
 
 -ifdef(DEBUG_LIVENESS).
 cfg_labels(CFG) -> hipe_amd64_cfg:labels(CFG).
 cfg_bb_add(CFG,L,NewBB) -> hipe_amd64_cfg:bb_add(CFG,L,NewBB).
-mk_comment(Text) -> hipe_amd64:mk_comment(Text).
+mk_comment(Text) -> hipe_x86:mk_comment(Text).
 -endif.

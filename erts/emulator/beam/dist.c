@@ -600,6 +600,7 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 #endif
     ErlOffHeap off_heap;
     Eterm* hp;
+    Eterm* hp_end;
     Sint type;
     Eterm token;
     Eterm token_size;
@@ -842,6 +843,7 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	        hp = HAlloc(rp, i + token_size);
 #else
 	    hp = HAlloc(rp, i + token_size);
+	    hp_end = hp + i + token_size;
 #endif
 	    message = erts_from_external_format(dep, &hp, &t, &MSO(rp));
 	    if (is_non_value(message)) {
@@ -854,6 +856,9 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 		token = tuple[5];
 		token = copy_struct(token, token_size, &hp, &MSO(rp));
 	    }
+#ifndef SHARED_HEAP
+	    HRelease(rp,hp_end,hp);
+#endif
 	    queue_message_tt(rp, NULL, message, token);
 	}
 	break;
@@ -903,10 +908,12 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
                 rp->hend = NULL;
                 rp->heap_sz = 0;
             }
-	    else
+	    else {
 	        hp = HAlloc(rp, i + token_size);
+	    }
 #else
 	    hp = HAlloc(rp, i + token_size);
+	    hp_end = hp + i + token_size;
 #endif
 	    message = erts_from_external_format(dep, &hp, &t, &MSO(rp));
 	    if (is_non_value(message)) {
@@ -919,6 +926,9 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 		token = tuple[4];
 		token = copy_struct(token, token_size, &hp, &MSO(rp));
 	    }
+#ifndef SHARED_HEAP
+	    HRelease(rp,hp_end,hp);
+#endif
 	    queue_message_tt(rp, NULL, message, token);
 	}
 	break;

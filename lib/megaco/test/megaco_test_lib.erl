@@ -43,7 +43,7 @@ tickets(Cases, Config) when list(Cases) ->
 tickets(Mod, Config) when atom(Mod) ->
     Res = tickets(Mod, tickets, Config),
     Res;
-tickets(Bad, Config) ->
+tickets(Bad, _Config) ->
     [{badarg, Bad, ok}].
 
 tickets(Mod, Func, Config) ->
@@ -153,7 +153,7 @@ t(Mod, Config) when atom(Mod) ->
     Res;
 t(Cases, Config) when list(Cases) ->
     [t(Case, Config) || Case <- Cases];
-t(Bad, Config) ->
+t(Bad, _Config) ->
     [{badarg, Bad, ok}].
 
 eval(Mod, Fun, Config) ->
@@ -174,49 +174,38 @@ eval(Mod, Fun, Config) ->
 -record('REASON', {mod, line, desc}).
 
 wait_for_evaluator(Pid, Mod, Fun, Config, Errors) ->
-%     io:format("wait_for_evaluator -> entry with"
-% 	      "~n   Pid:    ~p"
-% 	      "~n   Mod:    ~p"
-% 	      "~n   Fun:    ~p"
-% 	      "~n   Config: ~p"
-% 	      "~n   Errors: ~p"
-% 	      "~n", [Pid, Mod, Fun, Config, Errors]),
     TestCase = {?MODULE, Mod, Fun},
     Label = lists:concat(["TEST CASE: ", Fun]),
     receive
 	{done, Pid, ok} when Errors == [] ->
-% 	    io:format("wait_for_evaluator -> "
-% 		      "done: ~p ok with no errors~n",[Pid]),
 	    megaco:report_event(40, Mod, ?MODULE, Label ++ " ok",
 				[TestCase, Config]),
 	    {ok, {Mod, Fun}, Errors};
+	{done, Pid, ok} ->
+	    megaco:report_event(40, Mod, ?MODULE, Label ++ " failed",
+				[TestCase, Config]),
+	    {failed, {Mod, Fun}, Errors};
 	{done, Pid, {ok, _}} when Errors == [] ->
-% 	    io:format("wait_for_evaluator -> "
-% 		      "done: ~p when ok with no errors~n",[Pid]),
 	    megaco:report_event(40, Mod, ?MODULE, Label ++ " ok",
 				[TestCase, Config]),
 	    {ok, {Mod, Fun}, Errors};
+	{done, Pid, {ok, _}} ->
+	    megaco:report_event(40, Mod, ?MODULE, Label ++ " failed",
+				[TestCase, Config]),
+	    {failed, {Mod, Fun}, Errors};
 	{done, Pid, Fail} ->
-% 	    io:format("wait_for_evaluator -> "
-% 		      "done: ~p when ~p~n",[Pid, Fail]),
 	    megaco:report_event(20, Mod, ?MODULE, Label ++ " failed",
 				[TestCase, Config, {return, Fail}, Errors]),
 	    {failed, {Mod,Fun}, Fail};
 	{'EXIT', Pid, {skipped, Reason}} -> 
-% 	    io:format("wait_for_evaluator -> "
-% 		      "exit: ~p when skipped~n",[Pid]),
 	    megaco:report_event(20, Mod, ?MODULE, Label ++ " skipped",
 				[TestCase, Config, {skipped, Reason}]),
 	    {skipped, {Mod, Fun}, Errors};
 	{'EXIT', Pid, Reason} -> 
-% 	    io:format("wait_for_evaluator -> "
-% 		      "exit: ~p when ~p~n",[Pid, Reason]),
 	    megaco:report_event(20, Mod, ?MODULE, Label ++ " crashed",
 				[TestCase, Config, {'EXIT', Reason}]),
 	    {crashed, {Mod, Fun}, [{'EXIT', Reason} | Errors]};
 	{fail, Pid, Reason} ->
-% 	    io:format("wait_for_evaluator -> "
-% 		      "fail: ~p when ~p~n",[Pid, Reason]),
 	    wait_for_evaluator(Pid, Mod, Fun, Config, Errors ++ [Reason])
     end.
 
@@ -380,11 +369,11 @@ proxy_loop(OwnId, Controller) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Test server callbacks
-init_per_testcase(Case, Config) ->
+init_per_testcase(_Case, Config) ->
 %     io:format("init_per_testcase -> entry with"
-% 	      "~n   Case:   ~p"
+% 	      "~n   _Case:  ~p"
 % 	      "~n   Config: ~p"
-% 	      "~n", [Case, Config]),
+% 	      "~n", [_Case, Config]),
     Pid = group_leader(),
     Name = megaco_global_logger,
     case global:whereis_name(Name) of
@@ -403,11 +392,11 @@ init_per_testcase(Case, Config) ->
     end,
     set_kill_timer(Config).
 
-fin_per_testcase(Case, Config) ->
+fin_per_testcase(_Case, Config) ->
 %     io:format("fin_per_testcase -> entry with"
-% 	      "~n   Case:             ~p"
-% 	      "~n   Config:           ~p"
-% 	      "~n", [Case, Config]),
+% 	      "~n   _Case:  ~p"
+% 	      "~n   Config: ~p"
+% 	      "~n", [_Case, Config]),
     Name = megaco_global_logger,
     case global:whereis_name(Name) of
 	undefined ->
@@ -485,14 +474,15 @@ do_prepare_test_case([init | Actions], Nodes, Config, File, Line) ->
     megaco_test_lib:flush(),
     do_prepare_test_case(Actions, Nodes, Config, File, Line);
 do_prepare_test_case([{stop_app, App} | Actions], Nodes, Config, File, Line) ->
-    Res = rpc:multicall(Nodes, application, stop, [App]),
+    _Res = rpc:multicall(Nodes, application, stop, [App]),
     do_prepare_test_case(Actions, Nodes, Config, File, Line);
-do_prepare_test_case([], Nodes, Config, File, Line) ->
+do_prepare_test_case([], Nodes, _Config, _File, _Line) ->
     Nodes.
 
-pick_n_nodes(all, AllNodes, File, Line) ->
+pick_n_nodes(all, AllNodes, _File, _Line) ->
     AllNodes;
-pick_n_nodes(N, AllNodes, File, Line) when integer(N), length(AllNodes) >= N ->
+pick_n_nodes(N, AllNodes, _File, _Line) 
+  when integer(N), length(AllNodes) >= N ->
     AllNodes -- lists:nthtail(N, AllNodes);
 pick_n_nodes(N, AllNodes, File, Line) ->
     fatal_skip({too_few_nodes, N, AllNodes}, File, Line).
@@ -533,7 +523,6 @@ start_nodes([Node | Nodes], File, Line) ->
 	    start_nodes(Nodes, File, Line);
 	pang ->
 	    [Name, Host] = node_to_name_and_host(Node),
-	    Args = [],
 	    case slave:start_link(Host, Name) of
 		{ok, NewNode} when NewNode == Node ->
 		    Path = code:get_path(),
@@ -547,7 +536,7 @@ start_nodes([Node | Nodes], File, Line) ->
 		    fatal_skip({cannot_start_node, Node, Other}, File, Line)
 	    end
     end;
-start_nodes([], File, Line) ->
+start_nodes([], _File, _Line) ->
     ok.
 
 p(F,A) ->

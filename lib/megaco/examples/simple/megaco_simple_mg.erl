@@ -235,7 +235,7 @@ start_udp(MgcHost, MgcPort, RecHandle) ->
 	    case megaco_udp:open(SupPid, Options) of
 		{ok, Handle, ControlPid} ->
 		    d("start_udp -> port opened: ~p", [ControlPid]),
-		    Socket = megaco_udp:socket(Handle),
+		    %% Socket = megaco_udp:socket(Handle),
 		    %% MgPort = inet:port(Socket), BUGBUG BUGBUG
 		    MgcMid = preliminary_mid,
 		    SendHandle = megaco_udp:create_send_handle(Handle, 

@@ -251,7 +251,7 @@ opt(_DB,Id,Opt,ElseVal) ->
 %% Returns: list of {Key,Val}
 %%----------------------------------------------------------------------
 lookup_opts(_DB,Id) ->
-    lists:sort(lists:map({erlang,list_to_tuple},
+    lists:sort(lists:map(fun(L) -> list_to_tuple(L) end,
 			 ets:match(get(options),{{Id,'$1'},'$2'}))).
 
 default_container_opts(_DB,Id,ChildType) ->

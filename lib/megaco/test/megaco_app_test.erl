@@ -94,7 +94,7 @@ fields(Config) when list(Config) ->
 	    fail({missing_fields, Missing})
     end.
 
-check_fields([], AppFile, Missing) ->
+check_fields([], _AppFile, Missing) ->
     Missing;
 check_fields([Field|Fields], AppFile, Missing) ->
     check_fields(Fields, AppFile, check_field(Field, AppFile, Missing)).
@@ -141,7 +141,7 @@ get_ebin_mods(App) ->
     [list_to_atom(lists:reverse(Name)) || [$m,$a,$e,$b,$.|Name] <- Files1].
     
 
-missing_modules([], Ebins, Missing) ->
+missing_modules([], _Ebins, Missing) ->
     Missing;
 missing_modules([Mod|Mods], Ebins, Missing) ->
     case lists:member(Mod, Ebins) of
@@ -153,7 +153,7 @@ missing_modules([Mod|Mods], Ebins, Missing) ->
     end.
 
 
-extra_modules(Mods, [], Extra) ->
+extra_modules(_Mods, [], Extra) ->
     Extra;
 extra_modules(Mods, [Mod|Ebins], Extra) ->
     case lists:member(Mod, Mods) of

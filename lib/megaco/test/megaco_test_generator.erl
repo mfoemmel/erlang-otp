@@ -171,7 +171,7 @@ loop(#state{parent = Parent} = State) ->
 	    loop(State#state{handler = Handler});
 
 	{tcp_result, Pid, Res} when State#state.handler == Pid ->
-	    d("loop -> received tcp_reply"),
+	    d("loop -> received tcp result: ~n~p", [Res]),
 	    Parent ! {tcp_reply, self(), Res},
 	    loop(State#state{handler = undefined});
 
@@ -328,9 +328,9 @@ do_tcp({send, Desc, Msg}, #tcp{connection = Sock,
     p("send ~s message", [Desc]),
     case (catch Encode(Msg)) of
 	{ok, Bin} ->
-	    d("send -> message encoded, now add tpkt header"),
+	    d("send -> message encoded [~w], now add tpkt header", [sz(Bin)]),
 	    NewBin = add_tpkt_header(Bin),
-	    d("send -> tpkt header added, now send"),
+	    d("send -> tpkt header added [~w], now send", [sz(NewBin)]),
 	    case (catch gen_tcp:send(Sock, NewBin)) of
 		ok ->
 		    d("send -> message sent"),
@@ -559,11 +559,12 @@ handle_megaco1([Instruction|Instructions], State0) ->
 	    handle_megaco1(Instructions, State);
 	{error, State} when record(State, megaco) ->
 	    p("handle_megaco1 -> error"), 
-	    Reply = {error, lists:reverse(State#megaco.result)},
+	    Reply = {error, {{instruction_failed, Instructions},
+			     lists:reverse(State#megaco.result)}},
 	    {State, Reply};
 	Error ->
 	    p("handle_megaco1 -> Error: ~n~p", [Error]),
-	    Reply = {error, lists:reverse(State0#megaco.result)},
+	    Reply = {error, {Error, lists:reverse(State0#megaco.result)}},
 	    {State0, Reply}
     end.
 
@@ -579,11 +580,6 @@ do_megaco({megaco_trace, disable}, State) ->
 do_megaco({megaco_trace, Level}, State) ->
     p("megaco trace: disable"),
     megaco:enable_trace(Level, io),
-    State;
-
-do_megaco({sleep, To}, State) ->
-    p("sleep ~p", [To]),
-    sleep(To),
     State;
 
 do_megaco(megaco_start, State) ->
@@ -642,7 +638,7 @@ do_megaco({listen, Opts0},
 	ok ->
 	    State;
 	Else ->
-	    throw({error, {failed_starting_tcp_listen, Else}})
+	    megaco_error({listen, Opts0}, {failed_starting_tcp_listen, Else})
     end;
 do_megaco({listen, Opts0},
 	  #megaco{recv_handle = RH, port = Port, transport_sup = Pid} = State) 
@@ -653,7 +649,7 @@ do_megaco({listen, Opts0},
 	{ok, _SH, _CtrlPid} ->
 	    State;
 	Else ->
-	    throw({error, {failed_starting_udp_open, Else}})
+	    megaco_error({listen, Opts0}, {failed_starting_udp_open, Else})
     end;
 
 do_megaco({connect, Host, Opts0}, 
@@ -832,7 +828,11 @@ do_megaco({megaco_callback, Verifiers}, State) ->
 do_megaco({sleep, To}, State) ->
     p("sleep ~p", [To]),
     sleep(To),
-    State.
+    State;
+
+do_megaco(Instr, _State) ->
+    megaco_error(Instr, invalid_instruction).
+
 
 %% This is used when a number of callback's is expected, but where
 %% the specific order is unknown.
@@ -928,28 +928,38 @@ megaco_connect(RH, PrelMid, SH, ControlPid, Parent) ->
     exit(normal).
 
 megaco_cleanup(#megaco{mid = Mid}) ->
-    Close = 
-	fun(CH) ->
-		d("megaco_cleanup:fun -> entry with"
-		  "~n   CH: ~p", [CH]),
-		Reason     = {stopped_by_user,self()},
-		Pid        = megaco:conn_info(CH, control_pid),
-		SendMod    = megaco:conn_info(CH, send_mod),
-		SendHandle = megaco:conn_info(CH, send_handle),
-		d("megaco_cleanup:fun -> disconnect"),
-		megaco:disconnect(CH, Reason),
-		d("megaco_cleanup:fun -> disconnected, now cancel"),
-		megaco:cancel(CH, Reason),
-		d("megaco_cleanup:fun -> canceled, now close"),
-		case SendMod of
-		    megaco_tcp -> megaco_tcp:close(SendHandle);
-		    megaco_udp -> megaco_udp:close(SendHandle);
-		    SendMod    -> exit(Pid, Reason)
-		end
-	end,
+    Close = fun(CH) -> do_megaco_cleanup(CH) end,
     Conns = megaco:user_info(Mid, connections),
     lists:foreach(Close, Conns).
 
+do_megaco_cleanup(CH) ->
+    case (catch do_megaco_cleanup2(CH)) of
+	ok ->
+	    ok;
+	{'EXIT', {no_such_connection, _}} ->
+	    ok;
+	{'EXIT', Reason} ->
+	    exit(Reason)
+    end.
+
+do_megaco_cleanup2(CH) ->
+    d("do_megaco_cleanup2 -> entry with"
+      "~n   CH: ~p", [CH]),
+    Reason     = {stopped_by_user,self()},
+    Pid        = megaco:conn_info(CH, control_pid),
+    SendMod    = megaco:conn_info(CH, send_mod),
+    SendHandle = megaco:conn_info(CH, send_handle),
+    d("do_megaco_cleanup2 -> disconnect"),
+    megaco:disconnect(CH, Reason),
+    d("do_megaco_cleanup2 -> disconnected, now cancel"),
+    megaco:cancel(CH, Reason),
+    d("do_megaco_cleanup2 -> canceled, now close"),
+    case SendMod of
+	megaco_tcp -> megaco_tcp:close(SendHandle);
+	megaco_udp -> megaco_udp:close(SendHandle);
+	SendMod    -> exit(Pid, Reason)
+    end,
+    ok.
 
 parse_megaco([], RevInstrs) ->
     {ok, lists:reverse(RevInstrs)};
@@ -1210,17 +1220,23 @@ close(undefined) ->
 close(Sock) ->
     (catch gen_tcp:close(Sock)).
 
-add_tpkt_header(Data) when binary(Data) ->
-    L = size(Data) + 4,
-    [3, 0, ((L) bsr 8) band 16#ff, (L) band 16#ff ,Data];
+add_tpkt_header(Bin) when binary(Bin) ->
+    L = size(Bin) + 4,
+    SZ1 = ((L) bsr 8) band 16#ff,
+    SZ2 = (L) band 16#ff,
+    <<3, 0, SZ1, SZ2, Bin/binary>>;
 add_tpkt_header(IOList) when list(IOList) ->
-    Binary = list_to_binary(IOList),
-    L = size(Binary) + 4,
-    [3, 0, ((L) bsr 8) band 16#ff, (L) band 16#ff , Binary].
+    add_tpkt_header(list_to_binary(IOList)).
 
 sleep(X) when integer(X), X =< 0 -> ok;
 sleep(X) -> receive after X -> ok end.
 
+sz(Bin) when binary(Bin) ->
+    size(Bin);
+sz(L) when list(L) ->
+    lists:length(L);
+sz(_) ->
+    -1.
 
 %%% ----------------------------------------------------------------
 

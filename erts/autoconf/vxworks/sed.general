@@ -30,6 +30,8 @@ s|@ETHR_LIBS@||
 s|@ETHR_LIB_NAME@||
 s|@ETHR_DEFS@||
 s|@ETHR_THR_LIB_BASE@||
+s|@EMU_THR_DEFS@||
+s|@EMU_THR_LIBS@||
 s|@cc_root@|/clearcase/otp/|
 # Define VxWorks even though cross-compiling. 
 s|@HCFLAGS@|-DVXWORKS|
@@ -40,6 +42,9 @@ s|@ENABLE_ALLOC_TYPE_VARS@||
 s|@HIPE_ENABLED@||
 s|@PERFCTR_PATH@||
 s|@USE_PERFCTR@||
+
+# m4
+s|@OPSYS@|noopsys|
 
 # Conditional inclusion of applications
 s|@HIPE_APP@||
@@ -68,7 +73,9 @@ s|@EMU_LIBOBJS@||
 # General CFLAGS
 s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R -DENABLE_ELIB_MALLOC -DELIB_HEAP_USER -DELIB_SORTED_BLOCKS -DWORDS_BIGENDIAN -DELIB_DONT_INITIALIZE|g
 s|@WFLAGS@||
-s|@HIPE_ENABLED@||
+
+# Thread flags for eidefs.mk (erl_interface)
+s|@EI_THREADS@|false|
 
 # Make java code compile although we don't test it on VxWorks (no license)
 s|@JAVAC@|javac|

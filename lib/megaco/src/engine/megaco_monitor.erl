@@ -33,11 +33,13 @@
 
 	 lookup_request/1,
 	 match_requests/1,
+	 which_requests/1,
 	 insert_request/1,
 	 delete_request/1, 
 
 	 lookup_reply/1,
 	 match_replies/1,
+	 which_replies/1,
 	 insert_reply/1,
 	 delete_reply/1,
 
@@ -69,6 +71,10 @@ lookup_request(Key) ->
 match_requests(Pat) ->
     ets:match_object(megaco_requests, Pat).
 
+which_requests(Pat) ->
+    Spec = [{Pat, [], ['$$']}],
+    ets:select(megaco_requests, Spec).
+
 insert_request(Rec) ->
     ets:insert(megaco_requests, Rec).
 
@@ -80,6 +86,10 @@ lookup_reply(Key) ->
 
 match_replies(Pat) ->
     ets:match_object(megaco_replies, Pat).
+
+which_replies(Pat) ->
+    Spec = [{Pat, [], ['$$']}],
+    ets:select(megaco_replies, Spec).
 
 insert_reply(Rec) ->
     ets:insert(megaco_replies, Rec).
@@ -101,8 +111,12 @@ apply_after(Method, M, F, A, Time) when atom(M), atom(F), list(A) ->
     end.
 
 cancel_apply_after({apply_after, Ref}) ->
-    erlang:cancel_timer(Ref),
-    ok;
+    case erlang:cancel_timer(Ref) of
+	TimeLeft when integer(TimeLeft) ->
+	    {ok, TimeLeft};
+	_ ->
+	    {ok, 0}
+    end;
 cancel_apply_after(apply_after_infinity) ->
     ok;
 cancel_apply_after(BadRef) ->

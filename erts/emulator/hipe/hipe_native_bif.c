@@ -128,14 +128,17 @@ hipe_save_stacktrace(Process* c_p, Eterm args) {
 
     /* Create a container for the exception data. This must be done just
        as in the save_stacktrace function in beam_emu.c */
-    sz = (offsetof(struct StackTrace, trace) + sizeof(Uint) - 1)
-      / sizeof(Uint) + depth;
-    hp = HAlloc(c_p, (sz + 3) * sizeof(Uint));
+    sz = (offsetof(struct StackTrace, trace) + sizeof(Eterm)*depth
+	  + sizeof(Eterm) - 1) / sizeof(Eterm);
+    hp = HAlloc(c_p, 2 + 1 + sz);
     s = (struct StackTrace *) (hp + 2);
-    c_p->ftrace = CONS(hp, args, make_big((Uint *) s));
+    c_p->ftrace = CONS(hp, args, make_big((Eterm *) s));
     s->header = make_pos_bignum_header(sz);
 
     /* All the other fields are inside the bignum */
+    s->current = NULL;
+    s->pc = NULL;
+    s->depth = depth;
 
     /* Must mark this as a native-code exception. */
     s->freason = NATIVE_EXCEPTION(c_p->freason);

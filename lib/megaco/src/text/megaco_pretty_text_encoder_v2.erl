@@ -202,6 +202,7 @@ encode_action_reply(_EC, ActRep)
 -define(DurationToken              , ?PrettyDurationToken).
 -define(EmbedToken                 , ?PrettyEmbedToken).
 -define(EmergencyToken             , ?PrettyEmergencyToken).
+-define(EmergencyOffToken          , ?PrettyEmergencyOffToken).
 -define(ErrorToken                 , ?PrettyErrorToken).
 -define(EventBufferToken           , ?PrettyEventBufferToken).
 -define(EventsToken                , ?PrettyEventsToken).

@@ -71,11 +71,13 @@ loop(LoopData) ->
 	    loop(LoopData);
 
 	{gs, trace_in_window, click, _Data, _Arg} ->
-	    lists:foreach({gse,disable},[trace_file, trace_file_browse]),
+	    lists:foreach(fun(X) -> gse:disable(X) end,
+			  [trace_file, trace_file_browse]),
 	    loop(LoopData);
 
 	{gs, trace_to_file, click, _Data, [_Text,_,_Value]} ->
-	    lists:foreach({gse,enable},[trace_file, trace_file_browse]),
+	    lists:foreach(fun(X) -> gse:enable(X) end,
+			  [trace_file, trace_file_browse]),
 	    loop(LoopData);
 
 	{gs, trace_file_browse, click,_Data,_Arg} ->
@@ -98,10 +100,10 @@ group_radio(Value, Default, GroupList) ->
     case Value of
 	true ->
 	    gse:select(Default),
-	    lists:foreach({gse,enable}, GroupList);
+	    lists:foreach(fun(X) -> gse:enable(X) end, GroupList);
 	false ->
-	    lists:foreach({gse,deselect}, GroupList),
-	    lists:foreach({gse,disable}, GroupList)
+	    lists:foreach(fun(X) -> gse:deselect(X) end, GroupList),
+	    lists:foreach(fun(X) -> gse:disable(X) end, GroupList)
     end.
 
 
@@ -320,7 +322,8 @@ update_window_from_options(Options) ->
 	    gse:config(trace_spawn_first,
 		       [{select, Options#trace_options.inherit_on_1st_spawn}]);
 	false ->
-	    lists:foreach({gse,disable}, [trace_spawn_all,trace_spawn_first])
+	    lists:foreach(fun(X) -> gse:disable(X) end,
+			  [trace_spawn_all,trace_spawn_first])
     end,
 
     case (Options#trace_options.inherit_on_all_link or
@@ -331,7 +334,8 @@ update_window_from_options(Options) ->
 	    gse:config(trace_link_first,
 		       [{select, Options#trace_options.inherit_on_1st_link}]);
 	false ->
-	    lists:foreach({gse, disable}, [trace_link_all,trace_link_first])
+	    lists:foreach(fun(X) -> gse:disable(X) end,
+			  [trace_link_all,trace_link_first])
     end,
     
 
@@ -345,7 +349,8 @@ update_window_from_options(Options) ->
 	true ->
 	    ok;
 	false ->
-	    lists:foreach({gse, disable}, [trace_file, trace_file_browse])
+	    lists:foreach(fun(X) -> gse:disable(X) end,
+			  [trace_file, trace_file_browse])
     end.
 
 

@@ -76,7 +76,7 @@
 -deprecated([{c,                     1, eventually},
 	     {c,                     2, eventually},
 	     {compile,               3, eventually},
-	     {is_constistent,        1, eventually},
+	     {is_consistent,         1, eventually},
 	     {mib_to_hrl,            1, eventually},
 
 	     {change_log_size,       1, eventually},

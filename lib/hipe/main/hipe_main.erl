@@ -238,7 +238,6 @@ icode_ssa(IcodeCfg0, MFA, Options) ->
   IcodeSSA1 = icode_ssa_binary_pass(IcodeSSA0, Options),
   IcodeSSA2 = icode_ssa_const_prop(IcodeSSA1, Options),
   IcodeSSA3 = icode_ssa_copy_prop(IcodeSSA2, Options),
-  icode_ssa_type_signature(IcodeSSA3, Options),
   {Fixpoint, IcodeSSA4} = icode_ssa_type_info(IcodeSSA3, MFA, Options),
   IcodeSSA5 = icode_ssa_dead_code_elimination(IcodeSSA4, Options),
   icode_ssa_check(IcodeSSA5, Options), %% just for sanity
@@ -277,15 +276,6 @@ icode_ssa_copy_prop(IcodeSSA, Options) ->
       ?option_time(hipe_icode_ssa_copy_prop:cfg(IcodeSSA),
 		   "Icode SSA copy propagation", Options);
     _ -> 
-      IcodeSSA
-  end.
-
-icode_ssa_type_signature(IcodeSSA, Options) ->
-  case proplists:get_bool(type_signature, Options) of
-    true ->
-      ?option_time(hipe_icode_type_signature:cfg(IcodeSSA, Options),
-		   "Icode SSA type signature", Options);
-    false -> 
       IcodeSSA
   end.
 

@@ -4,4 +4,4 @@
  {start,{appmon,start,[]}},
  {icon,"appmon.gif"},
  {message,"Application Monitor"},
- {html,"../doc/index.html"}].
+ {html,"../doc/html/index.html"}].

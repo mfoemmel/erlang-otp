@@ -39,8 +39,8 @@ MODULES=hipe_ppc \
 	hipe_ppc_main \
 	hipe_ppc_pp \
 	hipe_ppc_ra \
-	hipe_ppc_ra_dummy \
 	hipe_ppc_ra_finalise \
+	hipe_ppc_ra_naive \
 	hipe_ppc_ra_postconditions \
 	hipe_ppc_ra_postconditions_fp \
 	hipe_ppc_registers \

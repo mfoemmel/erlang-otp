@@ -63,6 +63,10 @@ ifeq ($(TYPE),debug)
 ERL_COMPILE_FLAGS += -Ddebug
 endif
 
+ifeq ($(MEGACO_DEBUG),true)
+ERL_COMPILE_FLAGS += -Dmegaco_debug
+endif
+
 ifeq ($(USE_MEGACO_HIPE),true)
 ERL_COMPILE_FLAGS += +native
 endif

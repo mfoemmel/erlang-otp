@@ -302,7 +302,11 @@ get_network_copy(Tab, Cs) ->
     call({add_other, self()}),
     Reason = {dumper,add_table_copy},
     Work = #net_load{table = Tab,reason = Reason,cstruct = Cs},
+    %% I'll need this cause it's linked trough the subscriber
+    %% might be solved by using monitor in subscr instead.
+    process_flag(trap_exit, true),
     Res = (catch load_table(Work)),
+    process_flag(trap_exit, false),
     call({del_other, self()}),
     case Res of
  	#loader_done{is_loaded = true} ->
@@ -929,12 +933,6 @@ handle_cast({mnesia_down, Node}, State) ->
 			late_loader_queue = LateQ
 		       });
 
-handle_cast({im_running, _Node, NewFriends}, State) ->
-    Tabs = mnesia_lib:local_active_tables() -- [schema],
-    Ns = mnesia_lib:intersect(NewFriends, val({current, db_nodes})),
-    abcast(Ns, {adopt_orphans, node(), Tabs}),
-    noreply(State);
-
 handle_cast({merging_schema, Node}, State) ->
     case State#state.schema_is_merged of
 	false ->
@@ -957,6 +955,15 @@ handle_cast(Msg, State) when State#state.schema_is_merged /= true ->
     %% Buffer early messages
     Msgs = State#state.early_msgs,
     noreply(State#state{early_msgs = [{cast, Msg} | Msgs]});
+
+%% This must be done after schema_is_merged otherwise adopt_orphan
+%% might trigger a table load from wrong nodes as a result of that we don't 
+%% know which tables we can load safly first.
+handle_cast({im_running, _Node, NewFriends}, State) ->
+    Tabs = mnesia_lib:local_active_tables() -- [schema],
+    Ns = mnesia_lib:intersect(NewFriends, val({current, db_nodes})),
+    abcast(Ns, {adopt_orphans, node(), Tabs}),
+    noreply(State);
 
 handle_cast({disc_load, Tab, Reason}, State) ->
     Worker = #disc_load{table = Tab, reason = Reason},
@@ -1037,7 +1044,7 @@ handle_cast({adopt_orphans, Node, Tabs}, State) ->
 		    [Tab || {Tab, Ns} <- RemoteMasters,
 			    lists:member(N, Ns)],
 		mnesia_late_loader:maybe_async_late_disc_load(N, RemoteOrphans, Reason)
-	  end,
+	end,
     lists:foreach(Fun, Nodes),
     
     Queue = State2#state.loader_queue,
@@ -1188,7 +1195,8 @@ handle_info({'EXIT', Pid, R}, State) when Pid == State#state.supervisor ->
 
 handle_info({'EXIT', Pid, R}, State) when Pid == State#state.dumper_pid ->
     case State#state.dumper_queue of
-	[#schema_commit_lock{}|Workers] ->  %% Schema trans crashed or was killed
+	[#schema_commit_lock{}|Workers] -> %% Schema trans crashed or was killed
+	    dbg_out("WARNING: Dumper ~p exited ~p~n", [Pid, R]),
 	    State2 = State#state{dumper_queue = Workers, dumper_pid = undefined},
 	    State3 = opt_start_worker(State2),
 	    noreply(State3);
@@ -1259,13 +1267,16 @@ pick_next(Queue) ->
 
 pick_next([Head | Tail], Load, Order, Rest) when record(Head, net_load) ->
     Tab = Head#net_load.table,
-    select_best(Head, Tail, val({Tab, load_order}), Load, Order, Rest);
+    select_best(Head, Tail, ?catch_val({Tab, load_order}), Load, Order, Rest);
 pick_next([Head | Tail], Load, Order, Rest) when record(Head, disc_load) ->
     Tab = Head#disc_load.table,
-    select_best(Head, Tail, val({Tab, load_order}), Load, Order, Rest);
+    select_best(Head, Tail, ?catch_val({Tab, load_order}), Load, Order, Rest);
 pick_next([], Load, _Order, Rest) ->
     {Load, Rest}.
 
+select_best(_Head, Tail, {'EXIT', _WHAT}, Load, Order, Rest) ->
+    %% Table have been deleted drop it.
+    pick_next(Tail, Load, Order, Rest);
 select_best(Load, Tail, Order, none, none, Rest) ->
     pick_next(Tail, Load, Order, Rest);
 select_best(Load, Tail, Order, OldLoad, OldOrder, Rest) when Order > OldOrder ->
@@ -1338,8 +1349,11 @@ orphan_tables([Tab | Tabs], Node, Ns, Local, Remote) ->
     RamCopyHoldersOnDiscNodes = mnesia_lib:intersect(RamCopyHolders, DiscNodes),
     Active = val({Tab, active_replicas}),
     BeingCreated = (?catch_val({Tab, create_table}) == true),
+    Read = val({Tab, where_to_read}),
     case lists:member(Node, DiscCopyHolders) of
 	_ when BeingCreated == true -> 
+	    orphan_tables(Tabs, Node, Ns, Local, Remote);
+	_ when Read == node() -> %% Allready loaded
 	    orphan_tables(Tabs, Node, Ns, Local, Remote);
 	true when Active == [] ->
 	    case DiscCopyHolders -- Ns of
@@ -1936,12 +1950,17 @@ opt_start_loader(State) ->
 	    SchemaQueue = State#state.dumper_queue,
 	    case lists:keymember(schema_commit, 1, SchemaQueue) of
 		false ->
-		    {Worker, Rest} = pick_next(LoaderQueue),
+		    case pick_next(LoaderQueue) of
+			{none, []} ->
+			    State#state{loader_queue = []};
 
-		    %% Start worker but keep him in the queue
-		    Pid = spawn_link(?MODULE, load_and_reply, [self(), Worker]),
-		    State#state{loader_pid = Pid,
-				loader_queue = [Worker | Rest]};
+			{Worker, Rest} ->
+			    %% Start worker but keep him in the queue
+			    Pid = spawn_link(?MODULE, load_and_reply, 
+					     [self(), Worker]),
+			    State#state{loader_pid = Pid,
+					loader_queue = [Worker | Rest]}
+		    end;
 		true ->
 		    %% Bad luck, we must wait for the schema commit
 		    State

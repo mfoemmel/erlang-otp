@@ -389,14 +389,14 @@ analysis(undefined_functions, modules) ->
     %% not available.
     "XU - X - B";
 analysis(undefined_functions, functions) ->
-    %% "XU * (L + U - range UC)" is equivalent.
+    %% "XU * ((L + U) - range UC)" is equivalent.
     "XU - range UC - X - B";
 analysis(locals_not_used, functions) ->
     %% The Inter Call Graph is used to get local functions that are not
     %% used (indirectly) from any export: "(domain EE + range EE) * L".
     %% But then we only get locals that make some calls, so we add
     %% locals that are not used at all: "L * (UU + XU - LU)".
-    "L * (UU + XU - LU + domain EE + range EE)";
+    "L * ((UU + XU - LU) + domain EE + range EE)";
 analysis(exports_not_used, _) ->
     %% Local calls are not considered here. "X * UU" would do otherwise.
     "X - XU";
@@ -968,6 +968,7 @@ no_info(X, L, LC, XC, EE, Unres, NoCalls, NoUnresCalls) ->
     [{no_calls, {NoCalls-NoUnresCalls, NoUnresCalls}}, 
      {no_function_calls, {no_elements(LC), no_elements(XC)-NoUnres, NoUnres}},
      {no_functions, {no_elements(L), no_elements(X)}},
+     %% Note: this is overwritten in do_set_up():
      {no_inter_function_calls, no_elements(EE)}].
 
 inter_graph(Pid, X, L, LC, XC, CallAt) ->
@@ -1013,9 +1014,9 @@ inter_graph(X, L, LC, XC, CallAt) ->
     ECallAt = family_union(relation_to_family(ECallAt2)),
 
     ?FORMAT("XL=~p~nXEs=~p~nLEs=~p~nE1=~p~nR0=~p~nRL=~p~nRX=~p~nR=~p~n"
-	    "EE=~p~nECallAt0=~p~nECallAt1=~p~nECallAt=~p~n~n",
+	    "EE=~p~nECallAt1=~p~nECallAt2=~p~nECallAt=~p~n~n",
 	    [XL, XEs, LEs, E1, R0, RL, RX, R, EE, 
-	     ECallAt0, ECallAt1, ECallAt]),
+	     ECallAt1, ECallAt2, ECallAt]),
     {EE, ECallAt}.
 
 %% -> set of {V2,{V1,L1}}
@@ -1155,7 +1156,7 @@ do_set_up(S, VerboseOpt) ->
 do_set_up(S) when S#xref.mode == functions ->
     ModDictList = dict:to_list(S#xref.modules),
     [DefAt0, L, X0, LCallAt, XCallAt, CallAt, LC, XC, LU, 
-     EE, ECallAt, UC, LPredefined,
+     EE0, ECallAt, UC, LPredefined,
      Mod_DF,Mod_DF_1,Mod_DF_2,Mod_DF_3] = make_families(ModDictList, 18),
     
     {XC_1, XU, XPredefined} = do_set_up_1(XC),
@@ -1200,20 +1201,46 @@ do_set_up(S) when S#xref.mode == functions ->
     UU = family_difference(family_difference(F1, LU), XU),
     DefAt = make_defat(Undef, DefAt0),
 
-    %% Inter Call Graph.
-    EE_1 = user_family(union_of_family(EE)),
+    LM = domain(Lib),
+    UM = difference(difference(domain(U), AM), LM),
+    X = family_union(X1, Lib),
+
+    %% Inter Call Graph. Calls to exported functions (library
+    %% functions inclusive) as well as calls within modules. This is a
+    %% way to discard calls to local functions in other modules.
+    EE_conv = converse(union_of_family(EE0)),
+    EE_exported = restriction(EE_conv, union_of_family(X)),
+    EE_local = 
+      specification({external, fun({{M1,_,_},{M2,_,_}}) -> M1 =:= M2 end},
+                    EE_conv),
+    EE_0 = converse(union(EE_local, EE_exported)),
+    EE_1 = user_family(EE_0),
+    EE1 = partition_family({external, fun({{M1,_,_}, _MFA2}) -> M1 end}, 
+                           EE_0),
+    %% Make sure EE is defined for all modules:
+    EE = family_union(family_difference(EE0, EE0), EE1),
+    IFun = 
+       fun({Mod,EE_M}, XMods) -> 
+               IMFun = 
+                 fun(XrefMod) ->
+                         [NoCalls, NoFunctionCalls, 
+                          NoFunctions,  _NoInter] = XrefMod#xref_mod.info,
+                         NewInfo = [NoCalls, NoFunctionCalls, NoFunctions, 
+                                    {no_inter_function_calls,length(EE_M)}],
+                         XrefMod#xref_mod{info = NewInfo}
+                 end,
+               dict:update(Mod, IMFun,XMods)
+       end,
+    XrefMods1 = foldl(IFun, S#xref.modules, to_external(EE)),
+    S1 = S#xref{modules = XrefMods1},
+
+    UC_1 = user_family(union_of_family(UC)),
 
     ?FORMAT("DefAt ~p~n", [DefAt]),
     ?FORMAT("U=~p~nLib=~p~nB=~p~nLU=~p~nXU=~p~nUU=~p~n", [U,Lib,B,LU,XU,UU]),
     ?FORMAT("E_1=~p~nLC_1=~p~nXC_1=~p~n", [E_1,LC_1,XC_1]),
     ?FORMAT("EE=~p~nEE_1=~p~nECallAt=~p~n", [EE, EE_1, ECallAt]),
     ?FORMAT("DF=~p~nDF_1=~p~nDF_2=~p~nDF_3=~p~n", [DF, DF_1, DF_2, DF_3]),
-
-    LM = domain(Lib),
-    UM = difference(difference(domain(U), AM), LM),
-    X = family_union(X1, Lib),
-
-    UC_1 = user_family(union_of_family(UC)),
 
     Vs = [{'L',L}, {'X',X},{'F',F},{'U',U},{'B',B},{'UU',UU},
 	  {'XU',XU},{'LU',LU},{'V',V},{v,V},
@@ -1226,7 +1253,7 @@ do_set_up(S) when S#xref.mode == functions ->
 	  {me2ae, ME2AE},{ae, AE2RE},{m2a, M2A},{a2r, A2R},
 	  {def_at, DefAt}, {call_at, CallAt}, {e_call_at, ECallAt},
 	  {l_call_at, LCallAt}, {x_call_at, XCallAt}],
-    finish_set_up(S, Vs);
+    finish_set_up(S1, Vs);
 do_set_up(S) when S#xref.mode == modules ->
     ModDictList = dict:to_list(S#xref.modules),
     [X0, I0, Mod_DF, Mod_DF_1, Mod_DF_2, Mod_DF_3] = 
@@ -1446,7 +1473,7 @@ make_builtins(U0) ->
     U = family_difference(U0, B),
     {B, U}.
 
-% Returns a family, that may not be defined for all modules.
+% Returns a family that may not be defined for all modules.
 user_family(R) ->
     partition_family({external, fun({_MFA1, {M2,_,_}}) -> M2 end}, R).
 

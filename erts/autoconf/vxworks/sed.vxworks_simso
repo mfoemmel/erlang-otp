@@ -1,0 +1,21 @@
+s|@host@|vxworks_simso|
+s|@system_type@|vxworks_simso|
+s|@ARCH@|simso|
+s|@CC@|@TTPREFIX@ccsimso|
+s|@HCC@|gcc|
+s|@LD@|@TTPREFIX@ldsimso|
+s|@STRIP@|@TTPREFIX@stripsimso|
+s|@SYMPREFIX@||
+s|@LIBS@||
+s|@GCCLIBFLAGS@|-L@WIND_BASE@/target/lib/simso/SIMSPARCSOLARIS/common -lgcc|
+s|@DED_LD@|@TTPREFIX@ldsimso|
+s|@DED_CFLAGS@|@CFLAGS@|
+s|@DEBUG_CFLAGS@|@CFLAGS@|
+# remove -g option
+s|TYPE_FLAGS = -g |TYPE_FLAGS = |
+s|@GCCLIB_PATH@|@WIND_BASE@/target/lib/simso/SIMSPARCSOLARIS/common/libgcc.a|
+s|@RANLIB@|@TTPREFIX@ranlibsimso|
+s|@AR@|@TTPREFIX@arsimso|
+# -Dasm(X)= is for beam
+s|@CFLAGS@|@GENERAL_CFLAGS@ -DCPU=SIMSPARCSOLARIS -DTOOL_FAMILY=gnu -DTOOL=gnu -DWANT_NONBLOCKING -DHAVE_MEMMOVE -DVXWORKS -I@WIND_BASE@/target/h -fvolatile -fno-builtin -fno-for-scope |
+s|@LIB_CFLAGS@|@GENERAL_CFLAGS@ -DCPU=SIMSPARCSOLARIS -DTOOL_FAMILY=gnu -DTOOL=gnu -DWANT_NONBLOCKING -DHAVE_MEMMOVE -DVXWORKS -I@WIND_BASE@/target/h -mstrict-align -fvolatile -fno-builtin -fno-for-scope |

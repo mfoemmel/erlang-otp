@@ -515,7 +515,7 @@
 	 %% mk_const_fun/4,	 %% mk_const_fun(MFA,U,I,Args)
 	 mk_var/1,               %% mk_var(Id)
 	 annotate_var/2,         %% annotate_var(Var, Type)
-	 unannotate_var/1,       %% unannotate_var(Var)
+	 %%unannotate_var/1,       %% unannotate_var(Var)
 	 mk_reg/1,               %% mk_reg(Id)
 	 mk_fvar/1,              %% mk_fvar(Id)
 	 mk_new_var/0,           %% mk_new_var()
@@ -542,7 +542,7 @@
 	 is_const/1,
 	 is_const_fun/1,
 	 is_var/1,
-	 is_annotated_var/1,
+	 %is_annotated_var/1,
 	 is_fvar/1,
 	 is_reg/1,
 	 is_var_or_fvar_or_reg/1,
@@ -576,7 +576,7 @@
 	 fail_label/1,
 	 fail_set_label/2,
 	 %% var_name/1,
-	 var_annotation/1,
+	 %% var_annotation/1,
 	 %% fvar_name/1,
 	 %% reg_name/1,		 
 	 const_value/1,
@@ -1025,10 +1025,10 @@ is_var(_) -> false.
 %% type pass and when pretty printing typed icode.
 annotate_var({var, Name}, Type)-> {var, Name, Type};
 annotate_var({var, Name, _OldType}, Type) -> {var, Name, Type}.
-is_annotated_var({var, _Name, _Type})-> true;
-is_annotated_var(_) -> false.
-var_annotation({var, _Name, Type})-> Type.
-unannotate_var({var, Name, _}) -> {var, Name}.
+%%is_annotated_var({var, _Name, _Type})-> true;
+%%is_annotated_var(_) -> false.
+%%var_annotation({var, _Name, Type})-> Type.
+%unannotate_var({var, Name, _}) -> {var, Name}.
 
  
 mk_reg(V) -> {reg,V}.

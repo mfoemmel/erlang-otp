@@ -88,7 +88,8 @@ all(suite) ->
 	 ber_bin_drv,
 	 ber_bin_native,
 	 ber_bin_drv_native
-	].
+	],
+    Cases.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -204,7 +205,7 @@ ber_bin_drv_native(Config) when list(Config) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-req_and_rep(Config, Codec, Version, EC) when list(Config) ->
+req_and_rep(Config, Codec, _Version, EC) when list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     i("req_and_rep -> starting"),

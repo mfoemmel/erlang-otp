@@ -10,8 +10,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2004/08/21 16:39:00 $
-%%              $Revision: 1.24 $
+%%              $Date: 2005/01/19 10:14:06 $
+%%              $Revision: 1.26 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -26,10 +26,10 @@ allocate(_Fun, SparcCfg, Options) ->
   ?inc_counter(ra_caller_saves_counter,count_caller_saves(SparcCfg)),
   ?opt_start_timer("Regalloc"),
   ?start_ra_instrumentation(Options, 
-			    hipe_sparc_size:count_instrs_cfg(SparcCfg),
+			    count_instrs_cfg(SparcCfg),
 			    hipe_gensym:get_var(sparc)),
 
-  {NewCfg,TempMap, NextPos}  = 
+  {NewCfg, TempMap, NextPos}  = 
     case proplists:get_value(regalloc,Options) of
       linear_scan ->
 	hipe_sparc_ra_ls:alloc(
@@ -41,7 +41,7 @@ allocate(_Fun, SparcCfg, Options) ->
 	hipe_sparc_ra_coalescing:lf_alloc( 
 	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
       naive ->
-	hipe_sparc_ra_memory:alloc(
+	hipe_sparc_ra_naive:alloc(
 	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
 %%    cs ->
 %%	hipe_sparc_ra_cs:alloc(
@@ -56,8 +56,8 @@ allocate(_Fun, SparcCfg, Options) ->
   
   ?opt_stop_timer("Regalloc done"),
   ?stop_ra_instrumentation(Options, 
-			    hipe_sparc_size:count_instrs_cfg(NewCfg),
-			    hipe_gensym:get_var(NewCfg)),
+			   count_instrs_cfg(NewCfg),
+			   hipe_gensym:get_var(NewCfg)),
 
   {NewCfg2, FpMap, NextPos2}  = 
     case get(hipe_inline_fp) of
@@ -142,3 +142,40 @@ regnames(Regs2, Target) ->
 	Regs2
     end,
   [Target:reg_nr(X) || X <- Regs].
+
+%%--------------------------------------------------------------------- 
+%% The following is needed for taking measurements.
+%%--------------------------------------------------------------------- 
+
+count_instrs_cfg(CFG) ->
+  count_instrs(hipe_sparc:sparc_code(hipe_sparc_cfg:linearize(CFG))).
+
+count_instrs(Code) ->
+  count_instrs(Code,0).
+
+count_instrs([Instr|Is], Acc) ->
+  count_instrs(Is, Acc + icount(Instr));
+count_instrs([],Acc) -> Acc.
+
+icount(I) ->
+  case hipe_sparc:type(I) of
+    label ->
+      0;
+    comment ->
+      0;
+    load_address ->
+      2;
+    multimove ->
+      %% These should have been removed before assembly...
+      %% To be on the safe side, we calculate that we need one extra
+      %% move (to a temp) for each register that need to be moved.
+      %% I.e., [r1,r2] <- [r3, r4] can be handled as:
+      %%            r5 <- r3
+      %%            r6 <- r4
+      %%            r1 <- r5
+      %%            r2 <- r6
+      length(hipe_sparc:multimove_dest(I))*2;
+    _Other ->
+      1
+  end.
+

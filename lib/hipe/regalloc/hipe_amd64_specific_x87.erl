@@ -60,13 +60,13 @@ analyze(CFG) ->
 
 livein(Liveness,L) ->
   [X || X <- hipe_amd64_liveness:livein(Liveness,L),
- 	     hipe_amd64:temp_is_allocatable(X),
- 	     hipe_amd64:temp_type(X)=='double'].
+ 	     hipe_x86:temp_is_allocatable(X),
+ 	     hipe_x86:temp_type(X)=='double'].
 
 liveout(BB_in_out_liveness,Label) ->
   [X || X <- hipe_amd64_liveness:liveout(BB_in_out_liveness,Label),
-	     hipe_amd64:temp_is_allocatable(X),
-	     hipe_amd64:temp_type(X) == 'double'].
+	     hipe_x86:temp_is_allocatable(X),
+	     hipe_x86:temp_type(X) == 'double'].
 
 %% Registers stuff
 
@@ -91,12 +91,12 @@ labels(CFG) ->
   hipe_amd64_cfg:labels(CFG).
 
 %% var_range(_CFG) ->
-%%   {Min,Max} = hipe_gensym:var_range(amd64),
+%%   {Min,Max} = hipe_gensym:var_range(x86),
 %%   %% io:format("Var_range: ~w\n",[{Min,Max}]),
 %%   {Min,Max}.
 
 number_of_temporaries(_CFG) ->
-  Highest_temporary = hipe_gensym:get_var(amd64),
+  Highest_temporary = hipe_gensym:get_var(x86),
   %% Since we can have temps from 0 to Max adjust by +1.
   Highest_temporary + 1.
 
@@ -107,28 +107,28 @@ bb(CFG,L) ->
 
 %% def_use(Instruction) ->
 %%     {[X || X <- hipe_amd64_defuse:insn_def(Instruction), 
-%% 	   hipe_amd64:temp_is_allocatable(X),
+%% 	   hipe_x86:temp_is_allocatable(X),
 %% 	   temp_is_double(X)],
 %%      [X || X <- hipe_amd64_defuse:insn_use(Instruction), 
-%% 	   hipe_amd64:temp_is_allocatable(X),
+%% 	   hipe_x86:temp_is_allocatable(X),
 %% 	   temp_is_double(X)]
 %%     }.
 %% 
 uses(I) ->
   [X || X <- hipe_amd64_defuse:insn_use(I),
- 	     hipe_amd64:temp_is_allocatable(X),
+ 	     hipe_x86:temp_is_allocatable(X),
  	     temp_is_double(X)].
  
 defines(I) ->
   [X || X <- hipe_amd64_defuse:insn_def(I),
- 	     hipe_amd64:temp_is_allocatable(X),
+ 	     hipe_x86:temp_is_allocatable(X),
  	     temp_is_double(X)].
  
 temp_is_double(Temp)->
-  hipe_amd64:temp_type(Temp) == 'double'.
+  hipe_x86:temp_type(Temp) == 'double'.
 
 reg_nr(Reg) ->
-  hipe_amd64:temp_reg(Reg).
+  hipe_x86:temp_reg(Reg).
  
 %% new_spill_index(SpillIndex)->
 %%   SpillIndex+1.

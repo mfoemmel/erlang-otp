@@ -28,7 +28,7 @@
 	 handle_report/4]).
 
 handle_error(ReqId, Reason, UserData) ->
-    info("received handle_agent:"
+    info("received handle_error:"
 	 "~n   ReqId:    ~p"
 	 "~n   Reason:   ~p"
 	 "~n   UserData: ~p", [ReqId, Reason, UserData]),

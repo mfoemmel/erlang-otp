@@ -178,6 +178,8 @@ read(OpaqueData) ->
             {ok, R, []};
         {Cont, []} ->
             read(R#restore{cont = Cont});
+        {Cont, BackupItems, _BadBytes} ->
+            {ok, R#restore{cont = Cont}, BackupItems};
         {Cont, BackupItems} ->
             {ok, R#restore{cont = Cont}, BackupItems}
     end.

@@ -61,7 +61,19 @@
 	  trans_sender,         % The trans sender process ref, or undefined
 
 	  pending_timer, 
-	  orig_pending_limit,  % infinity | integer() > 0
+	  
+	  %% ------
+	  %% These counter's is used for the MGCOriginatedPendingLimit
+	  %% and MGOriginatedPendingLimit counters (of the root package).
+	  %% If the user is an MGC, the 
+	  %%   sent_pending_limit - represent MGCOriginatedPendingLimit
+	  %%   recv_pending_limit - represent MGOriginatedPendingLimit
+	  %% If the user is an MG, the 
+	  %%   sent_pending_limit - represent MGOriginatedPendingLimit
+	  %%   recv_pending_limit - represent MGCOriginatedPendingLimit
+	  sent_pending_limit,  % infinity | integer() > 0
+	  recv_pending_limit,  % infinity | integer() > 0
+
 	  reply_timer, 
 	  control_pid,
 	  monitor_ref,
@@ -112,3 +124,14 @@
 -define(report_verbose(  C, Label, Contents), ?report(40, C, Label, Contents)).
 -define(report_debug(    C, Label, Contents), ?report(60, C, Label, Contents)).
 -define(report_trace(    C, Label, Contents), ?report(80, C, Label, Contents)).
+
+
+%%%----------------------------------------------------------------------
+%%% Debug
+%%%----------------------------------------------------------------------
+
+-ifdef(megaco_debug).
+-define(d(F,A), io:format("~w: " ++ F ++ "~n",[?MODULE|A])).
+-else.
+-define(d(F,A), ok).
+-endif.

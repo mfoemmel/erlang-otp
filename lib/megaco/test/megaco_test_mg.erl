@@ -345,7 +345,7 @@ loop(#mg{parent = Parent, mid = Mid} = S) ->
 	    i("loop -> encode_ar_first: ~p", [EAF]),
 	    {Reply, S1} = handle_encode_ar_first(S, EAF),
 	    server_reply(Parent, encode_ar_first_reply, Reply),
-	    loop(S#mg{encode_ar_first = EAF});
+	    loop(S1#mg{encode_ar_first = EAF});
 
 	%% Give me statistics
 	{statistics, Parent} ->
@@ -541,7 +541,7 @@ do_get_statistics(Mid) ->
 
 do_get_conn_statistics(CH) ->
     {ok, Gen}  = megaco:get_stats(),
-    Pid        = megaco:conn_info(CH, control_pid),
+    %% Pid        = megaco:conn_info(CH, control_pid),
     SendMod    = megaco:conn_info(CH, send_mod),
     SendHandle = megaco:conn_info(CH, send_handle),
     {ok, Trans} = 
@@ -695,7 +695,7 @@ loader_main(_EAF, 0, _) ->
 loader_main(EAF, N, CH) ->
     d("loader_main -> entry with: ~w", [N]),
     {Act, _} = make_notify_request(),
-    Res      = send_sync(EAF, CH, Act, []),
+    _Res     = send_sync(EAF, CH, Act, []),
     loader_main(EAF, N-1, CH).
 
 
@@ -800,7 +800,7 @@ start_tcp(MgcPort, RH) ->
             throw({error, {megaco_tcp_start_transport, Reason}})
     end.
 
-megaco_tcp_connect(RH, LocalHost, SendHandle, ControlPid) ->
+megaco_tcp_connect(RH, _LocalHost, SendHandle, ControlPid) ->
     PrelMgcMid = preliminary_mid,
     d("megaco connect", []),    
     {ok, CH} = megaco:connect(RH, PrelMgcMid, SendHandle, ControlPid),
@@ -840,7 +840,7 @@ update_load_times(#mg{load_counter = 0} = MG, Times) ->
     d("update_load_times(0) -> entry with"
       "~n   Times: ~p", [Times]),
     {ok, MG#mg{load_counter = Times}};
-update_load_times(#mg{load_counter = N} = MG, Times) ->
+update_load_times(#mg{load_counter = N}, Times) ->
     d("update_load_times(~p) -> entry with"
       "~n   Times: ~p", [N, Times]),
     {error, {already_counting, N}}.
@@ -961,7 +961,7 @@ make_notify_request() ->
     CmdReq1    = cre_commandReq({notifyReq, NotifyReq1}),
     CmdReq2    = cre_commandReq({notifyReq, NotifyReq2}),
     ActReq     = cre_actionReq(?megaco_null_context_id, [CmdReq1,CmdReq2]),
-    {[ActReq], [Desc1,Desc2]}.
+    {[ActReq], [Desc3,Desc4]}.
 
 
 cre_actionReq(Cid, Cmds) ->
@@ -1015,11 +1015,11 @@ cre_error_descr(Code,Text) ->
 %% Handle megaco callbacks
 %%
 
-handle_megaco_request(#mg{mid = Mid, state = connecting} = MG,
+handle_megaco_request(#mg{state = connecting} = MG,
 		      {handle_connect, _CH, _PV}) ->
     d("handle_megaco_request(handle_connect,connecting) -> entry"),
     {ok, MG};
-handle_megaco_request(#mg{mid = Mid, state = S} = MG,
+handle_megaco_request(#mg{state = S} = MG,
 		      {handle_connect, _CH, _PV}) ->
     d("handle_megaco_request(handle_connect) -> entry"),
     Desc = 
@@ -1027,7 +1027,7 @@ handle_megaco_request(#mg{mid = Mid, state = S} = MG,
     ED   =  cre_error_descr(?megaco_internal_gateway_error, Desc),
     {{discard_ack, ED}, MG};
 
-handle_megaco_request(#mg{mid = Mid, req_handler = Pid} = MG,
+handle_megaco_request(#mg{req_handler = Pid} = MG,
 		      {handle_disconnect, _CH, _PV, R}) 
   when pid(Pid) ->
     d("handle_megaco_request(handle_disconnect) -> entry with"
@@ -1037,8 +1037,7 @@ handle_megaco_request(#mg{mid = Mid, req_handler = Pid} = MG,
     unlink(Pid),
     exit(Pid, kill),
     {ok, MG#mg{req_handler = undefined, state = initiated}};
-handle_megaco_request(#mg{mid = Mid} = MG,
-		      {handle_disconnect, _CH, _PV, R}) ->
+handle_megaco_request(MG, {handle_disconnect, _CH, _PV, _R}) ->
     d("handle_megaco_request(handle_disconnect) -> entry"),
     {ok, MG#mg{state = initiated}};
 
@@ -1046,7 +1045,7 @@ handle_megaco_request(MG,
 		      {handle_syntax_error, _RH, _PV, _ED}) ->
     {reply, MG};
 
-handle_megaco_request(#mg{mid = Mid, req_handler = Pid} = MG,
+handle_megaco_request(#mg{req_handler = Pid} = MG,
 		      {handle_message_error, CH, PV, ED}) 
   when pid(Pid) ->
     d("handle_megaco_request(handle_message_error) -> entry with"
@@ -1092,14 +1091,14 @@ handle_megaco_request(MG, {handle_trans_ack, _CH, _PV, _AS, _AD}) ->
     d("handle_megaco_request(handle_trans_ack) -> entry"),
     {ok, MG}.
 
-do_handle_trans_reply(#mg{parent = Parent, mid = Mid, state = connecting} = MG,
+do_handle_trans_reply(#mg{parent = Parent, state = connecting} = MG,
 		      CH, _PV, {ok, Rep}, _RD) ->
     d("do_handle_trans_reply(connecting) -> entry with"
       "~n   CH:     ~p"
       "~n   Rep:    ~p", [CH, Rep]),
     server_reply(Parent, service_change_reply, ok),
     {ok, MG#mg{state = connected}};
-do_handle_trans_reply(#mg{parent = Parent, mid = Mid, load_counter = 0} = MG,
+do_handle_trans_reply(#mg{parent = Parent, load_counter = 0} = MG,
 		      CH, _PV, {ok, Rep}, _RD) ->
     d("do_handle_trans_reply(load_counter = 0) -> entry with"
       "~n   CH:     ~p"
@@ -1169,9 +1168,9 @@ handle_connect(CH, PV, Pid, Mid) ->
 	    Reply
     end.
 
-handle_disconnect(CH, PV, 
+handle_disconnect(_CH, _PV, 
 		  {user_disconnect, {stopped_by_user, Pid}}, 
-		  Pid, Mid) ->
+		  Pid, _Mid) ->
     ok;
 handle_disconnect(CH, PV, R, Pid, Mid) ->
     request(Pid, {handle_disconnect, CH, PV, R}, Mid).
@@ -1353,8 +1352,7 @@ print(true, P, F, A) ->
 print(_, _, _, _) ->
     ok.
 
-format_timestamp(Now) ->
-    {N1, N2, N3} = Now,
+format_timestamp({_N1, _N2, N3} = Now) ->
     {Date, Time}   = calendar:now_to_datetime(Now),
     {YYYY,MM,DD}   = Date,
     {Hour,Min,Sec} = Time,

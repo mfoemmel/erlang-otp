@@ -12,21 +12,114 @@
 
 -export([build/2, 
 	 nodes_are_adjacent/3,
+	 node_spill_cost/2,
 	 node_adj_list/2,
-	 ig_moves/1,
-	 degree/1,
+	 get_moves/1,
+	 %% degree/1,
 	 %% number_of_temps/1,
-	 spill_costs/1,
+	 %% spill_costs/1,
 	 add_edge/4,
 	 %% set_adj_set/2,
 	 %% set_adj_list/2,
 	 %% set_ig_moves/2,
-	 set_degree/2,
-	 set_spill_costs/2
+	 %% set_spill_costs/2,
+	 %% set_degree/2
+	 get_node_degree/2,
+	 dec_node_degree/2,
+	 is_trivially_colourable/3
 	]).
 
 
 -record(igraph, {adj_set, adj_list, ig_moves, degree, spill_costs,no_temps}).
+
+%%----------------------------------------------------------------------
+%% Degree: array mapping nodes to integer degrees.
+%% Precoloured nodes have 'infinite' degrees: they are initialised with
+%% degrees K + number_of_temporaries.
+%% Operations include incrementing, decrementing, and querying a node's
+%% degree, and testing for trivial colourability (degree < K).
+%%----------------------------------------------------------------------
+
+degree_new(No_temporaries, Target) ->
+  Degree = hipe_bifs:array(No_temporaries, 0),
+  K = length(Target:allocatable()),
+  Inf = K + No_temporaries,
+  precoloured_to_inf_degree(Target:all_precoloured(), Inf, Degree).
+
+precoloured_to_inf_degree([], _Inf, Degree) -> Degree;
+precoloured_to_inf_degree([P|Ps], Inf, Degree) ->
+  hipe_bifs:array_update(Degree, P, Inf),
+  precoloured_to_inf_degree(Ps, Inf, Degree).
+
+degree_inc(Node, Degree) ->
+  hipe_bifs:array_update(Degree, Node, hipe_bifs:array_sub(Degree, Node) + 1).
+
+degree_dec(Node, Degree) ->
+  hipe_bifs:array_update(Degree, Node, hipe_bifs:array_sub(Degree, Node) - 1).
+
+degree_get(Node, Degree) ->
+  hipe_bifs:array_sub(Degree, Node).
+
+degree_is_trivially_colourable(Node, K, Degree) ->
+  hipe_bifs:array_sub(Degree, Node) < K.
+
+%%----------------------------------------------------------------------
+%% AdjSet:
+%% Implements sets of adjacent nodes.
+%% Symmetry implies that when (U,V) is a member, then so is (V,U).
+%% Hence, only (U,V), where U<V, is actually stored.
+%% Supports queries and destructive updates, but not enumeration.
+%% Implemented as a bit array in an array of words, augmented by an
+%% index vector for fast address calculations.
+%%----------------------------------------------------------------------
+
+-record(adjset, {index, array}).
+
+%%% XXX: Should use byte-array here, but that's not yet implemented.
+-define(BITS_PER_WORD, 16).
+-define(LOG2_BITS_PER_WORD, 4).
+
+adjset_new(NrTemps) ->
+  ArrayBits = (NrTemps * (NrTemps - 1)) div 2,
+  ArrayWords = (ArrayBits + (?BITS_PER_WORD - 1)) bsr ?LOG2_BITS_PER_WORD,
+  Array = hipe_bifs:array(ArrayWords, 0), % XXX: underutilised!
+  Index = adjset_mk_index(NrTemps, []),
+  #adjset{index=Index,array=Array}.
+
+adjset_mk_index(0, Tail) ->
+  list_to_tuple(Tail);
+adjset_mk_index(N, Tail) ->
+  I = N - 1,
+  adjset_mk_index(I, [(I * (I-1)) div 2 | Tail]).
+
+adjset_add_edge(U0, V0, Set=#adjset{index=Index,array=Array}) -> % PRE: U0 =/= V0
+  {U,V} =
+    if U0 < V0 -> {U0,V0};
+       true -> {V0,U0}
+    end,
+  %% INV: U < V
+  BitNr = element(V+1, Index) + U,
+  WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
+  WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
+  Word = hipe_bifs:array_sub(Array, WordNr),
+  hipe_bifs:array_update(Array, WordNr, Word bor WordMask),
+  Set.
+
+adjset_are_adjacent(U0, V0, #adjset{index=Index,array=Array}) ->
+  {U,V} =
+    if U0 < V0 -> {U0,V0};
+       U0 == V0 -> exit({?MODULE,adjacent,U0,V0}); % XXX: probably impossible
+       true -> {V0,U0}
+    end,
+  %% INV: U < V
+  BitNr = element(V+1, Index) + U,
+  WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
+  WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
+  Word = hipe_bifs:array_sub(Array, WordNr),
+  case Word band WordMask of
+    0 -> false;
+    _ -> true
+  end.
 
 %% Selectors
 
@@ -62,10 +155,10 @@ spill_costs(IG) -> IG#igraph.spill_costs.
 %%   An updated interference graph.
 %%----------------------------------------------------------------------
 
-set_adj_set(Adj_set, IG)         -> IG#igraph{adj_set  = Adj_set}.
+%%set_adj_set(Adj_set, IG)         -> IG#igraph{adj_set  = Adj_set}.
 set_adj_list(Adj_list, IG)       -> IG#igraph{adj_list = Adj_list}.
 set_ig_moves(IG_moves, IG)       -> IG#igraph{ig_moves = IG_moves}.
-set_degree(Degree, IG)           -> IG#igraph{degree   = Degree}.
+%%set_degree(Degree, IG)           -> IG#igraph{degree   = Degree}.
 set_spill_costs(Spill_costs, IG) -> IG#igraph{spill_costs = Spill_costs}.
 
 %%----------------------------------------------------------------------
@@ -83,10 +176,10 @@ set_spill_costs(Spill_costs, IG) -> IG#igraph{spill_costs = Spill_costs}.
 %%----------------------------------------------------------------------
 
 initial_ig(No_temporaries, Target) ->
-    #igraph{adj_set     = hipe_adj_set:new(), 
+    #igraph{adj_set     = adjset_new(No_temporaries),
 	    adj_list    = hipe_adj_list:new(No_temporaries),
 	    ig_moves    = hipe_ig_moves:new(No_temporaries),
-	    degree      = hipe_degree:new(No_temporaries, Target),
+	    degree      = degree_new(No_temporaries, Target),
 	    spill_costs = hipe_spillcost:new(No_temporaries),
 	    no_temps    = No_temporaries
 	   }.
@@ -108,10 +201,10 @@ build(CFG, Target) ->
     BBs_in_out_liveness = Target:analyze(CFG),
     Labels = Target:labels(CFG),
     %% How many temporaries exist?
-    No_temporaries = Target:number_of_temporaries(CFG),
-    IG = initial_ig(No_temporaries, Target),
-    FinalIG = analyze_bbs(Labels, BBs_in_out_liveness, IG, CFG, Target),
-    FinalIG.
+    NumTemps = Target:number_of_temporaries(CFG),
+    IG0 = initial_ig(NumTemps, Target),
+    IG = analyze_bbs(Labels, BBs_in_out_liveness, IG0, CFG, Target),
+    IG.
 
 %%----------------------------------------------------------------------
 %% Function:    analyze_bbs
@@ -149,9 +242,10 @@ analyze_bbs([L|Ls], BBs_in_out_liveness, IG, CFG, Target) ->
 					       ordsets:from_list(BB_liveout_numbers),
 					       IG,
 					       Target),
-    Newer_ig = hipe_spillcost:ref_in_bb(Ref, New_ig),
+    Newer_ig = set_spill_costs(hipe_spillcost:ref_in_bb(Ref,
+							spill_costs(New_ig)),
+			       New_ig),
     analyze_bbs(Ls, BBs_in_out_liveness, Newer_ig, CFG, Target).
-
 
 %%----------------------------------------------------------------------
 %% Function:    analyze_bb_instructions
@@ -187,21 +281,52 @@ analyze_bb_instructions([Instruction|Instructions], Live, IG, Target) ->
     Use_numbers = ordsets:from_list(reg_numbers(Use, Target)),
     Ref_numbers = ordsets:union(Ref, ordsets:union(Def_numbers, Use_numbers)),
     %% Increase spill cost on all used temporaries
-    IG1 = hipe_spillcost:inc_costs(Use_numbers, IG0),
-    {Live1, IG2} = analyze_move_instruction(Instruction, 
-					    Live0, 
-					    Def_numbers, 
-					    Use_numbers, 
-					    IG1, 
-					    Target),
-    Live2 = ordsets:union(Live1, Def_numbers),
+    IG1 = set_spill_costs(hipe_spillcost:inc_costs(Use_numbers,
+						   spill_costs(IG0)),
+			  IG0),
+    {Live1, IG2} = analyze_move(Instruction, 
+				Live0, 
+				Def_numbers, 
+				Use_numbers, 
+				IG1, 
+				Target),
+    %% Adding Def to Live here has the effect of creating edges between
+    %% the defined registers, which is O(N^2) for an instruction that
+    %% clobbers N registers.
+    %%
+    %% Adding Def to Live is redundant when:
+    %% 1. Def is empty, or
+    %% 2. Def is a singleton, or
+    %% 3. Def contains only precoloured registers, or
+    %% 4. Def contains exactly one non-precoloured register, and the
+    %%    remaining ones are all non-allocatable precoloured registers.
+    %%
+    %% HiPE's backends (except SPARC) only create multiple-element Def sets
+    %% for CALL instructions, and then all elements are precoloured.
+    %%
+    %% The SPARC backend requires more careful consideration:
+    %% 1. multimove instructions define multiple non-precoloured registers.
+    %%    However, multimoves are are eliminated before register allocation
+    %%    [see hipe_sparc_ra:allocate()].
+    %% 2. The alu_cc instruction sets the condition codes, and the backend
+    %%    records this by making alu_cc define virtual precoloured "%icc" and
+    %%    "%xcc" registers together with the non-precoloured result register.
+    %%    However, "%icc" and "%xcc" are non-allocatable, so no edges between
+    %%    them and the result register are needed.
+    %%    XXX: Nothing in the SPARC backend appears to use the "%icc" or
+    %%    "%xcc" registers, but removing them from the def/use sets breaks
+    %%    the backend for unknown reasons.
+    %%
+    %% Therefore we can avoid adding Def to Live. The benefit is greatest
+    %% on backends with many physical registers, since CALLs clobber all
+    %% physical registers.
+    Live2 = Live1, % ordsets:union(Live1, Def_numbers),
     IG3 = interfere(Def_numbers, Live2, IG2, Target),
     Live3 = ordsets:union(Use_numbers, ordsets:subtract(Live2, Def_numbers)),
     {Live3, IG3, Ref_numbers}.
 
-
 %%----------------------------------------------------------------------
-%% Function:    analyze_move_instruction
+%% Function:    analyze_move
 %%
 %% Description: If a move instructions is discovered, this function is
 %%               called. It is used to remember what move instructions
@@ -222,89 +347,20 @@ analyze_bb_instructions([Instruction|Instructions], Live, IG, Target) ->
 %%   IG    --  An updated interference graph
 %%----------------------------------------------------------------------
 
-analyze_move_instruction(Instruction, Live, Def_numbers, Use_numbers, IG, 
-			 Target) ->
-    case (Target:is_move(Instruction) andalso
-	  is_copy_instruction(Def_numbers, Use_numbers)) of
-	true ->
-	    New_live = ordsets:subtract(Live, Use_numbers),
-	    IG_moves = ig_moves(IG),
-	    Copy_instruction = 
-		create_copy_instruction(Def_numbers, Use_numbers),
-	    IG_moves0 = move_relate(Def_numbers, Copy_instruction, IG_moves),
-	    IG_moves1 = move_relate(Use_numbers, Copy_instruction, IG_moves0),
-	    IG_moves2 = 
-		hipe_ig_moves:add_worklist_moves(Copy_instruction, IG_moves1),
-	    New_IG = set_ig_moves(IG_moves2, IG),
-	    {New_live, New_IG};
-	false -> 
-	    {Live, IG}
-    end.
-
-
-%%----------------------------------------------------------------------
-%% Function:    is_copy_instruction
-%%
-%% Description: After tested that an instruction is a move instruction
-%%               this function tests if it's a copy instruction. That
-%%               is, it copys one temporary to another. 
-%%
-%% Parameters:
-%%   [Dest]         --  Destination register number(s) in a move instruction
-%%   [Source]       --  Source register number(s) in a move instruction
-%%
-%% Returns: 
-%%   true  --  If this is a copy instruction
-%%   false --  Otherwise
-%%----------------------------------------------------------------------
-
-is_copy_instruction([_Dest], [_Source])->
-    true;
-is_copy_instruction(_, _)->
-    false.
-
-%%----------------------------------------------------------------------
-%% Function:    create_copy_instruction
-%%
-%% Description: Create a copy instruction that looks in a way coalesce 
-%%               requires it to look like.
-%%
-%% Parameters:
-%%   Dest           --  Destination temporary number
-%%   Source         --  Source temporary number
-%%
-%% Returns: 
-%%   A move instruction in the format that coalesce wants it.
-%%----------------------------------------------------------------------
-
-create_copy_instruction([], Source)->
-    {no_move, [], Source};
-create_copy_instruction([Dest], [])->
-    {no_move, Dest, []};
-create_copy_instruction([Dest], [Source])->
-    {move, Dest, Source}.
-
-%%----------------------------------------------------------------------
-%% Function:    move_relate
-%%
-%% Description: Used to associate a bunch of temporaries with a
-%%               move instruction.
-%%
-%% Parameters:
-%%   Temporary      --  A temporary
-%%   Temporarys     --  A bunch of other temporaries.
-%%   Instruction    --  An instruction
-%%   IG_moves       --  A structure that have information about move
-%%                      instructions.
-%%
-%% Returns: 
-%%   A new IG_moves structure.
-%%----------------------------------------------------------------------
-
-move_relate([], _, IG_moves) -> IG_moves;
-move_relate([Temporary|Temporarys], Instruction, IG_moves) ->
-  New_IG_moves = hipe_ig_moves:add_movelist(Instruction, Temporary, IG_moves),
-  move_relate(Temporarys, Instruction, New_IG_moves).
+analyze_move(Instruction, Live, Def_numbers, Use_numbers, IG, Target) ->
+  case Target:is_move(Instruction) of
+    true ->
+      case {Def_numbers, Use_numbers} of
+	{[Dst], [Src]} ->
+	  New_IG = set_ig_moves(hipe_ig_moves:new_move(Dst, Src, ig_moves(IG)), IG),
+	  New_live = ordsets:del_element(Src, Live),
+	  {New_live, New_IG};
+	_ ->
+	  {Live, IG}
+      end;
+    _ ->
+      {Live, IG}
+  end.
 
 %%----------------------------------------------------------------------
 %% Function:    interfere
@@ -324,8 +380,8 @@ move_relate([Temporary|Temporarys], Instruction, IG_moves) ->
 
 interfere([], _, IG, _) -> IG;
 interfere([Define|Defines], Living, IG, Target) ->
-    New_ig = interfere_with_living(Define, Living, IG, Target),
-    interfere(Defines, Living, New_ig, Target).
+  New_ig = interfere_with_living(Define, Living, IG, Target),
+  interfere(Defines, Living, New_ig, Target).
 
 %%----------------------------------------------------------------------
 %% Function:    interfere_with_living
@@ -346,22 +402,32 @@ interfere([Define|Defines], Living, IG, Target) ->
 
 interfere_with_living(_, [], IG, _) -> IG;
 interfere_with_living(Define, [Live|Living], IG, Target) ->
-    New_ig = add_edge(Define, Live, IG, Target),
-    interfere_with_living(Define, Living, New_ig, Target).
+  New_ig = add_edge(Define, Live, IG, Target),
+  interfere_with_living(Define, Living, New_ig, Target).
 
-%%%
-%%% nodes_are_adjacent(U, V, IG)
-%%% returns true if nodes U and V are adjacent in interference graph IG
-%%%
+%%
+%% nodes_are_adjacent(U, V, IG)
+%% returns true if nodes U and V are adjacent in interference graph IG
+%%
 nodes_are_adjacent(U, V, IG) ->
-  hipe_adj_set:adjacent(U, V, adj_set(IG)).
+  adjset_are_adjacent(U, V, adj_set(IG)).
 
-%%%
-%%% node_adj_set(Node, IG)
-%%% returns ordset of Node's adjacent nodes in interference graph IG
-%%%
+%%
+%% node_adj_set(Node, IG)
+%% returns ordset of Node's adjacent nodes in interference graph IG
+%%
 node_adj_list(Node, IG) ->
   hipe_adj_list:edges(Node, adj_list(IG)).
+
+%%
+%% node_spill_cost(Node, IG)
+%% returns the Node's spill cost
+%%
+node_spill_cost(Node, IG) ->
+  hipe_spillcost:spill_cost(Node, spill_costs(IG)).
+
+get_moves(IG) ->
+  hipe_ig_moves:get_moves(ig_moves(IG)).
 
 %%----------------------------------------------------------------------
 %% Function:    add_edge
@@ -386,14 +452,13 @@ add_edge(U, V, IG, Target) ->
     true ->
       IG;
     false ->
-      Adj_set0 = hipe_adj_set:add_edge(U, V, adj_set(IG)),
-      {Adj_list0, Degree0} = interfere_if_uncolored(U, V, adj_list(IG), 
-						    degree(IG), Target),
-      {Adj_list1, Degree1} = interfere_if_uncolored(V, U, Adj_list0, 
-						    Degree0, Target),
-      IG0 = set_adj_set(Adj_set0, IG),
-      IG1 = set_adj_list(Adj_list1, IG0),
-      set_degree(Degree1, IG1)
+      adjset_add_edge(U, V, adj_set(IG)),
+      Degree = degree(IG),
+      Adj_list0 = interfere_if_uncolored(U, V, adj_list(IG),
+					 Degree, Target),
+      Adj_list1 = interfere_if_uncolored(V, U, Adj_list0,
+					 Degree, Target),
+      set_adj_list(Adj_list1, IG)
   end.
 
 %%----------------------------------------------------------------------
@@ -414,7 +479,7 @@ add_edge(U, V, IG, Target) ->
 %%
 %% Returns: 
 %%   Adj_list  --  An updated adj_list data-structure
-%%   Degree    --  An updated degree data-structure
+%%   Degree    --  An updated degree data-structure (via side-effects)
 %%----------------------------------------------------------------------
 
 interfere_if_uncolored(Temporary, Interfere_temporary, Adj_list, Degree, 
@@ -423,20 +488,19 @@ interfere_if_uncolored(Temporary, Interfere_temporary, Adj_list, Degree,
     false ->
       New_adj_list = hipe_adj_list:add_edge(Temporary, Interfere_temporary, 
 					    Adj_list),
-      New_degree   = hipe_degree:inc(Temporary, Degree),
-      {New_adj_list, New_degree};
+      degree_inc(Temporary, Degree),
+      New_adj_list;
     true ->
-      {Adj_list, Degree}
+      Adj_list
   end.
 
 %%----------------------------------------------------------------------
 %% Function:    reg_numbers
 %%
-%% Description: Converts a list of tupple with {something, reg_number}
+%% Description: Converts a list of tuple with {something, reg_number}
 %%               to a list of register numbers.
 %%
 %% Parameters:
-%%   TR             --  A Temorary register
 %%   TRs            --  A list of temporary registers
 %%   Target         --  The module containing the target-specific functions
 %% Returns: 
@@ -452,3 +516,15 @@ reg_numbers(Regs2, Target) ->
 	Regs2
     end,
   [Target:reg_nr(X) || X <- Regs].
+
+%%----------------------------------------------------------------------
+
+get_node_degree(Node, IG) ->
+  degree_get(Node, degree(IG)).
+
+dec_node_degree(Node, IG) ->
+  degree_dec(Node, degree(IG)),
+  IG.
+
+is_trivially_colourable(Node, K, IG) ->
+  degree_is_trivially_colourable(Node, K, degree(IG)).

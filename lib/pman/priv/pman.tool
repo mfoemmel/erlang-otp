@@ -3,4 +3,4 @@
  {start,{pman,start,[]}},
  {icon,"pman.gif"},
  {message,"Process Manager"},
- {html,"../doc/index.html"}}.
+ {html,"../doc/html/index.html"}}.

@@ -74,6 +74,7 @@
 -record(label, {label}).
 -record(lea, {mem, temp}).
 -record(move, {src, dst}).
+-record(move64, {imm, dst}).
 -record(movsx, {src, dst}).
 -record(movzx, {src, dst}).
 -record(nop, {}).

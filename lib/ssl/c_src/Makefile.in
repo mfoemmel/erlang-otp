@@ -94,8 +94,27 @@ SKIP_BUILDING_BINARIES := true
 endif
 endif
 
-ifneq ($(findstring darwin,$(TARGET)),darwin)
-LD_R_OPT = -Wl,-R$(SSL_LIBDIR)
+CC_R_FLAG=@CFLAG_RUNTIME_LIBRARY_PATH@
+ifeq ($(findstring @,$(CC_R_FLAG)),@)
+# Old erts configure used which hasn't replaced @CFLAG_RUNTIME_LIBRARY_PATH@;
+# we try our best here instead...
+
+ifeq ($(findstring darwin,$(TARGET)),darwin)	# darwin: no flag
+CC_R_FLAG =
+else
+ifeq ($(findstring osf,$(TARGET)),osf)		# osf1: -Wl,-rpath,
+CC_R_FLAG = -Wl,-rpath,
+else						# Default: -Wl,-R
+CC_R_FLAG = -Wl,-R
+endif
+endif
+
+endif
+
+ifeq ($(strip $(CC_R_FLAG)),)
+CC_R_OPT =
+else
+CC_R_OPT = $(CC_R_FLAG)$(SSL_LIBDIR)
 endif
 
 
@@ -123,7 +142,7 @@ $(OBJDIR)/%$(obj): %.c
 
 # Unix
 $(BINDIR)/ssl_esock: $(OBJS)
-	$(CC) -L$(SSL_LIBDIR) $(LD_R_OPT) -o $@ $^ \
+	$(CC) -L$(SSL_LIBDIR) $(CC_R_OPT) -o $@ $^ \
 		$(LIBS) -lssl -lcrypto
 
 # Win32/Cygwin

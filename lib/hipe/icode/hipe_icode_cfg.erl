@@ -5,7 +5,6 @@
 
 -export([bb/2, bb_add/3,
 	 cfg_to_linear/1,
-	 function/1,
          info/1, linear_to_cfg/1,
          labels/1, start_label/1,
 	 params/1, params_update/2,

@@ -442,15 +442,13 @@ trace_port1(file, Filename, Options) ->
 			     erlang:system_info(system_architecture)),
 		    catch erl_ddll:load_driver(Dir2, Driver)
 	    end,
-	    case Options of
-		{wrap, _, _, _} ->
-		    %% Delete old files
+	    if 	element(1, Options) == wrap ->
+		    %% Delete all files from any previous wrap log
 		    Files = wrap_postsort(wrap_presort(Name, Tail)),
 		    lists:foreach(
 		      fun(N) -> file:delete(N) end,
 		      Files);
-		_Other ->
-		    ok
+		true -> ok
 	    end,
 	    open_port({spawn, Command}, [eof])
     end.

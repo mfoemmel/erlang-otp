@@ -35,6 +35,8 @@ TARGET = @TARGET@
 # Application version and release dir specification
 # ----------------------------------------------------
 include ../vsn.mk
+include $(TARGET)/eidefs.mk
+
 ifdef TESTROOT
 RELEASE_PATH=$(TESTROOT)
 else
@@ -102,9 +104,6 @@ PROG_CFLAGS = @CFLAGS@ $(WARNFLAGS) $(INCFLAGS) $(TYPE_FLAGS) -Ilegacy
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 PROG_CFLAGS += -nostartfiles -Wl,-r,-d
 endif
-
-THR_DEFS = @THR_DEFS@
-THR_LIBS = @THR_LIBS@
 
 LIBS = @LIBS@
 
@@ -836,7 +835,8 @@ EXTRA = \
 	Makefile \
 	Makefile.in \
 	README \
-	README.internal
+	README.internal \
+	$(TARGET)/eidefs.mk
 
 release: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/include

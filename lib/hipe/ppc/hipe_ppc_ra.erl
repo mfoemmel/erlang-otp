@@ -27,7 +27,7 @@ ra(Defun0, Options) ->
 	  ra(Defun1, SpillIndex, Options, hipe_coalescing_regalloc);
 %%%	  hipe_ppc_ra_ls:ra(Defun1, SpillIndex, Options);
 	naive ->
-	  hipe_ppc_ra_dummy:ra(Defun1, Coloring_fp, Options);
+	  hipe_ppc_ra_naive:ra(Defun1, Coloring_fp, Options);
         _ ->
 	  exit({unknown_regalloc_compiler_option,
 		proplists:get_value(regalloc,Options)})
