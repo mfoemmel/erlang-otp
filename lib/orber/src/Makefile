@@ -67,7 +67,6 @@ MODULES= \
 	orber_iiop_outrequest \
 	orber_iiop_socketsup \
 	orber_socket \
-	orber_interceptors \
 	orber_ifr \
 	orber_ifr_aliasdef \
 	orber_ifr_arraydef \
@@ -87,22 +86,25 @@ MODULES= \
 	orber_ifr_repository \
 	orber_ifr_sequencedef \
 	orber_ifr_stringdef \
+	orber_ifr_wstringdef \
 	orber_ifr_structdef \
 	orber_ifr_typecode \
 	orber_ifr_typedef \
 	orber_ifr_uniondef \
 	orber_ifr_utils \
-	OrberApp_IFR_impl
+	OrberApp_IFR_impl \
+	orber_pi
 #	orber_imr
 
 EXTERNAL_HRL_FILES= ../include/corba.hrl \
-	../include/ifr_types.hrl
+	../include/ifr_types.hrl \
+	../include/orber_pi.hrl
 
 INTERNAL_HRL_FILES = \
 	orber_debug.hrl \
 	orber_iiop.hrl \
 	ifr_objects.hrl \
-	orber_ifr.hrl
+	orber_ifr.hrl \
 
 ERL_FILES= $(MODULES:%=%.erl)	
 

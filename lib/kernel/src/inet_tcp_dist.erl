@@ -204,15 +204,17 @@ nodelay() ->
 %% ------------------------------------------------------------
 %% Get remote information about a Socket.
 %% ------------------------------------------------------------
-
 get_remote_id(Socket, Node) ->
-    {ok, Address} = inet:peername(Socket),
-    [_, Host] = split_node(atom_to_list(Node), $@, []),
-    #net_address {
-		  address = Address,
-		  host = Host,
-		  protocol = tcp,
-		  family = inet }.
+    case inet:peername(Socket) of
+	{ok, Address} ->
+	    [_, Host] = split_node(atom_to_list(Node), $@, []),
+	    #net_address {address = Address,
+			  host = Host,
+			  protocol = tcp,
+			  family = inet };
+	{error, _Reason} ->
+	    ?shutdown(no_node)
+    end.
 
 %% ------------------------------------------------------------
 %% Setup a new connection to another Erlang node.

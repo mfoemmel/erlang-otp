@@ -61,7 +61,7 @@ int erts_put_binary(Eterm arg, unsigned size);
 int erts_put_binary_all(Eterm arg);
 int erts_put_float(Eterm arg, Eterm size, int unit, int flags);
 void erts_put_string(byte* iptr, size_t n);
-
+void erts_init_bits(void);
 /*
  * Flags for bs_get_* instructions.
  */

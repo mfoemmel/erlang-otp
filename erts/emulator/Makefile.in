@@ -247,8 +247,16 @@ RUN_OBJS = \
 OS_OBJS =					\
 	$(OBJDIR)/sys.o \
 	$(OBJDIR)/driver_tab.o		$(OBJDIR)/unix_efile.o \
-	$(OBJDIR)/unix_ddll_drv.o	$(OBJDIR)/gzio.o \
+	$(OBJDIR)/gzio.o \
 	$(OBJDIR)/elib_malloc.o		$(OBJDIR)/elib_memmove.o
+
+# Until recently (ummm...not *that* recently), both these were named
+# `ddll_drv.o'.
+ifeq ($(findstring vxworks,$(TARGET)),vxworks)
+	OS_OBJS += $(OBJDIR)/vxworks_ddll_drv.o
+else
+	OS_OBJS += $(OBJDIR)/unix_ddll_drv.o
+endif
 
 DRV_OBJS =					\
 	$(OBJDIR)/efile_drv.o		$(OBJDIR)/ddll_drv.o \

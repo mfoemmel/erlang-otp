@@ -291,7 +291,7 @@ printline(f,buf,dir,flags)
 #endif
 {
     char *p,*q;
-    char path[128];
+    char path[1024];
     unsigned int l;
 
     p=buf; while (*p=='\t' || *p==' ') p++;
@@ -467,7 +467,7 @@ main(argc, argv)
 {
     FILE *fout;
     char *p,*q, *filename=NULL;
-    char dir[128];
+    char dir[1024];
     tableitem *t;
     int c,i, flags=0;
 

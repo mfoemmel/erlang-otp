@@ -783,7 +783,6 @@ int count;
 					 + RESBUFSIZE + 1);
 	
 	    d->drive = buf[0];
-	    strcpy((char *) &d->b, name);
 	    d->command = command;
 	    driver_async(desc->port, KEY, invoke_pwd, (void *) d,
 			 free_data);

@@ -7,6 +7,28 @@
 
 <CENTER><H1>Debugger Release Notes</H1></CENTER>
 
+<H2>Debugger 1.5.3</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+The debugger could not be run in embedded mode, because the
+dbg_ets module was not listed in the app file.
+<br>Own Id: OTP-3829<br>
+Aux Id: Seq 5084
+
+
+<LI>
+In some cases, the debugger would in a call to undefined
+function <CODE>erts_debug:apply/4</CODE>. This problem has been
+corrected.
+<br>Own Id: OTP-3845<br>
+Aux Id: Seq 5094
+
+
+</UL>
+
 <H2>Debugger 1.5.2</H2>
   <H3>Known Problems</H3>
   <UL>

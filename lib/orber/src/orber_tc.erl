@@ -37,11 +37,11 @@
 -export([null/0, void/0, short/0, unsigned_short/0, 
 	 long/0, unsigned_long/0, long_long/0,
 	 unsigned_long_long/0, float/0, double/0,
-	 boolean/0, char/0, octet/0, any/0,
+	 boolean/0, char/0, wchar/0, octet/0, any/0,
 	 typecode/0, principal/0,
 	 object_reference/2, struct/3, 
 	 union/5, enum/3,
-	 string/1, sequence/2, array/2, alias/3,
+	 string/1, wstring/1, sequence/2, array/2, alias/3,
 	 exception/3, get_tc/1, check_tc/1]).
 
 %%-----------------------------------------------------------------
@@ -81,6 +81,8 @@ boolean() ->
     tk_boolean.
 char() ->
     tk_char.
+wchar() ->
+    tk_wchar.
 octet() ->
     tk_octet.
 any() ->
@@ -104,6 +106,9 @@ enum(Id, Name, ElementList) ->
 
 string(Length) ->
     {tk_string, Length}.
+
+wstring(Length) ->
+    {tk_wstring, Length}.
 
 sequence(ElemTC, Length) ->
     {tk_sequence, ElemTC, Length}.
@@ -156,6 +161,7 @@ check_tc('tk_double') -> true;
 %%check_tc('tk_longdouble') -> true;
 check_tc('tk_boolean') -> true;
 check_tc('tk_char') -> true;
+check_tc('tk_wchar') -> true;
 check_tc('tk_octet') -> true;
 check_tc('tk_any') -> true;
 check_tc('tk_TypeCode') -> true;
@@ -165,6 +171,7 @@ check_tc({'tk_struct', RepId, Name, ElementList}) -> true;
 check_tc({'tk_union', RepId, Name, DiscrTC, Default, ElementList}) -> true;
 check_tc({'tk_enum', RepId, Name, ElementList}) -> true;
 check_tc({'tk_string', MaxLength}) -> true;
+check_tc({'tk_wstring', MaxLength}) -> true;
 check_tc({'tk_sequence', ElemTC, MaxLength}) -> true;
 check_tc({'tk_array', ElemTC, Length}) -> true;
 check_tc({'tk_alias', RepId, Name, TC}) -> true;

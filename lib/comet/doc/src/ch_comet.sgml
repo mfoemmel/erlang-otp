@@ -22,21 +22,24 @@
     <title>Comet
     <prepared>Jakob Cederlund
     <docno>
-    <date>2000-05-17
+    <date>2000-11-13
     <rev>A
-    <file>ch_overview.sgml
+    <file>ch_comet.sgml
   </header>
   
   <section><title>Basic COM from Erlang</title>
-    <p>In COM, there are interfaces. An interface is a handle to
-      an object. Physically it consists of a pointer to an object
-      with a method table.</p>
-    <p>Interfaces in COM are represented as a tuple in Erlang. This
-      tuple should be considered oblique data.</p>
-    <p>There is a standard set of types in COM. These types can
-      be converted to and from Erlang by the port program. (It is
-      actually converted from the Erlang binary format.) Table 1
-      shows the types in Erlang and their corresponding COM type.</p>
+    <p>
+      In COM, there are interfaces. An interface is a handle to an
+      object. Physically it consists of a pointer to an object with a
+      method table.
+    <p>
+      Interfaces in COM are represented as a tuple in Erlang. This
+      tuple should be considered oblique data.
+    <p>
+      There is a standard set of types in COM. These types can be
+      converted to and from Erlang by the port program. (It is
+      actually converted from the Erlang binary format.) Table 1 shows
+      the types in Erlang and their corresponding COM type.
     <table>
       <row>
 	<cell><c>integer</c></cell>
@@ -57,35 +60,54 @@
 	<cell><c>float</c></cell>
 	<cell><c>VT_R8</c>, 64-bits floating point</cell>
       </row>
-      <tcaption>Erlang types and their corresponding COM type</tcaption>
+      <tcaption>Erlang Types and Their Corresponding COM Type</tcaption>
     </table>
-    <p>However, there are fewer types in Erlang than in COM, so
-      some types overlap. When calling a COM function, the parameters
-      types must match exactly, since COM is strongly typed. Comet
-      uses a special notation for the conversion of Erlang types to
-      COM types, a tuple with an atom followed by the value, e.g.
-      <c>{vt_i2, 12}</c> </p>
-   
-     
-
+    <p>
+      However, there are fewer types in Erlang than in COM, so some
+      types overlap. When calling a COM function, the parameters types
+      must match exactly, since COM is strongly typed. Comet uses a
+      special notation for the conversion of Erlang types to COM
+      types, a tuple with an atom followed by the value, e.g.
+      <c>{vt_i2, 12}</c>.
+    <p>
+      The comet application consists of two parts: the
+      <c>gen_server</c> module <c>erl_com</c>, that implements the
+      Erlang API for comet, and the port (driver or program)
+      <c>erl_com_drv</c>, that communicates with COM objects.  The
+      port is never called directly, only through API functions in
+      <c>erl_com</c>.
+    <p>
+      There is also a module <c>com_gen</c> that can generate Erlang
+      APIs for COM object, by querying their type libraries.
   </section>
-  <section><title>Using the IDispatch interface</title>
-    <p>The <c>IDispatch</c> interface is a way for scripts to
-      call a COM function. It is used by Visual Basic, JScript
-      and other scripting language. It is sometimes referred to
-      as the late-binding call interface.</p>
-    <p>This way to call COM objects shows off its VB heritage.
-      An interface has methods and properties. A property is really
-      two methods: put property and get property.</p>
-    <p>In the <c>erl_com</c> server, there are three functions for
-      calling an IDispatch-interface.</p>
+  <section><title>How comet works</title>
+    <p>
+      TBD      
+  </section>
+  <section><title>Using objects and interfaces</title>
+    <p>
+      TBD
+  </section>
+  <section><title>Using the dispatch interface</title>
+    <p>
+      The dispatch or <c>IDispatch</c> interface is a way for scripts
+      to call functions. It is used by Visual Basic, JScript and other
+      scripting language. It is sometimes referred to as the
+      late-binding call interface.
+    <p>
+      This way to call COM objects shows off its VB heritage.  An
+      interface has methods and properties. A property is really two
+      methods: put property and get property.
+    <p>
+      In the <c>erl_com</c> server, there are three functions for
+      calling an IDispatch-interface.
     <table>
       <row>
 	<cell><c>invoke(Interface, Method, Parameterlist)</c></cell>
 	<cell>
 	  Invokes a normal COM method. A list of out-parameters are
 	  returned, or, if there is a retval-parameter, it is
-	  returned. 
+	  returned.
 	</cell>
       </row>
       <row>
@@ -101,15 +123,56 @@
 	</cell>
       </row>
       <row>
+	<cell><c>property_put_ref(Interface, Method, Parameterlist,
+	    Value)</c></cell>
+	<cell>
+	  Sets a property value REF. See COM documentation for more
+	  info.
+	</cell>
+      </row>
+      <row>
 	<cell><c>property_get(Interface, Method, Parameterlist)</c></cell>
 	<cell>
 	  Calls a COM method with the <c>propget</c>-attribute. The
-	  value of the property is returned.
-	  If the property does not have parameters,
-	  the parameterlist might be omitted.
+	  value of the property is returned.  If the property does not
+	  have parameters, the parameterlist might be omitted.
 	</cell>
       </row>
-      <tcaption>calling an IDispatch interface</tcaption>
+      <tcaption>Functions for dispatch interfaces</tcaption>
     </table>
+    <p>
+      The parameter <c>Method</c> above, is either a string or a
+      member ID.
+    <p>
+      Examples of using this:
+    <p>
+      <c>erl_com:invoke(Obj, "Navigate", ["www.erlang.org"])</c>
+    <p>
+      <c>erl_com:property_put(Obj, "Visible", true)</c>
+    <p>
+      Here we assume that <c>Obj</c> is an IWebBrowser interface for
+      an Internet Explorer program.
+    <p>
+      Calling methods this way is OK for testing things in an Erlang
+      shell, but it's not very practical and does not make for
+      readable code. A much simpler way of using COM objects is to
+      generate them first and then call them.
+    <p>
+  </section>
+  <section><title>Other functions</title>
+    <p>
+      TBD
+    <p>
+  </section>
+  <section><title>Generating stub modules</title>
+    <p>
+      The <c>com_gen</c> erlang module, has functions for generating
+      stub modules for COM interfaces and classes.
+    <p>
+      In COM, type information is compiled from an IDL-file, and
+      stored in a "type library". This is a collection of type
+      information, that is readable (via COM) from erlang.
+    <p>
+      TBD
   </section>
 </chapter>

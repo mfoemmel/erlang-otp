@@ -33,6 +33,7 @@
 	 write/5, delete/5, delete_object/5,
 	 read/5, match_object/5, all_keys/4,
 	 index_match_object/6, index_read/6,
+	 foldl/6, foldr/6,
 	 table_info/4
        ]).
 
@@ -102,7 +103,7 @@ match_object(ActivityId, Opaque, Tab, Pat, LockKind) ->
 all_keys(ActivityId, Opaque, Tab, LockKind) ->
     Match = [mnesia:all_keys(ActivityId, Opaque, Frag, LockKind)
 	     || Frag <- frag_names(Tab)],
-    lists:flatten(Match).
+    lists:concat(Match).
 
 index_match_object(ActivityId, Opaque, Tab, Pat, Attr, LockKind) ->
     Match =
@@ -115,6 +116,18 @@ index_read(ActivityId, Opaque, Tab, Key, Attr, LockKind) ->
 	[mnesia:index_read(ActivityId, Opaque, Frag, Key, Attr, LockKind)
 	     || Frag <- frag_names(Tab)],
     lists:flatten(Match).
+
+foldl(ActivityId, Opaque, Fun, Acc, Tab, LockKind) ->
+    Fun2 = fun(Frag, A) ->
+		   mnesia:foldl(ActivityId, Opaque, Fun, A, Frag, LockKind)
+	   end,
+    lists:foldl(Fun2, Acc, frag_names(Tab)).
+
+foldr(ActivityId, Opaque, Fun, Acc, Tab, LockKind) ->
+    Fun2 = fun(Frag, A) ->
+		   mnesia:foldr(ActivityId, Opaque, Fun, A, Frag, LockKind)
+	   end,
+    lists:foldr(Fun2, Acc, frag_names(Tab)).
 
 table_info(ActivityId, Opaque, {Tab, Key}, Item) ->
     Frag = key_to_frag_name(Tab, Key),

@@ -22,6 +22,8 @@
 	 log_to_txt/6, log_to_txt/7,
 	 change_log_size/1]).
 
+-export([format/2]).
+
 -define(SNMP_USE_V3, true).
 -include("snmp_types.hrl").
 
@@ -384,3 +386,27 @@ addr([], Str) ->
 
 ip({A,B,C,D}) ->
     io_lib:format("~w.~w.~w.~w", [A,B,C,D]).
+
+
+%% Temporary fix, since we dont really know what Term is...
+%% grumble, mutter, ...
+%% Mib is a list of {Oid,Aliasname,bertype} (with no duplicates)
+format({Packet,Ip,Port},Mib) when binary(Packet) ->
+    L = binary_to_list(Packet),
+    case catch snmp_pdus:dec_message(L) of
+	{'EXIT', Reason} -> 
+	    %% Ok, failed the entire message. Try decode without the pdu.
+	    case catch snmp_pdus:dec_message_only(L) of
+		{'EXIT', Reason} -> 
+		    io_lib:format("failed decoding ~w bytes packet: ~p from ~p:~p",
+				  [size(Packet),Packet,Ip,Port]);
+		DecodedMessageOnly -> 
+		    io_lib:format("~p received from ~p:~p",
+				  [DecodedMessageOnly,Ip,Port])
+		    
+	    end;
+	DecodedMessage -> 
+	    io_lib:format("~p received from ~p:~p",[DecodedMessage,Ip,Port])
+    end;
+format(Term,Mib) ->
+    io_lib:format("~p",[Term]).

@@ -66,11 +66,8 @@ gen_encode_sequence(Typename,D) when record(D,type) ->
 		end,
     gen_enc_sequence_call(Typename,CompList1,1,Ext),
 
-    MyTag = 
-	case D#type.tag of
-	     undefined -> []; 
-	     Tag -> [Tag#tag{class=asn1ct_gen_ber:decode_class(Tag#tag.class)}]
-	end ++ 
+    MyTag = [X#tag{class=asn1ct_gen_ber:decode_class(X#tag.class)}|| X <- D#type.tag]
+	++ 
 	[#tag{class = asn1ct_gen_ber:decode_class('UNIVERSAL'),
 	      number = asn1ct_gen_ber:decode_type(SeqOrSet),
 	      form = ?CONSTRUCTED,
@@ -104,11 +101,8 @@ gen_decode_sequence(Module,Typename,D) when record(D,type) ->
     emit({"   %%-------------------------------------------------",nl}),
 
     asn1ct_name:new(rb),
-    MyTag = 
-	case D#type.tag of
-	     undefined -> []; 
-	     Tag -> [Tag#tag{class=asn1ct_gen_ber:decode_class(Tag#tag.class)}]
-	end ++ 
+    MyTag = [X#tag{class=asn1ct_gen_ber:decode_class(X#tag.class)}|| X <- D#type.tag]
+	++ 
 	[#tag{class = asn1ct_gen_ber:decode_class('UNIVERSAL'),
 	      number = asn1ct_gen_ber:decode_type('SEQUENCE'),
 	      form = ?CONSTRUCTED,
@@ -143,16 +137,17 @@ gen_decode_sequence(Module,Typename,D) when record(D,type) ->
 	    demit({"Result = "}), %dbg
 	    %% return value as record
 	    asn1ct_name:new(rb),
+	    asn1ct_name:new(bytes),
+	    ExtStatus = case Ext of
+			    {ext,_,_} -> ext;
+			    noext -> noext
+			end,
+	    emit(["{",{next,bytes},",",{curr,rb},"} = ?RT_BER:restbytes2(RemBytes, ",
+		  {curr,bytes},",",ExtStatus,"),",nl]),
+	    asn1ct_name:new(rb),
 	    emit({"   {{",{asis,Typename},", "}),
 	    mkvlist(asn1ct_name:all(term)),
-	    case Ext of
-		{ext,_,_} ->
-		    emit({"}, ?RT_BER:restbytes(RemBytes, ",
-			  {next,bytes},",ext),",nl,"    "});
-		noext ->
-		    emit({"}, ?RT_BER:restbytes(RemBytes, ",
-			  {next,bytes},",noext),",nl,"    "})
-	    end,
+	    emit(["}, ",{next,bytes},", "]),
 	    asn1ct_gen_ber:add_removed_bytes(),
 	    emit({"}.",nl})
     end.
@@ -183,11 +178,8 @@ gen_decode_set(Module,Typename,D) when record(D,type) ->
     emit({"   %%-------------------------------------------------",nl}),
 
     asn1ct_name:new(rb),
-    MyTag = 
-	case D#type.tag of
-	     undefined -> []; 
-	     Tag -> [Tag#tag{class=asn1ct_gen_ber:decode_class(Tag#tag.class)}]
-	end ++ 
+    MyTag = [X#tag{class=asn1ct_gen_ber:decode_class(X#tag.class)}|| X <- D#type.tag]
+	++ 
 	[#tag{class = asn1ct_gen_ber:decode_class('UNIVERSAL'),
 	      number = asn1ct_gen_ber:decode_type('SET'),
 	      form = ?CONSTRUCTED,
@@ -270,11 +262,8 @@ gen_encode_sof(Typename,InnerTypename,D) when record(D,type) ->
 
     emit({"   {EncBytes,EncLen} = 'enc_",Typename,"_components'(Val,[],0),",nl}),
 
-    MyTag = 
-	case D#type.tag of
-	     undefined -> []; 
-	     Tag -> [Tag#tag{class=asn1ct_gen_ber:decode_class(Tag#tag.class)}]
-	end ++ 
+    MyTag = [X#tag{class=asn1ct_gen_ber:decode_class(X#tag.class)}|| X <- D#type.tag]
+	++ 
 	[#tag{class = asn1ct_gen_ber:decode_class('UNIVERSAL'),
 	      number = asn1ct_gen_ber:decode_type(TypeTag),
 	      form = ?CONSTRUCTED,
@@ -348,11 +337,8 @@ gen_decode_sof(Typename,InnerTypename,D) when record(D,type) ->
     emit({"   %%-------------------------------------------------",nl}),
     
     asn1ct_name:new(rb),
-    MyTag = 
-	case D#type.tag of
-	     undefined -> []; 
-	     Tag -> [Tag#tag{class=asn1ct_gen_ber:decode_class(Tag#tag.class)}]
-	end ++ 
+    MyTag = [X#tag{class=asn1ct_gen_ber:decode_class(X#tag.class)}|| X <- D#type.tag]
+	++ 
 	[#tag{class = asn1ct_gen_ber:decode_class('UNIVERSAL'),
 	      number = asn1ct_gen_ber:decode_type(TypeTag),
 	      form = ?CONSTRUCTED,
@@ -652,10 +638,8 @@ gen_enc_choice1(TopType,Tag,CompList,_Ext) ->
     emit({"   {EncBytes,EncLen} = case element(1,Val) of",nl}),
     gen_enc_choice2(TopType,CompList),
     emit([nl,"   end,",nl,nl]),
-    NewTag = case Tag of
-		 undefined -> [];
-		 _ -> [Tag#tag{class=asn1ct_gen_ber:decode_class(Tag#tag.class)}]
-	     end,
+    NewTag = [X#tag{class=asn1ct_gen_ber:decode_class(X#tag.class)}|| X <- Tag],
+    
     emit(["?RT_BER:encode_tags(TagIn ++",{asis,NewTag},", EncBytes, EncLen).",nl]).
 %    emit({"   ["}),
 %    emit({"?RT_BER:encode_tag_val({",
@@ -699,12 +683,8 @@ gen_dec_choice(Module, TopType, ChTag, CompList, Ext) ->
 %%    emit({indent(3),
 %%	  {curr,tagList}," = ",{asis,TagList},",",nl,nl}),
 
-    Tags = case ChTag of
-	       undefined -> [];
-	       _T -> 
-		   [ChTag#tag{
-		      class=asn1ct_gen_ber:decode_class(ChTag#tag.class)}]
-	   end,
+    Tags = [X#tag{class=asn1ct_gen_ber:decode_class(X#tag.class)}|| X <- ChTag],
+    
     emit(["   {FormLen,",{next,bytes},
 	  ", RbExp} = ?RT_BER:check_tags(TagIn++",
 	  {asis,Tags},", ",
@@ -793,10 +773,8 @@ gen_enc_line(TopType,Cname,Type,Element,Indent,OptOrMand,Assign) when list(Eleme
 %    AttString = fun(true,I,A) -> lists:concat([I,A," = "]);
 %		   (_,I,A) -> I end (Att,IndDeep,
 %				     asn1ct_gen_ber:mk_var(asn1ct_name:curr(att))),
-    Tag = case _T1 = Type#type.tag of
-	      undefined -> [];
-	      _ -> [_T1#tag{class=asn1ct_gen_ber:decode_class(_T1#tag.class)}]
-	  end,
+    Tag = [X#tag{class=asn1ct_gen_ber:decode_class(X#tag.class)}
+	   || X <- Type#type.tag],
     InnerType = asn1ct_gen:get_inner(Type#type.def),
     WhatKind = asn1ct_gen:type(InnerType),
     emit(IndDeep),
@@ -828,11 +806,8 @@ gen_enc_line(TopType,Cname,Type,Element,Indent,OptOrMand,Assign) when list(Eleme
 gen_dec_line_sof(TopType,Cname,Type) ->
     OptOrMand = mandatory,
     BytesVar = asn1ct_gen_ber:mk_var(asn1ct_name:curr(bytes)),
-    Tag = case _T1 = Type#type.tag of
-	      undefined -> [];
-	      _ -> [_T1#tag{class=asn1ct_gen_ber:decode_class(_T1#tag.class)}]
-	  end,
-%    {TopEnc_type, Top_class, Top_tagNr} = get_top_enc_type(Type#type.tag),
+    Tag = [X#tag{class=asn1ct_gen_ber:decode_class(X#tag.class)}
+	   || X <- Type#type.tag],    
     InnerType = asn1ct_gen:get_inner(Type#type.def),
     WhatKind = asn1ct_gen:type(InnerType),
     case WhatKind of
@@ -854,11 +829,8 @@ gen_dec_line_sof(TopType,Cname,Type) ->
 
 gen_dec_line(TopType,Cname,Type,OptOrMand)  ->
     BytesVar = asn1ct_gen_ber:mk_var(asn1ct_name:curr(bytes)),
-    Tag = case _T1 = Type#type.tag of
-	      undefined -> [];
-	      _ -> [_T1#tag{class=asn1ct_gen_ber:decode_class(_T1#tag.class)}]
-	  end,
-%    {TopEnc_type, Top_class, Top_tagNr} = get_top_enc_type(Type#type.tag),
+    Tag = [X#tag{class=asn1ct_gen_ber:decode_class(X#tag.class)}
+	   || X <- Type#type.tag],
     InnerType = asn1ct_gen:get_inner(Type#type.def),
     WhatKind = asn1ct_gen:type(InnerType),
     case WhatKind of
@@ -949,14 +921,6 @@ print_attribute_comment(InnerType,Pos,Prop) ->
     emit([nl,CommentLine,nl]).
 
 
-mk_listhead(L) when list(L), length(L) > 0  ->
-    [$[|mk_listhead1(L)].
-
-mk_listhead1([H,H1|T]) ->
-    integer_to_list(H) ++ "," ++ mk_listhead([H1|T]);
-mk_listhead1([H]) ->
-    integer_to_list(H).
-    
 mkfuncname(TopType,Cname,WhatKind,DecOrEnc) ->
     case WhatKind of
 	#'Externaltypereference'{module=Mod,type=EType} ->

@@ -7,6 +7,53 @@
 
 <CENTER><H1>Stdlib Release Notes</H1></CENTER>
 
+<H2>Stdlib 1.9.4</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+Dets file repair failed with {error, eaccess} on the Windows
+platforms in stdlib-1.9.3 (patched R7B). This is now corrected
+and dets files can be repaired.
+<br>Own Id: OTP-3909<br>
+Aux Id: Seq 5146
+
+
+<LI>
+Ets:info/2 and dets:info/2 no longer returns values other than
+'undefined' for non existing ets/dets tables. The behaviour is
+now as described in the documentation.
+<br>Own Id: OTP-3877<br>
+Aux Id: Seq 5112
+
+
+<LI>
+The (betatest) ets:select/2 call in R7B may no longer
+crash the emulator. This only affects customers beta testing
+this functionality.
+<br>Own Id: OTP-3882
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The <CODE>ets</CODE> module now contains iterator functions
+<CODE>foldl/3</CODE> and <CODE>foldr/3</CODE> analogous to the ones
+in the <CODE>lists</CODE> module.
+<br>Own Id: OTP-3746
+
+<LI>
+Somewhat faster repair of dets files.
+<br>Own Id: OTP-3782<br>
+Aux Id: OTP-3746
+
+
+</UL>
+
 <H2>Stdlib 1.9.1 (R7B)</H2>
 <H3>Improvements and new features</H3>
 

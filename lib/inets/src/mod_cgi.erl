@@ -20,12 +20,15 @@
 
 -include("httpd.hrl").
 
+-define(VMODULE,"CGI").
+-include("httpd_verbosity.hrl").
+
 -define(GATEWAY_INTERFACE,"CGI/1.1").
 
 %% do
 
 do(Info) ->
-    ?DEBUG("do -> entry",[]),
+    ?vtrace("do",[]),
     case httpd_util:key1search(Info#mod.data,status) of
 	%% A status code has been generated!
 	{StatusCode,PhraseArgs,Reason} ->
@@ -35,54 +38,22 @@ do(Info) ->
 	    case httpd_util:key1search(Info#mod.data,response) of
 		%% No response has been generated!
 		undefined ->
-		    RequestURI=
-			case httpd_util:key1search(Info#mod.data,new_request_uri) of
+		    RequestURI =
+			case httpd_util:key1search(Info#mod.data,
+						   new_request_uri) of
 			    undefined ->
 				Info#mod.request_uri;
 			    Value ->
 				Value
 			end,
-		    ScriptAliases=
-			httpd_util:multi_lookup(Info#mod.config_db,script_alias),
+		    ScriptAliases =
+			httpd_util:multi_lookup(Info#mod.config_db,
+						script_alias),
 		    case mod_alias:real_script_name(Info#mod.config_db,
 						    RequestURI,
 						    ScriptAliases) of
 			{Script, AfterScript} ->
-			    case is_executable(Script) of
-				true ->
-				    Dir = filename:dirname(Script),
-				    [Script_Name|_] = string:tokens(RequestURI, "?"),
-				    Env = env(Info, Script_Name, AfterScript),
-				    Port = (catch open_port({spawn, Script}, [stream,
-									      {cd, Dir},
-									      {env, Env}])),
-				    case Port of
-					P when port(P) ->
-					    %% Send entity_body to port.
-					    if
-						Info#mod.entity_body == [] ->
-						    no_entity_body;
-						true ->
-						    Port ! {self(),
-							    {command,
-							     Info#mod.entity_body}}
-					    end,
-					    proxy(Info,Port);
-					O ->
-					    ?LOG("Failed exec request ~p: ~p",
-						 [Info#mod.request_uri,O]),
-					    {proceed,
-					     [{status,
-					       {500,Info#mod.request_uri,
-						?NICE("Failure when attempting to execute "++Info#mod.request_uri++reason(O))}}|
-					      Info#mod.data]}
-				    end;
-				false ->
-				    ?LOG("script ~s not executable",[Script]),
-				    {proceed,[{status,{404,Info#mod.request_uri,
-						       ?NICE("You don't have permission to execute "++Info#mod.request_uri++" on this server")}}|
-					      Info#mod.data]}
-			    end;
+			    exec_script(Info,Script,AfterScript,RequestURI);
 			not_a_script ->
 			    {proceed,Info#mod.data}
 		    end;
@@ -213,7 +184,7 @@ env(Info, Script, AfterScript) ->
     Env1=
         case Info#mod.method of
             "GET" ->
-		?DEBUG("AfterScript: ~p~n", [AfterScript]),
+		?vdebug("~n   AfterScript: ~p",[AfterScript]),
                 case AfterScript of
 		    {[], QueryString} ->
                         [env("QUERY_STRING", QueryString)|Env];
@@ -247,7 +218,7 @@ env(Info, Script, AfterScript) ->
             _ ->
                 Env
         end,
-    Env2=
+    Env2 =
         case httpd_util:key1search(Info#mod.data,remote_user) of
             undefined ->
                 Env1;
@@ -281,12 +252,74 @@ multi_value([Value]) ->
 multi_value([Value|Rest]) ->
   Value++", "++multi_value(Rest).
 
+
+exec_script(Info,Script,AfterScript,RequestURI) ->
+    exec_script(is_executable(Script),Info,Script,AfterScript,RequestURI).
+
+exec_script(true,Info,Script,AfterScript,RequestURI) ->
+    process_flag(trap_exit,true),
+    Dir  = filename:dirname(Script),
+    [Script_Name|_] = string:tokens(RequestURI, "?"),
+    Env  = env(Info, Script_Name, AfterScript),
+    Port = (catch open_port({spawn,Script},[stream,{cd, Dir},{env, Env}])),
+    case Port of
+	P when port(P) ->
+	    %% Send entity_body to port.
+	    Res = case Info#mod.entity_body of
+		      [] ->
+			  true;
+		      EntityBody ->
+			  (catch port_command(Port,EntityBody))
+		  end,
+	    case Res of
+		{'EXIT',Reason} ->
+		    ?vlog("port send failed:"
+			  "~n   Port:   ~p"
+			  "~n   URI:    ~p"
+			  "~n   Reason: ~p",
+			  [Port,Info#mod.request_uri,Reason]),
+		    exit({open_cmd_failed,Reason,
+			  [{mod,?MODULE},{port,Port},
+			   {uri,Info#mod.request_uri},
+			   {script,Script},{env,Env},{dir,Dir},
+			   {ebody_size,sz(Info#mod.entity_body)}]});
+		 true ->
+		    proxy(Info,Port)
+	    end;
+	{'EXIT',Reason} ->
+	    ?vlog("open port failed: exit"
+		  "~n   URI:    ~p"
+		  "~n   Reason: ~p",
+		  [Info#mod.request_uri,Reason]),
+	    exit({open_port_failed,Reason,
+		  [{mod,?MODULE},{uri,Info#mod.request_uri},{script,Script},
+		   {env,Env},{dir,Dir}]});
+	O ->
+	    ?vlog("open port failed: unknown result"
+		  "~n   URI: ~p"
+		  "~n   O:   ~p",
+		  [Info#mod.request_uri,O]),
+	    exit({open_port_failed,O,
+		  [{mod,?MODULE},{uri,Info#mod.request_uri},{script,Script},
+		   {env,Env},{dir,Dir}]})
+    end;
+
+exec_script(false,Info,Script,_AfterScript,_RequestURI) ->
+    ?vlog("script ~s not executable",[Script]),
+    {proceed,
+     [{status,
+       {404,Info#mod.request_uri,
+	?NICE("You don't have permission to execute "++
+	      Info#mod.request_uri++" on this server")}}|
+      Info#mod.data]}.
+    
+	    
+
 %%
 %% Socket <-> Port communication
 %%
 
 proxy(Info,Port) ->
-  process_flag(trap_exit,true),
   proxy(Info,Port,Info#mod.socket,0, undefined).
 
 proxy(Info,Port,Socket,Size, StatusCode) ->
@@ -320,7 +353,7 @@ proxy(Info,Port,Socket,Size, StatusCode) ->
 		      Socket, NewStatusCode, 
 		      Response, Size) of
 		socket_closed ->
-		    Port ! {self(), close}, % KILL the port !!!!
+		    (catch port_close(Port)), % KILL the port !!!!
 		    process_flag(trap_exit,false),
 		    {proceed,
 		     [{response,
@@ -390,6 +423,11 @@ extract_status_code([[$S,$t,$a,$t,$u,$s,$:,$ |CodeAndReason]|_]) ->
   end;
 extract_status_code([_|Rest]) ->
   extract_status_code(Rest).
+
+
+sz(B) when binary(B) -> {binary,size(B)};
+sz(L) when list(L)   -> {list,length(L)};
+sz(_)                -> undefined.
 
 
 %% Convert error to printable string

@@ -18,9 +18,8 @@
 %%
 %%%----------------------------------------------------------------------
 %%% File    : ir_objects.hrl
-%%% Author  : Per Danielsson <pd@erix.ericsson.se>
 %%% Purpose : Record definitions for the IR DB 
-%%% Created : 19 Mar 1997 by Per Danielsson <pd@erix.ericsson.se>
+%%% Created : 19 Mar 1997
 %%%----------------------------------------------------------------------
 
 %%%----------------------------------------------------------------------
@@ -187,6 +186,11 @@
 			  type,			%from IDLType
 			  bound}).
 
+-record(ir_WstringDef,   {ir_Internal_ID,	%[IDLType]
+			  def_kind,		%from IRObject
+			  type,			%from IDLType
+			  bound}).
+
 						% SequenceDef, page 6-22
 -record(ir_SequenceDef,  {ir_Internal_ID,	%[IDLType]
 			  def_kind,		%from IRObject
@@ -292,6 +296,7 @@
 			  ir_EnumDef,
 			  ir_UnionDef,
 			  ir_StringDef,
+			  ir_WstringDef,
 			  ir_ORB,
 			  ir_IDLType,
 			  ir_ExceptionDef,
@@ -346,6 +351,7 @@
          ?cr_fun_tuple(ir_AliasDef, Options),
          ?cr_fun_tuple(ir_PrimitiveDef, Options),
          ?cr_fun_tuple(ir_StringDef, Options),
+         ?cr_fun_tuple(ir_WstringDef, Options),
          ?cr_fun_tuple(ir_SequenceDef, Options),
          ?cr_fun_tuple(ir_ArrayDef, Options),
          ?cr_fun_tuple(ir_ExceptionDef, Options),
@@ -371,6 +377,7 @@
          ?cr_fun_tuple_local(ir_AliasDef, IFR_storage_type),
          ?cr_fun_tuple_local(ir_PrimitiveDef, IFR_storage_type),
          ?cr_fun_tuple_local(ir_StringDef, IFR_storage_type),
+         ?cr_fun_tuple_local(ir_WstringDef, IFR_storage_type),
          ?cr_fun_tuple_local(ir_SequenceDef, IFR_storage_type),
          ?cr_fun_tuple_local(ir_ArrayDef, IFR_storage_type),
          ?cr_fun_tuple_local(ir_ExceptionDef, IFR_storage_type),

@@ -265,10 +265,12 @@ volatile __declspec(thread) int __erl_errno = 0;
 volatile int * 
 __erl_errno_place (void)
 {
-    /* XXX: It seems safe to add a task variable more than once...but
-       is it? */
-    taskVarAdd(taskIdSelf(), &__erl_errno);
-
+    /* This check is somewhat insufficient, double task var entries will occur
+       if __erl_errno is actually -1, which on the other hand is an invalid 
+       error code. */
+    if (taskVarGet(taskIdSelf(), &__erl_errno) == ERROR) {
+	taskVarAdd(taskIdSelf(), &__erl_errno);
+    }
     return &__erl_errno;
 }
 #endif /* VXWORKS */

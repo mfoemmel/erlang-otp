@@ -35,7 +35,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/0, request/10, request/11, request/12, reply/5, reply/6, locate/6, 
+-export([start/0, request/14, reply/7, locate/6, 
 	 locate/7, locate_reply/5]).
 
 
@@ -57,27 +57,15 @@
 start() ->
     gen_server:start_link(orber_iiop_outrequest, [], []).
 
-%% The next case added to be able to handle code upgrade; remove later.
 request(Pid, RequestId, ObjKey, Op, Parameters, TypeCodes, ResponseExpected, 
-	ReplyTo, Socket, SocketType) ->
-    request(Pid, RequestId, ObjKey, Op, Parameters, TypeCodes, ResponseExpected, 
-	    ReplyTo, Socket, SocketType, infinity, orber:giop_version()).
-%% The next case added to be able to handle code upgrade; remove later.
-request(Pid, RequestId, ObjKey, Op, Parameters, TypeCodes, ResponseExpected, 
-	ReplyTo, Socket, SocketType, Timeout) ->
-    request(Pid, RequestId, ObjKey, Op, Parameters, TypeCodes, ResponseExpected, 
-	    ReplyTo, Socket, SocketType, Timeout, orber:giop_version()).
-request(Pid, RequestId, ObjKey, Op, Parameters, TypeCodes, ResponseExpected, 
-	ReplyTo, Socket, SocketType, Timeout, Version) ->
+	ReplyTo, Socket, SocketType, Timeout, Version, Interceptors, Ctx) ->
     gen_server:cast(Pid, {request, RequestId, ObjKey, Op, Parameters, TypeCodes,
 			  ResponseExpected, ReplyTo, Socket, SocketType, Timeout,
-			  Version}).
+			  Version, Interceptors, Ctx}).
 
-%% The next case added to be able to handle code upgrade; remove later.
-reply(Pid, ReplyHeader, Rest, Len, ByteOrder) ->
-    reply(Pid, ReplyHeader, Rest, Len, ByteOrder, []).
-reply(Pid, ReplyHeader, Rest, Len, ByteOrder, Bytes) ->
-    gen_server:cast(Pid, {reply, ReplyHeader, Rest, Len, ByteOrder, Bytes}).
+reply(Pid, ReplyHeader, Rest, Len, ByteOrder, Bytes, Interceptors) ->
+    gen_server:cast(Pid, {reply, ReplyHeader, Rest, Len, ByteOrder, Bytes, 
+			  Interceptors}).
 
 locate(Pid, RequestId, ObjKey, ReplyTo, Socket, SocketType) ->
     locate(Pid, RequestId, ObjKey, ReplyTo, Socket, SocketType, orber:giop_version()).
@@ -125,18 +113,12 @@ handle_call(_, _, State) ->
 %% Func: handle_cast/2
 %%-----------------------------------------------------------------
 handle_cast({request, RequestId, ObjKey, Op, Parameters, TypeCodes,
-	     ResponseExpected, ReplyTo, Socket, SocketType, Timeout},
-	    State) ->
-    handle_cast({request, RequestId, ObjKey, Op, Parameters, TypeCodes,
-		 ResponseExpected, ReplyTo, Socket, SocketType, Timeout,
-		 orber:giop_version()},
-		State);
-handle_cast({request, RequestId, ObjKey, Op, Parameters, TypeCodes,
-	     ResponseExpected, ReplyTo, Socket, SocketType, Timeout, GIOP_version},
+	     ResponseExpected, ReplyTo, Socket, SocketType, Timeout, GIOP_version,
+	     false, Ctx},
 	    State) ->
     case catch cdr_encode:enc_request(GIOP_version, ObjKey,  RequestId, ResponseExpected,
 				      Op, Parameters,
-				      [], TypeCodes) of
+				      Ctx, TypeCodes) of
 	{'EXCEPTION', E} ->
 	    gen_server:reply(ReplyTo, {'EXCEPTION', E}),
 	    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(request, ~p, ~p, ~p); exception(~p)", 
@@ -148,7 +130,7 @@ handle_cast({request, RequestId, ObjKey, Op, Parameters, TypeCodes,
 				    [?LINE, Op, Parameters, TypeCodes, R], ?DEBUG_LEVEL),
 	    {stop, normal, []};
 	Request ->
-	    ?IIOP_SOCKET_MOD:write(SocketType, Socket, Request),
+	    orber_socket:write(SocketType, Socket, Request),
 	    case ResponseExpected of
 		'true' when integer(Timeout) ->
 		    ?PRINTDEBUG2("out request via socket ~p has set userdefined value: ~p", 
@@ -165,12 +147,60 @@ handle_cast({request, RequestId, ObjKey, Op, Parameters, TypeCodes,
 		    {stop, normal, []}
 	    end
     end;
-%% The next case added to be able to handle code upgrade; remove later.
-handle_cast({reply, ReplyHeader, Rest, Len, ByteOrder}, State) ->
-    handle_cast({reply, ReplyHeader, Rest, Len, ByteOrder, []}, State);
-handle_cast({reply, ReplyHeader, Rest, Len, ByteOrder, Bytes},
+handle_cast({request, RequestId, ObjKey, Op, Parameters, TypeCodes,
+	     ResponseExpected, ReplyTo, Socket, SocketType, Timeout, GIOP_version,
+	     {basic, PIs}, Ctx},
+	    State) ->
+    case catch cdr_encode:enc_request_split(GIOP_version, ObjKey,  RequestId, ResponseExpected,
+					    Op, Parameters,
+					    Ctx, TypeCodes) of
+	{'EXCEPTION', E} ->
+	    gen_server:reply(ReplyTo, {'EXCEPTION', E}),
+	    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(request, ~p, ~p, ~p); exception(~p)", 
+				    [?LINE, Op, Parameters, TypeCodes, E], ?DEBUG_LEVEL),
+	    {stop, normal, []};
+	{'EXIT', R} ->
+	    gen_server:reply(ReplyTo, {'EXCEPTION', #'MARSHAL'{completion_status=?COMPLETED_NO}}),
+	    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(request, ~p, ~p, ~p); got exit(~p)", 
+				    [?LINE, Op, Parameters, TypeCodes, R], ?DEBUG_LEVEL),
+	    {stop, normal, []};
+	{Hdr, Body, HdrLength, BodyLength, Flags} ->
+	    NewBody = orber_pi:postinvoke(PIs, Body),
+	    MessSize = HdrLength+length(NewBody)-BodyLength,
+	    orber_socket:write(SocketType, Socket, 
+			       cdr_encode:
+			       enc_giop_message_header(GIOP_version, 'request', 
+						       Flags, MessSize, [Hdr|NewBody])),
+	    case ResponseExpected of
+		'true' when integer(Timeout) ->
+		    ?PRINTDEBUG2("out request via socket ~p has set userdefined value: ~p", 
+				 [Socket, Timeout]),
+		    {noreply, {ReplyTo, GIOP_version, TypeCodes, Op, 
+			       Parameters, Socket, SocketType}, Timeout};
+		'true' ->
+		    ?PRINTDEBUG2("out request via socket ~p has set the iiop_timeout value: ~p", 
+				 [Socket, orber:iiop_timeout()]),
+		    {noreply, {ReplyTo, GIOP_version, TypeCodes, Op, 
+			       Parameters, Socket, SocketType}, orber:iiop_timeout()};
+		'false' ->
+		    gen_server:reply(ReplyTo, ok),
+		    {stop, normal, []}
+	    end
+    end;
+handle_cast({reply, ReplyHeader, RestIn, Len, ByteOrder, Bytes, Interceptors},
 	    {ReplyTo, GIOP_version, TypeCodes, Op, Parameters, Socket, 
 	     SocketType}) ->
+    Rest = 
+	case Interceptors of
+	    false ->
+		RestIn;
+	    {portable, PIs} ->
+		RestIn;
+	    {basic, PIs} ->
+		(catch orber_pi:preinvoke(PIs, RestIn));
+	    {both, PIs} ->
+		(catch orber_pi:preinvoke(PIs, RestIn))
+	end,
     case catch decode_reply_body(ReplyHeader, GIOP_version, TypeCodes,
 				 Rest, Len, ByteOrder, Bytes) of
 	{'EXCEPTION', DecodeException} ->
@@ -206,8 +236,29 @@ handle_cast({reply, ReplyHeader, Rest, Len, ByteOrder, Bytes},
 		'user_exception' ->
 		    gen_server:reply(ReplyTo, {'EXCEPTION', Result});
 		'location_forward' ->
-		    corba:call(Result, Op, Parameters, TypeCodes) %%???????? LTH
-	    end	  
+		    case catch corba:call(Result, Op, Parameters, TypeCodes) of
+			{'EXCEPTION', E} ->
+			    gen_server:reply(ReplyTo, {'EXCEPTION', E});
+			{'EXIT', R} ->
+			    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(reply, ~p, ~p, ~p); location_forward resulted in exit(~p)", 
+						    [?LINE, Rest, GIOP_version, TypeCodes, R], ?DEBUG_LEVEL),
+			    gen_server:reply(ReplyTo, {'EXCEPTION', #'COMM_FAILURE'{completion_status=?COMPLETED_NO}});
+			NewResult ->
+			    gen_server:reply(ReplyTo, NewResult) 
+		    end;
+		'location_forward_perm' ->
+                    %% We should notify the client in this case.
+		    case catch corba:call(Result, Op, Parameters, TypeCodes) of
+			{'EXCEPTION', E} ->
+			    gen_server:reply(ReplyTo, {'EXCEPTION', E});
+			{'EXIT', R} ->
+			    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(reply, ~p, ~p, ~p); location_forward resulted in exit(~p)", 
+						    [?LINE, Rest, GIOP_version, TypeCodes, R], ?DEBUG_LEVEL),
+			    gen_server:reply(ReplyTo, {'EXCEPTION', #'COMM_FAILURE'{completion_status=?COMPLETED_NO}});
+			NewResult ->
+			    gen_server:reply(ReplyTo, NewResult)
+		    end
+	    end
     end,
     {stop, normal, []};
 handle_cast({locate_request, RequestId, ObjKey, ReplyTo, Socket, SocketType}, 
@@ -229,7 +280,7 @@ handle_cast({locate_request, RequestId, ObjKey, ReplyTo, Socket, SocketType,
 				    [?LINE, ObjKey, R], ?DEBUG_LEVEL),
 	    {stop, normal, []};
 	Request ->
-	    ?IIOP_SOCKET_MOD:write(SocketType, Socket, Request),
+	    orber_socket:write(SocketType, Socket, Request),
 	    {noreply, {ReplyTo, GIOP_version, Socket, SocketType}}
     end;
 handle_cast({locate_reply, ReplyHeader, Rest, Len, ByteOrder},
@@ -282,23 +333,24 @@ code_change(OldVsn, State, Extra) ->
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
-
-decode_reply_body(ReplyHeader, Version, TypeCodes, Rest, Len, ByteOrder, Bytes) ->			
-	case ReplyHeader#reply_header.reply_status of
-	    'no_exception' ->
-		{R, P, _} = cdr_decode:dec_reply_body(Version, TypeCodes, Rest, Len, ByteOrder, Bytes),
-		{R, P};
-	    'system_exception' ->
-		{R, _} = cdr_decode:dec_system_exception(Version, Rest, Len, ByteOrder),
-		{R, []};
-	    'user_exception' ->
-		{R, _} = cdr_decode:dec_user_exception(Version, Rest, Len, ByteOrder),
-		{R, []};
-	    'location_forward' ->
-		{R, _, _} = cdr_decode:dec_type({'tk_objref', "", ""}, Version, Rest, Len, ByteOrder),
-		{R, []}
-	end.
-
+decode_reply_body(ReplyHeader, Version, TypeCodes, Rest, Len, ByteOrder, Bytes) ->
+    case ReplyHeader#reply_header.reply_status of
+	'no_exception' ->
+	    {R, P, _} = cdr_decode:dec_reply_body(Version, TypeCodes, Rest, Len, ByteOrder, Bytes),
+	    {R, P};
+	'system_exception' ->
+	    {R, _} = cdr_decode:dec_system_exception(Version, Rest, Len, ByteOrder),
+	    {R, []};
+	'user_exception' ->
+	    {R, _} = cdr_decode:dec_user_exception(Version, Rest, Len, ByteOrder),
+	    {R, []};
+	'location_forward' ->
+	    {R, _, _} = cdr_decode:dec_type({'tk_objref', "", ""}, Version, Rest, Len, ByteOrder),
+	    {R, []};
+	'location_forward_perm' ->
+	    {R, _, _} = cdr_decode:dec_type({'tk_objref', "", ""}, Version, Rest, Len, ByteOrder),
+	    {R, []}
+    end.
 
 %%-----------------------------------------------------------------
 %% Utility Functions

@@ -29,6 +29,7 @@
 #include "big.h"
 #include "dist.h"
 #include "erl_version.h"
+#include "erl_db_util.h"
 
 extern int fixed_deletion_desc;
 
@@ -545,12 +546,11 @@ info_1_tuple(Process* BIF_P,	/* Pointer to current process. */
 	} else if (*tp == am_running) {
 	    BIF_RET(purify_is_running() ? am_true : am_false);
 	} else if (is_list(*tp)) {
-	    int iopos = 0;
 	    int r;
 
-	    r = io_list_to_buf(*tp, (char*) tmp_buf, &iopos, TMP_BUF_SIZE - 5);
-	    if (r == 0) {
-		tmp_buf[iopos] = 0;
+	    r = io_list_to_buf(*tp, (char*) tmp_buf, TMP_BUF_SIZE - 1);
+	    if (r >= 0) {
+		tmp_buf[TMP_BUF_SIZE - 1 - r] = '\0';
 		purify_printf("%s\n", tmp_buf);
 	    } else {
 		return THE_NON_VALUE;
@@ -622,6 +622,8 @@ BIF_ADECL_1
 	if (is_non_value(res))
 	    goto error;
 	return res;
+    } else if (BIF_ARG_1 == am_trace_control_word) {
+	BIF_RET(db_get_trace_control_word_0(BIF_P));
     } else if (BIF_ARG_1 == am_sequential_tracer) {
 	if (is_pid(system_seq_tracer) || is_port(system_seq_tracer)) {
 	    val = system_seq_tracer;

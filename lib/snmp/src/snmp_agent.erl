@@ -125,6 +125,7 @@ init([Parent, Ref, Options]) ->
     MeOverride = get_option(mibentry_override, Options, false),
     TeOverride = get_option(trapentry_override, Options, false),
     MibsVerbosity = get_option(mibserver_verbosity, Options, silence),
+    MibStorage = get_option(mib_storage, Options, ets),
     SetModule = get_option(set_mechanism, Options, snmp_set),
     put(set_module, SetModule),
     %% XXX OTP-3324. For AXD301.
@@ -140,7 +141,9 @@ init([Parent, Ref, Options]) ->
 	    none -> 
 		NetIf = get_option(net_if, Options, snmp_net_if),
 		NiVerbosity = get_option(net_if_verbosity, Options, silence),
-		NiOpts = [{net_if_verbosity,NiVerbosity}],
+		NiRecBuf = get_option(net_if_recbuf, Options, use_default),
+		NiOpts = [{net_if_verbosity,NiVerbosity},
+			  {net_if_recbuf,NiRecBuf}],
 		?debug("init -> start net if",[]),
 		?vdebug("start net if",[]),
 		case snmp_misc_sup:start_net_if(MiscSup,Ref,self(),
@@ -152,11 +155,12 @@ init([Parent, Ref, Options]) ->
 		{subagent, Pid, undefined}
 	end,
     ?debug("init -> start mib server",[]),
-    ?vdebug("start mib server (~p,~p,~p)",
-	    [MeOverride,TeOverride,MibsVerbosity]),
+    ?vdebug("start mib server (~p,~p,~p,~p)",
+	    [MeOverride,TeOverride,MibsVerbosity,MibStorage]),
     MibsOpts = [{mibentry_override,MeOverride},
 		{trapentry_override,TeOverride},
-		{mibserver_verbosity,MibsVerbosity}],
+		{mibserver_verbosity,MibsVerbosity},
+		{mib_storage,MibStorage}],
     case snmp_misc_sup:start_mib(MiscSup, Ref, Mibs, Prio, MibsOpts) of
 	{ok, MibPid} ->
 	    put(mibserver, MibPid),
@@ -295,7 +299,8 @@ verbosity(Agent,Verbosity) ->
 %%% 2. Main loop
 %%%--------------------------------------------------
 handle_info({snmp_pdu, Vsn, Pdu, PduMS, ACMData, Address, Extra}, S) ->
-    ?vdebug("~n   Received PDU ~p from ~p", [Pdu,Address]),
+    ?vdebug("~n   Received PDU ~p"
+	    "~n   from ~p", [Pdu,Address]),
     %% XXX OTP-3324
     AuthMod = get(auth_module),
     case AuthMod:init_check_access(Pdu, ACMData) of
@@ -346,19 +351,19 @@ handle_info(worker_available, S) ->
     {noreply, S#state{worker_state = ready}};
 
 handle_info({send_trap, Trap, NotifyName, ContextName, Recv, Varbinds}, S) ->
-    ?vlog("~n   send trap request: ~n"
-	  "\tTrap:        ~p~n"
-	  "\tNotifyName:  ~p~n"
-	  "\tContextName: ~p~n"
-	  "\tRecv:        ~p~n" 
-	  "\tVarbinds:    ~p", 
+    ?vlog("send trap request:"
+	  "~n   Trap:        ~p"
+	  "~n   NotifyName:  ~p"
+	  "~n   ContextName: ~p"
+	  "~n   Recv:        ~p" 
+	  "~n   Varbinds:    ~p", 
 	  [Trap,NotifyName,ContextName,Recv,Varbinds]),
     case catch handle_send_trap(S, Trap, NotifyName, ContextName,
 				Recv, Varbinds) of
 	{ok, NewS} ->
 	    {noreply, NewS};
 	{'EXIT', R} ->
-	    ?vinfo("~n   Trap not sent: ~p\n", [R]),
+	    ?vinfo("Trap not sent:~n   ~p", [R]),
 	    {noreply, S};
 	_ ->
 	    {noreply, S}
@@ -366,19 +371,19 @@ handle_info({send_trap, Trap, NotifyName, ContextName, Recv, Varbinds}, S) ->
 
 handle_info({forward_trap, TrapRecord, NotifyName, ContextName,
 	     Recv, Varbinds},S) ->
-    ?vlog("~n   forward trap request: ~n"
-	  "\tTrapRecord:  ~p~n"
-	  "\tNotifyName:  ~p~n"
-	  "\tContextName: ~p~n"
-	  "\tRecv:        ~p~n"
-	  "\tVarbinds:    ~p", 
+    ?vlog("forward trap request:"
+	  "~n   TrapRecord:  ~p"
+	  "~n   NotifyName:  ~p"
+	  "~n   ContextName: ~p"
+	  "~n   Recv:        ~p"
+	  "~n   Varbinds:    ~p", 
 	  [TrapRecord,NotifyName,ContextName,Recv,Varbinds]),
     case catch handle_forward_trap(S, TrapRecord, NotifyName, ContextName,
 				   Recv, Varbinds) of
 	{ok, NewS} ->
 	    {noreply, NewS};
 	{'EXIT', R} ->
-	    ?vinfo("~n   Trap not sent: ~p\n", [R]),
+	    ?vinfo("Trap not sent:~n   ~p", [R]),
 	    {noreply, S};
 	_ ->
 	    {noreply, S}
@@ -428,31 +433,31 @@ handle_info(_, S) ->
     {noreply, S}.
 
 handle_call({subagent_get, Varbinds, PduData, IsNotification}, _From, S) ->
-    ?vlog("subagent get~n"
-	  "\tVarbinds: ~p~n"
-	  "\tPduData:  ~p", 
+    ?vlog("subagent get:"
+	  "~n   Varbinds: ~p"
+	  "~n   PduData:  ~p", 
 	  [Varbinds,PduData]),
     put_pdu_data(PduData),
     {reply, do_get(Varbinds, IsNotification), S};
 handle_call({subagent_get_next, MibView, Varbinds, PduData}, _From, S) ->
-    ?vlog("subagent get-next~n"
-	  "\tMibView:  ~p~n"
-	  "\tVarbinds: ~p~n"
-	  "\tPduData:  ~p", 
+    ?vlog("subagent get-next:"
+	  "~n   MibView:  ~p"
+	  "~n   Varbinds: ~p"
+	  "~n   PduData:  ~p", 
 	  [MibView,Varbinds,PduData]),
     put_pdu_data(PduData),
     {reply, do_get_next(MibView, Varbinds), S};
 handle_call({subagent_set, Arguments, PduData}, _From, S) ->
-    ?vlog("subagent set~n"
-	  "\tArguments: ~p~n"
-	  "\tPduData:   ~p", 
+    ?vlog("subagent set:"
+	  "~n   Arguments: ~p"
+	  "~n   PduData:   ~p", 
 	  [Arguments,PduData]),
     put_pdu_data(PduData),
     {reply, do_subagent_set(Arguments), S};
 
 handle_call({get, Vars}, _From, S) ->
-    ?vlog("get~n"
-	  "\tVars: ~p",[Vars]),
+    ?vlog("get:"
+	  "~n   Vars: ~p",[Vars]),
     case catch mapfoldl({?MODULE, tr_var}, [], 1, Vars) of
 	{error, Reason} -> {reply, {error, Reason}, S};
 	{_, Varbinds} ->
@@ -586,7 +591,6 @@ terminate(_Reason, _S) ->
 
 %% Upgrade
 %%
-%% Upgrade from snmp-3.1.2:
 code_change(_Vsn, S, _Extra) ->
     put(auth_module, snmp_acm),
     NS = worker_restart(S),
@@ -594,7 +598,6 @@ code_change(_Vsn, S, _Extra) ->
 
 %% Downgrade
 %%
-%% Downgrade to snmp-3.1.2:
 code_change({down, _Vsn}, S, _Extra) ->
     worker_code_change(S),
     {ok, S}.
@@ -687,7 +690,7 @@ worker_loop(Master) ->
 	    handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra),
 	    Master ! worker_available;
 	{TrapRec, NotifyName, ContextName, Recv, V} -> % We don't trap exits!
-	    ?vtrace("send trap: ~p",[TrapRec]),
+	    ?vtrace("send trap:~n   ~p",[TrapRec]),
 	    snmp_trap:send_trap(TrapRec, NotifyName, 
 				ContextName, Recv, V, get(net_if)),
 	    Master ! worker_available;
@@ -717,7 +720,7 @@ handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData,
     put(snmp_net_if_data, Extra),
     RePdu = process_msg(MibView, Vsn, Pdu, PduMS, Community, 
 			Address, ContextName),
-    ?vtrace("Reply PDU: ~p",[RePdu]),
+    ?vtrace("reply PDU:~n   ~p",[RePdu]),
     get(net_if) ! {snmp_response, Vsn, RePdu, 
 		   RePdu#pdu.type, ACMData, Address, Extra}.
 
@@ -765,7 +768,8 @@ handle_acm_error(Vsn, Reason, Pdu, ACMData, Address, Extra) ->
 	    get(net_if) ! {snmp_response, Vsn, RePdu, 
 			   'get-response', ACMData, Address, Extra};
 	false ->
-	    ?vdebug("~n   Raw error status: ~w, invalid pdu type: ~w", 
+	    ?vdebug("~n   Raw error status: ~w"
+		    "~n   invalid pdu type: ~w", 
 		    [RawErrStatus,Type]),
 	    ok
     end.
@@ -795,7 +799,7 @@ handle_forward_trap(S, TrapRec, NotifyName, ContextName, Recv, Varbinds) ->
 			 Recv, V),
 	    {ok, S};
 	master_agent when S#state.multi_threaded == false ->
-	    ?vtrace("send trap ~p",[TrapRec]),
+	    ?vtrace("send trap:~n   ~p",[TrapRec]),
 	    snmp_trap:send_trap(TrapRec, NotifyName, ContextName,
 				Recv, V, get(net_if)),
 	    {ok, S};
@@ -1378,16 +1382,15 @@ next_loop_varbinds([], [Vb | Vbs], MibView, Res, LAVb) ->
 	    case try_get_instance(Vb, ME) of
 		{value, noValue, _NoSuchSomething} ->
 		    %% Try next one
-		    ?vtrace("no value, try next",[]),
 		    NewVb = Vb#varbind{oid = VarOid, value = 'NULL'},
 		    next_loop_varbinds([], [NewVb | Vbs], MibView, Res, []);
 		{value, Type, Value} ->
-		    ?vtrace("Type: ~p, Value: ~p",[Type,Value]),
 		    NewVb = Vb#varbind{oid = VarOid, variabletype = Type,
 				       value = Value},
 		    next_loop_varbinds([], Vbs, MibView, [NewVb | Res], []);
 		{error, ErrorStatus} ->
-		    ?vdebug("error: ~p",[ErrorStatus]),
+		    ?vdebug("next loop varbinds:"
+			    "~n   ErrorStatus: ~p",[ErrorStatus]),
 		    {ErrorStatus, Vb#varbind.org_index, []}
 	    end;
 	{variable, ME, VarOid} -> 
@@ -1418,6 +1421,10 @@ next_loop_varbinds({table, TableOid, ME, TabOids},
 		    NewRes = lists:append(TabRes, Res),
 		    next_loop_varbinds([], NewVbs, MibView, NewRes, []);
 		{ErrorStatus, OrgIndex} ->
+		    ?vdebug("next loop varbinds: next varbind"
+			    "~n   ErrorStatus: ~p"
+			    "~n   OrgIndex:    ~p",
+			    [ErrorStatus,OrgIndex]),
 		    {ErrorStatus, OrgIndex, []}
 	    end
     end;
@@ -1428,6 +1435,10 @@ next_loop_varbinds({table, TableOid, ME, TabOids},
 	    NewRes = lists:append(TabRes, Res),
 	    next_loop_varbinds([], TabEndOfTabVbs, MibView, NewRes, []);
 	{ErrorStatus, OrgIndex} ->
+	    ?vdebug("next loop varbinds: next table"
+		    "~n   ErrorStatus: ~p"
+		    "~n   OrgIndex:    ~p",
+		    [ErrorStatus,OrgIndex]),
 	    {ErrorStatus, OrgIndex, []}
     end;
 next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
@@ -1444,6 +1455,11 @@ next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
 		    NewRes = lists:append(SARes, Res),
 		    next_loop_varbinds([], NewVbs, MibView, NewRes, []);
 		{ErrorStatus, OrgIndex} ->
+		    ?vdebug("next loop varbinds: next subagent"
+			    "~n   Vb:          ~p"
+			    "~n   ErrorStatus: ~p"
+			    "~n   OrgIndex:    ~p",
+			    [Vb,ErrorStatus,OrgIndex]),
 		    {ErrorStatus, OrgIndex, []}
 	    end
     end;
@@ -1454,6 +1470,10 @@ next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
 	    NewRes = lists:append(SARes, Res),
 	    next_loop_varbinds([], SAEndOfMibViewVbs, MibView, NewRes, []);
 	{ErrorStatus, OrgIndex} ->
+	    ?vdebug("next loop varbinds: next subagent"
+		    "~n   ErrorStatus: ~p"
+		    "~n   OrgIndex:    ~p",
+		    [ErrorStatus,OrgIndex]),
 	    {ErrorStatus, OrgIndex, []}
     end;
 next_loop_varbinds([], [], _MibView, Res, _LAVb) ->
@@ -1608,7 +1628,7 @@ validate_tab_next_res(TooMany, [], Mfa, Res, _, _, I) ->
 get_next_sa(SAPid, SAOid, SAVbs, MibView) ->
     case catch subagent_get_next(SAPid, MibView, SAVbs) of
 	{noError, 0, NewVbs} ->
-	    NewerVbs = transform_sa_next_result(NewVbs, SAOid, next_oid(SAOid)),
+	    NewerVbs = transform_sa_next_result(NewVbs,SAOid,next_oid(SAOid)),
 	    split_varbinds(NewerVbs, [], []);
 	{ErrorStatus, ErrorIndex, _} ->
 	    {ErrorStatus, ErrorIndex};
@@ -1656,6 +1676,13 @@ next_oid(Oid) ->
 %%% 5. GET-BULK REQUEST
 %%%-----------------------------------------------------------------
 do_get_bulk(MibView, NonRepeaters, MaxRepetitions, PduMS, Varbinds) ->
+    ?vtrace("do get bulk: start with"
+	    "~n   MibView:        ~p"
+	    "~n   NonRepeaters:   ~p"
+	    "~n   MaxRepetitions: ~p"
+	    "~n   PduMS:          ~p"
+	    "~n   Varbinds:       ~p",
+	    [MibView, NonRepeaters, MaxRepetitions, PduMS, Varbinds]),
     {NonRepVbs, RestVbs} = split_vbs(NonRepeaters, Varbinds, []),
     case do_get_next(MibView, NonRepVbs) of
 	{noError, 0, UResNonRepVbs} -> 
@@ -1670,8 +1697,15 @@ do_get_bulk(MibView, NonRepeaters, MaxRepetitions, PduMS, Varbinds) ->
 		    {noError, 0, conv_res(Res)}
 	    end;
 	{ErrorStatus, Index, _} ->
+	    ?vdebug("do get bulk: "
+		    "~n   ErrorStatus: ~p"
+		    "~n   Index:       ~p",[ErrorStatus, Index]),
 	    {ErrorStatus, Index, []}
     end.
+
+sz(L) when list(L) -> length(L);
+sz(B) when binary(B) -> size(B);
+sz(_) -> unknown.
 
 split_vbs(N, Varbinds, Res) when N =< 0 -> {Res, Varbinds};
 split_vbs(N, [H | T], Res) -> split_vbs(N-1, T, [H | Res]);
@@ -2040,19 +2074,16 @@ check_size(Val, _, Mfa) ->
     report_err(Val, Mfa, wrongType).
 
 check_enums(Val, Asn1, Enums, Mfa) ->
-    if
-	integer(Val) ->
-	    Association = lists:keysearch(Val, 2, Enums);
-	atom(Val) ->
-	    Association = lists:keysearch(Val, 1, Enums);
-	true -> Association = {error, wrongType}
+    Association = 
+	if
+	    integer(Val) -> lists:keysearch(Val, 2, Enums);
+	    atom(Val)    -> lists:keysearch(Val, 1, Enums);
+	    true         -> {error, wrongType}
     end,
     case Association of
 	{value, {AliasIntName, Val2}} -> {value, Asn1#asn1_type.bertype, Val2};
-	false ->
-	    report_err(Val, Mfa, wrongValue);
-	{error, wrongType} ->
-	    report_err(Val, Mfa, wrongType)
+	false                         -> report_err(Val, Mfa, wrongValue);
+	{error, wrongType}            -> report_err(Val, Mfa, wrongType)
     end.
 
 report_err(Val, undef, Err) ->

@@ -29,7 +29,7 @@
 #include "driver.h"
 #include "elib_stat.h"
 
-extern erl_mutex_t erl_mutex_sys _ANSI_ARGS_((int mno));
+extern erl_mutex_t erts_mutex_sys _ANSI_ARGS_((int mno));
 
 /* To avoid clobbering of names becaure of reclaim on VxWorks,
    we undefine all possible malloc, calloc etc. */
@@ -452,9 +452,9 @@ EWord* addr; EWord sz;
     if (!elib_need_init)
 	return;
 
-    heap_lock = erl_mutex_sys(0);
+    heap_lock = erts_mutex_sys(0);
 
-    erl_mutex_lock(heap_lock);
+    erts_mutex_lock(heap_lock);
 
 
     for (i = 0; i < FIXED; i++)
@@ -526,7 +526,7 @@ EWord* addr; EWord sz;
     eheap_size += sz;
 
     elib_need_init = 0;
-    erl_mutex_unlock(heap_lock);
+    erts_mutex_unlock(heap_lock);
     heap_locked = 0;
 }
 
@@ -925,10 +925,10 @@ EWord nb; int clear;
     else
 	nw = ALIGN_SIZE(nb);
 
-    erl_mutex_lock(heap_lock);
+    erts_mutex_lock(heap_lock);
 
     if ((p = alloc_block(nw)) == 0) {
-	erl_mutex_unlock(heap_lock);	
+	erts_mutex_unlock(heap_lock);	
 	return 0;
     }
 
@@ -942,7 +942,7 @@ EWord nb; int clear;
 	    *pp++ = 0;
     }
 
-    erl_mutex_unlock(heap_lock);
+    erts_mutex_unlock(heap_lock);
     return (AllocatedBlock*) p;
 }
 
@@ -964,7 +964,7 @@ AllocatedBlock* p; int need_lock;
     EWord szp;
 
     if (need_lock)
-	erl_mutex_lock(heap_lock);
+	erts_mutex_lock(heap_lock);
 
     szp = SIZEOF(p);
 
@@ -992,7 +992,7 @@ AllocatedBlock* p; int need_lock;
     link_block((FreeBlock*) p, szp);
 
     if (need_lock)
-	erl_mutex_unlock(heap_lock);
+	erts_mutex_unlock(heap_lock);
 }
 
 /*
@@ -1013,7 +1013,7 @@ AllocatedBlock* p; EWord nb; int preserve;
     else
 	nw = ALIGN_SIZE(nb);
 
-    erl_mutex_lock(heap_lock);
+    erts_mutex_lock(heap_lock);
 
     sz = szp = SIZEOF(p);
 
@@ -1027,7 +1027,7 @@ AllocatedBlock* p; EWord nb; int preserve;
 
     if (nw <= szp) {
 	split_block(p, nw, szp);
-	erl_mutex_unlock(heap_lock);
+	erts_mutex_unlock(heap_lock);
 	return p;
     }
     else {
@@ -1048,7 +1048,7 @@ AllocatedBlock* p; EWord nb; int preserve;
 			*pp++ = *dp++;
 		}
 		split_block(p, nw, szp);
-		erl_mutex_unlock(heap_lock);
+		erts_mutex_unlock(heap_lock);
 		return p;
 	    }
 	}
@@ -1062,7 +1062,7 @@ AllocatedBlock* p; EWord nb; int preserve;
 	p->hdr = (p->hdr & FREE_ABOVE_BIT) | szp;
 	p->v[szp] &= ~FREE_ABOVE_BIT;
 
-	erl_mutex_unlock(heap_lock);
+	erts_mutex_unlock(heap_lock);
 
 	npp = allocate(nb, 0);
 	if(npp == NULL)

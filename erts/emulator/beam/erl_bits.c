@@ -450,10 +450,10 @@ copy_bits(Uint8* src,		/* Base pointer to source. */
 }
 
 static byte *byte_buf;
-static int byte_buf_len = 0;
+static int byte_buf_len;
 
 byte* erts_bin_buf;
-unsigned erts_bin_buf_len = 0;
+unsigned erts_bin_buf_len;
 unsigned erts_bin_offset;
 
 /* COPY_VAL:
@@ -481,6 +481,17 @@ unsigned erts_bin_offset;
    *(b) = ~__y; \
  } while(0)
   
+void erts_init_bits(void)
+{
+    byte_buf = NULL;
+    byte_buf_len = 0;
+    
+    erts_bin_buf = NULL;
+    erts_bin_buf_len = 0;
+    erts_bin_offset = 0;
+}
+
+    
 static int
 fmt_int(byte *buf, uint32 sz, Eterm val, uint32 size, uint32 flags)
 {

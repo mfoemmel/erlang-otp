@@ -332,14 +332,13 @@ standard_passes(v3) ->
 
      %% Note: erl_lint only warns for obviously unused functions, not
      %% for self-recursive functions never called. 
-     %% function
 %%     ?pass(remove_unused_functions),
 
      ?pass(expand_module),
      {iff,dexp,{listing,"expand"}},
      {iff,'E',{src_listing,"E"}},
      {iff,'abstr',{listing,"abstr"}},
-     {unless,no_debug_info,?pass(save_abstract_code)},
+     {iff,debug_info,?pass(save_abstract_code)},
 
      %% Core Erlang passes.
      {pass,v3_core},

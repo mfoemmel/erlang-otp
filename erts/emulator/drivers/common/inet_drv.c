@@ -135,14 +135,7 @@ WinSockFuncs winSock;
 #define sock_create_event(d)       (*winSock.WSACreateEvent)()
 #define sock_close_event(e)        (*winSock.WSACloseEvent)(e)
 
-#define sock_select(d, flags, onoff) do { \
-        (d)->event_mask = (onoff) ? \
-                 ((d)->event_mask | (flags)) : \
-                 ((d)->event_mask & ~(flags)); \
-        DEBUGF(("sock_select(%d): flags=%02X, onoff=%d, event_mask=%02X\r\n", \
-		(d)->port, (flags), (onoff), (d)->event_mask)); \
-        (*winSock.WSAEventSelect)((d)->s, (d)->event, (d)->event_mask); \
-  } while(0)
+#define sock_select(D, Flags, OnOff) winsock_event_select(D, Flags, OnOff)
 
 #define SET_BLOCKING(s)           (*winSock.ioctlsocket)(s, FIONBIO, &zero_value)
 #define SET_NONBLOCKING(s)        (*winSock.ioctlsocket)(s, FIONBIO, &one_value)
@@ -155,6 +148,10 @@ static unsigned long one_value = 1;
 #ifdef VXWORKS
 #include <sockLib.h>
 #include <sys/times.h>
+#include <iosLib.h>
+#include <taskLib.h>
+#include <selectLib.h>
+#include <ioLib.h>
 #else
 #include <sys/time.h>
 #include <netdb.h>
@@ -212,8 +209,15 @@ extern int gethostname();
 #define sock_connect(s, addr, len)  connect((s), (addr), (len))
 #define sock_listen(s, b)           listen((s), (b))
 #define sock_bind(s, addr, len)     bind((s), (addr), (len))
+#ifdef VXWORKS
+#define sock_getopt(s,t,n,v,l)      wrap_sockopt(&getsockopt,\
+                                                 s,t,n,v,(unsigned int)(l))
+#define sock_setopt(s,t,n,v,l)      wrap_sockopt(&setsockopt,\
+                                                 s,t,n,v,(unsigned int)(l))
+#else
 #define sock_getopt(s,t,n,v,l)      getsockopt((s),(t),(n),(v),(l))
 #define sock_setopt(s,t,n,v,l)      setsockopt((s),(t),(n),(v),(l))
+#endif
 #define sock_name(s, addr, len)     getsockname((s), (addr), (len))
 #define sock_peer(s, addr, len)     getpeername((s), (addr), (len))
 #define sock_ntohs(x)               ntohs((x))
@@ -584,6 +588,7 @@ static int  udp_inet_timeout();
 #ifdef __WIN32__
 static int udp_inet_event();
 static SOCKET make_noninheritable_handle(SOCKET s);
+static int winsock_event_select(inet_descriptor *, int, int);
 #endif
 
 static struct driver_entry udp_inet_driver_entry = 
@@ -1347,10 +1352,11 @@ inet_descriptor* desc; char* buf; int len;
 ** passive mode reply:
 **        {inet_async, S, Ref, {ok,[H1,...Hsz | Data]}}
 */
-static int inet_async_binary_data(desc, bin, offs, len)
-inet_descriptor* desc; DriverBinary* bin; int offs; int len;
+static int inet_async_binary_data(desc, phsz, bin, offs, len)
+     inet_descriptor* desc; unsigned int phsz;
+     DriverBinary* bin; int offs; int len;
 {
-    unsigned int hsz = desc->hsz;
+    unsigned int hsz = desc->hsz + phsz;
     DriverTermData spec[20];
     DriverTermData caller = desc->caller;
     int aid;
@@ -1709,12 +1715,12 @@ inet_descriptor* desc; char* buf; int len;
 }
 
 static int tcp_reply_binary_data(desc, bin, offs, len)
-inet_descriptor* desc;  DriverBinary* bin; int offs; int len;
+     tcp_descriptor* desc;  DriverBinary* bin; int offs; int len;
 {
     int code;
 
     /* adjust according to packet type */
-    switch(desc->htype) {
+    switch(desc->inet.htype) {
     case TCP_PB_1:  offs += 1; len -= 1; break;
     case TCP_PB_2:  offs += 2; len -= 2; break;
     case TCP_PB_4:  offs += 4; len -= 4; break;
@@ -1723,18 +1729,18 @@ inet_descriptor* desc;  DriverBinary* bin; int offs; int len;
 	break;
     }
 
-    scanbit8(desc, bin->orig_bytes+offs, len);
+    scanbit8(INETP(desc), bin->orig_bytes+offs, len);
 
-    if (desc->active == INET_PASSIVE)
-	return inet_async_binary_data(desc, bin, offs, len);
-    else if (desc->deliver == INET_DELIVER_PORT)
-	code = inet_port_binary_data(desc, bin, offs, len);
+    if (desc->inet.deliver == INET_DELIVER_PORT)
+        code = inet_port_binary_data(INETP(desc), bin, offs, len);
+    else if (desc->inet.active == INET_PASSIVE)
+	return inet_async_binary_data(INETP(desc), 0, bin, offs, len);
     else
 	code = tcp_binary_message(desc, bin, offs, len);
     if (code < 0)
 	return code;
-    if (desc->active == INET_ONCE)
-	desc->active = INET_PASSIVE;
+    if (desc->inet.active == INET_ONCE)
+	desc->inet.active = INET_PASSIVE;
     return code;
 }
 
@@ -1770,15 +1776,16 @@ inet_descriptor* desc; char* buf; int len;
 #endif
 
 
-static int udp_reply_binary_data(desc, bin, offs, len)
-inet_descriptor* desc;  DriverBinary* bin; int offs; int len;
+static int udp_reply_binary_data(desc, hsz, bin, offs, len)
+     inet_descriptor* desc; unsigned int hsz; DriverBinary* bin; 
+     int offs; int len;
 {
     int code;
 
     scanbit8(desc, bin->orig_bytes+offs, len);
 
     if (desc->active == INET_PASSIVE)
-	return inet_async_binary_data(desc, bin, offs, len);
+	return inet_async_binary_data(desc, hsz, bin, offs, len);
     else if (desc->deliver == INET_DELIVER_PORT)
 	code = inet_port_binary_data(desc, bin, offs, len);
     else
@@ -2670,6 +2677,47 @@ static int inet_ctl_ifset(inet_descriptor* desc, char* buf, int len,
 
 #endif
 
+#ifdef VXWORKS
+/*
+** THIS is a terrible creature, a bug in the tcp part
+** of the old VxWorks stack (non SENS) created a race.
+** If (and only if?) a socket got closed from the other
+** end and we tried a set/getsockopt on the TCP level,
+** the task would generate a bus error...
+*/
+static STATUS wrap_sockopt(STATUS (*function)() /* Yep, no parameter
+                                                   check */,
+                           int s, int level, int optname,
+                           char *optval, unsigned int optlen 
+                           /* optlen is a pointer if function 
+                              is getsockopt... */)
+{
+    fd_set rs;
+    struct timeval timeout;
+    int to_read;
+    int ret;
+
+    FD_ZERO(&rs);
+    FD_SET(s,&rs);
+    memset(&timeout,0,sizeof(timeout));
+    if (level == IPPROTO_TCP) {
+        taskLock();
+        if (select(s+1,&rs,NULL,NULL,&timeout)) {
+            if (ioctl(s,FIONREAD,(int)&to_read) == ERROR ||
+                to_read == 0) { /* End of file, other end closed? */
+                errno = EBADF;
+                taskUnlock();
+                return ERROR;
+            }
+        }
+        ret = (*function)(s,level,optname,optval,optlen);
+        taskUnlock();
+    } else {
+        ret = (*function)(s,level,optname,optval,optlen);
+    }
+    return ret;
+}
+#endif
 
 /* set socket options:
 ** return -1 on error
@@ -2826,11 +2874,23 @@ inet_descriptor* desc; char* ptr; int len;
 	case INET_OPT_SNDBUF:    type = SO_SNDBUF; 
 	    DEBUGF(("inet_set_opts(%d): s=%d, SO_SNDBUF=%d\r\n",
 		    desc->port, desc->s, ival));
+	    /* 
+	     * Setting buffer sizes in VxWorks gives unexpected results
+	     * our workaround is to leave it at default.
+	     */
+#ifdef VXWORKS
+	    goto skip_os_setopt;
+#else
 	    break;
+#endif
 	case INET_OPT_RCVBUF:    type = SO_RCVBUF; 
 	    DEBUGF(("inet_set_opts(%d): s=%d, SO_RCVBUF=%d\r\n",
 		    desc->port, desc->s, ival));
+#ifdef VXWORKS
+	    goto skip_os_setopt;
+#else
 	    break;
+#endif
 	case INET_OPT_LINGER:    type = SO_LINGER; 
 	    if (len < 4)
 		return -1;
@@ -2902,20 +2962,24 @@ inet_descriptor* desc; char* ptr; int len;
 	    return -1;
 	}
 
+#ifdef DEBUG
+	{ 
+	    int res =
+#endif
+		sock_setopt(desc->s, proto, type, arg_ptr, arg_sz);
+#ifdef DEBUG
+	    DEBUGF(("inet_set_opts(%d): s=%d returned %d\r\n",
+		    desc->port, desc->s, res));
+	}
+#endif
+#ifdef VXWORKS
+skip_os_setopt:
+#endif
 	if (type == SO_RCVBUF) {
 	    /* make sure we have desc->bufsz >= SO_RCVBUF */
 	    if (ival > desc->bufsz)
 		desc->bufsz = ival;
 	}
-#ifdef DEBUG
-	{ int res =
-#endif
-	      sock_setopt(desc->s, proto, type, arg_ptr, arg_sz);
-#ifdef DEBUG
-	  DEBUGF(("inet_set_opts(%d): s=%d returned %d\r\n",
-		  desc->port, desc->s, res));
-      }
-#endif
     }
 
     if ( ((desc->stype == SOCK_STREAM) && IS_CONNECTED(desc)) ||
@@ -3782,7 +3846,7 @@ tcp_descriptor* a_desc;
 }
 
 /*
-** Check Speical cases:
+** Check Special cases:
 ** 1. we are a listener doing nb accept -> report error on accept !
 ** 2. we are doing accept -> restore listener state
 */
@@ -3790,11 +3854,12 @@ static void tcp_close_check(desc)
 tcp_descriptor* desc;
 {
     if ((desc->inet.state == TCP_STATE_LISTENING) && (desc->i_ix != -1)) {
-	tcp_descriptor* a_desc = (tcp_descriptor*) inet_desc_table[desc->i_ix];
+	tcp_descriptor* a_desc = 
+	    (tcp_descriptor*) inet_desc_table[desc->i_ix];
 	if ((a_desc != NULL) && (a_desc->inet.state == TCP_STATE_ACCEPTING)) {
 	    DEBUGF(("tcp_close_check(%d): s=%d\r\n",
 		    a_desc->inet.port, a_desc->inet.s));
-	    async_error(INETP(a_desc), EINVAL);
+	    async_error_am(INETP(a_desc), am_closed);
 	}
     }
     else if (desc->inet.state == TCP_STATE_ACCEPTING) {
@@ -4591,6 +4656,54 @@ tcp_descriptor* desc; int request_len;
 
 #ifdef __WIN32__
 
+static int winsock_event_select(inet_descriptor *desc, int flags, int on)
+{
+    int save_event_mask = desc->event_mask;
+    if (on) 
+	desc->event_mask |= flags;
+    else
+	desc->event_mask &= (~flags);
+    DEBUGF(("port %d: winsock_event_select: "
+	    "flags=%02X, on=%d, event_mask=%02X\n", 
+	    desc->port, flags, on, desc->event_mask));
+    /* The RIGHT WAY (TM) to do this is to make sure:
+       A) The cancelling of all network events is done with
+          NULL as the event parameter (bug in NT's winsock),
+       B) The actual event handle is reset so that it is only
+          raised if one of the requested network events is active,
+       C) Avoid race conditions by making sure that the event cannot be set
+          while we are preparing to set the correct network event mask.
+       The simplest way to do it is to turn off all events, reset the
+       event handle and then, if event_mask != 0, turn on the appropriate
+       events again. */
+    if ((*winSock.WSAEventSelect)(desc->s, NULL, 0) != 0) {
+	DEBUGF(("port %d: winsock_event_select: "
+		"WSAEventSelect returned error, code %d.\n", 
+		sock_errno()));
+	desc->event_mask = save_event_mask;
+	return -1;
+    }
+    if (!ResetEvent(desc->event)) {
+	DEBUGF(("port %d: winsock_event_select: "
+		"ResetEvent returned error, code %d.\n", 
+		GetLastError()));
+	desc->event_mask = 0;
+	return -1;
+    }
+    if (desc->event_mask != 0) {
+	if ((*winSock.WSAEventSelect)(desc->s, 
+				      desc->event, 
+				      desc->event_mask) != 0) {
+	    DEBUGF(("port %d: winsock_event_select: "
+		    "WSAEventSelect returned error, code %d.\n", 
+		    sock_errno()));
+	    desc->event_mask = 0;
+	    return -1;
+	}
+    }
+    return 0;
+}
+
 static int tcp_inet_event(desc, event)
 tcp_descriptor* desc; HANDLE event;
 {
@@ -5344,11 +5457,11 @@ udp_descriptor* desc; HANDLE event;
 
 	    inet_get_address(desc->inet.sfamily, abuf, &other, &len);
 
-	    /* copy formatted adderss to ptr len is actual length */
+	    /* copy formatted address to ptr len is actual length */
 	    sys_memcpy(ptr - len, abuf, len); 
 	    ptr -= len;
 	    nsz = n + len;                /* nsz = data + address */
-	    offs = ptr - buf->orig_bytes; /* inital pointer offset */
+	    offs = ptr - buf->orig_bytes; /* initial pointer offset */
 
 	    /* check if we need to reallocate binary */
 	    if ((desc->inet.mode == INET_MODE_BINARY) &&
@@ -5357,7 +5470,7 @@ udp_descriptor* desc; HANDLE event;
 		if ((tmp = realloc_buffer(buf,nsz+offs)) != NULL)
 		    buf = tmp;
 	    }
-	    code = udp_reply_binary_data(desc, buf, offs, nsz);
+	    code = udp_reply_binary_data(desc,(unsigned int)len,buf,offs,nsz);
 	    free_buffer(buf);
 	    if (code < 0)
 		return count;

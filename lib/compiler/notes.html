@@ -14,6 +14,37 @@
 
 <BODY BGCOLOR="#FFFFFF">
 
+<H2>Compiler 3.0.1.2</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+The compiler would sometimes reorder bit syntax clauses
+causing them to be execute in the wrong order.
+This has been corrected.
+<br>Own Id: OTP-3748<br>
+Aux Id: Seq 4954
+
+
+<LI>
+Modules containing long literals string concatenated with
+variables would take long time to compile and the beam module
+would be unecesserialy large. Both problems have been
+corrected.
+<br>Own Id: OTP-3831<br>
+Aux Id: Seq 5085
+
+
+<LI>
+By default, debug information is no longer included in
+beam modules. Use the compiler option <CODE>debug_info</CODE>
+to include debug information.
+<br>Own Id: OTP-3885
+
+
+</UL>
+
 <H2>Compiler 3.0.1</H2>
 <H3>Improvements and new features</H3>
 

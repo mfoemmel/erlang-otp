@@ -649,9 +649,9 @@ ChoiceType -> 'CHOICE' '{' ComponentTypeList '}' :{'CHOICE','$3'}.
 ChoiceValue -> identifier ':' Value : {'ChoiceValue',element(3,'$1'),'$3'}.
 % save for later SelectionType ->
 
-TaggedType -> Tag Type : '$2'#type{tag='$1'#tag{type={default,get(tagdefault)}}}.
-TaggedType -> Tag IMPLICIT Type :'$3'#type{tag='$1'#tag{type='IMPLICIT'}}.
-TaggedType -> Tag EXPLICIT Type :'$3'#type{tag='$1'#tag{type='EXPLICIT'}}.
+TaggedType -> Tag Type : '$2'#type{tag=['$1'#tag{type={default,get(tagdefault)}}]}.
+TaggedType -> Tag IMPLICIT Type :'$3'#type{tag=['$1'#tag{type='IMPLICIT'}]}.
+TaggedType -> Tag EXPLICIT Type :'$3'#type{tag=['$1'#tag{type='EXPLICIT'}]}.
 
 Tag -> '[' Class ClassNumber ']': #tag{class='$2',number='$3'}.
 Tag -> '[' Class typereference '.' identifier ']': 

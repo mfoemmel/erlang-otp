@@ -35,7 +35,8 @@ RELSYSDIR = $(RELEASE_PATH)/lib/orber-$(VSN)
 # ----------------------------------------------------
 
 EXTERNAL_HRL_FILES= ../include/corba.hrl \
-	../include/ifr_types.hrl
+	../include/ifr_types.hrl \
+	../include/orber_pi.hrl
 
 # ----------------------------------------------------
 # FLAGS

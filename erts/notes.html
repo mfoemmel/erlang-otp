@@ -6,6 +6,174 @@
 <BODY BGCOLOR="#FFFFFF">
 
 <CENTER><H1>Erts Release Notes</H1></CENTER>
+<H2>Erts 5.0.2</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+Heart could time out due to system time adjustments. Heart is now modified to 
+use timestamps unrelated to system dates.
+<br>Own Id: OTP-3401
+
+<LI>
+The -nohup option didn't work on Windows, causing
+erlsrv to fail.
+<br>Own Id: OTP-3715
+
+
+<LI>
+zlib in the emulator (used during compress/decompress of 
+files) did not use the right memory allocation routines on vxworks.
+<br>Own Id: OTP-3815
+
+
+<LI>
+Instability problems in the erlang emulator introduced in R7 
+are now corrected:
+*) The R7B01 emulator may now be restarted after halting 
+without rebooting the VxWorks node.
+*) Parallel portprogrm execution no longer may cause memory
+access errors in tExecTask.
+*) Use of list_to_binary may no longer cause stack overruns 
+for the emulator.
+<br>Own Id: OTP-3819
+
+
+<LI>
+Name clashes between Erlang emulator and erl_interface
+on VxWorks removed.
+<br>Own Id: OTP-3824
+
+
+<LI>
+A bug in efile_drv that randomly caused memory access 
+violation when using file:get_cwd() has been fixed.
+<br>Own Id: OTP-3832
+
+
+<LI>
+In some cases, the debugger would in a call to undefined
+function <CODE>erts_debug:apply/4</CODE>. This problem has been
+corrected.
+<br>Own Id: OTP-3845<br>
+Aux Id: Seq 5094
+
+
+<LI>
+Running erlang in an console on Windows (erl) no longer causes
+output from erlang to be blocked. Using Ctrl-C to
+interrupt emulator now works as expected.
+<br>Own Id: OTP-3888
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+A number of bug fixes and improvements have been done
+to applications <CODE>runtime_tools</CODE>, 
+<CODE>kernel</CODE> and <CODE>erts</CODE>:
+<UL>
+<br>
+<LI>A read timeout no longer resets the sequential
+trace token. This is an incompatibility towards
+the previous behaviour. Use
+<CODE>seq_trace:set_token([])</CODE> to reset the
+sequential trace token.
+<br>
+<LI><CODE>seq_trace:get_token/0</CODE> and 
+<CODE>seq_trace:set_token/1</CODE> now have compatible
+token formats. 
+<br>
+<LI><CODE>dbg:trace_port/2</CODE> and 
+<CODE>dbg:trace_client/2,3</CODE> now supports trace
+to and read from a size limited "wrap file set".
+<br>
+<LI><CODE>dbg:trace_port_control/1</CODE> now supports
+operation <CODE>get_listen_port</CODE> for the ip
+trace driver.
+<br>
+<LI>New match spec functions 
+<CODE>{is_seq_trace}</CODE> and 
+<CODE>{get_seq_trace}</CODE> has been added to test
+and read the sequential trace token in match specs.
+<br>
+<LI>New match spec functions 
+<CODE>{get_tcw}</CODE> and 
+<CODE>{set_tcw Value}</CODE> that reads and sets 
+a "trace control word" in the node has been added.
+The "trace control word" is a word in each
+Erlang node of at least 24 bits.
+There are also enhancements of BIFs:
+<CODE>erlang:system_info(trace_control_word)</CODE> and
+<CODE>erlang:system_flag(trace_control_word, Value)</CODE>
+for the same purpose.
+<br>
+<LI>A new match spec function
+<CODE>{silent, TrueOrFalse}</CODE> for setting a 
+silent call trace flag per process that inhibits
+call trace messages, both local and global, has
+been added. The BIF 
+<CODE>erlang:trace/3</CODE> has been extended to 
+recognize the flag 'silent' to start a call
+trace in silent mode.
+<br>
+<LI>Some bugs in the <CODE>dbg</CODE> module has been
+fixed, e.g the 'old_trace_call' flag has been
+removed from the 'all' flags list, and the dbg server
+no longer hangs if the supplied tracer fails to
+start.
+<br>
+<LI>A bug in the emulator that made 'EXIT' messages
+from a process involved in a sequential call trace
+get overwritten by the sequential trace token
+itself has been fixed.
+<br>
+<LI>The documentation regarding the above has
+been updated. Especially, the fact that the match spec
+function <CODE>{return_trace}</CODE> destroys the 
+tail recursiveness of the traced function has been 
+pointed out.
+<br>
+</UL>
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3747<br>
+Aux Id: OTP-3592, OTP-3744
+
+
+<LI>
+The use of the environment variable ERL_GC_TYPE to force 
+fullsweep garbage collection is no longer supported in R7B, 
+instead the environment variable ERL_FULLSWEEP_AFTER
+can be set to "0" to get the same result. 
+The misleading README and example start script for VxWorks 
+are now updated.
+<br>Own Id: OTP-3884
+
+
+</UL>
+<H2>Erts 5.0.1</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+For newer versions of gcc the value of GCCLIB_PATH
+was set incorrectly.
+<br>Own Id: OTP-3785
+
+
+<LI>
+Loading of dynamic drivers on VxWorks works again.
+(erl_ddll:load_driver/2)
+<br>Own Id: OTP-3808<br>
+Aux Id: Seq 5037
+
+
+</UL>
 
 <H2>Erts 5.0.1 (R7B)</H2>
 <H3>Improvements and new features</H3>

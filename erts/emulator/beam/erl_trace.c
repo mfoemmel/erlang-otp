@@ -377,8 +377,6 @@ trace_receive(Process *rp, Eterm msg)
     }
 }
 
-#ifdef SEQ_TRACE
-
 int seq_trace_update_send(p)
 Process *p;
 {
@@ -507,8 +505,6 @@ seq_trace_output_exit(Eterm token, Eterm msg, uint32 type,
 	queue_message_tt(tracer, bp, mess, NIL); /* trace_token must be NIL here */
     }
 }
-
-#endif
 
 void 
 erts_trace_return_to(Process *p, Uint *pc)

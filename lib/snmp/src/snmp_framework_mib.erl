@@ -20,6 +20,14 @@
 -include("snmp_types.hrl").
 -include("STANDARD-MIB.hrl").
 
+-define(VMODULE,"FRAMEWORK-MIB").
+-include("snmp_verbosity.hrl").
+
+-ifndef(default_verbosity).
+-define(default_verbosity,silence).
+-endif.
+
+
 %%%-----------------------------------------------------------------
 %%% This module implements the init- configure- and instrumentation-
 %%% functions for the SNMP-FRAMEWORK-MIB.
@@ -69,11 +77,16 @@ init() ->
 %% PRE: init/1 has been successfully called
 %%-----------------------------------------------------------------
 configure(Dir) ->
+    set_sname(),
+    ?vdebug("read internal config files",[]),
     Contexts = snmp_conf:read_internal_config_files(Dir),
+    ?vdebug("read agent config files",[]),
     Agent = snmp_conf:read_agent(Dir),
+    ?vdebug("initiate vars",[]),
     init_vars(Agent),
     %% Add default context, if not present.
     NContexts = [{""} | lists:delete({""}, Contexts)],
+    ?vdebug("initiate tables",[]),
     init_tabs(NContexts),
     ok.
 
@@ -82,14 +95,20 @@ init_vars(Agent) ->
 
 maybe_create_table(Name) ->
     case snmp_local_db:table_exists(db(Name)) of
-	true -> ok;
-	_ -> snmp_local_db:table_create(db(Name))
+	true -> 
+	    ok;
+	_ -> 
+	    ?vtrace("create table: ~w",[Name]),
+	    snmp_local_db:table_create(db(Name))
     end.
 
 init_var({Var, Val}) ->
+    ?vtrace("init var: "
+	    "~n   set ~w to ~w",[Var, Val]),
     snmp_generic:variable_set(Var, Val).    
 
 init_tabs(Contexts) ->
+    ?vdebug("create context table",[]),
     snmp_local_db:table_delete(db(intContextTable)),
     snmp_local_db:table_create(db(intContextTable)),
     init_context_table(Contexts).
@@ -97,9 +116,11 @@ init_tabs(Contexts) ->
 init_context_table([Row | T]) ->
     Context = element(1, Row),
     Key = [length(Context) | Context],
+    ?vtrace("create intContextTable table row for: ~s",[Key]),
     snmp_local_db:table_create_row(db(intContextTable), Key, Row),
     init_context_table(T);
 init_context_table([]) -> true.
+
 
 %%-----------------------------------------------------------------
 %% Instrumentation functions
@@ -252,3 +273,11 @@ set_engine_time(Time) ->
     Base = snmp_misc:now(sec) - Time,
     ets:insert(snmp_agent_table, {snmp_engine_base, Base}).
 
+
+set_sname() ->
+    set_sname(get(sname)).
+
+set_sname(undefined) ->
+    put(sname,conf);
+set_sname(_) -> %% Keep it, if already set.
+    ok.

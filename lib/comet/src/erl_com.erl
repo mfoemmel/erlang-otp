@@ -16,6 +16,10 @@
 %%     $Id$
 %%
 
+%% The erl_com module provides a low-level interface to
+%% COM-libraries. It is a gen_server and has API-function for all
+%% features in COM supported by comet.
+
 -module(erl_com).
 -author('jakob@GAMGI').
 
@@ -23,21 +27,22 @@
 
 -include("erl_com.hrl").
 
--define(IID_IDispatch, "{00020400-0000-0000-C000-000000000046}").
-
 %% External exports (API)
--export([start_driver/0, start_process/0,
-	 start_driver/1, start_process/1,
-	 get_driver/1, get_process/1,
+-export([start_driver/0, start_program/0,
+	 start_driver/1, start_program/1,
+	 get_driver/1, get_program/1,
+	 get_or_start/2,
+	 driver_or_program/1,
 	 create_dispatch/3, create_object/4, create_object/3, 
+	 create_dispatch/2, create_object/2, 
 	 query_interface/2, release/1, 
 	 invoke/3, invoke/2, com_call/3, com_call/2,
-	 property_put/3, property_get/2, property_get/3,
-	 new_thread/1, end_thread/1,
+	 property_put/3, property_get/2, property_get/3, property_put_ref/3,
+	 new_thread/1, end_thread/1, current_thread/1,
 	 stop/1,
 	 get_method_id/2,
 	 get_interface_info/2, get_interface_info/3,
-	 get_typelib_info/1,
+	 get_typelib_info/1, get_typelib_info/2,
 	 package_interface/2,
 	 test/1]).
 
@@ -46,7 +51,7 @@
 	 terminate/2, code_change/3]).
 
 %% state record, portid and pending procs and kind
--record(state, {portid, procs, kind}).
+-record(state, {portid, procs, kind, current_thread}).
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -56,53 +61,77 @@
 start_driver() ->
     gen_server:start_link(?MODULE, driver, []).
 
-%% start as a port-process
-start_process() ->
-    gen_server:start_link(?MODULE, process, []).
+%% start as a port-program
+start_program() ->
+    gen_server:start_link(?MODULE, program, []).
 
 %% start as a registered port-driver (use with care)
 start_driver(Name) ->
     gen_server:start_link({local, Name}, ?MODULE, driver, []).
 
-%% start as a named port-process
-start_process(Name) ->
-    gen_server:start_link({local, Name}, ?MODULE, process, []).
+%% start as a named port-program
+start_program(Name) ->
+    gen_server:start_link({local, Name}, ?MODULE, program, []).
 
 get_or_start(undefined, Name, ProcFlag) ->
     gen_server:start_link({local, Name}, ?MODULE, ProcFlag, []);
 get_or_start(Pid, Name, ProcFlag) ->
-    Pid.
+    case driver_or_program(Pid) of
+	ProcFlag ->
+	    {ok, Pid};
+	_ ->
+	    {error, already_other_kind}
+    end.
+
+get_or_start(Name, ProcFlag) ->
+    get_or_start(whereis(Name), Name, ProcFlag).
 
 %% get or start as a registered port-driver (use with care)
 get_driver(Name) ->
-    get_or_start(whereis(Name), Name, driver).
+    get_or_start(Name, driver).
 
-%% get or start as a named port-process
-get_process(Name) ->
-    get_or_start(whereis(Name), Name, process).
+%% get or start as a named port-program
+get_program(Name) ->
+    get_or_start(Name, program).
+
+%% check whether a process is a port driver or port program
+driver_or_program(Pid) ->
+    gen_server:call(Pid, driver_or_program, infinity).
 
 %% create a thread for com
 new_thread(Pid) ->
     gen_server:call(Pid, new_thread, infinity).
 
 %% end thread
-end_thread(Thread) ->
-    {com_thread, Pid, Threadn}= Thread,
+end_thread(T) ->
+    {com_thread, Pid, Threadn}= get_thread(T),
     gen_server:call(Pid, {end_thread, Threadn}).
 
-%% create a com object with unknown interface
-create_object(Thread, Clsid, Ctx) ->
-    create_object(Thread, Clsid, "", Ctx).
+%% current thread
+current_thread(Pid) ->
+    gen_server:call(Pid, current_thread, infinity).
+
+%% create a com object with default interface
+create_object(Thread, Clsid, Ctx) when integer(Ctx) ->
+    create_object(get_thread(Thread), Clsid, "", Ctx);
+create_object(Thread, Clsid, Refiid) when list(Refiid) ->
+    {com_thread, Pid, Threadn}= get_thread(Thread),
+    gen_server:call(Pid, {create_object, Threadn, Clsid, Refiid, 15}, infinity).
+
+create_object(Thread, Clsid) ->
+    create_object(Thread, Clsid, 15).
 
 %% create a com object with dispatch interface
-create_dispatch(Thread, Clsid, Ctx) ->
-    {com_thread, Pid, Threadn}= Thread,
+create_dispatch(Thread, Clsid, Ctx) when integer(Ctx) ->
+    {com_thread, Pid, Threadn}= get_thread(Thread),
     gen_server:call(Pid, {create_object, Threadn, Clsid,
 			  ?IID_IDispatch, Ctx}, infinity).
+create_dispatch(Thread, Clsid) ->
+    create_dispatch(Thread, Clsid, 15).
 
 %% create a com object with given interface (Refiid)
 create_object(Thread, Clsid, Refiid, Ctx) ->
-    {com_thread, Pid, Threadn}= Thread,
+    {com_thread, Pid, Threadn}= get_thread(Thread),
     gen_server:call(Pid, {create_object, Threadn, Clsid, Refiid, Ctx}, infinity).
 
 %% package an interface
@@ -110,6 +139,18 @@ package_interface({com_thread, Pid, Threadn}, I) ->
     {com_interface, Pid, Threadn, I};
 package_interface({com_interface, Pid, Threadn, _}, I) ->
     {com_interface, Pid, Threadn, I}.
+
+%% get thread from interface (or thread)
+get_thread({com_interface, Pid, Threadn, _}) ->
+    {com_thread, Pid, Threadn};
+get_thread(Pid) when pid(Pid) ->
+    {com_thread, Pid, 0};
+get_thread(undefined) ->
+    {com_error};
+get_thread(Pid) when atom(Pid) ->
+    {com_thread, whereis(Pid), 0};
+get_thread(T) ->
+    T.
 
 %% query_interface, get a com interface from another
 query_interface({com_interface, Pid, Threadn, Inum}, Iid) ->
@@ -125,7 +166,7 @@ invoke(Comint, Mid) ->
 invoke(Comint, Mid, Pars) when list(Mid) ->
     M= get_method_id(Comint, Mid),
     invoke(Comint, M, Pars);
-invoke({com_interface, Pid, Threadn, Inum}, Mid, Pars) ->
+invoke({com_interface, Pid, Threadn, Inum}, Mid, Pars) when Inum >=0 ->
     gen_server:call(Pid, {invoke, Threadn, Inum, Mid, Pars}, infinity).
 
 %% get type information, methods names, ids and offsets etc.
@@ -134,15 +175,26 @@ get_interface_info({com_interface, Pid, Threadn, Inum}, dispatch) ->
 get_interface_info({com_interface, Pid, Threadn, Inum}, virtual) ->
     gen_server:call(Pid, {get_interface_info, Threadn, Inum, ?ERLCOM_VirtualIntf}, infinity).
 
-get_interface_info({com_interface, Pid, Threadn, Inum}, GUID, dispatch) ->
-    gen_server:call(Pid, {get_interface_info, Threadn, GUID, Inum, ?ERLCOM_DispatchIntf}, infinity);
-get_interface_info({com_interface, Pid, Threadn, Inum}, GUID, virtual) ->
-    gen_server:call(Pid, {get_interface_info, Threadn, GUID, Inum, ?ERLCOM_VirtualIntf}, infinity).
-
+get_interface_info({com_interface, Pid, Threadn, Inum}, Tname, dispatch) ->
+    gen_server:call(Pid, {get_interface_info, Threadn, Tname, Inum, ?ERLCOM_DispatchIntf}, infinity);
+get_interface_info({com_interface, Pid, Threadn, Inum}, Tname, virtual) ->
+    gen_server:call(Pid, {get_interface_info, Threadn, Tname, Inum, ?ERLCOM_VirtualIntf}, infinity);
+get_interface_info({T, Tlib}, Tname, dispatch) ->
+    {com_thread, Pid, Threadn}= get_thread(T),
+    gen_server:call(Pid, {get_interface_info, Threadn, Tname, Tlib, ?ERLCOM_DispatchIntf}, infinity);
+get_interface_info({T, Tlib}, Tname, virtual) ->
+    {com_thread, Pid, Threadn}= get_thread(T),
+    gen_server:call(Pid, {get_interface_info, Threadn, Tname, Tlib, ?ERLCOM_VirtualIntf}, infinity).
 
 %% get type information, methods names, ids and offsets etc.
 get_typelib_info({com_interface, Pid, Threadn, Inum}) ->
     gen_server:call(Pid, {get_typelib_info, Threadn, Inum}, infinity).
+
+get_typelib_info({com_interface, P, T, I}, Libname) ->
+    get_typelib_info({com_thread, P, T}, Libname);
+get_typelib_info(T, Libname) ->
+    {com_thread, Pid, Threadn}= get_thread(T),
+    gen_server:call(Pid, {get_typelib_info, Threadn, Libname}, infinity).
 
 %% call a com method with stdcall (needs offset)
 com_call(ComInt, Moffs) ->
@@ -157,7 +209,19 @@ property_put(Comint, Prop, Par) when list(Prop) ->
 property_put({com_interface, Pid, Threadn, Inum}, Prop, Par) ->
     gen_server:call(Pid, {property_put, Threadn, Inum, Prop, Par}, infinity).
 
+%% put a com ref property through the dispatch interface
+property_put_ref(Comint, Prop, Par) when list(Prop) ->
+    P= get_method_id(Comint, Prop),
+    property_put_ref(Comint, P, Par);
+property_put_ref({com_interface, Pid, Threadn, Inum}, Prop, Par) ->
+    gen_server:call(Pid, {property_put, Threadn, Inum, Prop, Par}, infinity).
+
 %% get a com property through the dispatch interface
+%property_get(Comint, Prop) when list(Prop) ->
+%    P= get_method_id(Comint, Prop),
+%    property_get(Comint, P);
+%property_get({com_interface, Pid, Threadn, Inum}, Prop) ->
+%    gen_server:call(Pid, {property_get, Threadn, Inum, Prop}, infinity).
 property_get(Comint, Mid) ->
     property_get(Comint, Mid, []).
 property_get(Comint, Mid, Pars) when list(Mid) ->
@@ -172,11 +236,15 @@ get_method_id({com_interface, Pid, Threadn, Inum}, Method) ->
     gen_server:call(Pid, {get_method_id, Threadn, Inum, Method}, infinity).
 
 %% terminate all com threads and close port
+stop(Pid) when pid(Pid) ->
+    unlink(Pid),
+    gen_server:call(Pid, stop, infinity);
 stop(Pid) ->
-    gen_server:call(Pid, stop, infinity).
+    stop(whereis(Pid)).
 
-test(Pid) ->
-    gen_server:call(Pid, test).
+test(Thread) ->
+    {com_thread, Pid, Threadn}= get_thread(Thread),
+    gen_server:call(Pid, {test, Threadn}, infinity).
 
 %%%----------------------------------------------------------------------
 %%% Callback functions from gen_server
@@ -199,12 +267,12 @@ init(driver) ->
 	{error, already_loaded} -> ok;
 	_ -> exit({error, could_not_load_driver})
     end,
-    Portid=open_port({spawn, erl_com_drv}, [binary]),
+    Portid= open_port({spawn, erl_com_drv}, [binary]),
     {ok, #state{portid= Portid, procs= [], kind=driver}};
-init(process) ->
+init(program) ->
     ErlProg= filename:join(code:priv_dir(comet), "lib/erl_com_prog"),
-    Portid=open_port({spawn, ErlProg}, [binary, {packet, 4}]),
-    {ok, #state{portid= Portid, procs= [], kind=process}}.
+    Portid= open_port({spawn, ErlProg}, [binary, {packet, 4}]),
+    {ok, #state{portid= Portid, procs= [], kind=program}}.
 
 %%----------------------------------------------------------------------
 %% Func: handle_call/3
@@ -217,34 +285,34 @@ init(process) ->
 %%----------------------------------------------------------------------
 handle_call(new_thread, From, State) ->
     do_call(?ERLCOM_NewThread, new_thread, 255, From, State);
+handle_call(driver_or_program, From, State) ->
+    {reply, State#state.kind, State};
+handle_call(current_thread, From, State) ->
+    do_call(?ERLCOM_CurrentThread, current_thread, 0, From, State);
 handle_call({end_thread, Threadn}, From, State) ->
     do_call(?ERLCOM_EndThread, end_thread, Threadn, From, State);
 handle_call(stop, From, State) ->
     State#state.portid ! {self(), {command, [?ERLCOM_Quit]}},
-    {stop, normal, State};
-
+    {stop, normal, ok, State};
 handle_call({create_object, Threadn, Clsid, Refiid, Ctx}, From, State) ->
     do_call(?ERLCOM_CreateObject, create_object, Threadn,
 	    {Clsid, Refiid, Ctx}, From, State);
-
 handle_call({query_interface, Threadn, Inum, Iid}, From, State) ->
     do_call(?ERLCOM_QueryInterface, query_interface, Threadn,
 	    {Inum, Iid}, From, State);
-
 handle_call({release, Threadn, Inum}, From, State) ->
     do_call(?ERLCOM_Release, release, Threadn, Inum, From, State);
-
 handle_call({invoke, Threadn, Inum, Mid, Pars}, From, State) ->
     do_call(?ERLCOM_Invoke, invoke, Threadn,
 	    {Inum, Mid, Pars}, From, State);
-
 handle_call({call, Threadn, Inum, Moffs, Pars}, From, State) ->
     do_call(?ERLCOM_Call, call, Threadn, {Inum, Moffs, Pars}, From, State);
-
+handle_call({property_put_ref, Threadn, Inum, Pid, Par}, From, State) ->
+    do_call(?ERLCOM_PropertyPutRef, property_put_ref, Threadn,
+	    {Inum, Pid, Par}, From, State);
 handle_call({property_put, Threadn, Inum, Pid, Par}, From, State) ->
     do_call(?ERLCOM_PropertyPut, property_put, Threadn,
-	    {Inum, Pid, [Par]}, From, State);
-
+	    {Inum, Pid, Par}, From, State);
 handle_call({property_get, Threadn, Inum, Mid, Pars}, From, State) ->
     do_call(?ERLCOM_PropertyGet, property_get, Threadn,
 	    {Inum, Mid, Pars}, From, State);
@@ -252,27 +320,23 @@ handle_call({property_get, Threadn, Inum, Mid, Pars}, From, State) ->
 handle_call({get_method_id, Threadn, Inum, Method}, From, State) ->
     do_call(?ERLCOM_GetMethodID, get_method_id, Threadn,
 	    {Inum, Method}, From, State);
-
 handle_call({get_interface_info, Threadn, Inum, Dispflag}, From, State) ->
     do_call(?ERLCOM_GetInterfaceInfo, get_interface_info, Threadn,
 	   {Inum, Dispflag}, From, State);
-handle_call({get_interface_info, Threadn, GUID, Inum, Dispflag}, From, State) ->
+handle_call({get_interface_info, Threadn, Tname, Inum, Dispflag}, From, State) ->
     do_call(?ERLCOM_GetInterfaceInfo, get_interface_info, Threadn,
-	   {GUID, Inum, Dispflag}, From, State);
+	   {Tname, Inum, Dispflag}, From, State);
 
 handle_call({get_typelib_info, Threadn, Inum}, From, State) ->
     do_call(?ERLCOM_GetTypeLibInfo, get_typelib_info, Threadn,
 	   Inum, From, State);
+handle_call({test, Threadn}, From, State) ->
+    do_call(?ERLCOM_Test, test, Threadn, {}, From, State);
 
-
-handle_call(test, From, State) ->
-    State#state.portid ! {self(), {command, [?ERLCOM_Test | term_to_binary(self())]}},
-    receive
-	{Portid, {data, L}} -> {reply, L, State}
-    end;	
 handle_call(Request, From, State) ->
     Reply = false,
     {reply, Reply, State}.
+%%!! vad ska vi göra här!
 
 %%----------------------------------------------------------------------
 %% Func: handle_cast/2
@@ -295,6 +359,8 @@ handle_info({_, {data, Bin}}, State) ->
     Reply= package_result(Op, Threadn, Result),
     gen_server:reply(Proc, Reply),
     {noreply, Newstate}.
+%%!! övriga fall!
+
 
 %%----------------------------------------------------------------------
 %% Func: terminate/2
@@ -334,6 +400,8 @@ package_result(query_interface, Threadn, Result) when integer(Result) ->
     {com_interface, self(), Threadn, Result};
 package_result(new_thread, Threadn, Result) when integer(Result) ->
     {com_thread, self(), Result};
+package_result(current_thread, Threadn, Result) when integer(Result) ->
+    {com_thread, self(), Result};
 package_result(_Op, _Threadn, Result) ->
     Result.
 
@@ -348,4 +416,3 @@ do_call(Call, Op, Threadn, Pars, From, State) ->
     State#state.portid ! {self(), {command, [Call, Threadn
 					     | term_to_binary(Pars)]}},
     {noreply, Newstate}.
-

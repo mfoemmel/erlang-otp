@@ -121,6 +121,8 @@
 #  include <rebootLib.h>
 #  include <sysLib.h> 
 #  include <taskLib.h>
+#  include <wdLib.h>
+#  include <taskHookLib.h>
 #  include <selectLib.h>
 #endif
 #if !defined(__WIN32__) && !defined(VXWORKS)
@@ -129,6 +131,10 @@
 #  include <sys/time.h>
 #  include <unistd.h>
 #  include <signal.h>
+#  if defined(CORRECT_USING_TIMES)
+#    include <sys/times.h>
+#    include <limits.h>
+#  endif
 #endif
 
 #ifdef VXWORKS
@@ -205,7 +211,6 @@ unsigned long heart_beat_kill_pid = 0;
 
 /*  prototypes */
 
-#if defined(__STDC__) || defined(_MSC_VER)
 static int message_loop(int,int);
 static void do_terminate(int);
 static int notify_ack(int);
@@ -215,17 +220,8 @@ static int read_skip(int, char *, int, int);
 static int read_fill(int, char *, int);
 static void print_error(const char *,...);
 static void debugf(const char *,...);
-#else
-static int message_loop();
-static void do_terminate();
-static int notify_ack();
-static int write_message();
-static int read_message();
-static int read_skip();
-static int read_fill();
-static void print_error();
-static void debugf();
-#endif
+static void init_timestamp(void);
+static time_t timestamp(time_t *);
 
 #ifdef SOLARIS
 pid_t getOldKeeper(void);
@@ -466,7 +462,8 @@ message_loop(erlin_fd, erlout_fd)
   struct msg m, *mp = &m;
 #endif
   
-  time(&now);
+  init_timestamp();
+  timestamp(&now);
   last_received = now;
 #ifdef __WIN32__
   hevent_dataready = CreateEvent(NULL,FALSE,FALSE,NULL);
@@ -513,7 +510,7 @@ message_loop(erlin_fd, erlout_fd)
      * the system clock is adjusted with more than 55 seconds, but we
      * regard this as en error and reboot anyway.
      */
-    time(&now);
+    timestamp(&now);
     if (now > last_received + heart_beat_timeout) {
 		print_error("heart-beat time-out.");
 		return R_TIMEOUT;
@@ -540,7 +537,7 @@ message_loop(erlin_fd, erlout_fd)
 		if ((tlen > MSG_HDR_SIZE) && (tlen <= MSG_TOTAL_SIZE)) {
 			switch (mp->op) {
 			case HEART_BEAT:
-				time(&last_received);
+				timestamp(&last_received);
 #ifdef USE_WATCHDOG
 				/* reset the hardware watchdog timer */
 				wd_reset();        
@@ -1035,4 +1032,156 @@ HANDLE start_reader_thread(void) {
 	}
 	return thandle;
 }
+#endif
+
+#if defined(__WIN32__)
+
+#  define TICK_MASK 0x7FFFFFFFUL
+
+void init_timestamp(void)
+{
+}
+
+time_t timestamp(time_t *res)
+{
+    static time_t extra = 0;
+    static unsigned last_ticks = 0;
+    unsigned this_ticks;
+    time_t r;
+
+    this_ticks = GetTickCount() & TICK_MASK;
+
+    if (this_ticks < last_ticks) {
+	extra += (time_t) ((TICK_MASK + 1) / 1000);
+    }
+
+    last_ticks = this_ticks;
+    
+    r = ((time_t) (this_ticks / 1000)) + extra;
+    
+    if (res != NULL)
+	*res = r;
+    return r;
+}
+
+#elif defined(VXWORKS)
+
+static WDOG_ID watchdog_id;
+static volatile unsigned elapsed;
+static WIND_TCB *this_task;
+/* A simple variable is enough to lock the time update, as the
+   watchdog is run at interrupt level and never preempted. */
+static volatile int lock_time; 
+
+static void my_delete_hook(WIND_TCB *tcb) 
+{ 
+    if (tcb == this_task) {
+	wdDelete(watchdog_id);
+	watchdog_id = NULL;
+	taskDeleteHookDelete((FUNCPTR) &my_delete_hook);
+    }	
+}
+
+static void my_wd_routine(int count)
+{
+    if (watchdog_id != NULL) {
+	++count;
+	if (!lock_time) {
+	    elapsed += count;
+	    count = 0;
+	}
+	wdStart(watchdog_id, sysClkRateGet(), 
+		(FUNCPTR) &my_wd_routine, count);
+    }
+}
+
+void init_timestamp(void)
+{
+    lock_time = 0;
+    elapsed = 0;
+    watchdog_id = wdCreate();
+    this_task = (WIND_TCB *) taskIdSelf();
+    taskDeleteHookAdd((FUNCPTR) &my_delete_hook);
+    wdStart(watchdog_id, sysClkRateGet(), 
+	    (FUNCPTR) &my_wd_routine, 0);
+}
+
+time_t timestamp(time_t *res)
+{
+    time_t r;
+    ++lock_time;
+    r = (time_t) elapsed;
+    --lock_time;
+    if (res != NULL)
+	*res = r;
+    return r;
+}
+   
+#elif defined(HAVE_GETHRTIME) 
+
+void init_timestamp(void)
+{
+}
+
+time_t timestamp(time_t *res)
+{
+    hrtime_t ht = gethrtime();
+    time_t r = (time_t) (ht / 1000000000);
+    if (res != NULL)
+	*res = r;
+    return r;
+}
+
+#elif defined(CORRECT_USING_TIMES)
+
+#  ifdef NO_SYSCONF
+#    include <sys/param.h>
+#    define TICKS_PER_SEC()	HZ
+#  else
+#    define TICKS_PER_SEC()	sysconf(_SC_CLK_TCK)
+#  endif
+
+#  define TICK_MASK 0x7FFFFFFFUL
+
+static unsigned tps;
+
+void init_timestamp(void)
+{
+    tps = TICKS_PER_SEC();
+}
+
+time_t timestamp(time_t *res)
+{
+    static time_t extra = 0;
+    static clock_t last_ticks = 0;
+    clock_t this_ticks;
+    struct tms dummy;
+    time_t r;
+
+    this_ticks = (times(&dummy) & TICK_MASK);
+
+    if (this_ticks < last_ticks) {
+	extra += (time_t) ((TICK_MASK + 1) / tps);
+    }
+
+    last_ticks = this_ticks;
+    
+    r = ((time_t) (this_ticks / tps)) + extra;
+    
+    if (res != NULL)
+	*res = r;
+    return r;
+}
+
+#else
+
+void init_timestamp(void)
+{
+}
+
+time_t timestamp(time_t *res)
+{
+    return time(res);
+}
+
 #endif

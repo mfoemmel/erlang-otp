@@ -28,6 +28,8 @@
 	 file_info/1,
 	 first/1,
 	 fixtable/2,
+	 foldl/3,
+	 foldr/3,
 	 fsck/1,
 	 get_head_field/2,
 	 info/1,
@@ -108,6 +110,7 @@
 -define(BASE, (?HEADSZ +  (4 * (?SEGSZ + ?SEGARRSZ)))).
 -define(ZERO, [0,0,0,0]).
 -define(POW(X), (1 bsl X)).
+-define(MAXOBJS, (?SEGSZ * ?SEGARRSZ)). % 2 M objects
 
 
 %% Record for the head structure in a file
@@ -164,12 +167,13 @@
 -define(CLOSED_PROPERLY_NEW_HASH_NEED_COMPACTING,5). %% Format 8(c)
 -define(FILE_FORMAT_VERSION_POS, 16).
 -define(D_POS, 20).
+-define(NO_ITEMS_POS, (?D_POS + 12)).
 -define(CHAIN_LEN, 1).  %% medium chain len
 -define(SEGSZ, 256).  %% size of each segment in words  
 -define(SEGARRSZ, 8192).  %% max # segments
 
 
-%%efine(TRACE(X, Y), io:format(X, Y)).
+%%-define(TRACE(X, Y), io:format(X, Y)).
 -define(TRACE(X, Y), true).
 
 %%-define(DEBUGF(X,Y), io:format(X, Y)).
@@ -329,6 +333,14 @@ pread_12(F, Pos) ->  %% check for possible eof here
     case file:pread(F, Pos, 12) of
 	{ok, Bin} when size(Bin) == 12 ->
 	    list_to_tuple(bin2ints(Bin));
+	_ ->
+	    eof
+    end.
+
+read_n(F, Max) ->
+    case file:read(F, Max) of
+	{ok, Bin} ->
+	    Bin;
 	_ ->
 	    eof
     end.
@@ -497,6 +509,7 @@ init_more_segments(Head, F, SegNo, Factor) ->
 
 fopen_init_file(F, Tab, Fname, Type, Kp, Est, Ram, CacheSz, Auto, read_write) ->
     Factor = if Est == default -> 1;
+		1 + (Est div ?SEGSZ) > ?SEGARRSZ -> ?SEGARRSZ;
 		true           -> 1 + (Est div ?SEGSZ)
 	     end,
     file:truncate(F),
@@ -691,7 +704,7 @@ tt(duplicate_bag) -> ?DUPLICATE_BAG.
 %% Given a filename, fsck it
 fsck(Fname) ->
     case file:open(Fname, [binary, raw, read]) of
-	{ok ,Fd} ->
+	{ok, Fd} ->
 	    case read_head_fields(Fd) of
 		{ok, FH} ->
 		    ?DEBUGF("FileHeader: ~p~n",[FH]),
@@ -717,23 +730,20 @@ fsck(Tab, Type, KeyPos, Fname, Bump) ->
 fsck2(Tab, Type, KeyPos, Fname, Bump) ->
     Tmp = Fname ++ ".TMP",
     file:delete(Tmp),
-    case fopen(Tab, Tmp, Type,  KeyPos, false, default, false, 0, infinity, read_write) of
+    {ok, F} = file:open(Fname, [raw, binary, read]),
+    %% no_items written by update_no_items/2.
+    Est = case catch pread_4(F, ?NO_ITEMS_POS) of
+	      {'EXIT', _} -> default;
+	      NoItems -> NoItems
+	  end,
+    case fopen(Tab, Tmp, Type,  KeyPos, false, Est, false, 
+	       0, infinity, read_write) of
 	{error, Reason} -> 
+	    file:close(F),
 	    {error, Reason};
-	{ok, Head, I } ->  %% New empty file with wrong filename
-	    {ok, Info} = file:read_file_info(Fname),
-	    Fz = Info#file_info.size,
-	    {ok, F} = file:open(Fname, [raw, binary, read]),
-	    Cp = ?HEADSZ + ((?SEGSZ + ?SEGARRSZ) *  4 ), %% current pos
-	    H2 = 
-		case (Fz >= Cp) of
-		    true ->
-			do_fsck(Head, Tab, Cp, Fz, F, 0,Bump);
-		    false ->
-			%% Bad luck, the segment list was truncated /hakan
-			Head
-		end,
-	    file:close(F), %% the corrupted input file
+	{ok, Head, I} ->  % New empty file with wrong filename
+	    H2 = do_fsck(Head, ?BASE, F, Bump),
+	    file:close(F),
 	    case fclose(H2#head{update_mode = dirty}, I) of
 		ok ->
 		    ok = file:rename(Tmp, Fname);
@@ -743,38 +753,63 @@ fsck2(Tab, Type, KeyPos, Fname, Bump) ->
 	    end
     end.
 
-%% Bump is 8 since all objects are allocated aligned to this
-%% Bump is 1 if we use fsck to upgrade version of dets file
-do_fsck(Head, Tab, Cp, Fz, F, I, Bump) ->
-    case pread_12(F, Cp) of
-	{Next, Sz, Magic} ->
-	    case in_range(F, Cp, Fz, Sz, Magic) of
-		{true, active} ->
-		    {ok, Bin} = file:pread(F, Cp+12, Sz),
-		    case catch erlang:binary_to_term(Bin) of
-			{'EXIT', _} ->
-			    do_fsck(Head, Tab , Cp + Bump, Fz, F, I+1,Bump);
-			Term when Bump == 8 ->
-			    ?TRACE("RECOVER ~p~n", [Term]),
-			    H2 = finsert(Head, Term),
-			    Cp2 = Cp + ?POW(sz2pos(Sz+12)),
-			    do_fsck(H2, Tab, Cp2, Fz, F, I+1, Bump);
-			Term when Bump == 1 ->
-			    H2 = finsert(Head, Term),
-			    Cp2 = Cp + Sz + 12,
-			    do_fsck(H2, Tab, Cp2, Fz, F, I+1, Bump)
-		    end;
-		false ->
-		    do_fsck(Head, Tab, Cp + Bump, Fz, F, I, Bump)
-	    end;
-	eof ->
+do_fsck(Head, Pos, F, Bump) ->
+    case file:position(F, Pos) of
+	{ok, _} ->
+	    read_more_bytes(<<>>, 0, Head, Pos, F, Bump);
+	_ ->
 	    Head
     end.
 
-in_range(F, Cp, Fz, Sz, ?ACTIVE) when Cp + 12 + Sz  =< Fz ->
-    {true, active};
-in_range(F, Cp, Fz, Sz, Magic) -> 
-    false.
+do_fsck(Bin = <<_N:32, Sz:32, Status:32, Tail/binary>>, Head, Pos, F, Bump) ->
+    if 
+	Status == ?ACTIVE ->
+	    case Tail of
+		<<BinTerm:Sz/binary, Tail2/binary>> ->
+		    case catch erlang:binary_to_term(BinTerm) of
+			{'EXIT', _} ->
+			    skip_bytes(Bin, Bump, Head, Pos, F, Bump);
+			Term when Bump == 8 ->
+			    ?TRACE("RECOVER ~p~n", [Term]),
+			    H2 = finsert(Head, Term),
+			    Skip = ?POW(sz2pos(Sz+12)) - Sz - 12,
+			    skip_bytes(Tail2, Skip, H2, Pos, F, Bump);
+			Term when Bump == 1 ->
+			    H2 = finsert(Head, Term),
+			    do_fsck(Tail2, H2, Pos, F, Bump)
+		    end;
+		_ ->
+		    read_more_bytes(Bin, Sz, Head, Pos, F, Bump)
+	    end;
+	true -> 
+	    skip_bytes(Bin, Bump, Head, Pos, F, Bump)
+    end;
+do_fsck(Bin, Head, Pos, F, Bump) ->
+    read_more_bytes(Bin, 0, Head, Pos, F, Bump).
+    
+skip_bytes(Bin, Skip, Head, Pos, F, Bump) ->
+    case Bin of
+	<<_:Skip/binary, Tail/binary>> ->
+	    do_fsck(Tail, Head, Pos, F, Bump);
+	_ ->
+	    NewPos = Pos + (Skip - size(Bin)),
+	    do_fsck(Head, NewPos, F, Bump)
+    end.
+
+-define(CHUNK_SIZE, 8192).
+
+read_more_bytes(B, Min, Head, Pos, F, Bump) ->
+    Max = if 
+	      Min < ?CHUNK_SIZE -> ?CHUNK_SIZE; 
+	      true -> Min 
+	  end,
+    case read_n(F, Max) of
+	eof ->
+	    Head;
+	Bin ->
+	    NewPos = Pos + size(Bin),
+	    do_fsck(list_to_binary([B, Bin]), Head, NewPos, F, Bump)
+    end.
 
 mark_not_closed(F) ->
     ok = file:pwrite(F, ?CLOSED_PROPERLY_POS, [0,0,0,0]),
@@ -1066,8 +1101,7 @@ fmatch_delete(Head, Pat)  ->
 			 {true,_} ->
 			     mdel_slots(Head, Pat, 0, 0)
 		     end,
-    X = NewHead#head.no_items - Dels,
-    NewHead#head{no_items = X}.
+    update_no_items(NewHead, -Dels).
 
 
 mdel_slots(Head, Pat, Deletions, Slot) ->
@@ -1109,8 +1143,7 @@ fdelete(Head, Key) ->
 	{ok, Prev, Pos2, Next, Size, Term}  ->
 	    Ets = Head#head.ets,
 	    {NewHead,Items} = loop_key_delete(Head, F, Prev, Pos2, Next,Size, Key, 1, Kp),
-	    X = NewHead#head.no_items - Items,
-	    NewHead#head{no_items = X}
+	    update_no_items(NewHead, -Items)
     end.
 
 loop_key_delete(Head, F, Prev, Pos, Next, Size, Key, Deletions, Kp) ->
@@ -1143,13 +1176,11 @@ fdelete_object(Head, Obj) when tuple(Obj), size(Obj) >= Head#head.keypos  ->
 	{ok, Prev, Pos2, Next, Size} when Head#head.type /= duplicate_bag  ->
 	    NewHead = cache_free(F, Head, Pos2, Size+12, Key),
 	    ok = file:pwrite(F, Prev, ?int32(Next)),
-	    X = NewHead#head.no_items - 1,
-	    {NewHead#head{no_items = X}, ok};
+	    {update_no_items(NewHead, -1), ok};
 	{ok, Prev, Pos2, Next, Size} ->
 	    NewHead = cache_free(F, Head, Pos2, Size+12, Key),
 	    ok = file:pwrite(F, Prev, ?int32(Next)),
-	    X = NewHead#head.no_items - 1,
-	    fdelete_object(NewHead#head{no_items = X}, Obj)
+	    fdelete_object(update_no_items(NewHead, -1), Obj)
     end;
 
 
@@ -1430,7 +1461,7 @@ finsert(Head, Object) ->
 		     end
 
 	     end,
-    H2 = H1#head{no_items = H1#head.no_items + I},
+    H2 = update_no_items(H1, I),
     if
 	(H2#head.no_items > H2#head.next) ->
 	    if (H2#head.fixed == false)->
@@ -1461,7 +1492,7 @@ db_hash(Key, Head) ->
 ensure_alloced(Head) ->
     Next = Head#head.next,
     if 
-	(Next >= (?SEGSZ * ?SEGARRSZ)) -> %% can't grow no more
+	(Next >= ?MAXOBJS) -> %% can't grow no more
 	    {Head,no};
 	(Next rem ?SEGSZ) == 0 ->  %% alloc new segment
 	    ?TRACE("Alloc new segment \n ", []),
@@ -1475,6 +1506,22 @@ ensure_alloced(Head) ->
 	true ->
 	    {Head,Next + 1}
     end.
+
+%% Update no_items on the file too, if the number of segments that
+%% fsck2/5 use for estimate has changed.
+update_no_items(Head, 0) -> Head;
+update_no_items(Head, Delta) ->
+    No = Head#head.no_items,
+    NewNo = No + Delta,
+    if 
+	NewNo > ?MAXOBJS ->
+	    ok;
+	No div ?SEGSZ == NewNo div ?SEGSZ ->
+	    ok;
+	true ->
+	    ok = file:pwrite(Head#head.fptr, ?NO_ITEMS_POS, <<NewNo:32>>)
+    end,
+    Head#head{no_items = NewNo}.
 
 
 grow(Head) ->
@@ -2192,7 +2239,12 @@ info(Tab, owner) ->        case (catch ?proc(Tab)) of
 			       _ ->
 				   undefined
 			   end;
-info(Tab, safe_fixed) ->   fixtable_server:info(?MODULE, Tab);
+info(Tab, safe_fixed) ->   case (catch ?proc(Tab)) of
+			       {'EXIT',Reason} ->
+				   undefined;
+			       Pid ->
+				   fixtable_server:info(?MODULE, Tab)
+			   end;
 info(Tab, fixed) ->        case (catch ?proc(Tab)) of
 			       {'EXIT',Reason} ->
 				   undefined;
@@ -2207,6 +2259,34 @@ all() ->                   ensure_started(),
 			   lists:map(fun(X) -> element(1, X) end, 
 				     ets:tab2list(?T)).
 
+foldr(Fun, Acc, Tab) ->
+    foldl(Fun, Acc, Tab).
+
+foldl(Fun, Acc, Tab) ->
+    Ref = make_ref(),
+    safe_fixtable(Tab, true),    
+    R = (catch do_foldl(0, Tab, Acc, Fun, Ref)),
+    safe_fixtable(Tab, false),
+    case R of
+	{Ref, Result} ->
+	    Result;
+	{'EXIT', Reason} ->
+	    erlang:fault(Reason);
+	Thrown ->
+	    throw(Thrown)
+    end.
+
+do_foldl(I, Tab, Acc, Fun, Ref) ->
+    case dets:slot(Tab, I) of
+	'$end_of_table' ->
+	    {Ref, Acc};
+	[] ->
+	    do_foldl(I+1, Tab, Acc, Fun, Ref);
+	L ->
+	    NewAcc = lists:foldl(Fun, Acc, L),
+	    do_foldl(I+1, Tab, NewAcc, Fun, Ref)
+    end.
+    
 
 verbose() ->           
     verbose(true).

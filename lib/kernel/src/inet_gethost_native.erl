@@ -213,18 +213,35 @@ getit(Cmd, Data) ->
     end.
     
 
+do_start(Sup,C) ->
+    {Child,_,_,_,_,_} = C,
+    case supervisor:start_child(Sup,C) of
+	{ok,_} ->
+	    ok;
+	{error, already_started, _} ->
+	    ok;
+	{error, already_present} ->
+	    supervisor:terminate_child(Sup, Child),
+	    supervisor:delete_child(Sup, Child),
+	    supervisor:start_child(Sup,C),
+	    ok;
+	Else ->
+	    exit({unexpected_supervisor_response, Else})
+    end.
+
 ensure_started() ->
     case whereis(inet_gethost_native) of
 	undefined -> 
-	    C = {inet_gethost_native, {?MODULE, start_link, []}, permanent, 1000, 
-		 worker, [?MODULE]},
+	    C = {inet_gethost_native, {?MODULE, start_link, []}, temporary, 
+		 1000, worker, [?MODULE]},
 	    case whereis(kernel_safe_sup) of
 		undefined ->
-		    supervisor:start_child(net_sup, C);  % kernel_safe_sup
-		_ ->supervisor:start_child(kernel_safe_sup, C)  % kernel_safe_sup
-	    end,
-	    ok;
-	_ -> ok
+		    do_start(net_sup,C);
+		_ ->
+		    do_start(kernel_safe_sup,C)
+	    end;
+	_ -> 
+	    ok
     end.
 
 reply([?REPLY_ERROR | Reason]) -> {error, list_to_atom(Reason)};

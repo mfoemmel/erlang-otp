@@ -19,7 +19,9 @@
  
 %% encoding / decoding of BER  
  
--export([fixoptionals/2,split_list/2,cindex/3,restbytes/3,list_to_record/2,
+-export([fixoptionals/2,split_list/2,cindex/3,
+	 restbytes/3, % remove this soon but change name on asn1rt_ber then
+	 restbytes2/3,list_to_record/2,
 	 encode_tag_val/1,decode_tag/1,peek_tag/1,
 	 check_tags/3, encode_tags/3]).
 -export([encode_boolean/2,decode_boolean/3,
@@ -121,17 +123,29 @@ split_list(List,indefinite) ->
 split_list(List,Len) ->
     {lists:sublist(List,Len),lists:nthtail(Len,List)}.
 
+%%% left here for backwards compatibility 
 restbytes(indefinite,[0,0|RemBytes],_) ->
-    RemBytes;
+    exit({error,{asn1, {"recompile with asn1-1.2.9.5 or later"}}});
 restbytes(indefinite,RemBytes,ext) ->
-    {Bytes,_} = skipvalue(indefinite,RemBytes),
-    Bytes;
+    exit({error,{asn1, {"recompile with asn1-1.2.9.5 or later"}}});
 restbytes(RemBytes,[],_) ->
     RemBytes;
 restbytes(RemBytes,Bytes,noext) ->
     exit({error,{asn1, {unexpected,Bytes}}});
 restbytes(RemBytes,Bytes,ext) ->
     RemBytes.
+
+%%% new function which fixes a bug regarding indefinite length decoding
+restbytes2(indefinite,[0,0|RemBytes],_) ->
+    {RemBytes,2};
+restbytes2(indefinite,RemBytes,ext) ->
+    skipvalue(indefinite,RemBytes);
+restbytes2(RemBytes,[],_) ->
+    {RemBytes,0};
+restbytes2(RemBytes,Bytes,noext) ->
+    exit({error,{asn1, {unexpected,Bytes}}});
+restbytes2(RemBytes,Bytes,ext) ->
+    {RemBytes,0}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% skipvalue(Length, Bytes) -> {RemainingBytes, RemovedNumberOfBytes}

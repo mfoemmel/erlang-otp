@@ -43,11 +43,9 @@
 	  enc_octet/2, dec_octet/1,
 	  enc_enum/3, enc_r_enum/3, dec_enum/3,
 	  %% IIOP 1.1 - 
-	  %%enc_wchar/2, enc_r_wchar/2, dec_wchar/2,
 	  enc_longlong/2, enc_r_longlong/2, dec_longlong/2,
 	  enc_unsigned_longlong/2, enc_r_unsigned_longlong/2, dec_unsigned_longlong/2
 	  %%enc_longdouble/2, enc_r_longdouble/2, dec_longdouble/2
-	  %%enc_wstring/2, enc_r_wstring/2, dec_wstring/2,
 	  %%enc_fixed/4, enc_r_fixed/4, dec_fixed/2
 	 ]).
 

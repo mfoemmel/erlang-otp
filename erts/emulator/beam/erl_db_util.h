@@ -138,6 +138,9 @@ typedef struct db_bindings {
 #define TERM_GETKEY(tb, obj) db_getkey((tb)->common.keypos, (obj)) 
 
 /* Function prototypes */
+Eterm db_get_trace_control_word_0(Process *p);
+Eterm db_set_trace_control_word_1(Process *p, Eterm val);
+
 void db_initialize_util(void);
 Eterm db_getkey(int keypos, Eterm obj);
 int db_do_match(Eterm obj, Eterm pattern, DbBindings *bs);
@@ -209,10 +212,12 @@ typedef struct dmc_err_info {
 /*
 ** Compilation flags
 */
-#define DCOMP_BODY_RETURN       1
-#define DCOMP_ALLOW_DBIF_BODY   2
+#define DCOMP_BODY_RETURN       1 /* The body should return a value (ets),
+				     otherwise body return value is ignored.*/
+#define DCOMP_ALLOW_DBIF_BODY   2 /* Allow Non guard BIF's in body
+				     expression (trace) */
 #define DCOMP_MATCH_ARRAY       4 /* The parameter to the execution
-				     will be an array, not a tuple. */
+				     will be an array, not a tuple (trace). */
 
 
 Binary *db_match_compile(Eterm *matchexpr, Eterm *guards,

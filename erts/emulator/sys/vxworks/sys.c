@@ -158,56 +158,62 @@ static volatile int break_requested = 0;
  */
 void erl_sys_schedule_loop(void);
 
+#ifdef SOFTDEBUG
+static void do_trace(int line, char *file, char *format, ...)
+{
+    va_list va;
+    int tid = taskIdSelf();
+    char buff[512];
+
+    va_start(va, format);
+    sprintf(buff,"Trace: Task: 0x%08x, %s:%d - ",
+	    tid, file, line);
+    vsprintf(buff + strlen(buff), format, va);
+    va_end(va);
+    strcat(buff,"\r\n");
+    write(2,buff,strlen(buff));
+}
+
+#define TRACE() do_trace(__LINE__, __FILE__,"")
+#define TRACEF(Args...) do_trace(__LINE__,__FILE__, ## Args)
+#endif
+
 void
 erl_sys_init(void)
 {
-    /* Dummy! */
-}
+    if (erlang_id != 0) {
+	/* NOTE: This particular case must *not* call erl_exit() */
+	sys_printf(CERR, "Sorry, erlang is already running (as task %d)\n",
+		   erlang_id);
+	exit(1);
+    }
 
-/* This is the system's main function (which may or may not be called "main")
-   - do general system-dependent initialization
-   - call erl_start() to parse arguments and do other init
-   - arrange for schedule() to be called forever, and i/o to be done
-   */
-void erl_main(int argc, char **argv)
-{
-  if (erlang_id != 0) {
-    /* NOTE: This particular case must *not* call erl_exit() */
-    sys_printf(CERR, "Sorry, erlang is already running (as task %d)\n",
-	       erlang_id);
-    exit(1);
-  }
+    /* This must be done as early as possible... */
+    if(!reclaim_init()) 
+	fprintf(stderr, "Warning : reclaim facility should be initiated before "
+		"erlang is started!\n");
+    max_files = reclaim_max_files();
 
-  /* This must be done as early as possible... */
-  if(!reclaim_init()) 
-      fprintf(stderr, "Warning : reclaim facility should be initiated before "
-	      "erlang is started!\n");
-  max_files = reclaim_max_files();
-
-  /* Floating point exceptions */
+    /* Floating point exceptions */
 #if (CPU == SPARC)
-  sys_sigset(SIGFPE, fpe_sig_handler);
+    sys_sigset(SIGFPE, fpe_sig_handler);
 #elif (CPU == PPC603)
-  fix_registers();
+    fix_registers();
 #endif
 
-  /* register the private delete hook in reclaim */
-  save_delete_hook((FUNCPTR)delete_hook, (caddr_t)0);
-  erlang_id = taskIdSelf();
-  initialize_allocation();
+    /* register the private delete hook in reclaim */
+    save_delete_hook((FUNCPTR)delete_hook, (caddr_t)0);
+    erlang_id = taskIdSelf();
+    initialize_allocation();
 
-  setvbuf(stdout, (char *)NULL, _IOLBF, BUFSIZ);
-  /* XXX Bug in VxWorks stdio loses fputch()'ed output after the
-     setvbuf() but before a *printf(), and possibly worse (malloc
-     errors, crash?) - so let's give it a *printf().... */
-  fprintf(stdout, "%s","");
+    setvbuf(stdout, (char *)NULL, _IOLBF, BUFSIZ);
+    /* XXX Bug in VxWorks stdio loses fputch()'ed output after the
+       setvbuf() but before a *printf(), and possibly worse (malloc
+       errors, crash?) - so let's give it a *printf().... */
+    fprintf(stdout, "%s","");
 #ifdef DEBUG
-  printf("emulator task id = 0x%x\n", erlang_id);
+    printf("emulator task id = 0x%x\n", erlang_id);
 #endif
-
-  erl_start(argc, argv);
-
-  erl_sys_schedule_loop();
 }
 
 void
@@ -474,6 +480,10 @@ static struct driver_data {
  * spawn ports as this is rare.
  */
 static SEM_ID driver_data_sem = NULL;
+/*
+ * Also locking when looking up entries in the load table
+ */
+static SEM_ID entry_data_sem = NULL;
 
 /* We maintain a linked fifo queue of these structs in order */
 /* to manage unfinnished reads/and writes on differenet fd's */
@@ -595,17 +605,25 @@ static int set_driver_data(int port_num, int ifd, int ofd,
   }
 }
 
+static int need_new_sems = 1;
+
 static int spawn_init(void)
 {
   char *stackenv;
   int size;
-
   driver_data = (struct driver_data *)
       sys_alloc(max_files * sizeof(struct driver_data));
-  driver_data_sem = semMCreate
-      (SEM_Q_PRIORITY | SEM_DELETE_SAFE | SEM_INVERSION_SAFE);
-  if (driver_data_sem == NULL)
+  if (need_new_sems) {
+      driver_data_sem = semMCreate
+	  (SEM_Q_PRIORITY | SEM_DELETE_SAFE | SEM_INVERSION_SAFE);
+      entry_data_sem = semMCreate
+	  (SEM_Q_PRIORITY | SEM_DELETE_SAFE | SEM_INVERSION_SAFE);
+  }
+  if (driver_data_sem == NULL || entry_data_sem == NULL) {
       erl_exit(1,"Could not allocate driver locking semaphore.");
+  }
+  need_new_sems = 0;
+
   (void)uxPipeDrv();		/* Install pipe driver */
 
   if ((stackenv = getenv("ERLPORTSTACKSIZE")) != NULL &&
@@ -708,13 +726,16 @@ static void call_proc(char *name, int ifd, int ofd, int read_write,
   argc = build_argv(name, &argv);
   plain_free(name);
   /* Find basename of path */
-  if ((bname = strrchr(argv[0], '/')) != NULL)
+  if ((bname = strrchr(argv[0], '/')) != NULL) {
     bname++;
-  else
+  } else {
     bname = argv[0];
+  }
 #ifdef DEBUG
   fdprintf(2, "Port program name: %s\n", bname);
 #endif
+  semTake(entry_data_sem, WAIT_FOREVER);
+
   if (argc > 0) {
     if ((entry = lookup(bname)) == NULL) {
       int fd;
@@ -741,8 +762,10 @@ static void call_proc(char *name, int ifd, int ofd, int read_write,
 	}
       }
     }
-  } else
+  } else {
     entry = NULL;
+  }
+  semGive(entry_data_sem);
     
   if (read_write & DO_READ) {	/* emulator read */
     save_fd(ofd);
@@ -754,9 +777,9 @@ static void call_proc(char *name, int ifd, int ofd, int read_write,
     save_fd(ifd);
     ioTaskStdSet(0, 0, ifd);	/* stdin for process */
   }
-  if (entry != NULL)
+  if (entry != NULL) {
     ret = (*entry)(argc, argv, (char **)NULL); /* NULL for envp */
-  else {
+  } else {
     fdprintf(2, "Could not exec \"%s\"\n", argv[0]);
     ret = -1;
   }
@@ -1612,7 +1635,7 @@ void sys_putc(int ch, CIO where)
 
 Preload* sys_preloaded(void)
 {
-    return pre_loaded;
+    return (Preload *) pre_loaded;
 }
 
 /* Return a pointer to preloaded code for module "module" */
@@ -2587,13 +2610,8 @@ erl_debug(char* fmt, ...)
 }
 #endif
 
-
-
-
-
-
-
-
-
-
-
+void
+erl_sys_args(int* argc, char** argv)
+{
+    /* Dummy */
+}

@@ -1,4 +1,4 @@
 
-COMET_VSN = 1.0
+COMET_VSN = 1.1
 
 

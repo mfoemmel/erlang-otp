@@ -26,6 +26,10 @@
 -include("SNMP-COMMUNITY-MIB.hrl").
 -include("snmp_types.hrl").
 
+-define(VMODULE,"CONF").
+-include("snmp_verbosity.hrl").
+
+
 %% Enum definitions from intCommunityAccess
 -define(intCommunityAccess_readWrite, 2).
 -define(intCommunityAccess_read, 1).
@@ -58,42 +62,51 @@
 %%        configuration_error.
 %%-----------------------------------------------------------------
 read_internal_config_files(Dir) ->
+    ?vdebug("check context config file",[]),
     CtxFile = filename:join(Dir, "context.conf"),
     case file:read_file_info(CtxFile) of
 	{ok, _} -> ok;
 	{error, _} -> convert_context(Dir)
     end,
+    ?vdebug("read contexts config file",[]),
     Contexts = snmp_misc:read(CtxFile, {snmp_conf, check_context}),
     Contexts.
 
 read_target_config_files(Dir) ->
+    ?vdebug("check target address config file",[]),
     TAFile = filename:join(Dir, "target_addr.conf"),
     case file:read_file_info(TAFile) of
 	{ok, _} -> ok;
 	{error, _} -> convert_trap(Dir)
     end,
+    ?vdebug("check vacm config file",[]),
     VACMFile = filename:join(Dir, "vacm.conf"),
     case file:read_file_info(VACMFile) of
 	{ok, _} -> ok;
 	{error, _} -> convert_target_params(Dir)
     end,
+    ?vdebug("read addresses from target config file",[]),
     Addrs = snmp_misc:read(TAFile,
 			   {snmp_conf, check_target_addr}),
+    ?vdebug("read target params config file",[]),
     Params = snmp_misc:read(filename:join(Dir, "target_params.conf"), 
 			    {snmp_conf, check_target_params}),
     {Addrs, Params}.
     
 read_notify_config_files(Dir) ->
+    ?vdebug("read notify config file",[]),
     Notifs = snmp_misc:read(filename:join(Dir, "notify.conf"), 
 			    {snmp_conf, check_notify}),
     Notifs.
 
 read_vacm_config_files(Dir) ->
+    ?vdebug("check vacm config file",[]),
     VACMFile = filename:join(Dir, "vacm.conf"),
     case file:read_file_info(VACMFile) of
 	{ok, _} -> ok;
 	{error, _} -> convert_view(Dir)
     end,
+    ?vdebug("read vacm config file",[]),
     Vacms = snmp_misc:read(VACMFile, {snmp_conf, check_vacm}),
     Sec2Group = [X || {vacmSecurityToGroup, X} <- Vacms],
     Access = [X || {vacmAccess, X} <- Vacms],
@@ -101,15 +114,18 @@ read_vacm_config_files(Dir) ->
     {Sec2Group, Access, View}.
 
 read_usm_config_files(Dir) ->
+    ?vdebug("check usm config file",[]),
     USMFile = filename:join(Dir, "usm.conf"),
     case file:read_file_info(USMFile) of
 	{ok, _} -> ok;
 	{error, _} -> generate_usm(Dir)
     end,
+    ?vdebug("read usm config file",[]),
     Usms = snmp_misc:read(USMFile, {snmp_conf, check_usm}),
     Usms.
 
 read_community_config_files(Dir) ->
+    ?vdebug("read community config file",[]),
     Comms = snmp_misc:read(filename:join(Dir, "community.conf"), 
 			   {snmp_conf, check_community}),
     Comms.
@@ -122,7 +138,9 @@ read_community_config_files(Dir) ->
 %% Returns: A list of {Variable, Value}.
 %%-----------------------------------------------------------------
 read_agent(Dir) ->
+    ?vdebug("check agent config file",[]),
     File = filename:join(Dir, "agent.conf"), 
+    ?vdebug("read agent config file",[]),
     Agent = snmp_misc:read(File, {snmp_conf, check_agent}),
     Agent2 =
 	case lists:keymember(snmpEngineMaxMessageSize, 1, Agent) of
@@ -213,7 +231,20 @@ check_context(X) ->
 %%-----------------------------------------------------------------
 check_target_addr({Name, Ip, Udp, Timeout, RetryCount, TagList,
 		   Params, EngineId, TMask, MMS}) ->
-    check_string(Name),
+    ?vtrace("check target address with:"
+	    "~n   Name:       ~s"
+	    "~n   Ip:         ~p"
+	    "~n   Udp:        ~p"
+	    "~n   Timeout:    ~p"
+	    "~n   RetryCount: ~p"
+	    "~n   TagList:    ~p"
+	    "~n   Params:     ~p"
+	    "~n   EngineId:   ~p"
+	    "~n   TMask:      ~p"
+	    "~n   MMS:        ~p",
+	    [Name,Ip,Udp,Timeout,RetryCount,
+	     TagList,Params,EngineId,TMask,MMS]),
+    check_string(Name,{gt,0}),
     check_ip(Ip),
     check_integer(Udp),
     check_integer(Timeout),
@@ -232,6 +263,7 @@ check_target_addr({Name, Ip, Udp, Timeout, RetryCount, TagList,
     TAddr = Ip ++ [Udp div 256, Udp rem 256],
     check_mask(TMask, TAddr, fun check_ip_udp/1),
     check_packet_size(MMS),
+    ?vtrace("check target address done",[]),
     {ok, {Name, ?snmpUDPDomain, TAddr, Timeout,
 	  RetryCount, TagList, Params,
 	  ?'StorageType_nonVolatile', ?'RowStatus_active', EngineId,
@@ -248,7 +280,7 @@ check_target_addr(X) ->
 %%  {Name, MPModel, SecurityModel, SecurityName, SecurityLevel}
 %%-----------------------------------------------------------------
 check_target_params({Name, MPModel, SecModel, SecName, SecLevel}) ->
-    check_string(Name),
+    check_string(Name,{gt,0}),
     {ok, MP} = check_atom(MPModel, [{v1, ?MP_V1},
 				    {v2c, ?MP_V2C},
 				    {v3, ?MP_V3}]),
@@ -265,7 +297,7 @@ check_target_params(X) ->
 %%  {Name, Tag, Type}
 %%-----------------------------------------------------------------
 check_notify({Name, Tag, Type}) ->
-    check_string(Name),
+    check_string(Name,{gt,0}),
     check_string(Tag),
     {ok, Val} = check_atom(Type, [{trap, 1},
 				  {inform, 2}]),
@@ -371,7 +403,7 @@ plen(usmDESPrivProtocol) -> 16.
 %%-----------------------------------------------------------------
 check_community({Index, CommunityName, SecurityName, ContextName,
 		 TransportTag}) ->
-    check_string(Index),
+    check_string(Index,{gt,0}),
     check_string(CommunityName),
     check_string(SecurityName),
     check_string(ContextName),
@@ -422,9 +454,17 @@ check_integer(X) -> throw({invalid_integer, X}).
 check_string(X) when list(X) -> true;
 check_string(X) -> throw({invalid_string, X}).
 
-check_string(X, any) when list(X) -> true;
-check_string(X, Len) when list(X), length(X) == Len -> true;
-check_string(X, Len) when list(X) -> throw({invalid_length, X});
+check_string(X, any)      when list(X) -> true;
+check_string(X,{gt,Len})  when list(X), length(X) > Len -> true;
+check_string(X,{gt,Len})  when list(X) -> throw({invalid_length, X});
+check_string(X,{gte,Len}) when list(X), length(X) >= Len -> true;
+check_string(X,{gte,Len}) when list(X) -> throw({invalid_length, X});
+check_string(X,{lt,Len})  when list(X), length(X) < Len -> true;
+check_string(X,{lt,Len})  when list(X) -> throw({invalid_length, X});
+check_string(X,{lte,Len}) when list(X), length(X) =< Len -> true;
+check_string(X,{lte,Len}) when list(X) -> throw({invalid_length, X});
+check_string(X, Len)      when list(X), length(X) == Len -> true;
+check_string(X, Len)      when list(X) -> throw({invalid_length, X});
 check_string(X, _Len) -> throw({invalid_string, X}).
 
 check_oid([E1,E2|R]) when E1 * 40 + E2 =< 255 ->
@@ -468,9 +508,9 @@ check_atom(X, Atoms) ->
 error(Format, Error) ->
     snmp_error:config_err(Format, Error),
     exit(configuration_error).
-error(File, Line, Error) ->
-    snmp_error:config_err("~p:~w: ~p", [File, Line, Error]),
-    exit(configuration_error).
+%% error(File, Line, Error) ->
+%%     snmp_error:config_err("~p:~w: ~p", [File, Line, Error]),
+%%     exit(configuration_error).
 
 %%%-----------------------------------------------------------------
 %%% Converting functions - converts old style config files to

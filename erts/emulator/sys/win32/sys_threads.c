@@ -41,7 +41,7 @@ typedef struct _erl_cond_t {
 } _erl_cond_t;
 
 
-erl_mutex_t erl_mutex_create()
+erl_mutex_t erts_mutex_create()
 {
     CRITICAL_SECTION* mp = (CRITICAL_SECTION*)
 	sys_alloc(sizeof(CRITICAL_SECTION));
@@ -50,7 +50,7 @@ erl_mutex_t erl_mutex_create()
     return (erl_mutex_t) mp;
 }
 
-int erl_mutex_destroy(erl_mutex_t mtx)
+int erts_mutex_destroy(erl_mutex_t mtx)
 {
     if (mtx != NULL) {
 	DeleteCriticalSection((CRITICAL_SECTION*)mtx);
@@ -60,19 +60,19 @@ int erl_mutex_destroy(erl_mutex_t mtx)
     return -1;
 }
 
-int erl_mutex_lock (erl_mutex_t mtx)
+int erts_mutex_lock (erl_mutex_t mtx)
 {
     EnterCriticalSection((CRITICAL_SECTION*) mtx);
     return 1;
 }
 
-int erl_mutex_unlock (erl_mutex_t mtx)
+int erts_mutex_unlock (erl_mutex_t mtx)
 {
     LeaveCriticalSection((CRITICAL_SECTION*) mtx);
     return 1;
 }
 
-erl_cond_t erl_cond_create()
+erl_cond_t erts_cond_create()
 {
     _erl_cond_t* cvp = (_erl_cond_t*)sys_alloc(sizeof(_erl_cond_t));
     
@@ -81,7 +81,7 @@ erl_cond_t erl_cond_create()
     return (erl_cond_t) cvp;
 }
 
-int erl_cond_destroy(erl_cond_t cv)
+int erts_cond_destroy(erl_cond_t cv)
 {
     _erl_cond_t* cvp = (_erl_cond_t*) cv;
     if (cvp != NULL) {
@@ -92,7 +92,7 @@ int erl_cond_destroy(erl_cond_t cv)
     return -1;
 }
 
-int erl_cond_signal(erl_cond_t cv)
+int erts_cond_signal(erl_cond_t cv)
 {
     _erl_cond_t* cvp = (_erl_cond_t*) cv;
     EnterCriticalSection(&cvp->cs);
@@ -104,7 +104,7 @@ int erl_cond_signal(erl_cond_t cv)
     return 0;
 }
 
-int erl_cond_broadcast (erl_cond_t cv)
+int erts_cond_broadcast (erl_cond_t cv)
 {
     struct _erl_wait_t *wp;
     _erl_cond_t* cvp = (_erl_cond_t*) cv;
@@ -118,12 +118,12 @@ int erl_cond_broadcast (erl_cond_t cv)
     return 0;
 }
 
-int erl_cond_wait(erl_cond_t cv, erl_mutex_t mtx)
+int erts_cond_wait(erl_cond_t cv, erl_mutex_t mtx)
 {
-    return erl_cond_timedwait(cv, mtx, INFINITE);
+    return erts_cond_timedwait(cv, mtx, INFINITE);
 }
 
-int erl_cond_timedwait(erl_cond_t cv, erl_mutex_t mtx, long time)
+int erts_cond_timedwait(erl_cond_t cv, erl_mutex_t mtx, long time)
 {
     _erl_cond_t* cvp = (_erl_cond_t*) cv;
     _erl_wait_t* wp;
@@ -171,7 +171,7 @@ int erl_cond_timedwait(erl_cond_t cv, erl_mutex_t mtx, long time)
 }
 
 
-int erl_thread_create(erl_thread_t* tpp, 
+int erts_thread_create(erl_thread_t* tpp, 
 		      void* (*func)(void*),
 		      void* arg,
 		      int detached)
@@ -188,17 +188,17 @@ int erl_thread_create(erl_thread_t* tpp,
     return 0;
 }
 
-erl_thread_t erl_thread_self()
+erl_thread_t erts_thread_self()
 {
     return GetCurrentThread();
 }
 
-void erl_thread_exit(void* val)
+void erts_thread_exit(void* val)
 {
     _endthreadex((unsigned)val);
 }
 
-int erl_thread_join(erl_thread_t tp, void** vp)
+int erts_thread_join(erl_thread_t tp, void** vp)
 {
     DWORD code;
     code = WaitForSingleObject((HANDLE)tp, INFINITE); /* FIX ERRORS */

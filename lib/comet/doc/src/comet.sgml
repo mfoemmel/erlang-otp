@@ -44,7 +44,7 @@
     COM stands for Component Object Model, (or sometimes Common Object Model),
     and is MicroSoft's technique for component-based programming. It allows
     programs on Windows systems, to call other programs and libraries across
-    language boundaries. It is a competitor to Corba, but has other functionality
+    language boundaries. It is a competitor to CORBA, but has other functionality
     too.
     <p>
     COM is available on all 32-bit Windows systems, such as NT 4, Windows 95,
@@ -70,11 +70,11 @@
     <p>
   </description>
 
-  <section><title>CONFIGURATION</title>
+  <section><title>Configuraion</title>
 <p>    Comet does not use any configuration parameters.
   </section>
 
-  <section><title>SEE ALSO</title>
+  <section><title>See Also</title>
 
     <p>erl_com(3),
        comet_examples(3),

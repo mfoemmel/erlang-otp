@@ -398,7 +398,15 @@ res_option(search)         -> db_get(res_search);
 res_option(retry)          -> db_get(res_retry);
 res_option(timeout)        -> db_get(res_timeout);
 res_option(inet6)          -> db_get(res_inet6);
-res_option(next_id)        -> ets:update_counter(inet_db, res_id, 1) rem 65536;
+res_option(next_id)        -> 
+    Cnt = ets:update_counter(inet_db, res_id, 1),
+    case Cnt band 16#ffff of
+	0 ->
+	    ets:update_counter(inet_db, res_id, -Cnt),
+	    0;
+	Id ->
+	    Id
+    end;
 res_option(usevc)          -> db_get(res_usevc).
 
 socks_option(server)       -> db_get(socks5_server);

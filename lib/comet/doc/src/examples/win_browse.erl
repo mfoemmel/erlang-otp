@@ -4,9 +4,9 @@
 
 -export([open/1, example/0]).
 open(Url) ->
-    {ok, Pid}= erl_com:start_process(),
-    T= erl_com:new_thread(Pid),
-    Obj= erl_com:create_dispatch(T, "InternetExplorer.Application", ?CLSCTX_LOCAL_SERVER),
+    {ok, _Pid}= erl_com:get_program(win_browse),
+    Obj= erl_com:create_dispatch(win_browse, "InternetExplorer.Application",
+				 ?CLSCTX_LOCAL_SERVER),
     erl_com:invoke(Obj, "Navigate", [Url]),
     erl_com:property_put(Obj, "Visible", true),
     Obj.

@@ -428,16 +428,14 @@ translate_ip(loopback, inet6) -> {0,0,0,0,0,0,0,1};
 translate_ip(IP, _) -> IP.
 
 
-getaddrs_tm(IP, inet, _) when tuple(IP), size(IP) == 4 ->
-    {A,B,C,D} = IP,
+getaddrs_tm({A,B,C,D} = IP, inet, _) ->
     if 
-	integer(A+B+C+D) -> {ok, [IP]};
+	?ip(A,B,C,D) -> {ok, [IP]};
 	true -> {error,einval}
     end;
-getaddrs_tm(IP, inet6, _) when tuple(IP), size(IP) == 8 ->
-    {A,B,C,D,E,F,G,H} = IP,
+getaddrs_tm({A,B,C,D,E,F,G,H} = IP, inet6, _) ->
     if 
-	integer(A+B+C+D+E+F+G+H) -> {ok, [IP]};
+	?ip6(A,B,C,D,E,F,G,H) -> {ok, [IP]};
 	true -> {error,einval}
     end;
 getaddrs_tm(Address, Family, Timer) when atom(Address) ->
@@ -498,7 +496,29 @@ gethostbyname_tm(Name, Type, Timer, [native | Opts]) ->
 gethostbyname_tm(Name, Type, Timer, [_ | Opts]) ->
     gethostbyname_tm(Name, Type, Timer, Opts);
 gethostbyname_tm(Name, Type, Timer, []) ->
-    {error, timeout}.
+    case inet_parse:ipv4_address(Name) of
+	{ok, IP4} ->
+	    {ok, 
+	     #hostent{
+	       h_name = Name,
+	       h_aliases = [],
+	       h_addrtype = inet,
+	       h_length = 4,
+	       h_addr_list = [IP4]}};
+	_ ->
+	    case inet_parse:ipv6_address(Name) of
+		{ok, IP6} ->
+		    {ok, 
+		     #hostent{
+		       h_name = Name,
+		       h_aliases = [],
+		       h_addrtype = inet6,
+		       h_length = 16,
+		       h_addr_list = [IP6]}};
+		_ ->
+		    {error, nxdomain}
+	    end
+    end.
 
 %%
 %% gethostbyaddr with option search
@@ -535,7 +555,7 @@ gethostbyaddr_tm(Addr, Timer, [native | Opts]) ->
 gethostbyaddr_tm(Addr, Timer, [_ | Opts]) ->
     gethostbyaddr_tm(Addr, Timer, Opts);
 gethostbyaddr_tm(Addr, Timer, []) ->
-    {error, timeout}.
+    {error, nxdomain}.
 
 
 open(Fd, Addr, Port, Opts, Type, Family, Module) when Fd < 0 ->

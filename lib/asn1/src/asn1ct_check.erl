@@ -343,10 +343,10 @@ check_type(S,Type,Ts) when record(Ts,type) ->
 		case (MaybeChoice#typedef.typespec)#type.def of
 		    {'CHOICE',_} ->
 			case Tag of
-			    #tag{type='IMPLICIT'} ->
+			    [#tag{type='IMPLICIT'}] ->
 				throw({error,{asn1,{implicit_tag_before_choice}}});
-			    #tag{type={default,_}} ->
-				Tag#tag{type='EXPLICIT'}; % X.680 28.6 c
+			    [TTag = #tag{type={default,_}}] ->
+				[TTag#tag{type='EXPLICIT'}]; % X.680 28.6 c
 			    _ ->
 				unchanged
 			end;
@@ -358,10 +358,36 @@ check_type(S,Type,Ts) when record(Ts,type) ->
 	case Def of 
 	    Tref when record(Tref,typereference) ->
 		Ct = TestFun(Tref),
-		#newt{type=check_typereference(S,Tref),tag=Ct};
+		RefType = get_referenced_type(S,Tref),
+		case asn1ct_gen:get_inner(asn1ct_gen:prim_bif((RefType#typedef.typespec)#type.def)) of
+		    true ->
+			RefType1 = check_type(S,RefType,RefType#typedef.typespec),
+			#newt{type=RefType1#type.def, 
+			      tag=merge_tags(Tag,
+					     RefType1#type.tag),
+			      constraint=
+			      merge_constraints(check_constraints(S,Constr),
+						RefType1#type.constraint)};
+		    _ ->
+			#newt{type=check_typereference(S,Tref),tag=Ct}
+		end;
 	    Ext when record(Ext,'Externaltypereference') ->
+		RefMod = Ext#'Externaltypereference'.module,
+		RefT = Ext#'Externaltypereference'.type,
 		Ct = TestFun(Ext),
-		#newt{type=check_externaltypereference(S,Ext),tag=Ct};
+		RefType = get_referenced_type(S,Ext),
+		case asn1ct_gen:get_inner(asn1ct_gen:prim_bif((RefType#typedef.typespec)#type.def)) of
+		    true ->
+			RefType1 = check_type(S,RefType,RefType#typedef.typespec),
+			#newt{type=RefType1#type.def, 
+			      tag=merge_tags(Tag,
+					     RefType1#type.tag),
+			      constraint=
+			      merge_constraints(check_constraints(S,Constr),
+						RefType1#type.constraint)};
+		    _ ->
+			#newt{type=check_externaltypereference(S,Ext),tag=Ct}
+		end;
 	    'ANY' ->
 		exit({'cant check',Def});
 	    'INTEGER' ->
@@ -428,10 +454,10 @@ check_type(S,Type,Ts) when record(Ts,type) ->
 		#newt{type={'SEQUENCE OF',check_sequenceof(S,Type,Components)}};
 	    {'CHOICE',Components} ->
 		Ct = case Tag of
-			 #tag{type='IMPLICIT'} ->
+			 [#tag{type='IMPLICIT'}] ->
 			     throw({error,{asn1,{implicit_tag_before_choice}}});
-			 #tag{type={default,_}} -> 
-			     Tag#tag{type='EXPLICIT'}; % X.680 28.6 c
+			 [ChTag = #tag{type={default,_}}] -> 
+			     [ChTag#tag{type='EXPLICIT'}]; % X.680 28.6 c
 			 _ -> 
 			     unchanged
 		end,
@@ -457,17 +483,15 @@ check_type(S,Type,Ts) when record(Ts,type) ->
 	      #newt{type=TDef}->
 		  Ts#type{def=TDef}
 	  end,
-    T3 = case NewDef of
-	#newt{tag=unchanged} ->
-	    case Tag of
-		#tag{type={default,TT}} ->
-		    Ts2#type{tag=(Tag#tag{type=TT})};
-		_ ->
-		    Ts2
-	    end;
-	#newt{tag=TT} ->
-	    Ts2#type{tag=TT}
-    end,
+    NewTag = case NewDef of
+		 #newt{tag=unchanged} ->
+		     Tag;
+		 #newt{tag=TT} ->
+		     TT
+	     end,
+    T3 = Ts2#type{tag = lists:map(fun(TempTag = #tag{type={default,TTx}}) ->
+					  TempTag#tag{type=TTx};
+				     (Else) -> Else end, NewTag)},
     T4 = case NewDef of
 	     #newt{constraint=unchanged} ->
 		 T3#type{constraint=Constr};
@@ -611,7 +635,7 @@ check_typereference(S,Tref) when record(Tref,typereference) ->
 		    %Tref
 	    end;
 	_ ->
-	    Tref    
+	    Tref
     end.
 
 
@@ -801,7 +825,7 @@ check_enum(S,[{'NamedNumber',Id,{identifier,_,Name}}|T],Acc1,Acc2) ->
     check_enum(S,[{'NamedNumber',Id,Val#valuedef.value}|T],Acc1,Acc2);
 check_enum(S,['EXTENSIONMARK'|T],Acc1,Acc2) ->
     NewAcc2 = lists:keysort(2,Acc1),
-    NewList = enum_number(Acc2,NewAcc2,0,[]),
+    NewList = enum_number(lists:reverse(Acc2),NewAcc2,0,[]),
     { NewList, check_enum(S,T,[],[])};
 check_enum(S,[Id|T],Acc1,Acc2) when atom(Id) ->
     check_enum(S,T,Acc1,[Id|Acc2]);
@@ -955,17 +979,17 @@ generate_automatic_tags(S,C,TagNo) ->
 
 generate_automatic_tags1([H|T],TagNo) when record(H,'ComponentType') ->
     #'ComponentType'{typespec=Ts} = H,
-    NewTs = Ts#type{tag=#tag{class='CONTEXT',
+    NewTs = Ts#type{tag=[#tag{class='CONTEXT',
 			     number=TagNo,
 			     type={default,'IMPLICIT'},
-			     form= 0 }}, % PRIMITIVE
+			     form= 0 }]}, % PRIMITIVE
     [H#'ComponentType'{typespec=NewTs}|generate_automatic_tags1(T,TagNo+1)];
 generate_automatic_tags1([ExtMark|T],TagNo) -> % EXTENSIONMARK
     [ExtMark | generate_automatic_tags1(T,TagNo)];
 generate_automatic_tags1([],_) ->
     [].
 
-any_manual_tag([#'ComponentType'{typespec=#type{tag=undefined}}|Rest]) ->
+any_manual_tag([#'ComponentType'{typespec=#type{tag=[]}}|Rest]) ->
     any_manual_tag(Rest);
 any_manual_tag([{'EXTENSIONMARK',_,_}|Rest]) ->
     any_manual_tag(Rest);
@@ -1069,10 +1093,10 @@ get_taglist(S,Tref) when record(Tref,typereference) ->
     get_taglist(S,T#typedef.typespec);
 get_taglist(S,Type) when record(Type,type) ->
     case Type#type.tag of
-	undefined ->
+	[] ->
 	    get_taglist(S,Type#type.def);
-	Tag  ->
-	    [asn1ct_gen:def_to_tag(Tag)]
+	Tags  ->
+	    lists:map(fun(Tx) -> asn1ct_gen:def_to_tag(Tx) end,Tags)
     end;
 get_taglist(S,{'CHOICE',{Rc,Ec}}) ->
     get_taglist(S,{'CHOICE',Rc ++ Ec});
@@ -1099,6 +1123,53 @@ dbget_ex(S,Module,Key) ->
 	    throw({error,{asn1,{undefined,{Module,Key}}}}); % this is catched on toplevel type or value
 	T -> T
     end.
+
+merge_tags(T1, T2) ->
+    merge_tags2(T1 ++ T2, []).
+
+merge_tags2([T1= #tag{type='IMPLICIT'}, T2 |Rest], Acc) ->
+    merge_tags2([T1#tag{type=T2#tag.type, form=T2#tag.form}|Rest],Acc);
+merge_tags2([T1= #tag{type={default,'IMPLICIT'}}, T2 |Rest], Acc) ->
+    merge_tags2([T1#tag{type=T2#tag.type, form=T2#tag.form}|Rest],Acc);
+merge_tags2([H|T],Acc) ->
+    merge_tags2(T, [H|Acc]);
+merge_tags2([], Acc) ->
+    lists:reverse(Acc).
+
+merge_constraints(C1, []) ->
+    C1;
+merge_constraints([], C2) ->
+    C2;
+merge_constraints(C1, C2) ->
+    {SList,VList,Rest} = splitlist(C1++C2,[],[],[]),
+    SizeC = merge_constraints(SList),
+    ValueC = merge_constraints(VList),
+    case Rest of
+        [] ->
+            SizeC ++ ValueC;
+        _ ->
+            throw({error,{asn1,{not_implemented,{merge_constraints,Rest}}}})
+    end.
+    
+merge_constraints([]) -> [];
+merge_constraints([C1 = {_,{Low1,High1}},{_,{Low2,High2}}|Rest]) when Low1 >= Low2,
+                                                                      High1 =< High2 ->
+    merge_constraints([C1|Rest]);
+merge_constraints([C1 = {_,{Low1,High1}},C2 = {_,{Low2,High2}}|Rest]) ->
+    throw({error,asn1,{conflicting_constraints,{C1,C2}}});
+merge_constraints([C]) ->
+    [C].
+
+splitlist([C={'SizeConstraint',_}|Rest],Sacc,Vacc,Restacc) ->
+    splitlist(Rest,[C|Sacc],Vacc,Restacc);
+splitlist([C={'ValueRange',_}|Rest],Sacc,Vacc,Restacc) ->
+    splitlist(Rest,Sacc,[C|Vacc],Restacc);
+splitlist([C|Rest],Sacc,Vacc,Restacc) ->
+    splitlist(Rest,Sacc,Vacc,[C|Restacc]);
+splitlist([],Sacc,Vacc,Restacc) ->
+    {lists:reverse(Sacc),
+     lists:reverse(Vacc),
+     lists:reverse(Restacc)}.
 
 
 storeindb(M) when record(M,module) ->

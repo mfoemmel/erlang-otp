@@ -1,0 +1,214 @@
+ <!doctype erlref PUBLIC "-//Stork//DTD erlref//EN">
+ <!-- 
+  ``The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved via the world wide web at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+  Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+  AB. All Rights Reserved.''
+
+      $Id$
+ -->
+<erlref>
+  <header>
+    <title>com_gen
+    <prepared>Jakob Cederlund
+    <responsible>Jakob Cederlund
+    <docno>
+    <approved>
+    <checked>
+    <date>2000-11-08
+    <rev>A
+    <file>com_gen.sgml
+  </header>
+  <module>com_gen</module>
+  <modulesummary>Comet code generator from COM type libraries.</modulesummary>
+  <description>
+    <p>
+      The <c>com_gen</c> module generates stub code from COM type
+      libraries. This makes it as easy to use COM objects in erlang as
+      in other languages with COM capabilies (such as Visual Basic or
+      Microsoft Java). OK, not quite as easy, but not really difficult
+      anyway.
+    <p>
+      It also makes it possible to use the early-binding virtual
+      interfaces available for most COM classes. This is often way
+      faster than going through the Dispatch/Invoke-interface.
+    <p>
+      The <c>com_gen</c> module takes a COM interface and generates
+      erlang source code files in the current directory. It can
+      generate just one type, or a whole typelib with several
+      types. There are options controlling the output.
+    <p>
+      These options are available, a (D) indicates a default option:
+    <pre>
+Option           Explanation
+=================================================================
+fix_names (D)    Fix names to reasonable Erlang names
+
+keep_names       Keeps the names as is, requiring '
+
+prefix           A prefix added before each name
+
+prefix_these     A list of names to prefix (empty means all)
+      
+also_prefix_these
+                 Include the given names to be prefixed
+
+dont_prefix_these
+                 Remove the given names from the list of
+                 names being prefixed
+
+suffix           A suffix added after each name
+
+class_suffix     A suffix added after class names
+
+{verbose, Lvl}   The amount of feedback while generating
+      1 (D)      Only write type library name
+      2          Write each type in a library
+      3          Write each member in a type (e.g. each function)
+
+no_optional      Prevents generation of multiple functions with
+                 optional arguments
+
+virtual          Generate virtual interfaces (dispatch interfaces are
+                 generated with the suffix _disp)
+
+no_base_virtual  Generate virtual interfaces without including
+                 functions in the interhited interface in each
+                 interface module
+
+    </pre>
+    <p>
+      The name fixing is made to make it easier to use COM object in
+      erlang. It removes any initial _ (underscores), and changes the
+      first letter to lower case. Thus _Connection -> connection and
+      EOF -> eOF. Without the name fixing (option <c>keep_names</c>),
+      each COM name has to be surrounded with ' (ticks).
+    <p>
+      Sometimes names are unappropriate or clashes with other names,
+      e.g. _Application -> application. In those cases a prefix can
+      be given.
+    <p>
+      By default, the following names will be prefixed with <c>c_</c>:
+      <c>end</c>, <c>fun</c>, <c>when</c>. Names that might be added
+      are <c>application</c>, <c>receive</c>, <c>throw</c>, etc.
+    <p>
+      Each interface generates a file with stubs that calls the
+      appropriate <c>erl_com</c> function. If the function has
+      optional in arguments, several version with different
+      cardinality is generated.
+    <p>
+      Virtual interfaces that inherits from other interfaces, are
+      normally recursively generated to include there base interface
+      functions. This makes comet behave more like C++ or Visual Basic
+      when using interfaces with inheritance. (This can be turned off
+      with the <c>no_base_virtual</c> option.)
+    <p>
+      When generating from a library, lot's of files will be
+      created. All types in the library that comet recognizes will be
+      generated as files.
+    <p>
+      Note that the options for virtual or dispatch does not prevent
+      dispatch-interfaces to be generated, however they will have
+      another name.
+    <p>
+      Often in COM, the same name is used for different members. To
+      avoid name clashes, <c>com_gen</c> has a simple rule: properties
+      are prefixed with <c>put_</c>, <c>get_</c> or <c>put_ref_</c>,
+      and methods are suffixed with <c>_</c> (underscore). Name
+      changes will be reported with warnings from <c>com_gen</c>.
+    <p>
+      The current default options for <c>com_gen</c> are: use name fixing,
+      prefix <c>c_</c>, no suffix, class suffix <c>_class</c>, verbose
+      level 1 (print type names, but not mebmers), generate multiple
+      functions for optional in parameters and prefer
+      dispatch-interfaces.
+  </description>
+  <funcs>
+    <func>
+      <name>gen_enum(ComInterface, EnumName) -> {Erlfilename, Hrlfilename, ok}</name>
+      <name>gen_enum(ComInterface, EnumName, Options) -> {Erlfilename, Hrlfilename, ok}</name>
+      <fsummary>Generates an enum to a module and a header.</fsummary>
+      <type>
+	<v>EnumName = string()</v>
+      </type>
+      <desc>
+	<p>
+	  The <c>gen_enum</c> function is used to generate a COM enum
+	  from a type library. The enum yields both a header file and
+	  a module with the same contents.
+	<p>
+	  The header file contains the enum values as defines, for
+	  inclusion in an erlang module.
+	<p>
+	  The module file contains the values as functions, and is
+	  useful when experimenting in an erlang shell.
+      </desc>
+    </func>
+    <func>
+      <name>gen_coclass(ClassName, ClsID) -> {ok, Filename}</name>
+      <name>gen_coclass(ClassName, ClsID, Options) -> {ok, Filename}</name>
+      <fsummary>Generates a file for a COM class.</fsummary>
+      <type>
+	<v>ClassName = ClsID = Filename = string()</v>
+      </type>
+      <desc>
+	<p>
+	  This functions generates a stub for a COM class. Both the
+	  name and the GUID has to be specified.
+	<p>
+	  The erlang module only contatins create-functions for
+	  instance creation, and <c>iid</c> and <c>name</c>.
+	<p>
+	  Note that no checking is performed on the <c>ClsID</c>
+	  parameter. This function is rarely used, instead generation
+	  is done from the type library with <c>gen_typelib</c>.
+      </desc>
+    </func>
+    <func>
+      <name>gen_interface(ComInterface, VirtualOrDispatch) -> {ok, Filename}</name>
+      <name>gen_interface(ComInterface, VirtualOrDispatch, Options) -> {ok, Filename}</name>
+      <name>gen_interface(ComInterface, IntfName, VirtualOrDispatch) -> {ok, Filename}</name>
+      <name>gen_interface(ComInterface, IntfName, VirtualOrDispatch, Options) -> {ok, Filename}</name>
+      <fsummary>Starts or gets a named server.</fsummary>
+      <type>
+	<v>VirtualOrDispatch = virtual | dispatch</v>
+	<v>IntfName, Filename = string()</v>
+      </type>
+      <desc>
+	<p>
+	  This function generates stub files for an interface. For
+	  each of the methods (and property functions) in the
+	  interface, a function is generated.
+	<p>
+	  The <c>VirtualOrDispatch</c> flag is used to specify if
+	  virtual interfaces are to be generated. If it <c>virtual</c>
+	  is given, virtual and dispatch versions are generated, the
+	  dispatch interfaces have the suffix _disp. If
+	  <c>dispatch</c> is given, only dispatch interfaces are
+	  generated, without suffix.
+	<p>
+	  The options can specify whether several versions for
+	  optional parameters is generated, and if inherited functions
+	  should be included in virtual interfaces.
+	<p>
+	  Note that currently, no optional out parameters provided in
+	  the interface stubs, to use them, <c>erl_com:invoke</c> has
+	  to be called directly.
+      </desc>
+    </func>
+  </funcs>
+<authors>
+    <aname>Jakob Cederlund</aname>
+    <email>jakob@erix.ericsson.se</email>
+  </authors>
+</erlref>

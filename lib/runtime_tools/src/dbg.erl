@@ -23,11 +23,17 @@
 	 ltp/0, wtp/1, rtp/1, dtp/0, dtp/1, n/1, cn/1, ln/0, h/0, h/1]).
 %-export([ptp/0]).
 
--export([trace_port/2, flush_trace_port/0, 
+-export([trace_port/2, flush_trace_port/0, trace_port_control/1,
 	 trace_client/2, trace_client/3, stop_trace_client/1]).
 
 %% Local exports
--export([init/2,do_relay/1,tracer_init/2,tracer_loop/2, start_tc_loop/2]).
+-export([init/2,do_relay/1,tracer_init/2,tracer_loop/2]).
+
+%% Debug exports
+-export([wrap_presort/2, wrap_postsort/1, 
+	 match_front/2, match_rear/2,
+	 match_a_Z/1, match_a_z/1, match_A_Z/1,
+	 next_wrap_cnt/1]).
 
 %%% Client functions.
 
@@ -262,29 +268,50 @@ tracer(port, Port) when port(Port) ->
 tracer(process, {Handler,HandlerData}) ->
     start(fun() -> start_tracer_process(Handler, HandlerData) end).
 
+
+
 flush_trace_port() ->
+    trace_port_control(flush).
+
+trace_port_control(flush) ->
+    case trace_port_control($f, "") of
+	{ok, [0]} ->
+	    ok;
+	{ok, _} ->
+	    {error, not_supported_by_trace_driver};
+	Other ->
+	    Other
+    end;
+trace_port_control(get_listen_port) ->
+    case trace_port_control($p, "") of
+	{ok, <<0, IpPort:16>>} ->
+	    {ok, IpPort};
+	{ok, Other} ->
+	    {error, not_supported_by_trace_driver};
+	Other ->
+	    Other
+    end.
+
+trace_port_control(Command, Arg) ->
     case get_tracer() of
 	{ok, Port} when port(Port) ->
-	    case (catch erlang:port_control(Port,$f,"")) of
-		[0] ->
-		    ok;
-		_ -> 
-		    {error,not_supported_by_trace_driver}
-	    end;
+	    {ok, catch erlang:port_control(Port, Command, Arg)};
 	_ ->
 	    {error, no_trace_driver}
     end.
-		
-trace_port(file, Filename) when list(Filename) ->
-    fun() ->
-	    (catch erl_ddll:load_driver(
-		     filename:join(
-		       code:priv_dir(runtime_tools), 
-		       "lib"), 
-		     "trace_file_drv")),
-	    open_port({spawn, "trace_file_drv " ++ Filename}, 
-		      [eof])
-    end;
+
+					   
+
+trace_port(file, {Filename, wrap, Tail}) ->
+    trace_port(file, {Filename, wrap, Tail, 128*1024});
+trace_port(file, {Filename, wrap, Tail, WrapSize}) ->
+    trace_port(file, {Filename, wrap, Tail, WrapSize, 8});
+trace_port(file, {Filename, wrap, Tail, WrapSize, WrapCnt})
+  when list(Tail), integer(WrapSize), WrapSize >= 0,
+       integer(WrapCnt), WrapCnt >= 1 ->
+    trace_port1(file, Filename, {wrap, Tail, WrapSize, WrapCnt});
+trace_port(file, Filename) ->
+    trace_port1(file, Filename, nowrap);
 
 trace_port(ip, Portno) when integer(Portno) -> 
     trace_port(ip,{Portno,50});
@@ -302,32 +329,78 @@ trace_port(ip, {Portno, Qsiz}) when integer(Portno), integer(Qsiz) ->
 	    open_port({spawn, L}, [eof])
     end.
 
-trace_client(file, Filename) when list(Filename) ->
-    trace_client1(file, Filename, {fun dhandler/2,false});
-trace_client(follow_file, Filename) when list(Filename) ->
-    trace_client1(follow_file, Filename, {fun dhandler/2,false});
+trace_port1(file, Filename, Options) ->
+    Driver = "trace_file_drv",
+    Name = filename:absname(Filename), 
+    %% Absname is needed since the driver uses 
+    %% the supplied name without further investigations, 
+    %% and if the name is relative the resulting path 
+    %% might be too long which can cause a bus error
+    %% on vxworks instead of a nice error code return.
+    {Wrap, Tail} =
+	case Options of
+	    {wrap, T, WrapSize, WrapCnt} ->
+		{lists:flatten(
+		   io_lib:format("w ~p ~p ~p ", 
+				 [WrapSize, WrapCnt, length(Name)])),
+		 T};
+	    nowrap ->
+		{"", ""}
+	end,
+    Command = Driver ++ " " ++ Wrap ++ "n " ++ Name ++ Tail,
+    fun() ->
+	    (catch erl_ddll:load_driver(
+		     filename:join(
+		       code:priv_dir(runtime_tools), 
+		       "lib"), 
+		     Driver)),
+	    case Options of
+		{wrap, _, _, _} ->
+		    %% Delete old files
+		    Files = wrap_postsort(
+			      wrap_presort(Name, Tail)),
+		    lists:foreach(
+		      fun(N) -> file:delete(N) end,
+		      Files);
+		Other ->
+		    ok
+	    end,
+	    open_port({spawn, Command}, [eof])
+    end.
+
+
+trace_client(file, Filename) ->
+    trace_client(file, Filename, {fun dhandler/2,false});
+trace_client(follow_file, Filename) ->
+    trace_client(follow_file, Filename, {fun dhandler/2,false});
 trace_client(ip, Portno) when integer(Portno) ->
     trace_client1(ip, {"localhost", Portno}, {fun dhandler/2,false});
 trace_client(ip, {Host, Portno}) when integer(Portno) ->
     trace_client1(ip, {Host, Portno}, {fun dhandler/2,false}).
 
-trace_client(file, Filename, {Fun,Data} ) when list(Filename), function(Fun) ->
-    trace_client1(file, Filename, {Fun,Data});
-trace_client(follow_file, Filename, {Fun,Data} ) when list(Filename), 
-						      function(Fun) ->
-    trace_client1(follow_file, Filename, {Fun,Data});
-trace_client(ip, Portno, {Fun,Data}) when integer(Portno), function(Fun) ->
-    trace_client1(ip, {"localhost", Portno}, {Fun,Data});
-trace_client(ip, {Host, Portno}, {Fun,Data}) when integer(Portno), 
-						  function(Fun) ->
-    trace_client1(ip, {Host, Portno}, {Fun,Data}).
+trace_client(file, {Filename, wrap, Tail, _, _}, FD) ->
+    trace_client(file, {Filename, wrap, Tail}, FD);
+trace_client(file, {Filename, wrap, Tail, _}, FD) ->
+    trace_client(file, {Filename, wrap, Tail}, FD);
+trace_client(file, {Filename, wrap, Tail} = FwT, {Fun, Data} = FD) 
+  when list(Tail), function(Fun) ->
+    trace_client1(file, FwT, FD);
+trace_client(file, Filename, {Fun, Data} ) when function(Fun) ->
+    trace_client1(file, Filename, {Fun, Data});
+trace_client(follow_file, Filename, {Fun, Data} ) when function(Fun) ->
+    trace_client1(follow_file, Filename, {Fun, Data});
+trace_client(ip, Portno, {Fun, Data}) when integer(Portno), function(Fun) ->
+    trace_client1(ip, {"localhost", Portno}, {Fun, Data});
+trace_client(ip, {Host, Portno}, {Fun, Data}) when integer(Portno), 
+						   function(Fun) ->
+    trace_client1(ip, {Host, Portno}, {Fun, Data}).
 
 trace_client1(Type, OpenData, HandlerData) ->
-    case req({link_to, spawn(?MODULE, start_tc_loop, 
-			     [fun() -> 
-				      gen_reader(Type, OpenData) 
-			      end, 
-			      HandlerData])}) of
+    case req({link_to, 
+	      spawn(
+		fun() ->
+			tc_loop(gen_reader(Type, OpenData), HandlerData)
+		end)}) of
 	{ok, Pid} ->
 	    Pid;
 	Other ->
@@ -373,11 +446,20 @@ stop() ->
 %%% Calling the server.
 
 req(R) ->
-    ensure() ! {self(),R},
+    P = ensure(), % The pid or perhaps the name of the server
+    Mref = erlang:monitor(process, P),
+    catch P ! {self(), R}, % May crash if P = atom() and server died
     receive
-	{dbg,Reply} -> Reply
+	{'DOWN', Mref, _, _, _} -> % If server died
+	    exit(dbg_server_crash);
+	{dbg, Reply} ->
+	    erlang:demonitor(Mref),
+	    receive {'DOWN', Mref, _, _, _} -> ok after 0 -> ok end,
+	    Reply
     end.
 
+%% Returns the pid of the dbg server, or in worst case the name.
+%% Starts a new server if necessary.
 ensure() ->
     case whereis(dbg) of
 	undefined -> 
@@ -385,9 +467,7 @@ ensure() ->
 		{ok, P} ->
 		    P;
 		{error, already_started} ->
-		    whereis(dbg);
-		Else ->
-		    Else
+		    dbg
 	    end;
 	Pid -> 
 	    Pid
@@ -411,9 +491,13 @@ init(Parent, StartTracer) ->
 	{'EXIT', _} ->
 	    Parent ! {self(), {error, already_started}};
 	_ ->
-	    Tracer = StartTracer(),
-	    Parent ! {self(),started},
-	    loop(Tracer,[], [])
+	    case (catch StartTracer()) of
+		{'EXIT', Reason} ->
+		    Parent ! {self(), {error, Reason}};
+		Tracer ->
+		    Parent ! {self(),started},
+		    loop(Tracer,[], [])
+	    end
     end.
 
 %
@@ -445,7 +529,7 @@ loop(Tracer,SurviveLinks, Table) ->
 	    loop(Tracer, SurviveLinks, Tab);
 	{From,stop} ->
 	    reply(From, ok),
-	    exit(normal);
+	    exit(done);
 	{From, {link_to, Pid}} -> 	    
 	    case (catch link(Pid)) of
 		{'EXIT', Reason} ->
@@ -479,7 +563,7 @@ loop(Tracer,SurviveLinks, Table) ->
 	{'EXIT', Pid, _} ->
 	    case lists:delete(Pid, SurviveLinks) of
 		SurviveLinks ->
-		    exit(normal);
+		    exit(done);
 		NewSLinks ->
 		    loop(Tracer, NewSLinks, Table)
 	    end;
@@ -798,8 +882,9 @@ transform_flags([F|Tail]=List) when atom(F) ->
 transform_flags(Bad) -> {error,{bad_flags,Bad}}.
 
 all() ->
-    [send,'receive',call,old_call_trace,procs,garbage_collection,running,
-     set_on_spawn,set_on_first_spawn,set_on_link,set_on_first_link,timestamp,arity, return_to].
+    [send,'receive',call,procs,garbage_collection,running,
+     set_on_spawn,set_on_first_spawn,set_on_link,set_on_first_link,
+     timestamp,arity,return_to].
 
 display_info(List) ->
     io:format("~-12s ~-21s Trace ~n", ["Pid", "Initial call"]),
@@ -811,6 +896,8 @@ display_info1([Pid|T]) ->
             display_info1(T);
         {initial_call, Call} ->
 	    case tinfo(Pid, flags) of
+		undefined ->
+		    display_info1(T);
 		{flags,[]} ->
 		    display_info1(T);
 		{flags,Flags} ->
@@ -867,115 +954,194 @@ tinfo(P, X) -> check(rpc:call(node(P), erlang, trace_info, [P, X])).
 check({badrpc, _}) -> undefined;
 check(X) -> X.
 
-start_tc_loop(GenReader, Handler) ->
-    tc_loop(GenReader(), Handler).
-    
-tc_loop(Reader,{Handler, HData}) ->
-    case (catch Reader()) of
-	{'EXIT', eof} ->
-	    exit(normal);
-	{'EXIT', Other} ->
-	    exit({client_cannot_open, Other});
-	Data ->
-	    NewHData = Handler(Data,HData),
-	    tc_loop(Reader,{Handler, NewHData})
-    end.
+%% Process loop that processes a trace. Reads the trace with 
+%% the reader Reader, and feeds the trace terms 
+%% to handler Handler, keeping a state variable for the 
+%% handler.
+%%
+%% Exits 'normal' at end of trace, other exits due to errors.
+%%
+%% Reader is a lazy list, i.e either a list or a fun/0. 
+%% If it is a fun, it is evaluated for rest of the lazy list.
+%% A list head is considered to be a trace term. End of list 
+%% is interpreted as end of trace.
+tc_loop(Reader, {Handler, HData}) when function(Reader) ->
+    tc_loop(Reader(), {Handler, HData});
+tc_loop([], {_Handler, _HData}) ->
+    exit(normal);
+tc_loop([Term | Tail], {Handler, HData}) ->
+    NewHData = Handler(Term, HData),
+    tc_loop(Tail, {Handler, NewHData});
+tc_loop(Other, {_Handler, _HData}) ->
+    io:format("~p:tc_loop ~p~n", [?MODULE, Other]),
+    exit({unknown_term_from_reader, Other}).
 
+
+
+%% Returns a reader (lazy list of trace terms) for tc_loop/2.
 gen_reader(ip, {Host, Portno}) ->
-    case gen_tcp:connect(Host, Portno, [{active, false}]) of
+    case gen_tcp:connect(Host, Portno, [{active, false}, binary]) of
         {ok, Sock} ->    
-	    fun() ->
-		     [Op | BESiz] = my_ip_read(Sock, 5),
-		     Siz = get_be(BESiz),
-		     case Op of
-			 0 ->
-			     B = list_to_binary(my_ip_read(Sock, Siz)),
-			     binary_to_term(B);
-			 1 ->
-			     {drop, Siz};
-			 Else ->
-			     exit({'bad trace tag', Else})
-		     end
-	     end;
+	    mk_reader(fun ip_read/2, Sock);
 	Error ->
 	    exit(Error)
     end;
-
+gen_reader(file, {Filename, wrap, Tail}) ->
+    mk_reader_wrap(lists:sort(wrap_presort(Filename, Tail)));
 gen_reader(file, Filename) ->
-    case file:open(Filename, [read, raw, binary]) of
-	{ok, File} ->
-	    fun() ->
-		     [Op | BESiz] = binary_to_list(my_file_read(File, 5)),
-		     Siz = get_be(BESiz),
-		     case Op of
-			 0 ->
-			     binary_to_term(my_file_read(File,Siz));
-			 Else ->
-			     exit({'bad trace tag', Else})
-		     end
-	     end;
-	Error ->
-	    exit(Error)
-    end;
-
+    gen_reader_file(fun file_read/2, Filename);
 gen_reader(follow_file, Filename) ->
+    gen_reader_file(fun follow_read/2, Filename).
+
+%% Opens a file and returns a reader (lazy list).
+gen_reader_file(ReadFun, Filename) ->
     case file:open(Filename, [read, raw, binary]) of
 	{ok, File} ->
-	    fun() ->
-		    [Op | BESiz] = binary_to_list(my_follow_read(File, 5)),
-		    Siz = get_be(BESiz),
-		    case Op of
-			0 ->
-			    binary_to_term(my_follow_read(File,Siz));
-			Else ->
-			    exit({'bad trace tag', Else})
-		    end
-	    end;
+	    mk_reader(ReadFun, File);
 	Error ->
-	    exit(Error)
-    end.    
-		     
-		     
-get_be([A,B,C,D]) ->
-    A * 16777216 + B * 65536 + C * 256 + D.
-
-my_file_read(File,N) ->
-    case file:read(File, N) of
-	{ok, Bin} when size(Bin) =:= N -> 
-	    Bin;
-	_ ->
-	    exit(eof)
+	    exit({client_cannot_open, Error})
     end.
 
-my_follow_read(File,N) ->
-    {ok,Pos} = file:position(File,cur),
-    case file:read(File, N) of
-	{ok, Bin} when size(Bin) =:= N -> 
-	    Bin;
-	_ ->
-	    case file:position(File,Pos) of
-		{ok, Pos} ->
-		    receive
-		    after 1000 ->
-			    my_follow_read(File,N)
-		    end;
-		_ ->
-		    exit(eof)
+%% Creates and returns a reader (lazy list).
+mk_reader(ReadFun, Source) ->
+    fun() ->
+	    case read_term(ReadFun, Source) of
+		{ok, Term} ->
+		    [Term | mk_reader(ReadFun, Source)];
+		eof ->
+		    [] % eof
 	    end
     end.
 
-my_ip_read(Sock,N) ->
-    case gen_tcp:recv(Sock, N) of
-        {ok, Data} ->
-	    case length(Data) of
-		N ->
-		    Data;
-		X ->
-		    Data ++ my_ip_read(Sock, N - X)
-	    end;
-	Else ->
-	    exit(eof)
+%% Creates and returns a reader (lazy list) for a wrap log.
+%% The argument is a sorted list of sort converted 
+%% wrap log file names, see wrap_presort/2.
+
+mk_reader_wrap([]) ->
+    [];
+mk_reader_wrap([Hd | _] = WrapFiles) ->
+    case file:open(wrap_name(Hd), [read, raw, binary]) of
+	{ok, File} ->
+	    mk_reader_wrap(WrapFiles, File);
+	Error ->
+	    exit({client_cannot_open, Error})
     end.
+
+mk_reader_wrap([Hd | Tail] = WrapFiles, File) ->
+    fun() ->
+	    case read_term(fun file_read/2, File) of
+		{ok, Term} ->
+		    [Term | mk_reader_wrap(WrapFiles, File)];
+		eof ->
+		    file:close(File),
+		    %% Check if next file is the next
+		    %% in sequence
+		    case Tail of
+			[Hd2 | _] ->
+			    case is_wrap_succ(Hd, Hd2) of
+				true ->
+				    %% Next file
+				    mk_reader_wrap(Tail);
+				false ->
+				    exit({wrap_file_out_of_sequence,
+					  wrap_name(Hd2)})
+			    end;
+			[] ->
+			    [] % eof
+		    end
+	    end
+    end.
+
+
+
+%% Generic read term function. 
+%% Returns {ok, Term} | 'eof'. Exits on errors.
+
+read_term(ReadFun, Source) ->
+    case ReadFun(Source, 5) of
+	Bin when binary(Bin) ->
+	    read_term(ReadFun, Source, Bin);
+	List when list(List) ->
+	    read_term(ReadFun, Source, list_to_binary(List));
+	eof ->
+	    eof
+    end.
+
+read_term(ReadFun, Source, <<Op, Size:32>> = Tag) ->
+    case Op of
+	0 ->
+	    case ReadFun(Source, Size) of
+		eof ->
+		    exit({'trace term missing', 
+			  binary_to_list(Tag)});
+		Bin when binary(Bin) ->
+		    {ok, binary_to_term(Bin)};
+		List when list(List) ->
+		    {ok, binary_to_term(list_to_binary(List))}
+	    end;
+	1 ->
+	    {ok, {drop, Size}};
+	Junk ->
+	    exit({'bad trace tag', Junk})
+    end.
+    
+
+
+%% Read functions for different source types, for read_term/2.
+%%
+%% Returns a binary of length N, an I/O-list of 
+%% effective length N or 'eof'. Exits on errors.
+
+file_read(File, N) ->
+    case file:read(File, N) of
+	{ok, Bin} when binary(Bin), size(Bin) =:= N -> 
+	    Bin;
+	{ok, Bin} when binary(Bin) ->
+	    exit({'truncated file', binary_to_list(Bin)});
+	eof ->
+	    eof;
+	{error, Reason} ->
+	    exit({'file read error', Reason})
+    end.
+
+follow_read(File, N) ->
+    {ok, Pos} = file:position(File, cur),
+    case file:read(File, N) of
+	{ok, Bin} when binary(Bin), size(Bin) =:= N -> 
+	    Bin;
+	{ok, Bin} when binary(Bin) ->
+	    follow_read(File, N, Pos);
+	eof ->
+	    follow_read(File, N, Pos);
+	{error, Reason} ->
+	    exit({'file read error', Reason})
+    end.
+
+follow_read(File, N, Pos) ->
+    case file:position(File,Pos) of
+	{ok, Pos} ->
+	    receive
+	    after 1000 ->
+		    follow_read(File,N)
+	    end;
+	{error, Reason} ->
+	    exit({'file position error', Reason})
+    end.
+
+ip_read(Socket, N) ->
+    case gen_tcp:recv(Socket, N) of
+	{ok, Bin} when binary(Bin), size(Bin) < N ->
+	    [Bin | ip_read(Socket, N-size(Bin))];
+	{ok, Bin} when binary(Bin), size(Bin) == N ->
+	    [Bin];
+	{ok, Bin} when binary(Bin) ->
+	    exit({'socket read too much data', Bin});
+	{error, closed} ->
+	    eof;
+	{error, Reason} = Error ->
+	    exit({'socket read error', Error})
+    end.
+
 
 
 get_tracer() ->
@@ -1031,12 +1197,13 @@ lint_tp(Pattern) ->
     end.
 
 check_list(T) ->
-    case (catch lists:foldl(fun(Val,_) ->
-				    {ok,_,_,_} = 
-					erlang:match_spec_test([],Val,trace),
-				    ok
-			    end,
-			    ok, T)) of
+    case (catch lists:foldl(
+		  fun(Val,_) ->
+			  {ok,_,_,_} = 
+			      erlang:match_spec_test([],Val,trace),
+			  ok
+		  end,
+		  ok, T)) of
 	{'EXIT',_} ->
 	    {error, bad_match_spec};
 	ok ->
@@ -1044,6 +1211,134 @@ check_list(T) ->
 	Else ->
 	    {error, badfile}
     end.
+
+%% Find all possible wrap log files.
+%% Returns: a list of sort converted filenames.
+%%
+%% The sort conversion is done by extracting the wrap sequence counter
+%% from the filename. The counter is converted to a tuple of characters,
+%% and the converted result is a cons cell headed by the tuple.
+%%
+%% Tuples are sorted primarily by size, so "filename.z.log" 
+%% will be sorted before "filename.aa.log", since their conversions 
+%% are [{$z}]++"filename.z.log" and [{$a,$a}]++"filename.aa.log".
+wrap_presort(Filename, Tail) ->
+    Name = filename:basename(Filename),
+    Dirname = filename:dirname(Filename),
+    case file:list_dir(Dirname) of
+	{ok, Files} ->
+	    lists:zf(
+	      fun(N) ->
+		      case match_front(N, Name) of
+			  false ->
+			      false;
+			  X ->
+			      case match_rear(X, Tail) of
+				  false ->
+				      false;
+				  C -> % Counter
+				      case match_a_Z(C) of
+					  true ->
+					      {true, 
+					       wrap_encode(
+						 filename:join(Dirname, N),
+						 C)};
+					  false ->
+					      false
+				      end
+			      end
+		      end
+	      end,
+	      Files);
+	_ ->
+	    []
+    end.
+
+%% Extract the filenames from a list of sort converted ones.
+wrap_postsort(Files) ->    
+    lists:map(fun wrap_name/1, Files).
+
+wrap_encode(N, C) ->
+    [list_to_tuple(C) | N].
+
+wrap_name([_C | N]) ->
+    N.
+
+%% Checks if the converted filename in arg 2 is the next 
+%% in sequence after arg 1.
+is_wrap_succ([C1|_], [C2|_]) ->
+    C2 == next_wrap_cnt(C1).
+
+%% Returns what is left of ListA when removing all matching
+%% elements from ListB, or false if some element did not match,
+%% or if ListA runs out of elements before ListB.
+match_front(ListA, []) when list(ListA) ->
+    ListA;
+match_front([], ListB) when list(ListB) ->
+    false;
+match_front([Hd|TlA], [Hd|TlB]) ->
+    match_front(TlA,TlB);
+match_front([HdA|_], [HdB|_]) ->
+    false.
+
+%% Reversed version of match_front/2
+match_rear(ListA, ListB) when list(ListA), list(ListB) ->
+    case match_front(lists:reverse(ListA), lists:reverse(ListB)) of
+	false ->
+	    false;
+	List ->
+	    lists:reverse(List)
+    end.
+
+%% Returns (match_a_z(L) || match_A_Z(L)), but optimized.
+match_a_Z([]) ->
+    false;
+match_a_Z([H|_] = L) when integer(H), $a =< H, H =< $z ->
+    match_a_z(L);
+match_a_Z([H|_] = L) when integer(H), $A =< H, H =< $Z ->
+    match_A_Z(L);
+match_a_Z(L) when list(L) ->
+    false.
+			      
+%% Returns true if the non-empty list arguments contains all
+%% characters $a .. $z.
+match_a_z([]) ->
+    false;
+match_a_z([H]) when integer(H), $a =< H, H =< $z ->
+    true;
+match_a_z([H|T] = L) when integer(H), $A =< H, H =< $z ->
+    match_a_z(T);
+match_a_z(L) when list(L) ->
+    false.
+
+%% Returns true if the non-empty list arguments contains all
+%% characters $A .. $Z.
+match_A_Z([]) ->
+    false;
+match_A_Z([H]) when integer(H), $A =< H, H =< $Z ->
+    true;
+match_A_Z([H|T] = L) when integer(H), $A =< H, H =< $Z ->
+    match_A_Z(T);
+match_A_Z(L) when list(L) ->
+    false.
+
+%% Counts {},{$a},{$b},..{$z},{$a,$a},{$a,$b},..{$z,$z},{$a,$a,$a},...
+%% The same for $A .. $Z, if not starting with {}.
+next_wrap_cnt(T) when tuple(T) ->
+    list_to_tuple(lists:reverse(
+		    next_wrap_cnt_r(
+		      lists:reverse(tuple_to_list(T)), $a))).
+
+next_wrap_cnt_r([], C) ->
+    [C];
+next_wrap_cnt_r([H|T], _) when $a =< H, H < $z ->
+    [H+1 | T];
+next_wrap_cnt_r([H|T], _) when $A =< H, H < $Z ->
+    [H+1 | T];
+next_wrap_cnt_r([$z|T], _) ->
+    [$a | next_wrap_cnt_r(T, $a)];
+next_wrap_cnt_r([$Z|T], _) ->
+    [$A | next_wrap_cnt_r(T, $A)].
 
 %%%%%%%%%%%%%%%%%%
 %% Help...
@@ -1170,7 +1465,7 @@ h(tracer) ->
 		  " - Starts a tracer server with additional parameters"]);
 h(trace_port) ->
     help_display(["trace_port(Type, Parameters) -> fun()",
-		  " - Creates and returns a trace port generating"]);
+		  " - Creates and returns a trace port generating fun"]);
 h(trace_client) ->
     help_display(["trace_client(Type, Parameters) -> pid()",
 		  " - Starts a trace client that reads messages created by "

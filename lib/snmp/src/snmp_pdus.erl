@@ -20,6 +20,9 @@
 -define(SNMP_USE_V3, true).
 -include("snmp_types.hrl").
 
+-define(VMODULE,"PDUS").
+-include("snmp_verbosity.hrl").
+
 %% See RFC1155, RFC1157, RFC1901, RFC1902, RFC1905, RFC2272
 
 

@@ -770,13 +770,13 @@ replace_path(Name,Dir,Path,NameDb) ->
 replace_path1(Name,Dir,[P|Path],NameDb) ->
     case get_name(P) of
 	Name ->
-	    delete_name(Name,NameDb),
 	    insert_name(Name, Dir, NameDb),
 	    [Dir|Path];
 	_ ->
 	    [P|replace_path1(Name,Dir,Path,NameDb)]
     end;
-replace_path1(_,Dir,[],_) ->
+replace_path1(Name, Dir, [], NameDb) ->
+    insert_name(Name, Dir, NameDb),
     [Dir].
 
 check_pars(Name,Dir) ->

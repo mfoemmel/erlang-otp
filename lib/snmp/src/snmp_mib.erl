@@ -50,6 +50,7 @@
 -record(state, {data}).
 
 
+
 %%-----------------------------------------------------------------
 %% Func: start_link/1
 %% Args: Mibs is a list of mibnames.
@@ -83,11 +84,14 @@ init([Father, Mibs, Prio, Opts]) ->
     put(me_override,MeOverride),
     TeOverride = get_te_override(Opts),
     put(te_override,TeOverride),
+    Storage = get_mib_storage(Opts),
     ?vlog("starting",[]),
-    Data = snmp_mib_data:new(),
+    Data = snmp_mib_data:new(Storage),
+    ?vtrace("init result: ~p",[Data]),
     case mib_operations(load_mib, Mibs, Data, MeOverride, TeOverride) of
 	{ok, Data2} ->
 	    ?vdebug("started",[]),
+	    snmp_mib_data:store(Data2),
 	    {ok, #state{data = Data2}};
 	{'aborted at', Mib, _NewData, Reason} ->
 	    ?vinfo("aborted at ~p for reason ~p",[Mib,Reason]),
@@ -99,6 +103,7 @@ init([Father, Mibs, Prio, Opts]) ->
 %% Args: Operation is load_mib | unload_mib.
 %%----------------------------------------------------------------------
 mib_operations(Operation, [Mib | Mibs], Data, MeOverride, TeOverride) when list(Mib) ->
+    ?vtrace("mib operation ~p on mib ~p",[Operation,Mib]),
     case apply(snmp_mib_data, Operation, [Data,Mib,MeOverride,TeOverride]) of
 	{error, Reason} ->
 	    {'aborted at', Mib, Data, Reason};
@@ -191,27 +196,31 @@ handle_call({load_mibs, Mibs}, _From, State) ->
     ?vlog("load mibs ~p",[Mibs]),    
     MeOverride = get(me_override), 
     TeOverride = get(te_override),
-    case mib_operations(load_mib,Mibs,State#state.data,MeOverride,TeOverride) of
-	{'aborted at', Mib, NewData, Reason} ->
-	    ?vlog("aborted at ~p for reason ~p",[Mib,Reason]),    
-	    R = {error, {'load aborted at', Mib, Reason}};
-	{ok, NewData} ->
-	    R = ok
-    end,
-    {reply, R, State#state{data = NewData}};
+    {NData,Reply} = 
+	case mib_operations(load_mib,Mibs,State#state.data,MeOverride,TeOverride) of
+	    {'aborted at', Mib, NewData, Reason} ->
+		?vlog("aborted at ~p for reason ~p",[Mib,Reason]),    
+		{NewData,{error, {'load aborted at', Mib, Reason}}};
+	    {ok, NewData} ->
+		{NewData,ok}
+	end,
+    snmp_mib_data:store(NData),
+    {reply, Reply, State#state{data = NData}};
 
 handle_call({unload_mibs, Mibs}, _From, State) ->
     ?vlog("unload mibs ~p",[Mibs]),    
     MeOverride = get(me_override), 
     TeOverride = get(te_override),
-    case mib_operations(unload_mib,Mibs,State#state.data,MeOverride,TeOverride) of
-	{'aborted at', Mib, NewData, Reason} ->
-	    ?vlog("aborted at ~p for reason ~p",[Mib,Reason]),    
-	    R = {error, {'unload aborted at', Mib, Reason}};
-	{ok, NewData} ->
-	    R = ok
-    end,
-    {reply, R, State#state{data = NewData}};
+    {NData,Reply} = 
+	case mib_operations(unload_mib,Mibs,State#state.data,MeOverride,TeOverride) of
+	    {'aborted at', Mib, NewData, Reason} ->
+		?vlog("aborted at ~p for reason ~p",[Mib,Reason]),    
+		{NewData,{error, {'unload aborted at', Mib, Reason}}};
+	    {ok, NewData} ->
+		{NewData,ok}
+	end,
+    snmp_mib_data:store(NData),
+    {reply, Reply, State#state{data = NData}};
 
 handle_call({register_subagent, Oid, Pid}, _From, State) ->
     ?vlog("register subagent ~p, ~p",[Oid,Pid]),
@@ -279,38 +288,23 @@ terminate(_Reason, State) ->
 %%----------------------------------------------------------
 
 %% downgrade
-code_change({down, Vsn}, State, downgrade_to_pre_3_2_0) ->
+code_change({down, Vsn}, State, downgrade_to_pre_3_3_0) ->
     ?debug("code_change(down) -> entry with~n"
 	   "  Vsn:   ~p~n"
-	   "  State: ~p~n"
 	   "  Extra: ~p",
-	   [Vsn,State,downgrade_to_pre_3_2_0]),
-    NData = snmp_mib_data:code_change({down,pre_3_2_0},State#state.data),
+	   [Vsn,downgrade_to_pre_3_3_0]),
+    NData = snmp_mib_data:code_change({down,pre_3_3_0},State#state.data),
     {ok, State#state{data = NData}};
-code_change({down, Vsn}, State, Extra) ->
-    ?debug("code_change(down) -> entry with~n"
-	   "  Vsn:   ~p~n"
-	   "  State: ~p~n"
-	   "  Extra: ~p",
-	   [Vsn,State,Extra]),
-    {ok, State};
 
 %% upgrade
-code_change(Vsn, State, upgrade_from_pre_3_2_0) ->
+code_change(Vsn, State, upgrade_from_pre_3_3_0) ->
     ?debug("code_change(up) -> entry with~n"
 	   "  Vsn:   ~p~n"
-	   "  State: ~p~n"
 	   "  Extra: ~p",
-	   [Vsn,State,upgrade_from_pre_3_2_0]),
-    NData = snmp_mib_data:code_change({up,pre_3_2_0},State#state.data),
-    {ok, State#state{data = NData}};
-code_change(Vsn, State, Extra) ->
-    ?debug("code_change(up) -> entry with~n"
-	   "  Vsn:   ~p~n"
-	   "  State: ~p~n"
-	   "  Extra: ~p",
-	   [Vsn,State,Extra]),
-    {ok, State}.
+	   [Vsn,upgrade_from_pre_3_3_0]),
+    NData = snmp_mib_data:code_change({up,pre_3_3_0},State#state.data),
+    ?debug("code_change(up) -> New Mib data created~n",[]),
+    {ok, State#state{data = NData}}.
 
 
 
@@ -326,5 +320,8 @@ get_me_override(O) ->
 
 get_te_override(O) ->
     snmp_misc:get_option(trapentry_override,O,false).
+
+get_mib_storage(O) ->
+    snmp_misc:get_option(mib_storage,O,ets).
 
 

@@ -20,10 +20,13 @@
 
 -include("httpd.hrl").
 
+-define(VMODULE,"INCLUDE").
+-include("httpd_verbosity.hrl").
+
 %% do
 
 do(Info) ->
-    ?DEBUG("do -> entry",[]),
+    ?vtrace("do",[]),
     case Info#mod.method of
 	"GET" ->
 	    case httpd_util:key1search(Info#mod.data,status) of
@@ -47,7 +50,7 @@ do(Info) ->
     end.
 
 do_include(Info) ->
-    ?DEBUG("do_include -> Request URI: ~p",[Info#mod.request_uri]),
+    ?vtrace("do include:~n   URI: ~p",[Info#mod.request_uri]),
     Path = mod_alias:path(Info#mod.data,Info#mod.config_db,
 			  Info#mod.request_uri),
     Suffix = httpd_util:suffix(Path),
@@ -65,11 +68,11 @@ do_include(Info) ->
 			      {mime_type,"text/html"}|
 			      lists:append(ErrorLog,Info#mod.data)]};
 		{error,Reason} ->
-		    ?LOG("do_include -> send_in failed:~n"
-			 "          Reason: ~p~n"
-			 "          Info:   ~p~n"
-			 "          Path:   ~p",
-			 [Reason,Info,Path]),
+		    ?vlog("send in failed:"
+			  "~n   Reason: ~p"
+			  "~n   Path:   ~p"
+			  "~n   Info:   ~p",
+			  [Reason,Info,Path]),
 		    {proceed,
 		     [{status,send_error(Reason,Info,Path)}|Info#mod.data]}
 	    end;
@@ -276,9 +279,10 @@ fsize(Info,Context,ErrorLog,R,Path) ->
 	{ok,FileInfo} ->
 	    case httpd_util:key1search(Context,sizefmt) of
 		"bytes" ->
-		    {ok,Context,ErrorLog,integer_to_list(FileInfo#file_info.size),R};
+		    {ok,Context,ErrorLog,
+		     integer_to_list(FileInfo#file_info.size),R};
 		"abbrev" ->
-		    Size=integer_to_list(trunc(FileInfo#file_info.size/1024+1))++"k",
+		    Size = integer_to_list(trunc(FileInfo#file_info.size/1024+1))++"k",
 		    {ok,Context,ErrorLog,Size,R};
 		Value->
 		    {ok,Context,
@@ -329,10 +333,16 @@ flastmod(Info,Context,ErrorLog,R,File) ->
 %%
 
 exec(Info,Context,ErrorLog,[cmd],[Command],R) ->
+    ?vtrace("exec cmd:~n   Command: ~p",[Command]),
     cmd(Info,Context,ErrorLog,R,Command);
 exec(Info,Context,ErrorLog,[cgi],[RequestURI],R) ->
+    ?vtrace("exec cgi:~n   RequestURI: ~p",[RequestURI]),
     cgi(Info,Context,ErrorLog,R,RequestURI);
 exec(Info,Context,ErrorLog,TagList,ValueList,R) ->
+    ?vlog("exec with spurious tag:"
+	  "~n   TagList:   ~p"
+	  "~n   ValueList: ~p",
+	  [TagList,ValueList]),
     {ok, Context,
      [{internal_info,?NICE("exec directive has a spurious tag")}|
       ErrorLog], httpd_util:key1search(Context,errmsg,""),R}.
@@ -340,13 +350,31 @@ exec(Info,Context,ErrorLog,TagList,ValueList,R) ->
 %% cmd
 
 cmd(Info, Context, ErrorLog, R, Command) ->
-    Env = env(Info),
-    Dir = filename:dirname(Command),
-    Port = open_port({spawn, Command}, [{cd, Dir},
-					{env, Env},
-					stream]),
-    {NewErrorLog, Result} = proxy(Port, ErrorLog),
-    {ok, Context, NewErrorLog, Result, R}.
+    process_flag(trap_exit,true),    
+    Env  = env(Info),
+    Dir  = filename:dirname(Command),
+    Port = (catch open_port({spawn,Command},[stream,{cd,Dir},{env,Env}])),
+    case Port of
+	P when port(P) ->
+	    {NewErrorLog, Result} = proxy(Port, ErrorLog),
+	    {ok, Context, NewErrorLog, Result, R};
+	{'EXIT',Reason} ->
+	    ?vlog("open port failed: exit"
+		  "~n   URI:    ~p"
+		  "~n   Reason: ~p",
+		  [Info#mod.request_uri,Reason]),
+	    exit({open_port_failed,Reason,
+		  [{uri,Info#mod.request_uri},{script,Command},
+		   {env,Env},{dir,Dir}]});
+	O ->
+	    ?vlog("open port failed: unknown result"
+		  "~n   URI: ~p"
+		  "~n   O:   ~p",
+		  [Info#mod.request_uri,O]),
+	    exit({open_port_failed,O,
+		  [{uri,Info#mod.request_uri},{script,Command},
+		   {env,Env},{dir,Dir}]})
+    end.
 
 env(Info) ->
     [{"DOCUMENT_NAME",document_name(Info#mod.data,Info#mod.config_db,
@@ -366,24 +394,7 @@ cgi(Info, Context, ErrorLog, R, RequestURI) ->
     case mod_alias:real_script_name(Info#mod.config_db, RequestURI,
 				    ScriptAliases) of
 	{Script, AfterScript} ->
-	    Aliases = httpd_util:multi_lookup(Info#mod.config_db, alias),
-	    {_, Path, AfterPath} = mod_alias:real_name(Info#mod.config_db,
-						       Info#mod.request_uri,
-						       Aliases),
-	    Env = env(Info)++mod_cgi:env(Info, Path, AfterPath),
-	    Dir = filename:dirname(Path),
-	    Port = open_port({spawn,Script},[{env, Env},
-					     {cd, Dir},
-					     stream]),
-	    %% Send entity body to port.
-	    if
-		Info#mod.entity_body == [] ->
-		    no_entity_body;
-		true ->
-		    Port ! {self(), {command, Info#mod.entity_body}}
-	    end,
-	    {NewErrorLog, Result} = proxy(Port, ErrorLog),
-	    {ok, Context, NewErrorLog, remove_header(Result), R};
+	    exec_script(Info,Script,AfterScript,ErrorLog,Context,R);
 	not_a_script ->
 	    {ok, Context,
 	     [{internal_info, ?NICE(RequestURI++" is not a script")}|
@@ -396,6 +407,60 @@ remove_header([$\n,$\n|Rest]) ->
     Rest;
 remove_header([C|Rest]) ->
     remove_header(Rest).
+
+
+exec_script(Info,Script,AfterScript,ErrorLog,Context,R) ->
+    process_flag(trap_exit,true),    
+    Aliases = httpd_util:multi_lookup(Info#mod.config_db, alias),
+    {_, Path, AfterPath} = mod_alias:real_name(Info#mod.config_db,
+					       Info#mod.request_uri,
+					       Aliases),
+    Env  = env(Info)++mod_cgi:env(Info, Path, AfterPath),
+    Dir  = filename:dirname(Path),
+    Port = (catch open_port({spawn,Script},[stream,{env, Env},{cd, Dir}])),
+    case Port of
+	P when port(P) ->
+	    %% Send entity body to port.
+	    Res = case Info#mod.entity_body of
+		      [] ->
+			  true;
+		      EntityBody ->
+			  (catch port_command(Port,EntityBody))
+		  end,
+	    case Res of
+		{'EXIT',Reason} ->
+		    ?vlog("port send failed:"
+			  "~n   Port:   ~p"
+			  "~n   URI:    ~p"
+			  "~n   Reason: ~p",
+			  [Port,Info#mod.request_uri,Reason]),
+		    exit({open_cmd_failed,Reason,
+			  [{mod,?MODULE},{port,Port},
+			   {uri,Info#mod.request_uri},
+			   {script,Script},{env,Env},{dir,Dir},
+			   {ebody_size,sz(Info#mod.entity_body)}]});
+		true ->
+		    {NewErrorLog, Result} = proxy(Port, ErrorLog),
+		    {ok, Context, NewErrorLog, remove_header(Result), R}
+	    end;
+	{'EXIT',Reason} ->
+	    ?vlog("open port failed: exit"
+		  "~n   URI:    ~p"
+		  "~n   Reason: ~p",
+		  [Info#mod.request_uri,Reason]),
+	    exit({open_port_failed,Reason,
+		  [{mod,?MODULE},{uri,Info#mod.request_uri},{script,Script},
+		   {env,Env},{dir,Dir}]});
+	O ->
+	    ?vlog("open port failed: unknown result"
+		  "~n   URI: ~p"
+		  "~n   O:   ~p",
+		  [Info#mod.request_uri,O]),
+	    exit({open_port_failed,O,
+		  [{mod,?MODULE},{uri,Info#mod.request_uri},{script,Script},
+		   {env,Env},{dir,Dir}]})
+    end.
+    
 
 %%
 %% Port communication
@@ -414,7 +479,8 @@ proxy(Port, ErrorLog, Result) ->
 	    {ErrorLog, Result};
 	{'EXIT', Port, Reason} when port(Port) ->
 	    process_flag(trap_exit, false),
-	    {[{internal_info,?NICE("Scrambled output from CGI-script")}|ErrorLog],
+	    {[{internal_info,
+	       ?NICE("Scrambled output from CGI-script")}|ErrorLog],
 	     Result};
 	{'EXIT', Pid, Reason} when pid(Pid) ->
 	    process_flag(trap_exit, false),
@@ -588,6 +654,11 @@ parse5([$-,$-,$>|R],Comment,Depth) ->
   parse5(R,[$>,$-,$-|Comment],Depth-1);
 parse5([C|R],Comment,Depth) ->
   parse5(R,[C|Comment],Depth).
+
+
+sz(B) when binary(B) -> {binary,size(B)};
+sz(L) when list(L)   -> {list,length(L)};
+sz(_)                -> undefined.
 
 
 %% send_error - Handle failure to send the file

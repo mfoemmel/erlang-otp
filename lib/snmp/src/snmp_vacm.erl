@@ -28,6 +28,10 @@
 -include("snmp_types.hrl").
 -include("snmp_vacm.hrl").
 
+-define(VMODULE,"VACM").
+-include("snmp_verbosity.hrl").
+
+
 %%%-----------------------------------------------------------------
 %%% Access Control Module for VACM  (see also snmp_acm)
 %%% This module implements:
@@ -58,6 +62,7 @@ get_mib_view(ViewType, SecModel, SecName, SecLevel, ContextName) ->
 %% Follows the procedure in rfc2275
 auth(ViewType, SecModel, SecName, SecLevel, ContextName) ->
     % 3.2.1 - Check that the context is known to us
+    ?vdebug("check that the context (~p) is known to us",[ContextName]),
     case snmp_view_based_acm_mib:vacmContextTable(get, ContextName,
 						  [?vacmContextName]) of
 	[_Found] ->
@@ -67,6 +72,8 @@ auth(ViewType, SecModel, SecName, SecLevel, ContextName) ->
 	    throw({discarded, noSuchContext})
     end,
     % 3.2.2 - Check that the SecModel and SecName is valid
+    ?vdebug("check that SecModel (~p) and SecName (~p) is valid",
+	    [SecModel,SecName]),
     GroupName = 
 	case snmp_view_based_acm_mib:get(vacmSecurityToGroupTable, 
 					 [SecModel, length(SecName) | SecName],
@@ -77,6 +84,7 @@ auth(ViewType, SecModel, SecName, SecLevel, ContextName) ->
 		throw({discarded, noGroupName})
 	end,
     % 3.2.3-4 - Find an access entry and its view name
+    ?vdebug("find an access entry and its view name",[]),
     ViewName =
 	case get_view_name(ViewType, GroupName, ContextName,
 			   SecModel, SecLevel) of
@@ -84,6 +92,7 @@ auth(ViewType, SecModel, SecName, SecLevel, ContextName) ->
 	    Error -> throw(Error)
 	end,
     % 3.2.5a - Find the corresponding mib view
+    ?vdebug("find the corresponding mib view (for ~p)",[ViewName]),
     get_mib_view(ViewName).
 
 check_auth({'EXIT', Error}) -> exit(Error);

@@ -31,6 +31,7 @@
 #include "dist.h"
 #include "erl_version.h"
 #include "erl_binary.h"
+#include "erl_db_util.h"
 
 extern DriverEntry fd_driver_entry;
 extern DriverEntry vanilla_driver_entry;
@@ -1322,6 +1323,7 @@ BIF_ADECL_1
     res = double_to_integer(BIF_P, (f.fd > 0.0) ? f.fd + 0.5 : f.fd - 0.5);
     BIF_RET(res);
 }
+
 /**********************************************************************/
 
 /* 
@@ -2138,9 +2140,9 @@ hash value.
 
 */
 
-static uint32 reference = 0;   /* XXX fix proper init */
-static uint32 reference1 = 0;
-static uint32 reference2 = 0;
+static uint32 reference; /* Initialized in erts_bif_init */
+static uint32 reference1;
+static uint32 reference2;
 
 /* For internal use */
 static uint32 new_ref(Process *p)
@@ -2910,8 +2912,9 @@ BIF_ADECL_2
 	}
 	erts_backtrace_depth = n;
 	BIF_RET(make_small(oval));
-    }
-    else if (BIF_ARG_1 == am_sequential_tracer) {
+    } else if (BIF_ARG_1 == am_trace_control_word) {
+	BIF_RET(db_set_trace_control_word_1(BIF_P, BIF_ARG_2));
+    } else if (BIF_ARG_1 == am_sequential_tracer) {
         Eterm old_value;
 
 	if (is_pid(system_seq_tracer) || is_port(system_seq_tracer)) {
@@ -3176,7 +3179,7 @@ typedef struct bif_timer_rec {
 
 #define TIMER_HASH_VEC 3331
 
-static BifTimerRec* bif_tm_vec[TIMER_HASH_VEC];  /* XXX fix proper init */
+static BifTimerRec* bif_tm_vec[TIMER_HASH_VEC];  
 
 static BifTimerRec** find_timer(ref)
 Ref *ref;
@@ -3378,4 +3381,15 @@ void print_timer_info(CIO to)
 	 erl_printf(to, ", time left %d ms", time_left(&p->tm));
 	 erl_printf(to, "\n");
       }
+}
+
+void erts_init_bif(void)
+{
+    int i;
+    reference = 0;
+    reference1 = 0;
+    reference2 = 0;
+    for (i = 0; i < TIMER_HASH_VEC; ++i) {
+	bif_tm_vec[i] = NULL;
+    }
 }

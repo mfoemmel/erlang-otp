@@ -1485,9 +1485,15 @@ threaded_reader(LPVOID param)
 	    n = aio->bytesTransferred;
 	    for (s = buf; s < buf+n; s++) {
 		if (*s == '\r') {
-		    *s = '\n';
+                    if (s < buf + n - 1 && s[1] == '\n') {
+                        memmove(s, s+1, (buf+n - s - 1));
+                        --n;
+                    } else {
+                        *s = '\n';
+                    }
 		}
 	    }
+            aio->bytesTransferred = n;
 	}
 	SetEvent(aio->ov.hEvent);
 	if ((aio->flags & DF_XLAT_CR) == 0 && aio->bytesTransferred == 0) {

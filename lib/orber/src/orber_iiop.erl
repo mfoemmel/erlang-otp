@@ -174,9 +174,10 @@ init({orber_iiop_sup, Opts}) ->
 					       [[{port, normal, IIOP_port} | PortList]]},
 			      permanent, 10000, worker, [orber_iiop_net]}];
 			Bootstrap_port < 1024 ->
-%%%		     Bootstrap_port < 2024 -> % Used for testing without being root
+			%% Used for testing without being root
+                        %% Bootstrap_port < 2024 -> 
 			    [{orber_iiop_net, {orber_iiop_net, start,
-					       [[{port, IIOP_port}| PortList]]},
+					       [[{port, normal, IIOP_port}| PortList]]},
 			      permanent, 10000, worker, [orber_iiop_net]},
 			     {orber_bootstrap, {orber_bootstrap,
 						start, [{port, normal, Bootstrap_port}]}, permanent, 

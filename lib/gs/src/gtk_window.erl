@@ -162,8 +162,7 @@ event(DB, Gtkid, configure, Edata, Args) ->
     gtk_db:insert_opt(DB,Gtkid,{height,H}),
     case gtk_db:opt(DB,Gtkid,configure) of
 	true ->
-	    get(config_workaround) !
-                 {config_event_args,[DB,Gtkid,configure,Edata,Args]};
+	    apply(gtk_generic,event,[DB,Gtkid,configure,Edata,Args]);
 	false ->
 	    ok
     end;

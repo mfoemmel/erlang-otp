@@ -194,26 +194,26 @@ typedef void* erl_mutex_t;
 typedef void* erl_cond_t;
 typedef void* erl_thread_t;
 
-EXTERN erl_mutex_t erl_mutex_create _ANSI_ARGS_((void));
-EXTERN int erl_mutex_destroy _ANSI_ARGS_((erl_mutex_t));
-EXTERN int erl_mutex_lock _ANSI_ARGS_((erl_mutex_t));
-EXTERN int erl_mutex_unlock _ANSI_ARGS_((erl_mutex_t));
+EXTERN erl_mutex_t erts_mutex_create _ANSI_ARGS_((void));
+EXTERN int erts_mutex_destroy _ANSI_ARGS_((erl_mutex_t));
+EXTERN int erts_mutex_lock _ANSI_ARGS_((erl_mutex_t));
+EXTERN int erts_mutex_unlock _ANSI_ARGS_((erl_mutex_t));
 
-EXTERN erl_cond_t erl_cond_create _ANSI_ARGS_((void));
-EXTERN int erl_cond_destroy _ANSI_ARGS_((erl_cond_t));
-EXTERN int erl_cond_signal _ANSI_ARGS_((erl_cond_t));
-EXTERN int erl_cond_broadcast _ANSI_ARGS_((erl_cond_t));
-EXTERN int erl_cond_wait _ANSI_ARGS_((erl_cond_t, erl_mutex_t));
-EXTERN int erl_cond_timedwait _ANSI_ARGS_((erl_cond_t, erl_mutex_t, long));
+EXTERN erl_cond_t erts_cond_create _ANSI_ARGS_((void));
+EXTERN int erts_cond_destroy _ANSI_ARGS_((erl_cond_t));
+EXTERN int erts_cond_signal _ANSI_ARGS_((erl_cond_t));
+EXTERN int erts_cond_broadcast _ANSI_ARGS_((erl_cond_t));
+EXTERN int erts_cond_wait _ANSI_ARGS_((erl_cond_t, erl_mutex_t));
+EXTERN int erts_cond_timedwait _ANSI_ARGS_((erl_cond_t, erl_mutex_t, long));
 
-EXTERN int erl_thread_create _ANSI_ARGS_((erl_thread_t*,
+EXTERN int erts_thread_create _ANSI_ARGS_((erl_thread_t*,
 					 void* (*func)(void*),
 					 void* arg,
 					 int detached));
-EXTERN erl_thread_t erl_thread_self _ANSI_ARGS_((void));
-EXTERN void erl_thread_exit _ANSI_ARGS_((void*));
-EXTERN int  erl_thread_join _ANSI_ARGS_((erl_thread_t, void**));
-EXTERN int  erl_thread_kill _ANSI_ARGS_((erl_thread_t));
+EXTERN erl_thread_t erts_thread_self _ANSI_ARGS_((void));
+EXTERN void erts_thread_exit _ANSI_ARGS_((void*));
+EXTERN int  erts_thread_join _ANSI_ARGS_((erl_thread_t, void**));
+EXTERN int  erts_thread_kill _ANSI_ARGS_((erl_thread_t));
 
 
 typedef unsigned long DriverTermData;

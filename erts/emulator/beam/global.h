@@ -371,6 +371,7 @@ void erts_cleanup_mso(ProcBin* pb);
 /* bif.c */
 EXTERN_FUNCTION(void, queue_monitor_message, (Process *, Ref *, uint32, uint32, uint32));
 EXTERN_FUNCTION(void, print_timer_info, (CIO));
+EXTERN_FUNCTION(void, erts_init_bif, (void));
 
 /* beam_load.c */
 EXTERN_FUNCTION(int, bin_load, (uint32, uint32, byte*, int));
@@ -513,6 +514,7 @@ EXTERN_FUNCTION(Process*, pid2proc, (uint32));
 EXTERN_FUNCTION(void, display, (uint32, CIO));
 EXTERN_FUNCTION(void, ldisplay, (uint32, CIO, int));
 EXTERN_FUNCTION(void, print_atom, (int, CIO));
+EXTERN_FUNCTION(void, erts_init_utils, (void));
 
 extern int eq(Eterm, Eterm);
 #define EQ(x,y) (((x) == (y)) || (is_not_both_immed((x),(y)) && eq((x),(y))))
@@ -550,7 +552,7 @@ EXTERN_FUNCTION(void, bin_write, (CIO, byte*, int));
 EXTERN_FUNCTION(int, intlist_to_buf, (uint32, byte*, int));
 EXTERN_FUNCTION(char*, int_to_buf, (int, char*));
 EXTERN_FUNCTION(uint32, buf_to_intlist, (uint32**, byte*, int, uint32));
-EXTERN_FUNCTION(int, io_list_to_buf, (uint32, char*, int*, int));
+EXTERN_FUNCTION(int, io_list_to_buf, (uint32, char*, int));
 EXTERN_FUNCTION(int, io_list_len, (uint32));
 EXTERN_FUNCTION(int, is_string, (uint32));
 EXTERN_FUNCTION(int, do_load, (uint32, uint32,

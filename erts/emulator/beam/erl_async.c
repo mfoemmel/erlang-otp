@@ -73,20 +73,20 @@ int init_async(int hndl)
     AsyncQueue* q;
     int i;
 
-    async_ready_lck = erl_mutex_create();
+    async_ready_lck = erts_mutex_create();
     async_ready_list = NULL;
     async_id = 0;
 
     async_q = q = (AsyncQueue*) sys_alloc(erts_async_max_threads*
 					  sizeof(AsyncQueue));
     for (i = 0; i < erts_async_max_threads; i++) {
-	q->lck = erl_mutex_create();
-	q->cv  = erl_cond_create();
+	q->lck = erts_mutex_create();
+	q->cv  = erts_cond_create();
 	q->head = NULL;
 	q->tail = NULL;
 	q->len = 0;
 	q->hndl = hndl;
-	erl_thread_create(&q->thr, async_main, (void*)q, 0);
+	erts_thread_create(&q->thr, async_main, (void*)q, 0);
 	q++;
     }
     return 0;
@@ -106,11 +106,11 @@ int exit_async()
 
     for (i = 0; i < erts_async_max_threads; i++) {
 	void* result;
-	erl_thread_join(async_q[i].thr, &result);
-	erl_mutex_destroy(async_q[i].lck);
-	erl_cond_destroy(async_q[i].cv);
+	erts_thread_join(async_q[i].thr, &result);
+	erts_mutex_destroy(async_q[i].lck);
+	erts_cond_destroy(async_q[i].cv);
     }
-    erl_mutex_destroy(async_ready_lck);
+    erts_mutex_destroy(async_ready_lck);
     sys_free(async_q);
     return 0;
 }
@@ -121,13 +121,13 @@ static void async_add(ErlAsync* a, AsyncQueue* q)
     if (a->port != -1)
 	driver_attach(a->port);  /* make sure the driver will stay around */
 
-    erl_mutex_lock(q->lck);
+    erts_mutex_lock(q->lck);
 
     if (q->len == 0) {
 	q->head = a;
 	q->tail = a;
 	q->len = 1;
-	erl_cond_signal(q->cv);
+	erts_cond_signal(q->cv);
     }
     else { /* no need to signal (since the worker is working) */
 	a->next = q->head;
@@ -135,16 +135,16 @@ static void async_add(ErlAsync* a, AsyncQueue* q)
 	q->head = a;
 	q->len++;
     }
-    erl_mutex_unlock(q->lck);
+    erts_mutex_unlock(q->lck);
 }
 
 static ErlAsync* async_get(AsyncQueue* q)
 {
     ErlAsync* a;
 
-    erl_mutex_lock(q->lck);
+    erts_mutex_lock(q->lck);
     while((a = q->tail) == NULL) {
-	erl_cond_wait(q->cv, q->lck);
+	erts_cond_wait(q->cv, q->lck);
     }
     if (q->head == q->tail) {
 	q->head = q->tail = NULL;
@@ -155,7 +155,7 @@ static ErlAsync* async_get(AsyncQueue* q)
 	q->tail = q->tail->prev;
 	q->len--;
     }
-    erl_mutex_unlock(q->lck);
+    erts_mutex_unlock(q->lck);
     return a;
 }
 
@@ -167,7 +167,7 @@ static int async_del(long id)
 
     for (i = 0; i < erts_async_max_threads; i++) {
 	ErlAsync* a;
-	erl_mutex_lock(async_q[i].lck);
+	erts_mutex_lock(async_q[i].lck);
 	
 	a = async_q[i].head;
 	while(a != NULL) {
@@ -181,7 +181,7 @@ static int async_del(long id)
 		else
 		    async_q[i].tail = a->prev;
 		async_q[i].len--;
-		erl_mutex_unlock(async_q[i].lck);
+		erts_mutex_unlock(async_q[i].lck);
 		if (a->async_free != NULL)
 		    a->async_free(a->async_data);
 		async_detach(a->hndl);
@@ -189,7 +189,7 @@ static int async_del(long id)
 		return 1;
 	    }
 	}
-	erl_mutex_unlock(async_q[i].lck);
+	erts_mutex_unlock(async_q[i].lck);
     }
     return 0;
 }
@@ -210,15 +210,15 @@ static void* async_main(void* arg)
 	    (*a->async_invoke)(a->async_data);
 	    /* Major problem if the code for async_invoke
 	       or async_free is removed during a blocking operation */
-	    erl_mutex_lock(async_ready_lck);
+	    erts_mutex_lock(async_ready_lck);
 	    a->next = async_ready_list;
 	    async_ready_list = a;
-	    erl_mutex_unlock(async_ready_lck);
+	    erts_mutex_unlock(async_ready_lck);
 
 	    sys_async_ready(q->hndl);
 	}
     }
-    /* erl_thread_exit(0); */
+    /* erts_thread_exit(0); */
     return NULL;
 }
 
@@ -232,10 +232,10 @@ int check_async_ready()
     ErlAsync* a;
     int count = 0;
 
-    erl_mutex_lock(async_ready_lck);
+    erts_mutex_lock(async_ready_lck);
     a = async_ready_list;
     async_ready_list = NULL;
-    erl_mutex_unlock(async_ready_lck);
+    erts_mutex_unlock(async_ready_lck);
 
     while(a != NULL) {
 	ErlAsync* a_next = a->next;

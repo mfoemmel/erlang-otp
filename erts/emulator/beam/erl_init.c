@@ -27,6 +27,7 @@
 #include "erl_version.h"
 #include "erl_db.h"
 #include "beam_bp.h"
+#include "erl_bits.h"
 
 extern void erl_crash_dump();
 #ifdef __WIN32__
@@ -99,6 +100,7 @@ erl_init(void)
 
     H_MIN_SIZE = next_heap_size(H_MIN_SIZE, 0);
 
+    erts_init_bits();
     init_atom_table();
     init_export_table();
     init_module_table();
@@ -113,6 +115,7 @@ erl_init(void)
     init_io();
     init_copy();
     init_load();
+    erts_init_bif();
 
 #ifdef INSTRUMENT
     {int j;
@@ -287,6 +290,7 @@ erl_start(int argc, char **argv)
     erl_sys_init();
     erl_sys_args(&argc, argv);
 
+    erts_init_utils();
     tmpenvbuf = getenv(ERL_MAX_ETS_TABLES_ENV);
     if (tmpenvbuf != NULL) 
 	user_requested_db_max_tabs = atoi(tmpenvbuf);

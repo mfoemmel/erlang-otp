@@ -1,10 +1,12 @@
-README, Erlang/OTP 5.0 -- R7B for VxWorks on MC68360 (CPU32) and PPC603
+README, Erlang/OTP R7B01 for VxWorks on MC68360 (CPU32), PPC860 and PPC603
 -----------------------------------------------------------------------
-20001009 -- Sverker Wiberg, support@erlang.ericsson.se
+20010220 -- Patrik Nyblom, support@erlang.ericsson.se
 
-R7B is a full OTP release for PPC603, PPC860 and CPU32, i.e. all 
+R7B01 is a full OTP release for PPC603 and PPC860, i.e. all 
 applications that can possibly be run on an embedded system with
-limited memory is included.
+limited memory is included. For CPU32 no more than core functionality can be 
+guaranteed, as the slow processor may cause timeouts in more complicated
+applications. The entire package is however distributed even for CPU32. 
 
 Included OTP applications
 -------------------------
@@ -86,6 +88,9 @@ The following boards and configurations are fully supported:
 * Force PowerCore 603 with Force pcore603 BSP and VxWorks 3.5.1 (no
   SENS or SENS 1.1 + SPR23938) and a minimum of 32 Mb memory.
 
+* Force Powercore 750 with Force pcore750 BSP and VxWorks 3.5.1 (no
+  SENS or SENS 1.1 + SPR23938) and a minimum of 32 Mb memory.
+
 * PSS Core PPC860 processors, only erl_interface (too small main memory).
 
 Most PowerPC boards with FPU are expected to work, but will need to be
@@ -131,10 +136,19 @@ configuration tool):
  INCLUDE_TTY_DEV
  INCLUDE_UNLOADER
  INCLUDE_NFS or INCLUDE_RAMDRV or INCLUDE_DOSFS (i.e. a file system,
- possibly read-only)
+ possibly read-only) (**)
 
 (*) Needed for the example startup script, not actually needed in production if
     erlang is set up by a c routine called from usrConfig.c.
+(**) INCLUDE_NFS usually requires the NFS_USER_ID and NFS_GROUP_ID variables 
+     to be set in config.h
+
+As an erlang system may open a lot of files, it is recommended to raise the
+default NUM_FILES variable to something like 256 in config.h like this:
+ #ifdef NUM_FILES
+ #undef NUM_FILES
+ #endif
+ #define NUM_FILES 256
 
 The SENS stack *has* to be of version 1.1 or higher, 1.0 is *not*
 supported and will not work reliably. Upgrades as well as the patch
@@ -319,3 +333,4 @@ static int echo_stop()
 {
     return erlang_port = -1;
 }
+

@@ -383,10 +383,12 @@ handle_call({accept, Client, ListenSocket, Opts, Timeout}, From, St) ->
 		{ok, ThisSocket, NSt} ->
 		    {reply, {ok, ThisSocket}, NSt};
 		{error, Reason, St} ->
-		    {stop, normal, {error, Reason}, St}
+		    What = what(Reason),
+		    {stop, normal, {error, What}, St}
 	    end;
 	{error, Reason} ->
-	    {stop, normal, {error, Reason}, St}
+	    What = what(Reason),
+	    {stop, normal, {error, What}, St}
     end;
 
 %% connect
@@ -403,7 +405,8 @@ handle_call({connect, Client, Address, Port, Opts, Timeout}, From, St) ->
 	{ok, Res, NSt} ->
 	    {reply, {ok, Res}, NSt};
 	{error, Reason, NSt} ->
-	    {stop, normal, {error, Reason}, NSt}
+	    What = what(Reason),
+	    {stop, normal, {error, What}, NSt}
     end;
 
 
@@ -430,7 +433,8 @@ handle_call({listen, Client, Port, Opts}, From, St) ->
 	{ok, Res, NSt} ->
 	    {reply, {ok, Res}, NSt};
 	{error, Reason, NSt} ->
-	    {stop, normal, {error, Reason}, NSt}
+	    What = what(Reason),
+	    {stop, normal, {error, What}, NSt}
     end;
 
 %% peername
@@ -874,6 +878,18 @@ debug1(true, Type, Format0, Args) ->
     io:format(Format, [Secs, MiSecs, self(), Type| Args]);
 debug1(_, _, _, _) ->
     ok.
+
+%%
+%% what(Reason) -> What
+%% 
+what(Reason) when atom(Reason) ->
+    Reason;
+what({'EXIT', Reason}) ->
+    what(Reason);
+what({What, Where}) when atom(What) ->
+    What;
+what(Reason) ->
+    Reason.
 
 %%
 %% transform_opts(Opts) -> NewOpts  - from old to new i/f

@@ -84,32 +84,47 @@ connection(Us,Manager,SocketType,ListenSocket,ConfigDB,Verbosity) ->
 %% When the next connection is received the only active process is 
 %% this "busy" connection process. I.e. there is no heavy load 
 %% situation at all. To handle this situation, the first thing done 
-%% after a successful accept is do check if the server is actually 
+%% after a successful accept is to check if the server is actually 
 %% still busy (still at max_client), which is done in the handle_busy 
 %% function.
 
 connection(busy,Manager,SocketType,ListenSocket,ConfigDB) ->
     ?LOG("connection(busy) -> ListenSocket: ~p~n",[ListenSocket]),
     ?vlog("starting when busy",[]),
-    case httpd_socket:accept(SocketType,ListenSocket,30000) of
+    case (catch httpd_socket:accept(SocketType,ListenSocket,30000)) of
 	{error, timeout} ->
-	    ?LOG("connection(busy) -> error:  timeout",[]),
-	    ?vlog("~n   Accept timeout",[]),
+	    ?DEBUG("connection(busy) -> error:  timeout",[]),
+	    ?vdebug("Accept timeout",[]),
 	    ?REPORT_ERROR(ConfigDB," accept timeout",[]),
+	    ?MODULE:connection(busy,Manager,SocketType,ListenSocket,ConfigDB);
+	{error, {enfile, _}} ->
+	    ?LOG("connection(busy) -> error: enfile",[]),
+	    ?vinfo("Accept error: enfile",[]),
+	    ?REPORT_ERROR(ConfigDB,"connection accept error: enfile",[]),
+	    %% Out of sockets...
+	    receive after 200 -> ok end,
+	    ?MODULE:connection(busy,Manager,SocketType,ListenSocket,ConfigDB);
+	{error, emfile} ->
+	    ?LOG("connection(busy) -> error: emfile",[]),
+	    ?vinfo("Accept error: emfile",[]),
+	    ?REPORT_ERROR(ConfigDB,"connection accept error: emfile",[]),
+	    %% Too many open files -> Out of sockets...
+	    receive after 200 -> ok end,
 	    ?MODULE:connection(busy,Manager,SocketType,ListenSocket,ConfigDB);
 	{error, closed} ->
 	    ?LOG("connection(busy) -> error: closed",[]),
-	    ?vlog("~n   Accept error: closed",[]),
+	    ?vlog("Accept error: closed",[]),
 	    %% This propably only means that our manager is stopping
 	    ?REPORT_ERROR(ConfigDB,"connection accept error: closed",[]),
 	    exit(normal);
-	{error,Reason} ->
-	    ?LOG("connection(busy) -> error:  ~p",[Reason]),
-	    ?vinfo("~n   Accept error: ~p",[Reason]),
-	    ?REPORT_ERROR(ConfigDB,"heavy load accept error: ~p",[Reason]),
-	    %% Out of sockets, too many open files, ...
-	    receive after 200 -> ok end,
-	    ?MODULE:connection(busy,Manager,SocketType,ListenSocket,ConfigDB);
+	{error, Reason} ->
+	    ?LOG("connection(busy) -> error: ~p",[Reason]),
+	    ?vinfo("Accept error:~n   ~p",[Reason]),
+	    accept_failed(SocketType, ConfigDB, Reason);
+	{'EXIT', Reason} ->
+	    ?LOG("connection(busy) -> exit: ~p",[Reason]),
+	    ?vinfo("Accept exit:~n   ~p",[Reason]),
+	    accept_failed(SocketType, ConfigDB, Reason);
 	Socket ->
 	    ?DEBUG("connection(busy) -> accepted: ~p",[Socket]),
 	    ?vlog("accepted",[]),
@@ -122,39 +137,39 @@ connection(busy,Manager,SocketType,ListenSocket,ConfigDB) ->
 connection(Us,Manager,SocketType,ListenSocket,ConfigDB) ->
     ?LOG("connection(~p) -> ListenSocket: ~p",[Us,ListenSocket]),
     ?vlog("starting when ~p",[Us]),
-    case catch httpd_socket:accept(SocketType,ListenSocket, 30000) of
+    case (catch httpd_socket:accept(SocketType,ListenSocket, 30000)) of
 	{error, timeout} ->
-	    ?LOG("connection(~p) -> error: timeout",[Us]),
-	    ?vlog("~n   Accept timeout",[]),
+	    ?DEBUG("connection(~p) -> error: timeout",[Us]),
+	    ?vdebug("Accept timeout",[]),
 	    ?REPORT_ERROR(ConfigDB,"connection accept timeout",[]),
 	    ?MODULE:connection(Us,Manager,SocketType,ListenSocket,ConfigDB);
 	{error, {enfile, _}} ->
 	    ?LOG("connection(~p) -> error: enfile",[Us]),
-	    ?vinfo("~n   Accept error: enfile",[]),
+	    ?vinfo("Accept error: enfile",[]),
 	    ?REPORT_ERROR(ConfigDB,"connection accept error: enfile",[]),
 	    %% Out of sockets...
 	    receive after 200 -> ok end,
 	    ?MODULE:connection(Us,Manager,SocketType,ListenSocket,ConfigDB);
 	{error, emfile} ->
 	    ?LOG("connection(~p) -> error: emfile",[Us]),
-	    ?vinfo("~n   Accept error: emfile",[]),
+	    ?vinfo("Accept error: emfile",[]),
 	    ?REPORT_ERROR(ConfigDB,"connection accept error: emfile",[]),
 	    %% Too many open files -> Out of sockets...
 	    receive after 200 -> ok end,
 	    ?MODULE:connection(Us,Manager,SocketType,ListenSocket,ConfigDB);
 	{error, closed} ->
 	    ?LOG("connection(~p) -> error: closed",[Us]),
-	    ?vlog("~n   Accept error: closed",[]),
+	    ?vlog("Accept error: closed",[]),
 	    %% This propably only means that our manager is stopping
 	    ?REPORT_ERROR(ConfigDB,"connection accept error: closed",[]),
 	    exit(normal);
 	{error, Reason} ->
 	    ?LOG("connection(~p) -> error: ~p",[Us,Reason]),
-	    ?vinfo("~n   Accept error: ~p",[Reason]),
+	    ?vinfo("Accept error:~n   ~p",[Reason]),
 	    accept_failed(SocketType, ConfigDB, Reason);
 	{'EXIT', Reason} ->
 	    ?LOG("connection(~p) -> exit: ~p",[Us,Reason]),
-	    ?vinfo("~n   Accept exit: ~p",[Reason]),
+	    ?vinfo("Accept exit:~n   ~p",[Reason]),
 	    accept_failed(SocketType, ConfigDB, Reason);
 	Socket ->
 	    ?DEBUG("connection(~p) -> accepted: ~p",[Us,Socket]),
@@ -169,12 +184,12 @@ handle_busy(Manager,SocketType,Socket,ConfigDB) ->
     case httpd_manager:is_busy(Manager) of
 	true -> %% busy state
 	    ?LOG("handle_busy -> still busy, so reject",[]),
-	    ?vlog("~n   still busy usage state => reject",[]),
+	    ?vlog("still busy usage state => reject",[]),
 	    reject_connection(Manager, SocketType, Socket, ConfigDB);
 
 	false -> %% not busy state
 	    ?LOG("handle_busy -> no longer busy, so handle",[]),
-	    ?vlog("~n   no longer busy usage state => handle",[]),
+	    ?vlog("no longer busy usage state => handle",[]),
 	    handle_connection(Manager, SocketType, Socket, ConfigDB)
     end.
 

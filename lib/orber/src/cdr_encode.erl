@@ -35,10 +35,12 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([enc_giop_msg_type/1, enc_request/8, enc_reply/6,
+-export([enc_giop_msg_type/1, enc_request/8, enc_request_split/8, enc_reply/6,
 	 enc_type/3, enc_type/5, enc_cancel_request/2,
 	 enc_locate_request/3, enc_locate_reply/3, enc_close_connection/1,
 	 enc_message_error/1, enc_fragment/1]).
+
+-export([enc_reply_split/6, enc_giop_message_header/5]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -59,20 +61,32 @@
 %% The header size is known so we know that the size will be aligned.
 %% MessSize already includes the header length.
 %%-----------------------------------------------------------------
-enc_giop_message_header({1,0}, MessType, Flags, MessSize, Message) ->
-    ?PRINTDEBUG("Encode GIOP header version == 1.0"),
-    Message1 = cdrlib:enc_unsigned_long(MessSize, Message), 
-    {Message2, _}  = enc_type('tk_octet', {1, 0}, enc_giop_msg_type(MessType),
-			      Message1, 0),
-    {Message3, _} = enc_byte_order({1, 0}, Message2),
-    Message4 = enc_giop_version({1, 0}, Message3),
-    enc_magic(Message4);
-enc_giop_message_header(Version, MessType, Flags, MessSize, Message) ->
-    ?PRINTDEBUG("Encode GIOP header version > 1.0"),
+%% ## NEW IIOP 1.2 ##
+enc_giop_message_header(Version, MessType, Flags, MessSize, Message) 
+  when Version == {1,2} ->
+    ?PRINTDEBUG("Encode GIOP header version 1.2"),
     Message1 = cdrlib:enc_unsigned_long(MessSize, Message), 
     {Message2, _}  = enc_type('tk_octet', Version, enc_giop_msg_type(MessType),
 			      Message1, 0),
     {Message3, _} = enc_flags(Version, Flags, Message2),
+    Message4 = enc_giop_version(Version, Message3),
+    enc_magic(Message4);
+enc_giop_message_header(Version, MessType, Flags, MessSize, Message) 
+  when Version == {1,1} ->
+    ?PRINTDEBUG("Encode GIOP header version 1.1"),
+    Message1 = cdrlib:enc_unsigned_long(MessSize, Message), 
+    {Message2, _}  = enc_type('tk_octet', Version, enc_giop_msg_type(MessType),
+			      Message1, 0),
+    {Message3, _} = enc_flags(Version, Flags, Message2),
+    Message4 = enc_giop_version(Version, Message3),
+    enc_magic(Message4);
+enc_giop_message_header(Version, MessType, Flags, MessSize, Message) 
+  when Version == {1,0} ->
+    ?PRINTDEBUG("Encode GIOP header version == 1.0"),
+    Message1 = cdrlib:enc_unsigned_long(MessSize, Message), 
+    {Message2, _}  = enc_type('tk_octet', Version, enc_giop_msg_type(MessType),
+			      Message1, 0),
+    {Message3, _} = enc_byte_order(Version, Message2),
     Message4 = enc_giop_version(Version, Message3),
     enc_magic(Message4).
 
@@ -108,12 +122,25 @@ enc_parameters(Version, [PT1 |TypeList], [ P1 | Parameters], Message, Len) ->
 %%-----------------------------------------------------------------
 %% Func: enc_request/8
 %%-----------------------------------------------------------------
+%% ## NEW IIOP 1.2 ##
+enc_request(Version, TargetAddress, RequestId, ResponseExpected, Op, Parameters,
+	    Context, TypeCodes) when Version == {1,2} ->
+    Flags            = 1, %% LTH Not correct, just placeholder
+    {Message, Len}   = enc_request_id(Version, RequestId, [], ?GIOP_HEADER_SIZE),
+    {Message1, Len1} = enc_response_flags(Version, ResponseExpected, Message, Len),
+    {Message2, Len2} = enc_reserved(Version, {0,0,0}, Message1, Len1),
+    {Message3, Len3} = enc_target_address(Version, TargetAddress, Message2, Len2),
+    {Message4, Len4} = enc_operation(Version, atom_to_list(Op), Message3, Len3),
+    {Message5, Len5} = enc_service_context(Version, Context, Message4, Len4),
+    {Message6, Len6} = enc_request_body(Version, TypeCodes, Parameters,
+					Message5, Len5),
+    enc_giop_message_header(Version, 'request', Flags, Len6 - ?GIOP_HEADER_SIZE,
+			    lists:reverse(Message6));
 enc_request(Version, ObjectKey, RequestId, ResponseExpected, Op, Parameters,
 	    Context, TypeCodes) ->
     Flags = 1, %% LTH Not correct, just placeholder
     Operation = atom_to_list(Op),
-    {Message0, Len0} = enc_service_context(Version, Context, [],
-					   ?GIOP_HEADER_SIZE),
+    {Message0, Len0} = enc_service_context(Version, Context, [], ?GIOP_HEADER_SIZE),
     {Message, Len} = enc_request_id(Version, RequestId, Message0, Len0),
     {Message1, Len1} = enc_response(Version, ResponseExpected, Message, Len),
     {Message1b, Len1b} =
@@ -131,6 +158,39 @@ enc_request(Version, ObjectKey, RequestId, ResponseExpected, Op, Parameters,
     enc_giop_message_header(Version, 'request', Flags, Len5 - ?GIOP_HEADER_SIZE,
 			    lists:reverse(Message5)).
 
+%% ## NEW IIOP 1.2 ##
+enc_request_split(Version, TargetAddress, RequestId, ResponseExpected, Op, Parameters,
+		  Context, TypeCodes) when Version == {1,2} ->
+    Flags            = 1, %% LTH Not correct, just placeholder
+    {Message, Len}   = enc_request_id(Version, RequestId, [], ?GIOP_HEADER_SIZE),
+    {Message1, Len1} = enc_response_flags(Version, ResponseExpected, Message, Len),
+    {Message2, Len2} = enc_reserved(Version, {0,0,0}, Message1, Len1),
+    {Message3, Len3} = enc_target_address(Version, TargetAddress, Message2, Len2),
+    {Message4, Len4} = enc_operation(Version, atom_to_list(Op), Message3, Len3),
+    {Message5, Len5} = enc_service_context(Version, Context, Message4, Len4),
+    {Body, Len6}     = enc_request_body(Version, TypeCodes, Parameters, [], Len5),
+    {lists:reverse(Message5), lists:flatten(lists:reverse(Body)), 
+    Len6 - ?GIOP_HEADER_SIZE, Len6-Len5, Flags};
+enc_request_split(Version, ObjectKey, RequestId, ResponseExpected, Op, Parameters,
+		  Context, TypeCodes) ->
+    Flags = 1, %% LTH Not correct, just placeholder
+    Operation = atom_to_list(Op),
+    {Message0, Len0} = enc_service_context(Version, Context, [], ?GIOP_HEADER_SIZE),
+    {Message, Len} = enc_request_id(Version, RequestId, Message0, Len0),
+    {Message1, Len1} = enc_response(Version, ResponseExpected, Message, Len),
+    {Message1b, Len1b} =
+	if
+	    Version /= {1,0} ->
+		enc_reserved(Version, {0,0,0}, Message1, Len1);
+	    true ->
+		{Message1, Len1}
+	end,
+    {Message2, Len2} = enc_object_key(Version, ObjectKey, Message1b, Len1b),
+    {Message3, Len3} = enc_operation(Version, Operation, Message2, Len2),
+    {Message4, Len4} = enc_principal(Version, Message3, Len3),
+    {Body, Len5}     = enc_request_body(Version, TypeCodes, Parameters, [], Len4),
+    {lists:reverse(Message4), lists:flatten(lists:reverse(Body)), 
+     Len5 - ?GIOP_HEADER_SIZE, Len5-Len4, Flags}.
 enc_principal(Version, Mess, Len) ->
     enc_type({'tk_string', 0}, Version, atom_to_list(node()), Mess, Len).
     
@@ -150,16 +210,59 @@ enc_request_id(Version, RequestId, Mess, Len) ->
     enc_type('tk_ulong', Version, RequestId, Mess, Len).
 
 enc_service_context(Version, Context, Message, Len) ->
-    enc_type({'tk_sequence',
-	      {'tk_struct', 0, 'ServiceContext',
-	       [{"context_id", 'tk_long'},
-		{"context_data",
-		 {'tk_sequence', 'tk_octet', 0}}]}, 0},
-	     Version, Context, Message, Len).
-    
+    Ctxs = enc_used_contexts(Version, Context, []),
+    enc_type(?IOP_SERVICECONTEXT, Version, Ctxs, Message, Len).
+
+enc_used_contexts(Version, [], Message) ->
+    lists:flatten(Message);
+enc_used_contexts({1,0}, [#'IOP_ServiceContext'{context_id=?IOP_CodeSets}|T], Ctxs) ->
+    %% Not supported by 1.0, drop it.
+    enc_used_contexts({1,0}, T, Ctxs);
+enc_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_CodeSets,
+						  context_data = CodeSetCtx}|T], 
+		  Ctxs) ->
+    %% Encode ByteOrder
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = enc_type(?CONV_FRAME_CODESETCONTEXT, Version, CodeSetCtx, 
+			      Bytes0, Len0),
+    Bytes = lists:flatten(lists:reverse(Bytes1)),
+    enc_used_contexts(Version, T, 
+		      [#'IOP_ServiceContext'{context_id=?IOP_CodeSets,
+					     context_data = Bytes}|Ctxs]);
+enc_used_contexts(Version, [H|T], Ctxs) ->
+    enc_used_contexts(Version, T, [H|Ctxs]).
+
+
+
+
+
+%% ## NEW IIOP 1.2 ##
+enc_target_address(Version, TargetAddr, Mess, Len) when record(TargetAddr,
+							       'GIOP_TargetAddress') ->
+    enc_type(?TARGETADDRESS, Version, TargetAddr, Mess, Len);
+enc_target_address(Version, IOR, Mess, Len) when record(IOR, 'IOP_IOR') ->
+    enc_type(?TARGETADDRESS, Version, #'GIOP_TargetAddress'{label = 2, value = IOR}, 
+	     Mess, Len);
+enc_target_address(Version, TP, Mess, Len) when record(TP, 'IOP_TaggedProfile') ->
+    enc_type(?TARGETADDRESS, Version, #'GIOP_TargetAddress'{label = 1, value = TP}, 
+	     Mess, Len);
+enc_target_address(Version, ObjKey, Mess, Len) ->
+    enc_type(?TARGETADDRESS, Version, #'GIOP_TargetAddress'{label = 0, value = ObjKey}, 
+	     Mess, Len).
+
+%% FIX ME!! This is temporary, not proper flag handling.
+enc_response_flags(Version, true, Mess, Len) ->
+    enc_type('tk_octet', Version, 3, Mess, Len);
+enc_response_flags(Version, false, Mess, Len) ->
+    enc_type('tk_octet', Version, 0, Mess, Len).
+
 %%-----------------------------------------------------------------
 %% Func: enc_request_body/5
 %%-----------------------------------------------------------------
+enc_request_body(Version, {RetType, InParameters, OutParameters}, Parameters,
+		 Message, Len) when Version == {1,2} ->
+    {Message1, Len1} = enc_align(Message, Len, 8),
+    enc_parameters(Version, InParameters, Parameters, Message1, Len1);
 enc_request_body(Version, {RetType, InParameters, OutParameters}, Parameters,
 		 Message, Len) ->
     enc_parameters(Version, InParameters, Parameters, Message, Len).
@@ -167,16 +270,45 @@ enc_request_body(Version, {RetType, InParameters, OutParameters}, Parameters,
 %%-----------------------------------------------------------------
 %% Func: enc_reply/6
 %%-----------------------------------------------------------------
+%% ## NEW IIOP 1.2 ##
+enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters) 
+  when Version == {1,2} ->
+    Flags            = 1, %% LTH Not correct, just placeholder
+    {Message, Len}   = enc_request_id(Version, ReqId, [], ?GIOP_HEADER_SIZE), 
+    {Message1, Len1} = enc_reply_status(Version, RepStatus, Message, Len),
+    {Message2, Len2} = enc_service_context(Version, [], Message1, Len1),
+    {Message3, Len3} = enc_reply_body(Version, TypeCodes, Result, OutParameters,
+				      Message2, Len2),
+    enc_giop_message_header(Version, 'reply', Flags, Len3 - ?GIOP_HEADER_SIZE,
+			    lists:reverse(Message3));
 enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters) ->
-    Flags = 1, %% LTH Not correct, just placeholder
-    {Message, Len} = enc_service_context(Version, [], [],
-					?GIOP_HEADER_SIZE),
+    Flags            = 1, %% LTH Not correct, just placeholder
+    {Message, Len}   = enc_service_context(Version, [], [], ?GIOP_HEADER_SIZE),
     {Message1, Len1} = enc_request_id(Version, ReqId, Message, Len), 
     {Message2, Len2} = enc_reply_status(Version, RepStatus, Message1, Len1),
     {Message3, Len3} = enc_reply_body(Version, TypeCodes, Result, OutParameters,
 				      Message2, Len2),
     enc_giop_message_header(Version, 'reply', Flags, Len3 - ?GIOP_HEADER_SIZE,
 			    lists:reverse(Message3)).
+
+%% ## NEW IIOP 1.2 ##
+enc_reply_split(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters) 
+  when Version == {1,2} ->
+    Flags            = 1, %% LTH Not correct, just placeholder
+    {Message, Len0}   = enc_request_id(Version, ReqId, [], ?GIOP_HEADER_SIZE), 
+    {Message1, Len1} = enc_reply_status(Version, RepStatus, Message, Len0),
+    {Message2, Len2} = enc_service_context(Version, [], Message1, Len1),
+    {Body, Len} = enc_reply_body(Version, TypeCodes, Result, OutParameters, [], Len2),
+    {lists:reverse(Message2), lists:flatten(lists:reverse(Body)),
+     Len - ?GIOP_HEADER_SIZE, Len-Len2, Flags};
+enc_reply_split(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters) ->
+    Flags            = 1, %% LTH Not correct, just placeholder
+    {Message, Len0}   = enc_service_context(Version, [], [], ?GIOP_HEADER_SIZE),
+    {Message1, Len1} = enc_request_id(Version, ReqId, Message, Len0), 
+    {Message2, Len2} = enc_reply_status(Version, RepStatus, Message1, Len1),
+    {Body, Len} = enc_reply_body(Version, TypeCodes, Result, OutParameters, [], Len2),
+    {lists:reverse(Message2), lists:flatten(lists:reverse(Body)), 
+     Len - ?GIOP_HEADER_SIZE, Len-Len2, Flags}.
 
 enc_reply_status(Version, Status, Mess, Len) ->
     L = enc_giop_reply_status_type(Status),
@@ -185,6 +317,11 @@ enc_reply_status(Version, Status, Mess, Len) ->
 %%-----------------------------------------------------------------
 %% Func: enc_reply_body/6
 %%-----------------------------------------------------------------
+enc_reply_body(Version, {RetType, InParameters, OutParameters}, Result, Parameters,
+	       Message, Len) when Version == {1,2} ->
+    {Message1, Len1} = enc_align(Message, Len, 8),
+    {Message2, Len2}  = enc_type(RetType, Version, Result, Message1, Len1),
+    enc_parameters(Version, OutParameters, Parameters, Message2, Len2);
 enc_reply_body(Version, {RetType, InParameters, OutParameters}, Result, Parameters,
 	       Message, Len) ->
     {Message1, Len1}  = enc_type(RetType, Version, Result, Message, Len),
@@ -203,12 +340,18 @@ enc_cancel_request(Version, RequestId) ->
 %%-----------------------------------------------------------------
 %% Func: enc_locate_request/3
 %%-----------------------------------------------------------------
+%% ## NEW IIOP 1.2 ##
+enc_locate_request(Version, TargetAddress, RequestId) when Version == {1,2} ->
+    Flags = 1, %% LTH Not correct, just placeholder
+    {Message, Len}   = enc_request_id(Version, RequestId, [], ?GIOP_HEADER_SIZE), 
+    {Message1, Len1} = enc_target_address(Version, TargetAddress, Message, Len),
+    enc_giop_message_header(Version, 'locate_request', Flags, Len1-?GIOP_HEADER_SIZE, 
+			    lists:reverse(Message1));
 enc_locate_request(Version, ObjectKey, RequestId) ->
     Flags = 1, %% LTH Not correct, just placeholder
-    {Message, Len} = enc_request_id(Version, RequestId, [],
-				   ?GIOP_HEADER_SIZE), 
+    {Message, Len}   = enc_request_id(Version, RequestId, [], ?GIOP_HEADER_SIZE), 
     {Message1, Len1} = enc_object_key(Version, ObjectKey, Message, Len),
-    enc_giop_message_header(Version, 'locate_request', Flags, Len1 - ?GIOP_HEADER_SIZE, 
+    enc_giop_message_header(Version, 'locate_request', Flags, Len1-?GIOP_HEADER_SIZE, 
 			    lists:reverse(Message1)).
 
 %%-----------------------------------------------------------------
@@ -281,7 +424,12 @@ enc_giop_reply_status_type(?USER_EXCEPTION) ->
 enc_giop_reply_status_type(?SYSTEM_EXCEPTION) ->
     2;
 enc_giop_reply_status_type('location_forward') ->
-    3.
+    3;
+%% ## NEW IIOP 1.2 ##
+enc_giop_reply_status_type('location_forward_perm') ->
+    4;
+enc_giop_reply_status_type('needs_addressing_mode') ->
+    5.
 
 %%-----------------------------------------------------------------
 %% Func: enc_giop_locate_status_type
@@ -337,6 +485,13 @@ enc_type('tk_boolean', Version, Value, Bytes, Len) ->
     {cdrlib:enc_bool(Value, Bytes), Len + 1};
 enc_type('tk_char', Version, Value, Bytes, Len) ->
     {cdrlib:enc_char(Value, Bytes), Len + 1};
+%% The wchar decoding can be 1, 2 or 4 bytes but temporarily we'll only accept 2.
+enc_type('tk_wchar', {1,2}, Value, Bytes, Len) ->
+    {Rest, Len1} = enc_align(Bytes, Len, 2),
+    {cdrlib:enc_r_unsigned_short(Value, Rest), Len1 + 2};
+enc_type('tk_wchar', Version, Value, Bytes, Len) ->
+    {Rest, Len1} = enc_align(Bytes, Len, 2),
+    {cdrlib:enc_r_unsigned_short(Value, Rest), Len1 + 2};
 enc_type('tk_octet', Version, Value, Bytes, Len) ->
     {cdrlib:enc_octet(Value, Bytes), Len + 1};
 enc_type('tk_any', Version, Any, Bytes, Len) when record(Any, any) ->
@@ -358,6 +513,8 @@ enc_type({'tk_enum', IFRId, Name, ElementList}, Version, Value, Bytes, Len) ->
     {cdrlib:enc_r_enum(atom_to_list(Value), ElementList, Rest), Len1 + 4};
 enc_type({'tk_string', MaxLength}, Version, Value, Bytes, Len) -> % MaxLength not used
     enc_string(Version, Value, Bytes, Len);
+enc_type({'tk_wstring', MaxLength}, Version, Value, Bytes, Len) -> % MaxLength not used
+    enc_wstring(Version, Value, Bytes, Len);
 enc_type({'tk_sequence', ElemTC, MaxLength}, Version, Value, Bytes, Len) -> % MaxLength not used
     enc_sequence(Version, Value, ElemTC, Bytes, Len);
 enc_type({'tk_array', ElemTC, Size}, Version, Value, Bytes, Len) -> 
@@ -403,13 +560,27 @@ enc_array(_,Array, Size, _, _, _) ->
     corba:raise(#'MARSHAL'{minor=105, completion_status=?COMPLETED_MAYBE}).
 
 %%-----------------------------------------------------------------
-%% Func: enc_string/3
+%% Func: enc_string/4
 %%-----------------------------------------------------------------
 enc_string(Version, String, Bytes, Len) ->
     {ByteSequence, Len1} = enc_align(Bytes, Len, 4),
-    ByteSequence1 = cdrlib:enc_r_unsigned_long(length(String) + 1,
-					       ByteSequence),
-    {cdrlib:enc_octet(0, [String | ByteSequence1]), Len1 + length(String) + 5}.
+    StrLen = length(String),
+    ByteSequence1 = cdrlib:enc_r_unsigned_long(StrLen + 1, ByteSequence),
+    {cdrlib:enc_octet(0, [String | ByteSequence1]), Len1 + StrLen + 5}.
+
+%%-----------------------------------------------------------------
+%% Func: enc_wstring/4
+%%-----------------------------------------------------------------
+enc_wstring(Version, String, Bytes, Len) ->
+    %% Encode the length of the string (ulong).
+    {Bytes1, Len1} = enc_align(Bytes, Len, 4),
+    StrLen = length(String) + 1,
+    Bytes2 = cdrlib:enc_r_unsigned_long(StrLen, Bytes1),
+    {Bytes3, Len3} = enc_sequence1(Version, String, 'tk_wchar', Bytes2, Len1+4),
+    %% The terminating null character is also a wchar.
+    {cdrlib:enc_unsigned_short(0, Bytes3), Len3+2};
+enc_wstring(Version, String, Bytes, Len) ->
+    corba:raise(#'MARSHAL'{minor=105, completion_status=?COMPLETED_MAYBE}).
 
 %%-----------------------------------------------------------------
 %% Func: enc_union/5
@@ -494,6 +665,8 @@ enc_type_code('tk_boolean', Version, Message, Len) ->
     enc_type('tk_ulong', Version, 8, Message, Len);
 enc_type_code('tk_char', Version, Message, Len) ->
     enc_type('tk_ulong', Version, 9, Message, Len);
+enc_type_code('tk_wchar', Version, Message, Len) ->
+    enc_type('tk_ulong', Version, 26, Message, Len);
 enc_type_code('tk_octet', Version, Message, Len) ->
     enc_type('tk_ulong', Version, 10, Message, Len);
 enc_type_code('tk_any', Version, Message, Len) ->
@@ -512,7 +685,8 @@ enc_type_code({'tk_objref', RepId, Name}, Version, Message, Len) ->
 				     Message2, 1),
     encode_complex_tc_paramters(lists:reverse(ComplexParams), Len2, Message1, Len1);
 enc_type_code({'tk_struct', RepId, SimpleName, ElementList}, Version, Message, Len) ->
-    Name = ifrid_to_name(RepId),
+    %% Using SimpleName should be enough (and we avoid some overhead). 
+    %% Name = ifrid_to_name(RepId),
     {Message1, Len1} = enc_type('tk_ulong', Version, 15, Message, Len),
     {Message2, _} = enc_byte_order(Version, []),
     {ComplexParams, Len2} = enc_type({'tk_struct', "", "", [{"repository ID", {'tk_string', 0}},
@@ -523,7 +697,7 @@ enc_type_code({'tk_struct', RepId, SimpleName, ElementList}, Version, Message, L
 						       {"member type", 'tk_TypeCode'}]},
 				      0}}]},
 				     Version,
-				     {"", RepId, Name,
+				     {"", RepId, SimpleName,
 				      lists:map(fun({N,T}) -> {"",N,T} end, ElementList)},
 				     Message2, 1),
     encode_complex_tc_paramters(lists:reverse(ComplexParams), Len2, Message1, Len1);
@@ -568,6 +742,12 @@ enc_type_code({'tk_string', MaxLength}, Version, Message, Len) ->
 				    {"max length", 'tk_ulong'}]},
 	      Version,
 	      {"", 18, MaxLength},
+	      Message, Len);
+enc_type_code({'tk_wstring', MaxLength}, Version, Message, Len) ->
+     enc_type({'tk_struct', "", "", [{"TCKind", 'tk_ulong'},
+				    {"max length", 'tk_ulong'}]},
+	      Version,
+	      {"", 27, MaxLength},
 	      Message, Len);
 enc_type_code({'tk_sequence', ElemTC, MaxLength}, Version, Message, Len) ->
     {Message1, Len1} = enc_type('tk_ulong', Version, 19, Message, Len),
@@ -633,24 +813,6 @@ encode_complex_tc_paramters(Value, Value_length, Message, Len) ->
     {Message1, Len1} = enc_align(Message, Len, 4),
     Message2 = cdrlib:enc_r_unsigned_long(Value_length, Message1),
     {[Value |Message2], Len+Value_length+4}.
-
-
-ifrid_to_name([]) ->
-    orber:debug_level_print("[~p] cdr_encode:ifrid_to_name([]). No Id supplied.",
-			    [?LINE], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE});
-ifrid_to_name(Id) ->
-    Rep = orber_ifr:find_repository(),
-    Key = orber_ifr:'Repository_lookup_id'(Rep, Id),
-    [$:, $: |N] = orber_ifr:'Contained__get_absolute_name'(Key),
-    change_colons_to_underscore(N, []).
-
-change_colons_to_underscore([$:, $: | T], Acc) ->
-    change_colons_to_underscore(T, [$_ |Acc]);
-change_colons_to_underscore([H |T], Acc) ->
-    change_colons_to_underscore(T, [H |Acc]);
-change_colons_to_underscore([], Acc) ->
-    lists:reverse(Acc).
 
 %%-----------------------------------------------------------------
 %% Func: enc_align/1

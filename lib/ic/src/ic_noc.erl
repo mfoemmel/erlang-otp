@@ -105,15 +105,18 @@ gen(G, N, [X|Xs]) when record(X, const) ->
 
 gen(G, N, [X|Xs]) when record(X, op) ->
     {Name, ArgNames, TypeList, OutArgs} = extract_info(G, N, X),
-    
+
     case getNocType(G,X,N) of
 	transparent ->
 	    emit_transparent_func(G, N, X, Name, ArgNames, TypeList, OutArgs);
 	multiple ->
+	    mark_not_transparent(G,N),
 	    emit_transparent_func(G, N, X, Name, ArgNames, TypeList, OutArgs);
 	XTuple ->
+	    mark_not_transparent(G,N),
 	    emit_stub_func(G, N, X, Name, ArgNames, TypeList, OutArgs)
     end,
+
     gen(G, N, Xs);
 	
 
@@ -231,8 +234,8 @@ extract_info(G, N, X) when record(X, op) ->
 
 emit_serv_std(G, N, X) ->
     Fd = icgen:stubfiled(G),
-    case getNocType(G,X,[get_id2(X)|N]) of
-	transparent ->
+    case transparent(G) of
+	true ->
 	    true;
 	
 	XTupleORMultiple ->
@@ -301,8 +304,8 @@ emit_serv_std(G, N, X) ->
 
 
 gen_end_of_call(G, N, X) ->
-    case getNocType(G,X,[get_id2(X)|N]) of
-	transparent ->
+    case transparent(G) of
+	true ->
 	    true;
 	XTuple ->
 	    Fd = icgen:stubfiled(G),
@@ -326,8 +329,8 @@ gen_end_of_call(G, N, X) ->
 
 
 gen_end_of_cast(G, N, X) ->
-    case getNocType(G,X,[get_id2(X)|N]) of
-	transparent ->
+    case transparent(G) of
+	true ->
 	    true;
 	XTuple ->
 	    Fd = icgen:stubfiled(G),
@@ -350,8 +353,8 @@ gen_end_of_cast(G, N, X) ->
 
 
 emit_skel_footer(G, N, X) ->
-    case getNocType(G,X,[get_id2(X)|N]) of
-	transparent ->
+    case transparent(G) of
+	true ->
 	    true;
 	XTuple ->
 	    Fd = icgen:stubfiled(G),
@@ -390,8 +393,8 @@ get_if_name(G) -> mk_oe_name(G, "get_interface").
 
 %% Generates the get_interface function (for Lars)
 get_if_gen(G, N, X) ->
-    case getNocType(G,X,N) of
-	transparent ->
+    case transparent(G) of
+	true ->
 	    ok;
 	XTuple ->
 	    case icgen:is_stubfile_open(G) of
@@ -467,8 +470,8 @@ gen_head_special(G, N, X) when record(X, interface) ->
 		    nl(Fd)
 	    end, X#interface.inherit_body),
 
-    case NocType of
-	transparent ->
+    case transparent(G) of
+	true ->
 	    nl(Fd), nl(Fd);
 	XTuple ->
 	    icgen:comment(Fd, "Type identification function"),
@@ -1128,5 +1131,21 @@ use_tk(OTab,[Scope|Scopes]) ->
 
 
 
+mark_not_transparent(G,N) ->
 
+    %% Mark that there are multiple 
+    %% functions in interface 
+    S = icgen:pragmatab(G),
+    ets:insert(S,{no_transparent,N}).
+
+
+transparent(G) ->
+    
+    S = icgen:pragmatab(G),
+    case ets:match_object(S,{no_transparent,'$0'}) of
+	[] ->
+	    true;
+	_ ->
+	    false
+    end.
 

@@ -41,7 +41,8 @@
 	 unique/0,
 	 existence_check/2,
 	 create_repository/0,
-	 init_DB/2
+	 init_DB/2,
+	 code_change/1
 	]).
 
 -include_lib("orber/include/corba.hrl").
@@ -85,6 +86,8 @@ select(Record,Field) when record(Record,ir_PrimitiveDef) ->
     select(Record,record_info(fields,ir_PrimitiveDef),Field);
 select(Record,Field) when record(Record,ir_StringDef) ->
     select(Record,record_info(fields,ir_StringDef),Field);
+select(Record,Field) when record(Record,ir_WstringDef) ->
+    select(Record,record_info(fields,ir_WstringDef),Field);
 select(Record,Field) when record(Record,ir_SequenceDef) ->
     select(Record,record_info(fields,ir_SequenceDef),Field);
 select(Record,Field) when record(Record,ir_ArrayDef) ->
@@ -151,6 +154,8 @@ construct(Record,Field,Value) when record(Record,ir_PrimitiveDef) ->
     construct(Record,record_info(fields,ir_PrimitiveDef),Field,Value);
 construct(Record,Field,Value) when record(Record,ir_StringDef) ->
     construct(Record,record_info(fields,ir_StringDef),Field,Value);
+construct(Record,Field,Value) when record(Record,ir_WstringDef) ->
+    construct(Record,record_info(fields,ir_WstringDef),Field,Value);
 construct(Record,Field,Value) when record(Record,ir_SequenceDef) ->
     construct(Record,record_info(fields,ir_SequenceDef),Field,Value);
 construct(Record,Field,Value) when record(Record,ir_ArrayDef) ->
@@ -304,7 +309,6 @@ existence_check({ObjType, ObjID}, Id) ->
 %% Database initialization
 
 init_DB(Timeout, Options) ->
-    AllTabs = mnesia:system_info(tables),
     Func = case Options of
 	       {localCopy, IFR_storage_type} ->
 		   ?ifr_record_tuple_list_local(IFR_storage_type);
@@ -323,6 +327,61 @@ db_error_check(Checkval,Message) ->
 	false ->
 	    ok
     end.   
+
+%% Temporary function for upgrade. Remove in next version.
+code_change(wstring_up) ->
+    IFR_storage_type = mnesia:table_info(ir_StringDef, storage_type),
+    Type = mnesia:table_info(ir_StringDef, type),
+    case mnesia:table_info(ir_StringDef, local_content) of
+	true ->
+	    {atomic,ok} = 
+		mnesia:add_table_copy(ir_WstringDef, node(), IFR_storage_type),  
+	    ok = mnesia:wait_for_tables([ir_WstringDef], infinity);
+	false ->
+	    Nodes = orber:orber_nodes(),
+	    TabDef = [{IFR_storage_type, Nodes}, {type, Type}, 
+		      {attributes, record_info(fields, ir_WstringDef)}],
+	    {atomic,ok} = mnesia:create_table(ir_WstringDef, TabDef),
+	    ok = mnesia:wait_for_tables([ir_WstringDef], infinity)
+    end,
+    Rep = create_repository(),
+    PrimitiveDefs = get_field(Rep, primitivedefs),
+    NewPDefs = lists:map(fun(Pk) ->
+				 orber_ifr_repository:create_primitivedef(Pk)
+			 end,
+			 [pk_longlong,pk_ulonglong,pk_wchar,pk_wstring]),
+    set_field(Rep, primitivedefs, NewPDefs++PrimitiveDefs),
+    ok;
+code_change(wstring_down) ->
+    case mnesia:table_info(ir_StringDef, local_content) of
+	true ->
+	    {atomic, ok} = mnesia:del_table_copy(ir_WstringDef, node());
+	false ->
+	    {atomic, ok} = mnesia:delete_table(ir_WstringDef)
+    end,
+    Rep = create_repository(),
+    PrimitiveDefs = mnesia:dirty_match_object({ir_PrimitiveDef,'_','_','_','_'}),
+    NewPDefs = remove_old_primitives(PrimitiveDefs, []),
+    set_field(Rep, primitivedefs, NewPDefs),
+    ok.
+
+remove_old_primitives([], Acc) ->    
+    Acc;
+remove_old_primitives([{_,Key,_,_,pk_longlong}|T], Acc) ->
+    ok = mnesia:dirty_delete(ir_PrimitiveDef, Key),
+    remove_old_primitives(T, Acc);
+remove_old_primitives([{_,Key,_,_,pk_wchar}|T], Acc) ->
+    ok = mnesia:dirty_delete(ir_PrimitiveDef, Key),
+    remove_old_primitives(T, Acc);
+remove_old_primitives([{_,Key,_,_,pk_ulonglong}|T], Acc) ->
+    ok = mnesia:dirty_delete(ir_PrimitiveDef, Key),
+    remove_old_primitives(T, Acc);
+remove_old_primitives([{_,Key,_,_,pk_wstring}|T], Acc) ->
+    ok = mnesia:dirty_delete(ir_PrimitiveDef, Key),
+    remove_old_primitives(T, Acc);
+remove_old_primitives([{_,Key,_,_,_}|T], Acc) ->
+    remove_old_primitives(T, [{ir_PrimitiveDef, Key}|Acc]).
+
 
 %%%----------------------------------------------------------------------
 %%% Create an interface repository. This function should only be called
@@ -354,6 +413,8 @@ create_primitivedefs() ->
     lists:map(fun(Pk) ->
 		      orber_ifr_repository:create_primitivedef(Pk)
 	      end,
-	      [pk_void,pk_short,pk_long,pk_ushort,pk_ulong,
-	       pk_float,pk_double,pk_boolean,pk_char,pk_octet,pk_any,
-	       pk_TypeCode,pk_Principal,pk_string,pk_objref]).
+	      [pk_void,pk_short,pk_long,pk_longlong,pk_ulonglong,pk_ushort,pk_ulong,
+	       pk_float,pk_double,pk_boolean,pk_char,pk_wchar,pk_octet,pk_any,
+	       pk_TypeCode,pk_Principal,pk_string,pk_wstring,pk_objref]).
+
+

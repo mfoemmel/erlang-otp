@@ -117,7 +117,7 @@ static BOOL reset_acl(SaveAclStruct *save_acl){
     if(!save_acl->initialized)
       return FALSE;
     if(!OpenProcessToken(GetCurrentProcess(),
-			 TOKEN_ALL_ACCESS,&tokenh)){
+			 TOKEN_READ|TOKEN_WRITE,&tokenh)){
       log_warning("Failed to open access token.");
       return FALSE;
     } 
@@ -156,7 +156,7 @@ static BOOL new_acl(SaveAclStruct *save_acl){
 
     save_acl->initialized = FALSE;
     if(!OpenProcessToken(GetCurrentProcess(),
-			 TOKEN_ALL_ACCESS,&tokenh)){
+			 TOKEN_READ|TOKEN_WRITE,&tokenh)){
       log_warning("Failed to open access token.");
       return FALSE;
     } 

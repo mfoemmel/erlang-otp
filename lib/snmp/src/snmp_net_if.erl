@@ -68,26 +68,39 @@ init(MasterAgent, Parent, Opts) ->
     put(verbosity,get_verbosity(Opts)),
     ?vlog("starting",[]),
     {value, UDPPort} = snmp_framework_mib:intAgentUDPPort(get),
+    ?vdebug("port: ~w",[UDPPort]),
     {value, IPAddress} = snmp_framework_mib:intAgentIpAddress(get),
+    ?vdebug("addr: ~w",[IPAddress]),
     Vsns = snmp_misc:get_vsns(),
+    ?vdebug("vsns: ~w",[Vsns]),
     Log = case snmp_log:create_log() of
 	      {ok, L} -> L;
 	      false -> false;
 	      {error, Err} -> exit(Err)
 	  end,
+    ?vdebug("Log: ~w",[Log]),
     IPOpts1 = case application:get_env(snmp, bind_to_ip_address) of
 		  {ok, true} ->
 		      [{ip, list_to_tuple(IPAddress)}];
 		  _ ->
 		      []
 	      end,
+    ?vdebug("get no_reuse_address option",[]),
     IPOpts2 = case application:get_env(snmp, no_reuse_address) of
 		  {ok, true} ->
 		      [{reuseaddr, true}];
 		  _ ->
 		      []
 	      end,
-    IPOpts = IPOpts1 ++ IPOpts2, 
+    ?vdebug("get recbuf option",[]),
+    IPOpts3 = case get_recbuf(Opts) of
+		  use_default ->
+		      [];
+		  RecSz ->
+		      [{recbuf,RecSz}]
+	      end,
+    IPOpts = IPOpts1 ++ IPOpts2 ++ IPOpts3, 
+    ?vdebug("open socket with options: ~w",[IPOpts]),
     case gen_udp_open(UDPPort, [binary| IPOpts]) of
 	{ok, Id} ->
 	    MpdState = snmp_mpd:init_mpd(Vsns),
@@ -144,7 +157,7 @@ loop(S) ->
 		   ?vlog("~n   packet from ~p => "
 			 "sending report for reason: ~p", 
 			 [{Ip, Port}, Reason]),
-		    gen_udp:send(S#state.usock, Ip, Port, ReportPacket)
+		    udp_send(S#state.usock, Ip, Port, ReportPacket)
 		end,
 	    loop(S);
 	{snmp_response, Vsn, RePdu, Type, ACMData, {Ip, Port}, []} ->
@@ -153,7 +166,7 @@ loop(S) ->
 		       false -> nofunc;
 		       Log ->
 			   fun(Type2, Data) ->
-				   snmp_log:log(Log, Type2, Data, {Ip, Port})
+				   log(Log, Type2, Data, {Ip, Port})
 			   end
 		   end,
 	    case snmp_mpd:generate_response_msg(Vsn,RePdu,Type,
@@ -162,7 +175,7 @@ loop(S) ->
 		    N2 = erlang:now(),
 		    NT = subtr(N2, get(n1)),
 		    ?vinfo("time in agent: ~w mysec", [NT]),
-		    gen_udp:send(S#state.usock, Ip, Port, Packet);
+		    udp_send(S#state.usock, Ip, Port, Packet);
 		{discarded, Reason} ->
 		    ?vlog("~n   reply discarded for reason: ~p", [Reason]),
 		    ok
@@ -174,9 +187,10 @@ loop(S) ->
 	    NewS = handle_send_pdu(S, Vsn, Pdu, MsgData, To, undefined),
 	    loop(NewS);
 	{send_pdu_req, Vsn, Pdu, MsgData, To, From} ->
-	    ?vdebug("~n   send pdu request: ~p"
-		    "~n   to ~p"
-		    "~n   from ~p", 
+	    ?vdebug("send pdu request: "
+		    "~n   Pdu:  ~p"
+		    "~n   to:   ~p"
+		    "~n   from: ~p", 
 		    [Pdu,To,toname(From)]),
 	    NewS = handle_send_pdu(S, Vsn, Pdu, MsgData, To, From),
 	    loop(NewS);
@@ -210,18 +224,7 @@ loop(S) ->
 handle_send_pdu(S, Vsn, Pdu, MsgData, To, From) ->
     case snmp_mpd:generate_msg(Vsn, Pdu, MsgData, To) of
 	{ok, Addresses} ->
-	    lists:foreach(fun({snmpUDPDomain, {Ip, Port}, Packet}) ->
-				  ?vlog("~n   sending pdu ~p~n"
-					"~n   to mgr: ~p:~p",
-					[Pdu,Ip,Port]),
-				  log(S#state.log, Pdu#pdu.type, Packet,
-				      {Ip, Port}),
-				  gen_udp:send(S#state.usock, Ip,
-					       Port, Packet);
-			     (_X) ->
-				  ?vlog("** bad res: ~p\n", [_X]),
-				  ok
-			  end, Addresses);
+	    handle_send_pdu(S,Pdu,Addresses);
 	{discarded, Reason} ->
 	    ?vlog("~n   PDU ~p not sent due to ~p", [Pdu,Reason]),
 	    ok
@@ -237,24 +240,73 @@ handle_send_pdu(S, Vsn, Pdu, MsgData, To, From) ->
 	    S#state{reqs = NReqs}
     end.
 
+
+handle_send_pdu(S,Pdu,Addresses) ->
+    case (catch handle_send_pdu1(S,Pdu#pdu.type,Addresses)) of
+	{Reason,Sz} ->
+	    error_msg("snmp[error]: cannot send message "
+		      "(size: ~p, reason: ~p, pdu: ~p)",
+		      [Sz, Reason, Pdu]);
+	_ ->
+	    ok
+    end.
+	    
+handle_send_pdu1(S,PduType,Addresses) ->
+    lists:foreach(fun({snmpUDPDomain, {Ip, Port}, Packet}) ->
+			  ?vdebug("sending packet:"
+				  "~n   of size: ~p"
+				  "~n   to mgr:  ~p:~p",
+				  [sz(Packet),Ip,Port]),
+			  log(S#state.log, PduType, Packet, {Ip, Port}),
+			  udp_send(S#state.usock, Ip, Port, Packet);
+		     (_X) ->
+			  ?vlog("** bad res: ~p", [_X]),
+			  ok
+		  end, Addresses).
+
+
 handle_response(Vsn, Pdu, From, S) ->
     case lists:keysearch(Pdu#pdu.request_id, 1, S#state.reqs) of
 	{value, {_, Pid}} ->
-	    ?vlog("~n   send response to receiver ~p", [Pid]),
+	    ?vdebug("~n   send response to receiver ~p", [Pid]),
 	    Pid ! {snmp_response_received, Vsn, Pdu, From};
 	_ ->
-	    ?vlog("~n   No receiver available for response pdu", [])
+	    ?vdebug("~n   No receiver available for response pdu", [])
     end.
 
-clear_reqs(Pid, S) ->
-    NReqs = lists:keydelete(Pid, 2, S#state.reqs),
-    S#state{reqs = NReqs}.
 
+udp_send(UdpId, AgentIp, UdpPort, B) ->
+    case (catch gen_udp:send(UdpId, AgentIp, UdpPort, B)) of
+	{error,emsgsize} ->
+	    %% From this message we cannot recover, so exit sending loop
+	    throw({emsgsize,sz(B)});
+	{error,ErrorReason} ->
+	    error_msg("snmp[error]: cannot send message "
+		      "(destination: ~p:~p, size: ~p, reason: ~p)",
+		      [AgentIp, UdpPort, sz(B), ErrorReason]);
+	{'EXIT',ExitReason} ->
+	    error_msg("snmp[exit]: cannot send message "
+		      "(destination: ~p:~p, size: ~p, reason: ~p)",
+		      [AgentIp, UdpPort, sz(B), ExitReason]);
+	_ ->
+	    ok
+    end.
+
+sz(L) when list(L) -> length(L);
+sz(B) when binary(B) -> size(B);
+sz(_) -> undefined.
 
 log(false, _Type, _Packet, _Address) ->
     ok;
 log(Log, Type, Packet, Address) ->
     snmp_log:log(Log, Type, Packet, Address).
+
+error_msg(F,A) -> 
+    catch error_logger:error_msg(F,A).
+
+clear_reqs(Pid, S) ->
+    NReqs = lists:keydelete(Pid, 2, S#state.reqs),
+    S#state{reqs = NReqs}.
 
 
 toname(P) when pid(P) ->
@@ -294,3 +346,5 @@ get_verbosity([]) ->
 get_verbosity(L) ->
     snmp_misc:get_option(net_if_verbosity,L,?default_verbosity).
 
+
+get_recbuf(O) -> snmp_misc:get_option(net_if_recbuf,O,use_default).

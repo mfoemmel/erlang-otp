@@ -26,7 +26,13 @@
 %% Internal exports
 -export([init/1, snmp_config/3]).
 
+-include("snmp_verbosity.hrl").
 -include("snmp_debug.hrl").
+
+
+-ifndef(default_verbosity).
+-define(default_verbosity,silence).
+-endif.
 
 
 %%-----------------------------------------------------------------
@@ -93,7 +99,14 @@ stop_subagent(SubAgentPid) ->
 
 
 init([Type, DbD, ConfD, Opts]) ->
-    ?debug("init -> entry with Type: ~p",[Type]),
+    ?debug("init -> entry with"
+	   "~n    Type:  ~p"
+	   "~n    DbD:   ~p"
+	   "~n    ConfD: ~p"
+	   "~n    Opts:  ~p",[Type, DbD, ConfD, Opts]),
+    put(sname,sup),
+    put(verbosity,get_verbosity(Opts)),
+    ?vlog("starting",[]),
     DbDir = filename:join([DbD]),
     SupFlags = {one_for_all, 0, 3600},
     Prio = snmp_misc:get_option(priority, Opts, normal),
@@ -101,10 +114,11 @@ init([Type, DbD, ConfD, Opts]) ->
     MiscSup = {snmp_misc_sup,
 	      {snmp_misc_sup, start_link, [snmp_misc_sup]},
 	      permanent, infinity, supervisor, [snmp_misc_sup]},
+    MibStorage = {mib_storage,snmp_misc:get_option(snmp_mib_storage,Opts,ets)},
     SymStoreVerbosity = 
 	{verbosity,
 	 snmp_misc:get_option(symbolic_store_verbosity,Opts,silence)},
-    SymStoreArgs = [Prio,[SymStoreVerbosity]],
+    SymStoreArgs = [Prio,[SymStoreVerbosity,MibStorage]],
     SymbolicStore = {snmp_symbolic_store,
 		     {snmp_symbolic_store, start_link, SymStoreArgs},
 		     permanent, 2000, worker, [snmp_symbolic_store]},
@@ -113,23 +127,23 @@ init([Type, DbD, ConfD, Opts]) ->
     LdbOpts = [{auto_repair,LdbAutoRepair},{verbosity,LdbVerbosity}],
     LocalDb = {snmp_local_db,
 	       {snmp_local_db, start_link, [DbDir, Prio, LdbOpts]},
-	       permanent, 5000, worker, [snmp_local_db]},
-    ?debug("init -> create agent table",[]),
+	       permanent, 5000, worker, [snmp_local_db]},    
+    ?vdebug("create agent table",[]),
     ets:new(snmp_agent_table, [set, public, named_table]),
-    ?debug("init -> create community cache",[]),
+    ?vdebug("create community cache",[]),
     ets:new(snmp_community_cache, [bag, public, named_table]),
-    ?debug("init -> store priority",[]),
+    ?vdebug("store priority",[]),
     ets:insert(snmp_agent_table, {priority, Prio}),
-    ?debug("init -> store system start time",[]),
+    ?vdebug("store system start time",[]),
     ets:insert(snmp_agent_table, {system_start_time, snmp_misc:now(cs)}),
-    ?debug("init -> init VACM",[]),
+    ?vdebug("init VACM",[]),
     snmp_vacm:init(DbDir),
     Rest =
 	case Type of
 	    master_agent ->
 		% If we're starting the master, we must also
 		% configure the tables.
-		?debug("init -> configure the tables",[]),
+		?vdebug("starting as master agent -> configure the tables",[]),
 		ConfDir = filename:join([ConfD]),
 		ForceLoad = snmp_misc:get_option(force_load, Opts, false),
 		Config = {snmp_config,
@@ -150,33 +164,32 @@ init([Type, DbD, ConfD, Opts]) ->
 			true -> filename:join([MibDir, "SNMPv2-MIB"]);
 			false -> filename:join([MibDir, "STANDARD-MIB"])
 		    end,
-		?debug("init -> add standard and v2 mibs",[]),
+		?vdebug("add standard and v2 mibs",[]),
 		NMibs = add_mib(StdMib, Mibs, ["SNMPv2-MIB", "STANDARD-MIB"]),
 		NMibs2 = case lists:member(v3, Vsns) of
 			     true -> 
-				 ?debug("init -> add v3 mibs",[]),
+				 ?vdebug("add v3 mibs",[]),
 				 add_v3_mibs(MibDir, NMibs);
 			     false -> NMibs
 			 end,
-		?debug("init -> set mibs options",[]),
+		?vdebug("set mibs options",[]),
 		Opts2 = snmp_misc:set_option(mibs, NMibs2, Opts),
-		?debug("init -> set misc_sup options",[]),
+		?vdebug("set misc_sup options",[]),
 		Opts3 = snmp_misc:set_option(misc_sup, snmp_misc_sup, Opts2),
 		Ref = make_ref(),
-		?debug("init -> Ref: ~p",[Ref]),
 		Agent =
 		    case snmp_misc:assq(name, Opts) of
 			{value, Name} ->
 			    {master_agent,
-			     {snmp_agent, start_link, [Name, none, Ref, Opts3]},
+			     {snmp_agent, start_link, [Name,none,Ref,Opts3]},
 			     permanent, 15000, worker, [snmp_agent]};
 			false ->
 			    {master_agent,
-			     {snmp_agent, start_link, [none, Ref, Opts3]},
+			     {snmp_agent, start_link, [none,Ref,Opts3]},
 			     permanent, 15000, worker, [snmp_agent]}
 		    end,
 		AgentSup = {snmp_agent_sup,
-			    {snmp_agent_sup, start_link, [Prio, Agent]},
+			    {snmp_agent_sup, start_link, [Prio,Agent]},
 			    permanent, infinity, supervisor, [snmp_agent_sup]},
 		[Config, NoteStore, AgentSup];
 	    _ ->
@@ -185,7 +198,7 @@ init([Type, DbD, ConfD, Opts]) ->
 			    permanent, infinity, supervisor, [snmp_agent_sup]},
 		[AgentSup]
 	end,
-    ?debug("init -> done",[]),
+    ?vdebug("init done",[]),
     {ok, {SupFlags, [MiscSup, SymbolicStore, LocalDb | Rest]}}.
 
 
@@ -203,53 +216,56 @@ add_mib(DefaultMib, [Mib | T], BaseNames) ->
     end.
 
 snmp_config(ConfDir, Vsns, ForceLoad) ->
-    ?debug("snmp_config -> entry with~n"
-	   "\tConfDir:   ~p~n"
-	   "\tVsns:      ~p~n"
-	   "\tForceLoad: ~p",[ConfDir, Vsns, ForceLoad]),
     case catch conf(ConfDir, Vsns, ForceLoad) of
 	ok -> 
 	    ignore;
 	{'EXIT', Reason} -> 
-	    ?debug("snmp_config -> exit signal with reason: ~p",[Reason]),
+	    ?vlog("configure failed (exit) with reason: ~p",[Reason]),
 	    {error, {config_error, Reason}}
     end.
 
 conf(Dir, Vsns, ForceLoad) ->
-    ?debug("conf -> entry",[]),
+    ?vlog("start configure (~p)",[ForceLoad]),
     Conf = case ForceLoad of
 	       false -> configure;
 	       true -> reconfigure
 	   end,
-    ?debug("conf -> ~p snmp_standard_mib",[Conf]),
+    ?vdebug("~p snmp_standard_mib",[Conf]),
     snmp_standard_mib:Conf(Dir),
-    ?debug("conf -> init snmp_framework_mib",[]),
+    ?vdebug("init snmp_framework_mib",[]),
     snmp_framework_mib:init(),
-    ?debug("conf -> configure snmp_framework_mib",[]),
+    ?vdebug("configure snmp_framework_mib",[]),
     snmp_framework_mib:configure(Dir),
-    ?debug("conf -> ~p snmp_target_mib",[Conf]),
+    ?vdebug("~p snmp_target_mib",[Conf]),
     snmp_target_mib:Conf(Dir),
-    ?debug("conf -> ~p snmp_notification_mib",[Conf]),
+    ?vdebug("~p snmp_notification_mib",[Conf]),
     snmp_notification_mib:Conf(Dir),
-    ?debug("conf -> ~p snmp_view_based_acm_mib",[Conf]),
+    ?vdebug("~p snmp_view_based_acm_mib",[Conf]),
     snmp_view_based_acm_mib:Conf(Dir),
-    ?debug_b("conf -> do we handle v1 and/or v2? ",[]),
     case lists:member(v1, Vsns) or lists:member(v2, Vsns) of
 	true ->
-	    ?debug_e("yes => ~p snmp_community_mib~n",[Conf]),
+	    ?vdebug("we need to handle v1 and/or v2 =>~n"
+		    "   ~p snmp_community_mib",[Conf]),
 	    snmp_community_mib:Conf(Dir);
 	false ->
-	    ?debug_e("no~n",[]),
+	    ?vdebug("no need to handle v1 or v2",[]),
 	    ok
     end,
-    ?debug_b("conf -> do we handle v3? ",[]),
     case lists:member(v3, Vsns) of
 	true ->
-	    ?debug_e("yes => ~p snmp_user_based_sm_mib~n",[Conf]),
+	    ?vdebug("we need to handle v3 =>~n"
+		    "   ~p snmp_user_based_sm_mib",[Conf]),
 	    snmp_user_based_sm_mib:Conf(Dir);
 	false ->
-	    ?debug_e("no~n",[]),
+	    ?vdebug("no need to handle v3",[]),
 	    ok
     end,
-    ?debug("conf -> done",[]),
+    ?vdebug("conf done",[]),
     ok.
+
+
+%% -------------------------------------
+
+get_verbosity(L) -> 
+    snmp_misc:get_option(supervisor_verbosity,L,?default_verbosity).
+

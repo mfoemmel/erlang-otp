@@ -204,11 +204,11 @@ gen_encode(Erules,Module,Tname,Type) when record(Type,type) ->
 
 gen_encode(Erules,Module,Tname,{'ComponentType',_Pos,Cname,Type,Prop,Tags}) ->
     NewTname = list_to_atom(lists:concat([Tname,"_",Cname])),
-    %% The tag is set to undefined to avoid that it is
+    %% The tag is set to [] to avoid that it is
     %% taken into account twice, both as a component/alternative (passed as
     %% argument to the encode decode function and within the encode decode
     %% function it self.
-    NewType = Type#type{tag=undefined},
+    NewType = Type#type{tag=[]},
     gen_encode(Erules,Module,NewTname,NewType).
 
 gen_encode_user(Erules,Module,D) when record(D,typedef) ->
@@ -216,10 +216,7 @@ gen_encode_user(Erules,Module,D) when record(D,typedef) ->
     Type = D#typedef.typespec,
     InnerType = asn1ct_gen:get_inner(Type#type.def),
     OTag = Type#type.tag,
-    Tag = case OTag of
-	      undefined -> [];
-	      _ -> [OTag#tag{class=decode_class(OTag#tag.class)}]
-	  end,
+    Tag = [X#tag{class=decode_class(X#tag.class)}|| X <- OTag],
     emit([nl,nl,"%%================================"]),
     emit([nl,"%%  ",Typename]),
     emit([nl,"%%================================",nl]),
@@ -300,7 +297,7 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 %%% with [] as a placeholder
     BitStringConstraint = D#type.constraint,
     Constraint = [],
-
+    asn1ct_name:new(enumval),
     case D#type.def of
 	'BOOLEAN' ->
 	    emit_encode_func('boolean',Value,DoTag);
@@ -402,10 +399,12 @@ emit_enc_enumerated_cases([{EnumName,EnumVal}], Tags, Ext) ->
     emit(["'",EnumName,"' -> ?RT_BER:encode_enumerated(",EnumVal,",",Tags,")"]),
     case Ext of
 	noext -> emit([";",nl]);
-	ext -> emit([";",nl,"{asn1_enum,EnumVal} -> ",
-		     "?RT_BER:encode_enumerated(EnumVal,",Tags,");",nl])
+	ext -> 
+	    emit([";",nl,"{asn1_enum,",{curr,enumval},"} -> ",
+		     "?RT_BER:encode_enumerated(",{curr,enumval},",",Tags,");",nl]),
+	    asn1ct_name:new(enumval)
     end,
-    emit(["EnumVal -> exit({error,{asn1, {enumerated_not_in_range, EnumVal}}})"]),
+    emit([{curr,enumval}," -> exit({error,{asn1, {enumerated_not_in_range,",{curr, enumval},"}}})"]),
     emit([nl,"end"]).
 
 
@@ -456,11 +455,11 @@ gen_decode(Erules,Module,Tname,Type) when record(Type,type) ->
 
 gen_decode(Erules,Module,Tname,{'ComponentType',_Pos,Cname,Type,Prop,Tags}) ->
     NewTname = list_to_atom(lists:concat([Tname,"_",Cname])),
-    %% The tag is set to undefined to avoid that it is
+    %% The tag is set to [] to avoid that it is
     %% taken into account twice, both as a component/alternative (passed as
     %% argument to the encode decode function and within the encode decode
     %% function it self.
-    NewType = Type#type{tag=undefined},
+    NewType = Type#type{tag=[]},
     gen_decode(Erules,Module,NewTname,NewType).
 
 
@@ -468,11 +467,8 @@ gen_decode_user(Erules,Module,D) when record(D,typedef) ->
     Typename = D#typedef.name,
     Def = D#typedef.typespec,
     InnerType = asn1ct_gen:get_inner(Def#type.def),
-    InnerTag = Def#type.tag,
-    Tag = case InnerTag of
-	      undefined -> [];
-	      _ -> [InnerTag#tag{class=decode_class(InnerTag#tag.class)}]
-	  end,
+    InnerTag = Def#type.tag ,
+    Tag = [X#tag{class=decode_class(X#tag.class)}|| X <- InnerTag],
     case asn1ct_gen:type(InnerType) of
 	'ASN1_OPEN_TYPE' ->
 	    BytesVar = mk_var(asn1ct_name:curr(bytes)),

@@ -472,7 +472,7 @@ static int exec_erlang(char *alive,
   if ((flags & ERL_START_REMOTE) || (hisaddr->s_addr != myaddr.s_addr)) {
     argv[0] = RSH;
     len = strlen(inet_ntoa(*hisaddr));
-    argv[1] = erl_malloc(len);
+    argv[1] = erl_malloc(len+1);
     strcpy(argv[1],inet_ntoa(*hisaddr));
   }
   else {

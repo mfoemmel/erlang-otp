@@ -27,9 +27,6 @@ extern void erl_init_malloc __ERL_P((Erl_Heap*,long));
 extern void *erl_malloc __ERL_P((long));
 extern void erl_free __ERL_P((void*));
 
-extern ETERM * eterm_ref __ERL_P((ETERM *));
-extern void eterm_unref __ERL_P((ETERM *));
-
 extern ETERM *erl_alloc_eterm __ERL_P((unsigned char));
 extern void erl_free_term __ERL_P((ETERM*));
 extern void erl_free_compound __ERL_P((ETERM*));

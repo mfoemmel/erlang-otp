@@ -38,7 +38,7 @@ __asm__(".equ __eabi, 0");
 #endif
 
 void 
-main(int argc, char **argv)
+erl_main(int argc, char **argv)
 {
     ErlOtpStart(argc, argv);
 }

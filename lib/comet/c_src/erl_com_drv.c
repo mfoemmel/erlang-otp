@@ -79,6 +79,13 @@ typedef int ErlDrvPort;
 typedef void* ErlDrvData;
 #endif
 
+/* a dynamic version of ei */
+typedef struct x_ei_buff_TAG {
+    char* buff;
+    int buffsz;
+    int index;
+} x_ei_buff;
+
 /* state for erlang thread, one of these for each thread */
 typedef struct erl_com_thread_data_TAG {
     HANDLE emulator_event;	/* event used for driver_select */
@@ -86,9 +93,7 @@ typedef struct erl_com_thread_data_TAG {
     unsigned thread;		/* the thread handle (from _beginthreadex) */
     int op;			/* operation */
     int thread_n;		/* index of thread in erl_data */
-    char* buff;			/* buffer */
-    int buffsz;			/* allocated buffsize */
-    int bufflen;		/* length of data in buffer (bufflen <= buffsz) */
+    x_ei_buff x;		/* buffer */
     int stop;			/* flag to stop a thread */
     void** com_i_ptrs;		/* the interfaces held in the thread */
     int n_com_i_ptrs;
@@ -190,7 +195,7 @@ static DWORD WINAPI input_thread(LPVOID par)
 	}
 	n = ntohl(n);		/* erlang is big-endian */
 	if (ienv->buffsz < n) {
-	    ienv->buffsz = n + 100;
+	    ienv->buffsz = n * 2 + 100;
 	    ienv->buff = driver_realloc(ienv->buff, ienv->buffsz);
 	}
 	if (ienv->buff == NULL) {
@@ -243,9 +248,11 @@ int main(int argc, char* argv[])
     }
     /* some extra init */
     result = 0;
-    n_threads = 0;
+    n_threads = 1;
     init_dates();
-
+    erl_data[0] = new_erl_com_thread(0);
+    waiting_on[0] = FALSE;
+    
     /* we have to do the select ourselves, driver_select is only 
      * available in driver-ports */
     for (;;) {
@@ -260,12 +267,14 @@ int main(int argc, char* argv[])
 	}
 	/* select in win32 */
 	n = WaitForMultipleObjects(n, wait_events, FALSE, INFINITE);
+	//DebugBreak();
 	n -= WAIT_OBJECT_0;
 	if (n == 0) {		/* this is the input_thread */
 	    char* tmpbuff; int tmpbufflen, tmpbuffsz;
 	    /* check for the special operation of creating a new thread */
 	    if (in_env.op == com_NewThread) {
 		int t;
+		//DebugBreak();
 		if (n_threads >= N_MAX_THREADS) {
 		    t = -1;
 		} else {
@@ -300,12 +309,12 @@ int main(int argc, char* argv[])
 		    return 1;
 		i = in_env.thread_n;
 		waiting_on[i] = TRUE;
-		tmpbuff = erl_data[i]->buff;
-		tmpbufflen = erl_data[i]->bufflen;
-		tmpbuffsz = erl_data[i]->buffsz;
-		erl_data[i]->buff = in_env.buff;
-		erl_data[i]->bufflen = in_env.bufflen;
-		erl_data[i]->buffsz = in_env.buffsz;
+		tmpbuff = erl_data[i]->x.buff;
+		tmpbufflen = erl_data[i]->x.index;
+		tmpbuffsz = erl_data[i]->x.buffsz;
+		erl_data[i]->x.buff = in_env.buff;
+		erl_data[i]->x.index = in_env.bufflen;
+		erl_data[i]->x.buffsz = in_env.buffsz;
 		in_env.buff = tmpbuff;
 		in_env.bufflen = tmpbufflen;
 		in_env.buffsz = tmpbuffsz;
@@ -326,14 +335,14 @@ int main(int argc, char* argv[])
 	    }
 	    waiting_on[i] = FALSE;
 	    /* write packet size (packet 4) */
-	    n = htonl(erl_data[i]->bufflen); /* erlang is big-endian */
+	    n = htonl(erl_data[i]->x.index); /* erlang is big-endian */
 	    if (!WriteFile(out_h, &n, sizeof(n), &m, NULL)) {
 		fprintf(stderr, "erl_com: couldn't write packet size (res) \n");
 		exit(1);
 	    }
-	    if (!WriteFile(out_h, erl_data[i]->buff, erl_data[i]->bufflen, &n, NULL)) {
+	    if (!WriteFile(out_h, erl_data[i]->x.buff, erl_data[i]->x.index, &n, NULL)) {
 		fprintf(stderr, "erl_com: couldn't write packet (res) (wanted %d, got %d) \n", 
-			erl_data[i]->bufflen, n);
+			erl_data[i]->x.index, n);
 		exit(1);
 	    }
 	}
@@ -353,6 +362,9 @@ int main(int argc, char* argv[])
 
 static ErlDrvData drv_erl_com_drv_start(ErlDrvPort port, char *buff)
 {
+    //DebugBreak();
+    erl_data[n_threads] = new_erl_com_thread(port);
+    ++n_threads;
     return (ErlDrvData)port;
 }
 
@@ -369,15 +381,129 @@ static erl_com_thread_data* new_erl_com_thread(ErlDrvPort port)
 #if PORT_DRIVER
     driver_select(port, ret->emulator_event, DO_WRITE, 1);
 #endif
-    ret->buff = NULL;
-    ret->bufflen = 0;
-    ret->buffsz = 0;
+    ret->x.buff = NULL;
+    ret->x.index = 0;
+    ret->x.buffsz = 0;
     ret->stop = FALSE;
     ret->n_com_i_ptrs = 0;
     ret->com_i_ptrs = driver_alloc(sizeof(void*));
+    ret->com_i_ptrs[0] = 0;
     //DebugBreak();
     ret->thread = _beginthreadex(NULL, 0, erl_com_thread_main, ret, 0, &tid);
     return ret;
+}
+
+/*
+ * yet another dynamic-buffer version of ei 
+ */
+enum { X_EI_EXTRA = 100 };
+
+static int x_fix_buff(x_ei_buff* x, int szneeded)
+{
+    int sz = szneeded + X_EI_EXTRA;
+    if (sz > x->buffsz) {
+	sz += X_EI_EXTRA;	/* to avoid reallocating each and every time */
+	x->buffsz = sz;
+	x->buff = driver_realloc(x->buff, sz);
+    }
+    return x->buff != NULL;
+}
+
+static int x_ei_encode_string(x_ei_buff* x, const char* s)
+{
+    int i = x->index;
+    ei_encode_string(NULL, &i, s);
+    if (!x_fix_buff(x, i))
+	return FALSE;
+    return ei_encode_string(x->buff, &x->index, s);
+}
+
+static char* get_erl_str(OLECHAR* oles);
+
+static int x_ei_encode_and_free_bstr(x_ei_buff* x, BSTR* b)
+{    
+    int r;
+    char* s;
+    if (b == NULL) {
+	return -1; }
+    s = get_erl_str(*b);
+    SysFreeString(*b);
+    *b = NULL;
+    r = x_ei_encode_string(x, s);
+    driver_free(s);
+    return r;
+}
+
+static int x_ei_encode_long(x_ei_buff* x, long n)
+{
+    int i = x->index;
+    ei_encode_long(NULL, &i, n);
+    if (!x_fix_buff(x, i))
+	return FALSE;
+    return ei_encode_long(x->buff, &x->index, n);
+}
+
+static int x_ei_encode_ulong(x_ei_buff* x, unsigned long n)
+{
+    int i = x->index;
+    ei_encode_ulong(NULL, &i, n);
+    if (!x_fix_buff(x, i))
+	return FALSE;
+    return ei_encode_ulong(x->buff, &x->index, n);
+}
+
+x_ei_encode_double(x_ei_buff* x, double dbl)
+{
+    int i = x->index;
+    ei_encode_double(NULL, &i, dbl);
+    if (!x_fix_buff(x, i))
+	return FALSE;
+    return ei_encode_double(x->buff, &x->index, dbl);
+}
+
+static int x_ei_encode_list_header(x_ei_buff* x, long n)
+{
+    int i = x->index;
+    ei_encode_list_header(NULL, &i, n);
+    if (!x_fix_buff(x, i))
+	return FALSE;
+    return ei_encode_list_header(x->buff, &x->index, n);
+}
+
+static int x_ei_encode_empty_list(x_ei_buff* x)
+{
+    int i = x->index;
+    ei_encode_empty_list(NULL, &i);
+    if (!x_fix_buff(x, i))
+	return FALSE;
+    return ei_encode_empty_list(x->buff, &x->index);
+}
+
+static int x_ei_encode_version(x_ei_buff* x)
+{
+    int i = x->index;
+    ei_encode_version(NULL, &i);
+    if (!x_fix_buff(x, i))
+	return FALSE;
+    return ei_encode_version(x->buff, &x->index);
+}
+
+static int x_ei_encode_tuple_header(x_ei_buff* x, long n)
+{
+    int i = x->index;
+    ei_encode_tuple_header(NULL, &i, n);
+    if (!x_fix_buff(x, i))
+	return FALSE;
+    return ei_encode_tuple_header(x->buff, &x->index, n);
+}
+
+static int x_ei_encode_atom(x_ei_buff* x, const char* s)
+{
+    int i = x->index;
+    ei_encode_atom(NULL, &i, s);
+    if (!x_fix_buff(x, i))
+	return FALSE;
+    return ei_encode_atom(x->buff, &x->index, s);
 }
 
 #if PORT_DRIVER
@@ -416,7 +542,7 @@ static void drv_erl_com_drv_readyoutput(ErlDrvData handle, ErlDrvEvent event)
     } 
     if (i == n_threads) 
 	return;
-    driver_output((ErlDrvPort)handle, data->buff, data->bufflen);
+    driver_output((ErlDrvPort)handle, data->x.buff, data->x.index);
 }
 
 /*
@@ -428,9 +554,9 @@ static void drv_erl_com_drv_output(ErlDrvData handle, char *buff, int bufflen)
     int op = buff[0];
     int i, thread = buff[1];
     erl_com_thread_data* data;
-    /*DebugBreak();*/
+    //DebugBreak();
     if (op == com_NewThread) {
-	char buf[100]; int index = 0;
+        char b[100]; int index = 0;
 	for (i = 0; i < n_threads; ++i) {
 	    if (erl_data[i] == NULL)
 		break;
@@ -438,19 +564,20 @@ static void drv_erl_com_drv_output(ErlDrvData handle, char *buff, int bufflen)
 	if (i == N_MAX_THREADS) 
 	    return;
 	data = erl_data[i] = new_erl_com_thread(port);
-	ei_encode_version(buf, &index);
-	ei_encode_tuple_header(buf, &index, 2);
-	ei_encode_long(buf, &index, NEW_THREAD_SPECIAL_N);
-	ei_encode_long(buf, &index, i);
-        driver_output(port, buf, index);
 	if (i == n_threads)
 	    ++n_threads;
+	index = 0;
+	ei_encode_version(b, &index);
+	ei_encode_tuple_header(b, &index, 2);
+	ei_encode_long(b, &index, NEW_THREAD_SPECIAL_N);
+	ei_encode_long(b, &index, i);
+	driver_output(port, b, index);
     } else {
 	if (thread >= 0 && thread < n_threads) {
 	    data = erl_data[thread];
-	    data->buffsz = data->bufflen = bufflen;
-	    data->buff = driver_realloc(data->buff, bufflen);
-	    memcpy(data->buff, buff, bufflen);
+	    data->x.buffsz = data->x.index = bufflen;
+	    data->x.buff = driver_realloc(data->x.buff, bufflen);
+	    memcpy(data->x.buff, buff, bufflen);
 	    SetEvent(data->event);
 	}
     }
@@ -499,9 +626,16 @@ static void drv_erl_com_drv_finish(void)
 /* add to interface list */
 static int add_interface(erl_com_thread_data* d, void* p)
 {
-    d->com_i_ptrs = driver_realloc(d->com_i_ptrs, (d->n_com_i_ptrs+1)*sizeof(void*));
-    d->com_i_ptrs[d->n_com_i_ptrs] = p;
-    return d->n_com_i_ptrs++;
+    int f = (int)d->com_i_ptrs[0];  // OK, this is ugly!
+    if (f != 0) {
+	d->com_i_ptrs[0] = d->com_i_ptrs[f];
+    } else {
+	f = d->n_com_i_ptrs+1;
+	d->com_i_ptrs = driver_realloc(d->com_i_ptrs, (d->n_com_i_ptrs+2)*sizeof(void*));
+	d->n_com_i_ptrs++;
+    }
+    d->com_i_ptrs[f] = p;
+    return f;
 }
 
 /* create com object, and add to interface list */
@@ -531,11 +665,12 @@ static HRESULT create_obj(erl_com_thread_data* d, BSTR clsid, BSTR refiid, CLSCT
     return r;
 }
 
-/* call com release */
+/* call com release (and link to free list) */
 static HRESULT release_(erl_com_thread_data* d, int i)
 {
     HRESULT r = IUnknown_Release((LPUNKNOWN)d->com_i_ptrs[i]);
-    d->com_i_ptrs[i] = NULL;
+    d->com_i_ptrs[i] = d->com_i_ptrs[0];
+    *(int*)&d->com_i_ptrs[0] = i;   // ugly in a way, beautyful in another
     return r;
 }
 
@@ -588,181 +723,123 @@ static void init_dates()
 }
 
 static const char* bools[] = {"false", "true"};
+static const char vt_error[] = "error";
 static char com_null[] = "null";
 
 /* convert COM variant to erlang binary format */
-static void encode_variant(erl_com_thread_data* d, int* index, VARIANT* v)
+static void encode_variant(erl_com_thread_data* d, VARIANT* v)
 {
     long l;
     unsigned long u;
     double dbl;
-    char* s, b[50];
+    char b[50];
     OLECHAR* oles;
     void* p;
-    char* buff = d->buff;
+    x_ei_buff* x = &d->x;
     BOOL ref = (v->vt & VT_BYREF) != 0;
     switch (v->vt) {
     case VT_EMPTY:
-	ei_encode_empty_list(buff, index);
+	x_ei_encode_empty_list(x);
 	break;
     case VT_UI1:
     case VT_UI1 | VT_BYREF:
 	u = ref ? *v->pbVal : v->bVal;
-	ei_encode_ulong(buff, index, u);
+	x_ei_encode_ulong(x, u);
 	break;
     case VT_UI2:
     case VT_UI2 | VT_BYREF:
 	u = ref ? *v->puiVal : v->uiVal;
-	ei_encode_ulong(buff, index, u);
+	x_ei_encode_ulong(x, u);
 	break;
     case VT_UINT:
     case VT_UI4:
     case VT_UINT | VT_BYREF:
     case VT_UI4 | VT_BYREF:
 	u = ref ? *v->pulVal : v->ulVal;
-	ei_encode_ulong(buff, index, u);
+	x_ei_encode_ulong(x, u);
 	break;
     case VT_I1:
     case VT_I1 | VT_BYREF:
 	l = ref ? *v->pcVal : v->cVal;
-	ei_encode_long(buff, index, l);
+	x_ei_encode_long(x, l);
 	break;
     case VT_I2:
     case VT_I2 | VT_BYREF:
 	l = ref ? *v->piVal : v->iVal;
-	ei_encode_long(buff, index, l);
+	x_ei_encode_long(x, l);
 	break;
     case VT_INT:
     case VT_I4:
     case VT_INT | VT_BYREF:
     case VT_I4 | VT_BYREF:
 	l = ref ? *v->plVal : v->lVal;
-	ei_encode_long(buff, index, l);
+	x_ei_encode_long(x, l);
 	break;
     case VT_R4:
     case VT_R4 | VT_BYREF:
 	dbl = ref ? *v->pfltVal : v->fltVal;
-	ei_encode_double(buff, index, dbl);
+	x_ei_encode_double(x, dbl);
 	break;
+    case VT_VARIANT:
+    case VT_CY:
+    case VT_DECIMAL:
+    case VT_I8:
+    case VT_UI8:
+	if (FAILED(VariantChangeType(v, v, 0, VT_R8)))
+	    goto no_conv;
     case VT_R8:
     case VT_R8 | VT_BYREF:
 	dbl = ref ? *v->pdblVal : v->dblVal;
-	ei_encode_double(buff, index, dbl);
+	x_ei_encode_double(x, dbl);
 	break;
     case VT_BSTR:
     case VT_BSTR | VT_BYREF:
 	oles = ref ? *v->pbstrVal : v->bstrVal;
-	s = get_erl_str(oles);
-	SysFreeString(oles);
-	ei_encode_string(buff, index, s);
-	driver_free(s);
+	x_ei_encode_and_free_bstr(x, &oles);
 	break;
     case VT_BOOL:
     case VT_BOOL | VT_BYREF:
 	l = ref ? *v->pboolVal : v->boolVal;
 	l &= 1;
-	ei_encode_atom(buff, index, bools[l]);
+	x_ei_encode_atom(x, bools[l]);
 	break;
     case VT_NULL:
 	l = ref ? *v->pboolVal : v->boolVal;
 	l &= 1;
-	ei_encode_atom(buff, index, com_null);
+	x_ei_encode_atom(x, com_null);
 	break;
     case VT_DATE:
     case VT_DATE | VT_BYREF:
 	dbl = ref ? *v->pdate : v->date;
-	ei_encode_tuple_header(buff, index, 3);
+	x_ei_encode_tuple_header(x, 3);
 	dbl -= date_1970;
 	l = (long)(dbl / 1000000.0 * (24 * 60 * 60));
 	dbl -= l * 1000000.0 / (24 * 60 * 60);
-	ei_encode_long(buff, index, l);
+	x_ei_encode_long(x, l);
 	l = (long)(dbl * (24 * 60 * 60));
-	ei_encode_long(buff, index, l);
+	x_ei_encode_long(x, l);
 	dbl -= l / (24 * 60 * 60);
 	l = (long)(dbl / 1000000 / (24 * 60 * 60));
-	ei_encode_long(buff, index, l);
+	x_ei_encode_long(x, l);
 	break;
-    case VT_DISPATCH:
-    case VT_UNKNOWN:
+    case VT_DISPATCH:	case VT_DISPATCH | VT_BYREF:
+    case VT_UNKNOWN:	case VT_UNKNOWN | VT_BYREF:
 	p = ref ? *v->ppunkVal : v->punkVal;
-	ei_encode_long(buff, index, add_interface(d, p));
+	x_ei_encode_long(x, add_interface(d, p));
 	break;
-    case VT_CY:
     case VT_ERROR:
-    case VT_VARIANT:
-    case VT_DECIMAL:
-    case VT_I8:
-    case VT_UI8:
     default:
-	sprintf(b, "unknown type %d", v->vt);
-	ei_encode_string(buff, index, b);
+no_conv:
+	sprintf(b, "COMET unknown type %d", v->vt);
+	x_ei_encode_string(x, b);
 	break;
     }
-}
-
-/* encode and return int to gen_server */
-static void return_int(int i, erl_com_thread_data* d)
-{
-    int index = 0;
-    ei_encode_version(d->buff, &index);
-    ei_encode_tuple_header(d->buff, &index, 2);
-    ei_encode_long(d->buff, &index, d->thread_n);
-    ei_encode_long(d->buff, &index, i);
-    d->bufflen = index;
-}
-
-/* encode and return variant to gen_server */
-static void return_variant(VARIANT* res, erl_com_thread_data* d)
-{
-    int index = 0;
-    ei_encode_version(d->buff, &index);
-    ei_encode_tuple_header(d->buff, &index, 2);
-    ei_encode_long(d->buff, &index, d->thread_n);
-    encode_variant(d, &index, res);
-    d->bufflen = index;
-}
-
-/* encode and return COM error code to gen_server */
-static void return_err(HRESULT r, int bad_param_no, erl_com_thread_data* d)
-{
-    int index = 0;
-    char b[200];
-    ei_encode_version(d->buff, &index);
-    ei_encode_tuple_header(d->buff, &index, 2);
-    ei_encode_long(d->buff, &index, d->thread_n);
-    ei_encode_tuple_header(d->buff, &index, 2);
-    ei_encode_atom(d->buff, &index, "com_error");
-    sprintf(b, "%x %d", r, bad_param_no);
-    ei_encode_string(d->buff, &index, b);
-    d->bufflen = index;
-}
-
-/* encode and return multiple out parameters in a list */
-static void return_var_pars(DISPPARAMS* disp_pars, 
-		     int n_results, erl_com_thread_data* d)
-{
-    int i, index = 0;
-    UINT j;
-    ei_encode_version(d->buff, &index);
-    ei_encode_tuple_header(d->buff, &index, 2);
-    ei_encode_long(d->buff, &index, d->thread_n);
-    ei_encode_list_header(d->buff, &index, n_results);
-    for (i = 0, j = disp_pars->cArgs-1; i < n_results; ++i) {
-	while ((disp_pars->rgvarg[j].vt & VT_BYREF) == 0 && j>= 0) --j;
-	if (j >= 0) {
-	    encode_variant(d, &index, &disp_pars->rgvarg[j]);
-	} else {
-	    ei_encode_long(d->buff, &index, -1);
-	}
-    }
-    ei_encode_empty_list(d->buff, &index);
-    d->bufflen = index;
 }
 
 /* decode double from either a double or a long in erlang binary form */
 static int my_decode_double(const char* buff, int* index, double* d)
 {
-    int r = -1, is, t, s;
+    int r = 0, is, t, s;
     ei_get_type(buff, index, &t, &s);
     switch (t) {
     case ERL_FLOAT_EXT:
@@ -772,121 +849,116 @@ static int my_decode_double(const char* buff, int* index, double* d)
     case ERL_INTEGER_EXT:
 	r = ei_decode_long(buff, index, &is);
 	*d = is;
-	break; }
+	break;
+    }
     return r;
 }
 
+/* encode and return variant to gen_server */
+static void return_variant(VARIANT* res, erl_com_thread_data* d)
+{
+    x_ei_buff* x = &d->x;
+    x->index = 0;
+    x_ei_encode_version(x);
+    x_ei_encode_tuple_header(x, 2);
+    x_ei_encode_long(x, d->thread_n);
+    encode_variant(d, res);
+}
 
-static HRESULT get_var_pars(erl_com_thread_data* d, int* index, VARIANTARG** var_pars,
-		     DISPPARAMS* disp_pars, double* refs, int* n_refs,
-		     UINT* bad_par);
+/* encode and return COM error code to gen_server */
+static void return_err(HRESULT r, int bad_param_no, erl_com_thread_data* d)
+{
+    LPVOID msg;
+    x_ei_buff* x = &d->x;
+    x->index = 0;
+    x_ei_encode_version(x);
+    x_ei_encode_tuple_header(x, 2);
+    x_ei_encode_long(x, d->thread_n);
+    x_ei_encode_tuple_header(x, 3+(bad_param_no!=-1));
+    x_ei_encode_atom(x, "com_error");
+    x_ei_encode_long(x, r);
+    FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | 
+		      FORMAT_MESSAGE_FROM_SYSTEM | 
+		      FORMAT_MESSAGE_IGNORE_INSERTS,
+		  NULL,
+		  r,
+		  MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
+		  (LPTSTR) &msg,
+		  0,
+		  NULL);
+    if (msg == NULL) msg = "";
+    x_ei_encode_string(x, msg);
+    if (bad_param_no != -1)
+	x_ei_encode_long(x, bad_param_no);
+    LocalFree(msg);
+}
 
-static HRESULT get_stdcall_pars(erl_com_thread_data* d, int* index, char** stdcall_pars,
-			 int* pari, double* refs, int* results_types,
-			 int* n_refs, UINT* bad_par);
+/* encode and return COM error exception */
+static void return_exception(HRESULT r, BSTR bstrDescription, erl_com_thread_data* d)
+{
+    x_ei_buff* x = &d->x;
+    x->index = 0;
+    x_ei_encode_version(x);
+    x_ei_encode_tuple_header(x, 2);
+    x_ei_encode_long(x, d->thread_n);
+    x_ei_encode_tuple_header(x, 3);
+    x_ei_encode_atom(x, "com_error");
+    x_ei_encode_ulong(x, r);
+    x_ei_encode_and_free_bstr(x, &bstrDescription);
+}
 
-static HRESULT return_stdcall_pars(double* results, int* result_types,
-			    int n_results, erl_com_thread_data* d);
+
+/* encode and return int to gen_server */
+static void return_int(int i, erl_com_thread_data* d)
+{
+    x_ei_buff* x = &d->x;
+    x->index = 0;
+    x_ei_encode_version(x);
+    x_ei_encode_tuple_header(x, 2);
+    x_ei_encode_long(x, d->thread_n);
+    x_ei_encode_long(x, i);
+}
+
+/* encode and return multiple out parameters in a list */
+static void return_var_pars(DISPPARAMS* disp_pars, 
+		     int n_results, erl_com_thread_data* d)
+{
+    int i;
+    x_ei_buff* x = &d->x;
+    UINT j;
+    x->index = 0;
+    x_ei_encode_version(x);
+    x_ei_encode_tuple_header(x, 2);
+    x_ei_encode_long(x, d->thread_n);
+    x_ei_encode_list_header(x, n_results);
+    for (i = 0, j = disp_pars->cArgs-1; i < n_results; ++i) {
+	while ((disp_pars->rgvarg[j].vt & VT_BYREF) == 0 && j>= 0) --j;
+	if (j >= 0) {
+	    encode_variant(d, &disp_pars->rgvarg[j]);
+	} else {
+	    x_ei_encode_long(x, -1);
+	}
+    }
+    x_ei_encode_empty_list(x);
+}
+
+
+static HRESULT get_var_pars(int n, erl_com_thread_data* d, int* index,
+			    VARIANTARG** var_pars, DISPPARAMS* disp_pars, 
+			    VARIANT* refs, int* n_refs, UINT* bad_par);
+
+static HRESULT get_stdcall_pars(int n, erl_com_thread_data* d, int* index, 
+				char** stdcall_pars, int* pari,
+				VARIANT* refs, int* n_refs, UINT* bad_par);
+
+static HRESULT return_stdcall_pars(VARIANT* results, int n_results, erl_com_thread_data* d);
 
 static HRESULT __cdecl stdcall_apply(char* i_p, long m_offset, char* stdcall_pars, int pari);
 
-/*
- * yet another dynamic-buffer version of ei 
- */
-enum { X_EI_EXTRA = 100 };
-
-static int x_fix_buff(char** buff, int* buffsz, int szneeded)
-{
-    int sz = szneeded + X_EI_EXTRA;
-    if (sz > *buffsz) {
-	sz += X_EI_EXTRA;	/* to avoid reallocating each and every time */
-	*buffsz = sz;
-	*buff = driver_realloc(*buff, sz);
-    }
-    return *buff != NULL;
-}
-
-static int x_ei_encode_string(char** buff, int* buffsz, int* index, const char* s)
-{
-    int i = *index;
-    ei_encode_string(NULL, &i, s);
-    if (!x_fix_buff(buff, buffsz, i))
-	return FALSE;
-    return ei_encode_string(*buff, index, s);
-}
-
-static int x_ei_encode_and_free_bstr(char** buff, int* buffsz, int* index, BSTR* b)
-{    
-    int r;
-    char* s;
-    if (b == NULL)  
-	return FALSE;
-    s = get_erl_str(*b);
-    SysFreeString(*b);
-    *b = NULL;
-    r = x_ei_encode_string(buff, buffsz, index, s);
-    driver_free(s);
-    return r;
-}
-
-static int x_ei_encode_long(char** buff, int* buffsz, int* index, long n)
-{
-    int i = *index;
-    ei_encode_long(NULL, &i, n);
-    if (!x_fix_buff(buff, buffsz, i))
-	return FALSE;
-    return ei_encode_long(*buff, index, n);
-}
-
-static int x_ei_encode_list_header(char** buff, int* buffsz, int* index, long n)
-{
-    int i = *index;
-    ei_encode_list_header(NULL, &i, n);
-    if (!x_fix_buff(buff, buffsz, i))
-	return FALSE;
-    return ei_encode_list_header(*buff, index, n);
-}
-
-static int x_ei_encode_empty_list(char** buff, int* buffsz, int* index)
-{
-    int i = *index;
-    ei_encode_empty_list(NULL, &i);
-    if (!x_fix_buff(buff, buffsz, i))
-	return FALSE;
-    return ei_encode_empty_list(*buff, index);
-}
-
-static int x_ei_encode_version(char** buff, int* buffsz, int* index)
-{
-    int i = *index;
-    ei_encode_version(NULL, &i);
-    if (!x_fix_buff(buff, buffsz, i))
-	return FALSE;
-    return ei_encode_version(*buff, index);
-}
-
-static int x_ei_encode_tuple_header(char** buff, int* buffsz, int* index, long n)
-{
-    int i = *index;
-    ei_encode_tuple_header(NULL, &i, n);
-    if (!x_fix_buff(buff, buffsz, i))
-	return FALSE;
-    return ei_encode_tuple_header(*buff, index, n);
-}
-
-static int x_ei_encode_atom(char** buff, int* buffsz, int* index, const char* s)
-{
-    int i = *index;
-    ei_encode_atom(NULL, &i, s);
-    if (!x_fix_buff(buff, buffsz, i))
-	return FALSE;
-    return ei_encode_atom(*buff, index, s);
-}
-
 enum { N_RESULTS = 100 };
 
-static void get_interface_info(erl_com_thread_data* d, int* in_index);
-static void get_typelib_info(erl_com_thread_data* d, int* in_index);
+static void get_interface_info(erl_com_thread_data* d, int index);
+static void get_typelib_info(erl_com_thread_data* d, int index);
 
 /* 
  * perform operation requested in gen_server, return result
@@ -896,13 +968,12 @@ static void perform_op(erl_com_thread_data* d)
     int index = 0;
     int v, n, i, m;
     char s[200];
-    double results[N_RESULTS];
-    int result_types[N_RESULTS];
+    VARIANT results[N_RESULTS];
     int n_results = 0;
     OLECHAR* oles, * oles2;
     HRESULT r;
-    char* buff = d->buff;
-    int buffsz = d->buffsz;
+    char* buff = d->x.buff;
+    int buffsz = d->x.buffsz;
     d->op = buff[index++];	/* get operation */
     d->thread_n = buff[index++]; /* get thread (we know it, we should do a check instead) */
     ei_decode_version(buff, &index, &v);
@@ -911,7 +982,6 @@ static void perform_op(erl_com_thread_data* d)
     /* create a com object
      */
     case com_CreateObject:
-	//DebugBreak();
 	ei_decode_tuple_header(buff, &index, &n);
 	if (n != 3) {
 	    return_err(1, 0, d);
@@ -973,7 +1043,6 @@ static void perform_op(erl_com_thread_data* d)
 	    UINT bad_par;
 	    WORD flags;
 	    int t;
-	    //DebugBreak();
 	    VariantInit(&var_result);
 	    ei_decode_tuple_header(buff, &index, &n);
 	    if (n != 3) {
@@ -986,32 +1055,39 @@ static void perform_op(erl_com_thread_data* d)
 	    disp_pars.rgdispidNamedArgs = NULL;
 	    ei_get_type(buff, &index, &t, &n);
 	    if (t == ERL_NIL_EXT) {
-		n = 0;
+		ei_decode_list_header(buff, &index, &n);
 	    } else if (t != ERL_LIST_EXT) {
-		return_err(3, 0, d);
-		break;
+		n = 1;
+	    } else {
+		ei_decode_list_header(buff, &index, &n);
 	    }
 	    flags = (d->op==com_Invoke)? DISPATCH_METHOD : DISPATCH_PROPERTYGET;
-	    r = get_var_pars(d, &index, &var_pars, &disp_pars, results,
+	    r = get_var_pars(n, d, &index, &var_pars, &disp_pars, results,
 			     &n_results, &bad_par);
 	    if (SUCCEEDED(r)) {
 		r = IDispatch_Invoke((LPDISPATCH)d->com_i_ptrs[i],
-				     m,
-				     &IID_NULL,
-				     LOCALE_SYSTEM_DEFAULT,
-				     flags,
-				     &disp_pars,
-				     &var_result,
-				     &excep,
+				     m, &IID_NULL, LOCALE_SYSTEM_DEFAULT,
+				     flags, &disp_pars, &var_result, &excep,
 				     &bad_par);
 		if (SUCCEEDED(r)) {
-		    if (n_results > 1 || var_result.vt == VT_EMPTY)
+		    if (n_results > 0) {
+			if (var_result.vt != VT_EMPTY) {
+			    disp_pars.rgvarg[disp_pars.cArgs].pfltVal = &var_result.fltVal;
+			    disp_pars.rgvarg[disp_pars.cArgs++].vt = var_result.vt + VT_BYREF;
+			}
 			return_var_pars(&disp_pars, n_results, d);
-		    else   
+		    } else
 			return_variant(&var_result, d);
-		} else {
-		    return_err(r, bad_par, d);
 		}
+		if (r == DISP_E_EXCEPTION) {
+		    return_exception(r, excep.bstrDescription, d);
+		    r = S_OK;
+		}
+	    }
+	    if (FAILED(r)) {
+	        if (bad_par != -1)
+		    bad_par = n - bad_par - 1; /* Dispatch numbers them backwards */
+		return_err(r, bad_par, d);
 	    }
 	    driver_free(var_pars);
 	}
@@ -1025,7 +1101,6 @@ static void perform_op(erl_com_thread_data* d)
 	    int t, pari;
 	    char* stdcall_pars;
 
-	    //DebugBreak();
 	    ei_decode_tuple_header(buff, &index, &n);
 	    if (n != 3) {
 		return_err(2, 0, d);
@@ -1033,16 +1108,18 @@ static void perform_op(erl_com_thread_data* d)
 	    ei_decode_long(buff, &index, &i);
 	    ei_decode_long(buff, &index, &m);
 	    ei_get_type(buff, &index, &t, &n);
-	    if (t != ERL_LIST_EXT) {
+	    if (t == ERL_NIL_EXT || t == ERL_LIST_EXT)
+		ei_decode_list_header(buff, &index, &n);
+	    else {
 		return_err(3, 0, d);
 		break;
 	    }
-	    r = get_stdcall_pars(d, &index, &stdcall_pars, &pari, results,
-				 result_types, &n_results, &bad_par);
+	    r = get_stdcall_pars(n, d, &index, &stdcall_pars, &pari, results,
+				 &n_results, &bad_par);
 	    if (SUCCEEDED(r)) {
 		r = stdcall_apply(d->com_i_ptrs[i], m, stdcall_pars, pari);
 		if (SUCCEEDED(r)) {
-		    return_stdcall_pars(results, result_types, n_results, d);
+		    return_stdcall_pars(results, n_results, d);
 		} else {
 		    return_err(r, bad_par, d);
 		}
@@ -1050,43 +1127,19 @@ static void perform_op(erl_com_thread_data* d)
 	    driver_free(stdcall_pars);
 	}
 	break;
-    /* get property (dispatch)
-     */
-    case com_PropertyGet+1000:
-	{
-	    EXCEPINFO excep;
-	    VARIANT var_result;
-	    DISPPARAMS no_disp_pars = {NULL, NULL, 0, 0};
-	    //DebugBreak();
-	    ei_decode_tuple_header(buff, &index, &n);
-	    if (n != 2) {
-		return_err(1, 0, d);
-		break; }
-	    ei_decode_long(buff, &index, &i);
-	    ei_decode_long(buff, &index, &m);
-	    r = IDispatch_Invoke((LPDISPATCH)d->com_i_ptrs[i],
-				 m, &IID_NULL,
-				 LOCALE_SYSTEM_DEFAULT,
-				 DISPATCH_PROPERTYGET,
-				 &no_disp_pars, &var_result,
-				 &excep, NULL);
-	    if (FAILED(r)) {
-		return_err(r, -1, d);
-	    } else {
-		return_variant(&var_result, d);
-	    }
-	}
-	break;
     /* put property (dispatch)
      */
     case com_PropertyPut:
+    case com_PropertyPutRef:
 	{
 	    VARIANTARG* var_pars;
 	    DISPPARAMS disp_pars;
 	    DISPID dispip_propput = DISPID_PROPERTYPUT;
+	    WORD flag = d->op == com_PropertyPut ? 
+		DISPATCH_PROPERTYPUT : DISPATCH_PROPERTYPUTREF;
 	    UINT bad_par;
+	    int t;
 	    ei_decode_tuple_header(buff, &index, &n);
-	    //DebugBreak();
 	    if (n != 3) {
 		return_err(2, 0, d);
 		break; }
@@ -1094,14 +1147,22 @@ static void perform_op(erl_com_thread_data* d)
 	    ei_decode_long(buff, &index, &m);
 	    disp_pars.rgdispidNamedArgs = &dispip_propput; 
 	    disp_pars.cNamedArgs = 1;
-	    r = get_var_pars(d, &index, &var_pars, &disp_pars,
+	    ei_get_type(buff, &index, &t, &n);
+	    if (t == ERL_NIL_EXT) {
+		ei_decode_list_header(buff, &index, &n);
+	    } else if (t != ERL_LIST_EXT) {
+		n = 1;
+	    } else {
+		ei_decode_list_header(buff, &index, &n);
+	    }
+	    r = get_var_pars(n, d, &index, &var_pars, &disp_pars,
 			     results, &n_results, &bad_par);
 	    if (SUCCEEDED(r)) {
 		r = IDispatch_Invoke((LPDISPATCH)d->com_i_ptrs[i],
 				     m,
 				     &IID_NULL,
 				     LOCALE_SYSTEM_DEFAULT,
-				     DISPATCH_PROPERTYPUT,
+				     flag,
 				     &disp_pars,
 				     NULL,
 				     NULL,
@@ -1120,7 +1181,6 @@ static void perform_op(erl_com_thread_data* d)
     case com_GetMethodID:
 	{
 	    DISPID method;
-	    //DebugBreak();
 	    ei_decode_tuple_header(buff, &index, &n);
 	    if (n != 2) {
 		return_err(3, 0, d);
@@ -1147,28 +1207,29 @@ static void perform_op(erl_com_thread_data* d)
      */
     case com_EndThread:
 	// ska någon release göras här??? !!
-	/* meny 27/4: Höger (H), resten finns på sr.se/p1 */
 	d->stop = TRUE;
+	break;
+    case com_CurrentThread:
+	return_int(n_threads-1, d);
 	break;
     /* get type information from com
      * to be used for erlang code generation real soon now
      */
     case com_GetInterfaceInfo:
-	get_interface_info(d, &index);
+	get_interface_info(d, index);
 	break;
     case com_GetTypeLibInfo:
-	get_typelib_info(d, &index);
+	get_typelib_info(d, index);
 	break;
     case com_Test:
 	{
-	    index = 0;
-	    x_ei_encode_version(&buff, &buffsz, &index);
-	    x_ei_encode_list_header(&buff, &buffsz, &index, 1);
-	    x_ei_encode_long(&buff, &buffsz, &index, 0);
-	    x_ei_encode_empty_list(&buff, &buffsz, &index); 
-	    d->bufflen = index;
-	    d->buffsz = buffsz;
-	    d->buff = buff;
+	    x_ei_buff* x = &d->x;
+	    DebugBreak();
+	    x->index = 0;
+	    x_ei_encode_version(x);
+	    x_ei_encode_list_header(x, 1);
+	    x_ei_encode_long(x, 0);
+	    x_ei_encode_empty_list(x); 
 	}
     /* NewThread is intercepted, nobody should get here */
     case com_NewThread:
@@ -1180,8 +1241,9 @@ static void perform_op(erl_com_thread_data* d)
 
 /* convert date, two formats accepted:
    now() result (Ms, s, mikros)   and
-   {{y, m, d}, {h, m, s}} */
-static void my_decode_date(const char* buff, int* index, DATE* date)
+   {{y, m, d}, {h, m, s}}
+   (where h, m and s are optional) */
+static int my_decode_date(const char* buff, int* index, DATE* date)
 {
     long l;
     int arity;
@@ -1190,7 +1252,8 @@ static void my_decode_date(const char* buff, int* index, DATE* date)
     if (arity == 2) {		/* universal_time */
 	UDATE s;
 	ei_decode_tuple_header(buff, index, &arity);
-	if (arity != 3) return;
+	if (arity != 3) 
+	    return 0;
 	memset(&s, '\0', sizeof(s));
 	ei_decode_long(buff, index, &l);
 	s.st.wYear = (USHORT)l;
@@ -1199,13 +1262,18 @@ static void my_decode_date(const char* buff, int* index, DATE* date)
 	ei_decode_long(buff, index, &l);
 	s.st.wDay = (USHORT)l;
 	ei_decode_tuple_header(buff, index, &arity);
-	if (arity != 3) return;
-	ei_decode_long(buff, index, &l);
-	s.st.wHour = (USHORT)l;
-	ei_decode_long(buff, index, &l);
-	s.st.wMinute = (USHORT)l;
-	ei_decode_long(buff, index, &l);
-	s.st.wSecond = (USHORT)l;
+	if (arity >= 1) {
+	    ei_decode_long(buff, index, &l);
+	    s.st.wHour = (USHORT)l;
+	}
+	if (arity >= 2) {
+	    ei_decode_long(buff, index, &l);
+	    s.st.wMinute = (USHORT)l;
+	}
+	if (arity == 3) {
+	    ei_decode_long(buff, index, &l);
+	    s.st.wSecond = (USHORT)l;
+	}
 	VarDateFromUdate(&s, 0, date);
     } else if (arity == 3) {	/* now format */
 	*date = date_1970;
@@ -1215,27 +1283,34 @@ static void my_decode_date(const char* buff, int* index, DATE* date)
 	*date += l / (24 * 60 * 60.0);
 	ei_decode_long(buff, index, &l);
 	*date += l / 1000000.0 / (24 * 60 * 60.0);
-    }
+    } else
+	return -1;
+    return 0;
 }
 
 /* decode string and convert to BSTR */
-static void my_decode_string(const char* buff, int* index, BSTR* oles)
+static int my_decode_string(const char* buff, int* index, BSTR* oles)
 {
     char* s;
     int t, sz;
     ei_get_type(buff, index, &t, &sz);
-    if (t != ERL_STRING_EXT) {
+    if (t == ERL_NIL_EXT) {
+	ei_decode_list_header(buff, index, &t);
 	*oles = NULL;
-	return;
+	return 0;
+    } else if (t != ERL_STRING_EXT) {
+	*oles = NULL;
+	return -1;
     }
-    s = driver_alloc(sz);
+    s = driver_alloc(sz+1);
     ei_decode_string(buff, index, s);
     *oles = get_ole_str(s);
     driver_free(s);
+    return 0;
 }
 
 /* hmmm... */
-static void my_decode_interface(const char* buff, int* index, int* intf)
+static int my_decode_interface(const char* buff, int* index, int* intf)
 {
     char b[MAXATOMLEN];
     int t, sz;
@@ -1244,19 +1319,59 @@ static void my_decode_interface(const char* buff, int* index, int* intf)
 	ei_decode_long(buff, index, intf); 
     } else if (t != ERL_SMALL_TUPLE_EXT || sz != 4) {
 	*intf = -1;
-	return;
+	return -1;
+    } else {
+	erlang_pid pid;
+	ei_decode_tuple_header(buff, index, &sz);
+	ei_decode_atom(buff, index, b);
+	ei_decode_pid(buff, index, &pid);
+	ei_decode_long(buff, index, &t);
+	ei_decode_long(buff, index, intf);
     }
-    ei_decode_atom(buff, index, b);
-    ei_decode_long(buff, index, &t);
-    ei_decode_long(buff, index, &t);
-    ei_decode_long(buff, index, intf);
+    return 0;
 }
+
+static HRESULT get_1_var_par(char* buff, int* index, VARIANTARG* curarg, 
+			     VARIANT* refs, int* n_refs, erl_com_thread_data* d);
+
+
+static int my_decode_bool(const char* buff, int* index, void* o)
+{
+    HRESULT r;
+    int t, sz;
+    VARIANTARG v;
+    ei_get_type(buff, index, &t, &sz);
+    if (t == ERL_SMALL_INTEGER_EXT || t == ERL_INTEGER_EXT)
+	return ei_decode_long(buff, index, o);
+    if (t == ERL_SMALL_TUPLE_EXT || t == ERL_LARGE_TUPLE_EXT)
+	return -1;
+    r = get_1_var_par((char*)buff, index, &v, NULL, NULL, NULL);
+    if (SUCCEEDED(r))
+	r = VariantChangeType(&v, &v, 0, VT_BOOL);
+    memmove(o, &v.boolVal, sizeof(v.boolVal));
+    return FAILED(r) ? -1 : 0;
+}
+
+static int my_decode_variant(const char* buff, int* index, void* o)
+{
+    HRESULT r;
+    int t, sz;
+    VARIANTARG v;
+    ei_get_type(buff, index, &t, &sz);
+    if (t == ERL_SMALL_TUPLE_EXT || t == ERL_LARGE_TUPLE_EXT)
+	return -1;
+    r = get_1_var_par((char*)buff, index, &v, NULL, NULL, NULL);
+    memmove(o, &v, sizeof(v));
+    return FAILED(r) ? -1 : 0;
+}
+
+
 
 /* 
  * we use a table of functions to convert from erlang binary
  * format to com types
  */
-typedef void (*erl_decf)(const char* buff, int* index, void* dst);
+typedef int (*erl_decf)(const char* buff, int* index, void* dst);
 
 typedef struct var_erl_conv_TAG {
     const char* erl_type_atom;
@@ -1272,16 +1387,26 @@ static var_erl_conv converter[] = {
     { "vt_i2",   ei_decode_long,  VT_I4,   VT_I2,   2 },
     { "vt_u2",   ei_decode_ulong, VT_UI4,  VT_UI2,  2 },
     { "vt_i4",   ei_decode_long,  VT_I4,   0,       4 },
-    { "vt_u4",   ei_decode_ulong, VT_UI4,  0,	     4 },
+    { "vt_u4",   ei_decode_ulong, VT_UI4,  0,	    4 },
+    { "vt_int",  ei_decode_long,  VT_INT,  0,       4 },
+    { "vt_uint", ei_decode_ulong, VT_UINT, 0,	    4 },
     { "vt_r8",   my_decode_double,VT_R8,   0,       8 },
     { "vt_r4",   my_decode_double,VT_R8,   VT_R4,   4 },
-    { "vt_bool", ei_decode_long,  VT_I4,   VT_BOOL, 4 },
+    { "vt_decimal", my_decode_double,
+				  VT_R8,   VT_DECIMAL, 16 },
+    { "vt_currency", my_decode_double,
+				  VT_R8,   VT_CY,   8 },
+    { "vt_r4",   my_decode_double,VT_R8,   VT_R4,   4 },
+    { "vt_bool", my_decode_bool,  VT_I4,   VT_BOOL, 4 },
     { "vt_date", my_decode_date,  VT_DATE, 0,       8 },
     { "vt_str",  my_decode_string,VT_BSTR, 0,       4 },
+    { "vt_variant", my_decode_variant,
+				  VT_VARIANT, 0,    16 },
     { "vt_unknown", my_decode_interface, 
 				  VT_UNKNOWN, 0,    4 },
     { "vt_dispatch", my_decode_interface, 
 				  VT_DISPATCH, 0,   4 },
+    { "enum",	 ei_decode_long,  VT_I4,   0,   4 },
     { NULL, NULL, 0, 0 }
 };
 
@@ -1290,7 +1415,7 @@ static var_erl_conv converter[] = {
 
 /* convert to stdcall stack form */
 static HRESULT get_stdcall_tuple_parameter(char* buff, int* index, char* stdcall_pars, int* pari,
-					   double* refs, int* result_types, int* n_refs, 
+					   VARIANT* refs, int* n_refs, 
 					   erl_com_thread_data* d)
 {
     int arity, t, sz;
@@ -1300,16 +1425,25 @@ static HRESULT get_stdcall_tuple_parameter(char* buff, int* index, char* stdcall
     VARIANT interarg;
 
     ei_decode_tuple_header(buff, index, &arity);
-    if (arity != 2) return E_INVALIDARG;
+    if (arity != 2)
+	return E_INVALIDARG;
     ei_get_type(buff, index, &t, &sz);
-    if (t != ERL_ATOM_EXT) return E_INVALIDARG;
+    if (t != ERL_ATOM_EXT)
+	return E_INVALIDARG;
     ei_decode_atom(buff, index, atomname);
     ei_get_type(buff, index, &t, &sz);
     if (t == ERL_ATOM_EXT) {
 	char a2[MAXATOMLEN+1];
-	ei_decode_atom(buff, index, a2);
-	if (strcmp(a2, "out") != 0) return E_INVALIDARG;
-	ref = TRUE;
+	int ix = *index;
+	ei_decode_atom(buff, &ix, a2);
+	if (strcmp(a2, "out") != 0) {
+	    if (strcmp(atomname, "vt_variant") != 0 && 
+		strcmp(atomname, "vt_bool") != 0)
+		return E_INVALIDARG;
+	} else {
+	    ref = TRUE;
+	    *index = ix;
+	}
     }
     for (conv = converter; conv->erl_type_atom != NULL; ++conv) {
 	if (strcmp(atomname, conv->erl_type_atom) == 0) {
@@ -1319,24 +1453,36 @@ static HRESULT get_stdcall_tuple_parameter(char* buff, int* index, char* stdcall
     return E_INVALIDARG;
  found:
     if (ref) {
-	if (refs == NULL || n_refs == NULL) return E_INVALIDARG;
-	*(void* *)&stdcall_pars[*pari] = &refs[*n_refs];
+	if (refs == NULL || n_refs == NULL)
+	    return E_INVALIDARG;
 	memset(&refs[*n_refs], 255, sizeof(refs[0]));
-	result_types[*n_refs] = conv->vt2 != 0 ? conv->vt2 : conv->vt1;
-	result_types[*n_refs] |= VT_BYREF;
+	if (conv->erl_dec == my_decode_variant)
+	    *(void* *)&stdcall_pars[*pari] = &refs[*n_refs];
+	else {
+	    *(void* *)&stdcall_pars[*pari] = &refs[*n_refs].dblVal;
+	}
+	/* NB: vt this is just a parameter to return_stdcall_params, we SHOULD NOT set VT_BYREF here,
+	       as it would confuse return_stdcall_params (and trick it into an extra indirection) */
+        refs[*n_refs].vt = conv->vt2 != 0 ? conv->vt2 : conv->vt1; 
 	++*n_refs;
 	*pari += sizeof(void*);
 	return S_OK;
     }
-    conv->erl_dec(buff, index, data);
+    if (conv->erl_dec(buff, index, data) < 0) 
+	return E_INVALIDARG;
     interarg.vt = conv->vt1;
-    if (conv->erl_dec == my_decode_interface) {	/* unfortunately, we can't pass d to the decoder */
+    if (conv->erl_dec == my_decode_interface) {	/* unfortunately, we don't pass d to the decoder */
 	interarg.punkVal = (LPUNKNOWN)d->com_i_ptrs[*(int*)data];
+    } else if (conv->erl_dec == my_decode_variant) {	/* not so clean */
+	memcpy(&stdcall_pars[*pari], data, conv->sz);
+        *pari += conv->sz;
+	return S_OK;
     } else {
 	memcpy(&interarg.dblVal, data, sizeof(double));
 	if (conv->vt2 != 0) {
 	    HRESULT r = VariantChangeType(&interarg, &interarg, 0, conv->vt2);
-		if (FAILED(r)) return r;
+		if (FAILED(r))
+		    return r;
 	}
     }
     memcpy(&stdcall_pars[*pari], &interarg.dblVal, conv->sz);
@@ -1346,7 +1492,7 @@ static HRESULT get_stdcall_tuple_parameter(char* buff, int* index, char* stdcall
 
 /* convert to com variant */
 static HRESULT get_tuple_parameter(char* buff, int* index, VARIANTARG* curarg,
-				   double* refs, int* n_refs, 
+				   VARIANT* refs, int* n_refs, 
 				   erl_com_thread_data* d)
 {
     int arity, t, sz;
@@ -1363,9 +1509,16 @@ static HRESULT get_tuple_parameter(char* buff, int* index, VARIANTARG* curarg,
     ei_get_type(buff, index, &t, &sz);
     if (t == ERL_ATOM_EXT) {
 	char a2[MAXATOMLEN+1];
-	ei_decode_atom(buff, index, a2);
-	if (strcmp(a2, "out") != 0) return E_INVALIDARG;
-	ref = TRUE;
+	int ix = *index;
+	ei_decode_atom(buff, &ix, a2);
+	if (strcmp(a2, "out") != 0) {
+	    if (strcmp(atomname, "vt_variant") != 0 && 
+		strcmp(atomname, "vt_bool") != 0)
+		return E_INVALIDARG;
+	} else {
+	    ref = TRUE;
+	    *index = ix;
+	}
     }
     for (conv = converter; conv->erl_type_atom != NULL; ++conv) {
 	if (strcmp(atomname, conv->erl_type_atom) == 0) {
@@ -1376,17 +1529,25 @@ static HRESULT get_tuple_parameter(char* buff, int* index, VARIANTARG* curarg,
  found:
     if (ref) {
 	if (refs == NULL || n_refs == NULL) return E_INVALIDARG;
-	curarg->pdblVal = &refs[*n_refs];
-	*n_refs += 1;
+	if (conv->erl_dec == my_decode_variant)
+	    curarg->pvarVal = &refs[*n_refs];
+	else
+	    curarg->pdblVal = &refs[*n_refs].dblVal;
 	curarg->vt = conv->vt2;
 	if (curarg->vt == 0) curarg->vt = conv->vt1;
 	curarg->vt |= VT_BYREF;
+	++(*n_refs);
 	return S_OK;
     }
-    conv->erl_dec(buff, index, data);
+    if (conv->erl_dec == NULL || conv->erl_dec(buff, index, data) < 0) 
+	return E_INVALIDARG;
     interarg.vt = conv->vt1;
     if (conv->erl_dec == my_decode_interface) { /* see get_stdcall_tuple_parameter */
+	if (d == NULL)
+	    return E_INVALIDARG;
 	interarg.punkVal = (LPUNKNOWN)d->com_i_ptrs[*(int*)data];
+    } else if (conv->erl_dec == my_decode_variant) {	/* not so clean */
+	memcpy(&interarg, data, sizeof(interarg));    
     } else
 	memcpy(&interarg.dblVal, data, sizeof(double));
     if (conv->vt2 != 0) {
@@ -1397,90 +1558,102 @@ static HRESULT get_tuple_parameter(char* buff, int* index, VARIANTARG* curarg,
     return S_OK;
 }
 
-/* get variant parameter from erlang binary format list */
-static HRESULT get_var_pars(erl_com_thread_data* d, int* index, VARIANTARG** var_pars, DISPPARAMS* disp_pars, 
-		     double* refs, int* n_refs, UINT* bad_par)
+/* get variant parameters from erlang binary format list */
+static HRESULT get_1_var_par(char* buff, int* index, VARIANTARG* curarg, VARIANT* refs, int* n_refs, erl_com_thread_data* d)
 {
-    int i, n;
-    char atomname[MAXATOMLEN+1];
+    int t, sz, j, tmp;
+    double dbl;
+    char* s, atomname[MAXATOMLEN+1];
+    BSTR oles;
+    HRESULT r = S_OK;
+    VariantInit(curarg);
+    ei_get_type(buff, index, &t, &sz);
+    switch (t) {
+    case ERL_SMALL_INTEGER_EXT:
+    case ERL_INTEGER_EXT:
+	ei_decode_long(buff, index, &j);
+	curarg->vt = VT_I4;
+	curarg->intVal = j;
+	break;
+    case ERL_FLOAT_EXT:
+	ei_decode_double(buff, index, &dbl);
+	curarg->vt = VT_R8;
+	curarg->dblVal = dbl;
+	break;
+    case ERL_SMALL_TUPLE_EXT:
+    case ERL_LARGE_TUPLE_EXT:
+	r = get_tuple_parameter(buff, index, curarg, refs, n_refs, d);
+	break;
+    case ERL_STRING_EXT:
+	s = driver_alloc(sz);
+	ei_decode_string(buff, index, s);
+	oles = get_ole_str(s);
+	curarg->vt = VT_BSTR;
+	curarg->bstrVal = oles;
+	break;
+    case ERL_ATOM_EXT:
+	ei_decode_atom(buff, index, atomname);
+	curarg->vt = VT_BOOL;
+	if (strcmp(atomname, bools[TRUE]) == 0) {
+	    curarg->boolVal = TRUE;
+	} else if (strcmp(atomname, bools[FALSE]) == 0) {
+	    curarg->boolVal = FALSE;
+	} else if (strcmp(atomname, vt_error) == 0) {
+	    curarg->vt = VT_ERROR;
+	    curarg->scode = DISP_E_PARAMNOTFOUND;
+	}
+	break;
+    case ERL_NIL_EXT:   // we can't tell empty list from empty string...
+	ei_decode_list_header(buff, index, &tmp);
+	s = driver_alloc(sz);
+	oles = get_ole_str("");
+	curarg->vt = VT_BSTR;
+	curarg->bstrVal = oles;
+	break;
+    case ERL_LIST_EXT:
+    case ERL_BINARY_EXT:
+    case ERL_SMALL_BIG_EXT:
+    case ERL_LARGE_BIG_EXT:
+    case ERL_PASS_THROUGH:
+    case ERL_REFERENCE_EXT:
+    case ERL_NEW_REFERENCE_EXT:
+    case ERL_PORT_EXT:
+    case ERL_PID_EXT:
+    default:
+	r = E_INVALIDARG;
+    }
+    return r;
+}
+
+static HRESULT get_var_pars(int n, erl_com_thread_data* d, int* index, VARIANTARG** var_pars, DISPPARAMS* disp_pars, 
+		     VARIANT* refs, int* n_refs, UINT* bad_par)
+{
+    int i;
     HRESULT r;
-    char* buff = d->buff;
-    ei_decode_list_header(buff, index, &n);
     *var_pars = driver_alloc(sizeof(VARIANTARG)*n);
     disp_pars->cArgs = n;
     disp_pars->rgvarg = *var_pars;
     *n_refs = 0;
     for (i = 0; i < n; ++i) {
-	int t, sz, j;
-	double dbl;
-	char* s;
-	OLECHAR* oles;
-	VARIANTARG* curarg = &(*var_pars)[n - i - 1];
-	*bad_par = n - i - 1;
-	ei_get_type(buff, index, &t, &sz);
-	switch (t) {
-	case ERL_SMALL_INTEGER_EXT:
-	case ERL_INTEGER_EXT:
-	    ei_decode_long(buff, index, &j);
-	    curarg->vt = VT_I4;
-	    curarg->intVal = j;
-	    break;
-	case ERL_FLOAT_EXT:
-	    ei_decode_double(buff, index, &dbl);
-	    curarg->vt = VT_R8;
-	    curarg->dblVal = dbl;
-	    break;
-	case ERL_SMALL_TUPLE_EXT:
-	case ERL_LARGE_TUPLE_EXT:
-	    r = get_tuple_parameter(buff, index, curarg, refs, n_refs, d);
-	    if (!SUCCEEDED(r)) return r;
-	    break;
-	case ERL_STRING_EXT:
-	    s = driver_alloc(sz);
-	    ei_decode_string(buff, index, s);
-	    oles = get_ole_str(s);
-	    curarg->vt = VT_BSTR;
-	    curarg->bstrVal = oles;
-	    break;
-	case ERL_ATOM_EXT:
-	    ei_decode_atom(buff, index, atomname);
-	    curarg->vt = VT_BOOL;
-	    if (strcmp(atomname, bools[TRUE]) == 0) {
-		curarg->boolVal = TRUE;
-	    } else if (strcmp(atomname, bools[FALSE]) == 0) {
-		curarg->boolVal = FALSE;
-	    } else {
-		return E_INVALIDARG;
-	    }
-	    break;
-	case ERL_NIL_EXT:
-	case ERL_LIST_EXT:
-	case ERL_BINARY_EXT:
-	case ERL_SMALL_BIG_EXT:
-	case ERL_LARGE_BIG_EXT:
-	case ERL_PASS_THROUGH:
-	case ERL_REFERENCE_EXT:
-	case ERL_NEW_REFERENCE_EXT:
-	case ERL_PORT_EXT:
-	case ERL_PID_EXT:
-	    return E_INVALIDARG;
-	}
+	*bad_par = n - i - 1; /* dispatch numbers them backwards */
+	r = get_1_var_par(d->x.buff, index, &(*var_pars)[n - i - 1], refs, n_refs, d);
+	if (FAILED(r))
+	    return r;
     }
     *bad_par = -1;
     return S_OK;
 }
 
 /* get stdcall parameter from erlang binary format list */
-static HRESULT get_stdcall_pars(erl_com_thread_data* d, int* index, char** stdcall_pars,
-			 int* pari, double* refs, int* result_types,
-			 int* n_refs, UINT* bad_par)
+static HRESULT get_stdcall_pars(int n, erl_com_thread_data* d, int* index, 
+				char** stdcall_pars, int* pari, 
+				VARIANT* refs, int* n_refs, UINT* bad_par)
 {
-    int i, n;
+    int i, tmp;
     char atomname[MAXATOMLEN+1];
     HRESULT r;
-    char* buff = d->buff;
-    ei_decode_list_header(buff, index, &n);
-    *stdcall_pars = driver_alloc(sizeof(double)*n);
+    char* buff = d->x.buff;
+    *stdcall_pars = driver_alloc(sizeof(VARIANT)*n);
     *n_refs = 0;
     *pari = 0;
     for (i = 0; i < n; ++i) {
@@ -1489,7 +1662,7 @@ static HRESULT get_stdcall_pars(erl_com_thread_data* d, int* index, char** stdca
 	char* s;
 	OLECHAR* oles;
 
-	*bad_par = n - i - 1;
+	*bad_par = i;
 	ei_get_type(buff, index, &t, &sz);
 	switch (t) {
 	case ERL_SMALL_INTEGER_EXT:
@@ -1506,7 +1679,7 @@ static HRESULT get_stdcall_pars(erl_com_thread_data* d, int* index, char** stdca
 	case ERL_SMALL_TUPLE_EXT:
 	case ERL_LARGE_TUPLE_EXT:
 	    r = get_stdcall_tuple_parameter(buff, index, *stdcall_pars,
-					    pari, refs, result_types, n_refs, d);
+					    pari, refs, n_refs, d);
 	    if (!SUCCEEDED(r)) return r;
 	    break;
 	case ERL_STRING_EXT:
@@ -1529,6 +1702,10 @@ static HRESULT get_stdcall_pars(erl_com_thread_data* d, int* index, char** stdca
 	    pari += sizeof(long);
 	    break;
 	case ERL_NIL_EXT:
+	    ei_decode_list_header(buff, index, &tmp);
+	    *(BSTR*)&(*stdcall_pars)[*pari] = NULL;
+	    pari += sizeof(long);
+	    break;
 	case ERL_LIST_EXT:
 	case ERL_BINARY_EXT:
 	case ERL_SMALL_BIG_EXT:
@@ -1571,21 +1748,18 @@ static HRESULT stdcall_apply(char* i_p, long m_offset, char* stdcall_pars, int p
 }
 
 /* return out parameters from stdcall */
-static HRESULT return_stdcall_pars(double* results, int* result_types, int n_results, erl_com_thread_data* d)
+static HRESULT return_stdcall_pars(VARIANT* results, int n_results, erl_com_thread_data* d)
 {
-    int i, index = 0;
-    x_ei_encode_version(&d->buff, &d->buffsz, &index);
-    x_ei_encode_tuple_header(&d->buff, &d->buffsz, &index, 2);
-    x_ei_encode_long(&d->buff, &d->buffsz, &index, d->thread_n);
-    x_ei_encode_list_header(&d->buff, &d->buffsz, &index, n_results);
-    for (i = 0; i < n_results; ++i) {
-	VARIANT v;
-	v.vt = result_types[i];
-	v.pdblVal = &results[i];
-	encode_variant(d, &index, &v);
-    }
-    x_ei_encode_empty_list(&d->buff, &d->buffsz, &index);
-    d->bufflen = index;
+    int i;
+    x_ei_buff* x = &d->x;
+    x->index = 0;
+    x_ei_encode_version(x);
+    x_ei_encode_tuple_header(x, 2);
+    x_ei_encode_long(x, d->thread_n);
+    x_ei_encode_list_header(x, n_results);
+    for (i = 0; i < n_results; ++i)
+	encode_variant(d, &results[i]);
+    x_ei_encode_empty_list(x);
     return S_OK;
 }
 
@@ -1604,6 +1778,20 @@ static char* invoke_kind_names[] = {
 	INVOKE_PROPERTYGET	= 2,
 	INVOKE_PROPERTYPUT	= 4,
 	INVOKE_PROPERTYPUTREF	= 8 */
+
+static char* param_flag_names[] = {
+    "in", "out", "lcid", "retval", "optional", 
+    "has_default", "has_custom_data", NULL };
+/*
+#define	PARAMFLAG_NONE	( 0 )
+#define	PARAMFLAG_FIN	( 0x1 )
+#define	PARAMFLAG_FOUT	( 0x2 )
+#define	PARAMFLAG_FLCID	( 0x4 )
+#define	PARAMFLAG_FRETVAL	( 0x8 )
+#define	PARAMFLAG_FOPT	( 0x10 )
+#define	PARAMFLAG_FHASDEFAULT	( 0x20 )
+#define	PARAMFLAG_FHASCUSTDATA	( 0x40 )
+*/
 
 /* type kinds in TypeLibs */
 static char* type_kind_names[TKIND_MAX] = {
@@ -1635,6 +1823,11 @@ static struct com_type_name {
     { "vt_r4", VT_R4},
     { "vt_r8", VT_R8},
     { "vt_bool", VT_BOOL},
+    { "vt_int", VT_INT},
+    { "vt_uint", VT_UINT},
+    { "vt_variant", VT_VARIANT},
+    { "vt_unknown", VT_UNKNOWN},
+    { "vt_decimal", VT_DECIMAL},
     { "vt_date", VT_DATE},
     { "vt_currency", VT_CY},
     { "vt_str", VT_BSTR},
@@ -1656,11 +1849,66 @@ static const char* get_type_name(UINT com_type)
     return "";
 }
 
+/* encode flags as list of atoms */
+int x_encode_flags(x_ei_buff* x, int flags, const char* names[], int n)
+{
+    int i, m;
+    for (i = 0, m = 0; i < n; ++i) {
+	if ((1 << i) & flags)
+	    ++m;
+    }
+    x_ei_encode_list_header(x, m);
+	for (i = 0; i < n; ++i) {
+	    if ((1 << i) & flags)
+		x_ei_encode_atom(x, names[i]);
+	}
+    return x_ei_encode_empty_list(x);
+}
+
+// encode type of parameters and/or return value
+static void encode_type(x_ei_buff* x, TYPEDESC* pt, ITypeInfo* t)
+{
+    HRESULT r;
+    // pointer type
+    while (pt->vt == VT_PTR) {
+	pt = pt->lptdesc;
+	x_ei_encode_tuple_header(x, 2);// A 3 B2?
+	x_ei_encode_atom(x, "pointer");//    B 1
+    }
+    // user defined type
+    if (pt->vt == VT_USERDEFINED) {
+	ITypeInfo* t2;
+	LPTYPEATTR pta2;
+	BSTR b;
+	HREFTYPE rt = pt->hreftype;
+	x_ei_encode_tuple_header(x, 2); // A 3/B 2' D2
+	r = ITypeInfo_GetRefTypeInfo(t, rt, &t2);
+	r = ITypeInfo_GetDocumentation(t2, MEMBERID_NIL, &b, NULL, NULL, NULL);
+	r = ITypeInfo_GetTypeAttr(t2, &pta2);
+	if (SUCCEEDED(r)) {
+	    if (pta2->typekind == TKIND_ALIAS) {
+		x_ei_encode_tuple_header(x, 2);
+		x_ei_encode_atom(x, type_kind_names[pta2->typekind]);// D 1'
+		encode_type(x, &pta2->tdescAlias, t2);
+	    } else
+		x_ei_encode_atom(x, type_kind_names[pta2->typekind]);// D 1"
+	    ITypeInfo_ReleaseTypeAttr(t, pta2); // really void
+	} else
+	    x_ei_encode_atom(x, "unknown");   // D 1'''
+	x_ei_encode_and_free_bstr(x, &b);	    // D 2
+	r = IUnknown_Release(t2);
+    } else
+	x_ei_encode_atom(x,
+	    get_type_name(pt->vt));                     // A 3/B 2"
+}
+
+// generate erlang description from TypeInfo
 static HRESULT get_interface(ITypeInfo* t, LPTYPEATTR pt, 
-			     int dispflag, char** buff, int* buffsz, int* index)
+			     int dispflag, x_ei_buff* x)
 {
     int i, n;
     HRESULT r = S_OK;
+    // count functions
     for (i = 0, n = 0; i < pt->cFuncs; ++i) {
 	LPFUNCDESC pf;
 	r = ITypeInfo_GetFuncDesc(t, i, &pf);
@@ -1670,7 +1918,8 @@ static HRESULT get_interface(ITypeInfo* t, LPTYPEATTR pt,
 	    ITypeInfo_ReleaseFuncDesc(t, pf);
 	}
     }
-    x_ei_encode_list_header(buff, buffsz, index, n);
+    // get functions
+    x_ei_encode_list_header(x, n);
     for (i = 0; SUCCEEDED(r) && i < pt->cFuncs; ++i) {
 	LPFUNCDESC pf;
 	r = ITypeInfo_GetFuncDesc(t, i, &pf);
@@ -1684,69 +1933,53 @@ static HRESULT get_interface(ITypeInfo* t, LPTYPEATTR pt,
 		int retval = (dispflag == com_DispatchIntf 
 			    && pf->elemdescFunc.tdesc.vt != VT_VOID
 			    && pf->elemdescFunc.tdesc.vt != VT_EMPTY);
-		x_ei_encode_tuple_header(buff, buffsz, index, 5);
-		// 1
-		x_ei_encode_and_free_bstr(buff, buffsz, index, &names[0]);		
-		for (j = 0, n = 0; j < 6; ++j) {
-		    if ((1 << j) & pf->invkind)
-			++n;
-		}
-		// 2
-		x_ei_encode_list_header(buff, buffsz, index, n+1);
-		    x_ei_encode_atom(buff, buffsz, index, 
-			func_kind_names[pf->funckind]);
-		    for (j = 0; j < 6; ++j) {
-			if ((1 << j) & pf->invkind)
-			    x_ei_encode_atom(buff, buffsz, index, invoke_kind_names[j]);
-		    }
-		x_ei_encode_empty_list(buff, buffsz, index);
-		// 3
-		x_ei_encode_long(buff, buffsz, index, 
-		    (dispflag == com_DispatchIntf) ? pf->memid : pf->oVft);
-		// 4
-		if (n_names > 1) {
-		    x_ei_encode_list_header(buff, buffsz, index, n_names-1);
-		    for (j = 1; j < n_names; ++j) {
-			TYPEDESC* pt;
-			int is_ptr;
-			USHORT parflags;
-			x_ei_encode_tuple_header(buff, buffsz, index, 2);
-			x_ei_encode_and_free_bstr(buff, buffsz, index, &names[j]);
-	    		pt = &pf->lprgelemdescParam[j-1].tdesc;
-			parflags = pf->lprgelemdescParam[j-1].paramdesc.wParamFlags;
-			is_ptr = pt->vt == VT_PTR || (parflags & PARAMFLAG_FRETVAL);
-			if (is_ptr) {
-			    pt = pt->lptdesc;
-			    x_ei_encode_tuple_header(buff, buffsz, index, 2); 
-			}
-			if (is_ptr) 
-			    x_ei_encode_atom(buff, buffsz, index, 
-				(parflags & PARAMFLAG_FRETVAL) ? "retval" : "out");
-			x_ei_encode_atom(buff, buffsz, index, 
-			    get_type_name(pt->vt));
+		// function name and type
+		x_ei_encode_tuple_header(x, 6);	// T6
+		x_ei_encode_and_free_bstr(x, &names[0]);  //T 1
+		x_encode_flags(x, pf->invkind, invoke_kind_names, 6); // T 2
+		x_ei_encode_atom(x,  
+		    func_kind_names[pf->funckind]);			    // T 3
+		x_ei_encode_long(x, 
+		    (dispflag == com_DispatchIntf) ? pf->memid : pf->oVft); // T 4
+		// list of parameters
+		if (pf->cParams > 0) {
+		    x_ei_encode_list_header(x, pf->cParams); // T 5 
+		    for (j = 0; j < pf->cParams; ++j) {
+			USHORT parflags = pf->lprgelemdescParam[j].paramdesc.wParamFlags;
+			x_ei_encode_tuple_header(x, 4);	   // A4
+			if (j+1 < n_names)
+			    x_ei_encode_and_free_bstr(x, &names[j+1]); // A 1'
+	    		else
+			    x_ei_encode_string(x, "property_"); // A 1"
+			x_encode_flags(x, parflags, param_flag_names, 8); // A 2
+			encode_type(x, &pf->lprgelemdescParam[j].tdesc, t);// A 3
+	    		if (parflags & PARAMFLAG_FHASDEFAULT) {
+			    erl_com_thread_data d;
+			    memset(&d, 0, sizeof(d));
+			    d.x = *x;
+			    encode_variant(&d,
+				&pf->lprgelemdescParam[j].paramdesc.pparamdescex->varDefaultValue); // A 4'
+			    *x = d.x;
+			} else
+			    x_ei_encode_tuple_header(x, 0);			    // A 4"
 		    }
 		}
-		x_ei_encode_empty_list(buff, buffsz, index);
-		// 5
+		x_ei_encode_empty_list(x);
+		// return value
 		if (retval) {
-		    x_ei_encode_tuple_header(buff, buffsz, index, 2); 
-		    x_ei_encode_string(buff, buffsz, index, "_"); 
-		    x_ei_encode_tuple_header(buff, buffsz, index, 2); 
-		    x_ei_encode_atom(buff, buffsz, index, 
-			get_type_name(pf->elemdescFunc.tdesc.vt));
-		    x_ei_encode_atom(buff, buffsz, index, "retval");
+		    encode_type(x, &pf->elemdescFunc.tdesc, t);
 		} else
-		    x_ei_encode_atom(buff, buffsz, index, "void");
+		    x_ei_encode_atom(x, "void");		// T 6"
 	    } 
 	    ITypeInfo_ReleaseFuncDesc(t, pf);
 	}
     }
-    x_ei_encode_empty_list(buff, buffsz, index);
+    x_ei_encode_empty_list(x);
     return r;
 }
 
 static HRESULT get_enum(ITypeInfo* t, LPTYPEATTR pt, 
-			     int dispflag, char** buff, int* buffsz, int* index)
+			     int dispflag, x_ei_buff* x)
 {
     int i, n;
     HRESULT r = S_OK;
@@ -1760,7 +1993,7 @@ static HRESULT get_enum(ITypeInfo* t, LPTYPEATTR pt,
 	    ITypeInfo_ReleaseVarDesc(t, pv);
 	}
     }
-    x_ei_encode_list_header(buff, buffsz, index, n);
+    x_ei_encode_list_header(x, n);
     for (i = 0; SUCCEEDED(r) && i < pt->cVars; ++i) {
 	r = ITypeInfo_GetVarDesc(t, i, &pv);
 	if (SUCCEEDED(r) 
@@ -1770,28 +2003,29 @@ static HRESULT get_enum(ITypeInfo* t, LPTYPEATTR pt,
 	    r = ITypeInfo_GetNames(t, pv->memid, &name, 1, &n_names);
 	    if (SUCCEEDED(r) && n_names > 0) {
 		erl_com_thread_data d;
-		x_ei_encode_tuple_header(buff, buffsz, index, 2);
-		x_ei_encode_and_free_bstr(buff, buffsz, index, &name);
-		d.buff = *buff;
-		d.buffsz = X_EI_EXTRA;
-		encode_variant(&d, index, pv->lpvarValue); // this will crash mercilessly if value is interface...
+		memset(&d, 0, sizeof(d));
+		x_ei_encode_tuple_header(x, 2);
+		x_ei_encode_and_free_bstr(x, &name);
+		d.x = *x;
+		encode_variant(&d, pv->lpvarValue); // this will crash mercilessly if value is interface...
+		*x = d.x;
 	    } else
-		x_ei_encode_empty_list(buff, buffsz, index);
+		x_ei_encode_empty_list(x);
 	    ITypeInfo_ReleaseVarDesc(t, pv);
 	}
     }
-    x_ei_encode_empty_list(buff, buffsz, index);
+    x_ei_encode_empty_list(x);
     return r;
 }
 
-static HRESULT get_typeinfo(ITypeInfo* t, LPTYPEATTR pt, int dispflag, char** buff, int* buffsz, int* index)
+static HRESULT get_typeinfo(ITypeInfo* t, LPTYPEATTR pt, int dispflag, x_ei_buff* x)
 {
     char* s;
     BSTR b;
     HRESULT r;
     int i;
     //DebugBreak();
-    x_ei_encode_tuple_header(buff, buffsz, index, 5);
+    x_ei_encode_tuple_header(x, 5);
     if ((pt->wTypeFlags & TYPEFLAG_FDUAL)) {
 	s = "dual";
 	if (dispflag == com_VirtualIntf) {
@@ -1808,19 +2042,20 @@ static HRESULT get_typeinfo(ITypeInfo* t, LPTYPEATTR pt, int dispflag, char** bu
     } else {
 	s = "virtual";
     }
-    x_ei_encode_atom(buff, buffsz, index, type_kind_names[pt->typekind]);
-    x_ei_encode_atom(buff, buffsz, index, s);
-    x_ei_encode_tuple_header(buff, buffsz, index, 2);
+    x_ei_encode_atom(x, type_kind_names[pt->typekind]);
+    x_ei_encode_atom(x, s);
+    x_ei_encode_tuple_header(x, 2);
     ITypeInfo_GetDocumentation(t, MEMBERID_NIL, &b, NULL, NULL, NULL);
-    x_ei_encode_and_free_bstr(buff, buffsz, index, &b);
+    x_ei_encode_and_free_bstr(x, &b);
     StringFromCLSID(&pt->guid, &b);
-    x_ei_encode_and_free_bstr(buff, buffsz, index, &b);
+    x_ei_encode_and_free_bstr(x, &b);
     if (pt->typekind == TKIND_INTERFACE || pt->typekind == TKIND_DISPATCH) {
-	r = get_interface(t, pt, dispflag, buff, buffsz, index);//x_ei_encode_empty_list(buff, buffsz, index);
+	r = get_interface(t, pt, dispflag, x);//x_ei_encode_empty_list(x);
     } else if (pt->typekind == TKIND_ENUM) {
-	r = get_enum(t, pt, dispflag, buff, buffsz, index);
+	r = get_enum(t, pt, dispflag, x);
     } else
-	x_ei_encode_empty_list(buff, buffsz, index);
+	x_ei_encode_empty_list(x);
+    // implemented types, including inherited type
     for (i = -1; SUCCEEDED(r) && i < pt->cImplTypes; ++i) {
 	ITypeInfo* impt;
 	HREFTYPE reft;
@@ -1828,134 +2063,166 @@ static HRESULT get_typeinfo(ITypeInfo* t, LPTYPEATTR pt, int dispflag, char** bu
 	r = ITypeInfo_GetRefTypeOfImplType(t, i, &reft);
 	if (SUCCEEDED(r)) {
 	    if (i == -1)
-		x_ei_encode_list_header(buff, buffsz, index, pt->cImplTypes+1);
-	    x_ei_encode_tuple_header(buff, buffsz, index, 2);
+		x_ei_encode_list_header(x, pt->cImplTypes+1);
+	    x_ei_encode_tuple_header(x, 3);
+	    x_ei_encode_long(x, i);
     	    ITypeInfo_GetRefTypeInfo(t, reft, &impt);
 	    ITypeInfo_GetDocumentation(impt, MEMBERID_NIL, &b, NULL, NULL, NULL);
-	    x_ei_encode_and_free_bstr(buff, buffsz, index, &b);
+	    x_ei_encode_and_free_bstr(x, &b);
 	    ITypeInfo_GetTypeAttr(impt, &imppt);
 	    StringFromCLSID(&imppt->guid, &b);
-	    x_ei_encode_and_free_bstr(buff, buffsz, index, &b);
+	    x_ei_encode_and_free_bstr(x, &b);
 	    ITypeInfo_ReleaseTypeAttr(impt, imppt);
 	    IUnknown_Release(impt);
 	}
     }
     if (i == 0) 
 	r = S_OK;
-    x_ei_encode_empty_list(buff, buffsz, index);
+    x_ei_encode_empty_list(x);
     return r;
 }
 
-static void get_interface_info(erl_com_thread_data* d, int *in_index)
+static HRESULT decode_typelib_and_type(erl_com_thread_data* d, int* index, ITypeLib** l, ITypeInfo** t)
 {
-    ITypeInfo* t;
+    int ty, sz, i;
+    char* buff = d->x.buff;
     HRESULT r;
-    int n, i, index = *in_index, dispflag;
-    char* buff = d->buff;
-    int bufflen = d->bufflen, buffsz = d->buffsz;
-    BSTR mem = NULL;
+    BSTR b;
 
-    ei_decode_tuple_header(buff, &index, &n);
-    if (n != 2 && n != 3) {
-	return_err(3, 0, d); 
-	return;
-    }
-    if (n == 3) {
-	char memname[256];
-	ei_decode_string(buff, &index, memname);
-	mem = get_ole_str(memname);
-    }
-    //DebugBreak();
-    ei_decode_long(buff, &index, &i);
-    ei_decode_long(buff, &index, &dispflag);
-    r = IDispatch_GetTypeInfo((LPDISPATCH)d->com_i_ptrs[i],
-	0,
-	LOCALE_SYSTEM_DEFAULT,
-	&t);
-    if (SUCCEEDED(r)) {
-	LPTYPEATTR pt;
-	r = ITypeInfo_GetTypeAttr(t, &pt);
-	index = 0;
-	x_ei_encode_version(&buff, &buffsz, &index);
-	x_ei_encode_tuple_header(&buff, &buffsz, &index, 2);
-	x_ei_encode_long(&buff, &buffsz, &index, d->thread_n);
-	if (mem != NULL) {
-	    ITypeLib* l;
-	    ITypeInfo* t2;
-	    MEMBERID mi;
-	    UINT n;
-	    USHORT us = 1;
-	    r = ITypeInfo_GetContainingTypeLib(t, &l, &n);
-	    ITypeLib_FindName(l, mem, 0, &t2, &mi, &us);
-	    ITypeInfo_ReleaseTypeAttr(t, pt);
-	    IUnknown_Release(t);
-	    t = t2;
-	    ITypeInfo_GetTypeAttr(t, &pt);
+    *t = NULL;
+    ei_get_type(buff, index, &ty, &sz);
+    if (ty == ERL_SMALL_INTEGER_EXT || ty == ERL_INTEGER_EXT) {
+	IDispatch* di;
+        ei_decode_long(buff, index, &i);
+        r = IUnknown_QueryInterface((LPUNKNOWN)d->com_i_ptrs[i], &IID_IDispatch, &di);
+	if (SUCCEEDED(r)) {
+	    r = IDispatch_GetTypeInfo((LPDISPATCH)d->com_i_ptrs[i], 0, LOCALE_SYSTEM_DEFAULT, t);
+	    if (SUCCEEDED(r) && l != NULL) 
+		r = ITypeInfo_GetContainingTypeLib(*t, l, &i);
+	    else
+		*t = NULL;
 	}
-	r = get_typeinfo(t, pt, dispflag, &buff, &buffsz, &index);
-	ITypeInfo_ReleaseTypeAttr(t, pt);
-	IUnknown_Release(t);
-	d->buffsz = buffsz;
-	d->buff = buff;
-	d->bufflen = index;
+    } else if (ty == ERL_STRING_EXT) {
+	char* s = driver_alloc(sz + 1);
+	ei_decode_string(buff, index, s);
+	b = get_ole_str(s);
+        driver_free(s);
+        r = LoadTypeLib(b, l);
+	SysFreeString(b);
+    } else {
+	r = E_INVALIDARG;
     }
-    if (FAILED(r)) return_err(r, 0, d);
+    return r;
 }
 
-static void get_typelib_info(erl_com_thread_data* d, int *in_index)
+static void get_interface_info(erl_com_thread_data* d, int index)
 {
     ITypeInfo* t;
+    ITypeLib* l;
     HRESULT r;
-    int n, i, index = *in_index;
-    char* buff = d->buff;
+    int n, dispflag;
+    x_ei_buff* x = &d->x;
+    BSTR mem = NULL;
+    ei_decode_tuple_header(x->buff, &index, &n);
+    if (n != 2 && n != 3) {
+        return_err(3, 0, d); 
+        return;
+    }
+    if (n == 3) {
+        char memname[256];
+        ei_decode_string(x->buff, &index, memname);
+        mem = get_ole_str(memname);
+    }
+    r = decode_typelib_and_type(d, &index, (mem != NULL ? &l : NULL), &t);
+    ei_decode_long(x->buff, &index, &dispflag);
+    if (SUCCEEDED(r)) {
+        LPTYPEATTR pt;
+	USHORT us = 1;
+	MEMBERID mi;
+	if (mem != NULL) {
+	    if (t != NULL)
+		IUnknown_Release(t);
+	    r = ITypeLib_FindName(l, mem, 0, &t, &mi, &us);
+	    if (us == 0)    // Shouldn't this give an error in COM???
+		r = DISP_E_MEMBERNOTFOUND;
+	}	    
+	if (SUCCEEDED(r)) {
+	    x->index = 0;
+	    x_ei_encode_version(x);
+	    x_ei_encode_tuple_header(x, 2);
+	    x_ei_encode_long(x, d->thread_n);
+	    r = ITypeInfo_GetTypeAttr(t, &pt);
+	    r = get_typeinfo(t, pt, dispflag, x);
+	    ITypeInfo_ReleaseTypeAttr(t, pt);
+	    IUnknown_Release(t);
+	}
+    }
+    if (FAILED(r)) 
+	return_err(r, 0, d);
+}
+
+static char* get_ms_error(DWORD err)
+{
+    LPVOID	lpMsgBuf;
+    char* res;
+    FormatMessage( 
+	FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+	NULL,
+	err,
+	MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), 
+	(LPTSTR) &lpMsgBuf,
+	0,
+	NULL);
+    res = driver_alloc(strlen(lpMsgBuf)+1);
+    strcpy(res, lpMsgBuf);
+    LocalFree(lpMsgBuf);
+    return res;
+}
+
+
+static void get_typelib_info(erl_com_thread_data* d, int index)
+{
+    ITypeInfo* t = NULL;
+    HRESULT r;
+    int n, i;
     BSTR b;
-    int bufflen = d->bufflen, buffsz = d->buffsz;
+    x_ei_buff* x = &d->x;
     ITypeLib* l;
 
-    /*ei_decode_tuple_header(buff, &index, &n);
-    if (n != 2) {
-	return_err(3, 0, d);
-	return;
-    }*/
-    ei_decode_long(buff, &index, &i);
-    //DebugBreak();
-    r = IDispatch_GetTypeInfo((LPDISPATCH)d->com_i_ptrs[i],
-	0,
-	LOCALE_SYSTEM_DEFAULT,
-	&t);
+    r = decode_typelib_and_type(d, &index, &l, &t);
+    if (FAILED(r))
+	return_err(r, 0, d);
     if (SUCCEEDED(r)) {
-	ITypeInfo_GetContainingTypeLib(t, &l, &i);
 	ITypeLib_GetDocumentation(l, -1, &b, NULL, NULL, NULL);
-	index = 0;
-	x_ei_encode_version(&buff, &buffsz, &index);
-	x_ei_encode_tuple_header(&buff, &buffsz, &index, 2);
-	x_ei_encode_long(&buff, &buffsz, &index, d->thread_n);
-	x_ei_encode_tuple_header(&buff, &buffsz, &index, 2);
-	x_ei_encode_and_free_bstr(&buff, &buffsz, &index, &b);
+	x->index = 0;
+	x_ei_encode_version(x);
+	x_ei_encode_tuple_header(x, 2);
+	x_ei_encode_long(x, d->thread_n);
+	x_ei_encode_tuple_header(x, 2);
+	x_ei_encode_and_free_bstr(x, &b);
 	n = ITypeLib_GetTypeInfoCount(l);
 	//DebugBreak();
-	x_ei_encode_list_header(&buff, &buffsz, &index, n);
+	x_ei_encode_list_header(x, n);
 	for (i = 0; i < n; ++i) {
 	    ITypeInfo* t;
 	    LPTYPEATTR pt;
     	    ITypeLib_GetTypeInfo(l, i, &t);
 	    r = ITypeInfo_GetTypeAttr(t, &pt);
-	    x_ei_encode_tuple_header(&buff, &buffsz, &index, 3);
-	    x_ei_encode_atom(&buff, &buffsz, &index, type_kind_names[pt->typekind]);
+	    x_ei_encode_tuple_header(x, 3);
+	    x_ei_encode_atom(x, type_kind_names[pt->typekind]);
 	    ITypeLib_GetDocumentation(l, i, &b, NULL, NULL, NULL);
-	    x_ei_encode_and_free_bstr(&buff, &buffsz, &index, &b);
+	    x_ei_encode_and_free_bstr(x, &b);
 	    StringFromCLSID(&pt->guid, &b); 
-	    x_ei_encode_and_free_bstr(&buff, &buffsz, &index, &b);
+	    x_ei_encode_and_free_bstr(x, &b);
 	    ITypeInfo_ReleaseTypeAttr(t, pt);
 	    IUnknown_Release(t);
 	}
-	x_ei_encode_empty_list(&buff, &buffsz, &index);
+	x_ei_encode_empty_list(x);
 	IUnknown_Release(l);
-	IUnknown_Release(t);
-	d->buffsz = buffsz;
-	d->buff = buff;
-	d->bufflen = index;
+	if (t != NULL)
+	    IUnknown_Release(t);
     }
-    if (FAILED(r)) return_err(r, 0, d);
+    if (FAILED(r)) 
+	return_err(r, 0, d);
 }
 

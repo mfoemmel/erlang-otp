@@ -7,6 +7,199 @@
 
 <CENTER><H1>Kernel Release Notes</H1></CENTER>
 
+<H2>Kernel 2.6.2</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+<CODE>inet_res:nslookup/4</CODE> has been made backwards compatible.
+<br>Own Id: OTP-3763<br>
+Aux Id: Seq 4972
+
+<LI>
+When R6 nodes and unpatched R7 nodes are in the same
+network, <CODE>global:register_name</CODE> hangs. This is fixed
+with a patch to R7. Patched R7 nodes can communicate with
+unpatched R7 nodes.
+<br>Own Id: OTP-3714
+
+<LI>
+A hanging bug in the protocol between dist_ac and
+application_controller has been fixed. It occurred
+when dist_ac had stopped an application with 
+{ac_change_application_req,AppName,stop_it} and then
+tried to start it with {ac_change_application_req,
+AppName,{takeover,FromNode,RestartType}}.
+<br>Own Id: OTP-3773<br>
+Aux Id: Seq 4996
+
+
+<LI>
+If a new application was added using code:replace_path/2,
+the code:lib_dir/1 function would fail on the new application
+name. This has been corrected.
+<br>Own Id: OTP-3780<br>
+Aux Id: Seq 5003
+
+
+<LI>
+The internal inet_db counter next_id did not keep within
+the bounds [0, 65535] imposed by DNS query field width.
+The reply was then not recognized since the reply
+id was truncated to 16 bits. This bug is now fixed.
+<br>Own Id: OTP-3798<br>
+Aux Id: Seq 5001
+
+
+<LI>
+The default receive buffer size for UDP has been 
+restored to 8192 bytes, which it was before R7.
+<br>Own Id: OTP-3807<br>
+Aux Id: OTP-3797
+
+
+<LI>
+gen_upd:recv/2,3 now works better. The option 
+combination [binary, {active, false}] was broken.
+<br>Own Id: OTP-3823
+
+
+<LI>
+A bug in efile_drv that randomly caused memory access 
+violation when using file:get_cwd() has been fixed.
+<br>Own Id: OTP-3832
+
+
+<LI>
+gen_tcp:connect/3,4, and gen_udp:send/4 now exits with 
+badarg if an IP address tuple with a field
+integer value that is is not in the range 0 through 
+255 is passed as argument. Previously this caused a 
+function clause.
+<br>Own Id: OTP-3836<br>
+Aux Id: Seq 5091
+
+
+<LI>
+The function inet:gethostbyname/2,3 sometimes returned
+{error, timeout} when failing to lookup a name. This
+has been changed to the more appropriate response
+{error, nxdomain}.
+<br>Own Id: OTP-3883
+
+
+<LI>
+The function inet:gethostbyname/2,3 now accepts an
+IP-string as the Name argument for all resolver
+types. This previously did not work for the built in
+DNS resolver, nor for the /etc/hosts file resolver.
+<br>Own Id: OTP-3886
+
+
+<LI>
+The native version of the resolver for erlang no longer may 
+crash the system due to external causes like catatonic DNS 
+servers.
+<br>Own Id: OTP-3887
+
+
+<LI>
+When a host machine was misconfigured so that 
+inet:gethostbyname/1 returned an empty hostname
+for the host on which an erlang node was started, 
+inet_config crashed with a function clause during node 
+start on some platforms. This has now been fixed.
+<br>Own Id: OTP-3894<br>
+Aux Id: Seq 5127
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+<CODE>disk_log</CODE> handles huge terms better when reading
+log files using <CODE>chunk/2</CODE>. Bugs in
+<CODE>chunk/2</CODE> and <CODE>chunk_step/3</CODE> as well as in
+<CODE>wrap_log_reader</CODE> have been fixed.
+<br>Own Id: OTP-3716
+
+<LI>
+A number of bug fixes and improvements have been done
+to applications <CODE>runtime_tools</CODE>, 
+<CODE>kernel</CODE> and <CODE>erts</CODE>:
+<UL>
+<br>
+<LI>A read timeout no longer resets the sequential
+trace token. This is an incompatibility towards
+the previous behaviour. Use
+<CODE>seq_trace:set_token([])</CODE> to reset the
+sequential trace token.
+<br>
+<LI><CODE>seq_trace:get_token/0</CODE> and 
+<CODE>seq_trace:set_token/1</CODE> now have compatible
+token formats. 
+<br>
+<LI><CODE>dbg:trace_port/2</CODE> and 
+<CODE>dbg:trace_client/2,3</CODE> now supports trace
+to and read from a size limited "wrap file set".
+<br>
+<LI><CODE>dbg:trace_port_control/1</CODE> now supports
+operation <CODE>get_listen_port</CODE> for the ip
+trace driver.
+<br>
+<LI>New match spec functions 
+<CODE>{is_seq_trace}</CODE> and 
+<CODE>{get_seq_trace}</CODE> has been added to test
+and read the sequential trace token in match specs.
+<br>
+<LI>New match spec functions 
+<CODE>{get_tcw}</CODE> and 
+<CODE>{set_tcw Value}</CODE> that reads and sets 
+a "trace control word" in the node has been added.
+The "trace control word" is a word in each
+Erlang node of at least 24 bits.
+There are also enhancements of BIFs:
+<CODE>erlang:system_info(trace_control_word)</CODE> and
+<CODE>erlang:system_flag(trace_control_word, Value)</CODE>
+for the same purpose.
+<br>
+<LI>A new match spec function
+<CODE>{silent, TrueOrFalse}</CODE> for setting a 
+silent call trace flag per process that inhibits
+call trace messages, both local and global, has
+been added. The BIF 
+<CODE>erlang:trace/3</CODE> has been extended to 
+recognize the flag 'silent' to start a call
+trace in silent mode.
+<br>
+<LI>Some bugs in the <CODE>dbg</CODE> module has been
+fixed, e.g the 'old_trace_call' flag has been
+removed from the 'all' flags list, and the dbg server
+no longer hangs if the supplied tracer fails to
+start.
+<br>
+<LI>A bug in the emulator that made 'EXIT' messages
+from a process involved in a sequential call trace
+get overwritten by the sequential trace token
+itself has been fixed.
+<br>
+<LI>The documentation regarding the above has
+been updated. Especially, the fact that the match spec
+function <CODE>{return_trace}</CODE> destroys the 
+tail recursiveness of the traced function has been 
+pointed out.
+<br>
+</UL>
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3747<br>
+Aux Id: OTP-3592, OTP-3744
+
+
+</UL>
+
 <H2>Kernel 2.6.1 (R7B)</H2>
 <H3>Fixed errors and malfunctions</H3>
 

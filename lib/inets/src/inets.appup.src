@@ -13,6 +13,16 @@
    [
     {restart_application,inets}
    ]
+  },
+  {"2.5.3",
+   [
+    {restart_application,inets}
+   ]
+  },
+  {"2.5.4",
+   [
+    {restart_application,inets}
+   ]
   }
  ],
  [{"2.5",
@@ -26,6 +36,16 @@
    ]
   },
   {"2.5.2",
+   [
+    {restart_application,inets}
+   ]
+  },
+  {"2.5.3",
+   [
+    {restart_application,inets}
+   ]
+  },
+  {"2.5.4",
    [
     {restart_application,inets}
    ]

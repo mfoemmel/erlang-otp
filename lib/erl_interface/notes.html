@@ -7,6 +7,46 @@
 
 <CENTER><H1>Erl_interface Release Notes</H1></CENTER>
 
+<H2>Erl_interface 3.2.9</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+Changed back the return values from erl_send() and erl_reg_send()
+to 1 (as they used to be). Incompatible with plain R7, compatible
+with previous versions.
+<br>(*** INCOMPATIBILITY with R7B ***)
+<br>Own Id: OTP-3772
+
+
+<LI>
+A race-condition bug in the term allocation routines was corrected.
+<br>Own Id: OTP-3809
+
+
+<LI>
+erl_interface could not be linked with pthreads.
+<br>Own Id: OTP-3810<br>
+Aux Id: Seq 5032
+
+
+<LI>
+The TCB of VxWorks processes no longer grows when erl_errno 
+is accessed.
+On Pthreads plattforms the use of erl_errno no longer crashes 
+programs using multithreading.
+<br>Own Id: OTP-3820
+
+
+<LI>
+Name clashes between Erlang emulator and erl_interface
+on VxWorks removed.
+<br>Own Id: OTP-3824
+
+
+</UL>
+
 <h2>Erl_Interface 3.2.3</h2>
   <h3>Fixed errors</h3>
   <ul>

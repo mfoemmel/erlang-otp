@@ -25,7 +25,7 @@
 	 demit/1,
 	 emit/1,
 	 fopen/2,
-	 get_inner/1,type/1,def_to_tag/1]).
+	 get_inner/1,type/1,def_to_tag/1,prim_bif/1]).
 
 pgen_exports(Erules,Module,{Types,Values,_}) ->
     emit({"-export([encoding_rule/0]).",nl}),

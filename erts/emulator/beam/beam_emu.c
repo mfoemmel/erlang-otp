@@ -1306,7 +1306,6 @@ int process_main(c_p, reds)
      if (c_p->ct != NULL)
 	save_calls(c_p, &exp_timeout);
      c_p->flags &= ~F_TIMO;
-     SEQ_TRACE_TOKEN(c_p) = NIL;
      JOIN_MESSAGE(c_p);
      NextPF(0, next);
  }
@@ -1520,10 +1519,7 @@ int process_main(c_p, reds)
 	    c_p->arity = 1;
 	    goto suspend_bif;
 	} else if (c_p->freason == TRAP) {
-	    SET_CP(c_p, I+2);
-	    SET_I(((Export *)(c_p->fvalue))->address);
-	    r(0) = c_p->def_arg_reg[0];
-	    Dispatch();
+	    goto call_bif_trap3;
 	}
 
 	/*
@@ -1561,11 +1557,7 @@ int process_main(c_p, reds)
 	    c_p->arity = 2;
 	    goto suspend_bif;
 	} else if (c_p->freason == TRAP) {
-	    SET_CP(c_p, I+2);
-	    SET_I(((Export *)(c_p->fvalue))->address);
-	    r(0) = c_p->def_arg_reg[0];
-	    x(1) = c_p->def_arg_reg[1];
-	    Dispatch();
+	    goto call_bif_trap3;
 	}
 
 	/*
@@ -1601,6 +1593,7 @@ int process_main(c_p, reds)
 	    c_p->arity = 3;
 	    goto suspend_bif;
 	} else if (c_p->freason == TRAP) {
+	call_bif_trap3:
 	    SET_CP(c_p, I+2);
 	    SET_I(((Export *)(c_p->fvalue))->address);
 	    r(0) = c_p->def_arg_reg[0];

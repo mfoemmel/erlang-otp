@@ -274,9 +274,25 @@ static void save_reclaim(WIND_TCB *tcbp)
 #ifdef DEBUG
       fdprintf(2, "\nFreeing memory: total %d mallocs\n", i);
 #endif
-      if (tdp->delete_hook != NULL)
-	(*tdp->delete_hook)(tdp->hook_data);
+      
+      if (tdp->delete_hook != NULL) {
+#ifdef DEBUG
+	  fdprintf(2, "Calling delete hook at 0x%08x\n", tdp->delete_hook);
+#endif
+	  (*tdp->delete_hook)(tdp->hook_data);
+#ifdef DEBUG
+	  fdprintf(2, "Called delete hook at 0x%08x\n", tdp->delete_hook);
+#endif
+      }
+#ifdef DEBUG
+      fdprintf(2, "Freeing own mem at 0x%08x\n", tdp);
+#endif
       (void) free((char *)tdp);
+#ifdef DEBUG
+      fdprintf(2, "Freed own mem at 0x%08x, done (0x%08x)\n**********\n", tdp,
+	       taskIdSelf());
+      checkStack(0);
+#endif
     }
   }
 #ifdef DEBUG

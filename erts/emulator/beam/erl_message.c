@@ -197,6 +197,7 @@ deliver_exit_message_tt(Eterm from, Process *to, Eterm reason, uint32 token)
 	hp = bp->mem;
 	mess = copy_struct(reason, sz_reason, &hp, &to->off_heap);
 	save = TUPLE3(hp, am_EXIT, from, mess);
+	hp += 4;
 	/* the trace token must in this case be updated by the caller */
 	seq_trace_output(token, save, SEQ_TRACE_SEND, to->id);
 	temptoken = copy_struct(token, sz_token, &hp, &to->off_heap);
@@ -207,6 +208,7 @@ deliver_exit_message_tt(Eterm from, Process *to, Eterm reason, uint32 token)
 	hp = bp->mem;
 	mess = copy_struct(reason, sz_reason, &hp, &to->off_heap);
 	save = TUPLE3(hp, am_EXIT, from, mess);
+	hp += 4;
 	queue_message_tt(to, bp, save, NIL);
     }
 }

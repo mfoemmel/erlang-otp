@@ -383,7 +383,7 @@ delete_export_references(uint32 module)
 
     for (i = 0; i < export_list_size; i++) {
         if (export_list(i) != NULL && (export_list(i)->code[0] == module)) {
-	    if (export_list(i)->address == beam_debug_apply) {
+	    if (export_list(i)->address == beam_debug_apply+5) {
 		continue;
 	    }
 	    if (export_list(i)->address == export_list(i)->code+3 &&

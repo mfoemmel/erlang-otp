@@ -692,33 +692,54 @@ read(Tid, Ts, Tab, Key, LockKind) ->
 
 foldl(Fun, Acc, Tab) ->
     foldl(Fun, Acc, Tab, read).
-foldl(Fun, Acc, Tab, LockKind) when function(Fun) -> 
-    {Type, Prev} = init_iteration(Tab, LockKind),
-    Res = (catch foldl(Tab, dirty_first(Tab), Fun, Acc, Type, Prev)),
+
+foldl(Fun, Acc, Tab, LockKind) when function(Fun) ->
+    case get(mnesia_activity_state) of
+	{?DEFAULT_ACCESS, Tid, Ts} ->
+	    foldl(Tid, Ts, Fun, Acc, Tab, LockKind);
+	{Mod, Tid, Ts} ->
+	    Mod:foldl(Tid, Ts, Fun, Acc, Tab, LockKind);
+	_ ->
+	    abort(no_transaction)
+    end.
+
+foldl(ActivityId, Opaque, Fun, Acc, Tab, LockKind) ->
+    {Type, Prev} = init_iteration(ActivityId, Opaque, Tab, LockKind),
+    Res = (catch do_foldl(ActivityId, Opaque, Tab, dirty_first(Tab), Fun, Acc, Type, Prev)),
     close_iteration(Res, Tab).
 
-foldl(Tab, '$end_of_table', Fun, RAcc, Type, Stored) ->
+do_foldl(A, O, Tab, '$end_of_table', Fun, RAcc, Type, Stored) ->
     lists:foldl(fun(Key, Acc) -> 
-			lists:foldl(Fun, Acc, read(Tab, Key, read))
+			lists:foldl(Fun, Acc, read(A, O, Tab, Key, read))
 		end, RAcc, Stored);
-foldl(Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H == Key ->
-    NewAcc = lists:foldl(Fun, Acc, read(Tab, Key, read)),
-    foldl(Tab, dirty_next(Tab, Key), Fun, NewAcc, ordered_set, Stored);
-foldl(Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H < Key ->
-    NewAcc = lists:foldl(Fun, Acc, read(Tab, H, read)),
-    foldl(Tab, Key, Fun, NewAcc, ordered_set, Stored);
-foldl(Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H > Key ->
-    NewAcc = lists:foldl(Fun, Acc, read(Tab, Key, read)),
-    foldl(Tab, dirty_next(Tab, Key), Fun, NewAcc, ordered_set, [H |Stored]);
-foldl(Tab, Key, Fun, Acc, Type, Stored) ->  %% Type is set or bag 
-    NewAcc = lists:foldl(Fun, Acc, read(Tab, Key, read)),
+do_foldl(A, O, Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H == Key ->
+    NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, Key, read)),
+    do_foldl(A, O, Tab, dirty_next(Tab, Key), Fun, NewAcc, ordered_set, Stored);
+do_foldl(A, O, Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H < Key ->
+    NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, H, read)),
+    do_foldl(A, O, Tab, Key, Fun, NewAcc, ordered_set, Stored);
+do_foldl(A, O, Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H > Key ->
+    NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, Key, read)),
+    do_foldl(A, O, Tab, dirty_next(Tab, Key), Fun, NewAcc, ordered_set, [H |Stored]);
+do_foldl(A, O, Tab, Key, Fun, Acc, Type, Stored) ->  %% Type is set or bag 
+    NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, Key, read)),
     NewStored = ordsets:del_element(Key, Stored),
-    foldl(Tab, dirty_next(Tab, Key), Fun, NewAcc, Type, NewStored).
+    do_foldl(A, O, Tab, dirty_next(Tab, Key), Fun, NewAcc, Type, NewStored).
 
 foldr(Fun, Acc, Tab) ->
     foldr(Fun, Acc, Tab, read).
-foldr(Fun, Acc, Tab, LockKind) when function(Fun) -> 
-    {Type, TempPrev} = init_iteration(Tab, LockKind),
+foldr(Fun, Acc, Tab, LockKind) when function(Fun) ->
+    case get(mnesia_activity_state) of
+	{?DEFAULT_ACCESS, Tid, Ts} ->
+	    foldr(Tid, Ts, Fun, Acc, Tab, LockKind);
+	{Mod, Tid, Ts} ->
+	    Mod:foldr(Tid, Ts, Fun, Acc, Tab, LockKind);
+	_ ->
+	    abort(no_transaction)
+    end.
+
+foldr(ActivityId, Opaque, Fun, Acc, Tab, LockKind) ->
+    {Type, TempPrev} = init_iteration(ActivityId, Opaque, Tab, LockKind),
     Prev = 
 	if 
 	    Type == ordered_set ->
@@ -726,31 +747,31 @@ foldr(Fun, Acc, Tab, LockKind) when function(Fun) ->
 	    true ->      %% Order doesn't matter for set and bag
 		TempPrev %% Keep the order so we can use ordsets:del_element
 	end,
-    Res = (catch foldr(Tab, dirty_last(Tab), Fun, Acc, Type, Prev)),
+    Res = (catch do_foldr(ActivityId, Opaque, Tab, dirty_last(Tab), Fun, Acc, Type, Prev)),
     close_iteration(Res, Tab).
 
-foldr(Tab, '$end_of_table', Fun, RAcc, Type, Stored) ->
+do_foldr(A, O, Tab, '$end_of_table', Fun, RAcc, Type, Stored) ->
     lists:foldl(fun(Key, Acc) -> 
-			lists:foldl(Fun, Acc, read(Tab, Key, read))
+			lists:foldl(Fun, Acc, read(A, O, Tab, Key, read))
 		end, RAcc, Stored);
-foldr(Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H == Key ->
-    NewAcc = lists:foldl(Fun, Acc, read(Tab, Key, read)),
-    foldr(Tab, dirty_prev(Tab, Key), Fun, NewAcc, ordered_set, Stored);
-foldr(Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H > Key ->
-    NewAcc = lists:foldl(Fun, Acc, read(Tab, H, read)),
-    foldr(Tab, Key, Fun, NewAcc, ordered_set, Stored);
-foldr(Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H < Key ->
-    NewAcc = lists:foldl(Fun, Acc, read(Tab, Key, read)),
-    foldr(Tab, dirty_prev(Tab, Key), Fun, NewAcc, ordered_set, [H |Stored]);
-foldr(Tab, Key, Fun, Acc, Type, Stored) ->  %% Type is set or bag 
-    NewAcc = lists:foldl(Fun, Acc, read(Tab, Key, read)),
+do_foldr(A, O, Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H == Key ->
+    NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, Key, read)),
+    do_foldr(A, O, Tab, dirty_prev(Tab, Key), Fun, NewAcc, ordered_set, Stored);
+do_foldr(A, O, Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H > Key ->
+    NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, H, read)),
+    do_foldr(A, O, Tab, Key, Fun, NewAcc, ordered_set, Stored);
+do_foldr(A, O, Tab, Key, Fun, Acc, ordered_set, [H | Stored]) when H < Key ->
+    NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, Key, read)),
+    do_foldr(A, O, Tab, dirty_prev(Tab, Key), Fun, NewAcc, ordered_set, [H |Stored]);
+do_foldr(A, O, Tab, Key, Fun, Acc, Type, Stored) ->  %% Type is set or bag 
+    NewAcc = lists:foldl(Fun, Acc, read(A, O, Tab, Key, read)),
     NewStored = ordsets:del_element(Key, Stored),
-    foldr(Tab, dirty_prev(Tab, Key), Fun, NewAcc, Type, NewStored).
+    do_foldr(A, O, Tab, dirty_prev(Tab, Key), Fun, NewAcc, Type, NewStored).
 
-init_iteration(Tab, LockKind) ->
-    lock({table, Tab}, LockKind),
+init_iteration(ActivityId, Opaque, Tab, LockKind) ->
+    lock(ActivityId, Opaque, {table, Tab}, LockKind),
     Type = val({Tab, setorbag}),    
-    Previous = add_previous(Type, Tab),
+    Previous = add_previous(ActivityId, Opaque, Type, Tab),
     St = val({Tab, storage_type}),
     if 
 	St == unknown -> 
@@ -759,6 +780,7 @@ init_iteration(Tab, LockKind) ->
 	    mnesia_lib:db_fixtable(St, Tab, true)
     end, 
     {Type, Previous}.
+
 close_iteration(Res, Tab) ->
     case val({Tab, storage_type}) of
 	unknown -> 
@@ -775,14 +797,11 @@ close_iteration(Res, Tab) ->
 	    Res
     end.
 
-add_previous(Type, Tab) ->
-    case get(mnesia_activity_state) of
-	{_, _, non_transaction} -> 
-	    [];
-	{_, _Tid, Ts} ->
-	    Previous = ?ets_match(Ts#tidstore.store, {{Tab, '$1'}, '_', write}),
-	    lists:sort(lists:flatten(Previous))
-    end.
+add_previous(_ActivityId, non_transaction, _Type, _Tab) ->
+    [];
+add_previous(_Tid, Ts, _Type, Tab) ->
+    Previous = ?ets_match(Ts#tidstore.store, {{Tab, '$1'}, '_', write}),
+    lists:sort(lists:concat(Previous)).
 
 %% This routine fixes up the return value from read/1 so that
 %% it is correct with respect to what this particular transaction
@@ -1269,17 +1288,30 @@ any_table_info(Tab, Item) when atom(Tab) ->
 %		No_chk when list(No_chk) ->  [];
 %		Else -> info_reply(Else, Tab, Item)
 %	    end;
+	size -> 
+	    raw_table_info(Tab, Item);
+	memory ->
+	    raw_table_info(Tab, Item);
+	type -> 
+	    case ?catch_val({Tab, setorbag}) of
+		{'EXIT', _} ->
+		    bad_info_reply(Tab, Item);
+		Val ->
+		    Val
+	    end;
 	all ->
 	    case mnesia_schema:get_table_properties(Tab) of
 		[] ->
 		    abort({no_exists, Tab, Item});
 		Props ->
-		    Props
+		    lists:map(fun({setorbag, Type}) -> {type, Type};
+				 (Prop) -> Prop end, 
+			      Props) 
 	    end;
 	_ ->
 	    case ?catch_val({Tab, Item}) of
 		{'EXIT', _} ->
-		    raw_table_info(Tab, Item);
+		    bad_info_reply(Tab, Item);
 		Val ->
 		    Val
 	    end

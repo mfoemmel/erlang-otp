@@ -36,12 +36,13 @@
 -define(VMODULE,"MDATA").
 -include("snmp_verbosity.hrl").
 
+-define(SNMP_MIB_DATA,snmp_mib_data).
+-define(SNMP_MIB_TREE,snmp_mib_tree).
+-define(DUMMY_TREE_GENERATION,1).
+-define(DEFAULT_TREE,{tree,{undefined_node},internal}).
+-define(DUMMY_TREE_DB,dummy_tree_db).
+-define(DUMMY_TREE_DB_INIT,{?DUMMY_TREE_DB,?DEFAULT_TREE}).
 
--ifdef(snmp_debug).
--define(store(N,T),store(N,T)).
--else.
--define(store(N,T),ok).
--endif.
 
 %%%-----------------------------------------------------------------
 %%% Table of contents
@@ -57,16 +58,26 @@
 
 
 %%----------------------------------------------------------------------
-%% mibsEts is an ets containing loaded mibs as:
-%%    {MibName = atom(), FullFileName = string()}
-%% tree is the root node.
+%% data_db is an database containing loaded mibs as:
+%%    {MibName = atom(), Symbolic = ?, FullFileName = string()}
+%%    it is either ets or mnesia
+%% tree_db is a database containing _one_ record with the tree!
+%% (the reason for this is part to get replication and part out of convenience)
+%% ref_tree is the root node, without any subagent.
+%% tree is the root node (same as ref_tree but with the subagents added).
 %% subagents is a list of {SAPid, Oid}
 %%----------------------------------------------------------------------
--record(snmp_mib_data, {mibsEts, tree, subagents = []}).
+-record(snmp_mib_data, {data_db, tree_db, ref_tree, tree, subagents = []}).
+
+-record(mib_info,{name,symbolic,file_name}).
+
 
 %% API
--export([new/0, load_mib/4, unload_mib/4, unload_all/1, info/1, info/2,
-	 dump/1, dump/2, lookup/2, next/3,
+-export([new/0, new/1, store/1,
+	 load_mib/4, unload_mib/4, unload_all/1, 
+	 info/1, info/2,
+	 dump/1, dump/2, 
+	 lookup/2, next/3,
 	 register_subagent/3, unregister_subagent/2]).
 
 %% Internal exports
@@ -91,29 +102,46 @@
 %% node_info() = {subagent, Pid} | {variable, Id} | {table_colum, Id}
 %%-----------------------------------------------------------------
 
+%% This record is what is stored in the database. The 'tree' part
+%% is described above...
+-record(tree,{generation = ?DUMMY_TREE_GENERATION, tree = ?DEFAULT_TREE}).
+
+
 %%%======================================================================
 %%% 1. Interface
 %%%======================================================================
 
 %%-----------------------------------------------------------------
-%% Func: new/1
+%% Func: new/0, new/1
 %% Returns: A representation of mib data.
 %%-----------------------------------------------------------------
 new() ->
-    MibsEts = ets:new(snmp_mib_data, [set, protected]),    
-    #snmp_mib_data{mibsEts = MibsEts, tree = {tree,{undefined_node},internal}}.
+    new(ets).
+
+%% Where -> A list of nodes where the tables will be created
+new(Storage) ->
+    %% First we must check if there is already something to read
+    %% If a database already exists, then the tree structure has to be read
+    ?vtrace("open data base",[]),
+    Db = snmp_general_db:open(Storage,?SNMP_MIB_DATA,
+			      mib_info,record_info(fields,mib_info),set),
+    ?vtrace("create mib tree",[]),
+    {TreeDb,Tree} = create_tree(Storage,?SNMP_MIB_TREE),
+    #snmp_mib_data{data_db  = Db,   tree_db = TreeDb, 
+		   ref_tree = Tree, tree    = Tree}.
+
 
 %%----------------------------------------------------------------------
 %% Returns: new mib data | {error, Reason}
 %%----------------------------------------------------------------------
 load_mib(MibData,FileName,MeOverride,TeOverride) when record(MibData,snmp_mib_data),list(FileName) -> 
     ?vlog("load mib file: ~p",[FileName]),
-    #snmp_mib_data{mibsEts = MibsEts, tree = OldRoot} = MibData,
+    #snmp_mib_data{data_db = Db, tree = OldRoot} = MibData,
     ActualFileName = filename:rootname(FileName, ".bin") ++ ".bin",
     MibName = list_to_atom(filename:basename(FileName, ".bin")),
-    case ets:lookup(MibsEts, MibName) of
-	[{MibName, _, _}] -> {error, 'already loaded'};
-	[] ->
+    case snmp_general_db:read(Db, MibName) of
+	{value,#mib_info{name = MibName}} -> {error, 'already loaded'};
+	false ->
 	    case snmp_misc:read_mib(ActualFileName) of
 		{error, Reason} -> 
 		    ?vlog("Failed reading mib file ~p with reason: ~p",
@@ -144,7 +172,7 @@ load_mib(MibData,FileName,MeOverride,TeOverride) when record(MibData,snmp_mib_da
 				true ->
 				    install_mib(Symbolic, Mib, MibName,
 						ActualFileName,
-						MibsEts, NonInternalMes),
+						Db, NonInternalMes),
 				    ?vtrace("installed mib ~s",
 					    [Mib#mib.name]),
 				    MibData#snmp_mib_data{tree = NewRoot};
@@ -153,6 +181,11 @@ load_mib(MibData,FileName,MeOverride,TeOverride) when record(MibData,snmp_mib_da
 		    end
 	    end
     end.
+
+
+store(MibData) ->
+    save_tree(MibData#snmp_mib_data.tree_db,MibData#snmp_mib_data.ref_tree).
+
 
 %%----------------------------------------------------------------------
 %% Returns: true | {error, Reason}
@@ -209,21 +242,22 @@ check_mes([]) -> true.
 %%----------------------------------------------------------------------
 unload_mib(MibData, FileName, _, _)
   when record(MibData, snmp_mib_data), list(FileName) -> 
-    #snmp_mib_data{mibsEts = MibsEts, tree = OldRoot} = MibData,
+    #snmp_mib_data{data_db = Db, ref_tree = OldRefRoot, tree = OldRoot} = MibData,
     ActualFileName = filename:rootname(FileName, ".bin") ++ ".bin",
     MibName = list_to_atom(filename:basename(FileName, ".bin")),
-    case ets:lookup(MibsEts, MibName) of
-	[] -> {error, 'not loaded'};
-	[{MibName, Symbolic, _}] ->
+    case snmp_general_db:read(Db, MibName) of
+	false -> {error, 'not loaded'};
+	{value,#mib_info{name = MibName, symbolic = Symbolic}} ->
+	    {_MEs, NewRefRoot} = delete_mib_from_tree(MibName,OldRefRoot),
 	    {MEs, NewRoot} = delete_mib_from_tree(MibName,OldRoot),
-	    uninstall_mib(Symbolic, MibName, MibsEts, MEs),
-	    MibData#snmp_mib_data{tree = NewRoot}
+	    uninstall_mib(Symbolic, MibName, Db, MEs),
+	    MibData#snmp_mib_data{ref_tree = NewRefRoot, tree = NewRoot}
     end.
 
-unload_all(#snmp_mib_data{mibsEts = MibsEts}) ->
-    lists:foreach(fun({MibName, Symbolic, _}) ->
-			  uninstall_mib(Symbolic, MibName, MibsEts, [])
-		  end, ets:tab2list(MibsEts)).
+unload_all(#snmp_mib_data{data_db = Db}) ->
+    lists:foreach(fun(#mib_info{name = MibName, symbolic = Symbolic}) ->
+			  uninstall_mib(Symbolic, MibName, Db, [])
+		  end, snmp_general_db:tab2list(Db)).
 
 register_subagent(MibData, Oid, Pid) ->
     case insert_subagent(Oid, Pid, MibData#snmp_mib_data.tree) of
@@ -270,31 +304,38 @@ unregister_subagent(MibData, Oid) when list(Oid) ->
 %% Purpose: To inpect memory usage, loaded mibs, registered subagents
 %%----------------------------------------------------------------------
 info(MibData) ->
-    #snmp_mib_data{mibsEts = MibsEts, tree = Tree, subagents = SAs} = MibData,
-    LoadedMibs = ets:tab2list(MibsEts),
-    TreeSize = snmp_misc:mem_size(Tree),
+    ?vtrace("retrieve info",[]),
+    #snmp_mib_data{data_db = Db, ref_tree = RefTree, 
+		   tree = Tree, subagents = SAs} = MibData,
+    LoadedMibs = old_format(snmp_general_db:tab2list(Db)),
+    TreeSize = snmp_misc:mem_size(Tree) + snmp_misc:mem_size(RefTree),
     [{loaded_mibs, LoadedMibs}, {subagents, SAs}, {tree_size_bytes, TreeSize}].
 
 info(MibData, subagents) ->
     #snmp_mib_data{subagents = SAs} = MibData,
     SAs.
 
+old_format(LoadedMibs) ->
+    ?vtrace("convert mib info to old format",[]),
+    [{N,S,F} || #mib_info{name=N,symbolic=S,file_name=F} <- LoadedMibs].
+
+    
 %%----------------------------------------------------------------------
 %% A total dump for debugging.
 %%----------------------------------------------------------------------
 dump(MibData) when record(MibData, snmp_mib_data) -> 
-    #snmp_mib_data{mibsEts = MibsEts, tree = Tree} = MibData,
-    io:format("MIB-table:~n~p~n~n", [ets:tab2list(MibsEts)]),
+    #snmp_mib_data{data_db = Db, tree = Tree} = MibData,
+    io:format("MIB-tables:~n~p~n~n", [snmp_general_db:tab2list(Db)]),
     io:format("Tree:~n~p~n", [Tree]), % good luck reading it!
     ok.
 
 dump(MibData,File) when record(MibData, snmp_mib_data) -> 
     case file:open(File,[write]) of
 	{ok,Fd} ->
-	    #snmp_mib_data{mibsEts = MibsEts, tree = Tree} = MibData,
+	    #snmp_mib_data{data_db = Db, tree = Tree} = MibData,
 	    io:format(Fd,"~s~n", 
 		      [snmp:date_and_time_to_string(snmp:date_and_time())]),
-	    io:format(Fd,"MIB-table:~n~p~n~n", [ets:tab2list(MibsEts)]),
+	    io:format(Fd,"MIB-tables:~n~p~n~n",[snmp_general_db:tab2list(Db)]),
 	    io:format(Fd,"Tree:~n~p~n", [Tree]), % good luck reading it!
 	    file:close(Fd),
 	    ok;
@@ -778,13 +819,14 @@ delete_subagent({tree, Tree, Info}, [Index | TI]) ->
 %%----------------------------------------------------------------------
 %% Does all side effect stuff during load_mib.
 %%----------------------------------------------------------------------
-install_mib(Symbolic, Mib, MibName, FileName, MibsEts, NonInternalMes) ->
+install_mib(Symbolic, Mib, MibName, FileName, Db, NonInternalMes) ->
     ?vdebug("install mib with ~n"
 	    "\tSymbolic: ~p~n"
 	    "\tMibName:  ~p~n"
 	    "\tFileName: ~p",
 	    [Symbolic,MibName,FileName]),
-    ets:insert(MibsEts, {MibName, Symbolic, FileName}),
+    Rec = #mib_info{name = MibName, symbolic = Symbolic, file_name = FileName},
+    snmp_general_db:write(Db, Rec),
     MEs = Mib#mib.mes,
     case Symbolic of
 	true ->
@@ -804,8 +846,8 @@ install_mib(Symbolic, Mib, MibName, FileName, MibsEts, NonInternalMes) ->
 %%----------------------------------------------------------------------
 %% Does all side effect stuff during unload_mib.
 %%----------------------------------------------------------------------
-uninstall_mib(Symbolic, MibName, MibsEts, MEs) ->
-    ets:delete(MibsEts, MibName),
+uninstall_mib(Symbolic, MibName, Db, MEs) ->
+    snmp_general_db:delete(Db, MibName),
     case Symbolic of
 	true ->
 	    snmp_symbolic_store:delete_table_infos(MibName),
@@ -822,7 +864,7 @@ uninstall_mib(Symbolic, MibName, MibsEts, MEs) ->
 %% Calls MFA-instrumentation with 'new' or 'delete' operation.
 %%----------------------------------------------------------------------
 call_instrumentation(#me{entrytype = variable, mfa={M,F,A}}, Operation) ->
-    ?vtrace("call instrumentation with~n"
+    ?vtrace("call instrumentation with"
 	    "~n   entrytype: variable"
 	    "~n   MFA:       {~p,~p,~p}"
 	    "~n   Operation: ~p",
@@ -847,118 +889,48 @@ drop_internal_and_imported(X) -> true.
 %% Code change functions
 %%----------------------------------------------------------------------
 
-code_change({up,Vsn},State) ->
-    ?debug("upgrade from ~p",[Vsn]),
-    ?store("mibs_data-up_original.bin",State#snmp_mib_data.tree),
-    NTree = tree_upgrade(State#snmp_mib_data.tree),
-    ?debug("upgrade complete",[]),
-    ?store("mibs_data-up_new.bin",NTree),
-    State#snmp_mib_data{tree = NTree};
+code_change({down,pre_3_3_0},MibData) ->
+    ?debug("downgrade to ~p",[pre_3_3_0]),
+    #snmp_mib_data{data_db = {ets,Ets}, 
+		   tree = Tree, subagents = SAs} = MibData,
+    {snmp_mib_data,Ets,Tree,SAs};
 
-code_change({down,Vsn},State) ->
-    ?debug("downgrade to ~p",[Vsn]),
-    ?store("mibs_data-down_original.bin",State#snmp_mib_data.tree),
-    NTree = tree_downgrade(State#snmp_mib_data.tree),
-    ?debug("downgrade complete",[]),
-    ?store("mibs_data-down_new.bin",NTree),
-    State#snmp_mib_data{tree = NTree}.
-
-
--ifdef(snmp_debug).
-store(Name,Tree) ->
-    store(file:write_file(Name,term_to_binary(Tree))).
-
-store(ok) -> 
-    ok;
-store({error,Reason}) ->
-    ?debug("failed storing: ~p",[Reason]).
--endif.
+code_change({up,pre_3_3_0},State) ->
+    ?debug("upgrade from ~p",[pre_3_3_0]),
+    {snmp_mib_data,Ets,Tree,Subagents} = State,
+    Db = {ets,Ets},
+    %% Create a tree without any subagents (I hope this works...)
+    RefTree = cleanup_tree(Tree,Subagents), 
+    #snmp_mib_data{data_db   = Db, 
+		   tree_db   = ?DUMMY_TREE_DB_INIT,
+		   ref_tree  = RefTree, 
+		   tree      = Tree, 
+		   subagents = Subagents}.
 
 
-%% Upgrade a tree, i.e. upgrade all me-records
-tree_upgrade(Tree) ->
-    ?debug("upgrade tree",[]),
-    tree_code_change(Tree,up).
-
-%% Downgrade a tree, i.e. downgrade all me-records
-tree_downgrade(Tree) ->
-    ?debug("downgrade tree",[]),
-    tree_code_change(Tree,down).
-
-tree_code_change({tree,Tree,Info},How) ->
-    ?debug("tree: ~pgrade tree",[How]),
-    {tree,tree_code_change(Tree,How),tree_info_code_change(Info,How)};
-tree_code_change({node,Info},How) ->
-    ?debug("tree: ~pgrade node",[How]),
-    {node_info_code_change(Info,How)};
-tree_code_change(undefined_node,_How) -> 
-    ?debug("tree: ignoring ~p",[undefined_node]),
-    undefined_node;
-tree_code_change(T,How) when tuple(T) -> 
-    ?debug("tree: ~pgrade ~p-tuple",[How,size(T)]),
-    tree_code_change1(1,T,How);
-tree_code_change(Any,_How) -> 
-    ?debug("tree: ignoring ~p",[Any]),
-    Any.
-
-tree_code_change1(N,T,How) when N =< size(T) -> 
-    ?debug("tree-~p: ~pgrade ~p-tuple",[N,How,size(T)]),
-    E = tree_code_change(element(N,T),How),
-    tree_code_change1(N+1,setelement(N,T,E),How);
-tree_code_change1(_N,T,How) ->
-    ?debug("tree-n: ~pgrade of ~p-tuple done",[How,size(T)]),
-    T.
-
-tree_info_code_change({table,Id},How) ->
-    ?debug("tree info: ~pgrade table",[How]),
-    {table,id_code_change(Id,How)};
-tree_info_code_change({table_entry,Id},How) ->
-    ?debug("tree info: ~pgrade table_entry",[How]),
-    {table_entry,id_code_change(Id,How)};
-tree_info_code_change(Any,_How) ->
-    ?debug("tree info: ignoring ~p",[Any]),
-    Any.
-
-node_info_code_change({variable,Id},How) ->
-    ?debug("node info: ~pgrade variable",[How]),
-    {variable,id_code_change(Id,How)};
-node_info_code_change({table_column,Id},How) ->
-    ?debug("node info: ~pgrade table_column",[How]),
-    {table_colum,id_code_change(Id,How)};
-node_info_code_change(Any,_How) ->
-    ?debug("node info: ignoring ~p",[Any]),
-    Any.
-
-id_code_change({MibName,MibEntry},up) ->
-    {MibName,me_upgrade(MibEntry)};
-id_code_change({MibName,MibEntry},down) ->
-    {MibName,me_downgrade(MibEntry)}.
+cleanup_tree(Tree,[]) -> Tree;
+cleanup_tree(Tree,[{_Pid,Oid}|SAs]) ->
+    NTree = delete_subagent(Tree,Oid),
+    cleanup_tree(NTree,SAs).
 
 
-%% Convert old me record to new me record (description gets the default value).
-me_upgrade({me,Oid,EntryType,AliasName,Asn1Type,Access,MFA,Imported,Assoc}) -> 
-    ?debug("upgrade me-record with oid = ~p",[Oid]),
-    #me{oid       = Oid, 
-	entrytype = EntryType,
-	aliasname = AliasName,
-	asn1_type = Asn1Type,
-	access    = Access,
-	mfa       = MFA,
-	imported  = Imported,
-	assocList = Assoc};
-me_upgrade(Any) -> Any.
+%% -------------------------------------
+%% Tree interface functions
 
-%% Convert new me record to old me record (description gets dropped).
-me_downgrade(Me) when record(Me,me) ->
-    #me{oid       = Oid, 
-	entrytype = EntryType,
-	aliasname = AliasName,
-	asn1_type = Asn1Type,
-	access    = Access,
-	mfa       = MFA,
-	imported  = Imported,
-	assocList = Assoc} = Me,
-    ?debug("downgrade me-record with oid = ~p",[Oid]),
-    {me,Oid,EntryType,AliasName,Asn1Type,Access,MFA,Imported,Assoc};
-me_downgrade(Any) -> Any.
+create_tree(ets,_Name) ->
+    %% In this case the tree does not need to be stored.
+    ?DUMMY_TREE_DB_INIT;
+create_tree(Storage,Name) when tuple(Storage) ->
+    %% This is really a big overhead, but it solves the problem with storage
+    Db = snmp_general_db:open(Storage,Name,tree,record_info(fields,tree),set),
+    ?vtrace("tree database opened: ~p",[Db]),
+    Tree = #tree{},
+    ?vtrace("write default tree to database",[]),
+    snmp_general_db:write(Db,Tree),
+    ?vtrace("tree init done",[]),
+    {Db,Tree#tree.tree}.
+
+save_tree(?DUMMY_TREE_DB,_Tree) -> ok;
+save_tree(Db,Tree) -> snmp_general_db:write(Db,#tree{tree = Tree}).
+
 

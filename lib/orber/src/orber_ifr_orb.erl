@@ -31,6 +31,7 @@
 	 create_exception_tc/3,
 	 create_interface_tc/2,
 	 create_string_tc/1,
+	 create_wstring_tc/1,
 	 create_sequence_tc/2,
 	 create_recursive_sequence_tc/2,
 	 create_array_tc/2
@@ -79,6 +80,9 @@ create_interface_tc(Id, Name) ->
 
 create_string_tc(Bound) ->
     {tk_string, Bound}.
+
+create_wstring_tc(Bound) ->
+    {tk_wstring, Bound}.
 
 create_sequence_tc(Bound, Element_type) ->
     {tk_sequence,Element_type,Bound}.

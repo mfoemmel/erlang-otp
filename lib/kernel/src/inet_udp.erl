@@ -26,6 +26,10 @@
 
 -include("inet_int.hrl").
 
+-define(RECBUF, (8*1024)).
+
+
+
 %% inet_udp port lookup
 getserv(Port) when integer(Port) -> {ok, Port};
 getserv(Name) when atom(Name)    -> inet:getservbyname(Name,udp).
@@ -37,7 +41,9 @@ getaddr(Address,Timer) -> inet:getaddr_tm(Address, inet, Timer).
 open(Port) -> open(Port, []).
 
 open(Port, Opts) when Port >= 0, Port =< 16#ffff ->
-    case inet:udp_options([{port,Port} | Opts], inet) of
+    case inet:udp_options(
+	   [{port,Port}, {recbuf, ?RECBUF} | Opts], 
+	   inet) of
 	{error, Reason} -> exit(Reason);
 	{ok, R} ->
 	    Fd       = R#udp_opts.fd,
@@ -80,4 +86,47 @@ controlling_process(Socket, NewOwner) ->
 %% Create a port/socket from a file descriptor 
 %%
 fdopen(Fd, Opts) ->
-    inet:fdopen(Fd, Opts, dgram, inet, ?MODULE).
+    inet:fdopen(Fd, 
+		optuniquify([{recbuf, ?RECBUF} | Opts]), 
+		dgram, inet, ?MODULE).
+
+
+%% Remove all duplicate options from an option list.
+%% The last occurring duplicate is used, and the order is preserved.
+%% 
+%% Here's how:
+%%   Reverse the list.
+%%   For each head option go through the tail and remove
+%%   all occurences of the same option from the tail.
+%%   Store that head option and iterate using the new tail.
+%%   Return the list of stored head options.
+optuniquify(List) ->
+    optuniquify(lists:reverse(List), []).
+
+optuniquify([], Result) ->
+    Result;
+optuniquify([Opt | Tail], Result) ->
+    %% Remove all occurences of Opt in Tail, 
+    %% prepend Opt to Result, 
+    %% then iterate back here.
+    optuniquify(Opt, Tail, [], Result).
+
+%% All duplicates of current option are now removed
+optuniquify(Opt, [], Rest, Result) ->
+    %% Store unique option
+    optuniquify(lists:reverse(Rest), [Opt | Result]);
+%% Duplicate option tuple
+optuniquify(Opt0, [Opt1 | Tail], Rest, Result)
+  when tuple(Opt0), tuple(Opt1), 
+       size(Opt0) == size(Opt1), 
+       element(1, Opt0) == element(1, Opt1) ->
+    %% Waste duplicate
+    optuniquify(Opt0, Tail, Rest, Result);
+%% Duplicate option atom or other term
+optuniquify(Opt, [Opt | Tail], Rest, Result) ->
+    %% Waste duplicate
+    optuniquify(Opt, Tail, Rest, Result);
+%% Non-duplicate option
+optuniquify(Opt, [X | Tail], Rest, Result) ->
+    %% Keep non-duplicate
+    optuniquify(Opt, Tail, [X | Rest], Result).

@@ -244,7 +244,7 @@ serv_nmake(Path, Options) ->
 %% Result: ok | error
 serv_omake(Path, Options) ->
     {ok, Cwd}=file:get_cwd(),
-    Command="omake -E -EN -f Makefile.win32 " ++ Options ++ " 2>&1",
+    Command="omake -W -E -EN -f Makefile.win32 " ++ Options ++ " 2>&1",
     Res=run_make_bat(Path, Command),
     file:set_cwd(Cwd),
     Res.

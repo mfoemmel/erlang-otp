@@ -75,8 +75,10 @@ init() ->
 		    case inet_db:res_option(domain) of
 			"" ->
 			    case inet:gethostbyname(inet_db:gethostname()) of
-				{ok,HostEnt} ->
-				    set_hostname({ok,HostEnt#hostent.h_name});
+				{ok,#hostent{h_name = []}} ->
+				    true;
+				{ok,#hostent{h_name = HostName}} ->
+				    set_hostname({ok,HostName});
 				_ ->
 				    true
 			    end;
@@ -162,7 +164,7 @@ set_hostname() ->
 	    inet_udp:close(U),
 	    set_hostname(Res);
 	_ ->
-	    set_hostname({ok, "nohost.nodomain"})
+	    set_hostname({ok, []})
     end.
 
 set_hostname({ok,Name}) when length(Name) > 0 ->
@@ -170,7 +172,10 @@ set_hostname({ok,Name}) when length(Name) > 0 ->
 					(_)  -> true
 				     end, Name),
     inet_db:set_hostname(Host),
-    set_search_dom(Domain).
+    set_search_dom(Domain);
+set_hostname({ok,[]}) ->
+    inet_db:set_hostname("nohost"),
+    set_search_dom("nodomain").
 
 set_search_dom([$.|Domain]) ->
     %% leading . not removed by dropwhile above.

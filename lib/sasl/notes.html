@@ -7,7 +7,25 @@
  
 <CENTER><H1>Sasl Release Notes</H1></CENTER>
 
-<H2>Sasl 1.9</H2>
+<H2>SASL 1.9.1 (R7B01)</H2>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>
+      If a new application was added using <CODE>code:replace_path/2</CODE>,
+      the <CODE>code:lib_dir/1</CODE> function would fail on the new
+      application name. This has been corrected.<BR>
+      Own Id: OTP-3780<BR>
+      Aux Id: Seq 5003
+    </LI>
+    <LI>
+      A printout has been added in <CODE>release_handler</CODE> when
+      <CODE>install_release</CODE> fails.<BR>
+      Own Id: OTP-3767<BR>
+      Aux Id: seq4983
+    </LI>
+  </UL>
+
+<H2>Sasl 1.9 (R7B)</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
     <LI>

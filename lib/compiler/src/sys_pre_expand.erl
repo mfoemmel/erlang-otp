@@ -383,8 +383,9 @@ expr({op,Ll,'++',{string,L1,S1},R0}, Vs, St0) ->
     {R1,Rvs,Rus,St1} = expr(R0, Vs, St0),
     E = case R1 of
 	    {string,L2,S2} -> {string,L1,S1 ++ S2};
-	    Other -> string_to_conses(L1, S1, R1)
-    end,
+	    Other when length(S1) < 8 -> string_to_conses(L1, S1, R1);
+	    Other -> {op,Ll,'++',{string,L1,S1},R1}
+	end,
     {E,Rvs,Rus,St1};
 expr({op,Ll,'++',{cons,Lc,H,T},L2}, Vs, St) ->
     expr({cons,Ll,H,{op,Lc,'++',T,L2}}, Vs, St);

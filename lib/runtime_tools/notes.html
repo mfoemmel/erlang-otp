@@ -7,6 +7,85 @@
 
 <CENTER><H1>Runtime_tools Release Notes</H1></CENTER>
 
+<H2>Runtime_tools 1.1.4</H2>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+A number of bug fixes and improvements have been done
+to applications <CODE>runtime_tools</CODE>, 
+<CODE>kernel</CODE> and <CODE>erts</CODE>:
+<UL>
+<br>
+<LI>A read timeout no longer resets the sequential
+trace token. This is an incompatibility towards
+the previous behaviour. Use
+<CODE>seq_trace:set_token([])</CODE> to reset the
+sequential trace token.
+<br>
+<LI><CODE>seq_trace:get_token/0</CODE> and 
+<CODE>seq_trace:set_token/1</CODE> now have compatible
+token formats. 
+<br>
+<LI><CODE>dbg:trace_port/2</CODE> and 
+<CODE>dbg:trace_client/2,3</CODE> now supports trace
+to and read from a size limited "wrap file set".
+<br>
+<LI><CODE>dbg:trace_port_control/1</CODE> now supports
+operation <CODE>get_listen_port</CODE> for the ip
+trace driver.
+<br>
+<LI>New match spec functions 
+<CODE>{is_seq_trace}</CODE> and 
+<CODE>{get_seq_trace}</CODE> has been added to test
+and read the sequential trace token in match specs.
+<br>
+<LI>New match spec functions 
+<CODE>{get_tcw}</CODE> and 
+<CODE>{set_tcw Value}</CODE> that reads and sets 
+a "trace control word" in the node has been added.
+The "trace control word" is a word in each
+Erlang node of at least 24 bits.
+There are also enhancements of BIFs:
+<CODE>erlang:system_info(trace_control_word)</CODE> and
+<CODE>erlang:system_flag(trace_control_word, Value)</CODE>
+for the same purpose.
+<br>
+<LI>A new match spec function
+<CODE>{silent, TrueOrFalse}</CODE> for setting a 
+silent call trace flag per process that inhibits
+call trace messages, both local and global, has
+been added. The BIF 
+<CODE>erlang:trace/3</CODE> has been extended to 
+recognize the flag 'silent' to start a call
+trace in silent mode.
+<br>
+<LI>Some bugs in the <CODE>dbg</CODE> module has been
+fixed, e.g the 'old_trace_call' flag has been
+removed from the 'all' flags list, and the dbg server
+no longer hangs if the supplied tracer fails to
+start.
+<br>
+<LI>A bug in the emulator that made 'EXIT' messages
+from a process involved in a sequential call trace
+get overwritten by the sequential trace token
+itself has been fixed.
+<br>
+<LI>The documentation regarding the above has
+been updated. Especially, the fact that the match spec
+function <CODE>{return_trace}</CODE> destroys the 
+tail recursiveness of the traced function has been 
+pointed out.
+<br>
+</UL>
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3747<br>
+Aux Id: OTP-3592, OTP-3744
+
+
+</UL>
+
 <H2>Runtime_tools 1.1.2</H2>
 <H3>Improvements and new features</H3>
 

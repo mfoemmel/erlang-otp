@@ -853,9 +853,16 @@ encode_bit_string(C, [{bit,No} | RestVal], NamedBitList) ->
 %% when the value is a list of ones and zeroes
 
 encode_bit_string(C, BitListValue, NamedBitList) when list(BitListValue) ->
-    %% first remove any trailing zeroes
-    Bl1 = lists:dropwhile(fun(0)->true;(1)->false end,lists:reverse(BitListValue)),
-    BitList = [{bit,X} || X <- lists:reverse(Bl1)],
+    Bl1 = 
+	case NamedBitList of
+	    [] ->  % dont remove trailing zeroes
+		BitListValue;
+	    _ -> % first remove any trailing zeroes
+		lists:reverse(lists:dropwhile(fun(0)->true;(1)->false end,
+					      lists:reverse(BitListValue)))
+	end,
+    BitList = [{bit,X} || X <- Bl1],
+    BListLen = length(BitList),
     case get_constraint(C,'SizeConstraint') of
 	0 -> % fixed length
 	    []; % nothing to encode
@@ -863,7 +870,7 @@ encode_bit_string(C, BitListValue, NamedBitList) when list(BitListValue) ->
 	    pad_list(V,BitList);
 	V when integer(V) -> % fixed length 16 bits or less
 	    [align,pad_list(V,BitList)];
-	{Lb,Ub} when integer(Lb),integer(Ub) ->
+	{Lb,Ub} when integer(Lb),integer(Ub) ->	    
 	    [encode_length({Lb,Ub},length(BitList)),align,BitList];
 	no ->
 	    [encode_length(undefined,length(BitList)),align,BitList];

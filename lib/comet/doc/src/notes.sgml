@@ -22,7 +22,7 @@
     <title>Comet Release Notes
     <prepared>Jakob Cederlund
     <docno>
-    <date>2000-08-26
+    <date>2001-02-01
     <rev>
     <file>notes.sgml
   </header>
@@ -33,23 +33,40 @@
     
     <section><title>Improvements and New Features</title>
       <list>
-        <item>
-          <p>Look for improvements on the erlang home page, www.erlang.org. 
+	<item>Generates Erlang wrapper modules from COM TypeLibs.</item>
+	<item>More examples, better documentation.</item>
       </list>
     </section>
     
     <section><title>Fixed Bugs and Malfunctions</title>
       <p>
+	Improved stability, now works as a port program too.
     </section>
  
     <section><title>Known Bugs and Problems</title>
-      <p>There are problems with the <c>get_interface_info/1</c>
-	and <c>get_typelib_info</c>, don't use these as of yet.
-	Other tools such as OLE/COM Object Viewer or Visual Basic
-	can be used instead.
+      <p>
+	No way to avoid context switches (in Win32) when calling
+	COM-object. This might be addressed in future versions.
     </section>
   </section>
   
+  <section><title>Comet 1.1</title>
+
+    <p>
+      New release.
+    <p>
+      Greatly improved everything.
+    <p>
+      Comet can now be run as a port program and/or a port driver. The
+      same API works in both.
+    <p>
+      Now generates Erlang wrapper modules around COM objects and
+      interfaces, using information in COM TypeLibs.
+    <p>
+      Examples include controlling Internet Explorer, using Excel and
+      accessing data through ADO.
+      
+  </section>
   <section><title>Comet 1.0</title>
 
     <p>New application.
@@ -57,3 +74,4 @@
   </section>
 
 </chapter>
+

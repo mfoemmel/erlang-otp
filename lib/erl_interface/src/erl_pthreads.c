@@ -21,6 +21,10 @@
  * see erl_init() in erl_locking.h
  */
 
+#ifdef HAVE_CONFIG_H
+# include <config.h>
+#endif
+
 #if !defined(VXWORKS) && !defined(__WIN32__)
 #if defined HAVE_PTHREAD_H || defined HAVE_MIT_PTHREAD_H
 
@@ -131,7 +135,6 @@ erl_errno_key_alloc (void)
 static void
 erl_errno_alloc (void)
 {
-    pthread_once(&erl_errno_key_once, erl_errno_key_alloc);
     pthread_setspecific(erl_errno_key, malloc(sizeof(__erl_errno)));
     *(int *)pthread_getspecific(erl_errno_key) = 0;
 }
@@ -142,6 +145,7 @@ erl_errno_alloc (void)
 volatile int *
 __erl_errno_place (void)
 {
+    pthread_once(&erl_errno_key_once, erl_errno_key_alloc);
     if (pthread_getspecific(erl_errno_key) == NULL)
     {
 	erl_errno_alloc();

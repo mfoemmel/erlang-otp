@@ -196,6 +196,8 @@ bind(OE_THIS, OE_State, [H|T], Obj) ->
 								 cxt=OE_THIS});
 	X ->
 	    case lists:keysearch(H, 1, X) of
+		{value, {H, ncontext, NC}} when record(NC, 'IOP_IOR') ->
+		    {reply, 'CosNaming_NamingContext':bind(NC, T, Obj), OE_State};
 		{value, {H, ncontext, NC}} ->
 		    bind(NC, OE_State, T, Obj);
 		_ ->
@@ -237,6 +239,8 @@ rebind(OE_THIS, OE_State, [H|T], Obj) ->
 						       cxt=OE_THIS});
 	X ->
 	    case lists:keysearch(H, 1, X) of
+		{value, {H, ncontext, NC}} when record(NC, 'IOP_IOR') ->
+		    {reply, 'CosNaming_NamingContext':rebind(NC, T, Obj), OE_State};
 		{value, {H, ncontext, NC}} ->
 		    rebind(NC, OE_State, T, Obj);
 		_ ->
@@ -278,6 +282,9 @@ bind_context(OE_THIS, OE_State, [H|T], Obj) ->
 								 cxt=OE_THIS});
 	X ->
 	    case lists:keysearch(H, 1, X) of
+		{value, {H, ncontext, NC}} when record(NC, 'IOP_IOR') ->
+		    {reply, 'CosNaming_NamingContext':bind_context(NC, T, Obj), 
+		     OE_State};
 		{value, {H, ncontext, NC}} ->
 		    bind_context(NC, OE_State, T, Obj);
 		_ ->
@@ -319,6 +326,9 @@ rebind_context(OE_THIS, OE_State, [H|T], Obj) ->
 								 cxt=OE_THIS});
 	X ->
 	    case lists:keysearch(H, 1, X) of
+		{value, {H,ncontext, NC}} when record(NC, 'IOP_IOR') ->
+		    {reply, 'CosNaming_NamingContext':rebind_context(NC, T, Obj), 
+		    OE_State};
 		{value, {H,ncontext, NC}} ->
 		    rebind_context(NC, OE_State, T, Obj);
 		_ ->
@@ -358,6 +368,8 @@ resolve(OE_THIS, OE_State, [H|T]) ->
 								 cxt=OE_THIS});
 	X ->
 	    case lists:keysearch(H, 1, X) of
+		{value, {H, ncontext, NC}} when record(NC, 'IOP_IOR') ->
+		    {reply, 'CosNaming_NamingContext':resolve(NC, T), OE_State};
 		{value, {H, ncontext, NC}} ->
 		    resolve(NC, OE_State, T);
 		_ ->
@@ -394,6 +406,8 @@ unbind(OE_THIS, OE_State, [H|T]) ->
 								 cxt=OE_THIS});
 	X ->
 	    case lists:keysearch(H, 1, X) of
+		{value, {H, ncontext, NC}} when record(NC, 'IOP_IOR') ->
+		    {reply, 'CosNaming_NamingContext':unbind(NC, T), OE_State};
 		{value, {H, ncontext, NC}} ->
 		    unbind(NC, OE_State, T);
 		_ ->

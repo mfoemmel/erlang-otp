@@ -106,25 +106,45 @@
 %% No user variables have been assigned digraphs, so there is no
 %% need to call xref_base:delete/1.
 m(Module) when atom(Module) ->
-    {ok, State} = xref_base:new(),
     case xref_utils:find_beam(Module) of
 	{ok, File} ->
-	    catch do_analysis(fun(S) -> xref_base:add_module(S, File) end, 
-			      State);
+	    Fun = fun(S) -> xref_base:add_module(S, File) end,
+	    case catch do_functions_analysis(Fun) of
+		{error, _, {no_debug_info, _}} ->
+		    catch do_modules_analysis(Fun);
+		Result ->
+		    Result
+	    end;
 	Error -> Error
     end;
 m(File) ->
-    {ok, State} = xref_base:new(),
     {Dir, BaseName} = xref_utils:split_filename(File, ".beam"),
     BeamFile = filename:join(Dir, BaseName),
     Fun = fun(S) -> xref_base:add_module(S, BeamFile) end,
-    catch do_analysis(Fun, State).
+    case catch do_functions_analysis(Fun) of
+	{error, _, {no_debug_info, _}} ->
+	    catch do_modules_analysis(Fun);
+	Result ->
+	    Result
+    end.
 
 %% -> [Faulty] | Error; Faulty = {undefined, Calls} | {unused, Funs}
 d(Directory) ->
-    {ok, State} = xref_base:new(),
     Fun = fun(S) -> xref_base:add_directory(S, Directory) end,
-    catch do_analysis(Fun, State).
+    Fun1 = fun(S) ->
+		   case Fun(S) of
+		       {ok, [], _S} -> 
+			   no_modules;
+		       Reply -> 
+			   Reply
+		   end
+	   end,
+    case catch do_functions_analysis(Fun1) of
+	no_modules ->
+	    catch do_modules_analysis(Fun);
+	Result -> 
+	    Result
+    end.
 
 start(Name) ->
     start(Name, []).
@@ -514,7 +534,8 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%----------------------------------------------------------------------
 
-do_analysis(FFun, State) ->
+do_functions_analysis(FFun) ->
+    {ok, State} = xref_base:new(),
     {ok, State1} = xref_base:set_library_path(State, code_path),
     {ok, State2} = xref_base:set_default(State1, 
 					 [{verbose,false},{warnings,false}]),
@@ -526,6 +547,18 @@ do_analysis(FFun, State) ->
 	xref_base:analyze(State3, undefined_function_calls),
     {{ok, Unused}, _} = xref_base:analyze(State4, locals_not_used),
     [{undefined,to_external(Undef)}, {unused,to_external(Unused)}].
+
+do_modules_analysis(FFun) ->
+    {ok, State} = xref_base:new({xref_mode, modules}),
+    {ok, State1} = xref_base:set_library_path(State, code_path),
+    {ok, State2} = xref_base:set_default(State1, 
+					 [{verbose,false},{warnings,false}]),
+    State3 = case FFun(State2) of
+		 {ok, _, S} -> S;
+		 Error2 -> throw(Error2)
+	     end,
+    {{ok, Undef}, _} = xref_base:analyze(State3, undefined_functions),
+    [{undefined,to_external(Undef)}].
 
 unsetify(Reply={ok, X}) ->
     case is_set(X) of

@@ -11,6 +11,62 @@
 <h1>
 Inets Release Notes</h1></center>
 
+<h2>Inets 2.5.5</h2>
+
+<h3>Improvements and new features</h3>
+
+<ul>
+<li>Better handling of invalid server response (e.g. as a result of 
+an erroneous server config). 
+</ul>
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+<li>Invalid guard in function ftp:open/2.
+<br>This problem exist only in inets-2.5.4. Use ftp:open/3 instead.
+<br>Own Id: OTP-3892
+<br>Aux Id: Seq 4958
+</ul>
+
+<h3>Known bugs and problems</h3>
+
+<ul>
+</ul>
+
+<h2>Inets 2.5.4</h2>
+
+<h3>Improvements and new features</h3>
+
+<ul>
+<li>Support for choosing port number when opening FTP connection.</li>
+<br>It is now possible to open a connection using a user specified port number.
+<br>Default is still 21.
+<br>Own Id: OTP-3751
+
+</ul>
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+<li>Wrong return value from FTP function recv_bin.
+<br>The function actually returned: {ok,{ok,binary()}} instead of {ok,binary()}
+<br>Own Id: OTP-3755
+<br>Aux Id: Seq 4958
+
+<li>The HTTP server hangs due to unhandled info:  {'EXIT',<0.12542.6>,badsig}
+<br>Crash of the listener process for this reason not handled.
+<br>Own Id: OTP-3793
+<br>Aux Id: Seq 5020
+
+</ul>
+
+<h3>Known bugs and problems</h3>
+
+<ul>
+<li>ftp:open(Host,Port) does not work. Use ftp:open(Host,Port,[]) instead.
+</ul>
+
 <h2>Inets 2.5.3</h2>
 
 <h3>Improvements and new features</h3>

@@ -16,6 +16,9 @@
 %%     $Id$
 %%
 
+%% selectors used by the port for comet. These must correspond to
+%% defines in ../c_src/erl_com_drv.h .
+
 -define(ERLCOM_CreateObject , 0).
 -define(ERLCOM_QueryInterface , 1).
 -define(ERLCOM_Release , 2).
@@ -28,13 +31,18 @@
 -define(ERLCOM_GetTypeLibInfo , 9).
 -define(ERLCOM_NewThread , 10).
 -define(ERLCOM_EndThread , 11).
+-define(ERLCOM_CurrentThread , 12).
+-define(ERLCOM_PropertyPutRef , 13).
 -define(ERLCOM_Quit , 50).
 -define(ERLCOM_Test , 100).
 
 -define(ERLCOM_DispatchIntf , 1).
 -define(ERLCOM_VirtualIntf , 2).
 
+%% some COM defines
 -define(CLSCTX_INPROC_SERVER, 1).
 -define(CLSCTX_INPROC_HANDLER, 2).
 -define(CLSCTX_LOCAL_SERVER, 4).
 -define(CLSCTX_REMOTE_SERVER, 16).
+
+-define(IID_IDispatch, "{00020400-0000-0000-C000-000000000046}").

@@ -41,16 +41,19 @@
 	 uninstall/0, giop_version/0, info/0,
 	 is_running/0, add_node/2, remove_node/1, iiop_timeout/0, 
 	 iiop_connection_timeout/0, objectkeys_gc_time/0,
-	 objectkeys_gc_time/0, is_lightweight/0, get_lightweight_nodes/0,
+	 is_lightweight/0, get_lightweight_nodes/0,
 	 start_lightweight/0, start_lightweight/1,
-	 get_ORBDefaultInitRef/0, get_ORBInitRef/0]).
+	 get_ORBDefaultInitRef/0, get_ORBInitRef/0,
+	 get_interceptors/0, set_interceptors/1]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
 -export([host/0, ip_address_variable_defined/0, start/2, init/1, start_naming_service/1,
 	 messageInInterceptors/0, messageOutInterceptors/0,
-	 get_debug_level/0, debug_level_print/3, configure/2]).
+	 get_debug_level/0, debug_level_print/3, configure/2, add_table_index/0,
+	 del_table_index/0]).
+
 %%-----------------------------------------------------------------
 %% Internal definitions
 %%-----------------------------------------------------------------
@@ -215,6 +218,9 @@ Time to large (>1000000 sec), swithed to 'infinity'~n"),
 	    infinity
     end.
 
+%%-----------------------------------------------------------------
+%% CosNaming::NamingContextExt operations
+%%-----------------------------------------------------------------
 get_ORBInitRef() ->
     case application:get_env(orber, orbInitRef) of
 	{ok, Ref} when list(Ref) ->
@@ -231,11 +237,30 @@ get_ORBDefaultInitRef() ->
 	    undefined
     end.
 
+%%-----------------------------------------------------------------
+%% Interceptor opertaions (see orber_pi.erl)
+%%-----------------------------------------------------------------
+get_interceptors() ->
+    case application:get_env(orber, interceptors) of
+	{ok, {basic, PIs}} ->
+	    {basic, PIs};
+	{ok, {portable, PIs}} ->
+	    {portable, PIs};
+	{ok, {both, PIs}} ->
+	    {both, PIs};
+	_ ->
+	    false
+    end.
+
+set_interceptors({Type, InterceptorList}) when list(InterceptorList) ->
+    configure(interceptors, {Type, InterceptorList});
+set_interceptors(_) ->
+    exit({error, "Usage: {Type, ModuleList}"}).
+
 
 %%-----------------------------------------------------------------
 %% Light weight Orber operations
 %%-----------------------------------------------------------------
-
 is_lightweight() ->
     case application:get_env(orber, lightweight) of
 	{ok, L} when list(L) ->
@@ -255,7 +280,6 @@ get_lightweight_nodes() ->
 %%-----------------------------------------------------------------
 %% Security access operations (SSL)
 %%-----------------------------------------------------------------
-   
 secure() ->
     case application:get_env(orber, secure) of
 	{ok, V} ->
@@ -413,6 +437,7 @@ info() ->
 	    io:format("IIOP timeout: ~p\n",[iiop_timeout()]),
 	    io:format("IIOP connection timeout: ~p\n",[iiop_connection_timeout()]),
 	    io:format("Object Keys GC interval: ~p\n",[objectkeys_gc_time()]),
+	    io:format("Using Interceptors: ~p\n",[get_interceptors()]),
 	    Sec = secure(),
 	    io:format("ORB security: ~p\n",[Sec]),
 	    case Sec of
@@ -464,7 +489,6 @@ install_orber(Nodes, Options) ->
     MnesiaOptions = [Local_content_tables],
     {_, IFR_storage_type} = get_option(ifr_storage_type, Options),
     {_, Timeout} = get_option(install_timeout, Options),
-    AllTabs = mnesia:system_info(tables),
     TableTest = test_tables(),
     case lists:member(is_member, TableTest) of
 	true ->
@@ -477,6 +501,7 @@ install_orber(Nodes, Options) ->
 	_ ->
 	    orber_ifr:init(Timeout, [{IFR_storage_type, Nodes} |MnesiaOptions])
     end,
+    add_table_index(),
     orber_objectkeys:install(Timeout, [{ram_copies, Nodes} |MnesiaOptions]),
     orber_policy_server:install(Timeout, [{ram_copies, Nodes} |MnesiaOptions]),
     'CosNaming_NamingContext_impl':install(Timeout, [{ram_copies, Nodes} |MnesiaOptions]),
@@ -487,7 +512,8 @@ install_orber(Nodes, Options) ->
     oe_OrberIFR:oe_register(),
     oe_CORBA:oe_register(),
     create_default_contexts(),
-    mnesia:dump_tables(['orber_CosNaming']),
+    check_mnesia_result(mnesia:dump_tables(['orber_CosNaming']),
+			"Unable to dump mnesia tables."),
     application:stop(orber).
 
 
@@ -502,6 +528,11 @@ test_tables() ->
 		      end
 	      end,
 	      ?ifr_object_list++?ORBER_TABS).
+
+check_mnesia_result({atomic, ok}, _) ->
+    ok;
+check_mnesia_result({aborted, R}, Reason) ->
+    exit({error, {Reason, R}}).
 
 %%-----------------------------------------------------------------
 %% UnInstallation interface functions
@@ -533,7 +564,6 @@ get_option(Key, OptionList) ->
 %%-----------------------------------------------------------------
 %% Add and remove node interface functions
 %%-----------------------------------------------------------------
-
 add_node(Node, StorageType) when atom(Node), atom(StorageType)  ->
     case rpc:call(Node, mnesia, system_info, [is_running]) of
 	{badrpc, Reason} ->
@@ -651,6 +681,8 @@ check_giop_version() ->
 	    ok;
 	{1,1} ->
 	    ok;
+	{1,2} ->
+	    ok;
 	X ->
 	    X
     end.
@@ -693,6 +725,7 @@ debug_level_print(Format, Data, RequestedLevel) ->
 	    ok
     end.
 
+%%------ Keys we can update at any time -----
 %% Initial Services References
 configure(orbDefaultInitRef, String) when list(String) ->
     do_configure(orbDefaultInitRef, String);
@@ -713,16 +746,27 @@ configure(iiop_connection_timeout, infinity) ->
     do_configure(iiop_connection_timeout, infinity);
 configure(iiop_connection_timeout, Value) when integer(Value), Value =< 1000000 ->
     do_configure(iiop_connection_timeout, Value);
-%% 
+%% Garbage Collect the object keys DB.
 configure(objectkeys_gc_time, infinity) ->
     do_configure(objectkeys_gc_time, infinity);
 configure(objectkeys_gc_time, Value) when integer(Value), Value =< 1000000 ->
     do_configure(objectkeys_gc_time, Value);
+%% Orber debug printouts
 configure(orber_debug_level, Value) when integer(Value) ->
     do_configure(orber_debug_level, Value);
+
+%%------ Keys we cannot change if Orber is running -----
+%% Set the listen port
+configure(iiop_port, Value) when integer(Value) ->
+    do_safe_configure(iiop_port, Value);
+%% IIOP interceptors
+configure(interceptors, Value) when tuple(Value) ->
+    do_safe_configure(interceptors, Value);
+
 configure(_, _) ->
     exit({error, "Bad configure parameter(s)"}).
 
+%% This function may be used as long as it is safe to change a value at any time.
 do_configure(Key, Value) ->
     case is_loaded() of
 	false ->
@@ -731,7 +775,45 @@ do_configure(Key, Value) ->
 	true ->
 	    application_controller:set_env(orber, Key, Value)
     end.
-	
+
+%% This function MUST(!!) be used when we cannot change a value if Orber is running.
+do_safe_configure(Key, Value) ->
+    case is_loaded() of
+	false ->
+	    application:load(orber),
+	    application_controller:set_env(orber, Key, Value);
+	true ->
+	    case is_running() of
+		false ->
+		    application_controller:set_env(orber, Key, Value);
+		true ->
+		    exit({error, "Orber already rrunning, the given key may not be updated!"})
+	    end
+    end.
+
+
+add_table_index() ->
+    check_mnesia_result(mnesia:add_table_index(ir_ModuleDef, id),
+			"Unable to index ir_ModuleDef mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_InterfaceDef, id),
+			"Unable to index ir_InterfaceDef mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_StructDef, id),
+			"Unable to index ir_StructDef mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_UnionDef, id),
+			"Unable to index ir_UnionDef mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_ExceptionDef, id),
+			"Unable to index ir_ExceptionDef mnesia table.").  
+del_table_index() ->
+    check_mnesia_result(mnesia:del_table_index(ir_ModuleDef, id),
+			"Unable to remove index for the mnesia table ir_ModuleDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_InterfaceDef, id),
+			"Unable to remove index for the mnesia table ir_InterfaceDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_StructDef, id),
+			"Unable to remove index for the mnesia table ir_StructDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_UnionDef, id),
+			"Unable to remove index for the mnesia table ir_UnionDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_ExceptionDef, id),
+			"Unable to remove index for the mnesia table ir_ExceptionDef.").
 
 %%-----------------------------------------------------------------
 %% Server functions

@@ -26,6 +26,14 @@
 -include("SNMPv2-TC.hrl").
 
 
+-define(VMODULE,"NOTIFICATION-MIB").
+-include("snmp_verbosity.hrl").
+
+-ifndef(default_verbosity).
+-define(default_verbosity,silence).
+-endif.
+
+
 %%-----------------------------------------------------------------
 %% Func: configure/1
 %% Args: Dir is the directory where the configuration files are found.
@@ -38,10 +46,13 @@
 %% Fails: exit(configuration_error)
 %%-----------------------------------------------------------------
 configure(Dir) ->
+    set_sname(),
     case snmp_local_db:table_exists(db(snmpNotifyTable)) of
 	true ->
+	    ?vlog("notification table exist: cleanup",[]),
 	    gc_tabs();
 	false ->
+	    ?vlog("notification table does not exist: reconfigure",[]),
 	    reconfigure(Dir)
     end.
 
@@ -57,9 +68,11 @@ configure(Dir) ->
 %% Fails: exit(configuration_error)
 %%-----------------------------------------------------------------
 reconfigure(Dir) ->
-    Notifs =
-	snmp_conf:read_notify_config_files(Dir),
+    set_sname(),
+    ?vdebug("read notify config files",[]),
+    Notifs = snmp_conf:read_notify_config_files(Dir),
     init_tabs(Notifs),
+    ?vdebug("invalidate cache",[]),
     invalidate_cache(),
     ok.
 
@@ -70,15 +83,22 @@ maybe_create_table(Name) ->
     end.
 
 init_tabs(Notifs) ->
+    ?vdebug("create notify table",[]),
     snmp_local_db:table_delete(db(snmpNotifyTable)),
     snmp_local_db:table_create(db(snmpNotifyTable)),
+    ?vdebug("initiate notify table",[]),
     init_notify_table(Notifs).
     
 init_notify_table([Row | T]) ->
     Key = element(1, Row),
-    snmp_local_db:table_create_row(db(snmpNotifyTable), Key, Row),
+    table_create_row(snmpNotifyTable, Key, Row),
     init_notify_table(T);
 init_notify_table([]) -> true.
+
+table_create_row(Tab,Name,Row) ->
+    ?vtrace("create table ~w row with Name: ~s",[Tab,Name]),
+    snmp_local_db:table_create_row(db(Tab), Name, Row).
+
 
 gc_tabs() ->
     gc_tab(snmpNotifyTable),
@@ -89,13 +109,38 @@ gc_tab(Tab) ->
     F = fun(Oid, Row) ->
 		case element(STC, Row) of
 		    ?'StorageType_volatile' ->
+			?vtrace("delete volatile row: ~w",[Row]),
 			snmp_local_db:table_delete_row(db(Tab), Oid);
 		    _ ->
 			ok
 		end
 	end,
-    snmp_generic:table_foreach(db(Tab), F).
+    gc_tab1(F,Tab).
+		    
 
+gc_tab1(F,Tab) ->
+    case (catch snmp_generic:table_foreach(db(Tab), F)) of
+	{'EXIT',{cyclic_db_reference,Oid}} ->
+	    %% Remove the row regardless of storage type since this
+	    %% is a major error. This row must be removed.
+	    case snmp_local_db:table_delete_row(db(Tab), Oid) of
+		true -> 
+		    ?vlog("deleted cyclic ref row for: ~w",[Oid]),
+		    snmp_error:config_err("cyclic reference in table ~w: "
+					  "~w -> ~w. Row deleted",
+					  [Tab,Oid,Oid]),
+		    gc_tab1(F,Tab);
+		false ->
+		    ?vlog("unable to remove faulty row from table ~w",[Tab]),
+		    snmp_error:config_err("failed removing faulty row. "
+					  "Giving up on table ~w cleanup",
+					  [Tab])
+	    end;
+	_ ->
+	    ok
+    end.
+		    
+			    
 %%-----------------------------------------------------------------
 %% Func: get_targets()
 %%       get_targets(NotifyName) -> [Target]
@@ -236,3 +281,11 @@ table_next(Name, RestOid) ->
 get(Name, RowIndex, Cols) ->
     snmp_generic:handle_table_get(db(Name), RowIndex, Cols, foi(Name)).
 
+
+set_sname() ->
+    set_sname(get(sname)).
+
+set_sname(undefined) ->
+    put(sname,conf);
+set_sname(_) -> %% Keep it, if already set.
+    ok.

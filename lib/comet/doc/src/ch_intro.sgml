@@ -39,7 +39,7 @@
       to call COM objects.
     <p>This document describes Comet and its possible applications.
       However, some knowledge of COM is assumed. Please check the list
-      of recommended reading in appendix A for tips on books on COM.
+      of recommended reading below for tips on books on COM.
   </section>
   
   <section><title>Architecture</title>
@@ -49,13 +49,12 @@
       a port driver erl_com_drv, that implements the C glue. The port
       driver is also available as a port program with the same API from
       Erlang.
-    <p>Comet is not an application, it is intended to be part of other
-      applications. It does not contain an application and supervisor.
+   
     <p>Since COM is a Windows-specific technology, Comet is only
       available on Windows.
     <p>Erlang can only call other COM-servers, Comet does not currently
       provide for creating COM-objects written in Erlang. This might be
-      included in later versions. Comet is a COM-client only.
+      included in later versions. Thus Comet is a COM-client only.
   </section>
 
   <section><title>Prerequisites</title>

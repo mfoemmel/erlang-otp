@@ -258,15 +258,12 @@ localise_type(X, _) -> X.
 %% NOTE: Executed at the MA
 %%-----------------------------------------------------------------
 make_v1_trap_pdu(Enterprise, Specific, VarbindList, SysUpTime) ->
-    case Enterprise of
-	?snmp ->
-	    Enterp = sys_object_id(),
-	    Generic = Specific,
-	    Spec = 0;
-	_ ->
-	    Enterp = Enterprise,
-	    Generic = ?enterpriseSpecific,
-	    Spec = Specific
+    {Enterp,Generic,Spec} = 
+	case Enterprise of
+	    ?snmp ->
+		{sys_object_id(),Specific,0};
+	    _ ->
+		{Enterprise,?enterpriseSpecific,Specific}
     end,
     {value, AgentIp} = snmp_framework_mib:intAgentIpAddress(get),
     #trappdu{enterprise = Enterp,
@@ -405,49 +402,59 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 		 Type} | T],
 	       ContextName,{TrapRec, Vbs}, V1Res, V2Res, V3Res, Recv, NetIf) ->
     ?vdebug("send trap pdus: "
-	    "~n   Destination address: ~p~n"
-	    "~n   Target name:         ~p~n"
-	    "~n   MP model:            ~p~n"
-	    "~n   Type:                ~p",
-	    [DestAddr,TargetName,MpModel,Type]),
+	    "~n   Destination address: ~p"
+	    "~n   Target name:         ~p"
+	    "~n   MP model:            ~p"
+	    "~n   Type:                ~p"
+	    "~n   V1Res:               ~p"
+	    "~n   V2Res:               ~p"
+	    "~n   V3Res:               ~p",
+	    [DestAddr,TargetName,MpModel,Type,V1Res,V2Res,V3Res]),
     case snmp_vacm:get_mib_view(notify, SecModel, SecName, SecLevel,
 				ContextName) of
 	{ok, MibView} ->
 	    case check_all_varbinds(TrapRec, Vbs, MibView) of
 		true when MpModel == ?MP_V1 ->
+		    ?vtrace("v1 mp model",[]),
 		    ContextEngineId = snmp_framework_mib:get_engine_id(),
 		    case snmp_community_mib:vacm2community({SecName,
 							    ContextEngineId,
 							    ContextName},
 							   DestAddr) of
 			{ok, Community} ->
+			    ?vdebug("community found  for v1 dest: ~p",
+				    [element(2, DestAddr)]),
 			    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
 					   [{DestAddr, Community} | V1Res],
 					   V2Res, V3Res, Recv, NetIf);
 			undefined ->
-			    ?vlog("No community found for v1 dest: ~p", 
-				  [element(2, DestAddr)]),
+			    ?vdebug("No community found for v1 dest: ~p", 
+				    [element(2, DestAddr)]),
 			    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
 					   V1Res, V2Res, V3Res, Recv, NetIf)
 		    end;
 		true when MpModel == ?MP_V2C ->
+		    ?vtrace("v2c mp model",[]),
 		    ContextEngineId = snmp_framework_mib:get_engine_id(),
 		    case snmp_community_mib:vacm2community({SecName,
 							    ContextEngineId,
 							    ContextName},
 							   DestAddr) of
 			{ok, Community} ->
+			    ?vdebug("community found for v2c dest: ~p", 
+				    [element(2, DestAddr)]),
 			    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
 					   V1Res,
 					   [{DestAddr, Community, Type}|V2Res],
 					   V3Res, Recv, NetIf);
 			undefined ->
-			    ?vlog("No community found for v2c dest: ~p\n", 
-				  [element(2, DestAddr)]),
+			    ?vdebug("No community found for v2c dest: ~p", 
+				    [element(2, DestAddr)]),
 			    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
 					   V1Res, V2Res, V3Res, Recv, NetIf)
 		    end;
 		true when MpModel == ?MP_V3 ->
+		    ?vtrace("v3 mp model",[]),
 		    SecLevelF = mk_flag(SecLevel),
 		    MsgData = {SecModel, SecName, SecLevelF, TargetName},
 		    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
@@ -455,12 +462,13 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 				   [{DestAddr, MsgData, Type} | V3Res],
 				   Recv, NetIf);
 		true ->
-		    ?vlog("bad MpModel ~p for dest: ~p.~n",
+		    ?vlog("bad MpModel ~p for dest ~p",
 			  [MpModel, element(2, DestAddr)]),
 		    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
 				   V1Res, V2Res, V3Res, Recv, NetIf);
 		_ ->
-		    ?vlog("no access for dest: ~p in target ~p.~n",
+		    ?vlog("no access for dest: "
+			  "~n   ~p in target ~p",
 			  [element(2, DestAddr), TargetName]),
 		    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
 				   V1Res, V2Res, V3Res, Recv, NetIf)
@@ -468,7 +476,7 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 	{discarded, Reason} ->
 	    ?vlog("mib view error ~p for"
 		  "~n   dest:    ~p"
-		  "~n   secName: ~w", 
+		  "~n   SecName: ~w", 
 		  [Reason, element(2, DestAddr), SecName]),
 	    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
 			   V1Res, V2Res, V3Res, Recv, NetIf)
@@ -487,7 +495,10 @@ send_v1_trap(#trap{enterpriseoid = Enter, specificcode = Spec},
 	     V1Res, Vbs, NetIf, SysUpTime) ->
     ?vdebug("prepare to send v1 trap "
 	    "~n   '~p'"
-	    "~n   with ~p",[Enter,Spec]),
+	    "~n   with"
+	    "~n   ~p"
+	    "~n   to"
+	    "~n   ~p",[Enter,Spec,V1Res]),
     TrapPdu = make_v1_trap_pdu(Enter, Spec, Vbs, SysUpTime),
     AddrCommunities = mk_addr_communities(V1Res),
     lists:foreach(fun({Community, Addrs}) ->
@@ -503,20 +514,18 @@ send_v1_trap(#notification{oid = Oid}, V1Res, Vbs, NetIf, SysUpTime) ->
 				true;
 			   (_) -> false
 			end, Vbs),
-    case Oid of
-	[1,3,6,1,6,3,1,1,5,Specific] ->
-	    Enter = ?snmp,
-	    Spec = Specific - 1;
-	_ ->
-	    case lists:reverse(Oid) of
-		[Last, 0 | First] ->
-		    Enter = lists:reverse(First),
-		    Spec = Last;
-		[Last | First] ->
-		    Enter = lists:reverse(First),
-		    Spec = Last
-	    end
-    end,
+    {Enter,Spec} = 
+	case Oid of
+	    [1,3,6,1,6,3,1,1,5,Specific] ->
+		{?snmp,Specific - 1};
+	    _ ->
+		case lists:reverse(Oid) of
+		    [Last, 0 | First] ->
+			{lists:reverse(First),Last};
+		    [Last | First] ->
+			{lists:reverse(First),Last}
+		end
+	end,
     TrapPdu = make_v1_trap_pdu(Enter, Spec, NVbs, SysUpTime),
     AddrCommunities = mk_addr_communities(V1Res),
     lists:foreach(fun({Community, Addrs}) ->
@@ -552,14 +561,13 @@ mk_v2_trap(#notification{oid = Oid}, Vbs, SysUpTime) ->
 mk_v2_trap(#trap{enterpriseoid = Enter, specificcode = Spec}, Vbs, SysUpTime) ->
     %% Use alg. in rfc1908 to map a v1 trap to a v2 trap
     ?vtrace("make v2 trap for '~p' with ~p",[Enter,Spec]),
-    case Enter of
-	?snmp ->
-	    Oid = ?snmpTraps ++ [Spec + 1],
-	    Enterp = sys_object_id();
-	_ ->
-	    Oid = Enter ++ [0, Spec],
-	    Enterp = Enter
-    end,
+    {Oid,Enterp} = 
+	case Enter of
+	    ?snmp ->
+		{?snmpTraps ++ [Spec + 1],sys_object_id()};
+	    _ ->
+		{Enter ++ [0, Spec],Enter}
+	end,
     ExtraVb = #varbind{oid = ?snmpTrapEnterprise_instance,
 		       variabletype = 'OBJECT IDENTIFIER',
 		       value = Enterp},

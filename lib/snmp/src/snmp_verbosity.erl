@@ -95,7 +95,9 @@ image_of_sname(nif)       -> "NET-IF";
 image_of_sname(ldb)       -> "LOCAL-DB";
 image_of_sname(ns)        -> "NOTE-STORE";
 image_of_sname(ss)        -> "SYMBOLIC-STORE";
+image_of_sname(sup)       -> "SUPERVISOR";
 image_of_sname(ms)        -> "MIB-SERVER";
+image_of_sname(conf)      -> "CONFIGURATOR";
 image_of_sname(undefined) -> "";
 image_of_sname(V)         -> io_lib:format("~p",[V]).
 

@@ -115,10 +115,13 @@ receive_response() ->
     receive_response(3500).
 
 receive_response(Timeout) ->
+    d("await reponse within ~w ms",[Timeout]),
     receive
 	{snmp_pdu, PDU} when record(PDU, pdu) ->
+	    d("received PDU: ~n\t~p",[PDU]),
 	    PDU
     after Timeout ->
+	    d("response timeout",[]),
 	    {error, timeout}
     end.
 
@@ -127,10 +130,13 @@ receive_response(Timeout) ->
 %% Returns: TrapPdu|{error, Reason}
 %%----------------------------------------------------------------------
 receive_trap(Timeout) ->
+    d("await trap within ~w ms",[Timeout]),
     receive
 	{snmp_pdu, PDU} when record(PDU, trappdu) ->
+	    d("received trap-PDU: ~n\t~p",[PDU]),
 	    PDU
     after Timeout ->
+	    d("trap timeout",[]),
 	    {error, timeout}
     end.
 
@@ -146,6 +152,10 @@ init({Options, CallerPid}) ->
     random:seed(A1,A2,A3),
     case is_options_ok(Options) of
 	true ->
+	    put(debug,get_value(debug,Options,false)),
+	    d("init -> (~p) extract options",[self()]),
+	    PacksDbg = get_value(packet_server_debug,Options,false),
+	    RecBufSz = get_value(recbuf,Options,1024),
 	    Mibs = get_value(mibs, Options, []),
 	    Udp = get_value(agent_udp, Options, 4000),
 	    User = get_value(user, Options, "initial"),
@@ -177,18 +187,21 @@ init({Options, CallerPid}) ->
 			   {ok, Ip} = snmp_misc:ip(Host),
 			   Ip
 		   end,
+	    d("init -> start packet server",[]),
 	    PackServ = case lists:member(quiet, Options) of
 			   false ->
 			       snmp_mgr_misc:start_link_packet(
-				 {msg, self()},
-				 AgIp, Udp, TrapUdp, VsnHdrD, Version, Dir);
+				 {msg, self()}, AgIp, Udp, TrapUdp, 
+				 VsnHdrD, Version, Dir, RecBufSz);
 			   true ->
 			       Type =  get_value(receive_type, Options, pdu),
 			       snmp_mgr_misc:start_link_packet(
 				 {Type, CallerPid}, AgIp, Udp, TrapUdp,
-				 VsnHdrD, Version, Dir)
+				 VsnHdrD, Version, Dir, RecBufSz)
 		       end,
+	    d("init -> packet server: ~p",[PackServ]),
 	    InitState = #state{mini_mib = MiniMIB, packet_server = PackServ},
+	    d("init -> done",[]),
 	    {ok, InitState};
 	{error,Reason} -> {stop,Reason}
     end.
@@ -227,6 +240,12 @@ is_options_ok([v2|Opts]) ->
     is_options_ok(Opts);
 is_options_ok([v3|Opts]) ->
     is_options_ok(Opts);
+is_options_ok([{debug,Bool}|Opts]) ->
+    is_options_ok(Opts);
+is_options_ok([{packet_server_debug,Bool}|Opts]) ->
+    is_options_ok(Opts);
+is_options_ok([{recbuf,Sz}|Opts]) when 0 < Sz, Sz =< 65535 ->
+    is_options_ok(Opts);
 is_options_ok([InvOpt|_]) ->
     {error,{invalid_option,InvOpt}};
 is_options_ok([]) -> true.
@@ -237,15 +256,19 @@ mk_seclevel(authPriv) -> 3.
     
 
 handle_info({get, Oids}, State) ->
+    d("handle_info -> get request for ~p",[Oids]),
     {noreply, execute_request(get, Oids, State)};
 
 handle_info({set, VariablesAndValues}, State) ->
+    d("handle_info -> set request for ~p",[VariablesAndValues]),
     {noreply, execute_request(set, VariablesAndValues, State)};
 
 handle_info({bulk, Args}, State) ->
+    d("handle_info -> bulk request for ~p",[Args]),
     {noreply, execute_request(bulk, Args, State)};
 
 handle_info({response, RespPdu}, State) ->
+    d("handle_info -> response request with ~p",[RespPdu]),
     snmp_mgr_misc:send_pdu(RespPdu, State#state.packet_server),
     {noreply, State};
 
@@ -267,10 +290,12 @@ handle_info({snmp_msg, Msg, Ip, Udp}, State) ->
     {noreply, State#state{last_received_pdu = PDU}};
 
 handle_info({get_next, Oids}, State) ->
+    d("handle_info -> get-next request for ~p",[Oids]),
     {noreply, execute_request(get_next, Oids, State)};
 
 handle_info(resend_pdu, State) ->
     PDU = State#state.last_sent_pdu,
+    d("handle_info -> resend_pdu request when last sent pdu: ~n\t~p",[PDU]),
     send_pdu(PDU#pdu{request_id = make_request_id()},
 	     State#state.mini_mib,
 	     State#state.packet_server),
@@ -278,6 +303,7 @@ handle_info(resend_pdu, State) ->
 
 handle_info(iter_get_next, State)
   when record(State#state.last_received_pdu, pdu) ->
+    d("handle_info -> iter_get_next request",[]),
     PrevPDU = State#state.last_received_pdu,
     Oids = lists:map({snmp_mgr, get_oid_from_varbind}, [],
 		     PrevPDU#pdu.varbinds),
@@ -289,6 +315,7 @@ handle_info(iter_get_next, State) ->
     {noreply, State};
 
 handle_info({iter_get_next, N}, State) ->
+    d("handle_info -> iter_get_next(~p) request",[N]),
     if
 	record(State#state.last_received_pdu, pdu) ->
 	    PDU = get_next_iter_impl(N, State#state.last_received_pdu,
@@ -302,24 +329,31 @@ handle_info({iter_get_next, N}, State) ->
     end;
 
 handle_info({send_bytes, Bytes}, State) ->
+    d("handle_info -> send-bytes request for ~p bytes",
+      [sizeOf(Bytes)]),
     snmp_mgr_misc:send_bytes(Bytes, State#state.packet_server),
     {noreply, State}.
 
 
 handle_call({find_pure_oid, XOid}, _From, State) ->
+    d("handle_call -> find_pure_oid for ~p",[XOid]),
     {reply, catch flatten_oid(XOid, State#state.mini_mib), State};
 
 handle_call(stop, _From, State) ->
+    d("handle_call -> stop request",[]),
     {stop, normal, ok, State};
 
 handle_call(discovery, _From, State) ->
+    d("handle_call -> discovery",[]),
     {Reply,NewState} = execute_discovery(State),
     {reply, Reply, NewState}.
     
-handle_cast(_, State) ->
+handle_cast(Msg, State) ->
+    d("handle_cast -> unknown message: ~n\t~p",[Msg]),
     {noreply, State}.
 
-terminate(_Reason, State) ->
+terminate(Reason, State) ->
+    d("terminate -> with Reason: ~n\t~p",[Reason]),
     snmp_mgr_misc:stop(State#state.packet_server).
 
 
@@ -715,4 +749,18 @@ get_value(Opt, Opts, Default) ->
     end.
 
 
+%%----------------------------------------------------------------------
+%% Debug
+%%----------------------------------------------------------------------
 
+sizeOf(L) when list(L) ->
+    length(lists:flatten(L));
+sizeOf(B) when binary(B) ->
+    size(B).
+
+d(F,A) -> d(get(debug),F,A).
+
+d(true,F,A) ->
+    io:format("MGR_DBG:" ++ F ++ "~n",A);
+d(_,_F,_A) -> 
+    ok.

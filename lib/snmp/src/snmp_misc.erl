@@ -20,6 +20,10 @@
 %% need definition of mib record
 -include("snmp_types.hrl").
 
+-define(VMODULE,"MISC").
+-include("snmp_verbosity.hrl").
+
+
 -export([aliasname/2,
 	 aliasname_impl/3,
 	 andApplyAll/2,
@@ -75,7 +79,9 @@
 	 symbolify_oid/2,
 	 time/3,
 	 to_upper/1,
-	 type/2]).
+	 type/2,
+	 update_me/1,
+	 update_trap/1]).
 
 get_vsns() ->
     F = fun(Ver) ->
@@ -334,15 +340,16 @@ read_mib(FileName) ->
 	{ok, Bin} ->
 	    MibInThisVer = #mib{},
 	    case binary_to_term(Bin) of
-		Mib when record(Mib, mib) ->
+		Mib1 when record(Mib1, mib) ->
+		    Mib2 = update_mib(Mib1),
 		    if 
-			Mib#mib.mib_format_version
+			Mib2#mib.mib_format_version
 			== MibInThisVer#mib.mib_format_version ->
-			    case Mib#mib.misc of
+			    case Mib2#mib.misc of
 				X when integer(X) -> % old format
-				    {ok, Mib#mib{misc = []}};
+				    {ok, Mib2#mib{misc = []}};
 				_ ->
-				    {ok, Mib}
+				    {ok, Mib2}
 			    end;
 			true ->
 			    {error, 'wrong mib format version tag'}
@@ -351,6 +358,93 @@ read_mib(FileName) ->
 	    end;
 	{error, Reason} -> {error, Reason}
     end.
+
+
+%% This function is used to update MEs, traps and notifications which
+%% was changed as of release 3.2 (a description field was added).
+%% E.g. old style records will be converted to the new style, with
+%% the description field set the default value (the atom undefined).
+update_mib(M) ->
+    ?vtrace("update_mib -> entry",[]),
+    case {update_mes(M#mib.mes),update_traps(M#mib.traps)} of
+	{{true,Mes},{true,Traps}} ->
+	    ?vinfo("converted some mes and traps for ~s",[M#mib.name]),
+	    M#mib{mes = Mes, traps = Traps};
+	{{true,Mes},false} ->
+	    ?vinfo("converted some mes ~s",[M#mib.name]),
+	    M#mib{mes = Mes};
+	{false,{true,Traps}} ->
+	    ?vinfo("converted some traps for ~s",[M#mib.name]),
+	    M#mib{traps = Traps};
+	{false,false} ->
+	    ?vtrace("update_mib -> "
+		    "~n   compiled with current version of the compiler",[]),
+	    M
+    end.
+    
+update_mes(Mes)     -> update_mib_data(Mes,update_me).
+update_traps(Traps) -> update_mib_data(Traps,update_trap).
+
+update_mib_data(Data,F) -> update_mib_data(Data,[],false,F).
+
+update_mib_data([],_UpdatedData,false,_F) ->
+    false;
+update_mib_data([],UpdatedData,true,_F) ->
+    {true,lists:reverse(UpdatedData)};
+update_mib_data([D|Ds],UpdatedData,Updated,F) ->
+    case apply(?MODULE,F,[D]) of
+	{true,D1} ->
+	    update_mib_data(Ds,[D1|UpdatedData],true,F);
+	false ->
+	    update_mib_data(Ds,[D|UpdatedData],Updated,F)
+    end.
+
+%% Old style (pre 3.2.0) me record, make a new one with default description
+update_me({me, Oid, EntryType, AliasName, Asn1Type, Access, Mfa,
+	   Imported, AssocList}) -> 
+    ?vtrace("update_me -> convert old style me: "
+	    "~n   Oid:       ~w"
+	    "~n   AliasName: ~p",[Oid,AliasName]),
+    Me = #me{oid       = Oid,
+	     entrytype = EntryType, 
+	     aliasname = AliasName, 
+	     asn1_type = Asn1Type,
+	     access    = Access , 
+	     mfa       = Mfa, 
+	     imported  = Imported,
+	     assocList = AssocList},
+    {true, Me};
+
+% Up-to-date me
+update_me(_Me) -> false.
+
+
+%% Old style (pre 3.2.0) trap record, make a new one with default description
+update_trap({trap, TrapName, EnterpriseOid, SpecificCode, OidObjects}) ->
+    ?vtrace("update_trap -> update old style trap:"
+	    "~n   EnterpriseOid: ~w"
+	    "~n   Name:          ~p",[EnterpriseOid,TrapName]),
+    Trap = #trap{trapname      = TrapName, 
+		 enterpriseoid = EnterpriseOid,  
+		 specificcode  = SpecificCode, 
+		 oidobjects    = OidObjects},
+    {true, Trap};
+
+%% Old style (pre 3.2.0) notification record, make a new one with default 
+%% description
+update_trap({notification,TrapName,Oid,OidObjects}) ->
+    ?vtrace("update_trap -> update old style notification:"
+	    "~n   Oid:  ~w"
+	    "~n   Name: ~p",[Oid,TrapName]),
+    Notification = #notification{trapname   = TrapName, 
+				 oid        = Oid,  
+				 oidobjects = OidObjects},
+    {true,Notification};
+
+% Up-to-date trap or notification
+update_trap(_Trap) -> false.
+
+
 
 %%----------------------------------------------------------------------
 %% Converts a list of named bits to the integer value.
@@ -536,13 +630,19 @@ format_val(_, _, Val, MiniMib) ->
     
 
 %% Ret. Res | exit(Error)
-read(File, CheckFunc) ->
+read(File, CheckFunc) -> 
+    ?vtrace("~n   read file  '~s'"
+	    "~n   check with '~p'",[File,CheckFunc]),
     Fd = open_file(File),
     case loop(Fd, [], CheckFunc, 1, File) of
 	{error, Line, R} ->	
+	    ?vdebug("failed reading from file:"
+		    "~n   Line: ~p"
+		    "~n   R:    ~p",[Line,R]),
 	    file:close(Fd),
 	    error(File, Line-1, R);
 	Res ->
+	    ?vtrace("done with: ~p",[Res]),
 	    file:close(Fd),
 	    Res
     end.

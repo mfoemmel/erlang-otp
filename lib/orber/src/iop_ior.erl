@@ -28,11 +28,12 @@
 
 -include_lib("orber/include/corba.hrl").
 -include_lib("orber/src/orber_iiop.hrl").
+-include_lib("orber/src/orber_debug.hrl").
 
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([code/4, decode/4, string_code/1, string_decode/1, create/5,
+-export([code/4, decode/4, string_code/1, string_decode/1, create/5, create/6,
 	 get_key/1, get_typeID/1, get_objkey/1, check_nil/1,
 	 get_privfield/1, set_privfield/2, 
 	 get_orbfield/1, set_orbfield/2, 
@@ -59,12 +60,11 @@ get_version(_) ->
 %% External interface functions
 %%-----------------------------------------------------------------
 %%-----------------------------------------------------------------
-%% Func: create/4
+%% Func: create/5
 %%-----------------------------------------------------------------
-create(TypeID, Host, IIOP_port, Objkey) ->
-    create(orber:giop_version(), TypeID, Host, IIOP_port, Objkey).
-
-create({1, 0}, TypeID, Host, IIOP_port, Objkey) ->
+create(Version, TypeID, Host, IIOP_port, Objkey) ->
+    create(Version, TypeID, Host, IIOP_port, Objkey, []).
+create({1, 0}, TypeID, Host, IIOP_port, Objkey, MC) ->
     V=#'IIOP_Version'{major=1,
 		      minor=0},
     PB=#'IIOP_ProfileBody_1_0'{iiop_version=V,
@@ -73,7 +73,7 @@ create({1, 0}, TypeID, Host, IIOP_port, Objkey) ->
 			   object_key=Objkey},
     #'IOP_IOR'{type_id=TypeID, profiles=[#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
 							      profile_data=PB}]};
-create({1, 1}, TypeID, Host, IIOP_port, Objkey) ->
+create({1, 1}, TypeID, Host, IIOP_port, Objkey, MC) ->
     V=#'IIOP_Version'{major=1,
 		      minor=1},
     Components = case orber:iiop_ssl_port() of
@@ -90,14 +90,52 @@ create({1, 1}, TypeID, Host, IIOP_port, Objkey) ->
 			   port=IIOP_port,
 			   object_key=Objkey,
 			   components=Components},
-    #'IOP_IOR'{type_id=TypeID, profiles=[#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
-							      profile_data=PB}]};
-create(Version, TypeID, Host, IIOP_port, Objkey) ->
-    orber:debug_level_print("[~p] iop_ior:create(~p, ~p, ~p, ~p, ~p); unsupported IIOP-version.", 
-			    [?LINE, Version, TypeID, Host, IIOP_port, Objkey], ?DEBUG_LEVEL),
+    if
+	MC == [] ->
+	    #'IOP_IOR'{type_id=TypeID, 
+		       profiles=[#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
+						      profile_data=PB}]};
+	true ->
+	    #'IOP_IOR'{type_id=TypeID, 
+		       profiles=[#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
+						      profile_data=PB},
+				 #'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS,
+						      profile_data=MC}]}
+    end;
+create({1, 2}, TypeID, Host, IIOP_port, Objkey, MC) ->
+    V=#'IIOP_Version'{major=1,
+		      minor=2},
+    Components = case orber:iiop_ssl_port() of
+		       -1 ->
+			   [];
+		       SSLPort ->
+			   [#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
+				  component_data=[0 | cdrlib:enc_unsigned_short(2, 
+				  cdrlib:enc_unsigned_short(2,
+				    cdrlib:enc_unsigned_short(SSLPort, [])))]}]
+		   end,
+    PB=#'IIOP_ProfileBody_1_1'{iiop_version=V,
+			   host=Host,
+			   port=IIOP_port,
+			   object_key=Objkey,
+			   components=Components},
+    if
+	MC == [] ->
+	    #'IOP_IOR'{type_id=TypeID, 
+		       profiles=[#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
+						      profile_data=PB}]};
+	true ->
+	    #'IOP_IOR'{type_id=TypeID, 
+		       profiles=[#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
+						      profile_data=PB},
+				 #'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS,
+						      profile_data=MC}]}
+    end;
+create(Version, TypeID, Host, IIOP_port, Objkey, MC) ->
+    orber:debug_level_print("[~p] iop_ior:create(~p, ~p, ~p, ~p, ~p, ~p); unsupported IIOP-version.", 
+			    [?LINE, Version, TypeID, Host, IIOP_port, Objkey, MC], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
    
-
 %%-----------------------------------------------------------------
 %% Func: get_key/1
 %%-----------------------------------------------------------------
@@ -467,22 +505,32 @@ code(Version, #'IOP_IOR'{type_id=TypeId, profiles=Profiles}, Bytes, Len) ->
 			#'IOP_IOR'{type_id=TypeId, profiles=ProfileSeq},
 			Bytes, Len);
 code(Version, {Id, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) ->
+    MC=[#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+			       component_data=?DEFAULT_CODESETS}],
     IOR = create(Version, binary_to_list(Id), orber:host(), orber:iiop_port(),
-		 {Id, Type, Key, UserDef, OrberDef, Flags}),
+		 {Id, Type, Key, UserDef, OrberDef, Flags}, MC),
     code(Version, IOR, Bytes, Len);
 %% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
 code(Version, {Id, Type, Key, UserDef}, Bytes, Len) ->
+    MC=[#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+			       component_data=?DEFAULT_CODESETS}],
     IOR = create(Version, binary_to_list(Id), orber:host(), orber:iiop_port(),
-		 {Id, Type, Key, UserDef}),
+		 {Id, Type, Key, UserDef}, MC),
     code(Version, IOR, Bytes, Len).
 
 code_profile_datas(_, []) ->
     [];
-code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=0, profile_data=P} | Profiles]) ->
+code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=P} | Profiles]) ->
     NewBytes = code_profile_data(Version, P),
-    [#'IOP_TaggedProfile'{tag=0, profile_data=NewBytes} | code_profile_datas(Version, Profiles)];
+    [#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=NewBytes} | 
+     code_profile_datas(Version, Profiles)];
+code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, 
+						  profile_data=P} | Profiles]) ->
+    Profs= code_comp(Version, P, []),
+    [#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, 
+			  profile_data=Profs}| code_profile_datas(Version, Profiles)];
 code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=N, profile_data=P} | Profiles]) ->
-        [#'IOP_TaggedProfile'{tag=N, profile_data=P} | code_profile_datas(Version, Profiles)];
+    [#'IOP_TaggedProfile'{tag=N, profile_data=P} | code_profile_datas(Version, Profiles)];
 code_profile_datas(_, Data) ->
     orber:debug_level_print("[~p] iop_ior:code_profile_datas(~p); unsupported TaggedProfile.", 
 			    [?LINE, Data], ?DEBUG_LEVEL),
@@ -504,11 +552,27 @@ code_profile_data(Version, ProfileData) ->
 code_profile_data_1(Version, 'IIOP_ProfileBody_1_0', [], Bytes, Length) ->
     {Bytes, Length};
 code_profile_data_1(Version, 'IIOP_ProfileBody_1_1', [TaggedComponentSeq], Bytes, Length) ->
-    cdr_encode:enc_type(?IOP_TAGGEDCOMPONENT, Version, TaggedComponentSeq, Bytes, Length);
+    cdr_encode:enc_type(?IOP_TAGGEDCOMPONENT_SEQ, Version, TaggedComponentSeq, Bytes, Length);
 code_profile_data_1(_,V,S,_,_) ->
     orber:debug_level_print("[~p] iop_ior:code_profile_datas(~p, ~p); probably unsupported IIOP-version", 
 			    [?LINE, V, S], ?DEBUG_LEVEL),
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO}).
+
+code_comp(Version, [], CompData) ->
+    {Bytes, Len} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Data, _} = cdr_encode:enc_type(?IOP_TAGGEDCOMPONENT_SEQ, Version, CompData, Bytes, Len),
+    lists:flatten(lists:reverse(Data));
+code_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+					   component_data=CodeSet}|Comps], CompData)
+  when Version == {1,1}; Version == {1,2} ->
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = cdr_encode:enc_type(?CONV_FRAME_CODESETCOMPONENTINFO, Version, 
+					 CodeSet, Bytes0, Len0),
+    Bytes = lists:flatten(lists:reverse(Bytes1)),
+    code_comp(Version, Comps, [#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+						      component_data=Bytes}|CompData]);
+code_comp(Version, [C|Comps], CompData) -> 
+    code_comp(Version, Comps, [C|CompData]).
 
 %%-----------------------------------------------------------------
 %% Func: string_decode/1
@@ -535,7 +599,7 @@ decode_profiles(Version, [P | Profiles]) ->
     L = decode_profiles(Version, Profiles),
     [Struct | L].
 
-decode_profile(Version, #'IOP_TaggedProfile'{tag=0, profile_data=ProfileData}) ->
+decode_profile(Version, #'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=ProfileData}) ->
     {ByteOrder, Rest} = cdr_decode:dec_byte_order(ProfileData),
     Length = 1,
     {V, Rest1, Length1} = cdr_decode:dec_type(?IIOP_VERSION, Version, Rest, Length,
@@ -548,10 +612,14 @@ decode_profile(Version, #'IOP_TaggedProfile'{tag=0, profile_data=ProfileData}) -
     {ObjKey, Rest4, Length4} = cdr_decode:dec_type({'tk_sequence', 'tk_octet', 0}, Version, Rest3, Length3,
 					      ByteOrder),
     
-    Struct = decode_profile_1(V, H, P, corba:string_to_objkey(ObjKey), Version, Rest4, Length4, ByteOrder),
-    #'IOP_TaggedProfile'{tag=0, profile_data=Struct};
-decode_profile(_, #'IOP_TaggedProfile'{tag=?TAG_MULTIPPLE_COMPONENTS, profile_data=ProfileData}) ->
-    #'IOP_TaggedProfile'{tag=?TAG_MULTIPPLE_COMPONENTS, profile_data=ProfileData};
+    Struct = decode_profile_1(V, H, P, ObjKey, Version, Rest4, Length4, ByteOrder),
+    #'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=Struct};
+decode_profile(Version, #'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, 
+					     profile_data=ProfileData}) ->
+    {ByteOrder, Rest} = cdr_decode:dec_byte_order(ProfileData),
+    {Components, [], Length1} =cdr_decode:dec_type(?IOP_TAGGEDCOMPONENT_SEQ, Version, Rest, 1, ByteOrder),
+    CompData = decode_comp(Version, Components, []),
+    #'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, profile_data=CompData};
 decode_profile(_, #'IOP_TaggedProfile'{tag=N, profile_data=ProfileData}) ->
     #'IOP_TaggedProfile'{tag=N, profile_data=ProfileData};
 decode_profile(_, Data) ->
@@ -563,19 +631,42 @@ decode_profile_1(#'IIOP_Version'{major=1, minor=0}, H, P, ObjKey, Version, Rest,
     #'IIOP_ProfileBody_1_0'{iiop_version=#'IIOP_Version'{major=1,
 							 minor=0}, 
 			    host=H, port=P,
-			    object_key=ObjKey};
+			    object_key=corba:string_to_objkey(ObjKey)};
 decode_profile_1(#'IIOP_Version'{major=1, minor=1}, H, P, ObjKey, Version, Rest, Length, ByteOrder) ->
-    {Components, [], Length1} =cdr_decode:dec_type(?IOP_TAGGEDCOMPONENT, Version, Rest, Length, ByteOrder),
+    {Components, [], Length1} =cdr_decode:dec_type(?IOP_TAGGEDCOMPONENT_SEQ, Version, Rest, Length, ByteOrder),
     #'IIOP_ProfileBody_1_1'{iiop_version=#'IIOP_Version'{major=1,
 							 minor=1}, 
 			    host=H, port=P,
-			    object_key=ObjKey,
+			    object_key=corba:string_to_objkey(ObjKey),
+			    components=Components};
+decode_profile_1(#'IIOP_Version'{major=1, minor=2}, H, P, ObjKey, Version, Rest, Length, ByteOrder) ->
+    {Components, [], Length1} =cdr_decode:dec_type(?IOP_TAGGEDCOMPONENT_SEQ, Version, Rest, Length, ByteOrder),
+    #'IIOP_ProfileBody_1_1'{iiop_version=#'IIOP_Version'{major=1,
+							 minor=2}, 
+			    host=H, port=P,
+			    object_key=corba:string_to_objkey(ObjKey),
 			    components=Components};
 decode_profile_1(V, _, _, _, _, _, _,_) ->
     orber:debug_level_print("[~p] iop_ior:decode_profile_1(~p); probably unsupported IIOP-version.", 
 			    [?LINE, V], ?DEBUG_LEVEL),
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO}).
-    
+
+decode_comp(Version, [], Components) ->
+    Components;
+decode_comp(Version, [#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+					     component_data=Bytes}|Comps], 
+	    Components) when Version == {1,1}; Version == {1,2} ->
+    {ByteOrder, Rest} = cdr_decode:dec_byte_order(Bytes),
+    {CodeSet, _, _} = cdr_decode:dec_type(?CONV_FRAME_CODESETCOMPONENTINFO, 
+					  Version, Rest, 1, ByteOrder),
+    ?PRINTDEBUG2("CODESET: ~p~n", [CodeSet]),
+    decode_comp(Version, Comps, 
+		[#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+					component_data=CodeSet}|Components]);
+decode_comp(Version, [C|Comps], Components) ->
+    %% Not used but we cannot discard it.
+    decode_comp(Version, Comps, [C|Components]).
+
 %%-----------------------------------------------------------------
 %% Func: hexstring_to_bytestring/1
 %%-----------------------------------------------------------------

@@ -34,7 +34,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/comet-$(VSN)
 # ----------------------------------------------------
 
 MODULES= \
-	erl_com
+	erl_com com_gen
 HRL_FILES= $(MODULES:%=%.hrl)
 
 ERL_FILES= $(MODULES:%=%.erl)

@@ -1572,84 +1572,148 @@ uint32** hpp; byte *buf; int len; uint32 tail;
 **        |   [ iohead | iotail]
 **        ;
 ** 
-** return (char*) 0 on overflow, 
-**        (char*) 1 on error
-**        pointer continue buffer otherwise
-** 
+** Return remaing bytes in buffer on succsess
+**        -1 on overflow
+**        -2 on type error
 */
-#define IOL_OVERFLOW ((char*) 0)
-#define IOL_ERROR    ((char*) 1)
 
-static char*
-iol_to_buf(Eterm list, char* ptr, char* maxptr)
+int io_list_to_buf(Eterm obj, char* buf, int len)
 {
-    int i;
+    Eterm* objp;
+    DECLARE_ESTACK(s);
+    goto L_again;
 
-    while (is_list(list)) {
-	Eterm* cons = list_val(list);
-	Eterm obj = CAR(cons);
+    while (!ESTACK_ISEMPTY(s)) {
+	obj = ESTACK_POP(s);
+    L_again:
+	if (is_list(obj)) {
+	L_iter_list:
+	    objp = list_val(obj);
+	    obj = CAR(objp);
+	    if (is_byte(obj)) {
+		if (len == 0)
+		    goto L_overflow;
+		*buf++ = unsigned_val(obj);
+		len--;
+	    } else if (is_binary(obj)) {
+		byte* bytes;
+		size_t size = binary_size(obj);
+		if (len < size) {
+		    goto L_overflow;
+		}
+		GET_BINARY_BYTES(obj, bytes);
+		sys_memcpy(buf, bytes, size);
+		buf += size;
+		len -= size;
+	    }
+	    else if (is_nil(obj)) {
+		;
+	    }
+	    else if (is_list(obj)) {
+		ESTACK_PUSH(s, CDR(objp));
+		goto L_iter_list; /* on head */
+	    }
+	    else
+		goto L_type_error;
 
-	list = CDR(cons);
-	if (is_byte(obj)) {
-	    if (ptr >= maxptr)
-		return IOL_OVERFLOW;
-	    *ptr++ = unsigned_val(obj);
-	} else if (is_list(obj)) {
-	    if ((ptr = iol_to_buf(obj, ptr, maxptr)) <= IOL_ERROR)
-		return ptr;
+	    obj = CDR(objp);
+	    if (is_list(obj))
+		goto L_iter_list; /* on tail */
+	    else if (is_binary(obj)) {
+		byte* bytes;
+		size_t size = binary_size(obj);
+		if (len < size) {
+		    goto L_overflow;
+		}
+		GET_BINARY_BYTES(obj, bytes);
+		sys_memcpy(buf, bytes, size);
+		buf += size;
+		len -= size;
+	    }
+	    else if (is_nil(obj))
+		;
+	    else
+		goto L_type_error;
 	} else if (is_binary(obj)) {
 	    byte* bytes;
-	    i = binary_size(obj);
-	    if (ptr + i >= maxptr) {
-		return IOL_OVERFLOW;
+	    size_t size = binary_size(obj);
+	    if (len < size) {
+		goto L_overflow;
 	    }
 	    GET_BINARY_BYTES(obj, bytes);
-	    sys_memcpy(ptr, bytes, i);
-	    ptr += i;
-	} else if (!is_nil(obj))
-	    return IOL_ERROR;
-    }
-
-    if (is_nil(list)) {
-	return ptr;
-    } else if (is_binary(list)) {
-	byte* bytes;
-	i = binary_size(list);
-	if (ptr + i >= maxptr) {
-	    return IOL_OVERFLOW;
+	    sys_memcpy(buf, bytes, size);
+	    buf += size;
+	    len -= size;
+	} else if (is_not_nil(obj)) {
+	    goto L_type_error;
 	}
-	GET_BINARY_BYTES(list, bytes);
-	sys_memcpy(ptr, bytes, i);
-	return ptr + i;
     }
-    return IOL_ERROR;
+
+    DESTROY_ESTACK(s);
+    return len;
+
+ L_type_error:
+    DESTROY_ESTACK(s);
+    return -2;
+
+ L_overflow:
+    DESTROY_ESTACK(s);
+    return -1;
 }
 
-
-/* Fills a deep list of chars and binaries int buf */
-/* Used by the port write routines                 */
-/* Return 0 on success,                            */
-/*        -1 on overflow                           */
-/*        -2 on type error                         */
-
-int
-io_list_to_buf(Eterm list, char* buf, int* cpos, int max)
+int io_list_len(Eterm obj)
 {
-    char* ptr = buf + *cpos;  /* start position */
-    char* end = buf + max;    /* end position */
-    char* cur;
-    
-    if ((cur = iol_to_buf(list, ptr, end)) > IOL_ERROR) {
-	*cpos += (cur - ptr);
-	return 0;
+    Eterm* objp;
+    int len = 0;
+    DECLARE_ESTACK(s);
+    goto L_again;
+
+    while (!ESTACK_ISEMPTY(s)) {
+	obj = ESTACK_POP(s);
+    L_again:
+	if (is_list(obj)) {
+	L_iter_list:
+	    objp = list_val(obj);
+	    /* Head */
+	    obj = CAR(objp);
+	    if (is_byte(obj)) {
+		len++;
+	    } else if (is_binary(obj)) {
+		len += binary_size(obj);
+	    } else if (is_nil(obj)) {
+		;
+	    } else if (is_list(obj)) {
+		ESTACK_PUSH(s, CDR(objp));
+		goto L_iter_list; /* on head */
+	    } else {
+		goto L_type_error;
+	    }
+	    /* Tail */
+	    obj = CDR(objp);
+	    if (is_list(obj))
+		goto L_iter_list; /* on tail */
+	    else if (is_binary(obj)) {
+		len += binary_size(obj);
+	    } else if (is_nil(obj)) {
+		;
+	    } else {
+		goto L_type_error;
+	    }
+	} else if (is_binary(obj)) { /* Tail was binary */
+	    len += binary_size(obj);
+	} else if (is_not_nil(obj)) {
+	    goto L_type_error;
+	}
     }
-    else if (cur == IOL_OVERFLOW)
-	return -1;
-    else
-	return -2;
+
+    DESTROY_ESTACK(s);
+    return len;
+
+ L_type_error:
+    DESTROY_ESTACK(s);
+    return -1;
 }
-
-
+/*
 int
 io_list_len(Eterm list)
 {
@@ -1681,7 +1745,7 @@ io_list_len(Eterm list)
 	return -1;
     }
 }
-
+*/
 /* return 0 if item is not a non-empty flat list of bytes */
 
 int is_string(list)
@@ -1764,10 +1828,23 @@ typedef struct mem_link
    Most_strict align;
 } mem_link;
 
-int alloc_who = -1;
+int alloc_who;
+static mem_link *mem_anchor;
+static int need_instr_init;
+static erl_mutex_t instr_lck;
+#endif
 
-static mem_link *mem_anchor = NULL;	/* better to set this in erl_init */
+void erts_init_utils(void) 
+{
+#ifdef INSTRUMENT
+    alloc_who = -1;
+    mem_anchor = NULL;
+    need_instr_init = 1;
+#endif
+}
 
+
+#ifdef INSTRUMENT
 extern Eterm current_process;
 
 static void link_in(l, size)
@@ -1803,12 +1880,9 @@ mem_link *l;
       next->prev = prev;
 }
 
-static int need_instr_init = 1;
-static erl_mutex_t instr_lck;
-
 static void instr_init(void)
 {
-    instr_lck = erl_mutex_sys(1);
+    instr_lck = erts_mutex_sys(1);
 
     need_instr_init = 0;
 }
@@ -1822,7 +1896,7 @@ unsigned int size;
    if (need_instr_init)
        instr_init();
 
-   erl_mutex_lock(instr_lck);
+   erts_mutex_lock(instr_lck);
 
    p = sys_alloc2(size + sizeof(mem_link));
    if (p == NULL)
@@ -1832,7 +1906,7 @@ unsigned int size;
    l->type = -1;
    link_in(l, size);
 
-   erl_mutex_unlock(instr_lck);
+   erts_mutex_unlock(instr_lck);
 
    return (void *) (p + sizeof(mem_link));
 }
@@ -1847,7 +1921,7 @@ void* ptr; unsigned int size;
    if (need_instr_init)
        instr_init();
 
-   erl_mutex_lock(instr_lck);
+   erts_mutex_lock(instr_lck);
 
    p = ((char *) ptr) - sizeof(mem_link);
 
@@ -1862,7 +1936,7 @@ void* ptr; unsigned int size;
    l = (mem_link *) new_p;
    link_in(l, size);
 
-   erl_mutex_unlock(instr_lck);
+   erts_mutex_unlock(instr_lck);
 
    return (void *) (new_p + sizeof(mem_link));
 }
@@ -1876,7 +1950,7 @@ void* ptr;
    if (need_instr_init)
        instr_init();
 
-   erl_mutex_lock(instr_lck);
+   erts_mutex_lock(instr_lck);
 
    p = ((char *) ptr) - sizeof(mem_link);
 
@@ -1885,7 +1959,7 @@ void* ptr;
 
    sys_free2(p);
 
-   erl_mutex_unlock(instr_lck);
+   erts_mutex_unlock(instr_lck);
 }
 
 static void dump_memory_to_stream(FILE *f)

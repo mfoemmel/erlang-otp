@@ -379,17 +379,13 @@ handle_call({register, Objkey, Pid, Type}, From, State) ->
 		      [X] when pid(X#orber_objkeys.pid) ->
 			  %% Object exists, i.e., trying to create an object with
 			  %% the same name.
-% Uncomment this for next version; cannot release it this version since in an upgrade
-% orber depends on orber_objektkey which depends on orber which ..
-%			  orber:debug_level_print("[~p] orber_objectkeys:register(~p); Object already exists.", 
-%						  [?LINE, Type], ?DEBUG_LEVEL),
+			  orber:debug_level_print("[~p] orber_objectkeys:register(~p); Object already exists.", 
+						  [?LINE, Type], ?DEBUG_LEVEL),
 			  {'EXCEPTION', #'BAD_PARAM'{completion_status=?COMPLETED_NO}};
 		      Why ->
 			  %% Something else occured.
-% Uncomment this for next version; cannot release it this version since in an upgrade
-% orber depends on orber_objektkey which depends on orber which ..
-%			  orber:debug_level_print("[~p] orber_objectkeys:register(~p); error reading from DB(~p)", 
-%						  [?LINE, Type, Why], ?DEBUG_LEVEL),
+			  orber:debug_level_print("[~p] orber_objectkeys:register(~p); error reading from DB(~p)", 
+						  [?LINE, Type, Why], ?DEBUG_LEVEL),
 			  {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}
 		  end
 	  end,

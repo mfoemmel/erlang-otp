@@ -345,7 +345,8 @@ common_create(Module, TypeID, Env, Options, StartMethod) when list(Options) ->
 	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})   
     end.
 
-
+dispose(?ORBER_NIL_OBJREF) ->
+    ok;
 dispose(Obj) ->
     corba_boa:dispose(Obj).
 
@@ -672,6 +673,10 @@ request_from_iiop({Id, pseudo, Module, UserDef, OrberDef, Flags}, Func, Args,
 	false ->
 	    catch apply(Module, Func, [{Id, pseudo, Module, UserDef, OrberDef, 
 					     Flags}, State|Args]),
+	    ok;
+	true_oneway ->
+	    catch apply(Module, Func, [{Id, pseudo, Module, UserDef, OrberDef, 
+					     Flags}, State|Args]),
 	    ok
     end;
 
@@ -683,6 +688,9 @@ request_from_iiop({Id, Type, Key, UserDef, OrberDef, Flags}, Func, Args, Types,
 			    {{Id, Type, Key, UserDef, OrberDef, Flags}, Func, Args},
 			    infinity);
 	'false' ->
+	    gen_server:cast(convert_key_to_pid(Key),
+			    {{Id, Type, Key, UserDef, OrberDef, Flags}, Func, Args});
+	'true_oneway' ->
 	    gen_server:cast(convert_key_to_pid(Key),
 			    {{Id, Type, Key, UserDef, OrberDef, Flags}, Func, Args})
     end.
@@ -892,6 +900,18 @@ check_exception_type('TRANSACTION_REQUIRED') ->
 check_exception_type('TRANSACTION_ROLLEDBACK') ->
     ?SYSTEM_EXCEPTION;
 check_exception_type('INVALID_TRANSACTION') ->
+    ?SYSTEM_EXCEPTION;
+check_exception_type('INV_POLICY') ->
+    ?SYSTEM_EXCEPTION;
+check_exception_type('CODESET_INCOMPATIBLE') ->
+    ?SYSTEM_EXCEPTION;
+check_exception_type('REBIND') ->
+    ?SYSTEM_EXCEPTION;
+check_exception_type('TIMEOUT') ->
+    ?SYSTEM_EXCEPTION;
+check_exception_type('TRANSACTION_UNAVAILABLE') ->
+    ?SYSTEM_EXCEPTION;
+check_exception_type('TRANSACTION_MODE') ->
     ?SYSTEM_EXCEPTION;
 check_exception_type('BAD_QOS') ->
     ?SYSTEM_EXCEPTION;

@@ -216,7 +216,7 @@ BIF_RETTYPE list_to_binary_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     Eterm bin;
-    int j, i;
+    int i;
     byte* bytes;
 
     if (is_nil(BIF_ARG_1)) {
@@ -229,10 +229,9 @@ BIF_ADECL_1
     if ((i = io_list_len(BIF_ARG_1)) < 0) {
 	goto error;
     }
-    j = 0;
     bin = new_binary(BIF_P, (byte *)NULL, i);
     GET_BINARY_BYTES(bin, bytes);
-    if (io_list_to_buf(BIF_ARG_1, (char*) bytes, &j, i+1) != 0) {
+    if (io_list_to_buf(BIF_ARG_1, (char*) bytes, i) < 0) {
 	goto error;
     }
     BIF_RET(bin);

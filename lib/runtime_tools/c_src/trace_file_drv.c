@@ -23,23 +23,57 @@
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #ifdef __WIN32__
-#include <io.h>
-#define write _write
-#define open _open
-#define close _close
+#  include <io.h>
+#  define write _write
+#  define open _open
+#  define close _close
+#  define unlink _unlink
 #else
-#include <unistd.h>
+#  include <unistd.h>
 #endif
 #include <errno.h>
 #include <sys/types.h>
 #include <fcntl.h>
 #ifdef VXWORKS
-#include "reclaim.h"
+#  include "reclaim.h"
 #endif
+
+
+
+/*
+ * Deduce MAXPATHLEN, which is the one to use in this file, 
+ * from any available definition.
+ */
+#ifndef MAXPATHLEN
+#  ifdef PATH_MAX /* Posix */
+#    define MAXPATHLEN PATH_MAX
+#  else
+#    ifdef _POSIX_PATH_MAX /* Posix */
+#      define MAXPATHLEN _POSIX_PATH_MAX
+#    else
+#      ifdef MAXPATH
+#        define MAXPATHLEN MAXPATH
+#      else
+#        ifdef MAX_PATH
+#          define MAXPATHLEN MAX_PATH
+#        else
+#          ifdef _MAX_PATH
+#            define MAXPATHLEN _MAX_PATH
+#         else
+#            error Could not define MAXPATHLEN
+#          endif
+#        endif
+#      endif
+#    endif
+#  endif
+#endif
+
+
 
 #ifdef DEBUG
 #ifndef __WIN32__
@@ -52,17 +86,31 @@
 #define ASSERT(X)
 #endif
 
+
+
 #include "erl_driver.h"
+
+
 
 /*
 ** Protocol from driver:
 ** '\0' -> ok
 ** '\1' ++ String -> {error, Atom}
+**
 ** Protocol when opening (arguments to start):
-** <Filename>
+** ["w <WrapSize> <WrapCnt> <TailIndex> "] "n <Filename>"
 ** Where...
-** Filename, a string:
+** <Filename>, a string ('\0' terminated):
 **    The filename where the trace output is to be written.
+** "w ...", if present orders a size limited wrapping log.
+** <WrapSize>, an unsigned integer:
+**    The size limit of each log file.
+** <WrapCnt>, an unsigned integer:
+**    The number of log files.
+** <TailIndex>, an unsigned integer:
+**    The (zero based) index of where to insert the filename
+**    sequence count "a".."z","aa".."az","ba".."zz","aaa"...
+**
 ** Port control messages handled:
 ** 'f' -> '\0' (ok) | '\1' ++ String (error) : Flush file.
 **
@@ -75,7 +123,7 @@
 **    If Op is 1, then Size reflects the number of dropped messages. The 
 **    op 1 is never used in this driver.
 ** Size, a 32 bit interger in network byte order:
-**    Either the size of the binary term, or the number of packet's dropped. 
+**    Either the size of the binary term, or the number of packet's dropped.
 ** Term, an array of bytes:
 **    An erlang term in the external format or simply empty if Op == 1, the
 **    term is Size long.
@@ -89,13 +137,29 @@ typedef int FILETYPE;
 #define OP_DROP   1
 
 /*
-** State structure
+** State structures
 */
+
+typedef struct trace_file_name {
+    char name[MAXPATHLEN+1]; /* Incl. space for terminating '\0' */
+    unsigned suffix;         /* Index of suffix start */
+    unsigned tail;           /* Index of tail start */
+    unsigned len;            /* Total length (strlen) */
+} TraceFileName;
+
+typedef struct trace_file_wrap_data {
+    TraceFileName cur;  /* Current trace file */
+    TraceFileName del;  /* Next file to delete when wrapping */
+    unsigned      cnt;  /* How many remains before starting to wrap */
+    unsigned      size; /* File max size */
+    unsigned      len;  /* Current file len */
+} TraceFileWrapData;
 
 typedef struct trace_file_data {
     FILETYPE fd;
     ErlDrvPort port;
-    struct trace_file_data *next;
+    struct trace_file_data *next, *prev;
+    TraceFileWrapData *wrap; /* == NULL => no wrap */
     int buff_siz;
     int buff_pos;
     unsigned char buff[1]; /* You guessed it, will be longer... */
@@ -111,11 +175,13 @@ static void trace_file_stop(ErlDrvData handle);
 static void trace_file_output(ErlDrvData handle, char *buff, int bufflen);
 static void trace_file_finish(void);
 static int trace_file_control(ErlDrvData handle, unsigned int command, 
-			      char* buf, int count, char** res, int res_size);
+			      char* buff, int count, 
+			      char** res, int res_size);
 
 /*
 ** Internal routines
 */
+static int next_name(TraceFileName *tfn);
 static void *my_alloc(size_t size);
 static int my_write(TraceFileData *data, unsigned char *buff, int siz);
 static void my_flush(TraceFileData *data);
@@ -159,36 +225,97 @@ DRIVER_INIT(trace_file_drv)
 */
 static ErlDrvData trace_file_start(ErlDrvPort port, char *buff)
 {
-    TraceFileData *ret;
-    char *ptr;
+    unsigned size, cnt, tail, len;
+    char *p;
+    TraceFileData     *data;
+    TraceFileWrapData *wrap;
     FILETYPE fd;
+    int n, w;
 
 #ifdef HARDDEBUG
     fprintf(stderr,"hello (%s)\r\n", buff);
 #endif
-    for(ptr = buff; *ptr != '\0' && *ptr != ' '; ++ptr)
-	;
-    while(*ptr != '\0' && *ptr == ' ')
-	++ptr;
-    if (ptr == '\0')
+    w = 0; /* Index of where sscanf gave up */
+    size = 0; /* Warning elimination */
+    cnt = 0;  /* -"- */
+    tail = 0; /* -"- */
+    n = sscanf(buff, "trace_file_drv %n w %u %u %u %n",
+	       &w, &size, &cnt, &tail, &w);
+
+    if (w == 0 || (n != 0 && n != 3))
 	return ERL_DRV_ERROR_BADARG;
-    
-    if ((fd = open(ptr, O_WRONLY | O_TRUNC | O_CREAT
+
+    /* Search for "n <Filename>" in the rest of the string */
+    p = buff + w;
+    for (p = buff + w; *p == ' '; p++); /* Skip space (necessary?) */
+    if (*p++ != 'n')
+	return ERL_DRV_ERROR_BADARG;
+    if (*p++ != ' ')
+	return ERL_DRV_ERROR_BADARG;
+    /* Here we are at the start of the filename; p */
+    len = strlen(p);
+    if (tail >= len)
+	/* Tail must start within filename */
+	return ERL_DRV_ERROR_BADARG;
+
+    data = my_alloc(sizeof(TraceFileData) - 1 + BUFFER_SIZE);
+
+    /* We have to check the length in case we are running on 
+     * VxWorks since too long pathnames may cause bus errors
+     * instead of error return from file operations.
+     */
+    if (n == 3) {
+	/* Size limited wrapping log */
+	if (len+1 /* Incl suffix "a" */ >= MAXPATHLEN) {
+	    errno = ENAMETOOLONG; 
+	    return ERL_DRV_ERROR_ERRNO;
+	}
+	wrap = my_alloc(sizeof(TraceFileWrapData));
+	wrap->size = size;
+	wrap->cnt = cnt;
+	wrap->len = 0;
+	strcpy(wrap->cur.name, p);
+	wrap->cur.suffix = tail;
+	wrap->cur.tail = tail;
+	wrap->cur.len = len;
+	next_name(&wrap->cur); /* Incr to suffix "a" */
+	wrap->del = wrap->cur; /* Struct copy! */
+	p = wrap->cur.name; /* Use new name for open */
+    } else {
+	/* Regular log */
+	if (len >= MAXPATHLEN) {
+	    errno = ENAMETOOLONG; 
+	    return ERL_DRV_ERROR_ERRNO;
+	}
+	wrap = NULL;
+    }
+
+    if ((fd = open(p, O_WRONLY | O_TRUNC | O_CREAT
 #ifdef O_BINARY
 		   | O_BINARY
 #endif
 		   , 0777)) < 0) {
+	if (wrap)
+	    driver_free(wrap);
+	driver_free(data);
 	return ERL_DRV_ERROR_ERRNO;
-    }
-    ret = my_alloc(sizeof(TraceFileData) - 1 + BUFFER_SIZE);
-    ret->fd = fd;
-    ret->port = port;
-    ret->next = first_data;
-    ret->buff_siz = BUFFER_SIZE;
-    ret->buff_pos = 0;
-    first_data = ret;
+    } 
 
-    return (ErlDrvData) ret;
+    data->fd = fd;
+    data->port = port;
+    data->buff_siz = BUFFER_SIZE;
+    data->buff_pos = 0;
+    data->wrap = wrap;
+
+    if (first_data) {
+	data->prev = first_data->prev;
+	first_data->prev = data;
+    } else
+	data->prev = NULL;
+    data->next = first_data;
+    first_data = data;
+
+    return (ErlDrvData) data;
 }
 
 
@@ -211,6 +338,39 @@ static void trace_file_output(ErlDrvData handle, char *buff, int bufflen)
     if (my_write(data, b, sizeof(b)) < 0 || 
 	my_write(data, buff, bufflen) < 0) {
 	driver_failure_atom(data->port, "write_error");
+    } else if (data->wrap) {
+	/* Size limited wrapping log files */
+	data->wrap->len += sizeof(b) + bufflen;
+	if (data->wrap->len >= data->wrap->size) {
+	    /* Wrap to new file */
+	    my_flush(data);
+	    close(data->fd);
+	    data->buff_pos = 0;
+	    data->wrap->len = 0;
+	    if (next_name(&data->wrap->cur))
+		driver_failure_posix(data->port, errno); /* XXX */
+	    else {
+		FILETYPE fd;
+		fd = open(data->wrap->cur.name, O_WRONLY | O_TRUNC | O_CREAT
+#ifdef O_BINARY
+			  | O_BINARY
+#endif
+			  , 0777);
+		if (fd < 0)
+		    driver_failure_posix(data->port, errno); /* XXX */
+		else {
+		    data->fd = fd;
+		    /* Count down before starting to remove old files */
+		    if (data->wrap->cnt > 0)
+			data->wrap->cnt--;
+		    if (data->wrap->cnt <= 0) {
+			/* Remove an old file */
+			unlink(data->wrap->del.name);
+			next_name(&data->wrap->del);
+		    }
+		}
+	    }
+	}
     }
 }
 
@@ -218,13 +378,14 @@ static void trace_file_output(ErlDrvData handle, char *buff, int bufflen)
 ** Control message from erlang, we handle $f, which is flush.
 */
 static int trace_file_control(ErlDrvData handle, unsigned int command, 
-			      char* buf, int count, char** res, int res_size)
+			      char* buff, int count, 
+			      char** res, int res_size)
 {
     if (command == 'f') {
 	TraceFileData *data = (TraceFileData *) handle;
 	my_flush(data);
 	if (res_size < 1) {
-	    *res = malloc(1);
+	    *res = my_alloc(1);
 	}
 	**res = '\0';
 	return 1;
@@ -244,6 +405,38 @@ static void trace_file_finish(void)
 /*
 ** Internal helpers
 */
+
+/*
+** Increment filename
+*/
+static int next_name(TraceFileName *n) {
+    if (n->suffix < n->tail) {
+	int i = n->tail;
+	do {
+	    i--;
+	    /* Increment from the end, 
+	     * 'a'..'z', carry propagate forward */
+	    if (n->name[i] < 'z') {
+		n->name[i]++;
+		return 0;
+	    } else
+		n->name[i] = 'a';
+	} while (i > n->suffix);
+    }
+    /* Wrapped around from "zzzz" to "aaaa", 
+     * need one more character */
+    if (n->len+1 >= MAXPATHLEN) {
+	errno = ENAMETOOLONG;
+	return !0;
+    } else {
+	memmove(&n->name[n->tail+1],
+	       &n->name[n->tail],
+	       n->len+1 - n->tail); /* Incl '\0' */
+	n->name[n->tail++] = 'a';
+	n->len++;
+    }
+    return 0;
+}
 
 /*
 ** Yet another malloc wrapper
@@ -312,17 +505,18 @@ static void put_be(unsigned n, unsigned char *s)
 */
 static void close_unlink_port(TraceFileData *data) 
 {
-    TraceFileData **tmp;
-
     my_flush(data);
     close(data->fd);
 
-    for(tmp = &first_data; *tmp != NULL && *tmp != data; 
-	tmp = &((*tmp)->next))
-	;
-    if (*tmp != NULL) {
-	*tmp = (*tmp)->next;
-    }
+    if (data->next)
+	data->next->prev = data->prev;
+    if (data->prev)
+	data->prev->next = data->next;
+    else
+	first_data = data->next;
+
+    if (data->wrap)
+	driver_free(data->wrap);
     driver_free(data);
 }
 

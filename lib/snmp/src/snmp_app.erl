@@ -51,6 +51,16 @@ start(Type, []) ->
 	    {ok, Pr} when atom(Pr) -> Pr;
 	    _ -> normal
     end,
+    MibsVerbosity =
+	case application:get_env(snmp, snmp_mibserver_verbosity) of
+	    {ok, V3} -> V3;
+	    _ -> silence
+	end,
+    MibStorage =
+	case application:get_env(snmp, snmp_mib_storage) of
+	    {ok, Storage} -> Storage;
+	    _ -> ets
+	end,
     MeOverride =
 	case application:get_env(snmp, snmp_mibentry_override) of
 	    {ok, true} -> true;
@@ -69,16 +79,24 @@ start(Type, []) ->
 	    _ -> false
     end,
     Vsns = snmp_misc:get_vsns(),
+    SupVerbosity =
+	case application:get_env(snmp, snmp_supervisor_verbosity) of
+	    {ok, V4} -> V4;
+	    _ -> silence
+	end,
     case application:get_env(snmp, snmp_agent_type) of
 	{ok, sub} ->
 	    SubVerbosity =
 		case application:get_env(snmp, snmp_subagent_verbosity) of
-		    {ok, V3} -> V3;
+		    {ok, V5} -> V5;
 		    _ -> silence
 		end,
-	    Opts = [{priority, Prio},
+	    Opts = [{supervisor_verbosity, SupVerbosity},
+		    {priority, Prio},
 		    {snmp_vsn, Vsns},
 		    {multi_threaded, MultiT},
+		    {mibserver_verbosity, MibsVerbosity},
+		    {mib_storage, MibStorage},
 		    {mibentry_override, MeOverride},
 		    {trapentry_override, TeOverride},
 		    {local_db_auto_repair,LdbAutoRepair},
@@ -94,23 +112,23 @@ start(Type, []) ->
 	_ ->
 	    MasterVerbosity =
 		case application:get_env(snmp, snmp_master_agent_verbosity) of
-		    {ok, V4} -> V4;
+		    {ok, V6} -> V6;
 		    _ -> silence
 		end,
 	    NoteStoreVerbosity =
 		case application:get_env(snmp, snmp_note_store_verbosity) of
-		    {ok, V5} -> V5;
+		    {ok, V7} -> V7;
 		    _ -> silence
 		end,
 	    NetIfVerbosity =
 		case application:get_env(snmp, snmp_net_if_verbosity) of
-		    {ok, V6} -> V6;
+		    {ok, V8} -> V8;
 		    _ -> silence
 		end,
-	    MibsVerbosity =
-		case application:get_env(snmp, snmp_mibserver_verbosity) of
-		    {ok, V7} -> V7;
-		    _ -> silence
+	    NetIfRecBuf =
+		case application:get_env(snmp, snmp_net_if_recbuf) of
+		    {ok, V9} -> V9;
+		    _ -> use_default
 		end,
 	    ConfDir =
 		case application:get_env(snmp, snmp_config_dir) of
@@ -133,10 +151,13 @@ start(Type, []) ->
 			exit({bad_config,{snmp,{force_config_load,Bad4}}});
 		    _ -> false
 		end,
-	    Opts = [{priority, Prio},
+	    Opts = [{supervisor_verbosity, SupVerbosity},
+		    {priority, Prio},
 		    {snmp_vsn, Vsns},
 		    {multi_threaded, MultiT},
 		    {mibs, Mibs},
+		    {mibserver_verbosity, MibsVerbosity},
+		    {mib_storage, MibStorage},
 		    {mibentry_override, MeOverride},
 		    {trapentry_override, TeOverride},
 		    {force_load, ForceLoad},
@@ -146,8 +167,8 @@ start(Type, []) ->
 		    {master_agent_verbosity,MasterVerbosity},
 		    {symbolic_store_verbosity,SymbolicStoreVerbosity},
 		    {note_store_verbosity,NoteStoreVerbosity},
-		    {net_if_verbosity,NetIfVerbosity},
-		    {mibserver_verbosity,MibsVerbosity}],
+		    {net_if_recbuf,NetIfRecBuf},
+		    {net_if_verbosity,NetIfVerbosity}],
 	    case snmp_supervisor:start_master(DbDir, ConfDir, Opts) of
 		{ok, Pid} when Type == normal ->
 		    {ok, Pid};

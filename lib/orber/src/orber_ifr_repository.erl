@@ -41,6 +41,7 @@
 	 lookup_id/2,
 	 get_primitive/2,
 	 create_string/2,
+	 create_wstring/2,
 	 create_sequence/3,
 	 create_array/3,
 	 create_idltype/2,			%not in CORBA 2.0
@@ -185,6 +186,14 @@ create_string({ObjType,ObjID}, Bound) ?tcheck(ir_Repository, ObjType) ->
 %%    add_to_repository({ObjType,ObjID},New_string),
     makeref(New_string).
 
+create_wstring({ObjType,ObjID}, Bound) ?tcheck(ir_Repository, ObjType) ->
+    NewWstring = #ir_WstringDef{ir_Internal_ID = unique(),
+			       def_kind = dk_Wstring,
+			       type = {tk_wstring, Bound},
+			       bound = Bound},
+%%    add_to_repository({ObjType,ObjID},New_string),
+    makeref(NewWstring).
+
 create_sequence({ObjType,ObjID}, Bound, Element_type)
 			    ?tcheck(ir_Repository, ObjType) ->
     Element_typecode = get_field(Element_type, type),
@@ -227,10 +236,14 @@ create_primitivedef(Pkind) ->
 		       tk_short;
 		   pk_long ->
 		       tk_long;
+		   pk_longlong ->
+		       tk_longlong;
 		   pk_ushort ->
 		       tk_ushort;
 		   pk_ulong ->
 		       tk_ulong;
+		   pk_ulonglong ->
+		       tk_ulonglong;
 		   pk_float ->
 		       tk_float;
 		   pk_double ->
@@ -239,6 +252,8 @@ create_primitivedef(Pkind) ->
 		       tk_boolean;
 		   pk_char ->
 		       tk_char;
+		   pk_wchar ->
+		       tk_wchar;
 		   pk_octet ->
 		       tk_octet;
 		   pk_any ->
@@ -249,6 +264,8 @@ create_primitivedef(Pkind) ->
 		       tk_Principal;
 		   pk_string ->
 		       orber_ifr_orb:create_string_tc(0);
+		   pk_wstring ->
+		       orber_ifr_orb:create_wstring_tc(0);
 		   pk_objref ->
 		       %%*** what should the Id and Name be here?
 		       orber_ifr_orb:create_interface_tc("", "");

@@ -47,18 +47,54 @@
 
 %% Fragment flags for the flags bitfield in GIOP message headers
 -define(GIOP_MORE_FRAGMENTS_FALSE, 0).
--define(GIOP_MORE_FRAGMENTS_TRUE, 1).
+-define(GIOP_MORE_FRAGMENTS_TRUE,  1).
 
 %% PROFILE_ID's
--define(TAG_INTERNET_IOP, 0).
--define(TAG_MULTIPPLE_COMPONENTS, 1).
+-define(TAG_INTERNET_IOP,        0).
+-define(TAG_MULTIPLE_COMPONENTS, 1).
+-define(TAG_TAG_SCCP_IOP,        2).
 
 
 %% COMPONENT_ID's
--define(TAG_SSL_SEC_TRANS, 20).
+-define(TAG_ORB_TYPE,                  0).
+-define(TAG_CODE_SETS,                 1).
+-define(TAG_POLICIES,                  2).
+-define(TAG_ALTERNATE_IIOP_ADDRESS,    3).
+-define(TAG_COMPLETE_OBJECT_KEY,       5).
+-define(TAG_ENDPOINT_ID_POSITION,      6).
+-define(TAG_LOCATION_POLICY,          12).
+-define(TAG_ASSOCIATION_OPTIONS,      13).
+-define(TAG_SEC_NAME,                 14).
+-define(TAG_SPKM_1_SEC_MECH,          15).
+-define(TAG_SPKM_2_SEC_MECH,          16).
+-define(TAG_KerberosV5_SEC_MECH,      17).
+-define(TAG_CSI_ECMA_Secret_SEC_MECH, 18).
+-define(TAG_CSI_ECMA_Hybrid_SEC_MECH, 19).
+-define(TAG_SSL_SEC_TRANS,            20).
+-define(TAG_CSI_ECMA_Public_SEC_MECH, 21).
+-define(TAG_GENERIC_SEC_MECH,         22).
+-define(TAG_FIREWALL_TRANS,           23).
+-define(TAG_SCCP_CONTACT_INFO,        24).
+-define(TAG_JAVA_CODEBASE,            25).
+-define(TAG_TRANSACTION_POLICY,       26).
+-define(TAG_MESSAGE_ROUTERS,          30).
+-define(TAG_OTS_POLICY,               31).
+-define(TAG_INV_POLICY,               32).
+-define(TAG_DCE_STRING_BINDING,      100).
+-define(TAG_DCE_BINDING_NAME,        101).
+-define(TAG_DCE_NO_PIPES,            102).
+-define(TAG_DCE_SEC_MECH,            103).
+-define(TAG_INET_SEC_TRANS,          123).
 
 %% GIOP header size
 -define(GIOP_HEADER_SIZE, 12).
+
+%% CODESET's we support.
+-define(ISO8859_1_ID,  16#00010001).
+-define(ISO_10646_UCS_2_ID, 16#03e8).
+-define(ISO_10646_UCS_2_UTF_16_ID, 16#03f7).
+-define(DEFAULT_CHAR,  16#05010001).
+-define(DEFAULT_WCHAR, 16#00010109).
 
 
 %%----------------------------------------------------------------------
@@ -226,11 +262,16 @@
 				 port,
 				 object_key,
 				 components}).
+
 -record('IIOP_Version', {major, minor}).
 
 -record('SSLIOP_SSL', {target_supports, target_requires, port}).
 
 -record('IOP_TaggedComponent', {tag, component_data}).
+
+-record('GIOP_TargetAddress', {label, value}).
+
+-record('GIOP_IORAddressingInfo', {selected_profile_index, ior}).
 
 %%
 %% Nil object reference
@@ -249,13 +290,13 @@
 -define(IIOP_VERSION, {'tk_struct', 0, 'IIOP_Version',
 				 [{"major vsn", 'tk_octet'},
 				  {"minor vsn", 'tk_octet'}]}).
--define(IOP_TAGGEDCOMPONENT, {'tk_sequence', {'tk_struct', 0,
-							       'IOP_TaggedComponent',
-							       [{"tag", 'tk_ulong'},
-								{"component_data",
-								 {'tk_sequence',
-								  'tk_octet', 0}}]},
-							       0}).
+-define(IOP_TAGGEDCOMPONENT, {'tk_struct', 0,
+			      'IOP_TaggedComponent',
+			      [{"tag", 'tk_ulong'},
+			       {"component_data",
+				{'tk_sequence',
+				 'tk_octet', 0}}]}).
+-define(IOP_TAGGEDCOMPONENT_SEQ, {'tk_sequence', ?IOP_TAGGEDCOMPONENT, 0}).
 
 -define(PROFILEBODY_1_0_TYPEDEF, {'tk_struct', 0, 'IIOP_ProfileBody_1_0',
 			      [{"iiop_version", ?IIOP_VERSION },
@@ -268,10 +309,92 @@
 			       {"host", {'tk_string', 0}},
 			       {"port", 'tk_ushort'},
 			       {"object_key", {'tk_sequence', 'tk_octet', 0}}
-			       {"components", ?IOP_TAGGEDCOMPONENT}]}).
+			       {"components", ?IOP_TAGGEDCOMPONENT_SEQ}]}).
+
+-define(PROFILEBODY_1_2_TYPEDEF, {'tk_struct', 0, 'IIOP_ProfileBody_1_1',
+			      [{"iiop_version",?IIOP_VERSION },
+			       {"host", {'tk_string', 0}},
+			       {"port", 'tk_ushort'},
+			       {"object_key", {'tk_sequence', 'tk_octet', 0}}
+			       {"components", ?IOP_TAGGEDCOMPONENT_SEQ}]}).
 			       
 -define(SSLIOP_SSL, {'tk_struct', 0, 'SSLIOP_SSL',
 				 [{"target_supports", 'tk_ushort'},
 				  {"target_requires", 'tk_ushort'},
 				  {"port", 'tk_ushort'}]}).
+
+-define(TARGETADDRESS, {'tk_union', 0, 'GIOP_TargetAddress', 'tk_short', -1,
+			[{0, "object_key", {'tk_sequence', 'tk_octet', 0}},
+			 {1, "profile", {'tk_struct', 0,
+					 'IOP_TaggedProfile',
+					 [{"tag", 'tk_ulong'},
+					  {"profile_data",
+					   {'tk_sequence', 'tk_octet', 0}}]}},
+			 {2, "ior", {'tk_struct', 0, 
+				     'GIOP_IORAddressingInfo',
+				     [{"selected_profile_index", 'tk_ulong'},
+				      {"ior", ?IOR_TYPEDEF}]}}]}).
+
+-record('CONV_FRAME_CodeSetComponent', {native_code_set, conversion_code_sets}).
+-record('CONV_FRAME_CodeSetComponentInfo', {'ForCharData', 'ForWcharData'}).
+-define(CONV_FRAME_CODESETCOMPONENT, {'tk_struct', 0, 
+				      'CONV_FRAME_CodeSetComponent',
+				      [{"native_code_set", 'tk_ulong'},
+				       {"conversion_code_sets", 
+					{'tk_sequence', 'tk_ulong', 0}}]}).
+-define(CONV_FRAME_CODESETCOMPONENTINFO, {'tk_struct', 0, 
+					  'CONV_FRAME_CodeSetComponentInfo',
+					  [{"ForCharData", 
+					    ?CONV_FRAME_CODESETCOMPONENT},
+					   {"ForWcharData", 
+					    ?CONV_FRAME_CODESETCOMPONENT}]}).
+
+
+
+
+-define(DEFAULT_FOR_CHAR,  #'CONV_FRAME_CodeSetComponent'{native_code_set=?ISO8859_1_ID, 
+							  conversion_code_sets=[]}).
+-define(DEFAULT_FOR_WCHAR, #'CONV_FRAME_CodeSetComponent'{native_code_set=?ISO_10646_UCS_2_ID, 
+							  conversion_code_sets=[]}).
+-define(DEFAULT_CODESETS, 
+	#'CONV_FRAME_CodeSetComponentInfo'{'ForCharData' = ?DEFAULT_FOR_CHAR, 
+					   'ForWcharData' = ?DEFAULT_FOR_WCHAR}).
+	  
+
+%%-- ServiceContext ID's ------------
+%% Describes what type of context included, i.e.,
+%% typedef unsigned long ServiceId; 
+%% struct ServiceContext { 
+%%	  ServiceId context_id; 
+%%	  sequence <octet> context_data; 
+%%	 };
+
+-record('IOP_ServiceContext', {context_id, context_data}).
+-define(IOP_SERVICECONTEXT, {'tk_sequence',
+			     {'tk_struct', 0, 'IOP_ServiceContext',
+			      [{"context_id", 'tk_ulong'},
+			       {"context_data",
+				{'tk_sequence', 'tk_octet', 0}}]}, 0}).
+
+-record('CONV_FRAME_CodeSetContext', {char_data, wchar_data}).
+-define(CONV_FRAME_CODESETCONTEXT, {'tk_struct', 0, 'CONV_FRAME_CodeSetContext',
+				    [{"char_data", 'tk_ulong'},
+				     {"wchar_data", 'tk_ulong'}]}).
+
+	
+-define(IOP_TransactionService,      0).
+-define(IOP_CodeSets,                1).
+-define(IOP_ChainBypassCheck,        2).
+-define(IOP_ChainBypassInfo,         3).
+-define(IOP_LogicalThreadId,         4).
+-define(IOP_BI_DIR_IIOP,             5).
+-define(IOP_SendingContextRunTime,   6).
+-define(IOP_INVOCATION_POLICIES,     7).
+-define(IOP_FORWARDED_IDENTITY,      8).
+-define(IOP_UnknownExceptionInfo,    9).
+-define(IOP_RTCorbaPriority,        10).
+-define(IOP_RTCorbaPriorityRange,   11).
+-define(IOP_ExceptionDetailMessage, 14).
+
+
 -endif.

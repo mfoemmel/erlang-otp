@@ -39,8 +39,9 @@
 /*
 ** Flags for the guard bif's
 */
-#define DBIF_GUARD 1
-#define DBIF_BODY  2
+#define DBIF_GUARD 1 /* Allowed in guards, everything is allowed in guards
+			if the compilation flag DCOMP_ALLOW_DBIF_BODY is in 
+			effect */
 
 /*
 ** Some convenience macros for stacks (DMC == db_match_compile)
@@ -139,7 +140,9 @@ typedef enum {
     matchReturn,
     matchProcessDump,
     matchDisplay,
+    matchIsSeqTrace,
     matchSetSeqToken,
+    matchGetSeqToken,
     matchSetReturnTrace,
     matchCatch,
     matchEnableTrace,
@@ -148,7 +151,10 @@ typedef enum {
     matchDisableTrace2,
     matchTryMeElse,
     matchCaller,
-    matchHalt
+    matchHalt,
+    matchGetTraceControlWord,
+    matchSetTraceControlWord,
+    matchSilent
 } MatchOps;
 
 /*
@@ -235,6 +241,31 @@ typedef struct dmc_context {
 
 static Process match_pseudo_process;
 
+/* The trace control word. */
+
+static Uint trace_control_word;
+
+
+/*
+** Pseudo BIF:s to be callable from the PAM VM.
+*/
+
+BIF_RETTYPE db_get_trace_control_word_0(Process *p) {
+    BIF_RET(make_small_or_big(trace_control_word, p));
+}
+
+BIF_RETTYPE db_set_trace_control_word_1(Process *p, Eterm new) {
+    Uint val;
+    Eterm old;
+    if (!term_to_Uint(new, &val))
+	BIF_ERROR(p, BADARG);
+    old = make_small_or_big(trace_control_word, p);
+    trace_control_word = val;
+    BIF_RET(old);
+}
+
+
+
 /*
 ** The table of callable bif's, i e guard bif's and 
 ** some special animals that can provide us with trace
@@ -246,271 +277,283 @@ static DMCGuardBif guard_tab[] =
 	am_is_atom,
 	&is_atom_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_is_constant,
 	&is_constant_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },    
     {
 	am_is_float,
 	&is_float_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_is_integer,
 	&is_integer_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_is_list,
 	&is_list_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_is_number,
 	&is_number_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_is_pid,
 	&is_pid_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_is_port,
 	&is_port_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_is_reference,
 	&is_reference_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_is_tuple,
 	&is_tuple_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_is_binary,
 	&is_binary_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_is_function,
 	&is_function_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_is_record,
 	&is_record_3,
 	3,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_abs,
 	&abs_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_element,
 	&element_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_hd,
 	&hd_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_length,
 	&length_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_node,
 	&node_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_node,
 	&node_0,
 	0,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_round,
 	&round_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_size,
 	&size_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_tl,
 	&tl_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_trunc,
 	&trunc_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_Plus,
 	&splus_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_Minus,
 	&sminus_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_Times,
 	&stimes_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_Div,
 	&sdiv_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_div,
 	&div_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_rem,
 	&rem_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_band,
 	&band_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_bor,
 	&bor_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_bxor,
 	&bxor_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_bnot,
 	&bnot_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_bsl,
 	&bsl_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_bsr,
 	&bsr_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_Gt,
 	&sgt_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_Ge,
 	&sge_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_Lt,
 	&slt_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_Le,
 	&sle_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_Eq,
 	&seq_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_Eqeq,
 	&seqeq_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_Neq,
 	&sneq_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_Neqeq,
 	&sneqeq_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_not,
 	&not_1,
 	1,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
     },
     {
 	am_xor,
 	&xor_2,
 	2,
-	(DBIF_GUARD | DBIF_BODY)
+	DBIF_GUARD
+    },
+    {
+	am_get_tcw,
+	&db_get_trace_control_word_0,
+	0,
+	DBIF_GUARD
+    },
+    {
+	am_set_tcw,
+	&db_set_trace_control_word_1,
+	1,
+	0
     }
 };
 
@@ -872,7 +915,11 @@ Eterm erts_match_set_run(Process *p, Binary *mpsp,
 	    erl_printf(CERR, "\r\n");
 	}
 #endif
-	return (ret == am_false) ? THE_NON_VALUE : ret ;
+	if ((p->flags & F_TRACE_SILENT) 
+	    || ret == am_false)
+	    return THE_NON_VALUE;
+	else
+	    return ret;
     } 
     return ret;
 }
@@ -887,6 +934,7 @@ void db_initialize_util(void){
 	  sizeof(DMCGuardBif), 
 	  (int (*)(const void *, const void *)) &cmp_guard_bif);
     erts_init_empty_process(&match_pseudo_process);
+    trace_control_word = 0;
 }
 
 
@@ -1667,8 +1715,13 @@ restart:
 	    *return_flags |= MATCH_SET_RETURN_TRACE;
 	    *esp++ = am_true;
 	    break;
+	case matchIsSeqTrace:
+	    if (SEQ_TRACE_TOKEN(p) != NIL)
+		*esp++ = am_true;
+	    else
+		*esp++ = am_false;
+	    break;
 	case matchSetSeqToken:
-#ifdef SEQ_TRACE
 	    t = erts_seq_trace(p, esp[-1], esp[-2], 0);
 	    if (is_non_value(t)) {
 		esp[-2] = FAIL_TERM;
@@ -1676,10 +1729,26 @@ restart:
 		esp[-2] = t;
 	    }
 	    --esp;
-#else
-	    esp[-2] = FAIL_TERM;
-	    --esp;
-#endif
+	    break;
+	case matchGetSeqToken:
+	    if (SEQ_TRACE_TOKEN(p) == NIL) 
+		*esp++ = NIL;
+	    else {
+ 		*esp++ = make_tuple(ehp);
+ 		ehp[0] = make_arityval(5);
+ 		ehp[1] = SEQ_TRACE_TOKEN_FLAGS(p);
+ 		ehp[2] = SEQ_TRACE_TOKEN_LABEL(p);
+ 		ehp[3] = SEQ_TRACE_TOKEN_SERIAL(p);
+ 		ehp[4] = SEQ_TRACE_TOKEN_SENDER(p);
+ 		ehp[5] = SEQ_TRACE_TOKEN_LASTCNT(p);
+		ASSERT(SEQ_TRACE_TOKEN_ARITY(p) == 5);
+		ASSERT(is_immed(ehp[1]));
+		ASSERT(is_immed(ehp[2]));
+		ASSERT(is_immed(ehp[3]));
+		ASSERT(is_immed(ehp[4]));
+		ASSERT(is_immed(ehp[5]));
+ 		ehp += 6;
+	    } 
 	    break;
 	case matchEnableTrace:
 	    n = erts_trace_flag2bit(esp[-1]);
@@ -1755,6 +1824,13 @@ restart:
  		ehp += 4;
  	    }
  	    break;
+	case matchSilent:
+	    --esp;
+	    if (*esp == am_true)
+		p->flags |= F_TRACE_SILENT;
+	    else if (*esp == am_false)
+		p->flags &= ~F_TRACE_SILENT;
+	    break;
 	case matchCatch:
 	    do_catch = 1;
 	    break;
@@ -2883,6 +2959,28 @@ static DMCRet dmc_return_trace(DMCContext *context,
 }
 
 
+
+static DMCRet dmc_is_seq_trace(DMCContext *context,
+			       DMCHeap *heap,
+			       DMC_STACK_TYPE(Uint) *text,
+			       Eterm t,
+			       int *constant)
+{
+    Eterm *p = tuple_val(t);
+    Uint a = arityval(*p);
+    
+    if (a != 1) {
+	RETURN_TERM_ERROR("Special form 'is_seq_trace' called with "
+			  "arguments in %s.", t, context, *constant);
+    }
+    *constant = 0;
+    DMC_PUSH(*text, matchIsSeqTrace); 
+    /* Pushes 'true' or 'false' on the stack */
+    if (++context->stack_used > context->stack_need)
+	context->stack_need = context->stack_used;
+    return retOk;
+}
+
 static DMCRet dmc_set_seq_token(DMCContext *context,
 				DMCHeap *heap,
 				DMC_STACK_TYPE(Uint) *text,
@@ -2922,6 +3020,35 @@ static DMCRet dmc_set_seq_token(DMCContext *context,
     --context->stack_used; /* Remove two and add one */
     return retOk;
 }
+
+static DMCRet dmc_get_seq_token(DMCContext *context,
+				DMCHeap *heap,
+				DMC_STACK_TYPE(Uint) *text,
+				Eterm t,
+				int *constant)
+{
+    Eterm *p = tuple_val(t);
+    Uint a = arityval(*p);
+
+    if (context->is_guard) {
+	RETURN_ERROR("Special form 'get_seq_token' called in "
+		     "guard context.", context, *constant);
+    }
+    if (a != 1) {
+	RETURN_TERM_ERROR("Special form 'get_seq_token' called with "
+			  "arguments in %s.", t, context, 
+			  *constant);
+    }
+
+    *constant = 0;
+    DMC_PUSH(*text, matchGetSeqToken);
+    context->eheap_need += 6;     /* A 5-tuple is built */
+    if (++context->stack_used > context->stack_need)
+ 	context->stack_need = context->stack_used;
+    return retOk;
+}
+
+
 
 static DMCRet dmc_display(DMCContext *context,
 			  DMCHeap *heap,
@@ -3120,7 +3247,46 @@ static DMCRet dmc_caller(DMCContext *context,
  	context->stack_need = context->stack_used;
     return retOk;
 }
+
+
   
+static DMCRet dmc_silent(DMCContext *context,
+ 			 DMCHeap *heap,
+ 			 DMC_STACK_TYPE(Uint) *text,
+ 			 Eterm t,
+ 			 int *constant)
+{
+    Eterm *p = tuple_val(t);
+    Uint a = arityval(*p);
+    DMCRet ret;
+    int c;
+     
+    if (context->is_guard) {
+ 	RETURN_ERROR("Special form 'silent' called in "
+ 		     "guard context.", context, *constant);
+    }
+  
+    if (a != 2) {
+	RETURN_TERM_ERROR("Special form 'silent' called with wrong "
+			  "number of arguments in %s.", t, context, 
+			  *constant);
+    }
+    *constant = 0;
+    if ((ret = dmc_expr(context, heap, text, p[2], &c)) != retOk) {
+	return ret;
+    }
+    if (c) { 
+	do_emit_constant(context, text, p[2]);
+    }
+    DMC_PUSH(*text, matchSilent);
+    DMC_PUSH(*text, matchPushC);
+    DMC_PUSH(*text, am_true);
+    /* Push as much as we remove, stack_need is untouched */
+    return retOk;
+}
+  
+
+
 static DMCRet dmc_fun(DMCContext *context,
 		       DMCHeap *heap,
 		       DMC_STACK_TYPE(Uint) *text,
@@ -3150,8 +3316,12 @@ static DMCRet dmc_fun(DMCContext *context,
 	return dmc_self(context, heap, text, t, constant);
     case am_message:
 	return dmc_message(context, heap, text, t, constant);
+    case am_is_seq_trace:
+	return dmc_is_seq_trace(context, heap, text, t, constant);
     case am_set_seq_token:
 	return dmc_set_seq_token(context, heap, text, t, constant);
+    case am_get_seq_token:
+	return dmc_get_seq_token(context, heap, text, t, constant);
     case am_return_trace:
 	return dmc_return_trace(context, heap, text, t, constant);
     case am_display:
@@ -3164,6 +3334,8 @@ static DMCRet dmc_fun(DMCContext *context,
 	return dmc_disable_trace(context, heap, text, t, constant);
     case am_caller:
  	return dmc_caller(context, heap, text, t, constant);
+    case am_silent:
+ 	return dmc_silent(context, heap, text, t, constant);
     }
 
     b = dmc_lookup_bif(p[1], ((int) a) - 1);
@@ -3172,22 +3344,30 @@ static DMCRet dmc_fun(DMCContext *context,
 	if (context->err_info != NULL) {
 	    /* Ugly, should define a better RETURN_TERM_ERROR interface... */
 	    char buff[100];
-	    sprintf(buff, "Function %%s/%d does_not_exist.", (int) a);
+	    sprintf(buff, "Function %%s/%d does_not_exist.", (int)a - 1);
 	    RETURN_TERM_ERROR(buff, p[1], context, *constant);
 	} else {
 	    return retFail;
 	}
     } 
     ASSERT(b->arity == ((int) a) - 1);
-    if (!(b->flags & DBIF_GUARD) && 
-	(!(context->is_guard) || 
-	 !(context->cflags & DCOMP_ALLOW_DBIF_BODY))) {
+    if (!(b->flags & DBIF_GUARD)
+	/* false => {BIF allowed in guard is allowed in body too} => no error
+	 * true  => continue {Known: this BIF is not allowed in guards} */
+	&& (context->is_guard 
+	    /* true  => {This BIF is not allowed in a guard} => error
+	     * false => continue {Also known: the BIF is placed in the body} */
+	    || (!(context->cflags & DCOMP_ALLOW_DBIF_BODY)
+		/* true  => {BIFs are not allowed in the body} => error
+		 * false => ok */
+		))) {
 	/* Body clause used in wrong context. */
 	if (context->err_info != NULL) {
 	    /* Ugly, should define a better RETURN_TERM_ERROR interface... */
 	    char buff[100];
-	    sprintf(buff, "Function %%s/%d cannot be called in this context.",
-		    (int) a);
+	    sprintf(buff, 
+		    "Function %%s/%d cannot be called in this context.",
+		    (int)a - 1);
 	    RETURN_TERM_ERROR(buff, p[1], context, *constant);
 	} else {
 	    return retFail;
@@ -3213,14 +3393,16 @@ static DMCRet dmc_fun(DMCContext *context,
 	DMC_PUSH(*text, matchCall2);
 	break;
     case 3:
-	DMC_PUSH(*text, matchCall2);
+	DMC_PUSH(*text, matchCall3);
 	break;
     default:
 	erl_exit(1,"ets:match() internal error, "
 		 "guard with more than 3 arguments.");
     }
     DMC_PUSH(*text, (Uint) b->biff);
-    context->stack_used -= (a - 2);
+    context->stack_used -= (((int) a) - 2);
+    if (context->stack_used > context->stack_need)
+ 	context->stack_need = context->stack_used;
     return retOk;
 }
 
@@ -3928,9 +4110,17 @@ static void db_match_dis(Binary *bp)
 	    ++t;
 	    erl_printf(COUT,"Display\r\n");
 	    break;
+	case matchIsSeqTrace:
+	    ++t;
+	    erl_printf(COUT,"IsSeqTrace\r\n");
+	    break;
 	case matchSetSeqToken:
 	    ++t;
 	    erl_printf(COUT,"SetSeqToken\r\n");
+	    break;
+	case matchGetSeqToken:
+	    ++t;
+	    erl_printf(COUT,"GetSeqToken\r\n");
 	    break;
 	case matchSetReturnTrace:
 	    ++t;
@@ -3959,6 +4149,14 @@ static void db_match_dis(Binary *bp)
  	case matchCaller:
  	    ++t;
  	    erl_printf(COUT,"Caller\r\n");
+ 	    break;
+ 	case matchGetTraceControlWord:
+ 	    ++t;
+ 	    erl_printf(COUT,"GetTraceControlWord\r\n");
+ 	    break;
+ 	case matchSetTraceControlWord:
+ 	    ++t;
+ 	    erl_printf(COUT,"SetTraceControlWord\r\n");
  	    break;
 	default:
 	    erl_printf(COUT,"??? (0x%08x)\r\n", *t);

@@ -457,6 +457,7 @@ int wait;
     register int i;
     int n;
     EventData* ev;
+    MSG message;
 
     /*
      * If there is no I/O events ready and if we were asked to wait,
@@ -468,7 +469,23 @@ int wait;
 	DWORD timeout;
 	erts_time_remaining(&tv);
 	timeout = tv.tv_sec * 1000 + tv.tv_usec / 1000;
-	WaitForSingleObject(event_io_ready, timeout);
+	MsgWaitForMultipleObjects(1,&event_io_ready, FALSE, 
+				  timeout, QS_POSTMESSAGE);
+	
+	/*WaitForSingleObject(event_io_ready, timeout);*/
+    }
+    /*
+     * We shouldn't actually get any other messages than the thread WM_USER,
+     * but windows is windows...
+     */
+    while (PeekMessage(&message, NULL, 0, 0, PM_REMOVE)) {
+	if (message.message == WM_USER) {
+	    erl_exit(0,"");
+	} else {
+	    sys_printf(CERR,
+		       "Got unexpected Windows message %d\r\n", 
+		       (int) message.message);
+	}
     }
 
     /*

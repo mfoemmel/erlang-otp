@@ -33,6 +33,8 @@
 #define com_GetTypeLibInfo	9
 #define com_NewThread	       10
 #define com_EndThread	       11
+#define com_CurrentThread      12
+#define com_PropertyPutRef     13
 #define com_Quit	       50
 #define com_Test	      100
 

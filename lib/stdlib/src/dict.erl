@@ -325,7 +325,7 @@ list_to_dict(L) -> from_list(L).
 %%  which has not been split use the unsplit buddy bucket.
 
 get_slot(T, Key) ->
-    H = erlang:hash(Key, T#dict.maxn),
+    H = erlang:phash(Key, T#dict.maxn),
     if
 	H > T#dict.n -> H - T#dict.bso;
 	true -> H
@@ -484,7 +484,7 @@ maybe_contract_segs(T) -> T.
 
 rehash([?kv(Key,Bag)=KeyBag|T], Slot1, Slot2, MaxN) ->
     [L1|L2] = rehash(T, Slot1, Slot2, MaxN),
-    case erlang:hash(Key, MaxN) of
+    case erlang:phash(Key, MaxN) of
 	Slot1 -> [[KeyBag|L1]|L2];
 	Slot2 -> [L1|[KeyBag|L2]]
     end;

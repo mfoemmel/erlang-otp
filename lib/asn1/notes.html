@@ -7,6 +7,72 @@
 
 <CENTER><H1>Asn1 Release Notes</H1></CENTER>
 
+<H2>Asn1 1.2.9.6</H2>
+<H3>Known problems</H3>
+
+<UL>
+
+<LI>
+The compiler does not check that an exported name actually exists in the ASN.1 module.
+<br>Own Id: OTP-3659
+
+
+<LI>
+The compiler does not check that a value referenced by name does exist.
+<br>Own Id: OTP-3277
+
+
+
+<LI>
+BER: The compiler does not take the extensions into account when checking if
+the tags are unique in a SEQUENCE or SET.
+<br>Own Id: OTP-3304
+
+</UL>
+
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+PER: Trailing zeroes in a BIT STRING declared without named bits
+ should not be removed in the encodings.
+<br>Own Id: OTP-3830
+</UL>
+
+<H2>Asn1 1.2.9.5</H2>
+<H3>Known problems</H3>
+<P>Same as for 1.2.9.3.</P>
+
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+PER: Constraints are not propagated when types are
+referring to each other. Example:
+<code> 
+                TBCD-STRING ::= OCTET STRING
+ 
+                LAI ::= TBCD-STRING (SIZE(3))
+</code> 
+                The size constraint is not passed on during encode,decode
+                resulting in wrong encoding for PER , it is
+                coded with a length determinant which should not be there
+                when the length is fixed. For BER this does not matter because the constraints does
+                not affect the encodings.
+<br>Own Id: OTP-3713
+                
+<LI>
+ The generated code gets wrong if there are several ENUMERATED fields in a SEQUENCE or SET, this is now corrected.
+<br>Own Id: OTP-3796
+
+<LI>
+BER:Decode of a type T ::= SEQUENCE OF C fails if C is encoded with indefinite length.
+                This is know corrected.
+<br>Own Id: OTP-3811
+</UL>
+
 <H2>Asn1 1.2.9.3</H2>
 <H3>Known problems</H3>
 

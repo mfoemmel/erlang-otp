@@ -29,6 +29,10 @@ USER=$(LOGNAME)
 # ClearCase Root
 export ERL_TOP = /clearcase/otp/erts
 
+# "Solaris" commands
+CP:=cp -f
+MKDIR:=mkdir -p -m 775
+
 # Paths
 
 TESTROOT=$(UNIX_TMP_PATH)/ow_$(SYSTEM_VSN)$(SERIALNO)
@@ -55,6 +59,7 @@ RUNTESTS= $(ERL) $(ERLOPTS) -s ntbuild run_tests "buildserver@$(NT_BUILDHOST)"
 
 # Targets
 
+progress_test: setup unix1 $(EMULATOR) build_epmd apps unix2 tests win2
 progress: setup unix1 $(EMULATOR) build_epmd apps unix2 win2
 release:  setup unix1 $(EMULATOR) build_epmd apps unix2 win2
 lite: setup unix1lite $(EMULATOR) build_epmd unix2lite win2
@@ -63,22 +68,25 @@ night: progress runtests
 
 apps: erl_interface gs os_mon ic crypto comet ssl runtime_tools etk
 
+tests:
+	(cd $(ERL_TOP) && $(MAKE) -V release_tests TESTROOT=$(TESTROOT)/test/test_suite TARGET=win32)
+
 # Initial setup in view.
 setup:
 	$(OLDERLC) -bjam ntbuild.erl -o.
-	@if test ! -d $(ERL_TOP)/erts/obj.$(EMULATOR)/win32; then mkdir $(ERL_TOP)/erts/obj.$(EMULATOR)/win32; fi
-	@if test ! -d $(ERL_TOP)/erts/obj.debug.$(EMULATOR)/win32; then mkdir $(ERL_TOP)/erts/obj.debug.$(EMULATOR)/win32; fi
-	@if test ! -d $(ERL_TOP)/erts/obj.instr.$(EMULATOR); then mkdir $(ERL_TOP)/erts/obj.instr.$(EMULATOR); fi
-	@if test ! -d $(ERL_TOP)/erts/obj.instr.$(EMULATOR)/win32; then mkdir $(ERL_TOP)/erts/obj.instr.$(EMULATOR)/win32; fi
-	@if test ! -d $(ERL_TOP)/erts/obj/win32; then mkdir $(ERL_TOP)/erts/obj/win32; fi
-	@if test ! -d $(ERL_TOP)/bin/win32; then mkdir $(ERL_TOP)/bin/win32; fi
-	@if test ! -d $(ERL_TOP)/erts/emulator/win32; then mkdir $(ERL_TOP)/erts/emulator/win32; fi
-	@if test ! -d $(ERL_TOP)/lib/os_mon/priv/bin/win32; then mkdir $(ERL_TOP)/lib/os_mon/priv/bin/win32; fi
-	@if test ! -d $(ERL_TOP)/lib/os_mon/priv/obj/win32; then mkdir $(ERL_TOP)/lib/os_mon/priv/obj/win32; fi
-	@if test ! -d $(ERL_TOP)/lib/ic/priv/lib/win32; then mkdir $(ERL_TOP)/lib/ic/priv/lib/win32; fi
-	@if test ! -d $(ERL_TOP)/lib/ic/priv/obj/win32; then mkdir $(ERL_TOP)/lib/ic/priv/obj/win32; fi
-	@if test ! -d $(TESTROOT); then mkdir $(TESTROOT); fi	
-	cp /clearcase/otp/system/README $(TESTROOT)
+	@if test ! -d $(ERL_TOP)/erts/obj.$(EMULATOR)/win32; then $(MKDIR) $(ERL_TOP)/erts/obj.$(EMULATOR)/win32; fi
+	@if test ! -d $(ERL_TOP)/erts/obj.debug.$(EMULATOR)/win32; then $(MKDIR) $(ERL_TOP)/erts/obj.debug.$(EMULATOR)/win32; fi
+	@if test ! -d $(ERL_TOP)/erts/obj.instr.$(EMULATOR); then $(MKDIR) $(ERL_TOP)/erts/obj.instr.$(EMULATOR); fi
+	@if test ! -d $(ERL_TOP)/erts/obj.instr.$(EMULATOR)/win32; then $(MKDIR) $(ERL_TOP)/erts/obj.instr.$(EMULATOR)/win32; fi
+	@if test ! -d $(ERL_TOP)/erts/obj/win32; then $(MKDIR) $(ERL_TOP)/erts/obj/win32; fi
+	@if test ! -d $(ERL_TOP)/bin/win32; then $(MKDIR) $(ERL_TOP)/bin/win32; fi
+	@if test ! -d $(ERL_TOP)/erts/emulator/win32; then $(MKDIR) $(ERL_TOP)/erts/emulator/win32; fi
+	@if test ! -d $(ERL_TOP)/lib/os_mon/priv/bin/win32; then $(MKDIR) $(ERL_TOP)/lib/os_mon/priv/bin/win32; fi
+	@if test ! -d $(ERL_TOP)/lib/os_mon/priv/obj/win32; then $(MKDIR) $(ERL_TOP)/lib/os_mon/priv/obj/win32; fi
+	@if test ! -d $(ERL_TOP)/lib/ic/priv/lib/win32; then $(MKDIR) $(ERL_TOP)/lib/ic/priv/lib/win32; fi
+	@if test ! -d $(ERL_TOP)/lib/ic/priv/obj/win32; then $(MKDIR) $(ERL_TOP)/lib/ic/priv/obj/win32; fi
+	@if test ! -d $(TESTROOT); then $(MKDIR) $(TESTROOT); fi	
+	$(CP) /clearcase/otp/system/README $(TESTROOT)
 	(cd autoconf && $(MAKE) -V win32 EMULATOR=$(EMULATOR))
 
 

@@ -42,12 +42,13 @@ RELSYSDIR = $(RELEASE_PATH)/lib/comet-$(VSN)
 # ----------------------------------------------------
 
 DLL = erl_com_drv.dll
+EXE = erl_com_prog.exe
 C_FILES = erl_com_drv.c
-H_FILES = erl_com_drv.h erl_driver.h ei.h eicode.h eiext.h
+H_FILES = erl_com_drv.h # erl_driver.h ei.h eicode.h eiext.h
 LIB_FILES = ei.lib erl_dll.lib
+WIN_MAKEFILE = Makefile.win32
 
-
-TARGET_FILES= $(DLL:%=$(LIBDIR)/%)
+TARGET_FILES= $(DLL:%=$(LIBDIR)/%) $(EXE:%=$(LIBDIR)/%)
 OBJ_FILES= $(C_FILES:%.c=$(OBJDIR)/%.obj)
 
 ALL_CFLAGS = @CFLAGS@ @DEFS@ $(CFLAGS) 
@@ -81,5 +82,8 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/lib
 	$(INSTALL_PROGRAM) $(TARGET_FILES) $(RELSYSDIR)/priv/lib
+	$(INSTALL_DIR) $(RELSYSDIR)/c_src
+	$(INSTALL_DATA) $(C_FILES) $(H_FILES) $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(WIN_MAKEFILE) $(RELSYSDIR)/src
 
 release_docs_spec:

@@ -269,12 +269,14 @@ extern Eterm erts_default_tracer;
 #define F_NEED_FULLSWEEP     (1 << 18) /* If process has old binaries & funs. */
 #define F_TRACE_ARITY_ONLY   (1 << 19)
 #define F_TRACE_RETURN_TO    (1 << 20) /* Return_to trace when breakpoint tracing */
+#define F_TRACE_SILENT       (1 << 21) /* No call trace msg suppress */
 
 #define TRACE_FLAGS (  F_TRACE_PROCS | F_TRACE_CALLS \
 		     | F_TRACE_SOS |  F_TRACE_SOS1| F_TRACE_RECEIVE  \
 		     | F_TRACE_SOL | F_TRACE_SOL1 | F_TRACE_SEND | \
 		     F_TRACE_SCHED | F_TIMESTAMP | F_TRACE_GC  | \
-		     F_TRACE_ARITY_ONLY | F_TRACE_RETURN_TO)
+		     F_TRACE_ARITY_ONLY | F_TRACE_RETURN_TO | \
+                     F_TRACE_SILENT)
 
 /* Sequential trace flags */
 #define SEQ_TRACE_SEND     (1 << 0)

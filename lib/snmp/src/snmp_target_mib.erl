@@ -29,12 +29,20 @@
 -include("SNMPv2-TC.hrl").
 -include("SNMPv2-TM.hrl").
 
+-define(VMODULE,"TARGET-MIB").
+-include("snmp_verbosity.hrl").
+
+-ifndef(default_verbosity).
+-define(default_verbosity,silence).
+-endif.
+
 
 %% Column not accessible via SNMP - needed when the agent sends informs
 -define(snmpTargetAddrEngineId, 10).
 %% Extra comlumns for the augmented table snmpTargetAddrExtTable
 -define(snmpTargetAddrTMask, 11).
 -define(snmpTargetAddrMMS, 12).
+
 
 %%-----------------------------------------------------------------
 %% Func: configure/1
@@ -48,13 +56,17 @@
 %% Fails: exit(configuration_error)
 %%-----------------------------------------------------------------
 configure(Dir) ->
+    set_sname(),
     case snmp_local_db:table_exists(db(snmpTargetParamsTable)) of
 	true ->
+	    ?vdebug("tables already exist: init vars & cleanup",[]),
 	    init_vars(),
 	    gc_tabs();
 	false ->
+	    ?vdebug("no tables: reconfigure",[]),
 	    reconfigure(Dir)
     end.
+
 
 %%-----------------------------------------------------------------
 %% Func: reconfigure/1
@@ -68,38 +80,49 @@ configure(Dir) ->
 %% Fails: exit(configuration_error)
 %%-----------------------------------------------------------------
 reconfigure(Dir) ->
-    {Addrs, Params} =
-	snmp_conf:read_target_config_files(Dir),
+    set_sname(),
+    ?vdebug("read target configuration files",[]),
+    {Addrs, Params} = snmp_conf:read_target_config_files(Dir),
+    ?vdebug("initiate tables",[]),
     init_tabs(Addrs, Params),
+    ?vdebug("initiate vars",[]),
     init_vars(),
+    ?vdebug("invalidate cache for notification mib",[]),
     snmp_notification_mib:invalidate_cache(),
     ok.
 
-maybe_create_table(Name) ->
-    case snmp_local_db:table_exists(db(Name)) of
-	true -> ok;
-	_ -> snmp_local_db:table_create(db(Name))
-    end.
+%% maybe_create_table(Name) ->
+%%     case snmp_local_db:table_exists(db(Name)) of
+%% 	true -> ok;
+%% 	_ -> snmp_local_db:table_create(db(Name))
+%%     end.
 
 init_tabs(Addrs, Params) ->
+    ?vdebug("create target address table",[]),
     snmp_local_db:table_delete(db(snmpTargetAddrTable)),
     snmp_local_db:table_create(db(snmpTargetAddrTable)),
     init_addr_table(Addrs),
+    ?vdebug("create target params table",[]),
     snmp_local_db:table_delete(db(snmpTargetParamsTable)),
     snmp_local_db:table_create(db(snmpTargetParamsTable)),
     init_params_table(Params).
     
 init_addr_table([Row | T]) ->
     Key = element(1, Row),
-    snmp_local_db:table_create_row(db(snmpTargetAddrTable), Key, Row),
+    table_create_row(snmpTargetAddrTable, Key, Row),
     init_addr_table(T);
 init_addr_table([]) -> true.
 
 init_params_table([Row | T]) ->
     Key = element(1, Row),
-    snmp_local_db:table_create_row(db(snmpTargetParamsTable), Key, Row),
+    table_create_row(snmpTargetParamsTable, Key, Row),
     init_params_table(T);
 init_params_table([]) -> true.
+
+table_create_row(Tab,Name,Row) ->
+    ?vtrace("create table ~w row with Name: ~s",[Tab,Name]),
+    snmp_local_db:table_create_row(db(Tab), Name, Row).
+
 
 gc_tabs() ->
     gc_tab(snmpTargetAddrTable),
@@ -116,12 +139,38 @@ gc_tab(Tab) ->
 			ok
 		end
 	end,
-    snmp_generic:table_foreach(db(Tab), F).
+    gc_tab1(F,Tab).
+		    
+
+gc_tab1(F,Tab) ->
+    case (catch snmp_generic:table_foreach(db(Tab), F)) of
+	{'EXIT',{cyclic_db_reference,Oid}} ->
+	    %% Remove the row regardless of storage type since this
+	    %% is a major error. This row must be removed.
+	    case snmp_local_db:table_delete_row(db(Tab), Oid) of
+		true -> 
+		    ?vlog("deleted cyclic ref row for: ~w",[Oid]),
+		    snmp_error:config_err("cyclic reference in table ~w: "
+					  "~w -> ~w. Row deleted",
+					  [Tab,Oid,Oid]),
+		    gc_tab1(F,Tab);
+		false ->
+		    ?vlog("unable to remove faulty row from table ~w",[Tab]),
+		    snmp_error:config_err("failed removing faulty row. "
+					  "Giving up on table ~w cleanup",
+					  [Tab])
+	    end;
+	_ ->
+	    ok
+    end.
+
 
 %%-----------------------------------------------------------------
 %% Counter functions
 %%-----------------------------------------------------------------
-init_vars() -> lists:map(fun maybe_create_var/1, vars()).
+init_vars() -> 
+    ?vtrace("initiate vars",[]),
+    lists:map(fun maybe_create_var/1, vars()).
 
 maybe_create_var(Var) ->
     case ets:lookup(snmp_agent_table, Var) of
@@ -316,3 +365,12 @@ table_next(Name, RestOid) ->
 get(Name, RowIndex, Cols) ->
     snmp_generic:handle_table_get(db(Name), RowIndex, Cols, foi(Name)).
 
+
+set_sname() ->
+    set_sname(get(sname)).
+
+set_sname(undefined) ->
+    put(sname,conf);
+set_sname(_) -> %% Keep it, if already set.
+    ok.
+    

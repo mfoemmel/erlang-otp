@@ -30,6 +30,14 @@
 -include("snmp_vacm.hrl").
 
 
+-define(VMODULE,"VACM-MIB").
+-include("snmp_verbosity.hrl").
+
+-ifndef(default_verbosity).
+-define(default_verbosity,silence).
+-endif.
+
+
 %%-----------------------------------------------------------------
 %% Func: configure/1
 %% Args: Dir is the directory where the configuration files are found.
@@ -42,10 +50,14 @@
 %% Fails: exit(configuration_error)
 %%-----------------------------------------------------------------
 configure(Dir) ->
+    set_sname(),
     case snmp_local_db:table_exists(db(vacmSecurityToGroupTable)) of
 	true ->
+	    ?vdebug("vacm security-to-group table already exist: cleanup",[]),
 	    gc_tabs();
 	false ->
+	    ?vdebug("vacm security-to-group table does not exist: "
+		    "reconfigure",[]),
 	    reconfigure(Dir)
     end.
 
@@ -61,8 +73,11 @@ configure(Dir) ->
 %% Fails: exit(configuration_error)
 %%-----------------------------------------------------------------
 reconfigure(Dir) ->
+    set_sname(),
+    ?vdebug("read vacm configuration files",[]),
     {Sec2Group, Access, View} =
 	snmp_conf:read_vacm_config_files(Dir),
+    ?vdebug("initiate tables",[]),
     init_tabs(Sec2Group, Access, View),
     ok.
 
@@ -73,10 +88,12 @@ maybe_create_table(Name) ->
     end.
 
 init_tabs(Sec2Group, Access, View) ->
+    ?vdebug("create vacm security-to-group table",[]),
     snmp_local_db:table_delete(db(vacmSecurityToGroupTable)),
     snmp_local_db:table_create(db(vacmSecurityToGroupTable)),
     init_sec2group_table(Sec2Group),
     init_access_table(Access),
+    ?vdebug("create vacm view-tree-family table",[]),
     snmp_local_db:table_delete(db(vacmViewTreeFamilyTable)),
     snmp_local_db:table_create(db(vacmViewTreeFamilyTable)),
     init_view_table(View).
@@ -357,3 +374,11 @@ next(Name, RowIndex, Cols) ->
  
 get(Name, RowIndex, Cols) ->
     snmp_generic:handle_table_get(db(Name), RowIndex, Cols, foi(Name)).
+
+set_sname() ->
+    set_sname(get(sname)).
+
+set_sname(undefined) ->
+    put(sname,conf);
+set_sname(_) -> %% Keep it, if already set.
+    ok.

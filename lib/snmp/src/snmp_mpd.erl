@@ -402,8 +402,9 @@ generate_response_msg(Vsn, RePdu, Type,
 		      LogF, _) ->
 	case catch snmp_pdus:enc_pdu(RePdu) of
 	    {'EXIT', Reason} ->
-		snmp_error:user_err("~p (pdu: ~p, community: ~p)",
-				    [Reason, RePdu, Community]),
+		snmp_error:user_err("failed encoding pdu "
+				    "(pdu: ~p, community: ~p): ~p",
+				    [RePdu, Community, Reason]),
 		{discarded, Reason};
 	    PduBytes ->
 		Message = #message{version = Vsn, vsn_hdr = Community, 
@@ -411,8 +412,9 @@ generate_response_msg(Vsn, RePdu, Type,
 		case catch list_to_binary(
 			     snmp_pdus:enc_message_only(Message)) of
 		    {'EXIT', Reason} ->
-			snmp_error:user_err("~p (pdu: ~p, community: ~p)",
-					    [Reason, RePdu, Community]),
+			snmp_error:user_err("failed encoding message only"
+					    "(pdu: ~p, community: ~p): ~p",
+					    [RePdu, Community, Reason]),
 			{discarded, Reason};
 		    Packet ->
 			MMS = snmp_framework_mib:get_engine_max_message_size(),
@@ -423,7 +425,11 @@ generate_response_msg(Vsn, RePdu, Type,
 				inc_snmp_out_vars(RePdu),
 				{ok, Packet};
 			    Len ->
-				too_big(Vsn, RePdu, Community, LogF)
+				?vlog("pdu to big:"
+				      "~n   Max message size:    ~p"
+				      "~n   Encodedmessage size: ~p",
+				      [MMS,Len]),
+				too_big(Vsn, RePdu, Community, LogF, MMS, Len)
 			end
 		end
 	end;
@@ -437,8 +443,9 @@ generate_response_msg(Vsn, RePdu, Type,
 			   data = RePdu},
     case catch snmp_pdus:enc_scoped_pdu(ScopedPDU) of
 	{'EXIT', Reason} ->
-	    snmp_error:user_err("~p (pdu: ~p, contextName: ~p)",
-				[Reason, RePdu, ContextName]),
+	    snmp_error:user_err("failed encoded scoped pdu "
+				"(pdu: ~p, contextName: ~p): ~p",
+				[RePdu, ContextName, Reason]),
 	    {discarded, Reason};
 	ScopedPDUBytes -> 
 	    AgentMS = snmp_framework_mib:get_engine_max_message_size(),
@@ -489,11 +496,18 @@ generate_response_msg(Vsn, RePdu, Type,
 			    inc_snmp_out_vars(RePdu),
 			    {ok, Packet};
 			Len when N == 2 ->
-			    ?vlog("~n   Pdu ~p too big, not sent.", 
-				  [RePdu]),
+			    ?vlog("packet max size exceeded: "
+				  "~n   Max: ~p"
+				  "~n   Len: ~p",
+				  [AgentMS,Len]),
 			    inc(snmpSilentDrops),
 			    {discarded, tooBig};
 			Len ->
+			    ?vlog("packet max size exceeded: "
+				  "~n   N:   ~p"
+				  "~n   Max: ~p"
+				  "~n   Len: ~p",
+				  [N,AgentMS,Len]),
 			    TooBigPdu = RePdu#pdu{error_status = tooBig,
 						  error_index = 0, 
 						  varbinds = []},
@@ -532,8 +546,7 @@ generate_v3_report_msg(MsgID, MsgSecurityModel, Data, ErrorInfo, LogF) ->
 			   ContextEngineID, ContextName, SecData}, LogF).
 
 
-too_big(Vsn, Pdu, Community, LogF) when Pdu#pdu.type == 'get-response' ->
-    ?vlog("~n   Pdu ~p too big, not sent.", [Pdu]),
+too_big(Vsn, Pdu, Community, LogF, _MMS, _Len) when Pdu#pdu.type == 'get-response' ->
     ErrPdu =
 	if 
 	    Vsn == 'version-1' ->
@@ -549,16 +562,18 @@ too_big(Vsn, Pdu, Community, LogF) when Pdu#pdu.type == 'get-response' ->
 
     case catch snmp_pdus:enc_pdu(ErrPdu) of
 	{'EXIT', Reason} ->
-	    snmp_error:user_err("~p (pdu: ~p, community: ~p)", 
-				[Reason, ErrPdu, Community]),
+	    snmp_error:user_err("failed encoding pdu "
+				"(pdu: ~p, community: ~p): ~p", 
+				[ErrPdu, Community, Reason]),
 	    {discarded, Reason};
 	PduBytes -> 
 	    Message = #message{version = Vsn, vsn_hdr = Community, 
 			       data = PduBytes},
 	    case catch snmp_pdus:enc_message_only(Message) of
 		{'EXIT', Reason} ->
-		    snmp_error:user_err("~p (pdu: ~p, community: ~p)", 
-				[Reason, ErrPdu, Community]),
+		    snmp_error:user_err("failed encoding message only"
+					"(pdu: ~p, community: ~p): ~p", 
+					[ErrPdu, Community, Reason]),
 		    {discarded, Reason};
 		Packet -> 
 		    Bin = list_to_binary(Packet),
@@ -567,9 +582,11 @@ too_big(Vsn, Pdu, Community, LogF) when Pdu#pdu.type == 'get-response' ->
 		    {ok, Bin}
 	    end
     end;
-too_big(Vsn, Pdu, _Community, _LogF) ->
-    snmp_error:user_err("Pdu ~p too big, not sent.", [Pdu]),
-    {discarded, too_big}.
+too_big(Vsn, Pdu, _Community, _LogF, MMS, Len) ->
+    snmp_error:user_err("encoded pdu, ~p bytes, exceeded "
+			"max message size of ~p bytes. Pdu: ~p", 
+			[Len, MMS, Pdu]),
+    {discarded, tooBig}.
 
 set_vb_null([Vb | Vbs]) ->
     [Vb#varbind{variabletype = 'NULL', value = 'NULL'} | set_vb_null(Vbs)];
@@ -584,8 +601,9 @@ generate_msg(Vsn, Pdu, {community, Community}, To) ->
     Message = #message{version = Vsn, vsn_hdr = Community, data = Pdu},
     case catch list_to_binary(snmp_pdus:enc_message(Message)) of
 	{'EXIT', Reason} ->
-	    snmp_error:user_err("~p (pdu: ~p, community: ~p)",
-				[Reason, Pdu, Community]),
+	    snmp_error:user_err("failed encoding message "
+				"(pdu: ~p, community: ~p): ~p",
+				[Pdu, Community, Reason]),
 	    {discarded, Reason};
 	Packet ->
 	    AgentMax = snmp_framework_mib:get_engine_max_message_size(),
@@ -593,6 +611,10 @@ generate_msg(Vsn, Pdu, {community, Community}, To) ->
 		Len when Len =< AgentMax ->
 		    {ok, mk_v1_v2_packet_list(To, Packet, Len, Pdu)};
 		Len ->
+		    ?vlog("packet max size exceeded: "
+			  "~n   Max: ~p"
+			  "~n   Len: ~p",
+			  [AgentMax,Len]),
 		    {discarded, tooBig}
 	    end
     end;
@@ -603,8 +625,9 @@ generate_msg('version-3', Pdu, {v3, ContextEngineID, ContextName}, To) ->
 			   data = Pdu},
     case snmp_pdus:enc_scoped_pdu(ScopedPDU) of
 	{'EXIT', Reason} ->
-	    snmp_error:user_err("~p (pdu: ~p, contextName: ~p)",
-				[Reason, Pdu, ContextName]),
+	    snmp_error:user_err("failed encoding scoped pdu "
+				"(pdu: ~p, contextName: ~p): ~p",
+				[Pdu, ContextName, Reason]),
 	    {discarded, Reason};
 	ScopedPDUBytes -> 
 	    {ok, mk_v3_packet_list(To, ScopedPDUBytes, Pdu, 

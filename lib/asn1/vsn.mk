@@ -1,5 +1,5 @@
 
-ASN1_VSN = 1.2.9.3
+ASN1_VSN = 1.2.9.6
 
 TICKETS_1.2.5 = \
 	OTP-3341
@@ -27,4 +27,13 @@ TICKETS_1.2.9.2 = \
 TICKETS_1.2.9.3 = \
 	OTP-3700 \
 	OTP-3701
+
+TICKETS_1.2.9.5 = \
+	OTP-3713 \
+	OTP-3796 \
+	OTP-3811 
+
+TICKETS_1.2.9.6 = \
+	OTP-3830
+
 

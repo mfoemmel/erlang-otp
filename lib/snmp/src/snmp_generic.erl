@@ -29,13 +29,21 @@
          find_col/2, table_check_status/5, 
 	 table_find/3,split_index_to_keys/2, init_defaults/2, init_defaults/3,
 	 table_info/1,
-	 try_apply/2, get_own_indexes/2,table_create_rest/6,
+	 try_apply/2, get_own_indexes/2, table_create_rest/6,
 	 handle_table_get/4, variable_inc/2,
-	 get_status_col/2]).
+	 get_status_col/2, get_table_info/2, get_index_types/1]).
 
 -include("STANDARD-MIB.hrl").
 -include("snmp_types.hrl").
 -include("snmp_generic.hrl").
+
+-define(VMODULE,"GENERIC").
+-include("snmp_verbosity.hrl").
+
+-ifndef(default_verbosity).
+-define(default_verbosity,silence).
+-endif.
+
 
 %%%-----------------------------------------------------------------
 %%% Generic functions for implementing software tables
@@ -205,15 +213,24 @@ make_list(N, X) when N > 0 -> [X | make_list(N-1, X)];
 make_list(_, _) -> [].
 
 table_foreach(Tab, Fun) ->
+    ?vdebug("apply fun to all in table ~w",[Tab]),
     table_foreach(Tab, Fun, []).
 table_foreach(Tab, Fun, Oid) ->
     case table_next(Tab, Oid) of
 	endOfTable ->
+	    ?vdebug("end of table",[]),
 	    ok;
+	Oid ->
+	    %% OOUPS, circular ref, major db fuckup
+	    ?vinfo("cyclic reference: ~w -> ~w",[Oid,Oid]),
+	    exit({cyclic_db_reference,Oid});
 	NextOid ->
+	    ?vtrace("get row for oid ~w",[NextOid]),
 	    case table_get_row(Tab, NextOid) of
 		undefined -> ok;
-		Row -> Fun(NextOid, Row)
+		Row -> 
+		    ?vtrace("row: ~w",[Row]),
+		    Fun(NextOid, Row)
 	    end,
 	    table_foreach(Tab, Fun, NextOid)
     end.
@@ -731,9 +748,16 @@ table_get_row({Name, mnesia}, RowIndex) ->
 table_get_row(NameDb, RowIndex) ->
     snmp_local_db:table_get_row(NameDb, RowIndex).
 
+
 %%-----------------------------------------------------------------
-%% Purpose: Can be used by user's instrum func to check if
-%%          status column is modified.
+%% Purpose: These functions can be used by the user's instrum func 
+%%          to retrieve various table info.
+%%-----------------------------------------------------------------
+
+%%-----------------------------------------------------------------
+%% Description:
+%% Used by user's instrum func to check if mstatus column is 
+%% modified.
 %%-----------------------------------------------------------------
 get_status_col(Name, Cols) ->
     #table_info{status_col = StatusCol} = table_info(Name),
@@ -741,4 +765,68 @@ get_status_col(Name, Cols) ->
 	{value, {StatusCol, Val}} -> {ok, Val};
 	_ -> false
     end.
+
+
+%%-----------------------------------------------------------------
+%% Description:
+%% Used by user's instrum func to get the table info. Specific parts
+%% or all of it. If all is selected then the result will be a tagged
+%% list of values.
+%%-----------------------------------------------------------------
+get_table_info(Name,nbr_of_cols) ->
+    get_nbr_of_cols(Name);
+get_table_info(Name,defvals) ->
+    get_defvals(Name);
+get_table_info(Name,status_col) ->
+    get_status_col(Name);
+get_table_info(Name,not_accessible) ->
+    get_not_accessible(Name);
+get_table_info(Name,index_types) ->
+    get_index_types(Name);
+get_table_info(Name,first_accessible) ->
+    get_first_accessible(Name);
+get_table_info(Name,first_own_index) ->
+    get_first_own_index(Name);
+get_table_info(Name,all) ->
+    TableInfo = table_info(Name),
+    [{nbr_of_cols,      TableInfo#table_info.nbr_of_cols},
+     {defvals,          TableInfo#table_info.defvals},
+     {status_col,       TableInfo#table_info.status_col},
+     {not_accessible,   TableInfo#table_info.not_accessible},
+     {index_types,      TableInfo#table_info.index_types},
+     {first_accessible, TableInfo#table_info.first_accessible},
+     {first_own_index,  TableInfo#table_info.first_own_index}].
+
+
+%%-----------------------------------------------------------------
+%% Description:
+%% Used by user's instrum func to get the index types.
+%%-----------------------------------------------------------------
+get_index_types(Name) ->
+    #table_info{index_types = IndexTypes} = table_info(Name),
+    IndexTypes.
+
+get_nbr_of_cols(Name) ->
+    #table_info{nbr_of_cols = NumberOfCols} = table_info(Name),
+    NumberOfCols.
+
+get_defvals(Name) ->
+    #table_info{defvals = DefVals} = table_info(Name),
+    DefVals.
+
+get_status_col(Name) ->
+    #table_info{status_col = StatusCol} = table_info(Name),
+    StatusCol.
+
+get_not_accessible(Name) ->
+    #table_info{not_accessible = NotAcc} = table_info(Name),
+    NotAcc.
+
+get_first_accessible(Name) ->
+    #table_info{first_accessible = FirstAcc} = table_info(Name),
+    FirstAcc.
+
+get_first_own_index(Name) ->
+    #table_info{first_own_index = FirstOwnIdx} = table_info(Name),
+    FirstOwnIdx.
 

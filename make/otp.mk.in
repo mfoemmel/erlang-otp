@@ -43,8 +43,11 @@ PERL = @PERL@
 # ----------------------------------------------------
 EMULATOR = beam
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
-# VxWorks jam object files should be compressed
+# VxWorks object files should be compressed.
+# Other object files should have debug_info.
 ERL_COMPILE_FLAGS += +compressed
+else
+ERL_COMPILE_FLAGS += +debug_info
 endif
 ERL_COMPILE_FLAGS += $(ERL_BOOTSTRAP_FLAGS)
 ERLC_WFLAGS = -W

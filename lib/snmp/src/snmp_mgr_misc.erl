@@ -19,13 +19,13 @@
 %% c(snmp_mgr_misc).
 
 %% API
--export([start_link_packet/7, stop/1, 
+-export([start_link_packet/8, stop/1, 
 	 send_discovery_pdu/2, send_pdu/2, send_msg/4, send_bytes/2,
 	 error/2,
 	 get_pdu/1, set_pdu/2, format_hdr/1]).
 
 %% internal exports
--export([init_packet/8]).
+-export([init_packet/9]).
 
 -define(SNMP_USE_V3, true).
 -include("snmp_types.hrl").
@@ -36,11 +36,11 @@
 %%----------------------------------------------------------------------
 %% The InHandler process will receive messages on the form {snmp_pdu, Pdu}.
 %%----------------------------------------------------------------------
-start_link_packet(InHandler, AgentIp, UdpPort, TrapUdp, VsnHdr, Version, Dir) 
+start_link_packet(InHandler,AgentIp,UdpPort,TrapUdp,VsnHdr,Version,Dir,BufSz) 
   when integer(UdpPort) ->
     proc_lib:start_link(snmp_mgr_misc, init_packet,
 		[self(),InHandler,AgentIp,UdpPort,TrapUdp, VsnHdr, Version,
-		 Dir]).
+		 Dir,BufSz]).
 
 stop(Pid) ->
     Pid ! {stop, self()},
@@ -74,8 +74,8 @@ send_bytes(Bytes, PacketPid) ->
 %%--------------------------------------------------
 %% The SNMP encode/decode process
 %%--------------------------------------------------
-init_packet(Parent, SnmpMgr, AgentIp, UdpPort, TrapUdp, VsnHdr, Version, Dir) ->
-    {ok, UdpId} = gen_udp:open(TrapUdp, [{reuseaddr, true}]),
+init_packet(Parent,SnmpMgr,AgentIp,UdpPort,TrapUdp,VsnHdr,Version,Dir,BufSz) ->
+    {ok, UdpId} = gen_udp:open(TrapUdp, [{recbuf,BufSz},{reuseaddr, true}]),
     put(msg_id, 1),
     proc_lib:init_ack(Parent, self()),
     init_usm(Version, Dir),
@@ -91,7 +91,7 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 		    M = snmp_pdus:dec_message(B),
 		    put(discovery,{M,From}),
 		    display_outgoing_message(M),
-		    gen_udp:send(UdpId, AgentIp, UdpPort, B)
+		    udp_send(UdpId, AgentIp, UdpPort, B)
 	    end,
 	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
 	{send_pdu, Pdu} ->
@@ -99,7 +99,7 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 		error ->
 		    ok;
 		B when list(B) -> 
-		    gen_udp:send(UdpId, AgentIp, UdpPort, B)
+		    udp_send(UdpId, AgentIp, UdpPort, B)
 	    end,
 	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
 	{send_msg, Msg, Ip, Udp} ->
@@ -107,7 +107,7 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 		{'EXIT', Reason} ->
 		    error("Encoding error. Msg: ~w. Reason: ~w",[Msg,Reason]);
 		B when list(B) -> 
-		    gen_udp:send(UdpId, Ip, Udp, B)
+		    udp_send(UdpId, Ip, Udp, B)
 	    end,
 	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
 	{udp, UdpId, Ip, UdpPort, Bytes} ->
@@ -117,7 +117,7 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,
 			MsgData3);
 	{send_bytes, B} ->
-	    gen_udp:send(UdpId, AgentIp, UdpPort, B),
+	    udp_send(UdpId, AgentIp, UdpPort, B),
 	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
 	{stop, Pid} ->
 	    gen_udp:close(UdpId),
@@ -143,7 +143,7 @@ handle_udp_packet(_V,undefined,UdpId,Ip,UdpPort,Bytes,SnmpMgr,AgentIp) ->
 			end,
 			MsgData2;
 		    {error, Reason, B} ->
-			gen_udp:send(UdpId, AgentIp, UdpPort, B),
+			udp_send(UdpId, AgentIp, UdpPort, B),
 			error("Decoding error. Auto-sending Report.\n"
 			      "Reason: ~w "
 			      "(UDPport: ~w, Ip: ~w)",
@@ -416,6 +416,19 @@ format_hdr(#message{version = Vsn, vsn_hdr = Com, data = X}) ->
 
 vsn('version-1') -> v1;
 vsn('version-2') -> v2c.
+
+
+udp_send(UdpId, AgentIp, UdpPort, B) ->
+    case (catch gen_udp:send(UdpId, AgentIp, UdpPort, B)) of
+	{error,ErrorReason} ->
+	    error("failed (error) sending message to ~p:~p: "
+		  "~n   ~p",[AgentIp, UdpPort, ErrorReason]);
+	{'EXIT',ExitReason} ->
+	    error("failed (exit) sending message to ~p:~p:"
+		  "~n   ~p",[AgentIp, UdpPort, ExitReason]);
+	_ ->
+	    ok
+    end.
 
 
 get_pdu(#message{version = 'version-3', data = #scopedPdu{data = Pdu}}) ->

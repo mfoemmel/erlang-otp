@@ -54,18 +54,6 @@
 	       status = []}).
 
 
-%% ----
-%% This (and the report_error/4 function) is just temporary
-%% and should be removed eventually.
-
-%%-define(httpd_verbose,true).
--ifdef(httpd_verbose).
--define(REPORT_ERROR(Db,FS,A),report_error(Db,FS,A,?LINE)).
--else.
--define(REPORT_ERROR(Db,FS,A),ok).
--endif.
-
-
 %%
 %% External API
 %%
@@ -299,14 +287,13 @@ handle_call(Request, From, State) ->
 	   "~n   when listener = ~p",[Request,From,State#state.listener]),
     String = 
 	lists:flatten(
-	  io_lib:format("Unexpected (call) request to ~p from ~p when ~n" ++
+	  io_lib:format("Unknown request to manager (~p) from ~p when ~n" ++
 			"\tListener: ~p~n" ++
 			"\tSocket: ~p~n" ++
 			"\t=> ~p",
 			[self(),From,State#state.listener,
 			 State#state.socket,Request])),
-    error_logger:error_report(String),
-    ?REPORT_ERROR(State#state.config_db,String,[]),
+    report_error(State,String),
     {reply, ok, State}.
 
 
@@ -319,7 +306,6 @@ handle_cast({new_connection,reject,OldListener}, State) ->
 	  [OldListener,State#state.connection_count]),
     Status   = update_heavy_load_status(State#state.status),
     Listener = create_listener(State),
-    %% ?DEBUG("handle_cast -> new_connection(reject,~p): New Listener: ~p", 
     ?DEBUG("handle_cast -> new_connection(reject,~p): New Listener: ~p", 
 	   [OldListener,Listener]),
     ?vdebug("New listener = ~p",[Listener]),
@@ -334,7 +320,6 @@ handle_cast({new_connection,accept,OldListener}, State) ->
     S1       = State#state{connection_count = Cnt+1},
     Status   = update_connection_status(State#state.status,Cnt+1),
     Listener = create_listener(S1),
-    %%?DEBUG("handle_cast -> new_connection(accept,~p): New listener: ~p",
     ?DEBUG("handle_cast -> new_connection(accept,~p): New listener: ~p",
 	   [OldListener,Listener]),
     ?vdebug("New listener = ~p",[Listener]),
@@ -359,14 +344,13 @@ handle_cast(Message,State) ->
     ?vinfo("~n   unknown cast '~p'",[Message]),
     String = 
 	lists:flatten(
-	  io_lib:format("Unexpected (cast) message to ~p when ~n" ++
+	  io_lib:format("Unknown message to manager (~p) when ~n" ++
 			"\tListener: ~p~n" ++
 			"\tSocket: ~p~n" ++
 			"\t=> ~p",
 			[self(),State#state.listener,
 			 State#state.socket,Message])),
-    error_logger:error_report(String),
-    ?REPORT_ERROR(State#state.config_db,String,[]),
+    report_error(State,String),
     {noreply, State}.
 
 %% handle_info
@@ -377,10 +361,10 @@ handle_info({'EXIT', Pid, normal}, State) ->
 
 handle_info({'EXIT', Pid, {accept_failed, Err}},State) ->
     %% Accept failed. Start a new connection process.
-    ?ERROR("handle_info -> accept failed: ~n" ++ 
-	   "      Listener: ~p~n" ++ 
-	   "      Pid:      ~p~n" ++ 
-	   "      Err:      ~p", 
+    ?ERROR("handle_info -> accept failed:"
+	   "~n    Listener: ~p"
+	   "~n    Pid:      ~p"
+	   "~n    Err:      ~p", 
 	   [State#state.listener,Pid,Err]),
     ?vlog("~n   Accept failed exit message from ~p"
 	  "~n   with reason ~p",[Pid,Err]),
@@ -388,14 +372,14 @@ handle_info({'EXIT', Pid, {accept_failed, Err}},State) ->
     ?vdebug("New listener: ~p",[L]),
     {noreply, State#state{listener = L}};
 
-handle_info({'EXIT', Pid, {error, normal}}, State) ->
-    %% Bug in gen_tcp
-    ?ERROR("handle_info -> 'normal' error: ~n" ++
-	   "      Listener: ~p~n" ++ 
-	   "      Pid:      ~p",
-	   [State#state.listener,Pid]),
-    ?vlog("~n   Error(normal) exit message from ~p",[Pid]),
-    L = create_listener(State),
+handle_info({'EXIT', Pid, Reason}, State) ->
+    ?ERROR("handle_info -> exit signal:"
+	   "~n    Listener: ~p"
+	   "~n    Pid:      ~p"
+	   "~n    Reason:   ~p",
+	   [State#state.listener,Pid,Reason]),
+    ?vlog("~n   Exit message from ~p for reason ~p",[Pid,Reason]),
+    L = check_and_create(Pid,State,Reason),
     ?vdebug("New listener: ~p",[L]),
     {noreply, State#state{listener = L}};
 
@@ -404,14 +388,13 @@ handle_info(Info, State) ->
     ?vinfo("~n   unknown info '~p'",[Info]),
     String = 
 	lists:flatten(
-	  io_lib:format("Unexpected message to ~p when ~n" ++
+	  io_lib:format("Unknown info to manager (~p) when ~n" ++
 			"\tListener: ~p~n" ++
 			"\tSocket: ~p~n" ++
 			"\t=> ~p",
 			[self(),State#state.listener,
 			 State#state.socket,Info])),
-    error_logger:error_report(String),
-    ?REPORT_ERROR(State#state.config_db,String,[]),
+    report_error(State,String),
     {noreply, State}.
 
 %% terminate
@@ -467,13 +450,26 @@ downgrade_to_2_5_1(State) ->
      State#state.connection_count].
 
 
+check_and_create(Crasher,State,Reason) ->
+    check_and_create(Crasher,State#state.listener,State,Reason).
+
+check_and_create(Crasher,Crasher,State,Reason) ->
+    String = 
+	lists:flatten(
+	  io_lib:format("Listener process (~p) crashed ~n\t=> ~p",
+			[Crasher,Reason])),
+    report_error(State,String),    
+    create_listener(State);
+check_and_create(Crasher,Listener,State,Reason) ->
+    Listener.
+
 %% create_listener
 
 create_listener(State) ->
     UsageState    = get_usage_state(State),
     ?DEBUG("create_listener -> Connection count: ~p => ~p",
 	   [State#state.connection_count,UsageState]), 
-    ?vtrace("Create listener whehn connection count = ~p and usage state = ~p",
+    ?vtrace("Create listener when connection count = ~p and usage state = ~p",
 	    [State#state.connection_count,UsageState]),
     ConfigDB      = State#state.config_db,
     SocketType    = State#state.socket_type,
@@ -552,19 +548,18 @@ process_status(P,[H|T],L) ->
 make_name(Addr,Port) ->
     httpd_util:make_name("httpd",Addr,Port).
 
--ifdef(httpd_verbose).
-report_error(ConfigDB,FStr,Args,Line) ->
-    String = lists:flatten(io_lib:format("Error at line ~w: " ++ FStr, 
-					 [Line|Args])),
-    error_logger:error_report(String),
-    mod_log:report_error(ConfigDB,String),
-    mod_disk_log:report_error(ConfigDB,String).
--endif.
 
+report_error(State,String) ->
+    Cdb = State#state.config_db,
+    error_logger:error_report(String),
+    mod_log:report_error(Cdb,String),
+    mod_disk_log:report_error(Cdb,String).
+    
 
 set_verbosity(manager,V,_S) ->
     OldVerbosity = get(verbosity),
     put(verbosity,V),
+    ?vdebug("old verbosity: ~p",[OldVerbosity]),
     OldVerbosity;
 set_verbosity(listener,V,_S) ->
     OldVerbosity = get(listener_verbosity),

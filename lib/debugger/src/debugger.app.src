@@ -5,6 +5,7 @@
 	     i,
 	     int,
 	     debugger,
+	     dbg_ets,
 	     dbg_iasm,
 	     dbg_ui_break,
 	     dbg_icmd,

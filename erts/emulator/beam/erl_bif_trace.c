@@ -194,6 +194,7 @@ erts_trace_flag2bit(Eterm flag)
     case am_call: return  F_TRACE_CALLS;
     case am_arity: return F_TRACE_ARITY_ONLY;
     case am_return_to: return F_TRACE_RETURN_TO;
+    case am_silent: return F_TRACE_SILENT;
     default: return 0;
     }
 }
@@ -341,20 +342,47 @@ check_tracee(Process* p, Eterm tracer, Eterm tracee)
 	goto error;
     }
 
-    if (tracee_ptr->flags & TRACE_FLAGS && tracee_ptr->tracer_proc != tracer) {
-	Process *tracer_p = process_tab[pid_number(tracee_ptr->tracer_proc)];
-
-	if (INVALID_PID(tracer_p, tracee_ptr->tracer_proc)) {
-	    tracee_ptr->flags &= ~TRACE_FLAGS;
-	    tracee_ptr->tracer_proc = NIL;
+    if (tracee_ptr->flags & TRACE_FLAGS 
+	&& tracee_ptr->tracer_proc != tracer) {
+	/* This tracee is already being traced, and not by the 
+	 * tracer to be */
+	if (is_port(tracee_ptr->tracer_proc)) {
+	    Port *tracer_port = 
+		&erts_port[port_index(tracee_ptr->tracer_proc)];
+	    /* 
+	     * XXX Complicated test for invalid trace port. 
+	     * See erl_trace.c:send_to_port.
+	     */
+	    if (tracer_port == NULL 
+		|| tracer_port->id != tracee_ptr->tracer_proc
+		|| tracer_port->status == FREE
+		|| (tracer_port->status
+		    & (EXITING | CLOSING 
+		       | PORT_BUSY | DISTRIBUTION)) != 0) {
+		/* Invalid current tracer port -> discard and approve */
+		tracee_ptr->flags &= ~TRACE_FLAGS;
+		tracee_ptr->tracer_proc = NIL;
+	    } else 
+		goto already_traced;
 	} else {
-	    cerr_pos = 0;
-	    erl_printf(CBUF, "** can only have one tracer process per process\n");
-	    send_error_to_logger(p->group_leader);
-	    goto error;
+	    Process *tracer_p = 
+		process_tab[pid_number(tracee_ptr->tracer_proc)];
+	    
+	    if (INVALID_PID(tracer_p, tracee_ptr->tracer_proc)) {
+		/* Invalid current tracer process -> discard and approve */
+		tracee_ptr->flags &= ~TRACE_FLAGS;
+		tracee_ptr->tracer_proc = NIL;
+	    } else
+		goto already_traced;
 	}
     }
     return tracee;
+
+ already_traced:
+    cerr_pos = 0;
+    erl_printf(CBUF, "** can only have one tracer per process\n");
+    send_error_to_logger(p->group_leader);
+    goto error;
 }
 
 /*
@@ -438,6 +466,7 @@ trace_info_pid(Process* p, Eterm pid_spec, Eterm key)
 	FLAG(F_TIMESTAMP, am_timestamp);
 	FLAG(F_TRACE_ARITY_ONLY, am_arity);
 	FLAG(F_TRACE_RETURN_TO, am_return_to);
+	FLAG(F_TRACE_SILENT, am_silent);
 #undef FLAG0
 #undef FLAG
 	return TUPLE2(hp, key, flag_list);
@@ -1022,6 +1051,25 @@ BIF_ADECL_1
 }
 
 /*
+   seq_trace_print(Message) -> true | false
+   This function passes Message to the system_tracer
+   if the trace_token is not NIL.
+   Returns true if Message is passed else false
+   Note! That true is returned if the conditions to pass Message is
+   fulfilled, but nothing is passed if system_seq_tracer is not set.
+ */
+BIF_RETTYPE seq_trace_print_1(BIF_ALIST_1)    
+BIF_ADECL_1
+{
+    if (SEQ_TRACE_TOKEN(BIF_P) == NIL) 
+	BIF_RET(am_false);
+    seq_trace_update_send(BIF_P);
+    seq_trace_output(SEQ_TRACE_TOKEN(BIF_P), BIF_ARG_1, 
+		     SEQ_TRACE_PRINT, NIL);
+    BIF_RET(am_true);
+}
+
+/*
    seq_trace_print(Label,Message) -> true | false
    This function passes Message to the system_tracer
    if the trace_token is not NIL and the trace_token label is equal to
@@ -1040,6 +1088,7 @@ BIF_ADECL_2
     if (SEQ_TRACE_TOKEN_LABEL(BIF_P) != BIF_ARG_1)
 	BIF_RET(am_false);
     seq_trace_update_send(BIF_P);
-    seq_trace_output(SEQ_TRACE_TOKEN(BIF_P), BIF_ARG_2, SEQ_TRACE_PRINT, NIL);
+    seq_trace_output(SEQ_TRACE_TOKEN(BIF_P), BIF_ARG_2, 
+		     SEQ_TRACE_PRINT, NIL);
     BIF_RET(am_true);
 }

@@ -79,7 +79,12 @@ nnslookup(Name, Class, Type, Ns, Timeout) ->
 nslookup2(Name, Class, Type, Timer) ->
     case nslookup1(Name, Class, Type, res_option(nameserver), Timer) of
 	{error, nxdomain} ->
-	    nslookup1(Name, Class, Type, res_option(alt_nameserver), Timer);
+	    case res_option(alt_nameserver) of
+		[] ->
+		    {error, nxdomain};
+		AltNameserver ->
+		    nslookup1(Name, Class, Type, AltNameserver, Timer)
+	    end;
 	Reply -> Reply
     end.
     
@@ -150,22 +155,29 @@ res_gethostbyaddr(Addr, IP, Timer) ->
 	    case res_send2(Id, Buffer, res_option(nameserver),Timer) of
 		{ok, Rec} ->
 		    if length(Rec#dns_rec.anlist) == 0 ->
-			    alt_gethostbyaddr(Id, Buffer, IP, Timer);
+			    alt_gethostbyaddr(Id, Buffer, IP, 
+					      {error, nxdomain}, Timer);
 		       true ->
 			    inet_db:res_gethostbyaddr(IP, Rec)
 		    end;
 		{error, nxdomain} ->
-		    alt_gethostbyaddr(Id, Buffer, IP, Timer);
+		    alt_gethostbyaddr(Id, Buffer, IP, 
+				      {error, nxdomain}, Timer);
 		Error -> Error
 	    end;
 	Error -> Error
     end.
 
-alt_gethostbyaddr(Id, Buffer, IP, Timer) ->
-    case res_send2(Id, Buffer, res_option(alt_nameserver), Timer) of
-	{ok, Rec} ->
-	    inet_db:res_gethostbyaddr(IP, Rec);
-	Error -> Error
+alt_gethostbyaddr(Id, Buffer, IP, PrevError, Timer) ->
+    case res_option(alt_nameserver) of
+	[] ->
+	    PrevError;
+	AltNameserver ->
+	    case res_send2(Id, Buffer, AltNameserver, Timer) of
+		{ok, Rec} ->
+		    inet_db:res_gethostbyaddr(IP, Rec);
+		Error -> Error
+	    end
     end.
 
 %% --------------------------------------------------------------------------

@@ -189,14 +189,19 @@ static int trace_ip_ready_input(long handle, int fd);
 static int trace_ip_ready_output(long handle, int fd);
 static int trace_ip_finish(void); /* No arguments, despite what might be stated
 				     in any documentation */
+static int trace_ip_control(long handle, unsigned int command, 
+			    char* buff, int count, 
+			    char** res, int res_size);
 
 /*
 ** Internal routines
 */
 static void *my_alloc(size_t size);
+static DriverBinary *my_alloc_binary(int size);
 static int write_until_done(SOCKET s, char *buff, int bufflen);
 static unsigned get_be(unsigned char *s);
-static void put_be(unsigned n, unsigned char *s);
+static void put_be32(unsigned n, unsigned char *s);
+static void put_be16(unsigned n, unsigned char *s);
 static TraceIpData *lookup_data_by_port(int portno);
 static int set_nonblocking(SOCKET sock);
 static TraceIpMessage *make_buffer(int datasiz, unsigned char op, 
@@ -228,7 +233,8 @@ DriverEntry trace_ip_driver_entry = {
 #endif
     "trace_ip_drv",        /* char *driver_name, the argument to open_port */
     trace_ip_finish,       /* F_PTR finish, called when unloaded */
-    null_func,             /* F_PTR control, port_command callback */
+    NULL,                  /* void * that is not used */
+    trace_ip_control,      /* F_PTR control, port_control callback */
     null_func,             /* F_PTR timeout, reserved */
     null_func              /* F_PTR outputv, reserved */
 };
@@ -294,11 +300,21 @@ static long trace_ip_start(long port, char *buff)
     sin.sin_addr.s_addr = INADDR_ANY;
     sin.sin_port = htons((short) portno);
     
-    if (bind(s,(struct sockaddr *) &sin, sizeof(sin)) != 0) {
+    if (bind(s, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
 	closesocket(s);
 	return -1;
     }
-    
+
+    if (portno == 0) {
+	size_t sinlen = sizeof(sin);
+	if (getsockname(s, (struct sockaddr *)&sin, &sinlen) != 0) {
+	    closesocket(s);
+	    return -1;
+	} else {
+	    portno = sin.sin_port;
+	}
+    }    
+
     if (listen(s, 1)) { /* No significant backlog needed */
 	closesocket(s);
 	return -1;
@@ -332,6 +348,7 @@ static long trace_ip_start(long port, char *buff)
     ret->event = 0;
 #endif
     my_driver_select(ret, s, FLAG_READ, 1);
+    set_port_control_flags(port, PORT_CONTROL_FLAG_BINARY);
 
     return (long) ret;
 }
@@ -475,6 +492,26 @@ static int trace_ip_ready_output(long handle, int fd)
 }
 
 /*
+** Control message from erlang, we handle $p, which is get_listen_port.
+*/
+static int trace_ip_control(long handle, unsigned int command, 
+			      char* buff, int count, 
+			      char** res, int res_size)
+{
+    register void *void_ptr; /* Soft type cast */
+
+    if (command == 'p') {
+	TraceIpData *data = (TraceIpData *) handle;
+	DriverBinary *b = my_alloc_binary(3);
+	b->orig_bytes[0] = '\0'; /* OK */
+	put_be16(data->listen_portno, &(b->orig_bytes[1]));
+	*res = void_ptr = b;
+	return 0;
+    } 
+    return -1;
+}
+
+/*
 ** Driver unloaded
 */
 static int trace_ip_finish(void)
@@ -495,9 +532,24 @@ static int trace_ip_finish(void)
 static void *my_alloc(size_t size) 
 {
     void *ret;
-    if ((ret = (void *) driver_alloc(size)) == NULL) {
+    if ((ret = driver_alloc(size)) == NULL) {
 	/* May or may not work... */
 	fprintf(stderr, "Could not allocate %d bytes of memory in %s.",
+		(int) size, __FILE__);
+	exit(1);
+    }
+    return ret;
+}
+
+/*
+** Yet another malloc wrapper
+*/
+static DriverBinary *my_alloc_binary(int size)
+{
+    DriverBinary *ret;
+    if ((ret = driver_alloc_binary(size)) == NULL) {
+	/* May or may not work... */
+	fprintf(stderr, "Could not allocate a binary of %d bytes in %s.",
 		(int) size, __FILE__);
 	exit(1);
     }
@@ -543,12 +595,19 @@ static unsigned get_be(unsigned char *s)
 /*
 ** Write unsigned to buffer in big endian
 */
-static void put_be(unsigned n, unsigned char *s)
+
+static void put_be32(unsigned n, unsigned char *s)
 {
-    s[0] = n >> 24;
-    s[1] = (n >> 16) & 0xFFFFU;
-    s[2] = (n >> 8) & 0xFFFFU;
-    s[3] = n & 0xFFFFU;
+    s[0] = n >> 24U;
+    s[1] = n >> 16U;
+    s[2] = n >> 8U;
+    s[3] = n;
+}
+
+static void put_be16(unsigned n, unsigned char *s)
+{
+    s[0] = n >> 8U;
+    s[1] = n;
 }
 
 /*
@@ -573,7 +632,7 @@ static TraceIpMessage *make_buffer(int datasiz, unsigned char op,
     ret->siz = datasiz + 5;
     ret->written = 0;
     ret->bin[0] = op;
-    put_be(number, ret->bin + 1);
+    put_be32(number, ret->bin + 1);
     return ret;
 }
 
@@ -588,8 +647,8 @@ static void enque_message(TraceIpData *data, unsigned char *buff, int bufflen,
     TraceIpMessage *tim;
 
     if (diff == -1 || diff == data->quesiz - 1) {
-	put_be(get_be((data->que[data->questop])->bin + 1) + 1, 
-	       (data->que[data->questop])->bin + 1);
+	put_be32(get_be((data->que[data->questop])->bin + 1) + 1, 
+		 (data->que[data->questop])->bin + 1);
     } else if (diff == -2 || diff == data->quesiz - 2) {
 	ASSERT(byteswritten == 0);
 	if (++(data->questop) ==  data->quesiz) {
@@ -655,7 +714,7 @@ static int trywrite(TraceIpData *data, unsigned char *buff, int bufflen)
     int res;
 
     op[0] = OP_BINARY;
-    put_be(bufflen, op + 1);
+    put_be32(bufflen, op + 1);
 
     if ((res = write_until_done(data->fd, op, 5)) < 0) {
 	close_client(data);

@@ -28,8 +28,13 @@
 -include("SNMPv2-TC.hrl").
 -include("snmp_types.hrl").
 
--define(VMODULE,"USM_MIB").
+-define(VMODULE,"USB_MIB").
 -include("snmp_verbosity.hrl").
+
+-ifndef(default_verbosity).
+-define(default_verbosity,silence).
+-endif.
+
 
 %% Columns not accessible via SNMP
 -define(usmUserAuthKey, 14).
@@ -52,11 +57,14 @@
 %% Fails: exit(configuration_error)
 %%-----------------------------------------------------------------
 configure(Dir) ->
+    set_sname(),
     case snmp_local_db:table_exists(db(usmUserTable)) of
 	true ->
+	    ?vdebug("usm user table exists: init vars & cleanup",[]),
 	    init_vars(),
 	    gc_tabs();
 	false ->
+	    ?vdebug("usm user table does not exist: reconfigure",[]),
 	    reconfigure(Dir)
     end.
 
@@ -73,9 +81,14 @@ configure(Dir) ->
 %%        exit({unsupported_crypto, Function})
 %%-----------------------------------------------------------------
 reconfigure(Dir) ->
+    set_sname(),
+    ?vdebug("read usm configuration files",[]),
     Users = snmp_conf:read_usm_config_files(Dir),
+    ?vdebug("check users",[]),
     check_users(Users),
+    ?vdebug("initiate tables",[]),
     init_tabs(Users),
+    ?vdebug("initiate vars",[]),
     init_vars(),
     ok.
 
@@ -120,6 +133,7 @@ maybe_create_table(Name) ->
     end.
 
 init_tabs(Users) ->
+    ?vdebug("create usm user table",[]),
     snmp_local_db:table_delete(db(usmUserTable)),
     snmp_local_db:table_create(db(usmUserTable)),
     init_user_table(Users).
@@ -768,3 +782,10 @@ is_crypto_supported(Func) ->
 	_ -> false
     end.
     
+set_sname() ->
+    set_sname(get(sname)).
+
+set_sname(undefined) ->
+    put(sname,conf);
+set_sname(_) -> %% Keep it, if already set.
+    ok.

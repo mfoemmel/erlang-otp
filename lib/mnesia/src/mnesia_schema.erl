@@ -1351,6 +1351,10 @@ transform_table(Tab, Fun, NewAttrs, NewRecName)
   when function(Fun), list(NewAttrs), atom(NewRecName) -> 
     schema_transaction(fun() -> do_transform_table(Tab, Fun, NewAttrs, NewRecName) end);
 
+transform_table(Tab, ignore, NewAttrs, NewRecName) 
+  when list(NewAttrs), atom(NewRecName) -> 
+    schema_transaction(fun() -> do_transform_table(Tab, ignore, NewAttrs, NewRecName) end);
+
 transform_table(Tab, Fun, NewAttrs, NewRecName) ->
     {aborted,{bad_type, Tab, Fun, NewAttrs, NewRecName}}.
 
@@ -1766,6 +1770,8 @@ prepare_op(_Tid, {op, add_snmp, Ustruct, TabDef}, WaitFor) ->
             {true, optional}
     end;
 
+prepare_op(_Tid, {op, transform, ignore, TabDef}, WaitFor) ->
+    {true, mandatory};   %% Apply schema changes only.
 prepare_op(_Tid, {op, transform, Fun, TabDef}, WaitFor) ->
     Cs = list2cs(TabDef),
     case mnesia_lib:cs_to_storage_type(node(), Cs) of

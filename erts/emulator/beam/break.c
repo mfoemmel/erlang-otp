@@ -373,6 +373,12 @@ void do_break()
 	switch (i) {
 	case 'q':
 	case 'a': 
+	case '*': /* 
+		   * The asterisk is an read error on windows, 
+		   * where sys_get_key isn't that great in console mode.
+		   * The usual reason for a read error is Ctrl-C. Treat this as
+		   * 'a' to avoid infinite loop.
+		   */
 	    halt_0(0);
 	case 'c':
 	    return;

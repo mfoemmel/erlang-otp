@@ -73,7 +73,7 @@ static struct tab_entry {
 
 int user_requested_db_max_tabs;
 static int db_max_tabs;
-static int last_slot = 0;
+static int last_slot;
 static int no_tabs;		/* Number of active tables */
 
 /* 
@@ -1079,6 +1079,7 @@ void init_db(void)
     int i;
     int max_ets;
 
+    last_slot = 0;
     db_initialize_util();
     if (( max_ets = (user_requested_db_max_tabs*5)/4 ) < DB_DEF_MAX_TABS)
 	db_max_tabs = DB_DEF_MAX_TABS;

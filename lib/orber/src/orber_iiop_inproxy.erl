@@ -82,17 +82,21 @@ stop() ->
 init({connect, Type, Socket}) ->
     ?PRINTDEBUG2("orber_iiop_inproxy init: ~p ", [self()]),
     process_flag(trap_exit, true),
-    {ok, {Socket, Type, ets:new(orber_incoming_requests, [set])}}.
+    {ok, {Socket, Type, ets:new(orber_incoming_requests, [set]),
+	  orber:get_interceptors()}}.
 
 %%-----------------------------------------------------------------
 %% Func: terminate/2
 %%-----------------------------------------------------------------
-terminate(Reason, {Socket, Type, IncRequests}) ->
+%% We may want to kill all proxies before terminating, but the best
+%% option should be to let the repuest complete (especially for one-way
+%% functions it's a better alternative.
+%% kill_all_proxies(IncRequests, ets:first(IncRequests)),
+terminate(normal, {Socket, Type, IncRequests, Interceptors}) ->
+    ets:delete(IncRequests),
+    ok;
+terminate(Reason, {Socket, Type, IncRequests, Interceptors}) ->
     ?PRINTDEBUG2("in proxy for socket ~p terminated with reason: ~p", [Socket, Reason]),
-    %% We may want to kill all proxies before terminating, but the best
-    %% option should be to let the repuest complete (especially for one-way
-    %% functions it's a better alternative.
-    %% kill_all_proxies(IncRequests, ets:first(IncRequests)),
     ets:delete(IncRequests),
     orber:debug_level_print("[~p] orber_iiop_inproxy:terminate(~p)", [?LINE, Reason], ?DEBUG_LEVEL),
     ok.
@@ -126,34 +130,25 @@ handle_info({tcp_closed, Socket}, State) ->
     {stop, normal, State};
 handle_info({tcp_error, Socket}, State) ->
     {stop, normal, State};
-handle_info({tcp, Socket, Bytes}, {Socket, normal, IncRequests}) ->
-    Pid = orber_iiop_inrequest:start(Bytes, normal, Socket),
+handle_info({tcp, Socket, Bytes}, {Socket, normal, IncRequests, Interceptors}) ->
+    Pid = orber_iiop_inrequest:start(Bytes, normal, Socket, Interceptors),
     ets:insert(IncRequests, {Pid, undefined}),
-    {noreply, {Socket, normal, IncRequests}};
+    {noreply, {Socket, normal, IncRequests, Interceptors}};
 handle_info({ssl_closed, Socket}, State) ->
     {stop, normal, State};
 handle_info({ssl_error, Socket}, State) ->
     {stop, normal, State};
-handle_info({ssl, Socket, Bytes}, {Socket, ssl, IncRequests}) ->
-    Pid = orber_iiop_inrequest:start(Bytes, ssl, Socket),
+handle_info({ssl, Socket, Bytes}, {Socket, ssl, IncRequests, Interceptors}) ->
+    Pid = orber_iiop_inrequest:start(Bytes, ssl, Socket, Interceptors),
     ets:insert(IncRequests, {Pid, undefined}),
-    {noreply, {Socket, ssl, IncRequests}};
-%%% old sockets impl.
-%handle_info({Socket, {socket_closed, normal}}, State) ->
-%    {stop, normal, State};
-%handle_info({Socket, {socket_closed, Error}}, State) ->
-%    {stop, normal, State};
-%handle_info({Socket, {fromsocket, Bytes}}, {Socket, normal, IncRequests}) ->
-%    Pid = orber_iiop_inrequest:start(Bytes, normal, Socket),
-%    ets:insert(IncRequests, {Pid, undefined}),
-%    {noreply, {Socket, normal, IncRequests}};
-handle_info({'EXIT', Pid, normal}, {Socket, Type, IncRequests}) ->
+    {noreply, {Socket, ssl, IncRequests, Interceptors}};
+handle_info({'EXIT', Pid, normal}, {Socket, Type, IncRequests, Interceptors}) ->
     ets:delete(IncRequests, Pid),
-    {noreply, {Socket, Type, IncRequests}};
-handle_info({'EXIT', Pid, Reason}, {Socket, Type, IncRequests}) ->
+    {noreply, {Socket, Type, IncRequests, Interceptors}};
+handle_info({'EXIT', Pid, Reason}, {Socket, Type, IncRequests, Interceptors}) ->
     ?PRINTDEBUG2("proxy ~p finished with reason ~p", [Pid, Reason]),
     ets:delete(IncRequests, Pid),
-    {noreply, {Socket, Type, IncRequests}};
+    {noreply, {Socket, Type, IncRequests, Interceptors}};
 handle_info(X,State) ->
     {noreply, State}.
 
@@ -161,8 +156,13 @@ handle_info(X,State) ->
 %%-----------------------------------------------------------------
 %% Func: code_change/3
 %%-----------------------------------------------------------------
+code_change({down, OldVsn}, {Socket, Type, IncRequests, Interceptors},interceptors) ->
+    {ok, {Socket, Type, IncRequests}};
+code_change(OldVsn, {Socket, Type, IncRequests}, interceptors) ->
+    {ok, {Socket, Type, IncRequests, orber:get_interceptors()}};
 code_change(OldVsn, State, Extra) ->
     {ok, State}.
+
 
 
 

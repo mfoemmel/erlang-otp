@@ -72,6 +72,10 @@ putenv "HOME=/home/tornado/erlvxworks"
 # 
 putenv "HEART_DONT_REBOOT=1"
 
+# To get fullsweep garbage collection on systems with
+# very limited memory, set ERL_FULLSWEEP_AFTER to "0":
+# putenv "ERL_FULLSWEEP_AFTER=0"
+
 #
 # Start Erlang/OTP
 #

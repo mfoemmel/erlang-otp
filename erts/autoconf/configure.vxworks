@@ -42,29 +42,21 @@ MKDIRS="${ERL_TOP}/lib/os_mon/priv/bin/$target
         ${ERL_TOP}/lib/orber/priv/bin/$target
         ${ERL_TOP}/lib/ic/priv/lib/$target
         ${ERL_TOP}/lib/ic/priv/obj/$target
+        ${ERL_TOP}/lib/erl_interface/obj/$target
+        ${ERL_TOP}/lib/erl_interface/obj.debug/$target
+        ${ERL_TOP}/lib/erl_interface/bin/$target
         ${ERL_TOP}/lib/runtime_tools/priv/lib/$target
-        ${ERL_TOP}/lib/runtime_tools/priv/obj/$target"
+        ${ERL_TOP}/lib/runtime_tools/priv/obj/$target
+	${ERL_TOP}/erts/obj/$target
+	${ERL_TOP}/erts/obj.debug/$target
+	${ERL_TOP}/bin/$target"
 for tag in '' '.debug' '.instr' '.purify' '.quantify' '.purecov'; do
-   MKDIRS="$MKDIRS ../obj$tag.beam/$target"  #on the form `../obj.<TAG>.beam'
+   MKDIRS="$MKDIRS ${ERL_TOP}/erts/obj$tag.beam/$target"
 done
 
 for dir in $MKDIRS; do
   test ! -d "$dir" && mkdir -p "$dir"
 done
-
-#
-# Create directories for object files and binaries.
-#
-
-for dir in ${ERL_TOP}/erts/obj*; do
-    test ! -d $dir/$target && mkdir $dir/$target
-done
-test ! -d ${ERL_TOP}/bin/$target && mkdir ${ERL_TOP}/bin/$target
-
-for dir in ${ERL_TOP}/lib/erl_interface/obj*; do
-    test ! -d $dir/$target && mkdir $dir/$target
-done
-test ! -d ${ERL_TOP}/lib/erl_interface/bin/$target && mkdir ${ERL_TOP}/lib/erl_interface/bin/$target
 
 #
 # Create Makefiles for vxWorks.

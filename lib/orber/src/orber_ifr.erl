@@ -83,6 +83,7 @@
 	 'Repository_lookup_id'/2,
 	 'Repository_get_primitive'/2,
 	 'Repository_create_string'/2,
+	 'Repository_create_wstring'/2,
 	 'Repository_create_sequence'/3,
 	 'Repository_create_array'/3,
 	 'Repository_create_idltype'/2,		%not in CORBA 2.0
@@ -219,6 +220,11 @@
 	 'StringDef__get_type'/1,
 	 'StringDef__get_bound'/1,
 	 'StringDef__set_bound'/2,
+	 'WstringDef__get_def_kind'/1,
+	 'WstringDef_destroy'/1,
+	 'WstringDef__get_type'/1,
+	 'WstringDef__get_bound'/1,
+	 'WstringDef__set_bound'/2,
 	 'SequenceDef__get_def_kind'/1,
 	 'SequenceDef_destroy'/1,
 	 'SequenceDef__get_type'/1,
@@ -346,6 +352,7 @@
 	 'ORB_create_exception_tc'/3,
 	 'ORB_create_interface_tc'/2,
 	 'ORB_create_string_tc'/1,
+	 'ORB_create_wstring_tc'/1,
 	 'ORB_create_sequence_tc'/2,
 	 'ORB_create_recursive_sequence_tc'/2,
 	 'ORB_create_array_tc'/2,
@@ -379,6 +386,7 @@
 	 lookup_id/2,
 	 get_primitive/2,
 	 create_string/2,
+	 create_wstring/2,
 	 create_sequence/3,
 	 create_array/3,
 	 create_idltype/2,		%not in CORBA 2.0
@@ -422,6 +430,7 @@
 
 -include_lib("orber/include/corba.hrl").
 -include("orber_ifr.hrl").
+-include("ifr_objects.hrl").
 
 
 %%-----------------------------------------------------------------
@@ -430,1211 +439,1077 @@
 -define(DEBUG_LEVEL, 9).
 
 %%%======================================================================
-%%% Internal stuff
-
-%%%----------------------------------------------------------------------
-%%% Catch an exception
-
-
-exceptioncatcher(Module,Fun,Arglist) ->
-    apply(Module,Fun,Arglist).
-
-%    case catch apply(Module,Fun,Arglist) of
-%	{exception, Exception} ->
-%	    {exception, Exception};    
-%	Val ->
-%	    Val
-%    end.
-
-%%%======================================================================
 %%% Public interfaces to the IFR
 
 %% Initialize the database
 %%init(Nodes, Timeout) ->
-%%    exceptioncatcher(orber_ifr_utils,init_DB,[Timeout, [{disc_copies, Nodes}]]).
+%%    orber_ifr_utils:init_DB(Timeout, [{disc_copies, Nodes}]).
 
 init(Timeout, Options) ->
-    exceptioncatcher(orber_ifr_utils,init_DB,[Timeout, Options]).
+    orber_ifr_utils:init_DB(Timeout, Options).
 
 %%% Find the repository
 find_repository() ->
-    exceptioncatcher(orber_ifr_utils,create_repository,[]).
+    orber_ifr_utils:create_repository().
 
 'IRObject__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_irobject,'_get_def_kind',[Objref]).
+    orber_ifr_irobject:'_get_def_kind'(Objref).
 %%'IRObject_destroy'(Objref) ->
-%%    exceptioncatcher(orber_ifr_irobject,destroy,[Objref]).
+%%    orber_ifr_irobject:destroy(Objref).
 
 'Contained__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_contained,'_get_def_kind',[Objref]).
+    orber_ifr_contained:'_get_def_kind'(Objref).
 %%'Contained_destroy'(Objref) ->
-%%    exceptioncatcher(orber_ifr_contained,destroy,[Objref]).
+%%    orber_ifr_contained:destroy(Objref).
 'Contained__get_id'(Objref) ->
-    exceptioncatcher(orber_ifr_contained,'_get_id',[Objref]).
+    orber_ifr_contained:'_get_id'(Objref).
 'Contained__set_id'(Objref,Id) ->
-    exceptioncatcher(orber_ifr_contained,'_set_id',[Objref,Id]).
+    orber_ifr_contained:'_set_id'(Objref,Id).
 'Contained__get_name'(Objref) ->
-    exceptioncatcher(orber_ifr_contained,'_get_name',[Objref]).
+    orber_ifr_contained:'_get_name'(Objref).
 'Contained__set_name'(Objref,Name) ->
-    exceptioncatcher(orber_ifr_contained,'_set_name',[Objref,Name]).
+    orber_ifr_contained:'_set_name'(Objref,Name).
 'Contained__get_version'(Objref) ->
-    exceptioncatcher(orber_ifr_contained,'_get_version',[Objref]).
+    orber_ifr_contained:'_get_version'(Objref).
 'Contained__set_version'(Objref,Version) ->
-    exceptioncatcher(orber_ifr_contained,'_set_version',[Objref,Version]).
+    orber_ifr_contained:'_set_version'(Objref,Version).
 'Contained__get_defined_in'(Objref) ->
-    exceptioncatcher(orber_ifr_contained,'_get_defined_in',[Objref]).
+    orber_ifr_contained:'_get_defined_in'(Objref).
 'Contained__get_absolute_name'(Objref) ->
-    exceptioncatcher(orber_ifr_contained,'_get_absolute_name',[Objref]).
+    orber_ifr_contained:'_get_absolute_name'(Objref).
 'Contained__get_containing_repository'(Objref) ->
-    exceptioncatcher(orber_ifr_contained,'_get_containing_repository',
-		     [Objref]).
+    orber_ifr_contained:'_get_containing_repository'(Objref).
 'Contained_describe'(Objref) ->
-    exceptioncatcher(orber_ifr_contained,describe,[Objref]).
+    orber_ifr_contained:describe(Objref).
 'Contained_move'(Objref,New_container,New_name,New_version) ->
-    exceptioncatcher(orber_ifr_contained,move,
-		     [Objref,New_container,New_name,New_version]).
+    orber_ifr_contained:move(Objref,New_container,New_name,New_version).
 
 'Container__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_container,'_get_def_kind',[Objref]).
+    orber_ifr_container:'_get_def_kind'(Objref).
 'Container_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_container,'_destroy',[Objref]).
+    orber_ifr_container:destroy(Objref).
 'Container_lookup'(Objref,Search_name) ->
-    exceptioncatcher(orber_ifr_container,lookup,[Objref,Search_name]).
+    orber_ifr_container:lookup(Objref,Search_name).
 'Container_contents'(Objref,Limit_type,Exclude_inherited) ->
-    exceptioncatcher(orber_ifr_container,contents,
-		     [Objref,Limit_type,Exclude_inherited]).
+    orber_ifr_container:contents(Objref,Limit_type,Exclude_inherited).
 'Container_lookup_name'(Objref,Search_name,Levels_to_search,Limit_type,
 			Exclude_inherited) ->
-    exceptioncatcher(orber_ifr_container,lookup_name,
-		     [Objref,Search_name,Levels_to_search,Limit_type,
-		      Exclude_inherited]).
+    orber_ifr_container:lookup_name(Objref,Search_name,Levels_to_search,Limit_type,
+				    Exclude_inherited).
 'Container_describe_contents'(Objref,Limit_type,Exclude_inherited,
 					 Max_returned_objs) ->
-    exceptioncatcher(orber_ifr_container,describe_contents,
-		     [Objref,Limit_type,Exclude_inherited,Max_returned_objs]).
+    orber_ifr_container:describe_contents(Objref,Limit_type,Exclude_inherited,
+					  Max_returned_objs).
 'Container_create_module'(Objref,Id,Name,Version) ->
-    exceptioncatcher(orber_ifr_container,create_module,
-		     [Objref,Id,Name,Version]).
+    orber_ifr_container:create_module(Objref,Id,Name,Version).
 'Container_create_constant'(Objref,Id,Name,Version,Type,Value) ->
-    exceptioncatcher(orber_ifr_container,create_constant,
-		     [Objref,Id,Name,Version,Type,Value]).
+    orber_ifr_container:create_constant(Objref,Id,Name,Version,Type,Value).
 'Container_create_struct'(Objref,Id,Name,Version,Members) ->
-    exceptioncatcher(orber_ifr_container,create_struct,
-		     [Objref,Id,Name,Version,Members]).
+    orber_ifr_container:create_struct(Objref,Id,Name,Version,Members).
 'Container_create_union'(Objref,Id,Name,Version,Discriminator_type,Members) ->
-    exceptioncatcher(orber_ifr_container,create_union,
-		     [Objref,Id,Name,Version,Discriminator_type,Members]).
+    orber_ifr_container:create_union(Objref,Id,Name,Version,Discriminator_type,
+				     Members).
 'Container_create_enum'(Objref,Id,Name,Version,Members) ->
-    exceptioncatcher(orber_ifr_container,create_enum,
-		     [Objref,Id,Name,Version,Members]).
+    orber_ifr_container:create_enum(Objref,Id,Name,Version,Members).
 'Container_create_alias'(Objref,Id,Name,Version,Original_type) ->
-    exceptioncatcher(orber_ifr_container,create_alias,
-		     [Objref,Id,Name,Version,Original_type]).
+    orber_ifr_container:create_alias(Objref,Id,Name,Version,Original_type).
 'Container_create_interface'(Objref,Id,Name,Version,Base_interfaces) ->
-    exceptioncatcher(orber_ifr_container,create_interface,
-		     [Objref,Id,Name,Version,Base_interfaces]).
+    orber_ifr_container:create_interface(Objref,Id,Name,Version,Base_interfaces).
 'Container_create_exception'(Objref,Id,Name,Version,Members) ->
-    exceptioncatcher(orber_ifr_container,create_exception,
-		     [Objref,Id,Name,Version,Members]).
+    orber_ifr_container:create_exception(Objref,Id,Name,Version,Members).
 
 'IDLType__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_idltype,'_get_def_kind',[Objref]).
+    orber_ifr_idltype:'_get_def_kind'(Objref).
 'IDLType_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_idltype,destroy,[Objref]).
+    orber_ifr_idltype:destroy(Objref).
 'IDLType__get_type'(Objref) ->
-    exceptioncatcher(orber_ifr_idltype,'_get_type',[Objref]).
+    orber_ifr_idltype:'_get_type'(Objref).
 
 'Repository__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_repository,'_get_def_kind',[Objref]).
+    orber_ifr_repository:'_get_def_kind'(Objref).
 'Repository_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_repository,destroy,[Objref]).
+    orber_ifr_repository:destroy(Objref).
 'Repository_lookup'(Objref,Search_name) ->
-    exceptioncatcher(orber_ifr_repository,lookup,[Objref,Search_name]).
+    orber_ifr_repository:lookup(Objref,Search_name).
 'Repository_contents'(Objref,Limit_type,Exclude_inherited) ->
-    exceptioncatcher(orber_ifr_repository,contents,
-		     [Objref,Limit_type,Exclude_inherited]).
+    orber_ifr_repository:contents(Objref,Limit_type,Exclude_inherited).
 'Repository_lookup_name'(Objref,Search_name,Levels_to_search,Limit_type,
 			 Exclude_inherited) ->
-    exceptioncatcher(orber_ifr_repository,lookup_name,
-		     [Objref,Search_name,Levels_to_search,Limit_type,
-		      Exclude_inherited]).
+    orber_ifr_repository:lookup_name(Objref,Search_name,Levels_to_search,Limit_type,
+				     Exclude_inherited).
 'Repository_describe_contents'(Objref,Limit_type,Exclude_inherited,
 			       Max_returned_objs) ->
-    exceptioncatcher(orber_ifr_repository,describe_contents,
-		     [Objref,Limit_type,Exclude_inherited,Max_returned_objs]).
+    orber_ifr_repository:describe_contents(Objref,Limit_type,Exclude_inherited,
+					   Max_returned_objs).
 'Repository_create_module'(Objref,Id,Name,Version) ->
-    exceptioncatcher(orber_ifr_repository,create_module,
-		     [Objref,Id,Name,Version]).
+    orber_ifr_repository:create_module(Objref,Id,Name,Version).
 'Repository_create_constant'(Objref,Id,Name,Version,Type,Value) ->
-    exceptioncatcher(orber_ifr_repository,create_constant,
-		     [Objref,Id,Name,Version,Type,Value]).
+    orber_ifr_repository:create_constant(Objref,Id,Name,Version,Type,Value).
 'Repository_create_struct'(Objref,Id,Name,Version,Members) ->
-    exceptioncatcher(orber_ifr_repository,create_struct,
-		     [Objref,Id,Name,Version,Members]).
+    orber_ifr_repository:create_struct(Objref,Id,Name,Version,Members).
 'Repository_create_union'(Objref,Id,Name,Version,Discriminator_type,Members) ->
-    exceptioncatcher(orber_ifr_repository,create_union,
-		     [Objref,Id,Name,Version,Discriminator_type,Members]).
+    orber_ifr_repository:create_union(Objref,Id,Name,Version,Discriminator_type,
+				      Members).
 'Repository_create_enum'(Objref,Id,Name,Version,Members) ->
-    exceptioncatcher(orber_ifr_repository,create_enum,
-		     [Objref,Id,Name,Version,Members]).
+    orber_ifr_repository:create_enum(Objref,Id,Name,Version,Members).
 'Repository_create_alias'(Objref,Id,Name,Version,Original_type) ->
-    exceptioncatcher(orber_ifr_repository,create_alias,
-		     [Objref,Id,Name,Version,Original_type]).
+    orber_ifr_repository:create_alias(Objref,Id,Name,Version,Original_type).
 'Repository_create_interface'(Objref,Id,Name,Version,Base_interfaces) ->
-    exceptioncatcher(orber_ifr_repository,create_interface,
-		     [Objref,Id,Name,Version,Base_interfaces]).
+    orber_ifr_repository:create_interface(Objref,Id,Name,Version,Base_interfaces).
 'Repository_create_exception'(Objref,Id,Name,Version,Members) ->
-    exceptioncatcher(orber_ifr_repository,create_exception,
-		     [Objref,Id,Name,Version,Members]).
+    orber_ifr_repository:create_exception(Objref,Id,Name,Version,Members).
 'Repository_lookup_id'(Objref,Search_id) ->
-    exceptioncatcher(orber_ifr_repository,lookup_id,[Objref,Search_id]).
+    lookup_id(Objref,Search_id).
 'Repository_get_primitive'(Objref,Kind) ->
-    exceptioncatcher(orber_ifr_repository,get_primitive,[Objref,Kind]).
+    orber_ifr_repository:get_primitive(Objref,Kind).
 'Repository_create_string'(Objref,Bound) ->
-    exceptioncatcher(orber_ifr_repository,create_string,[Objref,Bound]).
+    orber_ifr_repository:create_string(Objref,Bound).
+'Repository_create_wstring'(Objref,Bound) ->
+    orber_ifr_repository:create_wstring(Objref,Bound).
 'Repository_create_sequence'(Objref,Bound,Element_type) ->
-    exceptioncatcher(orber_ifr_repository,create_sequence,
-		     [Objref,Bound,Element_type]).
+    orber_ifr_repository:create_sequence(Objref,Bound,Element_type).
 'Repository_create_array'(Objref,Length,Element_type) ->
-    exceptioncatcher(orber_ifr_repository,create_array,
-		     [Objref,Length,Element_type]).
+    orber_ifr_repository:create_array(Objref,Length,Element_type).
 'Repository_create_idltype'(Objref,Typecode) ->
-    exceptioncatcher(orber_ifr_repository,create_idltype,[Objref,Typecode]).
+    orber_ifr_repository:create_idltype(Objref,Typecode).
 
 'ModuleDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_moduledef,'_get_def_kind',[Objref]).
+    orber_ifr_moduledef:'_get_def_kind'(Objref).
 'ModuleDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_moduledef,destroy,[Objref]).
+    orber_ifr_moduledef:destroy(Objref).
 'ModuleDef_lookup'(Objref,Search_name) ->
-    exceptioncatcher(orber_ifr_moduledef,lookup,[Objref,Search_name]).
+    orber_ifr_moduledef:lookup(Objref,Search_name).
 'ModuleDef_contents'(Objref,Limit_type,Exclude_inherited) ->
-    exceptioncatcher(orber_ifr_moduledef,contents,
-		     [Objref,Limit_type,Exclude_inherited]).
+    orber_ifr_moduledef:contents(Objref,Limit_type,Exclude_inherited).
 'ModuleDef_lookup_name'(Objref,Search_name,Levels_to_search,Limit_type,
 			Exclude_inherited) ->
-    exceptioncatcher(orber_ifr_moduledef,lookup_name,
-		     [Objref,Search_name,Levels_to_search,Limit_type,
-		      Exclude_inherited]).
+    orber_ifr_moduledef:lookup_name(Objref,Search_name,Levels_to_search,Limit_type,
+				    Exclude_inherited).
 'ModuleDef_describe_contents'(Objref,Limit_type,Exclude_inherited,
 			      Max_returned_objs) ->
-    exceptioncatcher(orber_ifr_moduledef,describe_contents,
-		     [Objref,Limit_type,Exclude_inherited,Max_returned_objs]).
+    orber_ifr_moduledef:describe_contents(Objref,Limit_type,Exclude_inherited,
+					  Max_returned_objs).
 'ModuleDef_create_module'(Objref,Id,Name,Version) ->
-    exceptioncatcher(orber_ifr_moduledef,create_module,
-		     [Objref,Id,Name,Version]).
+    orber_ifr_moduledef:create_module(Objref,Id,Name,Version).
 'ModuleDef_create_constant'(Objref,Id,Name,Version,Type,Value) ->
-    exceptioncatcher(orber_ifr_moduledef,create_constant,
-		     [Objref,Id,Name,Version,Type,Value]).
+    orber_ifr_moduledef:create_constant(Objref,Id,Name,Version,Type,Value).
 'ModuleDef_create_struct'(Objref,Id,Name,Version,Members) ->
-    exceptioncatcher(orber_ifr_moduledef,create_struct,
-		     [Objref,Id,Name,Version,Members]).
+    orber_ifr_moduledef:create_struct(Objref,Id,Name,Version,Members).
 'ModuleDef_create_union'(Objref,Id,Name,Version,Discriminator_type,Members) ->
-    exceptioncatcher(orber_ifr_moduledef,create_union,
-		     [Objref,Id,Name,Version,Discriminator_type,Members]).
+    orber_ifr_moduledef:create_union(Objref,Id,Name,Version,Discriminator_type,
+				     Members).
 'ModuleDef_create_enum'(Objref,Id,Name,Version,Members) ->
-    exceptioncatcher(orber_ifr_moduledef,create_enum,
-		     [Objref,Id,Name,Version,Members]).
+    orber_ifr_moduledef:create_enum(Objref,Id,Name,Version,Members).
 'ModuleDef_create_alias'(Objref,Id,Name,Version,Original_type) ->
-    exceptioncatcher(orber_ifr_moduledef,create_alias,
-		     [Objref,Id,Name,Version,Original_type]).
+    orber_ifr_moduledef:create_alias(Objref,Id,Name,Version,Original_type).
 'ModuleDef_create_interface'(Objref,Id,Name,Version,Base_interfaces) ->
-    exceptioncatcher(orber_ifr_moduledef,create_interface,
-		     [Objref,Id,Name,Version,Base_interfaces]).
+    orber_ifr_moduledef:create_interface(Objref,Id,Name,Version,Base_interfaces).
 'ModuleDef_create_exception'(Objref,Id,Name,Version,Members) ->
-    exceptioncatcher(orber_ifr_moduledef,create_exception,
-		     [Objref,Id,Name,Version,Members]).
+    orber_ifr_moduledef:create_exception(Objref,Id,Name,Version,Members).
 'ModuleDef__get_id'(Objref) ->
-    exceptioncatcher(orber_ifr_moduledef,'_get_id',[Objref]).
+    orber_ifr_moduledef:'_get_id'(Objref).
 'ModuleDef__set_id'(Objref,Id) ->
-    exceptioncatcher(orber_ifr_moduledef,'_set_id',[Objref,Id]).
+    orber_ifr_moduledef:'_set_id'(Objref,Id).
 'ModuleDef__get_name'(Objref) ->
-    exceptioncatcher(orber_ifr_moduledef,'_get_name',[Objref]).
+    orber_ifr_moduledef:'_get_name'(Objref).
 'ModuleDef__set_name'(Objref,Name) ->
-    exceptioncatcher(orber_ifr_moduledef,'_set_name',[Objref,Name]).
+    orber_ifr_moduledef:'_set_name'(Objref,Name).
 'ModuleDef__get_version'(Objref) ->
-    exceptioncatcher(orber_ifr_moduledef,'_get_version',[Objref]).
+    orber_ifr_moduledef:'_get_version'(Objref).
 'ModuleDef__set_version'(Objref,Version) ->
-    exceptioncatcher(orber_ifr_moduledef,'_set_version',[Objref,Version]).
+    orber_ifr_moduledef:'_set_version'(Objref,Version).
 'ModuleDef__get_defined_in'(Objref) ->
-    exceptioncatcher(orber_ifr_moduledef,'_get_defined_in',[Objref]).
+    orber_ifr_moduledef:'_get_defined_in'(Objref).
 'ModuleDef__get_absolute_name'(Objref) ->
-    exceptioncatcher(orber_ifr_moduledef,'_get_absolute_name',[Objref]).
+    orber_ifr_moduledef:'_get_absolute_name'(Objref).
 'ModuleDef__get_containing_repository'(Objref) ->
-    exceptioncatcher(orber_ifr_moduledef,'_get_containing_repository',
-		     [Objref]).
+    orber_ifr_moduledef:'_get_containing_repository'(Objref).
 'ModuleDef_describe'(Objref) ->
-    exceptioncatcher(orber_ifr_moduledef,describe,[Objref]).
+    orber_ifr_moduledef:describe(Objref).
 'ModuleDef_move'(Objref,New_container,New_name,New_version) ->
-    exceptioncatcher(orber_ifr_moduledef,move,
-		     [Objref,New_container,New_name,New_version]).
+    orber_ifr_moduledef:move(Objref,New_container,New_name,New_version).
 
 'ConstantDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_constantdef,'_get_def_kind',[Objref]).
+    orber_ifr_constantdef:'_get_def_kind'(Objref).
 'ConstantDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_constantdef,destroy,[Objref]).
+    orber_ifr_constantdef:destroy(Objref).
 'ConstantDef__get_id'(Objref) ->
-    exceptioncatcher(orber_ifr_constantdef,'_get_id',[Objref]).
+    orber_ifr_constantdef:'_get_id'(Objref).
 'ConstantDef__set_id'(Objref,Id) ->
-    exceptioncatcher(orber_ifr_constantdef,'_set_id',[Objref,Id]).
+    orber_ifr_constantdef:'_set_id'(Objref,Id).
 'ConstantDef__get_name'(Objref) ->
-    exceptioncatcher(orber_ifr_constantdef,'_get_name',[Objref]).
+    orber_ifr_constantdef:'_get_name'(Objref).
 'ConstantDef__set_name'(Objref,Name) ->
-    exceptioncatcher(orber_ifr_constantdef,'_set_name',[Objref,Name]).
+    orber_ifr_constantdef:'_set_name'(Objref,Name).
 'ConstantDef__get_version'(Objref) ->
-    exceptioncatcher(orber_ifr_constantdef,'_get_version',[Objref]).
+    orber_ifr_constantdef:'_get_version'(Objref).
 'ConstantDef__set_version'(Objref,Version) ->
-    exceptioncatcher(orber_ifr_constantdef,'_set_version',[Objref,Version]).
+    orber_ifr_constantdef:'_set_version'(Objref,Version).
 'ConstantDef__get_defined_in'(Objref) ->
-    exceptioncatcher(orber_ifr_constantdef,'_get_defined_in',[Objref]).
+    orber_ifr_constantdef:'_get_defined_in'(Objref).
 'ConstantDef__get_absolute_name'(Objref) ->
-    exceptioncatcher(orber_ifr_constantdef,'_get_absolute_name',[Objref]).
+    orber_ifr_constantdef:'_get_absolute_name'(Objref).
 'ConstantDef__get_containing_repository'(Objref) ->
-    exceptioncatcher(orber_ifr_constantdef,'_get_containing_repository',
-		     [Objref]).
+    orber_ifr_constantdef:'_get_containing_repository'(Objref).
 'ConstantDef_describe'(Objref) ->
-    exceptioncatcher(orber_ifr_constantdef,describe,[Objref]).
+    orber_ifr_constantdef:describe(Objref).
 'ConstantDef_move'(Objref,New_container,New_name,New_version) ->
-    exceptioncatcher(orber_ifr_constantdef,move,
-		     [Objref,New_container,New_name,New_version]).
+    orber_ifr_constantdef:move(Objref,New_container,New_name,New_version).
 'ConstantDef__get_type'(Objref) ->
-    exceptioncatcher(orber_ifr_constantdef,'_get_type',[Objref]).
+    orber_ifr_constantdef:'_get_type'(Objref).
 'ConstantDef__get_type_def'(Objref) ->
-    exceptioncatcher(orber_ifr_constantdef,'_get_type_def',[Objref]).
+    orber_ifr_constantdef:'_get_type_def'(Objref).
 'ConstantDef__set_type_def'(Objref,TypeDef) ->
-    exceptioncatcher(orber_ifr_constantdef,'_set_type_def',[Objref,TypeDef]).
+    orber_ifr_constantdef:'_set_type_def'(Objref,TypeDef).
 'ConstantDef__get_value'(Objref) ->
-    exceptioncatcher(orber_ifr_constantdef,'_get_value',[Objref]).
+    orber_ifr_constantdef:'_get_value'(Objref).
 'ConstantDef__set_value'(Objref,Value) ->
-    exceptioncatcher(orber_ifr_constantdef,'_set_value',[Objref,Value]).
+    orber_ifr_constantdef:'_set_value'(Objref,Value).
 
 'TypedefDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_typedef,'_get_def_kind',[Objref]).
+    orber_ifr_typedef:'_get_def_kind'(Objref).
 'TypedefDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_typedef,destroy,[Objref]).
+    orber_ifr_typedef:destroy(Objref).
 'TypedefDef__get_id'(Objref) ->
-    exceptioncatcher(orber_ifr_typedef,'_get_id',[Objref]).
+    orber_ifr_typedef:'_get_id'(Objref).
 'TypedefDef__set_id'(Objref,Id) ->
-    exceptioncatcher(orber_ifr_typedef,'_set_id',[Objref,Id]).
+    orber_ifr_typedef:'_set_id'(Objref,Id).
 'TypedefDef__get_name'(Objref) ->
-    exceptioncatcher(orber_ifr_typedef,'_get_name',[Objref]).
+    orber_ifr_typedef:'_get_name'(Objref).
 'TypedefDef__set_name'(Objref,Name) ->
-    exceptioncatcher(orber_ifr_typedef,'_set_name',[Objref,Name]).
+    orber_ifr_typedef:'_set_name'(Objref,Name).
 'TypedefDef__get_version'(Objref) ->
-    exceptioncatcher(orber_ifr_typedef,'_get_version',[Objref]).
+    orber_ifr_typedef:'_get_version'(Objref).
 'TypedefDef__set_version'(Objref,Version) ->
-    exceptioncatcher(orber_ifr_typedef,'_set_version',[Objref,Version]).
+    orber_ifr_typedef:'_set_version'(Objref,Version).
 'TypedefDef__get_defined_in'(Objref) ->
-    exceptioncatcher(orber_ifr_typedef,'_get_defined_in',[Objref]).
+    orber_ifr_typedef:'_get_defined_in'(Objref).
 'TypedefDef__get_absolute_name'(Objref) ->
-    exceptioncatcher(orber_ifr_typedef,'_get_absolute_name',[Objref]).
+    orber_ifr_typedef:'_get_absolute_name'(Objref).
 'TypedefDef__get_containing_repository'(Objref) ->
-    exceptioncatcher(orber_ifr_typedef,'_get_containing_repository',[Objref]).
+    orber_ifr_typedef:'_get_containing_repository'(Objref).
 'TypedefDef_describe'(Objref) ->
-    exceptioncatcher(orber_ifr_typedef,describe,[Objref]).
+    orber_ifr_typedef:describe(Objref).
 'TypedefDef_move'(Objref,New_container,New_name,New_version) ->
-    exceptioncatcher(orber_ifr_typedef,move,
-		     [Objref,New_container,New_name,New_version]).
+    orber_ifr_typedef:move(Objref,New_container,New_name,New_version).
 'TypedefDef__get_type'(Objref) ->
-    exceptioncatcher(orber_ifr_typedef,'_get_type',[Objref]).
+    orber_ifr_typedef:'_get_type'(Objref).
 
 'StructDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_structdef,'_get_def_kind',[Objref]).
+    orber_ifr_structdef:'_get_def_kind'(Objref).
 'StructDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_structdef,destroy,[Objref]).
+    orber_ifr_structdef:destroy(Objref).
 'StructDef__get_id'(Objref) ->
-    exceptioncatcher(orber_ifr_structdef,'_get_id',[Objref]).
+    orber_ifr_structdef:'_get_id'(Objref).
 'StructDef__set_id'(Objref,Id) ->
-    exceptioncatcher(orber_ifr_structdef,'_set_id',[Objref,Id]).
+    orber_ifr_structdef:'_set_id'(Objref,Id).
 'StructDef__get_name'(Objref) ->
-    exceptioncatcher(orber_ifr_structdef,'_get_name',[Objref]).
+    orber_ifr_structdef:'_get_name'(Objref).
 'StructDef__set_name'(Objref,Name) ->
-    exceptioncatcher(orber_ifr_structdef,'_set_name',[Objref,Name]).
+    orber_ifr_structdef:'_set_name'(Objref,Name).
 'StructDef__get_version'(Objref) ->
-    exceptioncatcher(orber_ifr_structdef,'_get_version',[Objref]).
+    orber_ifr_structdef:'_get_version'(Objref).
 'StructDef__set_version'(Objref,Version) ->
-    exceptioncatcher(orber_ifr_structdef,'_set_version',[Objref,Version]).
+    orber_ifr_structdef:'_set_version'(Objref,Version).
 'StructDef__get_defined_in'(Objref) ->
-    exceptioncatcher(orber_ifr_structdef,'_get_defined_in',[Objref]).
+    orber_ifr_structdef:'_get_defined_in'(Objref).
 'StructDef__get_absolute_name'(Objref) ->
-    exceptioncatcher(orber_ifr_structdef,'_get_absolute_name',[Objref]).
+    orber_ifr_structdef:'_get_absolute_name'(Objref).
 'StructDef__get_containing_repository'(Objref) ->
-    exceptioncatcher(orber_ifr_structdef,'_get_containing_repository',
-		     [Objref]).
+    orber_ifr_structdef:'_get_containing_repository'(Objref).
 'StructDef_describe'(Objref) ->
-    exceptioncatcher(orber_ifr_structdef,describe,[Objref]).
+    orber_ifr_structdef:describe(Objref).
 'StructDef_move'(Objref,New_container,New_name,New_version) ->
-    exceptioncatcher(orber_ifr_structdef,move,
-		     [Objref,New_container,New_name,New_version]).
+    orber_ifr_structdef:move(Objref,New_container,New_name,New_version).
 'StructDef__get_type'(Objref) ->
-    exceptioncatcher(orber_ifr_structdef,'_get_type',[Objref]).
+    orber_ifr_structdef:'_get_type'(Objref).
 'StructDef__get_members'(Objref) ->
-    exceptioncatcher(orber_ifr_structdef,'_get_members',[Objref]).
+    orber_ifr_structdef:'_get_members'(Objref).
 'StructDef__set_members'(Objref,Members) ->
-    exceptioncatcher(orber_ifr_structdef,'_set_members',[Objref,Members]).
+    orber_ifr_structdef:'_set_members'(Objref,Members).
 
 'UnionDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_uniondef,'_get_def_kind',[Objref]).
+    orber_ifr_uniondef:'_get_def_kind'(Objref).
 'UnionDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_uniondef,destroy,[Objref]).
+    orber_ifr_uniondef:destroy(Objref).
 'UnionDef__get_id'(Objref) ->
-    exceptioncatcher(orber_ifr_uniondef,'_get_id',[Objref]).
+    orber_ifr_uniondef:'_get_id'(Objref).
 'UnionDef__set_id'(Objref,Id) ->
-    exceptioncatcher(orber_ifr_uniondef,'_set_id',[Objref,Id]).
+    orber_ifr_uniondef:'_set_id'(Objref,Id).
 'UnionDef__get_name'(Objref) ->
-    exceptioncatcher(orber_ifr_uniondef,'_get_name',[Objref]).
+    orber_ifr_uniondef:'_get_name'(Objref).
 'UnionDef__set_name'(Objref,Name) ->
-    exceptioncatcher(orber_ifr_uniondef,'_set_name',[Objref,Name]).
+    orber_ifr_uniondef:'_set_name'(Objref,Name).
 'UnionDef__get_version'(Objref) ->
-    exceptioncatcher(orber_ifr_uniondef,'_get_version',[Objref]).
+    orber_ifr_uniondef:'_get_version'(Objref).
 'UnionDef__set_version'(Objref,Version) ->
-    exceptioncatcher(orber_ifr_uniondef,'_set_version',[Objref,Version]).
+    orber_ifr_uniondef:'_set_version'(Objref,Version).
 'UnionDef__get_defined_in'(Objref) ->
-    exceptioncatcher(orber_ifr_uniondef,'_get_defined_in',[Objref]).
+    orber_ifr_uniondef:'_get_defined_in'(Objref).
 'UnionDef__get_absolute_name'(Objref) ->
-    exceptioncatcher(orber_ifr_uniondef,'_get_absolute_name',[Objref]).
+    orber_ifr_uniondef:'_get_absolute_name'(Objref).
 'UnionDef__get_containing_repository'(Objref) ->
-    exceptioncatcher(orber_ifr_uniondef,'_get_containing_repository',[Objref]).
+    orber_ifr_uniondef:'_get_containing_repository'(Objref).
 'UnionDef_describe'(Objref) ->
-    exceptioncatcher(orber_ifr_uniondef,describe,[Objref]).
+    orber_ifr_uniondef:describe(Objref).
 'UnionDef_move'(Objref,New_container,New_name,New_version) ->
-    exceptioncatcher(orber_ifr_uniondef,move,
-		     [Objref,New_container,New_name,New_version]).
+    orber_ifr_uniondef:move(Objref,New_container,New_name,New_version).
 'UnionDef__get_type'(Objref) ->
-    exceptioncatcher(orber_ifr_uniondef,'_get_type',[Objref]).
+    orber_ifr_uniondef:'_get_type'(Objref).
 'UnionDef__get_discriminator_type'(Objref) ->
-    exceptioncatcher(orber_ifr_uniondef,'_get_discriminator_type',[Objref]).
+    orber_ifr_uniondef:'_get_discriminator_type'(Objref).
 'UnionDef__get_discriminator_type_def'(Objref) ->
-    exceptioncatcher(orber_ifr_uniondef,'_get_discriminator_type_def',
-		     [Objref]).
+    orber_ifr_uniondef:'_get_discriminator_type_def'(Objref).
 'UnionDef__set_discriminator_type_def'(Objref,TypeDef) ->
-    exceptioncatcher(orber_ifr_uniondef,'_set_discriminator_type_def',
-		     [Objref,TypeDef]).
+    orber_ifr_uniondef:'_set_discriminator_type_def'(Objref,TypeDef).
 'UnionDef__get_members'(Objref) ->
-    exceptioncatcher(orber_ifr_uniondef,'_get_members',[Objref]).
+    orber_ifr_uniondef:'_get_members'(Objref).
 'UnionDef__set_members'(Objref,Members) ->
-    exceptioncatcher(orber_ifr_uniondef,'_set_members',[Objref,Members]).
+    orber_ifr_uniondef:'_set_members'(Objref,Members).
 
 'EnumDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_enumdef,'_get_def_kind',[Objref]).
+    orber_ifr_enumdef:'_get_def_kind'(Objref).
 'EnumDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_enumdef,destroy,[Objref]).
+    orber_ifr_enumdef:destroy(Objref).
 'EnumDef__get_id'(Objref) ->
-    exceptioncatcher(orber_ifr_enumdef,'_get_id',[Objref]).
+    orber_ifr_enumdef:'_get_id'(Objref).
 'EnumDef__set_id'(Objref,Id) ->
-    exceptioncatcher(orber_ifr_enumdef,'_set_id',[Objref,Id]).
+    orber_ifr_enumdef:'_set_id'(Objref,Id).
 'EnumDef__get_name'(Objref) ->
-    exceptioncatcher(orber_ifr_enumdef,'_get_name',[Objref]).
+    orber_ifr_enumdef:'_get_name'(Objref).
 'EnumDef__set_name'(Objref,Name) ->
-    exceptioncatcher(orber_ifr_enumdef,'_set_name',[Objref,Name]).
+    orber_ifr_enumdef:'_set_name'(Objref,Name).
 'EnumDef__get_version'(Objref) ->
-    exceptioncatcher(orber_ifr_enumdef,'_get_version',[Objref]).
+    orber_ifr_enumdef:'_get_version'(Objref).
 'EnumDef__set_version'(Objref,Version) ->
-    exceptioncatcher(orber_ifr_enumdef,'_set_version',[Objref,Version]).
+    orber_ifr_enumdef:'_set_version'(Objref,Version).
 'EnumDef__get_defined_in'(Objref) ->
-    exceptioncatcher(orber_ifr_enumdef,'_get_defined_in',[Objref]).
+    orber_ifr_enumdef:'_get_defined_in'(Objref).
 'EnumDef__get_absolute_name'(Objref) ->
-    exceptioncatcher(orber_ifr_enumdef,'_get_absolute_name',[Objref]).
+    orber_ifr_enumdef:'_get_absolute_name'(Objref).
 'EnumDef__get_containing_repository'(Objref) ->
-    exceptioncatcher(orber_ifr_enumdef,'_get_containing_repository',[Objref]).
+    orber_ifr_enumdef:'_get_containing_repository'(Objref).
 'EnumDef_describe'(Objref) ->
-    exceptioncatcher(orber_ifr_enumdef,describe,[Objref]).
+    orber_ifr_enumdef:describe(Objref).
 'EnumDef_move'(Objref,New_container,New_name,New_version) ->
-    exceptioncatcher(orber_ifr_enumdef,move,
-		     [Objref,New_container,New_name,New_version]).
+    orber_ifr_enumdef:move(Objref,New_container,New_name,New_version).
 'EnumDef__get_type'(Objref) ->
-    exceptioncatcher(orber_ifr_enumdef,'_get_type',[Objref]).
+    orber_ifr_enumdef:'_get_type'(Objref).
 'EnumDef__get_members'(Objref) ->
-    exceptioncatcher(orber_ifr_enumdef,'_get_members',[Objref]).
+    orber_ifr_enumdef:'_get_members'(Objref).
 'EnumDef__set_members'(Objref,Members) ->
-    exceptioncatcher(orber_ifr_enumdef,'_set_members',[Objref,Members]).
+    orber_ifr_enumdef:'_set_members'(Objref,Members).
 
 'AliasDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_aliasdef,'_get_def_kind',[Objref]).
+    orber_ifr_aliasdef:'_get_def_kind'(Objref).
 'AliasDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_aliasdef,destroy,[Objref]).
+    orber_ifr_aliasdef:destroy(Objref).
 'AliasDef__get_id'(Objref) ->
-    exceptioncatcher(orber_ifr_aliasdef,'_get_id',[Objref]).
+    orber_ifr_aliasdef:'_get_id'(Objref).
 'AliasDef__set_id'(Objref,Id) ->
-    exceptioncatcher(orber_ifr_aliasdef,'_set_id',[Objref,Id]).
+    orber_ifr_aliasdef:'_set_id'(Objref,Id).
 'AliasDef__get_name'(Objref) ->
-    exceptioncatcher(orber_ifr_aliasdef,'_get_name',[Objref]).
+    orber_ifr_aliasdef:'_get_name'(Objref).
 'AliasDef__set_name'(Objref,Name) ->
-    exceptioncatcher(orber_ifr_aliasdef,'_set_name',[Objref,Name]).
+    orber_ifr_aliasdef:'_set_name'(Objref,Name).
 'AliasDef__get_version'(Objref) ->
-    exceptioncatcher(orber_ifr_aliasdef,'_get_version',[Objref]).
+    orber_ifr_aliasdef:'_get_version'(Objref).
 'AliasDef__set_version'(Objref,Version) ->
-    exceptioncatcher(orber_ifr_aliasdef,'_set_version',[Objref,Version]).
+    orber_ifr_aliasdef:'_set_version'(Objref,Version).
 'AliasDef__get_defined_in'(Objref) ->
-    exceptioncatcher(orber_ifr_aliasdef,'_get_defined_in',[Objref]).
+    orber_ifr_aliasdef:'_get_defined_in'(Objref).
 'AliasDef__get_absolute_name'(Objref) ->
-    exceptioncatcher(orber_ifr_aliasdef,'_get_absolute_name',[Objref]).
+    orber_ifr_aliasdef:'_get_absolute_name'(Objref).
 'AliasDef__get_containing_repository'(Objref) ->
-    exceptioncatcher(orber_ifr_aliasdef,'_get_containing_repository',[Objref]).
+    orber_ifr_aliasdef:'_get_containing_repository'(Objref).
 'AliasDef_describe'(Objref) ->
-    exceptioncatcher(orber_ifr_aliasdef,describe,[Objref]).
+    orber_ifr_aliasdef:describe(Objref).
 'AliasDef_move'(Objref,New_container,New_name,New_version) ->
-    exceptioncatcher(orber_ifr_aliasdef,move,
-		     [Objref,New_container,New_name,New_version]).
+    orber_ifr_aliasdef:move(Objref,New_container,New_name,New_version).
 'AliasDef__get_type'(Objref) ->
-    exceptioncatcher(orber_ifr_aliasdef,'_get_type',[Objref]).
+    orber_ifr_aliasdef:'_get_type'(Objref).
 'AliasDef__get_original_type_def'(Objref) ->
-    exceptioncatcher(orber_ifr_aliasdef,'_get_original_type_def',[Objref]).
+    orber_ifr_aliasdef:'_get_original_type_def'(Objref).
 'AliasDef__set_original_type_def'(Objref,TypeDef) ->
-    exceptioncatcher(orber_ifr_aliasdef,'_set_original_type_def',
-		     [Objref,TypeDef]).
+    orber_ifr_aliasdef:'_set_original_type_def'(Objref,TypeDef).
 
 'PrimitiveDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_primitivedef,'_get_def_kind',[Objref]).
+    orber_ifr_primitivedef:'_get_def_kind'(Objref).
 'PrimitiveDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_primitivedef,destroy,[Objref]).
+    orber_ifr_primitivedef:destroy(Objref).
 'PrimitiveDef__get_type'(Objref) ->
-    exceptioncatcher(orber_ifr_primitivedef,'_get_type',[Objref]).
+    orber_ifr_primitivedef:'_get_type'(Objref).
 'PrimitiveDef__get_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_primitivedef,'_get_kind',[Objref]).
+    orber_ifr_primitivedef:'_get_kind'(Objref).
 
 'StringDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_stringdef,'_get_def_kind',[Objref]).
+    orber_ifr_stringdef:'_get_def_kind'(Objref).
 'StringDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_stringdef,destroy,[Objref]).
+    orber_ifr_stringdef:destroy(Objref).
 'StringDef__get_type'(Objref) ->
-    exceptioncatcher(orber_ifr_stringdef,'_get_type',[Objref]).
+    orber_ifr_stringdef:'_get_type'(Objref).
 'StringDef__get_bound'(Objref) ->
-    exceptioncatcher(orber_ifr_stringdef,'_get_bound',[Objref]).
+    orber_ifr_stringdef:'_get_bound'(Objref).
 'StringDef__set_bound'(Objref,Bound) ->
-    exceptioncatcher(orber_ifr_stringdef,'_set_bound',[Objref,Bound]).
+    orber_ifr_stringdef:'_set_bound'(Objref,Bound).
+
+'WstringDef__get_def_kind'(Objref) ->
+    orber_ifr_wstringdef:'_get_def_kind'(Objref).
+'WstringDef_destroy'(Objref) ->
+    orber_ifr_wstringdef:destroy(Objref).
+'WstringDef__get_type'(Objref) ->
+    orber_ifr_wstringdef:'_get_type'(Objref).
+'WstringDef__get_bound'(Objref) ->
+    orber_ifr_wstringdef:'_get_bound'(Objref).
+'WstringDef__set_bound'(Objref,Bound) ->
+    orber_ifr_wstringdef:'_set_bound'(Objref,Bound).
 
 'SequenceDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_sequencedef,'_get_def_kind',[Objref]).
+    orber_ifr_sequencedef:'_get_def_kind'(Objref).
 'SequenceDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_sequencedef,destroy,[Objref]).
+    orber_ifr_sequencedef:destroy(Objref).
 'SequenceDef__get_type'(Objref) ->
-    exceptioncatcher(orber_ifr_sequencedef,'_get_type',[Objref]).
+    orber_ifr_sequencedef:'_get_type'(Objref).
 'SequenceDef__get_bound'(Objref) ->
-    exceptioncatcher(orber_ifr_sequencedef,'_get_bound',[Objref]).
+    orber_ifr_sequencedef:'_get_bound'(Objref).
 'SequenceDef__set_bound'(Objref,Bound) ->
-    exceptioncatcher(orber_ifr_sequencedef,'_set_bound',[Objref,Bound]).
+    orber_ifr_sequencedef:'_set_bound'(Objref,Bound).
 'SequenceDef__get_element_type'(Objref) ->
-    exceptioncatcher(orber_ifr_sequencedef,'_get_element_type',[Objref]).
+    orber_ifr_sequencedef:'_get_element_type'(Objref).
 'SequenceDef__get_element_type_def'(Objref) ->
-    exceptioncatcher(orber_ifr_sequencedef,'_get_element_type_def',[Objref]).
+    orber_ifr_sequencedef:'_get_element_type_def'(Objref).
 'SequenceDef__set_element_type_def'(Objref,TypeDef) ->
-    exceptioncatcher(orber_ifr_sequencedef,'_set_element_type_def',
-		     [Objref,TypeDef]).
+    orber_ifr_sequencedef:'_set_element_type_def'(Objref,TypeDef).
 
 'ArrayDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_arraydef,'_get_def_kind',[Objref]).
+    orber_ifr_arraydef:'_get_def_kind'(Objref).
 'ArrayDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_arraydef,destroy,[Objref]).
+    orber_ifr_arraydef:destroy(Objref).
 'ArrayDef__get_type'(Objref) ->
-    exceptioncatcher(orber_ifr_arraydef,'_get_type',[Objref]).
+    orber_ifr_arraydef:'_get_type'(Objref).
 'ArrayDef__get_length'(Objref) ->
-    exceptioncatcher(orber_ifr_arraydef,'_get_length',[Objref]).
+    orber_ifr_arraydef:'_get_length'(Objref).
 'ArrayDef__set_length'(Objref,Length) ->
-    exceptioncatcher(orber_ifr_arraydef,'_set_length',[Objref,Length]).
+    orber_ifr_arraydef:'_set_length'(Objref,Length).
 'ArrayDef__get_element_type'(Objref) ->
-    exceptioncatcher(orber_ifr_arraydef,'_get_element_type',[Objref]).
+    orber_ifr_arraydef:'_get_element_type'(Objref).
 'ArrayDef__get_element_type_def'(Objref) ->
-    exceptioncatcher(orber_ifr_arraydef,'_get_element_type_def',[Objref]).
+    orber_ifr_arraydef:'_get_element_type_def'(Objref).
 'ArrayDef__set_element_type_def'(Objref,TypeDef) ->
-    exceptioncatcher(orber_ifr_arraydef,'_set_element_type_def',
-		     [Objref,TypeDef]).
+    orber_ifr_arraydef:'_set_element_type_def'(Objref,TypeDef).
 
 'ExceptionDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_exceptiondef,'_get_def_kind',[Objref]).
+    orber_ifr_exceptiondef:'_get_def_kind'(Objref).
 'ExceptionDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_exceptiondef,destroy,[Objref]).
+    orber_ifr_exceptiondef:destroy(Objref).
 'ExceptionDef__get_id'(Objref) ->
-    exceptioncatcher(orber_ifr_exceptiondef,'_get_id',[Objref]).
+    orber_ifr_exceptiondef:'_get_id'(Objref).
 'ExceptionDef__set_id'(Objref,Id) ->
-    exceptioncatcher(orber_ifr_exceptiondef,'_set_id',[Objref,Id]).
+    orber_ifr_exceptiondef:'_set_id'(Objref,Id).
 'ExceptionDef__get_name'(Objref) ->
-    exceptioncatcher(orber_ifr_exceptiondef,'_get_name',[Objref]).
+    orber_ifr_exceptiondef:'_get_name'(Objref).
 'ExceptionDef__set_name'(Objref,Name) ->
-    exceptioncatcher(orber_ifr_exceptiondef,'_set_name',[Objref,Name]).
+    orber_ifr_exceptiondef:'_set_name'(Objref,Name).
 'ExceptionDef__get_version'(Objref) ->
-    exceptioncatcher(orber_ifr_exceptiondef,'_get_version',[Objref]).
+    orber_ifr_exceptiondef:'_get_version'(Objref).
 'ExceptionDef__set_version'(Objref,Version) ->
-    exceptioncatcher(orber_ifr_exceptiondef,'_set_version',[Objref,Version]).
+    orber_ifr_exceptiondef:'_set_version'(Objref,Version).
 'ExceptionDef__get_defined_in'(Objref) ->
-    exceptioncatcher(orber_ifr_exceptiondef,'_get_defined_in',[Objref]).
+    orber_ifr_exceptiondef:'_get_defined_in'(Objref).
 'ExceptionDef__get_absolute_name'(Objref) ->
-    exceptioncatcher(orber_ifr_exceptiondef,'_get_absolute_name',[Objref]).
+    orber_ifr_exceptiondef:'_get_absolute_name'(Objref).
 'ExceptionDef__get_containing_repository'(Objref) ->
-    exceptioncatcher(orber_ifr_exceptiondef,'_get_containing_repository',
-		     [Objref]).
+    orber_ifr_exceptiondef:'_get_containing_repository'(Objref).
 'ExceptionDef_describe'(Objref) ->
-    exceptioncatcher(orber_ifr_exceptiondef,describe,[Objref]).
+    orber_ifr_exceptiondef:describe(Objref).
 'ExceptionDef_move'(Objref,New_container,New_name,New_version) ->
-    exceptioncatcher(orber_ifr_exceptiondef,move,
-		     [Objref,New_container,New_name,New_version]).
+    orber_ifr_exceptiondef:move(Objref,New_container,New_name,New_version).
 'ExceptionDef__get_type'(Objref) ->
-    exceptioncatcher(orber_ifr_exceptiondef,'_get_type',[Objref]).
+    orber_ifr_exceptiondef:'_get_type'(Objref).
 'ExceptionDef__get_members'(Objref) ->
-    exceptioncatcher(orber_ifr_exceptiondef,'_get_members',[Objref]).
+    orber_ifr_exceptiondef:'_get_members'(Objref).
 'ExceptionDef__set_members'(Objref,Members) ->
-    exceptioncatcher(orber_ifr_exceptiondef,'_set_members',[Objref,Members]).
+    orber_ifr_exceptiondef:'_set_members'(Objref,Members).
 
 'AttributeDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_attributedef,'_get_def_kind',[Objref]).
+    orber_ifr_attributedef:'_get_def_kind'(Objref).
 'AttributeDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_attributedef,destroy,[Objref]).
+    orber_ifr_attributedef:destroy(Objref).
 'AttributeDef__get_id'(Objref) ->
-    exceptioncatcher(orber_ifr_attributedef,'_get_id',[Objref]).
+    orber_ifr_attributedef:'_get_id'(Objref).
 'AttributeDef__set_id'(Objref,Id) ->
-    exceptioncatcher(orber_ifr_attributedef,'_set_id',[Objref,Id]).
+    orber_ifr_attributedef:'_set_id'(Objref,Id).
 'AttributeDef__get_name'(Objref) ->
-    exceptioncatcher(orber_ifr_attributedef,'_get_name',[Objref]).
+    orber_ifr_attributedef:'_get_name'(Objref).
 'AttributeDef__set_name'(Objref,Name) ->
-    exceptioncatcher(orber_ifr_attributedef,'_set_name',[Objref,Name]).
+    orber_ifr_attributedef:'_set_name'(Objref,Name).
 'AttributeDef__get_version'(Objref) ->
-    exceptioncatcher(orber_ifr_attributedef,'_get_version',[Objref]).
+    orber_ifr_attributedef:'_get_version'(Objref).
 'AttributeDef__set_version'(Objref,Version) ->
-    exceptioncatcher(orber_ifr_attributedef,'_set_version',[Objref,Version]).
+    orber_ifr_attributedef:'_set_version'(Objref,Version).
 'AttributeDef__get_defined_in'(Objref) ->
-    exceptioncatcher(orber_ifr_attributedef,'_get_defined_in',[Objref]).
+    orber_ifr_attributedef:'_get_defined_in'(Objref).
 'AttributeDef__get_absolute_name'(Objref) ->
-    exceptioncatcher(orber_ifr_attributedef,'_get_absolute_name',[Objref]).
+    orber_ifr_attributedef:'_get_absolute_name'(Objref).
 'AttributeDef__get_containing_repository'(Objref) ->
-    exceptioncatcher(orber_ifr_attributedef,'_get_containing_repository',
-		     [Objref]).
+    orber_ifr_attributedef:'_get_containing_repository'(Objref).
 'AttributeDef_describe'(Objref) ->
-    exceptioncatcher(orber_ifr_attributedef,describe,[Objref]).
+    orber_ifr_attributedef:describe(Objref).
 'AttributeDef_move'(Objref,New_container,New_name,New_version) ->
-    exceptioncatcher(orber_ifr_attributedef,move,
-		     [Objref,New_container,New_name,New_version]).
+    orber_ifr_attributedef:move(Objref,New_container,New_name,New_version).
 'AttributeDef__get_type'(Objref) ->
-    exceptioncatcher(orber_ifr_attributedef,'_get_type',[Objref]).
+    orber_ifr_attributedef:'_get_type'(Objref).
 'AttributeDef__get_type_def'(Objref) ->
-    exceptioncatcher(orber_ifr_attributedef,'_get_type_def',[Objref]).
+    orber_ifr_attributedef:'_get_type_def'(Objref).
 'AttributeDef__set_type_def'(Objref,TypeDef) ->
-    exceptioncatcher(orber_ifr_attributedef,'_set_type_def',[Objref,TypeDef]).
+    orber_ifr_attributedef:'_set_type_def'(Objref,TypeDef).
 'AttributeDef__get_mode'(Objref) ->
-    exceptioncatcher(orber_ifr_attributedef,'_get_mode',[Objref]).
+    orber_ifr_attributedef:'_get_mode'(Objref).
 'AttributeDef__set_mode'(Objref,Mode) ->
-    exceptioncatcher(orber_ifr_attributedef,'_set_mode',[Objref,Mode]).
+    orber_ifr_attributedef:'_set_mode'(Objref,Mode).
 
 'OperationDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,'_get_def_kind',[Objref]).
+    orber_ifr_operationdef:'_get_def_kind'(Objref).
 'OperationDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,destroy,[Objref]).
+    orber_ifr_operationdef:destroy(Objref).
 'OperationDef__get_id'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,'_get_id',[Objref]).
+    orber_ifr_operationdef:'_get_id'(Objref).
 'OperationDef__set_id'(Objref,Id) ->
-    exceptioncatcher(orber_ifr_operationdef,'_set_id',[Objref,Id]).
+    orber_ifr_operationdef:'_set_id'(Objref,Id).
 'OperationDef__get_name'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,'_get_name',[Objref]).
+    orber_ifr_operationdef:'_get_name'(Objref).
 'OperationDef__set_name'(Objref,Name) ->
-    exceptioncatcher(orber_ifr_operationdef,'_set_name',[Objref,Name]).
+    orber_ifr_operationdef:'_set_name'(Objref,Name).
 'OperationDef__get_version'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,'_get_version',[Objref]).
+    orber_ifr_operationdef:'_get_version'(Objref).
 'OperationDef__set_version'(Objref,Version) ->
-    exceptioncatcher(orber_ifr_operationdef,'_set_version',[Objref,Version]).
+    orber_ifr_operationdef:'_set_version'(Objref,Version).
 'OperationDef__get_defined_in'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,'_get_defined_in',[Objref]).
+    orber_ifr_operationdef:'_get_defined_in'(Objref).
 'OperationDef__get_absolute_name'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,'_get_absolute_name',[Objref]).
+    orber_ifr_operationdef:'_get_absolute_name'(Objref).
 'OperationDef__get_containing_repository'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,'_get_containing_repository',
-		     [Objref]).
+    orber_ifr_operationdef:'_get_containing_repository'(Objref).
 'OperationDef_describe'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,describe,[Objref]).
+    orber_ifr_operationdef:describe(Objref).
 'OperationDef_move'(Objref,New_container,New_name,New_version) ->
-    exceptioncatcher(orber_ifr_operationdef,move,
-		     [Objref,New_container,New_name,New_version]).
+    orber_ifr_operationdef:move(Objref,New_container,New_name,New_version).
 'OperationDef__get_result'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,'_get_result',[Objref]).
+    orber_ifr_operationdef:'_get_result'(Objref).
 'OperationDef__get_result_def'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,'_get_result_def',[Objref]).
+    orber_ifr_operationdef:'_get_result_def'(Objref).
 'OperationDef__set_result_def'(Objref,ResultDef) ->
-    exceptioncatcher(orber_ifr_operationdef,'_set_result_def',
-		     [Objref,ResultDef]).
+    orber_ifr_operationdef:'_set_result_def'(Objref,ResultDef).
 'OperationDef__get_params'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,'_get_params',[Objref]).
+    orber_ifr_operationdef:'_get_params'(Objref).
 'OperationDef__set_params'(Objref,Params) ->
-    exceptioncatcher(orber_ifr_operationdef,'_set_params',[Objref,Params]).
+    orber_ifr_operationdef:'_set_params'(Objref,Params).
 'OperationDef__get_mode'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,'_get_mode',[Objref]).
+    orber_ifr_operationdef:'_get_mode'(Objref).
 'OperationDef__set_mode'(Objref,Mode) ->
-    exceptioncatcher(orber_ifr_operationdef,'_set_mode',[Objref,Mode]).
+    orber_ifr_operationdef:'_set_mode'(Objref,Mode).
 'OperationDef__get_contexts'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,'_get_contexts',[Objref]).
+    orber_ifr_operationdef:'_get_contexts'(Objref).
 'OperationDef__set_contexts'(Objref,Contexts) ->
-    exceptioncatcher(orber_ifr_operationdef,'_set_contexts',[Objref,Contexts]).
+    orber_ifr_operationdef:'_set_contexts'(Objref,Contexts).
 'OperationDef__get_exceptions'(Objref) ->
-    exceptioncatcher(orber_ifr_operationdef,'_get_exceptions',[Objref]).
+    orber_ifr_operationdef:'_get_exceptions'(Objref).
 'OperationDef__set_exceptions'(Objref,Exceptions) ->
-    exceptioncatcher(orber_ifr_operationdef,'_set_exceptions',
-		     [Objref,Exceptions]).
+    orber_ifr_operationdef:'_set_exceptions'(Objref,Exceptions).
 
 'InterfaceDef__get_def_kind'(Objref) ->
-    exceptioncatcher(orber_ifr_interfacedef,'_get_def_kind',[Objref]).
+    orber_ifr_interfacedef:'_get_def_kind'(Objref).
 'InterfaceDef_destroy'(Objref) ->
-    exceptioncatcher(orber_ifr_interfacedef,destroy,[Objref]).
+    orber_ifr_interfacedef:destroy(Objref).
 'InterfaceDef_lookup'(Objref,Search_name) ->
-    exceptioncatcher(orber_ifr_interfacedef,lookup,[Objref,Search_name]).
+    orber_ifr_interfacedef:lookup(Objref,Search_name).
 'InterfaceDef_contents'(Objref,Limit_type,Exclude_inherited) ->
-    exceptioncatcher(orber_ifr_interfacedef,contents,
-		     [Objref,Limit_type,Exclude_inherited]).
+    orber_ifr_interfacedef:contents(Objref,Limit_type,Exclude_inherited).
 'InterfaceDef_lookup_name'(Objref,Search_name,Levels_to_search,Limit_type,
 			   Exclude_inherited) ->
-    exceptioncatcher(orber_ifr_interfacedef,lookup_name,
-		     [Objref,Search_name,Levels_to_search,Limit_type,
-		      Exclude_inherited]).
+    orber_ifr_interfacedef:lookup_name(Objref,Search_name,Levels_to_search,Limit_type,
+				       Exclude_inherited).
 'InterfaceDef_describe_contents'(Objref,Limit_type,Exclude_inherited,
 				 Max_returned_objs) ->
-    exceptioncatcher(orber_ifr_interfacedef,describe_contents,
-		     [Objref,Limit_type,Exclude_inherited,Max_returned_objs]).
+    orber_ifr_interfacedef:describe_contents(Objref,Limit_type,Exclude_inherited,
+					     Max_returned_objs).
 'InterfaceDef_create_module'(Objref,Id,Name,Version) ->
-    exceptioncatcher(orber_ifr_interfacedef,create_module,
-		     [Objref,Id,Name,Version]).
+    orber_ifr_interfacedef:create_module(Objref,Id,Name,Version).
 'InterfaceDef_create_constant'(Objref,Id,Name,Version,Type,Value) ->
-    exceptioncatcher(orber_ifr_interfacedef,create_constant,
-		     [Objref,Id,Name,Version,Type,Value]).
+    orber_ifr_interfacedef:create_constant(Objref,Id,Name,Version,Type,Value).
 'InterfaceDef_create_struct'(Objref,Id,Name,Version,Members) ->
-    exceptioncatcher(orber_ifr_interfacedef,create_struct,
-		     [Objref,Id,Name,Version,Members]).
+    orber_ifr_interfacedef:create_struct(Objref,Id,Name,Version,Members).
 'InterfaceDef_create_union'(Objref,Id,Name,Version,Discriminator_type,
 			    Members) ->
-    exceptioncatcher(orber_ifr_interfacedef,create_union,
-		     [Objref,Id,Name,Version,Discriminator_type,Members]).
+    orber_ifr_interfacedef:create_union(Objref,Id,Name,Version,Discriminator_type,
+					Members).
 'InterfaceDef_create_enum'(Objref,Id,Name,Version,Members) ->
-    exceptioncatcher(orber_ifr_interfacedef,create_enum,
-		     [Objref,Id,Name,Version,Members]).
+    orber_ifr_interfacedef:create_enum(Objref,Id,Name,Version,Members).
 'InterfaceDef_create_alias'(Objref,Id,Name,Version,Original_type) ->
-    exceptioncatcher(orber_ifr_interfacedef,create_alias,
-		     [Objref,Id,Name,Version,Original_type]).
+    orber_ifr_interfacedef:create_alias(Objref,Id,Name,Version,Original_type).
 'InterfaceDef_create_interface'(Objref,Id,Name,Version,Base_interfaces) ->
-    exceptioncatcher(orber_ifr_interfacedef,create_interface,
-		     [Objref,Id,Name,Version,Base_interfaces]).
+    orber_ifr_interfacedef:create_interface(Objref,Id,Name,Version,Base_interfaces).
 'InterfaceDef_create_exception'(Objref,Id,Name,Version,Members) ->
-    exceptioncatcher(orber_ifr_interfacedef,create_exception,
-		     [Objref,Id,Name,Version,Members]).
+    orber_ifr_interfacedef:create_exception(Objref,Id,Name,Version,Members).
 'InterfaceDef__get_id'(Objref) ->
-    exceptioncatcher(orber_ifr_interfacedef,'_get_id',[Objref]).
+    orber_ifr_interfacedef:'_get_id'(Objref).
 'InterfaceDef__set_id'(Objref,Id) ->
-    exceptioncatcher(orber_ifr_interfacedef,'_set_id',[Objref,Id]).
+    orber_ifr_interfacedef:'_set_id'(Objref,Id).
 'InterfaceDef__get_name'(Objref) ->
-    exceptioncatcher(orber_ifr_interfacedef,'_get_name',[Objref]).
+    orber_ifr_interfacedef:'_get_name'(Objref).
 'InterfaceDef__set_name'(Objref,Name) ->
-    exceptioncatcher(orber_ifr_interfacedef,'_set_name',[Objref,Name]).
+    orber_ifr_interfacedef:'_set_name'(Objref,Name).
 'InterfaceDef__get_version'(Objref) ->
-    exceptioncatcher(orber_ifr_interfacedef,'_get_version',[Objref]).
+    orber_ifr_interfacedef:'_get_version'(Objref).
 'InterfaceDef__set_version'(Objref,Version) ->
-    exceptioncatcher(orber_ifr_interfacedef,'_set_version',[Objref,Version]).
+    orber_ifr_interfacedef:'_set_version'(Objref,Version).
 'InterfaceDef__get_defined_in'(Objref) ->
-    exceptioncatcher(orber_ifr_interfacedef,'_get_defined_in',[Objref]).
+    orber_ifr_interfacedef:'_get_defined_in'(Objref).
 'InterfaceDef__get_absolute_name'(Objref) ->
-    exceptioncatcher(orber_ifr_interfacedef,'_get_absolute_name',[Objref]).
+    orber_ifr_interfacedef:'_get_absolute_name'(Objref).
 'InterfaceDef__get_containing_repository'(Objref) ->
-    exceptioncatcher(orber_ifr_interfacedef,'_get_containing_repository',
-		     [Objref]).
+    orber_ifr_interfacedef:'_get_containing_repository'(Objref).
 'InterfaceDef_describe'(Objref) ->
-    exceptioncatcher(orber_ifr_interfacedef,describe,[Objref]).
+    orber_ifr_interfacedef:describe(Objref).
 'InterfaceDef_move'(Objref,New_container,New_name,New_version) ->
-    exceptioncatcher(orber_ifr_interfacedef,move,
-		     [Objref,New_container,New_name,New_version]).
+    orber_ifr_interfacedef:move(Objref,New_container,New_name,New_version).
 'InterfaceDef__get_type'(Objref) ->
-    exceptioncatcher(orber_ifr_interfacedef,'_get_type',[Objref]).
+    orber_ifr_interfacedef:'_get_type'(Objref).
 'InterfaceDef__get_base_interfaces'(Objref) ->
-    exceptioncatcher(orber_ifr_interfacedef,'_get_base_interfaces',[Objref]).
+    orber_ifr_interfacedef:'_get_base_interfaces'(Objref).
 'InterfaceDef__set_base_interfaces'(Objref,BaseInterfaces) ->
-    exceptioncatcher(orber_ifr_interfacedef,'_set_base_interfaces',
-		     [Objref,BaseInterfaces]).
+    orber_ifr_interfacedef:'_set_base_interfaces'(Objref,BaseInterfaces).
 'InterfaceDef_is_a'(Objref,Interface_id) ->
-    exceptioncatcher(orber_ifr_interfacedef,is_a,[Objref,Interface_id]).
+    orber_ifr_interfacedef:is_a(Objref,Interface_id).
 'InterfaceDef_describe_interface'(Objref) ->
-    exceptioncatcher(orber_ifr_interfacedef,describe_interface,[Objref]).
+    orber_ifr_interfacedef:describe_interface(Objref).
 'InterfaceDef_create_attribute'(Objref,Id,Name,Version,Type,Mode) ->
-    exceptioncatcher(orber_ifr_interfacedef,create_attribute,
-		     [Objref,Id,Name,Version,Type,Mode]).
+    orber_ifr_interfacedef:create_attribute(Objref,Id,Name,Version,Type,Mode).
 'InterfaceDef_create_operation'(Objref,Id,Name,Version,Result,Mode,Params,
 				Exceptions,Contexts) ->
-    exceptioncatcher(orber_ifr_interfacedef,create_operation,
-		     [Objref,Id,Name,Version,Result,Mode,Params,Exceptions,
-		      Contexts]).
+    orber_ifr_interfacedef:create_operation(Objref,Id,Name,Version,Result,Mode,
+					    Params,Exceptions,Contexts).
 
 %%'TypeCode_equal'(Objref,Tc) ->
-%%    exceptioncatcher(orber_ifr_typecode,equal,[Objref,Tc]).
+%%    orber_ifr_typecode:equal(Objref,Tc).
 %%'TypeCode_kind'(Objref) ->
-%%    exceptioncatcher(orber_ifr_typecode,kind,[Objref]).
+%%    orber_ifr_typecode:kind(Objref).
 %%'TypeCode_id'(Objref) ->
-%%    exceptioncatcher(orber_ifr_typecode,id,[Objref]).
+%%    orber_ifr_typecode:id(Objref).
 %%'TypeCode_name'(Objref) ->
-%%    exceptioncatcher(orber_ifr_typecode,name,[Objref]).
+%%    orber_ifr_typecode:name(Objref).
 %%'TypeCode_member_count'(Objref) ->
-%%    exceptioncatcher(orber_ifr_typecode,member_count,[Objref]).
+%%    orber_ifr_typecode:member_count(Objref).
 %%'TypeCode_member_name'(Objref,Index) ->
-%%    exceptioncatcher(orber_ifr_typecode,member_name,[Objref,Index]).
+%%    orber_ifr_typecode:member_name(Objref,Index).
 %%'TypeCode_member_type'(Objref,Index) ->
-%%    exceptioncatcher(orber_ifr_typecode,member_type,[Objref,Index]).
+%%    orber_ifr_typecode:member_type(Objref,Index).
 %%'TypeCode_member_label'(Objref,Index) ->
-%%    exceptioncatcher(orber_ifr_typecode,member_label,[Objref,Index]).
+%%    orber_ifr_typecode:member_label(Objref,Index).
 %%'TypeCode_discriminator_type'(Objref) ->
-%%    exceptioncatcher(orber_ifr_typecode,discriminator_type,[Objref]).
+%%    orber_ifr_typecode:discriminator_type(Objref).
 %%'TypeCode_default_index'(Objref) ->
-%%    exceptioncatcher(orber_ifr_typecode,default_index,[Objref]).
+%%    orber_ifr_typecode:default_index(Objref).
 %%'TypeCode_length'(Objref) ->
-%%    exceptioncatcher(orber_ifr_typecode,length,[Objref]).
+%%    orber_ifr_typecode:length(Objref).
 %%'TypeCode_content_type'(Objref) ->
-%%    exceptioncatcher(orber_ifr_typecode,content_type,[Objref]).
+%%    orber_ifr_typecode:content_type(Objref).
 %%'TypeCode_param_count'(Objref) ->
-%%    exceptioncatcher(orber_ifr_typecode,param_count,[Objref]).
+%%    orber_ifr_typecode:param_count(Objref).
 %%'TypeCode_parameter'(Objref,Index) ->
-%%    exceptioncatcher(orber_ifr_typecode,parameter,[Objref,Index]).
+%%    orber_ifr_typecode:parameter(Objref,Index).
 
 'ORB_create_struct_tc'(Id,Name,Members) ->
-    exceptioncatcher(orber_ifr_orb,create_struct_tc,[Id,Name,Members]).
+    orber_ifr_orb:create_struct_tc(Id,Name,Members).
 'ORB_create_union_tc'(Id,Name,Discriminator_type,Members) ->
-    exceptioncatcher(orber_ifr_orb,create_union_tc,
-		     [Id,Name,Discriminator_type,Members]).
+    orber_ifr_orb:create_union_tc(Id,Name,Discriminator_type,Members).
 'ORB_create_enum_tc'(Id,Name,Members) ->
-    exceptioncatcher(orber_ifr_orb,create_enum_tc,[Id,Name,Members]).
+    orber_ifr_orb:create_enum_tc(Id,Name,Members).
 'ORB_create_alias_tc'(Id,Name,Original_type) ->
-    exceptioncatcher(orber_ifr_orb,create_alias_tc,
-		     [Id,Name,Original_type]).
+    orber_ifr_orb:create_alias_tc(Id,Name,Original_type).
 'ORB_create_exception_tc'(Id,Name,Members) ->
-    exceptioncatcher(orber_ifr_orb,create_exception_tc,
-		     [Id,Name,Members]).
+    orber_ifr_orb:create_exception_tc(Id,Name,Members).
 'ORB_create_interface_tc'(Id,Name) ->
-    exceptioncatcher(orber_ifr_orb,create_interface_tc,[Id,Name]).
+    orber_ifr_orb:create_interface_tc(Id,Name).
 'ORB_create_string_tc'(Bound) ->
-    exceptioncatcher(orber_ifr_orb,create_string_tc,[Bound]).
+    orber_ifr_orb:create_string_tc(Bound).
+'ORB_create_wstring_tc'(Bound) ->
+    orber_ifr_orb:create_wstring_tc(Bound).
 'ORB_create_sequence_tc'(Bound,Element_type) ->
-    exceptioncatcher(orber_ifr_orb,create_sequence_tc,
-		     [Bound,Element_type]).
+    orber_ifr_orb:create_sequence_tc(Bound,Element_type).
 'ORB_create_recursive_sequence_tc'(Bound,Offset) ->
-    exceptioncatcher(orber_ifr_orb,create_recursive_sequence_tc,
-		     [Bound,Offset]).
+    orber_ifr_orb:create_recursive_sequence_tc(Bound,Offset).
 'ORB_create_array_tc'(Length,Element_type) ->
-    exceptioncatcher(orber_ifr_orb,create_array_tc,
-		     [Length,Element_type]).
+    orber_ifr_orb:create_array_tc(Length,Element_type).
 
 %%%---------------------------------------------------------------
 %%% "Methods" of the IFR "objects"
 
 get_def_kind(Objref) ->
-    dispatch([Objref],[ir_IRObject,ir_Contained,ir_Container,ir_IDLType,
-		       ir_Repository,ir_ModuleDef,ir_ConstantDef,ir_TypedefDef,
-		       ir_StructDef,ir_UnionDef,ir_EnumDef,ir_AliasDef,
-		       ir_PrimitiveDef,ir_StringDef,ir_SequenceDef,ir_ArrayDef,
-		       ir_ExceptionDef,ir_AttributeDef,ir_OperationDef,
-		       ir_InterfaceDef],
-	     '_get_def_kind').
-
+    Mod = obj2mod(Objref),
+    Mod:'_get_def_kind'(Objref).
+	     
 destroy(Objref) ->
-    dispatch([Objref],[				% Destroying an
-		       %%ir_IRObject,		% ir_IRObject, an
-		       %%ir_Contained,		% ir_Contained or an
-		       %%ir_Container,		% ir_Container directly
-						% is not allowed
-		       ir_IDLType,
-		       ir_Repository,ir_ModuleDef,ir_ConstantDef,ir_TypedefDef,
-		       ir_StructDef,ir_UnionDef,ir_EnumDef,ir_AliasDef,
-		       ir_PrimitiveDef,ir_StringDef,ir_SequenceDef,ir_ArrayDef,
-		       ir_ExceptionDef,ir_AttributeDef,ir_OperationDef,
-		       ir_InterfaceDef],
-	     destroy).
-
+    %% Destroying an ir_IRObject, ir_Contained or ir_Container directly
+    %% is not allowed
+    Mod = obj2mod(Objref),
+    Mod:destroy(Objref).
+	     
 %%%---------------------------------------------------------------
 %%%
 
 get_id(Objref) ->
-    dispatch([Objref],[ir_Contained,
-		       ir_ModuleDef,ir_ConstantDef,ir_TypedefDef,
-		       ir_StructDef,ir_UnionDef,ir_EnumDef,ir_AliasDef,
-		       ir_ExceptionDef,ir_AttributeDef,ir_OperationDef,
-		       ir_InterfaceDef],
-	     '_get_id').
-
+    Mod = obj2mod(Objref),
+    Mod:'_get_id'(Objref).
+	     
 set_id(Objref,Id) ->
-    dispatch([Objref,Id],[ir_Contained,
-			  ir_ModuleDef,ir_ConstantDef,ir_TypedefDef,
-			  ir_StructDef,ir_UnionDef,ir_EnumDef,ir_AliasDef,
-			  ir_ExceptionDef,ir_AttributeDef,ir_OperationDef,
-			  ir_InterfaceDef],
-	     '_set_id').
-
+    Mod = obj2mod(Objref),
+    Mod:'_set_id'(Objref,Id).
+	     
 get_name(Objref) ->
-    dispatch([Objref],[ir_Contained,
-		       ir_ModuleDef,ir_ConstantDef,ir_TypedefDef,
-		       ir_StructDef,ir_UnionDef,ir_EnumDef,ir_AliasDef,
-		       ir_ExceptionDef,ir_AttributeDef,ir_OperationDef,
-		       ir_InterfaceDef],
-	     '_get_name').
-
+    Mod = obj2mod(Objref),
+    Mod:'_get_name'(Objref).
+	     
 set_name(Objref,Name) ->
-    dispatch([Objref,Name],[ir_Contained,
-			    ir_ModuleDef,ir_ConstantDef,ir_TypedefDef,
-			    ir_StructDef,ir_UnionDef,ir_EnumDef,ir_AliasDef,
-			    ir_ExceptionDef,ir_AttributeDef,ir_OperationDef,
-			    ir_InterfaceDef],
-	     '_set_name').
-
+    Mod = obj2mod(Objref),
+    Mod:'_set_name'(Objref,Name).
+	     
 get_version(Objref) ->
-    dispatch([Objref],[ir_Contained,
-		       ir_ModuleDef,ir_ConstantDef,ir_TypedefDef,
-		       ir_StructDef,ir_UnionDef,ir_EnumDef,ir_AliasDef,
-		       ir_ExceptionDef,ir_AttributeDef,ir_OperationDef,
-		       ir_InterfaceDef],
-	     '_get_version').
-
+    Mod = obj2mod(Objref),
+    Mod:'_get_version'(Objref).
+	     
 set_version(Objref,Version) ->
-    dispatch([Objref,Version],[ir_Contained,
-			       ir_ModuleDef,ir_ConstantDef,ir_TypedefDef,
-			       ir_StructDef,ir_UnionDef,ir_EnumDef,ir_AliasDef,
-			       ir_ExceptionDef,ir_AttributeDef,ir_OperationDef,
-			       ir_InterfaceDef],
-	     '_set_version').
+    Mod = obj2mod(Objref),
+    Mod:'_set_version'(Objref,Version).
 
 get_defined_in(Objref) ->
-    dispatch([Objref],[ir_Contained,
-		       ir_ModuleDef,ir_ConstantDef,ir_TypedefDef,
-		       ir_StructDef,ir_UnionDef,ir_EnumDef,ir_AliasDef,
-		       ir_ExceptionDef,ir_AttributeDef,ir_OperationDef,
-		       ir_InterfaceDef],
-	     '_get_defined_in').
-
+    Mod = obj2mod(Objref),
+    Mod:'_get_defined_in'(Objref).
+	     
 get_absolute_name(Objref) ->
-    dispatch([Objref],[ir_Contained,
-		       ir_ModuleDef,ir_ConstantDef,ir_TypedefDef,
-		       ir_StructDef,ir_UnionDef,ir_EnumDef,ir_AliasDef,
-		       ir_ExceptionDef,ir_AttributeDef,ir_OperationDef,
-		       ir_InterfaceDef],
-	     '_get_absolute_name').
-
+    Mod = obj2mod(Objref),
+    Mod: '_get_absolute_name'(Objref).
+	    
 get_containing_repository(Objref) ->
-    dispatch([Objref],[ir_Contained,
-		       ir_ModuleDef,ir_ConstantDef,ir_TypedefDef,
-		       ir_StructDef,ir_UnionDef,ir_EnumDef,ir_AliasDef,
-		       ir_ExceptionDef,ir_AttributeDef,ir_OperationDef,
-		       ir_InterfaceDef],
-	     '_get_containing_repository').
-
+    Mod = obj2mod(Objref),
+    Mod:'_get_containing_repository'(Objref).
+	     
 describe(Objref) ->
-    dispatch([Objref],[ir_Contained,
-		       ir_ModuleDef,ir_ConstantDef,ir_TypedefDef,
-		       ir_StructDef,ir_UnionDef,ir_EnumDef,ir_AliasDef,
-		       ir_ExceptionDef,ir_AttributeDef,ir_OperationDef,
-		       ir_InterfaceDef],
-	     describe).
+    Mod = obj2mod(Objref),
+    Mod:describe(Objref).
 
 move(Objref,New_container,New_name,New_version) ->
-    dispatch([Objref,New_container,New_name,New_version],
-	     [ir_Contained,
-	      ir_ModuleDef,ir_ConstantDef,ir_TypedefDef,
-	      ir_StructDef,ir_UnionDef,ir_EnumDef,ir_AliasDef,
-	      ir_ExceptionDef,ir_AttributeDef,ir_OperationDef,
-	      ir_InterfaceDef],
-	     move).
+    Mod = obj2mod(Objref),
+    Mod:move(Objref,New_container,New_name,New_version).
 
 %%%---------------------------------------------------------------
 %%% 
 
 lookup(Objref,Search_name) ->
-    dispatch([Objref,Search_name],
-	     [ir_Container,ir_Repository,ir_ModuleDef,ir_InterfaceDef],
-	     lookup).
+    Mod = obj2mod(Objref),
+    Mod:lookup(Objref,Search_name).
 
 contents(Objref,Limit_type,Exclude_inherited) ->
-    dispatch([Objref,Limit_type,Exclude_inherited],
-	     [ir_Container,ir_Repository,ir_ModuleDef,ir_InterfaceDef],
-	     contents).
+    Mod = obj2mod(Objref),
+    Mod:contents(Objref,Limit_type,Exclude_inherited).
 
 lookup_name(Objref,Search_name,Levels_to_search,Limit_type,Exclude_inherited) ->
-    dispatch([Objref,Search_name,Levels_to_search,Limit_type,Exclude_inherited],
-	     [ir_Container,ir_Repository,ir_ModuleDef,ir_InterfaceDef],
-	     lookup_name).
+    Mod = obj2mod(Objref),
+    Mod:lookup_name(Objref,Search_name,Levels_to_search,Limit_type,Exclude_inherited).
+
 
 describe_contents(Objref,Limit_type,Exclude_inherited,Max_returned_objs) ->
-    dispatch([Objref,Limit_type,Exclude_inherited,Max_returned_objs],
-	     [ir_Container,ir_Repository,ir_ModuleDef,ir_InterfaceDef],
-	     describe_contents).
+    Mod = obj2mod(Objref),
+    Mod:describe_contents(Objref,Limit_type,Exclude_inherited,Max_returned_objs).
 
 create_module(Objref,Id,Name,Version) ->
-    dispatch([Objref,Id,Name,Version],
-	     [ir_Container,ir_Repository,ir_ModuleDef,ir_InterfaceDef],
-	     create_module).
+    Mod = obj2mod(Objref),
+    Mod:create_module(Objref,Id,Name,Version).
 
 create_constant(Objref,Id,Name,Version,Type,Value) ->
-    dispatch([Objref,Id,Name,Version,Type,Value],
-	     [ir_Container,ir_Repository,ir_ModuleDef,ir_InterfaceDef],
-	     create_constant).
+    Mod = obj2mod(Objref),
+    Mod:create_constant(Objref,Id,Name,Version,Type,Value).
 
 create_struct(Objref,Id,Name,Version,Members) ->
-    dispatch([Objref,Id,Name,Version,Members],
-	     [ir_Container,ir_Repository,ir_ModuleDef,ir_InterfaceDef],
-	     create_struct).
+    Mod = obj2mod(Objref),
+    Mod:create_struct(Objref,Id,Name,Version,Members).
 
 create_union(Objref,Id,Name,Version,Discriminator_type,Members) ->
-    dispatch([Objref,Id,Name,Version,Discriminator_type,Members],
-	     [ir_Container,ir_Repository,ir_ModuleDef,ir_InterfaceDef],
-	     create_union).
+    Mod = obj2mod(Objref),
+    Mod:create_union(Objref,Id,Name,Version,Discriminator_type,Members).
 
 create_enum(Objref,Id,Name,Version,Members) ->
-    dispatch([Objref,Id,Name,Version,Members],
-	     [ir_Container,ir_Repository,ir_ModuleDef,ir_InterfaceDef],
-	     create_enum).
+    Mod = obj2mod(Objref),
+    Mod:create_enum(Objref,Id,Name,Version,Members).
 
 create_alias(Objref,Id,Name,Version,Original_type) ->
-    dispatch([Objref,Id,Name,Version,Original_type],
-	     [ir_Container,ir_Repository,ir_ModuleDef,ir_InterfaceDef],
-	     create_alias).
+    Mod = obj2mod(Objref),
+    Mod:create_alias(Objref,Id,Name,Version,Original_type).
 
 create_interface(Objref,Id,Name,Version,Base_interfaces) ->
-    dispatch([Objref,Id,Name,Version,Base_interfaces],
-	     [ir_Container,ir_Repository,ir_ModuleDef,ir_InterfaceDef],
-	     create_interface).
+    Mod = obj2mod(Objref),
+    Mod:create_interface(Objref,Id,Name,Version,Base_interfaces).
 
 create_exception(Objref,Id,Name,Version,Members) ->
-    dispatch([Objref,Id,Name,Version,Members],
-	     [ir_Container,ir_Repository,ir_ModuleDef,ir_InterfaceDef],
-	     create_exception).
+    Mod = obj2mod(Objref),
+    Mod:create_exception(Objref,Id,Name,Version,Members).
 
 %%%---------------------------------------------------------------
 %%% 
 
 get_type(Objref) ->
-    dispatch([Objref],[ir_IDLType,ir_ConstantDef,ir_TypedefDef,ir_StructDef,
-		      ir_UnionDef,ir_EnumDef,ir_AliasDef,ir_PrimitiveDef,
-		      ir_StringDef,ir_SequenceDef,ir_ArrayDef,ir_ExceptionDef,
-		      ir_AttributeDef,ir_InterfaceDef],
-	     '_get_type').
+    Mod = obj2mod(Objref),
+    Mod:'_get_type'(Objref).
 
 %%%---------------------------------------------------------------
 %%% 
 
-lookup_id(Objref,Search_id) ->
-    dispatch([Objref,Search_id],[ir_Repository],
-	     lookup_id).
+lookup_id(Objref,Id) ->
+    %% Yes, not a pretty sight but these shortcuts saves, in the normal case,
+    %% so much overhead. Hence, keep it!
+    case mnesia:dirty_index_read(ir_ExceptionDef, Id, #ir_ExceptionDef.id) of
+	[#ir_ExceptionDef{ir_Internal_ID=Ref}] ->
+	    {ir_ExceptionDef, Ref};
+	_ ->
+	    case mnesia:dirty_index_read(ir_InterfaceDef, Id, #ir_InterfaceDef.id) of
+		[#ir_InterfaceDef{ir_Internal_ID=Ref}] ->
+		    {ir_InterfaceDef, Ref};
+		_->
+		    case mnesia:dirty_index_read(ir_ModuleDef, Id, #ir_ModuleDef.id) of
+			[#ir_ModuleDef{ir_Internal_ID=Ref}] ->
+			    {ir_ModuleDef, Ref};
+			_->
+			    case mnesia:dirty_index_read(ir_StructDef, Id, #ir_StructDef.id) of
+				[#ir_StructDef{ir_Internal_ID=Ref}] ->
+				    {ir_StructDef, Ref};
+				_->
+				    case mnesia:dirty_index_read(ir_UnionDef, Id, #ir_UnionDef.id) of
+					[#ir_UnionDef{ir_Internal_ID=Ref}] ->
+					    {ir_UnionDef, Ref};
+					_->
+					    orber_ifr_repository:lookup_id(Objref,Id)
+				    end
+			    end
+		    end
+	    end
+    end.
 
 get_primitive(Objref,Kind) ->
-    dispatch([Objref,Kind],[ir_Repository],
-	     get_primitive).
+    orber_ifr_repository:get_primitive(Objref,Kind).
 
 create_string(Objref,Bound) ->
-    dispatch([Objref,Bound],[ir_Repository],
-	     create_string).
+    orber_ifr_repository:create_string(Objref,Bound).
+
+create_wstring(Objref,Bound) ->
+    orber_ifr_repository:create_wstring(Objref,Bound).
 
 create_sequence(Objref,Bound,Element_type) ->
-    dispatch([Objref,Bound,Element_type],[ir_Repository],
-	     create_sequence).
+    orber_ifr_repository:create_sequence(Objref,Bound,Element_type).
 
 create_array(Objref,Length,Element_type) ->
-    dispatch([Objref,Length,Element_type],[ir_Repository],
-	     create_array).
+    orber_ifr_repository:create_array(Objref,Length,Element_type).
 
 create_idltype(Objref,Typecode) ->		%not in CORBA 2.0
-    dispatch([Objref,Typecode],[ir_Repository],
-	     create_idltype).
+    orber_ifr_repository:create_idltype(Objref,Typecode).
 
 %%%---------------------------------------------------------------
 %%% 
 
 get_type_def(Objref) ->
-    dispatch([Objref],[ir_ConstantDef,ir_AttributeDef],
-	     '_get_type_def').
-
+    Mod = obj2mod(Objref),
+    Mod:'_get_type_def'(Objref).
+	     
 set_type_def(Objref,TypeDef) ->
-    dispatch([Objref,TypeDef],[ir_ConstantDef,ir_AttributeDef],
-	     '_set_type_def').
-
+    Mod = obj2mod(Objref),
+    Mod:'_set_type_def'(Objref,TypeDef).
+	     
 get_value(Objref) ->
-    dispatch([Objref],[ir_ConstantDef],
-	     '_get_value').
+    orber_ifr_constantdef:'_get_value'(Objref).
 
 set_value(Objref,Value) ->
-    dispatch([Objref,Value],[ir_ConstantDef],
-	     '_set_value').
+    orber_ifr_constantdef: '_set_value'(Objref,Value).
 
 %%%---------------------------------------------------------------
 %%% 
 
 get_members(Objref) ->
-    dispatch([Objref],[ir_StructDef,ir_UnionDef,ir_EnumDef,ir_ExceptionDef],
-	     '_get_members').
-
+    Mod = obj2mod(Objref),
+    Mod:'_get_members'(Objref).
+	     
 set_members(Objref,Members) ->
-    dispatch([Objref,Members],
-	     [ir_StructDef,ir_UnionDef,ir_EnumDef,ir_ExceptionDef],
-	     '_set_members').
-
+    Mod = obj2mod(Objref),
+    Mod:'_set_members'(Objref,Members).
+	     
 %%%---------------------------------------------------------------
 %%% 
 
 get_discriminator_type(Objref) ->
-    dispatch([Objref],[ir_UnionDef],
-	     '_get_discriminator_type').
+    orber_ifr_uniondef:'_get_discriminator_type'(Objref).
 
 get_discriminator_type_def(Objref) ->
-    dispatch([Objref],[ir_UnionDef],
-	     '_get_discriminator_type_def').
+    orber_ifr_uniondef:'_get_discriminator_type_def'(Objref).
 
 set_discriminator_type_def(Objref,TypeDef) ->
-    dispatch([Objref,TypeDef],[ir_UnionDef],
-	     '_set_discriminator_type_def').
+    orber_ifr_uniondef:'_set_discriminator_type_def'(Objref,TypeDef).
 
 %%%---------------------------------------------------------------
 %%% 
 
 get_original_type_def(Objref) ->
-    dispatch([Objref],[ir_AliasDef],
-	     '_get_original_type_def').
+    orber_ifr_aliasdef:'_get_original_type_def'(Objref).
 
 set_original_type_def(Objref,TypeDef) ->
-    dispatch([Objref,TypeDef],[ir_AliasDef],
-	     '_set_original_type_def').
+    orber_ifr_aliasdef:'_set_original_type_def'(Objref,TypeDef).
 
 %%%---------------------------------------------------------------
 %%% 
 
 get_kind(Objref) ->
-    dispatch([Objref],[ir_PrimitiveDef],
-	     '_get_kind').
+    orber_ifr_primitivedef:'_get_kind'(Objref).
 
 %%%---------------------------------------------------------------
 %%% 
 
 get_bound(Objref) ->
-    dispatch([Objref],[ir_StringDef,ir_SequenceDef],
-	     '_get_bound').
+    Mod = obj2mod(Objref),
+    Mod:'_get_bound'(Objref).
 
 set_bound(Objref,Bound) ->
-    dispatch([Objref,Bound],[ir_StringDef,ir_SequenceDef],
-	     '_set_bound').
+    Mod = obj2mod(Objref),
+    Mod:'_set_bound'(Objref,Bound).
 
 %%%---------------------------------------------------------------
 %%% 
 
 get_element_type(Objref) ->
-    dispatch([Objref],[ir_SequenceDef,ir_ArrayDef],
-	     '_get_element_type').
+    Mod = obj2mod(Objref),
+    Mod:'_get_element_type'(Objref).
 
 get_element_type_def(Objref) ->
-    dispatch([Objref],[ir_SequenceDef,ir_ArrayDef],
-	     '_get_element_type_def').
+    Mod = obj2mod(Objref),
+    Mod:'_get_element_type_def'(Objref).
 
 set_element_type_def(Objref,TypeDef) ->
-    dispatch([Objref,TypeDef],[ir_SequenceDef,ir_ArrayDef],
-	     '_set_element_type_def').
+    Mod = obj2mod(Objref),
+    Mod:'_set_element_type_def'(Objref,TypeDef).
 
 %%%---------------------------------------------------------------
 %%% 
 
 get_length(Objref) ->
-    dispatch([Objref],[ir_ArrayDef],
-	     '_get_length').
+    orber_ifr_arraydef:'_get_length'(Objref).
 
 set_length(Objref,Length) ->
-    dispatch([Objref,Length],[ir_ArrayDef],
-	     '_set_length').
+    orber_ifr_arraydef:'_set_length'(Objref,Length).
 
 %%%---------------------------------------------------------------
 %%% 
 
 get_mode(Objref) ->
-    dispatch([Objref],[ir_AttributeDef,ir_OperationDef],
-	     '_get_mode').
+    Mod = obj2mod(Objref),
+    Mod:'_get_mode'(Objref).
 
 set_mode(Objref,Mode) ->
-    dispatch([Objref,Mode],[ir_AttributeDef,ir_OperationDef],
-	     '_set_mode').
+    Mod = obj2mod(Objref),
+    Mod:'_set_mode'(Objref,Mode).	     
 
 %%%---------------------------------------------------------------
 %%% 
 
 get_result(Objref) ->
-    dispatch([Objref],[ir_OperationDef],
-	     '_get_result').
+    orber_ifr_operationdef:'_get_result'(Objref).
 
 get_result_def(Objref) ->
-    dispatch([Objref],[ir_OperationDef],
-	     '_get_result_def').
+    orber_ifr_operationdef:'_get_result_def'(Objref).
 
 set_result_def(Objref,ResultDef) ->
-    dispatch([Objref,ResultDef],[ir_OperationDef],
-	     '_set_result_def').
+    orber_ifr_operationdef:'_set_result_def'(Objref,ResultDef).
 
 get_params(Objref) ->
-    dispatch([Objref],[ir_OperationDef],
-	     '_get_params').
+    orber_ifr_operationdef:'_get_params'(Objref).
 
 set_params(Objref,Params) ->
-    dispatch([Objref,Params],[ir_OperationDef],
-	     '_set_params').
+    orber_ifr_operationdef:'_set_params'(Objref,Params).
 
 get_contexts(Objref) ->
-    dispatch([Objref],[ir_OperationDef],
-	     '_get_contexts').
+    orber_ifr_operationdef:'_get_contexts'(Objref).
 
 set_contexts(Objref,Contexts) ->
-    dispatch([Objref,Contexts],[ir_OperationDef],
-	     '_set_contexts').
+    orber_ifr_operationdef:'_set_contexts'(Objref,Contexts).
 
 get_exceptions(Objref) ->
-    dispatch([Objref],[ir_OperationDef],
-	     '_get_exceptions').
+    orber_ifr_operationdef:'_get_exceptions'(Objref).
 
 set_exceptions(Objref,Exceptions) ->
-    dispatch([Objref,Exceptions],[ir_OperationDef],
-	     '_set_exceptions').
+    orber_ifr_operationdef:'_set_exceptions'(Objref,Exceptions).
 
 %%%---------------------------------------------------------------
 %%% 
 
 get_base_interfaces(Objref) ->
-    dispatch([Objref],[ir_InterfaceDef],
-	     '_get_base_interfaces').
+    orber_ifr_interfacedef:'_get_base_interfaces'(Objref).
 
 set_base_interfaces(Objref,BaseInterfaces) ->
-    dispatch([Objref,BaseInterfaces],[ir_InterfaceDef],
-	     '_set_base_interfaces').
+    orber_ifr_interfacedef:'_set_base_interfaces'(Objref,BaseInterfaces).
 
 is_a(Objref,Interface_id) ->
-    dispatch([Objref,Interface_id],[ir_InterfaceDef],
-	     is_a).
+    orber_ifr_interfacedef:is_a(Objref,Interface_id).
 
 describe_interface(Objref) ->
-    dispatch([Objref],[ir_InterfaceDef],
-	     describe_interface).
+    orber_ifr_interfacedef:describe_interface(Objref).
 
 create_attribute(Objref,Id,Name,Version,Type,Mode) ->
-    dispatch([Objref,Id,Name,Version,Type,Mode],[ir_InterfaceDef],
-	     create_attribute).
+    orber_ifr_interfacedef:create_attribute(Objref,Id,Name,Version,Type,Mode).
 
 create_operation(Objref,Id,Name,Version,Result,Mode,Params,Exceptions,Contexts) ->
-    dispatch([Objref,Id,Name,Version,Result,Mode,Params,Exceptions,Contexts],
-	     [ir_InterfaceDef],
-	     create_operation).
+    orber_ifr_interfacedef:create_operation(Objref,Id,Name,Version,Result,Mode,
+					    Params,Exceptions,Contexts).
 
-dispatch(Parameterlist, Dispatchlist, Operation) ->
-    [{ObjType, _} | _] = Parameterlist,
-    case lists:keysearch(ObjType, 1,
-			 [{ir_IRObject,orber_ifr_irobject},
-			  {ir_Contained,orber_ifr_contained},
-			  {ir_Container,orber_ifr_container},
-			  {ir_IDLType,orber_ifr_idltype},
-			  {ir_Repository,orber_ifr_repository},
-			  {ir_ModuleDef,orber_ifr_moduledef},
-			  {ir_ConstantDef,orber_ifr_constantdef},
-			  {ir_TypedefDef,orber_ifr_typedef},
-			  {ir_StructDef,orber_ifr_structdef},
-			  {ir_UnionDef,orber_ifr_uniondef},
-			  {ir_EnumDef,orber_ifr_enumdef},
-			  {ir_AliasDef,orber_ifr_aliasdef},
-			  {ir_PrimitiveDef,orber_ifr_primitivedef},
-			  {ir_StringDef,orber_ifr_stringdef},
-			  {ir_SequenceDef,orber_ifr_sequencedef},
-			  {ir_ArrayDef,orber_ifr_arraydef},
-			  {ir_ExceptionDef,orber_ifr_exceptiondef},
-			  {ir_AttributeDef,orber_ifr_attributedef},
-			  {ir_OperationDef,orber_ifr_operationdef},
-			  {ir_InterfaceDef,orber_ifr_interfacedef}])
-	of
-	{value, {_, Module}} ->
-	    exceptioncatcher(Module,Operation,Parameterlist);
-	_ ->
-	    orber:debug_level_print("[~p] orber_ifr:dispatch(~p, ~p, ~p); unknown.", 
-				    [?LINE, Parameterlist, Dispatchlist, Operation], ?DEBUG_LEVEL),
-	    ?ifr_exception("Unknown dispatch: ",
-			   {Parameterlist,Dispatchlist,Operation})
-    end.
+obj2mod({ir_IRObject, _}) ->
+    orber_ifr_irobject;
+obj2mod({ir_Contained, _}) ->
+    orber_ifr_contained;
+obj2mod({ir_Container, _}) ->
+    orber_ifr_container;
+obj2mod({ir_IDLType, _}) ->
+    orber_ifr_idltype;
+obj2mod({ir_Repository, _}) ->
+    orber_ifr_repository;
+obj2mod({ir_ModuleDef, _}) ->
+    orber_ifr_moduledef;
+obj2mod({ir_ConstantDef, _}) ->
+    orber_ifr_constantdef;
+obj2mod({ir_TypedefDef, _}) ->
+    orber_ifr_typedef;
+obj2mod({ir_StructDef, _}) ->
+    orber_ifr_structdef;
+obj2mod({ir_UnionDef, _}) ->
+    orber_ifr_uniondef;
+obj2mod({ir_EnumDef, _}) ->
+    orber_ifr_enumdef;
+obj2mod({ir_AliasDef, _}) ->
+    orber_ifr_aliasdef;
+obj2mod({ir_PrimitiveDef, _}) ->
+    orber_ifr_primitivedef;
+obj2mod({ir_StringDef, _}) ->
+    orber_ifr_stringdef;
+obj2mod({ir_WstringDef, _}) ->
+    orber_ifr_wstringdef;
+obj2mod({ir_SequenceDef, _}) ->
+    orber_ifr_sequencedef;
+obj2mod({ir_ArrayDef, _}) ->
+    orber_ifr_arraydef;
+obj2mod({ir_ExceptionDef, _}) ->
+    orber_ifr_exceptiondef;
+obj2mod({ir_AttributeDef, _}) ->
+    orber_ifr_attributedef;
+obj2mod({ir_OperationDef, _}) ->
+    orber_ifr_operationdef;
+obj2mod({ir_InterfaceDef, _}) ->
+    orber_ifr_interfacedef;
+obj2mod(Obj) ->
+    orber:debug_level_print("[~p] orber_ifr:obj2mod(~p); unknown.", 
+			    [?LINE, Obj], ?DEBUG_LEVEL),
+    ?ifr_exception("Unknown Object Type: ", {Obj}).
+
+

@@ -28,16 +28,21 @@
 %%-----------------------------------------------------------------
 -module(cdr_decode).
 
--include_lib("orber/src/orber_iiop.hrl").
+-include("orber_iiop.hrl").
+
+%-include_lib("orber/src/orber_iiop.hrl").
 -include_lib("orber/include/ifr_types.hrl").
 -include_lib("orber/include/corba.hrl").
 -include_lib("orber/src/orber_debug.hrl").
+
+-include_lib("orber/src/ifr_objects.hrl").
 
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
 -export([dec_message/2, dec_giop_message_header/1, peek_message_size/1, dec_reply_header/4,
-	 dec_reply_body/5, dec_reply_body/6, dec_locate_reply_header/4, dec_locate_reply_body/5]).
+	 dec_reply_body/5, dec_reply_body/6, dec_locate_reply_header/4, dec_locate_reply_body/5,
+	 dec_message_header/2, dec_request_body/6]).
 
 %%-----------------------------------------------------------------
 %% Functions which only are exported for the testcases.
@@ -62,7 +67,7 @@
 %%       Bytes - is the the message as a byte sequence.
 %% Returns: 
 %%       A tupple which contains the decoded message,
-%%       {ok, Header, Parameters}.
+%%       {ok, Header, Parameters, TypeCodes}.
 %%-----------------------------------------------------------------
 dec_message(TypeCodes, Bytes) ->
     Message = dec_giop_message_header(Bytes),
@@ -123,6 +128,46 @@ peek_message_size(Bytes) ->
     M#giop_message.message_size.
 
 %%-----------------------------------------------------------------
+%% Func: dec_message_header/2
+%% Args: 
+%%       Header - #giop_message{}
+%%       Bytes - is the the message body as a byte sequence.
+%% Returns: 
+%%-----------------------------------------------------------------
+dec_message_header(TypeCodes, Bytes) ->
+    Message = dec_giop_message_header(Bytes),
+    ?PRINTDEBUG2("GIOP header: ~w", [Message]),
+    case Message#giop_message.message_type of
+	'request' ->
+	    dec_request_header(Message#giop_message.giop_version,
+			       Message#giop_message.message, ?GIOP_HEADER_SIZE, 
+			       Message#giop_message.byte_order, Bytes);
+	'reply' ->
+	    dec_reply(Message#giop_message.giop_version,
+		      TypeCodes, Message#giop_message.message, ?GIOP_HEADER_SIZE,
+		      Message#giop_message.byte_order);
+	'cancel_request' ->
+	    dec_cancel_request(Message#giop_message.giop_version,
+			       Message#giop_message.message, ?GIOP_HEADER_SIZE, 
+			       Message#giop_message.byte_order);
+	'locate_request' ->
+	    dec_locate_request(Message#giop_message.giop_version,
+			       Message#giop_message.message, ?GIOP_HEADER_SIZE, 
+			       Message#giop_message.byte_order);
+	'locate_reply' ->
+	    dec_locate_reply(Message#giop_message.giop_version,
+			     Message#giop_message.message, ?GIOP_HEADER_SIZE, 
+			     Message#giop_message.byte_order);
+	'close_connection' ->
+	    'close_connection';
+	'message_error' ->
+	    'message_error';
+	'fragment' ->
+	    'fragment'
+    end.
+
+
+%%-----------------------------------------------------------------
 %% Func: dec_magic/1
 %% Args: 
 %%       The message as a byte sequence.
@@ -172,9 +217,24 @@ dec_byte_order([1|Rest]) ->
 %%       Rest is the remaining message byte sequence.
 %%-----------------------------------------------------------------
 dec_flags([0 |Rest]) ->
+    %% Eq. to 00000000
     {big, Rest};
-dec_flags([_ |Rest]) ->
-    {little, Rest}.
+dec_flags([1 |Rest]) ->
+    %% Eq. to 00000001
+    {little, Rest};
+dec_flags([X |Rest]) ->
+    %% Not only the Endian flag is set, test which.
+    if
+	((X band 16#02) == 16#02) ->
+	    orber:debug_level_print("[~p] cdr_decode:dec_flags(~p); Fragmented Messages not supported.", 
+				    [?LINE, X], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{minor=103, completion_status=?COMPLETED_MAYBE});
+	%% Since the 6 most significant bits are unused we'll accept this for now.
+	((X band 16#01) == 16#01) ->
+	    {little, Rest};
+	true ->
+	    {big, Rest}
+    end.
 
 %%-----------------------------------------------------------------
 %% Func: dec_mess_type/1
@@ -212,7 +272,54 @@ dec_giop_msg_type(6) ->
 dec_giop_msg_type(7) ->
     'fragment'.
 
+%%-----------------------------------------------------------------
+%% Func    : dec_response_flags
+%% Args    : 
+%% Returns : boolean
+%%-----------------------------------------------------------------
+%% FIX ME!! Not correct flag handling.
+dec_response_flags(Version, [0|Rest], Len) ->
+    {false, Rest, Len+1};
+dec_response_flags(Version, [1|Rest], Len) ->
+    {true_oneway, Rest, Len+1};
+dec_response_flags(Version, [3|Rest], Len) ->
+    {true, Rest, Len+1};
+dec_response_flags(Version, [X|Rest], Len) ->
+    %% Not only the Response flag is set, test which.
+    if
+	%% Since the 6 most significant bits are unused we'll accept this for now.
+	((X band 16#03) == 16#03) ->
+	    {true, Rest, Len+1};
+	((X band 16#01) == 16#01) ->
+	    {true_oneway, Rest, Len+1};
+	true ->
+	    {false, Rest, Len+1}
+    end.
 
+%%-----------------------------------------------------------------
+%% Func    : dec_target_addr
+%% Args    : Octet
+%% Returns : boolean
+%%-----------------------------------------------------------------
+dec_target_addr(Version, Message, Len, ByteOrder) ->
+    case dec_type(?TARGETADDRESS, Version, Message, Len, ByteOrder, [], 0) of
+	{#'GIOP_TargetAddress'{label = 0, value = KeyAddr}, Rest3, Len3, C} ->
+	    {corba:string_to_objkey(KeyAddr), Rest3, Len3, C};
+	{#'GIOP_TargetAddress'{label = 1, 
+			       value = #'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
+							    profile_data=PA}}, 
+	 Rest3, Len3, C} ->
+	    {corba:string_to_objkey(PA), Rest3, Len3, C};
+	{#'GIOP_TargetAddress'{label = 2,
+			       value = #'GIOP_IORAddressingInfo'{
+				 selected_profile_index = PI,
+				 ior = IOR}}, Rest3, Len3, C} ->
+	    {corba:string_to_objkey(iop_ior:get_objkey(IOR)), Rest3, Len3, C};
+	Other ->
+	    orber:debug_level_print("[~p] cdr_decode:dec_target_addr(~p); Unsupported TargetAddress.", 
+				    [?LINE, Other], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{minor=103, completion_status=?COMPLETED_MAYBE})
+    end.
 
 %%-----------------------------------------------------------------
 %% Func: dec_mess_size/2
@@ -240,6 +347,32 @@ dec_mess_size(Bytes, ByteOrder) ->
 %%       parameters and TypeCodes is the operation description.
 %%-----------------------------------------------------------------
 dec_request(Version, Message, Len0, ByteOrder, Buffer) ->
+    {Version, ReqHdr, Rest, Len, _} = dec_request_header(Version, Message, Len0, 
+							 ByteOrder, Buffer),
+    {Parameters, TypeCodes, _} = dec_request_body(Version, ReqHdr, Rest, Len, 
+						  ByteOrder, Buffer),
+    {Version, ReqHdr, Parameters, TypeCodes};
+
+%% ## NEW IIOP 1.2 ##
+dec_request(Version, Message, Len0, ByteOrder, Buffer) when Version == {1,2} ->
+    {Request_id, Rest1, Len1, _} = dec_type('tk_ulong', Version, Message, Len0, 
+					    ByteOrder, [], 0),
+    {ResponseFlags, Rest2, Len2} = dec_response_flags(Version, Rest1, Len1),
+    {_, Rest2b, Len2b, _} = dec_type({'tk_array', 'tk_octet', 3}, Version, Rest2, Len2, ByteOrder, [], 0),
+    {Object_key, Rest3, Len3, _} = dec_target_addr(Version, Rest2b, Len2b, ByteOrder),
+    {Operation, Rest4, Len4, _} = dec_type({'tk_string', 0},  Version, Rest3, Len3, ByteOrder, [], 0),
+    {Context, Rest5, Len5} = dec_service_context(Version, Rest4, Len4, ByteOrder),
+    {Parameters, TypeCodes, _} = dec_request_body(Version, Object_key, Operation, 
+						  Rest5, Len5, ByteOrder, Buffer, Len5),
+    {Version, #request_header{service_context=Context, 
+			      request_id=Request_id,
+			      response_expected=ResponseFlags,
+			      object_key=Object_key,
+			      operation=Operation, 
+			      requesting_principal=""},
+     Parameters, TypeCodes};
+
+dec_request(Version, Message, Len0, ByteOrder, Buffer) ->
     {Context, Rest1, Len1} = dec_service_context(Version, Message, Len0, ByteOrder),
     {Request_id, Rest2, Len2, _} = dec_type('tk_ulong', Version, Rest1, Len1, ByteOrder, [], 0),
     {Response_expected, Rest3, Len3, _} = dec_type('tk_boolean',  Version, Rest2, Len2,
@@ -251,20 +384,102 @@ dec_request(Version, Message, Len0, ByteOrder, Buffer) ->
     {Principal, Rest, Len, _} = dec_type({'tk_string', 0},  Version, Rest5,Len5,  ByteOrder, [], 0),
     {Parameters, TypeCodes, _} = dec_request_body(Version, Object_key,
 				       Operation, Rest, Len, ByteOrder, Buffer, Len),
-    {Version, #request_header{service_context=Context, request_id=Request_id,
-		    response_expected=Response_expected,
-		    object_key=Object_key,
-		    operation=Operation, requesting_principal=Principal},
+    {Version, #request_header{service_context=Context, 
+			      request_id=Request_id,
+			      response_expected=Response_expected,
+			      object_key=Object_key,
+			      operation=Operation, 
+			      requesting_principal=Principal},
      Parameters, TypeCodes}.
 
 
+%%-----------------------------------------------------------------
+%% Func: dec_request_header/3
+%% Args: 
+%%       Message - The message
+%%       Len0 - Number of bytes already read.
+%%       ByteOrder - little or big
+%% Returns: 
+%%-----------------------------------------------------------------
+dec_request_header(Version, Message, Len0, ByteOrder, Buffer) when Version == {1,2} ->
+    {Request_id, Rest1, Len1, _} = dec_type('tk_ulong', Version, Message, Len0, 
+					    ByteOrder, [], 0),
+    {ResponseFlags, Rest2, Len2} = dec_response_flags(Version, Rest1, Len1),
+    {_, Rest2b, Len2b, _} = dec_type({'tk_array', 'tk_octet', 3}, Version, Rest2, Len2, ByteOrder, [], 0),
+    {Object_key, Rest3, Len3, _} = dec_target_addr(Version, Rest2b, Len2b, ByteOrder),
+    {Operation, Rest4, Len4, _} = dec_type({'tk_string', 0},  Version, Rest3, Len3, ByteOrder, [], 0),
+    {Context, Rest5, Len5} = dec_service_context(Version, Rest4, Len4, ByteOrder),
+    {Version, #request_header{service_context=Context, 
+			      request_id=Request_id,
+			      response_expected=ResponseFlags,
+			      object_key=Object_key,
+			      operation=Operation, 
+			      requesting_principal=""}, Rest5, Len5, ByteOrder};
+dec_request_header(Version, Message, Len0, ByteOrder, Buffer) ->
+    {Context, Rest1, Len1} = dec_service_context(Version, Message, Len0, ByteOrder),
+    {Request_id, Rest2, Len2, _} = dec_type('tk_ulong', Version, Rest1, Len1, ByteOrder, [], 0),
+    {Response_expected, Rest3, Len3, _} = dec_type('tk_boolean',  Version, Rest2, Len2,
+						   ByteOrder, [], 0),
+    {ObjKey, Rest4, Len4, _} = dec_type({'tk_sequence', 'tk_octet', 0},  Version, Rest3,
+				   Len3, ByteOrder, [], 0),
+    Object_key = corba:string_to_objkey(ObjKey),
+    {Operation, Rest5, Len5, _} = dec_type({'tk_string', 0},  Version, Rest4, Len4, ByteOrder, [], 0),
+    {Principal, Rest, Len, _} = dec_type({'tk_string', 0},  Version, Rest5,Len5,  ByteOrder, [], 0),
+    {Version, #request_header{service_context=Context, 
+			      request_id=Request_id,
+			      response_expected=Response_expected,
+			      object_key=Object_key,
+			      operation=Operation, 
+			      requesting_principal=Principal}, Rest, Len, ByteOrder}.
+
+
+%%-----------------------------------------------------------------
+%% Func: dec_service_context/4
+%% Args: Version - e.g. 1.2
+%%       Message - The message
+%%       Len - Number of bytes already read.
+%%       ByteOrder - little or big
+%% Returns: 
+%%-----------------------------------------------------------------
 dec_service_context(Version, Message, Len, ByteOrder) ->
-    {Context, Rest, Len1} = dec_type({'tk_sequence',
-				      {'tk_struct', 0, 'ServiceContext',
-				       [{"context_id", 'tk_long'},
-					{"context_data",
-					 {'tk_sequence', 'tk_octet', 0}}]}, 0},
-					Version, Message, Len, ByteOrder).
+    {Context, Rest, Len1} = dec_type(?IOP_SERVICECONTEXT, Version, Message, 
+				     Len, ByteOrder),
+    {dec_used_contexts(Version, Context, []), Rest, Len1}.
+
+dec_used_contexts(Version, [], Ctxs) ->
+    Ctxs;
+dec_used_contexts({1,0}, [#'IOP_ServiceContext'{context_id=?IOP_CodeSets}|T], Ctxs) ->
+    %% Not supported by 1.0, drop it.
+    dec_used_contexts({1,0}, T, Ctxs);
+dec_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_CodeSets,
+						  context_data = Bytes}|T], Ctxs) ->
+    {ByteOrder, Rest} = cdr_decode:dec_byte_order(Bytes),
+    {CodeCtx, _, _} =  dec_type(?CONV_FRAME_CODESETCONTEXT, Version, 
+				Rest, 1, ByteOrder),
+    dec_used_contexts(Version, T, [CodeCtx|Ctxs]);
+dec_used_contexts(Version, [H|T], Ctxs) ->
+    dec_used_contexts(Version, T, [H|Ctxs]).
+
+%%-----------------------------------------------------------------
+%% Func: dec_request_body
+%% Args: Version - e.g. 1.2
+%% Returns: 
+%%-----------------------------------------------------------------
+dec_request_body(Version, ReqHdr, Rest, Len, ByteOrder, Buffer) ->
+    set_codeset_data(ReqHdr#request_header.service_context),
+    {Parameters, TypeCodes, _} = 
+	dec_request_body(Version, ReqHdr#request_header.object_key, 
+			 ReqHdr#request_header.operation, 
+			 Rest, Len, ByteOrder, Buffer, Len),
+    {Version, ReqHdr, Parameters, TypeCodes}.
+
+dec_request_body(Version, Object_key, Operation, Body, Len, ByteOrder, Buffer, Counter) 
+  when Version == {1,2} ->
+    {RetType, InParameters, OutParameters} =
+	orber_typedefs:get_op_def(Object_key, Operation),
+    {Rest, Len1, NewC} = dec_align(Body, Len, 8, Counter),
+    {Parameters, Len2} = dec_parameters(Version, InParameters, Rest, Len1, ByteOrder, Buffer, NewC),
+    {Parameters, {RetType, InParameters, OutParameters}, Len2};
 
 dec_request_body(Version, Object_key, Operation, Body, Len, ByteOrder, Buffer, Counter) ->
     {RetType, InParameters, OutParameters} =
@@ -279,10 +494,17 @@ dec_parameters(Version, [P1 |InParList], Body, Len, ByteOrder, Buffer, Counter) 
     {List, Len2} = dec_parameters(Version, InParList, Rest, Len1, ByteOrder, Buffer, NewCounter),
     {[Object | List], Len2}.
 
-remove_extra_bytes([], Len) ->
-    {[], Len};
-remove_extra_bytes([_|Xs], Len) ->
-    remove_extra_bytes(Xs, Len + 1).
+set_codeset_data([]) ->
+    put(char, ?ISO8859_1_ID),
+    put(wchar, ?ISO_10646_UCS_2_ID);
+set_codeset_data([#'CONV_FRAME_CodeSetContext'{char_data=?ISO8859_1_ID,
+					       wchar_data=?ISO_10646_UCS_2_ID}|T]) ->
+    put(char, ?ISO8859_1_ID),
+    put(wchar, ?ISO_10646_UCS_2_ID);
+set_codeset_data([H|T]) when record(H, 'CONV_FRAME_CodeSetContext') ->
+    corba:raise(#'CODESET_INCOMPATIBLE'{completion_status=?COMPLETED_NO});
+set_codeset_data([H|T]) ->
+    set_codeset_data(T).
 
 %%-----------------------------------------------------------------
 %% Func: dec_reply/5
@@ -296,21 +518,37 @@ remove_extra_bytes([_|Xs], Len) ->
 %%-----------------------------------------------------------------
 dec_reply(Version, TypeCodes, Message, Len0, ByteOrder) ->
     {ReplyHeader, Rest, Len} = dec_reply_header(Version, Message, Len0, ByteOrder),
-    {Result, Par} = case ReplyHeader#reply_header.reply_status of
-		 'no_exception' ->
-		     {R, P, _} = dec_reply_body(Version, TypeCodes, Rest, Len, ByteOrder, Message),
-		     {R, P};
-		 'system_exception' ->
-		     {R, _} = dec_system_exception(Version, Rest, Len, ByteOrder),
-		     {R, []};
-		 'user_exception' ->
-		     {R, _} = dec_user_exception(Version, Rest, Len, ByteOrder),
-		     {R, []};
-		 'location_forward' ->
-		     {R, _, _, _} = dec_objref(Version, Rest, Len, ByteOrder, Message, Len),
-		     {R, []}
+    {Result, Par} = 
+	case ReplyHeader#reply_header.reply_status of
+	    'no_exception' ->
+		{R, P, _} = dec_reply_body(Version, TypeCodes, Rest, Len, ByteOrder, Message),
+		{R, P};
+	    'system_exception' ->
+		{R, _} = dec_system_exception(Version, Rest, Len, ByteOrder),
+		{R, []};
+	    'user_exception' ->
+		{R, _} = dec_user_exception(Version, Rest, Len, ByteOrder),
+		{R, []};
+	    'location_forward' ->
+		{R, _, _, _} = dec_objref(Version, Rest, Len, ByteOrder, Message, Len),
+		{R, []};
+	    'location_forward_perm' ->
+		%% We should notify the client in this case.
+		{R, _, _, _} = dec_objref(Version, Rest, Len, ByteOrder, Message, Len),
+		{R, []}
+%	    'needs_addressing_mode' ->
+%		ok
 	     end,
     {ReplyHeader, Result, Par}.
+
+
+%% ## NEW IIOP 1.2 ##
+dec_reply_header(Version, Message, Len0, ByteOrder) when Version == {1,2} ->
+    {Request_id, Rest1, Len1} = dec_type('tk_ulong', Version, Message, Len0, ByteOrder),
+    {ReplyStatus, Rest2, Len2} = dec_reply_status(Version, Rest1, Len1, ByteOrder),
+    {Context, Rest, Len3} = dec_service_context(Version, Rest2, Len2, ByteOrder),
+    {#reply_header{service_context=Context, request_id=Request_id, reply_status=ReplyStatus},
+     Rest, Len3};
 
 dec_reply_header(Version, Message, Len0, ByteOrder) ->
     {Context, Rest1, Len1} = dec_service_context(Version, Message, Len0, ByteOrder),
@@ -327,6 +565,12 @@ dec_reply_status(Version, Status, Len, ByteOrder) ->
 dec_reply_body(Version, {RetType, InParameters, OutParameters}, Body, Len, ByteOrder) ->
     dec_reply_body(Version, {RetType, InParameters, OutParameters}, Body, Len, ByteOrder, []).
 
+dec_reply_body(Version, {RetType, InParameters, OutParameters}, Body, Len, 
+	       ByteOrder, Bytes) when Version == {1,2} ->
+    {Rest, Len1, Counter} = dec_align(Body, Len, 8, Len),
+    {Result, Rest2, Len2, C} = dec_type(RetType, Version, Rest, Len1, ByteOrder, Bytes, Counter),
+    {Par, Len3} = dec_parameters(Version, OutParameters, Rest2, Len2, ByteOrder, Bytes, C),
+    {Result, Par, Len3};
 dec_reply_body(Version, {RetType, InParameters, OutParameters}, Body, Len, ByteOrder, Bytes) ->
     {Result, Rest, Len1, C} = dec_type(RetType, Version, Body, Len, ByteOrder, Bytes, Len),
     {Par, Len2} = dec_parameters(Version, OutParameters, Rest, Len1, ByteOrder, Bytes, C),
@@ -355,6 +599,11 @@ dec_cancel_request(Version, Message, Len, ByteOrder) ->
 %% Returns: 
 %%       A locate_request_header record.
 %%-----------------------------------------------------------------
+%% ## NEW IIOP 1.2 ##
+dec_locate_request(Version, Message, Len, ByteOrder) when Version == {1,2} ->
+    {Request_id, Rest, Len1} = dec_type('tk_ulong', Version, Message, Len, ByteOrder),
+    {Object_key, _, _, _} = dec_target_addr(Version, Rest, Len1, ByteOrder),
+    {Version, #locate_request_header{request_id=Request_id, object_key=Object_key}};
 dec_locate_request(Version, Message, Len, ByteOrder) ->
     {Request_id, Rest, Len1} = dec_type('tk_ulong', Version, Message, Len, ByteOrder),
     {ObjKey, _, _} = dec_type({'tk_sequence', 'tk_octet', 0}, Version, Rest,
@@ -409,7 +658,12 @@ dec_giop_reply_status_type(1) ->
 dec_giop_reply_status_type(2) ->
     'system_exception';
 dec_giop_reply_status_type(3) ->
-    'location_forward'.
+    'location_forward';
+%% ## NEW IIOP 1.2 ##
+dec_giop_reply_status_type(4) ->
+    'location_forward_perm';
+dec_giop_reply_status_type(5) ->
+    'needs_addressing_mode'.
 
 %%-----------------------------------------------------------------
 %% Func: dec_giop_locate_status_type
@@ -424,10 +678,6 @@ dec_giop_locate_status_type(1) ->
     'object_here';
 dec_giop_locate_status_type(2) ->
     'object_forward'.
-
-
-
-
 
 %%-----------------------------------------------------------------
 %% Func: dec_type/5
@@ -479,6 +729,33 @@ dec_type('tk_boolean', Version, Bytes, Len, _, _, C) ->
 dec_type('tk_char', Version, Bytes, Len, _, _, C) ->
     {Char, Rest} = cdrlib:dec_char(Bytes),
     {Char, Rest, Len + 1, C+1};
+dec_type('tk_wchar', {1,2}, Bytes, Len, ByteOrder, _, C) ->
+    %% This is not correct but for now me must decode in same way as for 1.1.
+    case get(wchar) of
+	?ISO_10646_UCS_2_ID ->
+	    {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
+	    {WChar, Rest2} = cdrlib:dec_unsigned_short(Rest, ByteOrder),
+	    {WChar, Rest2, Len1 + 2, NewC+2};
+	_->
+	    {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
+	    {WChar, Rest2} = cdrlib:dec_unsigned_short(Rest, ByteOrder),
+	    {WChar, Rest2, Len1 + 2, NewC+2}
+    end;
+%% For 1.1 the wchar is limited to the use of two-octet fixed-length encoding.
+dec_type('tk_wchar', Version, Bytes, Len, ByteOrder, _, C) ->
+    case get(wchar) of
+	?ISO_10646_UCS_2_ID ->
+	    {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
+	    {WChar, Rest2} = cdrlib:dec_unsigned_short(Rest, ByteOrder),
+	    {WChar, Rest2, Len1 + 2, NewC+2};
+	_->
+	    %% We should raise the DATA_CONVERSION system exception but
+	    %% it's not possible since all ORB:s do not include
+	    %% IOP::ServiceContext in the IOR:s.
+	    {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
+	    {WChar, Rest2} = cdrlib:dec_unsigned_short(Rest, ByteOrder),
+	    {WChar, Rest2, Len1 + 2, NewC+2}
+    end;
 dec_type('tk_octet', Version, Bytes, Len, _, _, C) ->
     {Octet, Rest} = cdrlib:dec_octet(Bytes),
     {Octet, Rest, Len + 1, C+1};
@@ -503,6 +780,8 @@ dec_type({'tk_enum', IFRId, Name, ElementList}, Version, Bytes, Len, ByteOrder, 
     {Enum, Rest1, Len1 + 4, NewC+4}; 
 dec_type({'tk_string', MaxLength}, Version, Bytes, Len, ByteOrder, Buff, C) -> % MaxLength Not Used
     dec_string(Version, Bytes, Len, ByteOrder, Buff, C);
+dec_type({'tk_wstring', MaxLength}, Version, Bytes, Len, ByteOrder, Buff, C) -> % MaxLength Not Used
+    dec_wstring(Version, Bytes, Len, ByteOrder, Buff, C);
 dec_type({'tk_sequence', ElemTC, MaxLength}, Version, Bytes, Len, ByteOrder, Buff, C) -> % MaxLength Not Used
     dec_sequence(Version, Bytes, ElemTC, Len, ByteOrder, Buff, C);
 dec_type({'tk_array', ElemTC, Size}, Version, Bytes, Len, ByteOrder, Buff, C) ->
@@ -560,10 +839,59 @@ dec_string(Version, Message, Len, ByteOrder, Buff, C) ->
 	    {"", Rest1, Len1 + 4, NewC+4}
     end.
 
+%%-----------------------------------------------------------------
+%% Func: dec_string/4
+%%-----------------------------------------------------------------
+%dec_wstring({1,2}, Message, Len, ByteOrder, Buff, C) ->
+%    {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
+%    {Size, Rest1} = cdrlib:dec_unsigned_long(Rest, ByteOrder),
+%    CodeSet = get(wchar),
+%    if
+%	Size > 0, CodeSet == ?ISO_10646_UCS_2_ID ->
+%	    {String, Rest2, Len2, NewC2} = dec_sequence(Version, Rest1, Size - 1, 'tk_wchar',
+%						 Len1 + 4, ByteOrder, Buff, NewC+4),
+%	    %% Remove the NULL character.
+%	    {_, Rest3} = cdrlib:dec_unsigned_short(Rest2, ByteOrder),
+%	    {String, Rest3, Len2 + 2, NewC2+2};
+%	Size > 0 ->
+%	    {String, Rest2, Len2, NewC2} = dec_sequence(Version, Rest1, Size - 1, 'tk_wchar',
+%						 Len1 + 4, ByteOrder, Buff, NewC+4),
+%	    {_, Rest3} = cdrlib:dec_unsigned_short(Rest2, ByteOrder),
+%	    {String, Rest3, Len2 + 2, NewC2+2};
+%	true ->
+%	    {"", Rest1, Len1 + 4, NewC+4}
+%    end;
+dec_wstring(Version, Message, Len, ByteOrder, Buff, C) ->
+    {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
+    {Size, Rest1} = cdrlib:dec_unsigned_long(Rest, ByteOrder),
+    CodeSet = get(wchar),
+    if
+	Size > 0, CodeSet == ?ISO_10646_UCS_2_ID ->
+	    {String, Rest2, Len2, NewC2} = dec_sequence(Version, Rest1, Size - 1, 'tk_wchar',
+						 Len1 + 4, ByteOrder, Buff, NewC+4),
+	    %% Remove the NULL character.
+	    {_, Rest3} = cdrlib:dec_unsigned_short(Rest2, ByteOrder),
+	    {String, Rest3, Len2 + 2, NewC2+2};
+	Size > 0 ->
+	    {String, Rest2, Len2, NewC2} = dec_sequence(Version, Rest1, Size - 1, 'tk_wchar',
+						 Len1 + 4, ByteOrder, Buff, NewC+4),
+	    {_, Rest3} = cdrlib:dec_unsigned_short(Rest2, ByteOrder),
+	    {String, Rest3, Len2 + 2, NewC2+2};
+	true ->
+	    {"", Rest1, Len1 + 4, NewC+4}
+    end.
+
 
 %%-----------------------------------------------------------------
 %% Func: dec_union/9
 %%-----------------------------------------------------------------
+%% ## NEW IIOP 1.2 ##
+dec_union(Version, IFRId, 'GIOP_TargetAddress', DiscrTC, Default, ElementList, Bytes, Len, ByteOrder, Buff, C) ->
+    {Label, Rest1, Len1, NewC} = dec_type(DiscrTC, Version, Bytes, Len, ByteOrder, Buff, C),
+    {Value, Rest2, Len2, NewC3} = dec_union(Version, Label, ElementList, Default, 
+					    Rest1, Len1, ByteOrder, Buff, NewC),
+    {#'GIOP_TargetAddress'{label = Label, value = Value}, Rest2, Len2, NewC3};
+
 
 dec_union(Version, IFRId, _, DiscrTC, Default, ElementList, Bytes, Len, ByteOrder, Buff, C) ->
     {Label, Rest1, Len1, NewC} = dec_type(DiscrTC, Version, Bytes, Len, ByteOrder, Buff, C),
@@ -576,7 +904,7 @@ dec_union(Version, IFRId, _, DiscrTC, Default, ElementList, Bytes, Len, ByteOrde
 		X ->
 		    X
 	    end,
-    Name = ifrid_to_name(IFRId),
+    Name = ifrid_to_name(IFRId, ir_UnionDef),
     {{list_to_atom(Name), Label, Value}, Rest2, Len2, NewC3}.
 
 dec_union(_, _, [], Default,  Message, Len, _, Buff, C) when Default < 0 ->
@@ -606,22 +934,28 @@ dec_struct(Version, IFRId, 'IOP_TaggedComponent', TypeCodeList, Message, Len, By
 dec_struct(Version, IFRId, 'SSLIOP_SSL', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
     {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
     {list_to_tuple(['SSLIOP_SSL' |Struct]), Rest, Len1, NewC};
-%dec_struct(Version, IFRId, 'IIOP_ProfileBody', TypeCodeList, Message, Len, ByteOrder) ->
-%    {Struct, Rest, Len1} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder),
-%    {list_to_tuple(['IIOP_ProfileBody' |Struct]), Rest, Len1};
 dec_struct(Version, IFRId, 'IIOP_Version', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
     {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
     {list_to_tuple(['IIOP_Version' |Struct]), Rest, Len1, NewC};
-dec_struct(Version, IFRId, 'ServiceContext', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
+dec_struct(Version, IFRId, 'IOP_ServiceContext', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
     {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
-    {list_to_tuple(['ServiceContext' |Struct]), Rest, Len1, NewC};
+    {list_to_tuple(['IOP_ServiceContext' |Struct]), Rest, Len1, NewC};
+dec_struct(Version, IFRId, 'CONV_FRAME_CodeSetContext', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
+    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
+    {list_to_tuple(['CONV_FRAME_CodeSetContext' |Struct]), Rest, Len1, NewC};
+dec_struct(Version, IFRId, 'CONV_FRAME_CodeSetComponent', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
+    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
+    {list_to_tuple(['CONV_FRAME_CodeSetComponent' |Struct]), Rest, Len1, NewC};
+dec_struct(Version, IFRId, 'CONV_FRAME_CodeSetComponentInfo', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
+    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
+    {list_to_tuple(['CONV_FRAME_CodeSetComponentInfo' |Struct]), Rest, Len1, NewC};
 dec_struct(Version, [], Name, TypeCodeList, Message, Len, ByteOrder, Buff, C) -> 
     %% This case is due to that for example Orbix, don't supply the IFRId field in
     %% struct type codes (used in any)
     {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
     {list_to_tuple([list_to_atom(Name) |Struct]), Rest, Len1, NewC};
 dec_struct(Version, IFRId, _, TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
-    Name = ifrid_to_name(IFRId),
+    Name = ifrid_to_name(IFRId, ir_StructDef),
     {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
     {list_to_tuple([list_to_atom(Name) |Struct]), Rest, Len1, NewC}.
 
@@ -632,21 +966,39 @@ dec_struct1(Version, [{ElemName, ElemType} | TypeCodeList], Message, Len, ByteOr
     {Struct, Rest1, Len2, NewC2} = dec_struct1(Version, TypeCodeList, Rest, Len1, ByteOrder, Buff, NewC),
     {[Element |Struct], Rest1, Len2, NewC2}.
 
-ifrid_to_name([]) ->
+ifrid_to_name([], _) ->
     orber:debug_level_print("[~p] cdr_decode:ifrid_to_name([]). No Id supplied.", 
 			    [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE});
-ifrid_to_name(Id) -> 
+ifrid_to_name(Id, Type) -> 
     case orber:get_lightweight_nodes() of
-	false ->
-	    %% This way may be more beutiful, but less effective. On the other
-	    %% hand we must duplicate code. Decide about which.
-%	    IFR=corba:resolve_initial_references("OrberIFR"),
-%	    'OrberApp_IFR':get_absolute_name(IFR, Id);
-	    Rep = orber_ifr:find_repository(),
-	    Key = orber_ifr:'Repository_lookup_id'(Rep, Id),
-	    [$:, $: |N] = orber_ifr:'Contained__get_absolute_name'(Key),
-	    change_colons_to_underscore(N, []);
+	false when Type == ir_UnionDef ->
+	    case mnesia:dirty_index_read(ir_UnionDef, Id, #ir_UnionDef.id) of
+		[#ir_UnionDef{absolute_name = [$:,$:|N]}] ->
+		    change_colons_to_underscore(N, []);
+		Other ->
+		    orber:debug_level_print("[~p] cdr_decode:ifrid_to_name(~p). IFR Id not found: ~p", 
+					    [?LINE, Id, Other], ?DEBUG_LEVEL),
+		    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE})
+	    end;
+	false when Type == ir_StructDef ->
+	    case mnesia:dirty_index_read(ir_StructDef, Id, #ir_StructDef.id) of
+		[#ir_StructDef{absolute_name = [$:,$:|N]}] ->
+		    change_colons_to_underscore(N, []);
+		Other ->
+		    orber:debug_level_print("[~p] cdr_decode:ifrid_to_name(~p). IFR Id not found: ~p", 
+					    [?LINE, Id, Other], ?DEBUG_LEVEL),
+		    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE})
+	    end;
+	false when Type == ir_ExceptionDef ->
+	    case mnesia:dirty_index_read(ir_ExceptionDef, Id, #ir_ExceptionDef.id) of
+		[#ir_ExceptionDef{absolute_name = [$:,$:|N]}] ->
+		    change_colons_to_underscore(N, []);
+		Other ->
+		    orber:debug_level_print("[~p] cdr_decode:ifrid_to_name(~p). IFR Id not found: ~p", 
+					    [?LINE, Id, Other], ?DEBUG_LEVEL),
+		    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE})
+	    end;
 	Nodes ->
 	    {A,B,C} = now(),
 	    random:seed(A,B,C),
@@ -700,16 +1052,14 @@ dec_system_exception(Version, Message, Len, ByteOrder) ->
 					       ["COMPLETED_YES", "COMPLETED_NO",
 						"COMPLETED_MAYBE"]}}],
 					    Rest1, Len1, ByteOrder),
-%    {[], Len3} = remove_extra_bytes(Rest2, Len2),
     {list_to_tuple([list_to_atom(Name), "" |Struct]), Len2}.
 
 dec_user_exception(Version, Message, Len, ByteOrder) ->
     {TypeId, Rest1, Len1} = dec_type({'tk_string', 0}, Version, Message, Len, ByteOrder),
-    Name = ifrid_to_name(TypeId),
+    Name = ifrid_to_name(TypeId, ir_ExceptionDef),
     {'tk_except', _, _, ElementList} = get_user_exception_type(TypeId),
     {Struct, Rest2, Len2} = dec_exception_1(Version, ElementList, Rest1, Len1,
 					    ByteOrder),
-%    {[], Len3} = remove_extra_bytes(Rest2, Len2),
     {list_to_tuple([list_to_atom(Name), TypeId |Struct]), Len2}.
 
 dec_exception_1(_, [], Message, Len, ByteOrder) ->
@@ -724,15 +1074,15 @@ dec_exception_1(Version, [{ElemName, ElemType} | ElementList], Message,
 get_user_exception_type(TypeId) ->
     case orber:get_lightweight_nodes() of
 	false ->
-	    %% This way may be more beutiful (next 2 lines), but less effective. 
-	    %% On the other hand we must duplicate code. Decide about which.
-%	    IFR=corba:resolve_initial_references("OrberIFR"),
-%	    'OrberApp_IFR':get_user_exception_type(IFR, Id);
-	    Rep = orber_ifr:find_repository(),
-	    ExceptionDef = orber_ifr:'Repository_lookup_id'(Rep, TypeId),
-	    ContainedDescr = orber_ifr_exceptiondef:describe(ExceptionDef),
-	    ExceptionDescr = ContainedDescr#contained_description.value,
-	    ExceptionDescr#exceptiondescription.type;
+	    case mnesia:dirty_index_read(ir_ExceptionDef, TypeId,
+					 #ir_ExceptionDef.id) of
+		[ExcDef] when record(ExcDef, ir_ExceptionDef) ->  
+		    ExcDef#ir_ExceptionDef.type;
+		Other ->
+		    orber:debug_level_print("[~p] cdr_decode:get_user_exception_type(~p). IFR Id not found: ~p", 
+					    [?LINE, TypeId, Other], ?DEBUG_LEVEL),
+		    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE})
+	    end;
 	Nodes ->
 	    {A,B,C} = now(),
 	    random:seed(A,B,C),
@@ -780,6 +1130,8 @@ dec_type_code(8, Version, Message, Len, ByteOrder, _, C) ->
     {'tk_boolean', Message, Len, C};
 dec_type_code(9, Version, Message, Len, ByteOrder, _, C) ->
     {'tk_char', Message, Len, C};
+dec_type_code(26, Version, Message, Len, ByteOrder, _, C) ->
+    {'tk_wchar', Message, Len, C};
 dec_type_code(10, Version, Message, Len, ByteOrder, _, C) ->
     {'tk_octet', Message, Len, C};
 dec_type_code(11, Version, Message, Len, ByteOrder, _, C) ->
@@ -896,6 +1248,10 @@ dec_type_code(22, Version, Message, Len, ByteOrder, Buff, C) ->
 		     0}}]},
 		 Version, Rest1, 1, ByteOrder1, Buff, C+1+Ex),
     {{'tk_except', RepId, Name, ElementList}, Message1, Len1, NewC};
+dec_type_code(27, Version, Message, Len, ByteOrder, Buff, C) ->
+    {MaxLength, Message1, Len1, NewC} =
+	dec_type('tk_ulong', Version, Message, Len, ByteOrder, Buff, C),
+    {{'tk_wstring', MaxLength}, Message1, Len1, NewC};
 dec_type_code(16#ffffffff, Version, Message, Len, ByteOrder, Buff, C) ->  %% placeholder
     {Indirection, Message1, Len1, NewC} =
 	dec_type('tk_long', Version, Message, Len, ByteOrder, Buff, C),
@@ -919,11 +1275,6 @@ decode_complex_tc_parameters(Version, Message, Len, ByteOrder) ->
     {ComplexParams, Message2, Len2, _} =
 	dec_sequence(Version, Rest1, Size, 'tk_octet', Len1 + 4, ByteOrder, [], 0),
     {ComplexParams, Message2, Len2, NewC+4}.
-
-
-%    {ComplexParams, Message1, Len1, _} =
-%    	dec_type({'tk_sequence', 'tk_octet', 0}, Version, Message, Len, ByteOrder, [], 0),
-%    {ComplexParams, Message1, Len1}.
 
 %%-----------------------------------------------------------------
 %% Func: dec_align/3

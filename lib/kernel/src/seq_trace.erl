@@ -27,6 +27,7 @@
 	 set_token/2,
 	 get_token/0,
 	 get_token/1,
+	 print/1,
 	 print/2,
 	 reset_trace/0,
 	 set_system_tracer/1,
@@ -35,16 +36,16 @@
 
 set_token([]) ->
 	erlang:seq_trace(sequential_trace_token,[]);
-set_token({Flags,Label,Serial,From,Lastcnt}) ->
+set_token({Flags,Label,Serial,_From,Lastcnt}) ->
     F = decode_flags(Flags),
-    set_token2([{label,Label},{serial,Serial},{1,Lastcnt}| F]).
+    set_token2([{label,Label},{serial,{Lastcnt, Serial}} | F]).
 
 % We limit the label type to always be a small integer because erl_interface
 % expects that, the BIF can however "unofficially" handle atoms as well , and
 % atoms can be used if only Erlang nodes are involved
 
 set_token(label,Val) when atom(Val) -> 
-    exit({badarg,{?MODULE,set_token,[label,Val]}});
+    erlang:fault(badarg, [label, Val]);
 set_token(Type,Val) ->
     erlang:seq_trace(Type,Val).
 
@@ -54,6 +55,11 @@ get_token() ->
 get_token(Type) ->
     erlang:seq_trace_info(Type).
 
+print(Term) ->
+    erlang:seq_trace_print(Term).
+
+print(Label,Term) when atom(Label) ->
+    erlang:fault(badarg, [Label, Term]);
 print(Label,Term) ->
     erlang:seq_trace_print(Label,Term).
 

@@ -1042,7 +1042,8 @@ handle_info({ac_change_application_req, AppName, Msg}, S) ->
 		stop_it ->
 		    stop_appl(AppName, Id, Type),
 		    cntrl(AppName, S, {ac_application_not_run, AppName}),
-		    NRunning = keydelete(AppName, 1, Running),
+		    NRunning = keyreplace(AppName, 1, Running, 
+					 {AppName, {distributed, []}}),
 		    {noreply, S#state{running = NRunning}};
 		%% We should not try to start a running application!
 		start_it when pid(Id) ->

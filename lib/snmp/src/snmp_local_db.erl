@@ -268,8 +268,7 @@ handle_call({table_delete, Name, Db}, _From, State) ->
     {reply, true, State};
 
 handle_call({table_create_row, Name, Db, Indexes, Row}, _From, State) ->
-    ?vlog("table create row: ~p -> ~p, ~p",
-	  [Name, Indexes, Row]),
+    ?vlog("table create row: ~p -> ~p, ~p",[Name, Indexes, Row]),
     Res = 
 	case catch handle_create_row(Db, Name, Indexes, Row, State) of
 	    {'EXIT', _} -> false;
@@ -279,8 +278,7 @@ handle_call({table_create_row, Name, Db, Indexes, Row}, _From, State) ->
     {reply, Res, State};
 
 handle_call({table_delete_row, Name, Db, Indexes}, _From, State) ->
-    ?vlog("table delete row: ~p -> ~p",
-	  [Name, Indexes]),
+    ?vlog("table delete row: ~p -> ~p",[Name, Indexes]),
     Res = 
 	case catch handle_delete_row(Db, Name, Indexes, State) of
 	    {'EXIT', _} -> false;
@@ -290,8 +288,7 @@ handle_call({table_delete_row, Name, Db, Indexes}, _From, State) ->
     {reply, Res, State};
 
 handle_call({table_get_row, Name, Db, Indexes}, _From, State) -> 
-    ?vlog("table get row: ~p -> ~p",
-	  [Name, Indexes]),
+    ?vlog("table get row: ~p -> ~p",[Name, Indexes]),
     Res = case lookup(Db, {Name, Indexes}, State) of
 	      undefined -> undefined;
 	      {value, {Row, Prev, Next}} -> Row

@@ -95,12 +95,12 @@ typedef struct line_buf_context {
 static int port_extra_shift;
 static int port_extra_limit;
 static int port_extra_n;
+static int last_port;
 
 static int
 get_free_port(void)
 {
     int i;
-    static int last_port = 0;
 
     i = last_port + 1;
     while(1) {
@@ -295,98 +295,6 @@ open_driver(driver, pid, name, opts)
     }
     erts_port[port_num].drv_data = ret;
     return port_num;
-}
-
-/* Fills a possibly deep list of chars and binaries int buf
-** Used by the port write routines                        
-** Return remaing bytes in buffer0 on succsess
-**        -1 on overflow
-**        -2 on type error
-*/
-
-static int
-io_list_to_buf2(Eterm obj, char* buf, int len)
-{
-    Eterm* objp;
-    DECLARE_ESTACK(s);
-    goto L_again;
-
-    while (!ESTACK_ISEMPTY(s)) {
-	obj = ESTACK_POP(s);
-    L_again:
-	if (is_list(obj)) {
-	L_iter_list:
-	    objp = list_val(obj);
-	    obj = CAR(objp);
-	    if (is_byte(obj)) {
-		if (len == 0)
-		    goto L_overflow;
-		*buf++ = unsigned_val(obj);
-		len--;
-	    } else if (is_binary(obj)) {
-		byte* bytes;
-		size_t size = binary_size(obj);
-		if (len < size) {
-		    goto L_overflow;
-		}
-		GET_BINARY_BYTES(obj, bytes);
-		sys_memcpy(buf, bytes, size);
-		buf += size;
-		len -= size;
-	    }
-	    else if (is_nil(obj)) {
-		;
-	    }
-	    else if (is_list(obj)) {
-		ESTACK_PUSH(s, CDR(objp));
-		goto L_iter_list; /* on head */
-	    }
-	    else
-		goto L_type_error;
-
-	    obj = CDR(objp);
-	    if (is_list(obj))
-		goto L_iter_list; /* on tail */
-	    else if (is_binary(obj)) {
-		byte* bytes;
-		size_t size = binary_size(obj);
-		if (len < size) {
-		    goto L_overflow;
-		}
-		GET_BINARY_BYTES(obj, bytes);
-		sys_memcpy(buf, bytes, size);
-		buf += size;
-		len -= size;
-	    }
-	    else if (is_nil(obj))
-		;
-	    else
-		goto L_type_error;
-	} else if (is_binary(obj)) {
-	    byte* bytes;
-	    size_t size = binary_size(obj);
-	    if (len < size) {
-		goto L_overflow;
-	    }
-	    GET_BINARY_BYTES(obj, bytes);
-	    sys_memcpy(buf, bytes, size);
-	    buf += size;
-	    len -= size;
-	} else if (is_not_nil(obj)) {
-	    goto L_type_error;
-	}
-    }
-
-    DESTROY_ESTACK(s);
-    return len;
-
- L_type_error:
-    DESTROY_ESTACK(s);
-    return -2;
-
- L_overflow:
-    DESTROY_ESTACK(s);
-    return -1;
 }
 
 /* Fills a possibly deep list of chars and binaries into vec
@@ -660,7 +568,7 @@ int ix; uint32 list;
 	int r;
 	
 	size = TMP_BUF_SIZE - 5;
-	r = io_list_to_buf2(list, (char*)tmp_buf, size);
+	r = io_list_to_buf(list, (char*)tmp_buf, size);
 	if (r >= 0) {
 	    size -= r;
 	    if (drv->output) {
@@ -680,7 +588,7 @@ int ix; uint32 list;
 	     * add ONE extra byte.
 	     */
 	    buf = safe_alloc(size+1); 
-	    r = io_list_to_buf2(list, buf, size);
+	    r = io_list_to_buf(list, buf, size);
 	    if (drv->output) {
 		(*drv->output)(p->drv_data, (char*)buf, size);
 	    }
@@ -725,6 +633,7 @@ void init_io(void)
     else
 	erl_max_ports = 0;
 
+    last_port = 0;
     if (erl_max_ports < 1024)
 	erl_max_ports = 1024;
 
@@ -1389,7 +1298,7 @@ port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
     byte* to_port = NULL;	/* Buffer to write to port. */
 				/* Initialization is for shutting up
 				   warning about use before set. */
-    int to_len;			/* Length of buffer. */
+    int to_len = 0;		/* Length of buffer. */
     int must_free = 0;		/* True if the buffer should be freed. */
     char port_result[64];	/* Buffer for result from port. */
     void* port_resp;		/* Pointer to result buffer. */
@@ -1414,24 +1323,22 @@ port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
 	to_len = binary_size(iolist);
     } else {
 	int r;
-	
-	to_len = 0;
-	r = io_list_to_buf(iolist, (char*) tmp_buf, &to_len, TMP_BUF_SIZE - 5);
-	if (r == 0) {
+	/* XXX Random amounts of extra memory allocated/reserved.
+	   The + 5 and + 20 should be removed in R8. */
+	r = io_list_to_buf(iolist, (char*) tmp_buf, TMP_BUF_SIZE - 5);
+	if (r >= 0) {
 	    to_port = tmp_buf;
+	    to_len = TMP_BUF_SIZE - 5 - r;
 	} else if (r == -2) {
 	    return 0;
 	} else if (r == -1) {	/* Overflow */
-	    int len;
-
-	    if ((len = io_list_len(iolist)) < 0) {
+	    if ((to_len = io_list_len(iolist)) < 0) {
 		return 0;
 	    }
 	    must_free = 1;
-	    to_port = safe_alloc(len + 20);
-	    to_len = 0;
-	    r = io_list_to_buf(iolist, to_port, &to_len, len+20);
-	    ASSERT(r == 0);
+	    to_port = safe_alloc(to_len + 20);
+	    r = io_list_to_buf(iolist, to_port, to_len+20);
+	    ASSERT(r == 20);
 	}
     }
 

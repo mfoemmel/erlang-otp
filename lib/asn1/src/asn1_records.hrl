@@ -30,7 +30,7 @@
 -record(constraint,{c,e}).
 -record('Constraint',{'SingleValue'=no,'SizeConstraint'=no,'ValueRange'=no,'PermittedAlphabet'=no,
 		      'ContainedSubtype'=no, 'TypeConstraint'=no,'InnerSubtyping'=no,e=no,'Other'=no}).
--record(type,{tag,def,constraint=[]}).
+-record(type,{tag=[],def,constraint=[]}).
 -record(tag,{class,number,type,form=32}). % form = ?CONSTRUCTED
 % This record holds information about allowed constraint types per type
 -record(cmap,{single_value=no,contained_subtype=no,value_range=no,

@@ -209,7 +209,7 @@ subset(S1, S2) -> is_subset(S1, S2).
 %%  which has not been split use the unsplit buddy bucket.
 
 get_slot(T, Key) ->
-    H = erlang:hash(Key, T#sets.maxn),
+    H = erlang:phash(Key, T#sets.maxn),
     if
 	H > T#sets.n -> H - T#sets.bso;
 	true -> H
@@ -347,7 +347,7 @@ maybe_contract_segs(T) -> T.
 
 rehash([E|T], Slot1, Slot2, MaxN) ->
     [L1|L2] = rehash(T, Slot1, Slot2, MaxN),
-    case erlang:hash(E, MaxN) of
+    case erlang:phash(E, MaxN) of
 	Slot1 -> [[E|L1]|L2];
 	Slot2 -> [L1|[E|L2]]
     end;

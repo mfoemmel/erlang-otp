@@ -208,20 +208,26 @@ extern voidp  calloc OF((uInt items, uInt size));
 extern void   free   OF((voidpf ptr));
 #endif
 
+extern void* sys_alloc(unsigned);
+extern void* sys_free(void *);
+
 voidpf zcalloc (opaque, items, size)
     voidpf opaque;
     unsigned items;
     unsigned size;
 {
+    unsigned sz = items * size;
+    voidpf* ptr = (voidpf) sys_alloc(sz);
+    memset(ptr, '\0', sz);
     if (opaque) items += size - size; /* make compiler happy */
-    return (voidpf)calloc(items, size);
+    return ptr;
 }
 
 void  zcfree (opaque, ptr)
     voidpf opaque;
     voidpf ptr;
 {
-    free(ptr);
+    sys_free(ptr);
     if (opaque) return; /* make compiler happy */
 }
 

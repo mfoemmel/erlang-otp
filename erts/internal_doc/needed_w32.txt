@@ -33,27 +33,34 @@ Things to consider: Make sure you have all the VC environment variables set
 GCC 2.8.1 for Win32 (Mingw32, NOT CygWin32)
 -------------------------------------------
 Available at:       http://agnes.dida.physik.uni-essen.de/~janjaap/mingw32/
-Internal location:  \\Vilya\Public\ftproot\pub\Windows\Win32\mingw32\
+Internal location:  \\Eomer\D_DISK\Program for download\mingw32\
 Things to consider: Read the installation page at the above URL.
 		    Make sure you have the environment set.
+Untested
 
 
 GNU SED for Win32
 -----------------
 Available at:       http://www.itribe.net/virtunix/contributors.html
-Internal location:  \\Vilya\Public\ftproot\pub\Windows\Win32\gnused.zip
-Things to consider: Just have 'sed.exe' in your path.
+Internal location:  \\Eomer\D_DISK\Program for download\GNU Sed\sed-3.02-1.tar.gz
+Things to consider: 
+
+Untested
 
 
 Perl 5 for Win32
 ----------------
 Available at:       http://www.ActiveState.com/
-Internal location:  \\Vilya\Public\ftproot\pub\Windows\Win32\Perl_w32i316.exe
-Things to consider: This is the only version of Perl for Win32 that has been
+Internal location:  \\Eomer\D_DISK\Program for download\Perl5_w32\APi522.exe
+Things to consider:
+
+Untested
+
+/*                    This is the only version of Perl for Win32 that has been
 		    tested. The installation procedure is depending on the 
-		    Win32 module for registry lookups and will fail if it cannot
-		    find it.
-	            Associate .pl files with Perl to make the scripts work properly.
+		    Win32 module for registry lookups and will fail if it 
+                    cannot find it.
+	            Associate .pl files with Perl to make the scripts work properly. */
 
 
 
@@ -85,6 +92,18 @@ data-files.wse - This file is generated with the genwse.pl Perl script. It has a
 
 autorun.pl.in - This is the source for autorun.pl run through sed during 'install'
 		build. It manages removal and installation of the Erlang installation.
+
+
+Last modification made by Ingvar Meyer (2000-10-12).
+
+
+
+
+
+
+
+
+
 
 
 

@@ -103,8 +103,6 @@ init({GsId,FrontendNode,Owner,Opts}) ->
 	    DB = gtk_db:init(Opts),
 	    ets:insert(DB,{frontend_node,FrontendNode}),
 	    put(worker,spawn_link(gtk,worker_init,[0])),
-	    put(config_workaround,
-		spawn_link(gtk,config_workaround_init,[Owner,get(options)])),
 	    Gtkid = #gtkid{id=GsId,widget="",owner=Owner,objtype=gs},
 	    gtk_db:insert_gs(DB,Gtkid),
 	    gtk_font:init(),
@@ -373,33 +371,3 @@ worker_match([{DB,[Expr|Exprs]}|DbExprs]) ->
 worker_match([{DB,[]}|DbExprs]) ->
     worker_match(DbExprs);
 worker_match([]) -> done.
-
-    
-%% This process now traps {'EXIT', Pid, Reason} from linked processes,
-%% so that it can detect when to terminate itself. /olin
-
-config_workaround_init(Frontend,OptionDB) ->
-    process_flag(trap_exit,true),    
-    put(gs_frontend,Frontend),
-    put(options,OptionDB),
-    config_workaround_idle().
-
-config_workaround_idle() ->
-    receive
-	{'EXIT',_Pid,  _Reason} ->
-	    ok;
-	{config_event_args,Args} ->
-	    config_loop(Args)
-    end.
-
-config_loop(Args) ->
-    receive
-	{'EXIT', _Pid, _Reason} ->
-	    ok;
-	{config_event_args,Args2} ->
-	    config_loop(Args2)
-    after 250 ->
-	    apply(gtk_generic,event,Args),
-	    config_workaround_idle()
-    end.
-

@@ -136,6 +136,8 @@ atom gc_end
 atom gc_start
 atom Ge='>='
 atom generational
+atom get_seq_token
+atom get_tcw
 atom getenv
 atom getting_linked
 atom global
@@ -156,6 +158,7 @@ atom input
 atom internal_error
 atom instruction_counts
 atom invalid
+atom is_seq_trace
 atom io
 atom keep_zombies
 atom keypos
@@ -263,6 +266,8 @@ atom set_on_first_spawn
 atom set_on_link
 atom set_on_spawn
 atom set_seq_token
+atom set_tcw
+atom silent
 atom stack_size
 atom start
 atom static
@@ -283,6 +288,7 @@ atom timeout_value
 atom Times='*'
 atom timestamp
 atom trace trace_ts traced 
+atom trace_control_word
 atom tracer
 atom trap_exit
 atom true

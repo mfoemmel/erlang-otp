@@ -66,46 +66,9 @@ ETERM *erl_alloc_eterm(unsigned char type)
 #define NOT_COMPOUND 0
 static void _erl_free_term(); /* forward */
 
-
-/*
- * Increment (up) term T's reference count.
- */
-ETERM *
-eterm_ref (ETERM *t)
-{
-    switch(ERL_COUNT(t))
-    {
-    default:			/* n |--> n+1 (== fast case)*/
-	ERL_COUNT(t)++;
-	return t;
-    case ERL_MAX_COUNT:		/* +inf |--> +inf (== latch-up) */	
-	return t;
-    }
-}
- 
-/*
- * Decrement (down) term T's reference count. Free the term if the
- * count drops to zero. 
- */
-void
-eterm_unref (ETERM *t)
-{
-    switch(ERL_COUNT(t))
-    {
-    default:			/* n |--> n-1 (== fast case)*/
-	ERL_COUNT(t)--;
-	return;
-    case 1:			/* 1 |--> 0 (== time to die)*/
-	erl_free_term(t);
-	return;
-    case ERL_MAX_COUNT:		/* +inf |--> +inf (== latch-up) */
-	return;
-    }
-}
-      
 /* 
  * Free a term, but don't deallocate it until
- * the reference counter trigger.
+ * the reference counter triggers.
  */
 void erl_free_term(ETERM *ep)
 {

@@ -23,6 +23,7 @@
 -export([delete/1,
 	 file2tab/1,
 	 filter/3,
+	 foldl/3, foldr/3,
 	 info/1,
 	 info/2,
 	 match_object/2,
@@ -52,6 +53,56 @@
 %% match_delete/2
 %% update_counter/3
 %%
+
+foldl(F, Accu, T) ->
+    safe_fixtable(T, true),
+    First = ets:first(T),
+    Ref = make_ref(),
+    R = (catch {Ref, do_foldl(F, Accu, First, T)}),
+    safe_fixtable(T, false),
+    case R of
+	{Ref, Result} ->
+	    Result;
+	{'EXIT', Reason} ->
+	    erlang:fault(Reason);
+	Thrown ->
+	    throw(Thrown)
+    end.
+
+do_foldl(F, Accu0, Key, T) ->
+    case Key of
+	'$end_of_table' ->
+	    Accu0;
+	_ ->
+	    do_foldl(F,
+		     lists:foldl(F, Accu0, ets:lookup(T, Key)),
+		     ets:next(T, Key), T)
+    end.
+
+foldr(F, Accu, T) ->
+    safe_fixtable(T, true),
+    Last = ets:last(T),
+    Ref = make_ref(),
+    R = (catch {Ref, do_foldr(F, Accu, Last, T)}),
+    safe_fixtable(T, false),
+    case R of
+	{Ref, Result} ->
+	    Result;
+	{'EXIT', Reason} ->
+	    erlang:fault(Reason);
+	Thrown ->
+	    throw(Thrown)
+    end.
+
+do_foldr(F, Accu0, Key, T) ->
+    case Key of
+	'$end_of_table' ->
+	    Accu0;
+	_ ->
+	    do_foldr(F,
+		     lists:foldr(F, Accu0, ets:lookup(T, Key)),
+		     ets:prev(T, Key), T)
+    end.
 
 delete(T) when atom(T) ->
     Ret = ets:db_delete(T),
@@ -114,19 +165,48 @@ info(T, What) when integer(T) ->
 local_info(T, What, Node) ->
     case What of 
 	node ->
-	    Node;
+	    %% Use a bif call to determine if the table exists
+	    case (catch ets:db_info(T, type)) of
+		undefined ->
+		    undefined;
+		{'EXIT',_} ->
+		    undefined;
+		_ ->
+		    Node
+	    end;
 	named_table ->
-	    if
-		atom(T) -> true;
-		true -> false
+	    %% Use a bif call to determine if the table exists
+	    case (catch ets:db_info(T, type)) of
+		undefined ->
+		    undefined;
+		{'EXIT',_} ->
+		    undefined;
+		_ ->
+		    if
+			atom(T) -> 
+			    true;
+			true -> 
+			    false
+		    end
 	    end;
 	safe_fixed ->
-	    fixtable_server:info(?MODULE, T);
+	    %% Use a bif call to determine if the table exists
+	    case (catch ets:db_info(T, type)) of
+		undefined ->
+		    undefined;
+		{'EXIT',_} ->
+		    undefined;
+		_ ->
+		    fixtable_server:info(?MODULE, T)
+	    end;
 	_ ->
-	    case catch ets:db_info(T, What) of
-	        undefined -> undefined;
-		{'EXIT',_} -> undefined;
-		Result -> Result
+	    case (catch ets:db_info(T, What)) of
+	        undefined -> 
+		    undefined;
+		{'EXIT',_} -> 
+		    undefined;
+		Result -> 
+		    Result
 	    end
     end.
 
