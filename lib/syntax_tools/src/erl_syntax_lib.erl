@@ -20,7 +20,7 @@
 %%
 %% Author contact: richardc@csd.uu.se
 %%
-%% $Id: erl_syntax_lib.erl,v 1.22 2002/11/26 16:58:13 richardc Exp $
+%% $Id: erl_syntax_lib.erl,v 1.25 2004/11/22 07:22:52 richardc Exp $
 %%
 %% =====================================================================
 %%
@@ -463,8 +463,12 @@ vann(Tree, Env) ->
             vann_case_expr(Tree, Env);
         if_expr ->
             vann_if_expr(Tree, Env);
+        cond_expr ->
+            vann_cond_expr(Tree, Env);
         receive_expr ->
             vann_receive_expr(Tree, Env);
+        try_expr ->
+            vann_try_expr(Tree, Env);
         function ->
             vann_function(Tree, Env);
         rule ->
@@ -548,6 +552,12 @@ vann_if_expr(Tree, Env) ->
     {Cs1, {Bound, Free}} = vann_clauses(Cs, Env),
     Tree1 = rewrite(Tree, erl_syntax:if_expr(Cs1)),
     {ann_bindings(Tree1, Env, Bound, Free), Bound, Free}.
+
+vann_cond_expr(_Tree, _Env) ->
+    erlang:error({not_implemented,cond_expr}).
+
+vann_try_expr(_Tree, _Env) ->
+    erlang:error({not_implemented,try_expr}).
 
 vann_receive_expr(Tree, Env) ->
     %% The timeout action is treated as an extra clause.
@@ -786,6 +796,10 @@ is_fail_expr(E) ->
                     true;
                 {ok, {erlang, throw}} when N == 1 ->
                     true;
+                {ok, {erlang, error}} when N == 1 ->
+                    true;
+                {ok, {erlang, error}} when N == 2 ->
+                    true;
                 {ok, {erlang, fault}} when N == 1 ->
                     true;
                 {ok, {erlang, fault}} when N == 2 ->
@@ -884,10 +898,10 @@ is_fail_expr(E) ->
 %% 	    <li><code>ModuleName = atom()</code></li>
 %%       </ul>
 %% 	 <code>ModuleName</code> is the name declared by a module
-%% 	 attribute in <code>Forms</code>. If the module name is not
-%% 	 uniquely defined in <code>Forms</code>, the result will contain
-%% 	 no entry for the <code>module</code> key. Multiple declarations
-%% 	 using the same name are however allowed.</dd>
+%% 	 attribute in <code>Forms</code>. If no module name is defined
+%% 	 in <code>Forms</code>, the result will contain no entry for the
+%% 	 <code>module</code> key. If multiple module name declarations
+%% 	 should occur, all but the first will be ignored.</dd>
 %%
 %%     <dt><code>{records, Records}</code></dt>
 %%       <dd><ul>
@@ -997,10 +1011,8 @@ finfo_set_module(Name, Info) ->
     case Info#forms.module of
         none ->
             Info#forms{module = {value, Name}};
-        {value, Name} ->
-            Info;    % allow duplicates
-        _ ->
-            Info#forms{module = error}
+        {value, _} ->
+            Info
     end.
 
 finfo_add_exports(L, Info) ->
@@ -1227,10 +1239,23 @@ analyze_module_attribute(Node) ->
             case erl_syntax:attribute_arguments(Node) of
                 [M] ->
                     module_name_to_atom(M);
+                [M, L] ->
+		    M1 = module_name_to_atom(M),
+		    L1 = analyze_variable_list(L),
+		    {M1, L1};
                 _ ->
                     throw(syntax_error)
             end;
         _ ->
+            throw(syntax_error)
+    end.
+
+analyze_variable_list(Node) ->
+    case erl_syntax:is_proper_list(Node) of
+        true ->
+            [erl_syntax:variable_name(V)
+	     || V <- erl_syntax:list_elements(Node)];
+        false ->
             throw(syntax_error)
     end.
 

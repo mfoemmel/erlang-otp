@@ -25,9 +25,14 @@
 %% External exports
 -export([start_link/0, start_agent/2, start_manager/2]).
 
+%% Internal exports
+-export([stop/0]).
+
 
 %% supervisor callbacks
 -export([init/1]).
+
+-define(SERVER, ?MODULE).
 
 
 %%%-------------------------------------------------------------------
@@ -35,9 +40,22 @@
 %%%-------------------------------------------------------------------
 start_link() ->
     ?d("start_link -> entry",[]),
-    SupName = {local,?MODULE},
+    SupName = {local, ?MODULE},
     supervisor:start_link(SupName, ?MODULE, []).
 
+stop() ->
+    ?d("stop -> entry", []),
+    case whereis(?SERVER) of
+	Pid when pid(Pid) ->
+	    ?d("stop -> Pid: ~p", [Pid]),
+	    exit(Pid, shutdown),
+	    ?d("stop -> stopped", []),
+	    ok;
+	_ ->
+	    ?d("stop -> not running", []),
+	    not_running
+    end.
+    
 
 start_agent(Type, Opts) ->
     ?d("start_agent -> entry with"

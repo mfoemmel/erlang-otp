@@ -174,11 +174,6 @@ conv_insn(I, Map, Data) ->
 	    {{Src, Map1}, Imm64} = conv_src(hipe_rtl:move_src(I), Map0),
             I2 = [hipe_amd64:mk_move(Src, Dst)],
 	    {Imm64++I2, Map1, Data};
-	begin_handler ->	% for SPARC this is eliminated by hipe_frame
-	    [Dst0] = hipe_rtl:begin_handler_varlist(I),
-	    {Dst1,Map1} = conv_dst(Dst0, Map),
-	    Src = mk_eax(),
-	    {[hipe_amd64:mk_move(Src, Dst1)], Map1, Data};
 	return ->
 	    %% TODO: multiple-value returns
 	    {{[Arg], Map0},Imm64} = 

@@ -149,12 +149,24 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	    gen_add_sub_2(Dst, Args, Cont, Fail, Op, add);
 	  '-' ->
 	    gen_add_sub_2(Dst, Args, Cont, Fail, Op, sub);
+	  '*' ->
+	    %% BIF call: am_Times -> nbif_mul_2 -> erts_mixed_times
+	    [hipe_rtl:mk_call(Dst, '*', Args, Cont, Fail, not_remote)];
+	  '/' ->
+	    %% BIF call: am_Div -> nbif_div_2 -> erts_mixed_div
+	    [hipe_rtl:mk_call(Dst, '/', Args, Cont, Fail, not_remote)];
 	  'unsafe_add' ->
 	    gen_unsafe_add_sub_2(Dst, Args, Cont, Fail, '+', add);
 	  'extra_unsafe_add' ->
 	    gen_extra_unsafe_add_2(Dst, Args, Cont);
 	  'unsafe_sub' ->
 	    gen_unsafe_add_sub_2(Dst, Args, Cont, Fail, '-', sub);
+	  'div' ->
+	    %% BIF call: am_div -> nbif_intdiv_2 -> intdiv_2
+	    [hipe_rtl:mk_call(Dst, 'div', Args, Cont, Fail, not_remote)];
+	  'rem' ->
+	    %% BIF call: am_rem -> nbif_rem_2 -> rem_2
+	    [hipe_rtl:mk_call(Dst, 'rem', Args, Cont, Fail, not_remote)];
 	  'band' ->
 	    gen_bitop_2(Dst, Args, Cont, Fail, Op, 'and');
 	  'bor' ->
@@ -163,6 +175,13 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	    gen_bitop_2(Dst, Args, Cont, Fail, Op, 'xor');
 	  'bnot' ->
 	    gen_bnot_2(Dst, Args, Cont, Fail, Op);
+	  'bsr' -> 
+	    %% BIF call: am_bsr -> nbif_bsr_2 -> bsr_2
+	    gen_bsr_2(Dst, Args, Cont, Fail, Op);
+	    %[hipe_rtl:mk_call(Dst, 'bsr', Args, Cont, Fail, not_remote)];
+	  'bsl' -> 
+	    %% BIF call: am_bsl -> nbif_bsl_2 -> bsl_2
+	    [hipe_rtl:mk_call(Dst, 'bsl', Args, Cont, Fail, not_remote)];
 	  'unsafe_band' ->
 	    gen_unsafe_bitop_2(Dst, Args, Cont, 'and');
 	  'unsafe_bor' ->
@@ -202,14 +221,6 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 		[GotoCont];
 	      [Dst1] ->
 		[gen_mk_tuple(Dst1, Args),GotoCont]
-	    end;
-	  unsafe_element ->
-	    [Index, Tuple] = Args,
-	    case Dst of
-	      [] -> %% The result is not used.
-		[gen_unsafe_element(hipe_rtl:mk_new_var(), Index, Tuple),GotoCont];
-	      [Dst1] ->
-		[gen_unsafe_element(Dst1, Index, Tuple),GotoCont]
 	    end;
 	  {unsafe_element,N} ->
 	    case Dst of
@@ -258,6 +269,9 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	    gen_select_msg(Dst, Cont);
 	  clear_timeout ->
 	    gen_clear_timeout(Dst, GotoCont);
+	  set_timeout ->
+	    %% BIF call: am_set_timeout -> nbif_set_timeout -> hipe_set_timeout
+	    [hipe_rtl:mk_call(Dst, set_timeout, Args, Cont, Fail, not_remote)];
 	  suspend_msg ->
 	    gen_suspend_msg(Dst, Cont);
 
@@ -351,16 +365,9 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 		hipe_tagscheme:unsafe_tag_float(Dst1, Arg)
 	    end;
 
-	  %% MFA:s are not primops!
-	  {_M,_F,_A} ->
-	    exit({bad_primop, Op});
-
-	  %% Catch-all
+	  %% Only names listed above are accepted! MFA:s are not primops!
 	  _ ->
-	    %% Some things still become calls in rtl although they have
-	    %% non-MFA names, such as the arithmetic operation '*'.
-	    %% XXX FIXME: This should probably be looked at.
-	    [hipe_rtl:mk_call(Dst, Op, Args, Cont, Fail, not_remote)]
+	    erlang:error({bad_primop, Op})
 	end,
       {Code, ConstTab}
   end.
@@ -489,7 +496,35 @@ gen_unsafe_bitop_2(Res, Args, Cont, BitOp) ->
        hipe_rtl:mk_goto(Cont)]
   end.
 
-
+gen_bsr_2(Res, Args, Cont, Fail, Op) ->
+  [Arg1, Arg2] = Args,
+  GenCaseLabel = hipe_rtl:mk_new_label(),
+  case hipe_rtl:is_imm(Arg2) of
+    true ->
+      Val =  hipe_tagscheme:fixnum_val(hipe_rtl:imm_value(Arg2)),
+      Limit = hipe_rtl_arch:word_size()*8,
+      if 
+	Val < Limit, Val >= 0 ->
+	  case Res of
+	    [] ->
+	      [hipe_tagscheme:test_fixnum(Arg1, hipe_rtl:label_name(Cont),
+					  hipe_rtl:label_name(GenCaseLabel), 0.99),
+	       gen_op_general_case(hipe_rtl:mk_new_var(), Op, Args, Cont, Fail, 
+				   GenCaseLabel)];
+	    [Res0] ->
+	      FixLabel = hipe_rtl:mk_new_label(),
+	      [hipe_tagscheme:test_fixnum(Arg1, hipe_rtl:label_name(FixLabel),
+					  hipe_rtl:label_name(GenCaseLabel), 0.99),
+	       FixLabel,
+	       hipe_tagscheme:fixnum_bsr(Arg1, Arg2, Res0),
+	       gen_op_general_case(Res0, Op, Args, Cont, Fail, GenCaseLabel)]
+	  end;
+	true ->
+	  [hipe_rtl:mk_call(Res, 'bsr', Args, Cont, Fail, not_remote)]
+      end;
+    false ->
+      [hipe_rtl:mk_call(Res, 'bsr', Args, Cont, Fail, not_remote)]
+  end.
 %%
 %% Inline not.
 %%
@@ -952,10 +987,10 @@ gen_clear_timeout([], GotoCont) ->
    GotoCont].
 
 gen_select_msg([], Cont) ->
-  hipe_rtl_arch:call_bif([], select_msg, [], Cont, []).
+  [hipe_rtl_arch:call_bif([], select_msg, [], Cont, [])].
 
 gen_suspend_msg([], Cont) ->
-  hipe_rtl:mk_call([], suspend_msg, [], Cont, [], not_remote).
+  [hipe_rtl:mk_call([], suspend_msg, [], Cont, [], not_remote)].
 
 %% --------------------------------------------------------------------
 %%

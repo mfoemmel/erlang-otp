@@ -44,7 +44,7 @@ assemble(CompiledCode, Closures, Exports, Flags) ->
   DataRelocs = mk_data_relocs(RefsFromConsts, LabelMap),
   SSE = slim_sorted_exportmap(ExportMap,Closures,Exports),
   SlimRefs = hipe_pack_constants:slim_refs(AccRefs),
-  Bin = term_to_binary([{?VERSION(),?HIPE_SYSTEM_CRC},
+  Bin = term_to_binary([{?VERSION_STRING(),?HIPE_SYSTEM_CRC},
 			ConstAlign, ConstSize,
 			SC,
 			DataRelocs, % nee LM, LabelMap
@@ -756,7 +756,6 @@ slim_sorted_exportmap([{Addr,M,F,A}|Rest], Closures, Exports) ->
   [Addr,M,F,A,IsClosure,IsExported | slim_sorted_exportmap(Rest, Closures, Exports)];
 slim_sorted_exportmap([],_,_) -> [].
 
-is_exported(_F, _A, []) -> true; % XXX: kill this clause when Core is fixed
 is_exported(F, A, Exports) -> lists:member({F,A}, Exports).
 
 %%%

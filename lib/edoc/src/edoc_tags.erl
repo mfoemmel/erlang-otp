@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_tags.erl,v 1.11 2004/08/25 00:03:13 richardc Exp $
+%% $Id: edoc_tags.erl,v 1.12 2004/11/04 17:48:35 richardc Exp $
 %%
 %% @private
 %% @copyright 2001-2003 Richard Carlsson
@@ -25,7 +25,6 @@
 
 %% @doc EDoc tag scanning.
 
-%% TODO: @title tag for use in overview files? Cf. {title,...} option.
 %% TODO: tag (or macro) for including the code of a function as <pre>-text.
 
 -module(edoc_tags).
@@ -60,6 +59,7 @@ tags() ->
      {see, fun parse_see/3, [module,function,package,overview]},
      {since, text, [module,function,package,overview,single]},
      {spec, fun parse_spec/3, [function,single]},
+     {title, text, [overview,single]},
      {type, fun parse_type/3, [module,footer,function]},
      {version, text, [module,package,overview,single]}].
 

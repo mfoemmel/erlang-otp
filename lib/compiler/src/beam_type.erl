@@ -520,10 +520,11 @@ tdb_update1([{_,_}=New|Ops], []) ->
 tdb_update1([], Db) -> Db.
 
 %% tdb_kill_xregs(Db) -> NewDb
-%%  Kill all information about x registers.
+%%  Kill all information about x registers. Also kill all tuple_element
+%%  dependencies from y registers to x registers.
 
 tdb_kill_xregs([{{x,_},_Type}|Db]) -> tdb_kill_xregs(Db);
-tdb_kill_xregs([{{y,_},_Type}|_]=Db) -> Db;
+tdb_kill_xregs([{{y,_},{tuple_element,{x,_},_}}|Db]) -> tdb_kill_xregs(Db);
 tdb_kill_xregs([Any|Db]) -> [Any|tdb_kill_xregs(Db)];
 tdb_kill_xregs([]) -> [].
     

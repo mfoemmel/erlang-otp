@@ -37,7 +37,12 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-MODULES = hipe_timing hipe_vectors
+ifdef HIPE_ENABLED
+HIPE_MODULES = hipe_vectors 
+else
+HIPE_MODULES =
+endif
+MODULES = hipe_timing hipe_dot $(HIPE_MODULES)
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
@@ -85,6 +90,8 @@ $(DOCS)/%.html:%.erl
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
+	$(INSTALL_DIR) $(RELSYSDIR)/util
+	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(RELSYSDIR)/util
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 

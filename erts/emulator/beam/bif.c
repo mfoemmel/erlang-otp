@@ -3169,6 +3169,10 @@ BIF_RETTYPE hash_2(BIF_ALIST_2)
     if ((range = signed_val(BIF_ARG_2)) <= 0) {  /* [1..MAX_SMALL] */
 	BIF_ERROR(BIF_P, BADARG);
     }
+#ifdef ARCH_64
+    if (range > ((1 << 27) - 1))
+	BIF_ERROR(BIF_P, BADARG);
+#endif
     hash = make_broken_hash(BIF_ARG_1, 0);
     BIF_RET(make_small(1 + (hash % range)));   /* [1..range] */
 }

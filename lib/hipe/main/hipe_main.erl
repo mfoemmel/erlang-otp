@@ -13,6 +13,7 @@
 %% global variable). </p>
 %%
 %% @end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%=====================================================================
 
@@ -54,7 +55,6 @@
 %% compilation after translation to RTL (in which case RTL code is
 %% generated). The compiler options must have already been expanded
 %% (cf. `<a href="hipe.html">hipe:expand_options</a>'). </p>
-%%
 
 compile_icode(MFA, LinearIcode, Options) ->
   compile_icode(MFA, LinearIcode, Options, get(hipe_debug)).
@@ -341,39 +341,44 @@ icode_ssa_unconvert(IcodeSSA, Options) ->
 %%    optimizations as possible in this pass; currently NO such
 %%    optimization is performed -- this to be changed soon.
 %%
-%% 3. rtl_cse is hardly ever used, which is a good thing since it
-%%    does not work. It should be taken out and substituted by an
-%%    rtl_lcm (lazy code motion) pass.
-%%
-%% 4. rtl_expand_gc must be done.
-%%
-%% 5. rtl_prop is almost always used and performs global constant
+%% 3. rtl_prop is almost always used and performs global constant
 %%    propagation.
+%%
+%% 4. rtl_lcm performs a lazy code motion on RTL.
 %%
 %%----------------------------------------------------------------------
  
 icode_to_rtl(MFA, Icode, Options) ->
   debug("ICODE -> RTL: ~w, ~w~n", [MFA, hash(Icode)], Options),
   LinearRTL = translate_to_rtl(Icode, Options),
-  %%hipe_rtl:pp(standard_io, LinearRTL),
+  %% hipe_rtl:pp(standard_io, LinearRTL),
   RtlCfg  = initialize_rtl_cfg(LinearRTL, Options),
-  %%hipe_rtl_cfg:pp(RtlCfg),
+  %% hipe_rtl_cfg:pp(RtlCfg),
   RtlCfg0 = hipe_rtl_cfg:remove_unreachable_code(RtlCfg),
   RtlCfg1 = hipe_rtl_cfg:remove_trivial_bbs(RtlCfg0),
-  %%hipe_rtl_cfg:pp(RtlCfg1),
-  RtlCfg2 = rtl_ssa(RtlCfg1, Options),
-  %%hipe_rtl_cfg:pp(RtlCfg2),
-  RtlCfg3 = rtl_cse(MFA, RtlCfg2, Options),
-  %%hipe_rtl_cfg:pp(RtlCfg3),
-  RtlCfg4 = rtl_symbolic(RtlCfg3, Options),
-  %%hipe_rtl_cfg:pp(RtlCfg4),
-  RtlCfg5 = rtl_prop(RtlCfg4, Options),
-  rtl_liveness_pp(MFA,RtlCfg5, Options),
-  rtl_pp(MFA, RtlCfg5, Options),
-  debug("linearize: ~w, ~w~n", [MFA, hash(RtlCfg5)], Options),
-  LinearRTL1 = hipe_rtl_cfg:linearize(RtlCfg5),
+  %% hipe_rtl_cfg:pp(RtlCfg1),
+
+%  rtl_pp(MFA, RtlCfg1, Options),	%% TAKE ME OUT
+%  RtlCfg2 = rtl_lcm(RtlCfg1, Options),
+  RtlCfg2 = RtlCfg1,
+%  rtl_pp(MFA, RtlCfg2, Options),	%% TAKE ME OUT
+
+  RtlCfg3 = rtl_ssa(RtlCfg2, Options),
+  RtlCfg5 = rtl_symbolic(RtlCfg3, Options),
+  %% hipe_rtl_cfg:pp(RtlCfg4),
+  RtlCfg6 = rtl_prop(RtlCfg5, Options),
+  rtl_liveness_pp(MFA,RtlCfg6, Options),
+
+  rtl_pp(MFA, RtlCfg6, Options),	%% TAKE ME OUT
+  RtlCfg7 = rtl_lcm(RtlCfg6, Options),
+%  RtlCfg7 = RtlCfg6,
+  rtl_pp(MFA, RtlCfg7, Options),	%% TAKE ME OUT
+
+  %% rtl_pp(MFA, RtlCfg6, Options),
+  debug("linearize: ~w, ~w~n", [MFA, hash(RtlCfg7)], Options),
+  LinearRTL1 = hipe_rtl_cfg:linearize(RtlCfg7),
   LinearRTL2 = hipe_rtl_cleanup_const:cleanup(LinearRTL1),
-  %%hipe_rtl:pp(standard_io, LinearRTL2),
+  %% hipe_rtl:pp(standard_io, LinearRTL2),
   LinearRTL2.
 
 translate_to_rtl(Icode, Options) ->
@@ -384,24 +389,6 @@ translate_to_rtl(Icode, Options) ->
 initialize_rtl_cfg(LinearRTL, Options) ->
   ?option_time(hipe_rtl_cfg:init(LinearRTL), "to cfg", Options).
 
-rtl_cse(MFA, RtlCfg, Options) ->
-  case proplists:get_value(rtl_cse, Options) of
-    local ->
-      debug("cse (local): ~w~n", [MFA], Options),
-      ?option_time(hipe_rtl_cse:blocks(RtlCfg), "RTL CSE", Options);
-    ebb ->
-      debug("cse (ebb): ~w~n", [MFA], Options),
-      ?option_time(hipe_rtl_cse:ebb(RtlCfg), "RTL CSE", Options);
-    global ->
-      debug("cse (global): ~w~n", [MFA], Options),
-      ?option_time(hipe_rtl_cse:fix(RtlCfg), "RTL CSE", Options);
-    true ->
-      debug("cse (local): ~w~n", [MFA], Options),
-      ?option_time(hipe_rtl_cse:blocks(RtlCfg), "RTL CSE", Options);
-    _ ->
-      RtlCfg
-  end.
-
 rtl_symbolic(RtlCfg, _Options) ->
   RtlCfg1=
     case hipe_rtl_arch:safe_handling_of_registers() of
@@ -411,11 +398,6 @@ rtl_symbolic(RtlCfg, _Options) ->
 	RtlCfg
     end,
   hipe_rtl_symbolic:expand(RtlCfg1).
-
-%rtl_expand_gc(MFA, RtlCfg, Options) ->
-%  debug("expand gc: ~w~n", [MFA], Options),
-%  ?option_time(hipe_rtl_gctests:expand(RtlCfg),
-%	       "Expand GC-tests", Options).
 
 rtl_prop(RtlCfg, Options) ->
   case proplists:get_bool(rtl_prop, Options) of
@@ -519,6 +501,21 @@ rtl_ssa_unconvert(RtlCfgSSA, Options) ->
   ?option_time(hipe_rtl_ssa:unconvert(RtlCfgSSA),
 	       "RTL SSA un-convert", Options).
 
+%%---------------------------------------------------------------------
+
+rtl_lcm(RtlCfg, Options) ->
+  case proplists:get_bool(rtl_lcm, Options) of
+    true ->
+      ?opt_start_timer("RTL lazy code motion"),
+%      ?option_time(hipe_rtl_lcm:rtl_lcm(RtlCfg, Options),
+%		   "RTL lazy code motion", Options);
+      RtlCfg1 = hipe_rtl_lcm:rtl_lcm(RtlCfg, Options),
+      ?opt_stop_timer("RTL lazy code motion"),
+      RtlCfg1;
+    false ->
+      RtlCfg
+  end.
+  
 %%---------------------------------------------------------------------
 
 rtl_pp(MFA, RtlCfg, Options) ->

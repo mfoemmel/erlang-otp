@@ -40,12 +40,12 @@
 -record(eq_constraint, {type1, type2}).
 -record(call, {'fun', args}).
 -record(subtract, {type1, type2}).
--record(sup, {types}).
+-record(union, {types}).
 -record(inf, {types}).
 -record(cons, {head, tail}).
 -record(list, {contents}).
 
-%%-define(DEBUG, true).
+-define(DEBUG, true).
 
 -define(TYPE_DEPTH, 5).
 -define(RETURN_VAR, t_var(0)).
@@ -61,7 +61,7 @@ debug(_S, _A) ->
 
 cfg(Cfg, _Options) ->
   State = traverse_cfg(new_state(Cfg)),
-  %%hipe_icode_cfg:pp(state__cfg(State)),
+  hipe_icode_cfg:pp(state__cfg(State)),
   case solve_constraints(State) of
 %    ok -> ok;
     {ok, Map} ->
@@ -212,17 +212,17 @@ get_constr_from_ins(I, State) ->
 	  [Def] = Defs,
 	  [mk_subtype_constr_list(Args, [t_number(), t_number()]),
 	   mk_subtype_constr_list(Args, [Def, Def]),
-	   mk_sup_constr_eq(Def, Args)];
+	   mk_union_constr_eq(Def, Args)];
 	'-' ->
 	  [Def] = Defs,
 	  [mk_subtype_constr_list(Args, [t_number(), t_number()]),
 	   mk_subtype_constr_list(Args, [Def, Def]),
-	   mk_sup_constr_eq(Def, Args)];
+	   mk_union_constr_eq(Def, Args)];
 	'*' ->
 	  [Def] = Defs,
 	  [mk_subtype_constr_list(Args, [t_number(), t_number()]),
 	   mk_subtype_constr_list(Args, [Def, Def]),
-	   mk_sup_constr_eq(Def, Args)];
+	   mk_union_constr_eq(Def, Args)];
 	'/' ->
 	  [Def] = Defs,
 	  [mk_subtype_constr_list(Args, [t_number(), t_number()]),
@@ -305,7 +305,7 @@ handle_edges_out([Label|Left], EdgeMap, State) ->
 	      TmpConstr =
 		case gb_trees:lookup(Arg, state__map_in(State, Fail)) of
 		  {value, Var} ->
-		    [mk_sup_constr(hd(ArgVarsCurrent), [TrueType,Var])];
+		    [mk_union_constr(hd(ArgVarsCurrent), [TrueType,Var])];
 		  none ->
 		    mk_subtype_constr_list(ArgVarsCurrent, [TrueType])
 		end,
@@ -328,7 +328,8 @@ handle_edges_out([Label|Left], EdgeMap, State) ->
 	  false ->
 	    case state__is_legal_label(State, Fail) of
 	      false ->
-		{EdgeMap, mk_subtype_constr_list(ArgVarsCurrent, [TrueType])};
+		TmpConstr = mk_subtype_constr_list(ArgVarsCurrent, [TrueType]),
+		{EdgeMap, TmpConstr};
 	      true ->
 		LabelMap = [{Succ, TrueType}],
 		{add_edge_out_constr([{Arg, LabelMap}], Label, EdgeMap), []}
@@ -400,7 +401,7 @@ mk_succ_constraints(State, Label) ->
 		  [] -> Acc;
 		  [TVar] -> [mk_subtype_constr(gb_trees:get(Var, MapOut), TVar)
 			     |Acc];
-		  TVars1 -> [mk_sup_constr(gb_trees:get(Var, MapOut), TVars1)
+		  TVars1 -> [mk_union_constr(gb_trees:get(Var, MapOut), TVars1)
 			     |Acc]
 		end
 	    end,
@@ -512,7 +513,7 @@ mk_edge_in_constr_one_var(Var, LHS, MapsOut, EdgeMap) ->
 	case ordsets:from_list(TVars) of
 	  [] -> [];
 	  [TVar] -> [mk_subtype_constr(LHS, TVar)];
-	  TVars1 -> [mk_sup_constr(LHS, TVars1)]
+	  TVars1 -> [mk_union_constr(LHS, TVars1)]
 	end,
       %% Additional edge constraints
       Constr2 = 
@@ -524,7 +525,7 @@ mk_edge_in_constr_one_var(Var, LHS, MapsOut, EdgeMap) ->
 	      true ->
 		[mk_subtype_constr(LHS, t_sup(Cs1))];
 	      false ->
-		[mk_sup_constr(LHS, Cs1)]
+		[mk_union_constr(LHS, Cs1)]
 	    end
 	end,
       Constr1++Constr2
@@ -561,11 +562,11 @@ mk_eq_constr(T1, T2) ->
 %  [#subtype_constraint{type1 = T1, type2 = #subtract{type1 = T2, type2 = T3}},
 %   #subtype_constraint{type2 = T1, type1 = #subtract{type1 = T2, type2 = T3}}].
 
-mk_sup_constr(T1, List) ->
-  #subtype_constraint{type1 = T1, type2 = #sup{types=List}}.
+mk_union_constr(T1, List) ->
+  #subtype_constraint{type1 = T1, type2 = #union{types=List}}.
 
-mk_sup_constr_eq(T1, List) ->
-  #eq_constraint{type1 = T1, type2 = #sup{types=ordsets:from_list(List)}}.
+mk_union_constr_eq(T1, List) ->
+  #eq_constraint{type1 = T1, type2 = #union{types=ordsets:from_list(List)}}.
 
 mk_call_constr(Fun, Args) ->
   #call{'fun'=Fun, args=Args}.  
@@ -846,7 +847,7 @@ solve_loop_iterate(Nodes, Graph, Map) ->
 
 solve_loop([Node|Left], Graph, Map) ->
   case Node of
-    #sup{types = Ts} ->
+    #union{types = Ts} ->
       NewType = type_sup(lookup_type_list(Ts, Map)),
       solve_loop(Left, Graph, enter_type(Node, NewType, Map));
     _ ->
@@ -895,7 +896,7 @@ solve_constraints(_Node, Type, [], _Map) ->
 %%
 
 
-evaluate_type(#sup{types=Types}, Map) ->
+evaluate_type(#union{types=Types}, Map) ->
   t_sup([evaluate_type(T, Map)||T <- Types]);
 evaluate_type(#inf{types=Types}, Map) ->
   t_inf([evaluate_type(T, Map)||T <- Types]);
@@ -941,7 +942,7 @@ lookup_type(Node, Map) ->
   case t_is_var(Node) of
     true ->
       case gb_trees:lookup(Node, Map) of
-	none -> t_any();
+	none -> t_none();%t_any();
 	{value, Type} -> 
 	  case t_is_var(Type) of
 	    true -> lookup_type(Type, Map);
@@ -950,7 +951,7 @@ lookup_type(Node, Map) ->
       end;
     false ->
       case Node of
-	#sup{types=Ts} -> 
+	#union{types=Ts} -> 
 	  type_sup(lookup_type_list(Ts, Map));
 	_ -> Node
       end
@@ -974,14 +975,14 @@ enter_type(Node, Type, Map) ->
 type_is_const(Node) ->
   case Node of
     #inf{} ->        false;
-    #sup{} ->        false;
+    #union{} ->        false;
     #subtract{} ->   false;
     #call{} ->       false;
     #cons{} ->       false;
     _ ->             not t_is_var(Node)
   end.
 
-split_cons_or_nil(#sup{types=T}, Map) ->
+split_cons_or_nil(#union{types=T}, Map) ->
   Nil = ordsets:filter(fun(X)->t_is_nil(lookup_type(X, Map))end, T),
   Cons = ordsets:filter(fun(X)->type_is_cons(lookup_type(X, Map))end, T),
   case ordsets:union(Nil, Cons) of
@@ -1008,7 +1009,7 @@ type_sup(T1, T2) ->
 	true -> T1;
 	false ->
 	  case type_sup_1(T1, T2) of
-	    #sup{types=Ts} ->
+	    #union{types=Ts} ->
 	      NewTs =
 		case [X || X <- Ts, type_is_const(X)==true] of
 		  [] -> Ts;
@@ -1018,7 +1019,7 @@ type_sup(T1, T2) ->
 		end,
 	      case NewTs of
 		[T] -> T;
-		_ -> #sup{types=NewTs}
+		_ -> #union{types=NewTs}
 	      end;
 	    Other ->
 	      Other
@@ -1026,16 +1027,16 @@ type_sup(T1, T2) ->
       end
   end.
 
-type_sup_1(#sup{types=T1}, #sup{types=T2}) ->
-  #sup{types=ordsets:union(T1, T2)};
-type_sup_1(T1, #sup{types=T2}) ->
-  #sup{types=ordsets:add_element(T1, T2)};
-type_sup_1(#sup{types=T1}, T2) ->
-  #sup{types=ordsets:add_element(T2, T1)};
+type_sup_1(#union{types=T1}, #union{types=T2}) ->
+  #union{types=ordsets:union(T1, T2)};
+type_sup_1(T1, #union{types=T2}) ->
+  #union{types=ordsets:add_element(T1, T2)};
+type_sup_1(#union{types=T1}, T2) ->
+  #union{types=ordsets:add_element(T2, T1)};
 type_sup_1(#cons{head=H1, tail=T1}, #cons{head=H2, tail=T2}) ->
   #cons{head=type_sup(H1, H2), tail=type_sup(T1, T2)};
 type_sup_1(T1, T2) ->
-  #sup{types=ordsets:from_list([T1, T2])}.
+  #union{types=ordsets:from_list([T1, T2])}.
 
 
 type_inf(T, T) ->
@@ -1071,12 +1072,12 @@ type_inf_1(T1, #inf{types=T2}) ->
   #inf{types=ordsets:add_element(T1, T2)};
 type_inf_1(#inf{types=T1}, T2) ->
   #inf{types=ordsets:add_element(T2, T1)};
-type_inf_1(Sup = #sup{types=T1}, T2) ->
+type_inf_1(Sup = #union{types=T1}, T2) ->
   case ordsets:is_element(T2, T1) of
     true -> T2;
     false -> #inf{types=ordsets:from_list([Sup, T2])}
   end;
-type_inf_1(T1, Sup = #sup{types=T2}) ->
+type_inf_1(T1, Sup = #union{types=T2}) ->
   case ordsets:is_element(T1, T2) of
     true -> T1;
     false -> #inf{types=ordsets:from_list([Sup, T1])}
@@ -1188,15 +1189,11 @@ build_var_map([Scc|Left], Map) ->
   case Scc of
     [_] ->
       build_var_map(Left, Map);
-    Ordset ->
-      case [X || X <- Ordset, t_is_var(X)==true] of
-	[] -> build_var_map(Left, Map);
-	[_] -> build_var_map(Left, Map);
-	[ID|Tail] ->
-	  Fun = fun(X, Acc)->gb_trees:insert(X, ID, Acc) end,
-	  NewMap = lists:foldl(Fun, Map, Tail),
-	  build_var_map(Left, gb_trees:insert(ID, t_any(), NewMap))
-      end
+    [ID|Rest] = SCC ->
+      debug("Found the SCC: ~p\n", [SCC]),
+      Fun = fun(X, Acc)->gb_trees:insert(X, ID, Acc) end,
+      NewMap = lists:foldl(Fun, Map, Rest),
+      build_var_map(Left, gb_trees:insert(ID, t_any(), NewMap))
   end;
 build_var_map([], Map) ->
   Map.
@@ -1208,8 +1205,12 @@ find_sccs([Node|Left], Graph, Acc) ->
   {_, Visited1} = dfs(Node, Graph),
   {_, Visited2} = dfs_reverse(Node, Graph),
   SCC = ordsets:intersection(Visited1, Visited2),
-  SCC1 = [X || X <- SCC, t_is_var(X) == true],
-  find_sccs(ordsets:subtract(Left, SCC), Graph, [SCC1|Acc]);
+  case [X || X <- SCC, t_is_var(X) == true] of
+    [] ->
+      find_sccs(ordsets:subtract(Left, SCC), Graph, Acc);
+    SCC1 ->
+      find_sccs(ordsets:subtract(Left, SCC), Graph, [SCC1|Acc])
+  end;
 find_sccs([], _Graph, Acc) ->
   Acc.
 
@@ -1217,8 +1218,8 @@ replace_node(T, Map) ->
   case T of
     #cons{head=H, tail=Tail} ->
       #cons{head=replace_node(H, Map), tail=replace_node(Tail, Map)};
-    #sup{types=Types} ->
-      #sup{types=ordsets:from_list([replace_node(X, Map)||X<-Types])};
+    #union{types=Types} ->
+      #union{types=ordsets:from_list([replace_node(X, Map)||X<-Types])};
     #inf{types=Types} ->
       #inf{types=ordsets:from_list([replace_node(X, Map)||X<-Types])};
     #subtract{type1=T1, type2=T2} ->
@@ -1229,7 +1230,7 @@ replace_node(T, Map) ->
 	  case gb_trees:lookup(T, Map) of
 	    none -> T;
 	    {value, NewT1} -> 
-	      case t_is_var(NewT1) of
+	      case not t_is_any(NewT1) of
 		true -> NewT1;
 		false -> T
 	      end
@@ -1325,8 +1326,8 @@ format(#call{'fun'=Fun, args=Args}) ->
   io_lib:format("Call to ~p(~s)", [Fun, format_args(Args)]);
 format(#subtract{type1=T1, type2=T2}) ->
   io_lib:format("(~s \\ ~s)", [format(T1), format(T2)]);
-format(#sup{types=Types}) ->
-  io_lib:format("sup(~s)", [format_args(Types)]);
+format(#union{types=Types}) ->
+  io_lib:format("union(~s)", [format_args(Types)]);
 format(#inf{types=Types}) ->
   io_lib:format("inf(~s)", [format_args(Types)]);
 format(#cons{head=H, tail=T}) ->

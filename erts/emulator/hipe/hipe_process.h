@@ -29,7 +29,7 @@ struct hipe_process_state {
     Eterm *ncsp;		/* Saved C stack pointer. */
     unsigned int narity;
 #endif
-#if defined(__powerpc__)
+#if defined(__powerpc__) || defined(__ppc__)
     void (*nra)(void);		/* Native code return address. */
     unsigned int narity;	/* Arity of BIF call, for stack walks. */
 #endif
@@ -50,10 +50,10 @@ static __inline__ void hipe_init_process(struct hipe_process_state *p)
     p->nstgraylim = NULL;
     p->nstblacklim = NULL;
     p->ngra = NULL;
-#if defined(__sparc__) || defined(__powerpc__)
+#if defined(__sparc__) || defined(__powerpc__) || defined(__ppc__)
     p->nra = NULL;
 #endif
-#if defined(__i386__) || defined(__x86_64__) || defined(__powerpc__)
+#if defined(__i386__) || defined(__x86_64__) || defined(__powerpc__) || defined(__ppc__)
     p->narity = 0;
 #endif
 }

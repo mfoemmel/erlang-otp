@@ -32,7 +32,6 @@ DUBIOUS_ORIGINS = /undefined/environment/
 #
 
 TSP_APP = @TSP_APP@
-HIPE_APP = @HIPE_APP@
 SSL_APP = @SSL_APP@
 CRYPTO_APP = @CRYPTO_APP@
 

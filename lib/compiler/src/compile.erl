@@ -466,6 +466,7 @@ asm_passes() ->
      {iff,'S',{listing,"S"}},
      {iff,'to_asm',{done,"S"}},
 
+     {pass,beam_validator},
      ?pass(beam_asm)
      | binary_passes()].
 

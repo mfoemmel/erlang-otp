@@ -870,7 +870,7 @@ read_bchunks(Head, {From, To, L}, Min, Bs, ASz) ->
                     %% The last object may not be padded.
                     Pad = Min - size(Bin1),
                     NewBin = <<Bin1/binary, 0:Pad/unit:8>>,
-                        bchunks(Head, L, NewBin, Bs, ASz, From, To);
+                    bchunks(Head, L, NewBin, Bs, ASz, From, To);
                 _ ->
                     {error, premature_eof}
             end;
@@ -1446,9 +1446,9 @@ temp_file(Head, SizeT, N) ->
 %% Does not close Fd.
 fsck_input(Head, Fd, Cntrs, FileHeader) ->
     MaxSz0 = case FileHeader#fileheader.has_md5 of
-                 true -> 
+                 true when integer(FileHeader#fileheader.no_colls) -> 
                      ?POW(max_objsize(FileHeader#fileheader.no_colls));
-                 false ->
+                 _ ->
                      %% The file is not compressed, so the bucket size
                      %% cannot exceed the filesize, for all buckets.
                      case file:position(Fd, eof) of
@@ -1985,12 +1985,23 @@ eval_work_list(Head, [{Key,[{_Seq,{lookup,Pid}}]}]) ->
     MaxSize = maxobjsize(Head),
     Objs = case dets_utils:ipread(Head#head.fptr, SlotPos, MaxSize) of 
 	       {ok, {_BucketSz, _Pointer, Bin}} ->
-		   case lists:keysearch(Key, 1, per_key(Head, Bin)) of
-		       false ->
-			   [];
-		       {value, {_Key,_KS,_KB,O,Os}} ->
-			   get_objects([O | binobjs2terms(Os)])
-		   end;
+                   case catch per_key(Head, Bin) of
+                       {'EXIT', _Error} ->
+                           throw(dets_utils:corrupt_reason(Head, bad_object));
+                       KeyObjs ->
+                           case lists:keysearch(Key, 1, KeyObjs) of
+                               false ->
+                                   [];
+                               {value, {_Key,_KS,_KB,O,Os}} ->
+                                   case catch binobjs2terms(Os) of
+                                       {'EXIT', _Error} ->
+                                           throw(dets_utils:corrupt_reason
+                                                      (Head, bad_object));
+                                       Terms -> 
+                                           get_objects([O | Terms])
+                                   end
+                           end
+                   end;
 	       [] ->
 		   [];
 	       _Bad -> % eof or bad badly formed binary
@@ -2425,7 +2436,7 @@ scan_objs(Head, Bin, From, To, L, Ts, R, Type) ->
     case catch scan_skip(Bin, From, To, L, Ts, R, Type, 0) of
 	{'EXIT', _Reason} ->
 	    bad_object;
-       Reply = {more, _From1, _To, _L, _Ts, _R, Size} when Size > ?MAXCOLL ->
+        Reply = {more, _From1, _To, _L, _Ts, _R, Size} when Size > ?MAXCOLL ->
             case check_pread_arg(Size, Head) of
                 true -> Reply;
                 false -> bad_object
@@ -2437,10 +2448,10 @@ scan_objs(Head, Bin, From, To, L, Ts, R, Type) ->
 scan_skip(Bin, From, To, L, Ts, R, Type, Skip) ->
     From1 = From + Skip,
     case Bin of
-	_ when From1 =:= To ->
-	    if 
-		size(L) =:= 0 -> 
-		    {finished, Ts, L};
+        _ when From1 >= To ->
+            if
+                (From1 > To) or (size(L) =:= 0) ->
+                    {more, From1, To, L, Ts, R, 0};
 		true ->
 		    <<From2:32, To1:32, L1/binary>> = L,
 		    Skip1 = From2 - From,
@@ -2510,16 +2521,11 @@ slot_end(KO, From, To, L, Ts, R, Type, Size, NoObjs) ->
 	    case R + NoObjs of
 		R1 when R1 >= -1 ->
 		    From1 = From + Skip,
-		    if
-			size(L) =:= 0, From1 =:= To ->
-			    {finished, Ts, L};
-			true ->
-			    Bin1 = case KO of
-				       <<_:Skip/binary, B/binary>> -> B;
-				       _ -> <<>>
-						end,
-			    {stop, Bin1, From1, To, L, Ts}
-		    end;
+                    Bin1 = case KO of
+                               <<_:Skip/binary, B/binary>> -> B;
+                               _ -> <<>>
+                           end,
+                    {stop, Bin1, From1, To, L, Ts};
 		R1 ->
 		    scan_skip(KO, From, To, L, Ts, R1, Type, Skip)
 	    end

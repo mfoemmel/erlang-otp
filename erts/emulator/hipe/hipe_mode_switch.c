@@ -125,7 +125,7 @@ static void hipe_check_nstack(Process *p, unsigned nwords);
 #include "hipe_x86_glue.h"
 #elif defined(__x86_64__)
 #include "hipe_amd64_glue.h"
-#elif defined(__powerpc__)
+#elif defined(__powerpc__) || defined(__ppc__)
 #include "hipe_ppc_glue.h"
 #endif
 

@@ -28,11 +28,12 @@
 %% translation from Core Erlang to Icode, or are renamed/rewritten to a
 %% corresponding ICode primop; they only exist to help the translation.
 
+-define(PRIMOP_IDENTITY, identity).		% arity 1
 -define(PRIMOP_NOT, 'not').			% arity 1
 -define(PRIMOP_AND, 'and').			% arity 2
 -define(PRIMOP_OR, 'or').			% arity 2
+-define(PRIMOP_XOR, 'xor').			% arity 2
 -define(PRIMOP_ADD, '+').			% arity 2
--define(PRIMOP_IDENTITY, identity).		% arity 1
 -define(PRIMOP_SUB, '-').			% arity 2
 -define(PRIMOP_NEG, neg).			% arity 1
 -define(PRIMOP_MUL, '*').			% arity 2
@@ -67,9 +68,10 @@
 -define(PRIMOP_IS_PORT, 'is_port').		% arity 1
 -define(PRIMOP_IS_REFERENCE, 'is_reference').	% arity 1
 -define(PRIMOP_IS_TUPLE, 'is_tuple').		% arity 1
+-define(PRIMOP_IS_RECORD, 'is_record').		% arity 3
 -define(PRIMOP_EXIT, exit).			% arity 1
 -define(PRIMOP_THROW, throw).			% arity 1
--define(PRIMOP_ERROR, error).			% arity 1
+-define(PRIMOP_ERROR, error).			% arity 1,2
 -define(PRIMOP_RETHROW, raise).			% arity 2
 -define(PRIMOP_RECEIVE_SELECT, receive_select).	% arity 0
 -define(PRIMOP_RECEIVE_NEXT, receive_next).	% arity 0

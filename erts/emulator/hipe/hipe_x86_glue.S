@@ -279,7 +279,6 @@ x86_throw_to_native:
 	addl	$4, %esp
 	SWITCH_C_TO_ERLANG		# %esp updated by hipe_find_handler()
 	/* now invoke the handler */
-	movl	P_FVALUE(P), %eax
 	jmp	*P_NCALLEE(P)		# set by hipe_find_handler()
 
 /*

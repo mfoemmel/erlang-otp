@@ -25,7 +25,6 @@
 %% =====================================================================
 
 %% TODO: might need a "top" (`any') element for any-length value lists.
-%% TODO: lists need a better abstraction
 
 -module(cerl_messagean).
 
@@ -472,7 +471,7 @@ visit(T, L, St) ->
 	    X = unsafe(),
 	    Vars = bind_vars(try_vars(T), Xs1, St1#state.vars),
 	    {Xs2, St2} = visit(try_body(T), L, St1#state{vars = Vars}),
-	    EVars = bind_vars(try_evars(T), [X, X], St2#state.vars),
+	    EVars = bind_vars(try_evars(T), [X, X, X], St2#state.vars),
 	    {Xs3, St3} = visit(try_handler(T), L, St2#state{vars = EVars}),
 	    {join(Xs2, Xs3), St3};
 	'catch' ->

@@ -16,12 +16,6 @@
 #     $Id$
 #
 include $(ERL_TOP)/make/target.mk
-
-#ifeq ($(TYPE),debug)
-#ERL_COMPILE_FLAGS += -Ddebug -W
-ERL_COMPILE_FLAGS += -W
-#endif
-
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 # ----------------------------------------------------
@@ -74,11 +68,10 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
+ERL_FLAGS += +nowarn_unused_vars +nowarn_unused_function
 ERL_COMPILE_FLAGS += \
 	+'{parse_transform,sys_pre_attributes}' \
-	+'{attribute,insert,vsn,"mnemosyne_$(MNEMOSYNE_VSN)"}' \
-	-W
+	+'{attribute,insert,vsn,"mnemosyne_$(MNEMOSYNE_VSN)"}' 
 
 # ----------------------------------------------------
 # Targets

@@ -7,9 +7,9 @@
 %%  History  :	* 2001-10-25 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2004/10/28 05:13:11 $
-%%              $Revision: 1.22 $
+%%              $Author: kostis $
+%%              $Date: 2004/11/12 15:02:18 $
+%%              $Revision: 1.23 $
 %% ====================================================================
 %%  Exports  :
 %%              pp/1,        Pretty prints linear SPARC code.
@@ -18,9 +18,10 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_sparc_pp).
--export([pp/1,         %% Pretty prints linear SPARC code.
-	 pp/2,         %% -- "" -- To a device (file)
-	 pp_instr/1]). %% Pretty prints a SPARC instruction.
+-export([pp/1,		%% Pretty prints linear SPARC code.
+	 pp/2]).	%% -- "" -- To a device (file)
+%%-export([pp_instr/1]). %% Pretty prints a SPARC instruction.
+
 -include("../main/hipe.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -64,8 +65,8 @@ pp_instrs([I|Is], Dev, Fname) ->
   pp_instrs(Is, Dev, Fname).
 
 
-pp_instr(I) ->
-  pp_instr(I, standard_io, "").
+%% pp_instr(I) ->
+%%   pp_instr(I, standard_io, "").
 
 pp_instr(I, Dev, Pre) ->
   case hipe_sparc:type(I) of

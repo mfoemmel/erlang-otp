@@ -330,7 +330,7 @@ erts_first_process(Eterm modname, void* code, unsigned size, int argc, char** ar
      * We need a dummy parent process to be able to call erl_create_process().
      */
     erts_init_empty_process(&parent);
-#if defined(SHARED_HEAP) || defined(HYBRID)
+#if defined(SHARED_HEAP)
     parent.heap_sz = global_heap_sz;
     parent.heap = global_heap;
     parent.hend = global_hend;
@@ -347,7 +347,7 @@ erts_first_process(Eterm modname, void* code, unsigned size, int argc, char** ar
     args = CONS(hp, new_binary(&parent, code, size), args);
     hp += 2;
     args = CONS(hp, args, NIL);
-#if defined(SHARED_HEAP) || defined(HYBRID)
+#if defined(SHARED_HEAP)
     global_heap = parent.heap;
     global_htop = parent.htop;
     global_hend = parent.hend;
@@ -389,7 +389,7 @@ erl_first_process_otp(char* modname, void* code, unsigned size, int argc, char**
      */
 
     erts_init_empty_process(&parent);
-#if defined(SHARED_HEAP) || defined(HYBRID)
+#if defined(SHARED_HEAP)
     parent.heap_sz = global_heap_sz;
     parent.heap = global_heap;
     parent.hend = global_hend;
@@ -407,7 +407,7 @@ erl_first_process_otp(char* modname, void* code, unsigned size, int argc, char**
     args = CONS(hp, args, NIL);
     hp += 2;
     args = CONS(hp, env, args);
-#if defined(SHARED_HEAP) || defined(HYBRID)
+#if defined(SHARED_HEAP)
     global_heap = parent.heap;
     global_htop = parent.htop;
     global_hend = parent.hend;

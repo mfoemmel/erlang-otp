@@ -851,8 +851,14 @@ gen_encode_objectfields(ClassName,[{typefield,Name,OptOrMand}|Rest],
 		exit({error,{asn1,{"missing mandatory field in object",
 				   ObjName}}});
 	    {false,'OPTIONAL'} ->
-		EmitFuncClause("_"),
-		emit("   <<>>"),
+		EmitFuncClause("Val"),
+		emit(["   if",nl,
+		      "     list(Val) ->",nl,
+		      "       NewVal = list_to_binary(Val),",nl,
+		      "       [20,size(NewVal),NewVal];",nl,
+		      "     binary(Val) ->",nl,
+		      "       [20,size(Val),Val]",nl,
+		      "   end"]),
 		[];
 	    {false,{'DEFAULT',DefaultType}} ->
 		EmitFuncClause("Val"),
@@ -1060,8 +1066,8 @@ gen_decode_objectfields(ClassName,[{typefield,Name,OptOrMand}|Rest],
 		exit({error,{asn1,{"missing mandatory field in object",
 				   ObjName}}});
 	    {false,'OPTIONAL'} ->
-		EmitFuncClause("_"),
-		emit(["   asn1_NOVALUE"]),
+		EmitFuncClause("Bytes"),
+		emit(["   {Bytes,[]}"]),
 		[];
 	    {false,{'DEFAULT',DefaultType}} ->
 		EmitFuncClause("Bytes"),
@@ -1311,8 +1317,11 @@ gen_objset_enc(ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],
 	  {asis,Val},") ->",nl}),
     {InternalFunc,NewNthObj}=
 	case ObjName of
-	    no_name ->
+	    {no_mod,no_name} ->
 		gen_inlined_enc_funs(Fields,ClFields,ObjSName,NthObj);
+	    {ModName,Name} ->
+		emit(["    {'",ModName,"', 'enc_",Name,"'}"]),
+		{[],NthObj};
 	    _ ->
 		emit({"    fun 'enc_",ObjName,"'/3"}),
 		{[],NthObj}
@@ -1327,8 +1336,11 @@ gen_objset_enc(ObjSetName,UniqueName,
 	  {asis,Val},") ->",nl}),
     {InternalFunc,_}=
 	case ObjName of
-	    no_name ->
+	    {no_mod,no_name} ->
 		gen_inlined_enc_funs(Fields,ClFields,ObjSetName,NthObj);
+	    {ModName,Name} ->
+		emit(["    {'",ModName,"', 'enc_",Name,"'}"]),
+		{[],NthObj};
 	    _ ->
 		emit({"    fun 'enc_",ObjName,"'/3"}),
 		{[],NthObj}
@@ -1476,8 +1488,11 @@ gen_objset_dec(ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],ClName,
 	  {asis,Val},") ->",nl}),
     NewNthObj=
 	case ObjName of
-	    no_name ->
+	    {no_mod,no_name} ->
 		gen_inlined_dec_funs(Fields,ClFields,ObjSName,NthObj);
+	    {ModName,Name} ->
+		emit(["    {'",ModName,"', 'dec_",Name,"'}"]),
+		NthObj;
 	    _ ->
 		emit({"    fun 'dec_",ObjName,"'/4"}),
 		NthObj
@@ -1490,8 +1505,10 @@ gen_objset_dec(ObjSetName,UniqueName,[{ObjName,Val,Fields}],_ClName,
     emit({"'getdec_",ObjSetName,"'(",{asis,UniqueName},",",
 	  {asis,Val},") ->",nl}),
     case ObjName of
-	no_name ->
+	{no_mod,no_name} ->
 	    gen_inlined_dec_funs(Fields,ClFields,ObjSetName,NthObj);
+	{ModName,Name} ->
+	    emit(["    {'",ModName,"', 'dec_",Name,"'}"]);
 	_ ->
 	    emit({"    fun 'dec_",ObjName,"'/4"})
     end,

@@ -21,7 +21,7 @@
 -ifdef(BIN_PMATCH_DEBUG).
 -export([pp/1, full_size/1, a_height/1, max_height/1, read_seg/4]).
 -endif.
-
+-include("cerl_hipe_primops.hrl").
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Record definitions and access functions 
@@ -194,6 +194,7 @@ add_offset_to_bin(BinClauses) ->
   {ClauseTree, _Hash}=adapt(BClause0, #hash_cons{}, ITree),
   #binary_match{clause_tree=ClauseTree, max_tag=MaxTag}.
 
+ 
 %%==========================================================================
 %%
 %% iterate_binclauses(Clauses) Frees segments from their context and creates
@@ -472,8 +473,12 @@ adapt(BClause, Hash, ITree) ->
 
 adapt0(#b_clause{segments=[], matches=Matches, guard=Guard, body=Body, next_clause=NextClause}, 
        Hash,  ITree) ->
+  Ref = cerl:concrete(get_ref(Guard)),
+  NewRef = make_newref(Ref),
+  NewGuard = update_guard(Guard, NewRef),
+  NewBody = update_body(Body, Ref, NewRef),
   {Fail, Hash1} = adapt(NextClause, Hash, ITree),
-  {#clause_tree{instr=#bin_guard{matches=Matches,label=Guard}, success=Body, fail=Fail}, Hash1};
+  {#clause_tree{instr=#bin_guard{matches=Matches,label=NewGuard}, success=NewBody, fail=Fail}, Hash1};
 
 adapt0(BClause, Hash, ITree) ->
   BinSeg = choose_binseg(BClause),
@@ -1216,6 +1221,48 @@ instr_type(Instr) ->
     #match_group{} ->
       match_group
   end.
+
+get_ref(Guard) ->
+  [Arg] = cerl:primop_args(Guard),
+  Arg.
+
+make_newref(Ref) ->
+  case get(joint_unique_ref) of
+    undefined ->
+      put(joint_unique_ref, 1),
+      {Ref, 0};
+    N ->
+      put(joint_unique_ref, N+1),
+      {Ref, N}
+  end.
+
+update_guard(Guard, NewRef) ->
+  cerl:update_c_primop(Guard,cerl:primop_name(Guard), 
+		       [cerl:abstract(NewRef)]).
+
+update_body(Expr, Ref, NewRef) ->
+  Fun =
+    fun(E) ->
+	case cerl:type(E) of
+	  primop ->
+	    case {cerl:atom_val(cerl:primop_name(E)), cerl:primop_args(E)} of
+	      {?PRIMOP_GOTO_LABEL, [Arg]} ->
+		case cerl:concrete(Arg) of
+		  Ref ->
+		    cerl:update_c_primop(E,cerl:primop_name(E), 
+					 [cerl:abstract(NewRef)]);
+		  _X ->
+		    %% io:format("X:~w Ref:~w~n", [_X, Ref]),
+		    E
+		end;
+	      _ ->
+		E
+	    end;
+	  _ ->
+	    E
+	end
+    end,
+  cerl_trees:map(Fun, Expr).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%

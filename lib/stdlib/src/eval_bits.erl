@@ -12,9 +12,9 @@
 %%% need, and keep the tail as a binary.
 
 %%% expr_grp/5 returns {value, Binary, New_bindings}.
-%%% match_bits/6 returns either {match, New_bindings} or 'nomatch',
-%%% or throws 'invalid' (if a pattern is illegal - this can only happen
-%%% if lint hasn't been run).
+%%% match_bits/6 returns either {match, New_bindings} or throws one of
+%%% 'nomatch' or 'invalid' (the latter if a pattern is illegal - this 
+%%% can only happen if lint hasn't been run).
 %%% Their last argument should be 'true' if type defaulting should be
 %%% done, 'false' otherwise (e.g., if sys_pre_expand has already done it).
 
@@ -64,14 +64,14 @@ maketype(Size0, Options0, false) ->
 expr_bit({bin_element, _, {string, _, S}, default, default}, Bs0, _Fun,
 	 _Call_maketype) ->
     {bytes_to_bits(S), Bs0};
-expr_bit({bin_element, Line, E, Size0, Options0}, Bs0, Fun, Call_maketype) ->
-    format("bit expr ~w~n", [{bin_element, Line, E, Size0, Options0}]),
+expr_bit({bin_element, _Line, E, Size0, Options0}, Bs0, Fun, Call_maketype) ->
+    %%format("bit expr ~w~n", [{bin_element, _Line, E, Size0, Options0}]),
     {value, V, Bs1} = Fun(E, Bs0),
     {Size1, Options} = maketype(Size0, Options0, Call_maketype),
     {value, Size, Bs} = Fun(Size1, Bs1),
-    format("bit expr ~w~n", [{bin_element, x, V, Size, Options}]),
+    %%format("bit expr ~w~n", [{bin_element, x, V, Size, Options}]),
     Bitl = to_binary(V, Size, Options),
-    format("bit list ~w~n", [Bitl]),
+    %%format("bit list ~w~n", [Bitl]),
     {Bitl, Bs}.
 
 size_or_all(all, All) -> All;
@@ -182,7 +182,7 @@ match_bits(Fs, Bin, Bs0, BBs, Mfun, Efun, Call_maketype) ->
     case catch match_bits1(Fs, Bin, Bs0, BBs, Mfun, Efun, Call_maketype) of
 	{match,Bs} -> {match,Bs};
 	invalid -> throw(invalid);
-	_Error -> nomatch
+	_Error -> throw(nomatch)
     end.
 
 match_bits1([], <<>>, Bs, _BBs, _Mfun, _Efun, _Call_maketype) -> {match,Bs};
@@ -246,8 +246,8 @@ match_thing(float, Opts, Size, Bin) ->
     Bits1 = from_little_endian(Bits0, Opts),
     <<Float:Size/float>> = list_to_binary(bits_to_bytes(Bits1)),
     {Float,Tail};
-match_thing(Type, Opts, Size, Bin) ->
-    erlang:display({Type,Opts,Size,Bin}),
+match_thing(_Type, _Opts, _Size, _Bin) ->
+    %%erlang:display({_Type,_Opts,_Size,_Bin}),
     error(badarg).
 
 match_check_size({var,_,V}, Bs) -> 
@@ -255,6 +255,7 @@ match_check_size({var,_,V}, Bs) ->
         {value,_} -> ok;
 	unbound -> throw(invalid) % or, rather, error({unbound,V})
     end;
+match_check_size({atom,_,all}, _Bs) -> ok;
 match_check_size({integer,_,_}, _Bs) -> ok;
 match_check_size({value,_,_}, _Bs) -> ok;	%From the debugger.
 match_check_size(_, _Bs) -> throw(invalid).
@@ -289,8 +290,9 @@ sublist([], 0) ->
 sublist([_|_], 0) ->
     [].
 
-
+-ifdef(debug).
 %%% Trace output.
 format(_Fmt, _Args) ->
-%    io:format(_Fmt, _Args),
+    io:format(_Fmt, _Args),
     ok.
+-endif.

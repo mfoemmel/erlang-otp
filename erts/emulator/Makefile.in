@@ -86,6 +86,12 @@ endif
 endif
 endif
 
+OPSYS=@OPSYS@
+sol2CFLAGS=
+linuxCFLAGS=
+darwinCFLAGS=-DDARWIN
+noopsysCFLAGS=
+OPSYSCFLAGS=$($(OPSYS)CFLAGS)
 ARCH=@ARCH@
 ultrasparcCFLAGS=-Wa,-xarch=v8plusa
 x86CFLAGS=
@@ -95,7 +101,9 @@ noarchCFLAGS=
 ARCHCFLAGS=$($(ARCH)CFLAGS)
 
 ifdef HIPE_ENABLED
+ifeq ($(OPSYS),linux)
 ppcBEAMLDFLAGS=-Wl,-m,elf32ppc
+endif
 HIPEBEAMLDFLAGS=$($(ARCH)BEAMLDFLAGS)
 endif
 
@@ -279,16 +287,12 @@ generate: $(TARGET)/beam_opcodes.h $(TARGET)/erl_bif_table.c \
 		$(TARGET_TYPE_DIR)/erl_alloc_types.h \
 		$(HIPE_GENERATE)
 endif
-ifdef HIPE_ENABLED
 HIPE_GENERATE = $(BINDIR)/hipe_mkliterals$(TYPEMARKER)
-endif
 
-ifdef HIPE_ENABLED
 generate: $(TARGET)/hipe_x86_asm.h
 generate: $(TARGET)/hipe_amd64_asm.h
 generate: $(TARGET)/hipe_ppc_asm.h
 generate: $(TARGET_TYPE_DIR)/hipe_literals.h
-endif
 
 # opcode table
 
@@ -638,10 +642,10 @@ OBJS_ELIB = 	$(patsubst %.o,%.elib.o,$(MOD_OBJS_ELIB)) \
 # HiPE section
 
 $(TARGET)/%.S: hipe/%.m4
-	m4 -DTARGET=$(TARGET) $< > $@
+	m4 -DTARGET=$(TARGET) -DOPSYS=$(OPSYS) $< > $@
 
 $(TARGET)/%.h: hipe/%.m4
-	m4 -DTARGET=$(TARGET) $< > $@
+	m4 -DTARGET=$(TARGET) -DOPSYS=$(OPSYS) $< > $@
 
 $(OBJDIR)/%.o: $(TARGET)/%.S
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@

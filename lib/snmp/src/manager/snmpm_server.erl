@@ -50,7 +50,7 @@
 	 code_change/3, terminate/2]).
 
 %% GCT exports
--export([gct_init/2, gct/3]).
+-export([gct_init/1, gct/2]).
 
 
 -include("snmp_debug.hrl").
@@ -96,6 +96,8 @@
 	 mini_mib
 	}
        ).
+
+-record(gct, {parent, state = idle, timeout}).
 
 -record(request, 
 	{id, 
@@ -583,7 +585,7 @@ handle_info({'DOWN', _MonRef, process, Pid, _Reason},
 	    #state{note_store = Pid, 
 		   net_if     = NetIf,
 		   net_if_mod = Mod} = State) ->
-    ?vlog("received 'DOWN' message regarding net_if", []),
+    ?vlog("received 'DOWN' message regarding note_store", []),
     {ok, Prio} = snmpm_config:system_info(prio),
     {NoteStore, Ref} = do_init_note_store(Prio),
     Mod:note_store(NetIf, NoteStore),
@@ -594,6 +596,14 @@ handle_info({'DOWN', MonRef, process, _Pid, _Reason}, State) ->
     ?vlog("received 'DOWN' message", []),
     handle_down(MonRef),
     {noreply, State};
+
+
+handle_info({'EXIT', Pid, Reason}, #state{gct = Pid} = State) ->
+    ?vlog("received 'EXIT' message from the GCT (~p) process: "
+	  "~n   ~p", [Reason]),
+    {ok, Timeout} = snmpm_config:system_info(server_timeout),
+    {ok, GCT} = gct_start(Timeout),
+    {noreply, State#state{gct = GCT}};
 
 
 handle_info(Info, State) ->
@@ -620,7 +630,8 @@ code_change(_Vsn, #state{gct = GCT} = State, _Extra) ->
 %% Terminate
 %%----------------------------------------------------------
                                                                               
-terminate(_Reason, #state{gct = GCT}) ->
+terminate(Reason, #state{gct = GCT}) ->
+    ?vdebug("terminate: ~p",[Reason]),
     gct_stop(GCT),
     snmpm_misc_sup:stop_note_store(),
     snmpm_misc_sup:stop_net_if(),
@@ -1368,7 +1379,7 @@ handle_snmp_inform(Pdu, Addr, Port, _State) ->
 		Error ->
 		    %% Oh crap, use the default user
 		    ?vlog("[inform] failed retreiving user info for user ~p:"
-			  " ~n   ~p", [UserId, Error]),
+			  "~n   ~p", [UserId, Error]),
 		    case snmpm_config:user_info() of
 			{ok, DefUserId, DefMod, DefData} ->
 			    handle_inform(DefUserId, DefMod, Addr, Port, 
@@ -1675,16 +1686,30 @@ var_and_value_to_varbind({Oid, Value}, MiniMIB) ->
 	     variabletype = oid2type(Oid, MiniMIB),
 	     value        = Value}.
 
-char_to_type(o) ->
-    'OBJECT IDENTIFIER';
 char_to_type(i) ->
     'INTEGER';
 char_to_type(u) ->
     'Unsigned32';
 char_to_type(g) -> % Gauge, Gauge32
     'Unsigned32';
+char_to_type(b) -> 
+    'BITS';
+char_to_type(ia) -> 
+    'IpAddress';
+char_to_type(op) -> 
+    'Opaque';
+char_to_type(c32) -> 
+    'Counter32';
+char_to_type(c64) -> 
+    'Counter64';
+char_to_type(tt) -> 
+    'TimeTicks';
+char_to_type(o) ->
+    'OBJECT IDENTIFIER';
 char_to_type(s) ->
-    'OCTET STRING'.
+    'OCTET STRING';
+char_to_type(C) ->
+    throw({error, {invalid_value_type, C}}).
 
 
 alias2oid(AliasName, MiniMIB) when atom(AliasName) ->
@@ -1696,8 +1721,10 @@ alias2oid(AliasName, MiniMIB) when atom(AliasName) ->
     end.
 
 oid2type(Oid, MiniMIB) ->
-    oid2type(Oid, MiniMIB, dummy).
+    oid2type(Oid, MiniMIB, utter_nonsense).
 
+oid2type(_Oid, [], utter_nonsense) ->
+    throw({error, no_type});
 oid2type(_Oid, [], Type) ->
     Type;
 oid2type(Oid, [{Oid2, _, Type}|MiniMIB], Res) when Oid2 =< Oid ->
@@ -1765,7 +1792,8 @@ version(v3) ->
 
 gct_start(Timeout) ->
     ?vdebug("start gc timer process (~p)", [Timeout]),    
-    proc_lib:start_link(?MODULE, gct_init, [self(), Timeout]).
+    State = #gct{parent = self(), timeout = Timeout},
+    proc_lib:start_link(?MODULE, gct_init, [State]).
 
 gct_stop(GCT) ->
     GCT ! {stop, self()}.
@@ -1779,11 +1807,11 @@ gct_deactivate(GCT) ->
 gct_code_change(GCT) ->
     GCT ! {code_change, self()}.
 
-gct_init(Parent, Timeout) ->
+gct_init(#gct{parent = Parent, timeout = Timeout} = State) ->
     proc_lib:init_ack(Parent, {ok, self()}),
-    gct(Parent, idle, Timeout).
+    gct(State, Timeout).
 
-gct(Parent, active, Timeout) ->
+gct(#gct{parent = Parent, state = active} = State, Timeout) ->
     T = t(),
     receive
 	{stop, Parent} ->
@@ -1791,35 +1819,47 @@ gct(Parent, active, Timeout) ->
 
 	%% This happens when a new request is received.
 	{activate, Parent}  ->
-	    NewTimeout = 
-		case Timeout - (t() - T) of
-		    NewT when NewT > 0 ->
-			NewT;
-		    _ ->
-			0
-		end,
-	    ?MODULE:gct(Parent, active, NewTimeout); 
+	    ?MODULE:gct(State, new_timeout(Timeout, T)); 
 	{deactivate, Parent} ->
-	    ?MODULE:gct(Parent, idle, Timeout);
+	    %% Timeout is of no consequence in the idle state, 
+	    %% but just to be sure
+	    NewTimeout = State#gct.timeout,
+	    ?MODULE:gct(State#gct{state = idle}, NewTimeout);
 	{code_change, Parent} ->
-	    ?MODULE:gct(Parent, active, Timeout);
+	    ?MODULE:gct(State, new_timeout(Timeout, T));
 	{'EXIT', Parent, _Reason} ->
-	    ok
+	    ok;
+	_ -> % Crap
+	    ?MODULE:gct(State, Timeout)
     after Timeout ->
 	    Parent ! gc_timeout,
-	    ?MODULE:gct(Parent, active, Timeout)
+	    NewTimeout = State#gct.timeout,
+	    ?MODULE:gct(State, NewTimeout)
     end;
 
-gct(Parent, idle, Timeout) ->
+gct(#gct{parent = Parent, state = idle} = State, Timeout) ->
     receive
 	{stop, Parent} ->
 	    ok;
+	{deactivate, Parent} ->
+	    ?MODULE:gct(State, Timeout);
 	{activate, Parent} ->
-	    ?MODULE:gct(Parent, active, Timeout);
+	    NewTimeout = State#gct.timeout,
+	    ?MODULE:gct(State#gct{state = active}, NewTimeout);
 	{code_change, Parent} ->
-	    ?MODULE:gct(Parent, idle, Timeout);
+	    ?MODULE:gct(State, Timeout);
 	{'EXIT', Parent, _Reason} ->
-	    ok
+	    ok;
+	_ -> % Crap
+	    ?MODULE:gct(State, Timeout)
+    end.
+
+new_timeout(T1, T2) ->
+    case T1 - (t() - T2) of
+	T when T > 0 ->
+	    T;
+	_ ->
+	    0
     end.
 
 %%----------------------------------------------------------------------

@@ -1126,7 +1126,7 @@ struct hipe_mfa_info {
     void *local_address;
     Eterm *beam_code;
     Uint orig_beam_op;
-#ifdef __powerpc__
+#if defined(__powerpc__) || defined(__ppc__)
     void *trampoline;
 #endif
 };
@@ -1187,7 +1187,7 @@ static struct hipe_mfa_info *hipe_mfa_info_table_alloc(Eterm m, Eterm f, unsigne
     res->local_address = NULL;
     res->beam_code = NULL;
     res->orig_beam_op = 0;
-#ifdef __powerpc__
+#if defined(__powerpc__) || defined(__ppc__)
     res->trampoline = NULL;
 #endif
 
@@ -1270,7 +1270,7 @@ static void hipe_mfa_set_na(Eterm m, Eterm f, unsigned int arity, void *address,
 	p->remote_address = address;
 }
 
-#ifdef __powerpc__
+#if defined(__powerpc__) || defined(__ppc__)
 void *hipe_mfa_get_trampoline(Eterm m, Eterm f, unsigned int arity)
 {
     struct hipe_mfa_info *p = hipe_mfa_info_table_put(m, f, arity);
@@ -1505,4 +1505,84 @@ void hipe_patch_address(Uint *address, Eterm patchtype, Uint value)
 		__FUNCTION__, patchtype);
 	return;
     }
+}
+
+struct modinfo {
+    HashBucket bucket;		/* bucket.hvalue == atom_val(the module name) */
+    unsigned int code_size;
+};
+
+static Hash modinfo_table;
+
+static HashValue modinfo_hash(void *tmpl)
+{
+    Eterm mod = (Eterm)tmpl;
+    return atom_val(mod);
+}
+
+static int modinfo_cmp(void *tmpl, void *bucket)
+{
+    /* bucket->hvalue == modinfo_hash(tmpl), so just return 0 (match) */
+    return 0;
+}
+
+static void *modinfo_alloc(void *tmpl)
+{
+    struct modinfo *p;
+
+    p = (struct modinfo*)erts_alloc(ERTS_ALC_T_HIPE, sizeof(*p));
+    p->code_size = 0;
+    return &p->bucket;
+}
+
+static void init_modinfo_table(void)
+{
+    HashFunctions f;
+    static int init_done = 0;
+
+    if (init_done)
+	return;
+    init_done = 1;
+    f.hash = (H_FUN) modinfo_hash;
+    f.cmp = (HCMP_FUN) modinfo_cmp;
+    f.alloc = (HALLOC_FUN) modinfo_alloc;
+    f.free = (HFREE_FUN) NULL;
+    hash_init(ERTS_ALC_T_HIPE, &modinfo_table, "modinfo_table", 11, f);
+}
+
+BIF_RETTYPE hipe_bifs_update_code_size_3(BIF_ALIST_3)
+{
+    struct modinfo *p;
+    Sint code_size;
+    
+    init_modinfo_table();
+
+    if (is_not_atom(BIF_ARG_1) ||
+	is_not_small(BIF_ARG_3) ||
+	(code_size = signed_val(BIF_ARG_3)) < 0)
+	BIF_ERROR(BIF_P, BADARG);
+
+    p = (struct modinfo*)hash_put(&modinfo_table, (void*)BIF_ARG_1);
+
+    if (is_nil(BIF_ARG_2))	/* some MFAs, not whole module */
+	p->code_size += code_size;
+    else			/* whole module */
+	p->code_size = code_size;
+    BIF_RET(NIL);
+}
+
+BIF_RETTYPE hipe_bifs_code_size_1(BIF_ALIST_1)
+{
+    struct modinfo *p;
+    unsigned int code_size;
+
+    init_modinfo_table();
+
+    if (is_not_atom(BIF_ARG_1))
+	BIF_ERROR(BIF_P, BADARG);
+
+    p = (struct modinfo*)hash_get(&modinfo_table, (void*)BIF_ARG_1);
+
+    code_size = p ? p->code_size : 0;
+    BIF_RET(make_small(code_size));
 }

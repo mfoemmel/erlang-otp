@@ -227,13 +227,6 @@ visit_call(Dst, Args, Fun, Cont, Fail, Environment) ->
        % XXX: If the put (in hipe.erl) is changed, replace with below:
        % Options = get(hipe_options),
        % ?when_option(hipe_const_prop_warnings, Options, 
-          case get(warn_expression_throws_exception) of
-            true -> 
-              ?WARNING_MSG("Constant propagator detected that ~w will fail at"
-                " runtime in function ~w:~w/~w\n",
-                [Fun, Module, Function, Arity]);
-            false -> ok
-          end,
 	  FlowWork = Fail,
 	  {Environment1, SSAWork} =
 	    update_lattice_value({Dst, bottom}, Environment);
@@ -415,6 +408,10 @@ evaluate_type_const(Type, [Arg|Left]) ->
       {{tuple, N}, T} when is_tuple(T), size(T) == N -> true;
       {atom,       A} when is_atom(A) -> true;
       {{atom, A},  A} when is_atom(A) -> true;
+      {{record, A, S}, R} when is_tuple(R), 
+			       size(R) == S, 
+			       element(1, R) =:= A -> true;
+      {{record, _, _}, _} -> false;
       _                -> bottom
     end,
   case Test of

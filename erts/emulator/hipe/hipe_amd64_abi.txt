@@ -94,7 +94,6 @@ Notes:
     the performance impact of using 64-bit immediates should be minor.
 
 Stack Frame Layout
-Exceptions
 Garbage Collection Interface
 BIFs
 Stacks and Unix Signal Handlers

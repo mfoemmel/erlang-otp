@@ -14,13 +14,15 @@ SHELL=/bin/sh
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
-#
+ifdef HIPE_ENABLED
+HIPE_SUBDIRS = regalloc sparc ppc x86 amd64 opt tools
+else
+HIPE_SUBDIRS =
+endif
+
 # "rtl" below must be the first directory so that file rtl/hipe_literals.hrl
 # which is needed by many other HiPE files is built first
-#
-
-SUB_DIRECTORIES = rtl main cerl icode flow regalloc sparc ppc x86 amd64 \
-		  opt misc util tools
+SUB_DIRECTORIES = rtl misc main cerl icode flow util $(HIPE_SUBDIRS)
 
 #
 # Default Subdir Targets
@@ -31,7 +33,7 @@ include $(ERL_TOP)/make/otp_subdir.mk
 # It is not pretty, but it will have to do for now.
 docs:
 	@if [ -d $(ERL_TOP)/lib/edoc/ebin ]; then \
-	  erl -noshell -pa $(ERL_TOP)/lib/edoc/ebin $(ERL_TOP)/lib/syntax_tools/ebin $(ERL_TOP)/lib/xmerl/ebin -run edoc_run application 'hipe' '"."' '[{title,"The HiPE Compiler"},new,no_packages,preprocess]' -s init stop ; \
+	  erl -noshell -pa $(ERL_TOP)/lib/edoc/ebin $(ERL_TOP)/lib/syntax_tools/ebin $(ERL_TOP)/lib/xmerl/ebin -run edoc_run application 'hipe' '"."' '[new,no_packages]' -s init stop ; \
 	fi
 
 edocs: docs

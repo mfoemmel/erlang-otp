@@ -126,7 +126,7 @@ post_beam_load(Mod) ->
 %%========================================================================
 
 version_check(Version, Mod) ->
-  Ver = ?VERSION(),
+  Ver = ?VERSION_STRING(),
   case Version < Ver of
     true -> 
       ?msg("WARNING: Module (~w) has version ~w\n", [Mod, Version]);
@@ -179,7 +179,7 @@ load_common(Mod, Bin, Beam, OldReferencesToPatch) ->
   %% Find callees for which we may need trampolines.
   CalleeMFAs = find_callee_mfas(Refs),
   %% Write the code to memory.
-  {CodeAddress,Trampolines} = enter_code(CodeSize, CodeBinary, CalleeMFAs),
+  {CodeAddress,Trampolines} = enter_code(CodeSize, CodeBinary, CalleeMFAs, Mod, Beam),
   %% Construct CalleeMFA-to-trampoline mapping.
   TrampolineMap = mk_trampoline_map(CalleeMFAs, Trampolines),
   %% Patch references to code labels in data seg.
@@ -344,11 +344,12 @@ export_funs(Mod, Beam, Addresses, ClosuresToPatch) ->
 
 %%========================================================================
 %% Patching 
-%%  @spec patch(refs(), BaseAddress:integer(), ConstAndZone:term(), Addresses:term())->
-%%   @type refs()=[{RefType:integer(), Reflist:reflist()} | refs()]
+%%  @spec patch(refs(), BaseAddress::integer(), ConstAndZone::term(),
+%%              Addresses::term(), TrampolineMap::term())-> term()
+%%   @type refs()=[{RefType::integer(), Reflist::reflist()} | refs()]
 %%
-%%   @type reflist()=   [{Data:term(), Offsets:offests()}|reflist()]
-%%   @type offsets()=   [Offset:integer() | offsets()]
+%%   @type reflist()=   [{Data::term(), Offsets::offests()}|reflist()]
+%%   @type offsets()=   [Offset::integer() | offsets()]
 %% @doc
 %%  The patchlist is a list of lists of patches of a type.
 %%  For each type the list of references is sorted so that several
@@ -892,8 +893,9 @@ mfa_to_address(_, [], _) -> false.
 %% ____________________________________________________________________
 %% 
 
-enter_code(CodeSize, CodeBinary, CalleeMFAs) ->
+enter_code(CodeSize, CodeBinary, CalleeMFAs, Mod, Beam) ->
   true = size(CodeBinary) =:= CodeSize,
+  hipe_bifs:update_code_size(Mod, Beam, CodeSize),
   {CodeAddress,Trampolines} = hipe_bifs:enter_code(CodeBinary, CalleeMFAs),
   ?ASSERT(init_assert_patch(CodeAddress, size(CodeBinary))),
   {CodeAddress,Trampolines}.

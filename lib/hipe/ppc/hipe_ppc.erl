@@ -10,6 +10,7 @@
 	 temp_reg/1,
 	 temp_type/1,
 	 temp_is_allocatable/1,
+	 temp_is_precoloured/1,
 
 	 mk_simm16/1,
 	 mk_uimm16/1,
@@ -93,6 +94,23 @@
 
 	 mk_unary/3,
 
+	 mk_lfd/3,
+	 mk_lfdx/3,
+	 mk_fload/3,
+
+	 mk_stfd/3,
+	 mk_stfdx/3,
+	 mk_fstore/3,
+
+	 mk_fp_binary/4,
+
+	 mk_fp_unary/3,
+
+	 mk_pseudo_fmove/2,
+	 is_pseudo_fmove/1,
+	 pseudo_fmove_dst/1,
+	 pseudo_fmove_src/1,
+
 	 mk_defun/8,
 	 defun_mfa/1,
 	 defun_formals/1,
@@ -115,6 +133,11 @@ is_temp(X) -> case X of #ppc_temp{} -> true; _ -> false end.
 temp_reg(#ppc_temp{reg=Reg}) -> Reg.
 temp_type(#ppc_temp{type=Type}) -> Type.
 temp_is_allocatable(#ppc_temp{allocatable=A}) -> A.
+temp_is_precoloured(#ppc_temp{reg=Reg,type=Type}) ->
+  case Type of
+    'double' -> hipe_ppc_registers:is_precoloured_fpr(Reg);
+    _ -> hipe_ppc_registers:is_precoloured_gpr(Reg)
+  end.
 
 mk_simm16(Value) -> #ppc_simm16{value=Value}.
 mk_uimm16(Value) -> #ppc_uimm16{value=Value}.
@@ -263,6 +286,38 @@ mk_storex(StxOp, Src, Base1, Base2) ->
   #storex{stxop=StxOp, src=Src, base1=Base1, base2=Base2}.
 
 mk_unary(UnOp, Dst, Src) -> #unary{unop=UnOp, dst=Dst, src=Src}.
+
+mk_lfd(Dst, Disp, Base) -> #lfd{dst=Dst, disp=Disp, base=Base}.
+mk_lfdx(Dst, Base1, Base2) -> #lfdx{dst=Dst, base1=Base1, base2=Base2}.
+mk_fload(Dst, Offset, Base) -> % may clobber hipe_ppc_registers:temp2()
+  if Offset >= -32768, Offset =< 32767 ->
+      [mk_lfd(Dst, Offset, Base)];
+     true ->
+      Index = mk_temp(hipe_ppc_registers:temp2(), 'untagged'),
+      [mk_li(Index, Offset),
+       mk_lfdx(Dst, Base, Index)]
+  end.
+
+mk_stfd(Src, Disp, Base) -> #stfd{src=Src, disp=Disp, base=Base}.
+mk_stfdx(Src, Base1, Base2) -> #stfdx{src=Src, base1=Base1, base2=Base2}.
+mk_fstore(Src, Offset, Base) -> % may clobber hipe_ppc_registers:temp2()
+  if Offset >= -32768, Offset =< 32767 ->
+      [mk_stfd(Src, Offset, Base)];
+     true ->
+      Index = mk_temp(hipe_ppc_registers:temp2(), 'untagged'),
+      [mk_li(Index, Offset),
+       mk_stfdx(Src, Base, Index)]
+  end.
+
+mk_fp_binary(FpBinOp, Dst, Src1, Src2) ->
+  #fp_binary{fp_binop=FpBinOp, dst=Dst, src1=Src1, src2=Src2}.
+
+mk_fp_unary(FpUnOp, Dst, Src) -> #fp_unary{fp_unop=FpUnOp, dst=Dst, src=Src}.
+
+mk_pseudo_fmove(Dst, Src) -> #pseudo_fmove{dst=Dst, src=Src}.
+is_pseudo_fmove(I) -> case I of #pseudo_fmove{} -> true; _ -> false end.
+pseudo_fmove_dst(#pseudo_fmove{dst=Dst}) -> Dst.
+pseudo_fmove_src(#pseudo_fmove{src=Src}) -> Src.
 
 mk_defun(MFA, Formals, IsClosure, IsLeaf, Code, Data, VarRange, LabelRange) ->
   #defun{mfa=MFA, formals=Formals, code=Code, data=Data,

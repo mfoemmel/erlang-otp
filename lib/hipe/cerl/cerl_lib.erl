@@ -27,11 +27,69 @@
 
 -define(NO_UNUSED, true).
 
--export([is_safe_expr/2, reduce_expr/1]).
+-export([is_safe_expr/2, reduce_expr/1, is_simple_clause/1,
+	 is_bool_switch/1, bool_switch_cases/1]).
 -ifndef(NO_UNUSED).
--export([is_safe_expr/1, is_pure_expr/1, is_pure_expr/2]).
+-export([is_safe_expr/1, is_pure_expr/1, is_pure_expr/2,
+	 make_bool_switch/3]).
 -endif.
 
+
+%% Test if a clause has a single pattern and an always-true guard.
+
+is_simple_clause(C) ->
+    case cerl:clause_pats(C) of
+	[_P] ->
+	    G = cerl:clause_guard(C),
+	    case cerl_clauses:eval_guard(G) of
+		{value, true} -> true;
+		_ -> false
+	    end;
+	_ -> false
+    end.
+
+%% Creating an if-then-else construct that can be recognized as such.
+%% `Test' *must* be guaranteed to return a boolean.
+
+-ifndef(NO_UNUSED).
+make_bool_switch(Test, True, False) ->
+    Cs = [cerl:c_clause([cerl:c_atom(true)], True),
+	  cerl:c_clause([cerl:c_atom(false)], False)],
+    cerl:c_case(Test, Cs).
+-endif.
+
+%% A boolean switch cannot have a catch-all; only true/false branches.
+is_bool_switch([C1, C2]) ->
+    case is_simple_clause(C1) andalso is_simple_clause(C2) of
+	true ->
+	    [P1] = cerl:clause_pats(C1),
+	    [P2] = cerl:clause_pats(C2),
+	    case cerl:is_c_atom(P1) andalso cerl:is_c_atom(P2) of
+		true ->
+		    A1 = cerl:concrete(P1),
+		    A2 = cerl:concrete(P2),
+		    is_boolean(A1) andalso is_boolean(A2)
+			andalso A1 =/= A2;
+		false ->
+		    false
+	    end;
+	false ->
+	    false
+    end;
+is_bool_switch(_) ->
+    false.
+
+%% Returns the true-body and the false-body for boolean switch clauses.
+bool_switch_cases([C1, C2]) ->
+    B1 = cerl:clause_body(C1),
+    B2 = cerl:clause_body(C2),
+    [P1] = cerl:clause_pats(C1),
+    case cerl:concrete(P1) of
+	true ->
+	    {B1, B2};
+	false ->
+	    {B2, B1}
+    end.
 
 %% The default function property check always returns `false':
 

@@ -1,3 +1,20 @@
+%% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Richard Carlsson.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%% 
+%%     $Id $
+%%
 %% =====================================================================
 %% Ordered Sets implemented as General Balanced Trees
 %%
@@ -7,23 +24,6 @@
 %% General Balanced Trees. This can be much more efficient than using
 %% ordered lists, for larger sets, but depends on the application. See
 %% notes below for details.
-%% ---------------------------------------------------------------------
-%% This library is free software; you can redistribute it and/or modify
-%% it under the terms of the GNU Lesser General Public License as
-%% published by the Free Software Foundation; either version 2 of the
-%% License, or (at your option) any later version.
-%%
-%% This library is distributed in the hope that it will be useful, but
-%% WITHOUT ANY WARRANTY; without even the implied warranty of
-%% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-%% Lesser General Public License for more details.
-%%
-%% You should have received a copy of the GNU Lesser General Public
-%% License along with this library; if not, write to the Free Software
-%% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
-%% USA
-%%
-%% Author contact: richardc@csd.uu.se
 %% ---------------------------------------------------------------------
 %% Notes:
 %%
@@ -321,7 +321,7 @@ from_ordset(L) ->
     {S, balance_list(L, S)}.
 
 del_element(Key, S) ->
-    delete(Key, S).
+    delete_any(Key, S).
 
 delete_any(Key, S) ->
     case is_member(Key, S) of

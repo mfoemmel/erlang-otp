@@ -256,6 +256,7 @@
 %%    float
 %%    pid
 %%    port
+%%    {record, Atom, Size}
 %%    reference
 %%    binary
 %%    function
@@ -374,6 +375,7 @@
 %%    | float
 %%    | pid
 %%    | port
+%%    | {record, atom(), integer()}
 %%    | reference
 %%    | binary
 %%    | function
@@ -599,8 +601,7 @@
 	 redirect_jmp/3,
 	 successors/1,
 	 fails_to/1,
-	 is_branch/1,
-	 is_leaf_code/1 % needs to be used in beam_to_icode
+	 is_branch/1
 	]).
 
 -export([highest_var/1,highest_label/1]).
@@ -835,22 +836,25 @@ phi_redirect_pred(P, OldPred, NewPred)->
 mk_primop(DstList, Fun, ArgList) ->
   mk_primop(DstList, Fun, ArgList, [], []).
 mk_primop(DstList, Fun, ArgList, Continuation, Fail) ->
-  mk_primop(DstList, Fun, ArgList, Continuation, Fail, false).
-mk_primop(DstList, Fun, ArgList, Continuation, Fail, Guard) ->
-  Type = find_call_type(Fun),
-  make_call(DstList, Fun, ArgList, Type, Continuation, Fail, Guard).
+  Type = op_type(Fun),
+  make_call(DstList, Fun, ArgList, Type, Continuation, Fail, false).
 
-%% Note that a 'guardop' is just a primop that occurred in a guard.
+%% Note that a 'guardop' is just a call that occurred in a guard. In
+%% this case, we should always have continuation labels True and False.
 
 mk_guardop(DstList, Fun, ArgList, True, False) ->
-  mk_primop(DstList, Fun, ArgList, True, False, true).
+  Type = op_type(Fun),
+  make_call(DstList, Fun, ArgList, Type, True, False, true).
 
-find_call_type(Fun) ->
-  case Fun of
-    {M,F,A} when atom(M), atom(F), integer(A) -> remote;
-    {_,_,_} -> exit({bad_primop, Fun});
-    _ -> primop
+op_type(Fun) ->
+  case is_mfa(Fun) of
+    true -> remote;
+    false -> primop
   end.
+
+is_mfa({M,F,A}) when atom(M), atom(F), integer(A) -> true;
+is_mfa(_) -> false.
+
 
 %%
 %% call
@@ -865,22 +869,21 @@ mk_call(DstList, M, F, ArgList, Type) ->
 %%   mk_call(DstList, M, F, ArgList, Type, Continuation, Fail, false).
 mk_call(DstList, M, F, ArgList, Type, Continuation, Fail, Guard)
   when atom(M), atom(F) ->
+  case Type of
+    local -> ok;
+    remote -> ok;
+    _ -> exit({bad_call_type, Type})
+  end,
   Fun = {M,F,length(ArgList)},
   make_call(DstList, Fun, ArgList, Type, Continuation, Fail, Guard).
 
-%% The common constructor for all calls
+%% The common constructor for all calls (for internal use only)
 %%
 %% Note: If the "guard" flag is `true', it means that if the call fails,
 %% we can simply jump to the Fail label (if it exists) without
 %% generating any additional exception information - it isn't needed.
 %%
 make_call(DstList, Fun, ArgList, Type, Continuation, Fail, InGuard) ->
-  case Type of
-    local -> ok;
-    remote -> ok;
-    primop -> ok;
-    _ -> exit({bad_call_type, Type})
-  end,
   #call{dstlist=DstList, 'fun'=Fun, args=ArgList,
 	type=Type, continuation=Continuation, fail_label=Fail,
 	in_guard=InGuard}.
@@ -896,9 +899,9 @@ call_fun(#call{'fun'=Fun}) -> Fun.
 %% Note that updating the name field requires recomputing the call type,
 %% in case it changes from a remote/local call to a primop call.
 call_fun_update(C, Fun) ->
-  Type = case find_call_type(Fun) of
-	   primop -> primop;
-	   _ -> call_type(C)
+  Type = case is_mfa(Fun) of
+	   true -> call_type(C);
+	   false -> primop
 	 end,
   C#call{'fun'=Fun, type=Type}.
 call_continuation(#call{continuation=Continuation}) -> Continuation.
@@ -925,15 +928,14 @@ mk_enter(M, F, Args, Type) when atom(M), atom(F) ->
   case Type of
     local -> ok;
     remote -> ok;
-    primop -> ok;
     _ -> exit({bad_enter_type, Type})
   end,
   #enter{'fun'={M,F,length(Args)}, args=Args, type=Type}.
 enter_fun(#enter{'fun'=Fun}) -> Fun.
 enter_fun_update(E, Fun) ->
-  Type = case find_call_type(Fun) of
-	   primop -> primop;
-	   _ -> enter_type(E)
+  Type = case is_mfa(Fun) of
+	   true -> enter_type(E);
+	   false -> primop
 	 end,
   E#enter{'fun'=Fun, type=Type}.
 enter_args(#enter{args=Args}) -> Args.
@@ -1490,30 +1492,6 @@ is_safe(Instr) ->
 	  hipe_icode_primops:is_safe(Op)
       end;
     _ -> false
-  end.
-
-%% @spec is_leaf_code([icode_instruction()]) -> bool()
-%% @doc Returns `false' if code sequence is not leaf code,
-%% otherwise `true'.
-
-is_leaf_code([]) ->
-  true;
-is_leaf_code([I|Is]) ->
-  case type(I) of
-    call ->
-      case call_type(I) of
-	primop -> 
-	  case call_fun(I) of
-	    call_fun -> false;		% Calls closure
-	    enter_fun -> false;		% Calls closure
-	    _ -> is_leaf_code(Is)	% Other primop calls are ok
-	  end;
-	_ -> 
-	  false    % non-primop call
-      end;
-    enter -> false;
-    _ ->
-      is_leaf_code(Is)
   end.
 
 %%-----------------------------------------------------------------------

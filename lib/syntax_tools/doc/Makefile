@@ -13,7 +13,7 @@
 # Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 # AB. All Rights Reserved.''
 # 
-#     $Id$
+#     $Id: Makefile,v 1.1.1.1 2004/10/04 13:56:14 richardc Exp $
 #
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
@@ -49,7 +49,7 @@ INFO_FILE = ../info
 
 docs:
 	(cd ..; \
-	edoc_generate -app '$(APPNAME)' -title '$(DOC_TITLE)')
+	edoc_generate -app '$(APPNAME)' -vsn '$(VSN)')
 
 
 info:

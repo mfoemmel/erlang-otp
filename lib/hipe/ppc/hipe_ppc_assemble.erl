@@ -4,7 +4,7 @@
 -module(hipe_ppc_assemble).
 -export([assemble/4]).
 
--include("../main/hipe.hrl").	% for VERSION, when_option
+-include("../main/hipe.hrl").	% for VERSION_STRING, when_option
 -include("hipe_ppc.hrl").
 -include("../../kernel/src/hipe_ext_format.hrl").
 -include("../rtl/hipe_literals.hrl").
@@ -32,7 +32,7 @@ assemble(CompiledCode, Closures, Exports, Options) ->
   DataRelocs = mk_data_relocs(RefsFromConsts, LabelMap),
   SSE = slim_sorted_exportmap(ExportMap,Closures,Exports),
   SlimRefs = hipe_pack_constants:slim_refs(AccRefs),
-  Bin = term_to_binary([{?VERSION(),?HIPE_SYSTEM_CRC},
+  Bin = term_to_binary([{?VERSION_STRING(),?HIPE_SYSTEM_CRC},
 			ConstAlign, ConstSize,
 			SC,
 			DataRelocs, % nee LM, LabelMap
@@ -123,6 +123,10 @@ translate_insn(I, MFA, ConstMap) ->	% -> [{Op,Opnd,OrigI}]
     #store{} -> do_store(I);
     #storex{} -> do_storex(I);
     #unary{} -> do_unary(I);
+    #lfd{} -> do_lfd(I);
+    #stfd{} -> do_stfd(I);
+    #fp_binary{} -> do_fp_binary(I);
+    #fp_unary{} -> do_fp_unary(I);
     _ -> exit({?MODULE,translate_insn,I})
   end.
 
@@ -266,7 +270,37 @@ do_unary(I) ->
   NewSrc = do_reg(Src),
   [{UnOp, {NewDst,NewSrc}, I}].
 
-do_reg(#ppc_temp{reg=Reg}) when Reg >= 0, Reg < 32 ->
+do_lfd(I) ->
+  #lfd{dst=Dst,disp=Disp,base=Base} = I,
+  NewDst = do_fpreg(Dst),
+  NewDisp = do_disp(Disp),
+  NewBase = do_reg(Base),
+  [{lfd, {NewDst,NewDisp,NewBase}, I}].
+
+do_stfd(I) ->
+  #stfd{src=Src,disp=Disp,base=Base} = I,
+  NewSrc = do_fpreg(Src),
+  NewDisp = do_disp(Disp),
+  NewBase = do_reg(Base),
+  [{stfd, {NewSrc,NewDisp,NewBase}, I}].
+
+do_fp_binary(I) ->
+  #fp_binary{fp_binop=FpBinOp,dst=Dst,src1=Src1,src2=Src2} = I,
+  NewDst = do_fpreg(Dst),
+  NewSrc1 = do_fpreg(Src1),
+  NewSrc2 = do_fpreg(Src2),
+  [{FpBinOp, {NewDst,NewSrc1,NewSrc2}, I}].
+
+do_fp_unary(I) ->
+  #fp_unary{fp_unop=FpUnOp,dst=Dst,src=Src} = I,
+  NewDst = do_fpreg(Dst),
+  NewSrc = do_fpreg(Src),
+  [{FpUnOp, {NewDst,NewSrc}, I}].
+
+do_fpreg(#ppc_temp{reg=Reg,type='double'}) when Reg >= 0, Reg < 32 ->
+  {fr,Reg}.
+
+do_reg(#ppc_temp{reg=Reg,type=Type}) when Reg >= 0, Reg < 32, Type /= 'double' ->
   {r,Reg}.
   
 do_label_ref(Label) when integer(Label) ->
@@ -497,7 +531,6 @@ slim_sorted_exportmap([{Addr,M,F,A}|Rest], Closures, Exports) ->
   [Addr,M,F,A,IsClosure,IsExported | slim_sorted_exportmap(Rest, Closures, Exports)];
 slim_sorted_exportmap([],_,_) -> [].
 
-is_exported(_F, _A, []) -> true; % XXX: kill this clause when Core is fixed
 is_exported(F, A, Exports) -> lists:member({F,A}, Exports).
 
 %%%

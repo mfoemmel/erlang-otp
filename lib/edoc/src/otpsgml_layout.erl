@@ -14,16 +14,17 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: otpsgml_layout.erl,v 1.3 2004/08/25 09:47:49 richardc Exp $
+%% $Id: otpsgml_layout.erl,v 1.8 2004/11/30 00:37:57 richardc Exp $
 %%
 %% @author Richard Carlsson <richardc@csd.uu.se>
-%% @copyright 2001-2002 Richard Carlsson
-%% @see edoc
+%% @author Kenneth Lundin <kenneth@erix.ericsson.se>
+%% @copyright 2001-2004 Richard Carlsson
+%% @see edoc_layout
 %% @end
 %% =====================================================================
 
-%% @doc The OTP SGML layout module for EDoc. See the module <a
-%% href="edoc.html"><code>edoc</code></a> for details on usage.
+%% @doc The OTP SGML layout module for EDoc. See the module {@link edoc}
+%% for details on usage.
 
 %% Note that this is written so that it is *not* depending on edoc.hrl!
 
@@ -51,15 +52,26 @@
 
 %% @doc The layout function.
 %%
-%% <p>Options to the standard layout:
+%% <p>Options:
 %% <dl>
-%%  <dt><code>{index_columns, integer()}</code></dt>
-%%    <dd>Specifies the number of column pairs used for the function
-%%    index tables. The default value is 1.</dd>
-%%  <dt><code>{stylesheet, string() | none}</code></dt>
-%%    <dd>Specifies the name of the stylesheet file used. If the value
-%%    is <code>none</code>, no stylesheet link will be generated.</dd>
-%%  </dl></p>
+%%  <dt>{@type {index_columns, integer()@}}
+%%  </dt>
+%%  <dd>Specifies the number of column pairs used for the function
+%%      index tables. The default value is 1.
+%%  </dd>
+%%  <dt>{@type {stylesheet, string()@}}
+%%  </dt>
+%%  <dd>Specifies the URI used for referencing the stylesheet. The
+%%      default value is `"stylesheet.css"'. If an empty string is
+%%      specified, no stylesheet reference will be generated.
+%%  </dd>
+%%  <dt>{@type {xml_export, Module::atom()@}}
+%%  </dt>
+%%  <dd>Specifies an {@link //xmerl. `xmerl'} callback module to be
+%%      used for exporting the documentation. See {@link
+%%      //xmerl/xmerl:export_simple/3} for details.
+%%  </dd>
+%% </dl></p>
 %%
 %% @see edoc:layout/2
 
@@ -79,20 +91,17 @@ init_opts(Element, Options) ->
 	      index_columns = proplists:get_value(index_columns,
 						  Options, 1)
 	     },
-    case proplists:get_bool(no_stylesheet, Options) of
-	true ->
-	    R;
-	false ->
-	    case proplists:get_value(stylesheet, Options) of
-		undefined ->
-		    S = edoc_lib:join_uri(R#opts.root, ?STYLESHEET),
-		    R#opts{stylesheet = S};
-		S when list(S) ->
-		    R#opts{stylesheet = S}; 
-		_ ->
-		    report("bad value for option `stylesheet'.", []),
-		    exit(error)
-	    end
+    case proplists:get_value(stylesheet, Options) of
+	undefined ->
+	    S = edoc_lib:join_uri(R#opts.root, ?STYLESHEET),
+	    R#opts{stylesheet = S};
+	"" ->
+	    R;  % don't use any stylesheet
+	S when list(S) ->
+	    R#opts{stylesheet = S}; 
+	_ ->
+	    report("bad value for option `stylesheet'.", []),
+	    exit(error)
     end.
 
 
@@ -277,7 +286,6 @@ functions(Fs) ->
 	    {funcs, Es}
     end.
 
-%% TODO: indicate non-exported functions (included with the 'private' flag) in some way.
 % is_exported(E) ->
 %     case get_attrval(exported, E) of
 % 	"yes" -> true;
@@ -571,7 +579,7 @@ authors(Es) ->
     case get_elem(author, Es) of
 	[] -> {authors,[?NL,{aname,["\s"]},?NL,{email,["\s"]}]};
 	Es1 ->
-	    [{authors,[?NL|seq(fun author/1, Es1, [])]}, ?NL]
+	    {authors,[?NL|seq(fun author/1, Es1, [])]}
 %
 %	    [{p, [{b, ["Authors:"]}, " "] ++ seq(fun author/1, Es1, ["."])},
 %	     ?NL]

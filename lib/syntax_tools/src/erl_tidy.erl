@@ -21,12 +21,12 @@
 %%
 %% Author contact: richardc@csd.uu.se
 %%
-%% $Id: erl_tidy.erl,v 1.36 2004/01/23 16:04:15 richardc Exp $
+%% $Id: erl_tidy.erl,v 1.39 2004/11/22 07:24:12 richardc Exp $
 %%
 %% =====================================================================
 %%
-%% @doc Tidies Erlang source code, removing unused functions, updating
-%% obsolete constructs and function calls, etc.
+%% @doc Tidies and pretty-prints Erlang source code, removing unused
+%% functions, updating obsolete constructs and function calls, etc.
 %%
 %% <p>Caveats: It is possible that in some intricate uses of macros,
 %% the automatic addition or removal of parentheses around uses or
@@ -174,7 +174,7 @@ dir_2(Name, Regexp, Dir, Env) ->
 
 dir_3(Name, Dir, Regexp, Env) ->
     Dir1 = filename:join(Dir, Name),
-    report("tidying directory `~s'.", [Dir1], Env#dir.options),
+    verbose("tidying directory `~s'.", [Dir1], Env#dir.options),
     dir_1(Dir1, Regexp, Env).
 
 dir_4(File, Regexp, Env) ->
@@ -183,8 +183,7 @@ dir_4(File, Regexp, Env) ->
             Opts = [{outfile, File}, {dir, ""} | Env#dir.options],
             case catch file(File, Opts) of
                 {'EXIT', _} ->
-                    report_warning("error tidying `~s'.", [File],
-                                   Opts);
+                    warn("error tidying `~s'.", [File], Opts);
                 _ ->
                     ok
             end;
@@ -374,7 +373,7 @@ write_module(Tree, Name, Opts) ->
     Printer = proplists:get_value(printer, Opts),
     FD = open_output_file(File),
     verbose("writing to file `~s'.", [File], Opts),
-    V = (catch {ok, io:put_chars(FD, Printer(Tree, Opts))}),
+    V = (catch {ok, output(FD, Printer, Tree, Opts)}),
     file:close(FD),
     case V of
         {ok, _} ->
@@ -386,6 +385,10 @@ write_module(Tree, Name, Opts) ->
             error_write_file(File),
             throw(R)
     end.
+
+output(FD, Printer, Tree, Opts) ->
+    io:put_chars(FD, Printer(Tree, Opts)),
+    io:nl(FD).
 
 %% file_type(filename()) -> {value, Type} | none
 
@@ -712,11 +715,10 @@ check_imports(Is, Opts, File) ->
         false ->
             case proplists:get_bool(no_imports, Opts) of
                 true ->
-                    report_warning({File, 0,
-                                    "conflicting import "
-                                    "declarations - will "
-                                    "not expand imports."},
-                                   [], Opts),
+                    warn({File, 0,
+			  "conflicting import declarations - "
+			  "will not expand imports."},
+			 [], Opts),
                     %% prevent expansion of imports
                     [{no_imports, false} | Opts];
                 false ->
@@ -787,9 +789,9 @@ keep_form(Form, Used, Opts) ->
 
 report_removed_def(Type, {N, A}, Form, Opts) ->
     File = proplists:get_value(file, Opts, ""),
-    verbose({File, erl_syntax:get_pos(Form),
-             "removing unused ~s `~w/~w'."},
-            [Type, N, A], Opts).
+    report({File, erl_syntax:get_pos(Form),
+	    "removing unused ~s `~w/~w'."},
+	   [Type, N, A], Opts).
 
 collect_functions(Forms) ->
     lists:foldl(
@@ -841,10 +843,10 @@ update_attribute(F, Imports, Opts) ->
                     ok;
                 Names ->
                     File = proplists:get_value(file, Opts, ""),
-                    verbose({File, erl_syntax:get_pos(F),
-                             "removing unused imports:~s"},
-                            [[io_lib:fwrite("\n\t`~w:~w/~w'", [M, N, A])
-                              || {N, A} <- Names]], Opts)
+                    report({File, erl_syntax:get_pos(F),
+			    "removing unused imports:~s"},
+			   [[io_lib:fwrite("\n\t`~w:~w/~w'", [M, N, A])
+			     || {N, A} <- Names]], Opts)
             end,
             Is = [make_fname(N) || N <- Ns1],
             if Is == [] ->
@@ -1089,9 +1091,9 @@ visit_atom_application(F, As, Tree, #env{context = guard_test} = Env,
 		 end
 	 end,
     if N1 /= N ->
-            verbose({Env#env.file, erl_syntax:get_pos(F),
-                     "changed guard test `~w' to `~w'."},
-                    [N, N1], Env#env.verbosity);
+            report({Env#env.file, erl_syntax:get_pos(F),
+		    "changing guard test `~w' to `~w'."},
+		   [N, N1], Env#env.verbosity);
        true ->
             ok
     end,
@@ -1127,9 +1129,9 @@ visit_import_application({N, A} = Name, F, As, Tree, Env, St0) ->
              end,
     case Expand of
         true ->
-            verbose({Env#env.file, erl_syntax:get_pos(F),
-                     "expanded call to imported function `~w:~w/~w'."},
-                    [M, N, A], Env#env.verbosity),
+            report({Env#env.file, erl_syntax:get_pos(F),
+		    "expanding call to imported function `~w:~w/~w'."},
+		   [M, N, A], Env#env.verbosity),
             F1 = erl_syntax:module_qualifier(erl_syntax:atom(M),
                                              erl_syntax:atom(N)),
             revisit_application(rewrite(F, F1), As, Tree, Env, St0);
@@ -1141,10 +1143,10 @@ visit_import_application({N, A} = Name, F, As, Tree, Env, St0) ->
 visit_bif_call({apply, 2}, F, [E, Args] = As, Tree, Env, St0) ->
     case erl_syntax:is_proper_list(Args) of
         true ->
-            verbose({Env#env.file, erl_syntax:get_pos(F),
-                     "rewrote call to BIF `apply/2' "
-                     "to direct application."},
-                    [], Env#env.verbosity),
+            report({Env#env.file, erl_syntax:get_pos(F),
+		    "changing use of `apply/2' "
+		    "to direct function call."},
+		   [], Env#env.verbosity),
             As1 = erl_syntax:list_elements(Args),
             revisit_application(E, As1, Tree, Env, St0);
         false ->
@@ -1153,10 +1155,10 @@ visit_bif_call({apply, 2}, F, [E, Args] = As, Tree, Env, St0) ->
 visit_bif_call({apply, 3}, F, [M, N, Args] = As, Tree, Env, St0) ->
     case erl_syntax:is_proper_list(Args) of
         true ->
-            verbose({Env#env.file, erl_syntax:get_pos(F),
-                     "rewrote call to BIF `apply/3' "
-                     "to direct remote call."},
-                    [], Env#env.verbosity),
+            report({Env#env.file, erl_syntax:get_pos(F),
+		    "changing use of `apply/3' "
+		    "to direct remote call."},
+		   [], Env#env.verbosity),
             F1 = rewrite(F, erl_syntax:module_qualifier(M, N)),
             As1 = erl_syntax:list_elements(Args),
             visit_nonlocal_application(F1, As1, Tree, Env, St0);
@@ -1181,9 +1183,9 @@ visit_spawn_call({N, A}, F, Ps, [A1, A2, A3] = As, Tree,
                  #env{spawn_funs = true} = Env, St0) ->
     case erl_syntax:is_proper_list(A3) of
         true ->
-            verbose({Env#env.file, erl_syntax:get_pos(F),
-                     "rewrote call to BIF `~w/~w' to use `~w/~w'."},
-                    [N, A, N, 1 + length(Ps)], Env#env.verbosity),
+            report({Env#env.file, erl_syntax:get_pos(F),
+		    "changing use of `~w/~w' to `~w/~w' with a fun."},
+		   [N, A, N, 1 + length(Ps)], Env#env.verbosity),
             F1 = case erl_syntax:is_atom(A1, Env#env.module) of
                      true ->
                          A2;    % calling self
@@ -1221,10 +1223,10 @@ visit_named_fun_application(F, As, Tree, Env, St0) ->
                     %% Making this a direct call would be an error.
                     visit_application_final(F, As, Tree, St0);
                 false ->
-                    verbose({Env#env.file, erl_syntax:get_pos(F),
-                             "rewrote application of implicit fun "
-                             "to direct local call."},
-                            [], Env#env.verbosity),
+                    report({Env#env.file, erl_syntax:get_pos(F),
+			    "changing application of implicit fun "
+			    "to direct local call."},
+			   [], Env#env.verbosity),
                     Used = sets:add_element({A, N}, St0#st.used),
                     F1 = rewrite(F, erl_syntax:atom(A)),
                     revisit_application(F1, As, Tree, Env,
@@ -1238,10 +1240,10 @@ visit_lambda_application(F, As, Tree, Env, St0) ->
     A = erl_syntax:fun_expr_arity(F),
     case A == length(As) of
         true ->
-            verbose({Env#env.file, erl_syntax:get_pos(F),
-                     "rewrote application of fun-expression "
-                     "to local function call."},
-                    [], Env#env.verbosity),
+            report({Env#env.file, erl_syntax:get_pos(F),
+		    "changing application of fun-expression "
+		    "to local function call."},
+		   [], Env#env.verbosity),
             {Base, _} = Env#env.current,
             Free = [erl_syntax:variable(V) || V <- get_free_vars(F)],
             N = length(Free),
@@ -1255,10 +1257,9 @@ visit_lambda_application(F, As, Tree, Env, St0) ->
             St2 = St1#st{new_forms = Forms, used = Used},
             visit_application_final(F1, As ++ Free, Tree, St2);
         false ->
-            report_warning({Env#env.file, erl_syntax:get_pos(F),
-                            "arity mismatch in fun-expression "
-                            "application."},
-                           [], Env#env.verbosity),
+            warn({Env#env.file, erl_syntax:get_pos(F),
+		  "arity mismatch in fun-expression application."},
+		 [], Env#env.verbosity),
             visit_application_final(F, As, Tree, St0)
     end.
 
@@ -1276,10 +1277,10 @@ visit_nonlocal_application(F, As, Tree, Env, St0) ->
         tuple ->
             case erl_syntax:tuple_elements(F) of
                 [X1, X2] ->
-                    verbose({Env#env.file, erl_syntax:get_pos(F),
-                             "rewrote application of 2-tuple "
-                             "to direct remote call."},
-                            [], Env#env.verbosity),
+                    report({Env#env.file, erl_syntax:get_pos(F),
+			    "changing application of 2-tuple "
+			    "to direct remote call."},
+			   [], Env#env.verbosity),
                     F1 = erl_syntax:module_qualifier(X1, X2),
                     revisit_application(rewrite(F, F1), As, Tree, Env,
                                         St0);
@@ -1300,18 +1301,18 @@ visit_nonlocal_application(F, As, Tree, Env, St0) ->
 
 visit_remote_application({lists, append, 2}, F, [A1, A2], Tree, Env,
                          St0) ->
-    verbose({Env#env.file, erl_syntax:get_pos(F),
-             "rewrote call to `lists:append/2' "
-             "to use the `++' operator."},
-            [], Env#env.verbosity),
+    report({Env#env.file, erl_syntax:get_pos(F),
+	    "replacing call to `lists:append/2' "
+	    "with the `++' operator."},
+	   [], Env#env.verbosity),
     Tree1 = erl_syntax:infix_expr(A1, erl_syntax:operator('++'), A2),
     visit(rewrite(Tree, Tree1), Env, St0);
 visit_remote_application({lists, subtract, 2}, F, [A1, A2], Tree, Env,
                          St0) ->
-    verbose({Env#env.file, erl_syntax:get_pos(F),
-             "rewrote call to `lists:subtract/2' "
-             "to use the `--' operator."},
-            [], Env#env.verbosity),
+    report({Env#env.file, erl_syntax:get_pos(F),
+	    "replacing call to `lists:subtract/2' "
+	    "with the `--' operator."},
+	   [], Env#env.verbosity),
     Tree1 = erl_syntax:infix_expr(A1, erl_syntax:operator('--'), A2),
     visit(rewrite(Tree, Tree1), Env, St0);
 
@@ -1321,10 +1322,10 @@ visit_remote_application({lists, filter, 2}, F, [A1, A2] = As, Tree,
 	and (get_var_exports(A1) == [])
 	and (get_var_exports(A2) == []) of
         true ->
-            verbose({Env#env.file, erl_syntax:get_pos(F),
-                     "rewrote call to `lists:filter/2' "
-                     "as a list comprehension."},
-                    [], Env#env.verbosity),
+            report({Env#env.file, erl_syntax:get_pos(F),
+		    "replacing call to `lists:filter/2' "
+		    "with a list comprehension."},
+		   [], Env#env.verbosity),
             {V, St1} = new_variable(St0),
             G = clone(A2, erl_syntax:generator(V, A2)),
             T = clone(A1, erl_syntax:application(A1, [V])),
@@ -1340,10 +1341,10 @@ visit_remote_application({lists, map, 2}, F, [A1, A2] = As, Tree, Env,
 	and (get_var_exports(A1) == [])
 	and (get_var_exports(A2) == []) of
         true ->
-            verbose({Env#env.file, erl_syntax:get_pos(F),
-                     "rewrote call to `lists:map/2' "
-                     "as a list comprehension."},
-                    [], Env#env.verbosity),
+            report({Env#env.file, erl_syntax:get_pos(F),
+		    "replacing call to `lists:map/2' "
+		    "with a list comprehension."},
+		   [], Env#env.verbosity),
             {V, St1} = new_variable(St0),
             T = clone(A1, erl_syntax:application(A1, [V])),
             G = clone(A2, erl_syntax:generator(V, A2)),
@@ -1362,10 +1363,10 @@ visit_remote_application({M, N, A} = Name, F, As, Tree, Env, St) ->
         false ->
             case rename_remote_call(Name, St) of
                 {M1, N1} ->
-                    verbose({Env#env.file, erl_syntax:get_pos(F),
-                             "changed call to `~w:~w/~w' "
-                             "to `~w:~w/~w'."},
-                            [M, N, A, M1, N1, A], Env#env.verbosity),
+                    report({Env#env.file, erl_syntax:get_pos(F),
+			    "updating obsolete call to `~w:~w/~w' "
+			    "to use `~w:~w/~w' instead."},
+			   [M, N, A, M1, N1, A], Env#env.verbosity),
                     M2 = erl_syntax:atom(M1),
                     N2 = erl_syntax:atom(N1),
                     F1 = erl_syntax:module_qualifier(M2, N2),
@@ -1441,10 +1442,10 @@ visit_generator(G, Env, St0) ->
     end.
 
 visit_generator_1(G, Env, St0) ->
-    verbose({Env#env.file, erl_syntax:get_pos(G),
-	     "nested list comprehension can be unfolded by hand "
-	     "for better efficiency."},
-	    [], Env#env.verbosity),
+    recommend({Env#env.file, erl_syntax:get_pos(G),
+	       "unfold that this nested list comprehension can be unfolded "
+	       "by hand to get better efficiency."},
+	      [], Env#env.verbosity),
     visit_filter(G, Env, St0).
 
 visit_match_expr(Tree, Env, St0) ->
@@ -1491,9 +1492,9 @@ visit_match_body(Ps, P, B, Tree, Env, St0) ->
             Cs = erl_syntax:case_expr_clauses(B),
             case multival_clauses(Cs, length(Ps), Ps) of
                 {true, Cs1} ->
-                    verbose_export_vars(Env#env.file,
-                                        erl_syntax:get_pos(B),
-                                        "case", Env#env.verbosity),
+                    report_export_vars(Env#env.file,
+				       erl_syntax:get_pos(B),
+				       "case", Env#env.verbosity),
                     A = erl_syntax:case_expr_argument(B),
                     Tree1 = erl_syntax:case_expr(A, Cs1),
                     {rewrite(Tree, Tree1), St0};
@@ -1504,10 +1505,22 @@ visit_match_body(Ps, P, B, Tree, Env, St0) ->
             Cs = erl_syntax:if_expr_clauses(B),
             case multival_clauses(Cs, length(Ps), Ps) of
                 {true, Cs1} ->
-                    verbose_export_vars(Env#env.file,
-                                        erl_syntax:get_pos(B),
-                                        "if", Env#env.verbosity),
+                    report_export_vars(Env#env.file,
+				       erl_syntax:get_pos(B),
+				       "if", Env#env.verbosity),
                     Tree1 = erl_syntax:if_expr(Cs1),
+                    {rewrite(Tree, Tree1), St0};
+                false ->
+                    visit_match_expr_final(P, B, Tree, Env, St0)
+            end;
+        cond_expr ->
+            Cs = erl_syntax:cond_expr_clauses(B),
+            case multival_clauses(Cs, length(Ps), Ps) of
+                {true, Cs1} ->
+                    report_export_vars(Env#env.file,
+				       erl_syntax:get_pos(B),
+				       "cond", Env#env.verbosity),
+                    Tree1 = erl_syntax:cond_expr(Cs1),
                     {rewrite(Tree, Tree1), St0};
                 false ->
                     visit_match_expr_final(P, B, Tree, Env, St0)
@@ -1519,9 +1532,9 @@ visit_match_body(Ps, P, B, Tree, Env, St0) ->
             Cs = erl_syntax:receive_expr_clauses(B),
             case multival_clauses([C | Cs], length(Ps), Ps) of
                 {true, [C1 | Cs1]} ->
-                    verbose_export_vars(Env#env.file,
-                                        erl_syntax:get_pos(B),
-                                        "receive", Env#env.verbosity),
+                    report_export_vars(Env#env.file,
+				       erl_syntax:get_pos(B),
+				       "receive", Env#env.verbosity),
                     T = erl_syntax:receive_expr_timeout(B),
                     As1 = erl_syntax:clause_body(C1),
                     Tree1 = erl_syntax:receive_expr(Cs1, T, As1),
@@ -1780,9 +1793,9 @@ clone(Source, Target) ->
 %% =====================================================================
 %% Reporting
 
-verbose_export_vars(F, L, Type, Opts) ->
-    verbose({F, L, "rewrote ~s-expression to export variables."},
-            [Type], Opts).
+report_export_vars(F, L, Type, Opts) ->
+    report({F, L, "rewrote ~s-expression to export variables."},
+	   [Type], Opts).
 
 error_read_file(Name) ->
     report_error("error reading file `~s'.", [filename(Name)]).
@@ -1816,13 +1829,16 @@ report_error({F, L, D}, Vs) ->
 report_error(D, Vs) ->
     report({error, D}, Vs).
 
-% report_warning(D, N) ->
-%     report_warning(D, [], N).
+% warn(D, N) ->
+%     warn(D, [], N).
 
-report_warning({F, L, D}, Vs, N) ->
+warn({F, L, D}, Vs, N) ->
     report({F, L, {warning, D}}, Vs, N);
-report_warning(D, Vs, N) ->
+warn(D, Vs, N) ->
     report({warning, D}, Vs, N).
+
+recommend(D, Vs, N) ->
+    report({recommend, D}, Vs, N).
 
 verbose(D, Vs, N) ->
     report(2, D, Vs, N).
@@ -1844,6 +1860,8 @@ format({error, D}, Vs) ->
     ["error: ", format(D, Vs)];
 format({warning, D}, Vs) ->
     ["warning: ", format(D, Vs)];
+format({recommend, D}, Vs) ->
+    ["recommendation: ", format(D, Vs)];
 format({"", L, D}, Vs) when integer(L), L > 0 ->
     [io_lib:fwrite("~w: ", [L]), format(D, Vs)];
 format({"", _L, D}, Vs) ->

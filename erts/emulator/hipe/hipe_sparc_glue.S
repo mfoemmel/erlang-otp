@@ -365,7 +365,7 @@ sparc_throw_to_native:
 	ld	[P+P_NCALLEE], %o1	! updated by hipe_find_handler()
 	ld	[P+P_NSP], NSP		! updated by hipe_find_handler()
 	jmp	%o1
-	ld	[P+P_FVALUE], %o0
+	nop
 
 /*
  * This is the default exception handler for native code.

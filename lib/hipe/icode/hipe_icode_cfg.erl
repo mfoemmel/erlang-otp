@@ -23,7 +23,6 @@
 %%-define(DO_ASSERT, true).
 -include("../main/hipe.hrl").
 -include("../flow/cfg.inc").
--include("../rtl/hipe_literals.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%

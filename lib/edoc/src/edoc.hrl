@@ -1,7 +1,7 @@
 %% =====================================================================
 %% Header file for EDoc
 %% 
-%% Copyright (C) 2001-2003 Richard Carlsson
+%% Copyright (C) 2001-2004 Richard Carlsson
 %%
 %% This library is free software; you can redistribute it and/or modify
 %% it under the terms of the GNU Lesser General Public License as
@@ -30,13 +30,13 @@
 -define(DEFAULT_FILE_SUFFIX, ".html").
 -define(DEFAULT_DOCLET, edoc_doclet).
 -define(DEFAULT_LAYOUT, edoc_layout).
-%-define(APP_DEFAULT, "http://www.erlang.org/edoc/doc").
--define(APP_DEFAULT, "http://www.it.uu.se/research/group/hipe/edoc/doc").
+-define(APP_DEFAULT, "http://www.erlang.org/edoc/doc").
 -define(CURRENT_DIR, ".").
 -define(SOURCE_DIR, "src").
 -define(EBIN_DIR, "ebin").
 -define(EDOC_DIR, "doc").
--define(NO_APP, []).
+
+-include("../include/edoc_doclet.hrl").
 
 %% Module information
 
@@ -47,7 +47,7 @@
 		 records	% = [{atom(), [{atom(), term()}]}]
 		}).
 
-%% Environment
+%% Environment for generating documentation data
 
 -record(env, {module = [],
 	      package = [],

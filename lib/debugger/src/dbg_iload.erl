@@ -366,10 +366,11 @@ expr({'receive',Line,Cs0,To0,ToEs0}) ->
     ToEs1 = exprs(ToEs0),
     Cs1 = icr_clauses(Cs0),
     {'receive',Line,Cs1,To1,ToEs1};
-expr({'fun',_,{clauses,_},{_OldUniq,_Hvss,_Free}}) ->
-    %% Old format (abstract_v1).
-    exit({?MODULE,old_funs});
-expr({'fun',Line,{clauses,Cs0},{_Index,_OldUniq,_Hvss,_Free,Name}}) ->
+expr({'fun',Line,{clauses,Cs0},{_,_,Name}}) when is_atom(Name) ->
+    %% New R10B-2 format (abstract_v2).
+    Cs = fun_clauses(Cs0),
+    {make_fun,Line,Name,Cs};
+expr({'fun',Line,{clauses,Cs0},{_,_,_,_,Name}}) when is_atom(Name) ->
     %% New R8 format (abstract_v2).
     Cs = fun_clauses(Cs0),
     {make_fun,Line,Name,Cs};
@@ -378,6 +379,9 @@ expr({'fun',Line,{function,F,A},{_Index,_OldUniq,Name}}) ->
     As = new_vars(A, Line),
     Cs = [{clause,Line,As,[],[{local_call,Line,F,As}]}],
     {make_fun,Line,Name,Cs};
+expr({'fun',_,{clauses,_},{_OldUniq,_Hvss,_Free}}) ->
+    %% Old format (abstract_v1).
+    exit({?MODULE,old_funs});
 expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,self}},[]}) ->
     {dbg, Line, self, []};
 expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,throw}},As0}) when length(As0) == 1 ->

@@ -7,9 +7,9 @@
 %%% Created : 23 Apr 2003 by Tobias Lindahl <tobiasl@it.uu.se>
 %%%
 %%% CVS      :
-%%%              $Author: richardc $
-%%%              $Date: 2004/10/28 05:13:10 $
-%%%              $Revision: 1.26 $
+%%%              $Author: tobiasl $
+%%%              $Date: 2004/11/28 13:09:38 $
+%%%              $Revision: 1.27 $
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_fp).
@@ -142,10 +142,11 @@ transform_block(WorkList, State)->
       NofPreds = length(state__pred(State, Label)),
       Map = state__map(State, Label),
       FilteredMap = filter_map(Map, NofPreds),
-      %%io:format("Label: ~w\nPhiMap: ~p\nMap ~p\n", [Label, Map, FilteredMap]),
-      Prelude = do_prelude(FilteredMap),
+      %%io:format("Label: ~w\nPhiMap: ~p\nFilteredMap ~p\n", 
+      %%	[Label, gb_trees:to_list(Map), gb_trees:to_list(FilteredMap)]),
+      {Prelude, NewFilteredMap} = do_prelude(FilteredMap),
       {NewMap, NewCode} = 
-	transform_instrs(Code, Map, FilteredMap, Info, []),
+	transform_instrs(Code, Map, NewFilteredMap, Info, []),
       NewBB = hipe_bb:code_update(BB, Prelude++NewCode),
       NewState = state__bb_add(State, Label, NewBB),
       case state__map_update(NewState, Label, NewMap) of
@@ -291,12 +292,12 @@ handle_untagged_arguments(I, Map)->
 do_prelude(Map)->  
   case gb_trees:lookup(phi, Map) of
     none ->
-      [];
+      {[], Map};
     {value, List} ->
       %%io:format("Adding phi: ~w\n", [List]),
       Fun = fun({FVar, Bindings}, Acc) -> 
 		[hipe_icode:mk_phi(FVar, Bindings)|Acc]end,
-      lists:foldl(Fun, [], List)
+      {lists:foldl(Fun, [], List), gb_trees:delete(phi, Map)}
   end.
 
 split_code(Code)->

@@ -20,7 +20,7 @@
 %%
 %% Author contact: richardc@csd.uu.se
 %%
-%% $Id: igor.erl,v 1.55 2004/08/13 16:22:27 richardc Exp $
+%% $Id: igor.erl,v 1.58 2004/11/22 07:25:01 richardc Exp $
 %%
 %% =====================================================================
 %%
@@ -85,6 +85,7 @@
 %% (Luckily, Igor can call on Inga to do some cleanup; cf. 'erl_tidy'.)
 
 %% FIXME: don't remove module qualifier if name is (auto-)imported!
+%% TODO: handle merging of parameterized modules (somehow).
 %% TODO: check for redefinition of macros; check equivalence; comment out.
 %% TODO: {export, [E]}, E = atom() | {atom(), atom(), integer()}.
 %% TODO: improve documentation. 
@@ -126,6 +127,7 @@
 %% Data structure for module information
 
 -record(module, {name,		% = atom()
+		 vars = none,	% = [atom()] | none
 		 functions,	% = ordset({atom(), int()})
 		 exports,	% = ordset({atom(), int()})
 				% | ordset({{atom(), int()},
@@ -873,11 +875,12 @@ merge_sources_2(Env, Modules, Trees, Opts) ->
 
 make_preamble(Module, Header, Env, St) ->
     Name = Module#module.name,
+    Vars = Module#module.vars,
     Extras = ordsets:from_list(sets:to_list(St#state.export)),
     Exports = make_exports(Module#module.exports, Extras),
     Imports = make_imports(Module#module.aliases),
     Attributes = make_attributes(Module#module.attributes),
-    erl_syntax:form_list(module_header(Header, Name, Env)
+    erl_syntax:form_list(module_header(Header, Name, Vars, Env)
 			 ++ Exports
 			 ++ Imports
 			 ++ Attributes).
@@ -885,10 +888,10 @@ make_preamble(Module, Header, Env, St) ->
 %% If the target preserves one of the source modules, we do not generate
 %% a new header, but use the original.
 
-module_header(Forms, Name, Env) ->
+module_header(Forms, Name, Vars, Env) ->
     case Env#merge.preserved of
 	true ->
-	    update_header(Forms, Name);
+	    update_header(Forms, Name, Vars);
 	false ->
 	    [comment([?COMMENT_BAR,
 		      "This module was formed by merging "
@@ -904,10 +907,14 @@ module_header(Forms, Name, Env) ->
 				  [erl_syntax:atom(Name)])]
     end.
 
-update_header(Fs, Name) ->
+update_header(Fs, Name, Vars) ->
     [M | Fs1] = lists:reverse(Fs),
+    Ps = if Vars == none -> [];
+	    true -> [erl_syntax:list([erl_syntax:variable(V)
+				      || V <- Vars])]
+	 end,
     M1 = rewrite(M, erl_syntax:attribute(erl_syntax:atom('module'),
-					 [erl_syntax:atom(Name)])),
+					 [erl_syntax:atom(Name) | Ps])),
     lists:reverse([M1 | Fs1]).
 
 %% Some functions may have been noted as necessary to export (because of
@@ -2518,14 +2525,16 @@ get_module_info(Forms) ->
 	    R ->
 		throw(R)
 	end,
-    Name = case lists:keysearch(module, 1, L) of
-	       {value, {module, N}} ->
-		   N;
-	       _ ->
-		   report_error("in source code: module name "
-				"missing or multiply defined."),
-		   exit(error)
-	   end,
+    {Name, Vars} =
+	case lists:keysearch(module, 1, L) of
+	    {value, {module, {N, Vs}}} ->
+		{N, Vs};
+	    {value, {module, N}} ->
+		{N, none};
+	    _ ->
+		report_error("in source code: module name missing."),
+		exit(error)
+	end,
     case lists:keysearch(errors, 1, L) of
 	{value, {errors, Ds}} when Ds /= [] ->
 	    report_errors(Ds, Name),
@@ -2571,6 +2580,7 @@ get_module_info(Forms) ->
 	      end,
     check_records(Records, Name),
     #module{name = Name,
+	    vars = Vars,
 	    functions = Functions,
 	    exports = ordsets:intersection(Exports, Functions),
 	    aliases = Imports,
@@ -2810,7 +2820,7 @@ write_module(Tree, Name, Dir, Opts) ->
     Printer = proplists:get_value(printer, Opts),
     FD = open_output_file(File),
     verbose("writing to file `~s'.", [File], Opts),
-    V = (catch {ok, io:put_chars(FD, Printer(Tree, Opts))}),
+    V = (catch {ok, output(FD, Printer, Tree, Opts)}),
     file:close(FD),
     case V of
 	{ok, _} ->
@@ -2822,6 +2832,10 @@ write_module(Tree, Name, Dir, Opts) ->
 	    error_write_file(File),
 	    throw(R)
     end.
+
+output(FD, Printer, Tree, Opts) ->
+    io:put_chars(FD, Printer(Tree, Opts)),
+    io:nl(FD).
 
 %% If the file exists, rename it by appending the given suffix to the
 %% file name.

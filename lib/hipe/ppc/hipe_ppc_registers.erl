@@ -3,9 +3,11 @@
 
 -module(hipe_ppc_registers).
 
--export([reg_name/1,
+-export([reg_name_gpr/1,
+	 reg_name_fpr/1,
 	 first_virtual/0,
-	 is_precoloured/1,
+	 is_precoloured_gpr/1,
+	 is_precoloured_fpr/1,
 	 all_precoloured/0,
 	 return_value/0,
 	 temp1/0,
@@ -16,7 +18,8 @@
 	 proc_pointer/0,
 	 %%heap_limit/0,
 	 %%fcalls/0,
-	 allocatable/0,
+	 allocatable_gpr/0,
+	 allocatable_fpr/0,
 	 is_fixed/1,
 	 nr_args/0,
 	 arg/1,
@@ -61,7 +64,7 @@
 -define(R29, 29).
 -define(R30, 30).
 -define(R31, 31).
--define(LAST_PRECOLOURED, 31).
+-define(LAST_PRECOLOURED, 31). % must handle both GPR and FPR ranges
 
 -define(ARG0, ?R4).
 -define(ARG1, ?R5).
@@ -80,11 +83,16 @@
 -define(STACK_POINTER, ?R30).
 -define(PROC_POINTER, ?R31).
 
-reg_name(R) -> [$r | integer_to_list(R)].
+reg_name_gpr(R) -> [$r | integer_to_list(R)].
+reg_name_fpr(R) -> [$f | integer_to_list(R)].
 
+%%% Must handle both GPR and FPR ranges.
 first_virtual() -> ?LAST_PRECOLOURED + 1.
 
-is_precoloured(X) -> X =< ?LAST_PRECOLOURED.
+%%% These two tests have the same implementation, but that's
+%%% not something we should cast in stone in the interface. 
+is_precoloured_gpr(R) -> R =< ?LAST_PRECOLOURED.
+is_precoloured_fpr(R) -> R =< ?LAST_PRECOLOURED.
 
 all_precoloured() ->
   %% XXX: skip R1, R2, and R13. They should never occur anywhere.
@@ -105,7 +113,7 @@ stack_pointer() -> ?STACK_POINTER.
 
 proc_pointer() -> ?PROC_POINTER.
 
-allocatable() ->
+allocatable_gpr() ->
   %% r0 is too restricted to be useful for variables
   %% r1, r2, and r13 are reserved for C
   %% r29, r30, and r31 are fixed global registers
@@ -113,6 +121,12 @@ allocatable() ->
     ?R8,  ?R9, ?R10, ?R11, ?R12,       ?R14, ?R15,
    ?R16, ?R17, ?R18, ?R19, ?R20, ?R21, ?R22, ?R23,
    ?R24, ?R25, ?R26, ?R27, ?R28].
+
+allocatable_fpr() ->
+  [ 0,  1,  2,  3,  4,  5,  6,  7,
+    8,  9, 10, 11, 12, 13, 14, 15,
+   16, 17, 18, 19, 20, 21, 22, 23,
+   24, 25, 26, 27, 28, 29, 30, 31].
 
 %% Needed for hipe_graph_coloring_regalloc.
 %% Presumably true for Reg in AllPrecoloured \ Allocatable.

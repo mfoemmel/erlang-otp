@@ -24,6 +24,8 @@
 -include_lib("megaco/include/megaco_message_v2.hrl").
 -include("megaco_text_tokens.hrl").
 
+-define(d(F,A), io:format("DBG:"++F++"~n",A)).
+
 make_safe_token({_TokenTag, Line, Text}) ->
     {safeToken, Line, Text}.
 
@@ -211,7 +213,6 @@ ensure_modemType({_TokenTag, _Line, Text} = Token) ->
         "v22b"      -> v22bis;
         "v18"       -> v18;
         "v22"       -> v22;
-        "v32"       -> v32;
         "v32"       -> v32;
         "v34"       -> v34;
         "v90"       -> v90;
@@ -831,49 +832,74 @@ ensure_transactionAck({safeToken, _Line, Text}) ->
 			      lastAck  = ensure_transactionID(Id2)}
     end.
 
-merge_action_requests(ContextId, Items) ->
+merge_action_requests(CtxId, Items) ->
     CtxReq      = #'ContextRequest'{},
-    CtxAuditReq = #'ContextAttrAuditRequest'{},
+    CtxAuditReq = asn1_NOVALUE, 
     CmdReq      = [],
     TopReq      = [],
-    do_merge_action_requests(ContextId, CtxReq, CtxAuditReq, CmdReq, TopReq, Items).
+    do_merge_action_requests(CtxId, CtxReq, CtxAuditReq, CmdReq, TopReq, Items).
 
-do_merge_action_requests(ContextId, CtxReq, CtxAuditReq, CmdReq, TopReq, [H | T]) ->
+do_merge_action_requests(CtxId, CtxReq, CtxAuditReq, CmdReq, TopReq, [H | T]) ->
     case H of
         _ when record(H, 'CommandRequest') ->
-            do_merge_action_requests(ContextId, CtxReq, CtxAuditReq, [H | CmdReq], TopReq, T);
+            do_merge_action_requests(CtxId, CtxReq, CtxAuditReq, [H | CmdReq], TopReq, T);
 
         {priority, Int} when CtxReq#'ContextRequest'.priority == asn1_NOVALUE ->
             CtxReq2 = CtxReq#'ContextRequest'{priority = Int},
-            do_merge_action_requests(ContextId, CtxReq2, CtxAuditReq, CmdReq, 
+            do_merge_action_requests(CtxId, CtxReq2, CtxAuditReq, CmdReq, 
 				     TopReq, T);
         {emergency, Bool} when CtxReq#'ContextRequest'.emergency == asn1_NOVALUE ->
             CtxReq2 = CtxReq#'ContextRequest'{emergency = Bool},
-            do_merge_action_requests(ContextId, CtxReq2, CtxAuditReq, CmdReq, 
+            do_merge_action_requests(CtxId, CtxReq2, CtxAuditReq, CmdReq, 
 				     TopReq, T);
         {topology, Desc} ->
             TopReq2 = Desc ++ TopReq, %% OTP-4088
-            do_merge_action_requests(ContextId, CtxReq, CtxAuditReq, CmdReq, 
+            do_merge_action_requests(CtxId, CtxReq, CtxAuditReq, CmdReq, 
 				     TopReq2, T);
 
-        priorityAudit when CtxAuditReq#'ContextAttrAuditRequest'.priority == asn1_NOVALUE ->
-            CtxAuditReq2 = CtxAuditReq#'ContextAttrAuditRequest'{priority = 'NULL'},
-            do_merge_action_requests(ContextId, CtxReq, CtxAuditReq2, CmdReq, 
-				     TopReq, T);
-        emergencyAudit when CtxAuditReq#'ContextAttrAuditRequest'.emergency == asn1_NOVALUE ->
-            CtxAuditReq2 = CtxAuditReq#'ContextAttrAuditRequest'{emergency = 'NULL'},
-            do_merge_action_requests(ContextId, CtxReq, CtxAuditReq2, CmdReq, 
-				     TopReq, T);
-        topologyAudit when CtxAuditReq#'ContextAttrAuditRequest'.topology == asn1_NOVALUE ->
-            CtxAuditReq2 = CtxAuditReq#'ContextAttrAuditRequest'{topology = 'NULL'},
-            do_merge_action_requests(ContextId, CtxReq, CtxAuditReq2, CmdReq, 
+	{contextAudit, CAs} ->
+	    CtxAuditReq2 = merge_context_attr_audit_request(CtxAuditReq, CAs),
+	    do_merge_action_requests(CtxId, CtxReq, CtxAuditReq2, CmdReq, 
 				     TopReq, T)
+	    
     end;
-do_merge_action_requests(ContextId, CtxReq, CtxAuditReq, CmdReq, TopReq, []) ->
-    #'ActionRequest'{contextId           = ContextId,
+do_merge_action_requests(CtxId, CtxReq, CtxAuditReq, CmdReq, TopReq, []) ->
+    #'ActionRequest'{contextId           = CtxId,
                      contextRequest      = strip_contextRequest(CtxReq, TopReq),
                      contextAttrAuditReq = strip_contextAttrAuditRequest(CtxAuditReq),
                      commandRequests     = lists:reverse(CmdReq)}.
+
+
+merge_context_attr_audit_request(asn1_NOVALUE, CAs) ->
+    merge_context_attr_audit_request(#'ContextAttrAuditRequest'{}, CAs);
+merge_context_attr_audit_request(CAAR, [H|T]) ->
+    CAAR2 = 
+	case H of
+	    priorityAudit when CAAR#'ContextAttrAuditRequest'.priority == asn1_NOVALUE ->
+		CAAR#'ContextAttrAuditRequest'{priority = 'NULL'};
+
+	    priorityAudit ->
+		Prio = CAAR#'ContextAttrAuditRequest'.priority,
+		exit({only_once, priorityAudit, Prio});
+
+	    emergencyAudit when CAAR#'ContextAttrAuditRequest'.emergency == asn1_NOVALUE ->
+		CAAR#'ContextAttrAuditRequest'{emergency = 'NULL'};
+
+	    emergencyAudit ->
+		Em = CAAR#'ContextAttrAuditRequest'.emergency,
+		exit({only_once, emergencyAudit, Em});
+
+	    topologyAudit when CAAR#'ContextAttrAuditRequest'.topology == asn1_NOVALUE ->
+		CAAR#'ContextAttrAuditRequest'{topology = 'NULL'};
+	    
+	    topologyAudit ->
+		Top = CAAR#'ContextAttrAuditRequest'.topology,
+		exit({only_once, topologyAudit, Top})
+
+    end,
+    merge_context_attr_audit_request(CAAR2, T);
+merge_context_attr_audit_request(CAAR, []) ->
+    CAAR.
 
 %% OTP-5085: 
 %% In order to solve a problem in the parser, the error descriptor

@@ -66,7 +66,7 @@
 
 -module(sys_core_fold).
 
--export([module/2,function/1,format_error/1]).
+-export([module/2,format_error/1]).
 
 -import(lists, [map/2,foldl/3,foldr/3,mapfoldl/3,all/2,any/2,reverse/1,member/2]).
 -include("core_parse.hrl").
@@ -80,14 +80,6 @@ module(#c_module{defs=Ds0}=Mod, Opts) ->
     Ds1 = map(fun function_1/1, Ds0),
     erase(no_inline_list_funcs),
     {ok,Mod#c_module{defs=Ds1},get_warnings()}.
-
-function(Cdef) ->
-    init_warnings(),
-    put(no_inline_list_funcs, true),
-    Res = function_1(Cdef),
-    erase(no_inline_list_funcs),
-    get_warnings(),
-    Res.
 
 function_1(#c_def{val=B0}=Def) ->
     %%ok = io:fwrite("~w:~p~n", [?LINE,{Def#c_def.name}]),

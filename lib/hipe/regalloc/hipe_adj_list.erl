@@ -1,3 +1,4 @@
+%% -*- erlang-indent-level: 2 -*-
 %%----------------------------------------------------------------------
 %% File    : hipe_adj_list.erl
 %% Author  : Andreas Wallin <d96awa@it.uu.se>

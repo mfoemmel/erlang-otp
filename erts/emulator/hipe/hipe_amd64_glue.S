@@ -310,7 +310,6 @@ x86_throw_to_native:
 	call	hipe_handle_exception	# Note: hipe_handle_exception() conses
 	SWITCH_C_TO_ERLANG		# %rsp updated by hipe_find_handler()
 	/* now invoke the handler */
-	movq	P_FVALUE(P), %rax
 	jmp	*P_NCALLEE(P)		# set by hipe_find_handler()
 
 /*

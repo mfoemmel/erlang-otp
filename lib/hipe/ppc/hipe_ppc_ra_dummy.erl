@@ -143,7 +143,7 @@ fix_dst(Dst) ->
 %%% Check if an operand is a pseudo-temp.
 
 temp_is_pseudo(Temp) ->
-  not(hipe_ppc_registers:is_precoloured(hipe_ppc:temp_reg(Temp))).
+  not(hipe_ppc:temp_is_precoloured(Temp)).
 
 %%% Create a new temp with the same type as an old one.
 

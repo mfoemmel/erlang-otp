@@ -167,17 +167,16 @@ combine_alloc({_,Ns,Nh1,Init}, {_,nostack,Nh2,[]}) ->
 merge_blocks([{allocate,R,{Attr,Ns,Nh1,Init}}|B1],
 	     [{allocate,_,{_,nostack,Nh2,[]}}|B2]) ->
     Alloc = {allocate,R,{Attr,Ns,Nh1+Nh2,Init}},
-    [Alloc|merge_blocks_1(B1, B2)];
-merge_blocks(B1, B2) -> merge_blocks_1(B1, B2).
+    [Alloc|merge_blocks(B1, B2)];
+merge_blocks(B1, B2) -> merge_blocks_1(B1++[{set,[],[],stop_here}|B2]).
 
-merge_blocks_1([{set,[D],_,move}=I|Is], Tail) ->
-    case is_killed(D, Is) orelse is_killed(D, Tail) of
-	true -> merge_blocks_1(Is, Tail);
-	false -> [I|merge_blocks_1(Is, Tail)]
+merge_blocks_1([{set,[],_,stop_here}|Is]) -> Is;
+merge_blocks_1([{set,[D],_,move}=I|Is]) ->
+    case is_killed(D, Is) of
+	true -> merge_blocks_1(Is);
+	false -> [I|merge_blocks_1(Is)]
     end;
-merge_blocks_1([I|Is], Tail) ->
-    [I|merge_blocks_1(Is, Tail)];
-merge_blocks_1([], Tail) -> Tail.
+merge_blocks_1([I|Is]) -> [I|merge_blocks_1(Is)].
 
 opt([{set,[Dst],As,{bif,Bif,Fail}}=I1,
      {set,[Dst],[Dst],{bif,'not',Fail}}=I2|Is]) ->

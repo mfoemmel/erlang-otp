@@ -694,11 +694,6 @@ find_new_label(Old, Map) ->
 %% Loads (or other operations) on the label of the BB are also
 %% updated. So are any references from the data section.
 %%
-%% XXX: This implementation does not handle empty infinite loops
-%%      such as L1: goto L2
-%%              L2: goto L1 
-%%      The occurrence of such loops should be checked for and handled.
-%%
 
 -ifdef(REMOVE_TRIVIAL_BBS_NEEDED).
 
@@ -789,6 +784,8 @@ remap([L|Rest], Map, CFG) ->
   case is_empty(bb(CFG, L)) of
     true ->
       case succ(succ_map(CFG), L) of
+	[L] -> %% This is an empty (infinite) self loop. Leave it.
+	  remap(Rest, Map, CFG);
 	[SuccL] ->
 	  CFG1 = bb_remove(CFG, L), 
 	  NewMap = remap_to_succ(L, SuccL, Map, pred_map(CFG)),

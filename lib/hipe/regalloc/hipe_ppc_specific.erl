@@ -56,28 +56,26 @@ non_alloc(_, Params) -> Params.
 %% Liveness stuff
 
 analyze(CFG) ->
-  hipe_ppc_liveness:analyze(CFG).
+  hipe_ppc_liveness_gpr:analyse(CFG).
 
 livein(Liveness,L) ->
-  [X || X <- hipe_ppc_liveness:livein(Liveness,L),
-	hipe_ppc:temp_is_allocatable(X),
-	hipe_ppc:temp_type(X) /= 'double'].
+  [X || X <- hipe_ppc_liveness_gpr:livein(Liveness,L),
+	hipe_ppc:temp_is_allocatable(X)].
 
 liveout(BB_in_out_liveness,Label) ->
-  [X || X <- hipe_ppc_liveness:liveout(BB_in_out_liveness,Label),
-	hipe_ppc:temp_is_allocatable(X),
-	hipe_ppc:temp_type(X) /= 'double'].
+  [X || X <- hipe_ppc_liveness_gpr:liveout(BB_in_out_liveness,Label),
+	hipe_ppc:temp_is_allocatable(X)].
 
 %% Registers stuff
 
 allocatable() ->
-  hipe_ppc_registers:allocatable().
+  hipe_ppc_registers:allocatable_gpr().
 
 all_precoloured() ->
   hipe_ppc_registers:all_precoloured().
 
 is_precoloured(Reg) ->
-  hipe_ppc_registers:is_precoloured(Reg).
+  hipe_ppc_registers:is_precoloured_gpr(Reg).
 
 is_fixed(R) ->
   hipe_ppc_registers:is_fixed(R).
@@ -110,14 +108,12 @@ def_use(Instruction) ->
   {defines(Instruction), uses(Instruction)}.
 
 uses(I) ->
-  [X || X <- hipe_ppc_defuse:insn_use(I),
-	hipe_ppc:temp_is_allocatable(X),
-	hipe_ppc:temp_type(X) /= 'double'].
+  [X || X <- hipe_ppc_defuse:insn_use_gpr(I),
+	hipe_ppc:temp_is_allocatable(X)].
 
 defines(I) ->
-  [X || X <- hipe_ppc_defuse:insn_def(I),
-	hipe_ppc:temp_is_allocatable(X),
-	hipe_ppc:temp_type(X) /= 'double'].
+  [X || X <- hipe_ppc_defuse:insn_def_gpr(I),
+	hipe_ppc:temp_is_allocatable(X)].
 
 is_move(Instruction) ->
   case hipe_ppc:is_pseudo_move(Instruction) of

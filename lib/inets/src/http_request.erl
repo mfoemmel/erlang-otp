@@ -61,7 +61,7 @@ send(#request{method = Method, scheme = Scheme, address = {Host,Port},
 %% Sever side
 
 parse([Bin, MaxHeaderSize]) ->
-    parse_method(Bin, [], MaxHeaderSize, []).
+         parse_method(Bin, [], MaxHeaderSize, []).
 
 %% Functions that may be returned during the decoding process
 %% if the input data is incompleate. 
@@ -71,11 +71,12 @@ parse_method([Bin, Method, MaxHeaderSize, Result]) ->
 parse_uri([Bin, URI, MaxHeaderSize, Result]) ->
     parse_uri(Bin, URI, MaxHeaderSize, Result).
 
-parse_version([Bin, Version, MaxHeaderSize, Result]) ->
-    parse_version(Bin, Version, MaxHeaderSize, Result).
+parse_version([Bin, Rest, Version, MaxHeaderSize, Result]) ->
+    parse_version(<<Rest/binary, Bin/binary>>, Version, MaxHeaderSize, Result).
 
-parse_headers([Bin, Header, Headers, MaxHeaderSize, Result]) ->
-    parse_headers(Bin, Header, Headers, MaxHeaderSize, Result).
+parse_headers([Bin, Rest, Header, Headers, MaxHeaderSize, Result]) ->
+    parse_headers(<<Rest/binary, Bin/binary>>, 
+		  Header, Headers, MaxHeaderSize, Result).
 
 whole_body([Bin, Body, Length])  ->
     whole_body(<<Body/binary, Bin/binary>>, Length).
@@ -219,15 +220,17 @@ parse_uri(<<Octet, Rest/binary>>, URI, MaxHeaderSize, Result) ->
     parse_uri(Rest, [Octet | URI], MaxHeaderSize, Result).
 
 parse_version(<<>>, Version, MaxHeaderSize, Result) ->
-    {?MODULE, parse_version, [Version, MaxHeaderSize, Result]};
+    {?MODULE, parse_version, [<<>>, Version, MaxHeaderSize, Result]};
 parse_version(<<?CR, ?LF, Rest/binary>>, Version, MaxHeaderSize, Result) ->
     parse_headers(Rest, [], [], MaxHeaderSize, 
 		  [string:strip(lists:reverse(Version)) | Result]);
+parse_version(<<?CR>> = Data, Version, MaxHeaderSize, Result) ->
+    {?MODULE, parse_version, [Data, Version, MaxHeaderSize, Result]};
 parse_version(<<Octet, Rest/binary>>, Version, MaxHeaderSize, Result) ->
     parse_version(Rest, [Octet | Version], MaxHeaderSize, Result).
 
 parse_headers(<<>>, Header, Headers, MaxHeaderSize, Result) ->
-    {?MODULE, parse_headers, [Header, Headers, MaxHeaderSize, Result]};
+    {?MODULE, parse_headers, [<<>>, Header, Headers, MaxHeaderSize, Result]};
 parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, [], [], _, Result) ->
      NewResult = list_to_tuple(lists:reverse([Body, {#http_request_h{}, []} |
 					      Result])),
@@ -248,18 +251,28 @@ parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, Header, Headers,
 						    HTTPHeaders} | Result])),
 	    {ok, NewResult}
     end;
+parse_headers(<<?CR,?LF,?CR>> = Data, Header, Headers, 
+	      MaxHeaderSize, Result) ->
+    {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, Result]};
+
+%% There where no headers, which is unlikely to happen.
 parse_headers(<<?CR,?LF>>, [], [], _, Result) ->
      NewResult = list_to_tuple(lists:reverse([<<>>, {#http_request_h{}, []} |
 					      Result])),
     {ok, NewResult};
+parse_headers(<<?CR,?LF>> = Data, Header, Headers, 
+	      MaxHeaderSize, Result) ->
+    {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, Result]};
 parse_headers(<<?CR,?LF, Octet, Rest/binary>>, Header, Headers, 
 	      MaxHeaderSize, Result) ->
     parse_headers(Rest, [Octet], [lists:reverse(Header) | Headers], 
 		  MaxHeaderSize, Result);
+parse_headers(<<?CR>> = Data, Header, Headers, 
+	      MaxHeaderSize, Result) ->
+    {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, Result]};
 parse_headers(<<Octet, Rest/binary>>, Header, Headers, 
 	      MaxHeaderSize, Result) ->
     parse_headers(Rest, [Octet | Header], Headers, MaxHeaderSize, Result).
-
 
 whole_body(Body, Length) ->
     case size(Body) of

@@ -53,8 +53,7 @@ Terminals
 
 %% Separators
 
-'(' ')' '{' '}' '[' ']' '|' ',' '->' '=' '/' '<' '>' ':' '-|' '#{' '}#'
-'#<'
+'(' ')' '{' '}' '[' ']' '|' ',' '->' '=' '/' '<' '>' ':' '-|' '#'
 
 %% Keywords (atoms are assumed to always be single-quoted).
 
@@ -188,16 +187,16 @@ tail_pattern -> '|' anno_pattern ']' : '$2'.
 tail_pattern -> ',' anno_pattern tail_pattern :
 		    #c_cons{hd='$2',tl='$3'}.
 
-binary_pattern -> '#{' '}#' : #c_binary{segments=[]}.
-binary_pattern -> '#{' segment_patterns '}#' : #c_binary{segments='$2'}.
+binary_pattern -> '#' '{' '}' '#' : #c_binary{segments=[]}.
+binary_pattern -> '#' '{' segment_patterns '}' '#' : #c_binary{segments='$3'}.
 
 segment_patterns -> segment_pattern ',' segment_patterns : ['$1' | '$3'].
 segment_patterns -> segment_pattern : ['$1'].
 
-segment_pattern -> '#<' anno_pattern '>' '(' anno_patterns ')':
-	case '$5' of
+segment_pattern -> '#' '<' anno_pattern '>' '(' anno_patterns ')':
+	case '$6' of
 	    [S,U,T,Fs] ->
-		#c_bitstr{val='$2',size=S,unit=U,type=T,flags=Fs};
+		#c_bitstr{val='$3',size=S,unit=U,type=T,flags=Fs};
 	    true ->
 		return_error(tok_line('$1'),
 			     "expected 4 arguments in binary segment")
@@ -277,16 +276,16 @@ tail -> ']' : #c_nil{}.
 tail -> '|' anno_expression ']' : '$2'.
 tail -> ',' anno_expression tail : #c_cons{hd='$2',tl='$3'}.
 
-binary -> '#{' '}#' : #c_binary{segments=[]}.
-binary -> '#{' segments '}#' : #c_binary{segments='$2'}.
+binary -> '#' '{' '}' '#' : #c_binary{segments=[]}.
+binary -> '#' '{' segments '}' '#' : #c_binary{segments='$3'}.
 
 segments -> segment ',' segments : ['$1' | '$3'].
 segments -> segment : ['$1'].
 
-segment -> '#<' anno_expression '>' '(' anno_expressions ')':
-	case '$5' of
+segment -> '#' '<' anno_expression '>' '(' anno_expressions ')':
+	case '$6' of
 	    [S,U,T,Fs] ->
-		#c_bitstr{val='$2',size=S,unit=U,type=T,flags=Fs};
+		#c_bitstr{val='$3',size=S,unit=U,type=T,flags=Fs};
 	    true ->
 		return_error(tok_line('$1'),
 			     "expected 4 arguments in binary segment")

@@ -33,6 +33,10 @@ do_insn(I, TempMap, DontSpill) ->
     #store{} -> do_store(I, TempMap, DontSpill);
     #storex{} -> do_storex(I, TempMap, DontSpill);
     #unary{} -> do_unary(I, TempMap, DontSpill);
+    #lfd{} -> do_lfd(I, TempMap, DontSpill);
+    #lfdx{} -> do_lfdx(I, TempMap, DontSpill);
+    #stfd{} -> do_stfd(I, TempMap, DontSpill);
+    #stfdx{} -> do_stfdx(I, TempMap, DontSpill);
     _ -> {[I], DontSpill}
   end.
 
@@ -112,6 +116,28 @@ do_unary(I=#unary{dst=Dst,src=Src}, TempMap, DontSpill0) ->
   NewI = I#unary{dst=NewDst,src=NewSrc},
   {FixSrc ++ [NewI | FixDst], DontSpill2}.
 
+do_lfd(I=#lfd{base=Base}, TempMap, DontSpill0) ->
+  {FixBase,NewBase,DontSpill1} = fix_src(Base, TempMap, DontSpill0),
+  NewI = I#lfd{base=NewBase},
+  {FixBase ++ [NewI], DontSpill1}.
+
+do_lfdx(I=#lfdx{base1=Base1,base2=Base2}, TempMap, DontSpill0) ->
+  {FixBase1,NewBase1,DontSpill1} = fix_src(Base1, TempMap, DontSpill0),
+  {FixBase2,NewBase2,DontSpill2} = fix_src(Base2, TempMap, DontSpill1),
+  NewI = I#lfdx{base1=NewBase1,base2=NewBase2},
+  {FixBase1 ++ FixBase2 ++ [NewI], DontSpill2}.
+
+do_stfd(I=#stfd{base=Base}, TempMap, DontSpill0) ->
+  {FixBase,NewBase,DontSpill1} = fix_src(Base, TempMap, DontSpill0),
+  NewI = I#stfd{base=NewBase},
+  {FixBase ++ [NewI], DontSpill1}.
+
+do_stfdx(I=#stfdx{base1=Base1,base2=Base2}, TempMap, DontSpill0) ->
+  {FixBase1,NewBase1,DontSpill1} = fix_src(Base1, TempMap, DontSpill0),
+  {FixBase2,NewBase2,DontSpill2} = fix_src(Base2, TempMap, DontSpill1),
+  NewI = I#stfdx{base1=NewBase1,base2=NewBase2},
+  {FixBase1 ++ FixBase2 ++ [NewI], DontSpill2}.
+
 %%% Fix Dst and Src operands.
 
 fix_src_or_imm(Src2, TempMap, DontSpill) ->
@@ -152,7 +178,7 @@ temp_is_spilled(Temp, TempMap) ->
 	true -> hipe_temp_map:is_spilled(Reg, TempMap);
 	false -> false
       end;
-    false ->true
+    false -> true
   end.
 
 %%% Create a new temp with the same type as an old one.

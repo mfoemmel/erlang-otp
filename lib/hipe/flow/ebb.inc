@@ -5,7 +5,6 @@
 %% IDENTIFIES THE EXTENDED BASIC BLOCKS OF A CFG
 %%
 
--module(?MODULE_NAME).
 -export([cfg/1,
 	 %% dag/2,
 	 type/1,

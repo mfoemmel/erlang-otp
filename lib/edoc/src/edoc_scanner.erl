@@ -13,7 +13,7 @@
 %% AB. Portions created by Ericsson are Copyright 1999, Ericsson
 %% Utvecklings AB. All Rights Reserved.''
 %%
-%% $Id: edoc_scanner.erl,v 1.7 2004/08/24 23:08:05 richardc Exp $
+%% $Id: edoc_scanner.erl,v 1.8 2004/11/30 00:39:34 richardc Exp $
 %%
 %% @private
 %% @copyright Richard Carlsson 2001-2003. Portions created by Ericsson
@@ -69,7 +69,7 @@ format_error(Other) -> io_lib:write(Other).
 %%
 %%  Returns:
 %%	{ok,[Tok]}
-%%	{error,{ErrorPos,cerl_scanner,What}}
+%%	{error,{ErrorPos,edoc_scanner,What}}
 
 scan(Cs, Pos) ->
     scan1(Cs, [], Pos).
@@ -346,4 +346,4 @@ scan_exponent1(_, _, _, _, CPos) ->
     scan_error(float, CPos).
 
 scan_error(In, Pos) ->
-    {error,{Pos,cerl_scanner,In}}.
+    {error,{Pos,edoc_scanner,In}}.

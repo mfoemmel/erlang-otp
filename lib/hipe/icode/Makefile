@@ -48,7 +48,7 @@ DOC_MODULES = hipe_icode hipe_icode_cfg hipe_icode_liveness \
 
 MODULES = $(DOC_MODULES) hipe_icode_ebb 
 
-HRL_FILES=
+HRL_FILES=hipe_icode_type.hrl
 ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 DOC_FILES= $(DOC_MODULES:%=$(DOCS)/%.html)
@@ -95,13 +95,15 @@ $(DOCS)/%.html:%.erl
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
+	$(INSTALL_DIR) $(RELSYSDIR)/icode
+	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(RELSYSDIR)/icode
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 
 release_docs_spec:
 
-$(EBIN)/hipe_icode.beam: hipe_icode.hrl ../main/hipe.hrl ../rtl/hipe_literals.hrl
-$(EBIN)/hipe_icode_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl ../rtl/hipe_literals.hrl
+$(EBIN)/hipe_icode.beam: hipe_icode.hrl ../main/hipe.hrl
+$(EBIN)/hipe_icode_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl
 $(EBIN)/hipe_icode_ebb.beam: ../flow/ebb.inc
 $(EBIN)/hipe_icode_liveness.beam: ../flow/liveness.inc
 $(EBIN)/hipe_icode_heap_test.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl

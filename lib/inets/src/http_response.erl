@@ -42,11 +42,13 @@ parse_version([Bin, Version, MaxHeaderSize, Result]) ->
 parse_status_code([Bin, Code, MaxHeaderSize, Result]) ->
     parse_status_code(Bin, Code, MaxHeaderSize, Result).
 
-parse_reason_phrase([Bin, Phrase, MaxHeaderSize, Result]) ->
-    parse_reason_phrase(Bin, Phrase, MaxHeaderSize,Result).
+parse_reason_phrase([Bin, Rest, Phrase, MaxHeaderSize, Result]) ->
+    parse_reason_phrase(<<Rest/binary, Bin/binary>>, Phrase, 
+			MaxHeaderSize, Result).
 
-parse_headers([Bin, Header, Headers, MaxHeaderSize, Result]) ->
-    parse_headers(Bin, Header, Headers, MaxHeaderSize, Result).
+parse_headers([Bin, Rest,Header, Headers, MaxHeaderSize, Result]) ->
+    parse_headers(<<Rest/binary, Bin/binary>>, Header, Headers, 
+		  MaxHeaderSize, Result).
     
 whole_body(Body, Length) ->
     case size(Body) of
@@ -141,16 +143,18 @@ parse_status_code(<<Octet, Rest/binary>>, StatusCodeStr,
     parse_status_code(Rest, [Octet | StatusCodeStr], MaxHeaderSize, Result).
 
 parse_reason_phrase(<<>>, Phrase, MaxHeaderSize, Result) ->
-    {?MODULE, parse_reason_phrase, [Phrase, MaxHeaderSize,Result]};
+    {?MODULE, parse_reason_phrase, [<<>>, Phrase, MaxHeaderSize,Result]};
 parse_reason_phrase(<<?CR, ?LF, Rest/binary>>, Phrase, 
 		    MaxHeaderSize, Result) ->
     parse_headers(Rest, [], [], MaxHeaderSize,
-		  [lists:reverse(Phrase) | Result]);  
+		  [lists:reverse(Phrase) | Result]); 
+parse_reason_phrase(<<?CR>> = Data, Phrase, MaxHeaderSize, Result) ->
+    {?MODULE, parse_reason_phrase, [Data, Phrase, MaxHeaderSize,Result]};
 parse_reason_phrase(<<Octet, Rest/binary>>, Phrase, MaxHeaderSize, Result) ->
     parse_reason_phrase(Rest, [Octet | Phrase], MaxHeaderSize, Result).
 
 parse_headers(<<>>, Header, Headers, MaxHeaderSize, Result) -> 
-    {?MODULE, parse_headers, [Header, Headers, MaxHeaderSize, Result]};
+    {?MODULE, parse_headers, [<<>>, Header, Headers, MaxHeaderSize, Result]};
 parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, Header, Headers,
 	      MaxHeaderSize, Result) ->
     HTTPHeaders = [lists:reverse(Header) | Headers],
@@ -165,26 +169,79 @@ parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, Header, Headers,
 	    throw({error, {header_too_long, MaxHeaderSize, 
 			   MaxHeaderSize-Length}})
     end;
+parse_headers(<<?CR,?LF,?CR>> = Data, Header, Headers, 
+	      MaxHeaderSize, Result) ->
+    {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, Result]};
+parse_headers(<<?CR,?LF>> = Data, Header, Headers, 
+	      MaxHeaderSize, Result) ->
+    {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, Result]};
 parse_headers(<<?CR,?LF, Octet, Rest/binary>>, Header, Headers,
 	      MaxHeaderSize, Result) ->
     parse_headers(Rest, [Octet], 
 		  [lists:reverse(Header) | Headers], MaxHeaderSize, Result);
+parse_headers(<<?CR>> = Data, Header, Headers, 
+	      MaxHeaderSize, Result) ->
+    {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, Result]};
 parse_headers(<<Octet, Rest/binary>>, Header, Headers,
 	      MaxHeaderSize, Result) ->
     parse_headers(Rest, [Octet | Header], Headers, MaxHeaderSize, Result).
 
+headers("cache_control", Value, Headers) ->
+    Headers#http_response_h{cache_control = Value};
 headers("connection", Value, Headers) ->
     Headers#http_response_h{connection = Value};
-headers("content-length", Value, Headers) ->
-    Headers#http_response_h{content_length = Value};
-headers("content-type", Value, Headers) ->
-    Headers#http_response_h{content_type = Value};
+headers("date", Value, Headers) ->
+    Headers#http_response_h{date = Value};
+headers("pragma", Value, Headers) ->
+    Headers#http_response_h{pragma = Value};
+headers("trailer", Value, Headers) ->
+    Headers#http_response_h{trailer = Value};
 headers("transfer-encoding", Value, Headers) ->
     Headers#http_response_h{transfer_encoding = Value};
+headers("upgrade", Value, Headers) ->
+    Headers#http_response_h{upgrade = Value};
+headers("via", Value, Headers) ->
+    Headers#http_response_h{via = Value};
+headers("warning", Value, Headers) ->
+    Headers#http_response_h{warning = Value};
+headers("accept_ranges", Value, Headers) ->
+    Headers#http_response_h{accept_ranges = Value};
+headers("age", Value, Headers) ->
+    Headers#http_response_h{age = Value};
+headers("etag", Value, Headers) ->
+    Headers#http_response_h{etag = Value};
 headers("location", Value, Headers) ->
     Headers#http_response_h{location = Value};
-headers("retry-after", Value, Headers) ->
+headers("proxy_authenticate", Value, Headers) ->
+    Headers#http_response_h{proxy_authenticate = Value};
+headers("retry_after", Value, Headers) ->
     Headers#http_response_h{retry_after = Value};
+headers("server", Value, Headers) ->
+    Headers#http_response_h{server = Value};
+headers("vary", Value, Headers) ->
+    Headers#http_response_h{vary = Value};
+headers("www_authenticate", Value, Headers) ->
+    Headers#http_response_h{www_authenticate = Value};
+headers("allow", Value, Headers) ->
+    Headers#http_response_h{allow = Value};
+headers("content-encoding", Value, Headers) ->
+    Headers#http_response_h{content_encoding = Value};
+headers("content-language", Value, Headers) ->
+    Headers#http_response_h{content_language = Value};
+headers("content-length", Value, Headers) ->
+    Headers#http_response_h{content_length = Value};
+headers("content-location", Value, Headers) ->
+    Headers#http_response_h{content_location = Value};
+headers("content-md5", Value, Headers) ->
+    Headers#http_response_h{content_md5 = Value};
+headers("content-range", Value, Headers) ->
+    Headers#http_response_h{content_range = Value};
+headers("content-type", Value, Headers) ->
+    Headers#http_response_h{content_type = Value};
+headers("expires", Value, Headers) ->
+    Headers#http_response_h{expires = Value};
+headers("last_modified", Value, Headers) ->
+    Headers#http_response_h{last_modified = Value};
 headers(Key, Value, Headers) ->
     Headers#http_response_h{other=
 			    [{Key, Value} | Headers#http_response_h.other]}.

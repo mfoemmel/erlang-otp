@@ -39,7 +39,7 @@ SOURCES= \
 	edoc_macros.erl edoc_doclet.erl edoc_data.erl edoc_refs.erl \
 	edoc_types.erl edoc_parse_expr.erl edoc_parse_ref.erl \
 	edoc_parse_spec.erl edoc_parse_typedef.erl edoc_parse_xml.erl \
-	edoc_parse_contact.erl edoc_wiki.erl edoc_index.erl \
+	edoc_parse_contact.erl edoc_wiki.erl \
 	otpsgml_layout.erl
 
 OBJECTS=$(SOURCES:%.erl=$(EBIN)/%.$(EMULATOR))

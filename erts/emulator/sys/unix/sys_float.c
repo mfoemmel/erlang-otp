@@ -37,6 +37,11 @@ erts_sys_init_float(void)
 
 #else  /* !NO_FPE_SIGNALS */
 
+/* Is there no standard identifier for Darwin/MacOSX ? */
+#if defined(__ppc__) && defined(__APPLE__) && defined(__MACH__) && !defined(__DARWIN__)
+#define __DARWIN__ 1
+#endif
+
 #if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
 
 static void unmask_x87(void)
@@ -71,17 +76,78 @@ void erts_restore_fpu(void)
     unmask_x87();
 }
 
-#elif defined(__powerpc__) && defined(__linux__)
+#elif (defined(__powerpc__) && defined(__linux__)) || defined(__DARWIN__)
 
+#if defined(__linux__)
 #include <sys/prctl.h>
 
-static void set_fpexc(unsigned int val)
+static void set_fpexc_precise(void)
 {
-    if( prctl(PR_SET_FPEXC, val) < 0 ) {
+    if( prctl(PR_SET_FPEXC, PR_FP_EXC_PRECISE) < 0 ) {
 	perror("PR_SET_FPEXC");
 	exit(1);
     }
 }
+
+#elif defined(__DARWIN__)
+
+#include <mach/mach.h>
+#include <pthread.h>
+
+/*
+ * FE0 FE1	MSR bits
+ *  0   0	floating-point exceptions disabled
+ *  0   1	floating-point imprecise nonrecoverable
+ *  1   0	floating-point imprecise recoverable
+ *  1   1	floating-point precise mode
+ *
+ * Apparently:
+ * - Darwin 5.5 (MacOS X <= 10.1) starts with FE0 == FE1 == 0,
+ *   and resets FE0 and FE1 to 0 after each SIGFPE.
+ * - Darwin 6.0 (MacOS X 10.2) starts with FE0 == FE1 == 1,
+ *   and does not reset FE0 or FE1 after a SIGFPE.
+ */
+#define FE0_MASK	(1<<11)
+#define FE1_MASK	(1<<8)
+
+/* a thread cannot get or set its own MSR bits */
+static void *fpu_fpe_enable(void *arg)
+{
+    thread_t t = *(thread_t*)arg;
+    struct ppc_thread_state state;
+    unsigned int state_size = PPC_THREAD_STATE_COUNT;
+
+    if (thread_get_state(t, PPC_THREAD_STATE, (natural_t*)&state, &state_size) != KERN_SUCCESS) {
+	perror("thread_get_state");
+	exit(1);
+    }
+    if ((state.srr1 & (FE1_MASK|FE0_MASK)) != (FE1_MASK|FE0_MASK)) {
+#if 0
+	/* This would also have to be performed in the SIGFPE handler
+	   to work around the MSR reset older Darwin releases do. */
+	state.srr1 |= (FE1_MASK|FE0_MASK);
+	thread_set_state(t, PPC_THREAD_STATE, (natural_t*)&state, state_size);
+#else
+	fprintf(stderr, "srr1 == 0x%08x, your Darwin is too old\n", state.srr1);
+	exit(1);
+#endif
+    }
+    return NULL; /* Ok, we appear to be on Darwin 6.0 or later */
+}
+
+static void set_fpexc_precise(void)
+{
+    thread_t self = mach_thread_self();
+    pthread_t enabler;
+
+    if (pthread_create(&enabler, NULL, fpu_fpe_enable, &self)) {
+	perror("pthread_create");
+    } else if (pthread_join(enabler, NULL)) {
+	perror("pthread_join");
+    }
+}
+
+#endif
 
 static void set_fpscr(unsigned int fpscr)
 {
@@ -91,12 +157,12 @@ static void set_fpscr(unsigned int fpscr)
     } u;
     u.fpscr[0] = 0xFFF80000;
     u.fpscr[1] = fpscr;
-    __asm__ __volatile__("lfd%U0 0,%0; mtfsf 255,0" : : "m"(u.d) : "fr0");
+    __asm__ __volatile__("mtfsf 255,%0" : : "f"(u.d));
 }
 
 static void unmask_fpe(void)
 {
-    set_fpexc(PR_FP_EXC_PRECISE);
+    set_fpexc_precise();
     set_fpscr(0x80|0x40|0x10);	/* VE, OE, ZE; not UE or XE */
 }
 
@@ -205,15 +271,16 @@ static void skip_sse2_insn(mcontext_t *mc)
 }
 #endif /* __linux__ && __x86_64__ */
 
-#if defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__powerpc__))
+#if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__powerpc__))) || defined(__DARWIN__)
 
 #include <ucontext.h>
 
 static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
 {
     ucontext_t *uc = puc;
-    mcontext_t *mc = &uc->uc_mcontext;
+#if defined(__linux__)
 #if defined(__x86_64__)
+    mcontext_t *mc = &uc->uc_mcontext;
     fpregset_t fpstate = mc->fpregs;
     /* A failed SSE2 instruction will restart. To avoid
        looping, we must update RIP to skip the instruction
@@ -227,12 +294,19 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
     }
     fpstate->swd &= ~0xFF;
 #elif defined(__i386__)
+    mcontext_t *mc = &uc->uc_mcontext;
     fpregset_t fpstate = mc->fpregs;
     fpstate->sw &= ~0xFF;
 #elif defined(__powerpc__)
-    unsigned long *regs = &mc->regs->gpr[0];
+    mcontext_t *mc = uc->uc_mcontext.uc_regs;
+    unsigned long *regs = &mc->gregs[0];
     regs[PT_NIP] += 4;
     regs[PT_FPSCR] = 0x80|0x40|0x10;	/* VE, OE, ZE; not UE or XE */
+#endif
+#elif defined(__DARWIN__)
+    mcontext_t mc = uc->uc_mcontext;
+    mc->ss.srr0 += 4;
+    mc->fs.fpscr = 0x80|0x40|0x10;
 #endif
     erl_fp_exception = 1;
 }
@@ -247,7 +321,7 @@ void erts_sys_init_float(void)
     unmask_fpe();
 }
 
-#else  /* !(__linux__ && (__i386__ || __x86_64__ || __powerpc__)) */
+#else  /* !((__linux__ && (__i386__ || __x86_64__ || __powerpc__)) || __DARWIN__) */
 
 static void fpe_sig_handler(int sig)
 {
@@ -261,7 +335,7 @@ erts_sys_init_float(void)
     unmask_fpe();
 }
 
-#endif /* __linux__ && (__i386__ || __x86_64__ || __powerpc__) */
+#endif /* (__linux__ && (__i386__ || __x86_64__ || __powerpc__)) || __DARWIN__ */
 
 #endif /* NO_FPE_SIGNALS */
 

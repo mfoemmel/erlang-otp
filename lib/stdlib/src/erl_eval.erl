@@ -499,7 +499,7 @@ eval_fun(Cs, As, Bs0, Lf, Ef) ->
     eval_fun(Cs, As, Bs0, Lf, Ef, value).
 
 eval_fun([{clause,_,H,G,B}|Cs], As, Bs0, Lf, Ef, RBs) ->
-    case match_list(H, As, new_bindings()) of
+    case match_list(H, As, new_bindings(), Bs0) of
 	{match,Bsn} ->                      % The new bindings for the head
 	    Bs1 = add_bindings(Bsn, Bs0),   % which then shadow!
 	    case guard(G, Bs1, Lf, Ef) of
@@ -987,12 +987,15 @@ match_tuple([], _, _, Bs, _BBs) ->
 %%  Try to match a list of patterns against a list of terms with the
 %%  current bindings.
 
-match_list([P|Ps], [T|Ts], Bs0) ->
-    case match(P, T, Bs0) of
-	{match,Bs1} -> match_list(Ps, Ts, Bs1);
+match_list(Ps, Ts, Bs) ->
+    match_list(Ps, Ts, Bs, Bs).
+
+match_list([P|Ps], [T|Ts], Bs0, BBs) ->
+    case match(P, T, Bs0, BBs) of
+	{match,Bs1} -> match_list(Ps, Ts, Bs1, BBs);
 	nomatch -> nomatch
     end;
-match_list([], [], Bs) ->
+match_list([], [], Bs, _BBs) ->
     {match,Bs}.
 
 %% new_bindings()

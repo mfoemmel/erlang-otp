@@ -24,19 +24,24 @@
 	 test_integer/4, test_number/4, test_constant/4, test_tuple_N/5]).
 -export([realtag_fixnum/2, tag_fixnum/2, realuntag_fixnum/2, untag_fixnum/2]).
 -export([test_two_fixnums/3, test_fixnums/4, unsafe_fixnum_add/3,
-	 fixnum_gt/5, fixnum_lt/5, fixnum_ge/5, fixnum_le/5,
-	 fixnum_addsub/5, fixnum_andorxor/4, fixnum_not/2]).
+	 fixnum_gt/5, fixnum_lt/5, fixnum_ge/5, fixnum_le/5, fixnum_val/1,
+	 fixnum_addsub/5, fixnum_andorxor/4, fixnum_not/2, fixnum_bsr/3]).
 -export([unsafe_car/2, unsafe_cdr/2,
 	 unsafe_constant_element/3, unsafe_update_element/3, element/6]).
 -export([unsafe_closure_element/3]).
--export([mk_fun_header/0, tag_fun/2, if_fun_get_arity_and_address/5]).
+-export([mk_fun_header/0, tag_fun/2]).
 -export([unsafe_untag_float/2, unsafe_tag_float/2]).
 -export([unsafe_mk_sub_binary/4, unsafe_mk_float/3, unsafe_mk_big/3, unsafe_load_float/3]).
 -export([safe_mk_sub_binary/4]).
 -export([test_subbinary/3, test_heap_binary/3]).
 -export([finalize_bin/4, get_base/2]).
 -export([create_heap_binary/3, create_refc_binary/3]).
+
 -include("hipe_literals.hrl").
+
+-ifdef(EFT_NATIVE_ADDRESS).
+-export([if_fun_get_arity_and_address/5]).
+-endif.
 
 -undef(TAG_PRIMARY_BOXED).
 -undef(TAG_IMMED2_MASK).
@@ -336,6 +341,9 @@ untag_fixnum(DestReg, SrcVar) ->
 realuntag_fixnum(DestReg, SrcVar) ->
   hipe_rtl:mk_alu(DestReg, SrcVar, 'sra', hipe_rtl:mk_imm(?TAG_IMMED1_SIZE)).
 
+fixnum_val(Fixnum) ->
+  Fixnum bsr ?TAG_IMMED1_SIZE.
+
 test_fixnums(Args, TrueLab, FalseLab, Pred)->
   {Reg, Ands} = test_fixnums_1(Args, []),
   Ands ++ [test_fixnum(Reg, TrueLab, FalseLab, Pred)].
@@ -429,6 +437,15 @@ fixnum_andorxor(AluOp, Arg1, Arg2, Res) ->
 fixnum_not(Arg, Res) ->
   Mask = (-1 bsl ?TAG_IMMED1_SIZE),
   hipe_rtl:mk_alu(Res, Arg, 'xor', hipe_rtl:mk_imm(Mask)).
+
+fixnum_bsr(Arg1, Arg2, Res) ->
+  Tmp1 = hipe_rtl:mk_new_reg(),
+  Tmp2 = hipe_rtl:mk_new_reg(),
+  [untag_fixnum(Tmp1, Arg2),
+   hipe_rtl:mk_alu(Tmp2, Arg1, 'sra', Tmp1),
+   hipe_rtl:mk_alu(Res, Tmp2, 'or', hipe_rtl:mk_imm(?TAG_IMMED1_SMALL))].
+   
+  
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -633,6 +650,7 @@ tag_fun(Res, X) ->
 %% untag_fun(Res, X) ->
 %%   hipe_rtl:mk_alu(Res, X, 'sub', hipe_rtl:mk_imm(?TAG_PRIMARY_BOXED)).
 
+-ifdef(EFT_NATIVE_ADDRESS).
 if_fun_get_arity_and_address(ArityReg, AddressReg, FunP, BadFunLab, Pred) ->
 %%    EmuAddressPtrReg = hipe_rtl:mk_new_reg(),
 %%    FEPtrReg = hipe_rtl:mk_new_reg(),
@@ -653,6 +671,7 @@ if_fun_get_arity_and_address(ArityReg, AddressReg, FunP, BadFunLab, Pred) ->
 		      hipe_rtl:mk_imm(-(?TAG_PRIMARY_BOXED)+
 				      ?EFT_NATIVE_ADDRESS))],
   IsFunCode ++ GetArityCode.
+-endif.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -842,15 +861,15 @@ unsafe_mk_float(Dst, FloatLo, FloatHi) ->
 unsafe_load_float(DstLo, DstHi, Src) ->
   WordSize = hipe_rtl_arch:word_size(),
   Offset1 = -(?TAG_PRIMARY_BOXED) + WordSize,
-  Offset2 = Offset1 + WordSize,
+  Offset2 = Offset1 + 4, %% This should really be 4 and not WordSize
   case hipe_rtl_arch:endianess() of
     little ->
-      [hipe_rtl:mk_load(DstLo, Src, hipe_rtl:mk_imm(Offset1)),
-       hipe_rtl:mk_load(DstHi, Src, hipe_rtl:mk_imm(Offset2))];
+      [hipe_rtl:mk_load(DstLo, Src, hipe_rtl:mk_imm(Offset1),int32,unsigned),
+       hipe_rtl:mk_load(DstHi, Src, hipe_rtl:mk_imm(Offset2),int32,unsigned)];
     big ->
-      [hipe_rtl:mk_load(DstHi, Src, hipe_rtl:mk_imm(Offset1)),
-       hipe_rtl:mk_load(DstLo, Src, hipe_rtl:mk_imm(Offset2))]
-  end.
+      [hipe_rtl:mk_load(DstHi, Src, hipe_rtl:mk_imm(Offset1),int32,unsigned),
+       hipe_rtl:mk_load(DstLo, Src, hipe_rtl:mk_imm(Offset2),int32,unsigned)]
+  end. 
 
 unsafe_mk_big(Dst, Src, Signedness) ->
   case hipe_rtl_arch:endianess() of

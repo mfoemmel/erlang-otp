@@ -150,8 +150,8 @@ linearize(CFG) ->
 			hipe_gensym:label_range(rtl)),
   hipe_rtl:rtl_info_update(Rtl, info(CFG)).
 
-%% XXX: Warning this arity might not be the true arity.
-%%      The true arity of a closure usually differs.
+%% %% Warning: this arity might not be the true arity.
+%% %% The true arity of a closure usually differs.
 %% arity(CFG) ->
 %%    {_M,_F,A} = function(CFG),
 %%    A.

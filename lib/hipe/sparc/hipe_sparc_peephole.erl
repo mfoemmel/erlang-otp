@@ -7,16 +7,15 @@
 
 -module(hipe_sparc_peephole).
 -author('chvi3471@student.uu.se').
+
 -export([peep/1]).
+
 -include("hipe_sparc.hrl").
 
-
 -define(DO_PEEP, true).
--define(DO_LOGGING, false).  % Change this to get peephole opts logged to..
+%%-define(DO_LOGGING, true).  % Uncomment this to get peephole opts logged to..
 -define(LOG_FILE, "peepcount.txt"). % ..this file..
 -define(LOG_DIR, "/home/chvi3471/otp/tests/"). % ..in this dir
-
-
 
 
 %%>----------------------------------------------------------------------<
@@ -32,7 +31,7 @@
 %  Return    : An optimized list of pseudo sparc-assembler records with 
 %              (hopefully) fewer or faster instructions.
 %  Notes     : Creates a file in the users home directory that contain 
-%              analysis information, if macro ?DO_LOGGING i set to true.
+%              analysis information, if macro ?DO_LOGGING is defined.
 %%>----------------------------------------------------------------------<
 peep(LinearCode) -> 
     case ?DO_PEEP of
@@ -208,57 +207,58 @@ log2(Nr, I) ->
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : printLogHeader/1
-%  Purpose   : Prints the headers for each function compiled.
-%  Arguments : 
-%  Return    : unit
-%  Notes     : 
+%% Procedure : printLogHeader/1
+%% Purpose   : Prints the headers for each function compiled.
+%% Arguments : 
+%% Return    : unit
+%% Notes     : 
 %%>----------------------------------------------------------------------<
+%% -ifdef(DO_LOGGING).
 %% printLogHeader(MFA) ->
-%%     case ?DO_LOGGING of
-%% 	true ->
-%% 	    {x86_mfa, M, F, _} = MFA,
-%% 	    {ok, Dir} = file:get_cwd(),
-%% 	    file:set_cwd(?LOG_DIR),
-%% 	    {ok, File} = file:open(?LOG_FILE, [read, append]),
-%% 	    io:format(File, 
-%% 		      "\nModule: ~w  Function: ~w" ++ 
-%% 		      "\n>==============================================<\n", 
-%% 		      [M, F]),
-%% 	    file:set_cwd(Dir),
-%% 	    file:close(File);
-%% 	_ ->
-%% 	    ok
-%%     end.
+%%     {x86_mfa, M, F, _} = MFA,
+%%     {ok, Dir} = file:get_cwd(),
+%%     file:set_cwd(?LOG_DIR),
+%%     {ok, File} = file:open(?LOG_FILE, [read, append]),
+%%     io:format(File, 
+%% 		 "\nModule: ~w  Function: ~w" ++ 
+%% 		 "\n>==============================================<\n", 
+%% 		 [M, F]),
+%%     file:set_cwd(Dir),
+%%     file:close(File).
+%% -else.
+%% printLogHeader(_) ->
+%%     ok.
+%% -endif.
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : printLst/1
-%  Purpose   : Prints ths name of the peephole optimizations done in the
-%              current function being compiled.
-%  Arguments : Lst - A list of atoms.
-%  Return    : unit
-%  Notes     : Prints (append) the atoms in the list, with a space in 
-%              between, to a file specified by the macro LOG_FILE. 
+%% Procedure : printLst/1
+%% Purpose   : Prints ths name of the peephole optimizations done in the
+%%             current function being compiled.
+%% Arguments : Lst - A list of atoms.
+%% Return    : unit
+%% Notes     : Prints (append) the atoms in the list, with a space in 
+%%             between, to a file specified by the macro LOG_FILE. 
 %%>----------------------------------------------------------------------<
+-ifdef(DO_LOGGING).
 printLst(Lst) ->
-    case ?DO_LOGGING of
-	true ->
-	    {ok, Dir} = file:get_cwd(),
-	    file:set_cwd(?LOG_DIR),
-	    {ok, File} = file:open(?LOG_FILE, [read, append]),
-	    printLst(File, Lst),
-	    file:set_cwd(Dir),
-	    file:close(File);
-	_ ->
-	    ok
-    end.
+    {ok, Dir} = file:get_cwd(),
+    file:set_cwd(?LOG_DIR),
+    {ok, File} = file:open(?LOG_FILE, [read, append]),
+    printLst(File, Lst),
+    file:set_cwd(Dir),
+    file:close(File).
+
 printLst(File, [Opt|Lst]) ->
-   %io:format(File, "Peephole applied ~w times!\n", [length(Lst)]),
+    %% io:format(File, "Peephole applied ~w times!\n", [length(Lst)]),
     io:format(File, "Peephole optimization applied: ", []),
     io:write(File, Opt),
     io:format(File, "\n", []),
     printLst(File, Lst);
 printLst(_, []) -> done.
 
+-else.
 
+printLst(_) ->
+    ok.
+-endif.

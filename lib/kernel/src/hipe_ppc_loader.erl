@@ -1,5 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
-%%% $Id: hipe_ppc_loader.erl,v 1.7 2004/04/26 23:32:22 mikpe Exp $
+%%% $Id$
 
 -module(hipe_ppc_loader).
 -export([patch_instr/3]).

@@ -34,13 +34,14 @@
 
 -export([empty_free_lists/0, init_alloc/1, alloc_many/4, alloc/2,
          free/3, get_freelists/1, all_free/1, all_allocated/1,
-         all_allocated_as_list/1, log2/1, make_zeros/1]).
+         all_allocated_as_list/1, find_allocated/4, find_next_allocated/3,
+         log2/1, make_zeros/1]).
 
 -export([init_slots_from_old_file/2]).
 
 -export([list_to_tree/1, tree_to_bin/5]).
 
--compile({inline, [{sz2pos,1}]}).
+-compile({inline, [{sz2pos,1}, {adjust_addr,3}]}).
 -compile({inline, [{bplus_mk_leaf,1}, {bplus_get_size,1},
 		   {bplus_get_tree,2}, {bplus_get_lkey,2},
 		   {bplus_get_rkey,2}]}).
@@ -653,6 +654,94 @@ all(Tab, I, L) ->
     LL = collect_tree(element(I, Tab), I, L),
     all(Tab, I-1, LL).
 
+%% Finds allocated areas between Addr (approx.) and Addr+Length.
+find_allocated(Ftab, Addr, Length, Base) ->
+    MaxAddr = Addr + Length,
+    Ints = collect_all_interval(Ftab, Addr, MaxAddr, Base),
+    allocated(Ints, Addr, MaxAddr, Ftab, Base).
+
+allocated(Some, Addr, Max, Ftab, Base) ->
+    case allocated1(Some, Addr, Max, []) of
+        [] ->
+            case find_next_allocated(Ftab, Addr, Base) of
+                {From,_} -> 
+                    find_allocated(Ftab, From, ?CHUNK_SIZE, Base);
+                none ->
+                    <<>>
+            end;
+        L -> 
+            list_to_binary(lists:reverse(L))
+    end.
+
+allocated1([], Y0, Max, A) when Y0 < Max ->
+    [<<Y0:32,Max:32>> | A];
+allocated1([], _Y0, _Max, A) ->
+    A;
+allocated1([{X,Y} | L], Y0, Max, A) when Y0 >= X ->
+    allocated1(L, Y, Max, A);
+allocated1([{X,Y} | L], Y0, Max, A) -> % when Y0 < X
+    allocated1(L, Y, Max, [<<Y0:32,X:32>> | A]).
+
+%% Finds the first allocated area starting at Addr or later.
+find_next_allocated(Ftab, Addr, Base) ->
+    case find_next_free(Ftab, Addr, Base) of
+        none ->
+            none;
+        {Addr1, Pos} when Addr1 =< Addr ->
+            find_next_allocated(Ftab, Addr1 + ?POW(Pos-1), Base);
+        {Next, _Pos} ->
+            {Addr, Next}
+    end.
+
+%% Finds the first free address starting att Addr or later. 
+%% -> none | {FirstFreeAddress, FtabPosition}
+find_next_free(Ftab, Addr, Base) ->
+    MaxBud = size(Ftab),
+    find_next_free(Ftab, Addr, 1, MaxBud, -1, -1, Base).
+
+find_next_free(Ftab, Addr0, Pos, MaxBud, Next, PosN, Base)  
+                         when Pos =< MaxBud ->
+    Addr = adjust_addr(Addr0, Pos, Base),
+    PosTab = element(Pos, Ftab),
+    case bplus_lookup_next(PosTab, Addr-1) of
+        undefined ->
+            find_next_free(Ftab, Addr0, Pos+1, MaxBud, Next, PosN, Base);
+        {ok, Next1} when PosN =:= -1; Next1 < Next ->
+            find_next_free(Ftab, Addr0, Pos+1, MaxBud, Next1, Pos, Base);
+        {ok, _} ->
+            find_next_free(Ftab, Addr0, Pos+1, MaxBud, Next, PosN, Base)
+    end;
+find_next_free(_Ftab, _Addr, _Pos, _MaxBud, -1, _PosN, _Base) ->
+    none;
+find_next_free(_Ftab, _Addr, _Pos, _MaxBud, Next, PosN, _Base) ->
+    {Next, PosN}.
+
+collect_all_interval(Ftab, Addr, MaxAddr, Base) ->
+    MaxBud = size(Ftab),
+    collect_all_interval(Ftab, Addr, MaxAddr, 1, MaxBud, Base, []).
+
+collect_all_interval(Ftab, L0, U, Pos, MaxBud, Base, Acc0) when Pos =< MaxBud ->
+    PosTab = element(Pos, Ftab),
+    L = adjust_addr(L0, Pos, Base),
+    Acc = collect_interval(PosTab, Pos, L, U, Acc0),
+    collect_all_interval(Ftab, L0, U, Pos+1, MaxBud, Base, Acc);
+collect_all_interval(_Ftab, _L, _U, _Pos, _MaxBud, _Base, Acc) ->
+    lists:sort(Acc).
+
+%% It could be that Addr is inside a free area. This function adjusts
+%% the address so that is placed on a boundary in the Pos tree. Inlined.
+adjust_addr(Addr, Pos, Base) ->
+    Pow = ?POW(Pos - 1),
+    Rem = (Addr - Base) rem Pow,
+    if
+        Rem =:= 0 ->
+            Addr;
+        Addr < Pow ->
+            Addr;
+        true ->
+            Addr - Rem
+    end.
+
 %%%-----------------------------------------------------------------
 %%% These functions implements a B+ tree.
 %%% The code is originally written by lelle@erlang.ericsson.se,
@@ -771,6 +860,42 @@ get_first_key(T) ->
 	    get_first_key(bplus_get_tree(T, 1))
     end.
 
+%% Special for dets.
+collect_interval(v, _TI, _L, _U, Acc) -> Acc;
+collect_interval(T, TI, L, U, Acc) ->
+    Pow = ?POW(TI-1),
+    collect_interval2(T, Pow, L, U, Acc).
+
+collect_interval2(Tree, Pow, L, U, Acc) ->
+    S = bplus_get_size(Tree),
+    case ?NODE_TYPE(Tree) of
+	l ->
+	    collect_leaf_interval(Tree, S, Pow, L, U, Acc);
+	n ->
+            {Max, _} = bplus_select_sub_tree(Tree, U),
+            {Min, _} = bplus_select_sub_tree_2(Tree, L, Max),
+	    collect_node_interval(Tree, Min, Max, Pow, L, U, Acc)
+    end.
+    
+collect_leaf_interval(_Leaf, 0, _Pow, _L, _U, Acc) ->
+    Acc;
+collect_leaf_interval(Leaf, I, Pow, L, U, Acc) ->
+    Key = ?GET_LEAF_KEY(Leaf, I),
+    if
+        Key < L -> 
+            Acc;
+        Key > U -> 
+            collect_leaf_interval(Leaf, I-1, Pow, L, U, Acc);
+        true -> 
+            collect_leaf_interval(Leaf, I-1, Pow, L, U, [{Key,Key+Pow} | Acc])
+    end.
+
+collect_node_interval(_Node, I, UP, _Pow, _L, _U, Acc) when I > UP ->
+    Acc;
+collect_node_interval(Node, I, UP, Pow, L, U, Acc) ->
+    Acc1 = collect_interval2(bplus_get_tree(Node, I), Pow, L, U, Acc),
+    collect_node_interval(Node, I+1, UP, Pow, L, U, Acc1).
+
 %%-----------------------------------------------------------------
 %% Func: empty_tree/0
 %% Purpose: Creates a new empty tree.
@@ -824,6 +949,67 @@ bplus_lookup_first(Tree) ->
 	    bplus_lookup_first(bplus_get_tree(Tree, 1))
     end.
 
+
+%%-----------------------------------------------------------------
+%% Func: lookup_next/2
+%% Purpose: Finds the next key nearest after Key.
+%% Returns: {ok, {Key, Val}} | 'undefined'. NIX!!!
+%%-----------------------------------------------------------------
+bplus_lookup_next(v, _) -> undefined;
+bplus_lookup_next(Tree, Key) ->
+    case ?NODE_TYPE(Tree) of
+	l ->
+	    lookup_next_leaf(Key, Tree);
+	n ->
+	    {Pos, SubTree} = bplus_select_sub_tree(Tree, Key),
+	    case bplus_lookup_next(SubTree, Key) of
+		undefined ->
+		    S = bplus_get_size(Tree),
+		    if
+			% There is a right brother.
+			S > Pos ->                  
+			    bplus_lookup_first(bplus_get_tree(Tree, Pos+1));
+			% No there is no right brother.
+			true ->
+			    undefined
+		    end;
+		% We ok a next item.
+		Result ->                         
+		    Result
+	    end
+    end.
+
+%%-----------------------------------------------------------------
+%% Returns {ok, NextKey} if there is a key in the leaf which is greater.
+%% If there is no such key we return 'undefined' instead.
+%% Key does not have to be a key in the structure, just a search value.
+%%-----------------------------------------------------------------
+lookup_next_leaf(Key, Leaf) -> 
+    lookup_next_leaf_2(Key, Leaf, bplus_get_size(Leaf), 1).
+
+lookup_next_leaf_2(Key, Leaf, Size, Size) -> 
+    % This is the rightmost key.
+    K = ?GET_LEAF_KEY(Leaf, Size),
+    if
+	K > Key ->
+	    {ok, ?GET_LEAF_KEY(Leaf, Size)};
+	true ->
+	    undefined
+    end;
+lookup_next_leaf_2(Key, Leaf, Size, N) ->
+    K = ?GET_LEAF_KEY(Leaf, N),
+    if
+	K < Key ->                         
+	    % K is still smaller, try next in the leaf.
+	    lookup_next_leaf_2(Key, Leaf, Size, N+1);
+	Key == K ->
+	    % Since this is exact Key it must be the next.
+	    {ok, ?GET_LEAF_KEY(Leaf, N+1)};
+        true ->
+            % Key was not an exact specification.
+	    % It must be K that is next greater.
+	    {ok, ?GET_LEAF_KEY(Leaf, N)}
+    end.
 
 %%-----------------------------------------------------------------
 %% Func: insert/3

@@ -25,10 +25,7 @@
 %% </pre>
 %% where
 %% <ul>
-%%   <li><code> version():   {{Major::integer(),
-%%                             Minor::integer(),
-%%                             Increment::integer()},
-%%                            SYSTEM-CHECKSUM} </code></li>
+%%   <li><code> version():   {VERSION::string(), SYSTEM-CHECKSUM} </code></li>
 %%   <li><code> size():      integer() </code></li>
 %%   <li><code> constmap():  [ConstNo::integer(), Offset::integer(),
 %%                            Need::integer(), Type::consttype(),
@@ -87,7 +84,7 @@ assemble(CompiledCode, Closures, Exports, Options) ->
   {CodeSize,ExportMap,Code} = get_code(CompiledCode),
   {AccHCode,AccHRefs} = linker(Code,ExportMap,ConstMap),
   CodeBinary = mk_code_binary(AccHCode),
-  Bin = term_to_binary([{?VERSION(),?HIPE_SYSTEM_CRC},
+  Bin = term_to_binary([{?VERSION_STRING(),?HIPE_SYSTEM_CRC},
 			ConstAlign, ConstSize,
 			hipe_pack_constants:slim_constmap(ConstMap),
 			mk_labelmap(RefsFromConsts, ExportMap),
@@ -158,7 +155,6 @@ slim_sorted_exportmap([{Addr,M,F,A}|Rest], Closures, Exports) ->
   [Addr,M,F,A,IsClosure,IsExported | slim_sorted_exportmap(Rest, Closures, Exports)];
 slim_sorted_exportmap([],_,_) -> [].
 
-is_exported(_F, _A, []) -> true; % XXX: kill this clause when Core is fixed
 is_exported(F, A, Exports) -> lists:member({F,A}, Exports).
 
 %%---------------------------------------------------------------------

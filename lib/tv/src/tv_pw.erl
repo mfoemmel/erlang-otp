@@ -280,7 +280,7 @@ gs_messages(Msg, ProcVars) ->
 	    ?WIN_FUNC_FILE:resize_window(WindowId, FinalWidth, FinalHeight),
 	    MasterPid ! #pc_win_conf{sender = self(),
 				     width  = FinalWidth, 
-				     height = H},
+				     height = FinalHeight},
 	    NewWinP = WinP#window_params{window_width  = FinalWidth,
 					 window_height = FinalHeight
 					},

@@ -377,7 +377,7 @@ visit(T, L, St) ->
 	    X = singleton(external),
 	    Vars = bind_vars(try_vars(T), [X], St1#state.vars),
 	    {Xs2, St2} = visit(try_body(T), L, St1#state{vars = Vars}),
-	    Evars = bind_vars(try_evars(T), [X, X], St2#state.vars),
+	    Evars = bind_vars(try_evars(T), [X, X, X], St2#state.vars),
 	    {Xs3, St3} = visit(try_handler(T), L, St2#state{vars = Evars}),
 	    {join(join(Xs1, Xs2), Xs3), St3};
 	'catch' ->

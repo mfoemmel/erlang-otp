@@ -1,7 +1,7 @@
 %%% -*- erlang-indent-level: 2 -*-
 %%% $Id$
 
--module(hipe_ppc_liveness).
+-module(hipe_ppc_liveness_fpr).
 -export([analyse/1]).
 -export([liveout/2]).
 -include("../flow/liveness.inc").
@@ -11,10 +11,6 @@ cfg_bb(CFG, L) -> hipe_ppc_cfg:bb(CFG, L).
 cfg_postorder(CFG) -> hipe_ppc_cfg:postorder(CFG).
 cfg_succ_map(CFG) -> hipe_ppc_cfg:succ_map(CFG).
 cfg_succ(CFG, L) -> hipe_ppc_cfg:succ(CFG, L).
-uses(Insn) -> hipe_ppc_defuse:insn_use(Insn).
-defines(Insn) -> hipe_ppc_defuse:insn_def(Insn).
-liveout_no_succ() ->
-  ordsets:from_list(lists:map(fun({Reg,Type}) ->
-				  hipe_ppc:mk_temp(Reg, Type)
-			      end,
-			      hipe_ppc_registers:live_at_return())).
+uses(Insn) -> hipe_ppc_defuse:insn_use_fpr(Insn).
+defines(Insn) -> hipe_ppc_defuse:insn_def_fpr(Insn).
+liveout_no_succ() -> [].

@@ -11,42 +11,62 @@ changecom(`/*', `*/')dnl
 define(NR_ARG_REGS,4)dnl admissible values are 0 to 6, inclusive
 
 /*
+ * Workarounds for Darwin.
+ */
+ifelse(OPSYS,darwin,``
+/* Darwin */
+#define JOIN(X,Y)	X##Y
+#define CSYM(NAME)	JOIN(_,NAME)
+#define GLOBAL(NAME)	.globl CSYM(NAME)
+#define SEMI		@
+#define SET_SIZE(NAME)	/*empty*/
+#define TYPE_FUNCTION(NAME)	/*empty*/
+'',``
+/* Not Darwin */
+#define CSYM(NAME)	NAME
+#define GLOBAL(NAME)	.global NAME
+#define SEMI		;
+#define SET_SIZE(NAME)	.size NAME,.-NAME
+#define TYPE_FUNCTION(NAME)	.type NAME,@function
+#define lo16(X)		X@l
+#define ha16(X)		X@ha
+
+/*
  * Standard register names.
  */
-define(defreg,`define(r$1,`$1')dnl
-#`define r'$1	$1')dnl
-defreg(0)
-defreg(1)
-defreg(2)
-defreg(3)
-defreg(4)
-defreg(5)
-defreg(6)
-defreg(7)
-defreg(8)
-defreg(9)
-defreg(10)
-defreg(11)
-defreg(12)
-defreg(13)
-defreg(14)
-defreg(15)
-defreg(16)
-defreg(17)
-defreg(18)
-defreg(19)
-defreg(20)
-defreg(21)
-defreg(22)
-defreg(23)
-defreg(24)
-defreg(25)
-defreg(26)
-defreg(27)
-defreg(28)
-defreg(29)
-defreg(30)
-defreg(31)
+#define r0	0
+#define r1	1
+#define r2	2
+#define r3	3
+#define r4	4
+#define r5	5
+#define r6	6
+#define r7	7
+#define r8	8
+#define r9	9
+#define r10	10
+#define r11	11
+#define r12	12
+#define r13	13
+#define r14	14
+#define r15	15
+#define r16	16
+#define r17	17
+#define r18	18
+#define r19	19
+#define r20	20
+#define r21	21
+#define r22	22
+#define r23	23
+#define r24	24
+#define r25	25
+#define r26	26
+#define r27	27
+#define r28	28
+#define r29	29
+#define r30	30
+#define r31	31
+'')dnl
 
 /*
  * Reserved registers.
@@ -69,20 +89,20 @@ defreg(31)
 	mtlr	TEMP_LR'
 
 `#define SAVE_CACHED_STATE	\
-	stw	HP, P_HP(P);	\
+	stw	HP, P_HP(P) SEMI\
 	stw	NSP, P_NSP(P)'
 
 `#define RESTORE_CACHED_STATE	\
-	lwz	HP, P_HP(P);	\
+	lwz	HP, P_HP(P) SEMI\
 	lwz	NSP, P_NSP(P)'
 
 `#define SAVE_CONTEXT		\
-	mflr	TEMP_LR;	\
-	stw	TEMP_LR, P_NRA(P);\
+	mflr	TEMP_LR SEMI	\
+	stw	TEMP_LR, P_NRA(P) SEMI\
 	SAVE_CACHED_STATE'
 
 `#define RESTORE_CONTEXT	\
-	mtlr	TEMP_LR;	\
+	mtlr	TEMP_LR SEMI	\
 	RESTORE_CACHED_STATE'
 
 /*
@@ -128,7 +148,7 @@ dnl XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 dnl
 dnl LOAD_ARG_REGS
 dnl
-define(LAR_1,`lwz ARG$1, P_ARG$1(P) ; ')dnl
+define(LAR_1,`lwz ARG$1, P_ARG$1(P) SEMI ')dnl
 define(LAR_N,`ifelse(eval($1 >= 0),0,,`LAR_N(eval($1-1))LAR_1($1)')')dnl
 define(LOAD_ARG_REGS,`LAR_N(eval(NR_ARG_REGS-1))')dnl
 `#define LOAD_ARG_REGS	'LOAD_ARG_REGS
@@ -136,7 +156,7 @@ define(LOAD_ARG_REGS,`LAR_N(eval(NR_ARG_REGS-1))')dnl
 dnl
 dnl STORE_ARG_REGS
 dnl
-define(SAR_1,`stw ARG$1, P_ARG$1(P) ; ')dnl
+define(SAR_1,`stw ARG$1, P_ARG$1(P) SEMI ')dnl
 define(SAR_N,`ifelse(eval($1 >= 0),0,,`SAR_N(eval($1-1))SAR_1($1)')')dnl
 define(STORE_ARG_REGS,`SAR_N(eval(NR_ARG_REGS-1))')dnl
 `#define STORE_ARG_REGS	'STORE_ARG_REGS
@@ -166,7 +186,7 @@ dnl It will be a memory load via NSP when ARGNO >= NR_ARG_REGS.
 dnl It will be a register move when 0 <= ARGNO < NR_ARG_REGS; if
 dnl the source and destination are the same, the move is suppressed.
 dnl
-define(NBIF_MOVE_REG,`ifelse(eval($1 == $2),0,`mr	$1, $2',`# mr $1, $2')')dnl
+define(NBIF_MOVE_REG,`ifelse($1,$2,`# mr $1, $2',`mr	$1, $2')')dnl
 define(NBIF_REG_ARG,`NBIF_MOVE_REG($1,ARG$2)')dnl
 define(NBIF_STK_LOAD,`lwz	$1, $2(NSP)')dnl
 define(NBIF_STK_ARG,`NBIF_STK_LOAD($1,eval(4*(($2-$3)-1)))')dnl
@@ -205,7 +225,7 @@ dnl Currently, 1 <= ARITY <= 2, so this simply moves the arguments
 dnl to C callee-save registers.
 dnl
 define(NBIF_MIN,`ifelse(eval($1 > $2),0,$1,$2)')dnl
-define(NBIF_SVA_1,`ifelse(eval($1 < NR_ARG_REGS),0,,`mr TEMP_ARG$1,ARG$1; ')')dnl
+define(NBIF_SVA_1,`ifelse(eval($1 < NR_ARG_REGS),0,,`mr TEMP_ARG$1,ARG$1 SEMI ')')dnl
 define(NBIF_SVA_N,`ifelse(eval($1 >= 0),0,,`NBIF_SVA_N(eval($1-1))NBIF_SVA_1($1)')')dnl
 define(NBIF_SAVE_RESCHED_ARGS,`NBIF_SVA_N(eval(NBIF_MIN($1,NR_ARG_REGS)-1))')dnl
 `/* #define NBIF_SAVE_RESCHED_ARGS_1 'NBIF_SAVE_RESCHED_ARGS(1)` */'

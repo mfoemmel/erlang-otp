@@ -169,7 +169,6 @@ known_heap_need(Name) ->
     fp_mul -> true;
     fp_sub -> true;
     mktuple -> true;
-    unsafe_element -> true;
     unsafe_hd -> true;
     unsafe_tag_float -> true;
     unsafe_tl -> true;

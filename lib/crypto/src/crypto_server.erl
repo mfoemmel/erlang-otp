@@ -57,18 +57,18 @@ handle_call(_, _, State) ->
 handle_cast(_, State) ->
     {noreply, State}.
 
-handle_info({'EXIT', Pid, Reason}, {Port, Libraries}) ->
+handle_info({'EXIT', Pid, _Reason}, {Port, Libraries}) when is_pid(Pid) ->
     {noreply, {Port, Libraries}};
 
-handle_info({'EXIT', Port, Reason}, {Port, Libraries}) ->
+handle_info({'EXIT', Port, Reason}, {Port, Libraries}) when is_port(Port) ->
     {stop, {port_died, Reason}, {Port, Libraries}};
 handle_info(_, State) ->
     {noreply, State}.
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, {Port, Libraries}) ->
+terminate(_Reason, {Port, _Libraries}) ->
     Port ! {self, close},
     ok.
 

@@ -12,7 +12,7 @@ frame(Defun) ->
   MinFrame = defun_minframe(Defun),
   Temps = ensure_minframe(MinFrame, Temps0),
   CFG0 = hipe_ppc_cfg:init(Defun),
-  Liveness = hipe_ppc_liveness:analyse(CFG0),
+  Liveness = hipe_ppc_liveness_all:analyse(CFG0),
   CFG1 = do_body(CFG0, Liveness, Formals, Temps),
   hipe_ppc_cfg:linearise(CFG1).
 
@@ -33,7 +33,7 @@ do_blocks(CFG, Context) ->
 
 do_blocks([Label|Labels], CFG, Context) ->
   Liveness = context_liveness(Context),
-  LiveOut = hipe_ppc_liveness:liveout(Liveness, Label),
+  LiveOut = hipe_ppc_liveness_all:liveout(Liveness, Label),
   Block = hipe_ppc_cfg:bb(CFG, Label),
   Code = hipe_bb:code(Block),
   NewCode = do_block(Code, LiveOut, Context),
@@ -68,6 +68,8 @@ do_insn(I, LiveOut, Context, FPoff) ->
       {do_pseudo_ret(I, Context, FPoff), context_framesize(Context)};
     #pseudo_tailcall{} ->
       {do_pseudo_tailcall(I, Context), context_framesize(Context)};
+    #pseudo_fmove{} ->
+      {do_pseudo_fmove(I, Context, FPoff), FPoff};
     _ ->
       {[I], FPoff}
   end.
@@ -90,6 +92,23 @@ do_pseudo_move(I, Context, FPoff) ->
 	  mk_load('lwz', Dst, Offset, mk_sp(), []);
 	_ ->
 	  [hipe_ppc:mk_alu('or', Dst, Src, Src)]
+      end
+  end.
+
+do_pseudo_fmove(I, Context, FPoff) ->
+  Dst = hipe_ppc:pseudo_fmove_dst(I),
+  Src = hipe_ppc:pseudo_fmove_src(I),
+  case temp_is_pseudo(Dst) of
+    true ->
+      Offset = pseudo_offset(Dst, FPoff, Context),
+      hipe_ppc:mk_fstore(Src, Offset, mk_sp());
+    _ ->
+      case temp_is_pseudo(Src) of
+	true ->
+	  Offset = pseudo_offset(Src, FPoff, Context),
+	  hipe_ppc:mk_fload(Dst, Offset, mk_sp());
+	_ ->
+	  [hipe_ppc:mk_fp_unary('fmr', Dst, Src)]
       end
   end.
 
@@ -484,7 +503,7 @@ src_is_pseudo(Src) ->
   end.
 
 temp_is_pseudo(Temp) ->
-  not(hipe_ppc_registers:is_precoloured(hipe_ppc:temp_reg(Temp))).
+  not(hipe_ppc:temp_is_precoloured(Temp)).
 
 %%%
 %%% Build the set of all temps used in a Defun's body.
@@ -497,8 +516,8 @@ all_temps(Code, Formals) ->
   S2.
 
 find_temps([I|Insns], S0) ->
-  S1 = tset_add_list(S0, hipe_ppc_defuse:insn_def(I)),
-  S2 = tset_add_list(S1, hipe_ppc_defuse:insn_use(I)),
+  S1 = tset_add_list(S0, hipe_ppc_defuse:insn_def_all(I)),
+  S2 = tset_add_list(S1, hipe_ppc_defuse:insn_use_all(I)),
   find_temps(Insns, S2);
 find_temps([], S) ->
   S.

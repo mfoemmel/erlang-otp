@@ -22,11 +22,11 @@
 -define(MAX_HEADER_SIZE, 10240).
 -define(MAX_REDIRECTS, 4).
 
--define(CR, "\r").
--define(LF, "\n").
--define(CRLF, "\r\n").
--define(SP, "\s").
--define(TAB, "\t").
+-define(CR, $\r).
+-define(LF, $\n).
+-define(CRLF, [$\r,$\n]).
+-define(SP, $\s).
+-define(TAB, $\t).
 
 -record(tcp_session,{
 	  id,           % {{Host, Port}, HandlerPid}

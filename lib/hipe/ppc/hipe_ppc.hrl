@@ -81,6 +81,13 @@
 -record(store, {stop, src, disp, base}).	% non-indexed, non-update form
 -record(storex, {stxop, src, base1, base2}).% indexed, non-update form
 -record(unary, {unop, dst, src}).
+-record(lfd, {dst, disp, base}).
+-record(lfdx, {dst, base1, base2}).
+-record(stfd, {src, disp, base}).
+-record(stfdx, {src, base1, base2}).
+-record(fp_binary, {fp_binop, dst, src1, src2}).
+-record(fp_unary, {fp_unop, dst, src}).
+-record(pseudo_fmove, {dst, src}).
 
 %%% Function definitions.
 

@@ -6,6 +6,9 @@ changecom(`/*', `*/')dnl
 include(`hipe/hipe_ppc_asm.m4')
 #`include' "hipe_literals.h"
 
+	.text
+	.p2align 2
+
 /*
  * XXX: TODO:
  * - Can a BIF with arity 0 fail? beam_emu doesn't think so.
@@ -31,16 +34,14 @@ define(standard_bif_interface_0,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Set up C argument registers. */
 	mr	r3, P
 
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. Check for exception. */
 	cmpwi	r3, THE_NON_VALUE
@@ -48,46 +49,42 @@ $1:
 	beq-	1f
 	NBIF_RET(0)
 1:	/* workaround for bc:s small offset operand */
-	b	nbif_0_simple_exception
-	.size	$1,.-$1
-	.type	$1,@function
+	b	CSYM(nbif_0_simple_exception)
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 define(standard_bif_interface_1,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Set up C argument registers. */
 	mr	r3, P
 	NBIF_ARG(r4,1,0)
 
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. Check for exception. */
-	cmpwi	3, THE_NON_VALUE
+	cmpwi	r3, THE_NON_VALUE
 	RESTORE_CONTEXT
 	beq-	1f
 	NBIF_RET(1)
 1:	/* workaround for bc:s small offset operand */
-	b	nbif_1_simple_exception
-	.size	$1,.-$1
-	.type	$1,@function
+	b	CSYM(nbif_1_simple_exception)
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 define(standard_bif_interface_2,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Set up C argument registers. */
 	mr	r3, P
 	NBIF_ARG(r4,2,0)
@@ -95,7 +92,7 @@ $1:
 
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. Check for exception. */
 	cmpwi	r3, THE_NON_VALUE
@@ -103,19 +100,17 @@ $1:
 	beq-	1f
 	NBIF_RET(2)
 1:	/* workaround for bc:s small offset operand */
-	b	nbif_2_simple_exception
-	.size	$1,.-$1
-	.type	$1,@function
+	b	CSYM(nbif_2_simple_exception)
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 define(standard_bif_interface_3,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Set up C argument registers. */
 	mr	r3, P
 	NBIF_ARG(r4,3,0)
@@ -124,7 +119,7 @@ $1:
 
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. Check for exception. */
 	cmpwi	r3, THE_NON_VALUE
@@ -132,9 +127,9 @@ $1:
 	beq-	1f
 	NBIF_RET(3)
 1:	/* workaround for bc:s small offset operand */
-	b	nbif_3_simple_exception
-	.size	$1,.-$1
-	.type	$1,@function
+	b	CSYM(nbif_3_simple_exception)
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 /*
@@ -148,10 +143,8 @@ define(expensive_bif_interface_1,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Set up C argument registers. */
 	mr	r3, P
 	NBIF_ARG(r4,1,0)
@@ -161,7 +154,7 @@ $1:
 
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. Check for exception. */
 	cmpwi	r3, THE_NON_VALUE
@@ -169,21 +162,19 @@ $1:
 	beq-	1f
 	NBIF_RET(1)
 1:
-	addi	r5, 0, $1@l
-	addis	r5, r5, $1@ha
-	b	nbif_1_hairy_exception
-	.size	$1,.-$1
-	.type	$1,@function
+	addi	r5, 0, lo16(CSYM($1))
+	addis	r5, r5, ha16(CSYM($1))
+	b	CSYM(nbif_1_hairy_exception)
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 define(expensive_bif_interface_2,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Set up C argument registers. */
 	mr	r3, P
 	NBIF_ARG(r4,2,0)
@@ -194,7 +185,7 @@ $1:
 
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. Check for exception. */
 	cmpwi	r3, THE_NON_VALUE
@@ -202,11 +193,11 @@ $1:
 	beq-	1f
 	NBIF_RET(2)
 1:
-	addi	r5, 0, $1@l
-	addis	r5, r5, $1@ha
-	b	nbif_2_hairy_exception
-	.size	$1,.-$1
-	.type	$1,@function
+	addi	r5, 0, lo16(CSYM($1))
+	addis	r5, r5, ha16(CSYM($1))
+	b	CSYM(nbif_2_hairy_exception)
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 /*
@@ -222,55 +213,49 @@ define(nofail_primop_interface_0,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Set up C argument registers. */
 	mr	r3, P
 
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. */
 	RESTORE_CONTEXT
 	NBIF_RET(0)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 define(nofail_primop_interface_1,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Set up C argument registers. */
 	mr	r3, P
 	NBIF_ARG(r4,1,0)
 
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. */
 	RESTORE_CONTEXT
 	NBIF_RET(1)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 define(nofail_primop_interface_2,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Set up C argument registers. */
 	mr	r3, P
 	NBIF_ARG(r4,2,0)
@@ -278,13 +263,13 @@ $1:
 
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. */
 	RESTORE_CONTEXT
 	NBIF_RET(2)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 /*
@@ -298,22 +283,20 @@ define(nocons_nofail_primop_interface_0,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Set up C argument registers. */
 	mr	r3, P
 
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_QUICK
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. */
 	RESTORE_CONTEXT_QUICK
 	NBIF_RET(0)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 /* 
@@ -330,74 +313,66 @@ define(noproc_primop_interface_0,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_QUICK
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. */
 	RESTORE_CONTEXT_QUICK
 	NBIF_RET(0)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 define(noproc_primop_interface_1,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Set up C argument registers. */
 	NBIF_ARG(r3,1,0)
 
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_QUICK
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. */
 	RESTORE_CONTEXT_QUICK
 	NBIF_RET(1)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 define(noproc_primop_interface_2,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Set up C argument registers. */
 	NBIF_ARG(r3,2,0)
 	NBIF_ARG(r4,2,1)
 
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_QUICK
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. */
 	RESTORE_CONTEXT_QUICK
 	NBIF_RET(2)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 define(noproc_primop_interface_3,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Set up C argument registers. */
 	NBIF_ARG(r3,3,0)
 	NBIF_ARG(r4,3,1)
@@ -405,23 +380,21 @@ $1:
 
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_QUICK
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. */
 	RESTORE_CONTEXT_QUICK
 	NBIF_RET(3)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 define(noproc_primop_interface_5,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
-	.section ".text"
-	.align	4
-	.global	$1
-$1:
+	GLOBAL($1)
+CSYM($1):
 	/* Set up C argument registers. */
 	NBIF_ARG(r3,5,0)
 	NBIF_ARG(r4,5,1)
@@ -431,13 +404,13 @@ $1:
 
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_QUICK
-	bl	$2
+	bl	CSYM($2)
 
 	/* Restore registers. */
 	RESTORE_CONTEXT_QUICK
 	NBIF_RET(5)
-	.size	$1,.-$1
-	.type	$1,@function
+	SET_SIZE($1)
+	TYPE_FUNCTION($1)
 #endif')
 
 /*

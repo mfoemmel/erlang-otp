@@ -262,27 +262,27 @@ delete({ets,Name}) ->
 
 
 %% ---------------------------------------------------------------
-%% delete(DbRef,Rec) -> ok
+%% delete(DbRef, Key) -> ok
 %% DbRef -> term()
-%% Rec   -> tuple()
+%% Key   -> term()
 %% 
 %% Delete a record from the database.
 %% ---------------------------------------------------------------
-delete({mnesia,Name},Rec) -> 
-    ?vtrace("[mnesia] delete from database ~p: ~p",[Name,Rec]),
-    F = fun() -> mnesia:delete(Name,Rec,write) end,
+delete({mnesia,Name}, Key) -> 
+    ?vtrace("[mnesia] delete from database ~p: ~p", [Name, Key]),
+    F = fun() -> mnesia:delete(Name, Key, write) end,
     case mnesia:transaction(F) of
 	{aborted,Reason} ->
 	    exit({aborted,Reason});
 	{atomic,_} ->
 	    ok
     end;
-delete({dets,Name},Rec) ->
-    ?vtrace("[dets] delete from table ~p: ~p",[Name,Rec]),
-    dets:delete(Name,Rec);
-delete({ets,Name},Rec) ->
-    ?vtrace("[ets] delete from table ~p: ~p",[Name,Rec]),
-    ets:delete(Name,Rec).
+delete({dets,Name}, Key) ->
+    ?vtrace("[dets] delete from table ~p: ~p", [Name, Key]),
+    dets:delete(Name, Key);
+delete({ets,Name}, Key) ->
+    ?vtrace("[ets] delete from table ~p: ~p", [Name, Key]),
+    ets:delete(Name, Key).
 
 
 %% ---------------------------------------------------------------

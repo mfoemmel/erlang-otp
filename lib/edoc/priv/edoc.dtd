@@ -25,6 +25,7 @@
 <!ATTLIST module
   name CDATA #REQUIRED
   private (yes | no) #IMPLIED
+  hidden (yes | no) #IMPLIED
   root CDATA #IMPLIED>
 
 <!ELEMENT behaviour (#PCDATA)>

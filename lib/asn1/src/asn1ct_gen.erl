@@ -173,8 +173,11 @@ pgen_partial_inc_dec1(Erules,Module,[P|Ps]) ->
     asn1ct:update_gen_state(prefix,"dec-inc-"),
     case asn1ct:maybe_saved_sindex(TopTypeName,P) of
 	I when integer(I),I > 0 ->
+%	    io:format("Index:~p~n",[I]),
 	    asn1ct:set_current_sindex(I);
-	_ ->
+	_I ->
+	    asn1ct:set_current_sindex(0),
+%	    io:format("Index=~p~n",[_I]),
 	    ok
     end,
     Rtmod:gen_decode(Erules,TypeDef),

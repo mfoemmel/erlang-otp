@@ -79,7 +79,7 @@ ifeq ($(HOST_OS),)
 HOST_OS := $(shell $(ERL_TOP)/erts/autoconf/config.guess)
 endif
 ifneq ($(findstring darwin,$(HOST_OS)),darwin)
-LD_R_OPT = -Wl,-R$(SSL_LIBDIR)
+LD_R_OPT = -R$(SSL_LIBDIR)
 endif
 
 # ----------------------------------------------------
@@ -100,7 +100,7 @@ $(OBJDIR)/%.o: %.c
 
 $(LIBDIR)/crypto_drv.so: $(OBJS)
 	$(INSTALL_DIR) $(LIBDIR)
-	$(CC) $(LDFLAGS) -L$(SSL_LIBDIR) $(LD_R_OPT) \
+	$(LD) $(LDFLAGS) -L$(SSL_LIBDIR) $(LD_R_OPT) \
 			-o $@ $^ $(LDLIBS) -lcrypto
 
 $(LIBDIR)/crypto_drv.dll: $(OBJS)

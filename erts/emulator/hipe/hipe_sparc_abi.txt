@@ -180,10 +180,6 @@ Stack Descriptors
 -----------------
 sdesc_fsize() is the frame size \emph{including} the return address word.
 
-Exceptions
-----------
-The exception handler receives the exception value in ARG0.
-
 BIFs
 ----
 (Note that hipe_sparc_bifs.m4 assumes that some register are

@@ -5,19 +5,20 @@
 -export([finalise/3]).
 -include("hipe_ppc.hrl").
 
-finalise(Defun, TempMap, _FpMap0=[]) ->
+finalise(Defun, TempMap, FPMap0) ->
   Code = hipe_ppc:defun_code(Defun),
   {_, SpillLimit} = hipe_ppc:defun_var_range(Defun),
   Map = mk_ra_map(TempMap, SpillLimit),
-  NewCode = ra_code(Code, Map, []),
+  FPMap1 = mk_ra_map_fp(FPMap0, SpillLimit),
+  NewCode = ra_code(Code, Map, FPMap1, []),
   Defun#defun{code=NewCode}.
 
-ra_code([I|Insns], Map, Accum) ->
-  ra_code(Insns, Map, [ra_insn(I, Map) | Accum]);
-ra_code([], _Map, Accum) ->
+ra_code([I|Insns], Map, FPMap, Accum) ->
+  ra_code(Insns, Map, FPMap, [ra_insn(I, Map, FPMap) | Accum]);
+ra_code([], _Map, _FPMap, Accum) ->
   lists:reverse(Accum).
 
-ra_insn(I, Map) ->
+ra_insn(I, Map, FPMap) ->
   case I of
     #alu{} -> ra_alu(I, Map);
     #cmp{} -> ra_cmp(I, Map);
@@ -31,6 +32,13 @@ ra_insn(I, Map) ->
     #store{} -> ra_store(I, Map);
     #storex{} -> ra_storex(I, Map);
     #unary{} -> ra_unary(I, Map);
+    #lfd{} -> ra_lfd(I, Map, FPMap);
+    #lfdx{} -> ra_lfdx(I, Map, FPMap);
+    #stfd{} -> ra_stfd(I, Map, FPMap);
+    #stfdx{} -> ra_stfdx(I, Map, FPMap);
+    #fp_binary{} -> ra_fp_binary(I, FPMap);
+    #fp_unary{} -> ra_fp_unary(I, FPMap);
+    #pseudo_fmove{} -> ra_pseudo_fmove(I, FPMap);
     _ -> I
   end.
 
@@ -93,6 +101,44 @@ ra_unary(I=#unary{dst=Dst,src=Src}, Map) ->
   NewSrc = ra_temp(Src, Map),
   I#unary{dst=NewDst,src=NewSrc}.
 
+ra_lfd(I=#lfd{dst=Dst,base=Base}, Map, FPMap) ->
+  NewDst = ra_temp_fp(Dst, FPMap),
+  NewBase = ra_temp(Base, Map),
+  I#lfd{dst=NewDst,base=NewBase}.
+
+ra_lfdx(I=#lfdx{dst=Dst,base1=Base1,base2=Base2}, Map, FPMap) ->
+  NewDst = ra_temp_fp(Dst, FPMap),
+  NewBase1 = ra_temp(Base1, Map),
+  NewBase2 = ra_temp(Base2, Map),
+  I#lfdx{dst=NewDst,base1=NewBase1,base2=NewBase2}.
+
+ra_stfd(I=#stfd{src=Src,base=Base}, Map, FPMap) ->
+  NewSrc = ra_temp_fp(Src, FPMap),
+  NewBase = ra_temp(Base, Map),
+  I#stfd{src=NewSrc,base=NewBase}.
+
+ra_stfdx(I=#stfdx{src=Src,base1=Base1,base2=Base2}, Map, FPMap) ->
+  NewSrc = ra_temp_fp(Src, FPMap),
+  NewBase1 = ra_temp(Base1, Map),
+  NewBase2 = ra_temp(Base2, Map),
+  I#stfdx{src=NewSrc,base1=NewBase1,base2=NewBase2}.
+
+ra_fp_binary(I=#fp_binary{dst=Dst,src1=Src1,src2=Src2}, FPMap) ->
+  NewDst = ra_temp_fp(Dst, FPMap),
+  NewSrc1 = ra_temp_fp(Src1, FPMap),
+  NewSrc2 = ra_temp_fp(Src2, FPMap),
+  I#fp_binary{dst=NewDst,src1=NewSrc1,src2=NewSrc2}.
+
+ra_fp_unary(I=#fp_unary{dst=Dst,src=Src}, FPMap) ->
+  NewDst = ra_temp_fp(Dst, FPMap),
+  NewSrc = ra_temp_fp(Src, FPMap),
+  I#fp_unary{dst=NewDst,src=NewSrc}.
+
+ra_pseudo_fmove(I=#pseudo_fmove{dst=Dst,src=Src}, FPMap) ->
+  NewDst = ra_temp_fp(Dst, FPMap),
+  NewSrc = ra_temp_fp(Src, FPMap),
+  I#pseudo_fmove{dst=NewDst,src=NewSrc}.
+
 ra_args([Arg|Args], Map) ->
   [ra_temp_or_imm(Arg, Map) | ra_args(Args, Map)];
 ra_args([], _) ->
@@ -106,20 +152,32 @@ ra_temp_or_imm(Arg, Map) ->
       Arg
   end.
 
+ra_temp_fp(Temp, FPMap) ->
+  Reg = hipe_ppc:temp_reg(Temp),
+  case hipe_ppc:temp_type(Temp) of
+    'double' ->
+      case hipe_ppc_registers:is_precoloured_fpr(Reg) of
+	true -> Temp;
+	_ -> ra_temp_common(Reg, Temp, FPMap)
+      end
+  end.
+
 ra_temp(Temp, Map) ->
   Reg = hipe_ppc:temp_reg(Temp),
   case hipe_ppc:temp_type(Temp) of
-    double ->
-      exit({?MODULE,temp});
-    _->
-      case hipe_ppc_registers:is_precoloured(Reg) of
+    'double' ->
+      exit({?MODULE,ra_temp,Temp});
+    _ ->
+      case hipe_ppc_registers:is_precoloured_gpr(Reg) of
 	true -> Temp;
-	_ ->
-	  case gb_trees:lookup(Reg, Map) of
-	    {value,NewReg} -> Temp#ppc_temp{reg=NewReg};
-	    _ -> Temp
-	  end
+	_ -> ra_temp_common(Reg, Temp, Map)
       end
+  end.
+
+ra_temp_common(Reg, Temp, Map) ->
+  case gb_trees:lookup(Reg, Map) of
+    {value,NewReg} -> Temp#ppc_temp{reg=NewReg};
+    _ -> Temp
   end.
 
 mk_ra_map(TempMap, SpillLimit) ->
@@ -130,16 +188,16 @@ mk_ra_map(TempMap, SpillLimit) ->
   %% The frame mapping proper is unchanged, since spills look just like
   %% ordinary (un-allocated) pseudos.
   lists:foldl(fun(MapLet, Map) ->
-		  {Key,Val} = conv_ra_maplet(MapLet, SpillLimit),
+		  {Key,Val} = conv_ra_maplet(MapLet, SpillLimit, is_precoloured_gpr),
 		  gb_trees:insert(Key, Val, Map)
 	      end,
 	      gb_trees:empty(),
 	      TempMap).
 
-conv_ra_maplet(MapLet = {From,To}, SpillLimit) ->
+conv_ra_maplet(MapLet = {From,To}, SpillLimit, IsPrecoloured) ->
   %% From should be a pseudo, or a hard reg mapped to itself.
   if is_integer(From), From =< SpillLimit ->
-      case hipe_ppc_registers:is_precoloured(From) of
+      case hipe_ppc_registers:IsPrecoloured(From) of
 	false -> [];
 	_ ->
 	  case To of
@@ -155,7 +213,7 @@ conv_ra_maplet(MapLet = {From,To}, SpillLimit) ->
       %% NewReg should be a hard reg, or a pseudo mapped
       %% to itself (formals are handled this way).
       if is_integer(NewReg) ->
-	  case hipe_ppc_registers:is_precoloured(NewReg) of
+	  case hipe_ppc_registers:IsPrecoloured(NewReg) of
 	    true -> [];
 	    _ -> if From =:= NewReg -> [];
 		    true ->
@@ -181,13 +239,11 @@ conv_ra_maplet(MapLet = {From,To}, SpillLimit) ->
     _ -> exit({?MODULE,conv_ra_maplet,MapLet})
   end.
 
--ifdef(notdef).
-mk_ra_map_fp(FpMap, SpillLimit) ->
+mk_ra_map_fp(FPMap, SpillLimit) ->
   lists:foldl(fun(MapLet, Map) ->
 		  {Key,Val} = conv_ra_maplet(MapLet, SpillLimit,
-					     is_precoloured_fp),
+					     is_precoloured_fpr),
 		  gb_trees:insert(Key, Val, Map)
 	      end,
 	      gb_trees:empty(),
-	      FpMap).
--endif.
+	      FPMap).

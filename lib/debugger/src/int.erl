@@ -499,7 +499,8 @@ load({Mod, Src, Beam, Exp, Abst}, Dist) ->
 	       fun() ->
 		       code:purge(Mod),
 		       erts_debug:breakpoint({Mod,'_','_'}, false),
-		       {module,Mod} = code:load_abs(filename:rootname(Beam))
+		       {module,Mod} = code:load_abs(filename:rootname(Beam),
+						    Mod)
 	       end),
     {ok, SrcBin} = file:read_file(Src),
     {ok, BeamBin} = file:read_file(Beam),
@@ -539,7 +540,7 @@ check_file(Name0) ->
 	  end,
     if
 	list(Src) ->
-	    Mod = list_to_atom(filename:basename(Src, ".erl")),
+	    Mod = scan_module_name(Src),
 	    case find_beam(Mod, Src) of
 		Beam when list(Beam) ->
 		    case check_beam(Beam) of
@@ -567,13 +568,22 @@ find_src(Beam) ->
     end.
 
 find_beam(Mod, Src) ->
-    ModS = atom_to_list(Mod),
     SrcDir = filename:dirname(Src),
-    EbinDir = filename:join(filename:dirname(SrcDir), "ebin"),
-    CodePath = [SrcDir, EbinDir | code:get_path()],
+    BeamFile = packages:last(Mod) ++ code_aux:objfile_extension(),
+    File = filename:join(SrcDir, BeamFile),
+    case is_file(File) of
+	true -> File;
+	false -> find_beam_1(Mod, SrcDir)
+    end.
+
+find_beam_1(Mod, SrcDir) ->
+    RootDir = find_root_dir(SrcDir, packages:first(Mod)),
+    EbinDir = filename:join(RootDir, "ebin"),
+    CodePath = [EbinDir | code:get_path()],
+    BeamFile = code_aux:to_path(Mod) ++ code_aux:objfile_extension(),
     lists:foldl(fun(_, Beam) when is_list(Beam) -> Beam;
 		   (Dir, error) ->
-			File = filename:join(Dir, ModS)++".beam",
+			File = filename:join(Dir, BeamFile),
 			case is_file(File) of
 			    true -> File;
 			    false -> error
@@ -581,6 +591,11 @@ find_beam(Mod, Src) ->
 		end,
 		error,
 		CodePath).
+
+find_root_dir(Dir, [_|Ss]) ->
+    find_root_dir(filename:dirname(Dir), Ss);
+find_root_dir(Dir, []) ->
+    filename:dirname(Dir).
 
 check_beam(Beam) ->
     case beam_lib:chunks(Beam, [exports,"Abst"]) of
@@ -604,6 +619,44 @@ everywhere(distributed, Fun) ->
     end;
 everywhere(local, Fun) ->
     Fun().
+
+scan_module_name(File) ->
+    case file:open(File, [read]) of
+	{ok, FD} ->
+	    R = (catch {ok, scan_module_name_1(FD)}),
+	    file:close(FD),
+	    case R of
+		{ok, A} when atom(A) -> A;
+		_ -> error
+	    end;
+	_ ->
+	    error
+    end.
+
+scan_module_name_1(FD) ->
+    case io:scan_erl_form(FD, "") of
+	{ok, Ts, _} ->
+	    scan_module_name_2(Ts, FD);
+	_ ->
+	    error
+    end.
+
+scan_module_name_2([{'-',_},{atom,_,module},{'(',_} | _]=Ts, _FD) ->
+    scan_module_name_3(Ts);
+scan_module_name_2([{'-',_},{atom,_,_} | _], FD) ->
+    scan_module_name_1(FD);
+scan_module_name_2(_, _) ->
+    error.
+
+scan_module_name_3(Ts) ->
+    case erl_parse:parse_form(Ts) of
+	{ok, {attribute,_,module,{M,_}}} -> module_atom(M);
+	{ok, {attribute,_,module,M}} -> module_atom(M);
+	_ -> error
+    end.
+
+module_atom(A) when atom(A) -> A;
+module_atom(L) when list(L) -> list_to_atom(packages:concat(L)).
 
 %%--Stop interpreting modules-----------------------------------------
 

@@ -124,6 +124,9 @@
 	 compact_otp5186_msg05/1, 
 	 compact_otp5186_msg06/1, 
 
+	 compact_otp5290_msg01/1, 
+	 compact_otp5290_msg02/1, 
+
 	 pretty_tickets/1, 
 	 pretty_otp4632_msg1/1, 
 	 pretty_otp4632_msg2/1, 
@@ -373,7 +376,7 @@ erl_dist_m(suite) ->
 
 tickets(suite) ->
     [
-     compact_tickets,
+     compact_tickets ,
      pretty_tickets,
      flex_pretty_tickets
     ].
@@ -415,7 +418,9 @@ compact_tickets(suite) ->
      compact_otp5186_msg03,
      compact_otp5186_msg04,
      compact_otp5186_msg05,
-     compact_otp5186_msg06
+     compact_otp5186_msg06,
+     compact_otp5290_msg01,
+     compact_otp5290_msg02
     ].
 
 pretty_tickets(suite) ->
@@ -2055,6 +2060,61 @@ compact_otp5186_check_auditDesc_apt(APT, APT) ->
 compact_otp5186_check_auditDesc_apt(APT1, APT2) ->
     exit({not_equal, auditPropertyToken, APT1, APT2}).
 
+
+
+%% --------------------------------------------------------------
+
+compact_otp5290_msg01(suite) ->
+    [];
+compact_otp5290_msg01(Config) when list(Config) ->
+    d("compact_otp5290_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5290_msg_1(compact_otp5290_msg01(), ok, ok).
+
+compact_otp5290_msg02(suite) ->
+    [];
+compact_otp5290_msg02(Config) when list(Config) ->
+    d("compact_otp5290_msg02 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5290_msg_1(compact_otp5290_msg02(), error, ignore).
+
+compact_otp5290_msg_1(M1, DecodeExpect, EncodeExpect) ->
+    Bin1 = list_to_binary(M1),
+    case decode_message(megaco_compact_text_encoder, false, [], Bin1) of
+	{ok, Msg} when DecodeExpect == ok ->
+ 	    io:format(" decoded", []),
+	    case encode_message(megaco_compact_text_encoder, [], Msg) of
+		{ok, Bin1} when EncodeExpect == ok ->
+		    io:format(", encoded - equal:", []),
+		    ok;
+		{ok, Bin2} when EncodeExpect == ok ->
+		    M2 = binary_to_list(Bin2),
+		    io:format(", encoded - not equal:", []),
+		    exit({messages_not_equal, Msg, M1, M2});
+		{ok, Bin3} when EncodeExpect == error ->
+		    M3 = binary_to_list(Bin3),
+		    io:format(", unexpected encode:", []),
+		    exit({unexpected_encode_success, Msg});
+		Else when EncodeExpect == error ->
+		    io:format(", encode failed ", []),
+		    ok
+	    end;
+	{ok, Msg} when DecodeExpect == error ->
+ 	    io:format(" decoded", []),
+	    exit({unexpected_decode_success, Msg});
+	_Else when DecodeExpect == error ->
+	    io:format(" decode failed ", []),
+	    ok;
+	Else when DecodeExpect == ok ->
+	    io:format(" decode failed ", []),
+	    exit({unexpected_decode_result, Else})
+    end.
+
+compact_otp5290_msg01() ->
+    "!/2 <ml>\nT=12345678{C=*{CA{TP,PR}}}".
+
+compact_otp5290_msg02() ->
+    "!/2 <ml>\nT=12345678{C=*{CA{TP,PR,TP}}}".
 
 %% --------------------------------------------------------------
 %% 

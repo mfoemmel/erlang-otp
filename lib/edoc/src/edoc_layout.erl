@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_layout.erl,v 1.26 2004/08/25 00:10:16 richardc Exp $
+%% $Id: edoc_layout.erl,v 1.28 2004/11/30 00:42:16 richardc Exp $
 %%
 %% @author Richard Carlsson <richardc@csd.uu.se>
 %% @copyright 2001-2002 Richard Carlsson
@@ -23,6 +23,7 @@
 %% =====================================================================
 
 %% TODO: generate navigation links, at least back to index.html
+%% TODO: mark deprecated functions in function index.
 
 %% @doc The standard HTML layout module for EDoc. See the {@link edoc}
 %% module for details on usage.
@@ -55,17 +56,30 @@
 %%
 %% <p>Options to the standard layout:
 %% <dl>
-%%  <dt>{@type {index_columns, integer()@}}</dt>
-%%    <dd>Specifies the number of column pairs used for the function
-%%    index tables. The default value is 1.</dd>
-%%  <dt>{@type {stylesheet, string() | none@}}</dt>
-%%    <dd>Specifies the name of the stylesheet file used. If the value
-%%    is `none', no stylesheet link will be generated.</dd>
-%%  </dl></p>
+%%  <dt>{@type {index_columns, integer()@}}
+%%  </dt>
+%%  <dd>Specifies the number of column pairs used for the function
+%%      index tables. The default value is 1.
+%%  </dd>
+%%  <dt>{@type {stylesheet, string()@}}
+%%  </dt>
+%%  <dd>Specifies the URI used for referencing the stylesheet. The
+%%      default value is `"stylesheet.css"'. If an empty string is
+%%      specified, no stylesheet reference will be generated.
+%%  </dd>
+%%  <dt>{@type {xml_export, Module::atom()@}}
+%%  </dt>
+%%  <dd>Specifies an {@link //xmerl. `xmerl'} callback module to be
+%%      used for exporting the documentation. See {@link
+%%      //xmerl/xmerl:export_simple/3} for details.
+%%  </dd>
+%% </dl></p>
 %%
 %% @see edoc:layout/2
 
 -record(opts, {root, stylesheet, index_columns}).
+
+%% NEW-OPTIONS: xml_export, index_columns, stylesheet
 
 module(Element, Options) ->
     XML = layout_module(Element, init_opts(Element, Options)),
@@ -80,20 +94,17 @@ init_opts(Element, Options) ->
 	      index_columns = proplists:get_value(index_columns,
 						  Options, 1)
 	     },
-    case proplists:get_bool(no_stylesheet, Options) of
-	true ->
-	    R;
-	false ->
-	    case proplists:get_value(stylesheet, Options) of
-		undefined ->
-		    S = edoc_lib:join_uri(R#opts.root, ?STYLESHEET),
-		    R#opts{stylesheet = S};
-		S when list(S) ->
-		    R#opts{stylesheet = S}; 
-		_ ->
-		    report("bad value for option `stylesheet'.", []),
-		    exit(error)
-	    end
+    case proplists:get_value(stylesheet, Options) of
+	undefined ->
+	    S = edoc_lib:join_uri(R#opts.root, ?STYLESHEET),
+	    R#opts{stylesheet = S};
+	"" ->
+	    R;  % don't use any stylesheet
+	S when list(S) ->
+	    R#opts{stylesheet = S}; 
+	_ ->
+	    report("bad value for option `stylesheet'.", []),
+	    exit(error)
     end.
 
 
@@ -221,7 +232,8 @@ index_row(Fs) ->
     [{tr, lists:flatmap(fun index_col/1, Fs)}, ?NL].
 
 index_col({Name, F=#xmlElement{content = Es}}) ->
-    [{td, [{valign, "top"}], label_href([Name], F)},
+    [{td, [{valign, "top"}],
+      label_href(function_header(Name, F, "*"), F)},
      {td, index_desc(Es)}].
 
 index_desc(Es) ->
@@ -261,15 +273,10 @@ functions(Fs) ->
 	     ?NL | Es]
     end.
 
-%% TODO: indicate non-exported functions (included with the 'private' flag) in some way.
-% is_exported(E) ->
-%     case get_attrval(exported, E) of
-% 	"yes" -> true;
-% 	_ -> false
-%     end.
-
 function(Name, E=#xmlElement{content = Es}) ->
-    ([?NL, {h3, label_anchor([Name], E)}, ?NL]
+    ([?NL,
+      {h3, label_anchor(function_header(Name, E, " (private)"), E)},
+      ?NL]
      ++ case typespec(get_content(typespec, Es)) of
 	    [] ->
 		signature(get_content(args, Es),
@@ -284,6 +291,18 @@ function(Name, E=#xmlElement{content = Es}) ->
 
 function_name(E) ->
     get_attrval(name, E) ++ "/" ++ get_attrval(arity, E).
+
+function_header(Name, E, Private) ->
+    case is_exported(E) of
+	true -> [Name];
+	false -> [Name, Private]
+    end.
+
+is_exported(E) ->
+    case get_attrval(exported, E) of
+ 	"yes" -> true;
+ 	_ -> false
+    end.
 
 label_anchor(Content, E) ->
     case get_attrval(label, E) of

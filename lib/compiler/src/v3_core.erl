@@ -397,9 +397,8 @@ expr({'catch',L,E0}, St0) ->
     {#icatch{anno=#a{anno=[L]},body=Eps ++ [E1]},[],St1};
 expr({'fun',L,{function,F,A},{_,_,_}=Id}, St) ->
     {#c_fname{anno=[L,{id,Id}],id=F,arity=A},[],St};
-expr({'fun',L,{clauses,Cs},{Index,Uniq,_,_,Name}}, St) ->
-    %% Take the new hacky format.
-    fun_tq({Index,Uniq,Name}, Cs, L, St);
+expr({'fun',L,{clauses,Cs},Id}, St) ->
+    fun_tq(Id, Cs, L, St);
 expr({call,L0,{remote,_,{atom,_,erlang},{atom,_,is_record}},[_,_,_]=As}, St)
   when L0 < 0 ->
     %% Compiler-generated erlang:is_record/3 should be converted to

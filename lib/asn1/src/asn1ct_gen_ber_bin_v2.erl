@@ -778,8 +778,8 @@ gen_encode_objectfields(ClassName,[{typefield,Name,OptOrMand}|Rest],
 		exit({error,{asn1,{"missing mandatory field in object",
 				   ObjName}}});
 	    {false,'OPTIONAL'} ->
-		EmitFuncClause("_"),
-		emit(["   {<<>>,0}"]),
+		EmitFuncClause("Val"),
+		emit(["   {Val,0}"]),
 		[];
 	    {false,{'DEFAULT',DefaultType}} ->
 		EmitFuncClause("Val"),
@@ -1009,8 +1009,8 @@ gen_decode_objectfields(ClassName,[{typefield,Name,OptOrMand}|Rest],
 		exit({error,{asn1,{"missing mandatory field in object",
 				   ObjName}}});
 	    {false,'OPTIONAL'} ->
-		EmitFuncClause(" _"),
-		emit(["   asn1_NOVALUE"]),
+		EmitFuncClause(" Bytes"),
+		emit(["   Bytes"]),
 		[];
 	    {false,{'DEFAULT',DefaultType}} ->
 		EmitFuncClause("Bytes"),
@@ -1276,8 +1276,11 @@ gen_objset_enc(Erules,ObjSName,UniqueName,
 	  ") ->",nl}),
     {InternalFunc,NewNthObj}=
 	case ObjName of
-	    no_name ->
+	    {no_mod,no_name} ->
 		gen_inlined_enc_funs(Fields,ClFields,ObjSName,NthObj);
+	    {ModuleName,Name} ->
+		emit(["    {'",ModuleName,"', 'enc_",Name,"'}"]),
+		{[],NthObj};
 	    _ ->
 		emit({"    fun 'enc_",ObjName,"'/3"}),
 		{[],NthObj}
@@ -1291,8 +1294,11 @@ gen_objset_enc(_,ObjSetName,UniqueName,
 	  {asis,Val},") ->",nl}),
     {InternalFunc,_} =
 	case ObjName of
-	    no_name ->
+	    {no_mod,no_name} ->
 		gen_inlined_enc_funs(Fields,ClFields,ObjSetName,NthObj);
+	    {ModuleName,Name} ->
+		emit(["    {'",ModuleName,"', 'enc_",Name,"'}"]),
+		{[],NthObj};
 	    _ ->
 		emit({"    fun 'enc_",ObjName,"'/3"}),
 		{[],NthObj}
@@ -1448,8 +1454,11 @@ gen_objset_dec(Erules,ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],
 	  {asis,Val},") ->",nl]),
     NewNthObj=
 	case ObjName of
-	    no_name ->
+	    {no_mod,no_name} ->
 		gen_inlined_dec_funs(Fields,ClFields,ObjSName,NthObj);
+	    {ModuleName,Name} ->
+		emit(["    {'",ModuleName,"', 'dec_",Name,"'}"]),
+		NthObj;
 	    _ ->
 		emit(["    fun 'dec_",ObjName,"'/3"]),
 		NthObj
@@ -1462,8 +1471,10 @@ gen_objset_dec(_,ObjSetName,UniqueName,[{ObjName,Val,Fields}],
     emit(["'getdec_",ObjSetName,"'(",{asis,UniqueName},",",
 	  {asis,Val},") ->",nl]),
     case ObjName of
-	no_name ->
+	{no_mod,no_name} ->
 	    gen_inlined_dec_funs(Fields,ClFields,ObjSetName,NthObj);
+	{ModuleName,Name} ->
+		emit(["    {'",ModuleName,"', 'dec_",Name,"'}"]);
 	_ ->
 	    emit(["    fun 'dec_",ObjName,"'/3"])
     end,

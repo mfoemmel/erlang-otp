@@ -40,8 +40,8 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 MODULES = hipe hipe_main
 
 
-
-HRL_FILES=
+## hipe.hrl is automatically generated from hipe.hrl.src -- see below
+HRL_FILES= hipe.hrl
 ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
@@ -64,6 +64,9 @@ ERL_COMPILE_FLAGS += +nowarn_shadow_vars
 # Targets
 # ----------------------------------------------------
 
+hipe.hrl: ../vsn.mk hipe.hrl.src
+	sed -e "s;%VSN%;$(HIPE_VSN);" hipe.hrl.src > hipe.hrl
+
 $(EBIN)/hipe.beam: hipe.hrl
 $(EBIN)/hipe.beam: ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_main.beam: hipe.hrl
@@ -73,7 +76,7 @@ debug opt: $(TARGET_FILES)
 docs: $(DOC_FILES)
 
 clean:
-	rm -f $(TARGET_FILES) $(DOC_FILES)
+	rm -f $(TARGET_FILES) $(DOC_FILES) $(HRL_FILES)
 	rm -f core
 
 $(DOCS)/%.html:%.erl
@@ -95,6 +98,8 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
+	$(INSTALL_DIR) $(RELSYSDIR)/main
+	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(RELSYSDIR)/main
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 

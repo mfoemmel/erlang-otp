@@ -622,7 +622,7 @@ write_size(Sz, I, CT, Cntrs) ->
     end.
 
 output_slots(E, [E1 | Es], Acc, Head, DCT) 
-                       when element(1, E) == element(1, E1) ->
+                       when element(1, E) =:= element(1, E1) ->
     output_slots(E1, Es, [E1 | Acc], Head, DCT);
 output_slots(_E, [E | L], Acc, Head, DCT) ->
     NDCT = output_slot(Acc, Head, DCT),
@@ -1468,20 +1468,23 @@ scan_objs(B = <<_N:32, Sz:32, St:32, T/binary>>, From, To, L, Ts, R) ->
 scan_objs(_B, From, To, L, Ts, R) ->
     {more, From, To, L, Ts, R, 0}.
 
-scan_skip(Bin, From, To, Skip, L, Ts, R) when From + Skip == To ->
-    scan_next_allocated(Bin, From, L, Ts, R);
-scan_skip(Bin, From, To, Skip, L, Ts, R) ->
+scan_skip(Bin, From, To, Skip, L, Ts, R) when From + Skip < To ->
     SkipPos = From + Skip,
     case Bin of
 	<<_:Skip/binary, Tail/binary>> ->
 	    scan_objs(Tail, SkipPos, To, L, Ts, R);
 	_ ->
             {more, SkipPos, To, L, Ts, R, 0}
-    end.
+    end;
+scan_skip(Bin, From, To, Skip, L, Ts, R) when From + Skip =:= To ->
+    scan_next_allocated(Bin, From, To, L, Ts, R);
+scan_skip(_Bin, From, _To, Skip, L, Ts, R) -> % when From + Skip > _To 
+    From1 = From + Skip,
+    {more, From1, From1, L, Ts, R, 0}.
 
-scan_next_allocated(_Bin, _From, L, Ts, _R) when size(L) == 0 ->
-    {finished, Ts, L};
-scan_next_allocated(Bin, From0, <<From:32, To:32, L/binary>>, Ts, R) ->
+scan_next_allocated(_Bin, _From, To, L, Ts, R) when size(L) == 0 ->
+    {more, To, To, L, Ts, R, 0};
+scan_next_allocated(Bin, From0, _To, <<From:32, To:32, L/binary>>, Ts, R) ->
     Skip = From - From0,
     scan_skip(Bin, From0, To, Skip, L, Ts, R).
 

@@ -13,7 +13,7 @@
 # Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 # AB. All Rights Reserved.''
 # 
-#     $Id$
+#     $Id: Makefile,v 1.31 2004/11/08 17:47:19 richardc Exp $
 #
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
@@ -41,7 +41,7 @@ APP_DIR = $(APP_RELEASE_DIR)/$(DIR_NAME)
 
 # APPNAME = syntax_tools
 # BINDIR = ebin
-# DOC_OPTS = [{title,"Erlang Syntax Tools"}]
+DOC_OPTS = [{def,{vsn,"$(VSN)"}}]
 
 SPECIAL_TARGETS = 
 
@@ -58,8 +58,10 @@ include $(ERL_TOP)/make/otp_subdir.mk
 version:
 	@echo "$(VSN)"
 
-# docs:
-# 	erl -noshell -pa "$(BINDIR)" -run edoc_run application "'$(APPNAME)'" '"."' '$(DOC_OPTS)' -s erlang halt
+docs:
+	erl -noshell -pa "$(BINDIR)" -run edoc_run application "'$(APPNAME)'" '"."' '$(DOC_OPTS)' -s init stop
+
+edocs: docs
 
 app_release: tar
 

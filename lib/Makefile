@@ -45,28 +45,33 @@ else
 #        cosTime cosNotification cosProperty cosFileTransfer cosEventDomain
     endif
   else
+#
+# unix and win32
+# --------------
+#
     ERTS_SUB_DIRECTORIES = stdlib sasl kernel compiler
+    OTHER_SUB_DIRECTORIES = tools
     ifdef BUILD_ALL
-      ifeq ($(findstring win32,$(TARGET)),win32)
-        OTHER_SUB_DIRECTORIES = 			\
+      ifeq ($(findstring win32,$(TARGET)),win32) # BUILD_ALL on win32
+        OTHER_SUB_DIRECTORIES += 			\
           snmp otp_mibs appmon erl_interface asn1 jinterface gs inets ic \
           mnesia mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools pman \
-          $(SSL_APP) toolbar tools tv observer debugger odbc runtime_tools \
+          $(SSL_APP) toolbar tv observer debugger odbc runtime_tools \
           cosTransactions cosEvent cosTime cosNotification cosProperty \
           cosFileTransfer cosEventDomain et megaco webtool syntax_tools \
 	  xmerl edoc
-      else
-        OTHER_SUB_DIRECTORIES = \
+      else # BUILD_ALL on unix
+        OTHER_SUB_DIRECTORIES += \
           snmp otp_mibs appmon erl_interface asn1 jinterface debugger gs inets \
           ic mnesia  mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools \
-          pman $(SSL_APP) toolbar tools tv observer \
+          pman $(SSL_APP) toolbar tv observer \
           runtime_tools cosTransactions cosEvent cosTime cosNotification \
           cosProperty cosFileTransfer cosEventDomain et megaco webtool \
 	  syntax_tools xmerl edoc
         ifeq ($(findstring sparc-sun-solaris,$(TARGET)),sparc-sun-solaris)
           OTHER_SUB_DIRECTORIES += odbc
         endif
-        OTHER_SUB_DIRECTORIES += $(HIPE_APP) $(TSP_APP)
+        OTHER_SUB_DIRECTORIES += hipe $(TSP_APP)
       endif
     endif
   endif
@@ -77,14 +82,14 @@ ifdef BOOTSTRAP
     stdlib compiler orber/include
 else
   ifdef SECONDARY_BOOTSTRAP
-    SUB_DIRECTORIES = kernel parsetools asn1/src $(HIPE_APP)
+    SUB_DIRECTORIES = kernel parsetools asn1/src hipe
   else
     ifdef TERTIARY_BOOTSTRAP
       SUB_DIRECTORIES = snmp
     else
       ifdef FOURTH_BOOTSTRAP
         SUB_DIRECTORIES = sasl jinterface ic
-      else
+      else # Not bootstrap build
         SUB_DIRECTORIES = $(ERTS_SUB_DIRECTORIES) $(OTHER_SUB_DIRECTORIES)
       endif
     endif

@@ -5,9 +5,9 @@
 %%  Filename : 	hipe_rtl_arch.erl
 %%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2004/08/10 15:08:05 $
-%%              $Revision: 1.51 $
+%%              $Author: mikpe $
+%%              $Date: 2004/12/06 03:09:39 $
+%%              $Revision: 1.53 $
 %%=====================================================================
 %% @doc
 %%
@@ -173,7 +173,7 @@ reg_name(Reg) ->
     ultrasparc ->
       hipe_sparc_registers:reg_name(Reg);
     powerpc ->
-      hipe_ppc_registers:reg_name(Reg);
+      hipe_ppc_registers:reg_name_gpr(Reg);
     x86 ->
       hipe_x86_registers:reg_name(Reg);
     amd64 ->
@@ -202,7 +202,7 @@ is_precolored_regnum(RegNum) ->
     ultrasparc ->
       hipe_sparc_registers:is_precoloured(RegNum);
     powerpc ->
-      hipe_ppc_registers:is_precoloured(RegNum);
+      hipe_ppc_registers:is_precoloured_gpr(RegNum);
     x86 ->
       hipe_x86_registers:is_precoloured(RegNum);
     amd64 ->
@@ -366,8 +366,9 @@ load_little_4(Dst, Base, Offset, Signedness) ->
 store_4(Base, Offset, Src) ->
   case get(hipe_target_arch) of
     x86 ->
-      [hipe_rtl:mk_store(Base, Offset, Src),
-       hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(4))];
+      store_4_directly(Base, Offset, Src);
+    powerpc ->
+      store_4_directly(Base, Offset, Src);
     ultrasparc ->
        [hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(3)),
        hipe_rtl:mk_store(Base, Offset, Src, byte),
@@ -394,6 +395,10 @@ store_4(Base, Offset, Src) ->
        hipe_rtl:mk_store(Base, Offset, Src, byte),
        hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(1))]
   end.
+
+store_4_directly(Base, Offset, Src) ->
+  [hipe_rtl:mk_store(Base, Offset, Src),
+   hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(4))].
 
 load_4_directly(Dst, Base, Offset, Signedness) ->
   [hipe_rtl:mk_load(Dst, Base, Offset, word, Signedness),
@@ -504,6 +509,7 @@ fwait() ->
   case get(hipe_target_arch) of
     x86 -> [hipe_rtl:mk_call([], 'fwait', [], [], [], not_remote)];
     amd64 -> [hipe_rtl:mk_call([], 'fwait', [], [], [], not_remote)];
+    powerpc -> [];
     ultrasparc -> []
   end.
 
@@ -524,6 +530,8 @@ handle_fp_exception() ->
       [hipe_rtl:mk_call([], handle_fp_exception, [],
 			hipe_rtl:label_name(ContLbl), [], not_remote),
        ContLbl];
+    powerpc ->
+      [];
     ultrasparc ->
       []
   end.

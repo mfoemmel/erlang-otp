@@ -33,7 +33,6 @@
 %%   <li> {move, Dst, Src} </li>
 %%   <li> {multimove, [Dst1, ..., DstN], [Src1, ..., SrcN]} </li>
 %%   <li> {phi, Dst, Id, [Src1, ..., SrcN]} </li>
-%%   <li> {begin_handler, VarList} </li>
 %%   <li> {return, VarList} </li>
 %%   <li> {store, Base, Offset, Src, Size} </li>
 %%   <li> {switch, Src1, Labels, SortedBy} </li>
@@ -203,9 +202,6 @@
 	 mk_return/1,
 	 return_varlist/1,
 
-	 mk_begin_handler/1,
-	 begin_handler_varlist/1,
-
 	 mk_gctest/1,
 	 gctest_words/1,
  
@@ -297,7 +293,23 @@
 	 %% highest_var/1,
 	 pp/1,
 	 pp/2,
-	 pp_block/1]).
+	 pp_block/1,
+
+	 %% FIXME _dst_update command. Ok to export these?
+	 alu_dst_update/2,
+	 call_dstlist_update/2,
+	 fconv_dst_update/2,
+	 fload_dst_update/2,
+	 %% fmove_dst_update/2,
+	 fp_dst_update/2,
+	 fp_unop_dst_update/2,
+	 load_dst_update/2,
+	 load_address_dst_update/2,
+	 load_atom_dst_update/2,
+	 load_word_index_dst_update/2,
+	 %% move_dst_update/2,
+	 fixnumop_dst_update/2,
+	 pp_instr/2]).
 
 -compile({inline, [{type,1}]}). 
 
@@ -343,7 +355,6 @@
 -record(move, {dst, src}).
 -record(multimove, {dstlist, srclist}).
 -record(phi, {dst, id, arglist}).
--record(begin_handler, {varlist}).
 -record(return, {varlist}).
 -record(store, {base, offset, src, size}).
 -record(switch, {src, labels, sorted_by=[]}).
@@ -676,15 +687,6 @@ return_varlist(#return{varlist=VarList}) -> VarList.
 return_varlist_update(R, NewVarList) -> R#return{varlist=NewVarList}.
 
 %%
-%% begin_handler
-%%
-
-mk_begin_handler(VarList) -> #begin_handler{varlist=VarList}.
-begin_handler_varlist(#begin_handler{varlist=VarList}) -> VarList.
-begin_handler_varlist_update(RC, NewVarList) ->
-  RC#begin_handler{varlist=NewVarList}.
-
-%%
 %% gctests
 %%
 
@@ -903,7 +905,6 @@ args(I) ->
     move -> [move_src(I)];
     multimove -> multimove_srclist(I);
     phi -> phi_args(I);
-    begin_handler -> [];
     return -> hipe_rtl_arch:add_ra_reg(return_varlist(I));
     store -> [store_base(I), store_offset(I), store_src(I)];
     switch -> [switch_src(I)]
@@ -940,7 +941,6 @@ defines(Instr) ->
 	   move -> [move_dst(Instr)];
 	   multimove -> multimove_dstlist(Instr);
 	   phi -> [phi_dst(Instr)];
-	   begin_handler -> begin_handler_varlist(Instr);
 	   return -> [];
 	   store -> [];
 	   switch -> []
@@ -1038,8 +1038,6 @@ subst_uses(Subst, I) ->
       multimove_srclist_update(I, subst_list(Subst, multimove_srclist(I)));
     phi ->
       phi_argvar_subst(I, Subst);
-    begin_handler ->
-      I;
     return ->
       return_varlist_update(I, subst_list(Subst, return_varlist(I)));
     store ->
@@ -1102,8 +1100,6 @@ subst_defines(Subst, I)->
       multimove_dstlist_update(I, subst_list(Subst, multimove_dstlist(I)));
     phi ->
       phi_dst_update(I, subst1(Subst, phi_dst(I)));
-    begin_handler ->
-      begin_handler_varlist_update(I, subst_list(Subst, begin_handler_varlist(I)));
     return ->
       I;
     store ->
@@ -1140,7 +1136,6 @@ is_safe(Instr) ->
     return -> false;
     gctest -> false;
     comment -> false;
-    begin_handler -> false;
     _ -> true
   end.
 
@@ -1487,10 +1482,6 @@ pp_instr(Dev, I) ->
       io:format(Dev, ")~n", []);
     comment ->
       io:format(Dev, "    ;; ~p~n", [comment_text(I)]);
-    begin_handler ->
-      io:format(Dev, "    ", []),
-      pp_args(Dev,  begin_handler_varlist(I)),
-      io:format(Dev, " <- begin_handler()\n", []);
     binbase ->
       pp_arg(Dev, binbase_dst(I)),
       io:format(Dev, " <- ", []),

@@ -735,7 +735,8 @@ encode_length(undefined,Len) -> % un-constrained
 	    exit({error,{asn1,{encode_length,{nyi,above_16k}}}})
     end;
 	
-encode_length({0,'MAX'},Len) ->
+encode_length({Lb,'MAX'},Len) when integer(Lb),Lb=<Len->
+%    encode_semi_constrained_number(Lb,Len);
     encode_length(undefined,Len);
 encode_length({Lb,Ub},Len) when Ub =< 65535 ,Lb >= 0 -> % constrained
     encode_constrained_number({Lb,Ub},Len);
@@ -778,6 +779,8 @@ decode_length(Buffer,undefined)  -> % un-constrained
 
 decode_length(Buffer,{Lb,Ub}) when Ub =< 65535 ,Lb >= 0 -> % constrained
     decode_constrained_number(Buffer,{Lb,Ub});
+decode_length(Buffer,{Lb,_Ub}) when integer(Lb),Lb>=0 -> %Ub > 64K or 'MAX'. It will work for length < 16K
+    decode_length(Buffer,undefined);
 
 decode_length(Buffer,{{Lb,Ub},[]}) -> 
     case getbit(Buffer) of

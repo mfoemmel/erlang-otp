@@ -12,9 +12,8 @@
 new() ->
   gb_sets:empty().
 
-add_edge(U, V, Set) ->
-  if U =:= V -> Set;
-     U < V -> gb_sets:add_element({U,V}, Set);
+add_edge(U, V, Set) -> % PRE: U =/= V
+  if U < V -> gb_sets:add_element({U,V}, Set);
      true -> gb_sets:add_element({V,U}, Set)
   end.
 

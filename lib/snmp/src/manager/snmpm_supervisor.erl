@@ -21,11 +21,13 @@
 
 
 %% External exports
--export([start_link/2]).
+-export([start_link/2, stop/0]).
 
 %% supervisor callbacks
 -export([init/1]).
 
+
+-define(SERVER, ?MODULE).
 
 -include("snmp_debug.hrl").
 
@@ -38,6 +40,19 @@ start_link(_Type, Opts) ->
        "~n   Opts: ~p", [Opts]),
     SupName = {local, ?MODULE}, 
     supervisor:start_link(SupName, ?MODULE, [Opts]).
+
+stop() ->
+    ?d("stop -> entry", []),
+    case whereis(?SERVER) of
+	Pid when pid(Pid) ->
+	    ?d("stop -> Pid: ~p", [Pid]),
+	    exit(Pid, shutdown),
+	    ?d("stop -> stopped", []),
+	    ok;
+	_ ->
+	    ?d("stop -> not running", []),
+	    not_running
+    end.
 
 
 %%%-------------------------------------------------------------------

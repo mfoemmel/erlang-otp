@@ -24,7 +24,9 @@
 %% User interface
 -export([
 	 %% Management API
+	 start/1, 
 	 start_link/1, 
+	 stop/0, 
 
 	 register_user/3, unregister_user/1, 
 	 which_users/0, 
@@ -87,6 +89,16 @@ start_link(Opts) ->
     %% starts the other processes.
     {ok, _} = snmpm_supervisor:start_link(normal, Opts),
     ok.
+
+start(Opts) ->
+    %% This start the manager top supervisor, which in turn
+    %% starts the other processes.
+    {ok, Pid} = snmpm_supervisor:start_link(normal, Opts),
+    unlink(Pid),
+    ok.
+
+stop() ->
+    snmpm_supervisor:stop().
 
 
 %% Change the verbosity of a process in the manager

@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_data.erl,v 1.25 2004/08/25 00:05:19 richardc Exp $
+%% $Id: edoc_data.erl,v 1.27 2004/11/30 00:46:14 richardc Exp $
 %%
 %% @private
 %% @copyright 2003 Richard Carlsson
@@ -43,6 +43,7 @@
 %% <!ATTLIST module
 %%   name CDATA #REQUIRED
 %%   private NMTOKEN(yes | no) #IMPLIED
+%%   hidden NMTOKEN(yes | no) #IMPLIED
 %%   root CDATA #IMPLIED>
 %% <!ELEMENT behaviour (#PCDATA)>
 %% <!ATTLIST behaviour
@@ -68,17 +69,24 @@
 %% <!ELEMENT typedecl (typedef, description?)>
 %% <!ELEMENT functions (function+)>
 
+%% NEW-OPTIONS: private, hidden
+%% DEFER-OPTIONS: edoc_extract:source/4
+
 module(Module, Entries, Env, Opts) ->
     Name = atom_to_list(Module#module.name),
     HeaderEntry = get_entry(module, Entries),
     HeaderTags = HeaderEntry#entry.data,
     AllTags = get_all_tags(Entries),
-    Out = {module, [{name, Name},
-		    {root, Env#env.root}
-		    | case is_private(HeaderTags) of
-			  true -> [{private, "yes"}];
-			  false -> []
-		      end],
+    Out = {module, ([{name, Name},
+		     {root, Env#env.root}]
+		    ++ case is_private(HeaderTags) of
+			   true -> [{private, "yes"}];
+			   false -> []
+		       end
+		    ++ case is_hidden(HeaderTags) of
+			   true -> [{hidden, "yes"}];
+			   false -> []
+		       end),
 	   (behaviours(Module#module.attributes, Env)
 	    ++ get_doc(HeaderTags)
 	    ++ authors(HeaderTags)
@@ -123,7 +131,7 @@ functions(Es, Env, Opts) ->
 function_filter(#entry{name = {_,_}, export = Export, data = Ts},
 		Private, Hidden) ->
     ((Export andalso not is_private(Ts)) orelse Private)
-	andalso (Hidden orelse not is_hidden(Ts));
+	andalso ((not is_hidden(Ts)) orelse Hidden);
 function_filter(_, _, _) ->
     false.
 
@@ -393,7 +401,7 @@ overview(Title, Tags, Env, _Opts) ->
 
 overview_1(Title, Tags, Env) ->
     {overview, [{root, Env#env.root}],
-     ([{title, [Title]}]
+     ([{title, [get_title(Tags, Title)]}]
       ++ get_doc(Tags)
       ++ authors(Tags)
       ++ get_version(Tags)
@@ -402,3 +410,11 @@ overview_1(Title, Tags, Env) ->
       ++ sees(Tags, Env)
       ++ references(Tags))
     }.
+
+get_title(Ts, Default) ->
+    case get_tags(title, Ts) of
+	[T] ->
+	    T#tag.data;
+	[] ->
+	    Default
+    end.

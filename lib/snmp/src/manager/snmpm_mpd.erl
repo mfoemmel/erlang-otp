@@ -773,7 +773,7 @@ get_agent_max_message_size(Addr, Port) ->
 	{ok, MMS} ->
 	    MMS;
 	_Error ->
-	    user_err("unknown agent: ~w:~w", [Addr, Port]),
+	    ?vlog("unknown agent: ~w:~w", [Addr, Port]),
 	    get_max_message_size()
     end.
 

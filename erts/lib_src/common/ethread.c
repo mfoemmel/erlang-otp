@@ -52,11 +52,25 @@ static int assert_failed(char *f, int l, char *a);
 #define ASSERT(A) ((void) 1)
 #endif
 
+#if defined(__GNUC__)
+#  undef inline
+#  define inline __inline__
+#elif defined(__WIN32__)
+#  undef inline
+#  define inline __forceinline
+#else
+#  ifndef inline
+#    define inline
+#  endif
+#endif
+
 /*
  * ----------------------------------------------------------------------------
  * Common stuff
  * ----------------------------------------------------------------------------
  */
+
+#define ETHR_MAX_THREADS 2048 /* Has to be an even power of 2 */
 
 static int ethr_not_inited = 1;
 
@@ -101,6 +115,9 @@ typedef struct {
     void *prep_func_res;
 } thr_wrap_data_;
 
+static int no_ethreads;
+static ethr_mutex no_ethrs_mtx;
+
 #ifndef ETHR_HAVE_PTHREAD_ATFORK
 #define ETHR_HAVE_PTHREAD_ATFORK 0
 #endif
@@ -114,6 +131,35 @@ typedef struct {
  * Static functions
  * ----------------------------------------------------------------------------
  */
+
+/*
+ * Functions with safe_ prefix aborts on failure. To be used when
+ * we cannot recover after failure.
+ */
+
+static inline void
+safe_mutex_lock(pthread_mutex_t *mtxp)
+{
+    int res = pthread_mutex_lock(mtxp);
+    if (res != 0)
+	abort();
+}
+
+static inline void
+safe_mutex_unlock(pthread_mutex_t *mtxp)
+{
+    int res = pthread_mutex_unlock(mtxp);
+    if (res != 0)
+	abort();
+}
+
+static inline void
+safe_cond_signal(pthread_cond_t *cndp)
+{
+    int res = pthread_cond_signal(cndp);
+    if (res != 0)
+	abort();
+}
 
 #ifdef ETHR_HAVE_ETHR_REC_MUTEX_INIT
 
@@ -133,8 +179,7 @@ static void lock_mutexes(void)
     ethr_mutex *m = &forksafe_mtx;
     do {
 
-	if (pthread_mutex_lock(&m->pt_mtx) != 0)
-	    abort();
+	safe_mutex_lock(&m->pt_mtx);
 
 	m = m->next;
 
@@ -146,8 +191,7 @@ static void unlock_mutexes(void)
     ethr_mutex *m = forksafe_mtx.prev;
     do {
 
-	if (pthread_mutex_unlock(&m->pt_mtx) != 0)
-	    abort();
+	safe_mutex_unlock(&m->pt_mtx);
 
 	m = m->prev;
 
@@ -259,30 +303,34 @@ init_rec_mtx_attr(void)
 
 #endif /* #if ETHR_HAVE_ETHR_REC_MUTEX_INIT */
 
+static inline void thr_exit_cleanup(void)
+{
+    safe_mutex_lock(&no_ethrs_mtx.pt_mtx);
+    ASSERT(no_ethreads > 0);
+    no_ethreads--;
+    safe_mutex_unlock(&no_ethrs_mtx.pt_mtx);
+}
+
 static void *thr_wrapper(void *vtwd)
 {
-    int res;
+    void *res;
     thr_wrap_data_ *twd = (thr_wrap_data_ *) vtwd;
     void *(*thr_func)(void *) = twd->thr_func;
     void *arg = twd->arg;
 
-    res = pthread_mutex_lock(&twd->mtx);
-    if (res)
-	abort();
+    safe_mutex_lock(&twd->mtx);
 
     if (thread_create_child_func)
 	(*thread_create_child_func)(twd->prep_func_res);
 
     twd->initialized = 1;
 
-    res = pthread_cond_signal(&twd->cnd);
-    if (res)
-	abort();
-    res = pthread_mutex_unlock(&twd->mtx);
-    if (res)
-	abort();
+    safe_cond_signal(&twd->cnd);
+    safe_mutex_unlock(&twd->mtx);
 
-    return (*thr_func)(arg);
+    res = (*thr_func)(arg);
+    thr_exit_cleanup();
+    return res;
 }
 
 
@@ -295,7 +343,7 @@ static void *thr_wrapper(void *vtwd)
 int
 ethr_init(ethr_init_data *id)
 {
-
+    int res;
     init_create_thread_funcs(id);
 
 #if ETHR_HAVE_PTHREAD_ATFORK
@@ -303,8 +351,19 @@ ethr_init(ethr_init_data *id)
 #endif
 
     ethr_not_inited = 0;
+    no_ethreads = 1;
+    res = ethr_mutex_init(&no_ethrs_mtx);
+    if (res != 0)
+	goto error;
+    res = ethr_mutex_set_forksafe(&no_ethrs_mtx);
+    if (res != 0 && res != ENOTSUP)
+	goto error;
 
     return 0;
+ error:
+    ethr_not_inited = 1;
+    return res;
+
 }
 
 
@@ -339,34 +398,51 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg, int detached)
     /* Set som thread attributes */
     res = pthread_attr_init(&attr);
     if (res != 0)
-	goto cleanup_after_attr;
+	goto cleanup_parent_func;
     res = pthread_mutex_init(&twd.mtx, NULL);
     if (res != 0)
-	goto cleanup_after_mutex;
+	goto cleanup_attr_destroy;
     res = pthread_cond_init(&twd.cnd, NULL);
     if (res != 0)
-	goto cleanup_after_cond;
+	goto cleanup_mutex_destroy;
 
     /* Schedule child thread in system scope (if possible) ... */
     res = pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
     if (res != 0 && res != ENOTSUP)
-	goto cleanup;
+	goto cleanup_cond_destroy;
     /* Detached or joinable... */
     res = pthread_attr_setdetachstate(&attr,
 				      (detached
 				       ? PTHREAD_CREATE_DETACHED
 				       : PTHREAD_CREATE_JOINABLE));
     if (res != 0)
-	goto cleanup;
+	goto cleanup_cond_destroy;
     
     res = pthread_mutex_lock(&twd.mtx);
 
     if (res != 0)
-	goto cleanup;
+	goto cleanup_cond_destroy;
+
+    safe_mutex_lock(&no_ethrs_mtx.pt_mtx);
+    if (no_ethreads < ETHR_MAX_THREADS) {
+	no_ethreads++;
+	safe_mutex_unlock(&no_ethrs_mtx.pt_mtx);
+    }
+    else {
+	res = EAGAIN;
+	safe_mutex_unlock(&no_ethrs_mtx.pt_mtx);
+	goto cleanup_mutex_unlock;
+    }
 
     res = pthread_create((pthread_t *) tid, &attr, thr_wrapper, (void *) &twd);
 
-    if (res == 0) {
+    if (res != 0) {
+	safe_mutex_lock(&no_ethrs_mtx.pt_mtx);
+	ASSERT(no_ethreads > 0);
+	no_ethreads--;
+	safe_mutex_unlock(&no_ethrs_mtx.pt_mtx);
+    }
+    else {
 
 	/* Wait for child to initialize... */
 	while (!twd.initialized) {
@@ -377,25 +453,24 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg, int detached)
 
     }
 
+    /* Cleanup... */
+ cleanup_mutex_unlock:
     dres = pthread_mutex_unlock(&twd.mtx);
     if (res == 0)
 	res = dres;
-
-    /* Cleanup... */
- cleanup:
-
+ cleanup_cond_destroy:
     dres = pthread_cond_destroy(&twd.cnd);
     if (res == 0)
 	res = dres;
- cleanup_after_cond:
+ cleanup_mutex_destroy:
     dres = pthread_mutex_destroy(&twd.mtx);
     if (res == 0)
 	res = dres;
- cleanup_after_mutex:
+ cleanup_attr_destroy:
     dres = pthread_attr_destroy(&attr);
     if (res == 0)
 	res = dres;
- cleanup_after_attr:
+ cleanup_parent_func:
     if (thread_create_parent_func)
 	(*thread_create_parent_func)(twd.prep_func_res);
 
@@ -435,6 +510,7 @@ ethr_thr_exit(void *res)
 	return;
     }
 #endif
+    thr_exit_cleanup();
     pthread_exit(res);
 }
 
@@ -819,7 +895,6 @@ int ethr_sigwait(const sigset_t *set, int *sig)
 #endif
 
 #define INVALID_TID -1
-#define ETHR_MAX_THREADS 2048 /* Have to be an even power of 2 */
 
 ethr_tid serial_shift; /* Bits to shift serial when constructing a tid */
 ethr_tid last_serial; /* Last thread table serial used */
@@ -958,7 +1033,7 @@ get_errno(void)
     }
 }
 
-static __forceinline thr_data_ *
+static inline thr_data_ *
 tid2thr(ethr_tid tid)
 {
     ethr_tid ix;
@@ -977,7 +1052,7 @@ tid2thr(ethr_tid tid)
     return td;
 }
 
-static __forceinline void
+static inline void
 new_tid(ethr_tid *new_tid, ethr_tid *new_serial, ethr_tid *new_ix)
 {
     ethr_tid tmp_serial = last_serial;
@@ -1063,7 +1138,7 @@ static unsigned thr_wrapper(void* args)
 }
 
 
-static __forceinline void
+static inline void
 fake_static_mutex_init(ethr_mutex *mtx)
 {
     EnterCriticalSection((CRITICAL_SECTION *) &fake_static_init_cs);
@@ -1075,7 +1150,7 @@ fake_static_mutex_init(ethr_mutex *mtx)
     LeaveCriticalSection((CRITICAL_SECTION *) &fake_static_init_cs);
 }
 
-static __forceinline void
+static inline void
 fake_static_cond_init(ethr_cond *cnd)
 {
     EnterCriticalSection((CRITICAL_SECTION *) &fake_static_init_cs);
@@ -1091,7 +1166,7 @@ fake_static_cond_init(ethr_cond *cnd)
 
 #define EPOCH_JULIAN_DIFF 11644473600i64
 
-static __forceinline void
+static inline void
 get_curr_time(long *sec, long *nsec)
 {
     SYSTEMTIME t;
@@ -1105,7 +1180,7 @@ get_curr_time(long *sec, long *nsec)
     *sec = (long) ((lft / 10000000i64) - EPOCH_JULIAN_DIFF);
 }
 
-static __forceinline int
+static inline int
 condwait(ethr_cond *cnd,
 	 ethr_mutex *mtx,
 	 int with_timeout,
@@ -1348,8 +1423,10 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg, int detached)
 
     /* Find a new thread id to use */
     new_tid(&child_tid, &child_serial, &child_ix);
-    if (child_tid == INVALID_TID)
+    if (child_tid == INVALID_TID) {
+	err = EAGAIN;
 	goto error;
+    }
 
     ASSERT(child_ix == THR_IX(child_tid));
 

@@ -27,12 +27,12 @@
 %% start/2(Type, StartArgs) -> {ok, Pid} | {ok, Pid, State} | 
 %%                             {error, Reason}
 %%
-start(Type, StartArgs) ->
+start(_Type, _StartArgs) ->
     crypto_sup:start_link().
 
 %% stop(State) -> void()
 %%
-stop(State) ->
+stop(_State) ->
     ok.
 
 

@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_doclet.erl,v 1.11 2004/04/04 14:45:40 richardc Exp $
+%% $Id: edoc_doclet.erl,v 1.17 2004/11/30 00:45:41 richardc Exp $
 %%
 %% @copyright 2003 Richard Carlsson
 %% @author Richard Carlsson <richardc@csd.uu.se>
@@ -30,12 +30,11 @@
 
 -module(edoc_doclet).
 
--export([run/8]).
-
-%% For edoc_index
--export([index_file/3,overview/4,copy_stylesheet/2,stylesheet/1,xhtml/3]).
+-export([run/2]).
 
 -import(edoc_report, [report/2, warning/2]).
+
+-include("../include/edoc_doclet.hrl").
 
 -define(EDOC_APP, edoc).
 -define(DEFAULT_FILE_SUFFIX, ".html").
@@ -51,43 +50,130 @@
 -include("xmerl.hrl").
 
 %% Sources is the list of inputs in the order they were found.  Packages
-%% and Modules are sorted lists of atoms without duplicates, and include
-%% the things from the edoc-info file (if present) in the target
-%% directory. The "empty package" is never included in Packages.
+%% and Modules are sorted lists of atoms without duplicates. (They
+%% usually include the data from the edoc-info file in the target
+%% directory, if it exists.) Note that the "empty package" is never
+%% included in Packages!
 
-%% Note: this interface is not completely stable.
+%% @doc Main doclet entry point. See the file <a
+%% href="../include/edoc_doclet.hrl">`edoc_doclet.hrl'</a> for the data
+%% structures used for passing parameters.
+%%
+%% <p>Also see {@link edoc:layout/2} for layout-related options, and
+%% {@link edoc:get_doc/2} for options related to reading source
+%% files.</p>
+%%
+%% <p>Options:
+%% <dl>
+%%  <dt>{@type {file_suffix, string()@}}
+%%  </dt>
+%%  <dd>Specifies the suffix used for output files. The default value is
+%%      `".html"'.
+%%  </dd>
+%%  <dt>{@type {hidden, bool()@}}
+%%  </dt>
+%%  <dd>If the value is `true', documentation of hidden modules and
+%%      functions will also be included. The default value is `false'.
+%%  </dd>
+%%  <dt>{@type {overview, edoc:filename()@}}
+%%  </dt>
+%%  <dd>Specifies the name of the overview-file. By default, this doclet
+%%      looks for a file `"overview.edoc"' in the target directory.
+%%  </dd>
+%%  <dt>{@type {private, bool()@}}
+%%  </dt>
+%%  <dd>If the value is `true', documentation of private modules and
+%%      functions will also be included. The default value is `false'.
+%%  </dd>
+%%  <dt>{@type {stylesheet, string()@}}
+%%  </dt>
+%%  <dd>Specifies the URI used for referencing the stylesheet. The
+%%      default value is `"stylesheet.css"'. If an empty string is
+%%      specified, no stylesheet reference will be generated.
+%%  </dd>
+%%  <dt>{@type {stylesheet_file, edoc:filename()@}}
+%%  </dt>
+%%  <dd>Specifies the name of the stylesheet file. By default, this
+%%      doclet uses the file `"stylesheet.css"' in the `priv'
+%%      subdirectory of the EDoc installation directory. The named file
+%%      will be copied to the target directory.
+%%  </dd>
+%%  <dt>{@type {title, string()@}}
+%%  </dt>
+%%  <dd>Specifies the title of the overview-page.
+%%  </dd>
+%% </dl></p>
 
-run(Sources, Dir, App, Packages, Modules, FileMap, Env, Options) ->
-    Suffix = proplists:get_value(file_suffix, Options,
-				 ?DEFAULT_FILE_SUFFIX),
-    Title = proplists:get_value(title, Options,
-				if App == [] ->
-					"Overview";
-				   true ->
-					io_lib:fwrite("Application ~s",
-						      [App])
-				end),
-    Priv = proplists:get_bool(private, Options),
+%% INHERIT-OPTIONS: title/2
+%% INHERIT-OPTIONS: sources/5
+%% INHERIT-OPTIONS: overview/4
+%% INHERIT-OPTIONS: copy_stylesheet/2
+%% INHERIT-OPTIONS: stylesheet/1
+
+run(#doclet_gen{}=Cmd, Ctxt) ->
+    gen(Cmd#doclet_gen.sources,
+	Cmd#doclet_gen.app,
+	Cmd#doclet_gen.packages,
+	Cmd#doclet_gen.modules,
+	Cmd#doclet_gen.filemap,
+	Ctxt);
+run(#doclet_toc{}=Cmd, Ctxt) ->
+    toc(Cmd#doclet_toc.paths, Ctxt).
+
+gen(Sources, App, Packages, Modules, FileMap, Ctxt) ->
+    Dir = Ctxt#context.dir,
+    Env = Ctxt#context.env,
+    Options = Ctxt#context.opts,
+    Title = title(App, Options),
     CSS = stylesheet(Options),
-    Ms = lists:foldl(fun (Src, Set) ->
-			     source(Src, Dir, Suffix, Env, Set,
-				    Priv, Options)
-		     end,
-		     sets:new(), Sources),
-    lists:foreach(fun (P) ->
-			  package(P, Dir, FileMap, Env, Options)
-		  end,
-		  Packages),
-    Modules1 = [M || M <- Modules, sets:is_element(M, Ms)],
-    index_file(Dir, length(Packages) > 1, Title),
-    packages_frame(Dir, Packages, Title, CSS),
+    Modules1 = sources(Sources, Dir, Modules, Env, Options),
     modules_frame(Dir, Modules1, Title, CSS),
+    packages(Packages, Dir, FileMap, Env, Options),
+    packages_frame(Dir, Packages, Title, CSS),
     overview(Dir, Title, Env, Options),
+    index_file(Dir, length(Packages) > 1, Title),
     edoc_lib:write_info_file(App, Packages, Modules1, Dir),
     copy_stylesheet(Dir, Options),
     ok.
 
-source({M, P, Name, Path}, Dir, Suffix, Env, Set, Priv, Options) ->
+
+%% NEW-OPTIONS: title
+%% DEFER-OPTIONS: run/2
+
+title(App, Options) ->
+    proplists:get_value(title, Options,
+			if App == ?NO_APP ->
+				"Overview";
+			   true ->
+				io_lib:fwrite("Application: ~s", [App])
+			end).
+
+
+%% Processing the individual source files.
+
+%% NEW-OPTIONS: file_suffix, private, hidden
+%% INHERIT-OPTIONS: edoc:layout/2
+%% INHERIT-OPTIONS: edoc:get_doc/3
+%% DEFER-OPTIONS: run/2
+
+sources(Sources, Dir, Modules, Env, Options) ->
+    Suffix = proplists:get_value(file_suffix, Options,
+				 ?DEFAULT_FILE_SUFFIX),
+    Private = proplists:get_bool(private, Options),
+    Hidden = proplists:get_bool(hidden, Options),
+    Ms = lists:foldl(fun (Src, Set) ->
+			     source(Src, Dir, Suffix, Env, Set,
+				    Private, Hidden, Options)
+		     end,
+		     sets:new(), Sources),
+    [M || M <- Modules, sets:is_element(M, Ms)].
+
+
+%% Generating documentation for a source file, adding its name to the
+%% set if it was successful.
+
+source({M, P, Name, Path}, Dir, Suffix, Env, Set, Private, Hidden,
+       Options) ->
     File = filename:join(Path, Name),
     case catch {ok, edoc:get_doc(File, Env, Options)} of
 	{ok, {Module, Doc}} ->
@@ -95,7 +181,8 @@ source({M, P, Name, Path}, Dir, Suffix, Env, Set, Priv, Options) ->
 	    Text = edoc:layout(Doc, Options),
 	    Name1 = packages:last(M) ++ Suffix,
 	    edoc_lib:write_file(Text, Dir, Name1, P),
-	    case Priv orelse not is_private(Doc) of
+	    case ((not is_private(Doc)) orelse Private)
+		andalso ((not is_hidden(Doc)) orelse Hidden) of
 		true ->
 		    sets:add_element(Module, Set);
 		false ->
@@ -123,6 +210,17 @@ check_name(M, M0, P0, File) ->
     end.
 
 
+%% Generating the summary files for packages.
+
+%% INHERIT-OPTIONS: read_file/4
+%% INHERIT-OPTIONS: edoc_lib:run_layout/2
+
+packages(Packages, Dir, FileMap, Env, Options) ->
+    lists:foreach(fun (P) ->
+			  package(P, Dir, FileMap, Env, Options)
+		  end,
+		  Packages).
+
 package(P, Dir, FileMap, Env, Opts) ->
     Tags = case FileMap(P) of
 	       "" ->
@@ -131,9 +229,14 @@ package(P, Dir, FileMap, Env, Opts) ->
 		   read_file(File, package, Env, Opts)
 	   end,
     Data = edoc_data:package(P, Tags, Env, Opts),
-    Text = edoc_layout:package(Data, Opts),
+    F = fun (M) ->
+		M:package(Data, Opts)
+	end,
+    Text = edoc_lib:run_layout(F, Opts),
     edoc_lib:write_file(Text, Dir, ?PACKAGE_SUMMARY, P).
-    
+
+
+%% Creating an index file, with some frames optional.
 
 index_file(Dir, Packages, Title) ->
     Frame1 = {frame, [{src,?PACKAGES_FRAME},
@@ -158,11 +261,11 @@ index_file(Dir, Packages, Title) ->
 		++ [?NL, Frame3, ?NL,
 		    {noframes,
 		     [?NL,
-		      {h2, ["Yo, man!"]},
+		      {h2, ["This page uses frames"]},
 		      ?NL,
-		      {p, ["Your browser does not dig frames, man!",
+		      {p, ["Your browser does not accept frames.",
 			   ?NL, br,
-			   "You should be going to the ",
+			   "You should go to the ",
 			   {a, [{href, ?OVERVIEW_SUMMARY}],
 			    ["non-frame version"]},
 			   " instead.", ?NL]},
@@ -219,12 +322,26 @@ xhtml_1(Title, CSS, Body) ->
 	    ?NL]
     }.
 
+%% NEW-OPTIONS: overview
+%% INHERIT-OPTIONS: read_file/4
+%% INHERIT-OPTIONS: edoc_lib:run_layout/2
+%% INHERIT-OPTIONS: edoc_extract:file/4
+%% DEFER-OPTIONS: run/2
+
 overview(Dir, Title, Env, Opts) ->
-    File = proplists:get_value(overview, Opts, ?OVERVIEW_FILE),
+    File = proplists:get_value(overview, Opts,
+			       filename:join(Dir, ?OVERVIEW_FILE)),
     Tags = read_file(File, overview, Env, Opts),
     Data = edoc_data:overview(Title, Tags, Env, Opts),
-    Text = edoc_layout:overview(Data, Opts),
+    F = fun (M) ->
+		M:overview(Data, Opts)
+	end,
+    Text = edoc_lib:run_layout(F, Opts),
     edoc_lib:write_file(Text, Dir, ?OVERVIEW_SUMMARY).
+
+
+%% NEW-OPTIONS: stylesheet_file
+%% DEFER-OPTIONS: run/2
 
 copy_stylesheet(Dir, Options) ->
     case proplists:get_value(stylesheet, Options) of
@@ -233,7 +350,6 @@ copy_stylesheet(Dir, Options) ->
 		       File when list(File) ->
 			   File;
 		       _ ->
-			   %% TODO: strengthen the search for priv-dir?
 			   case code:priv_dir(?EDOC_APP) of
 			       PrivDir when list(PrivDir) ->
 				   filename:join(PrivDir, ?STYLESHEET);
@@ -248,14 +364,19 @@ copy_stylesheet(Dir, Options) ->
 	    ok
     end.
 
+%% NEW-OPTIONS: stylesheet
+%% DEFER-OPTIONS: run/2
+
 stylesheet(Options) ->
-    case proplists:get_bool(no_stylesheet, Options) of
-	true ->
+    case proplists:get_value(stylesheet, Options) of
+	"" ->
 	    [];
-	false ->
-	    Ref = case proplists:get_value(stylesheet, Options) of
+	S ->
+	    Ref = case S of
 		      undefined ->
 			  ?STYLESHEET;
+		      "" ->
+			  "";    % no stylesheet
 		      S when list(S) ->
 			  S;
 		      _ ->
@@ -271,6 +392,12 @@ stylesheet(Options) ->
 
 is_private(E) ->
     case get_attrval(private, E) of
+ 	"yes" -> true;
+ 	_ -> false
+    end.
+
+is_hidden(E) ->
+    case get_attrval(hidden, E) of
  	"yes" -> true;
  	_ -> false
     end.
@@ -291,6 +418,8 @@ get_attr(_, []) ->
 
 %% Read external source file. Fails quietly, returning empty tag list.
 
+%% INHERIT-OPTIONS: edoc_extract:file/4
+
 read_file(File, Context, Env, Opts) ->
     case edoc_extract:file(File, Context, Env, Opts) of
 	{ok, Tags} ->
@@ -298,3 +427,53 @@ read_file(File, Context, Env, Opts) ->
 	{error, _} ->
 	    []
     end.
+
+
+%% FIXME: meta-level index generation
+
+%% Creates a Table of Content from a list of Paths (ie paths to applications)
+%% and an overview file.
+
+-define(EDOC_DIR, "doc").
+-define(INDEX_DIR, "doc/index").
+-define(CURRENT_DIR, ".").
+
+toc(Paths, Ctxt) ->
+    Opts = Ctxt#context.opts,
+    Dir = Ctxt#context.dir,
+    Env = Ctxt#context.env,
+    app_index_file(Paths, Dir, Env, Opts).
+
+%% FIXME: it's unclear how much of this is working at all
+
+%% NEW-OPTIONS: title
+%% INHERIT-OPTIONS: overview/4
+
+app_index_file(Paths, Dir, Env, Options) ->
+    Title = proplists:get_value(title, Options,"Overview"),
+%    Priv = proplists:get_bool(private, Options),
+    CSS = stylesheet(Options),
+    Apps1 = [{filename:dirname(A),filename:basename(A)} || A <- Paths],
+    index_file(Dir, false, Title),
+    application_frame(Dir, Apps1, Title, CSS),
+    modules_frame(Dir, [], Title, CSS),
+    overview(Dir, Title, Env, Options),
+%    edoc_lib:write_info_file(Prod, [], Modules1, Dir),
+    copy_stylesheet(Dir, Options).
+
+application_frame(Dir, Apps, Title, CSS) ->
+    Body = [?NL,
+	    {h2, ["Applications"]},
+	    ?NL,
+	    {table, [{width, "100%"}, {border, 0}],
+	     [{tr, [{td, [], [{a, [{href,app_ref(Path,App)},
+				   {target,"_top"}],
+			       [App]}]}]}
+	      || {Path,App} <- Apps]},
+	    ?NL],
+    XML = xhtml(Title, CSS, Body),
+    Text = xmerl:export_simple([XML], xmerl_html, []),
+    edoc_lib:write_file(Text, Dir, ?MODULES_FRAME).
+
+app_ref(Path,M) ->
+    filename:join([Path,M,?EDOC_DIR,?INDEX_FILE]).

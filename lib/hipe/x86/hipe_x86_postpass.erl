@@ -12,8 +12,8 @@
 
 -export([postpass/1]).
 
--define(DO_PEEP, true).      % Turn on/off peephole optimizations
--define(DO_LOGGING, false).  % Change this to get peephole opts logged to..
+-define(DO_PEEP, true).    % Turn on/off peephole optimizations
+%% -define(DO_LOGGING, true). % Uncomment this to get peephole opts logged to..
 -define(LOG_FILE, "peepcount.txt"). % ..this file..
 -define(LOG_DIR, "/tmp/"). % ..in this dir
 
@@ -49,7 +49,7 @@ postpass(Defun) ->
 %  Return    : An optimized list of pseudo x86-assembler records with 
 %              (hopefully) fewer or faster instructions.
 %  Notes     : Creates a file in the users tmp directory that contain 
-%              analysis information, if macro ?DO_LOGGING i set to true.
+%              analysis information, if macro ?DO_LOGGING is defined.
 %%>----------------------------------------------------------------------< 
 peep(Insns) -> 
     case ?DO_PEEP of
@@ -226,12 +226,7 @@ peep([I | Insns], Res, Lst) ->
 %% Base case. Optionally prints an optimization log
 %% ------------------------------------------------
 peep([], Res, Lst) ->
-    case ?DO_LOGGING of
-	true ->
-	    printLst(Lst);
-	_ ->
-	    ok
-    end,
+    printLst(Lst),
     lists:reverse(Res). 
 
 %% Simple goto elimination (vital, dont know why..?)
@@ -248,11 +243,11 @@ peepN([], Res, Lst) ->
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : expand/1
-%  Purpose   : Expands pseudo instructions.
-%  Arguments : Insns - An x86-instruction list.
-%  Return    : An optimized instruction list.
-%  Notes     : 
+%%  Procedure : expand/1
+%%  Purpose   : Expands pseudo instructions.
+%%  Arguments : Insns - An x86-instruction list.
+%%  Return    : An optimized instruction list.
+%%  Notes     : 
 %%>----------------------------------------------------------------------<
 expand(Insns) -> expand(Insns, []).
 expand([I|Tail], Res) ->
@@ -272,59 +267,61 @@ expand([], Res) -> lists:reverse(Res).
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : printLogHeader/1
-%  Purpose   : Prints the headers for each function compiled.
-%  Arguments : MFA -  #x86_mfa{} record
-%  Return    : unit
-%  Notes     : 
+%%  Procedure : printLogHeader/1
+%%  Purpose   : Prints the headers for each function compiled.
+%%  Arguments : MFA -  #x86_mfa{} record
+%%  Return    : unit
+%%  Notes     : 
 %%>----------------------------------------------------------------------<
+-ifdef(DO_LOGGING).
 printLogHeader(MFA) ->
-    case ?DO_LOGGING of
-	true ->
-	    {x86_mfa, M, F, _} = MFA,
-	    {ok, Dir} = file:get_cwd(),
-	    file:set_cwd(?LOG_DIR),
-	    {ok, File} = file:open(?LOG_FILE, [read, append]),
-	    io:format(File, 
-		      "\nModule: ~w  Function: ~w" ++ 
-		      "\n>==============================================<\n", 
-		      [M, F]),
-	    file:set_cwd(Dir),
-	    file:close(File);
-	_ ->
-	    ok
-    end.
+    {x86_mfa, M, F, _} = MFA,
+    {ok, Dir} = file:get_cwd(),
+    file:set_cwd(?LOG_DIR),
+    {ok, File} = file:open(?LOG_FILE, [read, append]),
+    io:format(File, 
+	      "\nModule: ~w  Function: ~w" ++ 
+	      "\n>==============================================<\n", 
+	      [M, F]),
+    file:set_cwd(Dir),
+    file:close(File).
+-else.
+printLogHeader(_) ->
+    ok.
+-endif.
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : printLst/1
-%  Purpose   : Prints ths name of the peephole optimizations done in the
-%              current function being compiled.
-%  Arguments : Lst - A list of numbers.
-%  Return    : unit
-%  Notes     : Prints (append) the atoms in the list with a space in 
-%              between to a file called 'peepcount.txt'. 
+%%  Procedure : printLst/1
+%%  Purpose   : Prints ths name of the peephole optimizations done in the
+%%              current function being compiled.
+%%  Arguments : Lst - A list of numbers.
+%%  Return    : unit
+%%  Notes     : Prints (append) the atoms in the list with a space in 
+%%              between to a file called 'peepcount.txt'. 
 %%>----------------------------------------------------------------------<
+-ifdef(DO_LOGGING).
 printLst(Lst) ->
-    case ?DO_LOGGING of
-	true ->
-	    {ok, Dir} = file:get_cwd(),
-	    file:set_cwd(?LOG_DIR),
-	    {ok, File} = file:open(?LOG_FILE, [read, append]),
-	    printLst(File, Lst),
-	    file:set_cwd(Dir),
-	    file:close(File);
-	_ ->
-	    ok
-    end.
+    {ok, Dir} = file:get_cwd(),
+    file:set_cwd(?LOG_DIR),
+    {ok, File} = file:open(?LOG_FILE, [read, append]),
+    printLst(File, Lst),
+    file:set_cwd(Dir),
+    file:close(File).
+
 printLst(File, [Opt|Lst]) ->
-   %io:format(File, "Peephole applied ~w times!\n", [length(Lst)]),
+    %% io:format(File, "Peephole applied ~w times!\n", [length(Lst)]),
     io:format(File, "Peephole optimization applied: ", []),
     io:write(File, Opt),
     io:format(File, "\n", []),
     printLst(File, Lst);
 printLst(_, []) -> done.
 
+-else. %% DO_LOGGING undefined
+
+printLst(_) ->
+    ok.
+-endif.
 
 
 %%  Miscellaneous helper functions

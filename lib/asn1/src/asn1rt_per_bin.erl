@@ -909,8 +909,8 @@ decode_length(Buffer,undefined)  -> % un-constrained
 
 decode_length(Buffer,{Lb,Ub}) when Ub =< 65535 ,Lb >= 0 -> % constrained
     decode_constrained_number(Buffer,{Lb,Ub});
-decode_length(_,{Lb,_}) when integer(Lb), Lb >= 0 -> % Ub > 65535
-    exit({error,{asn1,{decode_length,{nyi,above_64K}}}});
+decode_length(Buffer,{Lb,_}) when integer(Lb), Lb >= 0 -> % Ub > 65535
+    decode_length(Buffer,undefined);
 decode_length(Buffer,{{Lb,Ub},[]}) -> 
     case getbit(Buffer) of
 	{0,Buffer2} ->

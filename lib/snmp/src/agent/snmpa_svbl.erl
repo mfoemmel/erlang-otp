@@ -19,6 +19,9 @@
 
 -include("snmp_types.hrl").
 
+-define(VMODULE,"SVBL").
+-include("snmp_verbosity.hrl").
+
 -export([sort_varbindlist/2, sort_varbinds_rows/1, sa_split/1,
 	 delete_org_index/1, col_to_orgindex/2]).
 
@@ -44,6 +47,7 @@ partition(Mib, Vbs) ->
     partition(Mib, Vbs, [], [], []).
 partition(Mib, [Varbind | Vbs], Vars, Tabs, Subs) ->
     #varbind{oid = Oid} = Varbind,
+    ?vtrace("partition -> Oid: ~p", [Oid]),
     case snmpa_mib:lookup(Mib, Oid) of
 	{table_column, MibEntry, TableOid} ->
 	    IVarbind = #ivarbind{varbind = fix_bits(Varbind, MibEntry),
@@ -64,12 +68,17 @@ partition(Mib, [Varbind | Vbs], Vars, Tabs, Subs) ->
 partition(_Mib, [], Vars, Subs, Tabs) ->
     {Vars, Subs, Tabs}.
 
+% fix_bits(#varbind{bertype      = 'BITS', 
+% 		  variabletype = 'OCTET STRING', 
+% 		  value        = V} = VarBind, #me{asn1_type = A}) ->
+%     VarBind#varbind{variabletype = 'BITS',
+% 		    value = snmp_pdus:octet_str_to_bits(V)};
 fix_bits(VarBind, #me{asn1_type=A})
   when A#asn1_type.bertype == 'BITS',
        VarBind#varbind.variabletype == 'OCTET STRING',
        list(VarBind#varbind.value) ->
     VarBind#varbind{variabletype = 'BITS',
-		    value = snmp_pdus:octet_str_to_bits(VarBind#varbind.value)};
+ 		    value = snmp_pdus:octet_str_to_bits(VarBind#varbind.value)};
 fix_bits(Vb,_me) -> Vb.
 
 insert_key(Key, Value, [{Key, Values} | Rest]) ->

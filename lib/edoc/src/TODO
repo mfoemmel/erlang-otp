@@ -7,8 +7,6 @@
 
 * Multiline comment support (needs modified comment representation).
 
-* For better efficiency, maybe don't do full comment insertion?
-
 * Tags to be added:
 
 		@throws		{ExceptionClass, Data}, (definitions*)

@@ -86,9 +86,32 @@ if test "$ac_cv_prog_AR" = false; then
   AC_MSG_ERROR([No 'ar' command found in PATH])
 fi
 
+dnl
+dnl We can live with Solaris /usr/ucb/install
+dnl
+case $host in
+  *-*-solaris*|free_source)
+    if test -x /usr/ucb/install; then
+      INSTALL="/usr/ucb/install -c"
+    fi
+    ;;
+  *)
+    ;;
+esac
+
 AC_PROG_INSTALL
 INSTALL_DIR="\${INSTALL} -d"
 AC_SUBST(INSTALL_DIR)
+
+case $host_os in
+	darwin*)
+		dnl Need to preserve modification time on archives;
+		dnl otherwise, ranlib has to be run on archives
+		dnl again after installation.
+		INSTALL_DATA="$INSTALL_DATA -p";;
+	*)
+		;;
+esac
 
 # Checks for libraries.
 AC_CHECK_LIB([nsl], [gethostbyname])

@@ -71,18 +71,155 @@ conv_insn(I, Map, Data) ->
     load_address -> conv_load_address(I, Map, Data);
     load_atom -> conv_load_atom(I, Map, Data);
     move -> conv_move(I, Map, Data);
-    begin_handler -> conv_begin_handler(I, Map, Data);
     return -> conv_return(I, Map, Data);
     store -> conv_store(I, Map, Data);
     switch -> conv_switch(I, Map, Data);
-    %%fload -> conv_fload(I, Map, Data);
-    %%fstore -> conv_fstore(I, Map, Data);
-    %%fp -> conv_fp(I, Map, Data);
-    %%fp_unop -> conv_fp_unop(I, Map, Data);
-    %%fmove -> conv_fmove(I, Map, Data);
-    %%fconv -> conv_fconv(I, Map, Data);
+    fconv -> conv_fconv(I, Map, Data);
+    fmove -> conv_fmove(I, Map, Data);
+    fload -> conv_fload(I, Map, Data);
+    fstore -> conv_fstore(I, Map, Data);
+    fp -> conv_fp_binary(I, Map, Data);
+    fp_unop -> conv_fp_unary(I, Map, Data);
     _ -> exit({?MODULE,conv_insn,I})
   end.
+
+conv_fconv(I, Map, Data) ->
+  %% Dst := (double)Src, where Dst is FP reg and Src is int reg
+  {Dst, Map0} = conv_fpreg(hipe_rtl:fconv_dst(I), Map),
+  {Src, Map1} = conv_src(hipe_rtl:fconv_src(I), Map0), % exclude imm src
+  I2 = mk_fconv(Dst, Src),
+  {I2, Map1, Data}.
+
+mk_fconv(Dst, Src) ->
+  CSP = hipe_ppc:mk_temp(1, 'untagged'),
+  R0 = hipe_ppc:mk_temp(0, 'untagged'),
+  RTmp1 = hipe_ppc:mk_new_temp('untagged'),
+  RTmp2 = hipe_ppc:mk_new_temp('untagged'),
+  RTmp3 = hipe_ppc:mk_new_temp('untagged'),
+  FTmp1 = hipe_ppc:mk_new_temp('double'),
+  FTmp2 = hipe_ppc:mk_new_temp('double'),
+  [hipe_ppc:mk_pseudo_li(RTmp1, {fconv_constant,c_const}),
+   hipe_ppc:mk_lfd(FTmp1, 0, RTmp1),
+   hipe_ppc:mk_alu('xoris', RTmp2, Src, hipe_ppc:mk_uimm16(16#8000)),
+   hipe_ppc:mk_store('stw', RTmp2, 28, CSP),
+   hipe_ppc:mk_alu('addis', RTmp3, R0, hipe_ppc:mk_simm16(16#4330)),
+   hipe_ppc:mk_store('stw', RTmp3, 24, CSP),
+   hipe_ppc:mk_lfd(FTmp2, 24, CSP),
+   hipe_ppc:mk_fp_binary('fsub', Dst, FTmp2, FTmp1)].
+
+conv_fmove(I, Map, Data) ->
+  %% Dst := Src, where both Dst and Src are FP regs
+  {Dst, Map0} = conv_fpreg(hipe_rtl:fmove_dst(I), Map),
+  {Src, Map1} = conv_fpreg(hipe_rtl:fmove_src(I), Map0),
+  I2 = mk_fmove(Dst, Src),
+  {I2, Map1, Data}.
+
+mk_fmove(Dst, Src) ->
+  [hipe_ppc:mk_pseudo_fmove(Dst, Src)].
+
+conv_fload(I, Map, Data) ->
+  %% Dst := MEM[Base+Off], where Dst is FP reg
+  {Dst, Map0} = conv_fpreg(hipe_rtl:fload_dst(I), Map),
+  {Base1, Map1} = conv_src(hipe_rtl:fload_src(I), Map0),
+  {Base2, Map2} = conv_src(hipe_rtl:fload_offset(I), Map1),
+  I2 = mk_fload(Dst, Base1, Base2),
+  {I2, Map2, Data}.
+
+mk_fload(Dst, Base1, Base2) ->
+  case hipe_ppc:is_temp(Base1) of
+    true ->
+      case hipe_ppc:is_temp(Base2) of
+	true ->
+	  mk_fload_rr(Dst, Base1, Base2);
+	_ ->
+	  mk_fload_ri(Dst, Base1, Base2)
+      end;
+    _ ->
+      case hipe_ppc:is_temp(Base2) of
+	true ->
+	  mk_fload_ri(Dst, Base2, Base1);
+	_ ->
+	  mk_fload_ii(Dst, Base1, Base2)
+      end
+  end.
+
+mk_fload_ii(Dst, Base1, Base2) ->
+  io:format("~w: RTL fload with two immediates\n", [?MODULE]),
+  Tmp = new_untagged_temp(),
+  mk_li(Tmp, Base1,
+	mk_fload_ri(Dst, Tmp, Base2)).
+
+mk_fload_ri(Dst, Base, Disp) ->
+  if Disp >= -32768, Disp < 32768 ->
+      [hipe_ppc:mk_lfd(Dst, Disp, Base)];
+     true ->
+      Tmp = new_untagged_temp(),
+      mk_li(Tmp, Disp,
+	    mk_fload_rr(Dst, Base, Tmp))
+  end.
+
+mk_fload_rr(Dst, Base1, Base2) ->
+  [hipe_ppc:mk_lfdx(Dst, Base1, Base2)].
+
+conv_fstore(I, Map, Data) ->
+  %% MEM[Base+Off] := Src, where Src is FP reg
+  {Base1, Map0} = conv_dst(hipe_rtl:fstore_base(I), Map),
+  {Src, Map1} = conv_fpreg(hipe_rtl:fstore_src(I), Map0),
+  {Base2, Map2} = conv_src(hipe_rtl:fstore_offset(I), Map1),
+  I2 = mk_fstore(Src, Base1, Base2),
+  {I2, Map2, Data}.
+
+mk_fstore(Src, Base1, Base2) ->
+  case hipe_ppc:is_temp(Base2) of
+    true ->
+      mk_fstore_rr(Src, Base1, Base2);
+    _ ->
+      mk_fstore_ri(Src, Base1, Base2)
+  end.
+
+mk_fstore_ri(Src, Base, Disp) ->
+  if Disp >= -32768, Disp < 32768 ->
+      [hipe_ppc:mk_stfd(Src, Disp, Base)];
+     true ->
+      Tmp = new_untagged_temp(),
+      mk_li(Tmp, Disp,
+	    mk_fstore_rr(Src, Base, Tmp))
+  end.
+
+mk_fstore_rr(Src, Base1, Base2) ->
+  [hipe_ppc:mk_stfdx(Src, Base1, Base2)].
+
+conv_fp_binary(I, Map, Data) ->
+  {Dst, Map0} = conv_fpreg(hipe_rtl:fp_dst(I), Map),
+  {Src1, Map1} = conv_fpreg(hipe_rtl:fp_src1(I), Map0),
+  {Src2, Map2} = conv_fpreg(hipe_rtl:fp_src2(I), Map1),
+  RtlFpOp = hipe_rtl:fp_op(I),
+  I2 = mk_fp_binary(Dst, Src1, RtlFpOp, Src2),
+  {I2, Map2, Data}.
+
+mk_fp_binary(Dst, Src1, RtlFpOp, Src2) ->
+  FpBinOp =
+    case RtlFpOp of
+      'fadd' -> 'fadd';
+      'fdiv' -> 'fdiv';
+      'fmul' -> 'fmul';
+      'fsub' -> 'fsub'
+    end,
+  [hipe_ppc:mk_fp_binary(FpBinOp, Dst, Src1, Src2)].
+
+conv_fp_unary(I, Map, Data) ->
+  {Dst, Map0} = conv_fpreg(hipe_rtl:fp_unop_dst(I), Map),
+  {Src, Map1} = conv_fpreg(hipe_rtl:fp_unop_src(I), Map0),
+  RtlFpUnOp = hipe_rtl:fp_unop_op(I),
+  I2 = mk_fp_unary(Dst, Src, RtlFpUnOp),
+  {I2, Map1, Data}.
+
+mk_fp_unary(Dst, Src, RtlFpUnOp) ->
+  FpUnOp =
+    case RtlFpUnOp of
+      'fchs' -> 'fneg'
+    end,
+  [hipe_ppc:mk_fp_unary(FpUnOp, Dst, Src)].
 
 conv_alu(I, Map, Data) ->
   %% dst = src1 aluop src2
@@ -491,8 +628,11 @@ mk_extsh_call([Dst], [Src], [], [], not_remote) ->
   true = hipe_ppc:is_temp(Src),
   [hipe_ppc:mk_unary('extsh', Dst, Src)].
 
-mk_lhbrx_call([Dst], [Base,Offset], [], [], not_remote) ->
-  mk_loadx('lhbrx', Dst, Base, Offset).
+mk_lhbrx_call(Dsts, [Base,Offset], [], [], not_remote) ->
+  case Dsts of
+    [Dst] -> mk_loadx('lhbrx', Dst, Base, Offset);
+    [] -> [] % result unused, cancel the operation
+  end.
 
 mk_lwbrx_call([Dst], [Base,Offset], [], [], not_remote) ->
   mk_loadx('lwbrx', Dst, Base, Offset).
@@ -730,11 +870,6 @@ mk_move(Dst, Src, Tail) ->
     _ -> mk_li(Dst, Src, Tail)
   end.
 
-conv_begin_handler(I, Map, Data) ->
-  [Dst0] = hipe_rtl:begin_handler_varlist(I),
-  {Dst1,Map1} = conv_dst(Dst0, Map),
-  {[hipe_ppc:mk_pseudo_move(Dst1, mk_rv())], Map1, Data}.
-
 conv_return(I, Map, Data) ->
   %% TODO: multiple-value returns
   {[Arg], Map0} = conv_src_list(hipe_rtl:return_varlist(I), Map),
@@ -936,6 +1071,11 @@ conv_src_list([], Map) ->
 
 %%% Convert an RTL destination operand (var/reg).
 
+conv_fpreg(Opnd, Map) ->
+  case hipe_rtl:is_fpreg(Opnd) of
+    true -> conv_dst(Opnd, Map)
+  end.
+
 conv_dst(Opnd, Map) ->
   {Name, Type} =
     case hipe_rtl:is_var(Opnd) of
@@ -949,7 +1089,12 @@ conv_dst(Opnd, Map) ->
 	    {hipe_rtl:reg_index(Opnd), 'untagged'}
 	end
     end,
-  case hipe_ppc_registers:is_precoloured(Name) of
+  IsPrecoloured =
+    case Type of
+      'double' -> hipe_ppc_registers:is_precoloured_fpr(Name);
+      _ -> hipe_ppc_registers:is_precoloured_gpr(Name)
+    end,
+  case IsPrecoloured of
     true ->
       {hipe_ppc:mk_temp(Name, Type), Map};
     false ->

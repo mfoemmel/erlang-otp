@@ -13,7 +13,7 @@
 # Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 # AB. All Rights Reserved.''
 # 
-#     $Id: Makefile,v 1.10 2004/08/19 10:56:21 richardc Exp $
+#     $Id: Makefile,v 1.13 2004/11/08 16:44:34 richardc Exp $
 #
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
@@ -80,11 +80,18 @@ version:
 APPNAME=edoc
 BINDIR=$(ERL_TOP)/lib/edoc/ebin
 DOCDIR=$(ERL_TOP)/lib/edoc/doc
-DOC_OPTS=[{title,"Welcome to EDoc"}]
+DOC_OPTS=[{def,{vsn,"$(VSN)"}}]
 
 SYNTAX_TOOLS_DIR=$(ERL_TOP)/lib/syntax_tools
 XMERL_DIR=$(ERL_TOP)/lib/xmerl
 INCDIR=$(XMERL_DIR)/include
+
+docs:
+	erl -noshell -pa $(BINDIR) -pa $(SYNTAX_TOOLS_DIR)/ebin \
+	    -pa $(XMERL_DIR)/ebin -run edoc_run application \
+	    "'$(APPNAME)'" '"."' '$(DOC_OPTS)' -s init stop
+
+edocs: docs
 
 info:
 	@echo $(HTML_FILES)
@@ -118,4 +125,3 @@ tar: $(APP_TAR_FILE)
 
 $(APP_TAR_FILE): $(APP_DIR)
 	(cd $(APP_RELEASE_DIR); gtar zcf $(APP_TAR_FILE) $(DIR_NAME))
-

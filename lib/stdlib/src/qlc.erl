@@ -1059,32 +1059,22 @@ prep_qlc_lc({single_v1, QFun, CodeF, Qdata0, _, MS, PosFun}, Opt, GOpt) ->
     LuV = find_const_positions(LE0, PosFun, Opt),
     case LE0 of
         #qlc_table{trav_MS = true} when MS =/= no_match_spec, LuV =/= false ->
-            io:format("prep match_spec 0 Opt = ~p~n", [Opt]),
-            io:format("    lookup values ~p~n", [LuV]),
-            io:format("    match spec ~p~n", [MS]),
             LE = LE0#qlc_table{lu_vals = LuV, ms = MS},
             may_create_simple(Opt, Prep#prepared{qh = LE});
         #qlc_table{} when LuV =/= false ->
-            io:format("prep match_spec 1 Opt = ~p~n", [Opt]),
-            io:format("    lookup values ~p~n", [LuV]),
             Prep1 = Prep#prepared{qh = LE0#qlc_table{lu_vals = LuV}},
             Qdata = [?qual_data(QNum, GoI_G, SI_G, {gen, Prep1}) | Filter],
             prep_qlc(QFun, CodeF, Qdata, Opt);
         #qlc_table{trav_MS = true} when MS =/= no_match_spec ->
-            io:format("prep match_spec 2 Opt = ~p~n", [Opt]),
             may_create_simple(Opt, Prep#prepared{qh = LE0#qlc_table{ms = MS}});
         #qlc_list{l = []} ->
-            io:format("pre match_spec empty list~n"),
             may_create_simple(Opt, Prep);
         #qlc_list{ms = no_match_spec} when MS =/= no_match_spec ->
-            io:format("pre match_spec list no_match_spec~n"),
             may_create_simple(Opt, Prep#prepared{qh = LE0#qlc_list{ms = MS}});
         #qlc_list{} when MS =/= no_match_spec ->
-            io:format("pre match_spec list match_spec~n"),
             ListMS = #qlc_list{l = Prep, ms = MS},
             may_create_simple(Opt, #prepared{qh = ListMS, is_cached = true});
         _ ->
-            io:format("pre match_spec qlc~n"),
             Qdata = [?qual_data(QNum, GoI_G, SI_G, {gen, Prep}) | Filter],
             prep_qlc(QFun, CodeF, Qdata, Opt)
     end;

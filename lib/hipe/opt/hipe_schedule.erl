@@ -51,29 +51,25 @@
 %%   stuff.
 
 -module(hipe_schedule).
--export([cfg/1, est_cfg/1,delete_node/5]).
-%% -export([deps/1, block/2]).
+-export([cfg/1, est_cfg/1, delete_node/5]).
 
 %-define(debug1,true).
--define(debug1,false).
 
 %-define(debug2,true).
 -define(debug2,false).
 
-%-define(debug3,true).
--define(debug3,false).
+-define(debug3(Str,Args),ok).
+%-define(debug3(Str,Args),io:format(Str,Args)).
 
 %-define(debug4,true).
 -define(debug4,false).
 
-%-define(debug5,true).
--define(debug5,false).
+-define(debug5(Str,Args),ok).
+%-define(debug5(Str,Args),io:format(Str,Args)).
 
 -define(debug(Str,Args),ok).
 %-define(debug(Str,Args),io:format(Str,Args)).
 
--define(debug_ultra(Str,Args),ok).
-%-define(debug_ultra(Str,Args),io:format(Str,Args)).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : cfg
@@ -82,11 +78,7 @@
 %% Description : Takes each basic block and schedules them one by one.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 cfg(CFG) ->
-    case ?debug3 of  
-	true -> 
-       	    io:format("CFG: ~n~p",[CFG]);
-	false -> ok
-    end,
+    ?debug3("CFG: ~n~p", [CFG]),
     update_all( [ {L, 
 		   hipe_bb:mk_bb(
 		     block(L,hipe_bb:code(hipe_sparc_cfg:bb(CFG,L))) )}
@@ -104,13 +96,13 @@ update_all([],CFG) -> CFG;
 update_all([{L,NewB}|Ls],CFG) ->
     update_all(Ls,hipe_sparc_cfg:bb_add(CFG,L,NewB)).
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 est_cfg(CFG) ->
     update_all([ {L, hipe_bb:mk_bb(est_block(hipe_bb:code(hipe_sparc_cfg:bb(CFG,L))))}
 		 || L <- hipe_sparc_cfg:labels(CFG) ], CFG).
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Provides an estimation of how quickly a block will execute.
 %% This is done by chaining all instructions in sequential order
@@ -139,10 +131,8 @@ chain_i(N,[{M,_}|Xs],DAG) ->
 
 zero_latency() -> 0.
 
-
 lookup_instr([{N,I}|_],N) -> I;
 lookup_instr([_|Xs],N) -> lookup_instr(Xs,N).
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : block
@@ -182,17 +172,7 @@ block(_L,Blk) ->
 	    Sch = bb(IxBlk,{DAG, Preds}),
 	    {NewSch, NewIxBlk} = fill_delays(Sch, IxBlk, DAG),
 	    X = finalize_block(NewSch, NewIxBlk),
-	    case ?debug1 of
-		true ->
-		    io:format("Blk: ~p~n",[Blk]),
-		    io:format("DAG: ~n~p~n~p",[DAG,IxBlk]),
-		    io:format("~n"),
-		    print_instrs(IxBlk),
-		    print_sch(Sch, IxBlk),
-		    print_instrs2(X);
-		false ->
-		    ok
-	    end,
+	    debug1_stuff(Blk, DAG, IxBlk, Sch, X),
 	    X
     end.
 
@@ -455,9 +435,6 @@ get_instr(Sch, IxBlk, N) ->
      Instr.
     
 
-
-
-
 separate_block(Sch,IxBlk) ->
     sep_comments( [ {C,lookup_instr(IxBlk,N)} 
 		   || {{cycle,C},{node,N}} <- Sch ] ).
@@ -475,24 +452,14 @@ sep_comments([{C1,I}|Xs],C0) ->
 	    [I|sep_comments(Xs,C0)]
     end.
 
-
-
 finalize_block(Sch, IxBlk) ->
-    case ?debug5 of
-	true ->
-	    io:format("Sch: ~p~nIxBlk: ~p~n",[Sch,IxBlk]);
-	false -> ok
-    end,
-    
+    ?debug5("Sch: ~p~nIxBlk: ~p~n",[Sch,IxBlk]),
     finalize_block(1, hipe_vectors:size(Sch), 1, Sch, IxBlk, []).
 
 finalize_block(N, End, _C, Sch, IxBlk, _Instrs) when N == End - 1 ->
     NextLast = get_instr(Sch, IxBlk, N),
     Last     = get_instr(Sch, IxBlk, End),
-    case ?debug5 of
-	true -> io:format("NextLast: ~p~nLast: ~p~n",[NextLast,Last]);
-	false -> ok
-    end,
+    ?debug5("NextLast: ~p~nLast: ~p~n",[NextLast,Last]),
     case hipe_sparc:is_any_branch(Last) of
 	true -> % Couldn't fill delayslot ==> add NOP
 	    [NextLast , hipe_sparc:nop_create(), Last];
@@ -502,25 +469,9 @@ finalize_block(N, End, _C, Sch, IxBlk, _Instrs) when N == End - 1 ->
 finalize_block(N, End, C0, Sch, IxBlk, Instrs) ->
     {{cycle, _C1}, {node, _M}} = hipe_vectors:get(Sch, N),
     Instr = get_instr(Sch, IxBlk, N),
-    case ?debug5 of
-	true -> io:format("Instr: ~p~n~n",[Instr]);
-	false -> ok
-    end,
-
+    ?debug5("Instr: ~p~n~n",[Instr]),
     [Instr | finalize_block(N + 1, End, C0, Sch, IxBlk, Instrs)].
 
-
-
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Schedule a sequential trace of instructions
-%
-% Nodes is a list of {ID,Instr}
-% Deps is a list of {ID,Latency,ID}
-
-% bb(Nodes,Deps) ->
-%     bb(length(Nodes),Nodes,Deps).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : bb
 %% Argument    : IxBlk - indexed block
@@ -628,8 +579,8 @@ init_earliest(N) ->
     hipe_vectors:new(N,1).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% Schedule is kept reversed until the end.
+%%
+%% Schedule is kept reversed until the end.
 
 -define(present_node(I,Cycle),{{cycle,Cycle},{node,I}}).
 
@@ -651,11 +602,10 @@ add_to_schedule(I,Cycle,Sch) ->
 
 present_schedule(Sch) -> lists:reverse(Sch).
 
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% Interface to resource manager:
-%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% Interface to resource manager:
+%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : init_resources
@@ -742,22 +692,22 @@ update_earliest([{Lat,N}|Xs],Cycle,Preds,Earl,Ready) ->
 	    update_earliest(Xs,Cycle,NewPreds,NewEarl,Ready)
     end.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% Collect instruction dependences.
-%
-% Three forms:
-% - data/register
-%   * insert RAW, WAR, WAW dependences
-% - memory
-%   * stores serialize memory references
-%   * alias analysis may allow loads to bypass stores
-% - control
-%   * unsafe operations are 'trapped' between branches
-%   * branches are ordered
-%
-% returns { [{Index,Instr}], DepDAG }
-%   DepDAG is defined below.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% Collect instruction dependences.
+%%
+%% Three forms:
+%% - data/register
+%%   * insert RAW, WAR, WAW dependences
+%% - memory
+%%   * stores serialize memory references
+%%   * alias analysis may allow loads to bypass stores
+%% - control
+%%   * unsafe operations are 'trapped' between branches
+%%   * branches are ordered
+%%
+%% returns { [{Index,Instr}], DepDAG }
+%%   DepDAG is defined below.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : deps
@@ -870,17 +820,17 @@ add_arc(Lat1 ,To1, [{Lat2, To2} | Arcs]) ->
     {[{Lat2, To2} | Arcs1], Status}.
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% The register/data dependence DAG of a block is represented
-% as a mapping (Variable -> {NextWriter,NextReaders})
-%  where NextWriter is a pair {Ix,Type}
-%  and NextReaders is a list of pairs {Ix,Type}.
-%
-% Type is used to determine latencies of operations; on the UltraSparc,
-% latencies of arcs (n -> m) are determined by both n and m. (E.g., if
-% n is an integer op and m is a store, then latency is 0; if m is an
-% integer op, it's 1.)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% The register/data dependence DAG of a block is represented
+%% as a mapping (Variable -> {NextWriter,NextReaders})
+%%  where NextWriter is a pair {Ix,Type}
+%%  and NextReaders is a list of pairs {Ix,Type}.
+%%
+%% Type is used to determine latencies of operations; on the UltraSparc,
+%% latencies of arcs (n -> m) are determined by both n and m. (E.g., if
+%% n is an integer op and m is a store, then latency is 0; if m is an
+%% integer op, it's 1.)
 
 dd([],DAG) -> { empty_deptab(), DAG };
 dd([{N,I}|Is],DAG0) ->
@@ -905,8 +855,8 @@ add_deps(N,Instr,DepTab,DAG) ->
     add_read_deps(Us,N,Type,DepTab1,DAG1).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Instructions are classified into symbolic categories,
-% which are subsequently used to determine operation latencies
+%% Instructions are classified into symbolic categories,
+%% which are subsequently used to determine operation latencies
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 dd_type(Instr) ->
     case hipe_sparc:type(Instr) of
@@ -1113,11 +1063,11 @@ reader(X,N,Ty,DepTab) ->
     {W,Rs} = lookup(X,DepTab),
     gb_trees:enter(X,{W,[{N,Ty}|Rs]},DepTab).
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% The following version of md/2 separates heap- and stack operations,
-% which allows for greater reordering.
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% The following version of md/2 separates heap- and stack operations,
+%% which allows for greater reordering.
+%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : md
 %% Argument    : IxBB - indexed block
@@ -1220,30 +1170,30 @@ md_type(I) ->
 	    other
     end.
 
-% Given a memory operation and a 'memory op state',
-% overlap(N,MemOp,State) returns { Preceding_Dependent_Ops, NewState }.
-%  which are either a tuple { WAW_deps, WAR_deps } or a list RAW_deps.
-%
-% NOTES:
-%  Note that Erlang's semantics ("heap stores never overwrite existing data")
-% means we can be quite free in reordering stores to the heap.
-%  Ld/St to the stack are simply handled by their offsets; since we do not
-% rename the stack pointer, this is sufficient.
-%  *** We assume all memory ops have uniform size = 4 ***
-%
-% NOTES:
-%  The method mentioned above has now been changed because the assumption that
-%  "heap stores never overwrite existing data" caused a bug when the
-%   process-pointer was treated the same way as the heap. We were also told 
-%   that the semantics can possibly change in the future, so it would be more 
-%   safe to treat the heap store/loads as the stack.
-%   A future improvement can be to do an alias analysis to give more freedom
-%   in reordering stuff...
-%
-% Alias state:
-%   { [StackOp], [HeapOp], [StackOp], [HeapOp] }
-% where StackOp = {InstrID, Offset}
-%       HeapOp = {InstrID, Reg, Offset}
+%% Given a memory operation and a 'memory op state',
+%% overlap(N,MemOp,State) returns { Preceding_Dependent_Ops, NewState }.
+%%  which are either a tuple { WAW_deps, WAR_deps } or a list RAW_deps.
+%%
+%% NOTES:
+%%  Note that Erlang's semantics ("heap stores never overwrite existing data")
+%% means we can be quite free in reordering stores to the heap.
+%%  Ld/St to the stack are simply handled by their offsets; since we do not
+%% rename the stack pointer, this is sufficient.
+%%  *** We assume all memory ops have uniform size = 4 ***
+%%
+%% NOTES:
+%%  The method mentioned above has now been changed because the assumption that
+%%  "heap stores never overwrite existing data" caused a bug when the
+%%   process-pointer was treated the same way as the heap. We were also told 
+%%   that the semantics can possibly change in the future, so it would be more 
+%%   safe to treat the heap store/loads as the stack.
+%%   A future improvement can be to do an alias analysis to give more freedom
+%%   in reordering stuff...
+%%
+%% Alias state:
+%%   { [StackOp], [HeapOp], [StackOp], [HeapOp] }
+%% where StackOp = {InstrID, Offset}
+%%       HeapOp = {InstrID, Reg, Offset}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : st_overlap
 %% Argument    : N     - Index of current node
@@ -1339,19 +1289,19 @@ hp_dep([{N,_,_}|Xs], {Reg,Off},Dep,Indep) ->
 sp_dep_only(Stores,Off) ->
     [ N || {N,Off0} <- Stores, Off == Off0 ].
 
-% Dependences from heap stores to heap loads.
-% *** UNFINISHED ***
-% - but works
-% This is somewhat subtle:
-% - a heap load can only bypass a heap store if we KNOW it won't
-%   load the stored value
-% - unfortunately, we do not know the relationships between registers
-%   at this point, so we can't say that store(p+4) is independent of
-%   load(q+0).
-%    (OR CAN WE? A bit closer reasoning might show that it's possible?)
-% - We can ONLY say that st(p+c) and ld(p+c') are independent when c /= c'
-%
-% (As said before, it might be possible to lighten this restriction?)
+%% Dependences from heap stores to heap loads.
+%% *** UNFINISHED ***
+%% - but works
+%% This is somewhat subtle:
+%% - a heap load can only bypass a heap store if we KNOW it won't
+%%   load the stored value
+%% - unfortunately, we do not know the relationships between registers
+%%   at this point, so we can't say that store(p+4) is independent of
+%%   load(q+0).
+%%    (OR CAN WE? A bit closer reasoning might show that it's possible?)
+%% - We can ONLY say that st(p+c) and ld(p+c') are independent when c /= c'
+%%
+%% (As said before, it might be possible to lighten this restriction?)
 
 hp_dep_only([],_Reg,_Off) -> [];
 hp_dep_only([{_N,Reg,Off_1}|Xs],Reg,Off) when Off_1 =/= Off ->
@@ -1359,12 +1309,11 @@ hp_dep_only([{_N,Reg,Off_1}|Xs],Reg,Off) when Off_1 =/= Off ->
 hp_dep_only([{N,_,_}|Xs],Reg,Off) ->
     [N|hp_dep_only(Xs,Reg,Off)].
     
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% Control dependences:
-% - add dependences so that
-%   * branches are performed in order
-%   * unsafe operations are 'fenced in' by surrounding branches
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Control dependences:
+%% - add dependences so that
+%%   * branches are performed in order
+%%   * unsafe operations are 'fenced in' by surrounding branches
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : cd
 %% Argument    : IxBB - indexed block
@@ -1415,14 +1364,14 @@ cd_branch_to_other_deps(_, [], DAG) ->
 cd_branch_to_other_deps(N, [M | Ms], DAG) ->
     cd_branch_to_other_deps(N, Ms, dep_arc(M, zero_latency(), N, DAG)).
 
-% Is the operation a branch, an unspeculable op or something else?
+%% Is the operation a branch, an unspeculable op or something else?
 
-% Returns
-%   {branch,BranchType}
-%   {unsafe,OpType}
-%   {other,OpType}
+%% Returns
+%%   {branch,BranchType}
+%%   {unsafe,OpType}
+%%   {other,OpType}
 
-% *** UNFINISHED ***
+%% *** UNFINISHED ***
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : cd_type
 %% Argument    : I - instr
@@ -1450,7 +1399,7 @@ cd_type(I) ->
 	    {other,T}
    end.
 
-% add dependences to keep order of branches + unspeculable ops:
+%% add dependences to keep order of branches + unspeculable ops:
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : cd_branch_deps
 %% Argument    : PrevBr     - preceeding branch
@@ -1512,7 +1461,17 @@ def_use(Instr) ->
     { hipe_sparc:defines(Instr), hipe_sparc:uses(Instr) }.
 
 
-%%%%% Debug %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Debugging stuff below %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-ifdef(debug1).
+debug1_stuff(Blk, DAG, IxBlk, Sch, X) ->
+    io:format("Blk: ~p~n",[Blk]),
+    io:format("DAG: ~n~p~n~p",[DAG,IxBlk]),
+    io:format("~n"),
+    print_instrs(IxBlk),
+    print_sch(Sch, IxBlk),
+    print_instrs2(X).
+
 print_instrs([]) ->
     io:format("~n");
 print_instrs([{N,Instr} | Instrs]) ->
@@ -1527,15 +1486,19 @@ print_instrs2([Instr | Instrs]) ->
     hipe_sparc_pp:pp_instr(Instr),
     print_instrs2(Instrs).
 
+print_sch([],_) -> io:format("~n");
+print_sch([{{cycle,Cycle},{node,I}} | Rest], IxBlk) ->
+    io:format("{C~p, N~p} ",[Cycle,I]),
+    print_node(I, IxBlk),
+    print_sch(Rest, IxBlk).
+
 print_node(_, []) ->
     io:format("~n");
 print_node(I, [{I, Instr} | _]) ->
     hipe_sparc_pp:pp_instr(Instr);
 print_node(I, [_ | IxBlk]) ->
     print_node(I, IxBlk).
-
-print_sch([],_) -> io:format("~n");
-print_sch([{{cycle,Cycle},{node,I}} | Rest], IxBlk) ->
-    io:format("{C~p, N~p} ",[Cycle,I]),
-    print_node(I, IxBlk),
-    print_sch(Rest, IxBlk).
+-else.
+debug1_stuff(_Blk, _DAG, _IxBlk, _Sch, _X) ->
+    ok.
+-endif.

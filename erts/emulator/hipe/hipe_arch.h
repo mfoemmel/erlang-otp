@@ -20,7 +20,7 @@ extern void *hipe_make_native_stub(void *beamAddress, unsigned int beamArity);
 #if defined(__x86_64__)
 #include "hipe_amd64.h"
 #endif
-#if defined(__powerpc__)
+#if defined(__powerpc__) || defined(__ppc__)
 #include "hipe_ppc.h"
 #endif
 

@@ -45,7 +45,7 @@
 %%-------------------------------------------------------------------------
 decode(ChunkedBody, MaxBodySize, MaxHeaderSize) ->
     %% Note decode_size will call decode_data.
-    decode_size([ChunkedBody, [], {MaxBodySize, <<>>, 0, MaxHeaderSize}]).
+    decode_size([ChunkedBody, <<>>, [], {MaxBodySize, <<>>, 0, MaxHeaderSize}]).
 
 %%-------------------------------------------------------------------------
 %% decode(HeaderRecord, ChunkedHeaders) -> NewHeaderRecord
@@ -81,23 +81,24 @@ handle_headers(ResponseHeaderRecord = #http_response_h{},  ChunkedHeaders) ->
 
 %% Functions that may be returned during the decoding process
 %% if the input data is incompleate. 
-decode_size([Bin, HexList, Info]) ->
-    decode_size(Bin, HexList, Info).
+decode_size([Bin, Rest, HexList, Info]) ->
+    decode_size(<<Rest/binary, Bin/binary>>, HexList, Info).
 
-ignore_extensions([Bin, NextFunction]) ->
-    ignore_extensions(Bin, NextFunction).
+ignore_extensions([Bin, Rest, NextFunction]) ->
+    ignore_extensions(<<Rest/binary, Bin/binary>>, NextFunction).
 
 decode_data([Bin, ChunkSize, TotalChunk, Info]) ->
     decode_data(ChunkSize, <<TotalChunk/binary, Bin/binary>>, Info).
 
-decode_trailer([Bin, Header, Headers, MaxHeaderSize, Body, BodyLength]) ->
-    decode_trailer(Bin, Header, Headers, MaxHeaderSize, Body, BodyLength).
+decode_trailer([Bin, Rest, Header, Headers, MaxHeaderSize, Body, BodyLength]) ->
+    decode_trailer(<<Rest/binary, Bin/binary>>, 
+		   Header, Headers, MaxHeaderSize, Body, BodyLength).
 
 %%%========================================================================
 %%% Internal functions
 %%%========================================================================
 decode_size(<<>>, HexList, Info) ->
-    {?MODULE, decode_size, [HexList, Info]};
+    {?MODULE, decode_size, [<<>>, HexList, Info]};
 decode_size(<<?CR, ?LF, ChunkRest/binary>>, HexList, {MaxBodySize, Body, 
 						      AccLength,
 						      MaxHeaderSize}) ->
@@ -108,9 +109,11 @@ decode_size(<<?CR, ?LF, ChunkRest/binary>>, HexList, {MaxBodySize, Body,
     decode_data(ChunkSize, ChunkRest, {MaxBodySize, Body, 
 				       ChunkSize + AccLength , MaxHeaderSize});
 decode_size(<<";", Rest/binary>>, HexList, Info) ->
-    %% Note ignore_extensions will call decode_size again when
+    %% Note ignore_extensions will call decode_size/1 again when
     %% it ignored all extensions.
-    ignore_extensions(Rest, {?MODULE, decode_size, [HexList, Info]});
+    ignore_extensions(Rest, {?MODULE, decode_size, [<<>>, HexList, Info]});
+decode_size(<<?CR>> = Data, HexList, Info) ->
+      {?MODULE, decode_size, [Data, HexList, Info]};
 decode_size(<<Octet, Rest/binary>>, HexList, Info) ->
     decode_size(Rest, [Octet | HexList], Info).
 
@@ -118,9 +121,11 @@ decode_size(<<Octet, Rest/binary>>, HexList, Info) ->
 %% do not understand.", see RFC 2616 Section 3.6.1 We don't
 %% understand any extension...
 ignore_extensions(<<>>, NextFunction) ->
-    {?MODULE, ignore_extensions, [NextFunction]};
+    {?MODULE, ignore_extensions, [<<>>, NextFunction]};
 ignore_extensions(<<?CR, ?LF, ChunkRest/binary>>, {Module, Function, Args}) ->
     Module:Function([ChunkRest | Args]);
+ignore_extensions(<<?CR>> = Data, NextFunction) ->
+    {?MODULE, ignore_extensions, [Data, NextFunction]};
 ignore_extensions(<<_Octet, Rest/binary>>, NextFunction) ->
     ignore_extensions(Rest, NextFunction).
 
@@ -130,19 +135,23 @@ decode_data(ChunkSize, TotalChunk,
     case TotalChunk of
 	%% Last chunk
 	<<Data:ChunkSize/binary, ?CR, ?LF, "0", Rest/binary>> ->
-	    %% Note ignore_extensions will call decode_trailer
+	    %% Note ignore_extensions will call decode_trailer/1
 	    %% once it ignored all extensions.
 	    ignore_extensions(Rest, {?MODULE, decode_trailer, 
-				     [[],[], MaxHeaderSize,
+				     [<<>>, [],[], MaxHeaderSize,
 				      <<BodySoFar/binary, Data/binary>>,
-				     integer_to_list(AccLength + ChunkSize)]});
+				      integer_to_list(AccLength + 
+						      ChunkSize)]});
+	%% Next char may be a "0" but we have not received it yet!
+	<<_:ChunkSize/binary, ?CR, ?LF>> ->
+	    {?MODULE, decode_data, [ChunkSize, TotalChunk, Info]};
 	%% There are more chunks, so here we go agin...
 	<<Data:ChunkSize/binary, ?CR, ?LF, Rest/binary>> 
 	when (AccLength < MaxBodySize) or (MaxBodySize == nolimit)  ->
 	    decode_size(Rest, [], 
 			{MaxBodySize, <<BodySoFar/binary, Data/binary>>,
 			 AccLength, MaxHeaderSize});
-	<<_Data:ChunkSize/binary, ?CR, ?LF, _Rest/binary>> ->
+	<<_:ChunkSize/binary, ?CR, ?LF, _/binary>> ->
 	    throw({error, body_too_big});
 	_ ->
 	    {?MODULE, decode_data, [ChunkSize, TotalChunk, Info]}
@@ -151,7 +160,7 @@ decode_data(ChunkSize, TotalChunk, Info) ->
     {?MODULE, decode_data, [ChunkSize, TotalChunk, Info]}.
 
 decode_trailer(<<>>, Header, Headers, MaxHeaderSize, Body, BodyLength) ->
-    {?MODULE, decode_trailer, [Header, Headers, MaxHeaderSize, Body, 
+    {?MODULE, decode_trailer, [<<>>, Header, Headers, MaxHeaderSize, Body, 
 			       BodyLength]};
 decode_trailer(<<?CR,?LF>>, [], [], _, Body, BodyLength) ->
     {ok, {["content-length:" ++ BodyLength], Body}};
@@ -170,12 +179,11 @@ decode_trailer(<<?CR, ?LF, Rest/binary>>, Header, Headers,
 	       MaxHeaderSize, Body, BodyLength) ->
     decode_trailer(Rest, [], [lists:reverse(Header) | Headers], 
 		   MaxHeaderSize, Body, BodyLength);
+decode_trailer(<<?CR>> = Data, Header, Headers, MaxHeaderSize, 
+	       Body, BodyLength) ->
+    {?MODULE, decode_trailer, [Data, Header, Headers, MaxHeaderSize, Body, 
+			       BodyLength]};
 decode_trailer(<<Octet, Rest/binary>>, Header, Headers, MaxHeaderSize, Body,
 	       BodyLength) ->
     decode_trailer(Rest, [Octet | Header], Headers, MaxHeaderSize, 
 		   Body, BodyLength).
-
-
-
-
-

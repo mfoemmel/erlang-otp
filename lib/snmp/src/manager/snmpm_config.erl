@@ -1760,7 +1760,8 @@ handle_info(Info, State) ->
 %% Purpose: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
+terminate(Reason, _State) ->
+    ?vdebug("terminate: ~p",[Reason]),
     ok.
 
 %%----------------------------------------------------------------------

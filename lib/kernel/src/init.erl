@@ -141,6 +141,8 @@ boot(BootArgs) ->
     Flags0 = flags_to_atoms_again(Flags),
     boot(Start,Flags0,Args).
 
+prepare_run_args({eval, [Expr]}) ->
+    {eval,Expr};
 prepare_run_args({_, L=[]}) ->
     bs2as(L);
 prepare_run_args({_, L=[_]}) ->
@@ -912,6 +914,9 @@ start_in_kernel(Server,Mod,Fun,Args,Init) ->
 %% Disadvantage: anything started with -s that does not
 %% eventually spawn will hang the startup routine.
 
+%% We also handle -eval here. The argument is an arbitrary
+%% expression that should be parsed and evaluated.
+
 start_em([S|Tail]) ->
     case whereis(user) of
 	undefined -> 
@@ -924,6 +929,16 @@ start_em([S|Tail]) ->
 start_em([]) -> ok.
 
 start_it([]) -> 
+    ok;
+start_it({eval,Bin}) ->
+    Str = binary_to_list(Bin),
+    {ok,Ts,_} = erl_scan:string(Str),
+    Ts1 = case lists:reverse(Ts) of
+	      [{dot,_}|_] -> Ts;
+	      TsR -> lists:reverse([{dot,1} | TsR])
+	  end,
+    {ok,Expr} = erl_parse:parse_exprs(Ts1),
+    erl_eval:exprs(Expr, []),
     ok;
 start_it([_|_]=MFA) ->
     Ref = make_ref(),
@@ -1018,6 +1033,9 @@ parse_boot_args([B|Bs], Ss, Fs, As) ->
 	start_arg2 ->
 	    {S,Rest} = get_args(Bs, []),
 	    parse_boot_args(Rest, [{run, S}|Ss], Fs, As);
+	eval_arg ->
+	    {Expr,Rest} = get_args(Bs, []),
+	    parse_boot_args(Rest, [{eval, Expr}|Ss], Fs, As);
 	flag ->
 	    {F,Rest} = get_args(Bs, []),
 	    Fl = case F of
@@ -1037,6 +1055,7 @@ parse_boot_args([], Start, Flags, Args) ->
 check(<<"-extra">>) -> start_extra_arg;
 check(<<"-s">>) -> start_arg;
 check(<<"-run">>) -> start_arg2;
+check(<<"-eval">>) -> eval_arg;
 check(<<"--">>) -> end_args;
 check(X) when binary(X) ->
     case binary_to_list(X) of
@@ -1050,6 +1069,7 @@ get_args([B|Bs], As) ->
 	start_extra_arg -> {reverse(As), [B|Bs]};
 	start_arg -> {reverse(As), [B|Bs]};
 	start_arg2 -> {reverse(As), [B|Bs]};
+	eval_arg -> {reverse(As), [B|Bs]};
 	end_args -> {reverse(As), Bs};
 	flag -> {reverse(As), [B|Bs]};
 	arg ->

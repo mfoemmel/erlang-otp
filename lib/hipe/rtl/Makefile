@@ -33,22 +33,28 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-MODULES = hipe_rtl hipe_rtl_cfg hipe_rtl_cse hipe_rtl_ebb \
+ifdef HIPE_ENABLED
+HIPE_MODULES = hipe_rtl hipe_rtl_cfg hipe_rtl_ebb \
 	  hipe_rtl_liveness hipe_rtl_prop \
-	  hipe_icode2rtl hipe_tagscheme hipe_rtl_mk_switch \
-	  hipe_rtl_primops hipe_rtl_arch \
+	  hipe_icode2rtl hipe_rtl_mk_switch \
+	  hipe_rtl_primops \
 	  hipe_rtl_varmap hipe_rtl_exceptions \
 	  hipe_rtl_bs_ops hipe_rtl_cerl_bs_ops hipe_rtl_inline_bs_ops\
 	  hipe_rtl_arith_32 hipe_rtl_arith_64 \
 	  hipe_rtl_ssa hipe_rtl_ssa_const_prop hipe_rtl_bin_util \
-	  hipe_rtl_cleanup_const hipe_rtl_symbolic
+	  hipe_rtl_cleanup_const hipe_rtl_symbolic hipe_rtl_lcm
+else
+HIPE_MODULES =
+endif
 
-HRL_FILES=
+MODULES = hipe_rtl_arch hipe_tagscheme $(HIPE_MODULES)
+
+HRL_FILES= hipe_icode2rtl.hrl hipe_literals.hrl hipe_rtl_lcm.hrl
 ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
 # APP_FILE= 
-# APP_SRC= $(APP_FILE).src
+# App_SRC= $(APP_FILE).src
 # APP_TARGET= $(EBIN)/$(APP_FILE)
 #
 # APPUP_FILE= 
@@ -86,6 +92,8 @@ clean:
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
+	$(INSTALL_DIR) $(RELSYSDIR)/rtl
+	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(RELSYSDIR)/rtl
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 
@@ -96,6 +104,9 @@ HIPE_MKLITERALS=$(ERL_TOP)/bin/$(TARGET)/hipe_mkliterals
 
 hipe_literals.hrl:	$(HIPE_MKLITERALS)
 	$(HIPE_MKLITERALS) -e > hipe_literals.hrl
+
+../main/hipe.hrl: ../vsn.mk ../main/hipe.hrl.src
+	sed -e "s;%VSN%;$(HIPE_VSN);" ../main/hipe.hrl.src > ../main/hipe.hrl
 
 $(EBIN)/hipe_rtl.beam: ../main/hipe.hrl
 $(EBIN)/hipe_rtl_arch.beam: hipe_literals.hrl
@@ -115,6 +126,7 @@ $(EBIN)/hipe_rtl_inline_bs_ops.beam: hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_mk_switch.beam: ../main/hipe.hrl
 $(EBIN)/hipe_rtl_prop.beam: ../main/hipe.hrl
 $(EBIN)/hipe_rtl_varmap.beam: ../main/hipe.hrl
+$(EBIN)/hipe_rtl_lcm.beam: hipe_rtl_lcm.hrl
 
 $(EBIN)/hipe_rtl_ssa.beam: ../ssa/hipe_ssa.inc ../main/hipe.hrl ../ssa/hipe_ssa_liveness.inc
 $(EBIN)/hipe_rtl_ssa_const_prop.beam: ../main/hipe.hrl ../ssa/hipe_ssa_const_prop.inc

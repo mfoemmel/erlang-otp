@@ -113,7 +113,7 @@ pp_insn(Dev, I, Pre) ->
       pp_sdesc(Dev, Pre, SDesc),
       io:format(Dev, " ~w\n", [Linkage]);
     #pseudo_call_prepare{nrstkargs=NrStkArgs} ->
-      SP = hipe_ppc_registers:reg_name(hipe_ppc_registers:stack_pointer()),
+      SP = hipe_ppc_registers:reg_name_gpr(hipe_ppc_registers:stack_pointer()),
       io:format(Dev, "\taddi ~s, ~s, ~w # pseudo_call_prepare\n",
 		[SP, SP, -(4*NrStkArgs)]);
     #pseudo_li{dst=Dst, imm=Imm} ->
@@ -154,6 +154,54 @@ pp_insn(Dev, I, Pre) ->
       io:format(Dev, "\n", []);
     #unary{unop=UnOp, dst=Dst, src=Src} ->
       io:format(Dev, "\t~s ", [unop_name(UnOp)]),
+      pp_temp(Dev, Dst),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Src),
+      io:format(Dev, "\n", []);
+    #lfd{dst=Dst, disp=Disp, base=Base} ->
+      io:format(Dev, "\tlfd ", []),
+      pp_temp(Dev, Dst),
+      io:format(Dev, ", ~s(", [to_hex(Disp)]),
+      pp_temp(Dev, Base),
+      io:format(Dev, ")\n", []);
+    #lfdx{dst=Dst, base1=Base1, base2=Base2} ->
+      io:format(Dev, "\tlfdx ", []),
+      pp_temp(Dev, Dst),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Base1),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Base2),
+      io:format(Dev, "\n", []);
+    #stfd{src=Src, disp=Disp, base=Base} ->
+      io:format(Dev, "\tstfd ", []),
+      pp_temp(Dev, Src),
+      io:format(Dev, ", ~s(", [to_hex(Disp)]),
+      pp_temp(Dev, Base),
+      io:format(Dev, ")\n", []);
+    #stfdx{src=Src, base1=Base1, base2=Base2} ->
+      io:format(Dev, "\tstfdx ", []),
+      pp_temp(Dev, Src),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Base1),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Base2),
+      io:format(Dev, "\n", []);
+    #fp_binary{fp_binop=FpBinOp, dst=Dst, src1=Src1, src2=Src2} ->
+      io:format(Dev, "\t~s ", [FpBinOp]),
+      pp_temp(Dev, Dst),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Src1),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Src2),
+      io:format(Dev, "\n", []);
+    #fp_unary{fp_unop=FpUnOp, dst=Dst, src=Src} ->
+      io:format(Dev, "\t~s ", [FpUnOp]),
+      pp_temp(Dev, Dst),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Src),
+      io:format(Dev, "\n", []);
+    #pseudo_fmove{dst=Dst, src=Src} ->
+      io:format(Dev, "\tpseudo_fmove ", []),
       pp_temp(Dev, Dst),
       io:format(Dev, ", ", []),
       pp_temp(Dev, Src),
@@ -225,13 +273,19 @@ stxop_name(StxOp) -> StxOp.
 
 unop_name(UnOp) -> UnOp.
 
-pp_temp(Dev, #ppc_temp{reg=Reg, type=Type}) ->
-  case hipe_ppc_registers:is_precoloured(Reg) of
+pp_temp(Dev, Temp=#ppc_temp{reg=Reg, type=Type}) ->
+  case hipe_ppc:temp_is_precoloured(Temp) of
     true ->
-      io:format(Dev, "~s", [hipe_ppc_registers:reg_name(Reg)]);
+      Name =
+	case Type of
+	  'double' -> hipe_ppc_registers:reg_name_fpr(Reg);
+	  _ -> hipe_ppc_registers:reg_name_gpr(Reg)
+	end,
+      io:format(Dev, "~s", [Name]);
     false ->
       Tag =
 	case Type of
+	  double -> "f";
 	  tagged -> "t";
 	  untagged -> "u"
 	end,

@@ -45,10 +45,6 @@ Stack Descriptors
 -----------------
 sdesc_fsize() is the frame size excluding the return address word.
 
-Exceptions
-----------
-The exception handler receives the exception value in %eax.
-
 Stacks and Unix Signal Handlers
 -------------------------------
 Each Erlang process has its own private native code stack.

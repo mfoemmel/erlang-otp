@@ -172,7 +172,8 @@ handle_call(Request, _, State = #state{session = Session =
 	{error, Reason} ->
 	    http_response:send(Request#request.from, 
 			       http_response:error(Request,Reason)), 
-	    {stop, normal, State}
+	    {stop, normal, 
+	     State#state{request = Request#request{from = answer_sent}}}
     end.
 %%--------------------------------------------------------------------
 %% Function: handle_cast(Msg, State) -> {noreply, State} |
@@ -214,57 +215,54 @@ handle_info({tcp_closed, _}, State = #state{mfa = {_, whole_body, Args}}) ->
 handle_info({ssl_closed, _}, State = #state{mfa = {_, whole_body, Args}}) ->
     handle_response(State#state{body = hd(Args)}); 
 %% Error cases
-handle_info({tcp_closed, _}, State = #state{request = Request}) ->
-    http_response:send(Request#request.from, 
-		       http_response:error(Request, session_remotly_closed)),
-    {stop, error_connection_closed, State};
-handle_info({ssl_closed, _}, State = #state{request = Request}) ->
-    http_response:send(Request#request.from, 
-		        http_response:error(Request, seesion_remotly_closed)),
-    {stop, error_connection_closed, State};
-handle_info({tcp_error, _, Reason}, State = #state{request = Request}) ->
-    http_response:send(Request#request.from, 
-		       http_response:error(Request, Reason)),
-    {stop, error_tcp, State};
-handle_info({ssl_error, _, Reason}, State = #state{request = Request}) ->
-    http_response:send(Request#request.from, 
-		       http_response:error(Request, Reason)),
-    {stop, error_ssl, State};
+handle_info({tcp_closed, _}, State) ->
+    {stop, session_remotly_closed, State};
+handle_info({ssl_closed, _}, State) ->
+    {stop, session_remotly_closed, State};
+handle_info({tcp_error, _, _} = Reason, State) ->
+    {stop, Reason, State};
+handle_info({ssl_error, _, _} = Reason, State) ->
+    {stop, Reason, State};
 %% Timeouts
 handle_info({timeout, Id}, State =  #state{request = Request = 
 					   #request{id = Id}}) ->
     http_response:send(Request#request.from, 
 		       http_response:error(Request, session_local_timeout)),
-    {stop, normal, State};
+    {stop, normal, State#state{request = Request#request{from = answer_sent}}};
 handle_info({timeout, _}, State) -> %% Response has been received so ignore
     {noreply, State};
-
 %% Setting up the connection to the server somehow failed. 
 handle_info({init_error, _, ClientErrMsg},
 	    State = #state{request = Request}) ->
     http_response:send(Request#request.from, ClientErrMsg),
-    {stop, normal, State}.
+    {stop, normal, State#state{request = Request#request{from = answer_sent}}}.
 
 %%--------------------------------------------------------------------
 %% Function: terminate(Reason, State) -> _  (ignored by gen_server)
 %% Description: Shutdown the httpc_handler
 %%--------------------------------------------------------------------
-terminate(_, #state{session = undefined}) ->
+terminate(normal, #state{session = undefined}) ->
     ok;  %% Init error there is no socket to be closed.
-terminate(_, #state{request = Request, 
+terminate(normal, #state{request = Request, 
 		    session = #tcp_session{id = undefined,
 					   socket = Socket}}) ->  
     %% Init error sending, no session information has been setup but
     %% there is a socket that needs closing.
     http_transport:close(Request#request.scheme, Socket);
 
-terminate(_, State = #state{session = Session}) ->  
+terminate(Reason, State = #state{session = Session, request = Request}) -> 
+    case Request#request.from of
+	answer_sent ->
+	    ok;
+	Pid ->
+	    http_response:send(Pid, http_response:error(Request, Reason))
+    end,
     catch httpc_manager:delete_session(Session#tcp_session.id),
     case queue:is_empty(State#state.pipeline) of 
 	false ->
-	    lists:foreach(fun(NewRequest) ->
-				  httpc_manager:retry_request(NewRequest)
-			  end, queue:to_list(State#state.pipeline));
+	    catch lists:foreach(fun(NewRequest) ->
+					httpc_manager:retry_request(NewRequest)
+				end, queue:to_list(State#state.pipeline));
 	true ->
 	    ok
     end,
@@ -309,25 +307,25 @@ handle_http_body(Body, State = #state{headers = Headers, session = Session,
 				      request = Request}) ->
     case Headers#http_response_h.transfer_encoding of
         "chunked" ->
-            {ok, {ChunkedHeaders, NewBody}} =
-                case http_chunk:decode(Body, State#state.max_body_size, 
-                                       State#state.max_header_size) of
-                    {Module, Function, Args} ->
-                        http_transport:setopts(Session#tcp_session.scheme, 
-					       Session#tcp_session.socket, 
-					       [{active, once}]),
-                        {noreply, State#state{mfa = 
-					      {Module, Function, Args}}};
-                    Decoded ->
-                        Decoded
-                end,
-            NewHeaders = http_chunk:handle_headers(Headers, ChunkedHeaders),
-            handle_response(State#state{headers = NewHeaders, 
-					body = NewBody});
+	    case http_chunk:decode(Body, State#state.max_body_size, 
+				   State#state.max_header_size) of
+		{Module, Function, Args} ->
+		    http_transport:setopts(Session#tcp_session.scheme, 
+					   Session#tcp_session.socket, 
+					   [{active, once}]),
+		    {noreply, State#state{mfa = 
+					  {Module, Function, Args}}};
+		{ok, {ChunkedHeaders, NewBody}} ->
+		    NewHeaders = http_chunk:handle_headers(Headers, 
+							   ChunkedHeaders),
+		    handle_response(State#state{headers = NewHeaders, 
+						body = NewBody})
+	    end;
         Encoding when list(Encoding) ->
 	    http_response:send(Request#request.from, 
 			       http_response:error(Request, unknown_encoding)),
-	    {stop, normal, State};
+	    {stop, normal, 
+	     State#state{request = Request#request{from = answer_sent}}};
         _ ->
             Length =
                 list_to_integer(Headers#http_response_h.content_length),
@@ -347,7 +345,8 @@ handle_http_body(Body, State = #state{headers = Headers, session = Session,
 		    http_response:send(Request#request.from,
 				       http_response:error(Request, 
 							   body_too_big)),
-                    {stop, normal, State}
+                    {stop, normal, 
+		     State#state{request = Request#request{from = answer_sent}}}
             end
     end.
 
@@ -372,7 +371,8 @@ handle_response(State = #state{request = Request = #request{id = ID,
 		    handle_pipeline(State);
 		{stop, Msg} ->
 		    http_response:send(Client, Msg),
-		    {stop, normal, State}
+		    {stop, normal, 
+		     State#state{request = Request#request{from = answer_sent}}}
 	    end
     end.
 

@@ -41,8 +41,7 @@ with each frame's return address.
 
 When a frame with an active exception handler is found, the stack
 pointer is reset to the low address of the fixed portion of that frame,
-and a branch is made to the handler with the exception value in an
-architecture-specific register.
+and a branch is made to the handler.
 
 Garbage Collection Interface
 ----------------------------

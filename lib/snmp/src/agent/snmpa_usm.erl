@@ -174,12 +174,23 @@ is_auth(AuthProtocol, AuthKey, AuthParams, Packet, SecName,
 			    true -> true
 			end,
 		    case InTimeWindow of
-			true -> true;
-			%% OTP-4090 (OTP-3542)
-			false -> error(usmStatsNotInTimeWindows,
-				       ?usmStatsNotInTimeWindows_instance,
-				       SecName,
-				       [{securityLevel, 1}]) % authNoPriv
+			true -> 
+			    true;
+			false -> 
+			    %% OTP-4090 (OTP-3542)
+			    ?vinfo("NOT in time window: "
+				   "~n   SecName:            ~p"
+				   "~n   SnmpEngineBoots:    ~p"
+				   "~n   MsgAuthEngineBoots: ~p"
+				   "~n   SnmpEngineTime:     ~p"
+				   "~n   MsgAuthEngineTime:  ~p",
+				   [SecName,
+				    SnmpEngineBoots, MsgAuthEngineBoots,
+				    SnmpEngineTime, MsgAuthEngineTime]),
+			    error(usmStatsNotInTimeWindows,
+				  ?usmStatsNotInTimeWindows_instance,
+				  SecName,
+				  [{securityLevel, 1}]) % authNoPriv
 		    end;
 		_ -> %% 3.2.7b - we're non-authoritative
 		    ?vtrace("is_auth -> we are non-authoritative: 3.2.7b",[]),
@@ -226,6 +237,15 @@ is_auth(AuthProtocol, AuthKey, AuthParams, Packet, SecName,
 			end,
 		    case InTimeWindow of
 			false ->
+			    ?vinfo("NOT in time window: "
+				   "~n   SecName:            ~p"
+				   "~n   SnmpEngineBoots:    ~p"
+				   "~n   MsgAuthEngineBoots: ~p"
+				   "~n   SnmpEngineTime:     ~p"
+				   "~n   MsgAuthEngineTime:  ~p",
+				   [SecName,
+				    SnmpEngineBoots, MsgAuthEngineBoots,
+				    SnmpEngineTime, MsgAuthEngineTime]),
 			    error(notInTimeWindow, []);
 			true ->
 			    ok

@@ -26,8 +26,6 @@ ifeq ($(NO_START_SCRIPTS),)
 ERTSDIRS += start_scripts
 endif
 
-BUILD_SHARED_EMU=true
-BUILD_HYBRID_EMU=true
 ifeq ($(TARGET),win32)
 	BUILD_SHARED_EMU=false
 	BUILD_HYBRID_EMU=false
@@ -40,7 +38,7 @@ ifeq ($(findstring ose,$(TARGET)),ose)
 	BUILD_SHARED_EMU=false
 	BUILD_HYBRID_EMU=false
 else
-	BUILD_SHARED_EMU=true
+	BUILD_SHARED_EMU=false
 	BUILD_HYBRID_EMU=true
 endif
 endif
@@ -125,10 +123,10 @@ makefiles:
 #
 
 release release_docs:
-ifeq ($(BUILD_SHARED_EMU),true)
-	@if test $@ = release; then ( cd emulator && $(MAKE) $@ TYPE=shared) fi
+ifeq ($(BUILD_HYBRID_EMU),true)
+	@if test $@ = release; then ( cd emulator && $(MAKE) $@ TYPE=hybrid) fi
 else
-	@if test $@ = release; then ( $(MAKE) shared ) fi
+	@if test $@ = release; then ( $(MAKE) hybrid ) fi
 endif
 	@for d in $(ERTSDIRS); do \
 		 if test -d $$d; then ( cd $$d && $(MAKE) $@ )fi ; \

@@ -25,7 +25,7 @@
 %%%-----------------------------------------------------------------
 %%%  This module implements the SNMP application.
 %%%-----------------------------------------------------------------
--export([start/2, stop/1, config_change/3]).
+-export([start/2, stop/0, stop/1, config_change/3]).
 
 start(Type, []) ->
     ?d("start -> entry with"
@@ -85,6 +85,10 @@ old_start(Type) ->
 
 stop(_) ->
     ok.
+
+stop() ->
+    snmp_app_sup:stop().
+
 
 %%-----------------------------------------------------------------
 %% The presence of this function means that we will accept changes

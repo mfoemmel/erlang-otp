@@ -19,9 +19,9 @@
 %%
 %% @author Richard Carlsson <richardc@csd.uu.se>
 %% @copyright 2000-2004 Richard Carlsson
-%% @doc Translation from (HiPE-ified) Core Erlang to HiPE Icode.
+%% @doc Translation from Core Erlang to HiPE Icode.
 
-%% TODO: compile case-switches over true/false using shortcut code.
+%% TODO: annotate Icode leaf functions as such.
 %% TODO: add a pass to remove unnecessary reduction tests
 %% TODO: generate branch prediction info?
 
@@ -83,7 +83,7 @@
 -define(TYPE_FIXNUM(X), {integer, X}).    % for now
 -define(TYPE_CONS, cons).
 -define(TYPE_NIL, nil).
--define(TYPE_TUPLE(N), {tuple, N}).
+-define(TYPE_IS_N_TUPLE(N), {tuple, N}).
 -define(TYPE_IS_ATOM, atom).
 -define(TYPE_IS_BIGNUM, bignum).
 -define(TYPE_IS_BINARY, binary).
@@ -96,15 +96,9 @@
 -define(TYPE_IS_NUMBER, number).
 -define(TYPE_IS_PID, pid).
 -define(TYPE_IS_PORT, port).
+-define(TYPE_IS_RECORD(Atom_, Size_), {record, Atom_, Size_}).
 -define(TYPE_IS_REFERENCE, reference).
 -define(TYPE_IS_TUPLE, tuple).
-
-%% Boolean temporary values
-
--define(BOOL_TRUE, 1).
--define(BOOL_FALSE, 0).
--define(BOOL_IS_TRUE, ?TYPE_FIXNUM(0)).
--define(BOOL_IS_FALSE, ?TYPE_FIXNUM(0)).
 
 %% Record definitions
 
@@ -144,6 +138,9 @@ module(E) ->
 %% is a list of Icode function definitions. Currently, no options are
 %% available.
 %%
+%% <p>This function first calls the {@link cerl_hipeify:transform/2}
+%% function on the module.</p>
+%%
 %% <p>Note: Except for the module name, which is included in the header
 %% of each Icode function definition, the remaining information (exports
 %% and attributes) associated with the module definition is not included
@@ -176,7 +173,7 @@ module_1(E, Options) ->
 function_definition({V, F}, S) ->
     S1 = s__set_code([], S),
     {Icode, S2} = function_1(cerl:var_name(V), F, 1, S1),
-    {{hipe_icode:icode_fun(Icode), Icode}, S2}.
+    {{icode_icode_name(Icode), Icode}, S2}.
 
 init(Module) ->
     reset_label_counter(),		     
@@ -208,6 +205,13 @@ function(Module, Name, Fun) ->
 %%
 %% <p>Notes: 
 %% <ul>
+%%   <li>This function assumes that the code has been transformed into a
+%%   very simple and explicit form, using the {@link cerl_hipeify}
+%%   module.</li>
+%%
+%%   <li>Several primops (see "`cerl_hipe_primops.hrl'") are
+%%   detected by the translation and handled specially.</li>
+%%
 %%   <li>Tail call optimization is handled, even when the call is
 %%   "hidden" by let-definitions.</li>
 %%
@@ -217,42 +221,22 @@ function(Module, Name, Fun) ->
 %%   meta-calls) represent <em>actual</em> inter-module calls - not
 %%   primitive or built-in operations.</li>
 %%
-%%   <li>The following primops (see "`cerl_hipe_primops.hrl'") are
-%%   detected by the translation and handled specially:
-%%   <table>
-%%     <tr><td>`exit/1', `throw/1', `error/1'</td>
-%%           <td>generate exceptions</td></tr>
-%%     <tr><td>`not/1', `and/2', `or/2'</td>
-%%           <td>strict boolean operators</td></tr>
-%%     <tr><td>``'=='/2'', ``'/='/2''</td>
-%%           <td>arithmetic (un)equality</td></tr>
-%%     <tr><td>``'=:='/2'', ``'=/='/2''</td>
-%%           <td>exact (un)equality</td></tr>
-%%     <tr><td>``'<'/2'', ``'>'/2''</td>
-%%           <td>smaller/greater than</td></tr>
-%%     <tr><td>``'<'/2''</td>
-%%           <td>smaller than or equal to</td></tr>
-%%     <tr><td>``'>='/2''</td>
-%%           <td>greater than or equal to</td></tr>
-%%     <tr><td>`receive_select/0'</td>
-%%           <td>select current message</td></tr>
-%%     <tr><td>`receive_next/0'</td>
-%%           <td>loop to try next message</td></tr>
-%%     <tr><td>`make_fun/6'</td>
-%%           <td>create a functional value</td></tr>
-%%     <tr><td>`apply_fun/2'</td>
-%%           <td>apply a functional value</td></tr>
-%%   </table>
-%%   The boolean operators are expected to be used in guard expressions,
-%%   as well as in other expressions. See below for details on the
-%%   `receive_...' operations.</li>
+%%   <li>The following special form:
+%%     ```case Test of
+%%            'true' when 'true' -> True
+%%            'false' when 'true' -> False
+%%        end'''
+%%   is recognized as an if-then-else switch where `Test' is known
+%%   to always yield 'true' or 'false'. Efficient jumping code is
+%%   generated for such expressions, in particular if nested. Note that
+%%   there must be exactly two clauses; order is not important.</li>
 %%
 %%   <li>Compilation of clauses is simplistic. No pattern matching
-%%   compilation or similar optimizations is done. Indexing is not (yet)
-%%   done. Guards that are `true' or `false' are recognized as trivially
-%%   true/false; for all other guards, code will be generated. Catch-all
-%%   clauses (with `true' guard and variable-only patterns) are
-%%   detected, and any following clauses are discarded.</li>
+%%   compilation or similar optimizations is done at this stage. Guards
+%%   that are `true' or `false' are recognized as trivially true/false;
+%%   for all other guards, code will be generated. Catch-all clauses
+%%   (with `true' guard and variable-only patterns) are detected, and
+%%   any following clauses are discarded.</li>
 %% </ul></p>
 %%
 %% <p><b>Important</b>: This function does not handle occurrences of
@@ -329,7 +313,6 @@ function_1(Name, Fun, Degree, S) ->
     %% transferred to `Vs' (see above).
     HighV = new_var(),    % assure nonempty range
     HighL = max_label(),
-    %% TODO: is the is_closure information really being used?
     Closure = lists:member(closure, cerl:get_ann(Fun)),
     Module = s__get_module(S2),
     Code = s__get_code(S2),
@@ -532,23 +515,26 @@ expr_cons(E, Ts, _Ctxt, _Env, _S) ->
 %% call properties.
 
 expr_let(E, Ts, Ctxt, Env, S) ->
+    F = fun (B, Ctxt, Env, S) -> expr(B, Ts, Ctxt, Env, S) end,
+    expr_let_1(E, F, Ctxt, Env, S).
+
+expr_let_1(E, F, Ctxt, Env, S) ->
     E1 = cerl_lib:reduce_expr(E),
     case cerl:is_c_let(E1) of
 	true ->
-	    expr_let_1(E1, Ts, Ctxt, Env, S);
+	    expr_let_2(E1, F, Ctxt, Env, S);
 	false ->
 	    %% Redispatch the new expression.
-	    expr(E1, Ts, Ctxt, Env, S)
+	    F(E1, Ctxt, Env, S)
     end.
 
-expr_let_1(E, Ts, Ctxt, Env, S) ->
+expr_let_2(E, F, Ctxt, Env, S) ->
     Vars = cerl:let_vars(E),
     Vs = make_vars(length(Vars)),
     S1 = expr(cerl:let_arg(E), Vs,
 	      Ctxt#ctxt{effect = false, final = false}, Env, S),
     Env1 = bind_vars(Vars, Vs, Env),
-    B = cerl:let_body(E),
-    expr(B, Ts, Ctxt, Env1, S1).
+    F(cerl:let_body(E), Ctxt, Env1, S1).
 
 %% ---------------------------------------------------------------------
 %% Sequencing
@@ -560,10 +546,13 @@ expr_let_1(E, Ts, Ctxt, Env, S) ->
 %% many ICode operations, even if the result is not used.
 
 expr_seq(E, Ts, Ctxt, Env, S) ->
+    F = fun (B, Ctxt, Env, S) -> expr(B, Ts, Ctxt, Env, S) end,
+    expr_seq_1(E, F, Ctxt, Env, S).
+
+expr_seq_1(E, F, Ctxt, Env, S) ->
     Ctxt1 = Ctxt#ctxt{effect = true, final = false},
     S1 = expr(cerl:seq_arg(E), [make_var()], Ctxt1, Env, S),
-    expr(cerl:seq_body(E), Ts, Ctxt, Env, S1).
-
+    F(cerl:seq_body(E), Ctxt, Env, S1).
 
 %% ---------------------------------------------------------------------
 %% Binaries
@@ -576,12 +565,12 @@ expr_binary(E, [V]=Ts, Ctxt, Env, S) ->
 	      {const, S0, Size} ->
 		  add_code([icode_call_primop([V, Base, Offset], 
 					      {hipe_bs_primop, 
-					       {bs_init2, Size, 0,0}},
+					       {bs_init2, Size, 0}},
 					      [])], S0);
 	      {var, S0, SizeVar} ->
 		   add_code([icode_call_primop([V, Base, Offset], 
 					       {hipe_bs_primop, 
-						{bs_init2, 0,0}}, 
+						{bs_init2, 0}}, 
 					       [SizeVar])], S0)
 	  end,
     Vars = make_vars(length(Segs)),
@@ -776,7 +765,7 @@ bitstr(E, Ts, Ctxt, Env, S, Align, Base, Offset) ->
     LiteralFlags = cerl:bitstr_flags(E),
     Val = cerl:bitstr_val(E),
     Type = cerl:concrete(cerl:bitstr_type(E)),
-    S0 = expr(Val, Ts, Ctxt#ctxt{final = false}, Env, S),
+    S0 = expr(Val, Ts, Ctxt#ctxt{final = false, effect = false}, Env, S),
     ConstInfo = get_const_info(Val, Type),
     Flags = translate_flags(LiteralFlags, Align),
     SizeInfo = calculate_size(Unit, Size, Align, Env, S0),
@@ -1027,7 +1016,7 @@ primop_fun_element([N, F] = As, Ts, Ctxt, Env, S) ->
     case cerl:is_c_int(N) of
 	true ->
 	    V = make_var(),
-	    S1 = expr(F, [V], Ctxt#ctxt{final = false, effect=false},
+	    S1 = expr(F, [V], Ctxt#ctxt{final = false, effect = false},
 		      Env, S),
 	    add_code(make_op(?OP_FUN_ELEMENT(cerl:int_val(N)),
 			     Ts, [V], Ctxt),
@@ -1075,17 +1064,27 @@ primop_dsetelement([N | As1] = As, Ts, Ctxt, Env, S) ->
 %% ---------------------------------------------------------------------
 %% Try-expressions:
 
-expr_try(E, Ts, Ctxt = #ctxt{class = guard}, Env, S) ->
-    %% The limited form of try-expressions allowed in guards:
-    %%     "try Expr of X -> X catch <X1,X2> -> 'false' end".
-    Fail = new_label(),
-    Next = new_label(),
-    Ctxt1 = Ctxt#ctxt{fail = Fail},
-    S1 = expr(cerl:try_arg(E), Ts, Ctxt1, Env, S),
-    S2 = add_code([icode_goto(Next), icode_label(Fail)], S1),
-    S3 = expr(cerl:c_atom(false), Ts, Ctxt, Env, S2),
-    add_code([icode_label(Next)], S3);
+%% We want to rewrite trivial things like `try A of X -> B catch ...',
+%% where A is safe, into a simple let-binding `let X = A in B', avoiding
+%% unnecessary try-blocks. (The `let' might become further simplified.)
+
 expr_try(E, Ts, Ctxt, Env, S) ->
+    F = fun (B, Ctxt, Env, S) -> expr(B, Ts, Ctxt, Env, S) end,
+    expr_try_1(E, F, Ctxt, Env, S).
+
+expr_try_1(E, F, Ctxt, Env, S) ->
+    A = cerl:try_arg(E),
+    case is_safe_expr(A) of
+	true ->
+	    E1 = cerl:c_let(cerl:try_vars(E), A, cerl:try_body(E)),
+	    expr_let_1(E1, F, Ctxt, Env, S);
+	false ->
+	    expr_try_2(E, F, Ctxt, Env, S)
+    end.
+
+%% TODO: maybe skip begin_try/end_try and just use fail-labels...
+
+expr_try_2(E, F, Ctxt, Env, S) ->
     Cont = new_continuation_label(Ctxt),
     Catch = new_label(),
     Next = new_label(),
@@ -1096,20 +1095,24 @@ expr_try(E, Ts, Ctxt, Env, S) ->
     S2 = expr(cerl:try_arg(E), Vs, Ctxt1, Env, S1),
     Env1 = bind_vars(Vars, Vs, Env),
     S3 = add_code([icode_end_try()], S2),
-    S4 = expr(cerl:try_body(E), Ts, Ctxt, Env1, S3),
+    S4 = F(cerl:try_body(E), Ctxt, Env1, S3),
     S5 = add_continuation_jump(Cont, Ctxt, S4),
     EVars = cerl:try_evars(E),
     EVs = make_vars(length(EVars)),
     Env2 = bind_vars(EVars, EVs, Env),
     S6 = add_code([icode_label(Catch), icode_begin_handler(EVs)], S5),
-    S7 = expr(cerl:try_handler(E), Ts, Ctxt, Env2, S6),
+    S7 = F(cerl:try_handler(E), Ctxt, Env2, S6),
     add_continuation_label(Cont, Ctxt, S7).
 
 %% ---------------------------------------------------------------------
 %% Letrec-expressions (local goto-labels)
 
 %% We only handle letrec-functions as continuations. The fun-bodies are
-%% always compiled in the same context as the main letrec-body.
+%% always compiled in the same context as the main letrec-body. Note
+%% that we cannot propagate "advanced" contexts like boolean-compilation
+%% into the letrec body like we do for ordinary lets or seqs, since the
+%% context for an individual local function would be depending on the
+%% contexts of its call sites.
 
 expr_letrec(E, Ts, Ctxt, Env, S) ->
     Ds = cerl:letrec_defs(E),
@@ -1149,13 +1152,17 @@ defs([], _Ts, _Ctxt, _Env, S) ->
 %% `receive_select/0' or `receive_next/0'.
 
 expr_receive(E, Ts, Ctxt, Env, S) ->
+    F = fun (B, Ctxt, Env, S) -> expr(B, Ts, Ctxt, Env, S) end,
+    expr_receive_1(E, F, Ctxt, Env, S).
+
+expr_receive_1(E, F, Ctxt, Env, S) ->
     case cerl:receive_clauses(E) of
 	[C] ->
 	    case cerl:clause_pats(C) of
 		[_] ->
 		    case cerl_clauses:is_catchall(C) of
 			true ->
-			    expr_receive_1(C, E, Ts, Ctxt, Env, S);
+			    expr_receive_2(C, E, F, Ctxt, Env, S);
 			false ->
 			    error_msg("receive-expression clause "
 				      "must be a catch-all."),
@@ -1226,7 +1233,7 @@ expr_receive(E, Ts, Ctxt, Env, S) ->
 %%		TIMEOUT-ACTION
 %%		goto Next
 
-expr_receive_1(C, E, Ts, Ctxt, Env, S0) ->
+expr_receive_2(C, E, F, Ctxt, Env, S0) ->
     Expiry = cerl_lib:reduce_expr(cerl:receive_timeout(E)),
     After = case cerl:is_literal(Expiry) of
 		true ->
@@ -1292,8 +1299,8 @@ expr_receive_1(C, E, Ts, Ctxt, Env, S0) ->
     S4 = if After == 'infinity' -> S3;
 	    true ->
 		 add_continuation_jump(Next, Ctxt,
-				       expr(cerl:receive_action(E), Ts,
-					    Ctxt, Env, S3))
+				       F(cerl:receive_action(E), Ctxt,
+					 Env, S3))
 	 end,
 
     %% When we compile the primitive operations that select the current
@@ -1305,7 +1312,7 @@ expr_receive_1(C, E, Ts, Ctxt, Env, S0) ->
 
     %% The pattern variable of the clause will be mapped to `V', which
     %% holds the message, so it can be accessed in the clause body:
-    S5 = clauses([C], Ts, [V], Ctxt1, Env,
+    S5 = clauses([C], F, [V], Ctxt1, Env,
 		 add_code([icode_label(Match)], S4)),
     add_continuation_label(Next, Ctxt, S5).
 
@@ -1347,23 +1354,41 @@ primop_receive_select(Ts, #ctxt{'receive' = R} = Ctxt, S) ->
 %% efficiency anyway, so we don't spend any extra effort here.)
 
 expr_case(E, Ts, Ctxt, Env, S) ->
+    F = fun (B, Ctxt, Env, S) -> expr(B, Ts, Ctxt, Env, S) end,
+    expr_case_1(E, F, Ctxt, Env, S).
+
+expr_case_1(E, F, Ctxt, Env, S) ->
     Cs = cerl:case_clauses(E),
-    Vs = make_vars(cerl:clause_arity(hd(Cs))),
-    S1 = expr(cerl:case_arg(E), Vs,
-	      Ctxt#ctxt{final = false, effect = false}, Env, S),
+    A = cerl:case_arg(E),
+    case cerl_lib:is_bool_switch(Cs) of
+	true ->
+	    %% An if-then-else with a known boolean argument
+	    {True, False} = cerl_lib:bool_switch_cases(Cs),
+	    bool_switch(A, True, False, F, Ctxt, Env, S);
+	false ->
+	    Vs = make_vars(cerl:clause_arity(hd(Cs))),
+	    Ctxt1 = Ctxt#ctxt{final = false, effect = false},
+	    S1 = expr(A, Vs, Ctxt1, Env, S),
+	    expr_case_2(Vs, Cs, F, Ctxt, Env, S1)
+    end.
+
+%% Switching on a value
+
+expr_case_2(Vs, Cs, F, Ctxt, Env, S1) ->
     case is_constant_switch(Cs) of
 	true ->
-	    switch_val_clauses(Cs, Ts, Vs, Ctxt, Env, S1);
+	    switch_val_clauses(Cs, F, Vs, Ctxt, Env, S1);
 	false ->
 	    case is_tuple_switch(Cs) of
 		true ->
-		    switch_tuple_clauses(Cs, Ts, Vs, Ctxt, Env, S1);
+		    switch_tuple_clauses(Cs, F, Vs, Ctxt, Env, S1);
 		false ->
 		    case is_binary_switch(Cs, S1) of
 			true ->
-			    switch_binary_clauses(Cs, Ts, Vs, Ctxt, Env, S1);
+			    switch_binary_clauses(Cs, F, Vs, Ctxt, Env,
+						  S1);
 			false ->
-			    clauses(Cs, Ts, Vs, Ctxt, Env, S1)
+			    clauses(Cs, F, Vs, Ctxt, Env, S1)
 		    end
 	    end
     end.
@@ -1408,20 +1433,6 @@ is_binary_switch1([C|Cs], N) ->
 is_binary_switch1([], N) ->
     N > 0.
 
-get_binary_clauses(Cs) ->    
-    get_binary_clauses(Cs, []).
-
-get_binary_clauses([C|Cs], Acc) ->
-    [P]=cerl:clause_pats(C),
-    case cerl:is_c_binary(P) of 
-	true ->
-	    get_binary_clauses(Cs, [C|Acc]);
-	false ->
-	    {lists:reverse(Acc),[C]}
-    end;
-get_binary_clauses([], Acc) ->
-    {lists:reverse(Acc),[]}.
-
 all_vars([E | Es]) ->
     case cerl:is_c_var(E) of
 	true -> all_vars(Es);
@@ -1433,8 +1444,9 @@ is_switch(Cs, F) ->
     is_switch(Cs, F, 0).
 
 is_switch([C | Cs], F, N) ->
-    case is_simple_clause(C) of
-	{true, P} ->
+    case cerl_lib:is_simple_clause(C) of
+	true ->
+	    [P] = cerl:clause_pats(C),
 	    case F(P) of
 		true ->
 		    is_switch(Cs, F, N + 1);
@@ -1451,42 +1463,31 @@ is_switch([C | Cs], F, N) ->
 is_switch([], _F, N) ->
     N > 1.
 
-is_simple_clause(C) ->
-    case cerl:clause_pats(C) of
-	[P] ->
-	    G = cerl:clause_guard(C),
-	    case cerl_clauses:eval_guard(G) of
-		{value, true} -> {true, P};
-		_ -> false
-	    end;
-	_ -> false
-    end.
-
-switch_val_clauses(Cs, Ts, Vs, Ctxt, Env, S) ->
-    switch_clauses(Cs, Ts, Vs, Ctxt, Env,
+switch_val_clauses(Cs, F, Vs, Ctxt, Env, S) ->
+    switch_clauses(Cs, F, Vs, Ctxt, Env,
 		   fun (P) -> cerl:concrete(P) end,
 		   fun icode_switch_val/4,
 		   fun val_clause_body/9,
 		   S).
 
-val_clause_body(_N, _V, C, Ts, Next, _Fail, Ctxt, Env, S) ->
-    clause_body(C, Ts, Next, Ctxt, Env, S).
+val_clause_body(_N, _V, C, F, Next, _Fail, Ctxt, Env, S) ->
+    clause_body(C, F, Next, Ctxt, Env, S).
 
-switch_tuple_clauses(Cs, Ts, Vs, Ctxt, Env, S) ->
-    switch_clauses(Cs, Ts, Vs, Ctxt, Env, 
+switch_tuple_clauses(Cs, F, Vs, Ctxt, Env, S) ->
+    switch_clauses(Cs, F, Vs, Ctxt, Env, 
 		   fun (P) -> cerl:tuple_arity(P) end,
 		   fun icode_switch_tuple_arity/4,
 		   fun tuple_clause_body/9,
 		   S).
 
-tuple_clause_body(N, V, C, Ts, Next, Fail, Ctxt, Env, S0) ->
+tuple_clause_body(N, V, C, F, Next, Fail, Ctxt, Env, S0) ->
     Vs = make_vars(N),
     S1 = tuple_elements(Vs, V, S0),
     Es = cerl:tuple_es(hd(cerl:clause_pats(C))),
     {Env1, S2} = patterns(Es, Vs, Fail, Env, S1),
-    clause_body(C, Ts, Next, Ctxt, Env1, S2).
+    clause_body(C, F, Next, Ctxt, Env1, S2).
 
-switch_clauses(Cs, Ts, [V], Ctxt, Env, GetVal, Switch, Body, S0) ->
+switch_clauses(Cs, F, [V], Ctxt, Env, GetVal, Switch, Body, S0) ->
     Cs1 = [switch_clause(C, GetVal) || C <- Cs],
     Cases = [{V, L} || {V, L, _} <- Cs1],
     Default = [C || {default, C} <- Cs1],
@@ -1494,15 +1495,15 @@ switch_clauses(Cs, Ts, [V], Ctxt, Env, GetVal, Switch, Body, S0) ->
     S1 = add_code([Switch(V, Fail, length(Cases), Cases)], S0),
     Next = new_continuation_label(Ctxt),
     S3 = case Default of
-	     [] -> add_infinite_loop(Fail, S1);
+	     [] -> add_default_case(Fail, Ctxt, S1);
 	     [C] ->
 		 %% Bind the catch-all variable (this always succeeds)
 		 {Env1, S2} = patterns(cerl:clause_pats(C), [V], Fail,
 				       Env, S1),
-		 clause_body(C, Ts, Next, Ctxt, Env1,
+		 clause_body(C, F, Next, Ctxt, Env1,
 			     add_code([icode_label(Fail)], S2))
 	 end,
-    S4 = switch_cases(Cs1, V, Ts, Next, Fail, Ctxt, Env, Body, S3),
+    S4 = switch_cases(Cs1, V, F, Next, Fail, Ctxt, Env, Body, S3),
     add_continuation_label(Next, Ctxt, S4).
 
 switch_clause(C, F) ->
@@ -1513,76 +1514,95 @@ switch_clause(C, F) ->
 	_ -> {icode_const(F(P)), L, C}
     end.
 
-switch_binary_clauses(Cs, Ts, Vs, Ctxt, Env, S) ->
+switch_binary_clauses(Cs, F, Vs, Ctxt, Env, S) ->
     {Bins, Default} = get_binary_clauses(Cs),
     BMatch = cerl_binary_pattern_match:add_offset_to_bin(Bins),
     Fail = new_label(),
     Next = new_continuation_label(Ctxt),
-    S1 = binary_match(BMatch, Ts, Vs, Next, Fail, Ctxt, Env, S),
+    S1 = binary_match(BMatch, F, Vs, Next, Fail, Ctxt, Env, S),
     S2 = case Default of
-	     [] -> add_infinite_loop(Fail, S1);
+	     [] -> add_default_case(Fail, Ctxt, S1);
 	     [C] ->
-		 clause_body(C, Ts, Next, Ctxt, Env,
+		 clause_body(C, F, Next, Ctxt, Env,
 			     add_code([icode_label(Fail)], S1))
 	 end,
     add_continuation_label(Next, Ctxt, S2).
     
+get_binary_clauses(Cs) ->    
+    get_binary_clauses(Cs, []).
 
-switch_cases([{N, L, C} | Cs], V, Ts, Next, Fail, Ctxt, Env, Body,
+get_binary_clauses([C|Cs], Acc) ->
+    [P]=cerl:clause_pats(C),
+    case cerl:is_c_binary(P) of 
+	true ->
+	    get_binary_clauses(Cs, [C|Acc]);
+	false ->
+	    {lists:reverse(Acc),[C]}
+    end;
+get_binary_clauses([], Acc) ->
+    {lists:reverse(Acc),[]}.
+
+switch_cases([{N, L, C} | Cs], V, F, Next, Fail, Ctxt, Env, Body,
 	     S0) ->
     S1 = add_code([icode_label(L)], S0),
-    S2 = Body(icode_const_val(N), V, C, Ts, Next, Fail, Ctxt, Env, S1),
-    switch_cases(Cs, V, Ts, Next, Fail, Ctxt, Env, Body, S2);
-switch_cases([_ | Cs], V, Ts, Next, Fail, Ctxt, Env, Body, S) ->
-    switch_cases(Cs, V, Ts, Next, Fail, Ctxt, Env, Body, S);
-switch_cases([], _V, _Ts, _Next, _Fail, _Ctxt, _Env, _Body, S) ->
+    S2 = Body(icode_const_val(N), V, C, F, Next, Fail, Ctxt, Env, S1),
+    switch_cases(Cs, V, F, Next, Fail, Ctxt, Env, Body, S2);
+switch_cases([_ | Cs], V, F, Next, Fail, Ctxt, Env, Body, S) ->
+    switch_cases(Cs, V, F, Next, Fail, Ctxt, Env, Body, S);
+switch_cases([], _V, _F, _Next, _Fail, _Ctxt, _Env, _Body, S) ->
     S.
 
-%% The exact behaviour if all clauses fail is undefined; we generate
-%% code to keep the executing program in an infinite loop if this
-%% happens, which is safe and will not destroy information for later
-%% analyses. (We do not want to throw an arbitrary exception, and
-%% continuing execution after the `case', as in a C `switch' statement,
-%% would add a new possible path to the program, which could destroy
-%% program properties.) Recall that the `final' and `effect' context
-%% flags distribute over the clause bodies.
+%% Recall that the `final' and `effect' context flags distribute over
+%% the clause bodies.
 
-clauses(Cs, Ts, Vs, Ctxt, Env, S) ->
+clauses(Cs, F, Vs, Ctxt, Env, S) ->
     Next = new_continuation_label(Ctxt),
-    S1 = clauses_1(Cs, Ts, Vs, undefined, Next, Ctxt, Env, S),
+    S1 = clauses_1(Cs, F, Vs, undefined, Next, Ctxt, Env, S),
     add_continuation_label(Next, Ctxt, S1).
-	
 
-clauses_1([C | Cs], Ts, Vs, Fail, Next, Ctxt, Env, S) ->
+clauses_1([C | Cs], F, Vs, Fail, Next, Ctxt, Env, S) ->
     case cerl_clauses:is_catchall(C) of
 	true ->
 	    %% The fail label will not actually be used in this case.
-	    clause(C, Ts, Vs, Fail, Next, Ctxt, Env, S);
+	    clause(C, F, Vs, Fail, Next, Ctxt, Env, S);
 	false ->
 	    %% The previous `Fail' is not used here.
 	    Fail1 = new_label(),
-	    S1 = clause(C, Ts, Vs, Fail1, Next, Ctxt, Env, S),
+	    S1 = clause(C, F, Vs, Fail1, Next, Ctxt, Env, S),
 	    S2 = add_code([icode_label(Fail1)], S1),
-	    clauses_1(Cs, Ts, Vs, Fail1, Next, Ctxt, Env, S2)
+	    clauses_1(Cs, F, Vs, Fail1, Next, Ctxt, Env, S2)
     end;
-clauses_1([], _Ts, _Vs, Fail, _Next, _Ctxt, _Env, S) ->
+clauses_1([], _F, _Vs, Fail, _Next, Ctxt, _Env, S) ->
     if Fail == undefined ->
 	    L = new_label(),
-	    add_infinite_loop(L, S);
+	    add_default_case(L, Ctxt, S);
        true ->
 	    add_code([icode_goto(Fail)], S)    % use existing label
     end.
 
-add_infinite_loop(L, S) ->
-    add_code([icode_label(L), icode_goto(L)], S).
+%% The exact behaviour if all clauses fail is undefined; we generate an
+%% 'internal_error' exception if this happens, which is safe and will
+%% not get in the way of later analyses. (Continuing execution after the
+%% `case', as in a C `switch' statement, would add a new possible path
+%% to the program, which could destroy program properties.) Note that
+%% this code is only generated if some previous stage has created a
+%% switch over clauses without a final catch-all; this could be both
+%% legal and non-redundant, e.g. if the last clause does pattern
+%% matching to extract components of a (known) constructor. The
+%% generated default-case code *should* be unreachable, but we need it
+%% in order to have a safe fail-label.
 
-clause(C, Ts, Vs, Fail, Next, Ctxt, Env, S) ->
+add_default_case(L, Ctxt, S) ->
+    S1 = add_code([icode_label(L)], S),
+    add_error(icode_const(internal_error), Ctxt, S1).
+
+clause(C, F, Vs, Fail, Next, Ctxt, Env, S) ->
     G = cerl:clause_guard(C),
     case cerl_clauses:eval_guard(G) of
 	{value, true} ->
 	    {Env1, S1} = patterns(cerl:clause_pats(C), Vs, Fail, Env,
 				  S),
-	    clause_body(C, Ts, Next, Ctxt, Env1, S1);
+	    clause_body(C, F, Next, Ctxt, Env1, S1);
 	{value, false} ->
 	    add_code([icode_goto(Fail)], S);
 	_ ->
@@ -1594,16 +1614,16 @@ clause(C, Ts, Vs, Fail, Next, Ctxt, Env, S) ->
 			      class = guard},
 	    S2 = boolean(G, Succ, Fail, Ctxt1, Env1, S1),
 	    S3 = add_code([icode_label(Succ)], S2),
-	    clause_body(C, Ts, Next, Ctxt, Env1, S3)
+	    clause_body(C, F, Next, Ctxt, Env1, S3)
     end.
 
-clause_body(C, Ts, Next, Ctxt, Env, S) ->
+clause_body(C, F, Next, Ctxt, Env, S) ->
     %% This check is inserted as a goto is always final 
     case is_goto(cerl:clause_body(C)) of
 	true ->
-	    expr(cerl:clause_body(C), Ts, Ctxt, Env, S);
+	    F(cerl:clause_body(C), Ctxt, Env, S);
 	false ->
-	    S1 = expr(cerl:clause_body(C), Ts, Ctxt, Env, S),
+	    S1 = F(cerl:clause_body(C), Ctxt, Env, S),
 	    add_continuation_jump(Next, Ctxt, S1)
     end.
 
@@ -1683,7 +1703,7 @@ tuple_pattern(P, V, Fail, Env, S) ->
     N = length(Es),
     Vs = make_vars(N),
     Next = new_label(),
-    S1 = add_code([make_type([V], ?TYPE_TUPLE(N), Next, Fail),
+    S1 = add_code([make_type([V], ?TYPE_IS_N_TUPLE(N), Next, Fail),
 		   icode_label(Next)],
 		  S),
     S2 = tuple_elements(Vs, V, S1),
@@ -1803,13 +1823,25 @@ bin_seg_pattern(P, V, Fail, Env, S, Align) ->
 
 %% This generates code for a boolean expression (such as "primop
 %% 'and'(X, Y)") in a normal expression context, when an actual `true'
-%% or `false' value is to be computed.
+%% or `false' value is to be computed. We set up a default fail-label
+%% for generating a `badarg' error, unless we are in a guard.
 
+boolean_expr(E, [V], Ctxt=#ctxt{class = guard}, Env, S) ->
+    {Code, True, False} = make_bool_glue(V),
+    S1 = boolean(E, True, False, Ctxt, Env, S),
+    add_code(Code, S1);
 boolean_expr(E, [V] = Ts, Ctxt, Env, S) ->
-    {Code, True, False} = make_bool_glue(V, true, false),
-    Ctxt1 = Ctxt#ctxt{final = false},
+    {Code, True, False} = make_bool_glue(V),
+    Fail = new_label(),
+    Cont = new_continuation_label(Ctxt),
+    Ctxt1 = Ctxt#ctxt{final = false, effect = false, fail = Fail},
     S1 = boolean(E, True, False, Ctxt1, Env, S),
-    maybe_return(Ts, Ctxt, add_code(Code, S1));
+    S2 = maybe_return(Ts, Ctxt, add_code(Code, S1)),
+    S3 = add_continuation_jump(Cont, Ctxt, S2),
+    S4 = add_code([icode_label(Fail)], S3),
+    S5 = add_error(icode_const(badarg), Ctxt, S4),  % can add dummy label
+    S6 = add_continuation_jump(Cont, Ctxt, S5),  % avoid empty basic block
+    add_continuation_label(Cont, Ctxt, S6);
 boolean_expr(_, [], _Ctxt, _Env, _S) ->
     error_high_degree(),
     throw(error);
@@ -1817,69 +1849,96 @@ boolean_expr(_, _, _Ctxt, _Env, _S) ->
     error_low_degree(),
     throw(error).
 
-%% This generates jumping code for booleans, but does not generally use
-%% shortcuts for logical operators, unless the expression is "safe"
-%% (i.e., has no side effects and cannot fail), or we are in guard
-%% context; otherwise, we set a flag to be checked if necessary after
-%% both branches have been evaluated. Note that since subexpressions are
-%% checked repeatedly to see if they are safe, etc., this is really
-%% quadratic, but I don't expect booleans to be very deeply nested.
+%% This is for when we expect a boolean result in jumping code context,
+%% but are not sure what the expression will produce, or we know that
+%% the result is not a boolean and we just want error handling.
 
-%% TODO: use a pre-pass instead to annotate expressions as safe/pure?
-
-boolean(E, True, False, Ctxt, Env, S) ->
-    case Ctxt#ctxt.class of
-	guard ->
-	    pure_boolean(E, True, False, Ctxt, Env, S);
-	_ ->
-	    case is_safe_expr(E) of
-		true ->
-		    safe_boolean(E, True, False, Ctxt, Env, S);
-		false ->
-		    generic_boolean(E, True, False, Ctxt, Env, S)
-	    end
+expect_boolean_value(E, True, False, Ctxt, Env, S) ->
+    V = make_var(),
+    S1 = expr(E, [V], Ctxt#ctxt{final = false}, Env, S),
+    case Ctxt#ctxt.fail of
+	[] ->
+	    %% No fail-label set - this means we are *sure* that the
+	    %% result can only be 'true' or 'false'.
+	    add_code([make_type([V], ?TYPE_ATOM(true), True, False)],
+		     S1);
+	Fail ->
+	    Next = new_label(),
+	    add_code([make_type([V], ?TYPE_ATOM(true), True, Next),
+		      icode_label(Next),
+		      make_type([V], ?TYPE_ATOM(false), False, Fail)],
+		     S1)
     end.
 
-%% Note that 'and' and 'or' are strict! Unless we know more about their
-%% subexpressions, we must evaluate both branches.
+%% This generates code for a case-switch with exactly one 'true' branch
+%% and one 'false' branch, and no other branches (not even a catch-all).
+%% Note that E must be guaranteed to produce a boolean value for such a
+%% switch to have been generated.
 
-generic_boolean(E0, True, False, Ctxt, Env, S) ->
+bool_switch(E, TrueExpr, FalseExpr, F, Ctxt, Env, S) ->
+    Cont = new_continuation_label(Ctxt),
+    True = new_label(),
+    False = new_label(),
+    Ctxt1 = Ctxt#ctxt{final = false, effect = false},
+    S1 = boolean(E, True, False, Ctxt1, Env, S),
+    S2 = add_code([icode_label(True)], S1),
+    S3 = F(TrueExpr, Ctxt, Env, S2),
+    S4 = add_continuation_jump(Cont, Ctxt, S3),
+    S5 = add_code([icode_label(False)], S4),
+    S6 = F(FalseExpr, Ctxt, Env, S5),
+    add_continuation_label(Cont, Ctxt, S6).
+
+%% This generates jumping code for booleans. If the fail-label is set,
+%% it tells where to go in case a value turns out not to be a boolean.
+
+%% In strict boolean expressions, we set a flag to be checked if
+%% necessary after both branches have been evaluated. An alternative
+%% would be to duplicate the code for the second argument, for each
+%% value ('true' or 'false') of the first argument.
+
+%% (Note that subexpressions are checked repeatedly to see if they are
+%% safe - this is quadratic, but I don't expect booleans to be very
+%% deeply nested.)
+
+%% Note that 'and', 'or' and 'xor' are strict (like all primops)!
+
+boolean(E0, True, False, Ctxt, Env, S) ->
     E = cerl_lib:reduce_expr(E0),
     case cerl:type(E) of
+	literal ->
+	    case cerl:concrete(E) of
+		true ->
+		    add_code([icode_goto(True)], S);
+		false ->
+		    add_code([icode_goto(False)], S);
+		_ ->
+		    expect_boolean_value(E, True, False, Ctxt, Env, S)
+	    end;
+	values ->
+	    case cerl:values_es(E) of
+		[E1] ->
+		    boolean(E1, True, False, Ctxt, Env, S);
+		_ ->
+		    error_msg("degree mismatch - expected boolean: ~P",
+			      [E, 10]),
+		    throw(error)
+	    end;
 	primop ->
 	    Name = cerl:atom_val(cerl:primop_name(E)),
 	    As = cerl:primop_args(E),
 	    Arity = length(As),
 	    case {Name, Arity} of
 		{?PRIMOP_NOT, 1} ->
+		    %% `not' simply switches true and false labels.
 		    [A] = As,
 		    boolean(A, False, True, Ctxt, Env, S);
 		{?PRIMOP_AND, 2} ->
-		    [A, B] = As,
-		    V = make_var(),
-		    {Glue, True1, False1} =
-			make_bool_glue(V, ?BOOL_TRUE, ?BOOL_FALSE),
-		    S1 = boolean(A, True1, False1, Ctxt, Env, S),
-		    S2 = add_code(Glue, S1),
-		    Test = new_label(),
-		    S3 = boolean(B, Test, False, Ctxt, Env, S2),
-		    add_code([icode_label(Test),
-			      make_type([V], ?BOOL_IS_FALSE,
-					False, True)],
-			     S3);
+		    strict_and(As, True, False, Ctxt, Env, S);
 		{?PRIMOP_OR, 2} ->
-		    [A, B] = As,
-		    V = make_var(),
-		    {Glue, True1, False1} =
-			make_bool_glue(V, ?BOOL_TRUE, ?BOOL_FALSE),
-		    S1 = boolean(A, True1, False1, Ctxt, Env, S),
-		    S2 = add_code(Glue, S1),
-		    Test = new_label(),
-		    S3 = boolean(B, True, Test, Ctxt, Env, S2),
-		    add_code([icode_label(Test),
-			      make_type([V], ?BOOL_IS_FALSE,
-					False, True)],
-			     S3);
+		    strict_or(As, True, False, Ctxt, Env, S);
+		{?PRIMOP_XOR, 2} ->
+		    %% `xor' always needs to evaluate both arguments
+		    strict_xor(As, True, False, Ctxt, Env, S);
 		_ ->
 		    case is_comp_op(Name, Arity) of
 			true ->
@@ -1891,180 +1950,96 @@ generic_boolean(E0, True, False, Ctxt, Env, S) ->
 				    type_test(Name, As, True, False,
 					      Ctxt, Env, S);
 				false ->
-				    other_boolean(E, True, False, Ctxt,
-						  Env, S)
+				    expect_boolean_value(E, True, False,
+							 Ctxt, Env, S)
 			    end
 		    end
 	    end;
-	literal ->
-	    case cerl:concrete(E) of
-		true ->
-		    add_code([icode_goto(True)], S);
-		false ->
-		    add_code([icode_goto(False)], S);
-		X ->
-		    error_msg("not a boolean value: ~P.", [X, 5]),
-		    throw(error)
-	    end;
-	values ->
-	    case cerl:values_es(E) of
-		[E1] ->
-		    boolean(E1, True, False, Ctxt, Env, S);
-		_ ->
-		    error_msg("degree mismatch - expected boolean: ~P",
-			      [E, 10]),
-		    throw(error)
-	    end;
+ 	'case' ->
+	    %% Propagate boolean handling into clause bodies.
+	    F = fun (B, Ctxt, Env, S) ->
+			boolean(B, True, False, Ctxt, Env, S)
+		end,
+	    expr_case_1(E, F, Ctxt, Env, S);
 	seq ->
-	    %% Cf. 'expr_seq(...)'.
-	    Ctxt1 = Ctxt#ctxt{effect = true, final = false},
-	    S1 = expr(cerl:seq_arg(E), [], Ctxt1, Env, S),
-	    boolean(cerl:seq_body(E), True, False, Ctxt, Env, S1);
+	    %% Propagate boolean handling into body.
+	    F = fun (B, Ctxt, Env, S) ->
+			boolean(B, True, False, Ctxt, Env, S)
+		end,
+	    expr_seq_1(E, F, Ctxt, Env, S);	    
 	'let' ->
-	    %% Note that we have called 'cerl_lib:reduce_expr/1' above.
-	    Vars = cerl:let_vars(E),
-	    Vs = make_vars(length(Vars)),
-	    S1 = expr(cerl:let_arg(E), Vs,
-		      Ctxt#ctxt{effect = false, final = false}, Env, S),
-	    Env1 = bind_vars(Vars, Vs, Env),
-	    B = cerl:let_body(E),
-	    boolean(B, True, False, Ctxt, Env1, S1);
+	    %% Propagate boolean handling into body. Note that we have
+	    %% called 'cerl_lib:reduce_expr/1' above.
+	    F = fun (B, Ctxt, Env, S) ->
+			boolean(B, True, False, Ctxt, Env, S)
+		end,
+	    expr_let_1(E, F, Ctxt, Env, S);	    
+	'try' ->
+	    case Ctxt#ctxt.class of
+		guard ->
+		    %% This *must* be a "protected" guard expression on
+		    %% the form "try E of X -> X catch <...> -> 'false'"
+		    %% (we could of course test if the handler body is
+		    %% the atom 'false', etc.).
+		    Ctxt1 = Ctxt#ctxt{fail = False},
+		    boolean(cerl:try_arg(E), True, False, Ctxt1, Env,
+			    S);
+		_ ->
+		    %% Propagate boolean handling into the handler and body.
+		    F = fun (B, Ctxt, Env, S) ->
+				boolean(B, True, False, Ctxt, Env, S)
+			end,
+		    expr_try_1(E, F, Ctxt, Env, S)
+	    end;
 	_ ->
 	    %% This handles everything else, including cases that are
 	    %% known to not return a boolean.
-	    other_boolean(E, True, False, Ctxt, Env, S)
+	    expect_boolean_value(E, True, False, Ctxt, Env, S)
     end.
 
-%% This is for when we expect a boolean result, but are not sure what
-%% the expression will produce, or we know that the result is not a
-%% boolean and we just want the error handling.
-
-other_boolean(E, True, False, Ctxt, Env, S) ->
+strict_and([A, B], True, False, Ctxt, Env, S) ->
     V = make_var(),
-    S1 = expr(E, [V], Ctxt#ctxt{final = false}, Env, S),
-    L1 = new_label(),
-    S2 = add_code([make_type([V], ?TYPE_ATOM(true), True, L1),
-		   icode_label(L1)],
-		  S1),
-    case Ctxt#ctxt.class of
-	guard ->
-	    add_code([make_type([V], ?TYPE_ATOM(false), False,
-				Ctxt#ctxt.fail)],
-		     S2);
-	_ ->
-	    L2 = new_label(),
-	    S3 = add_code([make_type([V], ?TYPE_ATOM(false), False, L2),
-			   icode_label(L2)], S2),
-	    add_exit(icode_const(error), Ctxt, S3)
-    end.
+    {Glue, True1, False1} = make_bool_glue(V),
+    S1 = boolean(A, True1, False1, Ctxt, Env, S),
+    S2 = add_code(Glue, S1),
+    Test = new_label(),
+    S3 = boolean(B, Test, False, Ctxt, Env, S2),
+    add_code([icode_label(Test),
+	      make_bool_test(V, True, False)],
+	     S3).
 
-%% This generates jumping code for boolean expressions where no
-%% subexpression can have side effects *and* no subexpression can fail.
+strict_or([A, B], True, False, Ctxt, Env, S) ->
+    V = make_var(),
+    {Glue, True1, False1} = make_bool_glue(V),
+    S1 = boolean(A, True1, False1, Ctxt, Env, S),
+    S2 = add_code(Glue, S1),
+    Test = new_label(),
+    S3 = boolean(B, True, Test, Ctxt, Env, S2),
+    add_code([icode_label(Test),
+	      make_bool_test(V, True, False)],
+	     S3).
 
-safe_boolean(E0, True, False, Ctxt, Env, S) ->
-    E = cerl_lib:reduce_expr(E0),
-    case cerl:type(E) of
-	primop ->
-	    Name = cerl:atom_val(cerl:primop_name(E)),
-	    As = cerl:primop_args(E),
-	    Arity = length(As),
-	    case {Name, Arity} of
-		{?PRIMOP_AND, 2} ->
-		    [A, B] = As,
-		    Next = new_label(),
-		    S1 = safe_boolean(A, Next, False, Ctxt, Env,
-				      S),
-		    S2 = add_code([icode_label(Next)], S1),
-		    safe_boolean(B, True, False, Ctxt, Env, S2);
-		{?PRIMOP_OR, 2} ->
-		    [A, B] = As,
-		    Next = new_label(),
-		    S1 = safe_boolean(A, True, Next, Ctxt, Env,
-				      S),
-		    S2 = add_code([icode_label(Next)], S1),
-		    safe_boolean(B, True, False, Ctxt, Env, S2);
-		_ ->
-		    generic_boolean(E, True, False, Ctxt, Env, S)
-	    end;
- 	seq ->
-	    safe_boolean(cerl:seq_body(E), True, False, Ctxt, Env, S);
- 	'try' ->
-	    safe_boolean(cerl:try_arg(E), True, False, Ctxt, Env, S);
-	_ ->
-	    generic_boolean(E, True, False, Ctxt, Env, S)
-    end.
-
-%% This generates jumping code for boolean expressions where no
-%% subexpression can have side effects (as e.g. in a clause guard),
-%% *but* subexpressions might fail.
-
-pure_boolean(E, True, False, Ctxt, Env, S) ->
-    case is_safe_expr(E) of
-	true ->
-	    safe_boolean(E, True, False, Ctxt, Env, S);
-	false ->
-	    unsafe_pure_boolean(E, True, False, Ctxt, Env, S)
-    end.
-
-unsafe_pure_boolean(E0, True, False, Ctxt, Env, S) ->
-    E = cerl_lib:reduce_expr(E0),
-    case cerl:type(E) of
-	primop ->
-	    Name = cerl:atom_val(cerl:primop_name(E)),
-	    As = cerl:primop_args(E),
-	    Arity = length(As),
-	    case {Name, Arity} of
-		{?PRIMOP_AND, 2} ->
-		    %% Done as in the "safe" case:
-		    [A, B] = As,
-		    Next = new_label(),
-		    S1 = pure_boolean(A, Next, False, Ctxt, Env,
-				      S),
-		    S2 = add_code([icode_label(Next)], S1),
-		    pure_boolean(B, True, False, Ctxt, Env, S2);
-		{?PRIMOP_OR, 2} ->
-		    %% This is done as in the generic case: since the
-		    %% second argument might crash, it must be evaluated
-		    %% even if the first yields `true'.
-		    [A, B] = As,
-		    V = make_var(),
-		    {Glue, True1, False1} =
-			make_bool_glue(V, ?BOOL_TRUE, ?BOOL_FALSE),
-		    S1 = pure_boolean(A, True1, False1, Ctxt, Env,
-				      S),
-		    S2 = add_code(Glue, S1),
-		    Test = new_label(),
-		    S3 = pure_boolean(B, True, Test, Ctxt, Env,
-				      S2),
-		    add_code([icode_label(Test),
-			      make_type([V], ?BOOL_IS_FALSE,
-					False, True)],
-			     S3);
-		_ ->
-		    generic_boolean(E, True, False, Ctxt, Env, S)
-	    end;
- 	'try' ->
-	    case Ctxt#ctxt.class of
-		guard ->
-		    %% This should be a "protected" guard expression on
-		    %% the form "try E of X -> X catch <T,R> -> 'false'"
-		    %% but we don't actually check for this.
-		    Ctxt1 = Ctxt#ctxt{fail = False, class = guard},
-		    boolean(cerl:try_arg(E), True, False, Ctxt1, Env, S);
-		_ ->
-		    generic_boolean(E, True, False, Ctxt, Env, S)
-	    end;
-	_ ->
-	    generic_boolean(E, True, False, Ctxt, Env, S)
-    end.
+strict_xor([A, B], True, False, Ctxt, Env, S) ->
+    V = make_var(),
+    {Glue, True1, False1} = make_bool_glue(V),
+    S1 = boolean(A, True1, False1, Ctxt, Env, S),
+    S2 = add_code(Glue, S1),
+    Test1 = new_label(),
+    Test2 = new_label(),
+    S3 = boolean(B, Test1, Test2, Ctxt, Env, S2),
+    add_code([icode_label(Test1),
+	      make_bool_test(V, False, True),
+	      icode_label(Test2),
+	      make_bool_test(V, True, False)],
+	     S3).
 
 %% Primitive comparison operations are inline expanded as conditional
 %% branches when part of a boolean expression, rather than made into
-%% primop or guardop calls. Without type information, however, we cannot
-%% reduce comparisons `Expr == true' to simply `Expr' (and `Expr ==
-%% false' to `not Expr'), because we are not sure that Expr will yield a
-%% boolean - and if it does not, the result should be `false', not a
-%% crash!
+%% primop or guardop calls. Note that Without type information, we
+%% cannot reduce equality tests like `Expr == true' to simply `Expr'
+%% (and `Expr == false' to `not Expr'), because we are not sure that
+%% Expr will yield a boolean - if it does not, the result of the
+%% comparison should be `false'.
 
 comparison(Name, As, True, False, Ctxt, Env, S) ->
     {Vs, S1} = expr_list(As, Ctxt, Env, S),
@@ -2080,11 +2055,31 @@ comp_test(?PRIMOP_GT) -> ?TEST_GT;
 comp_test(?PRIMOP_LE) -> ?TEST_LE;
 comp_test(?PRIMOP_GE) -> ?TEST_GE.
 
+type_test(?PRIMOP_IS_RECORD, As, True, False, Ctxt, Env, S)
+  when length(As) == 3 ->
+    is_record_test(As, True, False, Ctxt, Env, S);
 type_test(Name, [A], True, False, Ctxt, Env, S) ->
     V = make_var(),
-    S1 = expr(A, [V], Ctxt#ctxt{effect=false}, Env, S),
+    S1 = expr(A, [V], Ctxt#ctxt{final = false, effect = false}, Env, S),
     Test = type_test(Name),
     add_code([make_type([V], Test, True, False)], S1).
+
+%% It turned out to be easiest to generate Icode directly for this. 
+is_record_test([T, A, N] = As, True, False, Ctxt, Env, S) ->
+    case cerl:is_c_atom(A) andalso cerl:is_c_int(N)
+	andalso (cerl:concrete(N) > 0) of
+	true ->
+	    V = make_var(),
+	    Ctxt1 = Ctxt#ctxt{final = false, effect = false},
+	    S1 = expr(T, [V], Ctxt1, Env, S),
+	    Atom = cerl:concrete(A),
+	    Size = cerl:concrete(N),
+	    add_code([make_type([V], ?TYPE_IS_RECORD(Atom, Size),True, False)],
+		     S1);
+	false ->
+	    error_primop_badargs(?PRIMOP_IS_RECORD, As),
+	    throw(error)
+    end.
 
 type_test(?PRIMOP_IS_ATOM) -> ?TYPE_IS_ATOM;
 type_test(?PRIMOP_IS_BIGNUM) -> ?TYPE_IS_BIGNUM;
@@ -2113,6 +2108,7 @@ is_comp_op(_, _) -> false.
 
 is_bool_op(?PRIMOP_AND, 2) -> true;
 is_bool_op(?PRIMOP_OR, 2) -> true;
+is_bool_op(?PRIMOP_XOR, 2) -> true;
 is_bool_op(?PRIMOP_NOT, 1) -> true;
 is_bool_op(_, _) -> false.
 
@@ -2130,6 +2126,7 @@ is_type_test(?PRIMOP_IS_PID, 1) -> true;
 is_type_test(?PRIMOP_IS_PORT, 1) -> true;
 is_type_test(?PRIMOP_IS_REFERENCE, 1) -> true;
 is_type_test(?PRIMOP_IS_TUPLE, 1) -> true;
+is_type_test(?PRIMOP_IS_RECORD, 3) -> true;
 is_type_test(_, _) -> false.
 
 
@@ -2310,7 +2307,11 @@ make_type(Vs, Test, True, False) ->
     icode_type(Vs, Test, True, False).
 
 %% Creating glue code with true/false target labels for assigning a
-%% corresponding 'true'/'false' value to a specific variable.
+%% corresponding 'true'/'false' value to a specific variable. Used as
+%% glue between boolean jumping code and boolean values.
+
+make_bool_glue(V) ->
+    make_bool_glue(V, true, false).
 
 make_bool_glue(V, T, F) ->
     False = new_label(),
@@ -2324,6 +2325,11 @@ make_bool_glue(V, T, F) ->
 	    icode_label(Next)],
     {Code, True, False}.
 
+make_bool_test(V, True, False) ->
+    make_type([V], ?TYPE_ATOM(true), True, False).
+
+%% Checking if an expression is safe
+
 is_safe_expr(E) ->
     cerl_lib:is_safe_expr(E, fun function_check/2).
 
@@ -2334,7 +2340,7 @@ function_check(safe, {Module, Name, Arity}) ->
 function_check(pure, {Name, Arity}) ->
     is_pure_op(Name, Arity);
 function_check(pure, {Module, Name, Arity}) ->
-    erl_bifs:is_safe(Module, Name, Arity);
+    erl_bifs:is_pure(Module, Name, Arity);
 function_check(_, _) ->
     false.
 
@@ -2351,11 +2357,36 @@ is_safe_op(N, A) ->
     end.
 
 is_pure_op(?PRIMOP_IDENTITY, 1) -> true;
+is_pure_op(?PRIMOP_ELEMENT, 2) -> true;
+is_pure_op(?PRIMOP_MAKE_FUN, 6) -> true;
+is_pure_op(?PRIMOP_FUN_ELEMENT, 2) -> true;
+is_pure_op(?PRIMOP_ADD, 2) -> true;
+is_pure_op(?PRIMOP_SUB, 2) -> true;
+is_pure_op(?PRIMOP_NEG, 1) -> true;
+is_pure_op(?PRIMOP_MUL, 2) -> true;
+is_pure_op(?PRIMOP_DIV, 2) -> true;
+is_pure_op(?PRIMOP_INTDIV, 2) -> true;
+is_pure_op(?PRIMOP_REM, 2) -> true;
+is_pure_op(?PRIMOP_BAND, 2) -> true;
+is_pure_op(?PRIMOP_BOR, 2) -> true;
+is_pure_op(?PRIMOP_BXOR, 2) -> true;
+is_pure_op(?PRIMOP_BNOT, 1) -> true;
+is_pure_op(?PRIMOP_BSL, 2) -> true;
+is_pure_op(?PRIMOP_BSR, 2) -> true;
+is_pure_op(?PRIMOP_EXIT, 1) -> true;
+is_pure_op(?PRIMOP_THROW, 1) -> true;
+is_pure_op(?PRIMOP_ERROR, 1) -> true;
+is_pure_op(?PRIMOP_ERROR, 2) -> true;
+is_pure_op(?PRIMOP_RETHROW, 2) -> true;
 is_pure_op(N, A) ->
-    case is_comp_op(N, A) of
+    case is_bool_op(N, A) of
 	true -> true;
 	false ->
-	    is_type_test(N, A)
+	    case is_comp_op(N, A) of
+		true -> true;
+		false ->
+		    is_type_test(N, A)
+	    end
     end.
 
 translate_flags(Flags, Align) ->
@@ -2580,6 +2611,9 @@ icode_icode(M, {F, A}, Vs, Closure, C, V, L, T) ->
     MFA = {M, F, A},
     hipe_icode:mk_typed_icode(MFA, Vs, Closure, false, C, V, L, T).
 
+icode_icode_name(Icode) ->
+    hipe_icode:icode_fun(Icode).
+
 icode_comment(S) -> hipe_icode:mk_comment(S).
 
 icode_var(V) -> hipe_icode:mk_var(V).
@@ -2709,7 +2743,7 @@ info_msg(S, Vs) ->
 %% --------------------------------------------------------------------------
 %% Binary stuff
 
-binary_match(BMatch, Ts, Vs, Next, Fail, Ctxt, Env, S) ->
+binary_match(BMatch, F, Vs, Next, Fail, Ctxt, Env, S) ->
     MState=#mstate{},
     Tree = cerl_binary_pattern_match:binary_match_clause_tree(BMatch),
     MTag = cerl_binary_pattern_match:binary_match_max_tag(BMatch),
@@ -2722,66 +2756,65 @@ binary_match(BMatch, Ts, Vs, Next, Fail, Ctxt, Env, S) ->
 		   icode_label(L1),
 		   icode_call_primop([OrigOffset], {hipe_bsi_primop, bs_get_orig_offset}, Vs),
 		   icode_call_primop([Size], {hipe_bsi_primop, bs_get_size}, Vs)], S),
-    {S2, _MState0} = clause_tree(Tree, VarList, Ts, {Orig, OrigOffset, Size}, Next, Fail, MState, Ctxt, Env, S1),
+    {S2, _MState0} = clause_tree(Tree, VarList, F, {Orig, OrigOffset, Size}, Next, Fail, MState, Ctxt, Env, S1),
     S2.
 
-clause_tree([], _VarList, _Ts, _State, _Next, Fail, MState, _Ctxt, _Env, S) ->
+clause_tree([], _VarList, _F, _State, _Next, Fail, MState, _Ctxt, _Env, S) ->
     {add_code([icode_goto(Fail)], S), MState};
-
-clause_tree(CTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S) ->
+clause_tree(CTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S) ->
     Instr = cerl_binary_pattern_match:clause_tree_instr(CTree),
     NextTree = cerl_binary_pattern_match:clause_tree_success(CTree),
     FailTree = cerl_binary_pattern_match:clause_tree_fail(CTree),
     case cerl_binary_pattern_match:instr_type(Instr) of
 	read_seg ->
-	    read_seg(Instr, NextTree,  VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S);
+	    read_seg(Instr, NextTree,  VarList, F, State, Next, Fail, MState, Ctxt, Env, S);
 	bin_guard ->
-	    bin_guard(Instr, NextTree, FailTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S);
+	    bin_guard(Instr, NextTree, FailTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S);
 	size ->
-	    do_size(Instr, NextTree, FailTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S);
+	    do_size(Instr, NextTree, FailTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S);
 	match ->
-	    do_match(Instr, NextTree, FailTree, VarList, Ts, State, Next, Fail, MState,Ctxt, Env, S);
+	    do_match(Instr, NextTree, FailTree, VarList, F, State, Next, Fail, MState,Ctxt, Env, S);
 	label ->
-	    do_label(Instr, NextTree, VarList, Ts, State, Next, Fail, MState,Ctxt, Env, S);
+	    do_label(Instr, NextTree, VarList, F, State, Next, Fail, MState,Ctxt, Env, S);
 	goto ->
 	    do_goto(Instr, MState, S);
 	match_group ->
-	    do_match_group(Instr, NextTree, FailTree, VarList, Ts, State, Next, Fail, MState,Ctxt, Env, S)
+	    do_match_group(Instr, NextTree, FailTree, VarList, F, State, Next, Fail, MState,Ctxt, Env, S)
     end.
 
-read_seg(Instr, NextTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S) ->
+read_seg(Instr, NextTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S) ->
     S1 = translate_binseg(Instr, VarList, State, Env, S),
-    clause_tree(NextTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S1).
+    clause_tree(NextTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S1).
 
-bin_guard(Instr, Body, FailTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S) ->
+bin_guard(Instr, Body, FailTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S) ->
     LabelPrimop = cerl_binary_pattern_match:bin_guard_label(Instr),
     Ref = translate_label_primop(LabelPrimop),
     {FL,S1} = s__get_label(Ref, S), 
     {Env1, S2} = translate_bin_guard(Instr, VarList, Env, S1),
-    S3 = expr(Body, Ts, Ctxt, Env1, S2),
+    S3 = F(Body, Ctxt, Env1, S2),
     S4 = add_continuation_jump(Next, Ctxt, S3),
     S5 = add_code([icode_label(FL)], S4),
-    clause_tree(FailTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S5).
+    clause_tree(FailTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S5).
 
-do_size(Instr, NextTree, FailTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S) ->
+do_size(Instr, NextTree, FailTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S) ->
     SL = new_label(),
     FL = new_label(),
     S1 = translate_size_expr(Instr, State, VarList, SL, FL, Env, S),
     S2 = add_code([icode_label(SL)], S1),
-    {S3, MState1} = clause_tree(NextTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S2),
+    {S3, MState1} = clause_tree(NextTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S2),
     S4 = add_code([icode_label(FL)], S3),
-    clause_tree(FailTree, VarList, Ts, State, Next, Fail, MState1, Ctxt, Env, S4).
+    clause_tree(FailTree, VarList, F, State, Next, Fail, MState1, Ctxt, Env, S4).
 
-do_match(Instr, NextTree, FailTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S) ->
+do_match(Instr, NextTree, FailTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S) ->
     SL = new_label(),
     FL = new_label(),
     S1 = translate_match(Instr, VarList, SL, FL, S),
     S2 = add_code([icode_label(SL)], S1),
-    {S3, MState1} = clause_tree(NextTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S2),
+    {S3, MState1} = clause_tree(NextTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S2),
     S4 = add_code([icode_label(FL)], S3),
-    clause_tree(FailTree, VarList, Ts, State, Next, Fail, MState1, Ctxt, Env, S4).
+    clause_tree(FailTree, VarList, F, State, Next, Fail, MState1, Ctxt, Env, S4).
 
-do_match_group(Instr, NextTree, FailTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S) ->
+do_match_group(Instr, NextTree, FailTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S) ->
     ValList=cerl_binary_pattern_match:match_group_vals(Instr),
     Tag=cerl_binary_pattern_match:match_group_tag(Instr),
     FL = new_label(),
@@ -2790,23 +2823,23 @@ do_match_group(Instr, NextTree, FailTree, VarList, Ts, State, Next, Fail, MState
     Cases=[Case||{_, Case} <- FullCases],
     ResVar = get_resvar(Tag, VarList),
     S1 = add_code([icode_switch_val(ResVar,FL,Length,Cases)], S), 
-    do_cases(FullCases, NextTree, FailTree, FL, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S1).
+    do_cases(FullCases, NextTree, FailTree, FL, VarList, F, State, Next, Fail, MState, Ctxt, Env, S1).
 
-do_cases([{Value,{_, Label}}|Rest], NextTree, FailTree, FL, VarList, Ts, State, 
+do_cases([{Value,{_, Label}}|Rest], NextTree, FailTree, FL, VarList, F, State, 
 	 Next, Fail, MState, Ctxt, Env, S) -> 
     {value, ClauseTree}=gb_trees:lookup(Value, NextTree),
     S1 = add_code([icode_label(Label)], S),
-    {S2, MState1} = clause_tree(ClauseTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S1),
-    do_cases(Rest, NextTree, FailTree, FL, VarList, Ts, State, Next, Fail, MState1, Ctxt, Env, S2); 
-do_cases([], _NextTree, FailTree, FL, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S) ->
+    {S2, MState1} = clause_tree(ClauseTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S1),
+    do_cases(Rest, NextTree, FailTree, FL, VarList, F, State, Next, Fail, MState1, Ctxt, Env, S2); 
+do_cases([], _NextTree, FailTree, FL, VarList, F, State, Next, Fail, MState, Ctxt, Env, S) ->
     S1 = add_code([icode_label(FL)], S),
-    clause_tree(FailTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S1).
+    clause_tree(FailTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S1).
 
-do_label(Instr, NextTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S) ->
+do_label(Instr, NextTree, VarList, F, State, Next, Fail, MState, Ctxt, Env, S) ->
     LabelAlias=cerl_binary_pattern_match:label_name(Instr),
     {Label, MState1}=get_correct_label(LabelAlias, MState),
-    S1 = add_code([icode_label(Label)], S),
-    clause_tree(NextTree, VarList, Ts, State, Next, Fail, MState1, Ctxt, Env, S1).
+    S1 = add_code([icode_goto(Label),icode_label(Label)], S),
+    clause_tree(NextTree, VarList, F, State, Next, Fail, MState1, Ctxt, Env, S1).
 
 do_goto(Instr, MState, S) ->    
     LabelAlias=cerl_binary_pattern_match:goto_label(Instr),

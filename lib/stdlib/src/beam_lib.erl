@@ -397,6 +397,7 @@ chunk_to_data(ChunkId, Chunk, _File, _Cs, AtomTable) -> % when list(ChunkId)
     {AtomTable, {ChunkId, Chunk}}. % Chunk is a binary
 
 chunk_name_to_id(atoms, _)           -> "Atom";
+chunk_name_to_id(indexed_imports, _) -> "ImpT";
 chunk_name_to_id(imports, _)         -> "ImpT";
 chunk_name_to_id(exports, _)         -> "ExpT";
 chunk_name_to_id(labeled_exports, _) -> "ExpT";
@@ -424,20 +425,22 @@ attributes(L, R) ->
 
 symbols(<<_Num:32, B/binary>>, AT0, Cs, Name) ->
     AT = ensure_atoms(AT0, Cs),
-    symbols1(B, AT, Name, []).
+    symbols1(B, AT, Name, [], 1).
 
-symbols1(<<I1:32, I2:32, I3:32, B/binary>>, AT, Name, S) ->
-    Symbol = symbol(Name, AT, I1, I2, I3),
-    symbols1(B, AT, Name, [Symbol|S]);
-symbols1(<<>>, AT, _Name, S) ->
+symbols1(<<I1:32, I2:32, I3:32, B/binary>>, AT, Name, S, Cnt) ->
+    Symbol = symbol(Name, AT, I1, I2, I3, Cnt),
+    symbols1(B, AT, Name, [Symbol|S], Cnt+1);
+symbols1(<<>>, AT, _Name, S, _Cnt) ->
     {ok, AT, sort(S)}.
 
-symbol(imports, AT, I1, I2, I3) ->
+symbol(indexed_imports, AT, I1, I2, I3, Cnt) ->
+    {Cnt, atm(AT, I1), atm(AT, I2), I3};
+symbol(imports, AT, I1, I2, I3, _Cnt) ->
     {atm(AT, I1), atm(AT, I2), I3};
-symbol(Name, AT, I1, I2, I3) when Name == labeled_exports; 
-				  Name == labeled_locals ->
+symbol(Name, AT, I1, I2, I3, _Cnt) when Name == labeled_exports; 
+					Name == labeled_locals ->
     {atm(AT, I1), I2, I3};
-symbol(_, AT, I1, I2, _I3) ->
+symbol(_, AT, I1, I2, _I3, _Cnt) ->
     {atm(AT, I1), I2}.
 
 atm(AT, N) ->

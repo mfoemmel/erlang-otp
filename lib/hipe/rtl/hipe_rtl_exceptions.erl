@@ -56,9 +56,8 @@ gen_begin_handler(I, VarMap, ConstTab) ->
   Ds = hipe_icode:begin_handler_dstlist(I),
   {Vars, VarMap1} = hipe_rtl_varmap:ivs2rvs(Ds, VarMap),
   [FTagVar,FValueVar,FTraceVar] = Vars,
-  %% XXX: This is inconsistent. Either all or none of the
-  %% handler's three parameters should be in registers.
-  {[hipe_rtl:mk_begin_handler([FValueVar]),
+  {[hipe_rtl:mk_comment('begin_handler'),
+    hipe_rtl_arch:pcb_load(FValueVar, ?P_FVALUE),
     hipe_rtl_arch:pcb_load(FTraceVar, ?P_FTRACE),
     %% synthesized from P->freason by hipe_handle_exception()
     hipe_rtl_arch:pcb_load(FTagVar, ?P_ARG0)

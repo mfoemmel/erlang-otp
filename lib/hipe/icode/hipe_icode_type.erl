@@ -33,11 +33,6 @@
 		    t_tuple_arity/1, t_tuple_arities/1, t_none/0]).
 
 
-%% If debug_test is defined the type tests are not removed but
-%% fail code is inserted, so if at runtime the outcome is not the
-%% expected one the program fails with an error message.
-%%-define(DEBUG_TEST, true).
-
 cfg(Cfg, IcodeFun, Options) ->
   OldReturnType = init_mfa_info(IcodeFun, Options),
   State = analyse(Cfg),
@@ -46,6 +41,7 @@ cfg(Cfg, IcodeFun, Options) ->
   pp(NewState, IcodeFun, Options, "Post-specialization"),
   warn_on_type_errors(Cfg, State, NewState, IcodeFun, Options),
   Fixpoint = update_mfa_info(NewState, IcodeFun, OldReturnType, Options),
+
 
   case proplists:get_bool(inline_fp, Options) of
     true ->
@@ -102,7 +98,7 @@ analyse_blocks(Work, State)->
 analyse_block(Label, InfoIn, State)->
   %%io:format("Handling ~w\n", [Label]),
   BB = state__bb(State, Label),
-  Code = hipe_bb:code(BB),
+  Code = hipe_bb:butlast(BB),
   Last = hipe_bb:last(BB),
   InfoOut = analyse_insns(Code, InfoIn),
   NewState = state__info_out_update(State, Label, InfoOut),
@@ -169,13 +165,7 @@ analyse_insn(I, Info) ->
     move ->
       do_move(I, Info);
     call ->
-      case hipe_icode:call_continuation(I) of
-	[] ->
-	  update_call_arguments(I, do_call(I, Info));
-	_ ->
-	  %% This call ends a bb so it will be handled above.
-	  Info
-      end;
+      update_call_arguments(I, do_call(I, Info));
     phi ->
       Type = t_limit(join_list(args(I), Info), ?TYPE_DEPTH),
       enter_defines(I, Type, Info);
@@ -223,7 +213,13 @@ do_call(I, Info)->
       AnnotatedType =
 	case hipe_icode:call_dst_type(I) of
 	  [] -> t_any();
-	  T -> T
+	  T -> 
+	    %% Make sure that the core type pass has not 
+	    %% annotated this with none()
+	    case t_is_none(T) of
+	      true -> t_any();
+	      false -> T
+	    end
 	end,
       MFA = hipe_icode:call_fun(I),
       DetsType = dets_lookup(MFA),
@@ -299,6 +295,8 @@ do_type(I, Info)->
 			      fun(X)->t_number_vals(X)end,
 			      N, Var, VarInfo, {integer, N}, 
 			      TrueLab, FalseLab, Info);
+	{record, Atom, Size} ->
+	  test_record(Atom, Size, Var, VarInfo, TrueLab, FalseLab, Info);
 	Other ->
 	  case t_is_any(VarInfo) of
 	    true ->
@@ -471,6 +469,25 @@ test_number_or_atom(Fun, FunVals, X, Var, VarInfo, TypeTest,
 	  end
       end
   end.
+
+test_record(Atom, Size, Var, VarInfo, TrueLab, FalseLab, Info) ->
+  AnyList = lists:duplicate(Size - 1, t_any()),
+  RecordType = t_tuple([t_atom(Atom)|AnyList]),
+  Inf = t_inf(RecordType, VarInfo),
+  case t_is_none(Inf) of
+    true ->
+      [{FalseLab, Info}];
+    false ->
+      Sub = t_subtract(VarInfo, Inf),
+      case t_is_none(Sub) of
+	true ->
+	  [{TrueLab, enter(Var, Inf, Info)}];
+	false ->
+	  [{TrueLab, enter(Var, Inf, Info)},
+	   {FalseLab, enter(Var, Sub, Info)}]
+      end
+  end.
+
 
 test_type(Test, Type)->
   %%io:format("Test is: ~w\n", [Test]),
@@ -654,67 +671,6 @@ true_branch_info(T) ->
 %% of the simplification of the cfg.
 %%
 
--ifdef(DEBUG_TEST).
-simplify_controlflow([Label|Left], State, Dirty) ->
-  case state__bb(State, Label) of
-    not_found ->
-      simplify_controlflow(Left, State, Dirty);
-    BB ->
-      I = hipe_bb:last(BB),
-      case hipe_icode:type(I) of
-	type ->
-	  Info = state__info_out(State, Label),
-	  [Var] = args(I),
-	  VarInfo = safe_lookup(Var, Info),
-	  case test_type(hipe_icode:type_type(I), VarInfo) of
-	    maybe ->
-	      simplify_controlflow(Left, State, Dirty);
-	    Res ->
-	      {Taken, NotTaken} = 
-		case Res of
-		  true -> 
-		    {hipe_icode:type_true_label(I),
-		     hipe_icode:type_false_label(I)};
-		  false -> 
-		    {hipe_icode:type_false_label(I),
-		     hipe_icode:type_true_label(I)}
-		end,
-	      case Taken of
-		NotTaken ->
-		  %% true label = false label, this can occur!
-		  NewState = mk_goto(State, BB, Label, Taken),
-		  simplify_controlflow(Left, NewState, true);
-		_ ->
-		  %% Insert a fail block.
-		  FailLab = 
-		    hipe_icode:label_name(hipe_icode:mk_new_label()),
-		  V = hipe_icode:mk_new_var(),
-		  FailAtom = list_to_atom("type_test_failed in "++
-					  integer_to_list(Label)),
-		  Reason = hipe_icode:mk_const(FailAtom),
-		  FailCode = [hipe_icode:mk_move(V, Reason),
-			      hipe_icode:mk_fail([V], error)],
-		  FailBB = hipe_bb:mk_bb(FailCode),
-		  Cfg = state__cfg(State),
-		  NewCfg = hipe_icode_cfg:bb_add(Cfg, FailLab, FailBB),
-		  NewState = state__cfg_update(State, NewCfg),
-		  
-		  %% Redirect the typetest.
-		  NewI = hipe_icode:redirect_jmp(I, NotTaken, FailLab),
-		  NewBB = hipe_bb:code_update(BB, hipe_bb:butlast(BB)++
-					      [NewI]),
-		  NewState2 = state__bb_add(NewState, Label, NewBB),
-		  simplify_controlflow(Left, NewState2, true)
-	      end
-	  end;
-	_ ->
-	  simplify_controlflow(Left, State, Dirty)
-      end
-  end;
-simplify_controlflow([], State, _) ->
-  State.
-
--else.
 
 simplify_controlflow([Label|Left], State, Dirty)->
   case state__bb(State, Label) of
@@ -734,8 +690,6 @@ simplify_controlflow([Label|Left], State, Dirty)->
 	  end;
 	type ->
 	  Info = state__info_out(State, Label),
-	  [Var] = args(I),
-	  VarInfo = safe_lookup(Var, Info),
 	  FalseLab = hipe_icode:type_false_label(I),
 	  case hipe_icode:type_true_label(I) of
 	    FalseLab ->
@@ -743,14 +697,14 @@ simplify_controlflow([Label|Left], State, Dirty)->
 	      NewState = mk_goto(State, BB, Label, FalseLab),
 	      simplify_controlflow(Left, NewState, true);
 	    TrueLab ->
-	      case test_type(hipe_icode:type_type(I), VarInfo) of
-		true -> 
+	      case do_type(I, Info) of
+		[{TrueLab, _}] -> 
 		  NewState = mk_goto(State, BB, Label, TrueLab),
 		  simplify_controlflow(Left, NewState, true);
-		false ->
+		[{FalseLab, _}] -> 
 		  NewState = mk_goto(State, BB, Label, FalseLab),
 		  simplify_controlflow(Left, NewState, true);
-		maybe ->
+		[_,_] -> %% Maybe
 		  simplify_controlflow(Left, State, Dirty)
 	      end
 	  end;
@@ -853,8 +807,6 @@ simplify_controlflow([], State, true) ->
   {dirty, state__cfg(State)};
 simplify_controlflow([], State, _) ->
   State.
-
--endif.
 
 mk_goto(State, BB, Label, Succ)->
   NewI = hipe_icode:mk_goto(Succ),
@@ -1423,11 +1375,6 @@ new_state(Cfg)->
 state__cfg(#state{cfg=Cfg})->
   Cfg.
 
--ifdef(DEBUG_TEST).
-state__cfg_update(S, Cfg)->
-  S#state{cfg=Cfg}.
--endif.
-
 state__succ(#state{succmap=SM}, Label)->
   hipe_icode_cfg:succ(SM, Label).
 
@@ -1582,10 +1529,10 @@ warn_on_type_errors(PreAnalysisCfg, OrigState, FinalState, IcodeFun, Options) ->
 	  warn_on_args(IcodeFun, PreAnalysisCfg),
 	  OrigCfg = state__cfg(OrigState),
 	  OrigLabels = hipe_icode_cfg:reverse_postorder(OrigCfg),
-	  warn_on_bb(OrigLabels, OrigState, IcodeFun, true),
+	  warn_on_control_flow(OrigLabels, OrigState, IcodeFun),
 	  FinalCfg = state__cfg(FinalState),
 	  FinalLabels = hipe_icode_cfg:reverse_postorder(FinalCfg),
-	  warn_on_bb(FinalLabels, FinalState, IcodeFun, false),
+	  warn_on_bb(FinalLabels, FinalState, IcodeFun),
 	  {RetType, IsExplicit, HasReturn} = 
 	    find_return_type(FinalLabels, FinalState),
 	  case t_is_none(RetType) of
@@ -1663,26 +1610,20 @@ warn_on_args(IcodeFun, Cfg) ->
       ok
   end.
 
-warn_on_bb([Label|Left], State, IcodeFun, ControlFlow) ->
+warn_on_bb([Label|Left], State, IcodeFun) ->
   BB = state__bb(State, Label),
   Code = hipe_bb:code(BB),
   InfoOut = state__info_out(State, Label),
   case gb_trees:is_empty(InfoOut) of
     true ->
       %% This block is in a non-possible trace.
-      warn_on_bb(Left, State, IcodeFun, ControlFlow);
+      warn_on_bb(Left, State, IcodeFun);
     false ->
-      case ControlFlow of
-	true ->
-	  Last = lists:last(Code),
-	  warn_on_control_flow(Last, InfoOut, IcodeFun);
-	false ->
-	  InfoIn = state__info_in(State, Label),
-	  warn_on_instr(Code, InfoIn, IcodeFun)
-      end,
-      warn_on_bb(Left, State, IcodeFun, ControlFlow)
+      InfoIn = state__info_in(State, Label),
+      warn_on_instr(Code, InfoIn, IcodeFun),
+      warn_on_bb(Left, State, IcodeFun)
   end;
-warn_on_bb([], _State, _IcodeFun, _ControlFlow) ->
+warn_on_bb([], _State, _IcodeFun) ->
   ok.
 
 warn_on_instr([I|Left], Info, IcodeFun) ->
@@ -1717,16 +1658,19 @@ warn_on_instr([I|Left], Info, IcodeFun) ->
 warn_on_instr([], _Info, _IcodeFun) ->
   ok.
 
-warn_on_control_flow(I, Info, IcodeFun) ->
+
+warn_on_control_flow([Label|Left], State, IcodeFun) ->
+  I = hipe_bb:last(state__bb(State, Label)),
+  Info = state__info_out(State, Label),
   case hipe_icode:type(I) of
     'if' ->
       warn_on_if(I, Info, IcodeFun);
-    switch_tuple_arity ->
+    switch_tuple_arity ->      
       warn_on_switch_tuple_arity(I, Info, IcodeFun);
     switch_val ->
       warn_on_switch_val(I, Info, IcodeFun);
     type ->
-      warn_on_type(I, Info, IcodeFun);
+      warn_on_type(I, Info, IcodeFun, State);
     call ->
       case hipe_icode:call_in_guard(I) of
 	true ->
@@ -1736,9 +1680,12 @@ warn_on_control_flow(I, Info, IcodeFun) ->
       end;
     _ ->
       ok
-  end.
+  end,
+  warn_on_control_flow(Left, State, IcodeFun);
+warn_on_control_flow([], _State, _IcodeFun) ->
+  ok.
 
-warn_on_type(I, Info, IcodeFun) ->
+warn_on_type(I, Info, IcodeFun, State) ->
   FalseLab = hipe_icode:type_false_label(I),
   case do_type(I, Info) of
     [{FalseLab, _}] ->
@@ -1747,11 +1694,20 @@ warn_on_type(I, Info, IcodeFun) ->
       ArgType = format_type(safe_lookup(Arg, Info)),
       W = 
 	case Test of
+%	  tuple ->
+%	    TrueLabel = hipe_icode:type_true_label(I),
+%	    String = construct_tuple(TrueLabel, State),
+%	    io_lib:format(String, [IcodeFun, ArgType]);
 	  {tuple, N} ->
-	    Tuple = construct_tuple(N),
+	    TrueLabel = hipe_icode:type_true_label(I),
+	    Tuple = construct_n_tuple(N, TrueLabel, State),
 	    io_lib:format("~w: Pattern matching with ~s will always fail since "
 			  "variable has type ~s!\n",
 			  [IcodeFun, Tuple, ArgType]);
+	  {record, Atom, _Size} ->
+	    io_lib:format("~w: Pattern matching with #~w{} will always "
+			  "fail since variable has type ~s!\n",
+			  [IcodeFun, Atom, ArgType]);
 	  _ ->
 	    io_lib:format("~w: Type guard ~w will always fail since "
 			  "variable has type ~s!\n", [IcodeFun, Test, ArgType])
@@ -1761,8 +1717,29 @@ warn_on_type(I, Info, IcodeFun) ->
       ok
   end.
 
-construct_tuple(N) ->
+construct_n_tuple(N, _Label, _State) ->
   "{"++construct_underscores(N, [])++"}".
+%%  case hipe_bb:code(state__bb(State, Label)) of
+%%    [I1, I2] -> 
+%%      case {hipe_icode:type(I1), hipe_icode:type(I2)} of
+%%	{call, type} -> 
+%%	  case hipe_icode:call_fun(I1) of
+%%	    {unsafe_element, 1} -> 
+%%	      Dst = defines(I1),
+%%	      case hipe_icode:type_type(I2) of
+%%		{atom, Atom} -> 
+%%		  case args(I2) of
+%%		    Dst -> "#"++atom_to_list(Atom)++"{}";
+%%		    _ -> "{"++construct_underscores(N, [])++"}"
+%%		  end;
+%%		_ -> "{"++construct_underscores(N, [])++"}"
+%%	      end;
+%%	    _ -> "{"++construct_underscores(N, [])++"}"
+%%	  end;
+%%	_ -> "{"++construct_underscores(N, [])++"}"
+%%      end;
+%%    _ -> "{"++construct_underscores(N, [])++"}"
+%%  end.
 
 construct_underscores(1, Acc) ->
   "_"++Acc;
@@ -2236,9 +2213,7 @@ init_mfa_info(MFA, Options) ->
     {dets, Dets} ->
       put(hipe_mfa_dets, {ok, Dets}),
       {ok, _} = dets:open_file(Dets, []),
-      ReturnType = dets_lookup(MFA),
-      dets:delete(Dets, MFA),
-      ReturnType;
+      dets_lookup(MFA);
     _ ->
       put(hipe_mfa_dets, none),
       none

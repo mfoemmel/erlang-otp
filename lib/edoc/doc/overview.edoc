@@ -3,24 +3,24 @@
 
 @author Richard Carlsson <richardc@csd.uu.se>
 @copyright 2003 Richard Carlsson
-@version 0.4 alpha
+@version {@vsn}
+@title Welcome to EDoc
 
 @doc EDoc is the Erlang program documentation generator. Inspired by the
 Javadoc<sup><font size="-3">TM</font></sup> tool for the Java<sup><font
 size="-3">TM</font></sup> programming language, EDoc is adapted to the
 conventions of the Erlang world, and has several features not found in
-Javadoc. Since the first and previously only public release (v. 0.1), a
-lot of new functionality has been added, and most of the code has been
-completely rewritten. However, the old main interface (the function
-{@link edoc:file/2}) has been preserved for backwards compatibility, and
-there should be few or no incompatibilities with existing EDoc-comments
-in Erlang code.
+Javadoc. Since the first public release (v. 0.1), a lot of new
+functionality has been added, and most of the code has been completely
+rewritten. However, there should be few or no incompatibilities with
+existing EDoc-comments in Erlang code.
 
 <h3><a name="contents">Contents</a></h3>
 <ol>
   <li><a href="#intro">Introduction</a></li>
   <li><a href="#usage">Running EDoc</a></li>
   <li><a href="#gtags">Generic Tags</a></li>
+  <li><a href="#otags">Overview Tags</a></li>
   <li><a href="#mtags">Module Tags</a></li>
   <li><a href="#ftags">Function Tags</a></li>
   <li><a href="#refs">Making references</a></li>
@@ -75,7 +75,21 @@ in the "footer".</p>
 
 
 <h3><a name="usage">Running EDoc</a></h3>
- <p>For the time being, just see the module {@link edoc}.</p>
+<p>The following are the main functions for running EDoc:
+    <ul>
+      <li>{@link edoc:application/2}: Creates documentation for a
+	  typical Erlang application.</li>
+      <li>{@link edoc:packages/2}: Creates documentation for one or
+	  more packages, automatically locating source files.</li>
+      <li>{@link edoc:files/2}: Creates documentation for a
+	  specified set of source files.</li>
+      <li>{@link edoc:run/3}: General interface function; the common
+          back-end for the above functions. Options are documented here.</li>
+    </ul>
+</p>
+
+<p>Note that the function {@link edoc:file/2} belongs to the old
+interface (from EDoc version 0.1) and is now deprecated.</p>
 
 
 <h3><a name="gtags">Generic tags</a></h3>
@@ -138,6 +152,16 @@ in the "footer".</p>
 </dl>
 </p>
 
+
+<h3><a name="otags">Overview tags</a></h3>
+
+<p>The following tags can only be used in an overview file:
+<dl>
+  <dt><code><a name="otag-title">@title</a></code></dt>
+      <dd>Specifies a title for the overview page. The content
+      can be arbitrary text.</dd>
+</dl>
+</p>
 
 <h3><a name="mtags">Module tags</a></h3>
 
@@ -320,9 +344,9 @@ possible formats for references are:
 <table border="1">
   <tr><th>Reference syntax</th><th>Example</th></tr>
   <tr><td>`Module'</td><td>{@link edoc_run}</td></tr>
-  <tr><td>`Function/Arity'</td><td>`file/2' (*)</td></tr>
+  <tr><td>`Function/Arity'</td><td>`file/2' *</td></tr>
   <tr><td>`Module:Function/Arity'</td><td>{@link edoc:application/2}</td></tr>
-  <tr><td>`Type()'</td><td>`filename()' (*)</td></tr>
+  <tr><td>`Type()'</td><td>`filename()' *</td></tr>
   <tr><td>`Module:Type()'</td><td>{@link edoc:edoc_module()}</td></tr>
   <tr><td>`//Application'</td><td>{@link //edoc}</td></tr>
   <tr><td>`//Application/Module'</td><td>{@link //edoc/edoc_doclet}</td></tr>
@@ -351,7 +375,7 @@ found). This makes it possible to refer to e.g. a module "`fred'" as
 names that are local to the application you are currently creating -
 they will always be resolved correctly.</p>
 
-<p>(*) Local references such as these only work properly within a
+<p>*) Local references such as these only work properly within a
 module. In an overview-page like this (i.e., the one you are currently
 reading), no module context is available.</p>
 
@@ -376,6 +400,11 @@ To write an element like the HTML <code>&lt;br&gt;</code>, which has no
 actual content, you can write either the full
 <code>&lt;br&gt;&lt;/br&gt;</code>, or better, use the XHTML abbreviated
 form <code>&lt;br/&gt;</code>.</p>
+
+<p>Since the purpose of EDoc is to document programs, there is also a
+limited form of "wiki"-syntax available for making program code easier
+to write inline (and to make the doc-comments easier to read).
+See <a href="#escapes">Escape sequences</a> below for details.</p>
 
 <p>The HTML heading tags <code>h1</code> and <code>h2</code> are
 reserved for use by EDoc. Headings in documentation source code should
@@ -678,12 +707,15 @@ information.
       e.g. "{@time}".</dd>
 </dl>
 
+
 <h3><a name="escapes">Escape sequences</a></h3>
 
-To prevent certain characters from being interpreted as delimiters, for
-example to produce the text "<code>@{@</code>" in the output, use a
-"<code>}</code>" character in the argument text of a macro call,
-the following escape sequences may be used: <dl>
+<h4>@-escapes</h4>
+
+<p>To prevent certain characters from being interpreted as delimiters,
+for example to produce the text "<code>@{@</code>" in the output, or use a
+"<code>}</code>" character in the argument text of a macro call, the
+following escape sequences may be used: <dl>
   <dt><code>@@{</code></dt>
       <dd>Expands to "<code>{</code>". Example:
       <pre>
@@ -702,9 +734,73 @@ the following escape sequences may be used: <dl>
    "<code>vaporware.acme.com</code>". Also:
    <pre>
    %% @doc You might want to write something like
-   %% @@@@foo that will expand to @@foo but does not start
+   %% @@@@foo that will expand to @@foo and does not start
    %% a new tag even if it appears first in a line.</pre></dd>
 </dl>
+</p>
+
+<h4>Using `` `...' ''-quoting in XHTML</h4>
+
+<p>In XHTML text, the "<code>&#x60;</code>" character (Unicode `000060',
+known as "grave accent" or "back-quote") can be used for verbatim
+quoting. This is expanded before XML parsing takes place.</p>
+
+<ul>
+  <li><p>A character sequence "<code>&#x60;...'</code>" or
+      "<code>&#x60;&#x60;...''</code>" will be expanded to
+      "`<code>...</code>'", where all occurrences of the special XML
+      characters "`<'" and "`&'" (and for completeness, also "`>'") in
+      the quoted text have been escaped to "`&lt;'", "`&amp;'", and
+      "`&gt;'", respectively.
+      All whitespace is stripped from the beginning and end of the
+      quoted text.</p>
+
+      <p>Double back-quotes "<code>&#x60;&#x60;...''</code>" can be used
+      to quote text containing single "`` ' ''" characters. The automatic
+      stripping of any surrounding whitespace makes it possible to write
+      things like "<code>&#x60;&#x60; 'foo@bar' ''</code>".</p>
+
+      <p>To quote text containing "<code>''</code>" verbatim,
+      explicit `<code>' markup or similar must be used.</p></li>
+
+  <li><p>A character sequence "<code>&#x60;&#x60;&#x60;...'''</code>"
+      will be expanded to "`<pre><![CDATA[...]]></pre>'", which disables
+      all XML markup within the quoted text, and displays the result in
+      fixed-font with preserved indentation. Whitespace is stripped from
+      the end of the quoted text, but not from the beginning, except for
+      whole leading lines of whitespace. This is
+      useful for multi-line code examples, or displayed
+      one-liners.</p></li>
+
+  <li><p>To produce a single "<code>&#x60;</code>"-character in XML
+      without beginning a new quote, you can write "<code>&#x60;'</code>"
+      (no space between the "<code>&#x60;</code>" and the "<code>'</code>").
+      You can of course also use the XML character entity
+      "`&#x60;'".</p></li>
+</ul>
+
+<p>Examples:
+  ```%% @doc ...where the variable `Foo' refers to... '''
+
+  ```%% @doc ...returns the atom `` 'foo@erlang.org' ''... '''
+
+  <pre>
+     %% @doc ...use the command &#x60;&#x60;&#x60;erl -name foo''' to...</pre>
+
+  <pre>
+     %% @doc ...as in the following code:
+     %% &#x60;&#x60;&#x60;f(X) ->
+     %%       case X of
+     %%          ...
+     %%       end'''</pre>
+
+  <pre>
+     %% @doc ...or in the following:
+     %% &#x60;&#x60;&#x60;
+     %%     g(X) ->
+     %%       fun () -> ... end
+     %% '''</pre>
+</p>
 
 
 <h3><a name="credits">Acknowledgements</a></h3>

@@ -14,9 +14,8 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_extract.erl,v 1.27 2004/08/25 00:11:07 richardc Exp $
+%% $Id: edoc_extract.erl,v 1.31 2004/11/30 00:44:40 richardc Exp $
 %%
-%% @private
 %% @copyright 2001-2003 Richard Carlsson
 %% @author Richard Carlsson <richardc@csd.uu.se>
 %% @see edoc
@@ -58,7 +57,7 @@ source(Forms, Comments, File, Env, Opts) when list(Forms) ->
     Forms1 = erl_syntax:form_list(Forms),
     source(Forms1, Comments, File, Env, Opts);
 source(Forms, Comments, File, Env, Opts) ->
-    Tree = erl_recomment:recomment_forms(Forms, Comments),
+    Tree = erl_recomment:quick_recomment_forms(Forms, Comments),
     source(Tree, File, Env, Opts).
 
 %% @spec source(Forms, File::filename(), Env::edoc_env(),
@@ -78,15 +77,17 @@ source(Forms, Comments, File, Env, Opts) ->
 %% edoc_lib:get_doc_env/4}. The `File' argument is used for
 %% error reporting and output file name generation only.
 %%
-%% <p>See {@link edoc:get_doc/2} for options.</p>
+%% <p>See {@link edoc:get_doc/2} for descriptions of the `def',
+%% `hidden', and `private' options.</p>
 %%
-%% @see edoc:read_source/2
-%% @see edoc:get_doc/2
 %% @see source/5
 %% @see erl_recomment
 
 %% Note that the actual module name found in the source file will be
 %% used for generating the documentation, creating relative links, etc.
+
+%% INHERIT-OPTIONS: get_macro_defs/1
+%% INHERIT-OPTIONS: edoc_data:module/4
 
 source(Forms, File, Env, Opts) when list(Forms) ->
     source(erl_syntax:form_list(Forms), File, Env, Opts);
@@ -96,8 +97,7 @@ source(Tree, File0, Env, Opts) ->
     Forms = preprocess_forms(erl_syntax:form_list_elements(
 			       erl_syntax:flatten_form_list(Tree))),
     {Header, Footer, Entries} = collect(Forms, Module),
-    Defs = proplists:append_values(def, Opts),
-    edoc_macros:check_defs(Defs),
+    Defs = get_macro_defs(Opts),
     Name = Module#module.name,
     Package = list_to_atom(packages:strip_last(Name)),
     Env1 = Env#env{module = Name,
@@ -109,18 +109,31 @@ source(Tree, File0, Env, Opts) ->
     {Name, Data}.
 
 
-%% @spec (File::filename(), Context, Env::edoc_env(),
-%%        Options::option_list()) -> {ok, Tags} | {error, Reason}
-%%     Context = overview | package
-%%     Tags = [term()]
-%%     edoc_env() = edoc_lib:edoc_env()
-%%     Reason = term()
+%% NEW-OPTIONS: def
+%% DEFER-OPTIONS: source/4
+
+get_macro_defs(Opts) ->
+    Defs = proplists:append_values(def, Opts),
+    edoc_macros:check_defs(Defs),
+    Defs.
+
+
+%% @spec file(File::filename(), Context, Env::edoc_env(),
+%%            Options::option_list()) -> {ok, Tags} | {error, Reason}
+%%   Context = overview | package
+%%   Tags = [term()]
+%%   edoc_env() = edoc_lib:edoc_env()
+%%   Reason = term()
 %%
-%% @doc Reads a text file and returns the list of tags in the file.  Any
+%% @doc Reads a text file and returns the list of tags in the file. Any
 %% lines of text before the first tag are ignored. `Env' is an
 %% environment created by {@link edoc_lib:get_doc_env/4}. Upon error,
 %% `Reason' is an atom returned from the call to {@link
 %% //kernel/file:read_file/1}.
+%%
+%% <p>See {@link text/4} for options.</p>
+
+%% INHERIT-OPTIONS: text/4
 
 file(File, Context, Env, Opts) ->
     case file:read_file(File) of
@@ -137,18 +150,22 @@ file(File, Context, Env, Opts) ->
 %%     Tags = [term()]
 %%     edoc_env() = edoc_lib:edoc_env()
 %%
-%% @doc Returns the list of tags in the text.  Any lines of text before
-%% the first tag are ignored. `Env' is an environment created
-%% by {@link edoc_lib:get_doc_env/4}.
+%% @doc Returns the list of tags in the text. Any lines of text before
+%% the first tag are ignored. `Env' is an environment created by {@link
+%% edoc_lib:get_doc_env/4}.
+%%
+%% <p>See {@link source/4} for a description of the `def' option.</p>
+
+%% INHERIT-OPTIONS: get_macro_defs/1
+%% DEFER-OPTIONS: source/4
 
 text(Text, Context, Env, Opts) ->
     text(Text, Context, Env, Opts, "").
 
 text(Text, Context, Env, Opts, Where) ->
-    Defs = proplists:append_values(def, Opts),
-    edoc_macros:check_defs(Defs),
+    Defs = get_macro_defs(Opts),
     Defs1 = dict:from_list(Defs ++ file_macros(Context, Env)),
-    Cs = edoc_lib:split(Text, $\n),
+    Cs = edoc_lib:lines(Text),
     Ts0 = edoc_tags:scan_lines(Cs, 1),
     Tags = sets:from_list(edoc_tags:tag_names()),
     Ts1 = edoc_tags:filter_tags(Ts0, Tags, Where),
@@ -185,26 +202,16 @@ get_module_info(Forms, File) ->
 	       {value, {module, N}} ->
 		   N;
 	       _ ->
-		   report(File, "module name missing or redefined.", []),
+		   report(File, "module name missing.", []),
 		   exit(error)
 	   end,
     Functions = ordsets:from_list(get_list_keyval(functions, L)),
     Exports = ordsets:from_list(get_list_keyval(exports, L)),
     Attributes = ordsets:from_list(get_list_keyval(attributes, L)),
     Records = get_list_keyval(records, L),
-    %% Detect the case when all functions are exported by -compile(export_all)
-    %% Should add a better test for this via the attribute later
-    ResultingExports = case Exports of
-			   [] -> 
-			       %% we then assume "-compile(export_all)"
-			       Functions;
-			   _ ->
-			       ordsets:intersection(Exports, Functions)
-		       end,
     #module{name = Name,
 	    functions = Functions,
-		    
-	    exports = ResultingExports,
+	    exports = ordsets:intersection(Exports, Functions),
 	    attributes = Attributes,
 	    records = Records}.
 

@@ -1,6 +1,5 @@
 Bugfix
 ======
- "Correct" error messages
  P->current (Fix observable behaviour?)
  New calling convention for guard bifs (Recognize at load time).
  Long branches:
@@ -11,10 +10,8 @@ Bugfix
 Performance
 ===========
 
- Core Erlang -> Icode
  Better handling of multimove in regalloc.
  Faster closure creation. (Can static fields be preallocated?)
- Type info in Icode.
  Expand pseudo-ops before scheduler (SPARC)
  Stack maps for SPARC + Make frames in Sparc not in RTL.
  Coalesce spill locations.
@@ -22,7 +19,6 @@ Performance
 Feature
 =======
 
- module_info() -> beam/native. 
  Stack traces from stack maps.
 
 Cleanup
@@ -49,7 +45,6 @@ Other
 =====
 
  BMs from Telia promotor, AXD301.
- Release party HiPE 1.0
 
 
 Old list compiled by Thomas Lindgren (needs cleaning up)
@@ -67,23 +62,17 @@ Old list compiled by Thomas Lindgren (needs cleaning up)
 
 <H2>Erlang/Core source-level-optimizations</H2>
 <UL>
-  <LI> Inlining. 
   <LI> "Context compilation"
   <LI> CDR-kodning
   <LI> List reuse
   <LI> Compilation by transformation
-  <LI> Pattern-matching compilation
 </UL>
 
 <H2>Icode-optimizations</H2>
 <UL>
-  <LI> Type analysis
-  <LI> Type based - strength reduction
   <LI> Convertion to loops from recursive programs
-  <LI> Copy propagation (<a href="./thomasl/icode/local.erl">local</a>,global)
   <LI> Dominatorer
       (<a href="./thomasl/icode/dominators.erl">långsamma</a>, snabba)
-  <LI> Inlining again
 </UL>
 
 <H2>RTL-optimizations</H2>

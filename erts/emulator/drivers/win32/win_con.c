@@ -96,6 +96,8 @@ static LOGFONT logfont;
 static DWORD fgColor;
 static DWORD bkgColor;
 static FILE *logfile = NULL;
+static RECT winPos;
+static BOOL toolbarVisible;
 
 static int lines_to_save = 1000; /* Maximum number of screen lines to save. */
 
@@ -244,6 +246,7 @@ ConThreadInit(LPVOID param)
     int iCmdShow;
     STARTUPINFO StartupInfo;
     HACCEL hAccel;
+    int x, y, w, h;
 
     /*DebugBreak();*/
     hInstance = GetModuleHandle(NULL);
@@ -299,9 +302,20 @@ ConThreadInit(LPVOID param)
 			       NULL,LoadMenu(beam_module,MAKEINTRESOURCE(1)),
 			       hInstance,NULL);
 
-    SetWindowPos(hFrameWnd, NULL, 0, 0,
-		 cxChar*LINE_LENGTH+FRAME_WIDTH+GetSystemMetrics(SM_CXVSCROLL),
-		 cyChar*30+FRAME_HEIGHT, SWP_NOMOVE|SWP_NOZORDER);
+    if (winPos.left == -1) {
+	/* initial window position */
+	x = 0;
+	y = 0;
+	w = cxChar*LINE_LENGTH+FRAME_WIDTH+GetSystemMetrics(SM_CXVSCROLL);
+	h = cyChar*30+FRAME_HEIGHT;
+    } else {
+	/* saved window position */
+	x = winPos.left;
+	y = winPos.top;
+	w = winPos.right - x;
+	h = winPos.bottom - y;
+    }
+    SetWindowPos(hFrameWnd, NULL, x, y, w, h, SWP_NOZORDER);
 
     ShowWindow(hFrameWnd, iCmdShow);
     UpdateWindow(hFrameWnd);
@@ -321,7 +335,6 @@ ConThreadInit(LPVOID param)
             DispatchMessage (&msg);
         }
     }
-    SaveUserPreferences();
     (*ctrl_handler)(CTRL_CLOSE_EVENT);
     return msg.wParam;
 }
@@ -453,10 +466,13 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 	    SaveUserPreferences();
             return 0;
         case IDMENU_TOOLBAR:
-            if (IsWindowVisible(hTBWnd))
+            if (toolbarVisible) {
                 ShowWindow(hTBWnd,SW_HIDE);
-            else
+		toolbarVisible = FALSE;
+            } else {
                 ShowWindow(hTBWnd,SW_SHOW);
+		toolbarVisible = TRUE;
+	    }
             GetClientRect(hwnd,&r);
             PostMessage(hwnd,WM_SIZE,0,MAKELPARAM(r.right,r.bottom));
             return 0;
@@ -512,6 +528,7 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
     case WM_CLOSE :
 	break;
     case WM_DESTROY :
+	SaveUserPreferences();
 	PostQuitMessage(0);
 	return 0;
     }
@@ -724,22 +741,26 @@ LoadUserPreferences(void)
     GetObject(GetStockObject(SYSTEM_FIXED_FONT),sizeof(LOGFONT),(PSTR)&logfont);
     fgColor = GetSysColor(COLOR_WINDOWTEXT);
     bkgColor = GetSysColor(COLOR_WINDOW);
+    winPos.left = -1;
+    toolbarVisible = TRUE;
 
     if (RegCreateKeyEx(HKEY_CURRENT_USER, USER_KEY, 0, 0,
 		       REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL,
 		       &key, &res) != ERROR_SUCCESS)
         return;
-    if (res == REG_CREATED_NEW_KEY) {
-	has_key = TRUE;
-	SaveUserPreferences();
-    } else {
-        size = sizeof(logfont);
-        res = RegQueryValueEx(key,"Font",NULL,&type,(LPBYTE)&logfont,&size);
-        size = sizeof(fgColor);
-        res = RegQueryValueEx(key,"FgColor",NULL,&type,(LPBYTE)&fgColor,&size);
-        size = sizeof(bkgColor);
-        res = RegQueryValueEx(key,"BkColor",NULL,&type,(LPBYTE)&bkgColor,&size);
-    }
+    has_key = TRUE;
+    if (res == REG_CREATED_NEW_KEY)
+	return;
+    size = sizeof(logfont);
+    res = RegQueryValueEx(key,"Font",NULL,&type,(LPBYTE)&logfont,&size);
+    size = sizeof(fgColor);
+    res = RegQueryValueEx(key,"FgColor",NULL,&type,(LPBYTE)&fgColor,&size);
+    size = sizeof(bkgColor);
+    res = RegQueryValueEx(key,"BkColor",NULL,&type,(LPBYTE)&bkgColor,&size);
+    size = sizeof(winPos);
+    res = RegQueryValueEx(key,"Pos",NULL,&type,(LPBYTE)&winPos,&size);
+    size = sizeof(toolbarVisible);
+    res = RegQueryValueEx(key,"Toolbar",NULL,&type,(LPBYTE)&toolbarVisible,&size);
 }
 
 static void
@@ -749,6 +770,10 @@ SaveUserPreferences(void)
         RegSetValueEx(key,"Font",0,REG_BINARY,(CONST BYTE *)&logfont,sizeof(LOGFONT));
         RegSetValueEx(key,"FgColor",0,REG_DWORD,(CONST BYTE *)&fgColor,sizeof(fgColor));
         RegSetValueEx(key,"BkColor",0,REG_DWORD,(CONST BYTE *)&bkgColor,sizeof(bkgColor));
+        RegSetValueEx(key,"Toolbar",0,REG_DWORD,(CONST BYTE *)&toolbarVisible,sizeof(toolbarVisible));
+
+	GetWindowRect(hFrameWnd,&winPos);
+	RegSetValueEx(key,"Pos",0,REG_BINARY,(CONST BYTE *)&winPos,sizeof(winPos));
     }
 }
 
@@ -1513,7 +1538,8 @@ InitToolBar(HWND hwndParent)
 		(WPARAM) &tbbitmap); 
     SendMessage(hwndTB,TB_ADDBUTTONS, (WPARAM) 32,
 		(LPARAM) (LPTBBUTTON) tbb); 
-    ShowWindow(hwndTB, SW_SHOW); 
+    if (toolbarVisible)
+	ShowWindow(hwndTB, SW_SHOW); 
 
     /* Create combobox window */
     SendMessage(hwndTB,TB_GETITEMRECT,0,(LPARAM)&r);

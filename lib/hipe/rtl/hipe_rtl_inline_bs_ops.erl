@@ -7,9 +7,9 @@
 %%  History  :	*2001-06-14 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: mikpe $
-%%              $Date: 2004/06/17 21:35:17 $
-%%              $Revision: 1.50 $
+%%              $Author: pergu $
+%%              $Date: 2004/11/29 14:37:12 $
+%%              $Revision: 1.52 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -51,9 +51,6 @@ gen_rtl(BsOP, Args, Dst, TrueLblName, FalseLblName, ConstTab) ->
     _ -> 
       Code = 
 	case BsOP of
-	  {bs_init, fail} ->
-	    [hipe_rtl:mk_goto(FalseLblName)];
-	  
 	  bs_bits_to_bytes ->
 	    [Src]=Args,
 	    [Dst0]=Dst,
@@ -95,18 +92,21 @@ gen_rtl(BsOP, Args, Dst, TrueLblName, FalseLblName, ConstTab) ->
 	       hipe_tagscheme:untag_fixnum(Tmp2, Dst0),
 	       hipe_rtl:mk_branch(Tmp1, eq, Tmp2, TrueLblName, FalseLblName)];
 
+	  {bs_init, fail} ->
+	    [hipe_rtl:mk_goto(FalseLblName)];
+	  
 	  {bs_init, {Const, Units}} ->
 	    init(Dst, Const, Units, Args, FalseLblName, TrueLblName);
 	  
-	  {bs_init2, Size, Words, _Flags} -> 
+	  {bs_init2, Size, _Flags} -> 
 	    [] = Args,
 	    [Dst0, Base, Offset] = Dst,
-	    const_init2(Size, Dst0, Base, Offset, Words, TrueLblName, FalseLblName);
+	    const_init2(Size, Dst0, Base, Offset, TrueLblName, FalseLblName);
 	  
-	  {bs_init2, Words, _Flags} -> 
+	  {bs_init2, _Flags} -> 
 	    [Size] = Args,
 	    [Dst0, Base, Offset] = Dst,
-	    var_init2(Size, Dst0, Base, Offset, Words, TrueLblName, FalseLblName);
+	    var_init2(Size, Dst0, Base, Offset, TrueLblName, FalseLblName);
 
 	  {bs_create_space, Size, Shifts} ->
 	    create_space(Size, Shifts, Args, TrueLblName);
@@ -559,19 +559,19 @@ put_string(NewOffset, ConstTab, String, SizeInBytes, Base, Offset, TLName,
        NewTab}
   end.
 							  
-const_init2(Size, Dst, Base, Offset, Words, TrueLblName, _FalseLblName) ->
+const_init2(Size, Dst, Base, Offset, TrueLblName, _FalseLblName) ->
   Log2WordSize=hipe_rtl_arch:log2_word_size(),
   WordSize=hipe_rtl_arch:word_size(),
   NextLbl = hipe_rtl:mk_new_label(),
   case Size =< ?MAX_HEAP_BIN_SIZE of
     true ->
-      [hipe_rtl:mk_gctest(((Size + 3*WordSize-1) bsr Log2WordSize)+Words),
+      [hipe_rtl:mk_gctest(((Size + 3*WordSize-1) bsr Log2WordSize)),
        hipe_tagscheme:create_heap_binary(Base, Size, Dst),
        hipe_rtl:mk_move(Offset, hipe_rtl:mk_imm(0)),
        hipe_rtl:mk_goto(TrueLblName)];
     false ->
       ByteSize = hipe_rtl:mk_new_reg(),
-      [hipe_rtl:mk_gctest(?PROC_BIN_WORDSIZE+Words),
+      [hipe_rtl:mk_gctest(?PROC_BIN_WORDSIZE),
        hipe_rtl:mk_move(Offset, hipe_rtl:mk_imm(0)),
        hipe_rtl:mk_move(ByteSize, hipe_rtl:mk_imm(Size)),
        hipe_rtl:mk_call([Base], bs_allocate, [ByteSize],
@@ -581,7 +581,7 @@ const_init2(Size, Dst, Base, Offset, Words, TrueLblName, _FalseLblName) ->
        hipe_rtl:mk_goto(TrueLblName)]
   end.
 
-var_init2(Size, Dst, Base, Offset, Words, TrueLblName, _FalseLblName) ->
+var_init2(Size, Dst, Base, Offset, TrueLblName, _FalseLblName) ->
   Log2WordSize=hipe_rtl_arch:log2_word_size(),
   WordSize=hipe_rtl_arch:word_size(),
   HeapLbl = hipe_rtl:mk_new_label(),
@@ -592,17 +592,17 @@ var_init2(Size, Dst, Base, Offset, Words, TrueLblName, _FalseLblName) ->
   [hipe_tagscheme:untag_fixnum(USize, Size),
    hipe_rtl:mk_move(Offset, hipe_rtl:mk_imm(0)),
    hipe_rtl:mk_branch(USize, le, hipe_rtl:mk_imm(?MAX_HEAP_BIN_SIZE), 
-		      hipe_rtl:label_name(HeapLbl), hipe_rtl:label_name(REFCLbl)),
+		      hipe_rtl:label_name(HeapLbl), 
+		      hipe_rtl:label_name(REFCLbl)),
    HeapLbl,
    hipe_rtl:mk_alu(Tmp, USize, add, hipe_rtl:mk_imm(3*WordSize-1)),
    hipe_rtl:mk_alu(Tmp, Tmp, srl, hipe_rtl:mk_imm(Log2WordSize)),
-   hipe_rtl:mk_alu(Tmp, Tmp, add, hipe_rtl:mk_imm(Words)),
    hipe_rtl:mk_gctest(Tmp),
    hipe_tagscheme:untag_fixnum(USize, Size),
    hipe_tagscheme:create_heap_binary(Base, USize, Dst),
    hipe_rtl:mk_goto(TrueLblName),
    REFCLbl,
-   hipe_rtl:mk_gctest(?PROC_BIN_WORDSIZE+Words),
+   hipe_rtl:mk_gctest(?PROC_BIN_WORDSIZE),
    hipe_tagscheme:untag_fixnum(USize, Size),
    hipe_rtl:mk_call([Base], bs_allocate, [USize],
 		    hipe_rtl:label_name(NextLbl),[],not_remote),
@@ -711,11 +711,11 @@ put_float(NewOffset, Src, Base, Offset, 64, CCode, Aligned, LittleEndian,
 			  ConstInfo, TrueLblName) ->
   [CLbl] = create_lbls(1),
   case {Aligned, LittleEndian} of
-    {true, true} ->
+    {true, false} ->
       copy_float_big(Base, Offset, NewOffset, Src,  hipe_rtl:label_name(CLbl),
 		     TrueLblName, ConstInfo) ++
 	[CLbl|CCode];
-    {true, false} ->
+    {true, true} ->
       copy_float_little(Base, Offset, NewOffset, Src, hipe_rtl:label_name(CLbl),  
 			TrueLblName, ConstInfo) ++
 	[CLbl|CCode];

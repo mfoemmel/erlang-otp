@@ -46,10 +46,6 @@ Stack Descriptors
 -----------------
 sdesc_fsize() is the frame size excluding the return address word.
 
-Exceptions
-----------
-The exception handler receives the exception value in r3.
-
 Standard Linux PowerPC Calling Conventions
 ==========================================
 
@@ -61,7 +57,7 @@ r0		calleR-save	volatile
 r1		calleE-save	stack pointer, 16-byte aligned, must point
 				to valid frame with link to previous frame
 r2		reserved	thread register
-				(TOC in AIX, GOT in 64-bit)
+				(TOC in AIX, GOT in 64-bit, caller-save in OSX)
 r3-r4		calleR-save	volatile, parameters, return values
 r5-r10		calleR-save	volatile, parameters
 r11		calleR-save	volatile,
@@ -70,7 +66,8 @@ r11		calleR-save	volatile,
 r12		calleR-save	volatile,
 				may be modified during function linkage
 r13		reserved	small data area pointer
-				(callee-save in AIX, thread reg in 64-bit)
+				(callee-save in AIX, thread reg in 64-bit,
+				callee-save in OSX)
 r14-r30		calleE-save	local variables
 r31		calleE-save	local variable or "environment pointer"
 f0		calleR-save	volatile

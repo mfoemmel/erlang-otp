@@ -41,6 +41,7 @@ MODULES = hipe_bb hipe_dominators hipe_gen_cfg
 
 
 HRL_FILES=
+INC_FILES= cfg.inc ebb.inc liveness.inc
 ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
@@ -86,6 +87,8 @@ $(DOCS)/%.html:%.erl
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
+	$(INSTALL_DIR) $(RELSYSDIR)/flow
+	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(INC_FILES) $(RELSYSDIR)/flow
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 

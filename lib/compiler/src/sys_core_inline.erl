@@ -120,21 +120,16 @@ inline(Fs0, St0) ->
 				  false -> {Fst,Ifs}
 			      end
 		      end, [], Fs1),
-    Is1 = lists:map(fun (#ifun{body=B}=If) ->
-			    If#ifun{body=core_lib:map(match_fail_fun(), B)}
-		    end, Is0),
-    Is2 = lists:map(fun (If) -> inline_inline(If, Is1) end, Is1),
+    Is1 = map(fun (#ifun{body=B}=If) ->
+		      If#ifun{body=core_lib:map(match_fail_fun(), B)}
+	      end, Is0),
+    Is2 = map(fun (If) -> inline_inline(If, Is1) end, Is1),
     %% We would like to remove inlined, non-exported functions here,
     %% but this can be difficult as they may be recursive.
     %% Use fixed inline functions on all functions.
-    Fs3 = lists:map(fun (F) -> inline_func(F, Is2) end, Fs2),
+    Fs = map(fun (F) -> inline_func(F, Is2) end, Fs2),
     %% Regenerate module body.
-    map(fun (#fstat{def=Def,modified=M}) ->
-		case M of
-		    true -> sys_core_fold:function(Def);
-		    false -> Def
-		end
-	end, Fs3).
+    [Def || #fstat{def=Def} <- Fs].
 
 %% is_inlineable(Fstat, Thresh, [Inline]) -> bool().
 
@@ -206,8 +201,14 @@ kill_id_anns(Body) ->
     core_lib:map(fun(#c_fun{anno=A0}=CFun) ->
 			 A = kill_id_anns_1(A0),
 			 CFun#c_fun{anno=A};
-		    (Expr) -> Expr
-		 end, Body).
+		    (Expr) when is_list(Expr) ->
+			 Expr;
+		    (Expr) ->
+			 %% Mark everything as compiler generated to suppress
+			 %% bogus warnings.
+			 A = [compiler_generated|core_lib:get_anno(Expr)],
+			 core_lib:set_anno(Expr, A)
+			 end, Body).
 
 kill_id_anns_1([{'id',_}|As]) ->
     kill_id_anns_1(As);

@@ -8,8 +8,10 @@ ra(Defun0, Options) ->
   %% hipe_ppc_pp:pp(Defun0),
   {Defun1, Coloring_fp, SpillIndex}
     = case proplists:get_bool(inline_fp, Options) of
-%%%	true ->
-%%%	  hipe_ppc_ra_fp_ls:ra(Defun0, Options);
+	true ->
+	  hipe_regalloc_loop:ra_fp(Defun0, Options,
+				   hipe_coalescing_regalloc,
+				   hipe_ppc_specific_fp);
 	false ->
 	  {Defun0,[],0}
       end,

@@ -1,5 +1,6 @@
 # $Id$
 # PowerPC-specific atoms
 
+atom fconv_constant
 atom inc_stack_0
 atom powerpc

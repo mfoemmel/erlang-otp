@@ -154,10 +154,6 @@ translate_instruction(I, Map, ConstTab) ->
       {RegArgs, Moves} = move_vars_to_retregs(Regs),
       RetIs = [hipe_sparc:pseudo_return_create(RegArgs)],
       {Moves ++ RetIs, Map1, ConstTab};
-    begin_handler ->
-      {Vars, Map1} = rvs2srs(hipe_rtl:begin_handler_varlist(I), Map),
-      {_Regs, Moves} = move_rets_to_vars(Vars),
-      {Moves, Map1, ConstTab};
     comment ->
       Ins = [hipe_sparc:comment_create(hipe_rtl:comment_text(I))],
       {Ins, Map, ConstTab};

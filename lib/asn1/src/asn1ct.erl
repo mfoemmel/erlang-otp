@@ -26,7 +26,8 @@
 -export([encode/2, encode/3, decode/3]).
 -export([test/1, test/2, test/3, value/2]).
 %% Application internal exports
--export([compile_asn/3,compile_asn1/3,compile_py/3,compile/3,value/1,vsn/0,
+-export([compile_asn/3,compile_asn1/3,compile_py/3,compile/3,compile_inline/4,
+	 value/1,vsn/0,
 	 create_ets_table/2,get_name_of_def/1,get_pos_of_def/1]).
 -export([read_config_data/1,get_gen_state_field/1,get_gen_state/0,
 	 partial_inc_dec_toptype/1,save_gen_state/1,update_gen_state/2,
@@ -86,11 +87,18 @@ compile(File,Options) when list(Options) ->
 	end,
     case (catch input_file_type(File)) of
 	{single_file,PrefixedFile} ->
-	    (catch compile1(PrefixedFile,Options1));
+ 	    (catch compile1(PrefixedFile,Options1));
 	{multiple_files_file,SetBase,FileName} ->
 	    FileList = get_file_list(FileName),
-	    (catch compile_set(SetBase,filename:dirname(FileName),
-			       FileList,Options1));
+	    case [X||{inline,X}<-Options1] of
+		[] ->
+		    (catch compile_set(SetBase,filename:dirname(FileName),
+				       FileList,Options1));
+		[OutputName] -> 
+		    NewFileList=
+			[filename:rootname(filename:basename(X))||X<-FileList],
+		    (catch compile_inline(OutputName,filename:dirname(FileName),NewFileList,Options1))
+	    end;
 	Err = {input_file_error,_Reason} ->
 	    {error,Err}
     end.
@@ -114,9 +122,46 @@ compile1(File,Options) when list(Options) ->
     delete_tables([asn1_functab]),
     compile_erl(Continue4,OutFile,Options).
 
+			  
 %%****************************************************************************%%
 %% functions dealing with compiling of several input files to one output file %%
 %%****************************************************************************%%
+
+%%%
+%% compile_inline/3
+%% compiles a number of modules, merges the resulting erlang modules with
+%% the appropriate run-time modules so the resulting module contains all
+%% run-time asn1 functionality. Then compiles the resulting file to beam code.
+%% The merging is done by the igor module. If this function is used in older
+%% versions than R10B the igor module, part of user contribution syntax_tools,
+%% must be provided. It is possible to pass options for the ASN1 compiler
+%% Types:
+%%     Name -> atom()
+%%     Modules -> [filename()]
+%%     Options -> [term()]
+%%     filename() -> file:filename()
+compile_inline(Name,DirName,Modules,Options) ->
+    Options1 =
+	case {lists:member(optimize,Options),lists:member(ber_bin,Options)} of
+	    {true,true} -> 
+		[ber_bin_v2|Options--[ber_bin]];
+	    _ -> Options
+	end,
+    Fun = fun(M)-> compile(filename:join([DirName,M]),Options1) end,
+    lists:foreach(Fun,Modules),
+    RTmodule = get_runtime_mod(Options1),
+    IgorOptions = remove_asn_flags(Options1),
+    case igor:merge(Name,Modules++RTmodule,[{preprocess,true},{stubs,false}]++IgorOptions) of
+	{'EXIT',{undef,Reason}} -> %% module igor first in R10B
+	    io:format("Module igor in syntax_tools must be available:~n~p~n",
+		      [Reason]);
+	_ ->
+	    io:format("compiling output module: ~p~n",[Name]),
+	    erl_compile(Name,Options1)
+    end.
+
+%% compile_set/4 merges and compiles a number of asn1 modules
+%% specified in a .set.asn file to one .erl file.
 compile_set(SetBase,DirName,Files,Options) when list(hd(Files)),list(Options) ->
     %% case when there are several input files in a list
     io:format("Erlang ASN.1 version ~p compiling ~p ~n",[?vsn,Files]),    
@@ -954,7 +999,7 @@ get_file_list1(Stream,Acc) ->
 		case (catch input_file_type(lists:delete($\n,FileName))) of
 		    {empty_name,[]} -> [];
 		    {single_file,Name} -> [Name];
-		    {multiple_files_file,Name} ->
+		    {multiple_files_file,_,Name} ->
 			get_file_list(Name);
 		    Err = {input_file_error,_Reason} ->
 			throw(Err)
@@ -973,6 +1018,22 @@ get_rule(Options) ->
 	[] ->
 	    ber
     end.
+
+get_runtime_mod(Options) ->
+    RtMod1=
+	case get_rule(Options) of
+	    per -> ["asn1rt_per_v1.erl"];
+	    ber -> ["asn1rt_ber_bin.erl"];
+	    per_bin ->
+		case lists:member(optimize,Options) of
+		    true -> ["asn1rt_per_bin_rt2ct.erl"];
+		    _ -> ["asn1rt_per_bin.erl"]
+		end;
+	    ber_bin -> ["asn1rt_ber_bin.erl"];
+	    ber_bin_v2 -> ["asn1rt_ber_bin_v2.erl"]
+	end,
+    RtMod1++["asn1rt_check.erl","asn1rt_driver_handler.erl"].
+    
 
 erl_compile(OutFile,Options) ->
 %    io:format("Options:~n~p~n",[Options]),
@@ -995,7 +1056,8 @@ remove_asn_flags(Options) ->
 	  X /= optimize,
 	  X /= compact_bit_string,
 	  X /= debug,
-	  X /= keyed_list].
+	  X /= keyed_list,
+	  X /= asn1config].
 	  
 debug_on(Options) ->
     case lists:member(debug,Options) of
@@ -1437,7 +1499,7 @@ partial_decode_prepare(ber_bin_v2,M,TsAndVs,Options) when tuple(TsAndVs) ->
 %	      [CommandList,SelectedDecode]),
     CommandList2 = 
 	create_partial_inc_decode_gen_info(M#module.name,ExclusiveDecode),
-%%    io:format("partial_incomplete_decode = ~p~n",[CommandList2]),
+%    io:format("partial_incomplete_decode = ~p~n",[CommandList2]),
     Part_inc_tlv_tags = tag_format(ber_bin_v2,Options,CommandList2),
 %    io:format("partial_incomplete_decode: tlv_tags = ~p~n",[Part_inc_tlv_tags]),
     save_config(partial_incomplete_decode,Part_inc_tlv_tags),
@@ -2415,18 +2477,6 @@ maybe_saved_sindex(Name,Pattern) ->
 		_ -> false
 	    end
     end.
-% 	    Pred =
-% 		fun({N,_,_}) when N==Name ->
-% 			true;
-% 		   (_) -> false
-% 		end,
-% 	    L2 = lists:filter(Pred,L),
-% 	    case lists:keysearch(Pattern,3,L2) of
-% 		false ->
-% 		    false;
-% 		{value,{_,SI,_}} -> SI
-% 	    end
-%     end.
     
 next_sindex() ->
     SI = get_gen_state_field(suffix_index),

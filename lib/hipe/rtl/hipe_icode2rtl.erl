@@ -127,7 +127,7 @@ translate_instruction(I, VarMap, ConstTab, Options) ->
     switch_tuple_arity -> 
       gen_switch_tuple(I, VarMap, ConstTab, Options);
     type -> 
-      gen_type(I, VarMap, ConstTab);
+      gen_type(I, VarMap, ConstTab, Options);
     X ->
       exit({?MODULE,{"unknown Icode instruction",X}})
   end.
@@ -380,7 +380,7 @@ gen_switch_tuple(I, Map, ConstTab, Options) ->
 %% TYPE
 %%
 
-gen_type(I, VarMap, ConstTab)->
+gen_type(I, VarMap, ConstTab, Options)->
   {Vars, Map0, NewConstTab, Code1} = 
     args_to_vars(hipe_icode:type_args(I), VarMap, ConstTab),
   {TrueLbl, Map1} =
@@ -391,7 +391,7 @@ gen_type(I, VarMap, ConstTab)->
 					hipe_rtl:label_name(TrueLbl),
 					hipe_rtl:label_name(FalseLbl),
 					hipe_icode:type_pred(I),
-					NewConstTab),
+					NewConstTab, Options),
   {Code1 ++ Code2, Map2, NewConstTab1}.
 
 %% --------------------------------------------------------------------
@@ -400,7 +400,7 @@ gen_type(I, VarMap, ConstTab)->
 %% Generate code for a type test. If X is not of type Type then goto Label.
 %%
 
-gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
+gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab, Options) ->
   case Type of
     nil ->
       {hipe_tagscheme:test_nil(X, TrueLbl, FalseLbl, Pred), ConstTab};
@@ -446,6 +446,25 @@ gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
       {hipe_tagscheme:test_tuple(X, TrueLbl, FalseLbl, Pred), ConstTab};
     {tuple, N} ->
       {hipe_tagscheme:test_tuple_N(X, N, TrueLbl, FalseLbl, Pred), ConstTab};
+    {record, A, S} ->
+      TupleLbl = hipe_rtl:mk_new_label(),
+      TupleLblName = hipe_rtl:label_name(TupleLbl),
+      AtomLab = hipe_rtl:mk_new_label(),
+      AtomLabName = hipe_rtl:label_name(AtomLab),
+      TagVar = hipe_rtl:mk_new_var(),
+      TmpAtomVar = hipe_rtl:mk_new_var(),
+      {UntagCode, ConstTab1} = hipe_rtl_primops:gen_primop(
+				 {{unsafe_element,1},[TagVar],[X],
+				  AtomLabName,[]},
+				 false, ConstTab, Options),
+      Code = 
+	hipe_tagscheme:test_tuple_N(X, S, TupleLblName, FalseLbl, Pred) ++	
+	[TupleLbl|UntagCode] ++
+	[AtomLab,
+	 hipe_rtl:mk_load_atom(TmpAtomVar, A),
+	 hipe_rtl:mk_branch(TagVar, eq, TmpAtomVar, TrueLbl, FalseLbl, Pred)],
+      {Code,
+       ConstTab1};
     atom ->
       {hipe_tagscheme:test_atom(X, TrueLbl, FalseLbl, Pred), ConstTab};
     {atom, Atom} ->
@@ -478,7 +497,7 @@ gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
     Other ->
       exit({?MODULE,{"unknown type",Other}})
   end;
-gen_type_test(X, Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
+gen_type_test(X, Type, TrueLbl, FalseLbl, Pred, ConstTab, _Options) ->
   case Type of
     fixnum -> 
       {hipe_tagscheme:test_fixnums(X, TrueLbl, FalseLbl, Pred), ConstTab};

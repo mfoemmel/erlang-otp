@@ -228,7 +228,7 @@ match_typegroup(T, V, Vs, Gs, Else, Env) ->
     typetest_clause(T, V, Body, Env).
 
 match_congroup({?binary_id, Segs}, Vs, Cs, _Else, Env) -> 
-    Ref = make_ref(),
+    Ref = get_unique(),
     Guard = cerl:c_primop(cerl:c_atom(set_label), [cerl:c_int(Ref)]),
     NewElse = cerl:c_primop(cerl:c_atom(goto_label), [cerl:c_int(Ref)]),
     Body = match(Vs, Cs, NewElse, Env),
@@ -582,6 +582,16 @@ is_simple(E) ->
 	_ -> false
     end.
 
+
+get_unique() ->
+  case get(unique_label) of
+    undefined ->
+      put(unique_label, 1),
+      0;
+    N ->
+      put(unique_label, N+1),
+      N
+  end.
 
 %% ---------------------------------------------------------------------
 %% Abstract datatype: environment()

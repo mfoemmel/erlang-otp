@@ -228,6 +228,7 @@ static const struct literal {
     { "P_ARG14", offsetof(struct process, def_arg_reg[14]) },
     { "P_ARG15", offsetof(struct process, def_arg_reg[15]) },
 #endif
+#ifdef HIPE
     { "P_NSP", offsetof(struct process, hipe.nsp) },
     { "P_NCALLEE", offsetof(struct process, hipe.ncallee) },
     { "P_CLOSURE", offsetof(struct process, hipe.closure) },
@@ -239,11 +240,12 @@ static const struct literal {
     { "P_NSP_LIMIT", offsetof(struct process, hipe.nstack) },
     { "P_CSP", offsetof(struct process, hipe.ncsp) },
     { "P_NARITY", offsetof(struct process, hipe.narity) },
-#elif defined(__powerpc__)
+#elif defined(__powerpc__) || defined(__ppc__)
     { "P_NSP_LIMIT", offsetof(struct process, hipe.nstack) },
     { "P_NRA", offsetof(struct process, hipe.nra) },
     { "P_NARITY", offsetof(struct process, hipe.narity) },
 #endif
+#endif /* HIPE */
 
     /* process flags bits */
     {  "F_TIMO", F_TIMO },
@@ -256,7 +258,9 @@ static const struct literal {
     { "THE_NON_VALUE", THE_NON_VALUE },
 
     /* funs */
+#ifdef HIPE
     { "EFE_NATIVE_ADDRESS", offsetof(struct erl_fun_entry, native_address) },
+#endif
     { "EFE_REFC", offsetof(struct erl_fun_entry, refc) },
     { "EFT_THING", offsetof(struct erl_fun_thing, thing_word) },
 
@@ -322,8 +326,10 @@ static const struct literal {
 #endif
 
     /* SPARC */
+#ifdef HIPE
     { "HIPE_SPARC_LEAF_WORDS", HIPE_SPARC_LEAF_WORDS },
     { "SPARC_ARGS_IN_REGS", HIPE_SPARC_ARGS_IN_REGS},
+#endif
     { "SPARC_REG_P", P_NR},
     { "SPARC_REG_NSP", NSP_NR},
     { "SPARC_REG_NSP_LIMIT", NSP_LIMIT_NR},
@@ -402,7 +408,9 @@ static const struct rts_param {
        presence or absence of struct erl_fun_thing's "next" field. */
     { 5, "EFT_CREATOR", 1, offsetof(struct erl_fun_thing, creator) },
     { 6, "EFT_FE", 1, offsetof(struct erl_fun_thing, fe) },
+#ifdef HIPE
     { 7, "EFT_NATIVE_ADDRESS", 1, offsetof(struct erl_fun_thing, native_address) },
+#endif
     { 8, "EFT_ARITY", 1, offsetof(struct erl_fun_thing, arity) },
     { 9, "EFT_NUM_FREE", 1, offsetof(struct erl_fun_thing, num_free) },
     { 10, "EFT_ENV", 1, offsetof(struct erl_fun_thing, env[0]) },

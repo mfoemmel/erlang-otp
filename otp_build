@@ -426,7 +426,14 @@ check_erltop
 
 cd $ERL_TOP
 
-# Target first guess, wont necessarily hold, may be changed for 
+# Unset ERL_FLAGS and ERL_<Release>_FLAGS to prevent, for instance,
+# a value of "-hybrid" to run the hybrid emulator during bootstrap.
+sys_vsn=`awk '/SYSTEM_VSN = / {print $3}' < erts/vsn.mk`
+sys_erl_flags="ERL_${sys_vsn}_FLAGS"
+unset ERL_FLAGS
+unset ${sys_erl_flags}
+
+# Target first guess, won't necessarily hold, may be changed for 
 # certain parameters.
 if [ X"$TARGET" = X"" ]; then
 	TARGET=`$ERL_TOP/erts/autoconf/config.guess`

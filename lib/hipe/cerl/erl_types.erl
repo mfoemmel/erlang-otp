@@ -1529,7 +1529,7 @@ t_nonempty_string() -> ?nonempty_proper_list(t_char()).
 
 -define(c_fun(D, R), #c{c = 'fun', n = 2, as = [D, R]}).
 -define('fun'(D, R), ?u_fun(?none, ?c_fun(D, R))).
--define(is_fun(D, R), ?u_fun(_, ?c_fun(D, R))).
+-define(is_fun(D, R), ?u_fun(?none, ?c_fun(D, R))).
 -define(fun_domain_args(N, Ts), #c{c = args, n = N, as = Ts}).
 
 
@@ -2834,7 +2834,7 @@ t_to_string_1(?is_float) ->
 t_to_string_1(?is_number(_, _)) ->
     "number()";
 t_to_string_1(?is_atom(?singleton(V), _)) ->
-    lists:flatten(io_lib:fwrite("'~w'", [V]));
+    io_lib:write_string(atom_to_list(V), $');
 t_to_string_1(?is_bool) ->
     "bool()";
 t_to_string_1(?is_atom(?value_set(S), _)) ->

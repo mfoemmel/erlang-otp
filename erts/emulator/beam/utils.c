@@ -272,8 +272,8 @@ void erts_arith_shrink(Process* p, Eterm* hp)
      * happen to often.
      */
     for (hf = MBUF(p); hf != 0; hf = hf->next) {
-	if (hp - hf->mem < hf->size) {
-	    if (ARITH_HEAP(p) - hf->mem < hf->size) {
+	if (hp - hf->mem < (unsigned long)hf->size) {
+	    if (ARITH_HEAP(p) - hf->mem < (unsigned long)hf->size) {
 		/*
 		 * Regain lost space from the current arith heap
 		 * and make sure that there are no garbage in a heap
@@ -769,8 +769,10 @@ make_hash(Eterm term, Uint32 hash)
 	    Uint y2 = y1 < 0 ? -(Uint)y1 : y1;
 
 	    UINT32_HASH_STEP(y2, FUNNY_NUMBER2);
-	    if (sizeof(Uint) > sizeof(Uint32))
-		UINT32_HASH_STEP((y2 >> 16) >> 16, FUNNY_NUMBER2);
+#ifdef ARCH_64
+	    if (y2 >> 32)
+		UINT32_HASH_STEP(y2 >> 32, FUNNY_NUMBER2);
+#endif
 	    return hash * (y1 < 0 ? FUNNY_NUMBER4 : FUNNY_NUMBER3);
 	}
 
@@ -994,6 +996,7 @@ make_hash2(Eterm term)
             Sint32 y = (Sint32) (Expr);           \
 	    if (y < 0) {			  \
 		UINT32_HASH(-y, AConst);          \
+                /* Negative numbers are unnecessarily mixed twice. */ \
 	    } 					  \
 	    UINT32_HASH(y, AConst);          	  \
 	} while(0)
@@ -1242,7 +1245,43 @@ make_broken_hash(Eterm term, Uint hash)
 	return hash*FUNNY_NUMBER1 + 
 	    (atom_tab(atom_val(term))->slot.bucket.hvalue);
     case SMALL_DEF:
+#ifdef ARCH_64
+    {
+	Sint y1 = signed_val(term);
+	Uint y2 = y1 < 0 ? -(Uint)y1 : y1;
+	Uint32 y3 = (Uint32) (y2 >> 32);
+	int arity = 1;
+
+#if defined(WORDS_BIGENDIAN)
+	if (!IS_SSMALL28(y1))
+	{   /* like a bignum */
+	    Uint32 y4 = (Uint32) y2;
+	    hash = hash*FUNNY_NUMBER2 + ((y4 << 16) | (y4 >> 16));
+	    if (y3) 
+	    {
+		hash = hash*FUNNY_NUMBER2 + ((y3 << 16) | (y3 >> 16));
+		arity++;
+	    }
+	    return hash * (y1 < 0 ? FUNNY_NUMBER3 : FUNNY_NUMBER2) + arity;
+	}
+	return hash*FUNNY_NUMBER2 + (((Uint) y1) & 0xfffffff);
+#else
+	if  (!IS_SSMALL28(y1))
+	{   /* like a bignum */
+	    hash = hash*FUNNY_NUMBER2 + ((Uint32) y2);
+	    if (y3)
+	    {
+		hash = hash*FUNNY_NUMBER2 + y3;
+		arity++;
+	    }
+	    return hash * (y1 < 0 ? FUNNY_NUMBER3 : FUNNY_NUMBER2) + arity;
+	}
+        return hash*FUNNY_NUMBER2 + (((Uint) y1) & 0xfffffff);
+#endif
+    }
+#else
 	return hash*FUNNY_NUMBER2 + unsigned_val(term);
+#endif
     case BINARY_DEF:
 	{
 	    byte* ptr;
@@ -1317,27 +1356,17 @@ make_broken_hash(Eterm term, Uint hash)
 #ifdef ARCH_64
 	    Uint i = 0;
 	    Uint n = BIG_SIZE(ptr);
-	    ptr++;
-	    arity = (n + 1) >> 1;
+	    arity = n;
 
-	    do {
+	    for (i = 0; i < n; i++)
+	    {
+		digit_t d = BIG_DIGIT(ptr, i);
 #if defined(WORDS_BIGENDIAN)
-		hash = hash*FUNNY_NUMBER2 + (Uint32) (((Uint) *ptr) >> 32);
-		i += 2;
-		if (i < n) {
-		    hash = hash*FUNNY_NUMBER2 + (Uint32) *ptr;
-		    i += 2;
-		}
+		hash = hash*FUNNY_NUMBER2 + ((d << 16) | (d >> 16));
 #else
-		hash = hash*FUNNY_NUMBER2 + (Uint32) *ptr;
-		i += 2;
-		if (i < n) {
-		    hash = hash*FUNNY_NUMBER2 + (Uint32) (((Uint) *ptr) >> 32);
-		    i += 2;
-		}
+		hash = hash*FUNNY_NUMBER2 + d;
 #endif
-		ptr++; 
-	    } while (i < n);
+	    }
 #else
 	    int i = arity;
 

@@ -16,12 +16,12 @@
 	 colored/1,
 	 add_spilled/2,
 	 add_coalesced/2,
-	 add_colored/2,
+	 add_colored/2
 	 %% remove/3,
 	 %% is_empty/2,
-	 member_precoloured/2,
-	 member_coalesced/2,
-	 member_colored/2
+	 %% member_precoloured/2,
+	 %% member_coalesced/2,
+	 %% member_colored/2
 	]).
 
 -record(node_sets, 
@@ -126,14 +126,14 @@ add_colored(Node, Node_sets) ->
 %%   false --  Otherwise
 %%%----------------------------------------------------------------------
 
-member_precoloured(Node, Node_sets) ->
-  (Node_sets#node_sets.target):is_precoloured(Node).
+%% member_precoloured(Node, Node_sets) ->
+%%   (Node_sets#node_sets.target):is_precoloured(Node).
 
-member_coalesced(Node, Node_sets) ->
-  ordsets:is_element(Node, coalesced(Node_sets)).
+%% member_coalesced(Node, Node_sets) ->
+%%   ordsets:is_element(Node, coalesced(Node_sets)).
 
-member_colored(Node, Node_sets) ->
-  ordsets:is_element(Node, colored(Node_sets)).
+%% member_colored(Node, Node_sets) ->
+%%   ordsets:is_element(Node, colored(Node_sets)).
 
 %%%----------------------------------------------------------------------
 %% Function:    remove

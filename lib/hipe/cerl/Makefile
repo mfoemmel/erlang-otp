@@ -42,7 +42,7 @@ MODULES = cerl_lib cerl_to_icode cerl_cconv cerl_hipeify cerl_pmatch \
 	erl_types erl_bif_types cerl_closurean cerl_typean \
 	cerl_hybrid_transform cerl_prettypr
 
-HRL_FILES=
+HRL_FILES= cerl_hipe_primops.hrl
 ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
@@ -89,6 +89,8 @@ $(DOCS)/%.html:%.erl
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
+	$(INSTALL_DIR) $(RELSYSDIR)/cerl
+	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(RELSYSDIR)/cerl
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 

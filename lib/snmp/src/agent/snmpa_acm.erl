@@ -263,11 +263,15 @@ check_mask(_, _, _) -> false.
 %%-----------------------------------------------------------------
 validate_all_mib_view([#varbind{oid = Oid, org_index = Index} | Varbinds],
 		      MibView) ->
+    ?vtrace("validate_all_mib_view -> entry with"
+	    "~n   Oid:    ~p"
+	    "~n   Index:  ~p", [Oid, Index]),
     case validate_mib_view(Oid, MibView) of
 	true -> validate_all_mib_view(Varbinds, MibView);
 	false -> {false, Index}
     end;
 validate_all_mib_view([], _MibView) ->
+    ?vtrace("validate_all_mib_view -> done", []),
     true.
 
 %%-----------------------------------------------------------------

@@ -628,12 +628,11 @@ fun_tq(Lf, {function,F,A}, Vs, St0) ->
     end;
 fun_tq(Lf, {clauses,Cs0}, Vs, St0) ->
     Uniq = erlang:hash(Cs0, (1 bsl 27)-1),
-    {Cs1,Hvss,Frees,St1} = fun_clauses(Cs0, Vs, St0),
+    {Cs1,_Hvss,Frees,St1} = fun_clauses(Cs0, Vs, St0),
     Ufrees = union(Frees),
-    Free = intersection(Ufrees, Vs),
     Index = St1#expand.fun_index,
     {Fname,St2} = new_fun_name(St1),
-    {{'fun',Lf,{clauses,Cs1},{Index,Uniq,Hvss,Free,Fname}},[],Ufrees,
+    {{'fun',Lf,{clauses,Cs1},{Index,Uniq,Fname}},[],Ufrees,
      St2#expand{fun_index=Index+1}}.
 
 fun_clauses([{clause,L,H0,G0,B0}|Cs0], Vs, St0) ->

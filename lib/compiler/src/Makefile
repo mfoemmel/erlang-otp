@@ -62,7 +62,7 @@ MODULES =  \
 	beam_dict \
 	beam_opcodes \
 	beam_disasm \
-	beam_pp \
+	beam_validator \
         erl_bifs \
 	cerl \
 	cerl_clauses \

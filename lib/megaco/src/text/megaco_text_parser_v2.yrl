@@ -471,9 +471,9 @@ actionRequest        -> 'CtxToken' 'EQUAL' contextID
 actionRequestItems   -> 'COMMA' actionRequestItem actionRequestItems  : ['$2' | '$3'] .
 actionRequestItems   -> '$empty' : [] .
 
-actionRequestItem    -> contextProperty : '$1'.
+actionRequestItem    -> contextProperty : '$1' .
 actionRequestItem    -> contextAudit    : '$1' .
-actionRequestItem    -> commandRequest  : '$1'.
+actionRequestItem    -> commandRequest  : '$1' .
 
 %% at-most-once
 contextProperty      -> topologyDescriptor  : {topology, '$1'}.
@@ -482,7 +482,7 @@ contextProperty      -> 'EmergencyToken'    : {emergency, true}.
 
 contextAudit         -> 'ContextAuditToken'
                         'LBRKT' contextAuditProperty contextAuditProperties 'RBRKT'
-                        : ['$3' | '$4'] .
+                        : {contextAudit, ['$3' | '$4']} .
 
 contextAuditProperties -> 'COMMA' contextAuditProperty contextAuditProperties  
                           : ['$2' | '$3'] .

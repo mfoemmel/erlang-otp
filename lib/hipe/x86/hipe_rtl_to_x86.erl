@@ -151,11 +151,6 @@ conv_insn(I, Map, Data) ->
 	    {Src, Map1} = conv_src(hipe_rtl:move_src(I), Map0),
 	    I2 = [hipe_x86:mk_move(Src, Dst)],
 	    {I2, Map1, Data};
-	begin_handler ->	% for SPARC this is eliminated by hipe_frame
-	    [Dst0] = hipe_rtl:begin_handler_varlist(I),
-	    {Dst1,Map1} = conv_dst(Dst0, Map),
-	    Src = mk_eax(),
-	    {[hipe_x86:mk_move(Src, Dst1)], Map1, Data};
 	return -> % frame will fill in npop later, hence the "mk_ret(-1)"
 	    {Arg, Map0} = conv_src_list(hipe_rtl:return_varlist(I), Map),
 	    I2 = mk_mult_move(Arg) ++ [hipe_x86:mk_ret(-1)], 
@@ -642,10 +637,12 @@ clone_dst(Dst) ->
 new_untagged_temp() ->
     hipe_x86:mk_new_temp('untagged').
 
+-ifdef(notdef).
 %%% Cons up a tagged '%eax' Temp.
 
 mk_eax() ->
     hipe_x86:mk_temp(hipe_x86_registers:eax(), 'tagged').
+-endif.
 
 %%% Map from RTL var/reg operands to x86 temps.
 

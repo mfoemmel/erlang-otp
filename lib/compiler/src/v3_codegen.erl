@@ -175,6 +175,8 @@ need_heap(Kes0, I) ->
 % 			     (Lke) -> Lke#l.ke end, Kes2)}]),
     Kes2.
 
+need_heap_1(#l{ke={set,_,{binary,_}},i=I}, H, F) ->
+    {need_heap_need(I, H, F),0,false};
 need_heap_1(#l{ke={set,_,Val}}, H, F) ->
     %% Just pass through adding to needed heap.
     {[],H + case Val of
@@ -250,33 +252,32 @@ match_cg({block,Es}, Le, _Fail, Bef, St) ->
 %%  case for when the fail value has been created elsewhere.
 
 match_fail_cg({function_clause,As}, Le, Vdb, Bef, St) ->
-    %% Must have the args in r0,r1,...
+    %% Must have the args in {x,0}, {x,1},...
     {Sis,Int} = cg_setup_call(As, Bef, Le#l.i, Vdb),
     {Sis ++ [{jump,{f,St#cg.finfo}}],
      Int#sr{reg=clear_regs(Int#sr.reg)},St};
 match_fail_cg({badmatch,Term}, Le, Vdb, Bef, St) ->
-    {R,Ms,Int0} = cg_reg_arg(Term, Bef),
-    Int1 = clear_dead(Int0, Le#l.i, Vdb),
-    {Sis,Int2} = adjust_stack(Int1, Le#l.i, Le#l.i+1, Vdb),
-    {Ms ++ Sis ++ [{badmatch,R}],
-     Int2#sr{reg=clear_regs(Int0#sr.reg)},St};
+    R = cg_reg_arg(Term, Bef),
+    Int0 = clear_dead(Bef, Le#l.i, Vdb),
+    {Sis,Int} = adjust_stack(Int0, Le#l.i, Le#l.i+1, Vdb),
+    {Sis ++ [{badmatch,R}],
+     Int#sr{reg=clear_regs(Int0#sr.reg)},St};
 match_fail_cg({case_clause,Reason}, Le, Vdb, Bef, St) ->
-    {R,Ms,Int0} = cg_reg_arg(Reason, Bef),
-    Int1 = clear_dead(Int0, Le#l.i, Vdb),
-    {Sis,Int2} = adjust_stack(Int1, Le#l.i, Le#l.i+1, Vdb),
-    {Ms ++ Sis ++ [{case_end,R}],
-     Int2#sr{reg=clear_regs(Int0#sr.reg)},St};
+    R = cg_reg_arg(Reason, Bef),
+    Int0 = clear_dead(Bef, Le#l.i, Vdb),
+    {Sis,Int} = adjust_stack(Int0, Le#l.i, Le#l.i+1, Vdb),
+    {Sis++[{case_end,R}],
+     Int#sr{reg=clear_regs(Bef#sr.reg)},St};
 match_fail_cg(if_clause, Le, Vdb, Bef, St) ->
     Int0 = clear_dead(Bef, Le#l.i, Vdb),
     {Sis,Int1} = adjust_stack(Int0, Le#l.i, Le#l.i+1, Vdb),
-    {Sis ++ [if_end],
-     Int1#sr{reg=clear_regs(Int1#sr.reg)}, St};
+    {Sis++[if_end],Int1#sr{reg=clear_regs(Int1#sr.reg)},St};
 match_fail_cg({try_clause,Reason}, Le, Vdb, Bef, St) ->
-    {R,Ms,Int0} = cg_reg_arg(Reason, Bef),
-    Int1 = clear_dead(Int0, Le#l.i, Vdb),
-    {Sis,Int2} = adjust_stack(Int1, Le#l.i, Le#l.i+1, Vdb),
-    {Ms ++ Sis ++ [{try_case_end,R}],
-     Int2#sr{reg=clear_regs(Int0#sr.reg)},St}.
+    R = cg_reg_arg(Reason, Bef),
+    Int0 = clear_dead(Bef, Le#l.i, Vdb),
+    {Sis,Int} = adjust_stack(Int0, Le#l.i, Le#l.i+1, Vdb),
+    {Sis ++ [{try_case_end,R}],
+     Int#sr{reg=clear_regs(Int0#sr.reg)},St}.
 
 
 %% block_cg([Kexpr], Le, Vdb, StackReg, St) -> {[Ainstr],StackReg,St}.
@@ -709,20 +710,20 @@ protected_cg(Ts, Rs, _Fail, I, Vdb, Bef, St0) ->
 %% test_cg(TestName, Args, Fail, I, Vdb, Bef, St) -> {[Ainstr],Aft,St}.
 %%  Generate test instruction.  Use explicit fail label here.
 
-test_cg(Test, As, Fail, I, Vdb, Bef, St0) ->
+test_cg(Test, As, Fail, I, Vdb, Bef, St) ->
     case test_type(Test, length(As)) of
     	{cond_op,Op} ->
-	    {Ars,Ms,Int0} = cg_reg_args(As, Bef),
-	    Int1 = clear_dead(Int0, I, Vdb),
-	    {Ms ++ [{test,Op,{f,Fail},Ars}],
-	     clear_dead(Int1, I, Vdb),
-	     St0};
+	    Ars = cg_reg_args(As, Bef),
+	    Int = clear_dead(Bef, I, Vdb),
+	    {[{test,Op,{f,Fail},Ars}],
+	     clear_dead(Int, I, Vdb),
+	     St};
 	{rev_cond_op,Op} ->
-	    {[S1,S2],Ms,Int0} = cg_reg_args(As, Bef),
-	    Int1 = clear_dead(Int0, I, Vdb),
-	    {Ms ++ [{test,Op,{f,Fail},[S2,S1]}],
-	     clear_dead(Int1, I, Vdb),
-	     St0}
+	    [S1,S2] = cg_reg_args(As, Bef),
+	    Int = clear_dead(Bef, I, Vdb),
+	    {[{test,Op,{f,Fail},[S2,S1]}],
+	     clear_dead(Int, I, Vdb),
+	     St}
     end.
 
 test_type(is_atom, 1)      -> {cond_op,is_atom};
@@ -908,10 +909,10 @@ trap_bif(_, _, _) -> false.
 %%      {[Ainstr],StackReg,State}.
 
 bif_cg(dsetelement, [Index0,Tuple0,New0], _Rs, Le, Vdb, Bef, St0) ->
-    {[New,Tuple,{integer,Index1}],Ms,Int} = cg_reg_args([New0,Tuple0,Index0], Bef),
+    [New,Tuple,{integer,Index1}] = cg_reg_args([New0,Tuple0,Index0], Bef),
     Index = Index1-1,
-    {Ms ++ [{set_tuple_element,New,Tuple,Index}],
-     clear_dead(Int, Le#l.i, Vdb), St0};
+    {[{set_tuple_element,New,Tuple,Index}],
+     clear_dead(Bef, Le#l.i, Vdb), St0};
 bif_cg({make_fun,Func,Arity,Index,Uniq}, As, Rs, Le, Vdb, Bef, St0) ->
     %% This behaves more like a function call.
     {Sis,Int} = cg_setup_call(As, Bef, Le#l.i, Vdb),
@@ -925,8 +926,8 @@ bif_cg({make_fun,Func,Arity,Index,Uniq}, As, Rs, Le, Vdb, Bef, St0) ->
      [MakeFun],
      clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb),
      St1};
-bif_cg(Bif, As, Rs, Le, Vdb, Bef, St0) ->
-    {Ars,Ms,Int0} = cg_reg_args(As, Bef),
+bif_cg(Bif, As, [{var,V}], Le, Vdb, Bef, St0) ->
+    Ars = cg_reg_args(As, Bef),
 
     %% If we are inside a catch, we must save everything that will
     %% be alive after the catch (because the BIF might fail and there
@@ -934,19 +935,18 @@ bif_cg(Bif, As, Rs, Le, Vdb, Bef, St0) ->
     %%   Currently, we are somewhat pessimistic in
     %% that we save any variable that will be live after this BIF call.
 
-    {Sis,Int1} =
+    {Sis,Int0} =
 	case St0#cg.in_catch of
 	    true -> adjust_stack(Bef, Le#l.i, Le#l.i+1, Vdb);
-	    false -> {[],Int0}
+	    false -> {[],Bef}
 	end,
 
-    Int2 = clear_dead(Int1, Le#l.i, Vdb),
-    Reg = load_vars(Rs, Int2#sr.reg),
-    Int3 = Int2#sr{reg=Reg},
-    [Dst] = map(fun ({var,V}) -> fetch_reg(V, Reg) end, Rs),
-    {Ms ++ Sis ++
-     [{bif,Bif,bif_fail(St0#cg.btype, St0#cg.bfail, length(Ars)),Ars,Dst}],
-     clear_dead(Int3, Le#l.i, Vdb), St0}.
+    Int1 = clear_dead(Int0, Le#l.i, Vdb),
+    Reg = put_reg(V, Int1#sr.reg),
+    Int = Int1#sr{reg=Reg},
+    Dst = fetch_reg(V, Reg),
+    {Sis ++ [{bif,Bif,bif_fail(St0#cg.btype, St0#cg.bfail, length(Ars)),Ars,Dst}],
+     clear_dead(Int, Le#l.i, Vdb), St0}.
 
 bif_fail(_, _, 0) -> nofail;
 bif_fail(exit, _, _) -> {f,0};
@@ -995,12 +995,12 @@ cg_recv_wait({integer,0}, Tes, _I, Bef, St0) ->
     {Tis,Int,St1} = cg_block(Tes#l.ke, Tes#l.i, Tes#l.vdb, Bef, St0),
     {[timeout|Tis],Int,St1};
 cg_recv_wait(Te, Tes, I, Bef, St0) ->
-    {Reg,Ris,Int0} = cg_reg_arg(Te, Bef),
+    Reg = cg_reg_arg(Te, Bef),
     %% Must have empty registers here!  Bug if anything in registers.
-    Int1 = clear_dead(Int0, I, Tes#l.vdb),
-    {Tis,Int2,St1} = cg_block(Tes#l.ke, Tes#l.i, Tes#l.vdb,
-			     Int1#sr{reg=clear_regs(Int1#sr.reg)}, St0),
-    {Ris ++ [{wait_timeout,{f,St1#cg.recv},Reg},timeout] ++ Tis,Int2,St1}.
+    Int0 = clear_dead(Bef, I, Tes#l.vdb),
+    {Tis,Int,St1} = cg_block(Tes#l.ke, Tes#l.i, Tes#l.vdb,
+			     Int0#sr{reg=clear_regs(Int0#sr.reg)}, St0),
+    {[{wait_timeout,{f,St1#cg.recv},Reg},timeout] ++ Tis,Int,St1}.
 
 %% recv_next_cg(Le, Vdb, StackReg, St) -> {[Ainstr],StackReg,St}.
 %%  Use adjust stack to clear stack, but only need it for Aft.
@@ -1067,21 +1067,29 @@ set_cg([{var,R}], {cons,Es}, Le, Vdb, Bef, St) ->
     Int1 = Int0#sr{reg=put_reg(R, Int0#sr.reg)},
     Ret = fetch_reg(R, Int1#sr.reg),
     {[{put_list,S1,S2,Ret}], Int1, St};
-set_cg([{var,R}], {old_binary,Bin}, Le, Vdb, Bef, St) ->
+set_cg([{var,R}], {old_binary,Segs}, Le, Vdb, Bef, St) ->
     Fail = bif_fail(St#cg.btype, St#cg.bfail, 42),
-    Code = cg_binary_old(Bin, Fail, Bef),
+    PutCode = cg_bin_put(Segs, Fail, Bef),
+    Code = cg_binary_old(PutCode),
     Int0 = clear_dead(Bef, Le#l.i, Vdb),
     Aft = Int0#sr{reg=put_reg(R, Int0#sr.reg)},
     Ret = fetch_reg(R, Aft#sr.reg),
     {Code ++ [{bs_final,Fail,Ret}],Aft,St};
-set_cg([{var,R}], {binary,Bin}, Le, Vdb, Bef, St) ->
-    Int = Bef#sr{reg=put_reg(R, Bef#sr.reg)},
-    Target = fetch_reg(R, Int#sr.reg),
+set_cg([{var,R}], {binary,Segs}, Le, Vdb, Bef, #cg{in_catch=InCatch}=St) ->
+    Int0 = Bef#sr{reg=put_reg(R, Bef#sr.reg)},
+    Target = fetch_reg(R, Int0#sr.reg),
     Fail = bif_fail(St#cg.btype, St#cg.bfail, 42),
-    Temp = find_scratch_reg(Int#sr.reg),
-    Code = cg_binary(Bin, Target, Temp, Fail, Int),
-    Aft = clear_dead(Int, Le#l.i, Vdb),
-    {Code,Aft,St};
+    Temp = find_scratch_reg(Int0#sr.reg),
+    PutCode = cg_bin_put(Segs, Fail, Bef),
+    {Sis,Int1} =
+	case InCatch of
+	    true -> adjust_stack(Int0, Le#l.i, Le#l.i+1, Vdb);
+	    false -> {[],Int0}
+	end,
+    MaxRegs = max_reg(Bef#sr.reg),
+    Aft = clear_dead(Int1, Le#l.i, Vdb),
+    Code = cg_binary(PutCode, Target, Temp, Fail, MaxRegs),
+    {Sis++Code,Aft,St};
 set_cg([{var,R}], Con, Le, Vdb, Bef, St) ->
     %% Find a place for the return register first.
     Int = Bef#sr{reg=put_reg(R, Bef#sr.reg)},
@@ -1097,16 +1105,19 @@ set_cg([{var,R}], Con, Le, Vdb, Bef, St) ->
 		  [{move,Other,Ret}]
 	  end,
     {Ais,clear_dead(Int, Le#l.i, Vdb),St};
-set_cg([], {binary,Bin}, Le, Vdb, Bef, St) ->
+set_cg([], {binary,Segs}, Le, Vdb, Bef, St) ->
     Fail = bif_fail(St#cg.btype, St#cg.bfail, 42),
     Target = find_scratch_reg(Bef#sr.reg),
     Temp = find_scratch_reg(put_reg(Target, Bef#sr.reg)),
-    Code = cg_binary(Bin, Target, Temp, Fail, Bef),
+    PutCode = cg_bin_put(Segs, Fail, Bef),
+    MaxRegs = max_reg(Bef#sr.reg),
+    Code = cg_binary(PutCode, Target, Temp, Fail, MaxRegs),
     Aft = clear_dead(Bef, Le#l.i, Vdb),
     {Code,Aft,St};
-set_cg([], {old_binary,Bin}, Le, Vdb, Bef, St) ->
+set_cg([], {old_binary,Segs}, Le, Vdb, Bef, St) ->
     Fail = bif_fail(St#cg.btype, St#cg.bfail, 42),
-    Ais0 = cg_binary_old(Bin, Fail, Bef),
+    PutCode = cg_bin_put(Segs, Fail, Bef),
+    Ais0 = cg_binary_old(PutCode),
     Ret = find_scratch_reg(Bef#sr.reg),
     Ais = Ais0 ++ [{bs_final,Fail,Ret}],
     {Ais,clear_dead(Bef, Le#l.i, Vdb),St};
@@ -1119,10 +1130,8 @@ set_cg([], _, Le, Vdb, Bef, St) ->
 %%% Code generation for constructing binaries.
 %%%
 
-cg_binary(Segs, Target, Temp, Fail, Bef) ->
-    PutCode = cg_bin_put(Segs, Fail, Bef),
+cg_binary(PutCode, Target, Temp, Fail, MaxRegs) ->
     SzCode = cg_binary_size(PutCode, Target, Temp, Fail),
-    MaxRegs = max_reg(Bef#sr.reg),
     Code = SzCode ++ [{bs_init2,Fail,Target,MaxRegs,{field_flags,[]},Target}|PutCode],
     cg_bin_opt(Code).
 
@@ -1211,7 +1220,7 @@ cg_bin_opt([{bs_bits_to_bytes,Fail,{integer,N},_}|Is0]) when N rem 8 =/= 0 ->
     case Fail of
 	{f,0} ->
 	    Is = [{move,{atom,badarg},{x,0}},
-		  {call_ext_only,1,{extfunc,erlang,error,1}}|Is0],
+		  {call_ext,1,{extfunc,erlang,error,1}}|Is0],
 	    cg_bin_opt(Is);
 	_ ->
 	    cg_bin_opt([{jump,Fail}|Is0])
@@ -1244,9 +1253,8 @@ cg_bin_put(bin_end, _, _) -> [].
 
 %% Old style.
 
-cg_binary_old(Segs, Fail, Bef) ->
-    Code = cg_bin_put(Segs, Fail, Bef),
-    [cg_bs_init(Code)] ++ need_bin_buf(Code).
+cg_binary_old(PutCode) ->
+    [cg_bs_init(PutCode)] ++ need_bin_buf(PutCode).
 
 cg_bs_init(Code) ->
     {Size,Fs} = foldl(fun ({_,_,{integer,N},U,_,_}, {S,Fs}) ->
@@ -1288,23 +1296,14 @@ break_cg(Bs, Le, Vdb, Bef, St) ->
     {comment({break,Bs}) ++ Ms ++ [{jump,{f,St#cg.break}}],
      Int#sr{reg=clear_regs(Int#sr.reg)},St}.
 
-%% cg_reg_arg(Arg, Info) -> {Reg,Moves,Aft}.
-%% cg_reg_args([Arg], Info) -> {[Reg],Moves,Aft}.
-%%  Convert argument[s] into registers, generating moves or puts as
-%%  necessary.  N.B. the resultant register info will contain non-variable
-%%  values if constants have been put into registers.
+%% cg_reg_arg(Arg0, Info) -> Arg
+%% cg_reg_args([Arg0], Info) -> [Arg]
+%%  Convert argument[s] into registers. Literal values are returned unchanged.
 
-cg_reg_args(As, Bef) ->
-    foldr(fun (A, {Rs,Ms0,Int0}) ->
-		  {R,Ms,Int1} = cg_reg_arg(A, Int0),
-		  {[R|Rs],Ms ++ Ms0,Int1}
-	  end, {[],[],Bef}, As).
+cg_reg_args(As, Bef) -> [cg_reg_arg(A, Bef) || A <- As].
 
-cg_reg_arg({var,V}, Bef) ->
-    R = fetch_var(V, Bef),
-    {R,[],Bef};
-cg_reg_arg(Other, Bef) ->
-    {Other,[],Bef}.
+cg_reg_arg({var,V}, Bef) -> fetch_var(V, Bef);
+cg_reg_arg(Literal, _) -> Literal.
 
 %% cg_setup_call([Arg], Bef, Cur, Vdb) -> {[Instr],Aft}.
 %%  Do the complete setup for a call/enter.

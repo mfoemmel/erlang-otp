@@ -23,12 +23,13 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # ----------------------------------------------------
 
 # Include erts/system/vsn.mk to port number for EPMD -- we will
-# get an unwanted definiton for VSN too.  Therefore,
+# get an unwanted definition for VSN too.  Therefore,
 # we'll use KERNEL_VSN directly instead of assigning it to
-# VSN which is done in other Makefiles.
+# VSN which is done in other Makefiles.  Same with HIPE_VSN.
 
 include ../vsn.mk
 include $(ERL_TOP)/erts/vsn.mk
+include $(ERL_TOP)/lib/hipe/vsn.mk
 
 include $(ERL_TOP)/erts/epmd/epmd.mk
 
@@ -120,10 +121,6 @@ MODULES = \
 	ram_file \
 	rpc \
 	seq_trace \
-	socks5 \
-	socks5_auth \
-	socks5_tcp \
-	socks5_udp \
 	user \
 	user_drv \
 	user_sup \
@@ -133,7 +130,7 @@ MODULES = \
 HRL_FILES= ../include/file.hrl ../include/inet.hrl
 INTERNAL_HRL_FILES= application_master.hrl disk_log.hrl \
         net_address.hrl inet_dns.hrl inet_res.hrl \
-        socks5.hrl inet_boot.hrl inet_config.hrl inet_int.hrl \
+        inet_boot.hrl inet_config.hrl inet_int.hrl \
 	dist.hrl dist_util.hrl
 
 ERL_FILES= $(PRE_LOADED_MODULES:%=%.erl) $(MODULES:%=%.erl) $(HIPE_MODULES:%=%.erl)
@@ -180,9 +177,8 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 
-$(EBIN)/hipe_sparc_loader.$(EMULATOR): hipe_sparc_loader.erl
-	$(ERLC) $(ERL_COMPILE_FLAGS) -o$(EBIN) \
-              -I../../hipe/main -I../../hipe/rtl -I../../hipe/sparc $<
+../../hipe/main/hipe.hrl: ../../hipe/vsn.mk ../../hipe/main/hipe.hrl.src
+	sed -e "s;%VSN%;$(HIPE_VSN);" ../../hipe/main/hipe.hrl.src > ../../hipe/main/hipe.hrl
 
 ifdef HIPE_ENABLED
 $(APP_TARGET): $(APP_SRC) ../vsn.mk

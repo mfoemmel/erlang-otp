@@ -114,7 +114,7 @@ expr(E0, Env, Ren, Ctxt, S0) ->
 	    {M, S1} = expr(cerl:call_module(E), Env, Ren, Ctxt, S0),
 	    {N, S2} = expr(cerl:call_name(E), Env, Ren, Ctxt, S1),
 	    {As, S3} = expr_list(cerl:call_args(E), Env, Ren, Ctxt, S2),
- 	    {rewrite_call(E, M, N, As), S3};
+ 	    {rewrite_call(E, M, N, As, S3), S3};
  	primop ->
 	    {As, S1} = expr_list(cerl:primop_args(E), Env, Ren, Ctxt, S0),
 	    N = cerl:primop_name(E),
@@ -354,7 +354,7 @@ add_defs([], Ds, Env, Ren) ->
 %% straightforwardly. In most cases however, it is simply because they
 %% are supposed to be represented as primop calls on the Icode level.
 
-rewrite_call(E, M, F, As) ->
+rewrite_call(E, M, F, As, S) ->
     case cerl:is_c_atom(M) and cerl:is_c_atom(F) of
 	true ->
 	    case call_to_primop(cerl:atom_val(M),
@@ -362,7 +362,10 @@ rewrite_call(E, M, F, As) ->
 				length(As))
 		of
 		{yes, N} ->
-		    cerl:update_c_primop(E, cerl:c_atom(N), As);
+		    %% The primop might need further handling
+		    N1 = cerl:c_atom(N),
+		    E1 = cerl:update_c_primop(E, N1, As),
+		    rewrite_primop(E1, N1, As, S);
 		no ->
 		    cerl:update_c_call(E, M, F, As)
 	    end;
@@ -373,20 +376,21 @@ rewrite_call(E, M, F, As) ->
 call_to_primop(erlang, 'not', 1) -> {yes, ?PRIMOP_NOT};
 call_to_primop(erlang, 'and', 2) -> {yes, ?PRIMOP_AND};
 call_to_primop(erlang, 'or', 2) -> {yes, ?PRIMOP_OR};
+call_to_primop(erlang, 'xor', 2) -> {yes, ?PRIMOP_XOR};
 call_to_primop(erlang, '+', 2) -> {yes, ?PRIMOP_ADD};
 call_to_primop(erlang, '+', 1) -> {yes, ?PRIMOP_IDENTITY};
 call_to_primop(erlang, '-', 2) -> {yes, ?PRIMOP_SUB};
 call_to_primop(erlang, '-', 1) -> {yes, ?PRIMOP_NEG};
 call_to_primop(erlang, '*', 2) -> {yes, ?PRIMOP_MUL};
 call_to_primop(erlang, '/', 2) -> {yes, ?PRIMOP_DIV};
-%% call_to_primop(erlang, 'div', 2) -> {yes, ?PRIMOP_INTDIV};
-%% call_to_primop(erlang, 'rem', 2) -> {yes, ?PRIMOP_REM};
+call_to_primop(erlang, 'div', 2) -> {yes, ?PRIMOP_INTDIV};
+call_to_primop(erlang, 'rem', 2) -> {yes, ?PRIMOP_REM};
 call_to_primop(erlang, 'band', 2) -> {yes, ?PRIMOP_BAND};
 call_to_primop(erlang, 'bor', 2) -> {yes, ?PRIMOP_BOR};
 call_to_primop(erlang, 'bxor', 2) -> {yes, ?PRIMOP_BXOR};
 call_to_primop(erlang, 'bnot', 1) -> {yes, ?PRIMOP_BNOT};
-%% call_to_primop(erlang, 'bsl', 2) -> {yes, ?PRIMOP_BSL};
-%% call_to_primop(erlang, 'bsr', 2) -> {yes, ?PRIMOP_BSR};
+call_to_primop(erlang, 'bsl', 2) -> {yes, ?PRIMOP_BSL};
+call_to_primop(erlang, 'bsr', 2) -> {yes, ?PRIMOP_BSR};
 call_to_primop(erlang, '==', 2) -> {yes, ?PRIMOP_EQ};
 call_to_primop(erlang, '/=', 2) -> {yes, ?PRIMOP_NE};
 call_to_primop(erlang, '=:=', 2) -> {yes, ?PRIMOP_EXACT_EQ};
@@ -407,6 +411,7 @@ call_to_primop(erlang, is_pid, 1) -> {yes, ?PRIMOP_IS_PID};
 call_to_primop(erlang, is_port, 1) -> {yes, ?PRIMOP_IS_PORT};
 call_to_primop(erlang, is_reference, 1) -> {yes, ?PRIMOP_IS_REFERENCE};
 call_to_primop(erlang, is_tuple, 1) -> {yes, ?PRIMOP_IS_TUPLE};
+call_to_primop(erlang, internal_is_record, 3) -> {yes, ?PRIMOP_IS_RECORD};
 call_to_primop(erlang, element, 2) -> {yes, ?PRIMOP_ELEMENT};
 call_to_primop(erlang, exit, 1) -> {yes, ?PRIMOP_EXIT};
 call_to_primop(erlang, throw, 1) -> {yes, ?PRIMOP_THROW};

@@ -11,8 +11,8 @@
 -author('Andreas Wallin').
 
 -export([build/2, 
-	 adj_set/1, 
-	 adj_list/1,      
+	 nodes_are_adjacent/3,
+	 node_adj_list/2,
 	 ig_moves/1,
 	 degree/1,
 	 %% number_of_temps/1,
@@ -224,7 +224,7 @@ analyze_bb_instructions([Instruction|Instructions], Live, IG, Target) ->
 
 analyze_move_instruction(Instruction, Live, Def_numbers, Use_numbers, IG, 
 			 Target) ->
-    case (Target:is_move(Instruction) and 
+    case (Target:is_move(Instruction) andalso
 	  is_copy_instruction(Def_numbers, Use_numbers)) of
 	true ->
 	    New_live = ordsets:subtract(Live, Use_numbers),
@@ -349,6 +349,20 @@ interfere_with_living(Define, [Live|Living], IG, Target) ->
     New_ig = add_edge(Define, Live, IG, Target),
     interfere_with_living(Define, Living, New_ig, Target).
 
+%%%
+%%% nodes_are_adjacent(U, V, IG)
+%%% returns true if nodes U and V are adjacent in interference graph IG
+%%%
+nodes_are_adjacent(U, V, IG) ->
+  hipe_adj_set:adjacent(U, V, adj_set(IG)).
+
+%%%
+%%% node_adj_set(Node, IG)
+%%% returns ordset of Node's adjacent nodes in interference graph IG
+%%%
+node_adj_list(Node, IG) ->
+  hipe_adj_list:edges(Node, adj_list(IG)).
+
 %%----------------------------------------------------------------------
 %% Function:    add_edge
 %%
@@ -368,7 +382,7 @@ interfere_with_living(Define, [Live|Living], IG, Target) ->
 
 add_edge(U, U, IG, _) -> IG;
 add_edge(U, V, IG, Target) ->
-  case hipe_adj_set:adjacent(U, V, adj_set(IG)) of
+  case nodes_are_adjacent(U, V, IG) of
     true ->
       IG;
     false ->

@@ -10,6 +10,8 @@
 #include "hipe_native_bif.h"	/* nbif_callemu() */
 #include "hipe_bif0.h"
 
+static const unsigned int fconv_constant[2] = { 0x43300000, 0x80000000 };
+
 extern void hipe_ppc_inc_stack(void);
 
 /* Flush dcache and invalidate icache for a range of addresses. */
@@ -49,6 +51,7 @@ void hipe_flush_icache_range(void *address, unsigned int nbytes)
 void *hipe_arch_primop_address(Eterm key)
 {
     switch( key ) {
+      case am_fconv_constant: return (void*)fconv_constant;
       case am_inc_stack_0: return hipe_ppc_inc_stack;
       default: return NULL;
     }
@@ -128,7 +131,7 @@ void *hipe_make_native_stub(void *beamAddress, unsigned int beamArity)
 void hipe_arch_print_pcb(struct hipe_process_state *p)
 {
 #define U(n,x) \
-    printf(" % 4d | %s | 0x%08x |            |\r\n", offsetof(struct hipe_process_state,x), n, (unsigned)p->x)
+    printf(" % 4ld | %s | 0x%08x |            |\r\n", (long)offsetof(struct hipe_process_state,x), n, (unsigned)p->x)
     U("nra        ", nra);
     U("narity     ", narity);
 #undef U
@@ -208,6 +211,11 @@ static unsigned int *try_alloc(Uint nrwords, int nrcallees, Eterm callees, Eterm
     curseg.tramp_pos = tramp_pos;
     return address;
 }
+
+/* Darwin breakage */
+#if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
+#define MAP_ANONYMOUS MAP_ANON
+#endif
 
 void *hipe_alloc_code(Uint nrbytes, Eterm callees, Eterm *trampolines, Process *p)
 {

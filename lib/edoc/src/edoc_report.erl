@@ -90,5 +90,5 @@ where({File, {F, A}}) ->
     io_lib:fwrite("~s, function ~s/~w: ", [File, F, A]);
 where([]) ->
     io_lib:fwrite("~s: ", [?APPLICATION]);
-where(File) ->
-    lists:concat([File,": "]). % File can be atom or string
+where(File) when list(File) ->
+    File ++ ": ".

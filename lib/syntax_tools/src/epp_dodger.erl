@@ -20,7 +20,7 @@
 %%
 %% Author contact: richardc@csd.uu.se
 %%
-%% $Id: epp_dodger.erl,v 1.10 2003/11/24 15:05:41 richardc Exp $
+%% $Id: epp_dodger.erl,v 1.12 2004/11/08 17:46:45 richardc Exp $
 %%
 %% =====================================================================
 %%
@@ -37,9 +37,13 @@
 %% @end
 %% =====================================================================
 
+%% TODO: document the quick-parse functions properly.
+
 -module(epp_dodger).
 
--export([parse_file/1, parse/1, parse/2, parse_form/2, format_error/1]).
+-export([parse_file/1, quick_parse_file/1, parse/1, quick_parse/1,
+	 parse/2, quick_parse/2, parse_form/2, quick_parse_form/2,
+	 format_error/1]).
 
 
 %% =====================================================================
@@ -59,9 +63,15 @@
 %% @see io
 
 parse_file(File) ->
+    parse_file(File, fun parse/1).
+
+quick_parse_file(File) ->
+    parse_file(File, fun quick_parse/1).
+
+parse_file(File, Parser) ->
     case file:open(File, [read]) of
         {ok, Dev} ->
-            V = parse(Dev),
+            V = Parser(Dev),
             file:close(Dev),
             V;
         Other ->
@@ -75,6 +85,9 @@ parse_file(File) ->
 
 parse(Dev) ->
     parse(Dev, 1).
+
+quick_parse(Dev) ->
+    quick_parse(Dev, 1).
 
 
 %% =====================================================================
@@ -93,26 +106,34 @@ parse(Dev) ->
 %% @see parse_file/1
 
 parse(Dev, L0) ->
-    parse(Dev, L0, []).
+    parse(Dev, L0, fun parse_form/2).
 
-parse(Dev, L0, Fs) ->
-    case parse_form(Dev, L0) of
+quick_parse(Dev, L0) ->
+    parse(Dev, L0, fun quick_parse_form/2).
+
+parse(Dev, L0, Parser) ->
+    parse(Dev, L0, [], Parser).
+
+parse(Dev, L0, Fs, Parser) ->
+    case Parser(Dev, L0) of
+        {ok, none, L1} ->
+            parse(Dev, L1, Fs, Parser);
         {ok, F, L1} ->
-            parse(Dev, L1, [F | Fs]);
+            parse(Dev, L1, [F | Fs], Parser);
         {error, R, L1} ->
-            parse(Dev, L1, [{error, R} | Fs]);
+            parse(Dev, L1, [{error, R} | Fs], Parser);
         {eof, _L1} ->
             {ok, lists:reverse(Fs)}
     end.
 
 
 %% =====================================================================
-%% @spec parse_form(IODevice, StartLine) -> {ok, Forms, LineNo}
+%% @spec parse_form(IODevice, StartLine) -> {ok, Form, LineNo}
 %%                                        | {eof, LineNo}
 %%                                        | {error, ErrorInfo, LineNo}
 %%       IODevice = pid()
 %%       StartLine = integer()
-%%       Forms = [erl_syntax:syntaxTree()]
+%%       Form = erl_syntax:syntaxTree() | none
 %%       ErrorInfo = term()
 %%       LineNo = integer()
 %%
@@ -122,14 +143,22 @@ parse(Dev, L0, Fs) ->
 %% end-of-file; apart from this, the behaviour is similar to that of
 %% <code>parse/2</code>, except that the return values also contain the
 %% final line number, given that <code>StartLine</code> is the initial
-%% line number, and that <code>{eof, LineNo}</code> may be returned.
+%% line number, and that <code>{eof, LineNo}</code> may be returned. If
+%% the scanning/parsing determines that the form should be discarded,
+%% `{ok, none, LineNo}' will be returned.
 %%
 %% @see parse/2
 
 parse_form(Dev, L0) ->
+    parse_form(Dev, L0, fun normal_parser/1).
+
+quick_parse_form(Dev, L0) ->
+    parse_form(Dev, L0, fun quick_parser/1).
+
+parse_form(Dev, L0, Parser) ->
     case io:scan_erl_form(Dev, "", L0) of
         {ok, Ts, L1} ->
-            case catch rewrite_form(parse_tokens(scan_form(Ts))) of
+            case catch Parser(Ts) of
                 {'EXIT', _} ->
                     {error, {L1, ?MODULE, unknown}, L1};
                 {error, R} ->
@@ -141,6 +170,8 @@ parse_form(Dev, L0) ->
             Other
     end.
 
+%% The standard Erlang parser stage
+
 parse_tokens(Ts) ->
     case erl_parse:parse_form(Ts) of
         {ok, Form} ->
@@ -148,6 +179,96 @@ parse_tokens(Ts) ->
         {error, R} ->
             throw({error, R})
     end.
+
+%% ---------------------------------------------------------------------
+%% Quick scanning/parsing - deletes macro definitions and other
+%% preprocessor directives, and replaces all macro calls with atoms.
+
+quick_parser(Ts) ->
+    filter_form(parse_tokens(quickscan_form(Ts))).
+
+quickscan_form([{'-', _L}, {atom, La, define} | _Ts]) ->
+    kill_form(La);
+quickscan_form([{'-', _L}, {atom, La, undef} | _Ts]) ->
+    kill_form(La);
+quickscan_form([{'-', _L}, {atom, La, include} | _Ts]) ->
+    kill_form(La);
+quickscan_form([{'-', _L}, {atom, La, include_lib} | _Ts]) ->
+    kill_form(La);
+quickscan_form([{'-', _L}, {atom, La, ifdef} | _Ts]) ->
+    kill_form(La);
+quickscan_form([{'-', _L}, {atom, La, ifndef} | _Ts]) ->
+    kill_form(La);
+quickscan_form([{'-', _L}, {atom, La, else} | _Ts]) ->
+    kill_form(La);
+quickscan_form([{'-', _L}, {atom, La, endif} | _Ts]) ->
+    kill_form(La);
+quickscan_form(Ts) ->
+    quickscan_macros(Ts).
+
+kill_form(L) ->
+    [{atom, L, '?pp'}, {'(', L}, {')', L}, {'->', L}, {atom, L, kill},
+     {dot, L}].
+
+quickscan_macros([{'?',_}, {atom, L, A} | Ts]) ->
+    A1 = list_to_atom("?" ++ atom_to_list(A)),
+    [{atom,L,A1} | quickscan_macros(skip_macro_args(Ts))];
+quickscan_macros([{'?',_}, {var, L, A} | Ts]) ->
+    A1 = list_to_atom("?" ++ atom_to_list(A)),
+    [{atom,L,A1} | quickscan_macros(skip_macro_args(Ts))];
+quickscan_macros([T | Ts]) ->
+    [T | quickscan_macros(Ts)];
+quickscan_macros([]) ->
+    [].
+
+%% Skipping to the end of a macro call, tracking open/close constructs.
+
+skip_macro_args([{'(',_} | Ts]) ->
+    skip_macro_args(Ts, [')']);
+skip_macro_args(Ts) ->
+    Ts.
+
+skip_macro_args([{'(',_} | Ts], Es) ->
+    skip_macro_args(Ts, [')' | Es]);
+skip_macro_args([{'{',_} | Ts], Es) ->
+    skip_macro_args(Ts, ['}' | Es]);
+skip_macro_args([{'[',_} | Ts], Es) ->
+    skip_macro_args(Ts, [']' | Es]);
+skip_macro_args([{'<<',_} | Ts], Es) ->
+    skip_macro_args(Ts, ['>>' | Es]);
+skip_macro_args([{'begin',_} | Ts], Es) ->
+    skip_macro_args(Ts, ['end' | Es]);
+skip_macro_args([{'if',_} | Ts], Es) ->
+    skip_macro_args(Ts, ['end' | Es]);
+skip_macro_args([{'case',_} | Ts], Es) ->
+    skip_macro_args(Ts, ['end' | Es]);
+skip_macro_args([{'receive',_} | Ts], Es) ->
+    skip_macro_args(Ts, ['end' | Es]);
+skip_macro_args([{'try',_} | Ts], Es) ->
+    skip_macro_args(Ts, ['end' | Es]);
+skip_macro_args([{'cond',_} | Ts], Es) ->
+    skip_macro_args(Ts, ['end' | Es]);
+skip_macro_args([{E,_} | Ts], [E]) ->		%Found final close
+    Ts;
+skip_macro_args([{E,_} | Ts], [E | Es]) ->	%Found matching close
+    skip_macro_args(Ts, Es);
+skip_macro_args([_T | Ts], Es) ->
+    skip_macro_args(Ts, Es);
+skip_macro_args([], _Es) ->
+    throw({error, nonterminated_macro}).
+
+filter_form({function, _, '?pp', _,
+	     [{clause, _, [], [], [{atom, _, kill}]}]}) ->
+    none;
+filter_form(T) ->
+    T.
+
+
+%% ---------------------------------------------------------------------
+%% Normal parsing - try to preserve all information
+
+normal_parser(Ts) ->
+    rewrite_form(parse_tokens(scan_form(Ts))).
 
 scan_form([{'-', _L}, {atom, La, define} | Ts]) ->
     [{atom, La, '?pp'}, {'(', La}, {')', La}, {'->', La},

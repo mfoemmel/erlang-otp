@@ -1280,7 +1280,7 @@ apply_op(Op, From, Head, N) ->
 		    start_auto_save_timer(Head),
 		    H2 = Head#head{update_mode = dirty},
 		    apply_op(WriteOp, From, H2, 0);
-		{NewHead, Error} ->
+		{NewHead, Error} when record(NewHead, head) ->
 		    From ! {self(), Error},
 		    NewHead
 	    end;
@@ -1349,7 +1349,7 @@ stream_end(Head, Pids0, C, N, Next) ->
 	    stream_end1(Pids0, Next, N, C, Head1, PwriteList);
 	Head1 when record(Head1, head) ->
 	    stream_end2(Pids0, Pids0, Next, N, C, Head1, ok);	    
-	{Head1, Error} ->
+	{Head1, Error} when record(Head1, head) ->
 	    %% Dig out the processes that did lookup or member.
 	    Fun = fun({{lookup,[Pid]},_Keys}, L) -> [Pid | L];
 		     ({{lookup,Pid},_Keys}, L) -> [Pid | L];
@@ -1357,7 +1357,9 @@ stream_end(Head, Pids0, C, N, Next) ->
 		  end,
 	    LPs0 = lists:foldl(Fun, [], C),
 	    LPs = lists:usort(lists:flatten(LPs0)),
-	    stream_end2(Pids0 ++ LPs, Pids0, Next, N, C, Head1, Error)
+	    stream_end2(Pids0 ++ LPs, Pids0, Next, N, C, Head1, Error);
+        DetsError ->
+            DetsError
     end.
 
 stream_end1(Pids, Next, N, C, Head, []) ->
@@ -1470,12 +1472,15 @@ fclose(Head) ->
 %% -> {NewHead, Res}
 perform_save(Head, DoSync) when Head#head.update_mode == dirty;
 				Head#head.update_mode == new_dirty ->
-    catch begin
-              {Head1, []} = write_cache(Head),
-              {Head2, ok} = (Head1#head.mod):do_perform_save(Head1),
-	      ok = ensure_written(Head2, DoSync),
-	      {Head2#head{update_mode = saved}, ok}
-          end;
+    case catch begin
+                   {Head1, []} = write_cache(Head),
+                   {Head2, ok} = (Head1#head.mod):do_perform_save(Head1),
+                   ok = ensure_written(Head2, DoSync),
+                   {Head2#head{update_mode = saved}, ok}
+               end of
+        {NewHead, _} = Reply when record(NewHead, head) ->
+            Reply
+    end;
 perform_save(Head, _DoSync) ->
     {Head, status(Head)}.
 
@@ -1501,11 +1506,12 @@ do_bchunk_init(Head, Tab) ->
 		undefined ->
 		    {H2, {error, old_version}};
 		Parms ->
-		    C0 = init_scan(H2, default),
+                    L = dets_utils:all_allocated(H2),
+                    C0 = #dets_cont{no_objs = default, bin = <<>>, alloc = L},
 		    BinParms = term_to_binary(Parms),
 		    {H2, {C0#dets_cont{tab = Tab, what = bchunk}, [BinParms]}}
 	    end;
-	HeadError ->
+	{NewHead, _} = HeadError when record(NewHead, head) ->
 	    HeadError
     end.
 
@@ -1554,7 +1560,7 @@ ffirst(H) ->
     case catch {Ref, ffirst1(H)} of
 	{Ref, {NH, R}} -> 
 	    {NH, {ok, R}};
-	{NH, R} -> 
+	{NH, R} when record(NH, head) -> 
 	    {NH, {error, R}}
     end.
 
@@ -1574,8 +1580,8 @@ finsert(Head, Objects) ->
     case catch update_cache(Head, Objects, insert) of
 	{NewHead, []} ->
 	    {NewHead, ok};
-	Reply ->
-	    Reply
+	{NewHead, _} = HeadError when record(NewHead, head) ->
+	    HeadError
     end.
 
 %% -> {NewHead, Reply}, Reply = ok | badarg | Error.
@@ -1587,16 +1593,16 @@ finsert_new(Head, Objects) ->
                 {Head1, PidObjs} when list(PidObjs) ->
                     case lists:all(fun({_P,OL}) -> OL =:= [] end, PidObjs) of
                         true ->
-                            catch begin 
-                                      {NewHead, []} = update_cache(Head1, 
-                                                                   Objects, 
-                                                                   insert),
-                                      {NewHead, true}
-                                  end;
+                            case catch update_cache(Head1, Objects, insert) of
+                                {NewHead, []} ->
+                                    {NewHead, true};
+                                {NewHead, Error} when record(NewHead, head) ->
+                                    {NewHead, Error}
+                            end;
                         false=Reply ->
                             {Head1, Reply}
                     end;
-                HeadError ->
+                {NewHead, _} = HeadError when record(NewHead, head) ->
                     HeadError
             end;
         _ ->
@@ -1697,7 +1703,7 @@ finfo(H) ->
 			    file_size(H2#head.fptr, H2#head.filename)},
 			   {filename, H2#head.filename}]),
 	    {H2, Info};
-	HeadError ->
+	{H2, _} = HeadError when record(H2, head) ->
 	    HeadError
     end.
 
@@ -1712,7 +1718,7 @@ finfo(H, bchunk_format) ->
                 Parms ->
                     {H2, term_to_binary(Parms)}
             end;
-        HeadError ->
+        {H2, _} = HeadError when record(H2, head) ->
             HeadError
     end;
 finfo(H, delayed_write) -> % undocumented
@@ -1722,7 +1728,7 @@ finfo(H, file_size) ->
     case catch write_cache(H) of
 	{H2, []} ->
 	    {H2, catch file_size(H#head.fptr, H#head.filename)};
-	HeadError ->
+	{H2, _} = HeadError when record(H2, head) ->
 	    HeadError
     end;
 finfo(H, fixed) -> 
@@ -1736,7 +1742,7 @@ finfo(H, no_keys) ->
     case catch write_cache(H) of
 	{H2, []} ->
 	    {H2, H2#head.no_keys};
-	HeadError ->
+	{H2, _} = HeadError when record(H2, head) ->
 	    HeadError
     end;
 finfo(H, no_slots) -> {H, (H#head.mod):no_slots(H)};
@@ -1747,7 +1753,7 @@ finfo(H, size) ->
     case catch write_cache(H) of
 	{H2, []} ->
 	    {H2, H2#head.no_objects};
-	HeadError ->
+	{H2, _} = HeadError when record(H2, head) ->
 	    HeadError
     end;
 finfo(H, type) -> {H, H#head.type};
@@ -1882,7 +1888,7 @@ flookup_keys(Head, Keys) ->
 	    {NewHead, Objs};
 	{NewHead, L} when list(L) ->
 	    {NewHead, lists:flatmap(fun({_Pid,OL}) -> OL end, L)};
-	HeadError ->
+	{NewHead, _} = HeadError when record(NewHead, head) ->
 	    HeadError
     end.
 
@@ -1905,7 +1911,7 @@ fmatch(Head, MP, Spec, N) ->
 		{NewHead, []} ->
 		    C0 = init_scan(NewHead, N),
 		    {NewHead, {cont, C0#dets_cont{match_program = MP}}};
-		HeadError ->
+		{NewHead, _} = HeadError when record(NewHead, head) ->
 		    HeadError
 	    end;
 	List ->
@@ -1969,19 +1975,22 @@ contains_variable(_) ->
 %% -> {NewHead, Res}
 fmatch_delete_init(Head, MP, Spec)  ->
     KeyPos = Head#head.keypos,
-    case find_all_keys(Spec, KeyPos, []) of
-	[] -> 
-	    catch do_fmatch_delete_var_keys(Head, MP, Spec);
-	List ->
-	    Keys = lists:usort(List),
-            do_fmatch_constant_keys(Head, Keys, MP)
+    case catch 
+        case find_all_keys(Spec, KeyPos, []) of
+            [] -> 
+                do_fmatch_delete_var_keys(Head, MP, Spec);
+            List ->
+                Keys = lists:usort(List),
+                do_fmatch_constant_keys(Head, Keys, MP)
+        end of
+        {NewHead, _} = Reply when record(NewHead, head) ->
+            Reply            
     end.
 
-%% A note: It is possible that the binary in C contains the first part
-%% of _one_ term. If that term is deleted here, the binary will not be
-%% affected, which means that next call to scan/1 will find that term
-%% active (unless it was free already...). The (remaining) terms of
-%% the slot where the term resided will then be traversed once more.
+%% A note: If deleted objects reside in a bucket with other objects
+%% that are not deleted, the bucket is moved. If the address of the
+%% moved bucket is greater than original bucket address the kept
+%% objects will be read once again later on. 
 %% -> {NewHead, Res}
 fmatch_delete(Head, C) ->
     case scan(Head, C) of
@@ -2061,15 +2070,18 @@ do_delete(Head, Things, What) ->
     case catch update_cache(Head, Things, What) of
 	{NewHead, []} ->
 	    {NewHead, ok};
-	HeadError ->
+	{NewHead, _} = HeadError when record(NewHead, head) ->
 	    HeadError
     end.
 
 fmember(Head, Key) ->
-    catch begin
-	      {NewHead, [{_NoPid,Objs}]} = 
-		  update_cache(Head, [Key], {lookup, nopid}),
-	      {NewHead, Objs =/= []}
+    case catch begin
+                   {Head2, [{_NoPid,Objs}]} = 
+                       update_cache(Head, [Key], {lookup, nopid}),
+                   {Head2, Objs =/= []}
+               end of
+        {NewHead, _} = Reply when record(NewHead, head) ->
+            Reply
     end.
 
 fnext(Head, Key) ->
@@ -2078,8 +2090,8 @@ fnext(Head, Key) ->
     case catch {Ref, fnext(Head, Key, Slot)} of
 	{Ref, {H, R}} -> 
 	    {H, {ok, R}};
-	Reply ->
-	    Reply
+	{NewHead, _} = HeadError when record(NewHead, head) ->
+	    HeadError
     end.
 
 fnext(H, Key, Slot) ->
@@ -2547,10 +2559,13 @@ close_tmp(Fd) ->
     file:close(Fd).
 
 fslot(H, Slot) ->
-    catch begin
-      {NH, []} = write_cache(H),
-      Objs = (NH#head.mod):slot_objs(NH, Slot),
-      {NH, Objs}
+    case catch begin
+                   {NH, []} = write_cache(H),
+                   Objs = (NH#head.mod):slot_objs(NH, Slot),
+                   {NH, Objs}
+               end of
+        {NewHead, _Objects} = Reply when record(NewHead, head) ->
+            Reply
     end.
 
 do_update_counter(Head, _Key, _Incr) when Head#head.type =/= set ->
@@ -2597,7 +2612,7 @@ where_is_object(Head, Object) ->
 	    case catch write_cache(Head) of
 		{NewHead, []} ->
 		    {NewHead, (Head#head.mod):find_object(NewHead, Object)};
-		HeadError ->
+		{NewHead, _} = HeadError when record(NewHead, head) ->
 		    HeadError
 	    end;
 	false ->
@@ -2761,12 +2776,10 @@ status(Head) ->
 
 %% -> dets_cont()
 init_scan(Head, NoObjs) ->
-    L = dets_utils:all_allocated(Head),
-    EBin = case L of
-	       <<>> -> eof;
-	       _ -> <<>>
-	  end,
-    #dets_cont{no_objs = NoObjs, bin = EBin, alloc = L}.
+    FreeLists = dets_utils:get_freelists(Head),
+    Base = Head#head.base,
+    {From, To} = dets_utils:find_next_allocated(FreeLists, Base, Base),
+    #dets_cont{no_objs = NoObjs, bin = <<>>, alloc = {From, To, <<>>}}.
 
 %% -> {[RTerm], dets_cont()} | {scan_error, Reason}
 %% RTerm = {Pos, Next, Size, Status, Term}
@@ -2787,11 +2800,16 @@ scan(Bin, H, From, To, L, Ts, R, {C0, Type} = C) ->
     case (H#head.mod):scan_objs(H, Bin, From, To, L, Ts, R, Type) of
         {more, NFrom, NTo, NL, NTs, NR, Sz} ->
             scan_read(H, NFrom, NTo, Sz, NL, NTs, NR, C);
+        {stop, B, NFrom, NTo, NL, NTs} when size(B) =:= 0, size(NL) =:= 0 ->
+            Ftab = dets_utils:get_freelists(H),
+            case dets_utils:find_next_allocated(Ftab, NFrom, H#head.base) of
+                none ->
+                    {NTs, C0#dets_cont{bin = eof, alloc = B}};
+                _ -> 
+                    {NTs, C0#dets_cont{bin = B, alloc = {NFrom, NTo, NL}}}
+            end;
         {stop, B, NFrom, NTo, NL, NTs} ->
-            A = {NFrom, NTo, NL},
-            {NTs, C0#dets_cont{bin = B, alloc = A}};
-        {finished, NTs, E} ->
-            {NTs, C0#dets_cont{bin = eof, alloc = E}};
+            {NTs, C0#dets_cont{bin = B, alloc = {NFrom, NTo, NL}}};
         bad_object ->
             {scan_error, bad_object}
     end.
@@ -2801,16 +2819,23 @@ scan_read(_H, From, To, _Min, L0, Ts,
     %% We may have read (much) more than CHUNK_SIZE, if there are holes.
     L = {From, To, L0},
     {Ts, C#dets_cont{bin = <<>>, alloc = L}};
-scan_read(H, From, To, Min, L, Ts, R, C) ->
+scan_read(H, From, _To, Min, _L, Ts, R, C) ->
     Max = if 
 	      Min < ?CHUNK_SIZE -> ?CHUNK_SIZE; 
 	      true -> Min 
 	  end,
-    case dets_utils:pread_n(H#head.fptr, From, Max) of
-	eof ->
-	    {scan_error, premature_eof};
-	NewBin ->
-	    scan(NewBin, H, From, To, L, Ts, R, C)
+    FreeLists = dets_utils:get_freelists(H),
+    case dets_utils:find_allocated(FreeLists, From, Max, H#head.base) of
+        Bin0 when size(Bin0) =:= 0 ->
+            {Cont, _} = C,
+            {Ts, Cont#dets_cont{bin = eof, alloc = Bin0}};
+        <<From1:32,To1:32,L1/binary>> ->
+            case dets_utils:pread_n(H#head.fptr, From1, Max) of
+                eof ->
+                    {scan_error, premature_eof};
+                NewBin ->
+                    scan(NewBin, H, From1, To1, L1, Ts, R, C)
+            end
     end.
 
 err(Error) ->

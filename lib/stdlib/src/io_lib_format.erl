@@ -330,7 +330,8 @@ float_data([_|Cs], Ds) ->
 
 %% fwrite_g(Float)
 %% fwrite_g(Float, Field, Adjust, Precision, PadChar)
-%%  Use the f form if Float is > 0.1 and < 10^4, else the e form.
+%%  Use the f form if Float is >= 0.1 and < 1.0e4, 
+%%  and the prints correctly in the f form, else the e form.
 %%  Precision always means the # of significant digits.
 
 fwrite_g(Fl) ->
@@ -338,20 +339,25 @@ fwrite_g(Fl) ->
 
 fwrite_g(Fl, F, Adj, none, Pad) ->
     fwrite_g(Fl, F, Adj, 6, Pad);
-fwrite_g(Fl, F, Adj, P, Pad) when abs(Fl) < 0.1 ->
-    fwrite_e(Fl, F, Adj, P, Pad);
-fwrite_g(Fl, F, Adj, P, Pad) when abs(Fl) < 1.0 ->
-    fwrite_f(Fl, F, Adj, P, Pad);
-fwrite_g(Fl, F, Adj, P, Pad) when abs(Fl) < 10.0 ->
-    fwrite_f(Fl, F, Adj, P-1, Pad);
-fwrite_g(Fl, F, Adj, P, Pad) when abs(Fl) < 100.0 ->
-    fwrite_f(Fl, F, Adj, P-2, Pad);
-fwrite_g(Fl, F, Adj, P, Pad) when abs(Fl) < 1000.0 ->
-    fwrite_f(Fl, F, Adj, P-3, Pad);
-fwrite_g(Fl, F, Adj, P, Pad) when abs(Fl) < 10000.0 ->
-    fwrite_f(Fl, F, Adj, P-4, Pad);
-fwrite_g(Fl, F, Adj, P, Pad) ->
-    fwrite_e(Fl, F, Adj, P, Pad).
+fwrite_g(Fl, F, Adj, P, Pad) when P >= 1 ->
+    A = abs(Fl),
+    E = if A < 1.0e-1 -> -2;
+	   A < 1.0e0  -> -1;
+	   A < 1.0e1  -> 0;
+	   A < 1.0e2  -> 1;
+	   A < 1.0e3  -> 2;
+	   A < 1.0e4  -> 3;
+	   true       -> fwrite_f
+	end,
+    if  P =< 1, E == -1;
+	P-1 > E, E >= -1 ->
+	    fwrite_f(Fl, F, Adj, P-1-E, Pad);
+	P =< 1 ->
+	    fwrite_e(Fl, F, Adj, 2, Pad);
+	true ->
+	    fwrite_e(Fl, F, Adj, P, Pad)
+    end.
+
 
 %% string(String, Field, Adjust, Precision, PadChar)
 

@@ -37,10 +37,14 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-MODULES = hipe_consttab hipe_gensym hipe_data_pp \
-	  hipe_pack_constants hipe_sdi
+ifdef HIPE_ENABLED
+HIPE_MODULES = hipe_data_pp hipe_pack_constants hipe_sdi 
+else
+HIPE_MODULES =
+endif
+MODULES =  hipe_consttab hipe_gensym $(HIPE_MODULES)
 
-HRL_FILES=
+HRL_FILES= hipe_sdi.hrl
 ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
@@ -86,6 +90,8 @@ $(DOCS)/%.html:%.erl
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
+	$(INSTALL_DIR) $(RELSYSDIR)/misc
+	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(RELSYSDIR)/misc
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 

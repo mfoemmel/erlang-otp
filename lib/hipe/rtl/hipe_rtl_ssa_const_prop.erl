@@ -134,8 +134,6 @@ visit_expression(Instruction, Environment) ->
 % phi-nodes are handled in scc
 %    phi ->
 %      visit_phi(Instruction, Environment);
-    begin_handler ->
-      visit_begin_handler(Instruction, Environment);
 %%    return ->
 %%      visit_return(Instruction, Environment);
 %%    store ->
@@ -578,21 +576,6 @@ visit_multimove(Inst, Env) ->
   {[], NewSSA, NewEnv}.
   
 %%-----------------------------------------------------------------------------
-%% Procedure : visit_begin_handler/2
-%% Purpose   : execute a restore catch instruction. Excatly what is the 
-%%             semantics ? We've assuemd that it sets all dests to bottom for
-%%             now.
-%% Arguments : Inst - The instruction
-%%             Env  - The environment
-%% Returns   : {FlowWorkList, SSAWorkList, NewEnvironment}
-%%-----------------------------------------------------------------------------
-
-visit_begin_handler(Inst, Env) ->
-  Dsts = hipe_rtl:defines(Inst),
-  {NewEnv, NewSSA} = update_lattice_value({Dsts, bottom}, Env),
-  {[], NewSSA, NewEnv}.
-
-%%-----------------------------------------------------------------------------
 %% Procedure : visit_call/2
 %% Purpose   : execute a call-instruction. All calls return bottom. We make 
 %%             this assumption since the icode-leel have taken care of BIF's
@@ -705,8 +688,6 @@ update_instruction(Inst, Env) ->
     move ->
       subst_all_uses(Inst, Env);
     multimove ->
-      subst_all_uses(Inst, Env);
-    begin_handler ->
       subst_all_uses(Inst, Env);
     return ->
       subst_all_uses(Inst, Env);

@@ -141,31 +141,19 @@
 %%     <dd>Performs sparse conditional constant propagation on the SSA
 %%     form on the RTL level. </dd>
 %%
-%%   <dt><code>rtl_cse</code></dt>
-%%     <dd>Performs common subexpression elimination on RTL. Also
-%%	<code>{rtl_cse,CSE_type}</code>.
-%%      <p><code>CSE_type</code> is one of the following:
-%%      <ul>
-%%        <li><code>true</code>/<code>false</code>: normal CSE/no CSE</li>
-%%        <li><code>local</code>: CSE per block</li>
-%%        <li><code>ebb</code>: CSE per extended basic block</li>
-%%        <li><code>global</code>: CSE by fixpoint iteration</li>
-%%      </ul></p></dd>
-%%
 %%   <dt><code>rtl_prop</code></dt>
 %%     <dd>Propagation of constants on RTL.</dd>
 %%
-%%   <dt><code>sparc_estimate_block_times</code></dt>
-%%     <dd>Do not perform scheduling, but annotate with cycle
-%%     estimates</dd>
+%%   <dt><code>rtl_lcm</code></dt>
+%%     <dd>Lazy Code Motion on RTL.</dd>
 %%
 %%   <dt><code>sparc_estimate_block_times</code></dt>
-%%     <dd>Do not perform scheduling, but annotate with cycle
+%%     <dd>Do not perform instruction scheduling, but annotate with cycle
 %%     estimates</dd>
 %%
 %%   <dt><code>sparc_post_schedule</code></dt>
-%%   <dd>Schedule after register allocation as well. There are two
-%%   reasons for this:
+%%   <dd>Perform instruction scheduling after register allocation as well.
+%%   There are two reasons why this might be beneficial:
 %%   <ol>
 %%     <li>Spill code (rare).</li>
 %%     <li>Register allocation may reuse registers in nearby
@@ -457,8 +445,8 @@ compile(Name, File, Opts) ->
       end;
     {src_file, Source} ->
       CoreOpts1 = [X || X = {core_transform, _} <-Opts],
-      CoreOpts2 = [report_errors, to_core, binary, {i, "../include"}|CoreOpts1],
-      %%io:format("Using: ~w\n", [CoreOpts2]),
+      CoreOpts2 = [report_errors, to_core, binary, {i,"../include"}|CoreOpts1],
+      %% io:format("Using: ~w\n", [CoreOpts2]),
       case compile:file(Source, CoreOpts2) of
 	{ok, _, Core} ->
 	  compile_core(Name, Core, File, Opts);
@@ -584,7 +572,6 @@ disasm(File) ->
 		    {value,{hipe,X}} -> [X];
 		    _ -> []
 		  end,
-      %% XXX: get module name too somehow
       Exports = fix_beam_exports(BeamExports),
       {{BeamCode, Exports}, HCompOpts};
     Error ->
@@ -946,11 +933,6 @@ pre_init(Opts) ->
 %% accessed globally. Options have been fully expanded at ths point.
 
 init(_Options) ->
-  % XXX: If more options start to use this then make a list instead
-  %      and change hipe_icode_ssa_const_prop.erl accordingly
-  put(warn_expression_throws_exception,
-	proplists:get_bool(warn_expression_throws_exception, _Options)),
-
   put(regalloctime,0),
   put(callersavetime,0),
   put(totalspill,{0,0}),
@@ -1011,13 +993,10 @@ post(Res, Icode, Options) ->
 
 %% --------------------------------------------------------------------
 
-%% @spec version() -> {Major, Minor, Increment}
-%% Major = integer()
-%% Minor = integer()
-%% Increment  = integer() 
-%% @doc Returns the current HiPE version.
+%% @spec version() -> string().
+%% @doc Returns the current HiPE version as a string().
 version() ->
-  ?VERSION().
+  ?VERSION_STRING().
 
 %% ____________________________________________________________________
 %% 
@@ -1027,58 +1006,56 @@ version() ->
 %% @spec () -> ok
 %% @doc Prints on-line documentation to the standard output.
 help() ->
-  {V1,V2,V3} = ?VERSION(),
-  io:format("The HiPE Compiler (Version ~w.~w.~w)\n" ++
-	    " The normal way to native-compile Erlang code " ++
-	    "using HiPE is to\n" ++
-	    " include `native' in the Erlang compiler " ++
-	    "options, as in:\n" ++
-	    "     1> c(my_module, [native]).\n" ++
-	    " Options to the HiPE compiler must then be passed " ++
-	    "as follows:\n" ++
-	    "     1> c(my_module, [native,{hipe,Options}]).\n" ++
-	    " Use `help_options()' for details.\n" ++
-	    " Utility functions:\n" ++
-	    "   help()\n" ++
-	    "     Prints this message.\n" ++
-	    "   help_options()\n" ++
-	    "     Prints a description of options recognized by the\n" ++
-	    "     HiPE compiler.\n" ++
-	    "   help_option(Option)\n" ++
-	    "     Prints a description of that option.\n" ++
-	    "   help_debug_options()\n" ++
-	    "     Prints a description of debug options.\n" ++
-	    "   version() ->\n" ++
-	    "     Returns `{Major,Minor,Revision}'.\n" ++
-	    " The following functions are for advanced users only!\n" ++
-	    " Note that all options are specific to the HiPE compiler.\n" ++
-	    "   c(Name,Options)\n" ++ 
-	    "     Compiles the module or function Name and loads it\n" ++
-	    "     to memory. Name is an atom or a tuple {M,F,A}.\n" ++
-	    "   c(Name)\n" ++
-	    "     As above, but using only default options.\n" ++
-	    "   f(File,Options)\n" ++ 
-	    "     As c(Name,File,Options), but taking the module name\n" ++
-	    "     from File.\n" ++
-	    "   f(File)\n" ++ 
-	    "     As above, but using only default options.\n" ++
-	    "   compile(Name,Options)\n" ++
-	    "     Compiles the module or function Name to a binary.\n" ++
-	    "     By default, this does not load to memory.\n" ++
-	    "   compile(Name)\n" ++ 
-	    "     As above, but using only default options.\n" ++
-	    "   file(File,Options)\n" ++ 
-	    "     As compile(Name,File,Options), but taking the\n" ++
-	    "     module name from File.\n" ++
-	    "   file(File)\n" ++ 
-	    "     As above, but using only default options.\n" ++
-	    "   load(Module)\n" ++
-	    "     Loads the named module into memory.\n" ++
-	    "   load(Module,Source)\n" ++
-	    "     As above, but taking the code from Source.\n" ++
-	    "     Source is either the name of a BEAM file\n" ++
-	    "     or a binary containing native code.\n",
-	    [V1,V2,V3]),
+  io:put_chars("The HiPE Compiler (Version " ++ ?VERSION_STRING() ++ ")\n" ++
+	       " The normal way to native-compile Erlang code " ++
+	       "using HiPE is to\n" ++
+	       " include `native' in the Erlang compiler " ++
+	       "options, as in:\n" ++
+	       "     1> c(my_module, [native]).\n" ++
+	       " Options to the HiPE compiler must then be passed " ++
+	       "as follows:\n" ++
+	       "     1> c(my_module, [native,{hipe,Options}]).\n" ++
+	       " Use `help_options()' for details.\n" ++
+	       " Utility functions:\n" ++
+	       "   help()\n" ++
+	       "     Prints this message.\n" ++
+	       "   help_options()\n" ++
+	       "     Prints a description of options recognized by the\n" ++
+	       "     HiPE compiler.\n" ++
+	       "   help_option(Option)\n" ++
+	       "     Prints a description of that option.\n" ++
+	       "   help_debug_options()\n" ++
+	       "     Prints a description of debug options.\n" ++
+	       "   version() ->\n" ++
+	       "     Returns the HiPE version as a string'.\n" ++
+	       " The following functions are for advanced users only!\n" ++
+	       " Note that all options are specific to the HiPE compiler.\n" ++
+	       "   c(Name,Options)\n" ++ 
+	       "     Compiles the module or function Name and loads it\n" ++
+	       "     to memory. Name is an atom or a tuple {M,F,A}.\n" ++
+	       "   c(Name)\n" ++
+	       "     As above, but using only default options.\n" ++
+	       "   f(File,Options)\n" ++ 
+	       "     As c(Name,File,Options), but taking the module name\n" ++
+	       "     from File.\n" ++
+	       "   f(File)\n" ++ 
+	       "     As above, but using only default options.\n" ++
+	       "   compile(Name,Options)\n" ++
+	       "     Compiles the module or function Name to a binary.\n" ++
+	       "     By default, this does not load to memory.\n" ++
+	       "   compile(Name)\n" ++ 
+	       "     As above, but using only default options.\n" ++
+	       "   file(File,Options)\n" ++ 
+	       "     As compile(Name,File,Options), but taking the\n" ++
+	       "     module name from File.\n" ++
+	       "   file(File)\n" ++ 
+	       "     As above, but using only default options.\n" ++
+	       "   load(Module)\n" ++
+	       "     Loads the named module into memory.\n" ++
+	       "   load(Module,Source)\n" ++
+	       "     As above, but taking the code from Source.\n" ++
+	       "     Source is either the name of a BEAM file\n" ++
+	       "     or a binary containing native code.\n"),
   ok.
 
 %% TODO: it should be possible to specify the target somehow when asking
@@ -1137,8 +1114,6 @@ option_text(icode_ssa_check) ->
   "Checks wheter Icode is on SSA form or not\n";
 option_text(icode_ssa_const_prop) ->
   "Performs sparse conditional constant propagation on Icode SSA";
-option_text(warn_expression_throws_exception) ->
-  "Warns when detecting code that will throw an exception at runtime.";
 option_text(load) ->
   "Automatically load the produced code into memory.";
 option_text(peephole) ->
@@ -1152,6 +1127,8 @@ option_text(pp_icode) ->
   "Display the intermediate HiPE-ICode.";
 option_text(pp_rtl) ->
   "Display the intermediate HiPE-RTL code.";
+option_text(pp_rtl_lcm) ->
+  "Display the intermediate HiPE-RTL lazy code motion sets.";
 option_text(pp_native) ->
   "Display the generated (back-end specific) native code.";
 option_text(regalloc) ->
@@ -1167,10 +1144,10 @@ option_text(rtl_ssa) ->
   "Perform SSA conversion on the RTL level -- default starting at O2";
 option_text(rtl_ssa_const_prop) ->
   "Performs sparse conditional constant propagation on RTL SSA";
-option_text(rtl_cse) ->
-  "Common Subexpression Elimination on RTL.";
 option_text(rtl_prop) ->
   "Perform RTL-level constant propagation.";
+option_text(rtl_lcm) ->
+  "Perform Lazy Code Motion on RTL.";
 option_text(sparc_peephole) ->
   "Perform Sparc peephole optimization.";
 option_text(sparc_prop) ->
@@ -1284,7 +1261,6 @@ hipe_timers() ->
 %%     timers
 %%     safe
 %%     use_indexing
-%%     rtl_cse
 
 %% Valid option keys. (Don't list aliases or negations - the check is
 %% done after the options have been expanded to normal form.)
@@ -1327,12 +1303,13 @@ opt_keys() ->
      pp_rtl,
      pp_rtl_liveness,
      pp_rtl_ssa,
+     pp_rtl_lcm,
      regalloc,
      remove_comments,
      rtl_ssa,
      rtl_ssa_const_prop,
-     rtl_cse,
      rtl_prop,
+     rtl_lcm,
      rtl_show_translation,
      safe,
      sparc_estimate_block_time,
@@ -1357,7 +1334,6 @@ opt_keys() ->
      use_clusters,
      use_jumptable,
      verbose,
-     warn_expression_throws_exception,
      x87].
 
 %% Definitions: 
@@ -1368,7 +1344,7 @@ o1_opts() ->
     ultrasparc ->
       [sparc_peephole, fill_delayslot | Common];
     powerpc ->
-      [rtl_prop, inline_bs];	% XXX: inline_fp not yet allowed
+      Common;
     x86 ->
       Common;
     amd64 ->
@@ -1379,21 +1355,17 @@ o1_opts() ->
 
 o2_opts() ->
   Common = [icode_ssa_const_prop, icode_ssa_copy_prop, icode_type,
-	    %% warn_expression_throws_exception, 
 	    rtl_ssa, rtl_ssa_const_prop,
 	    use_indexing, remove_comments | o1_opts()],
-  %% KOSTIS: The following do not work currently -- why?
-  % Common = [rtl_cse | Common],
-  % Common = [{rtl_cse,global} | Common],
   case get(hipe_target_arch) of
     ultrasparc ->
-      [sparc_prop | Common];
+      [sparc_prop | Common];	% no rtl_lcm here; untagged values over GC...
     powerpc ->
-      Common;
+      [rtl_lcm | Common];
     x86 ->
-      Common;
+      [rtl_lcm | Common];
     amd64 ->
-      Common;
+      [rtl_lcm | Common];
     Arch -> 
       ?EXIT({executing_on_an_unsupported_architecture,Arch})
   end.
@@ -1427,7 +1399,6 @@ opt_negations() ->
    {no_icode_ssa_check, icode_ssa_check},
    {no_icode_ssa_copy_prop, icode_ssa_copy_prop},
    {no_icode_ssa_const_prop, icode_ssa_const_prop},
-   {no_warn_expression_throws_exception, warn_expression_throws_exception},
    {no_icode_type, icode_type},
    {no_inline_bs, inline_bs},
    {no_inline_fp, inline_fp},
@@ -1441,11 +1412,12 @@ opt_negations() ->
    {no_pp_typed_icode, pp_typed_icode},
    {no_pp_rtl, pp_rtl},
    {no_pp_native, pp_native},
+   {no_pp_rtl_lcm, pp_rtl_lcm},
    {no_remove_comments, remove_comments},
    {no_rtl_ssa, rtl_ssa},
    {no_rtl_ssa_const_prop, rtl_ssa_const_prop},
-   {no_rtl_cse, rtl_cse},
    {no_rtl_prop, rtl_prop},
+   {no_rtl_lcm, rtl_lcm},
    {no_rtl_show_translation, rtl_show_translation},
    {no_sparc_estimate_block_time, sparc_estimate_block_time},
    {no_sparc_peephole, sparc_peephole},

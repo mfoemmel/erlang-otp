@@ -7,7 +7,7 @@
 %% (in particular, to muck up the complexity) if you don't understand
 %% how it works.
 %%
-%% $Id: prettypr.erl,v 1.23 2002/09/02 08:55:07 richardc Exp $
+%% $Id: prettypr.erl,v 1.24 2004/11/08 17:46:33 richardc Exp $
 %% ---------------------------------------------------------------------
 %% Copyright (C) 2000-2001 Richard Carlsson
 %%
@@ -29,6 +29,7 @@
 %% Author contact: richardc@csd.uu.se
 %% =====================================================================
 
+%% TODO: EDoc-ify the documentation.
 %% TODO: can floats be moved in/out of sep:s without too much pain?
 
 -module(prettypr).

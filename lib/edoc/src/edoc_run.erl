@@ -14,7 +14,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: edoc_run.erl,v 1.11 2004/08/19 09:23:42 richardc Exp $
+%% $Id: edoc_run.erl,v 1.15 2004/11/30 00:39:00 richardc Exp $
 %%
 %% @copyright 2003 Richard Carlsson
 %% @author Richard Carlsson <richardc@csd.uu.se>
@@ -23,33 +23,25 @@
 %% =====================================================================
 
 %% @doc Interface for calling EDoc from Erlang startup options.
-%% The following is an example of typical usage in a Makefile:
-%% <pre>
-%% $(DOCDIR)/%.html:%.erl
-%%     erl -noshell -run edoc_run file '"$&lt;"' '[{dir,"$(DOCDIR)"}]' -s init stop</pre>
+%%
+%% <p>The following is an example of typical usage in a Makefile:
+%% ```docs:
+%%            erl -noshell -run edoc_run application "'$(APP_NAME)'" \
+%%              '"."' '[{def,{vsn,"$(VSN)"}}]' -s init stop'''
 %% (note the single-quotes to avoid shell expansion, and the
-%% double-quotes enclosing the strings).
+%% double-quotes enclosing the strings).</p>
 
 -module(edoc_run).
 
--export([file/1, application/1, toc/1]).
+-export([file/1, application/1, packages/1, files/1, toc/1]).
 
 -import(edoc_report, [report/2, error/1]).
 
 
-toc(Args) ->
-    F = fun () ->
- 		case parse_args(Args) of
- 		    [Dir, Paths, Opts] -> edoc_index:toc(Dir,Paths,Opts);
- 		    _ ->
- 			invalid_args("edoc_run:toc/1", Args)
- 		end
- 	end,
-    run(F).
-
 application(Args) ->
     F = fun () ->
 		case parse_args(Args) of
+		    [App] -> edoc:application(App);
 		    [App, Opts] -> edoc:application(App, Opts);
 		    [App, Dir, Opts] -> edoc:application(App, Dir, Opts);
 		    _ ->
@@ -58,13 +50,58 @@ application(Args) ->
 	end,
     run(F).
 
+files(Args) ->
+    F = fun () ->
+		case parse_args(Args) of
+		    [Files] -> edoc:files(Files);
+		    [Files, Opts] -> edoc:files(Files, Opts);
+		    _ ->
+			invalid_args("edoc_run:files/1", Args)
+		end
+	end,
+    run(F).
+
+packages(Args) ->
+    F = fun () ->
+		case parse_args(Args) of
+		    [Packages] -> edoc:packages(Packages);
+		    [Packages, Opts] -> edoc:packages(Packages, Opts);
+		    _ ->
+			invalid_args("edoc_run:packages/1", Args)
+		end
+	end,
+    run(F).
+
+%% @hidden   Not official yet
+toc(Args) ->
+    F = fun () ->
+ 		case parse_args(Args) of
+ 		    [Dir, Paths] -> edoc:toc(Dir,Paths);
+ 		    [Dir, Paths, Opts] -> edoc:toc(Dir,Paths,Opts);
+ 		    _ ->
+ 			invalid_args("edoc_run:toc/1", Args)
+ 		end
+ 	end,
+    run(F).
+
 
 %% @spec ([string()]) -> ok | error
+%%
+%% @deprecated This is part of the old interface to EDoc and is mainly
+%% kept for backwards compatibility. The preferred way of generating
+%% documentation is through one of the functions {@link application/1},
+%% {@link packages/1} and {@link files/1}.
+%%
 %% @doc Calls {@link edoc:file/2} with the corresponding arguments. The
 %% strings in the list are parsed as Erlang constant terms. The list can
 %% be either `[File]' or `[File, Options]'. In the first case, an empty
-%% list of options is passed to {@link edoc:file/2}. See also the usage
-%% example above.
+%% list of options is passed to {@link edoc:file/2}.
+%%
+%% <p>The following is an example of typical usage in a Makefile:
+%% ```$(DOCDIR)/%.html:%.erl
+%%            erl -noshell -run edoc_run file '"$<"' '[{dir,"$(DOCDIR)"}]' \
+%%              -s init stop'''
+%% </p>
 
 file(Args) ->
     F = fun () ->

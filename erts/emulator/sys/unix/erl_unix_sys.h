@@ -205,7 +205,7 @@ static __inline__ int erts_check_fpe(double f)
     return 1;
 }
 #  define ERTS_FP_ERROR(f, Action) do { if( erts_check_fpe((f)) ) { Action; } } while (0)
-#  elif defined(__powerpc__) && defined(__GNUC__)
+#  elif (defined(__powerpc__) || defined(__ppc__)) && defined(__GNUC__)
 static __inline__ int erts_check_fpe(double f)
 {
     __asm__ __volatile__("" : "=m"(erl_fp_exception) : "fm"(f));
