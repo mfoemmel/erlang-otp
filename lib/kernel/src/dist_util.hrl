@@ -67,10 +67,11 @@
 	                     %% is a tuple {M,F}.
 	                     %% Is should place {tcp_closed, Socket}
 	                     %% in the message queue on failure.
-	  mf_getstat         %% Returns 
+	  mf_getstat,        %% Returns 
 			     %% {ok, RecvCnt, SendCnt, SendPend} for
 	                     %% a given socket. This is a {M,F}, 
 	                     %% returning {error, Reason on failure}
+	  request_type = normal
 }).
 	  
 
@@ -81,3 +82,4 @@
 %% - handshake_other_started:
 %% kernel_pid, this_node, socket, timer, 
 %% this_flags, allowed, All fun's/mf's.
+

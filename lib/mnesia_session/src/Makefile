@@ -139,8 +139,8 @@ ERL_FLAGS +=  \
 
 
 ERL_COMPILE_FLAGS += \
-	+'{parse_transform, sys_pre_attributes}' \
-	+'{attribute, insert, vsn, "mnesia_session_$(MNESIA_SESSION_VSN)"}'
+	+'{parse_transform,sys_pre_attributes}' \
+	+'{attribute,insert,vsn,"mnesia_session_$(MNESIA_SESSION_VSN)"}'
 
 ERL_ROOTDIR := $(shell echo 'io:format("~s~n",[code:root_dir()]),halt().' | erl | sed 's,^[0-9]*> *,,g' | tail +2)
 
@@ -177,15 +177,15 @@ $(EBIN)/mnesia_session_impl.$(EMULATOR): $(INCLUDE_DIR)/mnesia.hrl
 
 $(GEN_CORBA_FILES): mnesia_corba_session.idl 
 	$(ERLC) $(ERL_FLAGS) $(IDL_COMPILE_FLAGS) \
-	+'{preproc_cmd, "gcc -x c -E -D_CORBA_"}' \
-	+'{{impl, "mnesia_corba_session"}, "mnesia_session_impl"}' \
+	+'{preproc_cmd,"gcc -x c -E -D_CORBA_"}' \
+	+'{{impl,"mnesia_corba_session"},"mnesia_session_impl"}' \
 	mnesia_corba_session.idl
 	mv mnesia.hrl $(INCLUDE_DIR)
 
 $(GEN_GS_FILES): mnesia_session.idl
 	$(ERLC) $(ERL_FLAGS)  $(IDL_COMPILE_FLAGS) \
-	+'{preproc_cmd, "gcc -x c -E"}' \
-	+'{be, erl_genserv}' \
+	+'{preproc_cmd,"gcc -x c -E"}' \
+	+'{be,erl_genserv}' \
 	mnesia_session.idl
 	mv mnesia.hrl $(INCLUDE_DIR)
 

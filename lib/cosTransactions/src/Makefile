@@ -122,8 +122,8 @@ ERL_FLAGS += -pa $(ERL_TOP)/lib/cosTransactions/ebin \
 ERL_COMPILE_FLAGS += \
 	-I$(ERL_TOP)/lib/cosTransactions/include \
 	-I$(ERL_TOP)/lib/orber/include \
-	+'{parse_transform, sys_pre_attributes}' \
-	+'{attribute, insert, app_vsn, "cosTransactions_$(COSTRANSACTIONS_VSN)"}' 
+	+'{parse_transform,sys_pre_attributes}' \
+	+'{attribute,insert,app_vsn,"cosTransactions_$(COSTRANSACTIONS_VSN)"}' 
 
 
 # ----------------------------------------------------
@@ -150,7 +150,7 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 $(GEN_FILES): CosTransactions.idl
-	erlc $(ERL_FLAGS) +'{cfgfile, "CosTransactions.cfg"}' CosTransactions.idl
+	erlc $(ERL_FLAGS) +'{cfgfile,"CosTransactions.cfg"}' CosTransactions.idl
 
 
 # ----------------------------------------------------

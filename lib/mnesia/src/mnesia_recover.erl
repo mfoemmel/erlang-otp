@@ -57,6 +57,7 @@
 	 code_change/3
 	]).
 
+
 -include("mnesia.hrl").
 -import(mnesia_lib, [set/2, verbose/2, error/2, fatal/2]).
 
@@ -97,15 +98,22 @@ allow_garb() ->
 %% transaction log only may contain commit records which refers to
 %% transactions noted in the last two of the 'Prev' tables. All other
 %% tables may now be garbed by 'garb_decisions' (after 2 minutes).
+%% Max 10 tables are kept. 
 do_allow_garb() ->
     %% The order of the following stuff is important!
     Curr = val(latest_transient_decision),
     Old = val(previous_transient_decisions),
     Next = create_transient_decision(),
-    Prev = [Curr | Old],
+    {Prev, ReallyOld} = sublist([Curr | Old], 10, []),
+    [?ets_delete_table(Tab) || Tab <- ReallyOld],
     set(previous_transient_decisions, Prev),
     set(latest_transient_decision, Next).
     
+sublist([H|R], N, Acc) when N > 0 ->
+    sublist(R, N-1, [H| Acc]);
+sublist(List, N, Acc) ->
+    {lists:reverse(Acc), List}.
+
 do_garb_decisions() ->
     case val(previous_transient_decisions) of
 	[First, Second | Rest] ->

@@ -229,6 +229,10 @@ BIF_ADECL_1
 	      */
 	    BIF_ERROR(BIF_P, NOTALIVE);
 	 }
+	 /* We need to look up the link again, since the other node may have
+	    gone down, the dist_demonitor call detected that, and therefore
+	    what dist_lnkp pointed at is no longer there. */
+	 dist_lnkp = find_link_by_ref(&dist_addrs[slot].links, ref_ptr(ref));
 	 del_link(dist_lnkp);
       } else { /* Local monitor */
 	 if ((rp = pid2proc(to)) != NULL)

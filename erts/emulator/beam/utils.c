@@ -28,8 +28,28 @@
 #include "bif.h"
 #include "erl_binary.h"
 
+#undef M_TRIM_THRESHOLD
+#undef M_TOP_PAD
+#undef M_MMAP_THRESHOLD
+#undef M_MMAP_MAX
+
+#if defined(DLMALLOC_IS_CLIB)
+#include "dlmalloc.h"
+#elif !defined(ELIB_ALLOC_IS_CLIB) && \
+       defined(__GLIBC__) && \
+       defined(HAVE_MALLOC_H)
+#include <malloc.h>
+#endif
+
+#ifndef HAVE_MALLOPT
+#define HAVE_MALLOPT 0
+#endif
+
 /* Imported from drv/gzio.c. Why not in any header file? */
 EXTERN_FUNCTION(DriverBinary*, gzinflate_buffer, (char*, int));
+#ifdef INSTRUMENT
+EXTERN_FUNCTION(erl_mutex_t, erts_mutex_sys, (int mno));
+#endif
 
 /* Forward */
 static int is_printable_string(uint32);
@@ -1832,10 +1852,22 @@ int alloc_who;
 static mem_link *mem_anchor;
 static int need_instr_init;
 static erl_mutex_t instr_lck;
+
+static void instr_init(void);
+
 #endif
+
+static Sint trim_threshold;
+static Sint top_pad;
+static Sint mmap_threshold;
+static Sint mmap_max;
 
 void erts_init_utils(void) 
 {
+    trim_threshold = -1;
+    top_pad = -1;
+    mmap_threshold = -1;
+    mmap_max = -1;
 #ifdef INSTRUMENT
     alloc_who = -1;
     mem_anchor = NULL;
@@ -1843,6 +1875,69 @@ void erts_init_utils(void)
 #endif
 }
 
+int
+sys_alloc_opt(int opt, int value)
+{
+#if HAVE_MALLOPT
+  Sint m_opt;
+  Sint *curr_val;
+
+  switch(opt) {
+  case SYS_ALLOC_OPT_TRIM_THRESHOLD:
+#ifdef M_TRIM_THRESHOLD
+    m_opt = M_TRIM_THRESHOLD;
+    curr_val = &trim_threshold;
+    break;
+#else
+    return 0;
+#endif
+  case SYS_ALLOC_OPT_TOP_PAD:
+#ifdef M_TOP_PAD
+    m_opt = M_TOP_PAD;
+    curr_val = &top_pad;
+    break;
+#else
+    return 0;
+#endif
+  case SYS_ALLOC_OPT_MMAP_THRESHOLD:
+#ifdef M_MMAP_THRESHOLD
+    m_opt = M_MMAP_THRESHOLD;
+    curr_val = &mmap_threshold;
+    break;
+#else
+    return 0;
+#endif
+  case SYS_ALLOC_OPT_MMAP_MAX:
+#ifdef M_MMAP_MAX
+    m_opt = M_MMAP_MAX;
+    curr_val = &mmap_max;
+    break;
+#else
+    return 0;
+#endif
+  default:
+    return 0;
+  }
+
+  if(mallopt(m_opt, value)) {
+    *curr_val = (Sint) value;
+    return 1;
+  }
+
+#endif /* #if HAVE_MALLOPT */
+
+  return 0;
+}
+
+void
+sys_alloc_stat(SysAllocStat *sasp)
+{
+   sasp->trim_threshold = trim_threshold;
+   sasp->top_pad        = top_pad;
+   sasp->mmap_threshold = mmap_threshold;
+   sasp->mmap_max       = mmap_max;
+
+}
 
 #ifdef INSTRUMENT
 extern Eterm current_process;
@@ -1899,8 +1994,10 @@ unsigned int size;
    erts_mutex_lock(instr_lck);
 
    p = sys_alloc2(size + sizeof(mem_link));
-   if (p == NULL)
-      return NULL;
+   if (p == NULL) {
+     erts_mutex_unlock(instr_lck);
+     return NULL;
+   }
 
    l = (mem_link *) p;
    l->type = -1;
@@ -1926,12 +2023,15 @@ void* ptr; unsigned int size;
    p = ((char *) ptr) - sizeof(mem_link);
 
    l = (mem_link *) p;
-   link_out(l);
    old_size = l->size;
+   link_out(l);
 
    new_p = sys_realloc2(p, size + sizeof(mem_link));
-   if (new_p == NULL)
-      return NULL;
+   if (new_p == NULL) {
+     link_in(l, old_size); /* Old memory block is still allocated */
+     erts_mutex_unlock(instr_lck);
+     return NULL;
+   }
 
    l = (mem_link *) new_p;
    link_in(l, size);

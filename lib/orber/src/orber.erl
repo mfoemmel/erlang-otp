@@ -38,9 +38,9 @@
 	 ssl_server_verify/0, ssl_client_verify/0, set_ssl_client_verify/1,
 	 ssl_server_depth/0, ssl_client_depth/0, set_ssl_client_depth/1,
 	 ssl_server_cacertfile/0,ssl_client_cacertfile/0, set_ssl_client_cacertfile/1,
-	 uninstall/0, giop_version/0, info/0,
-	 is_running/0, add_node/2, remove_node/1, iiop_timeout/0, 
-	 iiop_connection_timeout/0, objectkeys_gc_time/0,
+	 uninstall/0, giop_version/0, info/0, is_running/0, add_node/2, 
+	 remove_node/1, iiop_timeout/0, iiop_connection_timeout/0, 
+	 iiop_setup_connection_timeout/0, objectkeys_gc_time/0,
 	 is_lightweight/0, get_lightweight_nodes/0,
 	 start_lightweight/0, start_lightweight/1,
 	 get_ORBDefaultInitRef/0, get_ORBInitRef/0,
@@ -54,6 +54,9 @@
 	 get_debug_level/0, debug_level_print/3, configure/2, add_table_index/0,
 	 del_table_index/0]).
 
+%% Temporary exports added to handle upgrade. Remove in next version.
+-export([add_table_index_appup/0, del_table_index_appup/0]).
+
 %%-----------------------------------------------------------------
 %% Internal definitions
 %%-----------------------------------------------------------------
@@ -65,6 +68,9 @@
 
 -define(ORBER_TABS, [orber_CosNaming, orber_objkeys, corba_policy,
 		     corba_policy_associations]).
+
+-define(DEBUG_LEVEL, 5).
+
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -157,7 +163,10 @@ host() ->
     end.
 
 ip_address() ->
-    {ok, Hostname} = inet:gethostname(),
+    %% We used to call inet:gethostname() instead of net_adm:localhost() but if the 
+    %% /etc/hosts don't contain the short name the result would be 127.0.0.1. In an
+    %% IOR this would cause problems.
+    Hostname = net_adm:localhost(),
     {ok, {A1, A2, A3, A4}} = inet:getaddr(Hostname, inet),
     integer_to_list(A1) ++ "." ++ integer_to_list(A2) ++ "." ++ integer_to_list(A3)
 	++ "." ++ integer_to_list(A4).
@@ -192,13 +201,22 @@ iiop_connection_timeout() ->
 	{ok, Int} when integer(Int) ->
 	    if
 		Int > 1000000 ->
-		    error_logger:error_msg("Orber 'iiop_timeout' badly configured.
+		    error_logger:error_msg("Orber 'iiop_connection_timeout' badly configured.
 Time to large (>1000000 sec), swithed to 'infinity'~n"),
 		    infinity;
 		true ->
 		    %% Convert to msec.
 		    Int*1000
 	    end;
+	_ ->
+	    infinity
+    end.
+
+iiop_setup_connection_timeout() ->
+    case application:get_env(orber, iiop_setup_connection_timeout) of
+	{ok, Int} when integer(Int) ->
+            %% Convert to msec.
+	    Int*1000;
 	_ ->
 	    infinity
     end.
@@ -242,12 +260,10 @@ get_ORBDefaultInitRef() ->
 %%-----------------------------------------------------------------
 get_interceptors() ->
     case application:get_env(orber, interceptors) of
-	{ok, {basic, PIs}} ->
-	    {basic, PIs};
-	{ok, {portable, PIs}} ->
+	{ok, {native, PIs}} when list(PIs) ->
+	    {native, PIs};
+	{ok, {portable, PIs}} when list(PIs) ->
 	    {portable, PIs};
-	{ok, {both, PIs}} ->
-	    {both, PIs};
 	_ ->
 	    false
     end.
@@ -436,8 +452,12 @@ info() ->
 	    io:format("GIOP version: ~p\n",[giop_version()]),
 	    io:format("IIOP timeout: ~p\n",[iiop_timeout()]),
 	    io:format("IIOP connection timeout: ~p\n",[iiop_connection_timeout()]),
+	    io:format("IIOP setup connection timeout: ~p\n",[iiop_setup_connection_timeout()]),
 	    io:format("Object Keys GC interval: ~p\n",[objectkeys_gc_time()]),
 	    io:format("Using Interceptors: ~p\n",[get_interceptors()]),
+	    io:format("Debug Level: ~p\n",[get_debug_level()]),
+	    io:format("orbInitRef: ~p\n",[get_ORBInitRef()]),
+	    io:format("orbDefaultInitRef: ~p\n",[get_ORBDefaultInitRef()]),
 	    Sec = secure(),
 	    io:format("ORB security: ~p\n",[Sec]),
 	    case Sec of
@@ -511,7 +531,6 @@ install_orber(Nodes, Options) ->
     oe_erlang:oe_register(),
     oe_OrberIFR:oe_register(),
     oe_CORBA:oe_register(),
-    create_default_contexts(),
     check_mnesia_result(mnesia:dump_tables(['orber_CosNaming']),
 			"Unable to dump mnesia tables."),
     application:stop(orber).
@@ -699,10 +718,10 @@ get_debug_level() ->
 %% NOTE!!
 %% The following levels are used (0-10):
 %% 10: cdrlib.erl
-%%  9: cdr_encode.erl cdr_decode.erl orber_ifr.erl
+%%  9: cdr_encode.erl cdr_decode.erl orber_ifr.erl orber_pi.erl
 %%  8: orber_iiop_outrequest.erl orber_iiop_inrequest.erl
 %%  7: orber_iiop_outproxy.erl orber_iiop_inproxy.erl
-%%  6: iop_ior.erl, orber_objectkeys.erl, Orber_IFR_impl.erl
+%%  6: iop_ior.erl, orber_objectkeys.erl, Orber_IFR_impl.erl orber_socket.erl
 %%  5: corba.erl, corba_boa.erl, corba_object.erl
 %%  4: Reserved for Cos-services!
 %%  3: Reserved for Cos-services!
@@ -729,13 +748,19 @@ debug_level_print(Format, Data, RequestedLevel) ->
 %% Initial Services References
 configure(orbDefaultInitRef, String) when list(String) ->
     do_configure(orbDefaultInitRef, String);
+configure(orbDefaultInitRef, undefined) ->
+    do_configure(orbDefaultInitRef, undefined);
 configure(orbInitRef, String) when list(String) ->
     do_configure(orbInitRef, String);
+configure(orbInitRef, undefined) ->
+    do_configure(orbInitRef, undefined);
 %% IIOP-version
 configure(giop_version, {1, 0}) ->
     do_configure(giop_version, {1, 0});
 configure(giop_version, {1, 1}) ->
     do_configure(giop_version, {1, 1});
+configure(giop_version, {1, 2}) ->
+    do_configure(giop_version, {1, 2});
 %% configure 'iiop_timout' will only have effect on new requests.
 configure(iiop_timeout, infinity) ->
     do_configure(iiop_timeout, infinity);
@@ -746,6 +771,11 @@ configure(iiop_connection_timeout, infinity) ->
     do_configure(iiop_connection_timeout, infinity);
 configure(iiop_connection_timeout, Value) when integer(Value), Value =< 1000000 ->
     do_configure(iiop_connection_timeout, Value);
+%% configure 'iiop_setup_connection_timeout' will only have effect on new connections.
+configure(iiop_setup_connection_timeout, infinity) ->
+    do_configure(iiop_setup_connection_timeout, infinity);
+configure(iiop_setup_connection_timeout, Value) when integer(Value) ->
+    do_configure(iiop_setup_connection_timeout, Value);
 %% Garbage Collect the object keys DB.
 configure(objectkeys_gc_time, infinity) ->
     do_configure(objectkeys_gc_time, infinity);
@@ -763,8 +793,10 @@ configure(iiop_port, Value) when integer(Value) ->
 configure(interceptors, Value) when tuple(Value) ->
     do_safe_configure(interceptors, Value);
 
-configure(_, _) ->
-    exit({error, "Bad configure parameter(s)"}).
+configure(Key, Value) ->
+    orber:debug_level_print("[~p] orber:configure(~p, ~p); Bad key or value.", 
+			    [?LINE, Key, Value], ?DEBUG_LEVEL),
+    exit("Bad configure parameter(s)").
 
 %% This function may be used as long as it is safe to change a value at any time.
 do_configure(Key, Value) ->
@@ -787,10 +819,43 @@ do_safe_configure(Key, Value) ->
 		false ->
 		    application_controller:set_env(orber, Key, Value);
 		true ->
-		    exit({error, "Orber already rrunning, the given key may not be updated!"})
+		    exit("Orber already running, the given key may not be updated!")
 	    end
     end.
 
+%% Temporary function added to handle upgrade. Remove in next version.
+add_table_index_appup() ->
+    check_mnesia_result(mnesia:add_table_index(ir_ConstantDef, id),
+			"Unable to index ir_ConstantDef mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_EnumDef, id),
+			"Unable to index ir_EnumDef mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_AliasDef, id),
+			"Unable to index ir_AliasDef mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_AttributeDef, id),
+			"Unable to index ir_AttributeDef mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_OperationDef, id),
+			"Unable to index ir_OperationDef mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_Contained, id),
+			"Unable to index ir_Contained mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_TypedefDef, id),
+			"Unable to index ir_TypedefDef mnesia table.").
+
+%% Temporary function added to handle upgrade. Remove in next version.
+del_table_index_appup() ->
+    check_mnesia_result(mnesia:del_table_index(ir_ConstantDef, id),
+			"Unable to remove index for the mnesia table ir_ConstantDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_EnumDef, id),
+			"Unable to remove index for the mnesia table ir_EnumDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_AliasDef, id),
+			"Unable to remove index for the mnesia table ir_AliasDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_AttributeDef, id),
+			"Unable to remove index for the mnesia table ir_AttributeDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_OperationDef, id),
+			"Unable to remove index for the mnesia table ir_OperationDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_Contained, id),
+			"Unable to remove index for the mnesia table ir_Contained."),
+    check_mnesia_result(mnesia:del_table_index(ir_TypedefDef, id),
+			"Unable to remove index for the mnesia table ir_TypedefDef.").
 
 add_table_index() ->
     check_mnesia_result(mnesia:add_table_index(ir_ModuleDef, id),
@@ -802,7 +867,23 @@ add_table_index() ->
     check_mnesia_result(mnesia:add_table_index(ir_UnionDef, id),
 			"Unable to index ir_UnionDef mnesia table."),
     check_mnesia_result(mnesia:add_table_index(ir_ExceptionDef, id),
-			"Unable to index ir_ExceptionDef mnesia table.").  
+			"Unable to index ir_ExceptionDef mnesia table."),
+    %% New index tables
+    check_mnesia_result(mnesia:add_table_index(ir_ConstantDef, id),
+			"Unable to index ir_ConstantDef mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_EnumDef, id),
+			"Unable to index ir_EnumDef mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_AliasDef, id),
+			"Unable to index ir_AliasDef mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_AttributeDef, id),
+			"Unable to index ir_AttributeDef mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_OperationDef, id),
+			"Unable to index ir_OperationDef mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_Contained, id),
+			"Unable to index ir_Contained mnesia table."),
+    check_mnesia_result(mnesia:add_table_index(ir_TypedefDef, id),
+			"Unable to index ir_TypedefDef mnesia table.").
+
 del_table_index() ->
     check_mnesia_result(mnesia:del_table_index(ir_ModuleDef, id),
 			"Unable to remove index for the mnesia table ir_ModuleDef."),
@@ -813,7 +894,21 @@ del_table_index() ->
     check_mnesia_result(mnesia:del_table_index(ir_UnionDef, id),
 			"Unable to remove index for the mnesia table ir_UnionDef."),
     check_mnesia_result(mnesia:del_table_index(ir_ExceptionDef, id),
-			"Unable to remove index for the mnesia table ir_ExceptionDef.").
+			"Unable to remove index for the mnesia table ir_ExceptionDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_ConstantDef, id),
+			"Unable to remove index for the mnesia table ir_ConstantDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_EnumDef, id),
+			"Unable to remove index for the mnesia table ir_EnumDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_AliasDef, id),
+			"Unable to remove index for the mnesia table ir_AliasDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_AttributeDef, id),
+			"Unable to remove index for the mnesia table ir_AttributeDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_OperationDef, id),
+			"Unable to remove index for the mnesia table ir_OperationDef."),
+    check_mnesia_result(mnesia:del_table_index(ir_Contained, id),
+			"Unable to remove index for the mnesia table ir_Contained."),
+    check_mnesia_result(mnesia:del_table_index(ir_TypedefDef, id),
+			"Unable to remove index for the mnesia table ir_TypedefDef.").
 
 %%-----------------------------------------------------------------
 %% Server functions

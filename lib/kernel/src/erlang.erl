@@ -32,6 +32,8 @@
 
 -export([open_port/2]).
 
+-export([nodes/0]).
+
 open_port(Name, Opt) -> erl_open_port:open_port(Name, Opt).
 
 apply(Fun, Args) ->
@@ -76,6 +78,8 @@ spawn_link(N,M,F,A) -> spawn_link(M,F,A).
 
 spawn_opt(M, F, A, Opts) ->
     erlang:spawn_opt({M, F, A}, Opts).
+
+nodes() -> erlang:nodes(visible).
 
 crasher(Node,Mod,Fun,Args,Reason) ->
     error_logger:error_msg('** Can not start ~w:~w,~w on ~w **~n',

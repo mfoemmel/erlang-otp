@@ -1344,7 +1344,11 @@ BIF_ADECL_3
 	erts_port[ix].dslot = slot;
     }
 
-    if (!(flags & DFLAG_PUBLISHED)) {
+    if (!(flags & DFLAG_ATOM_CACHE) ||
+	(!(flags & DFLAG_PUBLISHED) && !(flags & DFLAG_HIDDEN_ATOM_CACHE))
+	/* Nodes which cannot use atom cache on non-published connections
+	   (pre r7b01_patched nodes) doesn't send the DFLAG_HIDDEN_ATOM_CACHE
+	   flag. */) {
 	delete_cache(slot);
     } else {
 	create_cache(slot);
@@ -1544,24 +1548,67 @@ BIF_ADECL_0
 /**********************************************************************/
 /* nodes() -> [ Node ] */
 
+#if 0 /* Done in erlang.erl instead. */
 BIF_RETTYPE nodes_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
+  return nodes_1(BIF_P, am_visible);
+}
+#endif
+
+BIF_RETTYPE nodes_1(BIF_ALIST_1)
+BIF_ADECL_1
+{
+#undef  ADD_NODE
+#define ADD_NODE                                                             \
+  (((dist_addrs[i].cid != NIL) &&                                            \
+    (connected                                                               \
+     || (published && (dist_addrs[i].flags & DFLAG_PUBLISHED))               \
+     || (hidden && !(dist_addrs[i].flags & DFLAG_PUBLISHED))))               \
+   || (known && (dist_addrs[i].status & D_RESERVED)))
+
+#undef  SET_NODE_TYPE
+#define SET_NODE_TYPE(X)                                                     \
+  do {                                                                       \
+    switch((X)) {                                                            \
+    case am_visible:   published = 1;                                 break; \
+    case am_hidden:    hidden    = 1;                                 break; \
+    case am_known:     known     = 1;                                 break; \
+    case am_this:      this      = 1;                                 break; \
+    case am_connected: connected = 1;                                 break; \
+    default:           BIF_ERROR(BIF_P, BADARG);                      break; \
+    }                                                                        \
+  } while(0)
+
     int i;
     uint32 previous;
     int length;
     uint32* hp;
+    int connected = 0;
+    int published = 0;
+    int hidden = 0;
+    int known = 0;
+    int this = 0;
 
-    if (this_node == am_Noname)
-	BIF_RET(NIL);
+    if (is_atom(BIF_ARG_1))
+      SET_NODE_TYPE(BIF_ARG_1);
+    else {
+      Eterm list = BIF_ARG_1;
 
-    length = 0;
-    for (i=1; i <MAXDIST ; i++) {
-	if ((dist_addrs[i].cid != NIL) && 
-	    (dist_addrs[i].flags & DFLAG_PUBLISHED)) {
-	    length++;
-	}
+      while (is_list(list)) {
+	SET_NODE_TYPE(CAR(list_val(list)));
+	list = CDR(list_val(list));
+      }
+
+      if (is_not_nil(list))
+	BIF_ERROR(BIF_P, BADARG);
     }
+
+    length = this || known ? 1 : 0;
+    if (this_node != am_Noname)
+      for (i=1; i <MAXDIST ; i++)
+	if (ADD_NODE)
+	  length++;
 
     if (length == 0)
 	BIF_RET(NIL);
@@ -1569,14 +1616,22 @@ BIF_ADECL_0
     hp = HAlloc(BIF_P, 2*length);
 
     previous = NIL;
-    for (i = 1; i <MAXDIST; i++) {
-	if ((dist_addrs[i].cid != NIL) &&
-	    (dist_addrs[i].flags & DFLAG_PUBLISHED)) {
-	    previous = CONS(hp, dist_addrs[i].sysname, previous);
-	    hp += 2;
-	}
+
+    if(this || known) {
+      previous = CONS(hp, this_node, previous);
+      hp += 2;
     }
+
+    if (this_node != am_Noname)
+      for (i = 1; i <MAXDIST; i++)
+	if (ADD_NODE) {
+	  previous = CONS(hp, dist_addrs[i].sysname, previous);
+	  hp += 2;
+	}
+
     BIF_RET(previous);
+#undef  ADD_NODE
+#undef  SET_NODE_TYPE
 }
 
 /**********************************************************************/

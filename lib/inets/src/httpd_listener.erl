@@ -226,10 +226,12 @@ do_next_connection(InitData,SocketType,Socket,ConfigDB,MaxRequests,Timeout) ->
 				  Timeout) of
 	{'EXIT',Reason} ->
 	    ?LOG("do_next_connection -> exit: ~p",[Reason]),
-	    ?vlog("exit handling connection: ~p",[Reason]),
+	    ?vlog("exit reading request: ~p",[Reason]),
 	    error_logger:error_report({'EXIT',Reason}),
 	    mod_log:error_log(SocketType,Socket,ConfigDB,Peername,Reason),
 	    mod_disk_log:error_log(SocketType,Socket,ConfigDB,Peername,Reason);
+	{error,Reason} ->
+	    handle_read_error(Reason,SocketType,Socket,ConfigDB,Peername);
 	Info when record(Info, mod) ->
 	    case Info#mod.connection of
 		keep_alive ->
@@ -249,6 +251,42 @@ do_next_connection(InitData,SocketType,Socket,ConfigDB,MaxRequests,Timeout) ->
 	    ok
     end.
 
+handle_read_error({header_too_long,Max,Rem},
+		  SocketType,Socket,ConfigDB,Peername) ->
+    ?LOG("handle_read_error(header_too_long) -> entry with"
+	 "~n   Max: ~p"
+	 "~n   Rem: ~p",[Max,Rem]),
+    String = io_lib:format("header too long: ~p + ~p",[Max,Rem]),
+    handle_read_error(ConfigDB,String,SocketType,Socket,Peername,
+		      max_header_action,close);
+handle_read_error({body_too_long,Max,Actual},
+		  SocketType,Socket,ConfigDB,Peername) ->
+    ?LOG("handle_read_error(body_too_long) -> entry with"
+	 "~n   Max:    ~p"
+	 "~n   Actual: ~p",[Max,Actual]),
+    String = io_lib:format("body too long: ~p : ~p",[Max,Actual]),
+    handle_read_error(ConfigDB,String,SocketType,Socket,Peername,
+		      max_body_action,close);
+handle_read_error(Error,SocketType,Socket,ConfigDB,Peername) ->
+    ok.
+
+handle_read_error(ConfigDB,ReasonString,SocketType,Socket,Peername,
+		  Item,Default) ->
+    ?vlog("error reading request: ~s",[ReasonString]),
+    E = io_lib:format("Error reading request: ~s",[ReasonString]),
+    mod_log:error_log(SocketType,Socket,ConfigDB,Peername,E),
+    mod_disk_log:error_log(SocketType,Socket,ConfigDB,Peername,E),
+    case httpd_util:lookup(ConfigDB,Item,Default) of
+	reply414 ->
+	    send_read_status(SocketType,Socket,414,ReasonString,ConfigDB);
+	_ ->
+	    ok
+    end.
+    
+send_read_status(SocketType,Socket,Code,ReasonString,ConfigDB) ->
+    httpd_response:send_status(SocketType,Socket,Code,ReasonString,ConfigDB).
+
+    
 accept_failed(SocketType, ConfigDB, Error) ->
     String = lists:flatten(io_lib:format("Accept failed: ~p", [Error])),
     error_logger:error_report(String),

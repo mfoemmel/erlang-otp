@@ -108,6 +108,7 @@ reason_phrase(400) -> "Bad Request";
 reason_phrase(401) -> "Unauthorized";
 reason_phrase(403) -> "Forbidden";
 reason_phrase(404) -> "Not Found";
+reason_phrase(414) -> "Request-URI Too Long";
 reason_phrase(500) -> "Internal Server Error";
 reason_phrase(501) -> "Not Implemented";
 reason_phrase(502) -> "Bad Gateway";
@@ -133,6 +134,8 @@ message(403,RequestURI,_) ->
   "You don't have permission to access "++RequestURI++" on this server.";
 message(404,RequestURI,_) ->
   "The requested URL "++RequestURI++" was not found on this server.";
+message(414,ReasonPhrase,_) ->
+  "Message "++ReasonPhrase++".";
 message(500,none,ConfigDB) ->
   ServerAdmin=lookup(ConfigDB,server_admin,"unknown@unknown"),
   "The server encountered an internal error or

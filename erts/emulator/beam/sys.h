@@ -409,6 +409,33 @@ EXTERN_FUNCTION(void, sys_free, (void*));
 #define sys_free(p)             free(p)
 */
 
+/* Options to sys_alloc_opt */
+#define SYS_ALLOC_OPT_TRIM_THRESHOLD 0
+#define SYS_ALLOC_OPT_TOP_PAD        1
+#define SYS_ALLOC_OPT_MMAP_THRESHOLD 2
+#define SYS_ALLOC_OPT_MMAP_MAX       3
+
+/* Default values to sys_alloc_opt options */
+#define ERTS_DEFAULT_TRIM_THRESHOLD  (128 * 1024)
+#define ERTS_DEFAULT_TOP_PAD         0
+#define ERTS_DEFAULT_MMAP_THRESHOLD  (128 * 1024)
+#define ERTS_DEFAULT_MMAP_MAX        64
+
+EXTERN_FUNCTION(int, sys_alloc_opt, (int, int));
+
+typedef struct {
+  Sint trim_threshold;
+  Sint top_pad;
+  Sint mmap_threshold;
+  Sint mmap_max;
+#ifdef INSTRUMENT
+  Uint total;
+  Uint maximum;
+#endif
+} SysAllocStat;
+
+EXTERN_FUNCTION(void, sys_alloc_stat, (SysAllocStat *));
+
 /* Declare if not macros */
 #ifndef sys_alloc2
 EXTERN_FUNCTION(void*, sys_alloc2, (unsigned int));

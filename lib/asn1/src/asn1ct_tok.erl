@@ -19,35 +19,9 @@
 
 %% Tokenize ASN.1 code (input to parser generated with yecc)   
 
--export([get_name/2,tokenise/2, file/1, chop/1]).
+-export([get_name/2,tokenise/2, file/1]).
 
 
--define(tend,{'$end',1}).
-
-chop(File) ->
-    case file(File) of
-	{error,Reason} ->
-	    {error, Reason};
-	Toks ->
-	    chop(Toks,[],[])
-    end.
-
-chop([Tref,Assign|Trest], Acc1, Acc2) 
-  when element(1,Tref) == typereference,
-       element(1,Assign) == '::=' ->
-    chop(Trest, [Assign, Tref], [lists:reverse([?tend|Acc1])|Acc2]);
-chop([Vref,Assign|Trest], Acc1, Acc2) 
-  when element(1,Vref) == valuereference,
-       element(1,Assign) == '::=' ->
-    chop(Trest, [Assign, Vref], [lists:reverse([?tend|Acc1])|Acc2]);
-chop([End|Trest], Acc1, Acc2) 
-  when element(1,End) == 'END' ->
-    chop(Trest, [End], [lists:reverse([?tend|Acc1])|Acc2]);
-chop([H|Trest], Acc1, Acc2) ->
-    chop(Trest, [H|Acc1], Acc2);
-chop([], Acc1, Acc2) ->
-    lists:reverse([lists:reverse(Acc1)|Acc2]).
-    
 file(File) ->
     case file:open(File, read)  of
 	{error, Reason} ->
@@ -71,9 +45,7 @@ process(L, Stream,Lno,R) when list(L) ->
     %%io:format('read:~s',[L]),
     case catch tokenise(L,Lno) of
 	{'ERR',Reason} ->
-	    io:format("Tokeniser error on line: ~d ~w~n",[Lno,Reason]),
-%%	    print_toks(lists:flatten(lists:reverse(R)),
-%%			      "** on the next line **"),
+	    io:format("Tokeniser error on line: ~w ~w~n",[Lno,Reason]),
 	    exit(0);
 	T ->
 	    %%io:format('toks:~w~n',[T]),
@@ -166,9 +138,6 @@ tokenise([$!|T],Lno) ->
 tokenise([$||T],Lno) ->
     [{'|',Lno}|tokenise(T,Lno)];
 
-% tokenise([$@,$@|T],Lno) ->
-%    {{inline,Expr},More} =   eat_term(T,two),
-%    [{inline,Lno,Expr} | tokenise(More,Lno)];
 
 tokenise([H|T],Lno) ->
     case white_space(H) of
@@ -179,40 +148,6 @@ tokenise([H|T],Lno) ->
     end;
 tokenise([],_) ->
     [].
-
-%eat_term(Chars,Num) ->
-%    eat_term(Chars,Num,[]).
-
-%eat_term([],Num,_) ->
-%    throw({'ERR','bad inliner found eof'});
-
-%eat_term([$@,$@|Tail],two,R) ->
-%    L =lists:reverse(R),
-%    {inline(L),Tail};
-
-%eat_term([$@,$@,$@|Tail],three,R) ->
-%    L =lists:reverse(R),
-%    {inline(L),Tail};
-
-%eat_term([C|T],Num,R) ->
-%    eat_term(T,Num,[C|R]).
-    
-    
-
-%inline(Chars) ->% <B>
-%    Toks = io_lib:scan(Chars),
-%    case Toks of
-%	{tokens,Toklist} ->
-%	    Parse = parse:parse_term(Toklist),
-%	    case Parse of
-%		{term,AbsForm} ->
-%		    {inline,AbsForm};
-%		X ->
-%		    throw({'ERR','bad inliner found'})
-%	    end;
-%	Y ->
-%	    throw({'ERR','bad inliner found '})
-%    end.
 
 
 collect_string(L,Lno) ->
@@ -277,13 +212,6 @@ white_space(32) -> true;
 white_space(_) -> false.
 
 
-%get_number([H|T], "0") ->
-%    case isdigit(H) of
-%	true ->
-%	    throw({'ERR',{unexpected, H}});
-%	false ->
-%	    {"0", [H|T]}
-%    end;
 get_number([H|T], L) ->
     case isdigit(H) of
 	true ->
@@ -421,79 +349,3 @@ reserved_word('VideotexString') -> rstrtype;
 reserved_word('VisibleString') -> rstrtype;
 reserved_word('WITH') -> true;
 reserved_word(_) -> false.
-
-
-print_toks(Toks) ->
-    print_toks(Toks,"** here **").
-
-print_toks(Toks,String) ->
-    print_toks(Toks,String,[]).
-
-print_toks([],String,R) ->
-    io:format("~s ~s ~n",[strip(lists:flatten(R)),String]);
-
-print_toks([H|Toks],String,R) ->
-    case H of
-	{identifier,X} ->
-	    NewR = io_lib:format(" ~s ~w",[R,X]),
-	    print_toks(Toks,String,NewR);
-	{typeReference,X} ->
-	    NewR = io_lib:format(" ~s ~w",[R,X]),
-	    print_toks(Toks,String,NewR);
-	implies ->
-	    NewR = io_lib:format(" ~s ::= ",[R]),
-	    print_toks(Toks,String,NewR);
-	lbrace ->
-	    NewR = io_lib:format(" ~s { ",[R]),
-	    print_toks(Toks,String,NewR);
-	rbrace ->
-	    NewR = io_lib:format(" ~s } ",[R]),
-	    print_toks(Toks,String,NewR);
-	rbrack ->
-	    NewR = io_lib:format(" ~s ] ",[R]),
-	    print_toks(Toks,String,NewR);
-	lbrack ->
-	    NewR = io_lib:format(" ~s [ ",[R]),
-	    print_toks(Toks,String,NewR);
-	comma ->
-	    NewR = io_lib:format(" ~s , ",[R]),
-	    print_toks(Toks,String,NewR);
-	point ->
-	    NewR = io_lib:format(" ~s . ",[R]),
-	    print_toks(Toks,String,NewR);
-	lpar ->
-	    NewR = io_lib:format(" ~s ( ",[R]),
-	    print_toks(Toks,String,NewR);
-	rpar ->
-	    NewR = io_lib:format(" ~s ) ",[R]),
-	    print_toks(Toks,String,NewR);
-	{number,Number} ->
-	    NewR = io_lib:format(" ~s ~w",[R,Number]),
-	    print_toks(Toks,String,NewR);
-	{preDefined,X} ->
-	    NewR = io_lib:format(" ~s ~w",[R,X]),
-	    print_toks(Toks,String,NewR);
-	{reserved_word,X} ->
-	    NewR = io_lib:format(" ~s ~w",[R,X]),
-	    print_toks(Toks,String,NewR);
-	X when list(X) ->
-	    NewR = io_lib:format(" ~s ~s",[R,X]),
-	    print_toks(Toks,String,NewR);
-	X  when integer(X) ->
-	    NewR = io_lib:format(" ~s ~s",[R,[X]]),
-	    print_toks(Toks,String,NewR);
-	X ->
-	    NewR = io_lib:format(" ~s ~w",[R,[X]]),
-	    print_toks(Toks,String,NewR)
-    end.
-
-	
-strip([32|Tail]) -> strip(Tail);
-strip(X) -> X.
-
-
-
-
-
-
-

@@ -141,8 +141,8 @@ ERL_COMPILE_FLAGS += \
 	-pa $(ERL_TOP)/lib/cosTime/include \
 	-I$(ERL_TOP)/lib/cosTime/include \
 	-I$(ERL_TOP)/lib/orber/include \
-	+'{parse_transform, sys_pre_attributes}' \
-	+'{attribute, insert, app_vsn, "cosTime_$(COSTIME_VSN)"}' 
+	+'{parse_transform,sys_pre_attributes}' \
+	+'{attribute,insert,app_vsn,"cosTime_$(COSTIME_VSN)"}' 
 
 
 # ----------------------------------------------------
@@ -177,11 +177,11 @@ $(GEN_TIMEBASE_ERL_FILES) $(EXTERNAL_TIMEBASE_HRL_FILES): TimeBase.idl
 	mv $(GEN_TIMEBASE_HRL_FILES) $(EXTERNAL_INC_PATH)
 
 $(GEN_COSTIME_ERL_FILES) $(EXTERNAL_COSTIME_HRL_FILES): CosTime.idl
-	erlc $(ERL_FLAGS) +'{cfgfile, "CosTime.cfg"}' CosTime.idl
+	erlc $(ERL_FLAGS) +'{cfgfile,"CosTime.cfg"}' CosTime.idl
 	mv $(GEN_COSTIME_HRL_FILES) $(EXTERNAL_INC_PATH)
 
 $(GEN_COSTIMEREVENT_ERL_FILES) $(EXTERNAL_COSTIMEREVENT_HRL_FILES): CosTimerEvent.idl
-	erlc $(ERL_FLAGS) +'{cfgfile, "CosTimerEvent.cfg"}' CosTimerEvent.idl
+	erlc $(ERL_FLAGS) +'{cfgfile,"CosTimerEvent.cfg"}' CosTimerEvent.idl
 	mv $(GEN_COSTIMEREVENT_HRL_FILES) $(EXTERNAL_INC_PATH)
 
 # ----------------------------------------------------

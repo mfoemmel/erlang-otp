@@ -32,8 +32,9 @@ RELSYSDIR = $(RELEASE_PATH)/lib/snmp-$(VSN)
 # ----------------------------------------------------
 # Common macros
 # ----------------------------------------------------
-CONF_FILES = address.conf community.conf trap_dest.conf \
-	agent.conf standard.conf view.conf
+
+include files.mk
+
 
 # ----------------------------------------------------
 # Targets

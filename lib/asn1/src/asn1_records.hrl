@@ -18,19 +18,35 @@
 -define('RT_BER',"asn1rt_ber_v1").
 -define('RT_BER_BIN',"asn1rt_ber_bin").
 -define('RT_PER',"asn1rt_per_v1").
+%% change to this when we have this module -define('RT_PER_BIN',"asn1rt_per_bin").
+-define('RT_PER_BIN',"asn1rt_per_v1").
 
 -record(module,{pos,name,defid,tagdefault='EXPLICIT',exports={exports,[]},imports={imports,[]}, extensiondefault=empty,typeorval}).
+
+-record('SEQUENCE',{pname=false,tablecinf=false,components=[]}).
+-record('SET',{pname=false,tablecinf=false,components=[]}).
 -record('ComponentType',{pos,name,typespec,prop,tags}).
--record(typedef,{pos,name,typespec}).
--record(classdef,{pos,name,typespec}).
--record(valuedef,{pos,name,type,value}).
--record(ptypedef,{pos,name,args,typespec}).
+
+-record(typedef,{checked=false,pos,name,typespec}).
+-record(classdef,{checked=false,pos,name,typespec}).
+-record(valuedef,{checked=false,pos,name,type,value}).
+-record(ptypedef,{checked=false,pos,name,args,typespec}).
+-record(pvaluedef,{checked=false,pos,name,args,type,value}).
+-record(pvaluesetdef,{checked=false,pos,name,args,type,valueset}).
+-record(pobjectdef,{checked=false,pos,name,args,class,def}).
+-record(pobjectsetdef,{checked=false,pos,name,args,class,def}).
+
 -record(typereference,{pos,val}).
 -record(identifier,{pos,val}).
 -record(constraint,{c,e}).
 -record('Constraint',{'SingleValue'=no,'SizeConstraint'=no,'ValueRange'=no,'PermittedAlphabet'=no,
 		      'ContainedSubtype'=no, 'TypeConstraint'=no,'InnerSubtyping'=no,e=no,'Other'=no}).
--record(type,{tag=[],def,constraint=[]}).
+-record(type,{tag=[],def,constraint=[],tablecinf=[]}).
+
+-record(objectclass,{fields=[],syntax}).
+-record('Object',{classname,gen=true,def}).
+-record('ObjectSet',{class,gen=true,uniquefname,set}).
+
 -record(tag,{class,number,type,form=32}). % form = ?CONSTRUCTED
 % This record holds information about allowed constraint types per type
 -record(cmap,{single_value=no,contained_subtype=no,value_range=no,
@@ -48,7 +64,8 @@
 % Externalvaluereference -> modulename '.' typename
 -record('Externalvaluereference',{pos,module,value}).
 
--record(state,{module,mname,type,tname,value,vname,erule,parameters=[]}).
+-record(state,{module,mname,type,tname,value,vname,erule,parameters=[],
+	       inputmodules,abscomppath=[]}).
 
 
 

@@ -82,24 +82,44 @@ stop() ->
 init({connect, Type, Socket}) ->
     ?PRINTDEBUG2("orber_iiop_inproxy init: ~p ", [self()]),
     process_flag(trap_exit, true),
-    {ok, {Socket, Type, ets:new(orber_incoming_requests, [set]),
-	  orber:get_interceptors()}}.
+    case orber:get_interceptors() of
+	false ->
+	    {ok, {Socket, Type, ets:new(orber_incoming_requests, [set]), false}};
+	{native, PIs} ->
+	    {ok, {{N1,N2,N3,N4}, Port}} = inet:peername(Socket),
+	    Address = lists:concat([N1, ".", N2, ".", N3, ".", N4]),
+	    ?PRINTDEBUG2("orber_iiop_inproxy init PIs: ~p ~p ~p", [PIs, Address, Port]),
+	    {ok, {Socket, Type, ets:new(orber_incoming_requests, [set]),
+		  {native, orber_pi:new_in_connection(PIs, Address, Port), PIs}}};
+	{Type, PIs} ->
+	    ?PRINTDEBUG2("orber_iiop_inproxy init PIs: ~p ", [PIs]),
+	    {ok, {Socket, Type, ets:new(orber_incoming_requests, [set]), {Type, PIs}}}
+    end.
 
 %%-----------------------------------------------------------------
 %% Func: terminate/2
 %%-----------------------------------------------------------------
 %% We may want to kill all proxies before terminating, but the best
-%% option should be to let the repuest complete (especially for one-way
+%% option should be to let the requests complete (especially for one-way
 %% functions it's a better alternative.
 %% kill_all_proxies(IncRequests, ets:first(IncRequests)),
-terminate(normal, {Socket, Type, IncRequests, Interceptors}) ->
-    ets:delete(IncRequests),
-    ok;
 terminate(Reason, {Socket, Type, IncRequests, Interceptors}) ->
-    ?PRINTDEBUG2("in proxy for socket ~p terminated with reason: ~p", [Socket, Reason]),
     ets:delete(IncRequests),
-    orber:debug_level_print("[~p] orber_iiop_inproxy:terminate(~p)", [?LINE, Reason], ?DEBUG_LEVEL),
-    ok.
+    if
+	Reason == normal ->
+	    ok;
+	true ->
+	    orber:debug_level_print("[~p] orber_iiop_inproxy:terminate(~p)", 
+				    [?LINE, Reason], ?DEBUG_LEVEL)
+    end,
+    case Interceptors of 
+	false ->
+	    ok;
+	{native, Ref, PIs} ->
+	    orber_pi:closed_in_connection(PIs, Ref);
+	{Type, PIs} ->
+	    ok
+    end.
 
 kill_all_proxies(_, '$end_of_table') ->
     ok;
@@ -159,10 +179,17 @@ handle_info(X,State) ->
 code_change({down, OldVsn}, {Socket, Type, IncRequests, Interceptors},interceptors) ->
     {ok, {Socket, Type, IncRequests}};
 code_change(OldVsn, {Socket, Type, IncRequests}, interceptors) ->
-    {ok, {Socket, Type, IncRequests, orber:get_interceptors()}};
+    case orber:get_interceptors() of
+	false ->
+	    {ok, {Socket, Type, IncRequests, false}};
+	{native, PIs} ->
+	    {ok, {{N1,N2,N3,N4}, Port}} = inet:peername(Socket),
+	    Address = lists:concat([N1, ".", N2, ".", N3, ".", N4]),
+	    {ok, {Socket, Type, IncRequests, 
+		  {native, orber_pi:new_in_connection(PIs, Address, Port), PIs}}};
+	{Type, PIs} ->
+	    {ok, {Socket, Type, IncRequests, {Type, PIs}}}
+    end;
 code_change(OldVsn, State, Extra) ->
     {ok, State}.
-
-
-
 

@@ -181,12 +181,12 @@ $(EBIN)/%.$(EMULATOR): $(PP_DIR)/%.erl
 
 $(GEN_ERL_FILES): $(PERSON_IDL)
 	$(ERLC) $(ERL_FLAGS)  $(ERL_COMPILE_FLAGS) \
-	+'{be, erl_genserv}' +'{outdir, "./$(PP_DIR)"}' \
+	+'{be,erl_genserv}' +'{outdir,"./$(PP_DIR)"}' \
 	$(PERSON_IDL)
 
 $(GEN_PP_FILES): $(PERSON_IDL)
 	$(ERLC) $(ERL_FLAGS)  $(ERL_COMPILE_FLAGS) \
-	+'{be, c_genserv}' +'{outdir, "./$(PP_DIR)"}' \
+	+'{be,c_genserv}' +'{outdir,"./$(PP_DIR)"}' \
 	$(PERSON_IDL)
 
 $(GEN_MS_FILES): $(ERL_TOP)/lib/mnesia_session/src/mnesia_session.idl

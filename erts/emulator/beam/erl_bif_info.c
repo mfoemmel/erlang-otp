@@ -30,6 +30,7 @@
 #include "dist.h"
 #include "erl_version.h"
 #include "erl_db_util.h"
+#include "dlmalloc.h"
 
 extern int fixed_deletion_desc;
 
@@ -891,6 +892,139 @@ BIF_ADECL_1
        hp = HAlloc(BIF_P, 3);
        tup = TUPLE2(hp, type, flav);
        BIF_RET(tup);
+    }
+    else if (BIF_ARG_1 == am_allocator) {
+
+#ifndef HAVE_MMAP
+#define HAVE_MMAP 0
+#endif
+      Sint i;
+      Eterm features = NIL;
+      Eterm settings = NIL;
+
+      {
+#undef  MAX_SAS
+#define MAX_SAS 4
+	Sint no;
+	SysAllocStat sas;
+	Sint *datapv[MAX_SAS] = {&sas.trim_threshold,
+				 &sas.top_pad,
+				 &sas.mmap_threshold,
+				 &sas.mmap_max};
+	Eterm atomv[MAX_SAS] = {am_trim_threshold,
+				am_top_pad,
+				am_mmap_threshold,
+				am_mmap_max};
+
+	sys_alloc_stat(&sas);
+	
+	for(i = 0, no = 0; i < MAX_SAS; i++)
+	  if(*datapv[i] >= 0)
+	    no++;
+
+	if(no) {
+	  hp = HAlloc(BIF_P, no*(2+3));
+
+	  for(i = 0; i < MAX_SAS; i++)
+	    if(*datapv[i] >= 0) {
+	      settings = CONS(hp,
+			      TUPLE2(hp+2,
+				     atomv[i],
+				     make_small_or_big(*datapv[i], BIF_P)),
+			      settings);
+	      hp += 2+3;
+	    }
+	}
+#undef  MAX_SAS
+      }
+
+#if !defined(NO_FIX_ALLOC) && !defined(PURIFY)
+      hp = HAlloc(BIF_P, 2);
+      features = CONS(hp, am_fix_alloc, features);
+#endif
+
+#if defined(DLMALLOC_IS_CLIB)
+
+#if HAVE_MMAP
+      hp = HAlloc(BIF_P, 5 + 4*2 + 2);
+      features = CONS(hp, am_mmap, features);
+      hp += 2;
+#else
+      hp = HAlloc(BIF_P, 5 + 4*2);
+#endif
+      res = TUPLE4(hp,
+		   am_dlmalloc,
+		   CONS(hp+5,
+			make_small(DLMALLOC_MAJOR),
+			CONS(hp+7,
+			     make_small(DLMALLOC_MINOR),
+			     CONS(hp+9,
+				  make_small(DLMALLOC_BUILD),
+				  CONS(hp+11,
+				       make_small(DLMALLOC_ERTS),
+				       NIL)))),
+		   features,
+		   settings);
+		   
+#elif defined(ELIB_ALLOC_IS_CLIB)
+      {
+	Eterm version;
+	int i;
+	int ver[5];
+	i = sscanf(ERLANG_VERSION,
+		   "%d.%d.%d.%d.%d",
+		   &ver[0], &ver[1], &ver[2], &ver[3], &ver[4]);
+
+	hp = HAlloc(BIF_P, 5+i*2);
+
+	version = NIL;
+	for(i--; i >= 0; i--) {
+	  version = CONS(hp, make_small(ver[i]), version);
+	  hp += 2;
+	}
+
+	res = TUPLE4(hp, am_elib_malloc, version, features, settings);
+      }
+#elif defined(__GLIBC__)
+      {
+	Eterm version;
+	int words =
+	  5 + 1*2
+#ifdef __GLIBC_MINOR__
+	  + 2
+#endif
+#if HAVE_MMAP
+	  + 2
+#endif
+	  ;
+	hp = HAlloc(BIF_P, words);
+
+#ifdef __GLIBC_MINOR__
+	version = CONS(hp,
+		       make_small(__GLIBC__),
+		       CONS(hp+2, make_small(__GLIBC_MINOR__), NIL));	
+	hp += 4;
+#else
+	version = CONS(hp, make_small(__GLIBC__), NIL);
+	hp += 2;
+#endif
+
+#if HAVE_MMAP
+	features = CONS(hp, am_mmap, features);
+	hp += 2;
+#endif
+
+	res = TUPLE4(hp, am_glibc, version, features, settings);
+      }
+
+#else /* unknown allocator */
+
+      hp = HAlloc(BIF_P, 5);
+      res = TUPLE4(hp, am_undefined, NIL, features, settings);
+
+#endif
+
+      BIF_RET(res);
     }
     else if (BIF_ARG_1 == am_thread_pool_size) {
 	extern int erts_async_max_threads;

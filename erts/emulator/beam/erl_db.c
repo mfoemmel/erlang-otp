@@ -47,13 +47,19 @@
 #define TERM_GETKEY(tb, obj) db_getkey((tb)->common.keypos, (obj)) 
 /* 
 ** The id in a tab_entry slot is
-** DB_NOTUSED if it's never been used
-** DB_USED if it's been freed
+** DB_NOTUSED if it's never been used(*)
+** DB_USED if it's been freed(*)
 ** An occupied slot has an (atom|small) id equal to the table's id
 ** This is so that we shall be able to terminate a search when we
 ** reach a point in the table that is impossible to reach if the id
 ** is there, we have to consider that tables can be removed thogh, so if
 ** we come to a removed slot, we must continue the search
+** (*) A slot that has been used can actually be marked as DB_NOTUSED, 
+** that happens if the next slot is also DB_NOTUSED when freeing.
+** Then the slot we're freeing need not be marked as 
+** DB_USED as you needn't continue search in that case.
+**
+**
 */
 
 #define ISFREE(i)	((db_tables[i].id == DB_USED) || ISNOTUSED(i))
@@ -75,10 +81,11 @@ int user_requested_db_max_tabs;
 static int db_max_tabs;
 static int last_slot;
 static int no_tabs;		/* Number of active tables */
-
+static DbTable *meta_pid_to_tab; /* Pid mapped to tables */
 /* 
 ** Forward decls, static functions 
 */
+static void meta_mark_free(int idx);
 static void free_table(DbTable *tb);
 static void print_table(CIO fd, int show,  DbTable* tb);
 static int next_prime(int n);
@@ -346,6 +353,9 @@ BIF_ADECL_2
 {
     DbTable* tb;
     int oldslot, newslot;
+    Eterm dummy;
+    Eterm meta_tuple[3];
+
 
 
     if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE)) == NULL) {
@@ -378,8 +388,21 @@ BIF_ADECL_2
     db_tables[newslot].t = tb;
     tb->common.id = tb->common.the_name = BIF_ARG_2;
     tb->common.slot = newslot;
-    db_tables[oldslot].id = DB_USED;
+    meta_mark_free(oldslot);
     db_tables[oldslot].t = NULL;
+
+    if (db_put_hash(NULL,&(meta_pid_to_tab->hash),
+		    TUPLE2(meta_tuple, 
+			   tb->common.owner, 
+			   make_small(newslot)),
+		    &dummy)
+	!= DB_ERROR_NONE) {
+	erl_exit(1,"Could not insert ets metadata in rename.");
+    }
+
+    db_erase_bag_exact2(&(meta_pid_to_tab->hash),
+			tb->common.owner,make_small(oldslot));
+
     BIF_RET(tb->common.id);
 }
 
@@ -401,6 +424,8 @@ BIF_ADECL_2
     int keypos;
     int is_named;
     int cret;
+    Eterm dummy;
+    Eterm meta_tuple[3];
 
     if (is_not_atom(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -534,6 +559,12 @@ BIF_ADECL_2
 
     no_tabs++;
 
+    if (db_put_hash(NULL,&(meta_pid_to_tab->hash),TUPLE2(meta_tuple, BIF_P->id, 
+							 make_small(slot)),&dummy)
+	!= DB_ERROR_NONE) {
+	erl_exit(1,"Could not update ets metadata.");
+    }
+
     BIF_RET(ret);
 }
 
@@ -632,11 +663,13 @@ BIF_ADECL_1
     if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE)) == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    db_tables[tb->common.slot].id = DB_USED;
+    meta_mark_free(tb->common.slot);
     db_tables[tb->common.slot].t = NULL;
 
     no_tabs--;
 
+    db_erase_bag_exact2(&(meta_pid_to_tab->hash),tb->common.owner,
+			make_small(tb->common.slot));
     free_table(tb); /* Takes care of different table types */
     BIF_RET(am_true);
 }
@@ -1096,30 +1129,78 @@ void init_db(void)
     db_initialize_hash();
     db_initialize_tree();
     /*TT*/
+    /* Create meta table invertion. */
+    meta_pid_to_tab = (DbTable*) fix_alloc_from(55,table_desc);
+    meta_pid_to_tab->common.id = NIL;
+    meta_pid_to_tab->common.the_name = am_true;
+    meta_pid_to_tab->common.status = (DB_NORMAL | DB_BAG | DB_LHASH | 
+				      DB_PUBLIC);
+    meta_pid_to_tab->common.keypos = 1;
+    meta_pid_to_tab->common.owner = NIL;
+    meta_pid_to_tab->common.nitems = 0;
+    meta_pid_to_tab->common.slot = -1;
+    if (db_create_hash(NULL, &(meta_pid_to_tab->hash)) != DB_ERROR_NONE) {
+	erl_exit(1,"Unable to create ets metadata tables.");
+    }
 }
 
 /* Called when  a process which has created any tables dies */
 /* So that we can remove the tables ceated by the process   */
 
+#define ARRAY_CHUNK 100
 void db_proc_dead(eTerm pid)
 {
+    Eterm arr[ARRAY_CHUNK];
+    int arr_siz;
+    int ret;
+    Eterm dummy;
     int i;
 
-    for (i=0; i<db_max_tabs; i++) {
-	DbTable* tb = db_tables[i].t;
-	if ((tb != NULL)  && (tb->common.owner == pid)) {
+    for (;;) {
+	arr_siz = ARRAY_CHUNK;
+	if ((ret = db_get_element_array(&(meta_pid_to_tab->hash), 
+					pid, 2, arr, &arr_siz)) == 
+	    DB_ERROR_BADKEY) {
+	    /* done */
+	    return;
+	} else if (ret != DB_ERROR_NONE) {
+	    erl_exit(1,"Inconsistent ets metadata");
+	}
+	for (i = 0; i < arr_siz; ++i) {
+	    int ix = unsigned_val(arr[i]); /* slot */
+	    DbTable* tb = db_tables[ix].t;
+	    ASSERT(tb->common.owner == pid);
 	    free_table(tb);
 	    no_tabs--;
-	    db_tables[i].id = DB_USED;
-	    db_tables[i].t = NULL;
+	    meta_mark_free(ix);
+	    db_tables[ix].t = NULL;
+	    if (arr_siz == ARRAY_CHUNK) {
+		/* Need to erase each explicitly */
+		db_erase_bag_exact2(&(meta_pid_to_tab->hash),pid,arr[i]);
+	    }
 	}
+	if (arr_siz < 100) {
+	    db_erase_hash(NULL,&(meta_pid_to_tab->hash),pid,&dummy);
+	} 
     }
 }
 
 /*
 ** Internal functions.
 */
-
+static void meta_mark_free(int idx)
+{
+    int i;
+    if (ISNOTUSED((idx + 1) % db_max_tabs)) {
+	db_tables[idx].id = DB_NOTUSED;
+	for (i = idx - 1; i != idx && db_tables[i].id == DB_USED; 
+	     i = ((i > 0) ? i : db_max_tabs) - 1) {
+	    db_tables[i].id = DB_NOTUSED;
+	}
+    } else {
+	db_tables[idx].id = DB_USED;
+    }
+}
 
 static int next_prime(int n)
 {
@@ -1215,6 +1296,10 @@ void db_info(CIO fd, int show)    /* Called by break handler */
 	    erl_printf(fd, "In slot %d\n", i);
 	    print_table(fd, show, db_tables[i].t);
 	}
+#ifdef DEBUG
+    erl_printf(fd, "Process to table index\n");
+    print_table(fd, show, meta_pid_to_tab);
+#endif
 }
 
 

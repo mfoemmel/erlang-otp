@@ -25,6 +25,7 @@
 #define DFLAG_DIST_MONITOR        0x08
 #define DFLAG_FUN_TAGS            0x10
 #define DFLAG_DIST_MONITOR_NAME   0x20
+#define DFLAG_HIDDEN_ATOM_CACHE   0x40
 
 /* All flags that should be enabled when term_to_binary/1 is used. */
 #define TERM_TO_BINARY_DFLAGS (DFLAG_EXTENDED_REFERENCES|DFLAG_FUN_TAGS)

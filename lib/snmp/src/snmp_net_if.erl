@@ -172,9 +172,8 @@ loop(S) ->
 	    case snmp_mpd:generate_response_msg(Vsn,RePdu,Type,
 						ACMData,LogF) of
 		{ok, Packet} ->
-		    N2 = erlang:now(),
-		    NT = subtr(N2, get(n1)),
-		    ?vinfo("time in agent: ~w mysec", [NT]),
+		    ?vinfo("time in agent: ~w mysec", 
+			   [subtr(erlang:now(),get(n1))]),
 		    udp_send(S#state.usock, Ip, Port, Packet);
 		{discarded, Reason} ->
 		    ?vlog("~n   reply discarded for reason: ~p", [Reason]),
@@ -338,7 +337,9 @@ system_code_change(S, _Module, _OldVsn, _Extra) ->
 subtr({X1,Y1,Z1}, {X1,Y1,Z2}) ->
     Z1 - Z2;
 subtr({X1,Y1,Z1}, {X1,Y2,Z2}) ->
-    ((Y1 * 1000000) + Z1) - ((Y2 * 1000000) + Z2).
+    ((Y1-Y2) * 1000000) + (Z1 - Z2);
+subtr({X1,Y1,Z1}, {X2,Y2,Z2}) ->
+    ((X1 - X2) * 1000000000000) + ((Y1 - Y2) * 1000000) + (Z1 - Z2).
 
 
 get_verbosity([]) ->

@@ -144,12 +144,7 @@ do_accept(Kernel, AcceptPid, Socket, MyNode, Allowed, SetupTime) ->
 		      this_node = MyNode,
 		      socket = Socket,
 		      timer = Timer,
-		      this_flags = ?DFLAG_PUBLISHED bor
-		      ?DFLAG_ATOM_CACHE bor
-		      ?DFLAG_EXTENDED_REFERENCES bor
-		      ?DFLAG_DIST_MONITOR bor
-		      ?DFLAG_FUN_TAGS bor
-		      ?DFLAG_DIST_MONITOR_NAME,
+		      this_flags = 0,
 		      allowed = Allowed,
 		      f_send = fun(S,D) -> inet_tcp:send(S,D) end,
 		      f_recv = fun(S,N,T) -> inet_tcp:recv(S,N,T) 
@@ -245,21 +240,13 @@ do_setup(Kernel, Node, Type, MyNode, LongOrShortNames,SetupTime) ->
 					  [{active, false}, 
 					   {packet,2}]) of
 			{ok, Socket} ->
-			    PubFlag = if Type == hidden -> 0;
-					 true -> ?DFLAG_PUBLISHED
-				      end,
 			    HSData = #hs_data{
 			      kernel_pid = Kernel,
 			      other_node = Node,
 			      this_node = MyNode,
 			      socket = Socket,
 			      timer = Timer,
-			      this_flags = PubFlag bor
-			      ?DFLAG_ATOM_CACHE bor
-			      ?DFLAG_EXTENDED_REFERENCES bor
-			      ?DFLAG_DIST_MONITOR bor
-			      ?DFLAG_FUN_TAGS bor
-			      ?DFLAG_DIST_MONITOR_NAME,
+			      this_flags = 0,
 			      other_version = Version,
 			      f_send = fun(S,D) -> 
 					       inet_tcp:send(S,D) 
@@ -296,7 +283,8 @@ do_setup(Kernel, Node, Type, MyNode, LongOrShortNames,SetupTime) ->
 				   family = inet}
 			      end,
 			      mf_tick = {?MODULE, tick},
-			      mf_getstat = {?MODULE,getstat}
+			      mf_getstat = {?MODULE,getstat},
+			      request_type = Type
 			     },
 			    dist_util:handshake_we_started(HSData);
 			_ ->

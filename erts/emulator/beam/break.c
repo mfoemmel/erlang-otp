@@ -124,6 +124,7 @@ void print_process_info(p,to)
 Process *p; CIO to;
 {
     int garbing = 0;
+    int running = 0;
 
     /* display the PID */
     display(p->id,to);
@@ -143,6 +144,7 @@ Process *p; CIO to;
 	break;
     case P_RUNNING:
 	erl_printf(to," Running.");
+	running = 1;
 	break;
     case P_EXITING:
 	erl_printf(to," Exiting.");
@@ -150,6 +152,7 @@ Process *p; CIO to;
     case P_GARBING:
 	erl_printf(to," Process is garbing, limited information.");
 	garbing = 1;
+	running = 1;
 	break;
     }
 
@@ -173,7 +176,11 @@ Process *p; CIO to;
     erl_printf(to,"%d\n", (int)p->initial[INITIAL_ARI]);
 
     if (p->current != NULL) {
-	erl_printf(to, "Current call: ");
+	if (running) {
+	    erl_printf(to, "Last scheduled in for: ");
+	} else {
+	    erl_printf(to, "Current call: ");
+	}
 	display(p->current[0], to);
 	erl_printf(to, ":");
 	display(p->current[1], to);

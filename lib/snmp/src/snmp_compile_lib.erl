@@ -776,18 +776,32 @@ non_implied_name(IndexColumnName) -> IndexColumnName.
 %% returns: {ok, 
 %  {snmp_mib, MEs, traps, list of {TrapOid, list of oids (objects)}}}
 get_final_mib(Name, Options) ->
+    d("get_final_mib",[]),
     CDATA = get(cdata),
     #cdata{mes=MEs,mibfuncs=MibFuncs,asn1_types=Types,
 	   traps=Traps,oid_ets=OidEts}=CDATA,
+    d("get_final_mib -> resolve oids",[]),
     resolve_oids(OidEts),
     %% Reverse so that we get report on objects earlier in the file
     %% before later objects.
     UMEs = update_me_oids(lists:reverse(MEs), OidEts),
+    t("get_final_mib -> "
+      "~n   UMEs: ~p",[UMEs]),
     UTraps = update_trap_oids(Traps, OidEts),
+    t("get_final_mib -> "
+      "~n   UTraps: ~p",[UTraps]),
     SortedMEs = lists:keysort(#me.oid,UMEs),
+    d("get_final_mib -> search for dublettes",[]),
     search_for_dublettes(#me{aliasname=dummy_init}, SortedMEs),
+
+    d("get_final_mib -> search for oid conflicts",[]),
+    search_for_oid_conflicts(UTraps,SortedMEs),
+
+    d("get_final_mib -> resolve oid",[]),
     MibFs = lists:keysort(1,
       lists:map(fun (MF) -> resolve_oid(MF,SortedMEs) end, MibFuncs)),
+    t("get_final_mib -> "
+      "~n   MibFs: ~p",[MibFs]),
     {value, DBName} = snmp_misc:assq(db, Options),
     MEsWithMFA = insert_mfa(MibFs, SortedMEs, DBName),
     Misc = [{snmp_version,get(snmp_version)}
@@ -800,20 +814,24 @@ get_final_mib(Name, Options) ->
     case GroupBool==true of
 	true->
 	    case get(snmp_version)==2 of
-		true->check_group(CDATA#cdata.mes,CDATA#cdata.objectgroups),
-		      check_notification(UTraps,CDATA#cdata.notificationgroups);
+		true->
+		    d("get_final_mib -> check groups",[]),
+		    check_group(CDATA#cdata.mes,CDATA#cdata.objectgroups),
+		    d("get_final_mib -> check notifications",[]),
+		    check_notification(UTraps,CDATA#cdata.notificationgroups);
 		false->
 		    ok
 	    end;
 	false->
 	    ok
     end,
-    {ok, #mib{name = Name, mes = lists:map(fun translate_me_type/1,
-					   MEsWithMFA), misc=Misc,
-	      variable_infos = extract_variable_infos(MEsWithMFA),
-	      table_infos = extract_table_infos(MEsWithMFA),
-	      traps = lists:map(fun translate_trap_type/1, UTraps), 
-	      asn1_types = lists:map(fun translate_type/1, Types)}}.
+    Mib = #mib{name = Name, mes = lists:map(fun translate_me_type/1,
+					    MEsWithMFA), misc=Misc,
+	       variable_infos = extract_variable_infos(MEsWithMFA),
+	       table_infos = extract_table_infos(MEsWithMFA),
+	       traps = lists:map(fun translate_trap_type/1, UTraps), 
+	       asn1_types = lists:map(fun translate_type/1, Types)},
+    {ok, Mib}.
 	      
 	      
 
@@ -1059,6 +1077,28 @@ search_for_dublettes(PrevME, [ME|MEs])
 search_for_dublettes(PrevME, [ME|MEs]) ->
     search_for_dublettes(ME, MEs);
 search_for_dublettes(PrevME, []) -> ok.
+
+
+search_for_oid_conflicts([Rec|Traps],MEs) when record(Rec,notification) ->
+    #notification{oid = Oid, trapname = Name} = Rec,
+    case search_for_oid_conflicts1(Oid,MEs) of
+	{error,ME} ->
+	    error("Notification with OBJECT IDENTIFIER '~w'. "
+		  "Used in '~w' and '~w'.", [Oid,Name,ME#me.aliasname]);
+	ok ->
+	    search_for_oid_conflicts(Traps,MEs)
+    end;
+search_for_oid_conflicts([_Trap|Traps],MEs) ->
+    search_for_oid_conflicts(Traps,MEs);
+search_for_oid_conflicts([],MEs) ->
+    ok.
+
+search_for_oid_conflicts1(Oid,[]) ->
+    ok;
+search_for_oid_conflicts1(Oid,[ME|MEs]) when Oid == ME#me.oid ->
+    {error,ME};
+search_for_oid_conflicts1(Oid,[ME|MEs]) ->
+    search_for_oid_conflicts1(Oid,MEs).
 
 set_default_function([TableMe, EntryMe | ColMes], DBName) ->
     #me{aliasname = Name} = TableMe,

@@ -272,6 +272,14 @@ static void usage()
 	       MIN_PROCESS, MAX_PROCESS);
     erl_printf(CERR, "-A number  set number or threads in async thread pool\n");
     erl_printf(CERR, "           valid range is [0-256]\n");
+    erl_printf(CERR, "-m number  set mmap threshold (Kb)\n");
+    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
+    erl_printf(CERR, "-M number  set max number of mmappings\n");
+    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX);
+    erl_printf(CERR, "-t number  set trim threshold (Kb)\n");
+    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
+    erl_printf(CERR, "-T number  set top pad\n");
+    erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
     erl_printf(CERR, "\n\n");
     erl_exit(-1, "");
 }
@@ -284,6 +292,10 @@ erl_start(int argc, char **argv)
     char* arg=NULL;
     int have_break_handler = 1;
     char* tmpenvbuf;
+    int trim_threshold = ERTS_DEFAULT_TRIM_THRESHOLD;
+    int top_pad = ERTS_DEFAULT_TOP_PAD;
+    int mmap_max = ERTS_DEFAULT_MMAP_MAX;
+    int mmap_threshold = ERTS_DEFAULT_MMAP_THRESHOLD;
 
     program = argv[0];
 
@@ -291,6 +303,12 @@ erl_start(int argc, char **argv)
     erl_sys_args(&argc, argv);
 
     erts_init_utils();
+    sys_alloc_opt(SYS_ALLOC_OPT_TRIM_THRESHOLD, trim_threshold);
+    sys_alloc_opt(SYS_ALLOC_OPT_TOP_PAD, top_pad);
+    sys_alloc_opt(SYS_ALLOC_OPT_MMAP_THRESHOLD, mmap_threshold);
+    /* Temporarily disable use of mmap during initialization. */
+    sys_alloc_opt(SYS_ALLOC_OPT_MMAP_MAX, 0);
+
     tmpenvbuf = getenv(ERL_MAX_ETS_TABLES_ENV);
     if (tmpenvbuf != NULL) 
 	user_requested_db_max_tabs = atoi(tmpenvbuf);
@@ -439,6 +457,91 @@ erl_start(int argc, char **argv)
 	    }
 	    break;
 
+	case 'm': {
+	  char *rest;
+	  /* set mmap threshold */
+	  arg = get_arg(argv[i]+2, argv[i+1], &i);
+	  errno = 0;
+	  mmap_threshold = (int) strtol(arg, &rest, 10);
+	  if (errno != 0
+	      || rest == arg
+	      || mmap_threshold < 0
+	      || (INT_MAX/1024) < mmap_threshold) {
+	    mmap_threshold = ERTS_DEFAULT_MMAP_THRESHOLD/1024;
+	    erl_printf(CERR,
+		       "bad mmap threshold: %s Kb; using default: %d Kb\n",
+		       arg,
+		       mmap_threshold);
+
+	  }
+	  VERBOSE(erl_printf(COUT, "using mmap threshold: %d Kb\n",
+			     mmap_threshold););
+	  mmap_threshold *= 1024;
+	  break;
+        }
+
+	case 'M': {
+	  char *rest;
+	  /* set mmap max */
+	  arg = get_arg(argv[i]+2, argv[i+1], &i);
+	  errno = 0;
+	  mmap_max = (int) strtol(arg, &rest, 10);
+	  if (errno != 0 || rest == arg || mmap_max < 0) {
+	    mmap_max = ERTS_DEFAULT_MMAP_MAX;
+	    erl_printf(CERR,
+		       "bad mmap max: %s; using default: %d\n",
+		       arg,
+		       mmap_max);
+	  }
+	  VERBOSE(erl_printf(COUT, "using mmap max: %d\n",
+			     mmap_max););
+	  break;
+        }
+
+	case 't': {
+	  char *rest;
+	  /* set trim threshold */
+	  arg = get_arg(argv[i]+2, argv[i+1], &i);
+	  errno = 0;
+	  trim_threshold = (int) strtol(arg, &rest, 10);
+	  if (errno != 0
+	      || rest == arg
+	      || trim_threshold < 0
+	      || (INT_MAX/1024) < trim_threshold) {
+	    trim_threshold = ERTS_DEFAULT_TRIM_THRESHOLD/1024;
+	    erl_printf(CERR,
+		       "bad trim threshold: %s; using default: %d\n",
+		       arg,
+		       trim_threshold);
+	  }
+	  VERBOSE(erl_printf(COUT, "using trim threshold: %d\n",
+			     trim_threshold););
+	  trim_threshold *= 1024;
+	  break;
+        }
+
+	case 'T': {
+	  char *rest;
+	  /* set top pad */
+	  arg = get_arg(argv[i]+2, argv[i+1], &i);
+	  errno = 0;
+	  top_pad = (int) strtol(arg, &rest, 10);
+	  if (errno != 0
+	      || rest == arg
+	      || top_pad < 0
+	      || (INT_MAX/1024) < top_pad) {
+	    top_pad = ERTS_DEFAULT_TOP_PAD/1024;
+	    erl_printf(CERR,
+		       "bad top pad: %s; using default: %d\n",
+		       arg,
+		       top_pad);
+	  }
+	  VERBOSE(erl_printf(COUT, "using top pad: %d\n",
+			     top_pad););
+	  top_pad *= 1024;
+	  break;
+        }
+
 	case 'n':   /* XXX obsolete */
 	    break;
 	case 'c':
@@ -461,6 +564,11 @@ erl_start(int argc, char **argv)
     boot_argc = argc - i;  /* Number of arguments to init */
     boot_argv = &argv[i];
     erl_init();
+    sys_alloc_opt(SYS_ALLOC_OPT_TRIM_THRESHOLD, trim_threshold);
+    sys_alloc_opt(SYS_ALLOC_OPT_TOP_PAD, top_pad);
+    sys_alloc_opt(SYS_ALLOC_OPT_MMAP_THRESHOLD, mmap_threshold);
+    if(!sys_alloc_opt(SYS_ALLOC_OPT_MMAP_MAX, mmap_max))
+      sys_alloc_opt(SYS_ALLOC_OPT_MMAP_MAX, ERTS_DEFAULT_MMAP_MAX);
     load_preloaded();
     erl_first_process("otp_ring0", NULL, 0, boot_argc, boot_argv);
     erl_sys_schedule_loop();

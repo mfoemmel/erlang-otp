@@ -148,50 +148,55 @@ remove_old_keys() ->
     %% This function may ONLY be used when restarting a crashed node.
     %% We must remove all objects started with {global, "name"} otherwise
     %% we cannot restart the node using the same name.
-    Fun = ?match_function(),
-    case catch mnesia:transaction(Fun) of
-	{atomic, Objects} ->
-	    Node = node(),
-	    lists:foreach(fun(Obj) ->
-				  case node(Obj#orber_objkeys.pid) of
-				      Node ->
-					  _F = ?delete_function({orber_objkeys, Obj#orber_objkeys.object_key}),
-					  write_result(mnesia:transaction(_F));
-				      _->
-					  ok
-				  end
-			  end,
-			  Objects);
-	R ->
-	    R
-    end.
+    Fun = fun() -> 
+		  Node = node(),
+		  mnesia:write_lock_table(orber_objkeys),
+		  Objects = mnesia:match_object(orber_objkeys,
+						mnesia:table_info(orber_objkeys,
+								  wild_pattern),
+						read),
+		  lists:foreach(fun(Obj) ->
+					case node(Obj#orber_objkeys.pid) of
+					    Node ->
+						mnesia:delete({orber_objkeys, 
+							       Obj#orber_objkeys.object_key});
+					    _->
+						ok
+					end
+				end,
+				Objects),
+		  ok
+	  end,
+    write_result(mnesia:transaction(Fun)).
 
 stop_and_remove_local(Reason) ->
     %% This function may ONLY be used when this server terminates with reason 
     %% normal or shutdown.
-    Fun = ?match_function(),
-    case catch mnesia:transaction(Fun) of
-	{atomic, Objects} ->
-	    Node = node(),
-	    lists:foreach(fun(Obj) ->
-				  case node(Obj#orber_objkeys.pid) of
-				      Node ->
-					  gen_server:call(Obj#orber_objkeys.pid, 
-							  stop, infinity),
-					  _F = ?delete_function({orber_objkeys, Obj#orber_objkeys.object_key}),
-					  write_result(mnesia:transaction(_F));
-				      _->
-					  ok
-				  end
-			  end,
-			  Objects);
-	R ->
-	    R
-    end.
+    Fun = fun() -> 
+		  Node = node(),
+		  mnesia:write_lock_table(orber_objkeys),
+		  Objects = mnesia:match_object(orber_objkeys, 
+						mnesia:table_info(orber_objkeys,
+								  wild_pattern),
+						read),
+		  lists:foreach(fun(Obj) ->
+					case node(Obj#orber_objkeys.pid) of
+					    Node ->
+						exit(Obj#orber_objkeys.pid, Reason),
+						mnesia:delete({orber_objkeys, 
+							       Obj#orber_objkeys.object_key});
+					    _->
+						ok
+					end
+				end,
+				Objects),
+		  ok
+	  end,
+    write_result(mnesia:transaction(Fun)).
     
 stop_all() ->
     Fun = ?match_function(),
-    case catch mnesia:transaction(Fun) of
+    case mnesia:transaction(Fun) of
 	{atomic, Objects} ->
 	    lists:foreach(fun(Obj) ->
 				  gen_server:call(Obj#orber_objkeys.pid, 
@@ -236,24 +241,22 @@ is_persistent(Objkey) ->
 
 
 gc(Sec) when integer(Sec) ->
-    Fun = fun() ->
-		  mnesia:match_object({orber_objkeys, '_', dead, true,'_'})
+    Fun = fun() -> 
+		  mnesia:write_lock_table(orber_objkeys),
+		  Objects = mnesia:match_object({orber_objkeys, '_', dead, true,'_'}),
+		  lists:foreach(fun(Obj) ->
+					case timetest(Sec, Obj#orber_objkeys.timestamp) of
+					    true ->
+						mnesia:delete({orber_objkeys, 
+							       Obj#orber_objkeys.object_key});
+					    _->
+						ok
+					end
+				end,
+				Objects),
+		  ok
 	  end,
-    case catch mnesia:transaction(Fun) of
-	{atomic, Objects} ->
-	    lists:foreach(fun(Obj) ->
-				  case timetest(Sec, Obj#orber_objkeys.timestamp) of
-				      true ->
-					  _F = ?delete_function({orber_objkeys, Obj#orber_objkeys.object_key}),
-					  write_result(mnesia:transaction(_F));
-				      _ ->
-					  ok
-				  end
-			  end,
-			  Objects);
-	R ->
-	    R
-    end.
+    write_result(mnesia:transaction(Fun)).
 
 register(Objkey, Pid) ->
     'register'(Objkey, Pid, false).
@@ -263,6 +266,8 @@ register(Objkey, Pid, Type) when pid(Pid) ->
 				     {register, Objkey, Pid, Type}, 
 				     infinity));
 register(Objkey, Pid, Type) ->
+    orber:debug_level_print("[~p] orber_objectkeys:register(~p, ~p); Not a Pid ~p", 
+			    [?LINE, Objkey, Type, Pid], ?DEBUG_LEVEL),
     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
 delete(Objkey) ->
@@ -379,13 +384,13 @@ handle_call({register, Objkey, Pid, Type}, From, State) ->
 		      [X] when pid(X#orber_objkeys.pid) ->
 			  %% Object exists, i.e., trying to create an object with
 			  %% the same name.
-			  orber:debug_level_print("[~p] orber_objectkeys:register(~p); Object already exists.", 
-						  [?LINE, Type], ?DEBUG_LEVEL),
+			  orber:debug_level_print("[~p] orber_objectkeys:register(~p, ~p); Object already exists.", 
+						  [?LINE, Objkey, Type], ?DEBUG_LEVEL),
 			  {'EXCEPTION', #'BAD_PARAM'{completion_status=?COMPLETED_NO}};
 		      Why ->
 			  %% Something else occured.
-			  orber:debug_level_print("[~p] orber_objectkeys:register(~p); error reading from DB(~p)", 
-						  [?LINE, Type, Why], ?DEBUG_LEVEL),
+			  orber:debug_level_print("[~p] orber_objectkeys:register(~p, ~p); error reading from DB(~p)", 
+						  [?LINE, Objkey, Type, Why], ?DEBUG_LEVEL),
 			  {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}
 		  end
 	  end,
@@ -549,10 +554,8 @@ query_result(?query_check(Qres)) ->
 	[] ->
 	    {'EXCEPTION', #'OBJECT_NOT_EXIST'{minor=103, completion_status=?COMPLETED_NO}};
 	Other ->
-% Uncomment this for next version; cannot release it this version since in an upgrade
-% orber depends on orber_objektkey which depends on orber which ..
-%	    orber:debug_level_print("[~p] orber_objectkeys:query_result(); DB lookup failed(~p)", 
-%				    [?LINE, Other], ?DEBUG_LEVEL),
+	    orber:debug_level_print("[~p] orber_objectkeys:query_result(); DB lookup failed(~p)", 
+				    [?LINE, Other], ?DEBUG_LEVEL),
 	    {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}
     end.
 
@@ -560,10 +563,8 @@ query_result(?query_check(Qres)) ->
 %% Check a write transaction
 write_result({atomic,ok}) -> ok;
 write_result(Foo) ->
-% Uncomment this for next version; cannot release it this version since in an upgrade
-% orber depends on orber_objektkey which depends on orber which ..
-%    orber:debug_level_print("[~p] orber_objectkeys:query_result(); DB write failed(~p)", 
-%			    [?LINE, Foo], ?DEBUG_LEVEL),
+    orber:debug_level_print("[~p] orber_objectkeys:query_result(); DB write failed(~p)", 
+			    [?LINE, Foo], ?DEBUG_LEVEL),
     {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}.
 
 

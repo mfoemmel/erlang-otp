@@ -292,7 +292,7 @@ describe_interface({ObjType, ObjID}) ?tcheck(ir_InterfaceDef, ObjType) ->
 
 create_attribute({ObjType, ObjID}, Id, Name, Version, Type, Mode)
 		?tcheck(ir_InterfaceDef, ObjType) ->
-    ?exists_check({ObjType, ObjID}, Id),
+    ?exists_check(Id, ir_AttributeDef, #ir_AttributeDef.id),
     New_attribute = #ir_AttributeDef{ir_Internal_ID = unique(),
 				     def_kind = dk_Attribute,
 				     id = Id,
@@ -311,7 +311,7 @@ create_attribute({ObjType, ObjID}, Id, Name, Version, Type, Mode)
 
 create_operation({ObjType, ObjID}, Id, Name, Version, Result, Mode, Params,
 		 Exceptions, Contexts) ?tcheck(ir_InterfaceDef, ObjType) ->
-    ?exists_check({ObjType, ObjID}, Id),
+    ?exists_check(Id, ir_OperationDef, #ir_OperationDef.id),
     New_operation = #ir_OperationDef{ir_Internal_ID = unique(),
 				     def_kind = dk_Operation,
 				     id = Id,

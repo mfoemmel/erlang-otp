@@ -66,6 +66,15 @@ output from erlang to be blocked. Using Ctrl-C to
 interrupt emulator now works as expected.
 <br>Own Id: OTP-3888
 
+<LI>
+Deliverance of SIGCHLD signals to the emulator could
+fail when threads where used on Solaris. This could
+result in the (Solaris) process table being filled
+with defunct processes. Child process management in
+the emulator has been modified to eliminate this
+problem.
+<br>Own Id: OTP-3963<br>
+Aux Id: OTP-3906
 
 </UL>
 <H3>Improvements and new features</H3>
@@ -152,6 +161,16 @@ can be set to "0" to get the same result.
 The misleading README and example start script for VxWorks 
 are now updated.
 <br>Own Id: OTP-3884
+
+
+<LI>
+The dlmalloc malloc() implementation has been included
+in the emulator in order to reduce memory consumption
+and memory fragmentation when running Erlang on Solaris.
+See README file (in top directory) on how to enable dlmalloc
+when building an open source release.
+<br>Own Id: OTP-3997<br>
+Aux Id: OTP-3917
 
 
 </UL>

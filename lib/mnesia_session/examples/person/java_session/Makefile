@@ -190,11 +190,11 @@ $(EBIN)/%.$(EMULATOR): $(GEN_OUT_DIR)/%.erl
 
 $(GEN_FILES): $(PERSON_IDL)
 	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS)\
-	+'{be, erl_genserv}' +'{outdir, "./gen_files"}' $(PERSON_IDL)
+	+'{be,erl_genserv}' +'{outdir,"./gen_files"}' $(PERSON_IDL)
 	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) \
-	+'{be, java}' +'{outdir, "./gen_files"}' $(PERSON_IDL) 
+	+'{be,java}' +'{outdir,"./gen_files"}' $(PERSON_IDL) 
 	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) \
-	+'{be, java}' '+{preproc_flags, "-I$(ERLANG_INCLUDE)"}' +'{outdir, "./gen_files"}' \
+	+'{be,java}' '+{preproc_flags,"-I$(ERLANG_INCLUDE)"}' +'{outdir,"./gen_files"}' \
 	$(MNESIA_SESSION_IDL)
 	CLASSPATH=$(CLASSPATH) $(JAVA) $(JAVA_FLAGS) $(ALL_JAVA_FILES)
 	$(JAR) $(JARFLAGS) $(MNESIA_JAR_FILE) $(COMPILED_MNESIA_MODULE)

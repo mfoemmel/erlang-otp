@@ -18,8 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: orber_bootstrap.erl
-%% Author: Lars Thorsen
-%% 
 %% Description:
 %%    This file contains the bootstrap handling interface
 %%
@@ -47,6 +45,8 @@
 %% Server state record
 %%-----------------------------------------------------------------
 -record(state, {port, portNo}).
+
+-define(DEBUG_LEVEL, 7).
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -89,9 +89,13 @@ handle_cast(_, State) ->
 %%-----------------------------------------------------------------
 handle_info({Port, {data, Data}}, State) when State#state.port == Port ->
     case catch cdr_decode:dec_message(null, Data) of
-	{'EXCEPTION', _} ->
+	{'EXCEPTION', DecodeException} ->
+	    orber:debug_level_print("[~p] orber_bootstrap:handle_info(~p); Decode exception(~p)", 
+				    [?LINE, Data, DecodeException], ?DEBUG_LEVEL),
 	    Reply = cdr_encode:enc_message_error(orber:giop_version());
-	{'EXIT', _} ->
+	{'EXIT', Why} ->
+	    orber:debug_level_print("[~p] orber_bootstrap:handle_info(~p); Decode exit(~p)", 
+				    [?LINE, Data, Why], ?DEBUG_LEVEL),
 	    Reply = cdr_encode:enc_message_error(orber:giop_version());
 	{Version, Hdr, Par, TypeCodes} ->
 	    Result = corba:request_from_iiop(Hdr#request_header.object_key,

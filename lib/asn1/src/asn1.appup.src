@@ -26,6 +26,22 @@
   }, 
   {"1.2.7", 
    [ {load_module, asn1rt_per_v1, soft_purge, soft_purge, []}] 
+  }, 
+  {"1.2.9.5", 
+   [ 		
+	{load_module, asn1rt_per_v1, soft_purge, soft_purge, []},
+	{load_module, asn1rt_ber_v1, soft_purge, soft_purge, []},
+	{load_module, asn1rt_ber_bin, soft_purge, soft_purge, []},
+	{load_module, asn1rt, soft_purge, soft_purge, []}
+   ] 
+  }, 
+  {"1.2.9.6", 
+   [ 		
+	{load_module, asn1rt_per_v1, soft_purge, soft_purge, []},
+	{load_module, asn1rt_ber_v1, soft_purge, soft_purge, []},
+	{load_module, asn1rt_ber_bin, soft_purge, soft_purge, []},
+	{load_module, asn1rt, soft_purge, soft_purge, []}
+   ] 
   } 
  ], 
  [
@@ -50,6 +66,22 @@
   }, 
   {"1.2.7", 
    [{load_module, asn1rt_per_v1, soft_purge, soft_purge, []}] 
+  }, 
+  {"1.2.9.5", 
+   [ 		
+	{load_module, asn1rt_per_v1, soft_purge, soft_purge, []},
+	{load_module, asn1rt_ber_v1, soft_purge, soft_purge, []},
+	{load_module, asn1rt_ber_bin, soft_purge, soft_purge, []},
+	{load_module, asn1rt, soft_purge, soft_purge, []}
+   ] 
+  }, 
+  {"1.2.9.6", 
+   [ 		
+	{load_module, asn1rt_per_v1, soft_purge, soft_purge, []},
+	{load_module, asn1rt_ber_v1, soft_purge, soft_purge, []},
+	{load_module, asn1rt_ber_bin, soft_purge, soft_purge, []},
+	{load_module, asn1rt, soft_purge, soft_purge, []}
+   ] 
   } 
  
  ]}.

@@ -328,7 +328,9 @@ extern int gethostname();
 #define INET_REQ_GETIFLIST     21
 #define INET_REQ_IFGET         22
 #define INET_REQ_IFSET         23
+#define INET_REQ_SUBSCRIBE     24
 
+#define INET_SUBS_EMPTY_OUT_Q  1
 
 #define INET_REP_ERROR       0
 #define INET_REP_OK          1
@@ -456,6 +458,17 @@ typedef struct {
     unsigned long  timeout; /* Request timeout (since op issued,not started) */
 } inet_async_op;
 
+typedef struct subs_list_ {
+  DriverTermData subscriber;
+  struct subs_list_ *next;
+} subs_list;
+
+#define NO_PROCESS 0
+#define NO_SUBSCRIBERS(SLP) ((SLP)->subscriber == NO_PROCESS)
+static void send_to_subscribers(long, subs_list *, int,
+				DriverTermData [], int);
+static void free_subscribers(subs_list*);
+static int save_subscriber(subs_list *, DriverTermData);
 
 typedef struct {
     SOCKET s;                   /* the socket or INVALID_SOCKET if not open */
@@ -503,6 +516,8 @@ typedef struct {
     unsigned long send_cnt;     /* number of packets sent */
     unsigned long send_max;     /* maximum packet send */
     double send_avg;            /* average packet size sent */
+
+    subs_list empty_out_q_subs; /* Empty out queue subscribers */
 } inet_descriptor;
 
 
@@ -662,6 +677,7 @@ static DriverTermData am_tcp_closed;
 static DriverTermData am_tcp_error;
 static DriverTermData am_udp_closed;
 static DriverTermData am_udp_error;
+static DriverTermData am_empty_out_q;
 
 /* speical errors for bad ports and sequences */
 #define EXBADPORT "exbadport"
@@ -1840,6 +1856,7 @@ static int inet_init()
     am_inet_reply   = driver_mk_atom("inet_reply");
     am_timeout      = driver_mk_atom("timeout");
     am_closed       = driver_mk_atom("closed");
+    am_empty_out_q  = driver_mk_atom("empty_out_q");
 
     inet_desc_size = INET_MAX_DESCRIPTOR;
     sz = sizeof(inet_descriptor*) * inet_desc_size;
@@ -1991,6 +2008,7 @@ static void desc_close(inet_descriptor* desc)
 static int inet_close(desc)
 inet_descriptor* desc;
 {
+    free_subscribers(&desc->empty_out_q_subs);
     if ((desc->prebound == 0) && (desc->state & INET_F_OPEN)) {
 	desc_close(desc);
 	desc->state = INET_STATE_CLOSED;
@@ -3221,6 +3239,58 @@ inet_descriptor* desc; char* src; int len; char* dst;
     return dst - dst_start;  /* actual length */
 }
 
+static void
+send_empty_out_q_msgs(desc)
+inet_descriptor* desc;
+{
+  DriverTermData msg[6];
+  int msg_len = 0;
+
+  if(NO_SUBSCRIBERS(&desc->empty_out_q_subs))
+    return;
+
+  msg_len = LOAD_ATOM(msg, msg_len, am_empty_out_q);
+  msg_len = LOAD_PORT(msg, msg_len, desc->dport);
+  msg_len = LOAD_TUPLE(msg, msg_len, 2);
+
+  ASSERT(msg_len == 6);
+
+  send_to_subscribers(desc->port,
+		      &desc->empty_out_q_subs,
+		      1,
+		      msg,
+		      msg_len);
+}
+
+/* subscribe and fill subscription reply, op codes from src and
+** result in dest dst area must be a least 5*len + 1 bytes
+*/
+static int inet_subscribe(desc, src, len, dst)
+inet_descriptor* desc; char* src; int len; char* dst;
+{
+    unsigned long val;
+    int op;
+    char* dst_start = dst;
+
+    *dst++ = INET_REP_OK;     /* put reply code */
+    while (len--) {
+	op = *src++;
+	*dst++ = op;  /* copy op code */
+	switch(op) {
+	case INET_SUBS_EMPTY_OUT_Q:  
+	  val = driver_sizeq(desc->port);
+	  if(val > 0)
+	    if(!save_subscriber(&desc->empty_out_q_subs,
+				driver_caller(desc->port)))
+	      return 0;
+	  break;
+	default: return -1; /* invalid argument */
+	}
+	put_int32(val, dst);  /* write 32bit value */
+	dst += 4;
+    }
+    return dst - dst_start;  /* actual length */
+}
 
 /* Terminate socket */
 static void inet_stop(desc)
@@ -3291,6 +3361,8 @@ long port; int size;
     desc->send_cnt = 0;
     desc->send_max = 0;
     desc->send_avg = 0.0;
+    desc->empty_out_q_subs.subscriber = NO_PROCESS;
+    desc->empty_out_q_subs.next = NULL;
 
     sys_memzero((char *)&desc->remote,sizeof(desc->remote));
 
@@ -3335,6 +3407,22 @@ static int inet_ctl(inet_descriptor* desc, int cmd, char* buf, int len,
 	  else
 	      dst = *rbuf;  /* ok we fit in buffer given */
 	  return inet_fill_stat(desc, buf, len, dst);
+      }
+
+    case INET_REQ_SUBSCRIBE: {
+	  char* dst;
+	  int dstlen = 1 /* Reply code */ + len*5;
+	  DEBUGF(("inet_ctl(%d): INET_REQ_SUBSCRIBE\r\n", desc->port)); 
+	  if (dstlen > INET_MAX_BUFFER) /* sanity check */
+	      return 0;
+	  if (dstlen > rsize) {
+	      if ((dst = (char*) ALLOC(dstlen)) == NULL)
+		  return 0;
+	      *rbuf = dst;  /* call will free this buffer */
+	  }
+	  else
+	      dst = *rbuf;  /* ok we fit in buffer given */
+	  return inet_subscribe(desc, buf, len, dst);
       }
 
     case INET_REQ_GETOPTS: {    /* get options */
@@ -3771,6 +3859,7 @@ tcp_descriptor* desc;
     int qsz = driver_sizeq(ix);
 
     driver_deq(ix, qsz);
+    send_empty_out_q_msgs(INETP(desc));
 }
 
 
@@ -4937,8 +5026,10 @@ tcp_descriptor* desc; ErlIOVec* ev;
 	    }
 	    n = 0;
 	}
-	else if (n == ev->size)
+	else if (n == ev->size) {
+	    ASSERT(NO_SUBSCRIBERS(&INETP(desc)->empty_out_q_subs));
 	    return 0;
+	}
 
 	DEBUGF(("tcp_sendv(%d): s=%d, Send failed, queuing", 
 		desc->inet.port, desc->inet.s));
@@ -5015,8 +5106,10 @@ tcp_descriptor* desc; char* ptr; int len;
 	    }
 	    n = 0;
 	}
-	else if (n == len+h_len)
+	else if (n == len+h_len) {
+	    ASSERT(NO_SUBSCRIBERS(&INETP(desc)->empty_out_q_subs));
 	    return 0;
+	}
 
 	DEBUGF(("tcp_send(%d): s=%d, Send failed, queuing", 
 		desc->inet.port, desc->inet.s));
@@ -5095,6 +5188,7 @@ tcp_descriptor* desc; HANDLE event;
 
 	    if ((iov = driver_peekq(ix, &vsize)) == NULL) {
 		sock_select(INETP(desc), FD_WRITE, 0);
+		send_empty_out_q_msgs(INETP(desc));
 		return 0;
 	    }
 	    vsize = vsize > MAX_VSIZE ? MAX_VSIZE : vsize;
@@ -5156,6 +5250,9 @@ long port; char* args;
 static int udp_inet_stop(desc)
 udp_descriptor* desc;
 {
+    /* There should *never* be any "empty out q" subscribers on
+       an udp socket! */
+    ASSERT(NO_SUBSCRIBERS(&INETP(desc)->empty_out_q_subs));
     inet_stop(&desc->inet);
     return 0;
 }
@@ -5627,3 +5724,86 @@ make_noninheritable_handle(SOCKET s)
 
 #endif
 
+/*-----------------------------------------------------------------------------
+
+   Subscription
+
+-----------------------------------------------------------------------------*/
+
+static int
+save_subscriber(subs, subs_pid)
+subs_list *subs; DriverTermData subs_pid;
+{
+  subs_list *tmp;
+
+  if(NO_SUBSCRIBERS(subs)) {
+    subs->subscriber = subs_pid;
+    subs->next = NULL;
+  }
+  else {
+    tmp = subs->next;
+    subs->next = ALLOC(sizeof(subs_list));
+    if(subs->next == NULL) {
+      subs->next = tmp;
+      return 0;
+    }
+    subs->next->subscriber = subs_pid;
+    subs->next->next = tmp;
+  }
+  return 1;
+}
+
+static void
+free_subscribers(subs)
+subs_list *subs;
+{
+  subs_list *this;
+  subs_list *next;
+
+  this = subs->next;
+  while(this) {
+    next = this->next;
+    sys_free((void *) this);
+    this = next;
+  }
+
+  subs->subscriber = NO_PROCESS;
+  subs->next = NULL;
+}
+
+static void
+send_to_subscribers(port, subs, free_subs, msg, msg_len)
+long port;
+subs_list *subs;
+int free_subs;
+DriverTermData msg[];
+int msg_len;
+{
+  subs_list *this;
+  subs_list *next;
+  int first = 1;
+
+  if(NO_SUBSCRIBERS(subs))
+    return;
+
+  this = subs;
+  while(this) {
+    
+    (void) driver_send_term(port, this->subscriber, msg, msg_len);
+
+    if(free_subs && !first) {
+      next = this->next;
+      sys_free((void *) this);
+      this = next;
+    }
+    else
+      this = this->next;
+    first = 0;
+  }
+
+  if(free_subs) {
+    subs->subscriber = NO_PROCESS;
+    subs->next = NULL;
+  }
+
+}

@@ -89,8 +89,8 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 ERL_FLAGS += 
 ERL_COMPILE_FLAGS += \
-	+'{parse_transform, sys_pre_attributes}' \
-	+'{attribute, insert, vsn, "mnesia_$(MNESIA_VSN)"}' \
+	+'{parse_transform,sys_pre_attributes}' \
+	+'{attribute,insert,vsn,"mnesia_$(MNESIA_VSN)"}' \
 	-W
 
 # ----------------------------------------------------

@@ -30,6 +30,10 @@
 #ifdef HAVE_DLFCN_H
 #include <dlfcn.h>
 #endif
+#ifdef HAVE_MACH_O_DYLD_H
+#include <mach-o/dyld.h>
+static int dyld_last_result = NSObjectFileImageSuccess;
+#endif
 
 
 /* some systems do not have RTLD_NOW defined, and require the "mode"
@@ -55,7 +59,7 @@ static int dlopen_error;      /* set if not dl error !! */
 void *ddll_open(full_name)
     char *full_name;
 {
-#if defined(HAVE_DLOPEN)
+#if defined(HAVE_DLOPEN) || defined(HAVE_MACH_O_DYLD_H)
     char dlname[MAX_NAME_LEN+EXT_LEN+1];
     int len;
 
@@ -66,7 +70,19 @@ void *ddll_open(full_name)
     }
     sys_strcpy(dlname, full_name);
     sys_strcpy(dlname+len, FILE_EXT);
+#if defined(HAVE_MACH_O_DYLD_H)
+    {
+      NSObjectFileImage ofile;
+      NSModule handle = NULL;
+
+      dyld_last_result = NSCreateObjectFileImageFromFile(dlname, &ofile);
+      if (dyld_last_result == NSObjectFileImageSuccess)
+	handle = NSLinkModule(ofile, dlname, NSLINKMODULE_OPTION_PRIVATE);
+      return handle;
+    }
+#else
     return dlopen(dlname, RTLD_NOW);
+#endif
 #else
     dlopen_error = ERL_DLERR_NOT_AVAILABLE;
     return NULL;
@@ -83,8 +99,13 @@ uint32 *ddll_sym(handle, func_name)
 #if defined(HAVE_DLOPEN)
     return dlsym(handle, func_name);
 #else
+#if defined(HAVE_MACH_O_DYLD_H)
+    NSSymbol nssymbol = NSLookupSymbolInModule((NSModule*)handle,func_name);
+    return nssymbol != NULL ? NSAddressOfSymbol(nssymbol) : NULL;
+#else
     dlopen_error = ERL_DLERR_NOT_AVAILABLE;
     return NULL;
+#endif
 #endif
 }
 
@@ -97,8 +118,12 @@ int ddll_close(handle)
 #if defined(HAVE_DLOPEN)
     return dlclose(handle);
 #else
+#if defined(HAVE_MACH_O_DYLD_H)
+    return 0;
+#else
     dlopen_error = ERL_DLERR_NOT_AVAILABLE;
     return -1;
+#endif
 #endif
 }
 
@@ -122,6 +147,30 @@ char *ddll_error()
     }
 #ifdef HAVE_DLOPEN
     msg = dlerror();
+#else
+#if defined(HAVE_MACH_O_DYLD_H)
+    if (dyld_last_result != NSObjectFileImageSuccess) {
+      switch (dyld_last_result) {
+      case NSObjectFileImageFailure:
+	return "dyld: general failure";
+      case NSObjectFileImageInappropriateFile:
+	return "dyld: inappropriate Mach-O file";
+      case NSObjectFileImageArch:
+	return "dyld: inappropriate Mach-O architecture";
+      case NSObjectFileImageFormat:
+	return "dyld: invalid Mach-O file format";
+      case NSObjectFileImageAccess:
+	return "dyld: access error";
+      default:
+	{
+	  static char dyld_error_message[1024];
+	  sprintf(dyld_error_message, "dyld: unknown error: %d",
+		  dyld_last_result);
+	  return dyld_error_message;
+	}
+      }
+    }
+#endif
 #endif
     return msg ? msg : "no error";
 }

@@ -36,13 +36,18 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/0, connect/4, listen/3, accept/2, read/2, write/3,
+-export([start/0, connect/4, listen/3, accept/2, write/3,
 	 controlling_process/3, close/2]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
 -export([]).
+
+%%-----------------------------------------------------------------
+%% Internal defines
+%%-----------------------------------------------------------------
+-define(DEBUG_LEVEL, 6).
 
 %%-----------------------------------------------------------------
 %% External functions
@@ -55,17 +60,39 @@ start() ->
 %% establish a connection.
 %%
 connect(normal, Host, Port, Options) ->
-    case catch gen_tcp:connect(Host, Port, [{packet,cdr}| Options]) of
+    Timeout = orber:iiop_setup_connection_timeout(),
+    case catch gen_tcp:connect(Host, Port, [binary, {packet,cdr}| Options], Timeout) of
 	{ok, Socket} ->
 	    Socket;
+%	{error, etimedout} ->
+%	    orber:debug_level_print("[~p] orber_socket:connect(normal, ~p, ~p, ~p); Timeout after ~p msec.", 
+%				    [?LINE, Host, Port, Options, Timeout], ?DEBUG_LEVEL),
+%	    corba:raise(#'TIMEOUT'{minor=100, completion_status=?COMPLETED_NO});
+	{error, timeout} ->
+	    orber:debug_level_print("[~p] orber_socket:connect(normal, ~p, ~p, ~p); Timeout after ~p msec.", 
+				    [?LINE, Host, Port, Options, Timeout], ?DEBUG_LEVEL),
+	    corba:raise(#'TIMEOUT'{minor=101, completion_status=?COMPLETED_NO});
 	Error ->
+	    orber:debug_level_print("[~p] orber_socket:connect(normal, ~p, ~p, ~p); Failed with reason: ~p", 
+				    [?LINE, Host, Port, Options, Error], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{minor=100, completion_status=?COMPLETED_NO})
     end;
 connect(ssl, Host, Port, Options) ->
-    case catch ssl:connect(Host, Port, [{packet,cdr}| Options]) of
+    Timeout = orber:iiop_setup_connection_timeout(),
+    case catch ssl:connect(Host, Port, [binary, {packet,cdr}| Options], Timeout) of
 	{ok, Socket} ->
 	    Socket;
+%	{error, etimedout} ->
+%	    orber:debug_level_print("[~p] orber_socket:connect(ssl, ~p, ~p, ~p); Timeout after ~p msec.", 
+%				    [?LINE, Host, Port, Options, Timeout], ?DEBUG_LEVEL),
+%	    corba:raise(#'TIMEOUT'{minor=102, completion_status=?COMPLETED_NO});
+	{error, timeout} ->
+	    orber:debug_level_print("[~p] orber_socket:connect(ssl, ~p, ~p, ~p); Timeout after ~p msec.", 
+				    [?LINE, Host, Port, Options, Timeout], ?DEBUG_LEVEL),
+	    corba:raise(#'TIMEOUT'{minor=103, completion_status=?COMPLETED_NO});
 	Error ->
+	    orber:debug_level_print("[~p] orber_socket:connect(ssl, ~p, ~p, ~p); Failed with reason: ~p", 
+				    [?LINE, Host, Port, Options, Error], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{minor=110, completion_status=?COMPLETED_NO})
     end.
 
@@ -81,11 +108,13 @@ listen(normal, Port, Options) ->
 		   false ->
 		       Options
 	       end,
-    case catch gen_tcp:listen(Port, [{packet,cdr}, {reuseaddr,true} |
+    case catch gen_tcp:listen(Port, [binary, {packet,cdr}, {reuseaddr,true} |
 				     Options1]) of
 	{ok, ListenSocket} ->
 	    ListenSocket;
 	Error ->
+	    orber:debug_level_print("[~p] orber_socket:listen(normal, ~p, ~p); Failed with reason: ~p",
+				    [?LINE, Port, Options, Error], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{minor=101, completion_status=?COMPLETED_NO})
     end;
 listen(ssl, Port, Options) ->
@@ -96,10 +125,12 @@ listen(ssl, Port, Options) ->
 		   false ->
 		       Options
 	       end,
-    case catch ssl:listen(Port, [{packet,cdr} | Options1]) of
+    case catch ssl:listen(Port, [binary, {packet,cdr} | Options1]) of
 	{ok, ListenSocket} ->
 	    ListenSocket;
 	Error ->
+	    orber:debug_level_print("[~p] orber_socket:listen(ssl, ~p, ~p); Failed with reason: ~p",
+				    [?LINE, Port, Options, Error], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{minor=111, completion_status=?COMPLETED_NO})
     end.
 
@@ -111,6 +142,8 @@ accept(normal, ListenSocket) ->
 	{ok, S} ->
 	    S;
 	Error ->
+	    orber:debug_level_print("[~p] orber_socket:accept(normal, ~p); Failed with reason: ~p",
+				    [?LINE, ListenSocket, Error], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{minor=102, completion_status=?COMPLETED_NO})
     end;
 accept(ssl, ListenSocket) ->
@@ -118,6 +151,8 @@ accept(ssl, ListenSocket) ->
 	{ok, S} ->
 	    S;
 	Error ->
+	    orber:debug_level_print("[~p] orber_socket:accept(ssl, ~p); Failed with reason: ~p",
+				    [?LINE, ListenSocket, Error], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{minor=112, completion_status=?COMPLETED_NO})
     end.
 
@@ -129,90 +164,13 @@ close(normal, Socket) ->
 close(ssl, Socket) ->
     ssl:close(Socket).
 
-
-%%-----------------------------------------------------------------
-%% Read from socket
-%% 
--ifdef(interceptors).
-
-read(normal, Socket) ->
-    Time =  orber:iiop_timeout(),
-    receive
-	{tcp, Socket, Bytes} ->
-	    %% Message interceptors for incomming calls
-	    orber_interceptors:call_receive_message_interceptors(Bytes);
-	{tcp_closed, Socket} ->
-	    corba:raise(#'COMM_FAILURE'{minor=103, completion_status=?COMPLETED_NO});
-	{tcp_error, Socket, Reason} ->
-	    corba:raise(#'COMM_FAILURE'{minor=104, completion_status=?COMPLETED_NO})
-    after Time ->
-	    corba:raise(#'COMM_FAILURE'{minor=105, completion_status=?COMPLETED_NO})
-    end;
-read(ssl, Socket) ->
-    Time =  orber:iiop_timeout(),
-    receive
-	{ssl, Socket, Bytes} ->
-	    %% Message interceptors for incomming calls
-	    orber_interceptors:call_receive_message_interceptors(Bytes);
-	{ssl_closed, Socket} ->
-	    corba:raise(#'COMM_FAILURE'{minor=113, completion_status=?COMPLETED_NO});
-	{ssl_error, Socket, Reason} ->
-	    corba:raise(#'COMM_FAILURE'{minor=114, completion_status=?COMPLETED_NO})
-    after Time ->
-	    corba:raise(#'COMM_FAILURE'{minor=115, completion_status=?COMPLETED_NO})
-    end.
-
--else.
-
-read(normal, Socket) ->
-    Time =  orber:iiop_timeout(),
-    receive
-	{tcp, Socket, Bytes} ->
-	    Bytes;
-	{tcp_closed, Socket} ->
-	    corba:raise(#'COMM_FAILURE'{minor=103, completion_status=?COMPLETED_NO});
-	{tcp_error, Socket, Reason} ->
-	    corba:raise(#'COMM_FAILURE'{minor=104, completion_status=?COMPLETED_NO})
-    after Time ->
-	    corba:raise(#'COMM_FAILURE'{minor=105, completion_status=?COMPLETED_NO})
-    end;
-read(ssl, Socket) ->
-    Time =  orber:iiop_timeout(),
-    receive
-	{ssl, Socket, Bytes} ->
-	    Bytes;
-	{ssl_closed, Socket} ->
-	    corba:raise(#'COMM_FAILURE'{minor=113, completion_status=?COMPLETED_NO});
-	{ssl_error, Socket, Reason} ->
-	    corba:raise(#'COMM_FAILURE'{minor=114, completion_status=?COMPLETED_NO})
-    after Time ->
-	    corba:raise(#'COMM_FAILURE'{minor=115, completion_status=?COMPLETED_NO})
-    end.
-
--endif.
-
 %%-----------------------------------------------------------------
 %% Write to socket
 %% 
--ifdef(interceptors).
-
-write(normal, Socket, Bytes) ->
-    %% Message interceptors for outgoing calls
-    B = orber_interceptors:call_send_message_interceptors(corba:create_nil_objref(), Bytes),
-    gen_tcp:send(Socket, B);
-write(ssl, Socket, Bytes) ->
-    %% Message interceptors for outgoing calls
-    B = orber_interceptors:call_send_message_interceptors(corba:create_nil_objref(), Bytes),
-    ssl:send(Socket, B).
-
--else.
-
 write(normal, Socket, Bytes) ->
     gen_tcp:send(Socket, Bytes);
 write(ssl, Socket, Bytes) ->
     ssl:send(Socket, Bytes).
-
--endif.
 
 %%-----------------------------------------------------------------
 %% Change the controlling process for the socket

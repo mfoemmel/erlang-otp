@@ -25,9 +25,194 @@
 	 demit/1,
 	 emit/1,
 	 fopen/2,
-	 get_inner/1,type/1,def_to_tag/1,prim_bif/1]).
+	 get_inner/1,type/1,def_to_tag/1,prim_bif/1,
+	 type_from_object/1,
+	 get_typefromobject/1,get_fieldcategory/2,
+	 get_classfieldcategory/2,
+	 list2name/1,
+	 list2rname/1,
+	 constructed_suffix/2]).
+-export([pgen/4,pgen_module/5,mk_var/1]).
+-export([gen_encode_constructed/4,gen_decode_constructed/4]).
 
-pgen_exports(Erules,Module,{Types,Values,_}) ->
+%% pgen(Erules, Module, TypeOrVal)
+%% Generate Erlang module (.erl) and (.hrl) file corresponding to an ASN.1 module
+%% .hrl file is only generated if necessary
+%% Erules = per | ber | ber_bin | per_bin
+%% Module = atom()
+%% TypeOrVal = {TypeList,ValueList}
+%% TypeList = ValueList = [atom()]
+
+pgen(OutFile,Erules,Module,TypeOrVal) ->
+    pgen_module(OutFile,Erules,Module,TypeOrVal,true).
+
+
+pgen_module(OutFile,Erules,Module,TypeOrVal,Indent) ->
+    put(outfile,OutFile),
+    HrlGenerated = asn1ct_gen:pgen_hrl(Erules,Module,TypeOrVal,Indent),
+    asn1ct_name:start(),
+    ErlFile = lists:concat([OutFile,".erl"]),
+    Fid = asn1ct_gen:fopen(ErlFile,write),
+    put(gen_file_out,Fid),
+    asn1ct_gen:gen_head(Erules,Module,HrlGenerated),
+    pgen_exports(Erules,Module,TypeOrVal),
+    pgen_dispatcher(Erules,Module,TypeOrVal),
+    pgen_obsolete_tuple(Erules),
+    pgen_typeorval(Erules,Module,TypeOrVal),
+% gen_vars(asn1_db:mod_to_vars(Module)),
+% gen_tag_table(AllTypes),
+    file:close(Fid),
+    io:format("--~p--~n",[{generated,ErlFile}]).
+
+
+pgen_typeorval(Erules,Module,{Types,Values,Ptypes,Classes,Objects,ObjectSets}) ->
+    pgen_types(Erules,Module,Types),
+    pgen_values(Erules,Module,Values),
+    case Erules of
+	per ->
+	    pgen_objects(Erules,Module,Objects),
+	    pgen_objectsets(Erules,Module,ObjectSets);
+	_  ->
+	    true
+    end.
+
+pgen_values(_,_,[]) ->
+    true;
+pgen_values(Erules,Module,[H|T]) ->
+    Valuedef = asn1_db:dbget(Module,H),
+    gen_value(Valuedef),
+    pgen_values(Erules,Module,T).
+
+pgen_types(_,_,[]) ->
+    true;
+pgen_types(Erules,Module,[H|T]) ->
+    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules)])),
+    asn1ct_name:clear(),
+    Typedef = asn1_db:dbget(Module,H),
+    Rtmod:gen_encode(Erules,Typedef),
+    asn1ct_name:clear(),
+    Rtmod:gen_decode(Erules,Typedef),
+    pgen_types(Erules,Module,T).
+
+pgen_objects(_,_,[]) ->
+    true;
+pgen_objects(Erules,Module,[H|T]) ->
+    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules)])),
+    asn1ct_name:clear(),
+    Typedef = asn1_db:dbget(Module,H),
+    Rtmod:gen_obj_code(Erules,Module,Typedef),
+    pgen_objects(Erules,Module,T).
+
+pgen_objectsets(_,_,[]) ->
+    true;
+pgen_objectsets(Erules,Module,[H|T]) ->
+    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules)])),
+    asn1ct_name:clear(),
+    TypeDef = asn1_db:dbget(Module,H),
+    Rtmod:gen_objectset_code(Erules,TypeDef),
+    pgen_objectsets(Erules,Module,T).
+    
+gen_types(Erules,Tname,{RootList,ExtList}) when list(RootList) ->
+    gen_types(Erules,Tname,RootList),
+    gen_types(Erules,Tname,ExtList);
+gen_types(Erules,Tname,[{'EXTENSIONMARK',_,_}|Rest]) ->
+    gen_types(Erules,Tname,Rest);
+gen_types(Erules,Tname,[ComponentType|Rest]) ->
+    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules)])),
+    asn1ct_name:clear(),
+    Rtmod:gen_encode(Erules,Tname,ComponentType),
+    asn1ct_name:clear(),
+    Rtmod:gen_decode(Erules,Tname,ComponentType),
+    gen_types(Erules,Tname,Rest);
+gen_types(_,Tname,[]) ->
+    true;
+gen_types(Erules,Tname,Type) when record(Type,type) ->
+    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules)])),
+    asn1ct_name:clear(),
+    Rtmod:gen_encode(Erules,Tname,Type),
+    asn1ct_name:clear(),
+    Rtmod:gen_decode(Erules,Tname,Type).
+
+
+%% VARIOUS GENERATOR STUFF 
+%% *************************************************
+%%**************************************************
+
+mk_var(X) when atom(X) ->
+    list_to_atom(mk_var(atom_to_list(X)));
+
+mk_var([H|T]) ->
+    [H-32|T].
+
+
+%% Generate value functions ***************
+%% ****************************************
+%% Generates a function 'V'/0 for each Value V defined in the ASN.1 module
+%% the function returns the value in an Erlang representation which can be
+%% used as  input to the runtime encode functions
+
+gen_value(Value) when record(Value,valuedef) ->
+%%    io:format(" ~w ",[Value#valuedef.name]),
+    emit({"'",Value#valuedef.name,"'() ->",nl}),
+    V = Value#valuedef.value,
+    emit([{asis,V},".",nl,nl]).
+
+gen_encode_constructed(Erules,Typename,InnerType,D) when record(D,type) ->
+
+    Rtmod = list_to_atom(lists:concat(["asn1ct_constructed_",erule(Erules)])),
+    case InnerType of
+	'SET' ->
+	    Rtmod:gen_encode_set(Erules,Typename,D),
+	    #'SET'{components=Components} = D#type.def,
+	    gen_types(Erules,Typename,Components);
+	'SEQUENCE' ->
+	    Rtmod:gen_encode_sequence(Erules,Typename,D),
+	    #'SEQUENCE'{components=Components} = D#type.def,
+	    gen_types(Erules,Typename,Components);
+	'CHOICE' ->
+	    Rtmod:gen_encode_choice(Erules,Typename,D),
+	    {_,Components} = D#type.def,
+	    gen_types(Erules,Typename,Components);
+	'SEQUENCE OF' ->
+	    Rtmod:gen_encode_sof(Erules,Typename,InnerType,D),
+	    {_,Type} = D#type.def,
+	    NameSuffix = asn1ct_gen:constructed_suffix(InnerType,Type#type.def),
+	    gen_types(Erules,[NameSuffix|Typename],Type);
+	'SET OF' ->
+	    Rtmod:gen_encode_sof(Erules,Typename,InnerType,D),
+	    {_,Type} = D#type.def,
+	    NameSuffix = asn1ct_gen:constructed_suffix(InnerType,Type#type.def),
+	    gen_types(Erules,[NameSuffix|Typename],Type);
+	Other ->
+	    exit({nyi,InnerType})
+    end;
+gen_encode_constructed(Erules,Typename,InnerType,D) 
+  when record(D,typedef) ->
+    gen_encode_constructed(Erules,Typename,InnerType,D#typedef.typespec).
+
+gen_decode_constructed(Erules,Typename,InnerType,D) when record(D,type) ->
+    Rtmod = list_to_atom(lists:concat(["asn1ct_constructed_",erule(Erules)])),
+    case InnerType of
+	'SET' ->
+	    Rtmod:gen_decode_set(Erules,Typename,D);
+	'SEQUENCE' ->
+	    Rtmod:gen_decode_sequence(Erules,Typename,D);
+	'CHOICE' ->
+	    Rtmod:gen_decode_choice(Erules,Typename,D);
+	'SEQUENCE OF' ->
+	    Rtmod:gen_decode_sof(Erules,Typename,InnerType,D);
+	'SET OF' ->
+	    Rtmod:gen_decode_sof(Erules,Typename,InnerType,D);
+	Other ->
+	    exit({nyi,InnerType})
+    end;
+
+
+gen_decode_constructed(Erules,Typename,InnerType,D) when record(D,typedef) ->
+    gen_decode_constructed(Erules,Typename,InnerType,D#typedef.typespec).
+
+
+pgen_exports(Erules,Module,{Types,Values,_,_,Objects,ObjectSets}) ->
     emit({"-export([encoding_rule/0]).",nl}),
     case Types of
 	[] -> ok;
@@ -59,14 +244,22 @@ pgen_exports(Erules,Module,{Types,Values,_}) ->
 	    emit({"-export([",nl}),
 	    gen_exports1(Values,"",0)
     end,
-    emit({"encoding_rule() ->",nl}),
-    emit({{asis,Erules},"."}),
-%%    if %% XXX
-%%	Erules == ber_bin ->
-%%	    emit({{asis,ber},"."});
-%%	true ->
-%%	    emit({{asis,Erules},"."})
-%%    end,
+    case Objects of
+	[] -> ok;
+	_ when Erules == per ->
+	    emit({"-export([",nl}),
+	    gen_exports1(Objects,"enc_",3),
+	    emit({"-export([",nl}),
+	    gen_exports1(Objects,"dec_",4)
+    end,
+    case ObjectSets of
+	[] -> ok;
+	_ when Erules == per ->
+	    emit({"-export([",nl}),
+	    gen_exports1(ObjectSets,"getenc_",2),
+	    emit({"-export([",nl}),
+	    gen_exports1(ObjectSets,"getdec_",2)
+    end,
     emit({nl,nl}).
 
 gen_exports1([F1,F2|T],Prefix,Arity) ->
@@ -74,6 +267,87 @@ gen_exports1([F1,F2|T],Prefix,Arity) ->
 	gen_exports1([F2|T],Prefix,Arity);
 gen_exports1([Flast|T],Prefix,Arity) ->
 	emit({"'",Prefix,Flast,"'/",Arity,nl,"]).",nl,nl}).
+
+
+pgen_obsolete_tuple(Erule) ->
+    case Erule of
+	Per when Per == per;
+		 Per == per_bin ->
+	    emit(["element2IfTuple({Name,Value}) when atom(Name) ->",nl,
+		  "   Value;",nl,
+		  "element2IfTuple(Value) ->",nl,
+		  "   Value.",nl,nl,nl]);
+	_ ->
+	    ok
+    end.
+
+pgen_dispatcher(Erules,Module,{[],Values,_,_,Objects,ObjectSets}) ->
+    emit(["encoding_rule() ->",nl]),
+    emit([{asis,Erules},".",nl,nl]);
+pgen_dispatcher(Erules,Module,{Types,Values,_,_,Objects,ObjectSets}) ->
+    emit(["-export([encode/2,decode/2,encode_disp/2,decode_disp/2]).",nl,nl]),
+    emit(["encoding_rule() ->",nl]),
+%% Remove this when per_bin is implemented
+    case Erules of
+	per_bin ->
+	    emit([{asis,per},".",nl,nl]);
+	_ ->
+	    emit([{asis,Erules},".",nl,nl])
+    end,
+    Call = case Erules of
+	       per -> "?RT_PER:complete(encode_disp(Type,Data))";
+	       per_bin -> "?RT_PER:complete(encode_disp(Type,Data))";
+	       ber -> "encode_disp(Type,Data)";
+	       ber_bin -> "encode_disp(Type,Data)"
+	   end,
+    emit(["encode(Type,Data) ->",nl,
+	  "case catch ",Call," of",nl,
+	  "  {'EXIT',{error,Reason}} ->",nl,
+	  "    {error,Reason};",nl,
+	  "  {'EXIT',Reason} ->",nl,
+	  "    {error,{asn1,Reason}};",nl,
+	  "  {Bytes,Len} ->",nl,
+	  "    {ok,Bytes};",nl,
+	  "  X ->",nl,
+	  "    {ok,X}",nl,
+	  "end.",nl,nl]),
+
+    emit(["decode(Type,Data) ->",nl,
+	  "case catch decode_disp(Type,Data) of",nl,
+	  "  {'EXIT',{error,Reason}} ->",nl,
+	  "    {error,Reason};",nl,
+	  "  {'EXIT',Reason} ->",nl,
+	  "    {error,{asn1,Reason}};",nl,
+	  "  {X,_Rest} ->",nl,
+	  "    {ok,X};",nl,
+	  "  {X,_Rest,_Len} ->",nl,
+	  "    {ok,X}",nl,
+	  "end.",nl,nl]),
+
+    case Types of
+	[] -> ok;
+	_ ->
+	    case Erules of
+		ber ->
+		    gen_dispatcher(Types,"encode_disp","enc_",",[]"),
+		    gen_dispatcher(Types,"decode_disp","dec_",",mandatory");
+		ber_bin ->
+		    gen_dispatcher(Types,"encode_disp","enc_",",[]"),
+		    gen_dispatcher(Types,"decode_disp","dec_",",mandatory");
+		_ ->
+		    gen_dispatcher(Types,"encode_disp","enc_",""),
+		    gen_dispatcher(Types,"decode_disp","dec_",",mandatory")
+	    end,
+	    emit([nl])
+    end,
+    emit({nl,nl}).
+
+gen_dispatcher([F1,F2|T],FuncName,Prefix,ExtraArg) ->
+	emit([FuncName,"('",F1,"',Data) -> '",Prefix,F1,"'(Data",ExtraArg,")",";",nl]),
+	gen_dispatcher([F2|T],FuncName,Prefix,ExtraArg);
+gen_dispatcher([Flast|T],FuncName,Prefix,ExtraArg) ->
+	emit([FuncName,"('",Flast,"',Data) -> '",Prefix,Flast,"'(Data",ExtraArg,")",";",nl]),
+	emit([FuncName,"(","Type",",Data) -> exit({error,{asn1,{undefined_type,Type}}}).",nl,nl,nl]).
 
 open_hrl(OutFile,Module) ->
     File = lists:concat([OutFile,".hrl"]),
@@ -172,15 +446,39 @@ fopen(F, Mode) ->
 
 pgen_hrl(Erules,Module,TypeOrVal,_Indent) ->
     put(currmod,Module),
-    {Types,_,_} = TypeOrVal,
-    case pgen_hrltypes(Erules,Module,Types,0) of
-	0 -> 0;
-	X ->
+    {Types,Values,Ptypes,_,_,_} = TypeOrVal,
+    Ret =
+	case pgen_hrltypes(Erules,Module,Ptypes++Types,0) of
+	    0 -> 
+		case Values of
+		    [] ->
+			0;
+		    _ ->
+			open_hrl(get(outfile),get(currmod)),
+			pgen_macros(Erules,Module,Values),
+			1
+		end;
+	    X ->
+		pgen_macros(Erules,Module,Values),
+		X
+	end,
+    case Ret of
+	0 ->
+	    0;
+	Y ->
 	    Fid = get(gen_file_out),
 	    file:close(Fid),
-	    io:format("--~p--~n",[{generated,lists:concat([get(outfile),".hrl"])}]),
-	    X
+	    io:format("--~p--~n",
+		      [{generated,lists:concat([get(outfile),".hrl"])}]),
+	    Y
     end.
+
+pgen_macros(_,_,[]) ->
+    true;
+pgen_macros(Erules,Module,[H|T]) ->
+    Valuedef = asn1_db:dbget(Module,H),
+    gen_macro(Valuedef),
+    pgen_macros(Erules,Module,T).
 
 pgen_hrltypes(_,_,[],NumRecords) ->
     NumRecords;
@@ -190,70 +488,93 @@ pgen_hrltypes(Erules,Module,[H|T],NumRecords) ->
     AddNumRecords = gen_record(Typedef,NumRecords),
     pgen_hrltypes(Erules,Module,T,NumRecords+AddNumRecords).
 
+
+%% Generates a macro for value Value defined in the ASN.1 module
+gen_macro(Value) when record(Value,valuedef) ->
+    emit({"-define('",Value#valuedef.name,"', ",
+	  Value#valuedef.value,").",nl}).
+
 %% Generate record functions **************
 %% Generates an Erlang record for each named and unnamed SEQUENCE and SET in the ASN.1 
 %% module. If no SEQUENCE or SET is found there is no .hrl file generated
 
+
 gen_record(Tdef,NumRecords) when record(Tdef,typedef) ->
-    Name = Tdef#typedef.name,
+    Name = [Tdef#typedef.name],
     Type = Tdef#typedef.typespec,
-    gen_record(Name,Type,NumRecords).
+    gen_record(type,Name,Type,NumRecords);
+
+gen_record(Tdef,NumRecords) when record(Tdef,ptypedef) ->
+    Name = [Tdef#ptypedef.name],
+    Type = Tdef#ptypedef.typespec,
+    gen_record(ptype,Name,Type,NumRecords).
     
-gen_record(Name,[#'ComponentType'{name=Cname,typespec=Type}|T],Num) ->
-    Num2 = gen_record(list_to_atom(lists:concat([Name,"_",Cname])),Type,Num),
-    gen_record(Name,T,Num2);
-gen_record(Name,[H|T],Num) -> % skip EXTENSIONMARK
-    gen_record(Name,T,Num);
-gen_record(_Name,[],Num) ->
+gen_record(TorPtype,Name,[#'ComponentType'{name=Cname,typespec=Type}|T],Num) ->
+    Num2 = gen_record(TorPtype,[Cname|Name],Type,Num),
+    gen_record(TorPtype,Name,T,Num2);
+gen_record(TorPtype,Name,[H|T],Num) -> % skip EXTENSIONMARK
+    gen_record(TorPtype,Name,T,Num);
+gen_record(_TorPtype,_Name,[],Num) ->
     Num;
 
-gen_record(Name,Type,Num) when record(Type,type) ->    
+gen_record(TorPtype,Name,Type,Num) when record(Type,type) ->    
     Def = Type#type.def,
     Rec = case Def of
-	      {'SEQUENCE',_CompList} -> 
-		  {record,Def};
-	      {'SET',_CompList} -> 
-		  {record,Def}; 
+	      Seq when record(Seq,'SEQUENCE') ->
+		  case Seq#'SEQUENCE'.pname of
+		      false ->
+			  {record,Seq#'SEQUENCE'.components};
+		      Pname when TorPtype == type ->
+			  false;
+		      _ ->
+			  {record,Seq#'SEQUENCE'.components}
+		  end;
+	      {'SET',{_,_CompList}} -> 
+		  {record,_CompList}; 
 	      {'CHOICE',_CompList} -> {inner,Def};
-	      {'SEQUENCE OF',_CompList} -> {list_to_atom(lists:concat([Name,"_SEQOF"])),Def};
-	      {'SET OF',_CompList} -> {list_to_atom(lists:concat([Name,"_SETOF"])),Def};
+	      {'SEQUENCE OF',_CompList} -> {['SEQOF'|Name],Def};
+	      {'SET OF',_CompList} -> {['SETOF'|Name],Def};
 	      _ -> false
     end,
     case Rec of
 	false -> Num;
-	{record,{SeqOrSet,CompList}} ->
+	{record,CompList} ->
 	    case Num of
 		0 -> open_hrl(get(outfile),get(currmod));
 		_ -> true
 	    end,
-	    emit({"-record('",Name,"',{",nl}),
+	    emit({"-record('",list2name(Name),"',{",nl}),
 	    RootList = case CompList of
 			   _ when list(CompList) ->
 			       CompList;
 			   {_Rl,_} -> _Rl
 		       end,
 	    gen_record2(Name,'SEQUENCE',RootList),
-	    case CompList of
-		{_,[]} ->
-		    emit({"}). % with extension mark",nl,nl});
-		{Tr,ExtensionList2} ->
-		    case Tr of
-			[] -> true;
-			_ -> emit({",",nl})
-		    end,
-		    emit({"%% with extensions",nl}),
-		    gen_record2(Name, 'SEQUENCE', ExtensionList2, ext),
-		    emit({"}).",nl,nl});
-		_ -> 
-		    emit({"}).",nl,nl})
-	    end,
-	    gen_record(Name,CompList,Num+1);
+	    NewCompList = 
+		case CompList of
+		    {CompList1,[]} ->
+			emit({"}). % with extension mark",nl,nl}),
+			CompList1;
+		    {Tr,ExtensionList2} ->
+			case Tr of
+			    [] -> true;
+			    _ -> emit({",",nl})
+			end,
+			emit({"%% with extensions",nl}),
+			gen_record2(Name, 'SEQUENCE', ExtensionList2, ext),
+			emit({"}).",nl,nl}),
+			Tr ++ ExtensionList2;
+		    _ -> 
+			emit({"}).",nl,nl}),
+			CompList
+		end,
+	    gen_record(TorPtype,Name,NewCompList,Num+1);
 	{inner,{'CHOICE', CompList}} ->
-	    gen_record(Name,CompList,Num);
+	    gen_record(TorPtype,Name,CompList,Num);
 	{NewName,{_, CompList}} ->
-	    gen_record(NewName,CompList,Num)
+	    gen_record(TorPtype,NewName,CompList,Num)
     end;
-gen_record(_,_,NumRecords) -> % skip CLASS etc for now.
+gen_record(_,_,_,NumRecords) -> % skip CLASS etc for now.
      NumRecords.
 		    
 gen_head(Erules,Mod,Hrl) ->
@@ -266,11 +587,16 @@ gen_head(Erules,Mod,Hrl) ->
 			    emit({"%% Generated by the Erlang ASN.1 BER-"
 				  "compiler version:",asn1ct:vsn(),nl}),
 			    {"RT_BER",?RT_BER};
+			per_bin ->
+			    emit({"%% Generated by the Erlang ASN.1 BER-"
+				  "compiler version, utilizing bit-syntax:",
+				  asn1ct:vsn(),nl}),
+			    {"RT_PER",?RT_PER_BIN};
 			ber_bin ->
 			    emit({"%% Generated by the Erlang ASN.1 BER-"
 				  "compiler version, utilizing bit-syntax:",
 				  asn1ct:vsn(),nl}),
-			    {"RT_BER_BIN",?RT_BER_BIN}
+			    {"RT_BER",?RT_BER_BIN}
     end,
     emit({"%% Purpose: encoder and decoder to the types in mod ",Mod,nl,nl}),
     emit({"-module('",Mod,"').",nl}),
@@ -286,7 +612,8 @@ gen_head(Erules,Mod,Hrl) ->
 gen_hrlhead(Mod) ->
     emit({"%% Generated by the Erlang ASN.1 compiler version:",asn1ct:vsn(),nl}),
     emit({"%% Purpose: Erlang record definitions for each named and unnamed",nl}),
-    emit({"%% SEQUENCE and SET in module ",Mod,nl,nl}),
+    emit({"%% SEQUENCE and SET, and macro definitions for each value",nl}),
+    emit({"%% definition,in module ",Mod,nl,nl}),
     emit({nl,nl}).
 
 gen_record2(Name,SeqOrSet,Comps) ->
@@ -317,13 +644,42 @@ gen_record_default(_, _) ->
 get_inner(A) when atom(A) -> A;    
 get_inner(Ext) when record(Ext,'Externaltypereference') -> Ext;    
 get_inner(Tref) when record(Tref,typereference) -> Tref;
-get_inner(T) when tuple(T) -> element(1,T).
+get_inner({fixedtypevaluefield,_,Type}) ->
+    if 
+	record(Type,type) ->
+	    Type#type.def;
+	true ->
+	    Type
+    end;
+get_inner({typefield,TypeName}) ->
+    TypeName;
+get_inner(T) when tuple(T) -> 
+    case element(1,T) of
+	Tuple when tuple(Tuple),element(1,Tuple) == objectclass ->
+	    case catch(lists:last(element(2,T))) of
+		{valuefieldreference,FieldName} ->
+		    get_fieldtype(element(2,Tuple),FieldName);
+		{typefieldreference,FieldName} ->
+		    get_fieldtype(element(2,Tuple),FieldName);
+		{'EXIT',Reason} ->
+		    throw({asn1,{'internal error in get_inner/1',Reason}})
+	    end;
+	_ -> element(1,T)
+    end.
+
+
+
+
 
 type(X) when record(X,'Externaltypereference') ->
     X;
 type(X) when record(X,typereference) ->
     X;
 type('ASN1_OPEN_TYPE') ->
+    'ASN1_OPEN_TYPE';
+type({fixedtypevaluefield,Name,Type}) when record(Type,type) ->
+    type(get_inner(Type#type.def));
+type({typefield,_}) ->
     'ASN1_OPEN_TYPE';
 type(X) ->
     %%    io:format("asn1_types:type(~p)~n",[X]),
@@ -384,6 +740,119 @@ def_to_tag(Def) ->
     {'UNIVERSAL',get_inner(Def)}.
     
 
+%% Information Object Class
+
+type_from_object(X) ->
+    case (catch lists:last(element(2,X))) of
+	{'EXIT',_} ->
+	    {notype,X};
+	Normal ->
+	    Normal
+    end.
+
+
+get_fieldtype([],FieldName)->
+    {no_type,no_name};
+get_fieldtype([Field|Rest],FieldName) ->
+    case element(2,Field) of
+	FieldName ->
+	    case element(1,Field) of
+		fixedtypevaluefield ->
+		    {element(1,Field),FieldName,element(3,Field)};
+		_ ->
+		    {element(1,Field),FieldName}
+	    end;
+	_  ->
+	    get_fieldtype(Rest,FieldName)
+    end.
+
+get_fieldcategory([],FieldName) ->
+    no_cat;
+get_fieldcategory([Field|Rest],FieldName) ->
+    case element(2,Field) of
+	FieldName ->
+	    element(1,Field);
+	_ ->
+	    get_fieldcategory(Rest,FieldName)
+    end.
+
+get_typefromobject(Type) when record(Type,type) ->
+    case Type#type.def of
+	{ClassDef={objectclass,_,_},TypeFrObj} when list(TypeFrObj) ->
+	    {_,FieldName} = lists:last(TypeFrObj),
+	    FieldName;
+	_ ->
+	    {no_field}
+    end.
+
+get_classfieldcategory(Type,FieldName) ->
+    case (catch Type#type.def) of
+	{{obejctclass,Fields,_},_} ->
+	    get_fieldcategory(Fields,FieldName);
+	{'EXIT',_} ->
+	    no_cat;
+	_ ->
+	    no_cat
+    end.
+%% Information Object Class
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Convert a list of name parts to something that can be output by emit
+%% 
+%% used to output function names in generated code.
+
+list2name(L) ->
+    NewL = list2name1(L),
+    lists:concat(lists:reverse(NewL)).
+
+list2name1([{ptype,H1},H2|T]) ->
+    [H1,"_",list2name([H2|T])];
+list2name1([H1,H2|T]) ->
+    [H1,"_",list2name([H2|T])];
+list2name1([{ptype,H}|T]) ->
+    [H];
+list2name1([H|T]) ->
+    [H];
+list2name1([]) ->
+    [].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Convert a list of name parts to something that can be output by emit
+%% stops at {ptype,Pname} i.e Pname whill be the first part of the name
+%% used to output record names in generated code.
+
+list2rname(L) ->
+    NewL = list2rname1(L),
+    lists:concat(lists:reverse(NewL)).
+
+list2rname1([{ptype,H1},H2|T]) ->
+    [H1];
+list2rname1([H1,H2|T]) ->
+    [H1,"_",list2name([H2|T])];
+list2rname1([{ptype,H}|T]) ->
+    [H];
+list2rname1([H|T]) ->
+    [H];
+list2rname1([]) ->
+    [].
 
 
 
+constructed_suffix(_,#'SEQUENCE'{pname=Ptypename}) when Ptypename =/= false ->
+    {ptype, Ptypename};
+constructed_suffix(_,#'SET'{pname=Ptypename}) when Ptypename =/= false ->
+    {ptype,Ptypename};
+constructed_suffix('SEQUENCE OF',_) -> 
+    'SEQOF';
+constructed_suffix('SET OF',_) -> 
+    'SETOF'.
+
+erule(ber) ->
+    ber;
+erule(ber_bin) ->
+    ber;
+erule(per) ->
+    per;
+erule(per_bin) ->
+    per.

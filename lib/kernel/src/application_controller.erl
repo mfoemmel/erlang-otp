@@ -880,6 +880,9 @@ handle_call(info, _From, S) ->
     {reply, Reply, S}.
 
 handle_cast({application_started, AppName, Res}, S) ->
+    handle_application_started(AppName, Res, S).
+
+handle_application_started(AppName, Res, S) ->
     #state{starting = Starting, running = Running, started = Started, 
 	   start_req = Start_req} = S,
     Start_reqN = reply_to_requester(AppName, Start_req, Res),
@@ -977,10 +980,10 @@ handle_info({ac_start_application_reply, AppName, Res}, S) ->
 		     Pid = spawn_starter(From, Appl, S, Type),
 		    {noreply, S#state{start_req = [{AppName, From, Pid} | Start_req]}};
 		{started, Node} ->
-		    gen_server:cast(?AC, {application_started, AppName,
-					  {ok, {distributed, Node}}}),
 		    reply(From, ok),
-		    {noreply, S};
+		    handle_application_started(AppName, 
+					       {ok, {distributed, Node}}, 
+					       S);
 		not_started ->
 		    Started = S#state.started,
 		    reply(From, ok),

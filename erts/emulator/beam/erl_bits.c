@@ -680,7 +680,7 @@ erts_put_binary(Eterm arg, unsigned n)
     }
     need_buf(&erts_bin_buf, &erts_bin_buf_len, NBYTES(n + erts_bin_offset));
     if (BIT_OFFSET(erts_bin_offset) == 0) {
-	sys_memcpy(erts_bin_buf+BYTE_OFFSET(erts_bin_offset), bptr, BYTE_OFFSET(n));
+	sys_memcpy(erts_bin_buf+BYTE_OFFSET(erts_bin_offset), bptr, NBYTES(n));
     } else {
 	copy_bits(bptr, 0, 1, erts_bin_buf, erts_bin_offset, 1, n);
     }

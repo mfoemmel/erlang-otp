@@ -98,8 +98,8 @@ open0(Type) ->
 
 close(S) when port(S) ->
     unlink(S),               %% avoid getting {'EXIT', S, Reason}
-    case getstat(S, [send_pend]) of
-	{ok, [{send_pend,N}]} when N > 0 ->
+    case subscribe(S, [subs_empty_out_q]) of
+	{ok, [{subs_empty_out_q,N}]} when N > 0 ->
 	    close_pend_loop(S, N);   %% wait for pending output to be sent
 	_ ->
 	    catch erlang:port_close(S),
@@ -108,13 +108,14 @@ close(S) when port(S) ->
 
 close_pend_loop(S, N) ->
     receive
+	{empty_out_q,S} ->
+	    catch erlang:port_close(S), ok
     after ?INET_CLOSE_TIMEOUT ->
 	    case getstat(S, [send_pend]) of
-		{ok, [{send_pend,N1}]} ->
-		    if N1 == 0 -> catch erlang:port_close(S), ok;
-		       N1 == N -> catch erlang:port_close(S), ok;
-		       true -> close_pend_loop(S, N1)
-		    end;
+                {ok, [{send_pend,N1}]} ->
+                    if N1 == N -> catch erlang:port_close(S), ok;
+                       true -> close_pend_loop(S, N1)
+                    end;
 		_ ->
 		    catch erlang:port_close(S), ok
 	    end
@@ -506,6 +507,32 @@ ifset(S, Name, Opts) ->
 			{ok, _} -> ok;
 			Error -> Error
 		    end;
+		Error -> Error
+	    end;
+	Error -> Error
+    end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% subscribe(insock(), SubsList) -> {ok,StatReply} | {error, Reason}
+%%
+%% Subscribe on socket events (from driver)
+%%
+%% Available event subscriptions:
+%%   subs_empty_out_q: StatReply = [{subs_empty_out_q, N}], where N
+%%                     is current queue length. When the queue becomes empty
+%%                     a {empty_out_q, insock()} message will be sent to
+%%                     subscribing process and the subscription will be
+%%                     removed. If N = 0, the queue is empty and no
+%%                     subscription is made.
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+subscribe(S, Sub) when port(S),list(Sub) ->
+    case encode_subs(Sub) of
+	{ok, Bytes} ->
+	    case ctl_cmd(S, ?INET_REQ_SUBSCRIBE, Bytes) of
+		{ok, Data} -> decode_subs(Data);
 		Error -> Error
 	    end;
 	Error -> Error
@@ -1045,6 +1072,40 @@ encode_ifopt_val([{Opt,Val} | Opts], Buf) ->
     end;
 encode_ifopt_val([], Buf) -> {ok,Buf}.
 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% handle subscribe options
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+encode_subs(L) ->
+    case catch enc_subs(L) of
+	List when list(List) -> {ok, List};
+	Error -> Error
+    end.
+
+enc_subs([H|T]) ->
+    case H of
+	subs_empty_out_q -> [?INET_SUBS_EMPTY_OUT_Q | enc_subs(T)];
+	_ -> throw({error, einval})
+    end;
+enc_subs([]) -> [].
+
+
+decode_subs(Bytes) -> 
+    case catch dec_subs(Bytes) of
+	List when list(List) -> {ok, List};
+	Error -> Error
+    end.
+
+dec_subs([X,X3,X2,X1,X0 | R]) ->
+    Val = ?u32(X3,X2,X1,X0),
+    case X of
+	?INET_SUBS_EMPTY_OUT_Q  -> [{subs_empty_out_q,Val} | dec_subs(R)];
+	_  -> throw({error, einval})
+    end;
+dec_subs([]) -> [].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%

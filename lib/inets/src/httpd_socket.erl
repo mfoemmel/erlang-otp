@@ -50,27 +50,27 @@ listen(SocketType,Port) ->
     listen(SocketType,undefined,Port).
 
 listen(ip_comm,Addr,Port) ->
-    case gen_tcp:listen(Port,
-			sock_opt(Addr) ++
-			[{packet,0},
-			 {backlog,128},
-			 {reuseaddr,true}]) of
+    ?DEBUG("listening(ip_comm) to port ~p", [Port]),
+    Opt = sock_opt(Addr,[{packet,0},{backlog,128},{reuseaddr,true}]),
+    case gen_tcp:listen(Port,Opt) of
 	{ok,ListenSocket} ->
 	    ListenSocket;
 	Error ->
 	    Error
     end;
 listen({ssl,SSLConfig},Addr,Port) ->
-    ?DEBUG("SSL: Listening to port ~p", [Port]),
-    case ssl:listen(Port, sock_opt(Addr)++[{packet,0}|SSLConfig]) of
+    ?DEBUG("listening(ssl) to port ~p"
+	   "~n   SSLConfig: ~p", [Port,SSLConfig]),
+    Opt = sock_opt(Addr,[{packet,0}|SSLConfig]),
+    case ssl:listen(Port, Opt) of
 	{ok,ListenSocket} ->
 	    ListenSocket;
 	Error ->
 	    Error
     end.
 
-sock_opt(undefined) -> [];
-sock_opt(Addr) -> [{ip, Addr}].
+sock_opt(undefined,Opt) -> Opt;
+sock_opt(Addr,Opt)      -> [{ip, Addr}|Opt].
 
 %% accept
 
@@ -79,7 +79,7 @@ accept(A, B) ->
 
 
 accept(ip_comm,ListenSocket, T) ->
-    ?DEBUG("IP_COMM: Accept on socket ~p", [ListenSocket]),
+    ?DEBUG("accept(ip_comm) on socket ~p", [ListenSocket]),
     case gen_tcp:accept(ListenSocket, T) of
 	{ok,Socket} ->
 	    Socket;
@@ -87,7 +87,7 @@ accept(ip_comm,ListenSocket, T) ->
 	    Error
     end;
 accept({ssl,_SSLConfig},ListenSocket, T) ->
-    ?DEBUG("SSL: Accept on socket ~p", [ListenSocket]),
+    ?DEBUG("accept(ssl) on socket ~p", [ListenSocket]),
     case ssl:accept(ListenSocket, T) of
 	{ok,Socket} ->
 	    Socket;
@@ -107,12 +107,10 @@ deliver(SocketType, Socket, IOListOrBinary)  ->
     end.
 
 send(ip_comm,Socket,Data) ->
-    ?DEBUG("send(ip_comm) -> ~p bytes on socket ~p", 
-	   [data_size(Data), Socket]),
+    ?DEBUG("send(ip_comm) -> ~p bytes on socket ~p",[data_size(Data),Socket]),
     gen_tcp:send(Socket,Data);
 send({ssl,SSLConfig},Socket,Data) ->
-    ?DEBUG("send(ssl) -> ~p bytes on socket ~p", 
-	   [data_size(Data), Socket]),
+    ?DEBUG("send(ssl) -> ~p bytes on socket ~p",[data_size(Data),Socket]),
     ssl:send(Socket, Data).
 
 -ifdef(inets_debug).
@@ -132,7 +130,7 @@ peername(ip_comm, Socket) ->
 	{ok,{{A,B,C,D},Port}} ->
 	    PeerName = integer_to_list(A)++"."++integer_to_list(B)++"."++
 		integer_to_list(C)++"."++integer_to_list(D),
-	    ?DEBUG("IP_COMM: Peername on socket ~p: ~p",
+	    ?DEBUG("peername(ip_comm) on socket ~p: ~p",
 		   [Socket,{Port,PeerName}]),
 	    {Port,PeerName};
 	{error,Reason} ->
@@ -143,7 +141,7 @@ peername({ssl,_SSLConfig},Socket) ->
 	{ok,{{A,B,C,D},Port}} ->
 	    PeerName = integer_to_list(A)++"."++integer_to_list(B)++"."++
 		integer_to_list(C)++"."++integer_to_list(D),
-	    ?DEBUG("SSL: Peername on socket ~p: ~p", 
+	    ?DEBUG("peername(ssl) on socket ~p: ~p", 
 		   [Socket, {Port,PeerName}]),
 	    {Port,PeerName};
 	{error,_Reason} ->
@@ -159,7 +157,7 @@ resolve(_) ->
 %% close
 
 close(ip_comm,Socket) ->
-    ?DEBUG("IP_COMM: Close socket ~p", [Socket]),
+    ?DEBUG("close(ip_comm) socket ~p", [Socket]),
     case (catch gen_tcp:close(Socket)) of
 	ok ->                  ok;
 	{error,Reason} ->      {error,Reason};
@@ -168,7 +166,7 @@ close(ip_comm,Socket) ->
 	Otherwise ->           {error,Otherwise}
     end;
 close({ssl,_SSLConfig},Socket) ->
-    ?DEBUG("SSL: Close socket ~p", [Socket]),
+    ?DEBUG("close(ssl) socket ~p", [Socket]),
     case (catch ssl:close(Socket)) of
 	ok ->                  ok;
 	{error,Reason} ->      {error,Reason};
@@ -189,8 +187,13 @@ config(ConfigDB) ->
 			   "not found in the config file")};
 		SSLCertificateFile ->
 		    {ssl,
-		     SSLCertificateFile++ssl_certificate_key_file(ConfigDB)++
-		     ssl_verify_client(ConfigDB)}
+		     SSLCertificateFile++
+		     ssl_certificate_key_file(ConfigDB)++
+		     ssl_verify_client(ConfigDB)++
+		     ssl_ciphers(ConfigDB)++
+		     ssl_password(ConfigDB)++
+		     ssl_verify_depth(ConfigDB)++
+		     ssl_ca_certificate_file(ConfigDB)}
 	    end;
 	ip_comm ->
 	    ip_comm
@@ -220,4 +223,49 @@ ssl_verify_client(ConfigDB) ->
 	    [{verify,SSLVerifyClient}]
     end.
 
+ssl_ciphers(ConfigDB) ->
+    case httpd_util:lookup(ConfigDB,ssl_ciphers) of
+	undefined ->
+	    [];
+	Ciphers ->
+	    [{ciphers, Ciphers}]
+    end.
 
+ssl_password(ConfigDB) ->
+    case httpd_util:lookup(ConfigDB,ssl_password_callback_module) of
+	undefined ->
+	    [];
+	Module ->
+	    case httpd_util:lookup(ConfigDB, ssl_password_callback_function) of
+		undefined ->
+		    [];
+		Function ->
+		    case catch apply(Module, Function, []) of
+			Password when list(Password) ->
+			    [{password, Password}];
+			Error ->
+			    error_report(ssl_password,Module,Function,Error),
+			    []
+		    end
+	    end
+    end.
+
+ssl_verify_depth(ConfigDB) ->
+    case httpd_util:lookup(ConfigDB, ssl_verify_client_depth) of
+	undefined ->
+	    [];
+	Depth ->
+	    [{depth, Depth}]
+    end.
+
+ssl_ca_certificate_file(ConfigDB) ->
+    case httpd_util:lookup(ConfigDB, ssl_ca_certificate_file) of
+	undefined ->
+	    [];
+	File ->
+	    [{cacertfile, File}]
+    end.
+
+
+error_report(Where,M,F,Error) ->
+    error_logger:error_report([{?MODULE, Where}, {apply, {M, F, []}},Error]).

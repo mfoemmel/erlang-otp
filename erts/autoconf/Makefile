@@ -33,7 +33,7 @@ do_vxworks:
 else
 
 ifneq (,$(findstring solaris,$(TARGET)))
-CONFIG_FLAGS = --enable-threads
+CONFIG_FLAGS = --enable-threads --enable-dlmalloc
 endif
 
 ifneq (,$(findstring univel-sysv4,$(TARGET)))

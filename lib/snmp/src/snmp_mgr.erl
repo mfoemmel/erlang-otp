@@ -112,7 +112,7 @@ get_response(Id, Vars) -> echo_errors(get_response_impl(Id, Vars)).
 %% It doesn't receive traps though.
 %%----------------------------------------------------------------------
 receive_response() ->
-    receive_response(3500).
+    receive_response(get_timeout()).
 
 receive_response(Timeout) ->
     d("await reponse within ~w ms",[Timeout]),
@@ -124,6 +124,13 @@ receive_response(Timeout) ->
 	    d("response timeout",[]),
 	    {error, timeout}
     end.
+
+
+get_timeout() ->
+    get_timeout(os:type()).
+
+get_timeout(vxworks) -> 7000;
+get_timeout(_)       -> 3500.
 
 %%----------------------------------------------------------------------
 %% Receives a trap from the agent.

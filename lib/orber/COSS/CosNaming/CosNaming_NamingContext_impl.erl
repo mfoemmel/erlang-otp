@@ -147,23 +147,37 @@ install(Timeout, Options) ->
 %%-----------------------------------------------------------------
 %% Interface CosNaming::NamingContext
 %%-----------------------------------------------------------------
+%%----------------------------------------------------------------------
+%% Function   : bind
+%% Arguments  : 
+%% Description: 
+%% Returns    : 
+%%----------------------------------------------------------------------
 bind(OE_THIS, OE_State, [N], Obj) ->
     SubobjKey = corba:get_subobject_key(OE_THIS),
-    _RF = ?read_function({orber_CosNaming, SubobjKey}),
-    case orber_cosnaming_utils:query_result(mnesia:transaction(_RF)) of
-	error ->
-	    corba:raise(#'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
-								   cxt=OE_THIS});
-	X ->
-	    case lists:keysearch(N, 1, X) of
-		{value, _} ->
-		    corba:raise(#'CosNaming_NamingContext_AlreadyBound'{});
-		false ->
-		    _F = ?write_function(#orber_CosNaming{name_context=SubobjKey,
-							  nameindex=[{N, nobject,
-								      Obj} | X]}),
-		    {write_result(mnesia:transaction(_F)), OE_State}
-	    end
+    _BF = 
+	fun() ->
+		case mnesia:wread({orber_CosNaming, SubobjKey}) of
+		    [#orber_CosNaming{nameindex = X}] ->
+			case lists:keysearch(N, 1, X) of
+			    {value, _} ->
+				{'EXCEPTION', #'CosNaming_NamingContext_AlreadyBound'{}};
+			    false ->
+				mnesia:write(#orber_CosNaming{name_context=SubobjKey,
+							      nameindex=[{N, nobject, Obj} | X]})
+			end;
+		    Other ->
+			{'EXCEPTION', #'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
+									       cxt=OE_THIS}}
+		end
+	end,
+    case mnesia:transaction(_BF) of 
+	{atomic, {'EXCEPTION', E}} ->
+	    corba:raise(E);
+	{atomic, ok} ->
+	    {ok, OE_THIS};
+	Other ->
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 bind(OE_THIS, OE_State, [H|T], Obj) ->
     SubobjKey = corba:get_subobject_key(OE_THIS),
@@ -182,23 +196,39 @@ bind(OE_THIS, OE_State, [H|T], Obj) ->
 	    end
     end.
 
+%%----------------------------------------------------------------------
+%% Function   : rebind
+%% Arguments  : 
+%% Description: 
+%% Returns    : 
+%%----------------------------------------------------------------------
 rebind(OE_THIS, OE_State, [N], Obj) ->
     SubobjKey = corba:get_subobject_key(OE_THIS),
-    _RF = ?read_function({orber_CosNaming, SubobjKey}),
-    case orber_cosnaming_utils:query_result(mnesia:transaction(_RF)) of
-	error ->
-	    corba:raise(#'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
-								       cxt=OE_THIS});
-	X ->
-	    KList = case lists:keysearch(N, 1, X) of
-			{value, {N, _, V}} ->
-			    lists:keyreplace(N, 1, X, {N, nobject, Obj});
-			false ->
-			    [{N, nobject, Obj} | X]
-		    end,
-	    _F = ?write_function(#orber_CosNaming{name_context=SubobjKey,
-						      nameindex=KList}),
-	    {write_result(mnesia:transaction(_F)), OE_State}
+    _RBF = 
+	fun() ->
+		case mnesia:wread({orber_CosNaming, SubobjKey}) of
+		    [#orber_CosNaming{nameindex = X}] ->
+			KList = 
+			    case lists:keysearch(N, 1, X) of
+				{value, {N, _, V}} ->
+				    lists:keyreplace(N, 1, X, {N, nobject, Obj});
+				false ->
+				    [{N, nobject, Obj} | X]
+			    end,
+			mnesia:write(#orber_CosNaming{name_context=SubobjKey,
+						      nameindex=KList});
+		    Other ->
+			{'EXCEPTION', #'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
+									       cxt=OE_THIS}}
+		end
+	end,
+    case mnesia:transaction(_RBF) of 
+	{atomic, {'EXCEPTION', E}} ->
+	    corba:raise(E);
+	{atomic, ok} ->
+	    {ok, OE_THIS};
+	Other ->
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 rebind(OE_THIS, OE_State, [H|T], Obj) ->
     SubobjKey = corba:get_subobject_key(OE_THIS),
@@ -217,23 +247,38 @@ rebind(OE_THIS, OE_State, [H|T], Obj) ->
 	    end
     end.
 
+%%----------------------------------------------------------------------
+%% Function   : bind_context
+%% Arguments  : 
+%% Description: 
+%% Returns    : 
+%%----------------------------------------------------------------------
 bind_context(OE_THIS, OE_State, [N], Obj) ->
     SubobjKey = corba:get_subobject_key(OE_THIS),
-    _RF = ?read_function({orber_CosNaming, SubobjKey}),
-    case orber_cosnaming_utils:query_result(mnesia:transaction(_RF)) of
-	error ->
-	    corba:raise(#'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
-								   cxt=OE_THIS});
-	X ->
-	    case lists:keysearch(N, 1, X) of
-		{value, _} ->
-		    corba:raise(#'CosNaming_NamingContext_AlreadyBound'{});
-		false ->
-		    _F = ?write_function(#orber_CosNaming{name_context=SubobjKey,
-							  nameindex=[{N, ncontext,
-								      Obj} | X]}),
-		    {write_result(mnesia:transaction(_F)), OE_State}
-	    end
+    _BCF = 
+	fun() ->
+		case mnesia:wread({orber_CosNaming, SubobjKey}) of
+		    [#orber_CosNaming{nameindex = X}] ->
+			case lists:keysearch(N, 1, X) of
+			    {value, _} ->
+				{'EXCEPTION', #'CosNaming_NamingContext_AlreadyBound'{}};
+			    false ->
+				mnesia:write(#orber_CosNaming{name_context=SubobjKey,
+							      nameindex=
+							      [{N, ncontext, Obj} | X]})
+			end;
+		    Other ->
+			{'EXCEPTION', #'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
+									       cxt=OE_THIS}}
+		end
+	end,
+    case mnesia:transaction(_BCF) of 
+	{atomic, {'EXCEPTION', E}} ->
+	    corba:raise(E);
+	{atomic, ok} ->
+	    {ok, OE_THIS};
+	Other ->
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 bind_context(OE_THIS, OE_State, [H|T], Obj) ->
     SubobjKey = corba:get_subobject_key(OE_THIS),
@@ -252,23 +297,39 @@ bind_context(OE_THIS, OE_State, [H|T], Obj) ->
 	    end
     end.
 
+%%----------------------------------------------------------------------
+%% Function   : rebind_context
+%% Arguments  : 
+%% Description: 
+%% Returns    : 
+%%----------------------------------------------------------------------
 rebind_context(OE_THIS, OE_State, [N], Obj) ->
     SubobjKey = corba:get_subobject_key(OE_THIS),
-    _RF = ?read_function({orber_CosNaming, SubobjKey}),
-    case orber_cosnaming_utils:query_result(mnesia:transaction(_RF)) of
-	error ->
-	    corba:raise(#'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
-								     cxt=OE_THIS});
-	X ->
-	    KList = case lists:keysearch(N, 1, X) of
-			{value, {N, _, V}} ->
-			    lists:keyreplace(N, 1, X, {N, ncontext, Obj});
-			false ->
-			    [{N, ncontext, Obj} | X]
-		    end,
-	    _F = ?write_function(#orber_CosNaming{name_context=SubobjKey,
-						  nameindex=KList}),
-	    {write_result(mnesia:transaction(_F)), OE_State}
+    _RBCF = 
+	fun() ->
+		case mnesia:wread({orber_CosNaming, SubobjKey}) of
+		    [#orber_CosNaming{nameindex = X}] ->
+			KList = 
+			    case lists:keysearch(N, 1, X) of
+				{value, {N, _, V}} ->
+				    lists:keyreplace(N, 1, X, {N, ncontext, Obj});
+				false ->
+				    [{N, ncontext, Obj} | X]
+			    end,
+			mnesia:write(#orber_CosNaming{name_context=SubobjKey,
+						      nameindex= KList});
+		    Other ->
+			{'EXCEPTION', #'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
+									       cxt=OE_THIS}}
+		end
+	end,
+    case mnesia:transaction(_RBCF) of 
+	{atomic, {'EXCEPTION', E}} ->
+	    corba:raise(E);
+	{atomic, ok} ->
+	    {ok, OE_THIS};
+	Other ->
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 rebind_context(OE_THIS, OE_State, [H|T], Obj) ->
     SubobjKey = corba:get_subobject_key(OE_THIS),
@@ -287,6 +348,12 @@ rebind_context(OE_THIS, OE_State, [H|T], Obj) ->
 	    end
     end.
 
+%%----------------------------------------------------------------------
+%% Function   : resolve
+%% Arguments  : 
+%% Description: 
+%% Returns    : 
+%%----------------------------------------------------------------------
 resolve(OE_THIS, OE_State, [N]) ->
     SubobjKey = corba:get_subobject_key(OE_THIS),
     _RF = ?read_function({orber_CosNaming, SubobjKey}),
@@ -320,18 +387,33 @@ resolve(OE_THIS, OE_State, [H|T]) ->
 	    end
     end.
 
+%%----------------------------------------------------------------------
+%% Function   : unbind
+%% Arguments  : 
+%% Description: 
+%% Returns    : 
+%%----------------------------------------------------------------------
 unbind(OE_THIS, OE_State, [N]) ->
     SubobjKey = corba:get_subobject_key(OE_THIS),
-    _RF = ?read_function({orber_CosNaming, SubobjKey}),
-    case orber_cosnaming_utils:query_result(mnesia:transaction(_RF)) of
-	error ->
-	    corba:raise(#'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
-								 cxt=OE_THIS});
-	X ->
-	    KList = lists:keydelete(N, 1, X),
-	    _F = ?write_function(#orber_CosNaming{name_context=SubobjKey,
-						  nameindex=KList}),
-	    {write_result(mnesia:transaction(_F)), OE_State}
+    _UBF = 
+	fun() ->
+		case mnesia:wread({orber_CosNaming, SubobjKey}) of
+		    [#orber_CosNaming{nameindex = X}] ->
+			KList = lists:keydelete(N, 1, X),
+			mnesia:write(#orber_CosNaming{name_context=SubobjKey,
+						      nameindex= KList});
+		    Other ->
+			{'EXCEPTION', #'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
+									       cxt=OE_THIS}}
+		end
+	end,
+    case mnesia:transaction(_UBF) of 
+	{atomic, {'EXCEPTION', E}} ->
+	    corba:raise(E);
+	{atomic, ok} ->
+	    {ok, OE_THIS};
+	Other ->
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 unbind(OE_THIS, OE_State, [H|T]) ->
     SubobjKey = corba:get_subobject_key(OE_THIS),
@@ -351,12 +433,24 @@ unbind(OE_THIS, OE_State, [H|T]) ->
     end.
 
 
+%%----------------------------------------------------------------------
+%% Function   : new_context
+%% Arguments  : 
+%% Description: 
+%% Returns    : 
+%%----------------------------------------------------------------------
 new_context(OE_THIS, OE_State) ->
     %% Use CosNaming_NamingContextExt instead; this way we will be able to softly
     %% migrate all to use the new interface.
     SubobjKey = term_to_binary({now(), node()}),
     {'CosNaming_NamingContextExt':oe_create(SubobjKey, [{pseudo, true}]), OE_State}.
 
+%%----------------------------------------------------------------------
+%% Function   : bind_new_context
+%% Arguments  : 
+%% Description: 
+%% Returns    : 
+%%----------------------------------------------------------------------
 bind_new_context(OE_THIS, OE_State, N) ->
     %%?PRINTDEBUG("bind_new_context"),
     %% Create a name context
@@ -371,6 +465,12 @@ bind_new_context(OE_THIS, OE_State, N) ->
     end.
 
 
+%%----------------------------------------------------------------------
+%% Function   : list
+%% Arguments  : 
+%% Description: 
+%% Returns    : 
+%%----------------------------------------------------------------------
 list(OE_THIS, OE_State, HowMany) ->
     SubobjKey = corba:get_subobject_key(OE_THIS),
     _RF = ?read_function({orber_CosNaming, SubobjKey}),
@@ -389,25 +489,38 @@ list(OE_THIS, OE_State, HowMany) ->
     end.
 
 
+%%----------------------------------------------------------------------
+%% Function   : destroy
+%% Arguments  : 
+%% Description: 
+%% Returns    : 
+%%----------------------------------------------------------------------
 destroy(OE_THIS, OE_State) ->
     SubobjKey = corba:get_subobject_key(OE_THIS),
     case term_to_binary(SubobjKey) of
 	'undefined' ->
 	    corba:raise(#'NO_PERMISSION'{completion_status=?COMPLETED_NO});
 	_ ->
-	    _RF = ?read_function({orber_CosNaming, SubobjKey}),
-	    case orber_cosnaming_utils:query_result(mnesia:transaction(_RF)) of
-		error ->
-		    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO});
-		[] ->
-		    _DF = ?delete_function({orber_CosNaming,
-					    SubobjKey}),
-		    {write_result(mnesia:transaction(_DF)), OE_State};
-		_ -> 
-		    corba:raise(#'CosNaming_NamingContext_NotEmpty'{})
+	    _DF = 
+		fun() ->
+			case mnesia:wread({orber_CosNaming, SubobjKey}) of
+			    [#orber_CosNaming{nameindex = []}] ->
+				mnesia:delete({orber_CosNaming, SubobjKey});
+			    Other when list(Other) ->
+				{'EXCEPTION', #'CosNaming_NamingContext_NotEmpty'{}};
+			    Other ->
+				{'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}
+			end
+		end,
+	    case mnesia:transaction(_DF) of 
+		{atomic, {'EXCEPTION', E}} ->
+		    corba:raise(E);
+		{atomic, ok} ->
+		    {ok, OE_THIS};
+		Other ->
+		    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
 	    end
     end.
-
 
 %%-----------------------------------------------------------------
 %% Internal Functions

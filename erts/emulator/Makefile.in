@@ -70,7 +70,7 @@ LIBS    = @LIBS@ @THR_LIBS@ -L$(ERL_TOP)/erts/obj/$(TARGET) -lz
 OBJDIR = $(ERL_TOP)/erts/obj$(TYPEMARKER).beam/$(TARGET)
 BINDIR = $(ERL_TOP)/bin/$(TARGET)
 
-OSTYPE = @OSTYPE@
+ERLANG_OSTYPE = @ERLANG_OSTYPE@
 
 EMULATOR_EXECUTABLE_SAE = beam_evm$(TYPEMARKER)
 EMULATOR_EXECUTABLE = beam$(TYPEMARKER)
@@ -100,7 +100,7 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 RELSYSDIR = $(RELEASE_PATH)/erts-$(VSN)
 
-RELEASE_INCLUDES = beam/erl_driver.h beam/driver.h sys/$(OSTYPE)/driver_int.h 
+RELEASE_INCLUDES = beam/erl_driver.h beam/driver.h sys/$(ERLANG_OSTYPE)/driver_int.h 
 
 release_spec: all
 	$(INSTALL_DIR) $(RELSYSDIR)
@@ -160,7 +160,7 @@ $(TARGET)/preload_sae.c: $(ERL_TOP)/erts/sae/ebin/ring0.beam
 # ----------------------------------------------------------------------
 # Pattern rules
 #
-INCLUDES  =  -Ibeam -Isys/$(OSTYPE) -I$(TARGET) -Izlib
+INCLUDES  =  -Ibeam -Isys/$(ERLANG_OSTYPE) -I$(TARGET) -Izlib
 
 # Need to include etc dir on VxWorks
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
@@ -173,13 +173,13 @@ $(OBJDIR)/%.o: beam/%.c
 $(OBJDIR)/%.o: $(TARGET)/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -c $< -o $@
 
-$(OBJDIR)/%.o: sys/$(OSTYPE)/%.c
+$(OBJDIR)/%.o: sys/$(ERLANG_OSTYPE)/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(OBJDIR)/%.o: drivers/common/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-$(OBJDIR)/%.o: drivers/$(OSTYPE)/%.c
+$(OBJDIR)/%.o: drivers/$(ERLANG_OSTYPE)/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -c $< -o $@
 
 # VxWorks uses unix drivers too...
@@ -247,7 +247,7 @@ RUN_OBJS = \
 OS_OBJS =					\
 	$(OBJDIR)/sys.o \
 	$(OBJDIR)/driver_tab.o		$(OBJDIR)/unix_efile.o \
-	$(OBJDIR)/gzio.o \
+	$(OBJDIR)/gzio.o		$(OBJDIR)/dlmalloc.o \
 	$(OBJDIR)/elib_malloc.o		$(OBJDIR)/elib_memmove.o
 
 # Until recently (ummm...not *that* recently), both these were named
@@ -317,8 +317,8 @@ $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE): $(TARGET)/preload_sae.c \
 #
 depend:
 	$(CC) -MM -MG $(CFLAGS) $(INCLUDES) \
-		  beam/*.c drivers/common/*.c drivers/$(OSTYPE)/*.c \
-		  sys/$(OSTYPE)/*.c | \
+		  beam/*.c drivers/common/*.c drivers/$(ERLANG_OSTYPE)/*.c \
+		  sys/$(ERLANG_OSTYPE)/*.c | \
 		sed 's|^\([^:]*:\)|$$(OBJDIR)/\1|g' > $(TARGET)/depend.mk
 
 -include $(TARGET)/depend.mk

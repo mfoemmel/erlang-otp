@@ -14,9 +14,11 @@ ac_default_prefix=/usr/local
 ac_help="$ac_help
   --disable-erlang-mandir do not install Erlang man pages in a private directory"
 ac_help="$ac_help
-  --with-ssl=PATH           specify location of openSSL/ssleay include and lib
-  --with-ssl                use SSL (default)
-  --without-ssl             don't use SSL"
+  --enable-dlmalloc       use dlmalloc instead of normal malloc"
+ac_help="$ac_help
+  --with-ssl=PATH         specify location of openSSL/ssleay include and lib
+  --with-ssl              use SSL (default)
+  --without-ssl           don't use SSL"
 
 # Initialize some variables set by options.
 # The variables have the same names as the options, with
@@ -574,7 +576,7 @@ else { echo "configure: error: can not run $ac_config_sub" 1>&2; exit 1; }
 fi
 
 echo $ac_n "checking host system type""... $ac_c" 1>&6
-echo "configure:578: checking host system type" >&5
+echo "configure:580: checking host system type" >&5
 
 host_alias=$host
 case "$host_alias" in
@@ -604,7 +606,7 @@ TARGET=$host
 # We need GNU make, complain if we can't find it
 #
 echo $ac_n "checking for GNU make""... $ac_c" 1>&6
-echo "configure:608: checking for GNU make" >&5
+echo "configure:610: checking for GNU make" >&5
 # If there is a Makefile created we don't want make to start making, run
 # in a subdirectory and -f /dev/null
 mkdir conftestmake
@@ -644,7 +646,7 @@ esac
 # SVR4 /usr/ucb/install, which tries to use the nonexistent group "staff"
 # ./install, which can be erroneously created by make from ./install.sh.
 echo $ac_n "checking for a BSD compatible install""... $ac_c" 1>&6
-echo "configure:648: checking for a BSD compatible install" >&5
+echo "configure:650: checking for a BSD compatible install" >&5
 if test -z "$INSTALL"; then
 if eval "test \"`echo '$''{'ac_cv_path_install'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
@@ -701,7 +703,7 @@ if test X"${INSTALL}" = "X${ac_aux_dir}/install-sh -c" && test -f /usr/ucb/insta
 fi
 
 echo $ac_n "checking whether ln -s works""... $ac_c" 1>&6
-echo "configure:705: checking whether ln -s works" >&5
+echo "configure:707: checking whether ln -s works" >&5
 if eval "test \"`echo '$''{'ac_cv_prog_LN_S'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -724,7 +726,7 @@ fi
 # Extract the first word of "ranlib", so it can be a program name with args.
 set dummy ranlib; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:728: checking for $ac_word" >&5
+echo "configure:730: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_prog_RANLIB'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -774,6 +776,26 @@ fi
 
 
 
+
+
+#
+# dlmalloc option to pass to "erts/autoconf/configure"
+#
+#
+# Check whether --enable-dlmalloc or --disable-dlmalloc was given.
+if test "${enable_dlmalloc+set}" = set; then
+  enableval="$enable_dlmalloc"
+   case "$enableval" in
+    no) dlmalloc_option="--disable-dlmalloc" ;;
+    *)  dlmalloc_option="--enable-dlmalloc" ;;
+  esac 
+else
+  dlmalloc_option=""
+fi
+
+
+
+
 #
 # Read options for SSL. Pass this information to "erts/autoconf/configure"
 #
@@ -784,19 +806,27 @@ if test "${with_ssl+set}" = set; then
 fi
 
 
+
 echo "Running configure in erts/autoconf..."
 #
 # The parameters are basically the same as in erts/autoconf/Makefile
 #
-(cd erts/autoconf && \
- if test ! -d ${TARGET}; then mkdir ${TARGET}; fi; \
- /bin/sh -c "ERL_TOP=${ERL_TOP} \
-            CONFIG_STATUS=${ERL_TOP}/erts/autoconf/${TARGET}/config.status \
-            ./configure \
+if test ! -d system; then
+  (cd erts/autoconf && \
+   if test ! -d ${TARGET}; then mkdir ${TARGET}; fi; \
+   /bin/sh -c "ERL_TOP=${ERL_TOP} \
+	      CONFIG_STATUS=${ERL_TOP}/erts/autoconf/${TARGET}/config.status \
+	      ./configure \
 		$ssl_arg \
-                --cache-file ${ERL_TOP}/erts/autoconf/${TARGET}/config.cache \
-                --srcdir=${ERL_TOP}/erts" \
-)
+		$dlmalloc_option \
+		--cache-file ${ERL_TOP}/erts/autoconf/${TARGET}/config.cache \
+		--srcdir=${ERL_TOP}/erts" \
+  )
+
+  if test $? -ne 0 ; then
+    { echo "configure: error: Configure in erts failed" 1>&2; exit 1; }
+  fi
+fi
 
 export ERL_TOP
 subdirs="lib"
@@ -1126,3 +1156,18 @@ if test "$no_recursion" != yes; then
   done
 fi
 
+
+pattern="lib/*/SKIP"
+files=`echo $pattern`
+if test "$files" != "$pattern"; then
+  echo '*********************************************************************'
+  echo '**********************  APPLICATIONS DISABLED  **********************'
+  echo '*********************************************************************'
+  echo
+  for skipfile in $files; do
+    app=`dirname $skipfile`; app=`basename $app`
+    printf "%-15s: " $app; cat $skipfile
+  done
+  echo
+  echo '*********************************************************************'
+fi

@@ -190,7 +190,9 @@ load_traverse(Line, [Context|Contexts], [Module|Modules], NewContexts, ConfigLis
 	    ?CDEBUG("load_traverse -> ~p:load/2 exported",[Module]),
 	    case catch apply(Module, load, [Line, Context]) of
 		{'EXIT', {function_clause, _}} ->
-		    ?CDEBUG("load_traverse -> exit: function_clause",[]),
+		    ?CDEBUG("load_traverse -> exit: function_clause"
+			    "~n   Module: ~p"
+			    "~n   Line:   ~s",[Module,Line]),
 		    load_traverse(Line, Contexts, Modules, [Context|NewContexts], ConfigList, State);
 		{'EXIT', Reason} ->
 		    ?CDEBUG("load_traverse -> exit: ~p",[Reason]),
@@ -225,6 +227,26 @@ load_traverse(Line, [Context|Contexts], [Module|Modules], NewContexts, ConfigLis
 
 load(eof, []) ->
     eof;
+load([$M,$a,$x,$H,$e,$a,$d,$e,$r,$S,$i,$z,$e,$ |MaxHeaderSize], []) ->
+    case make_integer(MaxHeaderSize) of
+	{ok, Integer} ->
+	    {ok, [], {max_header_size,Integer}};
+	{error, _} ->
+	    {error, ?NICE(clean(MaxHeaderSize)++
+			  " is an invalid number of MaxHeaderSize")}
+    end;
+load([$M,$a,$x,$H,$e,$a,$d,$e,$r,$A,$c,$t,$i,$o,$n,$ |Action], []) ->
+    {ok, [], {max_header_action,list_to_atom(clean(Action))}};
+load([$M,$a,$x,$B,$o,$d,$y,$S,$i,$z,$e,$ |MaxBodySize], []) ->
+    case make_integer(MaxBodySize) of
+	{ok, Integer} ->
+	    {ok, [], {max_body_size,Integer}};
+	{error, _} ->
+	    {error, ?NICE(clean(MaxBodySize)++
+			  " is an invalid number of MaxBodySize")}
+    end;
+load([$M,$a,$x,$B,$o,$d,$y,$A,$c,$t,$i,$o,$n,$ |Action], []) ->
+    {ok, [], {max_body_action,list_to_atom(clean(Action))}};
 load([$S,$e,$r,$v,$e,$r,$N,$a,$m,$e,$ |ServerName], []) ->
     {ok,[],{server_name,clean(ServerName)}};
 load([$S,$o,$c,$k,$e,$t,$T,$y,$p,$e,$ |SocketType], []) ->
@@ -232,7 +254,7 @@ load([$S,$o,$c,$k,$e,$t,$T,$y,$p,$e,$ |SocketType], []) ->
 	{ok, ValidSocketType} ->
 	    {ok, [], {com_type,ValidSocketType}};
 	{error,_} ->
-	    {error, ?NICE(clean(SocketType)++" is an invalid SocketType")}
+	    {error, ?NICE(clean(SocketType) ++ " is an invalid SocketType")}
     end;
 load([$P,$o,$r,$t,$ |Port], []) ->
     case make_integer(Port) of
@@ -242,7 +264,7 @@ load([$P,$o,$r,$t,$ |Port], []) ->
 	    {error, ?NICE(clean(Port)++" is an invalid Port")}
     end;
 load([$B,$i,$n,$d,$A,$d,$d,$r,$e,$s,$s,$ |Address], []) ->
-    ?CDEBUG("load -> Address:  ~p",[Address]),
+    ?DEBUG("load -> Address:  ~p",[Address]),
     case clean(Address) of
 	"*" ->
 	    {ok, [], {bind_address,any}};
@@ -305,6 +327,7 @@ load([$D,$o,$c,$u,$m,$e,$n,$t,$R,$o,$o,$t,$ |DocumentRoot],[]) ->
 load([$D,$e,$f,$a,$u,$l,$t,$T,$y,$p,$e,$ |DefaultType], []) ->
     {ok, [], {default_type,clean(DefaultType)}};
 load([$S,$S,$L,$C,$e,$r,$t,$i,$f,$i,$c,$a,$t,$e,$F,$i,$l,$e,$ | SSLCertificateFile], []) ->
+    ?DEBUG("load -> SSLCertificateFile: ~p",[SSLCertificateFile]),
     case is_file(clean(SSLCertificateFile)) of
 	{ok, File} ->
 	    {ok, [], {ssl_certificate_file,File}};
@@ -314,6 +337,7 @@ load([$S,$S,$L,$C,$e,$r,$t,$i,$f,$i,$c,$a,$t,$e,$F,$i,$l,$e,$ | SSLCertificateFi
     end;
 load([$S,$S,$L,$C,$e,$r,$t,$i,$f,$i,$c,$a,$t,$e,$K,$e,$y,$F,$i,$l,$e,$ |
       SSLCertificateKeyFile], []) ->
+    ?DEBUG("load -> SSLCertificateKeyFile: ~p",[SSLCertificateKeyFile]),
     case is_file(clean(SSLCertificateKeyFile)) of
 	{ok, File} ->
 	    {ok, [], {ssl_certificate_key_file,File}};
@@ -322,6 +346,7 @@ load([$S,$S,$L,$C,$e,$r,$t,$i,$f,$i,$c,$a,$t,$e,$K,$e,$y,$F,$i,$l,$e,$ |
 			  " is an invalid SSLCertificateKeyFile")}
     end;
 load([$S,$S,$L,$V,$e,$r,$i,$f,$y,$C,$l,$i,$e,$n,$t,$ |SSLVerifyClient], []) ->
+    ?DEBUG("load -> SSLVerifyClient: ~p",[SSLVerifyClient]),
     case make_integer(clean(SSLVerifyClient)) of
 	{ok, Integer} when Integer >=0,Integer =< 2 ->
 	    {ok, [], {ssl_verify_client,Integer}};
@@ -329,7 +354,44 @@ load([$S,$S,$L,$V,$e,$r,$i,$f,$y,$C,$l,$i,$e,$n,$t,$ |SSLVerifyClient], []) ->
 	    {error,?NICE(clean(SSLVerifyClient)++" is an invalid SSLVerifyClient")};
 	{error, nomatch} ->
 	    {error,?NICE(clean(SSLVerifyClient)++" is an invalid SSLVerifyClient")}
-    end.
+    end;
+load([$S,$S,$L,$V,$e,$r,$i,$f,$y,$D,$e,$p,$t,$h,$ |
+      SSLVerifyDepth], []) ->
+    ?DEBUG("load -> SSLVerifyDepth: ~p",[SSLVerifyDepth]),
+    case make_integer(clean(SSLVerifyDepth)) of
+	{ok, Integer} when Integer > 0 ->
+	    {ok, [], {ssl_verify_client_depth,Integer}};
+	{ok, Integer} ->
+	    {error,?NICE(clean(SSLVerifyDepth) ++
+			 " is an invalid SSLVerifyDepth")};
+	{error, nomatch} ->
+	    {error,?NICE(clean(SSLVerifyDepth) ++
+			 " is an invalid SSLVerifyDepth")}
+    end;
+load([$S,$S,$L,$C,$i,$p,$h,$e,$r,$s,$ | SSLCiphers], []) ->
+    ?DEBUG("load -> SSLCiphers: ~p",[SSLCiphers]),
+    {ok, [], {ssl_ciphers, clean(SSLCiphers)}};
+load([$S,$S,$L,$C,$A,$C,$e,$r,$t,$i,$f,$i,$c,$a,$t,$e,$F,$i,$l,$e,$ |
+      SSLCACertificateFile], []) ->
+    case is_file(clean(SSLCACertificateFile)) of
+	{ok, File} ->
+	    {ok, [], {ssl_ca_certificate_file,File}};
+	{error, _} ->
+	    {error, ?NICE(clean(SSLCACertificateFile)++
+			  " is an invalid SSLCACertificateFile")}
+    end;
+load([$S,$S,$L,$P,$a,$s,$s,$w,$o,$r,$d,$C,$a,$l,$l,$b,$a,$c,$k,$M,$o,$d,$u,$l,$e,$ | SSLPasswordCallbackModule], []) ->
+    ?DEBUG("load -> SSLPasswordCallbackModule: ~p",
+	   [SSLPasswordCallbackModule]),
+    {ok, [], {ssl_password_callback_module,
+	      list_to_atom(clean(SSLPasswordCallbackModule))}};
+load([$S,$S,$L,$P,$a,$s,$s,$w,$o,$r,$d,$C,$a,$l,$l,$b,$a,$c,$k,$F,$u,$n,$c,$t,$i,$o,$n,$ | SSLPasswordCallbackFunction], []) ->
+    ?DEBUG("load -> SSLPasswordCallbackFunction: ~p",
+	   [SSLPasswordCallbackFunction]),
+    {ok, [], {ssl_password_callback_function,
+	      list_to_atom(clean(SSLPasswordCallbackFunction))}}.
+
+
 
 %%
 %% load_mime_types/1 -> {ok, MimeTypes} | {error, Reason}

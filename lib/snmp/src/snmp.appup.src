@@ -1,5 +1,10 @@
 {"%VSN%",
- [{"3.3.0", 
+ [{"3.3.1", 
+   [
+    {update, snmp_net_if, soft, soft_purge, soft_purge, []}
+   ]
+  },
+  {"3.3.0", 
    [
     {load_module, snmp_misc, soft_purge, soft_purge, []},
 
@@ -34,7 +39,7 @@
 
    ]
   },
- {"3.2.2", 
+  {"3.2.2", 
    [
     {add_module, snmp_general_db},
 
@@ -96,7 +101,12 @@
   }
  ], 
 
- [{"3.3.0", 
+ [{"3.3.1", 
+   [
+    {update, snmp_net_if, soft, soft_purge, soft_purge, []}
+   ]
+  },
+  {"3.3.0", 
    [
     {load_module, snmp_misc, soft_purge, soft_purge, []},
 

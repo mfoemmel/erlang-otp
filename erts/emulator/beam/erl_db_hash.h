@@ -73,10 +73,19 @@ int db_put_hash(Process *p, DbTableHash *tb /* [in out] */,
 int db_get_hash(Process *p, DbTableHash *tb /* [in out] */, 
 		eTerm key /* [in] */,
 		eTerm *ret /* [out] */);
+int db_get_element_array(DbTableHash *tb, 
+			 Eterm key,
+			 int ndex, 
+			 Eterm *ret,
+			 int *num_ret); /* Interface for meta pid table */
 int db_get_element_hash(Process *p, DbTableHash *tb /* [in out] */, 
 			eTerm key /* [in] */,
 			int ndex, /* [in] */
 			eTerm *ret /* [out] */);
+int db_erase_bag_exact2(DbTableHash *tb, 
+			Eterm key,
+			Eterm value); /* Internal interface for meta PID 
+					 table */
 int db_erase_hash(Process *p, DbTableHash *tb /* [in out] */, 
 		  eTerm key /* [in] */,
 		  eTerm *ret /* [out] */);

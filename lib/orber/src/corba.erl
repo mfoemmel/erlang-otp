@@ -33,16 +33,16 @@
 %%-----------------------------------------------------------------
 %% Standard interface CORBA
 %%-----------------------------------------------------------------
-%%-export(['ORB_init'/2]).
+-export([orb_init/2]).
 %%-----------------------------------------------------------------
 %% Standard interface CORBA::ORB
 %%-----------------------------------------------------------------
 -export([%create_list/2,
 	 %create_operation_list/2,
 	 %% get_default_context/1,
-	 %% 'ORB_init'/2,
 	 %% 'BOA_init/2,
 	 resolve_initial_references/1,
+	 resolve_initial_references_local/1,
 	 list_initial_services/0,
 	 add_initial_service/2,
 	 remove_initial_service/1,
@@ -114,8 +114,13 @@
 %%create_operation_list(OpDef) ->
 %%    corba_nvlist:create_operation_list(OpDef).
 
-%%'ORB_init'(Args, Name) ->
-%%    ok.
+orb_init([], Name) ->
+    ok;
+orb_init([{Key, Data}|T], Name) ->
+    orber:configure(Key, Data),
+    orb_init(T, Name);
+orb_init(Args, Name) ->
+    exit("Bad parameters, useage: [{Key, Value}, ...]").
 
 %%-----------------------------------------------------------------
 %% Initial reference handling
@@ -128,8 +133,33 @@ resolve_initial_references(ObjectId) ->
 	    corba:string_to_object(Ref)
     end.
 
+resolve_initial_references_local(ObjectId) ->   
+    orber_initial_references:get(string_to_objkey("INIT"), ObjectId).
+
 list_initial_services() ->  
-    orber_initial_references:list(string_to_objkey("INIT")).
+    Local = orber_initial_references:list(string_to_objkey("INIT")),
+    case orber:get_ORBInitRef() of
+	undefined ->
+	    Local;
+	InitRef ->
+	    Local ++ get_prefixes(InitRef, [])
+    end.
+
+get_prefixes([], Acc) ->
+    Acc;
+%% A list of ORBInitRef's
+get_prefixes([H|T], Acc) when list(H) ->
+    [Key|_] = string:tokens(H, "="),
+    get_prefixes(T, [Key|Acc]);
+%% A single ORBInitRef
+get_prefixes(InitRef, Acc) when list(InitRef) ->
+    [Key|_] = string:tokens(InitRef, "="),
+    [Key];
+get_prefixes(What, _) ->
+    orber:debug_level_print("[~p] corba:get_prefixes(~p); Malformed argument?", 
+			    [?LINE, What], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status = ?COMPLETED_NO}).
+
 
 use_local_host(ObjectId) ->
     case orber:get_ORBInitRef() of
@@ -141,7 +171,7 @@ use_local_host(ObjectId) ->
 		    DefRef++"/"++ObjectId
 	    end;
 	InitRef ->
-	    case prefix(ObjectId, InitRef) of
+	    case check_prefixes(InitRef, ObjectId) of
 		false ->
 		    case orber:get_ORBDefaultInitRef() of
 			undefined ->
@@ -153,6 +183,31 @@ use_local_host(ObjectId) ->
 		    strip_junk(UseRef)
 	    end
     end.
+
+
+check_prefixes([], _) ->
+    false;
+%% A list of ORBInitRef's
+check_prefixes([H|T], ObjectId) when list(H) ->
+    case prefix(ObjectId, H) of
+	false ->
+	    check_prefixes(T, ObjectId);
+	UseRef ->
+	    UseRef
+    end;
+%% A single ORBInitRef
+check_prefixes(InitRef, ObjectId) when list(InitRef) ->
+    case prefix(ObjectId, InitRef) of
+	false ->
+	    false;
+	UseRef ->
+	    UseRef
+    end;
+check_prefixes(What,_) -> 
+    orber:debug_level_print("[~p] corba:check_prefixes(~p); Malformed argument?", 
+			    [?LINE, What], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status = ?COMPLETED_NO}).
+
 
 %% Valid is, for example, "NameService = corbaloc::host/NameService". 
 %% Hence, we must remove ' ' and '='.
@@ -211,8 +266,15 @@ string_to_object(IORString) ->
 	    {ObjRef, R, L} = iop_ior:string_decode(IORString),
 	    ObjRef;
 	_ ->
-	    Data = orber_cosnaming_utils:select_type(IORString),
-	    orber_cosnaming_utils:lookup(Data)
+	    %% CORBA-2.4 allows both IOR and ior prefix.
+	    case lists:prefix("ior", IORString) of
+		true ->
+		    {ObjRef, R, L} = iop_ior:string_decode(IORString),
+		    ObjRef;
+		_ ->
+		    Data = orber_cosnaming_utils:select_type(IORString),
+		    orber_cosnaming_utils:lookup(Data)
+	    end
     end.
 
 
@@ -469,15 +531,15 @@ call_internal({pseudo, Module}, {Obj, Func, Args, Types}, Timeout) ->
 	{stop, _, _} ->
 	    ok;
 	{'EXCEPTION', E} ->
-	    {'EXCEPTION', E};
+	    corba:raise(E);
 	{'EXIT', What} ->
 	    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); Pseudo object exit(~p).", 
 				    [?LINE, Func, Args, Types, What], ?DEBUG_LEVEL),
-	    {'EXCEPTION', #'UNKNOWN'{completion_status=?COMPLETED_MAYBE}};
+	    corba:raise(#'UNKNOWN'{completion_status=?COMPLETED_MAYBE});
 	Unknown ->
 	    orber:debug_level_print("[~p] corba:call_internal(~p, ~p, ~p); Pseudo object failed(~p).", 
 				    [?LINE, Func, Args, Types, Unknown], ?DEBUG_LEVEL),
-	    {'EXCEPTION', #'UNKNOWN'{completion_status=?COMPLETED_MAYBE}}
+	    corba:raise(#'UNKNOWN'{completion_status=?COMPLETED_MAYBE})
     end;
 call_internal(Registered, {Obj, Func, Args, Types}, Timeout)  when atom(Registered)->
     case whereis(Registered) of
@@ -924,14 +986,13 @@ check_exception_type(_) ->
 %%-----------------------------------------------------------------
 get_system_exception_typedef(ExcName) ->
     Name = atom_to_list(ExcName),
-    {'tk_except', "IDL:CORBA/" ++ Name ++ ":1.0", Name,
+    {'tk_except', "IDL:omg.org/CORBA/" ++ Name ++ ":1.0", Name,
      [
       {"minor",'tk_ulong'},
       {"completed",{'tk_enum', "", "completion_status",
 	   ["COMPLETED_YES", "COMPLETED_NO",
 	    "COMPLETED_MAYBE"]}}
      ]}.
-
 
 get_option(Key, OptionList) ->
     case lists:keysearch(Key, 1, OptionList) of

@@ -1264,34 +1264,35 @@ get_type(Objref) ->
 %%%---------------------------------------------------------------
 %%% 
 
+%% This list should contain the data in most-likely-to-be-accessed-order. 
+-define(INDEXED_TABLE_LIST, [{ir_ExceptionDef, #ir_ExceptionDef.id},
+			     {ir_InterfaceDef, #ir_InterfaceDef.id},
+			     {ir_ModuleDef, #ir_ModuleDef.id},
+			     {ir_StructDef, #ir_StructDef.id},
+			     {ir_UnionDef, #ir_UnionDef.id},
+			     {ir_AliasDef, #ir_AliasDef.id},
+			     {ir_TypedefDef, #ir_TypedefDef.id},
+			     {ir_ConstantDef, #ir_ConstantDef.id},
+			     {ir_EnumDef, #ir_EnumDef.id},
+			     {ir_AttributeDef, #ir_AttributeDef.id},
+			     {ir_Contained, #ir_Contained.id},
+			     {ir_OperationDef, #ir_OperationDef.id}]).
+
+
+
 lookup_id(Objref,Id) ->
-    %% Yes, not a pretty sight but these shortcuts saves, in the normal case,
-    %% so much overhead. Hence, keep it!
-    case mnesia:dirty_index_read(ir_ExceptionDef, Id, #ir_ExceptionDef.id) of
-	[#ir_ExceptionDef{ir_Internal_ID=Ref}] ->
-	    {ir_ExceptionDef, Ref};
-	_ ->
-	    case mnesia:dirty_index_read(ir_InterfaceDef, Id, #ir_InterfaceDef.id) of
-		[#ir_InterfaceDef{ir_Internal_ID=Ref}] ->
-		    {ir_InterfaceDef, Ref};
-		_->
-		    case mnesia:dirty_index_read(ir_ModuleDef, Id, #ir_ModuleDef.id) of
-			[#ir_ModuleDef{ir_Internal_ID=Ref}] ->
-			    {ir_ModuleDef, Ref};
-			_->
-			    case mnesia:dirty_index_read(ir_StructDef, Id, #ir_StructDef.id) of
-				[#ir_StructDef{ir_Internal_ID=Ref}] ->
-				    {ir_StructDef, Ref};
-				_->
-				    case mnesia:dirty_index_read(ir_UnionDef, Id, #ir_UnionDef.id) of
-					[#ir_UnionDef{ir_Internal_ID=Ref}] ->
-					    {ir_UnionDef, Ref};
-					_->
-					    orber_ifr_repository:lookup_id(Objref,Id)
-				    end
-			    end
-		    end
-	    end
+    %% We used the operation below before but it's very expensive.
+    %% orber_ifr_repository:lookup_id(Objref,Id)
+    lookup_id_helper(?INDEXED_TABLE_LIST, Id).
+
+lookup_id_helper([], _) ->
+    [];
+lookup_id_helper([{Tab, IdNum}|T], Id) ->
+    case mnesia:dirty_index_read(Tab, Id, IdNum) of
+	[] ->
+	    lookup_id_helper(T, Id);
+	[FoundIt] ->
+	    {Tab, element(2, FoundIt)}
     end.
 
 get_primitive(Objref,Kind) ->

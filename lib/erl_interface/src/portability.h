@@ -65,7 +65,8 @@
  */
 #if defined(__GNUC__)		/* GNU assembler syntax */
 
-#if defined(__ELF__)		/* Named sections (COFF should be O.K.) */
+#if defined(__ELF__) || defined(__APPLE__)
+/* Named sections (COFF should be O.K.) */
 
 /*
  * Weave the spell with GCC extensions and named sections.

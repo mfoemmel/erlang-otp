@@ -291,8 +291,8 @@ ERL_COMPILE_FLAGS += \
 	-I$(ERL_TOP)/lib/cosNotification/include \
 	-I$(ERL_TOP)/lib/cosEvent/include \
 	-I$(ERL_TOP)/lib/cosTime/include \
-	+'{parse_transform, sys_pre_attributes}' \
-	+'{attribute, insert, app_vsn, "cosNotification_$(COSNOTIFICATION_VSN)"}' 
+	+'{parse_transform,sys_pre_attributes}' \
+	+'{attribute,insert,app_vsn,"cosNotification_$(COSNOTIFICATION_VSN)"}' 
 
 YECC_COMPILE_FLAGS =
 
@@ -324,15 +324,15 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 $(GEN_NOTIFICATION_ERL_FILES) $(GEN_NOTIFICATION_HRL_FILES): CosNotification.idl
-	erlc $(ERL_FLAGS) +'{cfgfile, "CosNotification.cfg"}' CosNotification.idl
+	erlc $(ERL_FLAGS) +'{cfgfile,"CosNotification.cfg"}' CosNotification.idl
 $(GEN_CHANNELADMIN_ERL_FILES) $(GEN_CHANNELADMIN_HRL_FILES): CosNotifyChannelAdmin.idl
-	erlc $(ERL_FLAGS) +'{cfgfile, "CosNotifyChannelAdmin.cfg"}' CosNotifyChannelAdmin.idl
+	erlc $(ERL_FLAGS) +'{cfgfile,"CosNotifyChannelAdmin.cfg"}' CosNotifyChannelAdmin.idl
 $(GEN_NOTIFYFILTER_ERL_FILES) $(GEN_NOTIFYFILTER_HRL_FILES): CosNotifyFilter.idl
-	erlc $(ERL_FLAGS) +'{cfgfile, "CosNotifyFilter.cfg"}' CosNotifyFilter.idl
+	erlc $(ERL_FLAGS) +'{cfgfile,"CosNotifyFilter.cfg"}' CosNotifyFilter.idl
 $(GEN_OE_EVENTCOMM_ERL_FILES) $(GEN_OE_EVENTCOMM_HRL_FILES): cosNotificationAppComm.idl
-	erlc $(ERL_FLAGS) +'{cfgfile, "cosNotificationComm.cfg"}' cosNotificationAppComm.idl
+	erlc $(ERL_FLAGS) +'{cfgfile,"cosNotificationComm.cfg"}' cosNotificationAppComm.idl
 $(GEN_NOTIFYCOMM_ERL_FILES) $(GEN_NOTIFYCOMM_HRL_FILES): CosNotifyComm.idl
-	erlc $(ERL_FLAGS) +'{cfgfile, "CosNotifyComm.cfg"}' CosNotifyComm.idl
+	erlc $(ERL_FLAGS) +'{cfgfile,"CosNotifyComm.cfg"}' CosNotifyComm.idl
 $(GEN_YECC_ERL_FILES) $(GEN_YECC_HRL_FILES): cosNotification_Grammar.yrl
 
 # ----------------------------------------------------

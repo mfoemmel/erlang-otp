@@ -82,12 +82,38 @@ extern char **environ;
 
 #include "driver.h"
 
+#ifdef USE_THREADS
+#  ifdef ENABLE_CHILD_WAITER_THREAD
+#    define CHLDWTHR ENABLE_CHILD_WAITER_THREAD
+#  else
+#    define CHLDWTHR 0
+#  endif
+#else
+#  define CHLDWTHR 0
+#endif
+/*
+ * [OTP-3906]
+ * Solaris signal management gets confused when threads are used and a
+ * lot of child processes dies. The confusion results in that SIGCHLD
+ * signals aren't delivered to the emulator which in turn results in
+ * a lot of defunct processes in the system.
+ *
+ * The problem seems to appear when a signal is frequently
+ * blocked/unblocked at the same time as the signal is frequently
+ * propagated. The child waiter thread is a workaround for this problem.
+ * The SIGCHLD signal is always blocked (in all threads), and the child
+ * waiter thread fetches the signal by a call to sigwait(). See
+ * child_waiter().
+ */
+
 EXTERN_FUNCTION(void, input_ready, (int, int));
 EXTERN_FUNCTION(void, output_ready, (int, int));
 #ifdef USE_THREADS
 EXTERN_FUNCTION(void, async_ready, (int, int));
 EXTERN_FUNCTION(int, init_async, (int));
 EXTERN_FUNCTION(int, exit_async, (_VOID_));
+EXTERN_FUNCTION(int, erts_thread_sigmask, (int, const sigset_t*, sigset_t*));
+EXTERN_FUNCTION(int, erts_thread_sigwait, (const sigset_t*, int*));
 #endif
 EXTERN_FUNCTION(int, check_async_ready, (_VOID_));
 EXTERN_FUNCTION(int, driver_output, (int, char*, int));
@@ -101,6 +127,10 @@ EXTERN_FUNCTION(void, set_busy_port, (int, int));
 EXTERN_FUNCTION(void, do_break, (_VOID_));
 
 EXTERN_FUNCTION(void, erl_sys_args, (int*, char**));
+
+#if CHLDWTHR
+EXTERN_FUNCTION(erl_mutex_t, erts_mutex_sys, (int));
+#endif
 
 
 void erl_crash_dump(char* fmt, va_list args);
@@ -134,7 +164,11 @@ static int max_fd;
 static int debug_log = 0;
 #endif
 
-static int children_died;
+#if CHLDWTHR
+static erl_thread_t child_waiter_tid;
+#else
+static volatile int children_died;
+#endif
 
 /* We maintain a linked fifo queue of these structs in order */
 /* to manage unfinnished reads/and writes on differenet fd's */
@@ -183,6 +217,11 @@ int erl_fp_exception = 0;
 static FUNCTION(int, read_fill, (int, char*, int));
 /* static FUNCTION(int, write_fill, (int, char*, int)); unused? */
 static FUNCTION(void, check_io, (int));
+static FUNCTION(void, note_child_death, (int, int));
+
+#if CHLDWTHR
+static FUNCTION(void *, child_waiter, (void *));
+#endif
 
 /********************* General functions ****************************/
 
@@ -296,6 +335,11 @@ RETSIGTYPE (*func)();
     return(oact.sa_handler);
 }
 
+#ifdef USE_THREADS
+#undef  sigprocmask
+#define sigprocmask erts_thread_sigmask
+#endif
+
 void sys_sigblock(sig)
 int sig;
 {
@@ -390,14 +434,18 @@ int sys_max_files()
 
 static void block_signals()
 {
+#if !CHLDWTHR
    sys_sigblock(SIGCHLD);
+#endif
    sys_sigblock(SIGINT);
    sys_sigblock(SIGUSR1);
 }
 
 static void unblock_signals()
 {
+#if !CHLDWTHR
    sys_sigrelease(SIGCHLD);
+#endif
    sys_sigrelease(SIGINT);
    sys_sigrelease(SIGUSR1);
 }
@@ -524,6 +572,12 @@ static struct driver_data {
     int status;
 } *driver_data;			/* indexed by fd */
 
+#if CHLDWTHR
+/* dead_child_status_lock is used to protect against concurrent accesses
+   of the driver_data fields pid, alive, and status. */
+erl_mutex_t dead_child_status_lock;
+#endif
+
 /* Driver interfaces */
 static long spawn_start();
 static long fd_start();
@@ -613,7 +667,11 @@ struct driver_entry async_driver_entry = {
 /* Handle SIGCHLD signals. */
 static RETSIGTYPE onchld()
 {
+#if CHLDWTHR
+    ASSERT(0); /* We should *never* catch a SIGCHLD signal */
+#else
     children_died = 1;
+#endif
 }
 
 static int set_driver_data(port_num,
@@ -664,7 +722,18 @@ static int spawn_init()
    for (i = 0; i < max_files; i++)
       driver_data[i].pid = -1;
 
+#if CHLDWTHR
+   sys_sigblock(SIGCHLD);
+#endif
+
    sys_sigset(SIGCHLD, onchld); /* Reap children */
+
+#if CHLDWTHR
+   dead_child_status_lock = erts_mutex_sys(2);
+   if(erts_thread_create(&child_waiter_tid, child_waiter, NULL, 0) != 0)
+     erl_exit(1, "Failed to start child waiter thread");
+#endif
+
    return 1;
 }
 
@@ -825,6 +894,10 @@ static long spawn_start(port_num, name, opts)
        to be safe. */
     block_signals();
 
+#if CHLDWTHR
+    erts_mutex_lock(dead_child_status_lock);
+#endif
+
     /* See fork/vfork discussion before this function. */
     if (getenv("ERL_NO_VFORK") != NULL) {
       DEBUGF(("Using fork\n"));
@@ -930,6 +1003,12 @@ static long spawn_start(port_num, name, opts)
     /* Don't unblock SIGCHLD until now, since the call above must
        first complete putting away the info about our new subprocess. */
     unblock_signals();
+
+#if CHLDWTHR
+    /* Don't unlock dead_child_status_lock until now of the same reason
+       as above */
+    erts_mutex_unlock(dead_child_status_lock);
+#endif
     return res;
 }
 
@@ -952,6 +1031,8 @@ static long fd_start(port_num, name, opts)
     char* name;			/* Ignored. */
     SysDriverOpts* opts;
 {
+    long res;
+
     if (((opts->read_write & DO_READ) && opts->ifd >= max_files) ||
 	((opts->read_write & DO_WRITE) && opts->ofd >= max_files))
 	return(-1);
@@ -1093,8 +1174,16 @@ static long fd_start(port_num, name, opts)
 	    }
 	}
     }
-    return(set_driver_data(port_num, opts->ifd, opts->ofd,
-			   opts->packet_bytes, opts->read_write, 0, -1));
+#if CHLDWTHR
+    erts_mutex_lock(dead_child_status_lock);
+#endif
+    res = set_driver_data(port_num, opts->ifd, opts->ofd,
+			  opts->packet_bytes, opts->read_write, 0, -1);
+#if CHLDWTHR
+    erts_mutex_unlock(dead_child_status_lock);
+#endif
+    return res;
+    
 }
 
 static void clear_fd_data(fd) 
@@ -1145,6 +1234,7 @@ static long vanilla_start(port_num, name, opts)
     SysDriverOpts* opts;
 {
     int flags, fd;
+    long res;
 
     flags = (opts->read_write == DO_READ ? O_RDONLY :
 	     opts->read_write == DO_WRITE ? O_WRONLY|O_CREAT|O_TRUNC :
@@ -1157,10 +1247,16 @@ static long vanilla_start(port_num, name, opts)
     }
     SET_NONBLOCKING(fd);
     init_fd_data(fd, port_num);
-    return(set_driver_data(port_num, fd, fd,
-			   opts->packet_bytes, opts->read_write, 0, -1));
+#if CHLDWTHR
+    erts_mutex_lock(dead_child_status_lock);
+#endif
+    res = set_driver_data(port_num, fd, fd,
+			  opts->packet_bytes, opts->read_write, 0, -1);
+#if CHLDWTHR
+    erts_mutex_unlock(dead_child_status_lock);
+#endif
+    return res;
 }
-
 
 /* Note that driver_data[fd].ifd == fd if the port was opened for reading, */
 /* otherwise (i.e. write only) driver_data[fd].ofd = fd.  */
@@ -1180,8 +1276,16 @@ long fd;
 	(void) close(ofd);
     }
 
+#if CHLDWTHR
+    erts_mutex_lock(dead_child_status_lock);
+#endif
+
     /* Mark as unused. Maybe resetting the 'port_num' slot is better? */
     driver_data[fd].pid = -1;
+
+#if CHLDWTHR
+    erts_mutex_unlock(dead_child_status_lock);
+#endif
 
     return 1;
 }
@@ -1318,15 +1422,26 @@ int ready_fd;
 int res;			/* Result: 0 (eof) or -1 (error) */
 {
     int err = errno;
+    int status;
+    int alive;
+    
+#if CHLDWTHR
+    erts_mutex_lock(dead_child_status_lock);
+#endif
+
+    alive = driver_data[ready_fd].alive;
+    status = driver_data[ready_fd].status;
+
+#if CHLDWTHR
+    erts_mutex_unlock(dead_child_status_lock);
+#endif
 
     ASSERT(res <= 0);
     (void) driver_select(port_num, ready_fd, DO_READ|DO_WRITE, 0); 
     clear_fd_data(ready_fd);
     if (res == 0) {
-       if (!driver_data[ready_fd].alive
-	   && driver_data[ready_fd].report_exit) {
+       if (!alive && driver_data[ready_fd].report_exit) {
 	  /* We need not be prepared for stopped/continued processes. */
-	  int status = driver_data[ready_fd].status;
 	  if (WIFSIGNALED(status))
 	     status = 128 + WTERMSIG(status);
 	  else
@@ -2596,29 +2711,72 @@ va_dcl
 
 #endif /* DEBUG */
 
+static void note_child_death(int pid, int status)
+{
+  int i;
+
+  for (i = 0; i < max_files; i++)
+    if (driver_data[i].pid == pid) {
+      driver_data[i].alive = 0;
+      driver_data[i].status = status;
+      break;
+    }
+}
+
+#if CHLDWTHR
+
+static void *
+child_waiter(void *unused)
+{
+  sigset_t chldsigset;
+  int sig;
+  int pid;
+  int status;
+
+  sigemptyset(&chldsigset);
+  sigaddset(&chldsigset, SIGCHLD);
+
+  while(1) {
+    do {
+      pid = waitpid(-1, &status, 0);
+      if(pid < 0 && errno == ECHILD) {
+	/* Based on that all threads block SIGCHLD all the time! */
+	if(erts_thread_sigwait(&chldsigset, &sig) < 0) {
+	  ASSERT(errno == EINTR);
+	}
+	else {
+	  ASSERT(sig == SIGCHLD);
+	}
+      }
+    } while(pid < 0);
+    erts_mutex_lock(dead_child_status_lock);
+    note_child_death(pid, status);
+    erts_mutex_unlock(dead_child_status_lock);
+  }
+
+  return NULL;
+}
+
+#define check_children()
+
+#else
+
 static void check_children()
 {
     int pid;
     int status;
 
     if (children_died) {
-	sys_sigblock(SIGCHLD);
-	while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
-	{
-	    int i;
-
-	    for (i = 0; i < max_files; i++)
-		if (driver_data[i].pid == pid)
-		{
-		    driver_data[i].alive = 0;
-		    driver_data[i].status = status;
-		    break;
-		}
-	}
-	sys_sigrelease(SIGCHLD);
-	children_died = 0;
+      sys_sigblock(SIGCHLD);
+      while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
+	note_child_death(pid, status);
+      children_died = 0;
+      sys_sigrelease(SIGCHLD);
     }
+
 }
+
+#endif
 
 void
 erl_sys_schedule_loop(void)

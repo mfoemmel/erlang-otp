@@ -6,6 +6,9 @@
 /* Define if you don't have vprintf but do have _doprnt.  */
 #undef HAVE_DOPRNT
 
+/* Define if you have a working `mmap' system call.  */
+#undef HAVE_MMAP
+
 /* Define if you have <sys/wait.h> that is POSIX.1 compatible.  */
 #undef HAVE_SYS_WAIT_H
 
@@ -69,6 +72,9 @@
 /* Define to enable the use of sorted blocks when using elib_malloc. */
 #undef ELIB_SORTED_BLOCKS
 
+/* Define to enable use of dlmalloc (a malloc() replacement). */
+#undef ENABLE_DLMALLOC
+
 /* */
 #undef NO_PRAGMA_WEAK
 
@@ -120,8 +126,14 @@
 /* Define if you have a decl of fread that conflicts with int fread() */
 #undef HAVE_CONFLICTING_FREAD_DECLARATION
 
+/* Define if you have a decl of sbrk that conflicts with "void *sbrk()" */
+#undef HAVE_VOID_PTR_SBRK_CONFLICT
+
 /* Define the pthread.h header file is in pthread/mit directory. */
 #undef HAVE_MIT_PTHREAD_H
+
+/* Define if you want to enable child waiter thread */
+#undef ENABLE_CHILD_WAITER_THREAD
 
 /* Define if you have matherr() function and struct exception type. */
 #undef USE_MATHERR
@@ -141,6 +153,9 @@
 /* Define if you have the gethrtime function.  */
 #undef HAVE_GETHRTIME
 
+/* Define if you have the getpagesize function.  */
+#undef HAVE_GETPAGESIZE
+
 /* Define if you have the gmtime_r function.  */
 #undef HAVE_GMTIME_R
 
@@ -150,8 +165,17 @@
 /* Define if you have the localtime_r function.  */
 #undef HAVE_LOCALTIME_R
 
+/* Define if you have the mallopt function.  */
+#undef HAVE_MALLOPT
+
+/* Define if you have the memcpy function.  */
+#undef HAVE_MEMCPY
+
 /* Define if you have the memmove function.  */
 #undef HAVE_MEMMOVE
+
+/* Define if you have the mremap function.  */
+#undef HAVE_MREMAP
 
 /* Define if you have the poll function.  */
 #undef HAVE_POLL
@@ -185,6 +209,12 @@
 
 /* Define if you have the <limits.h> header file.  */
 #undef HAVE_LIMITS_H
+
+/* Define if you have the <mach-o/dyld.h> header file.  */
+#undef HAVE_MACH_O_DYLD_H
+
+/* Define if you have the <malloc.h> header file.  */
+#undef HAVE_MALLOC_H
 
 /* Define if you have the <ndir.h> header file.  */
 #undef HAVE_NDIR_H
@@ -266,9 +296,23 @@
 #define INADDR_LOOPBACK (u_long)0x7F000001
 #endif
 
+#ifndef PURIFY /* Don't use elib_malloc or dlmalloc as clib
+		  when purify is used */
+
 /* If elib_malloc is used then elib_alloc_is_clib */
 #ifdef ENABLE_ELIB_MALLOC
 #define ELIB_ALLOC_IS_CLIB
+#endif
+
+/* If dlmalloc is used then dlmalloc is clib */
+#ifdef ENABLE_DLMALLOC
+#define DLMALLOC_IS_CLIB
+#endif
+
+#if defined(ELIB_ALLOC_IS_CLIB) && defined(DLMALLOC_IS_CLIB)
+#error "Both elib_malloc and dlmalloc used as clib"
+#endif
+
 #endif
 
 #ifdef REDEFINE_FD_SETSIZE

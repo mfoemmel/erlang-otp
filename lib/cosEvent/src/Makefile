@@ -149,8 +149,8 @@ ERL_FLAGS += -pa $(ERL_TOP)/lib/cosEvent/ebin -pa $(ERL_TOP)/lib/ic/ebin
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/cosEvent/include \
-	+'{parse_transform, sys_pre_attributes}' \
-	+'{attribute, insert, app_vsn, "cosEvent_$(COSEVENT_VSN)"}' 
+	+'{parse_transform,sys_pre_attributes}' \
+	+'{attribute,insert,app_vsn,"cosEvent_$(COSEVENT_VSN)"}' 
 
 YRL_FLAGS = 
 
@@ -172,23 +172,23 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 $(GEN_ERL_FILES1) $(EXTERNAL_GEN_HRL_FILES1): CosEventChannelAdmin.idl
-	erlc $(ERL_FLAGS) +'{handle_info, "CosEventChannelAdmin::ConsumerAdmin"}' \
-		+'{handle_info, "CosEventChannelAdmin::SupplierAdmin"}' \
+	erlc $(ERL_FLAGS) +'{handle_info,"CosEventChannelAdmin::ConsumerAdmin"}' \
+		+'{handle_info,"CosEventChannelAdmin::SupplierAdmin"}' \
 		CosEventChannelAdmin.idl
 	mv $(GEN_HRL_FILES1) $(EXTERNAL_INC_PATH)
 
 $(GEN_ERL_FILES2) $(GEN_HRL_FILES2): OrberEventChannelAdmin.idl
 	erlc $(ERL_FLAGS) +'handle_info' \
-		+'{this, "OrberEventChannelAdmin::EventChannel::for_consumers"}' \
-		+'{this, "OrberEventChannelAdmin::EventChannel::for_suppliers"}' \
-		+'{this, "OrberEventChannelAdmin::ProxyPullConsumer::connect_pull_supplier"}' \
-		+'{this, "OrberEventChannelAdmin::ProxyPullConsumer::disconnect_pull_consumer"}' \
-		+'{this, "OrberEventChannelAdmin::ProxyPullSupplier::connect_pull_consumer"}' \
-		+'{this, "OrberEventChannelAdmin::ProxyPullSupplier::disconnect_pull_supplier"}' \
-		+'{this, "OrberEventChannelAdmin::ProxyPushConsumer::connect_push_supplier"}' \
-		+'{this, "OrberEventChannelAdmin::ProxyPushConsumer::disconnect_push_consumer"}' \
-		+'{this, "OrberEventChannelAdmin::ProxyPushSupplier::connect_push_consumer"}' \
-		+'{this, "OrberEventChannelAdmin::ProxyPushSupplier::disconnect_push_supplier"}' \
+		+'{this,"OrberEventChannelAdmin::EventChannel::for_consumers"}' \
+		+'{this,"OrberEventChannelAdmin::EventChannel::for_suppliers"}' \
+		+'{this,"OrberEventChannelAdmin::ProxyPullConsumer::connect_pull_supplier"}' \
+		+'{this,"OrberEventChannelAdmin::ProxyPullConsumer::disconnect_pull_consumer"}' \
+		+'{this,"OrberEventChannelAdmin::ProxyPullSupplier::connect_pull_consumer"}' \
+		+'{this,"OrberEventChannelAdmin::ProxyPullSupplier::disconnect_pull_supplier"}' \
+		+'{this,"OrberEventChannelAdmin::ProxyPushConsumer::connect_push_supplier"}' \
+		+'{this,"OrberEventChannelAdmin::ProxyPushConsumer::disconnect_push_consumer"}' \
+		+'{this,"OrberEventChannelAdmin::ProxyPushSupplier::connect_push_consumer"}' \
+		+'{this,"OrberEventChannelAdmin::ProxyPushSupplier::disconnect_push_supplier"}' \
 		OrberEventChannelAdmin.idl
 
 

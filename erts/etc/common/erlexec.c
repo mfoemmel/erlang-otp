@@ -390,7 +390,7 @@ main(int argc, char **argv)
 		    error("Could not execute the 'man' command.");
 #endif
 		} else
-		    add_arg(argv[i]);
+		  add_arg(argv[i]);
 		break;
 
 	    case 'n':
@@ -611,7 +611,9 @@ usage(const char *switchname)
 #ifdef __WIN32__
 	  "[-start_erl [datafile]] "
 #endif
-	  "[-make] [-man [manopts] MANPAGE] [-x] [-emu_args] [+i BOOT_MODULE] "
+	  "[-make] [-man [manopts] MANPAGE] [-x] [-emu_args] "
+	  "[+m SIZE_IN_KB] [+M MAX_NO_OF_MMAPS] [+t SIZE_IN_KB] "
+	  "[+T SIZE_IN_KB] [+i BOOT_MODULE] "
 	  "[+b BOOT_FUN] [+s STACK_SIZE] [+h HEAP_SIZE] [+# ITEMS] "
 	  "[+P MAX_PROCS] [args ...]\n");
   exit(1);

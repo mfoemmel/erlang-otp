@@ -103,7 +103,7 @@ $(EBIN)/%.$(EMULATOR): $(GEN_OUT_DIR)/%.erl
 
 $(GEN_CORBA_FILES): $(PERSON_IDL)
 	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) \
-	+'{outdir, "./gen_files"}' \
+	+'{outdir,"./gen_files"}' \
 	$(PERSON_IDL)
 
 # ----------------------------------------------------

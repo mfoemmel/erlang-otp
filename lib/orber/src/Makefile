@@ -104,7 +104,7 @@ INTERNAL_HRL_FILES = \
 	orber_debug.hrl \
 	orber_iiop.hrl \
 	ifr_objects.hrl \
-	orber_ifr.hrl \
+	orber_ifr.hrl
 
 ERL_FILES= $(MODULES:%=%.erl)	
 
@@ -165,8 +165,8 @@ ERL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin -pa $(ERL_TOP)/lib/ic/ebin
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/orber/include \
-	+'{parse_transform, sys_pre_attributes}' \
-	+'{attribute, insert, app_vsn, "orber_$(ORBER_VSN)"}' 
+	+'{parse_transform,sys_pre_attributes}' \
+	+'{attribute,insert,app_vsn,"orber_$(ORBER_VSN)"}' 
 
 # ----------------------------------------------------
 # Targets
@@ -199,7 +199,7 @@ $(GEN_ERL_FILES2) $(GEN_HRL_FILES2): CORBA.idl
 	erlc $(ERL_FLAGS) CORBA.idl
 
 $(GEN_ERL_FILES3) $(GEN_HRL_FILES3): OrberIFR.idl
-	erlc $(ERL_FLAGS) +'{this, "Orber::IFR"}' \
+	erlc $(ERL_FLAGS) +'{this,"Orber::IFR"}' \
 	OrberIFR.idl
 
 # ----------------------------------------------------

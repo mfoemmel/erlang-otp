@@ -11,6 +11,42 @@
 <h1>
 Inets Release Notes</h1></center>
 
+<h2>Inets 2.5.6</h2>
+
+<h3>Improvements and new features</h3>
+
+<ul>
+<li>Added some (ssl related) configuration directives. See documentation
+for further information.
+<ul>
+<li>SSLCACertificateFile
+<li>SSLCiphers
+<li>SSLPasswordCallbackModule
+<li>SSLPasswordCallbackFunction
+<li>SSLVerifyClient
+</ul>
+Own Id: OTP-3873
+<br>Aux Id: Seq 5088
+
+<li>Improving handling of DOS attacks. The following configuration directives 
+has been added to improve the handling of DOS attacks by malformed GET request:
+<ul>
+<li>MaxHeaderSize
+<li>MaxHeaderAction
+<li>MaxBodySize
+<li>MaxBodyAction
+</ul>
+Own Id: OTP-3640
+<br>Aux Id: Seq 4607 & 5077
+</ul>
+
+<h3>Fixed errors and malfunctions</h3>
+
+<h3>Known bugs and problems</h3>
+None.
+<ul>
+</ul>
+
 <h2>Inets 2.5.5</h2>
 
 <h3>Improvements and new features</h3>

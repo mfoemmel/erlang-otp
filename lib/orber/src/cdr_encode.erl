@@ -61,46 +61,23 @@
 %% The header size is known so we know that the size will be aligned.
 %% MessSize already includes the header length.
 %%-----------------------------------------------------------------
-%% ## NEW IIOP 1.2 ##
-enc_giop_message_header(Version, MessType, Flags, MessSize, Message) 
-  when Version == {1,2} ->
-    ?PRINTDEBUG("Encode GIOP header version 1.2"),
-    Message1 = cdrlib:enc_unsigned_long(MessSize, Message), 
-    {Message2, _}  = enc_type('tk_octet', Version, enc_giop_msg_type(MessType),
-			      Message1, 0),
-    {Message3, _} = enc_flags(Version, Flags, Message2),
-    Message4 = enc_giop_version(Version, Message3),
-    enc_magic(Message4);
-enc_giop_message_header(Version, MessType, Flags, MessSize, Message) 
-  when Version == {1,1} ->
-    ?PRINTDEBUG("Encode GIOP header version 1.1"),
-    Message1 = cdrlib:enc_unsigned_long(MessSize, Message), 
-    {Message2, _}  = enc_type('tk_octet', Version, enc_giop_msg_type(MessType),
-			      Message1, 0),
-    {Message3, _} = enc_flags(Version, Flags, Message2),
-    Message4 = enc_giop_version(Version, Message3),
-    enc_magic(Message4);
-enc_giop_message_header(Version, MessType, Flags, MessSize, Message) 
-  when Version == {1,0} ->
-    ?PRINTDEBUG("Encode GIOP header version == 1.0"),
-    Message1 = cdrlib:enc_unsigned_long(MessSize, Message), 
-    {Message2, _}  = enc_type('tk_octet', Version, enc_giop_msg_type(MessType),
-			      Message1, 0),
-    {Message3, _} = enc_byte_order(Version, Message2),
-    Message4 = enc_giop_version(Version, Message3),
-    enc_magic(Message4).
-
-enc_magic(Message) ->
-    [$G, $I, $O, $P | Message].
-
-enc_giop_version({Major, Minor}, Message) ->
-    [Major, Minor | Message].
+enc_giop_message_header({Major,Minor}, MessType, Flags, MessSize, Message) ->
+    ?PRINTDEBUG("Encode GIOP header"),
+    Type = enc_giop_msg_type(MessType),
+    %% The Flag handling must be fixed, i.e., it's not correct to only use '0'.
+    %% If IIOP-1.0 a boolean (FALSE == 0), otherwise, IIOP-1.1 or 1.2,
+    %% an octet. The octet bits represents:
+    %% * The least significant the byteorder (0 eq. big-endian)
+    %% * The second least significant indicates if the message is fragmented.
+    %%   If set to 0 it's not fragmented.
+    %% * The most significant 6 bits are reserved. Hence, must be set to 0.
+    %% Since we currently don't support fragmented messages and we always
+    %% encode using big-endian it's ok to use '0' for now.
+    list_to_binary([ <<"GIOP",Major:8,Minor:8,0:8,
+		     Type:8,MessSize:32/big-unsigned-integer>> | Message]).
 
 enc_byte_order(Version, Message) ->
     enc_type('tk_boolean', Version, 'false', Message, 0).
-
-enc_flags(Version, Flags, Message) ->
-    enc_type('tk_octet', Version, 0, Message, Flags). %%% LTH Skall fixas ordentligt 
 
 %%-----------------------------------------------------------------
 %% Func: enc_parameters/2
@@ -169,8 +146,8 @@ enc_request_split(Version, TargetAddress, RequestId, ResponseExpected, Op, Param
     {Message4, Len4} = enc_operation(Version, atom_to_list(Op), Message3, Len3),
     {Message5, Len5} = enc_service_context(Version, Context, Message4, Len4),
     {Body, Len6}     = enc_request_body(Version, TypeCodes, Parameters, [], Len5),
-    {lists:reverse(Message5), lists:flatten(lists:reverse(Body)), 
-    Len6 - ?GIOP_HEADER_SIZE, Len6-Len5, Flags};
+    {lists:reverse(Message5), list_to_binary(lists:reverse(Body)), 
+    Len5 - ?GIOP_HEADER_SIZE, Len6-Len5, Flags};
 enc_request_split(Version, ObjectKey, RequestId, ResponseExpected, Op, Parameters,
 		  Context, TypeCodes) ->
     Flags = 1, %% LTH Not correct, just placeholder
@@ -189,8 +166,8 @@ enc_request_split(Version, ObjectKey, RequestId, ResponseExpected, Op, Parameter
     {Message3, Len3} = enc_operation(Version, Operation, Message2, Len2),
     {Message4, Len4} = enc_principal(Version, Message3, Len3),
     {Body, Len5}     = enc_request_body(Version, TypeCodes, Parameters, [], Len4),
-    {lists:reverse(Message4), lists:flatten(lists:reverse(Body)), 
-     Len5 - ?GIOP_HEADER_SIZE, Len5-Len4, Flags}.
+    {lists:reverse(Message4), list_to_binary(lists:reverse(Body)), 
+     Len4 - ?GIOP_HEADER_SIZE, Len5-Len4, Flags}.
 enc_principal(Version, Mess, Len) ->
     enc_type({'tk_string', 0}, Version, atom_to_list(node()), Mess, Len).
     
@@ -214,7 +191,7 @@ enc_service_context(Version, Context, Message, Len) ->
     enc_type(?IOP_SERVICECONTEXT, Version, Ctxs, Message, Len).
 
 enc_used_contexts(Version, [], Message) ->
-    lists:flatten(Message);
+    Message;
 enc_used_contexts({1,0}, [#'IOP_ServiceContext'{context_id=?IOP_CodeSets}|T], Ctxs) ->
     %% Not supported by 1.0, drop it.
     enc_used_contexts({1,0}, T, Ctxs);
@@ -225,16 +202,12 @@ enc_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_CodeSets,
     {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
     {Bytes1, Len1} = enc_type(?CONV_FRAME_CODESETCONTEXT, Version, CodeSetCtx, 
 			      Bytes0, Len0),
-    Bytes = lists:flatten(lists:reverse(Bytes1)),
+    Bytes = list_to_binary(lists:reverse(Bytes1)),
     enc_used_contexts(Version, T, 
 		      [#'IOP_ServiceContext'{context_id=?IOP_CodeSets,
 					     context_data = Bytes}|Ctxs]);
 enc_used_contexts(Version, [H|T], Ctxs) ->
     enc_used_contexts(Version, T, [H|Ctxs]).
-
-
-
-
 
 %% ## NEW IIOP 1.2 ##
 enc_target_address(Version, TargetAddr, Mess, Len) when record(TargetAddr,
@@ -259,6 +232,9 @@ enc_response_flags(Version, false, Mess, Len) ->
 %%-----------------------------------------------------------------
 %% Func: enc_request_body/5
 %%-----------------------------------------------------------------
+enc_request_body(_, {_, [], _}, _, Message, Len) ->
+    %% This case is used to avoid adding alignment even though no body will be added.
+    {Message, Len};
 enc_request_body(Version, {RetType, InParameters, OutParameters}, Parameters,
 		 Message, Len) when Version == {1,2} ->
     {Message1, Len1} = enc_align(Message, Len, 8),
@@ -273,6 +249,7 @@ enc_request_body(Version, {RetType, InParameters, OutParameters}, Parameters,
 %% ## NEW IIOP 1.2 ##
 enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters) 
   when Version == {1,2} ->
+    ?PRINTDEBUG2("REPLY: ~w ~w ~w ~w", [Version, TypeCodes, Result, OutParameters]),
     Flags            = 1, %% LTH Not correct, just placeholder
     {Message, Len}   = enc_request_id(Version, ReqId, [], ?GIOP_HEADER_SIZE), 
     {Message1, Len1} = enc_reply_status(Version, RepStatus, Message, Len),
@@ -282,6 +259,7 @@ enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters)
     enc_giop_message_header(Version, 'reply', Flags, Len3 - ?GIOP_HEADER_SIZE,
 			    lists:reverse(Message3));
 enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters) ->
+    ?PRINTDEBUG2("REPLY: ~w ~w ~w ~w", [Version, TypeCodes, Result, OutParameters]),
     Flags            = 1, %% LTH Not correct, just placeholder
     {Message, Len}   = enc_service_context(Version, [], [], ?GIOP_HEADER_SIZE),
     {Message1, Len1} = enc_request_id(Version, ReqId, Message, Len), 
@@ -294,21 +272,23 @@ enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters) ->
 %% ## NEW IIOP 1.2 ##
 enc_reply_split(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters) 
   when Version == {1,2} ->
+    ?PRINTDEBUG2("REPLY: ~w ~w ~w ~w", [Version, TypeCodes, Result, OutParameters]),
     Flags            = 1, %% LTH Not correct, just placeholder
     {Message, Len0}   = enc_request_id(Version, ReqId, [], ?GIOP_HEADER_SIZE), 
     {Message1, Len1} = enc_reply_status(Version, RepStatus, Message, Len0),
     {Message2, Len2} = enc_service_context(Version, [], Message1, Len1),
     {Body, Len} = enc_reply_body(Version, TypeCodes, Result, OutParameters, [], Len2),
-    {lists:reverse(Message2), lists:flatten(lists:reverse(Body)),
-     Len - ?GIOP_HEADER_SIZE, Len-Len2, Flags};
+    {lists:reverse(Message2), list_to_binary(lists:reverse(Body)),
+     Len2 - ?GIOP_HEADER_SIZE, Len-Len2, Flags};
 enc_reply_split(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters) ->
+    ?PRINTDEBUG2("REPLY: ~w ~w ~w ~w", [Version, TypeCodes, Result, OutParameters]),
     Flags            = 1, %% LTH Not correct, just placeholder
     {Message, Len0}   = enc_service_context(Version, [], [], ?GIOP_HEADER_SIZE),
     {Message1, Len1} = enc_request_id(Version, ReqId, Message, Len0), 
     {Message2, Len2} = enc_reply_status(Version, RepStatus, Message1, Len1),
     {Body, Len} = enc_reply_body(Version, TypeCodes, Result, OutParameters, [], Len2),
-    {lists:reverse(Message2), lists:flatten(lists:reverse(Body)), 
-     Len - ?GIOP_HEADER_SIZE, Len-Len2, Flags}.
+    {lists:reverse(Message2), list_to_binary(lists:reverse(Body)), 
+     Len2 - ?GIOP_HEADER_SIZE, Len-Len2, Flags}.
 
 enc_reply_status(Version, Status, Mess, Len) ->
     L = enc_giop_reply_status_type(Status),
@@ -317,6 +297,11 @@ enc_reply_status(Version, Status, Mess, Len) ->
 %%-----------------------------------------------------------------
 %% Func: enc_reply_body/6
 %%-----------------------------------------------------------------
+enc_reply_body(Version, {'tk_void', _, []}, ok, [], Message, Len) ->
+    %% This case is mainly to be able to avoid adding alignment for
+    %% IIOP-1.2 messages if the body should be empty, i.e., void return value and
+    %% no out parameters.
+    {Message, Len};
 enc_reply_body(Version, {RetType, InParameters, OutParameters}, Result, Parameters,
 	       Message, Len) when Version == {1,2} ->
     {Message1, Len1} = enc_align(Message, Len, 8),
@@ -441,15 +426,22 @@ enc_giop_locate_status_type('unknown_object') ->
 enc_giop_locate_status_type('object_here') ->
     1;
 enc_giop_locate_status_type('object_forward') ->
-    2.
+    2;
+%% ## NEW IIOP 1.2 ##
+enc_giop_locate_status_type('object_forward_perm') ->
+    3;
+enc_giop_locate_status_type('loc_system_exception') ->
+    4;
+enc_giop_locate_status_type('loc_needs_addressing_mode') ->
+    5.
 
 %%-----------------------------------------------------------------
 %% Func: enc_type/3
 %%-----------------------------------------------------------------
 enc_type(Version, TypeCode, Value) ->
     {Bytes, Len} = enc_type(TypeCode, Version, Value, [], 0),
-    Bytes1 = lists:reverse(Bytes),
-    lists:flatten(Bytes1).
+    list_to_binary(lists:reverse(Bytes)).
+
 %%-----------------------------------------------------------------
 %% Func: enc_type/5
 %%-----------------------------------------------------------------
@@ -459,28 +451,28 @@ enc_type('tk_void', Version, ok, Bytes, Len) ->
     {Bytes, Len}; 
 enc_type('tk_short', Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 2),
-    {cdrlib:enc_r_short(Value, Rest), Len1 + 2};
+    {cdrlib:enc_short(Value, Rest), Len1 + 2};
 enc_type('tk_long', Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 4),
-    {cdrlib:enc_r_long(Value, Rest ), Len1 + 4};
+    {cdrlib:enc_long(Value, Rest ), Len1 + 4};
 enc_type('tk_longlong', Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 8),
-    {cdrlib:enc_r_longlong(Value, Rest ), Len1 + 8};
+    {cdrlib:enc_longlong(Value, Rest ), Len1 + 8};
 enc_type('tk_ushort', Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 2),
-    {cdrlib:enc_r_unsigned_short(Value, Rest), Len1 + 2};
+    {cdrlib:enc_unsigned_short(Value, Rest), Len1 + 2};
 enc_type('tk_ulong', Version, Value, Bytes, Len) -> 
     {Rest, Len1} = enc_align(Bytes, Len, 4),
-    {cdrlib:enc_r_unsigned_long(Value, Rest), Len1 + 4};
+    {cdrlib:enc_unsigned_long(Value, Rest), Len1 + 4};
 enc_type('tk_ulonglong', Version, Value, Bytes, Len) -> 
     {Rest, Len1} = enc_align(Bytes, Len, 8),
-    {cdrlib:enc_r_unsigned_longlong(Value, Rest), Len1 + 8};
+    {cdrlib:enc_unsigned_longlong(Value, Rest), Len1 + 8};
 enc_type('tk_float', Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 4),
-    {cdrlib:enc_r_float(Value, Rest), Len1 + 4};
+    {cdrlib:enc_float(Value, Rest), Len1 + 4};
 enc_type('tk_double', Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 8),
-    {cdrlib:enc_r_double(Value, Rest), Len1 + 8};
+    {cdrlib:enc_double(Value, Rest), Len1 + 8};
 enc_type('tk_boolean', Version, Value, Bytes, Len) ->
     {cdrlib:enc_bool(Value, Bytes), Len + 1};
 enc_type('tk_char', Version, Value, Bytes, Len) ->
@@ -488,10 +480,10 @@ enc_type('tk_char', Version, Value, Bytes, Len) ->
 %% The wchar decoding can be 1, 2 or 4 bytes but temporarily we'll only accept 2.
 enc_type('tk_wchar', {1,2}, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 2),
-    {cdrlib:enc_r_unsigned_short(Value, Rest), Len1 + 2};
+    {cdrlib:enc_unsigned_short(Value, Rest), Len1 + 2};
 enc_type('tk_wchar', Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 2),
-    {cdrlib:enc_r_unsigned_short(Value, Rest), Len1 + 2};
+    {cdrlib:enc_unsigned_short(Value, Rest), Len1 + 2};
 enc_type('tk_octet', Version, Value, Bytes, Len) ->
     {cdrlib:enc_octet(Value, Bytes), Len + 1};
 enc_type('tk_any', Version, Any, Bytes, Len) when record(Any, any) ->
@@ -510,7 +502,7 @@ enc_type({'tk_union', IFRId, Name, DiscrTC, Default, ElementList},
     enc_union(Version, Value, DiscrTC, ElementList, Bytes, Len);
 enc_type({'tk_enum', IFRId, Name, ElementList}, Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 4),
-    {cdrlib:enc_r_enum(atom_to_list(Value), ElementList, Rest), Len1 + 4};
+    {cdrlib:enc_enum(atom_to_list(Value), ElementList, Rest), Len1 + 4};
 enc_type({'tk_string', MaxLength}, Version, Value, Bytes, Len) -> % MaxLength not used
     enc_string(Version, Value, Bytes, Len);
 enc_type({'tk_wstring', MaxLength}, Version, Value, Bytes, Len) -> % MaxLength not used
@@ -530,9 +522,16 @@ enc_type(Type, _, _, _, _) ->
 %%-----------------------------------------------------------------
 %% Func: enc_sequence/5
 %%-----------------------------------------------------------------
+%% This is a special case used when encoding encapsualted data, i.e., contained
+%% in an octet-sequence.
+enc_sequence(Version, Sequence, 'tk_octet', Bytes, Len) when binary(Sequence) ->
+    {ByteSequence, Len1} = enc_align(Bytes, Len, 4),
+    Size = size(Sequence),
+    ByteSequence1 = cdrlib:enc_unsigned_long(Size, ByteSequence),
+    {[Sequence |ByteSequence1], Len1 + 4 + Size};
 enc_sequence(Version, Sequence, TypeCode, Bytes, Len) ->
     {ByteSequence, Len1} = enc_align(Bytes, Len, 4),
-    ByteSequence1 = cdrlib:enc_r_unsigned_long(length(Sequence), ByteSequence),
+    ByteSequence1 = cdrlib:enc_unsigned_long(length(Sequence), ByteSequence),
     enc_sequence1(Version, Sequence, TypeCode, ByteSequence1, Len1 + 4).
 
 %%-----------------------------------------------------------------
@@ -541,9 +540,9 @@ enc_sequence(Version, Sequence, TypeCode, Bytes, Len) ->
 enc_sequence1(Version, [], TypeCode, Bytes, Len) ->
     {Bytes, Len};
 enc_sequence1(Version, CharSeq, 'tk_char', Bytes, Len) -> 
-    {[CharSeq |Bytes], Len + length(CharSeq)};
+    {[list_to_binary(CharSeq) |Bytes], Len + length(CharSeq)};
 enc_sequence1(Version, OctetSeq, 'tk_octet', Bytes, Len) -> 
-    {[OctetSeq |Bytes], Len + length(OctetSeq)};
+    {[list_to_binary(OctetSeq) |Bytes], Len + length(OctetSeq)};
 enc_sequence1(Version, [Object| Rest], TypeCode, Bytes, Len) -> 
     {ByteSequence, Len1} = enc_type(TypeCode, Version, Object, Bytes, Len),
     enc_sequence1(Version, Rest, TypeCode, ByteSequence, Len1).
@@ -565,7 +564,7 @@ enc_array(_,Array, Size, _, _, _) ->
 enc_string(Version, String, Bytes, Len) ->
     {ByteSequence, Len1} = enc_align(Bytes, Len, 4),
     StrLen = length(String),
-    ByteSequence1 = cdrlib:enc_r_unsigned_long(StrLen + 1, ByteSequence),
+    ByteSequence1 = cdrlib:enc_unsigned_long(StrLen + 1, ByteSequence),
     {cdrlib:enc_octet(0, [String | ByteSequence1]), Len1 + StrLen + 5}.
 
 %%-----------------------------------------------------------------
@@ -575,7 +574,7 @@ enc_wstring(Version, String, Bytes, Len) ->
     %% Encode the length of the string (ulong).
     {Bytes1, Len1} = enc_align(Bytes, Len, 4),
     StrLen = length(String) + 1,
-    Bytes2 = cdrlib:enc_r_unsigned_long(StrLen, Bytes1),
+    Bytes2 = cdrlib:enc_unsigned_long(StrLen, Bytes1),
     {Bytes3, Len3} = enc_sequence1(Version, String, 'tk_wchar', Bytes2, Len1+4),
     %% The terminating null character is also a wchar.
     {cdrlib:enc_unsigned_short(0, Bytes3), Len3+2};
@@ -811,7 +810,7 @@ check_enum(_) ->
 
 encode_complex_tc_paramters(Value, Value_length, Message, Len) ->
     {Message1, Len1} = enc_align(Message, Len, 4),
-    Message2 = cdrlib:enc_r_unsigned_long(Value_length, Message1),
+    Message2 = cdrlib:enc_unsigned_long(Value_length, Message1),
     {[Value |Message2], Len+Value_length+4}.
 
 %%-----------------------------------------------------------------
@@ -822,25 +821,26 @@ enc_align(R, Len, Alignment) ->
     if Rem == 0 ->
 	    {R, Len};
        true ->
-	    {add_bytes(R, Alignment - Rem), Len + (Alignment - Rem)}
+	    Diff = Alignment - Rem,
+	    {add_bytes(R, Diff), Len + Diff}
     end.
 
 add_bytes(R, 0) ->
     R;
 add_bytes(R, 1) ->
-    [16#01 | R];
+    [<<16#01:8>> | R];
 add_bytes(R, 2) ->
-    [16#02, 16#02 | R];
+    [<<16#02:8, 16#02:8>> | R];
 add_bytes(R, 3) ->
-    [16#03, 16#03, 16#03 | R];
+    [<<16#03:8, 16#03:8, 16#03:8>> | R];
 add_bytes(R, 4) ->
-    [16#04, 16#04, 16#04, 16#04 | R];
+    [<<16#04:8, 16#04:8, 16#04:8, 16#04:8>> | R];
 add_bytes(R, 5) ->
-    [16#05, 16#05, 16#05, 16#05, 16#05 | R];
+    [<<16#05:8, 16#05:8, 16#05:8, 16#05:8, 16#05:8>> | R];
 add_bytes(R, 6) ->
-    [16#06, 16#06, 16#06, 16#06, 16#06, 16#06 | R];
+    [<<16#06:8, 16#06:8, 16#06:8, 16#06:8, 16#06:8, 16#06:8>> | R];
 add_bytes(R, 7) ->
-    [16#07, 16#07, 16#07, 16#07, 16#07, 16#07, 16#07 | R];
+    [<<16#07:8, 16#07:8, 16#07:8, 16#07:8, 16#07:8, 16#07:8, 16#07:8>> | R];
 add_bytes(R,N) ->
-    add_bytes([16#08 | R], N - 1).
+    add_bytes([<<16#08:8>> | R], N - 1).
 

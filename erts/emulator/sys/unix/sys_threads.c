@@ -27,6 +27,7 @@
 
 #include "sys.h"
 #include "driver.h"
+#include <signal.h>
 
 
 #if defined(POSIX_THREADS)
@@ -34,7 +35,6 @@
 #include <time.h>
 #include <sys/time.h>
 #include <unistd.h>
-#include <signal.h>
 
 #elif defined(SOLARIS_THREADS)
 #include <thread.h>
@@ -42,7 +42,6 @@
 #include <time.h>
 #include <sys/time.h>
 #include <unistd.h>
-#include <signal.h>
 
 #endif
 
@@ -167,7 +166,7 @@ static void* erl_thread_func_wrap(void* args)
 
     sigemptyset(&new);
     sigaddset(&new, SIGINT);   /* block interrupt */
-    sigaddset(&new, SIGCHLD);  /* block pipe signals */
+    sigaddset(&new, SIGCHLD);  /* block child signals */
     sigaddset(&new, SIGUSR1);  /* block user defined signal */
     pthread_sigmask(SIG_BLOCK, &new, NULL);
 
@@ -224,6 +223,16 @@ int erts_thread_join(erl_thread_t tp, void** vp)
 int erts_thread_kill(erl_thread_t tp)
 {
     return pthread_kill((pthread_t)tp, SIGINT);
+}
+
+int erts_thread_sigmask(int how, const sigset_t *set, sigset_t *oset)
+{
+  return pthread_sigmask(how, set, oset);
+}
+
+int erts_thread_sigwait(const sigset_t *set, int *sig)
+{
+  return sigwait(set, sig);
 }
 
 /**************************************************************************/
@@ -341,7 +350,7 @@ static void* erl_thread_func_wrap(void* args)
 
     sigemptyset(&new);
     sigaddset(&new, SIGINT);   /* block interrupt */
-    sigaddset(&new, SIGCHLD);  /* block pipe signals */
+    sigaddset(&new, SIGCHLD);  /* block child signals */
     sigaddset(&new, SIGUSR1);  /* block user defined signal */
     thr_sigsetmask(SIG_BLOCK, &new, NULL);
 
@@ -396,6 +405,16 @@ int erts_thread_kill(erl_thread_t tp)
     return thr_kill((thread_t)tp, SIGINT);
 }
 
+int erts_thread_sigmask(int how, const sigset_t *set, sigset_t *oset)
+{
+  return thr_sigsetmask(how, set, oset);
+}
+
+int erts_thread_sigwait(const sigset_t *set, int *sig)
+{
+  *sig = sigwait(set);
+  return (*sig >= 0) ? 0 : -1;
+}
 
 #else
 
@@ -476,10 +495,19 @@ int erts_thread_join(erl_thread_t tp, void** vp)
     return -1;
 }
 
-int er_thread_kill(erl_thread_t tp)
+int erts_thread_kill(erl_thread_t tp)
 {
     return -1;
 }
 
+int erts_thread_sigmask(int how, const sigset_t *set, sigset_t *oset)
+{
+  return -1;
+}
+
+int erts_thread_sigwait(const sigset_t *set, int *sig)
+{
+  return -1;
+}
 
 #endif

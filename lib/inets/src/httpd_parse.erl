@@ -18,6 +18,8 @@
 -module(httpd_parse).
 -export([request/1, hsplit/2]).
 
+-include("httpd.hrl").
+
 
 find_content_type([]) ->
     false;
@@ -53,11 +55,11 @@ hsplit(Accu, [H|T]) ->
 
 %% request
 %%
-%% Input: The request as sent from the client (list of characters) (may include part
-%%        of the entity body)
+%% Input: The request as sent from the client (list of characters) 
+%%        (may include part of the entity body)
 %%
 %% Returns:
-%%   {ok, [Method, RequestURI, HTTPVersion, RequestLine, ParsedHeader, EntityBody]}
+%%   {ok, [Method,RequestURI,HTTPVersion,RequestLine,ParsedHeader,EntityBody]}
 %%   {not_implemented, RequestLine, Method, RequestURI, HTTPVersion}
 %%   {bad_request, Reason}
 %%
@@ -70,10 +72,22 @@ hsplit(Accu, [H|T]) ->
 %% Reason      - string()
 %%		    
 request(Request) ->
+    ?DEBUG("request -> entry with:"
+	   "~n   Request: ~s",[Request]),
     {BeforeEntityBody, Rest} = hsplit([], Request),
+    ?DEBUG("request ->"
+	   "~n   BeforeEntityBody: ~p"
+	   "~n   Rest:             ~p",[BeforeEntityBody, Rest]),
     [RequestLine|Header] = split_lines(BeforeEntityBody),
+    ?DEBUG("request ->"
+	   "~n   RequestLine: ~p"
+	   "~n   Header:      ~p",[RequestLine,Header]),
     ParsedHeader = tagup_header(Header),
+    ?DEBUG("request ->"
+	   "~n   ParseHeader: ~p",[ParsedHeader]),
     EntityBody = maybe_remove_nl(ParsedHeader,Rest),
+    ?DEBUG("request ->"
+	   "~n   EntityBody: ~p",[EntityBody]),
     case verify_request(string:tokens(RequestLine," ")) of
 	["HEAD", RequestURI, [$H,$T,$T,$P,$/,$1,$.,N]] ->
 	    {ok, ["HEAD", RequestURI, [$H,$T,$T,$P,$/,$1,$.,N], RequestLine,

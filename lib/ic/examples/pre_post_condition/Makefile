@@ -105,7 +105,8 @@ test: $(TEST_TARGET_FILES)
 
 
 $(GEN_ERL_MODULES:%=%.erl) $(GEN_HRL_FILES): ex.idl
-	erlc $(ERL_FLAGS) +'{precond, {tracer, pre}}' +'{{postcond , "m::i::f"}, {tracer, post}}' ex.idl
+	erlc $(ERL_FLAGS) +'{precond,{tracer,pre}}' \
+		+'{{postcond,"m::i::f"},{tracer,post}}' ex.idl
 
 # ----------------------------------------------------
 # Release Target

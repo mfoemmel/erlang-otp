@@ -1475,11 +1475,13 @@ stack_dump2(Process *p, CIO fd)
     erl_printf(fd, "cp = 0x%x (", p->cp);
     print_function_from_pc(p->cp, fd);
     erl_printf(fd, ")\n");
-    erl_printf(fd, "arity = %d\n",p->arity);
-    for (i = 0; i < p->arity; i++) {
-	erl_printf(fd, "   ");
-	display(p->arg_reg[i], fd);
-	erl_printf(fd, "\n");
+    if (!((p->status == P_RUNNING) || (p->status == P_GARBING))) {
+	erl_printf(fd, "arity = %d\n",p->arity);
+	for (i = 0; i < p->arity; i++) {
+	    erl_printf(fd, "   ");
+	    display(p->arg_reg[i], fd);
+	    erl_printf(fd, "\n");
+	}
     }
     for (sp = p->stop; sp < p->hend; sp++) {
 	yreg = stack_element_dump(p, sp, yreg, fd);

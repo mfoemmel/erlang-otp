@@ -23,14 +23,12 @@
 %%    This file contains all decoding functions for the CDR
 %%    format.
 %%
-%% Creation date: 970115
+%% Creation date: January 15, 1997
 %%
 %%-----------------------------------------------------------------
 -module(cdr_decode).
 
--include("orber_iiop.hrl").
-
-%-include_lib("orber/src/orber_iiop.hrl").
+-include_lib("orber/src/orber_iiop.hrl").
 -include_lib("orber/include/ifr_types.hrl").
 -include_lib("orber/include/corba.hrl").
 -include_lib("orber/src/orber_debug.hrl").
@@ -40,24 +38,26 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([dec_message/2, dec_giop_message_header/1, peek_message_size/1, dec_reply_header/4,
-	 dec_reply_body/5, dec_reply_body/6, dec_locate_reply_header/4, dec_locate_reply_body/5,
-	 dec_message_header/2, dec_request_body/6]).
+-export([dec_giop_message_header/1, dec_reply_header/4,
+	 dec_reply_body/6, dec_locate_reply_header/4, 
+	 dec_locate_reply_body/5, dec_message_header/2, dec_request_body/6,
+	 dec_octet_sequence_bin/6, dec_message/2]).
 
 %%-----------------------------------------------------------------
 %% Functions which only are exported for the testcases.
 %%-----------------------------------------------------------------
--export([dec_type/5, dec_byte_order/1, dec_system_exception/4, dec_user_exception/4]).
+-export([dec_type/5, dec_byte_order/1, dec_system_exception/4, dec_user_exception/4,
+	 dec_byte_order_list/1]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
--export([]).
 
 %%-----------------------------------------------------------------
 %% Macros
 %%-----------------------------------------------------------------
 -define(DEBUG_LEVEL, 9).
+
 
 %%-----------------------------------------------------------------
 %% Func: dec_message/3
@@ -73,32 +73,34 @@ dec_message(TypeCodes, Bytes) ->
     Message = dec_giop_message_header(Bytes),
     ?PRINTDEBUG2("GIOP header: ~w", [Message]),
     case Message#giop_message.message_type of
-	'request' ->
-	    dec_request(Message#giop_message.giop_version,
-			Message#giop_message.message, ?GIOP_HEADER_SIZE, 
-			Message#giop_message.byte_order, Bytes);
-	'reply' ->
-	    dec_reply(Message#giop_message.giop_version,
-		      TypeCodes, Message#giop_message.message, ?GIOP_HEADER_SIZE,
-		      Message#giop_message.byte_order);
-	'cancel_request' ->
-	    dec_cancel_request(Message#giop_message.giop_version,
-			       Message#giop_message.message, ?GIOP_HEADER_SIZE, 
-			       Message#giop_message.byte_order);
-	'locate_request' ->
-	    dec_locate_request(Message#giop_message.giop_version,
-			       Message#giop_message.message, ?GIOP_HEADER_SIZE, 
-			       Message#giop_message.byte_order);
-	'locate_reply' ->
-	    dec_locate_reply(Message#giop_message.giop_version,
-			     Message#giop_message.message, ?GIOP_HEADER_SIZE, 
-			     Message#giop_message.byte_order);
-	'close_connection' ->
-	    'close_connection';
-	'message_error' ->
-	    'message_error';
-	'fragment' ->
-	    'fragment'
+        'request' ->
+            {Version, ReqHdr, Rest, Len, ByteOrder} = 
+		dec_request_header(Message#giop_message.giop_version,
+				   Message#giop_message.message, ?GIOP_HEADER_SIZE, 
+				   Message#giop_message.byte_order, Bytes),
+	    dec_request_body(Version, ReqHdr, Rest, Len, ByteOrder, Bytes);
+        'reply' ->
+            dec_reply(Message#giop_message.giop_version,
+                      TypeCodes, Message#giop_message.message, ?GIOP_HEADER_SIZE,
+                      Message#giop_message.byte_order);
+        'cancel_request' ->
+            dec_cancel_request(Message#giop_message.giop_version,
+                               Message#giop_message.message, ?GIOP_HEADER_SIZE, 
+                               Message#giop_message.byte_order);
+        'locate_request' ->
+            dec_locate_request(Message#giop_message.giop_version,
+                               Message#giop_message.message, ?GIOP_HEADER_SIZE, 
+                               Message#giop_message.byte_order);
+        'locate_reply' ->
+            dec_locate_reply(Message#giop_message.giop_version,
+                             Message#giop_message.message, ?GIOP_HEADER_SIZE, 
+                             Message#giop_message.byte_order);
+        'close_connection' ->
+            'close_connection';
+        'message_error' ->
+            'message_error';
+        'fragment' ->
+            'fragment'
     end.
 
 %%-----------------------------------------------------------------
@@ -108,24 +110,24 @@ dec_message(TypeCodes, Bytes) ->
 %% Returns: 
 %%       A giop_message record.
 %%-----------------------------------------------------------------
-dec_giop_message_header(Bytes) ->
-    {Magic, Rest1} =  dec_magic(Bytes),
-    {Version, Rest2} = dec_giop_version(Rest1),
-    {ByteOrder, Rest3} = if
-	Version == {1,0} ->
-	    dec_byte_order(Rest2);
-	true ->
-	    dec_flags(Rest2)
-    end,
-    {MessType, Rest4} = dec_mess_type(Rest3),
-    {MessSize, Message} = dec_mess_size(Rest4, ByteOrder),
-    #giop_message{magic = Magic, giop_version = Version, 
-		  byte_order = ByteOrder, message_type = MessType, 
-		   message_size = MessSize, message = Message}.
-
-peek_message_size(Bytes) ->
-    M = dec_giop_message_header(Bytes),
-    M#giop_message.message_size.
+dec_giop_message_header(<<"GIOP",Major:8,Minor:8,ByteOrderData:8,MessType:8,
+			Rest/binary>>) ->
+    Version = {Major, Minor},
+    ByteOrder = 
+	if
+	    Version == {1,0} ->
+		check_byte_order(ByteOrderData);
+	    true ->
+		dec_flags(ByteOrderData)
+	end,
+    %% We know that this long integer is aligned because of the 
+    %% fix header structure.
+    {MessSize, Message} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
+    #giop_message{magic = "GIOP", giop_version = Version, 
+		  byte_order = ByteOrder, message_type = dec_giop_msg_type(MessType), 
+		  message_size = MessSize, message = Message};
+dec_giop_message_header(_) ->
+    exit(message_error).
 
 %%-----------------------------------------------------------------
 %% Func: dec_message_header/2
@@ -168,34 +170,6 @@ dec_message_header(TypeCodes, Bytes) ->
 
 
 %%-----------------------------------------------------------------
-%% Func: dec_magic/1
-%% Args: 
-%%       The message as a byte sequence.
-%% Returns: 
-%%       A tuple {"GIOP", Rest} where Rest is the remaining
-%%       message byte sequence.
-%%-----------------------------------------------------------------
-dec_magic([$G, $I, $O, $P |Rest]) ->
-    {"GIOP", Rest};
-dec_magic(_) ->
-    exit(message_error).
-
-%%-----------------------------------------------------------------
-%% Func: dec_giop_version/1
-%% Args: 
-%%       The message as a byte sequence.
-%% Returns: 
-%%       A tuple {GIOP_version, Rest} where GIOP_version is a tuple 
-%%       with a major and minor value. Rest is the remaining
-%%       message byte sequence.
-%%-----------------------------------------------------------------
-dec_giop_version([GIOP_MAJOR, GIOP_MINOR | Rest]) ->
-    {{GIOP_MAJOR, GIOP_MINOR}, Rest}; 
-dec_giop_version(_) ->
-    exit(message_error).
-
-
-%%-----------------------------------------------------------------
 %% Func: dec_byte_order/1
 %% Args: 
 %%       The message as a byte sequence.
@@ -203,10 +177,38 @@ dec_giop_version(_) ->
 %%       A tuple {Endianess, Rest} where Endianess is big or little.
 %%       Rest is the remaining message byte sequence.
 %%-----------------------------------------------------------------
-dec_byte_order([0|Rest]) ->
-    {big, Rest};
-dec_byte_order([1|Rest]) ->
-    {little, Rest}.
+dec_byte_order(<<0:8,T/binary>>) ->
+    {big, T};
+dec_byte_order(<<1:8,T/binary>>) ->
+    {little, T}.
+
+%%-----------------------------------------------------------------
+%% Func: dec_byte_order_list/1
+%% Args: 
+%%       The message as a byte sequence.
+%% Returns: 
+%%       A tuple {Endianess, Rest} where Endianess is big or little.
+%%       Rest is the remaining message byte sequence.
+%%-----------------------------------------------------------------
+dec_byte_order_list([0|T]) ->
+    {big, T};
+dec_byte_order_list([1|T]) ->
+    {little, T}.
+
+
+
+%%-----------------------------------------------------------------
+%% Func: check_byte_order/1
+%% Args: 
+%%       The message as a byte sequence.
+%% Returns: 
+%%       A tuple {Endianess, Rest} where Endianess is big or little.
+%%       Rest is the remaining message byte sequence.
+%%-----------------------------------------------------------------
+check_byte_order(0) ->
+    big;
+check_byte_order(1) ->
+    little.
 
 %%-----------------------------------------------------------------
 %% Func: dec_flags/1
@@ -216,13 +218,13 @@ dec_byte_order([1|Rest]) ->
 %%       A tuple {Endianess, Rest} where Endianess is big or little.
 %%       Rest is the remaining message byte sequence.
 %%-----------------------------------------------------------------
-dec_flags([0 |Rest]) ->
+dec_flags(0) ->
     %% Eq. to 00000000
-    {big, Rest};
-dec_flags([1 |Rest]) ->
+    big;
+dec_flags(1) ->
     %% Eq. to 00000001
-    {little, Rest};
-dec_flags([X |Rest]) ->
+    little;
+dec_flags(X) ->
     %% Not only the Endian flag is set, test which.
     if
 	((X band 16#02) == 16#02) ->
@@ -231,22 +233,10 @@ dec_flags([X |Rest]) ->
 	    corba:raise(#'MARSHAL'{minor=103, completion_status=?COMPLETED_MAYBE});
 	%% Since the 6 most significant bits are unused we'll accept this for now.
 	((X band 16#01) == 16#01) ->
-	    {little, Rest};
+	    little;
 	true ->
-	    {big, Rest}
+	    big
     end.
-
-%%-----------------------------------------------------------------
-%% Func: dec_mess_type/1
-%% Args: 
-%%       The message as a byte sequence.
-%% Returns: 
-%%       A tuple {MsgType, Rest} where MsgType is an 
-%%       integer >= 0 and <= 6.
-%%       Rest is the remaining message byte sequence.
-%%-----------------------------------------------------------------
-dec_mess_type([Type|Rest]) ->
-    {dec_giop_msg_type(Type), Rest}.
 
 %%-----------------------------------------------------------------
 %% Func: dec_giop_msg_type
@@ -278,13 +268,13 @@ dec_giop_msg_type(7) ->
 %% Returns : boolean
 %%-----------------------------------------------------------------
 %% FIX ME!! Not correct flag handling.
-dec_response_flags(Version, [0|Rest], Len) ->
+dec_response_flags(Version, <<0:8, Rest/binary>>, Len) ->
     {false, Rest, Len+1};
-dec_response_flags(Version, [1|Rest], Len) ->
+dec_response_flags(Version, <<1:8, Rest/binary>>, Len) ->
     {true_oneway, Rest, Len+1};
-dec_response_flags(Version, [3|Rest], Len) ->
+dec_response_flags(Version, <<3:8, Rest/binary>>, Len) ->
     {true, Rest, Len+1};
-dec_response_flags(Version, [X|Rest], Len) ->
+dec_response_flags(Version, <<X:8, Rest/binary>>, Len) ->
     %% Not only the Response flag is set, test which.
     if
 	%% Since the 6 most significant bits are unused we'll accept this for now.
@@ -320,78 +310,6 @@ dec_target_addr(Version, Message, Len, ByteOrder) ->
 				    [?LINE, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{minor=103, completion_status=?COMPLETED_MAYBE})
     end.
-
-%%-----------------------------------------------------------------
-%% Func: dec_mess_size/2
-%% Args: 
-%%       Bytes - is the the message as a byte sequence.
-%%       ByteOrder - little or big
-%% Returns: 
-%%       A tuple {Length, Rest} where Length is the length of the message.
-%%       Rest is the remaining message byte sequence.
-%%-----------------------------------------------------------------
-dec_mess_size(Bytes, ByteOrder) ->
-    %% We know that this long integer is aligned because of the 
-    %% fix header structure.
-    cdrlib:dec_unsigned_long(Bytes, ByteOrder).
-
-%%-----------------------------------------------------------------
-%% Func: dec_request/3
-%% Args: 
-%%       Message - The message
-%%       Len0 - Number of bytes already read.
-%%       ByteOrder - little or big
-%% Returns: 
-%%       A tuple {RequestHeader, Parameters, TypeCodes} where RequestHeader is a
-%%       request_header record, Parameters a list of the decode
-%%       parameters and TypeCodes is the operation description.
-%%-----------------------------------------------------------------
-dec_request(Version, Message, Len0, ByteOrder, Buffer) ->
-    {Version, ReqHdr, Rest, Len, _} = dec_request_header(Version, Message, Len0, 
-							 ByteOrder, Buffer),
-    {Parameters, TypeCodes, _} = dec_request_body(Version, ReqHdr, Rest, Len, 
-						  ByteOrder, Buffer),
-    {Version, ReqHdr, Parameters, TypeCodes};
-
-%% ## NEW IIOP 1.2 ##
-dec_request(Version, Message, Len0, ByteOrder, Buffer) when Version == {1,2} ->
-    {Request_id, Rest1, Len1, _} = dec_type('tk_ulong', Version, Message, Len0, 
-					    ByteOrder, [], 0),
-    {ResponseFlags, Rest2, Len2} = dec_response_flags(Version, Rest1, Len1),
-    {_, Rest2b, Len2b, _} = dec_type({'tk_array', 'tk_octet', 3}, Version, Rest2, Len2, ByteOrder, [], 0),
-    {Object_key, Rest3, Len3, _} = dec_target_addr(Version, Rest2b, Len2b, ByteOrder),
-    {Operation, Rest4, Len4, _} = dec_type({'tk_string', 0},  Version, Rest3, Len3, ByteOrder, [], 0),
-    {Context, Rest5, Len5} = dec_service_context(Version, Rest4, Len4, ByteOrder),
-    {Parameters, TypeCodes, _} = dec_request_body(Version, Object_key, Operation, 
-						  Rest5, Len5, ByteOrder, Buffer, Len5),
-    {Version, #request_header{service_context=Context, 
-			      request_id=Request_id,
-			      response_expected=ResponseFlags,
-			      object_key=Object_key,
-			      operation=Operation, 
-			      requesting_principal=""},
-     Parameters, TypeCodes};
-
-dec_request(Version, Message, Len0, ByteOrder, Buffer) ->
-    {Context, Rest1, Len1} = dec_service_context(Version, Message, Len0, ByteOrder),
-    {Request_id, Rest2, Len2, _} = dec_type('tk_ulong', Version, Rest1, Len1, ByteOrder, [], 0),
-    {Response_expected, Rest3, Len3, _} = dec_type('tk_boolean',  Version, Rest2, Len2,
-						   ByteOrder, [], 0),
-    {ObjKey, Rest4, Len4, _} = dec_type({'tk_sequence', 'tk_octet', 0},  Version, Rest3,
-				   Len3, ByteOrder, [], 0),
-    Object_key = corba:string_to_objkey(ObjKey),
-    {Operation, Rest5, Len5, _} = dec_type({'tk_string', 0},  Version, Rest4, Len4, ByteOrder, [], 0),
-    {Principal, Rest, Len, _} = dec_type({'tk_string', 0},  Version, Rest5,Len5,  ByteOrder, [], 0),
-    {Parameters, TypeCodes, _} = dec_request_body(Version, Object_key,
-				       Operation, Rest, Len, ByteOrder, Buffer, Len),
-    {Version, #request_header{service_context=Context, 
-			      request_id=Request_id,
-			      response_expected=Response_expected,
-			      object_key=Object_key,
-			      operation=Operation, 
-			      requesting_principal=Principal},
-     Parameters, TypeCodes}.
-
 
 %%-----------------------------------------------------------------
 %% Func: dec_request_header/3
@@ -453,7 +371,7 @@ dec_used_contexts({1,0}, [#'IOP_ServiceContext'{context_id=?IOP_CodeSets}|T], Ct
     dec_used_contexts({1,0}, T, Ctxs);
 dec_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_CodeSets,
 						  context_data = Bytes}|T], Ctxs) ->
-    {ByteOrder, Rest} = cdr_decode:dec_byte_order(Bytes),
+    {ByteOrder, Rest} = dec_byte_order(list_to_binary(Bytes)),
     {CodeCtx, _, _} =  dec_type(?CONV_FRAME_CODESETCONTEXT, Version, 
 				Rest, 1, ByteOrder),
     dec_used_contexts(Version, T, [CodeCtx|Ctxs]);
@@ -475,12 +393,15 @@ dec_request_body(Version, ReqHdr, Rest, Len, ByteOrder, Buffer) ->
 
 dec_request_body(Version, Object_key, Operation, Body, Len, ByteOrder, Buffer, Counter) 
   when Version == {1,2} ->
-    {RetType, InParameters, OutParameters} =
-	orber_typedefs:get_op_def(Object_key, Operation),
-    {Rest, Len1, NewC} = dec_align(Body, Len, 8, Counter),
-    {Parameters, Len2} = dec_parameters(Version, InParameters, Rest, Len1, ByteOrder, Buffer, NewC),
-    {Parameters, {RetType, InParameters, OutParameters}, Len2};
-
+    case orber_typedefs:get_op_def(Object_key, Operation) of
+	{RetType, [], OutParameters} ->
+	    {[], {RetType, [], OutParameters}, Len};
+	{RetType, InParameters, OutParameters} ->
+	    {Rest, Len1, NewC} = dec_align(Body, Len, 8, Counter),
+	    {Parameters, Len2} = dec_parameters(Version, InParameters, Rest, Len1, 
+						ByteOrder, Buffer, NewC),
+	    {Parameters, {RetType, InParameters, OutParameters}, Len2}
+    end;
 dec_request_body(Version, Object_key, Operation, Body, Len, ByteOrder, Buffer, Counter) ->
     {RetType, InParameters, OutParameters} =
 	orber_typedefs:get_op_def(Object_key, Operation),
@@ -501,8 +422,12 @@ set_codeset_data([#'CONV_FRAME_CodeSetContext'{char_data=?ISO8859_1_ID,
 					       wchar_data=?ISO_10646_UCS_2_ID}|T]) ->
     put(char, ?ISO8859_1_ID),
     put(wchar, ?ISO_10646_UCS_2_ID);
-set_codeset_data([H|T]) when record(H, 'CONV_FRAME_CodeSetContext') ->
-    corba:raise(#'CODESET_INCOMPATIBLE'{completion_status=?COMPLETED_NO});
+set_codeset_data([#'CONV_FRAME_CodeSetContext'{char_data=Char,
+					       wchar_data=Wchar}|T]) ->
+    %% Should not raise an exception here since we don't know if operations using
+    %% wchar/wstring will be used.
+    put(char, Char),
+    put(wchar, Wchar);
 set_codeset_data([H|T]) ->
     set_codeset_data(T).
 
@@ -530,14 +455,17 @@ dec_reply(Version, TypeCodes, Message, Len0, ByteOrder) ->
 		{R, _} = dec_user_exception(Version, Rest, Len, ByteOrder),
 		{R, []};
 	    'location_forward' ->
-		{R, _, _, _} = dec_objref(Version, Rest, Len, ByteOrder, Message, Len),
-		{R, []};
+		{R, _, _} = dec_reply_body(Version, {{'tk_objref', "", ""}, [],[]}, 
+					   Rest, Len, ByteOrder, Message),
+	    {R, []};
 	    'location_forward_perm' ->
-		%% We should notify the client in this case.
-		{R, _, _, _} = dec_objref(Version, Rest, Len, ByteOrder, Message, Len),
+		{R, _, _} = dec_reply_body(Version, {{'tk_objref', "", ""}, [],[]}, 
+					   Rest, Len, ByteOrder, Message),
+		{R, []};
+	    'needs_addressing_mode' ->
+		{R, _, _} = dec_reply_body(Version, {'tk_short', [],[]}, 
+					   Rest, Len, ByteOrder, Message),
 		{R, []}
-%	    'needs_addressing_mode' ->
-%		ok
 	     end,
     {ReplyHeader, Result, Par}.
 
@@ -561,10 +489,11 @@ dec_reply_status(Version, Status, Len, ByteOrder) ->
     {L, Rest, Len1}= dec_type('tk_ulong', Version, Status, Len, ByteOrder),
     {dec_giop_reply_status_type(L), Rest, Len1}.
 
-%% Next case is added to handle code upgrade; remove later.
-dec_reply_body(Version, {RetType, InParameters, OutParameters}, Body, Len, ByteOrder) ->
-    dec_reply_body(Version, {RetType, InParameters, OutParameters}, Body, Len, ByteOrder, []).
-
+dec_reply_body(_, {'tk_void', _, []}, <<>>, Len, _, _) ->
+    %% This case is mainly to be able to avoid removing non-existent alignment for
+    %% IIOP-1.2 messages if the body should be empty, i.e., void return value and
+    %% no out parameters.
+    {ok, [], Len};
 dec_reply_body(Version, {RetType, InParameters, OutParameters}, Body, Len, 
 	       ByteOrder, Bytes) when Version == {1,2} ->
     {Rest, Len1, Counter} = dec_align(Body, Len, 8, Len),
@@ -631,6 +560,27 @@ dec_locate_reply_header(Version, Message, Len, ByteOrder) ->
     {Locate_status, Rest2, Len2} = dec_locate_status(Version, Rest1, Len, ByteOrder),
     {#locate_reply_header{request_id=Request_id, locate_status=Locate_status}, Rest2, Len2}.
    
+dec_locate_reply_body(Version, LocateStatus, Rest, Len, ByteOrder) 
+  when Version == {1,2} ->
+    case LocateStatus of
+	'object_forward' ->
+	    {ObjRef, _, _, _} = dec_objref(Version, Rest, Len, ByteOrder),
+	    ObjRef;
+	'object_forward_perm' ->
+	    {ObjRef, _, _, _} = dec_objref(Version, Rest, Len, ByteOrder),
+	    ObjRef;
+	'loc_system_exception' ->
+	    %% This should be updated but since 'dec_system_exception' removes
+	    %% alignment, which the LocateReplyBody don't hyave, for 1.2 we
+	    %% pretend it's 1.1 for now
+	    {SysExc, _} = dec_system_exception({1,1}, Rest, Len, ByteOrder),
+	    {'EXCEPTION', SysExc};
+	'loc_needs_addressing_mode' ->
+	    %% Not supported.
+	    [];
+	_ ->
+	    []
+    end;
 dec_locate_reply_body(Version, LocateStatus, Rest, Len, ByteOrder) ->
     case LocateStatus of
 	'object_forward' ->
@@ -646,9 +596,9 @@ dec_locate_status(Version, Bytes, Len, ByteOrder) ->
 
 %%-----------------------------------------------------------------
 %% Func: dec_giop_reply_status_type
-%% Args: 
+%% Args:
 %%       An integer status code
-%% Returns: 
+%% Returns:
 %%       An atom which is the reply status
 %%-----------------------------------------------------------------
 dec_giop_reply_status_type(0) ->
@@ -664,12 +614,12 @@ dec_giop_reply_status_type(4) ->
     'location_forward_perm';
 dec_giop_reply_status_type(5) ->
     'needs_addressing_mode'.
-
+ 
 %%-----------------------------------------------------------------
 %% Func: dec_giop_locate_status_type
-%% Args: 
+%% Args:
 %%       An integer status code
-%% Returns: 
+%% Returns:
 %%       An atom which is the reply status
 %%-----------------------------------------------------------------
 dec_giop_locate_status_type(0) ->
@@ -677,7 +627,15 @@ dec_giop_locate_status_type(0) ->
 dec_giop_locate_status_type(1) ->
     'object_here';
 dec_giop_locate_status_type(2) ->
-    'object_forward'.
+    'object_forward';
+%% ## NEW IIOP 1.2 ##
+dec_giop_locate_status_type(3) ->
+    'object_forward_perm';
+dec_giop_locate_status_type(4) ->
+    'loc_system_exception';
+dec_giop_locate_status_type(5) ->
+    'loc_needs_addressing_mode'.
+ 
 
 %%-----------------------------------------------------------------
 %% Func: dec_type/5
@@ -693,35 +651,35 @@ dec_type('tk_void', Version, Bytes, Len, _, _, C) ->
     {'ok', Bytes, Len, C}; 
 dec_type('tk_short', Version, Bytes, Len, ByteOrder, _, C) ->
     {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
-    {Short, Rest1} = cdrlib:dec_short(Rest, ByteOrder),
+    {Short, Rest1} = cdrlib:dec_short(ByteOrder, Rest),
     {Short, Rest1, Len1 + 2, NewC+2};
 dec_type('tk_long', Version, Bytes, Len, ByteOrder, _, C) ->
     {Rest, Len1, NewC} = dec_align(Bytes, Len, 4, C),
-    {Long, Rest1} = cdrlib:dec_long(Rest, ByteOrder),
+    {Long, Rest1} = cdrlib:dec_long(ByteOrder, Rest),
     {Long, Rest1, Len1 + 4, NewC+4};
 dec_type('tk_longlong', Version, Bytes, Len, ByteOrder, _, C) ->
     {Rest, Len1, NewC} = dec_align(Bytes, Len, 8, C),
-    {Long, Rest1} = cdrlib:dec_longlong(Rest, ByteOrder),
+    {Long, Rest1} = cdrlib:dec_longlong(ByteOrder, Rest),
     {Long, Rest1, Len1 + 8, NewC+8};
 dec_type('tk_ushort', Version, Bytes, Len, ByteOrder, _, C) ->
     {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
-    {Short, Rest1} = cdrlib:dec_unsigned_short(Rest, ByteOrder),
+    {Short, Rest1} = cdrlib:dec_unsigned_short(ByteOrder, Rest),
     {Short, Rest1, Len1 + 2, NewC+2};
 dec_type('tk_ulong', Version, Bytes, Len, ByteOrder, _, C) ->
     {Rest, Len1, NewC} = dec_align(Bytes, Len, 4, C),
-    {Long, Rest1} = cdrlib:dec_unsigned_long(Rest, ByteOrder),
+    {Long, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
     {Long, Rest1, Len1 + 4, NewC+4};
 dec_type('tk_ulonglong', Version, Bytes, Len, ByteOrder, _, C) ->
     {Rest, Len1, NewC} = dec_align(Bytes, Len, 8, C),
-    {Long, Rest1} = cdrlib:dec_unsigned_longlong(Rest, ByteOrder),
+    {Long, Rest1} = cdrlib:dec_unsigned_longlong(ByteOrder, Rest),
     {Long, Rest1, Len1 + 8, NewC+8};
 dec_type('tk_float', Version, Bytes, Len, ByteOrder, _, C) ->
     {Rest, Len1, NewC} = dec_align(Bytes, Len, 4, C),
-    {Float, Rest1} = cdrlib:dec_float(Rest, ByteOrder),
+    {Float, Rest1} = cdrlib:dec_float(ByteOrder, Rest),
     {Float, Rest1, Len1 + 4, NewC+4};
 dec_type('tk_double', Version, Bytes, Len, ByteOrder, _, C) ->
     {Rest, Len1, NewC} = dec_align(Bytes, Len, 8, C),
-    {Double, Rest1} = cdrlib:dec_double(Rest, ByteOrder),
+    {Double, Rest1} = cdrlib:dec_double(ByteOrder, Rest),
     {Double, Rest1, Len1 + 8, NewC+8};
 dec_type('tk_boolean', Version, Bytes, Len, _, _, C) ->
     {Bool, Rest} = cdrlib:dec_bool(Bytes),
@@ -734,11 +692,11 @@ dec_type('tk_wchar', {1,2}, Bytes, Len, ByteOrder, _, C) ->
     case get(wchar) of
 	?ISO_10646_UCS_2_ID ->
 	    {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
-	    {WChar, Rest2} = cdrlib:dec_unsigned_short(Rest, ByteOrder),
+	    {WChar, Rest2} = cdrlib:dec_unsigned_short(ByteOrder, Rest),
 	    {WChar, Rest2, Len1 + 2, NewC+2};
 	_->
 	    {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
-	    {WChar, Rest2} = cdrlib:dec_unsigned_short(Rest, ByteOrder),
+	    {WChar, Rest2} = cdrlib:dec_unsigned_short(ByteOrder, Rest),
 	    {WChar, Rest2, Len1 + 2, NewC+2}
     end;
 %% For 1.1 the wchar is limited to the use of two-octet fixed-length encoding.
@@ -746,14 +704,14 @@ dec_type('tk_wchar', Version, Bytes, Len, ByteOrder, _, C) ->
     case get(wchar) of
 	?ISO_10646_UCS_2_ID ->
 	    {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
-	    {WChar, Rest2} = cdrlib:dec_unsigned_short(Rest, ByteOrder),
+	    {WChar, Rest2} = cdrlib:dec_unsigned_short(ByteOrder, Rest),
 	    {WChar, Rest2, Len1 + 2, NewC+2};
 	_->
 	    %% We should raise the DATA_CONVERSION system exception but
 	    %% it's not possible since all ORB:s do not include
-	    %% IOP::ServiceContext in the IOR:s.
+	    %% IOP::ServiceContext.
 	    {Rest, Len1, NewC} = dec_align(Bytes, Len, 2, C),
-	    {WChar, Rest2} = cdrlib:dec_unsigned_short(Rest, ByteOrder),
+	    {WChar, Rest2} = cdrlib:dec_unsigned_short(ByteOrder, Rest),
 	    {WChar, Rest2, Len1 + 2, NewC+2}
     end;
 dec_type('tk_octet', Version, Bytes, Len, _, _, C) ->
@@ -776,7 +734,7 @@ dec_type({'tk_union', IFRId, Name, DiscrTC, Default, ElementList},
     dec_union(Version, IFRId, Name, DiscrTC, Default, ElementList, Bytes, Len, ByteOrder, Buff, C);
 dec_type({'tk_enum', IFRId, Name, ElementList}, Version, Bytes, Len, ByteOrder, _, C) ->
     {Rest, Len1, NewC} = dec_align(Bytes, Len, 4, C),
-    {Enum, Rest1} = cdrlib:dec_enum(ElementList, Rest, ByteOrder),
+    {Enum, Rest1} = cdrlib:dec_enum(ByteOrder, ElementList, Rest),
     {Enum, Rest1, Len1 + 4, NewC+4}; 
 dec_type({'tk_string', MaxLength}, Version, Bytes, Len, ByteOrder, Buff, C) -> % MaxLength Not Used
     dec_string(Version, Bytes, Len, ByteOrder, Buff, C);
@@ -798,11 +756,44 @@ stringify_enum({tk_enum,_,_,_}, Label) ->
 stringify_enum(_, Label) ->
     Label.
 %%-----------------------------------------------------------------
-%% Func: dec_sequence/5 and dec_sequence/6
+%% Func: dec_sequence/7 and dec_sequence/8
 %%-----------------------------------------------------------------
+dec_sequence(Version, Message, 'tk_octet', Len, ByteOrder, Buff, C) ->
+    {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
+    {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
+    <<OctetSeq:Size/binary, Rest2/binary>> = Rest1,
+    {binary_to_list(OctetSeq), Rest2, Len1+4+Size, NewC+4+Size};
+dec_sequence(Version, Message, 'tk_char', Len, ByteOrder, Buff, C) ->
+    {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
+    {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
+    <<OctetSeq:Size/binary, Rest2/binary>> = Rest1,
+    {binary_to_list(OctetSeq), Rest2, Len1+4+Size, NewC+4+Size};
+%% We test if it's a sequence of struct's or unions. By doing this we only
+%% have to look up the IFR-ID once instead of N times (N eq length of sequence).
+dec_sequence(Version, Message, {'tk_struct', IFRId, ShortName, ElementList}, 
+	     Len, ByteOrder, Buff, C) when IFRId /= "", ShortName /= "" ->
+    {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
+    {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
+    case  is_known_struct(ShortName) of
+	true ->
+	    dec_sequence_struct(Version, Rest1, Size, ElementList, Len1 + 4, 
+				ByteOrder, Buff, NewC+4, ShortName);
+	false ->
+	    Name = ifrid_to_name(IFRId, ir_StructDef),
+	    dec_sequence_struct(Version, Rest1, Size, ElementList, Len1 + 4, 
+				ByteOrder, Buff, NewC+4, list_to_atom(Name))
+    end;
+dec_sequence(Version, Message, 
+	     {'tk_union', IFRId, TCName, DiscrTC, Default, ElementList}, 
+	     Len, ByteOrder, Buff, C) when TCName /= 'GIOP_TargetAddress' ->
+    {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
+    {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
+    Name = ifrid_to_name(IFRId, ir_UnionDef),
+    dec_sequence_union(Version, Rest1, Size, DiscrTC, Default, ElementList, Len1 + 4,
+		       ByteOrder, Buff, NewC+4, list_to_atom(Name));
 dec_sequence(Version, Message, TypeCode, Len, ByteOrder, Buff, C) ->
     {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
-    {Size, Rest1} = cdrlib:dec_unsigned_long(Rest, ByteOrder),
+    {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
     dec_sequence(Version, Rest1, Size, TypeCode, Len1 + 4, ByteOrder, Buff, NewC+4).
 
 
@@ -813,6 +804,51 @@ dec_sequence(Version, Message, N, Type, Len, ByteOrder, Buff, C) ->
     {Seq, Rest2, Len2, NewC2} = dec_sequence(Version, Rest1, N - 1,  Type, Len1, ByteOrder, Buff, NewC),
     {[Object | Seq], Rest2, Len2, NewC2}.
 
+dec_sequence_struct(_, Message, 0, Type, Len, ByteOrder, Buff, C, Name) ->
+    {[], Message, Len, C};
+dec_sequence_struct(Version, Message, N, TypeCodeList, Len, ByteOrder, Buff, C, Name) ->
+    {Struct, Rest1, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
+    {Seq, Rest2, Len2, NewC2} = dec_sequence_struct(Version, Rest1, N - 1,  TypeCodeList, Len1, ByteOrder, 
+						    Buff, NewC, Name),
+    {[list_to_tuple([Name |Struct]) | Seq], Rest2, Len2, NewC2}.
+dec_sequence_union(_, Message, 0, DiscrTC, Default, ElementList, Len, ByteOrder, Buff, C, Name) ->
+    {[], Message, Len, C};
+dec_sequence_union(Version, Message, N, DiscrTC, Default, ElementList, Len, ByteOrder, Buff, C, Name) ->
+
+    {Label, Rest1, Len1, NewC} = dec_type(DiscrTC, Version, Message, Len, ByteOrder, Buff, C),
+    Result = dec_union(Version, stringify_enum(DiscrTC, Label), ElementList, Default, 
+				     Rest1, Len1, ByteOrder, Buff, NewC),
+    {Value, Rest2, Len2, NewC3} = case Result of
+		{default, R, L, NewC2} ->
+		    dec_union(Version, default, ElementList, Default, 
+				     R, L, ByteOrder, Buff, NewC2);
+		X ->
+		    X
+	    end,
+    {Seq, Rest3, Len3, NewC4} = dec_sequence_union(Version, Rest2, N - 1, 
+						   DiscrTC, Default, ElementList, 
+						   Len2, ByteOrder, 
+						   Buff, NewC3, Name),
+    {[{Name, Label, Value} | Seq], Rest3, Len3, NewC4}.
+
+%% A special case; when something is encapsulated (i.e. sent as octet-sequence)
+%% we sometimes don not want the result to be converted to a list.
+dec_octet_sequence_bin(Version, Message, Len, ByteOrder, Buff, C) ->
+    {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
+    {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
+    <<OctetSeq:Size/binary, Rest2/binary>> = Rest1,
+    {OctetSeq, Rest2, Len1+4+Size, NewC+4+Size}.
+
+is_known_struct('IOP_IOR') -> true;
+is_known_struct('IOP_TaggedProfile') -> true;
+is_known_struct('IOP_TaggedComponent') -> true;
+is_known_struct('SSLIOP_SSL') -> true;
+is_known_struct('IIOP_Version') -> true;
+is_known_struct('IOP_ServiceContext') -> true;
+is_known_struct('CONV_FRAME_CodeSetContext') -> true;
+is_known_struct('CONV_FRAME_CodeSetComponent') -> true;
+is_known_struct('CONV_FRAME_CodeSetComponentInfo') -> true;
+is_known_struct(_) -> false.
 
 %%-----------------------------------------------------------------
 %% Func: dec_array/5
@@ -828,13 +864,12 @@ dec_array(Version, Message, Size, TypeCode, Len, ByteOrder, Buff, C) ->
 %%-----------------------------------------------------------------
 dec_string(Version, Message, Len, ByteOrder, Buff, C) ->
     {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
-    {Size, Rest1} = cdrlib:dec_unsigned_long(Rest, ByteOrder),
+    {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
     if
 	Size > 0 ->
-	    {String, Rest2, Len2, NewC2} = dec_sequence(Version, Rest1, Size - 1, 'tk_char',
-						 Len1 + 4, ByteOrder, Buff, NewC+4),
-	    {_, Rest3} = cdrlib:dec_octet(Rest2),
-	    {String, Rest3, Len2 + 1, NewC2+1};
+	    DataSize = Size-1,
+	    <<String:DataSize/binary, Null:1/binary, Rest2/binary>> = Rest1,
+	    {binary_to_list(String), Rest2, Len1+4+Size, NewC+4+Size};
 	true ->
 	    {"", Rest1, Len1 + 4, NewC+4}
     end.
@@ -844,41 +879,47 @@ dec_string(Version, Message, Len, ByteOrder, Buff, C) ->
 %%-----------------------------------------------------------------
 %dec_wstring({1,2}, Message, Len, ByteOrder, Buff, C) ->
 %    {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
-%    {Size, Rest1} = cdrlib:dec_unsigned_long(Rest, ByteOrder),
+%    {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
 %    CodeSet = get(wchar),
 %    if
 %	Size > 0, CodeSet == ?ISO_10646_UCS_2_ID ->
 %	    {String, Rest2, Len2, NewC2} = dec_sequence(Version, Rest1, Size - 1, 'tk_wchar',
 %						 Len1 + 4, ByteOrder, Buff, NewC+4),
 %	    %% Remove the NULL character.
-%	    {_, Rest3} = cdrlib:dec_unsigned_short(Rest2, ByteOrder),
+%	    {_, Rest3} = cdrlib:dec_unsigned_short(ByteOrder, Rest2),
 %	    {String, Rest3, Len2 + 2, NewC2+2};
 %	Size > 0 ->
 %	    {String, Rest2, Len2, NewC2} = dec_sequence(Version, Rest1, Size - 1, 'tk_wchar',
 %						 Len1 + 4, ByteOrder, Buff, NewC+4),
-%	    {_, Rest3} = cdrlib:dec_unsigned_short(Rest2, ByteOrder),
+%	    {_, Rest3} = cdrlib:dec_unsigned_short(ByteOrder, Rest2),
 %	    {String, Rest3, Len2 + 2, NewC2+2};
 %	true ->
 %	    {"", Rest1, Len1 + 4, NewC+4}
 %    end;
 dec_wstring(Version, Message, Len, ByteOrder, Buff, C) ->
     {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
-    {Size, Rest1} = cdrlib:dec_unsigned_long(Rest, ByteOrder),
+    {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
     CodeSet = get(wchar),
     if
-	Size > 0, CodeSet == ?ISO_10646_UCS_2_ID ->
-	    {String, Rest2, Len2, NewC2} = dec_sequence(Version, Rest1, Size - 1, 'tk_wchar',
-						 Len1 + 4, ByteOrder, Buff, NewC+4),
-	    %% Remove the NULL character.
-	    {_, Rest3} = cdrlib:dec_unsigned_short(Rest2, ByteOrder),
-	    {String, Rest3, Len2 + 2, NewC2+2};
+%	Size > 0, CodeSet == ?ISO_10646_UCS_2_ID ->
 	Size > 0 ->
 	    {String, Rest2, Len2, NewC2} = dec_sequence(Version, Rest1, Size - 1, 'tk_wchar',
 						 Len1 + 4, ByteOrder, Buff, NewC+4),
-	    {_, Rest3} = cdrlib:dec_unsigned_short(Rest2, ByteOrder),
+	    %% Remove the NULL character.
+	    {_, Rest3} = cdrlib:dec_unsigned_short(ByteOrder, Rest2),
 	    {String, Rest3, Len2 + 2, NewC2+2};
+%	Size == 0, CodeSet == ?ISO_10646_UCS_2_ID ->
+	Size == 0 ->
+	    {"", Rest1, Len1 + 4, NewC+4};
+%	CodeSet == ?ISO_10646_UCS_2_ID ->
 	true ->
-	    {"", Rest1, Len1 + 4, NewC+4}
+	    orber:debug_level_print("[~p] cdr_decode:dec_wstring(~p);",
+				    [?LINE, Rest1], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_NO})
+%	true ->
+%	    orber:debug_level_print("[~p] cdr_decode:dec_wstring(~p); Unsupported CodeSet.",
+%				    [?LINE, CodeSet], ?DEBUG_LEVEL),
+%	    corba:raise(#'CODESET_INCOMPATIBLE'{completion_status=?COMPLETED_NO})
     end.
 
 
@@ -922,42 +963,21 @@ dec_union(Version, Label, [_ | List], Default, Message,  Len, ByteOrder, Buff, C
 dec_struct(Version, "", "", TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
     {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
     {list_to_tuple(Struct), Rest, Len1, NewC};
-dec_struct(Version, IFRId, 'IOP_IOR', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
-    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
-    {list_to_tuple(['IOP_IOR' |Struct]), Rest, Len1, NewC};
-dec_struct(Version, IFRId, 'IOP_TaggedProfile', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
-    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
-    {list_to_tuple(['IOP_TaggedProfile' |Struct]), Rest, Len1, NewC};
-dec_struct(Version, IFRId, 'IOP_TaggedComponent', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
-    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
-    {list_to_tuple(['IOP_TaggedComponent' |Struct]), Rest, Len1, NewC};
-dec_struct(Version, IFRId, 'SSLIOP_SSL', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
-    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
-    {list_to_tuple(['SSLIOP_SSL' |Struct]), Rest, Len1, NewC};
-dec_struct(Version, IFRId, 'IIOP_Version', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
-    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
-    {list_to_tuple(['IIOP_Version' |Struct]), Rest, Len1, NewC};
-dec_struct(Version, IFRId, 'IOP_ServiceContext', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
-    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
-    {list_to_tuple(['IOP_ServiceContext' |Struct]), Rest, Len1, NewC};
-dec_struct(Version, IFRId, 'CONV_FRAME_CodeSetContext', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
-    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
-    {list_to_tuple(['CONV_FRAME_CodeSetContext' |Struct]), Rest, Len1, NewC};
-dec_struct(Version, IFRId, 'CONV_FRAME_CodeSetComponent', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
-    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
-    {list_to_tuple(['CONV_FRAME_CodeSetComponent' |Struct]), Rest, Len1, NewC};
-dec_struct(Version, IFRId, 'CONV_FRAME_CodeSetComponentInfo', TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
-    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
-    {list_to_tuple(['CONV_FRAME_CodeSetComponentInfo' |Struct]), Rest, Len1, NewC};
 dec_struct(Version, [], Name, TypeCodeList, Message, Len, ByteOrder, Buff, C) -> 
-    %% This case is due to that for example Orbix, don't supply the IFRId field in
-    %% struct type codes (used in any)
+    %% This case is used when communicating with ORB:s which don't supply the IFRId
+    %% field in struct type codes (used in any)
     {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
     {list_to_tuple([list_to_atom(Name) |Struct]), Rest, Len1, NewC};
-dec_struct(Version, IFRId, _, TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
-    Name = ifrid_to_name(IFRId, ir_StructDef),
-    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
-    {list_to_tuple([list_to_atom(Name) |Struct]), Rest, Len1, NewC}.
+dec_struct(Version, IFRId, ShortName, TypeCodeList, Message, Len, ByteOrder, Buff, C) ->
+    case is_known_struct(ShortName) of
+	true ->
+	    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
+	    {list_to_tuple([ShortName |Struct]), Rest, Len1, NewC};
+	false ->
+	    Name = ifrid_to_name(IFRId, ir_StructDef),
+	    {Struct, Rest, Len1, NewC} = dec_struct1(Version, TypeCodeList, Message, Len, ByteOrder, Buff, C),
+	    {list_to_tuple([list_to_atom(Name) |Struct]), Rest, Len1, NewC}
+    end.
 
 dec_struct1(_, [], Message, Len, ByteOrder, _, C) ->
     {[], Message, Len, C};
@@ -1043,6 +1063,17 @@ dec_objref(Version, Message, Len, ByteOrder, Buff, C) ->
 %%-----------------------------------------------------------------
 %% Func: dec_system_exception/4 and dec_user_exception/4
 %%-----------------------------------------------------------------
+dec_system_exception(Version, Message, Len, ByteOrder) when Version == {1,2} ->
+    {Rest0, Len0, Counter} = dec_align(Message, Len, 8, Len),
+    {TypeId, Rest1, Len1} = dec_type({'tk_string', 0}, Version, Rest0, Len0, ByteOrder),
+    Name = get_system_exception_name(TypeId),
+    {Struct, Rest2, Len2} = dec_exception_1(Version, [{"minor",'tk_ulong'},
+						      {"completed",
+					      {'tk_enum', "", "completion_status",
+					       ["COMPLETED_YES", "COMPLETED_NO",
+						"COMPLETED_MAYBE"]}}],
+					    Rest1, Len1, ByteOrder),
+    {list_to_tuple([list_to_atom(Name), "" |Struct]), Len2};
 dec_system_exception(Version, Message, Len, ByteOrder) ->
     {TypeId, Rest1, Len1} = dec_type({'tk_string', 0}, Version, Message, Len, ByteOrder),
     Name = get_system_exception_name(TypeId),
@@ -1054,6 +1085,14 @@ dec_system_exception(Version, Message, Len, ByteOrder) ->
 					    Rest1, Len1, ByteOrder),
     {list_to_tuple([list_to_atom(Name), "" |Struct]), Len2}.
 
+dec_user_exception(Version, Message, Len, ByteOrder) when Version == {1,2} ->
+    {Rest0, Len0, Counter} = dec_align(Message, Len, 8, Len),
+    {TypeId, Rest1, Len1} = dec_type({'tk_string', 0}, Version, Rest0, Len0, ByteOrder),
+    Name = ifrid_to_name(TypeId, ir_ExceptionDef),
+    {'tk_except', _, _, ElementList} = get_user_exception_type(TypeId),
+    {Struct, Rest2, Len2} = dec_exception_1(Version, ElementList, Rest1, Len1,
+					    ByteOrder),
+    {list_to_tuple([list_to_atom(Name), TypeId |Struct]), Len2};
 dec_user_exception(Version, Message, Len, ByteOrder) ->
     {TypeId, Rest1, Len1} = dec_type({'tk_string', 0}, Version, Message, Len, ByteOrder),
     Name = ifrid_to_name(TypeId, ir_ExceptionDef),
@@ -1092,9 +1131,16 @@ get_user_exception_type(TypeId) ->
     end.
 
 get_system_exception_name(TypeId) ->
-    Start = string:chr(TypeId, $/),
-    End = string:rchr(TypeId, $:),
-    string:substr(TypeId, Start+1, End - (Start+1)).
+    case string:tokens(TypeId, ":/") of
+	[IDL, OMGORG, CORBA, Name, Version] ->
+	    Name;
+	[IDL, CORBA, Name, Version] ->
+	    Name;
+	_ ->
+             %% The CORBA-spec states that this exception should be raised if
+             %% it's a system exception we do not support.
+	    "UNKNOWN"
+    end.
 
 %%-----------------------------------------------------------------
 %% Func: dec_type_code/4
@@ -1142,18 +1188,18 @@ dec_type_code(13, Version, Message, Len, ByteOrder, _, C) ->
     {'tk_Principal', Message, Len, C};
 dec_type_code(14, Version, Message, Len, ByteOrder, Buff, C) ->
     {ComplexParams, Message1, Len1, Ex} = decode_complex_tc_parameters(Version, Message, Len, ByteOrder),
-    %% Decode marshalled parameters, eg ge a byteorder first
+    %% Decode marshalled parameters, eg get the byteorder first
     {ByteOrder1, Rest1} = dec_byte_order(ComplexParams),
-    {{RepId, Name}, [], Len2, NewC} = dec_type({'tk_struct', "", "",
+    {{RepId, Name}, <<>>, Len2, NewC} = dec_type({'tk_struct', "", "",
 					    [{"repository ID", {'tk_string', 0}},
 					     {"name", {'tk_string', 0}}]},
 					   Version, Rest1, 1, ByteOrder1, Buff, C+1+Ex),
     {{'tk_objref', RepId, Name}, Message1, Len1, NewC};
 dec_type_code(15, Version, Message, Len, ByteOrder, Buff, C) ->
     {ComplexParams, Message1, Len1, Ex} = decode_complex_tc_parameters(Version, Message, Len, ByteOrder),
-    %% Decode marshalled parameters, eg ge a byteorder first
+    %% Decode marshalled parameters, eg get the byteorder first
     {ByteOrder1, Rest1} = dec_byte_order(ComplexParams),
-    {{RepId, Name, ElementList}, [], Len2, NewC} =
+    {{RepId, Name, ElementList}, <<>>, Len2, NewC} =
 	dec_type({'tk_struct', "", "",
 		  [{"repository ID", {'tk_string', 0}},
 		   {"name", {'tk_string', 0}},
@@ -1166,7 +1212,7 @@ dec_type_code(15, Version, Message, Len, ByteOrder, Buff, C) ->
     {{'tk_struct', RepId, Name, ElementList}, Message1, Len1, NewC};
 dec_type_code(16, Version, Message, Len, ByteOrder, Buff, C) ->
     {ComplexParams, Message1, Len1, Ex} = decode_complex_tc_parameters(Version, Message, Len, ByteOrder),
-    %% Decode marshalled parameters, eg ge a byteorder first
+    %% Decode marshalled parameters, eg get the byteorder first
     {ByteOrder1, Rest1} = dec_byte_order(ComplexParams),
     {{RepId, Name, DiscrTC, Default}, Rest2, RestLen2, NewC} =
 	dec_type({'tk_struct', "", "",
@@ -1175,7 +1221,7 @@ dec_type_code(16, Version, Message, Len, ByteOrder, Buff, C) ->
 		   {"discriminant type", 'tk_TypeCode'},
 		   {"default used", 'tk_long'}]},
 		 Version, Rest1, 1, ByteOrder1, Buff, C+1+Ex),
-    {ElementList, [], RestLen3, NewC2} =
+    {ElementList, <<>>, RestLen3, NewC2} =
 	dec_type({'tk_sequence', {'tk_struct', "","",
 				  [{"label value", DiscrTC},
 				   {"member name", {'tk_string', 0}},
@@ -1191,9 +1237,9 @@ dec_type_code(16, Version, Message, Len, ByteOrder, Buff, C) ->
     {{'tk_union', RepId, Name, DiscrTC, Default, NewElementList}, Message1, Len1, NewC2};
 dec_type_code(17, Version, Message, Len, ByteOrder, Buff, C) ->
     {ComplexParams, Message1, Len1, Ex} = decode_complex_tc_parameters(Version, Message, Len, ByteOrder),
-    %% Decode marshalled parameters, eg ge a byteorder first
+    %% Decode marshalled parameters, eg get the byteorder first
     {ByteOrder1, Rest1} = dec_byte_order(ComplexParams),
-    {{RepId, Name, ElementList}, [], Len2, NewC} =
+    {{RepId, Name, ElementList}, <<>>, Len2, NewC} =
 	dec_type({'tk_struct', "", "",
 		  [{"repository ID", {'tk_string', 0}},
 		   {"name", {'tk_string', 0}},
@@ -1207,18 +1253,18 @@ dec_type_code(18, Version, Message, Len, ByteOrder, Buff, C) ->
     {{'tk_string', MaxLength}, Message1, Len1, NewC};
 dec_type_code(19, Version, Message, Len, ByteOrder, Buff, C) ->
     {ComplexParams, Message1, Len1, Ex} = decode_complex_tc_parameters(Version, Message, Len, ByteOrder),
-    %% Decode marshalled parameters, eg ge a byteorder first
+    %% Decode marshalled parameters, eg get the byteorder first
     {ByteOrder1, Rest1} = dec_byte_order(ComplexParams),
-    {{ElemTC, MaxLength}, [], Len2, NewC} =
+    {{ElemTC, MaxLength}, <<>>, Len2, NewC} =
 	dec_type({'tk_struct', "", "", [{"element type", 'tk_TypeCode'},
 					{"max length", 'tk_ulong'}]},
 		 Version, Rest1, 1, ByteOrder1, Buff, C+1+Ex),
     {{'tk_sequence', ElemTC, MaxLength}, Message1, Len1, NewC};
 dec_type_code(20, Version, Message, Len, ByteOrder, Buff, C) ->
     {ComplexParams, Message1, Len1, Ex} = decode_complex_tc_parameters(Version, Message, Len, ByteOrder),
-    %% Decode marshalled parameters, eg ge a byteorder first
+    %% Decode marshalled parameters, eg get the byteorder first
     {ByteOrder1, Rest1} = dec_byte_order(ComplexParams),
-    {{ElemTC, Length}, [], Len2, NewC} =
+    {{ElemTC, Length}, <<>>, Len2, NewC} =
 	dec_type({'tk_struct', "", "", [{"element type", 'tk_TypeCode'},
 					{"length", 'tk_ulong'}]},
 		 Version, Rest1, 1, ByteOrder1, Buff, C+1+Ex),
@@ -1227,7 +1273,7 @@ dec_type_code(21, Version, Message, Len, ByteOrder, Buff, C) ->
     {ComplexParams, Message1, Len1, Ex} = decode_complex_tc_parameters(Version, Message, Len, ByteOrder),
     %% Decode marshalled parameters, eg ge a byteorder first
     {ByteOrder1, Rest1} = dec_byte_order(ComplexParams),
-    {{RepId, Name, TC}, [], Len2, NewC} =
+    {{RepId, Name, TC}, <<>>, Len2, NewC} =
 	dec_type({'tk_struct', "", "", [{"repository ID", {'tk_string', 0}},
 					{"name", {'tk_string', 0}},
 					{"TypeCode", 'tk_TypeCode'}]},
@@ -1235,9 +1281,9 @@ dec_type_code(21, Version, Message, Len, ByteOrder, Buff, C) ->
     {{'tk_alias', RepId, Name, TC}, Message1, Len1, NewC};
 dec_type_code(22, Version, Message, Len, ByteOrder, Buff, C) ->
     {ComplexParams, Message1, Len1, Ex} = decode_complex_tc_parameters(Version, Message, Len, ByteOrder),
-    %% Decode marshalled parameters, eg ge a byteorder first
+    %% Decode marshalled parameters, eg get the byteorder first
     {ByteOrder1, Rest1} = dec_byte_order(ComplexParams),
-    {{RepId, Name, ElementList}, [], Len2, NewC} =
+    {{RepId, Name, ElementList}, <<>>, Len2, NewC} =
 	dec_type({'tk_struct', "", "",
 		  [{"repository ID", {'tk_string', 0}},
 		   {"name", {'tk_string', 0}},
@@ -1255,8 +1301,9 @@ dec_type_code(27, Version, Message, Len, ByteOrder, Buff, C) ->
 dec_type_code(16#ffffffff, Version, Message, Len, ByteOrder, Buff, C) ->  %% placeholder
     {Indirection, Message1, Len1, NewC} =
 	dec_type('tk_long', Version, Message, Len, ByteOrder, Buff, C),
-    SubList = lists:nthtail(C+Indirection, Buff),
-    {TC, _, _, _} = dec_type_code(Version, SubList, C+Indirection, ByteOrder, Buff, C+Indirection),
+    Position = C+Indirection,
+    <<_:Position/binary, SubBuff/binary>> = Buff,
+    {TC, _, _, _} = dec_type_code(Version, SubBuff, Position, ByteOrder, Buff, Position),
     {TC, Message1, Len1, NewC};
 dec_type_code(Type, _, _, _, _, _, _) -> 
     orber:debug_level_print("[~p] cdr_decode:dec_type_code(~p); No match.", 
@@ -1271,10 +1318,9 @@ check_enum(_) ->
 
 decode_complex_tc_parameters(Version, Message, Len, ByteOrder) ->
     {Rest, Len1, NewC} = dec_align(Message, Len, 4, 0),
-    {Size, Rest1} = cdrlib:dec_unsigned_long(Rest, ByteOrder),
-    {ComplexParams, Message2, Len2, _} =
-	dec_sequence(Version, Rest1, Size, 'tk_octet', Len1 + 4, ByteOrder, [], 0),
-    {ComplexParams, Message2, Len2, NewC+4}.
+    {Size, Rest1} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
+    <<OctetSeq:Size/binary, Rest2/binary>> = Rest1,
+    {OctetSeq, Rest2, Len1+4+Size, NewC+4}.
 
 %%-----------------------------------------------------------------
 %% Func: dec_align/3
@@ -1290,12 +1336,9 @@ dec_align(R, Len, Alignment, C) ->
     if Rem == 0 ->
 	    {R, Len, C};
        true ->
-	    {remove_bytes(R, Alignment - Rem), Len + (Alignment - Rem), C + (Alignment - Rem)}
+	    Diff = Alignment - Rem,
+	    <<_:Diff/binary,Rest/binary>> = R,
+	    {Rest, Len + Diff, C + Diff}
     end.
 
-remove_bytes(R, 0) ->
-    R;
-remove_bytes([_|R],N) ->
-    remove_bytes(R, N - 1).
-
-
+%%---------------- EOF MODULE ----------------------------------------

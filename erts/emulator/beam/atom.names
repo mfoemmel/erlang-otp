@@ -52,6 +52,7 @@ atom EXIT='EXIT'
 atom all
 atom allocated
 atom allocated_areas
+atom allocator
 atom atom_desc
 atom atom_space
 atom atom_table
@@ -96,6 +97,7 @@ atom dist
 atom Div='/'
 atom div
 atom dlink
+atom dlmalloc
 atom dmonitor_node
 atom dmonitor_p
 atom DollarDollar='$$'
@@ -104,6 +106,7 @@ atom DollarDictionary='$dictionary'
 atom dsend
 atom dunlink
 atom duplicate_bag
+atom elib_malloc
 atom emulator
 atom enable_trace
 atom env
@@ -123,6 +126,7 @@ atom export_table
 atom exports
 atom false
 atom fd
+atom fix_alloc
 atom fixed_deletion_desc
 atom flags
 atom fullsweep_after
@@ -140,6 +144,7 @@ atom get_seq_token
 atom get_tcw
 atom getenv
 atom getting_linked
+atom glibc
 atom global
 atom Gt='>'
 atom heap_size
@@ -164,6 +169,7 @@ atom keep_zombies
 atom keypos
 atom kill
 atom killed
+atom known
 atom label
 atom last_calls
 atom Le='=<'
@@ -186,6 +192,9 @@ atom message_queue_len
 atom messages
 atom min_heap_size
 atom Minus='-'
+atom mmap
+atom mmap_max
+atom mmap_threshold
 atom module
 atom module_desc
 atom module_info
@@ -282,15 +291,18 @@ atom system_version
 atom SYSTEM='SYSTEM'
 atom table
 atom table_desc
+atom this
 atom thread_pool_size
 atom timeout
 atom timeout_value
 atom Times='*'
 atom timestamp
+atom top_pad
 atom trace trace_ts traced 
 atom trace_control_word
 atom tracer
 atom trap_exit
+atom trim_threshold
 atom true
 atom type
 atom undef
@@ -306,6 +318,7 @@ atom use_stdio
 atom uniq
 atom value
 atom version
+atom visible
 atom waiting
 atom wall_clock
 atom xor

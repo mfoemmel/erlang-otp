@@ -80,10 +80,10 @@ $(OBJDIR)/odbclli_cb.o: odbclli_cb.c
 	$(BINDIR)/convert_macros $@
 
 $(GEN_H_FILES) $(GEN_CSRC): odbclli.idl
-	$(ERLC) $(EICFLAGS) +'{be, c_server}' odbclli.idl
+	$(ERLC) $(EICFLAGS) +'{be,c_server}' odbclli.idl
 
 $(GEN_ERLSRC) $(GEN_HRLS): odbclli.idl
-	$(ERLC) $(EICFLAGS) +'{be, erl_genserv}' odbclli.idl
+	$(ERLC) $(EICFLAGS) +'{be,erl_genserv}' odbclli.idl
 
 $(GEN_OBJS):	$(GEN_CSRC)
 	$(CC) $(CFLAGS) -o $@ -c $(@:$(OBJDIR)/%.o=%.c)

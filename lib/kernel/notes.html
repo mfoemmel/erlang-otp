@@ -114,6 +114,14 @@ start on some platforms. This has now been fixed.
 Aux Id: Seq 5127
 
 
+<LI>
+A close of a tcp socket could be delayed up to 5
+seconds after all pending output had been sent. Now
+the socket is closed immediately after all pending
+output has been sent.
+<br>Own Id: OTP-3963<br>
+Aux Id: OTP-3924
+
 </UL>
 <H3>Improvements and new features</H3>
 
@@ -197,6 +205,13 @@ pointed out.
 <br>Own Id: OTP-3747<br>
 Aux Id: OTP-3592, OTP-3744
 
+<LI>
+Hidden nodes and hidden global groups have been
+introduced. This makes it possible to establish hidden
+connections between Erlang nodes. See <code>global_group(3)</code>,
+and <code>erl(1)</code>.
+<br>Own Id: OTP-3963<br>
+Aux Id: OTP-3916
 
 </UL>
 

@@ -37,7 +37,7 @@ get_type(M,Typename,Tellname) ->
 	    {asn1_error,{not_found,{M,Typename}}};
 	Tdef when record(Tdef,typedef) ->
 	    Type = Tdef#typedef.typespec,
-	    get_type(M,Typename,Type,Tellname);
+	    get_type(M,[Typename],Type,Tellname);
 	Err ->
 	    {asn1_error,{other,Err}}
     end.
@@ -58,7 +58,7 @@ get_type(M,Typename,Type,Tellname) when record(Type,type) ->
 	    get_type_prim(Type);
 	'ASN1_OPEN_TYPE' ->
 	    case  Type#type.constraint of
-		[#typereference{val=TrefConstraint}] ->
+		[#'Externaltypereference'{type=TrefConstraint}] ->
 		    get_type(M,TrefConstraint,no);
 		_ ->
 		    "open_type"
@@ -67,14 +67,23 @@ get_type(M,Typename,Type,Tellname) when record(Type,type) ->
 	    get_type_constructed(M,Typename,InnerType,Type)
     end;
 get_type(M,Typename,#'ComponentType'{name = Name,prop= Prop,typespec = Type},Tellname)  ->
-    get_type(M,list_to_atom(lists:concat([Typename,"_",Name])),Type,no);
+    get_type(M,[Name|Typename],Type,no);
 get_type(_,_,_,_) -> % 'EXTENSIONMARK'
     undefined.
 
 get_inner(A) when atom(A) -> A;    
 get_inner(Ext) when record(Ext,'Externaltypereference') -> Ext;    
 get_inner({typereference,_Pos,Name}) -> Name;
-get_inner(T) when tuple(T) -> element(1,T).
+get_inner(T) when tuple(T) -> 
+    case asn1ct_gen:get_inner(T) of
+	{fixedtypevaluefield,_,Type} ->
+	    Type#type.def;
+	{typefield,FieldName} -> 
+	    'ASN1_OPEN_TYPE';
+	Other ->
+	    Other
+    end.
+%%get_inner(T) when tuple(T) -> element(1,T).
 
 
 
@@ -87,20 +96,28 @@ get_type_constructed(M,Typename,InnerType,D) when record(D,type) ->
 	'CHOICE' ->
 	    get_choice(M,Typename,D);
 	'SEQUENCE OF' ->
-	    get_sequence_of(M,Typename,D,"_SEQOF");
+	    {_,Type} = D#type.def,
+	    NameSuffix = asn1ct_gen:constructed_suffix(InnerType,Type#type.def),
+	    get_sequence_of(M,Typename,D,NameSuffix);
 	'SET OF' ->
-	    get_sequence_of(M,Typename,D,"_SETOF");
+	    {_,Type} = D#type.def,
+	    NameSuffix = asn1ct_gen:constructed_suffix(InnerType,Type#type.def),
+	    get_sequence_of(M,Typename,D,NameSuffix);
 	Other ->
 	    exit({nyi,InnerType})
     end.
 
 get_sequence(M,Typename,Type) ->
-    {_SEQorSET,CompList} = Type#type.def,
+    {_SEQorSET,CompList} = 
+	case Type#type.def of
+	    #'SEQUENCE'{components=Cl} -> {'SEQUENCE',Cl};
+	    #'SET'{components=Cl} -> {'SET',Cl}
+	end,
     case get_components(M,Typename,CompList) of
         [] ->
-            {Typename};
+            {list_to_atom(asn1ct_gen:list2rname(Typename))};
         C ->
-            list_to_tuple([Typename|C])
+            list_to_tuple([list_to_atom(asn1ct_gen:list2rname(Typename))|C])
     end.
 
 get_components(M,Typename,{Root,Ext}) ->
@@ -116,8 +133,6 @@ get_components(M,Typename,[]) ->
 
 get_choice(M,Typename,Type) ->
     {'CHOICE',TCompList} = Type#type.def,
-%%    io:format("asn1ct_value:get_choice/3: M = ~w, Typename = ~w~n"
-%%	      "  Type = ~w~n  TCompList = ~w~n",[M,Typename,Type,TCompList]),
     case TCompList of
 	[] -> 
 	    {asn1_EMPTY,asn1_EMPTY};
@@ -135,7 +150,7 @@ get_sequence_of(M,Typename,Type,TypeSuffix) ->
     {_,Oftype} = Type#type.def,
     C = Type#type.constraint,
     S = size_random(C),
-    NewTypeName = list_to_atom(lists:concat([Typename,TypeSuffix])),
+    NewTypeName = [TypeSuffix|Typename],
     gen_list(M,NewTypeName,Oftype,no,S).
 
 gen_list(M,Typename,Oftype,Tellname,0) ->
@@ -157,12 +172,13 @@ get_type_prim(D) ->
 		    lists:nth(random(length(NN)),NN)
 	    end;
 	{'ENUMERATED',NamedNumberList} ->
-	    case NamedNumberList of
-		{N1,N2} ->
-		    NNew = N1 ++ N2;
-		_->
-		    NNew = NamedNumberList
-	    end,
+	    NNew=
+		case NamedNumberList of
+		    {N1,N2} ->
+			N1 ++ N2;
+		    _->
+			NamedNumberList
+		end,
 	    NN = [X||{X,Y} <- NNew],
 	    case NN of
 		[] ->
@@ -299,48 +315,6 @@ adjust_list1(Len,Orig,[],Acc) ->
 adjust_list1(Len,Orig,[Oh|Ot],Acc) ->
     adjust_list1(Len-1,Orig,Ot,[Oh|Acc]).
 
-%% for future use
-%allowed_constraint('BIT STRING') -> c_return([yes,yes,no,yes,no,no,no]);
-%allowed_constraint('BOOLEAN') -> c_return([yes,yes,no,no,no,no,no]);
-%allowed_constraint('CHOICE') -> c_return([yes,yes,no,no,no,no,yes]);
-%allowed_constraint('EMBEDDED-PDV') -> c_return([yes,no,no,no,no,no,yes]);
-%allowed_constraint('ENUMERATED') -> c_return([yes,yes,no,no,no,no,no]);
-%allowed_constraint('EXTERNAL') -> c_return([yes,no,no,no,no,no,yes]);
-%allowed_constraint('INSTANCE OF') -> c_return([yes,yes,no,no,no,no,yes]);
-%allowed_constraint('INTEGER') -> c_return([yes,yes,yes,no,no,no,no]);
-%allowed_constraint('NULL') -> c_return([yes,yes,no,no,no,no,no]);
-%allowed_constraint('OBJECT-CLASS-FIELD-TYPE') -> c_return([yes,yes,no,no,no,no,no]);
-%allowed_constraint('OBJECT IDENTIFIER') -> c_return([yes,yes,no,no,no,no,no]);
-%allowed_constraint('OCTET STRING') -> c_return([yes,yes,no,yes,no,no,no]);
-%allowed_constraint('OPEN TYPE') -> c_return([no,no,no,no,no,yes,no]);
-%allowed_constraint('REAL') -> c_return([yes,yes,yes,no,no,no,yes]);
-%allowed_constraint('BMPString') -> c_return([yes,yes,yes,yes,yes,no,no]);
-%allowed_constraint('IA5String') -> c_return([yes,yes,yes,yes,yes,no,no]);
-%allowed_constraint('NumericString') -> c_return([yes,yes,yes,yes,yes,no,no]);
-%allowed_constraint('PrintableString') -> c_return([yes,yes,yes,yes,yes,no,no]);
-%allowed_constraint('VisibleString') -> c_return([yes,yes,yes,yes,yes,no,no]);
-%allowed_constraint('UniversalString') -> c_return([yes,yes,yes,yes,yes,no,no]);
-%allowed_constraint('SEQUENCE') -> c_return([yes,yes,no,no,no,no,yes]);
-%allowed_constraint('SEQUENCE OF') -> c_return([yes,yes,no,yes,no,no,yes]);
-%allowed_constraint('SET') -> c_return([yes,yes,no,no,no,no,yes]);
-%allowed_constraint('SET OF') -> c_return([yes,yes,no,yes,no,no,yes]);
-%allowed_constraint(_) -> c_return([yes,no,no,yes,no,no,yes]). % Unrestricted charstrings
-%
-%c_return(L) ->
-%    c_return1(['SingleValue',
-%	       'ContainedSubtype',
-%	       'ValueRange',
-%	       'SizeConstraint',
-%	       'PermittedAlphabet',
-%	       'Typeconstraint',
-%	       'InnerSubtyping'],L).
-%
-%c_return1([Nh|Nt],[no|Ct]) ->
-%    c_return1(Nt,Ct);
-%c_return1([Nh|Nt],[yes|Ct]) ->
-%    [Nh|c_return1(Nt,Ct)];
-%c_return1([],_) ->
-%    [].
 
 get_constraint(C,Key) ->
     case lists:keysearch(Key,1,C) of

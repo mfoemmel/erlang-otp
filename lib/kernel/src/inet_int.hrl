@@ -83,6 +83,10 @@
 -define(INET_REQ_GETIFLIST,     21).
 -define(INET_REQ_IFGET,         22).
 -define(INET_REQ_IFSET,         23).
+-define(INET_REQ_SUBSCRIBE,     24).
+
+%% subscribe codes
+-define(INET_SUBS_EMPTY_OUT_Q,  1).
 
 %% reply codes
 -define(INET_REP_ERROR,    0).

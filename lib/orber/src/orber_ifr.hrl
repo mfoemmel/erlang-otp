@@ -34,10 +34,13 @@
 % Existence checking
 -define(existence_checking, true).
 -ifdef(existence_checking).
--define(exists_check(Thing,Thing_ID),
-	orber_ifr_utils:existence_check(Thing,Thing_ID)).
+%-define(exists_check(Thing,Thing_ID),
+%	orber_ifr_utils:existence_check(Thing,Thing_ID)).
+-define(exists_check(Thing_ID, Tab, Field),
+	orber_ifr_utils:existence_check(Thing_ID, Tab, Field)).
 -else.
--define(exists_check(Thing,Thing_ID), ok).
+%-define(exists_check(Thing,Thing_ID), ok).
+-define(exists_check(Thing_ID, Tab, Field), ok).
 -endif.
 
 % Raise an IFR exception

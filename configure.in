@@ -109,14 +109,30 @@ AC_ARG_ENABLE(erlang-mandir,
   esac ], erl_mandir='$(ERLANG_ILIBDIR)/man')
 AC_SUBST(erl_mandir)
 
+
+
+#
+# dlmalloc option to pass to "erts/autoconf/configure"
+#
+#
+AC_ARG_ENABLE(dlmalloc,
+[  --enable-dlmalloc       use dlmalloc instead of normal malloc],
+[ case "$enableval" in
+    no) dlmalloc_option="--disable-dlmalloc" ;;
+    *)  dlmalloc_option="--enable-dlmalloc" ;;
+  esac ], dlmalloc_option="")
+
+
+
 #
 # Read options for SSL. Pass this information to "erts/autoconf/configure"
 #
 AC_ARG_WITH(ssl,
-[  --with-ssl=PATH           specify location of openSSL/ssleay include and lib
-  --with-ssl                use SSL (default)
-  --without-ssl             don't use SSL],
+[  --with-ssl=PATH         specify location of openSSL/ssleay include and lib
+  --with-ssl              use SSL (default)
+  --without-ssl           don't use SSL],
 [ssl_arg="--with-ssl=$with_ssl"])
+
 
 dnl
 dnl This could (should) of course be done with AC_CONFIG_SUBDIRS, but well
@@ -126,17 +142,39 @@ echo "Running configure in erts/autoconf..."
 #
 # The parameters are basically the same as in erts/autoconf/Makefile
 #
-(cd erts/autoconf && \
- if test ! -d ${TARGET}; then mkdir ${TARGET}; fi; \
- /bin/sh -c "ERL_TOP=${ERL_TOP} \
-            CONFIG_STATUS=${ERL_TOP}/erts/autoconf/${TARGET}/config.status \
-            ./configure \
+if test ! -d system; then
+  (cd erts/autoconf && \
+   if test ! -d ${TARGET}; then mkdir ${TARGET}; fi; \
+   /bin/sh -c "ERL_TOP=${ERL_TOP} \
+	      CONFIG_STATUS=${ERL_TOP}/erts/autoconf/${TARGET}/config.status \
+	      ./configure \
 		$ssl_arg \
-                --cache-file ${ERL_TOP}/erts/autoconf/${TARGET}/config.cache \
-                --srcdir=${ERL_TOP}/erts" \
-)
+		$dlmalloc_option \
+		--cache-file ${ERL_TOP}/erts/autoconf/${TARGET}/config.cache \
+		--srcdir=${ERL_TOP}/erts" \
+  )
+
+  if test $? -ne 0 ; then
+    AC_MSG_ERROR([Configure in erts failed])
+  fi
+fi
 
 export ERL_TOP
 AC_CONFIG_SUBDIRS(lib)
 
 AC_OUTPUT(Makefile)
+
+pattern="lib/*/SKIP"
+files=`echo $pattern`
+if test "$files" != "$pattern"; then
+  echo '*********************************************************************'
+  echo '**********************  APPLICATIONS DISABLED  **********************'
+  echo '*********************************************************************'
+  echo
+  for skipfile in $files; do
+    app=`dirname $skipfile`; app=`basename $app`
+    printf "%-15s: " $app; cat $skipfile
+  done
+  echo
+  echo '*********************************************************************'
+fi

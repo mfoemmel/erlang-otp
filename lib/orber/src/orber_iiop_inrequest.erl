@@ -144,16 +144,18 @@ send_reply(Reply, SocketType, Socket) ->
 
 
 
-call_interceptors(SocketType, {basic, PIs},
+call_interceptors(SocketType, {native, Ref, PIs},
 		  Version, ReqHdr, Rest, Len, ByteOrder, Msg) ->
-    NewRest = orber_pi:preinvoke(PIs, Rest),
-    case decode_body(Version, ReqHdr, NewRest, Len, ByteOrder, Msg, enc_reply_split) of
+    NewRest = orber_pi:in_request_enc(PIs, ReqHdr, Ref, Rest),
+    case decode_body(Version, ReqHdr, NewRest, Len, ByteOrder, Msg, enc_reply) of
 	{Version, Hdr, Par, TypeCodes} ->
-	    Result = invoke_request(Hdr, Par, SocketType, TypeCodes),
+	    NewPar = orber_pi:in_request(PIs, ReqHdr, Ref, Par),
+	    ResultInv = invoke_request(Hdr, NewPar, SocketType, TypeCodes),
+	    Result = orber_pi:out_reply(PIs, ReqHdr, Ref, ResultInv),
 	    {ReplyHdr, Reply, HdrL, BodyL, Flags} = 
 		evaluate_request(Version, ReqHdr, Result, TypeCodes, enc_reply_split),
-	    NewReply = orber_pi:postinvoke(PIs, Reply),
-	    MessSize = HdrL+length(NewReply)-BodyL,
+	    NewReply = orber_pi:out_reply_enc(PIs, ReqHdr, Ref, Reply),
+	    MessSize = HdrL+size(NewReply),
 	    cdr_encode:enc_giop_message_header(Version, 'reply', Flags, 
 					       MessSize, [ReplyHdr|NewReply]);
 	Other ->
@@ -167,23 +169,7 @@ call_interceptors(SocketType, {portable, PIs}, Version, ReqHdr, Rest, Len,
 	    evaluate_request(Version, ReqHdr, Result, TypeCodes, enc_reply);
 	Other ->
 	    Other
-    end;
-call_interceptors(SocketType, {both, PIs}, Version, ReqHdr, Rest, Len, 
-		  ByteOrder, Msg) ->
-    NewRest = orber_pi:preinvoke(PIs, Rest),
-    case decode_body(Version, ReqHdr, NewRest, Len, ByteOrder, Msg, enc_reply_split) of
-	{Version, Hdr, Par, TypeCodes} ->
-	    Result = invoke_request(Hdr, Par, SocketType, TypeCodes),
-	    {ReplyHdr, Reply, HdrL, BodyL, Flags} = 
-		evaluate_request(Version, ReqHdr, Result, TypeCodes, enc_reply_split),
-	    NewReply = orber_pi:postinvoke(PIs, Reply),
-	    MessSize = HdrL+length(NewReply)-BodyL,
-	    cdr_encode:enc_giop_message_header(Version, 'reply', Flags, 
-					       MessSize, [ReplyHdr|NewReply]);
-	Other ->
-	    Other
     end.
-
 
 %%-----------------------------------------------------------------
 %% Func: decode_body/2

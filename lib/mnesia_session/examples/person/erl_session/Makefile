@@ -105,7 +105,7 @@ $(EBIN)/%.$(EMULATOR): $(GEN_OUT_DIR)/%.erl
 
 $(GEN_FILES): $(PERSON_IDL)
 	$(ERLC) $(ERL_FLAGS)  $(ERL_COMPILE_FLAGS) \
-	+'{be, erl_genserv}' +'{outdir, "./gen_files"}' \
+	+'{be,erl_genserv}' +'{outdir,"./gen_files"}' \
 	$(PERSON_IDL)
 
 # ----------------------------------------------------

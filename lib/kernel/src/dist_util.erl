@@ -65,10 +65,51 @@
 	       ticked = 0
 	       }).
 
+remove_flag(Flag, Flags) ->
+    case Flags band Flag of
+	0 ->
+	    Flags;
+	_ ->
+	    Flags - Flag
+    end.
+    
 
-handshake_other_started(HSData) ->
-    {Flags,Node,Version} = recv_name(HSData),
-    NewHSData = HSData#hs_data{other_flags = Flags,
+adjust_flags(ThisFlags, OtherFlags) ->
+    case (?DFLAG_PUBLISHED band ThisFlags) band OtherFlags of
+	0 ->
+	    {remove_flag(?DFLAG_PUBLISHED, ThisFlags),
+	     remove_flag(?DFLAG_PUBLISHED, OtherFlags)};
+	_ ->
+	    {ThisFlags, OtherFlags}
+    end.
+
+publish_flag(hidden, _) ->
+    0;
+publish_flag(_, OtherNode) ->
+    case net_kernel:publish_on_node(OtherNode) of
+	true ->
+	    ?DFLAG_PUBLISHED;
+	_ ->
+	    0
+    end.
+
+make_this_flags(RequestType, OtherNode) ->
+    publish_flag(RequestType, OtherNode) bor
+	?DFLAG_ATOM_CACHE bor
+	?DFLAG_EXTENDED_REFERENCES bor
+	?DFLAG_DIST_MONITOR bor
+	?DFLAG_FUN_TAGS bor
+	?DFLAG_DIST_MONITOR_NAME bor
+	?DFLAG_HIDDEN_ATOM_CACHE.
+
+
+handshake_other_started(#hs_data{request_type = ReqType} = HSData) ->
+    {PreOtherFlags,Node,Version} = recv_name(HSData),
+    PreThisFlags = make_this_flags(ReqType, Node),
+    {ThisFlags, OtherFlags} = adjust_flags(PreThisFlags,
+					   PreOtherFlags),
+    NewHSData = HSData#hs_data{this_flags = ThisFlags,
+			       other_flags = OtherFlags,
 			       other_version = Version,
 			       other_node = Node,
 			       other_started = true},
@@ -232,16 +273,22 @@ flush_down() ->
 	    ok
     end.
 
-handshake_we_started(#hs_data{other_node = Node,
-			      other_version = Version} = HSData) ->
+handshake_we_started(#hs_data{request_type = ReqType,
+			      other_node = Node,
+			      other_version = Version} = PreHSData) ->
+    PreThisFlags = make_this_flags(ReqType, Node),
+    HSData = PreHSData#hs_data{this_flags = PreThisFlags},
     send_name(HSData),
     recv_status(HSData),
-    {Flags, NodeA, VersionA, ChallengeA} = recv_challenge(HSData),
+    {PreOtherFlags, NodeA, VersionA, ChallengeA} = recv_challenge(HSData),
     if Node =/= NodeA -> ?shutdown(no_node);
        Version =/= VersionA -> ?shutdown(no_node);
        true -> true
     end,
-    NewHSData = HSData#hs_data{other_flags = Flags, 
+    {ThisFlags, OtherFlags} = adjust_flags(PreThisFlags,
+					   PreOtherFlags),
+    NewHSData = HSData#hs_data{this_flags = ThisFlags,
+			       other_flags = OtherFlags, 
 			       other_started = false}, 
     MyChallenge = gen_challenge(),
     {MyCookie,HisCookie} = get_cookies(Node),

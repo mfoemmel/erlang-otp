@@ -21,19 +21,14 @@
 %% all types in an ASN.1 module
 
 -include("asn1_records.hrl").
-%%-compile(export_all).
-%%-import(asn1_misc,[get_prop/2]).
 
 -export([pgen/4]).
 -export([decode_class/1, decode_type/1]).
-%-export([dec_tag_prim/2]).
-%-export([decode_length/0]).
-%-export([decode_length_temp/0]).
 -export([add_removed_bytes/0]).
+-export([gen_encode/2,gen_encode/3,gen_decode/2,gen_decode/3]).
 -export([gen_encode_prim/4]).
 -export([gen_dec_prim/8]).
--export([mk_var/1]).
-%-export([check_tag/2]).
+
 -import(asn1ct_gen, [emit/1,demit/1]).
 
 						% the encoding of class of tag bits 8 and 7
@@ -65,85 +60,7 @@
 %% TypeList = ValueList = [atom()]
 
 pgen(OutFile,Erules,Module,TypeOrVal) ->
-    pgen_module(OutFile,Erules,Module,TypeOrVal,true).
-
-pgen_module(OutFile,Erules,Module,TypeOrVal,Indent) ->
-    put(outfile,OutFile),
-    HrlGenerated = asn1ct_gen:pgen_hrl(Erules,Module,TypeOrVal,Indent),
-    asn1ct_name:start(),
-    ErlFile = lists:concat([OutFile,".erl"]),
-    Fid = asn1ct_gen:fopen(ErlFile,write),
-    put(gen_file_out,Fid),
-    asn1ct_gen:gen_head(Erules,Module,HrlGenerated),
-    asn1ct_gen:pgen_exports(Erules,Module,TypeOrVal),
-    pgen_typeorval(Erules,Module,TypeOrVal),
-    %% gen_vars(asn1_db:mod_to_vars(Module)),
-    %% gen_tag_table(AllTypes),
-    file:close(Fid),
-    io:format("--~p--~n",[{generated,ErlFile}]).
-
-pgen_typeorval(Erules,Module,{Types,Values,PTypeList}) ->
-    pgen_types(Erules,Module,Types),
-    pgen_values(Erules,Module,Values).
-
-pgen_values(_,_,[]) ->
-    true;
-pgen_values(Erules,Module,[H|T]) ->
-    Valuedef = asn1_db:dbget(Module,H),
-    gen_value(Valuedef),
-    pgen_values(Erules,Module,T).
-
-pgen_types(_,_,[]) ->
-    true;
-
-pgen_types(Erules,Module,[H|T]) ->
-    asn1ct_name:clear(),
-    Typedef = asn1_db:dbget(Module,H),
-    gen_encode(Erules,Module,Typedef),
-    asn1ct_name:clear(),
-    gen_decode(Erules,Module,Typedef),
-    pgen_types(Erules,Module,T).
-
-gen_types(Erules,Module,Tname,{RootList,ExtList}) when list(RootList) ->
-    gen_types(Erules,Module,Tname,RootList),
-    gen_types(Erules,Module,Tname,ExtList);
-gen_types(Erules,Module,Tname,[{'EXTENSIONMARK',_,_}|Rest]) ->
-    gen_types(Erules,Module,Tname,Rest);
-gen_types(Erules,Module,Tname,[ComponentType|Rest]) ->
-    asn1ct_name:clear(),
-    gen_encode(Erules,Module,Tname,ComponentType),
-    asn1ct_name:clear(),
-    gen_decode(Erules,Module,Tname,ComponentType),
-    gen_types(Erules,Module,Tname,Rest);
-gen_types(_,_,Tname,[]) ->
-    true;
-gen_types(Erules,Module,Tname,Type) when record(Type,type) ->
-    asn1ct_name:clear(),
-    gen_encode(Erules,Module,Tname,Type),
-    asn1ct_name:clear(),
-    gen_decode(Erules,Module,Tname,Type).
-
-%% VARIOUS GENERATOR STUFF 
-%% *************************************************
-%%**************************************************
-
-mk_var(X) when atom(X) ->
-    list_to_atom(mk_var(atom_to_list(X)));
-
-mk_var([H|T]) ->
-    [H-32|T].
-
-%% Generate value functions ***************
-%% ****************************************
-%% Generates a function 'V'/0 for each Value V defined in the ASN.1 module
-%% the function returns the value in an Erlang representation which can be
-%% used as  input to the runtime encode functions
-
-gen_value(Value) when record(Value,valuedef) ->
-%%    io:format(" ~w ",[Value#valuedef.name]),
-    emit({"'",Value#valuedef.name,"'() ->",nl}),
-    {'ASN1_OK',V} = Value#valuedef.value,
-    emit([{asis,V},".",nl,nl]).
+    asn1ct_gen:pgen_module(OutFile,Erules,Module,TypeOrVal,true).
 
 
 %%===============================================================================
@@ -158,42 +75,43 @@ gen_value(Value) when record(Value,valuedef) ->
 %% encode #{typedef, {pos, name, typespec}}
 %%===============================================================================
 
-gen_encode(Erules,Module,Type) when record(Type,typedef) ->
-    gen_encode_user(Erules,Module,Type).
+gen_encode(Erules,Type) when record(Type,typedef) ->
+    gen_encode_user(Erules,Type).
 
 %%===============================================================================
 %% encode #{type, {tag, def, constraint}}
 %%===============================================================================
 
-gen_encode(Erules,Module,Tname,Type) when record(Type,type) ->
-    Typename = Tname,
+gen_encode(Erules,Typename,Type) when record(Type,type) ->
     InnerType = asn1ct_gen:get_inner(Type#type.def),
     case asn1ct_gen:type(InnerType) of
 	{constructed,bif} ->
-	    %%	    emit({nl,"'enc_",Typename,"'({'",Typename,
-	    %%		  "',Val}) ->",nl}),
-	    %%	    emit({"'enc_",Typename,"'(Val);",nl,nl}),
-	    emit({nl,nl,nl,"%%================================"}),
-	    emit({nl,"%%  ",Typename}),
-	    emit({nl,"%%================================",nl}),
+	    emit([nl,nl,nl,"%%================================"]),
+	    emit([nl,"%%  ",asn1ct_gen:list2name(Typename)]),
+	    emit([nl,"%%================================",nl]),
 	    case lists:member(InnerType,['SET','SEQUENCE']) of
 		true -> 
 		    case get(asn_keyed_list) of
 			true ->
-			    emit([nl,"'enc_",Typename,
+		    CompList = 
+			case Type#type.def of
+			    #'SEQUENCE'{components=Cl} -> Cl;
+			    #'SET'{components=Cl} -> Cl
+			end,
+			    emit([nl,"'enc_",asn1ct_gen:list2name(Typename),
 				  "'(Val, TagIn) when list(Val) ->",nl]),
-			    emit(["    'enc_",Typename,
+			    emit(["    'enc_",asn1ct_gen:list2name(Typename),
 				  "'(?RT_BER:fixoptionals(",
-				  {asis,optionals(element(2,Type#type.def))},
+				  {asis,optionals(CompList)},
 				  ",Val), TagIn);",nl,nl]);
 			_ -> true
 		    end;
 		_ ->
-		    emit({nl,"'enc_",Typename,"'({'",Typename,"',Val}, TagIn) ->",nl}),
-		    emit({"   'enc_",Typename,"'(Val, TagIn);",nl,nl})
+		    emit([nl,"'enc_",asn1ct_gen:list2name(Typename),"'({'",asn1ct_gen:list2name(Typename),"',Val}, TagIn) ->",nl]),
+		    emit(["   'enc_",asn1ct_gen:list2name(Typename),"'(Val, TagIn);",nl,nl])
 	    end,
-	    emit({"'enc_",Typename,"'(Val, TagIn) ->",nl,"   "}),
-	    gen_encode_constructed(Erules,Module,Typename,InnerType,Type);
+	    emit(["'enc_",asn1ct_gen:list2name(Typename),"'(Val, TagIn) ->",nl,"   "]),
+	    asn1ct_gen:gen_encode_constructed(Erules,Typename,InnerType,Type);
 	_ ->
 	    true
     end;
@@ -202,17 +120,17 @@ gen_encode(Erules,Module,Tname,Type) when record(Type,type) ->
 %% encode ComponentType
 %%===============================================================================
 
-gen_encode(Erules,Module,Tname,{'ComponentType',_Pos,Cname,Type,Prop,Tags}) ->
-    NewTname = list_to_atom(lists:concat([Tname,"_",Cname])),
+gen_encode(Erules,Tname,{'ComponentType',_Pos,Cname,Type,Prop,Tags}) ->
+    NewTname = [Cname|Tname],
     %% The tag is set to [] to avoid that it is
     %% taken into account twice, both as a component/alternative (passed as
     %% argument to the encode decode function and within the encode decode
     %% function it self.
     NewType = Type#type{tag=[]},
-    gen_encode(Erules,Module,NewTname,NewType).
+    gen_encode(Erules,NewTname,NewType).
 
-gen_encode_user(Erules,Module,D) when record(D,typedef) ->
-    Typename = D#typedef.name,
+gen_encode_user(Erules,D) when record(D,typedef) ->
+    Typename = [D#typedef.name],
     Type = D#typedef.typespec,
     InnerType = asn1ct_gen:get_inner(Type#type.def),
     OTag = Type#type.tag,
@@ -224,22 +142,28 @@ gen_encode_user(Erules,Module,D) when record(D,typedef) ->
 	true -> 
 	    case get(asn_keyed_list) of
 		true ->
-		    emit([nl,"'enc_",Typename,
+		    CompList = 
+			case Type#type.def of
+			    #'SEQUENCE'{components=Cl} -> Cl;
+			    #'SET'{components=Cl} -> Cl
+			end,
+
+		    emit([nl,"'enc_",asn1ct_gen:list2name(Typename),
 			  "'(Val, TagIn) when list(Val) ->",nl]),
-		    emit(["    'enc_",Typename,
+		    emit(["    'enc_",asn1ct_gen:list2name(Typename),
 			  "'(?RT_BER:fixoptionals(",
-			  {asis,optionals(element(2,Type#type.def))},
+			  {asis,optionals(CompList)},
 			  ",Val), TagIn);",nl,nl]);
 		_ -> true
 	    end;
 	_ ->
-	    emit({nl,"'enc_",Typename,"'({'",Typename,"',Val}, TagIn) ->",nl}),
-	    emit({"   'enc_",Typename,"'(Val, TagIn);",nl,nl})
+	    emit({nl,"'enc_",asn1ct_gen:list2name(Typename),"'({'",asn1ct_gen:list2name(Typename),"',Val}, TagIn) ->",nl}),
+	    emit({"   'enc_",asn1ct_gen:list2name(Typename),"'(Val, TagIn);",nl,nl})
     end,
-    emit({"'enc_",Typename,"'(Val, TagIn) ->",nl}),
+    emit({"'enc_",asn1ct_gen:list2name(Typename),"'(Val, TagIn) ->",nl}),
     case asn1ct_gen:type(InnerType) of
 	{constructed,bif} ->
-	    gen_encode_constructed(Erules,Module,Typename,InnerType,D);
+	    asn1ct_gen:gen_encode_constructed(Erules,Typename,InnerType,D);
 	{primitive,bif} ->
 	    asn1ct_gen_ber:gen_encode_prim(ber,Type,["TagIn ++ ",
 						     {asis,Tag}],"Val"),
@@ -251,45 +175,14 @@ gen_encode_user(Erules,Module,D) when record(D,typedef) ->
 		  {asis,Tag},").",nl]);
 	'ASN1_OPEN_TYPE' ->
 	    emit(["%% OPEN TYPE",nl]),
-	    asn1ct_gen_ber:gen_encode_prim(ber,Type,["TagIn ++ ",
-						     {asis,Tag}],"Val"),
+	    asn1ct_gen_ber:gen_encode_prim(ber,
+					   Type#type{def='ASN1_OPEN_TYPE'},
+					   ["TagIn ++ ",
+					    {asis,Tag}],"Val"),
 	    emit([".",nl])
     end.
 
 
-gen_encode_constructed(Erules,Module,Typename,InnerType,D) 
-  when record(D,type) ->
-    
-    %%    Rtmod = list_to_atom(lists:concat(["asn1ct_constructed_",Erules])),
-    case InnerType of
-	'SEQUENCE' ->
-	    asn1ct_constructed_ber:gen_encode_sequence(Typename,D),
-	    {_,Components} = D#type.def,
-	    gen_types(Erules,Module,Typename,Components);
-	'CHOICE' ->
-	    asn1ct_constructed_ber:gen_encode_choice(Typename,D),
-	    {_,Components} = D#type.def,
-	    gen_types(Erules,Module,Typename,Components);
-	'SEQUENCE OF' ->
-	    asn1ct_constructed_ber:gen_encode_sof(Typename,InnerType,D),
-	    {_,Type} = D#type.def,
-	    gen_types(Erules,Module,list_to_atom(lists:concat([Typename,"_SEQOF"])),Type);
-	'SET' ->
-	    asn1ct_constructed_ber:gen_encode_set(Typename,D),
-	    {_,Components} = D#type.def,
-	    gen_types(Erules,Module,Typename,Components);
-	'SET OF' ->
-	    asn1ct_constructed_ber:gen_encode_sof(Typename,InnerType,D),
-	    {_,Type} = D#type.def,
-	    gen_types(Erules,Module,list_to_atom(lists:concat([Typename,"_SETOF"])),Type);
-	Other ->
-	    exit({nyi,InnerType})
-    end;
-
-gen_encode_constructed(Erules,Module,Typename,InnerType,D) when record(D,typedef) ->
-    gen_encode_constructed(Erules,Module,Typename,InnerType,D#typedef.typespec).
-
-    
 
 gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
     
@@ -420,30 +313,28 @@ emit_enc_enumerated_cases([{EnumName,EnumVal}], Tags, Ext) ->
 %% decode #{typedef, {pos, name, typespec}}
 %%===============================================================================
 
-gen_decode(Erules,Module,Type) when record(Type,typedef) ->
+gen_decode(Erules,Type) when record(Type,typedef) ->
     D = Type,
     emit({nl,nl}),
     emit({"'dec_",Type#typedef.name,"'(Bytes, OptOrMand) ->",nl}),
     emit({"   'dec_",Type#typedef.name,"'(Bytes, OptOrMand, []).",nl,nl}),
     emit({"'dec_",Type#typedef.name,"'(Bytes, OptOrMand, TagIn) ->",nl}),
     dbdec(Type#typedef.name),
-    gen_decode_user(Erules,Module,D).
+    gen_decode_user(Erules,D).
 
 
 %%===============================================================================
 %% decode #{type, {tag, def, constraint}}
 %%===============================================================================
 
-gen_decode(Erules,Module,Tname,Type) when record(Type,type) ->
+gen_decode(Erules,Tname,Type) when record(Type,type) ->
     Typename = Tname,
     InnerType = asn1ct_gen:get_inner(Type#type.def),
     case asn1ct_gen:type(InnerType) of
 	{constructed,bif} ->
-%%%	    emit({nl,"'dec_",Typename,"'(Bytes, OptOrMand) ->",nl}),
-%%%	    emit({"   'dec_",Typename,"'(Bytes, OptOrMand, []).",nl,nl}),
-	    emit({"'dec_",Typename,"'(Bytes, OptOrMand, TagIn) ->",nl}),
+	    emit({"'dec_",asn1ct_gen:list2name(Typename),"'(Bytes, OptOrMand, TagIn) ->",nl}),
 	    dbdec(Typename),
-	    gen_decode_constructed(Erules,Module,Typename,InnerType,Type);
+	    asn1ct_gen:gen_decode_constructed(Erules,Typename,InnerType,Type);
 	_ ->
 	    true
     end;
@@ -453,39 +344,40 @@ gen_decode(Erules,Module,Tname,Type) when record(Type,type) ->
 %% decode ComponentType
 %%===============================================================================
 
-gen_decode(Erules,Module,Tname,{'ComponentType',_Pos,Cname,Type,Prop,Tags}) ->
-    NewTname = list_to_atom(lists:concat([Tname,"_",Cname])),
+gen_decode(Erules,Tname,{'ComponentType',_Pos,Cname,Type,Prop,Tags}) ->
+    NewTname = [Cname|Tname],
     %% The tag is set to [] to avoid that it is
     %% taken into account twice, both as a component/alternative (passed as
     %% argument to the encode decode function and within the encode decode
     %% function it self.
     NewType = Type#type{tag=[]},
-    gen_decode(Erules,Module,NewTname,NewType).
+    gen_decode(Erules,NewTname,NewType).
 
 
-gen_decode_user(Erules,Module,D) when record(D,typedef) ->
-    Typename = D#typedef.name,
+gen_decode_user(Erules,D) when record(D,typedef) ->
+    Typename = [D#typedef.name],
     Def = D#typedef.typespec,
     InnerType = asn1ct_gen:get_inner(Def#type.def),
     InnerTag = Def#type.tag ,
     Tag = [X#tag{class=decode_class(X#tag.class)}|| X <- InnerTag],
     case asn1ct_gen:type(InnerType) of
 	'ASN1_OPEN_TYPE' ->
-	    BytesVar = mk_var(asn1ct_name:curr(bytes)),
-	    LenVar = mk_var(asn1ct_name:curr(len)),
+	    BytesVar = asn1ct_gen:mk_var(asn1ct_name:curr(bytes)),
+	    LenVar = asn1ct_gen:mk_var(asn1ct_name:curr(len)),
 	    asn1ct_name:new(len),
-	    gen_dec_prim(ber, Def, BytesVar, Tag, "TagIn",no_length, 
+	    gen_dec_prim(ber, Def#type{def='ASN1_OPEN_TYPE'}, 
+			 BytesVar, Tag, "TagIn",no_length, 
 			 ?PRIMITIVE,"OptOrMand"),
 	    emit({".",nl,nl});
 	{primitive,bif} ->
-	    BytesVar = mk_var(asn1ct_name:curr(bytes)),
-	    LenVar = mk_var(asn1ct_name:curr(len)),
+	    BytesVar = asn1ct_gen:mk_var(asn1ct_name:curr(bytes)),
+	    LenVar = asn1ct_gen:mk_var(asn1ct_name:curr(len)),
 	    asn1ct_name:new(len),
 	    gen_dec_prim(ber, Def, BytesVar, Tag, "TagIn",no_length, 
 			 ?PRIMITIVE,"OptOrMand"),
 	    emit({".",nl,nl});
 	{constructed,bif} ->
-	    gen_decode_constructed(Erules,Module,Typename,InnerType,D);
+	    asn1ct_gen:gen_decode_constructed(Erules,Typename,InnerType,D);
 	TheType ->
 	    DecFunName = mkfuncname(TheType,dec),
 	    emit({DecFunName,"(",{curr,bytes},
@@ -494,59 +386,21 @@ gen_decode_user(Erules,Module,D) when record(D,typedef) ->
     end.
 
 
-gen_decode_constructed(Erules,Module,Typename,InnerType,D) when record(D,type) ->
-    Rtmod = list_to_atom(lists:concat(["asn1ct_constructed_",Erules])),
-    case InnerType of
-	'SEQUENCE' ->
-	    Rtmod:gen_decode_sequence(Module,Typename,D);
-	'CHOICE' ->
-	    Rtmod:gen_decode_choice(Module,Typename,D);
-	'SEQUENCE OF' ->
-	    Rtmod:gen_decode_sof(Typename,InnerType,D);	
- 	'SET' ->
-	    Rtmod:gen_decode_set(Module,Typename,D);
-	'SET OF' ->
-	    Rtmod:gen_decode_sof(Typename,InnerType,D);
-	Other ->
-	    exit({nyi,InnerType})
-    end;
-
-
-gen_decode_constructed(Erules,Module,Typename,InnerType,D) when record(D,typedef) ->
-    gen_decode_constructed(Erules,Module,Typename,InnerType,D#typedef.typespec).
-
 gen_dec_prim(Erules,Att,BytesVar,DoTag,TagIn,Length,Form,OptOrMand) ->
-    case OptOrMand of
-	L when list(L) ->
-	    gen_dec_prim1(Erules,Att,BytesVar,DoTag,TagIn,Length,Form,OptOrMand);
-	mandatory ->
-	    gen_dec_prim1(Erules,Att,BytesVar,DoTag,TagIn,Length,Form,mandatory);
-	_ -> % DEFAULT or OPTIONAL
-	    emit("case (catch "),
-	    gen_dec_prim1(Erules,Att,BytesVar,DoTag,TagIn,Length,Form,OptOrMand),
-	    emit([") of",nl]),
-	    case OptOrMand of
-		{'DEFAULT', Def} ->
-		    NewDef = case Def of % a temporary hack
-				 _ when integer(Def) -> Def;
-				 {identifier,_,Id} -> Id;
-				 _ -> Def
-			     end,
-		    emit(["{'EXIT',{error,{asn1,{no_optional_tag,_}}}} -> {",NewDef,",",BytesVar,", ",
-			  "0};",nl]);
-		'OPTIONAL' ->
-		    emit(["{'EXIT',{error,{asn1,{no_optional_tag,_}}}} -> { asn1_NOVALUE, ",BytesVar,", ",
-			  "0};",nl])
-	    end,
-	    asn1ct_name:new(casetmp),
-	    emit([{curr,casetmp},"-> ",{curr,casetmp},nl,"end"])
-    end.
-
-gen_dec_prim1(Erules,Att,BytesVar,DoTag,TagIn,Length,Form,OptOrMand) ->
     Typename = Att#type.def,
 %% Currently not used for BER replaced with [] as place holder
 %%    Constraint = Att#type.constraint,
-    Constraint = [],
+%% Constraint = [],
+    Constraint = 
+	case get_constraint(Att#type.constraint,'SizeConstraint') of
+	    no -> [];
+	    Tc -> Tc
+	end,
+    ValueRange = 
+	case get_constraint(Att#type.constraint,'ValueRange') of
+	    no -> [];
+	    Tv -> Tv
+	end,
     
     DoLength = 
 	case Typename of
@@ -555,11 +409,11 @@ gen_dec_prim1(Erules,Att,BytesVar,DoTag,TagIn,Length,Form,OptOrMand) ->
 		false;
 	    'INTEGER' ->
 		emit({"?RT_BER:decode_integer(",BytesVar,",",
-		      {asis,Constraint},","}),
+		      {asis,ValueRange},","}),
 		false;
 	    {'INTEGER',NamedNumberList} ->
 		emit({"?RT_BER:decode_integer(",BytesVar,",",
-		      {asis,Constraint},",",
+		      {asis,ValueRange},",",
 		      {asis,NamedNumberList},","}),
 		false;
 	    {'ENUMERATED',NamedNumberList} ->
@@ -569,10 +423,17 @@ gen_dec_prim1(Erules,Att,BytesVar,DoTag,TagIn,Length,Form,OptOrMand) ->
 		false;
 	    {'BIT STRING',NamedNumberList} ->
 %%		NewList = [{X,Y}||{_,X,Y} <- NamedNumberList],
-		emit({"?RT_BER:decode_bit_string(",BytesVar,",",
-		      {asis,Constraint},",",
-		      {asis,NamedNumberList},","}),
-%%		      {asis,NewList},","}),
+		case get(compact_bit_string) of
+		    true ->
+			emit({"?RT_BER:decode_compact_bit_string(",
+			      BytesVar,",",{asis,Constraint},",",
+			      {asis,NamedNumberList},","});
+		    _ ->
+			emit({"?RT_BER:decode_bit_string(",BytesVar,",",
+			      {asis,Constraint},",",
+			      {asis,NamedNumberList},","})
+			%%		      {asis,NewList},","}),
+		end,
 		true;
 	    'NULL' ->
 		emit({"?RT_BER:decode_null(",BytesVar,","}),
@@ -744,6 +605,13 @@ optionals([#'ComponentType'{}|Rest],Acc,Pos) ->
 optionals([],Acc,_) ->
     lists:reverse(Acc).
 
+get_constraint(C,Key) ->
+    case lists:keysearch(Key,1,C) of
+	false ->
+	     no;
+	{value,{_,V}} -> 
+	    V
+    end.
 
 
 

@@ -371,6 +371,59 @@ int db_get_hash(Process *p, DbTableHash *tb,
     *ret = NIL;
     return DB_ERROR_NONE;
 }
+
+int db_get_element_array(DbTableHash *tb, 
+			 Eterm key,
+			 int ndex, 
+			 Eterm *ret,
+			 int *num_ret)
+{
+    HashValue hval;
+    int ix;
+    HashDbTerm* b1;
+    int num = 0;
+    
+    hval = MAKE_HASH(key);
+    HASH(tb, hval, ix);
+    b1 = BUCKET(tb, ix);
+
+    while(b1 != 0) {
+	if ((b1->hvalue == hval) && EQ(key, GETKEY(tb, b1->dbterm.tpl))) {
+	    if ((tb->status & DB_BAG) || (tb->status & DB_DUPLICATE_BAG)) {
+		HashDbTerm* b;
+		HashDbTerm* b2 = b1->next;
+
+		while((b2 != 0) && (b2->hvalue == hval) &&
+		      EQ(key, GETKEY(tb, b2->dbterm.tpl))) {
+		    if (ndex > arityval(b2->dbterm.tpl[0]))
+			return DB_ERROR_BADITEM;
+		    b2 = b2->next;
+		}
+
+		b = b1;
+		while(b != b2) {
+		    if (num < *num_ret) {
+			ret[num++] = b->dbterm.tpl[ndex];
+		    } else {
+			return DB_ERROR_NONE;
+		    }
+		    b = b->next;
+		}
+		*num_ret = num;
+		return DB_ERROR_NONE;
+	    }
+	    else {
+		ASSERT(*num_ret > 0);
+		ret[0] = b1->dbterm.tpl[ndex];
+		*num_ret = 1;
+		return DB_ERROR_NONE;
+	    }
+	}
+	b1 = b1->next;
+    }
+    return DB_ERROR_BADKEY;
+}
+    
     
 int db_get_element_hash(Process *p, DbTableHash *tb, 
 			eTerm key,
@@ -430,6 +483,51 @@ int db_get_element_hash(Process *p, DbTableHash *tb,
     return DB_ERROR_BADKEY;
 }
 
+/*
+ * Very internal interface, removes elements of arity two from 
+ * BAG. Used for the PID meta table
+ */
+int db_erase_bag_exact2(DbTableHash *tb, 
+			Eterm key,
+			Eterm value)
+{
+    HashValue hval;
+    int ix;
+    HashDbTerm** bp;
+    HashDbTerm* b;
+    int found = 0;
+
+    hval = MAKE_HASH(key);
+    HASH(tb, hval, ix);
+    bp = &BUCKET(tb, ix);
+    b = *bp;
+
+    ASSERT(!(tb->status & DB_FIXED));
+    ASSERT((tb->status & DB_BAG));
+
+    while(b != 0) {
+	if ((b->hvalue == hval) && EQ(key, GETKEY(tb, b->dbterm.tpl))) {
+	    found = 1;
+	    if ((arityval(b->dbterm.tpl[0]) == 2) && 
+		EQ(value, b->dbterm.tpl[2])) {
+		*bp = b->next;
+		free_term(b);
+		tb->nitems--;
+		b = *bp;
+		break;
+	    }
+	} else if (found) {
+		break;
+	}
+	bp = &b->next;
+	b = b->next;
+    }
+
+    if (found && ((tb->nitems / tb->nactive) < CHAIN_LEN))
+	shrink(tb);
+    return DB_ERROR_NONE;
+}
+	
 /*
 ** NB, this is for the db_erase/2 bif.
 */

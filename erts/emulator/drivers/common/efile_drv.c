@@ -57,6 +57,7 @@
 #define FILE_RESP_NUMBER     3
 #define FILE_RESP_INFO       4
 
+#include <stdlib.h>
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
@@ -99,6 +100,8 @@ int key = 1;
   put_int32((i).minute,(b) + 4 * 4); \
   put_int32((i).second,(b) + 5 * 4)
 
+
+
 typedef unsigned char uchar;
 
 static long file_start();
@@ -115,7 +118,7 @@ typedef struct {
 
 static FUNCTION(int, error_reply, (file_descriptor*, Efile_error* errInfo));
 
-static void file_async_ready(file_descriptor *desc, void *data);
+static int file_async_ready(file_descriptor *desc, void *data);
 
 struct driver_entry efile_driver_entry = {
     file_init,
@@ -134,8 +137,23 @@ struct driver_entry efile_driver_entry = {
 };
 
 
+
+static int thread_short_circuit;
+
+#define DRIVER_ASYNC(level, desc, key, f_invoke, data, f_free) \
+if (thread_short_circuit >= (level)) { \
+    (*(f_invoke))(data); \
+    file_async_ready((desc), (data)); \
+} else { \
+    driver_async((desc)->port, (key), (f_invoke), (data), (f_free)); \
+}
+
+
+
 static int file_init()
 {
+    char *p = getenv("ERL_EFILE_THREAD_SHORT_CIRCUIT");
+    thread_short_circuit = p ? atoi(p) : 0;
     return 0;
 }
 
@@ -202,7 +220,7 @@ file_descriptor* desc;
 	struct t_data *d = sys_alloc(sizeof(struct t_data));
 	d->fd = fd;
 	d->command = FILE_CLOSE;
-	driver_async(desc->port, KEY, invoke_close, (void *) d,
+	DRIVER_ASYNC(2, desc, KEY, invoke_close, (void *) d,
 		     free_data);
 	return 0;
     }
@@ -515,7 +533,7 @@ static void invoke_open(void *data)
     int status = 1;		/* Status of open call. */
 
     if ((d->flags & EFILE_COMPRESSED) == 0) {
-	status = efile_openfile(&d->errInfo, &d->b, d->flags, &d->fd, &size);
+	status = efile_openfile(&d->errInfo, d->b, d->flags, &d->fd, &size);
     } else {
 	char* mode = NULL;
 
@@ -525,7 +543,7 @@ static void invoke_open(void *data)
 	    d->errInfo.posix_errno = EINVAL;
 	} else {
 	    mode = (d->flags & EFILE_MODE_READ) ? "rb" : "wb";
-	    d->fd = (int) gzopen(&d->b, mode);
+	    d->fd = (int) gzopen(d->b, mode);
 	    if ((gzFile)d->fd == NULL) {
 		if (errno == 0) {
 		    errno = ENOMEM;
@@ -556,7 +574,7 @@ static void free_readdir(void *data)
     sys_free(d);
 }
 
-static void file_async_ready(file_descriptor *desc, void *data)
+static int file_async_ready(file_descriptor *desc, void *data)
 {
     struct t_data *d = (struct t_data *) data;
     char header[5];		/* result code + count */
@@ -622,7 +640,7 @@ static void file_async_ready(file_descriptor *desc, void *data)
       case FILE_READLINK:
         {
 	    int length;
-	    char *resbuf = &d->b;
+	    char *resbuf = d->b;
 
 	    if (!d->result_ok)
 		error_reply(desc, &d->errInfo);
@@ -684,7 +702,7 @@ static void file_async_ready(file_descriptor *desc, void *data)
 	if (d->n == 1)
 	    free_readdir(data);
 	else
-	    driver_async(desc->port, KEY, invoke_readdir, (void *) d,
+	    DRIVER_ASYNC(2, desc, KEY, invoke_readdir, (void *) d,
 			 free_readdir);
 	break;
 	/* See file_stop */
@@ -694,6 +712,7 @@ static void file_async_ready(file_descriptor *desc, void *data)
       default:
 	abort();
     }
+    return 0;
 }
 
 static int file_erlang_read(desc, buf, count)
@@ -721,7 +740,7 @@ int count;
 	
 	strcpy((char *) &d->b, name);
 	d->command = command;
-	driver_async(desc->port, KEY, invoke_mkdir, (void *) d,
+	DRIVER_ASYNC(2, desc, KEY, invoke_mkdir, (void *) d,
 		     free_data);
 	return 0;
     }
@@ -732,7 +751,7 @@ int count;
 	
 	strcpy((char *) &d->b, name);
 	d->command = command;
-	driver_async(desc->port, KEY, invoke_rmdir, (void *) d,
+	DRIVER_ASYNC(2, desc, KEY, invoke_rmdir, (void *) d,
 		     free_data);
 	return 0;
     }
@@ -743,7 +762,7 @@ int count;
 	
 	strcpy((char *) &d->b, name);
 	d->command = command;
-	driver_async(desc->port, KEY, invoke_delete_file, (void *) d,
+	DRIVER_ASYNC(2, desc, KEY, invoke_delete_file, (void *) d,
 		     free_data);
 	return 0;
     }
@@ -762,7 +781,7 @@ int count;
 	    d->flags = desc->flags;
 	    d->fd = fd;
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_rename, (void *) d,
+	    DRIVER_ASYNC(2, desc, KEY, invoke_rename, (void *) d,
 			 free_data);
 	    return 0;
 	}
@@ -773,7 +792,7 @@ int count;
 	
 	strcpy((char *) &d->b, name);
 	d->command = command;
-	driver_async(desc->port, KEY, invoke_chdir, (void *) d,
+	DRIVER_ASYNC(2, desc, KEY, invoke_chdir, (void *) d,
 		     free_data);
 	return 0;
     }
@@ -784,7 +803,7 @@ int count;
 	
 	    d->drive = buf[0];
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_pwd, (void *) d,
+	    DRIVER_ASYNC(2, desc, KEY, invoke_pwd, (void *) d,
 			 free_data);
 	    return 0;
 	}
@@ -800,7 +819,7 @@ int count;
 	    d->dir_handle = NULL;
 	    d->buf = NULL;
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_readdir, (void *) d,
+	    DRIVER_ASYNC(2, desc, KEY, invoke_readdir, (void *) d,
 			 free_readdir);
 	    return 0;
 	}
@@ -832,7 +851,7 @@ int count;
 	    name = (char *) buf+4;
 	    strcpy((char *) &d->b, name);
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_open, (void *) d,
+	    DRIVER_ASYNC(2, desc, KEY, invoke_open, (void *) d,
 			 free_data);
 	    return 0;
 	}
@@ -843,7 +862,7 @@ int count;
 	
 	d->fd = fd;
 	d->command = command;
-	driver_async(desc->port, KEY, invoke_fsync, (void *) d,
+	DRIVER_ASYNC(2, desc, KEY, invoke_fsync, (void *) d,
 		     free_data);
 	return 0;
     }
@@ -857,7 +876,7 @@ int count;
 	strcpy((char *) &d->b, name);
 	d->fd = fd;
 	d->command = command;
-	driver_async(desc->port, KEY, invoke_flstat, (void *) d,
+	DRIVER_ASYNC(2, desc, KEY, invoke_flstat, (void *) d,
 		     free_data);
 	return 0;
     }
@@ -874,7 +893,7 @@ int count;
 	    d->n = count-5;
 	    d->fd = fd;
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_pwrite, (void *) d,
+	    DRIVER_ASYNC(1, desc, KEY, invoke_pwrite, (void *) d,
 			 free_data);
 	    return 0;
 	}
@@ -890,7 +909,7 @@ int count;
 	    d->n = count;
 	    d->fd = fd;
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_write, (void *) d,
+	    DRIVER_ASYNC(1, desc, KEY, invoke_write, (void *) d,
 			 free_data);
 	    return 0;
 	}
@@ -910,7 +929,7 @@ int count;
 	    d->n = origin;
 	    d->fd = fd;
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_lseek, (void *) d,
+	    DRIVER_ASYNC(1, desc, KEY, invoke_lseek, (void *) d,
 			 free_read);
 	    return 0;
 	}
@@ -936,7 +955,7 @@ int count;
 	    d->offset = offset;
 	    d->fd = fd;
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_pread, (void *) d,
+	    DRIVER_ASYNC(1, desc, KEY, invoke_pread, (void *) d,
 			 free_read);
 	    return 0;
 	}
@@ -962,7 +981,7 @@ int count;
 	    d->n = n;
 	    d->fd = fd;
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_read, (void *) d,
+	    DRIVER_ASYNC(1, desc, KEY, invoke_read, (void *) d,
 			 free_read);
 	    return 0;
 	}
@@ -975,7 +994,7 @@ int count;
 	    d->flags = desc->flags;
 	    d->fd = fd;
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_truncate, (void *) d,
+	    DRIVER_ASYNC(2, desc, KEY, invoke_truncate, (void *) d,
 			 free_data);
 	    return 0;
 	}
@@ -986,7 +1005,7 @@ int count;
 	
 	    strcpy((char *) &d->b, name);
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_read_file, (void *) d,
+	    DRIVER_ASYNC(2, desc, KEY, invoke_read_file, (void *) d,
 			 free_read);
 	    return 0;
 	}
@@ -1004,7 +1023,7 @@ int count;
 	    GET_TIME(d->info.cTime, buf + 15 * 4);
 	    strcpy((char *) &d->b, buf+21*4);
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_write_info, (void *) d,
+	    DRIVER_ASYNC(2, desc, KEY, invoke_write_info, (void *) d,
 			 free_data);
 	    return 0;
 	}
@@ -1016,7 +1035,7 @@ int count;
 	
 	    strcpy((char *) &d->b, name);
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_readlink, (void *) d,
+	    DRIVER_ASYNC(2, desc, KEY, invoke_readlink, (void *) d,
 			 free_data);
 	    return 0;
 	}
@@ -1036,7 +1055,7 @@ int count;
 	    d->flags = desc->flags;
 	    d->fd = fd;
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_link, (void *) d,
+	    DRIVER_ASYNC(2, desc, KEY, invoke_link, (void *) d,
 			 free_data);
 	    return 0;
 	}
@@ -1056,7 +1075,7 @@ int count;
 	    d->flags = desc->flags;
 	    d->fd = fd;
 	    d->command = command;
-	    driver_async(desc->port, KEY, invoke_symlink, (void *) d,
+	    DRIVER_ASYNC(2, desc, KEY, invoke_symlink, (void *) d,
 			 free_data);
 	    return 0;
 	}

@@ -48,6 +48,8 @@
 	 connecttime/0,
 	 i/0, i/1, verbose/1]).
 
+-export([publish_on_node/1, update_publish_nodes/1]).
+
 %% Internal Exports 
 -export([do_spawn_link/5, 
 	 ticker/2,
@@ -74,7 +76,8 @@
 	  monitor,      %% list of monitors for nodeup/nodedown
 	  pending_nodeup = [],
 	  allowed,       %% list of allowed nodes in a restricted system
-	  verbose = 0   %def_verb()    %% level of verboseness
+	  verbose = 0,   %def_verb()    %% level of verboseness
+	  publish_on_nodes = undefined
 	 }).
 
 -record(listen, {
@@ -136,6 +139,14 @@ disconnect(Node) ->            request({disconnect, Node}).
 
 %% connect but not seen
 hidden_connect(Node) ->        connect(Node, hidden).
+
+%% Should this node publish itself on Node?
+publish_on_node(Node) when atom(Node) ->
+    request({publish_on_node, Node}).
+
+%% Update publication list
+update_publish_nodes(Ns) ->
+    request({update_publish_nodes, Ns}).
 
 %% explicit connects
 connect_node(Node) when atom(Node) ->
@@ -324,6 +335,26 @@ handle_call({apply,Mod,Fun,Args}, {From,Tag}, State) when pid(From),
 
 handle_call(longnames, _From, State) ->
     {reply, get(longnames), State};
+
+handle_call({update_publish_nodes, Ns}, _From, State) ->
+    {reply, ok, State#state{publish_on_nodes = Ns}};
+
+handle_call({publish_on_node, Node}, _From, State) ->
+    NewState = case State#state.publish_on_nodes of
+		   undefined ->
+		       State#state{publish_on_nodes =
+				   global_group:publish_on_nodes()};
+		   _ ->
+		       State
+	       end,
+    Publish = case NewState#state.publish_on_nodes of
+		  all ->
+		      true;
+		  Nodes ->
+		      lists:member(Node, Nodes)
+	      end,
+    {reply, Publish, NewState};
+
 
 handle_call({verbose, Level}, _From, State) ->
     {reply, State#state.verbose, State#state{verbose = Level}}.

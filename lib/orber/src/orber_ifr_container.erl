@@ -236,7 +236,7 @@ add_to_container(ContainerRef,Object) ->
     orber_ifr_utils:ifr_transaction_write(F).
 
 create_module(ObjRef, Id, Name, Version) ->
-    ?exists_check(ObjRef, Id),
+    ?exists_check(Id, ir_ModuleDef, #ir_ModuleDef.id),
     New_module = #ir_ModuleDef{ir_Internal_ID = unique(),
 			       def_kind = dk_Module,
 			       contents = [],
@@ -252,7 +252,7 @@ create_module(ObjRef, Id, Name, Version) ->
     makeref(New_module).
 
 create_constant(ObjRef, Id, Name, Version, Type, Value) ->
-    ?exists_check(ObjRef, Id),
+    ?exists_check(Id, ir_ConstantDef, #ir_ConstantDef.id),
     IDL_typecode = get_field(Type,type),
     {Typecode, _} = Value,
     case IDL_typecode == Typecode of
@@ -278,7 +278,7 @@ create_constant(ObjRef, Id, Name, Version, Type, Value) ->
     end.
 
 create_struct(ObjRef, Id, Name, Version, Members) ->
-    ?exists_check(ObjRef, Id),
+    ?exists_check(Id, ir_StructDef, #ir_StructDef.id),
     New_struct = #ir_StructDef{ir_Internal_ID = unique(),
 			       def_kind = dk_Struct,
 			       id = Id,
@@ -300,7 +300,7 @@ create_struct(ObjRef, Id, Name, Version, Members) ->
 
 create_union(ObjRef, Id, Name, Version,
 	     Discriminator_type, Members) ->
-    ?exists_check(ObjRef, Id),
+    ?exists_check(Id, ir_UnionDef, #ir_UnionDef.id),
     Discriminator_type_code = get_field(Discriminator_type, type),
     New_union = #ir_UnionDef{ir_Internal_ID = unique(),
 			     def_kind = dk_Union,
@@ -326,7 +326,7 @@ create_union(ObjRef, Id, Name, Version,
     makeref(New_union).
 
 create_enum(ObjRef, Id, Name, Version, Members) ->
-    ?exists_check(ObjRef, Id),
+    ?exists_check(Id, ir_EnumDef, #ir_EnumDef.id),
     New_enum = #ir_EnumDef{ir_Internal_ID = unique(),
 			   def_kind = dk_Enum,
 			   id = Id,
@@ -343,7 +343,7 @@ create_enum(ObjRef, Id, Name, Version, Members) ->
     makeref(New_enum).
 
 create_alias(ObjRef, Id, Name, Version, Original_type) ->
-    ?exists_check(ObjRef, Id),
+    ?exists_check(Id, ir_AliasDef, #ir_AliasDef.id),
     New_alias = #ir_AliasDef{ir_Internal_ID = unique(),
 			     def_kind = dk_Alias,
 			     id = Id,
@@ -361,7 +361,7 @@ create_alias(ObjRef, Id, Name, Version, Original_type) ->
     makeref(New_alias).
 
 create_interface(ObjRef, Id, Name, Version, Base_interfaces) ->
-    ?exists_check(ObjRef, Id),
+    ?exists_check(Id, ir_InterfaceDef, #ir_InterfaceDef.id),
     New_interface = #ir_InterfaceDef{ir_Internal_ID = unique(),
 				     def_kind = dk_Interface,
 				     contents = [],
@@ -379,7 +379,7 @@ create_interface(ObjRef, Id, Name, Version, Base_interfaces) ->
     makeref(New_interface).
 
 create_exception(ObjRef, Id, Name, Version, Members) ->
-    ?exists_check(ObjRef, Id),
+    ?exists_check(Id, ir_ExceptionDef, #ir_ExceptionDef.id),
     New_exception = #ir_ExceptionDef{ir_Internal_ID = unique(),
 				     def_kind = dk_Exception,
 				     id = Id,

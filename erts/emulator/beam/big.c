@@ -822,8 +822,11 @@ digit_t* y; dsize_t yl; short ysgn; digit_t* r;
 		*r++ = ~c | *y++;
 		x++;
 	    }
-	    while(xl--)
-		*r++ = ~*x++;
+	    while(xl--) {
+		DSUBb(*x,0,b,c);
+ 		*r++ = ~c;
+ 		x++;
+	    }
 	}
 	else {
 	    digit_t b1, b2;

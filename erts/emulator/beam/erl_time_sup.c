@@ -106,6 +106,11 @@ static void get_tolerant_timeofday(SysTimeval *tv)
     *tv = inittv;
     diff_time = ((curr = sys_gethrtime()) + hr_correction - hr_init_time) / 1000; 
 
+    if (curr < hr_init_time) {
+	erl_exit(1,"Unexpected behaviour from operating system high "
+		 "resolution timer");
+    }
+
     if ((curr - hr_last_correction_check) / 1000 > 1000000) {
 	/* Check the correction need */
 	SysHrTime tv_diff, diffdiff;

@@ -21,7 +21,7 @@
 %% Purpose : 
 %% Created : 20 Sep 2000
 %% Comments:
-%% * Each Interceptor is represented as {Module, Args} where
+%% * Each Interceptor is represented by Module where
 %%              Module - refers to a module which must export the functions:
 %%                       (1)  receive_request
 %%                       (2)  send_other
@@ -32,11 +32,17 @@
 %%                       (7)  send_poll
 %%                       (8)  receive_reply
 %%                       (9)  receive_exception
-%%                       (10) receive_other
-%%                       (11) preinvoke
-%%                       (12) postinvoke
-%%              Args - any argument to be passed on to any of the
-%%                     functions above, i.e., (1)-(12).
+%%                       (10) receive_other 
+%%                       or
+%%                       (11) new_out_connection
+%%                       (12) new_in_connection
+%%                       (13) in_request
+%%                       (14) out_reply
+%%                       (15) out_request
+%%                       (16) in_reply
+%%
+%%              Functions (1) - (10) for Portable and (11) - (16) for 
+%%              Native Interceptors.
 %% 
 %%----------------------------------------------------------------------
 
@@ -47,13 +53,26 @@
 -include_lib("orber/include/ifr_types.hrl").
 -include_lib("orber/include/orber_pi.hrl").
 -include_lib("orber/src/orber_iiop.hrl").
+-include_lib("orber/src/orber_debug.hrl").
 
 %%--------------- EXPORTS-------------------------------------
 %% API external
--export([server_start_receive/7, 
+-export([%% Native Intercepotors API
+	 new_out_connection/3,
+	 new_in_connection/3,
+	 closed_in_connection/2,
+	 closed_out_connection/2,
+	 in_request_enc/4,
+	 out_reply_enc/4,
+	 out_request_enc/6,
+	 in_reply_enc/6,
+	 in_request/4,
+	 out_reply/4,
+	 out_request/6,
+	 in_reply/6,
+	 %% Portable Interceptors
+	 server_start_receive/7, 
 	 server_start_send/2,
-	 preinvoke/2,
-	 postinvoke/2,
 	 client_receive/2, 
 	 client_send/2, 
 	 codefactory_create_codec/1,
@@ -149,7 +168,7 @@
 	 adapter_id,
 	 target_most_derived_interface}).
 
--define(createInitSRI(_ReqID, _Op, _RespExp, _SyncScoope),
+-define(createInitSRI(_ReqID, _Op, _RespExp),
 	#'ServerRequestInfo'{request_id        = _ReqID,
 			     operation         = _Op,
 			     response_expected = _RespExp}).
@@ -171,6 +190,346 @@ error_logger:error_msg("========== PortableInterceptors ===========~n"
 -define(debug_print(F,A), ok).
 -endif.    
 
+-define(DEBUG_LEVEL, 9).
+
+%%------------------------------------------------------------
+%%------------- NATIVE INTERCEPTOR FUNCTIONS------------------
+%%------------------------------------------------------------
+%% function : new_in_connection
+%% Arguments: 
+%% Returns  : 
+%% Exception: 
+%% Effect   : 
+%%------------------------------------------------------------
+new_in_connection(PIs, Host, Port) ->
+    case catch new_in_connection(PIs, undefined, Host, Port) of
+	{'EXIT', R} ->
+	    orber:debug_level_print("[~p] orber_pi:new_in_connection(~p); exit(~p)", 
+				    [?LINE, PIs, R], ?DEBUG_LEVEL),
+	    exit("Supplied Interceptors unable to create a valid new_in_connection");
+	{'EXCEPTION', E} ->
+	    orber:debug_level_print("[~p] orber_pi:new_in_connection(~p); exception(~p)", 
+				    [?LINE, PIs, E], ?DEBUG_LEVEL),
+	    exit("Supplied Interceptors unable to create a valid new_in_connection");
+	Ref ->
+	    Ref
+    end.
+
+new_in_connection([], Ref, _, _) ->
+    Ref;
+new_in_connection([Mod|T], Ref, Host, Port) ->
+    NewRef = Mod:new_in_connection(Ref, Host, Port),
+    new_in_connection(T, NewRef, Host, Port).
+
+%%------------------------------------------------------------
+%% function : closed_in_connection
+%% Arguments: 
+%% Returns  : 
+%% Exception: 
+%% Effect   : 
+%%------------------------------------------------------------
+closed_in_connection(PIs, Ref) ->
+    case catch closed_in_connection_helper(PIs, Ref) of
+	{'EXIT', R} ->
+	    orber:debug_level_print("[~p] orber_pi:closed_in_connection(~p, ~p); exit(~p)", 
+				    [?LINE, PIs, Ref, R], ?DEBUG_LEVEL),
+	    ok;
+	{'EXCEPTION', E} ->
+	    orber:debug_level_print("[~p] orber_pi:closed_in_connection(~p, ~p); exception(~p)", 
+				    [?LINE, PIs, Ref, E], ?DEBUG_LEVEL),
+	    ok;
+	_ ->
+	    ok
+    end.
+
+closed_in_connection_helper([], Ref) ->
+    ok;
+closed_in_connection_helper([Mod|T], Ref) ->
+    NewRef = Mod:closed_in_connection(Ref),
+    closed_in_connection_helper(T, NewRef).
+
+
+%%------------------------------------------------------------
+%% function : new_out_connection
+%% Arguments: 
+%% Returns  : 
+%% Exception: 
+%% Effect   : 
+%%------------------------------------------------------------
+new_out_connection(PIs, Host, Port) ->
+    case catch new_out_connection(PIs, undefined, Host, Port) of
+	{'EXIT', R} ->
+	    orber:debug_level_print("[~p] orber_pi:new_out_connection(~p); exit(~p)", 
+				    [?LINE, PIs, R], ?DEBUG_LEVEL),
+	    exit("Supplied Interceptors unable to create a valid new_out_connection");
+	{'EXCEPTION', E} ->
+	    orber:debug_level_print("[~p] orber_pi:new_out_connection(~p); exception(~p)", 
+				    [?LINE, PIs, E], ?DEBUG_LEVEL),
+	    exit("Supplied Interceptors unable to create a valid new_out_connection");
+	Ref ->
+	    Ref
+    end.
+
+new_out_connection([], Ref, _, _) ->
+    Ref;
+new_out_connection([Mod|T], Ref, Host, Port) ->
+    NewRef = Mod:new_out_connection(Ref, Host, Port),
+    new_out_connection(T, NewRef, Host, Port).
+
+%%------------------------------------------------------------
+%% function : closed_out_connection
+%% Arguments: 
+%% Returns  : 
+%% Exception: 
+%% Effect   : 
+%%------------------------------------------------------------
+closed_out_connection(PIs, Ref) ->
+    case catch closed_out_connection_helper(PIs, Ref) of
+	{'EXIT', R} ->
+	    orber:debug_level_print("[~p] orber_pi:closed_out_connection(~p); exit(~p)", 
+				    [?LINE, PIs, R], ?DEBUG_LEVEL),
+	    ok;
+	{'EXCEPTION', E} ->
+	    orber:debug_level_print("[~p] orber_pi:closed_out_connection(~p); exception(~p)", 
+				    [?LINE, PIs, E], ?DEBUG_LEVEL),
+	    ok;
+	_ ->
+	    ok
+    end.
+
+closed_out_connection_helper([], Ref) ->
+    ok;
+closed_out_connection_helper([Mod|T], Ref) ->
+    NewRef = Mod:closed_out_connection(Ref),
+    closed_out_connection_helper(T, NewRef).
+
+%%------------------------------------------------------------
+%% function : in_request_enc
+%% Arguments: 
+%% Returns  : 
+%% Exception: 
+%% Effect   : Intercepts an incoming request (server-side).
+%%------------------------------------------------------------
+in_request_enc(PIs, ReqHdr, Ref, Msg) ->
+    case catch in_request_enc(PIs, ReqHdr, Ref, Msg, undefined) of
+	{'EXIT', R} ->
+	    orber:debug_level_print("[~p] orber_pi:in_request_enc(~p, ~p, ~p); exit(~p)", 
+				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
+	{'EXCEPTION', E} ->
+	    orber:debug_level_print("[~p] orber_pi:in_request_enc(~p, ~p, ~p); exception(~p)", 
+				    [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
+	    corba:raise(E);
+	NewMsg ->
+	    NewMsg
+    end.
+
+in_request_enc([], _, _, Msg, _) ->
+    Msg;
+in_request_enc([Mod|T], ReqHdr, Ref, Msg, Args) ->
+    {NewMsg, NewArgs} = Mod:in_request_encoded(Ref, ReqHdr#request_header.object_key,
+					       ReqHdr#request_header.service_context,
+					       list_to_atom(ReqHdr#request_header.operation), 
+					       Msg, Args),
+    in_request_enc(T, ReqHdr, Ref, NewMsg, NewArgs).
+
+%%------------------------------------------------------------
+%% function : in_request
+%% Arguments: 
+%% Returns  : 
+%% Exception: 
+%% Effect   : Intercepts an incoming request (server-side).
+%%------------------------------------------------------------
+in_request(PIs, ReqHdr, Ref, Msg) ->
+    case catch in_request(PIs, ReqHdr, Ref, Msg, undefined) of
+	{'EXIT', R} ->
+	    orber:debug_level_print("[~p] orber_pi:in_request(~p, ~p, ~p); exit(~p)", 
+				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
+	{'EXCEPTION', E} ->
+	    orber:debug_level_print("[~p] orber_pi:in_request(~p, ~p, ~p); exception(~p)", 
+				    [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
+	    corba:raise(E);
+	NewMsg ->
+	    NewMsg
+    end.
+
+in_request([], _, _, Msg, _) ->
+    Msg;
+in_request([Mod|T], ReqHdr, Ref, Msg, Args) ->
+    {NewMsg, NewArgs} = Mod:in_request(Ref, ReqHdr#request_header.object_key,
+				       ReqHdr#request_header.service_context,
+				       list_to_atom(ReqHdr#request_header.operation), 
+				       Msg, Args),
+    in_request(T, ReqHdr, Ref, NewMsg, NewArgs).
+
+%%------------------------------------------------------------
+%% function : out_reply_enc
+%% Arguments: 
+%% Returns  : 
+%% Exception: 
+%% Effect   : Intercept an outgoing reply (server-side).
+%%------------------------------------------------------------
+out_reply_enc(PIs, ReqHdr, Ref, Msg) ->
+    case catch out_reply_enc(PIs, ReqHdr, Ref, Msg, undefined) of
+	{'EXIT', R} ->
+	    orber:debug_level_print("[~p] orber_pi:out_reply_enc(~p, ~p, ~p); exit(~p)", 
+				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
+	{'EXCEPTION', E} ->
+	    orber:debug_level_print("[~p] orber_pi:out_reply_enc(~p, ~p, ~p); exception(~p)", 
+				    [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
+	    corba:raise(E);
+	NewMsg ->
+	    NewMsg
+    end.
+out_reply_enc([], _, _, Msg, _) ->
+    Msg;
+out_reply_enc([Mod|T], ReqHdr, Ref, Msg, Args) ->
+    {NewMsg, NewArgs} = Mod:out_reply_encoded(Ref, ReqHdr#request_header.object_key,
+					      [], %% Context.
+					      list_to_atom(ReqHdr#request_header.operation),
+					      Msg, Args),
+    out_reply_enc(T, ReqHdr, Ref, NewMsg, NewArgs).
+
+
+%%------------------------------------------------------------
+%% function : out_reply
+%% Arguments: 
+%% Returns  : 
+%% Exception: 
+%% Effect   : Intercept an outgoing reply (server-side).
+%%------------------------------------------------------------
+out_reply(PIs, ReqHdr, Ref, Msg) ->
+    case catch out_reply(PIs, ReqHdr, Ref, Msg, undefined) of
+	{'EXIT', R} ->
+	    orber:debug_level_print("[~p] orber_pi:out_reply(~p, ~p, ~p); exit(~p)", 
+				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
+	NewMsg ->
+	    NewMsg
+    end.
+out_reply([], _, _, Msg, _) ->
+    Msg;
+out_reply([Mod|T], ReqHdr, Ref, Msg, Args) ->
+    {NewMsg, NewArgs} = Mod:out_reply(Ref, ReqHdr#request_header.object_key,
+				      [], %% Context.
+				      list_to_atom(ReqHdr#request_header.operation),
+				      Msg, Args),
+    out_reply(T, ReqHdr, Ref, NewMsg, NewArgs).
+
+
+%%------------------------------------------------------------
+%% function : out_request_enc
+%% Arguments: 
+%% Returns  : 
+%% Exception: 
+%% Effect   : Intercept an outgoing request (client-side).
+%%------------------------------------------------------------
+out_request_enc(PIs, ObjKey, Ctx, Op, Ref, Msg) ->
+    case catch out_request_enc(PIs, ObjKey, Ctx, Op, Ref, Msg, undefined) of
+	{'EXIT', R} ->
+	    orber:debug_level_print("[~p] orber_pi:out_request_enc(~p, ~p, ~p); exit(~p)", 
+				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
+	{'EXCEPTION', E} ->
+	    orber:debug_level_print("[~p] orber_pi:out_request_enc(~p, ~p, ~p); exception(~p)", 
+				    [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
+	    corba:raise(E);
+	NewMsg ->
+	    NewMsg
+    end.
+
+out_request_enc([], _, _, _, _, Msg, _) ->
+    Msg;
+out_request_enc([Mod|T], ObjKey, Ctx, Op, Ref, Msg, Args) ->
+    {NewMsg, NewArgs} = Mod:out_request_encoded(Ref, ObjKey, Ctx, Op, Msg, Args),
+    out_request_enc(T, ObjKey, Ctx, Op, Ref, NewMsg, NewArgs).
+
+
+%%------------------------------------------------------------
+%% function : out_request
+%% Arguments: 
+%% Returns  : 
+%% Exception: 
+%% Effect   : Intercept an outgoing request (client-side).
+%%------------------------------------------------------------
+out_request(PIs, ObjKey, Ctx, Op, Ref, Msg) ->
+    case catch out_request(PIs, ObjKey, Ctx, Op, Ref, Msg, undefined) of
+	{'EXIT', R} ->
+	    orber:debug_level_print("[~p] orber_pi:out_request(~p, ~p, ~p); exit(~p)", 
+				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
+	{'EXCEPTION', E} ->
+	    orber:debug_level_print("[~p] orber_pi:out_request(~p, ~p, ~p); exception(~p)", 
+				    [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
+	    corba:raise(E);
+	NewMsg ->
+	    NewMsg
+    end.
+
+out_request([], _, _, _, _, Msg, _) ->
+    Msg;
+out_request([Mod|T], ObjKey, Ctx, Op, Ref, Msg, Args) ->
+    {NewMsg, NewArgs} = Mod:out_request(Ref, ObjKey, Ctx, Op, Msg, Args),
+    out_request(T, ObjKey, Ctx, Op, Ref, NewMsg, NewArgs).
+
+
+%%------------------------------------------------------------
+%% function :in_reply_enc
+%% Arguments: 
+%% Returns  : 
+%% Exception: 
+%% Effect   : Intercept an incoming reply (client-side)
+%%------------------------------------------------------------
+in_reply_enc(PIs, ObjKey, Ctx, Op, Ref, Msg) ->
+    case catch in_reply_enc(PIs, ObjKey, Ctx, Op, Ref, Msg, undefined) of
+	{'EXIT', R} ->
+	    orber:debug_level_print("[~p] orber_pi:in_reply_enc(~p, ~p, ~p); exit(~p)", 
+				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
+	{'EXCEPTION', E} ->
+	    orber:debug_level_print("[~p] orber_pi:in_reply_enc(~p, ~p, ~p); exception(~p)", 
+				    [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
+	    corba:raise(E);
+	NewMsg ->
+	    NewMsg
+    end.
+
+in_reply_enc([], _, _, _, _, Msg, _) ->
+    Msg;
+in_reply_enc([Mod|T], ObjKey, Ctx, Op, Ref, Msg, Args) ->
+    {NewMsg, NewArgs} = Mod:in_reply_encoded(Ref, ObjKey, Ctx, Op, Msg, Args),
+    in_reply_enc(T, ObjKey, Ctx, Op, Ref, NewMsg, NewArgs).
+
+%%------------------------------------------------------------
+%% function :in_reply
+%% Arguments: 
+%% Returns  : 
+%% Exception: 
+%% Effect   : Intercept an incoming reply (client-side)
+%%------------------------------------------------------------
+in_reply(PIs, ObjKey, Ctx, Op, Ref, Msg) ->
+    case catch in_reply(PIs, ObjKey, Ctx, Op, Ref, Msg, undefined) of
+	{'EXIT', R} ->
+	    orber:debug_level_print("[~p] orber_pi:in_reply(~p, ~p, ~p); exit(~p)", 
+				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
+	NewMsg ->
+	    NewMsg
+    end.
+
+in_reply([], _, _, _, _, Msg, _) ->
+    Msg;
+in_reply([Mod|T], ObjKey, Ctx, Op, Ref, Msg, Args) ->
+    {NewMsg, NewArgs} = Mod:in_reply(Ref, ObjKey, Ctx, Op, Msg, Args),
+    in_reply(T, ObjKey, Ctx, Op, Ref, NewMsg, NewArgs).
+
+
+
+
+%%------------------------------------------------------------
+%%------------- CODEC FUNCTIONS ------------------------------
 %%------------------------------------------------------------
 %% function : codefactory_create_codec
 %% Arguments: #IOP_N_Encoding{}
@@ -189,26 +548,31 @@ codefactory_create_codec(_) ->
 %%------------------------------------------------------------
 %% function : codec_encode
 %% Arguments: Version - GIOP version
-%%            Bytes - Any - #any{}
+%%            Any - #any{}
 %% Returns  : CORBA::OctetSeq
 %% Exception: 
 %% Effect   : 
 %%------------------------------------------------------------
 codec_encode(Version, Any) when record(Any, any) ->
-    cdr_encode:enc_type(Version, 'tk_any', Any);
+    %% Encode ByteOrder
+    {Bytes, Len} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    list_to_binary(lists:reverse(cdr_encode:enc_type('tk_any', Version, Any,
+						     Bytes, Len)));
 codec_encode(Version, Any) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%------------------------------------------------------------
 %% function : codec_encode_value
 %% Arguments: Version - GIOP version
-%%            Bytes - Any - #any{}
+%%            Any - #any{}
 %% Returns  : CORBA::OctetSeq
 %% Exception: 
 %% Effect   : Encode the Any#any.value only.
 %%------------------------------------------------------------
 codec_encode_value(Version, #any{typecode = TC, value = Val}) ->
-    cdr_encode:enc_type(Version, TC, Val);
+    %% Encode ByteOrder
+    {Bytes, Len} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    list_to_binary(lists:reverse(cdr_encode:enc_type(TC, Version, Val, Bytes, Len)));
 codec_encode_value(Version, NotAnAny) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
@@ -220,8 +584,9 @@ codec_encode_value(Version, NotAnAny) ->
 %% Exception: 
 %% Effect   : 
 %%------------------------------------------------------------
-codec_decode(Version, Bytes) when list(Bytes) ->
-    case catch cdr_decode:dec_type('tk_any', Version, Bytes, 0, big) of
+codec_decode(Version, Bytes) when binary(Bytes) ->
+    {ByteOrder, Rest} = cdr_decode:dec_byte_order(Bytes),
+    case catch cdr_decode:dec_type('tk_any', Version, Rest, 0, ByteOrder) of
 	{Any, [], _} ->
 	    Any;
 	_->
@@ -239,8 +604,9 @@ codec_decode(Version, Any) ->
 %% Exception: 
 %% Effect   : 
 %%------------------------------------------------------------
-codec_decode_value(Version, Bytes, TypeCode) when list(Bytes) ->
-    case catch cdr_decode:dec_type(TypeCode, Version, Bytes, 0, big) of
+codec_decode_value(Version, Bytes, TypeCode) when binary(Bytes) ->
+    {ByteOrder, Rest} = cdr_decode:dec_byte_order(Bytes),
+    case catch cdr_decode:dec_type(TypeCode, Version, Rest, 0, ByteOrder) of
 	{Val, [], _} ->
 	    #any{typecode = TypeCode, value = Val};
 	_->
@@ -299,20 +665,11 @@ codec_decode_value(Version, Bytes, TypeCode) ->
 %% Exception: 
 %% Effect   : 
 %%------------------------------------------------------------
-server_start_receive({basic, PIs}, Version, ReqHdr, Rest, Len, ByteOrder, Msg) ->
-    %% Invoke the Interceptors so they can manipulate the message.
-    NewRest = preinvoke(Rest, PIs),
-    cdr_decode:dec_request_body(Version, ReqHdr, Rest, Len, ByteOrder, Msg);
-server_start_receive({portable, PIs}, Version, ReqHdr, Rest, Len, ByteOrder, Msg) ->
-    cdr_decode:dec_request_body(Version, ReqHdr, Rest, Len, ByteOrder, Msg);
-server_start_receive({both, PIs}, Version, ReqHdr, Rest, Len, ByteOrder, Msg) ->
-    %% Invoke the Interceptors so they can manipulate the message.
-    NewRest = preinvoke(Rest, PIs),
-    {Version, ReqHdr, Parameters, TypeCodes} = 
-	cdr_decode:dec_request_body(Version, ReqHdr, NewRest, Len, ByteOrder, Msg),
-
-    %% FIX ME!!! Create a request ID (cannot use 0).
-    SRI = ?createInitSRI(0,0,0,0),
+server_start_receive(PIs, Version, ReqHdr, Rest, Len, ByteOrder, Msg) ->
+    cdr_decode:dec_request_body(Version, ReqHdr, Rest, Len, ByteOrder, Msg),
+    SRI = ?createInitSRI(ReqHdr#request_header.request_id,
+			 ReqHdr#request_header.operation,
+			 ReqHdr#request_header.response_expected),
     server_receive(receive_service_contexts, SRI, PIs, [], PIs).
 
 server_receive(receive_service_contexts, SRI, [], Acc, PIs) ->
@@ -350,8 +707,6 @@ server_receive(receive_request, SRI, [H|T], Acc, PIs)  ->
 %% Exception: 
 %% Effect   : 
 %%------------------------------------------------------------
-server_start_send({basic, PIs}, SRI) ->
-    SRI;
 server_start_send(PIs, SRI) ->
     case SRI#'ServerRequestInfo'.reply_status of
 	'PortableInterceptor_SUCCESSFUL' ->
@@ -410,17 +765,6 @@ send_reply(SRI, Mod) ->
 send_exception(SRI, Mod) ->
     apply(Mod, send_exception, SRI).
 
-preinvoke([], Msg) ->
-    Msg;
-preinvoke([Mod|T], Msg) ->
-    NewMsg = apply(Mod, preinvoke, [Msg]),
-    preinvoke(T, NewMsg).
-
-postinvoke([], Msg) ->
-    Msg;
-postinvoke([Mod|T], Msg) ->
-    NewMsg = apply(Mod, postinvoke, [Msg]),
-    postinvoke(T, NewMsg).
 
 %%------------------------------------------------------------
 %%------------- CLIENT SIDE FUNCTIONS ------------------------
@@ -820,7 +1164,7 @@ get_server_policy(#'ServerRequestInfo'{contexts = Ctxs}, PolicyType) ->
 set_slot(SRI, SlotId, Data) ->
     corba:raise(#'PortableInterceptor_InvalidSlot'{}).
 
-%%------------------------------------------------------------
+%%-----------------------------------------------------------%
 %% function : target_is_a
 %% Arguments: ServerRequestInfo
 %%            IFRId - CORBA::RepositoryId

@@ -1167,6 +1167,7 @@ TCL_INC_DIR=${TCL_SRC_DIR}/generic
 
 AC_PATH_X
 not_really_there=""
+/bin/rm -f SKIP
 if test "$no_x" = ""; then
     if test "$x_includes" = ""; then
 	AC_TRY_CPP([#include <X11/XIntrinsic.h>], , not_really_there="yes")
@@ -1200,6 +1201,7 @@ fi
 if test "$XINCLUDES" = nope; then
     AC_MSG_RESULT(couldn't find any!)
     XINCLUDES="# no include files found"
+    echo "No X Windows includes or libraries found" > SKIP
 fi
 
 if test "$no_x" = yes; then
@@ -1227,6 +1229,7 @@ fi
 if test "$XLIBSW" = nope ; then
     AC_MSG_RESULT(couldn't find any!  Using -lX11.)
     XLIBSW=-lX11
+    echo "No X Windows includes or libraries found" > SKIP
 fi
 
 #--------------------------------------------------------------------

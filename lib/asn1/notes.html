@@ -7,6 +7,92 @@
 
 <CENTER><H1>Asn1 Release Notes</H1></CENTER>
 
+<H2>Asn1 1.3</H2>
+<H3>Known problems</H3>
+
+<UL>
+
+
+<LI>
+The compiler will now check that a value referenced by name
+does exist.
+<br>Own Id: OTP-3277
+
+
+<LI>
+BER:Decode of a type T ::= SEQUENCE OF C fails if C is encoded with indefinite length.
+This is know corrected.
+<br>Own Id: OTP-3811<br>
+Aux Id: seq5040
+
+</UL>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+The new parser handles imports when one import ends with FROM, a modulename and a reference to a objectidentifier followed by imports from other modules.
+<br>Own Id: OTP-3463
+
+
+<LI>
+The compiler did not check that a name mentioned as EXPORTED
+actually is defined within the module.
+This is now corrected.
+<br>Own Id: OTP-3659
+
+
+<LI>
+Removed bug caused by use of nested indefinite length
+<br>Own Id: OTP-3994
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+PER: Now supporting most common use of Information Objects according to X.681. A new parser has been implemented. The error messages due to syntax errors are slightly different than previous. TableConstraint part of X.682 now also supported.
+<br>Own Id: OTP-3979
+
+
+<LI>
+New compiler option added: <CODE>ber_bin</CODE>. The compiler generates code with new bit syntax. Run time functions uses bit syntax when feasible. Higher encoding/decoding performance in most cases. Se also comments for Asn1 1.2.9.3.
+<br>Own Id: OTP-3981
+
+
+<LI>
+A more compact format of BIT STRING in Erlang is now available by use of the compiler option <CODE>compact_bit_string</CODE>. It is much faster when large BIT STRINGs are used.
+<br>Own Id: OTP-3982
+
+
+<LI>
+Now possible to merge many ASN.1 input files to one Erlang file by use of a configuration file that lists the ASN.1 files.
+<br>Own Id: OTP-3983
+
+
+<LI>
+New documentation in <b>User's Guide</b> in section:<BR>3.1: New compile-time functions and options are described.<BR>4.6: New compact format of BIT STRING is described.<BR>4.8: Additional comments on character strings.<BR>7: New section describing ASN.1 Information Objects.<BR>8: New section describing Parameterization.<BR><b>Reference Manual/asn1ct</b> New compile options are described.
+<br>Own Id: OTP-3984<br>
+Aux Id: OTP-3978, OTP-3979, OTP-3981, OTP-3982, OTP-3983
+
+
+<LI>
+Added the functionality to invoke ASN1Mod:encode (and decode).
+<br>Own Id: OTP-3985
+
+
+<LI>
+Performance improvements by removing not necessary use of apply when calling asn1rt:encode. Also other general improvements.
+<br>Own Id: OTP-3988
+
+
+
+</UL>
+
+
+
 <H2>Asn1 1.2.9.6</H2>
 <H3>Known problems</H3>
 

@@ -36,10 +36,10 @@ SHELL = /bin/sh
 LIBS = @LIBS@
 LDFLAGS = @DED_LDFLAGS@
 soname = @ded_soname@
-OS = @OSTYPE@
+ERLANG_OSTYPE = @ERLANG_OSTYPE@
 
 SYSINCLUDE = 	-I$(ERL_TOP)/erts/emulator/beam \
-		-I$(ERL_TOP)/erts/emulator/sys/$(OS)
+		-I$(ERL_TOP)/erts/emulator/sys/$(ERLANG_OSTYPE)
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 	SYSINCLUDE += -I$(ERL_TOP)/erts/etc/vxworks
 endif

@@ -106,6 +106,13 @@ ObjectClassAssignment ObjectClass ObjectClassDefn
 FieldSpecs FieldSpec OptionalitySpec WithSyntaxSpec
 TokenOrGroupSpecs TokenOrGroupSpec
 SyntaxList OptionalGroup RequiredToken Word
+TypeOptionalitySpec
+ValueOrObjectOptSpec
+VSetOrOSetOptSpec
+ValueOptionalitySpec
+ObjectOptionalitySpec
+ValueSetOptionalitySpec
+ObjectSetOptionalitySpec
 % X.681 chapter 15
 InformationFromObjects
 ValueFromObject
@@ -117,6 +124,7 @@ ReferencedObjects
 FieldName
 PrimitiveFieldName
 
+ObjectAssignment
 ObjectSetAssignment
 ObjectSet
 ObjectSetElements
@@ -131,9 +139,12 @@ DefinedSyntaxToken
 Setting
 DefinedObject
 ObjectFromObject
+ObjectSetFromObjects
 ParameterizedObject
 ExternalObjectReference
-
+DefinedObjectSet
+DefinedObjectClass
+ExternalObjectClassReference
 
 % X.682
 TableConstraint
@@ -164,7 +175,8 @@ Terminals
 '{' '}' '(' ')' '.' '::=' ';' ',' '@' '*' '-' '[' ']'
 '!' '..' '...' '|' '<' ':' '^'
 number identifier typereference restrictedcharacterstringtype 
-bstring hstring cstring typefieldreference valuefieldreference.
+bstring hstring cstring typefieldreference valuefieldreference
+objectclassreference word.
 
 Rootsymbol ModuleDefinition.
 Endsymbol '$end'.
@@ -287,6 +299,7 @@ Assignment -> ValueAssignment : '$1'.
 % later Assignment -> ValueSetTypeAssignment : '$1'.
 Assignment -> ObjectClassAssignment : '$1'.
 % later Assignment -> ObjectAssignment : '$1'.
+% combined with ValueAssignment Assignment -> ObjectAssignment : '$1'.
 Assignment -> ObjectSetAssignment : '$1'.
 Assignment -> ParameterizedTypeAssignment : '$1'.
 %Assignment -> ParameterizedValueAssignment : '$1'.
@@ -294,18 +307,65 @@ Assignment -> ParameterizedTypeAssignment : '$1'.
 %Assignment -> ParameterizedObjectClassAssignment : '$1'.
 
 ObjectClassAssignment -> typereference '::=' 'CLASS' '{' FieldSpecs '}' :
+%ObjectClassAssignment -> objectclassreference '::=' 'CLASS' '{' FieldSpecs '}' :
 	#typedef{pos=element(2,'$1'),name=element(3,'$1'),typespec={'CLASS','$5',[]}}.
 ObjectClassAssignment -> typereference '::=' 'CLASS' '{' FieldSpecs '}' WithSyntaxSpec :
+%ObjectClassAssignment -> objectclassreference '::=' 'CLASS' '{' FieldSpecs '}' WithSyntaxSpec :
 	#typedef{pos=element(2,'$1'),name=element(3,'$1'),typespec={'CLASS','$5','$7'}}.
 
 FieldSpecs -> FieldSpec : ['$1'].
 FieldSpecs -> FieldSpec ',' FieldSpecs : ['$1'|'$3'].
 
-FieldSpec -> typefieldreference OptionalitySpec : {typefield,'$1','$2'}.
-FieldSpec -> valuefieldreference Type 'UNIQUE' OptionalitySpec : 
-	{valuefield,'$1','$2','UNIQUE','$4'}.
-FieldSpec -> valuefieldreference Type OptionalitySpec : 
-	{valuefield,'$1','$2',undefined,'$3'}.
+FieldSpec -> typefieldreference TypeOptionalitySpec : {typefield,'$1','$2'}.
+
+FieldSpec -> valuefieldreference Type 'UNIQUE' ValueOrObjectOptSpec : 
+	{fixedtypevaluefield,'$1','$2','UNIQUE','$4'}.
+FieldSpec -> valuefieldreference Type ValueOrObjectOptSpec : 
+	{fixedtypevaluefield,'$1','$2',undefined,'$3'}.
+
+FieldSpec -> valuefieldreference typefieldreference ValueOrObjectOptSpec :
+        {variabletypevaluefield, '$1','$2','$3'}.
+
+FieldSpec -> typefieldreference typefieldreference VSetOrOSetOptSpec : 
+        {variabletypevaluesetfield, '$1','$2','$3'}.
+
+FieldSpec -> typefieldreference Type VSetOrOSetOptSpec :
+        {fixedtypevaluesetfield, '$1','$2','$3'}.
+
+TypeOptionalitySpec -> 'DEFAULT' Type : {'DEFAULT','$2'}.
+TypeOptionalitySpec -> 'OPTIONAL' : 'OPTIONAL'.
+TypeOptionalitySpec -> '$empty' : 'MANDATORY'.
+
+ValueOrObjectOptSpec -> ValueOptionalitySpec : '$1'.
+ValueOrObjectOptSpec -> ObjectOptionalitySpec : '$1'.
+ValueOrObjectOptSpec -> 'OPTIONAL' : 'OPTIONAL'.
+ValueOrObjectOptSpec -> '$empty' : 'MANDATORY'.
+
+ValueOptionalitySpec -> 'DEFAULT' Value :
+	case '$2' of
+	{identifier,_,Id} -> {'DEFAULT',Id};
+	_ -> {'DEFAULT','$2'}
+	end.
+
+%ObjectOptionalitySpec -> 'DEFAULT' Object :{'DEFAULT','$1'}.
+ObjectOptionalitySpec -> 'DEFAULT'  '{' FieldSetting ',' FieldSettings '}' : 
+        {'DEFAULT',{object,['$2'|'$4']}}.
+ObjectOptionalitySpec -> 'DEFAULT'  '{' FieldSetting '}' :
+        {'DEFAULT',{object, ['$2']}}.
+%ObjectOptionalitySpec -> 'DEFAULT'  '{' DefinedSyntaxTokens '}' :
+%        {'DEFAULT',{object, '$2'}}.
+ObjectOptionalitySpec -> 'DEFAULT'  ObjectFromObject :
+        {'DEFAULT',{object, '$2'}}.
+
+
+VSetOrOSetOptSpec -> ValueSetOptionalitySpec : '$1'.
+%VSetOrOSetOptSpec -> ObjectSetOptionalitySpec : '$1'.
+VSetOrOSetOptSpec -> 'OPTIONAL' : 'OPTIONAL'.
+VSetOrOSetOptSpec -> '$empty' : 'MANDATORY'.
+
+ValueSetOptionalitySpec -> 'DEFAULT' ValueSet : {'DEFAULT','$1'}.
+
+%ObjectSetOptionalitySpec -> 'DEFAULT' ObjectSet : {'DEFAULT','$1'}.
 
 OptionalitySpec -> 'DEFAULT' Type : {'DEFAULT','$2'}.
 OptionalitySpec -> 'DEFAULT' ValueNotNull : 
@@ -470,6 +530,8 @@ ValueNotNull -> typereference '.' identifier :
 	#'Externalvaluereference'{pos=element(2,'$1'),module=element(3,'$1'),
 	value=element(3,'$3')}.
 ValueNotNull -> identifier :'$1'.
+
+
 %tmp Value -> NamedNumber: '$1'. % not a value but part of ObjIdC
 % redundant BuiltinValue -> BitStringValue :'$1'.
 BuiltinValue -> BooleanValue :'$1'.
@@ -616,6 +678,7 @@ ValueList -> Value :['$1'].
 ValueList -> NamedNumber :['$1'].
 % modified ValueList -> ValueList ',' Value :'$1'.
 ValueList -> Value ',' ValueList :['$1'|'$3'].
+ValueList -> Value ',' '...' :['$1' |[]].
 ValueList -> Value ValueList : ['$1',space|'$2'].
 ValueList -> NamedNumber ValueList: ['$1',space|'$2'].
 
@@ -778,8 +841,8 @@ ConstraintSpec -> UserDefinedConstraint :'$1'.
 ConstraintSpec -> TableConstraint :'$1'.
 
 TableConstraint -> ComponentRelationConstraint : '$1'.
-% TableConstraint -> ObjectSet : '$1'.
-TableConstraint -> '{' typereference '}' :tableconstraint.
+TableConstraint -> ObjectSet : '$1'.
+%TableConstraint -> '{' typereference '}' :tableconstraint.
 
 ComponentRelationConstraint -> '{' typereference '}' '{' '@' ComponentIdList '}' : componentrelation.
 ComponentRelationConstraint -> '{' typereference '}' '{' '@' '.' ComponentIdList '}' : componentrelation.
@@ -939,6 +1002,7 @@ PrimitiveFieldName -> valuefieldreference : '$1'.
 %ObjectSetAssignment -> typereference DefinedObjectClass '::=' ObjectSet: null.
 ObjectSetAssignment -> typereference typereference '::=' ObjectSet :
 	#typedef{pos=element(2,'$1'),name=element(3,'$1'),typespec={'ObjectSet',element(3,'$2'), '$4'}}.	
+ObjectSetAssignment -> typereference typereference '.' typereference '::=' ObjectSet.
 
 ObjectSet -> '{' ElementSetSpecs '}' : '$2'.
 ObjectSet -> '{' '...' '}' : ['EXTENSIONMARK'].
@@ -949,43 +1013,83 @@ ObjectSet -> '{' '...' '}' : ['EXTENSIONMARK'].
 %ObjectSetElements -> ObjectSetFromObjects.
 %ObjectSetElements -> ParameterizedObjectSet.
 
-Object -> DefinedObject: '$1'.
-Object -> ObjectDefn: '$1'.
-Object -> ObjectFromObject: '$1'.
+%ObjectAssignment -> identifier DefinedObjectClass '::=' Object.
+ObjectAssignment -> ValueAssignment.
+%ObjectAssignment -> identifier typereference '::=' Object.
+%ObjectAssignment -> identifier typereference '.' typereference '::=' Object.
+
+%Object -> DefinedObject: '$1'.
+%Object -> ExternalObjectReference: '$1'.%Object -> DefinedObject: '$1'.
+Object -> typereference '.' identifier: '$1'.%Object -> DefinedObject: '$1'.
+Object -> identifier: '$1'.%Object -> DefinedObject: '$1'.
+
+%Object -> ObjectDefn -> DefaultSyntax: '$1'.
+Object -> '{' FieldSetting ',' FieldSettings '}' : ['$2'|'$4'].
+Object -> '{' FieldSetting '}' :['$2'].
+
+%% For User-friendly notation
+%% Object -> ObjectDefn -> DefinedSyntax
+Object -> '{' '}'. 
+Object -> '{' DefinedSyntaxTokens '}'.
+
 % later Object -> ParameterizedObject: '$1'. look in x.683
 
-DefinedObject -> ExternalObjectReference: '$1'.
-% objectreference == identifier
-DefinedObject -> identifier: '$1'.
+%DefinedObject -> ExternalObjectReference: '$1'.
+%DefinedObject -> identifier: '$1'.
+
+DefinedObjectClass -> typereference.
+%DefinedObjectClass -> objectclassreference.
+DefinedObjectClass -> ExternalObjectClassReference.
+%DefinedObjectClass -> typereference '.' objectclassreference.
+%%DefinedObjectClass -> UsefulObjectClassReference.
+
+ExternalObjectReference -> typereference '.' identifier.
+ExternalObjectClassReference -> typereference '.' typereference.
+%%ExternalObjectClassReference -> typereference '.' objectclassreference.
 
 ObjectDefn -> DefaultSyntax: '$1'.
-ObjectDefn -> DefinedSyntax: '$1'.
+%ObjectDefn -> DefinedSyntax: '$1'.
 
 ObjectFromObject -> ReferencedObjects '.' FieldName : {'ObjectFromObject','$1','$3'}.
 
 % later look in x.683 ParameterizedObject ->
- 
-DefaultSyntax -> '{' FieldSettings '}': '$2'.
 
-FieldSettings -> FieldSetting: '$1'.
-FieldSettings -> FieldSetting ',' FieldSettings: ['$1'|'$3'].
+%DefaultSyntax -> '{' '}'. 
+%DefaultSyntax -> '{' FieldSettings '}': '$2'.
+DefaultSyntax -> '{' FieldSetting ',' FieldSettings '}': '$2'.
+DefaultSyntax -> '{' FieldSetting '}': '$2'.
 
 FieldSetting -> PrimitiveFieldName Setting: {'$1','$2'}.
 
+FieldSettings -> FieldSetting ',' FieldSettings: ['$1'|'$3'].
+FieldSettings -> FieldSetting ',' FieldSettings: ['$1'|'$3'].
+FieldSettings -> FieldSetting: '$1'.
+
+%DefinedSyntax -> '{' '}'.
 DefinedSyntax -> '{' DefinedSyntaxTokens '}': '$2'.
 
 DefinedSyntaxTokens -> DefinedSyntaxToken: '$1'.
 DefinedSyntaxTokens -> DefinedSyntaxToken DefinedSyntaxTokens: ['$1'|'$2'].
 
 % expanded DefinedSyntaxToken -> Literal: '$1'.
-DefinedSyntaxToken -> typereference: '$1'.
+%DefinedSyntaxToken -> typereference: '$1'.
+DefinedSyntaxToken -> word: '$1'.
 DefinedSyntaxToken -> ',': '$1'.
 DefinedSyntaxToken -> Setting: '$1'.
+%DefinedSyntaxToken -> '$empty': nil .
 
+% Setting ::= Type|Value|ValueSet|Object|ObjectSet
 Setting -> Type: '$1'.
-Setting -> Value: '$1'.
+%Setting -> Value: '$1'.
+%Setting -> ValueNotNull: '$1'.
+Setting -> BuiltinValue: '$1'.
 Setting -> ValueSet: '$1'.
-Setting -> Object: '$1'.
+%Setting -> Object: '$1'.
+%Setting -> ExternalObjectReference.
+Setting -> typereference '.' identifier. 
+Setting -> identifier. 
+Setting -> ObjectDefn.
+
 Setting -> ObjectSet: '$1'.
 
 

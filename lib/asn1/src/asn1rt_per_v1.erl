@@ -27,7 +27,8 @@
 -export([getoptionals/3, set_choice/3, encode_integer/2, encode_integer/3  ]).
 -export([decode_integer/2, decode_integer/3, encode_small_number/1, encode_boolean/1, 
 	 decode_boolean/1, encode_length/2, decode_length/1, decode_length/2,
-	encode_small_length/1, decode_small_length/1]).
+	encode_small_length/1, decode_small_length/1,
+	decode_compact_bit_string/3]).
 -export([encode_enumerated/3, decode_enumerated/3, 
 	 encode_bit_string/3, decode_bit_string/3  ]).
 -export([encode_octet_string/2, decode_octet_string/2,
@@ -197,6 +198,35 @@ comptuple(_B,_L,0,_Nr) ->
 comptuple(B,O,N,Nr) ->
     [0|comptuple(B,O,N-1,Nr+1)].
 
+%% getbits_as_binary(Num,Bytes) -> {{Unused,BinBits},RestBytes},
+%% Num = integer(),
+%% Bytes = list() | tuple(),
+%% Unused = integer(),
+%% BinBits = binary(),
+%% RestBytes = tuple()
+getbits_as_binary(Num,Bytes) when list(Bytes) ->
+    getbits_as_binary(Num,{0,Bytes});
+getbits_as_binary(Num,{Used,[]}) ->
+    {{0,<<>>},{Used,[]}};
+getbits_as_binary(Num,{Used,Bits=[H|T]}) ->
+    B1 = case (Num+Used) =< 8 of
+	     true -> Num;
+	     _ -> 8-Used
+	 end,
+    B2 = Num - B1,
+    Pad = (8 - ((B1+B2) rem 8)) rem 8,% Pad /= 8
+    RestBits = lists:nthtail((B1+B2) div 8,Bits),
+    Int = integer_from_list(B2,T,0),
+    NewUsed = (Used + Num) rem 8,
+    {{Pad,<<(H bsr (8-(Used+B1))):B1,Int:B2,0:Pad>>},{NewUsed,RestBits}}.
+
+integer_from_list(Int,[],BigInt) ->
+    BigInt;
+integer_from_list(Int,[H|T],BigInt) when Int < 8 ->
+    (BigInt bsl Int) bor (H bsr (8-Int));
+integer_from_list(Int,[H|T],BigInt) ->
+    integer_from_list(Int-8,T,(BigInt bsl 8) bor H).
+     
 getbits_as_list(Num,Bytes) ->
     getbits_as_list(Num,Bytes,[]).
 
@@ -351,7 +381,9 @@ encode_integer(C,V,NamedNumberList) when atom(V) ->
 	    exit({error,{asn1,{namednumber,V}}})
     end;
 encode_integer(C,V,NamedNumberList) when integer(V) ->
-    encode_integer(C,V).
+    encode_integer(C,V);
+encode_integer(C,{Name,V},NamedNumberList) when atom(Name) ->
+    encode_integer(C,V,NamedNumberList).
     
 encode_integer(C,{Name,Val}) when atom(Name) ->
     encode_integer(C,Val);
@@ -839,6 +871,14 @@ decode_enumerated(Buffer,C,NamedNumberTup) when tuple(NamedNumberTup) ->
 %% - integer value representing the bitlist
 %% C is constraint Len, only valid when identifiers
 
+
+%% when the value is a list of {Unused,BinBits}, where 
+%% Unused = integer(),
+%% BinBits = binary().
+encode_bit_string(C,Bin={Unused,BinBits},NamedBitList) when integer(Unused),
+							    binary(BinBits) ->
+    encode_bin_bit_string(C,Bin,NamedBitList);
+
 %% when the value is a list of named bits
 encode_bit_string(C, [FirstVal | RestVal], NamedBitList) when atom(FirstVal) ->
     ToSetPos = get_all_bitposes([FirstVal | RestVal], NamedBitList, []),
@@ -879,13 +919,93 @@ encode_bit_string(C, BitListValue, NamedBitList) when list(BitListValue) ->
     end;
 
 %% when the value is an integer
-encode_bit_string(C, IntegerVal, NamedBitList) ->
+encode_bit_string(C, IntegerVal, NamedBitList) when integer(IntegerVal)->
     BitList = int_to_bitlist(IntegerVal),
-    encode_bit_string(C,BitList,NamedBitList).
-   
+    encode_bit_string(C,BitList,NamedBitList);
 
+%% when the value is a tuple
+encode_bit_string(C,{Name,Val}, NamedBitList) when atom(Name) ->
+    encode_bit_string(C,Val,NamedBitList).
+
+
+%% encode_bin_bit_string/3, when value is a tuple of Unused and BinBits.
+%% Unused = integer(),
+%% BinBits = binary().
+
+encode_bin_bit_string(C,{Unused,BinBits},NamedBitList) ->
+    RemoveZerosIfNNL =
+	fun({NNL,BitList}) -> 
+		case NNL of
+		    [] -> BitList;
+		    _ ->
+			lists:reverse(
+			  lists:dropwhile(fun(0)->true;(1)->false end,
+					  lists:reverse(BitList)))
+		end
+	end,
+    {OctetList,OLSize,LastBits} =
+	case size(BinBits) of
+	    N when N>1 ->
+		IntList = binary_to_list(BinBits),
+		[H|T] = lists:reverse(IntList),
+		Bl1 = RemoveZerosIfNNL({NamedBitList,lists:sublist(int_to_bitlist(H),8-Unused)}),% lists:sublist obsolete if trailing bits are zero !
+		{[{octet,X} || X <- lists:reverse(T)],size(BinBits)-1,
+		 [{bit,X} || X <- Bl1]};
+	    1 ->
+		<<B7:1,B6:1,B5:1,B4:1,B3:1,B2:1,B1:1,B0:1>> = BinBits,
+		{[],0,[{bit,X} || X <- lists:sublist([B7,B6,B5,B4,B3,B2,B1,B0],8-Unused)]};
+	    _ ->
+		{[],0,[]}
+	end,
+    case get_constraint(C,'SizeConstraint') of
+	0 ->
+	    [];
+	V when integer(V),V=<16 ->
+	    [OctetList, pad_list(V,LastBits)];
+	V when integer(V) ->
+	    [OctetList, align, pad_list(V rem 8,LastBits)];
+	{Lb,Ub} when integer(Lb),integer(Ub) ->
+	    [encode_length({Lb,Ub},length(LastBits)+(OLSize*8)),
+			   OctetList,align,LastBits];
+	 no ->
+	    [encode_length(undefined,length(LastBits)+(OLSize*8)),
+	     OctetList,align,LastBits];
+	Sc ->
+	    [encode_length(Sc,length(LastBits)+(OLSize*8)),
+	     OctetList,align,LastBits]
+    end.
     
     
+%%%%%%%%%%%%%%%
+%% The result is presented as a list of named bits (if possible)
+%% else as a tuple {Unused,Bits}. Unused is the number of unused
+%% bits, least significant bits in the last byte of Bits. Bits is
+%% the BIT STRING represented as a binary.
+%% 
+decode_compact_bit_string(Buffer, C, NamedNumberList) ->
+    case get_constraint(C,'SizeConstraint') of
+	0 -> % fixed length
+	    {{0,<<>>},Buffer};
+	V when integer(V),V=<16 -> %fixed length 16 bits or less
+	    compact_bit_string(Buffer,V,NamedNumberList);
+	V when integer(V) -> %fixed length > 16 bits
+	    Bytes2 = align(Buffer),
+	    compact_bit_string(Bytes2,V,NamedNumberList);
+	{Lb,Ub} when integer(Lb),integer(Ub) ->
+	    {Len,Bytes2} = decode_length(Buffer,{Lb,Ub}),
+	    Bytes3 = align(Bytes2),
+	    compact_bit_string(Bytes3,Len,NamedNumberList);
+	no ->
+	    {Len,Bytes2} = decode_length(Buffer,undefined),
+	    Bytes3 = align(Bytes2),
+	    compact_bit_string(Bytes3,Len,NamedNumberList);
+	Sc ->
+	    {Len,Bytes2} = decode_length(Buffer,Sc),
+	    Bytes3 = align(Bytes2),
+	    compact_bit_string(Bytes3,Len,NamedNumberList)
+    end.
+
+
 %%%%%%%%%%%%%%%
 %% The result is presented as a list of named bits (if possible)
 %% else as a list of 0 and 1.
@@ -912,6 +1032,16 @@ decode_bit_string(Buffer, C, NamedNumberList) ->
 	    Bytes3 = align(Bytes2),
 	    bit_list_to_named(Bytes3,Len,NamedNumberList)
     end.
+
+
+%% if no named bits are declared we will return a
+%% {Unused,Bits}. Unused = integer(),
+%% Bits = binary().
+compact_bit_string(Buffer,Len,[]) ->
+    getbits_as_binary(Len,Buffer); % {{Unused,BinBits},NewBuffer}
+compact_bit_string(Buffer,Len,NamedNumberList) ->
+    bit_list_to_named(Buffer,Len,NamedNumberList).
+
 
 %% if no named bits are declared we will return a
 %% BitList = [0 | 1]
@@ -1008,6 +1138,8 @@ encode_octet_string(C,{Name,Val}) when atom(Name) ->
 encode_octet_string(C,Val) ->
     encode_octet_string(C,false,Val).
 
+encode_octet_string(C,Bool,{Name,Val}) ->
+    encode_octet_string(C,Bool,Val);
 encode_octet_string(C,true,Val) -> 
     exit({error,{asn1,{'not_supported',extensionmarker}}});
 encode_octet_string(C,false,Val) ->
@@ -1202,7 +1334,7 @@ getBMPChars(Bytes,1) ->
 	O1 == 0 ->
 	    {[O2],Bytes3};
 	true ->
-	    {[{O1,O2}],Bytes3}
+	    {[{0,0,O1,O2}],Bytes3}
     end;
 getBMPChars(Bytes,Len) ->
     getBMPChars(Bytes,Len,[]).
@@ -1215,7 +1347,7 @@ getBMPChars(Bytes,Len,Acc) ->
 	[0,O2] ->
 	    getBMPChars(Bytes1,Len-1,[O2|Acc]);
 	[O1,O2]->
-	    getBMPChars(Bytes1,Len-1,[{O1,O2}|Acc])
+	    getBMPChars(Bytes1,Len-1,[{0,0,O1,O2}|Acc])
     end.
 
     
@@ -1243,10 +1375,12 @@ chars_encode2([H|T],NumBits,{Min,Max,Tab}) when H =< Max, H >= Min ->
     [{bits,NumBits,element(H-Min+1,Tab)}|chars_encode2(T,NumBits,{Min,Max,Tab})];
 chars_encode2([{A,B,C,D}|T],NumBits,{Min,Max,notab}) -> 
     %% no value range check here (ought to be, but very expensive)
-    [{bits,NumBits,(A*B*C*D)-Min}|chars_encode2(T,NumBits,{Min,Max,notab})];
+%    [{bits,NumBits,(A*B*C*D)-Min}|chars_encode2(T,NumBits,{Min,Max,notab})];
+    [{bits,NumBits,((((((A bsl 8) + B) bsl 8) + C) bsl 8) + D)-Min}|chars_encode2(T,NumBits,{Min,Max,notab})];
 chars_encode2([{A,B,C,D}|T],NumBits,{Min,Max,Tab}) -> 
     %% no value range check here (ought to be, but very expensive)
-    [{bits,NumBits,element((A*B*C*D)-Min,Tab)}|chars_encode2(T,NumBits,{Min,Max,notab})];
+%    [{bits,NumBits,element((A*B*C*D)-Min,Tab)}|chars_encode2(T,NumBits,{Min,Max,notab})];
+    [{bits,NumBits,element(((((((A bsl 8)+B) bsl 8)+C) bsl 8)+D)-Min,Tab)}|chars_encode2(T,NumBits,{Min,Max,notab})];
 chars_encode2([H|T],NumBits,{Min,Max,Tab}) ->
     exit({error,{asn1,{illegal_char_value,H}}});
 chars_encode2([],_,_) ->
@@ -1462,6 +1596,8 @@ decode_null(Bytes) ->
 %% Int3-N -> integer()
 %% CompleteList -> [{bits,8,Val}|{octets,Ol}|align|...]
 %%
+encode_object_identifier({Name,Val}) when atom(Name) ->
+    encode_object_identifier(Val);
 encode_object_identifier(Val) ->
     Octets = e_object_identifier(Val,notag),
     [{debug,object_identifier},encode_length(undefined,length(Octets)),{octets,Octets}].

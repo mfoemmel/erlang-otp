@@ -324,10 +324,19 @@ force_load_table(Tab) ->
     {error, {bad_type, Tab}}.
     
 do_force_load_table(Tab) ->
-    set({Tab, load_by_force}, true),
-    mnesia_late_loader:async_late_disc_load(node(), [Tab], forced_by_user),
-    wait_for_tables([Tab], infinity).
-
+    Loaded = ?catch_val({Tab, load_reason}),
+    case Loaded of
+	unknown -> 
+	    set({Tab, load_by_force}, true),
+	    mnesia_late_loader:async_late_disc_load(node(), [Tab], forced_by_user),
+	    wait_for_tables([Tab], infinity);
+	{'EXIT', _} ->
+	    set({Tab, load_by_force}, true),
+	    mnesia_late_loader:async_late_disc_load(node(), [Tab], forced_by_user),
+	    wait_for_tables([Tab], infinity);
+	_ ->
+	    ok
+    end.    
 master_nodes_updated(schema, Masters) ->
     ignore;
 master_nodes_updated(Tab, Masters) ->
@@ -681,8 +690,24 @@ late_disc_load(TabsR, Reason, RemoteLoaders, From, State) ->
     reply(From, queued),
     %% RemoteLoaders is a list of {ok, Node, Tabs} tuples
 
+    %% Remove deleted tabs
+    LocalTabs = mnesia_lib:val({schema, local_tables}),
+    Filter = fun({Tab, Reas}, Acc) -> 
+		     case lists:member(Tab, LocalTabs) of
+			 true -> [{Tab, Reas} | Acc];
+		         false -> Acc
+		     end;
+		(Tab, Acc) ->
+		     case lists:member(Tab, LocalTabs) of
+			 true -> [Tab | Acc];
+		         false -> Acc
+		     end
+	     end,
+    
+    Tabs = lists:foldl(Filter, [], TabsR),
+    
     Nodes = val({current, db_nodes}),
-    LateLoaders = late_loaders(TabsR, Reason, RemoteLoaders, Nodes),
+    LateLoaders = late_loaders(Tabs, Reason, RemoteLoaders, Nodes),
     LateQueue = State#state.late_loader_queue ++ LateLoaders,
     State#state{late_loader_queue = LateQueue}.
 

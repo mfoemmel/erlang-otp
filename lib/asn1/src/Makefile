@@ -22,10 +22,10 @@ RELSYSDIR = $(RELEASE_PATH)/lib/asn1-$(VSN)
 #
 # Common Macros
 #
-PARSER_SRC = \
-	asn1ct_parser.yrl
+# PARSER_SRC = \
+#	asn1ct_parser.yrl
 
-PARSER_MODULE=$(PARSER_SRC:%.yrl=%)
+# PARSER_MODULE=$(PARSER_SRC:%.yrl=%)
 
 EBIN = ../ebin
 CT_MODULES= \
@@ -39,10 +39,9 @@ CT_MODULES= \
 	asn1ct_constructed_per \
 	asn1ct_constructed_ber \
 	asn1ct_gen_ber \
-	asn1ct_constructed_ber_bin \
-	asn1ct_gen_ber_bin \
 	asn1ct_value \
-	asn1ct_tok 
+	asn1ct_tok \
+	asn1ct_parser2
 
 RT_MODULES= \
 	asn1rt \
@@ -56,7 +55,7 @@ RT_MODULES= \
 # and must be updated when an incompatible change is done in the rt modules
 
 
-MODULES= $(CT_MODULES) $(RT_MODULES) $(PARSER_MODULE) $(TEST_MODULES)
+MODULES= $(CT_MODULES) $(RT_MODULES) 
 
 ERL_FILES = $(MODULES:%=%.erl)
  
