@@ -1,33 +1,7 @@
 {"%VSN%",
  [
-  {"3.2.11",
-   [
-	{update, 'orber_iiop_outrequest', soft, soft_purge, soft_purge, []},
-	{update, 'orber_iiop_outproxy', soft, soft_purge, soft_purge, []},
-	{update, 'cdr_decode', soft, soft_purge, soft_purge, []},
-	{update, 'cdr_encode', soft, soft_purge, soft_purge, []},
-	{update, 'iop_ior', soft, soft_purge, soft_purge, []},
-	{update, 'orber_iiop_inrequest', soft, soft_purge, soft_purge, [cdr_decode]},
-	{update, 'orber_iiop_pm', soft, soft_purge, soft_purge, []},
-	{update, 'orber_iiop', soft, soft_purge, soft_purge, [cdr_encode, iop_ior, orber_iiop_pm]},
-	{update, 'corba', soft, soft_purge, soft_purge, [iop_ior]}
-    ]
-  }
  ],
  [
-  {"3.2.11",
-   [
-	{update, 'orber_iiop_outrequest', soft, soft_purge, soft_purge, []},
-	{update, 'orber_iiop_outproxy', soft, soft_purge, soft_purge, []},
-	{update, 'orber_iiop_inrequest', soft, soft_purge, soft_purge, []},
-	{update, 'cdr_decode', soft, soft_purge, soft_purge, [orber_iiop_inrequest]},
-	{update, 'orber_iiop', soft, soft_purge, soft_purge, []},
-	{update, 'cdr_encode', soft, soft_purge, soft_purge, [orber_iiop]},
-	{update, 'corba', soft, soft_purge, soft_purge, []},
-	{update, 'iop_ior', soft, soft_purge, soft_purge, [orber_iiop, corba]},
-	{update, 'orber_iiop_pm', soft, soft_purge, soft_purge, [orber_iiop]}
-   ]
-  }
  ]
 }.
 

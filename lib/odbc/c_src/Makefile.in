@@ -38,12 +38,15 @@ RELSYSDIR = $(RELEASE_PATH)/lib/odbc-$(VSN)
 # C Target Specs
 # ----------------------------------------------------
 ifeq ($(findstring win32,$(TARGET)),win32)
-MAKEFILE = Makefile.dist.win32.src
+MAKEFILE = Makefile.win32.src
+MAKE_PREBUILD = Makefile.win32
 else
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
-MAKEFILE = Makefile.dist.unix.src
+MAKEFILE = Makefile.unix.src
+MAKE_PREBUILD =
 else
-MAKEFILE = Makefile.dist.unix.src
+MAKEFILE = Makefile.unix.src
+MAKE_PREBUILD =
 endif
 endif
 
@@ -54,6 +57,9 @@ C_FILES = odbcserver.c convert_macros.c
 # ----------------------------------------------------
 
 MAKE_TARGET= $(OBJDIR)/Makefile
+WIN32_TARGET1 = odbcserver.exe
+WIN32_TARGET2 = odbc.hrl
+
 
 # ----------------------------------------------------
 # FLAGS
@@ -63,14 +69,16 @@ MAKE_TARGET= $(OBJDIR)/Makefile
 # Targets
 # ----------------------------------------------------
 
-opt:
-	echo "Nothing to build"
-
-debug:
-	echo "Nothing to build"
+opt: $(MAKE_PREBUILD)
+ 
+debug: $(MAKE_PREBUILD)
 
 clean:
-	rm -f core *~
+	rm -f core *~ Makefile.win32
+ifeq ($(findstring yes,$(TEST)),yes)
+else
+	rm -f ../priv/bin/$(WIN32_TARGET1) ../include/$(WIN32_TARGET2)
+endif
 
 docs:
 
@@ -82,16 +90,24 @@ $(OBJDIR):
 	-mkdir -p $(OBJDIR)
 
 $(MAKE_TARGET): $(MAKEFILE)
-	sed -e 's;%EMU%;$(EMULATOR);' \
-	    -e 's;%EI%;erl_interface-$(EI_VSN);' \
-	    $< > $@
+	@echo " Make a makefile for release"
+	sed -e 's;%EI%;erl_interface-$(EI_VSN);' \
+	$< > $@
+
+$(MAKE_PREBUILD): $(MAKEFILE)
+	@echo " Make a makefile for compiling of odbcserver.c"
+	sed -e 's;%EI%;erl_interface;' \
+	$< > $@
 
 # ----------------------------------------------------
 # Release Target
 # ---------------------------------------------------- 
+# A release with TARGET=win32 and TEST=yes will not
+# compile the odbcserver.c file.
+
 include $(ERL_TOP)/make/otp_release_targets.mk
 
-release_spec: $(APP_TARGET) $(OBJDIR) $(OBJDIR)/Makefile
+release_spec: $(APP_TARGET) $(OBJDIR) $(MAKE_TARGET) $(MAKE_PREBUILD)
 	$(INSTALL_DIR) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(C_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(MAKE_TARGET) $(RELSYSDIR)/src
@@ -99,11 +115,13 @@ release_spec: $(APP_TARGET) $(OBJDIR) $(OBJDIR)/Makefile
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/bin
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/obj
 	$(INSTALL_DIR) $(RELSYSDIR)/include
+ifeq ($(findstring yes,$(TEST)),yes)
+else
+ifeq ($(findstring win32,$(TARGET)),win32)
+	$(INSTALL_PROGRAM) ../priv/bin/$(WIN32_TARGET1) $(RELSYSDIR)/priv/bin
+	$(INSTALL_PROGRAM) ../include/$(WIN32_TARGET2) $(RELSYSDIR)/include
+endif
+endif
 
 release_docs_spec:
-
-
-
-
-
 

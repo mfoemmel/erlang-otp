@@ -353,6 +353,7 @@
 	 compact_otp4280_msg1/1, 
 	 compact_otp4299_msg1/1, 
 	 compact_otp4299_msg2/1, 
+	 compact_otp4359_msg1/1, 
 
 
 	 time_test/1,
@@ -1370,7 +1371,8 @@ compact_tickets(suite) ->
      compact_otp4085_msg2,
      compact_otp4280_msg1,
      compact_otp4299_msg1,
-     compact_otp4299_msg2
+     compact_otp4299_msg2,
+     compact_otp4359_msg1
     ].
 
 
@@ -4100,6 +4102,35 @@ compact_otp4299_msg() ->
 	"a=eecid:A4023371\n"
 	"}}; HOBBE\n}; KALLE \"HOBBE \n}}"
 	";KALLE\n\n",
+    M.
+
+
+%% --------------------------------------------------------------
+%% 
+%% 
+compact_otp4359_msg1(suite) ->
+    [];
+compact_otp4359_msg1(Config) when list(Config) ->
+    d("compact_otp4359_msg1 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    BinMsg = list_to_binary(compact_otp4359_msg()),
+    case d(megaco_compact_text_encoder, [], BinMsg) of
+	{ok, #'MegacoMessage'{mess = Mess}} ->
+	    {transactions, Trans} = Mess#'Message'.messageBody,
+	    case Trans of
+		[{transactionRequest,#'TransactionRequest'{transactionId = asn1_NOVALUE}}] ->
+		    ok;
+		Else ->
+		    exit({unexpected_transactions, Trans})
+	    end;
+	Else ->
+	    t("compact_otp4359_msg1 -> "
+	      "~n   Else: ~w", [Else]),
+	    exit({unexpected_decode_result, Else})
+    end.
+
+compact_otp4359_msg() ->
+    M = "!/1 ml2 T={C=${A=${M{O {MO=SR,RG=OFF,RV=OFF}}}}}",
     M.
 
 

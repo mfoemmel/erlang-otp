@@ -43,7 +43,8 @@ static char* last_error(void);
 static char* last_wsa_error(void);
 static char* win32_errorstr(int error);
 static int has_console(void);
-
+static char** fnuttify_argv(char **argv);
+static void free_fnuttified(char **v);
 
 int
 start_win_emulator(char* emu, char** argv, int start_detached)
@@ -54,8 +55,11 @@ start_win_emulator(char* emu, char** argv, int start_detached)
 	close(0);
 	close(1);
 	close(2);
+	
 	putenv("ERL_CONSOLE_MODE=detached");
+	argv = fnuttify_argv(argv);
 	result = spawnv(_P_DETACH, emu, argv);
+	free_fnuttified(argv);
     } else {
 	int argc = 0;
 
@@ -101,7 +105,9 @@ start_emulator(char* emu, char** argv, int start_detached)
 	close(1);
 	close(2);
 	putenv("ERL_CONSOLE_MODE=detached");
+	argv = fnuttify_argv(argv);
 	result = spawnv(_P_DETACH, emu, argv);
+	free_fnuttified(argv);
 	if (result == -1) {
 	    return 1;
 	}
@@ -190,4 +196,66 @@ has_console(void)
     } else {
         return 0;
     }
+}
+
+static char** fnuttify_argv(char **argv)
+{
+    char **v;
+    char *p;
+    char *q;
+    int c;
+    int i;
+    int n;
+    int m;
+
+    for (c = 0; argv[c]; ++c)
+	;
+
+    v = malloc(sizeof(char *) * (c+1));
+    v[c] = NULL;
+    for (i = 0; i < c; ++i) {
+	p = argv[i];
+	n = m = 0;
+	while (*p) {
+	    if (*p == ' ') {
+		m = 2;
+	    } else if (*p == '"') {
+		m = 2;
+		++n;
+	    }
+	    ++p;
+	}
+	v[i] = malloc((p - argv[i]) + 1 + n + m);
+	p = argv[i];
+	q = v[i];
+	if (n || m) {
+	    if (m) {
+		*q++ = '"';
+	    }
+	    while (*p) {
+		if (*p == '"') {
+		    *q++ = '\\';
+		}
+		*q++ = *p++;
+	    }
+	    if (m) {
+		*q++ = '"';
+	    }
+	    *q = '\0';
+	} else {
+	    strcpy(q,p);
+	}
+    }
+    return v;
+}
+
+static void free_fnuttified(char **v)
+{
+    char **t = v;
+
+    while(*t) {
+	free(*t);
+	++t;
+    }
+    free(v);
 }

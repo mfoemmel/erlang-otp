@@ -623,7 +623,10 @@ match1({nil,_}, Nil, Bs) ->
 match1({cons,_,H,T}, [H1|T1], Bs0) ->
     {match,Bs} = match1(H, H1, Bs0),
     match1(T, T1, Bs);
-match1({tuple,_,Elts}, Tuple, Bs) when length(Elts) == size(Tuple) ->
+match1({cons,_,_H,_T}, _List, _Bs0) ->
+    throw(nomatch);
+match1({tuple,_,Elts}, Tuple, Bs) when tuple(Tuple),
+				       length(Elts) == size(Tuple) ->
     match_tuple(Elts, Tuple, 1, Bs);
 match1({tuple,_,Elts}, Tuple, Bs) ->
     throw(nomatch);

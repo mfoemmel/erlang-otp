@@ -64,7 +64,8 @@ ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
 ERL_COMPILE_FLAGS += -pa $(ERL_TOP)/lib/test_server/ebin \
 	-I$(ERL_TOP)/lib/test_server/include
 
-ERL_PATH=-pa ../../megaco/examples/simple -pa ../../megaco/ebin 
+ERL_PATH = -pa ../../megaco/examples/simple \
+           -pa ../../megaco/ebin \
 
 ifndef SUITE
 SUITE=megaco_SUITE
@@ -127,18 +128,23 @@ app: make
 
 mess: make
 	erl -noshell -sname megaco $(ERL_PATH) \
-            -s event_viewer \
+            -s et_viewer \
             -s megaco_test_lib t megaco_mess_test
 
 # mess: make
 # 	erl -noshell -sname megaco $(ERL_PATH) \
-#             -s event_viewer \
+#             -s et_viewer \
 #             -s megaco_test_lib t megaco_mess_test \
 #             -s erlang halt
 
 tid: make
 	erl -noshell -sname megaco $(ERL_PATH) \
             -s megaco_test_lib t megaco_binary_term_id_test \
+            -s erlang halt
+
+tickets: make
+	erl -noshell -sname megaco $(ERL_PATH) \
+            -s megaco_test_lib tickets $(SUITE) \
             -s erlang halt
 
 test: make

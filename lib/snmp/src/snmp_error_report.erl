@@ -29,9 +29,7 @@
 %% supplied item, e.g. instrumentation function.
 %%-----------------------------------------------------------------
 user_err(F, A) -> 
-    Mod = report_module(),
-    catch Mod:user_err(F, A).
-       
+    report_err(user_err, F, A).
 
 
 %%-----------------------------------------------------------------
@@ -40,10 +38,26 @@ user_err(F, A) ->
 %% information in the configuration tables are inconsistent.)
 %%-----------------------------------------------------------------
 config_err(F, A) ->
-    Mod = report_module(),
-    catch Mod:config_err(F, A).
+    report_err(config_err, F, A).
 
 
+%% -----------------------------------------------------------------
+
+
+report_err(Func, Format, Args) ->
+    case report_module() of
+	{ok, Mod} ->
+	    (catch Mod:Func(Format, Args));
+	_ ->
+	    ok
+    end.
+       
+
+    
 report_module() ->
-    [{error_report_mod, Mod}] = ets:lookup(snmp_agent_table, error_report_mod),
-    Mod.
+    case ets:lookup(snmp_agent_table, error_report_mod) of	
+	[{error_report_mod, Mod}] ->
+	    {ok, Mod};
+	_ ->
+	    error
+    end.

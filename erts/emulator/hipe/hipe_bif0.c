@@ -559,7 +559,7 @@ void hipe_init_sdesc_table(struct sdesc *sdesc)
     hash_init(&sdesc_table, "sdesc_table", 500, f);
 
     if( hash_put(&sdesc_table, sdesc) != sdesc ) {
-	fprintf(stderr, __FUNCTION__ ": initial hash_put() failed\r\n");
+	fprintf(stderr, "%s: initial hash_put() failed\r\n",__FUNCTION__);
 	abort();
     }
 }
@@ -583,7 +583,7 @@ BIF_ADECL_1
     if( !sdesc )
 	BIF_ERROR(BIF_P, BADARG);
     if( hash_put(&sdesc_table, sdesc) != sdesc ) {
-	fprintf(stderr, __FUNCTION__ ": duplicate entry!\r\n");
+	fprintf(stderr, "%s: duplicate entry!\r\n", __FUNCTION__);
 	BIF_ERROR(BIF_P, BADARG);
     }
     BIF_RET(NIL);
@@ -771,7 +771,7 @@ BIF_ADECL_2
 #define GBIF_LIST(ATOM,ARY,CFUN) if(BIF_ARG_1 == ATOM && arity == ARY) { address = CFUN; break; }
 #include "hipe_gbif_list.h"
 #undef GBIF_LIST
-	printf("\r\n" __FUNCTION__ ": guard BIF ");
+	printf("\r\n" "%s: guard BIF ", __FUNCTION__);
 	fflush(stdout);
 	print_atom(atom_val(BIF_ARG_1), COUT);
 	printf("/%u isn't listed in hipe_gbif_list.h\r\n", arity);

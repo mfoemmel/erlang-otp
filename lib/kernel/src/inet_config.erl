@@ -122,17 +122,37 @@ init() ->
 %% lookup our own hostname.
 
 standalone_host() ->
-    case inet_hosts:gethostbyname(inet_db:gethostname()) of
-	{ok,Hostent} -> ok;
+    Name = inet_db:gethostname(),
+    case inet_hosts:gethostbyname(Name) of
+	{ok, #hostent{}} ->
+	    ok;
 	_ -> 
-	    inet_db:add_host({127,0,0,1}, [inet_db:gethostname()]),
+	    case inet_db:res_option(domain) of
+		"" ->
+		    inet_db:add_host({127,0,0,1}, [Name]);
+		Domain ->
+		    FQName = lists:append([inet_db:gethostname(),
+					    ".", Domain]),
+		    case inet_hosts:gethostbyname(FQName) of
+			{ok, #hostent{
+			   h_name      = N,
+			   h_addr_list = [IP|_],
+			   h_aliases   = As}} ->
+			    inet_db:add_host(IP, [N | As] ++ [Name]);
+			_ ->
+			    inet_db:add_host({127,0,0,1}, [Name])
+		    end
+	    end,
 	    Lookup = inet_db:res_option(lookup),
 	    case lists:member(file, Lookup) of
-		true -> ok;
-		false -> inet_db:set_lookup(Lookup++[file])
+		true -> 
+		    ok;
+		false -> 
+		    inet_db:set_lookup(Lookup++[file]),
+		    ok
 	    end
     end.
-	    
+
 add_dns_lookup(L) ->
     case lists:member(dns,L) of
 	true -> ok;

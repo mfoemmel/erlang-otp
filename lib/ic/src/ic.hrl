@@ -21,7 +21,6 @@
 %% Configuration macros
 -define(CORBAMOD, corba).
 -define(ORBNAME, orber).
--define(COMPILERVSN, "4.1.2").
 -define(CORBAHRL, "corba.hrl").
 -define(CALL, "call").
 -define(CAST, "cast").
@@ -41,13 +40,13 @@
 %% Option macros
 
 -define(ifopt(G,OPT,ACTION), 
-	case icgen:get_opt(G,OPT) of true -> ACTION; _ -> ok end).
+	case ic_options:get_opt(G,OPT) of true -> ACTION; _ -> ok end).
 
 -define(ifopt2(G,OPT,ACT1,ACT2), 
-	case icgen:get_opt(G,OPT) of true -> ACT1; _ -> ACT2 end).
+	case ic_options:get_opt(G,OPT) of true -> ACT1; _ -> ACT2 end).
 
 -define(ifnopt(G,OPT,ACTION), 
-	case icgen:get_opt(G,OPT) of false -> ACTION; _ -> ok end).
+	case ic_options:get_opt(G,OPT) of false -> ACTION; _ -> ok end).
 
 
 %% Internal record
@@ -57,7 +56,7 @@
 %% The generator object definition
 
 -record(genobj, {symtab, impl, options, warnings, auxtab,
-		 tktab, pragmatab, c_typedeftab, keywtab,
+		 tktab, pragmatab, c_typedeftab,
 		 skelfile=[], skelfiled=[], skelscope=[],
 		 stubfile=[], stubfiled=[], stubscope=[],
 		 includefile=[], includefiled=[],

@@ -49,6 +49,7 @@
 -record(except,		{id, body, tk}).
 -record(op,		{oneway, type, id, params, raises, ctx, tk}).
 -record(param,		{inout, type, id, tk}).
+-record(fixed,		{digits, scale, value}).
 
 %% NON-STANDARD
 -record(preproc,	{cat, id, aux}).

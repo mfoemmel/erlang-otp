@@ -18,7 +18,8 @@
 -module(asn1rt_ber_bin).
  
 %% encoding / decoding of BER  
- 
+
+-export([decode/1]). 
 -export([fixoptionals/2,split_list/2,cindex/3,restbytes2/3,
 	 list_to_record/2,
 	 encode_tag_val/1,decode_tag/1,peek_tag/1,
@@ -43,7 +44,7 @@
 	 decode_tag_and_length/1, decode_components/6, 
 	 decode_components/7, decode_set/6]).
 
--export([encode_open_type/1, decode_open_type/1]).
+-export([encode_open_type/1,encode_open_type/2,decode_open_type/1,decode_open_type/2]).
 -export([skipvalue/1, skipvalue/2]).
  
 -include("asn1_records.hrl"). 
@@ -113,6 +114,39 @@
 -define(T_UniversalString,  ?UNIVERSAL bor ?PRIMITIVE bor 28). %can be constructed 
 -define(T_BMPString,        ?UNIVERSAL bor ?PRIMITIVE bor 30). %can be constructed 
  
+
+decode(Bin) ->
+    decode_primitive(Bin).
+
+decode_primitive(Bin) ->
+    {Tlv = {Tag,Len,V},<<>>} = decode_tlv(Bin),
+    case element(2,Tag) of 
+	?CONSTRUCTED ->
+	    {Tag,Len,decode_constructed(V)};
+	_ ->
+	    Tlv
+    end.
+
+decode_constructed(<<>>) ->
+    [];
+decode_constructed(Bin) ->
+    {Tlv = {Tag,Len,V},Rest} = decode_tlv(Bin),
+    NewTlv =
+	case element(2,Tag) of 
+	    ?CONSTRUCTED ->
+		{Tag,Len,decode_constructed(V)};
+	    _ ->
+		Tlv
+	end,
+    [NewTlv|decode_constructed(Rest)].
+    
+decode_tlv(Bin) ->
+    {Tag,Bin1,Rb1} = decode_tag(Bin),
+    {{Len,Bin2},Rb2} = decode_length(Bin1),
+    <<V:Len/binary,Bin3/binary>> = Bin2,
+    {{Tag,Len,V},Bin3}.
+    
+
  
 %%%%%%%%%%%%%
 % split_list(List,HeadLen) -> {HeadList,TailList}
@@ -469,11 +503,19 @@ encode_one_tag(#tag{class=Class,number=No,type=Type, form = Form}) ->
 %% Value = list of bytes of an already encoded value (the list must be flat)
 %%         | binary
 
-%%
+%% This version does not consider Explicit tagging of the open type. It 
+%% is only left because of backward compatibility.
 encode_open_type(Val) when list(Val) -> 
     {Val,length(Val)};
 encode_open_type(Val) ->
     {Val, size(Val)}. 
+
+%% 
+encode_open_type(Val, Tag) when list(Val) -> 
+    encode_tags(Tag,Val,length(Val));
+encode_open_type(Val,Tag) ->
+    encode_tags(Tag,Val, size(Val)). 
+
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -486,6 +528,20 @@ decode_open_type(Bytes) ->
     N = Len + RemovedBytes,
     <<Val:N/binary, RemainingBytes/binary>> = Bytes,
     {Val, RemainingBytes, Len + RemovedBytes}.
+
+decode_open_type(Bytes,ExplTag) ->
+    {Tag, Len, RemainingBuffer, RemovedBytes} = decode_tag_and_length(Bytes),
+    case {Tag,ExplTag} of
+	{{Class,Form,No},[#tag{class=Class,number=No,form=Form}]} ->
+	    {Tag2, Len2, RemainingBuffer2, RemovedBytes2} = decode_tag_and_length(RemainingBuffer),
+	    N = Len2 + RemovedBytes2,
+	    <<_:RemovedBytes/unit:8,Val:N/binary,RemainingBytes/binary>> = Bytes,
+	    {Val, RemainingBytes, N + RemovedBytes};
+	_ ->
+	    N = Len + RemovedBytes,
+	    <<Val:N/binary, RemainingBytes/binary>> = Bytes,
+	    {Val, RemainingBytes, Len + RemovedBytes}
+    end.
  
  
 %%=============================================================================== 
@@ -1313,6 +1369,8 @@ decode_bitstring_NNL([0|BitList],NamedNumberList,No,Result) ->
 %% The OctetList must be a flat list of integers in the range 0..255
 %% the function does not check this because it takes to much time
 %%============================================================================ 
+encode_octet_string(C, OctetList, DoTag) when binary(OctetList) -> 
+    dotag(DoTag, ?N_OCTET_STRING, {OctetList,size(OctetList)});
 encode_octet_string(C, OctetList, DoTag) when list(OctetList) -> 
     dotag(DoTag, ?N_OCTET_STRING, {OctetList,length(OctetList)});
 encode_octet_string(C, {Name,OctetList}, DoTag) when atom(Name) -> 
@@ -1491,10 +1549,14 @@ dec_subidentifiers(<<H,T/binary>>,Av,Al,Len) ->
 %% encode Numeric Printable Teletex Videotex Visible IA5 Graphic General strings 
 %%============================================================================ 
 
+encode_restricted_string(C, OctetList, StringType, DoTag) 
+  when binary(OctetList) -> 
+    dotag(DoTag, StringType, {OctetList, size(OctetList)}); 
+encode_restricted_string(C, OctetList, StringType, DoTag) 
+  when list(OctetList) -> 
+    dotag(DoTag, StringType, {OctetList, length(OctetList)}); 
 encode_restricted_string(C,{Name,OctetL},StringType,DoTag) when atom(Name)-> 
-    encode_restricted_string(C, OctetL, StringType, DoTag);
-encode_restricted_string(C, OctetList, StringType, DoTag) -> 
-    dotag(DoTag, StringType, {OctetList, length(OctetList)}). 
+    encode_restricted_string(C, OctetL, StringType, DoTag).
 
 %%============================================================================ 
 %% decode Numeric Printable Teletex Videotex Visible IA5 Graphic General strings 

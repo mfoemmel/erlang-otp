@@ -30,8 +30,8 @@
 
 
 preproc(G, File) ->
-    Cmd		= icgen:get_opt(G, preproc_cmd),
-    Flags	= icgen:get_opt(G, preproc_flags),
+    Cmd		= ic_options:get_opt(G, preproc_cmd),
+    Flags	= ic_options:get_opt(G, preproc_flags),
 
 
     case Cmd of
@@ -53,7 +53,7 @@ preproc(G, File) ->
 		[$#, $ , C | Rest] when integer(C), C > $0, C =< $9 ->
 		    [$#, $ , C | Rest];
 		X ->
-		    icgen:fatal_error(G, {preproc, filter(X)})
+		    ic_error:fatal_error(G, {preproc, filter(X)})
 	    end
     end.
 
@@ -79,19 +79,19 @@ print_error(G,[]) ->
     ok;
 print_error(G,[{File,Line,Text}]) ->
     ErrorText = File++":"++integer_to_list(Line)++": "++Text,
-    icgen:fatal_error(G, {ic_pp_error, ErrorText}),
+    ic_error:fatal_error(G, {ic_pp_error, ErrorText}),
     ok;
 print_error(G,[{File,Line,Text}|T]) ->
     ErrorText = File++":"++integer_to_list(Line)++": "++Text,
-    icgen:error(G, {ic_pp_error, ErrorText}),
+    ic_error:error(G, {ic_pp_error, ErrorText}),
     print_error(G,T);
 print_error(G,[H]) ->
     ErrorText = H++"\n",
-    icgen:fatal_error(G, {ic_pp_error, ErrorText}),
+    ic_error:fatal_error(G, {ic_pp_error, ErrorText}),
     ok;
 print_error(G,[H|T]) ->
     ErrorText = H++"\n",
-    icgen:error(G, {ic_pp_error, ErrorText}),
+    ic_error:error(G, {ic_pp_error, ErrorText}),
     print_error(G,T).
 
 
@@ -99,11 +99,11 @@ print_warning(G,[]) ->
     ok;
 print_warning(G,[{File,Line,Text}|T]) ->
     WarText = File++":"++integer_to_list(Line)++": "++Text,
-    icgen:warn(G, {ic_pp_warning, WarText}),
+    ic_error:warn(G, {ic_pp_warning, WarText}),
     print_warning(G,T);
 print_warning(G,[H|T]) ->
     WarText = H++"\n",
-    icgen:warn(G, {ic_pp_warning, WarText}),
+    ic_error:warn(G, {ic_pp_warning, WarText}),
     print_warning(G,T).
 
 

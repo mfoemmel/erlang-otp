@@ -405,6 +405,8 @@ extern /* in dist.c */ int erts_reuse_all_dist_slots;
    global variable for easy inspection from a core dump. */
 static ErtsSlAllocInit erts_sl_alloc_init_args;
 
+extern void elib_ensure_initialized(void);
+
 void
 erl_start(int argc, char **argv)
 {
@@ -416,6 +418,7 @@ erl_start(int argc, char **argv)
     int top_pad = ERTS_DEFAULT_TOP_PAD;
     Uint definite_block_size = DEFAULT_DEFINITE_ALLOC_BLOCK_SIZE;
 
+    elib_ensure_initialized();
 
     erts_reuse_all_dist_slots = 0;
 

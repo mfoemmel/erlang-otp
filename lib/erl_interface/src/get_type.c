@@ -42,7 +42,15 @@ int ei_get_type(const char *buf, const int *index, int *type, int *len)
   case ERL_BINARY_EXT:
     *len = get32be(s);
     break;
-  
+    
+  case ERL_SMALL_BIG_EXT:
+    *len = (get8(s)+1)/2; /* big arity */
+    break;
+
+  case ERL_LARGE_BIG_EXT:
+    *len = (get32be(s)+1)/2; /* big arity */
+    break;
+
   default:
     *len = 0;
     break;

@@ -46,7 +46,8 @@
 	 decode_tag_and_length/1, decode_components/6,
 	 decode_components/7, decode_set/6]).
 
--export([encode_open_type/1, decode_open_type/1]).
+-export([encode_open_type/1, decode_open_type/1,
+	 encode_open_type/2, decode_open_type/2]).
 -export([skipvalue/1, skipvalue/2]).
  
 -include("asn1_records.hrl"). 
@@ -440,7 +441,11 @@ encode_open_type(Val) when list(Val) ->
 encode_open_type(Val) when binary(Val) ->
     {binary_to_list(Val), size(Val)}. 
 %% binary_to_list is not optimal but compatible with the current solution
-
+%% 
+encode_open_type(Val, Tag) when list(Val) -> 
+    encode_tags(Tag,Val,length(Val));
+encode_open_type(Val,Tag) ->
+    encode_tags(Tag,binary_to_list(Val),size(Val)). 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% decode_open_type(Buffer) -> Value
@@ -455,6 +460,20 @@ decode_open_type(Bytes) ->
 	    exit({error,{asn1, {indefinite_length_open_type,Bytes}}});
 	{Val, RemainingBytes} ->
 	    {Val, RemainingBytes, Len + RemovedBytes}
+    end.
+
+decode_open_type(Bytes,ExplTag) ->
+    {Tag, Len, RemainingBuffer1, RemovedBytes} = decode_tag_and_length(Bytes),
+    case {Tag,ExplTag} of
+	{{Class,Form,No},[#tag{class=Class,number=No,form=Form}]} ->
+	    {Tag2, Len2, RemainingBuffer2, RemovedBytes2} = decode_tag_and_length(RemainingBuffer1),
+	    {Val,RemainingBuffer3} = split_list(RemainingBuffer1,Len2+RemovedBytes2),
+	    {Val,RemainingBuffer3,Len2+RemovedBytes+RemovedBytes2};
+	{_,[]} ->
+	    {Val,RemainingBuffer2} = split_list(Bytes,Len+RemovedBytes),
+	    {Val, RemainingBuffer2, Len + RemovedBytes};
+	_ -> 
+	    exit({error,{asn1,{no_optional_tag,Tag}}})
     end.
  
  
@@ -1147,7 +1166,7 @@ decode_bit_string2(Len, [Unused | Buffer], NamedNumberList, RemovedBytes,
 		    {BitString, lists:nthtail(Len-1, Buffer), RemovedBytes}
 	    end;
 	_ ->
-	    BitString = decode_bitstring2(Len - 1, Unused, Buffer), 
+	    BitString = decode_bitstring2(Len - 1, Unused, Buffer),
 	    {decode_bitstring_NNL(BitString,NamedNumberList), 
 	     lists:nthtail(Len-1, Buffer),  
 	     RemovedBytes} 
@@ -1376,7 +1395,9 @@ decode_restricted_string(Buffer,Range,StringType,TagsIn,
     case Range of
 	[] -> % No length constraint
 	    Result;
-	{Lb,Ub} when StrLen >= Lb, Ub >= StrLen -> % variable length constraint
+	{Lb,Ub} when Ub >= StrLen -> % variable length constraint
+	    %% StrLen may be less than Lb in case of an definition like:
+	    %%  BIT STRING {a(0)} (SIZE (3..8))
 	    Result;
 	{{Lb,Ub},[]} when StrLen >= Lb ->
 	    Result;

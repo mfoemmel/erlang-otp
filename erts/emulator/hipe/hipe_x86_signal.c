@@ -24,41 +24,92 @@
  */
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #if __GLIBC__ == 2 && __GLIBC_MINOR__ == 2
 /*
- * In glibc 2.2 the signal setup functions call __sigaction(), which in
- * turn calls __libc_sigaction() [or perhaps there's a weak ref, I dunno].
- * So we just call __libc_sigaction() directly by name.
- * Note: The RTLD_NEXT trick does not work.
- */
-extern int __libc_sigaction(int, const struct sigaction*, struct sigaction*);
-#define INIT()		do{}while(0)
-#endif
-
-#if __GLIBC__ == 2 && __GLIBC_MINOR__ == 1
-/*
- * In glibc 2.1 the signal setup functions call __sigaction() but there
- * is no further function behind it. So we use dlsym(RTLD_NEXT) to obtain
- * __sigaction()'s address, and call it indirectly.
- * XXX: May also work with glibc 2.0, but I can't test this.
+ * __libc_sigaction() is the core routine.
+ * Without libpthread, sigaction() and __sigaction() are both aliases
+ * for __libc_sigaction().
+ * libpthread redefines __sigaction() as a non-trivial wrapper around
+ * __libc_sigaction(), and makes sigaction() an alias for __sigaction().
+ * glibc has internal calls to both sigaction() and __sigaction().
  *
- * When linked with thread support, there are calls to sigaction() before
- * our init routine has had a chance to find __sigaction()'s address.
- * This forces us to initialise at the first call.
+ * Overriding __libc_sigaction() would be ideal, but doing so breaks
+ * libpthread (threads hang).
+ *
+ * Overriding __sigaction(), using dlsym RTLD_NEXT to find glibc's
+ * version of __sigaction(), works with glibc-2.2.4 and 2.2.5.
+ * Unfortunately, this solution doesn't work with earlier versions,
+ * including glibc-2.2.2 and glibc-2.1.92 (2.2 despite its name):
+ * 2.2.2 SIGSEGVs in dlsym RTLD_NEXT (known glibc bug), and 2.1.92
+ * SIGSEGVs inexplicably in two test cases in the HiPE test suite.
+ *
+ * Instead we only override sigaction() and call __sigaction()
+ * directly. This should work for HiPE/x86 as long as only the Posix
+ * signal interface is used, i.e. there are no calls to simulated
+ * old BSD or SysV interfaces.
+ * glibc's internal calls to __sigaction() appear to be mostly safe.
+ * hipe_signal_init() fixes some unsafe ones, e.g. the SIGPROF handler.
+ *
+ * Tested with glibc-2.1.92 on RedHat 7.0, glibc-2.2.2 on RedHat 7.1,
+ * glibc-2.2.4 on RedHat 7.2, and glibc-2.2.5 on RedHat 7.3.
  */
+#if 0
+/* works with 2.2.5 and 2.2.4, but not 2.2.2 or 2.1.92 */
+#define __USE_GNU		/* to un-hide RTLD_NEXT */
 #include <dlfcn.h>
-static int (*__libc_sigaction)(int, const struct sigaction*, struct sigaction*);
-#define init_done()	(__libc_sigaction != 0)
+static int (*__next_sigaction)(int, const struct sigaction*, struct sigaction*);
+#define init_done()	(__next_sigaction != 0)
+#define __SIGACTION __sigaction
 static void do_init(void)
 {
-    if( (__libc_sigaction = dlsym(RTLD_NEXT, "__sigaction")) != 0 )
+    __next_sigaction = dlsym(RTLD_NEXT, "__sigaction");
+    if( __next_sigaction != 0 )
 	return;
     perror("dlsym");
     abort();
 }
 #define INIT()	do { if( !init_done() ) do_init(); } while(0)
+#else
+/* semi-works with all 2.2 versions so far */
+extern int __sigaction(int, const struct sigaction*, struct sigaction*);
+#define __next_sigaction __sigaction	/* pthreads-aware version */
+#undef __SIGACTION	/* we can't override __sigaction() */
+#define INIT()		do{}while(0)
 #endif
+#endif	/* glibc 2.2 */
+
+#if __GLIBC__ == 2 && __GLIBC_MINOR__ == 1
+/*
+ * __sigaction() is the core routine.
+ * Without libpthread, sigaction() is an alias for __sigaction().
+ * libpthread redefines sigaction() as a non-trivial wrapper around
+ * __sigaction().
+ * glibc has internal calls to both sigaction() and __sigaction().
+ *
+ * Overriding __sigaction() would be ideal, but doing so breaks
+ * libpthread (threads hang). Instead we override sigaction() and
+ * use dlsym RTLD_NEXT to find glibc's version of sigaction().
+ * glibc's internal calls to __sigaction() appear to be mostly safe.
+ * hipe_signal_init() fixes some unsafe ones, e.g. the SIGPROF handler.
+ *
+ * Tested with glibc-2.1.3 on RedHat 6.2.
+ */
+#include <dlfcn.h>
+static int (*__next_sigaction)(int, const struct sigaction*, struct sigaction*);
+#define init_done()	(__next_sigaction != 0)
+#undef __SIGACTION
+static void do_init(void)
+{
+    __next_sigaction = dlsym(RTLD_NEXT, "sigaction");
+    if( __next_sigaction != 0 )
+	return;
+    perror("dlsym");
+    abort();
+}
+#define INIT()	do { if( !init_done() ) do_init(); } while(0)
+#endif	/* glibc 2.1 */
 
 #if !defined(__GLIBC__)
 /*
@@ -81,25 +132,26 @@ static void do_init(void)
  * This forces us to initialise at the first call.
  */
 #include <dlfcn.h>
-static int (*__libc_sigaction)(int, const struct sigaction*, struct sigaction*);
-#define init_done()	(__libc_sigaction != 0)
+static int (*__next_sigaction)(int, const struct sigaction*, struct sigaction*);
+#define init_done()	(__next_sigaction != 0)
+#define __SIGACTION _sigaction
 static void do_init(void)
 {
-    if( (__libc_sigaction = dlsym(RTLD_NEXT, "_sigaction")) != 0 )
+    __next_sigaction = dlsym(RTLD_NEXT, "_sigaction");
+    if( __next_sigaction != 0 )
 	return;
     perror("dlsym");
     abort();
 }
-#define __sigaction _sigaction
 #define _NSIG NSIG
 #define INIT()	do { if( !init_done() ) do_init(); } while(0)
-#endif
+#endif	/* not glibc */
 
 /*
  * This is our wrapper for sigaction(). sigaction() can be called before
  * hipe_signal_init() has been executed, especially when threads support
  * has been linked with the executable. Therefore, we must initialise
- * __libc_sigaction() dynamically, the first time it's needed.
+ * __next_sigaction() dynamically, the first time it's needed.
  */
 static int my_sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
 {
@@ -115,17 +167,19 @@ static int my_sigaction(int signum, const struct sigaction *act, struct sigactio
 	newact.sa_flags |= SA_ONSTACK;
 	act = &newact;
     }
-    return __libc_sigaction(signum, act, oldact);
+    return __next_sigaction(signum, act, oldact);
 }
 
 /*
  * This overrides the C library's core sigaction() procedure, catching
  * all its internal calls.
  */
-int __sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
+#ifdef __SIGACTION
+int __SIGACTION(int signum, const struct sigaction *act, struct sigaction *oldact)
 {
     return my_sigaction(signum, act, oldact);
 }
+#endif
 
 /*
  * This catches the application's own sigaction() calls.

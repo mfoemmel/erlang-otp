@@ -108,7 +108,7 @@ BOOL WINAPI ctrl_handler(DWORD dwCtrlType);
  * (Named pipes are not supported on Windows 95.)
  */
 
-static int max_files = 1024;
+static int max_files = 2000;
 
 static BOOL use_named_pipes;
 static BOOL win_console = FALSE;
@@ -235,7 +235,7 @@ get_and_remove_option(argc, argv, option)
 }
 
 static char *get_and_remove_option2(int *argc, char **argv, 
-				    static char *option)
+				    const char *option)
 {
     char *ret;
     int i;
@@ -1187,16 +1187,13 @@ CreateChildProcess(origcmd, hStdin, hStdout, hStderr, phPid, hide, env, wd)
     return ok;
 }
 
-static int
-create_pipe(phRead, phWrite, inheritRead)
-     LPHANDLE phRead;		/* Where to store the handle to the read end
-				 * of the pipe. */
-     LPHANDLE phWrite;		/* Where to store the handle to the write end
-				 * of the pipe. */
-     BOOL inheritRead;		/* If TRUE, the read handle will be inheritable;
-				 * otherwise the write handle will be
-				 * inheritable.
-				 */
+/* 
+ * Note, inheritRead == FALSE means "inhetitWrite", i e one of the
+ * pipe ends is always expected to be inherited. The pipe end that should 
+ * be inherited is opened without overlapped io flags, as the child program
+ * would expect stdout not to demand overlapped I/O. 
+ */
+static int create_pipe(HANDLE *phRead, HANDLE *phWrite, BOOL inheritRead)
 {
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
     static long calls = 0;	/* Pipe instance pointer. */
@@ -1242,7 +1239,8 @@ create_pipe(phRead, phWrite, inheritRead)
     DEBUGF(("Creating pipe %s\n", pipe_name));
     sa.bInheritHandle = inheritRead;
     if ((*phRead = CreateNamedPipe(pipe_name,
-				   PIPE_ACCESS_INBOUND | FILE_FLAG_OVERLAPPED,
+				   PIPE_ACCESS_INBOUND | 
+				   ((inheritRead) ? 0 : FILE_FLAG_OVERLAPPED),
 				   PIPE_TYPE_BYTE | PIPE_READMODE_BYTE,
 				   1,
 				   0,
@@ -1259,7 +1257,8 @@ create_pipe(phRead, phWrite, inheritRead)
 			       0, /* No sharing */
 			       &sa,
 			       OPEN_EXISTING,
-			       FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+			       FILE_ATTRIBUTE_NORMAL | 
+			       ((inheritRead) ? FILE_FLAG_OVERLAPPED : 0),
 			       NULL)) == INVALID_HANDLE_VALUE) {
 	CloseHandle(*phRead);
 	DEBUGF(("Error opening other end of pipe: %s\n", last_error()));
@@ -1999,9 +1998,20 @@ ready_output(ErlDrvData drv_data, ErlDrvEvent ready_event)
 
     DEBUGF(("ready_output(%d, 0x%x)\n", drv_data, ready_event));
     set_busy_port(dp->port_num, 0);
+#ifdef DEBUG
+    /* Temporary!!! */
+    if (!(dp->outbuf)) {
+	erl_printf(COUT,"WARNING: Unexpected call to ready_output with outbuf "
+		   "set to NULL!\r\n");
+    } else {
+	sys_free(dp->outbuf);
+	dp->outbuf = NULL;
+    }
+#else
     ASSERT(dp->outbuf != NULL);
     sys_free(dp->outbuf);
     dp->outbuf = NULL;
+#endif
     error = get_overlapped_result(&dp->out, &bytesWritten, TRUE);
     if (error == NO_ERROR) {
 	dp->out.ov.Offset += bytesWritten; /* For vanilla driver. */
@@ -2191,9 +2201,9 @@ void sys_printf(CIO where, char* format, ...)
     }
     else if (win_console && (where == COUT || where == CERR))
 	ConVprintf(format, va);
-    else if (where == CERR)
+    else if (where == CERR) {
 	erl_error(format, va);
-    else if (where == COUT) {
+    } else if (where == COUT) {
 	vprintf(format, va);
 	fflush(stdout);
     } else {

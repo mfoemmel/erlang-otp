@@ -74,7 +74,25 @@ RANLIB  = @RANLIB@
 STRIP   = strip
 PERL    = @PERL@
 
+ifdef PURIFY_CHILD_SETUP
+CS_PURIFY = $(PURIFY)
+CS_TYPE_FLAGS = $(TYPE_FLAGS)
+else
+CS_PURIFY = 
+CS_TYPE_FLAGS = $(subst QUANTIFY,FAKE_QUANTIFY, \
+		$(subst PURIFY,FAKE_PURIFY, $(TYPE_FLAGS)))
+endif
+CS_CFLAGS_ = $(CS_TYPE_FLAGS) @DEFS@ $(WFLAGS) 
+ifeq ($(CC), gcc)
+CS_CFLAGS = $(subst -O2, -O3 -funroll-loops, $(CS_CFLAGS_))
+else
+CS_CFLAGS = $(CS_CFLAGS_)
+endif
+
+
 LIBS    = @LIBS@ @THR_LIBS@ -L$(ERL_TOP)/erts/obj/$(TARGET) -lz
+
+ELIB_FLAGS = -DENABLE_ELIB_MALLOC -DELIB_ALLOC_IS_CLIB -DELIB_HEAP_SBRK
 
 OBJDIR = $(ERL_TOP)/erts/obj$(TYPEMARKER).beam/$(TARGET)
 BINDIR = $(ERL_TOP)/bin/$(TARGET)
@@ -82,13 +100,21 @@ BINDIR = $(ERL_TOP)/bin/$(TARGET)
 ERLANG_OSTYPE = @ERLANG_OSTYPE@
 
 EMULATOR_EXECUTABLE_SAE = beam_evm$(TYPEMARKER)
+EMULATOR_EXECUTABLE_ELIB = beam.elib$(TYPEMARKER)
 EMULATOR_EXECUTABLE = beam$(TYPEMARKER)
-
+CS_EXECUTABLE = child_setup$(TYPEMARKER)
 
 # ----------------------------------------------------------------------
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
-all: generate zlib $(BINDIR)/$(EMULATOR_EXECUTABLE) # $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE)
+ifeq ($(ERLANG_OSTYPE), unix)
+UNIX_ONLY_BUILDS =	$(BINDIR)/$(CS_EXECUTABLE) \
+			$(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB)
+else
+UNIX_ONLY_BUILDS =
+endif
+
+all: generate zlib $(BINDIR)/$(EMULATOR_EXECUTABLE) $(UNIX_ONLY_BUILDS) # $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE)
 
 # Unsupported at the moment
 sae: $(TARGET)/preload_sae.c generate zlib $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE)
@@ -121,6 +147,10 @@ release_spec: all
 	$(INSTALL_DATA) $(RELEASE_INCLUDES) $(RELEASE_PATH)/usr/include
 	$(INSTALL_DATA) $(RELEASE_INCLUDES) $(RELSYSDIR)/src
 	$(INSTALL_PROGRAM) $(BINDIR)/$(EMULATOR_EXECUTABLE) $(RELSYSDIR)/bin
+ifeq ($(ERLANG_OSTYPE), unix)
+	$(INSTALL_PROGRAM) $(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB) $(RELSYSDIR)/bin
+	$(INSTALL_PROGRAM) $(BINDIR)/$(CS_EXECUTABLE) $(RELSYSDIR)/bin
+endif
 	$(INSTALL_DIR) $(RELEASE_PATH)/usr/include/obsolete
 	$(INSTALL_DATA) obsolete/driver.h $(RELEASE_PATH)/usr/include/obsolete
 
@@ -216,10 +246,18 @@ endif
 # ----------------------------------------------------------------------
 # Specials
 #
+CS_SRC = sys/$(ERLANG_OSTYPE)/erl_child_setup.c
+
+$(BINDIR)/$(CS_EXECUTABLE): $(CS_SRC)
+	$(CS_PURIFY) $(CC) -o $(BINDIR)/$(CS_EXECUTABLE) \
+	$(CS_CFLAGS) $(INCLUDES) $(CS_SRC)
+
+$(OBJDIR)/%.elib.o: beam/%.c
+	$(CC) $(ELIB_FLAGS) $(subst O2,O3, $(CFLAGS)) $(INCLUDES) -c $< -o $@
 
 ifeq ($(CC), gcc)
 $(OBJDIR)/erl_sl_alloc.o: beam/erl_sl_alloc.c
-	$(CC) $(subst O2,O3, $(CFLAGS)) $(INCLUDES) -funroll-loops -c $< -o $@
+	$(CC) $(subst -O2, -O3 -funroll-loops, $(CFLAGS)) $(INCLUDES) -c $< -o $@
 endif
 
 # ----------------------------------------------------------------------
@@ -318,6 +356,11 @@ endif
 BASE_OBJS = $(RUN_OBJS) $(EMU_OBJS) $(OS_OBJS) $(EXTRA_BASE_OBJS)
 
 OBJS =	$(BASE_OBJS) $(DRV_OBJS)
+OBJS_ELIB = 	$(subst elib_malloc.o,elib_malloc.elib.o, \
+		$(subst elib_memmove.o,elib_memmove.elib.o, \
+		$(subst erl_bif_info.o,erl_bif_info.elib.o, \
+		$(subst utils.o,utils.elib.o, \
+		$(OBJS)))))
 
 ########################################
 # HiPE section
@@ -391,6 +434,10 @@ endif
 $(BINDIR)/$(EMULATOR_EXECUTABLE): $(INIT_OBJS) $(OBJS)
 	$(PURIFY) $(LD) -o $(BINDIR)/$(EMULATOR_EXECUTABLE) \
 	$(LDFLAGS) $(DEXPORT) $(INIT_OBJS) $(OBJS) $(LIBS)
+
+$(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB): $(INIT_OBJS) $(OBJS_ELIB)
+	$(PURIFY) $(LD) -o $(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB) \
+	$(LDFLAGS) $(DEXPORT) $(INIT_OBJS) $(OBJS_ELIB) $(LIBS)
 
 $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE): $(TARGET)/preload_sae.c \
 					$(INIT_OBJS_SAE) $(OBJS)

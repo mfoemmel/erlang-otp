@@ -30,6 +30,10 @@
 	 check_enum/3,
 	 check_restrictedstring/2]).
 
+-export([transform_to_EXTERNAL1990/1,
+	 transform_to_EXTERNAL1994/1]).
+
+
 check_bool(Bool,asn1_DEFAULT) ->
     true;
 check_bool(Bool,Bool) when Bool == true; Bool == false ->
@@ -285,3 +289,45 @@ check_restrictedstring(V1,V2) when list(V1),tuple(V2) ->
     check_restrictedstring(V1,tuple_to_list(V2));
 check_restrictedstring(V1,V2) ->
     throw({error,{restricted,string,V1,V2}}).
+
+transform_to_EXTERNAL1990(Val) when tuple(Val),size(Val) == 4 ->
+    transform_to_EXTERNAL1990(tuple_to_list(Val),[]);
+transform_to_EXTERNAL1990(Val) when tuple(Val) ->
+    %% Data already in ASN1 1990 format
+    Val.
+
+transform_to_EXTERNAL1990(['EXTERNAL'|Rest],Acc) ->
+    transform_to_EXTERNAL1990(Rest,['EXTERNAL'|Acc]);
+transform_to_EXTERNAL1990([{syntax,Syntax}|Rest],Acc) ->
+    transform_to_EXTERNAL1990(Rest,[asn1_NOVALUE,Syntax|Acc]);
+transform_to_EXTERNAL1990([{'presentation-context-id',PCid}|Rest],Acc) ->
+    transform_to_EXTERNAL1990(Rest,[PCid,asn1_NOVALUE|Acc]);
+transform_to_EXTERNAL1990([{'context-negotiation',Context_negot}|Rest],Acc) ->
+    {_,Presentation_Cid,Transfer_syntax} = Context_negot,
+    transform_to_EXTERNAL1990(Rest,[Transfer_syntax,Presentation_Cid|Acc]);
+transform_to_EXTERNAL1990([asn1_NOVALUE|Rest],Acc) ->
+    transform_to_EXTERNAL1990(Rest,[asn1_NOVALUE|Acc]);
+transform_to_EXTERNAL1990([Data_val_desc,Data_value],Acc) when list(Data_value)->
+    list_to_tuple(lists:reverse([{'octet-aligned',Data_value},
+				 Data_val_desc|Acc]));
+transform_to_EXTERNAL1990([Data_value],Acc) when list(Data_value)->
+    list_to_tuple(lists:reverse([{'octet-aligned',Data_value}|Acc])).
+
+
+transform_to_EXTERNAL1994(V={'EXTERNAL',DRef,IndRef,Data_v_desc,Encoding}) ->
+    Identification =
+	case {DRef,IndRef} of
+	    {DRef,asn1_NOVALUE} ->
+		{syntax,DRef};
+	    {asn1_NOVALUE,IndRef} ->
+		{'presentation-context-id',IndRef};
+	     _ ->
+		{'context-negotiation',
+		 {'EXTERNAL_identification_context-negotiation',IndRef,DRef}}
+	end,
+    case Encoding of
+	{_,Val} when list(Val) ->
+	    {'EXTERNAL',Identification,Data_v_desc,Val};
+	_  ->
+	    V
+    end.

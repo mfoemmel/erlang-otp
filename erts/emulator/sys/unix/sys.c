@@ -34,18 +34,46 @@
 #include <sys/utsname.h>
 
 #if !defined(USE_SELECT)
+
 #  ifdef HAVE_POLL_H
 #    include <poll.h>
 #  endif
 #  ifdef HAVE_SYS_STROPTS_H
 #    include <sys/stropts.h>	/* some keep INFTIM here */
 #  endif
+
+#  ifdef USE_KERNEL_POLL
+#    ifdef HAVE_SYS_EVENT_H
+#      include <sys/event.h>
+#      define USE_KQUEUE
+#    endif
+#    ifdef HAVE_SYS_DEVPOLL_H
+#      define USE_DEVPOLL
+#      include <sys/devpoll.h>
+#    endif
+#    ifdef HAVE_LINUX_KPOLL_H
+#      define USE_DEVPOLL
+#      include <asm/page.h>
+#      include <sys/mman.h>
+#      include <sys/ioctl.h>
+#      ifndef POLLREMOVE
+#        define POLLREMOVE 0x1000 /* some day it will make it to bits/poll.h ;-) */
+#      endif
+#      include <linux/kpoll.h>
+#    endif
+#    ifdef USE_DEVPOLL /* can only use one of them ... */
+#      ifdef USE_KQUEUE
+#        undef USE_KQUEUE
+#      endif
+#    endif
+#  endif /* USE_KERNEL_POLL */
 #endif /* !USE_SELECT */
 
 #ifdef ISC32
 #include <sys/bsdtypes.h>
 #endif
 
+#define NEED_CHILD_SETUP_DEFINES
 #define WANT_NONBLOCKING    /* must define this to pull in defs from sys.h */
 #include "sys.h"
 
@@ -170,9 +198,63 @@ static struct pollfd*  poll_fds;      /* Allocated at startup */
 static struct readyfd* ready_fds;     /* Collect after poll */
 static int             nof_ready_fds; /* Number of fds after poll */
 
+#ifdef USE_DEVPOLL
+
+static int             dev_poll_fd;   /* fd for /dev/poll */
+#ifdef HAVE_LINUX_KPOLL_H
+static char *          dev_poll_map;  /* mmap'ed area from kernel /dev/kpoll */
+static struct k_poll   dev_poll;      /* control block for /dev/kpoll */
+static int max_poll_idx;              /* highest non /dev/kpoll fd */
+
+static void kpoll_enable();
+#else
+static struct dvpoll   dev_poll;      /* control block for /dev/poll */
+#endif /* !HAVE_LINUX_KPOLL_H */
+static struct pollfd*  dev_poll_rfds = NULL; /* Allocated at startup */
+
+static void devpoll_init();
+static void devpoll_update_pix(int pix);
+
+#endif /* !USE_DEVPOLL */
+
+#ifdef USE_KQUEUE
+
+static int              kqueue_fd;
+static struct kevent    *kqueue_res;
+static int              max_poll_idx;   /* highest non kqueue fd */
+
+static void kqueue_init();
+static void kqueue_enable();
+static void kqueue_update_pix(int pix, int old_events);
+
+#define ERL_POLL_READY_ENTRIES  2
+
+#endif
+
+#endif
+
+#ifndef ERL_POLL_READY_ENTRIES
+#define ERL_POLL_READY_ENTRIES  1
 #endif
 
 static int max_fd;
+
+#define DIR_SEPARATOR_CHAR    '/'
+
+#if defined(DEBUG)
+#define ERL_BUILD_TYPE_MARKER ".debug"
+#elif defined(INSTRUMENT)
+#define ERL_BUILD_TYPE_MARKER ".instr"
+#elif defined(PURIFY)
+#define ERL_BUILD_TYPE_MARKER ".purify"
+#elif defined(QUANTIFY)
+#define ERL_BUILD_TYPE_MARKER ".quantify"
+#else /* opt */
+#define ERL_BUILD_TYPE_MARKER
+#endif
+
+#define CHILD_SETUP_PROG_NAME	"child_setup" ERL_BUILD_TYPE_MARKER
+static char *child_setup_prog;
 
 #ifdef DEBUG
 static int debug_log = 0;
@@ -248,6 +330,23 @@ void sys_tty_reset(void)
 void
 erl_sys_init(void)
 {
+    char *bindir = getenv("BINDIR");
+    if (!bindir)
+        erl_exit(-1, "Environment variable BINDIR is not set\n");
+    if (bindir[0] != DIR_SEPARATOR_CHAR)
+	erl_exit(-1,
+		 "Environment variable BINDIR does not contain an"
+		 " absolute path\n");
+    child_setup_prog = safe_alloc(strlen(bindir)
+                                  + 1 /* DIR_SEPARATOR_CHAR */
+                                  + sizeof(CHILD_SETUP_PROG_NAME)
+                                  + 1);
+    sprintf(child_setup_prog,
+            "%s%c%s",
+            bindir,
+            DIR_SEPARATOR_CHAR,
+            CHILD_SETUP_PROG_NAME);
+
 #ifdef USE_SETLINEBUF
     setlinebuf(stdout);
 #else
@@ -432,6 +531,7 @@ static void block_signals()
 
 static void unblock_signals()
 {
+    /* Update erl_child_setup.c if changed */
 #if !CHLDWTHR
    sys_sigrelease(SIGCHLD);
 #endif
@@ -801,10 +901,17 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 {
     int ifd[2], ofd[2], len, pid, i;
     char *p1, *p2;
-    char **new_environ;
-    char **tmp;
+    char **volatile new_environ; /* volatile since a vfork() then cannot
+				    cause 'new_environ' to be clobbered
+				    in the parent process. */
     int saved_errno;
     long res;
+#ifndef QNX
+    char *cs_argv[CS_ARGV_NO_OF_ARGS + 1];
+    char fd_close_range[44];                  /* 44 bytes are enough to  */
+    char dup2_op[CS_ARGV_NO_OF_DUP2_OPS][44]; /* hold any "%d:%d" string */
+                                              /* on a 64-bit machine.    */
+#endif
 
     switch (opts->read_write) {
     case DO_READ:
@@ -861,23 +968,49 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 
     if (opts->envir != NULL)
     {
-       if ((tmp = build_unix_environment(opts->envir)) == NULL)
+       if ((new_environ = build_unix_environment(opts->envir)) == NULL)
        {
 	  errno = ENOMEM;
 	  return ERL_DRV_ERROR_ERRNO;
        }
     }
     else
-       tmp = NULL;
-
-    new_environ = tmp;		/* Using 'tmp' has only one purpose: */
-				/* to suppress a warning from the compiler */
-				/* about 'new_environ' being clobbered */
-				/* by 'vfork'. */
-				/* Why this suppresses the warning is */
-				/* a mystery. */
+       new_environ = environ;
 
 #ifndef QNX
+
+    /* Setup argv[] for the child setup program (implemented in
+       erl_child_setup.c) */
+    i = 0;
+    if (opts->use_stdio) {
+	if (opts->read_write & DO_READ){
+	     /* stdout for process */
+	    sprintf(&dup2_op[i++][0], "%d:%d", ifd[1], 1);
+	    if(opts->redir_stderr)
+		/* stderr for process */
+		sprintf(&dup2_op[i++][0], "%d:%d", ifd[1], 2);
+	}
+	if (opts->read_write & DO_WRITE)
+	     /* stdin for process */
+	    sprintf(&dup2_op[i++][0], "%d:%d", ofd[0], 0);
+    } else {		/* XXX will fail if ofd[0] == 4 (unlikely..) */
+	if (opts->read_write & DO_READ)
+	    sprintf(&dup2_op[i++][0], "%d:%d", ifd[1], 4);
+	if (opts->read_write & DO_WRITE)
+	    sprintf(&dup2_op[i++][0], "%d:%d", ofd[0], 3);
+    }
+    for (; i < CS_ARGV_NO_OF_DUP2_OPS; i++)
+	strcpy(&dup2_op[i][0], "-");
+    sprintf(fd_close_range, "%d:%d", opts->use_stdio ? 3 : 5, max_files - 1);
+
+    cs_argv[CS_ARGV_PROGNAME_IX] = child_setup_prog;
+    cs_argv[CS_ARGV_WD_IX] = opts->wd ? opts->wd : ".";
+    cs_argv[CS_ARGV_CMD_IX] = tmp_buf; /* Command */
+    cs_argv[CS_ARGV_FD_CR_IX] = fd_close_range;
+    for (i = 0; i < CS_ARGV_NO_OF_DUP2_OPS; i++)
+	cs_argv[CS_ARGV_DUP2_OP_IX(i)] = &dup2_op[i][0];
+    cs_argv[CS_ARGV_NO_OF_ARGS] = NULL;
+
     /* Block child from SIGINT and SIGUSR1. Must be before fork()
        to be safe. */
     block_signals();
@@ -896,44 +1029,16 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
     }
 
     if (pid == 0) {
-	/* child */
-	if (opts->use_stdio) {
-	    if (opts->read_write & DO_READ){
-		dup2(ifd[1], 1); /* stdout for process */
-		if(opts->redir_stderr)
-		    dup2(ifd[1], 2); /* stderr for process */
-	    }
-	    if (opts->read_write & DO_WRITE)
-		dup2(ofd[0], 0); /* stdin for process */
-	} else {		/* XXX will fail if ofd[0] == 4 (unlikely..) */
-	    if (opts->read_write & DO_READ)
-		dup2(ifd[1], 4);
-	    if (opts->read_write & DO_WRITE)
-		dup2(ofd[0], 3);
-	}
-	for (i = opts->use_stdio ? 3 : 5; i < max_files; i++)
-	    (void) close(i);
-#ifdef USE_SETPGRP_NOARGS	/* SysV */
-	(void) setpgrp();
-#else
-#ifdef USE_SETPGRP		/* BSD */
-	pid = getpid();
-	(void) setpgrp(0,pid);
-#else				/* POSIX */
-	(void) setsid();
-#endif
-	unblock_signals();
-#endif
-	if (opts->wd != NULL)
-	{
-	   if (chdir(opts->wd) < 0)
-	      _exit(1);
-	}
+	/* The child */
 
-	execle("/bin/sh", "sh", "-c",
-	       tmp_buf,
-	       (char *) 0,
-	       new_environ != NULL ? new_environ : environ);
+	/* Observe!
+	 * OTP-4389: The child setup program (implemented in
+	 * erl_child_setup.c) will perform the necessary setup of the
+	 * child before it execs to the user program. This because
+	 * vfork() only allow an *immediate* execve() or _exit() in the
+	 * child.
+	 */
+	execve(child_setup_prog, cs_argv, new_environ);
 	_exit(1);
     } else if (pid == -1) {
         saved_errno = errno;
@@ -969,7 +1074,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
     reset_qnx_spawn();
 #endif /* QNX */
 
-    if (new_environ != NULL)
+    if (new_environ != environ)
        sys_free(new_environ);
 
     if (opts->read_write & DO_READ) 
@@ -1635,6 +1740,8 @@ static void ready_output(ErlDrvData e, ErlDrvEvent ready_fd)
 #define POLL_INPUT	POLLIN
 #endif
 
+#if  !defined(USE_KERNEL_POLL)
+
 int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
 {
     int fd = (int)e;
@@ -1714,6 +1821,163 @@ int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
     }
     return 0;
 }
+
+#else /* !USE_KERNEL_POLL */
+
+int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
+{
+    int fd = (int)e;
+    if ((fd < 0) || (fd >= max_files))
+	return -1;
+
+    if (on) {
+	if (mode & (DO_READ|DO_WRITE)) {
+	    int pix = fd_data[fd].pix;  /* index to poll_fds */
+#if defined(USE_DEVPOLL) || defined(USE_KQUEUE)
+	    int old_events;
+#endif
+
+	    if (pix < 0) {  /* add new slot */
+		max_fd++;   /* FIXME: panic if max_fds >= max_files */
+		pix = max_fd;
+		fd_data[fd].pix = pix;
+		// init the pfd structure
+		poll_fds[pix].fd = fd;
+		poll_fds[pix].events = 0;
+	    }
+
+#if defined(USE_DEVPOLL) || defined(USE_KQUEUE)
+	    old_events = poll_fds[pix].events;
+#endif
+	    poll_fds[pix].fd = fd;
+	    if (mode & DO_READ) {
+		fd_data[fd].inport = ix;
+		poll_fds[pix].events |= POLL_INPUT;
+	    }
+	    if (mode & DO_WRITE) {
+		fd_data[fd].outport = ix;
+		poll_fds[pix].events |= POLLOUT;
+	    }
+
+#ifdef USE_DEVPOLL
+	    if (poll_fds[pix].events != old_events) 
+                devpoll_update_pix(pix);
+#endif
+#ifdef USE_KQUEUE
+	    if (poll_fds[pix].events != old_events) 
+                kqueue_update_pix(pix,old_events);
+#endif
+	}
+    }
+    else {
+	int pix = fd_data[fd].pix;  /* index to poll_fds */
+#if defined(USE_DEVPOLL) || defined(USE_KQUEUE)
+	int old_events ;
+#endif
+
+	int rix = 0;
+	int srix[ERL_POLL_READY_ENTRIES];      /* index(es) to ready_fds */
+	int srix_idx;
+
+	if (pix < 0) 	           /* driver deselected already */
+	    return -1;
+
+	for(srix_idx=0;srix_idx<(sizeof(srix)/sizeof(srix[0]));srix_idx++)
+	  srix[srix_idx]=-1;
+	srix_idx=0;
+
+#if defined(USE_DEVPOLL) || defined(USE_KQUEUE)
+	old_events = poll_fds[pix].events;
+#endif
+	if (mode & DO_READ) {
+	  poll_fds[pix].events &= ~POLL_INPUT;
+          fd_data[fd].inport = -1;
+        }
+	if (mode & DO_WRITE) {
+	  poll_fds[pix].events &= ~POLLOUT;
+          fd_data[fd].outport = -1;
+        }
+
+	/* Find index(es) of this fd in ready_fds */
+	for (rix = 0; rix < nof_ready_fds; rix++) {
+	  if (ready_fds[rix].pfd.fd == fd) {
+
+	    if (mode & DO_READ) 
+	      ready_fds[rix].pfd.revents &= ~POLL_INPUT;
+
+	    if (mode & DO_WRITE) 
+	      ready_fds[rix].pfd.revents &= ~POLLOUT;
+
+	    srix[srix_idx] = rix;
+	    if (++srix_idx == (sizeof(srix)/sizeof(srix[0]))) break;
+	  }
+	}
+	if (poll_fds[pix].events == 0) {
+#ifdef USE_DEVPOLL
+	    if ( old_events && (dev_poll_fd != -1) ) {
+	       /* Tell /dev/[k]poll that we are not interested any more ... */
+	       poll_fds[pix].events = POLLREMOVE;
+	       devpoll_update_pix(pix);
+	       /* devpoll_update_pix may change the pix */
+	       pix = fd_data[fd].pix;
+	       poll_fds[pix].events = 0;
+	    }
+#endif
+#ifdef USE_KQUEUE
+	    if ( old_events && (kqueue_fd != -1) ) {
+                /* Tell kqueue that we are not interested any more ... */
+                kqueue_update_pix(pix,old_events);
+                /*       devpoll_update_pix may change the pix */
+                pix = fd_data[fd].pix;
+                poll_fds[pix].events = 0;
+	    }
+#endif
+
+	    /* Erase all events from poll result being processed */
+	    {
+                int i;
+                for(i=0;i<srix_idx;i++) {
+                    if ((srix[i] != -1))
+                        ready_fds[srix[i]].pfd.revents = 0;
+                }
+	    }
+
+	    /* delete entry by moving the last entry to pix position */
+	    /* FIXME: panic if max_fd == -1 */
+
+	    fd_data[fd].pix  = -1;
+
+	    if (pix != max_fd) {
+		int rfd = poll_fds[max_fd].fd;
+		poll_fds[pix] = poll_fds[max_fd];
+		fd_data[rfd].pix = pix;
+	    }
+            
+	    /* Need to clear at least .events since it is or'ed when
+	     * this slot is reused - might as well clear everything.
+             */
+	    poll_fds[max_fd].fd      = -1;
+	    poll_fds[max_fd].events  = 0;
+	    poll_fds[max_fd].revents = 0;
+	    
+	    max_fd--;
+	}
+#ifdef USE_DEVPOLL
+	else {
+	    devpoll_update_pix(pix);
+	}
+#endif
+#ifdef USE_KQUEUE
+	else {
+	    kqueue_update_pix(pix,old_events);
+	}
+#endif
+
+    }
+    return 0;
+}
+
+#endif /* USE_KERNEL_POLL */
 
 #else
 
@@ -1976,6 +2240,8 @@ int do_wait;
 
 #else /* poll() implementation of check_io() */
 
+#if !defined(USE_KERNEL_POLL)
+
 static void check_io(do_wait)
 int do_wait;
 {
@@ -2096,6 +2362,307 @@ int do_wait;
     }
 }
 
+#else /* kernel poll implementation of check_io() */
+
+static void check_io(do_wait)
+int do_wait;
+{
+    SysTimeval wait_time;
+    int r, i;
+#ifndef USE_KQUEUE
+    int max_fd_plus_one = max_fd + 1;
+#endif
+    int timeout;		/* In milliseconds */
+    struct readyfd* rp;
+    struct readyfd* qp;
+
+    /* Figure out timeout value */
+    if (do_wait) {
+	erts_time_remaining(&wait_time);
+	timeout = wait_time.tv_sec * 1000 + wait_time.tv_usec / 1000;
+    } else if (max_fd == -1) {  /* No need to poll. */
+	erts_deliver_time(NULL); /* sync the machine's idea of time */
+        return;
+    } else {			/* poll only */
+	timeout = 0;
+    }
+
+#ifdef USE_DEVPOLL
+    if ( dev_poll_fd != -1 ) {
+#ifdef HAVE_LINUX_KPOLL_H
+      int do_event_poll;
+
+      do_event_poll = 0;
+      if ((r = poll(poll_fds, (max_poll_idx+1), timeout)) > 0 ) {
+#else
+      dev_poll.dp_timeout = timeout;
+      dev_poll.dp_nfds    = max_fd_plus_one;
+      dev_poll.dp_fds     = dev_poll_rfds;
+      if ((r = ioctl(dev_poll_fd, DP_POLL, &dev_poll)) > 0 ) {
+#endif
+	/* collect ready fds into the ready_fds stucture,
+	 * this makes the calls to input ready/output ready
+	 * independant of the poll_fds array 
+	 ** (accessed via call to driver_select etc)
+	 */
+	int rr;
+	int vr = 0; /* valid */
+#ifdef HAVE_LINUX_KPOLL_H
+	dev_poll_rfds = poll_fds;
+#endif
+	rp = ready_fds;
+	rr = r;
+#ifdef HAVE_LINUX_KPOLL_H
+	r = max_poll_idx+1;
+#endif
+	for (i = 0; rr && (i < r); i++) {
+	    short revents = dev_poll_rfds[i].revents;
+
+	    if (revents != 0) {
+#if HAVE_LINUX_KPOLL_H
+	        if (dev_poll_rfds[i].fd != dev_poll_fd) {
+#endif
+		    int fd = dev_poll_rfds[i].fd;
+
+		    rp->pfd = dev_poll_rfds[i]; /* COPY! */
+		    rp->iport = fd_data[fd].inport;
+		    rp->oport = fd_data[fd].outport;
+		    rp++;
+		    rr--;
+		    vr++;
+#if HAVE_LINUX_KPOLL_H
+	        } else {
+	            do_event_poll = 1;
+		}
+#endif
+	    }
+
+	}
+	nof_ready_fds = vr;
+
+#if HAVE_LINUX_KPOLL_H
+	if ( do_event_poll ) {
+	  /* Now do the fast poll */
+	  dev_poll.kp_timeout = 0;
+	  dev_poll.kp_resoff  = 0;
+	  if ((r = ioctl(dev_poll_fd, KP_POLL, &dev_poll)) > 0 ) {
+	    dev_poll_rfds = (struct pollfd *)(dev_poll_map + dev_poll.kp_resoff);
+
+	    for (i = 0; (i < r); i++) {
+	      short revents = dev_poll_rfds[i].revents;
+
+	      if (revents != 0) {
+	        int fd = dev_poll_rfds[i].fd;
+		rp->pfd = dev_poll_rfds[i]; /* COPY! */
+		rp->iport = fd_data[fd].inport;
+		rp->oport = fd_data[fd].outport;
+		rp++;
+	      } 
+
+	    }
+	    nof_ready_fds += r;
+	  }
+	}
+#endif
+
+      } else {
+	nof_ready_fds = 0;
+	rp = NULL; /* avoid 'uninitialized' warning */
+      }
+    } else {
+#endif
+#ifdef USE_KQUEUE
+    if ((r = poll(poll_fds, max_poll_idx+1, timeout)) > 0) {
+#else
+    if ((r = poll(poll_fds, max_fd_plus_one, timeout)) > 0) {
+#endif
+	int rr = r;
+	int vr = 0;
+#ifdef USE_KQUEUE
+	int do_kevent = 0;
+#endif
+	/* collect ready fds into the ready_fds stucture,
+	 * this makes the calls to input ready/output ready
+	 * independant of the poll_fds array 
+	 ** (accessed via call to driver_select etc)
+	 */
+	rp = ready_fds;
+#ifdef USE_KQUEUE
+	for (i = 0; rr && (i < (max_poll_idx+1)); i++) {
+#else
+	for (i = 0; rr && (i < max_fd_plus_one); i++) {
+#endif
+	    short revents = poll_fds[i].revents;
+	    
+	    if (revents != 0) {
+
+#ifdef USE_KQUEUE
+            if ((kqueue_fd != -1) && (poll_fds[i].fd == kqueue_fd)) {
+                do_kevent=1;
+            } else {
+#endif
+		int fd = poll_fds[i].fd;
+		rp->pfd = poll_fds[i]; /* COPY! */
+		rp->iport = fd_data[fd].inport;
+		rp->oport = fd_data[fd].outport;
+		rp++;
+		rr--;
+		vr++;
+#ifdef USE_KQUEUE
+	    }
+#endif
+	    }
+	}
+#ifdef USE_KQUEUE
+	if ( do_kevent ) {
+            int res;
+            struct timespec ts;
+
+            memset(&ts,(char)0,sizeof(ts));
+
+            if ( (res=kevent(kqueue_fd,NULL,0,kqueue_res,2*max_files,&ts)) < 0 ) {
+                erl_exit(1, "%s:%d kevent call failed. errno = %d\n",__FILE__,__LINE__,errno);
+            } else {
+                int i;
+                for(i=0;i<res;i++) {
+                    int pix;
+                    int fd;
+                    struct kevent *kep = &kqueue_res[i];
+                    fd = kep->ident;
+                    pix = fd_data[fd].pix;
+                    
+                    /* Now     we should copy this into the result fd array               */
+                    /* Please note t  he kqueue version may generate two entries per fd */
+                    /* This is handled in dr  iver_select for cleanup                   */
+                    
+                    rp->pfd = poll_fds[pix]; /* COPY! */
+                    if ( kep->filter == EVFILT_READ ) {
+                        rp->pfd.revents |= POLL_INPUT;
+                    } else if ( kep->filter == EVFILT_WRITE ) {
+                        rp->pfd.revents |= POLLOUT;
+                        if ( kep->flags & EV_EOF )
+                            rp->pfd.revents |= POLLHUP;
+                        if ( kep->flags & EV_ERROR )
+                            rp->pfd.revents |= POLLERR;
+                    } 
+                    if ( kep->flags & EV_EOF )
+                        rp->pfd.revents |= POLLHUP;
+                    if ( kep->flags & EV_ERROR )
+                        rp->pfd.revents |= POLLERR;
+                    
+                    rp->iport = fd_data[fd].inport;
+                    rp->oport = fd_data[fd].outport;
+                    rp++;
+                    vr++;
+                }
+            }
+	}
+#endif
+	nof_ready_fds = vr;
+    } else {
+	nof_ready_fds = 0;
+	rp = NULL; /* avoid 'uninitialized' warning */
+    }
+#ifdef USE_DEVPOLL
+    } 
+#endif
+
+    erts_deliver_time(NULL); /* sync the machine's idea of time */
+
+    if (break_requested) 
+	do_break_handling();
+
+    if (r == 0)     /* timeout */
+	return;
+
+    if (r < 0) {
+	if (errno == ERRNO_BLOCK || errno == EINTR)
+	    return;
+	erl_printf(CBUF, "poll() error %d (%s)\n", errno, erl_errno_id(errno));
+	send_error_to_logger(NIL);
+	return;
+    }
+
+    ASSERT(rp);
+    ASSERT(nof_ready_fds > 0);
+
+    /* Note: this is *not* the same behaviour as in the select
+     *       implementation, where *all* write ready file descriptors
+     *       are done first.
+     */
+
+    for (qp = ready_fds; qp < rp; qp++) {
+	int   fd      = qp->pfd.fd;
+	short revents = qp->pfd.revents;
+
+#ifdef __linux__
+	/* Linux sets pollhup on fresh sockets. Mask it out if not POLL_INPUT */
+	if (!(poll_fds[fd_data[fd].pix].events & POLL_INPUT)) {
+	  revents &= ~POLLHUP;
+	}
+#endif
+
+	if (revents & (POLL_INPUT|POLLOUT)) {
+	    if (revents & POLLOUT) 
+		output_ready(qp->oport, fd);
+	    /* check if output_ready affected selected events */
+	    if (revents & (POLL_INPUT|POLLHUP)) {
+	        if (poll_fds[fd_data[fd].pix].events & POLL_INPUT) 
+                    if ( qp->iport != -1 ) 
+                        input_ready(qp->iport, fd);
+	    }
+	}
+	else if (revents & (POLLERR|POLLHUP)) {
+	    /* let the driver handle the error condition */
+	    if (qp->pfd.events & POLL_INPUT) {
+                Port* p = &erts_port[qp->iport];
+                if ( p->status == FREE ) {
+                    erl_printf(CBUF, "Driver input on free port! fd,port,driver,name:"
+                               " %d,%d,%s,%s\n", fd,
+                               qp->iport, 
+                               erts_port[qp->iport].drv_ptr->driver_name,
+                               erts_port[qp->iport].name);
+                }
+                if ( qp->iport != -1 )
+                    input_ready(qp->iport, fd);
+            }
+	    else
+		output_ready(qp->oport, fd);
+	}
+	else if (revents & POLLNVAL) {
+	    if (qp->pfd.events & POLL_INPUT) {
+		erl_printf(CBUF, "Bad input fd in poll()! fd,port,driver,name:"
+			   " %d,%d,%s,%s\n", fd,
+			   qp->iport, 
+			   erts_port[qp->iport].drv_ptr->driver_name,
+			   erts_port[qp->iport].name);
+	    } 
+	    else if (qp->pfd.events & POLLOUT) {
+		erl_printf(CBUF,
+			   "Bad output fd in poll()! fd,port,driver,name:"
+			   " %d,%d,%s,%s\n", fd,
+			   qp->oport,
+			   erts_port[qp->oport].drv_ptr->driver_name,
+			   erts_port[qp->oport].name);
+	    } 
+	    else {
+		erl_printf(CBUF, "Bad fd in poll(), %d!\n", fd);
+	    }
+	    send_error_to_logger(NIL);
+
+	    /* unmap entry */
+	    if (qp->pfd.events & POLL_INPUT)
+		driver_select(qp->iport, fd, DO_READ|DO_WRITE, 0);
+	    if (qp->pfd.events & POLLOUT) {
+		if (!(qp->pfd.events & POLL_INPUT) || (qp->iport != qp->oport))
+		    driver_select(qp->oport, fd, DO_READ|DO_WRITE, 0);
+	    }
+	}
+    }
+}
+
+#endif /* USE_KERNEL_POLL */
+
 #endif
 
 /* Fills in the systems representation of the jam/beam process identifier.
@@ -2135,7 +2702,7 @@ sys_init_io(byte *buf, Uint size)
     poll_fds =  (struct pollfd *)
 	sys_alloc_from(182, max_files * sizeof(struct pollfd));
     ready_fds =  (struct readyfd *)
-	sys_alloc_from(182, max_files * sizeof(struct readyfd));
+	sys_alloc_from(182, ERL_POLL_READY_ENTRIES * max_files * sizeof(struct readyfd));
 
     if (poll_fds == NULL)
 	erl_exit(1, "Can't allocate %d bytes of memory\n",
@@ -2143,8 +2710,9 @@ sys_init_io(byte *buf, Uint size)
 
     if (ready_fds == NULL)
 	erl_exit(1, "Can't allocate %d bytes of memory\n",
-		 max_files * sizeof(struct readyfd));
+		 ERL_POLL_READY_ENTRIES * max_files * sizeof(struct readyfd));
 
+    nof_ready_fds = 0;
     {
 	int i;
 
@@ -2156,9 +2724,34 @@ sys_init_io(byte *buf, Uint size)
 	    fd_data[i].pix = -1;
 	}
     }
+
+
+#ifdef USE_KERNEL_POLL
+#ifdef USE_DEVPOLL
+    devpoll_init();
+#else
+#ifdef USE_KQUEUE
+    kqueue_init();
+#endif
+#endif /* ! USE_DEVPOLL */
 #endif
 
+#endif /* !USE_SELECT */
+
     max_fd = -1;
+
+#ifdef USE_KERNEL_POLL
+#ifdef USE_DEVPOLL
+#if HAVE_LINUX_KPOLL_H
+    max_poll_idx = -1;
+    kpoll_enable();
+#endif
+#endif
+#ifdef USE_KQUEUE
+    max_poll_idx = -1;
+    kqueue_enable();
+#endif
+#endif
 
 #ifdef USE_THREADS
     {
@@ -2764,3 +3357,273 @@ int sys_stop_hrvtime() {
 }
 
 #endif /* HAVE_GETHRVTIME_PROCFS_IOCTL */
+
+#ifdef USE_KERNEL_POLL /* kernel poll support */
+
+#ifdef USE_KQUEUE
+
+static void kqueue_init()
+{
+    if ( getenv("ERL_NO_KERNEL_POLL") != NULL ) {
+        DEBUGF(("Use of kqueue disabled\n"));
+        kqueue_fd=-1;
+        return;
+    } 
+    
+    if ( (kqueue_fd=kqueue()) < 0 ) {
+        DEBUGF(("Will use poll()\n"));
+        kqueue_fd = -1;
+    } else {
+        if ( (kqueue_res = 
+              (struct kevent *)sys_alloc(ERL_POLL_READY_ENTRIES*sizeof(struct kevent)*max_files)) == NULL ) {
+            erl_exit(1, "Can't allocate %d bytes for kqueue result array\n",
+                     ERL_POLL_READY_ENTRIES*sizeof(struct kevent)*max_files);
+        }
+    }
+}
+
+static void kqueue_enable()
+{
+    int pix;
+    
+    /*     Add kqueue fd to pollable descriptors */
+    if ( kqueue_fd == -1 ) return;
+    
+    max_fd++;
+    max_poll_idx++;
+    pix = max_fd;
+    fd_data[kqueue_fd].pix = pix;
+    poll_fds[pix].fd = kqueue_fd;
+    poll_fds[pix].events = POLL_INPUT;
+    poll_fds[pix].revents = 0;
+}
+
+static void kqueue_set_event(int fd, int filter, int flags)
+{
+    int res;
+    struct timespec ts;
+    struct kevent ke,*kep=&ke;
+    
+    memset(&ts,(char)0,sizeof(ts));
+    memset(kep,(char)0,sizeof(struct kevent));
+    
+    kep->ident = fd;
+    kep->filter = filter;
+    kep->flags = flags;
+    
+    if ( (res=kevent(kqueue_fd,kep,1,NULL,0,&ts)) == -1 ) {
+        fprintf(stderr,"WARNING: %s:%d kevent call failed errno = %d fd = %d filter = %d flags = %d (ignored)\r\n",
+                __FILE__,__LINE__,errno,fd,filter,flags);
+        if ( (errno == ENOENT) ) return; /* fd is not valid (closed?) */
+        erl_exit(1, "%s:%d kevent call failed. fd = %d filter = %d flags = %d errno = %d\n",
+                 __FILE__,__LINE__,fd,filter,flags,errno);
+    }
+}
+
+static void kqueue_update_pix(int pix, int old_events)
+{
+    struct stat sb;
+    
+    if ( fstat(poll_fds[pix].fd,&sb) == -1 ) {
+        erl_exit(1,"Can't fstat file %d. errno = %d\n",poll_fds[pix].fd,errno);
+    }
+    
+    if ( (kqueue_fd != -1) && ( S_ISFIFO(sb.st_mode) || S_ISSOCK(sb.st_mode) ) ) {
+        
+        /* Input */
+        if ( (poll_fds[pix].events & POLL_INPUT) == POLL_INPUT ) 
+            kqueue_set_event(poll_fds[pix].fd,EVFILT_READ,(EV_ADD|EV_ENABLE));
+        else 
+            if ( ( old_events & POLL_INPUT ) == POLL_INPUT ) 
+                kqueue_set_event(poll_fds[pix].fd,EVFILT_READ,EV_DELETE);
+        
+        /* Output */
+        if ( (poll_fds[pix].events & POLLOUT) == POLLOUT ) 
+            kqueue_set_event(poll_fds[pix].fd,EVFILT_WRITE,(EV_ADD|EV_ENABLE));
+        else 
+            if ( ( old_events & POLLOUT ) == POLLOUT ) 
+                kqueue_set_event(poll_fds[pix].fd,EVFILT_WRITE,EV_DELETE);
+	
+    } else {
+        if ( poll_fds[pix].events == 0 ) {
+            if ( pix != max_poll_idx ) {
+                struct pollfd tmp_pfd;
+                /* swap this slot with max_poll_idx and decrement */
+                tmp_pfd = poll_fds[pix];
+                poll_fds[pix] = poll_fds[max_poll_idx];
+                fd_data[poll_fds[pix].fd].pix = pix;
+                poll_fds[max_poll_idx] = tmp_pfd;
+                fd_data[poll_fds[max_poll_idx].fd].pix = max_poll_idx;
+            }
+            max_poll_idx--;
+            /* the normal processing in driver_select will kick it out completely */
+        } else {
+            if ( pix > max_poll_idx ) {
+                max_poll_idx++;
+                if ( max_poll_idx != max_fd ) {
+                    struct pollfd tmp_pfd;
+                    tmp_pfd = poll_fds[max_poll_idx];
+                    poll_fds[max_poll_idx] = poll_fds[pix];
+                    fd_data[poll_fds[max_poll_idx].fd].pix = max_poll_idx;
+                    poll_fds[pix] = tmp_pfd;
+                    fd_data[poll_fds[pix].fd].pix = pix;
+                }
+            }
+        }
+    }
+}
+  
+#endif
+
+/* /dev/kpoll support */
+
+#ifdef USE_DEVPOLL
+
+#if HAVE_LINUX_KPOLL_H
+static void kpoll_enable()
+{
+    int pix;
+    
+    /* Add /dev/epoll fd to pollable descriptors */
+    if ( dev_poll_fd == -1 ) return;
+    
+    max_fd++;
+    max_poll_idx++;
+    pix = max_fd;
+    fd_data[dev_poll_fd].pix = pix;
+    poll_fds[pix].fd = dev_poll_fd;
+    poll_fds[pix].events = POLL_INPUT;
+    poll_fds[pix].revents = 0;
+}
+
+static void kpoll_init()
+{
+    if ( (dev_poll_fd=open("/dev/kpoll",O_RDWR)) < 0 ) {
+        /* This will happen if the module is not inserted yet as well... */
+        DEBUGF(("Will use poll()\n"));
+        dev_poll_fd = -1; /* We will not use /dev/kpoll */
+    } else {
+      DEBUGF(("Will use /dev/kpoll\n"));
+      if ( ioctl(dev_poll_fd,KP_ALLOC,max_files) == -1 ) {
+	perror("ioctl(KP_ALLOC)");
+	erl_exit(1, "Can't allocate %d /dev/kpoll file descriptors\n",
+		 max_files);
+      }
+      if ( (dev_poll_map = (char *)mmap(NULL,KP_MAP_SIZE(max_files),
+					PROT_READ|PROT_WRITE, 
+					MAP_PRIVATE, dev_poll_fd, 0)) == NULL ) {
+	erl_exit(1, "Can't mmap /dev/kpoll result area.\n");
+      }
+      dev_poll_rfds =  NULL;
+    }
+}
+
+#endif /* HAVE_LINUX_KPOLL_H */
+
+#ifdef HAVE_SYS_DEVPOLL_H
+
+static void solaris_devpoll_init()
+{
+    if ( (dev_poll_fd=open("/dev/poll",O_RDWR)) < 0 ) {
+        DEBUGF(("Will use poll()\n"));
+        dev_poll_fd = -1; /* We will not use /dev/poll */
+    } else {
+        DEBUGF(("Will use /dev/poll\n"));
+        dev_poll_rfds =  (struct pollfd *)
+            sys_alloc_from(182, max_files * sizeof(struct pollfd));
+        if (dev_poll_rfds == NULL)
+            erl_exit(1, "Can't allocate %d bytes of memory\n",
+                     max_files * sizeof(struct pollfd));
+    }
+}
+
+#endif
+
+static void devpoll_init() 
+{
+    if ( getenv("ERL_NO_KERNEL_POLL") != NULL ) {
+        DEBUGF(("Use of kernel poll disabled.\n"));
+        dev_poll_fd=-1;
+    } else {
+        /* Determine use of poll vs. /dev/poll at runtime */
+#ifdef HAVE_LINUX_KPOLL_H
+        kpoll_init();
+#else
+#ifdef HAVE_SYS_DEVPOLL_H
+        solaris_devpoll_init();
+#endif
+#endif
+    }
+}
+
+static int devpoll_write(int fd, void *buf, size_t count)
+{
+    int res;
+    int left = count;
+
+    do {
+        if ( (res=write(fd,buf,left)) < 0 ) {
+            if ( errno == EINTR ) continue;
+            return res;
+        } else {
+            buf += res;
+            left -= res;
+        }
+    } while (left);
+    return count;
+}
+
+static void devpoll_update_pix(int pix)
+{
+    int res;
+
+#if HAVE_LINUX_KPOLL_H
+    struct stat sb;
+
+    if ( fstat(poll_fds[pix].fd,&sb) == -1 ) {
+        erl_exit(1,"Can't fstat file %d. errno = %d\n",poll_fds[pix].fd,errno);
+    }
+
+    if ( (dev_poll_fd != -1 ) && (S_ISFIFO(sb.st_mode) || S_ISSOCK(sb.st_mode)) ) {
+
+#endif
+    if ( dev_poll_fd != -1 ) {
+        if ( (res=devpoll_write(dev_poll_fd,&poll_fds[pix],sizeof(struct pollfd))) != 
+             (sizeof(struct pollfd)) ) {
+            erl_exit(1,"Can't write to /dev/poll\n");
+        }
+    }
+#if HAVE_LINUX_KPOLL_H
+    } else {
+        if ( poll_fds[pix].events & POLLREMOVE ) {
+            if ( pix != max_poll_idx ) {
+                struct pollfd tmp_pfd;
+                /* swap this slot with max_poll_idx and decrement */
+                tmp_pfd = poll_fds[pix];
+                poll_fds[pix] = poll_fds[max_poll_idx];
+                fd_data[poll_fds[pix].fd].pix = pix;
+                poll_fds[max_poll_idx] = tmp_pfd;
+                fd_data[poll_fds[max_poll_idx].fd].pix = max_poll_idx;
+            }
+            max_poll_idx--;
+            /* the normal processing in driver_select will kick it out completely */
+        } else {
+            if ( pix > max_poll_idx ) {
+                max_poll_idx++;
+                if ( max_poll_idx != max_fd ) {
+                    struct pollfd tmp_pfd;
+                    tmp_pfd = poll_fds[max_poll_idx];
+                    poll_fds[max_poll_idx] = poll_fds[pix];
+                    fd_data[poll_fds[max_poll_idx].fd].pix = max_poll_idx;
+                    poll_fds[pix] = tmp_pfd;
+                    fd_data[poll_fds[pix].fd].pix = pix;
+                }
+            }
+        }
+    }
+#endif /* HAVE_LINUX_KPOLL_H */
+}
+
+#endif /* USE_DEVPOLL */
+
+#endif /* USE_KERNEL_POLL */

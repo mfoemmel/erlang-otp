@@ -39,7 +39,7 @@
 %%%
 %%%-----------------------------------------------------
 emit_attribute_prototype(G, N, X, Fd) ->
-    emit_attribute_prototype(G, N, X, Fd, icgen:get_idlist(X)).
+    emit_attribute_prototype(G, N, X, Fd, ic_forms:get_idlist(X)).
 
 emit_attribute_prototype(_G, _N, _X, Fd, []) ->
     ok;
@@ -78,7 +78,7 @@ emit_attr_prototype(G, N, X, Fd, OpName, WireOpName) ->
 %%%
 %%%-----------------------------------------------------
 emit_atrribute_on_dictionary(G, N, X, Fd, C) ->
-    emit_atrribute_on_dictionary(G, N, X, Fd, C, icgen:get_idlist(X)).
+    emit_atrribute_on_dictionary(G, N, X, Fd, C, ic_forms:get_idlist(X)).
 
 emit_atrribute_on_dictionary(_G, _N, _X, _Fd, C, []) ->
     C;
@@ -111,7 +111,7 @@ emit_atrribute_on_dictionary(G, N, X, Fd, C, [V|Vs]) ->
 %%%-----------------------------------------------------
 emit_attribute_switch_case(G, N, X, Fd, C) ->
     Tk = ic_forms:get_tk(X),
-    emit_attribute_switch_case(G, N, X, Fd, Tk, C, icgen:get_idlist(X)).
+    emit_attribute_switch_case(G, N, X, Fd, Tk, C, ic_forms:get_idlist(X)).
 
 emit_attribute_switch_case(_G, _N, _X, _Fd, _Tk, C, []) ->
     C;
@@ -200,7 +200,7 @@ emit_attribute_switch_case1(G, N, X, Fd, "_set_", Name, Tk, C) ->
 %%%
 %%%-----------------------------------------------------
 emit_attribute_stub_code(G, N, X, Fd) ->
-    emit_attribute_stub_code(G, N, X, Fd, icgen:get_idlist(X)).
+    emit_attribute_stub_code(G, N, X, Fd, ic_forms:get_idlist(X)).
 
 emit_attribute_stub_code(_G, _N, _X, _Fd, []) ->
     ok;

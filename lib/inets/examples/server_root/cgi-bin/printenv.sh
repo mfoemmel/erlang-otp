@@ -2,5 +2,5 @@
 echo "Content-type: text/html"
 echo
 echo "<PRE>"
-printenv
+env
 echo "</PRE>"

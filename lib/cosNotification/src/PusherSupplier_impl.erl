@@ -271,17 +271,21 @@ init([MyType, MyAdmin, MyAdminPid, InitQoS, LQS, MyChannel, Options, Operator]) 
 			InitQoS, LQS, MyChannel, Operator, GCTime, GCLimit, TimeRef)}.
 
 terminate(Reason, State) when ?is_UnConnected(State) ->
+    stop_timer(State),
     %% We are not connected to a Client. Hence, no need to invoke disconnect.
     ok;
 terminate(Reason, State) when ?is_ANY(State) ->
+    stop_timer(State),
     'CosNotification_Common':disconnect('CosEventComm_PushConsumer', 
 					disconnect_push_consumer, 
 					?get_Client(State));
 terminate(Reason, State) when ?is_SEQUENCE(State) ->
+    stop_timer(State),
     'CosNotification_Common':disconnect('CosNotifyComm_SequencePushConsumer',
 					disconnect_sequence_push_consumer,
 					?get_Client(State));
 terminate(Reason, State) when ?is_STRUCTURED(State) ->
+    stop_timer(State),
     'CosNotification_Common':disconnect('CosNotifyComm_StructuredPushConsumer', 
 					disconnect_structured_push_consumer, 
 					?get_Client(State)).
@@ -409,8 +413,8 @@ suspend_connection(OE_THIS, OE_FROM, State) when ?is_Connected(State) ->
 	?is_Suspended(State) ->
 	    corba:raise(#'CosNotifyChannelAdmin_ConnectionAlreadyInactive'{});
 	true ->
-	    stop_timer(State),
-	    {reply, ok, ?set_Suspended(State)}
+	    NewState = stop_timer(State),
+	    {reply, ok, ?set_Suspended(NewState)}
     end;
 suspend_connection(_,_,_)->
       corba:raise(#'CosNotifyChannelAdmin_NotConnected'{}).
@@ -865,24 +869,34 @@ store_events(State, [Event|Rest]) ->
 %% Start timers which send a message each time we should push events. Only used
 %% when this objects is defined to supply sequences.
 start_timer(State) ->
-    case catch timer:send_interval(timer:seconds(?get_PacingInterval(State)), pacing) of
-	{ok,PacTRef} ->
-	    ?DBG("PUSH SUPPLIER STARTED TIMER, BATCH LIMIT: ~p~n",
+    case ?get_PacingInterval(State) of
+	0 ->
+	    ?DBG("PUSH SUPPLIER STARTED NO TIMER (0), BATCH LIMIT: ~p~n", 
+		 [?get_BatchLimit(State)]),
+
+	    State;
+	PacInt ->
+	    case catch timer:send_interval(timer:seconds(PacInt), pacing) of
+		{ok,PacTRef} ->
+		    ?DBG("PUSH SUPPLIER STARTED TIMER, BATCH LIMIT: ~p~n",
 			 [?get_BatchLimit(State)]),
-	    ?set_PacingTimer(State, PacTRef);
-	What ->
-	    orber:debug_level_print("[~p] PusherSupplier:start_timer(); 
+		    ?set_PacingTimer(State, PacTRef);
+		What ->
+		    orber:debug_level_print("[~p] PusherSupplier:start_timer(); 
 Unable to invoke timer:send_interval/2: ~p", [?LINE, What], ?DEBUG_LEVEL),
-	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
+		    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
+	    end
     end.
 
 stop_timer(State) ->
     case ?get_PacingTimer(State) of
 	undefined ->
-	    ok;
+	    ?DBG("PUSH SUPPLIER HAVE NO TIMER TO STOP~n",[]),
+	    State;
 	Timer ->
 	    ?DBG("PUSH SUPPLIER STOPPED TIMER~n",[]),
-	    timer:cancel(?get_PacingTimer(State))
+	    timer:cancel(Timer),
+	    ?set_PacingTimer(State, undefined)
     end.
 
 	    

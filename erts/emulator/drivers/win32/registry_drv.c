@@ -329,9 +329,18 @@ fix_value_result(RegPort* rp, LONG result, DWORD type,
 	ok = RegQueryInfoKey(rp->hkey, NULL, NULL, NULL,
 			     NULL, &max_name1, NULL, NULL, &max_name2,
 			     &max_value, NULL, NULL);
-	ASSERT(ok);
-	rp->name_buf_size = max_name1 > max_name2 ? max_name1 : max_name2;
-	rp->value_buf_size = max_value;
+#ifdef DEBUG
+	if (ok != ERROR_SUCCESS) {
+	    char buff[256];
+	    sprintf(buff,"Failure in registry_drv line %d, error = %d",
+		    __LINE__, GetLastError());
+	    MessageBox(NULL, buff, "Internal error", MB_OK);
+	    ASSERT(ok == ERROR_SUCCESS);
+	}
+#endif
+	rp->name_buf_size = (max_name1 > max_name2 ? max_name1 : max_name2) 
+	    + 1;
+	rp->value_buf_size = max_value + 1;
 	rp->name_buf = sys_realloc(rp->name_buf, rp->name_buf_size);
 	rp->value_buf = sys_realloc(rp->value_buf, rp->value_buf_size);
 	return FALSE;

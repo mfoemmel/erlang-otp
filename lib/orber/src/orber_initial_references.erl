@@ -38,7 +38,7 @@
 	 terminate/2, handle_call/3, code_change/3, 
 	 get/2, list/1, add/3, remove/2, 
 	 get/1, list/0, add/2, remove/1, 
-	 typeID/0, install/2]).
+	 typeID/0, install/2, oe_is_a/1]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -157,6 +157,11 @@ remove(EO_this, Id) ->
 
 typeID() ->
     "IDL:Orber/InitialReferences:1.0".
+
+oe_is_a("IDL:Orber/InitialReferences:1.0") ->
+    true;
+oe_is_a(_) ->
+    false.
 
 %%-----------------------------------------------------------------
 %% Internal interface functions

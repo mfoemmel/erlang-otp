@@ -32,8 +32,69 @@
 %%     {Mod, Fun, ExpectedRes, ActualRes}
 %%----------------------------------------------------------------------
 
+tickets(Case) ->
+    Res = lists:flatten(tickets(Case, default_config())),
+    io:format("Res: ~p~n", [Res]),
+    display_result(Res),
+    Res.
+
+tickets(Cases, Config) when list(Cases) ->     
+    [tickets(Case, Config) || Case <- Cases];
+tickets(Mod, Config) when atom(Mod) ->
+    Res = tickets(Mod, tickets, Config),
+    Res;
+tickets(Bad, Config) ->
+    [{badarg, Bad, ok}].
+
+tickets(Mod, Func, Config) ->
+    case (catch Mod:Func(suite)) of
+	[] ->
+	    io:format("Eval:   ~p:~p~n", [Mod, Func]),
+	    eval(Mod, Func, Config);
+	
+	Cases when list(Cases) ->
+	    io:format("Expand: ~p:~p ... ~p~n", [Mod, Func, Cases]),
+	    Map = fun({M,_}) when atom(M) -> tickets(M, tickets, Config);
+		     (F)     when atom(F) -> tickets(Mod, F, Config);
+		     (Case) -> Case
+		  end,
+	    lists:map(Map, Cases);
+
+        {req, _, {conf, Init, Cases, Finish}} ->
+	    case (catch Mod:Init(Config)) of
+		Conf when list(Conf) ->
+		    io:format("Expand: ~p:~p ...~n", [Mod, Func]),
+		    Map = fun({M,_}) when atom(M) -> tickets(M, tickets, Config);
+			     (F)     when atom(F) -> tickets(Mod, F, Config);
+			     (Case) -> Case
+			  end,
+		    Res = lists:map(Map, Cases),
+		    (catch Mod:Finish(Conf)),
+		    Res;
+		    
+		{'EXIT', {skipped, Reason}} ->
+		    io:format(" => skipping: ~p~n", [Reason]),
+		    [{skipped, {Mod, Func}, Reason}];
+		    
+		Error ->
+		    io:format(" => init failed: ~p~n", [Error]),
+		    [{failed, {Mod, Func}, Error}]
+	    end;
+		    
+        {'EXIT', {undef, _}} ->
+	    io:format("Undefined:   ~p~n", [{Mod, Func}]),
+	    [{nyi, {Mod, Func}, ok}];
+		    
+        Error ->
+	    io:format("Ignoring:   ~p:~p: ~p~n", [Mod, Func, Error]),
+	    [{failed, {Mod, Func}, Error}]
+    end.
+	
+
+
 t(Case) ->
-    Res = t(Case, default_config()),
+    Res = lists:flatten(t(Case, default_config())),
+    io:format("Res: ~p~n", [Res]),
     display_result(Res),
     Res.
 
@@ -41,12 +102,7 @@ t({Mod, Fun}, Config) when atom(Mod), atom(Fun) ->
     case catch apply(Mod, Fun, [suite]) of
 	[] ->
 	    io:format("Eval:   ~p~n", [{Mod, Fun}]),
-	    case eval(Mod, Fun, Config) of
-		{ok, _, _} ->
-		    [];
-		Other ->
-		    [Other]
-	    end;
+	    eval(Mod, Fun, Config);
 
 	Cases when list(Cases) ->
 	    io:format("Expand: ~p ...~n", [{Mod, Fun}]),
@@ -87,8 +143,7 @@ t(Mod, Config) when atom(Mod) ->
     Res = t({Mod, all}, Config),
     Res;
 t(Cases, Config) when list(Cases) ->
-    Errors = [t(Case, Config) || Case <- Cases],
-    lists:append(Errors);
+    [t(Case, Config) || Case <- Cases];
 t(Bad, Config) ->
     [{badarg, Bad, ok}].
 
@@ -150,23 +205,23 @@ do_eval(ReplyTo, Mod, Fun, Config) ->
 
 display_result([]) ->    
     io:format("OK~n", []);
-display_result(Errors) when list(Errors) ->
-    Nyi     = [MF || {nyi, MF, _} <- Errors],
-    Skipped = [{MF, Reason} || {skipped, MF, Reason} <- Errors],
-    Failed  = [{MF, Reason} || {failed, MF, Reason} <- Errors],
-    display_summery(Nyi, Skipped, Failed),
+display_result(Res) when list(Res) ->
+    Ok      = [MF || {ok, MF, _}  <- Res],
+    Nyi     = [MF || {nyi, MF, _} <- Res],
+    Skipped = [{MF, Reason} || {skipped, MF, Reason} <- Res],
+    Failed  = [{MF, Reason} || {failed, MF, Reason} <- Res],
+    display_summery(Ok, Nyi, Skipped, Failed),
     display_skipped(Skipped),
     display_failed(Failed).
 
-display_summery(Nyi, Skipped, Failed) ->
+display_summery(Ok, Nyi, Skipped, Failed) ->
     io:format("~nTest case summery:~n", []),
+    display_summery(Ok, "successfull"),
     display_summery(Nyi, "not yet implemented"),
     display_summery(Skipped, "skipped"),
     display_summery(Failed, "failed"),
     io:format("~n", []).
    
-display_summery([], _) ->
-    ok;
 display_summery(Res, Info) ->
     io:format("  ~w test cases ~s~n", [length(Res), Info]).
     

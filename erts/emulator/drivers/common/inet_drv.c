@@ -5779,6 +5779,8 @@ tcp_descriptor* desc; int err;
 	}
 	else {
 	    tcp_clear_output(desc);
+	    tcp_clear_input(desc);
+	    tcp_close_check(desc);
 	    inet_close(INETP(desc));
 	    inet_reply_error_am(INETP(desc), am_closed);
 	}

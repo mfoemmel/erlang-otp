@@ -30,6 +30,9 @@
 #include "dist.h"
 #include "erl_version.h"
 #include "erl_db_util.h"
+#ifdef ELIB_ALLOC_IS_CLIB
+#include "elib_stat.h"
+#endif
 
 #define DECL_AM(S) Eterm AM_ ## S = am_atom_put(#S, sizeof(#S) - 1)
 
@@ -61,6 +64,9 @@ static char erts_system_version[] = ("Erlang (" EMULATOR ")"
 #endif	
 #ifdef USE_THREADS
 				     " [threads:%d]"
+#endif
+#ifdef USE_KERNEL_POLL
+				     " [kernel-poll]"
 #endif	
 				     "\n");
 
@@ -1172,7 +1178,6 @@ BIF_ADECL_1
 
 #if defined(ELIB_ALLOC_IS_CLIB)
       {
-	DECL_AM(elib_malloc);
 	Eterm version;
 	int i;
 	int ver[5];
@@ -1188,7 +1193,7 @@ BIF_ADECL_1
 	  hp += 2;
 	}
 
-	res = TUPLE4(hp, AM_elib_malloc, version, features, settings);
+	res = TUPLE4(hp, am_elib_malloc, version, features, settings);
       }
 #elif defined(__GLIBC__)
       {
@@ -1239,6 +1244,56 @@ BIF_ADECL_1
     }
     else if (BIF_ARG_1 == am_sl_alloc) {
 	BIF_RET(erts_sl_alloc_stat_eterm(BIF_P));
+    }
+    else if (BIF_ARG_1 == am_elib_malloc) {
+#ifdef ELIB_ALLOC_IS_CLIB
+	struct elib_stat stat;
+	DECL_AM(heap_size);
+	DECL_AM(max_alloced_size);
+	DECL_AM(alloced_size);
+	DECL_AM(free_size);
+	DECL_AM(no_alloced_blocks);
+	DECL_AM(no_free_blocks);
+	DECL_AM(smallest_alloced_block);
+	DECL_AM(largest_free_block);
+	Eterm atoms[8];
+	Eterm ints[8];
+	int length = 0;
+
+	elib_stat(&stat);
+
+	atoms[length] = AM_heap_size;
+	ints[length++] = make_small_or_big((Uint) stat.mem_total*sizeof(Uint),
+					   BIF_P);
+	atoms[length] = AM_max_alloced_size;
+	ints[length++] = make_small_or_big((Uint) (stat.mem_max_alloc
+						   * sizeof(Uint)),
+					   BIF_P);
+	atoms[length] = AM_alloced_size;
+	ints[length++] = make_small_or_big((Uint) stat.mem_alloc*sizeof(Uint),
+					   BIF_P);
+	atoms[length] = AM_free_size;
+	ints[length++] = make_small_or_big((Uint) stat.mem_free*sizeof(Uint),
+					   BIF_P);
+	atoms[length] = AM_no_alloced_blocks;
+	ints[length++] = make_small_or_big((Uint) stat.mem_blocks,
+					   BIF_P);
+	atoms[length] = AM_no_free_blocks;
+	ints[length++] = make_small_or_big((Uint) stat.free_blocks,
+					   BIF_P);
+	atoms[length] = AM_smallest_alloced_block;
+	ints[length++] = make_small_or_big((Uint) stat.min_used*sizeof(Uint),
+					   BIF_P);
+	atoms[length] = AM_largest_free_block;
+	ints[length++] = make_small_or_big((Uint) stat.max_free*sizeof(Uint),
+					    BIF_P);
+
+	res = make_tuple2_list(BIF_P, length, atoms, ints);
+#else
+	res = am_false;
+#endif
+
+	BIF_RET(res);
     }
     else if (BIF_ARG_1 == am_os_version) {
        int major, minor, build;

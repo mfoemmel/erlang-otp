@@ -119,7 +119,7 @@ $(OBJDIR)/%.o: %.c
 
 $(OBJDIR)/elibcrypto.o:
 	$(INSTALL_DIR) $(OBJDIR)
-	$(LD) -r $(ELIBCRYPTO_UNDEFS) -L $(SSLEAY_LIBDIR) -lcrypto -o $@
+	$(LD) -r $(ELIBCRYPTO_UNDEFS) -L$(SSLEAY_LIBDIR) -lcrypto -o $@
 
 $(LIBDIR)/crypto_drv.so: $(CRYPTO_DRV_OBJS)
 	$(INSTALL_DIR) $(LIBDIR)

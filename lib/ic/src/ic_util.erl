@@ -26,9 +26,13 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([mk_align/1, mk_list/1, mk_name/2, mk_OE_name/2, mk_oe_name/2, mk_var/1]).
--export([to_atom/1, to_colon/1, to_list/1, to_undersc/1, to_dot/1, to_dot/2]).
--export([to_uppercase/1,adjustScopeToJava/2,eval_java/3, eval_c/3]).
+
+-export([mk_align/1, mk_list/1, join/2, chain/2, mk_name/2,
+	 mk_OE_name/2, mk_oe_name/2, mk_var/1]).
+
+-export([to_atom/1, to_colon/1, to_list/1, to_undersc/1, to_dot/1,
+	 to_dot/2]).  
+-export([to_uppercase/1, adjustScopeToJava/2, eval_java/3, eval_c/3]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -46,6 +50,20 @@ mk_list([Arg | Args]) ->
 mk_list2([Arg | Args]) ->
     ", " ++ Arg ++ mk_list2(Args);
 mk_list2([]) -> [].
+
+%% Produce a list of items separated by S.
+join([E1, E2| Es], S) ->
+        [E1, S| join([E2| Es], S)];
+join([E], _) ->
+    [E];
+join([], _) ->
+    [].
+
+%% Produce a list of items, each terminated by T.
+chain([E| Es], T) ->
+    [E, T| chain(Es, T)];
+chain([], _) ->
+    [].
 
 
 %% Shall convert a string to a Erlang variable name (Capitalise)
@@ -235,11 +253,15 @@ eval_java(G,N,Arg) when tuple(Arg), element(1,Arg) == '<integer_literal>' ->
     element(3,Arg);
 eval_java(G,N,Arg) when tuple(Arg), element(1,Arg) == '<character_literal>' ->
     element(3,Arg);
+eval_java(G,N,Arg) when tuple(Arg), element(1,Arg) == '<wcharacter_literal>' ->
+    element(3,Arg);
 eval_java(G,N,Arg) when tuple(Arg), element(1,Arg) == '<boolean_literal>' ->
     element(3,Arg);
 eval_java(G,N,Arg) when tuple(Arg), element(1,Arg) == '<floating_pt_literal>' ->
     element(3,Arg);
 eval_java(G,N,Arg) when tuple(Arg), element(1,Arg) == '<string_literal>' ->
+    element(3,Arg);
+eval_java(G,N,Arg) when tuple(Arg), element(1,Arg) == '<wstring_literal>' ->
     element(3,Arg);
 eval_java(G,N,{Op,Arg1,Arg2}) ->
     "(" ++ eval_java(G,N,Arg1) ++ 
@@ -262,11 +284,15 @@ eval_c(G,N,Arg) when tuple(Arg), element(1,Arg) == '<integer_literal>' ->
     element(3,Arg);
 eval_c(G,N,Arg) when tuple(Arg), element(1,Arg) == '<character_literal>' ->
     element(3,Arg);
+eval_c(G,N,Arg) when tuple(Arg), element(1,Arg) == '<wcharacter_literal>' ->
+    element(3,Arg);
 eval_c(G,N,Arg) when tuple(Arg), element(1,Arg) == '<boolean_literal>' ->
     element(3,Arg);
 eval_c(G,N,Arg) when tuple(Arg), element(1,Arg) == '<floating_pt_literal>' ->
     element(3,Arg);
 eval_c(G,N,Arg) when tuple(Arg), element(1,Arg) == '<string_literal>' ->
+    element(3,Arg);
+eval_c(G,N,Arg) when tuple(Arg), element(1,Arg) == '<wstring_literal>' ->
     element(3,Arg);
 eval_c(G,N,{Op,Arg1,Arg2}) ->
     "(" ++ eval_c(G,N,Arg1) ++ 

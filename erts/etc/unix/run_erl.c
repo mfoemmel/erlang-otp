@@ -41,6 +41,7 @@
 #include <signal.h>
 #include <dirent.h>
 #include <termios.h>
+#include <time.h>
 
 #define noDEBUG
 

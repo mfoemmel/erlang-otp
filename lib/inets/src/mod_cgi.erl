@@ -172,7 +172,7 @@ env(Info, Script, AfterScript) ->
     {_, RemoteAddr} = (Info#mod.init_data)#init_data.peername,
     ServerName = (Info#mod.init_data)#init_data.resolve,
     PH = parsed_header(Info#mod.parsed_header),
-    Env=
+    Env =
 	[env("SERVER_SOFTWARE",?SERVER_SOFTWARE),
 	 env("SERVER_NAME",ServerName),
 	 env("GATEWAY_INTERFACE",?GATEWAY_INTERFACE),
@@ -181,7 +181,7 @@ env(Info, Script, AfterScript) ->
 	 env("REQUEST_METHOD",Info#mod.method),
 	 env("REMOTE_ADDR",RemoteAddr),
 	 env("SCRIPT_NAME",Script)],
-    Env1=
+    Env1 =
         case Info#mod.method of
             "GET" ->
 		?vdebug("~n   AfterScript: ~p",[AfterScript]),
@@ -195,7 +195,8 @@ env(Info, Script, AfterScript) ->
                             mod_alias:real_name(
                               Info#mod.config_db, PathInfo, Aliases),
                         [Env|
-                         [env("PATH_INFO","/"++httpd_util:decode_hex(PathInfo)),
+                         [env("PATH_INFO","/"++
+			      httpd_util:decode_hex(PathInfo)),
                           env("PATH_TRANSLATED",PathTranslated)]];
 		    {PathInfo, QueryString} ->
                         Aliases = httpd_util:multi_lookup(
@@ -204,8 +205,7 @@ env(Info, Script, AfterScript) ->
                             mod_alias:real_name(
                               Info#mod.config_db, PathInfo, Aliases),
                         [Env|
-                         [env("PATH_INFO",
-			      httpd_util:decode_hex(PathInfo)),
+                         [env("PATH_INFO",httpd_util:decode_hex(PathInfo)),
                           env("PATH_TRANSLATED",PathTranslated),
 			  env("QUERY_STRING", QueryString)]];
 		    [] ->
@@ -223,7 +223,7 @@ env(Info, Script, AfterScript) ->
             undefined ->
                 Env1;
             RemoteUser ->
-                [Env1|env("REMOTE_USER",RemoteUser)]
+                [env("REMOTE_USER",RemoteUser)|Env1] %% OTP-4416
         end,
     lists:flatten([Env2|PH]).
 

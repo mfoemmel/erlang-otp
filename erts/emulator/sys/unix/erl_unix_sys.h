@@ -208,4 +208,17 @@ static __inline__ int erts_check_x87(double f)
               do {erl_fp_exception = old_erl_fp_exception;} while (0)
 #endif
 
-#endif
+
+#ifdef NEED_CHILD_SETUP_DEFINES
+/* The child setup argv[] */
+#define CS_ARGV_PROGNAME_IX	0		/* Program name		*/
+#define CS_ARGV_WD_IX		1		/* Working directory	*/
+#define CS_ARGV_CMD_IX		2		/* Command		*/
+#define CS_ARGV_FD_CR_IX	3		/* Fd close range	*/
+#define CS_ARGV_DUP2_OP_IX(N)	((N) + 4)	/* dup2 operations	*/
+
+#define CS_ARGV_NO_OF_DUP2_OPS	3		/* Number of dup2 ops	*/
+#define CS_ARGV_NO_OF_ARGS	7		/* Number of arguments	*/
+#endif /* #ifdef NEED_CHILD_SETUP_DEFINES */
+
+#endif /* #ifndef _ERL_UNIX_SYS_H */

@@ -34,8 +34,22 @@ SUB_DIRECTORIES = $(SUB_DIRS) doc/src
 
 SPECIAL_TARGETS = 
 
+ifeq ($(FLEX_SCANNER),disable)
+  FLEX_SCANNER_LINENO = --disable-megaco-flex-scanner-lineno
+else
+  FLEX_SCANNER_LINENO = --enable-megaco-flex-scanner-lineno
+endif
+
 # ----------------------------------------------------
 # Default Subdir Targets
 # ----------------------------------------------------
 include $(ERL_TOP)/make/otp_subdir.mk
+
+conf: do_configure
+
+do_configure: configure 
+	./configure $(FLEX_SCANNER_LINENO)
+
+configure: configure.in
+	autoconf
 

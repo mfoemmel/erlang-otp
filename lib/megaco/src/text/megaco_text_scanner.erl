@@ -323,7 +323,8 @@ octet_string([Char | Rest] = All, Acc, Line) ->
 	Char == ?BackslashToken ->
 	    case Rest of
 		[?RbrktToken | Rest2] ->
-		    octet_string(Rest, [?LbrktToken, ?BackslashToken | Acc], Line);
+		    %% OTP-4357
+		    octet_string(Rest, [?RbrktToken, ?BackslashToken | Acc], Line);
 		_ ->
 		    octet_string(Rest, [Char | Acc], Line)
 	    end;

@@ -86,8 +86,8 @@ void hipe_find_handler(Process *p)
 	ra = nsp[0];
 	sdesc = hipe_find_sdesc(ra);
 	if( !sdesc ) {
-	    fprintf(stderr, __FUNCTION__ ": ra %#lx at sp %#lx has no sdesc!\r\n",
-		    ra, (long)nsp);
+	    fprintf(stderr, "%s: ra %#lx at sp %#lx has no sdesc!\r\n",
+		    __FUNCTION__, ra, (long)nsp);
 	    break;
 	}
 	/* nsp = nsp + 1 + arity + sdesc->fsize; */
@@ -104,7 +104,7 @@ void hipe_find_handler(Process *p)
 	nsp += sdesc->fsize;
 	arity = sdesc->arity;
     }
-    fprintf(stderr, __FUNCTION__ ": no native CATCH found!\r\n");
+    fprintf(stderr, "%s: no native CATCH found!\r\n", __FUNCTION__);
     dump_nstack(p);
     abort();
 }
@@ -133,14 +133,14 @@ void hipe_clean_nstack(Process *p)
 	if( nsp >= nsp_end ) {
 	    if( nsp == nsp_end )
 		return;
-	    fprintf(stderr, __FUNCTION__ ": passed end of stack\r\n");
+	    fprintf(stderr, "%s: passed end of stack\r\n", __FUNCTION__);
 	    break;
 	}
 	ra = nsp[0];
 	sdesc = hipe_find_sdesc(ra);
 	if( !sdesc ) {
-	    fprintf(stderr, __FUNCTION__ ": ra %#lx at sp %#lx has no sdesc\r\n",
-		    ra, (long)nsp);
+	    fprintf(stderr, "%s: ra %#lx at sp %#lx has no sdesc\r\n",
+		    __FUNCTION__, ra, (long)nsp);
 	    break;
 	}
 	if( !sdesc->altra )

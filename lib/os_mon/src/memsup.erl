@@ -106,7 +106,7 @@ init([]) ->
 	    end
 	end of
 	{'EXIT', Reason} ->
-	    {stop, Reason, []};
+	    {stop, Reason};
 	Else ->
 	    Else
     end.
@@ -257,9 +257,9 @@ get_worst_sync(N) ->
 	    end,
 	    get_worst_sync(N - 1);
 	{collected_proc, Worst} ->
-	    Worst;
-	Else ->
-	    exit({unexpected_message,Else})
+	    Worst
+    after 30000 ->
+	    exit({memsup_collection_error, helper_timeout})
     end.
 	    
 get_sys_sync() ->
@@ -276,9 +276,9 @@ get_sys_sync(N) ->
 	    end,
 	    get_worst_sync(N - 1);
 	{collected_sys, Sys} ->
-	    Sys;
-	Else ->
-	    exit({unexpected_message,Else})
+	    Sys
+    after 30000 ->
+	    exit({memsup_collection_error, helper_timeout})
     end.
 	    
 

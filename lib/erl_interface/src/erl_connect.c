@@ -456,8 +456,25 @@ int erl_do_receive_msg(int fd, ei_x_buff* x, ErlMessage* emsg)
 
     if (r == ERL_MSG) {
 	int index = 0;
-	if (ei_decode_term(x->buff, &index, &emsg->msg) < 0)
+	emsg->type = msg.msgtype;
+
+	/*
+	  We can't call ei_decode_term for cases where there are no
+	  data following the type information. If there are other
+	  types added later where there are data this case has to be
+	  extended.
+	*/
+
+	switch (msg.msgtype) {
+	case ERL_SEND:
+	case ERL_REG_SEND:
+	  if (ei_decode_term(x->buff, &index, &emsg->msg) < 0)
 	    r = ERL_ERROR;
+	  break;
+	default:
+	  emsg->msg = NULL;	/* Not needed but may avoid problems for unsafe caller  */
+	  break;
+	}
     } else
 	emsg->msg = NULL;
     if (msg.from.node[0] != '\0')
@@ -527,7 +544,7 @@ int erl_rpc_from (int fd, int timeout, ErlMessage *emsg)
     fd_set readmask;
     struct timeval tv;
     struct timeval *t = NULL;
-    char rbuf[MAX_RECEIVE_BUF];    
+    unsigned char rbuf[MAX_RECEIVE_BUF];    
     
     if (timeout >= 0) {
 	tv.tv_sec = timeout / 1000;

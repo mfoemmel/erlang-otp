@@ -24,7 +24,8 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([defaultBe/0, float_to_version/1, get_opt/2, add_opt/3, read_cfg/2, which_opts/1]).
+-export([defaultBe/0, float_to_version/1, get_opt/2, add_opt/3, 
+	 read_cfg/2, which_opts/1, allowed_opt/2]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -291,10 +292,14 @@ assert_dir(D) ->
 %%    F.
     
 
-do_add_opt(G, handle_info, V) when V /= true, V /= false ->
+do_add_opt(G, handle_info, V) ->
     ?insert(G#genobj.options, {option, {handle_info, V}}, true);
-do_add_opt(G, timeout, V) when V /= true, V /= false ->
+do_add_opt(G, {handle_info, V}, false) ->
+    ?insert(G#genobj.options, {option, {handle_info, V}}, force_false);
+do_add_opt(G, timeout, V) ->
     ?insert(G#genobj.options, {option, {timeout, V}}, true);
+do_add_opt(G, {timeout, V}, false) ->
+    ?insert(G#genobj.options, {option, {timeout, V}}, force_false);
 do_add_opt(G, this, V) ->
     ?insert(G#genobj.options, {option, {this, V}}, true);
 do_add_opt(G, {this, V}, false) ->

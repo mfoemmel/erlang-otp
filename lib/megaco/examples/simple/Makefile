@@ -61,14 +61,18 @@ MEGACO_ROOT_DIR = $(shell (chdir .. ; dirname `pwd`))
 ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
 ERL_COMPILE_FLAGS += -I../../include
 
+ifneq ($(MGC_HOST),)
+MG_START_ARGS = $(MGC_HOST)
+endif
+
 
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
+opt: $(TARGET_FILES) 
+
 debug:
 	@${MAKE} TYPE=debug opt
-
-opt: $(TARGET_FILES) 
 
 clean:
 	rm -f $(TARGET_FILES) 
@@ -76,17 +80,22 @@ clean:
 
 docs:
 
+info: 
+	@echo "MEGACO_ROOT_DIR = $(MEGACO_ROOT_DIR)"
+
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
 
 mg: opt
 	erl -noshell -pa $(MEGACO_ROOT_DIR)/ebin \
-          -s megaco_filter \-s megaco -s megaco_simple_mg start_batch
+          -s megaco_filter -s megaco \
+          -s megaco_simple_mg start_batch $(MG_START_ARGS)
 
 mgc: opt
 	erl -noshell -pa $(MEGACO_ROOT_DIR)/ebin \
-          -s megaco_filter -s megaco -s megaco_simple_mgc start_batch
+          -s megaco_filter -s megaco \
+          -s megaco_simple_mgc start_batch
 
 # ----------------------------------------------------
 # Release Target
@@ -107,5 +116,3 @@ release_docs_spec:
 # Include dependencies
 # ----------------------------------------------------
 
-info:
-	@echo "MEGACO_ROOT_DIR = $(MEGACO_ROOT_DIR)"

@@ -2068,10 +2068,11 @@ SL_ALLOC_STAT_ETERM(Process *p)
     if (!esas.old_sl_alloc_enabled) {
 #undef  ADD_CALLS
 #define ADD_CALLS(A, CC)						\
-	list = ADD_3TUP(list,						\
-			A,						\
-			make_small_or_big(CC.giga_calls, p),		\
-			make_small_or_big(CC.calls, p))
+	/* list = ADD_3TUP(list, ...); bug fixed by Per Bergkvist. */	\
+	ADD_3TUP(list,							\
+		 A,							\
+		 make_small_or_big(CC.giga_calls, p),			\
+		 make_small_or_big(CC.calls, p))
 
 	list = NIL;
 	ADD_CALLS(AM_realloc,    esas.realloc_calls);

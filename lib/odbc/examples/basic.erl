@@ -17,11 +17,12 @@
 %%
 -module(basic).
 
--export([start/0]).
+-export([init/0,stop/0]).
+-export([create/0,insert/0, drop/0, select/0]).
 
 
 % Contains macros defined by the ODBC standard.
--include("/clearcase/otp/libraries/odbc/include/odbc.hrl").
+-include("/home/ingmey/odbc/include/odbc.hrl").
 
 
 % These strings depend on how your ODBC Driver is configured.
@@ -29,101 +30,84 @@
 %-define(DSN, "Oracle8").
 %-define(UID, "myself").
 %-define(PWD, "secret").
+-define(SERV, odbc1).
 
-%% Note that the SQL syntax is database and ODBC Driver dependent.
-%% Error handling is not covered by the example.
 
-start() ->
+init() ->
     % Start a new ODBC server. The application must already be started.
-    {ok, _Pid} = odbc:start_link({local, odbc1}, [], []),
-
-
+    {ok, Pid} = odbc:start_link({local, ?SERV},[], []),
 
     % Connect to the database (also loads the Driver).
-    ?SQL_SUCCESS =
-      odbc:sqlConnect(odbc1, ?DSN, ?UID, ?PWD, infinity),
+    Ret =
+      odbc:sqlConnect(?SERV, ?DSN, ?UID, ?PWD, infinity),
+    io:format("sqlConnect returns ~p~n",[Ret]).
 
+create() ->
     % Create a new table.
     CreateStmt = 
-	"CREATE TABLE TAB1 (ID number(3), DATA char(10))",
-    ?SQL_SUCCESS = odbc:sqlExecDirect(odbc1, CreateStmt, infinity),
+	"CREATE TABLE TAB3 (ID int, DATA varchar(50))",
+    Ret1 = odbc:sqlExecDirect(?SERV, CreateStmt, infinity),
+    io:format("sqlExecDirect returns ~p~n",[Ret1]),
 
-    % Print how many rows were affected by the statement.
-    {?SQL_SUCCESS, NAffectedRows1} = 
-	odbc:sqlRowCount(odbc1, infinity),
-    io:format("Create: Number of affected rows: ~p~n", [NAffectedRows1]),
-
-
+    Ret2 = odbc:sqlCloseHandle(?SERV, infinity),
+    io:format("sqlCloseHandle returns ~p~n",[Ret2]).
+    
+insert() ->
     % Insert a new row.
-    InsertStmt1 = "INSERT INTO TAB1 VALUES (1, 'a1a2a3a4a5')",
-    ?SQL_SUCCESS = odbc:sqlExecDirect(odbc1,InsertStmt1, infinity),
+    Str1 = "INSERT INTO TAB3 VALUES (1,'",
+    Str2 = string:chars($a,50),
+    InsertStmt1 = lists:flatten([Str1, Str2, "')"]),
+    Ret1 = odbc:sqlExecDirect(?SERV,InsertStmt1, infinity),
+    io:format("sqlExecDirect returns ~p~n",[Ret1]),
 
     % Print how many rows were affected by the statement.
-    {?SQL_SUCCESS, NAffectedRows2} =
-      odbc:sqlRowCount(odbc1, infinity),
-    io:format("Insert: Number of affected rows: ~p~n", [NAffectedRows2]),
+    Ret2 = odbc:sqlCloseHandle(?SERV, infinity),
+    io:format("sqlCloseHandle returns ~p~n",[Ret2]).
 
+select() ->
     % Select all columns from all rows.
-    SelectStmt = "SELECT * FROM TAB1",
-    ?SQL_SUCCESS = odbc:sqlExecDirect(odbc1, SelectStmt, infinity),
-
+    SelectStmt = "SELECT * FROM TAB3",
+    Ret1 = odbc:sqlExecDirect(?SERV, SelectStmt, infinity),
+    io:format("sqlExecDirect returns ~p~n",[Ret1]),
     % Print how many columns there are in the table resulting from the 
     % statement.
     {?SQL_SUCCESS, NSelectedCols} =
-      odbc:sqlNumResultCols(odbc1, infinity),
+      odbc:sqlNumResultCols(?SERV, infinity),
     io:format("Select: Number of columns: ~p~n", [NSelectedCols]),
 
-    % Describe the column(s) of the resulting table.
-    {?SQL_SUCCESS, ColName1, Nullable1} =
-      odbc:sqlDescribeCol(odbc1, 1, infinity),
-    {?SQL_SUCCESS, ColName2, Nullable2} =
-      odbc:sqlDescribeCol(odbc1, 2, infinity),
-
     % Create references for columns
-    Buf1 = odbc:columnRef(),
-    Buf2 = odbc:columnRef(),
-
+    {ok,Ref1} = odbc:columnRef(),
+    {ok,Ref2} = odbc:columnRef(),
     % Bind the refererces to the columns.
-    ?SQL_SUCCESS = odbc:sqlBindColumn(odbc1, 1, Buf1, infinity),
-    ?SQL_SUCCESS = odbc:sqlBindColumn(odbc1, 2, Buf2, infinity),
-
+    Ret6 = odbc:sqlBindColumn(?SERV, 1, Ref1, infinity),
+    io:format("sqlBindColumn returns ~p~n",[Ret6]),
+    Ret7 = odbc:sqlBindColumn(?SERV, 2, Ref2, infinity),
+    io:format("sqlBindColumn returns ~p~n",[Ret7]),
     % Fetch the first row of selected rows.
-    ?SQL_SUCCESS = odbc:sqlFetch(odbc1, infinity),
-
+    Ret8 = odbc:sqlFetch(?SERV, infinity),
+    io:format("sqlFetch returns ~p~n",[Ret1]),
     % Read the value from the buffer(s).
     {ok, ColValue1} =
-      odbc:readData(odbc1, Buf1, infinity),
-    io:format("Select: Column name: ~p, Data: ~p~n", [ColName1, ColValue1]),
+	odbc:readData(?SERV, Ref1, infinity),
+    io:format("Select: Column 1 data:~p~n",[ColValue1]),
     {ok, ColValue2} =
-      odbc:readData(odbc1, Buf2, infinity),
-    io:format("Select: Column name: ~p, Data: ~p~n", [ColName2, ColValue2]),
+      odbc:readData(?SERV, Ref2, infinity),
+    io:format("Select: Column 2 data:~p~n",[ColValue2]),
 
     % Check that there are no more rows to fetch.
-    ?SQL_NO_DATA = odbc:sqlFetch(odbc1, infinity),
-
+    ?SQL_NO_DATA = odbc:sqlFetch(?SERV, infinity),
     % Close the cursor on the statement.
-    ?SQL_SUCCESS = odbc:sqlCloseCursor(odbc1, infinity),
+    Ret12 = odbc:sqlCloseHandle(?SERV, infinity),
+    io:format("sqlCloseHandle returns ~p~n",[Ret12]).
 
+drop() ->
     % Delete the table.
-    DropStmt = "DROP TABLE TAB1",
-    ?SQL_SUCCESS = odbc:sqlExecDirect(odbc1, DropStmt, infinity),
+    DropStmt = "DROP TABLE TAB3",
+    Ret = odbc:sqlExecDirect(?SERV, DropStmt, infinity),
+    io:format("sqlExecDirect returns ~p~n",[Ret]).
 
-    % Print how many rows were affected by the statement.
-    {?SQL_SUCCESS, NAffectedRows3} = 
-	odbc:sqlRowCount(odbc1, infinity),
-    io:format("Delete: Number of affected rows: ~p~n", [NAffectedRows3]),
-
+stop() ->
     % Disconnect from the database.
-    ?SQL_SUCCESS = odbc:sqlDisConnect(odbc1, infinity),
-
+    Ret = odbc:sqlDisConnect(?SERV, infinity),
     % Stop the server.
-    ok = odbc:stop(odbc1).
-
-
-
-
-
-
-
-
-
+    odbc:stop(?SERV).

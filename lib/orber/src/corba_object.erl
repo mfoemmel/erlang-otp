@@ -97,9 +97,9 @@ get_policy(Obj, PolicyType) when integer(PolicyType) ->
 			       {orber_policy_server:get_tc(),
 				[orber_tc:unsigned_long()],[]},
 			       true, infinity, Obj);
-	{'internal', _} ->
+	{'internal', _, _, _, _} ->
 	    orber_policy_server:get_policy(Obj, PolicyType);
-	{'internal_registered', _} ->
+	{'internal_registered', _, _, _, _} ->
 	    orber_policy_server:get_policy(Obj, PolicyType);
 	_ ->
 	    orber:debug_level_print("[~p] corba_object:get_policy(~p); Invalid object reference.", 
@@ -121,7 +121,7 @@ is_a(Obj, Logical_type_id) ->
 	    orber_iiop:request(Key, '_is_a', [Logical_type_id], 
 			       {orber_tc:boolean(),[orber_tc:string(0)],[]},
 			       true, infinity, Obj);
-	{_Local, _Key} ->
+	{_Local, _Key, _, _, Module} ->
 	    case iop_ior:get_typeID(Obj) of
 		Logical_type_id ->
 		    true;
@@ -156,9 +156,8 @@ not_existent(Obj) ->
     existent_helper(Obj, '_not_existent').
 
 existent_helper(Obj, Op) ->
-    {Location, Key} = iop_ior:get_key(Obj),
-    if
-	Location == 'internal' ->
+    case catch iop_ior:get_key(Obj) of
+	{'internal', Key, _, _, _} ->
 	    case catch orber_objectkeys:get_pid(Key) of
 		{'EXCEPTION', E} when record(E,'OBJECT_NOT_EXIST') ->
 		    true;
@@ -171,7 +170,7 @@ existent_helper(Obj, Op) ->
 		_ ->
 		    false
 	    end;
-	Location == 'internal_registered' ->
+	{'internal_registered', Key, _, _, _} ->
 	    case Key of
 		{pseudo, _} ->
 		    false;
@@ -183,7 +182,7 @@ existent_helper(Obj, Op) ->
 			    false
 		    end
 	    end;
-	Location == 'external' ->
+	{'external', Key} ->
 	    orber_iiop:request(Key, Op, [], 
 			       {orber_tc:boolean(), [],[]}, 'true', infinity, Obj);
 	true -> 	
@@ -192,7 +191,7 @@ existent_helper(Obj, Op) ->
 
 is_remote(Obj) ->
     case catch iop_ior:get_key(Obj) of
-	{'external', _} ->
+	{'external', _, _, _, _} ->
 	    true;
 	_ ->
 	    false

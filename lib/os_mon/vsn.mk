@@ -1,2 +1,2 @@
-OS_MON_VSN = 1.5.0
+OS_MON_VSN = 1.5.2
 

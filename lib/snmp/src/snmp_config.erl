@@ -332,7 +332,7 @@ write_target_addr_conf(Dir, ManagerIp, UDP, Vers) ->
         Comment = 
 "%% This files defines the target address parameters.\n"
 "%% The data is inserted into the snmpTargetAddrTable defined\n"
-"%% in SNMP-TARGET-MIB, and in the snmpTargeAddrExtTabke defined\n"
+"%% in SNMP-TARGET-MIB, and in the snmpTargetAddrExtTable defined\n"
 "%% in SNMP-COMMUNITY-MIB.\n"
 "%% Each row is a 9-tuple:\n"
 "%% {Name, Ip, Udp, Timeout, RetryCount, TagList, ParamsName, EngineId,\n"

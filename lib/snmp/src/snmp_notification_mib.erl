@@ -76,11 +76,11 @@ reconfigure(Dir) ->
     invalidate_cache(),
     ok.
 
-maybe_create_table(Name) ->
-    case snmp_local_db:table_exists(db(Name)) of
-	true -> ok;
-	_ -> snmp_local_db:table_create(db(Name))
-    end.
+% maybe_create_table(Name) ->
+%     case snmp_local_db:table_exists(db(Name)) of
+% 	true -> ok;
+% 	_ -> snmp_local_db:table_create(db(Name))
+%     end.
 
 init_tabs(Notifs) ->
     ?vdebug("create notify table",[]),
@@ -198,6 +198,9 @@ find_targets(Key, TargAddrs, Res) ->
 	    Elements = [?snmpNotifyTag, ?snmpNotifyType, ?snmpNotifyRowStatus],
 	    case snmpNotifyTable(get, NextKey, Elements) of
 		[{value, Tag}, {value, Type}, {value, ?'RowStatus_active'}] ->
+		    ?vtrace("find targets for ~w"
+			    "~n   Tag:     ~w"
+			    "~n   Type:    ~w", [NextKey, Tag, Type]),
 		    Targs = get_targets(TargAddrs, Tag, Type, NextKey),
 		    find_targets(NextKey, TargAddrs, Targs ++ Res);
 		_ ->
@@ -217,7 +220,9 @@ get_targets([], Tag, Type, Name) ->
     [].
 
 type(trap, _, _) -> trap;
-type(inform, Timeout, Retry) -> {inform, Timeout, Retry}.
+type(1,    _, _) -> trap;                                  %% OTP-4329
+type(inform, Timeout, Retry) -> {inform, Timeout, Retry};
+type(2,      Timeout, Retry) -> {inform, Timeout, Retry}.  %% OTP-4329
 
 
 %%-----------------------------------------------------------------

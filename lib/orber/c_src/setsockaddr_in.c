@@ -60,18 +60,15 @@ int setsockaddr_in(name, host, serv, proto)
   
   bcopy(h->h_addr, (char *) &(name->sin_addr.s_addr), h->h_length);
   
-  if (serv == 0)
-    name->sin_port = htons(IPPORT_USERRESERVED + 1);
+  if (isdigit(*serv))
+     name->sin_port = atoi(serv);
   else
-    if (isdigit(*serv))
-      name->sin_port = atoi(serv);
-    else
-      {
-	if ((s = getservbyname(serv, proto)) == NULL)
-	  return 0;
-	
-	name->sin_port = s->s_port;
-      }
+  {
+     if ((s = getservbyname(serv, proto)) == NULL)
+	return 0;
+     
+     name->sin_port = s->s_port;
+  }
   
   return 1;
 }

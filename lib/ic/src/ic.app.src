@@ -4,6 +4,7 @@
   {modules,
      [
       ic,
+      ic_cclient,
       ic_cbe,
       ic_cserver,
       ic_erlbe,
@@ -14,7 +15,6 @@
       ic_pragma,
       icenum,
       iceval,
-      icgen,
       icparse,
       icpreproc,
       icscan,

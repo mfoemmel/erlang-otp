@@ -225,6 +225,13 @@
 	 'WstringDef__get_type'/1,
 	 'WstringDef__get_bound'/1,
 	 'WstringDef__set_bound'/2,
+	 'FixedDef__get_def_kind'/1,
+	 'FixedDef_destroy'/1,
+	 'FixedDef__get_type'/1,
+	 'FixedDef__get_digits'/1,
+	 'FixedDef__set_digits'/2,
+	 'FixedDef__get_scale'/1,
+	 'FixedDef__set_scale'/2,
 	 'SequenceDef__get_def_kind'/1,
 	 'SequenceDef_destroy'/1,
 	 'SequenceDef__get_type'/1,
@@ -390,6 +397,7 @@
 	 create_sequence/3,
 	 create_array/3,
 	 create_idltype/2,		%not in CORBA 2.0
+	 create_fixed/3,
 	 get_type_def/1,
 	 set_type_def/2,
 	 get_value/1,
@@ -864,6 +872,21 @@ find_repository() ->
 'WstringDef__set_bound'(Objref,Bound) ->
     orber_ifr_wstringdef:'_set_bound'(Objref,Bound).
 
+'FixedDef__get_def_kind'(Objref) ->
+    orber_ifr_fixeddef:'_get_def_kind'(Objref).
+'FixedDef_destroy'(Objref) ->
+    orber_ifr_fixeddef:destroy(Objref).
+'FixedDef__get_type'(Objref) ->
+    orber_ifr_fixeddef:'_get_type'(Objref).
+'FixedDef__get_digits'(Objref) ->
+    orber_ifr_fixeddef:'_get_digits'(Objref).
+'FixedDef__set_digits'(Objref,Digits) ->
+    orber_ifr_fixeddef:'_set_digits'(Objref,Digits).
+'FixedDef__get_scale'(Objref) ->
+    orber_ifr_fixeddef:'_get_scale'(Objref).
+'FixedDef__set_scale'(Objref,Scale) ->
+    orber_ifr_fixeddef:'_set_scale'(Objref,Scale).
+
 'SequenceDef__get_def_kind'(Objref) ->
     orber_ifr_sequencedef:'_get_def_kind'(Objref).
 'SequenceDef_destroy'(Objref) ->
@@ -1313,6 +1336,9 @@ create_array(Objref,Length,Element_type) ->
 create_idltype(Objref,Typecode) ->		%not in CORBA 2.0
     orber_ifr_repository:create_idltype(Objref,Typecode).
 
+create_fixed(Objref, Digits, Scale) ->
+    orber_ifr_repository:create_fixed(Objref, Digits, Scale).
+
 %%%---------------------------------------------------------------
 %%% 
 
@@ -1508,6 +1534,8 @@ obj2mod({ir_OperationDef, _}) ->
     orber_ifr_operationdef;
 obj2mod({ir_InterfaceDef, _}) ->
     orber_ifr_interfacedef;
+obj2mod({ir_FixedDef, _}) ->
+    orber_ifr_fidxeddef;
 obj2mod(Obj) ->
     orber:debug_level_print("[~p] orber_ifr:obj2mod(~p); unknown.", 
 			    [?LINE, Obj], ?DEBUG_LEVEL),

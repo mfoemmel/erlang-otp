@@ -165,6 +165,38 @@
 %% This is used when the wchar codeset is unknown.
 -define(UNSUPPORTED_WCHAR, 0).
 
+%% Integer limits
+-define(SHORTMIN, -32768).
+-define(SHORTMAX, 32767).
+-define(USHORTMIN, 0).
+-define(USHORTMAX, 65535).
+-define(LONGMIN, -2147483648).
+-define(LONGMAX, 2147483647).
+-define(ULONGMIN, 0).
+-define(ULONGMAX, 4294967295).
+-define(LONGLONGMIN, -9223372036854775808).
+-define(LONGLONGMAX, 9223372036854775807).
+-define(ULONGLONGMIN, 0).
+-define(ULONGLONGMAX, 18446744073709551615).
+
+%% Orber OMG assigned TAG's
+%% Service Cxt IDs 0x45524904 - 0x45524907  ("ERI\x04" - "ERI\x07")
+%% Component IDs   0x45524904 - 0x45524907  ("ERI\x04" - "ERI\x07")
+%% ORB type IDs    0x45524904 - 0x45524907  ("ERI\x04" - "ERI\x07")
+-define(ORBER_ORB_TYPE_1, 16#45524904).
+-define(ORBER_ORB_TYPE_2, 16#45524905).
+-define(ORBER_ORB_TYPE_3, 16#45524906).
+-define(ORBER_ORB_TYPE_4, 16#45524907).
+
+-define(ORBER_COMPONENT_1, 16#45524904).
+-define(ORBER_COMPONENT_2, 16#45524905).
+-define(ORBER_COMPONENT_3, 16#45524906).
+-define(ORBER_COMPONENT_4, 16#45524907).
+
+-define(ORBER_SERVICE_CTX_1, 16#45524904).
+-define(ORBER_SERVICE_CTX_2, 16#45524905).
+-define(ORBER_SERVICE_CTX_3, 16#45524906).
+-define(ORBER_SERVICE_CTX_4, 16#45524907).
 
 %%----------------------------------------------------------------------
 %% GIOP Message Header
@@ -274,9 +306,10 @@
 %% Definition of flag positions:
 -define(ORB_SEC_ATTRIBUTES, 16#01).
 -define(ORB_CONTEXT,        16#02).
+-define(ORB_TYPECHECK,      16#04).
+
 %% Flags below should be changed :-) At the moment not used. When updated
 %% it is necessary to update ../test/corba_SUITE.erl
--define(ORB_SOME,           16#04).
 -define(ORB_THING,          16#08).
 -define(ORB_ELSE1,          16#10).
 -define(ORB_ELSE2,          16#20).
@@ -284,6 +317,7 @@
 -define(ORB_ELSE,           16#80).
 
 -define(ORB_INIT_FLAGS, 16#00).
+
 
 %% Definition of flag operations:
 %% USAGE: Boolean = ?ORB_FLAG_TEST(Flags, ?ORB_SEC_ATTRIBUTES)

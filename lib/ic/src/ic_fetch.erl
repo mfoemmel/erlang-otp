@@ -24,7 +24,7 @@
 
 
 name2type( G, Name ) ->
-    S = icgen:tktab( G ),
+    S = ic_genobj:tktab( G ),
     ScopedName = lists:reverse(string:tokens(Name,"_")),
     InfoList = ets:lookup( S, ScopedName ),
     filter( InfoList ).
@@ -34,7 +34,7 @@ name2type( G, Name ) ->
 %% This is en overloaded function,
 %% differs in input on unions
 member2type(G, X, I) when record(X, union)->
-    Name = icgen:get_id2(I),
+    Name = ic_forms:get_id2(I),
     case lists:keysearch(Name,2,element(6,X#union.tk)) of
 	false ->
 	    error;
@@ -43,7 +43,7 @@ member2type(G, X, I) when record(X, union)->
     end;
 member2type( G, SName, MName ) ->
 
-    S = icgen:tktab( G ),
+    S = ic_genobj:tktab( G ),
     SNList = lists:reverse(string:tokens(SName,"_")),
     ScopedName = [MName | SNList],
     InfoList = ets:lookup( S, ScopedName ),
@@ -92,7 +92,7 @@ lookup_member_type_in_tktab(S, ScopedName, MName) ->
 lookup_member_type_in_tktab([],_ScopedName) ->
     error;
 lookup_member_type_in_tktab([{FullScopedName,_,{_,TKInfo},_}|Rest],ScopedName) ->
-    case lists:reverse(string:tokens(icgen:to_undersc(FullScopedName),"_")) of
+    case lists:reverse(string:tokens(ic_util:to_undersc(FullScopedName),"_")) of
 	ScopedName ->
 	    fetchType(TKInfo);
 	_ ->
@@ -101,7 +101,7 @@ lookup_member_type_in_tktab([{FullScopedName,_,{_,TKInfo},_}|Rest],ScopedName) -
 
 
 lookup_type_in_pragmatab(G, SName) ->    
-    S = icgen:pragmatab(G),
+    S = ic_genobj:pragmatab(G),
 
     %% Look locally first
     case ets:match(S,{file_data_local,'_','_','$2','_','_',SName,'_','_'}) of 
@@ -202,8 +202,8 @@ isBasicTypeOrEterm(G, N, S) ->
 
 
 isEterm(G, N, S) when element(1, S) == scoped_id -> 
-    {FullScopedName, _, TK, _} = icgen:get_full_scoped_name(G, N, S),
-    case icgen:get_basetype(G, icgen:to_undersc(FullScopedName)) of
+    {FullScopedName, _, TK, _} = ic_symtab:get_full_scoped_name(G, N, S),
+    case ic_code:get_basetype(G, ic_util:to_undersc(FullScopedName)) of
 	"erlang_term" ->
 	    true;
 	"ETERM*" ->
@@ -215,7 +215,7 @@ isEterm(G, Ni, X) ->
     false.
 
 isBasicType(G, N, S) when element(1, S) == scoped_id -> 
-    {_, _, TK, _} = icgen:get_full_scoped_name(G, N, S),
+    {_, _, TK, _} = ic_symtab:get_full_scoped_name(G, N, S),
     isBasicType(fetchType(TK));
 isBasicType(G, N, {string, _} ) -> 
     false;
@@ -242,7 +242,7 @@ isBasicType( Type ) ->
 
 
 isString(G, N, T) when element(1, T) == scoped_id ->
-    case icgen:get_full_scoped_name(G, N, T) of
+    case ic_symtab:get_full_scoped_name(G, N, T) of
 	{FullScopedName, _, {'tk_string',_}, _} ->
 	    true;
 	_ ->
@@ -255,7 +255,7 @@ isString(G, N, Other) ->
 
 
 isArray(G, N, T) when element(1, T) == scoped_id ->
-    case icgen:get_full_scoped_name(G, N, T) of
+    case ic_symtab:get_full_scoped_name(G, N, T) of
 	{FullScopedName, _, {'tk_array', _, _}, _} ->
 	    true;
 	_ ->
@@ -269,7 +269,7 @@ isArray(G, N, Other) ->
 
 
 isStruct(G, N, T) when element(1, T) == scoped_id ->
-    case icgen:get_full_scoped_name(G, N, T) of
+    case ic_symtab:get_full_scoped_name(G, N, T) of
 	{FullScopedName, _, {'tk_struct', _, _, _}, _} ->
 	    true;
 	_ ->
@@ -283,7 +283,7 @@ isStruct(G, N, Other) ->
 
 
 isUnion(G, N, T) when element(1, T) == scoped_id ->
-    case icgen:get_full_scoped_name(G, N, T) of
+    case ic_symtab:get_full_scoped_name(G, N, T) of
 	{FullScopedName, _, {'tk_union', _, _, _,_,_}, _} ->
 	    true;
 	_Other ->
@@ -316,7 +316,7 @@ fetchTk(G,N,X) ->
 %%
 %%------------------------------------------------------------
 searchTk(G,IR_ID) ->
-    S = icgen:tktab(G),
+    S = ic_genobj:tktab(G),
     case catch searchTk(S,IR_ID,typedef) of
 	{value,TK} ->
 	    TK;

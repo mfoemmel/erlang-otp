@@ -35,55 +35,48 @@
 #include <errno.h>
 #endif
 
+#include "erl_malloc.h"
 #include "ei_format.h"
-#ifdef VXWORKS
-typedef va_list va_list_p;
-#define VA_LIST_FROM_P(VaList) (VaList)
-#define VA_LIST_TO_P(VaList) (VaList)
-#else
-typedef va_list *va_list_p;
-#define VA_LIST_FROM_P(VaList) (*(VaList))
-#define VA_LIST_TO_P(VaList) (&(VaList))
-#endif
 
+/*
+ * To avoid problems we read the variable number of arguments to an
+ * array of unions.
+ */
+union arg {
+  char* s;
+  long l;
+  unsigned long u;
+  double d;
+};
 
-static int eiformat(const char** s, va_list_p va, ei_x_buff* x);
-
-static int xformat(const char* s, va_list va, ei_x_buff* x)
-{
-    int res = ei_x_encode_version(x);
-
-    if (res >= 0)
-	res = eiformat(&s, VA_LIST_TO_P(va), x);
-    return res;
-}
+static int eiformat(const char** s, union arg** args, ei_x_buff* x);
 
 /* forwards of parse functions */
-static int pformat(const char **fmt, va_list_p pap, ei_x_buff* x);
-static int plist(const char **fmt, va_list_p pap, ei_x_buff* x, int size);
-static int ptuple(const char **fmt, va_list_p pap, ei_x_buff* x, int size);
-static int pquotedatom(const char **fmt, ei_x_buff* x);
-static int pdigit(const char **fmt, ei_x_buff* x);
-static int patom(const char **fmt, ei_x_buff* x);
-static int pstring(const char **fmt, ei_x_buff* x);
+static int pformat(const char** fmt, union arg**, ei_x_buff* x);
+static int plist(const char** fmt, union arg**, ei_x_buff* x, int size);
+static int ptuple(const char** fmt, union arg**, ei_x_buff* x, int size);
+static int pquotedatom(const char** fmt, ei_x_buff* x);
+static int pdigit(const char** fmt, ei_x_buff* x);
+static int patom(const char** fmt, ei_x_buff* x);
+static int pstring(const char** fmt, ei_x_buff* x);
 
 /* format a string into an ei_x_buff, except the version token */
-static int eiformat(const char **fmt, va_list_p va, ei_x_buff* x)
+static int eiformat(const char** fmt, union arg** args, ei_x_buff* x)
 {
     const char* p = *fmt;
     int res;
     ei_x_buff x2;
 
-    while (isspace(*p))
+    while (isspace((int)*p))
 	++p;
     switch (*p) {
     case '~':
-	res = pformat(&p, va, x);
+	res = pformat(&p, args, x);
 	break;
     case '[':
 	res = ei_x_new(&x2);
 	if (res >= 0)
-	    res = plist(&p, va, &x2, 0);
+	    res = plist(&p, args, &x2, 0);
 	if (res > 0)
 	    res = ei_x_encode_list_header(x, res);
 	if (res >= 0)
@@ -93,7 +86,7 @@ static int eiformat(const char **fmt, va_list_p va, ei_x_buff* x)
     case '{':
 	res = ei_x_new(&x2);
 	if (res >= 0)
-	    res = ptuple(&p, va, &x2, 0);
+	    res = ptuple(&p, args, &x2, 0);
 	if (res >= 0)
 	    res = ei_x_encode_tuple_header(x, res);
 	if (res >= 0)
@@ -107,9 +100,9 @@ static int eiformat(const char **fmt, va_list_p va, ei_x_buff* x)
 	res = pquotedatom(&p, x);
 	break;
     default:
-	if (isdigit(*p))
+	if (isdigit((int)*p))
 	    res = pdigit(&p, x);
-	else if (islower(*p))
+	else if (islower((int)*p))
 	    res = patom(&p, x);
 	else
 	    res = -1;
@@ -122,9 +115,9 @@ static int eiformat(const char **fmt, va_list_p va, ei_x_buff* x)
     return res;
 }
 
-static int patom(const char **fmt, ei_x_buff* x)
+static int patom(const char** fmt, ei_x_buff* x)
 {
-    const char *start=*fmt;
+    const char* start = *fmt;
     char c;
     int len;
     
@@ -143,9 +136,9 @@ static int patom(const char **fmt, ei_x_buff* x)
 }
 
 /* Check if integer or float */
-static int pdigit(const char **fmt, ei_x_buff* x)
+static int pdigit(const char** fmt, ei_x_buff* x)
 {
-    const char *start=*fmt;
+    const char* start = *fmt;
     char c;
     int len, dotp=0;
     double d;
@@ -173,9 +166,9 @@ static int pdigit(const char **fmt, ei_x_buff* x)
 }
 
 /* "string" */
-static int pstring(const char **fmt, ei_x_buff* x)
+static int pstring(const char** fmt, ei_x_buff* x)
 {
-    const char *start = ++(*fmt); /* skip first quote */
+    const char* start = ++(*fmt); /* skip first quote */
     char c;
     int res;
     
@@ -196,9 +189,9 @@ static int pstring(const char **fmt, ei_x_buff* x)
 }
 
 /* 'atom' */
-static int pquotedatom(const char **fmt, ei_x_buff* x)
+static int pquotedatom(const char** fmt, ei_x_buff* x)
 {
-    const char *start = ++(*fmt); /* skip first quote */
+    const char* start = ++(*fmt); /* skip first quote */
     char c;
     int res;
     
@@ -230,7 +223,7 @@ static int pquotedatom(const char **fmt, ei_x_buff* x)
   *   f  -  A float 
   *   d  -  A double float 
   */
-static int pformat(const char **fmt, va_list_p pap, ei_x_buff* x)
+static int pformat(const char** fmt, union arg** args, ei_x_buff* x)
 {
     int res = 0;
     ++(*fmt);	/* skip tilde */
@@ -239,23 +232,29 @@ static int pformat(const char **fmt, va_list_p pap, ei_x_buff* x)
         rc = ei_x_encode_term(buf, index, va_arg(*pap, ETERM*));
         break;*/
     case 'a': 
-	res = ei_x_encode_atom(x, va_arg(VA_LIST_FROM_P(pap), char *));
+	res = ei_x_encode_atom(x, (*args)->s);
+	(*args)++;
 	break;
     case 's':
-	res = ei_x_encode_string(x, va_arg(VA_LIST_FROM_P(pap), char *));
+	res = ei_x_encode_string(x, (*args)->s);
+	(*args)++;
 	break;
     case 'i':
-	res = ei_x_encode_long(x, va_arg(VA_LIST_FROM_P(pap), long));
+	res = ei_x_encode_long(x, (*args)->l);
+	(*args)++;
 	break;
     case 'l':
-	res = ei_x_encode_long(x, va_arg(VA_LIST_FROM_P(pap), long));
+	res = ei_x_encode_long(x, (*args)->l);
+	(*args)++;
 	break;
     case 'u':
-	res = ei_x_encode_ulong(x, va_arg(VA_LIST_FROM_P(pap), unsigned long));
+	res = ei_x_encode_ulong(x, (*args)->u);
+	(*args)++;
 	break;
-    case 'f':	/* note that float is expanded to double (C calling conventions) */
+    case 'f':     /* float is expanded to double (C calling conventions) */
     case 'd':
-	res = ei_x_encode_double(x, va_arg(VA_LIST_FROM_P(pap), double));
+	res = ei_x_encode_double(x, (*args)->d);
+	(*args)++;
 	break;	
     default:
 	res = -1;
@@ -265,7 +264,7 @@ static int pformat(const char **fmt, va_list_p pap, ei_x_buff* x)
 }
 
 /* encode a tuple */
-static int ptuple(const char **fmt, va_list_p pap, ei_x_buff* x, int size)
+static int ptuple(const char** fmt, union arg** args, ei_x_buff* x, int size)
 {
     int res = 0;
     const char* p = *fmt;
@@ -273,7 +272,7 @@ static int ptuple(const char **fmt, va_list_p pap, ei_x_buff* x, int size)
     
     if (after == '}')
 	return size;
-    while (isspace(*p))
+    while (isspace((int)*p))
 	++p;
     switch (*p++) {
     case '}':
@@ -286,13 +285,13 @@ static int ptuple(const char **fmt, va_list_p pap, ei_x_buff* x, int size)
 	if (after == ',' || after == '{')
 	    res = -1;
 	else
-	    res = ptuple(&p, pap, x, size);
+	    res = ptuple(&p, args, x, size);
 	break;
     default:
 	--p;
-	res = eiformat(&p, pap, x);
+	res = eiformat(&p, args, x);
 	if (res >= 0)
-	    res = ptuple(&p, pap, x, size + 1);
+	    res = ptuple(&p, args, x, size + 1);
 	break;
 	/*
 	Variables
@@ -303,7 +302,7 @@ static int ptuple(const char **fmt, va_list_p pap, ei_x_buff* x, int size)
 }
 
 /* encode a list */
-static int plist(const char **fmt, va_list_p pap, ei_x_buff* x, int size)
+static int plist(const char** fmt, union arg** args, ei_x_buff* x, int size)
 {
     int res = 0;
     const char* p = *fmt;
@@ -311,7 +310,7 @@ static int plist(const char **fmt, va_list_p pap, ei_x_buff* x, int size)
 
     if (after == ']')
 	--p;
-    while (isspace(*p))
+    while (isspace((int)*p))
 	++p;
     switch (*p++) {
     case ']':
@@ -327,26 +326,26 @@ static int plist(const char **fmt, va_list_p pap, ei_x_buff* x, int size)
 	if (after == '|' || after == ',')
 	    res = -1;
 	else
-	    res = plist(&p, pap, x, size);
+	    res = plist(&p, args, x, size);
 	break;
     case ',':
 	if (after == '|' || after == ',')
 	    res = -1;
 	else
-	    res = plist(&p, pap, x, size);
+	    res = plist(&p, args, x, size);
 	break;
     default:
 	--p;
-	res = eiformat(&p, pap, x);
+	res = eiformat(&p, args, x);
 	++size;
 	if (res >= 0) {
 	    if (after == '|') {
-	        while (isspace(*p))
+	        while (isspace((int)*p))
 		    ++p;
 		if (*p != ']')
 		    res = -1;
 	    } else
-		res = plist(&p, pap, x, size);
+		res = plist(&p, args, x, size);
 	}
 	break;
 	/*
@@ -357,23 +356,89 @@ static int plist(const char **fmt, va_list_p pap, ei_x_buff* x, int size)
     return res;
 }
 
-int ei_x_format(ei_x_buff* x, const char *fmt, ... )
+static union arg* read_args(const char* fmt, va_list ap)
 {
-    int res;
+    const char* p = fmt;
+    int arg_count = 0;
+    union arg* args;
+    int i = 0;
+
+    /* Count the number of format strings. Assume null terminated string. */
+
+    while (*p) if (*p++ == '~') arg_count++;
+
+    /* Allocate space for the arguments */
+
+    args = (union arg*)erl_malloc(arg_count * sizeof(union arg));
+
+    if (!args) return NULL;
+
+    p = fmt;			/* Start again and fill array */
+
+    while (*p) {
+      if (*p++ == '~') {
+	if (!*p) {
+	  erl_free(args);
+	  return NULL;	/* Error, string not complete */
+	}
+	switch (*p++) {
+	case 'a': 
+	case 's':
+	  args[i++].s = va_arg(ap, char*);
+	  break;
+	case 'i':
+	case 'l':
+	  args[i++].l = va_arg(ap, long);
+	  break;
+	case 'u':
+	  args[i++].u = va_arg(ap, unsigned long);
+	  break;
+	case 'f':     /* float is expanded to double (C calling conventions) */
+	case 'd':
+	  args[i++].d = va_arg(ap, double);
+	  break;	
+	default:
+	  erl_free(args);	/* Invalid specifier */
+	  return NULL;
+	}
+      }
+    }
+    return args;
+}
+       
+int ei_x_format(ei_x_buff* x, const char* fmt, ... )
+{
     va_list ap;
+    union arg* args;
+    union arg* saved_args; 
+    int res;
+
+    res = ei_x_encode_version(x);
+    if (res < 0) return res;
+
     va_start(ap, fmt);
-    res = xformat(fmt, ap, x);
+    saved_args = args = read_args(fmt, ap);
     va_end(ap);
+    if (!args) return -1;
+    res = eiformat(&fmt, &args, x);
+    erl_free(saved_args);
+
     return res;
 }
 
-int ei_x_format_wo_ver(ei_x_buff* x, const char *fmt, ... )
+int ei_x_format_wo_ver(ei_x_buff* x, const char* fmt, ... )
 {
-    int res;
     va_list ap;
+    union arg* args; 
+    int res;
+
     va_start(ap, fmt);
-    res = eiformat(&fmt, VA_LIST_TO_P(ap), x);
+    args = read_args(fmt, ap);
     va_end(ap);
+    if (!args) return -1;
+    res = eiformat(&fmt, &args, x);
+    erl_free(args);
+
     return res;
 }
  

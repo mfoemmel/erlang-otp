@@ -47,7 +47,7 @@
 	 get_ORBDefaultInitRef/0, get_ORBInitRef/0,
 	 get_interceptors/0, set_interceptors/1,
 	 jump_start/0, jump_start/1, jump_start/2, jump_stop/0, js/0, js/1,
-	 iiop_connections/0, iiop_connections_pending/0]).
+	 iiop_connections/0, iiop_connections_pending/0, typechecking/0]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -84,7 +84,7 @@ jump_stop() ->
 
 js() ->
     corba:orb_init([{interceptors, {native, [orber_iiop_tracer]}},
-		    {orber_debug_level, 10}]),
+		    {orber_debug_level, 10}, {local_typecheck, true}]),
     jump_start(4001, ip_address()).
 
 js(Port) ->
@@ -147,7 +147,7 @@ stop() ->
 
 iiop_port() ->
     case application:get_env(orber, iiop_port) of
-	{ok, Port} when integer(Port) ->
+	{ok, Port} when integer(Port), Port > 0 ->
 	    Port;
 	_ ->
 	    4001
@@ -165,7 +165,7 @@ iiop_out_ports() ->
 
 bootstrap_port() ->
     case application:get_env(orber, bootstrap_port) of
-	{ok, Port} when integer(Port) ->
+	{ok, Port} when integer(Port), Port > 0 ->
 	    Port;
 	_ ->
 	    iiop_port()
@@ -286,6 +286,22 @@ Time to large (>1000000 sec), swithed to 'infinity'~n"),
 	    infinity
     end.
 
+typechecking() ->
+    case get(oe_typechecking) of
+	undefined ->
+	    case application:get_env(orber, local_typecheck) of
+		undefined ->
+		    put(oe_typechecking, false),
+		    false;
+		{ok, Boolean} ->
+		    put(oe_typechecking, Boolean),
+		    Boolean
+	    end;
+	Boolean ->
+	    Boolean
+    end.
+
+
 %%-----------------------------------------------------------------
 %% CosNaming::NamingContextExt operations
 %%-----------------------------------------------------------------
@@ -358,7 +374,7 @@ iiop_ssl_port() ->
     case application:get_env(orber, secure) of
 	{ok, ssl} ->
 	        case application:get_env(orber, iiop_ssl_port) of
-		    {ok, Port} when integer(Port) ->
+		    {ok, Port} when integer(Port), Port > 0 ->
 			Port;
 		    _ ->
 			4002
@@ -494,46 +510,77 @@ set_ssl_client_cacertfile(Value) when list(Value) ->
 info() ->
     case is_running() of
 	true ->
-	    io:format("======== Orber System Information ========\n",[]),
-	    io:format("Orber domain: ~p\n",[domain()]),
-	    io:format("IIOP port number: ~p\n",[iiop_port()]),
-	    io:format("Bootstrap port number: ~p\n",[bootstrap_port()]),
-	    io:format("Nodes in domain: ~p\n",[orber_nodes()]),
-	    io:format("GIOP version: ~p\n",[giop_version()]),
-	    io:format("IIOP timeout: ~p\n",[iiop_timeout()]),
-	    io:format("IIOP connection timeout: ~p\n",[iiop_connection_timeout()]),
-	    io:format("IIOP setup connection timeout: ~p\n",[iiop_setup_connection_timeout()]),
-	    io:format("IIOP out ports: ~p\n",[iiop_out_ports()]),
-	    io:format("IIOP connections: ~p\n",[iiop_connections()]),
-	    io:format("IIOP connections (pending): ~p\n",[iiop_connections_pending()]),
-	    io:format("Object Keys GC interval: ~p\n",[objectkeys_gc_time()]),
-	    io:format("Using Interceptors: ~p\n",[get_interceptors()]),
-	    io:format("Debug Level: ~p\n",[get_debug_level()]),
-	    io:format("orbInitRef: ~p\n",[get_ORBInitRef()]),
-	    io:format("orbDefaultInitRef: ~p\n",[get_ORBDefaultInitRef()]),
-	    Sec = secure(),
-	    io:format("ORB security: ~p\n",[Sec]),
-	    case Sec of
-		ssl ->
-		    io:format("SSL IIOP port number ~p\n",[iiop_ssl_port()]),
-		    io:format("SSL server certfile ~p\n",[ssl_server_certfile()]),
-		    io:format("SSL server verification type ~p\n",[ssl_server_verify()]),
-		    io:format("SSL server verification depth ~p\n",[ssl_server_depth()]),
-		    io:format("SSL server cacertfile ~p\n",[ssl_server_cacertfile()]),
-		    io:format("SSL client certfile ~p\n",[ssl_client_certfile()]),
-		    io:format("SSL client verification type ~p\n",[ssl_client_verify()]),
-		    io:format("SSL client verification depth ~p\n",[ssl_client_depth()]),
-		    io:format("SSL client cacertfile ~p\n",[ssl_client_cacertfile()]),
-		    io:format("==========================================\n",[]);
+	    case secure() of
 		no ->
-		    io:format("==========================================\n",[]),
-		    ok
-	    end; 
+		    error_logger:info_msg("=== Orber-~-9s System Information ===
+Orber domain..................: ~s
+IIOP port number..............: ~p
+Bootstrap port number.........: ~p
+Nodes in domain...............: ~p
+GIOP version..................: ~p
+IIOP timeout..................: ~p
+IIOP connection timeout.......: ~p
+IIOP setup connection timeout.: ~p
+IIOP out ports................: ~p
+IIOP connections..............: ~p
+IIOP connections (pending)....: ~p
+Object Keys GC interval.......: ~p
+Using Interceptors............: ~p
+Debug Level...................: ~p
+orbInitRef....................: ~p
+orbDefaultInitRef.............: ~p
+Local Typechecking............: ~p
+=========================================~n",
+[?ORBVSN, domain(), iiop_port(), bootstrap_port(), orber_nodes(), giop_version(),
+ iiop_timeout(), iiop_connection_timeout(), iiop_setup_connection_timeout(),
+ iiop_out_ports(), iiop_connections(), iiop_connections_pending(), 
+ objectkeys_gc_time(), get_interceptors(), get_debug_level(), get_ORBInitRef(),
+ get_ORBDefaultInitRef(), typechecking()]);
+                ssl ->
+		    error_logger:info_msg("=== Orber-~-9s System Information ===
+Orber domain..................: ~s
+IIOP port number..............: ~p
+Bootstrap port number.........: ~p
+Nodes in domain...............: ~p
+GIOP version..................: ~p
+IIOP timeout..................: ~p
+IIOP connection timeout.......: ~p
+IIOP setup connection timeout.: ~p
+IIOP out ports................: ~p
+IIOP connections..............: ~p
+IIOP connections (pending)....: ~p
+Object Keys GC interval.......: ~p
+Using Interceptors............: ~p
+Debug Level...................: ~p
+orbInitRef....................: ~p
+orbDefaultInitRef.............: ~p
+Local Typechecking............: ~p
+ORB security..................: ssl
+SSL IIOP port number..........: ~p
+SSL server certfile...........: ~p
+SSL server verification type..: ~p
+SSL server verification depth.: ~p
+SSL server cacertfile.........: ~p
+SSL client certfile...........: ~p
+SSL client verification type..: ~p
+SSL client verification depth.: ~p
+SSL client cacertfile.........: ~p
+=========================================~n",
+[?ORBVSN, domain(), iiop_port(), bootstrap_port(), orber_nodes(), giop_version(),
+ iiop_timeout(), iiop_connection_timeout(), iiop_setup_connection_timeout(),
+ iiop_out_ports(), iiop_connections(), iiop_connections_pending(), 
+ objectkeys_gc_time(), get_interceptors(), get_debug_level(), get_ORBInitRef(),
+ get_ORBDefaultInitRef(), typechecking(), iiop_ssl_port(), ssl_server_certfile(), 
+ ssl_server_verify(),
+ ssl_server_depth(), ssl_server_cacertfile(), ssl_client_certfile(),
+ ssl_client_verify(), ssl_client_depth(), ssl_client_cacertfile()])
+           end;
 	_ ->
-	    io:format("======== Orber System Information ========\n",[]),
-	    io:format("Orber is not running\n",[]),
-	    io:format("==========================================\n",[])
+	    error_logger:info_msg("=== Orber-~-9s System Information ===
+       *** Orber is not running ***
+==========================================~n",[?ORBVSN])
     end.
+
 
 %%-----------------------------------------------------------------
 %% Installation interface functions
@@ -899,8 +946,11 @@ configure(orber_debug_level, Value, Status) when integer(Value) ->
     do_configure(orber_debug_level, Value, Status);
 
 %%------ Keys we cannot change if Orber is running -----
+%% Set the bootstrap port
+configure(bootstrap_port, Value, Status) when integer(Value), Value > 0 ->
+    do_safe_configure(bootstrap_port, Value, Status);
 %% Set the listen port
-configure(iiop_port, Value, Status) when integer(Value) ->
+configure(iiop_port, Value, Status) when integer(Value), Value > 0 ->
     do_safe_configure(iiop_port, Value, Status);
 %% IIOP interceptors
 configure(interceptors, Value, Status) when tuple(Value) ->
@@ -914,6 +964,44 @@ configure(ip_address, Value, Status) when list(Value) ->
 %% Set the range of ports we may use on this machine when connecting to a server.
 configure(iiop_out_ports, {Min, Max}, Status) when integer(Min), integer(Max) ->
     do_safe_configure(iiop_out_ports, {Min, Max}, Status);
+%% Set the lightweight option.
+configure(lightweight, Value, Status) when list(Value) ->
+    do_safe_configure(lightweight, Value, Status);
+%% Set the lightweight option.
+configure(local_typecheck, true, Status) ->
+    do_safe_configure(local_typecheck, true, Status);
+configure(local_typecheck, false, Status) ->
+    do_safe_configure(local_typecheck, false, Status);
+
+%% SSL settings
+configure(secure, ssl, Status) ->
+    do_safe_configure(secure, ssl, Status);
+configure(iiop_ssl_port, Value, Status) when integer(Value), Value > 0 ->
+    do_safe_configure(iiop_ssl_port, Value, Status);
+configure(ssl_server_certfile, Value, Status) when list(Value) ->
+    do_safe_configure(ssl_server_certfile, Value, Status);
+configure(ssl_server_certfile, Value, Status) when atom(Value) ->
+    do_safe_configure(ssl_server_certfile, atom_to_list(Value), Status);
+configure(ssl_client_certfile, Value, Status) when list(Value) ->
+    do_safe_configure(ssl_client_certfile, Value, Status);
+configure(ssl_client_certfile, Value, Status) when atom(Value) ->
+    do_safe_configure(ssl_client_certfile, atom_to_list(Value), Status);
+configure(ssl_server_verify, Value, Status) when integer(Value) ->
+    do_safe_configure(ssl_server_verify, Value, Status);
+configure(ssl_client_verify, Value, Status) when integer(Value) ->
+    do_safe_configure(ssl_client_verify, Value, Status);
+configure(ssl_server_depth, Value, Status) when integer(Value) ->
+    do_safe_configure(ssl_server_depth, Value, Status);
+configure(ssl_client_depth, Value, Status) when integer(Value) ->
+    do_safe_configure(ssl_client_depth, Value, Status);
+configure(ssl_server_cacertfile, Value, Status) when list(Value) ->
+    do_safe_configure(ssl_server_cacertfile, Value, Status);
+configure(ssl_server_cacertfile, Value, Status) when atom(Value) ->
+    do_safe_configure(ssl_server_cacertfile, atom_to_list(Value), Status);
+configure(ssl_client_cacertfile, Value, Status) when list(Value) ->
+    do_safe_configure(ssl_client_cacertfile, Value, Status);
+configure(ssl_client_cacertfile, Value, Status) when atom(Value) ->
+    do_safe_configure(ssl_client_cacertfile, atom_to_list(Value), Status);
 
 configure(Key, Value, _) ->
     orber:debug_level_print("[~p] orber:configure(~p, ~p); Bad key or value.", 

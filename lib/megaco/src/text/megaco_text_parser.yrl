@@ -406,6 +406,14 @@ transactionAck       -> safeToken : ensure_transactionAck('$1') .
 transactionPending   -> 'PendingToken' 'EQUAL' transactionID 'LBRKT' 'RBRKT'
                             : #'TransactionPending'{transactionId = ensure_transactionID('$3') } .
 
+transactionRequest   -> 'TransToken' 
+                        'LBRKT'  actionRequest actionRequestList 'RBRKT'
+                            : #'TransactionRequest'{transactionId = asn1_NOVALUE,
+                                                    actions = ['$3' | '$4']} .
+transactionRequest   -> 'TransToken' 'EQUAL' 
+                        'LBRKT'  actionRequest actionRequestList 'RBRKT'
+                            : #'TransactionRequest'{transactionId = asn1_NOVALUE,
+                                                    actions = ['$4' | '$5']} .
 transactionRequest   -> 'TransToken' 'EQUAL' transactionID
                         'LBRKT'  actionRequest actionRequestList 'RBRKT'
                             : #'TransactionRequest'{transactionId = ensure_transactionID('$3'),

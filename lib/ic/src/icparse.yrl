@@ -146,6 +146,8 @@ Nonterminals
 	'OE_pragma'				% NON standard
 	'Uggly_pragmas'				% NON standard
 	'ZorM_<integer_literal>'
+	'<fixed_pt_type>'
+	'<fixed_pt_const_type>'
 	.
 
 
@@ -159,6 +161,7 @@ Terminals
 	'union'
 	'struct'
 	'<character_literal>'
+	'<wcharacter_literal>'
 	')'
 	']'
 	'any'
@@ -179,7 +182,6 @@ Terminals
 	'{'
 	'readonly'
 	':'
-	'<floating_pt_literal>'
 	'-'
 	'void'
 	';'
@@ -202,9 +204,11 @@ Terminals
 	'>>'
 	'const'
 	'<string_literal>'
+	'<wstring_literal>'
 	'raises'
 	'string'
 	'wstring'
+	'fixed'
 	'default'
 	'short'
 	'%'
@@ -213,6 +217,8 @@ Terminals
 	'exception'
 	'boolean'
 	'<integer_literal>'
+	'<fixed_pt_literal>'
+	'<floating_pt_literal>'
 	'&'
 	'::'
 	'Object'
@@ -242,7 +248,7 @@ OE_pragma -> '#'  '<integer_literal>' '<identifier>'
 %% pragma version
 OE_pragma -> '#'  '<integer_literal>' '<identifier>' 
 	           '<identifier>' '<identifier>' '<floating_pt_literal>' '#'
-	: #pragma{type='$4', to='$5', apply=icgen:float_to_version('$6')} .
+	: #pragma{type='$4', to='$5', apply=ic_options:float_to_version('$6')} .
 
 
 
@@ -363,10 +369,10 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 
 
 %% (11)
-'<scoped_name>' -> '<identifier>' : icgen:scoped_id_new('$1') .
-'<scoped_name>' -> '::' '<identifier>' : icgen:scoped_id_new_global('$2') .
+'<scoped_name>' -> '<identifier>' : ic_symtab:scoped_id_new('$1') .
+'<scoped_name>' -> '::' '<identifier>' : ic_symtab:scoped_id_new_global('$2') .
 '<scoped_name>' -> '<scoped_name>' '::' '<identifier>' 
-  : icgen:scoped_id_add('$1', '$3') .
+  : ic_symtab:scoped_id_add('$1', '$3') .
 
 
 %% (12)
@@ -380,7 +386,9 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 '<const_type>' -> '<boolean_type>' : '$1' .
 '<const_type>' -> '<floating_pt_type>' : '$1' .
 '<const_type>' -> '<string_type>' : '$1' .
+'<const_type>' -> '<fixed_pt_const_type>' : '$1' .
 '<const_type>' -> '<scoped_name>' : '$1' .
+'<const_type>' -> '<octet_type>' : '$1' .
 
 
 %% (14)
@@ -440,8 +448,11 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 
 %% (24)
 '<literal>' -> '<integer_literal>' : '$1' .
+'<literal>' -> '<wstring_literal>' : '$1' .
 '<literal>' -> '<string_literal>' : '$1' .
 '<literal>' -> '<character_literal>' : '$1' .
+'<literal>' -> '<wcharacter_literal>' : '$1' .
+'<literal>' -> '<fixed_pt_literal>' : '$1' .
 '<literal>' -> '<floating_pt_literal>' : '$1' .
 '<literal>' -> '<boolean_literal>' : '$1' .
 
@@ -491,6 +502,7 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 %% (32)
 '<template_type_spec>' -> '<sequence_type>' : '$1' .
 '<template_type_spec>' -> '<string_type>' : '$1' .
+'<template_type_spec>' -> '<fixed_pt_type>' : '$1' .
 
 
 %% (33)
@@ -576,6 +588,8 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 %% (49)
 '<any_type>' -> 'any' : '$1' .
 
+%%
+'<fixed_pt_const_type>' -> 'fixed' : '$1'.
 
 %% (50) NIY: unfolding of struct decls (FIXED)
 %%'<struct_type>' -> 'struct' '<identifier>' '{' '<member_list>' '}'
@@ -810,6 +824,12 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 '<param_type_spec>' -> '<base_type_spec>' : '$1' .
 '<param_type_spec>' -> '<string_type>' : '$1' .
 '<param_type_spec>' -> '<scoped_name>' : '$1' .
+
+
+%% (96)
+'<fixed_pt_type>' -> 'fixed' '<' '<positive_int_const>' ',' '<positive_int_const>' '>'
+  : #fixed{digits='$3',scale='$5'} .
+
 
 %% Added clause
 'ZorM_<string_literal>' -> '$empty' : [] .

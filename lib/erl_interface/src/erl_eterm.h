@@ -46,6 +46,7 @@ __ERL_BEGIN_DECL
 #define ERL_SMALL_BIG   13
 #define ERL_U_SMALL_BIG 14
 #define ERL_FUNCTION    (15 | ERL_COMPOUND)
+#define ERL_BIG         16
 
 /*  Erlang terms in C  */
 
@@ -122,6 +123,13 @@ typedef struct _binary {
   unsigned char *b;
 } Erl_Binary;
 
+typedef struct _big {
+  Erl_Header h;
+  int arity;
+  int is_neg;
+  unsigned short *digits;
+} Erl_Big;
+
 /* Variables may only exist in patterns. 
  * Note: identical variable names in a pattern 
  * denotes the same value.
@@ -163,6 +171,7 @@ typedef struct _eterm {
     Erl_Binary    bval;
     Erl_Variable  vval;
     Erl_Function  funcval;
+    Erl_Big       bigval;
   } uval;
 } ETERM;
 
@@ -231,6 +240,11 @@ typedef struct _eterm {
 #define ERL_CLOSURE(x)       ((x)->uval.funcval.closure)
 #define ERL_CLOSURE_ELEMENT(x,i) (ERL_CLOSURE(x)[(i)])
 
+#define ERL_BIG_ARITY(x)     ((x)->uval.bigval.arity)
+#define ERL_BIG_IS_NEG(x)    ((x)->uval.bigval.is_neg)
+#define ERL_BIG_DIGITS(x)    ((x)->uval.bigval.digits)
+#define ERL_BIG_DIGIT(x,i)   (ERL_BIG_DIGITS(x)[(i)])
+
 /*
  * Typing checking macros.
  */
@@ -251,6 +265,7 @@ typedef struct _eterm {
 #define ERL_IS_TUPLE(x)    (ERL_TYPE(x) == ERL_TUPLE)
 #define ERL_IS_BINARY(x)   (ERL_TYPE(x) == ERL_BINARY)
 #define ERL_IS_FUNCTION(x) (ERL_TYPE(x) == ERL_FUNCTION)
+#define ERL_IS_BIG(x)      (ERL_TYPE(x) == ERL_BIG)
 
 #define ERL_IS_LIST(x)     (ERL_IS_CONS(x) || ERL_IS_EMPTY_LIST(x))
 

@@ -66,6 +66,7 @@
 #define var_start(x, y) va_start(x)
 #endif
 
+#define ELIB_SUFFIX	".elib"
 #define INSTR_SUFFIX	".instr"
 
 void usage(const char *switchname);
@@ -88,6 +89,7 @@ static void *erealloc(void *p, size_t size);
 static void efree(void *p);
 static char* strsave(char* string);
 static int is_one_of_strs(char *str, char *strs[]);
+static char *write_str(char *to, char *from);
 static void get_home(void);
 #ifdef __WIN32__
 static void get_start_erl_data(char *);
@@ -146,39 +148,61 @@ static char* progname;		/* Name of this program. */
 static char* home;		/* Path of user's home directory. */
 
 /*
-   Add the instrumentation suffix to the program name, except on Windows,
-   where we insert it just before ".EXE".
+   Add the elib and instr suffixes to the program name if needed,
+   except on Windows, where we insert it just before ".EXE".
 */
-static char *add_instrument_suffix(char *prog)
+static char *add_extra_suffixes(char *prog, int elib, int instr)
 {
+   char *res;
    char *p;
    int len;
 #ifdef __WIN32__
    char *exe_p;
+   int exe = 0;
 #endif
+
+#ifdef VXWORKS
+   elib = 0; /* elib_malloc is default on vxworks;
+		don't need an extra suffix for it */
+#endif
+
+   if (!elib && !instr)
+       return prog;
 
    len = strlen(prog);
 
-   p = emalloc(len + strlen(INSTR_SUFFIX) + 1);
-   strcpy(p, prog);
+   p = emalloc(len
+	       + (elib ? strlen(ELIB_SUFFIX) : 0)
+	       + (instr ? strlen(INSTR_SUFFIX) : 0)
+	       + 1);
+   res = p;
+   p = write_str(p, prog);
 
 #ifdef __WIN32__
-   exe_p = p + len - 4;
-   if (exe_p >= p)
+   exe_p = res + len - 4;
+   if (exe_p >= res)
    {
       if (exe_p[0] == '.' &&
 	  (exe_p[1] == 'e' || exe_p[1] == 'E') &&
 	  (exe_p[2] == 'x' || exe_p[2] == 'X') &&
 	  (exe_p[3] == 'e' || exe_p[3] == 'E'))
       {
-	 sprintf(exe_p, "%s.exe", INSTR_SUFFIX);
-	 return p;
+	  p = exe_p;
+	  exe = 1;
       }
    }
 #endif
 
-   strcat(p, INSTR_SUFFIX);
-   return p;
+   if (elib)
+       p = write_str(p, ELIB_SUFFIX);
+   if (instr)
+       p = write_str(p, INSTR_SUFFIX);
+#ifdef __WIN32__
+   if (exe)
+       p = write_str(p, ".exe");
+#endif
+
+   return res;
 }
 
 #ifdef WIN32_WERL
@@ -200,6 +224,8 @@ main(int argc, char **argv)
     int i;
     char* s;
     char *epmd_prog = NULL;
+    char *malloc_lib;
+    int use_elib;
     int process_args = 1;
 
 #ifdef __WIN32__
@@ -229,15 +255,48 @@ main(int argc, char **argv)
      */
 
     /* We need to do this before the ordinary processing. */
+#ifdef VXWORKS
+    use_elib = 1;
+#else
+    use_elib = 0;
+#endif
+    malloc_lib = getenv("ERL_MALLOC_LIB");
     while (i < argc) {
-       if (strcmp(argv[i], "-instr") == 0)
-	  instrumented = 1;
-       i++;
+	if (argv[i][0] == '+') {
+	    if (argv[i][1] == 'm') {
+		if (argv[i][2] == '\0') {
+		    if (++i < argc)
+			malloc_lib = argv[i];
+		    else
+			usage("+m");
+		}
+		else
+		    malloc_lib = &argv[i][2];
+	    }
+	}
+	else if (argv[i][0] == '-') {
+	    if (strcmp(argv[i], "-instr") == 0)
+		instrumented = 1;
+	}
+	i++;
+    }
+
+    if (malloc_lib) {
+	if (0)
+	    ;
+#ifndef VXWORKS
+	else if (strcmp(malloc_lib, "libc") == 0)
+	    use_elib = 0;
+#endif
+#if defined(UNIX) || defined(VXWORKS)
+	else if (strcmp(malloc_lib, "elib") == 0)
+	    use_elib = 1;
+#endif
+	else
+	    usage("+m");
     }
 #if !defined(__WIN32__)
-    if (instrumented) {
-	emu = add_instrument_suffix(emu);
-    }
+    emu = add_extra_suffixes(emu, use_elib, instrumented);
     sprintf(tmpStr, "%s" DIRSEP "%s" BINARY_EXT, bindir, emu);
     emu = strsave(tmpStr);
 #endif
@@ -526,6 +585,11 @@ main(int argc, char **argv)
 			  goto the_default;
 		      break;
 		  }
+		  case 'm':
+		      /* Already handled */
+		      if (argv[i][2] == '\0')
+			  i++;
+		      break;
 		  default:
 		  the_default:
 		    argv[i][0] = '-'; /* Change +option to -option. */
@@ -646,7 +710,7 @@ usage(const char *switchname)
 	  "[-make] [-man [manopts] MANPAGE] [-x] [-emu_args] "
 	  "[+d SIZE_IN_KB] [+t SIZE_IN_KB] [+T SIZE_IN_KB] [+i BOOT_MODULE] "
 	  "[+b BOOT_FUN] [+s STACK_SIZE] [+h HEAP_SIZE] [+# ITEMS] "
-	  "[+P MAX_PROCS] [+A THREADS] "
+	  "[+P MAX_PROCS] [+A THREADS] [+m MALLOC_LIB] "
 
 	  "[+Se BOOL] [+Sr RELEASE] [+Ssbct SIZE_IN_KB] [+Smmc AMOUNT] "
 	  "[+Ssbcmt RATIO] [+Smcs SIZE_IN_KB] [+Sscs SIZE_IN_KB] "
@@ -793,6 +857,14 @@ is_one_of_strs(char *str, char *strs[])
 	    return 1;
     }
     return 0;
+}
+
+static char *write_str(char *to, char *from)
+{
+    while (*from)
+	*(to++) = *(from++);
+    *to = '\0';
+    return to;
 }
 
 char*

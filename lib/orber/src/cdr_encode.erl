@@ -40,7 +40,8 @@
 	 enc_locate_request/3, enc_locate_reply/3, enc_locate_reply/5, 
 	 enc_close_connection/1, enc_message_error/1, enc_fragment/1]).
 
--export([enc_reply_split/6, enc_giop_message_header/5]).
+-export([enc_reply_split/6, enc_giop_message_header/5, validate_request_body/3, 
+	 validate_reply_body/3]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -249,6 +250,12 @@ enc_request_body(Version, {RetType, InParameters, OutParameters}, Parameters,
     enc_parameters(Version, InParameters, Parameters, Message, Len).
 
 %%-----------------------------------------------------------------
+%% Func: validate_request_body/3
+%%-----------------------------------------------------------------
+validate_request_body(Version, {RetType, InParameters, OutParameters}, Parameters) ->
+    enc_parameters(Version, InParameters, Parameters, [], 0).
+
+%%-----------------------------------------------------------------
 %% Func: enc_reply/6
 %%-----------------------------------------------------------------
 %% ## NEW IIOP 1.2 ##
@@ -316,6 +323,26 @@ enc_reply_body(Version, {RetType, InParameters, OutParameters}, Result, Paramete
 	       Message, Len) ->
     {Message1, Len1}  = enc_type(RetType, Version, Result, Message, Len),
     enc_parameters(Version, OutParameters, Parameters, Message1, Len1).
+
+
+%%-----------------------------------------------------------------
+%% Func: validate_reply_body/3
+%%-----------------------------------------------------------------
+validate_reply_body(Version, _, {'EXCEPTION', Exception}) ->
+    {TypeOfException, ExceptionTypeCode} =
+	orber_typedefs:get_exception_def(Exception),
+    {'tk_except', TypeOfException, ExceptionTypeCode, 
+     (catch enc_reply_body(Version, {ExceptionTypeCode, [], []}, Exception, [], [], 0))};
+validate_reply_body(Version, {RetType, InParameters, []}, Reply) ->
+    enc_reply_body(Version, {RetType, InParameters, []}, Reply,
+		   [], [], 0);
+validate_reply_body(Version, {RetType, InParameters, OutParameters}, Reply) 
+  when tuple(Reply) ->
+    [Result|Parameters] = tuple_to_list(Reply),
+    enc_reply_body(Version, {RetType, InParameters, OutParameters}, Result,
+		   Parameters, [], 0);
+validate_reply_body(Version, {RetType, InParameters, OutParameters}, Reply) ->
+    enc_reply_body(Version, {RetType, InParameters, OutParameters}, Reply, [], [], 0).
 
 %%-----------------------------------------------------------------
 %% Func: enc_cancel_request/2
@@ -565,33 +592,48 @@ enc_type(Type, _, _, _, _) ->
 enc_fixed(Version, Digits, Scale, 
 	  #fixed{digits = Digits, scale = Scale, value = Value}, Bytes, Len) 
   when integer(Value), integer(Digits), integer(Scale), Digits < 32, Digits >= Scale ->
-    case ?ODD(Digits) of
-	true ->
-	    enc_fixed_2(Version, Digits, Scale, integer_to_list(Value)++[?FIXED_POSITIVE], 
-			Bytes, Len);
-	false ->
-	    enc_fixed_2(Version, Digits, Scale, [0|integer_to_list(Value)]++[?FIXED_POSITIVE], 
-			Bytes, Len)
+    %% This isn't very efficient and we should improve it before supporting it
+    %% officially.
+    Odd = ?ODD(Digits),
+    case integer_to_list(Value) of
+	[$-|ValueList] when Odd == true ->
+	    Padded = lists:duplicate((Digits-length(ValueList)), 0) ++ ValueList,
+	    enc_fixed_2(Version, Digits, Scale, Padded, 
+			Bytes, Len, ?FIXED_NEGATIVE);
+	[$-|ValueList] ->
+	    Padded = lists:duplicate((Digits-length(ValueList)), 0) ++ ValueList,
+	    enc_fixed_2(Version, Digits, Scale, [0|Padded], 
+			Bytes, Len, ?FIXED_NEGATIVE);
+	ValueList when Odd == true ->
+	    Padded = lists:duplicate((Digits-length(ValueList)), 0) ++ ValueList,
+	    enc_fixed_2(Version, Digits, Scale, Padded, 
+			Bytes, Len, ?FIXED_POSITIVE);
+	ValueList ->
+	    Padded = lists:duplicate((Digits-length(ValueList)), 0) ++ ValueList,
+	    enc_fixed_2(Version, Digits, Scale, [0|Padded], 
+			Bytes, Len, ?FIXED_POSITIVE)
     end;
 enc_fixed(Version, Digits, Scale, Fixed, Bytes, Len) ->
     orber:debug_level_print("[~p] cdr_encode:enc_fixed(~p, ~p, ~p)
 The supplied fixed type incorrect. Check that the 'digits' and 'scale' field
 match the definition in the IDL-specification. The value field must be
 a list of Digits lenght.", [?LINE, Digits, Scale, Fixed], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_MAYBE}).
+    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE}).
 
-enc_fixed_2(Version, Digits, Scale, [], Bytes, Len) ->
-    {Bytes, Len};
-enc_fixed_2(Version, Digits, Scale, [D1, D2|Ds], Bytes, Len) ->
+enc_fixed_2(Version, Digits, Scale, [D1], Bytes, Len, Sign) ->
+    {[<<D1:4,Sign:4>>|Bytes], Len+1};
+enc_fixed_2(Version, Digits, Scale, [D1, D2|Ds], Bytes, Len, Sign) ->
     %% We could convert the ASCII-value to digit values but the bit-syntax will
     %% truncate it correctly.
-    enc_fixed_2(Version, Digits, Scale, Ds, [<<D1:4,D2:4>> | Bytes], Len+1);
-enc_fixed_2(Version, Digits, Scale, Value, Bytes, Len) ->
-       orber:debug_level_print("[~p] cdr_encode:enc_fixed_2(~p, ~p, ~p)
+    enc_fixed_2(Version, Digits, Scale, Ds, [<<D1:4,D2:4>> | Bytes], Len+1, Sign);
+enc_fixed_2(Version, Digits, Scale, Value, Bytes, Len, Sign) ->
+       orber:debug_level_print("[~p] cdr_encode:enc_fixed_2(~p, ~p, ~p, ~p)
 The supplied fixed type incorrect. Most likely the 'digits' field don't match the 
 supplied value. Hence, check that the value is correct.", 
-    [?LINE, Digits, Scale, Value], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_MAYBE}). 
+    [?LINE, Digits, Scale, Value, Sign], ?DEBUG_LEVEL),
+    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE}). 
+
+
 
 %%-----------------------------------------------------------------
 %% Func: enc_sequence/5

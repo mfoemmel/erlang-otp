@@ -87,7 +87,6 @@
 	 string_to_objkey/1,
 	 string_to_objkey_local/1,
 	 check_exception_type/1,
-	 %%call_internal/2,
 	 get_system_exception_typedef/1,
 	 call_relay/3,
 	 cast_relay/2]).
@@ -95,14 +94,15 @@
 %%-----------------------------------------------------------------
 %% Internal definitions
 %%-----------------------------------------------------------------
+-define(DEBUG_LEVEL, 5).
+
 %% Defines possible configuration parameters a user can add when
 %% creating new CORBA objects.
--define(OE_CREATE_DEF_OPT, [{sup_child, false},
-			    {persistent, false},
-			    {regname, []},
-			    {pseudo, false}]).
-
--define(DEBUG_LEVEL, 5).
+-record(options, {sup_child = false, 
+		  persistent = false, 
+		  regname = [], 
+		  pseudo = false,
+		  local_typecheck}).
 
 
 %%------------------------------------------------------------
@@ -239,8 +239,8 @@ resolve_initial_references_remote(ObjectId, [RemoteModifier| Rest])
 	    [_, Host, Port] = string:tokens(RemoteModifier, ":/"),
 	    IOR = iop_ior:create_external(orber:giop_version(), "", 
 				 Host, list_to_integer(Port), "INIT"),
-	    %% We know it's an external referens. Hence, nmo need to check.
-	    {Location, Key} = iop_ior:get_key(IOR),
+	    %% We know it's an external referens. Hence, no need to check.
+	    {_, Key} = iop_ior:get_key(IOR),
 	    orber_iiop:request(Key, 'get', [ObjectId], 
 			       {{'tk_objref', 12, "object"},
 				[{'tk_string', 0}],
@@ -259,8 +259,8 @@ list_initial_services_remote([RemoteModifier| Rest]) when list(RemoteModifier) -
 	    [_, Host, Port] = string:tokens(RemoteModifier, ":/"),
 	    IOR = iop_ior:create_external(orber:giop_version(), "", 
 				 Host, list_to_integer(Port), "INIT"),
-	    %% We know it's an external referens. Hence, nmo need to check.
-	    {Location, Key} = iop_ior:get_key(IOR),
+	    %% We know it's an external referens. Hence, no need to check.
+	    {_, Key} = iop_ior:get_key(IOR),
 	    orber_iiop:request(Key, 'list', [],
 			       {{'tk_sequence', {'tk_string',0},0},
 				[], []}, 'true', infinity, IOR);
@@ -370,12 +370,11 @@ node_check(Node) ->
     lists:member(Node,orber:orber_nodes()).
 
 common_create(Module, TypeID, Env, Options, StartMethod) when list(Options) ->
-    {regname, RegName}= get_option(regname, Options),
-    {persistent, Persistent} = get_option(persistent, Options),
-    case RegName of
+    Opt = evaluate_options(Options, #options{}),
+    case Opt#options.regname of
 	[] ->
 	    ok;
-	{'local', Atom} when atom(Atom), Persistent == false ->
+	{'local', Atom} when atom(Atom), Opt#options.persistent == false ->
 	    ok;
 	{'global', _} ->
 	    ok;
@@ -384,13 +383,13 @@ common_create(Module, TypeID, Env, Options, StartMethod) when list(Options) ->
 bad name type or combination(~p).", [?LINE, Module, Options, Why], ?DEBUG_LEVEL),
 	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})   
     end,
-    {pseudo, Pseudo} = get_option(pseudo, Options),
-    case Pseudo of
+    case Opt#options.pseudo of
 	false ->
-	    {sup_child, SupChild} = get_option(sup_child, Options),
 	    case apply(Module, StartMethod, [Env]) of
 		{ok, Pid} ->
-		    case catch mk_objkey(Module, Pid, RegName, Persistent) of
+		    case catch mk_objkey(Module, Pid, Opt#options.regname, 
+                                         Opt#options.persistent, 
+                                         Opt#options.local_typecheck) of
 			{'EXCEPTION', E} ->
 			    %% This branch is only used if we couldn't register 
 			    %% our new objectkey due to an internal error in orber.
@@ -401,14 +400,10 @@ bad name type or combination(~p).", [?LINE, Module, Options, Why], ?DEBUG_LEVEL)
 			    %% which aren't expected (due to bug).
 			    gen_server:call(Pid, stop),
 			    exit(R);
-			Objkey ->
-			    %% The normal case.
-			    case SupChild of
-				true ->
-				    {ok, Pid, Objkey};
-				false ->
-				    Objkey
-			    end
+			Objkey when Opt#options.sup_child == true ->
+		            {ok, Pid, Objkey};
+                        Objkey ->
+			    Objkey
 		    end;
 		X ->
 		    X
@@ -417,9 +412,13 @@ bad name type or combination(~p).", [?LINE, Module, Options, Why], ?DEBUG_LEVEL)
 	    ModuleImpl = list_to_atom(lists:concat([Module, '_impl'])),
 	    case apply(ModuleImpl, init, [Env]) of
 		{ok, State} ->
-		    create_subobject_key(mk_pseudo_objkey(Module, ModuleImpl),State);
+		    create_subobject_key(mk_pseudo_objkey(Module, ModuleImpl, 
+                                                          Opt#options.local_typecheck),
+                                                          State);
 		{ok, State,_} ->
-		    create_subobject_key(mk_pseudo_objkey(Module, ModuleImpl),State);
+		    create_subobject_key(mk_pseudo_objkey(Module, ModuleImpl,
+                                                          Opt#options.local_typecheck),
+                                                          State);
 		Reason ->
 		    orber:dbg("[~p] corba:common_create(~p);
 'init' function incorrect(~p).", [?LINE, ModuleImpl, Reason], ?DEBUG_LEVEL),
@@ -481,22 +480,21 @@ get_subobject_key(Objkey) ->
 %% Description: 
 %%----------------------------------------------------------------------
 get_pid(Objkey) ->
-    {Location, Key} = iop_ior:get_key(Objkey),
-     case Location of
-	 'internal' ->
-	     orber_objectkeys:get_pid(Key);
-	 'internal_registered' when atom(Key) -> 
-	     case whereis(Key) of
-		 undefined ->
-		     corba:raise(#'OBJECT_NOT_EXIST'{minor=100, completion_status=?COMPLETED_NO});
-		 Pid ->
-		     Pid
-	     end;
+    case iop_ior:get_key(Objkey) of
+	{'internal', Key, _, _, _} ->
+	    orber_objectkeys:get_pid(Key);
+	{'internal_registered', Key, _, _, _} when atom(Key) ->
+	    case whereis(Key) of
+		undefined ->
+		    corba:raise(#'OBJECT_NOT_EXIST'{minor=100, completion_status=?COMPLETED_NO});
+		Pid ->
+		    Pid
+	    end;
 	 R ->
-	     orber:dbg("[~p] corba:get_pid(~p); 
+	    orber:dbg("[~p] corba:get_pid(~p); 
 Probably a pseudo- or external object(~p).", [?LINE, Objkey, R], ?DEBUG_LEVEL),
-	     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
-     end.
+	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
+    end.
 
 %%----------------------------------------------------------------------
 %% Function   : raise
@@ -561,21 +559,24 @@ call(Obj, Func, Args, Types) ->
     call(Obj, Func, Args, Types, infinity).
 
 call(Obj, Func, Args, Types, Timeout) ->
-    {Location, Key} = iop_ior:get_key(Obj),
-    if
-	Location == 'internal' ->
+    case iop_ior:get_key(Obj) of
+	{'internal', Key, _, Flags, Mod} ->
 	    Pid = orber_objectkeys:get_pid(Key),
-	    call_internal(Pid, {Obj, Func, Args, Types}, Timeout);
-	Location == 'internal_registered' -> 
-	    call_internal(Key, {Obj, Func, Args, Types}, Timeout);
-	Location == 'external' -> 
+	    call_internal(Pid, Obj, Func, Args, Types, 
+			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod, Timeout);
+	{'internal_registered', Key, _, Flags, Mod} ->
+	    call_internal(Key, Obj, Func, Args, Types,
+			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod, Timeout);
+	{'external', Key} ->		   
 	    orber_iiop:request(Key, Func, Args, Types, 'true', Timeout, Obj)
     end.
 
-call_internal(Pid, {Obj, Func, Args, Types}, Timeout) when pid(Pid), 
-							   node(Pid) == node() ->
+call_internal(Pid, Obj, Func, Args, Types, Check, Mod, Timeout) when pid(Pid), 
+								node(Pid) == node() ->
+    typecheck_request(Check, Types, Args, Mod, Func),
     case catch gen_server:call(Pid, {Obj, Func, Args}, Timeout) of
 	{'EXCEPTION', E} ->
+            typecheck_reply(Check, Types, {'EXCEPTION', E}, Mod, Func),
 	    corba:raise(E);
 	{'EXIT',{timeout, _}} ->
 	    corba:raise(#'COMM_FAILURE'{minor=108, completion_status=?COMPLETED_MAYBE});
@@ -584,27 +585,16 @@ call_internal(Pid, {Obj, Func, Args, Types}, Timeout) when pid(Pid),
 call exit(~p).", [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
 	    exit(R);
 	Res ->
+            typecheck_reply(Check, Types, Res, Mod, Func),
 	    Res
     end;
-call_internal(Pid, {Obj, Func, Args, Types}, Timeout) when pid(Pid) ->
+call_internal(Pid, Obj, Func, Args, Types, Check, Mod, Timeout) when pid(Pid) ->
+    typecheck_request(Check, Types, Args, Mod, Func),
     case catch rpc:call(node(Pid), corba, call_relay, 
 			[Pid, {Obj, Func, Args}, Timeout]) of
 	{'EXCEPTION', E} ->
+            typecheck_reply(Check, Types, {'EXCEPTION', E}, Mod, Func),
 	    corba:raise(E);
-	{badrpc, {'EXIT', {undef, _}}} ->
-	    %% Must be an older version; try the old-way.
-	    case catch gen_server:call(Pid, {Obj, Func, Args}, Timeout) of
-		{'EXCEPTION', E} ->
-		    corba:raise(E);
-		{'EXIT',{timeout, _}} ->
-		    corba:raise(#'COMM_FAILURE'{minor=108, completion_status=?COMPLETED_MAYBE});
-		{'EXIT',R} ->
-		    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p); 
-call exit(~p).", [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
-		    exit(R);
-		Res ->
-		    Res
-	    end;
 	{badrpc, {'EXIT',R}} ->
 	    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p); 
 call exit(~p).", [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
@@ -614,11 +604,13 @@ call exit(~p).", [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
 Node ~p down.", [?LINE, Func, Args, Types, node(Pid)], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{minor=108, completion_status=?COMPLETED_MAYBE});
 	Res ->
+            typecheck_reply(Check, Types, Res, Mod, Func),
 	    Res
     end;
 
 %% This case handles if the reference is created as a Pseudo object. Just call apply/3.
-call_internal({pseudo, Module}, {Obj, Func, Args, Types}, Timeout) ->
+call_internal({pseudo, Module}, Obj, Func, Args, Types, Check, Mod, Timeout) ->
+    typecheck_request(Check, Types, Args, Mod, Func),
     State = binary_to_term(get_subobject_key(Obj)),
     case catch apply(Module, Func, [Obj, State|Args]) of
 	{noreply, _} ->
@@ -626,14 +618,18 @@ call_internal({pseudo, Module}, {Obj, Func, Args, Types}, Timeout) ->
 	{noreply, _, _} ->
 	    ok;
 	{reply, Reply, _} ->
+            typecheck_reply(Check, Types, Reply, Mod, Func),
 	    Reply;
 	{reply, Reply, _, _} ->
+            typecheck_reply(Check, Types, Reply, Mod, Func),
 	    Reply;
 	{stop, _, Reply, _} ->
+            typecheck_reply(Check, Types, Reply, Mod, Func),
 	    Reply;
 	{stop, _, _} ->
 	    ok;
 	{'EXCEPTION', E} ->
+            typecheck_reply(Check, Types, {'EXCEPTION', E}, Mod, Func),
 	    corba:raise(E);
 	{'EXIT', What} ->
 	    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p); 
@@ -645,7 +641,8 @@ Pseudo object failed due to bad return value (~p).",
 				    [?LINE, Func, Args, Types, Unknown], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_MAYBE})
     end;
-call_internal(Registered, {Obj, Func, Args, Types}, Timeout)  when atom(Registered)->
+call_internal(Registered, Obj, Func, Args, Types, Check, Mod, Timeout) when atom(Registered)->
+    typecheck_request(Check, Types, Args, Mod, Func),
     case whereis(Registered) of
 	undefined ->
 	    corba:raise(#'OBJECT_NOT_EXIST'{minor=100, completion_status=?COMPLETED_NO});
@@ -659,6 +656,7 @@ call_internal(Registered, {Obj, Func, Args, Types}, Timeout)  when atom(Register
 	P ->
 	    case catch gen_server:call(P, {Obj, Func, Args}, Timeout) of
 		{'EXCEPTION', E} ->
+		    typecheck_reply(Check, Types, {'EXCEPTION', E}, Mod, Func),
 		    corba:raise(E);
 		{'EXIT',{timeout, _}} ->
 		    corba:raise(#'COMM_FAILURE'{minor=109, completion_status=?COMPLETED_MAYBE});	
@@ -667,10 +665,88 @@ call_internal(Registered, {Obj, Func, Args, Types}, Timeout)  when atom(Register
 call exit(~p).", [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
 		    exit(R);
 		Res ->
+                    typecheck_reply(Check, Types, Res, Mod, Func),
 		    Res
 	    end
     end.
 
+
+typecheck_request(true, Types, Args, Mod, Func) ->
+    case catch cdr_encode:validate_request_body({1,2}, Types, Args) of
+	{'EXCEPTION', E} ->
+	    {_, TC, _} = Types, 
+	    error_logger:error_msg("========= Orber Typecheck Request =========
+Invoked......: ~p:~p/~p
+Typecode.....: ~p
+Arguments....: ~p
+Result.......: ~p
+===========================================~n", 
+				   [Mod, Func, length(TC), TC, Args, {'EXCEPTION', E}]),
+	    corba:raise(E);
+	{'EXIT',R} ->
+	    {_, TC, _} = Types, 
+	    error_logger:error_msg("========= Orber Typecheck Request =========
+Invoked......: ~p:~p/~p
+Typecode.....: ~p
+Arguments....: ~p
+Result.......: ~p
+===========================================~n", [Mod, Func, length(TC), TC, Args, {'EXIT',R}]),
+	    corba:raise(#'MARSHAL'{minor=104, completion_status=?COMPLETED_MAYBE});
+	_ ->
+	    ok
+    end;
+typecheck_request(_, _, _, _, _) ->
+    ok.
+
+typecheck_reply(true, Types, Args, Mod, Func) ->
+    case catch cdr_encode:validate_reply_body({1,2}, Types, Args) of
+	{'tk_except', ExcType, ExcTC, {'EXCEPTION', E}} ->
+	    {_, TC, _} = Types, 
+	    error_logger:error_msg("========== Orber Typecheck Reply ==========
+Invoked........: ~p:~p/~p
+Exception Type.: ~p
+Typecode.......: ~p
+Raised.........: ~p
+Result.........: ~p
+===========================================~n", 
+				   [Mod, Func, length(TC), ExcType, ExcTC, Args, {'EXCEPTION', E}]),
+	    corba:raise(E);
+	{'EXCEPTION', E} ->
+	    {RetType, TC, OutParams} = Types, 
+	    error_logger:error_msg("========== Orber Typecheck Reply ==========
+Invoked......: ~p:~p/~p
+Typecode.....: ~p
+Reply........: ~p
+Result.......: ~p
+===========================================~n", 
+				   [Mod, Func, length(TC), [RetType | OutParams], Args, {'EXCEPTION', E}]),
+	    corba:raise(E);
+	{'tk_except', ExcType, ExcTC, {'EXIT',R}} ->
+	    {_, TC, _} = Types, 
+	    error_logger:error_msg("========== Orber Typecheck Reply ==========
+Invoked........: ~p:~p/~p
+Exception Type.: ~p
+Typecode.......: ~p
+Raised.........: ~p
+Result.........: ~p
+===========================================~n", 
+				   [Mod, Func, length(TC), ExcType, ExcTC, Args, {'EXIT',R}]),
+	    corba:raise(#'MARSHAL'{minor=104, completion_status=?COMPLETED_MAYBE});
+	{'EXIT',R} ->
+	    {RetType, TC, OutParams} = Types, 
+	    error_logger:error_msg("========== Orber Typecheck Reply ==========
+Invoked........: ~p:~p/~p
+Typecode.......: ~p
+Reply..........: ~p
+Result.........: ~p
+===========================================~n", 
+				   [Mod, Func, length(TC), [RetType | OutParams], Args, {'EXIT',R}]),
+	    corba:raise(#'MARSHAL'{minor=104, completion_status=?COMPLETED_MAYBE});
+	_ ->
+	    ok
+    end;
+typecheck_reply(_, _, _, _, _) ->
+    ok.
 
 call_relay(Pid, {Obj, Func, Args}, Timeout) ->
     case whereis(orber_objkeyserver) of
@@ -695,22 +771,26 @@ call exit(~p).", [?LINE, Func, Args, R], ?DEBUG_LEVEL),
 %% Corba:cast - the function for ONEWAY requests
 %%-----------------------------------------------------------------
 cast(Obj, Func, Args, Types) ->
-    {Location, Key} = iop_ior:get_key(Obj),
-    if
-	Location == 'internal' ->
+    case iop_ior:get_key(Obj) of
+	{'internal', Key, _, Flags, Mod} ->
 	    Pid = orber_objectkeys:get_pid(Key),
-	    cast_internal(Pid, {Obj, Func, Args, Types});
-	Location == 'internal_registered' -> 	
-	    cast_internal(Key, {Obj, Func, Args, Types});
-	Location == 'external' -> 
+	    cast_internal(Pid, Obj, Func, Args, Types, 
+			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod);
+	{'internal_registered', Key, _, Flags, Mod} ->
+	    cast_internal(Key, Obj, Func, Args, Types, 
+			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), Mod);
+	{'external', Key} ->
 	    orber_iiop:request(Key, Func, Args, Types, 'false', infinity, Obj)
     end.
 
-cast_internal(Pid, {Obj, Func, Args, Types}) when pid(Pid), node(Pid) == node() ->
+cast_internal(Pid, Obj, Func, Args, Types, Check, Mod) when pid(Pid), node(Pid) == node() ->
+    typecheck_request(Check, Types, Args, Mod, Func),
     gen_server:cast(Pid, {Obj, Func, Args});
-cast_internal(Pid, {Obj, Func, Args, Types}) when pid(Pid) ->
+cast_internal(Pid, Obj, Func, Args, Types, Check, Mod) when pid(Pid) ->
+    typecheck_request(Check, Types, Args, Mod, Func),
     case catch rpc:call(node(Pid), corba, call_relay, [Pid, {Obj, Func, Args}]) of
 	{'EXCEPTION', E} ->
+            typecheck_reply(Check, Types, {'EXCEPTION', E}, Mod, Func),
 	    corba:raise(E);
 	{badrpc, {'EXIT', {undef, _}}} ->
 	    %% Must be an older version; try the old-way.
@@ -729,11 +809,13 @@ Communication with node: ~p failed with reason: ~p.",
     end;
 
 %% This case handles if the reference is created as a Pseudo object. Just call apply/3.
-cast_internal({pseudo, Module}, {Obj, Func, Args, Types}) ->
+cast_internal({pseudo, Module}, Obj, Func, Args, Types, Check, Mod) ->
+    typecheck_request(Check, Types, Args, Mod, Func),
     State = binary_to_term(get_subobject_key(Obj)),
     catch apply(Module, Func, [Obj, State|Args]),
     ok;
-cast_internal(Registered, {Obj, Func, Args, Types}) ->
+cast_internal(Registered, Obj, Func, Args, Types, Check, Mod) ->
+    typecheck_request(Check, Types, Args, Mod, Func),
     case whereis(Registered) of
 	undefined ->
 	    corba:raise(#'OBJECT_NOT_EXIST'{minor=100, completion_status=?COMPLETED_NO});
@@ -788,31 +870,31 @@ request_from_iiop(Obj, 'get_policy', [Arg], _, _) ->
     catch corba_object:get_policy(Obj, Arg);
 
 %% "Ordinary" operations.
-request_from_iiop({Id, ObjType, Module, UserDef, OrberDef, Flags}, oe_get_interface, 
-		  Args, Types, _ResponseExpected) when atom(Id) ->
-    case Id:handle_call({false, oe_get_interface, []}, false, false) of
+request_from_iiop({Mod, ObjType, Module, UserDef, OrberDef, Flags}, oe_get_interface, 
+		  Args, Types, _ResponseExpected) when atom(Mod) ->
+    case Mod:handle_call({false, oe_get_interface, []}, false, false) of
 	{reply, OpDef, _} ->
 	    OpDef;
 	_->
 	    []
     end;
 %% This case handles if the reference is created as a Pseudo object. Just call apply/3.
-request_from_iiop({Id, pseudo, Module, UserDef, OrberDef, Flags}, oe_get_interface, 
-		  Args, Types, _ResponseExpected) ->
-    M=remove_impl(lists:reverse(atom_to_list(Module))),
-    case M:handle_call({false, oe_get_interface, []}, false, false) of
-	{reply, OpDef, _} ->
-	    OpDef;
-	_->
-	    []
-    end;
-request_from_iiop({Id, pseudo, Module, UserDef, OrberDef, Flags}, Func, Args, 
+%request_from_iiop({Mod, pseudo, Module, UserDef, OrberDef, Flags}, oe_get_interface, 
+%		  Args, Types, _ResponseExpected) ->
+%    M=remove_impl(lists:reverse(atom_to_list(Module))),
+%    case M:handle_call({false, oe_get_interface, []}, false, false) of
+%	{reply, OpDef, _} ->
+%	    OpDef;
+%	_->
+%	    []
+%    end;
+request_from_iiop({Mod, pseudo, Module, UserDef, OrberDef, Flags}, Func, Args, 
 		  Types, ResponseExpected) ->
-    State = binary_to_term(get_subobject_key({Id, pseudo, Module, UserDef, OrberDef, 
+    State = binary_to_term(get_subobject_key({Mod, pseudo, Module, UserDef, OrberDef, 
 					      Flags})),
     case ResponseExpected of
 	true ->
-	    case catch apply(Module, Func, [{Id, pseudo, Module, UserDef, OrberDef, 
+	    case catch apply(Module, Func, [{Mod, pseudo, Module, UserDef, OrberDef, 
 					     Flags}, State|Args]) of
 		{noreply, _} ->
 		    ok;
@@ -840,31 +922,31 @@ Pseudo object failed(~p); confirm that the return value is correct (e.g. {reply,
 		    {'EXCEPTION', #'COMM_FAILURE'{completion_status=?COMPLETED_MAYBE}}
 	    end;
 	false ->
-	    catch apply(Module, Func, [{Id, pseudo, Module, UserDef, OrberDef, 
+	    catch apply(Module, Func, [{Mod, pseudo, Module, UserDef, OrberDef, 
 					     Flags}, State|Args]),
 	    ok;
 	true_oneway ->
-	    catch apply(Module, Func, [{Id, pseudo, Module, UserDef, OrberDef, 
+	    catch apply(Module, Func, [{Mod, pseudo, Module, UserDef, OrberDef, 
 					     Flags}, State|Args]),
 	    ok
     end;
 
-request_from_iiop({Id, Type, Key, UserDef, OrberDef, Flags}, Func, Args, Types,
+request_from_iiop({Mod, Type, Key, UserDef, OrberDef, Flags}, Func, Args, Types,
 		  ResponseExpected) ->
     case ResponseExpected of
 	'true' ->
 	    gen_server:call(convert_key_to_pid(Key),
-			    {{Id, Type, Key, UserDef, OrberDef, Flags}, Func, Args},
+			    {{Mod, Type, Key, UserDef, OrberDef, Flags}, Func, Args},
 			    infinity);
 	'false' ->
 	    gen_server:cast(convert_key_to_pid(Key),
-			    {{Id, Type, Key, UserDef, OrberDef, Flags}, Func, Args});
+			    {{Mod, Type, Key, UserDef, OrberDef, Flags}, Func, Args});
 	'true_oneway' ->
 	    gen_server:cast(convert_key_to_pid(Key),
-			    {{Id, Type, Key, UserDef, OrberDef, Flags}, Func, Args})
+			    {{Mod, Type, Key, UserDef, OrberDef, Flags}, Func, Args})
     end.
 
-remove_impl([$l,$p,$m,$i,$_|Rest]) -> list_to_atom(lists:reverse(Rest)).
+%remove_impl([$l,$p,$m,$i,$_|Rest]) -> list_to_atom(lists:reverse(Rest)).
     
 
 %%------------------------------------------------------------
@@ -876,52 +958,55 @@ convert_key_to_pid(Key) when binary(Key) ->
 convert_key_to_pid(Name) when atom(Name) ->
     Name.
 
-mk_objkey(Id, Pid, [], _) when pid(Pid) ->
+mk_objkey(Mod, Pid, RegName, Persistent) ->
+    mk_objkey(Mod, Pid, RegName, Persistent, 0).
+
+mk_objkey(Mod, Pid, [], _, Flags) when pid(Pid) ->
     Key = make_objkey(),
     case orber_objectkeys:register(Key, Pid, false) of
 	ok ->
-	    {Id, 'key', Key, term_to_binary(undefined), 0, 0};
+	    {Mod, 'key', Key, term_to_binary(undefined), 0, Flags};
 	R ->
 	    orber:dbg("[~p] corba:mk_objkey(~p);
-unable to store key(~p).", [?LINE, Id, R], ?DEBUG_LEVEL),
+unable to store key(~p).", [?LINE, Mod, R], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{minor=1101, completion_status=?COMPLETED_NO})
     end;
-mk_objkey(Id, Pid, {'global', RegName}, Persitent) when pid(Pid) ->
+mk_objkey(Mod, Pid, {'global', RegName}, Persitent, Flags) when pid(Pid) ->
     Key = term_to_binary(RegName),
     case orber_objectkeys:register(Key, Pid, Persitent) of
 	ok ->
-	    {Id, 'key', Key, term_to_binary(undefined), 0, 0};
+	    {Mod, 'key', Key, term_to_binary(undefined), 0, Flags};
 	R ->
 	    orber:dbg("[~p] corba:mk_objkey(~p, ~p);
-unable to store key(~p).", [?LINE, Id, RegName, R], ?DEBUG_LEVEL),
+unable to store key(~p).", [?LINE, Mod, RegName, R], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{minor=1102, completion_status=?COMPLETED_NO})
     end;
-mk_objkey(Id, Pid, {'local', RegName}, Persistent) when pid(Pid), atom(RegName) ->
+mk_objkey(Mod, Pid, {'local', RegName}, Persistent, Flags) when pid(Pid), atom(RegName) ->
     register(RegName, Pid),
     Key = make_objkey(),
     case orber_objectkeys:register(Key, Pid, Persistent) of
 	ok ->
-	    {Id, 'registered', RegName, term_to_binary(undefined), 0, 0};
+	    {Mod, 'registered', RegName, term_to_binary(undefined), 0, Flags};
 	R ->
 	    orber:dbg("[~p] corba:mk_objkey(~p, ~p);
-unable to store key(~p).", [?LINE, Id, RegName, R], ?DEBUG_LEVEL),
+unable to store key(~p).", [?LINE, Mod, RegName, R], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{minor=1103, completion_status=?COMPLETED_NO})
     end.
 
 
-mk_light_objkey(Id, RegName) ->
-    {Id, 'registered', RegName, term_to_binary(undefined), 0, 0}.
+mk_light_objkey(Mod, RegName) ->
+    {Mod, 'registered', RegName, term_to_binary(undefined), 0, 0}.
 
-mk_pseudo_objkey(Id, Module) ->
-    {Id, 'pseudo', Module, term_to_binary(undefined), 0, 0}.
+mk_pseudo_objkey(Mod, Module, Flags) ->
+    {Mod, 'pseudo', Module, term_to_binary(undefined), 0, Flags}.
 
 make_objkey() ->
     term_to_binary({now(), node()}).
 
-objkey_to_string({Id, 'registered', 'orber_init', UserDef, OrberDef, Flags}) ->
+objkey_to_string({Mod, 'registered', 'orber_init', UserDef, OrberDef, Flags}) ->
     "INIT";
-objkey_to_string({Id, Type, Key, UserDef, OrberDef, Flags}) ->
-    orber:domain() ++ [ 7 | binary_to_list(term_to_binary({Id, Type, Key, UserDef, OrberDef, Flags}))];
+objkey_to_string({Mod, Type, Key, UserDef, OrberDef, Flags}) ->
+    orber:domain() ++ [ 7 | binary_to_list(term_to_binary({Mod, Type, Key, UserDef, OrberDef, Flags}))];
 objkey_to_string(External_object_key) ->
     External_object_key.
 
@@ -1053,17 +1138,43 @@ get_system_exception_typedef(ExcName) ->
 	    "COMPLETED_MAYBE"]}}
      ]}.
 
-get_option(Key, OptionList) ->
-    case lists:keysearch(Key, 1, OptionList) of
-	{value,{Key,Value}} ->
-	    {Key,Value};
-	_ ->
-	    case lists:keysearch(Key, 1, ?OE_CREATE_DEF_OPT) of
-		{value,{Key,Value}} ->
-		    {Key,Value};
-		_->
-		    exit(io_lib:format("Option ~w not found in optionlist", 
-				       [Key]))
-	    end
-    end.
+
+evaluate_options([], #options{local_typecheck = undefined} = Options) ->
+    case orber:typechecking() of
+	true ->
+	    Options#options{local_typecheck = ?ORB_TYPECHECK};
+	false ->
+	    Options#options{local_typecheck = ?ORB_INIT_FLAGS}
+    end;
+evaluate_options([], Options) ->
+    Options;
+evaluate_options([{sup_child, false}|Rest], Options) ->
+    evaluate_options(Rest, Options);
+evaluate_options([{sup_child, true}|Rest], Options) ->
+    evaluate_options(Rest, Options#options{sup_child = true});
+evaluate_options([{persistent, false}|Rest], Options) ->
+    evaluate_options(Rest, Options);
+evaluate_options([{persistent, true}|Rest], Options) ->
+    evaluate_options(Rest, Options#options{persistent = true});
+evaluate_options([{pseudo, false}|Rest], Options) ->
+    evaluate_options(Rest, Options);
+evaluate_options([{pseudo, true}|Rest], Options) ->
+    evaluate_options(Rest, Options#options{pseudo = true});
+evaluate_options([{regname, []}|Rest], Options) ->
+    evaluate_options(Rest, Options);
+evaluate_options([{regname, Name}|Rest], Options) ->
+    evaluate_options(Rest, Options#options{regname = Name});
+evaluate_options([{local_typecheck, false}|Rest], Options) ->
+    evaluate_options(Rest, Options#options{local_typecheck = ?ORB_INIT_FLAGS});
+evaluate_options([{local_typecheck, true}|Rest], Options) ->
+    evaluate_options(Rest, Options#options{local_typecheck = ?ORB_TYPECHECK});
+evaluate_options([{Key, Value}|_], _) ->
+    orber:dbg("[~p] corba:evaluate_options(~p, ~p); 
+Option not recognized or illegal value. Allowed settings:
+sup_child.....: boolean()
+persistent....: boolean()
+pseudo........: boolean()
+typecheck.....: boolean()
+regname.......: {local, atom} | {global, term()}", [?LINE, Key, Value], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 

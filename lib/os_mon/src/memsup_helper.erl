@@ -151,13 +151,11 @@ get_worst_memory_user([], Return) ->
 
 process_memory(Pid) ->
     case process_info(Pid,memory) of
-	{memory, Words} ->
-	    words_to_bytes(Words);
+	{memory, Bytes} ->
+	    Bytes;
 	_ ->
 	    undefined
     end.
-
-words_to_bytes(X) -> 4*X.
 
 %%%----------------------------------------------------------------------------
 %%% Port program

@@ -47,12 +47,12 @@
 %%-----------------------------------------------------------------
 
 type_check(G, Forms) ->
-    S = icgen:tktab(G),
+    S = ic_genobj:tktab(G),
     check_list(G, S, [], Forms).
 
 scoped_lookup(G, S, N, X) ->
-    Id = icgen:scoped_id_strip(X),
-    case icgen:scoped_id_is_global(X) of
+    Id = ic_symtab:scoped_id_strip(X),
+    case ic_symtab:scoped_id_is_global(X) of
 	true ->
 	    lookup(G, S, [], X, Id);
 	false ->
@@ -74,7 +74,7 @@ maybe_array(G, S, N, _, TK) -> TK.
 
 
 name2type( G, Name ) ->
-    S = icgen:tktab( G ),
+    S = ic_genobj:tktab( G ),
     ScopedName = lists:reverse(string:tokens(Name,"_")),
     InfoList = ets:lookup( S, ScopedName ),
     filter( InfoList ).
@@ -83,7 +83,7 @@ name2type( G, Name ) ->
 %% This is en overloaded function,
 %% differs in input on unions
 member2type(G, X, I) when record(X, union)->
-    Name = icgen:get_id2(I),
+    Name = ic_forms:get_id2(I),
     case lists:keysearch(Name,2,element(6,X#union.tk)) of
 	false ->
 	    error;
@@ -92,7 +92,7 @@ member2type(G, X, I) when record(X, union)->
     end;
 member2type( G, SName, MName ) ->
 
-    S = icgen:tktab( G ),
+    S = ic_genobj:tktab( G ),
     SNList = lists:reverse(string:tokens(SName,"_")),
     ScopedName = [MName | SNList],
     InfoList = ets:lookup( S, ScopedName ),
@@ -141,7 +141,7 @@ lookup_member_type_in_tktab(S, ScopedName, MName) ->
 lookup_member_type_in_tktab([],_ScopedName) ->
     error;
 lookup_member_type_in_tktab([{FullScopedName,_,{_,TKInfo},_}|Rest],ScopedName) ->
-    case lists:reverse(string:tokens(icgen:to_undersc(FullScopedName),"_")) of
+    case lists:reverse(string:tokens(ic_util:to_undersc(FullScopedName),"_")) of
 	ScopedName ->
 	    fetchType(TKInfo);
 	_ ->
@@ -150,7 +150,7 @@ lookup_member_type_in_tktab([{FullScopedName,_,{_,TKInfo},_}|Rest],ScopedName) -
 
 
 lookup_type_in_pragmatab(G, SName) ->    
-    S = icgen:pragmatab(G),
+    S = ic_genobj:pragmatab(G),
 
     %% Look locally first
     case ets:match(S,{file_data_local,'_','_','$2','_','_',SName,'_','_'}) of 
@@ -174,7 +174,7 @@ lookup_type_in_pragmatab(G, SName) ->
 
 
 isString(G, N, T) when element(1, T) == scoped_id ->
-    case icgen:get_full_scoped_name(G, N, T) of
+    case ic_symtab:get_full_scoped_name(G, N, T) of
 	{FullScopedName, _, {'tk_string',_}, _} ->
 	    true;
 	_ ->
@@ -187,7 +187,7 @@ isString(G, N, Other) ->
 
 
 isWString(G, N, T) when element(1, T) == scoped_id ->  %% WSTRING
-    case icgen:get_full_scoped_name(G, N, T) of
+    case ic_symtab:get_full_scoped_name(G, N, T) of
 	{FullScopedName, _, {'tk_wstring',_}, _} ->
 	    true;
 	_ ->
@@ -200,7 +200,7 @@ isWString(G, N, Other) ->
 
 
 isArray(G, N, T) when element(1, T) == scoped_id ->
-    case icgen:get_full_scoped_name(G, N, T) of
+    case ic_symtab:get_full_scoped_name(G, N, T) of
 	{FullScopedName, _, {'tk_array', _, _}, _} ->
 	    true;
 	_ ->
@@ -213,7 +213,7 @@ isArray(G, N, Other) ->
 
 
 isSequence(G, N, T) when element(1, T) == scoped_id ->
-    case icgen:get_full_scoped_name(G, N, T) of
+    case ic_symtab:get_full_scoped_name(G, N, T) of
 	{FullScopedName, _, {'tk_sequence', _, _}, _} ->
 	    true;
 	_ ->
@@ -226,7 +226,7 @@ isSequence(G, N, Other) ->
 
 
 isStruct(G, N, T) when element(1, T) == scoped_id ->
-    case icgen:get_full_scoped_name(G, N, T) of
+    case ic_symtab:get_full_scoped_name(G, N, T) of
 	{FullScopedName, _, {'tk_struct', _, _, _}, _} ->
 	    true;
 	_ ->
@@ -239,7 +239,7 @@ isStruct(G, N, Other) ->
 
 
 isUnion(G, N, T) when element(1, T) == scoped_id ->
-    case icgen:get_full_scoped_name(G, N, T) of
+    case ic_symtab:get_full_scoped_name(G, N, T) of
         {FullScopedName, _, {'tk_union', _, _, _,_,_}, _} ->
             true;
         _Other ->
@@ -253,7 +253,7 @@ isUnion(G, N, _Other) ->
 
 
 isEnum(G, N, T) when element(1, T) == scoped_id ->
-    case icgen:get_full_scoped_name(G, N, T) of
+    case ic_symtab:get_full_scoped_name(G, N, T) of
         {FullScopedName, _, {'tk_enum',_,_,_}, _} ->
             true;
         _Other ->
@@ -268,7 +268,7 @@ isEnum(G, N, _Other) ->
 
 isBoolean(G, N, T) when element(1, T) == scoped_id ->
     {_, _, TK, _} =
-	icgen:get_full_scoped_name(G, N, T),
+	ic_symtab:get_full_scoped_name(G, N, T),
     case fetchType(TK) of
 	'boolean' ->
 	    true;
@@ -294,8 +294,8 @@ isBasicTypeOrEterm(G, N, S) ->
     end.
 
 isEterm(G, N, S) when element(1, S) == scoped_id -> 
-    {FullScopedName, _, TK, _} = icgen:get_full_scoped_name(G, N, S),
-    case icgen:get_basetype(G, icgen:to_undersc(FullScopedName)) of
+    {FullScopedName, _, TK, _} = ic_symtab:get_full_scoped_name(G, N, S),
+    case ic_code:get_basetype(G, ic_util:to_undersc(FullScopedName)) of
 	"erlang_term" ->
 	    true;
 	"ETERM*" ->
@@ -309,7 +309,7 @@ isEterm(G, Ni, X) ->
 isBasicType(G, N,  {scoped_id,_,_,["term","erlang"]}) ->
     false;
 isBasicType(G, N, S) when element(1, S) == scoped_id ->
-    {_, _, TK, _} = icgen:get_full_scoped_name(G, N, S),
+    {_, _, TK, _} = ic_symtab:get_full_scoped_name(G, N, S),
     isBasicType(fetchType(TK));
 isBasicType(G, N, {string, _} ) -> 
     false;
@@ -366,21 +366,21 @@ check(G, S, N, X) when record(X, op) ->
     %% Check for exception defs.
     Raises = lists:map(fun(E) -> name_lookup(G, S, N, E) end,
 		 X#op.raises),
-    case icgen:is_oneway(X) of
+    case ic_forms:is_oneway(X) of
 	true ->
 	    if  TK /= tk_void ->
-		    icgen:error(G, {bad_oneway_type, X, TK});
+		    ic_error:error(G, {bad_oneway_type, X, TK});
 		true -> ok
 	    end,
 	    case ic:filter_params([inout, out], X#op.params) of
 		[] -> ok;			% No out parameters!
 		_ ->
-		    icgen:error(G, {oneway_outparams, X})
+		    ic_error:error(G, {oneway_outparams, X})
 	    end,
 	    case X#op.raises of
 		[] -> ok;
 		_ ->
-		    icgen:error(G, {oneway_raises, X})
+		    ic_error:error(G, {oneway_raises, X})
 	    end;
 	false -> 
 	    ok
@@ -397,13 +397,33 @@ check(G, S, N, X) when record(X, interface) ->
     InhBody = calc_inherit_body(G, N2, CheckedBody, Inherit, []),
     X2 = X#interface{inherit=Inherit, tk=TK, body=CheckedBody,
 		     inherit_body=InhBody},
-    icgen:symtab_store(G, N, X2),
+    ic_symtab:store(G, N, X2),
     X2;
 
 check(G, S, N, X) when record(X, forward) ->
     ?STDDBG,
     tktab_add(G, S, N, X, {tk_objref, ictk:get_IR_ID(G, N, X), ic_forms:get_id2(X)}),
     X;
+
+
+check(G, S, N, X) when record(X, const) ->
+    ?STDDBG,
+    case tk_base(G, S, N, ic_forms:get_type(X)) of
+	Err when element(1, Err) == error -> X;
+	TK ->
+	    check_const_tk(G, S, N, X, TK),
+	    case iceval:eval_const(G, S, N, TK, X#const.val) of
+		Err when element(1, Err) == error -> X;
+		{ok, NewTK, Val} ->
+		    V = iceval:get_val(Val),
+		    tktab_add(G, S, N, X, NewTK, V),
+		    X#const{val=V, tk=NewTK};
+		Val ->
+		    V = iceval:get_val(Val),
+		    tktab_add(G, S, N, X, TK, V),
+		    X#const{val=V, tk=TK}
+	    end
+    end;
 
 check(G, S, N, X) when record(X, const) ->
     ?STDDBG,
@@ -445,7 +465,7 @@ check(G, S, N, X) when record(X, attr) ->
     TK = tk_base(G, S, N, ic_forms:get_type(X)),
     XX = #id_of{type=X},
     lists:foreach(fun(Id) -> tktab_add(G, S, N, XX#id_of{id=Id}) end,
-		  icgen:get_idlist(X)),
+		  ic_forms:get_idlist(X)),
     X#attr{tk=TK};
 
 check(G, S, N, X) when record(X, module) -> 
@@ -462,7 +482,7 @@ check(G, S, N, X) ->
     ?DBG("    dbg: ~p~n", [element(1,X)]),
     X.
 
-handle_preproc(G, N, line_nr, X) -> icgen:set_idlfile(G, ic_forms:get_id2(X));
+handle_preproc(G, N, line_nr, X) -> ic_genobj:set_idlfile(G, ic_forms:get_id2(X));
 handle_preproc(G, N, C, X) -> ok.
 
 
@@ -547,6 +567,17 @@ tk_base(G, S, N, X) when record(X, string) ->
 tk_base(G, S, N, X) when record(X, wstring) ->  %% WSTRING
     {tk_wstring, len_eval(G, S, N, X#wstring.length)};
 
+%% Fixed constants can be declared as:
+%% (1)  const fixed pi = 3.14D; or
+%% (2)  typedef fixed<3,2> f32;
+%%      const f32 pi = 3.14D;
+tk_base(G, S, N, X) when record(X, fixed) -> 
+    %% Case 2
+    {tk_fixed, len_eval(G, S, N, X#fixed.digits), len_eval(G, S, N, X#fixed.scale)};
+tk_base(G, S, N, {fixed, _}) -> 
+    %% Case 1
+    tk_fixed;
+
 
 %% Special case, here CORBA::TypeCode is built in 
 %% ONLY when erl_corba is the backend of choice 
@@ -608,7 +639,7 @@ tk_memberlist(G, S, N, [X | Xs]) ->
     lists:foldr(fun(Id, Acc) ->
 		  [tk_member(G, S, N, XX#id_of{id=Id}, BaseTK) | Acc] end, 
 	  tk_memberlist(G, S, N, Xs), 
-	  icgen:get_idlist(X));
+	  ic_forms:get_idlist(X));
 tk_memberlist(G, S, N, []) -> [].
 
 %% same as above but for case dcls
@@ -628,7 +659,7 @@ tk_caselist(G, S, N, DiscrTK, Xs) ->
 				end
 			end, 
 			Acc,
-			icgen:get_idlist(Case))
+			ic_forms:get_idlist(Case))
 	  end,
 	  [],
 	  Xs).
@@ -642,13 +673,13 @@ tk_member(G, S, N, X, BaseTK) ->
 
 
 get_case_id_and_check(G, S, N, X, ScopedId) ->
-    case icgen:scoped_id_is_global(ScopedId) of
-	true -> icgen:error(G, {bad_scope_enum_case, ScopedId});
+    case ic_symtab:scoped_id_is_global(ScopedId) of
+	true -> ic_error:error(G, {bad_scope_enum_case, ScopedId});
 	false -> ok
     end,
-    case icgen:scoped_id_strip(ScopedId) of
+    case ic_symtab:scoped_id_strip(ScopedId) of
 	[Id] -> Id;
-	List -> icgen:error(G, {bad_scope_enum_case, ScopedId}), 
+	List -> ic_error:error(G, {bad_scope_enum_case, ScopedId}), 
 		""
     end.
 
@@ -663,7 +694,7 @@ tk_case(G, S, N, X, BaseTK, DiscrTK, Id) ->
 		    {iceval:get_val(Val), ic_forms:get_id2(X),
 		     maybe_array(G, S, N, X#case_dcl.id, BaseTK)};
 		false ->
-		    icgen:error(G, {bad_case_type, DiscrTK, X, 
+		    ic_error:error(G, {bad_case_type, DiscrTK, X, 
 				    iceval:get_val(Val)})
 	    end
     end.
@@ -692,11 +723,11 @@ tktab_add_id(G, S, N, X, Id, TK, Aux) when record(X,enumerator) ->
     case ets:lookup(S, Name) of
 	[{_, forward, _, _}] when record(X, interface) -> ok;
 	[XX] when record(X, forward), element(2, XX)==interface -> ok;
-	[_] -> icgen:error(G, {multiply_defined, X});
+	[_] -> ic_error:error(G, {multiply_defined, X});
 	[] ->
 	    case ets:lookup(S, UName) of
 		[] -> ok;
-		[_] -> icgen:error(G, {illegal_spelling, X})
+		[_] -> ic_error:error(G, {illegal_spelling, X})
 	    end
     end,
     ets:insert(S, {Name, element(1, get_beef(X)), TK, Aux}),
@@ -751,11 +782,11 @@ tktab_add_id(G, S, N, X, Id, TK, Aux) when record(X,module) ->
 	    case ets:lookup(S, Name) of
 		[{_, forward, _, _}] when record(X, interface) -> ok;
 		[XX] when record(X, forward), element(2, XX)==interface -> ok;
-		[_] -> icgen:error(G, {multiply_defined, X});
+		[_] -> ic_error:error(G, {multiply_defined, X});
 		[] ->
 		    case ets:lookup(S, UName) of
 			[] -> ok;
-			[_] -> icgen:error(G, {illegal_spelling, X})
+			[_] -> ic_error:error(G, {illegal_spelling, X})
 		    end
 	    end,
 	    ets:insert(S, {Name, element(1, get_beef(X)), TK, Aux}),
@@ -769,11 +800,11 @@ tktab_add_id(G, S, N, X, Id, TK, Aux) ->
     case ets:lookup(S, Name) of
 	[{_, forward, _, _}] when record(X, interface) -> ok;
 	[XX] when record(X, forward), element(2, XX)==interface -> ok;
-	[_] -> icgen:error(G, {multiply_defined, X});
+	[_] -> ic_error:error(G, {multiply_defined, X});
 	[] ->
 	    case ets:lookup(S, UName) of
 		[] -> ok;
-		[_] -> icgen:error(G, {illegal_spelling, X})
+		[_] -> ic_error:error(G, {illegal_spelling, X})
 	    end
     end,
     ets:insert(S, {Name, element(1, get_beef(X)), TK, Aux}),
@@ -860,7 +891,7 @@ unique_add_case_label(G, S, N, Id, TK, TKList) ->
 	true ->
 	    case lists:keysearch(element(1, TK), 1, TKList) of
 		{value, _} -> 
-		    icgen:error(G, {multiple_cases, Id}),
+		    ic_error:error(G, {multiple_cases, Id}),
 		    TKList;
 		false -> 
 		    [TK | TKList]
@@ -905,9 +936,12 @@ check_const_tk(G, S, N, X, tk_double) -> true;
 check_const_tk(G, S, N, X, tk_boolean) -> true;
 check_const_tk(G, S, N, X, tk_char) -> true;
 check_const_tk(G, S, N, X, tk_wchar) -> true; %% WCHAR
+check_const_tk(G, S, N, X, tk_octet) -> true;
 check_const_tk(G, S, N, X, {tk_string, Len}) -> true;
 check_const_tk(G, S, N, X, {tk_wstring, Len}) -> true; %% WSTRING
-check_const_tk(G, S, N, X, TK) -> icgen:error(G, {illegal_const_t, X, TK}).
+check_const_tk(G, S, N, X, tk_fixed) -> true;
+check_const_tk(G, S, N, X, {tk_fixed, Digits, Scale}) -> true;
+check_const_tk(G, S, N, X, TK) -> ic_error:error(G, {illegal_const_t, X, TK}).
 
 
 check_switch_tk(G, S, N, X, tk_long) -> true;
@@ -920,7 +954,7 @@ check_switch_tk(G, S, N, X, tk_boolean) -> true;
 check_switch_tk(G, S, N, X, tk_char) -> true;
 check_switch_tk(G, S, N, X, tk_wchar) -> true;  %% WCHAR
 check_switch_tk(G, S, N, X, TK) when element(1, TK) == tk_enum -> true;
-check_switch_tk(G, S, N, X, TK) -> icgen:error(G, {illegal_switch_t, X, TK}),
+check_switch_tk(G, S, N, X, TK) -> ic_error:error(G, {illegal_switch_t, X, TK}),
 				   false.
 
 
@@ -948,7 +982,7 @@ lookup(G, S, N, X, Id) ->
 			    T;
 			_ ->
 			    if  N == [] -> 
-				    icgen:error(G, {tk_not_found, X});
+				    ic_error:error(G, {tk_not_found, X});
 				true ->
 				    lookup(G, S, tl(N), X, Id)
 			    end
@@ -961,7 +995,7 @@ lookup(G, S, N, X, Id) ->
 
 		_ ->
 		    if  N == [] -> 
-			    icgen:error(G, {tk_not_found, X});
+			    ic_error:error(G, {tk_not_found, X});
 			true ->
 			    lookup(G, S, tl(N), X, Id)
 		    end
@@ -976,7 +1010,7 @@ lookup(G, S, N, X, Id) ->
 		    T;
 		_ ->
 		    if  N == [] -> 
-			    icgen:error(G, {tk_not_found, X});
+			    ic_error:error(G, {tk_not_found, X});
 			true ->
 			    lookup(G, S, tl(N), X, Id)
 		    end
@@ -1032,7 +1066,7 @@ mk_uppercase(L) ->
 %% InhBody is an accumulating parameter
 
 calc_inherit_body(G, N, OrigBody, [X|Xs], InhBody) ->
-    case icgen:symtab_retrieve(G, X) of
+    case ic_symtab:retrieve(G, X) of
 	Intf when record(Intf, interface) ->
 	    Body = filter_body(G, X, ic_forms:get_body(Intf), N, OrigBody, InhBody),
 	    calc_inherit_body(G, N, OrigBody, Xs, [{X, Body} | InhBody]);
@@ -1073,7 +1107,7 @@ idlist_member(G, XPath, X, OrigPath, OrigBody, InhBody) ->
 		not(straight_member(G, XPath, XX#id_of{id=Id}, OrigPath,
 				    OrigBody, InhBody))
 	end,
-    case lists:filter(F, icgen:get_idlist(X)) of
+    case lists:filter(F, ic_forms:get_idlist(X)) of
 	[] -> 
 	    true;
 	IdList ->
@@ -1109,7 +1143,7 @@ body_member(G, XPath, X, YPath, [Y|Ys]) ->
 	    case list_and(fun(Y2) -> 
 				  not(is_equal(G, XPath, X, YPath, 
 					       YY#id_of{id=Y2})) end,
-			  icgen:get_idlist(Y)) of
+			  ic_forms:get_idlist(Y)) of
 		true -> 
 		    body_member(G, XPath, X, YPath, Ys);
 		false ->
@@ -1142,14 +1176,14 @@ collision(G, XPath, X, YPath, Y) ->
     I1 = get_beef(X),
     I2 = get_beef(Y),
     if record(I1, op) -> %%, record(I2, op) ->
-	    icgen:error(G, {inherit_name_collision, 
+	    ic_error:error(G, {inherit_name_collision, 
 			    {YPath, Y}, {XPath, X}});
        record(I1, attr) -> %%, record(I2, attr) ->
-	    icgen:error(G, {inherit_name_collision, 
+	    ic_error:error(G, {inherit_name_collision, 
 			    {YPath, Y}, {XPath, X}});
        true ->
 	    ?ifopt(G, warn_name_shadow, 
-		   icgen:warn(G, {inherit_name_shadow, 
+		   ic_error:warn(G, {inherit_name_shadow, 
 				  {YPath, Y}, {XPath, X}}))
     end.
 
@@ -1193,7 +1227,7 @@ inherit_resolve(G, S, N, [X|Rest], Out) ->
 		false ->
 		    case unique_append(Inh, [Name|Out]) of
 			error ->
-			    icgen:error(G, {inherit_resolve, X, Name}),
+			    ic_error:error(G, {inherit_resolve, X, Name}),
 			    inherit_resolve(G, S, N, Rest, []);
 			UA ->
 			    inherit_resolve(G, S, N, Rest, UA)
@@ -1271,6 +1305,8 @@ fetchType( { tk_string, _} ) ->
     string;
 fetchType( { tk_wstring, _} ) ->  %% WSTRING
     wstring;
+fetchType( { tk_fixed, _, _} ) ->
+    fixed;
 fetchType( tk_short ) ->
     short;
 fetchType( tk_long ) ->
@@ -1330,7 +1366,7 @@ fetchTk(G,N,X) ->
 %%
 %%------------------------------------------------------------
 searchTk(G,IR_ID) ->
-    S = icgen:tktab(G),
+    S = ic_genobj:tktab(G),
     case catch searchTk(S,IR_ID,typedef) of
         {value,TK} ->
             TK;

@@ -14,7 +14,7 @@
 %% AB. All Rights Reserved.''
 %% 
 %%     $Id$
-%%
+%
 
 -module(odbc).
 
@@ -24,7 +24,7 @@
 %% External exports------------------------------------
 %% Basic API
 -export([sqlBindColumn/3, sqlBindColumn/4]).
--export([sqlCloseCursor/1, sqlCloseCursor/2]).
+-export([sqlCloseHandle/1, sqlCloseHandle/2]).
 -export([sqlConnect/4, sqlConnect/5]).
 -export([sqlDescribeCol/2, sqlDescribeCol/3]).
 -export([sqlDisConnect/1, sqlDisConnect/2]).
@@ -40,65 +40,80 @@
 %% Utility API
 -export([erl_connect/2, erl_connect/3, erl_connect/4, erl_connect/5]).
 -export([erl_executeStmt/2, erl_executeStmt/3]).
--export([erl_disconnect/2, erl_disconnect/3]).
+-export([erl_disconnect/1, erl_disconnect/2]).
 
 %% Start/stop
 -export([start_link/2, start_link/3]).
 -export([stop/1, stop/2]).
 
-%% Miscellaneous
--export([display_size/2]).
 %%------------------------------------------------------
-
-%% Internal exports (for debug)
--export([get_state/1]).
-
-
 %% Internal exports (for supervisor).
 -export([start_link_sup/2, start_link_sup/3]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
+	 terminate/2, code_change/3]).
 
+%% debuge start/stop debugging of erlang
+-export([debugerl/2, debugerl/3]).
+%%  debugc start/stop debugging of c-program 
+-export([debugc/2]).
 
 %% Internal state
--record(state, {port,                        % The port to the c-node.
-		connected = false,           % Connected to database. 
+-record(state, {port,                        % The port to the c-program
+%		wait_for_port = false,
+		connected = false,           % Connected to database
 		fetchdata = false,           % fetched data before read
-		clientPid,                   % Pid of the odbc-client.
-		columnvector = []            % memoryref for columns
+		reply_to,			     % 
+	%	clientpid,                   % Client Pid
+		columnvector = [],            % memoryref for columns
+		queue = queue:new()
 	       }).
 
 %%------------------------------------------------------
 %% Internal macros
-%% Path to C server main
--define(ServerDir, filename:nativename(
+%% Path to the c-program.
+-define(SERVERDIR, filename:nativename(
 		     filename:join(code:priv_dir(odbc), "bin"))).
 
-%% Name of C server main
--define(ServerProg, "odbcserver").
+%% Name of the C program 
+-define(SERVERPROG, "odbcserver").
 
-%% Default timeout.
--define(DefaultTimeout, 5000).
+%% Other constants
+-define(DEFAULT_TIMEOUT, 10000). % 10 sec
+-define(STR_TERMINATOR, 0).
+-define(SQL_ERROR, -1). %FOO
+
+%% Constats defining the command protocol between the erlang control process
+%% and the port program. These constants must also be defined in the same way 
+%% in the port program.
+-define(OPEN_DB, 1).
+-define(CLOSE_DB, 2).
+-define(BIND_COLUMN, 3).
+-define(DESCRIBE_COLUMN, 4).
+-define(END_TRANSACTION, 5).
+-define(EXEDIR, 6).
+-define(FETCH_DATA, 7).
+-define(NUMBER_RESULT_COLUMNS, 8).
+-define(ROW_COUNT, 9).
+-define(SET_ATTRIBUTE, 10).
+-define(READ_BUFFER, 11).
+-define(CLOSE_HANDLE, 12).
+-define(EXECDB, 13).
+-define(DEBUG, 14).
+-define(LENGTH_INDICATOR_SIZE, 4).
+-define(INT_VALUE, 1).
+-define(STR_VALUE, 2).
+-define(DEBUG_ON, 1).
+-define(DEBUG_OFF, 2).
 
 
-%%%----------------------------------------------
-%% DEBUG MACRO
-
--ifdef (DEBUG).
--define(DBG(Format, Args), io:format("Debug Module:~p line:~p: "
-				     ++Format++ "~n",
-                                     [?MODULE,?LINE]++Args)).
--else.
--define(DBG(F,A),[]).
--endif.
-
-
-%% External exports------------------------------------
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% These functions are deprecated and is included only for 
 %% compatibility reason. Some of them do nothing and some 
-%% are replaced by function from above.
-%% Deprecated Basic functions
+%% are replaced by new function.
+%% Deprecated functions
+-export([sqlCloseCursor/1, sqlCloseCursor/2]).
 -export([sql_alloc_handle/3, sql_alloc_handle/4]).
 -export([sql_bind_col/4, sql_bind_col/5]).
 -export([sql_close_cursor/2, sql_close_cursor/3]).
@@ -119,49 +134,26 @@
 -export([alloc_buffer/3, alloc_buffer/4]).
 -export([dealloc_buffer/2, dealloc_buffer/3]).
 -export([read_buffer/2, read_buffer/3]).
-
-%% Deprecated Utility functions
 -export([init_env/1, init_env/2]).
 -export([connect/3, connect/4, connect/5, connect/6]).
 -export([execute_stmt/3, execute_stmt/4]).
 -export([disconnect/2, disconnect/3]).
 -export([terminate_env/2, terminate_env/3]).
+-export([display_size/2]).
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 
 %%%----------------------------------------------------------
 %%% Start and Stop
 %%%----------------------------------------------------------
 
-
-%%---------------------------------------------------
-%% start_link/[2, 3]
-%%
-%% Starts the ODBCE server and the C node.
-%% Links to the server to the calling process.
+%%---------------------------------------------------------------------------
+%% start_link(ServerName, Args, Options) ->
+%% start_link(Args, Options) ->
+%%	ServerName, Args, Options - see supervisor:start_child/3
+%% Description: Starts the ODBC-Erlang server and the C node.
+%% Links the server to the calling process.
 %% Registers the new server with the supervisor.
-%%
-%% start_link(ServerName, Args, Options, Client) ->
-%% start_link(Args, Options, Client) ->
-%%    Result
-%% Args -> []                      ; Not used.
-%% Options -> [Opt]                ; List of options.
-%% Opt -> {timeout, integer()} |   ; Timeout for initialisation of gen_server.
-%%        {debug, [Dbg]}           ;Debug options, see gen_server.
-%% ServerName -> {local, atom()} | ; When supplied, causes the server to be
-%%               {global, atom()}    registered, locally or globally. If the
-%%                                   server is started without a name it can
-%%                                   only be called using the returned Pid.
-%% Result -> {ok, pid()} |         ; The pid of the erl. server.
-%%           {error, Reason}         Error tuple.
-%% Reason -> {already_started, pid()}| ; Server already started.
-%%           timeout |               Timeout expired.
-%%           {no_odbcserver, Info}   Can't start odbcserver. The C-program 
-%                                    may not
-%%                                   have been found or may not have been
-%%                                   executable e.g.
-%% Info -> string()                ; More information.
-%%
-
-
+%%-------------------------------------------------------------------------
 start_link(Args, Options) ->
     supervisor:start_child(odbc_sup, [[{client, self()} | Args], Options]).
 
@@ -169,863 +161,848 @@ start_link(ServerName, Args, Options) ->
     supervisor:start_child(odbc_sup,
 			   [ServerName, [{client, self()} | Args], Options]).
 
-
-
-%% start_link_sup/[2, 3]
-%%
-%% Called by the supervisor to start a new server instance.
+%%---------------------------------------------------------------------------
+%% start_link_sup(Args, Options) ->
+%% start_link_sup(ServerName, Args, Options) ->
+%%	ServerName, Args, Options - see gen_server:start_link[3,4]
+%% Description:  Called by the supervisor to start a new server instance.
 %% (start_link calls the supervisor which calls start_link_sup.)
-%%
+%%-------------------------------------------------------------------------
 start_link_sup(Args, Options) ->
     gen_server:start_link(?MODULE, Args, Options).
 
 start_link_sup(ServerName, Args, Options) ->
     gen_server:start_link(ServerName, ?MODULE, Args, Options).
 
-
-
-%%-------------------------------------------------------
-%% stop/[1, 2]
-%%
-%% Stops the ODBCE server and the C program.
-%%
-%% stop(Server) ->
-%% stop(Server, Timeout) ->
-%%    ok
-%%
-%% Server -> pid() |                 ; The pid of the server,
-%%           Name |                    a registered name,
-%%           {global, Name} |          a globally registered name, or
-%%           {Name, Node}              a registered name on a remote node.
-%% Timeout -> integer() |            ; Max time (ms) for serving the request.
-%%            infinity
-%%
-
+%%---------------------------------------------------------------------------
+%% stop(Server) -> ok
+%%	Server  = pid() | Name | {global, Name} | {Name, Node} 
+%% Description: Stops the ODBC-Erlang server and the C program.
+%%-------------------------------------------------------------------------
 stop(Server) ->
-    stop(Server, ?DefaultTimeout).
+    gen_server:cast(Server, stop),
+    ok.
 
-stop(Server, Timeout) ->
-    gen_server:call(Server, stop, Timeout).
+stop(Server, _Timeout) ->  % remove later deprecated!!!
+    gen_server:cast(Server, stop),
+    ok.
 
-
-
-%%%--------------------------------------------------------------------------
+%%%======================================================================
 %%% Basic API
-%%%--------------------------------------------------------------------------
+%%%======================================================================
 
-%% sqlBindColumn/[3, 4]
-%% Assigns a referens to a column
-%% (binds a referens to a  column).
-%%
-%% sqlBindColumn(Server, ColNum, Ref) ->
-%% sqlBindColumn(Server, ColNum, Ref, Timeout) ->
-%%   Result | {error, ErrMsg, ErrCode}
-%%
-%% Server -> pid() |                  ; The pid of the server,
-%%           Name |                     a registered name,
-%%           {global, Name} |           a globally registered name, or
-%%           {Name, Node}               a registered name on a remote node.
-%% ColNum -> integer()                ; Column number from left to right
-%%                                      starting at 1.
-%% Ref -> term()                      ; Reference to the column with ColNum.
-%% Timeout -> integer() |             ; timeout (ms) for genserver
-%%            infinity
-%% Result -> ?SQL_SUCCESS |
-%%           ?SQL_SUCCESS_WITH_INFO 
-%% ErrMsg -> string()                 ; The error message.
-%% ErrCode -> ?SQL_INVALID_HANDLE |
-%%            ?SQL_EROR
-%%
-
+%%---------------------------------------------------------------------------
+%% sqlBindColumn(Server, ColNum, Ref, <Timeout>) -> Result |
+%%						   {error, ErrMsg, ErrCode} 
+%%	Server  = pid() | Name | {global, Name} | {Name, Node} 
+%%      ColNum  = integer()
+%%      Ref     = term()
+%%      Timeout = integer() | infinity
+%%      Result  = ?SQL_SUCCESS | ?SQL_SUCCESS_WITH_INFO 
+%%      ErrMsg   = string()
+%%      ErrCode  = ?SQL_INVALID_HANDLE | ?SQL_ERROR
+%% Description: Assigns a referens to a column (binds a referens to a  column).
+%%---------------------------------------------------------------------------
 sqlBindColumn(Server, ColNum, Ref) ->
-    sqlBindColumn(Server, ColNum, Ref, ?DefaultTimeout).
+    sqlBindColumn(Server, ColNum, Ref, ?DEFAULT_TIMEOUT).
 
-sqlBindColumn(Server, ColNum, Ref, Timeout) ->
-    chk_int(ColNum, sqlBindColumn, 2),
-    CmdStr = "bincol",
-    Ret = gen_server:call(Server,{bindcolumn, CmdStr, ColNum, Ref},
-			  Timeout),
-    ?DBG("sqlBindColumn gen_server return: ~p",[Ret]),
-    case Ret of
-	{ok, RetMsg, RetCode} ->
-	    RetCode;
-	{error, ErrMsg, ErrCode} ->
-	    {error, ErrMsg, ErrCode};
-	% gen_server specific error
-	{error, Reason} ->
-	    exit(Reason);
-	% Server going down
-	{stopped, Reason} ->
-	    exit({stopped, Reason});
-	Other ->
-	    Other
-    end.
+sqlBindColumn(Server, ColNum, Ref, Timeout)
+  when integer(ColNum), reference(Ref) ->
+ 
+    ODBCCmd = ?BIND_COLUMN,   
+    call(Server,{bind_column, ODBCCmd, ColNum, Ref}, Timeout);
 
+sqlBindColumn(_Server, ColNum, Ref, _Timeout) when integer(ColNum) ->
+    exit({badarg, sqlBindColumn, {"Arg 3 is not a reference", Ref}});
 
-%% sqlCloseCursor/[1, 2]
-%% Closes a cursor that has been opened on a statement and discards pending 
-%% results.
-%%
-%% sqlCloseCursor(Server) ->
-%% sqlCloseCursor(Server, Timeout) ->
-%%   Result | {error, ErrMsg, ErrCode}
-%%
-%% Server -> pid() |                    ; The pid of the server,
-%%           Name |                       a registered name,
-%%           {global, Name} |             a globally registered name, or
-%%           {Name, Node}                 a registered name on a remote node.
-%% Timeout -> integer() |               ; timeout (ms) for genserver.
-%%            infinity
-%% Result -> ?SQL_SUCCESS |
-%%           ?SQL_SUCCESS_WITH_INFO
-%% ErrMsg -> string()                   ; Error message
-%% ErrCode -> ?SQL_INVALID_HANDLE |
-%%            ?SQL_ERROR
+sqlBindColumn(_Server, ColNum, Ref, _Timeout) ->
+    exit({badarg, sqlBindColumn, {"Arg 2 is not an integer", ColNum}}).
+%%---------------------------------------------------------------------------
+%% sqlCloseHandle(Server, <Timeout>) -> Result | {error, ErrMsg, ErrCode} 
+%%	Server  = pid() | Name | {global, Name} | {Name, Node} 
+%%      Timeout = integer() | infinity
+%%      Result  = ?SQL_SUCCESS | ?SQL_SUCCESS_WITH_INFO
+%%      ErrMsg   = string()
+%%      ErrCode  = ?SQL_INVALID_HANDLE | ?SQL_ERROR 
+%% Description: Close Stament handle. CloseHandle is needed when basic SQL 
+%%              functions are used.
+%%---------------------------------------------------------------------------
+sqlCloseHandle(Server) ->
+    sqlCloseCursor(Server, ?DEFAULT_TIMEOUT).
 
-sqlCloseCursor(Server) ->
-    sqlCloseCursor(Server, ?DefaultTimeout).
+sqlCloseHandle(Server, Timeout) ->
+    ODBCCmd = ?CLOSE_HANDLE, 
+    call(Server, {close_handle, ODBCCmd}, Timeout).
 
-sqlCloseCursor(Server, Timeout) ->
-    CmdStr = "closec",
-    Ret = gen_server:call(Server,{closecursor, CmdStr},Timeout),
-    ?DBG("sqlCloseCursor gen_server call returns: ~p",[Ret]),
-    case Ret of
-	% Succeeded in making ODBC call (which may have returned an error)
-	{error, ErrMsg, ErrCode} ->
-	    {error, ErrMsg, ErrCode};
-	{ok, Result, ReturnCode} ->
-	    ReturnCode;
-	% gen_server specific error
-	{error, Reason} ->
-	    exit(Reason);
-	% Server going down
-	{stopped, Reason} ->
-	    exit({stopped, Reason});
-	Other ->
-	    Other
-    end.
+%%---------------------------------------------------------------------------
+%% sqlConnect(Server, DSN, UID, PWD, <Timeout>) -> Result | 
+%%						   {error, ErrMsg, ErrCode} 
+%%	Server  = pid() | Name | {global, Name} | {Name, Node} 
+%%      DSN = string() - The name of the database.
+%%      UID = string() - The user ID.
+%%      PWD = string() - The user's password for the database.
+%%      Timeout = integer() | infinity
+%%      Result  = ?SQL_SUCCESS | ?SQL_SUCCESS_WITH_INFO 
+%%      ErrMsg   = string()
+%%      ErrCode  = ?SQL_INVALID_HANDLE | ?SQL_ERROR
+%% Description: Establishes a connection to a driver and a database.
+%%---------------------------------------------------------------------------
+sqlConnect(Server, DSN, UID, PWD) ->
+    sqlConnect(Server, DSN, UID, PWD, ?DEFAULT_TIMEOUT).
 
+sqlConnect(Server, DSN, UID, PWD, Timeout) 
+  when list(DSN), list(UID), list(PWD) ->
+    ODBCCmd =  [?OPEN_DB, "DSN=",DSN,";UID=",UID,";PWD=",PWD],
+    call(Server, {open_connection, ODBCCmd}, Timeout);
 
-%% sqlConnect/[4, 5]
-%% Establishes a connection to a driver and a data source.
-%%
-%% sqlConnect(Server, DSN, UID, Auth) ->
-%% sqlConnect(Server, DSN, UID, Auth, Timeout) ->
-%%   Result | {error, ErrMsg, ErrCode}
-%%
-%% Server -> pid() |                  ; The pid of the server,
-%%           Name |                     a registered name,
-%%           {global, Name} |           a globally registered name, or
-%%           {Name, Node}               a registered name on a remote node.
-%% DSN -> string()                    ; The name of the data source.
-%% UID -> string()                    ; The user ID.
-%% Auth -> string()                   ; The user's password.
-%% Timeout -> integer() |             ; timeout (ms) for genserver.
-%%            infinity
-%% Result -> ?SQL_SUCCESS | 
-%%           ?SQL_SUCCESS_WITH_INFO 
-%% ErrMsg -> string()                 ; The error message
-%% ErrCode -> ?SQL_INVALID_HANDLE |
-%%            ?SQL_ERROR
-
-sqlConnect(Server, DSN, UID, Auth) ->
-    sqlConnect(Server, DSN, UID, Auth, ?DefaultTimeout).
-
-sqlConnect(Server, DSN, UID, Auth, Timeout) ->
-    chk_str(DSN, sqlConnect, 2),
-    chk_str(UID, sqlConnect, 3),
-    chk_str(Auth, sqlConnect, 4),
-
-%% When there are not any user passsword
-    N = string:len(Auth),
-    ConnectStr = case N of
-	0 -> 
-	    "opendbDSN=" ++ DSN ++ ";UID=" ++ UID;
-	NotZero-> 
-	    "opendbDSN=" ++ DSN ++ ";UID=" ++ UID ++ ";PWD="++ Auth
-    end,
-    Ret = gen_server:call(Server,{openconnection, ConnectStr, self()},
-			  Timeout),
-    ?DBG("sqlConnect gen_server call returns: ~p",[Ret]),
-    case Ret of
-	% Succeeded in making ODBC call (which may have returned an error)
-	{error, ErrMsg, ErrCode} ->
-	    {error, ErrMsg, ErrCode};
-	{ok, Result, ReturnCode} ->
-	    ReturnCode;
-	% gen_server specific error
-	{error, Reason} ->
-	    exit(Reason);
-	% Server going down
-	{stopped, Reason} ->
-	    exit({stopped, Reason});
-	Other ->
-	    Other
-    end.
-
-
-%% sqlDescribeCol/[2, 3]
-%% Returns the result descriptor -- column name, type, column size,
-%% decimal digits, and nullability -- for one column in the result set.
-%%
-%% sqlDescribeCol(Server, ColNum) ->
-%% sqlDescribeCol(Server, ColNum, Timeout) ->
-%%   {Result, ColName, Nullable} | {error, ErrMsg, ErrCode}
-%%
-%% Server -> pid() |                  ; The pid of the server,
-%%           Name |                     a registered name,
-%%           {global, Name} |           a globally registered name, or
-%%           {Name, Node}               a registered name on a remote node.
-%% ColNum -> integer()                ; Column number from left to right
-%%                                      starting at 1.    
-%% Timeout -> integer() |             ; timeout (ms) for genserver
-%%            infinity
-%% Result -> ?SQL_SUCCESS |
-%%           ?SQL_SUCCESS_WITH_INFO |
-%% ColName -> string()                ; The column name.
-%% Nullable -> ?SQL_NO_NULLS |        ; Indicates whether the column allows
-%%             ?SQL_NULLABLE |          NULL values or not.
-%%             ?SQL_NULLABLE_UNKNOWN
-%% ErrMsg -> string()                 ; The error message
-%% ErrCode -> ?SQL_INVALID_HANDLE |
-%%            ?SQL_ERROR
-
+sqlConnect(_Server, DSN, UID, PWD, _Timeout) 
+   when list(DSN), list(UID) ->
+     exit({badarg, sqlConnect, {"Arg 4 is not a string", PWD}});    
+ sqlConnect(_Server, DSN, UID, _PWD, _Timeout) 
+   when list(DSN) ->
+     exit({badarg, sqlConnect, {"Arg 3 is not a string", UID}});
+ sqlConnect(_Server, DSN, _UID, _PWD, _Timeout) ->
+     exit({badarg, sqlConnect, {"Arg 2 is not a string", DSN}}).
+%%---------------------------------------------------------------------------
+%% sqlDescribeCol(Server, ColNum, <Timeout>) -> {Result, ColName, Nullable} |
+%%				                {error, ErrMsg, ErrCode} 
+%%	Server   = pid() | Name | {global, Name} | {Name, Node} 
+%%      Timeout  = integer() | infinity
+%%      Result   = ?SQL_SUCCESS | ?SQL_SUCCESS_WITH_INFO 
+%%      ColName  = string() - The column name.
+%%      Nullable = ?SQL_NO_NULLS | ?SQL_NULLABLE | ?SQL_NULLABLE_UNKNOWN
+%%      ErrMsg   = string()
+%%      ErrCode  = ?SQL_INVALID_HANDLE | ?SQL_ERROR
+%% Description:  Returns the result descriptor -- column name, type, column 
+%%		 size, decimal digits, and nullability -- for one column 
+%%		 in the result set.
+%%---------------------------------------------------------------------------
 sqlDescribeCol(Server, ColNum) ->
-    sqlDescribeCol(Server, ColNum, ?DefaultTimeout).
+    sqlDescribeCol(Server, ColNum, ?DEFAULT_TIMEOUT).
 
-sqlDescribeCol(Server, ColNum, Timeout) ->
-    chk_int(ColNum, sqlDescribeCol, 2),
-    CmdStr = "descol" ++ integer_to_list(ColNum),
-    Ret = gen_server:call(Server,{describeColumn, CmdStr},Timeout),
-    ?DBG("sqlDescribeCol gen_server call returns: ~p",[Ret]),
-    case Ret of
-	% Succeeded in making ODBC call (which may have returned an error)
-	{error, ErrMsg, ErrCode} ->
-	    {error, ErrMsg, ErrCode};
-	{ok, ReturnCode, CName, CNullable} ->
-	    {ReturnCode, CName, CNullable};
-	% gen_server specific error
-	{error, Reason} ->
-	    exit(Reason);
-	% Server going down
-	{stopped, Reason} ->
-	    exit({stopped, Reason});
-	Other ->
-	    Other
-    end.
+sqlDescribeCol(Server, ColNum, Timeout) when integer(ColNum) ->
+    ODBCCmd = [?DESCRIBE_COLUMN, integer_to_list(ColNum)],
+    call(Server, {describeColumn, ODBCCmd}, Timeout);
 
-%% sqlDisConnect/[1, 2]
-%% Close the connection.
-%%
-%% sqlDisConnect(Server) ->
-%% sqlDisconnect(Server, Timeout) ->
-%%   Result | {error, ErrMsg, ErrCode}
-%%
-%% Server -> pid() |                    ; The pid of the server,
-%%           Name |                       a registered name,
-%%           {global, Name} |             a globally registered name, or
-%%           {Name, Node}                 a registered name on a remote node.
-%% Timeout -> integer() |               ; timeout (ms) for genserver.
-%%            infinity
-%% Result -> ?SQL_SUCCESS | 
-%%           ?SQL_SUCCESS_WITH_INFO
-%% ErrMsg -> string()                   ; Error message.
-%% ErrCode -> ?SQL_INVALID_HANDLE |
-%%            ?SQL_ERROR
+sqlDescribeCol(_Server, ColNum, _Timeout) ->
+    exit({badarg, sqlDescribeCol, {"Arg 2 is not an integer", ColNum}}).    
 
+%%---------------------------------------------------------------------------
+%% sqlDisconnect(Server, <Timeout>) -> Result | {error, ErrMsg, ErrCode} 
+%%	Server  = pid() | Name | {global, Name} | {Name, Node} 
+%%      Timeout = integer() | infinity
+%%      Result  = ?SQL_SUCCESS | ?SQL_SUCCESS_WITH_INFO
+%%      ErrMsg   = string()
+%%      ErrCode  = ?SQL_INVALID_HANDLE | ?SQL_ERROR 
+%% Description: Closes a database connection.
+%%--------------------------------------------------------------------------
 sqlDisConnect(Server) ->
-    sqlDisConnect(Server, ?DefaultTimeout).
+    sqlDisConnect(Server, ?DEFAULT_TIMEOUT).
 
 sqlDisConnect(Server, Timeout) ->
-    CloseStr = "closdb",
-    Ret = gen_server:call(Server,{closeconnection, CloseStr}, Timeout),
-    ?DBG("sqlDisConnect gen_server call returns: ~p",[Ret]),
-    case Ret of
-	% Succeeded disconnecting  
-	{ok, Mes,RetCode} ->
-	    RetCode;
-	% Did not succeded disconnecting (may already be disconnected)
-	{error, ErrMsg, ErrCode} ->
-	    {error, ErrMsg, ErrCode};
-	Other ->
-	    Other
-    end.
+    CloseStr = ?CLOSE_DB,
+    call(Server,{close_connection, CloseStr}, Timeout).
 
-
-%% sqlEndTran/[2, 3]
-%%
-%% Requests a commit or rollback operation for all active operations on all 
-%% statement handles associated with a connection. It can only request a 
-%% commit or rollback operation for a connection.
-%%
-%% sqlEndTran(Server, ComplType) ->
-%% sqlEndTran(Server, ComplType, Timeout) ->
-%%   Result | {error, ErrMsg, ErrCode}
-%%
-%% Server -> pid() |                    ; The pid of the server,
-%%           Name |                       a registered name,
-%%           {global, Name} |             a globally registered name, or
-%%           {Name, Node}                 a registered name on a remote node.
-%% ComplType -> ?SQL_COMMIT |           ; Commit operation.
-%%              ?SQL_ROLLBACK             Rollback operation.
-%% Timeout -> integer() |               ; timeout (ms) for genserver.
-%%            infinity
-%% Result -> ?SQL_SUCCESS |             
-%%           ?SQL_SUCCESS_WITH_INFO
-%% ErrMsg -> string()                   ; Error message.
-%% ErrCode -> ?SQL_INVALID_HANDLE |
-%%            ?SQL_ERROR
-
+%%---------------------------------------------------------------------------
+%% sqlEndTran(Server, ComplType, <Timeout>) -> Result | 
+%%					       {error, ErrMsg, ErrCode} 
+%%	Server    = pid() | Name | {global, Name} | {Name, Node} 
+%%      ComplType = ?SQL_COMMIT | ?SQL_ROLLBACK
+%%      Timeout   = integer() | infinity
+%%      Result    = ?SQL_SUCCESS | ?SQL_SUCCESS_WITH_INFO
+%%      ErrMsg    = string()
+%%      ErrCode   = ?SQL_INVALID_HANDLE | ?SQL_ERROR 
+%% Description: Requests a commit or rollback operation for all active 
+%%		operations on all statement handles associated with a 
+%%		connection. It can only request a commit or rollback operation
+%%	        for a single connection.
+%%--------------------------------------------------------------------------
 sqlEndTran(Server, ComplType) ->
-    sqlEndTran(Server, ComplType, ?DefaultTimeout).
+    sqlEndTran(Server, ComplType, ?DEFAULT_TIMEOUT).
 
 sqlEndTran(Server, ComplType, Timeout) ->
-    AttrStr = integer_to_list(ComplType) ++ ";",
-    CmdStr = "endtra" ++ AttrStr,
+    ODBCCmd = [?END_TRANSACTION, ComplType],
+    call(Server,{endTran, ODBCCmd}, Timeout).
 
-    Ret = gen_server:call(Server,{endTran, CmdStr},Timeout),  
-    case Ret of
-	% Succeeded in making ODBC call (which may have returned an error)
-	{error, ErrMsg, ErrCode} ->
-	    {error, ErrMsg, ErrCode};
-	{ok, ReturnMsg, ReturnCode} ->
-	    ReturnCode;
-	% gen_server specific error
-	{error, Reason} ->
-	    exit(Reason);
-	% Server going down
-	{stopped, Reason} ->
-	    exit({stopped, Reason});
-	Other ->
-	    Other
-    end.
-%% sqlExecDirect/[2, 3]
-%% Executes a preparable statement.
-%%
-%% sqlExecDirect(Server, Stmt) ->
-%% sqlExecDirect(Server, Stmt, Timeout) ->
-%%   Result | {error, ErrMsg, ErrCode}
-%%
-%% Server -> pid() |                  ; The pid of the server,
-%%           Name |                     a registered name,
-%%           {global, Name} |           a globally registered name, or
-%%           {Name, Node}               a registered name on a remote node.
-%% Stmt -> string()                   ; An SQL statement.
-%% Timeout -> integer() |             ; timeout (ms) for genserver
-%%            infinity
-%% Result -> ?SQL_SUCCESS |
-%%           ?SQL_SUCCESS_WITH_INFO |
-%%           ?SQL_NEED_DATA |
-%%           ?SQL_NO_DATA |
-%% ErrMsg -> string()                 ; The error message.
-%% ErrCode -> ?SQL_INVALID_HANDLE |
-%%            ?SQL_ERROR
-
+%%---------------------------------------------------------------------------
+%% sqlExecDirect(Server, Stmt, <Timeout>) -> Result | {error, ErrMsg, ErrCode} 
+%%	Server  = pid() | Name | {global, Name} | {Name, Node} 
+%%      Timeout = integer() | infinity
+%%      Result  = ?SQL_SUCCESS | ?SQL_SUCCESS_WITH_INFO
+%%      ErrMsg   = string()
+%%      ErrCode  = ?SQL_INVALID_HANDLE | ?SQL_ERROR 
+%% Description: 
+%%--------------------------------------------------------------------------
 sqlExecDirect(Server, Stmt) ->
-    sqlExecDirect(Server, Stmt, ?DefaultTimeout).
+    sqlExecDirect(Server, Stmt, ?DEFAULT_TIMEOUT).
 
-sqlExecDirect(Server, Stmt, Timeout) ->
-    chk_str(Stmt, sqlExecuteDirect, 2),
-    SqlStmt = "exedir" ++ Stmt,
-    Ret = gen_server:call(Server, {execdir,SqlStmt}, Timeout),
-    ?DBG("sqlExecDirect gen_server call returns: ~p",[Ret]),
-    case Ret of
-	% Succeeded in making ODBC call (which may have returned an error)
-	{error, ErrMsg, Errcode} ->
-	    {error,ErrMsg,Errcode};
-	{ok, Result, ReturnCode} ->
-	    ReturnCode;
-	% gen_server specific error
-	{error, Reason} ->
-	    exit(Reason);
-	% Server going down
-	{stopped, Reason} ->
-	    exit({stopped, Reason});
-	Other ->
-	    Other
-    end.
+sqlExecDirect(Server, Stmt, Timeout) when list(Stmt) ->
+    CmdStmt = [?EXEDIR, Stmt],
+    call(Server, {execdir,CmdStmt}, Timeout);
 
-%% sqlFetch/[1, 2]
-%% Fetches a row of data from a result set. The driver returns data for 
-%% all columns that were bound to a referens with sqlBindCol/[3, 4].
-%%
-%% sqlFetch(Server) ->
-%% sqlFetch(Server, Timeout) ->
-%%   Result | {error, ErrMsg, ErrCode}
-%%
-%% Server -> pid() |                  ; The pid of the server,
-%%           Name |                     a registered name,
-%%           {global, Name} |           a globally registered name, or
-%%           {Name, Node}               a registered name on a remote node.
-%% Timeout -> integer() |             ; timeout (ms) for genserver
-%%            infinity
-%% Result -> ?SQL_SUCCESS |  
-%%           ?SQL_SUCCESS_WITH_INFO |
-%%           ?SQL_NO_DATA |
-%% ErrMsg -> string()                 ; The error message.
-%% ErrCode -> ?SQL_INVALID_HANDLE |
-%%            ?SQL_ERROR
+sqlExecDirect(_Server, Stmt, _Timeout) ->
+    exit({badarg, sqlExecDirect, {"Arg 2 is not a string", Stmt}}).    
 
+%%---------------------------------------------------------------------------
+%% sqlFetch(Server, <Timeout>) -> Result | {error, ErrMsg, ErrCode} 
+%%	Server  = pid() | Name | {global, Name} | {Name, Node} 
+%%      Timeout = integer() | infinity
+%%      Result  = ?SQL_SUCCESS | ?SQL_SUCCESS_WITH_INFO
+%%      ErrMsg   = string()
+%%      ErrCode  = ?SQL_INVALID_HANDLE | ?SQL_ERROR 
+%% Description: Fetches a row of data from a result set. The driver returns 
+%%              data for all columns that were bound to a referens with 
+%%              sqlBindCol/[3, 4].
+%%--------------------------------------------------------------------------
 sqlFetch(Server) ->
-    sqlFetch(Server, ?DefaultTimeout).
+    sqlFetch(Server, ?DEFAULT_TIMEOUT).
 
 sqlFetch(Server, Timeout) ->
-    CmdStr = "fetchd",
-    Ret = gen_server:call(Server,{fetch, CmdStr},Timeout),
-    ?DBG("sqlFetct gen_server call returns: ~p",[Ret]),
-    case Ret of
-	% Succeeded in making ODBC call (which may have returned an error)
-	{error, ErrMsg, ErrCode} ->
-	    {error, ErrMsg, ErrCode};
-	{ok, ReturnCode} ->
-	    ReturnCode;
-	% gen_server specific error
-	{error, Reason} ->
-	    exit(Reason);
-	% Server going down
-	{stopped, Reason} ->
-	    exit({stopped, Reason});
-	Other ->
-	    Other
-    end.
+    ODBCCmd = ?FETCH_DATA, 
+    call(Server,{fetch, ODBCCmd}, Timeout).
 
-%% sqlNumResultCols/[1, 2]
-%% Returns the number of columns in a result set.
-%%
-%% sqlNumResultCols(Server) ->
-%% sqlNumResultCols(Server, Timeout) ->
-%%   {Result, ColCount} | {error, ErrMsg, ErrCode}
-%%
-%% Server -> pid() |                  ; The pid of the server,
-%%           Name |                     a registered name,
-%%           {global, Name} |           a globally registered name, or
-%%           {Name, Node}               a registered name on a remote node.
-%% Timeout -> integer() |             ; timeout (ms) for genserver
-%%            infinity
-%% Result -> ?SQL_SUCCESS |  
-%%           ?SQL_SUCCESS_WITH_INFO
-%% ColCount -> integer()              ; number of columns in the result set.
-%% ErrMsg -> string()                 ; The error message.
-%% ErrCode -> ?SQL_INVALID_HANDLE |
-%%            ?SQL_ERROR
-
+%%---------------------------------------------------------------------------
+%% sqlNumResultCols(Server, <Timeout>) -> {Result, ColCount}  |
+%%                                        {error, ErrMsg, ErrCode} 
+%%	Server  = pid() | Name | {global, Name} | {Name, Node} 
+%%      Timeout = integer() | infinity
+%%      Result  = ?SQL_SUCCESS | ?SQL_SUCCESS_WITH_INFO
+%%      ColCount = integer()
+%%      ErrMsg   = string()
+%%      ErrCode  = ?SQL_INVALID_HANDLE | ?SQL_ERROR 
+%% Description: Returns the number of columns in a result set.
+%%--------------------------------------------------------------------------
 sqlNumResultCols(Server) ->
-    sqlNumResultCols(Server, ?DefaultTimeout).
+    sqlNumResultCols(Server, ?DEFAULT_TIMEOUT).
 
 sqlNumResultCols(Server, Timeout) ->
-    CmdStr = "rescol",
-    Ret = gen_server:call(Server,{numResultCols, CmdStr},Timeout),
-    ?DBG("sqlNumResultCols gen_server call returns: ~p",[Ret]),
-    case Ret of
-	% Succeeded in making ODBC call (which may have returned an error)
-	{error, ErrMsg, ErrCode} ->
-	    {error, ErrMsg, ErrCode};
-	{ok, NumberColumn, ReturnCode} ->
-	    {ReturnCode, NumberColumn};
-	% gen_server specific error
-	{error, Reason} ->
-	    exit(Reason);
-	% Server going down
-	{stopped, Reason} ->
-	    exit({stopped, Reason});
-	Other ->
-	    Other
-    end.
+    ODBCCmd = ?NUMBER_RESULT_COLUMNS,
+    call(Server,{numResultCols, ODBCCmd}, Timeout).
 
-%% sqlRowCount/[1, 2]
-%% Returns the number of rows affected by an UPDATE, INSERT, or DELETE 
-%% statement.
-%%
-%% sqlRowCount(Server) ->
-%% sqlRowCount(Server, Timeout) ->
-%%   {Result, RowCount} | {error, ErrMsg, ErrCode}
-%%
-%% Server -> pid() |                   ; The pid of the server,
-%%           Name |                      a registered name,
-%%           {global, Name} |            a globally registered name, or
-%%           {Name, Node}                a registered name on a remote node.
-%% Timeout -> integer() |              ; timeout (ms) for genserver.
-%%            infinity
-%% Result -> ?SQL_SUCCESS |
-%%           ?SQL_SUCCESS_WITH_INFO
-%% RowCount -> integer()               ; The number of affected rows (or -1
-%%                                       if not available).
-%% ColCount -> integer()              ; number of columns in the result set.
-%% ErrMsg -> string()                 ; The error message.
-%% ErrCode -> ?SQL_INVALID_HANDLE |
-%%            ?SQL_ERROR
-
+%%---------------------------------------------------------------------------
+%% sqlRowCount(Server, Timeout) -> {Result, RowCount} |
+%%                                 {error, ErrMsg, ErrCode} 
+%%	Server   = pid() | Name | {global, Name} | {Name, Node} 
+%%      Timeout  = integer() | infinity
+%%      Result   = ?SQL_SUCCESS | ?SQL_SUCCESS_WITH_INFO
+%%      RowCount = integer()
+%%      ErrMsg   = string()
+%%      ErrCode  = ?SQL_INVALID_HANDLE | ?SQL_ERROR 
+%% Description:  Returns the number of rows affected by an UPDATE, INSERT, 
+%%               or DELETE statement.
+%%--------------------------------------------------------------------------
 sqlRowCount(Server) ->
-    sqlRowCount(Server, ?DefaultTimeout).
+    sqlRowCount(Server, ?DEFAULT_TIMEOUT).
 
 sqlRowCount(Server, Timeout) ->
-    CmdStr = "rowcon",
-    Ret = gen_server:call(Server,{rowCount, CmdStr},Timeout),
-    ?DBG("sqlRowCount gen_server call returns: ~p",[Ret]),
-    case Ret of
-	% Succeeded in making ODBC call (which may have returned an error)
-	{error, ErrMsg, ErrCode} ->
-	    {error, ErrMsg, ErrCode};
-	{ok, NumberColumn, ReturnCode} ->
-	    {ReturnCode, NumberColumn};
-	% gen_server specific error
-	{error, Reason} ->
-	    exit(Reason);
-	% Server going down
-	{stopped, Reason} ->
-	    exit({stopped, Reason});
-	Other ->
-	    Other
-    end.
+    ODBCCmd = ?ROW_COUNT,
+    call(Server,{rowCount, ODBCCmd},Timeout).
     
-
-%% sqlSetConnectAttr/[3, 4]
-%%
-%% Sets attributes that govern aspects of connections.
-%% Driver-specific
-%% attributes are not supported through macros, but can be set, if  they
-%% are strings or signed/unsigned long integers.
-%%
-%% sqlSetConnectAttr(Server,Attr, Value) ->
-%% sqlSetConnectAttr(Server, Attr, Value, Timeout) ->
-%%   Result | {error, ErrMsg, ErrCode}
-%%
-%% Server -> pid() |                  ; The pid of the server,
-%%           Name |                     a registered name,
-%%           {global, Name} |           a globally registered name, or
-%%           {Name, Node}               a registered name on a remote node.
-%% Attr -> integer()                  ; Attribute number 
-%% Value -> string() |                ; The new attribute value.
-%%          integer()
-%% Timeout -> integer() |             ; timeout (ms) for genserver.
-%%            infinity
-%% Result -> ?SQL_SUCCESS |
-%%           ?SQL_SUCCESS_WITH_INFO 
-%% ErrMsg -> string()                 ; The error message.
-%% ErrCode -> ?SQL_INVALID_HANDLE |
-%%            ?SQL_ERROR
-
+%%---------------------------------------------------------------------------
+%% sqlSetConnectAttr(Server, Attr, Value, <Timeout>) ->  Result |
+%%					              {error, ErrMsg, ErrCode} 
+%%	Server  = pid() | Name | {global, Name} | {Name, Node} 
+%%      Timeout = integer() | infinity
+%%      Attr = integer() - supported are: ?SQL_ATTR_AUTOCOMMIT,
+%%                                        ?SQL_ATTR_TRACE,
+%%					  ?SQL_ATTR_TRACEFILE
+%%      Value = string() | integer()
+%%      Result  = ?SQL_SUCCESS | ?SQL_SUCCESS_WITH_INFO
+%%      ErrMsg   = string()
+%%      ErrCode  = ?SQL_INVALID_HANDLE | ?SQL_ERROR 
+%% Description: Sets attributes that govern aspects of connections.
+%%              Driver-specific attributes are not supported through macros,
+%%		but can be set, if they are strings or signed/unsigned 
+%%              long integers.
+%%--------------------------------------------------------------------------
 sqlSetConnectAttr(Server, Attr, Value) ->
-    sqlSetConnectAttr(Server, Attr, Value, ?DefaultTimeout).
+    sqlSetConnectAttr(Server, Attr, Value, ?DEFAULT_TIMEOUT).
 
 sqlSetConnectAttr(Server, Attr, Value, Timeout) ->
-    AttrStr = integer_to_list(Attr) ++ ";",
-    ValueStr = if 
-		   number(Value) ->
-		       "0;" ++ integer_to_list(Value);
-		   list(Value) ->
-		       "1;" ++ Value;
-		   true ->
-		       exit({sqlSetConnectAttr, wrong_Value_type})
-	       end,
-    CmdStr = "setatr" ++ AttrStr ++ ValueStr ++ ";",
+    Cmd = if 
+	      number(Value) ->
+		  [?INT_VALUE, integer_to_list(Attr),
+		   ";", integer_to_list(Value), ";"];
+	      list(Value) ->
+		  [?STR_VALUE, integer_to_list(Attr), ";", Value, ";"];
+	      true ->
+		  exit({badarg, sqlSetConnectAttr, {"Arg 3 is not a string "
+			"or integer", Value}})
+	  end,
+    ODBCCmd = [?SET_ATTRIBUTE, Cmd],
+    
+    call(Server, {setConnectAttr, ODBCCmd}, Timeout).
 
-    Ret = gen_server:call(Server,{setConnectAttr, CmdStr},Timeout),  
-    case Ret of
-	% Succeeded in making ODBC call (which may have returned an error)
-	{error, ErrMsg, ErrCode} ->
-	    {error, ErrMsg, ErrCode};
-	{ok, Result, ReturnCode} ->
-	    ReturnCode;
-	% gen_server specific error
-	{error, Reason} ->
-	    exit(Reason);
-	% Server going down
-	{stopped, Reason} ->
-	    exit({stopped, Reason});
-	Other ->
-	    Other
-    end.
+%%---------------------------------------------------------------------------
+%% readData(Server, Ref, <Timeout>) ->  {ok, value} | {error, ErrMsg, ErrCode}
+%%	Server  = pid() | Name | {global, Name} | {Name, Node} 
+%%      Ref     = ref()
+%%      Timeout = integer() | infinity
+%%      Result  = ?SQL_SUCCESS | ?SQL_SUCCESS_WITH_INFO
+%%      ErrMsg  = string()
+%%      ErrCode = ?SQL_INVALID_HANDLE | ?SQL_ERROR 
+%% Description: Returns data from the sqlFetch/[1,2] call.
+%%--------------------------------------------------------------------------
+readData(Server, Ref) ->
+    readData(Server, Ref, ?DEFAULT_TIMEOUT).
 
+readData(Server, Ref, Timeout) ->
+    ODBCCmd = ?READ_BUFFER,
+    call(Server, {read_buffer, ODBCCmd, Ref}, Timeout).
 
-%% columnRef/[0]
-%% Generate a referens for a column. 
-%%
-%% columnRef() ->
-%%   {ok, Ref}
-%%
-%% Ref -> term()             ; A reference.
-%%
-
+%%---------------------------------------------------------------------------
+%% columnRef() -> ref()
+%% Description: Generate a referens for a column. 
+%%---------------------------------------------------------------------------
 columnRef() ->
     Ref = erlang:make_ref(),
     {ok, Ref}.
 
-
-%% readData/[2, 3]
-%% Returns data from the sqlFetch/[1,2] call.
-%%
-%% readData(Server, Ref) ->
-%% readData(Server, Ref, Timeout) ->
-%%   {ok, Value}
-%%
-%% Server -> pid() |                    ; The pid of the server,
-%%           Name |                       a registered name,
-%%           {global, Name} |             a globally registered name, or
-%%           {Name, Node}                 a registered name on a remote node.
-%% Ref -> term()                        ; A reference to a column.
-%% Timeout -> integer() |               ; timeout (ms) for genserver.
-%%            infinity
-%% Value -> string() |                  ; Returned Data 
-%%
-
-readData(Server, Ref) ->
-    readData(Server, Ref, ?DefaultTimeout).
-
-readData(Server, Ref, Timeout) ->
-    CmdStr = "readbu",
-    Ret = gen_server:call(Server, {readbuffer, CmdStr, Ref},Timeout),
-    ?DBG("readData gen_server call returns: ~p",[Ret]),
-    case Ret of
-	% Succeeded in get data
-	{ok, Data} ->
-	    {ok, Data};
-	% gen_server specific error
-	{error, Reason} ->
-	    exit(Reason);
-	% Server going down
-	{stopped, Reason} ->
-	    exit({stopped, Reason});
-	Other ->
-	    Other
-    end.
-
-%%%----------------------------------------------------------------------
+%%%======================================================================
 %%% Utility API
-%%%
-%%%
-%%%----------------------------------------------------------------------
+%%%======================================================================
 
-
-%% erl_connect/[2, 3, 4, 5]
-%% Opens a connection to a data source. There can be only one open data 
-%% source connection per server. erl_connect/[2, 3] is used when the 
-%% information that can be supplied through erl_connect/[4, 5] does not 
-%% suffice.
-%%
-%% erl_connect(Server, ConnectStr) ->
-%% erl_connect(Server, ConnectStr, Timeout) ->
-%% erl_connect(Server, DSN, UID, PWD) ->
-%% erl_connect(Server, DSN, UID, PWD, Timeout) ->
-%%   ok |
-%%   {error, ErrMsg, ErrCode}
-%%
-%% Server -> pid() |                      ; The pid of the server,
-%%           Name |                         a registered name,
-%%           {global, Name} |               a globally registered name, or
-%%           {Name, Node}                   a registered name on a remote node.
-%% ConnectStr -> string()                 ; 
-%% Timeout -> integer() |                 ; timeotu (ms) for genserver.
-%%            infinity
-%% DSN -> string()                        ; Name of the database.
-%% UID -> string()                        ; User ID.
-%% PWD -> string()                        ; Password.
-%% ErrMsg -> string()                     ; Error Message.
-%% ErrCode -> ?SQL_ERROR
-%%
-
+%%---------------------------------------------------------------------------
+%% erl_connect(Server, ConnectStr, <Timeout>) ->  ok, | 
+%%                                                {error, ErrMsg, ErrCode} 
+%%	Server     = pid() | Name | {global, Name} | {Name, Node} 
+%%      ConnectStr = ConnectStr = string() ex:
+%%		     "DSN=Oracle8;DBQ=gandalf;UID=test;PWD=foobar" see
+%%                    SQLDriverConnect in Microsoft ODBC 3.0, Programmer's 
+%%                    Reference and SDK Guide 
+%%      Timeout    = integer() | infinity
+%%      ErrMsg     = string()
+%%      ErrCode    = ?SQL_INVALID_HANDLE | ?SQL_ERROR
+%% Description: Opens a connection to a database. There can be only one open 
+%%              database connection per server.
+%%--------------------------------------------------------------------------
 erl_connect(Server, ConnectStr) ->
-    erl_connect(Server, ConnectStr, ?DefaultTimeout).
+    erl_connect(Server, ConnectStr, ?DEFAULT_TIMEOUT).
 
-erl_connect(Server, ConnectStr, Timeout) ->
-    chk_str(ConnectStr, erl_connect, 2),
-    NewConnectStr = "opendb" ++ ConnectStr,
-    Ret = gen_server:call(Server,{openconnection, NewConnectStr, self()}, 
-			  Timeout),
-    ?DBG("erl_connect gen_server call returns: ~p",[Ret]),
-    case Ret of
-	% Server going down
-	{stopped, Reason} ->
-	    exit({stopped, Reason});
-	% Succeeded connected 
-	{ok, Msg, RetCode} ->
-	    ok;
-	% Did not succed connected
+erl_connect(Server, ConnectStr, Timeout) when list(ConnectStr) ->
+    ODBCCmd = [?OPEN_DB, ConnectStr],
+    Result = call(Server,{open_connection, ODBCCmd}, Timeout),
+
+    case Result of
 	{error, ErrMsg, ErrCode} ->
 	    {error,ErrMsg, ErrCode};
-	Other ->
-	    Other
-    end.
+	Other -> %% ?SQL_SUCCESS | ?SQL_SUCCESS_WITH_INFO
+	    ok
+    end;
 
+erl_connect(_Server, ConnectStr, _Timeout) ->
+    exit({badarg, erl_connect, {"Arg 2 is not a string", ConnectStr}}).    
+
+%%---------------------------------------------------------------------------
+%% erl_connect(Server, DSN, UID, PWD, <Timeout>) ->  ok, | 
+%%                                                 {error, ErrMsg, ErrCode} 
+%%	Server  = pid() | Name | {global, Name} | {Name, Node} 
+%%      DNS     = string() - The name of the database.
+%%      UID     = string() - The user ID.
+%%      PWD     = string() - The user's password for the database.
+%%      Timeout = integer() | infinity
+%%      ErrMsg     = string()
+%%      ErrCode    = ?SQL_INVALID_HANDLE | ?SQL_ERROR
+%% Description: Opens a connection to a database. There can be only one open 
+%%              database connection per server.
+%%-------------------------------------------------------------------------
 erl_connect(Server, DSN, UID, PWD) ->
-    erl_connect(Server, DSN, UID, PWD, ?DefaultTimeout).
+    erl_connect(Server, DSN, UID, PWD, ?DEFAULT_TIMEOUT).
 
-erl_connect(Server, DSN, UID, PWD, Timeout) ->
-    chk_str(DSN, erl_connect, 2),
-    chk_str(UID, erl_connect, 3),
-    chk_str(PWD, erl_connect, 4),
-    N = string:len(PWD),
-    ConnectStr = case N of 
-		     0 -> "DSN=" ++ DSN ++ ";UID=" ++ UID;
-		     NotNull ->
-			 "DSN=" ++ DSN ++ ";UID=" ++ UID ++ ";PWD="++ PWD
-		 end,
-    erl_connect(Server, ConnectStr, Timeout).
+erl_connect(Server, DSN, UID, PWD, Timeout) 
+  when list(DSN), list(UID), list(PWD) ->
+    ConnectStr = ["DSN=",DSN,";UID=",UID,";PWD=",PWD],
+    erl_connect(Server, ConnectStr, Timeout);
 
+erl_connect(_Server, DSN, UID, PWD, _Timeout) 
+  when list(DSN), list(UID) ->
+    exit({badarg, erl_connect, {"Arg 4 is not a string", PWD}});
 
-%% erl_executeStmt/[2, 3]
-%% Executes a single SQL statement. All changes to the data source are
-%% automatically committed if successful.
-%%
-%% erl_executeStmt(Server, Stmt) ->
-%% erl_executeStmt(Server, Stmt, Timeout) ->
-%%   {updated, NRows} |
-%%   {selected, [ColName], [Row]} |
-%%   {error, ErrMsg}
-%%
-%% Server -> pid() |                     ; The pid of the server,
-%%           Name |                        a registered name,
-%%           {global, Name} |              a globally registered name, or
-%%           {Name, Node}                  a registered name on a remote node.
-%% Stmt -> string()                      ; SQL statement to execute.
-%% Timeout -> integer() |                ; timeout (ms) for genserver.
-%%            infinity
-%% NRows -> integer()                    ; The number of updated rows.
-%% ColName -> string()                   ; The name of the columns in the table.
-%% Row -> [Value]                        ; One row of the resulting table.
-%%   Value -> string                     ; One value in a row.
-%% ErrMsg -> string()                    ; Error message.
+erl_connect(_Server, DSN, UID, _PWD, _Timeout) 
+  when list(DSN) ->
+    exit({badarg, erl_connect, {"Arg 3 is not a string", UID}});
 
+erl_connect(_Server, DSN, _UID, _PWD, _Timeout) ->
+         exit({badarg, erl_connect, {"Arg 2 is not a string", DSN}}).
+
+%%---------------------------------------------------------------------------
+%% erl_executeStmt(Server, Stmt, <Timeout>) -> {updated, NRows} | 
+%%                                             {selected, [ColName], [Row]} | 
+%%                                             {error, ErrMsg}
+%%	Server  = pid() | Name | {global, Name} | {Name, Node} 
+%%      Stmt    = string() - SQL query
+%%      Timeout = integer() | infinity
+%%      NRows = integer()
+%%      ColName = string()
+%%      Row = [Value] - Values from the row of the resulting table.
+%%      Value = string() | null
+%% Description: Executes a single SQL statement. All changes to the data 
+%%              source are automatically committed if successful.
+%%-------------------------------------------------------------------------
 erl_executeStmt(Server, Stmt) ->
-    erl_executeStmt(Server, Stmt, ?DefaultTimeout).
+    erl_executeStmt(Server, Stmt, ?DEFAULT_TIMEOUT).
 
-erl_executeStmt(Server, Stmt, Timeout) ->
-    chk_str(Stmt, erl_executeStmt, 2),
-    SqlStmt = "execdb" ++ Stmt,
-    case gen_server:call(Server,{execute, SqlStmt}, Timeout)   of
-	ok -> wait_result([],[]);
-	    
-	% Succeeded in making ODBC call (which may have returned an error)
+erl_executeStmt(Server, Stmt, Timeout) when list(Stmt) ->
+    SqlStmt = [?EXECDB, Stmt],
+    case call(Server,{execute, SqlStmt}, Timeout) of
+	{error, ErrMsg, ErrCode} ->
+	    {error, ErrMsg};
 	Other ->
 	    Other
-    end.
-wait_result(ColumnNameList,RowList) ->
-    receive
-	{column_name,ColumnName} ->
-	   ?DBG("erl_executeStmt -> ColumnName: ~p~n",[ColumnName]),
-	   wait_result(ColumnName,RowList);
-	{row,Data} ->
-	    ?DBG("erl_executeStmt -> {row, Data}: ~p",[Data]),
-	    wait_result(ColumnNameList,[Data|RowList]);
-	{selected, lastrow} ->
-	    {selected,ColumnNameList ,RowList};
-	{updated, NupdatRow} ->
-	    {updated, NupdatRow};
-	{error, ErrMsg} ->
-	    {error,ErrMsg};
-	Other ->
-	    ?DBG("erl_executeStmt -> Other: ~p~n",[Other]),
-	    Other
-    end.
+    end;
 
+erl_executeStmt(_Server, Stmt, _Timeout) ->
+    exit({badarg, erl_executeStmt, {"Arg 2 is not a string", Stmt}}).
 
-%% erl_disconnect/[2, 3]
-%% Closes the connection to a data source.
-%%
-%% erl_disconnect(Server, RefConnHandle) ->
-%% erl_disconnect(Server, RefConnHandle, Timeout) ->
-%%   ok |
-%%   {error, ErrMsg, ErrCode}
-%%
-%% Server -> pid() |                     ; The pid of the server,
-%%           Name |                        a registered name,
-%%           {global, Name} |              a globally registered name, or
-%%           {Name, Node}                  a registered name on a remote node.
-%%
-%% Timeout -> integer() |                ; timeout (ms) for genserver.
-%%            infinity
-%% ErrMsg -> string()                    ; Error messages
-%% ErrCode -> integer()                  ; SQL errorcode
-%%
+%%---------------------------------------------------------------------------
+%% erl_disconnect(Server, <Timeout>) -> ok | {error, ErrMsg, ErrCode}
+%%	Server     = pid() | Name | {global, Name} | {Name, Node} 
+%%      Timeout    = integer() | infinity
+%%      ErrMsg     = string()
+%%      ErrCode    = ?SQL_INVALID_HANDLE | ?SQL_ERROR
+%% Description: Closes the connection to a database.
+%%--------------------------------------------------------------------------
+erl_disconnect(Server) ->
+    erl_disconnect(Server, ?DEFAULT_TIMEOUT).
 
-erl_disconnect(Server, RefConnHandle) ->
-    erl_disconnect(Server, RefConnHandle, ?DefaultTimeout).
+erl_disconnect(Server, Timeout) ->
+    CloseStr = ?CLOSE_DB,
+    Result = call(Server,{close_connection, CloseStr}, Timeout),
 
-erl_disconnect(Server, RefConnHandle, Timeout) ->
-    CloseStr = "closdb",
-    Ret = gen_server:call(Server,{closeconnection, CloseStr}, Timeout),
-    ?DBG("erl_disconnect gen_server call returns: ~p",[Ret]),
-    case Ret of
-	% Succeeded disconnecting  
-	{ok, Mes,RetCode} ->
-	    ok;
-	% Did not succeded disconnecting (may already be disconnected)
+    case Result of
 	{error, ErrMsg, ErrCode} ->
 	    {error, ErrMsg, ErrCode};
+	Other ->  %% ?SQL_SUCCESS | ?SQL_SUCCESS_WITH_INFO
+	    ok
+    end.
 
-	Other ->
-	    {error, Other}
+%%%======================================================================
+%%% Callback functions from gen_server
+%%%======================================================================
+
+%%----------------------------------------------------------------------
+%% Func: init/1
+%% Returns: {ok, State}          |
+%%          {ok, State, Timeout} |
+%%          {stop, Reason}
+%%----------------------------------------------------------------------
+init(Args) ->
+    process_flag(trap_exit, true),
+    {value, {client, ClientPid}} = lists:keysearch(client, 1,Args),
+
+    link(ClientPid),
+    
+    %% Start the C program
+    case os:find_executable(?SERVERPROG, ?SERVERDIR) of
+	FileName when list(FileName)->
+	    Port  = open_port({spawn, FileName},
+			      [{packet, ?LENGTH_INDICATOR_SIZE}, binary]),
+	    State = #state{port = Port}, %, clientpid = ClientPid},
+	    {ok, State};
+	false ->
+	    {stop, "Can't find the port-program: odbcserver executable."}
+    end.
+		    
+%%----------------------------------------------------------------------
+%% Func: handle_call/3
+%% Returns: {reply, Reply, State}          |
+%%          {reply, Reply, State, Timeout} |
+%%          {noreply, State}               |
+%%          {noreply, State, Timeout}      |
+%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
+%%          {stop, Reason, Reply, State}     (terminate/2 is called)
+%%----------------------------------------------------------------------
+handle_call(Msg, From, State = #state{reply_to = undefined}) ->
+    case queue:out(State#state.queue) of
+ 	{empty, Queue} ->
+ 	    handle_msg(Msg, From, State);
+ 	{{value, {WaitingMsg, WaitingFrom}}, Queue}  ->
+	    NewQueue = queue:in({Msg, From}, Queue),
+	    NewState = State#state{queue = NewQueue},
+	    handle_msg(WaitingMsg, WaitingFrom, NewState)
+    end;
+handle_call(Msg, From, State) ->
+    NewQueue = queue:in({Msg, From}, State#state.queue),
+    NewState = State#state{queue = NewQueue},
+    {noreply, NewState}.
+
+%%----------------------------------------------------------------------
+%% Func: handle_msg/3 - (help function to handle_call/3)
+%% Returns: {reply, Reply, State}          |
+%%          {reply, Reply, State, Timeout} |
+%%          {noreply, State}               |
+%%          {noreply, State, Timeout}      |
+%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
+%%          {stop, Reason, Reply, State}     (terminate/2 is called)
+%% Description: 
+%%----------------------------------------------------------------------
+%% Open connection to database
+handle_msg({control_cmd, {open_connection, ODBCCmd}}, From, 
+	    State = #state{connected = false}) ->
+    Port  = State#state.port,
+    port_command(Port,  [ODBCCmd, ?STR_TERMINATOR]),
+    NewState = State#state{connected = true, reply_to = From},
+    {noreply, NewState};
+
+%% If you try opening a connection that is already open
+handle_msg({control_cmd, {open_connection, ODBCCmd}}, From, 
+	    State = #state{connected = true}) ->
+    {reply, {error, "Connection already open", ?SQL_ERROR}, State};
+
+%% Close connection to database
+handle_msg({control_cmd, {close_connection, ODBCCmd}}, From, 
+	    State = #state{connected = true}) ->
+    Port = State#state.port,
+    NewState = State#state{connected = false, reply_to = From},
+    port_command(Port,  [ODBCCmd, ?STR_TERMINATOR]),
+    {noreply, NewState};
+
+%% If you try closing a connection that is already closed
+handle_msg({control_cmd, {close_connection, ODBCCmd}}, From, State = 
+	    #state{connected = false}) ->
+    {reply, {error, "Connection already closed", ?SQL_ERROR}, State};
+
+%----------------------------------------------------------------------
+%% ODBC commands - require that we have a connection to the database
+handle_msg({db_cmd, Cmd}, From = {Pid, _Tag},
+            #state{connected = false} = State) ->
+    {reply, {error, "Not connected", ?SQL_ERROR}, State};
+
+handle_msg({db_cmd, {bind_column, ODBCCmd, ColNum, MemRef}}, From,
+	   State = #state{connected = true}) ->
+    Port = State#state.port,
+    ColumnVec = State#state.columnvector,
+    NewColumnVec = insert({MemRef,ColNum}, ColumnVec),
+    NewState = State#state{columnvector = NewColumnVec, reply_to = From},
+    NewODBCCmd = [ODBCCmd, integer_to_list(ColNum)],
+    port_command(Port,  [NewODBCCmd, ?STR_TERMINATOR]),
+    {noreply, NewState};
+
+handle_msg({db_cmd,{close_handle, ODBCCmd}}, From, State =
+	    #state{connected = true}) ->
+
+    Port = State#state.port,
+    ColumnVect    = State#state.columnvector,
+    NewColumnVect = delete(ColumnVect),
+    NewState = State#state{columnvector = NewColumnVect, fetchdata = false,
+			  reply_to = From},
+    port_command(Port,  [ODBCCmd, ?STR_TERMINATOR]),
+    {noreply, NewState};
+
+
+handle_msg({db_cmd, {read_buffer, ODBCCmd, ColumnRef}}, From, 
+	    State = #state{connected = true, fetchdata = true}) ->
+    Port       = State#state.port,
+    ColumnVect = State#state.columnvector,
+    CNumber    = lookup(ColumnRef,ColumnVect),
+
+    case CNumber of
+	not_found ->
+	    {reply, {error, column_not_found, ?SQL_ERROR}, State};
+	_ ->
+	    NewODBCCmd = [ODBCCmd, integer_to_list(CNumber)],
+	    port_command(Port,  [NewODBCCmd, ?STR_TERMINATOR]),
+	    {noreply, State#state{reply_to = From}}
+    end;
+
+handle_msg({db_cmd, {read_buffer, _ODBCCmd, _ColumnRef}}, _From, 
+	    #state{fetchdata = false} = State) ->
+    {reply, {error, no_data_fetched, ?SQL_ERROR}, State};
+
+handle_msg({db_cmd, {fetch, ODBCCmd}}, From, State = 
+	    #state{connected = true}) ->
+    Port = State#state.port,
+    port_command(Port,  [ODBCCmd, ?STR_TERMINATOR]),
+    {noreply, State#state{reply_to = From, fetchdata = true}};
+
+%% Tag = execute | execdir | describeColumn | endTran | 
+%% | numResultCols | rowCount | setConnectAttr 
+handle_msg({db_cmd, {Tag, ODBCCmd}}, From, State = 
+	    #state{connected = true}) ->
+    Port = State#state.port,
+    port_command(Port,  [ODBCCmd, ?STR_TERMINATOR]),
+    {noreply, State#state{reply_to = From}};
+
+%----------------------------------------------------------------------
+%% Catch all - throws away unknown messages.
+handle_msg(Request, _From, State) ->
+    error_logger:error_msg("ODBC: received unexpected request: ~p~n", 
+			   [Request]),
+    {reply, {did_not_understand_request, Request, ?SQL_ERROR}, State}.
+
+%%----------------------------------------------------------------------
+%% Func: handle_cast/2
+%% Returns: {noreply, State}          |
+%%          {noreply, State, Timeout} |
+%%          {stop, Reason, State}            (terminate/2 is called)
+%%----------------------------------------------------------------------
+%% Stop Call Back
+handle_cast(stop, State) ->
+    {stop, normal, State};
+
+%% Send debug request to the port-program.
+handle_cast({debugc, DebugCmd}, State) ->
+    Port = State#state.port,
+    port_command(Port,  [DebugCmd, ?STR_TERMINATOR]),
+    {noreply, State};
+
+%% Catch all - throws away unknown messages.
+handle_cast(Msg, State) ->
+    error_logger:error_msg("ODBC: received unexpected message: ~p~n", [Msg]),
+    {noreply, State}.
+
+%%----------------------------------------------------------------------
+%% Func: handle_info/2
+%% Returns: {noreply, State}          |
+%%          {noreply, State, Timeout} |
+%%          {stop, Reason, State}            (terminate/2 is called)
+%%----------------------------------------------------------------------
+handle_info({'EXIT', Port, Reason}, #state{port = Port} = State) ->
+    error_logger:error_msg("ODBC: exit signal from port program:~p~n", 
+			   [Reason]),
+    {stop, {port_exit, Reason}, State};
+
+%% If the owning process dies there is no reson to go on
+handle_info({'EXIT', Pid, Reason}, State) when pid(Pid) ->
+    {stop, {stopped, {'EXIT', Pid, Reason}}, State};
+
+
+%----------------------------------------------------------------------
+handle_info({Port, {data, BinData}}, #state{reply_to = From} = State) 
+  when From =/= undefined ->
+    gen_server:reply(From, BinData),
+    handle_queue(State);
+    
+%----------------------------------------------------------------------
+% Catch all - throws away unknown messages
+handle_info(Info, State) ->
+    error_logger:error_msg("ODBC: received unexpected info: ~p~n", [Info]),
+    {noreply, State}.
+
+%----------------------------------------------------------------------
+
+handle_queue(State) ->
+    case queue:out(State#state.queue) of
+ 	{empty, Queue} ->
+	    {noreply, State#state{reply_to = undefined}};
+ 	{{value, {WaitingMsg, WaitingFrom}}, Queue}  ->
+	    NewState = State#state{queue = Queue, reply_to = WaitingFrom},
+	    handle_msg(WaitingMsg, WaitingFrom, NewState)
+    end.
+
+
+%%----------------------------------------------------------------------
+%% terminate/2 and code_change/3
+%%----------------------------------------------------------------------
+
+terminate({port_exit, _Reason}, State) ->
+    ok;
+
+terminate(_Reason, State) ->
+    Port = State#state.port,
+    port_close(Port),
+    receive
+	{Port, closed} ->
+	    ok;
+	{'EXIT', Port, normal} ->
+	    ok
+    after ?DEFAULT_TIMEOUT ->
+	    error_logger:error_report("Erlang ODBC-process did not receive "
+				      "closed port message.")
+    end.
+    
+code_change(_Vsn, State, _Extra) ->
+    {ok, State}.
+
+%%%======================================================================
+%%% Internal functions
+%%%======================================================================
+
+%%---------------------------------------------------------------------------
+%% call(Server, Msg, Timeout) -> term()
+%%	Server  - pid() | Name | {global, Name} | {Name, Node} 
+%%      Msg     - term()
+%%      Timeout - integer() | infinity
+%% Description: Sends a message to the ODBC-server and waits for
+%%              the answer. It also unpacks the answer as if it is 
+%%              a binary.
+%%---------------------------------------------------------------------------
+call(Server, Msg = {open_connection, ODBCCmd}, Timeout) ->
+    do_call(Server, {control_cmd, Msg}, Timeout); 
+call(Server, Msg = {close_connection, ODBCCmd}, Timeout) ->
+    do_call(Server, {control_cmd, Msg}, Timeout); 
+call(Server, Msg, Timeout) ->
+    do_call(Server, {db_cmd, Msg}, Timeout).
+
+do_call(Server, Msg, Timeout) ->
+    Result = gen_server:call(Server, Msg, Timeout),
+    if 
+	binary(Result) -> % Normal case
+	    binary_to_term(Result); 
+	true -> % Error ocuured
+	    Result
     end.
 
 %%---------------------------------------------------------------------------
+%% This is a simple table. The table contains tuples.
+%% Each tuple contain a memoryreferens and a corrsponding
+%% columnnumber.
+%%---------------------------------------------------------------------------
+
+insert({Ref, ColumnNr}, []) ->
+    [{Ref, ColumnNr}];
+insert({Ref, ColumnNr}, Tail) ->
+    [{Ref, ColumnNr}| Tail].
+
+lookup(_Ref, []) ->
+    not_found;
+lookup(Ref, [{Ref, ColumnNr} | _Tail]) ->
+    ColumnNr;
+lookup(Ref, [Head | Tail] ) ->
+    lookup(Ref, Tail).
+
+delete(_Tail) ->
+    [].
+
+%%%======================================================================
+%%% Debug functions
+%%%======================================================================
+
+%%---------------------------------------------------------------------------
+%% debugerl(Server, OnOff, <Level>) -> ok
+%%	Server  - pid() | Name | {global, Name} | {Name, Node} 
+%%	OnOff   - on | off
+%%      Level   - exported | all
+%% Description: Turns on tracing of messages sent and recived by
+%%              the server <Server> and tracing on all, or all exported 
+%%              functions, according to level <Level>, in this module.
+%%              Result will be printed on stdout.
+%% Note: This function is only intended for debugging and may not be used
+%%       in products. Turning on this tracing will cause the program
+%%       to loose performance !!!!!!!!!!!!   
+%%---------------------------------------------------------------------------
+debugerl(Server, OnOff) ->
+    debugerl(Server, OnOff, exported).
+
+debugerl(Server, on, exported) ->
+    dbg:tracer(),
+    dbg:tp(?MODULE, [{'_', [], [{return_trace}]}]),
+    dbg:p(Server, [call, m]),
+    ok; 
+
+debugerl(Server, on, all) ->
+    dbg:tracer(),
+    dbg:tpl(?MODULE, [{'_', [], [{return_trace}]}]),
+    dbg:p(Server, [call, m]),
+    ok;
+
+debugerl(Server, off, _Level) ->
+    dbg:stop(),
+    ok.
+
+%%---------------------------------------------------------------------------
+%% debugc(Server, OnOff) -> _
+%%	Server  - pid() | Name | {global, Name} | {Name, Node} 
+%%	OnOff   - on | off	
+%% Description: Turns on/off the c-programs (port programs) debug-printouts.
+%% Note: This function is only intended for debugging and may not be used
+%%       in products. Turning on these printouts will cause the program
+%%       to loose performance !!!!!!!!!!!!
+%%---------------------------------------------------------------------------
+debugc(Server, on) ->
+    CCmd = [?DEBUG, ?DEBUG_ON, ?STR_TERMINATOR],
+    gen_server:cast(Server, {debugc, CCmd});
+    
+debugc(Server, off) ->
+    CCmd = [?DEBUG, ?DEBUG_OFF, ?STR_TERMINATOR],
+    gen_server:cast(Server, {debugc, CCmd}).
+    
+
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+%%---------------------------------------------------------------------------
 %%
-%% Depricated functions
+%% !!!!!!!!!!!!!! Only depricated functions below !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 %%---------------------------------------------------------------------------
 
 %% This function is deprecated and does nothing.
 %% It is included only for compatibility reason.
 %%--------------------------------------------------------------------------- 
 sql_alloc_handle(Server, HandleType, RefInputHandle) ->
-    sql_alloc_handle(Server, HandleType, RefInputHandle, ?DefaultTimeout).
+    sql_alloc_handle(Server, HandleType, RefInputHandle, ?DEFAULT_TIMEOUT).
 
-sql_alloc_handle(Server, HandleType, RefInputHandle, Timeout) ->
+sql_alloc_handle(_Server, _HandleType, _RefInputHandle, _Timeout) ->
     {0,void}. 
 
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and replaced by the function 
 %% sqlBindColumn/[3,4].
 %%---------------------------------------------------------------------------
 sql_bind_col(Server, RefStmtHandle, ColNum, RefBuf) ->
-    sql_bind_col(Server, RefStmtHandle, ColNum, RefBuf, ?DefaultTimeout).
+    sql_bind_col(Server, RefStmtHandle, ColNum, RefBuf, ?DEFAULT_TIMEOUT).
 
-sql_bind_col(Server, RefStmtHandle, ColNum, RefBuf, Timeout) ->
+sql_bind_col(Server, _RefStmtHandle, ColNum, RefBuf, Timeout) ->
     Ret = sqlBindColumn(Server, ColNum, RefBuf, Timeout),
     case Ret of
-	{error, ErrMsg, ErrCode} ->
+	{error, _ErrMsg, ErrCode} ->
 	    ErrCode;
 	Other ->
 	    Other
     end.
 
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and replaced by the function
-%% sqlCloseCursor/[1,2].
+%% sqlCloseHandle/[1,2].
+%%---------------------------------------------------------------------------
+sqlCloseCursor(Server) ->
+    sqlCloseCursor(Server, ?DEFAULT_TIMEOUT).
+
+sqlCloseCursor(Server, Timeout) ->
+    Ret = sqlCloseHandle(Server, Timeout),
+    case Ret of
+	{error, _ErrMsg, ErrCode} ->
+	    ErrCode;
+	Other ->
+	    Other
+    end.
+
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+%% This function is deprecated.
+%% It is included only for compatibility reason.
 %%---------------------------------------------------------------------------
 sql_close_cursor(Server, RefStmtHandle) ->
-    sql_close_cursor(Server, RefStmtHandle, ?DefaultTimeout).
+    sql_close_cursor(Server, RefStmtHandle, ?DEFAULT_TIMEOUT).
 
-sql_close_cursor(Server, RefStmtHandle, Timeout) ->
-    Ret = sqlCloseCursor(Server, Timeout),
-    case Ret of
-	{error, ErrMsg, ErrCode} ->
-	    ErrCode;
-	Other ->
-	    Other
-    end.
+sql_close_cursor(Server, _RefStmtHandle, Timeout) ->
+    0.
 
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and replaced by the function
-%% sqlDescribeCol/[2,3].
+%% sqlConnect/[4,5].
 %%---------------------------------------------------------------------------
 sql_connect(Server, RefConnHandle, DSN, UID, Auth) ->
-    sql_connect(Server, RefConnHandle, DSN, UID, Auth, ?DefaultTimeout).
+    sql_connect(Server, RefConnHandle, DSN, UID, Auth, ?DEFAULT_TIMEOUT).
 
-sql_connect(Server, RefConnHandle, DSN, UID, Auth, Timeout) ->
+sql_connect(Server, _RefConnHandle, DSN, UID, Auth, Timeout) ->
     Ret = sqlConnect(Server, DSN, UID, Auth, Timeout),
     case Ret of
-	{error, ErrMsg, ErrCode} ->
+	{error, _ErrMsg, ErrCode} ->
 	    ErrCode;
 	Other ->
 	    Other
     end.
 
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and repleced by the function
 %% sqlDescribeCol/[2,3].
 %%---------------------------------------------------------------------------
 sql_describe_col(Server, RefStmtHandle, ColNum, BufLenColName) ->
-    sql_describe_col(Server, RefStmtHandle, ColNum, BufLenColName, ?DefaultTimeout).
+    sql_describe_col(Server, RefStmtHandle, ColNum, BufLenColName, 
+		     ?DEFAULT_TIMEOUT).
 
-sql_describe_col(Server, RefStmtHandle, ColNum, BufLenColName, Timeout) ->
+sql_describe_col(Server, _RefStmtHandle, ColNum, _BufLenColName, Timeout) ->
     Ret = sqlDescribeCol(Server, ColNum, Timeout),
     case Ret of
-	{error, ErrMsg, ErrCode} ->
+	{error, _ErrMsg, ErrCode} ->
 	    ErrCode;
 	{ReturnCode, ColName, CNullable} ->
 	    {ReturnCode, {ColName, -1}, -1, -1, -1, CNullable};
@@ -1033,191 +1010,201 @@ sql_describe_col(Server, RefStmtHandle, ColNum, BufLenColName, Timeout) ->
 	    Other
     end.
 
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and replaced by the function
 %% sqlDisConnect/[1,2].
 %%---------------------------------------------------------------------------
 sql_disconnect(Server, RefConnHandle) ->
-    sql_disconnect(Server, RefConnHandle, ?DefaultTimeout).
+    sql_disconnect(Server, RefConnHandle, ?DEFAULT_TIMEOUT).
 
-sql_disconnect(Server, RefConnHandle, Timeout) ->
+sql_disconnect(Server, _RefConnHandle, Timeout) ->
     Ret = sqlDisConnect(Server, Timeout),
     case Ret of
-	{error, ErrMsg, ErrCode} ->
+	{error, _ErrMsg, ErrCode} ->
 	    ErrCode;
 	Other ->
 	    Other
-    end.	
+    end.
 
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and does nothing.
 %% It is included only for compatibility reason.
 %%--------------------------------------------------------------------------
 sql_driver_connect(Server, RefConnHandle, InConnStr,
 		   BufLenOutConnStr, DrvCompletion) ->
     sql_driver_connect(Server, RefConnHandle, InConnStr,
-		       BufLenOutConnStr, DrvCompletion, ?DefaultTimeout).
+		       BufLenOutConnStr, DrvCompletion, ?DEFAULT_TIMEOUT).
 
-sql_driver_connect(Server, RefConnHandle, InConnStr,
-		   BufLenOutConnStr, DrvCompletion, Timeout) ->
+sql_driver_connect(_Server, _RefConnHandle, _InConnStr,
+		   _BufLenOutConnStr, _DrvCompletion, _Timeout) ->
     {0, void}.
 
-
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and replaced by the function 
 %% sqlEndTran/[2,3]
 %%---------------------------------------------------------------------------
 sql_end_tran(Server, HandleType, RefHandle, ComplType) ->
-    sql_end_tran(Server, HandleType, RefHandle, ComplType, ?DefaultTimeout).
+    sql_end_tran(Server, HandleType, RefHandle, ComplType, ?DEFAULT_TIMEOUT).
 
-sql_end_tran(Server, HandleType, RefHandle, ComplType, Timeout) ->
+sql_end_tran(Server, _HandleType, _RefHandle, ComplType, Timeout) ->
     Ret = sqlEndTran(Server, ComplType, Timeout),
     case Ret of
-	{error, ErrMsg, ErrCode} ->
+	{error, _ErrMsg, ErrCode} ->
 	    ErrCode;
 	Other ->
 	    Other
     end.
 
-
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and replaced by the function
 %% sqlExecDirect/[2,3].
 %%---------------------------------------------------------------------------
 sql_exec_direct(Server, RefStmtHandle, Stmt) ->
-    sql_exec_direct(Server, RefStmtHandle, Stmt, ?DefaultTimeout).
+    sql_exec_direct(Server, RefStmtHandle, Stmt, ?DEFAULT_TIMEOUT).
 
 
-sql_exec_direct(Server, RefStmtHandle, Stmt, Timeout) ->
+sql_exec_direct(Server, _RefStmtHandle, Stmt, Timeout) ->
     Ret = sqlExecDirect(Server, Stmt, Timeout),
     case Ret of
-	{error, ErrMsg, ErrCode} ->
+	{error, _ErrMsg, ErrCode} ->
 	    ErrCode;
 	Other ->
 	    Other
     end.
-
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and replaced by the function
 %% sqlFetch/[1,2].
 %%---------------------------------------------------------------------------
 sql_fetch(Server, RefStmtHandle) ->
-    sql_fetch(Server, RefStmtHandle, ?DefaultTimeout).
+    sql_fetch(Server, RefStmtHandle, ?DEFAULT_TIMEOUT).
 
-sql_fetch(Server, RefStmtHandle, Timeout) ->
+sql_fetch(Server, _RefStmtHandle, Timeout) ->
     Ret = sqlFetch(Server, Timeout),
     case Ret of
-	{error, ErrMsg, ErrCode} ->
+	{error, _ErrMsg, ErrCode} ->
 	    ErrCode;
 	Other ->
 	    Other
     end.
 
-
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and does nothing.
 %% It is included only for compatibility reason.
 %%---------------------------------------------------------------------------
 sql_free_handle(Server, HandleType, RefHandle) ->
-    sql_free_handle(Server, HandleType, RefHandle, ?DefaultTimeout).
+    sql_free_handle(Server, HandleType, RefHandle, ?DEFAULT_TIMEOUT).
 
-sql_free_handle(Server, HandleType, RefHandle, Timeout) ->
+sql_free_handle(_Server, _HandleType, _RefHandle, _Timeout) ->
     0.
-
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and does nothing
 %% It is included only for compatibility reason.
 %%---------------------------------------------------------------------------
 sql_get_connect_attr(Server, RefConnHandle, Attr, BufType) ->
     sql_get_connect_attr(Server, RefConnHandle, Attr, BufType, 
-			 ?DefaultTimeout).
+			 ?DEFAULT_TIMEOUT).
 
-sql_get_connect_attr(Server, RefConnHandle, Attr, BufType, Timeout) ->
+sql_get_connect_attr(_Server, _RefConnHandle, _Attr, _BufType, _Timeout) ->
     {0, -1}.
 
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and does nothing.
 %% It is included only for compatibility reason.
 %%---------------------------------------------------------------------------
 sql_get_diag_rec(Server, HandleType, RefHandle, RecNum, BufLenErrMsg) ->
     sql_get_diag_rec(Server, HandleType, RefHandle, RecNum, BufLenErrMsg,
-		     ?DefaultTimeout).
+		     ?DEFAULT_TIMEOUT).
 
-sql_get_diag_rec(Server, HandleType, RefHandle, RecNum, BufLenErrMsg, 
-		 Timeout) ->
+sql_get_diag_rec(_Server, _HandleType, _RefHandle, _RecNum, 
+		 _BufLenErrMsg, _Timeout) ->
    0.
 
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and replaced by the function
 %% sqlNumResultCols/[1,2].
 %%---------------------------------------------------------------------------
 sql_num_result_cols(Server, RefStmtHandle) ->
-    sql_num_result_cols(Server, RefStmtHandle, ?DefaultTimeout).
+    sql_num_result_cols(Server, RefStmtHandle, ?DEFAULT_TIMEOUT).
 
-sql_num_result_cols(Server, RefStmtHandle, Timeout) ->
+sql_num_result_cols(Server, _RefStmtHandle, Timeout) ->
     Ret = sqlNumResultCols(Server, Timeout),
     case Ret of
-	{error, ErrMsg, ErrCode} ->
+	{error, _ErrMsg, ErrCode} ->
 	    ErrCode;
-	 Other ->
+	Other ->
 	    Other
     end.    
 
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and replaced by the function
 %% sql_rowCount/[1,2].
 %%---------------------------------------------------------------------------
 sql_row_count(Server, RefStmtHandle) ->
-    sql_row_count(Server, RefStmtHandle, ?DefaultTimeout).
+    sql_row_count(Server, RefStmtHandle, ?DEFAULT_TIMEOUT).
 
-sql_row_count(Server, RefStmtHandle, Timeout) ->
+sql_row_count(Server, _RefStmtHandle, Timeout) ->
     Ret = sqlRowCount(Server, Timeout),
     case Ret of
-	{error, ErrMsg, ErrCode} ->
-	    ErrCode;
-	 Other ->
-	    Other
-    end.
-
-%% This function is deprecated and replaced by the function.
-%% sqlSetConnectAttr/[4, 5].
-%%---------------------------------------------------------------------------
-sql_set_connect_attr(Server, RefConnHandle, Attr, Value, BufType) ->
-    sql_set_connect_attr(Server, RefConnHandle, Attr, Value, BufType,
-			 ?DefaultTimeout).
-
-sql_set_connect_attr(Server, RefConnHandle, Attr, Value, BufType, Timeout) ->
-    Ret = sqlSetConnectAttr(Server,Attr,Value,Timeout),
-    case Ret of
-	{error, ErrMsg, ErrCode} ->
+	{error, _ErrMsg, ErrCode} ->
 	    ErrCode;
 	Other ->
 	    Other
     end.
 
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+%% This function is deprecated and replaced by the function.
+%% sqlSetConnectAttr/[4, 5].
+%%---------------------------------------------------------------------------
+sql_set_connect_attr(Server, RefConnHandle, Attr, Value, BufType) ->
+    sql_set_connect_attr(Server, RefConnHandle, Attr, Value, BufType,
+			 ?DEFAULT_TIMEOUT).
+
+sql_set_connect_attr(Server, _RefConnHandle, Attr, Value, _BufType, Timeout) ->
+    Ret = sqlSetConnectAttr(Server,Attr,Value,Timeout),
+    case Ret of
+	{error, _ErrMsg, ErrCode} ->
+	    ErrCode;
+	Other ->
+	    Other
+    end.
+
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and does nothing.
 %% It is included only for compatibility reason.
 %%---------------------------------------------------------------------------
 sql_set_env_attr(Server, RefEnvHandle, Attr, Value, BufType) ->
     sql_set_env_attr(Server, RefEnvHandle, Attr, Value, BufType, 
-		     ?DefaultTimeout).
+		     ?DEFAULT_TIMEOUT).
 
-sql_set_env_attr(Server, RefEnvHandle, Attr, Value, BufType, Timeout) ->
+sql_set_env_attr(_Server, _RefEnvHandle, _Attr, _Value, _BufType, 
+		 _Timeout) ->
     0.
 
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and replaced by the function
 %% columnRef/0. 
 %%---------------------------------------------------------------------------
 alloc_buffer(Server, BufCType, Size) ->
-    alloc_buffer(Server, BufCType, Size, ?DefaultTimeout).
+    alloc_buffer(Server, BufCType, Size, ?DEFAULT_TIMEOUT).
 
-alloc_buffer(Server, BufCType, Size, Timeout) ->
+alloc_buffer(_Server, _BufCType, _Size, _Timeout) ->
     columnRef().
 
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and does nothing.
 %% It is included only for compatibility reason.
 %%---------------------------------------------------------------------------
 dealloc_buffer(Server, RefBuf) ->
-    dealloc_buffer(Server, RefBuf, ?DefaultTimeout).
+    dealloc_buffer(Server, RefBuf, ?DEFAULT_TIMEOUT).
 
-dealloc_buffer(Server, RefBuf, Timeout) ->
+dealloc_buffer(_Server, _RefBuf, _Timeout) ->
     ok.
-
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and replaced by the function 
 %% readData/[2,3].
 %%---------------------------------------------------------------------------
 read_buffer(Server, RefBuf) ->
-    read_buffer(Server, RefBuf, ?DefaultTimeout).
+    read_buffer(Server, RefBuf, ?DEFAULT_TIMEOUT).
 
 read_buffer(Server, RefBuf, Timeout) ->
     Ret = readData(Server, RefBuf, Timeout),
@@ -1228,23 +1215,24 @@ read_buffer(Server, RefBuf, Timeout) ->
 	    Other
     end.
 
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and does nothing.
 %% It is included only for compatibility reason.
 %%---------------------------------------------------------------------------
 init_env(Server) ->
-    init_env(Server, ?DefaultTimeout).
+    init_env(Server, ?DEFAULT_TIMEOUT).
 
-init_env(Server, Timeout) ->
+init_env(_Server, _Timeout) ->
     {ok, void}.
 
-
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and replaced by the function 
 %% erl_connect/[2,3,4,5].
 %%---------------------------------------------------------------------------
 connect(Server, RefEnvHandle, ConnectStr) ->
-    connect(Server, RefEnvHandle, ConnectStr, ?DefaultTimeout).
+    connect(Server, RefEnvHandle, ConnectStr, ?DEFAULT_TIMEOUT).
 
-connect(Server, RefEnvHandle, ConnectStr, Timeout) ->
+connect(Server, _RefEnvHandle, ConnectStr, Timeout) ->
     Ret = erl_connect(Server, ConnectStr, Timeout),
     case Ret of
 	ok ->
@@ -1256,9 +1244,9 @@ connect(Server, RefEnvHandle, ConnectStr, Timeout) ->
     end.
 
 connect(Server, RefEnvHandle, DSN, UID, PWD) ->
-    connect(Server, RefEnvHandle, DSN, UID, PWD, ?DefaultTimeout).
+    connect(Server, RefEnvHandle, DSN, UID, PWD, ?DEFAULT_TIMEOUT).
 
-connect(Server, RefEnvHandle, DSN, UID, PWD, Timeout) ->
+connect(Server, _RefEnvHandle, DSN, UID, PWD, Timeout) ->
     Ret = erl_connect(Server, DSN, UID, PWD, Timeout),
     case Ret of
 	ok ->
@@ -1268,25 +1256,27 @@ connect(Server, RefEnvHandle, DSN, UID, PWD, Timeout) ->
 	Other ->
 	    Other
     end.
-
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and replaced by the function
 %% erl_executeStmt/[2,3].
 %%---------------------------------------------------------------------------
 execute_stmt(Server, RefConnHandle, Stmt) ->
-    execute_stmt(Server, RefConnHandle, Stmt, ?DefaultTimeout).
+    execute_stmt(Server, RefConnHandle, Stmt, ?DEFAULT_TIMEOUT).
 
-execute_stmt(Server, RefConnHandle, Stmt, Timeout) ->
+execute_stmt(Server, _RefConnHandle, Stmt, Timeout) ->
     Ret = erl_executeStmt(Server, Stmt, Timeout),
     case Ret of
-	{error,ErrMsg, ErrMsg} ->
-	    {error,{execute_stmt, [{void, {-1, ErrMsg, -1}}]}};
-	{selected, ColumnNameList, RowData} -> 
+	{error,_ErrMsg1, ErrMsg2} ->
+	    {error,{execute_stmt, [{void, {-1, ErrMsg2, -1}}]}};
+	{selected, ColumnList, RowData} ->
+	    NewColumnList = ColumnList, % For new ColumnList 
 	    NewRowData = bar(RowData),
-	    {selected,ColumnNameList, NewRowData};
+	    {selected,NewColumnList, NewRowData};
 	Other ->
 	    Other
     end.
-
+    
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% Bar convert a list in format [[El11, El12, ...], [El21, ...],....] 
 %% to same lists but each element (El11,..) converted to a string. 
 bar([])->
@@ -1306,14 +1296,14 @@ bar2(X) when float(X) ->
 bar2(X) ->
     io_lib:format("~p",[X]).
 
-    
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and replaced by the function
 %% erl_disconnect/[1,2].
 %%---------------------------------------------------------------------------
 disconnect(Server, RefConnHandle) ->
-    disconnect(Server, RefConnHandle, ?DefaultTimeout).
+    disconnect(Server, RefConnHandle, ?DEFAULT_TIMEOUT).
 
-disconnect(Server, RefConnHandle, Timeout) ->
+disconnect(Server, _RefConnHandle, Timeout) ->
     Ret = erl_disconnect(Server, Timeout),
     case Ret of
 	ok ->
@@ -1324,437 +1314,22 @@ disconnect(Server, RefConnHandle, Timeout) ->
 	    Other
     end.
 
-
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and does nothing.
 %% It is included only for compatibility reason.
 %%-------------------------------------------------------------------
 terminate_env(Server, RefEnvHandle) ->
-    terminate_env(Server, RefEnvHandle, ?DefaultTimeout).
+    terminate_env(Server, RefEnvHandle, ?DEFAULT_TIMEOUT).
 
-terminate_env(Server, RefEnvHandle, Timeout) ->
+terminate_env(_Server, _RefEnvHandle, _Timeout) ->
     ok.
-
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 %% This function is deprecated and does nothing.
 %% It is included only for compatibility reason.
 %%-------------------------------------------------------------------
 display_size(SqlType, ColumnSize) when 
   integer(SqlType), integer(ColumnSize) ->
     -1.
-
-
-%%%----------------------------------------------------------------------
-%%% Debug fcns
-%%%----------------------------------------------------------------------
-
-%% Returns the internal state in a tagged tuple list.
-%%
-get_state(Server) ->
-    State = gen_server:call(Server, get_state),
-    [{port, State#state.port},
-     {connected, State#state.connected},
-     {fetchdata, State#state.fetchdata},
-     {clientPid, State#state.clientPid},
-     {columnvector, State#state.columnvector}].
-
-
-%%%======================================================================
-%%% Callback functions from gen_server
-%%%======================================================================
-
-%%----------------------------------------------------------------------
-%% Func: init/1
-%% Returns: {ok, State}          |
-%%          {ok, State, Timeout} |
-%%          {stop, Reason}
-%%----------------------------------------------------------------------
-
-%%
-init(Args) ->
-    process_flag(trap_exit, true),
-    % Start the C node
-    case os:find_executable(?ServerProg, ?ServerDir) of
-	FileName when list(FileName)->
-	    Port = open_port({spawn,FileName},[{packet,4}, binary]),
-	    State = #state{port=Port},
-	    {ok, State};
-	false ->
-	    {stop, {no_odbcserver, "Can't find executable."}}
-    end.
-		    
-
-%%----------------------------------------------------------------------
-%% Func: handle_call/3
-%% Returns: {reply, Reply, State}          |
-%%          {reply, Reply, State, Timeout} |
-%%          {noreply, State}               |
-%%          {noreply, State, Timeout}      |
-%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%          {stop, Reason, State}            (terminate/2 is called)
-%%----------------------------------------------------------------------
-
-%%---------------------------------------------------------------------
-%% Stop Call Backs
-%%---------------------------------------------------------------------
-
-% stop
-handle_call(stop, _From, State) ->
-    {stop, normal, ok, State};
-
-%%---------------------------------------------------------------------
-%% ODBC Call Backs
-%%---------------------------------------------------------------------
-
-handle_call({openconnection,ConnectString,ClientPid}, _, State) ->
-    Port = State#state.port,
-    Reply = send(Port, ConnectString),
-    NewState = State#state{connected = true, clientPid = ClientPid},
-    {reply, Reply, NewState};
-
-handle_call({execute, SqlStmt}, _, State) ->
-    Port = State#state.port,
-    Connected = State#state.connected,
-    Reply = case Connected of
-		false ->
-		    {error, not_connected};
-		true ->
-		    Port ! {self(), {command, term_to_binary(SqlStmt)}},
-		    ok
-	    end,
-    {reply, Reply, State};
-handle_call({execdir, CmdStr}, _, State) ->
-    Port = State#state.port,
-    Connected = State#state.connected,
-    Reply =
-	case Connected of
-	    false ->
-		{error, not_connected};
-	    true ->
-		send(Port, CmdStr)
-	end,
-    {reply, Reply, State};
-
-handle_call({closeconnection,CloseStr}, _,State) ->
-    Port = State#state.port,
-    NewState = State#state{connected = false},
-    Reply = send(Port, CloseStr),
-    {reply,Reply, NewState};
-
-handle_call({bindcolumn, CmdStr, ColNum, MemRef}, _,State) ->
-    Port = State#state.port,
-    Connected = State#state.connected,
-    ColumnVec = State#state.columnvector,
-    NewColumnVec = insert({MemRef,ColNum}, ColumnVec),
-    ?DBG("handle_call: bindcolumn insert return ~p",[NewColumnVec]),
-    NewState = State#state{columnvector = NewColumnVec},
-    NCmdStr = CmdStr ++ integer_to_list(ColNum),
-    Reply =
-	case Connected of
-	    false ->
-		{error, not_connected};
-	    true ->
-		send(Port, NCmdStr)
-	end,
-    {reply,Reply, NewState};
-
-handle_call({closecursor, CmdStr}, _, State) ->
-    Port = State#state.port,
-    Connected = State#state.connected,
-    ColumnVect = State#state.columnvector,
-    NewColumnVect = delete(ColumnVect),
-    NewState = State#state{columnvector = NewColumnVect, fetchdata = false},
-    Reply = case Connected of
-		false ->
-		    {error, not_connected};
-		true ->
-		    send(Port, CmdStr)
-	    end,
-    {reply,Reply, NewState};
-
-handle_call({describeColumn, CmdStr}, _, State) ->
-    Port = State#state.port,
-    Connected = State#state.connected,
-    Reply =
-	case Connected of
-	    false ->
-		{error, not_connected};
-	    true ->
-		send(Port, CmdStr)
-	end,
-    {reply,Reply, State};
-
-handle_call({endTran, CmdStr}, _, State) ->
-    Port = State#state.port,
-    Connected = State#state.connected,
-    Reply =
-	case Connected of
-	    false ->
-		{error, not_connected};
-	    true ->
-		send(Port, CmdStr)
-	end,
-    {reply,Reply, State};
-
-handle_call({fetch, CmdStr}, _, State) ->
-    Port = State#state.port,
-    Connected = State#state.connected,
-    NewState =  State#state{fetchdata = true},
-    Reply = case Connected of
-		false ->
-		    {error, not_connected};
-		true ->
-		    send(Port, CmdStr)
-	    end,
-    {reply,Reply, NewState};
-
-handle_call({numResultCols, CmdStr}, _, State) ->
-    Port = State#state.port,
-    Connected = State#state.connected,
-    Reply =
-	case Connected of
-	    false ->
-		{error, not_connected};
-	    true ->
-		send(Port, CmdStr)
-	end,
-    {reply,Reply, State};
-
-handle_call({rowCount, CmdStr}, _, State) ->
-    Port = State#state.port,
-    Connected = State#state.connected,
-    Reply =
-	case Connected of
-	    false ->
-		{error, not_connected};
-	    true ->
-		send(Port, CmdStr)
-	end,
-    {reply,Reply, State};
-
-handle_call({setConnectAttr, CmdStr}, _, State) ->
-    Port = State#state.port,
-    Reply = send(Port, CmdStr),
-    {reply,Reply, State};
-
-handle_call({readbuffer, CmdStr, ColumnRef}, _, State) ->
-    Port = State#state.port,
-    ColumnVect = State#state.columnvector,
-    CNumber = lockup(ColumnRef,ColumnVect),
-    Fetchdata = State#state.fetchdata,
-    Reply = case CNumber of
-		not_found ->
-		    {error, column_found};
-		Other ->
-		    case Fetchdata of
-			false ->
-			    {error, no_data_fetched};
-			true ->
-			    NCmdStr = CmdStr ++ integer_to_list(CNumber),
-			    send(Port, NCmdStr)
-		    end
-	    end,
-    {reply,Reply, State};
-
-handle_call(stop, _, State) ->
-    ?DBG("handle_call(stop)~n",[]),
-    {stop,  normal, ok, State};
-
-%%---------------------------------------------------------------------
-%% Debug Call Back
-%%---------------------------------------------------------------------
-
-handle_call(get_state, _From, State) ->
-    {reply, State, State};
-
-
-%%-----------------------------------------------------------
-
-% Unknown request
-handle_call(Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
-%%----------------------------------------------------------------------
-
-
-%%----------------------------------------------------------------------
-%% Func: handle_cast/2
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
-%%----------------------------------------------------------------------
-handle_cast(_Msg, State) ->
-    {noreply, State}.
-
-%%----------------------------------------------------------------------
-%% Func: handle_info/2
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
-%%----------------------------------------------------------------------
-
-handle_info({'EXIT', Pid, Reason}, State) when pid(Pid) ->
-    ok =
-	error_logger:error_report({"ODBC: Linked process:", 
-				   {'EXIT', Pid, Reason}}),
-    {stop, {stopped, {'EXIT', Pid, Reason}}, State};
-% EXIT from port.
-% Log exit and terminate.
-%
-handle_info({'EXIT', Port, Reason}, State) ->
-    ok =
-	error_logger:error_report({"ODBC: Port:", {'EXIT', Port, Reason}}),
-    {stop, {stopped, {'EXIT', Port, Reason}}, State};
-
-handle_info({Port, {data, BinData}}, State) ->
-    ClientPid = State#state.clientPid,
-    case (catch binary_to_term(BinData)) of
-	{'EXIT',Reason} ->
-	    ?DBG("handle_info(Port) decode error: ~p~n", [Reason]),
-	    {error, {binary_to_term, Reason}};
-	Data ->
-	    ?DBG("handle_info(Port) Data: ~p~n",[Data]),
-	    ClientPid ! Data,
-	    Data
-    end,
-    {noreply, State};
-
-% Other.
-%
-handle_info(_Info, State) ->
-    {noreply, State}.
-
-%%----------------------------------------------------------------------
-%% Func: terminate/2
-%% Purpose: Shutdown the server
-%% Returns: any (ignored by gen_server)
-%%----------------------------------------------------------------------
-terminate(Reason, State) ->
-    Port = State#state.port,
-    Port ! {self(), close}.
-
-
-
-%%%======================================================================
-%%% Internal functions
-%%%======================================================================
-
-
-%%%---------------------------------------------------------------------
-%%% Argument checking
-%%%---------------------------------------------------------------------
-%%% These fcns check input arguments to the interface
-%%% fcns. They all return ok. If an argument is not
-%%% valid, the following exception thrown:
-%%% {badarg, F, ArgNo, Info}
-%%%   F -> atom()             ; Function.
-%%%   ArgNo -> integer()      ; The ordinal number of the argument in the
-%%%                             interface fcn.
-%%%   Info -> term()          ; Error info.
-%%%
-%%%---------------------------------------------------------------------
-
-
-%%------------------------------------------------------------------
-%% chk_str/3
-%%
-%% Checks that a string is valid.
-%% NOTE: Does not check that the string contains ASCII
-%%       characters only or that it doesn't contain a
-%%       null-termination character!
-%%
-%% chk_str(Str, CallingFunc, ArgNo) -> ok
-%%
-
-chk_str(Str, _CallingFunc, _ArgNo) when list(Str) ->
-    ok;
-chk_str(Str, CallingFunc, ArgNo) ->
-    exit({badarg,
-	  CallingFunc,
-	  ArgNo,
-	  {"Not a string", Str}}).
-
-%%------------------------------------------------------------------
-%% chk_int/3
-%%
-%% Checks that arg is a integer.
-%% chk_int(Int, CallingFunc, ArgNo) -> ok
-%%
-
-chk_int(Int, _CallingFunc, _ArgNo) when integer(Int) ->
-    ok;
-chk_int(Int, CallingFunc, ArgNo) ->
-    exit({badarg,
-	  CallingFunc,
-	  ArgNo,
-	  {"Not a Integer", Int}}).
-
-
-
-%%%----------------------------------------------------------------
-%%% Other Internal Fcns
-%%%----------------------------------------------------------------
-
-
-%%----------------------------------------------------------------
-%% get_port_reply/1
-%%
-%% get_port_reply(Port) -> ok | {error, Reason}
-%%
-%%
-
-%% Send a command to ODBC
-send(Port, Data)->
-    Port ! {self(), {command, term_to_binary(Data)}},
-    get_port_reply(Port).
-%% Wait of respond from ODBC
-get_port_reply(Port)->
-    receive
-	{Port, {data, BinData}}  -> 
-	    case (catch binary_to_term(BinData)) of
-		{'EXIT',Reason} ->
-		    {error, {binary_to_term, Reason}};
-		Data ->
-		    Data
-	    end;
-	{'EXIT', P, Reason} ->
-	    {error, port_died};
-	Other ->
-	    ?DBG("get_prot_reply Other ~p ~n", [Other])
-    end.
-
-%% This is a simple table. The table contains tuples.
-%% Each tuple contain a memoryreferens and a corrsponding
-%% columnnumber.
-
-insert({Ref, ColumnNr}, []) ->
-    [{Ref, ColumnNr}];
-insert({Ref, ColumnNr}, Xs) ->
-    [{Ref, ColumnNr}| Xs].
-
-lockup(Ref, []) ->
-    not_found;
-lockup(Ref, [{Ref, ColumnNr} | Xs]) ->
-    ColumnNr;
-lockup(Ref, [{ORef, ColumnNr} | Xs] ) ->
-    lockup(Ref, Xs).
-
-delete(Xs) ->
-    [].
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+%%%&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 
 

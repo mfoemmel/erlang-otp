@@ -72,8 +72,17 @@ all(suite) ->
      connect,
      request_and_reply,
      pending_ack,
-     dist
+     dist,
+
+     %% Tickets last
+     tickets
     ].
+
+tickets(suite) ->
+    [
+     otp_4359
+    ].
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -108,6 +117,7 @@ connect(Config) when list(Config) ->
     ?VERIFY(ok, application:stop(megaco)),
     ?RECEIVE([]),
     ok.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -188,6 +198,7 @@ request_and_reply(Config) when list(Config) ->
     d("request_and_reply -> done",[]),
     ok.
 
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 pending_ack(suite) ->
@@ -247,6 +258,7 @@ pending_ack(Config) when list(Config) ->
     ?SEND(application:stop(megaco)),
     ?RECEIVE([{res, _, ok}]),
     ok.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -328,6 +340,124 @@ dist(Config) when list(Config) ->
     ?RECEIVE([]),
     ok.
 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+otp_4359(suite) ->
+    [];
+otp_4359(Config) when list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+    Mid = {deviceName, "dummy_mid"},
+
+    io:format("otp_4359 -> start megaco application~n", []),
+    ?VERIFY(ok, application:start(megaco)),
+
+    io:format("otp_4359 -> start and configure megaco user~n", []),
+    ?VERIFY(ok,	megaco:start_user(Mid, [{send_mod, ?MODULE},
+					{request_timer, infinity},
+					{reply_timer, infinity}])),
+
+    ?VERIFY(ok, megaco:update_user_info(Mid, user_mod,  ?MODULE)),
+    ?VERIFY(ok, megaco:update_user_info(Mid, user_args, [self()])),
+    RH0 = ?VERIFY(_,  megaco:user_info(Mid, receive_handle)),
+    RH1 = RH0#megaco_receive_handle{send_mod        = ?MODULE,
+				    encoding_mod    = megaco_compact_text_encoder,
+				    encoding_config = []},
+
+    %% First an erroneous transaction (missing the transaction id number)
+    %% then an valid transaction.
+    M = "!/1 ml2 "
+	"T={C=${A=${M{O {MO=SR,RG=OFF,RV=OFF}}}}}"
+	"T=1{C=${A=${M{O {MO=SR,RG=OFF,RV=OFF}}}}}",
+
+    %% Simulate incomming message
+    %% Will result in an (auto) connect first
+    io:format("otp_4359 -> simulate receive message~n", []),
+    megaco:receive_message(RH1, self(), self(), list_to_binary(M)),
+    io:format("otp_4359 -> await actions~n", []),
+    Actions = otp_4359_await_actions([{handle_connect, ignore}, 
+				      {send_message, ?megaco_bad_request}, 
+				      {handle_trans_request, ignore}, 
+				      {send_message, ?megaco_not_implemented}]), 
+    io:format("otp_4359 -> analyze actions~n", []),
+    otp_4359_analyze_result(RH1, Actions),
+
+    Conns = megaco:system_info(connections),
+    OKs   = lists:duplicate(length(Conns),ok),
+    ?VERIFY(OKs, [megaco:disconnect(CH, test_complete) || CH <- Conns]),
+    ?VERIFY(_,	megaco:stop_user(Mid)),
+    ?VERIFY(ok, application:stop(megaco)),
+    ?RECEIVE([]),
+    ok.
+
+
+otp_4359_await_actions(Exp) ->
+    otp_4359_await_actions(Exp, []).
+
+otp_4359_await_actions([], Rep) ->
+    lists:reverse(Rep);
+otp_4359_await_actions([{M,I}|R] = All, Rep) ->
+    receive
+	{M, Info} ->
+	    otp_4359_await_actions(R, [{M, I, Info}|Rep]);
+	Else ->
+	    exit({received_unexpected_message, M, Else})
+	    %% io:format("received unexpected: ~p~n", [Else]),
+	    %% otp_4359_await_actions(All, Rep)
+    after 10000 ->
+	    exit(timeout)
+    end.
+
+otp_4359_analyze_result(RH, []) ->
+    ok;
+otp_4359_analyze_result(RH, [{send_message, ExpErrorCode, EncodedMessage}|L]) ->
+    io:format("otp_4359_analyze_result -> send_message: ", []),
+    otp_4359_analyze_encoded_message(RH, ExpErrorCode, EncodedMessage),
+    otp_4359_analyze_result(RH,L);
+otp_4359_analyze_result(RH, [{M,ignore,_}|T]) ->
+    io:format("otp_4359_analyze_result -> ignoring ~p~n", [M]),
+    otp_4359_analyze_result(RH,T).
+
+otp_4359_analyze_encoded_message(RH, ExpErrorCode, M) 
+  when record(RH, megaco_receive_handle), binary(M) ->
+    #megaco_receive_handle{encoding_mod    = Mod,
+			   encoding_config = Conf} = RH,
+    case (catch Mod:decode_message(Conf, M)) of
+	{ok, #'MegacoMessage'{mess = #'Message'{messageBody = Body}}} ->
+	    case Body of
+		{transactions, [{transactionReply,Reply}]} ->
+		    case Reply of
+			#'TransactionReply'{transactionResult = Result} ->
+			    case Result of
+				{transactionError,ED} when record(ED, 'ErrorDescriptor') ->
+				    case ED#'ErrorDescriptor'.errorCode of
+					ExpErrorCode ->
+					    io:format("error code ~p ok~n", [ExpErrorCode]),
+					    ok;
+					Code ->
+					    io:format("error code ~p erroneous~n", [Code]),
+					    exit({unexpected_error_code, ExpErrorCode, Code})
+				    end;
+				_ ->
+				    io:format("unexpected trans result~n", []),
+				    exit({unexpected_trans_result, Result})
+			    end;
+			_ ->
+			    io:format("unexpected trans reply~n", []),
+			    exit({unexpected_trans_reply, Reply})
+		    end;
+		_ ->
+		    io:format("unexpected body~n", []),
+		    exit({unexpected_body, Body})
+	    end;
+
+	Else ->
+	    io:format("unexpected decode result~n", []),
+	    exit({unexpected_decode_result, Else})
+    end.
+	    
+    
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 service_change_request() ->
@@ -358,6 +488,78 @@ ipv4_mid(Port) ->
     IpAddr = local_ip_address(),
     Ip = tuple_to_list(IpAddr),
     {ip4Address, #'IP4Address'{address = Ip, portNumber = Port}}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%% -------------------------------------------------------------------------------
+%%% Megaco user callback interface
+%%% -------------------------------------------------------------------------------
+
+handle_connect(ConnHandle, ProtocolVersion, Pid) ->
+    Pid ! {handle_connect, {ConnHandle, ProtocolVersion}},
+    ok.
+
+handle_disconnect(_, _, {user_disconnect, test_complete}, _) ->
+    ok;
+handle_disconnect(ConnHandle, ProtocolVersion, Reason, Pid) ->
+    Pid ! {handle_disconnect, {ConnHandle, ProtocolVersion, Reason}},
+    ok.
+
+handle_syntax_error(ConnHandle, ProtocolVersion, ErrorDescriptor, Pid) ->
+    Pid ! {handle_syntax_error,{ConnHandle, ProtocolVersion, ErrorDescriptor}},
+    reply.
+         
+handle_message_error(ConnHandle, ProtocolVersion, ErrorDescriptor, Pid) ->
+    Pid ! {handle_message_error,{ConnHandle, ProtocolVersion, ErrorDescriptor}},
+    reply.
+
+handle_trans_request(ConnHandle, ProtocolVersion, ActionRequests, Pid) ->
+    Pid ! {handle_trans_request,{ConnHandle, ProtocolVersion, ActionRequests}},
+    ED = #'ErrorDescriptor'{errorCode = ?megaco_not_implemented,
+			    errorText = "not implemented yet"},
+    {discard_ack, ED}.
+
+handle_trans_long_request(ConnHandle, ProtocolVersion, Data, Pid) ->
+    Pid ! {handle_trans_long_request,{ConnHandle, ProtocolVersion, Data}},
+    ED = #'ErrorDescriptor'{errorCode = ?megaco_not_implemented,
+			    errorText = "not implemented yet"},
+    {discard_ack, ED}.
+
+handle_trans_reply(ConnHandle, ProtocolVersion, ActualReply, Data, Pid) ->
+    Pid ! {handle_trans_reply,{ConnHandle, ProtocolVersion, ActualReply, Data}},
+    ok.
+
+handle_trans_ack(ConnHandle, ProtocolVersion, Status, Data, Pid) ->
+    Pid ! {handle_trans_ack,{ConnHandle, ProtocolVersion, Status, Data}},
+    ok.
+
+
+
+
+
+%%% -------------------------------------------------------------------------------
+%%% Megaco transport module interface
+%%% -------------------------------------------------------------------------------
+
+send_message(Pid, Data) ->
+    Pid ! {send_message, Data},
+    ok.
+
+block(Pid) ->
+    Pid ! {block, dummy},
+    ok.
+
+unblock(Pid) ->
+    Pid ! {unblock, dummy},
+    ok.
+
+close(Pid) ->
+    Pid ! {close, dummy},
+    ok.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 
 
 d(F,A) ->

@@ -26,9 +26,15 @@
 #include <stdio.h>
 #include "esock_ssl.h"
 
+#ifdef __GNUC__
+#define DEBUGF(x)  if (debug) __debugprintf x;
+#define DEBUGMSGF(x)  if (debugmsg) __debugprintclistf x;
+#define LOGF(fp, x) if (fp) { __locallogfp = fp; __debuglogf x; }
+#else
 #define DEBUGF(x)  if (debug) __debugprintf ## x;
 #define DEBUGMSGF(x)  if (debugmsg) __debugprintclistf ## x;
 #define LOGF(fp, x) if (fp) { __locallogfp = fp; __debuglogf ## x; }
+#endif
 #define SSLDEBUGF()  if (debug) { esock_ssl_print_errors_fp(stderr); \
     if (syslogfp) esock_ssl_print_errors_fp(syslogfp); }
 

@@ -148,6 +148,12 @@
 /* Define if you have the finite() function. */
 #undef HAVE_FINITE
 
+/* Define if you have the isinf() function. */
+#undef HAVE_ISINF
+
+/* Define if you have the isnan() function. */
+#undef HAVE_ISNAN
+
 /* Define if you have the fpsetmask() function. */
 #undef HAVE_FPSETMASK
 
@@ -157,6 +163,17 @@
 /* Define if you have the ieee_handler() function. */
 #undef HAVE_IEEE_HANDLER
 
+/* Define if you want to try to enable kernel poll */
+#undef ENABLE_KERNEL_POLL
+
+/* Define if you have the <sys/devpoll.h> header file. */
+#undef HAVE_SYS_DEVPOLL_H
+ 
+/* Define if you have the <linux/kpoll.h> header file. */
+#undef HAVE_LINUX_KPOLL_H
+ 
+/* Define if you have the <sys/event.h> header file. */
+#undef HAVE_SYS_EVENT_H
 
 /*
  * The lines below this marker is copied into the bottom of config.h.in
@@ -174,14 +191,11 @@
 #define INADDR_LOOPBACK (u_long)0x7F000001
 #endif
 
-#ifndef PURIFY /* Don't use elib_malloc as clib
-		  when purify is used */
-
-/* If elib_malloc is used then elib_alloc_is_clib */
-#ifdef ENABLE_ELIB_MALLOC
-#define ELIB_ALLOC_IS_CLIB
-#endif
-
+#ifdef PURIFY /* Don't use elib_malloc as clib
+		 when purify is used */
+#undef ENABLE_ELIB_MALLOC
+#undef ELIB_HEAP_SBRK
+#undef ELIB_ALLOC_IS_CLIB
 #endif
 
 #ifdef REDEFINE_FD_SETSIZE
@@ -192,6 +206,20 @@
 #define USE_SELECT
 #endif
 
+#if !defined(USE_SELECT)
+#  if defined(ENABLE_KERNEL_POLL)
+#    if defined(HAVE_SYS_DEVPOLL_H) || defined(HAVE_LINUX_KPOLL_H) || defined(HAVE_SYS_EVENT_H)
+#      define USE_KERNEL_POLL
+#    endif
+#  endif
+#endif
+ 
 #ifdef HAVE_GETHRVTIME_PROCFS_IOCTL
 #define HAVE_GETHRVTIME
+#endif
+
+#ifndef HAVE_FINITE
+# if defined(HAVE_ISINF) && defined(HAVE_ISNAN)
+#  define USE_ISINF_ISNAN
+# endif
 #endif

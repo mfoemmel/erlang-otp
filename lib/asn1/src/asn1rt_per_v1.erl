@@ -22,13 +22,17 @@
 -include("asn1_records.hrl").
 
 -export([dec_fixup/3, cindex/3, list_to_record/2]).
--export([setchoiceext/1, setext/1, fixoptionals/2, fixextensions/2, setoptionals/1, 
-	 getext/1, getextension/2, skipextensions/3, getbit/1, getchoice/3 ]).
--export([getoptionals/2, getoptionals/3, set_choice/3, encode_integer/2, encode_integer/3  ]).
--export([decode_integer/2, decode_integer/3, encode_small_number/1, encode_boolean/1, 
-	 decode_boolean/1, encode_length/2, decode_length/1, decode_length/2,
-	encode_small_length/1, decode_small_length/1,
-	decode_compact_bit_string/3]).
+-export([setchoiceext/1, setext/1, fixoptionals/2, fixextensions/2,
+	 setoptionals/1, fixoptionals2/3, getext/1, getextension/2,
+	 skipextensions/3, getbit/1, getchoice/3 ]).
+-export([getoptionals/2, getoptionals/3, set_choice/3,
+	 getoptionals2/2,
+	 encode_integer/2, encode_integer/3  ]).
+-export([decode_integer/2, decode_integer/3, encode_small_number/1,
+	 encode_boolean/1, decode_boolean/1, encode_length/2,
+	 decode_length/1, decode_length/2,
+	 encode_small_length/1, decode_small_length/1,
+	 decode_compact_bit_string/3]).
 -export([encode_enumerated/3, decode_enumerated/3, 
 	 encode_bit_string/3, decode_bit_string/3  ]).
 -export([encode_octet_string/2, decode_octet_string/2,
@@ -47,7 +51,8 @@
 	 encode_VisibleString/2, decode_VisibleString/2,
 	 encode_BMPString/2, decode_BMPString/2,
 	 encode_IA5String/2, decode_IA5String/2,
-	 encode_NumericString/2, decode_NumericString/2
+	 encode_NumericString/2, decode_NumericString/2,
+	 encode_ObjectDescriptor/2, decode_ObjectDescriptor/1
 	 ]).
 
 
@@ -94,6 +99,25 @@ setext(true) ->
 setext(false) ->
     [{debug,ext},{bit,0}].
 
+%%
+
+fixoptionals2(OptList,OptLength,Val) when tuple(Val) ->
+    Bits = fixoptionals2(OptList,Val,0),
+    {Val,{bits,OptLength,Bits}};
+
+fixoptionals2([],Val,Acc) ->
+    %% Optbits
+    Acc;
+fixoptionals2([Pos|Ot],Val,Acc) ->
+    case element(Pos,Val) of
+	asn1_NOVALUE -> fixoptionals2(Ot,Val,Acc bsl 1);
+	asn1_DEFAULT -> fixoptionals2(Ot,Val,Acc bsl 1);
+	_ -> fixoptionals2(Ot,Val,(Acc bsl 1) + 1)
+    end.
+
+
+%%
+%% fixoptionals remains only for backward compatibility purpose
 fixoptionals(OptList,Val) when tuple(Val) ->
     fixoptionals(OptList,Val,[]);
     
@@ -185,6 +209,10 @@ getchoice(Bytes,NumChoices,1) ->
 getchoice(Bytes,NumChoices,0) ->
     decode_integer(Bytes,[{'ValueRange',{0,NumChoices-1}}]).
 
+getoptionals2(Bytes,NumOpt) ->
+    {Opts,Bytes1} = getbits(Bytes,NumOpt).
+
+%% getoptionals is kept only for bakwards compatibility
 getoptionals(Bytes,NumOpt) ->
     {Blist,Bytes1} = getbits_as_list(NumOpt,Bytes),
     {list_to_tuple(Blist),Bytes1}.
@@ -920,10 +948,16 @@ encode_bit_string(C, BitListValue, NamedBitList) when list(BitListValue) ->
 	    pad_list(V,BitList);
 	V when integer(V) -> % fixed length 16 bits or less
 	    [align,pad_list(V,BitList)];
+	{Lb,Ub} when integer(Lb),integer(Ub),BListLen<Lb ->
+	    %% padding due to OTP-4353
+	    [encode_length({Lb,Ub},Lb),align,pad_list(Lb,BitList)];
 	{Lb,Ub} when integer(Lb),integer(Ub) ->	    
 	    [encode_length({Lb,Ub},length(BitList)),align,BitList];
 	no ->
 	    [encode_length(undefined,length(BitList)),align,BitList];
+	Sc={{Lb,Ub},_} when integer(Lb),integer(Ub),BListLen<Lb ->
+	    %% padding due to OTP-4353
+	    [encode_length(Sc,Lb),align,pad_list(Lb,BitList)];
 	Sc -> % extension marker
 	    [encode_length(Sc,length(BitList)),align,BitList]
     end;
@@ -973,18 +1007,33 @@ encode_bin_bit_string(C,{Unused,BinBits},NamedBitList) ->
 	V when integer(V),V=<16 ->
 	    [OctetList, pad_list(V,LastBits)];
 	V when integer(V) ->
-	    [OctetList, align, pad_list(V rem 8,LastBits)];
+%	    [OctetList, align, pad_list(V rem 8,LastBits)];
+	    [align,OctetList, pad_list(V rem 8,LastBits)];
 	{Lb,Ub} when integer(Lb),integer(Ub) ->
-	    [encode_length({Lb,Ub},length(LastBits)+(OLSize*8)),
-			   OctetList,align,LastBits];
-	 no ->
+	    NewLastBits = maybe_pad(Lb,length(LastBits)+(OLSize*8),LastBits,NamedBitList),
+	    [encode_length({Lb,Ub},length(NewLastBits)+(OLSize*8)),
+%			   OctetList,align,LastBits];
+			   align,OctetList,NewLastBits];
+	no ->
 	    [encode_length(undefined,length(LastBits)+(OLSize*8)),
-	     OctetList,align,LastBits];
+%	     OctetList,align,LastBits];
+	     align,OctetList,LastBits];
+	Sc={{Lb,_},_} when integer(Lb) ->
+	    NewLastBits = maybe_pad(Lb,length(LastBits)+(OLSize*8),LastBits,NamedBitList),
+	    [encode_length(Sc,length(NewLastBits)+(OLSize*8)),
+	     align,OctetList,NewLastBits];
 	Sc ->
 	    [encode_length(Sc,length(LastBits)+(OLSize*8)),
-	     OctetList,align,LastBits]
+%	     OctetList,align,LastBits]
+	     align,OctetList,LastBits]
     end.
     
+maybe_pad(_,_,Bits,[]) ->
+    Bits;
+maybe_pad(Lb,LenBits,Bits,_) when Lb>LenBits ->
+    pad_list(Lb,Bits);
+maybe_pad(_,_,Bits,_) ->
+    Bits.
     
 %%%%%%%%%%%%%%%
 %% The result is presented as a list of named bits (if possible)
@@ -1319,6 +1368,11 @@ decode_GeneralString(Bytes,C) ->
 encode_GraphicString(C,Val) ->
     encode_restricted_string(aligned,Val).
 decode_GraphicString(Bytes,C) ->
+    decode_restricted_string(Bytes,aligned).
+
+encode_ObjectDescriptor(C,Val) ->
+    encode_restricted_string(aligned,Val).
+decode_ObjectDescriptor(Bytes) ->
     decode_restricted_string(Bytes,aligned).
 
 encode_TeletexString(C,Val) -> % equivalent with T61String

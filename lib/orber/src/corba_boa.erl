@@ -64,9 +64,8 @@
 dispose(Object) ->
     case binary_to_term(iop_ior:get_privfield(Object)) of
 	undefined ->
-	    {Location, Key} = iop_ior:get_key(Object),
-	    if
-		Location == 'internal' ->
+	    case catch iop_ior:get_key(Object) of
+		{'internal', Key, _, _, _} ->
 		    case orber_objectkeys:get_pid(Key) of
 			{error, Reason} ->
 			    orber:debug_level_print("[~p] corba_boa:dispose(~p); object not found(~p)", 
@@ -75,7 +74,7 @@ dispose(Object) ->
 			Pid ->
 			    gen_server:call(Pid, stop)
 		    end;
-		Location == 'internal_registered' -> 	
+		{'internal_registered', Key, _, _, _} -> 	
 		    case Key of
 			{pseudo, Module} ->
 			    Module:terminate(normal, undefined),
@@ -88,7 +87,7 @@ dispose(Object) ->
 				    gen_server:call(Pid, stop)
 			    end
 		    end;
-		Location == 'external' -> 
+		{'external', _} -> 
 		    orber:debug_level_print("[~p] corba_boa:dispose(~p); external object.", 
 					    [?LINE, Object], ?DEBUG_LEVEL),
 		    %% Must be fixed !!!!!!!!
@@ -96,7 +95,7 @@ dispose(Object) ->
 	    end;
 	Other ->
 	    case iop_ior:get_key(Object) of
-		{_, {pseudo, Module}} ->
+		{_, {pseudo, Module}, _, _, _} ->
 		    Module:terminate(normal, Other),
 		    ok;
 		Why ->

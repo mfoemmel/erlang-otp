@@ -108,6 +108,7 @@ atom dsend
 atom dsend_nosuspend
 atom dunlink
 atom duplicate_bag
+atom elib_malloc
 atom emulator
 atom enable_trace
 atom env

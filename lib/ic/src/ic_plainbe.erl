@@ -25,11 +25,9 @@
 %%
 %%------------------------------------------------------------
 
-
--import(icgen, [ mk_oe_name/2, mk_var/1, 
-		 get_id/1, emit/3, to_atom/1, 
-		 to_list/1, nl/1, get_id2/1, 
-		 get_body/1, stubfiled/1 ]).
+-import(ic_util, [mk_var/1, mk_oe_name/2, to_atom/1, to_list/1]).
+-import(ic_forms, [get_id/1, get_id2/1, get_body/1]).
+-import(ic_codegen, [emit/3, nl/1]).
 
 -import(lists, [foreach/2, map/2]).
 
@@ -52,14 +50,14 @@
 
 
 do_gen(G, File, Form) -> 
-    G2 = icgen:filename_push(G, [], mk_oe_name(G, 
-					       icgen:remove_ext(to_list(File))),
+    G2 = ic_file:filename_push(G, [], mk_oe_name(G, 
+					       ic_file:remove_ext(to_list(File))),
 			     erlang),
     gen_head(G2, [], Form),
     exportDependency(G2),
     gen(G2, [], Form),
     genDependency(G2),
-    icgen:filename_pop(G2, erlang),
+    ic_file:filename_pop(G2, erlang),
     ok.
 
 
@@ -68,24 +66,24 @@ gen(G, N, [X|Xs]) when record(X, preproc) ->
     gen(NewG, N, Xs);
 
 gen(G, N, [X|Xs]) when record(X, module) ->
-    CD = icgen:codeDirective(G,X),
-    G2 = icgen:filename_push(G, N, X, CD),
+    CD = ic_code:codeDirective(G,X),
+    G2 = ic_file:filename_push(G, N, X, CD),
     N2 = [get_id2(X) | N],
     gen_head(G2, N2, X),
     gen(G2, N2, get_body(X)),
-    G3 = icgen:filename_pop(G2, CD),
+    G3 = ic_file:filename_pop(G2, CD),
     gen(G3, N, Xs);
 
 gen(G, N, [X|Xs]) when record(X, interface) ->
     %% Add inheritence data to pragmatab
     ic_pragma:add_inh_data(G,N,X),
-    G2 = icgen:filename_push(G, N, X, erlang),
+    G2 = ic_file:filename_push(G, N, X, erlang),
     N2 = [get_id2(X) | N],
     gen_head(G2, N2, X),
     gen(G2, N2, get_body(X)),
     foreach(fun({Name, Body}) -> gen(G2, N2, Body) end, 
 	    X#interface.inherit_body), 
-    G3 = icgen:filename_pop(G2, erlang),
+    G3 = ic_file:filename_pop(G2, erlang),
     gen(G3, N, Xs);
 
 gen(G, N, [X|Xs]) when record(X, const) ->
@@ -142,7 +140,7 @@ get_if([X|Rest]) when record(X, attr) ->
 				      {Get, GetT};
 				  _ -> 
 				      [{Set, SetT}, {Get, GetT}]
-			      end end, icgen:get_idlist(X)),
+			      end end, ic_forms:get_idlist(X)),
     lists:flatten(AList) ++ get_if(Rest);
 
 get_if([X|Rest]) -> get_if(Rest);
@@ -161,12 +159,12 @@ get_if([]) -> [].
 
 
 gen_head_special(G, N, X) when record(X, interface) ->
-    Fd = icgen:stubfiled(G),
+    Fd = ic_genobj:stubfiled(G),
 
     foreach(fun({Name, Body}) ->
-		    icgen:comment(Fd, "Exports from ~p", 
-				  [icgen:to_colon(Name)]),
-		    icgen:export(Fd, exp_top(G, N, Body, [])),
+		    ic_codegen:comment(Fd, "Exports from ~p", 
+				  [ic_util:to_colon(Name)]),
+		    ic_codegen:export(Fd, exp_top(G, N, Body, [])),
 		    nl(Fd)
 	    end, X#interface.inherit_body),
     Fd;
@@ -178,11 +176,11 @@ gen_head_special(G, N, X) -> ok.
 
 %% Shall generate all export declarations
 gen_head(G, N, X) -> 
-    case icgen:is_stubfile_open(G) of
+    case ic_genobj:is_stubfile_open(G) of
 	true -> 
-	    F = stubfiled(G),
-	    icgen:comment(F, "Interface functions"),
-	    icgen:export(F, exp_top(G, N, X, [])), 
+	    F = ic_genobj:stubfiled(G),
+	    ic_codegen:comment(F, "Interface functions"),
+	    ic_codegen:export(F, exp_top(G, N, X, [])), 
 	    nl(F),
 	    gen_head_special(G, N, X);
 	false -> ok
@@ -213,7 +211,7 @@ exp3(G, N, A, Acc)  when record(A, attr) ->
 			case A#attr.readonly of
 			    {readonly, _} -> [{Get, 1} | Acc2];
 			    _ ->             [{Get, 1}, {Set, 2} | Acc2]
-			end end, Acc, icgen:get_idlist(A));
+			end end, Acc, ic_forms:get_idlist(A));
 
 exp3(_G, _N, _X, Acc) -> Acc.
 
@@ -232,15 +230,15 @@ exp_list(G, N, L, OrigAcc) ->
 
 
 emit_func(G, N, X, Name, ArgNames, TypeList, OutArgs) ->
-    case icgen:is_stubfile_open(G) of
+    case ic_genobj:is_stubfile_open(G) of
 	false -> ok;
 	true ->
-	    Fd = icgen:stubfiled(G),
+	    Fd = ic_genobj:stubfiled(G),
 	    OpName = list_to_atom(Name),
 	    ArgList = mk_list(ArgNames),
 	    emit_op_comment(G, Fd, X, OpName, ArgNames, OutArgs),
 	    emit(Fd, "~p(~s) ->\n", [OpName,ArgList]),
-	    emit(Fd, "    ~p:~p(~s).\n\n", [to_atom(icgen:impl(G)), OpName, ArgList])
+	    emit(Fd, "    ~p:~p(~s).\n\n", [to_atom(ic_genobj:impl(G)), OpName, ArgList])
     end.
 
 emit_attr(G, N, X, F) ->
@@ -253,15 +251,15 @@ emit_attr(G, N, X, F) ->
 			  case X#attr.readonly of
 			      {readonly, _} -> ok;
 			      _ -> 
-				  F(G, N, X2, Set, [icgen:mk_name(G, "Value")], 
+				  F(G, N, X2, Set, [ic_util:mk_name(G, "Value")], 
 				    SetType, [])
-			  end end, icgen:get_idlist(X)).
+			  end end, ic_forms:get_idlist(X)).
 
 emit_constant_func(G, Id, Val) ->
-    case icgen:is_stubfile_open(G) of
+    case ic_genobj:is_stubfile_open(G) of
 	false -> ok;
 	true ->
-	    Fd = stubfiled(G),
+	    Fd = ic_genobj:stubfiled(G),
 	    N = list_to_atom(get_id(Id)),
 	    emit_const_comment(G, Fd, Id, N),
 	    emit(Fd, "~p() -> ~p.\n\n", [N, Val])
@@ -269,12 +267,12 @@ emit_constant_func(G, Id, Val) ->
 
 
 emit_const_comment(G, F, X, Name) ->
-    icgen:mcomment_light(F,
+    ic_codegen:mcomment_light(F,
 			 [io_lib:format("Constant: ~p", [Name])]).
 
 
 emit_op_comment(G, F, X, Name, InP, OutP) ->
-    icgen:mcomment_light(F,
+    ic_codegen:mcomment_light(F,
 			 [io_lib:format("~s: ~p", [get_title(X), Name]),
 			  "",
 			  get_returns(G, X, InP, OutP) |
@@ -287,7 +285,7 @@ get_raises(X) when record(X, op) ->
     if  X#op.raises == [] -> [];
 	true ->
 	    ["  Raises:  " ++ 
-	     mk_list(lists:map({icgen, to_colon}, X#op.raises))]
+	     mk_list(lists:map({ic_util, to_colon}, X#op.raises))]
     end;
 get_raises(X) -> [].
 
@@ -358,15 +356,15 @@ mk_list2([]) -> [].
 
 %% Export code produce for dependency function
 exportDependency(G) ->
-    Fd = stubfiled(G),
-    icgen:export(Fd, [{oe_dependency, 0}]),
+    Fd = ic_genobj:stubfiled(G),
+    ic_codegen:export(Fd, [{oe_dependency, 0}]),
     nl(Fd).
 
 %% Code produce for dependency function
 genDependency(G) ->
-    Fd = stubfiled(G),
+    Fd = ic_genobj:stubfiled(G),
     nl(Fd),nl(Fd),
-    icgen:comment(Fd, "Idl file dependency list function"), 
+    ic_codegen:comment(Fd, "Idl file dependency list function"), 
     emit(Fd, "oe_dependency() ->\n", []),
     emit(Fd, "    ~p.\n\n", [ic_pragma:get_dependencies(G)]).   
 
@@ -378,7 +376,7 @@ extract_info(G, N, X) when record(X, op) ->
     InArgs	= ic:filter_params([in,inout], X#op.params),
     OutArgs	= ic:filter_params([out,inout], X#op.params),
     ArgNames	= mk_erl_vars(G, InArgs),
-    S = icgen:tktab(G),
+    S = ic_genobj:tktab(G),
     TypeList	= {ic_forms:get_tk(X),
 		   map(fun(Y) -> ic_forms:get_tk(Y) end, InArgs),
 		   map(fun(Y) -> ic_forms:get_tk(Y) end, OutArgs)

@@ -18,7 +18,7 @@
 -module(icscan).
 
 
--export([scan/2,add_keyw/0]).
+-export([scan/2]).
 
 -include("ic.hrl").
 
@@ -30,12 +30,11 @@
 
 
 scan(G, File) ->
-    Kw = G#genobj.keywtab,
-    PL = call_preproc(G, Kw, File),
-    call_scan(G, Kw, PL).
+    PL = call_preproc(G, File),
+    call_scan(G, PL).
 
-call_preproc(G, Kw, File) ->
-    case icgen:get_opt(G, use_preproc) of
+call_preproc(G, File) ->
+    case ic_options:get_opt(G, use_preproc) of
 	true -> 
 	    icpreproc:preproc(G, File);
 	false ->
@@ -47,8 +46,9 @@ call_preproc(G, Kw, File) ->
 	    end
     end.
 
-call_scan(G, Kw, PL) ->
-    RSL = scan(G, Kw, PL, 1, []),
+call_scan(G, PL) ->
+    BE = ic_options:get_opt(G, be),
+    RSL = scan(G, BE, PL, 1, []),
     lists:reverse(RSL).
 
 
@@ -58,78 +58,109 @@ call_scan(G, Kw, PL) ->
 -define(is_lower(X), X >= $a, X =< $z).
 -define(is_hex_uc(X), X >= $A , X =< $F).
 -define(is_hex_lc(X), X >= $a , X =< $f).
+-define(is_octal(X), X >=$0, X =< $7).
 
-
-scan(G, Kw, [X|Str], Line, Out) when ?is_upper(X) ->
-    scan_name(G, Kw, Str, [X], Line, Out);
-scan(G, Kw, [X|Str], Line, Out) when ?is_lower(X) ->
-    scan_name(G, Kw, Str, [X], Line, Out);
-scan(G, Kw, [X|Str], Line, Out) when ?is_number(X) ->
-    scan_number(G, Kw, Str, [X], Line, Out);
-scan(G, Kw, [9| T], Line, Out) -> scan(G, Kw, T, Line, Out);
-scan(G, Kw, [32| T], Line, Out) -> scan(G, Kw, T, Line, Out);
-scan(G, Kw, [$\r|Str], Line, Out) ->
-    scan(G, Kw, Str, Line, Out);
-scan(G, Kw, [$\n|Str], Line, Out) ->
-    scan(G, Kw, Str, Line+1, Out);
-scan(G, Kw, [$:, $: | Str], Line, Out) ->
-    scan(G, Kw, Str, Line, [{'::', Line} | Out]);
-scan(G, Kw, [$/, $/ | Str], Line, Out) ->
+%% Handle:
+%%  const wchar aWChar = L'X';
+scan(G, BE, [$L, $'|Str], Line, Out) ->
+    scan_const(G, BE, wchar, Str, [], Line, Out);
+scan(G, BE, [$L, $"|Str], Line, Out) ->
+    scan_const(G, BE, wstring, Str, [], Line, Out);
+scan(G, BE, [$_, X|Str], Line, Out) when ?is_upper(X) ->
+    scan_name(G, BE, Str, [X], false, Line, Out);
+scan(G, BE, [$_, X|Str], Line, Out) when ?is_lower(X) ->
+    scan_name(G, BE, Str, [X], false, Line, Out);
+scan(G, BE, [X|Str], Line, Out) when ?is_upper(X) ->
+    scan_name(G, BE, Str, [X], true, Line, Out);
+scan(G, BE, [X|Str], Line, Out) when ?is_lower(X) ->
+    scan_name(G, BE, Str, [X], true, Line, Out);
+scan(G, BE, [X|Str], Line, Out) when ?is_number(X) ->
+    scan_number(G, BE, Str, [X], Line, Out);
+scan(G, BE, [9| T], Line, Out) -> scan(G, BE, T, Line, Out);
+scan(G, BE, [32| T], Line, Out) -> scan(G, BE, T, Line, Out);
+scan(G, BE, [$\r|Str], Line, Out) ->
+    scan(G, BE, Str, Line, Out);
+scan(G, BE, [$\n|Str], Line, Out) ->
+    scan(G, BE, Str, Line+1, Out);
+scan(G, BE, [$:, $: | Str], Line, Out) ->
+    scan(G, BE, Str, Line, [{'::', Line} | Out]);
+scan(G, BE, [$/, $/ | Str], Line, Out) ->
     Rest = skip_to_nl(Str),
-    scan(G, Kw, Rest, Line, Out);
-scan(G, Kw, [$/, $* | Str], Line, Out) ->
+    scan(G, BE, Rest, Line, Out);
+scan(G, BE, [$/, $* | Str], Line, Out) ->
     Rest = skip_comment(Str),
-    scan(G, Kw, Rest, Line, Out);
-scan(G, Kw, [$"|Str], Line, Out) ->
-    scan_const(G, Kw, string, Str, [], Line, Out);
-scan(G, Kw, [$"|Str], Line, Out) ->              %% WSTRING
-    scan_const(G, Kw, wstring, Str, [], Line, Out);
-scan(G, Kw, [$'|Str], Line, Out) ->
-    scan_const(G, Kw, char, Str, [], Line, Out);
-scan(G, Kw, [$'|Str], Line, Out) ->               %% WCHAR
-    scan_const(G, Kw, wchar, Str, [], Line, Out);
-scan(G, Kw, [$. | Str], Line, Out) ->
-    scan_frac(G, Kw, Str, [$.], Line, Out);
-scan(G, Kw, [$# | Str], Line, Out) ->
-    scan_preproc(G, Kw, Str, Line, Out);
-scan(G, Kw, [$<, $< | Str], Line, Out) ->
-    scan(G, Kw, Str, Line, [{'<<', Line} | Out]);
-scan(G, Kw, [$>, $> | Str], Line, Out) ->
-    scan(G, Kw, Str, Line, [{'>>', Line} | Out]);
-scan(G, Kw, [C|Str], Line, Out) ->
-    scan(G, Kw, Str, Line, [{list_to_atom([C]), Line} | Out]);
+    scan(G, BE, Rest, Line, Out);
+scan(G, BE, [$", $\\|Str], Line, Out) ->
+    scan_const(G, BE, string, [$\\|Str], [], Line, Out);
+scan(G, BE, [$"|Str], Line, Out) ->
+    scan_const(G, BE, string, Str, [], Line, Out);
+scan(G, BE, [$', $\\|Str], Line, Out) ->
+    scan_const(G, BE, char, [$\\|Str], [], Line, Out);
+scan(G, BE, [$'|Str], Line, Out) ->
+    scan_const(G, BE, char, Str, [], Line, Out);
+scan(G, BE, [$\\|Str], Line, Out) ->
+    scan_const(G, BE, escaped, [$\\|Str], [], Line, Out);
+scan(G, BE, [$. | Str], Line, Out) ->
+    scan_frac(G, BE, Str, [$.], Line, Out);
+scan(G, BE, [$# | Str], Line, Out) ->
+    scan_preproc(G, BE, Str, Line, Out);
+scan(G, BE, [$<, $< | Str], Line, Out) ->
+    scan(G, BE, Str, Line, [{'<<', Line} | Out]);
+scan(G, BE, [$>, $> | Str], Line, Out) ->
+    scan(G, BE, Str, Line, [{'>>', Line} | Out]);
+scan(G, BE, [C|Str], Line, Out) ->
+    scan(G, BE, Str, Line, [{list_to_atom([C]), Line} | Out]);
 	    
-scan(G, Kw, [], Line, Out) ->
+scan(G, BE, [], Line, Out) ->
     Out.
 
 
-scan_number(G, Kw, [X|Str], [$0], Line, Out) 
-  when X == $X ; X ==$x ->
+scan_number(G, BE, [X|Str], [$0], Line, Out) when X == $X ; X ==$x ->
     case Str of
 	[D|TmpStr] when ?is_number(D); ?is_hex_uc(D); ?is_hex_lc(D) ->
 	    {Num,Rest} = scan_hex_number(Str,0),
-	    scan(G, Kw, Rest, Line, [{'<integer_literal>', Line, 
-				      integer_to_list(Num)} | Out]);
+	    scan(G, BE, Rest, Line, [{'<integer_literal>', Line, 
+				  integer_to_list(Num)} | Out]);
 	[D|TmpStr] -> 
-	    scan(G, Kw, TmpStr, Line, [{list_to_atom([D]), Line} | Out])
+	    scan(G, BE, TmpStr, Line, [{list_to_atom([D]), Line} | Out])
     end;
-scan_number(G, Kw, Str, [$0], Line, Out) ->
-    {Num,Rest} = scan_octal_number(Str,0),
-    scan(G, Kw, Rest, Line, [{'<integer_literal>', Line, 
-			      integer_to_list(Num)} | Out]);
-scan_number(G, Kw, [X|Str], Accum, Line, Out) when ?is_number(X) ->
-    scan_number(G, Kw, Str, [X|Accum], Line, Out);
-scan_number(G, Kw, [X|Str], Accum, Line, Out) when X==$. ->
-    scan_frac(G, Kw, Str, [X|Accum], Line, Out);
-scan_number(G, Kw, [X|Str], Accum, Line, Out) when X==$e ->
-    scan_exp(G, Kw, Str, [X|Accum], Line, Out);
-scan_number(G, Kw, [X|Str], Accum, Line, Out) when X==$E ->
-    scan_exp(G, Kw, Str, [X|Accum], Line, Out);
-scan_number(G, Kw, Str, Accum, Line, Out) ->
-    scan(G, Kw, Str, Line, [{'<integer_literal>', Line,
-			(lists:reverse(Accum))} | Out]).
+scan_number(G, BE, Str, [$0], Line, Out) ->
+    %% If an integer literal starts with a 0 it may indicate that
+    %% it is represented as an octal number. But, it can also be a fixed
+    %% type which must use padding to match a fixed typedef. For example:
+    %% typedef fixed<5,2> fixed52;
+    %% 123.45d, 123.00d and 023.00d is all valid fixed values.
+    %% Naturally, a float can be defined as 0.14 or 00.14.
+    case pre_scan_number(Str, [], octal) of
+	octal ->
+	    {Num, Rest} = scan_octal_number(Str,0),
+	    scan(G, BE, Rest, Line, [{'<integer_literal>', Line, 
+				  integer_to_list(Num)} | Out]);
+	{fixed, Fixed, Rest} ->
+	    scan(G, BE, Rest, Line, [{'<fixed_pt_literal>', Line, Fixed} | Out]);
+	float ->
+	    %% Not very likely that someone defines a constant as 00.14 but ... 
+	    NewStr = remove_leading_zeroes(Str),
+	    scan(G, BE, NewStr, Line, Out)
+    end;
+scan_number(G, BE, [X|Str], Accum, Line, Out) when ?is_number(X) ->
+    scan_number(G, BE, Str, [X|Accum], Line, Out);
+scan_number(G, BE, [X|Str], Accum, Line, Out) when X==$. ->
+    scan_frac(G, BE, Str, [X|Accum], Line, Out);
+scan_number(G, BE, [X|Str], Accum, Line, Out) when X==$e ; X==$e ->
+    scan_exp(G, BE, Str, [X|Accum], Line, Out);
+scan_number(G, BE, [X|Str], Accum, Line, Out) when X==$D ; X==$d ->
+    scan(G, BE, Str, Line, [{'<fixed_pt_literal>', Line,
+			 (lists:reverse(Accum))} | Out]);
+scan_number(G, BE, Str, Accum, Line, Out) ->
+    scan(G, BE, Str, Line, [{'<integer_literal>', Line,
+			 (lists:reverse(Accum))} | Out]).
 
 
+remove_leading_zeroes([$0|Rest]) ->
+    remove_leading_zeroes(Rest);
+remove_leading_zeroes(L) ->
+    L.
 
 scan_hex_number([X|Rest],Acc) when X >=$a, X =< $f ->
     scan_hex_number(Rest,(Acc bsl 4) + (X - $a + 10)); 
@@ -140,11 +171,26 @@ scan_hex_number([X|Rest],Acc) when X >=$0, X =< $9 ->
 scan_hex_number(Rest,Acc) -> 
     {Acc,Rest}.
 
-scan_octal_number([X|Rest],Acc) when X >=$0, X =< $7 ->
+pre_scan_number([$d|Rest], Acc, _) ->
+    {fixed, [$0|lists:reverse(Acc)], Rest};
+pre_scan_number([$D|Rest], Acc, _) ->
+    {fixed, [$0|lists:reverse(Acc)], Rest};
+pre_scan_number([$.|Rest], Acc, _) ->
+    %% Actually, we don't know if it's a float since it can be a fixed.
+    pre_scan_number(Rest, [$.|Acc], float);
+pre_scan_number([X|_], Acc, _) when X == $E ; X ==$e  ->
+    %% Now we now it's a float.
+    float;
+pre_scan_number([X|Rest], Acc, Type) when ?is_number(X) ->
+    pre_scan_number(Rest, [X|Acc], Type);
+pre_scan_number(Rest, Acc, Type) ->
+    %% At this point we know it's a octal or float.
+    Type.
+
+scan_octal_number([X|Rest],Acc) when ?is_octal(X) ->
     scan_octal_number(Rest,(Acc bsl 3) + (X-$0)); 
 scan_octal_number(Rest,Acc) -> 
-    {Acc,Rest}.
-    
+    {Acc, Rest}.
 
 %% Floating point number scan.
 %%
@@ -162,80 +208,121 @@ scan_octal_number(Rest,Acc) ->
 %%	will not be caught in the scanner (but rather in expression
 %%	evaluation)
 
-scan_frac(G, Kw, [$e | Str], [$.], Line, Out) ->
-    icgen:fatal_error(G, {illegal_float, Line});
-scan_frac(G, Kw, [$E | Str], [$.], Line, Out) ->
-    icgen:fatal_error(G, {illegal_float, Line});
-scan_frac(G, Kw, Str, Accum, Line, Out) ->
-    scan_frac2(G, Kw, Str, Accum, Line, Out).
+scan_frac(G, BE, [$e | Str], [$.], Line, Out) ->
+    ic_error:fatal_error(G, {illegal_float, Line});
+scan_frac(G, BE, [$E | Str], [$.], Line, Out) ->
+    ic_error:fatal_error(G, {illegal_float, Line});
+scan_frac(G, BE, Str, Accum, Line, Out) ->
+    scan_frac2(G, BE, Str, Accum, Line, Out).
 
-scan_frac2(G, Kw, [X|Str], Accum, Line, Out) when ?is_number(X) ->
-    scan_frac2(G, Kw, Str, [X|Accum], Line, Out);
-scan_frac2(G, Kw, [X|Str], Accum, Line, Out) when X==$e ->
-    scan_exp(G, Kw, Str, [X|Accum], Line, Out);
-scan_frac2(G, Kw, [X|Str], Accum, Line, Out) when X==$E ->
-    scan_exp(G, Kw, Str, [X|Accum], Line, Out);
-scan_frac2(G, Kw, Str, Accum, Line, Out) ->
-    scan(G, Kw, Str, Line, [{'<floating_pt_literal>', Line,
+scan_frac2(G, BE, [X|Str], Accum, Line, Out) when ?is_number(X) ->
+    scan_frac2(G, BE, Str, [X|Accum], Line, Out);
+scan_frac2(G, BE, [X|Str], Accum, Line, Out) when X==$e ; X==$E ->
+    scan_exp(G, BE, Str, [X|Accum], Line, Out);
+%% The following case is for fixed (e.g. 123.45d).
+scan_frac2(G, BE, [X|Str], Accum, Line, Out) when X==$d ; X==$D ->
+    scan(G, BE, Str, Line, [{'<fixed_pt_literal>', Line,
+			 (lists:reverse(Accum))} | Out]);
+scan_frac2(G, BE, Str, Accum, Line, Out) ->
+    scan(G, BE, Str, Line, [{'<floating_pt_literal>', Line,
 			 (lists:reverse(Accum))} | Out]).
 
-scan_exp(G, Kw, [X|Str], Accum, Line, Out) when X==$- ->
-    scan_exp2(G, Kw, Str, [X|Accum], Line, Out);
-scan_exp(G, Kw, Str, Accum, Line, Out) ->
-    scan_exp2(G, Kw, Str, Accum, Line, Out).
+scan_exp(G, BE, [X|Str], Accum, Line, Out) when X==$- ->
+    scan_exp2(G, BE, Str, [X|Accum], Line, Out);
+scan_exp(G, BE, Str, Accum, Line, Out) ->
+    scan_exp2(G, BE, Str, Accum, Line, Out).
 
-scan_exp2(G, Kw, [X|Str], Accum, Line, Out) when ?is_number(X) ->
-    scan_exp2(G, Kw, Str, [X|Accum], Line, Out);
-scan_exp2(G, Kw, Str, Accum, Line, Out) ->
-    scan(G, Kw, Str, Line, [{'<floating_pt_literal>', Line,
+scan_exp2(G, BE, [X|Str], Accum, Line, Out) when ?is_number(X) ->
+    scan_exp2(G, BE, Str, [X|Accum], Line, Out);
+scan_exp2(G, BE, Str, Accum, Line, Out) ->
+    scan(G, BE, Str, Line, [{'<floating_pt_literal>', Line,
 			 (lists:reverse(Accum))} | Out]).
 
 
-scan_name(G, Kw, [X|Str], Accum, Line, Out) when ?is_upper(X) ->
-    scan_name(G, Kw, Str, [X|Accum], Line, Out);
-scan_name(G, Kw, [X|Str], Accum, Line, Out) when ?is_lower(X) ->
-    scan_name(G, Kw, Str, [X|Accum], Line, Out);
-scan_name(G, Kw, [X|Str], Accum, Line, Out) when ?is_number(X) ->
-    scan_name(G, Kw, Str, [X|Accum], Line, Out);
-scan_name(G, Kw, [$_|Str], Accum, Line, Out) ->
-    scan_name(G, Kw, Str, [$_|Accum], Line, Out);
-scan_name(G, Kw, S, Accum, Line, Out) ->
+scan_name(G, BE, [X|Str], Accum, TypeCheck, Line, Out) when ?is_upper(X) ->
+    scan_name(G, BE, Str, [X|Accum], TypeCheck, Line, Out);
+scan_name(G, BE, [X|Str], Accum, TypeCheck, Line, Out) when ?is_lower(X) ->
+    scan_name(G, BE, Str, [X|Accum], TypeCheck, Line, Out);
+scan_name(G, BE, [X|Str], Accum, TypeCheck, Line, Out) when ?is_number(X) ->
+    scan_name(G, BE, Str, [X|Accum], TypeCheck, Line, Out);
+scan_name(G, BE, [$_|Str], Accum, TypeCheck, Line, Out) ->
+    scan_name(G, BE, Str, [$_|Accum], TypeCheck, Line, Out);
+scan_name(G, BE, S, Accum, false, Line, Out) ->
+    %% The CORBA 2.3 specification allows the user to override typechecking:
+    %% typedef string _native;
+    %% interface i {
+    %%     void foo(in _native VT);
+    %% };
+    %% BUT, the IFR-id remains the same ("IDL:native:1.0") etc. The reason for
+    %% this is that one don't have to re-write a large chunk of IDL- and
+    %% application-code.
+    scan(G, BE, S, Line, [{'<identifier>', Line, lists:reverse(Accum)} | Out]);
+scan_name(G, BE, S, Accum, _, Line, Out) ->
     L = lists:reverse(Accum),
-    X = case ets:lookup(Kw, L) of
-	    [] -> {'<identifier>', Line, L};
-	    _ -> {list_to_atom(L), Line}
+    X = case is_reserved(L, BE) of
+	    undefined -> 
+		{'<identifier>', Line, L};
+	    Yes -> 
+		{Yes, Line}
 	end,
-    scan(G, Kw, S, Line, [X | Out]).
+    scan(G, BE, S, Line, [X | Out]).
 
 %% Shall scan a constant
-scan_const(G, Kw, string, [$" | Rest], Accum, Line, Out) ->
-    scan(G, Kw, Rest, Line, 
+scan_const(G, BE, string, [$" | Rest], Accum, Line, [{'<string_literal>', _, Str}|Out]) ->
+    scan(G, BE, Rest, Line, 
+	 [{'<string_literal>', Line, Str ++ lists:reverse(Accum)} | Out]);
+scan_const(G, BE, string, [$" | Rest], Accum, Line, Out) ->
+    scan(G, BE, Rest, Line, 
 	 [{'<string_literal>', Line, lists:reverse(Accum)} | Out]);
-scan_const(G, Kw, wstring, [$" | Rest], Accum, Line, Out) -> %% WSTRING
-    scan(G, Kw, Rest, Line, 
-	 [{'<string_literal>', Line, lists:reverse(Accum)} | Out]);
-scan_const(G, Kw, string, [], Accum, Line, Out) -> %% Bad string
-    icgen:error(G, {bad_string, Line}),
+scan_const(G, BE, wstring, [$" | Rest], Accum, Line, [{'<wstring_literal>', _,Wstr}|Out]) -> %% WSTRING
+    scan(G, BE, Rest, Line, 
+	 [{'<wstring_literal>', Line, Wstr ++ lists:reverse(Accum)} | Out]);
+scan_const(G, BE, wstring, [$" | Rest], Accum, Line, Out) -> %% WSTRING
+    scan(G, BE, Rest, Line, 
+	 [{'<wstring_literal>', Line, lists:reverse(Accum)} | Out]);
+scan_const(G, BE, string, [], Accum, Line, Out) -> %% Bad string
+    ic_error:error(G, {bad_string, Line}),
     Out;
-scan_const(G, Kw, wstring, [], Accum, Line, Out) -> %% Bad WSTRING
-    icgen:error(G, {bad_string, Line}),
+scan_const(G, BE, wstring, [], Accum, Line, Out) -> %% Bad WSTRING
+    ic_error:error(G, {bad_string, Line}),
     Out;
-scan_const(G, Kw, char, [$' | Rest], Accum, Line, Out) ->
-    scan(G, Kw, Rest, Line, 
+scan_const(G, BE, char, [$' | Rest], Accum, Line, Out) ->
+    scan(G, BE, Rest, Line, 
 	 [{'<character_literal>', Line, lists:reverse(Accum)} | Out]);
-scan_const(G, Kw, wchar, [$' | Rest], Accum, Line, Out) -> %% WCHAR
-    scan(G, Kw, Rest, Line, 
-	 [{'<character_literal>', Line, lists:reverse(Accum)} | Out]);
-scan_const(G, Kw, Mode, [$\\, C | Rest], Accum, Line, Out) ->
+scan_const(G, BE, wchar, [$' | Rest], Accum, Line, Out) -> %% WCHAR
+    scan(G, BE, Rest, Line, 
+	 [{'<wcharacter_literal>', Line, lists:reverse(Accum)} | Out]);
+scan_const(G, BE, Mode, [$\\, C | Rest], Accum, Line, Out) ->
     case escaped_char(C) of
 	error ->
-	    icgen:error(G, {bad_escape_character, Line, C}), %% Bad escape character
-	    scan_const(G, Kw, Mode, Rest, [C | Accum], Line, Out);
+	    ic_error:error(G, {bad_escape_character, Line, C}), %% Bad escape character
+	    scan_const(G, BE, Mode, Rest, [C | Accum], Line, Out);
+	octal ->
+	    {Num,Rest2} = scan_octal_number([C|Rest], 0),
+	    scan_const(G, BE, Mode, Rest2, [Num|Accum], Line, Out); 
+	hexadecimal ->
+	    {Num,Rest2} = scan_hex_number(Rest, 0),
+	    if
+		Num > 255 -> %% 16#FF
+		    ic_error:error(G, {bad_escape_character, Line, C}),
+		    scan_const(G, BE, Mode, Rest, [C | Accum], Line, Out);
+		true ->
+		    scan_const(G, BE, Mode, Rest2, [Num|Accum], Line, Out)
+	    end;
+	unicode ->
+	    {Num,Rest2} = scan_hex_number(Rest, 0),
+	    if
+		Num > 65535 -> %% 16#FFFF
+		    ic_error:error(G, {bad_escape_character, Line, C}),
+		    scan_const(G, BE, Mode, Rest, [C | Accum], Line, Out);
+		true ->
+		    scan_const(G, BE, Mode, Rest2, [Num|Accum], Line, Out)
+	    end;
 	EC ->
-	    scan_const(G, Kw, Mode, Rest, [EC | Accum], Line, Out)
+	    scan_const(G, BE, Mode, Rest, [EC | Accum], Line, Out)
     end;
-scan_const(G, Kw, Mode, [C | Rest], Accum, Line, Out) ->
-    scan_const(G, Kw, Mode, Rest, [C | Accum], Line, Out).
+scan_const(G, BE, Mode, [C | Rest], Accum, Line, Out) ->
+    scan_const(G, BE, Mode, Rest, [C | Accum], Line, Out).
 
 
 %%
@@ -247,30 +334,20 @@ scan_const(G, Kw, Mode, [C | Rest], Accum, Line, Out) ->
 %%
 %% NOTE: This will have to be enhanced in order to eat #pragma
 %%
-scan_preproc(G, Kw, Str, Line, Out) ->
+scan_preproc(G, BE, Str, Line, Out) ->
     {List, Rest} = scan_to_nl2(strip(Str), []),
     NewLine = get_new_line_nr(strip(List), Line+1, []),
-    case scan_number(G, Kw, List, [], Line, [{'#', Line} | Out]) of
+    case scan_number(G, BE, List, [], Line, [{'#', Line} | Out]) of
 	L when list(L) ->
-	    scan(G, Kw, Rest, NewLine, [{'#', Line} | L]);
+	    scan(G, BE, Rest, NewLine, [{'#', Line} | L]);
 	X ->
-	    scan(G, Kw, Rest, NewLine, [{'#', Line}, {'#', Line} | Out])
+	    scan(G, BE, Rest, NewLine, [{'#', Line}, {'#', Line} | Out])
     end.
-
-%%    Out2 = scan(G, Kw, List, Line, [{'#', Line} | Out]),
-%%    NewLine = get_new_line_nr(strip(List), Line+1, []),
-%%    scan(G, Kw, Rest, NewLine, [{'#', Line} | Out2]).
 
 get_new_line_nr([C|R], Line, Acc) when C>=$0, C=<$9 ->
     get_new_line_nr(R, Line, [C|Acc]);
 get_new_line_nr(_, Line, []) -> Line;		% No line nr found
 get_new_line_nr(_, _, Acc) -> list_to_integer(reverse(Acc)).
-
-    
-%%    NewLine = list_to_integer(hd(List)),
-%%    Id = delete($", delete($", hd(tl(List)))),
-%%    Flags = lists:map(fun(X) -> list_to_integer(X) end, tl(tl(List))),
-%%    scan(G, Kw, Rest, NewLine, [{preproc, NewLine, {Id, Flags}} | Out]).
 
 scan_to_nl2([], Acc) -> {reverse(Acc), []};
 scan_to_nl2([$\n|Str], Acc) -> {reverse(Acc), Str};
@@ -301,6 +378,9 @@ escaped_char($\\) -> $\\;
 escaped_char($?) -> $?;
 escaped_char($') -> $';
 escaped_char($") -> $";
+escaped_char($x) -> hexadecimal;
+escaped_char($u) -> unicode;
+escaped_char(X) when ?is_octal(X) -> octal;
 %% Error
 escaped_char(Other) -> error.
 
@@ -318,55 +398,63 @@ skip_comment([_|Str]) ->
 
 %%----------------------------------------------------------------------
 %% Shall separate keywords from identifiers and numbers
-%%
-%%-define(add_keyw(K, L), [{list_to_atom(K), ?line} | L]).
-
--define(add_k2(TAB,KEYW), ets:insert(TAB,KEYW)).
-
 
 %% Fill in the ets of reserved words
-add_keyw() -> 
-    G = ets:new(keywtab, [public, bag]),
-    ?add_k2(G,{"Object"}),
-    ?add_k2(G,{"in"}),
-    ?add_k2(G,{"interface"}),
-    ?add_k2(G,{"case"}),
-    ?add_k2(G,{"union"}),
-    ?add_k2(G,{"struct"}),
-    ?add_k2(G,{"any"}),
-    ?add_k2(G,{"long"}),
-    ?add_k2(G,{"float"}),
-    ?add_k2(G,{"out"}),
-    ?add_k2(G,{"enum"}),
-    ?add_k2(G,{"double"}),
-    ?add_k2(G,{"context"}),
-    ?add_k2(G,{"oneway"}),
-    ?add_k2(G,{"sequence"}),
-    ?add_k2(G,{"FALSE"}),
-    ?add_k2(G,{"readonly"}),
-    ?add_k2(G,{"char"}),
-    ?add_k2(G,{"wchar"}),      %% WCHAR 
-    ?add_k2(G,{"void"}),
-    ?add_k2(G,{"inout"}),
-    ?add_k2(G,{"attribute"}),
-    ?add_k2(G,{"octet"}),
-    ?add_k2(G,{"TRUE"}),
-    ?add_k2(G,{"switch"}),
-    ?add_k2(G,{"unsigned"}),
-    ?add_k2(G,{"typedef"}),
-    ?add_k2(G,{"const"}),
-    ?add_k2(G,{"raises"}),
-    ?add_k2(G,{"string"}),
-    ?add_k2(G,{"wstring"}),    %% WSTRING
-    ?add_k2(G,{"default"}),
-    ?add_k2(G,{"short"}),
-    ?add_k2(G,{"module"}),
-    ?add_k2(G,{"exception"}),
-    ?add_k2(G,{"boolean"}),
-    G.
+is_reserved("Object", _) ->     'Object';
+is_reserved("in", _) ->          in;
+is_reserved("interface", _) ->   interface;
+is_reserved("case", _) ->       'case';
+is_reserved("union", _) ->       union;
+is_reserved("struct", _) ->      struct;
+is_reserved("any", _) ->         any;
+is_reserved("long", _) ->        long;
+is_reserved("float", _) ->       float;
+is_reserved("out", _) ->         out;
+is_reserved("enum", _) ->        enum;
+is_reserved("double", _) ->      double;
+is_reserved("context", _) ->     context;
+is_reserved("oneway", _) ->      oneway;
+is_reserved("sequence", _) ->    sequence;
+is_reserved("FALSE", _) ->      'FALSE';
+is_reserved("readonly", _) ->    readonly;
+is_reserved("char", _) ->        char;
+is_reserved("wchar", _) ->       wchar;
+is_reserved("void", _) ->        void;
+is_reserved("inout", _) ->       inout;
+is_reserved("attribute", _) ->   attribute;
+is_reserved("octet", _) ->       octet;
+is_reserved("TRUE", _) ->       'TRUE';
+is_reserved("switch", _) ->      switch;
+is_reserved("unsigned", _) ->    unsigned;
+is_reserved("typedef", _) ->     typedef;
+is_reserved("const", _) ->       const;
+is_reserved("raises", _) ->      raises;
+is_reserved("string", _) ->      string;
+is_reserved("wstring", _) ->     wstring;
+is_reserved("default", _) ->     default;
+is_reserved("short", _) ->       short;
+is_reserved("module", _) ->      module;
+is_reserved("exception", _) ->   exception;
+is_reserved("boolean", _) ->     boolean;
+%% --- New keywords Introduced in CORBA-2.3.1 ---
+%% For now we cannot add these for all backends right now since it would cause
+%% some problems for at least one customer.
+is_reserved("fixed", BE) ->       check_be(BE, fixed);
+%is_reserved("abstract", BE) ->    check_be(BE, abstract);
+%is_reserved("custom", BE) ->      check_be(BE, custom);
+%is_reserved("factory", BE) ->     check_be(BE, factory);
+%is_reserved("local", BE) ->       check_be(BE, local);
+%is_reserved("native", BE) ->      check_be(BE, native);
+%is_reserved("private", BE) ->     check_be(BE, private);
+%is_reserved("public", BE) ->      check_be(BE, public);
+%is_reserved("supports", BE) ->    check_be(BE, supports);
+%is_reserved("truncatable", BE) -> check_be(BE, truncatable);
+%is_reserved("ValueBase", BE) ->   check_be(BE, 'ValueBase');
+%is_reserved("valuetype", BE) ->   check_be(BE, valuetype);
+is_reserved(_, _) -> undefined.
 
-
-
-
-
+check_be(erl_corba, KeyWord) ->
+    KeyWord;
+check_be(_, _) ->
+    undefined.
 

@@ -325,7 +325,7 @@ emit_interface(G, N, X, Fd) ->
 
 emit_interface_prototypes(G, N, [X |Xs], Fd) when record(X, op) ->
 
-    {_, ArgNames, TypeList} = ic_cbe:extract_info(G, N, X),
+    {_, ArgNames, TypeList} = extract_info(G, N, X),
     {R, ParameterTypes, _} = TypeList,
 
     OpName = ic_forms:get_java_id(X),
@@ -484,7 +484,7 @@ emit_op_implementation(G, N, [X |Xs], Fd) when record(X, op) ->
 
     WireOpName = ic_forms:get_id2(X),
     OpName = ic_forms:get_java_id(WireOpName),
-    {_, ArgNames, TypeList} = ic_cbe:extract_info(G, N, X),
+    {_, ArgNames, TypeList} = extract_info(G, N, X),
     {R, ParamTypes, _} = TypeList,
     
     RT = ic_java_type:getParamType(G,N,R,ret),
@@ -572,7 +572,7 @@ emit_op_implementation(G, N, [], Fd) -> ok.
 emit_op_marshal(G, N, X, Fd) ->
     WireOpName = ic_forms:get_id2(X),
     OpName = ic_forms:get_java_id(WireOpName),
-    {_, ArgNames, TypeList} = ic_cbe:extract_info(G, N, X),
+    {_, ArgNames, TypeList} = extract_info(G, N, X),
     {R, ParamTypes, _} = TypeList,
     
     RT = ic_java_type:getParamType(G,N,R,ret),
@@ -685,7 +685,7 @@ emit_op_unmarshal(G, N, X, Fd) ->
 	    ok;
 	false ->
 	    OpName = ic_forms:get_java_id(X),
-	    {_, ArgNames, TypeList} = ic_cbe:extract_info(G, N, X),
+	    {_, ArgNames, TypeList} = extract_info(G, N, X),
 	    {R, ParamTypes, _} = TypeList,
     
 	    RT = ic_java_type:getParamType(G,N,R,ret),
@@ -931,7 +931,7 @@ emit_server_op_switch_loop(G, N, [{_,X}|Xs], C, Fd) ->
 emit_server_op_switch(G, N, [X|Xs], C, Fd) when record(X, op) ->
 
     OpName = ic_forms:get_java_id(X),
-    {_, ArgNames, TypeList} = ic_cbe:extract_info(G, N, X),
+    {_, ArgNames, TypeList} = extract_info(G, N, X),
     {R, ParamTypes, _} = TypeList,
     
     RT = ic_java_type:getParamType(G,N,R,ret),
@@ -1036,7 +1036,7 @@ emit_dictionary(G, N, [], C, Fd) ->
 
 emit_invoke(G, N, X, Fd) ->
 
-    {_, ArgNames, TypeList} = ic_cbe:extract_info(G, N, X),
+    {_, ArgNames, TypeList} = extract_info(G, N, X),
     {R, ParamTypes, _} = TypeList,
     OpName = ic_forms:get_java_id(X),
     RT = ic_java_type:getParamType(G,N,R,ret),
@@ -1190,6 +1190,26 @@ emit_server_marshal_loop(G, N, X, [Type|Types],[{_, Arg}|Args], Counter, Fd) ->
 %%%
 %%%----------------------------------------------------
 
+extract_info(G, N, X) when record(X, op) ->
+    Name	=  ic_util:to_undersc([ic_forms:get_id2(X) | N]),
+    Args	= X#op.params,
+    ArgNames	= mk_c_vars(Args),
+    TypeList	= {ic_forms:get_type(X),
+		   lists:map(fun(Y) -> ic_forms:get_type(Y) end, Args),
+		   []
+		  },
+    {Name, ArgNames, TypeList};
+extract_info(G, N, X) ->
+    Name	=  ic_util:to_undersc([ic_forms:get_id2(X) | N]),
+    {Name, [], []}.
+
+%% Input is a list of parameters (in parse form) and output is a list
+%% of parameter attribute and variable names.
+mk_c_vars(Params) ->
+    lists:map(fun(P) -> {A, _} = P#param.inout,
+			{A, ic_forms:get_id(P#param.id)}
+	      end,
+	      Params).
 
 %%
 handle_preproc(G, N, line_nr, X) ->

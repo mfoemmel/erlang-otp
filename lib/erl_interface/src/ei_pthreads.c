@@ -41,6 +41,7 @@
 #endif
 
 #include "erl_error.h"
+#include "ei_connect.h"
 
 extern int erl_locking_init_done;
 

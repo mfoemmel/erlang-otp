@@ -40,7 +40,8 @@
 #include <malloc.h>
 #endif
 
-#ifndef HAVE_MALLOPT
+#if defined(ELIB_ALLOC_IS_CLIB) || !defined(HAVE_MALLOPT)
+#undef  HAVE_MALLOPT
 #define HAVE_MALLOPT 0
 #endif
 
@@ -2301,7 +2302,9 @@ instr_realloc(int from,
    link_out(l);
    erts_mutex_unlock(instr_lck);
 
-   new_p = (realloc_func)(p, save_size, size + sizeof(mem_link));
+   new_p = (realloc_func)(p,
+			  save_size + sizeof(mem_link),
+			  size + sizeof(mem_link));
    if (new_p == NULL) {
      erts_mutex_lock(instr_lck);
      link_in(l, old_size, old_type); /* Old memory block is still allocated */

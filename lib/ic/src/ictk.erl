@@ -25,9 +25,9 @@
 %% Utilities
 -export([get_IR_ID/3, get_IR_VSN/3, register_name/1, unregister_name/1]).
 
--import(icgen, [get_id2/1, mk_name/2, mk_oe_name/2, nl/1, emit/2, 
-		emit/3, get_body/1, to_atom/1, to_atom/1, to_list/1,
-		get_idlist/1]).
+-import(ic_forms, [get_id2/1, get_body/1, get_idlist/1]).
+-import(ic_util, [mk_name/2, mk_oe_name/2, to_atom/1, to_list/1]).
+-import(ic_codegen, [emit/2, emit/3, nl/1]).
 
 -include("icforms.hrl").
 -include("ic.hrl").
@@ -51,12 +51,12 @@
 
 reg_gen(G, N, X) ->
     ?DBG("Reg Gen: ~n", []),
-    S = icgen:tktab(G),
+    S = ic_genobj:tktab(G),
     init_var(),
-    case icgen:is_stubfile_open(G) of
+    case ic_genobj:is_stubfile_open(G) of
 	true ->
 	    Var = ?IFRID(G),
-	    Fd = icgen:stubfiled(G),
+	    Fd = ic_genobj:stubfiled(G),
 	    nl(Fd), nl(Fd), nl(Fd),
 	    emit(Fd, "~p() ->\n", [to_atom(register_name(G))]),
 	    emit(Fd, "    ~s = ~p:find_repository(),\n",
@@ -147,7 +147,7 @@ reg2(G, S, N, C, V, X) ->  ok.
 %% the actuall file. See ticket OTP-2133
 reg2_list(G, S, N, C, V, []) -> [];
 reg2_list(G, S, N, C, V, List ) ->
-    CurrentFileName = icgen:idlfile(G), 
+    CurrentFileName = ic_genobj:idlfile(G), 
     reg2_list(G, S, N, C, V, {CurrentFileName,true}, List).
 
 %% The filter function + loop 
@@ -250,10 +250,10 @@ register_if_unregistered(Fd) ->
 
 
 do_typedef(G, S, N, C, V, X) ->
-    case icgen:is_stubfile_open(G) of
+    case ic_genobj:is_stubfile_open(G) of
 	false -> ok;
 	true -> 
-	    Fd = icgen:stubfiled(G),
+	    Fd = ic_genobj:stubfiled(G),
 	    Thing = get_thing_name(X),
 	    IR_VSN = get_IR_VSN(G, N, X),
 	    TK = ic_forms:get_tk(X),
@@ -382,11 +382,11 @@ call_fun_str(G,S) ->
 r_emit2(G, S, N, C, V, X) ->
     r_emit2(G, S, N, C, V, X, "", []).
 r_emit2(G, S, N, C, V, X, F, A) ->
-    case icgen:is_stubfile_open(G) of
+    case ic_genobj:is_stubfile_open(G) of
 	false -> ok;
 	true ->
 	    {NewV, Str} = get_assign(G, V, X),
-	    r_emit_raw(G, X, icgen:stubfiled(G), Str, 
+	    r_emit_raw(G, X, ic_genobj:stubfiled(G), Str, 
 		       C, get_thing_name(X), V, 
 		       get_IR_ID(G, N, X), get_id2(X), get_IR_VSN(G, N, X), 
 		       F, A),
@@ -678,11 +678,11 @@ get_EXC_ID(G, S, N, X, ScopedId) ->
 unreg_gen(G, N, X) ->
 
     ?DBG("UNReg Gen: ~n", []),
-    S = icgen:tktab(G),
-    case icgen:is_stubfile_open(G) of
+    S = ic_genobj:tktab(G),
+    case ic_genobj:is_stubfile_open(G) of
 	true ->
 	    Var = ?IFRID(G),
-	    Fd = icgen:stubfiled(G),
+	    Fd = ic_genobj:stubfiled(G),
 	    nl(Fd), nl(Fd), nl(Fd),
 	    emit(Fd, "~p() ->\n", [to_atom(unregister_name(G))]),
 	    emit(Fd, "    ~s = ~p:find_repository(),\n",
@@ -736,7 +736,7 @@ oe_destroy(OE_IFR,IFR_ID) ->
 %% unreg2 is top level registration 
 
 unreg2(G, N, X) ->
-    emit(icgen:stubfiled(G),"~s",[lists:flatten(unreg3(G, N, X))]).
+    emit(ic_genobj:stubfiled(G),"~s",[lists:flatten(unreg3(G, N, X))]).
 
 unreg3(G, N, X)  when list(X) -> 
     unreg3_list(G, N, X, []);
@@ -779,7 +779,7 @@ unreg3(G, N, X) ->  [].
 unreg3_list(G, N, [], Found) -> 
     Found;
 unreg3_list(G, N, List, Found) ->
-    CurrentFileName = icgen:idlfile(G), 
+    CurrentFileName = ic_genobj:idlfile(G), 
     unreg3_list(G, N, {CurrentFileName,true}, List, Found).
 
 %% The filter function + loop 
@@ -808,6 +808,12 @@ unreg3_list(G, N, {CFN,Status}, [X | Xs], Found) ->
 unreg_collect(G, N, X) when record(X, module) ->
     io_lib:format("    oe_destroy_if_empty(OE_IFR, ~p),\n", 
 	      [get_IR_ID(G, N, X)]);
+unreg_collect(G, N, X) when record(X, typedef) ->
+    lists:map(fun(Id) ->
+		      io_lib:format("    oe_destroy(OE_IFR, ~p),\n", 
+				    [get_IR_ID(G, N, Id)])
+		  end,
+	      ic_forms:get_idlist(X));
 unreg_collect(G, N, X) ->
     io_lib:format("    oe_destroy(OE_IFR, ~p),\n", 
 	      [get_IR_ID(G, N, X)]).

@@ -340,7 +340,7 @@ init([Client, Type, NewIf]) ->
 
 %% recv - passive mode
 %%
-handle_call({recv, Client, Length, Timeout}, From, St) 
+handle_call({recv, Client, Length, Timeout}, _From, St) 
   when St#st.status =/= closed, St#st.active == false ->
     debug(St, "recv: client = ~w~n", [Client]),
     Reply = gen_tcp:recv(St#st.proxysock, Length, Timeout),
@@ -349,7 +349,7 @@ handle_call({recv, Client, Length, Timeout}, From, St)
 
 %% send - new i/f
 %% 
-handle_call({send, Client, Data}, From, St) ->
+handle_call({send, Client, Data}, _From, St) ->
     debug(St, "send: client = ~w~n", [Client]),
     if 
 	St#st.status =/= open ->
@@ -358,7 +358,7 @@ handle_call({send, Client, Data}, From, St) ->
 	    case gen_tcp:send(St#st.proxysock, Data) of
 		ok ->
 		    {reply, ok, St};
-		{error, Reason} ->
+		{error, _Reason} ->
 		    {reply, {error, closed}, St#st{status = closing}}
 	    end
     end;
@@ -373,7 +373,7 @@ handle_call({send, Client, Data}, From, St) ->
 %% Opts = [{flags, Flags}] only. The rest of the options is fetched from 
 %% the process owning the ListenSocket.
 %%
-handle_call({accept, Client, ListenSocket, Opts, Timeout}, From, St) ->
+handle_call({accept, Client, ListenSocket, Opts, Timeout}, _From, St) ->
     debug(St, "accept: client = ~w, listensocket = ~w~n", 
 	  [Client, ListenSocket]),
     case getopts(ListenSocket, tcp_listen_opt_tags(), ?DEF_TIMEOUT) of 
@@ -399,7 +399,7 @@ handle_call({accept, Client, ListenSocket, Opts, Timeout}, From, St) ->
 %% Port = integer()
 %% Opts = options()
 %%
-handle_call({connect, Client, Address, Port, Opts, Timeout}, From, St) ->
+handle_call({connect, Client, Address, Port, Opts, Timeout}, _From, St) ->
     debug(St, "connect: client = ~w, address = ~p, port = ~w~n",
 	  [Client, Address, Port]),
     case connect_prim(ssl_server, gen_tcp, Client, Address, Port, Opts, 
@@ -414,7 +414,7 @@ handle_call({connect, Client, Address, Port, Opts, Timeout}, From, St) ->
 
 %% close from client - new i/f
 %%
-handle_call({close, Client}, From, St) ->
+handle_call({close, Client}, _From, St) ->
     debug(St, "close: client = ~w~n", [Client]),
     if
 	integer(St#st.fd) ->
@@ -428,7 +428,7 @@ handle_call({close, Client}, From, St) ->
 %%  Port = int()
 %%  Opts = options()
 %%
-handle_call({listen, Client, Port, Opts}, From, St) ->
+handle_call({listen, Client, Port, Opts}, _From, St) ->
     debug(St, "listen: client = ~w, port = ~w~n",
 	  [Client, Port]),
     case listen_prim(ssl_server, Client, Port, Opts, St) of
@@ -441,7 +441,7 @@ handle_call({listen, Client, Port, Opts}, From, St) ->
 
 %% peername
 %%
-handle_call({peername, Client}, From, St) ->
+handle_call({peername, Client}, _From, St) ->
     debug(St, "peername: client = ~w~n", [Client]),
     if 
 	St#st.status =/= open ->
@@ -458,47 +458,54 @@ handle_call({peername, Client}, From, St) ->
     end;
 
 
-%% setopts - only nodelay supported.
+%% setopts
 %%
-handle_call({setopts, Client, Opts}, From, St) ->
+handle_call({setopts, Client, _Opts}, _From, St) when St#st.status =/= open ->
     debug(St, "setopts: client = ~w~n", [Client]),
-    if
-	St#st.status =/= open ->
-	    {reply, {error, closed}, St};
+    {reply, {error, closed}, St};
+handle_call({setopts, _Client, Opts0}, _From, St0) ->
+    OptsOK = case St0#st.brokertype of
+		 listener ->
+		     are_opts(fun is_tcp_listen_opt/1, Opts0);
+		 acceptor ->
+		     are_opts(fun is_tcp_accept_opt/1, Opts0);
+		 connector ->
+		     are_opts(fun is_tcp_connect_opt/1, Opts0)
+	     end,
+    if 
+	OptsOK == false ->
+	    {reply, {error, eoptions}, St0};
 	true ->
-	    OptsOK = case St#st.brokertype of
-			 listener ->
-			     are_opts(fun is_tcp_listen_opt/1, Opts);
-			 acceptor ->
-			     are_opts(fun is_tcp_accept_opt/1, Opts);
-			 connector ->
-			     are_opts(fun is_tcp_connect_opt/1, Opts)
-		     end,
-	    if 
-		OptsOK == false ->
-		    {reply, {error, eoptions}, St};
-		true ->
-		    case inet:setopts(St#st.proxysock, Opts) of
-			ok ->
-			    Bool = get_nodelay(Opts),
-			    case setnodelay(ssl_server, St, Bool) of
+	    Opts1 = lists:keydelete(nodelay, 1, Opts0),
+	    case inet:setopts(St0#st.proxysock, Opts1) of
+		ok ->
+		    Opts2 = replace_opts(Opts1, St0#st.opts),
+		    Active = get_active(Opts2),
+		    St2 = St0#st{opts = Opts2, 
+				 active = Active},
+		    case get_nodelay(Opts0) of
+			empty ->
+			    {reply, ok, St2};
+			Bool ->
+			    case setnodelay(ssl_server, St0, Bool) of
 				ok ->
-				    NOpts = replace_opts(Opts, St#st.opts),
-				    NSt = St#st{opts = NOpts},
-				    {reply, ok, NSt};
+				    Opts3 = replace_opts([{nodelay, Bool}],
+							 Opts2),
+				    St3 = St0#st{opts = Opts3, 
+						 active = Active},
+				    {reply, ok, St3};
 				{error, Reason} ->
-				    {reply, {error, Reason}, St}
-			    end;
-			{error, Reason} ->
-			    {reply, {error, Reason}, St}
-		    end
+				    {reply, {error, Reason}, St2}
+			    end
+		    end;
+		{error, Reason} ->
+		    {reply, {error, Reason}, St0}
 	    end
     end;
 
-
 %% sockname
 %%
-handle_call({sockname, Client}, From, St) ->
+handle_call({sockname, Client}, _From, St) ->
     debug(St, "sockname: client = ~w~n", [Client]),
     if 
 	St#st.status =/= open ->
@@ -518,7 +525,7 @@ handle_call({sockname, Client}, From, St) ->
 %% inhibit msgs
 %%
 %%
-handle_call({inhibit_msgs, Client}, From, St) when St#st.client == Client ->
+handle_call({inhibit_msgs, Client}, _From, St) when St#st.client == Client ->
     debug(St, "inhibit_msgs: client = ~w~n", [Client]),
     {ok, Collector} = start_collector(),
     {reply, ok, St#st{collector = Collector}};
@@ -527,7 +534,7 @@ handle_call({inhibit_msgs, Client}, From, St) when St#st.client == Client ->
 %% release msgs
 %%
 %%
-handle_call({release_msgs, Client, NewClient}, From, St) 
+handle_call({release_msgs, Client, NewClient}, _From, St) 
   when St#st.client == Client ->
     debug(St, "release_msgs: client = ~w~n", [Client]),
     unlink(Client),
@@ -540,7 +547,7 @@ handle_call({release_msgs, Client, NewClient}, From, St)
 %% getopts
 %%
 %%
-handle_call({getopts, Client, OptTags}, From, St) ->
+handle_call({getopts, Client, OptTags}, _From, St) ->
     debug(St, "getopts: client = ~w~n", [Client]),
     Reply = case are_opt_tags(St#st.brokertype, St#st.newif, OptTags) of
 		true ->
@@ -554,7 +561,7 @@ handle_call({getopts, Client, OptTags}, From, St) ->
 %% bad call
 %% 
 %%
-handle_call(Request, From, St) ->
+handle_call(Request, _From, St) ->
     debug(St, "++++ ssl_broker: bad call: ~w~n", [Request]),
     {reply, {error, {badcall, Request}}, St}.
 
@@ -636,7 +643,7 @@ handle_info({Client, {deliver, Data}}, St)
     case gen_tcp:send(St#st.proxysock, Data) of
 	ok ->
 	    {noreply, St};
-	{error, Reason} ->
+	{error, _Reason} ->
 	    {noreply, St#st{status = closing}}
     end;
 
@@ -692,7 +699,7 @@ terminate(Reason, St) ->
 %% code_change
 %%
 %%
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%
@@ -710,7 +717,7 @@ listen_prim(ServerName, Client, Port, Opts, St) ->
     BackLog = get_backlog(LOpts),
     IP = get_ip(LOpts),
     case ssl_server:listen_prim(ServerName, IP, Port, FlagStr, BackLog) of
-	{ok, ListenFd, Port0} ->
+	{ok, ListenFd, _Port0} ->
 	    ThisSocket = #sslsocket{fd = ListenFd, pid = self()},
 	    StOpts = add_default_tcp_listen_opts(LOpts) ++
 		add_default_ssl_opts(St#st.newif, SSLOpts),
@@ -793,7 +800,6 @@ accept_prim(ServerName, TcpModule, Client, ListenFd, LOpts, Opts,
 		    ThisSocket = #sslsocket{fd = Fd, pid = self()}, 
 		    StOpts = add_default_tcp_accept_opts(AOpts) ++
 			add_default_ssl_opts(St#st.newif, SSLOpts),
-		    Reply = {ok, ThisSocket}, 
 		    NSt = St#st{fd = Fd, 
 				active = get_active(AOpts),
 				opts = StOpts,
@@ -916,7 +922,7 @@ transfer_messages(Pid, NewOwner) ->
 %% 
 new_close_status(closed) -> closed;
 new_close_status(closing) -> closed;
-new_close_status(Other) -> closing.
+new_close_status(_Other) -> closing.
 
 
 %%
@@ -926,7 +932,7 @@ debug(St, Format, Args) ->
     debug1(St#st.debug, St#st.brokertype, Format, Args).
 
 debug1(true, Type, Format0, Args) ->
-    {MS, S, MiS} = erlang:now(),
+    {_MS, S, MiS} = erlang:now(),
     Secs = S rem 100, 
     MiSecs = MiS div 1000,
     Format = "++++ ~3..0w:~3..0w ssl_broker (~w)[~w]: " ++ Format0, 
@@ -941,7 +947,7 @@ what(Reason) when atom(Reason) ->
     Reason;
 what({'EXIT', Reason}) ->
     what(Reason);
-what({What, Where}) when atom(What) ->
+what({What, _Where}) when atom(What) ->
     What;
 what(Reason) ->
     Reason.
@@ -1140,15 +1146,15 @@ is_tcp_gen_opt({nodelay, false}) -> true;
 is_tcp_gen_opt({active, true}) -> true;
 is_tcp_gen_opt({active, false}) -> true;
 is_tcp_gen_opt({active, once}) -> true;
-is_tcp_gen_opt(Opt) -> false.
+is_tcp_gen_opt(_Opt) -> false.
 
 is_tcp_listen_only_opt({backlog, Size}) when integer(Size), 0 =< Size -> true;
 is_tcp_listen_only_opt({ip, Addr}) -> is_ip_address(Addr);
-is_tcp_listen_only_opt(Opt) -> false.
+is_tcp_listen_only_opt(_Opt) -> false.
 
 %% SSL options
 is_ssl_old_opt({flags, String}) -> is_string(String); 
-is_ssl_old_opt(Opt) -> false.
+is_ssl_old_opt(_Opt) -> false.
 
 is_ssl_opt({verify, Code}) when 0 =< Code, Code =< 2 -> true;
 is_ssl_opt({depth, Depth}) when 0 =< Depth -> true;
@@ -1158,12 +1164,12 @@ is_ssl_opt({password, String}) -> is_string(String);
 is_ssl_opt({cacertfile, String}) -> is_string(String);
 is_ssl_opt({ciphers, String}) -> is_string(String);
 is_ssl_opt({cachetimeout, Timeout}) when Timeout >= 0 -> true;
-is_ssl_opt(Opt) -> false.
+is_ssl_opt(_Opt) -> false.
 
 %% Various types
 is_string(String) when list(String) ->
     lists:all(fun (C) when integer(C), 0 =< C, C =< 255 -> true; 
-		  (C) -> false end, 
+		  (_C) -> false end, 
 	      String);
 is_string(_) ->
     false.

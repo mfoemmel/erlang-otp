@@ -88,7 +88,7 @@ inInterface(G, []) -> % Global constant
 inInterface(G, N) -> 
     [N1 |Ns] = N,
     {FullScopedName, T, TK, _} =
-	icgen:get_full_scoped_name(G, Ns, ic_symtab:scoped_id_new(N1)),
+	ic_symtab:get_full_scoped_name(G, Ns, ic_symtab:scoped_id_new(N1)),
     case T of
 	interface -> % Constant declare in an interface
 	    true;

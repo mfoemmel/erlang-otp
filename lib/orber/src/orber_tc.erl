@@ -35,14 +35,15 @@
 %% External exports
 %%-----------------------------------------------------------------
 -export([null/0, void/0, short/0, unsigned_short/0, 
-	 long/0, unsigned_long/0, long_long/0,
+	 long/0, longdouble/0, unsigned_long/0, long_long/0,
 	 unsigned_long_long/0, float/0, double/0,
 	 boolean/0, char/0, wchar/0, octet/0, any/0,
 	 typecode/0, principal/0,
 	 object_reference/2, struct/3, 
 	 union/5, enum/3,
 	 string/1, wstring/1, sequence/2, array/2, alias/3,
-	 exception/3, get_tc/1, check_tc/1]).
+	 exception/3, fixed/2, value/5, value_box/3, native/2, abstract_interface/2,
+	 get_tc/1, check_tc/1]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -75,8 +76,9 @@ float() ->
     tk_float.
 double() ->
     tk_double.
-%%long_double() ->
-%%    tk_longdouble.
+longdouble() ->
+    tk_longdouble.
+
 boolean() ->
     tk_boolean.
 char() ->
@@ -90,7 +92,7 @@ any() ->
 typecode() ->
     tk_TypeCode.
 principal() ->
-    tk_principal.
+    tk_Principal.
 
 object_reference(Id, Name) ->
     {tk_objref, Id, Name}.
@@ -119,9 +121,23 @@ array(ElemTC, Length) ->
 alias(Id, Name, TC) ->
     {tk_alias, Id, Name, TC}.
 
-
 exception(Id, Name, ElementList) ->
-    {tk_exception, Id, Name, ElementList}.
+    {tk_except, Id, Name, ElementList}.
+
+fixed(Digits, Scale) ->
+    {tk_fixed, Digits, Scale}.
+
+value(RepId, Name, ValueModifier, TC, ElementList) ->
+    {tk_value, RepId, Name, ValueModifier, TC, ElementList}.
+
+value_box(RepId, Name, TC) ->
+    {tk_value_box, RepId, Name, TC}.
+
+native(RepId, Name) ->
+    {tk_native, RepId, Name}.
+
+abstract_interface(RepId, Name) ->
+    {tk_abstract_interface, RepId, Name}.
 
 
 %%-----------------------------------------------------------------
@@ -158,7 +174,7 @@ check_tc('tk_longlong') -> true;
 check_tc('tk_ulonglong') -> true;
 check_tc('tk_float') -> true;
 check_tc('tk_double') -> true;
-%%check_tc('tk_longdouble') -> true;
+check_tc('tk_longdouble') -> true;
 check_tc('tk_boolean') -> true;
 check_tc('tk_char') -> true;
 check_tc('tk_wchar') -> true;
@@ -172,10 +188,15 @@ check_tc({'tk_union', RepId, Name, DiscrTC, Default, ElementList}) -> true;
 check_tc({'tk_enum', RepId, Name, ElementList}) -> true;
 check_tc({'tk_string', MaxLength}) -> true;
 check_tc({'tk_wstring', MaxLength}) -> true;
+check_tc({'tk_fixed', Digits, Scale}) -> true;
 check_tc({'tk_sequence', ElemTC, MaxLength}) -> true;
 check_tc({'tk_array', ElemTC, Length}) -> true;
 check_tc({'tk_alias', RepId, Name, TC}) -> true;
 check_tc({'tk_except', RepId, Name, ElementList}) -> true;
+check_tc({'tk_value', RepId, Name, ValueModifier, TC, ElementList}) -> true;
+check_tc({'tk_value_box', RepId, Name, TC}) -> true;
+check_tc({'tk_native', RepId, Name}) -> true;
+check_tc({'tk_abstract_interface', RepId, Name}) -> true;
 check_tc({'none', Indirection}) -> true;
 check_tc(_) -> false.
     

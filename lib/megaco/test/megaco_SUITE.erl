@@ -59,6 +59,12 @@ all(suite) ->
      sdp
     ].
 
+tickets(suite) ->
+    [
+     mess,
+     codec
+     ].
+
 app_test(suite) ->
     [{megaco_app_test, all}].
 

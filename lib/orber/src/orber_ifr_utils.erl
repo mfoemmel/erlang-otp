@@ -100,6 +100,8 @@ select(Record,Field) when record(Record,ir_OperationDef) ->
     select(Record,record_info(fields,ir_OperationDef),Field);
 select(Record,Field) when record(Record,ir_InterfaceDef) ->
     select(Record,record_info(fields,ir_InterfaceDef),Field);
+select(Record,Field) when record(Record,ir_FixedDef) ->
+    select(Record,record_info(fields,ir_FixedDef),Field);
 select([],_) -> [];
 select(Record,Field) ->
     ?ifr_exception("Unknow record type:", Record).
@@ -168,6 +170,8 @@ construct(Record,Field,Value) when record(Record,ir_OperationDef) ->
     construct(Record,record_info(fields,ir_OperationDef),Field,Value);
 construct(Record,Field,Value) when record(Record,ir_InterfaceDef) ->
     construct(Record,record_info(fields,ir_InterfaceDef),Field,Value);
+construct(Record,Field,Value) when record(Record,ir_FixedDef) ->
+    construct(Record,record_info(fields,ir_FixedDef),Field,Value);
 construct(Record,Field,Value) ->
     ?ifr_exception("Unknow record type:", Record).
 

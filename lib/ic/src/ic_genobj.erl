@@ -61,22 +61,42 @@ new(Opts) ->
     Tk		= ets:new(tktab, [set, public]),
     PragmaTab   = ets:new(pragmatab, [bag, public]),
     TypeDefTab  = ets:new(c_typedeftab, [set, public]),
-    KeyWordTab  = icscan:add_keyw(),
     G = #genobj{options=OptDB, 
 		warnings=Warns, 
 		symtab=ic_symtab:new(), 
 		auxtab=Aux, 
 		tktab=Tk, 
 		pragmatab=PragmaTab,
-		c_typedeftab=TypeDefTab,
-		keywtab=KeyWordTab},
+		c_typedeftab=TypeDefTab},
     ic_error:init_errors(G),
     ic_options:add_opt(G, default_opts, true),
     ic_options:read_cfg(G, Opts),	       % Read any config files
     ic_options:add_opt(G, Opts, true),
     ic_symtab:symtab_add_faked_included_types(G), % Add CORBA::<Types> that as if they
                                                   % were defined in an included file
-    G.
+    case ic_options:get_opt(G, be) of
+	false ->
+	    DefBE = ic_options:defaultBe(),
+	    case ic_options:get_opt(G, multiple_be) of
+		false ->
+		    ic_options:add_opt(G, be, DefBE),
+		    G;
+		List ->
+		    case lists:member(DefBE, List) of
+			true ->
+			    %% Delete the default be from the list to avoid
+			    %% generating it twice.
+			    NewList = lists:delete(DefBE, List),
+			    ic_options:add_opt(G, multiple_be, NewList),
+			    ic_options:add_opt(G, be, DefBE),
+			    G;
+			false ->
+			    G
+		    end
+	    end;
+	_ ->
+	    G
+    end.
 
 
 %%--------------------------------------------------------------------
@@ -97,7 +117,6 @@ free_table_space(G) ->
     ets:delete(G#genobj.tktab),
     ets:delete(G#genobj.pragmatab),
     ets:delete(G#genobj.c_typedeftab),
-    ets:delete(G#genobj.keywtab),
     %% Close file descriptors
     close_fd(G#genobj.skelfiled),
     close_fd(G#genobj.stubfiled),

@@ -26,6 +26,9 @@
 #  include "erl_vxworks_sys.h"
 #else 
 #  include "erl_unix_sys.h"
+#ifndef UNIX
+#  define UNIX 1
+#endif
 #endif
 
 #ifdef DEBUG

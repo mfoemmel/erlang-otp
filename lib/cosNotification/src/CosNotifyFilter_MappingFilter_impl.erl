@@ -407,7 +407,7 @@ try_create_filters(State, [#'CosNotifyFilter_MappingConstraintPair'
 	    corba:raise(#'CosNotifyFilter_InvalidValue'
 			{constr =  #'CosNotifyFilter_ConstraintExp'
 			 {event_types = Types, constraint_expr = Con},
-			 value=any:get_value(Any)});
+			 value=Any});
 	{_, {ok, Tree}} ->
 	    case catch cosNotification_Filter:check_types(Types) of
 		true ->

@@ -56,6 +56,17 @@ gen_encode_sequence(Erules,Typename,D) when record(D,type) ->
     asn1ct_name:start(),
     asn1ct_name:new(term),
     asn1ct_name:new(bytes),
+    
+    %% if EXTERNAL type the input value must be transformed to 
+    %% ASN1 1990 format
+    case Typename of
+	['EXTERNAL'] ->
+	    emit(["   NewVal = asn1rt_check:transform_to_EXTERNAL1990(Val),",
+		  nl]);
+	_ ->
+	    ok
+    end,
+
     {SeqOrSet,TableConsInfo,CompList} = 
 	case D#type.def of
 	    #'SEQUENCE'{tablecinf=TCI,components=CL} -> 
@@ -70,16 +81,32 @@ gen_encode_sequence(Erules,Typename,D) when record(D,type) ->
 		end,
     EncObj =
 	case TableConsInfo of
+	    {_,_,_,{no_unique,_}} ->
+		false;
 	    %% ObjectSet, name of the object set in constraints
 	    %% 
 	    {ObjectSet,AttrN,N,UniqueFieldName} -> %% N is index of attribute that determines constraint
-		ObjectEncode = lists:concat(['Obj',AttrN]),
-		emit({ObjectEncode," = ",nl}),
-		emit({"   'getenc_",ObjectSet,"'(",{asis,UniqueFieldName},
-		      ", ",nl}),
-		emit({indent(35),"?RT_BER:cindex(",N+1,", Val,",
-		      {asis,AttrN},")),",nl}),
-		{AttrN,ObjectEncode};
+		OSDef =
+		    case ObjectSet of
+			{Module,OSName} ->
+			    asn1_db:dbget(Module,OSName);
+			OSName ->
+			    asn1_db:dbget(get(currmod),OSName)
+		    end,
+%		io:format("currmod: ~p~nOSName: ~p~nAttrN: ~p~nN: ~p~nUniqueFieldName: ~p~n",
+%			  [get(currmod),OSName,AttrN,N,UniqueFieldName]),
+		case (OSDef#typedef.typespec)#'ObjectSet'.gen of
+		    true ->
+			ObjectEncode = lists:concat(['Obj',AttrN]),
+			emit({ObjectEncode," = ",nl}),
+			emit({"   'getenc_",ObjectSet,"'(",{asis,UniqueFieldName},
+			      ", ",nl}),
+			emit({indent(35),"?RT_BER:cindex(",N+1,", Val,",
+			      {asis,AttrN},")),",nl}),
+			{AttrN,ObjectEncode};
+		    _ ->
+			false
+		end;
 	    _ ->
 		false
 	end,
@@ -202,12 +229,24 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 			    {ext,_,_} -> ext;
 			    noext -> noext
 			end,
-	    emit(["{",{next,bytes},",",{curr,rb},"} = ?RT_BER:restbytes2(RemBytes, ",
+	    emit(["   {",{next,bytes},",",{curr,rb},"} = ?RT_BER:restbytes2(RemBytes, ",
 		  {curr,bytes},",",ExtStatus,"),",nl]),
 	    asn1ct_name:new(rb),
-	    emit(["   {{'",asn1ct_gen:list2rname(Typename),"', "]),
-	    mkvlist(asn1ct_name:all(term)),
-	    emit(["}, ",{next,bytes},", "]),
+	    case Typename of
+		['EXTERNAL'] ->
+		    emit({"   OldFormat={'",asn1ct_gen:list2rname(Typename),
+			  "', "}),
+		    mkvlist(asn1ct_name:all(term)),
+		    emit({"},",nl}),
+		    emit({"   ASN11994Format =",nl,
+			  "      asn1rt_check:transform_to_EXTERNAL1994",
+			  "(OldFormat),",nl}),
+		    emit(["   {ASN11994Format,",{next,bytes},", "]);
+		_ ->
+		    emit(["   {{'",asn1ct_gen:list2rname(Typename),"', "]),
+		    mkvlist(asn1ct_name:all(term)),
+		    emit(["}, ",{next,bytes},", "])
+	    end,
 	    asn1ct_gen_ber:add_removed_bytes(),
 	    emit({"}.",nl})
     end.
@@ -469,7 +508,13 @@ gen_decode_choice(Erules,Typename,D) when record(D,type) ->
 gen_enc_sequence_call(Erules,TopType,[#'ComponentType'{name=Cname,typespec=Type,prop=Prop,tags=Tags}|Rest],Pos,Ext,EncObj) ->
     asn1ct_name:new(encBytes),
     asn1ct_name:new(encLen),
-    Element = io_lib:format("?RT_BER:cindex(~w,Val,~w)",[Pos+1,Cname]),
+    Element = 
+	case TopType of
+	    ['EXTERNAL'] ->
+		io_lib:format("?RT_BER:cindex(~w,NewVal,~w)",[Pos+1,Cname]);
+	    _ ->
+		io_lib:format("?RT_BER:cindex(~w,Val,~w)",[Pos+1,Cname])
+	end,
     InnerType = asn1ct_gen:get_inner(Type#type.def),
     print_attribute_comment(InnerType,Pos,Prop),
     gen_enc_line(Erules,TopType,Cname,Type,Element,3,Prop,EncObj),
@@ -749,12 +794,13 @@ gen_dec_choice(Erules,TopType, ChTag, CompList, Ext) ->
     asn1ct_name:delete(bytes),
     Tags = [X#tag{class=asn1ct_gen_ber:decode_class(X#tag.class)}|| X <- ChTag],
     
-    emit(["   {FormLen,",{next,bytes},
+    emit(["   {{_,Len},",{next,bytes},
 	  ", RbExp} = ?RT_BER:check_tags(TagIn++",
 	  {asis,Tags},", ",
 	  {curr,bytes},", OptOrMand),",nl]),
     asn1ct_name:new(bytes),
     asn1ct_name:new(len),
+    gen_dec_choice_indef_funs(Erules),
     case Erules of
 	ber_bin ->
 	    emit([indent(3),"case ",{curr,bytes}," of",nl]);
@@ -773,6 +819,12 @@ gen_dec_choice(Erules,TopType, ChTag, CompList, Ext) ->
     emit({indent(3),"end"}),
     asn1ct_name:new(tag),
     asn1ct_name:new(else).
+
+gen_dec_choice_indef_funs(Erules) ->
+    emit({indent(3),"IndefEndBytes = fun(indefinite,",indefend_match(Erules),
+	  ")-> R; (_,B)-> B end,",nl}),
+    emit({indent(3),"IndefEndRb = fun(indefinite,",indefend_match(Erules),
+	  ")-> 2; (_,_)-> 0 end,",nl}).
 
 
 gen_dec_choice_cases(Erules,TopType, []) ->
@@ -803,8 +855,8 @@ gen_dec_choice_cases_type(Erules,TopType,H) ->
     emit({indent(9),"{Dec, Rest, ",{curr,rbCho},"} = "}),
     gen_dec_line(Erules,TopType,Cname,[],Type,Prop,false),
     emit([",",nl,indent(9),"{{",{asis,Cname},
-	  ", Dec}, Rest, RbExp + ",
-	  {curr,rbCho},"};",nl,nl]).
+	  ", Dec}, IndefEndBytes(Len,Rest), RbExp + ",
+	  {curr,rbCho}," + IndefEndRb(Len,Rest)};",nl,nl]).
 
 encode_tag_val(Erules,{Class,TagNo}) when integer(TagNo) ->
     Rtmod = rtmod(Erules),
@@ -877,7 +929,7 @@ get_all_choice_tags([H|T],TagList)  ->
 gen_enc_line(Erules,TopType,Cname,Type=#type{constraint=
 					     [{tableconstraint_info,_}],
 					     def={typefield,_}},
-	     Element,Indent,OptOrMand,EncObj) 
+	     Element,Indent,OptOrMand=mandatory,EncObj) 
   when list(Element) ->
     asn1ct_name:new(tmpBytes),
     gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,
@@ -906,14 +958,30 @@ gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,Assign,EncObj)
 	    case RefedFieldName of
 		{notype,T} ->
 		    throw({error,{notype,type_from_object,T}});
-		{_,Name} when atom(Name) ->
+		{Name,RestFieldNames} when atom(Name) ->
+		    case OptOrMand of
+			mandatory -> ok;
+			_ ->
+			    emit(["{",{curr,tmpBytes},",",{curr,tmpLen},
+				  "} = "])
+%%			    asn1ct_name:new(tmpBytes),
+%%			    asn1ct_name:new(tmpLen)
+		    end,
 		    emit({Fun,"(",{asis,Name},", ",Element,", ",
-			  {asis,Tag},", []),",nl}),
+			  {asis,Tag},", ",{asis,RestFieldNames},"),",nl}),
 		    emit(IndDeep),
-%		    asn1ct_name:new(encLen),
-%		    asn1ct_name:new(tmpLen),
-		    emit({"{",{curr,encBytes},", _} = "}),
-		    emit({"?RT_BER:encode_open_type(",{curr,tmpBytes},")"});
+		    case OptOrMand of
+			mandatory ->
+			    emit({"{",{curr,encBytes},", _} = "}),
+			    emit({"?RT_BER:encode_open_type(",{curr,tmpBytes},
+				  ")"});
+			_ ->
+			    emit({"{",{next,tmpBytes},", _} = "}),
+			    emit({"?RT_BER:encode_open_type(",{curr,tmpBytes},
+				  "),",nl}),
+			    emit(IndDeep),
+			    emit({"{",{next,tmpBytes},", ",{curr,tmpLen},"}"})
+		    end;
 		_ ->
 		    throw({asn1,{'internal error'}})
 	    end;
@@ -936,6 +1004,9 @@ gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,Assign,EncObj)
 						   Element);
 		{notype,_} ->
 		    emit({"'enc_",InnerType,"'(",Element,", ",{asis,Tag},")"});
+		'ASN1_OPEN_TYPE' ->
+		    asn1ct_gen_ber:gen_encode_prim(ber,Type,{asis,Tag},
+						   Element);
 		_ ->
 		    {EncFunName, EncMod, EncFun} = 
 			mkfuncname(TopType,Cname,WhatKind,enc),
@@ -1099,14 +1170,15 @@ gen_dec_line(Erules,TopType,Cname,CTags,Type,OptOrMand,DecObjInf)  ->
 gen_dec_call({typefield,_},_,_,Cname,Type,BytesVar,Tag,_,_,false) ->
     %%  this in case of a choice with typefield components
     asn1ct_name:new(reason),
-    {_,RefedFieldName} = 
+    {FirstPFName,RestPFName} = 
 	asn1ct_gen:get_constraint(Type#type.constraint,
 				  tableconstraint_info),
     emit({nl,indent(6),"begin",nl}),
     emit({indent(9),"{OpenDec,TmpRest,TmpRbCho} =",nl,indent(12),
 	  "?RT_BER:decode_open_type(",{curr,bytes},"),",nl}),
-    emit({indent(9),"case (catch ObjFun(",{asis,RefedFieldName},
-	  ", OpenDec, ",{asis,Tag},", [])) of", nl}),%% ??? What about Tag 
+    emit({indent(9),"case (catch ObjFun(",{asis,FirstPFName},
+	  ", OpenDec, ",{asis,Tag},", ",{asis,RestPFName},
+	  ")) of", nl}),%% ??? What about Tag 
     emit({indent(12),"{'EXIT',",{curr,reason},"} ->",nl}),
 %%    emit({indent(15),"throw({runtime_error,{'Type not ",
 %%	  "compatible with tableconstraint', OpenDec}});",nl}),
@@ -1118,10 +1190,10 @@ gen_dec_call({typefield,_},_,_,Cname,Type,BytesVar,Tag,_,_,false) ->
     [];
 gen_dec_call({typefield,_},_,_,Cname,Type,BytesVar,Tag,_,_,DecObjInf) ->
     emit({"?RT_BER:decode_open_type(",{curr,bytes},")"}),
-    {_,RefedFieldName} = 
+    RefedFieldName = 
 	asn1ct_gen:get_constraint(Type#type.constraint,
 				  tableconstraint_info),
-    [{Cname,{RefedFieldName,[]},
+    [{Cname,RefedFieldName,
       asn1ct_gen:mk_var(asn1ct_name:curr(tmpterm)),Tag}];
 gen_dec_call({objectfield,PrimFieldName,PFNList},_,_,Cname,_,_,Tag,_,_,_) ->
     emit({"?RT_BER:decode_open_type(",{curr,bytes},")"}),
@@ -1150,6 +1222,10 @@ gen_dec_call1({primitive,bif},InnerType,Erules,_,_,Type,BytesVar,
 	    asn1ct_gen_ber:gen_dec_prim(Erules,Type,BytesVar,Tag,[],no_length,
 					?PRIMITIVE,OptOrMand)
     end;
+gen_dec_call1('ASN1_OPEN_TYPE',InnerType,Erules,_,_,Type,BytesVar,
+	      Tag,OptOrMand,_) ->
+    asn1ct_gen_ber:gen_dec_prim(Erules,Type,BytesVar,Tag,[],no_length,
+				?PRIMITIVE,OptOrMand);
 gen_dec_call1(WhatKind,_,Erules,TopType,Cname,Type,_,Tag,_,OptOrMand) ->
     {DecFunName, DecMod, DecFun} = 
 	mkfuncname(TopType,Cname,WhatKind,dec),
@@ -1255,5 +1331,8 @@ rtmod(ber_bin) ->
     list_to_atom(?RT_BER_BIN).
 
 
-
+indefend_match(ber) ->
+    "[0,0|R]";
+indefend_match(ber_bin) ->
+    "<<0,0,R/binary>>".
 

@@ -297,7 +297,7 @@ remove_ext(File) ->
 %%-----------------------------------------------------------------
 open(_, ignore) -> ignore;
 open(empty, Name) -> 
-    case file:open(Name, {raw, binary, write}) of
+    case file:open(Name, [raw, binary, write]) of
 	{ok, Fd} ->
 	    Fd;
 	{error, Reason} ->

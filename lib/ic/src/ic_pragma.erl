@@ -34,9 +34,14 @@
 -import(lists,[suffix/2,delete/2,reverse/1,keysearch/3,member/2,last/1,flatten/1]).
 -import(string,[tokens/2]).
 -import(ets,[insert/2,lookup/2]).
--import(icgen,[pragmatab/1,get_id2/1,get_line/1,get_body/1,idlfile/1,to_atom/1,get_opt/2]).
+
+-import(ic_forms,   [get_id2/1, get_body/1, get_line/1]).
+-import(ic_util,    [to_atom/1]).
+-import(ic_genobj,  [idlfile/1]).
+-import(ic_options, [get_opt/2]).
 
 -include("icforms.hrl").
+-include("ic.hrl").
 
 
 
@@ -48,7 +53,7 @@
 %% If it is to be optimised, it should be 
 %% embodied in one of other compiling stages. 
 pragma_reg(G,X) ->
-    S = icgen:pragmatab(G),
+    S = ic_genobj:pragmatab(G),
     init_idlfile(G,S),
     init_pragma_status(S),
     registerOptions(G,S),
@@ -77,7 +82,7 @@ pragma_reg(G,X) ->
 
 
 registerOptions(G,S) ->
-    OptList = ets:tab2list(icgen:optiontab(G)),
+    OptList = ets:tab2list(ic_genobj:optiontab(G)),
     registerOptions(G,S,OptList).
 
 
@@ -252,8 +257,12 @@ pragma_reg(G, S, N, X) when record(X, const) ->
     mk_file_data(G,X,N,const);
 
 pragma_reg(G, S, N, X) when record(X, typedef) ->  
-    mk_ref(G,[get_id2(X) | N],typedef_ref),
-    mk_file_data(G,X,N,typedef);
+    XX = #id_of{type=X},
+    lists:foreach(fun(Id) ->
+			  mk_ref(G,[get_id2(Id) | N],typedef_ref),
+			  mk_file_data(G,XX#id_of{id=Id},N,typedef)
+		  end,
+		  ic_forms:get_idlist(X));
 
 pragma_reg(G, S, N, X) when record(X, enum) ->  
     mk_ref(G,[get_id2(X) | N],enum_ref),
@@ -269,6 +278,14 @@ pragma_reg(G, S, N, X) when record(X, struct) ->
     mk_ref(G,[get_id2(X) | N],struct_ref),
     mk_file_data(G,X,N,struct),
     pragma_reg_all(G, S, N, X#struct.body);
+
+pragma_reg(G, S, N, X) when record(X, attr) -> 
+    XX = #id_of{type=X},
+    lists:foreach(fun(Id) ->
+			  mk_ref(G,[get_id2(Id) | N],attr_ref),
+			  mk_file_data(G,XX#id_of{id=Id},N,attr)
+		  end,
+		  ic_forms:get_idlist(X));
     
 pragma_reg(G, S, N, X) ->  ok.
 
@@ -375,7 +392,7 @@ pragma_reg_codeOpt(G, S, N, {pragma,{_,LineNr,"CODEOPT"},_,Apply} )->
 	    {_,_,OptionList_str} = Apply,
 	    case  list_to_term(OptionList_str) of
 		error ->
-		    icgen:error(G,{pragma_code_opt_bad_option_list,LineNr});
+		    ic_error:error(G,{pragma_code_opt_bad_option_list,LineNr});
 		OptionList ->
 		    
 		    case lists:keysearch(be,1,OptionList) of
@@ -441,7 +458,7 @@ applyCodeOpts(G,S,LNr,[X|Xs]) ->
 	true ->
 	    %% Add that term of the option list 
 	    %% to the compiler option list      
-	    icgen:add_opt(G, [X], true),
+	    ic_options:add_opt(G, [X], true),
 	    %% Continue
 	    applyCodeOpts(G,S,LNr,Xs);
 	false ->
@@ -453,7 +470,7 @@ applyCodeOpts(G,S,LNr,[X|Xs]) ->
 
 
 is_allowed_opt({X,Y}) ->
-    icgen:allowed_opt(X,Y);
+    ic_options:allowed_opt(X,Y);
 is_allowed_opt(X) ->
     false.
     
@@ -464,7 +481,7 @@ is_allowed_opt(X) ->
 %% the scope SCOPE. This is done by use of the 
 %% function pragma_cover/4.
 pragma_cover(G,Scope,Object) ->
-    pragma_cover(pragmatab(G),get_id2(Object),Scope,get_line(Object)).
+    pragma_cover(ic_genobj:pragmatab(G),get_id2(Object),Scope,get_line(Object)).
 
 %% Returns a tuple { PFX, VSN, ID }, that is the  
 %% pragma prefix, version and id coverages of
@@ -480,7 +497,7 @@ pragma_cover(PragmaTab,Name,Scope,LineNr) ->
 %% Finds out which pragma PREFIX that affects 
 %% the scope Scope
 pragma_prefix(G,Scope,Object) ->
-    pragma_prefix_cover(pragmatab(G),get_id2(Object),Scope,get_line(Object)).
+    pragma_prefix_cover(ic_genobj:pragmatab(G),get_id2(Object),Scope,get_line(Object)).
 
 
 %% Finds out which pragma PREFIX that affects 
@@ -524,7 +541,7 @@ slashify(List) -> lists:foldl(fun(X, Acc) -> X++"/"++Acc end,
 %% Finds out which pragma VERSION that affects 
 %% the scope Scope
 pragma_version(G,Scope,Object) ->
-    pragma_version_cover(pragmatab(G),get_id2(Object),Scope,get_line(Object)).
+    pragma_version_cover(ic_genobj:pragmatab(G),get_id2(Object),Scope,get_line(Object)).
 
 %% Finds out which pragma VERSION that affects 
 %% the scope Scope
@@ -559,7 +576,7 @@ default_version() -> "1.0".
 %% Finds out which pragma ID that affects 
 %% the scope Scope
 pragma_id(G,Scope,Object) ->
-    pragma_id_cover(pragmatab(G),get_id2(Object),Scope,get_line(Object)).
+    pragma_id_cover(ic_genobj:pragmatab(G),get_id2(Object),Scope,get_line(Object)).
 
 %% Finds out which pragma ID that affects 
 %% the scope Scope
@@ -759,7 +776,7 @@ mk_ref(G,Name,Type) ->
 	true -> %% The interface is NOT defined att top level
 	    true;
 	false ->
-	    S = pragmatab(G),
+	    S = ic_genobj:pragmatab(G),
 	    File = get_idlfile(S), % The current file or an included one.
 	    case idlfile(G) of % The current file to be compiled.
 		File ->
@@ -774,13 +791,13 @@ mk_ref(G,Name,Type) ->
 %% all vital information available inside files.
 %% Registers ESSENTIAL data for included files
 mk_file_data(G,X,Scope,Type) ->
-    S = pragmatab(G),
+    S = ic_genobj:pragmatab(G),
     Name = get_id2(X),
     PreprocFile = get_idlfile(S), % The current file or an included one.
     CompFile = idlfile(G), % The current file compiled
     Depth = length(Scope), % The depth of the scope
-    ScopedName = icgen:to_undersc([Name|Scope]),
-    Line = icgen:get_line(X),
+    ScopedName = ic_util:to_undersc([Name|Scope]),
+    Line = ic_forms:get_line(X),
     case PreprocFile of 
 	CompFile ->
 	    insert(S,{file_data_local,CompFile,CompFile,Type,Scope,Name,ScopedName,Depth,Line});
@@ -794,7 +811,7 @@ mk_file_data(G,X,Scope,Type) ->
 %% the local file that represent the module
 %% or interface that is preciding the current
 get_local_c_headers(G,X) ->
-    S = pragmatab(G),
+    S = ic_genobj:pragmatab(G),
     Local = lookup(S,file_data_local),
     FoundLocal = get_local_c_headers(X,Local,Local),
     no_doubles(FoundLocal).
@@ -805,14 +822,14 @@ get_local_c_headers(X,Local,Local) ->
 get_local_c_headers(X,[],All,Found) ->
     Found;
 get_local_c_headers(X,[{file_data_local,PF_idl,_,module,_,_,SN,_,Line}|Hs],All,Found)->
-    case icgen:get_line(X) > Line of
+    case ic_forms:get_line(X) > Line of
 	true ->
 	    get_local_c_headers(X,Hs,All,[SN|Found]);
 	false ->
 	    get_local_c_headers(X,Hs,All,Found)
     end;
 get_local_c_headers(X,[{file_data_local,PF_idl,_,interface,_,_,SN,_,Line}|Hs],All,Found)->
-    case icgen:get_line(X) > Line of
+    case ic_forms:get_line(X) > Line of
 	true ->
 	    get_local_c_headers(X,Hs,All,[SN|Found]);
 	false ->
@@ -827,7 +844,7 @@ get_local_c_headers(X,[_|Hs],All,Found) ->
 %% the included file that represent the module
 %% or interface that have to be included
 get_included_c_headers(G) ->
-    S = pragmatab(G),
+    S = ic_genobj:pragmatab(G),
     Included = lookup(S,file_data_included),
     FoundIncluded = get_included_c_headers(Included,Included),
     no_doubles(FoundIncluded).
@@ -923,7 +940,7 @@ contains_interface(PF_idl,[H|Hs]) ->
 
 %% This returns a list of everything defined in an included file.
 get_incl_refs(G) ->
-    S = pragmatab(G),
+    S = ic_genobj:pragmatab(G),
     
     RefList = 
 	ets:match(S,{mod_ref,'$0','_',included}) ++
@@ -933,7 +950,8 @@ get_incl_refs(G) ->
 	ets:match(S,{except_ref,'$0','_',included}) ++
 	ets:match(S,{struct_ref,'$0','_',included}) ++
 	ets:match(S,{union_ref,'$0','_',included}) ++
-	ets:match(S,{enum_ref,'$0','_',included}),
+	ets:match(S,{enum_ref,'$0','_',included}) ++
+	ets:match(S,{attr_ref,'$0','_',included}),
 
     case RefList of
 	[] ->
@@ -946,7 +964,7 @@ get_incl_refs(G) ->
 
 %% This returns a list of everything locally defined.
 get_local_refs(G) ->
-    S = pragmatab(G),
+    S = ic_genobj:pragmatab(G),
 
     RefList = 
 	ets:match(S,{mod_ref,'$0','_',local}) ++
@@ -956,7 +974,8 @@ get_local_refs(G) ->
 	ets:match(S,{except_ref,'$0','_',local}) ++
 	ets:match(S,{struct_ref,'$0','_',local}) ++
 	ets:match(S,{union_ref,'$0','_',local}) ++
-	ets:match(S,{enum_ref,'$0','_',local}),
+	ets:match(S,{enum_ref,'$0','_',local}) ++
+	ets:match(S,{attr_ref,'$0','_',local}),
 
     case RefList of
 	[] ->
@@ -974,7 +993,7 @@ get_local_refs(G) ->
 %% scoped and "final" identities.
 mk_alias(G,PragmaId,ScopedId) ->
     %io:format("~nMaking alias -> ~p~n",[PragmaId]),
-    S = pragmatab(G),
+    S = ic_genobj:pragmatab(G),
     insert(S,{alias,ScopedId,PragmaId}).
 
 
@@ -983,7 +1002,7 @@ mk_alias(G,PragmaId,ScopedId) ->
 %% be registered as an alias and the identity of the object 
 %% is returned. Otherwize "none" is returned.
 get_alias(G,ScopedId) ->
-    S = pragmatab(G),
+    S = ic_genobj:pragmatab(G),
     case ets:match(S,{alias,ScopedId,'$1'}) of
 	[] ->
 	    none;
@@ -1014,8 +1033,8 @@ scope2id(G,ScopedId) ->
 
 
 is_included(G,ScopedId) ->
-    S = pragmatab(G),
-    Name = icgen:to_undersc(ScopedId),
+    S = ic_genobj:pragmatab(G),
+    Name = ic_util:to_undersc(ScopedId),
     case ets:match(S,{file_data_included,'_','_','_','_','_',Name,'_','_'}) of
 	[[]] ->
 	    true;
@@ -1026,8 +1045,8 @@ is_included(G,ScopedId) ->
 
 
 get_included_IR_ID(G,ScopedId) ->
-    S = pragmatab(G),
-    ScopedName = icgen:to_undersc(ScopedId),
+    S = ic_genobj:pragmatab(G),
+    ScopedName = ic_util:to_undersc(ScopedId),
     [[Scope,Name,LNr]] = ets:match(S,{file_data_included,'_','_','_','$3','$4',ScopedName,'_','$7'}),
     {Prefix,Vsn,Id} = pragma_cover(S,Name,Scope,LNr),
     case Id of
@@ -1055,7 +1074,7 @@ get_included_IR_ID(G,ScopedId) ->
 
 %% Returns the scope for object
 id2scope(G,IfrId) ->
-    S = pragmatab(G),
+    S = ic_genobj:pragmatab(G),
     case lookup(S,alias) of
 	[] ->
 	    mk_scope(IfrId);
@@ -1136,7 +1155,7 @@ get_filepath(S) ->
 %% that direct or indirect the current
 %% compiled file is depended on.
 get_dependencies(G) ->
-    S = pragmatab(G),
+    S = ic_genobj:pragmatab(G),
     case lookup(S,dependency) of
 	[] ->
 	    [];
@@ -1239,7 +1258,7 @@ is_decimal_char(D) ->
 
 %% Prints out all the table
 print_tab(G) ->
-    io:format("~nPragmaTab = ~p~n",[ets:tab2list(icgen:pragmatab(G))]).
+    io:format("~nPragmaTab = ~p~n",[ets:tab2list(ic_genobj:pragmatab(G))]).
 
 
 list_to_term(List) ->
@@ -1302,7 +1321,7 @@ remove_redundant_codeOpt(S,[ScopedId,CodeOption,LNr,FilePath]) ->
 
 
 add_inh_data(G,InclScope,X) ->
-    S = icgen:pragmatab(G),
+    S = ic_genobj:pragmatab(G),
     case X#interface.inherit of
 	[] ->
 	    true;
@@ -1339,7 +1358,7 @@ findMembers([X|Xs],List,Found) ->
 
 %% Returns a default broker data
 defaultBrokerData(G) ->
-    {to_atom(icgen:impl(G)),transparent}.
+    {to_atom(ic_genobj:impl(G)),transparent}.
 
 
 %% Loops through the form and sdds inheritence data 
@@ -1369,7 +1388,7 @@ preproc(G, N, []) ->
 %% top scope for the module to be produced and
 %% cannot be overriden.
 getBrokerData(G,X,Scope) ->
-    S = icgen:pragmatab(G),
+    S = ic_genobj:pragmatab(G),
     cleanup_codeOptions(G,S,Scope),
 
     %% Check if it is an operation denoted
@@ -1401,7 +1420,7 @@ getBrokerData(G,X,Scope) ->
 %% Returns a tuple / list of tuples { Mod, Type }
 %% Inside loop, uses overridence. 
 getBrokerData(G,X,RS,Scope,CSF) ->
-    S = icgen:pragmatab(G),
+    S = ic_genobj:pragmatab(G),
     cleanup_codeOptions(G,S,Scope),
     OvScope = overridedFrom(S,RS,Scope),
     getBrokerData(G,S,X,RS,[OvScope],[OvScope|CSF]).
@@ -1839,7 +1858,7 @@ scoped_names_idl_file(PragmaTab, Name, Scope) ->
 denote_specific_code_opts(G) ->
     case ic_options:get_opt(G, be) of
 	noc ->
-	    S = icgen:pragmatab(G),
+	    S = ic_genobj:pragmatab(G),
 	    COList = ets:match(S,{codeopt,'$0','_','_','_','_'}),
 	    OPList = ets:match(S,{op,'$0','$1','_','_'}),
 	    denote_specific_code_opts(S,COList,OPList);
@@ -1906,7 +1925,7 @@ hasNonSpecificCodeoptionOnTopFile(S,File) ->
 
 fetchRandomLocalType(G) ->
     
-    S = pragmatab(G),
+    S = ic_genobj:pragmatab(G),
 
     case ets:match(S,{file_data_local,'_','_','$2','$3','$4','_','_','_'}) of		
 	[] ->
@@ -1940,7 +1959,7 @@ fetchRandomLocalType(S,[[_,Scope,Name]|Tail]) ->
 
 
 fetchLocalOperationNames(G,I) ->
-    S = pragmatab(G),
+    S = ic_genobj:pragmatab(G),
     case ets:match(S,{file_data_local,'_','_',op,I,'$4','_','_','_'}) of
 	[] ->
 	    [];
@@ -1962,8 +1981,8 @@ fetchLocalOperationNames2([[Name]|Names],Found) ->
 %%
 %%------------------------------------------------
 is_local(G,ScopedId) ->
-    S = pragmatab(G),
-    Name = icgen:to_undersc(ScopedId),
+    S = ic_genobj:pragmatab(G),
+    Name = ic_util:to_undersc(ScopedId),
     case ets:match(S,{file_data_local,'_','_','_',tl(ScopedId),'_',Name,'_','_'}) of
 	[[]] ->
 	    true;

@@ -74,6 +74,29 @@
 #include "ssl.h"
 #include "err.h"
 
+/*
+** Compatibility hack for different SSL versions 
+** Unfortunately there is no define in OpenSSL to tell 
+** the version installed.
+** The esock_ssleay.c module is dependent of two changes:
+** a) pem_password_cb userdata appeares in 0.9.4 and later
+** b) malloc/realloc pointers returned are void * in 0.9.5 and later
+**
+**/
+#ifndef OPENSSL_VERSION
+  /* SSL_CTRL_MODE appeared in 0.9.4 */
+  #ifndef SSL_CTRL_MODE 
+    #define OPENSSL_VERSION 0x000903 /* or earlier */
+  #else
+    /* The SSL_AD_USER_CANCLED was changed to SSL_AD_USER_CANCELLED in 0.9.5 */
+    #ifndef SSL_AD_USER_CANCELLED
+      #define OPENSSL_VERSION 0x000904
+    #else
+      #define OPENSSL_VERSION 0x000905 /* or later */
+    #endif
+  #endif
+#endif
+
 char *esock_ssl_err_str = "";
 
 #define FLAGSBUFSIZE		512
@@ -93,7 +116,11 @@ static void reset_err_str(void);
 static void maybe_set_err_str(char *s);
 static int set_ssl_parameters(Connection *cp, int server);
 static int verify_callback(int ok, X509_STORE_CTX *ctx);
+#if OPENSSL_VERSION < 0x000904
 static int passwd_callback(char *buf, int num, int verify);
+#else
+static int passwd_callback(char *buf, int num, int verify, void *userdata);
+#endif
 static void info_callback(SSL *s, int where, int ret);
 
 static err_entry errs[] = {    
@@ -122,9 +149,15 @@ int esock_ssl_init(void)
      * Silly casts to avoid compiler warnings: malloc and realloc in 
      * SSLeay should return void * and not char *.  
      */
+#if OPENSSL_VERSION < 0x000905
     CRYPTO_set_mem_functions((char *(*)())esock_malloc, 
 			     (char *(*)())esock_realloc, 
 			     esock_free);
+#else
+    CRYPTO_set_mem_functions((void *(*)())esock_malloc, 
+			     (void *(*)())esock_realloc, 
+			     esock_free);
+#endif
     meth = SSLv23_method();
     SSL_load_error_strings();
     SSLeay_add_ssl_algorithms();
@@ -788,6 +821,8 @@ static int verify_callback(int ok, X509_STORE_CTX *x509_ctx)
     }
     switch (cert_err) {
     case X509_V_OK:
+    case X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT:
+	ok = 1;
 	break;
     case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT:
     case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY:
@@ -804,7 +839,6 @@ static int verify_callback(int ok, X509_STORE_CTX *x509_ctx)
     case X509_V_ERR_ERROR_IN_CERT_NOT_AFTER_FIELD:
 	maybe_set_err_str("epeercertinvalid");
 	break;
-    case X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT:
     case X509_V_ERR_SELF_SIGNED_CERT_IN_CHAIN:
 	maybe_set_err_str("eselfsignedcert");
 	break;
@@ -819,7 +853,11 @@ static int verify_callback(int ok, X509_STORE_CTX *x509_ctx)
     return ok;
 }
 
+#if OPENSSL_VERSION < 0x000904
 static int passwd_callback(char *buf, int num, int verify)
+#else
+static int passwd_callback(char *buf, int num, int verify, void *userdata)
+#endif
 {
     int len;
     if (key_passwd) {

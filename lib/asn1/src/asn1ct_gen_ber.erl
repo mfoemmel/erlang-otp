@@ -42,6 +42,8 @@
 -define(PRIMITIVE,   0).
 -define(CONSTRUCTED, 2#00100000).
 
+
+-define(T_ObjectDescriptor, ?UNIVERSAL bor ?PRIMITIVE bor 7).
 						% restricted character string types
 -define(T_NumericString,    ?UNIVERSAL bor ?PRIMITIVE bor 18). %can be constructed
 -define(T_PrintableString,  ?UNIVERSAL bor ?PRIMITIVE bor 19). %can be constructed
@@ -101,11 +103,11 @@ gen_encode(Erules,Typename,Type) when record(Type,type) ->
 		true -> 
 		    case get(asn_keyed_list) of
 			true ->
-		    CompList = 
-			case Type#type.def of
-			    #'SEQUENCE'{components=Cl} -> Cl;
-			    #'SET'{components=Cl} -> Cl
-			end,
+			    CompList = 
+				case Type#type.def of
+				    #'SEQUENCE'{components=Cl} -> Cl;
+				    #'SET'{components=Cl} -> Cl
+				end,
 			    emit([nl,"'enc_",asn1ct_gen:list2name(Typename),
 				  "'(Val, TagIn",ObjFun,
 				  ") when list(Val) ->",nl]),
@@ -170,7 +172,8 @@ gen_encode_user(Erules,D) when record(D,typedef) ->
 		_ -> true
 	    end;
 	_ ->
-	    emit({nl,"'enc_",asn1ct_gen:list2name(Typename),"'({'",asn1ct_gen:list2name(Typename),"',Val}, TagIn) ->",nl}),
+	    emit({nl,"'enc_",asn1ct_gen:list2name(Typename),
+		  "'({'",asn1ct_gen:list2name(Typename),"',Val}, TagIn) ->",nl}),
 	    emit({"   'enc_",asn1ct_gen:list2name(Typename),"'(Val, TagIn);",nl,nl})
     end,
     emit({"'enc_",asn1ct_gen:list2name(Typename),"'(Val, TagIn) ->",nl}),
@@ -231,13 +234,14 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 	    emit_encode_func('bit_string',BitStringConstraint,Value,
 			     NamedNumberList,DoTag);
 	'ANY' ->
-	    emit_encode_func('open_type', Value, DoTag);
+	    emit_encode_func('open_type', Value,DoTag);
 	'NULL' ->
 	    emit_encode_func('null',Value,DoTag);
 	'OBJECT IDENTIFIER' ->
 	    emit_encode_func("object_identifier",Value,DoTag);
 	'ObjectDescriptor' ->
-	    emit_encode_func('object_descriptor',Constraint,Value,DoTag);
+	    emit_encode_func('restricted_string',Constraint,Value,
+			     ?T_ObjectDescriptor,DoTag);
 	'OCTET STRING' ->
 	    emit_encode_func('octet_string',Constraint,Value,DoTag);
 	'NumericString' ->
@@ -273,11 +277,17 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 	'GeneralizedTime' ->
 	    emit_encode_func('generalized_time',Constraint,Value,DoTag);
 	'ASN1_OPEN_TYPE' ->
-	    emit_encode_func('open_type', Value, DoTag);
+	    emit_encode_func('open_type', Value,DoTag);
 	XX ->
 	    exit({'can not encode' ,XX})
     end.
 
+
+emit_encode_func(Name,Value) when atom(Name) ->
+    emit_encode_func(atom_to_list(Name),Value);
+emit_encode_func(Name,Value) ->
+    Fname = "?RT_BER:encode_" ++ Name,
+    emit([Fname,"(",Value,")"]).
 
 emit_encode_func(Name,Value,Tags) when atom(Name) ->
     emit_encode_func(atom_to_list(Name),Value,Tags);
@@ -429,19 +439,31 @@ gen_dec_prim(Erules,Att,BytesVar,DoTag,TagIn,Length,Form,OptOrMand) ->
 	    no -> [];
 	    Tv -> Tv
 	end,
-    
+    SingleValue = 
+	case get_constraint(Att#type.constraint,'SingleValue') of
+	    no -> [];
+	    Sv -> Sv
+	end,
+    AsBin = case get(binary_strings) of
+		true -> "_as_bin";
+		_ -> ""
+	    end,
+    NewTypeName = case Typename of
+		      'ANY' -> 'ASN1_OPEN_TYPE';
+		      _ -> Typename
+		  end,
     DoLength = 
-	case Typename of
+	case NewTypeName of
 	    'BOOLEAN'->
 		emit({"?RT_BER:decode_boolean(",BytesVar,","}),
 		false;
 	    'INTEGER' ->
 		emit({"?RT_BER:decode_integer(",BytesVar,",",
-		      {asis,ValueRange},","}),
+		      {asis,int_constr(SingleValue,ValueRange)},","}),
 		false;
 	    {'INTEGER',NamedNumberList} ->
 		emit({"?RT_BER:decode_integer(",BytesVar,",",
-		      {asis,ValueRange},",",
+		      {asis,int_constr(SingleValue,ValueRange)},",",
 		      {asis,NamedNumberList},","}),
 		false;
 	    {'ENUMERATED',NamedNumberList} ->
@@ -468,66 +490,62 @@ gen_dec_prim(Erules,Att,BytesVar,DoTag,TagIn,Length,Form,OptOrMand) ->
 		emit({"?RT_BER:decode_object_identifier(",BytesVar,","}),
 		false;
 	    'ObjectDescriptor' ->
-		emit({"?RT_BER:decode_object_descriptor(",
-		      BytesVar,")"}),
-		false;
+		emit({"?RT_BER:decode_restricted_string(",
+		      BytesVar,",",{asis,Constraint},",",{asis,?T_ObjectDescriptor},","}),
+		true;
 	    'OCTET STRING' ->
-		emit({"?RT_BER:decode_octet_string(",BytesVar,",",{asis,Constraint},","}),
+		emit({"?RT_BER:decode_octet_string",AsBin,"(",BytesVar,",",{asis,Constraint},","}),
 		true;
 	    'NumericString' ->
-		emit({"?RT_BER:decode_restricted_string(",
+		emit({"?RT_BER:decode_restricted_string",AsBin,"(",
 		      BytesVar,",",{asis,Constraint},",",{asis,?T_NumericString},","}),true;
 	    'TeletexString' ->
-		emit({"?RT_BER:decode_restricted_string(",
+		emit({"?RT_BER:decode_restricted_string",AsBin,"(",
 		      BytesVar,",",{asis,Constraint},",",{asis,?T_TeletexString},","}),
 		true;
 	    'VideotexString' ->
-		emit({"?RT_BER:decode_restricted_string(",
+		emit({"?RT_BER:decode_restricted_string",AsBin,"(",
 		      BytesVar,",",{asis,Constraint},",",{asis,?T_VideotexString},","}),
 		true;
 	    'GraphicString' ->
-		emit({"?RT_BER:decode_restricted_string(",
+		emit({"?RT_BER:decode_restricted_string",AsBin,"(",
 		      BytesVar,",",{asis,Constraint},",",{asis,?T_GraphicString},","})
 		    ,true;
 	    'VisibleString' ->
-		emit({"?RT_BER:decode_restricted_string(",
+		emit({"?RT_BER:decode_restricted_string",AsBin,"(",
 		      BytesVar,",",{asis,Constraint},",",{asis,?T_VisibleString},","}),
 		true;
 	    'GeneralString' ->
-		emit({"?RT_BER:decode_restricted_string(",
+		emit({"?RT_BER:decode_restricted_string",AsBin,"(",
 		      BytesVar,",",{asis,Constraint},",",{asis,?T_GeneralString},","}),
 		true;
 	    'PrintableString' ->
-		emit({"?RT_BER:decode_restricted_string(",
+		emit({"?RT_BER:decode_restricted_string",AsBin,"(",
 		      BytesVar,",",{asis,Constraint},",",{asis,?T_PrintableString},","}),
 		true;
 	    'IA5String' ->
-		emit({"?RT_BER:decode_restricted_string(",
+		emit({"?RT_BER:decode_restricted_string",AsBin,"(",
 		      BytesVar,",",{asis,Constraint},",",{asis,?T_IA5String},","}),
 		true;
 	    'UniversalString' ->
-		emit({"?RT_BER:decode_universal_string(",
+		emit({"?RT_BER:decode_universal_string",AsBin,"(",
 		      BytesVar,",",{asis,Constraint},","}),
 		true;
 	    'BMPString' ->
-		emit({"?RT_BER:decode_BMP_string(",
+		emit({"?RT_BER:decode_BMP_string",AsBin,"(",
 		      BytesVar,",",{asis,Constraint},","}),
 		true;
 	    'UTCTime' ->
-		emit({"?RT_BER:decode_utc_time(",
+		emit({"?RT_BER:decode_utc_time",AsBin,"(",
 		      BytesVar,",",{asis,Constraint},","}),
 		true;
 	    'GeneralizedTime' ->
-		emit({"?RT_BER:decode_generalized_time(",
+		emit({"?RT_BER:decode_generalized_time",AsBin,"(",
 		      BytesVar,",",{asis,Constraint},","}),
 		true;
 	    'ASN1_OPEN_TYPE' ->
 		emit(["?RT_BER:decode_open_type(",
-		      BytesVar, ","]),
-		false;
-	    'ANY' ->
-		emit(["?RT_BER:decode_open_type(",
-		      BytesVar, ","]),
+		      BytesVar,","]),
 		false;
 	    Other ->
 		exit({'can not decode' ,Other})
@@ -542,61 +560,95 @@ gen_dec_prim(Erules,Att,BytesVar,DoTag,TagIn,Length,Form,OptOrMand) ->
 		       mandatory -> {asis,mandatory};
 		       _ -> {asis,opt_or_default}
 		   end,
-    case TagIn of
-	[] ->
+    case {TagIn,NewTypeName} of
+	{_,'ASN1_OPEN_TYPE'} ->
+	    emit([{asis,DoTag},")"]);
+	{[],_} ->
 	    emit([{asis,DoTag},NewLength,", ",NewOptOrMand,")"]);
 	_ when list(TagIn) ->
 	    emit([TagIn,"++",{asis,DoTag},NewLength,", ",NewOptOrMand,")"])
     end.
 
 
+int_constr([],[]) ->
+    [];
+int_constr([],ValueRange) ->
+    ValueRange;
+int_constr(SingleValue,[]) ->
+    SingleValue;
+int_constr(SV,VR) ->
+    [SV,VR].
+    
 %% Object code generating for encoding and decoding
 %% ------------------------------------------------
 
 gen_obj_code(Erules,Module,Obj) when record(Obj,typedef) ->
     ObjName = Obj#typedef.name,
     Def = Obj#typedef.typespec,
-    Class = 
-	case Def#'Object'.classname of 
-	    {OtherModule,ClName} ->
-		asn1_db:dbget(OtherModule,ClName);
-	    ClName ->
-		asn1_db:dbget(Module,ClName)
-	end,
+    #'Externaltypereference'{module=M,type=ClName} = Def#'Object'.classname,
+    Class = asn1_db:dbget(M,ClName),
+%     Class = 
+% 	case Def#'Object'.classname of 
+% 	    {OtherModule,ClName} ->
+% 		asn1_db:dbget(OtherModule,ClName);
+% 	    ClName ->
+% 		asn1_db:dbget(Module,ClName)
+% 	end,
     {object,_,Fields} = Def#'Object'.def,
     emit({nl,nl,nl,"%%================================"}),
     emit({nl,"%%  ",ObjName}),
     emit({nl,"%%================================",nl}),
-    gen_encode_objectfields(Class#classdef.typespec,ObjName,Fields),
+    EncConstructed =
+	gen_encode_objectfields(Class#classdef.typespec,ObjName,Fields,[]),
     emit(nl),
-    gen_decode_objectfields(Class#classdef.typespec,ObjName,Fields),
-    emit(nl).
+    gen_encode_constr_type(EncConstructed),
+    emit(nl),
+    DecConstructed =
+	gen_decode_objectfields(Class#classdef.typespec,ObjName,Fields,[]),
+    emit(nl),
+    gen_decode_constr_type(DecConstructed);
+gen_obj_code(Erules,Module,Obj) when record(Obj,pobjectdef) ->
+    ok.
 
-gen_encode_objectfields(Class,ObjName,[{FieldName,Type}|Rest]) ->
+gen_encode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
     Fields = Class#objectclass.fields,
-    case is_typefield(Fields,FieldName) of
-	true ->
-	    Def = Type#typedef.typespec,
-	    OTag = Def#type.tag,
-	    Tag = [X#tag{class=decode_class(X#tag.class)}|| X <- OTag],
-	    emit({"'enc_",ObjName,"'(",{asis,FieldName},
-		  ", Val, TagIn, RestPrimFieldName) ->",nl}),
-	    case Type#typedef.name of
-		{primitive,bif} ->
-		    gen_encode_prim(ber,Def,["TagIn ++ ",{asis,Tag}],"Val");
-		{ExtMod,TypeName} ->
-		    emit({"   '",ExtMod,"':'enc_",TypeName,
-			  "'(Val, TagIn ++ ",{asis,Tag},")"});
-		TypeName ->
-		    emit({"   'enc_",TypeName,"'(Val, TagIn ++ ",
-			  {asis,Tag},")"})
-	    end,
-	    case more_genfields(Fields,Rest) of
-		true ->
-		    emit({";",nl});
-		false ->
-		    emit({".",nl})
-	    end;
+    MaybeConstr=
+	case is_typefield(Fields,FieldName) of
+	    true ->
+		Def = Type#typedef.typespec,
+		OTag = Def#type.tag,
+		Tag = [X#tag{class=decode_class(X#tag.class)}|| X <- OTag],
+		emit({"'enc_",ObjName,"'(",{asis,FieldName},
+		      ", Val, TagIn, RestPrimFieldName) ->",nl}),
+		CAcc=
+		case Type#typedef.name of
+		    {primitive,bif} ->
+			gen_encode_prim(ber,Def,["TagIn ++ ",{asis,Tag}],
+					"Val"),
+			[];
+		    {constructed,bif} ->
+			%%InnerType = asn1ct_gen:get_inner(Def#type.def),
+			%%asn1ct_gen:gen_encode_constructed(ber,[ObjName],
+			%%                            InnerType,Def);
+			emit({"   'enc_",ObjName,'_',FieldName,
+			      "'(Val, TagIn ++ ",{asis,Tag},")"}),
+			[{['enc_',ObjName,'_',FieldName],Def}];
+		    {ExtMod,TypeName} ->
+			emit({"   '",ExtMod,"':'enc_",TypeName,
+			      "'(Val, TagIn ++ ",{asis,Tag},")"}),
+			[];
+		    TypeName ->
+			emit({"   'enc_",TypeName,"'(Val, TagIn ++ ",
+			      {asis,Tag},")"}),
+			[]
+		end,
+		case more_genfields(Fields,Rest) of
+		    true ->
+			emit({";",nl});
+		    false ->
+			emit({".",nl})
+		end,
+		CAcc;
 	{false,objectfield} ->
 	    emit({"'enc_",ObjName,"'(",{asis,FieldName},
 		  ", Val, TagIn, [H|T]) ->",nl}),
@@ -612,17 +664,27 @@ gen_encode_objectfields(Class,ObjName,[{FieldName,Type}|Rest]) ->
 		    emit({";",nl});
 		false ->
 		    emit({".",nl})
-	    end;
-	{false,_} -> ok
+	    end,
+	    [];
+	{false,_} -> []
     end,
-    gen_encode_objectfields(Class,ObjName,Rest);
-gen_encode_objectfields(C,O,[H|T]) ->
-    gen_encode_objectfields(C,O,T);
-gen_encode_objectfields(_,_,[]) ->
+    gen_encode_objectfields(Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
+gen_encode_objectfields(C,O,[H|T],Acc) ->
+    gen_encode_objectfields(C,O,T,Acc);
+gen_encode_objectfields(_,_,[],Acc) ->
+    Acc.
+
+gen_encode_constr_type([{Name,Def}|Rest]) ->
+    emit({Name,"(Val,TagIn) ->",nl}),
+    InnerType = asn1ct_gen:get_inner(Def#type.def),
+    asn1ct_gen:gen_encode_constructed(ber,Name,InnerType,Def),
+    gen_encode_constr_type(Rest);
+gen_encode_constr_type([]) ->
     ok.
 
-gen_decode_objectfields(Class,ObjName,[{FieldName,Type}|Rest]) ->
+gen_decode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
     Fields = Class#objectclass.fields,
+    MaybeConstr =
     case is_typefield(Fields,FieldName) of
 	true ->
 	    Def = Type#typedef.typespec,
@@ -636,24 +698,32 @@ gen_decode_objectfields(Class,ObjName,[{FieldName,Type}|Rest]) ->
 		    {'DEFAULT',_} -> opt_or_default;
 		    _ -> mandatory
 		end,
+	    CAcc =
 	    case Type#typedef.name of
 		{primitive,bif} ->
-%		    BytesVar = asn1ct_gen:mk_var(asn1ct_name:curr(bytes)),
 		    gen_dec_prim(ber,Def,"Bytes",Tag,"TagIn",no_length,
-				 ?PRIMITIVE,Prop);
+				 ?PRIMITIVE,Prop),
+		    [];
+		{constructed,bif} ->
+		    emit({"   'dec_",ObjName,'_',FieldName,"'(Bytes,",
+			  {asis,Prop},", TagIn ++ ",{asis,Tag},")"}),
+		    [{['dec_',ObjName,'_',FieldName],Def}];
 		{ExtMod,TypeName} ->
-		    emit({"   '",ExtMod,"':'dec_",TypeName,
-			  "'(Bytes, ",{asis,Prop},", TagIn ++ ",{asis,Tag},")"});
+		    emit({"   '",ExtMod,"':'dec_",TypeName,"'(Bytes, ",
+			  {asis,Prop},", TagIn ++ ",{asis,Tag},")"}),
+		    [];
 		TypeName ->
 		    emit({"   'dec_",TypeName,"'(Bytes, ",{asis,Prop},
-			  ", TagIn ++ ",{asis,Tag},")"})
+			  ", TagIn ++ ",{asis,Tag},")"}),
+		    []
 	    end,
 	    case more_genfields(Fields,Rest) of
 		true ->
 		    emit({";",nl});
 		false ->
 		    emit({".",nl})
-	    end;
+	    end,
+	    CAcc;
 	{false,objectfield} ->
 	    emit({"'dec_",ObjName,"'(",{asis,FieldName},
 		  ", Bytes, TagIn, [H|T]) ->",nl}),
@@ -670,16 +740,27 @@ gen_decode_objectfields(Class,ObjName,[{FieldName,Type}|Rest]) ->
 		    emit({";",nl});
 		false ->
 		    emit({".",nl})
-	    end;
+	    end,
+	    [];
 	{false,_} ->
-	    ok
+	    []
     end,
-    gen_decode_objectfields(Class,ObjName,Rest);
-gen_decode_objectfields(C,O,[H|T]) ->
-    gen_decode_objectfields(C,O,T);
-gen_decode_objectfields(_,_,[]) ->
-    ok.
+    gen_decode_objectfields(Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
+gen_decode_objectfields(C,O,[H|T],CAcc) ->
+    gen_decode_objectfields(C,O,T,CAcc);
+gen_decode_objectfields(_,_,[],CAcc) ->
+    CAcc.
 
+gen_decode_constr_type([{Name,Def}|Rest]) ->
+%%    emit({Name,"(Bytes, OptOrMand) ->",nl}),
+%%    emit({"   ",Name,"(Bytes, OptOrMand, []).",nl,nl}),
+    emit({Name,"(Bytes, OptOrMand, TagIn) ->",nl}),
+    InnerType = asn1ct_gen:get_inner(Def#type.def),
+    asn1ct_gen:gen_decode_constructed(ber,Name,InnerType,Def),
+    gen_decode_constr_type(Rest);
+gen_decode_constr_type([]) ->
+    ok.
+    
 more_genfields(Fields,[]) ->
     false;
 more_genfields(Fields,[{FieldName,_}|T]) ->
@@ -715,7 +796,10 @@ get_optionalityspec(Fields,FieldName) ->
 gen_objectset_code(Erules,ObjSet) ->
     ObjSetName = ObjSet#typedef.name,
     Def = ObjSet#typedef.typespec,
-    {ClassName,ClassDef} = Def#'ObjectSet'.class,
+%    {ClassName,ClassDef} = Def#'ObjectSet'.class,
+    #'Externaltypereference'{module=ClassModule,
+			     type=ClassName} = Def#'ObjectSet'.class,
+    ClassDef = asn1_db:dbget(ClassModule,ClassName),
     UniqueFName = Def#'ObjectSet'.uniquefname,
     Set = Def#'ObjectSet'.set,
     emit({nl,nl,nl,"%%================================"}),
@@ -734,6 +818,10 @@ gen_objset_code(ObjSetName,UniqueFName,Set,ClassName,ClassDef)->
     gen_objset_enc(ObjSetName,UniqueFName,Set,ClassName,ClassFields),
     gen_objset_dec(ObjSetName,UniqueFName,Set,ClassName,ClassFields).
 
+gen_objset_enc(_,{unique,undefined},_,_,_) ->
+    %% There is no unique field in the class of this object set
+    %% don't bother about the constraint
+    ok;
 gen_objset_enc(ObjSName,UniqueName,
 	       [{ObjName,Val,Fields},T|Rest],ClName,ClFields)->
     emit({"'getenc_",ObjSName,"'(",{asis,UniqueName},",",{asis,Val},") ->",nl}),
@@ -841,6 +929,10 @@ indent(N) ->
     lists:duplicate(N,32). % 32 = space
 
 
+gen_objset_dec(_,{unique,undefined},_,_,_) ->
+    %% There is no unique field in the class of this object set
+    %% don't bother about the constraint
+    ok;
 gen_objset_dec(ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],ClName,ClFields)->
     emit({"'getdec_",ObjSName,"'(",{asis,UniqueName},",",{asis,Val},") ->",nl}),
     case ObjName of

@@ -87,7 +87,7 @@ local_setup:
 
 night: progress copytests runtests
 
-apps: erl_interface gs os_mon ic crypto comet ssl runtime_tools
+apps: erl_interface gs os_mon ic crypto comet ssl odbc runtime_tools asn1
 
 tests:
 	(cd $(ERL_TOP) && $(MAKE_V) release_tests TESTROOT=$(TESTROOT)/test/test_suite TARGET=win32)
@@ -166,6 +166,12 @@ runtime_tools:
 
 comet:
 	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\comet\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+
+asn1:
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\asn1\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+
+odbc:
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\odbc\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EIINCLUDE=\erts\lib\erl_interface\src EILIB1=\erts\lib\erl_interface\obj\win32\erl_interface_md.lib EILIB2=\erts\lib\erl_interface\obj\win32\ei_md.lib"
 
 unix2:
 	(cd ../lib && $(MAKE_V) release TARGET=win32 BUILD_ALL=1 TESTROOT=$(TESTROOT) SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))

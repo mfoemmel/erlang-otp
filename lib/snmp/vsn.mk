@@ -1,3 +1,3 @@
 
-SNMPEA_VSN = 3.3.5
+SNMPEA_VSN = 3.3.7
 

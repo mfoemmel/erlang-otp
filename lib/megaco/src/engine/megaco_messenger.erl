@@ -297,10 +297,12 @@ process_received_message(ReceiveHandle, ControlPid, SendHandle, Bin) ->
 
 prepare_message(RH, SH, Bin, Pid)
   when record(RH, megaco_receive_handle), pid(Pid) ->
+    ?report_trace(RH, "receive bytes", [{bytes, Bin}]),
     EncodingMod    = RH#megaco_receive_handle.encoding_mod,
     EncodingConfig = RH#megaco_receive_handle.encoding_config,
     case catch EncodingMod:decode_message(EncodingConfig, Bin) of
         {ok, MegaMsg} when record(MegaMsg, 'MegacoMessage') ->
+	    ?report_trace(RH, "receive message", [{message, MegaMsg}]),
             Mess       = MegaMsg#'MegacoMessage'.mess,
             RemoteMid  = Mess#'Message'.mId,
             LocalMid   = RH#megaco_receive_handle.local_mid,
@@ -310,7 +312,6 @@ prepare_message(RH, SH, Bin, Pid)
                 [ConnData] ->
                     %% Use already established connection
                     ConnData2 = ConnData#conn_data{send_handle = SH},
-		    ?report_trace(ConnData, "receive bytes", [{bytes, Bin}]),
                     check_message_auth(CH, ConnData2, MegaMsg, Bin);
                 [] ->
                     %% Setup a temporary connection
@@ -467,6 +468,12 @@ prepare_trans(ConnData, [Trans | Rest], AckList, ReqList)
     end;
 prepare_trans(ConnData, [Trans | Rest], AckList, ReqList) ->
     case Trans of
+        {transactionRequest, #'TransactionRequest'{transactionId = asn1_NOVALUE}} ->
+            ConnData2 = ConnData#conn_data{serial = 0},
+	    Code   = ?megaco_bad_request,
+            Reason = "Syntax error in message: transaction id missing",
+	    send_trans_error(ConnData2, Code, Reason),
+            prepare_trans(ConnData2, Rest, AckList, ReqList);
         {transactionRequest, T} when record(T, 'TransactionRequest') ->
             Serial = T#'TransactionRequest'.transactionId,
             ConnData2 = ConnData#conn_data{serial = Serial},
@@ -525,8 +532,11 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
                 {ok, _} ->
                     prepare_trans(ConnData2, Rest, AckList, ReqList);
                 {error, Reason} ->
-                    ?report_important(ConnData2, "<ERROR> re-send trans reply failed",
+                    ?report_important(ConnData2, 
+				      "<ERROR> re-send trans reply failed",
                                       [{bytes, Bin}, {error, Reason}]),
+		    error_msg("re-send transaction reply failed: ~w", 
+			      [Reason]),
                     prepare_trans(ConnData2, Rest, AckList, ReqList)
             end
         end.
@@ -663,14 +673,19 @@ handle_request_callback(ConnData, Actions, T) ->
             SendReply = send_pending(ConnData),
             {{pending, RequestData}, SendReply};
         Error ->
+	    ErrorText = atom_to_list(UserMod),
 	    ED = #'ErrorDescriptor'{errorCode = ?megaco_internal_gateway_error,
-				    errorText = atom_to_list(UserMod)},
+				    errorText = ErrorText},
+            ?report_important(ConnData, "callback: <ERROR> trans request",
+			      [ED, {error, Error}]),
+	    error_msg("trans request callback failed: ~w", [Error]),
             Reply = {transactionError, ED},
             SendReply = send_reply(ConnData, Reply, asn1_NOVALUE),
             {discard_ack, SendReply}
     end.
 
 handle_long_request_callback(ConnData, RequestData) ->
+    ?report_trace(ConnData, "callback: trans long request", [RequestData]),
     ConnHandle = ConnData#conn_data.conn_handle,
     Version    = ConnData#conn_data.protocol_version,
     UserMod    = ConnData#conn_data.user_mod,
@@ -688,10 +703,12 @@ handle_long_request_callback(ConnData, RequestData) ->
             SendReply = send_reply(ConnData, Reply, 'NULL'),
             {{handle_ack, AckData}, SendReply};
         Error ->
+	    ErrorText = atom_to_list(UserMod),
 	    ED = #'ErrorDescriptor'{errorCode = ?megaco_internal_gateway_error,
-				    errorText = atom_to_list(UserMod)},
+				    errorText = ErrorText},
             ?report_important(ConnData, "callback: <ERROR> trans long request",
 			      [ED, {error, Error}]),
+	    error_msg("long trans request callback failed: ~w", [Error]),
             Reply = {transactionError, ED},
             SendReply = send_reply(ConnData, Reply, asn1_NOVALUE),
             {discard_ack, SendReply}
@@ -1027,6 +1044,7 @@ send_reply(ConnData, Result, ImmAck) ->
             TR2 =  TR#'TransactionReply'{transactionResult = Reply},
             TraceLabel = "<ERROR> encode trans reply body failed",
             ?report_important(ConnData, TraceLabel, [TR, TR2, ED, Error]),
+	    error_msg("encode trans reply body failed: ~w", [Reason]),
             Body2 = {transactions, [{transactionReply, TR2}]},
             send_body(ConnData, TraceLabel, Body2)
     end.
@@ -1044,6 +1062,15 @@ send_ack(ConnData) ->
     TRA = #'TransactionAck'{firstAck = Serial},
     Body = {transactions, [{transactionResponseAck, [TRA]}]},
     send_body(ConnData, "send trans ack", Body).
+
+send_trans_error(ConnData, Code, Reason) ->
+    %% Encapsule the transaction error into a reply message
+    ED     = #'ErrorDescriptor'{errorCode = Code, errorText = Reason},
+    Serial = ConnData#conn_data.serial,
+    TR     = #'TransactionReply'{transactionId     = Serial,
+				 transactionResult = {transactionError,ED}},
+    Body   = {transactions, [{transactionReply, TR}]},
+    send_body(ConnData, "send trans error", Body).
 
 send_message_error(ConnData, Code, Reason) ->
     ED = #'ErrorDescriptor'{errorCode = Code, errorText = Reason},
@@ -1091,10 +1118,12 @@ send_message(ConnData, Bin) ->
         {error, Reason} ->
             ?report_important(ConnData, "<ERROR> send_message callback",
                               [{bytes, Bin}, {error, Reason}]),
+	    error_msg("failed sending message: ~w", [Reason]),
             {error, {send_message_failed, Reason}};
         Reason ->
             ?report_important(ConnData, "<ERROR> send_message callback",
                               [{bytes, Bin}, {error, Reason}]),
+	    error_msg("failed sending message: ~w", [Reason]),
             {error, {send_message_failed, Reason}}
     end.
 
@@ -1254,7 +1283,10 @@ do_request_timeout(ConnHandle, TransId, ConnData, Req) ->
 		    ignore;
 		{error, Reason} ->
 		    ?report_important(ConnData2, "<ERROR> re-send trans request failed",
-				      [{bytes, Bin}, {error, Reason}])
+				      [{bytes, Bin}, {error, Reason}]),
+		    error_msg("re-send transaction request failed: ~w", 
+			      [Reason])
+
 	    end,
 	    M = ?MODULE,
 	    F = request_timeout,
@@ -1359,3 +1391,8 @@ recalc_timer(Timer) when record(Timer, megaco_incr_timer) ->
 
 decr(infinity) -> infinity;
 decr(Int)      -> Int - 1.
+
+
+error_msg(F, A) ->
+    catch error_logger:error_msg(F, A).
+

@@ -22,7 +22,7 @@
 -include("asn1_records.hrl").
 
 -export([dec_fixup/3, cindex/3, list_to_record/2]).
--export([setchoiceext/1, setext/1, fixoptionals/2, fixextensions/2, setoptionals/1, 
+-export([setchoiceext/1, setext/1, fixoptionals/3, fixextensions/2, 
 	 getext/1, getextension/2, skipextensions/3, getbit/1, getchoice/3 ]).
 -export([getoptionals/2, set_choice/3, encode_integer/2, encode_integer/3  ]).
 -export([decode_integer/2, decode_integer/3, encode_small_number/1, encode_boolean/1, 
@@ -36,6 +36,7 @@
 	 encode_object_identifier/1, decode_object_identifier/1,
 	 complete/1]).
 
+
 -export([encode_open_type/2, decode_open_type/2]).
 
 -export([encode_UniversalString/2, decode_UniversalString/2,
@@ -47,8 +48,10 @@
 	 encode_VisibleString/2, decode_VisibleString/2,
 	 encode_BMPString/2, decode_BMPString/2,
 	 encode_IA5String/2, decode_IA5String/2,
-	 encode_NumericString/2, decode_NumericString/2
+	 encode_NumericString/2, decode_NumericString/2,
+	 encode_ObjectDescriptor/2, decode_ObjectDescriptor/1
 	]).
+-export([complete_bytes/1]).
 
 -define('16K',16384).
 -define('32K',32768).
@@ -97,39 +100,20 @@ setext(false) ->
 setext(true) ->
     [{debug,ext},{bits,1,1}].
 
-fixoptionals(OptList,Val) when tuple(Val) ->
-    fixoptionals(OptList,Val,[]);
-
-fixoptionals(OptList,Val) when list(Val) ->
-    fixoptionals(OptList,Val,1,[],[]).
+fixoptionals(OptList,OptLength,Val) when tuple(Val) ->
+    Bits = fixoptionals(OptList,Val,0),
+    {Val,{bits,OptLength,Bits}};
 
 fixoptionals([],Val,Acc) ->
-    %% return {Val,Opt}
-    {Val,lists:reverse(Acc)};
-fixoptionals([{_,Pos}|Ot],Val,Acc) ->
-    case element(Pos+1,Val) of
-	asn1_NOVALUE -> fixoptionals(Ot,Val,[0|Acc]);
-	asn1_DEFAULT -> fixoptionals(Ot,Val,[0|Acc]);
-	_ -> fixoptionals(Ot,Val,[1|Acc])
+    %% Optbits
+    Acc;
+fixoptionals([Pos|Ot],Val,Acc) ->
+    case element(Pos,Val) of
+	asn1_NOVALUE -> fixoptionals(Ot,Val,Acc bsl 1);
+	asn1_DEFAULT -> fixoptionals(Ot,Val,Acc bsl 1);
+	_ -> fixoptionals(Ot,Val,(Acc bsl 1) + 1)
     end.
 
-
-fixoptionals([{Name,Pos}|Ot],[{Name,Val}|Vt],Opt,Acc1,Acc2) ->
-    fixoptionals(Ot,Vt,Pos+1,[1|Acc1],[{Name,Val}|Acc2]);
-fixoptionals([{Name,Pos}|Ot],V,Pos,Acc1,Acc2) ->
-    fixoptionals(Ot,V,Pos+1,[0|Acc1],[asn1_NOVALUE|Acc2]);
-fixoptionals(O,[Vh|Vt],Pos,Acc1,Acc2) ->
-    fixoptionals(O,Vt,Pos+1,Acc1,[Vh|Acc2]);
-fixoptionals([],[Vh|Vt],Pos,Acc1,Acc2) ->
-    fixoptionals([],Vt,Pos+1,Acc1,[Vh|Acc2]);
-fixoptionals([],[],_,Acc1,Acc2) ->
-						% return {Val,Opt}
-    {list_to_tuple([asn1_RECORDNAME|lists:reverse(Acc2)]),lists:reverse(Acc1)}.
-
-setoptionals([H|T]) ->
-    [{bits,1,H}|setoptionals(T)];
-setoptionals([]) ->
-    [{debug,optionals}].
 
 getext(Bytes) when tuple(Bytes) ->
     getbit(Bytes);
@@ -184,11 +168,15 @@ getchoice(Bytes,1,0) -> % only 1 alternative is not encoded
 getchoice(Bytes,NumChoices,1) ->
     decode_small_number(Bytes);
 getchoice(Bytes,NumChoices,0) ->
-    decode_integer(Bytes,[{'ValueRange',{0,NumChoices-1}}]).
+    decode_constrained_number(Bytes,{0,NumChoices-1}).
+
+%% old version
+%%getoptionals(Bytes,NumOpt) ->
+%%    {Blist,Bytes1} = getbits_as_list(NumOpt,Bytes),
+%%    {list_to_tuple(Blist),Bytes1}.
 
 getoptionals(Bytes,NumOpt) ->
-    {Blist,Bytes1} = getbits_as_list(NumOpt,Bytes),
-    {list_to_tuple(Blist),Bytes1}.
+    {Opts,Bytes1} = getbits(Bytes,NumOpt).
 
 
 %% getbits_as_binary(Num,Bytes) -> {{Unused,BinBits},RestBytes},
@@ -270,15 +258,18 @@ getbits({0,Buffer},Num) when (Num rem 8) == 0 ->
     <<Bits:Num,Rest/binary>> = Buffer,
     {Bits,{0,Rest}};
 getbits({Used,Bin},Num) ->
-    NewUsed = (Num+Used) rem 8,
+    NumPlusUsed = Num + Used,
+    NewUsed = NumPlusUsed rem 8,
     Unused = (8-NewUsed) rem 8,
     case Unused of
 	0 ->
 	    <<_:Used,Bits:Num,Rest/binary>> = Bin,
 	    {Bits,{0,Rest}};
 	_ ->
-	    <<_:Used,Bits:Num,UBits:Unused,Rest/binary>> = Bin,
-	    {Bits,{NewUsed,<<0:NewUsed,UBits:Unused,Rest/binary>>}}
+	    Bytes = NumPlusUsed div 8,
+	    <<_:Used,Bits:Num,UBits:Unused,_/binary>> = Bin,
+	    <<_:Bytes/binary,Rest/binary>> = Bin,
+	    {Bits,{NewUsed,Rest}}
     end;
 getbits(Bin,Num) when binary(Bin) ->
     getbits({0,Bin},Num).
@@ -338,7 +329,9 @@ getoctets_as_bin({0,Bin},Num)->
     {Octets,{0,RestBin}};
 getoctets_as_bin({U,Bin},Num) ->
     <<Padding,Octets:Num/binary,RestBin/binary>> = Bin,
-    {Octets,{0,RestBin}}.
+    {Octets,{0,RestBin}};
+getoctets_as_bin(Bin,Num) when binary(Bin) ->
+    getoctets_as_bin({0,Bin},Num).
 
 %% same as above but returns octets as a List
 getoctets_as_list(Buffer,Num) ->
@@ -477,11 +470,8 @@ decode_fragmented_octets(<<0:1,Len:7,Bin/binary>>,C,Acc) ->
 %%
 encode_open_type(Constraint, Val) when list(Val) ->
     Bin = list_to_binary(Val),
-    [encode_length(undefined,size(Bin)),align,
-     {0,Bin}];
+    [encode_length(undefined,size(Bin)),{octets,Bin}]; % octets implies align
 encode_open_type(Constraint, Val) when binary(Val) ->
-%%    [encode_length(undefined,size(Val)),align,
-%%     {octets,binary_to_list(Val)}].
     [encode_length(undefined,size(Val)),{octets,Val}]. % octets implies align
 %% the binary_to_list is not optimal but compatible with the current solution
 
@@ -493,8 +483,7 @@ encode_open_type(Constraint, Val) when binary(Val) ->
 %%
 decode_open_type(Bytes, Constraint) ->
     {Len,Bytes2} = decode_length(Bytes,undefined),
-    Bytes3 = align(Bytes2),
-    getoctets_as_bin(Bytes3,Len).
+    getoctets_as_bin(Bytes2,Len).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% encode_integer(Constraint,Value,NamedNumberList) -> CompleteList
@@ -517,8 +506,8 @@ encode_integer(C,{Name,V},NamedNumberList) when atom(Name) ->
 encode_integer(C,{Name,Val}) when atom(Name) ->
     encode_integer(C,Val);
 
-encode_integer({Rc,Ec},Val) -> % XXX when is this invoked? First argument most often a list,...Ok this is the extension case...but it doesn't work.
-    case (catch encode_integer(Rc,Val)) of
+encode_integer([{Rc,Ec}],Val) when tuple(Rc) -> % XXX when is this invoked? First argument most often a list,...Ok this is the extension case...but it doesn't work.
+    case (catch encode_integer([Rc],Val)) of
 	{'EXIT',{error,{asn1,_}}} ->
 	    [{bits,1,1},encode_unconstrained_number(Val)];
 	Encoded ->
@@ -562,10 +551,10 @@ decode_integer(Buffer,Range,NamedNumberList) ->
 	_ -> {Val,Buffer2}
     end.
 
-decode_integer(Buffer,{Rc,Ec}) ->
+decode_integer(Buffer,[{Rc,Ec}]) when tuple(Rc) ->
     {Ext,Buffer2} = getext(Buffer),
     case Ext of
-	0 -> decode_integer(Buffer2,Rc);
+	0 -> decode_integer(Buffer2,[Rc]);
 	1 -> decode_unconstrained_number(Buffer2)
     end;
 decode_integer(Buffer,undefined) ->
@@ -602,8 +591,8 @@ decode_integer1(Buffer,C) ->
 encode_small_number({Name,Val}) when atom(Name) ->
     encode_small_number(Val);
 encode_small_number(Val) when Val =< 63 ->
-%    [{bit,0},{bits,6,Val}];
-    [{1,<<0:1,Val:6,0:1>>}];
+%    [{bits,1,0},{bits,6,Val}];
+    [{bits,7,Val}]; % same as above but more efficient
 encode_small_number(Val) ->
     [{bits,1,1},encode_semi_constrained_number(0,Val)].
 
@@ -613,7 +602,7 @@ decode_small_number(Bytes) ->
 	0 -> 
 	    getbits(Bytes2,6);
 	1 ->
-	    decode_semi_constrained_number(Bytes2,{0,'MAX'})
+	    decode_semi_constrained_number(Bytes2,0)
     end.
 
 %% X.691:10.7 Encoding of a semi-constrained whole number
@@ -624,8 +613,14 @@ encode_semi_constrained_number({Lb,'MAX'},Val) ->
     encode_semi_constrained_number(Lb,Val);
 encode_semi_constrained_number(Lb,Val) ->
     Val2 = Val - Lb,
-    Bin = eint_positive(Val2),
-    [encode_length(undefined,size(Bin)),{octets,Bin}].
+    Oct = eint_positive(Val2),
+    Len = length(Oct),
+    if 
+	Len < 128 ->
+	    {octets,[Len|Oct]}; % equiv with encode_length(undefined,Len) but faster
+	true ->
+	    [encode_length(undefined,Len),{octets,Oct}]
+    end.
 
 decode_semi_constrained_number(Bytes,{Lb,_}) ->
     decode_semi_constrained_number(Bytes,Lb);
@@ -657,18 +652,18 @@ encode_constrained_number({Lb,Ub},Val) when Val >= Lb, Ub >= Val ->
 	Range  =< 255 ->
 	    Size = {bits,8,Val2};
 	Range  =< 256 ->
-	    Size = {octets,<<Val2>>};
+	    Size = {octets,[Val2]};
 	Range  =< 65536 ->
 	    Size = {octets,<<Val2:16>>};
 	Range =< 16#1000000  ->
 	    Octs = eint_positive(Val2),
-	    [encode_length({1,3},size(Octs)),{octets,Octs}];
+	    [{bits,2,length(Octs)-1},{octets,Octs}];
 	Range =< 16#100000000  ->
 	    Octs = eint_positive(Val2),
-	    [encode_length({1,4},size(Octs)),{octets,Octs}];
+	    [{bits,2,length(Octs)-1},{octets,Octs}];
 	Range =< 16#10000000000  ->
 	    Octs = eint_positive(Val2),
-	    [encode_length({1,5},size(Octs)),{octets,Octs}];
+	    [{bits,3,length(Octs)-1},{octets,Octs}];
 	true  ->
 	    exit({not_supported,{integer_range,Range}})
     end.
@@ -715,46 +710,38 @@ decode_constrained_number(Buffer,{Lb,Ub}) ->
 	end,
     {Val+Lb,Remain}.
 
-						% X.691:10.8 Encoding of an unconstrained whole number
+%% X.691:10.8 Encoding of an unconstrained whole number
 
 encode_unconstrained_number(Val) when Val >= 0 ->
     Oct = eint(Val,[]),
-    Bin = list_to_binary(Oct),
-    [{debug,unconstrained_number},
-     encode_length({0,'MAX'},size(Bin)),
-     {octets,Bin}];
+    Len = length(Oct),
+    if 
+	Len < 128 ->
+	    {octets,[Len|Oct]}; % equiv with encode_length(undefined,Len) but faster
+	true ->
+	    [encode_length(undefined,Len),{octets,Oct}]
+    end;
 encode_unconstrained_number(Val) -> % negative
     Oct = enint(Val,[]),
-    Bin = list_to_binary(Oct),
-    [{debug,unconstrained_number},
-     encode_length({0,'MAX'},size(Bin)),
-     {octets,Bin}].
+    Len = length(Oct),
+    if 
+	Len < 128 ->
+	    {octets,[Len|Oct]}; % equiv with encode_length(undefined,Len) but faster
+	true ->
+	    [encode_length(undefined,Len),{octets,Oct}]
+    end.
+
 
 %% used for positive Values which don't need a sign bit
 %% returns a binary
 eint_positive(Val) ->
     case eint(Val,[]) of
 	[0,B1|T] ->
-	    list_to_binary([B1|T]);
+	    [B1|T];
 	T -> 
-	    list_to_binary(T)
+	    T
     end.
 
-
-% eint(N) when N < 128 ->
-%     N;
-% eint(N) when N < 16#8000 ->
-%     <<N:16>>;
-% eint(N) when N < 16#800000 ->
-%     <<N:24>>;
-% eint(N) ->
-%     eint(N bsr 24,[<<N:24>>]);
-% eint(N,Acc) when N < 128 ->
-%     list_to_binary([N|Acc]);
-% eint(N,Acc) when N < 16#8000 ->
-%     list_to_binary([<<N:16>>|Acc]);
-% eint(N,Acc) ->
-%     eint(N bsr 16, [<<N:16>>|Acc]).
 
 eint(0, [B|Acc]) when B < 128 ->
     [B|Acc];
@@ -765,40 +752,6 @@ enint(-1, [B1|T]) when B1 > 127 ->
     [B1|T];
 enint(N, Acc) ->
     enint(N bsr 8, [N band 16#ff|Acc]).
-
-%% used for signed positive values
-
-%%eint(Val, Ack) ->
-%%    X = Val band 255,
-%%    Next = Val bsr 8,
-%%    if
-%%	Next == 0, X >= 127 ->
-%%	    [0,X|Ack];
-%%	Next == 0 ->
-%%	    [X|Ack];
-%%	true ->
-%%	    eint(Next,[X|Ack])
-%%    end.
-
-%%% used for signed negative values
-%%enint(Val, Acc) ->
-%%    NumOctets = if 
-%%		    -Val < 16#80 -> 1;
-%%		    -Val < 16#8000 ->2;
-%%		    -Val < 16#800000 ->3;
-%%		    -Val < 16#80000000 ->4;
-%%		    -Val < 16#8000000000 ->5;
-%%		    -Val < 16#800000000000 ->6;
-%%		    -Val < 16#80000000000000 ->7;
-%%		    -Val < 16#8000000000000000 ->8;
-%%		    -Val < 16#800000000000000000 ->9
-%%		end,
-%%    enint(Val,Acc,NumOctets).
-%%enint(Val, Acc,0) ->
-%%    Acc;
-%%enint(Val, Acc,NumOctets) ->
-%%    enint(Val bsr 8,[Val band 255|Acc],NumOctets-1).
-
 
 decode_unconstrained_number(Bytes) ->
     {Len,Bytes2} = decode_length(Bytes,undefined),
@@ -837,30 +790,30 @@ decnint([Byte|Tail], Shift) ->
 encode_length(undefined,Len) -> % un-constrained
     if 
 	Len < 128 ->
-%%	    {octet,Len band 16#7F};
-	    [align,{0,<<0:1,Len:7>>}];
+	    {octets,[Len]};
 	Len < 16384 ->
-%%	    {octets,2,2#1000000000000000 bor Len};
-	    [align,{0,<<2:2,Len:14>>}];
+	    {octets,<<2:2,Len:14>>};
 	true  -> % should be able to endode length >= 16384
 	    exit({error,{asn1,{encode_length,{nyi,above_16k}}}})
     end;
 
 encode_length({0,'MAX'},Len) ->
     encode_length(undefined,Len);
-encode_length({Lb,Ub},Len) when Ub =< 65535 ,Lb >= 0 -> % constrained
-    encode_constrained_number({Lb,Ub},Len);
+encode_length(Vr={Lb,Ub},Len) when Ub =< 65535 ,Lb >= 0 -> % constrained
+    encode_constrained_number(Vr,Len);
 encode_length({Lb,Ub},Len) when integer(Lb), Lb >= 0 -> % Ub > 65535
     encode_length(undefined,Len);
-encode_length({{Lb,Ub},[]},Len) when Ub =< 65535 ,Lb >= 0 -> 
+encode_length({Vr={Lb,Ub},[]},Len) when Ub =< 65535 ,Lb >= 0 -> 
     %% constrained extensible
-    [{bits,1,0},encode_constrained_number({Lb,Ub},Len)];
+    [{bits,1,0},encode_constrained_number(Vr,Len)];
 encode_length(SingleValue,Len) when integer(SingleValue) ->
     [].
 
+%% X.691 10.9.3.4 (only used for length of bitmap that prefixes extension 
+%% additions in a sequence or set
 encode_small_length(Len) when Len =< 64 ->
-%%    [{bit,0},{bits,6,Len-1}];
-    {1,<<0:1,(Len-1):6,0:1>>};
+%%    [{bits,1,0},{bits,6,Len-1}];
+    {bits,7,Len-1}; % the same as above but more efficient
 encode_small_length(Len) ->
     [{bits,1,1},encode_length(undefined,Len)].
 
@@ -1097,13 +1050,16 @@ encode_bit_string(C,{Name,Val}, NamedBitList) when atom(Name) ->
 
 
 encode_bin_bit_string(C,UnusedAndBin={Unused,BinBits},NamedBitList) ->
+    Constr = get_constraint(C,'SizeConstraint'),
     UnusedAndBin1 = {Unused1,Bin1} = 
-	remove_trailing_bin(NamedBitList,UnusedAndBin),
-    case get_constraint(C,'SizeConstraint') of
+	remove_trailing_bin(NamedBitList,UnusedAndBin,lower_bound(Constr)),
+    case Constr of
 	0 ->
 	    [];
 	V when integer(V),V=<16 ->
-	    [pad_list(V,UnusedAndBin1)];
+	    {Unused2,Bin2} = pad_list(V,UnusedAndBin1),
+	    <<BitVal:V,_:Unused2>> = Bin2,
+	    {bits,V,BitVal};
 	V when integer(V) ->
 	    [align, pad_list(V, UnusedAndBin1)];
 	{Lb,Ub} when integer(Lb),integer(Ub) ->
@@ -1117,9 +1073,9 @@ encode_bin_bit_string(C,UnusedAndBin={Unused,BinBits},NamedBitList) ->
 	     align,UnusedAndBin1]
     end.
 
-remove_trailing_bin([], {Unused,Bin}) ->
+remove_trailing_bin([], {Unused,Bin},_) ->
     {Unused,Bin};
-remove_trailing_bin(NamedNumberList, BinOrig = {Unused,Bin}) ->
+remove_trailing_bin(NamedNumberList, BinOrig = {Unused,Bin},C) ->
     Size = size(Bin)-1,
     <<Bfront:Size/binary, LastByte:8>> = Bin,
     %% clear the Unused bits to be sure
@@ -1133,9 +1089,14 @@ remove_trailing_bin(NamedNumberList, BinOrig = {Unused,Bin}) ->
 	end,
     case Unused2 of
 	8 ->
-	    remove_trailing_bin(NamedNumberList,{0,Bfront});
+	    remove_trailing_bin(NamedNumberList,{0,Bfront},C);
 	_ ->
-	    {Unused2,Bin}
+	    case C of
+		Int when integer(Int),Int > ((size(Bin)*8)-Unused2) ->
+		    %% this padding see OTP-4353
+		    pad_list(Int,{Unused2,Bin});
+		_ -> {Unused2,Bin}
+	    end
     end.
 
 
@@ -1171,6 +1132,13 @@ trailingZeroesInNibble(14) ->
     1;
 trailingZeroesInNibble(15) ->
     0.
+
+lower_bound({{Lb,_},_}) when integer(Lb) ->
+    Lb;
+lower_bound({Lb,_}) when integer(Lb) ->
+    Lb;
+lower_bound(C) ->
+    C.
 
 %%%%%%%%%%%%%%%
 %% The result is presented as a list of named bits (if possible)
@@ -1361,16 +1329,13 @@ encode_octet_string(C,false,Val) ->
 	    [V1,V2] = Val,
 	    [{bits,8,V1},{bits,8,V2}];
 	Sv when Sv =<65535, Sv == length(Val) -> % fixed length
-	    [align,{octets,Val}];
+	    {octets,Val};
 	{Lb,Ub}  ->
-	    [encode_length({Lb,Ub},length(Val)),align,
-	     {octets,Val}];
+	    [encode_length({Lb,Ub},length(Val)),{octets,Val}];
 	Sv when list(Sv) ->
-	    [encode_length({hd(Sv),lists:max(Sv)},length(Val)),align,
-	     {octets,Val}];
+	    [encode_length({hd(Sv),lists:max(Sv)},length(Val)),{octets,Val}];
 	no  ->
-	    [encode_length(undefined,length(Val)),align,
-	     {octets,Val}]
+	    [encode_length(undefined,length(Val)),{octets,Val}]
     end.
 
 decode_octet_string(Bytes,Range) ->
@@ -1389,23 +1354,19 @@ decode_octet_string(Bytes,C,false) ->
 	{_,0} ->
 	    {[],Bytes};
 	Sv when integer(Sv), Sv =<65535 -> % fixed length
-	    Bytes2 = align(Bytes),
-	    getoctets_as_list(Bytes2,Sv);
+	    getoctets_as_list(Bytes,Sv);
 	Sv when integer(Sv) -> % fragmented encoding
 	    Bytes2 = align(Bytes),
 	    decode_fragmented_octets(Bytes2,Sv);
 	{Lb,Ub}  ->
 	    {Len,Bytes2} = decode_length(Bytes,{Lb,Ub}),
-	    Bytes3 = align(Bytes2),
-	    getoctets_as_list(Bytes3,Len);
+	    getoctets_as_list(Bytes2,Len);
 	Sv when list(Sv) ->
 	    {Len,Bytes2} = decode_length(Bytes,{hd(Sv),lists:max(Sv)}),
-	    Bytes3 = align(Bytes2),
-	    getoctets_as_list(Bytes3,Len);
+	    getoctets_as_list(Bytes2,Len);
 	no  ->
 	    {Len,Bytes2} = decode_length(Bytes,undefined),
-	    Bytes3 = align(Bytes2),
-	    getoctets_as_list(Bytes3,Len)
+	    getoctets_as_list(Bytes2,Len)
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1419,8 +1380,7 @@ encode_restricted_string(aligned,{Name,Val}) when atom(Name) ->
     encode_restricted_string(aligned,Val);
 
 encode_restricted_string(aligned,Val) when list(Val)->
-    [encode_length(undefined,length(Val)),align,
-     {octets,Val}].
+    [encode_length(undefined,length(Val)),{octets,Val}].
 
 encode_known_multiplier_string(aligned,StringType,C,Ext,{Name,Val}) when atom(Name) ->
     encode_known_multiplier_string(aligned,StringType,C,false,Val);
@@ -1450,8 +1410,7 @@ encode_known_multiplier_string(aligned,StringType,C,Ext,Val) ->
 
 decode_restricted_string(Bytes,aligned) ->
     {Len,Bytes2} = decode_length(Bytes,undefined),
-    Bytes3 = align(Bytes2),
-    getoctets_as_list(Bytes3,Len).
+    getoctets_as_list(Bytes2,Len).
 
 decode_known_multiplier_string(Bytes,aligned,StringType,C,Ext) ->
     NumBits = get_NumBits(C,StringType),
@@ -1519,6 +1478,11 @@ decode_GeneralString(Bytes,C) ->
 encode_GraphicString(C,Val) ->
     encode_restricted_string(aligned,Val).
 decode_GraphicString(Bytes,C) ->
+    decode_restricted_string(Bytes,aligned).
+
+encode_ObjectDescriptor(C,Val) ->
+    encode_restricted_string(aligned,Val).
+decode_ObjectDescriptor(Bytes) ->
     decode_restricted_string(Bytes,aligned).
 
 encode_TeletexString(C,Val) -> % equivalent with T61String
@@ -1818,39 +1782,41 @@ decode_null(Bytes) ->
 encode_object_identifier({Name,Val}) when atom(Name) ->
     encode_object_identifier(Val);
 encode_object_identifier(Val) ->
-    Octets = e_object_identifier(Val,notag),
-    [{debug,object_identifier},encode_length(undefined,length(Octets)),{octets,Octets}].
+    OctetList = e_object_identifier(Val),
+    Octets = list_to_binary(OctetList), % performs a flatten at the same time
+    [{debug,object_identifier},encode_length(undefined,size(Octets)),{octets,Octets}].
 
 %% This code is copied from asn1_encode.erl (BER) and corrected and modified 
 
-e_object_identifier({'OBJECT IDENTIFIER',V},DoTag) ->
-    e_object_identifier(V,DoTag);
-e_object_identifier({Cname,V},DoTag) when atom(Cname),tuple(V) ->
-    e_object_identifier(tuple_to_list(V),DoTag);
-e_object_identifier({Cname,V},DoTag) when atom(Cname),list(V) ->
-    e_object_identifier(V,DoTag);
-e_object_identifier(V,DoTag) when tuple(V) ->
-    e_object_identifier(tuple_to_list(V),DoTag);
+e_object_identifier({'OBJECT IDENTIFIER',V}) ->
+    e_object_identifier(V);
+e_object_identifier({Cname,V}) when atom(Cname),tuple(V) ->
+    e_object_identifier(tuple_to_list(V));
+e_object_identifier({Cname,V}) when atom(Cname),list(V) ->
+    e_object_identifier(V);
+e_object_identifier(V) when tuple(V) ->
+    e_object_identifier(tuple_to_list(V));
 
-						% E1 = 0|1|2 and (E2 < 40 when E1 = 0|1) 
-e_object_identifier([E1,E2|Tail],DoTag) when E1 =< 2 ->
+%% E1 = 0|1|2 and (E2 < 40 when E1 = 0|1) 
+e_object_identifier([E1,E2|Tail]) when E1 >= 0, E1 < 2, E2 < 40 ; E1==2 ->
     Head = 40*E1 + E2,  % weird
-    Res = e_object_elements([Head|Tail]),
-						%    dotag(DoTag,[6],elength(length(Res)+1),[Head|Res]),
-    Res.
+    e_object_elements([Head|Tail],[]);
+e_object_identifier(Oid=[E1,E2|Tail]) ->
+    exit({error,{asn1,{'illegal_value',Oid}}}).
 
-e_object_elements([]) ->
-    [];
-e_object_elements([H|T]) ->
-    lists:append(e_object_element(H),e_object_elements(T)).
+e_object_elements([],Acc) ->
+    lists:reverse(Acc);
+e_object_elements([H|T],Acc) ->
+    e_object_elements(T,[e_object_element(H)|Acc]).
 
 e_object_element(Num) when Num < 128 ->
-    [Num];
+    Num;
 %% must be changed to handle more than 2 octets
 e_object_element(Num) ->  %% when Num < ???
     Left = ((Num band 2#11111110000000) bsr 7) bor 2#10000000,
     Right = Num band 2#1111111 ,
     [Left,Right].
+
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1896,149 +1862,275 @@ get_constraint(C,Key) ->
 %% Should be applied as the last step at encode of a complete ASN.1 type
 %%
 
+% complete(L) ->
+%     case complete1(L) of
+% 	{[],0} ->
+% 	    <<0>>;
+% 	{Acc,0} ->
+% 	    lists:reverse(Acc);
+% 	{[Hacc|Tacc],Acclen}  -> % Acclen >0
+% 	    Rest = 8 - Acclen,
+% 	    NewHacc = Hacc bsl Rest,	       
+% 	    lists:reverse([NewHacc|Tacc])
+%     end.
+
+
+% complete1(InList) when list(InList) ->
+%     complete1(InList,[]);
+% complete1(InList) ->
+%     complete1([InList],[]).
+
+% complete1([{debug,_}|T], Acc) ->
+%     complete1(T,Acc);
+% complete1([H|T],Acc) when list(H) ->
+%     {NewH,NewAcclen} = complete1(H,Acc),
+%     complete1(T,NewH,NewAcclen);
+
+% complete1([{0,Bin}|T],Acc,0) when binary(Bin) ->
+%     complete1(T,[Bin|Acc],0);
+% complete1([{Unused,Bin}|T],Acc,0) when integer(Unused),binary(Bin) ->
+%     Size = size(Bin)-1,
+%     <<Bs:Size/binary,B>> = Bin,
+%     complete1(T,[(B bsr Unused),Bs|Acc],8-Unused);
+% complete1([{Unused,Bin}|T],[Hacc|Tacc],Acclen) when integer(Unused),binary(Bin) ->
+%     Rest = 8 - Acclen,
+%     Used = 8 - Unused,
+%     case size(Bin) of
+% 	1 ->
+% 	    if
+% 		Rest >= Used ->
+% 		    <<B:Used,_:Unused>> = Bin,
+% 		    complete1(T,[(Hacc bsl Used) + B|Tacc],
+% 			     (Acclen+Used) rem 8);
+% 		true ->
+% 		    LeftOver = 8 - Rest - Unused,
+% 		    <<Val2:Rest,Val1:LeftOver,_:Unused>> = Bin,
+% 		    complete1(T,[Val1,(Hacc bsl Rest) + Val2|Tacc],
+% 			     (Acclen+Used) rem 8)
+% 	    end;
+% 	N ->
+% 	    if 
+% 		Rest == Used ->
+% 		    N1 = N - 1,
+% 		    <<B:Rest,Bs:N1/binary,_:Unused>> = Bin,
+% 		    complete1(T,[Bs,(Hacc bsl Rest) + B|Tacc],0);
+% 		Rest > Used ->
+% 		    N1 = N - 2,
+% 		    N2 = (8 - Rest) + Used,
+% 		    <<B1:Rest,Bytes:N1/binary,B2:N2,_:Unused>> = Bin,
+% 		    complete1(T,[B2,Bytes,(Hacc bsl Rest) + B1|Tacc],
+% 			     (Acclen + Used) rem 8);
+% 		true -> % Rest < Used
+% 		    N1 = N - 1,
+% 		    N2 = Used - Rest,
+% 		    <<B1:Rest,Bytes:N1/binary,B2:N2,_:Unused>> = Bin,
+% 		    complete1(T,[B2,Bytes,(Hacc bsl Rest) + B1|Tacc],
+% 			     (Acclen + Used) rem 8)
+% 	    end
+%     end;
+	    
+% %complete1([{octets,N,Val}|T],Acc,Acclen) when N =< 4 ,integer(Val) ->
+% %    complete1([{octets,<<Val:N/unit:8>>}|T],Acc,Acclen);
+% complete1([{octets,N,Val}|T],Acc,Acclen) when N =< 4 ,integer(Val) ->
+%    Newval = case N of
+% 		 1 -> 
+% 		     Val4 = Val band 16#FF,
+% 		     [Val4];
+% 		 2 -> 
+% 		     Val3 = (Val bsr 8) band 16#FF,
+% 		     Val4 = Val band 16#FF,
+% 		     [Val3,Val4];
+% 		 3 ->
+% 		     Val2 = (Val bsr 16) band 16#FF,
+% 		     Val3 = (Val bsr 8) band 16#FF,
+% 		     Val4 = Val band 16#FF,
+% 		     [Val2,Val3,Val4];
+% 		 4 ->
+% 		     Val1 = (Val bsr 24) band 16#FF,
+% 		     Val2 = (Val bsr 16) band 16#FF,
+% 		     Val3 = (Val bsr 8) band 16#FF,
+% 		     Val4 = Val band 16#FF,
+% 		     [Val1,Val2,Val3,Val4]
+% 	     end,
+%    complete1([{octets,Newval}|T],Acc,Acclen);
+
+% complete1([{octets,Bin}|T],Acc,Acclen) when binary(Bin) ->
+%     Rest = 8 - Acclen,
+%     if 
+% 	Rest == 8 ->
+% 	    complete1(T,[Bin|Acc],0);
+% 	true ->
+% 	    [Hacc|Tacc]=Acc,
+% 	    complete1(T,[Bin, Hacc bsl Rest|Tacc],0)
+%     end;
+
+% complete1([{octets,Oct}|T],Acc,Acclen) when list(Oct) ->
+%     Rest = 8 - Acclen,
+%     if 
+% 	Rest == 8 ->
+% 	    complete1(T,[list_to_binary(Oct)|Acc],0);
+% 	true ->
+% 	    [Hacc|Tacc]=Acc,
+% 	    complete1(T,[list_to_binary(Oct), Hacc bsl Rest|Tacc],0)
+%     end;
+
+% complete1([{bit,Val}|T], Acc, Acclen) ->
+%     complete1([{bits,1,Val}|T],Acc,Acclen);
+% complete1([{octet,Val}|T], Acc, Acclen) ->
+%     complete1([{octets,1,Val}|T],Acc,Acclen);
+
+% complete1([{bits,N,Val}|T], Acc, 0) when N =< 8 ->
+%     complete1(T,[Val|Acc],N);
+% complete1([{bits,N,Val}|T], [Hacc|Tacc], Acclen) when N =< 8 ->
+%     Rest = 8 - Acclen,
+%     if 
+% 	Rest >= N ->
+% 	    complete1(T,[(Hacc bsl N) + Val|Tacc],(Acclen+N) rem 8);
+% 	true -> 
+% 	    Diff = N - Rest, 
+% 	    NewHacc = (Hacc bsl Rest) + (Val bsr Diff),
+% 	    Mask = element(Diff,{1,3,7,15,31,63,127,255}),
+% 	    complete1(T,[(Val band Mask),NewHacc|Tacc],(Acclen+N) rem 8)
+%     end;
+% complete1([{bits,N,Val}|T], Acc, Acclen) -> % N > 8
+%     complete1([{bits,N-8,Val bsr 8},{bits,8,Val band 255}|T],Acc,Acclen);
+
+% complete1([align|T],Acc,0) ->
+%     complete1(T,Acc,0);
+% complete1([align|T],[Hacc|Tacc],Acclen) ->
+%     Rest = 8 - Acclen,
+%     complete1(T,[Hacc bsl Rest|Tacc],0);
+% complete1([{octets,N,Val}|T],Acc,Acclen) when list(Val) -> % no security check here 
+%     complete1([{octets,Val}|T],Acc,Acclen);
+
+% complete1([],Acc,Acclen) ->
+%     {Acc,Acclen}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% complete(InList) -> ByteList
+%% Takes a coded list with bits and bytes and converts it to a list of bytes
+%% Should be applied as the last step at encode of a complete ASN.1 type
+%%
+
 complete(L) ->
     case complete1(L) of
-	{[],0} ->
+	{[],[]} ->
 	    <<0>>;
-	{Acc,0} ->
-	    lists:reverse(Acc);
-	{[Hacc|Tacc],Acclen}  -> % Acclen >0
-	    Rest = 8 - Acclen,
-	    NewHacc = Hacc bsl Rest,	       
-	    lists:reverse([NewHacc|Tacc])
+	{Acc,[]} ->
+	    Acc;
+	{Acc,Bacc}  ->
+	    [Acc|complete_bytes(Bacc)]
     end.
 
-
+%% this function builds the ugly form of lists [E1|E2] to avoid having to reverse it at the end.
+%% this is done because it is efficient and that the result always will be sent on a port or
+%% converted by means of list_to_binary/1
 complete1(InList) when list(InList) ->
-    complete1(InList,[],0);
+    complete1(InList,[],[]);
 complete1(InList) ->
-    complete1([InList],[],0).
+    complete1([InList],[],[]).
 
-complete1([{debug,_}|T], Acc, Acclen) ->
-    complete1(T,Acc,Acclen);
-complete1([H|T],Acc,Acclen) when list(H) ->
-    {NewH,NewAcclen} = complete1(H,Acc,Acclen),
-    complete1(T,NewH,NewAcclen);
+complete1([],Acc,Bacc) ->
+    {Acc,Bacc};
+complete1([H|T],Acc,Bacc) when list(H) ->
+    {NewH,NewBacc} = complete1(H,Acc,Bacc),
+    complete1(T,NewH,NewBacc);
 
-complete1([{0,Bin}|T],Acc,0) when binary(Bin) ->
-    complete1(T,[Bin|Acc],0);
-complete1([{Unused,Bin}|T],Acc,0) when integer(Unused),binary(Bin) ->
+complete1([{octets,Bin}|T],Acc,[]) ->
+    complete1(T,[Acc|Bin],[]);
+
+complete1([{octets,Bin}|T],Acc,Bacc) ->
+    complete1(T,[Acc|[complete_bytes(Bacc),Bin]],[]);
+
+complete1([{debug,_}|T], Acc,Bacc) ->
+    complete1(T,Acc,Bacc);
+
+complete1([{bits,N,Val}|T],Acc,Bacc) ->
+    complete1(T,Acc,complete_update_byte(Bacc,Val,N));
+
+complete1([{bit,Val}|T],Acc,Bacc) ->
+    complete1(T,Acc,complete_update_byte(Bacc,Val,1));
+
+complete1([align|T],Acc,[]) ->
+    complete1(T,Acc,[]);
+complete1([align|T],Acc,Bacc) ->
+    complete1(T,[Acc|complete_bytes(Bacc)],[]);
+complete1([{0,Bin}|T],Acc,[]) when binary(Bin) ->
+    complete1(T,[Acc|Bin],[]);
+complete1([{Unused,Bin}|T],Acc,[]) when integer(Unused),binary(Bin) ->
     Size = size(Bin)-1,
     <<Bs:Size/binary,B>> = Bin,
-    complete1(T,[(B bsr Unused),Bs|Acc],8-Unused);
-complete1([{Unused,Bin}|T],[Hacc|Tacc],Acclen) when integer(Unused),binary(Bin) ->
-    Rest = 8 - Acclen,
-    Used = 8 - Unused,
-    case size(Bin) of
-	1 ->
-	    if
-		Rest >= Used ->
-		    <<B:Used,_:Unused>> = Bin,
-		    complete1(T,[(Hacc bsl Used) + B|Tacc],
-			     (Acclen+Used) rem 8);
-		true ->
-		    LeftOver = 8 - Rest - Unused,
-		    <<Val2:Rest,Val1:LeftOver,_:Unused>> = Bin,
-		    complete1(T,[Val1,(Hacc bsl Rest) + Val2|Tacc],
-			     (Acclen+Used) rem 8)
-	    end;
-	N ->
-	    if 
-		Rest == Used ->
-		    N1 = N - 1,
-		    <<B:Rest,Bs:N1/binary,_:Unused>> = Bin,
-		    complete1(T,[Bs,(Hacc bsl Rest) + B|Tacc],0);
-		Rest > Used ->
-		    N1 = N - 2,
-		    N2 = (8 - Rest) + Used,
-		    <<B1:Rest,Bytes:N1/binary,B2:N2,_:Unused>> = Bin,
-		    complete1(T,[B2,Bytes,(Hacc bsl Rest) + B1|Tacc],
-			     (Acclen + Used) rem 8);
-		true -> % Rest < Used
-		    N1 = N - 1,
-		    N2 = Used - Rest,
-		    <<B1:Rest,Bytes:N1/binary,B2:N2,_:Unused>> = Bin,
-		    complete1(T,[B2,Bytes,(Hacc bsl Rest) + B1|Tacc],
-			     (Acclen + Used) rem 8)
-	    end
-    end;
-	    
-%complete1([{octets,N,Val}|T],Acc,Acclen) when N =< 4 ,integer(Val) ->
-%    complete1([{octets,<<Val:N/unit:8>>}|T],Acc,Acclen);
-complete1([{octets,N,Val}|T],Acc,Acclen) when N =< 4 ,integer(Val) ->
-   Newval = case N of
-		 1 -> 
-		     Val4 = Val band 16#FF,
-		     [Val4];
-		 2 -> 
-		     Val3 = (Val bsr 8) band 16#FF,
-		     Val4 = Val band 16#FF,
-		     [Val3,Val4];
-		 3 ->
-		     Val2 = (Val bsr 16) band 16#FF,
-		     Val3 = (Val bsr 8) band 16#FF,
-		     Val4 = Val band 16#FF,
-		     [Val2,Val3,Val4];
-		 4 ->
-		     Val1 = (Val bsr 24) band 16#FF,
-		     Val2 = (Val bsr 16) band 16#FF,
-		     Val3 = (Val bsr 8) band 16#FF,
-		     Val4 = Val band 16#FF,
-		     [Val1,Val2,Val3,Val4]
-	     end,
-   complete1([{octets,Newval}|T],Acc,Acclen);
+    NumBits = 8-Unused,
+    complete1(T,[Acc|Bs],[[B bsr Unused]|NumBits]);
+complete1([{Unused,Bin}|T],Acc,Bacc) when integer(Unused),binary(Bin) ->
+    Size = size(Bin)-1,
+    <<Bs:Size/binary,B>> = Bin,
+    NumBits = 8 - Unused,
+    Bf = complete_bytes(Bacc),
+    complete1(T,[Acc|[Bf,Bs]],[[B bsr Unused]|NumBits]).
 
-complete1([{octets,Bin}|T],Acc,Acclen) when binary(Bin) ->
-    Rest = 8 - Acclen,
-    if 
-	Rest == 8 ->
-	    complete1(T,[Bin|Acc],0);
-	true ->
-	    [Hacc|Tacc]=Acc,
-	    complete1(T,[Bin, Hacc bsl Rest|Tacc],0)
-    end;
 
-complete1([{octets,Oct}|T],Acc,Acclen) when list(Oct) ->
-    Rest = 8 - Acclen,
-    if 
-	Rest == 8 ->
-	    complete1(T,[list_to_binary(Oct)|Acc],0);
-	true ->
-	    [Hacc|Tacc]=Acc,
-	    complete1(T,[list_to_binary(Oct), Hacc bsl Rest|Tacc],0)
-    end;
+complete_update_byte([],Val,Len) ->
+    complete_update_byte([[0]|0],Val,Len);
+complete_update_byte([[Byte|Bacc]|NumBits],Val,Len) when NumBits + Len == 8 ->
+    [[0,((Byte bsl Len) + Val) band 255|Bacc]|0];
+complete_update_byte([[Byte|Bacc]|NumBits],Val,Len) when NumBits + Len > 8  ->
+    Rem = 8 - NumBits,
+    Rest = Len - Rem,
+    complete_update_byte([[0,((Byte bsl Rem) + (Val bsr Rest)) band 255 |Bacc]|0],Val,Rest);
+complete_update_byte([[Byte|Bacc]|NumBits],Val,Len) ->
+    [[((Byte bsl Len) + Val) band 255|Bacc]|NumBits+Len].
 
-complete1([{bit,Val}|T], Acc, Acclen) ->
-    complete1([{bits,1,Val}|T],Acc,Acclen);
-complete1([{octet,Val}|T], Acc, Acclen) ->
-    complete1([{octets,1,Val}|T],Acc,Acclen);
+ 
+complete_bytes([[Byte|Bacc]|0]) ->
+    lists:reverse(Bacc);
+complete_bytes([[Byte|Bacc]|NumBytes]) ->
+    lists:reverse([(Byte bsl (8-NumBytes)) band 255|Bacc]);
+complete_bytes([]) ->
+    [].
 
-complete1([{bits,N,Val}|T], Acc, 0) when N =< 8 ->
-    complete1(T,[Val|Acc],N);
-complete1([{bits,N,Val}|T], [Hacc|Tacc], Acclen) when N =< 8 ->
-    Rest = 8 - Acclen,
-    if 
-	Rest >= N ->
-	    complete1(T,[(Hacc bsl N) + Val|Tacc],(Acclen+N) rem 8);
-	true -> 
-	    Diff = N - Rest, 
-	    NewHacc = (Hacc bsl Rest) + (Val bsr Diff),
-	    Mask = element(Diff,{1,3,7,15,31,63,127,255}),
-	    complete1(T,[(Val band Mask),NewHacc|Tacc],(Acclen+N) rem 8)
-    end;
-complete1([{bits,N,Val}|T], Acc, Acclen) -> % N > 8
-    complete1([{bits,N-8,Val bsr 8},{bits,8,Val band 255}|T],Acc,Acclen);
+% complete_bytes(L) ->
+%     complete_bytes1(lists:reverse(L),[],[],0,0).
 
-complete1([align|T],Acc,0) ->
-    complete1(T,Acc,0);
-complete1([align|T],[Hacc|Tacc],Acclen) ->
-    Rest = 8 - Acclen,
-    complete1(T,[Hacc bsl Rest|Tacc],0);
-complete1([{octets,N,Val}|T],Acc,Acclen) when list(Val) -> % no security check here 
-    complete1([{octets,Val}|T],Acc,Acclen);
+% complete_bytes1([H={V,B}|T],Acc,ReplyAcc,NumBits,NumFields) when ((NumBits+B) rem 8) == 0 ->
+% 	    NewReplyAcc = [complete_bytes2([H|Acc],0)|ReplyAcc],
+% 	    complete_bytes1(T,[],NewReplyAcc,0,0);
+% complete_bytes1([H={V,B}|T],Acc,ReplyAcc,NumBits,NumFields)  when NumFields == 7; (NumBits+B) div 8 > 0 ->
+%     Rem = (NumBits+B) rem 8,
+%     NewReplyAcc = [complete_bytes2([{V bsr Rem,B - Rem}|Acc],0)|ReplyAcc],
+%     complete_bytes1([{V,Rem}|T],[],NewReplyAcc,0,0);
+% complete_bytes1([H={V,B}|T],Acc,ReplyAcc,NumBits,NumFields)  ->
+%     complete_bytes1(T,[H|Acc],ReplyAcc,NumBits+B,NumFields+1);
+% complete_bytes1([],[],ReplyAcc,_,_) ->
+%     lists:reverse(ReplyAcc);
+% complete_bytes1([],Acc,ReplyAcc,NumBits,_) ->
+%     PadBits = case NumBits rem 8 of
+% 		  0 -> 0;
+% 		  Rem -> 8 - Rem
+% 	      end,
+%     lists:reverse([complete_bytes2(Acc,PadBits)|ReplyAcc]).
 
-complete1([],Acc,Acclen) ->
-    {Acc,Acclen}.
 
+% complete_bytes2([{V1,B1}],PadBits) ->
+%     <<V1:B1,0:PadBits>>;
+% complete_bytes2([{V2,B2},{V1,B1}],PadBits) ->
+%     <<V1:B1,V2:B2,0:PadBits>>;
+% complete_bytes2([{V3,B3},{V2,B2},{V1,B1}],PadBits) ->
+%     <<V1:B1,V2:B2,V3:B3,0:PadBits>>;
+% complete_bytes2([{V4,B4},{V3,B3},{V2,B2},{V1,B1}],PadBits) ->
+%     <<V1:B1,V2:B2,V3:B3,V4:B4,0:PadBits>>;
+% complete_bytes2([{V5,B5},{V4,B4},{V3,B3},{V2,B2},{V1,B1}],PadBits) ->
+%     <<V1:B1,V2:B2,V3:B3,V4:B4,V5:B5,0:PadBits>>;
+% complete_bytes2([{V6,B6},{V5,B5},{V4,B4},{V3,B3},{V2,B2},{V1,B1}],PadBits) ->
+%     <<V1:B1,V2:B2,V3:B3,V4:B4,V5:B5,V6:B6,0:PadBits>>;
+% complete_bytes2([{V7,B7},{V6,B6},{V5,B5},{V4,B4},{V3,B3},{V2,B2},{V1,B1}],PadBits) ->
+%     <<V1:B1,V2:B2,V3:B3,V4:B4,V5:B5,V6:B6,V7:B7,0:PadBits>>;
+% complete_bytes2([{V8,B8},{V7,B7},{V6,B6},{V5,B5},{V4,B4},{V3,B3},{V2,B2},{V1,B1}],PadBits) ->
+%     <<V1:B1,V2:B2,V3:B3,V4:B4,V5:B5,V6:B6,V7:B7,V8:B8,0:PadBits>>.
+
+    
+    
+    
 
 

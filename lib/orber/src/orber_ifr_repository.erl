@@ -42,6 +42,7 @@
 	 get_primitive/2,
 	 create_string/2,
 	 create_wstring/2,
+	 create_fixed/3,
 	 create_sequence/3,
 	 create_array/3,
 	 create_idltype/2,			%not in CORBA 2.0
@@ -152,7 +153,7 @@ lookup_id({ObjType,ObjID}, Search_id) ?tcheck(ir_Repository, ObjType) ->
     end.
 
 get_primitive({ObjType,ObjID}, Kind) ?tcheck(ir_Repository, ObjType) ->
-    Primitivedefs = get_field({ObjType,ObjID}, primitivdefs),
+    Primitivedefs = get_field({ObjType,ObjID}, primitivedefs),
     lists:filter(fun(X) -> orber_ifr_primitivedef:'_get_kind'(X) == Kind end,
 		 Primitivedefs).
 
@@ -193,6 +194,15 @@ create_wstring({ObjType,ObjID}, Bound) ?tcheck(ir_Repository, ObjType) ->
 			       bound = Bound},
 %%    add_to_repository({ObjType,ObjID},New_string),
     makeref(NewWstring).
+
+create_fixed({ObjType,ObjID}, Digits, Scale) ?tcheck(ir_Repository, ObjType) ->
+    NewFixed = #ir_FixedDef{ir_Internal_ID = unique(),
+			    def_kind = dk_Fixed,
+			    type = {tk_fixed, Digits, Scale},
+			    digits = Digits,
+			    scale = Scale},
+%%    add_to_repository({ObjType,ObjID},NewFixed),
+    makeref(NewFixed).
 
 create_sequence({ObjType,ObjID}, Bound, Element_type)
 			    ?tcheck(ir_Repository, ObjType) ->
@@ -254,6 +264,8 @@ create_primitivedef(Pkind) ->
 		       tk_char;
 		   pk_wchar ->
 		       tk_wchar;
+		   pk_fixed ->
+		       tk_fixed;
 		   pk_octet ->
 		       tk_octet;
 		   pk_any ->

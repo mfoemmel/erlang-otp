@@ -85,8 +85,8 @@ active_once(Type, Sock) ->
 
 active(ip_comm, Sock, Active) ->
     inet:setopts(Sock, [{active, Active}]);
-active({ssl, _SSLConfig}, _Sock, _Active) ->
-    ok.
+active({ssl, _SSLConfig}, Sock, Active) ->
+    ssl:setopts(Sock, [{active, Active}]).
 
 %% accept
 

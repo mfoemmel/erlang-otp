@@ -169,8 +169,10 @@ loop_c2v_rows([{_, CommunityIndex} | T], Addr) ->
 	    {TDomain, TAddr} = Addr,
 	    case snmp_target_mib:is_valid_tag(Tag, TDomain, TAddr) of
 		true ->
+		    ?vtrace("loop_c2v_rows -> ~p valid tag", [Tag]),
 		    VacmParams;
 		false ->
+		    ?vtrace("loop_c2v_rows -> ~p not valid tag", [Tag]),
 		    loop_c2v_rows(T, Addr)
 	    end;
 	undefined ->

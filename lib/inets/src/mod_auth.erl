@@ -872,10 +872,6 @@ init([Verbosity]) ->
     put(sname,auth),
     put(verbosity,Verbosity),
     ?vlog("starting",[]),
-    
-    %% This is not a good solution, and it will be changed...
-    %% Make sure crypto is started
-    crypto:start(),
     {ok,#state{tab = ets:new(auth_pwd,[set,protected])}}.
 
 terminate(Reason,State) ->
@@ -928,7 +924,7 @@ handle_call({add_auth_pass,Dir,Pwd0},_From,State)->
 handle_call({update_auth_pass,Dir,Old,New},_From,State)->
     case getPassword(State,Dir) of
 	OldPwd when binary(OldPwd)->
-	    case crypto:md5(Old) of
+	    case erlang:md5(Old) of
 		OldPwd ->
 		    %%The old password is right update the authPwd to the new
 		    update_password(Dir,New,State),
@@ -960,19 +956,26 @@ handle_cast(Request,State)->
 code_change({down, _}, #state{tab = Tab}, downgrade_to_2_6_0) ->
     ?vlog("downgrade to 2.6.0", []),
     {ok, {state, Tab, undefined}};
+code_change({down, _}, State, _) ->
+    ?vlog("downgrade to 2.6.x", []),
+    {ok, State};
 
 
 %% code_change(FromVsn, State, Extra)
 %%
 code_change(_, {mod_state, Tab, _}, upgrade_from_2_6_0) ->
     ?vlog("upgrade from 2.6.0", []),
-    {ok, #state{tab = Tab}}.
+    {ok, #state{tab = Tab}};
+code_change(_, State, _) ->
+    ?vlog("upgrade from 2.6.x", []),
+    {ok, State}.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                  %%
-%%The functions that really changes the data in the database        %%
-%%of users to different directories                                 %%
+%% The functions that really changes the data in the database       %%
+%% of users to different directories                                %%
+%%                                                                  %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 
 %% API gateway
@@ -1002,7 +1005,7 @@ controlPassword(Password,State,Dir)when Password=:="DummyPassword"->
 controlPassword(Password,State,Dir)->
     case getPassword(State,Dir) of
 	Pwd when binary(Pwd)->
-	    case crypto:md5(Password) of
+	    case erlang:md5(Password) of
 		Pwd ->
 		    ok;
 		_->
@@ -1022,7 +1025,7 @@ getPassword(State,Dir)->
     end.
 
 update_password(Dir,New,State)->
-    ets:insert(State#state.tab,{Dir,crypto:md5(New)}).
+    ets:insert(State#state.tab,{Dir,erlang:md5(New)}).
 
 add_auth_pass(Dir,Pwd0,State)->
     case getPassword(State,Dir) of

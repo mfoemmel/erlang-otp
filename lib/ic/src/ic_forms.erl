@@ -49,12 +49,15 @@ get_dimension(X) when record(X, array)       ->
     [element(3, L) || L <- X#array.size].
 
 %% Should find the name hidden in constructs
+get_id( [{'<identifier>', LineNo, Id}] ) -> Id;
 get_id( {'<identifier>', LineNo, Id} ) -> Id;
 get_id(Id) when list(Id), integer(hd(Id)) -> Id;
 get_id(X) when record(X, scoped_id) -> X#scoped_id.id;
 get_id(X) when record(X, array) -> get_id(X#array.id);
-get_id( {'<string_literal>', LineNo, Id} ) -> Id.
+get_id( {'<string_literal>', LineNo, Id} ) -> Id;
+get_id( {'<wstring_literal>', LineNo, Id} ) -> Id.
 
+get_line([{'<identifier>', LineNo, Id}]) -> LineNo;
 get_line({'<identifier>', LineNo, Id}) -> LineNo;
 get_line(X) when record(X, scoped_id) -> X#scoped_id.line;
 get_line(X) when record(X, module)      -> get_line(X#module.id);
@@ -291,6 +294,9 @@ get_type_code2(G, N, {unsigned,{short,_}}) -> tk_ushort;
 
 get_type_code2(G, N, {unsigned,{long,_}}) -> tk_ulong;
 
+get_type_code2(G, N, X) when record(X, fixed) -> 
+    {tk_fixed, X#fixed.digits, X#fixed.scale};
+
 get_type_code2(G, N, {X,_}) ->
     get_type_code2(G, N, X);
 
@@ -300,8 +306,10 @@ get_type_code2(_, _, float) -> tk_float;
 get_type_code2(_, _, double) -> tk_double;                              
 get_type_code2(_, _, boolean) -> tk_boolean;
 get_type_code2(_, _, char) -> tk_char;
+get_type_code2(_, _, wchar) -> tk_wchar;
 get_type_code2(_, _, octet) -> tk_octet;                                                     
 get_type_code2(_, _, string) -> tk_string;
+get_type_code2(_, _, wstring) -> tk_wstring;
 get_type_code2(_, _, any) -> tk_any.
 
 

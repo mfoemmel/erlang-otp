@@ -19,6 +19,10 @@
  * Interface functions to different versions of gethostbyname
  */
 
+#ifdef HAVE_CONFIG_H
+# include "config.h"	      /* FIXME: Autoconf Info prefers <config.h> */
+#endif
+
 #ifdef VXWORKS
 #include <vxWorks.h>
 #include <stdio.h>
@@ -68,7 +72,6 @@ int h_errno;
 #else
 #define DEBUGF(X) /* Nothing */
 #endif
-
 
 static struct hostent *(*sens_gethostbyname)() = NULL;
 static struct hostent *(*sens_gethostbyaddr)() = NULL;

@@ -190,6 +190,7 @@ DLL_SYSOBJS = \
 	$(OBJDIR)\sys_select.obj \
 	$(OBJDIR)\sys_threads.obj \
 	$(OBJDIR)\dosmap.obj \
+	$(OBJDIR)\elib_malloc.obj \
 	$(OBJDIR)\erl_old_sl_alloc.obj \
 	$(OBJDIR)\erl_sl_alloc.obj
 
@@ -200,6 +201,7 @@ SYSOBJS = \
 	$(OBJDIR)\sys_select.obj \
 	$(OBJDIR)\sys_threads.obj \
 	$(OBJDIR)\dosmap.obj \
+	$(OBJDIR)\elib_malloc.obj \
 	$(OBJDIR)\erl_old_sl_alloc.obj \
 	$(OBJDIR)\erl_sl_alloc.obj
 # Comment in if linking with a DLL instead of LIB.
@@ -311,7 +313,7 @@ $(ERL_RUNTIME_LIB): $(ERLOBJS)
 !ifdef NO_BEAM_DLL
 $(BINDIR)\$(EMULATOR): $(SYSOBJS) $(DRVOBJS) $(BEAMOBJS) \
    $(ERL_RUNTIME_LIB)  $(ZLIBDIR)\zlib.lib $(SYSDIR)\erl.def $(BEAMS_RES)
-	link $(LINKDEBUG) -nologo -pdb:none -incremental:no -nodefaultlib\
+	link $(LINKDEBUG) -nologo -pdb:none -incremental:no \
 		$(WIN32_LIBS_NO_LIBCMT) $(ERL_LIBCMT) \
 		$(SYSOBJS) $(DRVOBJS) \
 		$(BEAMOBJS) $(ERL_RUNTIME_LIB) $(ZLIBDIR)\zlib.lib \
@@ -326,7 +328,7 @@ $(BINDIR)\$(EMULATOR): $(SYSOBJS) $(DRVOBJS) $(BEAMOBJS) \
 $(BINDIR)\$(BEAM_DLL): $(DLL_SYSOBJS) $(DRVOBJS) $(BEAMOBJS) \
 	$(ERL_RUNTIME_LIB)  $(ZLIBDIR)\zlib.lib $(SYSDIR)\erl.def $(BEAMS_RES) \
 	$(OBJDIR)\erl_api.obj
-	link $(LINKDEBUG) -nologo -pdb:none -incremental:no -nodefaultlib \
+	link $(LINKDEBUG) -nologo -pdb:none -incremental:no  \
 		-dll \
 		$(WIN32_LIBS_NO_LIBCMT) $(ERL_LIBCMT) \
 		$(DLL_SYSOBJS) $(DRVOBJS)  \

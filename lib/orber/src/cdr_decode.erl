@@ -782,23 +782,34 @@ dec_fixed(0, 0, Bytes, Len, C) ->
 dec_fixed(Digits, Scale, Bytes, Len, C) ->
     case ?ODD(Digits) of
 	true ->
-	    {Fixed, Bytes2, Len2, C2} = dec_fixed_2(Digits, Scale, Bytes, Len, C),
-	    {#fixed{digits = Digits, scale = Scale, value = list_to_integer(Fixed)},
-	     Bytes2, Len2, C2};
+	    {Fixed, Bytes2, Len2, C2, Sign} = dec_fixed_2(Digits, Scale, Bytes, Len, C),
+	    case Sign of
+		?FIXED_POSITIVE ->
+		    {#fixed{digits = Digits, scale = Scale,
+			    value = list_to_integer(Fixed)}, Bytes2, Len2, C2};
+		?FIXED_NEGATIVE ->
+		    {#fixed{digits = Digits, scale = Scale,
+			    value = -list_to_integer(Fixed)}, Bytes2, Len2, C2}
+	    end;
 	false ->
 	    %% If the length (of fixed) is even a zero is added first.
 	    %% Subtract that we've read 1 digit.
 	    <<0:4,D2:4,T/binary>> = Bytes,
-	    {Fixed, Bytes2, Len2, C2} = dec_fixed_2(Digits-1, Scale, T, Len+1, C+1),
-	    {#fixed{digits = Digits, scale = Scale, value = list_to_integer([D2+48|Fixed])}, 
-	     Bytes2, Len2, C2}
+	    {Fixed, Bytes2, Len2, C2, Sign} = dec_fixed_2(Digits-1, Scale, T, Len+1, C+1),
+	    case Sign of
+		?FIXED_POSITIVE ->
+		    {#fixed{digits = Digits, scale = Scale, 
+			    value = list_to_integer([D2+48|Fixed])}, Bytes2, Len2, C2};
+		?FIXED_NEGATIVE ->
+		    {#fixed{digits = Digits, scale = Scale, 
+			    value = -list_to_integer([D2+48|Fixed])}, Bytes2, Len2, C2}
+	    end
     end.
 
 dec_fixed_2(1, Scale, <<D1:4,?FIXED_POSITIVE:4,T/binary>>, Len, C) ->
-    %% Even though the CORBA specifications give the impression of allowing
-    %% a negative scale, but the scale must be a positive integer.
-    %% The FIXED_POSITIVE vale (0xC) is a "left-over" from some specifications.
-    {[D1+48], T, Len+1, C+1};
+    {[D1+48], T, Len+1, C+1, ?FIXED_POSITIVE};
+dec_fixed_2(1, Scale, <<D1:4,?FIXED_NEGATIVE:4,T/binary>>, Len, C) ->
+    {[D1+48], T, Len+1, C+1, ?FIXED_NEGATIVE};
 dec_fixed_2(Digits, Scale, Bytes, Len, C) when Digits =< 0 ->
     orber:dbg("[~p] cdr_decode:dec_fixed_2(~p, ~p)
 Malformed fixed type.", [?LINE, Digits, Scale], ?DEBUG_LEVEL),
@@ -808,8 +819,8 @@ dec_fixed_2(Digits, Scale, <<>>, Len, C) ->
 The fixed type received was to short.", [?LINE, Digits, Scale], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=105, completion_status=?COMPLETED_MAYBE});
 dec_fixed_2(Digits, Scale, <<D1:4,D2:4,T/binary>>, Len, C) ->
-    {Seq, Rest2, Len2, NewC2} = dec_fixed_2(Digits-2, Scale, T, Len+1, C+1),
-    {[D1+48, D2+48 | Seq], Rest2, Len2, NewC2}.
+    {Seq, Rest2, Len2, NewC2, Sign} = dec_fixed_2(Digits-2, Scale, T, Len+1, C+1),
+    {[D1+48, D2+48 | Seq], Rest2, Len2, NewC2, Sign}.
 
 %%-----------------------------------------------------------------
 %% Func: dec_sequence/7 and dec_sequence/8

@@ -45,10 +45,13 @@ get_almost_full_threshold() ->
     gen_server:call(disksup, get_almost_full_threshold).
 
 init([]) ->  
-    Port = new_port(),
+    OS = get_os(),
+    Port = case OS of
+		{unix, _} -> new_port();
+		_ -> noport
+    end,
     Timeout = get_timeout(),
     Threshold = get_threshold(),
-    OS = get_os(),
     process_flag(trap_exit, true),
     process_flag(priority, low),
     State = #state{threshold = Threshold, timeout = Timeout, os = OS, 

@@ -498,6 +498,7 @@ load({Mod, Src, Beam, Exp, Abst}, Dist) ->
     everywhere(Dist,
 	       fun() ->
 		       code:purge(Mod),
+		       erts_debug:breakpoint({Mod,'_','_'}, false),
 		       {module,Mod} = code:load_abs(filename:rootname(Beam))
 	       end),
     {ok, SrcBin} = file:read_file(Src),

@@ -69,6 +69,7 @@ extern int h_errno;
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/utsname.h>  /* for gen_challenge (NEED FIX?) */
+#include <time.h>
 #endif
 
 /* common includes */
@@ -1278,7 +1279,9 @@ static int send_name_or_challenge (int fd, char *nodename,
     char *buf, *s;
     char dbuf[DEFBUF_SIZ];
     int siz = 2 + 1 + 2 + 4 + strlen(nodename);
+#ifdef DEBUG_DIST
     const char* function[] = {"SEND_NAME", "SEND_CHALLENGE"};
+#endif
     if (f_chall)
 	siz += 4;
     buf = (siz > DEFBUF_SIZ) ? malloc(siz) : dbuf;

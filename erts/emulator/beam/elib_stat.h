@@ -30,6 +30,7 @@ struct elib_stat {
     int min_used;     /* Size of the smallest block used */
     int max_free;     /* Size of the largest free block */
     int free_blocks;  /* Number of fragments in free list */
+    int mem_max_alloc;/* Max number of words in use */
 };
 
 EXTERN_FUNCTION(void, elib_statistics, (void*));

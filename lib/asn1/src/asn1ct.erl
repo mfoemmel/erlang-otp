@@ -53,20 +53,22 @@ compile(File,Options) when list(Options) ->
 
 
 compile1(File,Options) when list(Options) ->
+%    Options1 = [rt2ct|Options], %temporary hack to run test cases with rt2ct
+    Options1 = Options,
     io:format("Erlang ASN.1 version ~p compiling ~p ~n",[?vsn,File]),
-    io:format("Compiler Options: ~p~n",[Options]),
+    io:format("Compiler Options: ~p~n",[Options1]),
     Ext = filename:extension(File),
     Base = filename:basename(File,Ext),
-    OutFile = outfile(Base,"",Options),
-    DbFile = outfile(Base,"asn1db",Options),
-    Includes = [I || {i,I} <- Options],
-    EncodingRule = get_rule(Options),
-    Continue1 = scan({true,true},File,Options),
-    Continue2 = parse(Continue1,File,Options),
+    OutFile = outfile(Base,"",Options1),
+    DbFile = outfile(Base,"asn1db",Options1),
+    Includes = [I || {i,I} <- Options1],
+    EncodingRule = get_rule(Options1),
+    Continue1 = scan({true,true},File,Options1),
+    Continue2 = parse(Continue1,File,Options1),
     Continue3 = check(Continue2,File,OutFile,Includes,EncodingRule,
-		      DbFile,Options,[]),
-    Continue4 = generate(Continue3,OutFile,EncodingRule,Options),
-    compile_erl(Continue4,OutFile,Options).
+		      DbFile,Options1,[]),
+    Continue4 = generate(Continue3,OutFile,EncodingRule,Options1),
+    compile_erl(Continue4,OutFile,Options1).
 
 %%****************************************************************************%%
 %% functions dealing with compiling of several input files to one output file %%
@@ -116,11 +118,11 @@ check_set(ParseRes,SetBase,OutFile,Includes,EncRule,DbFile,
     compile_erl(Continue2,OutFile,Options).
 
 
-%% merge/1 -> returns a module record where the typeorval lists are merged,
+%% merge_modules/2 -> returns a module record where the typeorval lists are merged,
 %% the exports lists are merged, the imports lists are merged when the 
 %% elements come from other modules than the merge set, the tagdefault 
 %% field gets the shared value if all modules have same tagging scheme,
-%% otherwise an tagging_error exception is thrown, 
+%% otherwise a tagging_error exception is thrown, 
 %% the extensiondefault ...(not handled yet).
 merge_modules(ParseRes,CommonName) ->
     ModuleList = lists:map(fun(X)->element(2,X) end,ParseRes),
@@ -128,10 +130,13 @@ merge_modules(ParseRes,CommonName) ->
 	lists:append(lists:map(fun(X)->X#module.typeorval end,ModuleList)),
     InputMNameList = lists:map(fun(X)->X#module.name end,ModuleList),
     CExports = common_exports(ModuleList),
+   
     ImportsModuleNameList = lists:map(fun(X)->
 					      {X#module.imports,
 					       X#module.name} end,
 				      ModuleList),
+    %% ImportsModuleNameList: [{Imports,ModuleName},...]
+    %% Imports is a tuple {imports,[#'SymbolsFromModule'{},...]}
     CImports = common_imports(ImportsModuleNameList,InputMNameList),
     TagDefault = common_tagdefault(ModuleList),
     #module{name=CommonName,tagdefault=TagDefault,exports=CExports,
@@ -175,7 +180,13 @@ export_all(ModuleList) ->
 								 type=C#classdef.name};
 				    P when record(P,ptypedef) ->
 					#'Externaltypereference'{pos=0,
-								 type=P#ptypedef.name}
+								 type=P#ptypedef.name};
+				    PV when record(PV,pvaluesetdef) ->
+					#'Externaltypereference'{pos=0,
+								 type=PV#pvaluesetdef.name};
+				    PO when record(PO,pobjectdef) ->
+					#'Externalvaluereference'{pos=0,
+								 value=PO#pobjectdef.name}
 				end
 			end,
 			TorVL)
@@ -183,6 +194,12 @@ export_all(ModuleList) ->
 	  ModuleList),
     lists:append(ExpList).
 
+%% common_imports/2
+%% IList is a list of tuples, {Imports,MName}, where Imports is the imports of
+%% the module with name MName.
+%% InputMNameL holds the names of all merged modules.
+%% Returns an import tuple with a list of imports that are external the merged
+%% set of modules.
 common_imports(IList,InputMNameL) ->
     SetExternalImportsList = remove_in_set_imports(IList,InputMNameL,[]),
     {imports,remove_import_doubles(SetExternalImportsList)}.
@@ -227,10 +244,13 @@ remove_in_set_imports1([],_,Acc) ->
 
 remove_import_doubles([]) ->
     [];
+%% If several modules in the merge set imports symbols from
+%% the same external module it might be doubled.
+%% ImportList has #'SymbolsFromModule' elements
 remove_import_doubles(ImportList) ->
     MergedImportList = 
-	merge_symbols_from_module(lists:map(fun(X)->element(1,X) end, 
-					    ImportList),[]),
+	merge_symbols_from_module(ImportList,[]),
+%%    io:format("MergedImportList: ~p~n",[MergedImportList]),
     delete_double_of_symbol(MergedImportList,[]).
 
 merge_symbols_from_module([Imp|Imps],Acc) ->
@@ -248,12 +268,13 @@ merge_symbols_from_module([Imp|Imps],Acc) ->
 	  end,
 	  Imps),
     NewImps = lists:subtract(Imps,IfromModName),
+%%    io:format("Imp: ~p~nIfromModName: ~p~n",[Imp,IfromModName]),
     NewImp =
 	Imp#'SymbolsFromModule'{
 	  symbols = lists:append(
 		      lists:map(fun(SL)->
 					SL#'SymbolsFromModule'.symbols 
-				end,[Imp,IfromModName]))},
+				end,[Imp|IfromModName]))},
     merge_symbols_from_module(NewImps,[NewImp|Acc]);
 merge_symbols_from_module([],Acc) ->
     lists:reverse(Acc).
@@ -265,7 +286,7 @@ delete_double_of_symbol([I|Is],Acc) ->
 delete_double_of_symbol([],Acc) ->
     Acc.
 
-delete_double_of_symbol1([TRef={typereference,_,TrefName}|Rest],Acc)->
+delete_double_of_symbol1([TRef=#'Externaltypereference'{type=TrefName}|Rest],Acc)->
     NewRest = 
 	lists:filter(fun(S)->
 			     case S of
@@ -276,7 +297,7 @@ delete_double_of_symbol1([TRef={typereference,_,TrefName}|Rest],Acc)->
 		     end,
 		     Rest),
     delete_double_of_symbol1(NewRest,[TRef|Acc]);
-delete_double_of_symbol1([VRef={identifier,_,VName}|Rest],Acc) ->
+delete_double_of_symbol1([VRef=#'Externalvaluereference'{value=VName}|Rest],Acc) ->
     NewRest = 
 	lists:filter(fun(S)->
 			     case S of
@@ -619,7 +640,7 @@ make_erl_options(Opts) ->
     %% This way of extracting will work even if the record passed
     %% has more fields than known during compilation.
 
-    Includes0 = Opts#options.includes,
+    Includes = Opts#options.includes,
     Defines = Opts#options.defines,
     Outdir = Opts#options.outdir,
     Warning = Opts#options.warning,
@@ -628,14 +649,6 @@ make_erl_options(Opts) ->
     Optimize = Opts#options.optimize,
     OutputType = Opts#options.output_type,
     Cwd = Opts#options.cwd,
-
-    Includes = 
-	case Opts#options.ilroot of
-	    undefined ->
-		Includes0;
-	    Ilroot ->
-		[Ilroot|Includes0]
-	end,
 
     Options =
 	case Verbose of

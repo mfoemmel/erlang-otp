@@ -44,12 +44,20 @@
 #  define CountCase(OpCode) case op_count_##OpCode
 #  define OpCode(OpCode)    ((Uint*)op_##OpCode)
 #  define Goto(Rel) {Go = (int)(Rel); goto emulator_loop;}
-#  define LabelAddr(Addr) &&##Addr
+#  ifdef __GNUC__
+#    define LabelAddr(Addr) &&Addr
+#  else
+#    define LabelAddr(Addr) &&##Addr
+#  endif
 #else
 #  define OpCase(OpCode)    lb_##OpCode
 #  define CountCase(OpCode) lb_count_##OpCode
 #  define Goto(Rel) goto *(Rel)
-#  define LabelAddr(Addr) &&##Addr
+#  ifdef __GNUC__
+#    define LabelAddr(Addr) &&Addr
+#  else
+#    define LabelAddr(Addr) &&##Addr
+#  endif
 #  define OpCode(OpCode)  (&&lb_##OpCode)
 #endif
 

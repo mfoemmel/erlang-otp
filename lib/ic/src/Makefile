@@ -42,7 +42,6 @@ MODULES= \
 	ic \
 	ic_erlbe \
 	ic_cbe \
-	icgen \
 	icscan \
 	icparse \
 	iceval \
@@ -56,6 +55,7 @@ MODULES= \
 	ic_pragma \
 	ic_noc \
 	ic_plainbe \
+	ic_cclient \
 	ic_cserver \
 	ic_fetch \
 	ic_code \
@@ -153,7 +153,8 @@ ERL_FLAGS += -pa ../../ic/ebin
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += +'{parse_transform,sys_pre_attributes}' \
-		     +'{attribute,insert,vsn,"ic_$(IC_VSN)"}'
+		     +'{attribute,insert,app_vsn,"ic_$(VSN)"}' \
+                     -D'COMPILERVSN="$(VSN)"'
 YRL_FLAGS = -Iicyeccpre.hrl
 
 # ----------------------------------------------------

@@ -68,6 +68,7 @@
         'orber_ifr_typecode',
         'orber_ifr_typedef',
         'orber_ifr_uniondef',
+        'orber_ifr_fixeddef',
         'orber_ifr_utils',
         'orber_iiop',
         'orber_iiop_inproxy',
@@ -90,7 +91,9 @@
         'orber_typedefs',
 	'orber_web',
 	'orber_web_server',
-	'orber_iiop_tracer'
+	'orber_iiop_tracer',
+	'orber_iiop_tracer_silent',
+	'fixed'
      ]	
   },
   {registered, [orber_sup, orber_iiop_sup, orber_iiop_net, orber_iiop_outsup, 

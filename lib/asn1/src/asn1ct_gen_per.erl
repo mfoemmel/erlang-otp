@@ -165,7 +165,8 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 	'OBJECT IDENTIFIER' ->
 	    emit({"?RT_PER:encode_object_identifier(",Value,")"});
 	'ObjectDescriptor' ->
-	    emit({"asn1_encode:e_object_descriptor(",Value,",",false,")"});
+	    emit({"?RT_PER:encode_ObjectDescriptor(",{asis,Constraint},
+		  ",",Value,")"});
 	'BOOLEAN' ->
 	    emit({"?RT_PER:encode_boolean(",Value,")"});
 	'OCTET STRING' ->
@@ -246,44 +247,69 @@ emit_enc_enumerated_case(C, EnumName, Count) ->
 gen_obj_code(Erules,Module,Obj) when record(Obj,typedef) ->
     ObjName = Obj#typedef.name,
     Def = Obj#typedef.typespec,
-    Class = 
-	case Def#'Object'.classname of 
-	    {OtherModule,ClName} ->
-		asn1_db:dbget(OtherModule,ClName);
-	    ClName ->
-		asn1_db:dbget(Module,ClName)
-	end,
+    #'Externaltypereference'{module=Mod,type=ClassName} = 
+	Def#'Object'.classname,
+    Class = asn1_db:dbget(Mod,ClassName),
+%     Class = 
+% 	case Def#'Object'.classname of 
+% 	    {OtherModule,ClName} ->
+% 		asn1_db:dbget(OtherModule,ClName);
+% 	    ClName ->
+% 		asn1_db:dbget(Module,ClName)
+% 	end,
     {object,_,Fields} = Def#'Object'.def,
     emit({nl,nl,nl,"%%================================"}),
     emit({nl,"%%  ",ObjName}),
     emit({nl,"%%================================",nl}),
-    gen_encode_objectfields(Class#classdef.typespec,ObjName,Fields),
+    EncConstructed =
+	gen_encode_objectfields(Class#classdef.typespec,ObjName,Fields,[]),
     emit(nl),
-    gen_decode_objectfields(Class#classdef.typespec,ObjName,Fields),
-    emit(nl).
+    gen_encode_constr_type(EncConstructed),
+    emit(nl),
+    DecConstructed =
+	gen_decode_objectfields(Class#classdef.typespec,ObjName,Fields,[]),
+    emit(nl),
+    gen_decode_constr_type(DecConstructed),
+    emit(nl);
+gen_obj_code(Erules,Module,Obj) when record(Obj,pobjectdef) ->
+    ok.
 
-gen_encode_objectfields(Class,ObjName,[{FieldName,Type}|Rest]) ->
+gen_encode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
     Fields = Class#objectclass.fields,
+
+    MaybeConstr =
     case is_typefield(Fields,FieldName) of
 	true ->
 	    Def = Type#typedef.typespec,
-	    emit({"'enc_",ObjName,"'(",{asis,FieldName},", Val, Dummy) ->",nl}),
+	    emit({"'enc_",ObjName,"'(",{asis,FieldName},
+		  ", Val, Dummy) ->",nl}),
+
+	    CAcc =
 	    case Type#typedef.name of
 		{primitive,bif} ->
-		    gen_encode_prim(per,Def,"false","Val");
+		    gen_encode_prim(per,Def,"false","Val"),
+		    [];
+		{constructed,bif} ->
+		    emit({"   'enc_",ObjName,'_',FieldName,
+			  "'(Val)"}),
+			[{['enc_',ObjName,'_',FieldName],Def}];
 		{ExtMod,TypeName} ->
-		    emit({"   '",ExtMod,"':'enc_",TypeName,"'(Val)"});
+		    emit({"   '",ExtMod,"':'enc_",TypeName,"'(Val)"}),
+		    [];
 		TypeName ->
-		    emit({"   'enc_",TypeName,"'(Val)"})
+		    emit({"   'enc_",TypeName,"'(Val)"}),
+		    []
 	    end,
 	    case more_genfields(Fields,Rest) of
 		true ->
 		    emit({";",nl});
 		false ->
 		    emit({".",nl})
-	    end;
+	    end,
+	    CAcc;
 	{false,objectfield} ->
-	    emit({"'enc_",ObjName,"'(",{asis,FieldName},", Val, [H|T]) ->",nl}),
+	    emit({"'enc_",ObjName,"'(",{asis,FieldName},
+		  ", Val, [H|T]) ->",nl}),
 	    case Type#typedef.name of
 		{ExtMod,TypeName} ->
 		    emit({indent(3),"'",ExtMod,"':'enc_",TypeName,
@@ -296,37 +322,58 @@ gen_encode_objectfields(Class,ObjName,[{FieldName,Type}|Rest]) ->
 		    emit({";",nl});
 		false ->
 		    emit({".",nl})
-	    end;
-	{false,_} -> ok
+	    end,
+	    [];
+	{false,_} -> []
     end,
-    gen_encode_objectfields(Class,ObjName,Rest);
-gen_encode_objectfields(C,O,[H|T]) ->
-    gen_encode_objectfields(C,O,T);
-gen_encode_objectfields(_,_,[]) ->
+    gen_encode_objectfields(Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
+gen_encode_objectfields(C,O,[H|T],Acc) ->
+    gen_encode_objectfields(C,O,T,Acc);
+gen_encode_objectfields(_,_,[],Acc) ->
+    Acc.
+
+gen_encode_constr_type([{Name,Def}|Rest]) ->
+    emit({Name,"(Val) ->",nl}),
+    InnerType = asn1ct_gen:get_inner(Def#type.def),
+    asn1ct_gen:gen_encode_constructed(per,Name,InnerType,Def),
+    gen_encode_constr_type(Rest);
+gen_encode_constr_type([]) ->
     ok.
 
-gen_decode_objectfields(Class,ObjName,[{FieldName,Type}|Rest]) ->
+gen_decode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
     Fields = Class#objectclass.fields,
+
+    MaybeConstr =
     case is_typefield(Fields,FieldName) of
 	true ->
 	    Def = Type#typedef.typespec,
 	    emit({"'dec_",ObjName,"'(",{asis,FieldName},
-		  ", Val, Telltype, Dummy) ->",nl}),
+		  ", Val, Telltype, RestPrimFieldName) ->",nl}),
+
+	    CAcc =
 	    case Type#typedef.name of
 		{primitive,bif} ->
-		    gen_dec_prim(per,Def,"Val");
+		    gen_dec_prim(per,Def,"Val"),
+		    [];
+		{constructed,bif} ->
+		    emit({"   'dec_",ObjName,'_',FieldName,
+			  "'(Val, Telltype)"}),
+		    [{['dec_',ObjName,'_',FieldName],Def}];
 		{ExtMod,TypeName} ->
 		    emit({"   '",ExtMod,"':'dec_",TypeName,
-			  "'(Val, Telltype)"});
+			  "'(Val, Telltype)"}),
+		    [];
 		TypeName ->
-		    emit({"   'dec_",TypeName,"'(Val, Telltype)"})
+		    emit({"   'dec_",TypeName,"'(Val, Telltype)"}),
+		    []
 	    end,
 	    case more_genfields(Fields,Rest) of
 		true ->
 		    emit({";",nl});
 		false ->
 		    emit({".",nl})
-	    end;
+	    end,
+	    CAcc;
 	{false,objectfield} ->
 	    emit({"'dec_",ObjName,"'(",{asis,FieldName},
 		  ", Val, Telltype, [H|T]) ->",nl}),
@@ -343,14 +390,23 @@ gen_decode_objectfields(Class,ObjName,[{FieldName,Type}|Rest]) ->
 		    emit({";",nl});
 		false ->
 		    emit({".",nl})
-	    end;
+	    end,
+	    [];
 	{false,_} ->
-	    ok
+	    []
     end,
-    gen_decode_objectfields(Class,ObjName,Rest);
-gen_decode_objectfields(C,O,[H|T]) ->
-    gen_decode_objectfields(C,O,T);
-gen_decode_objectfields(_,_,[]) ->
+    gen_decode_objectfields(Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
+gen_decode_objectfields(C,O,[H|T],CAcc) ->
+    gen_decode_objectfields(C,O,T,CAcc);
+gen_decode_objectfields(_,_,[],CAcc) ->
+    CAcc.
+
+gen_decode_constr_type([{Name,Def}|Rest]) ->
+    emit({Name,"(Bytes,Telltype) ->",nl}),
+    InnerType = asn1ct_gen:get_inner(Def#type.def),
+    asn1ct_gen:gen_decode_constructed(ber,Name,InnerType,Def),
+    gen_decode_constr_type(Rest);
+gen_decode_constr_type([]) ->
     ok.
 
 more_genfields(Fields,[]) ->
@@ -379,7 +435,10 @@ is_typefield(Fields,FieldName) ->
 gen_objectset_code(Erules,ObjSet) ->
     ObjSetName = ObjSet#typedef.name,
     Def = ObjSet#typedef.typespec,
-    {ClassName,ClassDef} = Def#'ObjectSet'.class,
+%%    {ClassName,ClassDef} = Def#'ObjectSet'.class,
+    #'Externaltypereference'{module=ClassModule,
+			     type=ClassName} = Def#'ObjectSet'.class,
+    ClassDef = asn1_db:dbget(ClassModule,ClassName),
     UniqueFName = Def#'ObjectSet'.uniquefname,
     Set = Def#'ObjectSet'.set,
     emit({nl,nl,nl,"%%================================"}),
@@ -398,6 +457,10 @@ gen_objset_code(ObjSetName,UniqueFName,Set,ClassName,ClassDef)->
     gen_objset_enc(ObjSetName,UniqueFName,Set,ClassName,ClassFields),
     gen_objset_dec(ObjSetName,UniqueFName,Set,ClassName,ClassFields).
 
+gen_objset_enc(_,{unique,undefined},_,_,_) ->
+    %% There is no unique field in the class of this object set
+    %% don't bother about the constraint
+    ok;
 gen_objset_enc(ObjSName,UniqueName,
 	       [{ObjName,Val,Fields},T|Rest],ClName,ClFields)->
 %%    Value = 
@@ -502,6 +565,10 @@ indent(N) ->
     lists:duplicate(N,32). % 32 = space
 
 
+gen_objset_dec(_,{unique,undefined},_,_,_) ->
+    %% There is no unique field in the class of this object set
+    %% don't bother about the constraint
+    ok;
 gen_objset_dec(ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],ClName,ClFields)->
 %%    Value = 
 %%	case Val of
@@ -695,7 +762,7 @@ gen_dec_prim(Erules,Att,BytesVar) ->
 	    emit({"?RT_PER:decode_object_identifier(",
 		  BytesVar,")"});
 	'ObjectDescriptor' ->
-	    emit({"?RT_PER:decode_object_descriptor(",
+	    emit({"?RT_PER:decode_ObjectDescriptor(",
 		  BytesVar,")"});
 	{'ENUMERATED',{NamedNumberList1,NamedNumberList2}} ->
 	    NewTup = {list_to_tuple([X||{X,Y} <- NamedNumberList1]),

@@ -612,6 +612,8 @@ getLabel(_, {'<integer_literal>', _, N}) ->
     N;
 getLabel(_, {'<character_literal>', _, N}) ->
     "'" ++ N ++ "'";
+getLabel(_, {'<wcharacter_literal>', _, N}) ->
+    "'" ++ N ++ "'";
 getLabel(_, {'TRUE',_}) ->
     "true";
 getLabel(_, {'FALSE',_}) ->

@@ -5,10 +5,11 @@ define([AC_CACHE_SAVE], )dnl
 AC_INIT(vsn.mk)
 
 if test -z "$ERL_TOP" || test ! -d $ERL_TOP ; then
-  AC_MSG_ERROR(You need to set the environment variable ERL_TOP!)
+  AC_CONFIG_AUX_DIRS(autoconf)
+else
+  erl_top=${ERL_TOP}
+  AC_CONFIG_AUX_DIRS($erl_top/erts/autoconf)
 fi
-erl_top=${ERL_TOP}
-AC_CONFIG_AUX_DIRS($erl_top/erts/autoconf)
 
 AC_CANONICAL_HOST
 
@@ -35,12 +36,13 @@ dnl
 dnl For increased performance it is possible to disable lineno
 dnl
 AC_ARG_ENABLE(megaco_flex_scanner_lineno,
-[  --disable-megaco-flex-scanner-lineno   disable megaco flex scanner lineno])
-if test x${enable_megaco_flex_scanner_lineno} = xno ; then
-  ENABLE_MEGACO_FLEX_SCANNER_LINENO=false
-else
-  ENABLE_MEGACO_FLEX_SCANNER_LINENO=true
-fi
+[  --disable-megaco-flex-scanner-lineno  disable megaco flex scanner lineno],
+  if test x${enable_megaco_flex_scanner_lineno} = xno ; then
+    ENABLE_MEGACO_FLEX_SCANNER_LINENO=false
+  else
+    ENABLE_MEGACO_FLEX_SCANNER_LINENO=true
+  fi, 
+  ENABLE_MEGACO_FLEX_SCANNER_LINENO=true)
 AC_SUBST(ENABLE_MEGACO_FLEX_SCANNER_LINENO)
 
 

@@ -24,7 +24,8 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([error/2, fatal_error/2, init_errors/1, return/1, warn/2]).
+-export([error/2, fatal_error/2, init_errors/1, return/1, warn/2, get_error_count/1,
+	 return/1]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -243,6 +244,8 @@ format_error({error, _, File, {bad_case_type, TK, X, Val}}) ->
 format_error({error, _, File, {tk_not_found, X}}) ->
     display(File, ic_forms:get_line(X), "undeclared identifier ~s", [pp(X)]);
 %%% New format_errors
+format_error({error, _, File, {bad_fixed, Format, Args, Line}}) ->
+    display(File, Line, Format, Args);
 format_error({error, _, File, {illegal_switch_t, Arg, _N}}) ->
     display(File, ic_forms:get_line(Arg), "illegal switch", []);  
 format_error({error, _, File, {inherit_resolve, Arg, N}}) ->
@@ -259,6 +262,8 @@ format_error({error, _, File, {open_file, Path, Reason}}) ->
     display(File, not_specified, "couldn't open ~p due to ~p", [Path, Reason]);
 format_error({error, _, File, {plain_error_string, ErrString}}) ->
     display(File, not_specified, "~s", [ErrString]);
+format_error({error, _, File, {plain_error_string, T, ErrString}}) ->
+    display(File, ic_forms:get_line(T), "~s", [ErrString]);
 format_error({error, _, File, {ErrString, Line}}) ->
     display(File, Line, ErrString, []).
 
@@ -341,6 +346,7 @@ pp(tk_octet) -> "octet";
 pp(tk_null) -> "null";
 pp(tk_void) -> "void";
 pp(tk_any) -> "any";
+pp({tk_fixed, _, _}) -> "fixed";
 pp({tk_objref, _, _}) -> "object reference";
 pp(rshift) -> ">>";
 pp(lshift) -> "<<";

@@ -29,6 +29,7 @@
 #include "erl_error.h"
 
 extern int erl_locking_init_done;
+extern int ei_init();
 
 void ei_init_nothreads()
 {
@@ -42,16 +43,7 @@ void ei_init_nothreads()
 #endif
 }
 
-void *erl_m_create(void)   { return NULL; }
-int erl_m_destroy(void *l) { return 0; }
-int erl_m_lock(void *l)    { return 0; }
-int erl_m_trylock(void *l) { return 0; } 
-int erl_m_unlock(void *l)  { return 0; } 
-
 #if !defined(VXWORKS) && !defined(__WIN32__)
-
-volatile int * 
-__erl_errno_place (void) { return &__erl_errno; }
 
 #ifndef NO_PRAGMA_WEAK
 /* above symbols must be weak since 
@@ -63,7 +55,16 @@ __erl_errno_place (void) { return &__erl_errno; }
 #pragma weak erl_m_trylock
 #pragma weak erl_m_unlock
 #pragma weak __erl_errno_place
-
 #endif
+
+volatile int * 
+__erl_errno_place (void) { return &__erl_errno; }
+
+void *erl_m_create(void)   { return NULL; }
+int erl_m_destroy(void *l) { return 0; }
+int erl_m_lock(void *l)    { return 0; }
+int erl_m_trylock(void *l) { return 0; } 
+int erl_m_unlock(void *l)  { return 0; } 
+
 
 #endif

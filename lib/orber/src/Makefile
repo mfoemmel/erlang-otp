@@ -91,12 +91,15 @@ MODULES= \
 	orber_ifr_typecode \
 	orber_ifr_typedef \
 	orber_ifr_uniondef \
+	orber_ifr_fixeddef \
 	orber_ifr_utils \
 	OrberApp_IFR_impl \
 	orber_pi \
 	orber_web \
 	orber_web_server \
-	orber_iiop_tracer
+	orber_iiop_tracer \
+	orber_iiop_tracer_silent \
+	fixed
 
 
 EXTERNAL_HRL_FILES= ../include/corba.hrl \
@@ -169,7 +172,8 @@ ERL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin -pa $(ERL_TOP)/lib/ic/ebin
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/orber/include \
 	+'{parse_transform,sys_pre_attributes}' \
-	+'{attribute,insert,app_vsn,"orber_$(ORBER_VSN)"}' 
+	+'{attribute,insert,app_vsn,"orber_$(ORBER_VSN)"}' \
+	-D'ORBVSN="$(VSN)"'
 
 # ----------------------------------------------------
 # Targets

@@ -24,13 +24,21 @@
 
 #ifdef ENABLE_ELIB_MALLOC
 
-#include <stdio.h>
+#undef THREAD_SAFE_ELIB_MALLOC
+#ifdef USE_THREADS
+#define THREAD_SAFE_ELIB_MALLOC 1
+#else
+#define THREAD_SAFE_ELIB_MALLOC 0
+#endif
+
 #include "sys.h"
 #include "erl_driver.h"
 #include "erl_threads.h"
 #include "elib_stat.h"
-
-extern erts_mutex_t erts_mutex_sys(int mno);
+#if THREAD_SAFE_ELIB_MALLOC && defined(POSIX_THREADS)
+#include <pthread.h>
+#endif
+#include <stdio.h>
 
 /* To avoid clobbering of names becaure of reclaim on VxWorks,
    we undefine all possible malloc, calloc etc. */
@@ -53,6 +61,101 @@ extern erts_mutex_t erts_mutex_sys(int mno);
 #ifndef ELIB_HEAP_INCREAMENT
 #define ELIB_HEAP_INCREAMENT   (32*1024)  /* Default 32K */
 #endif
+
+#ifndef ELIB_FAILURE
+#define ELIB_FAILURE    abort()
+#endif
+
+#undef ASSERT
+#ifdef DEBUG
+#define ASSERT(B) \
+ ((void) ((B) ? 1 : (fprintf(stderr, "%s:%d: Assertion failed: %s\n", \
+			     __FILE__, __LINE__, #B), abort(), 0)))
+#else
+#define ASSERT(B) ((void) 1)
+#endif
+
+/* Threads ... */
+
+#if THREAD_SAFE_ELIB_MALLOC
+
+#ifdef POSIX_THREADS
+
+#ifdef PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP
+#  define USE_RECURSIVE_MUTEX 1
+#else
+#  define USE_RECURSIVE_MUTEX 0
+#endif
+
+#if USE_RECURSIVE_MUTEX
+static pthread_mutex_t malloc_mutex = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+#else /* #if USE_RECURSIVE_MUTEX */
+static pthread_mutex_t malloc_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  malloc_cond  = PTHREAD_COND_INITIALIZER;
+#endif  /* #if USE_RECURSIVE_MUTEX */
+
+#ifdef DEBUG
+#define LOCK   do { ASSERT(0 == pthread_mutex_lock(&malloc_mutex)); } while(0)
+#define UNLOCK do { ASSERT(0 == pthread_mutex_unlock(&malloc_mutex)); } while(0)
+#else
+#define LOCK   ((void) pthread_mutex_lock(&malloc_mutex))
+#define UNLOCK ((void) pthread_mutex_unlock(&malloc_mutex))
+#endif
+
+#if HAVE_PTHREAD_ATFORK
+
+static void prepare_for_fork(void)   { LOCK; }
+static void cleanup_after_fork(void) { UNLOCK; }
+
+#define parent_cleanup_after_fork cleanup_after_fork
+#define child_cleanup_after_fork  cleanup_after_fork
+
+#if INIT_MUTEX_IN_CHILD_AT_FORK
+#undef child_cleanup_after_fork
+static void
+child_cleanup_after_fork(void)
+{
+#if USE_RECURSIVE_MUTEX
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE_NP);
+    pthread_mutex_init(&malloc_mutex, &attr);
+    pthread_mutexattr_destroy(&attr);
+#else
+    pthread_mutex_init(&malloc_mutex, NULL);
+#endif
+}
+
+#endif /* #if INIT_MUTEX_IN_CHILD_AT_FORK */
+#endif /* #if HAVE_PTHREAD_ATFORK */
+
+#define LOCK_AND_INIT \
+do { LOCK; if (elib_need_init) locked_elib_init(NULL,(EWord)0); } while(0)
+
+#else /* #ifdef POSIX_THREADS */
+
+#define USE_RECURSIVE_MUTEX 0
+
+extern erts_mutex_t erts_mutex_sys(int mno);
+
+erts_mutex_t heap_lock;
+#define LOCK erts_mutex_lock(heap_lock)
+#define UNLOCK erts_mutex_unlock(heap_lock)
+
+#define LOCK_AND_INIT \
+do { if (elib_need_init) elib_init(NULL,(EWord)0); LOCK; } while(0)
+
+#endif /* #ifdef POSIX_THREADS */
+
+#else /* #if THREAD_SAFE_ELIB_MALLOC */
+
+#define LOCK   
+#define UNLOCK 
+
+#define LOCK_AND_INIT \
+do { if (elib_need_init) elib_init(NULL,(EWord)0); } while(0)
+
+#endif /* #if THREAD_SAFE_ELIB_MALLOC */
 
 typedef unsigned long EWord;       /* Assume 32-bit in this implementation */
 typedef unsigned short EHalfWord;  /* Assume 16-bit in this implementation */
@@ -83,6 +186,8 @@ void ELIB_PREFIX(free, (EWord *));
 void *ELIB_PREFIX(realloc, (EWord *, size_t));
 void* ELIB_PREFIX(memresize, (EWord *, int));
 void* ELIB_PREFIX(memalign, (int, int));
+void* ELIB_PREFIX(valloc, (int));
+void* ELIB_PREFIX(pvalloc, (int));
 int ELIB_PREFIX(memsize, (EWord *));
 /* Extern interfaces used by VxWorks */
 size_t elib_sizeof(void *);
@@ -146,22 +251,38 @@ static EWord fix_heap[WORDS(ELIB_HEAP_SIZE)];
 
 #endif
 
+
+#define STAT_ALLOCED_BLOCK(SZ)		\
+do {					\
+    tot_allocated += (SZ);		\
+    if (max_allocated < tot_allocated)	\
+	max_allocated = tot_allocated;	\
+} while (0)
+
+#define STAT_FREED_BLOCK(SZ)		\
+do {					\
+    tot_allocated -= (SZ);		\
+} while (0)
+
+static int max_allocated = 0;
+static int tot_allocated = 0;
 static EWord* eheap;        /* Align heap start */
 static EWord* eheap_top;    /* Point to end of heap */
 EWord page_size = 0;        /* Set by elib_init */
 
-#ifndef ELIB_FAILURE
-#define ELIB_FAILURE    abort()
-#endif
-
 #if defined(ELIB_DEBUG) || defined(DEBUG)
-#define ELIB_ALIGN_CHECK(p) do { \
-       if ((EWord)(p) & (ELIB_ALIGN-1)) { \
-	elib_printf(stderr, "RUNTIME ERROR: bad alignment\n"); \
-        ELIB_FAILURE; \
-     } \
+#define ALIGN_CHECK(a, p)						\
+ do {									\
+    if ((EWord)(p) & (a-1)) {						\
+	elib_printf(stderr,						\
+		    "RUNTIME ERROR: bad alignment (0x%x:%d:%d)\n",	\
+		    (unsigned) (p), (int) a, __LINE__);			\
+	ELIB_FAILURE;							\
+    }									\
   } while(0)
+#define ELIB_ALIGN_CHECK(p) ALIGN_CHECK(ELIB_ALIGN, p)
 #else
+#define ALIGN_CHECK(a, p)
 #define ELIB_ALIGN_CHECK(p)
 #endif
 
@@ -224,7 +345,6 @@ static EWord eheap_size = 0;
 
 /* we must have room for head,tail,next,prev */
 
-erts_mutex_t heap_lock;
 static int heap_locked;
 
 /* Fixed block pointer chains:
@@ -241,6 +361,9 @@ static FreeBlock* h_fixed[FIXED];
 static FreeBlock* h_dynamic[DYNAMIC];
 
 static int elib_need_init = 1;
+#if THREAD_SAFE_ELIB_MALLOC
+static int elib_is_initing = 0;
+#endif
 
 static FUNCTION(void, deallocate, (AllocatedBlock*, int));
 
@@ -435,13 +558,107 @@ void *p;
     return 0;
 }
 
+static void locked_elib_init(EWord*, EWord);
+static void init_elib_malloc(EWord*, EWord);
+
 /*
 ** Initialize the elib
 ** The addr and sz is only used when compiled with EXPAND_ADDR 
 */
 /* Not static, this is used by VxWorks */
-void elib_init(addr, sz)
-EWord* addr; EWord sz;
+void elib_init(EWord* addr, EWord sz)
+{
+    if (!elib_need_init)
+	return;
+#if THREAD_SAFE_ELIB_MALLOC && !defined(POSIX_THREADS)
+    heap_lock = erts_mutex_sys(0);
+#endif
+    LOCK;
+    locked_elib_init(addr, sz);
+    UNLOCK;
+}
+
+static void locked_elib_init(EWord* addr, EWord sz)
+{
+    if (!elib_need_init)
+	return;
+
+#if THREAD_SAFE_ELIB_MALLOC
+
+#if defined(POSIX_THREADS) && !USE_RECURSIVE_MUTEX
+    {
+	static pthread_t initer_tid;
+
+	if(elib_is_initing) {
+	    int wait_res;
+	    int old_cancelstate;
+
+	    if(pthread_equal(initer_tid, pthread_self()))
+		return;
+
+	    /* Wait until initializing thread is done with initialization */
+
+	    pthread_setcanceltype(PTHREAD_CANCEL_DISABLE, &old_cancelstate);
+	    while(!elib_need_init) {
+		wait_res = pthread_cond_wait(&malloc_cond, &malloc_mutex);
+		ASSERT(wait_res != 0 && wait_res == EINTR);
+	    }
+	    pthread_setcanceltype(old_cancelstate, NULL);
+	    return;
+	}
+	else {
+	    initer_tid = pthread_self();
+	    elib_is_initing = 1;
+	}
+    }
+#else
+    if(elib_is_initing)
+	return;
+    elib_is_initing = 1;
+#endif
+
+#endif /* #if THREAD_SAFE_ELIB_MALLOC */
+
+    /* Do the actual initialization of the malloc implementation */
+    init_elib_malloc(addr, sz);
+
+#if THREAD_SAFE_ELIB_MALLOC
+
+#if !USE_RECURSIVE_MUTEX
+    UNLOCK;
+#endif
+    {	/* Recursive calls to malloc are allowed here... */
+
+#ifdef POSIX_THREADS
+#if HAVE_PTHREAD_ATFORK
+#ifdef DEBUG
+	int atfork_res =
+#endif
+	    pthread_atfork(prepare_for_fork,
+			   parent_cleanup_after_fork,
+			   child_cleanup_after_fork);
+	ASSERT(atfork_res == 0);
+#endif
+#endif
+
+
+    }
+#if !USE_RECURSIVE_MUTEX
+    LOCK;
+    elib_is_initing = 0;
+#endif
+
+#endif /* #if THREAD_SAFE_ELIB_MALLOC */
+
+    elib_need_init = 0;
+
+#if THREAD_SAFE_ELIB_MALLOC && defined(POSIX_THREADS) && !USE_RECURSIVE_MUTEX
+    pthread_cond_broadcast(&malloc_cond);
+#endif
+
+}
+
+static void init_elib_malloc(EWord* addr, EWord sz)
 {
     int i;
     FreeBlock* freep;
@@ -450,13 +667,9 @@ EWord* addr; EWord sz;
     char* top;
     EWord n;
 #endif
-    if (!elib_need_init)
-	return;
 
-    heap_lock = erts_mutex_sys(0);
-
-    erts_mutex_lock(heap_lock);
-
+    max_allocated = 0;
+    tot_allocated = 0;
 
     for (i = 0; i < FIXED; i++)
 	h_fixed[i] = 0;
@@ -526,8 +739,6 @@ EWord* addr; EWord sz;
     eheap_top += sz;
     eheap_size += sz;
 
-    elib_need_init = 0;
-    erts_mutex_unlock(heap_lock);
     heap_locked = 0;
 }
 
@@ -774,6 +985,8 @@ struct elib_stat* info;
 
     info->mem_total = eheap_size;
 
+    p = (AllocatedBlock*) (p->v + SIZEOF(p));
+
     while((sz = SIZEOF(p)) != 0) {
 	blks++;
 	if (IS_FREE(p)) {
@@ -795,6 +1008,8 @@ struct elib_stat* info;
     info->mem_free = sz_free;
     info->min_used = sz_min_used;
     info->max_free = sz_max_free;
+    info->mem_max_alloc = max_allocated;
+    ASSERT(sz_alloc == tot_allocated);
 }
 
 /*
@@ -906,7 +1121,7 @@ void* to;
 }
 
 /*
-** Allocate a least nb bytes
+** Allocate a least nb bytes with alignment a
 ** Algorithm:
 **    1) Try locate a block which match exacly among the by direct index.
 **    2) Try using a fix block of greater size
@@ -915,27 +1130,70 @@ void* to;
 **
 ** Reset memory to zero if clear is true
 */
-static AllocatedBlock* allocate(nb, clear)
-EWord nb; int clear;
+static AllocatedBlock* allocate(EWord nb, EWord a, int clear)
 {
     FreeBlock* p;
     EWord nw;
 
-    if (nb < MIN_BYTE_SIZE)
-	nw = MIN_ALIGN_SIZE;
-    else
-	nw = ALIGN_SIZE(nb);
+    if (a > ELIB_ALIGN) {
+	EWord asz, szp, szq, tmpsz;
+	FreeBlock *q;
 
-    erts_mutex_lock(heap_lock);
+	if ((p = alloc_block((1+MIN_ALIGN_SIZE)*sizeof(EWord)+a-1+nb)) == 0)
+	    return NULL;
 
-    if ((p = alloc_block(nw)) == 0) {
-	erts_mutex_unlock(heap_lock);	
-	return 0;
+	unlink_block(p);
+
+	asz = a - ((EWord) ((AllocatedBlock *)p)->v) % a;
+
+	if (asz != a) {
+	    /* Enforce the alignment requirement by cutting of a free
+	       block at the beginning of the block. */
+
+	    if (asz < (1+MIN_ALIGN_SIZE)*sizeof(EWord) && !IS_FREE_ABOVE(p)) {
+		/* Not enough room to cut of a free block;
+		   increase align size */
+		asz += (((1+MIN_ALIGN_SIZE)*sizeof(EWord) + a - 1)/a)*a;
+	    }
+
+	    szq = ALIGN_SIZE(asz - sizeof(EWord));
+	    szp = SIZEOF(p) - szq - 1;
+
+	    q = p;
+	    p = (FreeBlock*) (((EWord*) q) + szq + 1);
+	    p->hdr = FREE_ABOVE_BIT | FREE_BIT | szp;
+
+	    if (IS_FREE_ABOVE(q)) { /* This should not be possible I think,
+				       but just in case... */
+		tmpsz = SIZEOF_ABOVE(q) + 1;
+		szq += tmpsz;
+		q = (FreeBlock*) (((EWord*) q) - tmpsz);
+		unlink_block(q);
+		q->hdr = (q->hdr & FREE_ABOVE_BIT) | FREE_BIT | szq;
+	    }
+	    else
+		q->hdr = FREE_BIT | szq;
+
+	    q->v[szq-3] = szq;
+	    link_block(q, szq);
+
+	} /* else already had the correct alignment */
+ 
+	nw = nb < MIN_BYTE_SIZE ? MIN_ALIGN_SIZE : ALIGN_SIZE(nb);
+    }
+    else { /* ELIB_ALIGN */
+	nw = nb < MIN_BYTE_SIZE ? MIN_ALIGN_SIZE : ALIGN_SIZE(nb);
+
+	if ((p = alloc_block(nw)) == 0)
+	    return NULL;
+
+	unlink_block(p);
     }
 
-    unlink_block(p);
     split_block(p, nw, SIZEOF(p));
-    
+
+    STAT_ALLOCED_BLOCK(SIZEOF(p));
+
     if (clear) {
 	EWord* pp = ((AllocatedBlock*)p)->v;
 
@@ -943,7 +1201,6 @@ EWord nb; int clear;
 	    *pp++ = 0;
     }
 
-    erts_mutex_unlock(heap_lock);
     return (AllocatedBlock*) p;
 }
 
@@ -957,17 +1214,17 @@ EWord nb; int clear;
 ** p points to the block header!
 **
 */
-static void deallocate(p, need_lock)
-AllocatedBlock* p; int need_lock;
+static void deallocate(p, stat_count)
+AllocatedBlock* p; int stat_count;
 {
     FreeBlock* q;
     EWord szq;
     EWord szp;
 
-    if (need_lock)
-	erts_mutex_lock(heap_lock);
-
     szp = SIZEOF(p);
+
+    if (stat_count)
+	STAT_FREED_BLOCK(SIZEOF(p));
 
     if (IS_FREE_ABOVE(p)) {
 	szq = SIZEOF_ABOVE(p);
@@ -992,8 +1249,6 @@ AllocatedBlock* p; int need_lock;
 
     link_block((FreeBlock*) p, szp);
 
-    if (need_lock)
-	erts_mutex_unlock(heap_lock);
 }
 
 /*
@@ -1014,9 +1269,9 @@ AllocatedBlock* p; EWord nb; int preserve;
     else
 	nw = ALIGN_SIZE(nb);
 
-    erts_mutex_lock(heap_lock);
-
     sz = szp = SIZEOF(p);
+
+    STAT_FREED_BLOCK(szp);
 
     /* Merge with block below */
     q = (FreeBlock*) (p->v + szp);
@@ -1027,8 +1282,8 @@ AllocatedBlock* p; EWord nb; int preserve;
     }
 
     if (nw <= szp) {
-	split_block(p, nw, szp);
-	erts_mutex_unlock(heap_lock);
+	split_block((FreeBlock *)p, nw, szp);
+	STAT_ALLOCED_BLOCK(SIZEOF(p));
 	return p;
     }
     else {
@@ -1048,8 +1303,8 @@ AllocatedBlock* p; EWord nb; int preserve;
 		    while(sz--)
 			*pp++ = *dp++;
 		}
-		split_block(p, nw, szp);
-		erts_mutex_unlock(heap_lock);
+		split_block((FreeBlock *)p, nw, szp);
+		STAT_ALLOCED_BLOCK(SIZEOF(p));
 		return p;
 	    }
 	}
@@ -1063,9 +1318,7 @@ AllocatedBlock* p; EWord nb; int preserve;
 	p->hdr = (p->hdr & FREE_ABOVE_BIT) | szp;
 	p->v[szp] &= ~FREE_ABOVE_BIT;
 
-	erts_mutex_unlock(heap_lock);
-
-	npp = allocate(nb, 0);
+	npp = allocate(nb, ELIB_ALIGN, 0);
 	if(npp == NULL)
 	    return NULL;
 	if (preserve) {
@@ -1073,7 +1326,7 @@ AllocatedBlock* p; EWord nb; int preserve;
 	    while(sz--)
 		*pp++ = *dp++;
 	}
-	deallocate(p, 1);
+	deallocate(p, 0);
 	return npp;
     }
 }
@@ -1085,12 +1338,12 @@ AllocatedBlock* p; EWord nb; int preserve;
 static void* heap_exhausted()
 {
     /* Choose behaviour */
-#if 1
+#if 0
     /* Crash-and-burn --- leave a usable corpse (hopefully) */
     abort();
 #endif    
     /* The usual ANSI-compliant behaviour */
-    return 0;
+    return NULL;
 }
 
 /*
@@ -1099,36 +1352,47 @@ static void* heap_exhausted()
 void* ELIB_PREFIX(malloc, (nb))
 size_t nb;
 {
+    void *res;
     AllocatedBlock* p;
 
-    if (elib_need_init)
-	elib_init(NULL,(EWord)0);
+    LOCK_AND_INIT;
+
     if (nb == 0)
-	return 0;
-    if ((p = allocate(nb, 0)) != 0) {
+	res = NULL;
+    else if ((p = allocate(nb, ELIB_ALIGN, 0)) != 0) {
 	ELIB_ALIGN_CHECK(p->v);
-	return p->v;
+	res = p->v;
     }
-    return heap_exhausted();
+    else
+	res = heap_exhausted();
+
+    UNLOCK;
+
+    return res;
 }
 
 
 void* ELIB_PREFIX(calloc, (nelem, size))
 size_t nelem; size_t size;
 {
+    void *res;
     int nb;
     AllocatedBlock* p;
     
-    if (elib_need_init)
-	elib_init(NULL,(EWord)0);
+    LOCK_AND_INIT;
 
     if ((nb = nelem * size) == 0)
-	return 0;
-    if ((p = allocate(nb, 1)) != 0) {
+	res = NULL;
+    else if ((p = allocate(nb, ELIB_ALIGN, 1)) != 0) {
 	ELIB_ALIGN_CHECK(p->v);
-	return p->v;
+	res = p->v;
     }
-    return heap_exhausted();
+    else
+	res = heap_exhausted();
+
+    UNLOCK;
+
+    return res;
 }
 
 /*
@@ -1138,9 +1402,19 @@ size_t nelem; size_t size;
 void ELIB_PREFIX(free, (p))
 EWord* p;
 {
+    LOCK_AND_INIT;
+
     if (p != 0)
 	deallocate((AllocatedBlock*)(p-1), 1);
+
+    UNLOCK;
 }
+
+void ELIB_PREFIX(cfree, (EWord* p))
+{
+    ELIB_PREFIX(free, (p));
+}
+
 
 /*
 ** Realloc the memory allocated in p to nb number of bytes
@@ -1150,30 +1424,34 @@ EWord* p;
 void* ELIB_PREFIX(realloc, (p, nb))
 EWord* p; size_t nb;
 {
+    void *res = NULL;
     AllocatedBlock* pp;
+
+    LOCK_AND_INIT;
 
     if (p != 0) {
 	pp = (AllocatedBlock*) (p-1);
 	if (nb > 0) {
 	    if ((pp = reallocate(pp, nb, 1)) != 0) {
 		ELIB_ALIGN_CHECK(pp->v);
-		return pp->v;
+		res = pp->v;
 	    }
 	}
 	else
 	    deallocate(pp, 1);
     }
     else if (nb > 0) {
-	if (elib_need_init)
-	  elib_init(NULL,(EWord)0);
-	if ((pp = allocate(nb, 0)) != 0) {
+	if ((pp = allocate(nb, ELIB_ALIGN, 0)) != 0) {
 	    ELIB_ALIGN_CHECK(pp->v);
-	    return pp->v;
+	    res = pp->v;
 	}
 	else
-	    return heap_exhausted();
+	    res = heap_exhausted();
     }
-    return 0;
+
+    UNLOCK;
+
+    return res;
 }
 
 /*
@@ -1182,30 +1460,34 @@ EWord* p; size_t nb;
 void* ELIB_PREFIX(memresize, (p, nb))
 EWord* p; int nb;
 {
+    void *res = NULL;
     AllocatedBlock* pp;
+
+    LOCK_AND_INIT;
 
     if (p != 0) {
 	pp = (AllocatedBlock*) (p-1);
 	if (nb > 0) {
 	    if ((pp = reallocate(pp, nb, 0)) != 0) {
 		ELIB_ALIGN_CHECK(pp->v);
-		return pp->v;
+		res = pp->v;
 	    }
 	}
 	else
 	    deallocate(pp, 1);
     }
     else if (nb > 0) {
-	if (elib_need_init)
-	  elib_init(NULL,(EWord)0);
-	if ((pp = allocate(nb, 0)) != 0) {
+	if ((pp = allocate(nb, ELIB_ALIGN, 0)) != 0) {
 	    ELIB_ALIGN_CHECK(pp->v);
-	    return pp->v;
+	    res = pp->v;
 	}
 	else
-	    return heap_exhausted();
+	    res = heap_exhausted();
     }
-    return 0;
+
+    UNLOCK;
+
+    return res;
 }
 
 
@@ -1214,23 +1496,35 @@ EWord* p; int nb;
 void* ELIB_PREFIX(memalign, (a, nb))
 int a; int nb;
 {
-    EWord nw;
+    void *res;
+    AllocatedBlock* p;
 
-    if ((nb == 0) || (a <= 0))
-	return 0;
-    if (a < ELIB_ALIGN)
-	a = ELIB_ALIGN;
+    LOCK_AND_INIT;
 
-    /* Calculate the amount to allocated to guarantee alignment */
-    if ((nw = WORDS(nb+a-1)) < MIN_WORD_SIZE)
-	nw = MIN_WORD_SIZE;
+    if (nb == 0 || a <= 0)
+	res = NULL;
+    else if ((p = allocate(nb, a, 0)) != 0) {
+	ALIGN_CHECK(a, p->v);
+	res = p->v;
+    }
+    else
+	res = heap_exhausted();
 
-    if (elib_need_init)
-      elib_init(NULL,(EWord)0);
+    UNLOCK;
 
-    return 0;  /* NOT YET */
+    return res;
 }
 
+void* ELIB_PREFIX(valloc, (int nb))
+{
+    return ELIB_PREFIX(memalign, (page_size, nb));
+}
+
+
+void* ELIB_PREFIX(pvalloc, (int nb))
+{
+    return ELIB_PREFIX(memalign, (page_size, PAGES(nb)*page_size));
+}
 /* Return memory size for pointer p in bytes */
 
 int ELIB_PREFIX(memsize, (p))
@@ -1386,10 +1680,28 @@ char* file; int line;
     elib__free(p);
 }
 
+void elib_dbg_cfree(EWord* p, char* file, int line)
+{
+    if (p == 0)
+	return;
+    check_allocated_block(p, file, line, "elib_free");
+    elib__cfree(p);
+}
+
 void* elib_dbg_memalign(a, n, file, line)
 int a; int n; char* file; int line;
 {
     return elib__memalign(a, n);
+}
+
+void* elib_dbg_valloc(int n, char* file, int line)
+{
+    return elib__valloc(n);
+}
+
+void* elib_dbg_pvalloc(int n, char* file, int line)
+{
+    return elib__pvalloc(n);
 }
 
 void* elib_dbg_memresize(p, n, file, line)
@@ -1439,10 +1751,25 @@ EWord* p;
     elib_dbg_free(p, "", -1);
 }
 
+void elib_cfree(EWord* p)
+{
+    elib_dbg_cfree(p, "", -1);
+}
+
 void* elib_memalign(a, n)
 int a; int n;
 {
     return elib_dbg_memalign(a, n, "", -1);
+}
+
+void* elib_valloc(int n)
+{
+    return elib_dbg_valloc(n, "", -1);
+}
+
+void* elib_pvalloc(int n)
+{
+    return elib_dbg_pvalloc(n, "", -1);
 }
 
 void* elib_memresize(p, n)
@@ -1487,6 +1814,10 @@ void *p;
     elib_free(p);
 }
 
+void cfree(void *p)
+{
+    elib_cfree(p);
+}
 
 void* realloc(p, nb)
 void* p;
@@ -1501,6 +1832,16 @@ size_t a;
 size_t s;
 {
     return elib_memalign(a, s);
+}
+
+void* valloc(size_t nb)
+{
+    return elib_valloc(nb);
+}
+
+void* pvalloc(size_t nb)
+{
+    return elib_pvalloc(nb);
 }
 
 void* memresize(p, nb)
@@ -1518,3 +1859,11 @@ void* p;
 #endif /* ELIB_ALLOC_IS_CLIB */
 
 #endif /* ENABLE_ELIB_MALLOC */
+
+void
+elib_ensure_initialized(void)
+{
+#ifdef ENABLE_ELIB_MALLOC
+    elib_init(NULL, 0);
+#endif
+}

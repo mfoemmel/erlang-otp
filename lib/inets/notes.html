@@ -20,6 +20,60 @@
 
 <!--- ################################################################# --->
 
+<h2>Inets 2.6.7</h2>
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+  <li>
+    In inets, mod_cgi crashes when a directory is protected for a group or 
+    for a user and we try to execute a CGI script inside this protected 
+    directory.
+    <br>Original patch proposal submitted by Guillaume Bongenaar.
+    <br>Own Id: OTP-4416<p>
+  </li>
+
+</ul>
+
+<h3>Improvements and new features</h3>
+
+<ul>
+  <li>
+    Removed dependency of the crypto app.
+    <br>Patch submitted by Matthias Lang.
+    <br>Own Id: OTP-4417<p>
+  </li>
+
+</ul>
+
+
+
+<!--- ################################################################# --->
+
+<h2>Inets 2.6.6</h2>
+
+<h3>Fixed errors and malfunctions</h3>
+
+<p>-</p>
+
+<h3>Improvements and new features</h3>
+
+<ul>
+  <li>
+    Use the same read algorithm for socket type ssl as is used for ip_comm.
+    As of version 2.3.5 of the ssl application it is possible to use 
+    socket option {active, once}, so the same algorithm can be used for
+    both ip_comm and ssl.
+    <br>Own Id: OTP-4374<p>
+    <br>Aux Id: Seq 7417<p>
+  </li>
+
+</ul>
+
+
+
+<!--- ################################################################# --->
+
 <h2>Inets 2.6.5</h2>
 
 <h3>Fixed errors and malfunctions</h3>

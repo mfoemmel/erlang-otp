@@ -199,22 +199,42 @@ is_valid_tag(TDomain, TAddress, Tag, Key) ->
 						    ?snmpTargetAddrTAddress,
 						    ?snmpTargetAddrTagList,
 						    ?snmpTargetAddrTMask]) of
-		[{value, TDomain}, % must match exactly
+		[{value, TDomain},  % must match exactly
+		 {value, TAddress}, % RFC2576: chapters 5.2.1 & 5.3
+		 {value, TagList}, 
+		 {value, []}] ->
+		    case snmp_misc:is_tag_member(Tag, TagList) of
+			true ->
+			    ?vtrace("is_valid_tag -> exact: "
+				    "tag IS member of taglist", []),
+			    true;
+			false ->
+			    ?vtrace("is_valid_tag -> exact: "
+				    "tag is NOT member of taglist", []),
+			    is_valid_tag(TDomain, TAddress,
+					 Tag, NextKey)
+		    end;
+		[{value, TDomain},   % must match exactly
 		 {value, TAddress2},
 		 {value, TagList}, 
-		 {value, TMask}] ->
-		    case snmp_misc:is_tmask_match(TAddress, TAddress2, TMask) of
+		 {value, TMask}] when TMask =/= [] ->
+		    case snmp_misc:is_tmask_match(TAddress, TAddress2, 
+						  TMask) of
 			true ->
 			    case snmp_misc:is_tag_member(Tag, TagList) of
 				true ->
+				    ?vtrace("is_valid_tag -> masked: "
+					    "tag IS member of taglist", []),
 				    true;
 				false ->
+				    ?vtrace("is_valid_tag -> masked: "
+					    "tag is NOT member of taglist",[]),
 				    is_valid_tag(TDomain, TAddress,
-							    Tag, NextKey)
+						 Tag, NextKey)
 			    end;
 			false ->
 			    is_valid_tag(TDomain, TAddress,
-						    Tag, NextKey)
+					 Tag, NextKey)
 		    end;
 		_ ->
 		    is_valid_tag(TDomain, TAddress, Tag, NextKey)

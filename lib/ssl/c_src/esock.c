@@ -257,7 +257,7 @@ static int read_loop(void)
 {
     FD fd, msgsock, listensock, connectsock, proxysock;
     int cc, wc, cport, lport, pport, length, backlog, intref, op;
-    char value;
+    int value;
     char *ipstring;
     char *flags;
     struct sockaddr_in iserv_addr;

@@ -1,11 +1,28 @@
 {"%VSN%",
- [{"3.3.4", 
+ [{"3.3.6", 
+   [
+    {load_module, snmp_community_mib, soft_purge, soft_purge, 
+     [snmp_target_mib]},
+    {load_module, snmp_target_mib, soft_purge, soft_purge, []}
+   ]
+  },
+  {"3.3.5", 
+   [
+    {load_module, snmp_error_report, soft_purge, soft_purge, []},
+    {load_module, snmp_notification_mib, soft_purge, soft_purge, [snmp_conf]},
+    {load_module, snmp_community_mib, soft_purge, soft_purge, 
+     [snmp_target_mib]},
+    {load_module, snmp_target_mib, soft_purge, soft_purge, []},
+    {load_module, snmp_conf, soft_purge, soft_purge, []}
+   ]
+  },
+  {"3.3.4", 
    [
     {add_module, snmp_error_report},
     {add_module, snmp_error_io},
 
     {load_module, snmp_community_mib, soft_purge, soft_purge, 
-     [snmp_error_report]},
+     [snmp_error_report, snmp_target_mib]},
     {load_module, snmp_conf, soft_purge, soft_purge, [snmp_error_report]},
     {load_module, snmp_generic, soft_purge, soft_purge, [snmp_error_report]},
     {load_module, snmp_generic_mnesia, soft_purge, soft_purge, 
@@ -40,7 +57,7 @@
     {add_module, snmp_error_io},
 
     {load_module, snmp_community_mib, soft_purge, soft_purge, 
-     [snmp_error_report]},
+     [snmp_error_report, snmp_target_mib]},
     {load_module, snmp_conf, soft_purge, soft_purge, [snmp_error_report]},
     {load_module, snmp_generic, soft_purge, soft_purge, [snmp_error_report]},
     {load_module, snmp_generic_mnesia, soft_purge, soft_purge, 
@@ -78,7 +95,7 @@
     {add_module, snmp_error_io},
 
     {load_module, snmp_community_mib, soft_purge, soft_purge, 
-     [snmp_error_report]},
+     [snmp_error_report, snmp_target_mib]},
     {load_module, snmp_conf, soft_purge, soft_purge, [snmp_error_report]},
     {load_module, snmp_generic, soft_purge, soft_purge, [snmp_error_report]},
     {load_module, snmp_generic_mnesia, soft_purge, soft_purge, 
@@ -116,9 +133,27 @@
   }
  ], 
 
- [{"3.3.4", 
+ [{"3.3.6", 
    [
-    {load_module, snmp_community_mib, soft_purge, soft_purge, []},
+    {load_module, snmp_community_mib, soft_purge, soft_purge, 
+     [snmp_target_mib]},
+    {load_module, snmp_target_mib, soft_purge, soft_purge, []}
+   ]
+  },
+  {"3.3.5", 
+   [
+    {load_module, snmp_error_report, soft_purge, soft_purge, []},
+    {load_module, snmp_notification_mib, soft_purge, soft_purge, [snmp_conf]},
+    {load_module, snmp_community_mib, soft_purge, soft_purge, 
+     [snmp_target_mib]},
+    {load_module, snmp_target_mib, soft_purge, soft_purge, []},
+    {load_module, snmp_conf, soft_purge, soft_purge, []}
+   ]
+  },
+  {"3.3.4", 
+   [
+    {load_module, snmp_community_mib, soft_purge, soft_purge, 
+     [snmp_target_mib]},
     {load_module, snmp_conf, soft_purge, soft_purge, []},
     {load_module, snmp_generic, soft_purge, soft_purge, []},
     {load_module, snmp_generic_mnesia, soft_purge, soft_purge, []},
@@ -147,7 +182,8 @@
   },
   {"3.3.3", 
    [
-    {load_module, snmp_community_mib, soft_purge, soft_purge, []},
+    {load_module, snmp_community_mib, soft_purge, soft_purge, 
+     [snmp_target_mib]},
     {load_module, snmp_conf, soft_purge, soft_purge, []},
     {load_module, snmp_generic, soft_purge, soft_purge, []},
     {load_module, snmp_generic_mnesia, soft_purge, soft_purge, []},
@@ -179,7 +215,8 @@
   },
   {"3.3.2", 
    [
-    {load_module, snmp_community_mib, soft_purge, soft_purge, []},
+    {load_module, snmp_community_mib, soft_purge, soft_purge, 
+     [snmp_target_mib]},
     {load_module, snmp_conf, soft_purge, soft_purge, []},
     {load_module, snmp_generic, soft_purge, soft_purge, []},
     {load_module, snmp_generic_mnesia, soft_purge, soft_purge, []},

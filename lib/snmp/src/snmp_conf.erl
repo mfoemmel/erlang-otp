@@ -301,7 +301,7 @@ check_notify({Name, Tag, Type}) ->
     check_string(Tag),
     {ok, Val} = check_atom(Type, [{trap, 1},
 				  {inform, 2}]),
-    {ok, {Name, Tag, Type,
+    {ok, {Name, Tag, Val, %% OTP-4329
 	  ?'StorageType_nonVolatile', ?'RowStatus_active'}};
 check_notify(X) ->
     {invalid_notify, X}.
@@ -923,6 +923,7 @@ check_views([], CurView, MaxAccess, _Comm) ->
 max_acc(?intCommunityAccess_readWrite, _) -> ?intCommunityAccess_readWrite;
 max_acc(_, Max) -> Max.
     
+
 %%-----------------------------------------------------------------
 %%  View
 %%  {viewIndex, viewSubtree, viewType, viewMask}.

@@ -35,6 +35,7 @@ CT_MODULES= \
 	asn1ct_pretty_format \
 	asn1ct_gen \
 	asn1ct_gen_per \
+	asn1ct_gen_per_rt2ct \
 	asn1ct_name \
 	asn1ct_constructed_per \
 	asn1ct_constructed_ber \
@@ -50,6 +51,7 @@ RT_MODULES= \
 	asn1rt_per_bin \
 	asn1rt_per_v1 \
 	asn1rt_ber_bin \
+	asn1rt_per_bin_rt2ct \
 	asn1rt_ber_v1 \
 	asn1rt_check
 

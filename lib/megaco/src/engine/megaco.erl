@@ -56,12 +56,16 @@
 	 encode_binary_term_id/2,
 	 decode_binary_term_id/2,
 
-	 ms/0, nc/0, nc/1, ni/0, ni/1
+	 ms/0, nc/0, nc/1, ni/0, ni/1,
+
+	 enable_trace/2, disable_trace/0, set_trace/1
         ]).
 
 -include_lib("megaco/include/megaco.hrl").
 -include("megaco_message_internal.hrl").
 -include("megaco_internal.hrl").
+
+
 
 %%-----------------------------------------------------------------
 %% Starts the Megaco application
@@ -341,3 +345,63 @@ find_file([Dir | Dirs], File) ->
     end;
 find_file([], File) ->
     {error, {no_such_file, File}}.
+
+
+%%-----------------------------------------------------------------
+
+%% -----------------------------
+%% These functions can be used instead of the et tool for
+%% managing trace of the megaco application.
+
+%%-----------------------------------------------------------------
+%% enable_trace(Level, Destination) -> void()
+%% 
+%% Parameters:
+%% Level -> max | min | integer()
+%% Destination -> File | Port
+%% File -> string()
+%% Port -> integer()  
+%%
+%% Description:
+%% This function is used to start tracing at level Level and send
+%% the result either to the file File or the port Port. Note that
+%% it starts a tracer server.
+%%-----------------------------------------------------------------
+enable_trace(Level, File) when list(File) ->
+    dbg:tracer(port, dbg:trace_port(file, File)),
+    set_trace(Level);
+enable_trace(Level, Port) when integer(Port) ->
+    dbg:tracer(port, dbg:trace_port(ip, Port)),
+    set_trace(Level);
+enable_trace(Level, {Fun, Data} = HandleSpec) when function(Fun) ->
+    dbg:tracer(process, HandleSpec),
+    set_trace(Level).
+
+
+%%-----------------------------------------------------------------
+%% disable_trace() -> void()
+%% 
+%% Description:
+%% This function is used to stop tracing.
+%%-----------------------------------------------------------------
+disable_trace() ->
+    dbg:stop().
+
+
+%%-----------------------------------------------------------------
+%% set_trace(Level) -> void()
+%% 
+%% Parameters:
+%% Level -> max | min | integer()
+%%
+%% Description:
+%% This function is used to change the trace level when tracing has
+%% already been started. 
+%%-----------------------------------------------------------------
+set_trace(Level) ->
+    Pat = et:make_pattern(Level),
+    et:change_pattern(Pat).
+
+
+
+

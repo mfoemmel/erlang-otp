@@ -262,6 +262,14 @@
 			  base_interfaces}).
 
 						% TypeCode, page 6-33
+
+-record(ir_FixedDef,     {ir_Internal_ID,	%[IDLType]
+			  def_kind,		%from IRObject
+			  type,			%from IDLType
+			  digits,
+			  scale}).
+
+
 % TypeCodes cannot be defined as records, since each type code has a
 % quite unique structure depending on the type. The old TypeCode
 % record definition is left here as a comment in case we want to
@@ -306,7 +314,8 @@
 			  ir_AliasDef,
 			  ir_ConstantDef,
 			  ir_StructDef,
-			  ir_SequenceDef]).
+			  ir_SequenceDef,
+			  ir_FixedDef]).
 
 -define(cr_fun_tuple(Table, Options),
 	{Table,
@@ -359,7 +368,8 @@
          ?cr_fun_tuple(ir_OperationDef, Options),
          ?cr_fun_tuple(ir_InterfaceDef, Options),
 %        ?cr_fun_tuple(ir_TypeCode, Options),
-         ?cr_fun_tuple(ir_ORB, Options)]).
+         ?cr_fun_tuple(ir_ORB, Options),
+	 ?cr_fun_tuple(ir_FixedDef, Options)]).
 
 
 -define(ifr_record_tuple_list_local(IFR_storage_type),
@@ -385,4 +395,5 @@
          ?cr_fun_tuple_local(ir_OperationDef, IFR_storage_type),
          ?cr_fun_tuple_local(ir_InterfaceDef, IFR_storage_type),
 %        ?cr_fun_tuple_local(ir_TypeCode, IFR_storage_type),
-         ?cr_fun_tuple_local(ir_ORB, IFR_storage_type)]).
+         ?cr_fun_tuple_local(ir_ORB, IFR_storage_type),
+	 ?cr_fun_tuple_local(ir_FixedDef, IFR_storage_type)]).

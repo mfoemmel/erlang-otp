@@ -37,7 +37,7 @@ extern int ei_trace_distribution;
 #include <string.h>
 #include <stdlib.h>
 #include "ei.h"
-#include "erl_connect.h"
+#include "ei_connect.h"
 #include "putget.h"
 
 #ifdef __WIN32__

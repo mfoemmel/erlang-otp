@@ -140,7 +140,7 @@ ifeq ($(MFS_DEBUG),true)
 CFLAGS += -DMFS_DEBUG=true
 endif
 
-CFLAGS += $(DRIVER_INCLUDES) $(DRV_FLAGS) -funroll-loops -Wall $(LEXLIBS)
+CFLAGS += $(DRIVER_INCLUDES) $(DRV_FLAGS) -funroll-loops -Wall -Wno-unused 
 
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER_LINENO),true)
 LEX_FLAGS = -Ca
@@ -166,6 +166,9 @@ clean:
 docs:
 
 info:
+	@echo "ENABLE_MEGACO_FLEX_SCANNER        = $(ENABLE_MEGACO_FLEX_SCANNER)"
+	@echo "ENABLE_MEGACO_FLEX_SCANNER_LINENO = $(ENABLE_MEGACO_FLEX_SCANNER_LINENO)"
+	@echo ""
 	@echo "DRIVER_H     = $(DRIVER_H)"
 	@echo "DRV_FLAGS    = $(DRV_FLAGS)"
 	@echo "MODULES      = $(MODULES)"
@@ -176,6 +179,7 @@ info:
 	@echo "FLEX_FILES   = $(FLEX_FILES)"
 	@echo "C_TARGETS    = $(C_TARGETS)"
 	@echo "LIBDIR       = $(LIBDIR)"
+	@echo "LEXLIB       = $(LEXLIB)"
 	@echo "SOLIBS       = $(SOLIBS)"
 
 
@@ -203,16 +207,18 @@ release_docs_spec:
 
 megaco_flex_scanner_drv.flex: megaco_flex_scanner_drv.flex.src
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER_LINENO),true)
+	@printf "\tflex scanner lineno enabled\n"
 	$(PERL) -p -e \
           's/%MEGACO_YY_LINENO_OPTION%/%option yylineno/ ;  \
            s/%MEGACO_DUMMY_DECL_YY_LINENO%/\/* static int yylineno = 1; *\// ; \
            s/%MEGACO_LINENO_OR_TOKENCOUNTER%/yylineno/' \
            < $< > $@
 else
+	@printf "\tflex scanner lineno disabled\n"
 	$(PERL) -p -e \
           's/%MEGACO_YY_LINENO_OPTION%/  \/\* %option yylineno \*\// ; \
            s/%MEGACO_DUMMY_DECL_YY_LINENO%/static int yylineno = 1;/ ; \
-           s/%MEGACO_LINENO_OR_TOKENCOUNTER%/megaco_flex_scanner_token_counter/' \
+           s/%MEGACO_LINENO_OR_TOKENCOUNTER%/mfs_token_counter/' \
            < $< > $@
 endif
 

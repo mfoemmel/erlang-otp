@@ -45,6 +45,8 @@
 
 #include "eiext.h" /* replaces external.h */
 
+#include "eicode.h"
+
 #include "putget.h"
 
 /* I hate those warnings... :-(  */
@@ -59,6 +61,7 @@ static int is_string(ETERM* term);
 /* this global data is ok (from threading point of view) since it is
  * initialized once and never changed
  */
+
 #define CMP_ARRAY_SIZE 256
 static char cmp_array[CMP_ARRAY_SIZE]; 
 static int init_cmp_array_p=1; /* initialize array, the first time */
@@ -68,28 +71,75 @@ static int init_cmp_array_p=1; /* initialize array, the first time */
 extern int erl_fp_compare(unsigned *a, unsigned *b);
 #endif
 
-#define ERL_REF_CMP 5
+#if defined(__GNUC__)
+#  define INLINE __inline__
+#elif defined(__WIN32__)
+#  define INLINE __inline
+#else
+#  define INLINE
+#endif
+
+static INLINE int cmp_floats(double f1, double f2);
+
+#define ERL_NUM_CMP 1
+#define ERL_REF_CMP 3
+
+#define IS_ERL_NUM(t) (cmp_array[t]==ERL_NUM_CMP)
+
+#define CMP_NUM_CLASS_SIZE 256
+static unsigned char cmp_num_class[CMP_NUM_CLASS_SIZE]; 
+static int init_cmp_num_class_p=1; /* initialize array, the first time */
+
+#define MK_CMP_NUM_CODE(x,y)    (((x)<<2)|(y))
+#define CMP_NUM_CLASS(x)        (cmp_num_class[x] & 0x03)
+#define CMP_NUM_CODE(x,y)       (MK_CMP_NUM_CODE(CMP_NUM_CLASS(x),CMP_NUM_CLASS(y)))
+
+#define SMALL 1
+#define FLOAT 2
+#define BIG   3
+
+#define SMALL_SMALL    MK_CMP_NUM_CODE(SMALL,SMALL)
+#define SMALL_FLOAT    MK_CMP_NUM_CODE(SMALL,FLOAT)
+#define SMALL_BIG      MK_CMP_NUM_CODE(SMALL,BIG)
+#define FLOAT_SMALL    MK_CMP_NUM_CODE(FLOAT,SMALL)
+#define FLOAT_FLOAT    MK_CMP_NUM_CODE(FLOAT,FLOAT)
+#define FLOAT_BIG      MK_CMP_NUM_CODE(FLOAT,BIG)
+#define BIG_SMALL      MK_CMP_NUM_CODE(BIG,SMALL)
+#define BIG_FLOAT      MK_CMP_NUM_CODE(BIG,FLOAT)
+#define BIG_BIG        MK_CMP_NUM_CODE(BIG,BIG)
 
 void erl_init_marshal(void)
 {
   if (init_cmp_array_p) {
     memset(cmp_array, 0, CMP_ARRAY_SIZE);
-    cmp_array[ERL_NIL_EXT]           = 1;
-    cmp_array[ERL_SMALL_INTEGER_EXT] = 2;
-    cmp_array[ERL_INTEGER_EXT]       = 2;
-    cmp_array[ERL_FLOAT_EXT]         = 3;
-    cmp_array[ERL_ATOM_EXT]          = 4;
-    cmp_array[ERL_REFERENCE_EXT]     = 5;
-    cmp_array[ERL_NEW_REFERENCE_EXT] = 5;
-    cmp_array[ERL_FUN_EXT]           = 6;
-    cmp_array[ERL_PORT_EXT]          = 7;
-    cmp_array[ERL_PID_EXT]           = 8;
-    cmp_array[ERL_SMALL_TUPLE_EXT]   = 9;
-    cmp_array[ERL_LARGE_TUPLE_EXT]   = 9;
-    cmp_array[ERL_STRING_EXT]        = 10;
-    cmp_array[ERL_LIST_EXT]          = 10;
-    cmp_array[ERL_BINARY_EXT]        = 11;
+    cmp_array[ERL_SMALL_INTEGER_EXT] = 1;
+    cmp_array[ERL_INTEGER_EXT]       = 1;
+    cmp_array[ERL_FLOAT_EXT]         = 1;
+    cmp_array[ERL_SMALL_BIG_EXT]     = 1;
+    cmp_array[ERL_LARGE_BIG_EXT]     = 1;
+    cmp_array[ERL_ATOM_EXT]          = 2;
+    cmp_array[ERL_REFERENCE_EXT]     = 3;
+    cmp_array[ERL_NEW_REFERENCE_EXT] = 3;
+    cmp_array[ERL_FUN_EXT]           = 4;
+    cmp_array[ERL_NEW_FUN_EXT]       = 4;
+    cmp_array[ERL_PORT_EXT]          = 5;
+    cmp_array[ERL_PID_EXT]           = 6;
+    cmp_array[ERL_SMALL_TUPLE_EXT]   = 7;
+    cmp_array[ERL_LARGE_TUPLE_EXT]   = 7;
+    cmp_array[ERL_NIL_EXT]           = 8;
+    cmp_array[ERL_STRING_EXT]        = 9;
+    cmp_array[ERL_LIST_EXT]          = 9;
+    cmp_array[ERL_BINARY_EXT]        = 10;
     init_cmp_array_p = 0;
+  }
+  if (init_cmp_num_class_p) {
+    memset(cmp_num_class, 0, CMP_NUM_CLASS_SIZE);
+    cmp_num_class[ERL_SMALL_INTEGER_EXT] = SMALL;
+    cmp_num_class[ERL_INTEGER_EXT]       = SMALL;
+    cmp_num_class[ERL_FLOAT_EXT]         = FLOAT;
+    cmp_num_class[ERL_SMALL_BIG_EXT]     = BIG;
+    cmp_num_class[ERL_LARGE_BIG_EXT]     = BIG;
+    init_cmp_num_class_p = 0;
   }
 }
 
@@ -583,8 +633,10 @@ static ETERM *erl_decode_it(unsigned char **ext)
 	ep->uval.ival.i = i;
 	return ep;
 
+        /* NOTE: The arity below for bigs is not really the arity (= number of digits) */
+        /*       It is the byte count and this might cause problems in other parts...  */
     case ERL_SMALL_BIG_EXT:
-	arity = *(*ext)++; 
+        arity = *(*ext)++; 
 	goto big_cont;
     case ERL_LARGE_BIG_EXT:
 	arity = (**ext << 24) | ((*ext)[1])<< 16 | 
@@ -650,7 +702,7 @@ static ETERM *erl_decode_it(unsigned char **ext)
 	    unsigned char creation;
 
 	    READ_THE_NODE(ext,cp,len,i);
-	    node = alloca(len+1); /* FIXME: does VxWorks have alloca()? */
+	    node = (char*)alloca(len+1); /* FIXME: include header */
 	    memcpy(node, cp, len);
 	    node[len] = '\0';
 
@@ -682,7 +734,7 @@ static ETERM *erl_decode_it(unsigned char **ext)
 	    unsigned char creation;
 
 	    READ_THE_NODE(ext,cp,len,i);
-	    node = alloca(len+1);
+	    node = (char*)alloca(len+1);
 	    memcpy(node, cp, len);
 	    node[len] = '\0';
 
@@ -714,7 +766,7 @@ static ETERM *erl_decode_it(unsigned char **ext)
 #endif
 
 	    READ_THE_NODE(ext,cp,len,i);
-	    node = alloca(len+1);
+	    node = (char*)alloca(len+1);
 	    memcpy(node, cp, len);
 	    node[len] = '\0';
 
@@ -741,7 +793,7 @@ static ETERM *erl_decode_it(unsigned char **ext)
 	    unsigned char creation;
 
 	    READ_THE_NODE(ext,cp,len,i);
-	    node = alloca(len+1);
+	    node = (char*)alloca(len+1);
 	    memcpy(node, cp, len);
 	    node[len] = '\0';
 
@@ -1006,6 +1058,9 @@ char erl_ext_type(unsigned char *ext)
     case ERL_FUN_EXT:
     case ERL_NEW_FUN_EXT:
 	return ERL_FUNCTION;
+    case ERL_SMALL_BIG_EXT:
+    case ERL_LARGE_BIG_EXT:
+        return ERL_BIG;
     default:
 	return 0;
 
@@ -1039,6 +1094,8 @@ int erl_ext_size(unsigned char *t)
     case ERL_BINARY_EXT:
     case ERL_STRING_EXT:
     case ERL_FLOAT_EXT:
+    case ERL_SMALL_BIG_EXT:
+    case ERL_LARGE_BIG_EXT:
 	return 0;
 	break;
     case ERL_SMALL_TUPLE_EXT:
@@ -1167,6 +1224,14 @@ static int jump(unsigned char **ext)
 	i = get32be(*ext);
 	*ext += i + 4;
 	break;
+    case ERL_SMALL_BIG_EXT:
+        i = *(*ext);
+        *ext += i + 1;
+        break;
+    case ERL_LARGE_BIG_EXT:
+	i = get32be(*ext);
+        *ext += i + 4;
+        break;
     default:
 	return 0;
     } /* switch */
@@ -1407,13 +1472,8 @@ static int cmp_exe2(unsigned char **e1, unsigned char **e2)
       if (sscanf((char *) *e2, "%lf", &ff2) != 1)
 	return -1;
       *e2 += 31;
-#if defined(VXWORKS) && CPU == PPC860
-      return erl_fp_compare((unsigned *) &ff1, (unsigned *) &ff2);
-#else
-      if (ff1 < ff2) return -1;
-      if (ff1 > ff2) return 1;
-      return 0;
-#endif
+      return cmp_floats(ff1,ff2);
+
     case ERL_BINARY_EXT:
       i = (**e1 << 24) | ((*e1)[1] << 16) |((*e1)[2] << 8) | (*e1)[3];
       *e1 += 4;
@@ -1434,6 +1494,213 @@ static int cmp_exe2(unsigned char **e1, unsigned char **e2)
   
 } /* cmp_exe2 */
 
+/* Number compare */
+
+static INLINE int cmp_floats(double f1, double f2)
+{
+#if defined(VXWORKS) && CPU == PPC860
+      return erl_fp_compare((unsigned *) &f1, (unsigned *) &f2);
+#else
+      if (f1<f2) return -1;
+      else if (f1>f2) return 1;
+      else return 0;
+#endif
+}
+
+static int cmp_small_big(unsigned char**e1, unsigned char **e2)
+{
+    int i1,i2;
+    int t2;
+    int n2;
+    long l1;
+    int res;
+
+    erlang_big *b1,*b2;
+
+    i1 = i2 = 0;
+    if ( ei_decode_long(*e1,&i1,&l1) < 0 ) return -1;
+    
+    ei_get_type(*e2,&i2,&t2,&n2);
+    
+    /* any small will fit in two digits */
+    if ( (b1 = ei_alloc_big(2)) == NULL ) return -1;
+    if ( ei_small_to_big(l1,b1) < 0 ) {
+        ei_free_big(b1);
+        return -1;
+    }
+    
+    if ( (b2 = ei_alloc_big(n2)) == NULL ) {
+        ei_free_big(b1);
+        return 1;
+    }
+
+    if ( ei_decode_big(*e2,&i2,b2) < 0 ) {
+        ei_free_big(b1);
+        ei_free_big(b2);
+        return 1;
+    }
+    
+    res = ei_big_comp(b1,b2);
+    
+    ei_free_big(b1);
+    ei_free_big(b2);
+
+    return res;
+}
+
+static int cmp_small_float(unsigned char**e1, unsigned char **e2)
+{
+    int i1,i2;
+    long l1;
+    double f1,f2;
+
+    /* small -> float -> float_comp */
+
+    i1 = i2 = 0;
+    if ( ei_decode_long(*e1,&i1,&l1) < 0 ) return -1;
+    if ( ei_decode_double(*e2,&i2,&f2) < 0 ) return 1;
+    
+    f1 = l1;
+
+    return cmp_floats(f1,f2);
+}
+
+static int cmp_float_big(unsigned char**e1, unsigned char **e2)
+{
+    int res;
+    int i1,i2;
+    int t2,n2;
+    double f1,f2;
+    erlang_big *b2;
+    
+    /* big -> float if overflow return big sign else float_comp */
+    
+    i1 = i2 = 0;
+    if ( ei_decode_double(*e1,&i1,&f1) < 0 ) return -1;
+    
+    if (ei_get_type(*e2,&i2,&t2,&n2) < 0) return 1;
+    if ((b2 = ei_alloc_big(n2)) == NULL) return 1;
+    if (ei_decode_big(*e2,&i2,b2) < 0) return 1;
+    
+    /* convert the big to float */
+    if ( ei_big_to_double(b2,&f2) < 0 ) {
+        /* exception look at the sign */
+        res = b2->is_neg ? 1 : -1;
+        ei_free_big(b2);
+        return res;
+    }
+    
+    ei_free_big(b2);
+
+    return cmp_floats(f1,f2);
+}
+
+static int cmp_small_small(unsigned char**e1, unsigned char **e2)
+{
+    int i1,i2;
+    long l1,l2;
+
+    i1 = i2 = 0;
+    if ( ei_decode_long(*e1,&i1,&l1) < 0 ) {
+        fprintf(stderr,"Failed to decode 1\r\n");
+        return -1;
+    }
+    if ( ei_decode_long(*e2,&i2,&l2) < 0 ) {
+        fprintf(stderr,"Failed to decode 2\r\n");
+        return 1;
+    }
+    
+    if ( l1 < l2 ) return -1;
+    else if ( l1 > l2 ) return 1;
+    else return 0;
+}
+
+static int cmp_float_float(unsigned char**e1, unsigned char **e2)
+{
+    int i1,i2;
+    double f1,f2;
+
+    i1 = i2 = 0;
+    if ( ei_decode_double(*e1,&i1,&f1) < 0 ) return -1;
+    if ( ei_decode_double(*e2,&i2,&f2) < 0 ) return 1;
+    
+    return cmp_floats(f1,f2);
+}
+
+static int cmp_big_big(unsigned char**e1, unsigned char **e2)
+{
+    int res;
+    int i1,i2;
+    int t1,t2;
+    int n1,n2;
+    erlang_big *b1,*b2;
+
+    i1 = i2 = 0;
+    ei_get_type(*e1,&i1,&t1,&n1);
+    ei_get_type(*e2,&i2,&t2,&n2);
+    
+    b1 = ei_alloc_big(n1);
+    b2 = ei_alloc_big(n2);
+    
+    ei_decode_big(*e1,&i1,b1);
+    ei_decode_big(*e2,&i2,b2);
+    
+    res = ei_big_comp(b1,b2);
+    
+    ei_free_big(b1);
+    ei_free_big(b2);
+
+    return res;
+}
+
+static int cmp_number(unsigned char**e1, unsigned char **e2)
+{
+    switch (CMP_NUM_CODE(**e1,**e2)) {
+
+      case SMALL_BIG:
+        /* fprintf(stderr,"compare small_big\r\n"); */
+        return cmp_small_big(e1,e2);
+
+      case BIG_SMALL:
+        /* fprintf(stderr,"compare sbig_small\r\n"); */
+        return -cmp_small_big(e2,e1);
+
+      case SMALL_FLOAT:
+        /* fprintf(stderr,"compare small_float\r\n"); */
+        return cmp_small_float(e1,e2);
+        
+      case FLOAT_SMALL:
+        /* fprintf(stderr,"compare float_small\r\n"); */
+        return -cmp_small_float(e2,e1);
+
+      case FLOAT_BIG:
+        /* fprintf(stderr,"compare float_big\r\n"); */
+        return cmp_float_big(e1,e2);
+
+      case BIG_FLOAT:
+        /* fprintf(stderr,"compare big_float\r\n"); */
+        return -cmp_float_big(e2,e1);
+
+      case SMALL_SMALL:
+        /* fprintf(stderr,"compare small_small\r\n"); */
+        return cmp_small_small(e1,e2);
+
+      case FLOAT_FLOAT:
+        /* fprintf(stderr,"compare float_float\r\n"); */
+        return cmp_float_float(e1,e2);
+
+      case BIG_BIG:
+        /* fprintf(stderr,"compare big_big\r\n"); */
+        return cmp_big_big(e1,e2);
+
+      default:
+        /* should never get here ... */
+        /* fprintf(stderr,"compare standard\r\n"); */
+        return cmp_exe2(e1,e2);
+    }
+
+}
+
 /* 
  * If the arrays are of the same type, then we
  * have to do a real compare.
@@ -1448,9 +1715,13 @@ static int compare_top_ext(unsigned char**e1, unsigned char **e2)
 {
   if (**e1 == ERL_VERSION_MAGIC) (*e1)++;
   if (**e2 == ERL_VERSION_MAGIC) (*e2)++;
+
   if (cmp_array[**e1] < cmp_array[**e2]) return -1;
   if (cmp_array[**e1] > cmp_array[**e2]) return 1;
   
+  if (IS_ERL_NUM(**e1)) 
+      return cmp_number(e1,e2);
+
   if (cmp_array[**e1] == ERL_REF_CMP)
       return cmp_refs(e1, e2);
 

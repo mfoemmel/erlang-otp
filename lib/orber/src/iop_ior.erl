@@ -38,7 +38,7 @@
 	 get_privfield/1, set_privfield/2, 
 	 get_orbfield/1, set_orbfield/2, 
 	 get_flagfield/1, set_flagfield/2, get_version/1,
-	 create_external/5, create_external/6, print/1,
+	 create_external/5, create_external/6, print/1, print/2,
 	 get_alt_addr/1, add_component/2]).
 
 %%-----------------------------------------------------------------
@@ -186,14 +186,14 @@ create_external(Version, TypeID, Host, IIOP_port, Objkey, MC) ->
 %%-----------------------------------------------------------------
 get_key(#'IOP_IOR'{profiles=P})  ->
     get_key_1(P, false, 0, undefined);
-get_key({_Id, Type, Key, _UserDef, _OrberDef, _Flags}) ->
+get_key({Module, Type, Key, _UserDef, OrberDef, Flags}) ->
     if
 	binary(Key) ->
-	    {'internal', Key};
+	    {'internal', Key, OrberDef, Flags, Module};
 	Type == pseudo ->
-	    {'internal_registered', {pseudo, Key}};
+	    {'internal_registered', {pseudo, Key}, OrberDef, Flags, Module};
 	atom(Key) ->
-	    {'internal_registered', Key}
+	    {'internal_registered', Key, OrberDef, Flags, Module}
     end.
 
 get_key(#'IOP_IOR'{profiles=P}, Exclude)  ->
@@ -209,14 +209,14 @@ get_key_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB} = TP | P
 	  Retry, Counter, Exclude) ->
     [_, Version, Host, IIOP_port, ObjectKey | Rest] = tuple_to_list(PB),
     case ObjectKey of
-	{_Id, Type, Key, _UserDef, _OrberDef, _Flags} ->
+	{Module, Type, Key, _UserDef, OrberDef, Flags} ->
 	    if
 		binary(Key) ->
-		    {'internal', Key};
+		    {'internal', Key, OrberDef, Flags, Module};
 		Type == pseudo ->
-		    {'internal_registered', {pseudo, Key}};
+		    {'internal_registered', {pseudo, Key}, OrberDef, Flags, Module};
 		atom(Key) ->
-		    {'internal_registered', Key}
+		    {'internal_registered', Key, OrberDef, Flags, Module}
 	    end;
 	OK when Version#'IIOP_Version'.minor > 0, Exclude == undefined ->
 	    {'external', {Host, IIOP_port, OK, Counter, TP, 
@@ -626,9 +626,9 @@ check_nil(_) ->
 print(Object) ->
     print(undefined, Object).
 print(IoDevice, #'IOP_IOR'{type_id="", profiles=[]}) ->
-    print_it(IoDevice, "=================== IOR ====================
+    print_it(IoDevice, "================== IOR ====================
 NIL Object Reference.
-=================== END ====================~n", []);
+================== END ====================~n");
 print(IoDevice, IORStr) when list(IORStr) ->
     IOR = corba:string_to_object(IORStr),
     print_helper(IoDevice, IOR);
@@ -650,28 +650,27 @@ print(_, _) ->
     exit("Bad parameter").
 
 print_helper(IoDevice, #'IOP_IOR'{type_id=TypeID, profiles=Profs}) ->
-    print_it(IoDevice, "=================== IOR ====================
-------------------- IFR ID -----------------~n~s~n", [TypeID]),
-    print_profiles(IoDevice, Profs).
+    Data = io_lib:format("================== IOR ====================
+------------------ IFR ID -----------------~n~s~n", [TypeID]),
+    NewData = print_profiles(Profs, []),
+    print_it(IoDevice, [Data|NewData]).
 
-print_profiles(IoDevice, []) ->
-    print_it(IoDevice, "=================== END ====================~n", []);
-print_profiles(IoDevice, 
-	       [#'IOP_TaggedProfile'
+print_profiles([], Acc) ->
+   lists:flatten([Acc | io_lib:format("================== END ====================~n", [])]);
+print_profiles([#'IOP_TaggedProfile'
 		{tag=?TAG_INTERNET_IOP,
 		 profile_data = #'IIOP_ProfileBody_1_0'{iiop_version=
 							#'IIOP_Version'{major=Major,
 									minor=Minor},
 							host=Host, port=Port,
-							object_key=Objkey}}|T]) ->
-    print_it(IoDevice, "~n------------------- IIOP Profile -----------
+							object_key=Objkey}}|T], Acc) ->
+    Profile = io_lib:format("~n------------------ IIOP Profile -----------
 Version..........: ~p.~p
 Host.............: ~s
 Port.............: ~p~n", [Major, Minor, Host, Port]),
-    print_objkey(IoDevice, Objkey),
-    print_profiles(IoDevice, T);
-print_profiles(IoDevice, 
-	       [#'IOP_TaggedProfile'
+    ObjKeyStr = print_objkey(Objkey),
+    print_profiles(T, [ObjKeyStr | Acc]);
+print_profiles([#'IOP_TaggedProfile'
 		{tag=?TAG_INTERNET_IOP,
 		 profile_data = #'IIOP_ProfileBody_1_1'{iiop_version=
 							#'IIOP_Version'{major=Major,
@@ -679,44 +678,39 @@ print_profiles(IoDevice,
 							host=Host,
 							port=Port,
 							object_key=Objkey,
-							components=Components}}|T]) ->
-    print_it(IoDevice, "~n------------------- IIOP Profile -----------
+							components=Components}}|T], Acc) ->
+    Profile = io_lib:format("~n------------------ IIOP Profile -----------
 Version..........: ~p.~p
 Host.............: ~s
 Port.............: ~p~n", [Major, Minor, Host, Port]),
-    print_components(IoDevice, Components),
-    print_objkey(IoDevice, Objkey),
-    print_profiles(IoDevice, T);
-print_profiles(IoDevice, 
-	       [#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS,
-				     profile_data = Components}|T]) ->
-    print_it(IoDevice, "~n------------------- Multiple Components ----~n", []),
-    print_components(IoDevice, Components),
-    print_profiles(IoDevice, T);
-print_profiles(IoDevice, 
-	       [#'IOP_TaggedProfile'{tag=?TAG_SCCP_IOP,
-				     profile_data = Data}|T]) ->
-    print_it(IoDevice, "~n------------------- SCCP IOP ---------------~n", []),
-    print_profiles(IoDevice, T);
-print_profiles(IoDevice, 
-	       [#'IOP_TaggedProfile'{tag=Tag,
-				     profile_data = Data}|T]) ->
-    print_it(IoDevice, "~n------------------- TAG ~p -----------------~n", [Tag]),
-    print_profiles(IoDevice, T).
+    ComponentsStr = print_components(Components, []),
+    ObjKeyStr = print_objkey(Objkey),
+    print_profiles(T, [Profile, ComponentsStr, ObjKeyStr |Acc]);
+print_profiles([#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS,
+				     profile_data = Components}|T], Acc) ->
+    MComp = io_lib:format("~n------------------ Multiple Components ----~n", []),
+    ComponentsStr = print_components(Components, []),
+    print_profiles(T, [ComponentsStr, MComp | Acc]);
+print_profiles([#'IOP_TaggedProfile'{tag=?TAG_SCCP_IOP,
+				     profile_data = Data}|T], Acc) ->
+    SCCP = io_lib:format("~n------------------ SCCP IOP ---------------~n", []),
+    print_profiles(T, [SCCP | Acc]);
+print_profiles([#'IOP_TaggedProfile'{tag=Tag,
+				     profile_data = Data}|T], Acc) ->
+    TAG = io_lib:format("~n------------------ TAG ~p -----------------~n", [Tag]),
+    print_profiles(T, [TAG|Acc]).
 
-print_components(_, []) -> ok;
-print_components(IoDevice, 
-		 [#'IOP_TaggedComponent'{tag=?TAG_ORB_TYPE, 
-					 component_data=ORB}|T]) ->
-    print_it(IoDevice, "ORB Type.........: ~p~n", [ORB]),
-    print_components(IoDevice, T);
-print_components(IoDevice, 
-		 [#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+print_components([], Data) -> lists:flatten(lists:reverse(Data));
+print_components([#'IOP_TaggedComponent'{tag=?TAG_ORB_TYPE, 
+					 component_data=ORB}|T], Data) ->
+    OType = io_lib:format("ORB Type.........: ~p~n", [ORB]),
+    print_components(T, [OType | Data]);
+print_components([#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
 					 component_data=
 					 #'CONV_FRAME_CodeSetComponentInfo'
 					 {'ForCharData' = Char,
-					  'ForWcharData' = Wchar}}|T]) ->
-    print_it(IoDevice, "Native Char......: ~p
+					  'ForWcharData' = Wchar}}|T], Data) ->
+    CharSet = io_lib:format("Native Char......: ~p
 Char Conversion..: ~p
 Native Wchar.....: ~p
 Wchar Conversion.: ~p~n", 
@@ -724,62 +718,79 @@ Wchar Conversion.: ~p~n",
 	       Char#'CONV_FRAME_CodeSetComponent'.conversion_code_sets,
 	       Wchar#'CONV_FRAME_CodeSetComponent'.native_code_set,
 	       Wchar#'CONV_FRAME_CodeSetComponent'.conversion_code_sets]),
-    print_components(IoDevice, T);
-print_components(IoDevice, 
-		 [#'IOP_TaggedComponent'{tag=?TAG_ALTERNATE_IIOP_ADDRESS, 
+    print_components(T, [CharSet | Data]);
+print_components([#'IOP_TaggedComponent'{tag=?TAG_ALTERNATE_IIOP_ADDRESS, 
 					 component_data=#'ALTERNATE_IIOP_ADDRESS'
-					 {'HostID'=Host, 'Port'=Port}}|T]) ->
-    print_it(IoDevice, "Alternate Address: ~s:~p~n", [Host, Port]),
-    print_components(IoDevice, T);
-print_components(IoDevice, 
-		 [#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
+					 {'HostID'=Host, 'Port'=Port}}|T], Data) ->
+    AltAddr = io_lib:format("Alternate Address: ~s:~p~n", [Host, Port]),
+    print_components(T, [AltAddr | Data]);
+print_components([#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
 					 component_data=#'SSLIOP_SSL'
 					 {target_supports=Supports, 
 					  target_requires=Requires,
-					  port=Port}}|T]) ->
-    print_it(IoDevice, "SSL Port.........: ~p
+					  port=Port}}|T], Data) ->
+    SSL = io_lib:format("SSL Port.........: ~p
 SSL Requires.....: ~p
 SSL Supports.....: ~p~n", [Port, Requires, Supports]),
-    print_components(IoDevice, T);
-print_components(IoDevice, 
-		 [#'IOP_TaggedComponent'{tag=TAG, 
-					 component_data=Data}|T]) ->
-    print_it(IoDevice, "Unused Component.: ~s~n", [match_tag(TAG)]),
-    print_octets(IoDevice, Data, [], 1),
-    print_components(IoDevice, T).
+    print_components(T, [SSL | Data]);
+print_components([#'IOP_TaggedComponent'{tag=TAG, 
+					 component_data=CData}|T], Data) ->
+    Unused = io_lib:format("Unused Component.: ~s~n", [match_tag(TAG)]),
+    Octets = print_octets(CData, [], 1, []),
+    print_components(T, [lists:flatten([Unused | Octets])| Data]).
 
 
-print_objkey(IoDevice, Objkey) when tuple(Objkey) ->
-    print_it(IoDevice, "Local Object.....:~n~p~n", [Objkey]);
-print_objkey(IoDevice, Objkey) ->
-    print_it(IoDevice, "External Object..: ~n", []),
-    print_octets(IoDevice, Objkey, [], 1).
+print_objkey(Objkey) when tuple(Objkey) ->
+    io_lib:format("Local Object.....:~n~p~n", [Objkey]);
+print_objkey(Objkey) ->
+    Hdr = io_lib:format("External Object..: ~n", []),
+    Octets = print_octets(Objkey, [], 1, []),
+    lists:flatten([Hdr | Octets]).
 
-print_octets(IoDevice, [], [], _) ->
-    ok;
-print_octets(IoDevice, [], Acc, C) ->
+print_octets([], [], _, Data) ->
+    lists:reverse(Data);
+print_octets([], Acc, C, Data) ->
     Filling = lists:duplicate((4*(9-C)), 32),
-    print_it(IoDevice, "~s", [Filling]),
-    print_it(IoDevice, "  ~p~n", [Acc]);
-print_octets(IoDevice, [H|T], Acc, 8) when H > 31 , H < 127 ->
-    print_it(IoDevice, "~4w", [H]),
-    print_it(IoDevice, "  ~p~n", [lists:reverse([H|Acc])]),
-    print_octets(IoDevice, T, [], 1);
-print_octets(IoDevice, [H|T], Acc, C) when H > 31 , H < 127 ->
-    print_it(IoDevice, "~4w", [H]),
-    print_octets(IoDevice, T, [H|Acc], C+1);
-print_octets(IoDevice, [H|T], Acc, 8) ->
-    print_it(IoDevice, "~4w", [H]),
-    print_it(IoDevice, "  ~p~n", [lists:reverse([$.|Acc])]),
-    print_octets(IoDevice, T, [], 1);
-print_octets(IoDevice, [H|T], Acc, C) ->
-    print_it(IoDevice, "~4w", [H]),
-    print_octets(IoDevice, T, [$.|Acc], C+1).
+    FData = io_lib:format("~s", [Filling]),
+    Rest = io_lib:format("  ~p~n", [Acc]),
+    [lists:reverse(Data), FData | Rest];
+print_octets([H|T], Acc, 8, Data) when H > 31 , H < 127 ->
+    D1 = io_lib:format("~4w", [H]),
+    D2 = io_lib:format("  ~p~n", [lists:reverse([H|Acc])]),
+    print_octets(T, [], 1, [D2, D1 | Data]);
+print_octets([H|T], Acc, 1, Data) when H > 31 , H < 127 ->
+    D1 = io_lib:format("~3w", [H]),
+    print_octets(T, [H|Acc], 2, [D1 | Data]);
+print_octets([H|T], Acc, C, Data) when H > 31 , H < 127 ->
+    D1 = io_lib:format("~4w", [H]),
+    print_octets(T, [H|Acc], C+1, [D1 | Data]);
+print_octets([H|T], Acc, 8, Data) ->
+    D1 = io_lib:format("~4w", [H]),
+    D2 = io_lib:format("  ~p~n", [lists:reverse([$.|Acc])]),
+    print_octets(T, [], 1, [D2, D1 | Data]);
+print_octets([H|T], Acc, 1, Data) ->
+    D1 = io_lib:format("~3w", [H]),
+    print_octets(T, [$.|Acc], 2, [D1|Data]);
+print_octets([H|T], Acc, C, Data) ->
+    D1 = io_lib:format("~4w", [H]),
+    print_octets(T, [$.|Acc], C+1, [D1|Data]).
 
-print_it(undefined, Format, Data) ->
-    io:format(Format, Data);
-print_it(IoDevice, Format, Data) ->
-    io:format(IoDevice, Format, Data).
+print_it(undefined, Data) ->
+    io:format(Data);
+print_it(error_report, Data) ->
+    error_logger:error_report(Data);
+print_it(info_msg, Data) ->
+    error_logger:info_msg(Data);
+print_it(string, Data) ->
+    lists:flatten(Data);
+print_it({error_report, Msg}, Data) ->
+    error_logger:error_report(io_lib:format("================== Reason =================~n~s~n~s", 
+					    [Msg, Data]));
+print_it({info_msg, Msg}, Data) ->
+    error_logger:info_msg(io_lib:format("================== Comment ================~n~s~n~s", 
+					[Msg, Data]));
+print_it(IoDevice, Data) ->
+    io:format(IoDevice, Data).
 
 match_tag(?TAG_ORB_TYPE) -> ?TAG_ORB_TYPE_STR;
 match_tag(?TAG_CODE_SETS) -> ?TAG_CODE_SETS_STR;

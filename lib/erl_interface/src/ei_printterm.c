@@ -82,6 +82,31 @@ static int xprintf(FILE* fp, ei_x_buff* x, const char* fmt, ...)
     return r;
 }
 
+static char *erl_big_to_str(erlang_big *b)
+{
+    int buf_len;
+    char *s,*buf;
+    unsigned short *sp;
+    int i;
+
+    buf_len = 64+b->is_neg+10*b->arity;
+    if ( (buf=erl_malloc(buf_len)) == NULL) return NULL;
+
+    memset(buf,(char)0,buf_len);
+
+    s = buf;
+    if ( b->is_neg ) 
+        s += sprintf(s,"-");
+    s += sprintf(s,"#integer(%d) = {",b->arity);
+    for(sp=b->digits,i=0;i<b->arity;i++) {
+        s += sprintf(s,"%d",sp[i]);
+        if ( (i+1) != b->arity ) 
+            s += sprintf(s,",");
+    }
+    s += sprintf(s,"}");
+    return buf;
+}
+
 static int print_term(FILE* fp, ei_x_buff* x,
 			       const char* buf, int* index)
 {
@@ -93,7 +118,7 @@ static int print_term(FILE* fp, ei_x_buff* x,
     erlang_ref ref;
     double d;
     long l;
-    unsigned long u;
+    //unsigned long u;
 
     if (fp == NULL && x == NULL) return -1;
 
@@ -206,13 +231,29 @@ static int print_term(FILE* fp, ei_x_buff* x,
 	ch_written += xprintf(fp, x, "%ld", l);
 	break;
     case ERL_SMALL_BIG_EXT:
-	if (ei_decode_ulong(buf, index, &u) < 0) goto err;
-	ch_written += xprintf(fp, x, "%lu", u);
-	break;
     case ERL_LARGE_BIG_EXT:
-	ch_written += xprintf(fp, x, "BigNum");
-	*index += n;
-	break;
+        {
+            erlang_big *b;
+            char *ds;
+
+            b = ei_alloc_big(n);
+            if (ei_decode_big(buf, index, b) < 0) {
+                ei_free_big(b);
+                goto err;
+            }
+            
+            if ( (ds = erl_big_to_str(b)) == NULL ) {
+                ei_free_big(b);
+                goto err;
+            }
+            
+            ch_written += xprintf(fp, x, ds);
+            erl_free(ds);
+            ei_free_big(b);
+            
+        }
+        break;
+
     case ERL_FLOAT_EXT:
 	if (ei_decode_double(buf, index, &d) < 0) goto err;
 	ch_written += xprintf(fp, x, "%f", d);
@@ -338,10 +379,8 @@ int ei_skip_term(const char* buf, int* index)
 	if (ei_decode_long(buf, index, NULL) < 0) goto err;
 	break;
     case ERL_SMALL_BIG_EXT:
-	if (ei_decode_ulong(buf, index, NULL) < 0) goto err;
-	break;
     case ERL_LARGE_BIG_EXT:
-	*index += n; /* !! Funkar detta? */
+        if (ei_decode_big(buf,index,NULL) < 0) goto err;
 	break;
     case ERL_FLOAT_EXT:
 	if (ei_decode_double(buf, index, NULL) < 0) goto err;

@@ -277,7 +277,7 @@ type_expand_op_exec(G,N,X,Fd) ->
 	true ->
 	    ic_codegen:emit(Fd,"%%~n",[]),
 	    RaisesList=["%% Raises: " ++ 
-			mk_list(lists:map({icgen, to_colon}, X#op.raises))],
+			mk_list(lists:map({ic_util, to_colon}, X#op.raises))],
 	    ic_codegen:emit(Fd,RaisesList,[]),
 	    ic_codegen:nl(Fd)
     end,
@@ -403,6 +403,8 @@ type_expand(_G,_N,_X,Fd,Tabs,Name,tk_octet) ->
     type_expand_octet(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,tk_any) ->
     type_expand_any(Fd,Tabs,Name);
+type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_fixed, Digits, Scale}) ->
+    type_expand_fixed(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_objref, IFRId, ObjTabs, ObjName}) ->
     type_expand_object(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_string, Length}) ->
@@ -469,6 +471,9 @@ type_expand_octet(Fd,Tabs,Name) ->
 
 type_expand_any(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = any()~n",[Tabs,Name]).
+
+type_expand_fixed(Fd,Tabs,Name) ->
+    ic_codegen:emit(Fd,"%%~s ~s = fixed()~n",[Tabs,Name]).
 
 type_expand_object(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = Object_Ref()~n",[Tabs,Name]).

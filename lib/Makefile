@@ -60,7 +60,7 @@ endif
 ifdef BOOTSTRAP
 SUB_DIRECTORIES = \
   $(ERTS_SUB_DIRECTORIES) parsetools jinterface ic \
-  mnemosyne/src mnemosyne/include orber/include eva/include asn1
+  mnemosyne/src mnemosyne/include orber/include eva/include asn1/src
 else
 SUB_DIRECTORIES = $(ERTS_SUB_DIRECTORIES) $(OTHER_SUB_DIRECTORIES)
 endif

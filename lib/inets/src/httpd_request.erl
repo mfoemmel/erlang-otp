@@ -33,7 +33,7 @@ read(SocketType, Socket, ConfigDB, InitData, Timeout) ->
 read(SocketType, Socket, Data, ConfigDB, InitData, Timeout) ->
     ?vdebug("read from socket ~p with Timeout ~p",[Socket,Timeout]),
     MaxHdrSz = httpd_util:lookup(ConfigDB,max_header_size,10240),
-    case read_header(SocketType, Socket, Timeout, MaxHdrSz) of
+    case read_header(SocketType, Socket, Timeout, MaxHdrSz, []) of
 	{socket_closed, Reason} ->
 	    ?vlog("Socket closed while reading request header: "
 		  "~n   ~p", [Reason]),
@@ -57,54 +57,62 @@ read(SocketType, Socket, Data, ConfigDB, InitData, Timeout) ->
 
 %% read_header
 
-%% The reason for having two different header read functions is that
-%% for ssl the {active, once} socket option is not (currently)
-%% available...
-%%
-read_header(ip_comm = Type, Socket, Timeout, MaxHdrSz) ->
-    read_header_ip(Type, Socket, Timeout, MaxHdrSz, []);
-read_header({ssl, _SSLConfig} = Type, Socket, Timeout, MaxHdrSz) ->
-    read_header_ssl(Type, Socket, Timeout, MaxHdrSz, []).
-
-
 %% This algorithm rely on the buffer size of the inet driver together
 %% with the {active, once} socket option. Atmost one message of this 
 %% size will be received at a give time. When a full header has been 
 %% read, the body is read with the recv function (the body size is known). 
 %%
-read_header_ip(_SocketType, _Socket, Timeout, _MaxHdrSz, _SoFar) 
+read_header(_SocketType, _Socket, Timeout, _MaxHdrSz, _SoFar) 
   when Timeout < 0 ->
     {socket_closed, timeout};
     
-read_header_ip(SocketType, Socket, Timeout, MaxHdrSz, SoFar) ->
+read_header(SocketType, Socket, Timeout, MaxHdrSz, SoFar) ->
     T = t(),
     case terminated_header(MaxHdrSz, SoFar) of
 	{true, Header, EntityBodyPart} ->
-	    ?vdebug("read_header_ip -> done reading header: "
+	    ?vdebug("read_header(~p) -> done reading header: "
 		    "~n   length(Header):         ~p"
 		    "~n   length(EntityBodyPart): ~p", 
-		    [length(Header), length(EntityBodyPart)]),
+		    [SocketType, length(Header), length(EntityBodyPart)]),
 	    {ok, Header, EntityBodyPart};
 	false ->
-	    ?vtrace("read_header_ip -> "
+	    ?vtrace("read_header(~p) -> "
 		    "~n   set active = 'once' and "
-		    "await a chunk of the header", []),
+		    "await a chunk of the header", [SocketType]),
 	    httpd_socket:active_once(SocketType, Socket),
 	    receive
+		%% 
+		%% TCP
+		%% 
 		{tcp, Socket, Data} ->
-		    ?vtrace("read_header_ip -> got some data: ~p bytes", 
+		    ?vtrace("read_header(ip) -> got some data: ~p bytes", 
 			    [sz(Data)]),
-		    read_header_ip(SocketType, Socket, 
-				   Timeout-(t()-T), MaxHdrSz, [SoFar,Data]);
+		    read_header(SocketType, Socket, 
+				Timeout-(t()-T), MaxHdrSz, [SoFar,Data]);
 		{tcp_closed, Socket} ->
-		    ?vtrace("read_header_ip -> socket closed",[]),
+		    ?vtrace("read_header(ip) -> socket closed",[]),
 		    {socket_closed, normal};
 		{tcp_error, Socket, Reason} ->
-		    ?vtrace("read_header_ip -> socket error: ~p",
-			    [Reason]),
+		    ?vtrace("read_header(ip) -> socket error: ~p", [Reason]),
+		    {socket_closed, Reason};
+
+		%% 
+		%% SSL
+		%% 
+		{ssl, Socket, Data} ->
+		    ?vtrace("read_header(ssl) -> got some data: ~p bytes", 
+			    [sz(Data)]),
+		    read_header(SocketType, Socket, 
+				Timeout-(t()-T), MaxHdrSz, [SoFar,Data]);
+		{ssl_closed, Socket} ->
+		    ?vtrace("read_header(ssl) -> socket closed",[]),
+		    {socket_closed, normal};
+		{ssl_error, Socket, Reason} ->
+		    ?vtrace("read_header(ssl) -> socket error: ~p", [Reason]),
 		    {socket_closed, Reason}
+
 	    after Timeout ->
-		    ?vlog("read_header_ip -> timeout",[]),
+		    ?vlog("read_header(~p) -> timeout",[SocketType]),
 		    {socket_closed, timeout}
 	    end
     end.
@@ -131,38 +139,6 @@ hsplit(MaxHdrSz, Accu, [H|T]) when length(Accu) < MaxHdrSz ->
     hsplit(MaxHdrSz,[H|Accu],T);
 hsplit(MaxHdrSz, Accu, D) ->
     throw({error,{header_too_long,length(Accu),length(D)}}).
-
-
-
-read_header_ssl(_,_,_, MaxHdrSz, Bs) 
-  when MaxHdrSz < length(Bs) ->
-    ?vlog("header to long: "
-	  "~n   MaxHdrSz:   ~p"
-	  "~n   length(Bs): ~p", [MaxHdrSz,length(Bs)]),
-    throw({error, {header_too_long,MaxHdrSz,length(Bs)}});
-
-read_header_ssl(_, _, _, _,[$\n, $\r, $\n, $\r | Rest]) ->
-    {ok, lists:reverse([$\n, $\r, $\n, $\r | Rest]), []};
-
-read_header_ssl(_SocketType, _Socket, Timeout, _MaxHdrSz, _Bs) 
-  when Timeout < 0 ->
-    {socket_closed, timeout};
-
-read_header_ssl(SocketType, Socket, Timeout, MaxHdrSz, Bs) ->
-    T = t(),
-    case (catch httpd_socket:recv(SocketType, Socket, 1, Timeout)) of
-	{ok,[B]} ->
-	    read_header_ssl(SocketType,Socket,Timeout-(t()-T),MaxHdrSz,[B|Bs]);
-	{error, closed} ->
-	    {socket_closed, normal};
-	{error, etimedout} ->
-	    {socket_closed, timeout};
-	{error,Reason} ->
-	    {socket_closed, Reason};
-	Other ->
-	    {socket_closed,Other}
-    end.
-
 
 
 %% content_length

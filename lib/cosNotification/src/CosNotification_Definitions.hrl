@@ -182,9 +182,9 @@
 %% Global (OMG) representation of QoS.
 -define(not_DEFAULT_QOS, 
 [#'CosNotification_Property'{name=?not_MaximumBatchSize, 
-			     value=any:create(orber_tc:long(), 100)},
+			     value=any:create(orber_tc:long(), 1)},
  #'CosNotification_Property'{name=?not_PacingInterval, 
-			     value=any:create(orber_tc:unsigned_long_long(), 200000000)},
+			     value=any:create(orber_tc:unsigned_long_long(), 0)},
  #'CosNotification_Property'{name=?not_Timeout, 
 			     value=any:create(orber_tc:unsigned_long_long(), 0)},
  #'CosNotification_Property'{name=?not_MaxEventsPerConsumer, 

@@ -28,6 +28,7 @@
 -export([new/0, store/3, retrieve/2, soft_retrieve/2, intf_resolv/3]).
 -export([get_full_scoped_name/3, scoped_id_new_global/1, scoped_id_new/1]).
 -export([scoped_id_strip/1,symtab_add_faked_included_types/1]).
+-export([scoped_id_is_global/1, scoped_id_add/2]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -195,7 +196,7 @@ symtab_add_faked_included_types(G) ->
 					  [],
 					  [],
 					  {tk_objref,
-					   "IDL:CORBA/TypeCode:1.0",
+					   "IDL:omg.org/CORBA/TypeCode:1.0",
 					   "TypeCode"}}});
 	erl_corba ->
 	    %% Add TypeCode as if it were defiend in included file
@@ -205,7 +206,7 @@ symtab_add_faked_included_types(G) ->
 					  [],
 					  [],
 					  {tk_objref,
-					   "IDL:CORBA/TypeCode:1.0",
+					   "IDL:omg.org/CORBA/TypeCode:1.0",
 					   "TypeCode"}}}); 
 	_ ->
 	    ok
