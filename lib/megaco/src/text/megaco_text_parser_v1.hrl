@@ -732,11 +732,22 @@ do_merge_action_requests(ContextId, CtxReq, CtxAuditReq, CmdReq, TopReq, []) ->
                      contextAttrAuditReq = strip_contextAttrAuditRequest(CtxAuditReq),
                      commandRequests     = lists:reverse(CmdReq)}.
 
+%% OTP-5085: 
+%% In order to solve a problem in the parser, the error descriptor
+%% has been put last in the non-empty commandReplyList, if it is not 
+%% asn1_NOVALUE
 merge_action_reply(ReplyList) ->
     CtxReq  = #'ContextRequest'{},
     TopReq  = [],
     CmdList = [],
-    do_merge_action_reply(ReplyList, CtxReq, TopReq, CmdList). 
+    case lists:reverse(ReplyList) of
+	[ED|RL2] when record(ED, 'ErrorDescriptor') ->
+	    AR = do_merge_action_reply(lists:reverse(RL2), 
+				       CtxReq, TopReq, CmdList),
+	    AR#'ActionReply'{errorDescriptor = ED};
+	_ ->
+	    do_merge_action_reply(ReplyList, CtxReq, TopReq, CmdList)
+    end.
 
 do_merge_action_reply([H | T], CtxReq, TopReq, CmdList) ->
     case H of

@@ -524,9 +524,6 @@ actionReplyBody      -> errorDescriptor               :
                         #'ActionReply'{errorDescriptor = '$1'} .
 actionReplyBody      -> commandReply commandReplyList : 
                         merge_action_reply(['$1' | '$2']) .
-actionReplyBody      -> commandReply commandReplyList 'COMMA' errorDescriptor : 
-                        setelement(#'ActionReply'.errorDescriptor, 
-                                   merge_action_reply(['$1' | '$2']), '$3') .
 
 commandReply         -> serviceChangeReply  : {command, '$1'} .
 commandReply         -> auditReply          : {command, '$1'} .
@@ -534,6 +531,12 @@ commandReply         -> ammsReply           : {command, '$1'} .
 commandReply         -> notifyReply         : {command, '$1'} .
 commandReply         -> contextProperty     : {context, '$1'} . 
 
+%% OTP-5085
+%% This ugly thing is to fool the parser. The errorDescriptor does not
+%% realy belong here. The merge_action_reply will remove it and put it
+%% in it's right place later.
+commandReplyList     -> 'COMMA' errorDescriptor : 
+                        ['$2'] .
 commandReplyList     -> 'COMMA' commandReply commandReplyList  : 
                         ['$2' | '$3'] .
 commandReplyList     -> '$empty' : [] .

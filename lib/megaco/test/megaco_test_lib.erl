@@ -97,10 +97,6 @@ tickets(Mod, Func, Config) ->
     end.
 	
 
-end_t() ->
-    receive after 1000 -> ok end,
-    erlang:halt().
-
 t(Case) ->
     process_flag(trap_exit, true),
     Res = lists:flatten(t(Case, default_config())),

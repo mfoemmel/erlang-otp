@@ -477,12 +477,12 @@ enc_ActionRequest(Val, State)
      ?RBRKT_INDENT(State)
     ].
 
+%% OTP-5085
 enc_ActionReply(#'ActionReply'{contextId       = Id,
 			       errorDescriptor = ED,
 			       contextReply    = CtxRep,
 			       commandReply    = CmdRep}, 
-		State) 
-  when CtxRep =/= asn1_NOVALUE; CmdRep =/= [] ->
+		State) ->
     [
      ?CtxToken,
      ?EQUAL,
@@ -503,10 +503,9 @@ do_enc_ActionReply(ED, CtxRep, CmdRep, State)
   when CtxRep =/= asn1_NOVALUE; CmdRep =/= [] ->
     [
      enc_list(decompose_ContextRequest(CtxRep) ++
-	      [{CmdRep, fun enc_CommandReply/2}],
-	      ?INC_INDENT(State)),
-     ?COMMA,
-     enc_ErrorDescriptor(ED, ?INC_INDENT(State))
+ 	      [{CmdRep, fun enc_CommandReply/2},
+	       {[ED],   fun enc_ErrorDescriptor/2}], % Indention cosmetics
+ 	      ?INC_INDENT(State))
     ];
 do_enc_ActionReply(ED, asn1_NOVALUE, [], State) ->
     [
@@ -1073,6 +1072,8 @@ enc_MediaDescriptor(Val, State)
      ?RBRKT_INDENT(State)
     ].
 
+decompose_streams(asn1_NOVALUE) ->
+    [];
 decompose_streams({'MediaDescriptor_streams',Val}) ->
     decompose_streams(Val);
 decompose_streams({Tag, Val}) ->

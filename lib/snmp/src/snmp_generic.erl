@@ -247,6 +247,8 @@ table_foreach(Tab, Fun, Oid) ->
 %% column FirstCol.
 %% Returns: List of endOfTable | {NextOid, Value}
 %%------------------------------------------------------------------
+handle_table_next(_NameDb, _RowIndex, _OrgCols, _FirstCol, _FOI, undefined) ->
+    [endOfTable];
 handle_table_next(_NameDb, _RowIndex, [], _FirstCol, _FOI, _LastCol) ->
     [];
 handle_table_next(NameDb, RowIndex, OrgCols, FirstCol, FOI, LastCol) ->
@@ -265,7 +267,7 @@ handle_table_next(NameDb, RowIndex, OrgCols, FirstCol, FOI, LastCol) ->
 		    handle_table_next(NameDb, [], NewCols,FirstCol,FOI,LastCol),
 		lists:append(NewVals, EndOfTabs);
 	    NextIndex ->  
-		% We found next Row; check if all Cols are initialized.
+		%% We found next Row; check if all Cols are initialized.
 		Row = table_get_elements(NameDb, NextIndex, Cols, FOI),
 		check_all_initalized(Row,Cols,NameDb,NextIndex,
 				     FirstCol, FOI, LastCol)

@@ -300,7 +300,7 @@
 	  ifaddr = any,     %% bind to interface address
 	  port   = 0,       %% bind to port (default is dynamic port)
 	  fd      = -1,     %% fd >= 0 => already bound
-	  opts   = [{active,true}]
+	  opts   = []       %% [{active,true}] added in inet:connect_options
 	 }).
 
 -record(listen_opts, 
@@ -309,7 +309,8 @@
 	  port   = 0,                %% bind to port (default is dynamic port)
 	  backlog = ?LISTEN_BACKLOG, %% backlog
 	  fd      = -1,              %% %% fd >= 0 => already bound
-	  opts   = [{active,true}]
+	  opts   = []                %% [{active,true}] added in 
+	                             %% inet:listen_options
 	 }).
 
 -record(udp_opts,

@@ -1,35 +1,83 @@
 {"%VSN%",
- [{"2.1",
+ [{"2.1.2",
    [
-    {load_module, megaco_messenger, soft_purge, soft_purge, 
+    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v1,  soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v2,  soft_purge, soft_purge, []},
+    {load_module, megaco_text_parser_v1,          soft_purge, soft_purge, []},
+    {load_module, megaco_text_parser_v2,          soft_purge, soft_purge, []}
+   ]
+  },
+  {"2.1.1",
+   [
+    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v1,  soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v2,  soft_purge, soft_purge, []},
+    {load_module, megaco_text_parser_v1,          soft_purge, soft_purge, []},
+    {load_module, megaco_text_parser_v2,          soft_purge, soft_purge, []}
+   ]
+  },
+  {"2.1",
+   [
+    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v1,  soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v2,  soft_purge, soft_purge, []},
+    {load_module, megaco_messenger,               soft_purge, soft_purge, 
      [megaco_messenger_misc]},
-    {load_module, megaco_messenger_misc, soft_purge, soft_purge, 
+    {load_module, megaco_messenger_misc,          soft_purge, soft_purge, 
      [megaco_text_parser_v1, megaco_text_parser_v2, megaco_trans_sender, 
       megaco_trans_sender]},
-    {load_module, megaco_text_scanner, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_v1, soft_purge, soft_purge, 
+    {load_module, megaco_text_scanner,            soft_purge, soft_purge, []},
+    {load_module, megaco_text_parser_v1,          soft_purge, soft_purge, 
      [megaco_text_scanner]},
-    {load_module, megaco_text_parser_v2, soft_purge, soft_purge, 
+    {load_module, megaco_text_parser_v2,          soft_purge, soft_purge, 
      [megaco_text_scanner]},
-    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []},
+    {update, megaco_trans_sender,         soft, soft_purge, soft_purge, []},
     {update, megaco_flex_scanner_handler, soft, soft_purge, soft_purge, []}
    ]
   }
  ],
 
- [{"2.1",
+ [{"2.1.2",
    [
-    {load_module, megaco_messenger, soft_purge, soft_purge, 
+    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v1,  soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v2,  soft_purge, soft_purge, []},
+    {load_module, megaco_text_parser_v1,          soft_purge, soft_purge, []},
+    {load_module, megaco_text_parser_v2,          soft_purge, soft_purge, []}
+   ]
+  },
+  {"2.1.1",
+   [
+    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v1,  soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v2,  soft_purge, soft_purge, []},
+    {load_module, megaco_text_parser_v1,          soft_purge, soft_purge, []},
+    {load_module, megaco_text_parser_v2,          soft_purge, soft_purge, []}
+   ]
+  },
+  {"2.1",
+   [
+    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v1,  soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v2,  soft_purge, soft_purge, []},
+    {load_module, megaco_messenger,               soft_purge, soft_purge, 
      [megaco_messenger_misc]},
-    {load_module, megaco_messenger_misc, soft_purge, soft_purge, 
+    {load_module, megaco_messenger_misc,          soft_purge, soft_purge, 
      [megaco_text_parser_v1, megaco_text_parser_v2, megaco_trans_sender, 
       megaco_trans_sender]},
-    {load_module, megaco_text_scanner, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser_v1, soft_purge, soft_purge, 
+    {load_module, megaco_text_scanner,            soft_purge, soft_purge, []},
+    {load_module, megaco_text_parser_v1,          soft_purge, soft_purge, 
      [megaco_text_scanner]},
-    {load_module, megaco_text_parser_v2, soft_purge, soft_purge, 
+    {load_module, megaco_text_parser_v2,          soft_purge, soft_purge, 
      [megaco_text_scanner]},
-    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []},
+    {update, megaco_trans_sender,         soft, soft_purge, soft_purge, []},
     {update, megaco_flex_scanner_handler, soft, soft_purge, soft_purge, []}
    ]
   }

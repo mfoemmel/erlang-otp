@@ -413,6 +413,7 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
     case snmp_vacm:get_mib_view(notify, SecModel, SecName, SecLevel,
 				ContextName) of
 	{ok, MibView} ->
+	    ?vtrace("mib view: ~w",[MibView]),
 	    case check_all_varbinds(TrapRec, Vbs, MibView) of
 		true when MpModel == ?MP_V1 ->
 		    ?vtrace("v1 mp model",[]),

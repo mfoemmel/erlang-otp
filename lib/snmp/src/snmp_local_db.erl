@@ -107,7 +107,7 @@ init([Dir, Prio, Opts]) ->
 do_dets_open(Name, Dir, Repair) ->
     case dets_open_file(Name, Dir, Repair) of
 	{ok, Dets} ->
-	    ?vdebug("pets open done",[]),
+	    ?vdebug("dets open done",[]),
 	    Dets;
 	{error, Reason} ->
 	    error_msg("Error opening database ~w: ~w", [Name, Reason]),
@@ -854,13 +854,13 @@ get_auto_repair(L) ->
     end.
 
 validate(auto_repair,true)         -> true;
-validate(auto_repair,true_verbose) -> true_verbose;
+validate(auto_repair,true_verbose) -> true;
 validate(auto_repair,_)            -> false;
 
 validate(verbosity,Verbosity) -> snmp_verbosity:validate(Verbosity).
 
 error_msg(Format, X) ->
-    Form = lists:concat(["** Batabase error: ", Format, "\n"]),
+    Form = lists:concat(["** Database error: ", Format, "\n"]),
     catch error_logger:error_msg(Form, X).
 
 %% ----------------------------------------------------------------

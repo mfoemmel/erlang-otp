@@ -88,7 +88,7 @@ endif
 ifeq ($(NO_EHALT),true)
 EHALT =
 else
-EHALT = -s megaco_test_lib end_t
+EHALT = -s init stop
 endif
 
 
@@ -157,12 +157,12 @@ timeb2: make
 codec: make
 	erl -noshell -sname megaco_codec $(ERL_PATH) \
             -s megaco_test_lib t megaco_codec_test \
-            -s erlang halt
+            $(EHALT)
 
 codec1: make
 	erl -noshell -sname megaco_codec1 $(ERL_PATH) \
             -s megaco_test_lib t megaco_codec_v1_test \
-            -s erlang halt
+            $(EHALT)
 
 codec1_tickets: make
 	erl -noshell -sname megaco_codec1_tickets $(ERL_PATH) \
@@ -172,7 +172,7 @@ codec1_tickets: make
 codec2: make
 	erl -noshell -sname megaco_codec2 $(ERL_PATH) \
             -s megaco_test_lib t megaco_codec_v2_test \
-            -s erlang halt
+            $(EHALT)
 
 codec2_tickets: make
 	erl -noshell -sname megaco_codec2_tickets $(ERL_PATH) \
@@ -259,7 +259,7 @@ tickets: make
 test: make
 	erl -noshell -sname megaco_test $(ERL_PATH) \
             -s megaco_test_lib t $(SUITE) \
-            -s erlang halt
+            $(EHALT)
 
 utest: make
 	erl -noshell -sname megaco_utest $(ERL_PATH) \

@@ -516,6 +516,8 @@ bif ets:prev/2
 bif 'erl.lang.ets':prev/2		ebif_ets_prev_2
 bif ets:insert/2
 bif 'erl.lang.ets':insert/2		ebif_ets_insert_2
+bif ets:insert_new/2
+bif 'erl.lang.ets':insert_new/2		ebif_ets_insert_new_2
 bif ets:rename/2
 bif 'erl.lang.ets':rename/2		ebif_ets_rename_2
 bif ets:safe_fixtable/2

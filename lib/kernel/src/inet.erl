@@ -291,10 +291,23 @@ stats() ->
 connect_options() ->
     [reuseaddr, keepalive, linger, sndbuf, recbuf, nodelay,
      header, active, packet, buffer, mode, deliver,
-     exit_on_close, high_watermark, low_watermark, bit8, send_timeout].
+     exit_on_close, high_watermark, low_watermark, bit8, send_timeout,
+     delay_send].
     
 connect_options(Opts, Family) ->
-    case con_opt(Opts, #connect_opts { }, connect_options()) of
+    BaseOpts = 
+	case application:get_env(kernel, inet_default_connect_options) of
+	    {ok,List} when is_list(List) ->
+		NList = [{active, true} | lists:keydelete(active,1,List)],     
+		#connect_opts{ opts = NList};
+	    {ok,{active,Bool}} -> 
+		#connect_opts{ opts = [{active,true}]};
+	    {ok,Option} -> 
+		#connect_opts{ opts = [{active,true}, Option]};
+	    _ ->
+		#connect_opts{ opts = [{active,true}]}
+	end,
+    case con_opt(Opts, BaseOpts, connect_options()) of
 	{ok, R} ->
 	    {ok, R#connect_opts {
 		   ifaddr = translate_ip(R#connect_opts.ifaddr, Family)
@@ -332,10 +345,22 @@ con_add(Name, Val, R, Opts, AllOpts) ->
 listen_options() ->
     [reuseaddr, keepalive, linger, sndbuf, recbuf, nodelay,
      header, active, packet, buffer, mode, deliver, backlog,
-     exit_on_close, high_watermark, low_watermark, bit8, send_timeout].
+     exit_on_close, high_watermark, low_watermark, bit8, send_timeout,
+     delay_send].
 
 listen_options(Opts, Family) ->
-    case list_opt(Opts, #listen_opts { }, listen_options()) of
+    BaseOpts = 
+	case application:get_env(kernel, inet_default_listen_options) of
+	    {ok,List} when is_list(List) ->
+		NList = [{active, true} | lists:keydelete(active,1,List)],		       #listen_opts{ opts = NList};
+	    {ok,{active,Bool}} -> 
+		#listen_opts{ opts = [{active,true}]};
+	    {ok,Option} -> 
+		#listen_opts{ opts = [{active,true}, Option]};
+	    _ ->
+		#listen_opts{ opts = [{active,true}]}
+	end,
+    case list_opt(Opts, BaseOpts, listen_options()) of
 	{ok, R} ->
 	    {ok, R#listen_opts {
 		   ifaddr = translate_ip(R#listen_opts.ifaddr, Family)

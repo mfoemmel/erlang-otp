@@ -28,8 +28,12 @@
          spawn/3,spawn_link/3,spawn/4,spawn_link/4,
          spawn_opt/2, spawn_opt/3, spawn_opt/4, spawn_opt/5,
 	 start/3, start/4, start/5, start_link/3, start_link/4,start_link/5,
+	 hibernate/3,
 	 init_ack/1, init_ack/2,
 	 init_p/3,init_p/5,format/1,initial_call/1,translate_initial_call/1]).
+
+%% Internal exports.
+-export([wake_up/3]).
 
 spawn(F) when function(F) ->
     Parent = get_my_name(),
@@ -91,6 +95,10 @@ spawn_opt(Node,M,F,A,Opts) ->
     Ancestors = get_ancestors(),
     erlang:spawn_opt(Node,proc_lib,init_p,[Parent,Ancestors,M,F,A],Opts).
 
+
+hibernate(M,F,A) ->
+    erlang:hibernate(proc_lib, wake_up, [M,F,A]).
+
 ensure_link(SpawnOpts) ->
     case lists:member(link, SpawnOpts) of
 	true -> 
@@ -111,6 +119,10 @@ init_p(Parent,Ancestors,M,F,A) ->
     put('$initial_call',{M,F,A}),
     Result = (catch apply(M,F,A)),
     exit_p(Result,{M,F,A}).
+
+wake_up(M,F,A) ->
+    Result = (catch apply(M,F,A)),
+    exit_p(Result, {M,F,A}).
 
 exit_p({'EXIT',Reason},StartF) ->
     crash_report(Reason,StartF),

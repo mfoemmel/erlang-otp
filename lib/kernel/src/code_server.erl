@@ -218,13 +218,30 @@ handle_call({load_file,Mod},{_From,_Tag}, S) ->
 	    {reply,Status,St}
     end;
 
-handle_call({add_path,Where,Dir}, {_From,_Tag}, S) ->
-    {Resp,Path} = add_path(Where, Dir, S#state.path, S#state.namedb),
-    {reply,Resp,rehash_cache(S#state{path = Path})};
+handle_call({add_path,Where,Dir0}, {_From,_Tag}, S=#state{cache=Cache0}) ->
+    case Cache0 of
+	no_cache ->
+	    {Resp,Path} = add_path(Where, Dir0, S#state.path, S#state.namedb),
+	    {reply,Resp,S#state{path=Path}};
+	_ ->
+	    Dir = absname(Dir0), %% Cache always expands the path 
+	    {Resp,Path} = add_path(Where, Dir, S#state.path, S#state.namedb),
+	    Cache=update_cache([Dir],Where,Cache0),
+	    {reply,Resp,S#state{path=Path,cache=Cache}}
+    end;
 
-handle_call({add_paths,Where,Dirs}, {_From,_Tag}, S) ->
-    {Resp,Path} = add_paths(Where,Dirs,S#state.path,S#state.namedb),
-    {reply,Resp,rehash_cache(S#state{path = Path})};
+handle_call({add_paths,Where,Dirs0}, {_From,_Tag}, S=#state{cache=Cache0}) ->
+    case Cache0 of
+	no_cache ->
+	    {Resp,Path} = add_paths(Where,Dirs0,S#state.path,S#state.namedb),
+	    {reply,Resp, S#state{path=Path}};
+	_ ->
+	    %% Cache always expands the path 
+	    Dirs = [absname(Dir) || Dir <- Dirs0], 
+	    {Resp,Path} = add_paths(Where, Dirs, S#state.path, S#state.namedb),
+	    Cache=update_cache(Dirs,Where,Cache0),
+	    {reply,Resp,S#state{cache=Cache,path=Path}}
+    end;
 
 handle_call({set_path,PathList}, {_From,_Tag}, S) ->
     Path = S#state.path,
@@ -355,31 +372,46 @@ rehash_cache(St = #state{cache = OldCache}) ->
 
 rehash_cache(Cache, St = #state{path = Path}) ->
     Ext = code_aux:objfile_extension(),
-    {Cache,NewPath} = locate_mods(lists:reverse(Path), Ext, Cache, []),
+    {Cache,NewPath} = locate_mods(lists:reverse(Path), first, Ext, Cache, []),
     St#state{cache = Cache, path=NewPath}.
 
-locate_mods([Dir0|Path], Ext, Cache, Acc) ->
+update_cache(Dirs, Where, Cache0) ->
+    Ext = code_aux:objfile_extension(),
+    {Cache, _} = locate_mods(Dirs, Where, Ext, Cache0, []),
+    Cache.
+
+locate_mods([Dir0|Path], Where, Ext, Cache, Acc) ->
     Dir = absname(Dir0), %% Cache always expands the path 
     case erl_prim_loader:list_dir(Dir) of
 	{ok, Files} -> 
-	    Cache = filter_mods(Files, Ext, Dir, Cache),
-	    locate_mods(Path, Ext, Cache, [Dir|Acc]);
-	{error, _} ->
-	    locate_mods(Path, Ext, Cache, Acc)
+	    Cache = filter_mods(Files, Where, Ext, Dir, Cache),
+	    locate_mods(Path, Where, Ext, Cache, [Dir|Acc]);
+	error ->
+	    locate_mods(Path, Where, Ext, Cache, Acc)
     end;
-locate_mods([], _, Cache, Path) ->
+locate_mods([], _, _, Cache, Path) ->
     {Cache,Path}.
 
-filter_mods([File|Rest], Ext, Dir, Cache) ->
+filter_mods([File|Rest], Where, Ext, Dir, Cache) ->
     case filename:extension(File) of
 	Ext ->
 	    Mod = list_to_atom(filename:rootname(File, Ext)),
-	    true = ets:insert(Cache, {Mod, Dir}),
-	    filter_mods(Rest, Ext, Dir, Cache);
+	    case Where of
+		first ->
+		    true = ets:insert(Cache, {Mod, Dir});
+		last ->
+		    case ets:lookup(Cache, Mod) of
+			[] ->
+			    true = ets:insert(Cache, {Mod, Dir});
+			_ ->
+			    ignore
+		    end
+	    end,
+	    filter_mods(Rest, Where, Ext, Dir, Cache);
 	_ ->
-	    filter_mods(Rest, Ext, Dir, Cache)
+	    filter_mods(Rest, Where, Ext, Dir, Cache)
     end;
-filter_mods([], _, _, Cache) ->
+filter_mods([], _, _, _, Cache) ->
     Cache.
 
 %% --------------------------------------------------------------

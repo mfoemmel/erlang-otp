@@ -254,7 +254,7 @@ accept0(L, Time) when port(L), integer(Time) ->
 
 %% setup options from listen socket on the connected socket
 accept_opts(L, S) ->
-    case getopts(L, [active, nodelay, keepalive]) of
+    case getopts(L, [active, nodelay, keepalive, delay_send]) of
 	{ok, Opts} ->
 	    case setopts(S, Opts) of
 		ok -> {ok, S};

@@ -110,6 +110,7 @@
 		late_loader_queue = [],
 		dumper_pid,          % Dumper or schema commit pid
 		dumper_queue = [],   % Dumper or schema commit queue
+		others = [],         % Processes that needs the copier_done msg
 		dump_log_timer_ref,
 		is_stopping = false
 	       }).
@@ -293,7 +294,31 @@ release_schema_commit_lock() ->
 
 %% Special for preparation of add table copy
 get_network_copy(Tab, Cs) ->
-    call({net_load, Tab, Cs}).
+%   We can't let the controller queue this one
+%   because that may cause a deadlock between schema_operations
+%   and initial tableloadings which both takes schema locks.
+%   But we have to get copier_done msgs when the other side 
+%   goes down.
+    call({add_other, self()}),
+    Reason = {dumper,add_table_copy},
+    Work = #net_load{table = Tab,reason = Reason,cstruct = Cs},
+    Res = (catch load_table(Work)),
+    call({del_other, self()}),
+    case Res of
+ 	#loader_done{is_loaded = true} ->
+ 	    Tab = Res#loader_done.table_name,
+ 	    case Res#loader_done.needs_announce of
+ 		true ->
+ 		    i_have_tab(Tab);
+ 		false ->
+ 		    ignore
+ 	    end,
+ 	    Res#loader_done.reply;
+ 	#loader_done{} -> 
+ 	    Res#loader_done.reply;
+ 	Else ->
+ 	    {not_loaded, Else}
+    end.
 
 %% This functions is invoked from the dumper
 %% 
@@ -714,6 +739,13 @@ handle_call({block_table, [Tab], From}, _Dummy, State) ->
 handle_call({check_w2r, _Node, Tab}, _From, State) ->
     {reply, val({Tab, where_to_read}), State};
 
+handle_call({add_other, Who}, _From, State = #state{others=Others0}) ->
+    Others = [Who|Others0],
+    {reply, ok, State#state{others=Others}};
+handle_call({del_other, Who}, _From, State = #state{others=Others0}) ->
+    Others = lists:delete(Who, Others0),
+    {reply, ok, State#state{others=Others}};
+	    
 handle_call(Msg, _From, State) ->
     error("~p got unexpected call: ~p~n", [?SERVER_NAME, Msg]),
     noreply(State).
@@ -884,6 +916,9 @@ handle_cast({mnesia_down, Node}, State) ->
 	    lists:foreach(fun({Pid,_}) -> Pid ! {copier_done, Node} end,
 			  Pids)
     end,
+    lists:foreach(fun(Pid) -> Pid ! {copier_done,Node} end, 
+		  State#state.others),
+    
     Remove = fun(ST) ->
 		     node(ST#send_table.receiver_pid) /= Node
 	     end,

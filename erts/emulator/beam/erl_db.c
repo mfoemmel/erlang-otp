@@ -549,6 +549,113 @@ BIF_RETTYPE ets_insert_2(BIF_ALIST_2)
     }
 }
 
+
+/* 
+** The put-if-not-already-there BIF... 
+*/
+BIF_RETTYPE ets_insert_new_2(BIF_ALIST_2)
+{
+    DbTable* tb;
+    int cret = DB_ERROR_NONE;
+    Eterm ret = am_true;
+    Eterm lst;
+    Eterm lookup_ret;
+
+    CHECK_TABLES();
+
+    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE)) == NULL) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    if (BIF_ARG_2 == NIL) {
+	BIF_RET(am_true);
+    }
+    if (is_list(BIF_ARG_2)) {
+	for (lst = BIF_ARG_2; is_list(lst); lst = CDR(list_val(lst))) {
+	    if (is_not_tuple(CAR(list_val(lst))) || 
+		(arityval(*tuple_val(CAR(list_val(lst)))) < tb->common.keypos)) {
+		BIF_ERROR(BIF_P, BADARG);
+	    }
+	}
+	if (lst != NIL) {
+	    BIF_ERROR(BIF_P, BADARG);
+	}
+	if (IS_HASH_TABLE(tb->common.status)) {
+	    /* Loop through list first to verify that *all* keys are "free" */
+	    for (lst = BIF_ARG_2; is_list(lst); lst = CDR(list_val(lst))) {
+		if ((cret = db_member_hash(BIF_P, &(tb->hash), 
+					TERM_GETKEY(tb,CAR(list_val(lst))), 
+					&lookup_ret)) != DB_ERROR_NONE ||
+		    (lookup_ret != am_false)) {
+		    ret = am_false;
+		    goto done;
+		}
+	    }
+	    for (lst = BIF_ARG_2; is_list(lst); lst = CDR(list_val(lst))) {
+		if ((cret = db_put_hash(BIF_P, &(tb->hash), 
+					CAR(list_val(lst)), &ret)) != DB_ERROR_NONE)
+		    break;
+	    }
+	} else if (IS_TREE_TABLE(tb->common.status)) {
+	    /* Loop through list first to verify that *all* keys are "free" */
+	    for (lst = BIF_ARG_2; is_list(lst); lst = CDR(list_val(lst))) {
+		if ((cret = db_member_tree(BIF_P, &(tb->tree), 
+					TERM_GETKEY(tb,CAR(list_val(lst))), 
+					&lookup_ret)) != DB_ERROR_NONE ||
+		    (lookup_ret != am_false)) {
+		    ret = am_false;
+		    goto done;
+		}
+	    }
+	    for (lst = BIF_ARG_2; is_list(lst); lst = CDR(list_val(lst))) {
+		if ((cret = db_put_tree(BIF_P, &(tb->tree), 
+					CAR(list_val(lst)), &ret)) != DB_ERROR_NONE)
+		    break;
+	    }
+	    /*TT*/
+	} else {
+	    cret = DB_ERROR_UNSPEC;
+	}
+    } else {
+	if (is_not_tuple(BIF_ARG_2) || 
+	    (arityval(*tuple_val(BIF_ARG_2)) < tb->common.keypos)) {
+	    BIF_ERROR(BIF_P, BADARG);
+	}
+	if (IS_HASH_TABLE(tb->common.status)) {
+	    if ((cret = db_member_hash(BIF_P, &(tb->hash), 
+				       TERM_GETKEY(tb,BIF_ARG_2), 
+				       &lookup_ret)) != DB_ERROR_NONE ||
+		(lookup_ret != am_false)) {
+		ret = am_false;
+	    } else {
+		cret = db_put_hash(BIF_P, &(tb->hash), 
+				   BIF_ARG_2, &ret);
+	    }
+	} else if (IS_TREE_TABLE(tb->common.status)) {
+	    if ((cret = db_member_tree(BIF_P, &(tb->tree), 
+				       TERM_GETKEY(tb,BIF_ARG_2), 
+				       &lookup_ret)) != DB_ERROR_NONE ||
+		(lookup_ret != am_false)) {
+		ret = am_false;
+	    } else {
+		cret = db_put_tree(BIF_P, &(tb->tree), 
+				   BIF_ARG_2, &ret);
+	    }
+	    /*TT*/
+	} else {
+	    cret = DB_ERROR_UNSPEC;
+	}
+    }
+done:
+    switch (cret) {
+    case DB_ERROR_NONE:
+	BIF_RET(ret);
+    case DB_ERROR_SYSRES:
+	BIF_ERROR(BIF_P, SYSTEM_LIMIT);
+    default:
+	BIF_ERROR(BIF_P, BADARG);
+    }
+}
+
 /*
 ** Rename a (possibly) named table
 */

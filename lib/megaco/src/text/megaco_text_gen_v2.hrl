@@ -26,6 +26,8 @@
 %% - All IndAud stuff
 %%----------------------------------------------------------------------
 
+%% -define(d(F,A), io:format("~w:" ++ F ++ "~n", [?MODULE|A])).
+	       
 -define(META_ENC(Type, Item), Item) .
 %% -define(META_ENC(Type, Item), megaco_meta_package:encode(text, Type, Item)).
 %% -define(META_DEC(Type, Item), megaco_meta_package:decode(text, Type, Item)).
@@ -132,7 +134,8 @@ enc_Message_messageBody({Tag, Val}, State) ->
 	    enc_Message_messageBody_transactions(Val, State)
     end.
 
-enc_Message_messageBody_transactions({'Message_messageBody_transactions',Val}, State) ->
+enc_Message_messageBody_transactions({'Message_messageBody_transactions',Val}, 
+				     State) ->
     enc_Message_messageBody_transactions(Val, State);
 enc_Message_messageBody_transactions(Val, State)
   when list(Val), Val /= []->
@@ -408,7 +411,8 @@ enc_immAckRequired(Val, State) ->
 	    [?ImmAckRequiredToken, ?COMMA_INDENT(?INC_INDENT(State))]
     end.
 
-enc_TransactionReply_transactionResult({'TransactionReply_transactionResult',Val}, State) ->
+enc_TransactionReply_transactionResult({'TransactionReply_transactionResult',
+					Val}, State) ->
     enc_TransactionReply_transactionResult(Val, State);
 enc_TransactionReply_transactionResult({Tag, Val}, State) ->
     case Tag of
@@ -478,12 +482,12 @@ enc_ActionRequest(Val, State)
      ?RBRKT_INDENT(State)
     ].
 
+%% OTP-5085
 enc_ActionReply(#'ActionReply'{contextId       = Id,
 			       errorDescriptor = ED,
 			       contextReply    = CtxRep,
 			       commandReply    = CmdRep}, 
-		State) 
-  when CtxRep =/= asn1_NOVALUE; CmdRep =/= [] ->
+		State) ->
     [
      ?CtxToken,
      ?EQUAL,
@@ -504,35 +508,16 @@ do_enc_ActionReply(ED, CtxRep, CmdRep, State)
   when CtxRep =/= asn1_NOVALUE; CmdRep =/= [] ->
     [
      enc_list(decompose_ContextRequest(CtxRep) ++
-	      [{CmdRep, fun enc_CommandReply/2}],
-	      ?INC_INDENT(State)),
-     ?COMMA,
-     enc_ErrorDescriptor(ED, ?INC_INDENT(State))
+ 	      [{CmdRep, fun enc_CommandReply/2},
+	       {[ED],   fun enc_ErrorDescriptor/2}], % Indention cosmetics
+ 	      ?INC_INDENT(State))
     ];
-do_enc_ActionReply(ED, asn1_NOVALUE, [], State) ->
+do_enc_ActionReply(ED, asn1_NOVALUE, [], State) 
+  when ED =/= asn1_NOVALUE ->
     [
      enc_ErrorDescriptor(ED, ?INC_INDENT(State))
     ].
 
-%% enc_ActionReply(Val, State)
-%%   when record(Val, 'ActionReply') ->
-%%     [
-%%      ?CtxToken,
-%%      ?EQUAL,
-%%      enc_ContextID(Val#'ActionReply'.contextId, State),
-%%      ?LBRKT_INDENT(State),
-%%      case Val#'ActionReply'.errorDescriptor of
-%% 	 asn1_NOVALUE ->
-%% 	     enc_list(decompose_ContextRequest(Val#'ActionReply'.contextReply) ++
-%% 		      [{Val#'ActionReply'.commandReply,
-%% 			fun enc_CommandReply/2}],
-%% 		      ?INC_INDENT(State));
-%% 	 ErrorDesc when Val#'ActionReply'.contextReply == asn1_NOVALUE,
-%% 			Val#'ActionReply'.commandReply == [] ->
-%% 	     enc_ErrorDescriptor(ErrorDesc, ?INC_INDENT(State))
-%%      end,
-%%      ?RBRKT_INDENT(State)
-%%     ].
 
 decompose_ContextRequest(asn1_NOVALUE) ->
     [{[], dummy}] ;
@@ -1364,6 +1349,8 @@ enc_MediaDescriptor(Val, State)
      ?RBRKT_INDENT(State)
     ].
 
+decompose_streams(asn1_NOVALUE) ->
+    [];
 decompose_streams({'MediaDescriptor_streams',Val}) ->
     decompose_streams(Val);
 decompose_streams({Tag, Val}) ->

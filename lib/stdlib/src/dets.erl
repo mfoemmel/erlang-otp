@@ -35,6 +35,7 @@
          init_table/2,
 	 init_table/3,
          insert/2,
+         insert_new/2,
          is_compatible_bchunk_format/2,
 	 is_dets_file/1,
          lookup/2,
@@ -308,6 +309,11 @@ insert(Tab, Objs) when list(Objs) ->
     badarg(treq(Tab, {insert, Objs}), [Tab, Objs]);
 insert(Tab, Obj) ->
     badarg(treq(Tab, {insert, [Obj]}), [Tab, Obj]).
+
+insert_new(Tab, Objs) when list(Objs) ->
+    badarg(treq(Tab, {insert_new, Objs}), [Tab, Objs]);
+insert_new(Tab, Obj) ->
+    badarg(treq(Tab, {insert_new, [Obj]}), [Tab, Obj]).
 
 internal_open(Pid, Args) ->
     req(Pid, {internal_open, Args}).
@@ -1060,6 +1066,10 @@ apply_op(Op, From, Head, N) ->
 		    From ! {self(), badarg},
 		    ok
 	    end;
+	{insert_new, Objs} when Head#head.update_mode == dirty ->
+            {H2, Res} = finsert_new(Head, Objs),
+            From ! {self(), Res},
+            {N + 1, H2};
 	{lookup_keys, Keys}  when Head#head.version == 8 ->
 	    {H2, Res} = flookup_keys(Head, Keys),
 	    From ! {self(), Res},
@@ -1155,6 +1165,9 @@ stream_op(Head, Pids, C, N, Pid, {lookup_keys,Keys}, Fxd) ->
     NC = [{{lookup,Pid},Keys} | C],
     stream_loop(Head, Pids, NC, N, Fxd);
 stream_op(Head, Pids, C, N, Pid, {insert, _Objects} = Op, Fxd) ->
+    NC = [Op | C],
+    stream_loop(Head, [Pid | Pids], NC, N, Fxd);
+stream_op(Head, Pids, C, N, Pid, {insert_new, _Objects} = Op, Fxd) ->
     NC = [Op | C],
     stream_loop(Head, [Pid | Pids], NC, N, Fxd);
 stream_op(Head, Pids, C, N, Pid, {delete_key, _Keys} = Op, Fxd) ->
@@ -1412,6 +1425,31 @@ finsert(Head, Objects) ->
 	    {NewHead, ok};
 	Reply ->
 	    Reply
+    end.
+
+%% -> {NewHead, Reply}, Reply = ok | badarg | Error.
+finsert_new(Head, Objects) ->
+    KeyPos = Head#head.keypos,
+    case catch lists:map(fun(Obj) -> element(KeyPos, Obj) end, Objects) of
+        Keys when list(Keys) ->
+            case catch update_cache(Head, Keys, {lookup, nopid}) of
+                {Head1, PidObjs} when list(PidObjs) ->
+                    case lists:all(fun({_P,OL}) -> OL =:= [] end, PidObjs) of
+                        true ->
+                            catch begin 
+                                      {NewHead, []} = update_cache(Head1, 
+                                                                   Objects, 
+                                                                   insert),
+                                      {NewHead, true}
+                                  end;
+                        false=Reply ->
+                            {Head1, Reply}
+                    end;
+                HeadError ->
+                    HeadError
+            end;
+        _ ->
+            {Head, badarg}
     end.
 
 do_safe_fixtable(Head, Pid, true) ->
@@ -1692,7 +1730,7 @@ flookup_keys(Head, Keys) ->
 	{NewHead, [{_NoPid,Objs}]} -> 
 	    {NewHead, Objs};
 	{NewHead, L} when list(L) ->
-	    {NewHead, lists:append(lists:map(fun({_Pid,OL}) -> OL end, L))};
+	    {NewHead, lists:flatmap(fun({_Pid,OL}) -> OL end, L)};
 	HeadError ->
 	    HeadError
     end.

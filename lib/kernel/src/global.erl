@@ -1959,7 +1959,7 @@ get_own_nodes() ->
 
 
 %%-----------------------------------------------------------------
-%% The deleter process is a sattelite process to global_name_server
+%% The deleter process is a satellite process to global_name_server
 %% that does background batch deleting of names when a process
 %% that had globally registered names dies. It is started by and 
 %% linked to global_name_server.
@@ -1968,8 +1968,7 @@ get_own_nodes() ->
 start_the_deleter(Global) ->
     spawn_link(
       fun () -> 
-	      loop_the_deleter(Global),
-	      process_flag(trap_exit, true)
+	      loop_the_deleter(Global)
       end).
 
 loop_the_deleter(Global) ->
@@ -1991,10 +1990,11 @@ collect_deletions(Global, Deletions) ->
 	{delete_name,Global,Name,Pid} ->
 	    ?P2({delete_name, node(), self(), Name, Pid, nodes()}),
 	    collect_deletions(Global, [{Name,Pid}|Deletions]);
-	{'EXIT',Global,Reason} ->
-	    exit(Reason);
 	Other ->
-	    exit({unknown,Other})
+	    error_logger:error_msg("The global_name_server deleter process "
+				   "received an unexpected message:\n~p\n", 
+				   [Other]),
+	    collect_deletions(Global, Deletions)
     after case Deletions of
 	      [] -> infinity;
 	      _  -> 0

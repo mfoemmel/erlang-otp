@@ -38,6 +38,7 @@ typedef struct _erts_wait_t {
     HANDLE event;
     struct _erts_wait_t *next;
     struct _erts_wait_t *prev;
+    int in_list;
 } _erts_wait_t;
 
 typedef struct _erts_cond_t {
@@ -134,6 +135,7 @@ int erts_cond_signal(erts_cond_t cv)
     EnterCriticalSection(&cvp->cs);
     if (cvp->waiters) {
         SetEvent(cvp->waiters->event);
+	cvp->waiters->in_list = 0;
 	cvp->waiters = cvp->waiters->next;
 	if (cvp->waiters)
 	    cvp->waiters->prev = NULL;
@@ -149,8 +151,10 @@ int erts_cond_broadcast (erts_cond_t cv)
 
     /* signal every event in waiting queue */
     EnterCriticalSection(&cvp->cs);
-    for (wp = cvp->waiters; wp; wp = wp->next)
+    for (wp = cvp->waiters; wp; wp = wp->next) {
+	wp->in_list = 0;
 	SetEvent(wp->event);
+    }
     cvp->waiters = NULL;
     LeaveCriticalSection(&cvp->cs);
     return 0;
@@ -176,6 +180,7 @@ int erts_cond_timedwait(erts_cond_t cv, erts_mutex_t mtx, long time)
     wp->next = cvp->waiters;
     if (wp->next)
 	wp->next->prev = wp;
+    wp->in_list = 1;
     cvp->waiters = wp;
     LeaveCriticalSection(&cvp->cs);
 
@@ -185,14 +190,17 @@ int erts_cond_timedwait(erts_cond_t cv, erts_mutex_t mtx, long time)
     EnterCriticalSection((CRITICAL_SECTION*)mtx);
 
     if (code != WAIT_OBJECT_0) {
-	/* remove from wait list */
 	EnterCriticalSection(&cvp->cs);
-	if (wp->prev)
-	    wp->prev->next = wp->next;
-	else
-	    cvp->waiters = wp->next;
-	if (wp->next)
-	    wp->next->prev = wp->prev;
+	if (wp->in_list) {
+	    /* remove from wait list */
+	    if (wp->prev)
+		wp->prev->next = wp->next;
+	    else
+		cvp->waiters = wp->next;
+	    if (wp->next)
+		wp->next->prev = wp->prev;
+	    wp->in_list = 0;
+	}
 	LeaveCriticalSection(&cvp->cs);
     }
     /* else: we was removed from the list by a signal or broadcast */
@@ -220,6 +228,7 @@ static unsigned thread_wrapper(void* args)
     pwait = ((thread_data__ *) args)->pwait;
 
     wait.event = CreateEvent(NULL, FALSE, FALSE, NULL);
+    wait.in_list = 0;
     if (!wait.event || !TlsSetValue(tl_wait_ix, (LPVOID) &wait)) {
 	if (wait.event)
 	    CloseHandle(wait.event);
@@ -321,6 +330,7 @@ erts_sys_threads_init(void)
     if (!TlsSetValue(tl_wait_ix, (LPVOID) &main_thread_wait))
 	erl_exit(1, "Failed to set main thread wait object\n");
     main_thread_wait.event = CreateEvent(NULL, FALSE, FALSE, NULL);
+    main_thread_wait.in_list = 0;
     if (!main_thread_wait.event)
 	erl_exit(1, "Failed to create main thread wait event\n");
 

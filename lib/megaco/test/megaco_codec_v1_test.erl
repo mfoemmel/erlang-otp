@@ -134,9 +134,24 @@
 	 pretty_otp4949_msg2/1, 
 	 pretty_otp4949_msg3/1, 
 	 pretty_otp5042_msg1/1, 
+	 pretty_otp5068_msg1/1, 
+	 pretty_otp5085_msg1/1, 
+	 pretty_otp5085_msg2/1, 
+	 pretty_otp5085_msg3/1, 
+	 pretty_otp5085_msg4/1, 
+	 pretty_otp5085_msg5/1, 
+	 pretty_otp5085_msg6/1, 
+	 pretty_otp5085_msg7/1, 
 
 	 flex_pretty_tickets/1, 
 	 flex_pretty_otp5042_msg1/1, 
+	 flex_pretty_otp5085_msg1/1, 
+	 flex_pretty_otp5085_msg2/1, 
+	 flex_pretty_otp5085_msg3/1, 
+	 flex_pretty_otp5085_msg4/1, 
+	 flex_pretty_otp5085_msg5/1, 
+	 flex_pretty_otp5085_msg6/1, 
+	 flex_pretty_otp5085_msg7/1, 
 	 
 
 	 init_per_testcase/2, fin_per_testcase/2]).  
@@ -411,12 +426,27 @@ pretty_tickets(suite) ->
      pretty_otp4949_msg1,
      pretty_otp4949_msg2,
      pretty_otp4949_msg3,
-     pretty_otp5042_msg1
+     pretty_otp5042_msg1,
+     pretty_otp5068_msg1,
+     pretty_otp5085_msg1,
+     pretty_otp5085_msg2,
+     pretty_otp5085_msg3,
+     pretty_otp5085_msg4,
+     pretty_otp5085_msg5,
+     pretty_otp5085_msg6,
+     pretty_otp5085_msg7
     ].
 
 flex_pretty_tickets(suite) ->
     [
-     flex_pretty_otp5042_msg1
+     flex_pretty_otp5042_msg1,
+     flex_pretty_otp5085_msg1,
+     flex_pretty_otp5085_msg2,
+     flex_pretty_otp5085_msg3,
+     flex_pretty_otp5085_msg4,
+     flex_pretty_otp5085_msg5,
+     flex_pretty_otp5085_msg6,
+     flex_pretty_otp5085_msg7
     ].
 
 
@@ -491,6 +521,56 @@ flex_pretty_otp5042_msg1(Config) when list(Config) ->
 	      "~n~p", [M]),
 	    ok
     end.
+
+
+flex_pretty_otp5085_msg1(suite) ->
+    [];
+flex_pretty_otp5085_msg1(Config) when list(Config) ->
+    d("flex_pretty_otp5085_msg1 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    pretty_otp5085(ok, pretty_otp5085_msg1()).
+
+flex_pretty_otp5085_msg2(suite) ->
+    [];
+flex_pretty_otp5085_msg2(Config) when list(Config) ->
+    d("flex_pretty_otp5085_msg2 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    pretty_otp5085(error, pretty_otp5085_msg2()).
+
+flex_pretty_otp5085_msg3(suite) ->
+    [];
+flex_pretty_otp5085_msg3(Config) when list(Config) ->
+    d("flex_pretty_otp5085_msg3 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    pretty_otp5085(ok, pretty_otp5085_msg3()).
+
+flex_pretty_otp5085_msg4(suite) ->
+    [];
+flex_pretty_otp5085_msg4(Config) when list(Config) ->
+    d("flex_pretty_otp5085_msg4 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    pretty_otp5085(ok, pretty_otp5085_msg4()).
+
+flex_pretty_otp5085_msg5(suite) ->
+    [];
+flex_pretty_otp5085_msg5(Config) when list(Config) ->
+    d("flex_pretty_otp5085_msg5 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    pretty_otp5085(ok, pretty_otp5085_msg5()).
+
+flex_pretty_otp5085_msg6(suite) ->
+    [];
+flex_pretty_otp5085_msg6(Config) when list(Config) ->
+    d("flex_pretty_otp5085_msg6 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    pretty_otp5085(ok, pretty_otp5085_msg6()).
+
+flex_pretty_otp5085_msg7(suite) ->
+    [];
+flex_pretty_otp5085_msg7(Config) when list(Config) ->
+    d("flex_pretty_otp5085_msg7 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    pretty_otp5085(ok, pretty_otp5085_msg7()).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1284,7 +1364,7 @@ compact_otp4920_msg_1(M1, CheckEqual) ->
 		    exit({messages_not_equal, M1, M2});
 		{ok, Bin2} ->
 		    M2 = binary_to_list(Bin2),
-		    io:format("encoded:", []),
+		    io:format(", encoded:", []),
 		    ok;
 		Else ->
 		    io:format(", encode failed ", []),
@@ -1948,6 +2028,338 @@ h245bh/h245msgin { Stream =  1
  }  } 
  }  }  }".
   
+
+pretty_otp5068_msg1(suite) ->
+    [];
+pretty_otp5068_msg1(Config) when list(Config) ->
+    d("pretty_otp5068_msg1 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Msg = pretty_otp5068_msg1(),
+    case encode_message(megaco_pretty_text_encoder, [], Msg) of
+	{error, Reason} ->
+% 	    io:format("pretty_otp5068_msg1 -> "
+% 		      "~n   Reason: ~w"
+% 		      "~n", [Reason]),
+	    exit({unexpected_encode_result, Reason});
+	{ok, Bin} ->
+% 	    io:format("pretty_otp5068_msg1 -> successfull encode:"
+% 		      "~n~s~n", [binary_to_list(Bin)]),
+	    case decode_message(megaco_pretty_text_encoder, false, [], Bin) of
+		{ok, _} ->
+% 		    io:format("pretty_otp5068_msg1 -> ok~n", []),
+		    ok;
+		Else ->
+		    %% io:format("~npretty_otp5068_msg1 -> ~n~p~n", [Else]),
+		    exit({unexpected_decode_result, Else})
+	    end
+    end.
+
+pretty_otp5068_msg1() ->
+{'MegacoMessage',
+ asn1_NOVALUE,
+ {'Message',
+  2,
+  {deviceName,[109,103,51,51]},
+  {transactions,
+   [{transactionReply,
+     {'TransactionReply',
+      190,
+      asn1_NOVALUE,
+      {actionReplies,
+       [{'ActionReply',  %% Comments: Detta upprepas många gånger
+	 0,
+	 asn1_NOVALUE,
+	 asn1_NOVALUE,
+	 [{auditValueReply,
+	   {auditResult,
+	    {'AuditResult',
+	     {megaco_term_id,false,
+	      [[99,101,100,101,118,49,47,52,47,49,47,49],[51,49]]},
+	     [{mediaDescriptor,
+	       {'MediaDescriptor',
+		{'TerminationStateDescriptor',
+		 [],
+		 asn1_NOVALUE,
+		 inSvc},
+		asn1_NOVALUE}}]}}}]}]}}}]}}}.
+  
+
+pretty_otp5085_msg1(suite) ->
+    [];
+pretty_otp5085_msg1(Config) when list(Config) ->
+    d("pretty_otp5085_msg1 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    pretty_otp5085(ok, pretty_otp5085_msg1()).
+
+pretty_otp5085_msg2(suite) ->
+    [];
+pretty_otp5085_msg2(Config) when list(Config) ->
+    d("pretty_otp5085_msg2 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    pretty_otp5085(error, pretty_otp5085_msg2()).
+
+pretty_otp5085_msg3(suite) ->
+    [];
+pretty_otp5085_msg3(Config) when list(Config) ->
+    d("pretty_otp5085_msg3 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    pretty_otp5085(ok, pretty_otp5085_msg3()).
+
+pretty_otp5085_msg4(suite) ->
+    [];
+pretty_otp5085_msg4(Config) when list(Config) ->
+    d("pretty_otp5085_msg4 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    pretty_otp5085(ok, pretty_otp5085_msg4()).
+
+pretty_otp5085_msg5(suite) ->
+    [];
+pretty_otp5085_msg5(Config) when list(Config) ->
+    d("pretty_otp5085_msg5 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    pretty_otp5085(ok, pretty_otp5085_msg5()).
+
+pretty_otp5085_msg6(suite) ->
+    [];
+pretty_otp5085_msg6(Config) when list(Config) ->
+    d("pretty_otp5085_msg6 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    pretty_otp5085(ok, pretty_otp5085_msg6()).
+
+pretty_otp5085_msg7(suite) ->
+    [];
+pretty_otp5085_msg7(Config) when list(Config) ->
+    d("pretty_otp5085_msg7 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    pretty_otp5085(ok, pretty_otp5085_msg7()).
+
+pretty_otp5085(Expected, Msg) ->
+    t("pretty_otp5085 -> entry with"
+      "~n   Expected: ~p"
+      "~n   Msg:      ~p", [Expected, Msg]),
+    case (catch encode_message(megaco_pretty_text_encoder, [], Msg)) of
+	{error, Reason} when Expected == error ->
+ 	    d("pretty_otp5085 -> encode failed as expected"
+	      "~n   Reason: ~w", [Reason]),
+	    ok;
+	{error, Reason} ->
+ 	    e("pretty_otp5085 -> encode failed unexpectedly: "
+	      "~n   Reason: ~w", [Reason]),
+	    exit({unexpected_encode_result, Reason});
+	{ok, Bin} when Expected == error ->
+ 	    e("pretty_otp5085 -> encode succeded unexpectedly: "
+	      "~n   ~w", [binary_to_list(Bin)]),
+	    exit({unexpected_encode_result, binary_to_list(Bin)});
+	{ok, Bin} ->
+	    d("pretty_otp5085 -> successfull encode as expected:"
+	      "~n~s", [binary_to_list(Bin)]),
+	    case decode_message(megaco_pretty_text_encoder, false, [], Bin) of
+		{ok, Msg} ->
+ 		    d("pretty_otp5085 -> successfull decode~n", []),
+		    ok;
+		{ok, Msg2} ->
+ 		    e("pretty_otp5085 -> successfull decode"
+		      " - but not equal", []),
+		    exit({unexpected_decode_result, Msg, Msg2});
+		Else ->
+ 		    e("pretty_otp5085 -> decode failed:~n~p", [Else]),
+		    exit({unexpected_decode_result, Else})
+	    end
+    end.
+
+pretty_otp5085_msg1() ->
+    {'MegacoMessage',
+     asn1_NOVALUE,
+     {'Message',
+      ?VERSION,
+      {deviceName,"mg36"},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',
+	  230,
+	  asn1_NOVALUE,
+	  {actionReplies,
+	   [{'ActionReply', 
+	     400,
+	     {'ErrorDescriptor',504,asn1_NOVALUE},
+	     asn1_NOVALUE,
+	     []
+	    }
+	   ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+pretty_otp5085_msg2() ->
+    {'MegacoMessage',
+     asn1_NOVALUE,
+     {'Message',
+      ?VERSION,
+      {deviceName,"mg36"},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',
+	  230,
+	  asn1_NOVALUE,
+	  {actionReplies,
+	   [{'ActionReply', 
+	     400,
+	     asn1_NOVALUE,
+	     asn1_NOVALUE,
+	     []
+	    }
+	   ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+pretty_otp5085_msg3() ->
+    {'MegacoMessage',
+     asn1_NOVALUE,
+     {'Message',
+      ?VERSION,
+      {deviceName,"mg36"},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',
+	  230,
+	  asn1_NOVALUE,
+	  {actionReplies,
+	   [{'ActionReply', 
+	     400,
+	     asn1_NOVALUE,
+	     #'ContextRequest'{priority = 3},
+	     []
+	    }
+	   ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+pretty_otp5085_msg4() ->
+    {'MegacoMessage',
+     asn1_NOVALUE,
+     {'Message',
+      ?VERSION,
+      {deviceName,"mg36"},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',
+	  230,
+	  asn1_NOVALUE,
+	  {actionReplies,
+	   [{'ActionReply', 
+	     400,
+	     asn1_NOVALUE,
+	     asn1_NOVALUE,
+	     [{addReply,    cre_ammsReply([#megaco_term_id{id = ?A4444}])}, 
+	      {notifyReply, cre_notifyReply([#megaco_term_id{id = ?A5555}])}]
+	    }
+	   ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+pretty_otp5085_msg5() ->
+    {'MegacoMessage',
+     asn1_NOVALUE,
+     {'Message',
+      ?VERSION,
+      {deviceName,"mg36"},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',
+	  230,
+	  asn1_NOVALUE,
+	  {actionReplies,
+	   [{'ActionReply', 
+	     400,
+	     asn1_NOVALUE,
+	     #'ContextRequest'{priority = 5},
+	     [{addReply,    cre_ammsReply([#megaco_term_id{id = ?A4444}])}, 
+	      {notifyReply, cre_notifyReply([#megaco_term_id{id = ?A5555}])}]
+	    }
+	   ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+pretty_otp5085_msg6() ->
+    {'MegacoMessage',
+     asn1_NOVALUE,
+     {'Message',
+      ?VERSION,
+      {deviceName,"msg36"},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',
+	  230,
+	  asn1_NOVALUE,
+	  {actionReplies,
+	   [{'ActionReply', 
+	     400,
+	     {'ErrorDescriptor',504,asn1_NOVALUE},
+	     #'ContextRequest'{priority = 6},
+	     [{addReply,    cre_ammsReply([#megaco_term_id{id = ?A4444}])}, 
+	      {notifyReply, cre_notifyReply([#megaco_term_id{id = ?A5555}])}]
+	    }
+	   ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+pretty_otp5085_msg7() ->
+    {'MegacoMessage',
+     asn1_NOVALUE,
+     {'Message',
+      ?VERSION,
+      {deviceName,"msg36"},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',
+	  230,
+	  asn1_NOVALUE,
+	  {actionReplies,
+	   [{'ActionReply', 
+	     400,
+	     {'ErrorDescriptor',504,asn1_NOVALUE},
+	     #'ContextRequest'{priority = 7},
+	     [{notifyReply, cre_notifyReply([#megaco_term_id{id = ?A5555}])}]
+	    }
+	   ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
