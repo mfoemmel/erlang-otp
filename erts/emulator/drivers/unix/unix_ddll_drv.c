@@ -94,16 +94,14 @@ void *ddll_open(full_name)
  */
 void *ddll_sym(void *handle, char *func_name)
 {
-#if defined(HAVE_DLOPEN)
-    return dlsym(handle, func_name);
-#else
 #if defined(HAVE_MACH_O_DYLD_H)
     NSSymbol nssymbol = NSLookupSymbolInModule((NSModule*)handle,func_name);
     return nssymbol != NULL ? NSAddressOfSymbol(nssymbol) : NULL;
+#elif defined(HAVE_DLOPEN)
+    return dlsym(handle, func_name);
 #else
     dlopen_error = ERL_DLERR_NOT_AVAILABLE;
     return NULL;
-#endif
 #endif
 }
 
@@ -113,15 +111,13 @@ void *ddll_sym(void *handle, char *func_name)
 int ddll_close(handle)
      void *handle;
 {
-#if defined(HAVE_DLOPEN)
-    return dlclose(handle);
-#else
 #if defined(HAVE_MACH_O_DYLD_H)
     return 0;
+#elif defined(HAVE_DLOPEN)
+    return dlclose(handle);
 #else
     dlopen_error = ERL_DLERR_NOT_AVAILABLE;
     return -1;
-#endif
 #endif
 }
 
@@ -143,9 +139,6 @@ char *ddll_error()
 	    return "unknown error";
 	}
     }
-#ifdef HAVE_DLOPEN
-    msg = dlerror();
-#else
 #if defined(HAVE_MACH_O_DYLD_H)
     if (dyld_last_result != NSObjectFileImageSuccess) {
       switch (dyld_last_result) {
@@ -168,7 +161,8 @@ char *ddll_error()
 	}
       }
     }
-#endif
+#elif defined(HAVE_DLOPEN)
+    msg = dlerror();
 #endif
     return msg ? msg : "no error";
 }

@@ -37,14 +37,14 @@ ERTS_SUB_DIRECTORIES = stdlib snmp sasl kernel compiler
 ifdef BUILD_ALL
 ifeq ($(findstring win32,$(TARGET)),win32)
 OTHER_SUB_DIRECTORIES = 			\
-  appmon asn1 erl_interface jinterface eva gs inets ic \
+  appmon erl_interface asn1 jinterface eva gs inets ic \
   mnesia mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools pman \
   $(SSL_APP) toolbar tools tv observer debugger odbc runtime_tools \
   cosTransactions cosEvent cosTime cosNotification cosProperty \
   cosFileTransfer cosEventDomain et megaco webtool
 else
 OTHER_SUB_DIRECTORIES = \
-  appmon asn1 erl_interface jinterface eva debugger gs inets \
+  appmon erl_interface asn1 jinterface eva debugger gs inets \
   ic mnesia  mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools \
   pman $(SSL_APP) toolbar tools tv observer \
   runtime_tools cosTransactions cosEvent cosTime cosNotification \
@@ -62,7 +62,7 @@ SUB_DIRECTORIES = \
   stdlib compiler jinterface orber/include eva/include
 else
 ifdef SECONDARY_BOOTSTRAP
-SUB_DIRECTORIES = kernel parsetools asn1 $(HIPE_APP)
+SUB_DIRECTORIES = kernel parsetools asn1/src $(HIPE_APP)
 else
 ifdef TERTIARY_BOOTSTRAP
 SUB_DIRECTORIES = snmp_dummy snmp

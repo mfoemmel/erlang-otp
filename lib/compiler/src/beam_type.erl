@@ -290,10 +290,11 @@ flush(Rs0, Is, Acc0) ->
 flush_all(no_float_opt, _, Acc) -> Acc;
 flush_all([{_,{float,_},_}|Rs], Is, Acc) ->
     flush_all(Rs, Is, Acc);
-flush_all([{I,V,dirty}|Rs], Is, Acc) ->
+flush_all([{I,V,dirty}|Rs], Is, Acc0) ->
+    Acc = checkerror(Acc0),
     case is_killed(V, Is) of
 	true  -> flush_all(Rs, Is, Acc);
-	false -> flush_all(Rs, Is, [{set,[V],[{fr,I}],fmove}|checkerror(Acc)])
+	false -> flush_all(Rs, Is, [{set,[V],[{fr,I}],fmove}|Acc])
     end;
 flush_all([{_,_,clean}|Rs], Is, Acc) -> flush_all(Rs, Is, Acc);
 flush_all([free|Rs], Is, Acc) -> flush_all(Rs, Is, Acc);

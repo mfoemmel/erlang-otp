@@ -121,4 +121,36 @@ do {								\
  ((ProcBin *) binary_val(Bin))->bytes :				\
  (byte *)(&(((ErlHeapBin *) binary_val(Bin))->data)))
 
+
+#define ERTS_SL_ALLOC_BINARIES_DEFAULT 0
+extern int erts_sl_alloc_binaries;
+
+#define OH_BIN_ALLOC(F, SZ)					\
+  ((Binary *) (erts_sl_alloc_binaries				\
+	       ? erts_sl_alloc_from((F), (SZ))			\
+	       : sys_alloc_from((F), (SZ))))
+
+#define OH_BIN_SAFE_ALLOC(F, SZ) 				\
+  ((Binary *) (erts_sl_alloc_binaries				\
+	       ? erts_safe_sl_alloc_from((F), (SZ))		\
+	       : safe_alloc_from((F), (SZ))))
+
+#define OH_BIN_REALLOC(P, SSZ, SZ) 				\
+  ((Binary *) (erts_sl_alloc_binaries				\
+	       ? erts_sl_realloc((void*) (P), (SSZ), (SZ))	\
+	       : sys_realloc((void*) (P), (SZ))))
+
+#define OH_BIN_SAFE_REALLOC(P, SSZ, SZ) 			\
+  ((Binary *) (erts_sl_alloc_binaries				\
+	       ? erts_safe_sl_realloc((void*) (P), (SSZ), (SZ))	\
+	       : safe_realloc((void*) (P), (SZ))))
+
+#define OH_BIN_FREE(P) 						\
+  do {								\
+      if (erts_sl_alloc_binaries)				\
+	  erts_sl_free((void*) (P));				\
+      else							\
+	  sys_free((void*) (P));				\
+  } while (0)
+
 #endif

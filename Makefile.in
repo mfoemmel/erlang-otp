@@ -117,7 +117,6 @@ BOOT_PREFIX=$(ERL_TOP)/bootstrap/bin:
 #   * use the bootstrap erl and erlc to build all the libs
 #
 all: depend emulator emulator.instr \
-     init_boot \
      bootstrap_setup \
      secondary_bootstrap_build secondary_bootstrap_copy \
      tertiary_bootstrap_build tertiary_bootstrap_copy \
@@ -139,12 +138,6 @@ ERLANG_EARS=$(ERL_TOP)/bootstrap/erts
 ELINK=$(ERL_TOP)/bootstrap/erts/bin/elink
 BOOT_BINDIR=$(ERL_TOP)/bootstrap/erts/bin
 BEAM_EVM=$(ERL_TOP)/bin/$(TARGET)/beam_evm
-
-init_boot:
-	cp $(BOOT_BINDIR)/ecc $(ERL_TOP)/bootstrap/bin
-	chmod +w $(ERL_TOP)/bootstrap/bin/ecc
-	ERLANG_EARS=$(ERLANG_EARS) $(BEAM_EVM) $(ELINK) -r $(BEAM_EVM) \
-	   $(ERL_TOP)/bootstrap/bin/ecc
 
 build_boot:
 	cd erts/boot/src && ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
@@ -281,7 +274,8 @@ install.Install:
 # Erlang base public files
 #
 install.bin:
-	rm -f $(BINDIR)/erl $(BINDIR)/erlc
+	rm -f $(BINDIR)/erl $(BINDIR)/erlc \
+	      $(BINDIR)/ecc $(BINDIR)/elink $(BINDIR)/ear $(BINDIR)/escript
 	${LN_S} $(ERLANG_BINDIR)/erl      $(BINDIR)/erl
 	${LN_S} $(ERLANG_BINDIR)/erlc     $(BINDIR)/erlc
 	${LN_S} $(ERLANG_BINDIR)/ecc      $(BINDIR)/ecc

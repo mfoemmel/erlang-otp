@@ -29,6 +29,7 @@
 	megaco_per_bin_media_gateway_control,
 	megaco_pretty_text_encoder,
 	megaco_sdp,
+	megaco_stats,
 	megaco_sup,
 	megaco_tcp,
 	megaco_tcp_accept,

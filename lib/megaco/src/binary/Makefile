@@ -42,17 +42,18 @@ RELSYSDIR = $(RELEASE_PATH)/lib/megaco-$(VSN)
 
 include modules.mk
 
-ERL_FILES = $(MODULES:%=%.erl)	
-
-TARGET_FILES =  \
-	$(MODULES:%=$(EBIN)/%.$(EMULATOR))
-
 SPECS = $(BER_ASN1_SPEC)     \
         $(BER_BIN_ASN1_SPEC) \
         $(PER_ASN1_SPEC)     \
         $(PER_BIN_ASN1_SPEC) 
 
 SPEC_BINS = $(SPECS:%=%.erl) $(SPECS:%=%.hrl) $(SPECS:%=%.asn1db)
+
+ERL_FILES = $(MODULES:%=%.erl)	
+HRL_FILES = $(INTERNAL_HRL_FILES) $(SPECS:%=%.hrl)
+
+TARGET_FILES =  \
+	$(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
 
 # ----------------------------------------------------
@@ -65,6 +66,10 @@ endif
 ifeq ($(WARN_UNUSED_WARS),true)
 ERL_COMPILE_FLAGS += +warn_unused_vars
 endif
+
+# ifeq ($(USE_HIPE),true)
+# ERL_COMPILE_FLAGS += +native
+# endif
 
 # This is valid together with the -bber_bin and -bper_bin options
 ifneq ($(DONT_USE_BIN_OPTIMIZE),true)
@@ -93,38 +98,12 @@ clean:
 docs:
 
 info:
-	@echo "USE_PER_BIN:   $(USE_PER_BIN)"
 	@echo "MODULES:       $(MODULES)"
 	@echo "ERL_FILES:     $(ERL_FILES)"
+	@echo "HRL_FILES:     $(HRL_FILES)"
 	@echo "TARGET_FILES:  $(TARGET_FILES)"
 	@echo "SPECS:         $(SPECS)"
 	@echo "SPEC_BINS:     $(SPEC_BINS)"
-
-
-# ----------------------------------------------------
-# Special Build Targets
-# ----------------------------------------------------
-
-ifeq ($(USE_PER_BIN_OPT),yes)
-asn1: ber ber_bin per per_bin per_bin_opt
-else
-asn1: ber ber_bin per per_bin
-endif
-
-ber: 
-	$(ERLC) -bber     $(BER_ASN1_SPEC).set.asn
-
-ber_bin: 
-	$(ERLC) -bber_bin $(BER_BIN_ASN1_SPEC).set.asn
-
-per: 
-	$(ERLC) -bper     $(PER_ASN1_SPEC).set.asn
-
-per_bin: 
-	$(ERLC) -bper_bin $(PER_BIN_ASN1_SPEC).set.asn
-
-per_bin_opt: 
-	$(ERLC) -bper_bin +optimize $(PER_BIN_OPT_ASN1_SPEC).set.asn
 
 
 # ----------------------------------------------------
@@ -138,7 +117,7 @@ release_spec: opt
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR)  $(RELSYSDIR)/src
 	$(INSTALL_DIR)  $(RELSYSDIR)/src/binary
-	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_HRL_FILES) $(ASN1_SPEC).asn $(RELSYSDIR)/src/binary
+	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(ASN1_SPEC).asn $(RELSYSDIR)/src/binary
 
 
 release_docs_spec:

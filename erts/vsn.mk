@@ -1,5 +1,5 @@
-VSN = 5.2
-SYSTEM_VSN = R9
+VSN = 5.2.3.3
+SYSTEM_VSN = R9B
 
 # Port number 4365 in 4.2
 # Port number 4366 in 4.3

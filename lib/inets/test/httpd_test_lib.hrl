@@ -20,8 +20,9 @@
 %%----------------------------------------------------------------------
 
 -define(EPOLL(M, H, P, N, R, O),   httpd_test_lib:epoll(M, H, P, N, R, O)).
--define(POLL(M, H, P, N, R, S, T), httpd_test_lib:poll(M, H, P, N, R, S, T)).
 -define(PPOLL(M, H, P, N, R, O),   httpd_test_lib:ppoll(M, H, P, N, R, O)).
+-define(POLL(M, H, P, N, R, S, T), httpd_test_lib:poll(M, H, P, N, R, S, T)).
+-define(CPOLL(M, H, P, N, R, S, T),httpd_test_lib:cpoll(M, H, P, N, R, S, T)).
 	      
 
 

@@ -536,8 +536,7 @@ emit_encoder_prototypes(G, Fd, N, []) -> ok.
 
 emit_operation_mapping_declaration(G, Fd, N, Bodies) ->
     Interface = ic_util:to_undersc(N), 
-    OpNames = get_all_opnames(G, N, Bodies),
-    Length = erlang:length(OpNames), 
+    Length = erlang:length(get_all_opnames(G, N, Bodies)),
     emit(Fd, "\n/* Operation mapping */\n", []), 
     emit(Fd, "extern ___map___ ___~s_map___;\n", [Interface]), 
     case Length of 
@@ -548,19 +547,29 @@ emit_operation_mapping_declaration(G, Fd, N, Bodies) ->
 		 [Interface]) 
     end.
 
+
+%% Returns a list of {OpName, ScopedOpName} for all operations, where
+%% OpName == ScopedOpName in case the `scoped_op_calls' option has
+%% been set.
+%%
 get_all_opnames(G, N, Bodies) ->
-    lists:flatmap(
-      fun(Xs) ->
-	      lists:zf(		% filtermap
-		fun(X) when record(X, op) ->
-			{Name, _, _} = ic_cbe:extract_info(G, N, X), 
-			{true, Name}; 
-		   (_) ->
-			false
-		end, 
-		Xs) 
-      end, 
-      Bodies).
+    ScNF = fun(X) ->
+		  {ScName, _, _} = ic_cbe:extract_info(G, N, X),
+		  ScName
+	  end, 
+    NF = case ic_options:get_opt(G, scoped_op_calls) of
+	    true ->
+		ScNF;
+	    false  ->
+		fun(X) -> ic_forms:get_id2(X) end
+	end,
+    Filter = fun(X) when record(X, op) -> 
+		     {true, {NF(X), ScNF(X)}};
+		(_) ->
+		     false
+	     end,
+    %% zf == filtermap
+    lists:flatmap(fun(Xs) -> lists:zf(Filter, Xs) end, Bodies).
 
 %%------------------------------------------------------------
 %% Emit switch 
@@ -632,10 +641,11 @@ emit_operation_mapping(G, Fd, N, Bodies) ->
 	    emit(Fd, "\n___operation___ ___~s_operations___[~p]  =  {\n", 
 		 [Interface, Length]), 
 	    Members = lists:map(
-			fun(Op) ->
-				Name = ic_util:to_undersc([Op]), 
+			fun({OpN, ScOpN}) ->
+				Name = ic_util:to_undersc([OpN]), 
+				ScName = ic_util:to_undersc([ScOpN]), 
 				io_lib:fwrite("  {~p, ~p, ~s__exec}", 
-					      [Interface, Name, Name])
+					      [Interface, Name, ScName])
 			end, OpNames),
 	    emit(Fd, ic_util:join(Members, ",\n")),
 	    emit(Fd, "};\n\n", []), 

@@ -971,8 +971,7 @@ static int max_buf_allocated = 0; /* max allocated */
 
 #endif
 
-static ErlDrvBinary* alloc_buffer(minsz)
-int minsz;
+static ErlDrvBinary* alloc_buffer(long minsz)
 {
     ErlDrvBinary* buf = NULL;
 
@@ -1003,8 +1002,8 @@ int minsz;
 ** Max buffer memory "cached" BUFFER_STACK_SIZE * INET_MAX_BUFFER
 ** (16 * 64k ~ 1M)
 */
-static void release_buffer(buf)
-ErlDrvBinary* buf;
+/* #define CHECK_DOUBLE_RELEASE 1 */
+static void release_buffer(ErlDrvBinary* buf)
 {
     DEBUGF(("release_buffer: %ld\r\n", (buf==NULL) ? 0 : buf->orig_size));
     if (buf == NULL)
@@ -1015,18 +1014,31 @@ ErlDrvBinary* buf;
 	driver_free_binary(buf);
     }
     else {
+#ifdef CHECK_DOUBLE_RELEASE
+#warning CHECK_DOUBLE_RELEASE is enabled, this is a custom build emulator
+	int i;
+	for (i = 0; i < buffer_stack_pos; ++i) {
+	    if (buffer_stack[i] == buf) {
+		erl_exit(1,"Multiple buffer release in inet_drv, this is a "
+			 "bug, save the core and send it to "
+			 "support@erlang.ericsson.se!");
+	    }
+	}
+#endif
 	buffer_stack[buffer_stack_pos++] = buf;
 	COUNT_BUF_STACK(buf->orig_size);
     }
 }
 
-static ErlDrvBinary* realloc_buffer(buf, newsz)
-ErlDrvBinary* buf; int newsz;
+static ErlDrvBinary* realloc_buffer(ErlDrvBinary* buf, long newsz)
 {
     ErlDrvBinary* bin;
+#ifdef DEBUG
+    long orig_size =  buf->orig_size;
+#endif
 
     if ((bin = driver_realloc_binary(buf,newsz)) != NULL) {
-	COUNT_BUF_ALLOC(newsz - buf->orig_size);
+	COUNT_BUF_ALLOC(newsz - orig_size);
 	;
     }
     return bin;
@@ -1036,8 +1048,7 @@ ErlDrvBinary* buf; int newsz;
  * a ref to this buffer then call driver_free_binary else 
  * release_buffer instead
  */
-static void free_buffer(buf)
-ErlDrvBinary* buf;
+static void free_buffer(ErlDrvBinary* buf)
 {
     DEBUGF(("free_buffer: %ld\r\n", (buf==NULL) ? 0 : buf->orig_size));
 
@@ -2060,6 +2071,7 @@ static int http_message(desc, buf, len)
 	  return -1;
 	while(n && SP(ptr)) { ptr++; n--; }
 	if (n == 0) {
+	  desc->http_state++;
 	  return http_request_message(desc, meth,
 				      meth_ptr, meth_len,
 				      uri_ptr, uri_len,
@@ -4856,6 +4868,8 @@ static void tcp_inet_stop(ErlDrvData e)
     /* free input buffer & output buffer */
     if (desc->i_buf != NULL)
 	release_buffer(desc->i_buf);
+    desc->i_buf = NULL; /* net_mess2 may call this function recursively when 
+			   faulty messages arrive on dist ports*/
     inet_stop(&desc->inet);
 }
 

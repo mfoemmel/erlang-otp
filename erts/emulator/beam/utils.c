@@ -58,13 +58,36 @@ do_alloc(Process* p, Eterm* last_htop, Uint need)
 #endif
 
     /*
+     * Check if there is any space left in the previous heap fragment.
+     */
+
+    if (need <= ARITH_AVAIL(p)) {
+	Eterm* hp = ARITH_HEAP(p);
+
+	ARITH_HEAP(p) += need;
+	ARITH_AVAIL(p) -= need;
+	return hp;
+    }
+
+    /*
      * Allocate a new arith heap.
      */
 
 #ifdef SHARED_HEAP
     n = need;
 #else
-    n = p->min_heap_size/2 + need;
+    /*
+     * Find a new suitable size.
+     */
+
+    n = need;
+    if (ARITH_AVAIL(p) < 16 || n < 64) {
+	ARITH_AVAIL(p) = 0;
+	n = p->min_heap_size/2 + need;
+	if (n > 16*1024 && n > 2*need) {
+	    n = 2*need;
+	}
+    }
 #endif
 
 #ifdef DEBUG
@@ -77,8 +100,10 @@ do_alloc(Process* p, Eterm* last_htop, Uint need)
 #ifdef DEBUG
     n--;
 #endif
-    ARITH_AVAIL(p) = n - need;
-    ARITH_HEAP(p) = bp->mem + need;
+    if (ARITH_AVAIL(p) == 0) {
+	ARITH_AVAIL(p) = n - need;
+	ARITH_HEAP(p) = bp->mem + need;
+    }
 #ifdef DEBUG
     for (i = 0; i <= n; i++) {
 	bp->mem[i] = ARITH_MARKER;

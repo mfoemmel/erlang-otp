@@ -173,7 +173,7 @@ chunk(Log, Cont, N) when integer(N), N > 0 ->
     ichunk(Log, Cont, N).
 
 ichunk(Log, start, N) ->
-    R = sreq(Log, {chunk, 0, <<>>, N}),
+    R = sreq(Log, {chunk, 0, [], N}),
     ichunk_end(R, Log);
 ichunk(Log, More, N) when record(More, continuation) ->
     R = req2(More#continuation.pid, 
@@ -240,7 +240,7 @@ bchunk(Log, Cont, N) when integer(N), N > 0 ->
     bichunk(Log, Cont, N).
 
 bichunk(Log, start, N) ->
-    R = sreq(Log, {chunk, 0, <<>>, N}),
+    R = sreq(Log, {chunk, 0, [], N}),
     bichunk_end(R);
 bichunk(_Log, More, N) when record(More, continuation) ->
     R = req2(More#continuation.pid, 

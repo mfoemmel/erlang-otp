@@ -30,7 +30,7 @@
 -include_lib("cosProperty/include/CosPropertyService.hrl").
 
 %% Local
--include("../include/CosFileTransfer.hrl").
+-include_lib("cosFileTransfer/include/CosFileTransfer.hrl").
 
 -define(write_ErrorMsg(Txt, Arg),
 error_logger:error_msg("============= CosFileTransfer =============~n"

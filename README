@@ -94,12 +94,12 @@ How to build and install Erlang/OTP
 Start by unpacking the Erlang/OTP distribution file with your
 GNU compatible TAR
 
-  1)    gunzip -c otp_src_R9B-0.tar.gz | tar xf -
-  1)    zcat otp_src_R9B-0.tar.gz | tar xf -
+  1)    gunzip -c otp_src_R9B-1.tar.gz | tar xf -
+  1)    zcat otp_src_R9B-1.tar.gz | tar xf -
 
 Now cd into base directory
 
-  2)    cd otp_src_R9B-0
+  2)    cd otp_src_R9B-1
 
 Run the following commands
 
@@ -168,13 +168,13 @@ For some graphical tools to find the on-line help you have to install
 the HTML documentation on top of the installed OTP applications, i.e.
 
         cd <PrefixDir>/lib/erlang
-        gunzip -c otp_doc_html_R9B-0.tar.gz | tar xf -
+        gunzip -c otp_html_R9B-1.tar.gz | tar xf -
 
 For "erl -man <page>" to work the Unix manual pages have to be
 installed in the same way, i.e.
 
         cd <PrefixDir>/lib/erlang
-        gunzip -c otp_doc_man_R9B-0.tar.gz | tar xf -
+        gunzip -c otp_man_R9B-1.tar.gz | tar xf -
 
 
 GS (Graphic System)
@@ -241,9 +241,6 @@ using "cc" and the flags "-bundle -flat_namespace -undefined
 suppress". You also include "-fno-common" in CFLAGS when
 compiling. Use ".so" as the library suffix.
 
-Known issue: Dynamic loading of drivers (the "ddll" module) will
-probably not work if you have installed "libcompat"
-(required by Open Office for Mac OS X).
 
 Caveats
 -------

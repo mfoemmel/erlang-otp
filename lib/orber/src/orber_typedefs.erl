@@ -33,12 +33,14 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([get_op_def/2, get_Op_def/2, get_exception_def/1]).
+-export([get_op_def/2, get_exception_def/1]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
 -export([]).
+
+-define(DEBUG_LEVEL, 5).
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -46,29 +48,36 @@
 %%-----------------------------------------------------------------
 %% Func: get_op_def/2
 %%
-get_op_def(_Objkey, "_is_a") ->
+get_op_def(_Objkey, '_is_a') ->
     {orber_tc:boolean(),[orber_tc:string(0)],[]};
 %% First the OMG specified this operation to be '_not_existent' and then
 %% changed it to '_non_existent' without suggesting that both must be supported.
 %% See CORBA2.3.1 page 15-34, Minor revision 2.3.1: October 1999
-get_op_def(_Objkey, "_not_existent") ->
+get_op_def(_Objkey, '_not_existent') ->
     {orber_tc:boolean(),[],[]};
-get_op_def(_Objkey, "_non_existent") ->
+get_op_def(_Objkey, '_non_existent') ->
     {orber_tc:boolean(),[],[]};
-get_op_def(_Objkey, "get_policy") ->
+get_op_def(_Objkey, 'get_policy') ->
     {orber_policy_server:get_tc(),[orber_tc:unsigned_long()],[]};
 get_op_def(Objkey, Op) ->
-    List = corba:request_from_iiop(Objkey, oe_get_interface,
-					 [], [], 'true'),
-    get_op_def_1(List, Op).
-
-get_op_def_1([], Op) ->
-    corba:raise(#'BAD_OPERATION'{minor = (?ORBER_VMCID bor 4),
-				 completion_status='COMPLETED_NO'});
-get_op_def_1([{Op, Types} | Rest], Op) ->
-    Types;
-get_op_def_1([_ | Rest], Op) ->
-    get_op_def_1(Rest, Op).
+    case catch iop_ior:get_key(Objkey) of
+	{_Local, _Key, _, _, Module} ->
+	    case catch Module:oe_tc(Op) of
+		{'EXIT', What} ->
+		    orber:dbg("[~p] orber_typedefs:get_op_def(~p); 
+The call-back module does not exist or incorrect IC-version used.
+Reason: ~p", [?LINE, Module, What], ?DEBUG_LEVEL),
+		    {'EXCEPTION', #'TRANSIENT'{minor=(?ORBER_VMCID bor 7),
+					       completion_status=?COMPLETED_NO}};
+		undefined ->
+		    corba:raise(#'BAD_OPERATION'{minor = (?ORBER_VMCID bor 4),
+						 completion_status=?COMPLETED_NO});
+		TC ->
+		    TC
+	    end;
+	_ ->
+	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
+    end.
 
 %%-----------------------------------------------------------------
 %% Func: get_exception_def/1
@@ -87,41 +96,4 @@ get_exception_def(Exception) ->
 	    ExceptionDescr = ContainedDescr#contained_description.value,
 	    {?USER_EXCEPTION, ExceptionDescr#exceptiondescription.type}
     end.
-
-%%-----------------------------------------------------------------
-%% Func: get_Op_def/2
-%%
-get_Op_def({TypeId, _, _}, Op) ->
-    Rep = orber_ifr:find_repository(),
-    %%io:format("Time before lookup: ~w~n", [erlang:now()]),
-    Int = orber_ifr:'Repository_lookup_id'(Rep, TypeId),
-    %%io:format("Time before descr inteface: ~w~n", [erlang:now()]),
-    InterfaceDef = orber_ifr_interfacedef:describe_interface(Int),
-    %%io:format("Time after: ~w~n", [erlang:now()]),
-    Ops = InterfaceDef#fullinterfacedescription.operations,
-    A = get_Op_def_1(Ops, Op),
-    %%io:format("Time after all: ~w~n", [erlang:now()]),
-    A.
-
-get_Op_def_1([], _) ->
-    corba:raise(#'BAD_OPERATION'{minor = (?ORBER_VMCID bor 4),
-				 completion_status='COMPLETED_NO'});
-get_Op_def_1([#contained_description{kind=dk_Operation, value=#operationdescription{name=Op, result=Result, parameters=Parameters}}|_], Op) ->
-    {In, Out} = get_parameters(Parameters,{[],[]}),
-    {Result, lists:reverse(In), lists:reverse(Out)};
-get_Op_def_1([_|Rest], Op) ->
-    get_Op_def_1(Rest, Op).
-
-%%-----------------------------------------------------------------
-%% Internal functions
-%%-----------------------------------------------------------------
-get_parameters([], Par) ->
-    Par;
-get_parameters([#parameterdescription{type=Type, mode='PARAM_IN'} | Rest], {In, Out}) ->
-    get_parameters(Rest, {[Type | In], Out});
-get_parameters([#parameterdescription{type=Type, mode='PARAM_OUT'} | Rest], {In, Out}) ->
-    get_parameters(Rest, {In, [Type |Out]});
-get_parameters([#parameterdescription{type=Type, mode='PARAM_INOUT'} | Rest], {In, Out}) ->
-    get_parameters(Rest, {[Type | In],[Type |Out]}).
-
 

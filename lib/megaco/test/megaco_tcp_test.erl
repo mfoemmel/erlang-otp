@@ -156,7 +156,7 @@ normal_start_case(Options) ->
 		ok ->
 		    ok;
 		{error, Reason} ->
-		    io:format("<ERROR> couldn't start tpkt socket"
+		    io:format("<ERROR> couldn't start tpkt socket "
 			      "because of: ~w~n",
 			      [Reason])
 	    end;

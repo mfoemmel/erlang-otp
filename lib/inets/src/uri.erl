@@ -112,6 +112,9 @@ scan_pathquery(C0) ->
 
 
 %%% ............................................................................
+%%% FIXME!!! This is just a quick hack that doesn't work!
+-define(FTP_DEFAULT_PORT, 80).
+
 %%% FTP (Source RFC 2396, RFC 1738, RFC 959)
 %%% Note: This BNF has been modified to better fit with RFC 2396
 %%%  ftp_URL = "ftp:" "//" [ ftp_userinfo ] host [ ":" port ] ftp_abs_path
@@ -124,8 +127,30 @@ scan_pathquery(C0) ->
 %%%  ftp_password	= *[ ftp_uchar | ";" | "?" | "&" | "=" ]
 %%%  ftp_uchar		= ftp_unreserved | escaped
 %%%  ftp_unreserved	= alphanum | mark | "$" | "+" | ","
-parse_ftp(Cont,Scheme) ->
-     {Scheme,Cont}.
+parse_ftp("//"++C0,Scheme) ->
+    case ftp_userinfo(C0) of
+	{C1,Creds} ->
+	    case scan_hostport(C1,Scheme) of
+		{C2,Host,Port} ->
+		    case scan_abspath(C2) of
+			{error,Error} ->
+			    {error,Error};
+			{[],[]} -> % Add implicit path
+			    {Scheme,Creds,Host,Port,"/"};
+			{[],Path} ->
+			    {Scheme,Creds,Host,Port,Path}
+		    end;
+		{error,Error} ->
+		    {error,Error}
+	    end;
+    	{error,Error} ->
+	    {error,Error}
+    end.
+
+ftp_userinfo(C0) ->
+    User="",
+    Password="",
+    {C0,{User,Password}}.
 
 
 %%% ............................................................................
@@ -204,7 +229,9 @@ scan_hostport(C0,Scheme) ->
 	{C1,Host} when Scheme==http ->
 	    {C1,Host,?HTTP_DEFAULT_PORT};
 	{C1,Host} when Scheme==https ->
-	    {C1,Host,?HTTPS_DEFAULT_PORT}
+	    {C1,Host,?HTTPS_DEFAULT_PORT};
+	{C1,Host} when Scheme==ftp ->
+	    {C1,Host,?FTP_DEFAULT_PORT}
     end.
 
 

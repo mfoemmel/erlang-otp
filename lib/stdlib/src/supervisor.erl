@@ -54,7 +54,7 @@
 
 behaviour_info(callbacks) ->
     [{init,1}];
-behaviour_info(Other) ->
+behaviour_info(_Other) ->
     undefined.
 
 %%% ---------------------------------------------------
@@ -141,14 +141,13 @@ init_children(State, StartSpec) ->
     end.
 
 init_dynamic(State, [StartSpec]) ->
-    SupName = State#state.name,
     case check_startspec([StartSpec]) of
         {ok, Children} ->
 	    {ok, State#state{children = Children}};
         Error ->
             {stop, {start_spec, Error}}
     end;
-init_dynamic(State, StartSpec) ->
+init_dynamic(_State, StartSpec) ->
     {stop, {bad_start_spec, StartSpec}}.
 
 %%-----------------------------------------------------------------
@@ -188,7 +187,6 @@ do_start_child(SupName, Child) ->
 	    report_progress(NChild, SupName),
 	    {ok, Pid, Extra};
 	ignore -> 
-	    NChild = Child#child{pid = undefined},
 	    {ok, undefined};
 	{error, What} -> {error, What};
 	What -> {error, What}
@@ -219,16 +217,22 @@ handle_call({start_child, EArgs}, _From, State) when ?is_simple(State) ->
     Args = A ++ EArgs,
     case do_start_child_i(M, F, Args) of
 	{ok, Pid} ->
-	    NState = State#state{dynamics = [{Pid, Args}|State#state.dynamics]},
+	    NState = State#state{dynamics = 
+				 [{Pid, Args}|State#state.dynamics]},
 	    {reply, {ok, Pid}, NState};
 	{ok, Pid, Extra} ->
-	    NState = State#state{dynamics = [{Pid, Args}|State#state.dynamics]},
+	    NState = State#state{dynamics = 
+				 [{Pid, Args}|State#state.dynamics]},
 	    {reply, {ok, Pid, Extra}, NState};
 	What ->
 	    {reply, What, State}
     end;
-handle_call({Req, Data}, _From, State) when ?is_simple(State) ->
+
+%%% The requests terminate_child, delete_child and restart_child are 
+%%% invalid for simple_one_for_one supervisors. 
+handle_call({_Req, _Data}, _From, State) when ?is_simple(State) ->
     {reply, {error, simple_one_for_one}, State};
+
 handle_call({start_child, ChildSpec}, _From, State) ->
     case check_childspec(ChildSpec) of
 	{ok, Child} ->
@@ -292,9 +296,18 @@ handle_call(which_children, _From, State) ->
 		  State#state.children),
     {reply, Resp, State}.
 
-%
-% Take care of terminated children.
-%
+
+%%% Hopefully cause a function-clause as there is no API function
+%%% that utilizes cast.
+handle_cast(null, State) ->
+    error_logger:error_msg("ERROR: Supervisor received cast-message 'null'~n", 
+			   []),
+
+    {noreply, State}.
+
+%%
+%% Take care of terminated children.
+%%
 handle_info({'EXIT', Pid, Reason}, State) ->
     case restart_child(Pid, Reason, State) of
 	{ok, State1} ->
@@ -303,25 +316,26 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 	    {stop, shutdown, State1}
     end;
 
-handle_info(_, State) ->
+handle_info(Msg, State) ->
+    error_logger:error_msg("Supervisor received unexpected message: ~p~n", 
+			   [Msg]),
     {noreply, State}.
-
-%
-% Terminate this server.
-%
+%%
+%% Terminate this server.
+%%
 terminate(_Reason, State) ->
     terminate_children(State#state.children, State#state.name),
     ok.
 
-%
-% Change code for the supervisor.
-% Call the new call-back module and fetch the new start specification.
-% Combine the new spec. with the old. If the new start spec. is
-% not valid the code change will not succeed.
-% Use the old Args as argument to Module:init/1.
-% NOTE: This requires that the init function of the call-back module
-%       does not have any side effects.
-%
+%%
+%% Change code for the supervisor.
+%% Call the new call-back module and fetch the new start specification.
+%% Combine the new spec. with the old. If the new start spec. is
+%% not valid the code change will not succeed.
+%% Use the old Args as argument to Module:init/1.
+%% NOTE: This requires that the init function of the call-back module
+%%       does not have any side effects.
+%%
 code_change(_, State, _) ->
     case apply(State#state.module, init,
 	       [State#state.args]) of
@@ -341,9 +355,6 @@ code_change(_, State, _) ->
 	Error ->
 	    Error
     end.
-
-handle_cast(null, State) ->
-    {noreply, State}.
 
 check_flags({Strategy, MaxIntensity, Period}) ->
     validStrategy(Strategy),
@@ -406,17 +417,19 @@ handle_start_child(Child, State) ->
 		{ok, Pid} ->
 		    Children = State#state.children,
 		    {{ok, Pid},
-		     State#state{children = [Child#child{pid = Pid}|Children]}};
+		     State#state{children = 
+				 [Child#child{pid = Pid}|Children]}};
 		{ok, Pid, Extra} ->
 		    Children = State#state.children,
 		    {{ok, Pid, Extra},
-		     State#state{children = [Child#child{pid = Pid}|Children]}};
+		     State#state{children = 
+				 [Child#child{pid = Pid}|Children]}};
 		{error, What} ->
 		    {{error, {What, Child}}, State}
 	    end;
 	{value, OldChild} when OldChild#child.pid /= undefined ->
 	    {{error, {already_started, OldChild#child.pid}}, State};
-	{value, OldChild} ->
+	{value, _OldChild} ->
 	    {{error, already_present}, State}
     end.
 
@@ -430,7 +443,7 @@ restart_child(Pid, Reason, State) when ?is_simple(State) ->
 	{value, {_Pid, Args}} ->
 	    [Child] = State#state.children,
 	    RestartType = Child#child.restart_type,
-	    {M, F, A} = Child#child.mfa,
+	    {M, F, _} = Child#child.mfa,
 	    NChild = Child#child{pid = Pid, mfa = {M, F, Args}},
 	    do_restart(RestartType, Reason, NChild, State);
 	_ ->
@@ -531,7 +544,7 @@ terminate_children(Children, SupName) ->
 terminate_children([Child | Children], SupName, Res) ->
     NChild = do_terminate(Child, SupName),
     terminate_children(Children, SupName, [NChild | Res]);
-terminate_children([], SupName, Res) ->
+terminate_children([], _SupName, Res) ->
     Res.
 
 do_terminate(Child, SupName) when Child#child.pid /= undefined ->
@@ -547,31 +560,80 @@ do_terminate(Child, _SupName) ->
     Child.
 
 %%-----------------------------------------------------------------
-%% Try to shutdown a child.  We must check the EXIT value of the
-%% child, because it might have died with another reason than
-%% the wanted.  In this case we want to report the error.
-%% The child is guaranteed to be terminated.
+%% Shutdowns a child. We must check the EXIT value 
+%% of the child, because it might have died with another reason than
+%% the wanted. In that case we want to report the error. We put a 
+%% monitor on the child an check for the 'DOWN' message instead of 
+%% checking for the 'EXIT' message, because if we check the 'EXIT' 
+%% message a "naughty" child, who does unlink(Sup), could hang the 
+%% supervisor. 
 %% Returns: ok | {error, OtherReason}  (this should be reported)
 %%-----------------------------------------------------------------
 shutdown(Pid, brutal_kill) ->
-    exit(Pid, kill),
-    receive
-	{'EXIT', Pid, killed} -> ok;
-	{'EXIT', Pid, OtherReason} -> {error, OtherReason}
-    end;
-shutdown(Pid, Time) ->
-    exit(Pid, shutdown),
-    receive
-	{'EXIT', Pid, shutdown} -> ok;
-	{'EXIT', Pid, OtherReason} -> {error, OtherReason}
-    after Time ->
-	    exit(Pid, kill),  %% Force termination.
+  
+    case monitor_child(Pid) of
+	ok ->
+	    exit(Pid, kill),
 	    receive
-		{'EXIT', Pid, OtherReason} ->
+		{'DOWN', _MRef, process, Pid, killed} ->
+		    ok;
+		{'DOWN', _MRef, process, Pid, OtherReason} ->
 		    {error, OtherReason}
-	    end
+	    end;
+	{error, Reason} ->      
+	    {error, Reason}
+    end;
+
+shutdown(Pid, Time) ->
+    
+    case monitor_child(Pid) of
+	ok ->
+	    exit(Pid, shutdown), %% Try to shutdown gracefully
+	    receive 
+		{'DOWN', _MRef, process, Pid, shutdown} ->
+		    ok;
+		{'DOWN', _MRef, process, Pid, OtherReason} ->
+		    {error, OtherReason}
+	    after Time ->
+		    exit(Pid, kill),  %% Force termination.
+		    receive
+			{'DOWN', _MRef, process, Pid, OtherReason} ->
+			    {error, OtherReason}
+		    end
+	    end;
+	{error, Reason} ->      
+	    {error, Reason}
     end.
 
+%% Help function to shutdown/2 switches from link to monitor approach
+monitor_child(Pid) ->
+    
+    %% Do the monitor operation first so that if the child dies 
+    %% before the monitoring is done causing a 'DOWN'-message with
+    %% reason noproc, we will get the real reason in the 'EXIT'-message
+    %% unless a naughty child has already done unlink...
+    erlang:monitor(process, Pid),
+    unlink(Pid),
+
+    receive
+	%% If the child dies before the unlik we must empty
+	%% the mail-box of the 'EXIT'-message and the 'DOWN'-message.
+	{'EXIT', Pid, Reason} -> 
+	    receive 
+		{'DOWN', _, process, Pid, _} ->
+		    {error, Reason}
+	    end
+    after 0 -> 
+	    %% If a naughty child did unlink and the child dies before
+	    %% monitor the result will be that shutdown/2 receives a 
+	    %% 'DOWN'-message with reason noproc.
+	    %% If the child should die after the unlink there
+	    %% will be a 'DOWN'-message with a correct reason
+	    %% that will be handled in shutdown/2. 
+	    ok   
+    end.
+    
+   
 %%-----------------------------------------------------------------
 %% Child/State manipulating functions.
 %%-----------------------------------------------------------------
@@ -716,7 +778,7 @@ validChildType(supervisor)  -> true;
 validChildType(worker) -> true;
 validChildType(What)  -> throw({invalid_child_type, What}).
 
-validName(Name) -> true. 
+validName(_Name) -> true. 
 
 validFunc({M, F, A}) when atom(M), atom(F), list(A) -> true;
 validFunc(Func)                                 -> throw({invalid_mfa, Func}).
@@ -821,5 +883,3 @@ report_progress(Child, SupName) ->
     Progress = [{supervisor, SupName},
 		{started, extract_child(Child)}],
     error_logger:info_report(progress, Progress).
-
-

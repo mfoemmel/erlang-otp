@@ -86,11 +86,18 @@ terminate(Reason, State) ->
 %% Func: parse_options/2
 %%-----------------------------------------------------------------
 parse_options([{port, Type, Port} | Rest], State) ->
-    Options = case Type of
-		  ssl ->
-		      [{certfile, orber:ssl_server_certfile()},
-		       {verify, orber:ssl_server_verify()},
-		       {depth, orber:ssl_server_depth()}] ++ ssl_server_cacertfile_option();
+    Options = 
+	case Type of
+	    ssl ->
+		[{verify, orber:ssl_server_verify()},
+		 {depth, orber:ssl_server_depth()} |
+		 ssl_server_extra_options([{certfile, orber:ssl_server_certfile()},
+					   {cacertfile, orber:ssl_server_cacertfile()},
+					   {password, orber:ssl_server_password()},
+					   {keyfile, orber:ssl_server_keyfile()},
+					   {ciphers, orber:ssl_client_ciphers()},
+					   {cachetimeout, orber:ssl_server_cachetimeout()}], [])];
+	    
 		  _ ->
 		      []
 	      end,
@@ -102,15 +109,15 @@ parse_options([{port, Type, Port} | Rest], State) ->
 parse_options([], State) ->
     State.
 
-ssl_server_cacertfile_option() ->
-    case orber:ssl_server_cacertfile() of
-	[] ->
-	    [];
-	X when list(X) ->
-	    [{cacertfile, X}];
-	_ ->
-	    []
-    end.
+ssl_server_extra_options([], Acc) ->
+    Acc;
+ssl_server_extra_options([{Type, []}|T], Acc) ->
+    ssl_server_extra_options(T, Acc);
+ssl_server_extra_options([{Type, infinity}|T], Acc) ->
+    ssl_server_extra_options(T, Acc);
+ssl_server_extra_options([{Type, Value}|T], Acc) ->
+    ssl_server_extra_options(T, [{Type, Value}|Acc]).
+
 
 %%-----------------------------------------------------------------
 %% Func: handle_call/3

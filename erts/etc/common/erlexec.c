@@ -533,7 +533,7 @@ main(int argc, char **argv)
 		  case 'S': {
 		      char *sub_flags[] = {"e", "r", "mmc", "mcs", "scs",
 					   "lcs", "sbct", "mbsd", "mbcgs",
-					   "sbcmt", "msbclt", NULL};
+					   "sbcmt", "msbclt", "b", NULL};
 		      if (is_one_of_strs(argv[i]+2, sub_flags)) {
 			  if (i+1 >= argc
 			      || argv[i+1][0] == '-'
@@ -678,7 +678,7 @@ usage(const char *switchname)
 	  "[+Se BOOL] [+Sr RELEASE] [+Ssbct SIZE_IN_KB] [+Smmc AMOUNT] "
 	  "[+Ssbcmt RATIO] [+Smsbclt RATIO] [+Smcs SIZE_IN_KB] "
 	  "[+Sscs SIZE_IN_KB] [+Slcs SIZE_IN_KB] [+Smbcgs STAGES] "
-	  "[+Smbsd BLOCKS] "
+	  "[+Smbsd BLOCKS] [+Sb BOOL] "
 
 	  "[args ...]\n");
   exit(1);

@@ -13,6 +13,7 @@ MODULES = \
 	megaco_examples_test \
 	megaco_mess_test \
 	megaco_mess_user_test \
+	megaco_mib_test \
 	megaco_sdp_test \
 	megaco_tcp_test \
 	megaco_udp_test \

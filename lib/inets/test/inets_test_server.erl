@@ -136,7 +136,14 @@ eval(Mod, Fun, Config) ->
 wait_for_evaluator(Pid, Mod, Fun, Config, Errors) ->
     Pre = lists:concat(["TEST CASE: ", Fun]),
     receive
+	{'EXIT', _Watchdog, watchdog_timeout} ->
+	    io:format("*** ~s WATCHDOG TIMEOUT~n", [Pre]), 
+	    exit(Pid, kill),
+	    {failed, {Mod,Fun}, watchdog_timeout};
 	{done, Pid, ok} when Errors == [] ->
+	    io:format("*** ~s OK~n", [Pre]),
+	    {ok, {Mod, Fun}, Errors};
+	{done, Pid, {ok, _}} when Errors == [] ->
 	    io:format("*** ~s OK~n", [Pre]),
 	    {ok, {Mod, Fun}, Errors};
 	{done, Pid, Fail} ->
@@ -151,7 +158,7 @@ wait_for_evaluator(Pid, Mod, Fun, Config, Errors) ->
 	{fail, Pid, Reason} ->
 	    io:format("*** ~s FAILED~n~p~n", [Pre, Reason]),
 	    wait_for_evaluator(Pid, Mod, Fun, Config, Errors ++ [Reason])
-    end.
+   end.
 
 do_eval(ReplyTo, Mod, Fun, Config) ->
     d("do_eval -> entry with"

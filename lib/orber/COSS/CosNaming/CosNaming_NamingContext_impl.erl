@@ -443,7 +443,9 @@ new_context(OE_THIS, OE_State) ->
     %% Use CosNaming_NamingContextExt instead; this way we will be able to softly
     %% migrate all to use the new interface.
     SubobjKey = term_to_binary({now(), node()}),
-    {'CosNaming_NamingContextExt':oe_create(SubobjKey, [{pseudo, true}]), OE_State}.
+    {'CosNaming_NamingContextExt':oe_create(SubobjKey, 
+					    [{pseudo, true}|?CREATE_OPTS]), 
+     OE_State}.
 
 %%----------------------------------------------------------------------
 %% Function   : bind_new_context
@@ -484,7 +486,8 @@ list(OE_THIS, OE_State, HowMany) ->
 			      #'CosNaming_Binding'{binding_name=[N],
 						   binding_type=T}
 		      end, List),
-	    BIterator = 'CosNaming_BindingIterator':oe_create({SubobjKey, HowMany}),
+	    BIterator = 'CosNaming_BindingIterator':oe_create({SubobjKey, HowMany},
+							      ?CREATE_OPTS),
 	    {{ok, BList, BIterator}, OE_State}
     end.
 

@@ -105,8 +105,9 @@ N+M  | Object N+M        |		    /
   if (in_win_check_io) \
     ; \
   else { \
+    setup_standby_wait(1); \
     SetEvent((w)->events[0]); \
-    WaitForSingleObject((w)->standby, INFINITE); \
+    wait_standby(); \
   }
 
 #define START_WAITERS() \
@@ -124,11 +125,13 @@ N+M  | Object N+M        |		    /
     ; \
   else { \
     int i; \
+    setup_standby_wait(num_waiters); \
     for (i = 0; i < num_waiters; i++) { \
 	SetEvent(waiter[i]->events[0]); \
     } \
-    WaitForMultipleObjects(num_waiters, standby, TRUE, INFINITE); \
+    wait_standby(); \
  } while (0)
+
 
 typedef void (*IoHandler)(int, int);
 typedef struct _EventData EventData;
@@ -140,7 +143,8 @@ typedef struct _EventData EventData;
 static int set_driver_select(int port, HANDLE event, IoHandler handler);
 static int cancel_driver_select(HANDLE event);
 static void new_waiter(void);
-static FUNCTION(void*, checked_alloc, (unsigned));
+static void* checked_alloc(unsigned);
+static void* checked_realloc(void *,unsigned);
 static void my_do_break(int, int);
 static DWORD WINAPI threaded_waiter(LPVOID param);
 #ifdef DEBUG
@@ -204,41 +208,66 @@ typedef struct _Waiter {
 
     HANDLE go_ahead;		/* The waiter may continue. (Auto-reset) */
 
-    /*
-     * The following events are set by the waiting thread
-     */
-
-    HANDLE standby;		/* The waiter thread is standing by (waiting
-				 * for go_ahead to be set.  (Auto-reset)
-				 */
 } Waiter;
 
-static Waiter* waiter[MAXIMUM_WAIT_OBJECTS];
+static Waiter** waiter;
 static EventData* to_delete = NULL; /* List of delayed cancellations. */
 
-/*
- * Copies of the event handles "standby" from the Waiter structure.
- */
-
-static HANDLE standby[MAXIMUM_WAIT_OBJECTS];
-
+static int allocated_waiters;  /* Size ow waiter array */ 
 static int num_waiters;		/* Number of waiter threads. */
 
-int sys_io_ready;		/* Some I/O is ready. */
+volatile int sys_io_ready;		/* Some I/O is ready. */
 HANDLE event_io_ready;	/* Same meaning as the variable. (Manual reset) */
 
-static int in_win_check_io = FALSE;
+static volatile int in_win_check_io = FALSE;
 static void (*break_func)();
 static void (*quit_func)();
 static HANDLE break_event;
+
+static volatile int standby_wait_counter;
+static CRITICAL_SECTION standby_crit;
+static HANDLE standby_wait_event;
 
 
 void
 init_sys_select(void)
 {
+    num_waiters = 0;
+    allocated_waiters = 64;
+    waiter = checked_alloc(sizeof(Waiter *)*allocated_waiters);
+    InitializeCriticalSection(&standby_crit);
+    standby_wait_counter = 0;
     event_io_ready = CreateManualEvent(FALSE);
+    standby_wait_event = CreateManualEvent(FALSE);
     break_event = CreateAutoEvent(FALSE);
     set_driver_select(0, break_event, my_do_break);
+}
+
+static void setup_standby_wait(int num_threads)
+{
+    EnterCriticalSection(&standby_crit);
+    standby_wait_counter = num_threads;
+    ResetEvent(standby_wait_event);
+    LeaveCriticalSection(&standby_crit);
+}
+
+static void signal_standby(void) 
+{
+    EnterCriticalSection(&standby_crit);
+    --standby_wait_counter;
+    if (standby_wait_counter < 0) {
+	LeaveCriticalSection(&standby_crit);
+	erl_exit(1,"Standby signalled by more threads than expected");
+    }
+    if (!standby_wait_counter) {
+	SetEvent(standby_wait_event);
+    }
+    LeaveCriticalSection(&standby_crit);
+}
+
+static void wait_standby(void)
+{
+    WaitForSingleObject(standby_wait_event,INFINITE);
 }
 
 /* ----------------------------------------------------------------------
@@ -628,6 +657,21 @@ checked_alloc(size)
     return p;
 }
 
+static void*
+checked_realloc(ptr,size)
+     void *ptr;
+     unsigned int size;		/* Amount to allocate. */
+{
+    void* p;
+
+    if ((p = sys_realloc(ptr,size)) == NULL)
+	erl_exit(1, "Can't reallocate %d bytes of memory\n", size);
+#ifdef DEBUG
+    memset(p, CleanLandFill, size);
+#endif
+    return p;
+}
+
 
 static void
 new_waiter(void)
@@ -637,10 +681,17 @@ new_waiter(void)
     HANDLE thread;
     int i;
 
+    if (num_waiters == allocated_waiters) {
+	allocated_waiters += 64;
+	waiter = checked_realloc(waiter,sizeof(Waiter *)*allocated_waiters);
+    }
+	
+    /*
     if (num_waiters == MAXIMUM_WAIT_OBJECTS) {
 	erl_exit(1, "Can't wait for more than %d events",
 		 MAXIMUM_WAIT_OBJECTS * MAXIMUM_WAIT_OBJECTS);
     }
+    */
     w = (Waiter *) checked_alloc(sizeof(Waiter));
     waiter[num_waiters] = w;
 
@@ -666,7 +717,6 @@ new_waiter(void)
      */
 
     w->go_ahead = CreateAutoEvent(FALSE);
-    standby[num_waiters] = w->standby = CreateAutoEvent(FALSE);
 
     /*
      * Create the thread.
@@ -733,7 +783,7 @@ threaded_waiter(LPVOID param)
 	    ASSERT(0);		/* Can't happen. */
 	    break;
 	case WAIT_OBJECT_0:
-	    SetEvent(w->standby);
+	    signal_standby();
 	    goto again;
 #ifdef DEBUG
 	case WAIT_TIMEOUT:

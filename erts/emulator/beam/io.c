@@ -970,7 +970,7 @@ int eol;
 	ProcBin* pb;
 	Binary* bptr;
 
-	bptr = (Binary*) safe_alloc_from(61, len+sizeof(Binary));
+	bptr = OH_BIN_SAFE_ALLOC(61, len+sizeof(Binary));
 	bptr->flags = 0;
 	bptr->orig_size = len;
 	bptr->refc = 1;
@@ -1349,6 +1349,19 @@ do_exit_port(Eterm this_port, Eterm from, Eterm reason)
       terminate_port(ix);
 }
 
+/* About the states EXITING and CLOSING used above.
+**
+** EXITING is a recursion protection for do_exit_port(). It is unclear
+** whether this state is necessary or not, it might be possible
+** to merge it with CLOSING. EXITING only persists over a section of
+** sequential (but highly recursive) code.
+**
+** CLOSING is a state where the port is in Limbo, waiting to pass on.
+** All links are removed, and the port receives in/out-put events so
+** as soon as the port queue gets empty terminate_port() is called.
+*/
+
+
 
 /* Command should be of the form
 **   {PID, close}
@@ -1367,7 +1380,7 @@ void port_command(Eterm caller_id, Eterm port_id, Eterm command)
     if (is_not_internal_port(port_id))
 	return;
     ix = internal_port_index(port_id);
-    if ((erts_port[ix].status == FREE) || (erts_port[ix].status & CLOSING))
+    if (INVALID_PORT(erts_port+ix, port_id))
 	return;
 
     if (is_tuple(command)) {
@@ -1792,9 +1805,8 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 	return 0;
     if (prt->status & CLOSING)
 	return 0;
-    if (internal_pid_index(to) >= erts_max_processes)
-	return 0;
-    rp = process_tab[internal_pid_index(to)];
+    rp = internal_pid_index(to) < erts_max_processes ?
+	process_tab[internal_pid_index(to)] : NULL;
     if (INVALID_PID(rp, to))
 	return 0;
 
@@ -2167,7 +2179,18 @@ driver_alloc_binary(int size)
 {
     Binary* bin;
 
-    if ((bin = (Binary*) sys_alloc_from(71,sizeof(Binary)+size)) == NULL)
+    if (size < 0) {
+	cerr_pos = 0;
+	erl_printf(CBUF,
+		   "Bad use of driver_alloc_binary(%d): called with "
+		   "with negative size as argument",
+		   size);
+	send_error_to_logger(NIL);
+	size = 0;
+    }
+
+    bin = OH_BIN_ALLOC(71, sizeof(Binary)+size);
+    if (!bin)
 	return NULL; /* The driver write must take action */
     bin->flags = 0;
     bin->refc = 1;
@@ -2181,12 +2204,36 @@ driver_alloc_binary(int size)
 ErlDrvBinary* driver_realloc_binary(bin, size)
 ErlDrvBinary* bin; int size;
 {
+    Binary* oldbin;
     Binary* newbin;
 
-    if ((newbin = (Binary*)
-	 sys_realloc((bin == NULL) ? NULL : ErlDrvBinary2Binary(bin) , 
-		     sizeof(Binary)+size)) == NULL)
+    if (!bin || size < 0) {
+	cerr_pos = 0;
+	erl_printf(CBUF,
+		   "Bad use of driver_realloc_binary(%p, %d): "
+		   "called with ",
+		   bin, size);
+	if (!bin) {
+	    erl_printf(CBUF, "NULL pointer as first argument");
+	    if (size < 0)
+		erl_printf(CBUF, ", and ");
+	}
+	if (size < 0) {
+	    erl_printf(CBUF, "negative size as second argument");
+	    size = 0;
+	}
+	send_error_to_logger(NIL);
+	if (!bin)
+	    return driver_alloc_binary(size);
+    }
+
+    oldbin = ErlDrvBinary2Binary(bin);
+    newbin = OH_BIN_REALLOC(oldbin,
+			    sizeof(Binary) + oldbin->orig_size,
+			    sizeof(Binary) + size);
+    if (!newbin)
 	return NULL;
+
     tot_bin_allocated += (size - newbin->orig_size);
     newbin->orig_size = size;
     return Binary2ErlDrvBinary(newbin);
@@ -2196,13 +2243,23 @@ ErlDrvBinary* bin; int size;
 void driver_free_binary(dbin)
 ErlDrvBinary* dbin;
 {
-    Binary *bin = ErlDrvBinary2Binary(dbin);
+    Binary *bin;
+    if (!dbin) {
+	cerr_pos = 0;
+	erl_printf(CBUF,
+		   "Bad use of driver_free_binary(%p): called with "
+		   "NULL pointer as argument", dbin);
+	send_error_to_logger(NIL);
+	return;
+    }
+
+    bin = ErlDrvBinary2Binary(dbin);
     if (bin->refc == 1) {
 	if (bin->flags & BIN_FLAG_MATCH_PROG) {
 	    erts_match_set_free(bin);
 	} else {
 	    tot_bin_allocated -= bin->orig_size;
-	    sys_free(bin);
+	    OH_BIN_FREE(bin);
 	}
     } else {
 	bin->refc--;

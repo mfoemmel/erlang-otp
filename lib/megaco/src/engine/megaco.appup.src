@@ -1,6 +1,60 @@
 {"%VSN%",
- [],
+ [{"1.1.1", 
+   [
+    {load_module, megaco_compact_text_encoder, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder, soft_purge, soft_purge, []}
+   ]
+  },
+  {"1.1.0", 
+   [
+    {add_module, megaco_stats},
 
- []
+    {load_module, megaco, soft_purge, soft_purge, [megaco_stats]},
+    {load_module, megaco_messenger, soft_purge, soft_purge, 
+     [megaco_compact_text_encoder, megaco_pretty_text_encoder]},
+    {load_module, megaco_tcp, soft_purge, soft_purge, [megaco_stats]},
+    {load_module, megaco_udp, soft_purge, soft_purge, [megaco_stats]},
+
+    {load_module, megaco_compact_text_encoder, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder, soft_purge, soft_purge, []},
+
+    {update,      megaco_tcp_connection, {advanced,upgrade_from_1_1_0}, 
+     soft_purge, soft_purge, []},
+    {update,      megaco_udp_server, {advanced,upgrade_from_1_1_0}, 
+     soft_purge, soft_purge, []},
+    {update,      megaco_config, {advanced,upgrade_from_1_1_0}, 
+     soft_purge, soft_purge, [megaco_stats]}
+   ]
+  }
+ ],
+
+ [{"1.1.1", 
+   [
+    {load_module, megaco_compact_text_encoder, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder, soft_purge, soft_purge, []}
+   ]
+  },
+  {"1.1.0", 
+   [
+    {load_module, megaco, soft_purge, soft_purge, []},
+    {load_module, megaco_messenger, soft_purge, soft_purge, 
+     [megaco_compact_text_encoder, megaco_pretty_text_encoder]},
+    {load_module, megaco_tcp, soft_purge, soft_purge, []},
+    {load_module, megaco_udp, soft_purge, soft_purge, []},
+
+    {load_module, megaco_compact_text_encoder, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder, soft_purge, soft_purge, []},
+
+    {update,      megaco_tcp_connection, {advanced,downgrade_to_1_1_0}, 
+     soft_purge, soft_purge, []},
+    {update,      megaco_udp_server, {advanced,downgrade_to_1_1_0}, 
+     soft_purge, soft_purge, []},
+    {update,      megaco_config, {advanced,downgrade_to_1_1_0}, 
+     soft_purge, soft_purge, []},
+
+    {remove,{megaco_stats,soft_purge,soft_purge}}
+   ]
+  }
+ ]
 }.
 

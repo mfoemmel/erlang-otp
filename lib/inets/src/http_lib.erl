@@ -38,7 +38,8 @@
 
 -export([read_client_headers/2,read_server_headers/2,
 	 get_auth_data/1,create_header_list/1,
-	 read_client_body/2,read_server_body/2]).
+	 read_client_body/2,read_client_multipartrange_body/3,
+	 read_server_body/2]).
 
 
 %%% Server response:
@@ -47,8 +48,8 @@
 %%% Client Request:
 %%%    Check if 'close' in request headers 
 %%% Only care about HTTP 1.1 clients!
-connection_close(Headers) when list(Headers) ->
-    case getHeaderValue("Connection",Headers) of
+connection_close(Headers) when record(Headers,req_headers) ->
+    case Headers#req_headers.connection of
 	"close" ->
 	    true;
 	"keep-alive" ->
@@ -58,7 +59,7 @@ connection_close(Headers) when list(Headers) ->
 	_ ->
 	    false
     end;
-connection_close(Headers) ->
+connection_close(Headers) when record(Headers,res_headers) ->
     case Headers#res_headers.connection of
 	"close" ->
 	    true;
@@ -93,37 +94,8 @@ connection_close(Headers) ->
 %     {unknown_size,O}.
 
 
-
-%%% ----------------------------------------------------------------------------
-%%% Settings (i.e. Key/Value pairs) can be supplied when invoking a http request
-%%% or via environment variables.
-% get_var(Key,Settings) when list(Settings) ->
-%     case lists:keysearch(Key,1,Settings) of
-% 	{value,{Key,Value}} ->
-% 	    Value;
-% 	_Other ->
-% 	    case application:get_key(Key) of
-% 		undefined ->
-% 		    get_default_value(Key);
-% 		Value ->
-% 		    Value
-% 	    end
-%     end;
-% get_var(_,_Other) ->
-%     throw({error,bad_supplied_settings}).
-
-
-% get_default_value(http_timeout) ->     ?HTTP_REQUEST_TIMEOUT;
-% get_default_value(http_useproxy) ->    false;
-% get_default_value(http_proxy) ->       [];
-% get_default_value(http_noproxylist) -> [];
-% get_default_value(http_autoredirect) ->true;
-% get_default_value(http_ssl) ->	       false;
-% get_default_value(Key) ->              throw({exception,{not_found,Key}}).
-
 %% =============================================================================
 
-%% lists:keysearch(Attr,1,List).
 getHeaderValue(_Attr,[]) ->
     [];
 getHeaderValue(Attr,[{Attr,Value}|_Rest]) ->
@@ -146,7 +118,6 @@ create_request_line(Method,Path,{Major,Minor}) ->
      " HTTP/",integer_to_list(Major),".",integer_to_list(Minor)];
 create_request_line(Method,Path,Minor) ->
     [atom_to_list(Method)," ",Path," HTTP/1.",integer_to_list(Minor)].
-%    io_lib:format("~s ~s HTTP/1.~w",[atom_to_list(Method),Path,Minor]).
 
 
 %%% ============================================================================
@@ -180,8 +151,8 @@ read_request_h(SType,S,Timeout,H) ->
 	    read_request_h(SType,S,Timeout,H#req_headers{host=Value});
 	{ok,{http_header,_,'Content-Length',_,Value}} ->
 	    read_request_h(SType,S,Timeout,H#req_headers{content_length=Value});
-	{ok,{http_header,_,'Expect',_,Value}} ->
-	    read_request_h(SType,S,Timeout,H#req_headers{expect=Value});
+%	{ok,{http_header,_,'Expect',_,Value}} -> % FIXME! Update inet_drv.c!!
+%	    read_request_h(SType,S,Timeout,H#req_headers{expect=Value});
 	{ok,{http_header,_,'Transfer-Encoding',_,V}} ->
 	    read_request_h(SType,S,Timeout,H#req_headers{transfer_encoding=V});
 	{ok,{http_header,_,'Authorization',_,Value}} ->
@@ -253,8 +224,8 @@ read_response_h(SType,S,Timeout,H) ->
 %%%   unlimited.
 %%% - Move to raw packet mode as we are finished with HTTP parsing
 read_client_body(Info,Timeout) ->
-    ContLen=list_to_integer((Info#response.headers)#res_headers.content_length),
-    case (Info#response.headers)#res_headers.transfer_encoding of
+    Headers=Info#response.headers,    
+    case Headers#res_headers.transfer_encoding of
 	"chunked" ->
 	    ?DEBUG("read_entity_body2()->"
 		"Transfer-encoding:Chunked Data:",[]),
@@ -263,15 +234,20 @@ read_client_body(Info,Timeout) ->
 	    ?DEBUG("read_entity_body2()->"
 		"Transfer-encoding:Unknown",[]),
 	    throw({error,unknown_coding});
-	_ when integer(ContLen),ContLen>?MAXBODYSIZE -> 
-	    throw({error,body_too_big});
-	_ when integer(ContLen) ->
-	    ?DEBUG("read_entity_body2()->"
-		"Transfer-encoding:none ",[]),
-	    Info#response{body=read_plain_body(Info#response.scheme,
-					       Info#response.socket,
-					       ContLen,Info#response.body,
-					       Timeout)}
+	_ ->
+	    ContLen=list_to_integer(Headers#res_headers.content_length),
+	    if
+		ContLen>?MAXBODYSIZE -> 
+		    throw({error,body_too_big});
+		true ->
+		    ?DEBUG("read_entity_body2()->"
+			"Transfer-encoding:none ",[]),
+		    Info#response{body=read_plain_body(Info#response.scheme,
+						       Info#response.socket,
+						       ContLen,
+						       Info#response.body,
+						       Timeout)}
+	    end
     end.
 
 
@@ -279,7 +255,6 @@ read_client_body(Info,Timeout) ->
 read_server_body(Info,Timeout) ->
     MaxBodySz=httpd_util:lookup(Info#mod.config_db,max_body_size,?MAXBODYSIZE),
     ContLen=list_to_integer((Info#mod.headers)#req_headers.content_length),
-    %% io:format("JB read_server_body ~p~n",[Info]),
     %% ?vtrace("ContentLength: ~p", [ContLen]),
     if
 	integer(ContLen),integer(MaxBodySz),ContLen>MaxBodySz ->
@@ -307,7 +282,9 @@ read_server_body2(Info,Timeout,ContLen,MaxBodySz) ->
 	Encoding when list(Encoding) ->
 	    ?DEBUG("read_entity_body2()->"
 		"Transfer-encoding:Unknown",[]),
-	    throw({error,unknown_coding});
+	    httpd_response:send_status(Info,501,"Unknown Transfer-Encoding"),
+	    http_lib:close(Info#mod.socket_type,Info#mod.socket),
+	    throw({error,{status_sent,"Unknown Transfer-Encoding "++Encoding}});
 	_ when integer(ContLen),integer(MaxBodySz),ContLen>MaxBodySz -> 
 	    throw({error,body_too_big});
 	_ when integer(ContLen) ->
@@ -406,8 +383,8 @@ read_chunk(Scheme,Socket,Timeout,Int,MaxChunkSz) when MaxChunkSz>Int ->
 	<<?CR>> when Int==0 ->
 	    read_data_lf(Scheme,Socket,Timeout),
 	    {last_chunk,[]};
-	<<C>> when C==$ -> % Some browsers (eg Apache 1.3.6) throw in additional
-			   % whitespace...
+	<<C>> when C==$ -> % Some servers (e.g., Apache 1.3.6) throw in
+			   % additional whitespace...
 	    read_chunk(Scheme,Socket,Timeout,Int,MaxChunkSz);
 	_Other ->
 	    {error,unexpected_chunkdata}
@@ -471,6 +448,73 @@ read_data_lf(Scheme,Socket,Timeout) ->
     end.
 
 %%% ----------------------------------------------------------------------------
+%%% The body was "multipart/byteranges", decode it.
+%%% Example from RFC 2616, Appendix 19.2
+%%%    HTTP/1.1 206 Partial Content
+%%%    Date: Wed, 15 Nov 1995 06:25:24 GMT
+%%%    Last-Modified: Wed, 15 Nov 1995 04:58:08 GMT
+%%%    Content-type: multipart/byteranges; boundary=THIS_STRING_SEPARATES
+%%%
+%%%    --THIS_STRING_SEPARATES
+%%%    Content-type: application/pdf
+%%%    Content-range: bytes 500-999/8000
+%%%
+%%%    ...the first range...
+%%%    --THIS_STRING_SEPARATES
+%%%    Content-type: application/pdf
+%%%    Content-range: bytes 7000-7999/8000
+%%%
+%%%    ...the second range
+%%%    --THIS_STRING_SEPARATES--
+%%%
+%%%       Notes:
+%%%
+%%%       1) Additional CRLFs may precede the first boundary string in the
+%%%          entity.
+%%% FIXME!!
+read_client_multipartrange_body(Info,Parstr,Timeout) ->
+    Boundary=get_boundary(Parstr),
+    scan_boundary(Info,Boundary),
+    Info#response{body=read_multipart_body(Info,Boundary,Timeout)}.
+
+read_multipart_body(Info,Boundary,Timeout) ->
+    Info.
+
+%     Headers=read_headers_old(Info#response.scheme,Info#response.socket,Timeout),
+%     H=Info#response.headers,
+%     OtherHeaders=H#res_headers.other++TrailH,
+%     Info#response{headers=H#res_headers{other=OtherHeaders}}.
+
+
+scan_boundary(Info,Boundary) ->
+    Info.
+
+
+get_boundary(Parstr) ->
+    case skip_lwsp(Parstr) of
+	[] ->
+	    throw({error,missing_range_boundary_parameter});
+	Val ->
+	    get_boundary2(string:tokens(Val, ";"))
+    end.
+
+get_boundary2([]) ->
+    undefined;
+get_boundary2([Param|Rest]) ->
+    case string:tokens(skip_lwsp(Param), "=") of
+	["boundary"++Attribute,Value] ->
+	    Value;
+	_ ->
+	    get_boundary2(Rest)
+    end.
+
+
+%% skip space & tab
+skip_lwsp([$ | Cs]) -> skip_lwsp(Cs);
+skip_lwsp([$\t | Cs]) -> skip_lwsp(Cs);
+skip_lwsp(Cs) -> Cs.
+
+%%% ----------------------------------------------------------------------------
 
 %%% Read the incoming data from the open socket.
 read_more_data(http,Socket,Len,Timeout) ->
@@ -514,23 +558,55 @@ close(https,Socket) ->
     ssl:close(Socket).
 
 
-connect(#request{scheme=http,settings=_Settings,address={Host,Port}}) ->
-    Opts=[binary,{active,false},{reuseaddr,true}],
-%=case ClientClose of
-%		true ->
-%	 
-%		false ->
-%		    [binary,{packet,http},{active,false},{reuseaddr,true}]
-%	    end,
-    gen_tcp:connect(Host,Port,Opts);
-connect(#request{scheme=https,settings=Settings,address={Host,Port}}) ->
-    Opts=case Settings#client_settings.ssl of
-	     false ->
-		 [binary,{active,false}];
-	     SSLSettings ->
-		 [binary,{active,false}]++SSLSettings
-	 end,
-    ssl:connect(Host,Port,Opts).
+connect(#request{scheme=http,settings=Settings,address=Addr}) ->
+    case proxyusage(Addr,Settings) of
+	{error,Reason} ->
+	    {error,Reason};
+	{Host,Port} ->
+	    Opts=[binary,{active,false},{reuseaddr,true}],    
+	    gen_tcp:connect(Host,Port,Opts)
+    end;
+connect(#request{scheme=https,settings=Settings,address=Addr}) ->
+    case proxyusage(Addr,Settings) of
+	{error,Reason} ->
+	    {error,Reason};
+	{Host,Port} ->
+	    Opts=case Settings#client_settings.ssl of
+		     false ->
+			 [binary,{active,false}];
+		     SSLSettings ->
+			 [binary,{active,false}]++SSLSettings
+		 end,
+	    ssl:connect(Host,Port,Opts)
+    end.
+
+
+%%% Check to see if the given {Host,Port} tuple is in the NoProxyList
+%%% Returns an eventually updated {Host,Port} tuple, with the proxy address
+proxyusage(HostPort,Settings) ->
+    case Settings#client_settings.useproxy of
+	true ->
+	    case noProxy(HostPort,Settings#client_settings.noproxylist) of
+		true ->
+		    HostPort;
+		_ ->
+		    case Settings#client_settings.proxy of
+			undefined ->
+			    {error,no_proxy_defined};
+			ProxyHostPort ->
+			    ProxyHostPort
+		    end
+	    end;
+	_ ->
+	    HostPort
+    end.
+
+noProxy(_HostPort,[]) ->
+    false;
+noProxy({Host,Port},[{Host,Port}|Rest]) ->
+    true;
+noProxy(HostPort,[_|Rest]) ->
+    noProxy(HostPort,Rest).
 
 
 controlling_process(http,Socket,Pid) ->

@@ -62,8 +62,13 @@ ifeq ($(TYPE),debug)
 ERL_COMPILE_FLAGS += -Ddebug
 endif
 
-ERL_FLAGS += 	-pa $(ERL_TOP)/lib/et/ebin \
-		-pa $(ERL_TOP)/lib/megaco/ebin
+# ifeq ($(USE_HIPE),true)
+# ERL_COMPILE_FLAGS += +native
+# endif
+
+ERL_FLAGS += -pa $(ERL_TOP)/lib/et/ebin \
+             -pa $(ERL_TOP)/lib/megaco/ebin
+
 ERL_COMPILE_FLAGS += -I../../include \
                      +'{parse_transform,sys_pre_attributes}' \
                      +'{attribute,insert,app_vsn,$(APP_VSN)}'

@@ -100,7 +100,8 @@ handle_info({Port, {data, Data}}, State) when State#state.port == Port ->
 	{Version, Hdr, Par, TypeCodes} ->
 	    Result = corba:request_from_iiop(Hdr#request_header.object_key,
 					     list_to_atom(Hdr#request_header.operation),
-					     Par, [], 'true'),
+					     Par, [], 'true', 
+					     Hdr#request_header.service_context),
 	    case result_to_list(Result, TypeCodes) of
 		[{'EXCEPTION', Exception} | _] ->
 		    {TypeOfException, ExceptionTypeCode} =

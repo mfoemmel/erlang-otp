@@ -284,7 +284,10 @@ doit({From,{info,gs_db}},State) ->
 doit({From,{info,kernel_db}},State) ->
     reply(From,gstk:request(State#state.kernel,dump_db));
 doit({From,{info,user_db}},State) ->
-    reply(From,gstk:request(State#state.user,dump_db)).
+    reply(From,gstk:request(State#state.user,dump_db));
+doit({From,{info,Unknown}},_State) ->
+    io:format("gs: unknown info option '~w', use one of 'gs_db', 'kernel_db' or 'user_db'~n",[Unknown]),
+    reply(From,ok).
 
 terminate(_Reason,#state{db=DB}) ->
     if DB==undefined -> ok;

@@ -864,7 +864,7 @@ check_types([H|_], _,_) when record(H, 'CosNotification_EventType') ->
     corba:raise(#'CosNotifyComm_InvalidEventType'{type=H});
 check_types(_,_,_) ->
     %% Wasn't even a correct input.
-    corba:raise(#'BAD_PARAM'{minor=950, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 check_wildcard(Types, Which, WC, Domain, Type) ->
     NewWC =
@@ -886,7 +886,7 @@ convert_wildcard([], Acc) ->
 	{ok, Expr} ->
 	    Expr;
 	_ ->
-	    corba:raise(#'BAD_PARAM'{minor=951, completion_status=?COMPLETED_NO})
+	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end;
 convert_wildcard([$*|T], Acc) ->
     convert_wildcard(T, [$*, $.|Acc]);
@@ -961,7 +961,7 @@ validate_types([H|_])
     corba:raise(#'CosNotifyComm_InvalidEventType'{type=H});
 validate_types(_) ->
     %% Wasn't even a correct input.
-    corba:raise(#'BAD_PARAM'{minor=952, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 
 %%--------------- END OF MODULE ------------------------------

@@ -131,6 +131,11 @@ mk_create_opts_for_child(DB,Cgstkid, Pgstkid, Opts) ->
 %%
 %% Return 	: [true | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% FIXME: Could we really trust Index? If we create a menu and put one
+% entry in the middle of the meny, don't the entrys after that one
+% renumber?
+
 config(DB, Gstkid, Options) ->
     Parent = Gstkid#gstkid.parent,
     Pgstkid = gstk_db:lookup_gstkid(DB, Parent),
@@ -280,6 +285,8 @@ option(Option, Gstkid, TkW, DB, {Kind,Index}) ->
 	    gstk_db:insert_opt(DB,Gstkid,Option),
 	    {s, [" -font ", gstk_font:choose_ascii(DB,Font)]};
 	{label, {image,Img}} -> {s, [" -bitm @", Img, " -lab {}"]};
+	% FIXME: insert -command here.....
+	% FIXME: how to get value from image entry???
 	{label, {text,Text}} -> {s, [" -lab ",gstk:to_ascii(Text)," -bitm {}"]};
 	{underline,     Int} -> {s, [" -underl ", gstk:to_ascii(Int)]};
         {activebg,    Color} -> {s, [" -activeba ", gstk:to_color(Color)]};
@@ -537,22 +544,24 @@ find_last_index(TkMenu) ->
 	Other -> gs:error("Couldn't find index ~p~n",[Other])
     end.
 
-cbind({true, Edata}, Gstkid, TkMenu, _Index, Type, DB) ->
+cbind({true, Edata}, Gstkid, TkMenu, Index, Type, DB) ->
     Eref = gstk_db:insert_event(DB, Gstkid, click, Edata),
+    IdxStr = gstk:to_ascii(Index),
     case Type of
 	normal ->
-	    Cmd = [" -command {set x [",TkMenu, " index active];erlsend ", Eref,
-		   " \\\"[",TkMenu," entrycg $x -label]\\\" $x}"],
+	    Cmd = [" -command {erlsend ", Eref,
+		   " \\\"[",TkMenu," entrycg ",IdxStr," -label]\\\" ",
+		   IdxStr,"}"],
 	    {s, Cmd};
 	check ->
-	    Cmd = [" -command {set x [",TkMenu, " index active];erlsend ", Eref,
-		   " \[expr \$[", TkMenu, " entrycg $x -var]\] \\\"[",
-		   TkMenu, " entrycg $x -label]\\\" $x}"],
+	    Cmd = [" -command {erlsend ", Eref,
+		   " \[expr \$[", TkMenu, " entrycg ",IdxStr," -var]\] \\\"[",
+		   TkMenu, " entrycg ",IdxStr," -label]\\\" ",IdxStr,"}"],
 	    {s, Cmd};
 	radio ->
-	    Cmd = [" -command {set x [",TkMenu, " index active];erlsend ", Eref,
-		   " [", TkMenu, " entrycg $x -var] \\\"[",
-		   TkMenu, " entrycg $x -label]\\\" $x}"],
+	    Cmd = [" -command {erlsend ", Eref,
+		   " [", TkMenu, " entrycg ",IdxStr," -var] \\\"[",
+		   TkMenu, " entrycg ",IdxStr," -label]\\\" ",IdxStr,"}"],
 	    {s, Cmd};
 	_Other ->
 	    none

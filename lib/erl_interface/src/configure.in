@@ -28,7 +28,7 @@ AC_FUNC_ALLOCA
 AC_FUNC_MEMCMP
 AC_TYPE_SIGNAL
 AC_FUNC_VPRINTF
-AC_CHECK_FUNCS(gethostname gettimeofday select socket strdup strerror strstr uname)
+AC_CHECK_FUNCS(gethostname gettimeofday select socket strdup strerror strerror_r strstr uname)
 
 AC_OUTPUT(GNUmakefile)
 

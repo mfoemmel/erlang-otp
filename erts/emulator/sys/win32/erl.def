@@ -50,3 +50,10 @@ EXPORTS
 	set_port_control_flags
 	erl_start
 	sys_get_key
+	driver_output_term
+	driver_send_term
+	driver_mk_atom
+	driver_mk_port
+	driver_connected
+	driver_caller
+	driver_term_nil

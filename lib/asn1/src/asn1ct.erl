@@ -27,14 +27,30 @@
 -export([test/1, test/2, test/3, value/2]).
 %% Application internal exports
 -export([compile_asn/3,compile_asn1/3,compile_py/3,compile/3,value/1,vsn/0,
-	 create_ets_table/2,get_name_of_def/1,get_pos_of_def/1]).
+	 create_ets_table/2,get_name_of_def/1,get_pos_of_def/1,
+	 read_config_data/1]).
 -include("asn1_records.hrl").
 -include_lib("stdlib/include/erl_compile.hrl").
+
+-import(asn1ct_gen_ber_bin_v2,[encode_tag_val/3,decode_class/1]).
 
 -define(unique_names,0).
 -define(dupl_uniquedefs,1).
 -define(dupl_equaldefs,2).
 -define(dupl_eqdefs_uniquedefs,?dupl_equaldefs bor ?dupl_uniquedefs).
+
+-define(CONSTRUCTED, 2#00100000). 
+
+%% macros used for partial decode commands
+-define(CHOOSEN,choosen).
+-define(SKIP,skip).
+-define(SKIP_OPTIONAL,skip_optional).
+
+%% macros used for partial incomplete decode commands
+-define(MANDATORY,mandatory).
+-define(OPTIONAL,opt).
+-define(PARTS,parts).
+-define(BINARY,bin).
 
 %% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% This is the interface to the compiler
@@ -136,15 +152,6 @@ check_set(ParseRes,SetBase,OutFile,Includes,EncRule,DbFile,
     delete_tables([renamed_defs,original_imports,automatic_tags]),
 
     compile_erl(Continue2,OutFile,Options).
-
-delete_tables([Table|Ts]) ->
-    case ets:info(Table) of
-	undefined -> ok;
-	_ -> ets:delete(Table)
-    end,
-    delete_tables(Ts);
-delete_tables([]) ->
-    ok.
 
 %% merge_modules/2 -> returns a module record where the typeorval lists are merged,
 %% the exports lists are merged, the imports lists are merged when the 
@@ -416,26 +423,33 @@ export_all(ModuleList) ->
 	lists:map(
 	  fun(M)->
 		  TorVL=M#module.typeorval,
+		  MName = M#module.name,
 		  lists:map(
 		    fun(Def)->
 			    case Def of
 				T when record(T,typedef)->
 				    #'Externaltypereference'{pos=0,
+							     module=MName,
 							     type=T#typedef.name};
 				V when record(V,valuedef) ->
 				    #'Externalvaluereference'{pos=0,
+							      module=MName,
 							      value=V#valuedef.name};
 				C when record(C,classdef) ->
 				    #'Externaltypereference'{pos=0,
+							     module=MName,
 							     type=C#classdef.name};
 				P when record(P,ptypedef) ->
 				    #'Externaltypereference'{pos=0,
+							     module=MName,
 							     type=P#ptypedef.name};
 				PV when record(PV,pvaluesetdef) ->
 				    #'Externaltypereference'{pos=0,
+							     module=MName,
 							     type=PV#pvaluesetdef.name};
 				PO when record(PO,pobjectdef) ->
 				    #'Externalvaluereference'{pos=0,
+							      module=MName,
 							      value=PO#pobjectdef.name}
 			    end
 		    end,
@@ -724,10 +738,20 @@ generate({true,{M,_Module,GenTOrV}},OutFile,EncodingRule,Options) ->
     end,
     put(encoding_options,Options),
     create_ets_table(check_functions,[named_table]),
+
+    %% create decoding function names and taglists for partial decode
+    %% For the time being leave errors unnoticed !!!!!!!!!
+    case catch partial_decode_prepare(EncodingRule,M,GenTOrV,Options) of
+	{error, Reason} -> ok;
+	_ -> ok
+    end,
+
     asn1ct_gen:pgen(OutFile,EncodingRule,M#module.name,GenTOrV),
     debug_off(Options),
     put(compact_bit_string,false),
     erase(encoding_options),
+    erase(tlv_format), % used in ber_bin, optimize
+    erase(class_default_type),% used in ber_bin, optimize
     ets:delete(check_functions),
     case lists:member(sg,Options) of
 	true -> % terminate here , with .erl file generated
@@ -760,6 +784,14 @@ input_file_type(File) ->
 			_Error ->
 			    {single_file, lists:concat([File,".py"])}
 		    end
+	    end;
+	".ans1config" ->
+	    case read_config_file(File,asn1_module) of
+		{ok,Asn1Module} -> 
+		    put(asn1_config_file,File),
+		    input_file_type(Asn1Module);
+		Error ->
+		    Error
 	    end;
 	Asn1PFix ->
 	    Base = filename:basename(File,Asn1PFix),
@@ -1157,6 +1189,9 @@ print_listing([],_) ->
     ok.
 
 
+%% functions to administer ets tables
+
+%% Always creates a new table
 create_ets_table(Name,Options) when atom(Name) ->
     case ets:info(Name) of
 	undefined ->
@@ -1164,4 +1199,362 @@ create_ets_table(Name,Options) when atom(Name) ->
 	_  ->
 	    ets:delete(Name),
 	    ets:new(Name,Options)
+    end.
+
+%% Creates a new ets table only if no table exists
+create_if_none_table(Name,Options) ->
+    case ets:info(Name) of
+	undefined ->
+	    %% create a new table
+	    create_ets_table(Name,Options);
+	_ -> ok
+    end.
+    
+
+delete_tables([Table|Ts]) ->
+    case ets:info(Table) of
+	undefined -> ok;
+	_ -> ets:delete(Table)
+    end,
+    delete_tables(Ts);
+delete_tables([]) ->
+    ok.
+
+
+%% Reads the configuration file if it exists and stores information
+%% about partial decode and incomplete decode
+partial_decode_prepare(ber_bin_v2,M,TsAndVs,Options) when tuple(TsAndVs) ->
+    %% read configure file
+    Types = element(1,TsAndVs),
+    CfgList = read_config_file(M#module.name),
+    PartialDecode = get_config_info(CfgList,partial_decode),
+    PartialIncDecode = get_config_info(CfgList,partial_incomplete_decode),
+    CommandList = 
+	create_partial_decode_gen_info(M#module.name,PartialDecode),
+    io:format("partial_decode = ~p~n",[CommandList]),
+    
+    save_config(partial_decode,CommandList),
+    CommandList2 = 
+	create_partial_inc_decode_gen_info(M#module.name,PartialIncDecode),
+    io:format("partial_incomplete_decode = ~p~n",[CommandList2]),
+    Part_inc_dec = tag_format(ber_bin_v2,Options,CommandList2),
+    io:format("partial_incomplete_decode: tlv_tags = ~p~n",[Part_inc_dec]),
+    save_config(partial_incomplete_decode,Part_inc_dec);
+partial_decode_prepare(_,_,_,_) ->
+    ok.
+
+%% create_partial_inc_decode_gen_info/2
+%%
+%% Creats a list of tags out of the information in TypeNameList that
+%% tells which value will be incomplete decoded, i.e. each end
+%% component/type in TypeNameList. The significant types/components in
+%% the path from the toptype must be specified in the
+%% TypeNameList. Significant elements are all constructed types that
+%% branches the path to the leaf and the leaf it selfs.
+%%
+%% Returns a list of elements, where an element may be one of
+%% mandatory|[opt,Tag]|[bin,Tag]. mandatory correspond to a mandatory
+%% element that shall be decoded as usual. [opt,Tag] matches an
+%% OPTIONAL or DEFAULT element that shall be decoded as
+%% usual. [bin,Tag] corresponds to an element, mandatory, OPTIONAL or
+%% DEFAULT, that shall be left encoded (incomplete decoded).
+create_partial_inc_decode_gen_info(ModName,{Mod,[L|Ls]}) when list(L) ->
+    [create_partial_inc_decode_gen_info(ModName,{Mod,L})|
+     create_partial_inc_decode_gen_info(ModName,{Mod,Ls})];
+create_partial_inc_decode_gen_info(_,{_,[]}) ->
+    [];
+create_partial_inc_decode_gen_info(ModName,{{_,ModName},
+					    [TopTypeName|Rest]}) ->
+    case asn1_db:dbget(ModName,TopTypeName) of
+	#typedef{typespec=TS} ->
+	    TagCommand = get_tag_command(TS,?MANDATORY,mandatory),
+	    create_pdec_inc_command(ModName,get_components(TS#type.def),
+				    Rest,[TagCommand]);
+	_ ->
+	    throw({error,{"wrong type list in asn1 config file",
+			  TopTypeName}})
+    end;
+
+create_partial_inc_decode_gen_info(_,TNL) ->
+    throw({error,{"wrong type list in asn1 config file",
+		  TNL}}).
+
+%%
+%% Only when there is a 'ComponentType' the config data C1 may be a
+%% list, where the incomplete decode is branched. So, C1 may be a
+%% list, a "binary tuple", a "parts tuple" or an atom. The second
+%% element of a binary tuple and a parts tuple is an atom.
+create_pdec_inc_command(ModName,_,[],Acc) ->
+    lists:reverse(Acc);
+create_pdec_inc_command(ModName,
+			CList=[#'ComponentType'{name=Name,typespec=TS,
+						prop=Prop}|Comps],
+			TNL=[C1|Cs],Acc)  ->
+    case C1 of
+	Name ->
+	    %% In this case C1 is an atom
+	    TagCommand = get_tag_command(TS,?MANDATORY,Prop),
+	    create_pdec_inc_command(ModName,get_components(TS#type.def),Cs,[TagCommand|Acc]);
+	{binary,Name} ->
+	    TagCommand = get_tag_command(TS,?BINARY,Prop),
+	    create_pdec_inc_command(ModName,Comps,Cs,[TagCommand|Acc]);
+	{parts,Name} ->
+	    TagCommand = get_tag_command(TS,?PARTS,Prop),
+	    create_pdec_inc_command(ModName,Comps,Cs,[TagCommand|Acc]);
+	L when list(L) ->
+	    %% Follow each element in L. Must note every tag on the
+	    %% way until the last command is reached, but it ought to
+	    %% be enough to have a "complete" or "complete optional"
+	    %% command for each component that is not specified in the
+	    %% config file. Then in the TLV decode the components with
+	    %% a "complete" command will be decoded by an ordinary TLV
+	    %% decode.
+%	    TagCommand = get_tag_command(TS,?MANDATORY,Prop),
+%	    TagCommand2 = create_pdec_inc_command(ModName,get_components(TS#type.def),L,[TagCommand|Acc]),
+	    create_pdec_inc_command(ModName,CList,L,Acc);
+%	    create_pdec_inc_command(ModName,Cs,Comps,TagCommand2);
+	_ -> %% this component may not be in the config list
+	    TagCommand = get_tag_command(TS,?MANDATORY,Prop),
+	    create_pdec_inc_command(ModName,Comps,TNL,[TagCommand|Acc])
+    end;
+create_pdec_inc_command(ModName,
+			{'CHOICE',[Comp=#'ComponentType'{name=C1}|_]},
+			TNL=[C1|_],Acc) ->
+    create_pdec_inc_command(ModName,[Comp],TNL,Acc);
+% create_pdec_inc_command(ModName,{'CHOICE',[Comp=#'ComponentType'{name=C1}|_]},TNL=[{_,C1}|_Cs],Acc) ->
+%     create_pdec_inc_command(ModName,[Comp],TNL,Acc);
+create_pdec_inc_command(ModName,{'CHOICE',[#'ComponentType'{}|Comps]},TNL,Acc) ->
+    create_pdec_inc_command(ModName,{'CHOICE',Comps},TNL,Acc);
+create_pdec_inc_command(ModName,#'Externaltypereference'{module=M,type=Name},
+			TNL,Acc) ->
+    #type{def=Def} = get_referenced_type(M,Name),
+    create_pdec_inc_command(ModName,get_components(Def),TNL,Acc);
+create_pdec_inc_command(_,_,TNL,_) ->
+    throw({error,{"unexpected error when creating partial "
+		  "decode command",TNL}}).
+
+
+%% Creats a list of tags out of the information in TypeList and Types
+%% that tells which value will be decoded.  Each constructed type that
+%% is in the TypeList will get a "choosen" command. Only the last
+%% type/component in the TypeList may be a primitive type. Components
+%% "on the way" to the final element may get the "skip" or the
+%% "skip_optional" command.
+%% CommandList = [Elements]
+%% Elements = {choosen,Tag}|{skip_optional,Tag}|skip
+%% Tag is a binary with the tag BER encoded.
+create_partial_decode_gen_info(ModName,{{_,ModName},TypeList}) ->
+    case TypeList of
+	[TopType|Rest] ->
+	    case asn1_db:dbget(ModName,TopType) of
+		#typedef{typespec=TS} ->
+		    TagCommand = get_tag_command(TS,?CHOOSEN),
+		    CommandList = create_pdec_command(ModName,get_components(TS#type.def),Rest,[TagCommand]);
+		_ ->
+		    throw({error,{"wrong type list in asn1 config file",
+				  TypeList}})
+	    end;
+	_ ->
+	    ok
+    end.
+
+%% create_pdec_command/4 for each name (type or component) in the
+%% third argument, TypeNameList, a command is created. The command has
+%% information whether the component/type shall be skipped, looked
+%% into or returned. The list of commands is returned.
+create_pdec_command(ModName,_,[],Acc) ->
+    lists:reverse(Acc);
+create_pdec_command(ModName,[#'ComponentType'{name=C1,typespec=TS}|_Comps],
+		    [C1|Cs],Acc) ->
+    %% this component is a constructed type or the last in the
+    %% TypeNameList otherwise the config spec is wrong
+    TagCommand = get_tag_command(TS,?CHOOSEN),
+    create_pdec_command(ModName,get_components(TS#type.def),
+			Cs,[TagCommand|Acc]);
+create_pdec_command(ModName,[#'ComponentType'{name=C1,typespec=TS,
+					      prop=Prop}|Comps],
+		    [C2|Cs],Acc) ->
+    TagCommand = 
+	case Prop of
+	    mandatory ->
+		get_tag_command(TS,?SKIP);
+	    _ ->
+		get_tag_command(TS,?SKIP_OPTIONAL)
+	end,
+    create_pdec_command(ModName,Comps,[C2|Cs],[TagCommand|Acc]);
+create_pdec_command(ModName,{'CHOICE',[Comp=#'ComponentType'{name=C1}|_]},TNL=[C1|_Cs],Acc) ->
+    create_pdec_command(ModName,[Comp],TNL,Acc);
+create_pdec_command(ModName,{'CHOICE',[#'ComponentType'{}|Comps]},TNL,Acc) ->
+    create_pdec_command(ModName,{'CHOICE',Comps},TNL,Acc);
+create_pdec_command(ModName,#'Externaltypereference'{module=M,type=C1},
+		    TypeNameList,Acc) ->
+    case get_referenced_type(M,C1) of
+	TS=#type{def=Def} ->
+	    create_pdec_command(ModName,get_components(Def),TypeNameList,
+				Acc);
+	Err ->
+	    throw({error,{"unexpected result when fetching "
+			  "referenced element",Err}})
+    end;
+create_pdec_command(ModName,TS=#type{tag=Tag,def=Def},[C1|Cs],Acc) ->
+    %% This case when we got the "components" of a SEQUENCE/SET OF
+    case C1 of
+	[1] ->
+	    %% A list with an integer is the only valid option in a 'S
+	    %% OF', the other valid option would be an empty
+	    %% TypeNameList saying that the entire 'S OF' will be
+	    %% decoded.
+	    TagCommand = get_tag_command(TS,?CHOOSEN),
+	    create_pdec_command(ModName,Def,Cs,[TagCommand|Acc]);
+	[N] when integer(N) ->
+	    TagCommand = get_tag_command(TS,?SKIP),
+	    create_pdec_command(ModName,Def,[[N-1]|Cs],[TagCommand|Acc]);
+	Err ->
+	    throw({error,{"unexpected error when creating partial "
+			  "decode command",Err}})
+    end;
+create_pdec_command(_,_,TNL,_) ->
+    throw({error,{"unexpected error when creating partial "
+		  "decode command",TNL}}).
+	    
+% get_components({'CHOICE',Components}) ->
+%     Components;
+get_components(#'SEQUENCE'{components=Components}) ->
+    Components;
+get_components(#'SET'{components=Components}) ->
+    Components;
+get_components({'SEQUENCE OF',Components}) ->
+    Components;
+get_components({'SET OF',Components}) ->
+    Components;
+get_components(Def) ->
+    Def.
+			   
+%% get_tag_command(Type,Command)
+
+%% Type is the type that has information about the tag Command tells
+%% what to do with the encoded value with the tag of Type when
+%% decoding. 
+get_tag_command(#type{tag=[]},_) ->
+    [];
+get_tag_command(#type{tag=[Tag]},?SKIP) ->
+    ?SKIP;
+get_tag_command(#type{tag=[Tag]},Command) ->
+    %% encode the tag according to BER
+    [Command,encode_tag_val(decode_class(Tag#tag.class),Tag#tag.form, 
+			    Tag#tag.number)];
+get_tag_command(T=#type{tag=[Tag|Tags]},Command) ->
+    [get_tag_command(T#type{tag=Tag},Command)|
+     get_tag_command(T#type{tag=Tags},Command)].
+
+get_tag_command(#type{tag=[]},_,_) ->
+    [];
+get_tag_command(#type{tag=[Tag]},?MANDATORY,Prop) ->
+    case Prop of
+	mandatory ->
+	    ?MANDATORY;
+	_ -> [?OPTIONAL,encode_tag_val(decode_class(Tag#tag.class),
+				       Tag#tag.form,Tag#tag.number)]
+    end;
+get_tag_command(#type{tag=[Tag]},Command,_) ->
+    [Command,encode_tag_val(decode_class(Tag#tag.class),Tag#tag.form, 
+			    Tag#tag.number)].
+
+
+get_referenced_type(M,Name) ->
+    case asn1_db:dbget(M,Name) of
+	#typedef{typespec=TS} ->
+	    case TS of
+		#type{def=#'Externaltypereference'{module=M2,type=Name2}} ->
+		    %% The tags have already been taken care of in the
+		    %% first reference where they were gathered in a
+		    %% list of tags.
+		    get_referenced_type(M2,Name2);
+		#type{} -> TS;
+		_  ->
+		    throw({error,{"unexpected element when"
+				  " fetching referenced type",TS}})
+	    end;
+	T ->
+	    throw({error,{"unexpected element when fetching "
+			  "referenced type",T}})
+    end.
+
+tag_format(EncRule,Options,CommandList) ->
+    case EncRule of
+	ber_bin_v2 ->
+	    tlv_tags(CommandList);
+	_ ->
+	    CommandList
+    end.
+
+tlv_tags([]) ->
+    [];
+tlv_tags([mandatory|Rest]) ->
+    [mandatory|tlv_tags(Rest)];
+tlv_tags([[opt,Tag]|Rest]) ->
+    [[opt,tlv_tag(Tag)]|tlv_tags(Rest)];
+tlv_tags([[parts,Tag]|Rest]) ->
+    [[parts,tlv_tag(Tag)]|tlv_tags(Rest)];
+tlv_tags([[bin,Tag]|Rest]) ->
+    [[bin,tlv_tag(Tag)]|tlv_tags(Rest)];
+%% remove all empty lists
+tlv_tags([[]|Rest]) ->
+    tlv_tags(Rest);
+tlv_tags([L1|Rest]) when list(L1) ->
+    [tlv_tags(L1)|tlv_tags(Rest)].
+
+tlv_tag(<<Cl:2,_:1,TagNo:5>>) when TagNo < 31 ->
+    (Cl bsl 16) + TagNo;
+tlv_tag(<<Cl:2,_:1,31:5,0:1,TagNo:7>>) ->
+    (Cl bsl 16) + TagNo;
+tlv_tag(<<Cl:2,_:1,31:5,Buffer/binary>>) ->
+    TagNo = tlv_tag1(Buffer,0),
+    (Cl bsl 16) + TagNo.
+tlv_tag1(<<0:1,PartialTag:7>>,Acc) ->
+    (Acc bsl 7) bor PartialTag;
+tlv_tag1(<<1:1,PartialTag:7,Buffer/binary>>,Acc) ->
+    tlv_tag1(Buffer,(Acc bsl 7) bor PartialTag).
+    
+%% reads the content from the configuration file and returns the
+%% selected part choosen by InfoType. Assumes that the config file
+%% content is an Erlang term.
+read_config_file(ModuleName,InfoType) ->
+    CfgList = read_config_file(ModuleName),
+    get_config_info(CfgList,InfoType).
+
+
+read_config_file(ModuleName) ->
+    case file:consult(lists:concat([ModuleName,'.asn1config'])) of
+	{ok,CfgList} ->
+	    CfgList;
+	{error,Reason} ->
+	    file:format_error(Reason),
+	    throw({error,{"error reading asn1 config file",Reason}})
+    end.
+
+get_config_info(CfgList,InfoType) ->
+    case InfoType of
+	all ->
+	    CfgList;
+	_ ->
+	    case lists:keysearch(InfoType,1,CfgList) of
+		{value,{InfoType,Value}} ->
+		    Value;
+		false ->
+		    []
+	    end
+    end.
+
+%% save_config/2 saves the Info with the key Key
+%% Before saving anything check if a 
+save_config(Key,Info) ->
+    create_if_none_table(asn1_general,[named_table]),
+    ets:insert(asn1_general,{asn1_config,Key,Info}).
+
+read_config_data(Key) ->
+    case ets:info(asn1_general) of
+	undefined -> undefined;
+	_ ->
+	    ets:match(asn1_general,{asn1_config,Key,'$1'})
     end.

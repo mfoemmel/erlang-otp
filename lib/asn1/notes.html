@@ -17,7 +17,8 @@
 
 <CENTER><H1>Asn1 Release Notes</H1></CENTER>
 
-<h2>Asn1 1.4</h2>
+
+<h2>Asn1 1.4.1</h2>
 
 
 <!--- ----------------------------------------------------------------- --->
@@ -27,18 +28,57 @@
 <ul>
 
   <li>
-    The compiler now detects duplicate tags within the components of a
-    SEQUENCE.<br>
-    (Own Id: OTP-3304)<p>
+    Now is the Default value for an ENUMERATED returned as the name from
+    the NamedList when decoding.
+    (Own Id: OTP-4633)<p>
   </li>
 
   <li>
-    The compiler now handles the class of an object set when the class
-    definition is a references to another class definition.<br>
-    (Own Id: OTP-4441)<p>
+    It was an internal failure when permitted alphabet constraint existed
+    together with for instance a size constraint. E.g. when a
+    referenced type is constrained by a size constraint and the defined
+    type in turn is constrained by a permitted alphabet constraint.<br> 
+    (Own Id: OTP-4559)<p>
+  </li>
+
+  <li>
+    Record is generated in hrl file for a CHOICE with extension mark
+    that has an internal SEQUENCE/SET definition.
+    (Own Id:  OTP-4560)<p>
+  </li>
+
+  <li>
+    Now is the length of a SEQUENCE/SET OF correctly encoded/decoded (PER).
+    (Own Id: OTP-4590)<p>
+  </li>
+    
+  <li>
+    The problem with unordered decoded terms when a component is a
+    ObjectClassFieldType has been solved.
+    (Own Id: OTP-4591)
+  </li>
+</ul>
+
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+  More complex definitions with TableConstraints where the SimpleTable
+  and ComponentRelation are on different levels is now fully
+  supported.  (Own Id: OTP-4631)
   </li>
 
 </ul>
+
+
+<h2>Asn1 1.4</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
 
 
 <!--- ----------------------------------------------------------------- --->

@@ -292,10 +292,10 @@ eval_cons(Cons, H, T) ->
 
 %% Handling remote calls. The module/name fields have been processed.
 
-call(#c_call{args=As}=Call, #c_atom{val=M}, #c_atom{val=N}, Sub) ->
+call(#c_call{args=As}=Call, #c_atom{val=M}=M0, #c_atom{val=N}=N0, Sub) ->
     case get(no_inline_list_funcs) of
 	true ->
-	    call_0(Call, M, N, As, Sub);
+	    call_0(Call, M0, N0, As, Sub);
 	false ->
 	    call_1(Call, M, N, As, Sub)
     end;
@@ -635,11 +635,12 @@ call_1(#c_call{module=M, name=N}=Call, _, _, As, Sub) ->
 %%  We evaluate element/2 and setelement/3 if the position is constant and
 %%  the shape of the tuple is known.
 %%
-%%  We evalute '++' if the first operand is as literal (or partly literal).
+%%  We evalute '++' if the first operand is a literal (or partly literal).
 
 fold_call(Call, #c_atom{val=M}, #c_atom{val=F}, Args) ->
     fold_call_1(Call, M, F, Args);
-fold_call(Call, _M, _N, _Args) -> Call.
+fold_call(Call, _M, _N, _Args) ->
+    Call.
 
 fold_call_1(Call, erlang, length, [Arg]) ->
     eval_length(Call, Arg);

@@ -103,7 +103,7 @@ ifneq ($(findstring vxworks,$(TARGET)),vxworks)
 	$(INSTALL_DIR) $(RELSYSDIR)
 	$(INSTALL_DATA) erlang.ear $(RELSYSDIR)/erlang.ear
 	$(INSTALL_DIR) $(RELSYSDIR)/bin
-	$(INSTALL_PROGRAM) ecc elink escript ear esh $(RELSYSDIR)/bin
+	$(INSTALL_SCRIPT) ecc elink escript ear esh $(RELSYSDIR)/bin
 endif
 
 bootstrap: ${BEAM} ${FAKES} elink

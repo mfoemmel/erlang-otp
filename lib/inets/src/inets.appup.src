@@ -1,24 +1,41 @@
 {"%VSN%",
- [
-  {"2.6.7", [{restart_application, inets}]},
-  {"2.6.6", [{restart_application, inets}]},
-  {"2.6.5", [{restart_application, inets}]},
-  {"2.6.4", [{restart_application, inets}]},
-  {"2.6.3", [{restart_application, inets}]},
-  {"2.6.2", [{restart_application, inets}]},
-  {"2.6.1", [{restart_application, inets}]},
-  {"2.6.0", [{restart_application, inets}]},
-  {"2.5.6", [{restart_application, inets}]}
+ [{"3.0.2",
+   [{load_module, httpd_response, soft_purge, soft_purge, []},
+    {update, httpd_request_handler, soft, soft_purge, soft_purge, [httpd_response]}]
+  },
+  {"3.0.1",
+   [{load_module, httpd_response, soft_purge, soft_purge, []},
+    {load_module, mod_auth, soft_purge, soft_purge, []},
+    {update, httpd_request_handler, soft, soft_purge, soft_purge, 
+     [httpd_response,mod_auth]}]
+  },
+  {"3.0",
+   [{load_module, httpd_response, soft_purge, soft_purge, []},
+    {load_module, mod_auth, soft_purge, soft_purge, []},
+    {update, httpd_misc_sup, soft, soft_purge, soft_purge, [mod_auth]},
+    {update, httpd_request_handler, soft, soft_purge, soft_purge, [httpd_response]},
+    {update, httpd_manager, soft, soft_purge, soft_purge, 
+     [httpd_request_handler, mod_auth]}]
+  }
  ],
- [{"2.6.7", [{restart_application, inets}]},
-  {"2.6.6", [{restart_application, inets}]},
-  {"2.6.5", [{restart_application, inets}]},
-  {"2.6.4", [{restart_application, inets}]},
-  {"2.6.3", [{restart_application, inets}]},
-  {"2.6.2", [{restart_application, inets}]},
-  {"2.6.1", [{restart_application, inets}]},
-  {"2.6.0", [{restart_application, inets}]},
-  {"2.5.6", [{restart_application, inets}]}
+ [{"3.0.2",
+   [{load_module, httpd_response, soft_purge, soft_purge, []},
+    {update, httpd_request_handler, soft, soft_purge, soft_purge, [httpd_response]}]
+  },
+  {"3.0.1",
+   [{load_module, httpd_response, soft_purge, soft_purge, []},
+    {load_module, mod_auth, soft_purge, soft_purge, []},
+    {update, httpd_request_handler, soft, soft_purge, soft_purge, 
+     [httpd_response,mod_auth]}]
+  },
+  {"3.0",
+   [{load_module, httpd_response, soft_purge, soft_purge, []},
+    {load_module, mod_auth, soft_purge, soft_purge, []},
+    {update, httpd_misc_sup, soft, soft_purge, soft_purge, [mod_auth]},
+    {update, httpd_request_handler, soft, soft_purge, soft_purge, [httpd_response]},
+    {update, httpd_manager, soft, soft_purge, soft_purge, 
+     [httpd_request_handler, mod_auth]}]
+  }
  ]
 }.
 

@@ -341,9 +341,12 @@ do_init() ->
     ets:new(megaco_config,      [public, named_table, {keypos, 1}]),
     ets:new(megaco_local_conn,  [public, named_table, {keypos, 2}]),
     ets:new(megaco_remote_conn, [public, named_table, {keypos, 2}, bag]),
+    megaco_stats:init(megaco_stats, global_snmp_counters()),
     init_scanner(),
     init_user_defaults(),
     init_users().
+    
+
 
 init_scanner() ->
     case get_env(scanner, undefined) of
@@ -518,11 +521,17 @@ terminate(_Reason, _State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 
-code_change(_Vsn, S, _Extra) ->
+code_change(_Vsn, S, upgrade_from_1_1_0) ->
+    ets:new(megaco_stats, [set, public, named_table]),
+    {ok, S};
+
+code_change(_Vsn, S, downgrade_to_1_1_0) ->
+    ets:delete(megaco_stats),
     {ok, S};
 
 code_change(_Vsn, S, _Extra) ->
     {ok, S}.
+
 
 %%%----------------------------------------------------------------------
 %%% Internal functions
@@ -687,6 +696,12 @@ replace_conn_data(CD, Item, Val) ->
     end.
 
 handle_connect(RH, RemoteMid, SendHandle, ControlPid) ->
+%     io:format("~p:handle_connect -> entry with"
+% 	      "~n   RH:         ~p"
+% 	      "~n   RemoteMid:  ~p"
+% 	      "~n   SendHandle: ~p"
+% 	      "~n   ControlPid: ~p~n", 
+% 	      [?MODULE, RH, RemoteMid, SendHandle, ControlPid]),
     LocalMid = RH#megaco_receive_handle.local_mid,
     ConnHandle = #megaco_conn_handle{local_mid  = LocalMid,
 				     remote_mid = RemoteMid},
@@ -700,17 +715,26 @@ handle_connect(RH, RemoteMid, SendHandle, ControlPid) ->
 			{'EXIT', _} ->
 			    {error, {no_such_user, LocalMid}};
 			ConnData ->
+			    %% Brand new connection, use 
+			    %% When is the preliminary_mid used?
+			    create_snmp_counters(ConnHandle),
 			    ets:insert(megaco_local_conn, ConnData),
 			    {ok, ConnData}
 		    end;
 		[PrelData] ->
+		    %% OK, we nee to fix the snmp counters. Used 
+		    %% temporary (preliminary_mid) conn_handle.
+		    create_snmp_counters(ConnHandle),
 		    ConnData = PrelData#conn_data{conn_handle = ConnHandle},
 		    ets:insert(megaco_local_conn, ConnData),
 		    ets:delete(megaco_local_conn, PrelHandle),
+		    update_snmp_counters(ConnHandle, PrelHandle),
 		    TH = ConnHandle#megaco_conn_handle{local_mid  = PrelMid,
 						       remote_mid = RemoteMid},
 		    TD = ConnData#conn_data{conn_handle = TH},
- 		    ?report_debug(TD, "Upgrade preliminary_mid to actual remote_mid",
+ 		    ?report_debug(TD, 
+				  "Upgrade preliminary_mid to "
+				  "actual remote_mid",
 				  [{local_mid, LocalMid},
 				   {preliminary_mid, preliminary_mid},
 				   {remote_mid, RemoteMid}]),
@@ -786,4 +810,42 @@ make_receive_handle(UserMid) ->
 			   encoding_mod    = user_info(UserMid, encoding_mod),
 			   encoding_config = user_info(UserMid, encoding_config),
 			   send_mod        = user_info(UserMid, send_mod)}.
+
+
+%%-----------------------------------------------------------------
+%% Func: create_snmp_counters/1, update_snmp_counters/2
+%% Description: create/update all the SNMP statistic counters
+%%-----------------------------------------------------------------
+
+create_snmp_counters(CH) ->
+    create_snmp_counters(CH, snmp_counters()).
+
+create_snmp_counters(CH, []) ->
+    ok;
+create_snmp_counters(CH, [Counter|Counters]) ->
+    Key = {CH, Counter},
+    ets:insert(megaco_stats, {Key, 0}),
+    create_snmp_counters(CH, Counters).
+
+
+update_snmp_counters(CH, PrelCH) ->
+    update_snmp_counters(CH, PrelCH, snmp_counters()).
+
+update_snmp_counters(_CH, _PrelCH, []) ->
+    ok;
+update_snmp_counters(CH, PrelCH, [Counter|Counters]) ->
+    PrelKey = {PrelCH, Counter},
+    Key     = {CH, Counter},
+    [{PrelKey,PrelVal}] = ets:lookup(megaco_stats, PrelKey),
+    ets:update_counter(megaco_stats, Key, PrelVal),
+    ets:delete(megaco_stats, PrelKey),
+    update_snmp_counters(CH, PrelCH, Counters).
+
+
+global_snmp_counters() ->
+    [medGwyGatewayNumErrors].
+
+snmp_counters() ->
+    [medGwyGatewayNumTimerRecovery,
+     medGwyGatewayNumErrors].
 

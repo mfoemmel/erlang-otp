@@ -115,7 +115,7 @@ BIF_ADECL_1
 	    BIF_RET(am_true); /* already linked */
 
 	ix = internal_port_index(BIF_ARG_1);
-	if (erts_port[ix].status == FREE)
+	if (INVALID_PORT(erts_port+ix, BIF_ARG_1))
 	    goto res_no_proc;
 	erts_port[ix].links = new_link(erts_port[ix].links,LNK_LINK,BIF_P->id,NIL);
 
@@ -299,13 +299,13 @@ BIF_ADECL_2
 {
    Eterm       type; /* BIF_ARG_1 */
    Eterm       item; /* Item to put in link list *lnkp */
-   Eterm       p_item = 0; /* Item to put in this process's link list */
+   Eterm       p_item; /* Item to put in this process's link list */
    Eterm       ref;
    DistEntry  *dep; /* Distribution entry */
    ErlLink   **lnkp = NULL;
 
    type = BIF_ARG_1;
-   item = BIF_ARG_2;
+   p_item = item = BIF_ARG_2;
    if (type == am_process) {
       Process *rp = NULL; /* Suppress use before set warning */
 
@@ -367,7 +367,6 @@ BIF_ADECL_2
 	      lnkp = &rp->links;
 	  }
 	  else if (!INVALID_PID(rp, item)) {
-	      p_item = item;
 	      lnkp = &rp->links;
 	  }
 	  else
@@ -397,9 +396,7 @@ BIF_ADECL_2
 	    BIF_ERROR(BIF_P, EXC_NOTALIVE);
 	 }
 	 lnkp = &dep->links;
-	 if (is_external_pid(item))
-	     p_item = item;
-	 else {
+	 if (! is_external_pid(item)) {
 	     /* "item" is the registered name. Registered name will
 		be stored in dist_entry and nodename will be stored
 		in process */
@@ -564,7 +561,7 @@ BIF_ADECL_1
     if (is_internal_port(BIF_ARG_1)) {
 	del_link(find_link(&BIF_P->links,LNK_LINK,BIF_ARG_1,NIL));
 	ix = internal_port_index(BIF_ARG_1);
-	if (erts_port[ix].status != FREE)
+	if (! INVALID_PORT(erts_port+ix, BIF_ARG_1))
 	    del_link(find_link(&erts_port[ix].links,LNK_LINK,BIF_P->id,NIL));
 	BIF_RET(am_true);
     }
@@ -1098,7 +1095,8 @@ BIF_ADECL_2
 
       port_common:
 	/* XXX let port_command handle the busy stuff !!! */
-	if (erts_port[internal_port_index(portid)].status & PORT_BUSY) {
+	if (! INVALID_PORT(erts_port+internal_port_index(portid), portid)
+	    && (erts_port[internal_port_index(portid)].status & PORT_BUSY)) {
 	    erl_suspend(BIF_P, portid);
 	    BIF_ERROR(BIF_P, RESCHEDULE);
 	}
@@ -2767,8 +2765,11 @@ BIF_ADECL_2
 		}
 	    }
 	} else if (is_internal_port(BIF_ARG_2)) {
-	    system_seq_tracer = BIF_ARG_2;
-	    BIF_RET(old_value);
+	    if (! INVALID_TRACER_PORT(erts_port+internal_port_index(BIF_ARG_2), 
+				      BIF_ARG_2)) {
+		system_seq_tracer = BIF_ARG_2;
+		BIF_RET(old_value);
+	    }
 	}
     }
     else if (BIF_ARG_1 == make_small(1)) {
@@ -3011,7 +3012,8 @@ bif_timeout_proc(BifTimerRec* btm)
 	rp = whereis_process(btm->pid);
 	invalid_pid = (rp == NULL);
     } else {
-	rp = process_tab[internal_pid_index(btm->pid)];
+	rp = internal_pid_index(btm->pid) < erts_max_processes ? 
+	    process_tab[internal_pid_index(btm->pid)] : NULL;
 	invalid_pid = (INVALID_PID(rp, btm->pid));
     }
 

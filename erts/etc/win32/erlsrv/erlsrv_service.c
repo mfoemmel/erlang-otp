@@ -318,7 +318,6 @@ static char **merge_environment(char *current, char *add){
 	;
     for(j=0;a_arg[j] != NULL;++j)
 	;
-    i += j + 3;
 
     new = malloc(sizeof(char *)*(i + j + 3));
 
@@ -329,6 +328,7 @@ static char **merge_environment(char *current, char *add){
 
     for(j = 0; a_arg[j] != NULL; ++j){
 	if((tmp = find_arg(new,a_arg[j])) != NULL){
+	    free(*tmp);
 	    *tmp = strdup(a_arg[j]);
 	} else {
 	    new[i++] = strdup(a_arg[j]);

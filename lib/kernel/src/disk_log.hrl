@@ -29,11 +29,14 @@
 -define(MAGICSZ, 4).
 -define(HEADERSZ, 8).
 -define(MAGICHEAD, <<12,33,44,55>>).
--define(MAGICINT, 203500599).  %% ?MAGICHEAD = <<?MAGICINT:32>>
+-define(MAGICINT, 203500599).     %% ?MAGICHEAD = <<?MAGICINT:32>>
+-define(BIGMAGICHEAD, <<98,87,76,65>>).
+-define(BIGMAGICINT, 1649888321). %% ?BIGMAGICHEAD = <<?BIGMAGICINT:32>>
+-define(MIN_MD5_TERM, 65528).% (?MAX_CHUNK_SIZE - ?HEADERSZ)
 
 -define(MAX_FILES, 65000).
 -define(MAX_BYTES, ((1 bsl 64) - 1)).
--define(MAX_CHUNK_SIZE, 8192).
+-define(MAX_CHUNK_SIZE, 65536).
 
 %% Object defines
 -define(LOGMAGIC, <<1,2,3,4>>). 

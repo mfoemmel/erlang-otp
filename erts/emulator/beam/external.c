@@ -377,9 +377,15 @@ dec_atom(DistEntry *dep, byte* ep, Eterm* objp)
 	return ep + len;
 
     case NEW_CACHE:
+	if (dep != NULL && !(dep->flags & DFLAG_ATOM_CACHE)) {
+	    return NULL;
+	}
 	return dec_and_insert_hashed_atom(dep,ep,objp); 
 
     case CACHED_ATOM:
+	if (dep != NULL && !(dep->flags & DFLAG_ATOM_CACHE)) {
+	    return NULL;
+	}
 	return dec_hashed_atom(dep,ep,objp);
 
     default:
@@ -870,9 +876,15 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		break;
 	    }
 	case NEW_CACHE:
+	    if (dep != NULL && !(dep->flags & DFLAG_ATOM_CACHE)) {
+		return NULL;
+	    }
 	    ep = dec_and_insert_hashed_atom(dep, ep, objp);
 	    break;
 	case CACHED_ATOM:
+	    if (dep != NULL && !(dep->flags & DFLAG_ATOM_CACHE)) {
+		return NULL;
+	    }
 	    ep = dec_hashed_atom(dep, ep, objp);
 	    break;
 	case ATOM_EXT:
@@ -1103,8 +1115,7 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		    sys_memcpy(hb->data, ep, n);
 		    *objp = make_binary(hb);
 		} else {
-		    Binary* dbin = (Binary *)
-			safe_alloc_from(60,n+sizeof(Binary));
+		    Binary* dbin = OH_BIN_SAFE_ALLOC(60, n+sizeof(Binary));
 		    ProcBin* pb;
 		    dbin->flags = 0;
 		    dbin->orig_size = n;

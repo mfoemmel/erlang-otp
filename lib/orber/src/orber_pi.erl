@@ -329,7 +329,7 @@ in_request_enc([], _, _, Msg, _) ->
 in_request_enc([Mod|T], ReqHdr, Ref, Msg, Args) ->
     {NewMsg, NewArgs} = Mod:in_request_encoded(Ref, ReqHdr#request_header.object_key,
 					       ReqHdr#request_header.service_context,
-					       list_to_atom(ReqHdr#request_header.operation), 
+					       ReqHdr#request_header.operation, 
 					       Msg, Args),
     in_request_enc(T, ReqHdr, Ref, NewMsg, NewArgs).
 
@@ -359,7 +359,7 @@ in_request([], _, _, Msg, _) ->
 in_request([Mod|T], ReqHdr, Ref, Msg, Args) ->
     {NewMsg, NewArgs} = Mod:in_request(Ref, ReqHdr#request_header.object_key,
 				       ReqHdr#request_header.service_context,
-				       list_to_atom(ReqHdr#request_header.operation), 
+				       ReqHdr#request_header.operation, 
 				       Msg, Args),
     in_request(T, ReqHdr, Ref, NewMsg, NewArgs).
 
@@ -388,7 +388,7 @@ out_reply_enc([], _, _, Msg, _) ->
 out_reply_enc([Mod|T], ReqHdr, Ref, Msg, Args) ->
     {NewMsg, NewArgs} = Mod:out_reply_encoded(Ref, ReqHdr#request_header.object_key,
 					      [], %% Context.
-					      list_to_atom(ReqHdr#request_header.operation),
+					      ReqHdr#request_header.operation,
 					      Msg, Args),
     out_reply_enc(T, ReqHdr, Ref, NewMsg, NewArgs).
 
@@ -414,7 +414,7 @@ out_reply([], _, _, Msg, _) ->
 out_reply([Mod|T], ReqHdr, Ref, Msg, Args) ->
     {NewMsg, NewArgs} = Mod:out_reply(Ref, ReqHdr#request_header.object_key,
 				      [], %% Context.
-				      list_to_atom(ReqHdr#request_header.operation),
+				      ReqHdr#request_header.operation,
 				      Msg, Args),
     out_reply(T, ReqHdr, Ref, NewMsg, NewArgs).
 

@@ -21,6 +21,7 @@
 %%%      - RFC 2818 HTTP Over TLS
 %%%      - RFC 3229 Delta encoding in HTTP (not yet!)
 %%%      - RFC 3230 Instance Digests in HTTP (not yet!)
+%%%      - RFC 3310 Authentication and Key Agreement (AKA) (not yet!)
 %%%      - HTTP/1.1 Specification Errata found at
 %%%        http://world.std.com/~lawrence/http_errata.html
 %%%    Additionaly follows the following recommendations:
@@ -80,7 +81,7 @@ start() ->
 %%% Method                          HTTPReq
 %%% options,get,head,delete,trace = {Url,Headers}
 %%% post,put                      = {Url,Headers,ContentType,Body}
-%%%  where Url is a {Scheme,Host,Port,PathQuery} tuple
+%%%  where Url is a {Scheme,Host,Port,PathQuery} tuple, as returned by uri.erl
 %%% 
 %%% Returns: {ok,ReqId} |
 %%%          {error,Reason}
@@ -108,11 +109,22 @@ request(Ref,Method,HTTPReqCont,Settings) ->
 
 request(Ref,Method,{{Scheme,Host,Port,PathQuery},
 		    Headers,ContentType,Body},Settings,From) ->
-    Req=#request{ref=Ref,from=From,scheme=Scheme,address={Host,Port},
-		 pathquery=PathQuery,method=Method,
-		 headers=Headers,content={ContentType,Body},
-		 settings=create_settings(Settings,#client_settings{})},
-    httpc_manager:request(Req);
+    case create_settings(Settings,#client_settings{}) of
+	{error,Reason} ->
+	    {error,Reason};
+	CS ->
+	    case create_headers(Headers,#req_headers{}) of
+		{error,Reason} ->
+		    {error,Reason};
+		H ->
+		    Req=#request{ref=Ref,from=From,
+				 scheme=Scheme,address={Host,Port},
+				 pathquery=PathQuery,method=Method,
+				 headers=H,content={ContentType,Body},
+				 settings=CS},
+		    httpc_manager:request(Req)
+	    end
+    end;
 request(Ref,Method,{Url,Headers},Settings,From) ->
     request(Ref,Method,{Url,Headers,[],[]},Settings,From).
 
@@ -156,7 +168,9 @@ request_sync(Method,{Url,Headers,ContentType,Body},Settings)
 	    {error,Reason};
 	ParsedUrl ->
 	    request_sync(Method,{ParsedUrl,Headers,ContentType,Body},Settings,0)
-    end.
+    end;
+request_sync(Method,Request,Settings) ->
+    {error,bad_request}.
 
 request_sync(Method,HTTPCont,Settings,_Redirects) ->
     case request(request_sync,Method,HTTPCont,Settings,self()) of
@@ -172,6 +186,7 @@ request_sync(Method,HTTPCont,Settings,_Redirects) ->
 	Error ->
 	    Error
     end.
+
 
 create_settings([],Out) ->
     Out;
@@ -196,6 +211,20 @@ create_settings([{http_sessions,Val}|Settings],Out)
 create_settings([{Key,_Val}|_Settings],_Out) ->
     io:format("ERROR bad settings, got ~p~n",[Key]),
     {error,bad_settings}.
+
+
+create_headers([],Req) ->
+    Req;
+create_headers([{Key,Val}|Rest],Req) ->
+    case httpd_util:to_lower(Key) of
+	"expect" ->
+	    create_headers(Rest,Req#req_headers{expect=Val});
+	OtherKey ->
+	    create_headers(Rest,
+			   Req#req_headers{other=[{OtherKey,Val}|
+						  Req#req_headers.other]})
+    end.
+		
 
 pp_headers(#res_headers{connection=Connection,
 			transfer_encoding=Transfer_encoding,

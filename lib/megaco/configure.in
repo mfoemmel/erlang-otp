@@ -65,7 +65,7 @@ dnl
 dnl Flags to the C compiler
 dnl
 dnl make sure we find config.h
-CFLAGS="$CFLAGS -I${ERL_TOP}/erts/autoconf/$host $OTP_EXTRA_FLAGS"
+CFLAGS="$CFLAGS -I${ERL_TOP}/erts/$host $OTP_EXTRA_FLAGS"
 
 case $host_os in
   darwin*)

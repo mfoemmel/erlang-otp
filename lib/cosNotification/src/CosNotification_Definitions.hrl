@@ -312,7 +312,8 @@
 			       {timeService, undefined},
 			       {typecheck, true},
 			       {tty, false},
-			       {logfile, false}]).
+			       {logfile, false},
+			       {server_options, []}]).
 -define(not_CreateDBKey, term_to_binary({now(), node()})).
 
 -define(DEBUG_LEVEL, 3).

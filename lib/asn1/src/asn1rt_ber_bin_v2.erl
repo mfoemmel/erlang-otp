@@ -19,7 +19,7 @@
  
 %% encoding / decoding of BER  
 
--export([decode/1, match_tags/2, encode/1]). 
+-export([decode/1, decode/2, match_tags/2, encode/1]). 
 -export([fixoptionals/2, cindex/3,
 	 list_to_record/2,
 	 encode_tag_val/1,
@@ -124,7 +124,9 @@ encode({TlvTag,TlvVal}) when list(TlvVal) ->
     %% constructed form of value
     encode_tlv(TlvTag,TlvVal,?CONSTRUCTED);
 encode({TlvTag,TlvVal}) ->
-    encode_tlv(TlvTag,TlvVal,?PRIMITIVE).
+    encode_tlv(TlvTag,TlvVal,?PRIMITIVE);
+encode(Bin) when binary(Bin) ->
+    Bin.
 
 encode_tlv(TlvTag,TlvVal,Form) ->
     Tag = encode_tlv_tag(TlvTag,Form),
@@ -166,9 +168,49 @@ encode_tlv_list([],Acc) ->
 %     end,
     
 
-    
-decode(Bin) ->
-    decode_primitive(Bin).
+decode(B,driver) ->
+    case catch port_control(drv_complete,2,B) of
+	Bin when binary(Bin) ->
+	    binary_to_term(Bin);
+	List when list(List) -> handle_error(List,B);
+	{'EXIT',{badarg,Reason}} ->
+	    asn1rt_driver_handler:load_driver(),
+	    receive
+		driver_ready ->
+		    case catch port_control(drv_complete,2,B) of
+			Bin2 when binary(Bin2) -> binary_to_term(Bin2);
+			List when list(List) -> handle_error(List,B);
+			Error -> exit(Error)
+		    end;
+		{error,Error} -> % error when loading driver
+		    %% the driver could not be loaded
+		    exit(Error);
+		Error={port_error,Reason} ->
+		    exit(Error)
+	    end;
+	{'EXIT',Reason} ->
+	    exit(Reason)
+    end.
+
+handle_error([],_)->
+    exit({error,{"memory allocation problem"}});
+handle_error([$1|_],L) -> % error in driver
+    exit({error,{asn1_error,L}});
+handle_error([$2|_],L) -> % error in driver due to wrong tag
+    exit({error,{asn1_error,{"bad tag",L}}});
+handle_error([$3|_],L) -> % error in driver due to length error
+    exit({error,{asn1_error,{"bad length field",L}}});
+handle_error([$4|_],L) -> % error in driver due to indefinite length error
+    exit({error,{asn1_error,{"indefinite length without end bytes",L}}});
+handle_error(ErrL,L) ->
+    exit({error,{unknown_error,ErrL,L}}).
+
+
+decode(Bin) when binary(Bin) ->
+    decode_primitive(Bin);
+decode(Tlv) -> % assume it is a tlv
+    {Tlv,<<>>}.
+
 
 decode_primitive(Bin) ->
     {Tlv = {Form,TagNo,Len,V},Rest} = decode_tlv(Bin),
@@ -397,7 +439,12 @@ encode_open_type(Val,Tag) ->
 %% Value = binary with decoded data (which must be decoded again as some type)
 %%
 decode_open_type(Tlv, TagIn) ->
-    match_tags(Tlv,TagIn).
+    case match_tags(Tlv,TagIn) of
+	Bin when binary(Bin) ->
+	    {InnerTlv,_} = decode(Bin),
+	    InnerTlv;
+	TlvBytes -> TlvBytes
+    end.
 
  
 decode_open_type_as_binary(Tlv,TagIn)->

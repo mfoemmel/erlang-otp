@@ -3799,9 +3799,6 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
 	erl_exit(1, "%s, line %d: Heap block overrun", __FILE__, __LINE__);
     }
 
-    if (MBUF(c_p) != NULL) {
-	erts_garbage_collect(c_p, 0, &Value, 1);
-    }
 
     /*
      * Save final error term for use by native code.

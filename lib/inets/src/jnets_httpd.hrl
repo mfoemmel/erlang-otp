@@ -52,16 +52,15 @@
 	  socket_type=ip_comm, % socket_type() IP or SSL socket
 	  socket,              % socket() Actual socket
 	  config_db,           % ets() {key,val} db with config entries
-	  method,              % string() HTTP method, e.g. "GET"
+	  method,              % atom() HTTP method, e.g. 'GET'
 %	  request_uri,         % string() Request URI
-	  path,                % string() Absolute path
-	  http_version,        % string() HTTP version number, e.g. "1.1"
+	  path,                % string() Absolute path. May include query etc
+	  http_version,        % int() HTTP minor version number, e.g. 0 or 1
 %	  request_line,        % string() Request Line
-	  headers,        % #req_headers{} if server or #res_headers{} if client
+	  headers,             % #req_headers{} Parsed request headers
 	  entity_body= <<>>,   % binary() Body of request
 	  connection,          % bool() true if persistant connection
 	  status_code,         % int() Status code
-	  user_agent,          % See mod_browser.erl
 	  logging              % int() 0=No logging
 	                       %       1=Only mod_log present
 	                       %       2=Only mod_disk_log present
@@ -112,7 +111,7 @@
 % 	  accept_encoding,
 % 	  accept_language,
  	  authorization,
- 	  expect,
+ 	  expect, %% FIXME! Update inet_drv.c!!
 % 	  from,
  	  host,
  	  if_match,
@@ -124,7 +123,7 @@
 % 	  proxy_authorization,
  	  range,
 % 	  referer,
-% 	  te,
+% 	  te, %% FIXME! Update inet_drv.c!!
  	  user_agent,
 %%% --- Standard "Entity" headers
 % 	  content_encoding,

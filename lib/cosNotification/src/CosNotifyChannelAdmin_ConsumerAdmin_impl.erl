@@ -299,10 +299,12 @@ obtain_notification_pull_supplier(OE_THIS, OE_FROM, State, Ctype) ->
 Incorrect enumerant", [?LINE, Ctype], ?DEBUG_LEVEL),
 		corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
 	end,
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case Mod:oe_create_link([Type, OE_THIS, self(), ?get_GlobalQoS(State), 
 			     ?get_LocalQoS(State), ?get_MyChannel(State),
 			     ?get_Options(State), ?get_MyOperator(State)], 
-			    [{sup_child, true}]) of
+			    [{sup_child, true}|SO]) of
 	{ok, Pid, PrRef} ->
 	    ProxyID = ?new_Id(State),
 	    NewState = ?add_PullSupplier(State, ProxyID, PrRef, Pid),
@@ -334,10 +336,12 @@ obtain_notification_push_supplier(OE_THIS, OE_FROM, State, Ctype) ->
 Incorrect enumerant", [?LINE, Ctype], ?DEBUG_LEVEL),
 		corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
 	end,
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case Mod:oe_create_link([Type, OE_THIS, self(), ?get_GlobalQoS(State), 
 			     ?get_LocalQoS(State), ?get_MyChannel(State),
 			     ?get_Options(State), ?get_MyOperator(State)], 
-			    [{sup_child, true}]) of
+			    [{sup_child, true}|SO]) of
 	{ok, Pid, PrRef} ->
 	    ProxyID = ?new_Id(State),
 	    NewState = ?add_PushSupplier(State, ProxyID, PrRef, Pid),
@@ -424,7 +428,7 @@ add_filter(OE_THIS, OE_FROM, State, Filter) ->
 remove_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
     {reply, ok, ?del_Filter(State, FilterID)};
 remove_filter(_,_,_,_) ->
-    corba:raise(#'BAD_PARAM'{minor=700, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : get_filter
@@ -435,7 +439,7 @@ remove_filter(_,_,_,_) ->
 get_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
     {reply, ?get_Filter(State, FilterID), State};
 get_filter(_,_,_,_) ->
-    corba:raise(#'BAD_PARAM'{minor=701, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : get_all_filters
@@ -460,6 +464,8 @@ remove_all_filters(OE_THIS, OE_FROM, State) ->
 %% Returns  : ProxyPushSupplier
 %%-----------------------------------------------------------
 obtain_push_supplier(OE_THIS, OE_FROM, State) ->
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case 'CosNotifyChannelAdmin_ProxyPushSupplier':oe_create_link(['PUSH_ANY', OE_THIS, 
 								   self(), 
 								   ?get_GlobalQoS(State), 
@@ -467,7 +473,7 @@ obtain_push_supplier(OE_THIS, OE_FROM, State) ->
 								   ?get_MyChannel(State),
 								   ?get_Options(State),
 								   ?get_MyOperator(State)], 
-								  [{sup_child, true}]) of
+								  [{sup_child, true}|SO]) of
 	{ok, Pid, PrRef} ->
 	    ProxyID = ?new_Id(State),
 	    NewState = ?add_PushSupplier(State, ProxyID, PrRef, Pid),
@@ -485,6 +491,8 @@ Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 %% Returns  : ProxyPullSupplier
 %%-----------------------------------------------------------
 obtain_pull_supplier(OE_THIS, OE_FROM, State) ->
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case 'CosNotifyChannelAdmin_ProxyPullSupplier':oe_create_link(['PULL_ANY', OE_THIS, 
 								   self(), 
 								   ?get_GlobalQoS(State), 
@@ -492,7 +500,7 @@ obtain_pull_supplier(OE_THIS, OE_FROM, State) ->
 								   ?get_MyChannel(State),
 								   ?get_Options(State), 
 								   ?get_MyOperator(State)], 
-								  [{sup_child, true}]) of
+								  [{sup_child, true}|SO]) of
 	{ok, Pid, PrRef} ->
 	    ProxyID = ?new_Id(State),
 	    NewState = ?add_PullSupplier(State, ProxyID, PrRef, Pid),

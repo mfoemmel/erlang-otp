@@ -70,3 +70,4 @@
 %% Misc constants
 -define(DEFAULT_TIMEOUT, infinity).
 -define(STR_TERMINATOR, 0).
+-define(MAX_SEQ_TIMEOUTS, 10).

@@ -1978,7 +1978,7 @@ partition1([], _K, Es, P) ->
 partition_n(Set, Fun, Type) ->
     Ts = inverse_substitution(?LIST(Set), Fun, true),
     P = partition_n(Ts),
-    ?SET(reverse(P), ?SET_OF(Type)).
+    ?SET(sort(P), ?SET_OF(Type)).
 
 partition_n([{K,Vs} | Ts]) ->
     partition_n(Ts, K, [Vs], []);

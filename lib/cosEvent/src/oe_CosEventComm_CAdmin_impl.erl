@@ -52,7 +52,8 @@
 %%----------------------------------------------------------------------
 %% Records
 %%----------------------------------------------------------------------
--record(state, {channel_pid, typecheck, maxevents, proxies = []}).
+-record(state, {channel_pid, typecheck, maxevents, proxies = [],
+		server_options}).
 
 %%----------------------------------------------------------------------
 %% Macros
@@ -70,10 +71,10 @@
 %%              {stop, Reason}
 %% Description: Initiates the server
 %%----------------------------------------------------------------------
-init([ChannelPid, TypeCheck, MaxEvents]) ->
+init([ChannelPid, TypeCheck, MaxEvents, ServerOpts]) ->
     process_flag(trap_exit, true),
     {ok, #state{channel_pid = ChannelPid, typecheck = TypeCheck, 
-		maxevents = MaxEvents}}.
+		maxevents = MaxEvents, server_options = ServerOpts}}.
 
 %%----------------------------------------------------------------------
 %% Function   : terminate/2
@@ -119,10 +120,10 @@ handle_info(Info, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-obtain_push_supplier(OE_This, _, State) ->
+obtain_push_supplier(_, _, #state{server_options = ServerOpts} = State) ->
     case catch 'oe_CosEventComm_PusherS':oe_create_link([self(), 
 							 State#state.typecheck],
-							[{sup_child, true}]) of
+							[{sup_child, true}|ServerOpts]) of
 	{ok, Pid, Proxy} ->
 	    ?DBG("Started a new oe_CosEventComm_PusherS.~n", []),
 	    {reply, Proxy, State#state{proxies = [{Proxy, Pid}|State#state.proxies]}};
@@ -138,11 +139,11 @@ obtain_push_supplier(OE_This, _, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-obtain_pull_supplier(OE_This, _, State) ->
+obtain_pull_supplier(_, _, #state{server_options = ServerOpts} = State) ->
     case catch 'oe_CosEventComm_PullerS':oe_create_link([self(), 
 							 State#state.typecheck, 
 							 State#state.maxevents],
-							[{sup_child, true}]) of
+							[{sup_child, true}|ServerOpts]) of
 	{ok, Pid, Proxy} ->
 	    ?DBG("Started a new oe_CosEventComm_PullerS.~n", []),
 	    {reply, Proxy, State#state{proxies = [{Proxy, Pid}|State#state.proxies]}};
@@ -159,7 +160,7 @@ obtain_pull_supplier(OE_This, _, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-send(OE_This, #state{proxies = Proxies} = State, Any) ->
+send(_, #state{proxies = Proxies} = State, Any) ->
     ?DBG("Received Event ~p~n", [Any]),
     case send_helper(Proxies, Any, [], false) of
 	ok ->
@@ -177,7 +178,7 @@ send(OE_This, #state{proxies = Proxies} = State, Any) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-send_sync(OE_This, OE_From, #state{proxies = Proxies} = State, Any) ->
+send_sync(_, OE_From, #state{proxies = Proxies} = State, Any) ->
     ?DBG("Received Event ~p~n", [Any]),
     corba:reply(OE_From, ok),
     case send_helper(Proxies, Any, [], true) of

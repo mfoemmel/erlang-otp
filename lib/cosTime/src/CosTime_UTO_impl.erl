@@ -134,7 +134,7 @@ absolute_time(OE_THIS, State) ->
 	    Utc=?get_Utc(State),
 	    {reply, 'CosTime_UTO':oe_create([Utc#'TimeBase_UtcT'{time=UniTime},
 					     ?get_TimeObj(State)], 
-					    [{pseudo,true}]), State};
+					    [{pseudo,true}|?CREATE_OPTS]), State};
 	UniTime when integer(UniTime) ->
 	    %% Oopss, overflow!
 	    corba:raise(#'DATA_CONVERSION'{completion_status=?COMPLETED_NO});
@@ -169,7 +169,7 @@ compare_time(OE_THIS, State, 'IntervalC', Uto) ->
 		    {reply, 'TCIndeterminate', State}
 	    end;
 	_ ->
-	    corba:raise(#'BAD_PARAM'{minor=800, completion_status=?COMPLETED_NO})
+	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end;
 compare_time(OE_THIS, State, 'MidC', Uto) ->
     ?time_TypeCheck(Uto, 'CosTime_UTO'),
@@ -184,11 +184,11 @@ compare_time(OE_THIS, State, 'MidC', Uto) ->
 		    {reply, 'TCEqualTo', State}
 	    end;
 	_ ->
-	    corba:raise(#'BAD_PARAM'{minor=800, completion_status=?COMPLETED_NO})
+	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end;
 compare_time(OE_THIS, State, _, _) ->
     %% Comparison_type given not correct?!
-    corba:raise(#'BAD_PARAM'{minor=800, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : time_to_interval
@@ -206,16 +206,16 @@ time_to_interval(OE_THIS, State, Uto) ->
 									   upper_bound=Time},
 						     ?get_Tdf(State),
 						     ?get_TimeObj(State)], 
-						    [{pseudo,true}]), State};
+						    [{pseudo,true}|?CREATE_OPTS]), State};
 		true ->
 		    {reply, 'CosTime_TIO':oe_create([#'TimeBase_IntervalT'{lower_bound=Time, 
 									   upper_bound=OwnTime},
 						     ?get_Tdf(State),
 						     ?get_TimeObj(State)], 
-						    [{pseudo,true}]), State}
+						    [{pseudo,true}|?CREATE_OPTS]), State}
 	    end;
 	_ ->
-	    corba:raise(#'BAD_PARAM'{minor=800, completion_status=?COMPLETED_NO})
+	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end.
 
 %%----------------------------------------------------------%
@@ -230,7 +230,7 @@ interval(OE_THIS, State) ->
 							   upper_bound=Upper},
 				     ?get_Tdf(State),
 				     ?get_TimeObj(State)], 
-				    [{pseudo,true}]), State}.
+				    [{pseudo,true}|?CREATE_OPTS]), State}.
 
 
 %%--------------- LOCAL FUNCTIONS ----------------------------

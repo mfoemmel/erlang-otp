@@ -30,6 +30,8 @@
 %% Macros
 %%-----------------------------------------------------------------
 
+-define(CREATE_OPTS, []).
+%-define(CREATE_OPTS, [{no_security, orber:partial_security()}]).
 
 %%-define(dirty_query_context, true).
 

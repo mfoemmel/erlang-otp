@@ -723,8 +723,8 @@ test_type('=:=', 2) -> {cond_op,is_eq_exact};
 test_type('=/=', 2) -> {cond_op,is_ne_exact}.
 
 guard_and_cg([G|Gs], Fail, Vdb, Bef, St0) ->
-    {Gis,_,St1} = guard_cg(G, Fail, Vdb, Bef, St0),
-    {Gsis,Aft,St2} = guard_and_cg(Gs, Fail, Vdb, Bef, St1),
+    {Gis,Int0,St1} = guard_cg(G, Fail, Vdb, Bef, St0),
+    {Gsis,Aft,St2} = guard_and_cg(Gs, Fail, Vdb, Int0, St1),
     {Gis ++ Gsis,Aft,St2};
 guard_and_cg([], _, _, Bef, St) -> {[],Bef,St}.
 

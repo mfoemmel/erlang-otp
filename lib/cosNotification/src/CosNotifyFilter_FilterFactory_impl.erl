@@ -50,15 +50,8 @@
 %%--------------- LOCAL DEFINITIONS --------------------------
 %% Data structures
 -record(state, {adminProp,
-		etsR}).
-
-%% Data structures constructors
--define(get_InitState(), 
-	#state{}).
-
-%% Data structures selectors
-
-%% Data structures modifiers
+		etsR,
+		options}).
 
 %%-----------------------------------------------------------%
 %% function : handle_info, code_change
@@ -78,9 +71,9 @@ handle_info(Info, State) ->
 %% Arguments: 
 %%-----------------------------------------------------------
 
-init(Env) ->
+init(Options) ->
     process_flag(trap_exit, true),
-    {ok, ?get_InitState()}.
+    {ok, #state{options = Options}}.
 
 terminate(Reason, State) ->
     ok.
@@ -97,8 +90,11 @@ terminate(Reason, State) ->
 create_filter(OE_THIS, State, InitGrammar) ->
     case lists:member(InitGrammar, ?not_SupportedGrammars) of
 	true ->
+	    SO = 'CosNotification_Common':get_option(server_options, State#state.options, 
+						     ?not_DEFAULT_SETTINGS),
 	    Fi='CosNotifyFilter_Filter':oe_create_link([OE_THIS, self(), 
-							InitGrammar]),
+							InitGrammar],
+						       SO),
 	    {reply, Fi, State};
 	_ ->
 	    corba:raise(#'CosNotifyFilter_InvalidGrammar'{})
@@ -113,8 +109,11 @@ create_filter(OE_THIS, State, InitGrammar) ->
 create_mapping_filter(OE_THIS, State, InitGrammar, DefVal) ->
     case lists:member(InitGrammar, ?not_SupportedGrammars) of
 	true ->
+	    SO = 'CosNotification_Common':get_option(server_options, State#state.options, 
+						     ?not_DEFAULT_SETTINGS),
 	    Fi='CosNotifyFilter_MappingFilter':oe_create_link([OE_THIS, self(), 
-							       InitGrammar, DefVal]),
+							       InitGrammar, DefVal],
+							      SO),
 	    {reply, Fi, State};
 	_ ->
 	    corba:raise(#'CosNotifyFilter_InvalidGrammar'{})

@@ -12,6 +12,6 @@ LDLIBS = %LDLIBS%
 LIBDIR = `pwd`/../bin
 
 $(BINDIR)/ssl_esock: ssl_base.o esock_ssleay.o
-	$(CC) $(LDFLAGS) -L$(LIBDIR) -Wl,-R$(LIBDIR) -o $@ $? \
+	$(CC) $(LDFLAGS) -L$(LIBDIR) -o $@ $? \
 		$(LDLIBS) -lssl -lcrypto
 

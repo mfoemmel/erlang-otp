@@ -88,7 +88,8 @@ pgen_values(Erules,Module,[H|T]) ->
     gen_value(Valuedef),
     pgen_values(Erules,Module,T).
 
-pgen_types(_,_,[]) ->
+pgen_types(_,Module,[]) ->
+    gen_value_match(Module),
     true;
 pgen_types(Erules,Module,[H|T]) ->
     Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
@@ -157,6 +158,21 @@ gen_types(Erules,Tname,Type) when record(Type,type) ->
     asn1ct_name:clear(),
     Rtmod:gen_decode(Erules,Tname,Type).
 
+gen_value_match(Module) ->
+    case get(value_match) of
+	{true,Module} ->
+	    emit(["value_match([{Index,Cname}|Rest],Value) ->",nl,
+		  "  Value2 =",nl,
+		  "    case element(Index,Value) of",nl,
+		  "      {Cname,Val2} -> Val2;",nl,
+		  "      X -> X",nl,
+		  "    end,",nl,
+		  "  value_match(Rest,Value2);",nl,
+		  "value_match([],Value) ->",nl,
+		  "  Value.",nl]);
+	_  -> ok
+    end,
+    put(value_match,undefined).
 
 gen_check_defaultval(Erules,Module,[{Name,Type}|Rest]) ->
     gen_check_func(Name,Type),
@@ -455,7 +471,7 @@ pgen_dispatcher(Erules,_Module,{Types,_Values,_,_,_Objects,_ObjectSets}) ->
     case Erules of
 	ber_bin_v2 ->
 	    emit(["decode(Type,Data0) ->",nl]),
-	    emit(["{Data,_RestBin} = ?RT_BER:decode(Data0),",nl]);
+	    emit(["{Data,_RestBin} = ?RT_BER:decode(Data0",driver_parameter(),"),",nl]);
 	_ ->
 	    emit(["decode(Type,Data) ->",nl])
     end,
@@ -506,6 +522,14 @@ pgen_dispatcher(Erules,_Module,{Types,_Values,_,_,_Objects,_ObjectSets}) ->
 	_ -> ok
     end,
     emit({nl,nl}).
+
+driver_parameter() ->
+    Options = get(encoding_options),
+    case lists:member(driver,Options) of
+	true ->
+	    ",driver";
+	_ -> ""
+    end.
 
 gen_wrapper() ->
     emit(["wrap_encode(Bytes) when list(Bytes) ->",nl,
@@ -694,6 +718,8 @@ gen_record(Tdef,NumRecords) when record(Tdef,ptypedef) ->
 gen_record(TorPtype,Name,[#'ComponentType'{name=Cname,typespec=Type}|T],Num) ->
     Num2 = gen_record(TorPtype,[Cname|Name],Type,Num),
     gen_record(TorPtype,Name,T,Num2);
+gen_record(TorPtype,Name,{Clist1,Clist2},Num) when list(Clist1), list(Clist2) ->
+    gen_record(TorPtype,Name,Clist1++Clist2,Num);
 gen_record(TorPtype,Name,[_|T],Num) -> % skip EXTENSIONMARK
     gen_record(TorPtype,Name,T,Num);
 gen_record(_TorPtype,_Name,[],Num) ->
@@ -1093,6 +1119,9 @@ get_inner({fixedtypevaluefield,_,Type}) ->
     end;
 get_inner({typefield,TypeName}) ->
     TypeName;
+get_inner(#'ObjectClassFieldType'{type=Type}) ->
+%    get_inner(Type);
+    Type;
 get_inner(T) when tuple(T) -> 
     case element(1,T) of
 	Tuple when tuple(Tuple),element(1,Tuple) == objectclass ->
@@ -1323,5 +1352,7 @@ get_constraint(C,Key) ->
 	false ->
 	     no;
 	{value,{_,V}} -> 
-	    V
+	    V;
+	{value,Cnstr} ->
+	    Cnstr
     end.

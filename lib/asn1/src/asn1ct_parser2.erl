@@ -508,10 +508,16 @@ parse_TypeWithConstraint([{'SEQUENCE',_},Lpar = {'(',_}|Rest]) ->
     end;
 parse_TypeWithConstraint([{'SEQUENCE',_},{'SIZE',_},Lpar = {'(',_}|Rest]) ->
     {Constraint,Rest2} = parse_Constraint([Lpar|Rest]),
+    Constraint2 =
+	case Constraint of
+	    #constraint{c=C} ->
+		Constraint#constraint{c={'SizeConstraint',C}};
+	    _ -> Constraint
+	end,
     case Rest2 of
 	[{'OF',_}|Rest3] ->
 	    {Type,Rest4} = parse_Type(Rest3),
-	    {#type{def = {'SEQUENCE OF',Type}, constraint = merge_constraints([Constraint])},Rest4};
+	    {#type{def = {'SEQUENCE OF',Type}, constraint = merge_constraints([Constraint2])},Rest4};
 	_ ->
 	    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),
 			       [got,get_token(hd(Rest2)),expected,'OF']}})
@@ -528,10 +534,16 @@ parse_TypeWithConstraint([{'SET',_},Lpar = {'(',_}|Rest]) ->
     end;
 parse_TypeWithConstraint([{'SET',_},{'SIZE',_},Lpar = {'(',_}|Rest]) ->
     {Constraint,Rest2} = parse_Constraint([Lpar|Rest]),
+    Constraint2 =
+	case Constraint of
+	    #constraint{c=C} ->
+		Constraint#constraint{c={'SizeConstraint',C}};
+	    _ -> Constraint
+	end,
     case Rest2 of
 	[{'OF',_}|Rest3] ->
 	    {Type,Rest4} = parse_Type(Rest3),
-	    {#type{def = {'SET OF',Type}, constraint = merge_constraints([Constraint])},Rest4};
+	    {#type{def = {'SET OF',Type}, constraint = merge_constraints([Constraint2])},Rest4};
 	_ ->
 	    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),
 			       [got,get_token(hd(Rest2)),expected,'OF']}})
@@ -1330,7 +1342,10 @@ parse_ObjectClassFieldType(Tokens) ->
     case Rest of
 	[{'.',_}|Rest2] ->
 	    {FieldName,Rest3} = parse_FieldName(Rest2),
-	    {#type{def={Class,FieldName}},Rest3};
+	    OCFT = #'ObjectClassFieldType'{
+	      classname=Class,
+	      class=Class,fieldname=FieldName},
+	    {#type{def=OCFT},Rest3};
 	[H|T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'.']}})

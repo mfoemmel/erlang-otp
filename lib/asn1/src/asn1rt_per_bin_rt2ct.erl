@@ -24,7 +24,8 @@
 -export([dec_fixup/3, cindex/3, list_to_record/2]).
 -export([setchoiceext/1, setext/1, fixoptionals/3, fixextensions/2, 
 	 getext/1, getextension/2, skipextensions/3, getbit/1, getchoice/3 ]).
--export([getoptionals/2, set_choice/3, encode_integer/2, encode_integer/3  ]).
+-export([getoptionals/2, getoptionals2/2, 
+	 set_choice/3, encode_integer/2, encode_integer/3  ]).
 -export([decode_integer/2, decode_integer/3, encode_small_number/1, 
 	 decode_boolean/1, encode_length/2, decode_length/1, decode_length/2,
 	 encode_small_length/1, decode_small_length/1,
@@ -200,12 +201,13 @@ getchoice(Bytes,NumChoices,1) ->
 getchoice(Bytes,NumChoices,0) ->
     decode_constrained_number(Bytes,{0,NumChoices-1}).
 
-%% old version
-%%getoptionals(Bytes,NumOpt) ->
-%%    {Blist,Bytes1} = getbits_as_list(NumOpt,Bytes),
-%%    {list_to_tuple(Blist),Bytes1}.
-
+%% old version kept for backward compatibility with generates from R7B01
 getoptionals(Bytes,NumOpt) ->
+    {Blist,Bytes1} = getbits_as_list(NumOpt,Bytes),
+    {list_to_tuple(Blist),Bytes1}.
+
+%% new version used in generates from r8b_patch/3 and later
+getoptionals2(Bytes,NumOpt) ->
     {Opts,Bytes1} = getbits(Bytes,NumOpt).
 
 
@@ -1647,7 +1649,7 @@ chars_encode2([H|T],NumBits,T1={Min,Max,notab}) when  H =< Max, H >= Min ->
     [pre_complete_bits(NumBits,H-Min)|chars_encode2(T,NumBits,T1)];
 chars_encode2([H|T],NumBits,T1={Min,Max,Tab}) when H =< Max, H >= Min ->
 %    [[10,NumBits,element(H-Min+1,Tab)]|chars_encode2(T,NumBits,T1)];
-    [pre_complete_bits(NumBits,element(H-Min+1,Tab))|
+    [pre_complete_bits(NumBits,exit_if_false(H,element(H-Min+1,Tab)))|
      chars_encode2(T,NumBits,T1)];
 chars_encode2([{A,B,C,D}|T],NumBits,T1={Min,Max,notab}) -> 
     %% no value range check here (ought to be, but very expensive)
@@ -1656,15 +1658,17 @@ chars_encode2([{A,B,C,D}|T],NumBits,T1={Min,Max,notab}) ->
     [pre_complete_bits(NumBits,
 			       ((((((A bsl 8)+B) bsl 8)+C) bsl 8)+D)-Min)|
      chars_encode2(T,NumBits,T1)];
-chars_encode2([{A,B,C,D}|T],NumBits,{Min,Max,Tab}) -> 
+chars_encode2([H={A,B,C,D}|T],NumBits,{Min,Max,Tab}) -> 
     %% no value range check here (ought to be, but very expensive)
-%    [{bits,NumBits,element((A*B*C*D)-Min,Tab)}|chars_encode2(T,NumBits,{Min,Max,notab})];
-%    [[10,NumBits,element(((((((A bsl 8)+B) bsl 8)+C) bsl 8)+D)-Min,Tab)]|chars_encode2(T,NumBits,{Min,Max,notab})];
-    [pre_complete_bits(NumBits,element(((((((A bsl 8)+B) bsl 8)+C) bsl 8)+D)-Min,Tab))|chars_encode2(T,NumBits,{Min,Max,notab})];
+    [pre_complete_bits(NumBits,exit_if_false(H,element(((((((A bsl 8)+B) bsl 8)+C) bsl 8)+D)-Min,Tab)))|chars_encode2(T,NumBits,{Min,Max,notab})];
 chars_encode2([H|T],NumBits,{Min,Max,Tab}) ->
     exit({error,{asn1,{illegal_char_value,H}}});
 chars_encode2([],_,_) ->
     [].
+
+exit_if_false(V,false)->
+    exit({error,{asn1,{"illegal value according to Permitted alphabet constraint",V}}});
+exit_if_false(_,V) ->V.
 
 pre_complete_bits(NumBits,Val) when NumBits =< 8 ->
     [10,NumBits,Val];

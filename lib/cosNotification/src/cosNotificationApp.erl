@@ -77,7 +77,7 @@ install() ->
 install(Time) when integer(Time) ->
     install_loop(?IDL_MODULES, timer:seconds(Time));
 install(Time) ->
-    corba:raise(#'BAD_PARAM'{minor=500, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%------------------------------------------------------------
 %% function : install_event/X
@@ -92,7 +92,7 @@ install_event() ->
 install_event(Time) when integer(Time) ->
     install_loop(?EVENT_IDL_MODULES, timer:seconds(Time));
 install_event(Time) ->
-    corba:raise(#'BAD_PARAM'{minor=500, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%------------------------------------------------------------
 %% function : install_typed/X
@@ -107,7 +107,7 @@ install_typed() ->
 install_typed(Time) when integer(Time) ->
     install_loop(?TYPED_IDL_MODULES, timer:seconds(Time));
 install_typed(Time) ->
-    corba:raise(#'BAD_PARAM'{minor=501, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 install_loop([], _) ->
     ok;
@@ -129,7 +129,7 @@ uninstall() ->
 uninstall(Time) when integer(Time) ->
     uninstall_loop(lists:reverse(?IDL_MODULES), timer:seconds(Time));
 uninstall(Time) ->
-    corba:raise(#'BAD_PARAM'{minor=502, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%------------------------------------------------------------
 %% function : uninstall_event/X
@@ -144,7 +144,7 @@ uninstall_event() ->
 uninstall_event(Time) when integer(Time) ->
     uninstall_loop(lists:reverse(?EVENT_IDL_MODULES), timer:seconds(Time));
 uninstall_event(Time) ->
-    corba:raise(#'BAD_PARAM'{minor=502, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%------------------------------------------------------------
 %% function : uninstall_typed/X
@@ -159,7 +159,7 @@ uninstall_typed() ->
 uninstall_typed(Time) when integer(Time) ->
     uninstall_loop(lists:reverse(?TYPED_IDL_MODULES), timer:seconds(Time));
 uninstall_typed(Time) ->
-    corba:raise(#'BAD_PARAM'{minor=503, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 uninstall_loop([], _) ->
     ok;
@@ -191,21 +191,22 @@ start_factory() ->
     start_factory(?not_DEFAULT_SETTINGS).
     
 start_factory(Args) when list(Args) ->
+    SO = 'CosNotification_Common':get_option(server_options, Args, ?not_DEFAULT_SETTINGS),
     SPEC = ['CosNotifyChannelAdmin_EventChannelFactory',Args,
 	    [{sup_child, true}, 
-	     {regname, {local, oe_cosNotificationFactory}}]],
+	     {regname, {local, oe_cosNotificationFactory}}|SO]],
     case supervisor:start_child(?SUPERVISOR_NAME, SPEC) of
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
 	Other->
 	    orber:debug_level_print("[~p] cosNotificationApp:start_factory( ~p ).
 Reason: ~p~n", [?LINE, Args, Other], ?DEBUG_LEVEL),
-	    corba:raise(#'BAD_PARAM'{minor=504, completion_status=?COMPLETED_NO})
+	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end;
 start_factory(Args) ->
     orber:debug_level_print("[~p] cosNotificationApp:start_factory( ~p ).
 Bad parameters~n", [?LINE, Args], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=505, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
  
 %%------------------------------------------------------------
 %% function : start_global_factory 
@@ -217,22 +218,23 @@ start_global_factory() ->
     start_global_factory(?not_DEFAULT_SETTINGS).
     
 start_global_factory(Args) when list(Args) ->
+    SO = 'CosNotification_Common':get_option(server_options, Args, ?not_DEFAULT_SETTINGS),
     Name = create_name(),
     SPEC = ['CosNotifyChannelAdmin_EventChannelFactory',Args,
 	    [{sup_child, true}, 
-	     {regname, {global, Name}}]],
+	     {regname, {global, Name}}|SO]],
     case supervisor:start_child(?SUPERVISOR_NAME, SPEC) of
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
 	Other->
 	    orber:debug_level_print("[~p] cosNotificationApp:start_global_factory( ~p ).
 Reason: ~p~n", [?LINE, Args, Other], ?DEBUG_LEVEL),
-	    corba:raise(#'BAD_PARAM'{minor=504, completion_status=?COMPLETED_NO})
+	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end;
 start_global_factory(Args) ->
     orber:debug_level_print("[~p] cosNotificationApp:start_global_factory( ~p ).
 Bad parameters~n", [?LINE, Args], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=505, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
  
  
 %%------------------------------------------------------------
@@ -252,25 +254,27 @@ stop_factory(Fac)->
 %% Returns  : ObjectRef | {'EXCEPTION', _} | {'EXIT', Reason}
 %% Effect   : Starts a CosNotifyChannelAdmin_EventChannelFactory
 %%------------------------------------------------------------
- 
 start_filter_factory() ->
     start_filter_factory([{typecheck, true},
 			  {tty, false},
-			  {logfile, false}]).
+			  {logfile, false},
+			  {server_options, []}]).
 start_filter_factory(Args) when list(Args) ->
-    SPEC = ['CosNotifyFilter_FilterFactory',Args, [{sup_child, true}]],
+    SO = 'CosNotification_Common':get_option(server_options, Args, 
+					     ?not_DEFAULT_SETTINGS),
+    SPEC = ['CosNotifyFilter_FilterFactory',Args, [{sup_child, true}|SO]],
     case supervisor:start_child(?SUPERVISOR_NAME, SPEC) of
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
 	Other->
 	    orber:debug_level_print("[~p] cosNotificationApp:start_filter_factory( ~p ).
 Reason: ~p~n", [?LINE, Args, Other], ?DEBUG_LEVEL),
-	    corba:raise(#'BAD_PARAM'{minor=506, completion_status=?COMPLETED_NO})
+	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end;
 start_filter_factory(Args) ->
 	    orber:debug_level_print("[~p] cosNotificationApp:start_filter_factory( ~p ).
 Bad parameters~n", [?LINE, Args], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=507, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
  
  
 %%------------------------------------------------------------
@@ -303,7 +307,7 @@ create_structured_event(StrD,StrT,StrE,PSeqV,PSeqF,AnyR)
    filterable_data = PSeqF,
    remainder_of_body = AnyR};
 create_structured_event(StrD,StrT,StrE,PSeqV,PSeqF,AnyR) ->
-    corba:raise(#'BAD_PARAM'{minor=507, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
     
 
 

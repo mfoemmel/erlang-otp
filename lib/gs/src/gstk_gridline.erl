@@ -17,7 +17,7 @@
 %%
 -module(gstk_gridline).
 
--export([event/5,create/3,config/3,option/5,read/3,delete/2,destroy/2,
+-export([event/5,create/3,config/3,option/5,read/3,delete/2,destroy/3,
 	read_option/5]).
 
 -include("gstk.hrl").
@@ -47,7 +47,7 @@ create(DB, Gstkid, Options) ->
 	    Ngstkid = Gstkid#gstkid{widget=TkW},
 	    gstk_db:insert_opts(DB,Id,[{data,[]},{row,Row}]),
 	    update_cp_db(Ncols,Row,Id,CP),
-	    config_line(DB,Pgstkid,Ngstkid,Options),
+	    config_line(DB,Pgstkid,Ngstkid,Row,Options),
 	    Ngstkid
     end.
 
@@ -89,16 +89,15 @@ option(Option, _Gstkid, _TkW, DB,_) ->
 delete(DB, Gstkid) ->
     gstk_db:delete_widget(DB, Gstkid),
     {Gstkid#gstkid.parent, Gstkid#gstkid.id, gstk_gridline,
-     [Gstkid]}.
+     [Gstkid, gstk_db:opt(DB,Gstkid,row)]}.
 
 %%----------------------------------------------------------------------
 %% Is called iff my parent is not also destroyed.
 %%----------------------------------------------------------------------
-destroy(DB, Lgstkid) ->
-    Row = gstk_db:opt(DB,Lgstkid,row),
+destroy(DB, Lgstkid, Row) ->
     Ggstkid = gstk_db:lookup_gstkid(DB,Lgstkid#gstkid.parent),
     #gstkid{widget_data=State} = Ggstkid,
-    config_line(DB,Ggstkid,Lgstkid,
+    config_line(DB,Ggstkid,Lgstkid,Row,
 		[{bg,gstk_db:opt(DB,Ggstkid,bg)},
 		 {fg,gstk_db:opt(DB,Ggstkid,fg)},{text,""}]),
     Ncols = State#state.ncols,
@@ -109,11 +108,11 @@ config(DB, Gstkid, Opts) ->
     Pgstkid = gstk_db:lookup_gstkid(DB,Gstkid#gstkid.parent),
     case {gs:val(row,Opts,missing),gstk_db:opt(DB,Gstkid,row)} of
 	{Row,Row} -> % stay here...
-	    config_line(DB,Pgstkid,Gstkid,Opts);
-	{missing,_} ->  % stay here...
-	    config_line(DB,Pgstkid,Gstkid,Opts);
+	    config_line(DB,Pgstkid,Gstkid,Row,Opts);
+	{missing,Row} ->  % stay here...
+	    config_line(DB,Pgstkid,Gstkid,Row,Opts);
 	{NewRow,OldRow} ->
-	    config_line(DB,Pgstkid,Gstkid,Opts),
+	    config_line(DB,Pgstkid,Gstkid,OldRow,Opts),
 	    Ngstkid = gstk_db:lookup_gstkid(DB,Gstkid#gstkid.id),
 	    case move_line(NewRow,OldRow,DB,Pgstkid#gstkid.widget_data,Ngstkid) of
 		true -> 
@@ -170,10 +169,9 @@ swap_cells(TkW,#item{rect_id=NewRectId,text_id=NewTextId},
 %%----------------------------------------------------------------------
 %% Pre: {row,Row} option is taken care of.
 %%----------------------------------------------------------------------
-config_line(DB,Pgstkid,Lgstkid, Opts) ->
+config_line(DB,Pgstkid,Lgstkid,Row,Opts) ->
     #gstkid{widget_data=State, widget=TkW} = Pgstkid,
     #state{cell_pos=CP,ncols=Ncols} = State,
-    Row = gstk_db:opt(DB,Lgstkid,row),
     Ropts = transform_opts(Opts,Ncols),
     RestOpts = config_gridline(DB,CP,Lgstkid,Ncols,Row,Ropts),
     gstk_generic:mk_cmd_and_exec(RestOpts,Lgstkid,TkW,"","",DB).

@@ -34,6 +34,9 @@
 -include("CosTimerEvent.hrl").
 -include("TimeBase.hrl").
 
+-define(CREATE_OPTS, []).
+%-define(CREATE_OPTS, [{no_security, orber:partial_security()}]).
+
 -define(max_Inaccuracy, 281474976710655).
 -define(max_TimeT, 18446744073709551616).
 

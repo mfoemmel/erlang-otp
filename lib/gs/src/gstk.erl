@@ -60,9 +60,6 @@ call(Cmd) ->
 
 exec(Cmd) ->
     gstk_port_handler:exec(Cmd). 
-   
-%exec(Cmd) ->
-%    gstk_port_handler:exec(get(port_handler),Cmd). % too expensive 
 
 make_extern_id(IntId, DB) ->
     [{_,Node}] = ets:lookup(DB,frontend_node),
@@ -144,11 +141,11 @@ doit({From,{destroy, Id}}, #state{db=DB}) ->
     reply(From,gstk_db:get_deleted(DB));
 
 doit({From,dump_db},State) ->
-    io:format("gstk_db:~p~n",[ets:tab2list(State#state.db)]),
-    io:format("events:~p~n",[ets:tab2list(get(events))]),
-    io:format("options:~p~n",[ets:tab2list(get(options))]),
-    io:format("defaults:~p~n",[ets:tab2list(get(defaults))]),
-    io:format("kids:~p~n",[ets:tab2list(get(kids))]),
+    io:format("gstk_db:~p~n",[lists:sort(ets:tab2list(State#state.db))]),
+    io:format("events:~p~n",[lists:sort(ets:tab2list(get(events)))]),
+    io:format("options:~p~n",[lists:sort(ets:tab2list(get(options)))]),
+    io:format("defaults:~p~n",[lists:sort(ets:tab2list(get(defaults)))]),
+    io:format("kids:~p~n",[lists:sort(ets:tab2list(get(kids)))]),
     reply(From,State);
 
 doit({From,stop},_State) ->

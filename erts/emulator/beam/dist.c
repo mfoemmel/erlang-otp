@@ -448,6 +448,7 @@ int dist_group_leader(DistEntry *dep, Eterm leader, Eterm remote)
 **
 **   assert  hlen == 0 !!!
 */
+/* #define TRACE_CORRUPTION 1 */
 int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 {
     ErlLink **lnkp;
@@ -472,7 +473,9 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
     int type;
     Eterm token;
     Eterm token_size;
-
+#ifdef TRACE_CORRUPTION
+    int orig_len = len;
+#endif
     /* Thanks to Luke Gorrie */
     off_heap.mso = NULL;
 #ifndef SHARED_HEAP
@@ -511,7 +514,7 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 #ifdef SHARED_HEAP
     hp = erts_global_alloc(ctl_len);
 #else
-    if (ctl_len > sizeof(ctl)/sizeof(ctl[0])) {
+    if (ctl_len > sizeof(ctl_default)/sizeof(ctl_default[0])) {
 	ctl = safe_alloc_from(280, ctl_len * sizeof(Eterm));
     }
     hp = ctl;
@@ -753,9 +756,8 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 
 	if (is_internal_pid(to)) {
 	    ErlLink **rlinkpp;
-	    if (internal_pid_index(to) >= erts_max_processes)
-		break;
-	    rp = process_tab[internal_pid_index(to)];
+	    rp = internal_pid_index(to) < erts_max_processes ? 
+		process_tab[internal_pid_index(to)] : NULL;
 	    if (INVALID_PID(rp, to))
 		break;
 	    rlinkpp = find_link(&rp->links, LNK_LINK, from, NIL);
@@ -782,8 +784,9 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	    }
 	}
 	else {
+	    /* Internal port */
 	    int ix = internal_port_index(to);
-	    if (erts_port[ix].status != FREE) {
+	    if (! INVALID_PORT(erts_port+ix, to)) {
 		del_link(find_link(&erts_port[ix].links,LNK_LINK,from,NIL));
 	    }
 	    do_exit_port(to, from, reason);
@@ -805,9 +808,8 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	   reason = tuple[5];
 	}
 	if (is_internal_pid(to)) {
-	    if (internal_pid_index(to) >= erts_max_processes)
-		break;
-	    rp = process_tab[internal_pid_index(to)];
+	    rp = internal_pid_index(to) < erts_max_processes ?
+		process_tab[internal_pid_index(to)] : NULL;
 	    if (INVALID_PID(rp, to))
 		break;
 	    if (reason == am_kill)
@@ -823,10 +825,10 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
     case DOP_GROUP_LEADER:
 	from = tuple[2];   /* Group leader  */
 	to = tuple[3];     /* new member */
-	if(is_not_internal_pid(to)
-	   || internal_pid_index(to) >= erts_max_processes)
-	  break;
-	rp = process_tab[internal_pid_index(to)];
+	if (is_not_internal_pid(to))
+	    break;
+	rp = internal_pid_index(to) < erts_max_processes ?
+	    process_tab[internal_pid_index(to)] : NULL;
 	if (INVALID_PID(rp, to))
 	    break;
 	/*
@@ -862,6 +864,26 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
     return 0;
 
  data_error:
+#ifdef TRACE_CORRUPTION
+#warning TRACE_CORRUPTION is enabled, this is a custom build emulator
+    if (dep != NULL) { /*Always?*/
+	int z;
+	cerr_pos = 0;
+	erl_printf(CBUF, "Illegal data on distribution port: \n<<");
+	for(z=0; z < orig_len && z < 1024; ++z) {
+	    erl_printf(CBUF, "%d,", buf[z]);
+	}
+	erl_printf(CBUF, ">>\nnodename:[");
+	display(dep->sysname,CBUF);
+	erl_printf(CBUF,"]\nrefc %d, creation %d, cid ",
+		   (int) dep->refc, (int) dep->creation);
+	display(dep->cid,CBUF);
+	erl_printf(CBUF,", status %d, flags %d,\ncache 0x%08x, version %d\n",
+		   (int) dep->status, (int) dep->flags, (int) dep->cache,
+		   (int) dep->version);
+	send_error_to_logger(NIL);
+    }
+#endif
     if (off_heap.mso) {
 	erts_cleanup_mso(off_heap.mso);
     }
@@ -1333,7 +1355,8 @@ BIF_ADECL_3
 	goto error;
 
     ix = internal_port_index(BIF_ARG_2);
-    if ((erts_port[ix].status == FREE) || (erts_port[ix].status & EXITING)
+    if ((INVALID_PORT(erts_port+ix, BIF_ARG_2)) 
+	|| (erts_port[ix].status & EXITING)
 	|| (erts_port[ix].dist_entry != NULL))
       goto error;
 

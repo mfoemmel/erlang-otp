@@ -48,6 +48,9 @@ ERL_FILES= $(MODULES:%=%.erl)
 
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 
+BINDIR= ../priv/bin
+EXECUTABLES= $(BINDIR)/etop $(BINDIR)/getop $(BINDIR)/etop.bat $(BINDIR)/getop.bat
+
 APP_FILE= observer.app
 
 APP_SRC= $(APP_FILE).src
@@ -98,6 +101,8 @@ release_spec: opt
 	$(INSTALL_DATA) $(HRL_FILES) $(RELSYSDIR)/include
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
+	$(INSTALL_DIR) $(RELSYSDIR)/priv/bin
+	$(INSTALL_PROGRAM) $(EXECUTABLES) $(RELSYSDIR)/priv/bin
 
 release_docs_spec:
 

@@ -35,6 +35,11 @@
          reply_timeout/3
         ]).
 
+-export([
+	 get_stats/0, get_stats/1, get_stats/2,
+	 reset_stats/0, reset_stats/1
+	]).
+
 %% Module internal export
 -export([
 	 process_received_message/5,
@@ -85,6 +90,36 @@
           serial
          }).
 
+
+%%----------------------------------------------------------------------
+%% SNMP statistics handling functions
+%%----------------------------------------------------------------------
+
+%%-----------------------------------------------------------------
+%% Func: get_stats/0, get_stats/1, get_stats/2
+%% Description: Retreive statistics (counters) for TCP
+%%-----------------------------------------------------------------
+get_stats() ->
+    megaco_stats:get_stats(megaco_stats).
+
+get_stats(ConnHandleOrCounter) ->
+    megaco_stats:get_stats(megaco_stats, ConnHandleOrCounter).
+
+get_stats(ConnHandle, Counter) ->
+    megaco_stats:get_stats(megaco_stats, ConnHandle, Counter).
+
+
+%%-----------------------------------------------------------------
+%% Func: reset_stats/0, reaet_stats/1
+%% Description: Reset statistics (counters)
+%%-----------------------------------------------------------------
+reset_stats() ->
+    megaco_stats:reset_stats(megaco_stats).
+
+reset_stats(ConnHandleOrCounter) ->
+    megaco_stats:reset_stats(megaco_stats, ConnHandleOrCounter).
+
+
 %%----------------------------------------------------------------------
 %% Register/unreister connections
 %%----------------------------------------------------------------------
@@ -92,6 +127,12 @@
 %% Returns {ok, ConnHandle} | {error, Reason}
 connect(RH, RemoteMid, SendHandle, ControlPid)
   when record(RH, megaco_receive_handle) ->
+%      io:format("~p:connect -> entry with"
+%  	      "~n   RH:         ~p"
+%  	      "~n   RemoteMid:  ~p"
+%  	      "~n   SendHandle: ~p"
+%  	      "~n   ControlPid: ~p~n", 
+%  	      [?MODULE, RH, RemoteMid, SendHandle, ControlPid]),
     case megaco_config:connect(RH, RemoteMid, SendHandle, ControlPid) of
         {ok, ConnData} ->
             do_connect(ConnData);
@@ -119,6 +160,8 @@ do_connect(CD) ->
             megaco_config:disconnect(CH),
             {error, {connection_refused, CD, Error}}
     end.
+
+
 
 monitor_process(CH, ControlPid) when node(ControlPid) == node() ->
     M = ?MODULE,
@@ -266,6 +309,11 @@ process_received_message(ReceiveHandle, ControlPid, SendHandle, Bin, Receiver) -
 
 process_received_message(ReceiveHandle, ControlPid, SendHandle, Bin) ->
     Flag = process_flag(trap_exit, true),
+%      io:format("~p:process_received_message -> entry with"
+%  	      "~n   ReceiveHandle: ~p"
+%  	      "~n   ControlPid:    ~p"
+%  	      "~n   SendHandle:    ~p~n", 
+%  	      [?MODULE, ReceiveHandle, ControlPid, SendHandle]),
     case prepare_message(ReceiveHandle, SendHandle, Bin, ControlPid) of
         {ok, ConnData, MegaMsg} when record(MegaMsg, 'MegacoMessage') ->
             Mess = MegaMsg#'MegacoMessage'.mess,
@@ -300,7 +348,7 @@ prepare_message(RH, SH, Bin, Pid)
     ?report_trace(RH, "receive bytes", [{bytes, Bin}]),
     EncodingMod    = RH#megaco_receive_handle.encoding_mod,
     EncodingConfig = RH#megaco_receive_handle.encoding_config,
-    case catch EncodingMod:decode_message(EncodingConfig, Bin) of
+    case (catch EncodingMod:decode_message(EncodingConfig, Bin)) of
         {ok, MegaMsg} when record(MegaMsg, 'MegacoMessage') ->
 	    ?report_trace(RH, "receive message", [{message, MegaMsg}]),
             Mess       = MegaMsg#'MegacoMessage'.mess,
@@ -330,6 +378,7 @@ prepare_message(RH, SH, Bin, Pid)
                     end
             end;
         Error ->
+	    incNumErrors(),
             ConnData = fake_conn_data(RH, SH, Pid),
             handle_syntax_error_callback(RH, ConnData, prepare_error(Error))
     end;
@@ -1143,6 +1192,7 @@ encode_body(ConnData, TraceLabel, Body) ->
         {ok, Bin} when binary(Bin) ->
             {ok, Bin};
         Error ->
+	    incNumErrors(ConnData#conn_data.conn_handle),	    
             {error, {EncodingMod, encode_message, [EncodingConfig, MegaMsg], Error}}
     end.
 
@@ -1155,11 +1205,13 @@ send_message(ConnData, Bin) ->
         ok ->
             {ok, Bin};
         {error, Reason} ->
+	    incNumErrors(ConnData#conn_data.conn_handle),
             ?report_important(ConnData, "<ERROR> send_message callback",
                               [{bytes, Bin}, {error, Reason}]),
 	    error_msg("failed sending message: ~w", [Reason]),
             {error, {send_message_failed, Reason}};
         Reason ->
+	    incNumErrors(ConnData#conn_data.conn_handle),
             ?report_important(ConnData, "<ERROR> send_message callback",
                               [{bytes, Bin}, {error, Reason}]),
 	    error_msg("failed sending message: ~w", [Reason]),
@@ -1239,7 +1291,8 @@ return_reply(ConnData, TransId, UserReply) ->
     UserData = ConnData#conn_data.reply_data,
     case ConnData#conn_data.reply_action of
         call when pid(UserData) ->
-	    ?report_trace(ConnData, "callback: (call) trans reply", [UserReply]),
+	    ?report_trace(ConnData, "callback: (call) trans reply", 
+			  [UserReply]),
             Pid = UserData,
             Pid ! {?MODULE, TransId, Version, UserReply};
         cast ->
@@ -1295,8 +1348,16 @@ request_timeout(ConnHandle, TransId) ->
         [Req] when record(Req, request) ->
             case megaco_config:lookup_local_conn(ConnHandle) of
                 [ConnData] ->
+		    incNumTimerRecovery(ConnHandle),
 		    do_request_timeout(ConnHandle, TransId, ConnData, Req);
+                [] when ConnHandle#megaco_conn_handle.remote_mid == preliminary_mid ->
+		    %% The connection has just been upgraded from a 
+		    %% preliminary to a real connection. So this timeout
+		    %% is just a glitch. E.g. between the removel of this
+		    %% ConnHandle and the timer.
+		    megaco_monitor:delete_request(TransId);
                 [] ->
+		    incNumTimerRecovery(ConnHandle),
 		    ConnData = fake_conn_data(ConnHandle),
 		    do_request_timeout(ConnHandle, TransId, ConnData, Req)
             end
@@ -1338,8 +1399,13 @@ do_request_timeout(ConnHandle, TransId, ConnData, Req) ->
     end.
 
 reply_timeout(ConnHandle, TransId, Timer) ->
+%     io:format("reply_timeout -> entry with"
+% 	      "~n   ConnHandle: ~p"
+% 	      "~n   TransId:    ~p"
+% 	      "~n   Timer:      ~p~n", [ConnHandle, TransId, Timer]),
     case Timer of
         timeout ->
+	    incNumTimerRecovery(ConnHandle),
             %% OTP-4378
             case megaco_monitor:lookup_reply(TransId) of
                 [Rep] when Rep#reply.state == waiting_for_ack ->
@@ -1351,7 +1417,6 @@ reply_timeout(ConnHandle, TransId, Timer) ->
                             [] ->
                                 fake_conn_data(ConnHandle)
                         end,
-                    
                     ConnData2 = ConnData#conn_data{serial = Serial},
                     T = #'TransactionAck'{firstAck = Serial},
                     handle_ack(ConnData2, {error, timeout}, Rep, T);
@@ -1387,6 +1452,7 @@ pending_timeout(ConnData, TransId) ->
 		    %% No need for any pending trans reply
 		    ignore;
 		eval_request ->
+		    incNumTimerRecovery(ConnData#conn_data.conn_handle),
 		    send_pending(ConnData)
 	    end
     end.
@@ -1452,3 +1518,21 @@ decr(Int)      -> Int - 1.
 
 error_msg(F, A) ->
     catch error_logger:error_msg(F, A).
+
+
+
+%%-----------------------------------------------------------------
+%% Func: incNumErrors/0, incNumErrors/1, incNumTimerRecovery/1
+%% Description: SNMP counter increment functions
+%%-----------------------------------------------------------------
+incNumErrors() ->
+    ets:update_counter(megaco_stats, medGwyGatewayNumErrors, 1).
+
+incNumErrors(CH) ->
+    ets:update_counter(megaco_stats, 
+                       {CH, medGwyGatewayNumErrors}, 1).
+
+incNumTimerRecovery(CH) ->
+    ets:update_counter(megaco_stats, 
+                       {CH, medGwyGatewayNumTimerRecovery}, 1).
+

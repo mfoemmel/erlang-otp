@@ -117,7 +117,8 @@ check_depends(UpDown, [Dep|Deps], Modules) ->
 
 check_depend(UpDown, {V, Instructions}, Modules) ->
     check_version(V),
-    case check_instructions(UpDown, Instructions, [], [], Modules) of
+    case check_instructions(UpDown, 
+			    Instructions, Instructions, [], [], Modules) of
 	{_Good, []} ->
 	    ok;
 	{_, Bad} ->
@@ -125,23 +126,26 @@ check_depend(UpDown, {V, Instructions}, Modules) ->
     end.
 
 
-check_instructions(_, [], Good, Bad, _) ->
+check_instructions(_, [], _, Good, Bad, _) ->
     {lists:reverse(Good), lists:reverse(Bad)};
-check_instructions(UpDown, [Instr|Instrs], Good, Bad, Modules) ->
-    case (catch check_instruction(UpDown, Instr, Modules)) of
+check_instructions(UpDown, [Instr|Instrs], AllInstr, Good, Bad, Modules) ->
+    case (catch check_instruction(UpDown, Instr, AllInstr, Modules)) of
         ok ->
-            check_instructions(UpDown, Instrs, [Instr|Good], Bad, Modules);
+            check_instructions(UpDown, Instrs, AllInstr, 
+			       [Instr|Good], Bad, Modules);
         {error, Reason} ->
-            check_instructions(UpDown, Instrs, Good, 
+            check_instructions(UpDown, Instrs, AllInstr, Good, 
                                [{Instr, Reason}|Bad], Modules)
     end.
 
 %% A new module is added
-check_instruction(up, {add_module, Module}, Modules) when atom(Module) ->
+check_instruction(up, {add_module, Module}, _, Modules) 
+  when atom(Module) ->
     check_module(Module, Modules);
 
 %% An old module is re-added
-check_instruction(down, {add_module, Module}, Modules) when atom(Module) ->
+check_instruction(down, {add_module, Module}, _, Modules) 
+  when atom(Module) ->
     case (catch check_module(Module, Modules)) of
 	{error, {unknown_module, Module, Modules}} ->
 	    ok;
@@ -149,9 +153,10 @@ check_instruction(down, {add_module, Module}, Modules) when atom(Module) ->
 	    error({existing_readded_module, Module})
     end;
 
-%% Removing a module on upgrade: the module has been removed
-%% from the app-file.
-check_instruction(up, {remove, {Module, Pre, Post}}, Modules) 
+%% Removing a module on upgrade: 
+%% - the module has been removed from the app-file.
+%% - check that no module depends on this (removed) module
+check_instruction(up, {remove, {Module, Pre, Post}}, _, Modules) 
   when atom(Module), atom(Pre), atom(Post) ->
     case (catch check_module(Module, Modules)) of
 	{error, {unknown_module, Module, Modules}} ->
@@ -163,30 +168,33 @@ check_instruction(up, {remove, {Module, Pre, Post}}, Modules)
 
 %% Removing a module on downgrade: the module exist
 %% in the app-file.
-check_instruction(down, {remove, {Module, Pre, Post}}, Modules) 
+check_instruction(down, {remove, {Module, Pre, Post}}, AllInstr, Modules) 
   when atom(Module), atom(Pre), atom(Post) ->
     case (catch check_module(Module, Modules)) of
 	ok ->
 	    check_purge(Pre),
-	    check_purge(Post);
+	    check_purge(Post),
+	    check_no_remove_depends(Module, AllInstr);
 	{error, {unknown_module, Module, Modules}} ->
 	    error({nonexisting_removed_module, Module})
     end;
 
-check_instruction(_, {load_module, Module, Pre, Post, Depend}, Modules) 
+check_instruction(_, {load_module, Module, Pre, Post, Depend}, _, Modules) 
   when atom(Module), atom(Pre), atom(Post), list(Depend) ->
     check_module(Module, Modules),
     check_module_depend(Module, Depend, Modules),
     check_purge(Pre),
     check_purge(Post);
-check_instruction(_, {update, Module, Change, Pre, Post, Depend}, Modules) 
+
+check_instruction(_, {update, Module, Change, Pre, Post, Depend}, _, Modules) 
   when atom(Module), atom(Pre), atom(Post), list(Depend) ->
     check_module(Module, Modules),
     check_module_depend(Module, Depend, Modules),
     check_change(Change),
     check_purge(Pre),
     check_purge(Post);
-check_instruction(_, Instr, _Modules) ->
+
+check_instruction(_, Instr, _AllInstr, _Modules) ->
     error({error, {unknown_instruction, Instr}}).
 
 
@@ -221,6 +229,30 @@ check_module_depend(M, Deps, Modules) when atom(M), list(Deps) ->
 check_module_depend(M, D, Modules) ->
     error({bad_depend, D}).
 
+
+check_no_remove_depends(Module, []) ->
+    ok;
+check_no_remove_depends(Module, [Instr|Instrs]) ->
+    check_no_remove_depend(Module, Instr),
+    check_no_remove_depends(Module, Instrs).
+
+check_no_remove_depend(Module, {load_module, Mod, _Pre, _Post, Depend}) ->
+    case lists:member(Module, Depend) of
+	true ->
+	    error({removed_module_in_depend, load_module, Mod, Module});
+	false ->
+	    ok
+    end;
+check_no_remove_depend(Module, {update, Mod, _Change, _Pre, _Post, Depend}) ->
+    case lists:member(Module, Depend) of
+	true ->
+	    error({removed_module_in_depend, update, Mod, Module});
+	false ->
+	    ok
+    end;
+check_no_remove_depend(_, _) ->
+    ok.
+    
 
 check_change(soft) ->
     ok;

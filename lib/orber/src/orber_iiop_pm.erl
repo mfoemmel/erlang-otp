@@ -90,20 +90,24 @@ connect(Host, #'SSLIOP_SSL'{port = Port} = Data, SocketType, Timeout, Chars, Wch
     end.
 
 get_ssl_socket_options() ->
-    [{certfile, orber:ssl_client_certfile()},
-     {verify, orber:ssl_client_verify()},
+    [{verify, orber:ssl_client_verify()},
      {depth, orber:ssl_client_depth()} |
-     ssl_client_cacertfile_option()].
+     ssl_client_extra_options([{certfile, orber:ssl_client_certfile()},
+			       {cacertfile, orber:ssl_client_cacertfile()},
+			       {password, orber:ssl_client_password()},
+			       {keyfile, orber:ssl_client_keyfile()},
+			       {ciphers, orber:ssl_client_ciphers()},
+			       {cachetimeout, orber:ssl_client_cachetimeout()}], [])].
 
-ssl_client_cacertfile_option() ->
-    case orber:ssl_client_cacertfile() of
-	[] ->
-	    [];
-	X when list(X) ->
-	    [{cacertfile, X}];
-	_ ->
-	    []
-    end.
+ssl_client_extra_options([], Acc) ->
+    Acc;
+ssl_client_extra_options([{Type, []}|T], Acc) ->
+    ssl_client_extra_options(T, Acc);
+ssl_client_extra_options([{Type, infinity}|T], Acc) ->
+    ssl_client_extra_options(T, Acc);
+ssl_client_extra_options([{Type, Value}|T], Acc) ->
+    ssl_client_extra_options(T, [{Type, Value}|Acc]).
+
 
 disconnect(Host, Port) ->
     gen_server:call(orber_iiop_pm, {disconnect, Host, Port}).

@@ -21,7 +21,7 @@
 
 
 %% Poll functions
--export([ppoll/6, epoll/6, poll/6, poll/7]).
+-export([ppoll/6, epoll/6, poll/6, poll/7, cpoll/6, cpoll/7]).
 -export([validate_ppoll/8]).
 
 -export([end_of_header/1]).
@@ -253,6 +253,35 @@ validate_epoll_options1(Header, [{header, HeaderField, Value}|Rest],N,P) ->
 validate_epoll_options1(Header, [Unknown|Rest], N, P) ->
     validate_epoll_options1(Header, Rest, N, P).
 
+
+%% ----------------------------------------------------------------------
+%% Chunked poll function
+%% (This is the same as the poll function, with the difference that
+%%  it sends the erequest using the XSEND macro instead of SEND).
+%%
+%%
+
+cpoll(Mode, Host, Port, Node, Request, StatusCode) ->
+    cpoll(Mode, Host, Port, Node, Request, StatusCode, 30000).
+
+cpoll(Mode, Host, Port, Node, Request, StatusCode, Timeout) ->
+    ?DEBUG("poll -> connect to server: ~s:~p", [Host, Port]),
+    case ?CONNECT(Mode, Host, Port) of
+	{ok, Socket} ->
+	    ?LOG("poll -> send request "
+		 "~n   ~p"
+		 "~n   to server ~s:~p", [Request, Host, Port]),
+	    case ?CSEND(Mode, Socket, Request, 10, 100) of
+		ok ->
+		    validate(Mode, Request, StatusCode, Socket, Timeout);
+		Error ->
+		    ?FAIL({send_failed, Error})
+	    end;
+	Error ->
+	    poll_connect_error(Error),
+	    cpoll(Mode, Host, Port, Node, Request, StatusCode, Timeout)
+    end.
+	    
 
 %% ----------------------------------------------------------------------
 %% Poll function

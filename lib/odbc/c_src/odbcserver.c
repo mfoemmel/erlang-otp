@@ -17,7 +17,7 @@
  */
 
 /*
-  Description: Erlang ODBC (Open Database Connectivity) application. An
+  DESCRIPTION: Erlang ODBC (Open Database Connectivity) application. An
   erlang control process sends request to the c-process that queries the
   database using the Microsoft ODBC API. The c-process is implemented
   using two threads the supervisor thread and the database handler thread.
@@ -25,9 +25,63 @@
   the database handler thread talks to the database. This has the effect
   that the process will detect if erlang closes the port when the database
   handler thread seems to hang on some database call. In this case the
-  c-process will exit. Erlang sends byte streams to the c-program and the
-  c program sends erlang terms encoded in erlang external binary format
-  using ei-functions to do the encoding. */
+  c-process will exit. If the main thread has the role of the
+  supervisor or the databasehandler depends on the OS. Windows for some
+  peculiar reason requiers the database calls to be made from the main
+  thread, otherwhise it will hang. Unix on the other hand can not have the
+  database thread as the main thread because some database operations will
+  close all file descriptors which will also cause the erlang port to be
+  closed. 
+  
+  Command protocol between Erlang and C
+   -------------------------------------
+
+   The requests from Erlang to C are byte lists composed as [CommandByte,
+   Bytes, StringTerminator] Note that the byte lists does not have to be flat
+   as the port will flatten them.
+
+   CommandByte - constant between 0 and 255
+   identifing the request defined in odbc_internal.hrl and odbcserver.h
+
+   Bytes - How to interpret this sequence of bytes depends on the
+   CommandByte.
+
+   StringTerminator - 0
+
+   When the C-program processed the request from erlang it will use
+   ei-interface to create an Erlang term. This term will be sent through
+   the port as a binary to the Erlang control process, which will forward
+   it to the client that does binary_to_term before returning the result
+   to the client program.
+
+   Here follows a list of [CommandByte, Bytes] that describes the possible
+   values. Note the Bytes part may be empty as in the case
+   of ?CLOSE_CONNECTION and if integer values may be larger than 255
+   they are converted to string values.
+
+   [?OPEN_CONNECTION, C_AutoCommitMode, C_TraceDriver, C_SrollableCursors,
+   C_TupelRow, ConnectionStr]
+   [?CLOSE_CONNECTION]		     
+   [?COMMIT_TRANSACTION, CommitMode]
+   [?QUERY, SQLQuery]
+   [?SELECT_COUNT, SQLQuery]
+   [?SELECT, ?SELECT_FIRST]
+   [?SELECT, ?SELECT_LAST]	
+   [?SELECT, ?SELECT_NEXT]
+   [?SELECT, ?SELECT_PREV]
+   [?SELECT, CursorRelation, integer_to_list(OffSet), ";",
+   integer_to_list(N), ";"]
+
+   C_AutoCommitMode - ?ON | ?OFF
+   C_TraceDriver - ?ON | ?OFF
+   C_SrollableCursors - ?ON | ?OFF
+   C_TupelRow -  - ?ON | ?OFF
+   ConnectionStr -  String
+   CommitMode -  ?COMMIT | ?ROLLBACK
+   SQLQuery  - String
+   CursorRelation - ?SELECT_RELATIVE | ?SELECT_ABSOLUTE | ?SELECT_N_NEXT
+   OffSet - integer
+   N - integer */
 
 /* ----------------------------- INCLUDES ------------------------------*/
 #include<stdio.h>
@@ -206,7 +260,7 @@ void database_handler() {
 #endif
   DbResultMsg msg;
   byte *request_buffer = NULL;
-  DBState state = {NULL, NULL, NULL, NULL, 0, {NULL, 0, 0}, FALSE};
+  DBState state = {NULL, NULL, NULL, NULL, 0, {NULL, 0, 0}, FALSE, FALSE};
   byte cmd;
   
 #ifdef MULTITHREAD_WIN32
@@ -337,12 +391,25 @@ static DbResultMsg dbConnect(byte *args, DBState *state) {
   Diagnos diagnos;
   byte *connStrIn;
   byte ErlAutoComitMode, ErlTraceDriver;
-  int AutoComitMode, TraceDriver;
+  int AutoComitMode, TraceDriver, UseSrollableCursors, TupleRowState;
   
   ErlAutoComitMode = args[0];
   ErlTraceDriver = args[1];
-  connStrIn = args + 2 * sizeof(byte);
+  UseSrollableCursors = args[2];
+  TupleRowState = args[3];
+  connStrIn = args + 4 * sizeof(byte);
 
+  /* Determines if rows should be returned as lists of lists or lists
+     of tuples */
+  
+  tuple_row(state) = TupleRowState;  
+  
+  if(UseSrollableCursors == ON) {
+    use_srollable_cursors(state) = TRUE;
+  } else {
+    use_srollable_cursors(state) = FALSE;
+  }
+	
   if(ErlAutoComitMode == ON) {
     AutoComitMode = SQL_AUTOCOMMIT_ON;
   } else {
@@ -361,16 +428,16 @@ static DbResultMsg dbConnect(byte *args, DBState *state) {
   if(!sql_success(SQLAllocHandle(SQL_HANDLE_ENV,
 				 SQL_NULL_HANDLE,
 				 &environment_handle(state))))
-    exit_on_failure("SQLAllocHandle (environment) in dbOpen failed");
+    exit_on_failure("SQLAllocHandle (environment) in dbConnect failed");
   
   if(!sql_success(SQLSetEnvAttr(environment_handle(state),
 				SQL_ATTR_ODBC_VERSION,
 				(SQLPOINTER)SQL_OV_ODBC3, 0)))
-    exit_on_failure("SQLSetEnvAttr in dbOpen failed");
+    exit_on_failure("SQLSetEnvAttr in dbConnect failed");
   
   if(!sql_success(SQLAllocHandle(SQL_HANDLE_DBC, environment_handle(state),
 				 &connection_handle(state))))
-    exit_on_failure("SQLAllocHandle (connection) in dbOpen failed");
+    exit_on_failure("SQLAllocHandle (connection) in dbConnect failed");
   
   if(!sql_success(SQLSetConnectAttr(connection_handle(state),
 				    SQL_ATTR_CONNECTION_TIMEOUT,
@@ -414,7 +481,7 @@ static DbResultMsg dbConnect(byte *args, DBState *state) {
   DBG(("dbConnect -> Return ok message \n"));
 
   msg =  dbInfo(state);
-  printbuffer((char *)msg.buffer, msg.length);
+
   return msg;
 }
  
@@ -523,12 +590,14 @@ static DbResultMsg dbSelectCount(byte *sql, DBState *state) {
 				 &statement_handle(state))))
     exit_on_failure("SQLAllocHandle in dbSelectCount failed");
 
-  /* This function will fail if the driver does not support scrollable
-     cursors, this is expected and will not cause any damage*/
-  SQLSetStmtAttr(statement_handle(state),
-		 (SQLINTEGER)SQL_ATTR_CURSOR_SCROLLABLE,
-		 (SQLPOINTER)SQL_SCROLLABLE, (SQLINTEGER)0);
-  
+  if(use_srollable_cursors(state)) {
+    /* This function will fail if the driver does not support scrollable
+       cursors, this is expected and will not cause any damage*/
+    SQLSetStmtAttr(statement_handle(state),
+		   (SQLINTEGER)SQL_ATTR_CURSOR_SCROLLABLE,
+		   (SQLPOINTER)SQL_SCROLLABLE, (SQLINTEGER)0);
+  }
+    
   result = SQLExecDirect(statement_handle(state), sql, SQL_NTS);
   
   if(!sql_success(result)) {
@@ -759,8 +828,8 @@ static int write_exact(byte *buffer, int len) {
   return len;
 }
 
-/* Receive the length-header of a message and
-   change the received length from big endian to little endian */
+/* Receive the length-header of a message and shift it into an integer so that
+   it gets the correct endian representation for the current architecture. */
 static int received_length() {
   int len, i;
   byte buffer[LENGTH_INDICATOR_SIZE];
@@ -999,8 +1068,12 @@ static Diagnos getDiagnos(SQLSMALLINT handleType, SQLHANDLE handle) {
   SQLSMALLINT errmsg_buffer_size, record_nr, errmsg_size;
   int acc_errmsg_size;
   byte errmsg_buffer[MAX_ERR_MSG];
-  
+  byte *current_errmsg_pos;
+
   DBG(("getDiagnos -> entered\n"));
+  
+  current_errmsg_pos = (byte *)&errmsg_buffer;
+
   /* number bytes free in error message buffer */
   errmsg_buffer_size = MAX_ERR_MSG - ERRMSG_HEADR_SIZE;  
   acc_errmsg_size = 0;   /* number bytes used in the error message buffer */
@@ -1009,14 +1082,17 @@ static Diagnos getDiagnos(SQLSMALLINT handleType, SQLHANDLE handle) {
       the error message is obtained */
   for(record_nr = 1; ;record_nr++) {    
     if(SQLGetDiagRec(handleType, handle, record_nr, diagnos.sqlState,
-		     &nativeError, errmsg_buffer,
+		     &nativeError, current_errmsg_pos,
 		     (SQLSMALLINT)errmsg_buffer_size, &errmsg_size)
        != SQL_SUCCESS) {
+
+      
       break;
     } else {
       DBG(("getDiagnos -> errormsg found\n")); 
       errmsg_buffer_size = errmsg_buffer_size - errmsg_size;
       acc_errmsg_size = acc_errmsg_size + errmsg_size;
+      current_errmsg_pos = current_errmsg_pos + errmsg_size;
     }
   }
     
@@ -1118,7 +1194,7 @@ static DbResultMsg encode_column_name_list(SQLSMALLINT NumColumn,
   return msg;
 }
 
-/* Description: Encodes the list(s) of column values into the "ei_x" -
+/* Description: Encodes the list(s) of row values into the "ei_x" -
    dynamic_buffer held by the state variable */
 static DbResultMsg encode_value_list(SQLSMALLINT NumColumn, DBState *state){
   int i, msg_len;
@@ -1142,13 +1218,20 @@ static DbResultMsg encode_value_list(SQLSMALLINT NumColumn, DBState *state){
       }
 
     ei_x_encode_list_header(&dynamic_buffer(state), 1);
-    ei_x_encode_list_header(&dynamic_buffer(state), NumColumn);
+
+    if(tuple_row(state) == ON) {
+      ei_x_encode_tuple_header(&dynamic_buffer(state), NumColumn);
+    } else {
+      ei_x_encode_list_header(&dynamic_buffer(state), NumColumn);
+    }
     
     for (i = 0; i < NumColumn; i++) {
       encode_column_dyn(columns(state)[i], i, state);
     }
-    
-    ei_x_encode_empty_list(&dynamic_buffer(state));
+
+    if(tuple_row(state) == OFF) {
+      ei_x_encode_empty_list(&dynamic_buffer(state));
+    }
   } 
   ei_x_encode_empty_list(&dynamic_buffer(state));
   return msg;
@@ -1189,15 +1272,19 @@ static DbResultMsg encode_value_list_scroll(SQLSMALLINT NumColumn,
 	DBG(("encode_value_list_scroll -> Reached end of result set \n"));
 	break;
       }
-
     ei_x_encode_list_header(&dynamic_buffer(state), 1);
-    ei_x_encode_list_header(&dynamic_buffer(state), NumColumn);
-    
+
+    if(tuple_row(state) == ON) {
+      ei_x_encode_tuple_header(&dynamic_buffer(state), NumColumn);
+    } else {
+      ei_x_encode_list_header(&dynamic_buffer(state), NumColumn);
+    }
     for (i = 0; i < NumColumn; i++) {
       encode_column_dyn(columns(state)[i], i, state);
     }
-    
-    ei_x_encode_empty_list(&dynamic_buffer(state));
+    if(tuple_row(state) == OFF) {
+      ei_x_encode_empty_list(&dynamic_buffer(state));
+    }
   } 
   ei_x_encode_empty_list(&dynamic_buffer(state));
   return msg;
@@ -1326,26 +1413,32 @@ static DbResultMsg dbInfo(DBState *state) {
   ei_x_new_with_version(&dynamic_buffer(state));
   ei_x_encode_tuple_header(&dynamic_buffer(state), 3);
   ei_x_encode_atom(&dynamic_buffer(state), "ok");
-  
-  if(!sql_success(SQLGetInfo(connection_handle(state),
-			     SQL_DYNAMIC_CURSOR_ATTRIBUTES1,
-			     (SQLPOINTER)&supportMask,
-			     sizeof(supportMask),
-			     NULL))) {
-    exit_on_failure("SQLGetInfo failed in dbInfo");
-  }
-     
-  if (supportMask & SQL_CA1_ABSOLUTE ) {
-    ei_x_encode_atom(&dynamic_buffer(state), "true");
-  }
-  else {
-    ei_x_encode_atom(&dynamic_buffer(state), "false");    
-  }
-  
-  if (supportMask & SQL_CA1_RELATIVE) {
-    ei_x_encode_atom(&dynamic_buffer(state), "true");    
-  }
-  else {
+
+  if(use_srollable_cursors(state)) {
+    
+    if(!sql_success(SQLGetInfo(connection_handle(state),
+			       SQL_DYNAMIC_CURSOR_ATTRIBUTES1,
+			       (SQLPOINTER)&supportMask,
+			       sizeof(supportMask),
+			       NULL))) {
+      exit_on_failure("SQLGetInfo failed in dbInfo");
+    }
+    
+    if ((supportMask & SQL_CA1_ABSOLUTE)) {
+      ei_x_encode_atom(&dynamic_buffer(state), "true");
+    }
+    else {
+      ei_x_encode_atom(&dynamic_buffer(state), "false");    
+    }
+    
+    if ((supportMask & SQL_CA1_RELATIVE)) {
+      ei_x_encode_atom(&dynamic_buffer(state), "true");    
+    }
+    else {
+      ei_x_encode_atom(&dynamic_buffer(state), "false");
+    }
+  } else { /* Scrollable cursors disabled by the user */
+    ei_x_encode_atom(&dynamic_buffer(state), "false");  
     ei_x_encode_atom(&dynamic_buffer(state), "false");
   }
   
@@ -1535,6 +1628,9 @@ static DbResultMsg dbOpen(byte *connStrIn, DBState *state) {
   SQLSMALLINT stringlength2ptr, connlen;
   DbResultMsg msg;
   Diagnos diagnos;
+
+  tuple_row(state) = OFF;
+  use_srollable_cursors(state) = FALSE;
   
   DBG(("dbOpen -> The connection string is: %s\n",connStrIn));
   

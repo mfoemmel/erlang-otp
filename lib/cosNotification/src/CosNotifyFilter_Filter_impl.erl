@@ -308,7 +308,7 @@ match(OE_THIS, State, Event) when record(Event,'any') ->
 match(_,_,What) ->
     orber:debug_level_print("[~p] CosNotifyFilter_Filter:match(~p);
 Not an CORBA::Any", [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=602, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% Function : match_structured/3
@@ -325,7 +325,7 @@ match_structured(OE_THIS, State, Event) when
 match_structured(_,_,What) ->
     orber:debug_level_print("[~p] CosNotifyFilter_Filter:match_structured(~p);
 Not a StructuredEvent", [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=603, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------*
 %% Function : match_typed/3
@@ -356,7 +356,7 @@ detach_callback(OE_THIS, State, ID) when integer(ID) ->
 detach_callback(_,_,What) ->
     orber:debug_level_print("[~p] CosNotifyFilter_Filter:detach_callback(~p);
 Not an integer", [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=604, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% Function : get_callbacks/2
@@ -424,7 +424,7 @@ lookup_constraints([H|T], State, Accum) when integer(H) ->
 	    lookup_constraints(T, State, [Con|Accum])
     end;
 lookup_constraints(_, _, _) ->
-    corba:raise(#'BAD_PARAM'{minor=605, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %% Given a list of Constrain IDs we want to delet the related constraints.
 %% We need also to return the ConstraintInfoSeq described related to the
@@ -507,7 +507,7 @@ try_create_filters(State, [#'CosNotifyFilter_ConstraintExp'{event_types = Types,
 				       [?create_ConstraintInfo(Types, Con, ID)|InfoSeq], 
 				       NewETSeq);
 		_ ->
-		    corba:raise(#'BAD_PARAM'{minor=601, completion_status=?COMPLETED_NO})
+		    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
 	    end;
 	_ ->
 	    corba:raise(#'CosNotifyFilter_InvalidConstraint'
@@ -536,7 +536,7 @@ try_create_filters(State, [#'CosNotifyFilter_ConstraintInfo'
 				       [?create_ConstraintInfo(Types, Con, ID)|InfoSeq], 
 				       NewETSeq);
 		_ ->
-		    corba:raise(#'BAD_PARAM'{minor=602, completion_status=?COMPLETED_NO})
+		    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
 	    end;
 	_ ->
 	    corba:raise(#'CosNotifyFilter_InvalidConstraint'
@@ -545,7 +545,7 @@ try_create_filters(State, [#'CosNotifyFilter_ConstraintInfo'
     end;
 try_create_filters(_,_,_,_,_) ->
     %% The list contained something else but ConstraintExp.
-    corba:raise(#'BAD_PARAM'{minor=600, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------
 %% Function : store_filters/4

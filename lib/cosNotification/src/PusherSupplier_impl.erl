@@ -360,7 +360,7 @@ connect_any_push_consumer(OE_THIS, OE_FROM, State, Client) when ?is_ANY(State) -
 	    {reply, ok, ?set_Client(State, Client)}
     end;
 connect_any_push_consumer(_, _, _, _) ->
-    corba:raise(#'BAD_OPERATION'{minor=400, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----- CosNotifyChannelAdmin::SequenceProxyPushSupplier ----
 %%----------------------------------------------------------%
@@ -380,7 +380,7 @@ connect_sequence_push_consumer(OE_THIS, OE_FROM, State, Client) when ?is_SEQUENC
 	    {reply, ok, ?set_Client(NewState, Client)}
     end;
 connect_sequence_push_consumer(_, _, _, _) ->
-    corba:raise(#'BAD_OPERATION'{minor=401, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----- CosNotifyChannelAdmin::StructuredProxyPushSupplier ---
 %%----------------------------------------------------------%
@@ -399,7 +399,7 @@ connect_structured_push_consumer(OE_THIS, OE_FROM, State, Client) when ?is_STRUC
 	    {reply, ok, ?set_Client(State, Client)}
     end;
 connect_structured_push_consumer(_, _, _, _) ->
-    corba:raise(#'BAD_OPERATION'{minor=402, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----- CosNotifyChannelAdmin::*ProxyPushSupplier -----------
 %%----------------------------------------------------------%
@@ -459,7 +459,7 @@ obtain_offered_types(OE_THIS, OE_FROM, State, 'NONE_NOW_UPDATES_ON') ->
 obtain_offered_types(_,_,_,What) ->
     orber:debug_level_print("[~p] PusherSupplier:obtain_offered_types(~p);
 Bad enumerant", [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_OPERATION'{minor=403, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : validate_event_qos
@@ -579,7 +579,7 @@ remove_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
 remove_filter(_,_,_,What) ->
     orber:debug_level_print("[~p] PusherSupplier:remove_filter(~p); Not an integer", 
 			    [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=400, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : get_filter
@@ -592,7 +592,7 @@ get_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
 get_filter(_,_,_,What) ->
     orber:debug_level_print("[~p] PusherSupplier:get_filter(~p); Not an integer", 
 			    [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=401, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : get_all_filters

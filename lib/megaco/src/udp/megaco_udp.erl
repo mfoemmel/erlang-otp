@@ -39,6 +39,11 @@
 	 unblock/1
 	]).
 
+%% Statistics exports
+-export([get_stats/0, get_stats/1, get_stats/2,
+	 reset_stats/0, reset_stats/1]).
+
+
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
@@ -47,12 +52,41 @@
 %%-----------------------------------------------------------------
 %% External interface functions
 %%-----------------------------------------------------------------
+
+%%-----------------------------------------------------------------
+%% Func: get_stats/0, get_stats/1, get_stats/2
+%% Description: Retreive statistics (counters) for TCP
+%%-----------------------------------------------------------------
+get_stats() ->
+    megaco_stats:get_stats(megaco_udp_stats).
+
+get_stats(SH) when record(SH, send_handle) ->
+    megaco_stats:get_stats(megaco_udp_stats, SH).
+
+get_stats(SH, Counter) when record(SH, send_handle), atom(Counter) ->
+    megaco_stats:get_stats(megaco_udp_stats, SH, Counter).
+
+
+%%-----------------------------------------------------------------
+%% Func: reset_stats/0, reaet_stats/1
+%% Description: Reset statistics (counters) for TCP
+%%-----------------------------------------------------------------
+reset_stats() ->
+    megaco_stats:reset_stats(megaco_udp_stats).
+
+reset_stats(SH) when record(SH, send_handle) ->
+    megaco_stats:reset_stats(megaco_udp_stats, SH).
+
+
+
 %%-----------------------------------------------------------------
 %% Func: start_transport
 %% Description: Starts the UDP transport service
 %%-----------------------------------------------------------------
 start_transport() ->
+    (catch megaco_stats:init(megaco_udp_stats)),
     megaco_udp_sup:start_link().
+
 
 %%-----------------------------------------------------------------
 %% Func: open
@@ -68,7 +102,7 @@ open(SupPid, Options) ->
 	    IpOpts = [binary, {reuseaddr, true}, {active, once} |
 		      UdpRec#megaco_udp.options],
 
-	    case catch gen_udp:open(UdpRec#megaco_udp.port, IpOpts) of
+	    case (catch gen_udp:open(UdpRec#megaco_udp.port, IpOpts)) of
 		{ok, Socket} ->
 		    ?udp_debug(UdpRec, "udp open", []),
 		    NewUdpRec = UdpRec#megaco_udp{socket = Socket},
@@ -83,6 +117,10 @@ open(SupPid, Options) ->
 			    Error
 
 		    end;
+		{'EXIT', Reason} ->
+		    Error = {error, {could_not_open_udp_port, Reason}},
+		    ?udp_debug(UdpRec, "udp open exited", [Error]),
+		    Error;
 		{error, Reason} ->
 		    Error = {error, {could_not_open_udp_port, Reason}},
 		    ?udp_debug(UdpRec, "udp open failed", [Error]),
@@ -93,6 +131,7 @@ open(SupPid, Options) ->
 		       [Error, {options, Options}]),
 	    {error, Reason}
     end.
+
 
 %%-----------------------------------------------------------------
 %% Func: socket
@@ -108,8 +147,43 @@ socket(Socket) ->
 %% Description: Function is used for creating the handle used when 
 %%    sending data on the UDP socket
 %%-----------------------------------------------------------------
-create_send_handle(Socket, Addr, Port) ->
-    #send_handle{socket = Socket, addr = Addr, port = Port}.
+create_send_handle(Socket, {_, _, _, _} = Addr, Port) ->
+    do_create_send_handle(Socket, Addr, Port);
+create_send_handle(Socket, Addr0, Port) ->
+    {ok, Addr} = inet:getaddr(Addr0, inet),
+    do_create_send_handle(Socket, Addr, Port).
+
+do_create_send_handle(Socket, Addr, Port) ->
+    %% If neccessary create snmp counter's
+    SH = #send_handle{socket = Socket, addr = Addr, port = Port},
+    maybe_create_snmp_counters(SH),
+    SH.
+
+
+maybe_create_snmp_counters(SH) ->
+    Counters = [medGwyGatewayNumInMessages, 
+		medGwyGatewayNumInOctets, 
+		medGwyGatewayNumOutMessages, 
+		medGwyGatewayNumOutOctets, 
+		medGwyGatewayNumErrors],
+    %% Only need to check one of them, since either all of them exist
+    %% or none of them exist:
+    Key = {SH, medGwyGatewayNumInMessages},
+    case (catch ets:lookup(megaco_udp_stats, Key)) of
+	[] ->
+	    create_snmp_counters(SH, Counters);
+	[_] ->
+	    ok;
+	_ ->
+	    ok
+    end.
+
+create_snmp_counters(SH, []) ->
+    ok;
+create_snmp_counters(SH, [Counter|Counters]) ->
+    Key = {SH, Counter},
+    ets:insert(megaco_udp_stats, {Key, 0}),
+    create_snmp_counters(SH, Counters).
 
 %%-----------------------------------------------------------------
 %% Func: send_message
@@ -117,7 +191,15 @@ create_send_handle(Socket, Addr, Port) ->
 %%-----------------------------------------------------------------
 send_message(SH, Data) when record(SH, send_handle) ->
     #send_handle{socket = Socket, addr = Addr, port = Port} = SH,
-    gen_udp:send(Socket, Addr, Port, Data);
+    Res = gen_udp:send(Socket, Addr, Port, Data),
+    case Res of
+	ok ->
+	    incNumOutMessages(SH),
+	    incNumOutOctets(SH, size(Data));
+	_ ->
+	    ok
+    end,
+    Res;
 send_message(SH, _Data) ->
     {error, {bad_send_handle, SH}}.
 
@@ -194,3 +276,21 @@ parse_options([], _UdpRec, Mand) ->
     {error, {missing_options, Mand}};
 parse_options(BadList, _UdpRec, _Mand) ->
     {error, {bad_option_list, BadList}}.
+
+
+%%-----------------------------------------------------------------
+%% Func: incNumOutMessages/1, incNumOutOctets/2, incNumErrors/1
+%% Description: SNMP counter increment functions
+%%              
+%%-----------------------------------------------------------------
+incNumOutMessages(SH) ->
+    ets:update_counter(megaco_udp_stats, 
+		       {SH, medGwyGatewayNumOutMessages}, 1).
+
+incNumOutOctets(SH, NumOctets) ->
+    ets:update_counter(megaco_udp_stats, 
+		       {SH, medGwyGatewayNumOutOctets}, NumOctets).
+
+% incNumErrors(SH) ->
+%     ets:update_counter(megaco_udp_stats, 
+% 		       {SH, medGwyGatewayNumErrors}, 1).

@@ -16,7 +16,7 @@
 %%     $Id$
 %%
 -module(httpd_response).
--export([send/2,send_status/5,send_status/6]).
+-export([send/1, send_status/3, send_status/5]).
 
 %%code is the key for the statuscode ex: 200 404 ...
 -define(HTTP11HEADERFIELDS,[content_length, accept_ranges, cache_control, date,
@@ -43,7 +43,7 @@
 
 %% send
 
-send(Info, ConfigDB) ->
+send(#mod{config_db = ConfigDB} = Info) ->
     ?vtrace("send -> Request line: ~p", [Info#mod.request_line]),
     Modules = httpd_util:lookup(ConfigDB,modules,[mod_get, mod_head, mod_log]),
     case traverse_modules(Info, Modules) of
@@ -57,8 +57,7 @@ send(Info, ConfigDB) ->
 			    "~n   PhraseArgs: ~p"
 			    "~n   Reason:     ~p",
 			    [StatusCode, PhraseArgs, Reason]),
-		    send_status(Info#mod.socket_type, Info#mod.socket,
-				StatusCode, PhraseArgs, ConfigDB),
+		    send_status(Info, StatusCode, PhraseArgs),
 		    Info;
 		
 		undefined ->
@@ -70,15 +69,14 @@ send(Info, ConfigDB) ->
 				    [StatusCode, Size]),
 			    Info;
 			{response, Header, Body} -> %% New way
-			    send_response(Info, Header, Body, ConfigDB),
+			    send_response(Info, Header, Body),
 			    Info;
 			{StatusCode, Response} ->   %% Old way
-			    send_response(Info, StatusCode, Response),
+			    send_response_old(Info, StatusCode, Response),
 			    Info;
 			undefined ->
 			    ?vtrace("send -> undefined response", []),
-			    send_status(Info#mod.socket_type, Info#mod.socket,
-					500, none, Info, ConfigDB),
+			    send_status(Info, 500, none),
 			    Info
 		    end
 	    end
@@ -111,45 +109,34 @@ traverse_modules(Info,[Module|Rest]) ->
 %% send_status %%
 
 
+send_status(#mod{socket_type = SocketType, 
+		 socket      = Socket, 
+		 connection  = Conn} = Info, 100, _PhraseArgs) ->
+    ?DEBUG("send_status -> StatusCode: ~p~n",[100]),
+    Header = httpd_util:header(100, Conn),
+    httpd_socket:deliver(SocketType, Socket,
+			 [Header, "Content-Length:0\r\n\r\n"]);
+
+send_status(#mod{socket_type = SocketType, 
+		 socket      = Socket, 
+		 config_db   = ConfigDB} = Info, StatusCode, PhraseArgs) ->
+    send_status(SocketType, Socket, StatusCode, PhraseArgs, ConfigDB).
 
 send_status(SocketType, Socket, StatusCode, PhraseArgs, ConfigDB) ->
     ?DEBUG("send_status -> ~n"
-	   "    StatusCode: ~p~n"
-	   "    PhraseArgs: ~p",
-	   [StatusCode,PhraseArgs]),
-    Header = httpd_util:header(StatusCode, "text/html",false),
+	"    StatusCode: ~p~n"
+	"    PhraseArgs: ~p",
+	[StatusCode, PhraseArgs]),
+    Header       = httpd_util:header(StatusCode, "text/html", false),
     ReasonPhrase = httpd_util:reason_phrase(StatusCode),
-    Message = httpd_util:message(StatusCode,PhraseArgs,ConfigDB),
-    Body = get_body(ReasonPhrase,Message),
-    Header1 = Header ++ 
+    Message      = httpd_util:message(StatusCode, PhraseArgs, ConfigDB),
+    Body         = get_body(ReasonPhrase, Message),
+    Header1 = 
+	Header ++ 
 	"Content-Length:" ++ 
 	integer_to_list(length(Body)) ++
 	"\r\n\r\n",
-    httpd_socket:deliver(SocketType, Socket, [Header1,Body]).
-
-send_status(SocketType, Socket, 100, _PhraseArgs, Info, _ConfigDB) ->
-    ?DEBUG("send_status -> StatusCode: ~p~n",[100]),
-    Header = httpd_util:header(100,Info#mod.connection ),
-    httpd_socket:deliver(SocketType,Socket,
-			 [Header,"Content-Length:0\r\n\r\n"]);
-
-send_status(SocketType, Socket, StatusCode, PhraseArgs, Info, ConfigDB)
-  when record(Info,mod) ->
-    ?DEBUG("send_status -> ~n"
-	   "    StatusCode: ~p~n"
-	   "    PhraseArgs: ~p",
-	   [StatusCode,PhraseArgs]),
-    Header       = httpd_util:header(StatusCode, 
-				     "text/html",
-				     Info#mod.connection),
-    ReasonPhrase = httpd_util:reason_phrase(StatusCode),
-    Message      = httpd_util:message(StatusCode,PhraseArgs,ConfigDB),
-    Body         = get_body(ReasonPhrase,Message),
-    Header1      = 
-	Header ++ "Content-Length:" ++ 
-	integer_to_list(length(Body)) ++ "\r\n\r\n",
-    httpd_socket:deliver(SocketType, Socket, [Header1,Body]).
-
+    httpd_socket:deliver(SocketType, Socket, [Header1, Body]).
 
 
 get_body(ReasonPhrase, Message)->
@@ -210,16 +197,15 @@ get_body(ReasonPhrase, Message)->
 % Last-Modified
  
 
-send_response(#mod{socket_type = Type, socket = Sock} = Info, 
-	      Header, Body, ConfigDB) ->
+send_response(Info, Header, Body) ->
     ?vtrace("send_response -> (new) entry with"
 	    "~n   Header:       ~p", [Header]),
     case httpd_util:key1search(Header, code) of
 	undefined ->
-	    %% No status code Ooops this must be very bad:
+	    %% No status code 
+	    %% Ooops this must be very bad:
 	    %% generate a 404 content not availible
-	    send_status(Type, Sock, 404,
-			"The file is not availible", Info, ConfigDB);
+	    send_status(Info, 404, "The file is not availible");
 	StatusCode ->
 	    case send_header(Info, StatusCode, Header) of
 		ok ->
@@ -231,8 +217,8 @@ send_response(#mod{socket_type = Type, socket = Sock} = Info,
     end.
 
 
-send_header(#mod{socket_type = Type, socket = Sock, 
-		 http_version = Ver, connection = Conn} = Info, 
+send_header(#mod{socket_type  = Type, socket     = Sock, 
+		 http_version = Ver,  connection = Conn} = Info, 
 	    StatusCode, Head0) ->
     ?vtrace("send_haeder -> entry with"
 	    "~n   Ver:  ~p"
@@ -393,9 +379,11 @@ transform({last_modified,Value})->
 %% OTP-4408
 %%----------------------------------------------------------------------
 
-send_response(#mod{socket_type = Type, socket = Sock, method = "HEAD"} = Info,
-	      StatusCode, Response) ->
-    ?vtrace("send_response(HEAD) -> (old) entry with"
+send_response_old(#mod{socket_type = Type, 
+		       socket      = Sock, 
+		       method      = "HEAD"} = Info,
+		  StatusCode, Response) ->
+    ?vtrace("send_response_old(HEAD) -> entry with"
 	    "~n   StatusCode: ~p"
 	    "~n   Response:   ~p",
 	    [StatusCode,Response]),
@@ -407,13 +395,13 @@ send_response(#mod{socket_type = Type, socket = Sock, method = "HEAD"} = Info,
 	    httpd_socket:deliver(Type, Sock, [Header,Head,"\r\n"]);
 
 	Error ->
-	    send_status(Type, Sock, 500,
-			"Internal Server Error", Info#mod.config_db)
+	    send_status(Info, 500, "Internal Server Error")
     end;
 
-send_response(#mod{socket_type = Type, socket = Sock} = Info,
-	      StatusCode, Response) ->
-    ?vtrace("send_response -> (old) entry with"
+send_response_old(#mod{socket_type = Type, 
+		       socket      = Sock} = Info,
+		  StatusCode, Response) ->
+    ?vtrace("send_response_old -> entry with"
 	    "~n   StatusCode: ~p"
 	    "~n   Response:   ~p",
 	    [StatusCode,Response]),
@@ -431,8 +419,7 @@ send_response(#mod{socket_type = Type, socket = Sock} = Info,
 	    httpd_socket:deliver(Type, Sock, [Header, Response]);
 
 	{error, Reason} ->
-	    send_status(Type, Sock, 500,
-			"Internal Server Error", Info#mod.config_db)
+	    send_status(Info, 500, "Internal Server Error")
     end.
 
 content_length(Body)->

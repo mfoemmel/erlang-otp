@@ -126,6 +126,8 @@ handle_info({tcp, Socket, <<3:8, _X:8, Length:16, Msg/binary>>}, TcpRec)
     Mod = TcpRec#megaco_tcp.module,
     RH = TcpRec#megaco_tcp.receive_handle,
     Socket = TcpRec#megaco_tcp.socket,
+    incNumInMessages(Socket),
+    incNumInOctets(Socket, 4+size(Msg)),
     apply(Mod, receive_message, [RH, self(), Socket, Msg]),
     inet:setopts(Socket, [{active, once}]),
     {noreply, TcpRec};
@@ -133,10 +135,13 @@ handle_info({tcp, Socket, <<3:8, _X:8, Length:16, Msg/binary>>}, TcpRec) ->
     Mod = TcpRec#megaco_tcp.module,
     RH = TcpRec#megaco_tcp.receive_handle,
     Socket = TcpRec#megaco_tcp.socket,
+    incNumInMessages(Socket),
+    incNumInOctets(Socket, 4+size(Msg)),
     receive_message(Mod, RH, Socket, Length, Msg),
     inet:setopts(Socket, [{active, once}]),
     {noreply, TcpRec};
-handle_info({tcp, _Socket, Msg}, TcpRec) ->
+handle_info({tcp, Socket, Msg}, TcpRec) ->
+    incNumErrors(Socket),
     error_logger:error_report([{megaco_tcp, {bad_tpkt_packet, Msg}}]),
     {noreply, TcpRec};
 handle_info(X, TcpRec) ->
@@ -166,3 +171,19 @@ code_change(_OldVsn, C, _Extra) ->
 
 
 
+%%-----------------------------------------------------------------
+%% Func: incNumInMessages/1, incNumInOctets/2, incNumErrors/1
+%% Description: SNMP counter increment functions
+%%              
+%%-----------------------------------------------------------------
+incNumInMessages(Socket) ->
+    ets:update_counter(megaco_tcp_stats, 
+                       {Socket, medGwyGatewayNumInMessages}, 1).
+
+incNumInOctets(Socket, NumOctets) ->
+    ets:update_counter(megaco_tcp_stats, 
+                       {Socket, medGwyGatewayNumInOctets}, NumOctets).
+
+incNumErrors(Socket) ->
+    ets:update_counter(megaco_tcp_stats, 
+                     {Socket, medGwyGatewayNumErrors}, 1).

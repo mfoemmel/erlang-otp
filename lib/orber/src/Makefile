@@ -172,6 +172,7 @@ ERL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin -pa $(ERL_TOP)/lib/ic/ebin
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/orber/include \
+	-pa $(ERL_TOP)/lib/ic/ebin \
 	+'{parse_transform,sys_pre_attributes}' \
 	+'{attribute,insert,app_vsn,"orber_$(ORBER_VSN)"}' \
 	-D'ORBVSN="$(VSN)"'

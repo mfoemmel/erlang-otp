@@ -55,7 +55,8 @@
 %%----------------------------------------------------------------------
 %% Records
 %%----------------------------------------------------------------------
--record(state, {typecheck, pull_interval, maxevents, blocking, cadmins = []}).
+-record(state, {typecheck, pull_interval, maxevents, blocking, cadmins = [],
+		server_options}).
 
 %%----------------------------------------------------------------------
 %% Macros
@@ -72,14 +73,14 @@
 %%              {stop, Reason}
 %% Description: Initiates the server
 %%----------------------------------------------------------------------
-init(Options) ->
+init([Options, ServerOpts]) ->
     process_flag(trap_exit, true),
     PullI = cosEventApp:get_option(?PULL_INTERVAL, Options),
     TC = cosEventApp:get_option(?TYPECHECK, Options),
     Max = cosEventApp:get_option(?MAXEVENTS, Options),
     Blocking = cosEventApp:get_option(?BLOCKING, Options),
     {ok, #state{typecheck = TC, pull_interval = PullI, maxevents = Max,
-		blocking = Blocking}}.
+		blocking = Blocking, server_options = ServerOpts}}.
 
 %%----------------------------------------------------------------------
 %% Function   : terminate/2
@@ -119,18 +120,19 @@ handle_info(Info, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-for_consumers(OE_This, _, State) ->
+for_consumers(_, _, #state{server_options = ServerOpts} = State) ->
     case catch 'oe_CosEventComm_CAdmin':oe_create_link([self(),
 							State#state.typecheck,
-							State#state.maxevents],
-						       [{sup_child, true}]) of
+							State#state.maxevents,
+							ServerOpts],
+						       [{sup_child, true}|ServerOpts]) of
 	{ok, Pid, AdminCo} ->
 	    ?DBG("Created a new oe_CosEventComm_CAdmin.~n", []),
 	    {reply, AdminCo,
 	     State#state{cadmins = [{AdminCo, Pid}|State#state.cadmins]}};
 	Other ->
-	    orber:debug_level_print("[~p] oe_CosEventComm_Channel:for_consumers(); Error: ~p", 
-				    [?LINE, Other], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] oe_CosEventComm_Channel:for_consumers(); Error: ~p", 
+		      [?LINE, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -140,11 +142,12 @@ for_consumers(OE_This, _, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-for_suppliers(OE_This, _, State) ->
+for_suppliers(OE_This, _, #state{server_options = ServerOpts} = State) ->
     case catch 'CosEventChannelAdmin_SupplierAdmin':oe_create_link([OE_This, self(),
 								    State#state.typecheck, 
-								    State#state.pull_interval],
-								   [{sup_child, true}]) of
+								    State#state.pull_interval,
+								    ServerOpts],
+								   [{sup_child, true}|ServerOpts]) of
 	{ok, Pid, AdminSu} ->
 	    ?DBG("Created a new CosEventChannelAdmin_SupplierAdmin.~n", []),
 	    {reply, AdminSu, State};
@@ -160,7 +163,7 @@ for_suppliers(OE_This, _, State) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-destroy(OE_This, _, State) ->
+destroy(_, _, State) ->
     ?DBG("Destroy invoked.", []),
     {stop, normal, ok, State}.
 

@@ -1,1 +1,1 @@
-INETS_VSN = 3.0
+INETS_VSN = 3.0.3

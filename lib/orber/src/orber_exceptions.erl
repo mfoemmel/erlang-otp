@@ -504,6 +504,9 @@ another node in a multi-node Orber
 installation";
 'TRANSIENT'(?ORBER_VMCID bor 6) -> "Received unknown reply when invoking an 
 operation on a local object";
+'TRANSIENT'(?ORBER_VMCID bor 7) -> "Either the stub/skeleton does not exist or an
+incorrect IC-version was used, which does not generate
+the oe_tc/1 or oe_get_interface/1 functions";
 'TRANSIENT'(_) -> "-".
 
 %% FREE_MEM - OMG

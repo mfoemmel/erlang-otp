@@ -51,6 +51,8 @@ endif
 
 include modules.mk
 
+HRL_FILES = megaco_test_lib.hrl
+
 ERL_FILES = $(MODULES:%=%.erl)
 
 TARGET_FILES = $(MODULES:%=%.$(EMULATOR))
@@ -59,11 +61,18 @@ TARGET_FILES = $(MODULES:%=%.$(EMULATOR))
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin \
-	 -pa $(ERL_TOP)/lib/et/ebin
 
-ERL_COMPILE_FLAGS += -pa $(ERL_TOP)/lib/test_server/ebin \
-	-I$(ERL_TOP)/lib/test_server/include
+# ifeq ($(USE_HIPE),true)
+# ERL_COMPILE_FLAGS += +native
+# endif
+
+ERL_FLAGS += \
+           -pa $(ERL_TOP)/lib/megaco/ebin \
+           -pa $(ERL_TOP)/lib/et/ebin
+
+ERL_COMPILE_FLAGS += \
+           -pa $(ERL_TOP)/lib/test_server/ebin \
+           -I$(ERL_TOP)/lib/test_server/include
 
 ERL_PATH = -pa ../../megaco/examples/simple \
            -pa ../../megaco/ebin \
@@ -72,6 +81,13 @@ ERL_PATH = -pa ../../megaco/examples/simple \
 ifndef SUITE
 SUITE = megaco_SUITE
 endif
+
+ifeq ($(NO_EHALT),true)
+EHALT =
+else
+EHALT = -s erlang halt
+endif
+
 
 
 # ----------------------------------------------------
@@ -141,7 +157,13 @@ appup: make
 mess: make
 	erl -noshell -sname megaco $(ERL_PATH) \
             -s et_viewer \
-            -s megaco_test_lib t megaco_mess_test
+            -s megaco_test_lib t megaco_mess_test \
+            -s erlang halt
+
+mib: make
+	erl -noshell -sname megaco $(ERL_PATH) \
+            -s megaco_test_lib t megaco_mib_test \
+            $(EHALT)
 
 # mess: make
 # 	erl -noshell -sname megaco $(ERL_PATH) \
@@ -181,6 +203,11 @@ gnuplot_gif: make
             -s megaco_call_flow_test gnuplot_gif \
             -s erlang halt
 
+display_text_msgs: make
+	erl -noshell -sname megaco $(ERL_PATH) \
+            -s megaco_codec_test display_text_messages \
+            -s erlang halt
+
 
 # ----------------------------------------------------
 # Release Targets
@@ -194,7 +221,8 @@ release_docs_spec:
 
 release_tests_spec: tests
 	$(INSTALL_DIR)  $(RELSYSDIR)
-	$(INSTALL_DATA) $(TEST_SPEC_FILE) $(ERL_FILES) $(RELSYSDIR)
+	$(INSTALL_DATA) $(TEST_SPEC_FILE) $(HRL_FILES) $(ERL_FILES) \
+                        $(RELSYSDIR)
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)
 	chmod -f -R u+w $(RELSYSDIR)
 

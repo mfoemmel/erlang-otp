@@ -1,3 +1,4 @@
 
-COSEVENT_VSN = 2.0
+COSEVENT_VSN = 2.1
+
 

@@ -31,6 +31,7 @@
 #include "erl_version.h"
 #include "erl_db_util.h"
 #include "erl_message.h"
+#include "erl_binary.h"
 #ifdef ELIB_ALLOC_IS_CLIB
 #include "elib_stat.h"
 #endif
@@ -1130,8 +1131,8 @@ BIF_ADECL_1
       Uint *szp;
       Eterm features;
       Eterm settings;
-      Eterm atoms[12];
-      Uint terms[12];
+      Eterm atoms[13];
+      Uint terms[13];
       Uint length;
       SysAllocStat sas;
       ErtsSlAllocStat esas;
@@ -1176,6 +1177,7 @@ BIF_ADECL_1
 	  DECL_AM(release);
 	  DECL_AM(singleblock_carrier_threshold);
 	  DECL_AM(max_mmap_carriers);
+	  DECL_AM(binaries);
 
 	  length = 0;
 
@@ -1239,16 +1241,17 @@ BIF_ADECL_1
 
 	  }
 
-	  sla_setts = erts_bld_2tup_list(hpp, szp, length, atoms, terms);
+	  atoms[length]   = AM_binaries;
+	  terms[length++] = erts_sl_alloc_binaries ? am_true : am_false;
 
       }
       else {
 	  length = 0;
 	  atoms[length]   = AM_enabled;
 	  terms[length++] = am_false;
-	  sla_setts = erts_bld_2tup_list(hpp, szp, length, atoms, terms);
       }
 
+      sla_setts = erts_bld_2tup_list(hpp, szp, length, atoms, terms);
       settings = erts_bld_cons(hpp,
 			       szp,
 			       erts_bld_tuple(hpp,
@@ -1675,13 +1678,12 @@ BIF_ADECL_2
 	&& external_port_dist_entry(portid) == erts_this_dist_entry)
 	BIF_RET(am_undefined);
 
-    if (is_not_internal_port(portid)
-	|| ((portix = internal_port_index(portid)) >= erts_max_ports)) {
+    if (is_not_internal_port(portid)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-
-    if ((erts_port[portix].status == FREE)) {
-	BIF_RET(am_undefined);	
+    if (((portix = internal_port_index(portid)) >= erts_max_ports)
+	|| INVALID_PORT(erts_port+portix, portid)) {
+	BIF_RET(am_undefined);
     }
 
     if (item == am_id) {

@@ -472,7 +472,10 @@ unbind(OE_THIS, OE_State, [H|T]) ->
 new_context(OE_THIS, OE_State) ->
     DBKey = term_to_binary({now(), node()}),
     %% Create a record in the table and set the key to a newly
-    {reply, 'CosNaming_NamingContextExt':oe_create(DBKey, [{pseudo, true}]), OE_State}.
+    {reply, 
+     'CosNaming_NamingContextExt':oe_create(DBKey, 
+					    [{pseudo, true}|?CREATE_OPTS]), 
+     OE_State}.
 
 %%----------------------------------------------------------------------
 %% Function   : bind_new_context
@@ -485,7 +488,8 @@ bind_new_context(OE_THIS, OE_State, N) ->
     %% Create a record in the table and set the key to a newly
     %% generated objectkey.
     %%?PRINTDEBUG("bind_new_context"),
-    NewCtx = 'CosNaming_NamingContextExt':oe_create(DBKey, [{pseudo, true}]),
+    NewCtx = 'CosNaming_NamingContextExt':oe_create(DBKey, 
+						    [{pseudo, true}|?CREATE_OPTS]),
     %% Bind the created name context to a name
     case catch bind_context(OE_THIS, OE_State, N, NewCtx) of
 	{'EXCEPTION', E} ->
@@ -515,7 +519,8 @@ list(OE_THIS, OE_State, HowMany) ->
 			      #'CosNaming_Binding'{binding_name=[N],
 						   binding_type=T}
 		      end, List),
-	    BIterator = 'CosNaming_BindingIterator':oe_create({SubobjKey, HowMany}),
+	    BIterator = 'CosNaming_BindingIterator':oe_create({SubobjKey, HowMany},
+							      ?CREATE_OPTS),
 	    {reply, {ok, BList, BIterator}, OE_State}
     end.
 

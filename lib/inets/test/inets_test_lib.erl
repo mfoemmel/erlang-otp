@@ -22,14 +22,13 @@
 
 %% Various small utility functions
 -export([hostname/0, sz/1]).
--export([connect/3, send/3, close/2]).
--export([get_config/2, get_config/3, fail/3, skip/1]).
+-export([connect/3, send/3, csend/5, close/2]).
+-export([update_config/3, get_config/2, get_config/3, fail/3, skip/1]).
 -export([millis/0, millis_diff/2, hours/1, minutes/1, seconds/1, sleep/1]).
 -export([watchdog/2, watchdog_start/1, watchdog_stop/1]).
 -export([flush_mqueue/0, trap_exit/0, trap_exit/1]).
 -export([info/4, log/4, debug/4, print/4]).
 -export([expandable/3]).
--export([app_test/0, app_test/1]).
 -export([cover/1]).
 
 
@@ -107,6 +106,34 @@ connect(ip_comm,Host,Port) ->
     end.
 
 
+csend(Type, Socket, Bin, Sz, _) when size(Bin) =< Sz ->
+    send(Type, Socket, Bin);
+csend(Type, Socket, L, Sz, _) when length(L) =< Sz ->
+    send(Type, Socket, L);
+csend(Type, Socket, Bin, Sz, T) when binary(Bin) ->
+    <<B:Sz/binary, Rest/binary>> = Bin,
+    case send(Type, Socket, B) of
+	ok ->
+	    sleep(T),
+	    csend(Type, Socket, Rest, Sz, T);
+	{error, closed} ->
+	    ok;
+	Error ->
+	    Error
+    end;
+csend(Type, Socket, L, Sz, T) when list(L) ->
+    L1 = lists:sublist(L, Sz),
+    case send(Type, Socket, L1) of
+	ok ->
+	    sleep(T),
+	    csend(Type, Socket, lists:sublist(L, Sz+1, length(L)), Sz, T);
+	{error, closed} ->
+	    ok;
+	Error ->
+	    Error
+    end.
+    
+
 send(ssl, Socket, Data) ->
     ssl:send(Socket, Data);
 send(ip_comm,Socket,Data) ->
@@ -122,6 +149,14 @@ close(ip_comm,Socket) ->
 %% ----------------------------------------------------------------
 %% Test suite utility functions
 %% 
+
+update_config(Key, Val, Config) ->
+    case get_config(Key, Config) of
+	undefined ->
+	    [{Key, Val}|Config];
+	_ ->
+	    Config
+    end.
 
 get_config(Key,C) ->
     get_config(Key,C,undefined).
@@ -139,7 +174,8 @@ fail(Reason, Mod, Line) ->
     exit({suite_failed, Reason, Mod, Line}).
     
 skip(Reason) ->
-    exit({skipped, Reason}).
+    String = lists:flatten(io_lib:format("Skipping: ~p~n",[Reason])),
+    exit({skipped, String}).
     
 
 %% ----------------------------------------------------------------
@@ -223,153 +259,6 @@ timeout(T,vxworks) ->
 timeout(T,_) ->
     T.
 	    
-%% ----------------------------------------------------------------
-%% App-test functions
-%% 
-
-app_test() ->
-    app_test(inets).
-
-app_test(App) ->
-    case is_app(App) of
-	{ok, AppFile} ->
-	    case (catch do_app_test(App, AppFile)) of
-		{error, Reason} ->
-		    fail(Reason, ?MODULE, ?LINE);
-		ok ->
-		    ok
-	    end;
-	{error, Reason} ->
-	    fail(Reason, ?MODULE, ?LINE)
-    end.
-
-is_app(App) ->
-    LibDir = code:lib_dir(App),
-    File = filename:join([LibDir, "ebin", atom_to_list(App) ++ ".app"]),
-    case file:consult(File) of
-	{ok, [{application, App, AppFile}]} ->
-	    {ok, AppFile};
-	Error ->
-	    {error, {invalid_format, Error}}
-    end.
-
-
-do_app_test(App, AppFile) ->
-    %% Check mandatory (?) fields
-    check_fields([description, modules, registered, applications], AppFile),
-    
-    %% Check for missing or/end extra modules
-    Mods = check_modules(App, AppFile),
-    
-    %% Check that no modules has export_all
-    check_export_all(Mods),
-    
-    %% Check that all specified apps exist
-    check_spec_apps(AppFile).
-
-
-check_fields([], AppFile) ->
-    ok;
-check_fields([F|Fields], AppFile) ->
-    check_field(F, AppFile),
-    check_fields(Fields, AppFile).
-
-
-check_field(Name, AppFile) ->
-    case lists:keymember(Name, 1, AppFile) of
-	true ->
-	    ok;
-	false ->
-	    throw({error, {missing_field, Name}})
-    end.
-
-
-check_modules(App, AppFile) ->
-    %% Since we have checked fields, modules is there
-    {value, {modules, Mods}} = lists:keysearch(modules, 1, AppFile),
-    EbinList = get_ebin_mods(App),
-    case missing_modules(Mods, EbinList, []) of
-	[] ->
-	    ok;
-	Missing ->
-	    throw({error, {missing_modules, Missing}})
-    end,
-    case extra_modules(Mods, EbinList, []) of
-	[] ->
-	    ok;
-	Extra ->
-	    throw({error, {extra_modules, Extra}})
-    end,
-    Mods.
-	    
-get_ebin_mods(App) ->
-    LibDir  = code:lib_dir(App),
-    EbinDir = filename:join([LibDir,"ebin"]),
-    {ok, Files0} = file:list_dir(EbinDir),
-    Files1 = [lists:reverse(File) || File <- Files0],
-    [list_to_atom(lists:reverse(Name)) || [$m,$a,$e,$b,$.|Name] <- Files1].
-    
-
-missing_modules([], Ebins, Missing) ->
-    Missing;
-missing_modules([Mod|Mods], Ebins, Missing) ->
-    case lists:member(Mod, Ebins) of
-	true ->
-	    missing_modules(Mods, Ebins, Missing);
-	false ->
-	    missing_modules(Mods, Ebins, [Mod|Missing])
-    end.
-
-
-extra_modules(Mods, [], Extra) ->
-    Extra;
-extra_modules(Mods, [Mod|Ebins], Extra) ->
-    case lists:member(Mod, Mods) of
-	true ->
-	    extra_modules(Mods, Ebins, Extra);
-	false ->
-	    extra_modules(Mods, Ebins, [Mod|Extra])
-    end.
-
-
-check_export_all([]) ->
-    ok;
-check_export_all([Mod|Mods]) ->
-    case (catch apply(Mod, module_info, [compile])) of
-	{'EXIT', {undef, _}} ->
-	    check_export_all(Mods);
-	O ->
-            case lists:keysearch(options, 1, O) of
-                false ->
-                    check_export_all(Mods);
-                {value, {options, List}} ->
-                    case lists:member(export_all, List) of
-                        true ->
-			    throw({error, {export_all, Mod}});
-			false ->
-			    check_export_all(Mods)
-                    end
-            end
-    end.
-
-	    
-check_spec_apps(AppFile) ->
-    %% Since we have checked fields, modules is there
-    {value, {applications, Apps}} = lists:keysearch(applications, 1, AppFile),
-    
-    check_apps(Apps).
-
-check_apps([]) ->
-    ok;
-check_apps([App|Apps]) ->
-    case is_app(App) of
-	{ok, _} ->
-	    check_apps(Apps);
-	Error ->
-	    throw({error, {missing_app, {App, Error}}})
-    end.
-
-
 %% ----------------------------------------------------------------------
 %% cover functions
 %%

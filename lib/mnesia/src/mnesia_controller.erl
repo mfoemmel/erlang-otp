@@ -88,7 +88,6 @@
 	 cast/1,
 	 dump_and_reply/2,
 	 load_and_reply/2,
-	 load_and_reply2/2,
 	 send_and_reply/2,
 	 wait_for_tables_init/2
 	]).
@@ -1015,9 +1014,9 @@ handle_info(Done, State) when record(Done, loader_done) ->
 	Done#loader_done.worker_pid == State#state.loader_pid -> ok
     end,
 	    
-    [_Worker | Rest] = State#state.loader_queue,
-    LateQueue = State#state.late_loader_queue,
-    LateQueue2 =
+    [_Worker | Rest] = LoadQ0 = State#state.loader_queue,
+    LateQueue0 = State#state.late_loader_queue,
+    {LoadQ, LateQueue} =
 	case Done#loader_done.is_loaded of
 	    true ->
 		Tab = Done#loader_done.table_name,
@@ -1060,14 +1059,19 @@ handle_info(Done, State) when record(Done, loader_done) ->
 		    false ->
 			ignore
 		end,
-		reply_late_load(Tab, LateQueue);
+		{Rest, reply_late_load(Tab, LateQueue0)};
 	    false ->
-		LateQueue
+		case Done#loader_done.reply of
+		    restart -> 
+			{LoadQ0, LateQueue0};
+		    _ ->
+			{Rest, LateQueue0}
+		end
 	end,
 
     State2 = State#state{loader_pid = undefined,
-			 loader_queue = Rest,
-			 late_loader_queue = LateQueue2},
+			 loader_queue = LoadQ,
+			 late_loader_queue = LateQueue},
 
     State3 = opt_start_worker(State2),
     noreply(State3);
@@ -1885,34 +1889,9 @@ send_and_reply(ReplyTo, Worker) ->
 
 load_and_reply(ReplyTo, Worker) ->
     process_flag(trap_exit, true),
-    %% Grab a schema lock to avoid deadlock between table_loader and schema_commit dumping.
-    %% Both may grab tables-locks in different order.
-    Load = fun() -> 
-		   {_,Tid,Ts} = get(mnesia_activity_state), 
-		   mnesia_locker:rlock(Tid, Ts#tidstore.store, {schema, element(2, Worker)}),
-		   Pid = spawn_link(?MODULE, load_and_reply2, [self(), Worker]),
-		   put(mnesia_real_loader, Pid),
-		   wait_on_load_complete(Pid)
-	   end,
-    {atomic, Res} = mnesia:transaction(Load),
-    ReplyTo ! Res#loader_done{worker_pid = self()},
-    unlink(whereis(mnesia_tm)),  %% Avoid late unlink from tm
-    unlink(ReplyTo),
-    exit(normal).
-
-wait_on_load_complete(Pid) ->
-    receive 
-	{Pid, Res} -> Res;
-	Else -> 
-	    Pid ! Else,
-	    wait_on_load_complete(Pid)
-    end.    	    
-load_and_reply2(ReplyTo, Worker) ->
-    process_flag(trap_exit, true), 
     Done = load_table(Worker),
-    ReplyTo ! {self(),Done},
+    ReplyTo ! Done#loader_done{worker_pid = self()},
     unlink(ReplyTo),
-    unlink(whereis(?MODULE)),
     exit(normal).
 
 %% Now it is time to load the table
@@ -1988,27 +1967,15 @@ load_table(Load) when record(Load, disc_load) ->
 		    Done#loader_done{needs_sync = true};
 		{not_loaded, storage_unknown} ->
 		    Done#loader_done{is_loaded = false};
-		{not_loaded, _ErrReason} ->
-		    Done#loader_done{is_loaded = false}
+		{not_loaded, ErrReason} ->
+		    Done#loader_done{is_loaded = false,
+				     reply = ErrReason}
 	    end;
 	true ->
 	    %% Already readable, do not worry be happy
 	    Done
     end.
 
-filter_active(Tab) ->
-    ByForce = val({Tab, load_by_force}),
-    Active = val({Tab, active_replicas}),
-    Masters = mnesia_recover:get_master_nodes(Tab),
-    do_filter_active(ByForce, Active, Masters).
-
-do_filter_active(true, Active, _Masters) ->
-    Active;
-do_filter_active(false, Active, []) ->
-    Active;
-do_filter_active(false, Active, Masters) ->
-    mnesia_lib:intersect(Active, Masters).
-    
 disc_load_table(Tab, Reason, ReplyTo) ->
     Done = #loader_done{is_loaded = true,
 			table_name = Tab,
@@ -2030,4 +1997,18 @@ disc_load_table(Tab, Reason, ReplyTo) ->
 	true ->
 	    fatal("Cannot load table ~p from disc: ~p~n", [Tab, Res])
     end.
+
+filter_active(Tab) ->
+    ByForce = val({Tab, load_by_force}),
+    Active = val({Tab, active_replicas}),
+    Masters = mnesia_recover:get_master_nodes(Tab),
+    do_filter_active(ByForce, Active, Masters).
+
+do_filter_active(true, Active, _Masters) ->
+    Active;
+do_filter_active(false, Active, []) ->
+    Active;
+do_filter_active(false, Active, Masters) ->
+    mnesia_lib:intersect(Active, Masters).
+    
 

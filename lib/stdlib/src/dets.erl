@@ -35,6 +35,7 @@
          init_table/2,
 	 init_table/3,
          insert/2,
+         is_compatible_bchunk_format/2,
 	 is_dets_file/1,
          lookup/2,
          match/1,
@@ -369,6 +370,9 @@ member(Tab, Key) ->
 
 next(Tab, Key) ->
     badarg_exit(treq(Tab, {next, Key}), [Tab, Key]).
+
+is_compatible_bchunk_format(Tab, Term) ->
+    badarg(treq(Tab, {is_compatible_bchunk_format, Term}), [Tab, Term]).
 
 is_dets_file(FileName) ->
     case catch read_file_header(FileName, read, false) of
@@ -907,6 +911,10 @@ apply_op(Op, From, Head, N) ->
 	    {H2, Res} = finfo(Head, Tag),
 	    From ! {self(), Res},
 	    H2;
+        {is_compatible_bchunk_format, Term} ->
+            Res = test_bchunk_format(Head, Term),
+            From ! {self(), Res},
+            ok;
 	{internal_open, Args} ->
 	    ?PROFILE(ep:do()),
 	    case do_open_file(Args, Head#head.parent, Head#head.server) of
@@ -1438,6 +1446,18 @@ finfo(H) ->
 
 finfo(H, access) -> {H, H#head.access};
 finfo(H, auto_save) -> {H, H#head.auto_save};
+finfo(H, bchunk_format) -> 
+    case catch write_cache(H) of
+        {H2, []} ->
+            case (H2#head.mod):table_parameters(H2) of
+                undefined = Undef ->
+                    {H2, Undef};
+                Parms ->
+                    {H2, term_to_binary(Parms)}
+            end;
+        HeadError ->
+            HeadError
+    end;
 finfo(H, delayed_write) -> % undocumented
     {H, dets_utils:cache_size(H#head.cache)};
 finfo(H, filename) -> {H, H#head.filename};
@@ -1480,6 +1500,13 @@ finfo(H, _) -> {H, undefined}.
 file_size(Fd, FileName) -> 
     {ok, Pos} = dets_utils:position(Fd, FileName, eof),
     Pos.
+
+test_bchunk_format(_Head, undefined) ->
+    false;
+test_bchunk_format(Head, _Term) when Head#head.version == 8 ->
+    false;
+test_bchunk_format(Head, Term) ->
+    dets_v9:try_bchunk_header(Term, Head) =/= not_ok.
 
 do_open_file([Fname, Verbose], Parent, Server) ->
     case catch fopen(Fname) of

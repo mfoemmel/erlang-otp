@@ -168,7 +168,7 @@ type_check(Obj, Mod) ->
         _ ->
 	    orber:debug_level_print("[~p] CosNotification_Common:type_check(~p); 
 The supplied Object is not or does not inherrit from: ~p", [?LINE, Obj, Mod], ?DEBUG_LEVEL),
-            corba:raise(#'BAD_PARAM'{minor=507, completion_status=?COMPLETED_NO})
+            corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end.
 
 %%------------------------------------------------------------
@@ -1018,7 +1018,7 @@ v_e_q_helper(What, _, _) ->
     %% Not a Property struct.
     orber:debug_level_print("[~p] CosNotification_Common:v_e_q_helper(~p);
 Not a CosNotification_Property struct.", [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=100, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%-------------- QOS HELP FUNCTIONS --------------------------
 %%------------------------------------------------------------

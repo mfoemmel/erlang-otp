@@ -481,7 +481,11 @@ public abstract class AbstractConnection extends Thread {
 	  len = ibuf.read4BE();
 
 	  //  received tick? send tock!
-	  if (len == 0) socket.getOutputStream().write(tock);
+	  if (len == 0)
+	      synchronized (this) {
+		  socket.getOutputStream().write(tock);
+	      }
+
 	} while (len == 0); // tick_loop
 
 	// got a real message (maybe) - read len bytes

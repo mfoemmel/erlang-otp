@@ -43,18 +43,28 @@ CORBA_Environment *CORBA_Environment_alloc(int inbufsz, int outbufsz)
     ev = malloc(sizeof(CORBA_Environment));
 
     if (ev != NULL) {
+
+	/* CORBA */
 	ev->_major = CORBA_NO_EXCEPTION;
+
+	/* Set by user */
 	ev->_fd= -1;
-	ev->_iin = 0;
-	ev->_iout = 0;
-	ev->_inbuf = malloc(inbufsz);
-	ev->_outbuf = malloc(outbufsz);
 	ev->_inbufsz = inbufsz;
+	ev->_inbuf = malloc(inbufsz);
 	ev->_outbufsz = outbufsz;
+	ev->_outbuf = malloc(outbufsz);
 	ev->_memchunk = __OE_MEMCHUNK__;
-	ev->_received = 0;
+	ev->_regname[0] = '\0';
 	ev->_to_pid = NULL;
 	ev->_from_pid = NULL;
+
+	/* Set by client or server */
+	ev->_iin = 0;
+	ev->_iout = 0;
+	ev->_operation[0] = '\0';
+	ev->_received = 0;
+	/* ev->_caller  */
+	/* ev->_unique */
 	ev->_exc_id = NULL;
 	ev->_exc_value = NULL;
 	ev->_ref_counter_1 = 0;
@@ -127,72 +137,44 @@ void CORBA_exc_set(CORBA_Environment *ev,
     }
 }
 
+#define ERLANG_REF_NUM_SIZE  18
+#define ERLANG_REF_MASK      (~(~((unsigned int)0) << ERLANG_REF_NUM_SIZE))
+
 /* Initiating message reference */
 void ic_init_ref(CORBA_Environment *ev, erlang_ref *ref)
 {
 
-    strcpy(ref->node,erl_thisnodename());
-  
+    strcpy(ref->node, erl_thisnodename());
+
     ref->len = 3;
 
-    if(ref->n[0] < 0x3ffff)
-	ev->_ref_counter_1 += 1;
-    else {
-	if(ref->n[1] < 0xffffffff) {
-	    ev->_ref_counter_1 = 0;
-	    ev->_ref_counter_2 += 1;
-	}
-	else {
-	    if(ref->n[2] < 0xffffffff) {
-		ev->_ref_counter_1 = 0;
-		ev->_ref_counter_2 = 0;
-		ev->_ref_counter_3 += 1;
-	    }
-	    else {
-		ev->_ref_counter_1 = 0;
-		ev->_ref_counter_2 = 0;
-		ev->_ref_counter_3 = 0;
-	    }
-	}
-    }
-    
+    ++ev->_ref_counter_1;
+    ev->_ref_counter_1 &= ERLANG_REF_MASK;
+    if (ev->_ref_counter_1 == 0)
+	if (++ev->_ref_counter_2 == 0) 
+	    ++ev->_ref_counter_3;
     ref->n[0] = ev->_ref_counter_1;
     ref->n[1] = ev->_ref_counter_2;
     ref->n[2] = ev->_ref_counter_3;
-
+    
     ref->creation = erl_thiscreation();
-
 }
 
 /* Comparing message references */
 int ic_compare_refs(erlang_ref *ref1, erlang_ref *ref2)
 {
+    int i;
 
-    if(strcmp(ref1->node,ref2->node) != 0) 
+    if(strcmp(ref1->node, ref2->node) != 0) 
 	return -1;
  
     if (ref1->len != ref2->len) 
 	return -1;
- 
-    if (ref1->len == 1) {
-    
-	if (ref1->n[0] != ref2->n[0]) 
-	    return -1;
- 
-	if (ref1->len == 2) {
-      
-	    if (ref1->n[1] != ref2->n[1]) 
-		return -1;
-      
-	    if (ref1->len == 3) {
-	
-		if (ref1->n[2] != ref2->n[2]) 
-		    return -1;
-	
-	    }
-	}
-    }
 
+    for (i = 0; i < ref1->len; i++)
+	if (ref1->n[i] != ref2->n[i])
+	    return -1;
+    
     return 0; 
 }
 

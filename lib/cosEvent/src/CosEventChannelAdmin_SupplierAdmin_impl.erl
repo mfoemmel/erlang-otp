@@ -51,7 +51,7 @@
 %%----------------------------------------------------------------------
 %% Records
 %%----------------------------------------------------------------------
--record(state, {channel, channel_pid, typecheck, pull_interval}).
+-record(state, {channel, channel_pid, typecheck, pull_interval, server_options}).
  
 %%----------------------------------------------------------------------
 %% Macros
@@ -68,10 +68,10 @@
 %%              {stop, Reason}
 %% Description: Initiates the server
 %%----------------------------------------------------------------------
-init([Channel, ChannelPid, TypeCheck, PullInterval]) ->
+init([Channel, ChannelPid, TypeCheck, PullInterval, ServerOpts]) ->
     process_flag(trap_exit, true),
     {ok, #state{channel = Channel, channel_pid = ChannelPid, typecheck = TypeCheck,
-		pull_interval = PullInterval}}.
+		pull_interval = PullInterval, server_options = ServerOpts}}.
  
 %%----------------------------------------------------------------------
 %% Function   : terminate/2
@@ -115,13 +115,15 @@ handle_info(Info, State) ->
 %%----------------------------------------------------------------------
 obtain_push_consumer(OE_This, #state{channel = Channel, 
 				     channel_pid = ChannelPid,
-				     typecheck = TypeCheck} = State) ->
+				     typecheck = TypeCheck,
+				     server_options = ServerOpts} = State) ->
     ?DBG("Starting a new CosEventChannelAdmin_ProxyPushConsumer.~n", []),
     {reply, 
      'CosEventChannelAdmin_ProxyPushConsumer':oe_create_link([OE_This, 
                                                               self(),
                                                               Channel,
-							      TypeCheck]), 
+							      TypeCheck],
+							     ServerOpts), 
      State}.
  
 %%----------------------------------------------------------------------
@@ -133,14 +135,16 @@ obtain_push_consumer(OE_This, #state{channel = Channel,
 obtain_pull_consumer(OE_This, #state{channel = Channel, 
 				     channel_pid = ChannelPid,
 				     typecheck = TypeCheck,
-				     pull_interval= PullInterval} = State) ->
+				     pull_interval= PullInterval,
+				     server_options = ServerOpts} = State) ->
     ?DBG("Starting a new CosEventChannelAdmin_ProxyPullConsumer.~n", []),
     {reply, 
      'CosEventChannelAdmin_ProxyPullConsumer':oe_create_link([OE_This, 
                                                               self(),
                                                               Channel,
 							      TypeCheck,
-							      PullInterval]), 
+							      PullInterval],
+							     ServerOpts), 
      State}.
  
 %%======================================================================

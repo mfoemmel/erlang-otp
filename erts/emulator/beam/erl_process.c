@@ -1175,7 +1175,7 @@ do_exit(Process* p, Eterm reason)
 	case LNK_LINK:
 	    if(is_internal_port(item)) {
 		ix = internal_port_index(item);
-		if (erts_port[ix].status != FREE) {
+		if (! INVALID_PORT(erts_port+ix, item)) {
 		    del_link(find_link(&erts_port[ix].links,LNK_LINK,
 				       p->id,NIL));
 		    do_exit_port(item, p->id, reason);

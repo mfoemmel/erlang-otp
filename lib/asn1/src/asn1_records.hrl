@@ -26,6 +26,7 @@
 -record('SEQUENCE',{pname=false,tablecinf=false,components=[]}).
 -record('SET',{pname=false,sorted=false,tablecinf=false,components=[]}).
 -record('ComponentType',{pos,name,typespec,prop,tags}).
+-record('ObjectClassFieldType',{classname,class,fieldname,type}).
 
 -record(typedef,{checked=false,pos,name,typespec}).
 -record(classdef,{checked=false,pos,name,typespec}).
@@ -41,7 +42,9 @@
 -record(constraint,{c,e}).
 -record('Constraint',{'SingleValue'=no,'SizeConstraint'=no,'ValueRange'=no,'PermittedAlphabet'=no,
 		      'ContainedSubtype'=no, 'TypeConstraint'=no,'InnerSubtyping'=no,e=no,'Other'=no}).
--record(type,{tag=[],def,constraint=[],tablecinf=[]}).
+-record(simpletableattributes,{objectsetname,c_name,c_index,usedclassfield,
+			       uniqueclassfield,valueindex}).
+-record(type,{tag=[],def,constraint=[],tablecinf=[],inlined=no}).
 
 -record(objectclass,{fields=[],syntax}).
 -record('Object',{classname,gen=true,def}).

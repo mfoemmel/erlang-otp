@@ -887,10 +887,14 @@ return_abort(Fun, Args, Reason)  ->
 			      level = Level - 1},
 	    NewTidTs = {Mod, Tid, Ts2},
 	    put(mnesia_activity_state, NewTidTs),
-	    if 
-		record(Reason, cyclic) -> 
+	    case Reason of 
+		#cyclic{} ->
 		    exit({aborted, Reason});
-		true -> 
+		{node_not_running, N} -> 
+		    exit({aborted, Reason});
+		{bad_commit, N}-> 
+		    exit({aborted, Reason});
+		_ -> 
 		    {aborted, mnesia_lib:fix_error(Reason)}
 	    end
     end.
@@ -1901,7 +1905,7 @@ ask_commit(Protocol, Tid, [Head | Tail], DiscNs, RamNs, WaitFor, Local) ->
 	Node == node() ->
 	    ask_commit(Protocol, Tid, Tail, DiscNs, RamNs, WaitFor, Head);
 	true ->
-	    Bin = opt_term_to_binary(Protocol, Head),
+	    Bin = opt_term_to_binary(Protocol, Head, DiscNs++RamNs),
 	    Msg = {ask_commit, Protocol, Tid, Bin, DiscNs, RamNs},
 	    {?MODULE, Node} ! {self(), Msg},
 	    ask_commit(Protocol, Tid, Tail, DiscNs, RamNs, [Node | WaitFor], Local)
@@ -1909,11 +1913,20 @@ ask_commit(Protocol, Tid, [Head | Tail], DiscNs, RamNs, WaitFor, Local) ->
 ask_commit(_Protocol, Tid, [], _DiscNs, _RamNs, WaitFor, Local) ->
     {WaitFor, Local}.
 
-opt_term_to_binary(asym_trans, Head) ->
-    term_to_binary(Head);
-opt_term_to_binary(Protocol, Head) ->
+opt_term_to_binary(asym_trans, Head, Nodes) ->
+    opt_term_to_binary(Nodes, Head);
+opt_term_to_binary(Protocol, Head, Nodes) ->
     Head.
     
+opt_term_to_binary([], Head) ->
+    term_to_binary(Head);
+opt_term_to_binary([H|R], Head) ->
+    case mnesia_monitor:needs_protocol_conversion(H) of
+	true -> Head;
+	false -> 
+	    opt_term_to_binary(R, Head)
+    end.
+	    
 rec_all([Node | Tail], Tid, Res, Pids) ->
     receive
 	{?MODULE, Node, {vote_yes, Tid}} ->

@@ -25,6 +25,7 @@
 #include "erl_process.h"
 #include "erl_db.h"
 #include "beam_catches.h"
+#include "erl_binary.h"
 #if HIPE
 #include "hipe_mode_switch.h"
 #include "hipe_bif0.h"
@@ -272,13 +273,13 @@ offset_mqueue(Process *p, Sint offs, Eterm* low, Eterm* high)
 	    }
             break;
         }
+	mesg = ERL_MESSAGE_TOKEN(mp);
+	if (is_boxed(mesg) && ptr_within(ptr_val(mesg), low, high)) {
+	    ERL_MESSAGE_TOKEN(mp) = offset_ptr(mesg, offs);
+        }
         ASSERT((is_nil(ERL_MESSAGE_TOKEN(mp)) ||
 		is_tuple(ERL_MESSAGE_TOKEN(mp)) ||
 		is_atom(ERL_MESSAGE_TOKEN(mp))));
-	mesg = ERL_MESSAGE_TOKEN(mp);
-	if (is_tuple(mesg) && ptr_within(tuple_val(mesg), low, high)) {
-	    ERL_MESSAGE_TERM(mp) = offset_ptr(mesg, offs);
-        }
         mp = mp->next;
     }
 }
@@ -2234,7 +2235,7 @@ sweep_proc_bins(Process *p, int fullsweep)
                     erts_match_set_free(bptr);
                 } else {
                     tot_bin_allocated -= bptr->orig_size;
-                    sys_free((char*)bptr);
+		    OH_BIN_FREE(bptr);
                 }
             }
             ptr = *prev;

@@ -119,7 +119,8 @@ init([]) ->
 		    {stop, proc_file_system_not_accessible}
 	    end;
 	{unix, Flavor} = OsType when Flavor == freebsd;
-				     Flavor == openbsd ->
+				     Flavor == openbsd;
+				     Flavor == darwin ->
 	    {ok,#state{os_type = OsType}};
 	OsType ->
 	    {stop, {os_type_not_supported,OsType}}
@@ -261,6 +262,19 @@ get_int_measurement(Request, #state{os_type = {unix, freebsd}}) ->
 get_int_measurement(Request, #state{os_type = {unix, openbsd}}) ->
     D = os:cmd("/sbin/sysctl -n vm.loadavg") -- "\n",
     {ok, [L1, L5, L15], _} = io_lib:fread("~f ~f ~f", D),
+    case Request of
+	?avg1  -> sunify(L1);
+	?avg5  -> sunify(L5);
+	?avg15 -> sunify(L15);
+	?ping -> 4711;
+	?nprocs ->
+	    Ps = os:cmd("/bin/ps -ax | /usr/bin/wc -l"),
+	    {ok, [N], _} = io_lib:fread("~d", Ps),
+	    N-1
+    end;
+get_int_measurement(Request, #state{os_type = {unix, darwin}}) ->
+    D = os:cmd("uptime") -- "\n",
+    {ok, [L1, L5, L15], _} = io_lib:fread("~*s~*s~*s~*s~*s~*s~*s~f,~f,~f", D),
     case Request of
 	?avg1  -> sunify(L1);
 	?avg5  -> sunify(L5);

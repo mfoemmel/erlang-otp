@@ -376,7 +376,7 @@ connect_any_pull_consumer(OE_THIS, OE_FROM, State, Client) when ?is_ANY(State) -
 	    {reply, ok, ?set_Client(State, Client)}
     end;
 connect_any_pull_consumer(_, _, _, _) ->
-      corba:raise(#'BAD_OPERATION'{minor=200, completion_status=?COMPLETED_NO}).
+      corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
   
 %%----- CosNotifyChannelAdmin::SequenceProxyPullSupplier ----
 %%----------------------------------------------------------%
@@ -395,7 +395,7 @@ connect_sequence_pull_consumer(OE_THIS, OE_FROM, State, Client) when ?is_SEQUENC
 	    {reply, ok, ?set_Client(State, Client)}
     end;
 connect_sequence_pull_consumer(_, _, _, _) ->
-    corba:raise(#'BAD_OPERATION'{minor=201, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----- CosNotifyChannelAdmin::StructuredProxyPullSupplier --
 %%----------------------------------------------------------%
@@ -414,7 +414,7 @@ connect_structured_pull_consumer(OE_THIS, OE_FROM, State, Client) when ?is_STRUC
 	    {reply, ok, ?set_Client(State, Client)}
     end;
 connect_structured_pull_consumer(_, _, _, _) ->
-    corba:raise(#'BAD_OPERATION'{minor=202, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----- Inherit from CosNotifyChannelAdmin::ProxySupplier ---
 %%----------------------------------------------------------%
@@ -433,7 +433,7 @@ obtain_offered_types(OE_THIS, OE_FROM, State, 'NONE_NOW_UPDATES_ON') ->
 obtain_offered_types(_,_,_,What) ->
     orber:debug_level_print("[~p] PullerSupplier:obtain_offered_types(~p);
 Incorrect enumerant", [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=100, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : validate_event_qos
@@ -551,7 +551,7 @@ remove_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
 remove_filter(_,_,_,What) ->
     orber:debug_level_print("[~p] PullerSupplier:remove_filter(~p); Not an integer", 
 			    [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=200, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : get_filter
@@ -564,7 +564,7 @@ get_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
 get_filter(_,_,_,What) ->
     orber:debug_level_print("[~p] PullerSupplier:get_filter(~p); Not an integer", 
 			    [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=201, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : get_all_filters
@@ -604,7 +604,7 @@ pull(OE_THIS, OE_FROM, State) when ?is_ANY(State) ->
 	    {reply, Event, State}
     end;
 pull(_,_,_) ->
-    corba:raise(#'BAD_OPERATION'{minor=204, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : try_pull
@@ -620,7 +620,7 @@ try_pull(OE_THIS, OE_FROM, State) when ?is_ANY(State) ->
 	    {reply, {Event, Bool}, State}
     end;
 try_pull(_,_,_) ->
-    corba:raise(#'BAD_OPERATION'{minor=205, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----- Inherit from CosNotifyComm::SequencePullSupplier ----
 %%----------------------------------------------------------%
@@ -655,7 +655,7 @@ pull_structured_events(OE_THIS, OE_FROM, State, Max) when ?is_SEQUENCE(State) ->
 	    {noreply, ?set_RespondTo(NewState, {OE_FROM, Max})}
     end;
 pull_structured_events(_,_,_,_) ->
-    corba:raise(#'BAD_OPERATION'{minor=206, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : try_pull_structured_events
@@ -666,7 +666,7 @@ pull_structured_events(_,_,_,_) ->
 try_pull_structured_events(OE_THIS, OE_FROM, State, Max) when ?is_SEQUENCE(State) ->
     {reply, ?get_Events(State, Max), State};
 try_pull_structured_events(_,_,_,_) ->
-    corba:raise(#'BAD_OPERATION'{minor=205, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----- Inherit from CosNotifyComm::StructuredPullSupplier --
 %%----------------------------------------------------------%
@@ -690,7 +690,7 @@ pull_structured_event(OE_THIS, OE_FROM, State) when ?is_STRUCTURED(State) ->
 	    {reply, Event, State}
     end;
 pull_structured_event(_,_,_) ->
-    corba:raise(#'BAD_OPERATION'{minor=207, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : try_pull_structured_event
@@ -707,7 +707,7 @@ try_pull_structured_event(OE_THIS, OE_FROM, State) when ?is_STRUCTURED(State) ->
 	    {reply, {Event, Bool}, State}
     end;
 try_pull_structured_event(_,_,_) ->
-    corba:raise(#'BAD_OPERATION'{minor=208, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 
 %%--------------- LOCAL FUNCTIONS ----------------------------

@@ -28,6 +28,7 @@
 #include "erl_db.h"
 #include "beam_bp.h"
 #include "erl_bits.h"
+#include "erl_binary.h"
 #include "dist.h"
 
 #ifdef HIPE
@@ -136,6 +137,8 @@ void
 erts_short_init(void)
 {
     ErtsSlAllocInit sla_init = ERTS_SL_ALLOC_INIT_DEFAULT_INITIALIZER;
+
+    erts_sl_alloc_binaries = ERTS_SL_ALLOC_BINARIES_DEFAULT;
 
     erts_sl_alloc_init(&sla_init);
     erts_init_definite_alloc(DEFAULT_DEFINITE_ALLOC_BLOCK_SIZE);
@@ -474,6 +477,8 @@ static void usage()
     erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX);
     erl_printf(CERR, "-Smbsd num set max block search depth (sl_alloc)\n");
     erl_printf(CERR, "           valid range is [1-%d]\n", INT_MAX);
+    erl_printf(CERR, "-Sb bool   sl_alloc:ate binaries\n");
+    erl_printf(CERR, "           valid values are true | false\n");
     erl_printf(CERR, "\n\n");
     erl_exit(-1, "");
 }
@@ -498,6 +503,8 @@ erl_start(int argc, char **argv)
     program = argv[0];
 
     /* First find out how to initialize sl_alloc. */
+
+    erts_sl_alloc_binaries = ERTS_SL_ALLOC_BINARIES_DEFAULT;
 
     while (i < argc) {
 	if (strcmp(argv[i], "--") == 0)
@@ -528,6 +535,17 @@ erl_start(int argc, char **argv)
 		    sl_alloc_init.esla = 0;
 		else {
 		    erl_printf(CERR, "bad sl_alloc enable: %s\n", arg);
+		    usage();
+		}
+	    }
+	    else if (has_prefix("b", argv[i] + 2)) {
+		arg = get_arg(argv[i]+3, argv[i+1], &i);
+		if (strcmp(arg, "true") == 0)
+		    erts_sl_alloc_binaries = 1;
+		else if (strcmp(arg, "false") == 0)
+		    erts_sl_alloc_binaries = 0;
+		else {
+		    erl_printf(CERR, "bad sl_alloc binaries: %s\n", arg);
 		    usage();
 		}
 	    }

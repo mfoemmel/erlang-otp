@@ -163,7 +163,8 @@ start_channel() ->
     start_channel(?DEFAULT_OPTIONS).
 
 start_channel(Options) when list(Options) ->
-    'oe_CosEventComm_Channel':oe_create(Options);
+    ServerOpts = get_option(?SERVER, Options),
+    'oe_CosEventComm_Channel':oe_create([Options, ServerOpts], ServerOpts);
 start_channel(Options) ->
     orber:debug_level_print("[~p] cosEventApp:start_channel(~p); 
 Options not correct.", [?LINE, Options], ?DEBUG_LEVEL),
@@ -179,7 +180,8 @@ start_channel_link() ->
     start_channel_link(?DEFAULT_OPTIONS).
 
 start_channel_link(Options) when list(Options) ->
-    'oe_CosEventComm_Channel':oe_create_link(Options);
+    ServerOpts = get_option(?SERVER, Options),
+    'oe_CosEventComm_Channel':oe_create_link([Options, ServerOpts], ServerOpts);
 start_channel_link(Options) ->
     orber:debug_level_print("[~p] cosEventApp:start_channel_link(~p); 
 Options not correct.", [?LINE, Options], ?DEBUG_LEVEL),
@@ -260,7 +262,7 @@ type_check(Obj, Mod, _) ->
         _ ->
 	    orber:debug_level_print("[~p] cosEventApp:type_check(~p) failed; Should be ~p", 
 				    [?LINE, Obj, Mod], ?DEBUG_LEVEL),
-	    corba:raise(#'BAD_PARAM'{minor=700, completion_status=?COMPLETED_NO})
+	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end.
 
 %%-----------------------------------------------------------%

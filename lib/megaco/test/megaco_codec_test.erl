@@ -341,38 +341,6 @@
 	 per_bin_msg24/1, 
 	 per_bin_msg25/1, 
 
-% 	 per_bin_opt/1,
-% 	 per_bin_opt_msg1a/1, per_bin_opt_msg1b/1, 
-% 	 per_bin_opt_msg2/1, 
-% 	 per_bin_opt_msg3/1, 
-% 	 per_bin_opt_msg4/1, 
-% 	 per_bin_opt_msg5/1, 
-% 	 per_bin_opt_msg6a/1, per_bin_opt_msg6b/1, 
-% 	 per_bin_opt_msg7/1, 
-% 	 per_bin_opt_msg8a/1, per_bin_opt_msg8b/1, 
-% 	 per_bin_opt_msg9/1, 
-% 	 per_bin_opt_msg10/1, 
-% 	 per_bin_opt_msg11/1, 
-% 	 per_bin_opt_msg12/1, 
-% 	 per_bin_opt_msg13/1, 
-% 	 per_bin_opt_msg14/1, 
-% 	 per_bin_opt_msg15/1, 
-% 	 per_bin_opt_msg16/1, 
-% 	 per_bin_opt_msg17/1, 
-% 	 per_bin_opt_msg18/1, 
-% 	 per_bin_opt_msg19/1, 
-% 	 per_bin_opt_msg20/1, 
-% 	 per_bin_opt_msg21/1, 
-% 	 per_bin_opt_msg22a/1, 
-% 	 per_bin_opt_msg22b/1, 
-% 	 per_bin_opt_msg22c/1, 
-% 	 per_bin_opt_msg22d/1, 
-% 	 per_bin_opt_msg22e/1, 
-% 	 per_bin_opt_msg22f/1, 
-% 	 per_bin_opt_msg23/1, 
-% 	 per_bin_opt_msg24/1, 
-% 	 per_bin_opt_msg25/1, 
-
 	 tickets/1, 
 
 	 compact_tickets/1, 
@@ -387,6 +355,12 @@
 	 compact_otp4299_msg2/1, 
 	 compact_otp4359_msg1/1, 
 
+	 pretty_tickets/1, 
+	 pretty_otp4632_msg1/1, 
+	 pretty_otp4632_msg2/1, 
+	 pretty_otp4632_msg3/1, 
+	 pretty_otp4632_msg4/1, 
+
 
 	 time_test/1,
 	 pretty_time_test/1,
@@ -398,7 +372,6 @@
 	 ber_bin_time_test/1,
 	 per_time_test/1,
 	 per_bin_time_test/1,
-% 	 per_bin_opt_time_test/1,
 	 erl_dist_time_test/1,
 	 erl_dist_compressed_time_test/1,
 
@@ -407,6 +380,8 @@
 -export([do_time_tester/2, do_time_tester_loop/3]).
 
 -export([flex_scanner_handler/1]).
+
+-export([display_text_messages/0]).
 
 
 %% ----
@@ -429,6 +404,38 @@
 -define(A4445, ["11111111", "00000000", "11111111"]).
 -define(A5555, ["11111111", "11111111", "00000000"]).
 -define(A5556, ["11111111", "11111111", "11111111"]).
+
+
+%% ----
+
+display_text_messages() ->
+    display_text_messages(do_time_test_msgs()).
+
+
+display_text_messages([]) ->
+    ok;
+display_text_messages([{Name, Msg}|Msgs]) ->
+    display_text_message(Name, Msg),
+    display_text_messages(Msgs).
+    
+
+display_text_message(Name, Msg) ->
+    io:format("~n(Erlang) message ~p:~n~p~n", [Name, Msg]),
+    case (catch megaco_pretty_text_encoder:encode_message([],Msg)) of
+	{'EXIT', Reason} ->
+	    io:format("~nPretty encoded: failed~n", []);
+	{ok, Pretty} ->
+	    io:format("~nPretty encoded:~n~s~n", [binary_to_list(Pretty)])
+    end,
+    case (catch megaco_compact_text_encoder:encode_message([],Msg)) of
+	{'EXIT', _Reason} ->
+	    io:format("~nCompact encoded: failed~n", []);
+	{ok, Compact} ->
+	    io:format("~nCompact encoded:~n~s~n", [binary_to_list(Compact)])
+    end.
+
+
+%% ----
 
 
 expand(RootCase) ->
@@ -1435,7 +1442,8 @@ per_bin(suite) ->
 
 tickets(suite) ->
     [
-     compact_tickets
+     compact_tickets,
+     pretty_tickets
     ].
 
 
@@ -1451,6 +1459,14 @@ compact_tickets(suite) ->
      compact_otp4299_msg1,
      compact_otp4299_msg2,
      compact_otp4359_msg1
+    ].
+
+pretty_tickets(suite) ->
+    [
+     pretty_otp4632_msg1,
+     pretty_otp4632_msg2,
+     pretty_otp4632_msg3,
+     pretty_otp4632_msg4
     ].
 
 
@@ -4446,6 +4462,114 @@ compact_otp4359_msg() ->
     M.
 
 
+%% --------------------------------------------------------------
+%% 
+%% 
+pretty_otp4632_msg1(suite) ->
+    [];
+pretty_otp4632_msg1(Config) when list(Config) ->
+    d("pretty_otp4632_msg1 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Msg0 = pretty_otp4632_msg1(),
+    case e(megaco_pretty_text_encoder, [], Msg0) of
+	{ok, BinMsg} when binary(BinMsg) ->
+	    {ok, Msg1} = d(megaco_pretty_text_encoder, [], BinMsg),
+	    {equal, _} = chk_MegacoMessage(Msg0,Msg1),
+	    Msg0 = Msg1,
+	    ok;
+	Else ->
+	    t("pretty_otp4632_msg1 -> "
+	      "~n   Else: ~w", [Else]),
+	    exit({unexpected_decode_result, Else})
+    end.
+
+pretty_otp4632_msg1() ->
+    msg4(?MG1_MID_NO_PORT, "901 mg col boot").
+
+pretty_otp4632_msg2(suite) ->
+    [];
+pretty_otp4632_msg2(Config) when list(Config) ->
+    d("pretty_otp4632_msg2 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Msg0 = pretty_otp4632_msg2(),
+    case e(megaco_pretty_text_encoder, [], Msg0) of
+	{ok, BinMsg} when binary(BinMsg) ->
+	    {ok, Msg1} = d(megaco_pretty_text_encoder, [], BinMsg),
+	    {equal, _} = chk_MegacoMessage(Msg0,Msg1),
+	    Msg0 = Msg1,
+	    ok;
+	Else ->
+	    t("pretty_otp4632_msg2 -> "
+	      "~n   Else: ~w", [Else]),
+	    exit({unexpected_decode_result, Else})
+    end.
+
+pretty_otp4632_msg2() ->
+    msg4(?MG1_MID_NO_PORT, "901").
+
+
+pretty_otp4632_msg3(suite) ->
+    [];
+pretty_otp4632_msg3(Config) when list(Config) ->
+    d("pretty_otp4632_msg3 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Msg0 = pretty_otp4632_msg3(),
+    BinMsg0 = list_to_binary(Msg0),
+    case d(megaco_pretty_text_encoder, [], BinMsg0) of
+	{ok, Msg} when record(Msg, 'MegacoMessage') ->
+	    {ok, BinMsg1} = e(megaco_pretty_text_encoder, [], Msg),
+	    Msg1 = binary_to_list(BinMsg1),
+	    io:format("Msg1:~n~s~n", [Msg1]),
+	    Msg0 = Msg1,
+	    ok;
+	Else ->
+	    t("pretty_otp4632_msg3 -> "
+	      "~n   Else: ~w", [Else]),
+	    exit({unexpected_decode_result, Else})
+    end.
+
+pretty_otp4632_msg3() ->
+    M = "MEGACO/1 [124.124.124.222]\nTransaction = 9998 {\n\tContext = - {\n\t\tServiceChange = root {\n\t\t\tServices {\n\t\t\t\tMethod = Restart,\n\t\t\t\tServiceChangeAddress = 55555,\n\t\t\t\tProfile = resgw/1,\n\t\t\t\tReason = \"901\"\n\t\t\t}\n\t\t}\n\t}\n}",
+    M.
+
+
+pretty_otp4632_msg4(suite) ->
+    [];
+pretty_otp4632_msg4(Config) when list(Config) ->
+    d("pretty_otp4632_msg4 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    Msg0 = pretty_otp4632_msg4(),
+    BinMsg0 = list_to_binary(Msg0),
+    case d(megaco_pretty_text_encoder, [], BinMsg0) of
+	{ok, Msg} when record(Msg, 'MegacoMessage') ->
+	    {ok, BinMsg1} = e(megaco_pretty_text_encoder, [], Msg),
+	    Msg1 = binary_to_list(BinMsg1),
+	    %% io:format("Msg1:~n~s~n", [Msg1]),
+	    pretty_otp4632_msg4_chk(Msg0,Msg1);
+	Else ->
+	    t("pretty_otp4632_msg4 -> "
+	      "~n   Else: ~w", [Else]),
+	    exit({unexpected_decode_result, Else})
+    end.
+
+
+pretty_otp4632_msg4() ->
+    M = "MEGACO/1 [124.124.124.222]\nTransaction = 9998 {\n\tContext = - {\n\t\tServiceChange = root {\n\t\t\tServices {\n\t\t\t\tMethod = Restart,\n\t\t\t\tServiceChangeAddress = 55555,\n\t\t\t\tProfile = resgw/1,\n\t\t\t\tReason = 901\n\t\t\t}\n\t\t}\n\t}\n}",
+    M.
+
+
+pretty_otp4632_msg4_chk([], []) ->
+    exit(messages_not_eq); 
+pretty_otp4632_msg4_chk([], Rest1) ->
+    exit({messages_not_eq1, Rest1}); 
+pretty_otp4632_msg4_chk(Rest0, []) ->
+    exit({messages_not_eq0, Rest0}); 
+pretty_otp4632_msg4_chk([$R,$e,$a,$s,$o,$n,$ ,$=,$ ,$9,$0,$1|Rest0],
+			[$R,$e,$a,$s,$o,$n,$ ,$=,$ ,$",$9,$0,$1,$"|Rest1]) ->
+    ok;
+pretty_otp4632_msg4_chk([_|Rest0], [_|Rest1]) ->
+    pretty_otp4632_msg4_chk(Rest0,Rest1).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 pretty_time_test(suite) ->
@@ -4911,6 +5035,7 @@ e(Codec,Config,Msg) ->
 %     d("e -> entry with"
 %       "~n   Codec:  ~p"
 %       "~n   Config: ~p", [Codec, Config]),
+    %% io:format("Msg: ~n~p~n", [Msg]),
     case (catch apply(Codec,encode_message,[Config,Msg])) of
 	{ok,EncodedMsg} when binary(EncodedMsg) ->
 %  	    t("e -> decode ok, size: ~p"
@@ -4934,6 +5059,7 @@ d(Codec, Config, BinMsg) when binary(BinMsg) ->
 %     d("d -> entry with"
 %       "~n   Codec:  ~p"
 %       "~n   Config: ~p", [Codec, Config]),
+    %% io:format("Msg: ~n~s~n", [binary_to_list(BinMsg)]),
     case (catch apply(Codec,decode_message,[Config, BinMsg])) of
 	{ok,DecodedMsg} ->
 % 	    t("d -> ~n   ~p",[DecodedMsg]),
@@ -5061,12 +5187,11 @@ msg3(Mid) ->
 %% --------------------------
 
 msg4() ->
-    msg4(?MG1_MID_NO_PORT).
-msg4(Mid) ->
+    msg4(?MG1_MID_NO_PORT, "901 mg col boot").
+msg4(Mid, Reason) when list(Reason) ->
     Address = {portNumber, ?DEFAULT_PORT},
     Profile = cre_serviceChangeProf("resgw",1),
-    Parm    = cre_serviceChangeParm(restart,Address,
-				    ["901 mg col boot"],Profile),
+    Parm    = cre_serviceChangeParm(restart,Address,[Reason],Profile),
     Req     = cre_serviceChangeReq([?megaco_root_termination_id],Parm),
     CmdReq  = cre_commandReq({serviceChangeReq, Req}),
     msg_request(Mid, 9998, ?megaco_null_context_id, [CmdReq]).

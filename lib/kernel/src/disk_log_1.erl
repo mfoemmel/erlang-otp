@@ -36,23 +36,31 @@
 -export([is_head/1]).
 -export([position/3, truncate_at/3, fwrite/4, fclose/2]).
 
+-compile({inline,[{scan_f2,7}]}).
+
 -import(lists, [concat/1, reverse/1, sum/1]).
 
 -include("disk_log.hrl").
 -include_lib("kernel/include/file.hrl").
 
-%% At the head of a LOG file we have
-%% [?LOGMAGIC, ?OPENED | ?CLOSED]
-%% Otherwise it's not a LOG file.
-
-%% Following that, (the head), comes the logged items/terms
-%% each logged item looks like [4_byte_size, MAGICHEAD, term_as_binary ...]
-
-%%% There are three formats of wrap log files (so far). Only the size
-%%% file and the index file differ between versions.
+%%% At the head of a LOG file we have [?LOGMAGIC, ?OPENED | ?CLOSED].
+%%% Otherwise it's not a LOG file. Following that, the head, come the
+%%% logged items.
+%%%
+%%% There are four formats of wrap log files (so far). Only the size
+%%% file and the index file differ between versions between the first
+%%% three version. The fourth version 2(a), has some protection
+%%% against damaged item sizes.
 %%% Version 0: no "siz" file
 %%% Version 1: "siz" file, 4 byte sizes
-%%% Version 2: 8 byte sizes (large files support)
+%%% Version 2: 8 byte sizes (support for large files)
+%%% Version 2(a): Change of the format of logged items:
+%%%               if the size of a term binary is greater than or equal to
+%%%               ?MIN_MD5_TERM, a logged item looks like
+%%%               <<Size:32, ?BIGMAGICHEAD:32, MD5:128, Term/binary>>,
+%%%               otherwise <<Size:32, ?BIGMAGICHEAD:32, Term/binary>>.
+%%% This version of disk_log_1 uses Version 1 for written terms and
+%%% recognizes Version 2(a) when reading terms.
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -107,58 +115,80 @@ truncate(FdC, FileName, Head) ->
     end.
 
 %% -> {NewFdC, Reply}, Reply = {Cont, Binaries} | {error, Reason} | eof
-chunk(FdC, FileName, Pos, {B, true}, N) ->
-    case handle_chunk(B, FdC, FileName, Pos, N, []) of
-	{NewFdC, {_Cont, []}} ->
-	    chunk(NewFdC, FileName, Pos, B, N);
-	Else ->
-	    Else
-    end;
-chunk(FdC, FileName, Pos, B, N) ->
-    case read_chunk(FdC, FileName, Pos, ?MAX_CHUNK_SIZE) of
-	{NewFdC, {ok, Bin}} ->
-	    NewPos = Pos + size(Bin),
-            NewBin = list_to_binary([B,Bin]),
-	    handle_chunk(NewBin, NewFdC, FileName, NewPos, N, []);
-	{NewFdC, eof} when 0 == size(B) ->
-	    {NewFdC, eof};
-	{NewFdC, eof} ->
+chunk(FdC, FileName, Pos, B, N) when binary(B) ->
+    true = size(B) >= ?HEADERSZ,
+    do_handle_chunk(FdC, FileName, Pos, B, N);
+chunk(FdC, FileName, Pos, NoBytes, N) ->
+    MaxNoBytes = case NoBytes of
+                     [] -> ?MAX_CHUNK_SIZE;
+                     _ -> lists:max([NoBytes, ?MAX_CHUNK_SIZE])
+                 end,
+    case read_chunk(FdC, FileName, Pos, MaxNoBytes) of
+	{NewFdC, {ok, Bin}} when size(Bin) < ?HEADERSZ ->
 	    {NewFdC, {error, {corrupt_log_file, FileName}}};
-	Other -> 
+	{NewFdC, {ok, Bin}} when NoBytes == []; size(Bin) >= NoBytes ->
+	    NewPos = Pos + size(Bin),
+            do_handle_chunk(NewFdC, FileName, NewPos, Bin, N);
+	{NewFdC, {ok, _Bin}} ->
+	    {NewFdC, {error, {corrupt_log_file, FileName}}};
+	{NewFdC, eof} when integer(NoBytes) -> % "cannot happen"
+	    {NewFdC, {error, {corrupt_log_file, FileName}}};
+	Other -> % eof or error
 	    Other
     end.
 
-%% Format of a log item is: [Size, Magic, binary_term]
+do_handle_chunk(FdC, FileName, Pos, B, N) ->
+    case handle_chunk(B, Pos, N, []) of
+        corrupt ->
+            {FdC, {error, {corrupt_log_file, FileName}}};
+        {C, []} ->
+            chunk(FdC, FileName, C#continuation.pos, C#continuation.b, N);
+        C_Ack ->
+            {FdC, C_Ack}
+    end.
 
-handle_chunk(B, FdC, _FileName, Pos, 0, Ack) ->
-    {FdC, {#continuation{pos = Pos, b = {B, true}}, Ack}};
-handle_chunk(<<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8, Tail/binary>>, 
-	     FdC, FileName, Pos, N, Ack) ->
+handle_chunk(B, Pos, 0, Ack) when size(B) >= ?HEADERSZ ->
+    {#continuation{pos = Pos, b = B}, Ack};
+handle_chunk(B= <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8, 
+             Tail/binary>>, Pos, N, Ack) when Size < ?MIN_MD5_TERM ->
     case Tail of
 	<<BinTerm:Size/binary, Tail2/binary>> ->
 	    %% The client calls binary_to_term/1.
-	    handle_chunk(Tail2, FdC, FileName, Pos, N-1, [BinTerm | Ack]);
+	    handle_chunk(Tail2, Pos, N-1, [BinTerm | Ack]);
 	_ ->
-	    %% We read the whole thing into one binary.
-	    Pos1 = Pos - size(Tail) - ?HEADERSZ,
 	    BytesToRead = Size + ?HEADERSZ,
-            case read_chunk(FdC, FileName, Pos1, BytesToRead) of
-		{NewFdC, {ok, Bin}} when size(Bin) == BytesToRead ->
-		    NewPos = Pos1 + BytesToRead,
-		    handle_chunk(Bin, NewFdC, FileName, NewPos, N, Ack);
-		{NewFdC, {ok, _Bin}} -> % when size(_Bin) < BytesToRead
-		    {NewFdC, {error, {corrupt_log_file, FileName}}};
-		{NewFdC, eof} ->
-		    %% "Cannot happen"
-		    {NewFdC, {error, {corrupt_log_file, FileName}}};
-		Other -> 
-		    Other
-	    end
+            {#continuation{pos = Pos - size(B), b = BytesToRead}, Ack}
     end;
-handle_chunk(<<_:?HEADERSZ/unit:8,_/binary>>, FdC, FileName, _Pos, _N, _Ack) ->
-    {FdC, {error, {corrupt_log_file, FileName}}};
-handle_chunk(B, FdC, _FileName, Pos, _N, Ack) ->
-    {FdC, {#continuation{pos = Pos, b = B}, Ack}}.
+handle_chunk(B= <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8, 
+             Tail/binary>>, Pos, _N, Ack) -> % when Size >= ?MIN_MD5_TERM
+    MD5 = erlang:md5(<<Size:?SIZESZ/unit:8>>),
+    case Tail of
+        %% The requested object is always bigger than a chunk.
+        <<MD5:16/binary, Bin:Size/binary>> ->
+            {#continuation{pos = Pos, b = []}, [Bin | Ack]};
+        <<MD5:16/binary, _/binary>> ->
+            BytesToRead = Size + ?HEADERSZ + 16,
+            {#continuation{pos = Pos - size(B), b = BytesToRead}, Ack};
+        _ when size(Tail) >= 16 ->
+            corrupt;
+        _ ->
+            {#continuation{pos = Pos - size(B), b = []}, Ack}
+    end;
+handle_chunk(B= <<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8, Tail/binary>>,
+	     Pos, N, Ack) ->
+    %% Version 2, before 2(a).
+    case Tail of
+	<<BinTerm:Size/binary, Tail2/binary>> ->
+	    handle_chunk(Tail2, Pos, N-1, [BinTerm | Ack]);
+	_ ->
+	    %% We read the whole thing into one binary, even if Size is huge.
+	    BytesToRead = Size + ?HEADERSZ,
+            {#continuation{pos = Pos - size(B), b = BytesToRead}, Ack}
+    end;
+handle_chunk(B, _Pos, _N, _Ack) when size(B) >= ?HEADERSZ ->
+    corrupt;
+handle_chunk(B, Pos, _N, Ack) ->
+    {#continuation{pos = Pos-size(B), b = []}, Ack}.
 
 read_chunk(FdC, FileName, Pos, MaxBytes) ->
     {FdC1, R} = pread(FdC, FileName, Pos + ?HEADSZ, MaxBytes),
@@ -180,65 +210,82 @@ chunk_read_only(Fd, FileName, Pos, B, N) ->
     {_NFdC, Reply} = do_chunk_read_only(FdC, FileName, Pos, B, N),
     Reply.
 
-do_chunk_read_only(FdC, FileName, Pos, {B, true}, N) ->
-    case handle_chunk_ro(B, FdC, FileName, Pos, N, [], 0) of
-	{NewFdC, {_Cont, [], 0}} ->
-	    do_chunk_read_only(NewFdC, FileName, Pos, B, N);
-	Else ->
-	    Else
-    end;
-do_chunk_read_only(FdC, FileName, Pos, B, N) ->
-    case read_chunk_ro(FdC, FileName, Pos, ?MAX_CHUNK_SIZE) of
-	{NewFdC, {ok, Bin}}  ->
+do_chunk_read_only(FdC, FileName, Pos, B, N) when binary(B) ->
+    true = size(B) >= ?HEADERSZ,
+    do_handle_chunk_ro(FdC, FileName, Pos, B, N);
+do_chunk_read_only(FdC, FileName, Pos, NoBytes, N) ->
+    MaxNoBytes = case NoBytes of
+                     [] -> ?MAX_CHUNK_SIZE;
+                     _ -> lists:max([NoBytes, ?MAX_CHUNK_SIZE])
+                 end,
+    case read_chunk_ro(FdC, FileName, Pos, MaxNoBytes) of
+	{NewFdC, {ok, Bin}} when size(Bin) < ?HEADERSZ ->
+            %% FIXME. Inte längre någon test på denna.
+	    NewCont = #continuation{pos = Pos+size(Bin), b = []},
+	    {NewFdC, {NewCont, [], size(Bin)}};
+	{NewFdC, {ok, Bin}} when NoBytes == []; size(Bin) >= NoBytes ->
 	    NewPos = Pos + size(Bin),
-	    NewBin = list_to_binary([B, Bin]),
-	    handle_chunk_ro(NewBin, NewFdC, FileName, NewPos, N, [], 0);
-	{NewFdC, eof} when 0 == size(B) ->
-	    {NewFdC, eof};
-	{NewFdC, eof} ->
-	    NewCont = #continuation{pos = Pos, b = <<>>},
-	    {NewFdC, {NewCont, [], size(B)}};
+	    do_handle_chunk_ro(NewFdC, FileName, NewPos, Bin, N);
+	{NewFdC, {ok, Bin}} ->
+	    NewCont = #continuation{pos = Pos+size(Bin), b = []},
+	    {NewFdC, {NewCont, [], size(Bin)-?HEADERSZ}};
+	{NewFdC, eof} when integer(NoBytes) -> % "cannot happen"
+	    {NewFdC, eof}; % what else?
 	Other -> 
 	    Other
     end.
 
-%% Format of a log item is: [Size, Magic, binary_term]
+do_handle_chunk_ro(FdC, FileName, Pos, B, N) ->
+    case handle_chunk_ro(B, Pos, N, [], 0) of
+        {C, [], 0} ->
+            #continuation{pos = NewPos, b = NoBytes} = C,
+            do_chunk_read_only(FdC, FileName, NewPos, NoBytes, N);
+        C_Ack_Bad ->
+            {FdC, C_Ack_Bad}
+    end.
 
-handle_chunk_ro(B, FdC, _FileName, Pos, 0, Ack, Bad) ->
-    Cont = #continuation{pos = Pos, b = {B, true}},
-    {FdC, {Cont, Ack, Bad}};
-handle_chunk_ro(B= <<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8,
-		     Tail/binary>>, FdC, FileName, Pos, N, Ack, Bad) ->
+handle_chunk_ro(B, Pos, 0, Ack, Bad) when size(B) >= ?HEADERSZ ->
+    {#continuation{pos = Pos, b = B}, Ack, Bad};
+handle_chunk_ro(B= <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8,
+                Tail/binary>>, Pos, N, Ack, Bad) when Size < ?MIN_MD5_TERM ->
     case Tail of
 	<<BinTerm:Size/binary, Tail2/binary>> ->
-	    NewAck = [BinTerm | Ack],
-	    handle_chunk_ro(Tail2, FdC, FileName, Pos, N-1, NewAck, Bad);
+	    handle_chunk_ro(Tail2, Pos, N-1, [BinTerm | Ack], Bad);
 	_ ->
-	    %% We read the whole thing into one binary.
-	    TailSize = size(Tail),
-	    Pos1 = Pos - TailSize - ?HEADERSZ,
 	    BytesToRead = Size + ?HEADERSZ,
-            case read_chunk_ro(FdC, FileName, Pos1, BytesToRead) of
-		{NewFdC, {ok, Bin}} when size(Bin) == BytesToRead ->
-		    NewPos = Pos1 + BytesToRead,
-		    handle_chunk_ro(Bin, NewFdC, FileName, NewPos, N, Ack,Bad);
-		{NewFdC, {ok, _Bin}} -> % when size(_Bin) < BytesToRead
-		    <<_:8, B2/binary>> = B,
-		    handle_chunk_ro(B2, NewFdC, FileName, Pos, N-1, Ack,Bad+1);
-		{NewFdC, eof} ->
-		    %% "Cannot happen"
-		    NewCont = #continuation{pos = Pos1, b = <<>>},
-		    {NewFdC, {NewCont, Ack, Bad + TailSize+?HEADERSZ}};
-		Other -> 
-		    Other
-	    end
+            {#continuation{pos = Pos - size(B), b = BytesToRead}, Ack, Bad}
     end;
-handle_chunk_ro(B= <<_:?HEADERSZ/unit:8, _/binary>>, 
-		FdC, FileName, Pos, N, Ack, Bad) ->
+handle_chunk_ro(B= <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8, 
+                Tail/binary>>, Pos, N, Ack, Bad) -> % when Size>=?MIN_MD5_TERM
+    MD5 = erlang:md5(<<Size:?SIZESZ/unit:8>>),
+    case Tail of
+        <<MD5:16/binary, Bin:Size/binary>> ->
+            %% The requested object is always bigger than a chunk.
+            {#continuation{pos = Pos, b = []}, [Bin | Ack], Bad};
+        <<MD5:16/binary, _/binary>> ->
+            BytesToRead = Size + ?HEADERSZ + 16,
+            {#continuation{pos = Pos - size(B), b = BytesToRead}, Ack, Bad};
+        <<_BadMD5:16/binary, _:1/unit:8, Tail2/binary>> ->
+            handle_chunk_ro(Tail2, Pos, N-1, Ack, Bad+1);
+        _ ->
+            {#continuation{pos = Pos - size(B), b = []}, Ack, Bad}
+    end;
+handle_chunk_ro(B= <<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8,
+                Tail/binary>>, Pos, N, Ack, Bad) ->
+    %% Version 2, before 2(a).
+    case Tail of
+	<<BinTerm:Size/binary, Tail2/binary>> ->
+	    handle_chunk_ro(Tail2, Pos, N-1, [BinTerm | Ack], Bad);
+	_ ->
+	    %% We read the whole thing into one binary, even if Size is huge.
+	    BytesToRead = Size + ?HEADERSZ,
+            {#continuation{pos = Pos - size(B), b = BytesToRead}, Ack, Bad}
+    end;
+handle_chunk_ro(B, Pos, N, Ack, Bad) when size(B) >= ?HEADERSZ ->
     <<_:1/unit:8, B2/binary>> = B,
-    handle_chunk_ro(B2, FdC, FileName, Pos, N-1, Ack, Bad+1);
-handle_chunk_ro(B, FdC, _FileName, Pos, _N, Ack, Bad) ->
-    {FdC, {#continuation{pos = Pos, b = B}, Ack, Bad}}.
+    handle_chunk_ro(B2, Pos, N-1, Ack, Bad+1);
+handle_chunk_ro(B, Pos, _N, Ack, Bad) ->
+    {#continuation{pos = Pos-size(B), b = []}, Ack, Bad}.
 
 read_chunk_ro(FdC, FileName, Pos, MaxBytes) ->
     pread(FdC, FileName, Pos + ?HEADSZ, MaxBytes).
@@ -440,45 +487,74 @@ repair(In, File) ->
     error_logger:info_msg("disk_log: repairing ~p ...\n", [File]),
     Tmp = add_ext(File, "TMP"),
     {ok, {_Alloc, Out, {0, _}, _FileSize}} = new_int_file(Tmp, none),
-    scan_f_read(<<>>, In, Out, File, Tmp, ?MAX_CHUNK_SIZE, 0, 0).
+    FSz = file_size(File),
+    scan_f_read(<<>>, In, Out, File, FSz, Tmp, ?MAX_CHUNK_SIZE, 0, 0).
 
-scan_f_read(B, In, Out, File, Tmp, MaxBytes, No, Bad) ->
+scan_f_read(B, In, Out, File, FSz, Tmp, MaxBytes, No, Bad) ->
     case file:read(In, MaxBytes) of
-	eof when 0 == size(B) ->
-	    done_scan(In, Out, Tmp, File, No, Bad);
-	eof ->
-	    <<_:8, B2/binary>> = B,	    
-	    scan_f(B2, In, Out, File, Tmp, No, Bad+1);
-	{ok, Bin}  ->
-	    scan_f(list_to_binary([B, Bin]), In, Out, File, Tmp, No, Bad);
-	Error -> 
-	    repair_err(In, Out, Tmp, File, Error)
+        eof ->
+            done_scan(In, Out, Tmp, File, No, Bad+size(B));
+        {ok, Bin}  ->
+            NewBin = list_to_binary([B, Bin]),
+            {NB, NMax, Ack, NNo, NBad} =
+                scan_f(NewBin, FSz, [], No, Bad),
+            case log(Out, Tmp, lists:reverse(Ack)) of
+                {ok, _Size, NewOut} ->
+                    scan_f_read(NB, In, NewOut, File, FSz, Tmp, 
+                                NMax, NNo, NBad);
+                {{error, {file_error, _Filename, Error}}, NewOut} ->
+                    repair_err(In, NewOut, Tmp, File, {error, Error})
+            end;
+        Error -> 
+            repair_err(In, Out, Tmp, File, Error)
     end.
 
-scan_f(B = <<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8, Tail/binary>>, 
-       In, Out, File, Tmp, No, Bad) ->
+scan_f(B = <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8, Tail/binary>>,
+       FSz, Ack, No, Bad) when Size < ?MIN_MD5_TERM ->
+    scan_f2(B, FSz, Ack, No, Bad, Size, Tail);
+scan_f(B = <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8, Tail/binary>>,
+       FSz, Ack, No, Bad) -> % when Size >= ?MIN_MD5_TERM
+    MD5 = erlang:md5(<<Size:?SIZESZ/unit:8>>),
     case Tail of
-	<<BinTerm:Size/binary, Tail2/binary>> ->
-	    case catch binary_to_term(BinTerm) of
-		{'EXIT', _} ->
-		    <<_:8, B2/binary>> = B,
-		    scan_f(B2, In, Out, File, Tmp, No, Bad+1);
-		_Term ->
-		    case log(Out, Tmp, [BinTerm]) of
-			{ok, _Size, NewOut} ->
-			    scan_f(Tail2, In, NewOut, File, Tmp, No+1, Bad);
-			{{error, {file_error, _Filename, Error}}, NewOut} ->
-			    repair_err(In, NewOut, Tmp, File, {error, Error})
-		    end
-	    end;
-	_ ->
-	    scan_f_read(B, In, Out, File, Tmp, Size-size(Tail), No, Bad)
+        <<MD5:16/binary, BinTerm:Size/binary, Tail2/binary>> ->
+            case catch binary_to_term(BinTerm) of
+                {'EXIT', _} ->
+                    scan_f(Tail2, FSz, Ack, No, Bad+Size);
+                _Term ->
+                    scan_f(Tail2, FSz, [BinTerm | Ack], No+1, Bad)
+            end;
+        <<MD5:16/binary, _/binary>> ->
+            {B, Size-size(Tail)+16, Ack, No, Bad};
+        _ when size(Tail) < 16 ->
+            {B, Size-size(Tail)+16, Ack, No, Bad};
+        _ ->
+            <<_:8, B2/binary>> = B,
+            scan_f(B2, FSz, Ack, No, Bad+1)
     end;
-scan_f(B = <<_:?HEADERSZ/unit:8, _/binary>>, In, Out, File, Tmp, No, Bad) ->
+scan_f(B = <<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8, Tail/binary>>, 
+       FSz, Ack, No, Bad) when Size =< FSz ->
+    %% Since the file is not compressed, the item size cannot exceed
+    %% the file size.
+    scan_f2(B, FSz, Ack, No, Bad, Size, Tail);
+scan_f(B = <<_:?HEADERSZ/unit:8, _/binary>>, FSz, Ack, No, Bad) ->
     <<_:8, B2/binary>> = B,
-    scan_f(B2, In, Out, File, Tmp, No, Bad + 1);
-scan_f(B, In, Out, File, Tmp, No, Bad) ->
-    scan_f_read(B, In, Out, File, Tmp, ?MAX_CHUNK_SIZE, No, Bad).
+    scan_f(B2, FSz, Ack, No, Bad + 1);
+scan_f(B, _FSz, Ack, No, Bad) ->
+    {B, ?MAX_CHUNK_SIZE, Ack, No, Bad}.
+
+scan_f2(B, FSz, Ack, No, Bad, Size, Tail) ->
+    case Tail of
+        <<BinTerm:Size/binary, Tail2/binary>> ->
+            case catch binary_to_term(BinTerm) of
+                {'EXIT', _} ->
+                    <<_:8, B2/binary>> = B,
+                    scan_f(B2, FSz, Ack, No, Bad+1);
+                _Term ->
+                    scan_f(Tail2, FSz, [BinTerm | Ack], No+1, Bad)
+            end;
+        _ ->
+            {B, Size-size(Tail), Ack, No, Bad}
+    end.
 
 done_scan(In, Out, OutName, FName, RecoveredTerms, BadChars) ->
     file:close(In),
@@ -720,7 +796,7 @@ mf_int_chunk_step(Handle, {FileNo, _Pos}, Step) ->
     FileName = add_ext(Handle#handle.filename, NFileNo),
     case file:read_file_info(FileName) of
 	{ok, _FileInfo} ->	
-	    {ok, #continuation{pos = {NFileNo, 0}, b = <<>>}};
+	    {ok, #continuation{pos = {NFileNo, 0}, b = []}};
 	_Error ->
 	    {error, end_of_log}
     end.
@@ -1306,7 +1382,7 @@ open_truncate(FileName) ->
 
 %%% Functions that access files, and throw on error. 
 
--define(MAX, ?MAX_CHUNK_SIZE). % bytes
+-define(MAX, 16384). % bytes
 -define(TIMEOUT, 2000). % ms
 
 %% -> {Reply, cache()}; Reply = ok | Error

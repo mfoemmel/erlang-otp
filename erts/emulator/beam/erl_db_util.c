@@ -32,6 +32,7 @@
 #include "erl_db.h"
 #include "bif.h"
 #include "big.h"
+#include "erl_binary.h"
 
 #include "erl_db_util.h"
 
@@ -1331,7 +1332,7 @@ void erts_match_set_free(Binary *bprog)
     }
     if (prog->saved_program_buf != NULL)
 	free_message_buffer(prog->saved_program_buf);
-    sys_free(bprog);
+    OH_BIN_FREE(bprog);
 }
 
 void
@@ -3820,8 +3821,7 @@ static Eterm my_copy_struct(Eterm t, Eterm **hp, ErlOffHeap* off_heap)
 static Binary *allocate_magic_binary(size_t size)
 {
     Binary* bptr;
-    bptr = (Binary *) safe_alloc_from(61, 
-				      size + sizeof(Binary) - 1);
+    bptr = OH_BIN_ALLOC(61, size + sizeof(Binary) - 1);
     bptr->flags = BIN_FLAG_MATCH_PROG;
     bptr->orig_size = size;
     bptr->refc = 0;

@@ -210,16 +210,19 @@ display_result(Res) when list(Res) ->
     Nyi     = [MF || {nyi, MF, _} <- Res],
     Skipped = [{MF, Reason} || {skipped, MF, Reason} <- Res],
     Failed  = [{MF, Reason} || {failed, MF, Reason} <- Res],
-    display_summery(Ok, Nyi, Skipped, Failed),
+    Crashed = [{MF, Reason} || {crashed, MF, Reason} <- Res],
+    display_summery(Ok, Nyi, Skipped, Failed, Crashed),
     display_skipped(Skipped),
-    display_failed(Failed).
+    display_failed(Failed),
+    display_crashed(Crashed).
 
-display_summery(Ok, Nyi, Skipped, Failed) ->
+display_summery(Ok, Nyi, Skipped, Failed, Crashed) ->
     io:format("~nTest case summery:~n", []),
-    display_summery(Ok, "successfull"),
-    display_summery(Nyi, "not yet implemented"),
+    display_summery(Ok,      "successfull"),
+    display_summery(Nyi,     "not yet implemented"),
     display_summery(Skipped, "skipped"),
-    display_summery(Failed, "failed"),
+    display_summery(Failed,  "failed"),
+    display_summery(Crashed, "crashed"),
     io:format("~n", []).
    
 display_summery(Res, Info) ->
@@ -237,6 +240,13 @@ display_failed([]) ->
 display_failed(Failed) ->
     io:format("Failed test cases:~n", []),
     [io:format("  ~p => ~p~n", [MF, Reason]) || {MF, Reason} <- Failed],
+    io:format("~n", []).
+        
+display_crashed([]) ->
+    ok;
+display_crashed(Crashed) ->
+    io:format("Crashed test cases:~n", []),
+    [io:format("  ~p => ~p~n", [MF, Reason]) || {MF, Reason} <- Crashed],
     io:format("~n", []).
         
     

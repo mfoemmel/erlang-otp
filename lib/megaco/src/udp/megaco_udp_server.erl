@@ -124,7 +124,10 @@ handle_info({udp, _UdpId, Ip, Port, Msg}, UdpRec) ->
     Mod    = UdpRec#megaco_udp.module,
     RH = UdpRec#megaco_udp.receive_handle,
     SH = megaco_udp:create_send_handle(Socket, Ip, Port), 
-    case size(Msg) of
+    MsgSize = size(Msg),
+    incNumInMessages(SH),
+    incNumInOctets(SH, MsgSize),
+    case MsgSize of
 	Sz when Sz < ?GC_MSG_LIMIT ->
 	    apply(Mod, receive_message, [RH, self(), SH, Msg]);
 	Sz ->
@@ -154,9 +157,33 @@ handle_received_message(Mod, RH, Parent, SH, Msg) ->
 %% Func: code_change/3
 %% Descrition: Handles code change messages during upgrade.
 %%-----------------------------------------------------------------
-code_change(_OldVsn, State, _Extra) ->
+code_change(_Vsn, State, upgrade_from_1_1_0) ->
+    megaco_stats:init(megaco_udp_stats),
+    {ok, State};
+code_change(_Vsn, State, downgrade_to_1_1_0) ->
+    ets:delete(megaco_udp_stats),
+    {ok, State};
+code_change(_Vsn, State, _Extra) ->
     {ok, State}.
 
 do_stop(UdpRec) ->
     Socket = UdpRec#megaco_udp.socket,
     gen_udp:close(Socket).
+
+
+%%-----------------------------------------------------------------
+%% Func: incNumInMessages/1, incNumInOctets/2, incNumErrors/1
+%% Description: SNMP counter increment functions
+%%              
+%%-----------------------------------------------------------------
+incNumInMessages(SH) ->
+    ets:update_counter(megaco_udp_stats, 
+		       {SH, medGwyGatewayNumInMessages}, 1).
+
+incNumInOctets(SH, NumOctets) ->
+    ets:update_counter(megaco_udp_stats, 
+		       {SH, medGwyGatewayNumInOctets}, NumOctets).
+
+% incNumErrors(SH) ->
+%     ets:update_counter(megaco_udp_stats, 
+% 		       {SH, medGwyGatewayNumErrors}, 1).

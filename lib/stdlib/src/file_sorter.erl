@@ -53,12 +53,12 @@ sort(FileName) ->
 sort(Input, Output) ->
     sort(Input, Output, []).
 
-sort(Input, Output, Options) ->
-    case {is_input(Input), maybe_output(Output), options(Options)}  of
-	{true, true, Opts} when record(Opts, opts) -> 
+sort(Input0, Output0, Options) ->
+    case {is_input(Input0), maybe_output(Output0), options(Options)}  of
+	{{true,Input}, {true,Output}, Opts} when record(Opts, opts) -> 
 	    do_sort(0, Input, Output, Opts, sort);
 	T -> 
-	    badarg(culprit(tuple_to_list(T)), [Input, Output, Options])
+	    badarg(culprit(tuple_to_list(T)), [Input0, Output0, Options])
     end.
 
 keysort(KeyPos, FileName) ->
@@ -67,80 +67,89 @@ keysort(KeyPos, FileName) ->
 keysort(KeyPos, Input, Output) ->
     keysort(KeyPos, Input, Output, []).
 
-keysort(KeyPos, Input, Output, Options) ->
-    O = case {is_keypos(KeyPos), is_input(Input), 
-	      maybe_output(Output), options(Options)} of
+keysort(KeyPos, Input0, Output0, Options) ->
+    R = case {is_keypos(KeyPos), is_input(Input0), 
+	      maybe_output(Output0), options(Options)} of
 	    {_, _, _, Opts} when Opts#opts.format == binary -> 
-		[{badarg,format}];
-	    {_, _, _, Opts} when function(Opts#opts.order) -> [{badarg,order}];
-	    {true, true, true, Opts} when record(Opts, opts) -> Opts;
-	    T -> tuple_to_list(T)
+		{Input0,Output0,[{badarg,format}]};
+	    {_, _, _, Opts} when function(Opts#opts.order) -> 
+                {Input0,Output0,[{badarg,order}]};
+	    {true, {true,In}, {true,Out}, Opts} when record(Opts, opts) -> 
+                {In,Out,Opts};
+	    T -> 
+                {Input0,Output0,tuple_to_list(T)}
 	end,
-    case O of
-	_ when record(O, opts) ->
+    case R of
+	{Input,Output,O} when record(O, opts) ->
 	    do_sort(KeyPos, Input, Output, O, sort);
-	_ ->
-	    badarg(culprit(O), [KeyPos, Input, Output, Options])
+	{_,_,O} ->
+	    badarg(culprit(O), [KeyPos, Input0, Output0, Options])
     end.
 
 merge(Files, Output) ->
     merge(Files, Output, []).
 
-merge(Files, Output, Options) ->
-    case {is_files(Files), maybe_output(Output), options(Options)} of
+merge(Files0, Output0, Options) ->
+    case {is_files(Files0), maybe_output(Output0), options(Options)} of
 	%% size not used
-	{true, true, Opts} when record(Opts, opts) ->
+	{{true,Files}, {true,Output}, Opts} when record(Opts, opts) ->
 	    do_sort(0, Files, Output, Opts, merge);
 	T -> 
-	    badarg(culprit(tuple_to_list(T)), [Files, Output, Options])
+	    badarg(culprit(tuple_to_list(T)), [Files0, Output0, Options])
     end.
 
 keymerge(KeyPos, Files, Output) ->
     keymerge(KeyPos, Files, Output, []).
 
-keymerge(KeyPos, Files, Output, Options) ->
-    O = case {is_keypos(KeyPos), is_files(Files), 
-	      maybe_output(Output), options(Options)} of
+keymerge(KeyPos, Files0, Output0, Options) ->
+    R = case {is_keypos(KeyPos), is_files(Files0), 
+	      maybe_output(Output0), options(Options)} of
 	    {_, _, _, Opts} when Opts#opts.format == binary -> 
-		[{badarg,format}];
-	    {_, _, _, Opts} when function(Opts#opts.order) -> [{badarg,order}];
-	    {true, true, true, Opts} when record(Opts, opts) -> Opts;
-	    T -> tuple_to_list(T)
+		{Files0,Output0,[{badarg,format}]};
+	    {_, _, _, Opts} when function(Opts#opts.order) -> 
+                {Files0,Output0,[{badarg,order}]};
+	    {true, {true,Fs}, {true,Out}, Opts} when record(Opts, opts) -> 
+                {Fs,Out,Opts};
+	    T -> 
+                {Files0,Output0,tuple_to_list(T)}
 	end,
-    case O of
-	_ when record(O, opts) -> 
+    case R of
+	{Files,Output,O} when record(O, opts) -> 
 	    do_sort(KeyPos, Files, Output, O, merge);
-	_ -> 
-	    badarg(culprit(O), [KeyPos, Files, Output, Options])
+	{_,_,O} -> 
+	    badarg(culprit(O), [KeyPos, Files0, Output0, Options])
     end.
 
 check(FileName) ->
     check([FileName], []).
 
-check(Files, Options) ->
-    case {is_files(Files), options(Options)} of
-	{true, Opts} when record(Opts, opts) ->
+check(Files0, Options) ->
+    case {is_files(Files0), options(Options)} of
+	{{true,Files}, Opts} when record(Opts, opts) ->
 	    do_sort(0, Files, undefined, Opts, check);
 	T ->
-	    badarg(culprit(tuple_to_list(T)), [Files, Options])
+	    badarg(culprit(tuple_to_list(T)), [Files0, Options])
     end.
 
 keycheck(KeyPos, FileName) ->
     keycheck(KeyPos, [FileName], []).
 
-keycheck(KeyPos, Files, Options) ->
-    O = case {is_keypos(KeyPos), is_files(Files), options(Options)} of
+keycheck(KeyPos, Files0, Options) ->
+    R = case {is_keypos(KeyPos), is_files(Files0), options(Options)} of
 	    {_, _, Opts} when Opts#opts.format == binary -> 
-		[{badarg,format}];
-	    {_, _, Opts} when function(Opts#opts.order) -> [{badarg,order}];
-	    {true, true, Opts} when record(Opts, opts) -> Opts;
-	    T -> tuple_to_list(T)
+		{Files0,[{badarg,format}]};
+	    {_, _, Opts} when function(Opts#opts.order) -> 
+                {Files0,[{badarg,order}]};
+	    {true, {true,Fs}, Opts} when record(Opts, opts) -> 
+                {Fs,Opts};
+	    T -> 
+                {Files0,tuple_to_list(T)}
 	end,
-    case O of
-	_ when record(O, opts) -> 
+    case R of
+	{Files,O} when record(O, opts) -> 
 	    do_sort(KeyPos, Files, undefined, O, check);
-	_ -> 
-	    badarg(culprit(O), [KeyPos, Files, Options])
+	{_,O} -> 
+	    badarg(culprit(O), [KeyPos, Files0, Options])
     end.
 
 %%%
@@ -188,10 +197,8 @@ options([{tmpdir, ""} | L], Opts) ->
     options(L, Opts#opts{tmpdir = default});
 options([{tmpdir, Dir} | L],  Opts) ->
     case is_directory(Dir) of
-	true ->
-	    options(L, Opts#opts{tmpdir = {dir, Dir}});
-	badarg ->
-	    {badarg, Dir};
+	{true, Directory} ->
+	    options(L, Opts#opts{tmpdir = {dir, Directory}});
 	Error ->
 	    Error
     end;
@@ -1097,42 +1104,61 @@ is_keyposs(Bad) ->
     {badarg, Bad}.
 
 is_input(Fun) when function(Fun) ->
-    true;
+    {true,Fun};
 is_input(Files) ->
     is_files(Files).
 
-is_files([F | Fs]) ->
-    case file:read_file_info(F) of
-	{ok, _} ->
-	    is_files(Fs);
-	{error, einval} ->
-	    {badarg, F};
-	{error, Reason} ->
-	    {error, {file_error, F, Reason}}
+is_files(Fs) ->
+    is_files(Fs, []).
+
+is_files([F | Fs], L) ->
+    case read_file_info(F) of
+        {ok, File, _FI} ->
+            is_files(Fs, [File | L]);
+        Error ->
+            Error
     end;
-is_files([]) ->
-    true;
-is_files(Bad) ->
+is_files([], L) ->
+    {true, lists:reverse(L)};
+is_files(Bad, _L) ->
     {badarg, Bad}.
 
 maybe_output(Fun) when function(Fun) ->
-    true;
-maybe_output(FileName) ->
-    case file:read_file_info(FileName) of
-	{error, einval} -> {badarg, FileName};
-	_ -> true
+    {true, Fun};
+maybe_output(File) ->
+    case read_file_info(File) of
+        {badarg, _File} = Badarg ->
+            Badarg;
+        {ok, FileName, _FileInfo} ->
+            {true, FileName};
+        {error, {file_error, FileName, _Reason}} ->
+            {true, FileName}
     end.
 
-is_directory(F) ->
-    case file:read_file_info(F) of
-	{error, einval} ->
-	    badarg;
-	{ok, #file_info{type=directory}} ->
-	    true;
-	{ok, _} ->
-	    {error, {not_a_directory, F}};
-	{error, Reason} ->
-	    {error, {file_error, F, Reason}}
+is_directory(File) ->
+    case read_file_info(File) of
+        {ok, FileName, #file_info{type=directory}} ->
+            {true, FileName};
+        {ok, _FileName, _FileInfo} ->
+            {error, {not_a_directory, File}};
+        Error ->
+            Error
+    end.
+
+read_file_info(File) ->
+    %% Absolute names in case some process should call file:set_cwd/1.
+    case catch filename:absname(File) of
+        {'EXIT', _} ->
+            {badarg, File};
+        FileName ->
+            case file:read_file_info(FileName) of
+                {ok, FileInfo} ->
+                    {ok, FileName, FileInfo};
+                {error, einval} ->
+                    {badarg, File};
+                {error, Reason} ->
+                    {error, {file_error, FileName, Reason}}
+            end
     end.
 
 %% No attempt is made to avoid overwriting existing files.
@@ -1142,9 +1168,9 @@ next_temp(W) ->
     Temp = lists:concat([W#w.prefix, Seq]),
     {NW, Temp}.
 
-%% Would use the temporary directory (TMP|TEMP|TMPDIR), if it were
-%% easily available.
-tmp_prefix(F, TmpDirOpt) when function(F) ->
+%% Would use the temporary directory (TMP|TEMP|TMPDIR), were it
+%% readily accessible.
+tmp_prefix(F, TmpDirOpt) when function(F); F == undefined ->
     {ok, CurDir} = file:get_cwd(),
     tmp_prefix1(CurDir, TmpDirOpt);
 tmp_prefix(OutFile, TmpDirOpt) ->
@@ -1152,16 +1178,18 @@ tmp_prefix(OutFile, TmpDirOpt) ->
     tmp_prefix1(Dir, TmpDirOpt).
 
 tmp_prefix1(Dir, TmpDirOpt) ->
-    [S1,S2,S3] = string:tokens(pid_to_list(self()), "<>."),
     U = "_",
-    F = lists:concat([?MODULE,U,S1,U,S2,U,S3,"."]),
+    Node = node(),
+    Pid = os:getpid(),
+    {MSecs,Secs,MySecs} = erlang:now(),
+    F = lists:concat(["fs_",Node,U,Pid,U,MSecs,U,Secs,U,MySecs,"."]),
     TmpDir = case TmpDirOpt of
 		 default ->
 		     Dir;
 		 {dir, TDir} ->
 		     TDir
 	     end,
-    filename:join(TmpDir, F).
+    filename:join(filename:absname(TmpDir), F).
 
 %% -> {Fd, NewW} | throw(Error)
 open_file(FileName, W) ->

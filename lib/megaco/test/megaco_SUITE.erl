@@ -57,7 +57,8 @@ all(suite) ->
      measure,
      binary_term_id,
      codec,
-     sdp
+     sdp,
+     mib
     ].
 
 tickets(suite) ->
@@ -104,4 +105,7 @@ codec(suite) ->
 
 sdp(suite) ->
     [{megaco_sdp_test, all}].
+
+mib(suite) ->
+    [{megaco_mib_test, all}].
 

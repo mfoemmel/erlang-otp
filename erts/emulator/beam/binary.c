@@ -29,6 +29,9 @@
 #include "big.h"
 #include "erl_binary.h"
 
+/* Use sl_alloc for off heap binaries? */
+int erts_sl_alloc_binaries;
+
 /*
  * Create a brand new binary from scratch.
  */
@@ -52,7 +55,7 @@ new_binary(Process *p, byte *buf, int len)
     /*
      * Allocate the binary struct itself.
      */
-    bptr = (Binary *) safe_alloc_from(61, len+sizeof(Binary));
+    bptr = OH_BIN_SAFE_ALLOC(61, len+sizeof(Binary));
     bptr->flags = 0;
     bptr->orig_size = len;
     bptr->refc = 1;
@@ -99,7 +102,7 @@ Eterm new_binary_arith(Process *p, byte *buf, int len)
     /*
      * Allocate the binary struct itself.
      */
-    bptr = (Binary *) safe_alloc_from(61, len+sizeof(Binary));
+    bptr = OH_BIN_SAFE_ALLOC(61, len+sizeof(Binary));
     bptr->flags = 0;
     bptr->orig_size = len;
     bptr->refc = 1;
@@ -135,7 +138,10 @@ erts_realloc_binary(Eterm bin, size_t size)
 	binary_size(bin) = size;
     } else {			/* REFC */
 	ProcBin* pb = (ProcBin *) bval;
-	Binary* newbin = sys_realloc(pb->val, sizeof(Binary) + size);
+	Binary* newbin =
+	    OH_BIN_SAFE_REALLOC(pb->val,
+				sizeof(Binary) + pb->val->orig_size,
+				sizeof(Binary) + size);
 	tot_bin_allocated += (size - newbin->orig_size);
 	newbin->orig_size = size;
 	pb->val = newbin;
@@ -288,7 +294,7 @@ erts_cleanup_mso(ProcBin* pb)
 		erts_match_set_free(pb->val);
 	    } else {
 		tot_bin_allocated -= pb->val->orig_size;
-		sys_free((char*)pb->val);
+		OH_BIN_FREE(pb->val);
 	    }
 	}
 	pb = next;

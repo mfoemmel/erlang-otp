@@ -2043,6 +2043,12 @@ sys_init_io(byte *buf, Uint size)
     tmp_buf = buf;
     tmp_buf_size = size;
     cerr_pos = 0;
+    
+    /* Now heres an icky one... This is called before drivers are, so we
+       can change our view of the number of open files possible.
+       We estimate the number to twice the amount of ports. 
+       We really dont know on windows, do we? */
+    max_files = 2*erts_max_ports;
 
 #ifdef USE_THREADS
     {

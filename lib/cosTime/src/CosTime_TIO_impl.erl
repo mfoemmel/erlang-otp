@@ -130,10 +130,10 @@ spans(OE_THIS, State, Time) ->
 							     upper_bound=NewU},
 				       ?get_Tdf(State),
 				       ?get_TimerObj(State)], 
-				      [{pseudo,true}])}, 
+				      [{pseudo,true}|?CREATE_OPTS])}, 
 	     State};
 	_ ->
-	    corba:raise(#'BAD_PARAM'{minor=700, completion_status=?COMPLETED_NO})
+	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end.
 
 
@@ -170,10 +170,10 @@ overlaps(OE_THIS, State, Interval) ->
 							     upper_bound=NewU},
 				       ?get_Tdf(State),
 				       ?get_TimerObj(State)], 
-				      [{pseudo,true}])}, 
+				      [{pseudo,true}|?CREATE_OPTS])}, 
 	     State};
 	_ ->
-	    corba:raise(#'BAD_PARAM'{minor=700, completion_status=?COMPLETED_NO})
+	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end.
 
 %%----------------------------------------------------------%
@@ -189,7 +189,7 @@ time(OE_THIS, State) ->
 			   inacchi=H,
 			   tdf=?get_Tdf(State)},
     {reply, 
-     'CosTime_UTO':oe_create([Utc, ?get_TimerObj(State)], [{pseudo,true}]), 
+     'CosTime_UTO':oe_create([Utc, ?get_TimerObj(State)], [{pseudo,true}|?CREATE_OPTS]), 
      State}.
 
 

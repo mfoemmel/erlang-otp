@@ -24,21 +24,25 @@
 %%
 
 
--define(OPEN_TIMEOUT,60*1000).
+-define(OPEN_TIMEOUT, 60*1000).
 -define(BYTE_TIMEOUT, 1000).   % Timeout for _ONE_ byte to arrive. (ms)
 -define(OPER_TIMEOUT, 300).    % Operation timeout (seconds)
 -define(FTP_PORT, 21).
 
 %% Client interface
 -export([cd/2, close/1, delete/2, formaterror/1, help/0, 
-	 lcd/2, lpwd/1, ls/1, ls/2, mkdir/2, nlist/1, 
-	 nlist/2, open/1, open/2, open/3, pwd/1, recv/2, recv/3,
-	 recv_bin/2, rename/3, rmdir/2, send/2, send/3, 
-	 send_bin/3, send_chunk/2, send_chunk_end/1,
-	 send_chunk_start/2, type/2, user/3,user/4,account/2,
-	 append/3,append/2,append_bin/3,
-	 append_chunk/2, append_chunk_end/1,
-	 append_chunk_start/2]).
+	 lcd/2, lpwd/1, ls/1, ls/2, 
+	 mkdir/2, nlist/1, nlist/2, 
+	 open/1, open/2, open/3, 
+	 pwd/1, 
+	 recv/2, recv/3, recv_bin/2, 
+	 recv_chunk_start/2, recv_chunk/1, 
+	 rename/3, rmdir/2, 
+	 send/2, send/3, send_bin/3, 
+	 send_chunk_start/2, send_chunk/2, send_chunk_end/1, 
+	 type/2, user/3,user/4,account/2,
+	 append/3, append/2, append_bin/3,
+	 append_chunk/2, append_chunk_end/1, append_chunk_start/2]).
 
 %% Internal
 -export([init/1, handle_call/3, handle_cast/2, 
@@ -233,6 +237,23 @@ recv(Pid, RFile, LFile) ->
 recv_bin(Pid, RFile) ->
   gen_server:call(Pid, {recv_bin, RFile}, infinity).
 
+%% recv_chunk_start(Pid, RFile)
+%%
+%% Purpose:  Start receive of chunks of remote file.
+%% Args:     Pid = pid(), RFile = string().
+%% Returns:  ok | {error, elogin} | {error, epath} | {error, econn}
+recv_chunk_start(Pid, RFile) ->
+  gen_server:call(Pid, {recv_chunk_start, RFile}, infinity).
+
+
+%% recv_chunk(Pid, RFile)
+%%
+%% Purpose:  Transfer file from remote server into binary in chunks
+%% Args:     Pid = pid(), RFile = string()
+%% Returns:  Reference
+recv_chunk(Pid) ->
+    gen_server:call(Pid, recv_chunk, infinity).
+
 %% send(Pid, LFile [, RFile])
 %%
 %% Purpose:  Transfer file to remote server.
@@ -381,6 +402,8 @@ help() ->
 	    "  pwd(Pid)\n"
 	    "  recv(Pid, RFile [, LFile])\n"
 	    "  recv_bin(Pid, RFile)\n"
+	    "  recv_chunk_start(Pid, RFile)\n"
+	    "  recv_chunk(Pid)\n"
 	    "  rename(Pid, CurrFile, NewFile)\n"
 	    "  rmdir(Pid, Dir)\n"
 	    "  send(Pid, LFile [, RFile])\n"
@@ -530,7 +553,7 @@ handle_call({account,Acc},_From,State)->
 	{error,enotconn}->
 	    ?STOP_RET(econn);
 	Error ->
-	    io:format("~p",[Error]),
+	    debug(" error: ~p",[Error]),
 	    {reply, {error, eacct}, State}
     end;
 
@@ -726,12 +749,22 @@ handle_call({recv_bin, RFile}, _From, State) when State#state.chunk == false ->
 	    {reply, {error, epath}, State}
     end;
 
+
+handle_call({recv_chunk_start, RFile}, _From, State)
+  when State#state.chunk == false ->
+    start_chunk_transfer("RETR",RFile,State);
+
+handle_call(recv_chunk, _From, State) 
+  when State#state.chunk == true ->
+    do_recv_chunk(State);
+
+
 handle_call({send, LFile, RFile}, _From, State)
   when State#state.chunk == false ->
     transfer_file("STOR",LFile,RFile,State);
 
 handle_call({append, LFile, RFile}, _From, State) 
-when State#state.chunk == false ->
+  when State#state.chunk == false ->
     transfer_file("APPE",LFile,RFile,State);
 
 
@@ -742,7 +775,6 @@ handle_call({send_bin, Bin, RFile}, _From, State)
 handle_call({append_bin, Bin, RFile}, _From, State)
   when State#state.chunk == false ->
   transfer_data("APPE",Bin,RFile,State);
-
 
 
 
@@ -781,8 +813,10 @@ handle_call(close, _From, State) when State#state.chunk == false ->
 handle_call(_, _From, State) when State#state.chunk == true ->
   {reply, {error, echunk}, State}.
 
+
 handle_cast(Msg, State) ->
   {noreply, State}.
+
 
 handle_info({Sock, {fromsocket, Bytes}}, State) when Sock == State#state.csock ->
   put(leftovers, Bytes ++ leftovers()),
@@ -830,19 +864,19 @@ open(Host,Port,Timeout,State)->
 %%
 
 ctrl_cmd(CSock, Fmt, Args) ->
-  Cmd = mk_cmd(Fmt, Args),
-  case sock_write(CSock, Cmd) of
-    ok ->
-      debug("  cmd : ~s",[Cmd]),
-      result(CSock);
-    {error, enotconn} ->
-      {error, enotconn};
-    Other ->
-	  Other
-  end.
+    Cmd = mk_cmd(Fmt, Args),
+    case sock_write(CSock, Cmd) of
+	ok ->
+	    debug("  cmd : ~s",[Cmd]),
+	    result(CSock);
+	{error, enotconn} ->
+	    {error, enotconn};
+	Other ->
+	    Other
+    end.
 
 mk_cmd(Fmt, Args) ->
-  [io_lib:format(Fmt, Args)| "\r\n"].		% Deep list ok.
+    [io_lib:format(Fmt, Args)| "\r\n"].		% Deep list ok.
 
 %%
 %% TRANSFER TYPE
@@ -947,6 +981,43 @@ recv_binary2(Sock, Bs, Retry) ->
 	{closed, _Why} ->
 	    {ok,list_to_binary(Bs)}
   end.
+
+%% --------------------------------------------------
+
+%%
+%% recv_chunk
+%%
+
+do_recv_chunk(#state{dsock = undefined} = State) ->
+    {reply, {error,econn}, State};
+do_recv_chunk(State) ->
+    recv_chunk1(recv_chunk2(State, 0), State).
+
+recv_chunk1({ok, _Bin} = Reply, State) ->
+    {reply, Reply, State};
+%% Reply = ok | {error, Reason}
+recv_chunk1(Reply, #state{csock = CSock} = State) -> 
+    State1 = State#state{dsock = undefined, chunk = false},
+    case result(CSock) of
+	pos_compl -> 
+	    {reply, Reply, State1};
+	_         -> 
+	    {reply, {error, epath}, State1}
+    end.
+    
+recv_chunk2(#state{dsock = DSock} = State, ?OPER_TIMEOUT) ->
+    sock_close(DSock),
+    {error, eclosed};
+recv_chunk2(#state{dsock = DSock} = State, Retry) ->
+    case sock_read(DSock) of
+	{ok, Bin} ->
+	    {ok, Bin};
+	{error, timeout} ->
+           recv_chunk2(State, Retry+1);
+	{closed, _} ->
+	    ok
+    end.
+
 
 %% --------------------------------------------------
 
@@ -1403,8 +1474,7 @@ transfer_data(Cmd,Bin,RFile,State)->
     end.
 
 
-start_chunk_transfer(Cmd,RFile,State)->
-  #state{csock = CSock, ldir = LDir} = State,
+start_chunk_transfer(Cmd, RFile, #state{csock = CSock} = State) ->
   LSock = listen_data(CSock, binary),
   case ctrl_cmd(CSock, "~s ~s", [Cmd,RFile]) of
     pos_prel ->
@@ -1487,12 +1557,3 @@ get_key1(Key,List,Default)->
 	false->
 	    Default
     end.
-
-
-
-
-
-
-
-
-

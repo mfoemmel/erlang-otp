@@ -17,20 +17,53 @@
  */
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include "erl_driver.h"
+#include "ei.h"
 
 
 #define ASN1_OK 0
 #define ASN1_ERROR -1
 #define ASN1_COMPL_ERROR 1
 #define ASN1_MEMORY_ERROR 0
+#define ASN1_DECODE_ERROR 2
+#define ASN1_TAG_ERROR -3
+#define ASN1_LEN_ERROR -4
+#define ASN1_INDEF_LEN_ERROR -5
+
+#define ASN1_CLASS 0xc0
+#define ASN1_FORM 0x20
+#define ASN1_CLASSFORM (ASN1_CLASS | ASN1_FORM)
+#define ASN1_TAG 0x1f
+#define ASN1_LONG_TAG 0x7f
+
+#define ASN1_INDEFINITE_LENGTH 0x80
+#define ASN1_SHORT_DEFINITE_LENGTH 0
+
+#define ASN1_PRIMITIVE 0
+#define ASN1_CONSTRUCTED 0x20
+
+#define ASN1_COMPLETE 1
+#define ASN1_BER_TLV_DECODE 2
+#define ASN1_BER_TLV_PARTIAL_DECODE 3
+
+#define ASN1_NOVALUE 0
+
+#define ASN1_SKIPPED 0
+#define ASN1_OPTIONAL 1
+#define ASN1_CHOOSEN 2
+
 
 #define CEIL(X,Y) ((X-1) / Y + 1)
+
+#define INVMASK(X,M) (X & (M ^ 0xff))
+#define MASK(X,M) (X & M)
 
 typedef struct {
   ErlDrvPort port;
 } asn1_data;
 
+int min_alloc_bytes;
 
 static ErlDrvData asn1_drv_start(ErlDrvPort, char *);
 
@@ -62,6 +95,27 @@ int insert_octets_unaligned(int, unsigned char **, unsigned char **, int);
 
 int realloc_memory(ErlDrvBinary **,int,unsigned char **,unsigned char **);
 
+int decode_begin(ErlDrvBinary **,unsigned char *, int);
+
+int decode(ErlDrvBinary **,int *,unsigned char *,int *, int);
+
+int decode_tag(char *,int *,unsigned char *,int *);
+
+int decode_value(int *,unsigned char *,int *,ErlDrvBinary **,int ,int);
+
+
+/* declaration of functions used for partial decode of a BER encoded
+   message */
+
+int decode_partial(ErlDrvBinary **,unsigned char *, int);
+
+int skip_tag(unsigned char *,int *,int);
+
+int skip_length_and_value(unsigned char *,int *,int);
+
+int get_tag(unsigned char *,int *,int);
+
+int get_value(char *,unsigned char *,int *,int);
 
 static ErlDrvEntry asn1_drv_entry = {
   NULL,              /* init, always NULL for dynamic drivers */
@@ -87,9 +141,18 @@ DRIVER_INIT(asn1_erl_drv) /* must match name in driver_entry */
 
 static ErlDrvData asn1_drv_start(ErlDrvPort port, char *buff)
 {
-  asn1_data* d = (asn1_data*)driver_alloc(sizeof(asn1_data));
+  extern int min_alloc_bytes;
+  char  *ptr;
+  asn1_data* d;
+
+  d = (asn1_data*)driver_alloc(sizeof(asn1_data));
   set_port_control_flags(port, PORT_CONTROL_FLAG_BINARY);
   d->port = port;
+  
+  if ((ptr = getenv("ASN1_MIN_BUF_SIZE")) == NULL)
+    min_alloc_bytes = 1024;
+  else
+    min_alloc_bytes = atoi(ptr);
   return (ErlDrvData)d;
 }
 
@@ -109,45 +172,144 @@ int asn1_drv_control(ErlDrvData   handle,
 		     int          res_buf_len) 
 {
   char *complete_buf;
-  int complete_len;
+  int complete_len, decode_len;
   ErlDrvBinary *drv_binary;
+  ErlDrvBinary **drv_bin_ptr;
   asn1_data* a_data;
+  extern int min_alloc_bytes;
 
-  if ((drv_binary = driver_alloc_binary(buf_len))==NULL) {
-    /* error handling */
-/*     printf("error when allocating memory\n"); */
-    a_data = (asn1_data *)handle;
-    set_port_control_flags(a_data->port, 0);
-    return ASN1_MEMORY_ERROR;
-  }
-  complete_buf = drv_binary->orig_bytes;
-  if ((complete_len = complete(&drv_binary,complete_buf,buf,buf_len)) == ASN1_ERROR)
-    {
-      /* error handling due to failure in complete */
-/*       printf("error when running complete\n\r"); */
-      driver_free_binary(drv_binary);
-      a_data = (asn1_data *)handle;
-      set_port_control_flags(a_data->port, 0);
-      **res_buf = '1';
-      return ASN1_COMPL_ERROR;
+  if (command == ASN1_COMPLETE)
+    { /* Do the PER complete encode step */
+      if ((drv_binary = driver_alloc_binary(buf_len))==NULL) {
+	/* error handling */
+	/*     printf("error when allocating memory\n"); */
+	a_data = (asn1_data *)handle;
+	set_port_control_flags(a_data->port, 0);
+	return ASN1_MEMORY_ERROR;
+      }
+      complete_buf = drv_binary->orig_bytes;
+      if ((complete_len = complete(&drv_binary,complete_buf,buf,buf_len)) == ASN1_ERROR)
+	{
+	  /* error handling due to failure in complete */
+	  /*       printf("error when running complete\n\r"); */
+	  driver_free_binary(drv_binary);
+	  a_data = (asn1_data *)handle;
+	  set_port_control_flags(a_data->port, 0);
+	  **res_buf = '1';
+	  return ASN1_COMPL_ERROR;
+	}
+      /* now the message is complete packed, return to Erlang */
+      if (complete_len < buf_len) {
+	ErlDrvBinary *tmp;
+	if ((tmp=driver_realloc_binary(drv_binary,complete_len)) == NULL){
+	  /*error handling due to memory allocation failure */
+	  /*       printf("error when allocating memory\n\r"); */
+	  driver_free_binary(drv_binary);
+	  a_data = (asn1_data *)handle;
+	  set_port_control_flags(a_data->port, 0);
+	  return ASN1_MEMORY_ERROR;
+	}else
+	  drv_binary=tmp;
+      }
+      *res_buf = (char *)drv_binary;
+      return complete_len;
+    } else if (command == ASN1_BER_TLV_DECODE) { /* control == 2 */
+      /* Do the tlv decode,
+	 return the resulting term encoded on the Erlang 
+	 external format */
+/*       printf("driver: buffer_len = %d, min_alloc_bytes = %d\r\n",buf_len,min_alloc_bytes); */
+      if ((drv_binary = driver_alloc_binary((buf_len*5)+min_alloc_bytes))==NULL) {
+	/* error handling */
+	/*     printf("error when allocating memory\n"); */
+	a_data = (asn1_data *)handle;
+	set_port_control_flags(a_data->port, 0);
+	return ASN1_MEMORY_ERROR;
+      }
+      drv_bin_ptr = &drv_binary;
+      if ((decode_len = decode_begin(drv_bin_ptr,buf,buf_len)) <= ASN1_ERROR)
+	{
+	  /* error handling due to failure in decode  */
+	  driver_free_binary(*drv_bin_ptr);
+	  a_data = (asn1_data *)handle;
+	  set_port_control_flags(a_data->port, 0);
+	  
+	  /* 	  printf("decode_len=%d\r\n",decode_len); */
+
+	  if(decode_len==ASN1_ERROR)
+	    **res_buf = '1';
+	  else if(decode_len==ASN1_TAG_ERROR)
+	    **res_buf = '2';
+	  else if(decode_len==ASN1_LEN_ERROR)
+	    **res_buf = '3';
+	  else if(decode_len==ASN1_INDEF_LEN_ERROR)
+	    **res_buf = '4';
+	  return ASN1_DECODE_ERROR;
+	}
+      /*      printf("decode_len=%d\r\n",decode_len);*/
+      if (decode_len < ((buf_len * 5) + min_alloc_bytes)) {
+	/* not all memory was used => we have to reallocate */
+	ErlDrvBinary *tmp;
+	if ((tmp=driver_realloc_binary(*drv_bin_ptr,decode_len)) == NULL){
+	  /*error handling due to memory allocation failure */
+	  /*       printf("error when allocating memory\n\r"); */
+	  driver_free_binary(*drv_bin_ptr);
+	  a_data = (asn1_data *)handle;
+	  set_port_control_flags(a_data->port, 0);
+	  return ASN1_MEMORY_ERROR;
+	}else
+	  *drv_bin_ptr=tmp;
+      }
+      *res_buf = (char *)(*drv_bin_ptr);
+      return decode_len;
+    } else { /*command == ASN1_BER_TLV_PARTIAL_DECODE */
+      if ((drv_binary = driver_alloc_binary(buf_len))==NULL) {
+	/* error handling */
+	/*     printf("error when allocating memory\n"); */
+	a_data = (asn1_data *)handle;
+	set_port_control_flags(a_data->port, 0);
+	return ASN1_MEMORY_ERROR;
+      }
+      drv_bin_ptr = &drv_binary;
+      if ((decode_len = decode_partial(drv_bin_ptr,buf,buf_len))
+	  <= ASN1_ERROR) {
+	/* error handling due to failure in decode  */
+	driver_free_binary(*drv_bin_ptr);
+	a_data = (asn1_data *)handle;
+	set_port_control_flags(a_data->port, 0);
+	
+/* 	printf("asn1_drv_control 1: decode_len=%d\r\n",decode_len); */
+	  
+	if(decode_len==ASN1_ERROR)
+	  **res_buf = '1';
+	return ASN1_DECODE_ERROR;
+      }
+      if (decode_len < buf_len) { 
+	/* not all memory was used => we have to reallocate */
+	ErlDrvBinary *tmp;
+/* 	printf("asn1_drv_control 2: decode_len=%d\r\n",decode_len); */
+	if ((tmp=driver_realloc_binary(*drv_bin_ptr,decode_len)) == NULL){
+	  /*error handling due to memory allocation failure */
+	  /*       printf("error when allocating memory\n\r"); */
+	  driver_free_binary(*drv_bin_ptr);
+	  a_data = (asn1_data *)handle;
+	  set_port_control_flags(a_data->port, 0);
+	  return ASN1_MEMORY_ERROR;
+	}else
+	  *drv_bin_ptr=tmp;
+      }
+      *res_buf = (char *)(*drv_bin_ptr);
+      return decode_len;
     }
-  /* now the message is complete packed, return to Erlang */
-  if (complete_len < buf_len) {
-    ErlDrvBinary *tmp;
-    if ((tmp=driver_realloc_binary(drv_binary,complete_len)) == NULL){
-      /*error handling due to memory allocation failure */
-/*       printf("error when allocating memory\n\r"); */
-      driver_free_binary(drv_binary);
-      a_data = (asn1_data *)handle;
-      set_port_control_flags(a_data->port, 0);
-      return ASN1_MEMORY_ERROR;
-    }else
-      drv_binary=tmp;
-  }
-  *res_buf = (char *)drv_binary;
-  return complete_len;
 }
 
+
+
+/*
+ * 
+ * This section defines functionality for the complete encode of a
+ * PER encoded message
+ *
+ */
 
 int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
 	     unsigned char *in_buf, int in_buf_len)
@@ -166,7 +328,7 @@ int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
      in_buf_len */
 
   unsigned char *in_ptr, *ptr;
-  /* in_ptr points att the next byte in in_buf to be moved to
+  /* in_ptr points at the next byte in in_buf to be moved to
      complete_buf.
      ptr points into the new completed buffer, complete_buf, at the
      position of the next byte that will be set */
@@ -521,6 +683,7 @@ int realloc_memory(ErlDrvBinary **drv_binary,
   ErlDrvBinary *tmp_bin;
   int i;
 
+/*   printf("realloc_momory: amount = %d\n",amount); */
   if ((tmp_bin=driver_realloc_binary(*drv_binary,amount)) == NULL) {
     /*error handling due to memory allocation failure */
 /*     printf("error when allocating memory\n"); */
@@ -840,4 +1003,548 @@ int insert_octets_except_unused(int no_bytes,
   *output_ptr = ptr;
 /*    printf("%d: insert_octets_except_unused: ret=%d\n\r",__LINE__,ret); */
   return ret;
+}
+
+
+
+/*
+ * 
+ * This section defines functionality for the partial decode of a
+ * BER encoded message
+ *
+ */
+
+/*
+ * int decode(ErlDrvBinary **drv_binary,unsigned char *decode_buf,
+ *            unsigned char *in_buf, int in_buf_len) 
+ * drv_binary is a pointer to a pointer to an allocated driver binary.
+ * in_buf is a pointer into the buffer of incoming bytes.
+ * in_buf_len is the length of the incoming buffer.
+ * The function reads the bytes in the incoming buffer and structures
+ * it in a nested way as Erlang terms. The buffer contains data in the
+ * order tag - length - value. Tag, length and value has the following
+ * format:
+ * A tag is normally one byte but may be of any length, if the tag number
+ * is greater than 30. +----------+
+ *		       |CL|C|NNNNN|
+ * 		       +----------+
+ * If NNNNN is 31 then will the 7 l.s.b of each of the following tag number
+ * bytes contain the tag number. Each tag number byte that is not the last one
+ * has the m.s.b. set to 1.
+ * The length can be short definite length (sdl), long definite length (ldl)
+ * or indefinite length (il).
+ * sdl: +---------+ the L bits is the length
+ *	|0|LLLLLLL|
+ *	+---------+
+ * ldl:	+---------+ +---------+ +---------+     +-----------+
+ *	|1|lllllll| |first len| |	  |     |the Nth len|
+ *	+---------+ +---------+ +---------+ ... +-----------+
+ *    	The first byte tells how many len octets will follow, max 127
+ * il:  +---------+ +----------------------+ +--------+ +--------+
+ *	|1|0000000| |content octets (Value)| |00000000| |00000000|
+ *	+---------+ +----------------------+ +--------+ +--------+
+ *	The value octets are preceded by one octet and followed by two 
+ *	exactly as above. The value must be some tag-length-value encoding.
+ *
+ * The function returns a value in Erlnag term format:
+ * {{TagNo,Value},Rest}
+ * TagNo is an integer ((CL bsl 16) + tag number) which limits the tag number 
+ * to 65535.
+ * Value is a binary if the C bit in tag was unset, otherwise (if tag was
+ * constructed) Value is a list, List.
+ * List is like: [{TagNo,Value},{TagNo,Value},...]
+ * Rest is a binary, i.e. the undecoded part of the buffer. Most often Rest
+ * is the empty binary.
+ * If some error occured during the decoding of the in_buf an error is returned.
+ */
+int decode_begin(ErlDrvBinary **drv_binary,unsigned char *in_buf, int in_buf_len)
+{
+  int maybe_ret;
+  char *decode_buf = (*drv_binary)->orig_bytes;
+  int ei_index = 0;
+  int ib_index = 0;
+  /* ei_index is the index used by the ei functions to encode an
+     Erlang term into the buffer decode_buf */
+  /* ib_index is the index were to read the next byte from in_buf */
+
+
+/*    printf("decode_begin1: ei_index=%d, ib_index=%d\n\r",ei_index,ib_index);  */
+  /* the first byte must be a "version magic" */
+  if(ei_encode_version(decode_buf,&ei_index) == ASN1_ERROR)
+    return ASN1_ERROR;		/* 1 byte */
+/*    printf("decode_begin2: ei_index=%d, ib_index=%d\n\r",ei_index,ib_index);  */
+  if (ei_encode_tuple_header(decode_buf,&ei_index,2) == ASN1_ERROR)
+    return ASN1_ERROR;		/* 2 bytes */
+/*    printf("decode_begin3: ei_index=%d, ib_index=%d\n\r",ei_index,ib_index);  */
+  if((maybe_ret=decode(drv_binary,&ei_index,in_buf,&ib_index,in_buf_len)) <= ASN1_ERROR)
+    return maybe_ret;
+
+  decode_buf = (*drv_binary)->orig_bytes; /* maybe a realloc during decode_value */
+/*    printf("decode_begin4: in_buf_len=%d, ei_index=%d, ib_index=%d\n\r",  */
+/*  	 in_buf_len,ei_index,ib_index);  */
+  /* "{{TagNo,Value},Rest}" */
+  if (ei_encode_binary(decode_buf,&ei_index,&(in_buf[ib_index]),in_buf_len-ib_index)
+      == ASN1_ERROR)		/* at least 5 bytes */
+    return ASN1_ERROR;
+/*    printf("decode_begin5: ei_index=%d, ib_index=%d\n\r",ei_index,ib_index);  */
+  return ei_index;
+}
+
+int decode(ErlDrvBinary **drv_binary,int *ei_index,unsigned char *in_buf,
+	   int *ib_index, int in_buf_len)
+{
+  int maybe_ret;
+  char *decode_buf = (*drv_binary)->orig_bytes;
+  int form;
+/*    printf("decode 1\n\r"); */
+  if (((*drv_binary)->orig_size - *ei_index) < 19) {/* minimum amount of bytes */
+    /* allocate more memory */
+    if (realloc_decode_buf(drv_binary,(*drv_binary)->orig_size * 2) == 
+	ASN1_ERROR)
+      return ASN1_ERROR;
+    decode_buf = (*drv_binary)->orig_bytes;
+  }
+/*    printf("decode 2\n\r"); */
+    /* "{" */
+    if (ei_encode_tuple_header(decode_buf,ei_index,2) == ASN1_ERROR)
+    return ASN1_ERROR;		/* 2 bytes */
+/*    printf("decode 3:orig_size=%d, ei_index=%d\n\r",(*drv_binary)->orig_size,*ei_index); */
+
+
+  /* "{{TagNo," */
+  if ((form = decode_tag(decode_buf,ei_index,in_buf,ib_index)) <= ASN1_ERROR)
+    return form;		/* 5 bytes */
+/*      printf("decode 5 ib_index=%d\n\r",*ib_index); */
+  /* "{{TagNo,Value}," */
+  if ((maybe_ret=decode_value(ei_index,in_buf,ib_index,drv_binary,form,
+		   in_buf_len)) <= ASN1_ERROR)
+    return maybe_ret;		/* at least 5 bytes */
+/*    printf("decode 7\n\r"); */
+  return *ei_index;
+}
+
+/* 
+ * decode_tag decodes the BER encoded tag in in_buf and puts it in the
+ * decode_buf encoded by the Erlang extern format as an Erlang term.
+ */
+int decode_tag(char *decode_buf,int *db_index,unsigned char *in_buf,int *ib_index)
+{
+  int tag_no, tmp_tag, form;
+  
+  /* first get the class of tag and bit shift left 16*/
+  tag_no = ((MASK(in_buf[*ib_index],ASN1_CLASS)) << 10);
+
+  form = (MASK(in_buf[*ib_index],ASN1_FORM));
+
+  /* then get the tag number */
+  if((tmp_tag = (int) INVMASK(in_buf[*ib_index],ASN1_CLASSFORM)) < 31) {
+    ei_encode_ulong(decode_buf,db_index,tag_no+tmp_tag); /* usual case */
+    (*ib_index)++;
+  }
+  else
+    {
+      int n = 0; /* n is used to check that the 64K limit is not
+		    exceeded*/
+      (*ib_index)++;
+      /* The tag is in the following bytes in in_buf as 
+	 1ttttttt 1ttttttt ... 0ttttttt, where the t-bits
+	 is the tag number*/
+      /* In practice is the tag size limited to 64K, i.e. 16 bits. If
+	 the tag is greater then 64K return an error */
+      while (((tmp_tag = (int)in_buf[*ib_index]) >= 128) && n < 2){
+	/* m.s.b. = 1 */
+	tag_no = tag_no + (MASK(tmp_tag,ASN1_LONG_TAG) << 7);
+	(*ib_index)++;
+	n++;
+      };
+      if ((n==2) && in_buf[*ib_index] > 3)
+	return ASN1_TAG_ERROR; /* tag number > 64K */
+      tag_no = tag_no + in_buf[*ib_index];
+      (*ib_index)++;
+      ei_encode_ulong(decode_buf,db_index,tag_no);
+    }
+  return form;
+}
+
+
+/*
+ * decode_value decodes the BER encoded length and value fields in the
+ * in_buf and puts the value part in the decode_buf as an Erlang term
+ * encoded by the Erlang extern format
+ */
+int decode_value(int *ei_index,unsigned char *in_buf,
+		 int *ib_index,ErlDrvBinary **drv_binary,int form,
+		 int in_buf_len)
+{
+  int maybe_ret;
+  char *decode_buf = (*drv_binary)->orig_bytes;
+  int len, lenoflen;
+  int indef = 0;
+  
+/*    printf("decode_value1:ib_index=%d\n\r",*ib_index); */
+  if (((in_buf[*ib_index]) & 0x80) == ASN1_SHORT_DEFINITE_LENGTH) {
+    len = in_buf[*ib_index];
+    if (len > (in_buf_len - (*ib_index + 1)))
+      return ASN1_LEN_ERROR;
+  }
+  else if (in_buf[*ib_index] == ASN1_INDEFINITE_LENGTH)
+    indef = 1;
+  else /* long definite length */ {
+    lenoflen = (in_buf[*ib_index] & 0x7f); /*length of length */
+    len = 0;
+    while (lenoflen--) {
+      (*ib_index)++;
+      len = (len << 8) + in_buf[*ib_index];
+    }
+    if (len > (in_buf_len - (*ib_index + 1)))
+      return ASN1_LEN_ERROR;
+  }
+  (*ib_index)++;
+/*    printf("decode_value2:ib_index=%d\n\r",*ib_index); */
+  if (indef == 1)
+    { /* in this case it is desireably to check that indefinite length
+	 end bytes exist in inbuffer */
+      while (!(in_buf[*ib_index]==0 && in_buf[*ib_index + 1]==0)) {
+	printf("decode_value while:ib_index=%d in_buf_len=%d\n\r",
+	       *ib_index,in_buf_len);
+	if(*ib_index >= in_buf_len)
+	  return ASN1_INDEF_LEN_ERROR;
+	ei_encode_list_header(decode_buf,ei_index,1); /* 5 bytes */
+	if((maybe_ret=decode(drv_binary,ei_index,in_buf,
+			     ib_index,in_buf_len)) <= ASN1_ERROR)
+	  return maybe_ret;
+	decode_buf = (*drv_binary)->orig_bytes;
+      }
+      (*ib_index) += 2; /* skip the indefinite length end bytes */
+      ei_encode_empty_list(decode_buf,ei_index); /* 1 byte */
+    }
+  else if (form == ASN1_CONSTRUCTED)
+    {
+      int end_index = *ib_index + len;
+      while (*ib_index < end_index) {
+
+/*  	printf("decode_value3:*ib_index=%d, end_index=%d\n\r",*ib_index,end_index); */
+	ei_encode_list_header(decode_buf,ei_index,1); /* 5 bytes */
+	if((maybe_ret=decode(drv_binary,ei_index,in_buf,
+			     ib_index,in_buf_len))<=ASN1_ERROR)
+	  return maybe_ret;
+	decode_buf = (*drv_binary)->orig_bytes;
+      }
+      ei_encode_empty_list(decode_buf,ei_index); /* 1 byte */
+    }
+  else
+    {
+      if (((*drv_binary)->orig_size - *ei_index) < 10+len) { /* 5+len for the  binary*/
+	if (realloc_decode_buf(drv_binary,(*drv_binary)->orig_size * 2) == 
+	    ASN1_ERROR)
+	  return ASN1_ERROR;
+	decode_buf = (*drv_binary)->orig_bytes;
+      }
+      ei_encode_binary(decode_buf,ei_index,&in_buf[*ib_index],len);
+      *ib_index = *ib_index + len;
+    }
+  return ASN1_OK;
+}
+
+int realloc_decode_buf(ErlDrvBinary **drv_binary,int amount) {
+  ErlDrvBinary *tmp_bin;
+
+  if ((tmp_bin=driver_realloc_binary(*drv_binary,amount)) == NULL)
+    return ASN1_ERROR;
+  *drv_binary = tmp_bin;
+  return ASN1_OK;
+}
+
+
+
+/*
+ * int decode_partial(drv_binary,in_buf,in_buf_len) 
+ */
+/*
+ * The in_buf contains two parts: first information about which value
+ * will be decoded, as a sequence of tags and tag codes, then the
+ * encoded BER value. First of all comes a length field that tells how
+ * many following bytes contains the sequence of tags. Then starts the
+ * BER encoded message. The tag sequence length field is a single
+ * byte. The sequence of tags/tag codes may be one of the codes
+ * ASN1_SKIPPED, ASN1_CHOOSEN and a tag or ASN1_OPTIONAL and a
+ * tag. ASN1_SKIPPED means that the following tag is mandatory and is
+ * skipped. ASN1_CHOOSEN means that the value of this tag shall, if
+ * this was the last tag in tag sequence, be returned or be searched
+ * in for the next tag. ASN1_OPTIONAL means that this tag shall be
+ * skipped but it may be missing. Each tag in the tag sequence
+ * correspond to a tag in the BER encoded message. If the decode
+ * arives to a position where there is no matching tag, an error is
+ * returned (if it wasn't the last tag and it was OPTIONAL). After the
+ * right value has been detected it is returned in the out_buf.
+ *
+ */
+int decode_partial(ErlDrvBinary **drv_binary,unsigned char *in_buf, int in_buf_len)
+{
+  char *out_buf = (*drv_binary)->orig_bytes;
+  int tag_index_val = 1;
+  int msg_index_val;
+  int *msg_index, *tag_index, tmp_index;
+  int tag_seq_length;
+  char tag_code; /* one of ASN1_SKIPPED, ASN1_OPTIONAL, ASN1_CHOOSEN */
+  int wanted_tag, next_tag;
+  int buf_end_index = in_buf_len;
+  int ret = 0, length, old_index;
+  
+  tag_index = &tag_index_val;
+  tag_seq_length = in_buf[0];
+  msg_index = &msg_index_val;
+  *msg_index = tag_seq_length + 1;
+
+
+/*   printf("decode_partial 1: in_buf_len=%d, tag_index=%d, msg_index=%d\r\n,tag_seq_length=%d\r\n",in_buf_len,*tag_index,*msg_index,tag_seq_length); */
+  while(*tag_index < tag_seq_length) {
+    switch(in_buf[*tag_index]) {
+    case ASN1_SKIPPED:
+/*       printf("decode_partial ASN1_SKIPPED: in_buf[*msg_index]=%d\r\n",in_buf[*msg_index]); */
+      (*tag_index)++;
+/*       printf("decode_partial ASN1_SKIPPED 2: *msg_index=%d\r\n",*msg_index); */
+      skip_tag(in_buf,msg_index,buf_end_index);
+/*       printf("decode_partial ASN1_SKIPPED 3: *msg_index=%d\r\n",*msg_index); */
+      skip_length_and_value(in_buf,msg_index,buf_end_index);
+/*       printf("decode_partial ASN1_SKIPPED 4: *msg_index=%d\r\n",*msg_index); */
+      break;
+    case ASN1_OPTIONAL:
+      (*tag_index)++;
+/*       printf("decode_partial ASN1_OPTIONAL: in_buf[*tag_index]=%d\r\n",in_buf[*tag_index]); */
+      wanted_tag = in_buf[*tag_index];
+      (*tag_index)++;
+      tmp_index = *msg_index;
+      next_tag = get_tag(in_buf,msg_index,buf_end_index);
+      if (wanted_tag != next_tag) {
+	*msg_index = tmp_index;
+      } else 
+	skip_length_and_value(in_buf,msg_index,buf_end_index);
+      break;
+    case ASN1_CHOOSEN:
+/*       printf("decode_partial ASN1_CHOOSEN: in_buf[*msg_index]=%d, *msg_index=%d\r\n",in_buf[*msg_index],*msg_index); */
+      (*tag_index)++;
+      wanted_tag = in_buf[*tag_index];
+      (*tag_index)++;
+      old_index = *msg_index;
+/*       printf("decode_partial ASN1_CHOOSEN 2: *msg_index=%d\r\n",*msg_index); */
+      next_tag = get_tag(in_buf,msg_index,buf_end_index);
+/*       printf("decode_partial ASN1_CHOOSEN 3: *msg_index=%d\r\n,wanted_tag=%d, next_tag=%d\r\n",*msg_index,wanted_tag,next_tag); */
+      if (wanted_tag != next_tag)
+	return ASN1_NOVALUE; /* an empty binary will be returned to Erlang */
+      if (*tag_index == (tag_seq_length + 1)) { 
+	/* get the value and return*/
+	if((ret = get_value(out_buf,in_buf,msg_index,buf_end_index)) <= ASN1_ERROR)
+	  return ASN1_ERROR;
+	return ret;
+      } 
+      else { 
+	/* calculate the length of the sub buffer and let *msg_index
+	   be at the value part of this BER encoded type*/
+	int indef;
+	indef = 0;
+	length = get_length(in_buf,msg_index,&indef,buf_end_index);
+/* 	printf("decode_partial ASN1_CHOOSEN 4: length=%d, *msg_index=%d\r\n",length,*msg_index); */
+	if ((length == 0) && (indef == 1)) {
+	  /* indefinite length of value */
+	  old_index = *msg_index;
+	  length = skip_length_and_value(in_buf,msg_index,buf_end_index);
+	  *msg_index = old_index;
+	  buf_end_index = *msg_index + length - 2; 
+	  /* remove two bytes due to indefinete length end zeros */
+	} else 
+	  buf_end_index = (*msg_index + length);
+      }
+      break;
+    default:
+      return ASN1_ERROR;
+    }
+  }
+  return ASN1_ERROR;
+}
+
+
+/*
+ * int skip_tag(unsigned char *in_buf,int *index,int buf_len)
+ * steps past the BER encoded tag in in_buf and updates *index.
+ * Returns the number of skipped bytes.
+ */
+int skip_tag(unsigned char *in_buf,int *index,int buf_len)
+{
+  int start_index = *index;
+  if ((MASK(in_buf[*index],ASN1_TAG)) == 31){
+    do {
+      (*index)++;
+      if (*index >= buf_len)
+	return ASN1_ERROR;
+    }
+    while(in_buf[*index] >=128);
+  }
+  (*index)++;
+  return (*index - start_index);
+}
+
+
+/*
+ * int skip_length_and_value(unsigned char *in_buf,int *index,int buf_len)
+ * steps past the BER encoded length and value in in_buf and updates *index.
+ * returns the length if the skipped "length value".
+ * Returns the number of skipped bytes.
+ */
+int skip_length_and_value(unsigned char *in_buf,int *index,int buf_len)
+{
+  long len;
+  int indef = 0, lenoflen;
+  int start_index = *index;
+
+  if ((MASK(in_buf[*index],0x80)) == ASN1_SHORT_DEFINITE_LENGTH){
+    len = in_buf[*index];
+    if (len > (buf_len - (*index + 1)))
+      return ASN1_LEN_ERROR;
+  } else if (in_buf[*index] == ASN1_INDEFINITE_LENGTH)
+    indef = 1;
+  else /* long definite length */ {
+    lenoflen = (in_buf[*index] & 0x7f); /*length of length */
+    len = 0;
+    while (lenoflen--) {
+      (*index)++;
+      len = (len << 8) + in_buf[*index];
+    }
+    if (len > (buf_len - (*index + 1)))
+      return ASN1_LEN_ERROR;
+  }
+  (*index)++;
+  if (indef == 1)
+    {
+      while(!(in_buf[*index]==0 && in_buf[*index + 1]==0)) {
+	skip_tag(in_buf,index,buf_len);
+	skip_length_and_value(in_buf,index,buf_len);
+      }
+      (*index) += 2;
+    }
+  else 
+    (*index) += len;
+  return (*index - start_index);
+}
+
+/* int get_tag(unsigned char *in_buf,int *index)
+ *
+ * assumes next byte/bytes in in_buf is an encoded BER tag. A tag
+ * number has theoretically no upper limit in size. Here the tag
+ * number is assumed to be less than 64K. Returns an integer value
+ * on the format:
+ * xxxxxxxx xxxxxxcc tttttttt tttttttt
+ * the x-bits are 0 (insignificant)
+ * the c-bits are the class of the tag
+ * the t-bits are the tag number. This implies that the tag number
+ * is limited to 64K-1
+ * 
+ */
+int get_tag(unsigned char *in_buf,int *index,int buf_len)
+{
+  int tag_no = 0,tmp_tag = 0;
+
+  tag_no = (MASK(in_buf[*index],ASN1_CLASSFORM));
+  if ((MASK(in_buf[*index],ASN1_TAG)) == ASN1_TAG) {
+    /* long form of tag */
+    do {
+      (*index)++;
+      if (*index >= buf_len)
+	return ASN1_TAG_ERROR;
+      tmp_tag = tmp_tag << 7;
+      tmp_tag += (MASK(in_buf[*index],ASN1_LONG_TAG));
+    } while (in_buf[*index] >= 128);
+    (*index)++;
+    tag_no = tag_no + tmp_tag;
+  } else {
+    tag_no += (MASK(in_buf[*index],ASN1_TAG));
+    (*index)++;
+  }
+  if (*index >= buf_len)
+    return ASN1_TAG_ERROR;
+  return tag_no;
+}
+
+
+/*
+ * int get_value(char *out_buf,unsigned char *in_buf,
+ *               int *msg_index,int in_buf_len)
+ */
+/* assumes next byte/bytes in in_buf is an encoded BER value preceeded by a BER encoded length. Puts value in out_buf.
+ */
+int get_value(char *out_buf,
+	      unsigned char *in_buf,
+	      int *msg_index,
+	      int in_buf_len)
+{
+  int len, lenoflen, indef=0, skip_len;
+  int ret=0;
+  int start_index, out_index = 0;
+  
+/*   printf("get_value 1\n\r"); */
+  if (in_buf[*msg_index] < 0x80){ /* short definite length */
+    len = in_buf[*msg_index];
+/*     printf("short definite length\r\n"); */
+  } else if (in_buf[*msg_index] > 0x80) { /* long definite length */
+    lenoflen = (in_buf[*msg_index] & 0x7f); /*length of length */
+    len = 0;
+    while (lenoflen--) {
+      (*msg_index)++;
+      len = (len << 8) + in_buf[*msg_index];
+    }
+    if (len > (in_buf_len - (*msg_index + 1)))
+      return ASN1_LEN_ERROR;
+  } else 
+    indef = 1;
+  (*msg_index)++;
+/*   printf("get_value 2: len = %d, *msg_index = %d\r\n",len,*msg_index); */
+  if (indef == 1) {
+    while(!(in_buf[*msg_index]==0 && in_buf[*msg_index + 1]==0)) {
+      start_index = *msg_index;
+      skip_len = skip_tag(in_buf,msg_index,in_buf_len);
+/*       printf("get_value 3: skip_len=%d,start_index=%d,*msg_index=%d\n\r", */
+/* 	     skip_len,start_index,*msg_index); */
+      memcpy(&out_buf[ret],&in_buf[start_index],skip_len);
+      ret += skip_len;
+      start_index = *msg_index;
+      skip_len = skip_length_and_value(in_buf,msg_index,in_buf_len);
+/*       printf("get_value 4: skip_len=%d,start_index=%d,*msg_index=%d\n\r", */
+/* 	     skip_len,start_index,*msg_index); */
+      memcpy(&out_buf[ret],&in_buf[start_index],skip_len);
+      ret += skip_len;
+    }
+    return ret;
+  }
+  else
+    memcpy(&out_buf[ret],&in_buf[*msg_index],len);
+  return len;
+}
+
+
+/*
+ * int get_length(unsigned char *in_buf,int *msg_index)
+ * assumes next byte/bytes contain a BER encoded length field,
+ * which is decoded. The value of the length is returned. If it
+ * is an indefinite length the *indef is set to one.
+ */
+int get_length(unsigned char *in_buf,int *msg_index,
+	       int *indef,int in_buf_len)
+{
+  int len=0, lenoflen;
+  
+  if (in_buf[*msg_index] < 0x80) /* short definite length */
+    len = in_buf[*msg_index];
+  else if (in_buf[*msg_index] > 0x80) { /* long definite length */
+    lenoflen = (in_buf[*msg_index] & 0x7f); /*length of length */
+    len = 0;
+    while (lenoflen--) {
+      (*msg_index)++;
+      len = (len << 8) + in_buf[*msg_index];
+    }
+    if (len > (in_buf_len - (*msg_index + 1)))
+      return ASN1_LEN_ERROR;
+  } else 
+    *indef = 1;
+  (*msg_index)++;
+  return len;
 }

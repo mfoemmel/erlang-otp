@@ -15,7 +15,7 @@
 %% 
 %%     $Id$
 %%
--module(ftp_SUITE).
+-module(ftp_test).
 
 -include("inets_test_lib.hrl").
 
@@ -37,6 +37,7 @@
 	 append_chunk/1, 
 	 recv/1,
 	 recv_bin/1,
+	 recv_chunk/1,
 
 	 %% Tickets
 	 otp_3892/1]).
@@ -74,13 +75,15 @@ all(suite) -> [open, bad_open,
 	       append_chunk,
 	       recv,
 	       recv_bin,
+	       recv_chunk,
 
 	       %% Tickets
 	       otp_3892]. 
 
 
-init_per_testcase(Case, Config) when list(Config) ->
-    Config.
+init_per_testcase(Case, Config0) when list(Config0) ->
+    Config1 = ?UPDATE(priv_dir, ?inets_priv_dir, Config0),
+    Config1.
 
 fin_per_testcase(Case, Config) when list(Config) ->
     Config.
@@ -242,10 +245,12 @@ rename(doc) ->
 rename(suite) ->
     [];
 rename(Config) when list(Config) ->
+    ?LOG("rename -> entry",[]),
     ?line Host = ftp_host(Config), 
     ?line LFile  = "ftp_test.txt",
     ?line NewLFile  = "ftp_test.new",
     ?line PrivDir = ?CONFIG(priv_dir, Config), 
+    ?LOG("rename -> PrivDir: ~p",[PrivDir]),
     ?line AbsLFile = filename:absname(LFile, PrivDir),
     ?line Contents = "ftp_SUITE test ...",
     ?line ok = file:write_file(AbsLFile, list_to_binary(Contents)),
@@ -496,28 +501,38 @@ recv(doc) ->
 recv(suite) ->
     [];
 recv(Config) when list(Config) ->
+    ?LOG("recv -> entry",[]),
     ?line Host = ftp_host(Config), 
     ?line File  = "ftp_test.txt",
     ?line PrivDir = ?CONFIG(priv_dir, Config), 
     ?line AbsFile = filename:absname(File, PrivDir),
     ?line Contents = "ftp_SUITE:recv test ...",
+    ?DEBUG("recv -> create file to send: ~p",[AbsFile]),
     ?line ok = file:write_file(AbsFile, list_to_binary(Contents)),
+    ?DEBUG("recv -> connect to host",[]),
     ?line {ok, Pid1} = ?ftp_open(Host),
     ?line ok = ftp:user(Pid1, ?FTP_USER, ?FTP_PASS),
     ?line ok = ftp:cd(Pid1, "incoming"),
     ?line ftp:delete(Pid1, File),		% reset
     ?line ftp:lcd(Pid1, PrivDir),
+    ?DEBUG("recv -> send file",[]),
     ?line ok = ftp:send(Pid1, File),
+    ?DEBUG("recv -> close",[]),
     ?line ok = ftp:close(Pid1),
+    ?DEBUG("recv -> delete local file",[]),
     ?line ok = file:delete(AbsFile),		% cleanup
     %% new connection
     ?line sleep(100),
+    ?DEBUG("recv -> connect to host",[]),
     ?line {ok, Pid2} = ?ftp_open(Host),
     ?line ok = ftp:user(Pid2, ?FTP_USER, ?FTP_PASS),
     ?line ok = ftp:lcd(Pid2, PrivDir),
     ?line ok = ftp:cd(Pid2, "incoming"),
+    ?DEBUG("recv -> receive file",[]),
     ?line ok = ftp:recv(Pid2, File),
+    ?DEBUG("recv -> delete remote file",[]),
     ?line ok = ftp:delete(Pid2, File),		% cleanup
+    ?DEBUG("recv -> close",[]),
     ?line ok = ftp:close(Pid2),
     ?line {ok, Files} = file:list_dir(PrivDir),
     ?line true = lists:member(File, Files),
@@ -534,7 +549,6 @@ recv_bin(suite) ->
 recv_bin(Config) when list(Config) ->
     ?LOG("recv_bin -> entry",[]),
     ?line Host = ftp_host(Config), 
-    ?DEBUG("recv_bin -> create test binary",[]),
     ?line File = "ftp_test.txt",
     ?line Contents1 = "ftp_SUITE test ...",
     ?DEBUG("recv_bin -> data to send: '~p'",[Contents1]),
@@ -558,6 +572,64 @@ recv_bin(Config) when list(Config) ->
     ?DEBUG("recv_bin -> Data equal, now cleanup",[]),
     ?line ok = ftp:delete(Pid2, File),		% cleanup
     ?line ok = ftp:close(Pid2).
+    
+
+%%
+%%
+%%
+recv_chunk(doc) ->
+    ["Send a binary to the remote host; Connect again, and retreive "
+     "the file; then remove the file."];
+recv_chunk(suite) ->
+    [];
+recv_chunk(Config) when list(Config) ->
+    ?LOG("recv_chunk -> entry",[]),
+    ?line Host = ftp_host(Config), 
+    ?DEBUG("recv_chunk -> create test binary",[]),
+    ?line File = "ftp_test.txt",
+    ?line Contents1 = lists:flatten(lists:duplicate(10,
+	"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+	"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+	"DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+	"EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+	"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+	"GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
+	"HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH"
+	"IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII")),
+    ?line Bin1 = list_to_binary(Contents1),
+    ?DEBUG("recv_chunk -> connect to host, send and close",[]),
+    ?line {ok, Pid1} = ?ftp_open(Host),
+    ?line ok = ftp:user(Pid1, ?FTP_USER, ?FTP_PASS),
+    ?line ok = ftp:cd(Pid1, "incoming"),
+    ?line ok = ftp:send_bin(Pid1, Bin1, File),
+    ?line ok = ftp:close(Pid1),
+    ?line sleep(100),
+    ?DEBUG("recv_chunk -> connect to host, receive and close",[]),
+    ?line {ok, Pid2} = ?ftp_open(Host),
+    ?line ok = ftp:user(Pid2, ?FTP_USER, ?FTP_PASS),
+    ?line ok = ftp:cd(Pid2, "incoming"),
+    ?line ok  = ftp:recv_chunk_start(Pid2, File),
+    ?line {ok, Bin2} = recv_chunk(Pid2, []),
+    ?DEBUG("recv_chunk -> unpack received binary",[]),
+    ?line Contents2 = binary_to_list(Bin2),
+    ?DEBUG("recv_chunk -> data recived",[]),
+    ?line Contents1 = Contents2,
+    ?DEBUG("recv_chunk -> Data equal, now cleanup",[]),
+    ?line ok = ftp:delete(Pid2, File),		% cleanup
+    ?line ok = ftp:close(Pid2).
+    
+recv_chunk(Pid, Acc) ->
+    case ftp:recv_chunk(Pid) of
+	ok ->
+	    {ok, list_to_binary(lists:reverse(Acc))};
+	{ok, Bin} ->
+	    ?DEBUG("recv_chunk -> received binary chunk of ~p bytes",
+		[size(Bin)]),
+	    recv_chunk(Pid, [Bin|Acc]);
+	Error ->
+	    Error
+    end.
     
 
 otp_3892(doc) ->

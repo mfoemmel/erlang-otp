@@ -98,7 +98,7 @@ universal_time(OE_THIS, State) ->
     Utc = #'TimeBase_UtcT'{time=Time, inacclo = ?low_TimeT(Inaccuracy), 
 			   inacchi = ?high_TimeT(Inaccuracy), 
 			   tdf = ?get_Tdf(State)},
-    {reply, 'CosTime_UTO':oe_create([Utc, OE_THIS], [{pseudo,true}]), State}.
+    {reply, 'CosTime_UTO':oe_create([Utc, OE_THIS], [{pseudo,true}|?CREATE_OPTS]), State}.
 
 %%----------------------------------------------------------%
 %% function : secure_universal_time
@@ -120,9 +120,9 @@ new_universal_time(OE_THIS, State, Time, Inaccuracy, Tdf) when
   Inaccuracy=<?max_Inaccuracy, Time=<?max_TimeT ->
     Utc = #'TimeBase_UtcT'{time=Time, inacclo = ?low_TimeT(Inaccuracy), 
 			   inacchi = ?high_TimeT(Inaccuracy), tdf = Tdf},
-    {reply, 'CosTime_UTO':oe_create([Utc, OE_THIS], [{pseudo,true}]), State};
+    {reply, 'CosTime_UTO':oe_create([Utc, OE_THIS], [{pseudo,true}|?CREATE_OPTS]), State};
 new_universal_time(_, _, _, _, _) ->
-    corba:raise(#'BAD_PARAM'{minor=800, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : uto_from_utc
@@ -130,9 +130,9 @@ new_universal_time(_, _, _, _, _) ->
 %% Returns  : CosTime::UTO
 %%-----------------------------------------------------------
 uto_from_utc(OE_THIS, State, Utc) when record(Utc, 'TimeBase_UtcT') ->
-    {reply, 'CosTime_UTO':oe_create([Utc, OE_THIS],[{pseudo,true}]),State};
+    {reply, 'CosTime_UTO':oe_create([Utc, OE_THIS],[{pseudo,true}|?CREATE_OPTS]),State};
 uto_from_utc(_, _, _) ->
-    corba:raise(#'BAD_PARAM'{minor=800, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : new_interval
@@ -146,9 +146,9 @@ new_interval(OE_THIS, State, Lower, Upper) when integer(Lower), integer(Upper),
 							   upper_bound=Upper},
 				     ?get_Tdf(State),
 				     OE_THIS], 
-				    [{pseudo,true}]), State};
+				    [{pseudo,true}|?CREATE_OPTS]), State};
 new_interval(_, _, _, _) ->
-    corba:raise(#'BAD_PARAM'{minor=800, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 
 %%--------------- LOCAL FUNCTIONS ----------------------------

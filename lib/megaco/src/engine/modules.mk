@@ -11,6 +11,7 @@ MODULES = \
 	megaco_monitor \
 	megaco_sdp \
 	megaco_sup \
+	megaco_stats \
 	megaco_user
 
 EXTERNAL_HRL_FILES = \

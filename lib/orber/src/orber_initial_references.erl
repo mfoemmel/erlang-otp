@@ -38,7 +38,7 @@
 	 terminate/2, handle_call/3, code_change/3, 
 	 get/2, list/1, add/3, remove/2, 
 	 get/1, list/0, add/2, remove/1, 
-	 typeID/0, install/2, oe_is_a/1]).
+	 typeID/0, install/2, oe_is_a/1, oe_tc/1, oe_get_interface/0]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -101,7 +101,7 @@ install(Timeout, Options) ->
 %%-----------------------------------------------------------------
 %% InitialReferences Interface 
 %%-----------------------------------------------------------------
-get(Id) ->
+'get'(Id) ->
     case read(Id) of
 	{'EXCEPTION', E} ->
 	    corba:raise(E);
@@ -136,24 +136,17 @@ remove(Id) ->
     end.
 
 
-get(EO_this, Id) ->
-    corba:call(EO_this, 'get', [Id], {{'tk_objref', 12, "object"},
-				      [{"id", {'tk_string', 0}}],
-				      []}).
+'get'(EO_this, Id) ->
+    corba:call(EO_this, 'get', [Id], ?MODULE).
 
 list(EO_this) ->
-    corba:call(EO_this, 'list', [], {{'tk_sequence',{"id", {'tk_string', 0}, 0}},
-				     [], []}).
+    corba:call(EO_this, 'list', [], ?MODULE).
 
 add(EO_this, Id, ObjRef) ->
-    corba:call(EO_this, 'add', [Id, ObjRef], {'tk_boolean',
-				      [{"id", {'tk_string', 0}}, {'tk_objref', 12, "object"}],
-				      []}).
+    corba:call(EO_this, 'add', [Id, ObjRef], ?MODULE).
 
 remove(EO_this, Id) ->
-    corba:call(EO_this, 'remove', [Id], {'tk_boolean',
-				      [{"id", {'tk_string', 0}}],
-				      []}).
+    corba:call(EO_this, 'remove', [Id], ?MODULE).
 
 typeID() ->
     "IDL:Orber/InitialReferences:1.0".
@@ -169,7 +162,8 @@ oe_is_a(_) ->
 init([]) ->
     case mnesia:wait_for_tables(['orber_references'], infinity) of
 	ok ->
-	    NSObjKey = 'CosNaming_NamingContextExt':oe_create([], [{pseudo, true}]),
+	    NSObjKey = 'CosNaming_NamingContextExt':oe_create([], [{pseudo, true},
+								   {no_security, orber:partial_security()}]),
 	    rewrite("NameService", NSObjKey),
 	    ErlIfr = 'OrberApp_IFR':oe_create([], [{pseudo, true}]),
 	    rewrite("OrberIFR", ErlIfr),
@@ -184,32 +178,36 @@ terminate(Reason, State) ->
 
 %%-----------------------------------------------------------------
 %% Handle incomming calls 
-handle_call({EO_this, 'get', [Id]}, From, State) ->
+handle_call({EO_this, OE_Context, 'get', [Id]}, From, State) ->
     {'reply', read(Id), State};
-handle_call({EO_this, 'list', []}, From, State) ->
+handle_call({EO_this, OE_Context, 'list', []}, From, State) ->
     {'reply', list_keys(), State};
 
-handle_call({EO_this, 'add', [Id, ObjectRef]}, From, State) ->
+handle_call({EO_this, OE_Context, 'add', [Id, ObjectRef]}, From, State) ->
     {'reply', write(Id, ObjectRef, external), State};
 
-handle_call({EO_this, 'remove', [Id]}, From, State) ->
+handle_call({EO_this, OE_Context, 'remove', [Id]}, From, State) ->
     {'reply', delete(Id), State};
-handle_call({EO_THIS, oe_get_interface, []},
-            EO_From, EO_State) ->
-    {'reply', [{"get", {{'tk_objref', 12, "object"},
-			[{'tk_string', 0}],
-			[]}},
-	       {"list", {{'tk_sequence',{'tk_string', 0}, 0},
-			 [],
-			 []}},
-	       {"add", {'tk_boolean',
-			[{'tk_string', 0}, {'tk_objref', 12, "object"}],
-			[]}}
-	      ], EO_State};
 handle_call('stop', From, State) ->
     {'stop', normal, 'ok', State};
 handle_call(Req, From,State) ->
     {'reply', {'ok', 'nil', 'nil'}, State}.
+
+oe_tc(get) ->
+    {{'tk_objref', 12, "object"}, [{'tk_string', 0}], []};
+oe_tc(list) -> 
+    {{'tk_sequence',{'tk_string', 0}, 0}, [], []};
+oe_tc(add) ->
+    {'tk_boolean', [{'tk_string', 0}, {'tk_objref', 12, "object"}], []};
+oe_tc(remove) ->
+    {'tk_boolean', [{'tk_string', 0}], []};
+oe_tc(_) -> 
+    undefined.
+
+oe_get_interface() ->
+    [{"get", oe_tc(get)},
+     {"list", oe_tc(list)},
+     {"add", oe_tc(add)}].
 
 
 %%-----------------------------------------------------------------

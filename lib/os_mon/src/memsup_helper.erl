@@ -72,6 +72,7 @@ server_init(Starter) ->
 		       {win32,_} -> not_used;
 		       {unix,linux} -> not_used;
 		       {unix,freebsd} -> not_used;
+		       {unix, darwin} -> not_used;
 		       _ -> start_portprogram()
 		   end,
 	    process_flag(priority, low),
@@ -95,6 +96,8 @@ loop(Parent,Port) ->
 			       get_memory_usage_linux(Port);
 			   {unix,freebsd} ->
 			       get_memory_usage_freebsd(Port);
+			   {unix,darwin} ->
+			       get_memory_usage_darwin(Port);
 			   _ ->
 			       get_memory_usage(Port)
 		       end,
@@ -234,6 +237,31 @@ freebsd_sysctl(Def) ->
     list_to_integer(os:cmd("/sbin/sysctl -n " ++ Def) -- "\n").
 
 %%-----------------------------------------------------------------
+%% get_memory_usage_darwin(_Port)
+%%
+%% Uses vm_stat command. This appears to lie about the page size in
+%% Mac OS X 10.2.2 - the pages given are based on 4000 bytes, but
+%% the vm_stat command tells us that it is 4096..
+%% Returns {Allocated,Total}
+%%-----------------------------------------------------------------
+get_memory_usage_darwin(_) ->
+    Str = os:cmd("/usr/bin/vm_stat"),
+    {ok, [Free],Str2} = io_lib:fread("Pages free:~d.", skip_to_eol(Str)),
+    {ok, [Active],Str3} = io_lib:fread("Pages active:~d.", skip_to_eol(Str2)),
+    {ok, [Inactive],Str4} = io_lib:fread("Pages inactive:~d.", skip_to_eol(Str3)),
+    {ok, [Wired],_} = io_lib:fread("Pages wired down:~d.", skip_to_eol(Str4)),
+    NMemUsed  = (Wired + Active + Inactive) * 4000,
+    NMemTotal = NMemUsed + Free * 4000,
+    {NMemUsed,NMemTotal}.
+
+skip_to_eol([]) ->
+    [];
+skip_to_eol([$\n | T]) ->
+    T;
+skip_to_eol([_ | T]) ->
+    skip_to_eol(T).
+
+%%-----------------------------------------------------------------
 %% Return the extended memory data as a tagged list
 %% The (current) possible tag values are:
 %% total_memory: The total memory available to erlang.
@@ -256,6 +284,10 @@ get_system_memory_usage(Port) ->
 	     {system_total_memory,Tot}]; % correct unless setrlimit() set
 	{unix,freebsd} ->
 	    {Alloced,Tot} = get_memory_usage_freebsd([]),
+	    [{total_memory,Tot},{free_memory, Tot-Alloced},
+	     {system_total_memory,Tot}];
+	{unix,darwin} ->
+	    {Alloced,Tot} = get_memory_usage_darwin([]),
 	    [{total_memory,Tot},{free_memory, Tot-Alloced},
 	     {system_total_memory,Tot}];
 	_ -> 

@@ -1,1 +1,16 @@
-{"%VSN%",[],[]}.
+{"%VSN%",
+ [
+  {"1.6.0",
+   [
+    {update, memsup, {advanced, upgrade_from_1_6_0}, soft_purge, soft_purge, []}
+   ]
+  }
+ ],
+ [
+  {"1.6.0",
+   [
+    {update, memsup, {advanced, downgrade_to_1_6_0}, soft_purge, soft_purge, []}
+   ]
+  }
+ ]
+}.

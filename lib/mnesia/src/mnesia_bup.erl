@@ -890,17 +890,17 @@ open_media(Tab, LT) ->
 	    %% Create .DCL
 	    Fname = mnesia_lib:tab2dcl(Tab),
 	    file:delete(Fname),
-	    Tab = mnesia_log:open_log(Tab, 
-				      mnesia_log:dcl_log_header(), 
-				      Fname, false, false,
-				      read_write);
+	    mnesia_log:open_log({?MODULE,Tab}, 
+				mnesia_log:dcl_log_header(), 
+				Fname, false, false,
+				read_write);
 	_ ->
 	    Fname = mnesia_lib:tab2dcl(Tab),
 	    file:delete(Fname),
-	    Tab = mnesia_log:open_log(Tab, 
-				      mnesia_log:dcl_log_header(), 
-				      Fname, false, false,
-				      read_write)
+	    mnesia_log:open_log({?MODULE,Tab}, 
+				mnesia_log:dcl_log_header(), 
+				Fname, false, false,
+				read_write)
     end.
 close_media(L) ->
     Tab = L#local_tab.name,
@@ -908,7 +908,7 @@ close_media(L) ->
 	disc_only_copies ->
 	    mnesia_lib:dets_sync_close(Tab);
 	_ ->		    
-	    mnesia_log:close_log(Tab)
+	    mnesia_log:close_log({?MODULE,Tab})
     end.
 
 add_to_media(Tab, Key, Rec, L) -> 
@@ -924,15 +924,16 @@ add_to_media(Tab, Key, Rec, L) ->
 		    Rec2 = setelement(1, Rec, RecName),
 		    ok = dets:insert(Tab, Rec2)
 	    end;
-	_ ->		    
+	_ ->		
+	    Log = {?MODULE, Tab},
 	    case Rec of
 		{Tab, Key} ->
-		    mnesia_log:append(Tab, {{Tab, Key}, {Tab, Key}, delete});
+		    mnesia_log:append(Log, {{Tab, Key}, {Tab, Key}, delete});
 		(Rec) when Tab == RecName ->
-		    mnesia_log:append(Tab, {{Tab, Key}, Rec, write});
+		    mnesia_log:append(Log, {{Tab, Key}, Rec, write});
 		(Rec) ->
 		    Rec2 = setelement(1, Rec, RecName),
-		    mnesia_log:append(Tab, {{Tab, Key}, Rec2, write})
+		    mnesia_log:append(Log, {{Tab, Key}, Rec2, write})
 	    end
     end.
 

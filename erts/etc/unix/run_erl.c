@@ -42,6 +42,9 @@
 #include <dirent.h>
 #include <termios.h>
 #include <time.h>
+#if !defined(NO_SYSLOG)
+#include <syslog.h>
+#endif
 
 #define noDEBUG
 
@@ -71,6 +74,8 @@
 
 #define MAX(x,y)  ((x) > (y) ? (x) : (y))
 
+#define FILENAME_BUFSIZ FILENAME_MAX
+
 /* prototypes */
 static void usage(char *);
 static int create_fifo(char *name, int perm);
@@ -79,35 +84,70 @@ static int open_pty_slave(char *name);
 static void pass_on(pid_t, int);
 static void exec_shell(char **);
 static void status(const char *format,...);
-static void error(const char *format,...);
+static void stderr_error(int priority, const char *format,...);
 static void catch_sigpipe(int);
 static int next_log(int log_num);
 static int prev_log(int log_num);
 static int find_next_log_num();
 static int open_log(int log_num, int flags);
 static void write_to_log(int* lfd, int* log_num, char* buf, int len);
+static void daemon_init(void);
+static char *simple_basename(char *path);
 #ifdef DEBUG
 static void show_terminal_settings(struct termios *t);
 #endif
 
 /* static data */
-static char FIFO1[FILENAME_MAX], FIFO2[FILENAME_MAX];
-static char STATUSFILE[FILENAME_MAX];
-static char log_dir[FILENAME_MAX];
-static char pipename[FILENAME_MAX];
+static char fifo1[FILENAME_BUFSIZ], fifo2[FILENAME_BUFSIZ];
+static char statusfile[FILENAME_BUFSIZ];
+static char log_dir[FILENAME_BUFSIZ];
+static char pipename[FILENAME_BUFSIZ];
 static FILE *stdstatus = NULL;
 static struct sigaction sig_act;
 static int fifowrite = 0;
 static int log_generations = DEFAULT_LOG_GENERATIONS;
 static int log_maxsize     = DEFAULT_LOG_MAXSIZE;
+static int run_daemon = 0;
+static char *program_name;
 
-static void usage(char *pname)
-{
-  fprintf(stderr, "Usage: %s (pipe_name|pipe_dir/) log_dir \"command [parameters ...]\"\n", pname);
-  fprintf(stderr, "\nYou may also set the environment variables RUN_ERL_LOG_GENERATIONS\n");
-  fprintf(stderr, "and RUN_ERL_LOG_MAXSIZE to the number of log files to use and the\n");
-  fprintf(stderr, "size of the log file when to switch to the next log file\n");
-}
+
+#if defined(NO_SYSCONF) || !defined(_SC_OPEN_MAX) 
+#    if defined(OPEN_MAX)
+#        define HIGHEST_FILENO() OPEN_MAX
+#    else
+#        define HIGHEST_FILENO() 64 /* arbitrary value */
+#    endif
+#else 
+#    define HIGHEST_FILENO() sysconf(_SC_OPEN_MAX)
+#endif
+
+
+#ifdef NO_SYSLOG
+#define OPEN_SYSLOG() ((void) 0)
+#define ERROR(Parameters) stderr_error##Parameters
+#else
+#define OPEN_SYSLOG()\
+openlog(simple_basename(program_name),LOG_PID|LOG_CONS|LOG_NOWAIT,LOG_USER)
+
+#define ERROR(Parameters)			\
+do {						\
+    if (run_daemon) {			        \
+	syslog##Parameters;			\
+    } else {					\
+	stderr_error##Parameters;		\
+    }						\
+} while (0)
+#endif
+
+#define  CHECK_BUFFER(Need) 						   \
+do {									   \
+    if ((Need) >= FILENAME_BUFSIZ) {					   \
+	ERROR((LOG_ERR,"%s: Filename length (%d) exceeds maximum length "  \
+	      "of %d characters, exiting.", (Need),			   \
+	      program_name, FILENAME_BUFSIZ));				   \
+	exit(1);							   \
+    }									   \
+} while (0)
 
 int main(int argc, char **argv)
 {
@@ -115,16 +155,29 @@ int main(int argc, char **argv)
   int mfd, sfd;
   int fd;
   char *p, *ptyslave;
+  int i = 1;
+  int off_argv;
+
+  program_name = argv[0];
 
   if(argc<4) {
     usage(argv[0]);
-    exit(99);
+    exit(1);
   }
-  strncpy(pipename, argv[1], sizeof(pipename));
 
-  strncpy(log_dir, argv[2], sizeof(log_dir));
-  strncpy(STATUSFILE, log_dir, sizeof(STATUSFILE));
-  strncat(STATUSFILE, STATUSFILENAME, sizeof(STATUSFILE));
+  if (!strcmp(argv[1],"-daemon")) {
+      daemon_init();
+      ++i;
+  }
+
+  off_argv = i;
+  strncpy(pipename, argv[i++], FILENAME_BUFSIZ);
+  pipename[FILENAME_BUFSIZ - 1] = '\0';
+  strncpy(log_dir, argv[i], FILENAME_BUFSIZ);
+  log_dir[FILENAME_BUFSIZ - 1] = '\0';
+  strcpy(statusfile, log_dir);
+  CHECK_BUFFER(strlen(statusfile)+strlen(STATUSFILENAME));
+  strcat(statusfile, STATUSFILENAME);
 
 #ifdef DEBUG
   status("%s: pid is : %d\n", argv[0], getpid());
@@ -135,15 +188,15 @@ int main(int argc, char **argv)
   if ((p = getenv("RUN_ERL_LOG_GENERATIONS"))) {
     log_generations = atoi(p);
     if (log_generations < LOG_MIN_GENERATIONS)
-      error("Minumum RUN_ERL_LOG_GENERATIONS is %d\n", LOG_MIN_GENERATIONS);
+      ERROR((LOG_ERR,"Minumum RUN_ERL_LOG_GENERATIONS is %d\n", LOG_MIN_GENERATIONS));
     if (log_generations > LOG_MAX_GENERATIONS)
-      error("Maxumum RUN_ERL_LOG_GENERATIONS is %d\n", LOG_MAX_GENERATIONS);
+      ERROR((LOG_ERR,"Maxumum RUN_ERL_LOG_GENERATIONS is %d\n", LOG_MAX_GENERATIONS));
   }
 
   if ((p = getenv("RUN_ERL_LOG_MAXSIZE"))) {
     log_maxsize = atoi(p);
     if (log_maxsize < LOG_MIN_MAXSIZE)
-      error("Minumum RUN_ERL_LOG_MAXSIZE is %d\n", LOG_MIN_MAXSIZE);
+      ERROR((LOG_ERR,"Minumum RUN_ERL_LOG_MAXSIZE is %d\n", LOG_MIN_MAXSIZE));
   }
 
   /*
@@ -159,7 +212,7 @@ int main(int argc, char **argv)
 
     dirp = opendir(pipename);
     if(!dirp) {
-      error("Can't access pipe directory %s.\n", pipename);
+      ERROR((LOG_ERR,"Can't access pipe directory %s.\n", pipename));
       exit(1);
     }
 
@@ -173,30 +226,32 @@ int main(int argc, char **argv)
       }
     }	
     closedir(dirp);
+    CHECK_BUFFER(strlen(pipename)+10+strlen(PIPE_STUBNAME));
     sprintf(pipename+strlen(pipename),
 	    "%s.%d",PIPE_STUBNAME,highest_pipe_num+1);
   } /* if */
 
   /* write FIFO - is read FIFO for `to_erl' program */
-  strncpy(FIFO1, pipename, FILENAME_MAX);
-  strncat(FIFO1, ".r", FILENAME_MAX - strlen(FIFO1));
-  if (create_fifo(FIFO1, PERM) < 0) {
-    error("Cannot create FIFO %s for writing.\n", FIFO1);
+  strcpy(fifo1, pipename);
+  CHECK_BUFFER(strlen(fifo1)+2);
+  strcat(fifo1, ".r");
+  if (create_fifo(fifo1, PERM) < 0) {
+    ERROR((LOG_ERR,"Cannot create FIFO %s for writing.\n", fifo1));
     exit(1);
   }
 
   /* read FIFO - is write FIFO for `to_erl' program */
-  strncpy(FIFO2, pipename, FILENAME_MAX);
-  strncat(FIFO2, ".w", FILENAME_MAX - strlen(FIFO2));
+  strcpy(fifo2, pipename);
+  strcat(fifo2, ".w");
   /* Check that nobody is running run_erl already */
-  if ((fd = open (FIFO2, O_WRONLY|O_NDELAY, 0)) >= 0) {
+  if ((fd = open (fifo2, O_WRONLY|O_NDELAY, 0)) >= 0) {
     /* Open as client succeeded -- run_erl is already running! */
     fprintf(stderr, "Erlang already running on pipe %s.\n", pipename);
     close(fd);
     exit(1);
   }
-  if (create_fifo(FIFO2, PERM) < 0) { 
-    error("Cannot create FIFO %s for reading.\n", FIFO2);
+  if (create_fifo(fifo2, PERM) < 0) { 
+    ERROR((LOG_ERR,"Cannot create FIFO %s for reading.\n", fifo2));
     exit(1);
   }
 
@@ -205,7 +260,7 @@ int main(int argc, char **argv)
    */
 
   if ((mfd = open_pty_master(&ptyslave)) < 0) {
-    error("Could not open pty master\n");
+    ERROR((LOG_ERR,"Could not open pty master\n"));
     exit(1);
   }
 
@@ -214,7 +269,7 @@ int main(int argc, char **argv)
    */
 
   if ((childpid = fork()) < 0) {
-    error("Cannot fork\n");
+    ERROR((LOG_ERR,"Cannot fork\n"));
     exit(1);
   }
   if (childpid == 0) {
@@ -232,18 +287,35 @@ int main(int argc, char **argv)
 #endif
     /* Open the slave pty */
     if ((sfd = open_pty_slave(ptyslave)) < 0) {
-      error("Could not open pty slave %s\n", ptyslave);
+      ERROR((LOG_ERR,"Could not open pty slave %s\n", ptyslave));
       exit(1);
     }
+    /* But sfd may be one of the stdio fd's now, and we should be unmodern and not use dup2... */
+    /* easiest to dup it up... */
+    while (sfd < 3) {
+	sfd = dup(sfd);
+    }
+
+#ifndef NO_SYSLOG
+    /* Before fiddling with file descriptors we make sure syslog is turned off
+       or "closed". In the single case where we might want it again, 
+       we will open it again instead. Would not want syslog to
+       go to some other fd... */
+    if (run_daemon) {
+	closelog();
+    }
+#endif
+
     /* Close stdio */
     close(0);
     close(1);
     close(2);
+
     if (dup(sfd) != 0 || dup(sfd) != 1 || dup(sfd) != 2) {
       status("Cannot dup\n");
     }
     close(sfd);
-    exec_shell(argv+1); /* exec_shell expects argv[2] to be */
+    exec_shell(argv+off_argv); /* exec_shell expects argv[2] to be */
                         /* the command name, so we have to */
                         /* adjust. */
   } else {
@@ -284,13 +356,13 @@ static void pass_on(pid_t childpid, int mfd)
    * We can't open the writing side because nobody is reading and 
    * we'd either hang or get an error.
    */
-  if ((rfd = open(FIFO2, O_RDONLY|O_NDELAY, 0)) < 0) {
-    error("Could not open FIFO %s for reading.\n", FIFO2);
+  if ((rfd = open(fifo2, O_RDONLY|O_NDELAY, 0)) < 0) {
+    ERROR((LOG_ERR,"Could not open FIFO %s for reading.\n", fifo2));
     exit(1);
   }
 
 #ifdef DEBUG
-  status("run_erl: %s opened for reading\n", FIFO2);
+  status("run_erl: %s opened for reading\n", fifo2);
 #endif
 
   /* Open the log file */
@@ -311,7 +383,7 @@ static void pass_on(pid_t childpid, int mfd)
     ready = select(maxfd + 1, &readfds, NULL, NULL, &timeout);
     if (ready < 0) {
       /* Some error occured */
-      error("Error in select.");
+      ERROR((LOG_ERR,"Error in select."));
       exit(1);
     } else {
       /* Check how long time we've been inactive */
@@ -337,13 +409,13 @@ static void pass_on(pid_t childpid, int mfd)
 	close(rfd);
 	if(wfd) close(wfd);
 	close(mfd);
-	unlink(FIFO1);
-	unlink(FIFO2);
+	unlink(fifo1);
+	unlink(fifo2);
 	if (len < 0) {
 	  if(errno == EIO)
-	    error("Erlang closed the connection.\n");
+	    ERROR((LOG_ERR,"Erlang closed the connection.\n"));
 	  else
-	    error("Error in reading from terminal: errno=%d\n",errno);
+	    ERROR((LOG_ERR,"Error in reading from terminal: errno=%d\n",errno));
 	  exit(1);
 	}
 	exit(0);
@@ -383,9 +455,9 @@ static void pass_on(pid_t childpid, int mfd)
 	close(rfd);
 	if(wfd) close(wfd);
 	close(mfd);
-	unlink(FIFO1);
-	unlink(FIFO2);
-	error("Error in reading from FIFO.\n");
+	unlink(fifo1);
+	unlink(fifo2);
+	ERROR((LOG_ERR,"Error in reading from FIFO.\n"));
 	exit(1);
       }
 
@@ -396,26 +468,26 @@ static void pass_on(pid_t childpid, int mfd)
 
       if(!len) {
 	close(rfd);
-	rfd = open(FIFO2, O_RDONLY|O_NDELAY, 0);
+	rfd = open(fifo2, O_RDONLY|O_NDELAY, 0);
 	if (rfd < 0) {
-	  error("Could not open FIFO %s for reading.\n", FIFO2);
+	  ERROR((LOG_ERR,"Could not open FIFO %s for reading.\n", fifo2));
 	  exit(1);
 	}
       } else {
 	if(!wfd) {
-	  if ((wfd = open(FIFO1, O_WRONLY|O_NDELAY, 0)) < 0) {
+	  if ((wfd = open(fifo1, O_WRONLY|O_NDELAY, 0)) < 0) {
 	    status("Client expected on FIFO %s, but can't open (len=%d)\n",
-		   FIFO1, len);
+		   fifo1, len);
 	    close(rfd);
-	    rfd = open(FIFO2, O_RDONLY|O_NDELAY, 0);
+	    rfd = open(fifo2, O_RDONLY|O_NDELAY, 0);
 	    if (rfd < 0) {
-	      error("Could not open FIFO %s for reading.\n", FIFO2);
+	      ERROR((LOG_ERR,"Could not open FIFO %s for reading.\n", fifo2));
 	      exit(1);
 	    }
 	    wfd = 0;
 	  } else {
 #ifdef DEBUG
-	    status("run_erl: %s opened for writing\n", FIFO1);
+	    status("run_erl: %s opened for writing\n", fifo1);
 #endif
 	  }
 	}
@@ -427,7 +499,7 @@ static void pass_on(pid_t childpid, int mfd)
 	if(len==1 && buf[0] == '\003') {
 	  kill(childpid,SIGINT);
 	} else if(write(mfd, buf, len) != len) {
-	  error("Error in writing to terminal.\n");
+	  ERROR((LOG_ERR,"Error in writing to terminal.\n"));
 	  close(rfd);
 	  if(wfd) close(wfd);
 	  close(mfd);
@@ -496,7 +568,7 @@ static int find_next_log_num() {
     log_exists[i] = 0;
   dirp = opendir(log_dir);
   if(!dirp) {
-    error("Can't access log directory %s.\n", log_dir);
+    ERROR((LOG_ERR,"Can't access log directory %s.\n", log_dir));
     exit(1);
   }
 
@@ -552,7 +624,7 @@ static int open_log(int log_num, int flags) {
   /* Create or continue on the current log file */
   sprintf(buf, "%s/%s%d", log_dir, LOG_STUBNAME, log_num);
   if((lfd = open(buf, flags, LOG_PERM))<0){
-    error("Can't open log file %s.", buf);
+    ERROR((LOG_ERR,"Can't open log file %s.", buf));
     exit(1);
   }
 
@@ -601,7 +673,11 @@ static void write_to_log(int* lfd, int* log_num, char* buf, int len) {
  */
 static int create_fifo(char *name, int perm)
 {
-  if ((mknod(name, S_IFIFO | perm, 0) < 0) && (errno != EEXIST))
+#ifdef HAVE_MACH_O_DYLD_H
+  if ((mkfifo(name, perm) < 0) && (errno != EEXIST))
+#else
+    if ((mknod(name, S_IFIFO | perm, 0) < 0) && (errno != EEXIST))
+#endif
     return -1;
   return 0;
 }
@@ -726,7 +802,10 @@ static void exec_shell(char **argv)
   for (vp = argv, i = 0; *vp; vp++, i++)
     status("argv[%d] = %s\n", i, *vp);
   execv(sh, argv);
-  error("Could not execve\n");
+  if (run_daemon) {
+      OPEN_SYSLOG();
+  }
+  ERROR((LOG_ERR,"Could not execve\n"));
 }
 
 /* status()
@@ -739,7 +818,7 @@ static void status(const char *format,...)
   time_t now;
 
   if (stdstatus == NULL)
-    stdstatus = fopen(STATUSFILE, "w");
+    stdstatus = fopen(statusfile, "w");
   if (stdstatus == NULL)
     return;
   now = time(NULL);
@@ -750,11 +829,41 @@ static void status(const char *format,...)
   fflush(stdstatus);
 }
 
+static void daemon_init(void) 
+     /* As R Stevens wants it, to a certain extent anyway... */ 
+{
+    pid_t pid;
+    int i, maxfd = HIGHEST_FILENO(); 
+
+    if ((pid = fork()) != 0)
+	exit(0);
+#if defined(USE_SETPGRP_NOARGS)
+    setpgrp();
+#elif defined(USE_SETPGRP)
+    setpgrp(0,getpid());
+#else                           
+    setsid(); /* Seems to be the case on all current platforms */
+#endif
+    signal(SIGHUP, SIG_IGN);
+    if ((pid = fork()) != 0)
+	exit(0);
+
+    /* Should change working directory to "/" and change umask now, but that 
+       would be backward incompatible */
+
+    for (i = 0; i < maxfd; ++i ) {
+	close(i);
+    }
+
+    OPEN_SYSLOG();
+    run_daemon = 1;
+}
+
 /* error()
  * Prints the arguments to stderr
  * Works like printf (see vfrpintf)
  */
-static void error(const char *format,...)
+static void stderr_error(int priority /* ignored */, const char *format, ...)
 {
   va_list args;
   time_t now;
@@ -764,6 +873,26 @@ static void error(const char *format,...)
   va_start(args, format);
   vfprintf(stderr, format, args);
   va_end(args);
+}
+
+static void usage(char *pname)
+{
+  fprintf(stderr, "Usage: %s (pipe_name|pipe_dir/) log_dir \"command [parameters ...]\"\n", pname);
+  fprintf(stderr, "\nYou may also set the environment variables RUN_ERL_LOG_GENERATIONS\n");
+  fprintf(stderr, "and RUN_ERL_LOG_MAXSIZE to the number of log files to use and the\n");
+  fprintf(stderr, "size of the log file when to switch to the next log file\n");
+}
+
+/* Instead of making sure basename exists, we do our own */
+static char *simple_basename(char *path)
+{
+    char *ptr;
+    for (ptr = path; *ptr != '\0'; ++ptr) {
+	if (*ptr == '/') {
+	    path = ptr + 1;
+	}
+    }
+    return path;
 }
 
 #ifdef DEBUG

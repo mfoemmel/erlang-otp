@@ -272,7 +272,7 @@ match(OE_THIS, State, Event) when record(Event,'any'), ?is_EmptyFilter(State) ->
 match(OE_THIS, State, Event) when record(Event,'any') ->
     match_any_event(State, Event, ?get_ConstraintAllData(State));
 match(_,_,_) ->
-    corba:raise(#'BAD_PARAM'{minor=1000, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 
 %%----------------------------------------------------------%
@@ -288,7 +288,7 @@ match_structured(OE_THIS, State, Event) when
   record(Event,'CosNotification_StructuredEvent') ->
     match_str_event(State, Event, ?get_ConstraintAllData(State));
 match_structured(_,_,_) ->
-    corba:raise(#'BAD_PARAM'{minor=1001, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------*
 %% Function : match_typed/3
@@ -350,7 +350,7 @@ lookup_constraints([H|T], State, Accum) when integer(H) ->
 	    lookup_constraints(T, State, [Con|Accum])
     end;
 lookup_constraints(_, _, _) ->
-    corba:raise(#'BAD_PARAM'{minor=605, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %% Given a list of Constrain IDs we want to delet the related constraints.
 %% We need also to return the ConstraintInfoSeq described related to the
@@ -423,7 +423,7 @@ try_create_filters(State, [#'CosNotifyFilter_MappingConstraintPair'
 				       [{ID, Which, WC, Key, Types, Con, Tree, Any}|Accum],
 				       [?create_MappingInfo(Types, Con, ID, Any)|InfoSeq]);
 		_ ->
-		    corba:raise(#'BAD_PARAM'{minor=601, completion_status=?COMPLETED_NO})
+		    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
 	    end;
 	_ ->
 	    corba:raise(#'CosNotifyFilter_InvalidConstraint'
@@ -449,7 +449,7 @@ try_create_filters(State, [#'CosNotifyFilter_MappingConstraintInfo'
 				       [{ID, Which, WC, Key, Types, Con, Tree, Any}|Accum],
 				       [?create_MappingInfo(Types, Con, ID, Any)|InfoSeq]);
 		_ ->
-		    corba:raise(#'BAD_PARAM'{minor=602, completion_status=?COMPLETED_NO})
+		    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
 	    end;
 	_ ->
 	    corba:raise(#'CosNotifyFilter_InvalidConstraint'
@@ -458,7 +458,7 @@ try_create_filters(State, [#'CosNotifyFilter_MappingConstraintInfo'
     end;
 try_create_filters(_,_,_,_) ->
     %% The list contained something else but ConstraintExp.
-    corba:raise(#'BAD_PARAM'{minor=600, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------
 %% Function : store_filters/4

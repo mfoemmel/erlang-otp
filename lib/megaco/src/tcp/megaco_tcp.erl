@@ -47,6 +47,11 @@
 	 close/1            %% Used on both sides to close connection
 	]).
 
+%% Statistics exports
+-export([get_stats/0, get_stats/1, get_stats/2,
+	 reset_stats/0, reset_stats/1]).
+
+
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
@@ -68,11 +73,38 @@
 %%-----------------------------------------------------------------
 %% External interface functions
 %%-----------------------------------------------------------------
+
+%%-----------------------------------------------------------------
+%% Func: get_stats/0, get_stats/1, get_stats/2
+%% Description: Retreive statistics (counters) for TCP
+%%-----------------------------------------------------------------
+get_stats() ->
+    megaco_stats:get_stats(megaco_tcp_stats).
+
+get_stats(Socket) ->
+    megaco_stats:get_stats(megaco_tcp_stats, Socket).
+
+get_stats(Socket, Counter) ->
+    megaco_stats:get_stats(megaco_tcp_stats, Socket, Counter).
+
+
+%%-----------------------------------------------------------------
+%% Func: reset_stats/0, reaet_stats/1
+%% Description: Reset statistics (counters) for TCP
+%%-----------------------------------------------------------------
+reset_stats() ->
+    megaco_stats:reset_stats(megaco_tcp_stats).
+
+reset_stats(Socket) ->
+    megaco_stats:reset_stats(megaco_tcp_stats, Socket).
+
+
 %%-----------------------------------------------------------------
 %% Func: start_transport/0
 %% Description: Starts the TPKT transport service
 %%-----------------------------------------------------------------
 start_transport() ->
+    (catch megaco_stats:init(megaco_tcp_stats)),
     megaco_tcp_sup:start_link().
 
 %%-----------------------------------------------------------------
@@ -137,7 +169,17 @@ connect(SupPid, Parameters) ->
 %% Description: Function is used for sending data on the TCP socket
 %%-----------------------------------------------------------------
 send_message(Socket, Data) ->
-    gen_tcp:send(Socket, add_tpkt_header(Data)).
+    {Size, NewData} = add_tpkt_header(Data),
+    Res = gen_tcp:send(Socket, NewData),
+    case Res of
+	ok ->
+	    incNumOutMessages(Socket),
+	    incNumOutOctets(Socket, Size);
+	_ ->
+	    ok
+    end,
+    Res.
+	    
 
 
 %%-----------------------------------------------------------------
@@ -188,14 +230,14 @@ start_link(Args) ->
 %% Description: Function is used for starting up a connection
 %%              process
 %%-----------------------------------------------------------------
-start_connection(SupPid, TcpRec) ->
+start_connection(SupPid, #megaco_tcp{socket = Socket} = TcpRec) ->
     ProcList = supervisor:which_children(SupPid),
-
     case lists:keysearch(megaco_tcp_connection_sup, 1, ProcList) of
 	{value, {_Name, ConnSupPid, _Type, _Modules}} ->
 	    ?tcp_debug(TcpRec, "tcp connect", []),
 	    case supervisor:start_child(ConnSupPid, [TcpRec]) of
 		{ok, Pid} ->
+		    create_snmp_counters(Socket),
 		    {ok, Pid};
 		{error, Reason} ->
 		    Error = {error, {controlling_process_not_started, Reason}},
@@ -207,6 +249,22 @@ start_connection(SupPid, TcpRec) ->
 	    ?tcp_debug(TcpRec, "tcp connect failed", [Error]),
 	    Error
     end.
+
+create_snmp_counters(Socket) ->
+    Counters = [medGwyGatewayNumInMessages, 
+                medGwyGatewayNumInOctets, 
+                medGwyGatewayNumOutMessages, 
+                medGwyGatewayNumOutOctets, 
+                medGwyGatewayNumErrors],
+    create_snmp_counters(Socket, Counters).
+
+create_snmp_counters(Socket, []) ->
+    ok;
+create_snmp_counters(Socket, [Counter|Counters]) ->
+    Key = {Socket, Counter},
+    ets:insert(megaco_tcp_stats, {Key, 0}),
+    create_snmp_counters(Socket, Counters).
+
 
 %%-----------------------------------------------------------------
 %% Server functions
@@ -277,6 +335,12 @@ handle_info(Info, State) ->
 %% Func: code_change/3
 %% Descrition: Handles code change messages during upgrade.
 %%-----------------------------------------------------------------
+code_change(_OldVsn, State, upgrade_from_1_1_0) ->
+    megaco_stats:init(megaco_tcp_stats),
+    {ok, State};
+code_change(_OldVsn, State, downgrade_to_1_1_0) ->
+    ets:delete(megaco_tcp_stats),
+    {ok, State};
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -376,11 +440,11 @@ start_accept(SupPid, TcpRec, Listen) ->
 %%-----------------------------------------------------------------
 add_tpkt_header(Data) when binary(Data) ->
     L = size(Data) + 4,
-    [3, 0, ((L) bsr 8) band 16#ff, (L) band 16#ff ,Data];
+    {L, [3, 0, ((L) bsr 8) band 16#ff, (L) band 16#ff ,Data]};
 add_tpkt_header(IOList) when list(IOList) ->
     Binary = list_to_binary(IOList),
     L = size(Binary) + 4,
-    [3, 0, ((L) bsr 8) band 16#ff, (L) band 16#ff , Binary].
+    {L, [3, 0, ((L) bsr 8) band 16#ff, (L) band 16#ff , Binary]}.
 
 %%-----------------------------------------------------------------
 %% Func: parse_options
@@ -426,3 +490,21 @@ get_pid_from_supervisor(SupPid, ProcName) ->
 	false ->
 		{error, no_such_process}
     end.
+
+
+%%-----------------------------------------------------------------
+%% Func: incNumOutMessages/1, incNumOutOctets/2, incNumErrors/1
+%% Description: SNMP counter increment functions
+%%              
+%%-----------------------------------------------------------------
+incNumOutMessages(Socket) ->
+    ets:update_counter(megaco_tcp_stats, 
+		       {Socket, medGwyGatewayNumOutMessages}, 1).
+
+incNumOutOctets(Socket, NumOctets) ->
+    ets:update_counter(megaco_tcp_stats, 
+		       {Socket, medGwyGatewayNumOutOctets}, NumOctets).
+
+% incNumErrors(Socket) ->
+%     ets:update_counter(megaco_tcp_stats, 
+% 		       {Socket, medGwyGatewayNumErrors}, 1).

@@ -1653,7 +1653,7 @@ enc_serviceChangeReason({reason, Val}, State) ->
 	    [
 	     ?ReasonToken,
 	     ?EQUAL,
-	     enc_Value(List, State)
+	     enc_QUOTED_STRING(List,State) % OTP-4632 enc_Value(List, State)
 	    ]
     end.
 

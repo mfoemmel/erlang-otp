@@ -42,10 +42,12 @@ OBJDIR = ..\priv\obj
 
 # Includes
 #
+EIROOT = \erts\lib\erl_interface
 SYS_INCLUDE = /I\erts\erts\emulator\sys\win32
 RUNTIMEINC = \erts\erts\emulator\beam
 RUNTIME_INCLUDE = /I$(RUNTIMEINC)
-INCLUDES = /I. $(RUNTIME_INCLUDE) $(SYS_INCLUDE)
+EI_INCLUDE = /I$(EIROOT)\src
+INCLUDES = /I. $(RUNTIME_INCLUDE) $(SYS_INCLUDE) $(EI_INCLUDE)
 
 # Libraries (static)
 #
@@ -55,6 +57,8 @@ ERL_DLL_LIB = \erts\bin\$(TARGET)\erl_dll.lib
 !else
 ERL_DLL_LIB = \erts\bin\$(TARGET)\erl_debug_dll.lib
 !endif
+
+EI_LIB = $(EIROOT)\lib\ei_md.lib
 
 # Compiler options
 # 
@@ -82,6 +86,7 @@ $(ASN1_ERL_DRV_DLL):	$(ASN1_ERL_DRV_OBJ) $(ERL_DLL_LIB)
 	$(LINK) $(MLFLAGS) /dll /out:$(ASN1_ERL_DRV_DLL) \
 		$(ASN1_ERL_DRV_OBJ) \
 		$(ERL_DLL_LIB) \
+		$(EI_LIB) \
 		$(MLIBS)
 
 # Inference rule .c.obj:

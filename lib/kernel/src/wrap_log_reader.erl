@@ -78,10 +78,10 @@ open(File, FileNo) when atom(File), integer(FileNo) ->
     open(atom_to_list(File), FileNo);
 open(File, FileNo) when list(File), integer(FileNo) ->
     case read_index_file(File) of
-	{ok, {CurFileNo, _CurFileSz, _TotSz, NoOfFiles}} 
+	{ok, {_CurFileNo, _CurFileSz, _TotSz, NoOfFiles}} 
 	  when NoOfFiles >= FileNo ->
 	    ?FORMAT("open file ~p Cur = ~p, Sz = ~p, Tot = ~p, NoFiles = ~p~n",
-		    [FileNo, CurFileNo, _CurFileSz, _TotSz, NoOfFiles]),
+		    [FileNo, _CurFileNo, _CurFileSz, _TotSz, NoOfFiles]),
 	    open_int(File, FileNo, one);
 	%% The special case described above.
 	{ok, {CurFileNo, _CurFileSz, _TotSz, NoOfFiles}} 
@@ -166,7 +166,7 @@ chunk(WR, N, Bad) ->
     end.
 
 read_a_chunk(Fd, N, start, FileName) ->
-    read_a_chunk(Fd, FileName, 0, <<>>, N);
+    read_a_chunk(Fd, FileName, 0, [], N);
 read_a_chunk(Fd, N, More, FileName) ->
     Pos = More#continuation.pos,
     B = More#continuation.b,

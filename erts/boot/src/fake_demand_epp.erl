@@ -347,11 +347,20 @@ scan_toks(Toks0, From, St) ->
 	    wait_req_scan(St)
     end.
 
-scan_module([{'-',Lh},{atom,Lm,module},{'(',Ll},{atom,Ln,Mod},{')',Lr}|_], Ms) ->
-    Ms1 = dict:store({atom,'MODULE'}, {none,[{atom,Ln,Mod}]}, Ms),
-    dict:store({atom,'MODULE_STRING'}, {none,[{string,Ln,atom_to_list(Mod)}]},
-	       Ms1);
-scan_module(Ts, Ms) -> Ms.
+scan_module([{'-',_Lh},{atom,_Lm,module},{'(',_Ll}|Ts], Ms) ->
+    scan_module_1(Ts,[],Ms);
+scan_module(_Ts, Ms) -> Ms.
+
+scan_module_1([{atom,Ln,A},{')',_Lr}|_Ts], As, Ms) ->
+    Mod = lists:concat(lists:reverse([A|As])),
+    Ms1 = dict:store({atom,'MODULE'}, {none,[{atom,Ln,list_to_atom(Mod)}]},
+		     Ms),
+    dict:store({atom,'MODULE_STRING'}, {none,[{string,Ln,Mod}]},Ms1);
+scan_module_1([{atom,_Ln,A},{'.',_Lr}|Ts], As, Ms) ->
+    scan_module_1(Ts, [".",A|As], Ms);
+scan_module_1([{'.',_Lr}|Ts], As, Ms) ->
+    scan_module_1(Ts, As, Ms);
+scan_module_1(_Ts, _As, Ms) -> Ms.
 
 %% scan_define(Tokens, DefineLine, From, EppState)
 

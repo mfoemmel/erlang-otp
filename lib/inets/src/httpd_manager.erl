@@ -166,8 +166,8 @@ verbosity(ServerRef,all,Verbosity) ->
     gen_server:call(ServerRef,{verbosity,all,Verbosity});
 verbosity(ServerRef,manager,Verbosity) ->
     gen_server:call(ServerRef,{verbosity,manager,Verbosity});
-verbosity(ServerRef,listener,Verbosity) ->
-    gen_server:call(ServerRef,{verbosity,listener,Verbosity});
+verbosity(ServerRef,request,Verbosity) ->
+    gen_server:call(ServerRef,{verbosity,request,Verbosity});
 verbosity(ServerRef,acceptor,Verbosity) ->
     gen_server:call(ServerRef,{verbosity,acceptor,Verbosity});
 verbosity(ServerRef,security,Verbosity) ->

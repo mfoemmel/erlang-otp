@@ -37,7 +37,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 
 CC = @CC@
-#CC = gcc
+
 LD = @DED_LD@
 LIBS = @LIBS@
 
@@ -57,11 +57,26 @@ RELSYSDIR = $(RELEASE_PATH)/lib/asn1-$(VSN)
 
 
 # ----------------------------------------------------
+# FLAGS misc
+# ----------------------------------------------------
+ifeq ($(TYPE),debug)
+TYPEMARKER = .debug
+else
+TYPEMARKER =
+endif
+
+EI_LIBDIR = $(ERL_TOP)/lib/erl_interface/obj$(TYPEMARKER)/$(TARGET)
+
+# ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
+EI_INCLUDES = -I$(ERL_TOP)/lib/erl_interface/src
 DRIVER_INCLUDES = -I$(ERL_TOP)/erts/emulator/beam
-CFLAGS = $(DRIVER_INCLUDES) @DED_CFLAGS@
+CFLAGS = $(DRIVER_INCLUDES) $(EI_INCLUDES) @DED_CFLAGS@
 LDFLAGS = @DED_LDFLAGS@
+
+LD_INCL_EI = -L$(EI_LIBDIR)
+LD_EI = -lei 
 
 # ----------------------------------------------------
 # Target Specs
@@ -77,6 +92,7 @@ else
 SHARED_OBJ_FILES = $(LIBDIR)/asn1_erl_drv.so
 OBJ_FILES = $(OBJDIR)/asn1_erl_drv.o
 endif
+
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
@@ -111,7 +127,7 @@ $(OBJ_FILES): $(C_FILES) $(OBJDIR)
 	$(CC) -c $(CFLAGS) -o $(OBJ_FILES) $(C_FILES) 
 
 $(SHARED_OBJ_FILES): $(OBJ_FILES) $(LIBDIR)
-	$(LD) $(LDFLAGS) -o $(SHARED_OBJ_FILES) $(OBJ_FILES) -lc $(LIBS) 
+	$(CC) $(LDFLAGS) $(LD_INCL_EI) -o $(SHARED_OBJ_FILES) $(OBJ_FILES) $(LD_EI) $(LIBS)
 
 $(LIBDIR):
 	-mkdir -p $(LIBDIR)

@@ -47,13 +47,11 @@ init_connection(Req,Session) when record(Req,request) ->
 							  Session#session.id,
 							  Socket)
 		    end,
-		    Timeout=(Req#request.settings)#client_settings.timeout,
-		    next_response_with_request(Timeout,Req,
+		    next_response_with_request(Req,
 					       Session#session{socket=Socket});
 		{error,Reason} -> % Not possible to use new session
-		    gen_server:cast(Req#request.from,{Req#request.ref,
-						      Req#request.id,
-						      {error,Reason}}),
+		    gen_server:cast(Req#request.from,
+				    {Req#request.ref,Req#request.id,{error,Reason}}),
 		    exit_session_ok(Req#request.address,
 				    Session#session{socket=Socket})
 	    end;
@@ -64,11 +62,12 @@ init_connection(Req,Session) when record(Req,request) ->
 			     Session#session.clientclose,Session#session.id)
     end.
 
-next_response_with_request(Timeout,Req,Session) ->
+next_response_with_request(Req,Session) ->
+    Timeout=(Req#request.settings)#client_settings.timeout,
     case catch read(Timeout,Session#session.scheme,Session#session.socket) of
 	{Status,Headers,Body} ->
 	    NewReq=handle_response({Status,Headers,Body},Timeout,Req,Session),
-	    next_response_with_request(Timeout,NewReq,Session);
+	    next_response_with_request(NewReq,Session);
 	{error,Reason} ->
 	    gen_server:cast(Req#request.from,
 			    {Req#request.ref,Req#request.id,{error,Reason}}),
@@ -144,9 +143,14 @@ read(Timeout,SockType,Socket) ->
     http_lib:setopts(SockType,Socket,[{packet, http}]),
     Info1=read_response(SockType,Socket,Info,Timeout),
     http_lib:setopts(SockType,Socket,[binary,{packet, raw}]),
-    #response{status=Status2,headers=Headers2,body=Body2}=
-	http_lib:read_client_body(Info1,Timeout),
-    {Status2,Headers2,Body2}.
+    case (Info1#response.headers)#res_headers.content_type of
+	"multipart/byteranges"++Param ->
+	    range_response_body(Info1,Timeout,Param);
+	_ ->
+	    #response{status=Status2,headers=Headers2,body=Body2}=
+		http_lib:read_client_body(Info1,Timeout),
+	    {Status2,Headers2,Body2}
+    end.
 
 
 %%% From RFC 2616:
@@ -170,6 +174,29 @@ read_response(SockType,Socket,Info,Timeout) ->
 	    throw({error,Reason})
     end.
 
+%%% From RFC 2616, Section 4.4, Page 34
+%% 4.If the message uses the media type "multipart/byteranges", and the
+%%   transfer-length is not otherwise specified, then this self-
+%%   delimiting media type defines the transfer-length. This media type
+%%   MUST NOT be used unless the sender knows that the recipient can parse
+%%   it; the presence in a request of a Range header with multiple byte-
+%%   range specifiers from a 1.1 client implies that the client can parse
+%%   multipart/byteranges responses.
+%%% FIXME !!
+range_response_body(Info,Timeout,Param) ->
+    Headers=Info#response.headers,
+    case {Headers#res_headers.content_length,
+	  Headers#res_headers.transfer_encoding} of
+	{undefined,undefined} ->
+	    #response{status=Status2,headers=Headers2,body=Body2}=
+		http_lib:read_client_multipartrange_body(Info,Param,Timeout),
+	    {Status2,Headers2,Body2};
+	_ ->
+	    #response{status=Status2,headers=Headers2,body=Body2}=
+		http_lib:read_client_body(Info,Timeout),
+	    {Status2,Headers2,Body2}
+    end.
+    
 
 %%% ----------------------------------------------------------------------------
 %%% Host: field is required when addressing multi-homed sites ...
@@ -179,82 +206,60 @@ http_request(#request{method=Method,id=Id,
 		      headers=Headers, content={ContentType,Body},
 		      settings=Settings},
 	     Socket) ->
-%    {Scheme,Host,Port,PathQuery}=proxyusage(ParsedUrl,Settings),
     PostData=
 	if
 	    Method==post;Method==put -> 
-		content_type_header(ContentType) ++
-		    content_length_header(length(Body)) ++ 
-		    "\r\n" ++ Body;
+		case Headers#req_headers.expect of
+		    "100-continue" ->
+			content_type_header(ContentType) ++
+			    content_length_header(length(Body)) ++ 
+			    "\r\n";
+		    _ ->
+			content_type_header(ContentType) ++
+			    content_length_header(length(Body)) ++ 
+			    "\r\n" ++ Body
+		end;
 	    true ->
 		"\r\n"
 	end,
     Message=
-	case useProxy({Host,Port,PathQuery},
-		      Settings#client_settings.noproxylist) of
+	case useProxy(Settings#client_settings.useproxy,
+		      {Scheme,Host,Port,PathQuery}) of
 	    false ->
 		method(Method)++" "++PathQuery++" HTTP/1.1\r\n"++
 		    host_header(Host)++te_header()++
 		    headers(Headers) ++ PostData;
-	    _ ->
-		method(Method)++" "++PathQuery++" HTTP/1.1\r\n"++
-		    host_header(Host)++te_header()++
+	    AbsURI ->
+		method(Method)++" "++AbsURI++" HTTP/1.1\r\n"++
+		    te_header()++
 		    headers(Headers)++PostData
 	end,
     http_lib:send(Scheme,Socket,Message).
 
-
-%% Check to see if the given URL is in the NoProxyList
-%% returns {Host,Port,PathQuery}
-%%% Default NoProxyList: undefined
-%%% Default UseProxy: false
-proxyusage(ParsedUrl,Settings) ->
-    case Settings#client_settings.useproxy of
-	true ->
-	    case noProxy(ParsedUrl,Settings#client_settings.noproxylist) of
-		true ->
-		    ParsedUrl;
-		_ ->
-		    case Settings#client_settings.proxy of
-			undefined ->
-			    {error,no_proxy_defined};
-			Url ->
-			    Url
-		    end
-	    end;
-	_ ->
-	    ParsedUrl
-    end.
-
-%%% Default NoProxyList: []
-useProxy({Host,Port,PathQuery},NoProxyList) ->
-    case noProxy({Host,Port,PathQuery},NoProxyList) of
-	true -> false;
-	_ -> true
-    end.
-
-noProxy(_Url,[]) ->
+useProxy(false,_) ->
     false;
-noProxy(_Url,[Host|_Rest]) ->
-    HostPort = "",
-    case HostPort of
-	Host -> true;
-	_ ->
-	    ok
-%	    case string:str(Url,Host) of
-%		0 -> noProxy(Url,Rest);
-%		_ -> true
-%	    end
-    end.
+useProxy(true,{Scheme,Host,Port,PathQuery}) ->
+    [atom_to_list(Scheme),"://",Host,":",integer_to_list(Port),PathQuery].
 
 
-headers([]) -> [];
-headers([{Key,Value}|Rest]) when atom(Key) ->
+
+headers(#req_headers{expect=Expect,
+		     other=Other}) ->
+    H1=case Expect of
+	   undefined ->[];
+	   _ -> "Expect: "++Expect++"\r\n"
+       end,
+    H1++headers_other(Other).
+
+
+headers_other([]) ->
+    [];
+headers_other([{Key,Value}|Rest]) when atom(Key) ->
     Head = atom_to_list(Key)++": "++Value++"\r\n",
-    Head ++ headers(Rest);
-headers([{Key,Value}|Rest]) ->
+    Head ++ headers_other(Rest);
+headers_other([{Key,Value}|Rest]) ->
     Head = Key++": "++Value++"\r\n",
-    Head ++ headers(Rest).
+    Head ++ headers_other(Rest).
 
 host_header(Host) ->
     "Host: "++lists:concat([Host])++"\r\n".
@@ -270,8 +275,10 @@ method(Method) ->
 
 
 %%% ----------------------------------------------------------------------------
-http_response({Status,Headers,Body},Req=#request{method=Method},Session) ->
+http_response({Status,Headers,Body},Req,Session) ->
     case Status of
+	100 ->
+	    status_continue(Req,Session);
 	200 ->
 	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 					      {Status,Headers,Body}}),
@@ -279,7 +286,8 @@ http_response({Status,Headers,Body},Req=#request{method=Method},Session) ->
 	    handle_connection(Session#session.clientclose,ServerClose,
 			      Req,Session);
 	300 -> status_multiple_choices(Headers,Body,Req,Session);
-	301 -> status_moved_permanently(Method,Headers,Body,Req,Session);
+	301 -> status_moved_permanently(Req#request.method,
+					Headers,Body,Req,Session);
 	302 -> status_found(Headers,Body,Req,Session);
 	303 -> status_see_other(Headers,Body,Req,Session);
 	304 -> status_not_modified(Headers,Body,Req,Session);
@@ -300,6 +308,22 @@ http_response({Status,Headers,Body},Req=#request{method=Method},Session) ->
 
 
 %%% Status code dependent functions.
+
+%%% Received a 100 Status code ("Continue")
+%%% From RFC2616
+%%% The client SHOULD continue with its request. This interim response is
+%%% used to inform the client that the initial part of the request has
+%%% been received and has not yet been rejected by the server. The client
+%%% SHOULD continue by sending the remainder of the request or, if the
+%%% request has already been completed, ignore this response. The server
+%%% MUST send a final response after the request has been completed. See
+%%% section 8.2.3 for detailed discussion of the use and handling of this
+%%% status code.
+status_continue(Req,Session) ->
+    {_,Body}=Req#request.content,
+    http_lib:send(Session#session.scheme,Session#session.socket,Body),
+    next_response_with_request(Req,Session).
+
 
 %%% Received a 300 Status code ("Multiple Choices")
 %%% The resource is located in any one of a set of locations
@@ -324,7 +348,7 @@ status_multiple_choices(Headers,Body,Req,Session)
 	    handle_connection(Session#session.clientclose,ServerClose,
 			      Req,Session);
 	RedirUrl ->
-	    Scheme=Req#request.scheme,
+	    Scheme=Session#session.scheme,
 	    case uri:parse(RedirUrl) of
 		{error,Reason} ->
 		    {error,Reason};
@@ -362,7 +386,7 @@ status_moved_permanently(Method,Headers,Body,Req,Session)
 	    handle_connection(Session#session.clientclose,ServerClose,
 			      Req,Session);
 	RedirUrl ->
-	    Scheme=Req#request.scheme,
+	    Scheme=Session#session.scheme,
 	    case uri:parse(RedirUrl) of
 		{error,Reason} ->
 		    {error,Reason};
@@ -394,7 +418,7 @@ status_found(Headers,Body,Req,Session)
 	    handle_connection(Session#session.clientclose,ServerClose,
 			      Req,Session);
 	RedirUrl ->
-	    Scheme=Req#request.scheme,
+	    Scheme=Session#session.scheme,
 	    case uri:parse(RedirUrl) of
 		{error,Reason} ->
 		    {error,Reason};
@@ -425,7 +449,7 @@ status_see_other(Headers,Body,Req,Session)
 	    handle_connection(Session#session.clientclose,ServerClose,
 			      Req,Session);
 	RedirUrl ->
-	    Scheme=Req#request.scheme,
+	    Scheme=Session#session.scheme,
 	    case uri:parse(RedirUrl) of
 		{error,Reason} ->
 		    {error,Reason};
@@ -464,7 +488,7 @@ status_not_modified(Headers,Body,Req,Session)
 	    handle_connection(Session#session.clientclose,ServerClose,
 			      Req,Session);
 	RedirUrl ->
-	    Scheme=Req#request.scheme,
+	    Scheme=Session#session.scheme,
 	    case uri:parse(RedirUrl) of
 		{error,Reason} ->
 		    {error,Reason};
@@ -496,7 +520,7 @@ status_use_proxy(Headers,Body,Req,Session)
 	    handle_connection(Session#session.clientclose,ServerClose,
 			      Req,Session);
 	RedirUrl ->
-	    Scheme=Req#request.scheme,
+	    Scheme=Session#session.scheme,
 	    case uri:parse(RedirUrl) of
 		{error,Reason} ->
 		    {error,Reason};
@@ -525,7 +549,7 @@ status_temporary_redirect(Headers,Body,Req,Session)
 	    handle_connection(Session#session.clientclose,ServerClose,
 			      Req,Session);
 	RedirUrl ->
-	    Scheme=Req#request.scheme,
+	    Scheme=Session#session.scheme,
 	    case uri:parse(RedirUrl) of
 		{error,Reason} ->
 		    {error,Reason};
@@ -616,11 +640,11 @@ handle_connection(ClientClose,ServerClose,Req,Session) ->
 %%%   including the current depending on the error.
 %%% FIXME! Should not always abort the session (see close_session in
 %%%     httpc_manager for more details)
-close_session(client_connection_close,Req,Session) ->
-    http_lib:close(Req#request.scheme,Session#session.socket),
+close_session(client_connection_close,_Req,Session) ->
+    http_lib:close(Session#session.scheme,Session#session.socket),
     stop;
 close_session(server_connection_close,Req,Session) ->
-    http_lib:close(Req#request.scheme,Session#session.socket),
+    http_lib:close(Session#session.scheme,Session#session.socket),
     httpc_manager:abort_session(Req#request.address,Session#session.id,
 			       aborted_request),
     stop.

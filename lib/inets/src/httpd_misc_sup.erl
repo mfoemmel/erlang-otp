@@ -76,7 +76,7 @@ start_sec_server(Addr, Port, Verbosity) ->
 			   Verbosity, [gen_server]).
 
 stop_sec_server(Addr, Port) ->
-    stop_permanent_worker(mod_sec_server, Addr, Port).
+    stop_permanent_worker(mod_security_server, Addr, Port).
 
 
 

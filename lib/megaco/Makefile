@@ -15,6 +15,27 @@
 # 
 #     $Id$
 #
+# --------------------------------------------------------------------
+# If downloading this app separately (not as part of 
+# an OTP source release), then there is two ways to
+# build and install this app.
+# 1) Replace the megaco source dir in an existing
+#    OTP source tree. Then re-configure, build and 
+#    install OTP.
+#    Note that the directory name has to be renamed
+#    from megaco-<version> to megaco.
+# 2) Unpack outside an OTP-source tree. 
+#    a) Configure app (make ERL_TOP=</path/to/top/OTP-source/dir> conf)
+#    b) make ERL_TOP=</path/to/top/OTP-source/dir>
+#    c) make ERL_TOP=</path/to/top/OTP-source/dir> \
+#            OTP_INSTALL_DIR=</path/to/top/OTP-install/dir> app_install
+#       (e.g. if otp is installed in /usr/local/otp-r9b,
+#        then OTP_INSTALL_DIR is /usr/local/otp-r9b and
+#        the app will be installed in dir 
+#        /usr/local/otp-r9b/lib/erlang/lib/megaco-<version>)
+# -----------------------------------------------------------------------
+#
+
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
@@ -23,6 +44,27 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # ----------------------------------------------------
 include vsn.mk
 VSN=$(MEGACO_VSN)
+
+DIR_NAME = megaco-$(VSN)
+
+ifndef APP_RELEASE_DIR
+  APP_RELEASE_DIR = /tmp
+endif
+
+ifndef APP_TAR_FILE
+  APP_TAR_FILE = $(APP_RELEASE_DIR)/$(DIR_NAME).tgz
+endif
+
+APP_DIR = $(APP_RELEASE_DIR)/$(DIR_NAME)
+
+ifdef OTP_INSTALL_DIR
+  APP_INSTALL_DIR = $(OTP_INSTALL_DIR)/lib/erlang
+else
+  # If installing into an OTP structure created
+  # by installing an source OTP build, the '/tmp'
+  # shall be replaced with the value of ERL_TOP
+  APP_INSTALL_DIR = /tmp/lib/erlang
+endif
 
 # ----------------------------------------------------
 # Common Macros
@@ -52,4 +94,54 @@ do_configure: configure
 
 configure: configure.in
 	autoconf
+
+
+info:
+	@echo "APP_RELEASE_DIR: $(APP_RELEASE_DIR)"
+	@echo "APP_DIR:         $(APP_DIR)"
+	@echo "APP_TAR_FILE:    $(APP_TAR_FILE)"
+	@echo "OTP_INSTALL_DIR: $(OTP_INSTALL_DIR)"
+	@echo "APP_INSTALL_DIR: $(APP_INSTALL_DIR)"
+
+version:
+	@echo "$(VSN)"
+
+
+# ----------------------------------------------------
+# Application install (of a app built from source) targets
+# ----------------------------------------------------
+app_install:
+	$(MAKE) TESTROOT=$(APP_INSTALL_DIR) release 
+
+
+# ----------------------------------------------------
+# Application (source) release targets
+# ----------------------------------------------------
+app_release: app_doc tar
+
+app_doc:
+	cd doc/src; $(MAKE) html man
+
+app_dir: $(APP_DIR)
+
+$(APP_DIR):
+	cat TAR.exclude > TAR.exclude2; \
+        echo "megaco/TAR.exclude2" >> TAR.exclude2; \
+        echo "megaco/priv/lib/$(TARGET)" >> TAR.exclude2; \
+        echo "megaco/src/flex/$(TARGET)" >> TAR.exclude2
+	mkdir $(APP_DIR); \
+        (cd ..; tar cfX - megaco/TAR.exclude2 megaco) | \
+        (cd $(APP_DIR); tar xf -); \
+        mv $(APP_DIR)/megaco/* $(APP_DIR)/; \
+        find $(APP_DIR)/megaco -name '.cmake.state' | xargs rm -f; \
+	mkdir $(APP_DIR)/autoconf; \
+        cp autoconf/config.guess $(APP_DIR)/autoconf/; \
+        cp autoconf/config.sub $(APP_DIR)/autoconf/; \
+        cp autoconf/install-sh $(APP_DIR)/autoconf/; \
+        rmdir $(APP_DIR)/megaco
+
+tar: $(APP_TAR_FILE)
+
+$(APP_TAR_FILE): $(APP_DIR)
+	(cd $(APP_RELEASE_DIR); gtar zcf $(APP_TAR_FILE) $(DIR_NAME))
 

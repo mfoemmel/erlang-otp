@@ -316,7 +316,7 @@ disc_insert(Tid, Storage, Tab, Key, Val, Op, InPlace, InitBy) ->
 	true ->
 	    case Storage of 
 		disc_copies when Tab /= schema ->
-		    mnesia_log:append(Tab, {{Tab, Key}, Val, Op}),
+		    mnesia_log:append({?MODULE,Tab}, {{Tab, Key}, Val, Op}),
 		    ok;
 		_ ->
 		    case Op of
@@ -386,8 +386,13 @@ disc_delete_table(Tab, Storage) ->
 		    file:delete(Dat);		
 		true -> 
 		    DclFile = mnesia_lib:tab2dcl(Tab),
-		    del_opened_tab(Tab),
-		    mnesia_log:unsafe_close_log(Tab),		    
+		    case get({?MODULE,Tab}) of
+			{opened_dumper, dcl} ->
+			    del_opened_tab(Tab),
+			    mnesia_log:unsafe_close_log(Tab);
+			_ -> 
+			    ok
+		    end,
 		    file:delete(DclFile),
 		    DcdFile = mnesia_lib:tab2dcd(Tab),
 		    file:delete(DcdFile),
@@ -805,12 +810,12 @@ open_disc_copies(Tab, InitBy) ->
 	end,
     if 
 	DumpEts == false; InitBy == startup ->	    
-	    Tab = mnesia_log:open_log(Tab, 
-				      mnesia_log:dcl_log_header(), 
-				      DclF, 
-				      mnesia_lib:exists(DclF), 
-				      mnesia_monitor:get_env(auto_repair),
-				      read_write),
+	    mnesia_log:open_log({?MODULE,Tab}, 
+				mnesia_log:dcl_log_header(), 
+				DclF, 
+				mnesia_lib:exists(DclF), 
+				mnesia_monitor:get_env(auto_repair),
+				read_write),
 	    put({?MODULE, Tab}, {opened_dumper, dcl}),
 	    true;
 	true ->
@@ -827,12 +832,12 @@ open_dcl(Tab) ->
 	    true;
 	_ -> %% undefined or already_dumped
 	    DclF = mnesia_lib:tab2dcl(Tab),
-	    Tab = mnesia_log:open_log(Tab, 
-				      mnesia_log:dcl_log_header(), 
-				      DclF, 
-				      mnesia_lib:exists(DclF), 
-				      mnesia_monitor:get_env(auto_repair),
-				      read_write),
+	    mnesia_log:open_log({?MODULE,Tab}, 
+				mnesia_log:dcl_log_header(), 
+				DclF, 
+				mnesia_lib:exists(DclF), 
+				mnesia_monitor:get_env(auto_repair),
+				read_write),
 	    put({?MODULE, Tab}, {opened_dumper, dcl}),
 	    true
     end.
@@ -868,7 +873,7 @@ close_files(InPlace, Outcome, InitBy, [{{?MODULE, Tab}, {opened_dumper, Type}} |
 	disc_only_copies when InitBy /= startup ->
 	    ignore;
 	disc_copies when Tab /= schema -> 
-	    mnesia_log:close_log(Tab);
+	    mnesia_log:close_log({?MODULE,Tab});
 	Storage ->
 	    do_close(InPlace, Outcome, Tab, Type, Storage)
     end,
@@ -882,10 +887,10 @@ close_files(_, _, InitBy, []) ->
 %% If storage is unknown during close clean up files, this can happen if timing
 %% is right and dirty_write conflicts with schema operations.
 do_close(_, _, Tab, dcl, unknown) ->
-    mnesia_log:close_log(Tab),
+    mnesia_log:close_log({?MODULE,Tab}),
     file:delete(mnesia_lib:tab2dcl(Tab));
 do_close(_, _, Tab, dcl, _) ->  %% To be safe, can it happen?
-    mnesia_log:close_log(Tab);
+    mnesia_log:close_log({?MODULE,Tab});
 
 do_close(InPlace, Outcome, Tab, dat, Storage) ->
     mnesia_monitor:close_dets(Tab),

@@ -260,10 +260,12 @@ obtain_notification_pull_consumer(OE_THIS, OE_FROM, State, Ctype) ->
 Incorrect enumerant", [?LINE, Ctype], ?DEBUG_LEVEL),
 		corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
 	end,
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case catch Mod:oe_create_link([Type, OE_THIS, self(), ?get_GlobalQoS(State), 
 				   ?get_LocalQoS(State), ?get_MyChannel(State),
 				   ?get_Options(State), ?get_MyOperator(State)], 
-				  [{sup_child, true}]) of
+				  [{sup_child, true}|SO]) of
 	{ok, Pid, Proxy} ->
 	    ProxyID = ?new_Id(State),
 	    ?add_PullConsumer(State, ProxyID, Proxy, Pid),
@@ -295,10 +297,12 @@ obtain_notification_push_consumer(OE_THIS, OE_FROM, State, Ctype) ->
 Incorrect enumerant", [?LINE, Ctype], ?DEBUG_LEVEL),
 		corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
 	end,
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case catch Mod:oe_create_link([Type, OE_THIS, self(), ?get_GlobalQoS(State), 
 				   ?get_LocalQoS(State), ?get_MyChannel(State),
 				   ?get_Options(State), ?get_MyOperator(State)], 
-				  [{sup_child, true}]) of
+				  [{sup_child, true}|SO]) of
 	{ok, Pid, Proxy} ->
 	    ProxyID = ?new_Id(State),
 	    ?add_PushConsumer(State, ProxyID, Proxy, Pid),
@@ -385,7 +389,7 @@ remove_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
 remove_filter(_,_,_,What) ->
     orber:debug_level_print("[~p] CosNotifyChannelAdmin_SupplierAdmin:remove_filter(~p);
 Not an integer", [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=800, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : get_filter
@@ -398,7 +402,7 @@ get_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
 get_filter(_,_,_,What) ->
     orber:debug_level_print("[~p] CosNotifyChannelAdmin_SupplierAdmin:get_filter(~p);
 Not an integer", [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=801, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : get_all_filters
@@ -423,11 +427,13 @@ remove_all_filters(OE_THIS, OE_FROM, State) ->
 %% Returns  : ProxyPushConsumer
 %%-----------------------------------------------------------
 obtain_push_consumer(OE_THIS, OE_FROM, State) ->
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case catch 'CosNotifyChannelAdmin_ProxyPushConsumer':
 	oe_create_link(['PUSH_ANY', OE_THIS, self(), ?get_GlobalQoS(State), 
 			?get_LocalQoS(State), ?get_MyChannel(State),
 			?get_Options(State), ?get_MyOperator(State)], 
-		       [{sup_child, true}]) of
+		       [{sup_child, true}|SO]) of
 	{ok, Pid, Proxy} ->
 	    ProxyID = ?new_Id(State),
 	    ?add_PushConsumer(State, ProxyID, Proxy, Pid),
@@ -445,11 +451,13 @@ Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 %% Returns  : ProxyPullConsumer
 %%-----------------------------------------------------------
 obtain_pull_consumer(OE_THIS, OE_FROM, State) ->
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case catch 'CosNotifyChannelAdmin_ProxyPullConsumer':
 	oe_create_link(['PULL_ANY', OE_THIS, self(), ?get_GlobalQoS(State), 
 			?get_LocalQoS(State), ?get_MyChannel(State),
 			?get_Options(State), ?get_MyOperator(State)], 
-		       [{sup_child, true}]) of
+		       [{sup_child, true}|SO]) of
 	{ok, Pid, Proxy} ->
 	    ProxyID = ?new_Id(State),
 	    ?add_PullConsumer(State, ProxyID, Proxy, Pid),

@@ -593,7 +593,7 @@ ls_print(L) ->
     Width = min([max(lengths(L, [])), 40]) + 5,
     ls_print(L, Width, 0).
 
-ls_print(X, Width, Len) when Width + Len > 80 ->
+ls_print(X, Width, Len) when Width + Len >= 80 ->
     io:nl(),
     ls_print(X, Width, 0);
 ls_print([H|T], Width, Len) ->
@@ -693,7 +693,7 @@ get_ets_mem() ->
 get_ets_mem([T|Ts], Acc) ->
     case ets:info(T, memory) of
         M when integer(M) ->
-            get_ets_mem(Ts, Acc+(M*4));
+            get_ets_mem(Ts, Acc+(M*erlang:system_info(wordsize)));
         _ ->
             get_ets_mem(Ts, Acc)
     end;

@@ -305,7 +305,7 @@ dec_request_header(Version, Message, Len0, ByteOrder, Buffer) when Version == {1
 			      request_id=Request_id,
 			      response_expected=ResponseFlags,
 			      object_key=Object_key,
-			      operation=Operation, 
+			      operation=list_to_atom(Operation), 
 			      requesting_principal=""}, Rest5, Len5, ByteOrder};
 dec_request_header(Version, Message, Len0, ByteOrder, Buffer) ->
     {Context, Rest1, Len1} = dec_service_context(Version, Message, Len0, ByteOrder),
@@ -321,7 +321,7 @@ dec_request_header(Version, Message, Len0, ByteOrder, Buffer) ->
 			      request_id=Request_id,
 			      response_expected=Response_expected,
 			      object_key=Object_key,
-			      operation=Operation, 
+			      operation=list_to_atom(Operation), 
 			      requesting_principal=Principal}, Rest, Len, ByteOrder}.
 
 

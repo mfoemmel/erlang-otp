@@ -34,7 +34,6 @@ VSN=$(INETS_VSN)
 # ----------------------------------------------------
 
 CP = cp
-DATADIR = inets_SUITE_data
 
 ifeq ($(TESTROOT_DIR),)
 TESTROOT_DIR = /ldisk/tests/$(USER)/inets
@@ -122,14 +121,18 @@ else
   INETS_FLAGS += -Dhttpd_security_verbosity=log
 endif
 
-INETS_ROOT = ..
+INETS_ROOT = ../../inets
 
 MODULES =                 \
         inets_test_server \
 	inets_test_lib    \
 	httpd_test_lib    \
 	inets_SUITE       \
-	ftp_SUITE         \
+        inets_app_test    \
+        inets_appup_test  \
+        httpd_test        \
+        httpc_test        \
+	ftp_test          \
         httpd_poll        \
         httpd_time_test
 
@@ -146,9 +149,17 @@ INETS_FILES = Makefile.inets rules.mk suite_targets.mk \
 
 SOURCE = $(ERL_FILES) $(HRL_FILES) $(TARGET_FILES)
 
-INETS_SUITE = inets_SUITE
-FTP_SUITE   = ftp_SUITE
+INETS_SPECS = inets.spec inets.spec.vxworks
 
+INETS_SUITE = inets_SUITE
+APP_SUITE   = inets_app_test
+APPUP_SUITE = inets_appup_test
+FTP_SUITE   = ftp_test
+HTTPD_SUITE = httpd_test
+HTTPC_SUITE = httpc_test
+
+HTTPD_DATADIR = httpd_test_data
+DATADIRS = $(HTTPD_DATADIR)
 
 # ----------------------------------------------------
 # Release directory specification
@@ -206,20 +217,20 @@ release_spec: opt
 	$(INSTALL_DIR)  $(RELSYSDIR)/test
 	$(INSTALL_DATA) $(HRL_FILES)   $(ERL_FILES) $(RELSYSDIR)/test
 	$(INSTALL_DATA) $(INETS_FILES) $(RELSYSDIR)/test
-	$(INSTALL_DIR)  $(RELSYSDIR)/test/inets_SUITE_data
-	tar chf - -C inets_SUITE_data . | (cd $(RELSYSDIR)/test/inets_SUITE_data; tar xfBp -)
+	$(INSTALL_DIR)  $(RELSYSDIR)/test/$(HTTPD_DATADIR)
+	tar chf - -C $(HTTPD_DATADIR) . | (cd $(RELSYSDIR)/test/$(HTTPD_DATADIR); tar xfBp -)
 	(cd $(RELSYSDIR)/test; mv Makefile.inets Makefile)
 
 release_tests_spec: opt
 	$(INSTALL_DIR) $(RELTESTSYSDIR)
-	$(INSTALL_DATA) inets.spec inets.spec.vxworks $(SOURCE) $(RELTESTSYSDIR)
+	$(INSTALL_DATA) $(INETS_SPECS) $(SOURCE) $(RELTESTSYSDIR)
 	chmod -f -R u+w $(RELTESTSYSDIR)
-	tar chf - *_SUITE_data | (cd $(RELTESTSYSDIR); tar xfBp -)
+	tar chf - $(DATADIRS) | (cd $(RELTESTSYSDIR); tar xfBp -)
 	$(INSTALL_DIR) $(RELTESTSYSALLDATADIR)
 	$(INSTALL_DATA) $(MAKEFILE_SRC) $(RELTESTSYSALLDATADIR)/Makefile.src
 	$(INSTALL_DATA) copy_files.erl $(RELTESTSYSALLDATADIR)/copy_files.erl
 	$(INSTALL_DIR) $(RELTESTSYSBINDIR)
-	(cd $(RELTESTSYSBINDIR); chmod -f +x * )
+	chmod -f -R +x $(RELTESTSYSBINDIR)
 	tar cf - -C $(INETS_SSL_LIB_DIR) . | (cd $(RELTESTSYSALLDATADIR); tar xfBp -)
 	$(INSTALL_DIR) $(RELTESTSYSALLDATADIR)/win32/lib	
 	tar cf - -C $(INETS_SSL_LIB_DIR)/win32/out32dll . | \

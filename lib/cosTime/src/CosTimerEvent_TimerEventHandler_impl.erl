@@ -165,7 +165,7 @@ time_set(OE_THIS, State) ->
     Utc = #'TimeBase_UtcT'{time=0, inacclo = 0,inacchi = 0, tdf = 0},
     {reply, 
      {?is_TimeSet(State), 
-      'CosTime_UTO':oe_create([Utc, ?get_TimeObj(State)], [{pseudo,true}])}, 
+      'CosTime_UTO':oe_create([Utc, ?get_TimeObj(State)], [{pseudo,true}|?CREATE_OPTS])}, 
      State}.
 
 
@@ -263,7 +263,7 @@ set_timer(OE_THIS, State, 'TTPeriodic', TriggerTime) ->
 	    {reply, {'EXCEPTION', #'BAD_PARAM'{completion_status=?COMPLETED_NO}}, NewState}
     end;
 set_timer(OE_THIS, State, _, _) ->
-    corba:raise(#'BAD_PARAM'{minor=900, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : cancel_timer
@@ -289,7 +289,7 @@ cancel_timer(OE_THIS, State) ->
 set_data(OE_THIS, State, EventData) when record(EventData, any) ->
     {reply, ok, ?set_Event(State, EventData)};
 set_data(OE_THIS, State, EventData) ->
-    corba:raise(#'BAD_PARAM'{minor=900, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 
 %%--------------- LOCAL FUNCTIONS ----------------------------

@@ -42,11 +42,6 @@
 -define(line,put(test_server_loc,{?MODULE,?LINE}),).
 
 
-%% - App macros -
-
--define(APP_TEST(), inets_test_lib:app_test()).
-
-
 %% - Test case macros -
 
 -define(EXPANDABLE(I, C, F), inets_test_lib:expandable(I, C, F)).
@@ -54,6 +49,7 @@
 
 %% - Misc macros -
 
+-define(UPDATE(K,V,C),  inets_test_lib:update_config(K,V,C)).
 -define(CONFIG(K,C),    inets_test_lib:get_config(K,C)).
 -define(HOSTNAME(),     inets_test_lib:hostname()).
 -define(SZ(X),          inets_test_lib:sz(X)).
@@ -67,9 +63,10 @@
 
 %% - Socket macros -
 
--define(CONNECT(M,H,P), inets_test_lib:connect(M,H,P)).
--define(SEND(M,S,D),    inets_test_lib:send(M,S,D)).
--define(CLOSE(M,S),     inets_test_lib:close(M,S)).
+-define(CONNECT(M,H,P),   inets_test_lib:connect(M,H,P)).
+-define(SEND(M,S,D),      inets_test_lib:send(M,S,D)).
+-define(CSEND(M,S,D,C,T), inets_test_lib:csend(M,S,D,C,T)).
+-define(CLOSE(M,S),       inets_test_lib:close(M,S)).
 
 
 %% - Time macros -

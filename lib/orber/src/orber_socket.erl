@@ -37,7 +37,7 @@
 %% External exports
 %%-----------------------------------------------------------------
 -export([start/0, connect/4, listen/3, accept/2, write/3,
-	 controlling_process/3, close/2]).
+	 controlling_process/3, close/2, peername/2]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -219,3 +219,12 @@ controlling_process(normal, Socket, Pid) ->
 controlling_process(ssl, Socket, Pid) ->
     ssl:controlling_process(Socket, Pid).
 
+%%-----------------------------------------------------------------
+%% Get peername
+%% 
+peername(normal, Socket) ->
+    {ok, {{N1,N2,N3,N4}, Port}} = inet:peername(Socket),
+    {lists:concat([N1, ".", N2, ".", N3, ".", N4]), Port};
+peername(ssl, Socket) ->
+    {ok, {{N1,N2,N3,N4}, Port}} = ssl:peername(Socket),
+    {lists:concat([N1, ".", N2, ".", N3, ".", N4]), Port}.

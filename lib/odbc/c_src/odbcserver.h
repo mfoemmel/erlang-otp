@@ -29,7 +29,6 @@
 #define WAIT_FOR_NEW_MSG 0
 #define NEW_MSG_ARRIVED  1
 #define TIME_OUT 10
-#define DUMMY_OFFSET 0
 
 /* Constats defining the command protocol between the Erlang control process
    and the port program. These constants must also be defined in the same
@@ -55,8 +54,7 @@
 #define STR_VALUE		2
 #define ON		        1
 #define OFF		        2
-
-
+#define DUMMY_OFFSET            0
 /*%%%%%%%%%%%%%%% DEPRECATED CONSTANTS START %%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
 #define OPEN_DB			17
 #define CLOSE_DB		18
@@ -106,6 +104,8 @@ typedef struct {
   int number_of_columns;
   ei_x_buff dynamic_buffer;
   Boolean associated_result_set;
+  Boolean use_srollable_cursors;
+  int tuple_row;
 } DBState;
 
 #define connection_handle(DBState) (DBState -> connection_handle)
@@ -115,5 +115,9 @@ typedef struct {
 #define nr_of_columns(DBState) (DBState -> number_of_columns)
 #define dynamic_buffer(DBState) (DBState -> dynamic_buffer)
 #define associated_result_set(DBState) (DBState -> associated_result_set)
+#define use_srollable_cursors(DBState) (DBState -> use_srollable_cursors)
+#define tuple_row(DBState) (DBState -> tuple_row)
 
 #define DBG( proto ) if (dbgflag) Log proto
+
+

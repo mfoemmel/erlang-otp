@@ -111,33 +111,18 @@ gen(G, N, [X|Xs]) when record(X, interface) ->
 
 gen(G, N, [X|Xs]) when record(X, const) ->
     N2 = [get_id2(X) | N],
-%%    icstruct:struct_gen(G, N2, ic_forms:get_type(X)),
     emit_constant_func(G, X#const.id, X#const.val),
     gen(G, N, Xs);
 
 gen(G, N, [X|Xs]) when record(X, op) ->
     {Name, ArgNames, TypeList, OutArgs} = extract_info(G, N, X),
-    emit_stub_func(G, N, X, Name, ArgNames, TypeList, OutArgs),
+    emit_stub_func(G, N, X, Name, ArgNames, TypeList, OutArgs,
+		   is_oneway(X), get_opt(G, be)),
     gen(G, N, Xs);
 
 gen(G, N, [X|Xs]) when record(X, attr) ->
-    emit_attr(G, N, X, fun emit_stub_func/7),
+    emit_attr(G, N, X, fun emit_stub_func/9),
     gen(G, N, Xs);
-
-%%    XX = #id_of{type=X},
-%%    {GetType, SetType} = mk_attr_func_types(N, X),
-%%    lists:foreach(fun(Id) ->
-%%			  X2 = XX#id_of{id=Id},
-%%			  {Get, Set} = mk_attr_func_names(N, get_id(Id)),
-%%			  emit_stub_func(G, N, X2, Get, [], GetType, []),
-%%			  case X#attr.readonly of
-%%			      {readonly, _} -> ok;
-%%			      _ -> 
-%%				  emit_stub_func(G, N, X2, Set, 
-%%						 [mk_name(G, "Value")], 
-%%						 SetType, [])
-%%			  end end, ic_forms:get_idlist(X)),
-%%    gen(G, N, Xs);
 
 gen(G, N, [X|Xs]) when record(X, except) ->
     icstruct:except_gen(G, N, X, erlang),
@@ -170,21 +155,23 @@ gen_serv(G, N, X) ->
 	true ->
 	    GT = get_opt(G, be),
 	    gen_oe_is_a(G, N, X),
-	    emit_serv_std(GT, G, N, X),
 	    N2 = [get_id2(X) | N], 
+	    gen_oe_tc(G, N2, X, GT),
+
+	    emit_serv_std(GT, G, N, X),
+
 	    gen_calls(G, N2, get_body(X)),
 	    lists:foreach(fun({Name, Body}) ->
 				  gen_calls(G, N2, Body) end,
 			  X#interface.inherit_body),
-	    get_if_gen(G, N2, X),
-	    gen_end_of_call(GT, G, N, X),		% Note N instead of N2
-
+	    gen_end_of_call(GT, G, N, X), % Note N instead of N2
+	    
 	    gen_casts(G, N2, get_body(X)),
 	    lists:foreach(fun({Name, Body}) ->
 				  gen_casts(G, N2, Body) end,
 			  X#interface.inherit_body),
-	    gen_end_of_cast(GT, G, N, X),		% Note N instead of N2
-	    emit_skel_footer(GT, G, N, X);		% Note N instead of N2
+	    gen_end_of_cast(GT, G, N, X), % Note N instead of N2
+	    emit_skel_footer(GT, G, N, X); % Note N instead of N2
 	false ->
 	    ok
     end.
@@ -197,21 +184,132 @@ gen_oe_is_a(G, N, X) when record(X, interface) ->
 			  emit(Fd, "oe_is_a(~p) -> true;\n", 
 			       [ic_pragma:scope2id(G, ScopedName)])
 		  end, X#interface.inherit),
-    emit(Fd, "oe_is_a(_) -> false.\n");
+    emit(Fd, "oe_is_a(_) -> false.\n"),
+    nl(Fd),
+    ok;
 gen_oe_is_a(G, N, X) -> ok.
-    
+
+
+%% Generates the oe_tc function 
+gen_oe_tc(G, N, X, erl_corba) ->
+    Fd = ic_genobj:stubfiled(G),
+    ic_codegen:mcomment(Fd, ["Interface TypeCode"]),
+    LocalInterface = gen_oe_tc2(G, N, get_body(X), Fd, []),
+    CompleteInterface = 
+	lists:foldl(fun({Name, Body}, FunAcc) ->
+			    AName = ic_util:to_atom(ic_util:to_undersc(Name)),
+			    gen_oe_tc3(G, AName, Body, Fd, FunAcc)
+		    end, LocalInterface, X#interface.inherit_body),
+    emit(Fd, "oe_tc(_) -> undefined.\n"),
+    nl(Fd),
+    emit(Fd, "oe_get_interface() -> \n\t["),
+    emit_oe_get_interface(Fd, CompleteInterface),
+    nl(Fd),
+    ok;
+gen_oe_tc(_, _, _, _) ->
+    ok.
+
+emit_oe_get_interface(Fd, []) ->
+    emit(Fd, "].\n");
+emit_oe_get_interface(Fd, [Item]) ->
+    emit(Fd, "~s].\n", [lists:flatten(Item)]);
+emit_oe_get_interface(Fd, [H|T]) ->
+    emit(Fd, "~s,\n\t", [lists:flatten(H)]),
+    emit_oe_get_interface(Fd, T).
+
+gen_oe_tc2(_,_,[],_, Acc) -> 
+    Acc;
+gen_oe_tc2(G, N, [X|Rest], Fd, Acc) when record(X, op) ->
+    R = ic_forms:get_tk(X),
+    IN = lists:map(fun(P) -> ic_forms:get_tk(P) end,
+		   ic:filter_params([in, inout], X#op.params)),
+    OUT = lists:map(fun(P) -> ic_forms:get_tk(P) end,
+		    ic:filter_params([out, inout], X#op.params)),
+    Function = get_id2(X),
+    FunctionAtom = ic_util:to_atom(Function),
+    emit(Fd, "oe_tc(~p) -> \n\t~p;\n",[FunctionAtom, {R, IN, OUT}]),
+    GI = io_lib:format("{~p, oe_tc(~p)}",[Function, FunctionAtom]),
+    gen_oe_tc2(G, N, Rest, Fd, [GI|Acc]);
+
+gen_oe_tc2(G, N, [X|Rest], Fd, Acc) when record(X, attr) ->
+    {GetT, SetT} = mk_attr_func_types([], X),
+    NewAcc = 
+	lists:foldl(fun(Id, FunAcc) -> 
+			    {Get, Set} = mk_attr_func_names([], get_id(Id)),
+			    GetAttrAtom = ic_util:to_atom(Get),
+			    emit(Fd, "oe_tc(~p) -> \n\t~p;\n",
+				 [GetAttrAtom, GetT]),
+			    case X#attr.readonly of
+				{readonly, _} ->
+				    GI = io_lib:format("{~p, oe_tc(~p)}",
+						       [Get, GetAttrAtom]),
+				    [GI|FunAcc];
+				_ -> 
+				    SetAttrAtom = ic_util:to_atom(Set),
+				    
+				    emit(Fd, "oe_tc(~p) -> \n\t~p;\n",
+					 [SetAttrAtom, SetT]),
+				    GetGI = io_lib:format("{~p, oe_tc(~p)}", 
+						       [Get, GetAttrAtom]),
+				    SetGI = io_lib:format("{~p, oe_tc(~p)}", 
+						       [Set, SetAttrAtom]),
+				    [GetGI, SetGI|FunAcc]
+			    end 
+		    end, Acc, ic_forms:get_idlist(X)),
+    gen_oe_tc2(G, N, Rest, Fd, NewAcc);
+
+gen_oe_tc2(G,N,[X|Rest], Fd, Acc) -> 
+    gen_oe_tc2(G,N,Rest, Fd, Acc).
+
+                  
+gen_oe_tc3(_,_,[],_, Acc) -> 
+    Acc;
+gen_oe_tc3(G, N, [X|Rest], Fd, Acc) when record(X, op) ->
+    Function = get_id2(X),
+    FunctionAtom = ic_util:to_atom(get_id2(X)),
+    GI = io_lib:format("{~p, ~p:oe_tc(~p)}",[Function, N, FunctionAtom]),
+    emit(Fd, "oe_tc(~p) -> ~p:oe_tc(~s);\n",
+	 [FunctionAtom, N, Function]),
+    gen_oe_tc3(G, N, Rest, Fd, [GI|Acc]);
+
+gen_oe_tc3(G, N, [X|Rest], Fd, Acc) when record(X, attr) ->
+    NewAcc = lists:foldl(fun(Id, FunAcc) -> 
+				 {Get, Set} = mk_attr_func_names([], get_id(Id)),
+				 GetAttrAtom = ic_util:to_atom(Get),
+				 emit(Fd, "oe_tc(~p) -> ~p:oe_tc(~p);\n",
+				      [GetAttrAtom, N, GetAttrAtom]),
+				 case X#attr.readonly of
+				     {readonly, _} ->
+					 [io_lib:format("{~p, ~p:oe_tc(~p)}",
+							[Get, N, GetAttrAtom])|FunAcc];
+				     _ -> 
+					 SetAttrAtom = ic_util:to_atom(Set),
+					 emit(Fd, "oe_tc(~p) -> ~p:oe_tc(~p);\n",
+					      [SetAttrAtom, N, SetAttrAtom]),
+					 [io_lib:format("{~p, ~p:oe_tc(~p)}",
+							[Get, N, GetAttrAtom]),
+					  io_lib:format("{~p, ~p:oe_tc(~p)}",
+							[Set, N, SetAttrAtom])|FunAcc]
+				 end 
+			 end, Acc, ic_forms:get_idlist(X)),
+    gen_oe_tc3(G, N, Rest, Fd, NewAcc);
+
+gen_oe_tc3(G,N,[X|Rest], Fd, Acc) -> 
+    gen_oe_tc3(G,N,Rest, Fd, Acc).
+
 gen_calls(G, N, [X|Xs]) when record(X, op) ->
     case is_oneway(X) of
 	false ->
 	    {Name, ArgNames, TypeList, OutArgs} = extract_info(G, N, X),
-	    emit_skel_func(G, N, X, Name, ArgNames, TypeList, OutArgs),
+	    emit_skel_func(G, N, X, Name, ArgNames, TypeList, OutArgs, false,
+			   get_opt(G, be)),
 	    gen_calls(G, N, Xs);
 	true ->
 	    gen_calls(G, N, Xs)
     end;
 
 gen_calls(G, N, [X|Xs]) when record(X, attr) ->
-    emit_attr(G, N, X, fun emit_skel_func/7),
+    emit_attr(G, N, X, fun emit_skel_func/9),
     gen_calls(G, N, Xs);
 
 gen_calls(G, N, [X|Xs]) -> gen_calls(G, N, Xs);
@@ -221,8 +319,8 @@ gen_casts(G, N, [X|Xs]) when record(X, op) ->
     case is_oneway(X) of
 	true ->
 	    {Name, ArgNames, TypeList, OutArgs} = extract_info(G, N, X),
-%%	    io:format("Generateing oneway ~p~n", [Name]),
-	    emit_skel_func(G, N, X, Name, ArgNames, TypeList, OutArgs),
+	    emit_skel_func(G, N, X, Name, ArgNames, TypeList, OutArgs, true,
+			   get_opt(G, be)),
 	    gen_casts(G, N, Xs);
 	false ->
 	    gen_casts(G, N, Xs)
@@ -233,16 +331,19 @@ gen_casts(G, N, []) -> ok.
 
 emit_attr(G, N, X, F) ->
     XX = #id_of{type=X},
+    BE = get_opt(G, be),
     {GetType, SetType} = mk_attr_func_types(N, X),
     lists:foreach(fun(Id) ->
 			  X2 = XX#id_of{id=Id},
 			  {Get, Set} = mk_attr_func_names(N, get_id(Id)),
-			  F(G, N, X2, Get, [], GetType, []),
+			  F(G, N, X2, Get, [], GetType, [],
+			    is_oneway(X2), BE),
 			  case X#attr.readonly of
 			      {readonly, _} -> ok;
 			      _ -> 
 				  F(G, N, X2, Set, [mk_name(G, "Value")], 
-				    SetType, [])
+				    SetType, [],
+				    is_oneway(X2), BE)
 			  end end, ic_forms:get_idlist(X)).
 
 
@@ -306,91 +407,15 @@ emit_serv_std(erl_corba, G, N, X) ->
     emit(Fd, "oe_create_link(Env, RegName) ->\n"),
     emit(Fd, "    corba:create_link(?MODULE, \"~s\", Env, RegName).\n", [TypeID]),
     nl(Fd),
-      ic_codegen:mcomment(Fd, ["Start functions."]),
-    nl(Fd), 
-    emit(Fd, "start(Env) ->\n"),
-    emit(Fd, "    gen_server:start(?MODULE, Env, []).\n"),
-    nl(Fd),
-    emit(Fd, "start_link(Env) ->\n"),
-    emit(Fd, "    gen_server:start_link(?MODULE, Env, []).\n"),
-    nl(Fd),
     ic_codegen:mcomment(Fd, ["Init & terminate functions."]),
     nl(Fd), 
     emit(Fd, "init(Env) ->\n"),
     ic_codegen:comment(Fd, "Call to implementation init"),
-    emit(Fd, "    ~p:~p(Env).\n", [to_atom(Impl), init]),
+    emit(Fd, "    corba:handle_init(~p, Env).\n", [to_atom(Impl)]),
     nl(Fd),
     emit(Fd, "terminate(Reason, State) ->\n"),
-    emit(Fd, "    catch (~p:~p(Reason, State)).\n", 
-	 [to_atom(Impl), terminate]),
-    nl(Fd),
-    ic_codegen:mcomment(Fd, ["Call & Cast macros."]),
-    nl(Fd), 
-
-    %%
-    %% gen_server's requirements on return values from handle_call:
-    %%
-    %% {reply, Reply, State} 
-    %% {reply, Reply, State,  Timeout}
-    %% {noreply,  State}
-    %% {noreply,  State, Timeout} 
-    %% {stop, StopReason, Reply, State}
-    %% {stop, StopReason, State}
-    %%
-    emit(Fd, "-define(~s(Mod, Fun, Args),\n", [mk_name(G, "CALL")]),
-    emit(Fd, "        Result = case catch apply(Mod, Fun, Args) of\n"),
-    emit(Fd, "            {'EXIT', OE} -> exit(OE);\n"),
-    emit(Fd, "            ~s when element(1, ~s)=='EXCEPTION' ->\n",
-	 [Var1, Var1]),
-    emit(Fd, "                {reply, ~s, ~s};\n", [Var1, State]),
-
-    emit(Fd, "            ~s when element(1, ~s)=='reply' ->\n",
-	 [Var2, Var2]),
-    emit(Fd, "                ~s;~n", [Var2]),
-
-    emit(Fd, "            ~s when element(1, ~s)=='noreply' ->\n",
-	 [Var3, Var3]),
-    emit(Fd, "                ~s;~n", [Var3]),
-
-    emit(Fd, "            ~s when element(1, ~s)=='stop' ->\n",
-	 [Var4, Var4]),
-    emit(Fd, "                ~s;~n", [Var4]),
-
-
-    %% Old format for return values (this line is just for backward compatability)
-    emit(Fd, "            {~s, ~s} -> {reply, ~s, ~s}~n", 
-	 [Reply, NewState, Reply, NewState]),
-    emit(Fd, "        end).", []),
-    nl(Fd), 
-
-    %%
-    %% gen_server's requirements on return values from handle_cast:
-    %%
-    %% {noreply,  State}
-    %% {noreply,  State, Timeout} 
-    %% {stop, StopReason, State}
-    %%
-    emit(Fd, "-define(~s(Mod, Fun, Args),\n", [mk_name(G, "CAST")]),
-    emit(Fd, "        Result = case catch apply(Mod, Fun, Args) of\n"),
-    emit(Fd, "            {'EXIT', OE} -> exit(OE);\n"),
-    emit(Fd, "            ~s when element(1, ~s)=='EXCEPTION' ->\n",
-	 [Var1, Var1]),
-    emit(Fd, "                {noreply, ~s};~n", [State]),
-
-    emit(Fd, "            ~s when element(1, ~s)=='noreply' ->\n",
-	 [Var2, Var2]),
-    emit(Fd, "                ~s;~n", [Var2]),
-
-    emit(Fd, "            ~s when element(1, ~s)=='stop' ->\n",
-	 [Var3, Var3]),
-    emit(Fd, "                ~s;~n", [Var3]),
-
-    %% Old format for return values (this line is just for backward compatability)
-    emit(Fd, "            ~s -> {noreply, ~s}~n", [NewState, NewState]),
-
-    emit(Fd, "        end).\n"),
-
-    nl(Fd), 
+    emit(Fd, "    corba:handle_terminate(~p, Reason, State).\n", 
+	 [to_atom(Impl)]),
     nl(Fd), nl(Fd),
     Fd;
 emit_serv_std(erl_genserv, G, N, X) ->
@@ -521,7 +546,7 @@ emit_skel_footer(erl_corba, G, N, X) ->
     emit(Fd, "handle_info(Info, State) ->\n"),
     case use_impl_handle_info(G, N, X) of
 	true ->
-	    emit(Fd, "    ~p:handle_info(Info, State).\n\n", 
+	    emit(Fd, "    corba:handle_info(~p, Info, State).\n\n", 
 		 [list_to_atom(ic_genobj:impl(G))]);
 	false ->
 	    emit(Fd, "    {noreply, State}.\n\n")
@@ -530,7 +555,7 @@ emit_skel_footer(erl_corba, G, N, X) ->
     emit(Fd, "code_change(OldVsn, State, Extra) ->\n"),    
     case get_opt(G, no_codechange) of
 	false ->
-	    emit(Fd, "    ~p:code_change(OldVsn, State, Extra).\n\n", 
+	    emit(Fd, "    corba:handle_code_change(~p, OldVsn, State, Extra).\n\n", 
 		 [list_to_atom(ic_genobj:impl(G))]);
 	true ->
 	    emit(Fd, "    {ok, State}.\n\n")
@@ -608,84 +633,6 @@ use_postcond(G, N, X) ->
 	V1 -> V1
     end.
 
-get_if_name(G) -> mk_oe_name(G, "get_interface").
-
-%% Generates the get_interface function 
-get_if_gen(G, N, X) ->
-%%    ?DBG("Get I/F gen~n", []),
-%%    S = ic_genobj:tktab(G),
-    Backend = get_opt(G, be),
-    case {ic_genobj:is_stubfile_open(G), Backend} of
-	{true, erl_corba} ->
-	    B = 
-		foldr(fun({Name, Body}, Acc) ->
-			      get_if(G,N,Body,Backend)++Acc end,
-		      get_if(G,N,get_body(X),Backend),
-		      X#interface.inherit_body),
-	    Fd = ic_genobj:stubfiled(G),
-	    Name = to_atom(get_if_name(G)),
-	    ic_codegen:mcomment_light(Fd, 
-				 [io_lib:format("Standard Operation: ~p",
-						[Name])]),
-	    emit(Fd, "handle_call({~s, ~p, []}, From, State) ->~n",
-		 [mk_name(G, "THIS"), Name]),
-	    emit(Fd, "    {reply, ~p, State};~n", [B]),
-	    nl(Fd),
-	    ok;
-	_ -> ok
-    end.
-
-
-get_if(G,N,[X|Rest],erl_corba) when record(X, op) ->
-    R = ic_forms:get_tk(X),
-    IN = lists:map(fun(P) -> ic_forms:get_tk(P) end,
-		   ic:filter_params([in, inout], X#op.params)),
-    OUT = lists:map(fun(P) -> ic_forms:get_tk(P) end,
-		    ic:filter_params([out, inout], X#op.params)),
-    [{get_id2(X), {R, IN, OUT}} | get_if(G,N,Rest,erl_corba)];
-
-get_if(G,N,[X|Rest],erl_corba) when record(X, attr) ->
-    {GetT, SetT} = mk_attr_func_types([], X),
-    AList = lists:map(fun(Id) -> 
-			      {Get, Set} = mk_attr_func_names([], get_id(Id)),
-			      case X#attr.readonly of
-				  {readonly, _} -> 
-				      {Get, GetT};
-				  _ -> 
-				      [{Set, SetT}, {Get, GetT}]
-			      end end, ic_forms:get_idlist(X)),
-    lists:flatten(AList) ++ get_if(G,N,Rest,erl_corba);
-
-get_if(G,N,[X|Rest],erl_genserv) when record(X, op) ->
-    FunName = case ic_options:get_opt(G, scoped_op_calls) of 
-		  true -> 
-		      ic_util:to_undersc([get_id2(X) | N]);
-		  false ->
-		      get_id2(X)
-	      end,
-    R = ic_forms:get_tk(X),
-    IN = lists:map(fun(P) -> ic_forms:get_tk(P) end,
-		   ic:filter_params([in, inout], X#op.params)),
-    OUT = lists:map(fun(P) -> ic_forms:get_tk(P) end,
-		    ic:filter_params([out, inout], X#op.params)),
-    [{FunName, {R, IN, OUT}} | get_if(G,N,Rest,erl_genserv)];
-
-get_if(G,N,[X|Rest],erl_genserv) when record(X, attr) ->
-    {GetT, SetT} = mk_attr_func_types([], X),
-    AList = lists:map(fun(Id) -> 
-			      {Get, Set} = mk_attr_func_names([], get_id(Id)),
-			      case X#attr.readonly of
-				  {readonly, _} -> 
-				      {Get, GetT};
-				  _ -> 
-				      [{Set, SetT}, {Get, GetT}]
-			      end end, ic_forms:get_idlist(X)),
-    lists:flatten(AList) ++ get_if(G,N,Rest,erl_genserv);
-
-get_if(G,N,[X|Rest],Backend) -> get_if(G,N,Rest,Backend);
-get_if(_,_,[],_) -> [].
-
-
 
 %%------------------------------------------------------------
 %%
@@ -702,20 +649,21 @@ gen_head_special(G, N, X) when record(X, interface) ->
     foreach(fun({Name, Body}) ->
 		    ic_codegen:comment(Fd, "Exports from ~p", 
 				  [ic_util:to_colon(Name)]),
-		    ic_codegen:export(Fd, exp_top(G, N, Body, [])),
+		    ic_codegen:export(Fd, exp_top(G, N, Body, [], get_opt(G, be))),
 		    nl(Fd)
 	    end, X#interface.inherit_body),
-    %% nl(Fd), nl(Fd),
-    ic_codegen:comment(Fd, "Type identification function"),
-    ic_codegen:export(Fd, [{typeID, 0}]), %%%, {to_atom(get_if_name(G)), 1}]),
+
+    ic_codegen:comment(Fd, "Type identification function and inheritance"),
+    ic_codegen:export(Fd, [{typeID, 0}, {oe_is_a, 1}]), 
     nl(Fd),
     ic_codegen:comment(Fd, "Used to start server"),
     ic_codegen:export(Fd, [{oe_create, 0}, {oe_create_link, 0}, {oe_create, 1}, {oe_create_link, 1},
-		      {oe_create, 2}, {oe_create_link, 2}, {oe_is_a, 1}]),
+			   {oe_create, 2}, {oe_create_link, 2}]),
     nl(Fd),
     case get_opt(G, be) of
 	erl_corba ->
-	    ic_codegen:export(Fd, [{start, 1}, {start_link, 1}]);
+	    ic_codegen:comment(Fd, "TypeCode Functions"),
+	    ic_codegen:export(Fd, [{oe_tc, 1}, {oe_get_interface, 0}]);
 	_ ->
 	    ic_codegen:export(Fd, [{start, 2}, {start_link, 3}])
     end,
@@ -743,15 +691,6 @@ gen_head_special(G, N, X) when record(X, interface) ->
     ic_codegen:mcomment(Fd, ["Object interface functions."]),
     nl(Fd), nl(Fd), nl(Fd),
     Fd;
-
-%% Some items have extra exports
-%%gen_head_special(G, N, X) when record(X, module) ->
-%%    Fd = ic_genobj:stubfiled(G),
-%%    nl(Fd),
-%%    ic_codegen:comment(Fd, "Specific exports for modules\n"),
-%%    ic_codegen:export(Fd, [{ictk:register_name(G), 0},
-%%		      {ictk:unregister_name(G), 0}]);
-
 gen_head_special(G, N, X) -> ok.
 
     
@@ -762,28 +701,31 @@ gen_head(G, N, X) ->
 	true -> 
 	    F = ic_genobj:stubfiled(G),
 	    ic_codegen:comment(F, "Interface functions"),
-	    ic_codegen:export(F, exp_top(G, N, X, [])),
+	    ic_codegen:export(F, exp_top(G, N, X, [], get_opt(G, be))),
 	    nl(F),
 	    gen_head_special(G, N, X);
 	false -> ok
     end.
 
-exp_top(G, N, X, Acc)  when element(1, X) == preproc -> 
+exp_top(G, N, X, Acc, _)  when element(1, X) == preproc -> 
     Acc;
-exp_top(G, N, L, Acc)  when list(L) ->
-    exp_list(G, N, L, Acc);
-exp_top(G, N, M, Acc)  when record(M, module) ->
-    exp_list(G, N, get_body(M), Acc);
-exp_top(G, N, I, Acc)  when record(I, interface) ->
-    exp_list(G, N, get_body(I), Acc);
-exp_top(G, N, X, Acc) ->
-    exp3(G, N, X, Acc).
+exp_top(G, N, L, Acc, BE)  when list(L) ->
+    exp_list(G, N, L, Acc, BE);
+exp_top(G, N, M, Acc, BE)  when record(M, module) ->
+    exp_list(G, N, get_body(M), Acc, BE);
+exp_top(G, N, I, Acc, BE)  when record(I, interface) ->
+    exp_list(G, N, get_body(I), Acc, BE);
+exp_top(G, N, X, Acc, BE) ->
+    exp3(G, N, X, Acc, BE).
 
-exp3(G, N, C, Acc)  when record(C, const) ->
+exp3(G, N, C, Acc, BE)  when record(C, const) ->
     [{get_id(C#const.id), 0} | Acc];
-exp3(G, N, Op, Acc)  when record(Op, op) ->
+exp3(G, N, Op, Acc, erl_corba)  when record(Op, op) ->
     FuncName = get_id(Op#op.id),
-
+    Arity = length(ic:filter_params([in, inout], Op#op.params)) + 1,
+    [{FuncName, Arity}, {FuncName, Arity+1} | Acc];
+exp3(G, N, Op, Acc, BE)  when record(Op, op) ->
+    FuncName = get_id(Op#op.id),
     Arity = 
 	case use_timeout(G,N,Op) of
 	    true ->
@@ -799,7 +741,15 @@ exp3(G, N, Op, Acc)  when record(Op, op) ->
 	end,
     [{FuncName, Arity} | Acc];
 
-exp3(G, N, A, Acc)  when record(A, attr) ->
+exp3(G, N, A, Acc, erl_corba)  when record(A, attr) ->
+    lists:foldr(fun(Id, Acc2) ->
+			{Get, Set} = mk_attr_func_names([], get_id(Id)),
+			case A#attr.readonly of
+			    {readonly, _} -> [{Get, 1}, {Get, 2} | Acc2];
+			    _ ->             [{Get, 1}, {Get, 2}, 
+					      {Set, 2}, {Set, 3} | Acc2]
+			end end, Acc, ic_forms:get_idlist(A));
+exp3(G, N, A, Acc, BE)  when record(A, attr) ->
     lists:foldr(fun(Id, Acc2) ->
 			{Get, Set} = mk_attr_func_names([], get_id(Id)),
 			case A#attr.readonly of
@@ -807,10 +757,10 @@ exp3(G, N, A, Acc)  when record(A, attr) ->
 			    _ ->             [{Get, 1}, {Set, 2} | Acc2]
 			end end, Acc, ic_forms:get_idlist(A));
 
-exp3(G, N, X, Acc) -> Acc.
+exp3(G, N, X, Acc, BE) -> Acc.
 
-exp_list(G, N, L, OrigAcc) -> 
-    lists:foldr(fun(X, Acc) -> exp3(G, N, X, Acc) end, OrigAcc, L).
+exp_list(G, N, L, OrigAcc, BE) -> 
+    lists:foldr(fun(X, Acc) -> exp3(G, N, X, Acc, BE) end, OrigAcc, L).
 
 
 
@@ -822,12 +772,12 @@ exp_list(G, N, L, OrigAcc) ->
 %%	Low level generation primitives
 %%
 
-emit_stub_func(G, N, X, Name, ArgNames, TypeList, OutArgs) ->
+emit_stub_func(G, N, X, Name, ArgNames, TypeList, OutArgs, Oneway, Backend) ->
     case ic_genobj:is_stubfile_open(G) of
-	false -> ok;
+	false -> 
+	    ok;
 	true ->
 	    Fd = ic_genobj:stubfiled(G),
-%%%	    io:format("Stub: n: ~p filescope: ~p~n", [N, stubscope(G)]),
 	    StubName = list_to_atom(Name),
 	    UsingTimeout = use_timeout(G, N, X),
 	    Timeout = case UsingTimeout of
@@ -836,6 +786,7 @@ emit_stub_func(G, N, X, Name, ArgNames, TypeList, OutArgs) ->
 			  false ->
 			      "infinity"
 		      end,
+	    Options = mk_name(G, "Options"),
 	    This = mk_name(G, "THIS"),
 	    CallOrCast = 
 		case is_oneway(X) of 
@@ -843,35 +794,17 @@ emit_stub_func(G, N, X, Name, ArgNames, TypeList, OutArgs) ->
 		    _ -> ?CALL
 		end,
 	    emit_op_comment(G, Fd, X, StubName, ArgNames, OutArgs),
-	    case get_opt(G, be) of
+	    case Backend of
 		erl_corba ->
-		    %% NO TimeOut on ONEWAYS here !!!!
-		    case is_oneway(X) of 
-			true ->
-			    emit(Fd, "~p(~s) ->\n", 
-				 [StubName, mk_list([This | ArgNames])]);
-			false ->
-			    case UsingTimeout of
-				true ->
-				    emit(Fd, "~p(~s) ->\n", 
-					 [StubName, mk_list([This, Timeout| ArgNames])]);
-				false ->
-				    emit(Fd, "~p(~s) ->\n", 
-					 [StubName, mk_list([This | ArgNames])])
-			    end
-		    end,
-			    
-		    %% NO TimeOut on ONEWAYS here !!!!
-		    case is_oneway(X) of 
-			true ->
-			    emit(Fd, "    ~s:~s(~s, ~p, [~s], ~p).\n\n", 
-				 [?CORBAMOD, CallOrCast, This, StubName, mk_list(ArgNames),
-				  TypeList]);
-			false ->
-			    emit(Fd, "    ~s:~s(~s, ~p, [~s], ~p, ~s).\n\n", 
-				 [?CORBAMOD, CallOrCast, This, StubName, mk_list(ArgNames),
-				  TypeList, Timeout])
-		    end;
+		    emit(Fd, "~p(~s) ->\n", 
+			 [StubName, mk_list([This | ArgNames])]),
+		    emit(Fd, "    ~s:~s(~s, ~p, [~s], ?MODULE).\n\n", 
+			 [?CORBAMOD, CallOrCast, This, StubName, mk_list(ArgNames)]),
+		    emit(Fd, "~p(~s) ->\n", 
+			 [StubName, mk_list([This, Options| ArgNames])]),
+		    emit(Fd, "    ~s:~s(~s, ~p, [~s], ?MODULE, ~s).\n\n", 
+			 [?CORBAMOD, CallOrCast, This, StubName, mk_list(ArgNames),
+			  Options]);
 		_  ->
 		    FunName = case ic_options:get_opt(G, scoped_op_calls) of 
 				  true -> 
@@ -880,7 +813,7 @@ emit_stub_func(G, N, X, Name, ArgNames, TypeList, OutArgs) ->
 				      StubName
 			      end,
 		    %% NO TimeOut on ONEWAYS here !!!!
-		    case is_oneway(X) of 
+		    case Oneway of 
 			true ->
 			    emit(Fd, "~p(~s) ->\n", 
 				 [StubName, mk_list([This | ArgNames])]);
@@ -894,7 +827,7 @@ emit_stub_func(G, N, X, Name, ArgNames, TypeList, OutArgs) ->
 					 [StubName, mk_list([This | ArgNames])])
 			    end
 		    end,
-
+		    
 		    %% NO TimeOut on ONEWAYS here !!!!
 		    if 
 			length(ArgNames) == 0 ->
@@ -921,171 +854,137 @@ emit_stub_func(G, N, X, Name, ArgNames, TypeList, OutArgs) ->
 	    end
     end.
 
-emit_skel_func(G, N, X, OpName, ArgNames, TypeList, OutArgs) ->
+emit_skel_func(G, N, X, OpName, ArgNames, TypeList, OutArgs, Oneway, Backend) ->
     case ic_genobj:is_stubfile_open(G) of
-	false -> ok;
+	false -> 
+	    ok;
 	true ->
-	    Fd = ic_genobj:stubfiled(G),
-	    Name	= list_to_atom(OpName),
-	    ImplF	= Name,
-	    ImplM	= list_to_atom(ic_genobj:impl(G)),
-	    This	= mk_name(G, "THIS"),
-	    TL		= mk_name(G, "Types"),
-	    From	= mk_name(G, "From"),
-	    State	= mk_name(G, "State"),
-
-	    %% Create argument list
-	    CallArgs1 = [State | ArgNames],
-	    CallArgs2 =
-		case is_oneway(X) of
-		    false ->
-			case use_from(G, N, OpName) of
-			    true ->
-				[From | CallArgs1];
-			    false ->
-				CallArgs1
-			end;
-		    true ->
-			CallArgs1
-		end,
-	    CallArgs3 =
-		case use_this(G, N, OpName) of
-		    true ->
-			case get_opt(G, be) of
-			    erl_corba ->
-				[This | CallArgs2];
-			    erl_genserv ->
-				CallArgs2
-			end;
-		    false ->
-			CallArgs2
-		end,
-	    %% Create argument list string
-	    CallArgs = mk_list(CallArgs3),
-	    emit_op_comment(G, Fd, X, Name, ArgNames, OutArgs),
-	    case get_opt(G, be) of
-		erl_corba ->
-		    VarPrecond	= mk_name(G, "Precond"),
-		    VarPostcond	= mk_name(G, "Postcond"),
-
-		    %% Check if pre and post conditions are specified for this operation
-		    Precond = use_precond(G, N, X),
-		    Postcond = use_postcond(G, N, X),
-
-		    case is_oneway(X) of
-			true ->
-			    emit(Fd, "handle_cast({~s, ~p, [~s]}, ~s) ->\n",
-				 [This, Name, mk_list(ArgNames), State]),
-			    emit_precond(Fd, true, Precond, VarPrecond, 
-					 Name, CallArgs, State),
-			    emit(Fd, "    ?~s(~p, ~p, [~s])", 
-				 [mk_name(G, "CAST"), ImplM, ImplF, CallArgs]),
-			    emit_postcond(Fd, true, Precond, Postcond, VarPostcond,
-					  Name, CallArgs, State);
-			false ->
-			    emit(Fd, "handle_call({~s, ~p, [~s]}, ~s, ~s) ->\n",
-				 [This, Name, mk_list(ArgNames), From, State]),
-			    emit_precond(Fd, false, Precond, VarPrecond,  Name, 
-					 CallArgs, State),
-			    emit(Fd, "  ?~s(~p, ~p, [~s])", 
-				 [mk_name(G, "CALL"), ImplM, ImplF, CallArgs]),
-			    emit_postcond(Fd, false, Precond, Postcond, VarPostcond,
-					  Name, CallArgs, State)
-		    end;
-		erl_genserv ->
-		    FunName = case ic_options:get_opt(G, scoped_op_calls) of 
-				  true -> 
-				      list_to_atom(ic_util:to_undersc([OpName | N]));
-				  false ->
-				      list_to_atom(OpName)
-			      end,
-		    case is_oneway(X) of
-			true ->
-			    if
-				length(ArgNames) == 0 ->
-				    emit(Fd, "handle_cast(~p, ~s) ->\n",
-					 [FunName, State]);
-				true ->
-				    emit(Fd, "handle_cast({~p, ~s}, ~s) ->\n",
-					 [FunName, mk_list(ArgNames), State])
-			    end,
-			    emit(Fd, "    ~p:~p(~s);\n\n", 
-				 [ImplM, ImplF, CallArgs]);
-			false ->
-			    if
-				length(ArgNames) == 0 ->
-				    emit(Fd, "handle_call(~p, ~s, ~s) ->\n",
-					 [FunName, From, State]);
-				true ->
-				    emit(Fd, "handle_call({~p, ~s}, ~s, ~s) ->\n",  
-					 [FunName, 
-					  mk_list(ArgNames), 
-					  From, State])
-			    end,
-			    emit(Fd, "    ~p:~p(~s);\n\n", 
-				 [ImplM, ImplF, CallArgs])
-		    end
-	    end
-%%	    emit(Fd, "~p({~s, ~p, [~s], ~s},",
-%%		 [CallOrCast1, This, Name, mk_list(ArgNames), TL]),
-%%	    emit(Fd, " ~s, ~s) ->\n", [From, State]),
-%%	    emit(Fd, "    ?~s(~p:~p(~s));\n\n", 
-%%		 [CallOrCast2, ImplM, ImplF, mk_list(CallArgs)])
+	    emit_skel_func_helper(G, N, X, OpName, ArgNames, TypeList, OutArgs, 
+				  Oneway, Backend)
     end.
 
-emit_precond(Fd, CallOrCast, Precond, VarPrecond, F, A, State) ->
-    case Precond of 
-	{PreM, PreF} ->
-	    emit(Fd, "  case catch ~p:~p(?MODULE, ~s, [~s]) of\n",
-		 [PreM, PreF, F, A]),
-	    emit(Fd, "    {'EXIT', OE_precond_exit} -> exit(OE_precond_exit);\n"),
-	    emit(Fd, "    ~s when element(1, ~s)=='EXCEPTION' ->\n",
-		 [VarPrecond, VarPrecond]),
-	    case CallOrCast of
-		true ->
-		    emit(Fd, "          {noreply, ~s};~n", [State]);
-		false ->
-		    emit(Fd, "         {reply, ~s, ~s};\n", [VarPrecond, State])
-	    end,
-	    emit(Fd, "    ok ->\n      ");
-	_ ->
-	    ok
-    end.
+emit_skel_func_helper(G, N, X, OpName, ArgNames, TypeList, OutArgs, Oneway, 
+		      erl_corba) ->
+    Fd = ic_genobj:stubfiled(G),
+    Name	= list_to_atom(OpName),
+    ImplF	= Name,
+    ImplM	= list_to_atom(ic_genobj:impl(G)),
+    This	= mk_name(G, "THIS"),
+    TL		= mk_name(G, "Types"),
+    From	= mk_name(G, "From"),
+    State	= mk_name(G, "State"),
+    Context	= mk_name(G, "Context"),
+    VarPrecond	= mk_name(G, "Precond"),
+    VarPostcond	= mk_name(G, "Postcond"),
 
-emit_postcond(Fd, CallOrCast, Precond, Postcond, VarPostcond, F, A, State) ->
-    case Postcond of 
-	{PostM, PostF} ->
-	    emit(Fd, ",\n"),
-	    emit(Fd, "        case catch ~p:~p(?MODULE, ~s, [~s], Result) of\n",
-		 [PostM, PostF, F, A]),
-	    emit(Fd, "          {'EXIT', OE_postcond_exit} -> exit(OE_postcond_exit);\n"),
-	    emit(Fd, "          ~s when element(1, ~s)=='EXCEPTION' ->\n",
-		 [VarPostcond, VarPostcond]),
-
-	    case CallOrCast of
-		true ->
-		    emit(Fd, "             {noreply, ~s};~n", [State]);
-		false ->
-		    emit(Fd, "             {reply, ~s, ~s};\n", [VarPostcond, State])
-	    end,
-
-	    emit(Fd, "          ok ->\n"),
-	    emit(Fd, "             Result\n"),
-	    case Precond of 
-		{_, _} ->
-		    emit(Fd, "        end\n"),
-		    emit(Fd, "  end;\n\n");
+    %% Create argument list
+    CallArgs1 = [State | ArgNames],
+    UseFrom =
+	case Oneway of
+	    false ->
+		case use_from(G, N, OpName) of
+		    true ->
+			From;
+		    false ->
+			"false"
+		end;
+	    true ->
+		"false"
+	end,
+    UseThis =
+	case use_this(G, N, OpName) of
+	    true ->
+		This;
+	    false ->
+		"false"
+	end,
+    %% Create argument list string
+    CallArgs = mk_list(ArgNames),
+    emit_op_comment(G, Fd, X, Name, ArgNames, OutArgs),
+    
+    %% Check if pre and post conditions are specified for this operation
+    Precond = use_precond(G, N, X),
+    Postcond = use_postcond(G, N, X),
+    
+    case Oneway of
+	true ->
+	    emit(Fd, "handle_cast({~s, ~s, ~p, [~s]}, ~s) ->\n",
+		 [This, Context, Name, CallArgs, State]),
+	    case {Precond, Postcond} of
+		{false, false} ->
+		    emit(Fd, "    corba:handle_cast(~p, ~p, [~s], ~s, ~s, ~s);\n\n", 
+			 [ImplM, ImplF, CallArgs, State, Context, UseThis]);
 		_ ->
-		    emit(Fd, "        end;\n\n")
+		    emit(Fd, "    corba:handle_cast(~p, ~p, [~s], ~s, ~s, ~s, ~p, ~p, ?MODULE);\n\n", 
+			 [ImplM, ImplF, CallArgs, State, Context, UseThis, 
+			  Precond, Precond])
 	    end;
-	_ ->	    
-	    case Precond of 
-		{_, _} ->
-		    emit(Fd, "\n"),
-		    emit(Fd, "  end;\n\n");
-		_ ->
-		    emit(Fd, ";\n\n")
+	false ->
+	    emit(Fd, "handle_call({~s, ~s, ~p, [~s]}, ~s, ~s) ->\n",
+		 [This, Context, Name, CallArgs, From, State]),
+	    case {Precond, Postcond} of
+		{false, false} ->
+		    emit(Fd, "  corba:handle_call(~p, ~p, [~s], ~s, ~s, ~s, ~s);\n\n", 
+			 [ImplM, ImplF, CallArgs, State, Context, UseThis, UseFrom]);
+		_->
+		    emit(Fd, "  corba:handle_call(~p, ~p, [~s], ~s, ~s, ~s, ~s, ~p, ~p, ?MODULE);\n\n", 
+			 [ImplM, ImplF, CallArgs, State, Context, UseThis, UseFrom,
+			  Precond, Postcond])
 	    end
+    end;
+emit_skel_func_helper(G, N, X, OpName, ArgNames, TypeList, OutArgs, Oneway,
+		      Backend) ->
+    Fd = ic_genobj:stubfiled(G),
+    Name	= list_to_atom(OpName),
+    ImplF	= Name,
+    ImplM	= list_to_atom(ic_genobj:impl(G)),
+    TL		= mk_name(G, "Types"),
+    From	= mk_name(G, "From"),
+    State	= mk_name(G, "State"),
+
+    %% Create argument list
+    CallArgs1 = [State | ArgNames],
+    CallArgs2 =
+	case is_oneway(X) of
+	    false ->
+		case use_from(G, N, OpName) of
+		    true ->
+			[From | CallArgs1];
+		    false ->
+			CallArgs1
+		end;
+	    true ->
+		CallArgs1
+	end,
+    %% Create argument list string
+    CallArgs = mk_list(CallArgs2),
+    emit_op_comment(G, Fd, X, Name, ArgNames, OutArgs),
+    FunName = case ic_options:get_opt(G, scoped_op_calls) of 
+		  true -> 
+		      list_to_atom(ic_util:to_undersc([OpName | N]));
+		  false ->
+		      list_to_atom(OpName)
+	      end,
+    case Oneway of
+	true ->
+	    if
+		length(ArgNames) == 0 ->
+		    emit(Fd, "handle_cast(~p, ~s) ->\n", [FunName, State]);
+		true ->
+		    emit(Fd, "handle_cast({~p, ~s}, ~s) ->\n",
+			 [FunName, mk_list(ArgNames), State])
+	    end,
+	    emit(Fd, "    ~p:~p(~s);\n\n", [ImplM, ImplF, CallArgs]);
+	false ->
+	    if
+		length(ArgNames) == 0 ->
+		    emit(Fd, "handle_call(~p, ~s, ~s) ->\n",
+			 [FunName, From, State]);
+		true ->
+		    emit(Fd, "handle_call({~p, ~s}, ~s, ~s) ->\n",  
+			 [FunName, mk_list(ArgNames), From, State])
+	    end,
+	    emit(Fd, "    ~p:~p(~s);\n\n", [ImplM, ImplF, CallArgs])
     end.
 
 use_this(G, N, OpName) ->

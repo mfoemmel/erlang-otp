@@ -331,7 +331,7 @@
 -define(ORB_SEC_ATTRIBUTES, 16#01).
 -define(ORB_CONTEXT,        16#02).
 -define(ORB_TYPECHECK,      16#04).
--define(ORB_THING,          16#08).
+-define(ORB_NO_SECURITY,    16#08).
 -define(ORB_ELSE1,          16#10).
 -define(ORB_ELSE2,          16#20).
 -define(ORB_ELSE3,          16#40).
@@ -345,8 +345,10 @@
 %%----------------------------------------------------------------------
 -define(ORB_ENV_EXCLUDE_CODESET_COMPONENT, 16#01).
 -define(ORB_ENV_LOCAL_TYPECHECKING,        16#02).
--define(ORB_ENV_EXCLUDE_CODESET_CTX,       16#04).
--define(ORB_ENV_USE_BI_DIR_IIOP,           16#08).
+-define(ORB_ENV_HOSTNAME_IN_IOR,           16#04).
+-define(ORB_ENV_EXCLUDE_CODESET_CTX,       16#08).
+-define(ORB_ENV_PARTIAL_SECURITY,          16#10).
+-define(ORB_ENV_USE_BI_DIR_IIOP,           16#20).
 
 
 -define(ORB_ENV_INIT_FLAGS,      16#00).
@@ -354,6 +356,7 @@
 -define(ORB_ENV_FLAGS, 
 	[{?ORB_ENV_EXCLUDE_CODESET_CTX, "Exclude CodeSet Ctx"},
 	 {?ORB_ENV_LOCAL_TYPECHECKING, "Local Typechecking"},
+	 {?ORB_ENV_HOSTNAME_IN_IOR, "Use Hostname in IOR"},
 	 {?ORB_ENV_EXCLUDE_CODESET_COMPONENT, "Exclude CodeSet Component"},
 	 {?ORB_ENV_USE_BI_DIR_IIOP, "Use BiDirIIOP"}]).
 

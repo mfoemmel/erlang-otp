@@ -25,6 +25,7 @@
 -export([sha/1, sha_init/0, sha_update/2, sha_final/1]).
 -export([md5_mac/2, md5_mac_96/2, sha_mac/2, sha_mac_96/2]).
 -export([des_cbc_encrypt/3, des_cbc_decrypt/3, des_cbc_ivec/1]).
+-export([des_ede3_cbc_encrypt/5, des_ede3_cbc_decrypt/5]).
 
 -define(INFO,		 0).
 -define(MD5,		 1).
@@ -41,6 +42,8 @@
 -define(SHA_MAC_96,	 12).
 -define(DES_CBC_ENCRYPT, 13).
 -define(DES_CBC_DECRYPT, 14).
+-define(DES_EDE3_CBC_ENCRYPT, 15).
+-define(DES_EDE3_CBC_DECRYPT, 16).
 
 -define(FUNC_LIST, [md5,
 		    md5_init,
@@ -55,7 +58,9 @@
 		    sha_mac,
 		    sha_mac_96,
 		    des_cbc_encrypt,
-		    des_cbc_decrypt]).
+		    des_cbc_decrypt,
+		    des_ede3_cbc_encrypt,
+		    des_ede3_cbc_decrypt]).
 
 start() ->
     application:start(crypto).
@@ -150,6 +155,16 @@ des_cbc_ivec(Data) when binary(Data) ->
     IVec;
 des_cbc_ivec(Data) when list(Data) ->
     des_cbc_ivec(list_to_binary(Data)).
+
+%%
+%% DES - in cipher block chaining mode (CBC)
+%%
+des_ede3_cbc_encrypt(Key1, Key2, Key3, IVec, Data) ->
+    control(?DES_EDE3_CBC_ENCRYPT, [Key1, Key2, Key3, IVec, Data]).
+
+des_ede3_cbc_decrypt(Key1, Key2, Key3, IVec, Data) ->
+    control(?DES_EDE3_CBC_DECRYPT, [Key1, Key2, Key3, IVec, Data]).
+
 
 %%
 %%  LOCAL FUNCTIONS

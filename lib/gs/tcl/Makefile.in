@@ -47,7 +47,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/gs-$(VSN)
 # ----------------------------------------------------
 # Common Macros
 # ----------------------------------------------------
-TCL_FILES =  ../priv/gstk_unix.tcl ../priv/gstk_win32.tcl
+TCL_FILES =  ../priv/gstk.tcl
 
 # ----------------------------------------------------
 # Targets

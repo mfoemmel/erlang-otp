@@ -258,6 +258,9 @@
 /* Define if you have the strerror function.  */
 #undef HAVE_STRERROR
 
+/* Define if you have the strerror_r function.  */
+#undef HAVE_STRERROR_R
+
 /* Define if you have the strncasecmp function.  */
 #undef HAVE_STRNCASECMP
 

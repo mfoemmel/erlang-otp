@@ -1,25 +1,7 @@
 {"%VSN%",
  [
-  {"1.0.4",
-   [
-        {update, 'CosNotification_Common', soft, soft_purge, soft_purge, []},
-        {update, 'CosNotifyFilter_Filter_impl', soft, soft_purge, soft_purge, []},
-        {update, 'CosNotifyFilter_MappingFilter_impl', soft, soft_purge, soft_purge, []},
-        {update, 'cosNotificationApp', soft, soft_purge, soft_purge, []},
-        {update, 'cosNotification_eventDB', soft, soft_purge, soft_purge, []}
-    ]
-  }
  ],
  [
-  {"1.0.4",
-   [
-        {update, 'CosNotification_Common', soft, soft_purge, soft_purge, []},
-        {update, 'CosNotifyFilter_Filter_impl', soft, soft_purge, soft_purge, []},
-        {update, 'CosNotifyFilter_MappingFilter_impl', soft, soft_purge, soft_purge, []},
-        {update, 'cosNotificationApp', soft, soft_purge, soft_purge, []},
-        {update, 'cosNotification_eventDB', soft, soft_purge, soft_purge, []}
-   ]
-  }
  ]
 }.
 

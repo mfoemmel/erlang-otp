@@ -58,6 +58,8 @@
       HEAP_TOP(p) = (ptr);				\
   } else {}
 
+#define HeapWordsLeft(p)				\
+  (HEAP_LIMIT(p) - HEAP_TOP(p))
 
 #ifdef SHARED_HEAP
 #  define ARITH_HEAP(p)     erts_global_arith_heap

@@ -561,7 +561,7 @@ view(File) ->
 	true ->
 	    Repair = mnesia_monitor:get_env(auto_repair),
 	    N = view_only,
-	    Args = [{file, File}, {name, N}, {repair, Repair}],
+	    Args = [{file, File}, {name, N}, {mode, read_only}],
 	    case disk_log:open(Args) of
 		{ok, N} ->
 		    view_file(start, N);
@@ -575,13 +575,19 @@ view(File) ->
 view_file(C, Log) ->
     case disk_log:chunk(Log, C) of
 	{error, Reason} ->
-	    error("** Possibly truncated FILE ~n", []),
+	    error("** Possibly truncated FILE ~p~n", [Reason]),
 	    error;
 	eof ->
 	    disk_log:close(Log),
 	    eof;
+	{C2, Terms, _BadBytes} ->
+	    dbg_out("Lost ~p bytes in ~p ~n", [_BadBytes, Log]),
+	    lists:foreach(fun(X) -> mnesia_lib:show("~p~n", [X]) end, 
+			  Terms),
+	    view_file(C2, Log);
 	{C2, Terms} ->
-	    lists:foreach(fun(X) -> mnesia_lib:show("~p~n", [X]) end, Terms),
+	    lists:foreach(fun(X) -> mnesia_lib:show("~p~n", [X]) end, 
+			  Terms),
 	    view_file(C2, Log)
     end.
 
@@ -962,15 +968,16 @@ load_dcl(Tab, Rep) ->
     FName = mnesia_lib:tab2dcl(Tab),
     case mnesia_lib:exists(FName) of
 	true -> 	    
-	    Tab = open_log(Tab, 
-			   dcl_log_header(), 
-			   FName, 
-			   true,
-			   Rep, 
-			   read_only),
-	    FirstChunk = chunk_log(Tab, start),
-            N = insert_logchunk(FirstChunk, Tab, 0),
-	    close_log(Tab),
+	    Name = {load_dcl,Tab},
+	    open_log(Name, 
+		     dcl_log_header(), 
+		     FName, 
+		     true,
+		     Rep, 
+		     read_only),
+	    FirstChunk = chunk_log(Name, start),
+            N = insert_logchunk(FirstChunk, Name, 0),
+	    close_log(Name),
 	    N;
 	false ->
 	    0

@@ -190,7 +190,8 @@ get_line1({done,Line,Rest,Rs}, Drv, Ls) ->
     send_drv_reqs(Drv, Rs),
     put(line_buffer, [Line|lists:delete(Line, get(line_buffer))]),
     {done,Line,Rest};
-get_line1({undefined,{A,none,$\^P},Cs,Cont,Rs}, Drv, Ls0) ->
+get_line1({undefined,{A,Mode,Char},Cs,Cont,Rs}, Drv, Ls0) when ((Mode == none) and (Char == $\^P))
+						   or ((Mode == meta_left_sq_bracket) and (Char == $A)) ->
     send_drv_reqs(Drv, Rs),
     case up_stack(Ls0) of
 	{none,Ls} ->
@@ -205,7 +206,8 @@ get_line1({undefined,{A,none,$\^P},Cs,Cont,Rs}, Drv, Ls0) ->
 		      Drv,
 		      Ls)
     end;
-get_line1({undefined,{A,none,$\^N},Cs,Cont,Rs}, Drv, Ls0) ->
+get_line1({undefined,{A,Mode,Char},Cs,Cont,Rs}, Drv, Ls0) when ((Mode == none) and (Char == $\^N))
+						   or ((Mode == meta_left_sq_bracket) and (Char == $B)) ->
     send_drv_reqs(Drv, Rs),
     case down_stack(Ls0) of
 	{none,Ls} ->

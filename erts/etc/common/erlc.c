@@ -119,6 +119,11 @@ main(int argc, char** argv)
     char* emulator;
     int can_use_ecc = 1;	/* All files are .erl files. */
 
+    /*
+     * XXX Currently, never use ecc.
+     */
+    can_use_ecc = 0;
+
     emulator = getenv("ERLC_EMULATOR");
     if (emulator == NULL) {
 	emulator = get_default_emulator(argv[0]);

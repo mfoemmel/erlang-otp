@@ -96,7 +96,7 @@ get_policy(Obj, PolicyType) when integer(PolicyType) ->
 	    orber_iiop:request(Key, get_policy, [PolicyType], 
 			       {orber_policy_server:get_tc(),
 				[orber_tc:unsigned_long()],[]},
-			       true, infinity, Obj);
+			       true, infinity, Obj, []);
 	{'internal', _, _, _, _} ->
 	    orber_policy_server:get_policy(Obj, PolicyType);
 	{'internal_registered', _, _, _, _} ->
@@ -120,25 +120,9 @@ is_a(Obj, Logical_type_id) ->
 	{'external', Key} ->
 	    orber_iiop:request(Key, '_is_a', [Logical_type_id], 
 			       {orber_tc:boolean(),[orber_tc:string(0)],[]},
-			       true, infinity, Obj);
+			       true, infinity, Obj, []);
 	{_Local, _Key, _, _, Module} ->
-	    case iop_ior:get_typeID(Obj) of
-		Logical_type_id ->
-		    true;
-		TypeId ->
-		    case mnesia:dirty_index_read(ir_InterfaceDef, TypeId, 
-						 #ir_InterfaceDef.id) of
-			%% If all we get is an empty list there are no such
-			%% object registered in the IFR.
-			[] ->
-			    orber:dbg("[~p] corba_object:is_a(~p); TypeID ~p not found in IFR.", 
-				      [?LINE, Obj, Logical_type_id], ?DEBUG_LEVEL),
-			    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
-			[#ir_InterfaceDef{ir_Internal_ID=Ref}] ->
-			    orber_ifr_interfacedef:is_a({ir_InterfaceDef,Ref}, 
-							Logical_type_id)
-		    end
-	    end;
+	    Module:oe_is_a(Logical_type_id);
 	_ ->
 	    orber:dbg("[~p] corba_object:is_a(~p, ~p); Invalid object reference.", 
 		      [?LINE, Obj, Logical_type_id], ?DEBUG_LEVEL),
@@ -184,7 +168,7 @@ existent_helper(Obj, Op) ->
 	    end;
 	{'external', Key} ->
 	    orber_iiop:request(Key, Op, [], 
-			       {orber_tc:boolean(), [],[]}, 'true', infinity, Obj);
+			       {orber_tc:boolean(), [],[]}, 'true', infinity, Obj, []);
 	true -> 	
 	    false
     end.

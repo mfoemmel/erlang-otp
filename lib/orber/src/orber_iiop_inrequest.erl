@@ -35,12 +35,12 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/6, start_fragment_collector/8]).
+-export([start/7, start_fragment_collector/9]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
--export([handle_message/6, fragment_collector/8]).
+-export([handle_message/7, fragment_collector/9]).
 
 %%-----------------------------------------------------------------
 %% Macros
@@ -51,15 +51,15 @@
 %%-----------------------------------------------------------------
 %% External interface functions
 %%-----------------------------------------------------------------
-start(GIOPHdr, Message, Type, Socket, Interceptors, SSLPort) ->
+start(GIOPHdr, Message, Type, Socket, Interceptors, SSLPort, PartialSec) ->
     spawn_link(orber_iiop_inrequest, handle_message, 
-	       [GIOPHdr, Message, Type, Socket, Interceptors, SSLPort]).
+	       [GIOPHdr, Message, Type, Socket, Interceptors, SSLPort, PartialSec]).
 
 start_fragment_collector(GIOPHdr, Message, Type, Socket, Interceptors, 
-			 ReqId, Proxy, SSLPort) ->
+			 ReqId, Proxy, SSLPort, PartialSec) ->
     spawn_link(orber_iiop_inrequest, fragment_collector, 
 	       [GIOPHdr, Message, Type, Socket, Interceptors, 
-		ReqId, Proxy, SSLPort]).
+		ReqId, Proxy, SSLPort, PartialSec]).
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -69,7 +69,7 @@ start_fragment_collector(GIOPHdr, Message, Type, Socket, Interceptors,
 %% Func: fragment_collector/4
 %%-----------------------------------------------------------------
 fragment_collector(GIOPHdr, Bytes, SocketType, Socket, Interceptors, 
-		   ReqId, Proxy, SSLPort) ->
+		   ReqId, Proxy, SSLPort, PartialSec) ->
     case catch collect(Proxy, [], GIOPHdr#giop_message.byte_order, ReqId) of
 	{ok, Buffer} ->
 	    NewGIOP = GIOPHdr#giop_message
@@ -77,7 +77,8 @@ fragment_collector(GIOPHdr, Bytes, SocketType, Socket, Interceptors,
 	    %% NOTE, the third argument to dec_message_header must be complete
 	    %% message (i.e. AllBytes), otherwise we cannot handle indirection.
 	    case handle_message(NewGIOP, list_to_binary([Bytes| Buffer]), 
-				SocketType, Socket, Interceptors, SSLPort) of
+				SocketType, Socket, Interceptors, SSLPort, 
+				PartialSec) of
 		message_error ->
 		    Proxy ! {message_error, self(), ReqId},
 		    ok;
@@ -127,7 +128,8 @@ Incorrect Fragment. Might be different byteorder.",
 %%-----------------------------------------------------------------
 %% Func: handle_message/4
 %%-----------------------------------------------------------------
-handle_message(GIOPHdr, Message, SocketType, Socket, Interceptors, SSLPort) ->
+handle_message(GIOPHdr, Message, SocketType, Socket, Interceptors, SSLPort, 
+	       PartialSec) ->
     case catch cdr_decode:dec_message_header(null, GIOPHdr, Message) of
 	Hdr when record(Hdr, cancel_request_header) ->
             %% We just skips this message for the moment, the standard require that 
@@ -147,8 +149,8 @@ handle_message(GIOPHdr, Message, SocketType, Socket, Interceptors, SSLPort) ->
 	    Reply = handle_locate_request(Version, Hdr),
 	    orber_socket:write(SocketType, Socket, Reply);
 	{Version, ReqHdr, Rest, Len, ByteOrder} when record(ReqHdr, request_header) ->
-	    handle_request(Interceptors, Version, ReqHdr, Rest, Len, 
-			   ByteOrder, SocketType, Socket, Message, SSLPort);
+	    handle_request(Interceptors, Version, ReqHdr, Rest, Len, ByteOrder, 
+			   SocketType, Socket, Message, SSLPort, PartialSec);
 	Other ->
 	    %% This cluase takes care of all erranous messages.
 	    orber:dbg("[~p] orber_iiop_inrequest:handle_message(~p)
@@ -168,20 +170,20 @@ send_reply(Reply, SocketType, Socket) ->
 %% Func: handle_request
 %%-----------------------------------------------------------------
 handle_request(false, Version, ReqHdr, Rest, Len, ByteOrder, SocketType, Socket,
-	       Message, SSLPort) ->
+	       Message, SSLPort, PartialSec) ->
     case decode_body(Version, ReqHdr, Rest, Len, ByteOrder, Message, enc_reply) of
 	{error, E} ->
 	    orber_socket:write(SocketType, Socket, E);
 	{Version, Hdr, Par, TypeCodes} ->
-	    Result = invoke_request(Hdr, Par, SocketType, TypeCodes, SSLPort),
+	    Result = invoke_request(Hdr, Par, SocketType, TypeCodes, SSLPort, PartialSec),
 	    Reply  = evaluate(Version, Hdr, Result, TypeCodes, 
 			      enc_reply, 'no_exception'),
 	    send_reply(Reply, SocketType, Socket)
     end;
 handle_request(Interceptors, Version, ReqHdr, Rest, Len, ByteOrder, 
-	       SocketType, Socket, Message, SSLPort) ->
+	       SocketType, Socket, Message, SSLPort, PartialSec) ->
     case catch call_interceptors(SocketType, Interceptors, Version, ReqHdr, 
-				 Rest, Len, ByteOrder, Message, SSLPort) of
+				 Rest, Len, ByteOrder, Message, SSLPort, PartialSec) of
 	{error, E} ->
 	    %% Failed to decode body.
 	    orber_socket:write(SocketType, Socket, E);
@@ -209,12 +211,13 @@ Invoking the interceptors resulted in: ~p", [?LINE, ReqHdr, R], ?DEBUG_LEVEL),
 %% Func: call_interceptors_out
 %%-----------------------------------------------------------------
 call_interceptors(SocketType, {native, Ref, PIs},
-		  Version, ReqHdr, Rest, Len, ByteOrder, Msg, SSLPort) ->
+		  Version, ReqHdr, Rest, Len, ByteOrder, Msg, SSLPort, PartialSec) ->
     NewRest = orber_pi:in_request_enc(PIs, ReqHdr, Ref, Rest),
     case decode_body(Version, ReqHdr, NewRest, Len, ByteOrder, Msg, enc_reply) of
 	{Version, Hdr, Par, TypeCodes} ->
 	    NewPar = orber_pi:in_request(PIs, ReqHdr, Ref, Par),
-	    ResultInv = invoke_request(Hdr, NewPar, SocketType, TypeCodes, SSLPort),
+	    ResultInv = invoke_request(Hdr, NewPar, SocketType, TypeCodes, SSLPort, 
+				       PartialSec),
 	    Result = orber_pi:out_reply(PIs, ReqHdr, Ref, ResultInv),
 	    
             case evaluate(Version, ReqHdr, Result, TypeCodes, enc_reply_split,
@@ -231,10 +234,11 @@ call_interceptors(SocketType, {native, Ref, PIs},
 	    Other
     end;
 call_interceptors(SocketType, {portable, PIs}, Version, ReqHdr, Rest, Len, 
-		  ByteOrder, Msg, SSLPort) ->
+		  ByteOrder, Msg, SSLPort, PartialSec) ->
     case decode_body(Version, ReqHdr, Rest, Len, ByteOrder, Msg, enc_reply) of
 	{Version, Hdr, Par, TypeCodes} ->
-	    Result = invoke_request(Hdr, Par, SocketType, TypeCodes, SSLPort),
+	    Result = invoke_request(Hdr, Par, SocketType, TypeCodes, SSLPort, 
+				    PartialSec),
 	    evaluate(Version, ReqHdr, Result, TypeCodes, enc_reply, 'no_exception');
 	Other ->
 	    Other
@@ -338,19 +342,29 @@ Resulted in exit: ~p", [?LINE, Location, E], ?DEBUG_LEVEL),
 %%-----------------------------------------------------------------
 %% Func: invoke_request/2
 %%-----------------------------------------------------------------
-invoke_request(Hdr, Par, normal, TypeCodes, SSLPort) ->
+invoke_request(Hdr, Par, normal, TypeCodes, SSLPort, PartialSec) ->
     Result = 
 	case SSLPort of
 	    -1 ->
 		corba:request_from_iiop(Hdr#request_header.object_key,
-					list_to_atom(Hdr#request_header.operation),
-					Par, [], Hdr#request_header.response_expected);
+					Hdr#request_header.operation,
+					Par, [], Hdr#request_header.response_expected,
+					Hdr#request_header.service_context);
 	    _ ->
 		case Hdr#request_header.object_key of
 		    {_,registered,orber_init,_,_,_} ->
 			corba:request_from_iiop(Hdr#request_header.object_key,
-						list_to_atom(Hdr#request_header.operation),
-						Par, [], Hdr#request_header.response_expected);
+						Hdr#request_header.operation,
+						Par, [], 
+						Hdr#request_header.response_expected,
+						Hdr#request_header.service_context);
+%		    {_,_,_,_,_,Flags} when PartialSec == true, 
+%					   ?ORB_FLAG_TEST(Flags, ?ORB_NO_SECURITY) == true ->
+%			corba:request_from_iiop(Hdr#request_header.object_key,
+%						Hdr#request_header.operation,
+%						Par, [], 
+%						Hdr#request_header.response_expected,
+%						Hdr#request_header.service_context);
 		    _ ->
 			orber:dbg("[~p] orber_iiop_inrequest:invoke_request(~p)
 SSL do not permit", [?LINE, Hdr#request_header.object_key], ?DEBUG_LEVEL),
@@ -358,10 +372,11 @@ SSL do not permit", [?LINE, Hdr#request_header.object_key], ?DEBUG_LEVEL),
 		end
 	end,
     result_to_list(Result, TypeCodes);	
-invoke_request(Hdr, Par, ssl, TypeCodes, SSLPort) ->
+invoke_request(Hdr, Par, ssl, TypeCodes, SSLPort, _) ->
     Result = corba:request_from_iiop(Hdr#request_header.object_key,
-				     list_to_atom(Hdr#request_header.operation),
-				     Par, [], Hdr#request_header.response_expected),
+				     Hdr#request_header.operation,
+				     Par, [], Hdr#request_header.response_expected,
+				     Hdr#request_header.service_context),
     result_to_list(Result, TypeCodes).
 
 %%-----------------------------------------------------------------

@@ -22,9 +22,10 @@
 -include("asn1_records.hrl").
 
 -export([dec_fixup/3, cindex/3, list_to_record/2]).
--export([setchoiceext/1, setext/1, fixoptionals/3, fixextensions/2, 
+-export([setchoiceext/1, setext/1, fixoptionals/2, fixoptionals/3, 
+	 setoptionals/1, fixextensions/2, 
 	 getext/1, getextension/2, skipextensions/3, getbit/1, getchoice/3 ]).
--export([getoptionals/2, set_choice/3, encode_integer/2, encode_integer/3  ]).
+-export([getoptionals/2, getoptionals2/2, set_choice/3, encode_integer/2, encode_integer/3  ]).
 -export([decode_integer/2, decode_integer/3, encode_small_number/1, encode_boolean/1, 
 	 decode_boolean/1, encode_length/2, decode_length/1, decode_length/2,
 	 encode_small_length/1, decode_small_length/1,
@@ -100,6 +101,43 @@ setext(false) ->
 setext(true) ->
     [{debug,ext},{bits,1,1}].
 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% This version of fixoptionals/2 is kept only because of 
+%% backward compatibility with older generates
+
+fixoptionals(OptList,Val) when tuple(Val) ->
+    fixoptionals1(OptList,Val,[]);
+
+fixoptionals(OptList,Val) when list(Val) ->
+    fixoptionals1(OptList,Val,1,[],[]).
+
+fixoptionals1([],Val,Acc) ->
+    %% return {Val,Opt}
+    {Val,lists:reverse(Acc)};
+fixoptionals1([{_,Pos}|Ot],Val,Acc) ->
+    case element(Pos+1,Val) of
+	asn1_NOVALUE -> fixoptionals1(Ot,Val,[0|Acc]);
+	asn1_DEFAULT -> fixoptionals1(Ot,Val,[0|Acc]);
+	_ -> fixoptionals1(Ot,Val,[1|Acc])
+    end.
+
+
+fixoptionals1([{Name,Pos}|Ot],[{Name,Val}|Vt],Opt,Acc1,Acc2) ->
+    fixoptionals1(Ot,Vt,Pos+1,[1|Acc1],[{Name,Val}|Acc2]);
+fixoptionals1([{Name,Pos}|Ot],V,Pos,Acc1,Acc2) ->
+    fixoptionals1(Ot,V,Pos+1,[0|Acc1],[asn1_NOVALUE|Acc2]);
+fixoptionals1(O,[Vh|Vt],Pos,Acc1,Acc2) ->
+    fixoptionals1(O,Vt,Pos+1,Acc1,[Vh|Acc2]);
+fixoptionals1([],[Vh|Vt],Pos,Acc1,Acc2) ->
+    fixoptionals1([],Vt,Pos+1,Acc1,[Vh|Acc2]);
+fixoptionals1([],[],_,Acc1,Acc2) ->
+						% return {Val,Opt}
+    {list_to_tuple([asn1_RECORDNAME|lists:reverse(Acc2)]),lists:reverse(Acc1)}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% This is the new fixoptionals/3 which is used by the new generates
+%%
 fixoptionals(OptList,OptLength,Val) when tuple(Val) ->
     Bits = fixoptionals(OptList,Val,0),
     {Val,{bits,OptLength,Bits}};
@@ -114,6 +152,14 @@ fixoptionals([Pos|Ot],Val,Acc) ->
 	_ -> fixoptionals(Ot,Val,(Acc bsl 1) + 1)
     end.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% setoptionals/1 is kept only because of backward 
+%% compatibility with older generates
+%%
+setoptionals([H|T]) ->
+    [{bits,1,H}|setoptionals(T)];
+setoptionals([]) ->
+    [{debug,optionals}].
 
 getext(Bytes) when tuple(Bytes) ->
     getbit(Bytes);
@@ -170,12 +216,13 @@ getchoice(Bytes,NumChoices,1) ->
 getchoice(Bytes,NumChoices,0) ->
     decode_constrained_number(Bytes,{0,NumChoices-1}).
 
-%% old version
-%%getoptionals(Bytes,NumOpt) ->
-%%    {Blist,Bytes1} = getbits_as_list(NumOpt,Bytes),
-%%    {list_to_tuple(Blist),Bytes1}.
-
+%% old version kept for backward compatibility with generates from R7B
 getoptionals(Bytes,NumOpt) ->
+    {Blist,Bytes1} = getbits_as_list(NumOpt,Bytes),
+    {list_to_tuple(Blist),Bytes1}.
+
+%% new version used in generates from r8b_patch/3 and later
+getoptionals2(Bytes,NumOpt) ->
     {Opts,Bytes1} = getbits(Bytes,NumOpt).
 
 
@@ -666,7 +713,10 @@ encode_constrained_number({Lb,Ub},Val) when Val >= Lb, Ub >= Val ->
 	    [{bits,3,length(Octs)-1},{octets,Octs}];
 	true  ->
 	    exit({not_supported,{integer_range,Range}})
-    end.
+    end;
+encode_constrained_number(Range,Val) -> 
+    exit({error,{asn1,{integer_range,Range,value,Val}}}).
+
 
 decode_constrained_number(Buffer,{Lb,Ub}) ->
     Range = Ub - Lb + 1,
@@ -1546,7 +1596,7 @@ chars_encode(C,StringType,Value) ->
 chars_encode2([H|T],NumBits,{Min,Max,notab}) when  H =< Max, H >= Min ->
     [{bits,NumBits,H-Min}|chars_encode2(T,NumBits,{Min,Max,notab})];
 chars_encode2([H|T],NumBits,{Min,Max,Tab}) when H =< Max, H >= Min ->
-    [{bits,NumBits,element(H-Min+1,Tab)}|chars_encode2(T,NumBits,{Min,Max,Tab})];
+    [{bits,NumBits,exit_if_false(H,element(H-Min+1,Tab))}|chars_encode2(T,NumBits,{Min,Max,Tab})];
 chars_encode2([{A,B,C,D}|T],NumBits,{Min,Max,notab}) -> 
     %% no value range check here (ought to be, but very expensive)
 %    [{bits,NumBits,(A*B*C*D)-Min}|chars_encode2(T,NumBits,{Min,Max,notab})];
@@ -1554,11 +1604,15 @@ chars_encode2([{A,B,C,D}|T],NumBits,{Min,Max,notab}) ->
 chars_encode2([{A,B,C,D}|T],NumBits,{Min,Max,Tab}) -> 
     %% no value range check here (ought to be, but very expensive)
 %    [{bits,NumBits,element((A*B*C*D)-Min,Tab)}|chars_encode2(T,NumBits,{Min,Max,notab})];
-    [{bits,NumBits,element(((((((A bsl 8)+B) bsl 8)+C) bsl 8)+D)-Min,Tab)}|chars_encode2(T,NumBits,{Min,Max,notab})];
+    [{bits,NumBits,exit_if_false({A,B,C,D},element(((((((A bsl 8)+B) bsl 8)+C) bsl 8)+D)-Min,Tab))}|chars_encode2(T,NumBits,{Min,Max,notab})];
 chars_encode2([H|T],NumBits,{Min,Max,Tab}) ->
     exit({error,{asn1,{illegal_char_value,H}}});
 chars_encode2([],_,_) ->
     [].
+
+exit_if_false(V,false)->
+    exit({error,{asn1,{"illegal value according to Permitted alphabet constraint",V}}});
+exit_if_false(_,V) ->V.
 
 
 get_NumBits(C,StringType) ->

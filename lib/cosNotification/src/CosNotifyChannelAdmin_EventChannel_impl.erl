@@ -214,6 +214,8 @@ handle_info(Info, State) ->
 
 init([MyFac, InitQoS, InitAdmin, LocalQoS, [MaxQ, MaxC, MaxS|_], Options]) ->
     process_flag(trap_exit, true),
+    SO = 'CosNotification_Common':get_option(server_options, Options, 
+					     ?not_DEFAULT_SETTINGS),
     
     ?DBG("CHANNEL INIT STATE:~n~p~n~p~n~p  ~p  ~p  ~p~n~p~n",
 		 [InitQoS, InitAdmin, LocalQoS,MaxQ, MaxC, MaxS, Options]),
@@ -225,7 +227,7 @@ init([MyFac, InitQoS, InitAdmin, LocalQoS, [MaxQ, MaxC, MaxS|_], Options]) ->
     %% DefConAdm = 'CosNotifyChannelAdmin_ConsumerAdmin':oe_create_link([0],[]),
     %% DefSupAdm = 'CosNotifyChannelAdmin_SupplierAdmin':oe_create_link([0],[]),
 
-    case 'CosNotifyFilter_FilterFactory':oe_create_link([], [{sup_child, true}]) of
+    case 'CosNotifyFilter_FilterFactory':oe_create_link([], [{sup_child, true}|SO]) of
 	{ok, Pid, DefFiFac} ->
 	    {ok, ?get_InitState(MyFac, DefFiFac, Pid, InitQoS, LocalQoS, 
 				InitAdmin, MaxQ, MaxC, MaxS, Options)};
@@ -256,12 +258,14 @@ terminate(Reason, State) ->
   when ?is_UndefDefConsAdm(State) ->
     Op = 'CosNotification_Common':get_option(filterOp, ?get_Options(State), 
 					     ?not_DEFAULT_SETTINGS),
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case catch 'CosNotifyChannelAdmin_ConsumerAdmin':oe_create_link([0, OE_THIS,
 								     self(), Op, 
 								     ?get_GlobalQoS(State),
 								     ?get_LocalQoS(State),
 								     ?get_Options(State)],
-								    [{sup_child, true}]) of
+								    [{sup_child, true}|SO]) of
 	{ok, Pid, DefConAdm} ->
 	    {reply, DefConAdm, ?set_defConsumerAdm(State, DefConAdm, Pid)};
 	What ->
@@ -282,12 +286,14 @@ Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
   when ?is_UndefDefSuppAdm(State) ->
     Op = 'CosNotification_Common':get_option(filterOp, ?get_Options(State), 
 					     ?not_DEFAULT_SETTINGS),
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case catch 'CosNotifyChannelAdmin_SupplierAdmin':oe_create_link([0, OE_THIS,
 								     self(), Op, 
 								     ?get_GlobalQoS(State),
 								     ?get_LocalQoS(State),
 								     ?get_Options(State)],
-								    [{sup_child, true}]) of
+								    [{sup_child, true}|SO]) of
 	{ok, Pid, DefSupAdm} ->
 	    {reply, DefSupAdm, ?set_defSupplierAdm(State, DefSupAdm, Pid)};
 	What ->
@@ -306,7 +312,9 @@ Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 %%----------------------------------------------------------
 '_get_default_filter_factory'(OE_THIS, OE_FROM, State) 
   when ?is_UndefDefFilterFac(State) ->
-    case catch 'CosNotifyFilter_FilterFactory':oe_create_link([], [{sup_child, true}]) of
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
+    case catch 'CosNotifyFilter_FilterFactory':oe_create_link([], [{sup_child, true}|SO]) of
 	{ok, Pid, DefFiFac} ->
 	    {reply, DefFiFac, ?set_defFilterFac(State, DefFiFac, Pid)};
 	What ->
@@ -332,12 +340,14 @@ Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 new_for_consumers(OE_THIS, OE_FROM, State, Op) ->
     is_admin_limit_reached(?get_MaxConsumers(State), ?get_consumerAmount(State)),
     AdminId = ?new_Id(State),
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case catch 'CosNotifyChannelAdmin_ConsumerAdmin':oe_create_link([AdminId, OE_THIS, 
 								     self(), Op, 
 								     ?get_GlobalQoS(State),
 								     ?get_LocalQoS(State),
 								     ?get_Options(State)],
-								    [{sup_child, true}]) of
+								    [{sup_child, true}|SO]) of
 	{ok, Pid, AdminCo} ->
 	    %% Due to different storage, adding a new consumer is NOT done in the
 	    %% same way as for suppliers.
@@ -361,12 +371,14 @@ Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 new_for_suppliers(OE_THIS, OE_FROM, State, Op) ->
     is_admin_limit_reached(?get_MaxSuppliers(State), ?get_supplierAmount(State)),
     AdminId = ?new_Id(State),
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case catch 'CosNotifyChannelAdmin_SupplierAdmin':oe_create_link([AdminId, OE_THIS, 
 								     self(), Op, 
 								     ?get_GlobalQoS(State),
 								     ?get_LocalQoS(State),
 								     ?get_Options(State)],
-								    [{sup_child, true}]) of
+								    [{sup_child, true}|SO]) of
 	{ok, Pid, AdminSu} ->
 	    %% Due to different storage, adding a new supplier is NOT done in the
 	    %% same way as for consumers.
@@ -387,12 +399,14 @@ Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 get_consumeradmin(OE_THIS, OE_FROM, State, 0) when ?is_UndefDefConsAdm(State) ->
     Op = 'CosNotification_Common':get_option(filterOp, ?get_Options(State), 
 					     ?not_DEFAULT_SETTINGS),
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case catch 'CosNotifyChannelAdmin_ConsumerAdmin':oe_create_link([0, OE_THIS,
 								     self(), Op, 
 								     ?get_GlobalQoS(State),
 								     ?get_LocalQoS(State),
 								     ?get_Options(State)],
-								    [{sup_child, true}]) of
+								    [{sup_child, true}|SO]) of
 	{ok, Pid, DefConAdm} ->
 	    {reply, DefConAdm, ?set_defConsumerAdm(State, DefConAdm, Pid)};
 	What ->
@@ -408,7 +422,7 @@ get_consumeradmin(OE_THIS, OE_FROM, State, AdminId) when integer(AdminId) ->
 get_consumeradmin(_, _, _, What) ->
     orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:get_consumeradmin(~p);
 Not an integer", [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=900, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : get_supplieradmin
@@ -418,12 +432,14 @@ Not an integer", [?LINE, What], ?DEBUG_LEVEL),
 get_supplieradmin(OE_THIS, OE_FROM, State, 0) when ?is_UndefDefSuppAdm(State) ->
     Op = 'CosNotification_Common':get_option(filterOp, ?get_Options(State), 
 					     ?not_DEFAULT_SETTINGS),
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case catch 'CosNotifyChannelAdmin_SupplierAdmin':oe_create_link([0, OE_THIS,
 								     self(), Op, 
 								     ?get_GlobalQoS(State),
 								     ?get_LocalQoS(State),
 								     ?get_Options(State)],
-								    [{sup_child, true}]) of
+								    [{sup_child, true}|SO]) of
 	{ok, Pid, DefSupAdm} ->
 	    {reply, DefSupAdm, ?set_defSupplierAdm(State, DefSupAdm, Pid)};
 	What ->
@@ -439,7 +455,7 @@ get_supplieradmin(OE_THIS, OE_FROM, State, AdminId) when integer(AdminId) ->
 get_supplieradmin(_, _, _, What) ->
     orber:debug_level_print("[~p] CosNotifyChannelAdmin_EventChannel:get_supplieradmin(~p);
 Not an integer", [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=901, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : get_all_consumeradmins
@@ -524,12 +540,14 @@ set_admin(OE_THIS, OE_FROM, State, Admin) ->
 for_consumers(OE_THIS, OE_FROM, State) ->
     is_admin_limit_reached(?get_MaxConsumers(State), ?get_consumerAmount(State)),
     AdminId = ?new_Id(State),
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case catch 'CosNotifyChannelAdmin_ConsumerAdmin':oe_create_link([AdminId, OE_THIS, 
 								     self(), 'AND_OP', 
 								     ?get_GlobalQoS(State),
 								     ?get_LocalQoS(State),
 								     ?get_Options(State)],
-								    [{sup_child, true}]) of
+								    [{sup_child, true}|SO]) of
 	{ok, Pid, AdminCo} ->
 	    %% Due to different storage, adding a new consumer is NOT done in the
 	    %% same way as for suppliers.
@@ -550,12 +568,14 @@ Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 for_suppliers(OE_THIS, OE_FROM, State) ->
     is_admin_limit_reached(?get_MaxSuppliers(State), ?get_supplierAmount(State)),
     AdminId = ?new_Id(State),
+    SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
+					     ?not_DEFAULT_SETTINGS),
     case catch 'CosNotifyChannelAdmin_SupplierAdmin':oe_create_link([AdminId, OE_THIS, 
 								     self(), 'AND_OP', 
 								     ?get_GlobalQoS(State),
 								     ?get_LocalQoS(State),
 								     ?get_Options(State)],
-								    [{sup_child, true}]) of
+								    [{sup_child, true}|SO]) of
 	{ok, Pid, AdminSu} ->
 	    %% Due to different storage, adding a new supplier is NOT done in the
 	    %% same way as for consumers.

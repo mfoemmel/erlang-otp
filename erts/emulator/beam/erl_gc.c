@@ -1716,7 +1716,7 @@ sweep_proc_bins(Process *p, int fullsweep)
                     erts_match_set_free(bptr);
                 } else {
                     tot_bin_allocated -= bptr->orig_size;
-                    sys_free((char*)bptr);
+                    OH_BIN_FREE(bptr);
                 }
             }
             ptr = *prev;

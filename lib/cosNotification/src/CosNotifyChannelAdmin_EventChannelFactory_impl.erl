@@ -52,26 +52,8 @@
 -record(state, {adminProp,
 		idCounter = 0,
 		options,
-		etsR}).
-
-%% Data structures constructors
--define(get_InitState(O), 
-	#state{options = O,
-	       etsR    = ets:new(oe_ets, [set, protected])}).
-
-%% Data structures selectors
--define(get_channels(S),      lists:flatten(ets:match(S#state.etsR, {'_','$1','_'}))).
--define(get_channelIDs(S),    lists:flatten(ets:match(S#state.etsR, {'$1','_','_'}))).
--define(get_channel(S, I),    find_obj(ets:lookup(S#state.etsR, I))).
--define(get_options(S),       S#state.options).
--define(get_IdCounter(S),     S#state.idCounter).
-
-%% Data structures modifiers
--define(add_channel(S,I,R,P), ets:insert(S#state.etsR, {I,R,P})).
--define(del_channel(S,I),     ets:delete(S#state.etsR, I)).
--define(del_channelPid(S,P),  ets:match_delete(S#state.etsR, {'_','_',P})).
--define(set_IdCounter(S,V),   S#state{idCounter=V}).
--define(new_Id(S),            'CosNotification_Common':create_id(S#state.idCounter)).
+		etsR,
+		server_options}).
 
 %%-----------------------------------------------------------%
 %% function : handle_info, code_change
@@ -86,7 +68,7 @@ handle_info(Info, State) ->
     ?debug_print("INFO: ~p~n", [Info]),
     case Info of
         {'EXIT', Pid, normal} ->
-	    ?del_channelPid(State,Pid),
+	    ets:match_delete(State#state.etsR, {'_','_',Pid}),
             {noreply, State};
         Other ->
             ?debug_print("TERMINATED: ~p~n",[Other]),
@@ -98,9 +80,12 @@ handle_info(Info, State) ->
 %% Arguments: 
 %%-----------------------------------------------------------
 
-init(Env) ->
+init(Options) ->
     process_flag(trap_exit, true),
-    {ok, ?get_InitState(Env)}.
+    SO = 'CosNotification_Common':get_option(server_options, Options, ?not_DEFAULT_SETTINGS),
+    {ok, #state{options = Options,
+		etsR    = ets:new(oe_ets, [set, protected]),
+		server_options = SO}}.
 
 terminate(Reason, State) ->
     ok.
@@ -118,14 +103,14 @@ terminate(Reason, State) ->
 create_channel(OE_THIS, OE_FROM, State, InitQoS, InitAdmin) ->
     {QoS, LQoS} = 'CosNotification_Common':init_qos(InitQoS),
     {IAdm, LAdm} = 'CosNotification_Common':init_adm(InitAdmin),
-    Id = ?new_Id(State),
+    Id = 'CosNotification_Common':create_id(State#state.idCounter),
     case 'CosNotifyChannelAdmin_EventChannel':oe_create_link([OE_THIS, QoS, IAdm, 
 							      LQoS, LAdm, 
-							      ?get_options(State)],
-							     [{sup_child, true}]) of
+							      State#state.options],
+							     [{sup_child, true}|State#state.server_options]) of
 	{ok, Pid, Ch} ->
-	    ?add_channel(State, Id, Ch, Pid),
-	    {reply, {Ch, Id}, ?set_IdCounter(State, Id)};
+	    ets:insert(State#state.etsR, {Id,Ch,Pid}),
+	    {reply, {Ch, Id}, State#state{idCounter=Id}};
 	_ ->
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
@@ -137,7 +122,7 @@ create_channel(OE_THIS, OE_FROM, State, InitQoS, InitAdmin) ->
 %%            by this factory.
 %%-----------------------------------------------------------
 get_all_channels(OE_THIS, OE_FROM, State) ->
-    {reply, ?get_channelIDs(State), State}.
+    {reply, lists:flatten(ets:match(State#state.etsR, {'$1','_','_'})), State}.
 
 %%----------------------------------------------------------%
 %% function : get_event_channel
@@ -145,7 +130,7 @@ get_all_channels(OE_THIS, OE_FROM, State) ->
 %% Returns  : ChannelRef | 'CosNotifyChannelAdmin_ChannelNotFound'
 %%-----------------------------------------------------------
 get_event_channel(OE_THIS, OE_FROM, State, Id) ->
-    {reply, ?get_channel(State, Id), State}.
+    {reply, find_obj(ets:lookup(State#state.etsR, Id)), State}.
 
 %%--------------- LOCAL FUNCTIONS ----------------------------
 find_obj([]) -> {'EXCEPTION', #'CosNotifyChannelAdmin_ChannelNotFound'{}};

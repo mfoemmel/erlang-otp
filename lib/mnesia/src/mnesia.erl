@@ -1404,24 +1404,24 @@ do_dirty_rpc(Tab, Node, M, F, Args) ->
 	    do_dirty_rpc(Tab, Node, mnesia_lib, db_select, Args);
 	{badrpc, Reason} ->
 	    erlang:yield(), %% Do not be too eager
-	    case get(mnesia_activity_state) of
-		{_Mod, Tid, _Ts} when record(Tid, tid) ->
-		    %% In order to perform a consistent
-		    %% retry of a transaction we need
-		    %% to acquire the lock on the NewNode.
-		    %% In this context we do neither know
-		    %% the kind or granularity of the lock.
-		    %% --> Abort the transaction 
-		    mnesia:abort({node_not_running, Node});
-		_ ->
-		    %% Splendid! A dirty retry is safe
-		    %% 'Node' probably went down now
-		    %% Let mnesia_controller get broken link message first
-		    case mnesia_controller:call({check_w2r, Node, Tab}) of % Sync
-			NewNode when NewNode == Node -> 
-			    ErrorTag = mnesia_lib:dirty_rpc_error_tag(Reason),
-			    mnesia:abort({ErrorTag, Args});
-			NewNode ->
+	    case mnesia_controller:call({check_w2r, Node, Tab}) of % Sync
+		NewNode when NewNode == Node -> 
+		    ErrorTag = mnesia_lib:dirty_rpc_error_tag(Reason),
+		    mnesia:abort({ErrorTag, Args});
+		NewNode ->
+		    case get(mnesia_activity_state) of
+			{_Mod, Tid, _Ts} when record(Tid, tid) ->
+			    %% In order to perform a consistent
+			    %% retry of a transaction we need
+			    %% to acquire the lock on the NewNode.
+			    %% In this context we do neither know
+			    %% the kind or granularity of the lock.
+			    %% --> Abort the transaction 
+			    mnesia:abort({node_not_running, Node});
+			_ ->
+			    %% Splendid! A dirty retry is safe
+			    %% 'Node' probably went down now
+			    %% Let mnesia_controller get broken link message first			    
 			    do_dirty_rpc(Tab, NewNode, M, F, Args)
 		    end
 	    end;

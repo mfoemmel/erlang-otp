@@ -367,10 +367,10 @@ handle_close_session(Que,STab,Sid,_State) ->
 %%% Try setup a new session and resend these requests.
 %%% Note:
 %%% - This MUST be a persistent session
-handle_closed_pipelined_session_que([],_State) ->
-    ok;
-handle_closed_pipelined_session_que(_Que,_State) ->
-    ok.
+% handle_closed_pipelined_session_que([],_State) ->
+%     ok;
+% handle_closed_pipelined_session_que(_Que,_State) ->
+%     ok.
 
 
 %%% From RFC 2616, Section 8.2.4
@@ -383,23 +383,23 @@ handle_closed_pipelined_session_que(_Que,_State) ->
 %%%   request, it MAY use the following "binary exponential backoff"
 %%%   algorithm to be assured of obtaining a reliable response:
 %%%   ...
-%%% FIXME! I'm currently not checking if a "100-continue" has been sent.
-handle_remotely_closed_session_que([],_State) ->
-    ok;
-handle_remotely_closed_session_que(_Que,_State) ->
-%    resend_que(Que,Socket),
-    ok.
+%%% FIXME! I'm currently not checking if a "Expect: 100-continue" has been sent.
+% handle_remotely_closed_session_que([],_State) ->
+%     ok;
+% handle_remotely_closed_session_que(_Que,_State) ->
+% %    resend_que(Que,Socket),
+%     ok.
 
 %%% Resend all requests in the request que
-resend_que([],_) ->
-    ok;
-resend_que([Req|Que],Socket) ->
-    case catch httpc_handler:http_request(Req,Socket) of
-	ok ->
-	    resend_que(Que,Socket);
-	{error,Reason} ->
-	    {error,Reason}
-    end.
+% resend_que([],_) ->
+%     ok;
+% resend_que([Req|Que],Socket) ->
+%     case catch httpc_handler:http_request(Req,Socket) of
+% 	ok ->
+% 	    resend_que(Que,Socket);
+% 	{error,Reason} ->
+% 	    {error,Reason}
+%     end.
 
 
 %%% From RFC 2616,
@@ -427,9 +427,8 @@ resend_que([Req|Que],Socket) ->
 %%%  Session is the session that may be used
 lookup_session_entry(STab) ->
     MS=[{#session{quelength='$1',max_quelength='$2',
-		  id='$3',clientclose='$4',socket='$5',scheme='$6',
-		  pipeline='$7'},
-	 [{'<','$1','$2'},{is_port,'$5'}],
+		  id='_',clientclose='_',socket='$3',scheme='_',pipeline='_'},
+	 [{'<','$1','$2'},{is_port,'$3'}],
 	 ['$_']}],
     case ets:select(STab,MS) of
 	[] ->
@@ -533,8 +532,11 @@ ensure_started() ->
     end.
 
 
-format_time() ->
-    {_,_,MicroSecs}=TS=now(),
-    {{Y,Mon,D},{H,M,S}}=calendar:now_to_universal_time(TS),
-    lists:flatten(io_lib:format("~4.4.0w-~2.2.0w-~2.2.0w,~2.2.0w:~2.2.0w:~6.3.0f",
-				[Y,Mon,D,H,M,S+(MicroSecs/1000000)])).
+%%% ============================================================================
+%%% This is deprecated code, to be removed
+
+% format_time() ->
+%     {_,_,MicroSecs}=TS=now(),
+%     {{Y,Mon,D},{H,M,S}}=calendar:now_to_universal_time(TS),
+%     lists:flatten(io_lib:format("~4.4.0w-~2.2.0w-~2.2.0w,~2.2.0w:~2.2.0w:~6.3.0f",
+% 				[Y,Mon,D,H,M,S+(MicroSecs/1000000)])).

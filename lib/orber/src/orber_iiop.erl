@@ -34,7 +34,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start_sup/1, request/7, locate/3]).
+-export([start_sup/1, request/8, locate/3]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -67,15 +67,16 @@ start_sup(Opts) ->
 %%% Func: request/5
 %%%-----------------------------------------------------------------
 request({Host, Port, InitObjkey, Index, TaggedProfile, HostData}, 
-	Op, Parameters, TypeCodes, ResponseExpected, Timeout, IOR) ->
-    {{Proxy, Ctx, Interceptors}, ObjKey, Version} =
+	Op, Parameters, TypeCodes, ResponseExpected, Timeout, IOR, UserCtx) ->
+    {{Proxy, SysCtx, Interceptors}, ObjKey, Version} =
 	connect(Host, Port, InitObjkey, Timeout, [Index], HostData,
 		TaggedProfile, IOR),
+    Ctx = add_user_context(SysCtx, UserCtx),
     RequestId = orber_request_number:get(),
     Message = encode_request(Interceptors, Version, ObjKey, RequestId, 
 			     ResponseExpected, Op, Parameters, Ctx, TypeCodes),
-    case orber_iiop_outproxy:request(Proxy, ResponseExpected, Timeout, 
-				     Message, RequestId) of
+    case catch orber_iiop_outproxy:request(Proxy, ResponseExpected, Timeout, 
+					   Message, RequestId) of
 	{'EXCEPTION', MsgExc} ->
 	    corba:raise(MsgExc);
 	_ when ResponseExpected == false ->
@@ -119,7 +120,10 @@ Got message_error", [?LINE, Rest, Version, TypeCodes], ?DEBUG_LEVEL),
 				true ->
 				   {location_forward, Result};
 				_ ->
-				    case catch corba:call(Result, Op, Parameters, TypeCodes, Timeout) of
+				    case catch corba:call(Result, Op, Parameters, 
+							  TypeCodes, 
+							  [{timeout, Timeout},
+							   {context, UserCtx}]) of
 					{'EXCEPTION', E} ->
 					    corba:raise(E);
 					{'EXIT', Reason} ->
@@ -136,12 +140,15 @@ location_forward resulted in exit(~p)", [?LINE, Rest, Version, TypeCodes, Reason
 				true ->
 				   {location_forward, Result};
 				_ ->
-				    case catch corba:call(Result, Op, Parameters, TypeCodes, Timeout) of
+				    case catch corba:call(Result, Op, Parameters, 
+                                                          TypeCodes,
+							  [{timeout, Timeout},
+							   {context, UserCtx}]) of
 					{'EXCEPTION', E} ->
 					    corba:raise(E);
 					{'EXIT', Reason} ->
 					    orber:dbg("[~p] orber_iiop:request(reply, ~p, ~p, ~p)
-location_forward resulted in exit(~p)", [?LINE, Rest, Version, TypeCodes, Reason], ?DEBUG_LEVEL),
+location_forward_perm resulted in exit(~p)", [?LINE, Rest, Version, TypeCodes, Reason], ?DEBUG_LEVEL),
 					    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
 					NewResult ->
 					    NewResult
@@ -152,7 +159,11 @@ location_forward resulted in exit(~p)", [?LINE, Rest, Version, TypeCodes, Reason
 needs_addressing_mode not supported.", [?LINE, Rest, Version, TypeCodes], ?DEBUG_LEVEL),
 			    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
 		    end
-	    end
+	    end;
+        What ->
+            orber:dbg("[~p] orber_iiop:request(reply, ~p, ~p, ~p)
+outproxy-request: ~p", [?LINE, Message, Version, TypeCodes, What], ?DEBUG_LEVEL),
+            corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end.
 
 
@@ -360,6 +371,10 @@ handle_call(Req, From, State) ->
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
+add_user_context([], UserCtx) -> UserCtx;
+add_user_context(SysCtx, []) -> SysCtx;
+add_user_context(SysCtx, UserCtx) -> SysCtx ++ UserCtx.
+
 decode_reply_body(false, ObjKey, Op, ReplyHeader, Version, TypeCodes, 
 		  Rest, Len, ByteOrder, Bytes) ->
     case ReplyHeader#reply_header.reply_status of
@@ -467,23 +482,6 @@ Illegal IOR; contains a mixture of local and external profiles.", [?LINE, IOR], 
 
 try_connect([], _, _, _) ->
     error;
-try_connect([{Host, Port}|T], normal, Timeout, HostData) ->
-    case catch orber_iiop_pm:connect(Host, Port, normal, Timeout,
-				     HostData#host_data.charset,
-				     HostData#host_data.wcharset) of
-	{'EXCEPTION', PMExc} ->
-	    try_connect(T, normal, Timeout, HostData);
-	{'EXIT',{timeout,_}} ->
-	    orber:dbg("[~p] orber_iiop:try_connect(~p, ~p, ~p)
-Connect attempt timed out", [?LINE, Host, Port, Timeout], ?DEBUG_LEVEL),
-	    try_connect(T, normal, Timeout, HostData);
-	{'EXIT', What} ->
-	    orber:dbg("[~p] orber_iiop:try_connect(~p, ~p, ~p)
-Connect attempt resulted in: ~p", [?LINE, Host, Port, Timeout, What], ?DEBUG_LEVEL),
-	    try_connect(T, normal, Timeout, HostData);
-	X ->
-	    X
-    end;
 try_connect([{Host, Port}|T], SocketType, Timeout, HostData) ->
     case catch orber_iiop_pm:connect(Host, Port, SocketType, Timeout,
 				     HostData#host_data.charset,

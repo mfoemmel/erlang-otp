@@ -63,6 +63,12 @@
 	 report_event/4, report_event/5
         ]).
 
+-export([
+	 get_stats/0, get_stats/1, get_stats/2,
+	 reset_stats/0, reset_stats/1
+	]).
+
+
 -include_lib("megaco/include/megaco.hrl").
 -include("megaco_message_internal.hrl").
 -include("megaco_internal.hrl").
@@ -159,6 +165,32 @@ call(ConnHandle, ActionRequests, Options) ->
 
 cast(ConnHandle, ActionRequests, Options) ->
     megaco_messenger:cast(ConnHandle, ActionRequests, Options).
+
+
+%%-----------------------------------------------------------------
+%% Func: get_stats/0, get_stats/1, get_stats/2
+%% Description: Retreive statistics (counters) for TCP
+%%-----------------------------------------------------------------
+get_stats() ->
+    megaco_messenger:get_stats().
+
+get_stats(SendHandle) ->
+    megaco_messenger:get_stats(SendHandle).
+
+get_stats(SendHandle, Counter) ->
+    megaco_messenger:get_stats(SendHandle, Counter).
+
+
+%%-----------------------------------------------------------------
+%% Func: reset_stats/0, reaet_stats/1
+%% Description: Reset statistics (counters) for TCP
+%%-----------------------------------------------------------------
+reset_stats() ->
+    megaco_messenger:reset_stats().
+
+reset_stats(SendHandle) ->
+    megaco_messenger:reset_stats(SendHandle).
+
 
 %%-----------------------------------------------------------------
 %% Cancel all outstanding messages for this connection

@@ -162,7 +162,7 @@ runtime_tools:
 	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\runtime_tools\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
 
 asn1:
-	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\asn1\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\asn1\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EI_INCLUDE=/I\erts\lib\erl_interface\src EI_LIB=\erts\lib\erl_interface\obj\win32\ei_md.lib"
 
 odbc:
 	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\odbc\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EIINCLUDE=\erts\lib\erl_interface\src EILIB1=\erts\lib\erl_interface\obj\win32\erl_interface_md.lib EILIB2=\erts\lib\erl_interface\obj\win32\ei_md.lib"

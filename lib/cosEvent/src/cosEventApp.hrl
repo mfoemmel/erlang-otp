@@ -39,10 +39,12 @@ error_logger:error_msg("================ CosEvent =================~n"
 -define(TYPECHECK, typecheck).
 -define(MAXEVENTS, maxEvents).
 -define(BLOCKING, blocking).
+-define(SERVER, server_options).
 -define(DEFAULT_OPTIONS, [{?PULL_INTERVAL, 20}, 
 			  {?BLOCKING, true},
 			  {?TYPECHECK, false},
-			  {?MAXEVENTS, 300}]).
+			  {?MAXEVENTS, 300},
+			  {?SERVER, []}]).
 
 -define(DEBUG_LEVEL, 3).
 

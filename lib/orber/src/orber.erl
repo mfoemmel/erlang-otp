@@ -40,6 +40,8 @@
 	 ssl_server_verify/0, ssl_client_verify/0, set_ssl_client_verify/1,
 	 ssl_server_depth/0, ssl_client_depth/0, set_ssl_client_depth/1,
 	 ssl_server_cacertfile/0,ssl_client_cacertfile/0, set_ssl_client_cacertfile/1,
+	 ssl_client_keyfile/0, ssl_client_password/0, ssl_server_keyfile/0, ssl_server_password/0, 
+	 ssl_client_ciphers/0, ssl_server_ciphers/0, ssl_client_cachetimeout/0, ssl_server_cachetimeout/0,
 	 uninstall/0, giop_version/0, info/0, is_running/0, add_node/2, 
 	 remove_node/1, iiop_timeout/0, iiop_connection_timeout/0, 
 	 iiop_setup_connection_timeout/0, objectkeys_gc_time/0,
@@ -51,7 +53,7 @@
 	 iiop_connections/0, iiop_connections_pending/0, typechecking/0,
 	 exclude_codeset_ctx/0, exclude_codeset_component/0, bidir_context/0,
 	 secure/0, multi_jump_start/1, multi_jump_start/2, multi_jump_start/3, 
-	 get_tables/0]).
+	 get_tables/0, iiop_in_connection_timeout/0, partial_security/0]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -90,12 +92,12 @@ jump_stop() ->
 js() ->
     jump_start(iiop_port(), [{interceptors, {native, [orber_iiop_tracer]}},
 			     {orber_debug_level, 10}, 
-			     {flags, ?ORB_ENV_LOCAL_TYPECHECKING}]).
+			     {flags, (?ORB_ENV_LOCAL_TYPECHECKING bor get_flags())}]).
 
 js(Port) ->
     jump_start(Port, [{interceptors, {native, [orber_iiop_tracer]}},
 		      {orber_debug_level, 10}, 
-		      {flags, ?ORB_ENV_LOCAL_TYPECHECKING}]).
+		      {flags, (?ORB_ENV_LOCAL_TYPECHECKING bor get_flags())}]).
 
 jump_start() ->
     jump_start(iiop_port(), []).
@@ -119,13 +121,13 @@ mjs(Nodes) ->
     multi_js_helper(Nodes, iiop_port(),
 		    [{interceptors, {native, [orber_iiop_tracer]}},
 		     {orber_debug_level, 10}, 
-		     {flags, ?ORB_ENV_LOCAL_TYPECHECKING}]).
+		     {flags, (?ORB_ENV_LOCAL_TYPECHECKING bor get_flags())}]).
 
 mjs(Nodes, Port) ->
     multi_js_helper(Nodes, Port, 
 		    [{interceptors, {native, [orber_iiop_tracer]}},
 		     {orber_debug_level, 10},
-		     {flags, ?ORB_ENV_LOCAL_TYPECHECKING}]).
+		     {flags, (?ORB_ENV_LOCAL_TYPECHECKING bor get_flags())}]).
 
 
 multi_jump_start(Nodes) ->
@@ -320,7 +322,13 @@ host() ->
 	    integer_to_list(A1) ++ "." ++ integer_to_list(A2) ++ "." ++ integer_to_list(A3)
 		++ "." ++ integer_to_list(A4);
 	_ ->
-	    ip_address()
+	    case hostname_in_IOR() of
+		true ->
+		    {ok, Hostname} = inet:gethostname(),
+		    Hostname;
+		_ ->
+		    ip_address()
+	    end
     end.
 
 ip_address() ->
@@ -379,6 +387,23 @@ iiop_setup_connection_timeout() ->
 	    infinity
     end.
 
+iiop_in_connection_timeout() ->
+    case application:get_env(orber, iiop_in_connection_timeout) of
+	{ok, Int} when integer(Int) ->
+	    if
+		Int > 1000000 ->
+		    error_logger:error_msg("Orber 'iiop_connection_timeout' badly configured.
+Time to large (>1000000 sec), swithed to 'infinity'~n"),
+		    infinity;
+		true ->
+		    %% Convert to msec.
+		    Int*1000
+	    end;
+	_ ->
+	    infinity
+    end.
+    
+
 
 iiop_connections() ->
     orber_iiop_pm:list_existing_connections().
@@ -410,6 +435,12 @@ exclude_codeset_ctx() ->
 
 exclude_codeset_component() ->
     ?ORB_FLAG_TEST(get_flags(), ?ORB_ENV_EXCLUDE_CODESET_COMPONENT).
+
+hostname_in_IOR() ->
+    ?ORB_FLAG_TEST(get_flags(), ?ORB_ENV_HOSTNAME_IN_IOR).
+
+partial_security() ->
+    ?ORB_FLAG_TEST(get_flags(), ?ORB_ENV_PARTIAL_SECURITY).
 
 bidir_context() ->
     Flags = get_flags(),
@@ -529,8 +560,7 @@ ssl_server_certfile() ->
 	{ok, V2}  when atom(V2) ->
 	    atom_to_list(V2);
 	_ ->
-	    {ok, Cwd} = file:get_cwd(),
-	    filename:join(Cwd,"ssl_server_cert.pem")
+	    []
     end.
     
 ssl_client_certfile() ->
@@ -542,8 +572,7 @@ ssl_client_certfile() ->
 		{ok, V2}  when atom(V2) ->
 		    atom_to_list(V2);
 		_ ->
-		    {ok, Cwd} = file:get_cwd(),
-		    filename:join(Cwd,"ssl_client_cert.pem")
+		    []
 	    end;
 	V ->
 	    V
@@ -643,6 +672,70 @@ set_ssl_client_cacertfile(Value) when list(Value) ->
     put(ssl_client_cacertfile, Value), ok.
     
 
+ssl_client_password() ->
+    case application:get_env(orber, ssl_client_password) of
+	{ok, V1} when list(V1) ->
+	    V1;
+	_ ->
+	    []
+    end.
+
+ssl_server_password() ->
+    case application:get_env(orber, ssl_server_password) of
+	{ok, V1} when list(V1) ->
+	    V1;
+	_ ->
+	    []
+    end.
+
+ssl_client_keyfile() ->
+    case application:get_env(orber, ssl_client_keyfile) of
+	{ok, V1} when list(V1) ->
+	    V1;
+	_ ->
+	    []
+    end.
+
+ssl_server_keyfile() ->
+    case application:get_env(orber, ssl_server_keyfile) of
+	{ok, V1} when list(V1) ->
+	    V1;
+	_ ->
+	    []
+    end.
+
+ssl_client_ciphers() ->
+    case application:get_env(orber, ssl_client_ciphers) of
+	{ok, V1} when list(V1) ->
+	    V1;
+	_ ->
+	    []
+    end.
+
+ssl_server_ciphers() ->
+    case application:get_env(orber, ssl_server_ciphers) of
+	{ok, V1} when list(V1) ->
+	    V1;
+	_ ->
+	    []
+    end.
+
+ssl_client_cachetimeout() ->
+    case application:get_env(orber, ssl_client_cachetimeout) of
+	{ok, V1} when integer(V1) ->
+	    V1;
+	_ ->
+	    infinity
+    end.
+
+ssl_server_cachetimeout() ->
+    case application:get_env(orber, ssl_server_cachetimeout) of
+	{ok, V1} when integer(V1) ->
+	    V1;
+	_ ->
+	    infinity
+    end.
+
 %%-----------------------------------------------------------------
 %% Configuration settings
 %%-----------------------------------------------------------------
@@ -666,12 +759,12 @@ IIOP port number..............: ~p
 Bootstrap port number.........: ~p
 Nodes in domain...............: ~p
 GIOP version..................: ~p
-IIOP timeout..................: ~p
-IIOP connection timeout.......: ~p
+IIOP out timeout..............: ~p
+IIOP out connection timeout...: ~p
 IIOP setup connection timeout.: ~p
 IIOP out ports................: ~p
-IIOP connections..............: ~p
-IIOP connections (pending)....: ~p
+IIOP out connections..........: ~p
+IIOP out connections (pending): ~p
 Object Keys GC interval.......: ~p
 Using Interceptors............: ~p
 Debug Level...................: ~p
@@ -711,14 +804,25 @@ SSL server certfile...........: ~p
 SSL server verification type..: ~p
 SSL server verification depth.: ~p
 SSL server cacertfile.........: ~p
+SSL server keyfile............: ~p
+SSL server password...........: ~p
+SSL server ciphers............: ~p
+SSL server cachetimeout.......: ~p
 SSL client certfile...........: ~p
 SSL client verification type..: ~p
 SSL client verification depth.: ~p
 SSL client cacertfile.........: ~p
+SSL client keyfile............: ~p
+SSL client password...........: ~p
+SSL client ciphers............: ~p
+SSL client cachetimeout.......: ~p
 =========================================~n",
 [iiop_ssl_port(), ssl_server_certfile(), ssl_server_verify(),
- ssl_server_depth(), ssl_server_cacertfile(), ssl_client_certfile(),
- ssl_client_verify(), ssl_client_depth(), ssl_client_cacertfile()])]).
+ ssl_server_depth(), ssl_server_cacertfile(), ssl_server_keyfile(), 
+ ssl_server_password(), ssl_server_ciphers(), ssl_server_cachetimeout(),
+ ssl_client_certfile(), ssl_client_verify(), ssl_client_depth(), 
+ ssl_client_cacertfile(), ssl_client_keyfile(), ssl_client_password(),
+ ssl_client_ciphers(), ssl_client_cachetimeout()])]).
 
 
 %%-----------------------------------------------------------------
@@ -802,7 +906,26 @@ install_orber(Nodes, Options) ->
 try_starting(Type, Exit) ->
     case application:start(orber, Type) of
 	ok ->
-	    ok;
+	    case partial_security() of
+		true ->
+		    error_logger:error_msg("=================== Orber =================
+*******************************************
+**** WARNING - WARNING - WARNING **********
+**** WARNING - WARNING - WARNING **********
+**** WARNING - WARNING - WARNING **********
+**** WARNING - WARNING - WARNING **********
+*******************************************
+  ORBER STARTED WITH AN INSECURE OPTION:
+
+             {flags, ~p}
+
+ THIS OPTION MAY ONLY BE USED DURING TESTS
+
+===========================================~n", [?ORB_ENV_PARTIAL_SECURITY]),
+		ok;
+		false ->
+		    ok
+	    end;
 	{error,{already_started,orber}} when Exit == true ->
 	    exit("Orber already started on this node.");
 	Reason when Exit == true ->
@@ -1122,6 +1245,11 @@ configure(iiop_connection_timeout, infinity, Status) ->
     do_configure(iiop_connection_timeout, infinity, Status);
 configure(iiop_connection_timeout, Value, Status) when integer(Value), Value =< 1000000 ->
     do_configure(iiop_connection_timeout, Value, Status);
+%% configure 'iiop_in_connection_timout' will only have effect on new connections.
+configure(iiop_in_connection_timeout, infinity, Status) ->
+    do_configure(iiop_in_connection_timeout, infinity, Status);
+configure(iiop_in_connection_timeout, Value, Status) when integer(Value), Value =< 1000000 ->
+    do_configure(iiop_in_connection_timeout, Value, Status);
 %% configure 'iiop_setup_connection_timeout' will only have effect on new connections.
 configure(iiop_setup_connection_timeout, infinity, Status) ->
     do_configure(iiop_setup_connection_timeout, infinity, Status);
@@ -1191,6 +1319,34 @@ configure(ssl_client_cacertfile, Value, Status) when list(Value) ->
     do_safe_configure(ssl_client_cacertfile, Value, Status);
 configure(ssl_client_cacertfile, Value, Status) when atom(Value) ->
     do_safe_configure(ssl_client_cacertfile, atom_to_list(Value), Status);
+configure(ssl_client_password, Value, Status) when list(Value) ->
+    do_safe_configure(ssl_client_password, Value, Status);
+configure(ssl_client_password, Value, Status) when atom(Value) ->
+    do_safe_configure(ssl_client_password, atom_to_list(Value), Status);
+configure(ssl_client_keyfile, Value, Status) when list(Value) ->
+    do_safe_configure(ssl_client_keyfile, Value, Status);
+configure(ssl_client_keyfile, Value, Status) when atom(Value) ->
+    do_safe_configure(ssl_client_keyfile, atom_to_list(Value), Status);
+configure(ssl_server_password, Value, Status) when list(Value) ->
+    do_safe_configure(ssl_server_password, Value, Status);
+configure(ssl_client_password, Value, Status) when atom(Value) ->
+    do_safe_configure(ssl_server_password, atom_to_list(Value), Status);
+configure(ssl_server_keyfile, Value, Status) when list(Value) ->
+    do_safe_configure(ssl_server_keyfile, Value, Status);
+configure(ssl_server_keyfile, Value, Status) when atom(Value) ->
+    do_safe_configure(ssl_server_keyfile, atom_to_list(Value), Status);
+configure(ssl_server_ciphers, Value, Status) when list(Value) ->
+    do_safe_configure(ssl_server_ciphers, Value, Status);
+configure(ssl_server_ciphers, Value, Status) when atom(Value) ->
+    do_safe_configure(ssl_server_ciphers, atom_to_list(Value), Status);
+configure(ssl_client_ciphers, Value, Status) when list(Value) ->
+    do_safe_configure(ssl_client_ciphers, Value, Status);
+configure(ssl_client_ciphers, Value, Status) when atom(Value) ->
+    do_safe_configure(ssl_client_ciphers, atom_to_list(Value), Status);
+configure(ssl_client_cachetimeout, Value, Status) when integer(Value), Value > 0 ->
+    do_safe_configure(ssl_client_cachetimeout, Value, Status);
+configure(ssl_server_cachetimeout, Value, Status) when integer(Value), Value > 0 ->
+    do_safe_configure(ssl_server_cachetimeout, Value, Status);
 
 configure(Key, Value, _) ->
     dbg("[~p] orber:configure(~p, ~p); Bad key or value.", 

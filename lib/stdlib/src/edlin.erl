@@ -69,6 +69,8 @@ edit([C|Cs], P, {Bef,Aft}, Prefix, Rs0) ->
     case key_map(C, Prefix) of
 	meta ->
 	    edit(Cs, P, {Bef,Aft}, meta, Rs0);
+	meta_left_sq_bracket ->
+	    edit(Cs, P, {Bef,Aft}, meta_left_sq_bracket, Rs0);
 	ctlx ->
 	    edit(Cs, P, {Bef,Aft}, ctlx, Rs0);
 	new_line ->
@@ -171,6 +173,9 @@ key_map($t, meta) -> transpose_word;
 key_map($y, meta) -> yank_pop;
 key_map($\177, none) -> backward_delete_char;
 key_map($\177, meta) -> backward_kill_word;
+key_map($[, meta) -> meta_left_sq_bracket;
+key_map($D, meta_left_sq_bracket) -> backward_char;
+key_map($C, meta_left_sq_bracket) -> forward_char;
 key_map(C, none) when C >= $\s ->
     {insert,C};
 key_map(C, _) -> {undefined,C}.

@@ -23,10 +23,10 @@
 -export([constants/0, mark_dirty/1, read_file_header/2,
          check_file_header/2, do_perform_save/1, initiate_file/11,
          prep_table_copy/9, init_freelist/2, fsck_input/3,
-         bulk_input/3, output_objs/4, bchunk_init/2, compact_init/3,
-         read_bchunks/2, write_cache/1, may_grow/3, find_object/2,
-         slot_objs/2, scan_objs/7, db_hash/2, no_slots/1,
-         table_parameters/1]).
+         bulk_input/3, output_objs/4, bchunk_init/2,
+         try_bchunk_header/2, compact_init/3, read_bchunks/2,
+         write_cache/1, may_grow/3, find_object/2, slot_objs/2,
+         scan_objs/7, db_hash/2, no_slots/1, table_parameters/1]).
 
 -export([file_info/1, v_segments/1]).
 
@@ -651,7 +651,7 @@ output_objs(OldV, Head, SlotNums, Cntrs) when OldV =< 9 ->
 output_objs2(E, Acc, OldV, Head, Cache, SizeT, SlotNums, 0) ->
     NCache = write_all_sizes(Cache, SizeT, Head, more),
     %% Number of handled file_sorter chunks before writing:
-    Max = lists:min([size(NCache),10]), 
+    Max = lists:max([1,lists:min([size(NCache),10])]),
     output_objs2(E, Acc, OldV, Head, NCache, SizeT, SlotNums, Max);
 output_objs2(E, Acc, OldV, Head, Cache, SizeT, SlotNums, ChunkI) ->
     fun(close) ->
@@ -900,17 +900,10 @@ bchunk_init(Head, InitFun) ->
 	    #head{fptr = Fd, type = Type, keypos = Kp, 
 		  auto_save = Auto, cache = Cache, 
 		  filename = Fname, ram_file = Ram,
-		  name = Tab, hash_bif = HashBif} = Head,
-	    HashMethod = hash_method_to_code(HashBif),
-	    case catch binary_to_term(ParmsBin) of
-		Parms when record(Parms, ?HASH_PARMS),
-			   Parms#?HASH_PARMS.type == Type,
-			   Parms#?HASH_PARMS.keypos == Kp,
-			   Parms#?HASH_PARMS.hash_method == HashMethod,
-			   Parms#?HASH_PARMS.bchunk_format_version ==
-			         ?BCHUNK_FORMAT_VERSION ->
-		    #?HASH_PARMS{hash_method = HashMethod, 
-				 no_objects = NoObjects, 
+		  name = Tab} = Head,
+            case try_bchunk_header(ParmsBin, Head) of
+                {ok, Parms} ->
+		    #?HASH_PARMS{no_objects = NoObjects, 
 				 no_keys = NoKeys, 
 				 no_colls = NoObjsPerSize} = Parms,
 		    CacheSz = dets_utils:cache_size(Cache),
@@ -945,6 +938,21 @@ bchunk_init(Head, InitFun) ->
 	    {error, {init_fun, Value}};
 	Error ->
 	    {thrown, Error}
+    end.
+
+try_bchunk_header(ParmsBin, Head) ->
+    #head{type = Type, keypos = Kp, hash_bif = HashBif} = Head,
+    HashMethod = hash_method_to_code(HashBif),
+    case catch binary_to_term(ParmsBin) of
+        Parms when record(Parms, ?HASH_PARMS),
+                   Parms#?HASH_PARMS.type == Type,
+                   Parms#?HASH_PARMS.keypos == Kp,
+                   Parms#?HASH_PARMS.hash_method == HashMethod,
+                   Parms#?HASH_PARMS.bchunk_format_version ==
+                         ?BCHUNK_FORMAT_VERSION ->
+            {ok, Parms};
+        _ ->
+            not_ok
     end.
 
 bchunk_input(InitFun, SizeT, Head, Ref, Cache, ASz) ->

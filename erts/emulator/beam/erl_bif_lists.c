@@ -208,42 +208,72 @@ BIF_RETTYPE lists_reverse_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
     Eterm list;
+    Eterm tmp_list;
     Eterm result;
     Eterm* hp;
-    Eterm* hend;
-
-    int max_iter = CONTEXT_REDS * 10;
+    Uint n;
+    int max_iter;
     
+    /*
+     * Handle legal and illegal non-lists quickly.
+     */
     if (is_nil(BIF_ARG_1)) {
 	BIF_RET(BIF_ARG_2);
     } else if (is_not_list(BIF_ARG_1)) {
     error:
 	BIF_ERROR(BIF_P, BADARG);
     }
-    
+
+    /*
+     * First use the rest of the remaning heap space.
+     */
     list = BIF_ARG_1;
     result = BIF_ARG_2;
-    hp = hend = NULL;
-    while (is_list(list)) {
+    hp = HEAP_TOP(BIF_P);
+    n = HeapWordsLeft(BIF_P) / 2;
+    while (n != 0 && is_list(list)) {
 	Eterm* pair = list_val(list);
-	if (--max_iter == 0) {
-	    BUMP_ALL_REDS(BIF_P);
-	    HRelease(BIF_P, hp);
-	    BIF_TRAP2(bif_export[BIF_lists_reverse_2], BIF_P, list, result);
-	}
-	if (hp == hend) {
-	    hp = HAlloc(BIF_P, 64);
-	    hend = hp + 64;
-	}
 	result = CONS(hp, CAR(pair), result);
-	hp += 2;
 	list = CDR(pair);
+	hp += 2;
+	n--;
     }
-    if (is_not_nil(list))  {
+    HEAP_TOP(BIF_P) = hp;
+    if (is_nil(list)) {
+	BIF_RET(result);
+    }
+
+    /*
+     * Calculate length of remaining list (up to a suitable limit).
+     */
+    max_iter = CONTEXT_REDS * 40;
+    n = 0;
+    tmp_list = list;
+    while (max_iter-- > 0 && is_list(tmp_list)) {
+	tmp_list = CDR(list_val(tmp_list));
+	n++;
+    }
+    if (is_not_nil(tmp_list) && is_not_list(tmp_list)) {
 	goto error;
     }
-    HRelease(BIF_P, hp);
-    BIF_RET2(result, CONTEXT_REDS - max_iter / 10);
+
+    /*
+     * Now do one HAlloc() and continue reversing.
+     */
+    hp = HAlloc(BIF_P, 2*n);
+    while (n != 0 && is_list(list)) {
+	Eterm* pair = list_val(list);
+	result = CONS(hp, CAR(pair), result);
+	list = CDR(pair);
+	hp += 2;
+	n--;
+    }
+    if (is_nil(list)) {
+	BIF_RET(result);
+    } else {
+	BUMP_ALL_REDS(BIF_P);
+	BIF_TRAP2(bif_export[BIF_lists_reverse_2], BIF_P, list, result);
+    }
 }
 
 BIF_RETTYPE

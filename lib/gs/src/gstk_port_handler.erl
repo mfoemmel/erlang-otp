@@ -47,13 +47,12 @@
 %% ------------------------------------------------------------
 %%                  DEBUG FUNCTIONS 
 %% ------------------------------------------------------------
--export([exec/2,exec/1,call/2,
-	 start_link/1,init/1,init_win32/1,ping/1,stop/1]).
+-export([exec/1,call/2,
+	 start_link/1,init/2,ping/1,stop/1]).
 -export([wait_for_connection/2]).
 
 -define(START_TIMEOUT , 1000 * 30).
 -define(ACCEPT_TIMEOUT, 1000 * 20).
--define(MAXBUF, 5).
 
 -define(DEBUGLEVEL, 4).
 
@@ -67,7 +66,7 @@ dbg(DbgLvl, Format, Data) when DbgLvl =< ?DEBUGLEVEL ->
 dbg(_DbgLvl, _Format, _Data) -> ok.
 
 dbg_str(DbgLvl, What, Str) when DbgLvl =< ?DEBUGLEVEL ->
-    ok = io:format("DBG: ~s ~s\n", [What,dbg_s(Str)]);
+    ok = io:format("DBG: ~s~s\n", [What,dbg_s(Str)]);
 dbg_str(_DbgLvl, _What, _Data) -> ok.
 
 dbg_s([]) ->
@@ -96,15 +95,43 @@ dbg_s([C | Str]) when integer(C) ->
 %%                  INTERFACE FUNCTIONS 
 %% ------------------------------------------------------------
 
+% Note: gs is not a true application so this doesn't work :-(
+% Communication protocol between Erlang backend and wish program
+% that can be set in the application environment, e.i. tested
+% with "erl -gs backend_comm socket"
+%
+%   backend_comm = socket | port
+%
+% We fake reading the application variables from the command line.
+% Note that multiple -gs arguments can't be used.
+
+get_env(App, KeyAtom) ->
+    KeyStr = atom_to_list(KeyAtom),
+    ?DBG(1,"Command line -gs ~p\n",[init:get_argument(App)]),
+    case init:get_argument(App) of
+	{ok,[[KeyStr,ValStr]]} ->
+	    {ok,list_to_atom(ValStr)};
+	_ ->
+	    undefined
+    end.
+
 start_link(Gstk) ->
-    InitFunc = 
-	case os:type() of
-	    {win32,_} ->
-		init_win32;
-	    _  ->
-		init
+    ?DBG(1, "start_link(~w)~n", [Gstk]),
+%    io:format("STARTS ~p\n",[erlang:localtime()]),
+    Mode = 
+%	case {os:type(),application:get_env(gs,backend_comm)} of
+	case {os:type(),get_env(gs,backend_comm)} of
+	    {win32,undefined} ->
+		use_socket;
+	    {_OS,undefined} ->
+		use_port;
+	    {_OS,{ok,socket}} ->
+		use_socket;
+	    {_OS,{ok,port}} ->
+		use_port
 	end,
-    Pid = spawn_link(gstk_port_handler, InitFunc, [Gstk]),
+    ?DBG(1,"We use mode: ~w (~w)\n",[Mode,get_env(gs,backend_comm)]),
+    Pid = spawn_link(gstk_port_handler, init, [Gstk,Mode]),
     receive
 	{Pid, ok} ->
 	    {ok, Pid};
@@ -115,8 +142,7 @@ start_link(Gstk) ->
     end.
 
 call(PortHandler, Cmd) ->
-    ?DBG_STR(1, "call: ~p~n", [Cmd]),
-    PortHandler ! {call, ["erlcall {",Cmd,$},$\n]},
+    PortHandler ! {call, ["erlcall {",Cmd,$}]},
     receive
         {result, Result}         -> 
             ?DBG(1, "call reply: ~p~n", [Result]),
@@ -127,45 +153,52 @@ call(PortHandler, Cmd) ->
     end.
 
 ping(PortHandler) ->
+    ?DBG(1, "ping~n", []),
     PortHandler ! {ping, self()},
     receive
 	{pong,_From,PortOrSock} -> {ok,PortOrSock}
     end.
 
 stop(PortHandler) ->
+    ?DBG(1, "stop~n", []),
     PortHandler ! {stop,self()},
     receive
 	{stopped,PortHandler} -> ok
     end.
 
 %% Purpose: asyncron call to tk 
-exec(PortHandler, Cmd) ->
-    ?DBG_STR(1, "exec porthandler:", ["erlexec {",Cmd,"}"]),
-    PortHandler ! {exec, ["erlexec {",Cmd,"}\n"]}.
+%% too expensive 
+% FIXME   
+exec(Cmd) ->
+    get(port_handler) ! {exec, ["erlexec {",Cmd,$}]},
+    ok.
 
 % in gstk context, but I don't want "ifndef nt40" in other 
 % modules than this one.
-exec(Cmd) ->
-    ?DBG_STR(1, "exec:", ["erlexec {",Cmd,"}"]),
-    case get(port) of
-	{socket,Sock} ->
-	    gen_tcp:send(Sock, ["erlexec {",Cmd,"}\n"]);
-	{port,Port} ->
-	    Port ! {get(port_handler),{command,["erlexec {",Cmd,"}\n"]}}
-    end,
-    ok.
+%exec(Cmd) ->
+%    ?DBG_STR(1, "", ["erlexec {",Cmd,"}"]),
+%    case get(port) of
+%	{socket,Sock} ->
+%	    gen_tcp:send(Sock, ["erlexec {",Cmd,$}]);
+%	{port,Port} ->
+%	    Port ! {get(port_handler),{command,["erlexec {",Cmd,$}]}}
+%    end,
+%    ok.
 
-%% ------------------------------------------------------------
+%% ===========================================================================
 %% The server
-%% ------------------------------------------------------------
+%% ===========================================================================
 
-%%----------------------------------------------------------------------
+%% ---------------------------------------------------------------------
+%% We initiate by starting the wish port program and use the pipe
+%% or a socket to communicate with it.
+%%
 %% gstk: is the pid of the gstk process that started me. 
 %%      all my input (from the port) is forwarded to it.
 %%----------------------------------------------------------------------
 -record(state,{out,gstk}).
 
-init(Gstk) ->
+init(Gstk, Mode) ->
     process_flag(trap_exit,true),
 
     % ------------------------------------------------------------
@@ -177,14 +210,15 @@ init(Gstk) ->
     TclBinDir = filename:join(TclDir,"bin"),
     TclLibDir = filename:join(TclDir,"lib"),
 
-    InitScript = filename:nativename(filename:join(PrivDir,"gstk_unix.tcl")),
+    InitScript = filename:nativename(filename:join(PrivDir,"gstk.tcl")),
+
+    ?DBG(1, "TclBinDir  : ~s\n", [TclBinDir]),
+    ?DBG(1, "TclLibDir  : ~s\n", [TclLibDir]),
+    ?DBG(1, "InitScript : ~s\n", [InitScript]),
 
     % ------------------------------------------------------------
     % Search for wish in priv and in system search path
     % ------------------------------------------------------------
-
-    ?DBG(1, "TclBinDir :\n~p\n\n", [TclBinDir]),
-    ?DBG(1, "Wish      :\n~p\n\n", [filename:join(TclBinDir,"wish*")]),
 
     {Wish,Options} = 
 	case filelib:wildcard(filename:join(TclBinDir,"wish*")) of
@@ -197,46 +231,88 @@ init(Gstk) ->
 		% the host we run on.
 		% ------------------------------------------------
 
-		[TclLibrary] = filelib:wildcard(filename:join(PrivDir,"tcl/lib/tcl[1-9]*")),
-		[TkLibrary]  = filelib:wildcard(filename:join(PrivDir,"tcl/lib/tk[1-9]*")),
+		[TclLibrary] =
+		    filelib:wildcard(filename:join(PrivDir,
+						   "tcl/lib/tcl[1-9]*")),
+		[TkLibrary]  =
+		    filelib:wildcard(filename:join(PrivDir,
+						   "tcl/lib/tk[1-9]*")),
 
 		Opts = [{env,[{"TCL_LIBRARY", TclLibrary},
 			      {"TK_LIBRARY", TkLibrary},
-			      {"LD_LIBRARY_PATH",TclLibDir}]}],
+			      {"LD_LIBRARY_PATH",TclLibDir}]},
+		       {packet,4}],
 		{PrivWish,Opts};
 	    _ ->
 		% We use the system wish program
-		{search_wish(?WISHNAMES, Gstk),[]}
+		{search_wish(?WISHNAMES, Gstk),[{packet,4}]}
 	end,
 
-    ?DBG(1, "Wish and options:\n~p\n\n", [{Wish,Options}]),
 
-    Cmd = Wish ++ " " ++ InitScript,
-    Port = open_port({spawn, Cmd},Options),
-    link(Port),
+    ?DBG(1, "Wish       : ~s\n", [Wish]),
 
-    %% Check whether the port, i.e., the wish, still lives! If the DISPLAY
-    %% variable isn't set correctly, and/or xhost doesn't allow connection,
-    %% the port may be dead by now!
+    Cmd =
+	case Mode of
+	    use_socket ->
+		% ------------------------------------------------------------
+		% Set up a listening socket and call accept in another process
+		% ------------------------------------------------------------
+		SocketOpts =
+		    [
+		     {nodelay, true},
+		     {packet,4},
+		     {reuseaddr,true}
+		    ],
+		% Let OS pick a number
+		{ok,ListenSocket} = gen_tcp:listen(0, SocketOpts),
+		{ok,ListenPort} = inet:port(ListenSocket),
 
-    Port ! {self(), {command, ["erlcall {info tclversion}\n"]}},
-    receive
-	{Port, {data, [2 | _T]}} ->
-	    Gstk ! {self(), ok};
-	{Port, {data, [3 | _T]}} ->
-	    Gstk ! {self(),error, error_in_backend},
-	    exit(normal);
-	{'EXIT', _Pid, _Reason} ->		% FIXME: Why throw away reason?!
-	    Gstk ! {self(), error, backend_died},
-	    exit(normal)
-    end,
+		% Wait in another process
+		spawn_link(?MODULE,wait_for_connection,[self(),ListenSocket]),
+		lists:concat([Wish," ",InitScript," -- ",ListenPort]);
+	    use_port ->
+		Wish ++ " " ++ InitScript
+	end,
 
-    State = #state{out={port,Port}, gstk=Gstk},
+    ?DBG(1, "Port opts  :\n~p\n", [Options]),
 
-%    XDefaults = filename:join(code:lib_dir(gs),"ebin/gs-color-xdefaults"),
-%    output(State, ["erlexec {option read ",XDefaults,"}\n"]),
+    % FIXME remove timing if not debugging
+    Port =
+	case timer:tc(erlang,open_port,[{spawn, Cmd}, Options]) of
+	    {_T,Port1} when port(Port1) ->
+		?DBG(1,"open_port takes ~p milliseconds\n",[_T/1000]),
+		link(Port1),
+		Port1;
+	    {_T,{error,_Reason1}} ->		% FIXME: Why throw away reason?!
+		?DBG(1,"ERROR: ~p\n",[_Reason1]),
+		Gstk ! {self(), error, backend_died},
+		exit(normal)
+	end,
 
-    idle(State,[]).
+    State =
+	case Mode of
+	    use_socket ->
+		% ------------------------------------------------------------
+		% Wait for a connection
+		% ------------------------------------------------------------
+		Sock =
+		    receive
+			{connected,Socket} ->
+			    Socket;
+			% FIXME: Why throw away reason?!
+			{'EXIT', _Pid, _Reason2} ->
+			    Gstk ! {self(), error, backend_died},
+			    exit(normal)
+		    end,
+
+		?DBG(1,"Got socket ~p~n",[Sock]),
+		#state{out={socket,Sock}, gstk=Gstk};
+	    use_port ->
+		#state{out={port,Port}, gstk=Gstk}
+	end,
+
+    Gstk ! {self(), ok},			% Tell caller we are prepared
+    idle(State).
 
 search_wish([], Gstk) ->
     Gstk ! {self(), error, backend_died},
@@ -250,85 +326,8 @@ search_wish([WishName | WishNames], Gstk) ->
     end.
 	
 %%----------------------------------------------------------------------
-%% XXXX
+%% If we use sockets we wait for connection from port prog
 %%----------------------------------------------------------------------
-
-init_win32(Gstk) ->
-    process_flag(trap_exit,true),
-
-    % ------------------------------------------------------------
-    % Set up paths
-    % ------------------------------------------------------------
-
-    PrivDir = code:priv_dir(gs),
-    TclLibrary = filename:join(PrivDir,"tcl/lib/tcl8.3"),
-    TkLibrary  = filename:join(PrivDir,"tcl/lib/tk8.3"),
-    Wish       = filename:nativename(filename:join(PrivDir,
-						   "tcl/bin/wish83.exe")),
-    InitScript = filename:nativename(filename:join(PrivDir,"gstk_win32.tcl")),
-
-    Env = [{"TCL_LIBRARY", TclLibrary},
-	   {"TK_LIBRARY", TkLibrary}],
-
-    % ------------------------------------------------------------
-    % Set up a listening socket and call accept in another process
-    % ------------------------------------------------------------
-
-    Opts =
-        [
-         {nodelay, true},
-         {packet,raw},
-         {reuseaddr,true}
-        ],
-    {ok,ListenSocket} = gen_tcp:listen(0, Opts), % Let OS pick a number
-    {ok,ListenPort} = inet:port(ListenSocket),
-
-    % Wait in another process
-    spawn_link(?MODULE,wait_for_connection,[self(),ListenSocket]),
-
-    % ------------------------------------------------------------
-    % Start the wish program with arguments
-    % ------------------------------------------------------------
-
-    Cmd = Wish ++ " " ++ InitScript ++ " -- " ++
-	integer_to_list(ListenPort),
-
-    ?DBG(1, "open port: ~s~n", [Cmd]),
-    
-    case open_port({spawn, Cmd}, [{env,Env}]) of
-	Port when port(Port) ->
-	    true;
-	{error,_Reason1} ->			% FIXME: Why throw away reason?!
-	    Gstk ! {self(), error, backend_died},
-	    exit(normal)
-    end,
-
-    % ------------------------------------------------------------
-    % Wait for a connection
-    % ------------------------------------------------------------
-
-    Sock =
-	receive
-	    {connected,Socket} ->
-		Gstk ! {self(), ok},
-		Socket;
-	    {'EXIT', _Pid, _Reason2} ->		% FIXME: Why throw away reason?!
-		Gstk ! {self(), error, backend_died},
-		exit(normal)
-	end,
-
-    ?DBG(1,"Got socket ~p~n",[Sock]),
-
-    % ------------------------------------------------------------
-    % Call idle loop with state data
-    % ------------------------------------------------------------
-
-    State = #state{out={socket,Sock}, gstk=Gstk},
-
-    ?DBG(1,"Calling idle ~p~n",[State]),
-
-    idle(State,[]).
-
 
 wait_for_connection(CallerPid, ListenSocket) ->
     {ok,Sock} = gen_tcp:accept(ListenSocket, ?ACCEPT_TIMEOUT),
@@ -336,144 +335,86 @@ wait_for_connection(CallerPid, ListenSocket) ->
     ok = gen_tcp:controlling_process(Sock,CallerPid),
     CallerPid ! {connected,Sock}.
 
-
 %% ===========================================================================
 %% The main loop
 %% ===========================================================================
 
-idle_init(State, Buffer) ->
-    {false, Rest} = handle_idle_input(State, Buffer, []),
-    idle(State, Rest).
-
-idle(State, Buffer) ->
+idle(State) ->
+    ?DBG(1, "idle~n", []),
+%    io:format("IDLE ~p\n",[erlang:localtime()]),
     receive
 
 	{call, Cmd} ->
-	    got_call(State, Cmd, 0, ?MAXBUF, Buffer);
+	    output(State, Cmd),
+	    idle(State);
 
 	{exec, Cmd} ->
-	    got_exec(State, Cmd, 0, ?MAXBUF, Buffer);
+	    collect_exec_calls(Cmd, [], 0, State),
+	    idle(State);
 
 	{_Port, {data, Input}} ->
-	    ?DBG(2, "INPUT:  ~p~n", [Input]),
-	    {false, _Rest} = handle_idle_input(State, Input, Buffer),
-	    % FIXME: What is in Rest that we skip?
-	    idle(State, Buffer);
+	    ?DBG_STR(2, "INPUT[port]: ", [Input]),
+	    handle_input(State, Input),
+	    idle(State);
 
 	{tcp, _Sock, Input} ->
-	    ?DBG_STR(2, "idle from socket:", [Input]),
-	    {false, New_Buffer} = handle_idle_input(State, Input, Buffer),
-	    idle(State, New_Buffer);
+	    ?DBG_STR(2, "INPUT[sock]: ", [Input]),
+	    handle_input(State, Input),
+	    idle(State);
 
 	{ping,From} ->
 	    From ! {pong,self(),State#state.out},
-	    idle(State,Buffer);
+	    idle(State);
 
 	{stop,From} ->
 	    From ! {stopped,self()};
 
-	{'EXIT',Pid,normal} ->
-	    idle(State,Buffer);
+	% FIXME: We are we not to terminate if watforsocket
+	% terminated but what about the port???????
+	{'EXIT',_Pid,normal} ->
+	    ?DBG(1, "EXIT[~w]: normal~n", [_Pid]),
+	    idle(State);
 
 	{'EXIT',Pid,Reason} ->
 	    %%io:format("Port died when in idle loop!~n"),
-	    ?DBG(1,"EXIT msg ~p~n~p~n",[Pid,Reason]),
+	    ?DBG(1,"EXIT[~w]~n~p~n",[Pid,Reason]),
 	    exit({port_handler,Pid,Reason});
 
 	Other ->
+	    ?DBG(1,"OTHER: ~p~n",[Other]),
 	    gs:error("gstk_port_handler: got other: ~w~n",[Other]),
-	    idle(State, Buffer)
+	    idle(State)
     end.
 
+%% ----------------------------------------------------------------------
 
-handle_idle_input(State,Input,Buffer) ->
-    case in_split(Input,Buffer) of
-	{true, Reply, New_buffer} ->
-	    input_when_idle(State#state.gstk, Reply),
-	    handle_idle_input(State,New_buffer,[]);
-	Other ->
-	    Other
-    end.
+-define(MAXQUEUE, 4).				% FIXME find value...
 
-got_exec(State, Cmd, Pending, Maxbuf, Buffer) ->
-    case Pending of
-	Maxbuf -> 
-	    output(State, Cmd),
-	    idle(State, Buffer);
-	_ ->
-	    receive
-
-		{call, Cmd2} ->
-		    got_call(State, [Cmd, $;, Cmd2],
-			     Pending+1, Maxbuf, Buffer);
-		{'EXIT',Pid,Reason} -> exit({port_handler,Pid,Reason});
-		{exec, Cmd2} ->
-		    got_exec(State, [Cmd, $;, Cmd2], 
-			     Pending+1, Maxbuf, Buffer)
-	    after 0 ->
-		    output(State, Cmd),
-		    idle(State, Buffer)
-	    end
-    end.
-
-  
-got_call(State, Cmd, Pending, Maxbuf, Buffer) ->
-    case Pending of
-	Maxbuf -> 
-	    output(State, Cmd),
-	    wait_reply(State, Buffer);
-	_ -> 
-	    receive
-		{'EXIT',Pid,Reason} -> exit({port_handler,Pid,Reason});
-		{exec, Cmd2} ->
-		    got_call(State, [Cmd, $;, Cmd2], 
-			     Pending+1, Maxbuf, Buffer)
-	    after 0 ->
-		    output(State, Cmd),
-		    wait_reply(State, Buffer)
-	    end
-    end.
-
-
-wait_reply(State, Buffer) ->
+collect_exec_calls(Cmd, Queue, QueueLen, State) when QueueLen < ?MAXQUEUE ->
     receive
-
-	{exec, Cmd} ->
-	    output(State, Cmd),
-	    wait_reply(State, Buffer);
-	{'EXIT',Pid,Reason} -> exit({port_handler,Pid,Reason});
-
-	{_Port, {data, Input}} ->
-	    ?DBG_STR(2, "wait reply from port:", [Input]),
-	    case handle_input(State,Input,Buffer) of
-		{true, New_buffer} ->
-		    idle_init(State, New_buffer);
-		{false,New_buffer} ->
-		    wait_reply(State, New_buffer)
-	    end;
-
-	{tcp, _Sock, Input} ->
-	    ?DBG_STR(2, "wait reply from socket:", [Input]),
-	    case handle_input(State,Input,Buffer) of
-		{true, New_buffer} ->
-		    idle_init(State, New_buffer);
-		{false,New_buffer} ->
-		    wait_reply(State, New_buffer)
+	{exec, NewCmd} ->
+%	    io:format("collect~p~n", [NewCmd]),
+	    collect_exec_calls(NewCmd, [Cmd | Queue], QueueLen+1, State)
+    after 0 ->
+	    if
+		QueueLen == 0 ->
+		    output(State, Cmd);
+		true ->
+		    output(State, join_cmd_reverse(Cmd, Queue, []))
 	    end
-    end.
+    end;
+collect_exec_calls(Cmd, Queue, _QueueLen, State) -> % Queue is full, output
+    String = join_cmd_reverse(Cmd, Queue, []),
+%    io:format("queue full: ~p~n", [String]),
+    output(State, String).
 
-handle_input(State,Input,Buffer) ->
-    case in_split(Input,Buffer) of
-	{true, Reply, New_buffer} ->
-	    case input_during_call(State#state.gstk,Reply) of
-		true  -> {true, New_buffer};
-		false -> handle_input(State, New_buffer, [])
-	    end;
-	Other ->
-	    Other
-    end.
-	
 
+join_cmd_reverse(Cmd, [], DeepStr) ->
+    [DeepStr | Cmd];
+join_cmd_reverse(Cmd, [Cmd1 | Cmds], DeepStr) ->
+    join_cmd_reverse(Cmd, Cmds, [Cmd1,$; | DeepStr]).
+
+%% ----------------------------------------------------------------------
 %%
 %% Handle incoming data
 %% 1 - Event
@@ -483,61 +424,43 @@ handle_input(State,Input,Buffer) ->
 %% 5 - End of message
 %% 
 
-input_when_idle(GstkPid, [E|Event]) ->
-    case E of
+handle_input(State,[Type | Data]) ->
+    GstkPid = State#state.gstk,
+    Mode = xxxx,
+    case Type of
 	1 ->
-	    handle_event(GstkPid,Event);
-	2 ->
-	    gs:error("~w: unexpected reply: ~s~n",[gstk, Event]);
-	3 ->
-	    gs:error("~w: unexpected error reply: ~s~n",[gstk, Event]);
-	4 ->
-	    ?DBG(1, "~w: error in input : ~s~n",[gstk, Event])
-    end;
-input_when_idle(_,[]) ->
-    true.
+	    handle_event(GstkPid,Data);
 
+	2 when Mode =:= idle ->
+	    gs:error("gstk_port_handler: unexpected reply: ~s~n",[Data]);
 
-input_during_call(GstkPid, [E|Event]) ->
-    case E of
-	1 ->
-	    handle_event(GstkPid,Event),
-	    false;
 	2 ->
-	    GstkPid ! {result, Event},
-	    true;
+	    GstkPid ! {result, Data};
+
+	3 when Mode =:= idle ->
+	    gs:error("gstk_port_handler: unexpected error reply: ~s~n",[Data]);
+
 	3 ->
-	    GstkPid ! {bad_result, Event},
-	    true;
+	    GstkPid ! {bad_result, Data};
+
 	4 ->
-	    gs:error("~w: error in input : ~s~n",[gstk, Event]),
-	    false
+	    gs:error("gstk_port_handler: error in input : ~s~n",[Data])
     end.
 
-
-
-%% all below 6 reserved for protocol, but not checked
-
-
-in_split([5|T], Ack)             -> {true, lists:reverse(Ack), T};
-in_split([X|T],  Ack)            -> in_split(T, [X|Ack]);
-in_split([], Ack)                -> {false, Ack}.
-
-
-
-
-%% ---------------------------------------------
+%% ----------------------------------------------------------------------
 %% output a command to the port
 %% buffer several incoming execs
 %%
 output(#state{out = {socket,Sock}}, Cmd) ->
-    ?DBG_STR(1, "to socket:", [Cmd]),
+    ?DBG_STR(1, "OUTPUT[sock]: ", [Cmd]),
     ok = gen_tcp:send(Sock, Cmd);
 
 output(#state{out = {port,Port}}, Cmd) ->
-    ?DBG_STR(1, "to port:", [Cmd]),
+    ?DBG_STR(1, "OUTPUT[port]: ", [Cmd]),
     Port ! {self(), {command, Cmd}}.
 
+% FIXME why test list?
 handle_event(GstkPid, Bytes) when list(Bytes) ->
     Event = tcl2erl:parse_event(Bytes),
+    ?DBG(1,"Event = ~p\n",[Event]),
     gstk:event(GstkPid, Event). %% Event is {ID, Etag, Args}

@@ -206,7 +206,8 @@ OPCODE_TABLES += hipe/hipe_ops.tab
 endif
 
 $(TARGET)/beam_opcodes.h $(TARGET)/beam_opcodes.c: $(OPCODE_TABLES)
-	$(PERL) utils/beam_makeops -outdir $(TARGET) -emulator $(OPCODE_TABLES)
+	LANG=C $(PERL) utils/beam_makeops -outdir $(TARGET) \
+		-emulator $(OPCODE_TABLES)
 
 # bif and atom table
 ATOMS=	beam/atom.names

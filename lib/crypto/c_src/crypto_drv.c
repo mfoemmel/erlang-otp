@@ -33,6 +33,10 @@
 #include "md5.h"
 #include "sha.h"
 
+#if defined(HAVE_MACH_O_DYLD_H)
+#include <mach-o/dyld.h>
+#endif
+
 #define get_int32(s) ((((unsigned char*) (s))[0] << 24) | \
                       (((unsigned char*) (s))[1] << 16) | \
                       (((unsigned char*) (s))[2] << 8)  | \
@@ -40,9 +44,14 @@
 
 /* shared libs & dlls */
 EXTERN void *driver_dl_open(char *);
-EXTERN void *driver_dl_sym(void *, char *);
 EXTERN int driver_dl_close(void *);
 EXTERN char *driver_dl_error(void);
+
+#if defined(HAVE_MACH_O_DYLD_H)
+void *driver_dl_sym(void *, char *);
+#else
+EXTERN void *driver_dl_sym(void *, char *);
+#endif
 
 /* Driver interface declarations */
 static ErlDrvData start(ErlDrvPort port, char *command);
@@ -91,8 +100,10 @@ static ErlDrvData driver_data = (ErlDrvData) &erlang_port; /* Anything goes */
 #define DRV_SHA_MAC_96		12
 #define DRV_CBC_DES_ENCRYPT	13
 #define DRV_CBC_DES_DECRYPT	14
+#define DRV_EDE3_CBC_DES_ENCRYPT 15
+#define DRV_EDE3_CBC_DES_DECRYPT 16
 
-#define NUM_CRYPTO_FUNCS       	14
+#define NUM_CRYPTO_FUNCS       	16
 
 #define MD5_CTX_LEN	(sizeof(MD5_CTX))
 #define MD5_LEN		16
@@ -121,9 +132,26 @@ typedef struct _crypto_funcs {
     void (*SHA1_Final)(char *, SHA_CTX *);
     int (*des_set_key)(char *, void *);
     void (*des_ncbc_encrypt)(char *, char *, int, void *, char *, int);
+    void (*des_ede3_cbc_encrypt)(char *, char *, int, void *, void *,
+				 void *, char *, int);
 } crypto_funcs;
 
 static crypto_funcs cfs;
+
+/* We need our own OS X driver_dl_sym because the mechanism used in unix_ddll_drv.c
+   cannot find symbols except those specifically defined IN the module - not those in a
+   linked library */
+
+#if defined(HAVE_MACH_O_DYLD_H)
+void *driver_dl_sym(void *handle, char *symbol) {
+  NSSymbol nssymbol;
+  static char undersym[65]; /* enough for all the symbols we will find here anyway */
+  int sym_len = strlen(symbol);
+  snprintf(undersym,64,"_%s",symbol);
+  nssymbol = NSLookupAndBindSymbol(undersym);
+  return nssymbol != NULL ? NSAddressOfSymbol(nssymbol) : NULL;
+}
+#endif
 
 /* INITIALIZATION AFTER LOADING */
 
@@ -181,6 +209,7 @@ static ErlDrvData start(ErlDrvPort port, char *command)
     cfs.SHA1_Final = driver_dl_sym(lib_handle, "SHA1_Final");
     cfs.des_set_key = driver_dl_sym(lib_handle, "des_set_key");
     cfs.des_ncbc_encrypt = driver_dl_sym(lib_handle, "des_ncbc_encrypt");
+    cfs.des_ede3_cbc_encrypt = driver_dl_sym(lib_handle, "des_ede3_cbc_encrypt");
 
     /* Check that all pointer where initialized */
     for (i = 0; i < sizeof(crypto_funcs)/sizeof(void*); i++) {
@@ -221,9 +250,9 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
 		   int len, char **rbuf, int rlen)
 {
     int klen, dlen, i, macsize;
-    char *key, *dbuf, *ivec;
+    char *key, *key2, *key3, *dbuf, *ivec;
     ErlDrvBinary *b;
-    des_key_schedule schedule;
+    des_key_schedule schedule, schedule2, schedule3;
     char hmacbuf[SHA_LEN];
     MD5_CTX md5_ctx;
     SHA_CTX sha_ctx;
@@ -341,6 +370,23 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
 	(*cfs.des_set_key)(key, (void *)schedule);
 	(*cfs.des_ncbc_encrypt)(dbuf, b->orig_bytes, dlen, schedule, ivec, 
 				(command == DRV_CBC_DES_ENCRYPT));
+	return dlen;
+	break;
+
+    case DRV_EDE3_CBC_DES_ENCRYPT:
+    case DRV_EDE3_CBC_DES_DECRYPT:
+	dlen = len - 32;
+	if (dlen < 0)
+	    return -1;
+	key = buf; key2 = buf + 8; key3 = buf + 16;
+	ivec = buf + 24; dbuf = buf + 32;
+	*rbuf = (char *)(b = driver_alloc_binary(dlen));
+	(*cfs.des_set_key)(key, (void *)schedule);
+	(*cfs.des_set_key)(key2, (void *)schedule2);
+	(*cfs.des_set_key)(key3, (void *)schedule3);
+	(*cfs.des_ede3_cbc_encrypt)(dbuf, b->orig_bytes, dlen, schedule,
+				schedule2, schedule3, ivec, 
+				(command == DRV_EDE3_CBC_DES_ENCRYPT));
 	return dlen;
 	break;
 

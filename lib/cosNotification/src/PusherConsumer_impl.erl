@@ -319,7 +319,7 @@ connect_any_push_supplier(OE_THIS, OE_FROM, State, Client) when ?is_ANY(State) -
 	    {reply, ok, ?set_Client(State, Client)}
     end;
 connect_any_push_supplier(_, _, _, _) ->
-    corba:raise(#'BAD_OPERATION'{minor=300, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----- CosNotifyChannelAdmin::SequenceProxyPushConsumer ----
 %%----------------------------------------------------------%
@@ -337,7 +337,7 @@ connect_sequence_push_supplier(OE_THIS, OE_FROM, State, Client) when ?is_SEQUENC
 	    {reply, ok, ?set_Client(State, Client)}
     end;
 connect_sequence_push_supplier(_, _, _, _) ->
-    corba:raise(#'BAD_OPERATION'{minor=301, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----- CosNotifyChannelAdmin::StructuredProxyPushConsumer --
 %%----------------------------------------------------------%
@@ -355,7 +355,7 @@ connect_structured_push_supplier(OE_THIS, OE_FROM, State, Client) when ?is_STRUC
 	    {reply, ok, ?set_Client(State, Client)}
     end;
 connect_structured_push_supplier(_, _, _, _) ->
-    corba:raise(#'BAD_OPERATION'{minor=302, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----- Inherit from CosNotifyChannelAdmin::ProxyConsumer ---
 %%----------------------------------------------------------%
@@ -374,7 +374,7 @@ obtain_subscription_types(OE_THIS, OE_FROM, State, 'NONE_NOW_UPDATES_ON') ->
 obtain_subscription_types(_,_,_,What) ->
     orber:debug_level_print("[~p] PusherConsumer:obtain_subscription_types(~p);
 Incorrect enumerant", [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=100, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : validate_event_qos
@@ -488,7 +488,7 @@ remove_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
 remove_filter(_,_,_,What) ->
     orber:debug_level_print("[~p] PusherConsumer:remove_filter(~p); Not an integer", 
 			    [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=300, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : get_filter
@@ -501,7 +501,7 @@ get_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
 get_filter(_,_,_,What) ->
     orber:debug_level_print("[~p] PusherConsumer:get_filter(~p); Not an integer", 
 			    [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'BAD_PARAM'{minor=301, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
 %% function : get_all_filters
@@ -559,7 +559,7 @@ push(OE_THIS, OE_FROM, State, Event) when ?is_ANY(State) ->
 	    forward(any, ?get_MyChannel(State), State, Event, 'MATCHED')
     end;
 push(_, _, _, _) ->
-    corba:raise(#'BAD_OPERATION'{minor=304, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----- Inherit from CosNotifyComm::SequencePushConsumer ----
 %%----------------------------------------------------------%
@@ -594,7 +594,7 @@ push_structured_events(OE_THIS, OE_FROM, State, Events) when ?is_SEQUENCE(State)
 	    forward(seq, ?get_MyAdmin(State), State, Failed, 'MATCH')
     end;
 push_structured_events(_,_,_,_) ->
-    corba:raise(#'BAD_OPERATION'{minor=305, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----- Inherit from CosNotifyComm::StructuredPushConsumer --
 %%----------------------------------------------------------%
@@ -639,7 +639,7 @@ push_structured_event(OE_THIS, OE_FROM, State, Event) when ?is_STRUCTURED(State)
 	    forward(seq, ?get_MyChannel(State), State, [Event], 'MATCHED')
     end;
 push_structured_event(_,_,_,_) ->
-    corba:raise(#'BAD_OPERATION'{minor=306, completion_status=?COMPLETED_NO}).
+    corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%--------------- LOCAL FUNCTIONS ----------------------------
 find_obj({value, {_, Obj}}) -> Obj;

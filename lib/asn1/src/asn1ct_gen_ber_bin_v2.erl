@@ -581,7 +581,7 @@ int_constr(SV,VR) ->
 %% Object code generating for encoding and decoding
 %% ------------------------------------------------
 
-gen_obj_code(_Erules,_Module,Obj) when record(Obj,typedef) ->
+gen_obj_code(Erules,_Module,Obj) when record(Obj,typedef) ->
     ObjName = Obj#typedef.name,
     Def = Obj#typedef.typespec,
     #'Externaltypereference'{module=M,type=ClName} = Def#'Object'.classname,
@@ -598,175 +598,467 @@ gen_obj_code(_Erules,_Module,Obj) when record(Obj,typedef) ->
     emit({nl,"%%  ",ObjName}),
     emit({nl,"%%================================",nl}),
     EncConstructed =
-	gen_encode_objectfields(Class#classdef.typespec,ObjName,Fields,[]),
+	gen_encode_objectfields(ClName,get_class_fields(Class),
+				ObjName,Fields,[]),
     emit(nl),
-    gen_encode_constr_type(EncConstructed),
+    gen_encode_constr_type(Erules,EncConstructed),
     emit(nl),
     DecConstructed =
-	gen_decode_objectfields(Class#classdef.typespec,ObjName,Fields,[]),
+	gen_decode_objectfields(ClName,get_class_fields(Class),
+				ObjName,Fields,[]),
     emit(nl),
-    gen_decode_constr_type(DecConstructed);
+    gen_decode_constr_type(Erules,DecConstructed),
+    emit_tlv_format_function();
 gen_obj_code(_Erules,_Module,Obj) when record(Obj,pobjectdef) ->
     ok.
 
-gen_encode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
-    Fields = Class#objectclass.fields,
+gen_encode_objectfields(ClassName,[{typefield,Name,OptOrMand}|Rest],
+			ObjName,ObjectFields,ConstrAcc) ->
+    emit(["'enc_",ObjName,"'(",{asis,Name},
+	  ", Val, RestPrimFieldName) ->",nl]),
     MaybeConstr=
-	case is_typefield(Fields,FieldName) of
-	    true ->
-		Def = Type#typedef.typespec,
-%		OTag = Def#type.tag,
-% remove	Tag = [X#tag{class=decode_class(X#tag.class)}|| X <- OTag],
-%		Tag = [encode_tag_val(decode_class(X#tag.class),X#tag.form,X#tag.number)|| 
-%			  X <- OTag],
-		emit({"'enc_",ObjName,"'(",{asis,FieldName},
-		      ", Val, RestPrimFieldName) ->",nl}),
-		CAcc=
-		case Type#typedef.name of
-		    {primitive,bif} -> %%tag should be the primitive tag
-			OTag = Def#type.tag,
-			Tag = [encode_tag_val(decode_class(X#tag.class),
-					      X#tag.form,X#tag.number)||
-				  X <- OTag],
-			gen_encode_prim(ber,Def,{asis,lists:reverse(Tag)},
-					"Val"),
-			[];
-		    {constructed,bif} ->
-			%%InnerType = asn1ct_gen:get_inner(Def#type.def),
-			%%asn1ct_gen:gen_encode_constructed(ber,[ObjName],
-			%%                            InnerType,Def);
-			emit({"   'enc_",ObjName,'_',FieldName,
-			      "'(Val)"}),
-			[{['enc_',ObjName,'_',FieldName],Def}];
-		    {ExtMod,TypeName} ->
-			emit({"   '",ExtMod,"':'enc_",TypeName,
-			      "'(Val)"}),
-			[];
-		    TypeName ->
-			emit({"   'enc_",TypeName,"'(Val)"}),
-			[]
-		end,
-		case more_genfields(Fields,Rest) of
-		    true ->
-			emit({";",nl});
-		    false ->
-			emit({".",nl})
-		end,
-		CAcc;
-	{false,objectfield} ->
-	    emit({"'enc_",ObjName,"'(",{asis,FieldName},
-		  ", Val,[H|T]) ->",nl}),
-	    case Type#typedef.name of
+	case {get_object_field(Name,ObjectFields),OptOrMand} of
+	    {false,'MANDATORY'} -> %% this case is illegal
+		exit({error,{asn1,{"missing mandatory field in object",
+				   ObjName}}});
+	    {false,'OPTIONAL'} ->
+		emit(["   {<<>>,0}"]),
+		[];
+	    {false,{'DEFAULT',DefaultType}} ->
+		gen_encode_default_call(ClassName,Name,DefaultType);
+	    {{Name,TypeSpec},_} ->
+		%% A specified field owerwrites any 'DEFAULT' or
+		%% 'OPTIONAL' field in the class
+		gen_encode_field_call(ObjName,Name,TypeSpec)
+	end,
+    case more_genfields(Rest) of
+	true ->
+	    emit([";",nl]);
+	false ->
+	    emit([".",nl])
+    end,
+    gen_encode_objectfields(ClassName,Rest,ObjName,ObjectFields,
+			    MaybeConstr++ConstrAcc);
+gen_encode_objectfields(ClassName,[{objectfield,Name,Type,_,OptOrMand}|Rest],
+			ObjName,ObjectFields,ConstrAcc) ->
+    emit(["'enc_",ObjName,"'(",{asis,Name},
+	  ", Val,[H|T]) ->",nl]),
+    case {get_object_field(Name,ObjectFields),OptOrMand} of
+	{false,'MANDATORY'} ->
+	    exit({error,{asn1,{"missing mandatory field in object",
+			       ObjName}}});
+	{false,'OPTIONAL'} ->
+	    emit(["  exit({error,{'use of missing field in object', ",Name,
+		  "}})"]);
+	{false,{'DEFAULT',DefaultObject}} ->
+	    exit({error,{asn1,{"not implemented yet",Name}}});
+	{{Name,TypeSpec},_} ->
+	    case TypeSpec#typedef.name of
 		{ExtMod,TypeName} ->
 		    emit({indent(3),"'",ExtMod,"':'enc_",TypeName,
 			  "'(H, Val, T)"});
 		TypeName ->
 		    emit({indent(3),"'enc_",TypeName,"'(H, Val, T)"})
-	    end,
-	    case more_genfields(Fields,Rest) of
-		true ->
-		    emit({";",nl});
-		false ->
-		    emit({".",nl})
-	    end,
-	    [];
-	{false,_} -> []
+	    end
     end,
-    gen_encode_objectfields(Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
-gen_encode_objectfields(C,O,[_|T],Acc) ->
-    gen_encode_objectfields(C,O,T,Acc);
-gen_encode_objectfields(_,_,[],Acc) ->
+    case more_genfields(Rest) of
+	true ->
+	    emit([";",nl]);
+	false ->
+	    emit([".",nl])
+    end,
+    gen_encode_objectfields(ClassName,Rest,ObjName,ObjectFields,ConstrAcc);
+    
+% gen_encode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
+%     Fields = Class#objectclass.fields,
+%     MaybeConstr=
+% 	case is_typefield(Fields,FieldName) of
+% 	    true ->
+% 		Def = Type#typedef.typespec,
+% 		emit({"'enc_",ObjName,"'(",{asis,FieldName},
+% 		      ", Val, RestPrimFieldName) ->",nl}),
+% 		CAcc=
+% 		case Type#typedef.name of
+% 		    {primitive,bif} -> %%tag should be the primitive tag
+% 			OTag = Def#type.tag,
+% 			Tag = [encode_tag_val(decode_class(X#tag.class),
+% 					      X#tag.form,X#tag.number)||
+% 				  X <- OTag],
+% 			gen_encode_prim(ber,Def,{asis,lists:reverse(Tag)},
+% 					"Val"),
+% 			[];
+% 		    {constructed,bif} ->
+% 			emit({"   'enc_",ObjName,'_',FieldName,
+% 			      "'(Val)"}),
+% 			[Type#typedef{name=list_to_atom(lists:concat([ObjName,'_',FieldName]))}];
+% 		    {ExtMod,TypeName} ->
+% 			emit({"   '",ExtMod,"':'enc_",TypeName,
+% 			      "'(Val)"}),
+% 			[];
+% 		    TypeName ->
+% 			emit({"   'enc_",TypeName,"'(Val)"}),
+% 			[]
+% 		end,
+% 		case more_genfields(Fields,Rest) of
+% 		    true ->
+% 			emit({";",nl});
+% 		    false ->
+% 			emit({".",nl})
+% 		end,
+% 		CAcc;
+% 	{false,objectfield} ->
+% 	    emit({"'enc_",ObjName,"'(",{asis,FieldName},
+% 		  ", Val,[H|T]) ->",nl}),
+% 	    case Type#typedef.name of
+% 		{ExtMod,TypeName} ->
+% 		    emit({indent(3),"'",ExtMod,"':'enc_",TypeName,
+% 			  "'(H, Val, T)"});
+% 		TypeName ->
+% 		    emit({indent(3),"'enc_",TypeName,"'(H, Val, T)"})
+% 	    end,
+% 	    case more_genfields(Fields,Rest) of
+% 		true ->
+% 		    emit({";",nl});
+% 		false ->
+% 		    emit({".",nl})
+% 	    end,
+% 	    [];
+% 	{false,_} -> []
+%     end,
+%     gen_encode_objectfields(Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
+gen_encode_objectfields(ClassName,[C|Cs],O,OF,Acc) ->
+    gen_encode_objectfields(ClassName,Cs,O,OF,Acc);
+gen_encode_objectfields(_,[],_,_,Acc) ->
     Acc.
 
-gen_encode_constr_type([{Name,Def}|Rest]) ->
-    emit({Name,"(Val,TagIn) ->",nl}),
-    InnerType = asn1ct_gen:get_inner(Def#type.def),
-    asn1ct_gen:gen_encode_constructed(ber,Name,InnerType,Def),
-    gen_encode_constr_type(Rest);
-gen_encode_constr_type([]) ->
+% gen_encode_constr_type(Erules,[{Name,Def}|Rest]) ->
+%     emit({Name,"(Val,TagIn) ->",nl}),
+%     InnerType = asn1ct_gen:get_inner(Def#type.def),
+%     asn1ct_gen:gen_encode_constructed(Erules,Name,InnerType,Def),
+%     gen_encode_constr_type(Erules,Rest);
+gen_encode_constr_type(Erules,[TypeDef|Rest]) when record(TypeDef,typedef) ->
+    case is_already_generated(enc,TypeDef#typedef.name) of
+	true -> ok;
+	_ -> gen_encode_user(Erules,TypeDef)
+    end,
+    gen_encode_constr_type(Erules,Rest);
+gen_encode_constr_type(_,[]) ->
     ok.
 
-gen_decode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
-    Fields = Class#objectclass.fields,
-    MaybeConstr =
-    case is_typefield(Fields,FieldName) of
-	true ->
-	    Def = Type#typedef.typespec,
-	    emit({"'dec_",ObjName,"'(",{asis,FieldName},
-		  ", Bytes, RestPrimFieldName) ->",nl}),
+gen_encode_field_call(ObjName,FieldName,Type) ->
+    Def = Type#typedef.typespec,
+    case Type#typedef.name of
+	{primitive,bif} -> %%tag should be the primitive tag
 	    OTag = Def#type.tag,
-%	    Tag = [X#tag{class=decode_class(X#tag.class)}|| X <- OTag],
-	    Tag = [(decode_class(X#tag.class) bsl 10) + X#tag.number || X <- OTag],
-	    Prop = 
-		case get_optionalityspec(Fields,FieldName) of
-		    'OPTIONAL' -> opt_or_default;
-		    {'DEFAULT',_} -> opt_or_default;
-		    _ -> mandatory
-		end,
-	    CAcc =
-	    case Type#typedef.name of
-		{primitive,bif} ->
-		    gen_dec_prim(ber,Def,"Bytes",Tag,"TagIn",
-				 ?PRIMITIVE,Prop),
-		    [];
-		{constructed,bif} ->
-%		    emit({"   'dec_",ObjName,'_',FieldName,"'(Bytes,",
-%			  {asis,Prop},")"}),
-		    emit(["   'dec_",ObjName,'_',FieldName,"'(Bytes)"]),
-		    [{['dec_',ObjName,'_',FieldName],Def}];
-		{ExtMod,TypeName} ->
-% 		    emit({"   '",ExtMod,"':'dec_",TypeName,"'(Bytes, ",
-% 			  {asis,Prop},")"}),
-		    emit(["   '",ExtMod,"':'dec_",TypeName,"'(Bytes)"]),
-		    [];
-		TypeName ->
-% 		    emit({"   'dec_",TypeName,"'(Bytes, ",{asis,Prop},
-% 			  ")"}),
-		    emit(["   'dec_",TypeName,"'(Bytes)"]),
-		    []
-	    end,
-	    case more_genfields(Fields,Rest) of
-		true ->
-		    emit({";",nl});
-		false ->
-		    emit({".",nl})
-	    end,
-	    CAcc;
-	{false,objectfield} ->
-	    emit({"'dec_",ObjName,"'(",{asis,FieldName},
-		  ", Bytes, [H|T]) ->",nl}),
-	    case Type#typedef.name of
+	    Tag = [encode_tag_val(decode_class(X#tag.class),
+				  X#tag.form,X#tag.number)||
+		      X <- OTag],
+	    gen_encode_prim(ber,Def,{asis,lists:reverse(Tag)},
+			    "Val"),
+	    [];
+	{constructed,bif} ->
+	    emit({"   'enc_",ObjName,'_',FieldName,
+		  "'(Val)"}),
+	    [Type#typedef{name=list_to_atom(lists:concat([ObjName,'_',FieldName]))}];
+	{ExtMod,TypeName} ->
+	    emit({"   '",ExtMod,"':'enc_",TypeName,
+		  "'(Val)"}),
+	    [];
+	TypeName ->
+	    emit({"   'enc_",TypeName,"'(Val)"}),
+	    []
+    end.
+
+gen_encode_default_call(ClassName,FieldName,Type) ->
+    CurrentMod = get(currmod),
+    InnerType = asn1ct_gen:get_inner(Type#type.def),
+    OTag = Type#type.tag,
+    Tag = [encode_tag_val(decode_class(X#tag.class),X#tag.form,X#tag.number)|| X <- OTag],
+    case asn1ct_gen:type(InnerType) of
+    	{constructed,bif} ->
+%%	    asn1ct_gen:gen_encode_constructed(Erules,Typename,InnerType,Type);
+	    emit(["   'enc_",ClassName,'_',FieldName,"'(Bytes)"]),
+	    [#typedef{name=list_to_atom(lists:concat([ClassName,'_',FieldName])),
+		      typespec=Type}];
+	{primitive,bif} ->
+	    gen_encode_prim(ber,Type,{asis,lists:reverse(Tag)},"Val"),
+	    [];
+	#'Externaltypereference'{module=CurrentMod,type=Etype} ->
+	    emit(["   'enc_",Etype,"'(Val, ",Tag,")",nl]),
+	    [];
+	#'Externaltypereference'{module=Emod,type=Etype} ->
+	    emit(["   '",Emod,"':'enc_",Etype,"'(Val, ",Tag,")",nl]),
+	    []
+% 	'ASN1_OPEN_TYPE' ->
+% 	    emit(["%% OPEN TYPE",nl]),
+% 	    gen_encode_prim(ber,
+% 			    Type#type{def='ASN1_OPEN_TYPE'},
+% 			    "TagIn","Val"),
+% 	    emit([".",nl])
+    end.
+    
+%%%%%%%%%%%%%%%%
+
+gen_decode_objectfields(ClassName,[{typefield,Name,OptOrMand}|Rest],
+			ObjName,ObjectFields,ConstrAcc) ->
+    emit(["'dec_",ObjName,"'(",{asis,Name},
+	  ", Bytes, RestPrimFieldName) ->",nl]),
+    MaybeConstr=
+	case {get_object_field(Name,ObjectFields),OptOrMand} of
+	    {false,'MANDATORY'} -> %% this case is illegal
+		exit({error,{asn1,{"missing mandatory field in object",
+				   ObjName}}});
+	    {false,'OPTIONAL'} ->
+		emit(["   asn1_NOVALUE"]),
+		[];
+	    {false,{'DEFAULT',DefaultType}} ->
+		emit_tlv_format("Bytes"),
+		gen_decode_default_call(ClassName,Name,"Tlv",DefaultType);
+	    {{Name,TypeSpec},_} ->
+		%% A specified field owerwrites any 'DEFAULT' or
+		%% 'OPTIONAL' field in the class
+		emit_tlv_format("Bytes"),
+		gen_decode_field_call(ObjName,Name,"Tlv",TypeSpec)
+	end,
+    case more_genfields(Rest) of
+	true ->
+	    emit([";",nl]);
+	false ->
+	    emit([".",nl])
+    end,
+    gen_decode_objectfields(ClassName,Rest,ObjName,ObjectFields,MaybeConstr++ConstrAcc);
+gen_decode_objectfields(ClassName,[{objectfield,Name,Type,_,OptOrMand}|Rest],
+			ObjName,ObjectFields,ConstrAcc) ->
+    emit(["'dec_",ObjName,"'(",{asis,Name},
+	  ", Bytes,[H|T]) ->",nl]),
+    emit_tlv_format("Bytes"),
+    case {get_object_field(Name,ObjectFields),OptOrMand} of
+	{false,'MANDATORY'} ->
+	    exit({error,{asn1,{"missing mandatory field in object",
+			       ObjName}}});
+	{false,'OPTIONAL'} ->
+	    emit(["  exit({error,{'illegal use of missing field in object', ",Name,
+		  "}})"]);
+	{false,{'DEFAULT',DefaultObject}} ->
+	    exit({error,{asn1,{"not implemented yet",Name}}});
+	{{Name,TypeSpec},_} ->
+	    case TypeSpec#typedef.name of
 		{ExtMod,TypeName} ->
 		    emit({indent(3),"'",ExtMod,"':'dec_",TypeName,
 			  "'(H, Bytes, T)"});
 		TypeName ->
-		    emit({indent(3),"'dec_",TypeName,
-			  "'(H, Bytes, T)"})
-	    end,
-	    case more_genfields(Fields,Rest) of
-		true ->
-		    emit({";",nl});
-		false ->
-		    emit({".",nl})
-	    end,
-	    [];
-	{false,_} ->
-	    []
+		    emit({indent(3),"'dec_",TypeName,"'(H, Bytes, T)"})
+	    end
     end,
-    gen_decode_objectfields(Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
-gen_decode_objectfields(C,O,[_|T],CAcc) ->
-    gen_decode_objectfields(C,O,T,CAcc);
-gen_decode_objectfields(_,_,[],CAcc) ->
+    case more_genfields(Rest) of
+	true ->
+	    emit([";",nl]);
+	false ->
+	    emit([".",nl])
+    end,
+    gen_decode_objectfields(ClassName,Rest,ObjName,ObjectFields,ConstrAcc);
+gen_decode_objectfields(CN,[C|Cs],O,OF,CAcc) ->
+    gen_decode_objectfields(CN,Cs,O,OF,CAcc);
+gen_decode_objectfields(_,[],_,_,CAcc) ->
     CAcc.
 
-gen_decode_constr_type([{Name,Def}|Rest]) ->
-    emit([Name,"(Bytes, TagIn) ->",nl]),
+emit_tlv_format(Bytes) ->
+    notice_tlv_format_gen(), % notice for generating of tlv_format/1
+    emit(["  Tlv = tlv_format(",Bytes,"),",nl]).
+
+notice_tlv_format_gen() ->
+    Module = get(currmod),
+%    io:format("Noticed: ~p~n",[Module]),
+    case get(tlv_format) of
+	{done,Module} ->
+	    ok;
+	_ -> % true or undefined
+	    put(tlv_format,true)
+    end.
+
+emit_tlv_format_function() ->
+    Module = get(currmod),
+%    io:format("Tlv formated: ~p",[Module]),
+    case get(tlv_format) of
+	true ->
+%	    io:format(" YES!~n"),
+	    emit_tlv_format_function1(),
+	    put(tlv_format,{done,Module});
+	_ ->
+%	    io:format(" NO!~n"),
+	    ok
+    end.
+emit_tlv_format_function1() ->
+    emit(["tlv_format(Bytes) when binary(Bytes) ->",nl,
+	  "  {Tlv,_}=?RT_BER:decode(Bytes),",nl,
+	  "  Tlv;",nl,
+	  "tlv_format(Bytes) ->",nl,
+	  "  Bytes.",nl]).
+
+
+
+%%%%%%%%%%%%%%%
+% gen_decode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
+%     Fields = Class#objectclass.fields,
+%     MaybeConstr =
+%     case is_typefield(Fields,FieldName) of
+% 	true ->
+% 	    Def = Type#typedef.typespec,
+% 	    emit({"'dec_",ObjName,"'(",{asis,FieldName},
+% 		  ", Bytes, RestPrimFieldName) ->",nl}),
+% 	    OTag = Def#type.tag,
+% 	    Tag = [(decode_class(X#tag.class) bsl 10) + X#tag.number || X <- OTag],
+% 	    Prop = 
+% 		case get_optionalityspec(Fields,FieldName) of
+% 		    'OPTIONAL' -> opt_or_default;
+% 		    {'DEFAULT',_} -> opt_or_default;
+% 		    _ -> mandatory
+% 		end,
+% 	    CAcc =
+% 	    case Type#typedef.name of
+% 		{primitive,bif} ->
+% 		    gen_dec_prim(ber,Def,"Bytes",Tag,"TagIn",
+% 				 ?PRIMITIVE,Prop),
+% 		    [];
+% 		{constructed,bif} ->
+% 		    emit(["   'dec_",ObjName,'_',FieldName,"'(Bytes)"]),
+% 		    [Type#typedef{name=list_to_atom(lists:concat([ObjName,'_',FieldName]))}];
+% 		{ExtMod,TypeName} ->
+% 		    emit(["   '",ExtMod,"':'dec_",TypeName,"'(Bytes)"]),
+% 		    [];
+% 		TypeName ->
+% 		    emit(["   'dec_",TypeName,"'(Bytes)"]),
+% 		    []
+% 	    end,
+% 	    case more_genfields(Fields,Rest) of
+% 		true ->
+% 		    emit({";",nl});
+% 		false ->
+% 		    emit({".",nl})
+% 	    end,
+% 	    CAcc;
+% 	{false,objectfield} ->
+% 	    emit({"'dec_",ObjName,"'(",{asis,FieldName},
+% 		  ", Bytes, [H|T]) ->",nl}),
+% 	    case Type#typedef.name of
+% 		{ExtMod,TypeName} ->
+% 		    emit({indent(3),"'",ExtMod,"':'dec_",TypeName,
+% 			  "'(H, Bytes, T)"});
+% 		TypeName ->
+% 		    emit({indent(3),"'dec_",TypeName,
+% 			  "'(H, Bytes, T)"})
+% 	    end,
+% 	    case more_genfields(Fields,Rest) of
+% 		true ->
+% 		    emit({";",nl});
+% 		false ->
+% 		    emit({".",nl})
+% 	    end,
+% 	    [];
+% 	{false,_} ->
+% 	    []
+%     end,
+%     gen_decode_objectfields(Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
+% gen_decode_objectfields(C,O,[_|T],CAcc) ->
+%     gen_decode_objectfields(C,O,T,CAcc);
+% gen_decode_objectfields(_,_,[],CAcc) ->
+%     CAcc.
+
+gen_decode_constr_type(Erules,[{Name,Def}|Rest]) ->
+    emit([Name,"(Tlv, TagIn) ->",nl]),
     InnerType = asn1ct_gen:get_inner(Def#type.def),
-    asn1ct_gen:gen_decode_constructed(ber,Name,InnerType,Def),
-    gen_decode_constr_type(Rest);
-gen_decode_constr_type([]) ->
+    asn1ct_gen:gen_decode_constructed(Erules,Name,InnerType,Def),
+    gen_decode_constr_type(Erules,Rest);
+gen_decode_constr_type(Erules,[TypeDef|Rest]) when record(TypeDef,typedef) ->
+    case is_already_generated(dec,TypeDef#typedef.name) of
+	true -> ok;
+	_ ->
+	    gen_decode(Erules,TypeDef)
+    end,
+    gen_decode_constr_type(Erules,Rest);
+gen_decode_constr_type(_,[]) ->
     ok.
-    
+
+%%%%%%%%%%%
+gen_decode_field_call(ObjName,FieldName,Bytes,Type) ->
+    Def = Type#typedef.typespec,
+    case Type#typedef.name of
+	{primitive,bif} -> %%tag should be the primitive tag
+	    OTag = Def#type.tag,
+	    Tag = [(decode_class(X#tag.class) bsl 10) + X#tag.number || 
+		      X <- OTag],
+	    gen_dec_prim(ber,Def,Bytes,Tag,"TagIn",?PRIMITIVE,
+			 opt_or_default),
+	    [];
+	{constructed,bif} ->
+	    emit({"   'dec_",ObjName,'_',FieldName,
+		  "'(",Bytes,")"}),
+	    [Type#typedef{name=list_to_atom(lists:concat([ObjName,'_',FieldName]))}];
+	{ExtMod,TypeName} ->
+	    emit({"   '",ExtMod,"':'dec_",TypeName,
+		  "'(",Bytes,")"}),
+	    [];
+	TypeName ->
+	    emit({"   'dec_",TypeName,"'(",Bytes,")"}),
+	    []
+    end.
+
+gen_decode_default_call(ClassName,FieldName,Bytes,Type) ->
+    CurrentMod = get(currmod),
+    InnerType = asn1ct_gen:get_inner(Type#type.def),
+    OTag = Type#type.tag,
+    Tag = [(decode_class(X#tag.class) bsl 10) + X#tag.number || X <- OTag],
+    case asn1ct_gen:type(InnerType) of
+    	{constructed,bif} ->
+	    emit(["   'dec_",ClassName,'_',FieldName,"'(",Bytes,")"]),
+	    [#typedef{name=list_to_atom(lists:concat([ClassName,'_',FieldName])),
+		      typespec=Type}];
+	{primitive,bif} ->
+	    gen_dec_prim(ber,Type,Bytes,Tag,"TagIn",
+			 ?PRIMITIVE,opt_or_default),
+	    [];
+	#'Externaltypereference'{module=CurrentMod,type=Etype} ->
+	    emit(["   'dec_",Etype,"'(",Bytes, " ,",Tag,")",nl]),
+	    [];
+	#'Externaltypereference'{module=Emod,type=Etype} ->
+	    emit(["   '",Emod,"':'dec_",Etype,"'(",Bytes,", ",Tag,")",nl]),
+	    []
+% 	'ASN1_OPEN_TYPE' ->
+% 	    emit(["%% OPEN TYPE",nl]),
+% 	    gen_encode_prim(ber,
+% 			    Type#type{def='ASN1_OPEN_TYPE'},
+% 			    "TagIn","Val"),
+% 	    emit([".",nl])
+    end.
+%%%%%%%%%%%
+
+is_already_generated(Operation,Name) ->
+    case get(class_default_type) of
+	undefined ->
+	    put(class_default_type,[{Operation,Name}]),
+	    false;
+	GeneratedList ->
+	    case lists:member({Operation,Name},GeneratedList) of
+		true ->
+		    true;
+		false ->
+		    put(class_default_type,[{Operation,Name}|GeneratedList]),
+		    false
+	    end
+    end.
+
+more_genfields([]) ->
+    false;
+more_genfields([Field|Fields]) ->
+    case element(1,Field) of
+	typefield ->
+	    true;
+	objectfield ->
+	    true;
+	_ ->
+	    more_genfields(Fields)
+    end.
+
 more_genfields(_Fields,[]) ->
     false;
 more_genfields(Fields,[{FieldName,_}|T]) ->
@@ -820,7 +1112,7 @@ gen_objectset_code(Erules,ObjSet) ->
     emit(nl).
 
 gen_objset_code(Erules,ObjSetName,UniqueFName,Set,ClassName,ClassDef)->
-    ClassFields = (ClassDef#classdef.typespec)#objectclass.fields,
+    ClassFields = get_class_fields(ClassDef),
     gen_objset_enc(Erules,ObjSetName,UniqueFName,Set,ClassName,ClassFields),
     gen_objset_dec(Erules,ObjSetName,UniqueFName,Set,ClassName,ClassFields).
 
@@ -966,17 +1258,22 @@ gen_objset_dec(_,ObjSetName,UniqueName,[{ObjName,Val,Fields}],_ClName,ClFields) 
     ok;
 gen_objset_dec(Erules,ObjSetName,_UniqueName,['EXTENSIONMARK'],_ClName,_ClFields) ->
     emit({"'getdec_",ObjSetName,"'(_Any1, _Any2) ->",nl}),
-    emit({indent(3),"fun(_Attr1,Bytes, _RestPrimFieldName) ->",nl}),
+    emit({indent(2),"fun(_Attr1,Bytes, _RestPrimFieldName) ->",nl}),
     case Erules of
 	ber_bin_v2 ->
-	    emit({indent(6),"?RT_BER:encode(Bytes)",nl});
+	    emit([indent(4),"case Bytes of",nl,
+		  indent(6),"Bin when binary(Bin) -> ",nl,
+		  indent(8),"Bin;",nl,
+		  indent(6),"_ ->",nl,
+		  indent(8),"?RT_BER:encode(Bytes)",nl,
+		  indent(4),"end",nl]);
 	_ ->
 	    emit({indent(6),"Len = case Bytes of",nl,indent(9),
 		  "Bin when binary(Bin) -> size(Bin);",nl,indent(9),
 		  "_ -> length(Bytes)",nl,indent(6),"end,"}),
-	    emit({indent(6),"{Bytes,[],Len}",nl})
+	    emit({indent(4),"{Bytes,[],Len}",nl})
     end,
-    emit({indent(3),"end.",nl,nl}),
+    emit({indent(2),"end.",nl,nl}),
     ok;
 gen_objset_dec(_,_,_,[],_,_) ->
     ok.
@@ -1046,9 +1343,6 @@ emit_inner_of_decfun(Type,Prop) when record(Type,type) ->
 	    emit([indent(9),Def," ->",nl,indent(12)]),
 	    gen_dec_prim(ber,Type,"Bytes",Tag,"TagIn",
 			 ?PRIMITIVE,Prop);
-%	TRef when record(TRef,typereference) ->
-%	    T = TRef#typereference.val,
-%	    emit({indent(9),T," ->",nl,indent(12),"'dec_",T,"'(Val)"});
 	#'Externaltypereference'{module=CurrMod,type=T} ->
 	    emit([indent(9),T," ->",nl,indent(12),"'dec_",T,
 %		  "'(Bytes, ",Prop,")"]);
@@ -1124,7 +1418,7 @@ mkfuncname(WhatKind,DecOrEnc) ->
 		Mod ->
 		    lists:concat(["'",DecOrEnc,"_",EType,"'"]);
 		_ ->
-		    io:format("CurrMod: ~p, Mod: ~p~n",[CurrMod,Mod]),
+% 		    io:format("CurrMod: ~p, Mod: ~p~n",[CurrMod,Mod]),
 		    lists:concat(["'",Mod,"':'",DecOrEnc,"_",EType,"'"])
 	    end;
 	#'typereference'{val=EType} ->
@@ -1153,6 +1447,20 @@ get_constraint(C,Key) ->
 	     no;
 	{value,{_,V}} -> 
 	    V
+    end.
+
+
+get_class_fields(#classdef{typespec=ObjClass}) ->
+    ObjClass#objectclass.fields;
+get_class_fields(#objectclass{fields=Fields}) ->
+    Fields;
+get_class_fields(_) ->
+    [].
+
+get_object_field(Name,ObjectFields) ->
+    case lists:keysearch(Name,1,ObjectFields) of
+	{value,Field} -> Field;
+	false -> false
     end.
 
 %%encode_tag(TagClass(?UNI, APP etc), Form (?PRIM etx), TagInteger) ->  
